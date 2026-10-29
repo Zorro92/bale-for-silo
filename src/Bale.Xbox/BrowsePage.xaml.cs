@@ -275,7 +275,7 @@ public sealed partial class BrowsePage : Page
     /// user's last-focused card, as Silo's Android TV shell does with its content focusRestorer
     /// ("card 7 of row 3"), instead of whichever card happens to sit under the tab.
     /// </summary>
-    private void OnRowsGettingFocus(UIElement sender, GettingFocusRoutedEventArgs args)
+    private void OnRowsGettingFocus(UIElement sender, GettingFocusEventArgs args)
     {
         try
         {
