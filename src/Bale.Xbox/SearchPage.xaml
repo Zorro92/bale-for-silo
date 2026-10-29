@@ -18,7 +18,7 @@
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
 
-    <TextBox x:Name="QueryBox" Margin="40,0,0,0" Width="520" Height="52" HorizontalAlignment="Left" PlaceholderText="Search movies and series"
+    <TextBox x:Name="QueryBox" Margin="40,0,0,0" Width="520" Height="52" Padding="18,15,18,0" HorizontalAlignment="Left" PlaceholderText="Search movies and series"
              Style="{StaticResource SkylineTextBoxStyle}" TextChanged="OnQueryChanged" InputScope="Search" />
 
     <StackPanel x:Name="Filters" Grid.Row="1" Margin="40,8,0,0" Orientation="Horizontal" Spacing="12" XYFocusKeyboardNavigation="Enabled">

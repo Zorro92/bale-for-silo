@@ -85,7 +85,7 @@
                      LineStackingStrategy="BlockLineHeight" TextWrapping="Wrap" MaxLines="3" TextTrimming="WordEllipsis" Foreground="#F2FFFFFF" />
           <TextBlock x:Name="CreditLine" Margin="0,13,0,0" Height="14" FontSize="10.3" FontWeight="Medium" Foreground="#9EFFFFFF" TextTrimming="CharacterEllipsis" />
           <!-- Room for the Version / Audio / Subtitles summary, which arrives with playback. -->
-          <Border Height="14" Margin="0,2,0,0" />
+          <Border x:Name="SelectorSlot" Height="14" Margin="0,2,0,0" />
 
           <!-- Action row: Play, Start Over (with a resume point), Watchlist, More (TvItemDetailScreen.HeroActionRow). -->
           <StackPanel x:Name="Actions" Orientation="Horizontal" Spacing="9" Margin="0,13,0,0" XYFocusKeyboardNavigation="Enabled">
@@ -132,19 +132,20 @@
           <ItemsControl x:Name="Seasons" IsTabStop="False">
             <ItemsControl.Template>
               <ControlTemplate TargetType="ItemsControl">
-                <ScrollViewer HorizontalScrollMode="Enabled" HorizontalScrollBarVisibility="Hidden" VerticalScrollMode="Disabled" Padding="50,4,50,4">
+                <ScrollViewer HorizontalScrollMode="Enabled" HorizontalScrollBarVisibility="Hidden" VerticalScrollMode="Disabled" Padding="47,4,47,4">
                   <ItemsPresenter />
                 </ScrollViewer>
               </ControlTemplate>
             </ItemsControl.Template>
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
-                <StackPanel Orientation="Horizontal" Spacing="6" />
+                <!-- 3 px either side: room for the focused tab's outward ring inside the scroller's clip. -->
+                <StackPanel Orientation="Horizontal" Spacing="6" Margin="3,0,3,0" />
               </ItemsPanelTemplate>
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="views:SeasonView">
-                <ToggleButton Content="{x:Bind Title}" Style="{StaticResource SkylineChipStyle}" Click="OnSeasonClick" GotFocus="OnSeasonFocus" />
+                <ToggleButton Content="{x:Bind Title}" Style="{StaticResource SkylineChipStyle}" Click="OnSeasonClick" GotFocus="OnSeasonFocus" Loaded="OnTabLoaded" />
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>

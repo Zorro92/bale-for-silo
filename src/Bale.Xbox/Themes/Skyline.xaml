@@ -468,16 +468,24 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="ToggleButton">
+          <!-- Selected and focused are separate layers: setters from two state groups on one property undo each other. -->
           <Grid RenderTransformOrigin="0.5,0.5">
             <Grid.RenderTransform>
               <ScaleTransform x:Name="Lift" />
             </Grid.RenderTransform>
-            <Border x:Name="Rest" CornerRadius="15" BorderBrush="#1FFFFFFF" BorderThickness="1" />
-            <Border x:Name="Fill" CornerRadius="15" Background="#FFEDEDED" Opacity="0" />
-            <ContentPresenter x:Name="Label" Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}" Foreground="{TemplateBinding Foreground}"
+            <Border CornerRadius="15" BorderBrush="#1FFFFFFF" BorderThickness="1" />
+            <ContentPresenter Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}" Foreground="{TemplateBinding Foreground}"
                               FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}" VerticalContentAlignment="Center" />
-            <ContentPresenter x:Name="DarkLabel" Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}" Foreground="#FF000000"
-                              FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}" VerticalContentAlignment="Center" Opacity="0" />
+            <Grid x:Name="CheckedLayer" Opacity="0">
+              <Border CornerRadius="15" Background="#FFEDEDED" />
+              <ContentPresenter Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}" Foreground="#FF000000"
+                                FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}" VerticalContentAlignment="Center" />
+            </Grid>
+            <Grid x:Name="FocusLayer" Opacity="0">
+              <Border CornerRadius="15" Background="#FFEDEDED" />
+              <ContentPresenter Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}" Foreground="#FF000000"
+                                FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}" VerticalContentAlignment="Center" />
+            </Grid>
             <VisualStateManager.VisualStateGroups>
               <VisualStateGroup x:Name="CommonStates">
                 <VisualState x:Name="Normal" />
@@ -486,26 +494,17 @@
                 <VisualState x:Name="Disabled" />
                 <VisualState x:Name="Checked">
                   <VisualState.Setters>
-                    <Setter Target="Fill.Opacity" Value="1" />
-                    <Setter Target="Rest.Opacity" Value="0" />
-                    <Setter Target="Label.Opacity" Value="0" />
-                    <Setter Target="DarkLabel.Opacity" Value="1" />
+                    <Setter Target="CheckedLayer.Opacity" Value="1" />
                   </VisualState.Setters>
                 </VisualState>
                 <VisualState x:Name="CheckedPointerOver">
                   <VisualState.Setters>
-                    <Setter Target="Fill.Opacity" Value="1" />
-                    <Setter Target="Rest.Opacity" Value="0" />
-                    <Setter Target="Label.Opacity" Value="0" />
-                    <Setter Target="DarkLabel.Opacity" Value="1" />
+                    <Setter Target="CheckedLayer.Opacity" Value="1" />
                   </VisualState.Setters>
                 </VisualState>
                 <VisualState x:Name="CheckedPressed">
                   <VisualState.Setters>
-                    <Setter Target="Fill.Opacity" Value="1" />
-                    <Setter Target="Rest.Opacity" Value="0" />
-                    <Setter Target="Label.Opacity" Value="0" />
-                    <Setter Target="DarkLabel.Opacity" Value="1" />
+                    <Setter Target="CheckedLayer.Opacity" Value="1" />
                   </VisualState.Setters>
                 </VisualState>
                 <VisualState x:Name="CheckedDisabled" />
@@ -517,10 +516,7 @@
               <VisualStateGroup x:Name="FocusStates">
                 <VisualState x:Name="Focused">
                   <VisualState.Setters>
-                    <Setter Target="Fill.Opacity" Value="1" />
-                    <Setter Target="Rest.Opacity" Value="0" />
-                    <Setter Target="Label.Opacity" Value="0" />
-                    <Setter Target="DarkLabel.Opacity" Value="1" />
+                    <Setter Target="FocusLayer.Opacity" Value="1" />
                   </VisualState.Setters>
                   <Storyboard>
                     <DoubleAnimation Storyboard.TargetName="Lift" Storyboard.TargetProperty="ScaleX" To="1.02" Duration="0:0:0.12" />

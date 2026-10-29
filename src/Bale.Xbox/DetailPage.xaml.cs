@@ -37,6 +37,9 @@ public sealed partial class DetailPage : Page
     private long? _shownSeason;
     private bool _busy;
 
+    /// <summary>Set while the rail swaps seasons: focus briefly falls elsewhere and must not move the page.</summary>
+    private bool _swapping;
+
     public DetailPage()
     {
         InitializeComponent();
@@ -68,7 +71,13 @@ public sealed partial class DetailPage : Page
         _episodesRail.EdgeReached += step => _ = StepSeasonAsync(step);
 
         _castRail = Rail.Attach(Cast);
-        _castRail.Entered += () => AnchorSection(CastSection);
+        _castRail.Entered += () =>
+        {
+            if (!_swapping)
+            {
+                AnchorSection(CastSection);
+            }
+        };
 
         ActionButton.Attach(StartOverButton);
         ActionButton.Attach(WatchlistButton);
@@ -153,6 +162,15 @@ public sealed partial class DetailPage : Page
 
         SubtitleText.Text = detail.Subtitle ?? string.Empty;
         SubtitleText.Visibility = string.IsNullOrEmpty(detail.Subtitle) ? Visibility.Collapsed : Visibility.Visible;
+        if (!detail.IsSeries)
+        {
+            // Only a series fixes the slots (focusing an episode swaps the text); a movie's stack follows its synopsis.
+            Synopsis.Height = double.NaN;
+            CreditLine.Margin = new Thickness(0, 6, 0, 0);
+            SelectorSlot.Margin = new Thickness(0, 6, 0, 0);
+            Actions.Margin = new Thickness(0, 19, 0, 0);
+        }
+
         ShowEditorial(detail, null);
         CreditLine.Text = detail.CreditLine ?? string.Empty;
 
@@ -363,6 +381,7 @@ public sealed partial class DetailPage : Page
         }
 
         var views = episodes.Select(episode => new EpisodeView(episode, episode.ContentId == detail.PlayTargetId)).ToList();
+        _swapping = focusEdge;
         Episodes.ItemsSource = views;
         if (views.FirstOrDefault(view => view.Episode.ContentId == detail.PlayTargetId) is { } nextUp)
         {
@@ -374,9 +393,20 @@ public sealed partial class DetailPage : Page
         _episodesRail.Remembered = views.FirstOrDefault(view => view.Episode.ContentId == detail.PlayTargetId) ?? views.FirstOrDefault();
         if (focusEdge && views.Count > 0)
         {
+            // The far end isn't realized until the rail scrolls there.
             var target = edge > 0 ? views[0] : views[^1];
             _episodesRail.Remembered = target;
-            FocusRetry.Until(Episodes, () => _episodesRail.FocusItem(target, FocusState.Keyboard));
+            Episodes.ScrollIntoView(target);
+            FocusRetry.Until(Episodes, () =>
+            {
+                if (!_episodesRail.FocusItem(target, FocusState.Keyboard))
+                {
+                    return false;
+                }
+
+                _swapping = false;
+                return true;
+            });
         }
     }
 
@@ -387,12 +417,22 @@ public sealed partial class DetailPage : Page
             Seasons.UpdateLayout();
         }
 
+        // Under AOT the containers don't come back as ContentPresenter; go by each tab's DataContext.
         foreach (var container in (IEnumerable<UIElement>?)Seasons.ItemsPanelRoot?.Children ?? Array.Empty<UIElement>())
         {
-            if (container is ContentPresenter { Content: SeasonView view } presenter && FindChild<ToggleButton>(presenter) is { } tab)
+            if (FindChild<ToggleButton>(container) is { DataContext: SeasonView view } tab)
             {
                 tab.IsChecked = ReferenceEquals(view, _selectedTab);
             }
+        }
+    }
+
+    /// <summary>A tab realized after the selection changed picks up its checked state here.</summary>
+    private void OnTabLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleButton { DataContext: SeasonView view } tab)
+        {
+            tab.IsChecked = ReferenceEquals(view, _selectedTab);
         }
     }
 
