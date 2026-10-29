@@ -30,6 +30,13 @@ internal sealed class SiloRequestHandler : DelegatingHandler
         AddIfPresent(headers, "X-Silo-Client-Channel", _identity.ClientChannel);
         AddIfPresent(headers, "X-Silo-Client-Family", _identity.ClientFamily);
 
+        // Kiota asks only for application/problem+json on calls that answer 204 with no body (watchlist,
+        // favorites, watched). Silo refuses that with 406, so also accept application/json.
+        if (headers.Accept.Count == 1 && headers.Accept.First().MediaType == "application/problem+json")
+        {
+            headers.Accept.ParseAdd("application/json");
+        }
+
         // The refresh call itself must not wait on credentials: getting them may be what triggered it.
         if (headers.Authorization is null && _credentials is not null && !IsRefresh(request)
             && await _credentials(cancellationToken).ConfigureAwait(false) is { AccessToken.Length: > 0 } credentials)

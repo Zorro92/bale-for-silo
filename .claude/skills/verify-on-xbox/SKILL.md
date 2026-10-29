@@ -44,12 +44,12 @@ restored the port before.
 
 The console runs the user's real account against their real Silo server.
 
-- **Never trigger writes** to the user's library: watchlist, favorite, watched, ratings, progress.
-  Marking a series watched and then unwatched wipes its real per-episode watch history and drops it
-  from Continue Watching. Test toggles only on a title the user names for testing, and say first.
-  Don't call write endpoints directly with an API key either.
-- **Never press A in the profile menu or on Sign Out.** Check `focus` before every A: if it says
-  `SwitchProfileRow`, `Sign Out` or anything in `ProfilePanel`, back out with B instead.
+- **Be deliberate about writes** to the user's library (watchlist, favorite, watched, ratings,
+  progress). Testing them is fine and has found real bugs, but prefer the least destructive one
+  (watchlist add then remove), say what you're about to change, and undo it afterwards. Know that
+  marking a series watched and then unwatched wipes its real per-episode history.
+- **Don't press A in the profile menu by accident.** Check `focus` before every A: if it says
+  `SwitchProfileRow`, `Sign Out` or anything in `ProfilePanel` and that isn't the test, back out with B.
 - **Check focus after each step** instead of firing long press sequences blind; one surprise
   (a panel opening, the on-screen keyboard) turns the rest of the sequence into random input.
 - **The on-screen keyboard captures the d-pad.** After `type`, press B once to close it, then

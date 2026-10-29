@@ -93,3 +93,20 @@ public class SiloClientRefreshTests
         Assert.Equal("Bearer at2", stub.Requests[3].Headers.Authorization!.ToString());
     }
 }
+
+public class NoContentAcceptTests
+{
+    [Fact]
+    public async Task NoContentCallsAlsoAcceptJson()
+    {
+        var stub = new StubHandler().Enqueue(System.Net.HttpStatusCode.NoContent, "");
+        ServerAddress.TryParse("silo.example.com", out var server);
+        using var client = new SiloClient(server, new ClientIdentity("d", "x", "xbox", "Bale"), stub);
+
+        await client.Detail.SetWatchlistAsync("movie-1", on: false);
+
+        var accept = stub.Requests.Single().Headers.Accept.Select(value => value.MediaType).ToList();
+        Assert.Contains("application/problem+json", accept);
+        Assert.Contains("application/json", accept);
+    }
+}
