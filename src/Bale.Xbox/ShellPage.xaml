@@ -19,22 +19,26 @@
       </Grid.OpacityTransition>
       <TextBlock Text="BALE" FontSize="{StaticResource SkylineWordmarkSize}" FontWeight="Black" CharacterSpacing="340"
                  Foreground="{StaticResource SkylinePrimary}" VerticalAlignment="Center" HorizontalAlignment="Left" />
-      <ItemsControl x:Name="Tabs" HorizontalAlignment="Center" VerticalAlignment="Center" IsTabStop="False">
-        <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate>
-            <StackPanel Orientation="Horizontal" Spacing="4" />
-          </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="views:TabView">
-            <ToggleButton Content="{x:Bind Title}" Style="{StaticResource SkylineTabStyle}" Click="OnTabClick" GotFocus="OnTabFocus" />
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
+      <!-- Center cluster (TvTopMenuBar): Search just left of Home, the tabs, and an invisible twin of the
+           search icon after them so the tabs themselves stay centered on screen. -->
+      <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center" XYFocusKeyboardNavigation="Enabled">
+        <Button x:Name="SearchButton" Style="{StaticResource SkylineBarIconStyle}" Click="OnSearchClick" Content="&#xE721;"
+                AutomationProperties.Name="Search" VerticalAlignment="Center" />
+        <ItemsControl x:Name="Tabs" VerticalAlignment="Center" IsTabStop="False">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Orientation="Horizontal" Spacing="4" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="views:TabView">
+              <ToggleButton Content="{x:Bind Title}" Style="{StaticResource SkylineTabStyle}" Click="OnTabClick" GotFocus="OnTabFocus" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <Border Width="28" />
+      </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="11" HorizontalAlignment="Right" VerticalAlignment="Center">
-        <!-- Content must be text, not an element: the tab template draws it twice (resting and inverted). -->
-        <ToggleButton x:Name="SearchButton" Style="{StaticResource SkylineTabStyle}" Width="30" Padding="0" Click="OnSearchClick"
-                      Content="&#xE721;" FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="12" AutomationProperties.Name="Search" />
         <Button x:Name="AvatarButton" Style="{StaticResource SkylineCapsuleStyle}" Width="30" Padding="0"
                 Background="{StaticResource SkylineChromeSelected}" Foreground="{StaticResource SkylinePrimary}" Click="OnAvatarClick"
                 AutomationProperties.Name="Profile">

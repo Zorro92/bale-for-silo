@@ -358,7 +358,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             && card.Focus(FocusState.Programmatic));
     }
 
-    /// <summary>Focus has settled on <paramref name="view"/>: fetch the marquee art of the two cards either side (HeroFocusPrefetchRadius).</summary>
+    /// <summary>Focus has settled on <paramref name="view"/>: fetch the marquee art and details of the two cards either side (HeroFocusPrefetchRadius).</summary>
     private void PrefetchAround(CardView view)
     {
         if (Rows.ItemsSource is not IEnumerable<RowView> rows || rows.FirstOrDefault(row => row.Cards.Contains(view)) is not { } row)
@@ -367,12 +367,21 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         }
 
         var index = row.Cards.ToList().IndexOf(view);
+        var detail = Session.Client?.Detail;
         for (var i = Math.Max(0, index - 2); i <= Math.Min(row.Cards.Count - 1, index + 2); i++)
         {
+            // Details too: the marquee's cast line, and the page a press opens (an episode opens its series).
+            var card = row.Cards[i].Card;
+            detail?.Preload(card.ContentId);
+            if (card.Type == "episode" && card.SeriesId is { } series)
+            {
+                detail?.Preload(series);
+            }
+
             if (i != index)
             {
-                Prefetch.Warm(row.Cards[i].Card.BackdropUrl);
-                Prefetch.Warm(row.Cards[i].Card.LogoUrl);
+                Artwork.Warm(row.Cards[i].Card.BackdropUrl);
+                Artwork.Warm(row.Cards[i].Card.LogoUrl);
             }
         }
     }
@@ -388,9 +397,11 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         PrefetchAround(view);
         var card = view.Card;
         MarqueeTitle.Text = card.Title;
-        MarqueeMeta.Text = card.MarqueeMeta;
+        ShowFacts(card);
         MarqueeSynopsis.Text = card.Overview ?? string.Empty;
-        ShowBadges(card.Badges);
+        MarqueeDetailLine.Text = string.Empty;
+        _ = ShowDetailLineAsync(view);
+        ShowBadges(card.SpecBadges);
 
         // Logo art fades over the text title once it has decoded; a slow or broken logo never blanks the slot.
         MarqueeLogo.Opacity = 0;
@@ -417,6 +428,86 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         {
             _art?.Show(backdrop);
             _ = TintFromAsync(view, backdrop);
+        }
+    }
+
+    /// <summary>
+    /// The facts line (TvFactsRow on the marquee): the content-rating chip, then the facts, rating and
+    /// genre with dots between. Built in code: resources can't be read from code under AOT.
+    /// </summary>
+    private void ShowFacts(MediaCard card)
+    {
+        MarqueeFacts.Children.Clear();
+        if (card.ContentRating is { } rating)
+        {
+            MarqueeFacts.Children.Add(new Border
+            {
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0xB3, 0xFF, 0xFF, 0xFF)),
+                BorderThickness = new Thickness(0.75),
+                CornerRadius = new CornerRadius(2.5),
+                Padding = new Thickness(6, 1, 6, 1),
+                Margin = new Thickness(0, 0, 4, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = new TextBlock { Text = rating, FontSize = 9.5, FontWeight = Windows.UI.Text.FontWeights.SemiBold, CharacterSpacing = 30, Foreground = new SolidColorBrush(Colors.White) },
+            });
+        }
+
+        var tokens = 0;
+        void Add(UIElement token)
+        {
+            if (tokens++ > 0)
+            {
+                MarqueeFacts.Children.Add(FactText("·"));
+            }
+
+            MarqueeFacts.Children.Add(token);
+        }
+
+        foreach (var fact in card.MarqueeFacts)
+        {
+            Add(FactText(fact));
+        }
+
+        if (card.Rating is { } score)
+        {
+            Add(RatingMark.Build(score, 12));
+        }
+
+        if (card.Genre is { } genre)
+        {
+            Add(FactText(genre));
+        }
+    }
+
+    private static TextBlock FactText(string text) => new()
+    {
+        Text = text,
+        FontSize = 12,
+        FontWeight = Windows.UI.Text.FontWeights.Medium,
+        Foreground = new SolidColorBrush(Color.FromArgb(0xBF, 0xED, 0xED, 0xED)),
+        VerticalAlignment = VerticalAlignment.Center,
+        TextTrimming = TextTrimming.CharacterEllipsis,
+    };
+
+    /// <summary>The cast line arrives with the title's detail, which the card's neighbours already preloaded.</summary>
+    private async Task ShowDetailLineAsync(CardView view)
+    {
+        if (Session.Client is not { } client)
+        {
+            return;
+        }
+
+        try
+        {
+            var detail = await client.Detail.GetAsync(view.Card.ContentId);
+            if (ReferenceEquals(_shownMarquee, view))
+            {
+                MarqueeDetailLine.Text = detail.MarqueeLine ?? string.Empty;
+            }
+        }
+        catch (Exception)
+        {
+            // The line stays empty, as when a title has no cast.
         }
     }
 

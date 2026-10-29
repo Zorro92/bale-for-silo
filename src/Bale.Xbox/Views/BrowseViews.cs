@@ -57,6 +57,13 @@ public sealed partial class CardView
         OverlayVisibility = OverlayCode.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         SubtitleVisibility = string.IsNullOrEmpty(card.Subtitle) ? Visibility.Collapsed : Visibility.Visible;
 
+        // CardOverlays: posters scale their badges by width / 185; wide cards by TvCardOverlayScale (0.7).
+        var scale = landscape ? 0.7 : width / 185;
+        CornerTop = card.CornerTop.Select(text => new BadgeView(text, scale)).ToList();
+        CornerBottom = card.CornerBottom.Select(text => new BadgeView(text, scale)).ToList();
+        CornerInset = new Thickness(8 * scale, 8 * scale, 0, (landscape ? 12 : 8) * scale);
+        CornerGap = 4 * scale;
+
         if (card.ImageUrl is not null)
         {
             // Decode at the drawn size (x2 device pixels) so long rows stay light on memory.
@@ -78,6 +85,15 @@ public sealed partial class CardView
     public string OverlayCode { get; }
 
     public BitmapImage? Image { get; }
+
+    /// <summary>Overlay badges in the art's top-left and bottom-left corners.</summary>
+    public IReadOnlyList<BadgeView> CornerTop { get; }
+
+    public IReadOnlyList<BadgeView> CornerBottom { get; }
+
+    public Thickness CornerInset { get; }
+
+    public double CornerGap { get; }
 
     public double Width { get; }
 
@@ -132,4 +148,30 @@ public sealed partial class LibraryChoiceView
 
     /// <summary>A checkmark on the current scope, a chevron on the others.</summary>
     public string Trailing => IsCurrent ? "" : "";
+}
+
+/// <summary>
+/// One card overlay badge in the default "Classic" preset (OverlayPresetStyles.classic): an
+/// uppercase capsule, black @ 60% with a white @ 15% hairline, scaled with the card.
+/// </summary>
+public sealed partial class BadgeView
+{
+    public BadgeView(string text, double scale)
+    {
+        Text = text;
+        FontSize = 11 * 0.86 * scale;
+        Padding = new Thickness(8 * scale, 3 * scale, 8 * scale, 3 * scale);
+        Border = new Thickness(scale);
+        Radius = new CornerRadius((FontSize * 1.33 + 6 * scale) / 2);
+    }
+
+    public string Text { get; }
+
+    public double FontSize { get; }
+
+    public Thickness Padding { get; }
+
+    public Thickness Border { get; }
+
+    public CornerRadius Radius { get; }
 }

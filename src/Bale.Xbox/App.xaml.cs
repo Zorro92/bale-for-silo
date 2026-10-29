@@ -33,6 +33,7 @@ public sealed partial class App : Application
         Log.Info($"Launched {Windows.ApplicationModel.Package.Current.Id.Version.Build} on {Windows.System.Profile.AnalyticsInfo.VersionInfo.DeviceFamily}");
         if (Window.Current.Content is not Frame frame)
         {
+            Artwork.TrimInBackground();
             if (DeviceIdentity.IsXbox)
             {
                 // Draw edge to edge so artwork reaches the TV's edges; pages keep text inside the safe area themselves.

@@ -5,6 +5,16 @@
     xmlns:views="using:Bale.Xbox.Views"
     Background="{StaticResource SkylineBackground}">
 
+  <Page.Resources>
+    <!-- Same card overlay badges as Home (CardOverlays, Classic preset). -->
+    <DataTemplate x:Key="BadgeTemplate" x:DataType="views:BadgeView">
+      <Border Background="#99000000" BorderBrush="#26FFFFFF" BorderThickness="{x:Bind Border}" CornerRadius="{x:Bind Radius}"
+              Padding="{x:Bind Padding}" HorizontalAlignment="Left" Margin="0,0,0,1">
+        <TextBlock Text="{x:Bind Text}" FontSize="{x:Bind FontSize}" FontWeight="SemiBold" CharacterSpacing="55" Foreground="#FFFFFFFF" />
+      </Border>
+    </DataTemplate>
+  </Page.Resources>
+
   <!--
     Search as Silo's Android TV TvSearchScreen lays it out: a 520 x 52 field at the safe area, the
     All / Movies / Series filter chips, a result count, then a grid of 138 x 207 posters with 14 / 20
@@ -53,6 +63,10 @@
                 <TextBlock Text="{x:Bind Title}" Visibility="{x:Bind FallbackVisibility}" TextWrapping="Wrap" TextAlignment="Center"
                            FontSize="{StaticResource SkylineCardSubtitleSize}" VerticalAlignment="Center" Margin="8" Foreground="{StaticResource SkylineSecondary}" />
                 <Image Source="{x:Bind Image}" Stretch="UniformToFill" />
+                <ItemsControl ItemsSource="{x:Bind CornerTop}" ItemTemplate="{StaticResource BadgeTemplate}" Margin="{x:Bind CornerInset}"
+                              HorizontalAlignment="Left" VerticalAlignment="Top" IsTabStop="False" IsHitTestVisible="False" />
+                <ItemsControl ItemsSource="{x:Bind CornerBottom}" ItemTemplate="{StaticResource BadgeTemplate}" Margin="{x:Bind CornerInset}"
+                              HorizontalAlignment="Left" VerticalAlignment="Bottom" IsTabStop="False" IsHitTestVisible="False" />
               </Grid>
               <Border x:Name="FocusGlow" Margin="-6" CornerRadius="{StaticResource SkylineFocusGlowRadius}" BorderThickness="3"
                       BorderBrush="{StaticResource SkylineFocusGlow}" Opacity="0" IsHitTestVisible="False" />

@@ -26,6 +26,51 @@ public sealed class DetailFeed
         _browse = browse;
     }
 
+    /// <summary>How long a preloaded or opened detail is reused before it's fetched again.</summary>
+    private static readonly TimeSpan CacheLife = TimeSpan.FromMinutes(5);
+    private const int CacheSize = 40;
+
+    private readonly Dictionary<string, (DateTime At, Task<ItemDetail> Detail)> _cache = new();
+    private readonly object _cacheLock = new();
+
+    /// <summary>
+    /// A title's detail, from the cache when it was preloaded or opened in the last few minutes, as
+    /// the official TV feed does for the cards around focus (TvSkylineSectionFeed's fetchDetail), so
+    /// the marquee's cast line and the detail page appear at once.
+    /// </summary>
+    public Task<ItemDetail> GetAsync(string contentId)
+    {
+        lock (_cacheLock)
+        {
+            if (_cache.TryGetValue(contentId, out var cached) && DateTime.UtcNow - cached.At < CacheLife && !cached.Detail.IsFaulted && !cached.Detail.IsCanceled)
+            {
+                return cached.Detail;
+            }
+
+            if (_cache.Count >= CacheSize)
+            {
+                var oldest = _cache.OrderBy(entry => entry.Value.At).First().Key;
+                _cache.Remove(oldest);
+            }
+
+            var load = LoadAsync(contentId);
+            _cache[contentId] = (DateTime.UtcNow, load);
+            return load;
+        }
+    }
+
+    /// <summary>Start loading a detail the user is likely to open; failures are left for the real open to retry.</summary>
+    public void Preload(string contentId) => _ = GetAsync(contentId).ContinueWith(task => _ = task.Exception, TaskScheduler.Default);
+
+    /// <summary>Drop a cached detail after the viewer changed it (watchlist, favorite, watched).</summary>
+    public void Forget(string contentId)
+    {
+        lock (_cacheLock)
+        {
+            _cache.Remove(contentId);
+        }
+    }
+
     public async Task<ItemDetail> LoadAsync(string contentId, CancellationToken cancellationToken = default)
     {
         var item = await _api.Api.V2.Catalog.Items[contentId].GetAsync(config =>
@@ -107,7 +152,33 @@ public sealed class DetailFeed
                 item.UserState?.InWatchlist == true,
                 item.UserState?.IsFavorite == true,
                 item.UserState?.Played == true),
-            Ratings(item));
+            Ratings(item))
+        {
+            MarqueeLine = MarqueeLine(item),
+        };
+    }
+
+    /// <summary>"Aired Mar 12, 2026 · A, B, C": the air date and the first three cast by billing order.</summary>
+    internal static string? MarqueeLine(CatalogItemDetail item)
+    {
+        var parts = new List<string>();
+        if (item.AirDate is { } aired)
+        {
+            parts.Add("Aired " + new DateOnly(aired.Year, aired.Month, aired.Day).ToString("MMM d, yyyy", CultureInfo.GetCultureInfo("en-US")));
+        }
+
+        var cast = (item.Cast ?? [])
+            .OrderBy(credit => credit.Order ?? long.MaxValue)
+            .Select(credit => credit.Name?.Trim())
+            .Where(name => !string.IsNullOrEmpty(name))
+            .Take(3)
+            .ToList();
+        if (cast.Count > 0)
+        {
+            parts.Add(string.Join(", ", cast));
+        }
+
+        return parts.Count == 0 ? null : string.Join(" · ", parts);
     }
 
     /// <summary>
@@ -127,7 +198,7 @@ public sealed class DetailFeed
         return new[] { OutOfTen("imdb", "IMDb", item.RatingImdb), OutOfTen("tmdb", "TMDB", item.RatingTmdb) }.OfType<DisplayRating>().ToList();
     }
 
-    private static DisplayRating? OutOfTen(string source, string name, double? value) =>
+    internal static DisplayRating? OutOfTen(string source, string name, double? value) =>
         value is > 0 and <= 10 && double.IsFinite(value.Value)
             ? new DisplayRating(source, name, (Math.Round(value.Value * 10, MidpointRounding.AwayFromZero) / 10).ToString("0.0", CultureInfo.InvariantCulture))
             : null;

@@ -1,4 +1,3 @@
-using System.Net.Http;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Graphics.Imaging;
 using Windows.UI;
@@ -15,7 +14,6 @@ internal static class AmbientTint
 {
     private const double TargetLuminance = 0.22;
 
-    private static readonly HttpClient Http = new();
     private static readonly Dictionary<Uri, Color> Cache = new();
 
     public static async Task<Color?> SampleAsync(Uri image)
@@ -27,7 +25,12 @@ internal static class AmbientTint
 
         try
         {
-            var bytes = await Http.GetByteArrayAsync(image);
+            // From the artwork cache: the art box shows the same image, so it's downloaded once.
+            if (await Artwork.ReadAsync(image) is not { } bytes)
+            {
+                return null;
+            }
+
             using var stream = bytes.AsBuffer().AsStream().AsRandomAccessStream();
             var decoder = await BitmapDecoder.CreateAsync(stream);
 

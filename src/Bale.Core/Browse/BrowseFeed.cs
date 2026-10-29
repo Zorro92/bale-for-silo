@@ -145,15 +145,115 @@ public sealed class BrowseFeed
             Badges(item.OverlaySummary, item.ContentRating),
             item.Type == "episode" && item.SeasonNumber is { } season && item.EpisodeNumber is { } episode ? $"S{season} E{episode}" : null,
             item.Type == "episode" ? item.Title : null,
-            Runtime(item.Runtime));
+            Runtime(item.Runtime))
+        {
+            ContentRating = string.IsNullOrWhiteSpace(item.ContentRating) ? null : item.ContentRating!.Trim().ToUpperInvariant(),
+            MarqueeFacts = MarqueeFacts(item, isEpisode),
+            Rating = isEpisode ? null : Detail.DetailFeed.OutOfTen("imdb", "IMDb", item.RatingImdb) ?? Detail.DetailFeed.OutOfTen("tmdb", "TMDB", item.RatingTmdb),
+            Genre = isEpisode ? null : (item.Genres ?? []).FirstOrDefault(genre => !string.IsNullOrWhiteSpace(genre)),
+            SpecBadges = SpecBadges(item.OverlaySummary),
+            CornerTop = new[] { PrettyResolution(item.OverlaySummary?.Resolution), Upper(item.OverlaySummary?.Hdr), Upper(item.OverlaySummary?.Audio) }.OfType<string>().ToList(),
+            CornerBottom = new[] { Upper(item.OverlaySummary?.ReleaseType) }.OfType<string>().ToList(),
+        };
     }
+
+    private static IReadOnlyList<string> MarqueeFacts(CatalogItem item, bool isEpisode)
+    {
+        var facts = new List<string>();
+        if (isEpisode)
+        {
+            if (EpisodeTag(item.SeasonNumber, item.EpisodeNumber) is { } tag)
+            {
+                facts.Add(tag);
+            }
+
+            if (!string.IsNullOrWhiteSpace(item.Title))
+            {
+                facts.Add(item.Title!);
+            }
+        }
+        else
+        {
+            if (item.Year is > 0)
+            {
+                facts.Add(item.Year.Value.ToString(CultureInfo.InvariantCulture));
+            }
+
+            if (Length(item.Runtime, item.DurationSeconds) is { } length)
+            {
+                facts.Add(length);
+            }
+        }
+
+        return facts;
+    }
+
+    /// <summary>"S01E02" (tvEpisodeTag).</summary>
+    internal static string? EpisodeTag(long? season, long? episode) =>
+        season is null && episode is null ? null : $"{(season is { } s ? $"S{s:00}" : "")}{(episode is { } e ? $"E{e:00}" : "")}";
+
+    /// <summary>"1h 36m", "2h", "52 min": the runtime, else the file's duration (lengthText).</summary>
+    internal static string? Length(long? runtimeMinutes, double? durationSeconds)
+    {
+        var minutes = runtimeMinutes is > 0 ? runtimeMinutes.Value
+            : durationSeconds is > 0 && double.IsFinite(durationSeconds.Value) ? (long)Math.Round(durationSeconds.Value / 60) : 0;
+        return minutes switch
+        {
+            <= 0 => null,
+            < 60 => $"{minutes} min",
+            _ when minutes % 60 == 0 => $"{minutes / 60}h",
+            _ => $"{minutes / 60}h {minutes % 60}m",
+        };
+    }
+
+    /// <summary>"4K · DOLBY VISION · EAC3 5.1" as separate, uppercased badges (TvMarqueeContent.specLine).</summary>
+    internal static IReadOnlyList<string> SpecBadges(CatalogItemOverlay? overlay)
+    {
+        var badges = new List<string>();
+        if (overlay is null)
+        {
+            return badges;
+        }
+
+        if (PrettyResolution(overlay.Resolution) is { } resolution)
+        {
+            badges.Add(resolution);
+        }
+
+        if (overlay.Hdr?.Trim() is { Length: > 0 } hdr)
+        {
+            badges.Add(hdr.Contains("dv", StringComparison.OrdinalIgnoreCase) || hdr.Contains("dolby", StringComparison.OrdinalIgnoreCase) ? "DOLBY VISION" : hdr.ToUpperInvariant());
+        }
+
+        if (overlay.Audio?.Trim() is { Length: > 0 } audio)
+        {
+            var codec = audio.Contains("atmos", StringComparison.OrdinalIgnoreCase) ? "ATMOS" : audio.ToUpperInvariant();
+            badges.Add(overlay.AudioChannels?.Trim() is { Length: > 0 } channels ? $"{codec} {channels.ToUpperInvariant()}" : codec);
+        }
+
+        return badges;
+    }
+
+    /// <summary>"4K" for 2160p, "8K" for 4320p, "1080P" otherwise (OverlayRegistry.prettyResolution, uppercased by the preset).</summary>
+    internal static string? PrettyResolution(string? value) => value?.Trim().ToLowerInvariant() switch
+    {
+        null or "" => null,
+        "2160p" or "4k" or "uhd" => "4K",
+        "4320p" or "8k" => "8K",
+        var other => other.ToUpperInvariant(),
+    };
+
+    private static string? Upper(string? value) => string.IsNullOrWhiteSpace(value) ? null : value!.Trim().ToUpperInvariant();
 
     /// <summary>Second caption line, as Silo's Android TV cards show it: the episode's own title, else the year.</summary>
     private static string? Subtitle(CatalogItem item, bool isEpisode)
     {
         if (isEpisode)
         {
-            return string.IsNullOrEmpty(item.Title) ? null : item.Title;
+            // "S01E01 • Pilot", as the official cards caption an episode.
+            var tag = EpisodeTag(item.SeasonNumber, item.EpisodeNumber);
+            var title = string.IsNullOrWhiteSpace(item.Title) ? null : item.Title;
+            return tag is null ? title : title is null ? tag : $"{tag} • {title}";
         }
 
         return item.Year is > 0 ? item.Year.Value.ToString(CultureInfo.InvariantCulture) : null;

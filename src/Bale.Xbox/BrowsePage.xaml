@@ -6,6 +6,13 @@
     Background="{StaticResource SkylineBackground}">
 
   <Page.Resources>
+    <DataTemplate x:Key="BadgeTemplate" x:DataType="views:BadgeView">
+      <Border Background="#99000000" BorderBrush="#26FFFFFF" BorderThickness="{x:Bind Border}" CornerRadius="{x:Bind Radius}"
+              Padding="{x:Bind Padding}" HorizontalAlignment="Left" Margin="0,0,0,1">
+        <TextBlock Text="{x:Bind Text}" FontSize="{x:Bind FontSize}" FontWeight="SemiBold" CharacterSpacing="55" Foreground="#FFFFFFFF" />
+      </Border>
+    </DataTemplate>
+
     <!-- TvMediaCard / TvEpisodeCard: rounded art, caption underneath, ring + glow on focus (drawn by CardFocus). -->
     <DataTemplate x:Key="CardTemplate" x:DataType="views:CardView">
       <StackPanel Width="{x:Bind Width}" Spacing="{x:Bind CaptionSpacing}">
@@ -15,16 +22,17 @@
             <TextBlock Text="{x:Bind Title}" Visibility="{x:Bind FallbackVisibility}" TextWrapping="Wrap" TextAlignment="Center"
                        FontSize="{StaticResource SkylineCardSubtitleSize}" VerticalAlignment="Center" Margin="8" Foreground="{StaticResource SkylineSecondary}" />
             <Image Source="{x:Bind Image}" Stretch="UniformToFill" />
-            <Rectangle Visibility="{x:Bind OverlayVisibility}" Height="40" VerticalAlignment="Bottom" IsHitTestVisible="False">
-              <Rectangle.Fill>
-                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                  <GradientStop Color="#00000000" Offset="0" />
-                  <GradientStop Color="#A6000000" Offset="1" />
-                </LinearGradientBrush>
-              </Rectangle.Fill>
-            </Rectangle>
-            <TextBlock Text="{x:Bind OverlayCode}" Visibility="{x:Bind OverlayVisibility}" FontSize="{StaticResource SkylineCardOverlaySize}" FontWeight="Bold"
-                       VerticalAlignment="Bottom" Margin="10,0,0,12" />
+            <!-- CardOverlays: format badges, top-left and bottom-left. -->
+            <ItemsControl ItemsSource="{x:Bind CornerTop}" ItemTemplate="{StaticResource BadgeTemplate}" Margin="{x:Bind CornerInset}"
+                          HorizontalAlignment="Left" VerticalAlignment="Top" IsTabStop="False" IsHitTestVisible="False">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Spacing="2" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+            </ItemsControl>
+            <ItemsControl ItemsSource="{x:Bind CornerBottom}" ItemTemplate="{StaticResource BadgeTemplate}" Margin="{x:Bind CornerInset}"
+                          HorizontalAlignment="Left" VerticalAlignment="Bottom" IsTabStop="False" IsHitTestVisible="False" />
             <Grid Visibility="{x:Bind ProgressVisibility}" VerticalAlignment="Bottom" Height="3">
               <Border Background="{StaticResource SkylineProgressTrack}" />
               <Border Background="{StaticResource SkylinePrimary}" HorizontalAlignment="Left" Width="{x:Bind ProgressFillWidth}" />
@@ -47,8 +55,9 @@
     <DataTemplate x:Key="RowTemplate" x:DataType="views:RowView">
       <StackPanel Spacing="9" Margin="0,0,0,8">
         <!-- TvSectionHeader: a play glyph on progress rows, then the server's row title. -->
-        <StackPanel Orientation="Horizontal" Spacing="8" Margin="44,0,0,0">
-          <Grid Width="18" Height="18" Visibility="{x:Bind IconVisibility}" VerticalAlignment="Center">
+        <!-- The icon carries its own gap: StackPanel spacing would still indent rows without one. -->
+        <StackPanel Orientation="Horizontal" Margin="44,0,0,0">
+          <Grid Width="18" Height="18" Margin="0,0,8,0" Visibility="{x:Bind IconVisibility}" VerticalAlignment="Center">
             <Ellipse Fill="{StaticResource SkylinePrimary}" />
             <Polygon Points="7,5 13.5,9 7,13" Fill="{StaticResource SkylineBackground}" />
           </Grid>
@@ -108,29 +117,31 @@
                  Foreground="{StaticResource SkylineTertiary}" />
     </Grid>
 
-    <!-- TvFocusMarquee: passive, never focusable, anchored just above the rows. -->
-    <Grid Height="262" VerticalAlignment="Top" IsHitTestVisible="False">
-      <StackPanel x:Name="Marquee" Margin="44,0,0,4" Width="440" HorizontalAlignment="Left" VerticalAlignment="Bottom" Spacing="6">
+    <!--
+      TvFocusMarquee: passive, never focusable, anchored just above the rows. Rows of 6: the logo
+      slot (84), the facts line (content-rating chip, then year · length · rating · genre), two lines
+      of synopsis, the cast line once the title's detail lands (20), and the format badges.
+    -->
+    <Grid Height="293" VerticalAlignment="Top" IsHitTestVisible="False">
+      <StackPanel x:Name="Marquee" Margin="44,0,0,6" Width="440" HorizontalAlignment="Left" VerticalAlignment="Bottom" Spacing="6">
         <Grid x:Name="TitleSlot">
           <TextBlock x:Name="MarqueeTitle" FontSize="{StaticResource SkylineMarqueeTitleSize}" FontWeight="Black"
                      LineHeight="{StaticResource SkylineMarqueeTitleLine}" LineStackingStrategy="BlockLineHeight" TextWrapping="Wrap"
                      MaxLines="2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
           <Image x:Name="MarqueeLogo" MaxWidth="440" HorizontalAlignment="Left" Stretch="Uniform" Opacity="0" />
         </Grid>
-        <StackPanel Orientation="Horizontal" Spacing="8">
-          <StackPanel x:Name="Badges" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center" />
-          <TextBlock x:Name="MarqueeMeta" FontSize="{StaticResource SkylineMetaSize}" FontWeight="Medium" Foreground="{StaticResource SkylineSecondary}"
-                     VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-        </StackPanel>
+        <StackPanel x:Name="MarqueeFacts" Orientation="Horizontal" Spacing="4" Height="18" />
         <TextBlock x:Name="MarqueeSynopsis" FontSize="{StaticResource SkylineSynopsisSize}" LineHeight="{StaticResource SkylineSynopsisLine}"
                    LineStackingStrategy="BlockLineHeight" TextWrapping="Wrap" MaxLines="2" TextTrimming="WordEllipsis" MaxWidth="390"
                    HorizontalAlignment="Left" Foreground="{StaticResource SkylineSecondary}" />
+        <TextBlock x:Name="MarqueeDetailLine" Height="20" FontSize="12" Foreground="#B3EDEDED" TextTrimming="CharacterEllipsis" Margin="0,-4,0,0" />
+        <StackPanel x:Name="Badges" Orientation="Horizontal" Spacing="7" Margin="0,-6,0,0" />
       </StackPanel>
     </Grid>
 
     <!-- Rows scroll in their own viewport below the marquee. -->
     <!-- Up/Down between rows is handled in code (OnRowsKeyDown) so each row restores its own last card. -->
-    <ScrollViewer x:Name="RowsScroller" Margin="0,266,0,0" VerticalScrollBarVisibility="Hidden" HorizontalScrollMode="Disabled">
+    <ScrollViewer x:Name="RowsScroller" Margin="0,297,0,0" VerticalScrollBarVisibility="Hidden" HorizontalScrollMode="Disabled">
       <ItemsControl x:Name="Rows" ItemTemplate="{StaticResource RowTemplate}" IsTabStop="False" Padding="0,0,0,24" />
     </ScrollViewer>
 

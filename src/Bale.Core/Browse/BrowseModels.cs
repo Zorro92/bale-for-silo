@@ -41,6 +41,30 @@ public sealed record MediaCard(
     string? EpisodeTitle,
     string? RuntimeText)
 {
+    /// <summary>The outlined chip that leads the marquee's facts line: "PG", "TV-MA".</summary>
+    public string? ContentRating { get; init; }
+
+    /// <summary>
+    /// The marquee facts line after the chip (TvMarqueeContent.from): "S01E02", episode title for an
+    /// episode; else year and length. <see cref="Rating"/> and <see cref="Genre"/> follow a non-episode.
+    /// </summary>
+    public IReadOnlyList<string> MarqueeFacts { get; init; } = [];
+
+    /// <summary>The one rating a marquee shows: IMDb, else TMDB (ExternalRatings.primary).</summary>
+    public Detail.DisplayRating? Rating { get; init; }
+
+    /// <summary>The first genre.</summary>
+    public string? Genre { get; init; }
+
+    /// <summary>The marquee's format badges under the cast line: "4K", "DOLBY VISION", "EAC3 5.1" (specLine).</summary>
+    public IReadOnlyList<string> SpecBadges { get; init; } = [];
+
+    /// <summary>Card overlay badges, top-left stack: resolution, HDR, audio codec (OverlayRegistry defaults).</summary>
+    public IReadOnlyList<string> CornerTop { get; init; } = [];
+
+    /// <summary>Card overlay badges, bottom-left: the release type ("BLURAY").</summary>
+    public IReadOnlyList<string> CornerBottom { get; init; } = [];
+
     /// <summary>
     /// The marquee meta line next to the badges: "S2 E8 · Exodus · 52 min · 18m left" for episodes,
     /// "2025 · 1h 58m · Drama" otherwise, with time left on anything in progress.

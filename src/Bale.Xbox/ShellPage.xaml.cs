@@ -170,8 +170,6 @@ public sealed partial class ShellPage : Page, IBackHandler
                 button.IsChecked = !_searchSelected && tab == _selected;
             }
         }
-
-        SearchButton.IsChecked = _searchSelected;
     }
 
     private ToggleButton? ButtonFor(TabView? tab) =>

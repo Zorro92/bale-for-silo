@@ -117,7 +117,8 @@ public sealed partial class DetailPage : Page
         ErrorPanel.Visibility = Visibility.Collapsed;
         try
         {
-            var detail = _detail = await client.Detail.LoadAsync(_contentId);
+            // Preloaded from Home when the card had focus, so this is usually instant.
+            var detail = _detail = await client.Detail.GetAsync(_contentId);
             ShowHero(detail);
             PlayButton.Focus(FocusState.Programmatic);
 
@@ -238,7 +239,7 @@ public sealed partial class DetailPage : Page
 
         foreach (var rating in ratings)
         {
-            Add(Rating(rating));
+            Add(RatingMark.Build(rating, 12));
         }
 
         foreach (var token in trailing)
@@ -266,41 +267,6 @@ public sealed partial class DetailPage : Page
         VerticalAlignment = VerticalAlignment.Center,
         Child = new TextBlock { Text = text, FontSize = 9, FontWeight = Windows.UI.Text.FontWeights.Black, CharacterSpacing = 30, Foreground = new SolidColorBrush(Colors.White) },
     };
-
-    /// <summary>
-    /// A rating as its source's mark and score (RatingEntry): TMDB's green-to-blue wordmark and bar,
-    /// IMDb's yellow tag, or the source's plain name.
-    /// </summary>
-    private static StackPanel Rating(DisplayRating rating)
-    {
-        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
-        switch (rating.Source)
-        {
-            case "tmdb":
-                var tmdb = new LinearGradientBrush { StartPoint = new Windows.Foundation.Point(0, 0.5), EndPoint = new Windows.Foundation.Point(1, 0.5) };
-                tmdb.GradientStops.Add(new GradientStop { Offset = 0, Color = Color.FromArgb(0xFF, 0x90, 0xCE, 0xA1) });
-                tmdb.GradientStops.Add(new GradientStop { Offset = 1, Color = Color.FromArgb(0xFF, 0x01, 0xB4, 0xE4) });
-                panel.Children.Add(new TextBlock { Text = "TMDB", FontSize = 10.5, FontWeight = Windows.UI.Text.FontWeights.Black, CharacterSpacing = 80, Foreground = tmdb, VerticalAlignment = VerticalAlignment.Center });
-                panel.Children.Add(new Border { Width = 22, Height = 8, CornerRadius = new CornerRadius(4), Background = new SolidColorBrush(Color.FromArgb(0xFF, 0x01, 0xB4, 0xE4)), VerticalAlignment = VerticalAlignment.Center });
-                break;
-            case "imdb":
-                panel.Children.Add(new Border
-                {
-                    Background = new SolidColorBrush(Color.FromArgb(0xFF, 0xF5, 0xC5, 0x18)),
-                    CornerRadius = new CornerRadius(2),
-                    Padding = new Thickness(3, 0, 3, 0),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Child = new TextBlock { Text = "IMDb", FontSize = 9.5, FontWeight = Windows.UI.Text.FontWeights.Black, Foreground = new SolidColorBrush(Colors.Black) },
-                });
-                break;
-            default:
-                panel.Children.Add(Text(rating.Name, Color.FromArgb(0xB3, 0xFF, 0xFF, 0xFF)));
-                break;
-        }
-
-        panel.Children.Add(new TextBlock { Text = rating.Display, FontSize = 12, FontWeight = Windows.UI.Text.FontWeights.SemiBold, Foreground = new SolidColorBrush(Color.FromArgb(0xE0, 0xFF, 0xFF, 0xFF)), VerticalAlignment = VerticalAlignment.Center });
-        return panel;
-    }
 
     private void ShowFlags(ItemFlags flags)
     {
@@ -610,6 +576,7 @@ public sealed partial class DetailPage : Page
         try
         {
             await send(client.Detail, detail.ContentId, after);
+            client.Detail.Forget(detail.ContentId);
         }
         catch (Exception ex)
         {

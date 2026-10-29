@@ -37,6 +37,12 @@ public sealed record ItemDetail(
     IReadOnlyList<DisplayRating> Ratings)
 {
     public bool IsSeries => Type == "series";
+
+    /// <summary>
+    /// The Home marquee's line under the synopsis once the detail has loaded: "Aired Mar 12, 2026 ·
+    /// Pedro Pascal, Bella Ramsey, Anna Torv" (TvMarqueeEnrichment.from). Null when both are empty.
+    /// </summary>
+    public string? MarqueeLine { get; init; }
 }
 
 /// <summary>One external rating: the source's mark ("TMDB", "IMDb") and its score as the source writes it ("8.3").</summary>

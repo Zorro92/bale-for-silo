@@ -285,6 +285,48 @@
   </Style>
 
   <!--
+    Top bar icon (TvTopMenuBar.TvTopMenuIconButton): a 28 circle, bare at rest with the glyph at
+    62%, solid white with a black glyph on focus. Content must be a glyph string.
+  -->
+  <Style x:Key="SkylineBarIconStyle" TargetType="Button">
+    <Setter Property="Width" Value="28" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="Foreground" Value="#9EEDEDED" />
+    <Setter Property="FontFamily" Value="{ThemeResource SymbolThemeFontFamily}" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid>
+            <Ellipse x:Name="Disc" Fill="Transparent" />
+            <ContentPresenter x:Name="Glyph" Content="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" FontFamily="{TemplateBinding FontFamily}"
+                              FontSize="{TemplateBinding FontSize}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" />
+                <VisualState x:Name="PointerOver" />
+                <VisualState x:Name="Pressed" />
+                <VisualState x:Name="Disabled" />
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters>
+                    <Setter Target="Disc.Fill" Value="{StaticResource SkylinePrimary}" />
+                    <Setter Target="Glyph.Foreground" Value="{StaticResource SkylineBackground}" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="PointerFocused" />
+                <VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!--
     Detail page Play pill (TvSquaredButtons.TvPrimaryPillButton, stableHero = true): a 38 high
     capsule, white @ 10% with a white label at rest, solid white with a black label on focus, no
     lift. Series pages fix its width at 170 so the round actions keep their places.

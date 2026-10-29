@@ -19,6 +19,7 @@ internal sealed class MaskedArt
     private readonly SpriteVisual _visual;
     private readonly CompositionSurfaceBrush _image;
     private LoadedImageSurface? _surface;
+    private Uri? _requested;
 
     public MaskedArt(FrameworkElement host, string maskUri = "ms-appx:///Assets/ArtMask.png")
     {
@@ -47,7 +48,30 @@ internal sealed class MaskedArt
 
     public void Show(Uri image)
     {
-        var surface = LoadedImageSurface.StartLoadFromUri(image);
+        _requested = image;
+        ShowAsync(image);
+    }
+
+    private async void ShowAsync(Uri image)
+    {
+        // Composition loads from the artwork cache's file, which the tint sampler shares.
+        Uri source;
+        try
+        {
+            source = await Artwork.LocalUriAsync(image);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Art source", ex);
+            source = image;
+        }
+
+        if (!ReferenceEquals(image, _requested))
+        {
+            return;
+        }
+
+        var surface = LoadedImageSurface.StartLoadFromUri(source);
         surface.LoadCompleted += (sender, e) =>
         {
             if (ReferenceEquals(sender, _surface) && e.Status == LoadedImageSourceLoadStatus.Success)
@@ -60,7 +84,11 @@ internal sealed class MaskedArt
         _surface = surface;
     }
 
-    public void Hide() => _visual.Opacity = 0;
+    public void Hide()
+    {
+        _requested = null;
+        _visual.Opacity = 0;
+    }
 
     private void FadeIn()
     {
