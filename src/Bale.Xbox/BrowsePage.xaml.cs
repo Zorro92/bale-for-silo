@@ -138,10 +138,11 @@ public sealed partial class BrowsePage : Page
             return;
         }
 
+        // Focusing the row's ListView hands focus to its first card; its containers aren't reachable
+        // through ContainerFromIndex here, so don't look for them.
         var row = Rows.ContainerFromIndex(0) is DependencyObject rowContainer ? FindChild<ListView>(rowContainer) : null;
-        var first = row?.ContainerFromIndex(0) as ListViewItem;
-        var focused = first?.Focus(FocusState.Programmatic) == true;
-        Log.Info($"Browse: entry focus attempt row={row is not null} card={first is not null} focused={focused}");
+        var focused = row?.Focus(FocusState.Programmatic) == true;
+        Log.Info($"Browse: entry focus attempt row={row is not null} focused={focused}");
         if (focused)
         {
             _focusFirstRow = false;
@@ -170,6 +171,7 @@ public sealed partial class BrowsePage : Page
 
     private void OnCardFocus(object sender, RoutedEventArgs e)
     {
+        Log.Info($"Card focus: {e.OriginalSource?.GetType().FullName}");
         if (e.OriginalSource is ListViewItem { Content: CardView view } item)
         {
             CardFocus.Apply(item, focused: true);
