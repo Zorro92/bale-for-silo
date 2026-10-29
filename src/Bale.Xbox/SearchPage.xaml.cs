@@ -101,11 +101,12 @@ public sealed partial class SearchPage : Page, IRestoresFocus
     /// <summary>Back from a detail page lands on the result that opened it.</summary>
     public void RestoreFocus()
     {
-        if (_lastResult is not null && Results.ItemsPanelRoot is { } panel
-            && panel.Children.OfType<ContentControl>().FirstOrDefault(c => ReferenceEquals(c.Content, _lastResult)) is { } result)
-        {
-            result.Focus(FocusState.Programmatic);
-        }
+        var panel = Results.ItemsPanelRoot;
+        var result = _lastResult is null || panel is null
+            ? null
+            : panel.Children.OfType<ContentControl>().FirstOrDefault(c => ReferenceEquals(c.Content, _lastResult));
+        var focused = result?.Focus(FocusState.Programmatic) == true;
+        Log.Info($"Search: restore last={_lastResult?.Title ?? "none"} panel={panel is not null} children={panel?.Children.Count ?? 0} found={result is not null} focused={focused}");
     }
 
     private void OnResultClick(object sender, ItemClickEventArgs e)
