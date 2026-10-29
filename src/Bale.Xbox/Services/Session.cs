@@ -10,8 +10,11 @@ internal static class Session
 {
     public static SiloClient? Client { get; private set; }
 
-    /// <summary>Shown on Home's profile button.</summary>
+    /// <summary>Shown on the top bar's profile button.</summary>
     public static string? ProfileName { get; set; }
+
+    /// <summary>The acting profile's picture, when it has one.</summary>
+    public static Uri? ProfileAvatar { get; set; }
 
     public static SiloClient Connect(Uri server)
     {
@@ -57,6 +60,7 @@ internal static class Session
             }
 
             ProfileName = profile.Name;
+            ProfileAvatar = ProfileAvatars.ImageUrl(profile.AvatarUrl, client.Browse.Resolve);
             Persist();
             frame.Navigate(typeof(ShellPage));
         }
@@ -74,6 +78,7 @@ internal static class Session
         AppSettings.ForgetRefreshToken(ServerAddress.ToBaseUrl(Client.Server));
         AppSettings.ProfileId = null;
         ProfileName = null;
+        ProfileAvatar = null;
         await Client.SignOutAsync();
     }
 }

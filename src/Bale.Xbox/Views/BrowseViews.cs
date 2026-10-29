@@ -24,7 +24,11 @@ public sealed partial class RowView
         var landscape = row.Shape == CardShape.Landscape;
         IconVisibility = landscape ? Visibility.Visible : Visibility.Collapsed;
         Cards = row.Cards
-            .Select(card => new CardView(card, row.Title, landscape ? ThumbWidth : PosterWidth, landscape ? ThumbHeight : PosterHeight, landscape))
+            .Select((card, index) => new CardView(card, row.Title, landscape ? ThumbWidth : PosterWidth, landscape ? ThumbHeight : PosterHeight, landscape)
+            {
+                IsFirst = index == 0,
+                IsLast = index == row.Cards.Count - 1,
+            })
             .ToList();
     }
 
@@ -65,6 +69,11 @@ public sealed partial class CardView
 
     /// <summary>Which row the card came from.</summary>
     public string RowTitle { get; }
+
+    /// <summary>Ends of the rail: Left/Right stop here instead of wandering into another row.</summary>
+    public bool IsFirst { get; init; }
+
+    public bool IsLast { get; init; }
 
     public string Title => Card.Title;
 

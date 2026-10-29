@@ -37,7 +37,11 @@
         <Button x:Name="AvatarButton" Style="{StaticResource SkylineCapsuleStyle}" Width="30" Padding="0"
                 Background="{StaticResource SkylineChromeSelected}" Foreground="{StaticResource SkylinePrimary}" Click="OnAvatarClick"
                 AutomationProperties.Name="Profile">
-          <TextBlock x:Name="AvatarInitial" FontSize="12" FontWeight="Bold" />
+          <Grid Width="30" Height="30">
+            <TextBlock x:Name="AvatarInitial" FontSize="12" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <!-- An Ellipse with an ImageBrush: a reliably round crop of the profile picture. -->
+            <Ellipse x:Name="AvatarPicture" Visibility="Collapsed" />
+          </Grid>
         </Button>
       </StackPanel>
     </Grid>
@@ -77,7 +81,10 @@
             <ColumnDefinition Width="*" />
           </Grid.ColumnDefinitions>
           <Border Width="32" Height="32" CornerRadius="16" Background="{StaticResource SkylineChromeSelected}">
-            <TextBlock x:Name="PanelInitial" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <Grid>
+              <TextBlock x:Name="PanelInitial" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              <Ellipse x:Name="PanelPicture" Visibility="Collapsed" />
+            </Grid>
           </Border>
           <StackPanel Grid.Column="1" VerticalAlignment="Center">
             <TextBlock x:Name="PanelProfileName" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />

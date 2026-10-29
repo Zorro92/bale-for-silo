@@ -1,4 +1,5 @@
 using Bale.Core.Api.Models;
+using Bale.Core.Auth;
 using Bale.Xbox.Services;
 using Bale.Xbox.Views;
 using Windows.UI.Xaml;
@@ -30,7 +31,7 @@ public sealed partial class ProfilesPage : Page
         try
         {
             var profiles = await client.GetProfilesAsync();
-            Profiles.ItemsSource = profiles.Select(p => new ProfileView(p, client.Browse.Resolve(p.AvatarUrl))).ToList();
+            Profiles.ItemsSource = profiles.Select(p => new ProfileView(p, ProfileAvatars.ImageUrl(p.AvatarUrl, client.Browse.Resolve))).ToList();
             await Task.Yield();
             var current = profiles.ToList().FindIndex(p => p.Id == client.ProfileId);
             if (Profiles.ContainerFromIndex(Math.Max(current, 0)) is GridViewItem item)
@@ -68,7 +69,7 @@ public sealed partial class ProfilesPage : Page
 
     private async void OnProfileClick(object sender, ItemClickEventArgs e)
     {
-        if (e.ClickedItem is not ProfileView { Profile: var profile } || Session.Client is not { } client)
+        if (e.ClickedItem is not ProfileView { Profile: var profile } chosen || Session.Client is not { } client)
         {
             return;
         }
@@ -86,6 +87,7 @@ public sealed partial class ProfilesPage : Page
         }
 
         Session.ProfileName = profile.Name;
+        Session.ProfileAvatar = chosen.AvatarUrl;
         Session.Persist();
         Frame.Navigate(typeof(ShellPage));
         Frame.BackStack.Clear();

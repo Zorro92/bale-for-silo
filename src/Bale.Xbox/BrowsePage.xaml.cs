@@ -205,6 +205,16 @@ public sealed partial class BrowsePage : Page
     /// </summary>
     private void OnRowsKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        // Left/Right never leave the rail: at either end there is nothing to move to, and the focus
+        // engine would otherwise pick the nearest card in some other row.
+        if (e.OriginalSource is ContentControl { Content: CardView edge }
+            && ((edge.IsLast && e.Key is VirtualKey.Right or VirtualKey.GamepadDPadRight or VirtualKey.GamepadLeftThumbstickRight)
+                || (edge.IsFirst && e.Key is VirtualKey.Left or VirtualKey.GamepadDPadLeft or VirtualKey.GamepadLeftThumbstickLeft)))
+        {
+            e.Handled = true;
+            return;
+        }
+
         var step = e.Key switch
         {
             VirtualKey.Down or VirtualKey.GamepadDPadDown or VirtualKey.GamepadLeftThumbstickDown => 1,
@@ -246,6 +256,12 @@ public sealed partial class BrowsePage : Page
 
         return null;
     }
+
+    /// <summary>
+    /// A rail's own bring-into-view request stops at the rail: left to bubble, it also nudged the page
+    /// vertically on every Left/Right, which PinRow then undid, so the page jumped.
+    /// </summary>
+    private void OnRailBringIntoView(UIElement sender, BringIntoViewRequestedEventArgs args) => args.Handled = true;
 
     /// <summary>The focused row moves up to sit right under the marquee.</summary>
     private void PinRow(ListView row)

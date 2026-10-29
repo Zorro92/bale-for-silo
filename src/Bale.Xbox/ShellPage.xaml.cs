@@ -54,6 +54,12 @@ public sealed partial class ShellPage : Page, IBackHandler
         AvatarInitial.Text = PanelInitial.Text = name.Substring(0, 1).ToUpperInvariant();
         PanelProfileName.Text = name;
         PanelServer.Text = Session.Client?.Server.Host ?? string.Empty;
+        if (Session.ProfileAvatar is { } avatar)
+        {
+            AvatarPicture.Fill = new ImageBrush { ImageSource = ProfileView.AvatarImage(avatar, 30), Stretch = Stretch.UniformToFill };
+            PanelPicture.Fill = new ImageBrush { ImageSource = ProfileView.AvatarImage(avatar, 32), Stretch = Stretch.UniformToFill };
+            AvatarPicture.Visibility = PanelPicture.Visibility = Visibility.Visible;
+        }
 
         _tabs.Clear();
         _tabs.Add(new TabView("Home", null));
