@@ -38,6 +38,9 @@ public sealed partial class BrowsePage : Page
     /// <summary>The last card focused in each row, by row index (TvMediaRow's focusRestorer).</summary>
     private readonly Dictionary<int, CardView> _lastFocused = new();
 
+    /// <summary>The last card focused anywhere on the page: where Down from the top bar returns.</summary>
+    private (int Row, CardView Card)? _lastCard;
+
     public BrowsePage()
     {
         InitializeComponent();
@@ -45,6 +48,7 @@ public sealed partial class BrowsePage : Page
         // handledEventsToo: a horizontal ListView may claim Up/Down itself before it would bubble.
         RowsScroller.AddHandler(KeyDownEvent, new KeyEventHandler(OnRowsKeyDown), handledEventsToo: true);
         RowsScroller.PreviewKeyDown += OnRowsPreviewKeyDown;
+        RowsScroller.GettingFocus += OnRowsGettingFocus;
         Loaded += (_, _) =>
         {
             try
@@ -189,6 +193,7 @@ public sealed partial class BrowsePage : Page
                 if (RowIndexOf(row) is { } index)
                 {
                     _lastFocused[index] = view;
+                    _lastCard = (index, view);
                 }
             }
 
@@ -263,6 +268,47 @@ public sealed partial class BrowsePage : Page
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Focus entering the rows from outside (Down from the top bar, Back to content) returns to the
+    /// user's last-focused card, as Silo's Android TV shell does with its content focusRestorer
+    /// ("card 7 of row 3"), instead of whichever card happens to sit under the tab.
+    /// </summary>
+    private void OnRowsGettingFocus(UIElement sender, GettingFocusRoutedEventArgs args)
+    {
+        try
+        {
+            if (_lastCard is not { } last || IsInRows(args.OldFocusedElement) || !IsInRows(args.NewFocusedElement)
+                || Rows.ContainerFromIndex(last.Row) is not DependencyObject rowContainer
+                || FindChild<ListView>(rowContainer)?.ItemsPanelRoot is not { } panel)
+            {
+                return;
+            }
+
+            if (panel.Children.OfType<ContentControl>().FirstOrDefault(c => ReferenceEquals(c.Content, last.Card)) is { } card
+                && !ReferenceEquals(card, args.NewFocusedElement))
+            {
+                args.TrySetNewFocusedElement(card);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Restoring focus", ex);
+        }
+    }
+
+    private bool IsInRows(DependencyObject? element)
+    {
+        for (var node = element; node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (node == Rows)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
