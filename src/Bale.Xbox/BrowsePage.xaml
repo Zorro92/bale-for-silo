@@ -86,11 +86,8 @@
     <!-- TvRootHeroBackdrop: a tint wash sampled from the art, and the art in a top-right box fading into it. -->
     <Rectangle x:Name="Wash" IsHitTestVisible="False" />
     <!-- The art itself is a Composition visual with alpha masks (Services/MaskedArt.cs). -->
-    <Grid x:Name="ArtBox" Width="614" Height="378" HorizontalAlignment="Right" VerticalAlignment="Top" IsHitTestVisible="False" Opacity="0">
-      <Grid.OpacityTransition>
-        <ScalarTransition Duration="0:0:0.24" />
-      </Grid.OpacityTransition>
-    </Grid>
+    <!-- No XAML transitions here: they can't share an element with Composition; MaskedArt fades it. -->
+    <Grid x:Name="ArtBox" Width="614" Height="378" HorizontalAlignment="Right" VerticalAlignment="Top" IsHitTestVisible="False" />
     <Rectangle Height="90" VerticalAlignment="Top" IsHitTestVisible="False">
       <Rectangle.Fill>
         <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">

@@ -40,12 +40,13 @@ internal sealed class MaskedArt
 
         _visual = _compositor.CreateSpriteVisual();
         _visual.Brush = both;
+        _visual.Opacity = 0;
         _visual.RelativeSizeAdjustment = Vector2.One;
         ElementCompositionPreview.SetElementChildVisual(host, _visual);
     }
 
-    /// <summary>Raised when the current image has decoded, so the box can fade in.</summary>
-    public event Action? Loaded;
+    /// <summary>Marquee crossfade (TvMarqueeCrossfadeMs).</summary>
+    private static readonly TimeSpan Fade = TimeSpan.FromMilliseconds(240);
 
     public void Show(Uri image)
     {
@@ -55,11 +56,22 @@ internal sealed class MaskedArt
             if (ReferenceEquals(sender, _surface) && e.Status == LoadedImageSourceLoadStatus.Success)
             {
                 _image.Surface = sender;
-                Loaded?.Invoke();
+                FadeIn();
             }
         };
         _surface?.Dispose();
         _surface = surface;
+    }
+
+    public void Hide() => _visual.Opacity = 0;
+
+    private void FadeIn()
+    {
+        var animation = _compositor.CreateScalarKeyFrameAnimation();
+        animation.InsertKeyFrame(0, 0);
+        animation.InsertKeyFrame(1, 1);
+        animation.Duration = Fade;
+        _visual.StartAnimation(nameof(Visual.Opacity), animation);
     }
 
     private CompositionLinearGradientBrush Gradient(Vector2 start, Vector2 end, params (float Offset, float Alpha)[] stops)

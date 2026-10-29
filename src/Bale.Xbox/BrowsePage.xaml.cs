@@ -49,7 +49,6 @@ public sealed partial class BrowsePage : Page
                 return;
             }
 
-            _art.Loaded += () => ArtBox.Opacity = 1;
             if (_shownMarquee?.Card.BackdropUrl is { } pending)
             {
                 _art.Show(pending);
@@ -216,7 +215,7 @@ public sealed partial class BrowsePage : Page
             MarqueeLogo.Source = image;
         }
 
-        ArtBox.Opacity = 0;
+        _art?.Hide();
         if (card.BackdropUrl is { } backdrop)
         {
             _art?.Show(backdrop);
