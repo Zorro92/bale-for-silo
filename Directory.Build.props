@@ -7,5 +7,7 @@
     <Authors>Bale contributors</Authors>
     <Copyright>Bale contributors</Copyright>
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
+    <!-- Lock files make restores reproducible and give CI a stable cache key. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 </Project>

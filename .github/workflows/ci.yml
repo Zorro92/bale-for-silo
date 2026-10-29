@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# A newer push makes an in-flight build of the same branch pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   core:
     name: Core (Linux)
@@ -17,24 +22,27 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
       - run: dotnet test tests/Bale.Core.Tests --configuration Release
       - run: dotnet build tools/Bale.Cli --configuration Release
 
   xbox:
     name: Xbox package (Windows)
     runs-on: windows-latest
+    env:
+      NUGET_PACKAGES: ${{ github.workspace }}\.nuget\packages
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: '10.0.x'
+      # The runner image already ships a .NET 10 SDK; global.json picks it, so no setup-dotnet download.
       - uses: microsoft/setup-msbuild@v3
 
-      - name: Tool versions
-        run: |
-          dotnet --info
-          msbuild -version
+      - uses: actions/cache@v6
+        with:
+          path: ${{ github.workspace }}\.nuget\packages
+          key: nuget-windows-${{ hashFiles('**/*.csproj', 'Directory.Build.props', 'global.json') }}
+          restore-keys: nuget-windows-
 
       # Every build gets a higher version so the Xbox accepts it as an update.
       - name: Stamp version
@@ -67,6 +75,7 @@ jobs:
           /p:AppxPackageDir=${{ github.workspace }}\out\
           /p:AppxPackageSigningEnabled=true
           /p:PackageCertificateThumbprint=${{ steps.cert.outputs.thumbprint }}
+          /p:CsWinRTAotWarningLevel=2
 
       - uses: actions/upload-artifact@v7
         with:
