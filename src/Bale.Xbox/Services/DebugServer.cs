@@ -172,22 +172,19 @@ internal sealed class DebugServer
             return "input injection unavailable";
         }
 
-        var keys = new List<InjectedInputKeyboardInfo>();
+        // One injection per character: a batch mixing Unicode keystrokes with a virtual key is rejected
+        // (E_INVALIDARG), and a space only works as the Space virtual key.
         foreach (var ch in text)
         {
-            // A space as a Unicode keystroke is rejected (E_INVALIDARG); send the Space key instead.
-            if (ch == ' ')
-            {
-                keys.Add(new InjectedInputKeyboardInfo { VirtualKey = (ushort)Windows.System.VirtualKey.Space });
-                keys.Add(new InjectedInputKeyboardInfo { VirtualKey = (ushort)Windows.System.VirtualKey.Space, KeyOptions = InjectedInputKeyOptions.KeyUp });
-                continue;
-            }
-
-            keys.Add(new InjectedInputKeyboardInfo { ScanCode = ch, KeyOptions = InjectedInputKeyOptions.Unicode });
-            keys.Add(new InjectedInputKeyboardInfo { ScanCode = ch, KeyOptions = InjectedInputKeyOptions.Unicode | InjectedInputKeyOptions.KeyUp });
+            var down = ch == ' '
+                ? new InjectedInputKeyboardInfo { VirtualKey = (ushort)Windows.System.VirtualKey.Space }
+                : new InjectedInputKeyboardInfo { ScanCode = ch, KeyOptions = InjectedInputKeyOptions.Unicode };
+            var up = ch == ' '
+                ? new InjectedInputKeyboardInfo { VirtualKey = (ushort)Windows.System.VirtualKey.Space, KeyOptions = InjectedInputKeyOptions.KeyUp }
+                : new InjectedInputKeyboardInfo { ScanCode = ch, KeyOptions = InjectedInputKeyOptions.Unicode | InjectedInputKeyOptions.KeyUp };
+            _injector.InjectKeyboardInput(new[] { down, up });
         }
 
-        _injector.InjectKeyboardInput(keys);
         return $"typed \"{text}\"";
     }
 

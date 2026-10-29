@@ -81,8 +81,10 @@ public sealed partial class App : Application
         {
             args.Handled = true;
         }
-        else if (frame.CanGoBack)
+        // Never Back into sign-in: once signed in, Back from Home leaves the app (Skyline §7).
+        else if (frame.CanGoBack && frame.BackStack[frame.BackStack.Count - 1].SourcePageType != typeof(MainPage))
         {
+            Log.Info($"Back: {frame.Content?.GetType().Name} -> {frame.BackStack[frame.BackStack.Count - 1].SourcePageType.Name}");
             frame.GoBack();
             args.Handled = true;
         }
