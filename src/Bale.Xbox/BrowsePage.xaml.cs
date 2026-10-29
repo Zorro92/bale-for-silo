@@ -35,6 +35,9 @@ public sealed partial class BrowsePage : Page
     private bool _focusFirstRow;
     private MaskedArt? _art;
 
+    /// <summary>The last card focused in each row, by row index (TvMediaRow's focusRestorer).</summary>
+    private readonly Dictionary<int, CardView> _lastFocused = new();
+
     public BrowsePage()
     {
         InitializeComponent();
@@ -182,6 +185,10 @@ public sealed partial class BrowsePage : Page
             {
                 PinRow(row);
                 PinCard(row, item);
+                if (RowIndexOf(row) is { } index)
+                {
+                    _lastFocused[index] = view;
+                }
             }
 
             _pendingMarquee = view;
@@ -209,10 +216,20 @@ public sealed partial class BrowsePage : Page
             return;
         }
 
-        if (Rows.ContainerFromIndex(index + step) is DependencyObject next && FindChild<ListView>(next) is { } target)
+        if (Rows.ContainerFromIndex(index + step) is not DependencyObject next || FindChild<ListView>(next) is not { } target)
         {
-            e.Handled = target.Focus(FocusState.Keyboard);
+            return;
         }
+
+        // Find the remembered card among the realized containers (ContainerFromIndex returns nothing
+        // for these rails under AOT); a first visit lands on the first card.
+        Control? card = null;
+        if (_lastFocused.TryGetValue(index + step, out var remembered) && target.ItemsPanelRoot is { } panel)
+        {
+            card = panel.Children.OfType<ContentControl>().FirstOrDefault(container => ReferenceEquals(container.Content, remembered));
+        }
+
+        e.Handled = (card ?? target).Focus(FocusState.Keyboard);
     }
 
     /// <summary>The index of the row holding <paramref name="element"/>.</summary>
