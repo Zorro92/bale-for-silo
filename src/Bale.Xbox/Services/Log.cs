@@ -18,7 +18,15 @@ internal static class Log
 
     public static void Info(string message) => Write("INFO", message);
 
-    public static void Error(string context, Exception ex) => Write("ERROR", $"{context}: {ex}");
+    public static void Error(string context, Exception ex) => Write("ERROR", $"{context}: {Describe(ex)}{ex}");
+
+    /// <summary>For API failures, the HTTP status and the server's problem text, which the exception message lacks.</summary>
+    private static string Describe(Exception ex) => ex switch
+    {
+        Bale.Core.Api.Models.Problem problem => $"HTTP {problem.ResponseStatusCode} {problem.Title}: {problem.Detail} ",
+        Microsoft.Kiota.Abstractions.ApiException api => $"HTTP {api.ResponseStatusCode} ",
+        _ => string.Empty,
+    };
 
     /// <summary>Lines after <paramref name="since"/>, and the sequence number to ask from next.</summary>
     public static (IReadOnlyList<string> Lines, long Next) Since(long since)
