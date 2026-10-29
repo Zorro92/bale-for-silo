@@ -206,6 +206,20 @@ public sealed partial class BrowsePage : Page
     /// </summary>
     private void OnRowsKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        // An exception thrown from a handler attached with AddHandler ends the app without reaching
+        // UnhandledException, so nothing here may throw.
+        try
+        {
+            MoveBetweenRows(e);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Row navigation", ex);
+        }
+    }
+
+    private void MoveBetweenRows(KeyRoutedEventArgs e)
+    {
         var step = e.Key switch
         {
             VirtualKey.Down or VirtualKey.GamepadDPadDown or VirtualKey.GamepadLeftThumbstickDown => 1,
@@ -217,7 +231,10 @@ public sealed partial class BrowsePage : Page
             return;
         }
 
-        if (Rows.ContainerFromIndex(index + step) is not DependencyObject next || FindChild<ListView>(next) is not { } target)
+        // Up from the first row (and Down from the last) belongs to the focus engine: the top bar.
+        var targetIndex = index + step;
+        if (targetIndex < 0 || targetIndex >= Rows.Items.Count
+            || Rows.ContainerFromIndex(targetIndex) is not DependencyObject next || FindChild<ListView>(next) is not { } target)
         {
             return;
         }
@@ -225,7 +242,7 @@ public sealed partial class BrowsePage : Page
         // Find the remembered card among the realized containers (ContainerFromIndex returns nothing
         // for these rails under AOT); a first visit lands on the first card.
         Control? card = null;
-        if (_lastFocused.TryGetValue(index + step, out var remembered) && target.ItemsPanelRoot is { } panel)
+        if (_lastFocused.TryGetValue(targetIndex, out var remembered) && target.ItemsPanelRoot is { } panel)
         {
             card = panel.Children.OfType<ContentControl>().FirstOrDefault(container => ReferenceEquals(container.Content, remembered));
         }
