@@ -377,12 +377,16 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     /// <summary>Back from a detail page: focus returns to the card that opened it.</summary>
     public void RestoreFocus()
     {
-        if (_lastCard is { } last && Rows.ContainerFromIndex(last.Row) is DependencyObject rowContainer
-            && FindChild<ListView>(rowContainer)?.ItemsPanelRoot is { } panel
-            && panel.Children.OfType<ContentControl>().FirstOrDefault(c => ReferenceEquals(c.Content, last.Card)) is { } card)
+        if (_lastCard is not { } last)
         {
-            card.Focus(FocusState.Programmatic);
+            return;
         }
+
+        FocusRetry.Until(Rows, () =>
+            Rows.ContainerFromIndex(last.Row) is DependencyObject rowContainer
+            && FindChild<ListView>(rowContainer)?.ItemsPanelRoot is { } panel
+            && panel.Children.OfType<ContentControl>().FirstOrDefault(c => ReferenceEquals(c.Content, last.Card)) is { } card
+            && card.Focus(FocusState.Programmatic));
     }
 
     private void ShowMarquee(CardView? view)
