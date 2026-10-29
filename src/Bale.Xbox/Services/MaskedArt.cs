@@ -1,5 +1,4 @@
 using System.Numerics;
-using Windows.UI;
 using Windows.UI.Composition;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Hosting;
@@ -11,7 +10,8 @@ namespace Bale.Xbox.Services;
 /// The marquee art box, drawn with Composition so the image itself fades out (alpha masks), as
 /// TvRootHeroBackdrop masks it: transparent at the left edge to fully visible at 68% across, and
 /// fully visible down to 58% then transparent at the bottom. Overlays can't do this over a tinted
-/// diagonal wash without leaving a visible seam.
+/// diagonal wash without leaving a visible seam. Regenerate the mask with:
+///   magick -size 614x378 xc:white -alpha set -channel A -fx 'min(1, (i/w)/0.68) * (j/h &lt; 0.58 ? 1 : 1 - (j/h - 0.58)/0.42)' +channel PNG32:ArtMask.png
 /// </summary>
 internal sealed class MaskedArt
 {
@@ -30,13 +30,12 @@ internal sealed class MaskedArt
         _image.HorizontalAlignmentRatio = 0.5f;
         _image.VerticalAlignmentRatio = 0.25f;
 
-        var horizontal = _compositor.CreateMaskBrush();
-        horizontal.Source = _image;
-        horizontal.Mask = Gradient(new Vector2(0, 0.5f), new Vector2(1, 0.5f), (0f, 0f), (0.68f, 1f), (1f, 1f));
-
+        // One mask image holding both fades (Assets/ArtMask.png): mask brushes can't be nested.
+        var mask = _compositor.CreateSurfaceBrush(LoadedImageSurface.StartLoadFromUri(new Uri("ms-appx:///Assets/ArtMask.png")));
+        mask.Stretch = CompositionStretch.Fill;
         var both = _compositor.CreateMaskBrush();
-        both.Source = horizontal;
-        both.Mask = Gradient(new Vector2(0.5f, 0), new Vector2(0.5f, 1), (0f, 1f), (0.58f, 1f), (1f, 0f));
+        both.Source = _image;
+        both.Mask = mask;
 
         _visual = _compositor.CreateSpriteVisual();
         _visual.Brush = both;
@@ -72,19 +71,5 @@ internal sealed class MaskedArt
         animation.InsertKeyFrame(1, 1);
         animation.Duration = Fade;
         _visual.StartAnimation(nameof(Visual.Opacity), animation);
-    }
-
-    private CompositionLinearGradientBrush Gradient(Vector2 start, Vector2 end, params (float Offset, float Alpha)[] stops)
-    {
-        var brush = _compositor.CreateLinearGradientBrush();
-        brush.MappingMode = CompositionMappingMode.Relative;
-        brush.StartPoint = start;
-        brush.EndPoint = end;
-        foreach (var (offset, alpha) in stops)
-        {
-            brush.ColorStops.Add(_compositor.CreateColorGradientStop(offset, Color.FromArgb((byte)(alpha * 255), 0, 0, 0)));
-        }
-
-        return brush;
     }
 }
