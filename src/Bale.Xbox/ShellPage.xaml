@@ -31,10 +31,9 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
       <StackPanel Orientation="Horizontal" Spacing="11" HorizontalAlignment="Right" VerticalAlignment="Center">
+        <!-- Content must be text, not an element: the tab template draws it twice (resting and inverted). -->
         <ToggleButton x:Name="SearchButton" Style="{StaticResource SkylineTabStyle}" Width="26" Height="26" Padding="0" Click="OnSearchClick"
-                      AutomationProperties.Name="Search">
-          <FontIcon Glyph="&#xE721;" FontSize="11" />
-        </ToggleButton>
+                      Content="&#xE721;" FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="11" AutomationProperties.Name="Search" />
         <Button x:Name="AvatarButton" Style="{StaticResource SkylineCapsuleStyle}" Width="26" Height="26" Padding="0"
                 Background="{StaticResource SkylineChromeSelected}" Foreground="{StaticResource SkylinePrimary}" Click="OnAvatarClick"
                 AutomationProperties.Name="Profile">
