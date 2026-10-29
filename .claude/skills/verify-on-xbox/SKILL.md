@@ -40,7 +40,24 @@ If the debug port doesn't answer, check `./scripts/xbox-logs.sh` and that `Bale.
 (`curl -sk https://$XBOX_HOST:11443/api/resourcemanager/processes`); a fresh `deploy-xbox.sh` has
 restored the port before.
 
-## 3. Drive the exact scenario
+## 3. Rules while driving (learned the hard way)
+
+The console runs the user's real account against their real Silo server.
+
+- **Never trigger writes** to the user's library: watchlist, favorite, watched, ratings, progress.
+  Marking a series watched and then unwatched wipes its real per-episode watch history and drops it
+  from Continue Watching. Test toggles only on a title the user names for testing, and say first.
+  Don't call write endpoints directly with an API key either.
+- **Never press A in the profile menu or on Sign Out.** Check `focus` before every A: if it says
+  `SwitchProfileRow`, `Sign Out` or anything in `ProfilePanel`, back out with B instead.
+- **Check focus after each step** instead of firing long press sequences blind; one surprise
+  (a panel opening, the on-screen keyboard) turns the rest of the sequence into random input.
+- **The on-screen keyboard captures the d-pad.** After `type`, press B once to close it, then
+  check `focus` before moving on. B on the sign-in screen exits the app.
+- If the app ends up somewhere unexpected (signed out, exited), stop and tell the user rather
+  than trying to put it back.
+
+## 4. Drive the exact scenario
 
 Reproduce what the user did, or the interaction you changed, with real input:
 
@@ -55,7 +72,7 @@ Print every step; don't collapse output with `uniq`/`tail`, which has hidden the
 Go one step past the edge the user mentions (past the last card, Up from the first row, Back
 from Home): that's where the bugs have been.
 
-## 4. Look at it
+## 5. Look at it
 
 ```sh
 ./scripts/xbox-screenshot.sh /tmp/shot.png && magick /tmp/shot.png -resize 960x540 /tmp/shot-small.png
@@ -64,14 +81,14 @@ from Home): that's where the bugs have been.
 Read the image and compare it with the official reference: sizes, shapes (pills not ovals),
 focus ring fully visible, what moved and what didn't.
 
-## 5. If it crashed or misbehaved
+## 6. If it crashed or misbehaved
 
 - `./scripts/xbox-logs.sh 80` for errors; the file log survives crashes, the live log doesn't.
 - Nothing logged means a native failure: add `Log.Info` breadcrumbs around the suspect step,
   redeploy, and read which breadcrumb was last.
 - Check AGENTS.md's Native AOT pitfalls first; most console-only failures so far were one of those.
 
-## 6. Report
+## 7. Report
 
 Say what you expected (and from which official file), what you pressed, what happened, and attach
 or describe the screenshot. If anything is unverified, say so.
