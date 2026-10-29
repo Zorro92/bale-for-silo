@@ -5,7 +5,8 @@ using Windows.UI.Xaml.Media.Imaging;
 namespace Bale.Xbox.Views;
 
 /// <summary>A home row as the page draws it. Card sizes are in effective pixels (Xbox lays out at 960x540).</summary>
-public sealed class RowView
+// partial: the CsWinRT AOT generator adds the WinRT plumbing XAML needs to hold these in ItemsSource.
+public sealed partial class RowView
 {
     public RowView(HomeRow row)
     {
@@ -27,7 +28,7 @@ public sealed class RowView
     public IReadOnlyList<CardView> Cards { get; }
 }
 
-public sealed class CardView
+public sealed partial class CardView
 {
     public CardView(MediaCard card, double width, double height, bool landscape)
     {

@@ -4,7 +4,7 @@ using Windows.UI.Xaml.Media.Imaging;
 
 namespace Bale.Xbox.Views;
 
-public sealed class ProfileView
+public sealed partial class ProfileView
 {
     public ProfileView(Profile profile, Uri? avatarUrl)
     {
