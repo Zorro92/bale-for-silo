@@ -55,7 +55,7 @@ MSIX (~2 min). Then, with `XBOX_HOST` set to the console's IP:
 ```sh
 ./scripts/deploy-xbox.sh        # install the newest CI build and launch it
 ./scripts/bale-debug.sh log     # follow the live log
-./scripts/bale-debug.sh press down down a     # real gamepad input: up down left right a b menu view
+./scripts/bale-debug.sh press down down a     # real gamepad input: up down left right a b menu view lb rb lt rt
 ./scripts/bale-debug.sh key escape            # real keystrokes
 ./scripts/bale-debug.sh type dune             # typed text
 ./scripts/bale-debug.sh focus                 # what has focus, and its text

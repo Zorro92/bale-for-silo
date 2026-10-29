@@ -109,7 +109,7 @@ internal sealed class DebugServer
                 return ("200 OK", await OnUiAsync(DescribeTree));
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /tree\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /tree\n");
         }
     }
 
@@ -126,6 +126,9 @@ internal sealed class DebugServer
             "b" or "back" => GamepadButtons.B,
             "menu" => GamepadButtons.Menu,
             "view" => GamepadButtons.View,
+            "lb" => GamepadButtons.LeftShoulder,
+            "rb" => GamepadButtons.RightShoulder,
+            "lt" or "rt" => GamepadButtons.None,
             _ => (GamepadButtons?)null,
         };
         if (buttons is null)
@@ -138,7 +141,14 @@ internal sealed class DebugServer
             return "input injection unavailable";
         }
 
-        _injector.InjectGamepadInput(new InjectedInputGamepadInfo { Buttons = buttons.Value });
+        // Triggers are analog: fully pulled, then released.
+        var name = button.ToLowerInvariant();
+        _injector.InjectGamepadInput(new InjectedInputGamepadInfo
+        {
+            Buttons = buttons.Value,
+            LeftTrigger = name == "lt" ? 1 : 0,
+            RightTrigger = name == "rt" ? 1 : 0,
+        });
         _injector.InjectGamepadInput(new InjectedInputGamepadInfo());
         return "pressed";
     }

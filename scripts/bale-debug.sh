@@ -2,7 +2,7 @@
 # Drives and inspects Bale on the console through its development debug server (Services/DebugServer.cs).
 #
 #   XBOX_HOST=192.168.1.50 scripts/bale-debug.sh log            follow the live log (Ctrl+C to stop)
-#   XBOX_HOST=192.168.1.50 scripts/bale-debug.sh press down a   press buttons in order: up down left right a b menu view
+#   XBOX_HOST=192.168.1.50 scripts/bale-debug.sh press down a   press buttons in order: up down left right a b menu view lb rb lt rt
 #   XBOX_HOST=192.168.1.50 scripts/bale-debug.sh key enter      keystrokes by name: enter escape tab down back f5...
 #   XBOX_HOST=192.168.1.50 scripts/bale-debug.sh type dune      type text as real keystrokes
 #   XBOX_HOST=192.168.1.50 scripts/bale-debug.sh focus          what has focus, and the text on it
