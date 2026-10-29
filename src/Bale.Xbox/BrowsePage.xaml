@@ -128,6 +128,7 @@
     </Grid>
 
     <!-- Rows scroll in their own viewport below the marquee. -->
+    <!-- Up/Down between rows is handled in code (OnRowsKeyDown) so each row restores its own last card. -->
     <ScrollViewer x:Name="RowsScroller" Margin="0,266,0,0" VerticalScrollBarVisibility="Hidden" HorizontalScrollMode="Disabled">
       <ItemsControl x:Name="Rows" ItemTemplate="{StaticResource RowTemplate}" IsTabStop="False" Padding="0,0,0,24" />
     </ScrollViewer>

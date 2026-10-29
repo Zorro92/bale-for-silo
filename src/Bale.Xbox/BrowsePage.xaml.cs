@@ -4,7 +4,9 @@ using Bale.Xbox.Views;
 using Microsoft.Kiota.Abstractions;
 using Windows.UI;
 using Windows.UI.Xaml;
+using Windows.System;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Media.Imaging;
 using Windows.UI.Xaml.Navigation;
@@ -36,6 +38,9 @@ public sealed partial class BrowsePage : Page
     public BrowsePage()
     {
         InitializeComponent();
+
+        // handledEventsToo: a horizontal ListView may claim Up/Down itself before it would bubble.
+        RowsScroller.AddHandler(KeyDownEvent, new KeyEventHandler(OnRowsKeyDown), handledEventsToo: true);
         Loaded += (_, _) =>
         {
             try
@@ -173,10 +178,81 @@ public sealed partial class BrowsePage : Page
         if (e.OriginalSource is ContentControl { Content: CardView view } item)
         {
             CardFocus.Apply(item, focused: true);
+            if (sender is ListView row)
+            {
+                PinRow(row);
+                PinCard(row, item);
+            }
+
             _pendingMarquee = view;
             _marqueeTimer.Stop();
             _marqueeTimer.Start();
         }
+    }
+
+    /// <summary>
+    /// Up/Down move between rows the way Silo's TV rails do (TvMediaRow's focusRestorer): into the
+    /// neighbouring row's last-focused card, or its first card on a first visit, instead of whichever
+    /// card happens to sit nearest on screen. A focused ListView restores its own last-focused item.
+    /// Up from the first row falls through to the top bar.
+    /// </summary>
+    private void OnRowsKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        var step = e.Key switch
+        {
+            VirtualKey.Down or VirtualKey.GamepadDPadDown or VirtualKey.GamepadLeftThumbstickDown => 1,
+            VirtualKey.Up or VirtualKey.GamepadDPadUp or VirtualKey.GamepadLeftThumbstickUp => -1,
+            _ => 0,
+        };
+        if (step == 0 || RowIndexOf(e.OriginalSource as DependencyObject) is not { } index)
+        {
+            return;
+        }
+
+        if (Rows.ContainerFromIndex(index + step) is DependencyObject next && FindChild<ListView>(next) is { } target)
+        {
+            e.Handled = target.Focus(FocusState.Keyboard);
+        }
+    }
+
+    /// <summary>The index of the row holding <paramref name="element"/>.</summary>
+    private int? RowIndexOf(DependencyObject? element)
+    {
+        for (var node = element; node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (VisualTreeHelper.GetParent(node) is Panel panel && panel == Rows.ItemsPanelRoot)
+            {
+                var index = Rows.IndexFromContainer(node);
+                return index >= 0 ? index : null;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The focused row moves up to sit right under the marquee.</summary>
+    private void PinRow(ListView row)
+    {
+        if (VisualTreeHelper.GetParent(row) is FrameworkElement rowPanel)
+        {
+            var top = rowPanel.TransformToVisual(Rows).TransformPoint(new Windows.Foundation.Point(0, 0)).Y;
+            RowsScroller.ChangeView(null, Math.Max(0, top), null);
+        }
+    }
+
+    /// <summary>
+    /// The focused card slides to the row's start padding (the tvOS / Android "pinned" rail), so every
+    /// Left/Right is one card-sized glide and focus always sits in the same place. Row ends clamp.
+    /// </summary>
+    private static void PinCard(ListView row, ContentControl card)
+    {
+        if (FindChild<ScrollViewer>(row) is not { } scroller)
+        {
+            return;
+        }
+
+        var x = card.TransformToVisual(scroller).TransformPoint(new Windows.Foundation.Point(0, 0)).X;
+        scroller.ChangeView(scroller.HorizontalOffset + x - row.Padding.Left, null, null);
     }
 
     private void OnCardBlur(object sender, RoutedEventArgs e)
