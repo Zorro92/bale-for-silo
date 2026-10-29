@@ -1,0 +1,43 @@
+{
+  "descriptionHash": "3FACCCF6B1FA68542C98CF132E7B3343244E3BA339F4CD359420F1889270EC6B9FE81B3293D8D17EFD413B4F9DFABD08E449B5A0338E67C9A5E13E296F48E9DD",
+  "descriptionLocation": "../../../.cache/silo-openapi-cc8514943289045e7b9f7ac8d36d4968bfe93926.json",
+  "lockFileVersion": "1.0.0",
+  "kiotaVersion": "1.36.1",
+  "clientClassName": "SiloApiClient",
+  "typeAccessModifier": "Public",
+  "clientNamespaceName": "Bale.Core.Api",
+  "language": "CSharp",
+  "usesBackingStore": false,
+  "excludeBackwardCompatible": true,
+  "includeAdditionalData": true,
+  "disableSSLValidation": false,
+  "serializers": [
+    "Microsoft.Kiota.Serialization.Json.JsonSerializationWriterFactory",
+    "Microsoft.Kiota.Serialization.Text.TextSerializationWriterFactory",
+    "Microsoft.Kiota.Serialization.Form.FormSerializationWriterFactory",
+    "Microsoft.Kiota.Serialization.Multipart.MultipartSerializationWriterFactory"
+  ],
+  "deserializers": [
+    "Microsoft.Kiota.Serialization.Json.JsonParseNodeFactory",
+    "Microsoft.Kiota.Serialization.Text.TextParseNodeFactory",
+    "Microsoft.Kiota.Serialization.Form.FormParseNodeFactory"
+  ],
+  "structuredMimeTypes": [
+    "application/json",
+    "text/plain;q=0.9",
+    "application/x-www-form-urlencoded;q=0.2",
+    "multipart/form-data;q=0.1"
+  ],
+  "includePatterns": [
+    "/api/v2/auth/device/start",
+    "/api/v2/auth/device/poll",
+    "/api/v2/auth/device/cancel",
+    "/api/v2/auth/device/capability",
+    "/api/v2/auth/refresh",
+    "/api/v2/auth/logout",
+    "/api/v2/account/me"
+  ],
+  "excludePatterns": [],
+  "disabledValidationRules": [],
+  "allowedExternalOrigins": []
+}

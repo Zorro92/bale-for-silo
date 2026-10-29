@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Bale.Core/Bale.Core.csproj" />
+    <Project Path="src/Bale.Xbox/Bale.Xbox.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Bale.Core.Tests/Bale.Core.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Bale.Cli/Bale.Cli.csproj" />
+  </Folder>
+</Solution>
