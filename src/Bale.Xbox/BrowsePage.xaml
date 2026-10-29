@@ -85,29 +85,11 @@
 
     <!-- TvRootHeroBackdrop: a tint wash sampled from the art, and the art in a top-right box fading into it. -->
     <Rectangle x:Name="Wash" IsHitTestVisible="False" />
-    <Grid x:Name="ArtBox" Width="614" Height="378" HorizontalAlignment="Right" VerticalAlignment="Top" IsHitTestVisible="False">
-      <Image x:Name="Backdrop" Stretch="UniformToFill" Opacity="0">
-        <Image.OpacityTransition>
-          <ScalarTransition Duration="0:0:0.24" />
-        </Image.OpacityTransition>
-      </Image>
-      <!-- Black until the tint is sampled; then recoloured to match the wash (BrowsePage.TintFromAsync). -->
-      <Rectangle x:Name="ArtFadeLeft">
-        <Rectangle.Fill>
-          <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-            <GradientStop Color="#FF000000" Offset="0" />
-            <GradientStop Color="#00000000" Offset="0.68" />
-          </LinearGradientBrush>
-        </Rectangle.Fill>
-      </Rectangle>
-      <Rectangle x:Name="ArtFadeBottom">
-        <Rectangle.Fill>
-          <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-            <GradientStop Color="#00000000" Offset="0.58" />
-            <GradientStop Color="#FF000000" Offset="1" />
-          </LinearGradientBrush>
-        </Rectangle.Fill>
-      </Rectangle>
+    <!-- The art itself is a Composition visual with alpha masks (Services/MaskedArt.cs). -->
+    <Grid x:Name="ArtBox" Width="614" Height="378" HorizontalAlignment="Right" VerticalAlignment="Top" IsHitTestVisible="False" Opacity="0">
+      <Grid.OpacityTransition>
+        <ScalarTransition Duration="0:0:0.24" />
+      </Grid.OpacityTransition>
     </Grid>
     <Rectangle Height="90" VerticalAlignment="Top" IsHitTestVisible="False">
       <Rectangle.Fill>

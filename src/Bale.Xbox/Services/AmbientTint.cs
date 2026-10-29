@@ -82,9 +82,5 @@ internal static class AmbientTint
         return brush;
     }
 
-    /// <summary>The wash colour as it looks over black at a given strength, for fading the art into it.</summary>
-    public static Color Over(Color tint, double alpha) =>
-        Color.FromArgb(255, (byte)(tint.R * alpha), (byte)(tint.G * alpha), (byte)(tint.B * alpha));
-
     private static double Lerp(double from, double to, double t) => from + (to - from) * t;
 }

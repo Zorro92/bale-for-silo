@@ -31,10 +31,30 @@ public sealed partial class BrowsePage : Page
     private CardView? _shownMarquee;
     private string? _libraryId;
     private bool _focusFirstRow;
+    private MaskedArt? _art;
 
     public BrowsePage()
     {
         InitializeComponent();
+        Loaded += (_, _) =>
+        {
+            try
+            {
+                _art = new MaskedArt(ArtBox);
+            }
+            catch (Exception ex)
+            {
+                // Without the art the marquee still works on the tint alone.
+                Log.Error("Marquee art", ex);
+                return;
+            }
+
+            _art.Loaded += () => ArtBox.Opacity = 1;
+            if (_shownMarquee?.Card.BackdropUrl is { } pending)
+            {
+                _art.Show(pending);
+            }
+        };
         _marqueeTimer.Tick += (_, _) =>
         {
             _marqueeTimer.Stop();
@@ -105,15 +125,34 @@ public sealed partial class BrowsePage : Page
         }
     }
 
-    /// <summary>Rows load top to bottom, so the first to finish is the top row: start focus on its first card.</summary>
+    /// <summary>
+    /// Rows load top to bottom, so the first to finish is the top row: start focus on its first card
+    /// once that card's container (and template) exists, so the focus ring can draw.
+    /// </summary>
     private void OnRowLoaded(object sender, RoutedEventArgs e)
     {
-        if (_focusFirstRow && sender is ListView row)
+        if (!_focusFirstRow || sender is not ListView row)
         {
-            _focusFirstRow = false;
-            // A focused ListView hands focus to its first item if the container isn't realized yet.
-            ((Control?)(row.ContainerFromIndex(0) as ListViewItem) ?? row).Focus(FocusState.Programmatic);
+            return;
         }
+
+        _focusFirstRow = false;
+        if (row.ContainerFromIndex(0) is ListViewItem first)
+        {
+            first.Focus(FocusState.Programmatic);
+            return;
+        }
+
+        void OnRealized(ListViewBase list, ContainerContentChangingEventArgs args)
+        {
+            if (args.ItemIndex == 0)
+            {
+                list.ContainerContentChanging -= OnRealized;
+                _ = Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Low, () => args.ItemContainer.Focus(FocusState.Programmatic));
+            }
+        }
+
+        row.ContainerContentChanging += OnRealized;
     }
 
     private void OnCardFocus(object sender, RoutedEventArgs e)
@@ -177,18 +216,10 @@ public sealed partial class BrowsePage : Page
             MarqueeLogo.Source = image;
         }
 
-        Backdrop.Opacity = 0;
+        ArtBox.Opacity = 0;
         if (card.BackdropUrl is { } backdrop)
         {
-            var image = new BitmapImage { DecodePixelType = DecodePixelType.Logical, DecodePixelWidth = 614, UriSource = backdrop };
-            image.ImageOpened += (_, _) =>
-            {
-                if (ReferenceEquals(_shownMarquee, view))
-                {
-                    Backdrop.Opacity = 1;
-                }
-            };
-            Backdrop.Source = image;
+            _art?.Show(backdrop);
             _ = TintFromAsync(view, backdrop);
         }
     }
@@ -228,23 +259,6 @@ public sealed partial class BrowsePage : Page
         }
 
         Wash.Fill = AmbientTint.Wash(tint);
-
-        // Fade the art's left and bottom edges into the wash behind them (the Android masks: art fully
-        // visible from 68% across, and down to 58%).
-        var left = AmbientTint.Over(tint, 0.72);
-        var bottom = AmbientTint.Over(tint, 0.42);
-        ArtFadeLeft.Fill = Fade(new Windows.Foundation.Point(0, 0), new Windows.Foundation.Point(1, 0), left, 0, 0.68, reverse: false);
-        ArtFadeBottom.Fill = Fade(new Windows.Foundation.Point(0, 0), new Windows.Foundation.Point(0, 1), bottom, 0.58, 1, reverse: true);
-    }
-
-    private static LinearGradientBrush Fade(Windows.Foundation.Point start, Windows.Foundation.Point end, Color color, double from, double to, bool reverse)
-    {
-        var solid = color;
-        var clear = Color.FromArgb(0, color.R, color.G, color.B);
-        var brush = new LinearGradientBrush { StartPoint = start, EndPoint = end };
-        brush.GradientStops.Add(new GradientStop { Offset = from, Color = reverse ? clear : solid });
-        brush.GradientStops.Add(new GradientStop { Offset = to, Color = reverse ? solid : clear });
-        return brush;
     }
 
     private void ShowError(string message)
