@@ -35,9 +35,6 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     private bool _focusFirstRow;
     private MaskedArt? _art;
 
-    /// <summary>The last card focused in each row, by row index (TvMediaRow's focusRestorer).</summary>
-    private readonly Dictionary<int, CardView> _lastFocused = new();
-
     /// <summary>The last card focused anywhere on the page: where Down from the top bar returns.</summary>
     private (int Row, CardView Card)? _lastCard;
 
@@ -47,7 +44,6 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
 
         // handledEventsToo: a horizontal ListView may claim Up/Down itself before it would bubble.
         RowsScroller.AddHandler(KeyDownEvent, new KeyEventHandler(OnRowsKeyDown), handledEventsToo: true);
-        RowsScroller.PreviewKeyDown += OnRowsPreviewKeyDown;
         RowsScroller.GettingFocus += OnRowsGettingFocus;
         Loaded += (_, _) =>
         {
@@ -189,10 +185,8 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             if (sender is ListView row)
             {
                 PinRow(row);
-                PinCard(row, item);
                 if (RowIndexOf(row) is { } index)
                 {
-                    _lastFocused[index] = view;
                     _lastCard = (index, view);
                 }
             }
@@ -244,15 +238,8 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             return;
         }
 
-        // Find the remembered card among the realized containers (ContainerFromIndex returns nothing
-        // for these rails under AOT); a first visit lands on the first card.
-        Control? card = null;
-        if (_lastFocused.TryGetValue(targetIndex, out var remembered) && target.ItemsPanelRoot is { } panel)
-        {
-            card = panel.Children.OfType<ContentControl>().FirstOrDefault(container => ReferenceEquals(container.Content, remembered));
-        }
-
-        e.Handled = (card ?? target).Focus(FocusState.Keyboard);
+        // The row's rail lands on its remembered card, or the first card on a first visit.
+        e.Handled = target.Tag is Rail rail ? rail.Focus(FocusState.Keyboard) : target.Focus(FocusState.Keyboard);
     }
 
     /// <summary>The index of the row holding <paramref name="element"/>.</summary>
@@ -312,25 +299,22 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     }
 
     /// <summary>
-    /// Left/Right never leave the rail. At either end there is nothing to move to, and the ListView
-    /// itself would hand focus to the nearest card in some other row, so this runs on the tunnelling
-    /// pass, before the ListView sees the key.
+    /// Each row is a <see cref="Rail"/>: Left/Right stop at its ends, the focused card pins to the
+    /// start padding, and the row remembers its last card (kept on the RowView, which outlives its
+    /// recycled ListView).
     /// </summary>
-    private void OnRowsPreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    private void OnRailLoaded(object sender, RoutedEventArgs e)
     {
-        if (e.OriginalSource is ContentControl { Content: CardView edge }
-            && ((edge.IsLast && e.Key is VirtualKey.Right or VirtualKey.GamepadDPadRight or VirtualKey.GamepadLeftThumbstickRight)
-                || (edge.IsFirst && e.Key is VirtualKey.Left or VirtualKey.GamepadDPadLeft or VirtualKey.GamepadLeftThumbstickLeft)))
+        if (sender is not ListView { Tag: null, DataContext: RowView row } list)
         {
-            e.Handled = true;
+            return;
         }
-    }
 
-    /// <summary>
-    /// A rail's own bring-into-view request stops at the rail: left to bubble, it also nudged the page
-    /// vertically on every Left/Right, which PinRow then undid, so the page jumped.
-    /// </summary>
-    private void OnRailBringIntoView(UIElement sender, BringIntoViewRequestedEventArgs args) => args.Handled = true;
+        var rail = Rail.Attach(list);
+        rail.Remembered = row.LastFocused;
+        rail.ItemFocused += (_, item) => row.LastFocused = item as CardView;
+        list.Tag = rail;
+    }
 
     /// <summary>The focused row moves up to sit right under the marquee.</summary>
     private void PinRow(ListView row)
@@ -340,21 +324,6 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             var top = rowPanel.TransformToVisual(Rows).TransformPoint(new Windows.Foundation.Point(0, 0)).Y;
             RowsScroller.ChangeView(null, Math.Max(0, top), null);
         }
-    }
-
-    /// <summary>
-    /// The focused card slides to the row's start padding (the tvOS / Android "pinned" rail), so every
-    /// Left/Right is one card-sized glide and focus always sits in the same place. Row ends clamp.
-    /// </summary>
-    private static void PinCard(ListView row, ContentControl card)
-    {
-        if (FindChild<ScrollViewer>(row) is not { } scroller)
-        {
-            return;
-        }
-
-        var x = card.TransformToVisual(scroller).TransformPoint(new Windows.Foundation.Point(0, 0)).X;
-        scroller.ChangeView(scroller.HorizontalOffset + x - row.Padding.Left, null, null);
     }
 
     private void OnCardBlur(object sender, RoutedEventArgs e)

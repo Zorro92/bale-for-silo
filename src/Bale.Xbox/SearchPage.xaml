@@ -5,22 +5,49 @@
     xmlns:views="using:Bale.Xbox.Views"
     Background="{StaticResource SkylineBackground}">
 
-  <Grid Margin="44,75,0,0">
+  <!--
+    Search as Silo's Android TV TvSearchScreen lays it out: a 520 x 52 field at the safe area, the
+    All / Movies / Series filter chips, a result count, then a grid of 138 x 207 posters with 14 / 20
+    gaps. The grid spans the page so a focused poster's lift and ring are never clipped.
+  -->
+  <Grid Margin="0,90,0,0">
     <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
 
-    <TextBox x:Name="QueryBox" Width="440" HorizontalAlignment="Left" PlaceholderText="Search movies, shows and episodes"
+    <TextBox x:Name="QueryBox" Margin="40,0,0,0" Width="520" Height="52" HorizontalAlignment="Left" PlaceholderText="Search movies and series"
              Style="{StaticResource SkylineTextBoxStyle}" TextChanged="OnQueryChanged" InputScope="Search" />
-    <TextBlock x:Name="Status" Grid.Row="1" Margin="0,12,0,0" FontSize="{StaticResource SkylineBodySize}" Foreground="{StaticResource SkylineTertiary}" />
 
-    <GridView x:Name="Results" Grid.Row="2" Margin="0,12,0,0" Padding="4,10,44,24" SelectionMode="None" IsItemClickEnabled="True"
-              ItemClick="OnResultClick" GotFocus="OnResultFocus" LostFocus="OnResultBlur" ItemContainerStyle="{StaticResource SkylineGridItemStyle}">
+    <StackPanel x:Name="Filters" Grid.Row="1" Margin="40,8,0,0" Orientation="Horizontal" Spacing="12" XYFocusKeyboardNavigation="Enabled">
+      <ToggleButton x:Name="AllFilter" Content="All" Tag="" Style="{StaticResource SkylineFilterChipStyle}" IsChecked="True" Click="OnFilterClick" />
+      <ToggleButton x:Name="MoviesFilter" Content="Movies" Tag="movie" Style="{StaticResource SkylineFilterChipStyle}" Click="OnFilterClick" />
+      <ToggleButton x:Name="SeriesFilter" Content="Series" Tag="series" Style="{StaticResource SkylineFilterChipStyle}" Click="OnFilterClick" />
+    </StackPanel>
+
+    <TextBlock x:Name="Status" Grid.Row="2" Margin="40,8,0,0" FontSize="11.2" Foreground="#9EFFFFFF" />
+
+    <!-- Empty state (TvSearchScreen): an icon, a title and one line. -->
+    <StackPanel x:Name="EmptyState" Grid.Row="3" Margin="40,60,0,0" Orientation="Horizontal" Spacing="14" VerticalAlignment="Top">
+      <FontIcon Glyph="&#xE721;" FontSize="24" Foreground="#80FFFFFF" VerticalAlignment="Top" Margin="0,2,0,0" />
+      <StackPanel Spacing="4">
+        <TextBlock x:Name="EmptyTitle" Text="Search your library" FontSize="17.2" FontWeight="SemiBold" />
+        <TextBlock x:Name="EmptyBody" Text="Find movies and series in one place." FontSize="13" Foreground="{StaticResource SkylineSecondary}" />
+      </StackPanel>
+    </StackPanel>
+
+    <GridView x:Name="Results" Grid.Row="3" Padding="40,14,24,40" SelectionMode="None" IsItemClickEnabled="True"
+              ItemClick="OnResultClick" GotFocus="OnResultFocus" LostFocus="OnResultBlur">
+      <GridView.ItemContainerStyle>
+        <Style TargetType="GridViewItem" BasedOn="{StaticResource SkylineGridItemStyle}">
+          <Setter Property="Margin" Value="0,0,14,20" />
+        </Style>
+      </GridView.ItemContainerStyle>
       <GridView.ItemTemplate>
         <DataTemplate x:DataType="views:CardView">
-          <StackPanel Width="{x:Bind Width}" Spacing="11">
+          <StackPanel Width="{x:Bind Width}" Spacing="9">
             <Grid x:Name="Art" Width="{x:Bind Width}" Height="{x:Bind Height}">
               <Grid CornerRadius="{StaticResource SkylineCardRadius}" Background="{StaticResource SkylineCardPlaceholder}">
                 <TextBlock Text="{x:Bind Title}" Visibility="{x:Bind FallbackVisibility}" TextWrapping="Wrap" TextAlignment="Center"

@@ -57,7 +57,7 @@
         <!-- Rails bleed off the right edge; vertical padding leaves room for the focus lift. -->
         <ListView ItemsSource="{x:Bind Cards}" ItemTemplate="{StaticResource CardTemplate}" ItemContainerStyle="{StaticResource SkylineCardItemStyle}"
                   SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnCardClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur"
-                  BringIntoViewRequested="OnRailBringIntoView"
+                  Loaded="OnRailLoaded"
                   Padding="44,12,0,12" ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden"
                   ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
           <ListView.ItemsPanel>

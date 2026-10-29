@@ -106,8 +106,31 @@ public sealed class DetailFeed
             new ItemFlags(
                 item.UserState?.InWatchlist == true,
                 item.UserState?.IsFavorite == true,
-                item.UserState?.Played == true));
+                item.UserState?.Played == true),
+            Ratings(item));
     }
+
+    /// <summary>
+    /// The server's chosen, formatted ratings when it sends them; from an older server, IMDb then
+    /// TMDB from the raw scores, never Rotten Tomatoes (ExternalRatings.forTitle).
+    /// </summary>
+    internal static IReadOnlyList<DisplayRating> Ratings(CatalogItemDetail item)
+    {
+        if (item.Ratings is { } ratings)
+        {
+            return ratings
+                .Where(rating => !string.IsNullOrWhiteSpace(rating.Name) && !string.IsNullOrWhiteSpace(rating.Display))
+                .Select(rating => new DisplayRating(rating.Source ?? string.Empty, rating.Name!, rating.Display!))
+                .ToList();
+        }
+
+        return new[] { OutOfTen("imdb", "IMDb", item.RatingImdb), OutOfTen("tmdb", "TMDB", item.RatingTmdb) }.OfType<DisplayRating>().ToList();
+    }
+
+    private static DisplayRating? OutOfTen(string source, string name, double? value) =>
+        value is > 0 and <= 10 && double.IsFinite(value.Value)
+            ? new DisplayRating(source, name, (Math.Round(value.Value * 10, MidpointRounding.AwayFromZero) / 10).ToString("0.0", CultureInfo.InvariantCulture))
+            : null;
 
     /// <summary>"TV Show · Comedy · Animation" (TvDetailMetadata.sourceTokens).</summary>
     internal static IReadOnlyList<string> SourceTokens(CatalogItemDetail item)
@@ -213,11 +236,6 @@ public sealed class DetailFeed
     internal EpisodeCard ToEpisode(Episode episode, long seasonNumber)
     {
         var number = episode.EpisodeNumber ?? 0;
-        var label = string.Join(" · ", new[]
-        {
-            number > 0 ? $"EPISODE {number}" : null,
-            episode.Runtime is > 0 ? $"{episode.Runtime}m" : null,
-        }.OfType<string>());
         var data = episode.UserData;
         var progress = data?.PositionSeconds is > 0 && data.DurationSeconds is > 0
             ? Math.Min(1, data.PositionSeconds.Value / data.DurationSeconds.Value)
@@ -230,7 +248,8 @@ public sealed class DetailFeed
             episode.Title ?? string.Empty,
             episode.Overview,
             _browse.Resolve(episode.StillUrl),
-            label,
+            episode.AirDate is { } aired ? new DateOnly(aired.Year, aired.Month, aired.Day) : null,
+            episode.Runtime is > 0 ? episode.Runtime : null,
             progress,
             data?.Played == true);
     }

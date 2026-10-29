@@ -50,14 +50,39 @@ public class DetailFeedTests
     public void PlayLabels()
     {
         var feed = new DetailFeed(null!, null!);
-        var detail = new ItemDetail("m", "movie", "M", null, null, null, null, null, [], null, [], [], null, [], null, "m", null, null, new(false, false, false));
+        var detail = new ItemDetail("m", "movie", "M", null, null, null, null, null, [], null, [], [], null, [], null, "m", null, null, new(false, false, false), []);
 
         Assert.Equal("Play", PlayLabel.For(detail, null));
         Assert.Equal("Resume 12:34", PlayLabel.For(detail with { ResumeSeconds = 754 }, null));
         Assert.Equal("Resume 1:02:05", PlayLabel.For(detail with { ResumeSeconds = 3725 }, null));
 
         var series = detail with { Type = "series" };
-        var nextUp = new EpisodeCard("e", 1, 2, "Ep", null, null, "EPISODE 2", null, false);
+        var nextUp = new EpisodeCard("e", 1, 2, "Ep", null, null, null, null, null, false);
         Assert.Equal("Play S1:E2", PlayLabel.For(series, nextUp));
+    }
+
+    [Fact]
+    public void EpisodeCaptionsReadLikeTheOfficialRail()
+    {
+        var episode = new EpisodeCard("e", 1, 1, "Cartman Gets an Anal Probe", "While the boys wait…", null, new DateOnly(1997, 8, 13), 22, null, false);
+
+        Assert.Equal("S01E01 · Cartman Gets an Anal Probe", episode.Caption);
+        Assert.Equal("Aug 13, 1997  ·  22m", episode.CaptionMeta);
+        Assert.Equal(["Aug 13, 1997", "22 min"], episode.HeroFacts);
+        Assert.Equal(["Season 1", "Episode 1"], episode.HeroTokens);
+        Assert.Equal("Cartman Gets an Anal Probe · While the boys wait…", episode.HeroSynopsis);
+        Assert.Equal("S00E03", (episode with { SeasonNumber = 0, EpisodeNumber = 3, Title = "" }).Caption);
+        Assert.Equal("1h 5m", (episode with { AirDate = null, RuntimeMinutes = 65 }).CaptionMeta);
+    }
+
+    [Fact]
+    public void RatingsPreferTheServersListThenFallBackToImdbAndTmdb()
+    {
+        var served = new CatalogItemDetail { Ratings = [new CatalogRating { Source = "tmdb", Name = "TMDB", Display = "8.3" }], RatingImdb = 7.0 };
+        Assert.Equal([new DisplayRating("tmdb", "TMDB", "8.3")], DetailFeed.Ratings(served));
+
+        var older = new CatalogItemDetail { RatingImdb = 7.85, RatingTmdb = 8.25, RatingRtCritic = 90 };
+        Assert.Equal([new DisplayRating("imdb", "IMDb", "7.9"), new DisplayRating("tmdb", "TMDB", "8.3")], DetailFeed.Ratings(older));
+        Assert.Empty(DetailFeed.Ratings(new CatalogItemDetail { RatingTmdb = 0 }));
     }
 }

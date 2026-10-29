@@ -7,10 +7,12 @@
 
   <!--
     A title's detail page, pushed full screen over the shell (no top bar), laid out like Silo's
-    Android TV TvItemDetailScreen: hero (TvDetailHero) with the action row, then the season picker
-    and episode rail on a series (TvSeasonPicker, TvDetailEpisodeRail) and Cast & Crew
+    Android TV TvItemDetailScreen: hero (TvDetailHero) with the action row; on a series the Show /
+    Season tabs (TvSeriesModePicker) and the episode rail (TvDetailEpisodeRail, series geometry) sit
+    in the same first screen, which stays still while focus is in it; then Cast & Crew
     (TvCastCrewSection). Geometry is TvDetailHero's: 50 px side inset, content from 58 px down,
-    540 px wide; the art box is 64% x 70% of a 16:9 canvas, top right.
+    540 px wide, with fixed slots so focusing an episode never moves the controls; the art box is
+    64% x 70% of a 16:9 canvas, top right.
   -->
   <Page.Resources>
     <DataTemplate x:Key="EpisodeTemplate" x:DataType="views:EpisodeView">
@@ -18,24 +20,26 @@
         <Grid x:Name="Art" Width="180" Height="101">
           <Grid CornerRadius="8" Background="{StaticResource SkylineCardPlaceholder}">
             <Image Source="{x:Bind Still}" Stretch="UniformToFill" />
-            <Grid Visibility="{x:Bind ProgressVisibility}" VerticalAlignment="Bottom" Height="3">
-              <Border Background="{StaticResource SkylineProgressTrack}" />
+            <Grid Visibility="{x:Bind ProgressVisibility}" VerticalAlignment="Bottom" Height="5" Background="#99000000">
               <Border Background="{StaticResource SkylinePrimary}" HorizontalAlignment="Left" Width="{x:Bind ProgressFillWidth}" />
             </Grid>
-            <Border Visibility="{x:Bind WatchedVisibility}" Width="20" Height="20" CornerRadius="10" Background="#E6FFFFFF"
+            <Border Visibility="{x:Bind WatchedVisibility}" Width="20" Height="20" CornerRadius="10" Background="#FFFFFFFF"
                     HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6">
-              <FontIcon Glyph="&#xE73E;" FontSize="10" Foreground="#FF000000" />
+              <FontIcon Glyph="&#xE73E;" FontSize="9" Foreground="#FF000000" />
             </Border>
           </Grid>
+          <Border Visibility="{x:Bind CurrentVisibility}" CornerRadius="8" BorderThickness="2" BorderBrush="#B3FFFFFF" IsHitTestVisible="False" />
           <Border x:Name="FocusGlow" Margin="-6" CornerRadius="{StaticResource SkylineFocusGlowRadius}" BorderThickness="3"
                   BorderBrush="{StaticResource SkylineFocusGlow}" Opacity="0" IsHitTestVisible="False" />
           <Border x:Name="FocusRing" Margin="-3" CornerRadius="{StaticResource SkylineFocusRingRadius}" BorderThickness="2"
                   BorderBrush="{StaticResource SkylineFocusRing}" Opacity="0" IsHitTestVisible="False" />
         </Grid>
-        <TextBlock Text="{x:Bind Label}" FontSize="9.5" FontWeight="Bold" CharacterSpacing="120" Foreground="{StaticResource SkylineCaptionSubtitle}" />
-        <TextBlock Text="{x:Bind Title}" FontSize="{StaticResource SkylineCardTitleSize}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-        <TextBlock Text="{x:Bind Overview}" FontSize="11" LineHeight="14.5" LineStackingStrategy="BlockLineHeight" TextWrapping="Wrap"
-                   MaxLines="3" TextTrimming="WordEllipsis" Foreground="{StaticResource SkylineCaptionSubtitle}" />
+        <StackPanel Spacing="3">
+          <TextBlock Text="{x:Bind Caption}" FontSize="9.9" LineHeight="12" LineStackingStrategy="BlockLineHeight" FontWeight="SemiBold"
+                     Foreground="#EBEDEDED" TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="{x:Bind CaptionMeta}" FontSize="9" LineHeight="11.2" LineStackingStrategy="BlockLineHeight" FontWeight="Medium"
+                     Foreground="#B3EDEDED" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
       </StackPanel>
     </DataTemplate>
 
@@ -52,8 +56,9 @@
           <Ellipse x:Name="FocusGlow" Margin="-6" Stroke="{StaticResource SkylineFocusGlow}" StrokeThickness="3" Opacity="0" IsHitTestVisible="False" />
           <Ellipse x:Name="FocusRing" Margin="-3" Stroke="{StaticResource SkylineFocusRing}" StrokeThickness="2" Opacity="0" IsHitTestVisible="False" />
         </Grid>
-        <TextBlock Text="{x:Bind Name}" Margin="0,8,0,0" FontSize="12" FontWeight="SemiBold" TextAlignment="Center" TextTrimming="CharacterEllipsis" />
-        <TextBlock Text="{x:Bind Role}" Margin="0,2,0,0" FontSize="12" TextAlignment="Center" TextTrimming="CharacterEllipsis"
+        <TextBlock Text="{x:Bind Name}" Margin="0,8,0,0" FontSize="11.2" LineHeight="14" LineStackingStrategy="BlockLineHeight" FontWeight="SemiBold"
+                   TextAlignment="Center" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+        <TextBlock Text="{x:Bind Role}" Margin="0,2,0,0" FontSize="10.3" TextAlignment="Center" TextTrimming="CharacterEllipsis"
                    Foreground="{StaticResource SkylineCaptionSubtitle}" />
       </StackPanel>
     </DataTemplate>
@@ -65,82 +70,93 @@
     <Grid x:Name="ArtBox" Width="614" Height="378" HorizontalAlignment="Right" VerticalAlignment="Top" IsHitTestVisible="False" />
 
     <ScrollViewer x:Name="PageScroller" VerticalScrollBarVisibility="Hidden" HorizontalScrollMode="Disabled">
-      <StackPanel Padding="0,0,0,70">
-        <!-- Hero: 690/1080 of the screen. -->
-        <Grid Height="345">
-          <StackPanel Margin="50,58,50,0" MaxWidth="540" HorizontalAlignment="Left" Spacing="9">
-            <StackPanel Spacing="7">
-              <Grid x:Name="TitleSlot">
-                <TextBlock x:Name="TitleText" FontSize="31" FontWeight="Black" LineHeight="32" LineStackingStrategy="BlockLineHeight"
-                           TextWrapping="Wrap" MaxLines="2" />
-                <Image x:Name="TitleLogo" Height="80" MaxWidth="325" HorizontalAlignment="Left" VerticalAlignment="Bottom" Stretch="Uniform" Opacity="0" />
-              </Grid>
-              <TextBlock x:Name="SubtitleText" FontSize="17.2" FontWeight="ExtraBold" Foreground="#F0FFFFFF" Visibility="Collapsed" />
-              <!-- TvDetailHero.MetadataRow: rating chip, then facts and quality, then type and genres. -->
-              <StackPanel x:Name="Metadata" Orientation="Horizontal" Spacing="7" Height="18" />
-              <TextBlock x:Name="Synopsis" FontSize="11.2" LineHeight="15" LineStackingStrategy="BlockLineHeight" TextWrapping="Wrap" MaxLines="3"
-                         TextTrimming="WordEllipsis" Foreground="#D1FFFFFF" />
-              <TextBlock x:Name="CreditLine" FontSize="10.3" FontWeight="Medium" Foreground="#9EFFFFFF" TextTrimming="CharacterEllipsis" />
-            </StackPanel>
-
-            <!-- Action row: Play, Start Over (with a resume point), Watchlist, More (TvItemDetailScreen.HeroActionRow). -->
-            <StackPanel x:Name="Actions" Orientation="Horizontal" Spacing="9" Margin="0,4,0,0" XYFocusKeyboardNavigation="Enabled">
-              <Button x:Name="PlayButton" Style="{StaticResource SkylinePlayButtonStyle}" Click="OnPlayClick">
-                <StackPanel Orientation="Horizontal" Spacing="9">
-                  <FontIcon Glyph="&#xE768;" FontSize="14" />
-                  <TextBlock x:Name="PlayLabel" Text="Play" VerticalAlignment="Center" />
-                </StackPanel>
-              </Button>
-              <Button x:Name="StartOverButton" Style="{StaticResource SkylineCircleButtonStyle}" Content="&#xE892;" Click="OnStartOverClick"
-                      AutomationProperties.Name="Start Over" Visibility="Collapsed" />
-              <Button x:Name="WatchlistButton" Style="{StaticResource SkylineCircleButtonStyle}" Content="&#xE710;" Click="OnWatchlistClick"
-                      AutomationProperties.Name="Watchlist" />
-              <Button x:Name="MoreButton" Style="{StaticResource SkylineCircleButtonStyle}" Content="&#xE712;" AutomationProperties.Name="More">
-                <Button.Flyout>
-                  <MenuFlyout x:Name="MoreMenu" Placement="Bottom">
-                    <MenuFlyoutItem x:Name="FavoriteItem" Text="Add to Favorites" Click="OnFavoriteClick" />
-                    <MenuFlyoutItem x:Name="WatchedItem" Text="Mark as Watched" Click="OnWatchedClick" />
-                    <MenuFlyoutItem x:Name="SeriesItem" Text="Go to Series" Click="OnSeriesClick" Visibility="Collapsed" />
-                  </MenuFlyout>
-                </Button.Flyout>
-              </Button>
-            </StackPanel>
-            <TextBlock x:Name="ActionStatus" FontSize="10.3" Foreground="{StaticResource SkylineCaptionSubtitle}" />
-          </StackPanel>
-        </Grid>
-
-        <!-- Episodes (series only): section header, season chips, episode rail. -->
-        <StackPanel x:Name="EpisodesSection" Spacing="10" Margin="0,0,0,32" Visibility="Collapsed">
-          <Grid Margin="50,0,50,0">
-            <StackPanel Spacing="5">
-              <TextBlock x:Name="SeasonEyebrow" FontSize="12" FontWeight="Bold" CharacterSpacing="125" Foreground="#B3FFFFFF" />
-              <TextBlock Text="Episodes" FontSize="18" FontWeight="SemiBold" />
-            </StackPanel>
-            <TextBlock x:Name="EpisodeCount" HorizontalAlignment="Right" VerticalAlignment="Bottom" FontSize="10.3" Foreground="{StaticResource SkylineCaptionSubtitle}" />
+      <StackPanel x:Name="PageContent" Padding="0,0,0,70">
+        <!-- Hero: fixed slots from 58 px down (logo 80, facts 18, synopsis 56, credit 14, selectors 14), then the actions. -->
+        <StackPanel x:Name="Hero" Margin="50,58,50,0" HorizontalAlignment="Left">
+          <Grid x:Name="TitleSlot" Height="80" MaxWidth="540" HorizontalAlignment="Left">
+            <TextBlock x:Name="TitleText" FontSize="36" FontWeight="Bold" LineHeight="39.5" LineStackingStrategy="BlockLineHeight"
+                       TextWrapping="Wrap" MaxLines="2" VerticalAlignment="Bottom" />
+            <Image x:Name="TitleLogo" MaxHeight="80" MaxWidth="325" HorizontalAlignment="Left" VerticalAlignment="Bottom" Stretch="Uniform" Opacity="0" />
           </Grid>
-          <ItemsControl x:Name="Seasons" Margin="50,0,0,0" IsTabStop="False" Visibility="Collapsed">
+          <TextBlock x:Name="SubtitleText" Margin="0,2,0,0" FontSize="17.2" FontWeight="ExtraBold" Foreground="#F0FFFFFF" Visibility="Collapsed" />
+          <!-- TvDetailHero.MetadataRow: rating chip, then facts, ratings and quality, then type and genres. -->
+          <StackPanel x:Name="Metadata" Margin="0,7,0,0" Orientation="Horizontal" Spacing="7" Height="18" />
+          <TextBlock x:Name="Synopsis" Margin="0,4,0,0" Height="56" Width="540" HorizontalAlignment="Left" FontSize="11.2" LineHeight="15.5"
+                     LineStackingStrategy="BlockLineHeight" TextWrapping="Wrap" MaxLines="3" TextTrimming="WordEllipsis" Foreground="#F2FFFFFF" />
+          <TextBlock x:Name="CreditLine" Margin="0,13,0,0" Height="14" FontSize="10.3" FontWeight="Medium" Foreground="#9EFFFFFF" TextTrimming="CharacterEllipsis" />
+          <!-- Room for the Version / Audio / Subtitles summary, which arrives with playback. -->
+          <Border Height="14" Margin="0,2,0,0" />
+
+          <!-- Action row: Play, Start Over (with a resume point), Watchlist, More (TvItemDetailScreen.HeroActionRow). -->
+          <StackPanel x:Name="Actions" Orientation="Horizontal" Spacing="9" Margin="0,13,0,0" XYFocusKeyboardNavigation="Enabled">
+            <Button x:Name="PlayButton" Style="{StaticResource SkylinePlayButtonStyle}" Click="OnPlayClick">
+              <StackPanel Orientation="Horizontal" Spacing="9">
+                <FontIcon Glyph="&#xF5B0;" FontSize="15" />
+                <TextBlock x:Name="PlayLabel" Text="Play" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="StartOverButton" Style="{StaticResource SkylineActionButtonStyle}" Click="OnStartOverClick"
+                    AutomationProperties.Name="Start Over" Visibility="Collapsed">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <FontIcon Glyph="&#xE892;" FontSize="15" />
+                <TextBlock Text="Start Over" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="WatchlistButton" Style="{StaticResource SkylineActionButtonStyle}" Click="OnWatchlistClick" AutomationProperties.Name="Watchlist">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <!-- Bookmark (Icons.Filled.BookmarkBorder / Bookmark); Segoe MDL2 has no bookmark. -->
+                <Path x:Name="WatchlistIcon" Width="11" Height="15" Stretch="Fill" Stroke="#FFFFFFFF" StrokeThickness="1.6" StrokeLineJoin="Round"
+                      Data="M 0,0 L 10,0 L 10,14 L 5,10.5 L 0,14 Z" VerticalAlignment="Center" />
+                <TextBlock Text="Watchlist" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="MoreButton" Style="{StaticResource SkylineActionButtonStyle}" AutomationProperties.Name="More">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <FontIcon Glyph="&#xE712;" FontSize="15" />
+                <TextBlock Text="More" VerticalAlignment="Center" />
+              </StackPanel>
+              <Button.Flyout>
+                <MenuFlyout x:Name="MoreMenu" Placement="Bottom">
+                  <MenuFlyoutItem x:Name="FavoriteItem" Text="Add to Favorites" Click="OnFavoriteClick" />
+                  <MenuFlyoutItem x:Name="WatchedItem" Text="Mark as Watched" Click="OnWatchedClick" />
+                  <MenuFlyoutItem x:Name="SeriesItem" Text="Go to Series" Click="OnSeriesClick" Visibility="Collapsed" />
+                </MenuFlyout>
+              </Button.Flyout>
+            </Button>
+          </StackPanel>
+          <TextBlock x:Name="ActionStatus" Margin="0,6,0,0" FontSize="10.3" Foreground="{StaticResource SkylineCaptionSubtitle}" />
+        </StackPanel>
+
+        <!-- Series: Show / Season tabs and the episode rail, inside the first screen. -->
+        <StackPanel x:Name="EpisodesSection" Margin="0,8,0,0" Visibility="Collapsed">
+          <ItemsControl x:Name="Seasons" IsTabStop="False">
             <ItemsControl.Template>
               <ControlTemplate TargetType="ItemsControl">
-                <ScrollViewer HorizontalScrollMode="Enabled" HorizontalScrollBarVisibility="Hidden" VerticalScrollMode="Disabled" Padding="0,6,50,6">
+                <ScrollViewer HorizontalScrollMode="Enabled" HorizontalScrollBarVisibility="Hidden" VerticalScrollMode="Disabled" Padding="50,4,50,4">
                   <ItemsPresenter />
                 </ScrollViewer>
               </ControlTemplate>
             </ItemsControl.Template>
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
-                <StackPanel Orientation="Horizontal" Spacing="7" />
+                <StackPanel Orientation="Horizontal" Spacing="6" />
               </ItemsPanelTemplate>
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="views:SeasonView">
-                <ToggleButton Content="{x:Bind Title}" Style="{StaticResource SkylineChipStyle}" Click="OnSeasonClick" />
+                <ToggleButton Content="{x:Bind Title}" Style="{StaticResource SkylineChipStyle}" Click="OnSeasonClick" GotFocus="OnSeasonFocus" />
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
-          <ListView x:Name="Episodes" ItemTemplate="{StaticResource EpisodeTemplate}" ItemContainerStyle="{StaticResource SkylineCardItemStyle}"
-                    SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnEpisodeClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur"
-                    Padding="50,9,0,9" ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden"
+          <ListView x:Name="Episodes" ItemTemplate="{StaticResource EpisodeTemplate}" SelectionMode="None" IsItemClickEnabled="True"
+                    ItemClick="OnEpisodeClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur" Height="155"
+                    Padding="50,10,0,6" ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden"
                     ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+            <ListView.ItemContainerStyle>
+              <Style TargetType="ListViewItem" BasedOn="{StaticResource SkylineCardItemStyle}">
+                <Setter Property="Margin" Value="0,0,20,0" />
+              </Style>
+            </ListView.ItemContainerStyle>
             <ListView.ItemsPanel>
               <ItemsPanelTemplate>
                 <ItemsStackPanel Orientation="Horizontal" />
@@ -150,11 +166,8 @@
         </StackPanel>
 
         <!-- Cast & Crew. -->
-        <StackPanel x:Name="CastSection" Spacing="10" Visibility="Collapsed">
-          <StackPanel Spacing="5" Margin="50,0,50,0">
-            <TextBlock Text="CAST" FontSize="12" FontWeight="Bold" CharacterSpacing="125" Foreground="#B3FFFFFF" />
-            <TextBlock Text="&amp; Crew" FontSize="18" FontWeight="SemiBold" />
-          </StackPanel>
+        <StackPanel x:Name="CastSection" Margin="0,36,0,0" Spacing="10" Visibility="Collapsed">
+          <TextBlock Text="Cast &amp; Crew" Margin="50,0,50,0" FontSize="17.2" FontWeight="SemiBold" />
           <ListView x:Name="Cast" ItemTemplate="{StaticResource CastTemplate}" SelectionMode="None" IsItemClickEnabled="False"
                     GotFocus="OnCardFocus" LostFocus="OnCardBlur"
                     Padding="50,12,0,12" ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden"

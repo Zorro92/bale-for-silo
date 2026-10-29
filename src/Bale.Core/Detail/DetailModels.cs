@@ -13,6 +13,7 @@ namespace Bale.Core.Detail;
 /// <param name="CreditLine">"Starring A, B, C" on a series, "Directed by X" on a movie.</param>
 /// <param name="PlayTargetId">What Play starts: the next-up episode for a series, the item itself otherwise.</param>
 /// <param name="ResumeSeconds">Where Play resumes, when there's a saved position.</param>
+/// <param name="Ratings">External ratings after the facts: "TMDB 8.3", "IMDb 7.9" (ExternalRatings.forTitle).</param>
 public sealed record ItemDetail(
     string ContentId,
     string Type,
@@ -32,10 +33,14 @@ public sealed record ItemDetail(
     string PlayTargetId,
     long? PlaySeasonNumber,
     double? ResumeSeconds,
-    ItemFlags Flags)
+    ItemFlags Flags,
+    IReadOnlyList<DisplayRating> Ratings)
 {
     public bool IsSeries => Type == "series";
 }
+
+/// <summary>One external rating: the source's mark ("TMDB", "IMDb") and its score as the source writes it ("8.3").</summary>
+public sealed record DisplayRating(string Source, string Name, string Display);
 
 /// <summary>The viewer's own flags on a title.</summary>
 public sealed record ItemFlags(bool InWatchlist, bool IsFavorite, bool Played);
@@ -45,8 +50,7 @@ public sealed record CastMember(string Name, string? Role, Uri? PhotoUrl);
 
 public sealed record SeasonChoice(long Number, string Title, long EpisodeCount);
 
-/// <summary>An episode card on the series page (TvDetailEpisodeRail).</summary>
-/// <param name="Label">"EPISODE 2 · 48m", the eyebrow above the title.</param>
+/// <summary>An episode card on the series page (TvDetailEpisodeRail), and the hero it shows when focused.</summary>
 public sealed record EpisodeCard(
     string ContentId,
     long SeasonNumber,
@@ -54,9 +58,48 @@ public sealed record EpisodeCard(
     string Title,
     string? Overview,
     Uri? StillUrl,
-    string Label,
+    DateOnly? AirDate,
+    long? RuntimeMinutes,
     double? Progress,
-    bool Played);
+    bool Played)
+{
+    private static readonly System.Globalization.CultureInfo English = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+
+    /// <summary>"S01E02 · Pilot", or the code alone (EpisodeCardCaption.title).</summary>
+    public string Caption
+    {
+        get
+        {
+            var code = $"S{SeasonNumber:00}E{EpisodeNumber:00}";
+            return string.IsNullOrWhiteSpace(Title) ? code : $"{code} · {Title.Trim()}";
+        }
+    }
+
+    /// <summary>"Aug 13, 1997  ·  22m" under the caption (EpisodeCardCaption.metadata).</summary>
+    public string CaptionMeta => string.Join("  ·  ", new[] { Date, ShortRuntime }.OfType<string>());
+
+    /// <summary>The hero's facts while the episode has focus: "Aug 13, 1997", "22 min" (TvDetailMetadata).</summary>
+    public IReadOnlyList<string> HeroFacts => new[] { Date, RuntimeMinutes is > 0 ? $"{RuntimeMinutes} min" : null }.OfType<string>().ToList();
+
+    /// <summary>"Season 1", "Episode 1" after the rating.</summary>
+    public IReadOnlyList<string> HeroTokens => new[]
+    {
+        SeasonNumber == 0 ? "Specials" : $"Season {SeasonNumber}",
+        EpisodeNumber > 0 ? $"Episode {EpisodeNumber}" : null,
+    }.OfType<string>().ToList();
+
+    /// <summary>"Pilot · While the boys…": the hero synopsis names the episode first.</summary>
+    public string HeroSynopsis => string.Join(" · ", new[] { Title, Overview }.Where(part => !string.IsNullOrWhiteSpace(part)));
+
+    private string? Date => AirDate?.ToString("MMM d, yyyy", English);
+
+    private string? ShortRuntime => RuntimeMinutes switch
+    {
+        null or <= 0 => null,
+        >= 60 => $"{RuntimeMinutes / 60}h {RuntimeMinutes % 60}m",
+        _ => $"{RuntimeMinutes}m",
+    };
+}
 
 /// <summary>Play button wording, as TvItemDetailScreen.playButtonLabel words it.</summary>
 public static class PlayLabel

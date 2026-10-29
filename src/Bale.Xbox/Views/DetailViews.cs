@@ -4,15 +4,16 @@ using Windows.UI.Xaml.Media.Imaging;
 
 namespace Bale.Xbox.Views;
 
-/// <summary>An episode card on the series page (TvDetailEpisodeRail): 180x101 still, eyebrow, title, synopsis.</summary>
+/// <summary>An episode card on the series page (TvDetailEpisodeRail, series geometry): 180x101 still, "S01E02 · Title", date and runtime.</summary>
 public sealed partial class EpisodeView
 {
     public const double StillWidth = 180;
     public const double StillHeight = 101;
 
-    public EpisodeView(EpisodeCard episode)
+    public EpisodeView(EpisodeCard episode, bool isCurrent)
     {
         Episode = episode;
+        CurrentVisibility = isCurrent ? Visibility.Visible : Visibility.Collapsed;
         ProgressVisibility = episode.Progress is > 0 ? Visibility.Visible : Visibility.Collapsed;
         ProgressFillWidth = StillWidth * (episode.Progress ?? 0);
         WatchedVisibility = episode.Played ? Visibility.Visible : Visibility.Collapsed;
@@ -24,11 +25,12 @@ public sealed partial class EpisodeView
 
     public EpisodeCard Episode { get; }
 
-    public string Label => Episode.Label;
+    public string Caption => Episode.Caption;
 
-    public string Title => Episode.Title;
+    public string CaptionMeta => Episode.CaptionMeta;
 
-    public string Overview => Episode.Overview ?? string.Empty;
+    /// <summary>The next-up episode's still keeps a 2 px white @ 70% border.</summary>
+    public Visibility CurrentVisibility { get; }
 
     public BitmapImage? Still { get; }
 
@@ -63,12 +65,13 @@ public sealed partial class CastView
     public Visibility PlaceholderVisibility { get; }
 }
 
-/// <summary>A season chip.</summary>
+/// <summary>A tab in the series mode row: "Show" (no season), then each season (TvSeriesModePicker).</summary>
 public sealed partial class SeasonView
 {
-    public SeasonView(SeasonChoice season) => Season = season;
+    public SeasonView(SeasonChoice? season) => Season = season;
 
-    public SeasonChoice Season { get; }
+    /// <summary>Null for the "Show" tab.</summary>
+    public SeasonChoice? Season { get; }
 
-    public string Title => Season.Title;
+    public string Title => Season?.Title ?? "Show";
 }

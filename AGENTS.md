@@ -16,7 +16,7 @@ Where to look:
 |---|---|
 | Sizes, colors, type, components | `Silo-Server/silo-android` → `androidTvApp/src/androidMain/kotlin/org/siloserver/silo/tv/ui/{theme,components,shell,screens}` |
 | Information architecture, focus model, motion | `Silo-Server/silo-apple` → `docs/skyline-design-guide.md`, `docs/tvos-focus.md` |
-| What a screen looks like | `silo-android/ui-validation/*.png`, `silo-apple/docs/superpowers/reference/tvos-detail/*.png` |
+| What a screen looks like **today** | The real app: `scripts/silo-tv-reference.sh` runs the newest official Android TV APK in an emulator here (screenshot it next to Bale). The repo PNGs (`ui-validation/`, `tvos-detail/`) are months old and no longer match. |
 | API behavior and payloads | `Silo-Server/silo-server` → `contracts/api/v2/openapi.json`; the Android `shared` module for how clients use it |
 
 Read the Kotlin with `gh api repos/Silo-Server/silo-android/contents/<path> --jq .content | base64 -d`.
@@ -68,6 +68,19 @@ MSIX (~2 min). Then, with `XBOX_HOST` set to the console's IP:
 screenshot. Don't report a change as working from a successful build alone. The debug server
 (`Services/DebugServer.cs`, port 8790) is compiled into development builds only; build anything
 shipped with `-p:BaleDebugServer=false`.
+
+## Focus building blocks (use them on every page)
+
+Most focus bugs so far were the same few, re-solved page by page. Don't hand-roll these:
+
+- **Every horizontal row is a `Services/Rail`** (`Rail.Attach(listOrItemsControl)`): Left/Right stop
+  at its ends instead of jumping to another row, entering it lands on the remembered or selected item,
+  the focused card pins to the start padding, and its bring-into-view never scrolls the page. Pages
+  move vertically only on purpose (`Entered` → row pinning, section anchors), as the official apps do.
+- **Grids** stop Left/Right at row ends too (see `SearchPage.OnResultsPreviewKeyDown`).
+- **Bumpers, triggers and Page Up/Down do nothing**, app-wide (`App.OnPreviewKeyDown`); the official
+  app handles none of them, and a ScrollViewer would page away from focus.
+- **Back to a page restores its focus** through `IRestoresFocus` + `FocusRetry`.
 
 ## Native AOT + UWP pitfalls (all hit for real)
 

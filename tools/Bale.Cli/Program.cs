@@ -6,6 +6,7 @@
 //   bale-cli profiles              list the signed-in account's profiles
 //   bale-cli home [--json]         print the home rows Bale would show
 //   bale-cli detail <content-id>   print a title's detail page as Bale shows it
+//   bale-cli search <query>        print search results and their artwork
 //   bale-cli logout
 //
 // Run with: dotnet run --project tools/Bale.Cli -- <command> ...
@@ -84,7 +85,7 @@ switch (command)
         }
     }
 
-    case "profiles" or "home" or "logout" or "detail":
+    case "profiles" or "home" or "logout" or "detail" or "search":
     {
         using var client = await CliSession.ResumeAsync(identity, cts.Token);
         if (client is null)
@@ -118,6 +119,22 @@ switch (command)
             return 0;
         }
 
+        if (command == "search")
+        {
+            if (args.Length < 2)
+            {
+                return Usage();
+            }
+
+            foreach (var card in await client.Browse.SearchAsync(string.Join(' ', args.Skip(1)), ArtworkWidths.Tv1080, cancellationToken: cts.Token))
+            {
+                Console.WriteLine($"{card.Title} [{card.Type} {card.ContentId}]");
+                Console.WriteLine($"  image: {card.ImageUrl?.ToString() ?? "(none)"}");
+            }
+
+            return 0;
+        }
+
         if (command == "detail")
         {
             if (args.Length < 2)
@@ -128,7 +145,7 @@ switch (command)
             var detail = await client.Detail.LoadAsync(args[1], cts.Token);
             Console.WriteLine($"{detail.Title}{(detail.Subtitle is null ? "" : " — " + detail.Subtitle)}  [{detail.Type}]");
             Console.WriteLine($"  {string.Join(" · ", detail.SourceTokens)}  {detail.ContentRating}");
-            Console.WriteLine($"  {string.Join(" · ", detail.Facts)}  {string.Join(" ", detail.QualityBadges)}");
+            Console.WriteLine($"  {string.Join(" · ", detail.Facts)}  {string.Join(" ", detail.Ratings.Select(r => r.Name + " " + r.Display))}  {string.Join(" ", detail.QualityBadges)}");
             Console.WriteLine($"  {detail.Tagline}");
             Console.WriteLine($"  {detail.CreditLine}");
             Console.WriteLine($"  flags: {detail.Flags}  play: {detail.PlayTargetId} (season {detail.PlaySeasonNumber})");
@@ -143,7 +160,7 @@ switch (command)
                 Console.WriteLine($"  play button: {PlayLabel.For(detail, nextUp)}");
                 foreach (var episode in episodes.Take(3))
                 {
-                    Console.WriteLine($"    {episode.Label} — {episode.Title}{(episode.Played ? " (watched)" : "")}");
+                    Console.WriteLine($"    {episode.Caption}  ({episode.CaptionMeta}){(episode.Played ? " (watched)" : "")}");
                 }
             }
             else
@@ -186,7 +203,7 @@ catch (Bale.Core.Api.Models.Problem problem)
 
 static int Usage()
 {
-    Console.Error.WriteLine("usage: bale-cli <capability|pair-test|login> <server> | <profiles|home [--json]|detail <id>|logout>");
+    Console.Error.WriteLine("usage: bale-cli <capability|pair-test|login> <server> | <profiles|home [--json]|detail <id>|search <query>|logout>");
     return 2;
 }
 

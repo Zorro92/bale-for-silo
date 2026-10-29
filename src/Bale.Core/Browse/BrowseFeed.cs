@@ -60,19 +60,28 @@ public sealed class BrowseFeed
     }
 
     /// <summary>Movies, series and episodes matching <paramref name="query"/>, best match first.</summary>
-    public async Task<IReadOnlyList<MediaCard>> SearchAsync(string query, ArtworkWidths widths, int limit = 48, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Search as TvSearchViewModel runs it: the catalog's query source, with no type for All and
+    /// "movie" or "series" for the filter chips. An episode hit is captioned with its own title and
+    /// year, as the official search grid shows it.
+    /// </summary>
+    public async Task<IReadOnlyList<MediaCard>> SearchAsync(string query, ArtworkWidths widths, string? type = null, int limit = 48, CancellationToken cancellationToken = default)
     {
         var response = await _api.Api.V2.Catalog.GetAsync(config =>
         {
             config.QueryParameters.Q = query;
-            config.QueryParameters.Type = "video_with_episodes";
+            config.QueryParameters.Type = type;
             config.QueryParameters.Limit = limit;
             config.QueryParameters.PosterWidth = widths.Poster;
             config.QueryParameters.BackdropWidth = widths.Backdrop;
             config.QueryParameters.LogoWidth = widths.Logo;
         }, cancellationToken).ConfigureAwait(false);
 
-        return (response?.Items ?? []).Select(item => ToCard(item, CardShape.Poster)).ToList();
+        return (response?.Items ?? [])
+            .Select(item => ToCard(item, CardShape.Poster) is var card && item.Type == "episode" && !string.IsNullOrWhiteSpace(item.Title)
+                ? card with { Title = item.Title!, Subtitle = item.Year is > 0 ? item.Year.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : null }
+                : card)
+            .ToList();
     }
 
     /// <summary>The libraries this profile can see, grouped into the top bar's content-type tabs.</summary>

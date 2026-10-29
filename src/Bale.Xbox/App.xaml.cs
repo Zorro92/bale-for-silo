@@ -1,9 +1,11 @@
 using Bale.Xbox.Services;
 using Windows.ApplicationModel.Activation;
+using Windows.System;
 using Windows.UI.Core;
 using Windows.UI.ViewManagement;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Input;
 
 namespace Bale.Xbox;
 
@@ -40,6 +42,7 @@ public sealed partial class App : Application
             // Inter for everything under the root frame (literal path: resources can't be read from code under AOT).
             frame = new Frame { FontFamily = new Windows.UI.Xaml.Media.FontFamily("ms-appx:///Assets/Fonts/InterVariable.ttf#Inter Variable") };
             Window.Current.Content = frame;
+            frame.PreviewKeyDown += OnPreviewKeyDown;
             SystemNavigationManager.GetForCurrentView().BackRequested += (_, args) => OnBackRequested(frame, args);
         }
 
@@ -75,6 +78,21 @@ public sealed partial class App : Application
     }
 #endif
 
+    /// <summary>
+    /// Bumpers, triggers and Page Up/Down do nothing anywhere, as on Silo's Android TV app, which
+    /// handles none of them. Left alone, a ScrollViewer pages its content with them and leaves focus
+    /// behind, off screen. Runs on the tunnelling pass so no ScrollViewer sees them.
+    /// </summary>
+    private static void OnPreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key is VirtualKey.GamepadLeftShoulder or VirtualKey.GamepadRightShoulder
+            or VirtualKey.GamepadLeftTrigger or VirtualKey.GamepadRightTrigger
+            or VirtualKey.PageUp or VirtualKey.PageDown)
+        {
+            e.Handled = true;
+        }
+    }
+
     private static void OnBackRequested(Frame frame, BackRequestedEventArgs args)
     {
         if (frame.Content is IBackHandler page && page.OnBack())
@@ -84,7 +102,6 @@ public sealed partial class App : Application
         // Never Back into sign-in: once signed in, Back from Home leaves the app (Skyline §7).
         else if (frame.CanGoBack && frame.BackStack[frame.BackStack.Count - 1].SourcePageType != typeof(MainPage))
         {
-            Log.Info($"Back: {frame.Content?.GetType().Name} -> {frame.BackStack[frame.BackStack.Count - 1].SourcePageType.Name}");
             frame.GoBack();
             args.Handled = true;
         }

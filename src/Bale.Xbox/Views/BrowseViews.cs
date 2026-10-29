@@ -24,11 +24,7 @@ public sealed partial class RowView
         var landscape = row.Shape == CardShape.Landscape;
         IconVisibility = landscape ? Visibility.Visible : Visibility.Collapsed;
         Cards = row.Cards
-            .Select((card, index) => new CardView(card, row.Title, landscape ? ThumbWidth : PosterWidth, landscape ? ThumbHeight : PosterHeight, landscape)
-            {
-                IsFirst = index == 0,
-                IsLast = index == row.Cards.Count - 1,
-            })
+            .Select(card => new CardView(card, row.Title, landscape ? ThumbWidth : PosterWidth, landscape ? ThumbHeight : PosterHeight, landscape))
             .ToList();
     }
 
@@ -40,6 +36,9 @@ public sealed partial class RowView
     public Visibility IconVisibility { get; }
 
     public IReadOnlyList<CardView> Cards { get; }
+
+    /// <summary>The card focus last sat on in this row: Up/Down come back to it (TvMediaRow's focusRestorer).</summary>
+    public CardView? LastFocused { get; set; }
 }
 
 public sealed partial class CardView
@@ -62,6 +61,7 @@ public sealed partial class CardView
         {
             // Decode at the drawn size (x2 device pixels) so long rows stay light on memory.
             Image = new BitmapImage { DecodePixelType = DecodePixelType.Logical, DecodePixelWidth = (int)Math.Ceiling(width), UriSource = card.ImageUrl };
+            Image.ImageFailed += (_, e) => Services.Log.Info($"Image failed for {card.Title} ({card.ImageUrl.Host}{card.ImageUrl.AbsolutePath}): {e.ErrorMessage}");
         }
     }
 
@@ -69,11 +69,6 @@ public sealed partial class CardView
 
     /// <summary>Which row the card came from.</summary>
     public string RowTitle { get; }
-
-    /// <summary>Ends of the rail: Left/Right stop here instead of wandering into another row.</summary>
-    public bool IsFirst { get; init; }
-
-    public bool IsLast { get; init; }
 
     public string Title => Card.Title;
 

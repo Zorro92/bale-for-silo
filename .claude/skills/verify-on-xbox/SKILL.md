@@ -18,7 +18,9 @@ Find how the official client does it, so the check has a target:
 - Behavior and values: `Silo-Server/silo-android`, `androidTvApp/src/androidMain/kotlin/org/siloserver/silo/tv/ui/...`
   (`gh api repos/Silo-Server/silo-android/contents/<path> --jq .content | base64 -d`).
 - Design intent and focus model: `Silo-Server/silo-apple` `docs/skyline-design-guide.md`, `docs/tvos-focus.md`.
-- Reference screenshots: `silo-android/ui-validation/`, `silo-apple/docs/superpowers/reference/tvos-detail/`.
+- What it looks like now: drive the real app with `scripts/silo-tv-reference.sh` (`start`, `key …`,
+  `shot ref.png`) to the same screen and state, and compare with Bale's screenshot. Halve its
+  1920x1080 pixels for Bale's layout units. The PNGs in the official repos are out of date.
 
 Write down the expected result in one or two lines (e.g. "Down from the top bar returns to the
 last-focused card, TvMainShell focusRestorer").

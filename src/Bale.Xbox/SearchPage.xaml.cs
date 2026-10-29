@@ -1,8 +1,11 @@
 using Bale.Core.Browse;
 using Bale.Xbox.Services;
 using Bale.Xbox.Views;
+using Windows.System;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Controls.Primitives;
+using Windows.UI.Xaml.Input;
 
 namespace Bale.Xbox;
 
@@ -20,6 +23,9 @@ public sealed partial class SearchPage : Page, IRestoresFocus
     private bool _focusedOnce;
     private CardView? _lastResult;
     private CancellationTokenSource? _search;
+
+    /// <summary>The filter chip's catalog type: null for All, "movie", "series" (TvSearchMediaType).</summary>
+    private string? _type;
 
     public SearchPage()
     {
@@ -40,6 +46,49 @@ public sealed partial class SearchPage : Page, IRestoresFocus
             _typing.Stop();
             await SearchAsync(QueryBox.Text.Trim());
         };
+        Results.PreviewKeyDown += OnResultsPreviewKeyDown;
+    }
+
+    private async void OnFilterClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ToggleButton chip)
+        {
+            return;
+        }
+
+        _type = chip.Tag is string { Length: > 0 } type ? type : null;
+        foreach (var other in Filters.Children.OfType<ToggleButton>())
+        {
+            other.IsChecked = ReferenceEquals(other, chip);
+        }
+
+        await SearchAsync(QueryBox.Text.Trim());
+    }
+
+    /// <summary>
+    /// Left/Right stay on the row, as in the official grid (a LazyVerticalGrid doesn't wrap): the
+    /// GridView would otherwise carry Right from a row's last poster to the next row's first.
+    /// </summary>
+    private void OnResultsPreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        var step = e.Key switch
+        {
+            VirtualKey.Left or VirtualKey.GamepadDPadLeft or VirtualKey.GamepadLeftThumbstickLeft => -1,
+            VirtualKey.Right or VirtualKey.GamepadDPadRight or VirtualKey.GamepadLeftThumbstickRight => 1,
+            _ => 0,
+        };
+        if (step == 0 || e.OriginalSource is not ContentControl item || Results.ItemsPanelRoot is not { } panel)
+        {
+            return;
+        }
+
+        var index = Results.IndexFromContainer(item);
+        var top = panel.Children.OfType<FrameworkElement>().FirstOrDefault()?.ActualOffset.Y;
+        var columns = Math.Max(1, panel.Children.OfType<FrameworkElement>().Count(child => child.ActualOffset.Y == top));
+        if (index < 0 || (step < 0 && index % columns == 0) || (step > 0 && (index % columns == columns - 1 || index == Results.Items.Count - 1)))
+        {
+            e.Handled = true;
+        }
     }
 
     private void OnQueryChanged(object sender, TextChangedEventArgs e)
@@ -55,21 +104,29 @@ public sealed partial class SearchPage : Page, IRestoresFocus
         {
             Results.ItemsSource = null;
             Status.Text = string.Empty;
+            ShowEmpty("Search your library", "Find movies and series in one place.");
             return;
         }
 
         var search = _search = new CancellationTokenSource();
-        Status.Text = "Searching…";
         try
         {
-            var cards = await client.Browse.SearchAsync(query, ArtworkWidths.Tv1080, cancellationToken: search.Token);
+            var cards = await client.Browse.SearchAsync(query, ArtworkWidths.Tv1080, _type, cancellationToken: search.Token);
             if (search.IsCancellationRequested)
             {
                 return;
             }
 
             Results.ItemsSource = cards.Select(card => new CardView(card, "Search", PosterWidth, PosterHeight, landscape: false)).ToList();
-            Status.Text = cards.Count == 0 ? $"Nothing matches “{query}”." : string.Empty;
+            Status.Text = cards.Count == 0 ? string.Empty : $"{cards.Count} result{(cards.Count == 1 ? string.Empty : "s")}";
+            if (cards.Count == 0)
+            {
+                ShowEmpty($"No matches for “{query}”", "Try a shorter title or a different filter.");
+            }
+            else
+            {
+                EmptyState.Visibility = Visibility.Collapsed;
+            }
         }
         catch (OperationCanceledException)
         {
@@ -79,6 +136,13 @@ public sealed partial class SearchPage : Page, IRestoresFocus
             Log.Error("Search", ex);
             Status.Text = $"Search failed. {ex.Message}";
         }
+    }
+
+    private void ShowEmpty(string title, string body)
+    {
+        EmptyTitle.Text = title;
+        EmptyBody.Text = body;
+        EmptyState.Visibility = Visibility.Visible;
     }
 
     private void OnResultFocus(object sender, RoutedEventArgs e)

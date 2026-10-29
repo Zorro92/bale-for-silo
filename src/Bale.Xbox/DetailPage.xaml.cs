@@ -7,6 +7,7 @@ using Windows.UI.Xaml;
 using Windows.UI.Xaml.Automation;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Controls.Primitives;
+using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Media.Imaging;
 using Windows.UI.Xaml.Navigation;
@@ -21,11 +22,18 @@ public sealed partial class DetailPage : Page
     /// <summary>TvDetailHero's 0.42 sampled-tint strength over black.</summary>
     private const double TintStrength = 0.42;
 
+    /// <summary>Where a body section's top lands when focus enters it (DetailSectionAnchorFraction).</summary>
+    private const double SectionAnchor = 0.18;
+
+    private readonly Rail _seasonsRail;
+    private readonly Rail _episodesRail;
+    private readonly Rail _castRail;
     private string _contentId = string.Empty;
     private ItemDetail? _detail;
     private EpisodeCard? _nextUp;
     private MaskedArt? _art;
-    private List<SeasonView> _seasons = new();
+    private List<SeasonView> _tabs = new();
+    private SeasonView? _selectedTab;
     private long? _shownSeason;
     private bool _busy;
 
@@ -47,6 +55,38 @@ public sealed partial class DetailPage : Page
                 Log.Error("Detail art", ex);
             }
         };
+
+        // Show / Season tabs reveal the focused tab without pinning; entering lands on the selected one.
+        _seasonsRail = Rail.Attach(Seasons);
+        _seasonsRail.Pin = false;
+        _seasonsRail.EntryItem = () => _selectedTab;
+        _seasonsRail.Entered += () => ScrollTo(0);
+
+        _episodesRail = Rail.Attach(Episodes);
+        _episodesRail.Entered += () => ScrollTo(0);
+        _episodesRail.ItemFocused += (_, item) => OnEpisodeFocused(item as EpisodeView);
+        _episodesRail.EdgeReached += step => _ = StepSeasonAsync(step);
+
+        _castRail = Rail.Attach(Cast);
+        _castRail.Entered += () => AnchorSection(CastSection);
+
+        ActionButton.Attach(StartOverButton);
+        ActionButton.Attach(WatchlistButton);
+        ActionButton.Attach(MoreButton);
+
+        // Entering the action row from outside always lands on Play (HeroActionRow's focusProperties enter).
+        Actions.GettingFocus += OnActionsGettingFocus;
+        Actions.GotFocus += (_, _) =>
+        {
+            ScrollTo(0);
+            if (_detail is { } detail && _selectedTab?.Season is null)
+            {
+                ShowEditorial(detail, null);
+            }
+        };
+
+        // The page moves only by the anchors above, never by a focused element's own bring-into-view.
+        PageContent.BringIntoViewRequested += (_, args) => args.Handled = true;
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -96,13 +136,12 @@ public sealed partial class DetailPage : Page
 
     private void ShowHero(ItemDetail detail)
     {
-        TitleText.Text = detail.Title.ToUpperInvariant();
+        TitleText.Text = detail.Title;
         TitleText.Opacity = 1;
         TitleLogo.Opacity = 0;
         if (detail.LogoUrl is { } logo)
         {
             // The logo replaces the text title once decoded; a broken logo never blanks the title.
-            TitleSlot.Height = LogoHeight;
             var image = new BitmapImage { DecodePixelType = DecodePixelType.Logical, DecodePixelHeight = (int)LogoHeight, UriSource = logo };
             image.ImageOpened += (_, _) =>
             {
@@ -114,12 +153,12 @@ public sealed partial class DetailPage : Page
 
         SubtitleText.Text = detail.Subtitle ?? string.Empty;
         SubtitleText.Visibility = string.IsNullOrEmpty(detail.Subtitle) ? Visibility.Collapsed : Visibility.Visible;
-        ShowMetadata(detail);
-        Synopsis.Text = detail.Overview ?? string.Empty;
+        ShowEditorial(detail, null);
         CreditLine.Text = detail.CreditLine ?? string.Empty;
-        CreditLine.Visibility = detail.CreditLine is null ? Visibility.Collapsed : Visibility.Visible;
 
         PlayLabel.Text = Core.Detail.PlayLabel.For(detail, _nextUp);
+        // tvOS reserves a fixed width for the series Play label so the round actions never shift.
+        PlayButton.Width = detail.IsSeries ? 170 : double.NaN;
         StartOverButton.Visibility = detail.ResumeSeconds is > 0 ? Visibility.Visible : Visibility.Collapsed;
         SeriesItem.Visibility = detail.Type == "episode" && detail.SeriesId is not null ? Visibility.Visible : Visibility.Collapsed;
         ShowFlags(detail.Flags);
@@ -132,46 +171,63 @@ public sealed partial class DetailPage : Page
     }
 
     /// <summary>
-    /// TvDetailHero.MetadataRow: the outlined rating chip leads, then the facts and quality chips, then
-    /// type and genres, separated by dots. Built in code: resources can't be read from code under AOT.
+    /// The facts line and synopsis: the title's own, or the focused episode's on a series (air date and
+    /// runtime replace the show's facts; the content rating and external ratings stay;
+    /// TvDetailMetadata.seriesEpisodeFactsLine).
     /// </summary>
-    private void ShowMetadata(ItemDetail detail)
+    private void ShowEditorial(ItemDetail detail, EpisodeCard? episode)
+    {
+        if (episode is null)
+        {
+            ShowMetadata(detail.ContentRating, detail.Facts, detail.Ratings, detail.SourceTokens);
+            Synopsis.Text = detail.Overview ?? string.Empty;
+        }
+        else
+        {
+            ShowMetadata(detail.ContentRating, episode.HeroFacts, detail.Ratings, episode.HeroTokens);
+            Synopsis.Text = episode.HeroSynopsis;
+        }
+    }
+
+    /// <summary>
+    /// TvDetailHero.MetadataRow / TvFactsRow: the outlined content-rating chip leads, then facts,
+    /// external ratings and the type and genres, with dots between them. Built in code: resources
+    /// can't be read from code under AOT.
+    /// </summary>
+    private void ShowMetadata(string? contentRating, IReadOnlyList<string> facts, IReadOnlyList<DisplayRating> ratings, IReadOnlyList<string> trailing)
     {
         Metadata.Children.Clear();
-        if (detail.ContentRating is { } rating)
+        if (contentRating is not null)
         {
-            Metadata.Children.Add(Chip(rating, Color.FromArgb(0xB3, 0xFF, 0xFF, 0xFF), FontWeightsBlack()));
+            Metadata.Children.Add(Chip(contentRating));
         }
 
-        // Facts, then their quality chips, then type and genres; dots between text tokens.
         var tokens = 0;
-        void AddToken(string token)
+        void Add(UIElement token)
         {
             if (tokens++ > 0)
             {
                 Metadata.Children.Add(Text("·", Color.FromArgb(0x73, 0xFF, 0xFF, 0xFF)));
             }
 
-            Metadata.Children.Add(Text(token, Color.FromArgb(0xE0, 0xFF, 0xFF, 0xFF)));
+            Metadata.Children.Add(token);
         }
 
-        foreach (var fact in detail.Facts)
+        foreach (var fact in facts)
         {
-            AddToken(fact);
+            Add(Text(fact, Color.FromArgb(0xE0, 0xFF, 0xFF, 0xFF)));
         }
 
-        foreach (var badge in detail.QualityBadges)
+        foreach (var rating in ratings)
         {
-            Metadata.Children.Add(Chip(badge, Color.FromArgb(0xB3, 0xFF, 0xFF, 0xFF), FontWeightsBlack()));
+            Add(Rating(rating));
         }
 
-        foreach (var source in detail.SourceTokens)
+        foreach (var token in trailing)
         {
-            AddToken(source);
+            Add(Text(token, Color.FromArgb(0xE0, 0xFF, 0xFF, 0xFF)));
         }
     }
-
-    private static Windows.UI.Text.FontWeight FontWeightsBlack() => Windows.UI.Text.FontWeights.Black;
 
     private static TextBlock Text(string text, Color color) => new()
     {
@@ -183,20 +239,56 @@ public sealed partial class DetailPage : Page
     };
 
     /// <summary>TvDetailHero.RatingChip: 0.75 px white @ 70% outline, 2.5 px corners.</summary>
-    private static Border Chip(string text, Color border, Windows.UI.Text.FontWeight weight) => new()
+    private static Border Chip(string text) => new()
     {
-        BorderBrush = new SolidColorBrush(border),
+        BorderBrush = new SolidColorBrush(Color.FromArgb(0xB3, 0xFF, 0xFF, 0xFF)),
         BorderThickness = new Thickness(0.75),
         CornerRadius = new CornerRadius(2.5),
         Padding = new Thickness(6, 1.5, 6, 1.5),
         VerticalAlignment = VerticalAlignment.Center,
-        Child = new TextBlock { Text = text, FontSize = 9, FontWeight = weight, CharacterSpacing = 30, Foreground = new SolidColorBrush(Colors.White) },
+        Child = new TextBlock { Text = text, FontSize = 9, FontWeight = Windows.UI.Text.FontWeights.Black, CharacterSpacing = 30, Foreground = new SolidColorBrush(Colors.White) },
     };
+
+    /// <summary>
+    /// A rating as its source's mark and score (RatingEntry): TMDB's green-to-blue wordmark and bar,
+    /// IMDb's yellow tag, or the source's plain name.
+    /// </summary>
+    private static StackPanel Rating(DisplayRating rating)
+    {
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+        switch (rating.Source)
+        {
+            case "tmdb":
+                var tmdb = new LinearGradientBrush { StartPoint = new Windows.Foundation.Point(0, 0.5), EndPoint = new Windows.Foundation.Point(1, 0.5) };
+                tmdb.GradientStops.Add(new GradientStop { Offset = 0, Color = Color.FromArgb(0xFF, 0x90, 0xCE, 0xA1) });
+                tmdb.GradientStops.Add(new GradientStop { Offset = 1, Color = Color.FromArgb(0xFF, 0x01, 0xB4, 0xE4) });
+                panel.Children.Add(new TextBlock { Text = "TMDB", FontSize = 10.5, FontWeight = Windows.UI.Text.FontWeights.Black, CharacterSpacing = 80, Foreground = tmdb, VerticalAlignment = VerticalAlignment.Center });
+                panel.Children.Add(new Border { Width = 22, Height = 8, CornerRadius = new CornerRadius(4), Background = new SolidColorBrush(Color.FromArgb(0xFF, 0x01, 0xB4, 0xE4)), VerticalAlignment = VerticalAlignment.Center });
+                break;
+            case "imdb":
+                panel.Children.Add(new Border
+                {
+                    Background = new SolidColorBrush(Color.FromArgb(0xFF, 0xF5, 0xC5, 0x18)),
+                    CornerRadius = new CornerRadius(2),
+                    Padding = new Thickness(3, 0, 3, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Child = new TextBlock { Text = "IMDb", FontSize = 9.5, FontWeight = Windows.UI.Text.FontWeights.Black, Foreground = new SolidColorBrush(Colors.Black) },
+                });
+                break;
+            default:
+                panel.Children.Add(Text(rating.Name, Color.FromArgb(0xB3, 0xFF, 0xFF, 0xFF)));
+                break;
+        }
+
+        panel.Children.Add(new TextBlock { Text = rating.Display, FontSize = 12, FontWeight = Windows.UI.Text.FontWeights.SemiBold, Foreground = new SolidColorBrush(Color.FromArgb(0xE0, 0xFF, 0xFF, 0xFF)), VerticalAlignment = VerticalAlignment.Center });
+        return panel;
+    }
 
     private void ShowFlags(ItemFlags flags)
     {
-        WatchlistButton.Content = flags.InWatchlist ? "" : "";
-        AutomationProperties.SetName(WatchlistButton, flags.InWatchlist ? "Remove from Watchlist" : "Add to Watchlist");
+        // Bookmark outline, filled once it's on the watchlist.
+        WatchlistIcon.Fill = flags.InWatchlist ? new SolidColorBrush(WatchlistButton.FocusState == FocusState.Unfocused ? Colors.White : Colors.Black) : null;
+        AutomationProperties.SetName(WatchlistButton, flags.InWatchlist ? "Remove from watchlist" : "Add to watchlist");
         FavoriteItem.Text = flags.IsFavorite ? "Remove from Favorites" : "Add to Favorites";
         WatchedItem.Text = flags.Played ? "Mark as Unwatched" : "Mark as Watched";
     }
@@ -225,47 +317,120 @@ public sealed partial class DetailPage : Page
             return;
         }
 
-        _seasons = seasons.Select(season => new SeasonView(season)).ToList();
-        Seasons.ItemsSource = _seasons;
-        Seasons.Visibility = _seasons.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+        // "Show" first, then every season (TvSeriesModePicker).
+        _tabs = [new SeasonView(null), .. seasons.Select(season => new SeasonView(season))];
+        Seasons.ItemsSource = _tabs;
         EpisodesSection.Visibility = Visibility.Visible;
+        CastSection.Margin = new Thickness(0, 36, 0, 0);
 
-        // Open on the next-up episode's season, as the official apps do.
-        var start = seasons.FirstOrDefault(season => season.Number == detail.PlaySeasonNumber) ?? seasons[0];
-        await ShowSeasonAsync(feed, detail, start);
+        // The page opens on the show, with the next-up episode's season in the rail.
+        await SelectTabAsync(_tabs[0]);
     }
 
-    private async Task ShowSeasonAsync(DetailFeed feed, ItemDetail detail, SeasonChoice season)
-    {
-        _shownSeason = season.Number;
-        SeasonEyebrow.Text = season.Title.ToUpperInvariant();
-        EpisodeCount.Text = $"{season.EpisodeCount} episode{(season.EpisodeCount == 1 ? string.Empty : "s")}";
-        UpdateSeasonChips();
+    /// <summary>The next-up episode's season, which the "Show" tab lists.</summary>
+    private SeasonChoice? PlaySeason() =>
+        _tabs.Select(tab => tab.Season).FirstOrDefault(season => season?.Number == _detail?.PlaySeasonNumber)
+        ?? _tabs.Select(tab => tab.Season).FirstOrDefault(season => season is not null);
 
-        var episodes = await feed.EpisodesAsync(detail.ContentId, season.Number);
+    /// <summary>
+    /// Show and each season are focus-driven modes: landing on a tab switches to it at once, without
+    /// a press (TvSeriesModeTab). Show puts the series back in the hero.
+    /// </summary>
+    private async Task SelectTabAsync(SeasonView tab, bool focusEdge = false, int edge = 0)
+    {
+        if (_detail is not { } detail || Session.Client is not { } client)
+        {
+            return;
+        }
+
+        _selectedTab = tab;
+        UpdateTabs();
+        if (tab.Season is null)
+        {
+            ShowEditorial(detail, null);
+        }
+
+        if ((tab.Season ?? PlaySeason()) is not { } season || season.Number == _shownSeason)
+        {
+            return;
+        }
+
+        _shownSeason = season.Number;
+        var episodes = await client.Detail.EpisodesAsync(detail.ContentId, season.Number);
         if (_shownSeason != season.Number)
         {
             return;
         }
 
-        Episodes.ItemsSource = episodes.Select(episode => new EpisodeView(episode)).ToList();
-        if (episodes.FirstOrDefault(episode => episode.ContentId == detail.PlayTargetId) is { } nextUp)
+        var views = episodes.Select(episode => new EpisodeView(episode, episode.ContentId == detail.PlayTargetId)).ToList();
+        Episodes.ItemsSource = views;
+        if (views.FirstOrDefault(view => view.Episode.ContentId == detail.PlayTargetId) is { } nextUp)
         {
-            _nextUp = nextUp;
-            PlayLabel.Text = Core.Detail.PlayLabel.For(detail, nextUp);
+            _nextUp = nextUp.Episode;
+            PlayLabel.Text = Core.Detail.PlayLabel.For(detail, nextUp.Episode);
+        }
+
+        // Entering the rail lands on the next-up episode in its season, else the first.
+        _episodesRail.Remembered = views.FirstOrDefault(view => view.Episode.ContentId == detail.PlayTargetId) ?? views.FirstOrDefault();
+        if (focusEdge && views.Count > 0)
+        {
+            var target = edge > 0 ? views[0] : views[^1];
+            _episodesRail.Remembered = target;
+            FocusRetry.Until(Episodes, () => _episodesRail.FocusItem(target, FocusState.Keyboard));
         }
     }
 
-    private void UpdateSeasonChips()
+    private void UpdateTabs()
     {
-        Seasons.UpdateLayout();
-        foreach (var view in _seasons)
+        if (Seasons.ItemsPanelRoot is null)
         {
-            if (Seasons.ContainerFromItem(view) is DependencyObject container && FindChild<ToggleButton>(container) is { } chip)
+            Seasons.UpdateLayout();
+        }
+
+        foreach (var container in (IEnumerable<UIElement>?)Seasons.ItemsPanelRoot?.Children ?? Array.Empty<UIElement>())
+        {
+            if (container is ContentPresenter { Content: SeasonView view } presenter && FindChild<ToggleButton>(presenter) is { } tab)
             {
-                chip.IsChecked = view.Season.Number == _shownSeason;
+                tab.IsChecked = ReferenceEquals(view, _selectedTab);
             }
         }
+    }
+
+    /// <summary>Right past the last episode continues into the next season, Left past the first into the previous one.</summary>
+    private async Task StepSeasonAsync(int step)
+    {
+        try
+        {
+            var seasons = _tabs.Where(tab => tab.Season is not null).ToList();
+            var index = seasons.FindIndex(tab => tab.Season!.Number == _shownSeason);
+            if (index < 0 || index + step < 0 || index + step >= seasons.Count)
+            {
+                return;
+            }
+
+            await SelectTabAsync(seasons[index + step], focusEdge: true, edge: step);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Season step", ex);
+        }
+    }
+
+    private void OnEpisodeFocused(EpisodeView? view)
+    {
+        if (view is null || _detail is not { } detail)
+        {
+            return;
+        }
+
+        // Focusing an episode selects its season's tab and puts the episode in the hero.
+        if (_tabs.FirstOrDefault(tab => tab.Season?.Number == view.Episode.SeasonNumber) is { } tab && !ReferenceEquals(tab, _selectedTab))
+        {
+            _selectedTab = tab;
+            UpdateTabs();
+        }
+
+        ShowEditorial(detail, view.Episode);
     }
 
     private void ShowCast(ItemDetail detail)
@@ -277,21 +442,73 @@ public sealed partial class DetailPage : Page
 
         Cast.ItemsSource = detail.Cast.Take(30).Select(member => new CastView(member)).ToList();
         CastSection.Visibility = Visibility.Visible;
+        if (!detail.IsSeries)
+        {
+            CastSection.Margin = new Thickness(0, 10, 0, 0);
+        }
     }
 
-    private async void OnSeasonClick(object sender, RoutedEventArgs e)
+    private async void OnSeasonFocus(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: SeasonView view } && _detail is { } detail && Session.Client is { } client)
+        if (sender is FrameworkElement { DataContext: SeasonView view } && !ReferenceEquals(view, _selectedTab))
         {
             try
             {
-                await ShowSeasonAsync(client.Detail, detail, view.Season);
+                await SelectTabAsync(view);
             }
             catch (Exception ex)
             {
                 Log.Error("Season load", ex);
             }
         }
+    }
+
+    private async void OnSeasonClick(object sender, RoutedEventArgs e)
+    {
+        // A press re-checks the tab the toggle just unchecked; selection itself follows focus.
+        UpdateTabs();
+        if (sender is FrameworkElement { DataContext: SeasonView view } && !ReferenceEquals(view, _selectedTab))
+        {
+            await SelectTabAsync(view);
+        }
+    }
+
+    private void OnActionsGettingFocus(UIElement sender, GettingFocusEventArgs args)
+    {
+        try
+        {
+            if (!IsWithin(args.OldFocusedElement, Actions) && IsWithin(args.NewFocusedElement, Actions)
+                && !ReferenceEquals(args.NewFocusedElement, PlayButton))
+            {
+                args.TrySetNewFocusedElement(PlayButton);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Action row focus", ex);
+        }
+    }
+
+    private static bool IsWithin(DependencyObject? element, DependencyObject ancestor)
+    {
+        for (var node = element; node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (ReferenceEquals(node, ancestor))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void ScrollTo(double offset) => PageScroller.ChangeView(null, Math.Max(0, offset), null);
+
+    /// <summary>A body section's top settles 18% down the screen when focus enters it (detailBodySectionAnchor).</summary>
+    private void AnchorSection(FrameworkElement section)
+    {
+        var top = section.TransformToVisual(PageContent).TransformPoint(new Windows.Foundation.Point(0, 0)).Y;
+        ScrollTo(top - PageScroller.ViewportHeight * SectionAnchor);
     }
 
     private void OnCardFocus(object sender, RoutedEventArgs e)

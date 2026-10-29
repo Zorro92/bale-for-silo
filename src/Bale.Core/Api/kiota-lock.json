@@ -1,6 +1,6 @@
 {
   "descriptionHash": "6C02743E3E1949FE500A32E8E61B549E8A67F9253C9C6D4DF68717D7DF925C71CFF9284D45C3268B2E610534873C26897D1A42373B57B5BCD7AFE647478AC958",
-  "descriptionLocation": "../../../.cache/silo-openapi-cc8514943289045e7b9f7ac8d36d4968bfe93926.json",
+  "descriptionLocation": "../../../.cache/silo-openapi-44a345dbfb8c0a5892dc366ee0dd33fc091b7cf2.json",
   "lockFileVersion": "1.0.0",
   "kiotaVersion": "1.36.1",
   "clientClassName": "SiloApiClient",
