@@ -19,6 +19,7 @@ public sealed partial class HomePage : Page
     private MediaCard? _pendingBanner;
     private MediaCard? _shownBanner;
     private bool _loaded;
+    private bool _focusFirstRow;
 
     public HomePage()
     {
@@ -61,8 +62,7 @@ public sealed partial class HomePage : Page
             }
 
             ShowBanner(rows[0].Cards[0]);
-            await Task.Yield();
-            FocusFirstCard();
+            _focusFirstRow = true;
         }
         catch (ApiException ex) when (ex.ResponseStatusCode == 401)
         {
@@ -81,13 +81,14 @@ public sealed partial class HomePage : Page
         }
     }
 
-    private void FocusFirstCard()
+    /// <summary>Rows load top to bottom, so the first one to finish is the top row: start focus on its first card.</summary>
+    private void OnRowLoaded(object sender, RoutedEventArgs e)
     {
-        // The first row's ListView is realized once the ItemsControl has laid out.
-        if (Rows.ContainerFromIndex(0) is ContentPresenter presenter
-            && FindChild<ListView>(presenter) is { } firstRow)
+        if (_focusFirstRow && sender is ListView row)
         {
-            firstRow.Focus(FocusState.Programmatic);
+            _focusFirstRow = false;
+            // A focused ListView hands focus to its first item if the container isn't realized yet.
+            ((Control?)(row.ContainerFromIndex(0) as ListViewItem) ?? row).Focus(FocusState.Programmatic);
         }
     }
 
@@ -183,24 +184,5 @@ public sealed partial class HomePage : Page
         await Session.SignOutAsync();
         Frame.Navigate(typeof(MainPage));
         Frame.BackStack.Clear();
-    }
-
-    private static T? FindChild<T>(DependencyObject parent) where T : DependencyObject
-    {
-        for (var i = 0; i < Windows.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
-        {
-            var child = Windows.UI.Xaml.Media.VisualTreeHelper.GetChild(parent, i);
-            if (child is T match)
-            {
-                return match;
-            }
-
-            if (FindChild<T>(child) is { } nested)
-            {
-                return nested;
-            }
-        }
-
-        return null;
     }
 }
