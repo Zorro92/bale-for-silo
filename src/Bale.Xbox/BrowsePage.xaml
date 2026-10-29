@@ -56,10 +56,10 @@
         <VisualState x:Name="Library">
           <VisualState.Setters>
             <Setter Target="PillRow.Visibility" Value="Visible" />
-            <Setter Target="Marquee.Margin" Value="44,112,0,0" />
+            <Setter Target="Marquee.Margin" Value="44,104,0,0" />
             <Setter Target="MarqueeTitle.FontSize" Value="{StaticResource SkylineMarqueeTitleCompactSize}" />
             <Setter Target="MarqueeTitle.LineHeight" Value="33" />
-            <Setter Target="MarqueeLogo.MaxHeight" Value="80" />
+            <Setter Target="MarqueeLogo.MaxHeight" Value="56" />
             <Setter Target="RowsScroller.Margin" Value="0,255,0,0" />
           </VisualState.Setters>
         </VisualState>
@@ -102,13 +102,14 @@
     </Grid>
 
     <!-- Marquee: passive, never focusable, previews the focused card (guide §5.4, §5.5). -->
-    <StackPanel x:Name="Marquee" Margin="44,109,0,0" Width="440" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="6" IsHitTestVisible="False">
+    <!-- Sized to end above the first row (262) even with a logo: eyebrow 15 + logo 72 + meta 14 + 2-line synopsis 32. -->
+    <StackPanel x:Name="Marquee" Margin="44,92,0,0" Width="440" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="5" IsHitTestVisible="False">
       <StackPanel Orientation="Horizontal" Spacing="7">
         <Rectangle Width="13" Height="1.5" RadiusX="1" RadiusY="1" Fill="{StaticResource SkylineMarqueeTick}" VerticalAlignment="Center" />
         <TextBlock x:Name="Eyebrow" FontSize="{StaticResource SkylineEyebrowSize}" FontWeight="Bold" CharacterSpacing="300"
                    Foreground="{StaticResource SkylineMarqueeTick}" />
       </StackPanel>
-      <Image x:Name="MarqueeLogo" MaxHeight="100" MaxWidth="440" HorizontalAlignment="Left" Stretch="Uniform" />
+      <Image x:Name="MarqueeLogo" MaxHeight="72" MaxWidth="360" HorizontalAlignment="Left" Stretch="Uniform" />
       <TextBlock x:Name="MarqueeTitle" FontSize="{StaticResource SkylineMarqueeTitleSize}" FontWeight="ExtraBold" LineHeight="41"
                  LineStackingStrategy="BlockLineHeight" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
       <TextBlock x:Name="MarqueeMeta" FontSize="{StaticResource SkylineMetaSize}" FontWeight="Medium" Foreground="{StaticResource SkylineSecondary}" />
