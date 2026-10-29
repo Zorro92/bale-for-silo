@@ -105,6 +105,7 @@ public sealed partial class BrowsePage : Page
             // Entry focus: the first card of the first row, previewed at once (guide §6.1).
             ShowMarquee(views[0].Cards[0]);
             _focusFirstRow = true;
+            Rows.LayoutUpdated += OnRowsLayoutUpdated;
         }
         catch (ApiException ex) when (ex.ResponseStatusCode == 401)
         {
@@ -125,33 +126,45 @@ public sealed partial class BrowsePage : Page
     }
 
     /// <summary>
-    /// Rows load top to bottom, so the first to finish is the top row: start focus on its first card
-    /// once that card's container (and template) exists, so the focus ring can draw.
+    /// Entry focus: the first card of the first row (Skyline §6.1). Windows hands focus to the first
+    /// focusable control (the top bar) before the rows exist, so keep trying on each layout pass until
+    /// the card is in the tree and accepts focus.
     /// </summary>
-    private void OnRowLoaded(object sender, RoutedEventArgs e)
+    private void OnRowsLayoutUpdated(object? sender, object e)
     {
-        if (!_focusFirstRow || sender is not ListView row)
+        if (!_focusFirstRow)
         {
+            Rows.LayoutUpdated -= OnRowsLayoutUpdated;
             return;
         }
 
-        _focusFirstRow = false;
-        if (row.ContainerFromIndex(0) is ListViewItem first)
+        if (Rows.ContainerFromIndex(0) is DependencyObject rowContainer
+            && FindChild<ListView>(rowContainer) is { } row
+            && row.ContainerFromIndex(0) is ListViewItem first
+            && first.Focus(FocusState.Programmatic))
         {
-            first.Focus(FocusState.Programmatic);
-            return;
+            _focusFirstRow = false;
+            Rows.LayoutUpdated -= OnRowsLayoutUpdated;
         }
+    }
 
-        void OnRealized(ListViewBase list, ContainerContentChangingEventArgs args)
+    private static T? FindChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
         {
-            if (args.ItemIndex == 0)
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T match)
             {
-                list.ContainerContentChanging -= OnRealized;
-                _ = Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Low, () => args.ItemContainer.Focus(FocusState.Programmatic));
+                return match;
+            }
+
+            if (FindChild<T>(child) is { } nested)
+            {
+                return nested;
             }
         }
 
-        row.ContainerContentChanging += OnRealized;
+        return null;
     }
 
     private void OnCardFocus(object sender, RoutedEventArgs e)
