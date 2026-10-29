@@ -32,9 +32,9 @@
       </ItemsControl>
       <StackPanel Orientation="Horizontal" Spacing="11" HorizontalAlignment="Right" VerticalAlignment="Center">
         <!-- Content must be text, not an element: the tab template draws it twice (resting and inverted). -->
-        <ToggleButton x:Name="SearchButton" Style="{StaticResource SkylineTabStyle}" Width="28" Height="28" Padding="0" Click="OnSearchClick"
+        <ToggleButton x:Name="SearchButton" Style="{StaticResource SkylineTabStyle}" Width="30" Padding="0" Click="OnSearchClick"
                       Content="&#xE721;" FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="12" AutomationProperties.Name="Search" />
-        <Button x:Name="AvatarButton" Style="{StaticResource SkylineCapsuleStyle}" Width="28" Height="28" Padding="0"
+        <Button x:Name="AvatarButton" Style="{StaticResource SkylineCapsuleStyle}" Width="30" Padding="0"
                 Background="{StaticResource SkylineChromeSelected}" Foreground="{StaticResource SkylinePrimary}" Click="OnAvatarClick"
                 AutomationProperties.Name="Profile">
           <TextBlock x:Name="AvatarInitial" FontSize="12" FontWeight="Bold" />

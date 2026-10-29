@@ -52,7 +52,13 @@
   <CornerRadius x:Key="SkylinePanelRadius">12</CornerRadius>
   <CornerRadius x:Key="SkylineRowRadius">8</CornerRadius>
   <CornerRadius x:Key="SkylineBadgeRadius">3</CornerRadius>
-  <CornerRadius x:Key="SkylinePill">999</CornerRadius>
+  <!-- Pills need radius = half the height exactly: UWP turns larger radii into ovals, it doesn't clamp. -->
+  <x:Double x:Key="SkylineTabHeight">30</x:Double>
+  <CornerRadius x:Key="SkylineTabPill">15</CornerRadius>
+  <x:Double x:Key="SkylineButtonHeight">32</x:Double>
+  <CornerRadius x:Key="SkylineButtonPill">16</CornerRadius>
+  <x:Double x:Key="SkylineSubPillHeight">24</x:Double>
+  <CornerRadius x:Key="SkylineSubPill">12</CornerRadius>
 
   <!-- Type (Type.kt and component sizes, x 0.86). -->
   <x:Double x:Key="SkylineWordmarkSize">13</x:Double>
@@ -88,7 +94,8 @@
     <Setter Property="Padding" Value="14.5,6" />
     <Setter Property="FontSize" Value="{StaticResource SkylineTabSize}" />
     <Setter Property="FontWeight" Value="SemiBold" />
-    <Setter Property="CornerRadius" Value="{StaticResource SkylinePill}" />
+    <Setter Property="Height" Value="{StaticResource SkylineTabHeight}" />
+    <Setter Property="CornerRadius" Value="{StaticResource SkylineTabPill}" />
     <Setter Property="UseSystemFocusVisuals" Value="False" />
     <Setter Property="HorizontalContentAlignment" Value="Center" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -141,7 +148,8 @@
   <Style x:Key="SkylineTabStyle" TargetType="ToggleButton">
     <Setter Property="Foreground" Value="{StaticResource SkylineTabResting}" />
     <Setter Property="Background" Value="Transparent" />
-    <Setter Property="Padding" Value="14.5,6" />
+    <Setter Property="Height" Value="{StaticResource SkylineTabHeight}" />
+    <Setter Property="Padding" Value="14.5,0" />
     <Setter Property="FontSize" Value="{StaticResource SkylineTabSize}" />
     <Setter Property="FontWeight" Value="SemiBold" />
     <Setter Property="UseSystemFocusVisuals" Value="False" />
@@ -151,9 +159,9 @@
       <Setter.Value>
         <ControlTemplate TargetType="ToggleButton">
           <Grid>
-            <Border x:Name="SelectedFill" CornerRadius="{StaticResource SkylinePill}" Background="{StaticResource SkylineChromeSelected}"
+            <Border x:Name="SelectedFill" CornerRadius="{StaticResource SkylineTabPill}" Background="{StaticResource SkylineChromeSelected}"
                     BorderBrush="{StaticResource SkylineChromeSelectedBorder}" BorderThickness="0.5" Opacity="0" />
-            <Border x:Name="FocusFill" CornerRadius="{StaticResource SkylinePill}" Background="{StaticResource SkylinePrimary}" Opacity="0" />
+            <Border x:Name="FocusFill" CornerRadius="{StaticResource SkylineTabPill}" Background="{StaticResource SkylinePrimary}" Opacity="0" />
             <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}"
                               Foreground="{TemplateBinding Foreground}" FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}"
                               FontFamily="{TemplateBinding FontFamily}"
@@ -217,7 +225,9 @@
     <Setter Property="Background" Value="{StaticResource SkylineChromeResting}" />
     <Setter Property="BorderBrush" Value="{StaticResource SkylineHairline}" />
     <Setter Property="BorderThickness" Value="0.5" />
-    <Setter Property="Padding" Value="18,8" />
+    <Setter Property="Height" Value="{StaticResource SkylineButtonHeight}" />
+    <Setter Property="CornerRadius" Value="{StaticResource SkylineButtonPill}" />
+    <Setter Property="Padding" Value="18,0" />
     <Setter Property="FontSize" Value="{StaticResource SkylineButtonSize}" />
     <Setter Property="FontWeight" Value="SemiBold" />
   </Style>
@@ -225,8 +235,9 @@
   <!-- Rows in anchored panels (library panel, profile dropdown): left-aligned, invert on focus. -->
   <Style x:Key="SkylinePanelRowStyle" TargetType="Button" BasedOn="{StaticResource SkylineCapsuleStyle}">
     <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
+    <Setter Property="Height" Value="34" />
     <Setter Property="CornerRadius" Value="{StaticResource SkylineRowRadius}" />
-    <Setter Property="Padding" Value="12,8" />
+    <Setter Property="Padding" Value="12,0" />
     <Setter Property="FontSize" Value="{StaticResource SkylineDropdownRowSize}" />
     <Setter Property="HorizontalAlignment" Value="Stretch" />
     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -234,7 +245,7 @@
 
   <!--
     Card containers. Focus is drawn by the card template's FocusRing/FocusGlow (2 px white ring
-    and soft glow, rounded like the card) plus a 1.10 lift, set from code (CardFocus).
+    and soft glow, rounded like the card) and a 1.05 lift of the art only, captions stay put (CardFocus).
   -->
   <Style x:Key="SkylineCardItemStyle" TargetType="ListViewItem">
     <Setter Property="Padding" Value="0" />

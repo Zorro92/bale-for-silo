@@ -5,28 +5,32 @@ using Windows.UI.Xaml.Controls;
 namespace Bale.Xbox.Services;
 
 /// <summary>
-/// Silo's Android TV card focus (siloCardDefaults): a 1.10 lift with a 2 px white ring and soft glow.
-/// The ring lives in the card template as elements named FocusRing and FocusGlow.
-/// Takes the container as a ContentControl: under Native AOT, focus events report list containers as
-/// their ContentControl base, so `is ListViewItem` checks never match.
+/// Card focus as Silo's TV apps draw it: the art lifts 1.05 with a 2 px white ring and soft glow,
+/// while the caption underneath stays where it is. The card template names its art "Art" (holding
+/// FocusRing and FocusGlow). Takes the container as a ContentControl: under Native AOT, focus
+/// events report list containers as their ContentControl base, so `is ListViewItem` never matches.
 /// </summary>
 internal static class CardFocus
 {
-    public const float CardScale = 1.10f;
+    public const float ArtScale = 1.05f;
 
     private static readonly TimeSpan Duration = TimeSpan.FromMilliseconds(120);
 
-    public static void Apply(ContentControl item, bool focused, float scale = CardScale)
+    public static void Apply(ContentControl item, bool focused)
     {
-        item.ScaleTransition ??= new Vector3Transition { Duration = Duration };
-        item.CenterPoint = new Vector3((float)item.ActualWidth / 2, (float)item.ActualHeight / 2, 0);
-        var s = focused ? scale : 1f;
-        item.Scale = new Vector3(s, s, 1);
-
-        if (item.ContentTemplateRoot is FrameworkElement root)
+        if (item.ContentTemplateRoot is not FrameworkElement root)
         {
-            SetOpacity(root, "FocusRing", focused ? 1 : 0);
-            SetOpacity(root, "FocusGlow", focused ? 1 : 0);
+            return;
+        }
+
+        SetOpacity(root, "FocusRing", focused ? 1 : 0);
+        SetOpacity(root, "FocusGlow", focused ? 1 : 0);
+        if (root.FindName("Art") is FrameworkElement art)
+        {
+            art.ScaleTransition ??= new Vector3Transition { Duration = Duration };
+            art.CenterPoint = new Vector3((float)art.ActualWidth / 2, (float)art.ActualHeight / 2, 0);
+            var scale = focused ? ArtScale : 1f;
+            art.Scale = new Vector3(scale, scale, 1);
         }
     }
 

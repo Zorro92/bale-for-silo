@@ -20,7 +20,7 @@
         <GridView.ItemTemplate>
           <DataTemplate x:DataType="views:ProfileView">
             <StackPanel Width="136" Spacing="12" Margin="10">
-              <Grid Width="136" Height="136">
+              <Grid x:Name="Art" Width="136" Height="136">
                 <Grid CornerRadius="12" Background="#FF66758B">
                   <TextBlock Text="{x:Bind Initial}" FontSize="48" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                   <Image Source="{x:Bind Avatar}" Stretch="UniformToFill" />

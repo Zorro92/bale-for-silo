@@ -54,7 +54,7 @@ public sealed partial class ProfilesPage : Page
     {
         if (e.OriginalSource is ContentControl { Content: CardView or ProfileView } item)
         {
-            CardFocus.Apply(item, focused: true, scale: 1.06f);
+            CardFocus.Apply(item, focused: true);
         }
     }
 

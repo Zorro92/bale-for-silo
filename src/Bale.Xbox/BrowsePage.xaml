@@ -9,7 +9,8 @@
     <!-- TvMediaCard / TvEpisodeCard: rounded art, caption underneath, ring + glow on focus (drawn by CardFocus). -->
     <DataTemplate x:Key="CardTemplate" x:DataType="views:CardView">
       <StackPanel Width="{x:Bind Width}" Spacing="{x:Bind CaptionSpacing}">
-        <Grid Width="{x:Bind Width}" Height="{x:Bind Height}">
+        <!-- Art lifts on focus with its ring; the caption below stays put. -->
+        <Grid x:Name="Art" Width="{x:Bind Width}" Height="{x:Bind Height}">
           <Grid CornerRadius="{StaticResource SkylineCardRadius}" Background="{StaticResource SkylineCardPlaceholder}">
             <TextBlock Text="{x:Bind Title}" Visibility="{x:Bind FallbackVisibility}" TextWrapping="Wrap" TextAlignment="Center"
                        FontSize="{StaticResource SkylineCardSubtitleSize}" VerticalAlignment="Center" Margin="8" Foreground="{StaticResource SkylineSecondary}" />
@@ -44,7 +45,7 @@
     </DataTemplate>
 
     <DataTemplate x:Key="RowTemplate" x:DataType="views:RowView">
-      <StackPanel Spacing="12" Margin="0,0,0,14">
+      <StackPanel Spacing="9" Margin="0,0,0,8">
         <!-- TvSectionHeader: a play glyph on progress rows, then the server's row title. -->
         <StackPanel Orientation="Horizontal" Spacing="8" Margin="44,0,0,0">
           <Grid Width="18" Height="18" Visibility="{x:Bind IconVisibility}" VerticalAlignment="Center">
@@ -56,7 +57,7 @@
         <!-- Rails bleed off the right edge; vertical padding leaves room for the focus lift. -->
         <ListView ItemsSource="{x:Bind Cards}" ItemTemplate="{StaticResource CardTemplate}" ItemContainerStyle="{StaticResource SkylineCardItemStyle}"
                   SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnCardClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur"
-                  Padding="44,9,0,9" ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden"
+                  Padding="44,12,0,12" ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden"
                   ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
           <ListView.ItemsPanel>
             <ItemsPanelTemplate>
@@ -100,7 +101,8 @@
     <!-- Library tabs: sub-destination pills under the bar. Only Browse exists so far. -->
     <Grid x:Name="PillRow" Margin="44,72,44,0" VerticalAlignment="Top" Visibility="Collapsed">
       <Button x:Name="BrowsePill" Content="Browse" Style="{StaticResource SkylineCapsuleStyle}" FontSize="{StaticResource SkylinePillSize}"
-              Background="{StaticResource SkylinePrimary}" Foreground="{StaticResource SkylineBackground}" Padding="12,5" HorizontalAlignment="Left" />
+              Background="{StaticResource SkylinePrimary}" Foreground="{StaticResource SkylineBackground}" Padding="12,0" Height="{StaticResource SkylineSubPillHeight}"
+              CornerRadius="{StaticResource SkylineSubPill}" HorizontalAlignment="Left" />
       <TextBlock x:Name="ScopeCaption" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="{StaticResource SkylineCardSubtitleSize}"
                  Foreground="{StaticResource SkylineTertiary}" />
     </Grid>

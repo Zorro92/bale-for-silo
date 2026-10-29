@@ -21,7 +21,7 @@
       <GridView.ItemTemplate>
         <DataTemplate x:DataType="views:CardView">
           <StackPanel Width="{x:Bind Width}" Spacing="11">
-            <Grid Width="{x:Bind Width}" Height="{x:Bind Height}">
+            <Grid x:Name="Art" Width="{x:Bind Width}" Height="{x:Bind Height}">
               <Grid CornerRadius="{StaticResource SkylineCardRadius}" Background="{StaticResource SkylineCardPlaceholder}">
                 <TextBlock Text="{x:Bind Title}" Visibility="{x:Bind FallbackVisibility}" TextWrapping="Wrap" TextAlignment="Center"
                            FontSize="{StaticResource SkylineCardSubtitleSize}" VerticalAlignment="Center" Margin="8" Foreground="{StaticResource SkylineSecondary}" />
