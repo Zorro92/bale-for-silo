@@ -74,7 +74,11 @@ internal sealed class MaskedArt
         var surface = LoadedImageSurface.StartLoadFromUri(source);
         surface.LoadCompleted += (sender, e) =>
         {
-            if (ReferenceEquals(sender, _surface) && e.Status == LoadedImageSourceLoadStatus.Success)
+            if (e.Status != LoadedImageSourceLoadStatus.Success)
+            {
+                Log.Info($"Art failed to load ({e.Status}): {source.AbsolutePath}");
+            }
+            else if (ReferenceEquals(sender, _surface))
             {
                 _image.Surface = sender;
                 FadeIn();

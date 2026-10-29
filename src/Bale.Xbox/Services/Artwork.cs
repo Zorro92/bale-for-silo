@@ -98,6 +98,12 @@ internal static class Artwork
                 return;
             }
 
+            // Files from before extensions were kept are never read again.
+            foreach (var stale in directory.GetFiles().Where(file => file.Extension.Length == 0))
+            {
+                stale.Delete();
+            }
+
             var files = directory.GetFiles().OrderBy(file => file.LastWriteTimeUtc).ToList();
             var total = files.Sum(file => file.Length);
             foreach (var file in files)
@@ -222,8 +228,10 @@ internal static class Artwork
 
     private static string Key(Uri uri)
     {
+        // Keep the extension: Composition picks the decoder for an ms-appdata file by it.
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(uri.Host + uri.AbsolutePath));
-        return Convert.ToHexString(hash, 0, 16);
+        var extension = Path.GetExtension(uri.AbsolutePath);
+        return Convert.ToHexString(hash, 0, 16) + (extension.Length is > 1 and <= 5 ? extension.ToLowerInvariant() : ".img");
     }
 
     private static void Touch(string path)
