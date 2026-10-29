@@ -1,18 +1,19 @@
 // Developer tool: exercises Bale.Core against a real Silo server from Linux, no Xbox needed.
 //
-//   dotnet run --project tools/Bale.Cli -- capability <server>
-//   dotnet run --project tools/Bale.Cli -- login <server>
-//   dotnet run --project tools/Bale.Cli -- pair-test <server>   (opens a code, then cancels it)
+//   bale-cli capability <server>
+//   bale-cli pair-test <server>    open a sign-in code, then cancel it
+//   bale-cli login <server>        sign in with a code and keep the session (~/.config/bale-cli)
+//   bale-cli profiles              list the signed-in account's profiles
+//   bale-cli home [--json]         print the home rows Bale would show
+//   bale-cli logout
+//
+// Run with: dotnet run --project tools/Bale.Cli -- <command> ...
 
+using System.Text.Json;
 using Bale.Core;
 using Bale.Core.Auth;
 using Bale.Core.Connection;
-
-if (args.Length < 2 || !ServerAddress.TryParse(args[1], out var server))
-{
-    Console.Error.WriteLine("usage: bale-cli <capability|login|pair-test> <server>");
-    return 2;
-}
+using Bale.Core.Home;
 
 var identity = new ClientIdentity(
     DeviceId: "bale-cli-" + Environment.MachineName.ToLowerInvariant(),
@@ -23,27 +24,40 @@ var identity = new ClientIdentity(
     ClientChannel: "dev",
     ClientFamily: "desktop");
 
-using var client = new SiloClient(server, identity);
-var flow = client.DeviceLogin;
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
-switch (args[0])
+var command = args.FirstOrDefault() ?? "";
+try
 {
-    case "capability":
-        var capability = await flow.GetCapabilityAsync(cts.Token);
-        Console.WriteLine($"device sign-in: {capability?.State}, cancel: {capability?.Cancel}, opened signal: {capability?.OpenedSignal}");
-        return 0;
+switch (command)
+{
+    case "capability" or "pair-test" or "login":
+    {
+        if (args.Length < 2 || !ServerAddress.TryParse(args[1], out var server))
+        {
+            return Usage();
+        }
 
-    case "pair-test":
-        var probe = await flow.StartAsync(identity.DeviceName, identity.Platform, cts.Token);
-        Console.WriteLine($"server issued code {probe.DisplayCode} for {probe.ActivateText}, expires {probe.ExpiresAt:u}");
-        await flow.CancelAsync(probe);
-        Console.WriteLine("canceled it again");
-        return 0;
+        using var client = new SiloClient(server, identity);
+        var flow = client.DeviceLogin;
 
-    case "login":
+        if (command == "capability")
+        {
+            var capability = await flow.GetCapabilityAsync(cts.Token);
+            Console.WriteLine($"device sign-in: {capability?.State}, cancel: {capability?.Cancel}, opened signal: {capability?.OpenedSignal}");
+            return 0;
+        }
+
         var ticket = await flow.StartAsync(identity.DeviceName, identity.Platform, cts.Token);
+        if (command == "pair-test")
+        {
+            Console.WriteLine($"server issued code {ticket.DisplayCode} for {ticket.ActivateText}, expires {ticket.ExpiresAt:u}");
+            await flow.CancelAsync(ticket);
+            Console.WriteLine("canceled it again");
+            return 0;
+        }
+
         Console.WriteLine($"Go to {ticket.ActivateText} and enter {ticket.DisplayCode}");
         Console.WriteLine($"(or open {ticket.VerificationUriComplete})");
         try
@@ -55,11 +69,9 @@ switch (args[0])
                 return 1;
             }
 
-            client.SignIn(result.Tokens!);
-            var me = await client.Api.Api.V2.Account.Me.GetAsync(cancellationToken: cts.Token);
-            Console.WriteLine($"Signed in as {me?.Username} ({me?.Role})");
-            await client.SignOutAsync();
-            Console.WriteLine("Signed out again (the CLI doesn't keep sessions).");
+            client.SignIn(result.Tokens!, result.ProfileId, result.ProfileToken);
+            CliSession.Save(new CliSession(ServerAddress.ToBaseUrl(server), client.RefreshToken!, client.ProfileId));
+            Console.WriteLine($"Signed in as {client.Account?.Username}, profile {client.ProfileId ?? "(server default)"}. Session saved to {CliSession.Path}.");
             return 0;
         }
         catch (OperationCanceledException)
@@ -68,8 +80,118 @@ switch (args[0])
             Console.WriteLine("Canceled.");
             return 1;
         }
+    }
+
+    case "profiles" or "home" or "logout":
+    {
+        using var client = await CliSession.ResumeAsync(identity, cts.Token);
+        if (client is null)
+        {
+            Console.Error.WriteLine("Not signed in. Run: bale-cli login <server>");
+            return 1;
+        }
+
+        if (command == "logout")
+        {
+            await client.SignOutAsync(cts.Token);
+            CliSession.Delete();
+            Console.WriteLine("Signed out.");
+            return 0;
+        }
+
+        if (client.ProfileId is null
+            && ProfileChoice.Automatic(await client.GetProfilesAsync(cts.Token), null) is { } automatic)
+        {
+            client.UseProfile(automatic.Id!);
+        }
+
+        if (command == "profiles")
+        {
+            foreach (var profile in await client.GetProfilesAsync(cts.Token))
+            {
+                var marks = string.Join(", ", new[] { profile.IsPrimary == true ? "primary" : null, profile.HasPin == true ? "PIN" : null, profile.IsChild == true ? "child" : null }.Where(m => m is not null));
+                Console.WriteLine($"{(profile.Id == client.ProfileId ? "*" : " ")} {profile.Name} [{profile.Id}] {marks}");
+            }
+
+            return 0;
+        }
+
+        var rows = await client.Home.LoadAsync(ArtworkWidths.Tv1080, cts.Token);
+        if (args.Contains("--json"))
+        {
+            Console.WriteLine(JsonSerializer.Serialize(rows, new JsonSerializerOptions { WriteIndented = true }));
+            return 0;
+        }
+
+        foreach (var row in rows)
+        {
+            Console.WriteLine($"## {row.Title}  ({row.SectionType}, {row.Shape}{(row.Featured ? ", featured" : "")}, {row.Cards.Count} cards)");
+            foreach (var card in row.Cards.Take(5))
+            {
+                var progress = card.Progress is { } p ? $" {p:P0}" : "";
+                Console.WriteLine($"   {card.Title}{(card.Subtitle is null ? "" : " — " + card.Subtitle)}{progress}");
+            }
+        }
+
+        return 0;
+    }
 
     default:
-        Console.Error.WriteLine($"unknown command: {args[0]}");
-        return 2;
+        return Usage();
+}
+}
+catch (Bale.Core.Api.Models.Problem problem)
+{
+    Console.Error.WriteLine($"Server said {problem.Status}: {problem.Title}. {problem.Detail}");
+    return 1;
+}
+
+static int Usage()
+{
+    Console.Error.WriteLine("usage: bale-cli <capability|pair-test|login> <server> | <profiles|home [--json]|logout>");
+    return 2;
+}
+
+/// <summary>The CLI's saved session. Only for development: the refresh token sits in a 0600 file.</summary>
+internal sealed record CliSession(string Server, string RefreshToken, string? ProfileId)
+{
+    public static string Path { get; } = System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "bale-cli", "session.json");
+
+    public static void Save(CliSession session)
+    {
+        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
+        File.WriteAllText(Path, JsonSerializer.Serialize(session));
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(Path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+    }
+
+    public static void Delete() => File.Delete(Path);
+
+    public static async Task<SiloClient?> ResumeAsync(ClientIdentity identity, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(Path) || JsonSerializer.Deserialize<CliSession>(File.ReadAllText(Path)) is not { } saved
+            || !ServerAddress.TryParse(saved.Server, out var server))
+        {
+            return null;
+        }
+
+        var client = new SiloClient(server, identity);
+        if (!await client.ResumeAsync(saved.RefreshToken, cancellationToken))
+        {
+            client.Dispose();
+            Delete();
+            return null;
+        }
+
+        if (saved.ProfileId is not null)
+        {
+            client.UseProfile(saved.ProfileId);
+        }
+
+        Save(saved with { RefreshToken = client.RefreshToken! });
+        return client;
+    }
 }

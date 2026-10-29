@@ -38,12 +38,6 @@
       <Button x:Name="CancelPairingButton" Content="Use a different server" Click="OnCancelPairingClick" HorizontalAlignment="Center" Margin="0,24,0,0" />
     </StackPanel>
 
-    <!-- Step 3: signed in (placeholder until the home screen exists) -->
-    <StackPanel x:Name="SignedInPanel" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="16" Visibility="Collapsed">
-      <TextBlock x:Name="WelcomeText" FontSize="40" FontWeight="SemiBold" HorizontalAlignment="Center" />
-      <TextBlock x:Name="ServerText" FontSize="18" Foreground="{StaticResource BaleMuted}" HorizontalAlignment="Center" />
-      <Button x:Name="SignOutButton" Content="Sign out" Click="OnSignOutClick" HorizontalAlignment="Center" Margin="0,16,0,0" />
-    </StackPanel>
 
     <ProgressRing x:Name="BusyRing" Grid.Row="1" Width="48" Height="48" Visibility="Collapsed" />
   </Grid>

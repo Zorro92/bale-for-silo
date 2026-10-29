@@ -2,6 +2,9 @@
 #pragma warning disable CS0618
 using Bale.Core.Api.Api.V2.Account;
 using Bale.Core.Api.Api.V2.Auth;
+using Bale.Core.Api.Api.V2.Catalog;
+using Bale.Core.Api.Api.V2.Home;
+using Bale.Core.Api.Api.V2.Profiles;
 using Microsoft.Kiota.Abstractions.Extensions;
 using Microsoft.Kiota.Abstractions;
 using System.Collections.Generic;
@@ -25,6 +28,21 @@ namespace Bale.Core.Api.Api.V2
         public global::Bale.Core.Api.Api.V2.Auth.AuthRequestBuilder Auth
         {
             get => new global::Bale.Core.Api.Api.V2.Auth.AuthRequestBuilder(PathParameters, RequestAdapter);
+        }
+        /// <summary>The catalog property</summary>
+        public global::Bale.Core.Api.Api.V2.Catalog.CatalogRequestBuilder Catalog
+        {
+            get => new global::Bale.Core.Api.Api.V2.Catalog.CatalogRequestBuilder(PathParameters, RequestAdapter);
+        }
+        /// <summary>The home property</summary>
+        public global::Bale.Core.Api.Api.V2.Home.HomeRequestBuilder Home
+        {
+            get => new global::Bale.Core.Api.Api.V2.Home.HomeRequestBuilder(PathParameters, RequestAdapter);
+        }
+        /// <summary>The profiles property</summary>
+        public global::Bale.Core.Api.Api.V2.Profiles.ProfilesRequestBuilder Profiles
+        {
+            get => new global::Bale.Core.Api.Api.V2.Profiles.ProfilesRequestBuilder(PathParameters, RequestAdapter);
         }
         /// <summary>
         /// Instantiates a new <see cref="global::Bale.Core.Api.Api.V2.V2RequestBuilder"/> and sets the default values.

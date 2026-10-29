@@ -32,6 +32,13 @@ dotnet kiota generate \
   --include-path '/api/v2/auth/device/capability' \
   --include-path '/api/v2/auth/refresh' \
   --include-path '/api/v2/auth/logout' \
-  --include-path '/api/v2/account/me'
+  --include-path '/api/v2/account/me' \
+  --include-path '/api/v2/profiles' \
+  --include-path '/api/v2/profiles/{id}/verify-pin' \
+  --include-path '/api/v2/home/capabilities' \
+  --include-path '/api/v2/home/layout' \
+  --include-path '/api/v2/home/sections' \
+  --include-path '/api/v2/home/sections/{id}/items' \
+  --include-path '/api/v2/catalog/items/{id}'
 
 echo "Generated client from Silo-Server/silo-server@$SILO_REF"

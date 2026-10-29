@@ -32,6 +32,13 @@ internal static class AppSettings
         set => Local.Values[nameof(ServerUrl)] = value;
     }
 
+    /// <summary>The profile last picked on "Who's watching?", reused on the next launch.</summary>
+    public static string? ProfileId
+    {
+        get => Local.Values[nameof(ProfileId)] as string;
+        set => Local.Values[nameof(ProfileId)] = value;
+    }
+
     public static string? LoadRefreshToken(string server)
     {
         try

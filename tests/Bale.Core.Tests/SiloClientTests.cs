@@ -57,3 +57,39 @@ public class SiloClientTests
         Assert.Null(client.RefreshToken);
     }
 }
+
+public class SiloClientRefreshTests
+{
+    private sealed class ManualClock(DateTimeOffset start) : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = start;
+
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [Fact]
+    public async Task RenewsAccessTokenShortlyBeforeItExpires()
+    {
+        var clock = new ManualClock(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var stub = new StubHandler()
+            .Enqueue("""{"access_token":"at1","refresh_token":"rt1","expires_in":3600}""")
+            .Enqueue("""{"id":"u1","username":"fox","email":"","role":"user","permissions":[],"download_allowed":true,"password_change_required":false}""")
+            .Enqueue("""{"access_token":"at2","refresh_token":"rt2","expires_in":3600}""")
+            .Enqueue("""{"profile_id":"","items":[]}""");
+        ServerAddress.TryParse("silo.example.com", out var server);
+        using var client = new SiloClient(server, new ClientIdentity("d", "x", "xbox", "Bale"), stub, clock);
+        var rotations = 0;
+        client.TokensRefreshed += (_, _) => rotations++;
+        await client.ResumeAsync("rt0");
+        rotations = 0;
+
+        clock.Now = clock.Now.AddMinutes(59);
+        await client.GetProfilesAsync();
+
+        Assert.Equal("rt2", client.RefreshToken);
+        Assert.Equal(1, rotations);
+        Assert.EndsWith("/api/v2/auth/refresh", stub.Requests[2].RequestUri!.AbsolutePath);
+        Assert.Null(stub.Requests[2].Headers.Authorization);
+        Assert.Equal("Bearer at2", stub.Requests[3].Headers.Authorization!.ToString());
+    }
+}

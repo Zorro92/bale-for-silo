@@ -26,8 +26,11 @@ public enum DeviceLoginOutcome
     Canceled,
 }
 
-/// <summary>How a pairing request ended. <see cref="Tokens"/> is set only when approved.</summary>
-public sealed record DeviceLoginResult(DeviceLoginOutcome Outcome, TokenPair? Tokens = null);
+/// <summary>
+/// How a pairing request ended. <see cref="Tokens"/> is set only when approved; <see cref="ProfileId"/> is the
+/// profile the approver was using, when the server reports one.
+/// </summary>
+public sealed record DeviceLoginResult(DeviceLoginOutcome Outcome, TokenPair? Tokens = null, string? ProfileId = null, string? ProfileToken = null);
 
 /// <summary>
 /// Signs a TV in without typing a password: the TV shows a code, the user approves it
@@ -115,7 +118,7 @@ public sealed class DeviceLoginFlow
             switch (poll.Status)
             {
                 case DeviceLoginPoll_status.Approved when poll.Tokens is not null:
-                    return new DeviceLoginResult(DeviceLoginOutcome.Approved, poll.Tokens);
+                    return new DeviceLoginResult(DeviceLoginOutcome.Approved, poll.Tokens, NullIfEmpty(poll.ProfileId), NullIfEmpty(poll.ProfileToken));
                 case DeviceLoginPoll_status.Denied:
                     return new DeviceLoginResult(DeviceLoginOutcome.Denied);
                 case DeviceLoginPoll_status.Canceled:
@@ -143,6 +146,8 @@ public sealed class DeviceLoginFlow
             // Older servers lack cancel; the code will simply expire.
         }
     }
+
+    private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
 
     private static TimeSpan? Seconds(long? value) => value is > 0 ? TimeSpan.FromSeconds(value.Value) : null;
 }

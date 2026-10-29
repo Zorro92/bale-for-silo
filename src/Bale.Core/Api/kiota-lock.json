@@ -1,5 +1,5 @@
 {
-  "descriptionHash": "3FACCCF6B1FA68542C98CF132E7B3343244E3BA339F4CD359420F1889270EC6B9FE81B3293D8D17EFD413B4F9DFABD08E449B5A0338E67C9A5E13E296F48E9DD",
+  "descriptionHash": "B2E1A2874564169E97FCF083779CCB73E4ECCF6AD10EBB3072BD502B46CCA72E04D3F324A2FC084866EB5CBAF8ADE61AD8CAB42A4DEBE922BF1B2D57F79A1676",
   "descriptionLocation": "../../../.cache/silo-openapi-cc8514943289045e7b9f7ac8d36d4968bfe93926.json",
   "lockFileVersion": "1.0.0",
   "kiotaVersion": "1.36.1",
@@ -35,7 +35,14 @@
     "/api/v2/auth/device/capability",
     "/api/v2/auth/refresh",
     "/api/v2/auth/logout",
-    "/api/v2/account/me"
+    "/api/v2/account/me",
+    "/api/v2/profiles",
+    "/api/v2/profiles/{id}/verify-pin",
+    "/api/v2/home/capabilities",
+    "/api/v2/home/layout",
+    "/api/v2/home/sections",
+    "/api/v2/home/sections/{id}/items",
+    "/api/v2/catalog/items/{id}"
   ],
   "excludePatterns": [],
   "disabledValidationRules": [],

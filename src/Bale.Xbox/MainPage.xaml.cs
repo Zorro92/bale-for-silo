@@ -12,19 +12,14 @@ using Windows.UI.Xaml.Navigation;
 
 namespace Bale.Xbox;
 
-/// <summary>
-/// First-run flow: pick a server, pair with a code, land signed in. Kept in code-behind for this
-/// first milestone; screens move to view models once there is more than one.
-/// </summary>
-public sealed partial class MainPage : Page
+/// <summary>Sign-in: pick a server, pair with a code, then on to profiles and Home.</summary>
+public sealed partial class MainPage : Page, IBackHandler
 {
-    private SiloClient? _client;
     private CancellationTokenSource? _pairing;
 
     public MainPage()
     {
         InitializeComponent();
-        SystemNavigationManager.GetForCurrentView().BackRequested += OnBackRequested;
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -32,17 +27,17 @@ public sealed partial class MainPage : Page
         base.OnNavigatedTo(e);
 
         var saved = AppSettings.ServerUrl;
-        if (saved is not null && ServerAddress.TryParse(saved, out var server)
+        if (Session.Client is null && saved is not null && ServerAddress.TryParse(saved, out var server)
             && AppSettings.LoadRefreshToken(saved) is { } refreshToken)
         {
             ShowBusy();
             try
             {
-                var client = NewClient(server);
+                var client = Session.Connect(server);
                 if (await client.ResumeAsync(refreshToken))
                 {
-                    AppSettings.SaveRefreshToken(saved, client.RefreshToken!);
-                    ShowSignedIn();
+                    Session.Persist();
+                    await Session.ContinueToHomeAsync(Frame);
                     return;
                 }
 
@@ -55,6 +50,24 @@ public sealed partial class MainPage : Page
         }
 
         ShowServerEntry(saved);
+    }
+
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        base.OnNavigatedFrom(e);
+        _pairing?.Cancel();
+    }
+
+    /// <summary>B on the controller backs out of pairing instead of closing the app.</summary>
+    public bool OnBack()
+    {
+        if (CodePanel.Visibility != Visibility.Visible)
+        {
+            return false;
+        }
+
+        OnCancelPairingClick(this, new RoutedEventArgs());
+        return true;
     }
 
     private void OnServerBoxKeyDown(object sender, KeyRoutedEventArgs e)
@@ -70,12 +83,12 @@ public sealed partial class MainPage : Page
     {
         if (!ServerAddress.TryParse(ServerBox.Text, out var server))
         {
-            ShowServerError("That doesn't look like a server address.");
+            ShowServerEntry(ServerBox.Text, "That doesn't look like a server address.");
             return;
         }
 
         ShowBusy();
-        var client = NewClient(server);
+        var client = Session.Connect(server);
         try
         {
             var capability = await client.DeviceLogin.GetCapabilityAsync();
@@ -119,10 +132,10 @@ public sealed partial class MainPage : Page
         switch (result.Outcome)
         {
             case DeviceLoginOutcome.Approved:
-                client.SignIn(result.Tokens!);
-                AppSettings.ServerUrl = ServerAddress.ToBaseUrl(client.Server);
-                AppSettings.SaveRefreshToken(AppSettings.ServerUrl, client.RefreshToken!);
-                ShowSignedIn();
+                client.SignIn(result.Tokens!, result.ProfileId, result.ProfileToken);
+                Session.Persist();
+                ShowBusy();
+                await Session.ContinueToHomeAsync(Frame);
                 break;
             case DeviceLoginOutcome.Expired:
                 // Codes are short-lived; quietly issue a fresh one.
@@ -140,36 +153,6 @@ public sealed partial class MainPage : Page
         ShowServerEntry(ServerBox.Text);
     }
 
-    private async void OnSignOutClick(object sender, RoutedEventArgs e)
-    {
-        if (_client is null)
-        {
-            return;
-        }
-
-        var server = ServerAddress.ToBaseUrl(_client.Server);
-        ShowBusy();
-        await _client.SignOutAsync();
-        AppSettings.ForgetRefreshToken(server);
-        ShowServerEntry(server);
-    }
-
-    private void OnBackRequested(object? sender, BackRequestedEventArgs e)
-    {
-        // B on the controller backs out of pairing instead of closing the app.
-        if (CodePanel.Visibility == Visibility.Visible)
-        {
-            e.Handled = true;
-            OnCancelPairingClick(this, new RoutedEventArgs());
-        }
-    }
-
-    private SiloClient NewClient(Uri server)
-    {
-        _client?.Dispose();
-        return _client = new SiloClient(server, DeviceIdentity.Current());
-    }
-
     private void ShowServerEntry(string? server, string? error = null)
     {
         ShowOnly(ServerPanel);
@@ -178,8 +161,6 @@ public sealed partial class MainPage : Page
         ServerError.Visibility = error is null ? Visibility.Collapsed : Visibility.Visible;
         (string.IsNullOrEmpty(ServerBox.Text) ? (Control)ServerBox : ConnectButton).Focus(FocusState.Programmatic);
     }
-
-    private void ShowServerError(string error) => ShowServerEntry(ServerBox.Text, error);
 
     private void ShowCode(DeviceLoginTicket ticket)
     {
@@ -190,19 +171,11 @@ public sealed partial class MainPage : Page
         CancelPairingButton.Focus(FocusState.Programmatic);
     }
 
-    private void ShowSignedIn()
-    {
-        ShowOnly(SignedInPanel);
-        WelcomeText.Text = $"Signed in as {_client?.Account?.Username}";
-        ServerText.Text = _client?.Server.Host ?? string.Empty;
-        SignOutButton.Focus(FocusState.Programmatic);
-    }
-
     private void ShowBusy() => ShowOnly(BusyRing);
 
     private void ShowOnly(FrameworkElement visible)
     {
-        foreach (var panel in new FrameworkElement[] { ServerPanel, CodePanel, SignedInPanel, BusyRing })
+        foreach (var panel in new FrameworkElement[] { ServerPanel, CodePanel, BusyRing })
         {
             panel.Visibility = panel == visible ? Visibility.Visible : Visibility.Collapsed;
         }

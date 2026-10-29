@@ -14,8 +14,8 @@ public class DeviceLoginFlowTests
          "expires_in":600,"interval":5,"device_name":"Test Xbox","device_platform":"xbox","client_purpose":"device_login","temporary":false}
         """;
 
-    private static string Poll(string status, bool opened = false, string tokens = "") => $$"""
-        {"status":"{{status}}","poll_after":3,"opened":{{(opened ? "true" : "false")}},"profile_id":"","profile_token":"","temporary":false{{tokens}}}
+    private static string Poll(string status, bool opened = false, string tokens = "", string profileId = "") => $$"""
+        {"status":"{{status}}","poll_after":3,"opened":{{(opened ? "true" : "false")}},"profile_id":"{{profileId}}","profile_token":"","temporary":false{{tokens}}}
         """;
 
     private const string Tokens = """
@@ -62,7 +62,7 @@ public class DeviceLoginFlowTests
         stub.Enqueue(HttpStatusCode.Created, StartJson)
             .Enqueue(Poll("pending"))
             .Enqueue(Poll("pending", opened: true))
-            .Enqueue(Poll("approved", opened: true, tokens: Tokens));
+            .Enqueue(Poll("approved", opened: true, tokens: Tokens, profileId: "p7"));
 
         var ticket = await flow.StartAsync("Test Xbox", "xbox");
         var openedCount = 0;
@@ -71,6 +71,8 @@ public class DeviceLoginFlowTests
         Assert.Equal(DeviceLoginOutcome.Approved, result.Outcome);
         Assert.Equal("at", result.Tokens!.AccessToken);
         Assert.Equal("fox", result.Tokens.User!.Username);
+        Assert.Equal("p7", result.ProfileId);
+        Assert.Null(result.ProfileToken);
         Assert.Equal(1, openedCount);
         Assert.Equal(new[] { 5, 3, 3 }.Select(s => TimeSpan.FromSeconds(s)), delays);
     }
@@ -106,15 +108,18 @@ public class DeviceLoginFlowTests
     }
 
     [Fact]
-    public async Task SendsBearerTokenWhenSignedIn()
+    public async Task SendsBearerTokenAndProfileWhenSignedIn()
     {
         var stub = new StubHandler().Enqueue("""{"id":"u1","username":"fox","email":"","role":"user","permissions":[],"download_allowed":true,"password_change_required":false}""");
         ServerAddress.TryParse("silo.example.com", out var server);
-        using var connection = new SiloConnection(server, Identity, accessToken: () => "secret", transport: stub);
+        using var connection = new SiloConnection(server, Identity, _ => Task.FromResult<RequestCredentials?>(new("secret", "p1")), stub);
 
         var me = await connection.Api.Api.V2.Account.Me.GetAsync();
 
         Assert.Equal("fox", me!.Username);
-        Assert.Equal("Bearer secret", stub.Requests.Single().Headers.Authorization!.ToString());
+        var request = stub.Requests.Single();
+        Assert.Equal("Bearer secret", request.Headers.Authorization!.ToString());
+        Assert.Equal("p1", request.Headers.GetValues("X-Profile-Id").Single());
+        Assert.False(request.Headers.Contains("X-Profile-Token"));
     }
 }

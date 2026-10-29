@@ -1,4 +1,7 @@
+using Bale.Xbox.Services;
 using Windows.ApplicationModel.Activation;
+using Windows.UI.Core;
+using Windows.UI.ViewManagement;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 
@@ -18,8 +21,15 @@ public sealed partial class App : Application
     {
         if (Window.Current.Content is not Frame frame)
         {
+            if (DeviceIdentity.IsXbox)
+            {
+                // Draw edge to edge so artwork reaches the TV's edges; pages keep text inside the safe area themselves.
+                ApplicationView.GetForCurrentView().SetDesiredBoundsMode(ApplicationViewBoundsMode.UseCoreWindow);
+            }
+
             frame = new Frame();
             Window.Current.Content = frame;
+            SystemNavigationManager.GetForCurrentView().BackRequested += (_, args) => OnBackRequested(frame, args);
         }
 
         if (frame.Content is null)
@@ -28,5 +38,18 @@ public sealed partial class App : Application
         }
 
         Window.Current.Activate();
+    }
+
+    private static void OnBackRequested(Frame frame, BackRequestedEventArgs args)
+    {
+        if (frame.Content is IBackHandler page && page.OnBack())
+        {
+            args.Handled = true;
+        }
+        else if (frame.CanGoBack)
+        {
+            frame.GoBack();
+            args.Handled = true;
+        }
     }
 }
