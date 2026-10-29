@@ -47,7 +47,7 @@ public sealed partial class HomePage : Page
             return;
         }
 
-        Loading.Visibility = Visibility.Visible;
+        LoadingRing.Visibility = Visibility.Visible;
         ErrorPanel.Visibility = Visibility.Collapsed;
         try
         {
@@ -72,11 +72,12 @@ public sealed partial class HomePage : Page
         }
         catch (Exception ex)
         {
+            Log.Error("Home load", ex);
             ShowError($"Couldn't load Home. {ex.Message}", retry: true);
         }
         finally
         {
-            Loading.Visibility = Visibility.Collapsed;
+            LoadingRing.Visibility = Visibility.Collapsed;
         }
     }
 

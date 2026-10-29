@@ -15,10 +15,12 @@ public sealed partial class App : Application
 
         // Controller-first: the cursor only appears if a page explicitly asks for it.
         RequiresPointerMode = ApplicationRequiresPointerMode.WhenRequested;
+        UnhandledException += (_, e) => Log.Error("Unhandled", e.Exception);
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs e)
     {
+        Log.Info($"Launched {Windows.ApplicationModel.Package.Current.Id.Version.Build} on {Windows.System.Profile.AnalyticsInfo.VersionInfo.DeviceFamily}");
         if (Window.Current.Content is not Frame frame)
         {
             if (DeviceIdentity.IsXbox)

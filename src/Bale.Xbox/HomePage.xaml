@@ -110,7 +110,7 @@
       <ItemsControl x:Name="Rows" ItemTemplate="{StaticResource RowTemplate}" IsTabStop="False" />
     </ScrollViewer>
 
-    <ProgressRing x:Name="Loading" Grid.RowSpan="2" Width="48" Height="48" IsActive="True" />
+    <ProgressRing x:Name="LoadingRing" Grid.RowSpan="2" Width="48" Height="48" IsActive="True" />
     <StackPanel x:Name="ErrorPanel" Grid.RowSpan="2" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="16" Visibility="Collapsed">
       <TextBlock x:Name="ErrorText" FontSize="20" TextWrapping="Wrap" MaxWidth="560" TextAlignment="Center" />
       <Button x:Name="RetryButton" Content="Try again" HorizontalAlignment="Center" Click="OnRefreshClick" />

@@ -43,9 +43,10 @@ public sealed partial class MainPage : Page, IBackHandler
 
                 AppSettings.ForgetRefreshToken(saved);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // Offline or server down: fall through to the server screen with the address filled in.
+                Log.Error("Resume", ex);
             }
         }
 
@@ -102,6 +103,7 @@ public sealed partial class MainPage : Page, IBackHandler
         }
         catch (Exception ex)
         {
+            Log.Error("Connect", ex);
             ShowServerEntry(ServerBox.Text, $"Couldn't reach {server.Host}. {ex.Message}");
         }
     }

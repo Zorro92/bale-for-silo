@@ -40,12 +40,13 @@ public sealed partial class ProfilesPage : Page
         }
         catch (Exception ex)
         {
+            Log.Error("Profiles load", ex);
             ErrorText.Text = $"Couldn't load profiles. {ex.Message}";
             ErrorText.Visibility = Visibility.Visible;
         }
         finally
         {
-            Loading.Visibility = Visibility.Collapsed;
+            LoadingRing.Visibility = Visibility.Collapsed;
         }
     }
 

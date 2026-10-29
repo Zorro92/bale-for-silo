@@ -59,8 +59,10 @@ while true; do
 done
 echo "Installed."
 
+# Right after an update the console can list the old version too; launch the newest.
 PACKAGE="$("${CURL[@]}" -f "$BASE/api/app/packagemanager/packages" \
-  | jq -c '.InstalledPackages[] | select(.PackageFullName | startswith("Bale.ClientForSilo_"))')"
+  | jq -c '[.InstalledPackages[] | select(.PackageFullName | startswith("Bale.ClientForSilo_"))]
+           | max_by([.Version.Major, .Version.Minor, .Version.Build, .Version.Revision])')"
 b64uri() { printf %s "$1" | base64 -w0 | jq -sRr @uri; }
 APPID="$(b64uri "$(jq -r .PackageRelativeId <<<"$PACKAGE")")"
 FULLNAME="$(b64uri "$(jq -r .PackageFullName <<<"$PACKAGE")")"
