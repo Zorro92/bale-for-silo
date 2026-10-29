@@ -118,12 +118,85 @@
     </Setter>
   </Style>
 
-  <!-- A tab that is the current destination while focus is elsewhere: chrome.selected capsule, full-white label. -->
-  <Style x:Key="SkylineCapsuleSelectedStyle" TargetType="Button" BasedOn="{StaticResource SkylineCapsuleStyle}">
-    <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
-    <Setter Property="Background" Value="{StaticResource SkylineChromeSelected}" />
-    <Setter Property="BorderBrush" Value="{StaticResource SkylineChromeSelectedBorder}" />
-    <Setter Property="BorderThickness" Value="0.5" />
+
+  <!--
+    Top-bar tab (guide §5.1) as a ToggleButton: Checked = the selected destination (chrome.selected
+    capsule, full-white label); Focused = inverted white capsule with black label. The two looks use
+    separate layers so the Checked and Focus state groups never fight over one property.
+  -->
+  <Style x:Key="SkylineTabStyle" TargetType="ToggleButton">
+    <Setter Property="Foreground" Value="{StaticResource SkylineTabResting}" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Padding" Value="13,5.5" />
+    <Setter Property="FontSize" Value="{StaticResource SkylineTabSize}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToggleButton">
+          <Grid>
+            <Border x:Name="SelectedFill" CornerRadius="{StaticResource SkylinePill}" Background="{StaticResource SkylineChromeSelected}"
+                    BorderBrush="{StaticResource SkylineChromeSelectedBorder}" BorderThickness="0.5" Opacity="0" />
+            <Border x:Name="FocusFill" CornerRadius="{StaticResource SkylinePill}" Background="{StaticResource SkylinePrimary}" Opacity="0">
+              <Border.OpacityTransition>
+                <ScalarTransition Duration="0:0:0.12" />
+              </Border.OpacityTransition>
+            </Border>
+            <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}"
+                              Foreground="{TemplateBinding Foreground}" FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}"
+                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+            <ContentPresenter x:Name="FocusedContent" Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}"
+                              Foreground="{StaticResource SkylineBackground}" FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}"
+                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                              Opacity="0" />
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" />
+                <VisualState x:Name="PointerOver" />
+                <VisualState x:Name="Pressed" />
+                <VisualState x:Name="Disabled" />
+                <VisualState x:Name="Checked">
+                  <VisualState.Setters>
+                    <Setter Target="SelectedFill.Opacity" Value="1" />
+                    <Setter Target="Content.Foreground" Value="{StaticResource SkylinePrimary}" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="CheckedPointerOver">
+                  <VisualState.Setters>
+                    <Setter Target="SelectedFill.Opacity" Value="1" />
+                    <Setter Target="Content.Foreground" Value="{StaticResource SkylinePrimary}" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="CheckedPressed">
+                  <VisualState.Setters>
+                    <Setter Target="SelectedFill.Opacity" Value="1" />
+                    <Setter Target="Content.Foreground" Value="{StaticResource SkylinePrimary}" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="CheckedDisabled" />
+                <VisualState x:Name="Indeterminate" />
+                <VisualState x:Name="IndeterminatePointerOver" />
+                <VisualState x:Name="IndeterminatePressed" />
+                <VisualState x:Name="IndeterminateDisabled" />
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters>
+                    <Setter Target="FocusFill.Opacity" Value="1" />
+                    <Setter Target="Content.Opacity" Value="0" />
+                    <Setter Target="FocusedContent.Opacity" Value="1" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="PointerFocused" />
+                <VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
   </Style>
 
   <!-- Buttons on full screens (sign-in, dialogs): resting white @ 7% with a hairline, inverts on focus. -->

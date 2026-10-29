@@ -49,6 +49,23 @@
   </Page.Resources>
 
   <Grid>
+    <VisualStateManager.VisualStateGroups>
+      <VisualStateGroup x:Name="Landing">
+        <VisualState x:Name="Home" />
+        <!-- Library landing: pills under the bar, compact marquee (guide §5.5), first row a little higher. -->
+        <VisualState x:Name="Library">
+          <VisualState.Setters>
+            <Setter Target="PillRow.Visibility" Value="Visible" />
+            <Setter Target="Marquee.Margin" Value="44,112,0,0" />
+            <Setter Target="MarqueeTitle.FontSize" Value="{StaticResource SkylineMarqueeTitleCompactSize}" />
+            <Setter Target="MarqueeTitle.LineHeight" Value="33" />
+            <Setter Target="MarqueeLogo.MaxHeight" Value="80" />
+            <Setter Target="RowsScroller.Margin" Value="0,255,0,0" />
+          </VisualState.Setters>
+        </VisualState>
+      </VisualStateGroup>
+    </VisualStateManager.VisualStateGroups>
+
     <!-- Marquee backdrop: full-bleed art of the focused item under the standard scrim stack (guide §5.4). -->
     <Image x:Name="Backdrop" Stretch="UniformToFill" VerticalAlignment="Top" HorizontalAlignment="Right" Height="340" Opacity="0">
       <Image.OpacityTransition>

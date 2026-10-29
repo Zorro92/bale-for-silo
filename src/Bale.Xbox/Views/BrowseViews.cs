@@ -89,3 +89,37 @@ public sealed partial class CardView
 
     public Visibility FallbackVisibility { get; }
 }
+
+/// <summary>A top-bar tab: Home (no library tab) or a library type.</summary>
+public sealed partial class TabView
+{
+    public TabView(string title, LibraryTab? libraryTab)
+    {
+        Title = title;
+        LibraryTab = libraryTab;
+    }
+
+    public string Title { get; }
+
+    public LibraryTab? LibraryTab { get; }
+}
+
+/// <summary>A library row in the cascade panel (guide §5.3).</summary>
+public sealed partial class LibraryChoiceView
+{
+    public LibraryChoiceView(string id, string name, bool current)
+    {
+        Id = id;
+        Name = name;
+        IsCurrent = current;
+    }
+
+    public string Id { get; }
+
+    public string Name { get; }
+
+    public bool IsCurrent { get; }
+
+    /// <summary>A checkmark on the current scope, a chevron on the others.</summary>
+    public string Trailing => IsCurrent ? "" : "";
+}

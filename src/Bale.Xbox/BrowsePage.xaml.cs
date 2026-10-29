@@ -51,13 +51,7 @@ public sealed partial class BrowsePage : Page
             _libraryId = parts[1];
             ScopeCaption.Text = parts.Length > 2 ? parts[2] : string.Empty;
 
-            // Library landing: compact marquee below the pill row (guide §5.5).
-            PillRow.Visibility = Visibility.Visible;
-            Marquee.Margin = new Thickness(44, 112, 0, 0);
-            MarqueeTitle.FontSize = (double)Application.Current.Resources["SkylineMarqueeTitleCompactSize"];
-            MarqueeTitle.LineHeight = 33;
-            MarqueeLogo.MaxHeight = 80;
-            RowsScroller.Margin = new Thickness(0, 255, 0, 0);
+            VisualStateManager.GoToState(this, "Library", false);
         }
 
         await LoadAsync();

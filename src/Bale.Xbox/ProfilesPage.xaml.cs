@@ -78,7 +78,7 @@ public sealed partial class ProfilesPage : Page
     private async Task<bool> AskPinAsync(Profile profile)
     {
         var pinBox = new PasswordBox { PlaceholderText = "PIN", MaxLength = 8, InputScope = NumberScope() };
-        var error = new TextBlock { Foreground = (Windows.UI.Xaml.Media.Brush)Application.Current.Resources["SkylineError"], Visibility = Visibility.Collapsed };
+        var error = new TextBlock { Foreground = ErrorText.Foreground, Visibility = Visibility.Collapsed };
         var dialog = new ContentDialog
         {
             Title = $"Enter {profile.Name}'s PIN",
