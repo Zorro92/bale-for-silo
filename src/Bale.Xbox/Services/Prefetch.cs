@@ -1,4 +1,6 @@
 using Windows.Web.Http;
+using HttpClient = Windows.Web.Http.HttpClient;
+using HttpCompletionOption = Windows.Web.Http.HttpCompletionOption;
 
 namespace Bale.Xbox.Services;
 
