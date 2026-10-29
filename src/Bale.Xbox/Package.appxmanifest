@@ -2,7 +2,8 @@
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
-  IgnorableNamespaces="uap">
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
 
   <!-- Publisher must match the signing certificate's subject. CI signs with a throwaway
        "CN=Bale Development" certificate; Version is stamped per build. -->
@@ -42,5 +43,7 @@
   <Capabilities>
     <Capability Name="internetClient" />
     <Capability Name="privateNetworkClientServer" />
+    <!-- Development only: lets the debug server inject gamepad input (Services/DebugServer.cs). Remove for the Store. -->
+    <rescap:Capability Name="inputInjectionBrokered" />
   </Capabilities>
 </Package>

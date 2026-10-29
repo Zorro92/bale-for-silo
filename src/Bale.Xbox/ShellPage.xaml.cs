@@ -25,8 +25,8 @@ public sealed partial class ShellPage : Page, IBackHandler
     private readonly List<TabView> _tabs = new();
     private TabView? _selected;
     private bool _searchSelected;
-    private ToggleButton? _dwellTab;
-    private ToggleButton? _panelTab;
+    private Control? _dwellTab;
+    private Control? _panelTab;
 
     public ShellPage()
     {
@@ -124,7 +124,8 @@ public sealed partial class ShellPage : Page, IBackHandler
     {
         ClosePanels();
         _dwell.Stop();
-        if (sender is ToggleButton { DataContext: TabView { LibraryTab.Libraries.Count: > 1 } } button)
+        // Match on Control: under Native AOT a sender can arrive typed as its base class.
+        if (sender is Control { DataContext: TabView { LibraryTab.Libraries.Count: > 1 } } button)
         {
             _dwellTab = button;
             _dwell.Start();
@@ -179,7 +180,7 @@ public sealed partial class ShellPage : Page, IBackHandler
         return tab.Libraries.FirstOrDefault(library => library.Id == saved) ?? tab.Libraries[0];
     }
 
-    private void OpenLibraryPanel(ToggleButton tabButton)
+    private void OpenLibraryPanel(Control tabButton)
     {
         if (tabButton.DataContext is not TabView { LibraryTab: { } tab })
         {
@@ -201,7 +202,7 @@ public sealed partial class ShellPage : Page, IBackHandler
         // Down from the tab enters the panel on the current scope's row; focus stays on the tab until then.
         LibraryRows.UpdateLayout();
         var currentChoice = choices.First(choice => choice.IsCurrent);
-        tabButton.XYFocusDown = LibraryRows.ContainerFromItem(currentChoice) is DependencyObject row ? FindChild<Button>(row) : null;
+        tabButton.XYFocusDown = LibraryRows.ContainerFromItem(currentChoice) is DependencyObject row ? FindChild<Control>(row) : null;
     }
 
     private void OnLibraryRowClick(object sender, RoutedEventArgs e)
@@ -232,7 +233,6 @@ public sealed partial class ShellPage : Page, IBackHandler
     private void OnAnyFocus(object sender, RoutedEventArgs e)
     {
         var inBar = IsInTopBar(e.OriginalSource as DependencyObject);
-        Log.Info($"Focus: {e.OriginalSource?.GetType().Name} {(e.OriginalSource as FrameworkElement)?.Name} inBar={inBar}");
         TopBar.Opacity = inBar ? 1 : 0.7;
         if (!inBar)
         {

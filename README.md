@@ -57,6 +57,7 @@ Don't edit the generated files by hand.
    Add `XBOX_USER` and `XBOX_PASS` if Device Portal asks for a login.
 4. See what's on the TV without getting up: `XBOX_HOST=<your Xbox IP> ./scripts/xbox-screenshot.sh`
 5. Read Bale's log from the console: `XBOX_HOST=<your Xbox IP> ./scripts/xbox-logs.sh`
+6. Drive and inspect the running app from Linux (development builds only): `./scripts/bale-debug.sh log`, `press down a`, `type dune`, `focus`, `tree`. See `Services/DebugServer.cs`; build with `-p:BaleDebugServer=false` for anything you ship.
 
 ## License
 

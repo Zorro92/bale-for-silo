@@ -43,6 +43,14 @@ public sealed partial class App : Application
             SystemNavigationManager.GetForCurrentView().BackRequested += (_, args) => OnBackRequested(frame, args);
         }
 
+#if DEBUG_SERVER
+        if (_debugServer is null)
+        {
+            _debugServer = new DebugServer();
+            _ = StartDebugServerAsync(_debugServer);
+        }
+#endif
+
         if (frame.Content is null)
         {
             frame.Navigate(typeof(MainPage), e.Arguments);
@@ -50,6 +58,22 @@ public sealed partial class App : Application
 
         Window.Current.Activate();
     }
+
+#if DEBUG_SERVER
+    private DebugServer? _debugServer;
+
+    private static async Task StartDebugServerAsync(DebugServer server)
+    {
+        try
+        {
+            await server.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Debug server start", ex);
+        }
+    }
+#endif
 
     private static void OnBackRequested(Frame frame, BackRequestedEventArgs args)
     {

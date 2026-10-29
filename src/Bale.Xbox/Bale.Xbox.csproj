@@ -22,6 +22,9 @@
     <!-- The generated vtables use unsafe code; without this CsWinRT silently skips them (CsWinRT1030). -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <CsWinRTAotWarningLevel>2</CsWinRTAotWarningLevel>
+    <!-- Development control channel (Services/DebugServer.cs). Build with -p:BaleDebugServer=false for anything shipped. -->
+    <BaleDebugServer Condition="'$(BaleDebugServer)' == ''">true</BaleDebugServer>
+    <DefineConstants Condition="'$(BaleDebugServer)' == 'true'">$(DefineConstants);DEBUG_SERVER</DefineConstants>
     <AppxBundle>Never</AppxBundle>
     <UapAppxPackageBuildMode>SideloadOnly</UapAppxPackageBuildMode>
     <GenerateAppInstallerFile>false</GenerateAppInstallerFile>

@@ -52,7 +52,7 @@ public sealed partial class ProfilesPage : Page
 
     private void OnProfileFocus(object sender, RoutedEventArgs e)
     {
-        if (e.OriginalSource is GridViewItem item)
+        if (e.OriginalSource is ContentControl { Content: CardView or ProfileView } item)
         {
             CardFocus.Apply(item, focused: true, scale: 1.06f);
         }
@@ -60,7 +60,7 @@ public sealed partial class ProfilesPage : Page
 
     private void OnProfileBlur(object sender, RoutedEventArgs e)
     {
-        if (e.OriginalSource is GridViewItem item)
+        if (e.OriginalSource is ContentControl { Content: CardView or ProfileView } item)
         {
             CardFocus.Apply(item, focused: false);
         }

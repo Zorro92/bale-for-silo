@@ -142,7 +142,6 @@ public sealed partial class BrowsePage : Page
         // through ContainerFromIndex here, so don't look for them.
         var row = Rows.ContainerFromIndex(0) is DependencyObject rowContainer ? FindChild<ListView>(rowContainer) : null;
         var focused = row?.Focus(FocusState.Programmatic) == true;
-        Log.Info($"Browse: entry focus attempt row={row is not null} focused={focused}");
         if (focused)
         {
             _focusFirstRow = false;
@@ -171,8 +170,7 @@ public sealed partial class BrowsePage : Page
 
     private void OnCardFocus(object sender, RoutedEventArgs e)
     {
-        Log.Info($"Card focus: {e.OriginalSource?.GetType().FullName}");
-        if (e.OriginalSource is ListViewItem { Content: CardView view } item)
+        if (e.OriginalSource is ContentControl { Content: CardView view } item)
         {
             CardFocus.Apply(item, focused: true);
             _pendingMarquee = view;
@@ -183,7 +181,7 @@ public sealed partial class BrowsePage : Page
 
     private void OnCardBlur(object sender, RoutedEventArgs e)
     {
-        if (e.OriginalSource is ListViewItem item)
+        if (e.OriginalSource is ContentControl { Content: CardView } item)
         {
             CardFocus.Apply(item, focused: false);
         }
