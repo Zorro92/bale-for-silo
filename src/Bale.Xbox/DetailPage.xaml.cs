@@ -151,7 +151,7 @@ public sealed partial class DetailPage : Page
         if (detail.LogoUrl is { } logo)
         {
             // The logo replaces the text title once decoded; a broken logo never blanks the title.
-            var image = new BitmapImage { DecodePixelType = DecodePixelType.Logical, DecodePixelHeight = (int)LogoHeight, UriSource = logo };
+            var image = Artwork.Load(logo, height: (int)LogoHeight);
             image.ImageOpened += (_, _) =>
             {
                 TitleLogo.Opacity = 1;

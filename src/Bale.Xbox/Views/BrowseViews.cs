@@ -60,8 +60,7 @@ public sealed partial class CardView
         if (card.ImageUrl is not null)
         {
             // Decode at the drawn size (x2 device pixels) so long rows stay light on memory.
-            Image = new BitmapImage { DecodePixelType = DecodePixelType.Logical, DecodePixelWidth = (int)Math.Ceiling(width), UriSource = card.ImageUrl };
-            Image.ImageFailed += (_, e) => Services.Log.Info($"Image failed for {card.Title} ({card.ImageUrl.Host}{card.ImageUrl.AbsolutePath}): {e.ErrorMessage}");
+            Image = Services.Artwork.Load(card.ImageUrl, width: (int)Math.Ceiling(width));
         }
     }
 

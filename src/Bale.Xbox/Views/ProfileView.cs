@@ -33,5 +33,5 @@ public sealed partial class ProfileView
     public static ImageSource AvatarImage(Uri url, int size) =>
         ProfileAvatars.IsSvg(url)
             ? new SvgImageSource(url) { RasterizePixelWidth = size * 2, RasterizePixelHeight = size * 2 }
-            : new BitmapImage { DecodePixelType = DecodePixelType.Logical, DecodePixelWidth = size, UriSource = url };
+            : Services.Artwork.Load(url, width: size);
 }

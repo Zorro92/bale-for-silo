@@ -380,7 +380,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         if (card.LogoUrl is { } logo)
         {
             MarqueeLogo.Height = LogoSlotHeight;
-            var image = new BitmapImage { DecodePixelType = DecodePixelType.Logical, DecodePixelHeight = (int)LogoSlotHeight, UriSource = logo };
+            var image = Artwork.Load(logo, height: (int)LogoSlotHeight);
             image.ImageOpened += (_, _) =>
             {
                 if (ReferenceEquals(_shownMarquee, view))

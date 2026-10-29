@@ -19,7 +19,7 @@ public sealed partial class EpisodeView
         WatchedVisibility = episode.Played ? Visibility.Visible : Visibility.Collapsed;
         if (episode.StillUrl is not null)
         {
-            Still = new BitmapImage { DecodePixelType = DecodePixelType.Logical, DecodePixelWidth = (int)StillWidth, UriSource = episode.StillUrl };
+            Still = Services.Artwork.Load(episode.StillUrl, width: (int)StillWidth);
         }
     }
 
@@ -50,7 +50,7 @@ public sealed partial class CastView
         PlaceholderVisibility = member.PhotoUrl is null ? Visibility.Visible : Visibility.Collapsed;
         if (member.PhotoUrl is not null)
         {
-            Photo = new BitmapImage { DecodePixelType = DecodePixelType.Logical, DecodePixelWidth = 100, UriSource = member.PhotoUrl };
+            Photo = Services.Artwork.Load(member.PhotoUrl, width: 100);
         }
     }
 
