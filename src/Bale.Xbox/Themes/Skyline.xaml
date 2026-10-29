@@ -60,7 +60,8 @@
   <!--
     Capsule control used for top-bar tabs, pills and buttons. Resting: label at 62% white, no fill.
     Focused: inverted to a white capsule with black label (guide §5.1). No system focus rectangle:
-    the inversion is the focus cue.
+    the inversion is the focus cue. No implicit transitions inside templates: on the console they
+    crashed the first layout.
   -->
   <Style x:Key="SkylineCapsuleStyle" TargetType="Button">
     <Setter Property="Foreground" Value="{StaticResource SkylineTabResting}" />
@@ -80,9 +81,6 @@
           <Border x:Name="Capsule" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
                   BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}"
                   Padding="{TemplateBinding Padding}">
-            <Border.BackgroundTransition>
-              <BrushTransition Duration="0:0:0.12" />
-            </Border.BackgroundTransition>
             <VisualStateManager.VisualStateGroups>
               <VisualStateGroup x:Name="CommonStates">
                 <VisualState x:Name="Normal" />
@@ -140,11 +138,7 @@
           <Grid>
             <Border x:Name="SelectedFill" CornerRadius="{StaticResource SkylinePill}" Background="{StaticResource SkylineChromeSelected}"
                     BorderBrush="{StaticResource SkylineChromeSelectedBorder}" BorderThickness="0.5" Opacity="0" />
-            <Border x:Name="FocusFill" CornerRadius="{StaticResource SkylinePill}" Background="{StaticResource SkylinePrimary}" Opacity="0">
-              <Border.OpacityTransition>
-                <ScalarTransition Duration="0:0:0.12" />
-              </Border.OpacityTransition>
-            </Border>
+            <Border x:Name="FocusFill" CornerRadius="{StaticResource SkylinePill}" Background="{StaticResource SkylinePrimary}" Opacity="0" />
             <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}"
                               Foreground="{TemplateBinding Foreground}" FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}"
                               FontFamily="{TemplateBinding FontFamily}"
