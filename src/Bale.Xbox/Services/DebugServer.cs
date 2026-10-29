@@ -19,7 +19,8 @@ namespace Bale.Xbox.Services;
 ///
 ///   GET  /log?since=N     log lines after sequence N; the reply's first line is the next N
 ///   POST /press/{button}  up, down, left, right, a, b, menu, view: injected as real gamepad input
-///   POST /type?text=...   types text into the focused text box
+///   POST /key/{key}       a real keystroke, by VirtualKey name: Enter, Escape, Tab, Down, Back, F5...
+///   POST /type?text=...   types text as real keystrokes into whatever has focus
 ///   GET  /focus           the focused element and its text
 ///   GET  /tree            the visible element tree with bounds and text
 ///
@@ -91,8 +92,15 @@ internal sealed class DebugServer
                 await Task.Delay(150);
                 return ("200 OK", await OnUiAsync(DescribeFocus) + "\n");
 
+            case ("POST", var key) when key.StartsWith("/key/", StringComparison.Ordinal):
+                var result = await OnUiAsync(() => Key(key.Substring("/key/".Length)));
+                await Task.Delay(150);
+                return ("200 OK", result + "; " + await OnUiAsync(DescribeFocus) + "\n");
+
             case ("POST", "/type"):
-                return ("200 OK", await OnUiAsync(() => Type(query.GetValueOrDefault("text") ?? string.Empty)) + "\n");
+                var typed = await OnUiAsync(() => Type(query.GetValueOrDefault("text") ?? string.Empty));
+                await Task.Delay(150);
+                return ("200 OK", typed + "; " + await OnUiAsync(DescribeFocus) + "\n");
 
             case ("GET", "/focus"):
                 return ("200 OK", await OnUiAsync(DescribeFocus) + "\n");
@@ -101,7 +109,7 @@ internal sealed class DebugServer
                 return ("200 OK", await OnUiAsync(DescribeTree));
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view}, POST /type?text=, GET /focus, GET /tree\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /tree\n");
         }
     }
 
@@ -135,15 +143,43 @@ internal sealed class DebugServer
         return "pressed";
     }
 
-    private static string Type(string text)
+    /// <summary>A keystroke by VirtualKey name, pressed and released.</summary>
+    private string Key(string name)
     {
-        if (FocusManager.GetFocusedElement() is not TextBox box)
+        if (!Enum.TryParse<Windows.System.VirtualKey>(name, ignoreCase: true, out var key))
         {
-            return "focus is not in a text box";
+            return $"unknown key {name}";
         }
 
-        box.Text = text;
-        box.SelectionStart = text.Length;
+        if (_injector is null)
+        {
+            return "input injection unavailable";
+        }
+
+        _injector.InjectKeyboardInput(new[]
+        {
+            new InjectedInputKeyboardInfo { VirtualKey = (ushort)key },
+            new InjectedInputKeyboardInfo { VirtualKey = (ushort)key, KeyOptions = InjectedInputKeyOptions.KeyUp },
+        });
+        return $"key {key}";
+    }
+
+    /// <summary>Text as real Unicode keystrokes, so it reaches whatever has focus exactly like a keyboard would.</summary>
+    private string Type(string text)
+    {
+        if (_injector is null)
+        {
+            return "input injection unavailable";
+        }
+
+        var keys = new List<InjectedInputKeyboardInfo>();
+        foreach (var ch in text)
+        {
+            keys.Add(new InjectedInputKeyboardInfo { ScanCode = ch, KeyOptions = InjectedInputKeyOptions.Unicode });
+            keys.Add(new InjectedInputKeyboardInfo { ScanCode = ch, KeyOptions = InjectedInputKeyOptions.Unicode | InjectedInputKeyOptions.KeyUp });
+        }
+
+        _injector.InjectKeyboardInput(keys);
         return $"typed \"{text}\"";
     }
 

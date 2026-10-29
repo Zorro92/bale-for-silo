@@ -3,7 +3,6 @@ using Bale.Xbox.Services;
 using Bale.Xbox.Views;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Navigation;
 
 namespace Bale.Xbox;
 
@@ -23,17 +22,14 @@ public sealed partial class SearchPage : Page
     public SearchPage()
     {
         InitializeComponent();
+
+        // Focus the box once it exists; OnNavigatedTo is too early and focus stays on the top bar.
+        Loaded += (_, _) => QueryBox.Focus(FocusState.Programmatic);
         _typing.Tick += async (_, _) =>
         {
             _typing.Stop();
             await SearchAsync(QueryBox.Text.Trim());
         };
-    }
-
-    protected override void OnNavigatedTo(NavigationEventArgs e)
-    {
-        base.OnNavigatedTo(e);
-        QueryBox.Focus(FocusState.Programmatic);
     }
 
     private void OnQueryChanged(object sender, TextChangedEventArgs e)
