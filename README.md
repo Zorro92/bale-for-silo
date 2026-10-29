@@ -55,6 +55,7 @@ Don't edit the generated files by hand.
    ```
 
    Add `XBOX_USER` and `XBOX_PASS` if Device Portal asks for a login.
+4. See what's on the TV without getting up: `XBOX_HOST=<your Xbox IP> ./scripts/xbox-screenshot.sh`
 
 ## License
 

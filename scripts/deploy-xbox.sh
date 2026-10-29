@@ -60,11 +60,11 @@ done
 echo "Installed."
 
 PACKAGE="$("${CURL[@]}" -f "$BASE/api/app/packagemanager/packages" \
-  | jq -c '.InstalledPackages[] | select(.PackageFamilyName | startswith("Bale.ClientForSilo_"))')"
+  | jq -c '.InstalledPackages[] | select(.PackageFullName | startswith("Bale.ClientForSilo_"))')"
 b64uri() { printf %s "$1" | base64 -w0 | jq -sRr @uri; }
 APPID="$(b64uri "$(jq -r .PackageRelativeId <<<"$PACKAGE")")"
 FULLNAME="$(b64uri "$(jq -r .PackageFullName <<<"$PACKAGE")")"
 
-"${CURL[@]}" -f -o /dev/null -X POST -H "X-CSRF-Token: $CSRF" \
+"${CURL[@]}" -f -o /dev/null --data '' -H "X-CSRF-Token: $CSRF" \
   "$BASE/api/taskmanager/app?appid=$APPID&package=$FULLNAME"
 echo "Launched Bale $(jq -r .Version.Major,.Version.Minor,.Version.Build <<<"$PACKAGE" | paste -sd.)."

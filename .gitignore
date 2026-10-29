@@ -482,3 +482,4 @@ $RECYCLE.BIN/
 *.swp
 .cache/
 src/Bale.Core/Api/.kiota.log
+xbox-*.png
