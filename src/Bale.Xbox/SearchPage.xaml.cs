@@ -7,7 +7,7 @@ using Windows.UI.Xaml.Controls;
 namespace Bale.Xbox;
 
 /// <summary>Search, reached from the top bar's search icon (guide §6.7). Results update as you type.</summary>
-public sealed partial class SearchPage : Page
+public sealed partial class SearchPage : Page, IRestoresFocus
 {
     /// <summary>Wait for typing to pause before asking the server.</summary>
     private static readonly TimeSpan TypingPause = TimeSpan.FromMilliseconds(350);
@@ -17,14 +17,24 @@ public sealed partial class SearchPage : Page
     private const double PosterHeight = 207;
 
     private readonly DispatcherTimer _typing = new() { Interval = TypingPause };
+    private bool _focusedOnce;
+    private CardView? _lastResult;
     private CancellationTokenSource? _search;
 
     public SearchPage()
     {
         InitializeComponent();
 
-        // Focus the box once it exists; OnNavigatedTo is too early and focus stays on the top bar.
-        Loaded += (_, _) => QueryBox.Focus(FocusState.Programmatic);
+        // Focus the box the first time it exists (OnNavigatedTo is too early). Not on later loads: the
+        // page reloads when the user comes back from a detail page, and focus belongs on that result.
+        Loaded += (_, _) =>
+        {
+            if (!_focusedOnce)
+            {
+                _focusedOnce = true;
+                QueryBox.Focus(FocusState.Programmatic);
+            }
+        };
         _typing.Tick += async (_, _) =>
         {
             _typing.Stop();
@@ -75,6 +85,7 @@ public sealed partial class SearchPage : Page
     {
         if (e.OriginalSource is ContentControl { Content: CardView or ProfileView } item)
         {
+            _lastResult = item.Content as CardView;
             CardFocus.Apply(item, focused: true);
         }
     }
@@ -84,6 +95,16 @@ public sealed partial class SearchPage : Page
         if (e.OriginalSource is ContentControl { Content: CardView or ProfileView } item)
         {
             CardFocus.Apply(item, focused: false);
+        }
+    }
+
+    /// <summary>Back from a detail page lands on the result that opened it.</summary>
+    public void RestoreFocus()
+    {
+        if (_lastResult is not null && Results.ItemsPanelRoot is { } panel
+            && panel.Children.OfType<ContentControl>().FirstOrDefault(c => ReferenceEquals(c.Content, _lastResult)) is { } result)
+        {
+            result.Focus(FocusState.Programmatic);
         }
     }
 

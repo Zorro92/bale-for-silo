@@ -175,6 +175,14 @@ internal sealed class DebugServer
         var keys = new List<InjectedInputKeyboardInfo>();
         foreach (var ch in text)
         {
+            // A space as a Unicode keystroke is rejected (E_INVALIDARG); send the Space key instead.
+            if (ch == ' ')
+            {
+                keys.Add(new InjectedInputKeyboardInfo { VirtualKey = (ushort)Windows.System.VirtualKey.Space });
+                keys.Add(new InjectedInputKeyboardInfo { VirtualKey = (ushort)Windows.System.VirtualKey.Space, KeyOptions = InjectedInputKeyOptions.KeyUp });
+                continue;
+            }
+
             keys.Add(new InjectedInputKeyboardInfo { ScanCode = ch, KeyOptions = InjectedInputKeyOptions.Unicode });
             keys.Add(new InjectedInputKeyboardInfo { ScanCode = ch, KeyOptions = InjectedInputKeyOptions.Unicode | InjectedInputKeyOptions.KeyUp });
         }

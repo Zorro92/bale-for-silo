@@ -18,7 +18,7 @@ namespace Bale.Xbox;
 /// (TvSkylineSectionFeed): a passive marquee previews the focused card above the server's rows, over
 /// a wash tinted from that card's art.
 /// </summary>
-public sealed partial class BrowsePage : Page
+public sealed partial class BrowsePage : Page, IRestoresFocus
 {
     public const string HomeParameter = "home";
 
@@ -375,7 +375,7 @@ public sealed partial class BrowsePage : Page
     }
 
     /// <summary>Back from a detail page: focus returns to the card that opened it.</summary>
-    internal void RestoreFocus()
+    public void RestoreFocus()
     {
         if (_lastCard is { } last && Rows.ContainerFromIndex(last.Row) is DependencyObject rowContainer
             && FindChild<ListView>(rowContainer)?.ItemsPanelRoot is { } panel
