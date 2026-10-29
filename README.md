@@ -59,6 +59,10 @@ Don't edit the generated files by hand.
 5. Read Bale's log from the console: `XBOX_HOST=<your Xbox IP> ./scripts/xbox-logs.sh`
 6. Drive and inspect the running app from Linux (development builds only): `./scripts/bale-debug.sh log`, `press down a`, `type dune`, `focus`, `tree`. See `Services/DebugServer.cs`; build with `-p:BaleDebugServer=false` for anything you ship.
 
+## Contributing with an AI agent
+
+See [AGENTS.md](AGENTS.md) (and `CLAUDE.md` for Claude Code, with a `verify-on-xbox` skill in `.claude/skills`).
+
 ## License
 
 [GNU AGPL v3.0 or later](LICENSE), the same license as Silo.
