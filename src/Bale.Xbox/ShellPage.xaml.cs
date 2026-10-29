@@ -54,7 +54,8 @@ public sealed partial class ShellPage : Page, IBackHandler
         // Back from a detail page: the cached shell keeps its tabs and content; just restore focus.
         if (e.NavigationMode == NavigationMode.Back && _tabs.Count > 0)
         {
-            (ContentFrame.Content as IRestoresFocus)?.RestoreFocus();
+            // After the cached page is back in the tree and Windows has made its own first-focus pick.
+            _ = Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Low, () => (ContentFrame.Content as IRestoresFocus)?.RestoreFocus());
             return;
         }
 
