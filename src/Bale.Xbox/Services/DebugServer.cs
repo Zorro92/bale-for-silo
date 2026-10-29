@@ -35,7 +35,7 @@ internal sealed class DebugServer
 
     public async Task StartAsync()
     {
-        _listener.ConnectionReceived += (_, args) => _ = HandleAsync(args.Socket);
+        _listener.ConnectionReceived += (listener, args) => _ = HandleAsync(args.Socket);
         await _listener.BindServiceNameAsync(Port.ToString());
         Log.Info($"Debug server listening on port {Port}");
     }
