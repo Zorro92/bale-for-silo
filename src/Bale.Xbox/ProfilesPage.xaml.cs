@@ -30,7 +30,7 @@ public sealed partial class ProfilesPage : Page
         try
         {
             var profiles = await client.GetProfilesAsync();
-            Profiles.ItemsSource = profiles.Select(p => new ProfileView(p, client.Home.Resolve(p.AvatarUrl))).ToList();
+            Profiles.ItemsSource = profiles.Select(p => new ProfileView(p, client.Browse.Resolve(p.AvatarUrl))).ToList();
             await Task.Yield();
             var current = profiles.ToList().FindIndex(p => p.Id == client.ProfileId);
             if (Profiles.ContainerFromIndex(Math.Max(current, 0)) is GridViewItem item)
@@ -71,14 +71,14 @@ public sealed partial class ProfilesPage : Page
 
         Session.ProfileName = profile.Name;
         Session.Persist();
-        Frame.Navigate(typeof(HomePage));
+        Frame.Navigate(typeof(ShellPage));
         Frame.BackStack.Clear();
     }
 
     private async Task<bool> AskPinAsync(Profile profile)
     {
         var pinBox = new PasswordBox { PlaceholderText = "PIN", MaxLength = 8, InputScope = NumberScope() };
-        var error = new TextBlock { Foreground = new Windows.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 255, 138, 128)), Visibility = Visibility.Collapsed };
+        var error = new TextBlock { Foreground = (Windows.UI.Xaml.Media.Brush)Application.Current.Resources["SkylineError"], Visibility = Visibility.Collapsed };
         var dialog = new ContentDialog
         {
             Title = $"Enter {profile.Name}'s PIN",

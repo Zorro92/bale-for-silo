@@ -13,7 +13,7 @@ public sealed partial class ProfileView
         LockVisibility = profile.HasPin == true ? Visibility.Visible : Visibility.Collapsed;
         if (avatarUrl is not null)
         {
-            Avatar = new BitmapImage { DecodePixelType = DecodePixelType.Logical, DecodePixelWidth = 120, UriSource = avatarUrl };
+            Avatar = new BitmapImage { DecodePixelType = DecodePixelType.Logical, DecodePixelWidth = 56, UriSource = avatarUrl };
         }
     }
 

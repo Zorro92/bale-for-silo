@@ -1,0 +1,114 @@
+<Page
+    x:Class="Bale.Xbox.BrowsePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:Bale.Xbox.Views"
+    Background="{StaticResource SkylineBackground}">
+
+  <Page.Resources>
+    <DataTemplate x:Key="CardTemplate" x:DataType="views:CardView">
+      <StackPanel Width="{x:Bind Width}" Spacing="5">
+        <Grid Width="{x:Bind Width}" Height="{x:Bind Height}" CornerRadius="{StaticResource SkylineCardRadius}" Background="{StaticResource SkylineCardPlaceholder}">
+          <TextBlock Text="{x:Bind Title}" Visibility="{x:Bind FallbackVisibility}" TextWrapping="Wrap" TextAlignment="Center" FontSize="{StaticResource SkylineCardSubtitleSize}"
+                     VerticalAlignment="Center" Margin="6" Foreground="{StaticResource SkylineSecondary}" />
+          <Image Source="{x:Bind Image}" Stretch="UniformToFill" />
+          <!-- Progress: inset 7/6, 2.5 high, white on white @ 26% (guide §5.6). -->
+          <Grid Visibility="{x:Bind ProgressVisibility}" VerticalAlignment="Bottom" Margin="7,0,7,6" Height="2.5">
+            <Border Background="{StaticResource SkylineProgressTrack}" CornerRadius="1.25" />
+            <Border Background="{StaticResource SkylinePrimary}" CornerRadius="1.25" HorizontalAlignment="Left" Width="{x:Bind ProgressFillWidth}" />
+          </Grid>
+        </Grid>
+        <Grid Visibility="{x:Bind CaptionVisibility}" ColumnSpacing="6">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBlock Text="{x:Bind Title}" FontSize="{StaticResource SkylineCardTitleSize}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+          <TextBlock Grid.Column="1" Text="{x:Bind CaptionDetail}" FontSize="{StaticResource SkylineCardSubtitleSize}" FontWeight="Medium"
+                     Foreground="{StaticResource SkylineTertiary}" VerticalAlignment="Bottom" />
+        </Grid>
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate x:Key="RowTemplate" x:DataType="views:RowView">
+      <StackPanel Spacing="10" Margin="0,0,0,18">
+        <TextBlock Text="{x:Bind Title}" FontSize="{StaticResource SkylineRowTitleSize}" FontWeight="Bold" Margin="44,0,0,0" />
+        <!-- Rows bleed off the right edge, no end padding (guide §5.7). -->
+        <ListView ItemsSource="{x:Bind Cards}" ItemTemplate="{StaticResource CardTemplate}" ItemContainerStyle="{StaticResource SkylineCardItemStyle}"
+                  SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnCardClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur" Loaded="OnRowLoaded"
+                  Padding="44,4,0,4" ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden"
+                  ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+          <ListView.ItemsPanel>
+            <ItemsPanelTemplate>
+              <ItemsStackPanel Orientation="Horizontal" />
+            </ItemsPanelTemplate>
+          </ListView.ItemsPanel>
+        </ListView>
+      </StackPanel>
+    </DataTemplate>
+  </Page.Resources>
+
+  <Grid>
+    <!-- Marquee backdrop: full-bleed art of the focused item under the standard scrim stack (guide §5.4). -->
+    <Image x:Name="Backdrop" Stretch="UniformToFill" VerticalAlignment="Top" HorizontalAlignment="Right" Height="340" Opacity="0">
+      <Image.OpacityTransition>
+        <ScalarTransition Duration="0:0:0.24" />
+      </Image.OpacityTransition>
+    </Image>
+    <Rectangle IsHitTestVisible="False">
+      <Rectangle.Fill>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+          <GradientStop Color="#E6000000" Offset="0" />
+          <GradientStop Color="#99000000" Offset="0.38" />
+          <GradientStop Color="#00000000" Offset="0.7" />
+        </LinearGradientBrush>
+      </Rectangle.Fill>
+    </Rectangle>
+    <Rectangle IsHitTestVisible="False">
+      <Rectangle.Fill>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+          <GradientStop Color="#99000000" Offset="0" />
+          <GradientStop Color="#00000000" Offset="0.2" />
+          <GradientStop Color="#00000000" Offset="0.42" />
+          <GradientStop Color="#FF000000" Offset="0.63" />
+        </LinearGradientBrush>
+      </Rectangle.Fill>
+    </Rectangle>
+
+    <!-- Library tabs: sub-destination pills under the bar (guide §5.2). Only Browse exists so far. -->
+    <Grid x:Name="PillRow" Margin="44,75,44,0" VerticalAlignment="Top" Visibility="Collapsed">
+      <StackPanel Orientation="Horizontal" Spacing="6">
+        <Button x:Name="BrowsePill" Content="Browse" Style="{StaticResource SkylineCapsuleStyle}" FontSize="{StaticResource SkylinePillSize}"
+                Background="{StaticResource SkylinePrimary}" Foreground="{StaticResource SkylineBackground}" Padding="11,4.5" />
+      </StackPanel>
+      <TextBlock x:Name="ScopeCaption" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="9" Foreground="{StaticResource SkylineTertiary}" />
+    </Grid>
+
+    <!-- Marquee: passive, never focusable, previews the focused card (guide §5.4, §5.5). -->
+    <StackPanel x:Name="Marquee" Margin="44,109,0,0" Width="440" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="6" IsHitTestVisible="False">
+      <StackPanel Orientation="Horizontal" Spacing="7">
+        <Rectangle Width="13" Height="1.5" RadiusX="1" RadiusY="1" Fill="{StaticResource SkylineMarqueeTick}" VerticalAlignment="Center" />
+        <TextBlock x:Name="Eyebrow" FontSize="{StaticResource SkylineEyebrowSize}" FontWeight="Bold" CharacterSpacing="300"
+                   Foreground="{StaticResource SkylineMarqueeTick}" />
+      </StackPanel>
+      <Image x:Name="MarqueeLogo" MaxHeight="100" MaxWidth="440" HorizontalAlignment="Left" Stretch="Uniform" />
+      <TextBlock x:Name="MarqueeTitle" FontSize="{StaticResource SkylineMarqueeTitleSize}" FontWeight="ExtraBold" LineHeight="41"
+                 LineStackingStrategy="BlockLineHeight" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+      <TextBlock x:Name="MarqueeMeta" FontSize="{StaticResource SkylineMetaSize}" FontWeight="Medium" Foreground="{StaticResource SkylineSecondary}" />
+      <TextBlock x:Name="MarqueeSynopsis" FontSize="{StaticResource SkylineSynopsisSize}" LineHeight="16" LineStackingStrategy="BlockLineHeight"
+                 TextWrapping="Wrap" MaxLines="2" TextTrimming="WordEllipsis" MaxWidth="390" HorizontalAlignment="Left" />
+    </StackPanel>
+
+    <!-- Rows scroll in their own viewport below the marquee. -->
+    <ScrollViewer x:Name="RowsScroller" Margin="0,262,0,0" VerticalScrollBarVisibility="Hidden" HorizontalScrollMode="Disabled">
+      <ItemsControl x:Name="Rows" ItemTemplate="{StaticResource RowTemplate}" IsTabStop="False" Padding="0,0,0,24" />
+    </ScrollViewer>
+
+    <ProgressRing x:Name="LoadingRing" Width="32" Height="32" IsActive="True" Foreground="{StaticResource SkylinePrimary}" />
+    <StackPanel x:Name="ErrorPanel" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12" Visibility="Collapsed">
+      <TextBlock x:Name="ErrorText" FontSize="{StaticResource SkylineBodySize}" TextWrapping="Wrap" MaxWidth="420" TextAlignment="Center"
+                 Foreground="{StaticResource SkylineSecondary}" />
+      <Button x:Name="RetryButton" Content="Try Again" Style="{StaticResource SkylineButtonStyle}" HorizontalAlignment="Center" Click="OnRetryClick" />
+    </StackPanel>
+  </Grid>
+</Page>

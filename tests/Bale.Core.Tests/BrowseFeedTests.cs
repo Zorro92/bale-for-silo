@@ -1,16 +1,16 @@
 using Bale.Core.Api.Models;
 using Bale.Core.Connection;
-using Bale.Core.Home;
+using Bale.Core.Browse;
 
 namespace Bale.Core.Tests;
 
-public class HomeFeedTests
+public class BrowseFeedTests
 {
-    private static HomeFeed Feed(string server = "silo.example.com")
+    private static BrowseFeed Feed(string server = "silo.example.com")
     {
         ServerAddress.TryParse(server, out var address);
         var connection = new SiloConnection(address, new ClientIdentity("d", "x", "xbox", "Bale"), transport: new StubHandler());
-        return new HomeFeed(connection.Api, address);
+        return new BrowseFeed(connection.Api, address);
     }
 
     [Fact]
@@ -70,4 +70,20 @@ public class HomeFeedTests
     [Fact]
     public void RelativeArtworkKeepsServerSubpath() =>
         Assert.Equal("https://example.com/silo/api/v2/artwork/a.jpg", Feed("https://example.com/silo").Resolve("/api/v2/artwork/a.jpg")!.ToString());
+}
+
+public class MarqueeMetaTests
+{
+    [Fact]
+    public void EpisodeShowsBadgesCodeTitleAndTimeLeft()
+    {
+        var overlay = new CatalogItemOverlay { Resolution = "2160p", Hdr = "DV HDR10", Audio = "TrueHD Atmos" };
+        var badges = BrowseFeed.Badges(overlay);
+        var card = new MediaCard("e1", "episode", "Dark", null, null, null, null, null, null, 0.5, 23, null, "s1", badges, "S2 E7", "The Rains");
+
+        Assert.Equal("4K · DOLBY VISION · ATMOS · S2 E7 · The Rains · 23m left", card.MarqueeMeta);
+    }
+
+    [Fact]
+    public void PlainHdrIsShownAsSent() => Assert.Equal(["HDR10"], BrowseFeed.Badges(new CatalogItemOverlay { Resolution = "1080p", Hdr = "HDR10" }));
 }

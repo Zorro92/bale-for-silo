@@ -4,7 +4,9 @@ using Bale.Core.Api.Api.V2.Account;
 using Bale.Core.Api.Api.V2.Auth;
 using Bale.Core.Api.Api.V2.Catalog;
 using Bale.Core.Api.Api.V2.Home;
+using Bale.Core.Api.Api.V2.Library;
 using Bale.Core.Api.Api.V2.Profiles;
+using Bale.Core.Api.Api.V2.User;
 using Microsoft.Kiota.Abstractions.Extensions;
 using Microsoft.Kiota.Abstractions;
 using System.Collections.Generic;
@@ -39,10 +41,20 @@ namespace Bale.Core.Api.Api.V2
         {
             get => new global::Bale.Core.Api.Api.V2.Home.HomeRequestBuilder(PathParameters, RequestAdapter);
         }
+        /// <summary>The library property</summary>
+        public global::Bale.Core.Api.Api.V2.Library.LibraryRequestBuilder Library
+        {
+            get => new global::Bale.Core.Api.Api.V2.Library.LibraryRequestBuilder(PathParameters, RequestAdapter);
+        }
         /// <summary>The profiles property</summary>
         public global::Bale.Core.Api.Api.V2.Profiles.ProfilesRequestBuilder Profiles
         {
             get => new global::Bale.Core.Api.Api.V2.Profiles.ProfilesRequestBuilder(PathParameters, RequestAdapter);
+        }
+        /// <summary>The user property</summary>
+        public global::Bale.Core.Api.Api.V2.User.UserRequestBuilder User
+        {
+            get => new global::Bale.Core.Api.Api.V2.User.UserRequestBuilder(PathParameters, RequestAdapter);
         }
         /// <summary>
         /// Instantiates a new <see cref="global::Bale.Core.Api.Api.V2.V2RequestBuilder"/> and sets the default values.

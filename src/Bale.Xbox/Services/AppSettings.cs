@@ -39,6 +39,13 @@ internal static class AppSettings
         set => Local.Values[nameof(ProfileId)] = value;
     }
 
+    /// <summary>The library a multi-library tab is scoped to, per profile and tab (Skyline §8: persisted).</summary>
+    public static string? GetLibraryScope(string? profileId, string tab) =>
+        Local.Values[$"Scope.{profileId}.{tab}"] as string;
+
+    public static void SetLibraryScope(string? profileId, string tab, string libraryId) =>
+        Local.Values[$"Scope.{profileId}.{tab}"] = libraryId;
+
     public static string? LoadRefreshToken(string server)
     {
         try

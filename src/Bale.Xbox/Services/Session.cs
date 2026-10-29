@@ -58,7 +58,7 @@ internal static class Session
 
             ProfileName = profile.Name;
             Persist();
-            frame.Navigate(typeof(HomePage));
+            frame.Navigate(typeof(ShellPage));
         }
 
         frame.BackStack.Clear();

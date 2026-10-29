@@ -1,0 +1,80 @@
+<Page
+    x:Class="Bale.Xbox.ShellPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="{StaticResource SkylineBackground}">
+
+  <!-- Root screens (Home, library tabs, Search) live in ContentFrame under the Skyline top bar (guide §5.1). -->
+  <Grid x:Name="Root">
+    <Frame x:Name="ContentFrame" />
+
+    <!-- scrim.dropdown behind an open panel. -->
+    <Rectangle x:Name="PanelScrim" Fill="{StaticResource SkylineScrimDropdown}" Visibility="Collapsed" IsHitTestVisible="False" />
+
+    <Grid x:Name="TopBar" Margin="44,28,44,0" Height="32" VerticalAlignment="Top">
+      <Grid.OpacityTransition>
+        <ScalarTransition Duration="0:0:0.2" />
+      </Grid.OpacityTransition>
+      <TextBlock Text="BALE" FontSize="{StaticResource SkylineWordmarkSize}" FontWeight="ExtraBold" CharacterSpacing="340"
+                 Foreground="{StaticResource SkylinePrimary}" VerticalAlignment="Center" HorizontalAlignment="Left" />
+      <StackPanel x:Name="Tabs" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center"
+                  XYFocusKeyboardNavigation="Enabled" />
+      <StackPanel Orientation="Horizontal" Spacing="11" HorizontalAlignment="Right" VerticalAlignment="Center">
+        <Button x:Name="SearchButton" Style="{StaticResource SkylineCapsuleStyle}" Width="26" Height="26" Padding="0" Click="OnSearchClick"
+                AutomationProperties.Name="Search">
+          <FontIcon Glyph="&#xE721;" FontSize="11" />
+        </Button>
+        <Button x:Name="AvatarButton" Style="{StaticResource SkylineCapsuleStyle}" Width="26" Height="26" Padding="0"
+                Background="{StaticResource SkylineChromeSelected}" Foreground="{StaticResource SkylinePrimary}" Click="OnAvatarClick"
+                AutomationProperties.Name="Profile">
+          <TextBlock x:Name="AvatarInitial" FontSize="11" FontWeight="Bold" />
+        </Button>
+      </StackPanel>
+    </Grid>
+
+    <!-- Cascading library selector, level 1 (guide §5.3): anchored under the focused tab. -->
+    <Border x:Name="LibraryPanel" Width="230" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,66,0,0" Padding="7"
+            Background="{StaticResource SkylineGlassStrong}" CornerRadius="{StaticResource SkylinePanelRadius}" Visibility="Collapsed">
+      <StackPanel Spacing="2">
+        <TextBlock x:Name="LibraryPanelHeader" FontFamily="{StaticResource SkylineMono}" FontSize="{StaticResource SkylineDropdownHeaderSize}"
+                   FontWeight="SemiBold" CharacterSpacing="260" Foreground="{StaticResource SkylineTertiary}" Margin="9,4,9,4" />
+        <StackPanel x:Name="LibraryRows" Spacing="2" />
+      </StackPanel>
+    </Border>
+
+    <!-- Profile dropdown (guide §5.8): same panel grammar, anchored under the avatar. -->
+    <Border x:Name="ProfilePanel" Width="240" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,66,44,0" Padding="7"
+            Background="{StaticResource SkylineGlassStrong}" CornerRadius="{StaticResource SkylinePanelRadius}" Visibility="Collapsed">
+      <StackPanel Spacing="2">
+        <Grid Margin="9,6,9,6" ColumnSpacing="10">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="32" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Border Width="32" Height="32" CornerRadius="16" Background="{StaticResource SkylineChromeSelected}">
+            <TextBlock x:Name="PanelInitial" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <StackPanel Grid.Column="1" VerticalAlignment="Center">
+            <TextBlock x:Name="PanelProfileName" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="PanelServer" FontFamily="{StaticResource SkylineMono}" FontSize="8" Foreground="{StaticResource SkylineTertiary}"
+                       TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+        </Grid>
+        <Rectangle Height="0.5" Fill="{StaticResource SkylineHairline}" Margin="6,2" />
+        <Button x:Name="SwitchProfileRow" Style="{StaticResource SkylinePanelRowStyle}" Click="OnSwitchProfileClick">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <FontIcon Glyph="&#xE748;" FontSize="11" />
+            <TextBlock Text="Switch Profile" />
+          </StackPanel>
+        </Button>
+        <Rectangle Height="0.5" Fill="{StaticResource SkylineHairline}" Margin="6,2" />
+        <Button Style="{StaticResource SkylinePanelRowStyle}" Click="OnSignOutClick">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <FontIcon Glyph="&#xF3B1;" FontSize="11" />
+            <TextBlock Text="Sign Out" />
+          </StackPanel>
+        </Button>
+      </StackPanel>
+    </Border>
+  </Grid>
+</Page>

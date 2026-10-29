@@ -13,7 +13,7 @@ using System.Text.Json;
 using Bale.Core;
 using Bale.Core.Auth;
 using Bale.Core.Connection;
-using Bale.Core.Home;
+using Bale.Core.Browse;
 
 var identity = new ClientIdentity(
     DeviceId: "bale-cli-" + Environment.MachineName.ToLowerInvariant(),
@@ -116,7 +116,7 @@ switch (command)
             return 0;
         }
 
-        var rows = await client.Home.LoadAsync(ArtworkWidths.Tv1080, cts.Token);
+        var rows = await client.Browse.LoadHomeAsync(ArtworkWidths.Tv1080, cts.Token);
         if (args.Contains("--json"))
         {
             Console.WriteLine(JsonSerializer.Serialize(rows, new JsonSerializerOptions { WriteIndented = true }));

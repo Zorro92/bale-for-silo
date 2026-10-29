@@ -4,8 +4,10 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     RequestedTheme="Dark">
   <Application.Resources>
-    <SolidColorBrush x:Key="BaleBackground" Color="#17150F" />
-    <SolidColorBrush x:Key="BaleStraw" Color="#E3B54A" />
-    <SolidColorBrush x:Key="BaleMuted" Color="#A39C8C" />
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="ms-appx:///Themes/Skyline.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
   </Application.Resources>
 </Application>

@@ -39,6 +39,9 @@ dotnet kiota generate \
   --include-path '/api/v2/home/layout' \
   --include-path '/api/v2/home/sections' \
   --include-path '/api/v2/home/sections/{id}/items' \
-  --include-path '/api/v2/catalog/items/{id}'
+  --include-path '/api/v2/catalog/items/{id}' \
+  --include-path '/api/v2/catalog' \
+  --include-path '/api/v2/user/libraries' \
+  --include-path '/api/v2/library/{id}/sections'
 
 echo "Generated client from Silo-Server/silo-server@$SILO_REF"
