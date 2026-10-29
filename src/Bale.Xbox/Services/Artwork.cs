@@ -54,6 +54,43 @@ internal static class Artwork
         return image;
     }
 
+    private const int KeptLimit = 48;
+    private static readonly Dictionary<string, BitmapImage> Kept = new();
+    private static readonly Queue<string> KeptOrder = new();
+
+    /// <summary>
+    /// A logo that stays decoded in memory once shown, like the official image loader's memory
+    /// cache, so going back along a row puts it up at once. <paramref name="ready"/> says it's
+    /// already decoded (its ImageOpened won't fire again).
+    /// </summary>
+    public static BitmapImage LoadKept(Uri uri, int height, out bool ready)
+    {
+        var key = Key(uri) + "@" + height;
+        if (Kept.TryGetValue(key, out var kept))
+        {
+            ready = true;
+            return kept;
+        }
+
+        ready = false;
+        var image = Load(uri, height: height);
+        image.ImageOpened += (_, _) =>
+        {
+            if (Kept.ContainsKey(key))
+            {
+                return;
+            }
+
+            Kept[key] = image;
+            KeptOrder.Enqueue(key);
+            if (KeptOrder.Count > KeptLimit)
+            {
+                Kept.Remove(KeptOrder.Dequeue());
+            }
+        };
+        return image;
+    }
+
     /// <summary>Fetch into the cache ahead of time (Prefetch).</summary>
     public static void Warm(Uri? uri)
     {

@@ -22,6 +22,11 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
 {
     public const string HomeParameter = "home";
 
+    /// <summary>The For You tab: recommendation rows, laid out like Home (TvRecommendationsScreen).</summary>
+    public const string ForYouParameter = "foryou";
+
+    private bool _forYou;
+
     /// <summary>Marquee updates wait for focus to rest this long, so scrubbing a row doesn't thrash backdrops (guide §4.2).</summary>
     private static readonly TimeSpan MarqueeSettle = TimeSpan.FromMilliseconds(150);
 
@@ -29,6 +34,9 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     private const double LogoSlotHeight = 84;
 
     private readonly DispatcherTimer _marqueeTimer = new() { Interval = MarqueeSettle };
+
+    /// <summary>How long a marquee waits for its logo before showing the text title instead.</summary>
+    private readonly DispatcherTimer _logoGrace = new() { Interval = TimeSpan.FromMilliseconds(350) };
     private CardView? _pendingMarquee;
     private CardView? _shownMarquee;
     private string? _libraryId;
@@ -63,6 +71,14 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
                 _art.Show(pending);
             }
         };
+        _logoGrace.Tick += (_, _) =>
+        {
+            _logoGrace.Stop();
+            if (MarqueeLogo.Opacity == 0)
+            {
+                MarqueeTitle.Opacity = 1;
+            }
+        };
         _marqueeTimer.Tick += (_, _) =>
         {
             _marqueeTimer.Stop();
@@ -77,6 +93,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         base.OnNavigatedTo(e);
         Log.Info("Browse: navigated to " + (e.Parameter as string ?? ""));
         var parameter = e.Parameter as string ?? HomeParameter;
+        _forYou = parameter == ForYouParameter;
         if (parameter.StartsWith("library:", StringComparison.Ordinal))
         {
             var parts = parameter.Split(new[] { ':' }, 3);
@@ -100,14 +117,15 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         ErrorPanel.Visibility = Visibility.Collapsed;
         try
         {
-            var rows = _libraryId is null
-                ? await client.Browse.LoadHomeAsync(ArtworkWidths.Tv1080)
+            var rows = _forYou ? await client.Browse.LoadForYouAsync(ArtworkWidths.Tv1080)
+                : _libraryId is null ? await client.Browse.LoadHomeAsync(ArtworkWidths.Tv1080)
                 : await client.Browse.LoadLibraryAsync(_libraryId, ArtworkWidths.Tv1080);
             var views = rows.Select(row => new RowView(row)).ToList();
             Rows.ItemsSource = views;
             if (views.Count == 0)
             {
-                ShowError(_libraryId is null ? "Nothing on Home yet. Add a library on your Silo server and check back." : "This library is empty.");
+                ShowError(_forYou ? "No recommendations yet. Watch a few titles and check back."
+                    : _libraryId is null ? "Nothing on Home yet. Add a library on your Silo server and check back." : "This library is empty.");
                 return;
             }
 
@@ -403,24 +421,45 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         _ = ShowDetailLineAsync(view);
         ShowBadges(card.SpecBadges);
 
-        // Logo art fades over the text title once it has decoded; a slow or broken logo never blanks the slot.
+        // A title with logo art waits briefly for it (decoded logos are kept in memory, and the
+        // neighbours' are prefetched) before falling back to the text title, so moving along a row
+        // doesn't flash text for a frame or two before every logo. A slow or broken logo still never
+        // leaves the slot blank: the text appears after the grace period and the logo replaces it
+        // whenever it lands.
+        _logoGrace.Stop();
         MarqueeLogo.Opacity = 0;
-        MarqueeTitle.Opacity = 1;
         MarqueeLogo.Source = null;
+        MarqueeTitle.Opacity = card.LogoUrl is null ? 1 : 0;
         TitleSlot.Height = card.LogoUrl is null ? double.NaN : LogoSlotHeight;
         if (card.LogoUrl is { } logo)
         {
             MarqueeLogo.Height = LogoSlotHeight;
-            var image = Artwork.Load(logo, height: (int)LogoSlotHeight);
-            image.ImageOpened += (_, _) =>
-            {
-                if (ReferenceEquals(_shownMarquee, view))
-                {
-                    MarqueeLogo.Opacity = 1;
-                    MarqueeTitle.Opacity = 0;
-                }
-            };
+            var image = Artwork.LoadKept(logo, (int)LogoSlotHeight, out var ready);
             MarqueeLogo.Source = image;
+            if (ready)
+            {
+                MarqueeLogo.Opacity = 1;
+            }
+            else
+            {
+                image.ImageOpened += (_, _) =>
+                {
+                    if (ReferenceEquals(_shownMarquee, view))
+                    {
+                        _logoGrace.Stop();
+                        MarqueeLogo.Opacity = 1;
+                        MarqueeTitle.Opacity = 0;
+                    }
+                };
+                image.ImageFailed += (_, _) =>
+                {
+                    if (ReferenceEquals(_shownMarquee, view))
+                    {
+                        MarqueeTitle.Opacity = 1;
+                    }
+                };
+                _logoGrace.Start();
+            }
         }
 
         _art?.Hide();

@@ -147,18 +147,36 @@ public sealed partial class DetailPage : Page
     private void ShowHero(ItemDetail detail)
     {
         TitleText.Text = detail.Title;
-        TitleText.Opacity = 1;
         TitleLogo.Opacity = 0;
+        // As on Home: a title with logo art waits briefly for it before showing the text title.
+        TitleText.Opacity = detail.LogoUrl is null ? 1 : 0;
         if (detail.LogoUrl is { } logo)
         {
-            // The logo replaces the text title once decoded; a broken logo never blanks the title.
-            var image = Artwork.Load(logo, height: (int)LogoHeight);
-            image.ImageOpened += (_, _) =>
+            var image = Artwork.LoadKept(logo, (int)LogoHeight, out var ready);
+            TitleLogo.Source = image;
+            if (ready)
             {
                 TitleLogo.Opacity = 1;
-                TitleText.Opacity = 0;
-            };
-            TitleLogo.Source = image;
+            }
+            else
+            {
+                image.ImageOpened += (_, _) =>
+                {
+                    TitleLogo.Opacity = 1;
+                    TitleText.Opacity = 0;
+                };
+                image.ImageFailed += (_, _) => TitleText.Opacity = 1;
+                var grace = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
+                grace.Tick += (_, _) =>
+                {
+                    grace.Stop();
+                    if (TitleLogo.Opacity == 0)
+                    {
+                        TitleText.Opacity = 1;
+                    }
+                };
+                grace.Start();
+            }
         }
 
         SubtitleText.Text = detail.Subtitle ?? string.Empty;

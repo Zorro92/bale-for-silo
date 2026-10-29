@@ -119,15 +119,19 @@ public sealed partial class CardView
 /// <summary>A top-bar tab: Home (no library tab) or a library type.</summary>
 public sealed partial class TabView
 {
-    public TabView(string title, LibraryTab? libraryTab)
+    public TabView(string title, LibraryTab? libraryTab, string? page = null)
     {
         Title = title;
         LibraryTab = libraryTab;
+        Page = page;
     }
 
     public string Title { get; }
 
     public LibraryTab? LibraryTab { get; }
+
+    /// <summary>A fixed root that isn't a library: "foryou" or "calendar" (TvRootDestination).</summary>
+    public string? Page { get; }
 }
 
 /// <summary>A library row in the cascade panel (guide §5.3).</summary>

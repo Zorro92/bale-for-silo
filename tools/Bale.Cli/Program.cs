@@ -4,7 +4,7 @@
 //   bale-cli pair-test <server>    open a sign-in code, then cancel it
 //   bale-cli login <server>        sign in with a code and keep the session (~/.config/bale-cli)
 //   bale-cli profiles              list the signed-in account's profiles
-//   bale-cli home [--json]         print the home rows Bale would show
+//   bale-cli home [--json] [--for-you]         print the home rows Bale would show
 //   bale-cli detail <content-id>   print a title's detail page as Bale shows it
 //   bale-cli search <query>        print search results and their artwork
 //   bale-cli logout
@@ -171,7 +171,9 @@ switch (command)
             return 0;
         }
 
-        var rows = await client.Browse.LoadHomeAsync(ArtworkWidths.Tv1080, cts.Token);
+        var rows = args.Contains("--for-you")
+            ? await client.Browse.LoadForYouAsync(ArtworkWidths.Tv1080, cts.Token)
+            : await client.Browse.LoadHomeAsync(ArtworkWidths.Tv1080, cts.Token);
         if (args.Contains("--json"))
         {
             Console.WriteLine(JsonSerializer.Serialize(rows, new JsonSerializerOptions { WriteIndented = true }));
@@ -203,7 +205,7 @@ catch (Bale.Core.Api.Models.Problem problem)
 
 static int Usage()
 {
-    Console.Error.WriteLine("usage: bale-cli <capability|pair-test|login> <server> | <profiles|home [--json]|detail <id>|search <query>|logout>");
+    Console.Error.WriteLine("usage: bale-cli <capability|pair-test|login> <server> | <profiles|home [--json] [--for-you]|detail <id>|search <query>|logout>");
     return 2;
 }
 

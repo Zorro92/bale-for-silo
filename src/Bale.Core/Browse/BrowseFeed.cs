@@ -59,6 +59,29 @@ public sealed class BrowseFeed
         return ToRows(response?.Sections);
     }
 
+    /// <summary>For You: the server's recommendation rows (TvRecommendationsScreen, /recommendations/discover).</summary>
+    public async Task<IReadOnlyList<MediaRow>> LoadForYouAsync(ArtworkWidths widths, CancellationToken cancellationToken = default)
+    {
+        var response = await _api.Api.V2.Recommendations.Discover.GetAsync(config =>
+        {
+            config.QueryParameters.PosterWidth = widths.Poster;
+            config.QueryParameters.BackdropWidth = widths.Backdrop;
+            config.QueryParameters.LogoWidth = widths.Logo;
+            config.QueryParameters.StillWidth = widths.Still;
+        }, cancellationToken).ConfigureAwait(false);
+
+        return (response?.Items ?? [])
+            .Where(row => row.Items is { Count: > 0 })
+            .Select(row => new MediaRow(
+                row.Key ?? string.Empty,
+                row.Title ?? string.Empty,
+                row.Kind ?? string.Empty,
+                false,
+                CardShape.Poster,
+                row.Items!.Take(CardsPerRow).Select(item => ToCard(item, CardShape.Poster)).ToList()))
+            .ToList();
+    }
+
     /// <summary>Movies, series and episodes matching <paramref name="query"/>, best match first.</summary>
     /// <summary>
     /// Search as TvSearchViewModel runs it: the catalog's query source, with no type for All and

@@ -40,6 +40,40 @@ public sealed partial class ShellPage : Page, IBackHandler
             }
         };
         Root.GotFocus += OnAnyFocus;
+        TopBar.GettingFocus += OnTopBarGettingFocus;
+        TopBar.PreviewKeyDown += OnTopBarPreviewKeyDown;
+    }
+
+    /// <summary>
+    /// Up from content lands on the selected tab (or Search on the search screen), never the control
+    /// nearest on screen (TvTopMenuBar's enter target).
+    /// </summary>
+    private void OnTopBarGettingFocus(UIElement sender, GettingFocusEventArgs args)
+    {
+        try
+        {
+            if (!IsInTopBar(args.OldFocusedElement) && IsInTopBar(args.NewFocusedElement)
+                && (_searchSelected ? (Control?)SearchButton : ButtonFor(_selected)) is { } target
+                && !ReferenceEquals(target, args.NewFocusedElement))
+            {
+                args.TrySetNewFocusedElement(target);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Top bar focus", ex);
+        }
+    }
+
+    /// <summary>Left off Search and Right off the avatar stay in the bar instead of dropping into content.</summary>
+    private void OnTopBarPreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        var left = e.Key is Windows.System.VirtualKey.Left or Windows.System.VirtualKey.GamepadDPadLeft or Windows.System.VirtualKey.GamepadLeftThumbstickLeft;
+        var right = e.Key is Windows.System.VirtualKey.Right or Windows.System.VirtualKey.GamepadDPadRight or Windows.System.VirtualKey.GamepadLeftThumbstickRight;
+        if ((left && ReferenceEquals(e.OriginalSource, SearchButton)) || (right && ReferenceEquals(e.OriginalSource, AvatarButton)))
+        {
+            e.Handled = true;
+        }
     }
 
     /// <summary>Content pages reach the shell through this (sign-out on a dead session).</summary>
@@ -82,6 +116,9 @@ public sealed partial class ShellPage : Page, IBackHandler
             Log.Error("Library tabs", ex);
         }
 
+        // Fixed roots after the library tabs, as TvTopMenuBar orders them.
+        _tabs.Add(new TabView("For You", null, "foryou"));
+        _tabs.Add(new TabView("Calendar", null, "calendar"));
         Tabs.ItemsSource = _tabs.ToList();
         Tabs.UpdateLayout();
         Select(_tabs[0]);
@@ -150,7 +187,15 @@ public sealed partial class ShellPage : Page, IBackHandler
         _selected = tab;
         _searchSelected = false;
         UpdateChecked();
-        if (tab.LibraryTab is { } libraryTab)
+        if (tab.Page == "foryou")
+        {
+            ShowContent(typeof(BrowsePage), BrowsePage.ForYouParameter);
+        }
+        else if (tab.Page == "calendar")
+        {
+            ShowContent(typeof(CalendarPage), string.Empty);
+        }
+        else if (tab.LibraryTab is { } libraryTab)
         {
             var scope = ScopeFor(libraryTab);
             ShowContent(typeof(BrowsePage), BrowsePage.LibraryParameter(scope.Id!, scope.Name ?? libraryTab.Title));
