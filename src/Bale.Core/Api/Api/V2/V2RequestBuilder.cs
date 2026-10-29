@@ -3,10 +3,13 @@
 using Bale.Core.Api.Api.V2.Account;
 using Bale.Core.Api.Api.V2.Auth;
 using Bale.Core.Api.Api.V2.Catalog;
+using Bale.Core.Api.Api.V2.Favorites;
 using Bale.Core.Api.Api.V2.Home;
 using Bale.Core.Api.Api.V2.Library;
 using Bale.Core.Api.Api.V2.Profiles;
 using Bale.Core.Api.Api.V2.User;
+using Bale.Core.Api.Api.V2.Watched;
+using Bale.Core.Api.Api.V2.Watchlist;
 using Microsoft.Kiota.Abstractions.Extensions;
 using Microsoft.Kiota.Abstractions;
 using System.Collections.Generic;
@@ -36,6 +39,11 @@ namespace Bale.Core.Api.Api.V2
         {
             get => new global::Bale.Core.Api.Api.V2.Catalog.CatalogRequestBuilder(PathParameters, RequestAdapter);
         }
+        /// <summary>The favorites property</summary>
+        public global::Bale.Core.Api.Api.V2.Favorites.FavoritesRequestBuilder Favorites
+        {
+            get => new global::Bale.Core.Api.Api.V2.Favorites.FavoritesRequestBuilder(PathParameters, RequestAdapter);
+        }
         /// <summary>The home property</summary>
         public global::Bale.Core.Api.Api.V2.Home.HomeRequestBuilder Home
         {
@@ -55,6 +63,16 @@ namespace Bale.Core.Api.Api.V2
         public global::Bale.Core.Api.Api.V2.User.UserRequestBuilder User
         {
             get => new global::Bale.Core.Api.Api.V2.User.UserRequestBuilder(PathParameters, RequestAdapter);
+        }
+        /// <summary>The watched property</summary>
+        public global::Bale.Core.Api.Api.V2.Watched.WatchedRequestBuilder Watched
+        {
+            get => new global::Bale.Core.Api.Api.V2.Watched.WatchedRequestBuilder(PathParameters, RequestAdapter);
+        }
+        /// <summary>The watchlist property</summary>
+        public global::Bale.Core.Api.Api.V2.Watchlist.WatchlistRequestBuilder Watchlist
+        {
+            get => new global::Bale.Core.Api.Api.V2.Watchlist.WatchlistRequestBuilder(PathParameters, RequestAdapter);
         }
         /// <summary>
         /// Instantiates a new <see cref="global::Bale.Core.Api.Api.V2.V2RequestBuilder"/> and sets the default values.

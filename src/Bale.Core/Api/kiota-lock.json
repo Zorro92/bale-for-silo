@@ -1,5 +1,5 @@
 {
-  "descriptionHash": "ADE54BEB8B8559461C3FF248E177AF66C6BF0A63A06B7E4AE613ECD0E71B7C56ABDB63BC0999A41E48245BC442F112BC09853499EC65C88A431DF010F69B20B1",
+  "descriptionHash": "6C02743E3E1949FE500A32E8E61B549E8A67F9253C9C6D4DF68717D7DF925C71CFF9284D45C3268B2E610534873C26897D1A42373B57B5BCD7AFE647478AC958",
   "descriptionLocation": "../../../.cache/silo-openapi-cc8514943289045e7b9f7ac8d36d4968bfe93926.json",
   "lockFileVersion": "1.0.0",
   "kiotaVersion": "1.36.1",
@@ -45,7 +45,12 @@
     "/api/v2/catalog/items/{id}",
     "/api/v2/catalog",
     "/api/v2/user/libraries",
-    "/api/v2/library/{id}/sections"
+    "/api/v2/library/{id}/sections",
+    "/api/v2/catalog/series/{id}/seasons",
+    "/api/v2/catalog/series/{id}/seasons/{num}/episodes",
+    "/api/v2/favorites/{item_id}",
+    "/api/v2/watchlist/{item_id}",
+    "/api/v2/watched/{id}"
   ],
   "excludePatterns": [],
   "disabledValidationRules": [],

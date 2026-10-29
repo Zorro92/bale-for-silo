@@ -42,6 +42,11 @@ dotnet kiota generate \
   --include-path '/api/v2/catalog/items/{id}' \
   --include-path '/api/v2/catalog' \
   --include-path '/api/v2/user/libraries' \
-  --include-path '/api/v2/library/{id}/sections'
+  --include-path '/api/v2/library/{id}/sections' \
+  --include-path '/api/v2/catalog/series/{id}/seasons' \
+  --include-path '/api/v2/catalog/series/{id}/seasons/{num}/episodes' \
+  --include-path '/api/v2/favorites/{item_id}' \
+  --include-path '/api/v2/watchlist/{item_id}' \
+  --include-path '/api/v2/watched/{id}'
 
 echo "Generated client from Silo-Server/silo-server@$SILO_REF"

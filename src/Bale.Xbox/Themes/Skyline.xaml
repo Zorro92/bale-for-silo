@@ -283,4 +283,183 @@
     <Setter Property="CornerRadius" Value="{StaticResource SkylineBadgeRadius}" />
     <Setter Property="Padding" Value="6,2.5" />
   </Style>
+
+  <!--
+    Detail page Play pill (TvSquaredButtons.TvPrimaryPillButton, stableHero): 38 high, 4 px corners,
+    white @ 76% with a black label, solid white on focus with a 1.05 lift.
+  -->
+  <Style x:Key="SkylinePlayButtonStyle" TargetType="Button">
+    <Setter Property="Height" Value="38" />
+    <Setter Property="Padding" Value="27,0" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineBackground}" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Pill" Background="#C2FFFFFF" BorderBrush="#1FFFFFFF" BorderThickness="0.8" CornerRadius="4" Padding="{TemplateBinding Padding}">
+            <Border.RenderTransform>
+              <ScaleTransform x:Name="Lift" CenterX="0" CenterY="0" />
+            </Border.RenderTransform>
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" />
+                <VisualState x:Name="PointerOver" />
+                <VisualState x:Name="Pressed" />
+                <VisualState x:Name="Disabled">
+                  <VisualState.Setters>
+                    <Setter Target="Pill.Opacity" Value="0.5" />
+                  </VisualState.Setters>
+                </VisualState>
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters>
+                    <Setter Target="Pill.Background" Value="#FFFFFFFF" />
+                    <Setter Target="Pill.BorderBrush" Value="#2E000000" />
+                    <Setter Target="Pill.BorderThickness" Value="1.8" />
+                  </VisualState.Setters>
+                  <Storyboard>
+                    <DoubleAnimation Storyboard.TargetName="Lift" Storyboard.TargetProperty="ScaleX" To="1.05" Duration="0:0:0.12" />
+                    <DoubleAnimation Storyboard.TargetName="Lift" Storyboard.TargetProperty="ScaleY" To="1.05" Duration="0:0:0.12" />
+                  </Storyboard>
+                </VisualState>
+                <VisualState x:Name="PointerFocused" />
+                <VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <ContentPresenter Content="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" FontSize="{TemplateBinding FontSize}"
+                              FontWeight="{TemplateBinding FontWeight}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!--
+    Round icon toggle beside Play (TvSquaredButtons.TvSquareToggleButton): 38 across, white @ 10%
+    with a white @ 34% ring at rest; solid white, black glyph and a 1.08 lift on focus.
+    Content must be a glyph string.
+  -->
+  <Style x:Key="SkylineCircleButtonStyle" TargetType="Button">
+    <Setter Property="Width" Value="38" />
+    <Setter Property="Height" Value="38" />
+    <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
+    <Setter Property="FontFamily" Value="{ThemeResource SymbolThemeFontFamily}" />
+    <Setter Property="FontSize" Value="15" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid x:Name="Root" RenderTransformOrigin="0.5,0.5">
+            <Grid.RenderTransform>
+              <ScaleTransform x:Name="Lift" />
+            </Grid.RenderTransform>
+            <Ellipse x:Name="Disc" Fill="#1AFFFFFF" Stroke="#57FFFFFF" StrokeThickness="1.4" />
+            <ContentPresenter x:Name="Glyph" Content="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}"
+                              FontFamily="{TemplateBinding FontFamily}" FontSize="{TemplateBinding FontSize}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" />
+                <VisualState x:Name="PointerOver" />
+                <VisualState x:Name="Pressed" />
+                <VisualState x:Name="Disabled">
+                  <VisualState.Setters>
+                    <Setter Target="Root.Opacity" Value="0.4" />
+                  </VisualState.Setters>
+                </VisualState>
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters>
+                    <Setter Target="Disc.Fill" Value="#FFFFFFFF" />
+                    <Setter Target="Disc.Stroke" Value="#1F000000" />
+                    <Setter Target="Disc.StrokeThickness" Value="0.8" />
+                    <Setter Target="Glyph.Foreground" Value="#FF000000" />
+                  </VisualState.Setters>
+                  <Storyboard>
+                    <DoubleAnimation Storyboard.TargetName="Lift" Storyboard.TargetProperty="ScaleX" To="1.08" Duration="0:0:0.12" />
+                    <DoubleAnimation Storyboard.TargetName="Lift" Storyboard.TargetProperty="ScaleY" To="1.08" Duration="0:0:0.12" />
+                  </Storyboard>
+                </VisualState>
+                <VisualState x:Name="PointerFocused" />
+                <VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!--
+    Season chip (TvSeasonPicker): 26 high pill; white @ 5% with a white @ 30% hairline at rest,
+    white @ 20% with a white @ 70% ring when it's the shown season (Checked), inverted on focus.
+    Content must be a string.
+  -->
+  <Style x:Key="SkylineChipStyle" TargetType="ToggleButton">
+    <Setter Property="Height" Value="26" />
+    <Setter Property="Padding" Value="12,0" />
+    <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
+    <Setter Property="FontSize" Value="11.2" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToggleButton">
+          <Grid>
+            <Border x:Name="Rest" CornerRadius="13" Background="#0DFFFFFF" BorderBrush="#4DFFFFFF" BorderThickness="0.75" />
+            <Border x:Name="Selected" CornerRadius="13" Background="#33FFFFFF" BorderBrush="#B3FFFFFF" BorderThickness="1" Opacity="0" />
+            <Border x:Name="FocusFill" CornerRadius="13" Background="#FFFFFFFF" Opacity="0" />
+            <ContentPresenter x:Name="Label" Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}" Foreground="{TemplateBinding Foreground}"
+                              FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}" VerticalContentAlignment="Center" />
+            <ContentPresenter x:Name="FocusedLabel" Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}" Foreground="#FF000000"
+                              FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}" VerticalContentAlignment="Center" Opacity="0" />
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" />
+                <VisualState x:Name="PointerOver" />
+                <VisualState x:Name="Pressed" />
+                <VisualState x:Name="Disabled" />
+                <VisualState x:Name="Checked">
+                  <VisualState.Setters>
+                    <Setter Target="Selected.Opacity" Value="1" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="CheckedPointerOver">
+                  <VisualState.Setters>
+                    <Setter Target="Selected.Opacity" Value="1" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="CheckedPressed">
+                  <VisualState.Setters>
+                    <Setter Target="Selected.Opacity" Value="1" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="CheckedDisabled" />
+                <VisualState x:Name="Indeterminate" />
+                <VisualState x:Name="IndeterminatePointerOver" />
+                <VisualState x:Name="IndeterminatePressed" />
+                <VisualState x:Name="IndeterminateDisabled" />
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters>
+                    <Setter Target="FocusFill.Opacity" Value="1" />
+                    <Setter Target="Label.Opacity" Value="0" />
+                    <Setter Target="FocusedLabel.Opacity" Value="1" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="PointerFocused" />
+                <VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
 </ResourceDictionary>

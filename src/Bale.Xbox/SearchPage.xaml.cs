@@ -87,11 +87,11 @@ public sealed partial class SearchPage : Page
         }
     }
 
-    private async void OnResultClick(object sender, ItemClickEventArgs e)
+    private void OnResultClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is CardView { Card: var card })
         {
-            await CardInfo.ShowAsync(card);
+            ShellPage.Current?.OpenDetail(card.Type == "episode" && card.SeriesId is { } series ? series : card.ContentId);
         }
     }
 }

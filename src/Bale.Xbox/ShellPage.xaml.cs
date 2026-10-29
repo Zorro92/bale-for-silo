@@ -50,6 +50,14 @@ public sealed partial class ShellPage : Page, IBackHandler
         base.OnNavigatedTo(e);
         Log.Info("Shell: navigated to " + (e.Parameter as string ?? ""));
         Current = this;
+
+        // Back from a detail page: the cached shell keeps its tabs and content; just restore focus.
+        if (e.NavigationMode == NavigationMode.Back && _tabs.Count > 0)
+        {
+            (ContentFrame.Content as BrowsePage)?.RestoreFocus();
+            return;
+        }
+
         var name = Session.ProfileName ?? Session.Client?.Account?.Username ?? "?";
         AvatarInitial.Text = PanelInitial.Text = name.Substring(0, 1).ToUpperInvariant();
         PanelProfileName.Text = name;
@@ -282,6 +290,13 @@ public sealed partial class ShellPage : Page, IBackHandler
     {
         ClosePanels();
         await SignOutAsync();
+    }
+
+    /// <summary>Pushes a title's detail page full screen over the shell (Skyline: detail has no top bar).</summary>
+    internal void OpenDetail(string contentId)
+    {
+        ClosePanels();
+        Frame.Navigate(typeof(DetailPage), contentId);
     }
 
     /// <summary>Signs out and returns to the sign-in screen; content pages call this on a dead session.</summary>

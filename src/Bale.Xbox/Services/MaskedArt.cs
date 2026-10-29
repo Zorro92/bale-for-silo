@@ -15,15 +15,13 @@ namespace Bale.Xbox.Services;
 /// </summary>
 internal sealed class MaskedArt
 {
-    private readonly FrameworkElement _host;
     private readonly Compositor _compositor;
     private readonly SpriteVisual _visual;
     private readonly CompositionSurfaceBrush _image;
     private LoadedImageSurface? _surface;
 
-    public MaskedArt(FrameworkElement host)
+    public MaskedArt(FrameworkElement host, string maskUri = "ms-appx:///Assets/ArtMask.png")
     {
-        _host = host;
         _compositor = ElementCompositionPreview.GetElementVisual(host).Compositor;
         _image = _compositor.CreateSurfaceBrush();
         _image.Stretch = CompositionStretch.UniformToFill;
@@ -31,7 +29,7 @@ internal sealed class MaskedArt
         _image.VerticalAlignmentRatio = 0.25f;
 
         // One mask image holding both fades (Assets/ArtMask.png): mask brushes can't be nested.
-        var mask = _compositor.CreateSurfaceBrush(LoadedImageSurface.StartLoadFromUri(new Uri("ms-appx:///Assets/ArtMask.png")));
+        var mask = _compositor.CreateSurfaceBrush(LoadedImageSurface.StartLoadFromUri(new Uri(maskUri)));
         mask.Stretch = CompositionStretch.Fill;
         var both = _compositor.CreateMaskBrush();
         both.Source = _image;

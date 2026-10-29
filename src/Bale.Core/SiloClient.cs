@@ -2,6 +2,7 @@ using Bale.Core.Api;
 using Bale.Core.Api.Models;
 using Bale.Core.Auth;
 using Bale.Core.Connection;
+using Bale.Core.Detail;
 using Bale.Core.Browse;
 using Microsoft.Kiota.Abstractions;
 
@@ -27,6 +28,7 @@ public sealed class SiloClient : IDisposable
         _connection = new SiloConnection(server, identity, CurrentCredentialsAsync, transport);
         DeviceLogin = new DeviceLoginFlow(_connection.Api, time);
         Browse = new BrowseFeed(_connection.Api, server);
+        Detail = new DetailFeed(_connection.Api, Browse);
     }
 
     public Uri Server => _connection.Server;
@@ -36,6 +38,8 @@ public sealed class SiloClient : IDisposable
     public DeviceLoginFlow DeviceLogin { get; }
 
     public BrowseFeed Browse { get; }
+
+    public DetailFeed Detail { get; }
 
     public string? AccessToken { get; private set; }
 

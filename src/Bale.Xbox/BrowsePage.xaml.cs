@@ -365,11 +365,23 @@ public sealed partial class BrowsePage : Page
         }
     }
 
-    private async void OnCardClick(object sender, ItemClickEventArgs e)
+    /// <summary>A card opens its detail page; an episode opens its series' page (TvHomeScreen: "the combined Series page").</summary>
+    private void OnCardClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is CardView { Card: var card })
         {
-            await CardInfo.ShowAsync(card);
+            ShellPage.Current?.OpenDetail(card.Type == "episode" && card.SeriesId is { } series ? series : card.ContentId);
+        }
+    }
+
+    /// <summary>Back from a detail page: focus returns to the card that opened it.</summary>
+    internal void RestoreFocus()
+    {
+        if (_lastCard is { } last && Rows.ContainerFromIndex(last.Row) is DependencyObject rowContainer
+            && FindChild<ListView>(rowContainer)?.ItemsPanelRoot is { } panel
+            && panel.Children.OfType<ContentControl>().FirstOrDefault(c => ReferenceEquals(c.Content, last.Card)) is { } card)
+        {
+            card.Focus(FocusState.Programmatic);
         }
     }
 
