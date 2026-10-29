@@ -22,6 +22,8 @@
     <!-- The generated vtables use unsafe code; without this CsWinRT silently skips them (CsWinRT1030). -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <CsWinRTAotWarningLevel>2</CsWinRTAotWarningLevel>
+    <!-- Temporary while diagnosing layout errors on the console: keep running after unhandled XAML errors. -->
+    <DefineConstants>$(DefineConstants);DIAGNOSTICS</DefineConstants>
     <AppxBundle>Never</AppxBundle>
     <UapAppxPackageBuildMode>SideloadOnly</UapAppxPackageBuildMode>
     <GenerateAppInstallerFile>false</GenerateAppInstallerFile>

@@ -15,7 +15,16 @@ public sealed partial class App : Application
 
         // Controller-first: the cursor only appears if a page explicitly asks for it.
         RequiresPointerMode = ApplicationRequiresPointerMode.WhenRequested;
-        UnhandledException += (_, e) => Log.Error("Unhandled", e.Exception);
+        UnhandledException += (_, e) =>
+        {
+            // e.Message carries XAML's own error text, often more specific than the exception's.
+            Log.Error($"Unhandled ({e.Message})", e.Exception);
+#if DIAGNOSTICS
+            e.Handled = true;
+#endif
+        };
+        DebugSettings.XamlResourceReferenceFailed += (_, e) => Log.Info($"XAML resource lookup failed: {e.Message}");
+        DebugSettings.BindingFailed += (_, e) => Log.Info($"XAML binding failed: {e.Message}");
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs e)

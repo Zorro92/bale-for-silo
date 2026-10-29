@@ -25,6 +25,7 @@ public sealed partial class MainPage : Page, IBackHandler
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
+        Log.Info("SignIn: navigated to " + (e.Parameter as string ?? ""));
 
         var saved = AppSettings.ServerUrl;
         if (Session.Client is null && saved is not null && ServerAddress.TryParse(saved, out var server)

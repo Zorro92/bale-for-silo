@@ -44,6 +44,7 @@ public sealed partial class BrowsePage : Page
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
+        Log.Info("Browse: navigated to " + (e.Parameter as string ?? ""));
         var parameter = e.Parameter as string ?? HomeParameter;
         if (parameter.StartsWith("library:", StringComparison.Ordinal))
         {

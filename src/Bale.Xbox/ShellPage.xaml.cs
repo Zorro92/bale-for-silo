@@ -48,6 +48,7 @@ public sealed partial class ShellPage : Page, IBackHandler
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
+        Log.Info("Shell: navigated to " + (e.Parameter as string ?? ""));
         Current = this;
         var name = Session.ProfileName ?? Session.Client?.Account?.Username ?? "?";
         AvatarInitial.Text = PanelInitial.Text = name.Substring(0, 1).ToUpperInvariant();
