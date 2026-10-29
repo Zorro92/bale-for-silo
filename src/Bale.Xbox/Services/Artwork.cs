@@ -63,12 +63,6 @@ internal static class Artwork
         }
     }
 
-    /// <summary>The cached file as an ms-appdata URI for Composition surfaces, else the original URI.</summary>
-    public static async Task<Uri> LocalUriAsync(Uri uri) =>
-        IsRemote(uri) && await FileAsync(uri) is { } path
-            ? new Uri("ms-appdata:///localcache/art/" + Path.GetFileName(path))
-            : uri;
-
     /// <summary>The image's bytes, from the cache when possible (AmbientTint samples these).</summary>
     public static async Task<byte[]?> ReadAsync(Uri uri)
     {
@@ -228,7 +222,7 @@ internal static class Artwork
 
     private static string Key(Uri uri)
     {
-        // Keep the extension: Composition picks the decoder for an ms-appdata file by it.
+        // Keep the extension, so a cached file can be identified by eye.
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(uri.Host + uri.AbsolutePath));
         var extension = Path.GetExtension(uri.AbsolutePath);
         return Convert.ToHexString(hash, 0, 16) + (extension.Length is > 1 and <= 5 ? extension.ToLowerInvariant() : ".img");

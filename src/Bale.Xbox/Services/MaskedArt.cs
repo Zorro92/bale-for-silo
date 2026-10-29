@@ -54,29 +54,45 @@ internal sealed class MaskedArt
 
     private async void ShowAsync(Uri image)
     {
-        // Composition loads from the artwork cache's file, which the tint sampler shares.
-        Uri source;
+        // From the artwork cache's bytes (which the tint sampler shares): Composition won't load an
+        // ms-appdata file URI here, but a stream decodes fine. Falls back to the URL.
+        LoadedImageSurface surface;
         try
         {
-            source = await Artwork.LocalUriAsync(image);
+            var bytes = await Artwork.ReadAsync(image);
+            if (!ReferenceEquals(image, _requested))
+            {
+                return;
+            }
+
+            if (bytes is null)
+            {
+                surface = LoadedImageSurface.StartLoadFromUri(image);
+            }
+            else
+            {
+                var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+                await stream.WriteAsync(System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.AsBuffer(bytes));
+                stream.Seek(0);
+                if (!ReferenceEquals(image, _requested))
+                {
+                    return;
+                }
+
+                surface = LoadedImageSurface.StartLoadFromStream(stream);
+            }
         }
         catch (Exception ex)
         {
             Log.Error("Art source", ex);
-            source = image;
-        }
-
-        if (!ReferenceEquals(image, _requested))
-        {
             return;
         }
 
-        var surface = LoadedImageSurface.StartLoadFromUri(source);
         surface.LoadCompleted += (sender, e) =>
         {
             if (e.Status != LoadedImageSourceLoadStatus.Success)
             {
-                Log.Info($"Art failed to load ({e.Status}): {source.AbsolutePath}");
+                Log.Info($"Art failed to load ({e.Status}): {image.AbsolutePath}");
             }
             else if (ReferenceEquals(sender, _surface))
             {
