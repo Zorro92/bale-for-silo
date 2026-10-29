@@ -109,7 +109,7 @@ public sealed partial class ShellPage : Page, IBackHandler
 
         if (!IsInTopBar(FocusManager.GetFocusedElement() as DependencyObject))
         {
-            (_searchSelected ? SearchButton : ButtonFor(_selected))?.Focus(FocusState.Programmatic);
+            (_searchSelected ? (Control?)SearchButton : ButtonFor(_selected))?.Focus(FocusState.Programmatic);
             return true;
         }
 
