@@ -14,8 +14,8 @@ jobs:
     name: Core (Linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
       - run: dotnet test tests/Bale.Core.Tests --configuration Release
@@ -25,11 +25,11 @@ jobs:
     name: Xbox package (Windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
-      - uses: microsoft/setup-msbuild@v2
+      - uses: microsoft/setup-msbuild@v3
 
       - name: Tool versions
         run: |
@@ -45,17 +45,18 @@ jobs:
           $manifest.Package.Identity.Version = "0.1.${{ github.run_number }}.0"
           $manifest.Save($path)
 
-      # Throwaway certificate for sideloading. The deploy script installs Bale.cer on the console.
+      # Throwaway certificate for sideloading, left in the runner's store for the build to sign with.
+      # The deploy script installs Bale.cer on the console.
       - name: Create signing certificate
+        id: cert
         shell: pwsh
         run: |
           $cert = New-SelfSignedCertificate -Type Custom -Subject 'CN=Bale Development' `
             -KeyUsage DigitalSignature -FriendlyName 'Bale Development' `
             -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter (Get-Date).AddYears(1) `
             -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3', '2.5.29.19={text}')
-          $password = ConvertTo-SecureString -String 'bale-dev' -Force -AsPlainText
           New-Item -ItemType Directory -Force out | Out-Null
-          Export-PfxCertificate -Cert $cert -FilePath "$env:RUNNER_TEMP\bale.pfx" -Password $password | Out-Null
+          "thumbprint=$($cert.Thumbprint)" >> $env:GITHUB_OUTPUT
           Export-Certificate -Cert $cert -FilePath out\Bale.cer | Out-Null
 
       - name: Build MSIX
@@ -65,10 +66,9 @@ jobs:
           /p:GenerateAppxPackageOnBuild=true
           /p:AppxPackageDir=${{ github.workspace }}\out\
           /p:AppxPackageSigningEnabled=true
-          /p:PackageCertificateKeyFile=${{ runner.temp }}\bale.pfx
-          /p:PackageCertificatePassword=bale-dev
+          /p:PackageCertificateThumbprint=${{ steps.cert.outputs.thumbprint }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: bale-xbox-x64
           path: out/
