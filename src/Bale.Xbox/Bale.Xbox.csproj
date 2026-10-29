@@ -19,6 +19,9 @@
     <EnableMsixTooling>true</EnableMsixTooling>
     <!-- Auto: also generate WinRT vtables for generic collections handed to XAML (ItemsSource = List<T>), which AOT can't do at runtime. -->
     <CsWinRTAotOptimizerEnabled>Auto</CsWinRTAotOptimizerEnabled>
+    <!-- The generated vtables use unsafe code; without this CsWinRT silently skips them (CsWinRT1030). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <CsWinRTAotWarningLevel>2</CsWinRTAotWarningLevel>
     <AppxBundle>Never</AppxBundle>
     <UapAppxPackageBuildMode>SideloadOnly</UapAppxPackageBuildMode>
     <GenerateAppInstallerFile>false</GenerateAppInstallerFile>

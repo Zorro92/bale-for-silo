@@ -75,7 +75,6 @@ jobs:
           /p:AppxPackageDir=${{ github.workspace }}\out\
           /p:AppxPackageSigningEnabled=true
           /p:PackageCertificateThumbprint=${{ steps.cert.outputs.thumbprint }}
-          /p:CsWinRTAotWarningLevel=2
 
       - uses: actions/upload-artifact@v7
         with:
