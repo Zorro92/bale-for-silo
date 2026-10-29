@@ -358,6 +358,25 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             && card.Focus(FocusState.Programmatic));
     }
 
+    /// <summary>Focus has settled on <paramref name="view"/>: fetch the marquee art of the two cards either side (HeroFocusPrefetchRadius).</summary>
+    private void PrefetchAround(CardView view)
+    {
+        if (Rows.ItemsSource is not IEnumerable<RowView> rows || rows.FirstOrDefault(row => row.Cards.Contains(view)) is not { } row)
+        {
+            return;
+        }
+
+        var index = row.Cards.ToList().IndexOf(view);
+        for (var i = Math.Max(0, index - 2); i <= Math.Min(row.Cards.Count - 1, index + 2); i++)
+        {
+            if (i != index)
+            {
+                Prefetch.Warm(row.Cards[i].Card.BackdropUrl);
+                Prefetch.Warm(row.Cards[i].Card.LogoUrl);
+            }
+        }
+    }
+
     private void ShowMarquee(CardView? view)
     {
         if (view is null || ReferenceEquals(view, _shownMarquee))
@@ -366,6 +385,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         }
 
         _shownMarquee = view;
+        PrefetchAround(view);
         var card = view.Card;
         MarqueeTitle.Text = card.Title;
         MarqueeMeta.Text = card.MarqueeMeta;
