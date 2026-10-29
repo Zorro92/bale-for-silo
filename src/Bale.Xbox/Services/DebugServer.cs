@@ -1,6 +1,7 @@
 using System.Text;
 using Windows.ApplicationModel.Core;
 using Windows.Foundation;
+using Windows.Gaming.Input;
 using Windows.Networking.Sockets;
 using Windows.Storage.Streams;
 using Windows.UI.Core;
@@ -101,15 +102,15 @@ internal sealed class DebugServer
     {
         var buttons = button.ToLowerInvariant() switch
         {
-            "up" => InjectedInputGamepadButtons.DPadUp,
-            "down" => InjectedInputGamepadButtons.DPadDown,
-            "left" => InjectedInputGamepadButtons.DPadLeft,
-            "right" => InjectedInputGamepadButtons.DPadRight,
-            "a" or "select" => InjectedInputGamepadButtons.A,
-            "b" or "back" => InjectedInputGamepadButtons.B,
-            "menu" => InjectedInputGamepadButtons.Menu,
-            "view" => InjectedInputGamepadButtons.View,
-            _ => (InjectedInputGamepadButtons?)null,
+            "up" => GamepadButtons.DPadUp,
+            "down" => GamepadButtons.DPadDown,
+            "left" => GamepadButtons.DPadLeft,
+            "right" => GamepadButtons.DPadRight,
+            "a" or "select" => GamepadButtons.A,
+            "b" or "back" => GamepadButtons.B,
+            "menu" => GamepadButtons.Menu,
+            "view" => GamepadButtons.View,
+            _ => (GamepadButtons?)null,
         };
         if (buttons is null)
         {
