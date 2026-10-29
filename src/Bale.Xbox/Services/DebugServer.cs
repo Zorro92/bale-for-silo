@@ -37,6 +37,14 @@ internal sealed class DebugServer
     {
         _listener.ConnectionReceived += (listener, args) => _ = HandleAsync(args.Socket);
         await _listener.BindServiceNameAsync(Port.ToString());
+
+        // Set up injection now: the first input after InitializeGamepadInjection is otherwise lost.
+        Log.Info("Debug server: " + await OnUiAsync(() =>
+        {
+            _injector = InputInjector.TryCreate();
+            _injector?.InitializeGamepadInjection();
+            return _injector is null ? "input injection unavailable" : "input injection ready";
+        }));
         Log.Info($"Debug server listening on port {Port}");
     }
 
@@ -119,8 +127,7 @@ internal sealed class DebugServer
 
         if (_injector is null)
         {
-            _injector = InputInjector.TryCreate() ?? throw new InvalidOperationException("Input injection isn't available.");
-            _injector.InitializeGamepadInjection();
+            return "input injection unavailable";
         }
 
         _injector.InjectGamepadInput(new InjectedInputGamepadInfo { Buttons = buttons.Value });
