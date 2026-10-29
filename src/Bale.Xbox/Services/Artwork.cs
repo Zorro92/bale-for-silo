@@ -28,6 +28,12 @@ internal static class Artwork
     private const int Attempts = 3;
 
     private static readonly SemaphoreSlim Downloads = new(16);
+
+    /// <summary>
+    /// The marquee's art and logos (and their prefetch) have their own lane: a fresh page queues a
+    /// couple of hundred posters, and the art the user is looking at shouldn't wait behind them.
+    /// </summary>
+    private static readonly SemaphoreSlim PriorityDownloads = new(4);
     private static readonly Dictionary<string, Task<string?>> InFlight = new();
     private static readonly object Gate = new();
     private static readonly string Folder = Path.Combine(ApplicationData.Current.LocalCacheFolder.Path, "art");
@@ -38,7 +44,7 @@ internal static class Artwork
     });
 
     /// <summary>A bitmap that fills in from the cache, or once downloaded.</summary>
-    public static BitmapImage Load(Uri uri, int? width = null, int? height = null)
+    public static BitmapImage Load(Uri uri, int? width = null, int? height = null, bool priority = false)
     {
         var image = new BitmapImage { DecodePixelType = DecodePixelType.Logical };
         if (width is { } w)
@@ -50,7 +56,7 @@ internal static class Artwork
             image.DecodePixelHeight = h;
         }
 
-        _ = FillAsync(image, uri);
+        _ = FillAsync(image, uri, priority);
         return image;
     }
 
@@ -73,7 +79,7 @@ internal static class Artwork
         }
 
         ready = false;
-        var image = Load(uri, height: height);
+        var image = Load(uri, height: height, priority: true);
         image.ImageOpened += (_, _) =>
         {
             if (Kept.ContainsKey(key))
@@ -96,14 +102,14 @@ internal static class Artwork
     {
         if (uri is not null && IsRemote(uri))
         {
-            _ = FileAsync(uri);
+            _ = FileAsync(uri, priority: true);
         }
     }
 
     /// <summary>The image's bytes, from the cache when possible (AmbientTint samples these).</summary>
     public static async Task<byte[]?> ReadAsync(Uri uri)
     {
-        if (await FileAsync(uri) is not { } path)
+        if (await FileAsync(uri, priority: true) is not { } path)
         {
             return null;
         }
@@ -154,11 +160,11 @@ internal static class Artwork
         }
     });
 
-    private static async Task FillAsync(BitmapImage image, Uri uri)
+    private static async Task FillAsync(BitmapImage image, Uri uri, bool priority)
     {
         try
         {
-            if (IsRemote(uri) && await FileAsync(uri) is { } path)
+            if (IsRemote(uri) && await FileAsync(uri, priority) is { } path)
             {
                 var file = await StorageFile.GetFileFromPathAsync(path);
                 using var stream = await file.OpenReadAsync();
@@ -178,7 +184,7 @@ internal static class Artwork
     private static bool IsRemote(Uri uri) => uri.Scheme is "https" or "http";
 
     /// <summary>The cached file's path, downloading it first if needed; null when it can't be had.</summary>
-    private static Task<string?> FileAsync(Uri uri)
+    private static Task<string?> FileAsync(Uri uri, bool priority = false)
     {
         var path = Path.Combine(Folder, Key(uri));
         if (File.Exists(path))
@@ -191,7 +197,7 @@ internal static class Artwork
         {
             if (!InFlight.TryGetValue(path, out var download))
             {
-                download = DownloadAsync(uri, path);
+                download = DownloadAsync(uri, path, priority ? PriorityDownloads : Downloads);
                 InFlight[path] = download;
                 _ = download.ContinueWith(_ =>
                 {
@@ -206,9 +212,9 @@ internal static class Artwork
         }
     }
 
-    private static async Task<string?> DownloadAsync(Uri uri, string path)
+    private static async Task<string?> DownloadAsync(Uri uri, string path, SemaphoreSlim slots)
     {
-        await Downloads.WaitAsync().ConfigureAwait(false);
+        await slots.WaitAsync().ConfigureAwait(false);
         try
         {
             for (var attempt = 1; ; attempt++)
@@ -253,7 +259,7 @@ internal static class Artwork
         }
         finally
         {
-            Downloads.Release();
+            slots.Release();
         }
     }
 
