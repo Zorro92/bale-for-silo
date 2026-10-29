@@ -67,9 +67,13 @@ public sealed partial class ShellPage : Page, IBackHandler
             Log.Error("Library tabs", ex);
         }
 
+        Log.Info($"Shell: {_tabs.Count} tabs");
         Tabs.ItemsSource = _tabs.ToList();
+        Log.Info("Shell: tabs bound");
         Tabs.UpdateLayout();
+        Log.Info("Shell: tabs laid out");
         Select(_tabs[0]);
+        Log.Info("Shell: home selected");
     }
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
@@ -147,6 +151,7 @@ public sealed partial class ShellPage : Page, IBackHandler
 
     private void UpdateChecked()
     {
+        Log.Info("Shell: updating tab states");
         foreach (var tab in _tabs)
         {
             if (ButtonFor(tab) is { } button)
