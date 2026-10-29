@@ -7,21 +7,22 @@ namespace Bale.Xbox.Views;
 // Item views handed to XAML lists. `partial` lets the CsWinRT AOT generator add the WinRT
 // plumbing XAML needs to hold them (and List<T> of them) in ItemsSource.
 
-/// <summary>A row of cards. Sizes are Skyline's (guide §5.6, Android RowDimens) in effective pixels.</summary>
+/// <summary>A row of cards, sized like Silo's Android TV rails (RowDimens, TvSkylineSectionFeed).</summary>
 public sealed partial class RowView
 {
-    /// <summary>Dense Home/Browse poster: tvOS 176 pt, Android 88 dp.</summary>
+    /// <summary>Dense Home/Browse poster: 88x132 dp.</summary>
     public const double PosterWidth = 88;
     public const double PosterHeight = 132;
 
-    /// <summary>Continue Watching thumb: 372x209 mockup px.</summary>
-    public const double ThumbWidth = 186;
-    public const double ThumbHeight = 104.5;
+    /// <summary>16:9 Continue Watching / episode thumb: 180x100 dp.</summary>
+    public const double ThumbWidth = 180;
+    public const double ThumbHeight = 100;
 
     public RowView(MediaRow row)
     {
         Row = row;
         var landscape = row.Shape == CardShape.Landscape;
+        IconVisibility = landscape ? Visibility.Visible : Visibility.Collapsed;
         Cards = row.Cards
             .Select(card => new CardView(card, row.Title, landscape ? ThumbWidth : PosterWidth, landscape ? ThumbHeight : PosterHeight, landscape))
             .ToList();
@@ -30,6 +31,9 @@ public sealed partial class RowView
     public MediaRow Row { get; }
 
     public string Title => Row.Title;
+
+    /// <summary>Progress rows (Continue Watching, Next Up) get the play glyph before their title.</summary>
+    public Visibility IconVisibility { get; }
 
     public IReadOnlyList<CardView> Cards { get; }
 }
@@ -42,15 +46,13 @@ public sealed partial class CardView
         RowTitle = rowTitle;
         Width = width;
         Height = height;
-        CaptionVisibility = landscape ? Visibility.Visible : Visibility.Collapsed;
+        CaptionSpacing = landscape ? 7 : 11;
         ProgressPercent = (card.Progress ?? 0) * 100;
         ProgressVisibility = card.Progress is > 0 ? Visibility.Visible : Visibility.Collapsed;
         FallbackVisibility = card.ImageUrl is null ? Visibility.Visible : Visibility.Collapsed;
-        CaptionDetail = string.Join(" · ", new[]
-        {
-            card.EpisodeCode?.Replace(" ", " · "),
-            card.RemainingMinutes is > 0 ? $"{card.RemainingMinutes}m left" : null,
-        }.Where(part => part is not null));
+        OverlayCode = landscape ? card.EpisodeCode?.Replace(" ", " · ") ?? string.Empty : string.Empty;
+        OverlayVisibility = OverlayCode.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        SubtitleVisibility = string.IsNullOrEmpty(card.Subtitle) ? Visibility.Collapsed : Visibility.Visible;
 
         if (card.ImageUrl is not null)
         {
@@ -61,16 +63,16 @@ public sealed partial class CardView
 
     public MediaCard Card { get; }
 
-    /// <summary>The marquee eyebrow: which row the card came from.</summary>
+    /// <summary>Which row the card came from.</summary>
     public string RowTitle { get; }
 
     public string Title => Card.Title;
 
-    /// <summary>The year, or "S2 · E5 · Title" for episodes; shown under grid posters.</summary>
+    /// <summary>The episode's title, or the year.</summary>
     public string Subtitle => Card.Subtitle ?? string.Empty;
 
-    /// <summary>Right-aligned under a thumb: "S2 · E7 · 23m left".</summary>
-    public string CaptionDetail { get; }
+    /// <summary>"S2 · E8" over the bottom-left of an episode thumb.</summary>
+    public string OverlayCode { get; }
 
     public BitmapImage? Image { get; }
 
@@ -78,16 +80,21 @@ public sealed partial class CardView
 
     public double Height { get; }
 
-    public Visibility CaptionVisibility { get; }
+    /// <summary>Gap between the art and its caption: 11 under posters, 7 under thumbs.</summary>
+    public double CaptionSpacing { get; }
 
     public double ProgressPercent { get; }
 
-    /// <summary>Progress fill width: the bar is inset 7 px each side of the thumb (guide §5.6).</summary>
-    public double ProgressFillWidth => Math.Max(0, (Width - 14) * ProgressPercent / 100);
+    /// <summary>The progress fill spans the bottom edge of the art.</summary>
+    public double ProgressFillWidth => Math.Max(0, Width * ProgressPercent / 100);
 
     public Visibility ProgressVisibility { get; }
 
     public Visibility FallbackVisibility { get; }
+
+    public Visibility OverlayVisibility { get; }
+
+    public Visibility SubtitleVisibility { get; }
 }
 
 /// <summary>A top-bar tab: Home (no library tab) or a library type.</summary>

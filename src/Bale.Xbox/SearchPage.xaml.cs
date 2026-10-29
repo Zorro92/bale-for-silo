@@ -13,9 +13,9 @@ public sealed partial class SearchPage : Page
     /// <summary>Wait for typing to pause before asking the server.</summary>
     private static readonly TimeSpan TypingPause = TimeSpan.FromMilliseconds(350);
 
-    /// <summary>Standard library grid poster: 208x312 mockup px.</summary>
-    private const double PosterWidth = 104;
-    private const double PosterHeight = 156;
+    /// <summary>Android TV's search grid cell (TvArtworkDimens.GridPosterWidth): 138 dp wide, 2:3.</summary>
+    private const double PosterWidth = 138;
+    private const double PosterHeight = 207;
 
     private readonly DispatcherTimer _typing = new() { Interval = TypingPause };
     private CancellationTokenSource? _search;
@@ -72,6 +72,22 @@ public sealed partial class SearchPage : Page
         {
             Log.Error("Search", ex);
             Status.Text = $"Search failed. {ex.Message}";
+        }
+    }
+
+    private void OnResultFocus(object sender, RoutedEventArgs e)
+    {
+        if (e.OriginalSource is GridViewItem item)
+        {
+            CardFocus.Apply(item, focused: true, scale: 1.06f);
+        }
+    }
+
+    private void OnResultBlur(object sender, RoutedEventArgs e)
+    {
+        if (e.OriginalSource is GridViewItem item)
+        {
+            CardFocus.Apply(item, focused: false);
         }
     }
 

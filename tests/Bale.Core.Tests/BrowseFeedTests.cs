@@ -36,7 +36,8 @@ public class BrowseFeedTests
         Assert.Equal(CardShape.Landscape, row.Shape);
         var card = Assert.Single(row.Cards);
         Assert.Equal("Dark", card.Title);
-        Assert.Equal("S1 · E5 · The Rains", card.Subtitle);
+        Assert.Equal("The Rains", card.Subtitle);
+        Assert.Equal("S1 E5", card.EpisodeCode);
         Assert.Equal(0.25, card.Progress);
         Assert.Equal("https://silo.example.com/api/v2/artwork/still.jpg?sig=x", card.ImageUrl!.ToString());
         Assert.Equal("https://silo.example.com/api/v2/artwork/series.jpg", card.BackdropUrl!.ToString());
@@ -62,7 +63,8 @@ public class BrowseFeedTests
 
         Assert.Equal(CardShape.Poster, Feed().ToRow(section).Shape);
         Assert.Equal("2021", card.Subtitle);
-        Assert.Equal("2021 · PG-13 · 2h 35m · Science Fiction · Adventure", card.Meta);
+        Assert.Equal("2021 · 2h 35m · Science Fiction · Adventure", card.Meta);
+        Assert.Equal(["PG-13"], card.Badges);
         Assert.Equal("https://cdn.example.com/p.jpg", card.ImageUrl!.ToString());
         Assert.Null(card.Progress);
     }
@@ -75,15 +77,21 @@ public class BrowseFeedTests
 public class MarqueeMetaTests
 {
     [Fact]
-    public void EpisodeShowsBadgesCodeTitleAndTimeLeft()
+    public void EpisodeMetaMatchesAndroidTv()
     {
-        var overlay = new CatalogItemOverlay { Resolution = "2160p", Hdr = "DV HDR10", Audio = "TrueHD Atmos" };
-        var badges = BrowseFeed.Badges(overlay);
-        var card = new MediaCard("e1", "episode", "Dark", null, null, null, null, null, null, 0.5, 23, null, "s1", badges, "S2 E7", "The Rains");
+        var badges = BrowseFeed.Badges(new CatalogItemOverlay { Resolution = "2160p", Hdr = "HDR10", Audio = "EAC3" }, "TV-MA");
+        var card = new MediaCard("e1", "episode", "Paradise", "Exodus", null, null, null, null, null, 0.6, 18, null, "s1", badges, "S2 E8", "Exodus", "52 min");
 
-        Assert.Equal("4K · DOLBY VISION · ATMOS · S2 E7 · The Rains · 23m left", card.MarqueeMeta);
+        Assert.Equal(["4K", "HDR", "EAC3", "TV-MA"], card.Badges);
+        Assert.Equal("S2 E8 · Exodus · 52 min · 18m left", card.MarqueeMeta);
     }
 
     [Fact]
-    public void PlainHdrIsShownAsSent() => Assert.Equal(["HDR10"], BrowseFeed.Badges(new CatalogItemOverlay { Resolution = "1080p", Hdr = "HDR10" }));
+    public void DolbyVisionAndAtmosGetTheirOwnBadges() =>
+        Assert.Equal(["DOLBY VISION", "ATMOS"], BrowseFeed.Badges(new CatalogItemOverlay { Hdr = "DV HDR10", Audio = "TrueHD Atmos" }));
+
+    [Theory]
+    [InlineData(52, "52 min")]
+    [InlineData(118, "1h 58m")]
+    public void RuntimeFormat(long minutes, string expected) => Assert.Equal(expected, BrowseFeed.Runtime(minutes));
 }

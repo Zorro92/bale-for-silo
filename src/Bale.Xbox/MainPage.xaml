@@ -2,18 +2,18 @@
     x:Class="Bale.Xbox.MainPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Background="{StaticResource SkylineBackground}">
+    Background="{StaticResource SkylineAurora}">
 
   <!-- Full-screen auth flow: no top bar (guide §3), same wordmark position as the shell. -->
   <Grid>
     <StackPanel Orientation="Horizontal" Spacing="10" Margin="44,28,0,0" HorizontalAlignment="Left" VerticalAlignment="Top">
-      <TextBlock Text="BALE" FontSize="{StaticResource SkylineWordmarkSize}" FontWeight="ExtraBold" CharacterSpacing="340" VerticalAlignment="Center" />
-      <TextBlock Text="a client for Silo" FontSize="9" Foreground="{StaticResource SkylineTertiary}" VerticalAlignment="Center" />
+      <TextBlock Text="BALE" FontSize="{StaticResource SkylineWordmarkSize}" FontWeight="Black" CharacterSpacing="340" VerticalAlignment="Center" />
+      <TextBlock Text="a client for Silo" FontSize="{StaticResource SkylineCardSubtitleSize}" Foreground="{StaticResource SkylineTertiary}" VerticalAlignment="Center" />
     </StackPanel>
 
     <!-- Step 1: which server -->
-    <StackPanel x:Name="ServerPanel" VerticalAlignment="Center" HorizontalAlignment="Center" Width="320" Spacing="12">
-      <TextBlock Text="Connect to your Silo server" FontSize="{StaticResource SkylineScreenTitleSize}" FontWeight="Bold" />
+    <StackPanel x:Name="ServerPanel" VerticalAlignment="Center" HorizontalAlignment="Center" Width="380" Spacing="14">
+      <TextBlock Text="Connect to your Silo server" FontSize="{StaticResource SkylineScreenTitleSize}" FontWeight="Black" TextWrapping="Wrap" />
       <TextBox x:Name="ServerBox" PlaceholderText="silo.example.com" InputScope="Url" KeyDown="OnServerBoxKeyDown" Style="{StaticResource SkylineTextBoxStyle}" />
       <Button x:Name="ConnectButton" Content="Continue" Click="OnConnectClick" HorizontalAlignment="Stretch" Style="{StaticResource SkylineButtonStyle}" />
       <TextBlock x:Name="ServerError" FontSize="{StaticResource SkylineBodySize}" Foreground="{StaticResource SkylineError}" TextWrapping="Wrap" Visibility="Collapsed" />
@@ -22,9 +22,9 @@
     <!-- Step 2: show the pairing code -->
     <StackPanel x:Name="CodePanel" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8" Visibility="Collapsed">
       <TextBlock Text="On your phone or computer, go to" FontSize="{StaticResource SkylineBodySize}" Foreground="{StaticResource SkylineSecondary}" HorizontalAlignment="Center" />
-      <TextBlock x:Name="ActivateText" FontSize="{StaticResource SkylineScreenTitleSize}" FontWeight="Bold" HorizontalAlignment="Center" />
+      <TextBlock x:Name="ActivateText" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center" />
       <TextBlock Text="and enter the code" FontSize="{StaticResource SkylineBodySize}" Foreground="{StaticResource SkylineSecondary}" HorizontalAlignment="Center" Margin="0,8,0,0" />
-      <TextBlock x:Name="CodeText" FontSize="{StaticResource SkylineMarqueeTitleSize}" FontWeight="ExtraBold" CharacterSpacing="160" HorizontalAlignment="Center" />
+      <TextBlock x:Name="CodeText" FontSize="{StaticResource SkylineMarqueeTitleSize}" FontWeight="Black" CharacterSpacing="160" HorizontalAlignment="Center" />
       <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" Margin="0,8,0,0">
         <ProgressRing IsActive="True" Width="12" Height="12" Foreground="{StaticResource SkylineSecondary}" />
         <TextBlock x:Name="PairingStatus" Text="Waiting for approval" FontSize="{StaticResource SkylineBodySize}" Foreground="{StaticResource SkylineSecondary}" />

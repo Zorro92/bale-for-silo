@@ -1,18 +1,20 @@
-using System.Numerics;
 using Bale.Core.Browse;
 using Bale.Xbox.Services;
 using Bale.Xbox.Views;
 using Microsoft.Kiota.Abstractions;
+using Windows.UI;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Media.Imaging;
 using Windows.UI.Xaml.Navigation;
 
 namespace Bale.Xbox;
 
 /// <summary>
-/// A Skyline root screen: Home, or a library tab's Browse landing. A passive marquee previews the
-/// focused card over the server's rows (guide §5.4, §5.5, §6.1, §6.2).
+/// A root screen: Home, or a library tab's Browse landing, drawn like Silo's Android TV app
+/// (TvSkylineSectionFeed): a passive marquee previews the focused card above the server's rows, over
+/// a wash tinted from that card's art.
 /// </summary>
 public sealed partial class BrowsePage : Page
 {
@@ -21,7 +23,8 @@ public sealed partial class BrowsePage : Page
     /// <summary>Marquee updates wait for focus to rest this long, so scrubbing a row doesn't thrash backdrops (guide §4.2).</summary>
     private static readonly TimeSpan MarqueeSettle = TimeSpan.FromMilliseconds(150);
 
-    private const float FocusScale = 1.05f;
+    /// <summary>The logo slot's fixed height, so the block doesn't jump as art loads (TvFocusMarquee).</summary>
+    private const double LogoSlotHeight = 84;
 
     private readonly DispatcherTimer _marqueeTimer = new() { Interval = MarqueeSettle };
     private CardView? _pendingMarquee;
@@ -117,7 +120,7 @@ public sealed partial class BrowsePage : Page
     {
         if (e.OriginalSource is ListViewItem { Content: CardView view } item)
         {
-            Lift(item, FocusScale);
+            CardFocus.Apply(item, focused: true);
             _pendingMarquee = view;
             _marqueeTimer.Stop();
             _marqueeTimer.Start();
@@ -128,16 +131,8 @@ public sealed partial class BrowsePage : Page
     {
         if (e.OriginalSource is ListViewItem item)
         {
-            Lift(item, 1f);
+            CardFocus.Apply(item, focused: false);
         }
-    }
-
-    /// <summary>Focus scale 1.05 around the card's centre over 120 ms (guide §4.2, §5.6).</summary>
-    private static void Lift(ListViewItem item, float scale)
-    {
-        item.ScaleTransition ??= new Vector3Transition { Duration = TimeSpan.FromMilliseconds(120) };
-        item.CenterPoint = new Vector3((float)item.ActualWidth / 2, (float)item.ActualHeight / 2, 0);
-        item.Scale = new Vector3(scale, scale, 1);
     }
 
     private async void OnCardClick(object sender, ItemClickEventArgs e)
@@ -157,32 +152,35 @@ public sealed partial class BrowsePage : Page
 
         _shownMarquee = view;
         var card = view.Card;
-        Eyebrow.Text = view.RowTitle.ToUpperInvariant();
         MarqueeTitle.Text = card.Title;
         MarqueeMeta.Text = card.MarqueeMeta;
         MarqueeSynopsis.Text = card.Overview ?? string.Empty;
+        ShowBadges(card.Badges);
 
-        // Logo art when the server has it; never wait on it — the text title shows until it loads.
+        // Logo art fades over the text title once it has decoded; a slow or broken logo never blanks the slot.
+        MarqueeLogo.Opacity = 0;
+        MarqueeTitle.Opacity = 1;
         MarqueeLogo.Source = null;
-        MarqueeLogo.Visibility = Visibility.Collapsed;
-        MarqueeTitle.Visibility = Visibility.Visible;
+        TitleSlot.Height = card.LogoUrl is null ? double.NaN : LogoSlotHeight;
         if (card.LogoUrl is { } logo)
         {
-            var image = new BitmapImage { DecodePixelType = DecodePixelType.Logical, DecodePixelWidth = 440, UriSource = logo };
+            MarqueeLogo.Height = LogoSlotHeight;
+            var image = new BitmapImage { DecodePixelType = DecodePixelType.Logical, DecodePixelHeight = (int)LogoSlotHeight, UriSource = logo };
             image.ImageOpened += (_, _) =>
             {
                 if (ReferenceEquals(_shownMarquee, view))
                 {
-                    MarqueeLogo.Visibility = Visibility.Visible;
-                    MarqueeTitle.Visibility = Visibility.Collapsed;
+                    MarqueeLogo.Opacity = 1;
+                    MarqueeTitle.Opacity = 0;
                 }
             };
             MarqueeLogo.Source = image;
         }
 
+        Backdrop.Opacity = 0;
         if (card.BackdropUrl is { } backdrop)
         {
-            var image = new BitmapImage { UriSource = backdrop };
+            var image = new BitmapImage { DecodePixelType = DecodePixelType.Logical, DecodePixelWidth = 614, UriSource = backdrop };
             image.ImageOpened += (_, _) =>
             {
                 if (ReferenceEquals(_shownMarquee, view))
@@ -190,13 +188,63 @@ public sealed partial class BrowsePage : Page
                     Backdrop.Opacity = 1;
                 }
             };
-            Backdrop.Opacity = 0;
             Backdrop.Source = image;
+            _ = TintFromAsync(view, backdrop);
         }
-        else
+    }
+
+    /// <summary>Outlined badges built in code: resources can't be looked up from code under AOT, so colours are literal here.</summary>
+    private void ShowBadges(IReadOnlyList<string> badges)
+    {
+        Badges.Children.Clear();
+        foreach (var badge in badges)
         {
-            Backdrop.Opacity = 0;
+            Badges.Children.Add(new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x3D, 0xFF, 0xFF, 0xFF)),
+                BorderThickness = new Thickness(0.5),
+                CornerRadius = new CornerRadius(3),
+                Padding = new Thickness(6, 2.5, 6, 2.5),
+                Child = new TextBlock
+                {
+                    Text = badge,
+                    FontSize = 9,
+                    FontWeight = Windows.UI.Text.FontWeights.SemiBold,
+                    CharacterSpacing = 60,
+                    Foreground = new SolidColorBrush(Color.FromArgb(0xEB, 0xFF, 0xFF, 0xFF)),
+                },
+            });
         }
+
+        Badges.Visibility = badges.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private async Task TintFromAsync(CardView view, Uri backdrop)
+    {
+        if (await AmbientTint.SampleAsync(backdrop) is not { } tint || !ReferenceEquals(_shownMarquee, view))
+        {
+            return;
+        }
+
+        Wash.Fill = AmbientTint.Wash(tint);
+
+        // Fade the art's left and bottom edges into the wash behind them (the Android masks: art fully
+        // visible from 68% across, and down to 58%).
+        var left = AmbientTint.Over(tint, 0.72);
+        var bottom = AmbientTint.Over(tint, 0.42);
+        ArtFadeLeft.Fill = Fade(new Windows.Foundation.Point(0, 0), new Windows.Foundation.Point(1, 0), left, 0, 0.68, reverse: false);
+        ArtFadeBottom.Fill = Fade(new Windows.Foundation.Point(0, 0), new Windows.Foundation.Point(0, 1), bottom, 0.58, 1, reverse: true);
+    }
+
+    private static LinearGradientBrush Fade(Windows.Foundation.Point start, Windows.Foundation.Point end, Color color, double from, double to, bool reverse)
+    {
+        var solid = color;
+        var clear = Color.FromArgb(0, color.R, color.G, color.B);
+        var brush = new LinearGradientBrush { StartPoint = start, EndPoint = end };
+        brush.GradientStops.Add(new GradientStop { Offset = from, Color = reverse ? clear : solid });
+        brush.GradientStops.Add(new GradientStop { Offset = to, Color = reverse ? solid : clear });
+        return brush;
     }
 
     private void ShowError(string message)

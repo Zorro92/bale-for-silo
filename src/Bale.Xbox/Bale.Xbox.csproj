@@ -30,6 +30,8 @@
 
   <ItemGroup>
     <Content Include="Assets\*.png" />
+    <Content Include="Assets\Fonts\InterVariable.ttf" />
+    <Content Include="Assets\Fonts\Inter-OFL.txt" />
   </ItemGroup>
 
   <ItemGroup>

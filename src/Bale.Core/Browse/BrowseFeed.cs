@@ -133,22 +133,24 @@ public sealed class BrowseFeed
             RemainingMinutes(item),
             item.PlayContentId,
             item.SeriesId,
-            Badges(item.OverlaySummary),
+            Badges(item.OverlaySummary, item.ContentRating),
             item.Type == "episode" && item.SeasonNumber is { } season && item.EpisodeNumber is { } episode ? $"S{season} E{episode}" : null,
-            item.Type == "episode" ? item.Title : null);
+            item.Type == "episode" ? item.Title : null,
+            Runtime(item.Runtime));
     }
 
+    /// <summary>Second caption line, as Silo's Android TV cards show it: the episode's own title, else the year.</summary>
     private static string? Subtitle(CatalogItem item, bool isEpisode)
     {
         if (isEpisode)
         {
-            var code = item.SeasonNumber is { } s && item.EpisodeNumber is { } e ? $"S{s} · E{e}" : null;
-            return string.Join(" · ", new[] { code, item.Title }.Where(part => !string.IsNullOrEmpty(part)));
+            return string.IsNullOrEmpty(item.Title) ? null : item.Title;
         }
 
         return item.Year is > 0 ? item.Year.Value.ToString(CultureInfo.InvariantCulture) : null;
     }
 
+    /// <summary>Marquee facts for a movie or series: "2025 · 1h 58m · Drama · Thriller". Rating is a badge instead.</summary>
     internal static string? Meta(CatalogItem item)
     {
         var parts = new List<string>();
@@ -157,47 +159,58 @@ public sealed class BrowseFeed
             parts.Add(item.Year.Value.ToString(CultureInfo.InvariantCulture));
         }
 
-        if (!string.IsNullOrEmpty(item.ContentRating))
+        if (Runtime(item.Runtime) is { } runtime)
         {
-            parts.Add(item.ContentRating!);
-        }
-
-        if (item.Runtime is long minutes and > 0)
-        {
-            parts.Add(minutes >= 60 ? $"{minutes / 60}h {minutes % 60}m" : $"{minutes}m");
+            parts.Add(runtime);
         }
 
         parts.AddRange((item.Genres ?? []).Take(2));
         return parts.Count == 0 ? null : string.Join(" · ", parts);
     }
 
-    /// <summary>The marquee's quality badges, Skyline style: "4K · DOLBY VISION · ATMOS".</summary>
-    internal static IReadOnlyList<string> Badges(CatalogItemOverlay? overlay)
+    /// <summary>"52 min" under an hour, "1h 58m" over.</summary>
+    internal static string? Runtime(long? minutes) => minutes switch
+    {
+        null or <= 0 => null,
+        < 60 => $"{minutes} min",
+        _ => $"{minutes / 60}h {minutes % 60}m",
+    };
+
+    /// <summary>
+    /// The marquee's outlined badges, as Silo's Android TV app shows them: resolution, dynamic range,
+    /// audio codec, then the content rating, e.g. "4K · HDR · EAC3 · TV-MA".
+    /// </summary>
+    internal static IReadOnlyList<string> Badges(CatalogItemOverlay? overlay, string? contentRating = null)
     {
         var badges = new List<string>();
-        if (overlay is null)
-        {
-            return badges;
-        }
-
-        if (overlay.Resolution == "2160p")
+        if (overlay?.Resolution == "2160p")
         {
             badges.Add("4K");
         }
 
-        var hdr = overlay.Hdr ?? string.Empty;
+        var hdr = overlay?.Hdr ?? string.Empty;
         if (hdr.Contains("DV", StringComparison.OrdinalIgnoreCase) || hdr.Contains("Dolby Vision", StringComparison.OrdinalIgnoreCase))
         {
             badges.Add("DOLBY VISION");
         }
         else if (hdr.Length > 0)
         {
-            badges.Add(hdr.ToUpperInvariant());
+            badges.Add("HDR");
         }
 
-        if ((overlay.Audio ?? string.Empty).Contains("atmos", StringComparison.OrdinalIgnoreCase))
+        var audio = overlay?.Audio ?? string.Empty;
+        if (audio.Contains("atmos", StringComparison.OrdinalIgnoreCase))
         {
             badges.Add("ATMOS");
+        }
+        else if (audio.Length > 0)
+        {
+            badges.Add(audio.ToUpperInvariant());
+        }
+
+        if (!string.IsNullOrEmpty(contentRating))
+        {
+            badges.Add(contentRating!.ToUpperInvariant());
         }
 
         return badges;

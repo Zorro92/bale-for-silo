@@ -50,6 +50,22 @@ public sealed partial class ProfilesPage : Page
         }
     }
 
+    private void OnProfileFocus(object sender, RoutedEventArgs e)
+    {
+        if (e.OriginalSource is GridViewItem item)
+        {
+            CardFocus.Apply(item, focused: true, scale: 1.06f);
+        }
+    }
+
+    private void OnProfileBlur(object sender, RoutedEventArgs e)
+    {
+        if (e.OriginalSource is GridViewItem item)
+        {
+            CardFocus.Apply(item, focused: false);
+        }
+    }
+
     private async void OnProfileClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is not ProfileView { Profile: var profile } || Session.Client is not { } client)

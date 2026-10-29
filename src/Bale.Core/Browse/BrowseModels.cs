@@ -11,16 +11,17 @@ public enum CardShape
 
 /// <summary>One card on a home row, already resolved to what the TV draws.</summary>
 /// <param name="Title">Main line: the movie or series title.</param>
-/// <param name="Subtitle">Second line, e.g. "S2 · E5 · The Rains" or the year.</param>
+/// <param name="Subtitle">Second caption line: the episode's title, or the year.</param>
 /// <param name="ImageUrl">Art for the card in its row's shape.</param>
 /// <param name="BackdropUrl">Wide art for the banner above the rows.</param>
-/// <param name="Meta">Banner detail line, e.g. "2021 · PG-13 · 2h 35m · Sci-Fi".</param>
+/// <param name="Meta">Marquee facts for movies and series, e.g. "2021 · 2h 35m · Sci-Fi".</param>
 /// <param name="Progress">0..1 watched, for resumable cards.</param>
 /// <param name="RemainingMinutes">Minutes left on a resumable card.</param>
 /// <param name="PlayContentId">What Play starts; the card itself when null.</param>
-/// <param name="Badges">Quality badges for the marquee, e.g. "4K", "DOLBY VISION".</param>
+/// <param name="Badges">Outlined marquee badges, e.g. "4K", "HDR", "EAC3", "TV-MA".</param>
 /// <param name="EpisodeCode">"S2 E7" on episode cards.</param>
 /// <param name="EpisodeTitle">The episode's own title on episode cards.</param>
+/// <param name="RuntimeText">"52 min" or "1h 58m".</param>
 public sealed record MediaCard(
     string ContentId,
     string Type,
@@ -37,23 +38,29 @@ public sealed record MediaCard(
     string? SeriesId,
     IReadOnlyList<string> Badges,
     string? EpisodeCode,
-    string? EpisodeTitle)
+    string? EpisodeTitle,
+    string? RuntimeText)
 {
     /// <summary>
-    /// The marquee meta line from the Skyline guide: badges, then "S2 E7 · Title · 23m left" for
-    /// episodes or year · rating · runtime · genres otherwise.
+    /// The marquee meta line next to the badges: "S2 E8 · Exodus · 52 min · 18m left" for episodes,
+    /// "2025 · 1h 58m · Drama" otherwise, with time left on anything in progress.
     /// </summary>
     public string MarqueeMeta
     {
         get
         {
-            var parts = new List<string>(Badges);
+            var parts = new List<string>();
             if (EpisodeCode is not null)
             {
                 parts.Add(EpisodeCode);
                 if (!string.IsNullOrEmpty(EpisodeTitle))
                 {
                     parts.Add(EpisodeTitle!);
+                }
+
+                if (RuntimeText is not null)
+                {
+                    parts.Add(RuntimeText);
                 }
             }
             else if (Meta is not null)

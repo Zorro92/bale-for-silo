@@ -16,19 +16,28 @@
              Style="{StaticResource SkylineTextBoxStyle}" TextChanged="OnQueryChanged" InputScope="Search" />
     <TextBlock x:Name="Status" Grid.Row="1" Margin="0,12,0,0" FontSize="{StaticResource SkylineBodySize}" Foreground="{StaticResource SkylineTertiary}" />
 
-    <GridView x:Name="Results" Grid.Row="2" Margin="0,12,0,0" Padding="0,4,44,24" SelectionMode="None" IsItemClickEnabled="True"
-              ItemClick="OnResultClick" ItemContainerStyle="{StaticResource SkylineGridItemStyle}">
+    <GridView x:Name="Results" Grid.Row="2" Margin="0,12,0,0" Padding="4,10,44,24" SelectionMode="None" IsItemClickEnabled="True"
+              ItemClick="OnResultClick" GotFocus="OnResultFocus" LostFocus="OnResultBlur" ItemContainerStyle="{StaticResource SkylineGridItemStyle}">
       <GridView.ItemTemplate>
         <DataTemplate x:DataType="views:CardView">
-          <StackPanel Width="{x:Bind Width}" Spacing="5">
-            <Grid Width="{x:Bind Width}" Height="{x:Bind Height}" CornerRadius="{StaticResource SkylineCardRadius}" Background="{StaticResource SkylineCardPlaceholder}">
-              <TextBlock Text="{x:Bind Title}" Visibility="{x:Bind FallbackVisibility}" TextWrapping="Wrap" TextAlignment="Center"
-                         FontSize="{StaticResource SkylineCardSubtitleSize}" VerticalAlignment="Center" Margin="6" Foreground="{StaticResource SkylineSecondary}" />
-              <Image Source="{x:Bind Image}" Stretch="UniformToFill" />
+          <StackPanel Width="{x:Bind Width}" Spacing="11">
+            <Grid Width="{x:Bind Width}" Height="{x:Bind Height}">
+              <Grid CornerRadius="{StaticResource SkylineCardRadius}" Background="{StaticResource SkylineCardPlaceholder}">
+                <TextBlock Text="{x:Bind Title}" Visibility="{x:Bind FallbackVisibility}" TextWrapping="Wrap" TextAlignment="Center"
+                           FontSize="{StaticResource SkylineCardSubtitleSize}" VerticalAlignment="Center" Margin="8" Foreground="{StaticResource SkylineSecondary}" />
+                <Image Source="{x:Bind Image}" Stretch="UniformToFill" />
+              </Grid>
+              <Border x:Name="FocusGlow" Margin="-6" CornerRadius="{StaticResource SkylineFocusGlowRadius}" BorderThickness="3"
+                      BorderBrush="{StaticResource SkylineFocusGlow}" Opacity="0" IsHitTestVisible="False" />
+              <Border x:Name="FocusRing" Margin="-3" CornerRadius="{StaticResource SkylineFocusRingRadius}" BorderThickness="2"
+                      BorderBrush="{StaticResource SkylineFocusRing}" Opacity="0" IsHitTestVisible="False" />
             </Grid>
-            <TextBlock Text="{x:Bind Title}" FontSize="{StaticResource SkylineCardTitleSize}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-            <TextBlock Text="{x:Bind Subtitle}" FontSize="{StaticResource SkylineCardSubtitleSize}" Foreground="{StaticResource SkylineTertiary}"
-                       TextTrimming="CharacterEllipsis" />
+            <StackPanel Spacing="1">
+              <TextBlock Text="{x:Bind Title}" FontSize="{StaticResource SkylineCardTitleSize}" FontWeight="SemiBold"
+                         Foreground="{StaticResource SkylineCaptionTitle}" TextTrimming="CharacterEllipsis" />
+              <TextBlock Text="{x:Bind Subtitle}" Visibility="{x:Bind SubtitleVisibility}" FontSize="{StaticResource SkylineCardSubtitleSize}"
+                         Foreground="{StaticResource SkylineCaptionSubtitle}" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
           </StackPanel>
         </DataTemplate>
       </GridView.ItemTemplate>

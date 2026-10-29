@@ -37,7 +37,8 @@ public sealed partial class App : Application
                 ApplicationView.GetForCurrentView().SetDesiredBoundsMode(ApplicationViewBoundsMode.UseCoreWindow);
             }
 
-            frame = new Frame();
+            // Inter for everything under the root frame (literal path: resources can't be read from code under AOT).
+            frame = new Frame { FontFamily = new Windows.UI.Xaml.Media.FontFamily("ms-appx:///Assets/Fonts/InterVariable.ttf#Inter Variable") };
             Window.Current.Content = frame;
             SystemNavigationManager.GetForCurrentView().BackRequested += (_, args) => OnBackRequested(frame, args);
         }

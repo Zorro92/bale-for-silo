@@ -16,7 +16,7 @@
       <Grid.OpacityTransition>
         <ScalarTransition Duration="0:0:0.2" />
       </Grid.OpacityTransition>
-      <TextBlock Text="BALE" FontSize="{StaticResource SkylineWordmarkSize}" FontWeight="ExtraBold" CharacterSpacing="340"
+      <TextBlock Text="BALE" FontSize="{StaticResource SkylineWordmarkSize}" FontWeight="Black" CharacterSpacing="340"
                  Foreground="{StaticResource SkylinePrimary}" VerticalAlignment="Center" HorizontalAlignment="Left" />
       <ItemsControl x:Name="Tabs" HorizontalAlignment="Center" VerticalAlignment="Center" IsTabStop="False">
         <ItemsControl.ItemsPanel>
@@ -32,12 +32,12 @@
       </ItemsControl>
       <StackPanel Orientation="Horizontal" Spacing="11" HorizontalAlignment="Right" VerticalAlignment="Center">
         <!-- Content must be text, not an element: the tab template draws it twice (resting and inverted). -->
-        <ToggleButton x:Name="SearchButton" Style="{StaticResource SkylineTabStyle}" Width="26" Height="26" Padding="0" Click="OnSearchClick"
-                      Content="&#xE721;" FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="11" AutomationProperties.Name="Search" />
-        <Button x:Name="AvatarButton" Style="{StaticResource SkylineCapsuleStyle}" Width="26" Height="26" Padding="0"
+        <ToggleButton x:Name="SearchButton" Style="{StaticResource SkylineTabStyle}" Width="28" Height="28" Padding="0" Click="OnSearchClick"
+                      Content="&#xE721;" FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="12" AutomationProperties.Name="Search" />
+        <Button x:Name="AvatarButton" Style="{StaticResource SkylineCapsuleStyle}" Width="28" Height="28" Padding="0"
                 Background="{StaticResource SkylineChromeSelected}" Foreground="{StaticResource SkylinePrimary}" Click="OnAvatarClick"
                 AutomationProperties.Name="Profile">
-          <TextBlock x:Name="AvatarInitial" FontSize="11" FontWeight="Bold" />
+          <TextBlock x:Name="AvatarInitial" FontSize="12" FontWeight="Bold" />
         </Button>
       </StackPanel>
     </Grid>
@@ -80,7 +80,7 @@
             <TextBlock x:Name="PanelInitial" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
           </Border>
           <StackPanel Grid.Column="1" VerticalAlignment="Center">
-            <TextBlock x:Name="PanelProfileName" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="PanelProfileName" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
             <TextBlock x:Name="PanelServer" FontFamily="{StaticResource SkylineMono}" FontSize="8" Foreground="{StaticResource SkylineTertiary}"
                        TextTrimming="CharacterEllipsis" />
           </StackPanel>
@@ -88,14 +88,14 @@
         <Rectangle Height="0.5" Fill="{StaticResource SkylineHairline}" Margin="6,2" />
         <Button x:Name="SwitchProfileRow" Style="{StaticResource SkylinePanelRowStyle}" Click="OnSwitchProfileClick">
           <StackPanel Orientation="Horizontal" Spacing="10">
-            <FontIcon Glyph="&#xE748;" FontSize="11" />
+            <FontIcon Glyph="&#xE748;" FontSize="13" />
             <TextBlock Text="Switch Profile" />
           </StackPanel>
         </Button>
         <Rectangle Height="0.5" Fill="{StaticResource SkylineHairline}" Margin="6,2" />
         <Button Style="{StaticResource SkylinePanelRowStyle}" Click="OnSignOutClick">
           <StackPanel Orientation="Horizontal" Spacing="10">
-            <FontIcon Glyph="&#xF3B1;" FontSize="11" />
+            <FontIcon Glyph="&#xF3B1;" FontSize="13" />
             <TextBlock Text="Sign Out" />
           </StackPanel>
         </Button>
