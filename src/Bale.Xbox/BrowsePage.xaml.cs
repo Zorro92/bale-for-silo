@@ -44,6 +44,7 @@ public sealed partial class BrowsePage : Page
 
         // handledEventsToo: a horizontal ListView may claim Up/Down itself before it would bubble.
         RowsScroller.AddHandler(KeyDownEvent, new KeyEventHandler(OnRowsKeyDown), handledEventsToo: true);
+        RowsScroller.PreviewKeyDown += OnRowsPreviewKeyDown;
         Loaded += (_, _) =>
         {
             try
@@ -205,16 +206,6 @@ public sealed partial class BrowsePage : Page
     /// </summary>
     private void OnRowsKeyDown(object sender, KeyRoutedEventArgs e)
     {
-        // Left/Right never leave the rail: at either end there is nothing to move to, and the focus
-        // engine would otherwise pick the nearest card in some other row.
-        if (e.OriginalSource is ContentControl { Content: CardView edge }
-            && ((edge.IsLast && e.Key is VirtualKey.Right or VirtualKey.GamepadDPadRight or VirtualKey.GamepadLeftThumbstickRight)
-                || (edge.IsFirst && e.Key is VirtualKey.Left or VirtualKey.GamepadDPadLeft or VirtualKey.GamepadLeftThumbstickLeft)))
-        {
-            e.Handled = true;
-            return;
-        }
-
         var step = e.Key switch
         {
             VirtualKey.Down or VirtualKey.GamepadDPadDown or VirtualKey.GamepadLeftThumbstickDown => 1,
@@ -255,6 +246,21 @@ public sealed partial class BrowsePage : Page
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Left/Right never leave the rail. At either end there is nothing to move to, and the ListView
+    /// itself would hand focus to the nearest card in some other row, so this runs on the tunnelling
+    /// pass, before the ListView sees the key.
+    /// </summary>
+    private void OnRowsPreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.OriginalSource is ContentControl { Content: CardView edge }
+            && ((edge.IsLast && e.Key is VirtualKey.Right or VirtualKey.GamepadDPadRight or VirtualKey.GamepadLeftThumbstickRight)
+                || (edge.IsFirst && e.Key is VirtualKey.Left or VirtualKey.GamepadDPadLeft or VirtualKey.GamepadLeftThumbstickLeft)))
+        {
+            e.Handled = true;
+        }
     }
 
     /// <summary>
