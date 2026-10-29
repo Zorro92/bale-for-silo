@@ -23,7 +23,6 @@ public sealed partial class App : Application
             e.Handled = true;
 #endif
         };
-        DebugSettings.XamlResourceReferenceFailed += (_, e) => Log.Info($"XAML resource lookup failed: {e.Message}");
         DebugSettings.BindingFailed += (_, e) => Log.Info($"XAML binding failed: {e.Message}");
     }
 
