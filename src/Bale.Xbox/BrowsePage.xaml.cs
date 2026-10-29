@@ -138,10 +138,11 @@ public sealed partial class BrowsePage : Page
             return;
         }
 
-        if (Rows.ContainerFromIndex(0) is DependencyObject rowContainer
-            && FindChild<ListView>(rowContainer) is { } row
-            && row.ContainerFromIndex(0) is ListViewItem first
-            && first.Focus(FocusState.Programmatic))
+        var row = Rows.ContainerFromIndex(0) is DependencyObject rowContainer ? FindChild<ListView>(rowContainer) : null;
+        var first = row?.ContainerFromIndex(0) as ListViewItem;
+        var focused = first?.Focus(FocusState.Programmatic) == true;
+        Log.Info($"Browse: entry focus attempt row={row is not null} card={first is not null} focused={focused}");
+        if (focused)
         {
             _focusFirstRow = false;
             Rows.LayoutUpdated -= OnRowsLayoutUpdated;

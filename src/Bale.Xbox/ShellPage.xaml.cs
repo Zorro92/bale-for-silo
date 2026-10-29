@@ -232,6 +232,7 @@ public sealed partial class ShellPage : Page, IBackHandler
     private void OnAnyFocus(object sender, RoutedEventArgs e)
     {
         var inBar = IsInTopBar(e.OriginalSource as DependencyObject);
+        Log.Info($"Focus: {e.OriginalSource?.GetType().Name} {(e.OriginalSource as FrameworkElement)?.Name} inBar={inBar}");
         TopBar.Opacity = inBar ? 1 : 0.7;
         if (!inBar)
         {
