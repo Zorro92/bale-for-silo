@@ -2,6 +2,7 @@ using Bale.Core.Detail;
 using Bale.Xbox.Services;
 using Bale.Xbox.Views;
 using Microsoft.Kiota.Abstractions;
+using Windows.System;
 using Windows.UI;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Automation;
@@ -97,6 +98,36 @@ public sealed partial class DetailPage : Page
 
         // The page moves only by the anchors above, never by a focused element's own bring-into-view.
         PageContent.BringIntoViewRequested += (_, args) => args.Handled = true;
+        PageScroller.PreviewKeyDown += OnPagePreviewKeyDown;
+    }
+
+    /// <summary>
+    /// Keyboard Up/Down move focus like the d-pad. The page and season ScrollViewers would otherwise
+    /// take the arrows to scroll, so focus lagged behind or stuck. Gamepad keys already go to the focus engine.
+    /// </summary>
+    private void OnPagePreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        try
+        {
+            var direction = e.Key switch
+            {
+                VirtualKey.Up => FocusNavigationDirection.Up,
+                VirtualKey.Down => FocusNavigationDirection.Down,
+                _ => FocusNavigationDirection.None,
+            };
+            if (direction == FocusNavigationDirection.None)
+            {
+                return;
+            }
+
+            // Handled even when nothing lies that way: a vertical key never scrolls or moves focus sideways.
+            FocusManager.TryMoveFocus(direction);
+            e.Handled = true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Detail keys", ex);
+        }
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
