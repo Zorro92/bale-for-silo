@@ -153,6 +153,7 @@ public sealed partial class SearchPage : Page, IRestoresFocus
     /// <summary>
     /// Left/Right stay on the row, as in the official grid (a LazyVerticalGrid doesn't wrap): the
     /// GridView would otherwise carry Right from a row's last poster to the next row's first.
+    /// Down from the last row stays put: a vertical key must never move focus sideways.
     /// </summary>
     private void OnResultsPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
@@ -163,7 +164,8 @@ public sealed partial class SearchPage : Page, IRestoresFocus
             _ => 0,
         };
         var up = e.Key is VirtualKey.Up or VirtualKey.GamepadDPadUp or VirtualKey.GamepadLeftThumbstickUp;
-        if ((step == 0 && !up) || e.OriginalSource is not ContentControl { Content: CardView } item
+        var down = e.Key is VirtualKey.Down or VirtualKey.GamepadDPadDown or VirtualKey.GamepadLeftThumbstickDown;
+        if ((step == 0 && !up && !down) || e.OriginalSource is not ContentControl { Content: CardView } item
             || Results.ItemsPanelRoot is not { } panel)
         {
             return;
@@ -172,6 +174,15 @@ public sealed partial class SearchPage : Page, IRestoresFocus
         var index = Results.IndexFromContainer(item);
         var top = panel.Children.OfType<FrameworkElement>().FirstOrDefault()?.ActualOffset.Y;
         var columns = Math.Max(1, panel.Children.OfType<FrameworkElement>().Count(child => child.ActualOffset.Y == top));
+        if (down)
+        {
+            if (index >= 0 && index / columns == (Results.Items.Count - 1) / columns)
+            {
+                e.Handled = true;
+            }
+            return;
+        }
+
         if (up)
         {
             // TvSearchScreen explicitly returns to chips so spatial focus cannot skip to the field.
