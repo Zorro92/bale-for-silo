@@ -4,35 +4,81 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Background="{StaticResource SkylineAurora}">
 
-  <!-- Full-screen auth flow: no top bar (guide §3), same wordmark position as the shell. -->
-  <Grid>
-    <StackPanel Orientation="Horizontal" Spacing="10" Margin="44,28,0,0" HorizontalAlignment="Left" VerticalAlignment="Top">
+  <!-- TvMarquee.kt: 45dp safe sides, left copy and a 320dp card, no signed-in shell chrome. -->
+  <Grid Margin="45,30">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="32" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Left">
       <TextBlock Text="BALE" FontSize="{StaticResource SkylineWordmarkSize}" FontWeight="Black" CharacterSpacing="340" VerticalAlignment="Center" />
       <TextBlock Text="a client for Silo" FontSize="{StaticResource SkylineCardSubtitleSize}" Foreground="{StaticResource SkylineTertiary}" VerticalAlignment="Center" />
     </StackPanel>
 
-    <!-- Step 1: which server -->
-    <StackPanel x:Name="ServerPanel" VerticalAlignment="Center" HorizontalAlignment="Center" Width="380" Spacing="14">
-      <TextBlock Text="Connect to your Silo server" FontSize="{StaticResource SkylineScreenTitleSize}" FontWeight="Black" TextWrapping="Wrap" />
-      <TextBox x:Name="ServerBox" PlaceholderText="silo.example.com" InputScope="Url" KeyDown="OnServerBoxKeyDown" Style="{StaticResource SkylineTextBoxStyle}" />
-      <Button x:Name="ConnectButton" Content="Continue" Click="OnConnectClick" HorizontalAlignment="Stretch" Style="{StaticResource SkylineButtonStyle}" />
-      <TextBlock x:Name="ServerError" FontSize="{StaticResource SkylineBodySize}" Foreground="{StaticResource SkylineError}" TextWrapping="Wrap" Visibility="Collapsed" />
+    <!-- TvServerSetupScreen.kt: Back is present only when this entry form has somewhere to return. -->
+    <StackPanel x:Name="ServerPanel" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Left" Width="450">
+      <TextBlock Text="Enter your&#x0A;server address" FontSize="{StaticResource SkylineMarqueeTitleSize}" FontWeight="ExtraBold" TextWrapping="Wrap" />
+      <TextBlock Text="Type the address you use for Silo." FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineSecondary}" Margin="0,11,0,0" />
+      <TextBox x:Name="ServerBox" Width="380" HorizontalAlignment="Left" Margin="0,20,0,0" PlaceholderText="media.example.com" InputScope="Url"
+               KeyDown="OnServerBoxKeyDown" Style="{StaticResource SkylineTextBoxStyle}" />
+      <TextBlock x:Name="ServerError" MaxWidth="380" HorizontalAlignment="Left" Margin="0,8,0,0" FontSize="{StaticResource SkylineAuthCaptionSize}"
+                 Foreground="{StaticResource SkylineError}" TextWrapping="Wrap" Visibility="Collapsed" />
+      <ItemsControl x:Name="ServerActions" Margin="0,20,0,0" PreviewKeyDown="OnServerActionsPreviewKeyDown">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="11" /></ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <Button x:Name="ConnectButton" Content="Connect" Click="OnConnectClick" Style="{StaticResource SkylineAuthButtonStyle}" />
+        <Button x:Name="ServerBackButton" Content="Back" Click="OnServerBackClick" Visibility="Collapsed" Style="{StaticResource SkylineAuthButtonStyle}" />
+      </ItemsControl>
     </StackPanel>
 
-    <!-- Step 2: show the pairing code -->
-    <StackPanel x:Name="CodePanel" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8" Visibility="Collapsed">
-      <TextBlock Text="On your phone or computer, go to" FontSize="{StaticResource SkylineBodySize}" Foreground="{StaticResource SkylineSecondary}" HorizontalAlignment="Center" />
-      <TextBlock x:Name="ActivateText" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center" />
-      <TextBlock Text="and enter the code" FontSize="{StaticResource SkylineBodySize}" Foreground="{StaticResource SkylineSecondary}" HorizontalAlignment="Center" Margin="0,8,0,0" />
-      <TextBlock x:Name="CodeText" FontSize="{StaticResource SkylineMarqueeTitleSize}" FontWeight="Black" CharacterSpacing="160" HorizontalAlignment="Center" />
-      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" Margin="0,8,0,0">
-        <ProgressRing IsActive="True" Width="12" Height="12" Foreground="{StaticResource SkylineSecondary}" />
-        <TextBlock x:Name="PairingStatus" Text="Waiting for approval" FontSize="{StaticResource SkylineBodySize}" Foreground="{StaticResource SkylineSecondary}" />
+    <!-- TvLoginScreen.kt: every phone sign-in instruction stays on the code screen, including errors. -->
+    <Grid x:Name="CodePanel" Grid.Row="1" Visibility="Collapsed" VerticalAlignment="Center">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="450" />
+        <ColumnDefinition Width="*" MinWidth="40" />
+        <ColumnDefinition Width="320" />
+      </Grid.ColumnDefinitions>
+      <StackPanel VerticalAlignment="Center">
+        <TextBlock x:Name="SessionNotice" FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineError}"
+                   TextWrapping="Wrap" Visibility="Collapsed" Margin="0,0,0,12" />
+        <TextBlock x:Name="SignInTitle" FontSize="{StaticResource SkylineMarqueeTitleSize}" FontWeight="ExtraBold" TextWrapping="Wrap" />
+        <TextBlock x:Name="SignInInstructions" FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineSecondary}"
+                   TextWrapping="Wrap" Margin="0,13,0,0" />
+        <ItemsControl x:Name="CodeActions" Margin="0,24,0,0" PreviewKeyDown="OnCodeActionsPreviewKeyDown">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="11" /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <Button x:Name="NewCodeButton" Content="Show a new code" Click="OnNewCodeClick" Style="{StaticResource SkylineAuthButtonStyle}" />
+          <Button x:Name="ChangeServerButton" Content="Change server" Click="OnChangeServerClick" Style="{StaticResource SkylineAuthButtonStyle}" />
+        </ItemsControl>
       </StackPanel>
-      <Button x:Name="CancelPairingButton" Content="Use a Different Server" Click="OnCancelPairingClick" HorizontalAlignment="Center"
-              Margin="0,16,0,0" Style="{StaticResource SkylineButtonStyle}" />
-    </StackPanel>
-
-    <ProgressRing x:Name="BusyRing" Width="32" Height="32" Foreground="{StaticResource SkylinePrimary}" Visibility="Collapsed" />
+      <Border Grid.Column="2" Background="{StaticResource SkylineAuthCardFill}" BorderBrush="{StaticResource SkylineHairline}"
+              BorderThickness="1" CornerRadius="20" Padding="26">
+        <StackPanel HorizontalAlignment="Center">
+          <Border Width="190" Height="190" Background="White" CornerRadius="12" Padding="10">
+            <Grid>
+              <Image x:Name="QrImage" Width="170" Height="170" Stretch="Uniform" AutomationProperties.Name="Scan to sign in on your phone" />
+              <ProgressRing x:Name="CodeLoadingRing" IsActive="True" Width="28" Height="28" Foreground="Black" />
+              <TextBlock x:Name="QrFallback" Text="Use the address&#x0A;and code below" FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="Black"
+                         TextAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
+            </Grid>
+          </Border>
+          <!-- TvMarqueeCodeTiles currently draws one grouped, tabular line, shrinking long codes to fit. -->
+          <Viewbox MaxWidth="260" Height="42" Stretch="Uniform" StretchDirection="DownOnly" Margin="0,17,0,0">
+            <TextBlock x:Name="CodeText" FontSize="{StaticResource SkylineAuthCodeSize}" FontWeight="Bold" TextAlignment="Center"
+                       Typography.NumeralAlignment="Tabular" />
+          </Viewbox>
+          <TextBlock x:Name="ActivateText" FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineSecondary}"
+                     TextWrapping="Wrap" TextAlignment="Center" Margin="0,9,0,0" MaxWidth="260" />
+          <TextBlock Text="Continue on your phone" FontSize="{StaticResource SkylineAuthCaptionSize}" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,12,0,0" />
+          <StackPanel Orientation="Horizontal" Spacing="7" HorizontalAlignment="Center" Margin="0,7,0,0">
+            <ProgressRing x:Name="PairingRing" IsActive="True" Width="13" Height="13" Foreground="{StaticResource SkylineSecondary}" />
+            <TextBlock x:Name="PairingStatus" Text="Getting a code…" MaxWidth="240" FontSize="{StaticResource SkylineAuthCaptionSize}"
+                       Foreground="{StaticResource SkylineSecondary}" TextWrapping="Wrap" TextAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </Grid>
   </Grid>
 </Page>

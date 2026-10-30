@@ -327,7 +327,7 @@ public sealed partial class ShellPage : Page, IBackHandler
     private void OnSwitchProfileClick(object sender, RoutedEventArgs e)
     {
         ClosePanels();
-        Frame.Navigate(typeof(ProfilesPage), ProfilesPage.FromHome);
+        Session.ShowProfilePicker(Frame);
     }
 
     private async void OnSignOutClick(object sender, RoutedEventArgs e)
@@ -343,11 +343,11 @@ public sealed partial class ShellPage : Page, IBackHandler
         Frame.Navigate(typeof(DetailPage), contentId);
     }
 
-    /// <summary>Signs out and returns to the sign-in screen; content pages call this on a dead session.</summary>
+    /// <summary>Explicit sign-out returns to server entry; session expiry instead keeps the login server.</summary>
     internal async Task SignOutAsync()
     {
         await Session.SignOutAsync();
-        Frame.Navigate(typeof(MainPage));
+        Frame.Navigate(typeof(MainPage), MainPage.ServerEntry);
         Frame.BackStack.Clear();
     }
 

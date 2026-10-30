@@ -8,22 +8,33 @@ public class ProfileChoiceTests
     private static Profile P(string id, bool pin = false) => new() { Id = id, Name = id, HasPin = pin };
 
     [Fact]
-    public void ReusesRememberedUnlockedProfile() =>
-        Assert.Equal("b", ProfileChoice.Automatic([P("a"), P("b")], "b")?.Id);
+    public void DefaultAsksEvenWhenAProfileWasRemembered() =>
+        Assert.Null(ProfileChoice.Automatic([P("a"), P("b")], "b"));
 
     [Fact]
-    public void AsksAgainForRememberedLockedProfile() =>
-        Assert.Null(ProfileChoice.Automatic([P("a"), P("b", pin: true)], "b"));
+    public void DefaultAsksEvenInASingleProfileHousehold() =>
+        Assert.Null(ProfileChoice.Automatic([P("a")], null));
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AutomaticReopensTheRememberedProfileIncludingPinProfiles(bool pin) =>
+        Assert.Equal("b", ProfileChoice.Automatic([P("a"), P("b", pin)], "b", openAutomatically: true)?.Id);
 
     [Fact]
-    public void UsesLoneUnlockedProfile() =>
-        Assert.Equal("a", ProfileChoice.Automatic([P("a")], null)?.Id);
+    public void AutomaticDoesNotChooseSomebodyElseWhenTheSavedProfileWasDeleted() =>
+        Assert.Null(ProfileChoice.Automatic([P("a")], "gone", openAutomatically: true));
 
     [Fact]
-    public void AsksWhenLoneProfileIsLocked() =>
-        Assert.Null(ProfileChoice.Automatic([P("a", pin: true)], null));
+    public void AutomaticWithoutARememberedProfileStillAsks() =>
+        Assert.Null(ProfileChoice.Automatic([P("a")], null, openAutomatically: true));
 
-    [Fact]
-    public void AsksWhenSeveralAndNoneRemembered() =>
-        Assert.Null(ProfileChoice.Automatic([P("a"), P("b")], "gone"));
+    [Theory]
+    [InlineData(null, true, null)]
+    [InlineData("", true, null)]
+    [InlineData(" ", true, null)]
+    [InlineData("b", false, null)]
+    [InlineData("b", true, "b")]
+    public void StartupDecisionNeedsNoNetwork(string? rememberedId, bool automatic, string? expected) =>
+        Assert.Equal(expected, ProfileChoice.AutomaticId(rememberedId, automatic));
 }

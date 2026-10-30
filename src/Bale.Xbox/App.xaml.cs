@@ -59,6 +59,7 @@ public sealed partial class App : Application
         }
 #endif
 
+        Session.Attach(frame);
         if (frame.Content is null)
         {
             frame.Navigate(typeof(MainPage), e.Arguments);

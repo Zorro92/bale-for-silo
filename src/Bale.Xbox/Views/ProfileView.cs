@@ -14,7 +14,8 @@ public sealed partial class ProfileView
         AvatarUrl = avatarUrl;
         Initial = string.IsNullOrEmpty(profile.Name) ? "?" : profile.Name!.Substring(0, 1).ToUpperInvariant();
         LockVisibility = profile.HasPin == true ? Visibility.Visible : Visibility.Collapsed;
-        Avatar = avatarUrl is null ? null : AvatarImage(avatarUrl, 136);
+        KidsVisibility = profile.IsChild == true ? Visibility.Visible : Visibility.Collapsed;
+        Avatar = avatarUrl is null ? null : AvatarImage(avatarUrl, 110);
     }
 
     public Profile Profile { get; }
@@ -28,6 +29,8 @@ public sealed partial class ProfileView
     public ImageSource? Avatar { get; }
 
     public Visibility LockVisibility { get; }
+
+    public Visibility KidsVisibility { get; }
 
     /// <summary>An image source for a profile picture: SVG through SvgImageSource, anything else decoded at the drawn size.</summary>
     public static ImageSource AvatarImage(Uri url, int size) =>

@@ -21,6 +21,7 @@ public sealed class SiloClient : IDisposable
     private readonly TimeProvider _time;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private DateTimeOffset? _accessTokenExpiresAt;
+    private bool _sessionExpired;
 
     public SiloClient(Uri server, ClientIdentity identity, HttpMessageHandler? transport = null, TimeProvider? time = null)
     {
@@ -51,17 +52,39 @@ public sealed class SiloClient : IDisposable
     /// <summary>The household profile browsing and playback act as. Null lets the server pick its default.</summary>
     public string? ProfileId { get; private set; }
 
-    /// <summary>Proof of the PIN for a locked <see cref="ProfileId"/>. Short-lived; don't persist it.</summary>
+    /// <summary>Proof of the PIN for a locked profile. Store only in secure storage, never the PIN itself.</summary>
     public string? ProfileToken { get; private set; }
 
-    public bool IsSignedIn => AccessToken is not null;
+    public DateTimeOffset? AccessTokenExpiresAt => _accessTokenExpiresAt;
+
+    public bool IsSignedIn => AccessToken is not null || RefreshToken is not null;
 
     /// <summary>Raised when the refresh token rotates, so the app can save the new one.</summary>
     public event EventHandler? TokensRefreshed;
 
+    /// <summary>A refresh returned 401. Tokens are already cleared; keep the server and ask for sign-in.</summary>
+    public event EventHandler? SessionExpired;
+
+    /// <summary>
+    /// Restores local credentials without a network request (MainTvActivity.kt). Even a legacy install
+    /// with only a refresh token enters the picker/shell; its first API request performs the refresh.
+    /// </summary>
+    public void RestoreSession(string refreshToken, string? accessToken = null, DateTimeOffset? accessTokenExpiresAt = null,
+        string? profileId = null, string? profileToken = null)
+    {
+        _sessionExpired = false;
+        RefreshToken = refreshToken;
+        AccessToken = accessToken;
+        _accessTokenExpiresAt = accessTokenExpiresAt ?? _time.GetUtcNow();
+        Account = null;
+        ProfileId = profileId;
+        ProfileToken = profileId is null ? null : profileToken;
+    }
+
     /// <summary>Adopts the tokens from an approved device login or a password login.</summary>
     public void SignIn(TokenPair tokens, string? profileId = null, string? profileToken = null)
     {
+        _sessionExpired = false;
         AccessToken = tokens.AccessToken;
         RefreshToken = tokens.RefreshToken;
         _accessTokenExpiresAt = ExpiresAt(tokens.ExpiresIn);
@@ -83,19 +106,28 @@ public sealed class SiloClient : IDisposable
                 new RefreshSessionInputBody { RefreshToken = refreshToken },
                 cancellationToken: cancellationToken).ConfigureAwait(false);
         }
-        catch (ApiException e) when (e.ResponseStatusCode is 401 or 403)
+        catch (ApiException e) when (e.ResponseStatusCode == 401)
         {
+            ExpireSession();
             return false;
         }
 
         if (refreshed?.AccessToken is null)
         {
-            return false;
+            throw new InvalidOperationException("The server returned an empty refresh response.");
         }
 
+        _sessionExpired = false;
         AdoptRefreshed(refreshed, refreshToken);
-        Account = await Api.Api.V2.Account.Me.GetAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+        await GetAccountAsync(cancellationToken).ConfigureAwait(false);
         return true;
+    }
+
+    /// <summary>The account name shown under Who's watching; loading it isn't a startup gate.</summary>
+    public async Task<Account?> GetAccountAsync(CancellationToken cancellationToken = default)
+    {
+        Account = await Api.Api.V2.Account.Me.GetAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+        return Account;
     }
 
     /// <summary>The household profiles on this account, for a "Who's watching?" screen.</summary>
@@ -105,8 +137,8 @@ public sealed class SiloClient : IDisposable
         return profiles?.Items ?? [];
     }
 
-    /// <summary>Acts as <paramref name="profileId"/> from now on. Locked profiles need <see cref="VerifyPinAsync"/> instead.</summary>
-    public void UseProfile(string profileId)
+    /// <summary>Acts as this profile; null clears selection. New locked picks need <see cref="VerifyPinAsync"/>.</summary>
+    public void UseProfile(string? profileId)
     {
         ProfileId = profileId;
         ProfileToken = null;
@@ -132,6 +164,8 @@ public sealed class SiloClient : IDisposable
             return false;
         }
 
+        // TvProfileSelectionViewModel.kt drops a late answer after Cancel or another profile pick.
+        cancellationToken.ThrowIfCancellationRequested();
         ProfileId = profileId;
         ProfileToken = verification.ProfileToken;
         return true;
@@ -140,18 +174,26 @@ public sealed class SiloClient : IDisposable
     /// <summary>Ends the session on the server (best effort) and forgets it locally.</summary>
     public async Task SignOutAsync(CancellationToken cancellationToken = default)
     {
-        if (IsSignedIn)
+        try
         {
-            try
+            if (IsSignedIn)
             {
                 await Api.Api.V2.Auth.Logout.PostAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
             }
-            catch (ApiException)
-            {
-                // Already gone server-side; forgetting it locally is what matters.
-            }
         }
+        catch (Exception e) when (e is ApiException or HttpRequestException or OperationCanceledException)
+        {
+            // Offline and already revoked sessions must still sign out locally.
+        }
+        finally
+        {
+            ForgetSession();
+        }
+    }
 
+    /// <summary>Forgets credentials locally without a logout request, including after session expiry.</summary>
+    public void ForgetSession()
+    {
         AccessToken = null;
         RefreshToken = null;
         _accessTokenExpiresAt = null;
@@ -168,21 +210,40 @@ public sealed class SiloClient : IDisposable
 
     private async Task<RequestCredentials?> CurrentCredentialsAsync(CancellationToken cancellationToken)
     {
-        if (AccessToken is null)
-        {
-            return null;
-        }
-
+        ThrowIfSessionExpired();
         if (NeedsRefresh())
         {
             await RefreshNowAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        ThrowIfSessionExpired();
         return AccessToken is null ? null : new RequestCredentials(AccessToken, ProfileId, ProfileToken);
     }
 
     private bool NeedsRefresh() =>
-        RefreshToken is not null && _accessTokenExpiresAt is { } expiresAt && _time.GetUtcNow() >= expiresAt - RefreshMargin;
+        RefreshToken is not null && (AccessToken is null
+            || _accessTokenExpiresAt is { } expiresAt && _time.GetUtcNow() >= expiresAt - RefreshMargin);
+
+    private void ThrowIfSessionExpired()
+    {
+        if (_sessionExpired)
+        {
+            throw new ApiException("The session expired. Sign in again.") { ResponseStatusCode = 401 };
+        }
+    }
+
+    private void ExpireSession()
+    {
+        if (_sessionExpired)
+        {
+            return;
+        }
+
+        // TvAppNavigation.kt listens only for a real refresh 401, not offline/5xx failures.
+        _sessionExpired = true;
+        ForgetSession();
+        SessionExpired?.Invoke(this, EventArgs.Empty);
+    }
 
     /// <summary>One refresh at a time; requests that queue behind it reuse its result.</summary>
     private async Task RefreshNowAsync(CancellationToken cancellationToken)
@@ -201,15 +262,17 @@ public sealed class SiloClient : IDisposable
                 var refreshed = await Api.Api.V2.Auth.Refresh.PostAsync(
                     new RefreshSessionInputBody { RefreshToken = current },
                     cancellationToken: cancellationToken).ConfigureAwait(false);
-                if (refreshed?.AccessToken is not null)
+                if (refreshed?.AccessToken is null)
                 {
-                    AdoptRefreshed(refreshed, current);
+                    throw new InvalidOperationException("The server returned an empty refresh response.");
                 }
+
+                AdoptRefreshed(refreshed, current);
             }
-            catch (ApiException)
+            catch (ApiException e) when (e.ResponseStatusCode == 401)
             {
-                // Leave the old token in place; the request fails with 401 and the app sends the user to sign in.
-                _accessTokenExpiresAt = null;
+                ExpireSession();
+                throw;
             }
         }
         finally

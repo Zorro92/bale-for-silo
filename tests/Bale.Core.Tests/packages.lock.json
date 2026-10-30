@@ -129,6 +129,11 @@
         "resolved": "13.0.3",
         "contentHash": "HrC5BXdl00IP9zeV+0Z848QWPAoCr9P3bDEZguI+gkLcBKAOxix/tLEAAHC+UvDNPv4a2d18lOReHMOagPa+zQ=="
       },
+      "QRCoder": {
+        "type": "Transitive",
+        "resolved": "1.6.0",
+        "contentHash": "XmPA81eo+oRxBuyVdswsSkTGTE1d3thfF11Z1PdD7oB56A6HU4G4AAOdySmGRMb/cljwlFTMWUtosGEnwpS6GA=="
+      },
       "Std.UriTemplate": {
         "type": "Transitive",
         "resolved": "2.0.12",
@@ -177,7 +182,8 @@
       "bale.core": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Kiota.Bundle": "[2.1.2, )"
+          "Microsoft.Kiota.Bundle": "[2.1.2, )",
+          "QRCoder": "[1.6.0, )"
         }
       }
     }

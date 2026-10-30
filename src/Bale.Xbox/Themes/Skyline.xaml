@@ -574,4 +574,57 @@
       </Setter.Value>
     </Setter>
   </Style>
+  <!-- Auth/profile-only metrics: TvProfileSelectionScreen.kt, TvPinEntryDialog.kt, TvMarquee.kt.
+       Geometry is dp 1:1; type is sp x 0.86. Keep this group independent of shared browse styles. -->
+  <x:Double x:Key="SkylineProfileTitleSize">27.5</x:Double>
+  <x:Double x:Key="SkylineProfileNameSize">12.9</x:Double>
+  <x:Double x:Key="SkylineAuthCaptionSize">12.0</x:Double>
+  <x:Double x:Key="SkylinePinNameSize">16.3</x:Double>
+  <x:Double x:Key="SkylineProfileAvatarSize">110</x:Double>
+  <CornerRadius x:Key="SkylineProfileAvatarRadius">55</CornerRadius>
+  <x:Double x:Key="SkylineProfileColumnWidth">128</x:Double>
+  <x:Double x:Key="SkylineProfileLockSize">30</x:Double>
+  <CornerRadius x:Key="SkylineProfileLockRadius">15</CornerRadius>
+  <x:Double x:Key="SkylineProfileKidsHeight">22</x:Double>
+  <CornerRadius x:Key="SkylineProfileKidsRadius">11</CornerRadius>
+  <x:Double x:Key="SkylineProfileKidsSize">9.5</x:Double>
+  <SolidColorBrush x:Key="SkylineProfileLockFill" Color="#FF1C1C1E" />
+  <SolidColorBrush x:Key="SkylineProfileAvatarFill" Color="#FF66758B" />
+  <SolidColorBrush x:Key="SkylinePinKeyFill" Color="#21FFFFFF" />
+  <SolidColorBrush x:Key="SkylineAuthCardFill" Color="#B81F1F1F" />
+  <x:Double x:Key="SkylineAuthCodeSize">34.4</x:Double>
+  <SolidColorBrush x:Key="SkylinePinScrim" Color="#59000000" />
+
+  <!-- The avatar draws its own round ring, not the GridView's rectangular selection chrome. -->
+  <Style x:Key="SkylineProfileItemStyle" TargetType="GridViewItem" BasedOn="{StaticResource SkylineGridItemStyle}">
+    <Setter Property="Width" Value="{StaticResource SkylineProfileColumnWidth}" />
+    <Setter Property="Margin" Value="7,16,7,18" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="GridViewItem">
+          <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                            HorizontalAlignment="Center" VerticalAlignment="Top" />
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style x:Key="SkylineAuthButtonStyle" TargetType="Button" BasedOn="{StaticResource SkylineButtonStyle}">
+    <Setter Property="Height" Value="38" />
+    <Setter Property="CornerRadius" Value="19" />
+    <Setter Property="Padding" Value="20,0" />
+    <Setter Property="FontSize" Value="12.5" />
+  </Style>
+
+  <!-- TvPinEntryDialog.kt: 50dp circular keys; no implicit transitions inside templates. -->
+  <Style x:Key="SkylinePinKeyStyle" TargetType="Button" BasedOn="{StaticResource SkylineButtonStyle}">
+    <Setter Property="Width" Value="50" />
+    <Setter Property="Height" Value="50" />
+    <Setter Property="CornerRadius" Value="25" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="FontSize" Value="18.9" />
+    <Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="Background" Value="{StaticResource SkylinePinKeyFill}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
 </ResourceDictionary>

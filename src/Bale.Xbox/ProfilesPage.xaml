@@ -5,42 +5,124 @@
     xmlns:views="using:Bale.Xbox.Views"
     Background="{StaticResource SkylineAurora}">
 
-  <!-- Android TV's profile picker: Aurora backdrop, rounded-square tiles with the initial, name below. -->
   <Grid>
-    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="6">
-      <TextBlock Text="Who's watching?" FontSize="{StaticResource SkylineScreenTitleSize}" FontWeight="Black" HorizontalAlignment="Center" />
-      <TextBlock Text="Select your profile" FontSize="{StaticResource SkylineBodySize}" Foreground="{StaticResource SkylineSecondary}" HorizontalAlignment="Center" />
-      <GridView x:Name="Profiles" Margin="0,26,0,0" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnProfileClick"
-                GotFocus="OnProfileFocus" LostFocus="OnProfileBlur" HorizontalAlignment="Center" ItemContainerStyle="{StaticResource SkylineGridItemStyle}">
-        <GridView.ItemsPanel>
-          <ItemsPanelTemplate>
-            <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="5" />
-          </ItemsPanelTemplate>
-        </GridView.ItemsPanel>
-        <GridView.ItemTemplate>
-          <DataTemplate x:DataType="views:ProfileView">
-            <StackPanel Width="136" Spacing="12" Margin="10">
-              <Grid x:Name="Art" Width="136" Height="136">
-                <Grid CornerRadius="12" Background="#FF66758B">
-                  <TextBlock Text="{x:Bind Initial}" FontSize="48" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                  <Image Source="{x:Bind Avatar}" Stretch="UniformToFill" />
-                  <Border Width="28" Height="28" CornerRadius="14" Background="#99000000" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8"
-                          Visibility="{x:Bind LockVisibility}">
-                    <FontIcon Glyph="&#xE72E;" FontSize="12" />
+    <!-- TvProfileSelectionScreen.kt: six 128dp columns, 14dp gaps, round 110dp avatars. -->
+    <Grid x:Name="PickerPanel" Margin="44,30">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+      <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+        <TextBlock Text="Who's watching?" FontSize="{StaticResource SkylineProfileTitleSize}" FontWeight="ExtraBold" HorizontalAlignment="Center" />
+        <TextBlock x:Name="AccountText" Text=" " FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineSecondary}"
+                   HorizontalAlignment="Center" Margin="0,7,0,0" />
+        <GridView x:Name="Profiles" Margin="0,20,0,0" MaxWidth="852" MaxHeight="310" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnProfileClick"
+                  GotFocus="OnProfileFocus" LostFocus="OnProfileBlur" PreviewKeyDown="OnProfilesPreviewKeyDown" HorizontalAlignment="Center"
+                  Padding="0" ItemContainerStyle="{StaticResource SkylineProfileItemStyle}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                  ScrollViewer.VerticalScrollBarVisibility="Hidden">
+          <GridView.ItemsPanel>
+            <ItemsPanelTemplate>
+              <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="6" />
+            </ItemsPanelTemplate>
+          </GridView.ItemsPanel>
+          <GridView.ItemTemplate>
+            <DataTemplate x:DataType="views:ProfileView">
+              <StackPanel Width="{StaticResource SkylineProfileColumnWidth}">
+                <Grid x:Name="Art" Width="{StaticResource SkylineProfileAvatarSize}" Height="{StaticResource SkylineProfileAvatarSize}" HorizontalAlignment="Center">
+                  <Ellipse Fill="{StaticResource SkylineProfileAvatarFill}" />
+                  <TextBlock Text="{x:Bind Initial}" FontSize="36" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  <Ellipse>
+                    <Ellipse.Fill><ImageBrush ImageSource="{x:Bind Avatar}" Stretch="UniformToFill" /></Ellipse.Fill>
+                  </Ellipse>
+                  <!-- The ring's centre is 6dp outside the avatar; its 3dp stroke extends another 1.5dp. -->
+                  <Ellipse x:Name="FocusRing" Margin="-7.5" StrokeThickness="3" Stroke="{StaticResource SkylineFocusRing}" Opacity="0" />
+                  <!-- MarqueeProfileAvatar.kt badges are outside the circular crop. -->
+                  <Border Width="{StaticResource SkylineProfileLockSize}" Height="{StaticResource SkylineProfileLockSize}" CornerRadius="{StaticResource SkylineProfileLockRadius}"
+                          Background="{StaticResource SkylineProfileLockFill}" BorderBrush="Black" BorderThickness="2" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                          Margin="0,0,-2.4,-2.4" Visibility="{x:Bind LockVisibility}">
+                    <FontIcon Glyph="&#xE72E;" FontSize="12.6" Foreground="{StaticResource SkylineSecondary}" />
+                  </Border>
+                  <Border Height="{StaticResource SkylineProfileKidsHeight}" CornerRadius="{StaticResource SkylineProfileKidsRadius}" Background="White" Padding="8,0"
+                          HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-5.5,0" Visibility="{x:Bind KidsVisibility}">
+                    <TextBlock Text="KIDS" FontSize="{StaticResource SkylineProfileKidsSize}" FontWeight="Black" Foreground="Black" VerticalAlignment="Center" />
                   </Border>
                 </Grid>
-                <Border x:Name="FocusGlow" Margin="-6" CornerRadius="18" BorderThickness="3" BorderBrush="{StaticResource SkylineFocusGlow}" Opacity="0" />
-                <Border x:Name="FocusRing" Margin="-3" CornerRadius="15" BorderThickness="2" BorderBrush="{StaticResource SkylineFocusRing}" Opacity="0" />
-              </Grid>
-              <TextBlock Text="{x:Bind Name}" FontSize="{StaticResource SkylineRowTitleSize}" FontWeight="SemiBold" HorizontalAlignment="Center"
-                         TextTrimming="CharacterEllipsis" MaxWidth="136" />
-            </StackPanel>
-          </DataTemplate>
-        </GridView.ItemTemplate>
-      </GridView>
-      <ProgressRing x:Name="LoadingRing" Width="24" Height="24" IsActive="True" Foreground="{StaticResource SkylinePrimary}" />
-      <TextBlock x:Name="ErrorText" FontSize="{StaticResource SkylineBodySize}" Foreground="{StaticResource SkylineError}" HorizontalAlignment="Center"
-                 TextWrapping="Wrap" Visibility="Collapsed" />
-    </StackPanel>
+                <TextBlock x:Name="ProfileCaption" Text="{x:Bind Name}" FontSize="{StaticResource SkylineProfileNameSize}" FontWeight="SemiBold"
+                           Foreground="{StaticResource SkylineSecondary}" HorizontalAlignment="Center" Margin="0,13,0,0"
+                           TextTrimming="CharacterEllipsis" MaxWidth="{StaticResource SkylineProfileColumnWidth}" />
+              </StackPanel>
+            </DataTemplate>
+          </GridView.ItemTemplate>
+        </GridView>
+        <ProgressRing x:Name="LoadingRing" Width="24" Height="24" IsActive="True" Foreground="{StaticResource SkylinePrimary}" />
+        <StackPanel x:Name="ErrorPanel" Spacing="14" Margin="0,18,0,0" Visibility="Collapsed" HorizontalAlignment="Center">
+          <TextBlock x:Name="ErrorText" MaxWidth="600" FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineError}"
+                     HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+          <Button x:Name="RetryButton" Content="Retry" Click="OnRetryClick" HorizontalAlignment="Center" Style="{StaticResource SkylineButtonStyle}" />
+        </StackPanel>
+      </StackPanel>
+      <ItemsControl x:Name="PickerActions" Grid.Row="1" HorizontalAlignment="Center" PreviewKeyDown="OnPickerActionsPreviewKeyDown">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="10" /></ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <Button x:Name="ChangeServerButton" Content="Change server" Click="OnChangeServerClick" Style="{StaticResource SkylineButtonStyle}" />
+        <Button x:Name="SignOutButton" Content="Sign out" Click="OnSignOutClick" Style="{StaticResource SkylineButtonStyle}" />
+      </ItemsControl>
+    </Grid>
+
+    <!-- TvPinEntryDialog.kt: full-screen prompt, four dots, 50dp remote-first circular keys. -->
+    <Grid x:Name="PinPanel" Visibility="Collapsed" Background="{StaticResource SkylinePinScrim}" PreviewKeyDown="OnPinPreviewKeyDown">
+      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+        <Grid Width="80" Height="80">
+          <Ellipse Fill="{StaticResource SkylineProfileAvatarFill}" />
+          <TextBlock x:Name="PinInitial" FontSize="28" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          <Ellipse><Ellipse.Fill><ImageBrush x:Name="PinAvatarBrush" Stretch="UniformToFill" /></Ellipse.Fill></Ellipse>
+        </Grid>
+        <TextBlock x:Name="PinName" FontSize="{StaticResource SkylinePinNameSize}" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,11,0,0" />
+        <StackPanel x:Name="PinDots" Orientation="Horizontal" Spacing="14" HorizontalAlignment="Center" Margin="0,17,0,0" AutomationProperties.Name="PIN entry">
+          <Border Width="13" Height="13" CornerRadius="6.5" BorderThickness="1.5" />
+          <Border Width="13" Height="13" CornerRadius="6.5" BorderThickness="1.5" />
+          <Border Width="13" Height="13" CornerRadius="6.5" BorderThickness="1.5" />
+          <Border Width="13" Height="13" CornerRadius="6.5" BorderThickness="1.5" />
+        </StackPanel>
+        <TextBlock x:Name="PinStatus" Text="Enter your PIN" Height="17" FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineSecondary}"
+                   TextAlignment="Center" Margin="0,9,0,0" AutomationProperties.LiveSetting="Polite" />
+        <Grid x:Name="PinKeypad" HorizontalAlignment="Center" Margin="0,15,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="50" /><ColumnDefinition Width="12" /><ColumnDefinition Width="50" /><ColumnDefinition Width="12" /><ColumnDefinition Width="50" />
+          </Grid.ColumnDefinitions>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="50" /><RowDefinition Height="10" /><RowDefinition Height="50" /><RowDefinition Height="10" />
+            <RowDefinition Height="50" /><RowDefinition Height="10" /><RowDefinition Height="50" />
+          </Grid.RowDefinitions>
+          <Button Content="1" Tag="1" Grid.Row="0" Grid.Column="0" Click="OnPinKeyClick" Style="{StaticResource SkylinePinKeyStyle}" />
+          <Button Content="2" Tag="2" Grid.Row="0" Grid.Column="2" Click="OnPinKeyClick" Style="{StaticResource SkylinePinKeyStyle}" />
+          <Button Content="3" Tag="3" Grid.Row="0" Grid.Column="4" Click="OnPinKeyClick" Style="{StaticResource SkylinePinKeyStyle}" />
+          <Button Content="4" Tag="4" Grid.Row="2" Grid.Column="0" Click="OnPinKeyClick" Style="{StaticResource SkylinePinKeyStyle}" />
+          <Button x:Name="PinFiveButton" Content="5" Tag="5" Grid.Row="2" Grid.Column="2" Click="OnPinKeyClick" Style="{StaticResource SkylinePinKeyStyle}" />
+          <Button Content="6" Tag="6" Grid.Row="2" Grid.Column="4" Click="OnPinKeyClick" Style="{StaticResource SkylinePinKeyStyle}" />
+          <Button Content="7" Tag="7" Grid.Row="4" Grid.Column="0" Click="OnPinKeyClick" Style="{StaticResource SkylinePinKeyStyle}" />
+          <Button Content="8" Tag="8" Grid.Row="4" Grid.Column="2" Click="OnPinKeyClick" Style="{StaticResource SkylinePinKeyStyle}" />
+          <Button Content="9" Tag="9" Grid.Row="4" Grid.Column="4" Click="OnPinKeyClick" Style="{StaticResource SkylinePinKeyStyle}" />
+          <Button x:Name="PinZeroButton" Content="0" Tag="0" Grid.Row="6" Grid.Column="2" Click="OnPinKeyClick" Style="{StaticResource SkylinePinKeyStyle}" />
+          <Button Content="⌫" Tag="delete" Grid.Row="6" Grid.Column="4" Click="OnPinKeyClick" AutomationProperties.Name="Backspace" Style="{StaticResource SkylinePinKeyStyle}" />
+        </Grid>
+        <Button x:Name="PinCancelButton" Content="Cancel" Click="OnPinCancelClick" HorizontalAlignment="Center" Margin="0,15,0,0" Style="{StaticResource SkylineButtonStyle}" />
+      </StackPanel>
+    </Grid>
+
+    <Grid x:Name="RememberPanel" Background="{StaticResource SkylinePinScrim}" Visibility="Collapsed" PreviewKeyDown="OnRememberPreviewKeyDown">
+      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="600" Spacing="18">
+        <TextBlock x:Name="RememberTitle" FontSize="{StaticResource SkylineProfileTitleSize}" FontWeight="ExtraBold" TextAlignment="Center" TextWrapping="Wrap" />
+        <TextBlock Text="Open this profile when Bale starts on this TV." FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineSecondary}" HorizontalAlignment="Center" />
+        <ItemsControl x:Name="RememberActions" HorizontalAlignment="Center">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="11" /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <Button x:Name="RememberYesButton" Content="Yes" Click="OnRememberYesClick" Style="{StaticResource SkylineButtonStyle}" />
+          <Button Content="Not now" Click="OnRememberNotNowClick" Style="{StaticResource SkylineButtonStyle}" />
+        </ItemsControl>
+      </StackPanel>
+    </Grid>
   </Grid>
 </Page>

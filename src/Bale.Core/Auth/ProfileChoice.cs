@@ -6,17 +6,20 @@ namespace Bale.Core.Auth;
 public static class ProfileChoice
 {
     /// <summary>
-    /// The profile to act as without asking, or null to show the picker. A remembered profile is
-    /// reused unless it has a PIN; a lone unlocked profile is used outright.
+    /// A new TV asks every time, even with one profile. Only an explicit answer to the remember
+    /// offer enables automatic opening (ProfileLaunchPreferences.kt firstLaunch/answeringRememberOffer).
+    /// This local decision must not wait for the network at startup (MainTvActivity.kt).
     /// </summary>
-    public static Profile? Automatic(IReadOnlyList<Profile> profiles, string? rememberedId)
-    {
-        var remembered = profiles.FirstOrDefault(profile => profile.Id == rememberedId);
-        if (remembered is not null)
-        {
-            return remembered.HasPin == true ? null : remembered;
-        }
+    public static string? AutomaticId(string? rememberedId, bool openAutomatically = false) =>
+        openAutomatically && !string.IsNullOrWhiteSpace(rememberedId) ? rememberedId : null;
 
-        return profiles is [{ HasPin: not true } only] ? only : null;
-    }
+    /// <summary>
+    /// Resolves the saved choice against a loaded list. Automatic also reopens protected profiles;
+    /// the app restores their secure PIN proof, never a saved PIN (ProfileLaunchPreferences.kt).
+    /// A missing/deleted choice returns to the picker rather than choosing a different person.
+    /// </summary>
+    public static Profile? Automatic(IReadOnlyList<Profile> profiles, string? rememberedId, bool openAutomatically = false) =>
+        AutomaticId(rememberedId, openAutomatically) is { } id
+            ? profiles.FirstOrDefault(profile => profile.Id == id)
+            : null;
 }
