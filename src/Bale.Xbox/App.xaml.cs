@@ -44,6 +44,7 @@ public sealed partial class App : Application
             frame = new Frame { FontFamily = new Windows.UI.Xaml.Media.FontFamily("ms-appx:///Assets/Fonts/InterVariable.ttf#Inter Variable") };
             Window.Current.Content = frame;
             frame.PreviewKeyDown += OnPreviewKeyDown;
+            frame.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler((_, args) => OnBackKey(frame, args)), handledEventsToo: false);
             SystemNavigationManager.GetForCurrentView().BackRequested += (_, args) => OnBackRequested(frame, args);
         }
 
@@ -94,17 +95,45 @@ public sealed partial class App : Application
         }
     }
 
+    /// <summary>Routes system Back through the same policy as keyboard Backspace.</summary>
     private static void OnBackRequested(Frame frame, BackRequestedEventArgs args)
+    {
+        args.Handled = GoBack(frame);
+    }
+
+    /// <summary>Backspace follows Back outside text fields; controls get first chance on the bubbling pass.</summary>
+    private static void OnBackKey(Frame frame, KeyRoutedEventArgs args)
+    {
+        try
+        {
+            if (args.Key != VirtualKey.Back || FocusManager.GetFocusedElement() is TextBox or PasswordBox or RichEditBox)
+            {
+                return;
+            }
+
+            args.Handled = GoBack(frame);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Back key", ex);
+        }
+    }
+
+    /// <summary>Offers Back to the page before navigating, without returning to sign-in.</summary>
+    private static bool GoBack(Frame frame)
     {
         if (frame.Content is IBackHandler page && page.OnBack())
         {
-            args.Handled = true;
+            return true;
         }
+
         // Never Back into sign-in: once signed in, Back from Home leaves the app (Skyline §7).
-        else if (frame.CanGoBack && frame.BackStack[frame.BackStack.Count - 1].SourcePageType != typeof(MainPage))
+        if (!frame.CanGoBack || frame.BackStack[frame.BackStack.Count - 1].SourcePageType == typeof(MainPage))
         {
-            frame.GoBack();
-            args.Handled = true;
+            return false;
         }
+
+        frame.GoBack();
+        return true;
     }
 }

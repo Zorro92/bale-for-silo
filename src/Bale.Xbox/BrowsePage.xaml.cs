@@ -249,8 +249,19 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         }
 
         // Up from the first row (and Down from the last) belongs to the focus engine: the top bar.
+        // Keyboard Up needs a push, since the row's horizontal ListView swallows arrow keys.
         var targetIndex = index + step;
-        if (targetIndex < 0 || targetIndex >= Rows.Items.Count
+        if (targetIndex < 0)
+        {
+            if (e.Key == VirtualKey.Up && FocusManager.TryMoveFocus(FocusNavigationDirection.Up))
+            {
+                e.Handled = true;
+            }
+
+            return;
+        }
+
+        if (targetIndex >= Rows.Items.Count
             || Rows.ContainerFromIndex(targetIndex) is not DependencyObject next || FindChild<ListView>(next) is not { } target)
         {
             return;

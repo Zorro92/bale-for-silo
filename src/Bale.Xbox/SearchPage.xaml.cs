@@ -120,8 +120,22 @@ public sealed partial class SearchPage : Page, IRestoresFocus
 
     private void OnFiltersPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        if (e.OriginalSource is not ToggleButton)
+        {
+            return;
+        }
+
+        if (e.Key is VirtualKey.Up or VirtualKey.GamepadDPadUp or VirtualKey.GamepadLeftThumbstickUp)
+        {
+            // TvSearchScreen explicitly hands Up from the chips to the field.
+            if (QueryBox.Focus(FocusState.Programmatic))
+            {
+                e.Handled = true;
+            }
+            return;
+        }
+
         if (e.Key is not (VirtualKey.Down or VirtualKey.GamepadDPadDown or VirtualKey.GamepadLeftThumbstickDown)
-            || e.OriginalSource is not ToggleButton
             || Results.Items.Count == 0)
         {
             return;
