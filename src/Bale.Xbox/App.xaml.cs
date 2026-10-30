@@ -42,6 +42,9 @@ public sealed partial class App : Application
 
             // Inter for everything under the root frame (literal path: resources can't be read from code under AOT).
             frame = new Frame { FontFamily = new Windows.UI.Xaml.Media.FontFamily("ms-appx:///Assets/Fonts/InterVariable.ttf#Inter Variable") };
+            // Arrow keys move focus like the d-pad everywhere; without root keyboard XY navigation,
+            // panels that enable it (top bar, chips, detail actions) trap arrows inside them.
+            frame.XYFocusKeyboardNavigation = XYFocusKeyboardNavigationMode.Enabled;
             Window.Current.Content = frame;
             frame.PreviewKeyDown += OnPreviewKeyDown;
             frame.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler((_, args) => OnBackKey(frame, args)), handledEventsToo: false);
