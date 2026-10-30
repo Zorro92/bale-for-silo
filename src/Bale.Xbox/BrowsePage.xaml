@@ -13,17 +13,18 @@
       </Border>
     </DataTemplate>
 
-    <!-- TvMediaCard / TvEpisodeCard: rounded art, caption underneath, ring + glow on focus (drawn by CardFocus). -->
+    <!-- TvMediaCard / TvEpisodeCard: rounded art, caption underneath, ring + glow on focus (drawn by CardFocus).
+         OneWay bindings let TvHomeScreen.kt's quiet resume refresh update surviving cards in place. -->
     <DataTemplate x:Key="CardTemplate" x:DataType="views:CardView">
-      <StackPanel Width="{x:Bind Width}" Spacing="{x:Bind CaptionSpacing}">
+      <StackPanel Width="{x:Bind Width, Mode=OneWay}" Spacing="{x:Bind CaptionSpacing, Mode=OneWay}">
         <!-- Art lifts on focus with its ring; the caption below stays put. -->
-        <Grid x:Name="Art" Width="{x:Bind Width}" Height="{x:Bind Height}">
+        <Grid x:Name="Art" Width="{x:Bind Width, Mode=OneWay}" Height="{x:Bind Height, Mode=OneWay}">
           <Grid CornerRadius="{StaticResource SkylineCardRadius}" Background="{StaticResource SkylineCardPlaceholder}">
-            <TextBlock Text="{x:Bind Title}" Visibility="{x:Bind FallbackVisibility}" TextWrapping="Wrap" TextAlignment="Center"
+            <TextBlock Text="{x:Bind Title, Mode=OneWay}" Visibility="{x:Bind FallbackVisibility, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Center"
                        FontSize="{StaticResource SkylineCardSubtitleSize}" VerticalAlignment="Center" Margin="8" Foreground="{StaticResource SkylineSecondary}" />
-            <Image Source="{x:Bind Image}" Stretch="UniformToFill" />
+            <Image Source="{x:Bind Image, Mode=OneWay}" Stretch="UniformToFill" />
             <!-- CardOverlays: format badges, top-left and bottom-left. -->
-            <ItemsControl ItemsSource="{x:Bind CornerTop}" ItemTemplate="{StaticResource BadgeTemplate}" Margin="{x:Bind CornerInset}"
+            <ItemsControl ItemsSource="{x:Bind CornerTop, Mode=OneWay}" ItemTemplate="{StaticResource BadgeTemplate}" Margin="{x:Bind CornerInset, Mode=OneWay}"
                           HorizontalAlignment="Left" VerticalAlignment="Top" IsTabStop="False" IsHitTestVisible="False">
               <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
@@ -31,11 +32,11 @@
                 </ItemsPanelTemplate>
               </ItemsControl.ItemsPanel>
             </ItemsControl>
-            <ItemsControl ItemsSource="{x:Bind CornerBottom}" ItemTemplate="{StaticResource BadgeTemplate}" Margin="{x:Bind CornerInset}"
+            <ItemsControl ItemsSource="{x:Bind CornerBottom, Mode=OneWay}" ItemTemplate="{StaticResource BadgeTemplate}" Margin="{x:Bind CornerInset, Mode=OneWay}"
                           HorizontalAlignment="Left" VerticalAlignment="Bottom" IsTabStop="False" IsHitTestVisible="False" />
-            <Grid Visibility="{x:Bind ProgressVisibility}" VerticalAlignment="Bottom" Height="3">
+            <Grid Visibility="{x:Bind ProgressVisibility, Mode=OneWay}" VerticalAlignment="Bottom" Height="3">
               <Border Background="{StaticResource SkylineProgressTrack}" />
-              <Border Background="{StaticResource SkylinePrimary}" HorizontalAlignment="Left" Width="{x:Bind ProgressFillWidth}" />
+              <Border Background="{StaticResource SkylinePrimary}" HorizontalAlignment="Left" Width="{x:Bind ProgressFillWidth, Mode=OneWay}" />
             </Grid>
           </Grid>
           <Border x:Name="FocusGlow" Margin="-6" CornerRadius="{StaticResource SkylineFocusGlowRadius}" BorderThickness="3"
@@ -44,30 +45,30 @@
                   BorderBrush="{StaticResource SkylineFocusRing}" Opacity="0" IsHitTestVisible="False" />
         </Grid>
         <StackPanel Spacing="1">
-          <TextBlock Text="{x:Bind Title}" FontSize="{StaticResource SkylineCardTitleSize}" FontWeight="SemiBold" LineHeight="16"
+          <TextBlock Text="{x:Bind Title, Mode=OneWay}" FontSize="{StaticResource SkylineCardTitleSize}" FontWeight="SemiBold" LineHeight="16"
                      Foreground="{StaticResource SkylineCaptionTitle}" TextTrimming="CharacterEllipsis" />
-          <TextBlock Text="{x:Bind Subtitle}" Visibility="{x:Bind SubtitleVisibility}" FontSize="{StaticResource SkylineCardSubtitleSize}"
+          <TextBlock Text="{x:Bind Subtitle, Mode=OneWay}" Visibility="{x:Bind SubtitleVisibility, Mode=OneWay}" FontSize="{StaticResource SkylineCardSubtitleSize}"
                      LineHeight="15.5" Foreground="{StaticResource SkylineCaptionSubtitle}" TextTrimming="CharacterEllipsis" />
         </StackPanel>
       </StackPanel>
     </DataTemplate>
 
     <DataTemplate x:Key="RowTemplate" x:DataType="views:RowView">
-      <StackPanel Spacing="9" Margin="0,0,0,8">
-        <!-- TvSectionHeader: a play glyph on progress rows, then the server's row title. -->
-        <!-- The icon carries its own gap: StackPanel spacing would still indent rows without one. -->
-        <StackPanel Orientation="Horizontal" Margin="44,0,0,0">
-          <Grid Width="18" Height="18" Margin="0,0,8,0" Visibility="{x:Bind IconVisibility}" VerticalAlignment="Center">
+      <!-- TvMediaRow.kt / TvSkylineSectionFeed.kt: 12 header-to-rail, 14 between rows, 7 rail padding. -->
+      <StackPanel Spacing="12" Margin="0,0,0,14">
+        <!-- TvSectionHeader.kt carries 4 bottom padding; the icon carries its own horizontal gap. -->
+        <StackPanel Orientation="Horizontal" Margin="44,0,0,4">
+          <Grid Width="22" Height="22" Margin="0,0,8,0" Visibility="{x:Bind IconVisibility, Mode=OneWay}" VerticalAlignment="Center">
             <Ellipse Fill="{StaticResource SkylinePrimary}" />
-            <Polygon Points="7,5 13.5,9 7,13" Fill="{StaticResource SkylineBackground}" />
+            <Polygon Points="8.5,6 16,11 8.5,16" Fill="{StaticResource SkylineBackground}" />
           </Grid>
-          <TextBlock Text="{x:Bind Title}" FontSize="{StaticResource SkylineRowTitleSize}" FontWeight="SemiBold" VerticalAlignment="Center" />
+          <TextBlock Text="{x:Bind Title, Mode=OneWay}" FontSize="{StaticResource SkylineRowTitleSize}" FontWeight="SemiBold" LineHeight="18.9" VerticalAlignment="Center" />
         </StackPanel>
         <!-- Rails bleed off the right edge; vertical padding leaves room for the focus lift. -->
         <ListView ItemsSource="{x:Bind Cards}" ItemTemplate="{StaticResource CardTemplate}" ItemContainerStyle="{StaticResource SkylineCardItemStyle}"
                   SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnCardClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur"
                   Loaded="OnRailLoaded"
-                  Padding="44,12,0,12" ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden"
+                  Padding="44,7,0,7" ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden"
                   ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
           <ListView.ItemsPanel>
             <ItemsPanelTemplate>
@@ -82,7 +83,14 @@
   <Grid>
     <VisualStateManager.VisualStateGroups>
       <VisualStateGroup x:Name="Landing">
-        <VisualState x:Name="Home" />
+        <!-- TvHomeScreen.kt drops only the foreground by 28: base band 270, marquee bottom 266. -->
+        <VisualState x:Name="Home">
+          <VisualState.Setters>
+            <Setter Target="RowsScroller.Margin" Value="0,298,0,0" />
+            <Setter Target="MarqueeRegion.Height" Value="294" />
+          </VisualState.Setters>
+        </VisualState>
+        <VisualState x:Name="ForYou" />
         <!-- Library landing: pills under the bar and a smaller title. -->
         <VisualState x:Name="Library">
           <VisualState.Setters>
@@ -92,12 +100,36 @@
           </VisualState.Setters>
         </VisualState>
       </VisualStateGroup>
+      <!-- TvHomeScreen.kt distinguishes first load, error, empty, and content; refresh keeps content visible. -->
+      <VisualStateGroup x:Name="LoadState">
+        <VisualState x:Name="Content" />
+        <VisualState x:Name="Loading">
+          <VisualState.Setters>
+            <Setter Target="LoadingRing.Visibility" Value="Visible" />
+            <Setter Target="LoadingRing.IsActive" Value="True" />
+            <Setter Target="MarqueeRegion.Visibility" Value="Collapsed" />
+            <Setter Target="RowsScroller.Visibility" Value="Collapsed" />
+          </VisualState.Setters>
+        </VisualState>
+        <VisualState x:Name="Empty">
+          <VisualState.Setters>
+            <Setter Target="EmptyPanel.Visibility" Value="Visible" />
+            <Setter Target="MarqueeRegion.Visibility" Value="Collapsed" />
+            <Setter Target="RowsScroller.Visibility" Value="Collapsed" />
+          </VisualState.Setters>
+        </VisualState>
+        <VisualState x:Name="Error">
+          <VisualState.Setters>
+            <Setter Target="ErrorPanel.Visibility" Value="Visible" />
+            <Setter Target="MarqueeRegion.Visibility" Value="Collapsed" />
+            <Setter Target="RowsScroller.Visibility" Value="Collapsed" />
+          </VisualState.Setters>
+        </VisualState>
+      </VisualStateGroup>
     </VisualStateManager.VisualStateGroups>
 
-    <!-- TvRootHeroBackdrop: a tint wash sampled from the art, and the art in a top-right box fading into it. -->
+    <!-- TvRootHeroBackdrop.kt: sampled tint and corner-masked art animate in Composition, never XAML transitions. -->
     <Rectangle x:Name="Wash" IsHitTestVisible="False" />
-    <!-- The art itself is a Composition visual with alpha masks (Services/MaskedArt.cs). -->
-    <!-- No XAML transitions here: they can't share an element with Composition; MaskedArt fades it. -->
     <Grid x:Name="ArtBox" Width="614" Height="378" HorizontalAlignment="Right" VerticalAlignment="Top" IsHitTestVisible="False" />
     <Rectangle Height="90" VerticalAlignment="Top" IsHitTestVisible="False">
       <Rectangle.Fill>
@@ -122,8 +154,8 @@
       slot (84), the facts line (content-rating chip, then year · length · rating · genre), two lines
       of synopsis, the cast line once the title's detail lands (20), and the format badges.
     -->
-    <Grid Height="293" VerticalAlignment="Top" IsHitTestVisible="False">
-      <StackPanel x:Name="Marquee" Margin="44,0,0,6" Width="440" HorizontalAlignment="Left" VerticalAlignment="Bottom" Spacing="6">
+    <Grid x:Name="MarqueeRegion" Height="266" VerticalAlignment="Top" IsHitTestVisible="False">
+      <StackPanel x:Name="Marquee" Margin="44,0,0,0" Width="440" HorizontalAlignment="Left" VerticalAlignment="Bottom" Spacing="6">
         <Grid x:Name="TitleSlot">
           <TextBlock x:Name="MarqueeTitle" FontSize="{StaticResource SkylineMarqueeTitleSize}" FontWeight="Black"
                      LineHeight="{StaticResource SkylineMarqueeTitleLine}" LineStackingStrategy="BlockLineHeight" TextWrapping="Wrap"
@@ -139,13 +171,19 @@
       </StackPanel>
     </Grid>
 
-    <!-- Rows scroll in their own viewport below the marquee. -->
-    <!-- Up/Down between rows is handled in code (OnRowsKeyDown) so each row restores its own last card. -->
-    <ScrollViewer x:Name="RowsScroller" Margin="0,297,0,0" VerticalScrollBarVisibility="Hidden" HorizontalScrollMode="Disabled">
-      <ItemsControl x:Name="Rows" ItemTemplate="{StaticResource RowTemplate}" IsTabStop="False" Padding="0,0,0,24" />
+    <!-- TvSkylineSectionFeed.kt: enough trailing space to pin even the last row below the marquee. -->
+    <ScrollViewer x:Name="RowsScroller" Margin="0,270,0,0" VerticalScrollBarVisibility="Hidden" HorizontalScrollMode="Disabled">
+      <ItemsControl x:Name="Rows" ItemTemplate="{StaticResource RowTemplate}" IsTabStop="False" Padding="0,0,0,260" />
     </ScrollViewer>
 
-    <ProgressRing x:Name="LoadingRing" Width="32" Height="32" IsActive="True" Foreground="{StaticResource SkylinePrimary}" />
+    <ProgressRing x:Name="LoadingRing" Width="32" Height="32" IsActive="False" Visibility="Collapsed" Foreground="{StaticResource SkylinePrimary}" />
+    <StackPanel x:Name="EmptyPanel" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="16" Margin="48" Visibility="Collapsed">
+      <TextBlock x:Name="EmptyTitle" Text="Nothing to watch yet" FontSize="20.6" TextAlignment="Center" />
+      <TextBlock x:Name="EmptyMessage" Text="Add media to your libraries or start watching to see it here."
+                 FontSize="{StaticResource SkylineBodySize}" TextWrapping="Wrap" MaxWidth="600" TextAlignment="Center" Foreground="{StaticResource SkylineSecondary}" />
+      <Button x:Name="RefreshButton" Content="Refresh" Style="{StaticResource SkylineButtonStyle}" Height="Auto" Padding="32,12"
+              HorizontalAlignment="Center" Click="OnRetryClick" />
+    </StackPanel>
     <StackPanel x:Name="ErrorPanel" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12" Visibility="Collapsed">
       <TextBlock x:Name="ErrorText" FontSize="{StaticResource SkylineBodySize}" TextWrapping="Wrap" MaxWidth="420" TextAlignment="Center"
                  Foreground="{StaticResource SkylineSecondary}" />

@@ -26,7 +26,7 @@
   <SolidColorBrush x:Key="SkylineChromeSelected" Color="#24FFFFFF" />
   <SolidColorBrush x:Key="SkylineChromeSelectedBorder" Color="#1AFFFFFF" />
   <SolidColorBrush x:Key="SkylineChromeResting" Color="#14FFFFFF" />
-  <SolidColorBrush x:Key="SkylineTabResting" Color="#A6FFFFFF" />
+  <SolidColorBrush x:Key="SkylineTabResting" Color="#9EEDEDED" />
   <SolidColorBrush x:Key="SkylineGlassStrong" Color="#DB16171B" />
   <SolidColorBrush x:Key="SkylineScrimDropdown" Color="#8C000000" />
   <SolidColorBrush x:Key="SkylineCardPlaceholder" Color="#FF15171C" />
@@ -141,9 +141,10 @@
   </Style>
 
   <!--
-    Top-bar tab as a ToggleButton: Checked = the selected destination (chrome.selected capsule,
-    full-white label); Focused = inverted white capsule, black label. Content must be a string (a
-    label or an icon glyph), never an element: the template shows it in two presenters.
+    TvTopMenuBar.kt: resting labels are Medium at 62%; selected/focused labels are SemiBold.
+    Checked = the selected destination (chrome.selected capsule, full-white label); Focused =
+    inverted white capsule, black label. Content must be a string, never an element: the template
+    shows it in two presenters.
   -->
   <Style x:Key="SkylineTabStyle" TargetType="ToggleButton">
     <Setter Property="Foreground" Value="{StaticResource SkylineTabResting}" />
@@ -151,7 +152,7 @@
     <Setter Property="Height" Value="{StaticResource SkylineTabHeight}" />
     <Setter Property="Padding" Value="14.5,0" />
     <Setter Property="FontSize" Value="{StaticResource SkylineTabSize}" />
-    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontWeight" Value="Medium" />
     <Setter Property="UseSystemFocusVisuals" Value="False" />
     <Setter Property="HorizontalContentAlignment" Value="Center" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -160,14 +161,14 @@
         <ControlTemplate TargetType="ToggleButton">
           <Grid>
             <Border x:Name="SelectedFill" CornerRadius="{StaticResource SkylineTabPill}" Background="{StaticResource SkylineChromeSelected}"
-                    BorderBrush="{StaticResource SkylineChromeSelectedBorder}" BorderThickness="0.5" Opacity="0" />
+                    BorderBrush="{StaticResource SkylineChromeSelectedBorder}" BorderThickness="1" Opacity="0" />
             <Border x:Name="FocusFill" CornerRadius="{StaticResource SkylineTabPill}" Background="{StaticResource SkylinePrimary}" Opacity="0" />
             <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}"
                               Foreground="{TemplateBinding Foreground}" FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}"
                               FontFamily="{TemplateBinding FontFamily}"
                               HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
             <ContentPresenter x:Name="FocusedContent" Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}"
-                              Foreground="{StaticResource SkylineBackground}" FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}"
+                              Foreground="{StaticResource SkylineBackground}" FontSize="{TemplateBinding FontSize}" FontWeight="SemiBold"
                               FontFamily="{TemplateBinding FontFamily}"
                               HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
                               Opacity="0" />
@@ -181,18 +182,21 @@
                   <VisualState.Setters>
                     <Setter Target="SelectedFill.Opacity" Value="1" />
                     <Setter Target="Content.Foreground" Value="{StaticResource SkylinePrimary}" />
+                    <Setter Target="Content.FontWeight" Value="SemiBold" />
                   </VisualState.Setters>
                 </VisualState>
                 <VisualState x:Name="CheckedPointerOver">
                   <VisualState.Setters>
                     <Setter Target="SelectedFill.Opacity" Value="1" />
                     <Setter Target="Content.Foreground" Value="{StaticResource SkylinePrimary}" />
+                    <Setter Target="Content.FontWeight" Value="SemiBold" />
                   </VisualState.Setters>
                 </VisualState>
                 <VisualState x:Name="CheckedPressed">
                   <VisualState.Setters>
                     <Setter Target="SelectedFill.Opacity" Value="1" />
                     <Setter Target="Content.Foreground" Value="{StaticResource SkylinePrimary}" />
+                    <Setter Target="Content.FontWeight" Value="SemiBold" />
                   </VisualState.Setters>
                 </VisualState>
                 <VisualState x:Name="CheckedDisabled" />
@@ -207,6 +211,44 @@
                     <Setter Target="FocusFill.Opacity" Value="1" />
                     <Setter Target="Content.Opacity" Value="0" />
                     <Setter Target="FocusedContent.Opacity" Value="1" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="PointerFocused" />
+                <VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- TvTopMenuBar.kt: the avatar keeps its 18% white fill; only its ring changes on focus. -->
+  <Style x:Key="SkylineAvatarStyle" TargetType="Button">
+    <Setter Property="Width" Value="28" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid>
+            <Ellipse Fill="#2EFFFFFF" />
+            <ContentPresenter Content="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}"
+                              HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+            <Ellipse x:Name="Ring" Stroke="#2EFFFFFF" StrokeThickness="1" IsHitTestVisible="False" />
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" />
+                <VisualState x:Name="PointerOver" />
+                <VisualState x:Name="Pressed" />
+                <VisualState x:Name="Disabled" />
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters>
+                    <Setter Target="Ring.Stroke" Value="{StaticResource SkylinePrimary}" />
+                    <Setter Target="Ring.StrokeThickness" Value="2" />
                   </VisualState.Setters>
                 </VisualState>
                 <VisualState x:Name="PointerFocused" />
@@ -293,7 +335,7 @@
     <Setter Property="Height" Value="28" />
     <Setter Property="Foreground" Value="#9EEDEDED" />
     <Setter Property="FontFamily" Value="{ThemeResource SymbolThemeFontFamily}" />
-    <Setter Property="FontSize" Value="14" />
+    <Setter Property="FontSize" Value="19" />
     <Setter Property="UseSystemFocusVisuals" Value="False" />
     <Setter Property="Template">
       <Setter.Value>

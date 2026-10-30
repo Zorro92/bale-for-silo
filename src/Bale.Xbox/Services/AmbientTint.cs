@@ -1,7 +1,10 @@
+using System.Numerics;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Graphics.Imaging;
 using Windows.UI;
-using Windows.UI.Xaml.Media;
+using Windows.UI.Composition;
+using Windows.UI.Xaml;
+using Windows.UI.Xaml.Hosting;
 
 namespace Bale.Xbox.Services;
 
@@ -68,21 +71,79 @@ internal static class AmbientTint
         return Color.FromArgb(255, Channel(r), Channel(g), Channel(b));
     }
 
-    /// <summary>The wash: tint at 1.0 top-right, 0.5 mid, 0.18 bottom-left, with the Android app's smoothed stops.</summary>
-    public static LinearGradientBrush Wash(Color tint)
+    /// <summary>
+    /// TvRootHeroBackdrop.kt: the first sampled tint snaps in; later colours tween for 500 ms using
+    /// TvMarqueeEasing. Composition keeps interrupted tweens continuous without touching XAML opacity.
+    /// </summary>
+    internal sealed class WashAnimation : IDisposable
     {
-        var brush = new LinearGradientBrush { StartPoint = new Windows.Foundation.Point(1, 0), EndPoint = new Windows.Foundation.Point(0, 1) };
-        (double Offset, double Alpha)[] stops =
-        [
-            (0.00, 1.0), (0.12, Lerp(1.0, 0.5, 0.18)), (0.26, Lerp(1.0, 0.5, 0.48)), (0.45, 0.5),
-            (0.62, Lerp(0.5, 0.18, 0.36)), (0.80, Lerp(0.5, 0.18, 0.68)), (1.00, 0.18),
-        ];
-        foreach (var (offset, alpha) in stops)
+        private readonly FrameworkElement _host;
+        private readonly Compositor _compositor;
+        private readonly SpriteVisual _visual;
+        private readonly CompositionLinearGradientBrush _brush;
+        private readonly CubicBezierEasingFunction _easing;
+        private bool _hasTint;
+
+        public WashAnimation(FrameworkElement host)
         {
-            brush.GradientStops.Add(new GradientStop { Offset = offset, Color = Color.FromArgb((byte)Math.Round(alpha * 255), tint.R, tint.G, tint.B) });
+            _host = host;
+            _compositor = ElementCompositionPreview.GetElementVisual(host).Compositor;
+            _easing = _compositor.CreateCubicBezierEasingFunction(new Vector2(0.42f, 0), new Vector2(0.58f, 1));
+            _brush = _compositor.CreateLinearGradientBrush();
+            _brush.StartPoint = new Vector2(1, 0);
+            _brush.EndPoint = new Vector2(0, 1);
+            (float Offset, double Alpha)[] stops =
+            [
+                (0.00f, 1.0), (0.12f, Lerp(1.0, 0.5, 0.18)), (0.26f, Lerp(1.0, 0.5, 0.48)), (0.45f, 0.5),
+                (0.62f, Lerp(0.5, 0.18, 0.36)), (0.80f, Lerp(0.5, 0.18, 0.68)), (1.00f, 0.18),
+            ];
+            foreach (var (offset, alpha) in stops)
+            {
+                _brush.ColorStops.Add(_compositor.CreateColorGradientStop(offset,
+                    Color.FromArgb((byte)Math.Round(alpha * 255), 0, 0, 0)));
+            }
+
+            _visual = _compositor.CreateSpriteVisual();
+            _visual.RelativeSizeAdjustment = Vector2.One;
+            _visual.Brush = _brush;
+            ElementCompositionPreview.SetElementChildVisual(host, _visual);
         }
 
-        return brush;
+        public void Show(Color? tint)
+        {
+            var snap = !_hasTint;
+            _hasTint |= tint.HasValue;
+            var target = tint ?? Colors.Black;
+            foreach (var stop in _brush.ColorStops)
+            {
+                var color = Color.FromArgb(stop.Color.A, target.R, target.G, target.B);
+                if (snap)
+                {
+                    stop.Color = color;
+                    continue;
+                }
+
+                var animation = _compositor.CreateColorKeyFrameAnimation();
+                animation.InsertExpressionKeyFrame(0, "this.StartingValue");
+                animation.InsertKeyFrame(1, color, _easing);
+                animation.Duration = TimeSpan.FromMilliseconds(500);
+                stop.StartAnimation(nameof(CompositionColorGradientStop.Color), animation);
+                animation.Dispose();
+            }
+        }
+
+        public void Dispose()
+        {
+            ElementCompositionPreview.SetElementChildVisual(_host, null);
+            _visual.Dispose();
+            foreach (var stop in _brush.ColorStops)
+            {
+                stop.Dispose();
+            }
+
+            _brush.Dispose();
+            _easing.Dispose();
+        }
     }
 
     private static double Lerp(double from, double to, double t) => from + (to - from) * t;

@@ -18,8 +18,9 @@ namespace Bale.Xbox;
 /// </summary>
 public sealed partial class ShellPage : Page, IBackHandler
 {
-    /// <summary>Focus must rest on a library tab this long before its panel opens (guide §5.3).</summary>
-    private static readonly TimeSpan PanelDwell = TimeSpan.FromMilliseconds(250);
+    // TvTopMenuBar.kt: first preview waits longer than switching an already-open panel.
+    private static readonly TimeSpan PanelDwell = TimeSpan.FromMilliseconds(180);
+    private static readonly TimeSpan PanelSwitchDwell = TimeSpan.FromMilliseconds(80);
 
     private readonly DispatcherTimer _dwell = new() { Interval = PanelDwell };
     private readonly List<TabView> _tabs = new();
@@ -40,8 +41,10 @@ public sealed partial class ShellPage : Page, IBackHandler
             }
         };
         Root.GotFocus += OnAnyFocus;
+        Root.GettingFocus += OnRootGettingFocus;
         TopBar.GettingFocus += OnTopBarGettingFocus;
         TopBar.PreviewKeyDown += OnTopBarPreviewKeyDown;
+        ProfilePanel.PreviewKeyDown += OnProfilePanelPreviewKeyDown;
     }
 
     /// <summary>
@@ -70,10 +73,98 @@ public sealed partial class ShellPage : Page, IBackHandler
     {
         var left = e.Key is Windows.System.VirtualKey.Left or Windows.System.VirtualKey.GamepadDPadLeft or Windows.System.VirtualKey.GamepadLeftThumbstickLeft;
         var right = e.Key is Windows.System.VirtualKey.Right or Windows.System.VirtualKey.GamepadDPadRight or Windows.System.VirtualKey.GamepadLeftThumbstickRight;
-        if ((left && ReferenceEquals(e.OriginalSource, SearchButton)) || (right && ReferenceEquals(e.OriginalSource, AvatarButton)))
+        var up = e.Key is Windows.System.VirtualKey.Up or Windows.System.VirtualKey.GamepadDPadUp or Windows.System.VirtualKey.GamepadLeftThumbstickUp;
+        var down = e.Key is Windows.System.VirtualKey.Down or Windows.System.VirtualKey.GamepadDPadDown or Windows.System.VirtualKey.GamepadLeftThumbstickDown;
+        if (down)
+        {
+            // TvTopMenuBar.kt: Down enters the avatar/library panel, otherwise remembered content.
+            if (ReferenceEquals(e.OriginalSource, AvatarButton))
+            {
+                OpenProfilePanel();
+            }
+            else if (e.OriginalSource is Control { DataContext: TabView { LibraryTab.Libraries.Count: > 1 } } tab)
+            {
+                _dwell.Stop();
+                OpenLibraryPanel(tab);
+                (tab.XYFocusDown as Control)?.Focus(FocusState.Keyboard);
+            }
+            else if (ContentFrame.Content is BrowsePage browse)
+            {
+                browse.FocusContent();
+            }
+            else
+            {
+                return;
+            }
+
+            e.Handled = true;
+            return;
+        }
+
+        if (up || (left && ReferenceEquals(e.OriginalSource, SearchButton)) || (right && ReferenceEquals(e.OriginalSource, AvatarButton)))
         {
             e.Handled = true;
         }
+    }
+
+    /// <summary>TvMainShell.kt cancels every focus exit from the open profile dropdown, without a scrim.</summary>
+    private void OnRootGettingFocus(UIElement sender, GettingFocusEventArgs args)
+    {
+        try
+        {
+            if (ProfilePanel.Visibility == Visibility.Visible && IsWithin(args.OldFocusedElement, ProfilePanel)
+                && !IsWithin(args.NewFocusedElement, ProfilePanel))
+            {
+                args.Cancel = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Profile panel focus", ex);
+        }
+    }
+
+    private void OnProfilePanelPreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case Windows.System.VirtualKey.Up:
+            case Windows.System.VirtualKey.GamepadDPadUp:
+            case Windows.System.VirtualKey.GamepadLeftThumbstickUp:
+                SwitchProfileRow.Focus(FocusState.Keyboard);
+                e.Handled = true;
+                break;
+            case Windows.System.VirtualKey.Down:
+            case Windows.System.VirtualKey.GamepadDPadDown:
+            case Windows.System.VirtualKey.GamepadLeftThumbstickDown:
+                SignOutRow.Focus(FocusState.Keyboard);
+                e.Handled = true;
+                break;
+            case Windows.System.VirtualKey.Left:
+            case Windows.System.VirtualKey.Right:
+            case Windows.System.VirtualKey.GamepadDPadLeft:
+            case Windows.System.VirtualKey.GamepadDPadRight:
+            case Windows.System.VirtualKey.GamepadLeftThumbstickLeft:
+            case Windows.System.VirtualKey.GamepadLeftThumbstickRight:
+                e.Handled = true;
+                break;
+            case Windows.System.VirtualKey.Escape:
+                e.Handled = OnBack();
+                break;
+        }
+    }
+
+    private static bool IsWithin(DependencyObject? element, DependencyObject ancestor)
+    {
+        for (var node = element; node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (ReferenceEquals(node, ancestor))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Content pages reach the shell through this (sign-out on a dead session).</summary>
@@ -96,10 +187,11 @@ public sealed partial class ShellPage : Page, IBackHandler
         var name = Session.ProfileName ?? Session.Client?.Account?.Username ?? "?";
         AvatarInitial.Text = PanelInitial.Text = name.Substring(0, 1).ToUpperInvariant();
         PanelProfileName.Text = name;
-        PanelServer.Text = Session.Client?.Server.Host ?? string.Empty;
+        PanelServer.Text = Session.Client?.Server.Host.ToUpperInvariant() ?? string.Empty;
+        _ = LoadProfileSubtitleAsync();
         if (Session.ProfileAvatar is { } avatar)
         {
-            AvatarPicture.Fill = new ImageBrush { ImageSource = ProfileView.AvatarImage(avatar, 30), Stretch = Stretch.UniformToFill };
+            AvatarPicture.Fill = new ImageBrush { ImageSource = ProfileView.AvatarImage(avatar, 28), Stretch = Stretch.UniformToFill };
             PanelPicture.Fill = new ImageBrush { ImageSource = ProfileView.AvatarImage(avatar, 32), Stretch = Stretch.UniformToFill };
             AvatarPicture.Visibility = PanelPicture.Visibility = Visibility.Visible;
         }
@@ -124,9 +216,39 @@ public sealed partial class ShellPage : Page, IBackHandler
         Select(_tabs[0]);
     }
 
+    private async Task LoadProfileSubtitleAsync()
+    {
+        if (Session.Client is not { } client)
+        {
+            return;
+        }
+
+        var profileId = client.ProfileId;
+        try
+        {
+            var profile = (await client.GetProfilesAsync()).FirstOrDefault(candidate => candidate.Id == profileId);
+            if (!ReferenceEquals(client, Session.Client) || client.ProfileId != profileId)
+            {
+                return;
+            }
+
+            // TvMainShell.kt: only the primary profile gets the account's role; household profiles
+            // must not appear to have the owner's role. Bale currently knows the server by its host.
+            var subtitle = profile?.IsPrimary == true ? client.Account?.Role?.ToString() ?? client.Account?.Username : null;
+            PanelServer.Text = string.Join("  ·  ", new[] { subtitle, client.Server.Host }
+                .Where(part => !string.IsNullOrWhiteSpace(part))).ToUpperInvariant();
+        }
+        catch (Exception ex)
+        {
+            // The uppercase server name remains a useful caption if the optional role cannot load.
+            Log.Error("Profile subtitle", ex);
+        }
+    }
+
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
         base.OnNavigatedFrom(e);
+        _dwell.Stop();
         if (Current == this)
         {
             Current = null;
@@ -170,13 +292,17 @@ public sealed partial class ShellPage : Page, IBackHandler
 
     private void OnTabFocus(object sender, RoutedEventArgs e)
     {
-        ClosePanels();
         _dwell.Stop();
         // Match on Control: under Native AOT a sender can arrive typed as its base class.
         if (sender is Control { DataContext: TabView { LibraryTab.Libraries.Count: > 1 } } button)
         {
+            _dwell.Interval = LibraryPanel.Visibility == Visibility.Visible ? PanelSwitchDwell : PanelDwell;
             _dwellTab = button;
             _dwell.Start();
+        }
+        else
+        {
+            ClosePanels();
         }
     }
 
@@ -226,6 +352,10 @@ public sealed partial class ShellPage : Page, IBackHandler
         ContentFrame.BackStack.Clear();
     }
 
+    /// <summary>TvTopMenuBar.kt: Up from the first row enters the selected tab, never a sideways neighbour.</summary>
+    internal bool FocusSelectedTab() =>
+        (_searchSelected ? (Control?)SearchButton : ButtonFor(_selected))?.Focus(FocusState.Programmatic) == true;
+
     /// <summary>The library a tab shows: the persisted choice, else the first by server sort order (guide §3.1).</summary>
     private static UserLibrary ScopeFor(LibraryTab tab)
     {
@@ -250,6 +380,11 @@ public sealed partial class ShellPage : Page, IBackHandler
         LibraryPanel.Margin = new Thickness(Math.Max(44, tabLeft + tabButton.ActualWidth / 2 - LibraryPanel.Width / 2), 66, 0, 0);
         LibraryPanel.Visibility = Visibility.Visible;
         PanelScrim.Visibility = Visibility.Visible;
+        if (_panelTab is not null)
+        {
+            _panelTab.XYFocusDown = null;
+        }
+
         _panelTab = tabButton;
 
         // Down from the tab enters the panel on the current scope's row; focus stays on the tab until then.
@@ -270,6 +405,8 @@ public sealed partial class ShellPage : Page, IBackHandler
 
     private void ClosePanels()
     {
+        _dwell.Stop();
+        _dwellTab = null;
         if (_panelTab is not null)
         {
             _panelTab.XYFocusDown = null;
@@ -287,9 +424,8 @@ public sealed partial class ShellPage : Page, IBackHandler
     {
         var inBar = IsInTopBar(e.OriginalSource as DependencyObject);
         TopBar.Opacity = inBar ? 1 : 0.7;
-        if (!inBar)
+        if (!inBar || ReferenceEquals(e.OriginalSource, SearchButton) || ReferenceEquals(e.OriginalSource, AvatarButton))
         {
-            _dwell.Stop();
             ClosePanels();
         }
     }
@@ -315,13 +451,14 @@ public sealed partial class ShellPage : Page, IBackHandler
         ShowContent(typeof(SearchPage), string.Empty);
     }
 
-    private void OnAvatarClick(object sender, RoutedEventArgs e)
+    private void OnAvatarClick(object sender, RoutedEventArgs e) => OpenProfilePanel();
+
+    private void OpenProfilePanel()
     {
         ClosePanels();
         ProfilePanel.Visibility = Visibility.Visible;
-        PanelScrim.Visibility = Visibility.Visible;
         AvatarButton.XYFocusDown = SwitchProfileRow;
-        SwitchProfileRow.Focus(FocusState.Programmatic);
+        FocusRetry.Until(ProfilePanel, () => ProfilePanel.Visibility != Visibility.Visible || SwitchProfileRow.Focus(FocusState.Programmatic));
     }
 
     private void OnSwitchProfileClick(object sender, RoutedEventArgs e)
