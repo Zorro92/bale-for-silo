@@ -483,3 +483,4 @@ $RECYCLE.BIN/
 .cache/
 src/Bale.Core/Api/.kiota.log
 xbox-*.png
+.claude/worktrees/
