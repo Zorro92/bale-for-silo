@@ -26,8 +26,9 @@
               ItemClick="OnResultClick" GotFocus="OnResultFocus" LostFocus="OnResultBlur">
       <GridView.Header>
         <StackPanel Margin="0,90,0,0">
+          <!-- Focus alone never raises the on-screen keyboard; A/Select on the field does (TvSearchScreen: the field is read-only until Select). The page focuses this box from code on open and on Up from the chips. -->
           <TextBox x:Name="QueryBox" Width="520" Height="52" Padding="18,15,18,0" HorizontalAlignment="Left" PlaceholderText="Search movies and series"
-                   Style="{StaticResource SkylineTextBoxStyle}" TextChanged="OnQueryChanged" InputScope="Search" />
+                   Style="{StaticResource SkylineTextBoxStyle}" TextChanged="OnQueryChanged" InputScope="Search" PreventKeyboardDisplayOnProgrammaticFocus="True" />
 
           <StackPanel x:Name="Filters" Margin="0,8,0,0" Orientation="Horizontal" Spacing="12" XYFocusKeyboardNavigation="Enabled">
             <ToggleButton x:Name="AllFilter" Content="All" Tag="" Style="{StaticResource SkylineFilterChipStyle}" IsChecked="True" Click="OnFilterClick" />
