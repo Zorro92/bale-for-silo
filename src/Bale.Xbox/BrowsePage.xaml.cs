@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Bale.Core.Browse;
 using Bale.Xbox.Services;
 using Bale.Xbox.Views;
@@ -41,7 +42,15 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     private CardView? _shownMarquee;
     private string? _libraryId;
     private bool _focusFirstRow;
+    private bool _loading;
+    private bool _isLoaded;
+    private bool _updatingRows;
+    private bool _returning;
+    private int _focusVersion;
+    private readonly ObservableCollection<RowView> _rows = new();
     private MaskedArt? _art;
+    private AmbientTint.WashAnimation? _wash;
+    private Color? _tint;
 
     /// <summary>The last card focused anywhere on the page: where Down from the top bar returns.</summary>
     private (int Row, CardView Card)? _lastCard;
@@ -50,27 +59,21 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     {
         InitializeComponent();
 
-        // handledEventsToo: a horizontal ListView may claim Up/Down itself before it would bubble.
-        RowsScroller.AddHandler(KeyDownEvent, new KeyEventHandler(OnRowsKeyDown), handledEventsToo: true);
+        Rows.ItemsSource = _rows;
+        // The tunnelling pass runs before the ListView can make its own geometric (sideways) move.
+        RowsScroller.PreviewKeyDown += OnRowsKeyDown;
         RowsScroller.GettingFocus += OnRowsGettingFocus;
-        Loaded += (_, _) =>
+        RowsScroller.LostFocus += (_, _) =>
         {
-            try
+            if (!_updatingRows && !_returning && !IsInRows(FocusManager.GetFocusedElement() as DependencyObject))
             {
-                _art = new MaskedArt(ArtBox);
-            }
-            catch (Exception ex)
-            {
-                // Without the art the marquee still works on the tint alone.
-                Log.Error("Marquee art", ex);
-                return;
-            }
-
-            if (_shownMarquee?.Card.BackdropUrl is { } pending)
-            {
-                _art.Show(pending);
+                _focusVersion++;
             }
         };
+        EmptyPanel.PreviewKeyDown += OnStateKeyDown;
+        ErrorPanel.PreviewKeyDown += OnStateKeyDown;
+        Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
         _logoGrace.Tick += (_, _) =>
         {
             _logoGrace.Stop();
@@ -86,6 +89,39 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         };
     }
 
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        _isLoaded = true;
+        try
+        {
+            _wash = new AmbientTint.WashAnimation(Wash);
+            _wash.Show(_tint);
+            _art = new MaskedArt(ArtBox);
+            if (_shownMarquee?.Card.BackdropUrl is { } pending)
+            {
+                _art.Show(pending);
+            }
+        }
+        catch (Exception ex)
+        {
+            // The marquee remains usable even if the optional Composition backdrop cannot load.
+            Log.Error("Marquee backdrop", ex);
+        }
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        _isLoaded = false;
+        _returning = _lastCard is not null;
+        _focusVersion++;
+        _marqueeTimer.Stop();
+        _logoGrace.Stop();
+        _art?.Dispose();
+        _art = null;
+        _wash?.Dispose();
+        _wash = null;
+    }
+
     public static string LibraryParameter(string libraryId, string libraryName) => $"library:{libraryId}:{libraryName}";
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -94,45 +130,63 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         Log.Info("Browse: navigated to " + (e.Parameter as string ?? ""));
         var parameter = e.Parameter as string ?? HomeParameter;
         _forYou = parameter == ForYouParameter;
+        _libraryId = null;
         if (parameter.StartsWith("library:", StringComparison.Ordinal))
         {
             var parts = parameter.Split(new[] { ':' }, 3);
             _libraryId = parts[1];
             ScopeCaption.Text = parts.Length > 2 ? parts[2] : string.Empty;
-
-            VisualStateManager.GoToState(this, "Library", false);
         }
 
+        VisualStateManager.GoToState(this, _forYou ? "ForYou" : _libraryId is null ? "Home" : "Library", false);
         await LoadAsync();
     }
 
-    private async Task LoadAsync()
+    private async Task LoadAsync(bool refresh = false)
     {
-        if (Session.Client is not { } client)
+        if (_loading || Session.Client is not { } client)
         {
             return;
         }
 
-        LoadingRing.Visibility = Visibility.Visible;
-        ErrorPanel.Visibility = Visibility.Collapsed;
+        _loading = true;
+        if (_rows.Count == 0)
+        {
+            VisualStateManager.GoToState(this, "Loading", false);
+        }
+
         try
         {
             var rows = _forYou ? await client.Browse.LoadForYouAsync(ArtworkWidths.Tv1080)
                 : _libraryId is null ? await client.Browse.LoadHomeAsync(ArtworkWidths.Tv1080)
                 : await client.Browse.LoadLibraryAsync(_libraryId, ArtworkWidths.Tv1080);
-            var views = rows.Select(row => new RowView(row)).ToList();
-            Rows.ItemsSource = views;
-            if (views.Count == 0)
+            if (!ReferenceEquals(client, Session.Client) || (refresh && !_isLoaded))
             {
-                ShowError(_forYou ? "No recommendations yet. Watch a few titles and check back."
-                    : _libraryId is null ? "Nothing on Home yet. Add a library on your Silo server and check back." : "This library is empty.");
                 return;
             }
 
-            // Entry focus: the first card of the first row, previewed at once (guide §6.1).
-            ShowMarquee(views[0].Cards[0]);
-            _focusFirstRow = true;
-            Rows.LayoutUpdated += OnRowsLayoutUpdated;
+            var restoreFocus = UpdateRows(rows, refresh);
+            if (_rows.Count == 0)
+            {
+                ShowEmpty(!refresh || restoreFocus);
+                return;
+            }
+
+            VisualStateManager.GoToState(this, "Content", false);
+            ShowMarquee(_lastCard?.Card ?? _rows[0].Cards[0], refresh);
+            if (refresh)
+            {
+                if (restoreFocus)
+                {
+                    RestoreCardFocus(refreshHome: false);
+                }
+            }
+            else
+            {
+                // Entry focus: the first card of the first row, never replayed by a quiet refresh.
+                _focusFirstRow = true;
+                Rows.LayoutUpdated += OnRowsLayoutUpdated;
+            }
         }
         catch (ApiException ex) when (ex.ResponseStatusCode == 401)
         {
@@ -142,12 +196,88 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         catch (Exception ex)
         {
             Log.Error(_libraryId is null ? "Home load" : $"Library {_libraryId} load", ex);
-            ShowError($"Couldn't load this page. {ex.Message}");
+            // TvHomeScreen.kt keeps the existing feed usable when a quiet refresh fails.
+            if (_rows.Count == 0)
+            {
+                ShowError($"Couldn't load this page. {ex.Message}", focus: !refresh || IsInPage(FocusManager.GetFocusedElement() as DependencyObject));
+            }
         }
         finally
         {
-            LoadingRing.Visibility = Visibility.Collapsed;
+            _loading = false;
         }
+    }
+
+    /// <summary>
+    /// TvHomeScreen.kt refreshes on resume, after return focus lands. TvSkylineSectionFeed.kt resolves
+    /// by section/card identity first, then the nearest surviving index, not the first card on Home.
+    /// </summary>
+    private bool UpdateRows(IReadOnlyList<MediaRow> rows, bool preserveFocus)
+    {
+        var focused = FocusManager.GetFocusedElement() as DependencyObject;
+        var restoreFocus = preserveFocus && IsInPage(focused);
+        var last = _lastCard;
+        var rememberedRow = last is { } previous && previous.Row < _rows.Count ? _rows[previous.Row] : null;
+        var rememberedIndex = last is { } remembered ? rememberedRow?.Cards.IndexOf(remembered.Card) ?? 0 : 0;
+        _updatingRows = true;
+        try
+        {
+            var index = 0;
+            foreach (var row in rows.Where(row => row.Cards.Count > 0))
+            {
+                var existing = _rows.Skip(index).FirstOrDefault(view => view.Row.Id == row.Id);
+                if (existing is null)
+                {
+                    _rows.Insert(index, new RowView(row));
+                }
+                else
+                {
+                    var oldIndex = _rows.IndexOf(existing);
+                    if (oldIndex != index)
+                    {
+                        _rows.Move(oldIndex, index);
+                    }
+
+                    existing.Update(row);
+                }
+
+                index++;
+            }
+
+            while (_rows.Count > index)
+            {
+                _rows.RemoveAt(_rows.Count - 1);
+            }
+
+            if (_rows.Count == 0)
+            {
+                _lastCard = null;
+            }
+            else if (last is not null || restoreFocus)
+            {
+                var row = _rows.FirstOrDefault(view => ReferenceEquals(view, rememberedRow))
+                    ?? _rows[Math.Clamp(last?.Row ?? 0, 0, _rows.Count - 1)];
+                var target = row.Cards.FirstOrDefault(card => card.Card.ContentId == last?.Card.Card.ContentId)
+                    ?? row.Cards[Math.Clamp(rememberedIndex, 0, row.Cards.Count - 1)];
+                row.LastFocused = target;
+                _lastCard = (_rows.IndexOf(row), target);
+            }
+
+            // Existing rails outlive a refresh too; don't let their entry targets retain deleted cards.
+            for (var i = 0; i < _rows.Count; i++)
+            {
+                if (Rows.ContainerFromIndex(i) is DependencyObject container && FindChild<ListView>(container)?.Tag is Rail rail)
+                {
+                    rail.Remembered = _rows[i].LastFocused;
+                }
+            }
+        }
+        finally
+        {
+            _updatingRows = false;
+        }
+
+        return restoreFocus;
     }
 
     /// <summary>
@@ -160,6 +290,11 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         if (!_focusFirstRow)
         {
             Rows.LayoutUpdated -= OnRowsLayoutUpdated;
+            return;
+        }
+
+        if (!_isLoaded)
+        {
             return;
         }
 
@@ -198,6 +333,12 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         if (e.OriginalSource is ContentControl { Content: CardView view } item)
         {
             CardFocus.Apply(item, focused: true);
+            if (_updatingRows || _returning)
+            {
+                return;
+            }
+
+            _focusVersion++;
             if (sender is ListView row)
             {
                 PinRow(row);
@@ -221,8 +362,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     /// </summary>
     private void OnRowsKeyDown(object sender, KeyRoutedEventArgs e)
     {
-        // An exception thrown from a handler attached with AddHandler ends the app without reaching
-        // UnhandledException, so nothing here may throw.
+        // Focus/layout callbacks must not let an exception escape through the native input path.
         try
         {
             MoveBetweenRows(e);
@@ -246,16 +386,13 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             return;
         }
 
-        // Up from the first row (and Down from the last) belongs to the focus engine: the top bar.
-        // Keyboard Up needs a push, since the row's horizontal ListView swallows arrow keys.
+        // TvSkylineSectionFeed.kt owns vertical handoffs. Consume even failed/edge moves so the
+        // focus engine cannot turn Up/Down into a sideways move within this row (keyboard or pad).
+        e.Handled = true;
         var targetIndex = index + step;
         if (targetIndex < 0)
         {
-            if (e.Key == VirtualKey.Up && FocusManager.TryMoveFocus(FocusNavigationDirection.Up))
-            {
-                e.Handled = true;
-            }
-
+            ShellPage.Current?.FocusSelectedTab();
             return;
         }
 
@@ -266,7 +403,14 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         }
 
         // The row's rail lands on its remembered card, or the first card on a first visit.
-        e.Handled = target.Tag is Rail rail ? rail.Focus(FocusState.Keyboard) : target.Focus(FocusState.Keyboard);
+        if (target.Tag is Rail rail)
+        {
+            rail.Focus(FocusState.Keyboard);
+        }
+        else
+        {
+            target.Focus(FocusState.Keyboard);
+        }
     }
 
     /// <summary>The index of the row holding <paramref name="element"/>.</summary>
@@ -293,7 +437,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     {
         try
         {
-            if (_lastCard is not { } last || IsInRows(args.OldFocusedElement) || !IsInRows(args.NewFocusedElement)
+            if (_updatingRows || _lastCard is not { } last || IsInRows(args.OldFocusedElement) || !IsInRows(args.NewFocusedElement)
                 || Rows.ContainerFromIndex(last.Row) is not DependencyObject rowContainer
                 || FindChild<ListView>(rowContainer)?.ItemsPanelRoot is not { } panel)
             {
@@ -325,6 +469,19 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         return false;
     }
 
+    private bool IsInPage(DependencyObject? element)
+    {
+        for (var node = element; node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (ReferenceEquals(node, this))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// Each row is a <see cref="Rail"/>: Left/Right stop at its ends, the focused card pins to the
     /// start padding, and the row remembers its last card (kept on the RowView, which outlives its
@@ -339,7 +496,13 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
 
         var rail = Rail.Attach(list);
         rail.Remembered = row.LastFocused;
-        rail.ItemFocused += (_, item) => row.LastFocused = item as CardView;
+        rail.ItemFocused += (_, item) =>
+        {
+            if (!_updatingRows && !_returning)
+            {
+                row.LastFocused = item as CardView;
+            }
+        };
         list.Tag = rail;
     }
 
@@ -361,28 +524,89 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         }
     }
 
-    /// <summary>A card opens its detail page; an episode opens its series' page (TvHomeScreen: "the combined Series page").</summary>
+    /// <summary>TvHomeScreen.kt preserves episode selection; DetailPage resolves the episode to its series.</summary>
     private void OnCardClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is CardView { Card: var card })
         {
-            ShellPage.Current?.OpenDetail(card.Type == "episode" && card.SeriesId is { } series ? series : card.ContentId);
+            ShellPage.Current?.OpenDetail(card.ContentId);
         }
     }
 
-    /// <summary>Back from a detail page: focus returns to the card that opened it.</summary>
+    /// <summary>TvHomeScreen.kt defers its resume refresh until the shell has restored return focus.</summary>
     public void RestoreFocus()
     {
-        if (_lastCard is not { } last)
+        // The shell has finished its initial focus pass; explicit restoration now owns the target.
+        _returning = false;
+        if (_lastCard is null)
         {
+            if (_libraryId is null && !_forYou)
+            {
+                _ = LoadAsync(refresh: true);
+            }
+
             return;
         }
 
+        RestoreCardFocus(refreshHome: _libraryId is null && !_forYou);
+    }
+
+    /// <summary>TvTopMenuBar.kt hands Down to the remembered content, never a geometric neighbour.</summary>
+    internal void FocusContent()
+    {
+        _returning = false;
+        if (EmptyPanel.Visibility == Visibility.Visible)
+        {
+            FocusStateButton(RefreshButton, EmptyPanel);
+        }
+        else if (ErrorPanel.Visibility == Visibility.Visible)
+        {
+            FocusStateButton(RetryButton, ErrorPanel);
+        }
+        else if (_rows.Count > 0)
+        {
+            _lastCard ??= (0, _rows[0].Cards[0]);
+            RestoreCardFocus(refreshHome: false);
+        }
+    }
+
+    private void RestoreCardFocus(bool refreshHome)
+    {
+        var version = _focusVersion;
         FocusRetry.Until(Rows, () =>
-            Rows.ContainerFromIndex(last.Row) is DependencyObject rowContainer
-            && FindChild<ListView>(rowContainer)?.ItemsPanelRoot is { } panel
-            && panel.Children.OfType<ContentControl>().FirstOrDefault(c => ReferenceEquals(c.Content, last.Card)) is { } card
-            && card.Focus(FocusState.Programmatic));
+        {
+            // Don't steal focus if the user has moved again while containers were being laid out.
+            if (version != _focusVersion || _lastCard is not { } last)
+            {
+                return true;
+            }
+
+            if (!_isLoaded || Rows.ContainerFromIndex(last.Row) is not DependencyObject rowContainer
+                || FindChild<ListView>(rowContainer) is not { } row || row.ItemsPanelRoot is not { } panel)
+            {
+                return false;
+            }
+
+            if (row.Tag is Rail rail)
+            {
+                rail.Remembered = last.Card;
+            }
+
+            if (panel.Children.OfType<ContentControl>().FirstOrDefault(c => ReferenceEquals(c.Content, last.Card)) is not { } card
+                || !card.Focus(FocusState.Programmatic))
+            {
+                return false;
+            }
+
+            PinRow(row);
+            ShowMarquee(last.Card);
+            if (refreshHome)
+            {
+                _ = LoadAsync(refresh: true);
+            }
+
+            return true;
+        });
     }
 
     /// <summary>Focus has settled on <paramref name="view"/>: fetch the marquee art and details of the two cards either side (HeroFocusPrefetchRadius).</summary>
@@ -413,9 +637,9 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         }
     }
 
-    private void ShowMarquee(CardView? view)
+    private void ShowMarquee(CardView? view, bool refresh = false)
     {
-        if (view is null || ReferenceEquals(view, _shownMarquee))
+        if (view is null || (!refresh && ReferenceEquals(view, _shownMarquee)))
         {
             return;
         }
@@ -453,7 +677,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             {
                 image.ImageOpened += (_, _) =>
                 {
-                    if (ReferenceEquals(_shownMarquee, view))
+                    if (ReferenceEquals(_shownMarquee, view) && view.Card.LogoUrl == logo)
                     {
                         _logoGrace.Stop();
                         MarqueeLogo.Opacity = 1;
@@ -462,7 +686,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
                 };
                 image.ImageFailed += (_, _) =>
                 {
-                    if (ReferenceEquals(_shownMarquee, view))
+                    if (ReferenceEquals(_shownMarquee, view) && view.Card.LogoUrl == logo)
                     {
                         MarqueeTitle.Opacity = 1;
                     }
@@ -471,11 +695,17 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             }
         }
 
-        _art?.Hide();
         if (card.BackdropUrl is { } backdrop)
         {
+            // TvRootHeroBackdrop.kt crossfades the old art into its replacement, never via black.
             _art?.Show(backdrop);
             _ = TintFromAsync(view, backdrop);
+        }
+        else
+        {
+            _art?.Hide();
+            _tint = null;
+            _wash?.Show(null);
         }
     }
 
@@ -588,24 +818,86 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
 
     private async Task TintFromAsync(CardView view, Uri backdrop)
     {
-        if (await AmbientTint.SampleAsync(backdrop) is not { } tint || !ReferenceEquals(_shownMarquee, view))
+        var tint = await AmbientTint.SampleAsync(backdrop);
+        if (!ReferenceEquals(_shownMarquee, view) || view.Card.BackdropUrl != backdrop)
         {
             return;
         }
 
-        Wash.Fill = AmbientTint.Wash(tint);
+        _tint = tint;
+        _wash?.Show(tint);
     }
 
-    private void ShowError(string message)
+    private void ClearMarquee()
     {
+        _focusFirstRow = false;
+        Rows.LayoutUpdated -= OnRowsLayoutUpdated;
+        _marqueeTimer.Stop();
+        _logoGrace.Stop();
+        _shownMarquee = _pendingMarquee = null;
+        _art?.Hide();
+        _tint = null;
+        _wash?.Show(null);
+    }
+
+    private void ShowEmpty(bool focus)
+    {
+        ClearMarquee();
+        // TvHomeScreen.kt: an empty feed is not an error, and has its own Refresh action.
+        EmptyTitle.Text = _forYou ? "No recommendations yet" : _libraryId is null ? "Nothing to watch yet" : "This library is empty";
+        EmptyMessage.Text = _forYou ? "Watch a few titles and check back."
+            : _libraryId is null ? "Add media to your libraries or start watching to see it here." : "Add media to this library and refresh to see it here.";
+        VisualStateManager.GoToState(this, "Empty", false);
+        if (focus)
+        {
+            FocusStateButton(RefreshButton, EmptyPanel);
+        }
+    }
+
+    private void ShowError(string message, bool focus)
+    {
+        ClearMarquee();
         ErrorText.Text = message;
-        ErrorPanel.Visibility = Visibility.Visible;
-        RetryButton.Focus(FocusState.Programmatic);
+        VisualStateManager.GoToState(this, "Error", false);
+        if (focus)
+        {
+            FocusStateButton(RetryButton, ErrorPanel);
+        }
+    }
+
+    private void FocusStateButton(Control button, FrameworkElement panel)
+    {
+        var version = _focusVersion;
+        FocusRetry.Until(this, () => version != _focusVersion || panel.Visibility != Visibility.Visible
+            || (_isLoaded && button.Focus(FocusState.Programmatic)));
+    }
+
+    private void OnStateKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case VirtualKey.Up:
+            case VirtualKey.GamepadDPadUp:
+            case VirtualKey.GamepadLeftThumbstickUp:
+                ShellPage.Current?.FocusSelectedTab();
+                e.Handled = true;
+                break;
+            case VirtualKey.Down:
+            case VirtualKey.Left:
+            case VirtualKey.Right:
+            case VirtualKey.GamepadDPadDown:
+            case VirtualKey.GamepadDPadLeft:
+            case VirtualKey.GamepadDPadRight:
+            case VirtualKey.GamepadLeftThumbstickDown:
+            case VirtualKey.GamepadLeftThumbstickLeft:
+            case VirtualKey.GamepadLeftThumbstickRight:
+                e.Handled = true;
+                break;
+        }
     }
 
     private async void OnRetryClick(object sender, RoutedEventArgs e)
     {
-        _shownMarquee = null;
         await LoadAsync();
     }
 }

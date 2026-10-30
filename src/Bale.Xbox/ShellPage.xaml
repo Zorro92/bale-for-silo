@@ -10,7 +10,7 @@
   <Grid x:Name="Root">
     <Frame x:Name="ContentFrame" />
 
-    <!-- scrim.dropdown behind an open panel. -->
+    <!-- Library previews retain their scrim; TvMainShell.kt's profile dropdown has none. -->
     <Rectangle x:Name="PanelScrim" Fill="{StaticResource SkylineScrimDropdown}" Visibility="Collapsed" IsHitTestVisible="False" />
 
     <Grid x:Name="TopBar" Margin="44,28,44,0" Height="32" VerticalAlignment="Top">
@@ -39,10 +39,8 @@
         <Border Width="28" />
       </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="11" HorizontalAlignment="Right" VerticalAlignment="Center">
-        <Button x:Name="AvatarButton" Style="{StaticResource SkylineCapsuleStyle}" Width="30" Padding="0"
-                Background="{StaticResource SkylineChromeSelected}" Foreground="{StaticResource SkylinePrimary}" Click="OnAvatarClick"
-                AutomationProperties.Name="Profile">
-          <Grid Width="30" Height="30">
+        <Button x:Name="AvatarButton" Style="{StaticResource SkylineAvatarStyle}" Click="OnAvatarClick" AutomationProperties.Name="Profile">
+          <Grid Width="28" Height="28">
             <TextBlock x:Name="AvatarInitial" FontSize="12" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
             <!-- An Ellipse with an ImageBrush: a reliably round crop of the profile picture. -->
             <Ellipse x:Name="AvatarPicture" Visibility="Collapsed" />
@@ -76,38 +74,37 @@
       </StackPanel>
     </Border>
 
-    <!-- Profile dropdown (guide §5.8): same panel grammar, anchored under the avatar. -->
-    <Border x:Name="ProfilePanel" Width="240" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,66,44,0" Padding="7"
+    <!-- TvMainShell.kt: no page scrim, and directional focus stays inside this dropdown. -->
+    <Border x:Name="ProfilePanel" Width="240" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,66,44,0" Padding="0,6"
             Background="{StaticResource SkylineGlassStrong}" CornerRadius="{StaticResource SkylinePanelRadius}" Visibility="Collapsed">
       <StackPanel Spacing="2">
-        <Grid Margin="9,6,9,6" ColumnSpacing="10">
+        <Grid Margin="16,6" ColumnSpacing="10">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="32" />
             <ColumnDefinition Width="*" />
           </Grid.ColumnDefinitions>
-          <Border Width="32" Height="32" CornerRadius="16" Background="{StaticResource SkylineChromeSelected}">
+          <Border Width="32" Height="32" CornerRadius="16" Background="#29FFFFFF">
             <Grid>
               <TextBlock x:Name="PanelInitial" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
               <Ellipse x:Name="PanelPicture" Visibility="Collapsed" />
             </Grid>
           </Border>
           <StackPanel Grid.Column="1" VerticalAlignment="Center">
-            <TextBlock x:Name="PanelProfileName" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-            <TextBlock x:Name="PanelServer" FontFamily="{StaticResource SkylineMono}" FontSize="8" Foreground="{StaticResource SkylineTertiary}"
-                       TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="PanelProfileName" FontSize="12.9" LineHeight="15.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="PanelServer" FontSize="11.2" LineHeight="13.8" Foreground="#61EDEDED" TextTrimming="CharacterEllipsis" />
           </StackPanel>
         </Grid>
-        <Rectangle Height="0.5" Fill="{StaticResource SkylineHairline}" Margin="6,2" />
-        <Button x:Name="SwitchProfileRow" Style="{StaticResource SkylinePanelRowStyle}" Click="OnSwitchProfileClick">
+        <Rectangle Height="1" Fill="#1AFFFFFF" Margin="12,4" />
+        <Button x:Name="SwitchProfileRow" Style="{StaticResource SkylinePanelRowStyle}" Click="OnSwitchProfileClick" Margin="8,0" Height="Auto" Padding="12,8">
           <StackPanel Orientation="Horizontal" Spacing="10">
-            <FontIcon Glyph="&#xE748;" FontSize="13" />
+            <FontIcon Glyph="&#xE748;" FontSize="16" />
             <TextBlock Text="Switch Profile" />
           </StackPanel>
         </Button>
-        <Rectangle Height="0.5" Fill="{StaticResource SkylineHairline}" Margin="6,2" />
-        <Button Style="{StaticResource SkylinePanelRowStyle}" Click="OnSignOutClick">
+        <Rectangle Height="1" Fill="#1AFFFFFF" Margin="12,4" />
+        <Button x:Name="SignOutRow" Style="{StaticResource SkylinePanelRowStyle}" Click="OnSignOutClick" Margin="8,0" Height="Auto" Padding="12,8">
           <StackPanel Orientation="Horizontal" Spacing="10">
-            <FontIcon Glyph="&#xF3B1;" FontSize="13" />
+            <FontIcon Glyph="&#xF3B1;" FontSize="16" />
             <TextBlock Text="Sign Out" />
           </StackPanel>
         </Button>
