@@ -109,6 +109,20 @@ public sealed partial class DetailPage : Page
     {
         try
         {
+            var right = e.Key is VirtualKey.Right or VirtualKey.GamepadDPadRight or VirtualKey.GamepadLeftThumbstickRight;
+            var left = e.Key is VirtualKey.Left or VirtualKey.GamepadDPadLeft or VirtualKey.GamepadLeftThumbstickLeft;
+            if (right || left)
+            {
+                // Match TvItemDetailScreen.kt's action row focusGroup: Left/Right stop at the ends.
+                var actions = Actions.Children.Where(child => child is Control c && c.Visibility == Visibility.Visible && c.IsEnabled && c.IsTabStop);
+                var edge = right ? actions.LastOrDefault() : actions.FirstOrDefault();
+                if (edge is not null && ReferenceEquals(e.OriginalSource, edge))
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+
             var direction = e.Key switch
             {
                 VirtualKey.Up => FocusNavigationDirection.Up,
