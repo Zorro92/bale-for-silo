@@ -50,6 +50,7 @@ public sealed partial class SearchPage : Page, IRestoresFocus
         };
         Results.PreviewKeyDown += OnResultsPreviewKeyDown;
         Filters.PreviewKeyDown += OnFiltersPreviewKeyDown;
+        QueryBox.PreviewKeyDown += OnQueryPreviewKeyDown;
         Results.Loaded += (_, _) => HookResultBringIntoView();
     }
 
@@ -94,6 +95,21 @@ public sealed partial class SearchPage : Page, IRestoresFocus
         }
 
         await SearchAsync(QueryBox.Text.Trim());
+    }
+
+    private void OnQueryPreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key is not (VirtualKey.Down or VirtualKey.GamepadDPadDown or VirtualKey.GamepadLeftThumbstickDown))
+        {
+            return;
+        }
+
+        // TvSearchScreen explicitly hands Down from the field to the selected chip.
+        if (Filters.Children.OfType<ToggleButton>().FirstOrDefault(filter => filter.IsChecked == true) is { } chip
+            && chip.Focus(FocusState.Programmatic))
+        {
+            e.Handled = true;
+        }
     }
 
     private void OnFiltersPreviewKeyDown(object sender, KeyRoutedEventArgs e)
