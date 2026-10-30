@@ -37,8 +37,8 @@ internal sealed class SiloRequestHandler : DelegatingHandler
             headers.Accept.ParseAdd("application/json");
         }
 
-        // The refresh call itself must not wait on credentials: getting them may be what triggered it.
-        if (headers.Authorization is null && _credentials is not null && !IsRefresh(request)
+        // Refresh must not wait on itself, and re-pairing must still work after a refresh 401.
+        if (headers.Authorization is null && _credentials is not null && !IsAnonymousAuth(request)
             && await _credentials(cancellationToken).ConfigureAwait(false) is { AccessToken.Length: > 0 } credentials)
         {
             headers.Authorization = new AuthenticationHeaderValue("Bearer", credentials.AccessToken);
@@ -49,8 +49,10 @@ internal sealed class SiloRequestHandler : DelegatingHandler
         return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
     }
 
-    private static bool IsRefresh(HttpRequestMessage request) =>
-        request.RequestUri?.AbsolutePath.EndsWith("/api/v2/auth/refresh", StringComparison.Ordinal) == true;
+    private static bool IsAnonymousAuth(HttpRequestMessage request) =>
+        request.RequestUri?.AbsolutePath is { } path
+        && (path.EndsWith("/api/v2/auth/refresh", StringComparison.Ordinal)
+            || path.Contains("/api/v2/auth/device/", StringComparison.Ordinal));
 
     private static void AddIfPresent(HttpRequestHeaders headers, string name, string? value)
     {

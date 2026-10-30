@@ -3,10 +3,12 @@ using Windows.Storage;
 
 namespace Bale.Xbox.Services;
 
-/// <summary>Per-install state. The refresh token lives in the credential vault, not plain settings.</summary>
+/// <summary>Per-install state. Tokens and the profile's PIN proof live in the credential vault.</summary>
 internal static class AppSettings
 {
     private const string VaultResource = "Bale.Silo";
+    private const string AccessResource = "Bale.Silo.Access";
+    private const string ProfileResource = "Bale.Silo.Profile";
 
     private static ApplicationDataContainer Local => ApplicationData.Current.LocalSettings;
 
@@ -32,11 +34,48 @@ internal static class AppSettings
         set => Local.Values[nameof(ServerUrl)] = value;
     }
 
-    /// <summary>The profile last picked on "Who's watching?", reused on the next launch.</summary>
+    /// <summary>The last pick, not permission to open it automatically (ProfileLaunchPreferences.kt).</summary>
     public static string? ProfileId
     {
         get => Local.Values[nameof(ProfileId)] as string;
         set => Local.Values[nameof(ProfileId)] = value;
+    }
+
+    public static string? ProfileName
+    {
+        get => Local.Values[nameof(ProfileName)] as string;
+        set => Local.Values[nameof(ProfileName)] = value;
+    }
+
+    public static string? ProfileAvatar
+    {
+        get => Local.Values[nameof(ProfileAvatar)] as string;
+        set => Local.Values[nameof(ProfileAvatar)] = value;
+    }
+
+    public static string? AccountName
+    {
+        get => Local.Values[nameof(AccountName)] as string;
+        set => Local.Values[nameof(AccountName)] = value;
+    }
+
+    // The device-wide choice survives sign-out, as in ProfileLaunchPreferences.kt; a new TV asks.
+    public static bool OpenProfileAutomatically
+    {
+        get => Local.Values[nameof(OpenProfileAutomatically)] is true;
+        set => Local.Values[nameof(OpenProfileAutomatically)] = value;
+    }
+
+    public static bool ProfileRememberOfferAnswered
+    {
+        get => Local.Values[nameof(ProfileRememberOfferAnswered)] is true;
+        set => Local.Values[nameof(ProfileRememberOfferAnswered)] = value;
+    }
+
+    public static DateTimeOffset? AccessTokenExpiresAt
+    {
+        get => Local.Values[nameof(AccessTokenExpiresAt)] is long seconds ? DateTimeOffset.FromUnixTimeSeconds(seconds) : null;
+        set => Local.Values[nameof(AccessTokenExpiresAt)] = value?.ToUnixTimeSeconds();
     }
 
     /// <summary>The library a multi-library tab is scoped to, per profile and tab (Skyline §8: persisted).</summary>
@@ -46,11 +85,31 @@ internal static class AppSettings
     public static void SetLibraryScope(string? profileId, string tab, string libraryId) =>
         Local.Values[$"Scope.{profileId}.{tab}"] = libraryId;
 
-    public static string? LoadRefreshToken(string server)
+    public static string? LoadRefreshToken(string server) => LoadCredential(VaultResource, server);
+
+    public static void SaveRefreshToken(string server, string refreshToken) => SaveCredential(VaultResource, server, refreshToken);
+
+    public static string? LoadAccessToken(string server) => LoadCredential(AccessResource, server);
+
+    public static void SaveAccessToken(string server, string? accessToken) => SaveCredential(AccessResource, server, accessToken);
+
+    public static string? LoadProfileToken(string server) => LoadCredential(ProfileResource, server);
+
+    public static void SaveProfileToken(string server, string? profileToken) => SaveCredential(ProfileResource, server, profileToken);
+
+    public static void ForgetTokens(string server)
+    {
+        ForgetCredential(VaultResource, server);
+        ForgetCredential(AccessResource, server);
+        ForgetCredential(ProfileResource, server);
+        AccessTokenExpiresAt = null;
+    }
+
+    private static string? LoadCredential(string resource, string server)
     {
         try
         {
-            var credential = new PasswordVault().Retrieve(VaultResource, server);
+            var credential = new PasswordVault().Retrieve(resource, server);
             credential.RetrievePassword();
             return credential.Password;
         }
@@ -61,18 +120,21 @@ internal static class AppSettings
         }
     }
 
-    public static void SaveRefreshToken(string server, string refreshToken)
+    private static void SaveCredential(string resource, string server, string? token)
     {
-        ForgetRefreshToken(server);
-        new PasswordVault().Add(new PasswordCredential(VaultResource, server, refreshToken));
+        ForgetCredential(resource, server);
+        if (!string.IsNullOrEmpty(token))
+        {
+            new PasswordVault().Add(new PasswordCredential(resource, server, token));
+        }
     }
 
-    public static void ForgetRefreshToken(string server)
+    private static void ForgetCredential(string resource, string server)
     {
         var vault = new PasswordVault();
         try
         {
-            vault.Remove(vault.Retrieve(VaultResource, server));
+            vault.Remove(vault.Retrieve(resource, server));
         }
         catch (Exception)
         {

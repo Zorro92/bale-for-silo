@@ -136,10 +136,8 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         }
         catch (ApiException ex) when (ex.ResponseStatusCode == 401)
         {
-            if (ShellPage.Current is { } shell)
-            {
-                await shell.SignOutAsync();
-            }
+            // TvAppNavigation.kt sessionExpired keeps the server and explains why sign-in is needed.
+            Session.Expire();
         }
         catch (Exception ex)
         {
