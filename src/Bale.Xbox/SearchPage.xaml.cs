@@ -94,7 +94,13 @@ public sealed partial class SearchPage : Page, IRestoresFocus
             other.IsChecked = ReferenceEquals(other, chip);
         }
 
+        // The chips sit in the results' header; replacing ItemsSource drops their focus to the field.
+        var hadFocus = chip.FocusState != FocusState.Unfocused;
         await SearchAsync(QueryBox.Text.Trim());
+        if (hadFocus && chip.FocusState == FocusState.Unfocused)
+        {
+            chip.Focus(FocusState.Programmatic);
+        }
     }
 
     private void OnQueryPreviewKeyDown(object sender, KeyRoutedEventArgs e)
