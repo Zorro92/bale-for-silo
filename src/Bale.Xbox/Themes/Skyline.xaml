@@ -275,6 +275,111 @@
     <Setter Property="FocusVisualPrimaryBrush" Value="{StaticResource SkylinePrimary}" />
   </Style>
 
+  <!--
+    Search only (TvSearchScreen.kt / Color.kt / Type.kt). Keep this separate from the shared
+    TextBox style: the 20sp text, leading icon and ElevatedSurface @ 80% belong to SearchStage.
+    ContentElement and PlaceholderTextContentPresenter are TextBox's native template parts.
+  -->
+  <Style x:Key="SkylineSearchTextBoxStyle" TargetType="TextBox">
+    <Setter Property="Width" Value="520" />
+    <Setter Property="Height" Value="52" />
+    <Setter Property="FontSize" Value="17.2" />
+    <Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="Foreground" Value="#FFFFFFFF" />
+    <Setter Property="Background" Value="#0EFFFFFF" />
+    <Setter Property="BorderBrush" Value="#1FFFFFFF" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="14" />
+    <Setter Property="Padding" Value="0,0,16,0" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TextBox">
+          <Grid>
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" />
+                <VisualState x:Name="PointerOver" />
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters>
+                    <Setter Target="Field.Background" Value="#CC15171C" />
+                    <Setter Target="Field.BorderBrush" Value="#F0FFFFFF" />
+                    <Setter Target="Field.BorderThickness" Value="2" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="Disabled">
+                  <VisualState.Setters>
+                    <Setter Target="Field.Opacity" Value="0.4" />
+                  </VisualState.Setters>
+                </VisualState>
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <Border x:Name="Field" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}" />
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="48" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <FontIcon Glyph="&#xE721;" FontSize="20" Foreground="#B8FFFFFF" IsHitTestVisible="False" />
+              <ScrollViewer x:Name="ContentElement" Grid.Column="1" Margin="{TemplateBinding Padding}" VerticalAlignment="Center"
+                            HorizontalScrollMode="Auto" HorizontalScrollBarVisibility="Hidden"
+                            VerticalScrollMode="Disabled" VerticalScrollBarVisibility="Disabled"
+                            ZoomMode="Disabled" IsTabStop="False" />
+              <ContentControl x:Name="PlaceholderTextContentPresenter" Grid.Column="1" Padding="{TemplateBinding Padding}"
+                              Content="{TemplateBinding PlaceholderText}" Foreground="#8FFFFFFF" FontSize="15.5"
+                              FontFamily="{TemplateBinding FontFamily}" VerticalAlignment="Center"
+                              IsTabStop="False" IsHitTestVisible="False" />
+            </Grid>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style x:Key="SkylineSearchStatusStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="13.8" />
+    <Setter Property="LineHeight" Value="18.9" />
+    <Setter Property="MinHeight" Value="18.9" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="Foreground" Value="#9EFFFFFF" />
+  </Style>
+  <Style x:Key="SkylineSearchFeedbackTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="18.9" />
+    <Setter Property="LineHeight" Value="24.1" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style x:Key="SkylineSearchFeedbackBodyStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="15.5" />
+    <Setter Property="LineHeight" Value="20.6" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="Foreground" Value="#9EFFFFFF" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style x:Key="SkylineSearchRetryStyle" TargetType="Button" BasedOn="{StaticResource SkylineButtonStyle}">
+    <Setter Property="Height" Value="40" />
+    <Setter Property="CornerRadius" Value="20" />
+    <Setter Property="Padding" Value="24,0" />
+    <Setter Property="FontSize" Value="15.5" />
+  </Style>
+  <!-- TvSearchPeopleRow.kt / TvCastCrewSection.kt: 14sp, 18sp line, reserve two lines. -->
+  <Style x:Key="SkylineSearchPersonNameStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="LineHeight" Value="15.5" />
+    <Setter Property="MinHeight" Value="31" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="#FFFFFFFF" />
+    <Setter Property="Opacity" Value="0.88" />
+    <Setter Property="TextAlignment" Value="Center" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="MaxLines" Value="2" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+
   <!-- Outlined marquee badge (TvFocusMarquee.MarqueeBadge): "4K", "HDR", "EAC3", "TV-MA". -->
   <Style x:Key="SkylineBadgeStyle" TargetType="Border">
     <Setter Property="Background" Value="{StaticResource SkylineBadgeFill}" />
