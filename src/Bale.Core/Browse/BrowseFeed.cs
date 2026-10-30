@@ -1,5 +1,7 @@
 using System.Globalization;
 using Bale.Core.Api;
+using Bale.Core.Api.Api.V2.Catalog;
+using Bale.Core.Api.Api.V2.Catalog.People;
 using Bale.Core.Api.Models;
 
 namespace Bale.Core.Browse;
@@ -82,29 +84,162 @@ public sealed class BrowseFeed
             .ToList();
     }
 
-    /// <summary>Movies, series and episodes matching <paramref name="query"/>, best match first.</summary>
-    /// <summary>
-    /// Search as TvSearchViewModel runs it: the catalog's query source, with no type for All and
-    /// "movie" or "series" for the filter chips. An episode hit is captioned with its own title and
-    /// year, as the official search grid shows it.
-    /// </summary>
-    public async Task<IReadOnlyList<MediaCard>> SearchAsync(string query, ArtworkWidths widths, string? type = null, int limit = 48, CancellationToken cancellationToken = default)
-    {
-        var response = await _api.Api.V2.Catalog.GetAsync(config =>
-        {
-            config.QueryParameters.Q = query;
-            config.QueryParameters.Type = type;
-            config.QueryParameters.Limit = limit;
-            config.QueryParameters.PosterWidth = widths.Poster;
-            config.QueryParameters.BackdropWidth = widths.Backdrop;
-            config.QueryParameters.LogoWidth = widths.Logo;
-        }, cancellationToken).ConfigureAwait(false);
+    /// <summary>First-page convenience for the CLI; the TV uses <see cref="SearchPageAsync"/>.</summary>
+    public async Task<IReadOnlyList<MediaCard>> SearchAsync(string query, ArtworkWidths widths, string? type = null, int limit = 40, CancellationToken cancellationToken = default) =>
+        (await SearchPageAsync(query, widths, type, showAudiobooks: true, limit: limit, cancellationToken: cancellationToken).ConfigureAwait(false)).Cards;
 
-        return (response?.Items ?? [])
-            .Select(item => ToCard(item, CardShape.Poster) is var card && item.Type == "episode" && !string.IsNullOrWhiteSpace(item.Title)
-                ? card with { Title = item.Title!, Subtitle = item.Year is > 0 ? item.Year.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : null }
-                : card)
-            .ToList();
+    /// <summary>
+    /// TvSearchViewModel.kt pages source=query in batches of 40 using the opaque page.next_cursor,
+    /// never an offset/seek. Drain hidden-only pages: an empty grid cannot trigger its own load-more.
+    /// </summary>
+    public async Task<SearchResultPage> SearchPageAsync(string query, ArtworkWidths widths, string? type = null,
+        SearchContinuation? continuation = null, bool showAudiobooks = false, int limit = 40, CancellationToken cancellationToken = default)
+    {
+        var cursor = continuation?.Cursor;
+        var seen = new HashSet<string>(continuation?.Seen ?? [], StringComparer.Ordinal);
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var response = await _api.Api.V2.Catalog.GetAsync(config =>
+            {
+                config.QueryParameters.Source = GetSourceQueryParameterType.Query;
+                config.QueryParameters.Q = query.Trim();
+                config.QueryParameters.Type = type;
+                config.QueryParameters.Cursor = cursor;
+                config.QueryParameters.Limit = limit;
+                config.QueryParameters.PosterWidth = widths.Poster;
+                config.QueryParameters.BackdropWidth = widths.Backdrop;
+                config.QueryParameters.LogoWidth = widths.Logo;
+                config.QueryParameters.StillWidth = widths.Still;
+            }, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var items = response?.Items ?? [];
+            SearchContinuation? next = null;
+            if (response?.Page?.HasMore == true && items.Count > 0)
+            {
+                var nextCursor = response.Page.NextCursor;
+                // CatalogV2Api.kt rejects missing/repeated cursors, rather than looping the console.
+                if (string.IsNullOrWhiteSpace(nextCursor) || !seen.Add(nextCursor))
+                {
+                    throw new InvalidDataException("Invalid catalog continuation.");
+                }
+
+                next = new SearchContinuation(nextCursor, seen);
+            }
+
+            var cards = items.Where(item => IsVisibleSearchType(item.Type, showAudiobooks))
+                .Select(item => ToCard(item, CardShape.Poster) is var card && item.Type == "episode" && !string.IsNullOrWhiteSpace(item.Title)
+                    ? card with { Title = item.Title!, Subtitle = item.Year is > 0 ? item.Year.Value.ToString(CultureInfo.InvariantCulture) : null }
+                    : card)
+                .ToList();
+            if (cards.Count == 0 && next is not null)
+            {
+                cursor = next.Cursor;
+                continue;
+            }
+
+            return new SearchResultPage(cards, response?.Total ?? cards.Count, response?.TotalExact == true, next);
+        }
+    }
+
+    private static bool IsVisibleSearchType(string? type, bool showAudiobooks) => type?.Trim().ToLowerInvariant() switch
+    {
+        // TvMediaTypeFilters.kt / MediaMode.kt: TV has no ebook, comic or manga reader.
+        "ebook" or "ebooks" or "book" or "books" or "comic" or "comics" or "manga" or "reading" => false,
+        "audiobook" or "audiobooks" => showAudiobooks,
+        _ => true,
+    };
+
+    /// <summary>
+    /// SearchPeople.kt gates every lookup on people_media_scope; old servers otherwise leak people
+    /// outside the viewer's libraries. A slow/failed people lookup never fails the title search.
+    /// </summary>
+    public async Task<IReadOnlyList<SearchPerson>> SearchPeopleAsync(string query, string? type = null,
+        bool showAudiobooks = false, CancellationToken cancellationToken = default)
+    {
+        query = query.Trim();
+        if (query.Length == 0)
+        {
+            return [];
+        }
+
+        try
+        {
+            var capabilities = await _api.Api.V2.Catalog.Search.Capabilities.GetAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (capabilities?.PeopleMediaScope != true)
+            {
+                return [];
+            }
+
+            GetMedia_scopeQueryParameterType[] scopes = type switch
+            {
+                "movie" => [GetMedia_scopeQueryParameterType.Movie],
+                "series" => [GetMedia_scopeQueryParameterType.Series],
+                "audiobook" => [GetMedia_scopeQueryParameterType.Audiobook],
+                _ when showAudiobooks => [GetMedia_scopeQueryParameterType.Video, GetMedia_scopeQueryParameterType.Audiobook],
+                _ => [GetMedia_scopeQueryParameterType.Video],
+            };
+            var lists = await Task.WhenAll(scopes.Select(scope => SearchPeopleScopeAsync(query, scope, cancellationToken))).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            return MergePeople(query, lists.OfType<IReadOnlyList<SearchPerson>>().ToList());
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private async Task<IReadOnlyList<SearchPerson>?> SearchPeopleScopeAsync(string query, GetMedia_scopeQueryParameterType scope, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await _api.Api.V2.Catalog.People.GetAsync(config =>
+            {
+                config.QueryParameters.Q = query;
+                config.QueryParameters.MediaScope = scope;
+                config.QueryParameters.Limit = 20;
+            }, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            // CatalogV2Api.kt refuses partial envelopes on this bounded, non-pageable endpoint.
+            if (response?.Page?.HasMore == true || !string.IsNullOrWhiteSpace(response?.Page?.NextCursor))
+            {
+                return null;
+            }
+
+            return (response?.Items ?? []).Where(person => !string.IsNullOrEmpty(person.Id))
+                .Select(person => new SearchPerson(person.Id!, person.Name ?? string.Empty, Resolve(person.PhotoUrl))).ToList();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    internal static IReadOnlyList<SearchPerson> MergePeople(string query, IReadOnlyList<IReadOnlyList<SearchPerson>> lists)
+    {
+        // SearchPeople.kt keeps a single scope's server ranking; multiple scopes rank exact names,
+        // then name and numeric person ID, and deduplicate before taking the 20-card TV limit.
+        if (lists.Count == 1)
+        {
+            return lists[0].Take(20).ToList();
+        }
+
+        return lists.SelectMany(list => list).DistinctBy(person => person.Id)
+            .OrderBy(person => !person.Name.Trim().Equals(query.Trim(), StringComparison.OrdinalIgnoreCase))
+            .ThenBy(person => person.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(person => long.TryParse(person.Id, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : long.MaxValue)
+            .ThenBy(person => person.Id, StringComparer.Ordinal)
+            .Take(20).ToList();
     }
 
     /// <summary>The libraries this profile can see, grouped into the top bar's content-type tabs.</summary>

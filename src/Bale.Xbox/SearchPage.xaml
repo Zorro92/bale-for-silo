@@ -13,12 +13,32 @@
         <TextBlock Text="{x:Bind Text}" FontSize="{x:Bind FontSize}" FontWeight="SemiBold" CharacterSpacing="55" Foreground="#FFFFFFFF" />
       </Border>
     </DataTemplate>
+    <DataTemplate x:Key="FilterTemplate" x:DataType="views:SearchFilterView">
+      <ToggleButton Content="{x:Bind Label}" IsChecked="{x:Bind Selected, Mode=OneWay}" Margin="0,0,12,0"
+                    Style="{StaticResource SkylineFilterChipStyle}" Click="OnFilterClick" />
+    </DataTemplate>
+    <!-- TvSearchPeopleRow.kt reuses TvCastCard: circular 100px portraits, 22px gaps. -->
+    <DataTemplate x:Key="PersonTemplate" x:DataType="views:SearchPersonView">
+      <StackPanel Width="100">
+        <Grid x:Name="Art" Width="100" Height="100">
+          <Ellipse Fill="{StaticResource SkylineSurfaceElevated}" />
+          <FontIcon Glyph="&#xE77B;" FontSize="40" Foreground="#99FFFFFF" Visibility="{x:Bind PlaceholderVisibility}" />
+          <Ellipse>
+            <Ellipse.Fill>
+              <ImageBrush ImageSource="{x:Bind Photo}" Stretch="UniformToFill" />
+            </Ellipse.Fill>
+          </Ellipse>
+          <Ellipse x:Name="FocusGlow" Margin="-6" Stroke="{StaticResource SkylineFocusGlow}" StrokeThickness="3" Opacity="0" IsHitTestVisible="False" />
+          <Ellipse x:Name="FocusRing" Margin="-3" Stroke="{StaticResource SkylineFocusRing}" StrokeThickness="2" Opacity="0" IsHitTestVisible="False" />
+        </Grid>
+        <TextBlock x:Name="PersonName" Text="{x:Bind Name}" Margin="0,8,0,0" Style="{StaticResource SkylineSearchPersonNameStyle}" />
+      </StackPanel>
+    </DataTemplate>
   </Page.Resources>
 
   <!--
-    Search as Silo's Android TV TvSearchScreen lays it out: a 520 x 52 field at the safe area, the
-    All / Movies / Series filter chips, a result count, then a grid of 138 x 207 posters with 14 / 20
-    gaps. The field, chips, count and grid scroll as one under the top bar, like TvSearchScreen.
+    TvSearchScreen.kt: field, library-derived chips, people, status, then the title grid.
+    The field, chips, people and count scroll as one under the top bar, like TvSearchScreen.
     The grid spans the page so a focused poster's lift and ring are never clipped.
   -->
   <Grid>
@@ -27,23 +47,46 @@
       <GridView.Header>
         <StackPanel Margin="0,90,0,0">
           <!-- Focus alone never raises the on-screen keyboard; A/Select on the field does (TvSearchScreen: the field is read-only until Select). The page focuses this box from code on open and on Up from the chips. -->
-          <TextBox x:Name="QueryBox" Width="520" Height="52" Padding="18,15,18,0" HorizontalAlignment="Left" PlaceholderText="Search movies and series"
-                   Style="{StaticResource SkylineTextBoxStyle}" TextChanged="OnQueryChanged" InputScope="Search" PreventKeyboardDisplayOnProgrammaticFocus="True" />
+          <TextBox x:Name="QueryBox" HorizontalAlignment="Left" PlaceholderText="Search movies and series"
+                   Style="{StaticResource SkylineSearchTextBoxStyle}" TextChanged="OnQueryChanged" InputScope="Search" PreventKeyboardDisplayOnProgrammaticFocus="True" />
 
-          <StackPanel x:Name="Filters" Margin="0,8,0,0" Orientation="Horizontal" Spacing="12" XYFocusKeyboardNavigation="Enabled">
-            <ToggleButton x:Name="AllFilter" Content="All" Tag="" Style="{StaticResource SkylineFilterChipStyle}" IsChecked="True" Click="OnFilterClick" />
-            <ToggleButton x:Name="MoviesFilter" Content="Movies" Tag="movie" Style="{StaticResource SkylineFilterChipStyle}" Click="OnFilterClick" />
-            <ToggleButton x:Name="SeriesFilter" Content="Series" Tag="series" Style="{StaticResource SkylineFilterChipStyle}" Click="OnFilterClick" />
+          <ItemsControl x:Name="Filters" Margin="0,8,0,0" ItemTemplate="{StaticResource FilterTemplate}" XYFocusKeyboardNavigation="Enabled">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+          </ItemsControl>
+
+          <StackPanel x:Name="PeopleSection" Margin="-40,12,-8,0" Visibility="Collapsed" Spacing="4">
+            <TextBlock Text="People" Margin="40,0,40,4" FontSize="15.5" LineHeight="18.9" FontWeight="SemiBold" Foreground="White" />
+            <ListView x:Name="People" ItemTemplate="{StaticResource PersonTemplate}" SelectionMode="None" IsItemClickEnabled="True"
+                      ItemClick="OnPersonClick" GotFocus="OnPersonFocus" LostFocus="OnPersonBlur"
+                      Padding="40,12,40,4" ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden"
+                      ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+              <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem" BasedOn="{StaticResource SkylineCardItemStyle}">
+                  <Setter Property="Margin" Value="0,0,22,0" />
+                </Style>
+              </ListView.ItemContainerStyle>
+              <ListView.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <ItemsStackPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ListView.ItemsPanel>
+            </ListView>
           </StackPanel>
 
-          <TextBlock x:Name="Status" Margin="0,8,0,0" FontSize="11.2" Foreground="#9EFFFFFF" />
+          <TextBlock x:Name="Status" Margin="0,8,0,8" Style="{StaticResource SkylineSearchStatusStyle}" />
 
-          <!-- Empty state (TvSearchScreen): an icon, a title and one line. -->
-          <StackPanel x:Name="EmptyState" Margin="0,60,0,0" Orientation="Horizontal" Spacing="14" VerticalAlignment="Top">
-            <FontIcon Glyph="&#xE721;" FontSize="24" Foreground="#80FFFFFF" VerticalAlignment="Top" Margin="0,2,0,0" />
-            <StackPanel Spacing="4">
-              <TextBlock x:Name="EmptyTitle" Text="Search your library" FontSize="17.2" FontWeight="SemiBold" />
-              <TextBlock x:Name="EmptyBody" Text="Find movies and series in one place." FontSize="13" Foreground="{StaticResource SkylineSecondary}" />
+          <!-- SearchFeedbackMessage (TvSearchScreen.kt), including its recoverable error state. -->
+          <StackPanel x:Name="EmptyState" Margin="0,36,0,0" Orientation="Horizontal" Spacing="14" VerticalAlignment="Top">
+            <FontIcon Glyph="&#xE721;" FontSize="28" Foreground="#57FFFFFF" VerticalAlignment="Top" Margin="0,2,0,0" />
+            <StackPanel Spacing="4" MaxWidth="700">
+              <TextBlock x:Name="EmptyTitle" Text="Search your library" Style="{StaticResource SkylineSearchFeedbackTitleStyle}" />
+              <TextBlock x:Name="EmptyBody" Text="Find movies and series in one place." Style="{StaticResource SkylineSearchFeedbackBodyStyle}" />
+              <Button x:Name="RetryButton" Content="Try again" Margin="0,8,0,0" Style="{StaticResource SkylineSearchRetryStyle}"
+                      HorizontalAlignment="Left" Visibility="Collapsed" Click="OnRetryClick" PreviewKeyDown="OnFeedbackPreviewKeyDown" />
             </StackPanel>
           </StackPanel>
         </StackPanel>
@@ -85,6 +128,11 @@
           </StackPanel>
         </DataTemplate>
       </GridView.ItemTemplate>
+      <GridView.Footer>
+        <!-- TvCatalogGrid.kt reserves the grid spinner for pagination, not reset searches. -->
+        <ProgressRing x:Name="LoadingMoreRing" Width="32" Height="32" Margin="24" HorizontalAlignment="Center"
+                      IsActive="False" Visibility="Collapsed" Foreground="{StaticResource SkylinePrimary}" />
+      </GridView.Footer>
     </GridView>
   </Grid>
 </Page>
