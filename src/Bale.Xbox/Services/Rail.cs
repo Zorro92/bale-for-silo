@@ -16,7 +16,7 @@ namespace Bale.Xbox.Services;
 /// the selected season chip) instead of the one nearest on screen (Compose's focusRestorer and
 /// <c>focusProperties { enter = … }</c>).</item>
 /// <item>With <see cref="Pin"/>, the focused card slides to the rail's start padding
-/// (tvRailPinOnFocus); without it the rail scrolls just enough to show it.</item>
+/// (tvRailPinOnFocus); with <see cref="Center"/>, it stays in the middle; otherwise the rail scrolls just enough to show it.</item>
 /// <item>The rail's own bring-into-view stops at the rail, so Left/Right never scroll the page
 /// vertically. Pages place rails vertically themselves (row pinning, section anchors) from
 /// <see cref="Entered"/>.</item>
@@ -43,6 +43,9 @@ internal sealed class Rail
 
     /// <summary>Slide the focused item to the rail's start padding (cards), or only reveal it (chips).</summary>
     public bool Pin { get; set; } = true;
+
+    /// <summary>With <see cref="Pin"/> off, keep the focused item in the middle of the rail (TvSeasonPicker); the ends stay clamped.</summary>
+    public bool Center { get; set; }
 
     /// <summary>The item focus last sat on; where focus returns when it comes back to the rail.</summary>
     public object? Remembered { get; set; }
@@ -131,6 +134,10 @@ internal sealed class Rail
             {
                 PinToStart(element);
             }
+            else if (Center && container is FrameworkElement centered)
+            {
+                CenterOn(centered);
+            }
 
             ItemFocused?.Invoke(e.OriginalSource as Control ?? (Control)container, item);
             if (entered)
@@ -160,6 +167,17 @@ internal sealed class Rail
         var x = container.TransformToVisual(scroller).TransformPoint(new Windows.Foundation.Point(0, 0)).X;
         var padding = _list is Control control ? control.Padding.Left : 0;
         scroller.ChangeView(scroller.HorizontalOffset + x - padding, null, null);
+    }
+
+    private void CenterOn(FrameworkElement container)
+    {
+        if (FindChild<ScrollViewer>(_list) is not { } scroller)
+        {
+            return;
+        }
+
+        var x = container.TransformToVisual(scroller).TransformPoint(new Windows.Foundation.Point(0, 0)).X;
+        scroller.ChangeView(scroller.HorizontalOffset + x + container.ActualWidth / 2 - scroller.ViewportWidth / 2, null, null);
     }
 
     private IEnumerable<DependencyObject> Containers() =>

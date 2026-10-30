@@ -62,6 +62,7 @@ public sealed partial class DetailPage : Page
         // Show / Season tabs reveal the focused tab without pinning; entering lands on the selected one.
         _seasonsRail = Rail.Attach(Seasons);
         _seasonsRail.Pin = false;
+        _seasonsRail.Center = true;
         _seasonsRail.EntryItem = () => _selectedTab;
         _seasonsRail.Entered += () => ScrollTo(0);
 

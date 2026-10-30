@@ -132,15 +132,16 @@
           <ItemsControl x:Name="Seasons" IsTabStop="False">
             <ItemsControl.Template>
               <ControlTemplate TargetType="ItemsControl">
-                <ScrollViewer HorizontalScrollMode="Enabled" HorizontalScrollBarVisibility="Hidden" VerticalScrollMode="Disabled" Padding="47,0,47,0">
+                <ScrollViewer HorizontalScrollMode="Enabled" HorizontalScrollBarVisibility="Hidden" VerticalScrollMode="Disabled">
                   <ItemsPresenter />
                 </ScrollViewer>
               </ControlTemplate>
             </ItemsControl.Template>
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
-                <!-- Room on every side for the focused tab's outward ring: the scroller clips inside its padding. -->
-                <StackPanel Orientation="Horizontal" Spacing="6" Margin="3,4,3,4" />
+                <!-- TvSeasonPicker.kt: inset lives here, not on the scroller, so tabs scroll to screen edges.
+                     Leave room for the focused tab's outward ring: the scroller clips inside its padding. -->
+                <StackPanel Orientation="Horizontal" Spacing="6" Margin="50,4,50,4" />
               </ItemsPanelTemplate>
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
