@@ -1,6 +1,7 @@
 using Bale.Core.Browse;
 using Bale.Xbox.Services;
 using Bale.Xbox.Views;
+using Windows.Foundation;
 using Windows.System;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
@@ -21,6 +22,7 @@ public sealed partial class SearchPage : Page, IRestoresFocus
 
     private readonly DispatcherTimer _typing = new() { Interval = TypingPause };
     private bool _focusedOnce;
+    private bool _resultBringIntoViewHooked;
     private CardView? _lastResult;
     private CancellationTokenSource? _search;
 
@@ -47,6 +49,35 @@ public sealed partial class SearchPage : Page, IRestoresFocus
             await SearchAsync(QueryBox.Text.Trim());
         };
         Results.PreviewKeyDown += OnResultsPreviewKeyDown;
+        Filters.PreviewKeyDown += OnFiltersPreviewKeyDown;
+        Results.Loaded += (_, _) => HookResultBringIntoView();
+    }
+
+    private void HookResultBringIntoView()
+    {
+        if (!_resultBringIntoViewHooked && Results.ItemsPanelRoot is { } panel)
+        {
+            // Handle below the inner ScrollViewer so it sees the adjusted rectangle.
+            panel.BringIntoViewRequested += OnResultBringIntoViewRequested;
+            _resultBringIntoViewHooked = true;
+        }
+    }
+
+    private void OnResultBringIntoViewRequested(UIElement sender, BringIntoViewRequestedEventArgs args)
+    {
+        try
+        {
+            if (args.TargetElement is ContentControl { Content: CardView })
+            {
+                // TvSearchScreen-style minimal scrolling, with 44px above and 80px below each result.
+                var r = args.TargetRect;
+                args.TargetRect = new Rect(r.X, r.Y - 44, r.Width, r.Height + 44 + 80);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Search bring into view", ex);
+        }
     }
 
     private async void OnFilterClick(object sender, RoutedEventArgs e)
@@ -65,6 +96,24 @@ public sealed partial class SearchPage : Page, IRestoresFocus
         await SearchAsync(QueryBox.Text.Trim());
     }
 
+    private void OnFiltersPreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key is not (VirtualKey.Down or VirtualKey.GamepadDPadDown or VirtualKey.GamepadLeftThumbstickDown)
+            || e.OriginalSource is not ToggleButton
+            || Results.Items.Count == 0)
+        {
+            return;
+        }
+
+        // TvSearchScreen explicitly hands Down from the chips to the first card.
+        var first = Results.ItemsPanelRoot?.Children.OfType<ContentControl>()
+            .FirstOrDefault(item => item.Content is CardView && ReferenceEquals(item.Content, Results.Items[0]));
+        if (first?.Focus(FocusState.Programmatic) == true)
+        {
+            e.Handled = true;
+        }
+    }
+
     /// <summary>
     /// Left/Right stay on the row, as in the official grid (a LazyVerticalGrid doesn't wrap): the
     /// GridView would otherwise carry Right from a row's last poster to the next row's first.
@@ -77,7 +126,9 @@ public sealed partial class SearchPage : Page, IRestoresFocus
             VirtualKey.Right or VirtualKey.GamepadDPadRight or VirtualKey.GamepadLeftThumbstickRight => 1,
             _ => 0,
         };
-        if (step == 0 || e.OriginalSource is not ContentControl item || Results.ItemsPanelRoot is not { } panel)
+        var up = e.Key is VirtualKey.Up or VirtualKey.GamepadDPadUp or VirtualKey.GamepadLeftThumbstickUp;
+        if ((step == 0 && !up) || e.OriginalSource is not ContentControl { Content: CardView } item
+            || Results.ItemsPanelRoot is not { } panel)
         {
             return;
         }
@@ -85,6 +136,18 @@ public sealed partial class SearchPage : Page, IRestoresFocus
         var index = Results.IndexFromContainer(item);
         var top = panel.Children.OfType<FrameworkElement>().FirstOrDefault()?.ActualOffset.Y;
         var columns = Math.Max(1, panel.Children.OfType<FrameworkElement>().Count(child => child.ActualOffset.Y == top));
+        if (up)
+        {
+            // TvSearchScreen explicitly returns to chips so spatial focus cannot skip to the field.
+            if (index >= 0 && index < columns
+                && Filters.Children.OfType<ToggleButton>().FirstOrDefault(filter => filter.IsChecked == true) is { } chip
+                && chip.Focus(FocusState.Programmatic))
+            {
+                e.Handled = true;
+            }
+            return;
+        }
+
         if (index < 0 || (step < 0 && index % columns == 0) || (step > 0 && (index % columns == columns - 1 || index == Results.Items.Count - 1)))
         {
             e.Handled = true;
@@ -118,6 +181,7 @@ public sealed partial class SearchPage : Page, IRestoresFocus
             }
 
             Results.ItemsSource = cards.Select(card => new CardView(card, "Search", PosterWidth, PosterHeight, landscape: false)).ToList();
+            HookResultBringIntoView();
             Status.Text = cards.Count == 0 ? string.Empty : $"{cards.Count} result{(cards.Count == 1 ? string.Empty : "s")}";
             if (cards.Count == 0)
             {
@@ -149,6 +213,7 @@ public sealed partial class SearchPage : Page, IRestoresFocus
     {
         if (e.OriginalSource is ContentControl { Content: CardView or ProfileView } item)
         {
+            HookResultBringIntoView();
             _lastResult = item.Content as CardView;
             CardFocus.Apply(item, focused: true);
         }
