@@ -48,16 +48,21 @@
       </StackPanel>
     </StackPanel>
 
-    <GridView x:Name="Results" Grid.Row="3" Padding="40,14,24,40" SelectionMode="None" IsItemClickEnabled="True"
+    <GridView x:Name="Results" Grid.Row="3" Padding="40,2,8,40" SelectionMode="None" IsItemClickEnabled="True"
               ItemClick="OnResultClick" GotFocus="OnResultFocus" LostFocus="OnResultBlur">
+      <!--
+        Keep 12px headroom inside each result container; the row gap stays 20 (TvSearchScreen.kt).
+        The grid scrolls only enough to show the container, so this includes the focused poster's
+        lift and ring when scrolling up.
+      -->
       <GridView.ItemContainerStyle>
         <Style TargetType="GridViewItem" BasedOn="{StaticResource SkylineGridItemStyle}">
-          <Setter Property="Margin" Value="0,0,14,20" />
+          <Setter Property="Margin" Value="0,0,14,8" />
         </Style>
       </GridView.ItemContainerStyle>
       <GridView.ItemTemplate>
         <DataTemplate x:DataType="views:CardView">
-          <StackPanel Width="{x:Bind Width}" Spacing="9">
+          <StackPanel Width="{x:Bind Width}" Spacing="9" Margin="0,12,0,0">
             <Grid x:Name="Art" Width="{x:Bind Width}" Height="{x:Bind Height}">
               <Grid CornerRadius="{StaticResource SkylineCardRadius}" Background="{StaticResource SkylineCardPlaceholder}">
                 <TextBlock Text="{x:Bind Title}" Visibility="{x:Bind FallbackVisibility}" TextWrapping="Wrap" TextAlignment="Center"
