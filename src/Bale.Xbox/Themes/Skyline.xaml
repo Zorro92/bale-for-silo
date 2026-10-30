@@ -326,6 +326,143 @@
     </Setter>
   </Style>
 
+  <!-- Detail-only type: TvDetailHero.kt / TvDetailSectionHeader.kt / TvCastCrewSection.kt.
+       InterVariable.ttf includes Black; Inter Tight is not bundled. Keep Home's type unchanged. -->
+  <Style x:Key="SkylineDetailTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="36" />
+    <Setter Property="FontWeight" Value="Black" />
+    <Setter Property="LineHeight" Value="39.6" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="Foreground" Value="#FFFFFFFF" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="MaxLines" Value="2" />
+  </Style>
+  <Style x:Key="SkylineDetailSubtitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineDetailTitleStyle}">
+    <Setter Property="FontSize" Value="17.2" />
+    <Setter Property="FontWeight" Value="ExtraBold" />
+    <Setter Property="LineHeight" Value="18.9" />
+    <Setter Property="CharacterSpacing" Value="38" />
+    <Setter Property="Foreground" Value="#F2FFFFFF" />
+  </Style>
+  <Style x:Key="SkylineDetailSectionHeaderStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="18.1" />
+    <Setter Property="LineHeight" Value="20.6" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="#FFFFFFFF" />
+  </Style>
+  <Style x:Key="SkylineDetailCastNameStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="LineHeight" Value="15.5" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="#E0FFFFFF" />
+    <Setter Property="Height" Value="31" />
+    <Setter Property="MaxLines" Value="2" />
+    <Setter Property="TextAlignment" Value="Center" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="SkylineDetailCastRoleStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineDetailCastNameStyle}">
+    <Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="Foreground" Value="#B3FFFFFF" />
+    <Setter Property="Height" Value="15.5" />
+    <Setter Property="MaxLines" Value="1" />
+    <Setter Property="TextWrapping" Value="NoWrap" />
+  </Style>
+
+  <!-- TvExpandableSynopsis.kt: the hero's only text focus stop. No border or system halo. -->
+  <Style x:Key="SkylineDetailSynopsisStyle" TargetType="Button">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Foreground" Value="#D1FFFFFF" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="VerticalContentAlignment" Value="Top" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="SynopsisSurface" Background="Transparent" CornerRadius="4">
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" />
+                <VisualState x:Name="PointerOver" />
+                <VisualState x:Name="Pressed" />
+                <VisualState x:Name="Disabled" />
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters>
+                    <Setter Target="SynopsisSurface.Background" Value="#8C15171C" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="PointerFocused" />
+                <VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <ContentPresenter Content="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}"
+                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Detail's centered More Actions panel (TvOptionDialog.kt / TvPlayerChrome.kt), not an anchored flyout. -->
+  <Style x:Key="SkylineDetailDialogPanelStyle" TargetType="Border">
+    <Setter Property="Background" Value="#FF17181B" />
+    <Setter Property="BorderBrush" Value="#1AFFFFFF" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="20" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineDetailMenuRowStyle" TargetType="Button">
+    <Setter Property="MinHeight" Value="38" />
+    <Setter Property="Padding" Value="10,9" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="FontSize" Value="12.9" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Foreground" Value="#FFEDEDED" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Row" CornerRadius="10" Background="Transparent" Padding="{TemplateBinding Padding}">
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" />
+                <VisualState x:Name="PointerOver" />
+                <VisualState x:Name="Pressed" />
+                <VisualState x:Name="Disabled">
+                  <VisualState.Setters>
+                    <Setter Target="Row.Opacity" Value="0.38" />
+                  </VisualState.Setters>
+                </VisualState>
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters>
+                    <Setter Target="Row.Background" Value="#FFEDEDED" />
+                    <Setter Target="Content.Foreground" Value="#FF0B0B0C" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="PointerFocused" />
+                <VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}"
+                              FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}" />
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!--
     Detail page Play pill (TvSquaredButtons.TvPrimaryPillButton, stableHero = true): a 38 high
     capsule, white @ 10% with a white label at rest, solid white with a black label on focus, no

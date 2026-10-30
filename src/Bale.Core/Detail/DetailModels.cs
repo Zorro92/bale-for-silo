@@ -38,6 +38,20 @@ public sealed record ItemDetail(
 {
     public bool IsSeries => Type == "series";
 
+    public bool PlaysEpisodes => Type is "series" or "season";
+
+    public long? SeasonNumber { get; init; }
+
+    /// <summary>
+    /// TvItemDetailScreen.tvSeriesDetailRedirect keeps incomplete hierarchies standalone instead
+    /// of redirecting to a missing parent or back to themselves.
+    /// </summary>
+    public SeriesDetailEntry? SeriesEntry =>
+        Type is "episode" or "season" && SeriesId?.Trim() is { Length: > 0 } seriesId
+            && seriesId != ContentId && SeasonNumber is { } season
+            ? new SeriesDetailEntry(seriesId, season, Type == "episode" ? ContentId : null)
+            : null;
+
     /// <summary>
     /// The Home marquee's line under the synopsis once the detail has loaded: "Aired Mar 12, 2026 ·
     /// Pedro Pascal, Bella Ramsey, Anna Torv" (TvMarqueeEnrichment.from). Null when both are empty.
@@ -54,7 +68,15 @@ public sealed record ItemFlags(bool InWatchlist, bool IsFavorite, bool Played);
 /// <param name="Role">The first character played, or the crew job.</param>
 public sealed record CastMember(string Name, string? Role, Uri? PhotoUrl);
 
-public sealed record SeasonChoice(long Number, string Title, long EpisodeCount);
+/// <summary>A combined Series-page entry, including the one-shot rail selection (TvItemDetailScreen).</summary>
+public sealed record SeriesDetailEntry(string SeriesId, long SeasonNumber, string? EpisodeId);
+
+public sealed record SeasonChoice(long Number, string Title, long EpisodeCount)
+{
+    public string ContentId { get; init; } = string.Empty;
+
+    public bool Played { get; init; }
+}
 
 /// <summary>An episode card on the series page (TvDetailEpisodeRail), and the hero it shows when focused.</summary>
 public sealed record EpisodeCard(
@@ -71,6 +93,10 @@ public sealed record EpisodeCard(
 {
     private static readonly System.Globalization.CultureInfo English = System.Globalization.CultureInfo.GetCultureInfo("en-US");
 
+    public double? ResumeSeconds { get; init; }
+
+    public bool IsInProgress { get; init; }
+
     /// <summary>"S01E02 · Pilot", or the code alone (EpisodeCardCaption.title).</summary>
     public string Caption
     {
@@ -84,8 +110,8 @@ public sealed record EpisodeCard(
     /// <summary>"Aug 13, 1997  ·  22m" under the caption (EpisodeCardCaption.metadata).</summary>
     public string CaptionMeta => string.Join("  ·  ", new[] { Date, ShortRuntime }.OfType<string>());
 
-    /// <summary>The hero's facts while the episode has focus: "Aug 13, 1997", "22 min" (TvDetailMetadata).</summary>
-    public IReadOnlyList<string> HeroFacts => new[] { Date, RuntimeMinutes is > 0 ? $"{RuntimeMinutes} min" : null }.OfType<string>().ToList();
+    /// <summary>The hero's facts while the episode has focus (TvDetailMetadata.seriesEpisodeFactsLine).</summary>
+    public IReadOnlyList<string> HeroFacts => new[] { Date, Browse.BrowseFeed.Runtime(RuntimeMinutes) }.OfType<string>().ToList();
 
     /// <summary>"Season 1", "Episode 1" after the rating.</summary>
     public IReadOnlyList<string> HeroTokens => new[]
@@ -107,20 +133,81 @@ public sealed record EpisodeCard(
     };
 }
 
+/// <summary>The season's suggested target, as TvItemDetailViewModel.resolveNextUpEpisode chooses it.</summary>
+public static class DetailEpisodes
+{
+    public static EpisodeCard? NextUp(IReadOnlyList<EpisodeCard> episodes) =>
+        episodes.FirstOrDefault(episode => episode.IsInProgress)
+        ?? episodes.FirstOrDefault(episode => !episode.Played)
+        ?? episodes.FirstOrDefault();
+}
+
+/// <summary>The More menu's type-specific watched verbs (TvItemDetailScreen.watchedMarkLabel / watchedUnmarkLabel).</summary>
+public static class DetailActions
+{
+    public static string WatchedLabel(string type, bool played)
+    {
+        var kind = type switch
+        {
+            "series" => "Series",
+            "season" => "Season",
+            "episode" => "Episode",
+            "movie" => "Movie",
+            _ => "as",
+        };
+        return $"Mark {kind} {(played ? "Unwatched" : "Watched")}";
+    }
+}
+
+/// <summary>The no-logo title treatment from TvDetailHero.splitDisplayTitle.</summary>
+public static class DetailTitle
+{
+    public static (string Title, string? Subtitle) Split(string title)
+    {
+        foreach (var separator in new[] { ": ", " — ", " – ", " - " })
+        {
+            var index = title.IndexOf(separator, StringComparison.Ordinal);
+            if (index <= 0)
+            {
+                continue;
+            }
+
+            var head = title[..index].Trim();
+            var tail = title[(index + separator.Length)..].Trim();
+            if (head.Length > 0 && tail.Length > 0)
+            {
+                return (head, tail);
+            }
+        }
+
+        return (title, null);
+    }
+}
+
 /// <summary>Play button wording, as TvItemDetailScreen.playButtonLabel words it.</summary>
 public static class PlayLabel
 {
-    /// <summary>"Play S1:E2" / "Resume S1:E2" for a series' next-up episode, else "Play" or "Resume 12:34".</summary>
-    public static string For(ItemDetail detail, EpisodeCard? nextUp)
+    /// <summary>"Play S1:E2" / "Resume S1:E2" for a series' active episode, else "Play" or "Resume 12:34".</summary>
+    public static string For(ItemDetail detail, EpisodeCard? episode)
     {
-        var resuming = detail.ResumeSeconds is > 0;
-        if (detail.IsSeries && nextUp is not null)
+        var resume = ResumeFor(detail, episode);
+        if (detail.PlaysEpisodes && episode is not null)
         {
-            return $"{(resuming ? "Resume" : "Play")} S{nextUp.SeasonNumber}:E{nextUp.EpisodeNumber}";
+            var code = detail.IsSeries ? $"S{episode.SeasonNumber}:E{episode.EpisodeNumber}" : $"E{episode.EpisodeNumber}";
+            return $"{(resume is > 0 ? "Resume" : "Play")} {code}";
         }
 
-        return resuming ? $"Resume {Clock(detail.ResumeSeconds!.Value)}" : "Play";
+        return resume is > 0 ? $"Resume {Clock(resume.Value)}" : "Play";
     }
+
+    /// <summary>Container progress must never leak into an episode's Play or Start Over (TvItemDetailScreen.HeroActionRow).</summary>
+    public static double? ResumeFor(ItemDetail detail, EpisodeCard? episode) =>
+        detail.PlaysEpisodes ? episode?.ResumeSeconds : detail.ResumeSeconds;
+
+    /// <summary>Ignore the opening 30 seconds and final five, as TvItemDetailScreen.resumePositionSeconds does.</summary>
+    internal static double? ResumePosition(double? position, double? duration) =>
+        position is > 30 && duration is > 0 && double.IsFinite(position.Value) && double.IsFinite(duration.Value)
+            && position < duration - 5 ? position : null;
 
     /// <summary>"1:02:05" over an hour, "12:34" under.</summary>
     internal static string Clock(double seconds)

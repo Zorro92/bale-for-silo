@@ -93,7 +93,11 @@ public sealed class DetailFeed
             .Select(season => new SeasonChoice(
                 season.SeasonNumber!.Value,
                 season.SeasonNumber == 0 ? "Specials" : $"Season {season.SeasonNumber}",
-                season.EpisodeCount ?? 0))
+                season.EpisodeCount ?? 0)
+            {
+                ContentId = season.ContentId ?? string.Empty,
+                Played = season.UserData?.Played == true,
+            })
             .OrderBy(season => season.Number == 0 ? long.MaxValue : season.Number)
             .ToList();
     }
@@ -115,6 +119,7 @@ public sealed class DetailFeed
         on ? _api.Api.V2.Favorites[contentId].PutAsync(cancellationToken: cancellationToken)
            : _api.Api.V2.Favorites[contentId].DeleteAsync(cancellationToken: cancellationToken);
 
+    /// <summary>The generated watched/{id} endpoint expands season and series IDs to their episodes.</summary>
     public Task SetPlayedAsync(string contentId, bool on, CancellationToken cancellationToken = default) =>
         on ? _api.Api.V2.Watched[contentId].PostAsync(cancellationToken: cancellationToken)
            : _api.Api.V2.Watched[contentId].DeleteAsync(cancellationToken: cancellationToken);
@@ -146,8 +151,8 @@ public sealed class DetailFeed
             isSeries ? item.ContentId : item.SeriesId,
             item.PlayContentId ?? item.ContentId ?? string.Empty,
             item.PlaySeasonNumber,
-            // The detail payload keeps the resume point in user_data; position_seconds is a card field.
-            (item.UserData?.PositionSeconds ?? item.PositionSeconds) is > 0 and var resume ? resume : null,
+            // TvItemDetailScreen.HeroActionRow takes a container's resume only for leaf items.
+            isSeries || type == "season" ? null : PlayLabel.ResumePosition(item.UserData?.PositionSeconds, item.UserData?.DurationSeconds),
             new ItemFlags(
                 item.UserState?.InWatchlist == true,
                 item.UserState?.IsFavorite == true,
@@ -155,6 +160,7 @@ public sealed class DetailFeed
             Ratings(item))
         {
             MarqueeLine = MarqueeLine(item),
+            SeasonNumber = item.SeasonNumber,
         };
     }
 
@@ -281,6 +287,7 @@ public sealed class DetailFeed
     internal static string? StarringCredit(CatalogItemDetail item)
     {
         var names = (item.Cast ?? [])
+            .OrderBy(credit => credit.Order ?? long.MaxValue)
             .Select(credit => credit.Name?.Trim())
             .Where(name => !string.IsNullOrEmpty(name))
             .Distinct()
@@ -322,6 +329,10 @@ public sealed class DetailFeed
             episode.AirDate is { } aired ? new DateOnly(aired.Year, aired.Month, aired.Day) : null,
             episode.Runtime is > 0 ? episode.Runtime : null,
             progress,
-            data?.Played == true);
+            data?.Played == true)
+        {
+            ResumeSeconds = PlayLabel.ResumePosition(data?.PositionSeconds, data?.DurationSeconds),
+            IsInProgress = data?.IsInProgress == true,
+        };
     }
 }

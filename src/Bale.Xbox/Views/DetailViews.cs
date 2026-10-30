@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Bale.Core.Detail;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Media.Imaging;
@@ -5,7 +6,7 @@ using Windows.UI.Xaml.Media.Imaging;
 namespace Bale.Xbox.Views;
 
 /// <summary>An episode card on the series page (TvDetailEpisodeRail, series geometry): 180x101 still, "S01E02 · Title", date and runtime.</summary>
-public sealed partial class EpisodeView
+public sealed partial class EpisodeView : INotifyPropertyChanged
 {
     public const double StillWidth = 180;
     public const double StillHeight = 101;
@@ -29,8 +30,20 @@ public sealed partial class EpisodeView
 
     public string CaptionMeta => Episode.CaptionMeta;
 
-    /// <summary>The next-up episode's still keeps a 2 px white @ 70% border.</summary>
-    public Visibility CurrentVisibility { get; }
+    /// <summary>The active Play target retains its 2px border after focus leaves the rail (TvDetailEpisodeRail.kt).</summary>
+    public Visibility CurrentVisibility { get; private set; }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public void SetCurrent(bool current)
+    {
+        var visibility = current ? Visibility.Visible : Visibility.Collapsed;
+        if (CurrentVisibility != visibility)
+        {
+            CurrentVisibility = visibility;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentVisibility)));
+        }
+    }
 
     public BitmapImage? Still { get; }
 
@@ -59,6 +72,8 @@ public sealed partial class CastView
     public string Name => Member.Name;
 
     public string Role => Member.Role ?? string.Empty;
+
+    public Visibility RoleVisibility => string.IsNullOrWhiteSpace(Member.Role) ? Visibility.Collapsed : Visibility.Visible;
 
     public BitmapImage? Photo { get; }
 
