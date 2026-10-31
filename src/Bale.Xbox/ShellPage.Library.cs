@@ -174,7 +174,8 @@ public sealed partial class ShellPage
     private void FocusAfterCascadeDismiss(Control? anchor)
     {
         // TvTopMenuBar.kt: the focus used to close a cascade must not immediately dwell-open it again.
-        if (anchor is { FocusState: FocusState.Unfocused, DataContext: TabView { LibraryTab: not null } }) _cascadeDismissTarget = anchor;
+        if (anchor is { FocusState: FocusState.Unfocused, DataContext: TabView { } tab }
+            && (tab.LibraryTab is not null || tab.Page == "foryou")) _cascadeDismissTarget = anchor;
         anchor?.Focus(FocusState.Programmatic);
     }
 

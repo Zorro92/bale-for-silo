@@ -47,6 +47,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         TopBar.PreviewKeyDown += OnTopBarPreviewKeyDown;
         ProfilePanel.PreviewKeyDown += OnProfilePanelPreviewKeyDown;
         InitializeLibraryCascade();
+        InitializeForYouCascade();
     }
 
     /// <summary>
@@ -84,11 +85,12 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
             {
                 OpenProfilePanel();
             }
-            else if (e.OriginalSource is Control { DataContext: TabView { LibraryTab.Libraries.Count: > 0 } } tab)
+            else if (e.OriginalSource is Control { DataContext: TabView { LibraryTab.Libraries.Count: > 0 } or TabView { Page: "foryou" } } tab)
             {
                 _dwell.Stop();
                 OpenLibraryPanel(tab);
-                FocusLibraryCascadeEntry();
+                if (ForYouPanel.Visibility == Visibility.Visible) FocusForYouCascadeEntry();
+                else FocusLibraryCascadeEntry();
             }
             else if (ContentFrame.Content is BrowsePage browse)
             {
@@ -268,7 +270,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
     public bool OnBack()
     {
         if (ContentFrame.Content is IBackHandler content && content.OnBack()) return true;
-        if (LibraryPanel.Visibility == Visibility.Visible || ProfilePanel.Visibility == Visibility.Visible)
+        if (LibraryPanel.Visibility == Visibility.Visible || ForYouPanel.Visibility == Visibility.Visible || ProfilePanel.Visibility == Visibility.Visible)
         {
             Control? anchor = ProfilePanel.Visibility == Visibility.Visible ? AvatarButton : _panelTab;
             ClosePanels();
@@ -309,9 +311,9 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
             return;
         }
         // Match on Control: under Native AOT a sender can arrive typed as its base class.
-        if (sender is Control { DataContext: TabView { LibraryTab.Libraries.Count: > 0 } } button)
+        if (sender is Control { DataContext: TabView { LibraryTab.Libraries.Count: > 0 } or TabView { Page: "foryou" } } button)
         {
-            _dwell.Interval = LibraryPanel.Visibility == Visibility.Visible ? PanelSwitchDwell : PanelDwell;
+            _dwell.Interval = LibraryPanel.Visibility == Visibility.Visible || ForYouPanel.Visibility == Visibility.Visible ? PanelSwitchDwell : PanelDwell;
             _dwellTab = button;
             _dwell.Start();
         }
@@ -384,7 +386,15 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         return tab.Libraries.FirstOrDefault(library => library.Id == saved) ?? tab.Libraries[0];
     }
 
-    private void OpenLibraryPanel(Control tabButton) => OpenLibraryCascade(tabButton);
+    private void OpenLibraryPanel(Control tabButton)
+    {
+        if (tabButton.DataContext is TabView { Page: "foryou" }) OpenForYouCascade(tabButton);
+        else
+        {
+            ForYouPanel.Visibility = Visibility.Collapsed;
+            OpenLibraryCascade(tabButton);
+        }
+    }
 
     private void OnLibraryRowClick(object sender, RoutedEventArgs e)
     {
@@ -409,6 +419,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
 
         AvatarButton.XYFocusDown = null;
         LibraryPanel.Visibility = Visibility.Collapsed;
+        ForYouPanel.Visibility = Visibility.Collapsed;
         ProfilePanel.Visibility = Visibility.Collapsed;
         PanelScrim.Visibility = Visibility.Collapsed;
     }
@@ -428,7 +439,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
     {
         for (var node = element; node is not null; node = VisualTreeHelper.GetParent(node))
         {
-            if (node == TopBar || node == LibraryPanel || node == LibrarySectionPanel || node == ProfilePanel)
+            if (node == TopBar || node == LibraryPanel || node == LibrarySectionPanel || node == ForYouPanel || node == ProfilePanel)
             {
                 return true;
             }

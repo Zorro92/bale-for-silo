@@ -108,6 +108,9 @@
       </StackPanel>
     </Border>
 
+    <!-- TvCascadeSelector.kt / TvForYouSelector: Recommendations, Favorites, Watchlist. -->
+    <views:ForYouSelector x:Name="ForYouPanel" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,66,0,0" Visibility="Collapsed" />
+
     <!-- TvMainShell.kt: no page scrim, and directional focus stays inside this dropdown. -->
     <Border x:Name="ProfilePanel" Width="240" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,66,44,0" Padding="0,6"
             Background="{StaticResource SkylineGlassStrong}" CornerRadius="{StaticResource SkylinePanelRadius}" Visibility="Collapsed">
