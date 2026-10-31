@@ -50,7 +50,14 @@
       <GridView.ItemsPanel>
         <ItemsPanelTemplate><ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="6" /></ItemsPanelTemplate>
       </GridView.ItemsPanel>
-      <GridView.Header><TextBlock x:Name="PageTitle" Style="{StaticResource SkylineCatalogTitleStyle}" Margin="{StaticResource SkylineCatalogHeaderMargin}" /></GridView.Header>
+      <GridView.Header>
+        <StackPanel>
+          <TextBlock x:Name="PageTitle" Style="{StaticResource SkylineCatalogTitleStyle}" Margin="{StaticResource SkylineCatalogHeaderMargin}" />
+          <!-- Optional source chrome scrolls with the cards (TvCatalogGrid's spanning header).
+               A Border slot can be populated through Child under Native AOT. -->
+          <Border x:Name="ToolbarSlot" />
+        </StackPanel>
+      </GridView.Header>
       <GridView.Footer>
         <StackPanel>
           <TextBlock x:Name="EmptyMessage" Text="This row has no titles right now." Style="{StaticResource SkylineCatalogMessageStyle}" Visibility="Collapsed" />
@@ -65,11 +72,13 @@
     <ProgressRing x:Name="LoadingRing" Style="{StaticResource SkylinePersonLoadingStyle}" IsActive="False" Visibility="Collapsed" />
     <StackPanel x:Name="ErrorPanel" Style="{StaticResource SkylineCatalogRetryPanelStyle}" Visibility="Collapsed">
       <TextBlock Text="Couldn't load this row." Style="{StaticResource SkylineCatalogMessageStyle}" />
-      <Button x:Name="RetryButton" Content="Try Again" Style="{StaticResource SkylineButtonStyle}" HorizontalAlignment="Center" Click="OnRetryClick" />
+      <Button x:Name="RetryButton" Content="Retry" Style="{StaticResource SkylineButtonStyle}" HorizontalAlignment="Center" Click="OnRetryClick" />
     </StackPanel>
     <StackPanel x:Name="UnavailablePanel" Padding="{StaticResource SkylineCatalogPagePadding}" Visibility="Collapsed">
       <TextBlock x:Name="UnavailableTitle" Style="{StaticResource SkylineCatalogTitleStyle}" />
       <TextBlock Text="This row is no longer available." Style="{StaticResource SkylineCatalogMessageStyle}" />
     </StackPanel>
+    <!-- Source-specific full-page overlays (for example a toolbar dialog); empty for section pages. -->
+    <Border x:Name="SourceOverlay" Visibility="Collapsed" />
   </Grid>
 </Page>

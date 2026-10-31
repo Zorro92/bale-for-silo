@@ -177,9 +177,12 @@ public sealed partial class CardView : BrowseTileView, INotifyPropertyChanged
 
     public double Height { get; private set; }
 
+    /// <summary>Catalog posters use the 1.10 focus lift from TvMediaCard / siloCardDefaults.</summary>
+    public Services.RailFocusVisual GridFocusVisual { get; init; } = Services.RailFocusVisual.Card;
+
     /// <summary>Vertical grids need the same focus envelope inside each item when it scrolls into view.</summary>
     public Thickness GridHeadroom => new(0, Math.Max(Services.CardRailMetrics.GridTopInset,
-        Services.CardRailMetrics.Headroom(Height)), 0, 0);
+        Services.CardRailMetrics.Headroom(Height, GridFocusVisual)), 0, 0);
 
     /// <summary>Gap between the art and its caption: 11 under posters, 7 under thumbs.</summary>
     public double CaptionSpacing { get; private set; }
