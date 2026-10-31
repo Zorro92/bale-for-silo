@@ -39,6 +39,36 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
         Cards.Loaded += (_, _) => HookScroller();
         Cards.ContainerContentChanging += (_, _) => QueuePagingCheck();
         Cards.SizeChanged += (_, _) => QueuePagingCheck();
+        Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
+    }
+
+    private async void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        // A nested Library grid is retained with the cached shell when Detail covers it. Loaded /
+        // Unloaded can repeat during reparenting; use the actual tree, not an unconditional toggle.
+        if (_active || !IsLoaded || Parent is null || _lifetime.IsCancellationRequested || _entry is null || !_entry.IsCurrent(Session.Client)) return;
+        _active = true;
+        if (_entry.Results.HasLoaded)
+        {
+            SyncCards();
+            UpdateState();
+            OnSourceLoaded();
+            QueuePagingCheck();
+        }
+        else if (!_entry.Results.IsLoading && _entry.Results.Error is null && !_entry.Results.Unavailable)
+        {
+            await LoadAsync(_entry.Results.Begin());
+        }
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        if (IsLoaded && Parent is not null) return;
+        _active = false;
+        _focusGeneration++;
+        // Do not cancel the page lifetime here: a nested grid must still load pages after Back.
+        _entry?.Results.StopLoading();
     }
 
     // Source-specific chrome lives in a partial, not in the section/grid renderer. ToolbarSlot and
@@ -100,7 +130,7 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
         }
         catch (ApiException ex) when (ex.ResponseStatusCode == 401)
         {
-            Session.Expire();
+            if (_active && !_lifetime.IsCancellationRequested && _entry.IsCurrent(Session.Client)) Session.Expire();
         }
         catch (Exception ex)
         {
@@ -137,7 +167,7 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
         HookScroller();
     }
 
-    private static double CardHeight(MediaCard card, double width) => card.Type is "audiobook" or "audiobooks" ? width : width * 1.5;
+    private static double CardHeight(MediaCard card, double width) => width / card.PosterAspectRatio;
 
     private void UpdateState()
     {
@@ -172,16 +202,23 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
         _ = Dispatcher.RunAsync(CoreDispatcherPriority.Low, async () =>
         {
             _pagingCheckQueued = false;
-            HookScroller();
-            if (!_active || _scroller is not { } scroller) return;
-            var lastVisible = Containers().Where(container =>
+            try
             {
-                var top = container.TransformToVisual(scroller).TransformPoint(new Point(0, 0)).Y;
-                return top < scroller.ViewportHeight && top + container.ActualHeight > 0;
-            }).Select(container => _cards.IndexOf((CardView)container.Content)).DefaultIfEmpty(-1).Max();
-            if (SearchResults.IsNearEnd(lastVisible, _cards.Count) && _entry.Results.BeginMore() is { } request)
+                HookScroller();
+                if (!_active || !_entry.IsCurrent(Session.Client) || _scroller is not { } scroller) return;
+                var lastVisible = Containers().Where(container =>
+                {
+                    var top = container.TransformToVisual(scroller).TransformPoint(new Point(0, 0)).Y;
+                    return top < scroller.ViewportHeight && top + container.ActualHeight > 0;
+                }).Select(container => _cards.IndexOf((CardView)container.Content)).DefaultIfEmpty(-1).Max();
+                if (SearchResults.IsNearEnd(lastVisible, _cards.Count) && _entry.Results.BeginMore() is { } request)
+                {
+                    await LoadAsync(request);
+                }
+            }
+            catch (Exception ex)
             {
-                await LoadAsync(request);
+                Log.Error("Catalog grid paging", ex);
             }
         });
     }
