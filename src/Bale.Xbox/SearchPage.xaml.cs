@@ -26,6 +26,7 @@ public sealed partial class SearchPage : Page, IRestoresFocus
     private readonly DispatcherTimer _typing = new() { Interval = TypingPause };
     private readonly SearchResults _state = new();
     private readonly ObservableCollection<CardView> _cards = [];
+    private readonly CardMenuHost _cardMenu;
     private readonly Rail _filterRail;
     private readonly Rail _peopleRail;
     private IReadOnlyList<SearchMediaFilter> _filters = [SearchMediaFilter.All, SearchMediaFilter.Movies, SearchMediaFilter.Series];
@@ -48,6 +49,8 @@ public sealed partial class SearchPage : Page, IRestoresFocus
     public SearchPage()
     {
         InitializeComponent();
+        _cardMenu = new CardMenuHost(this, Results, OpenResult);
+        _cardMenu.Changed += item => { if (item is CardView view) _state.UpdateCard(view.Card); };
         _filterRail = Rail.Attach(Filters);
         _filterRail.Pin = false;
         _filterRail.EntryItem = () => _filterViews.FirstOrDefault(view => view.Selected);
@@ -708,9 +711,11 @@ public sealed partial class SearchPage : Page, IRestoresFocus
             && result.Focus(FocusState.Programmatic));
     }
 
-    private void OnResultClick(object sender, ItemClickEventArgs e)
+    private void OnResultClick(object sender, ItemClickEventArgs e) => OpenResult(e.ClickedItem);
+
+    private void OpenResult(object item)
     {
-        if (e.ClickedItem is CardView { Card: var card })
+        if (item is CardView { Card: var card })
         {
             _returnPerson = null;
             ShellPage.Current?.OpenDetail(card.Type == "episode" && card.SeriesId is { } series ? series : card.ContentId);

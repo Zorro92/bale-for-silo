@@ -11,7 +11,20 @@ public enum CardAction
     RemoveFromHome,
 }
 
-public sealed record CardMenuEntry(CardAction Action, string Label);
+/// <summary>The Material icons in TvMediaCardActions.kt, independent of the UI toolkit.</summary>
+public enum CardMenuIcon
+{
+    Play,
+    Check,
+    VisibilityOff,
+    Favorite,
+    FavoriteBorder,
+    BookmarkAdd,
+    BookmarkRemove,
+    Close,
+}
+
+public sealed record CardMenuEntry(CardAction Action, string Label, CardMenuIcon Icon);
 
 /// <summary>Optional callbacks and row order from TvMediaCardActions.kt, not Detail's More Actions dialog.</summary>
 public static class CardMenu
@@ -22,13 +35,13 @@ public static class CardMenu
         // TvHomeScreen.kt only offers Play/Resume on Continue Watching, never on Next Up or catalog grids.
         if (home && IsContinueWatching(sectionType))
         {
-            entries.Add(new(CardAction.Play, card.PositionSeconds is not null ? "Resume" : "Play"));
+            entries.Add(new(CardAction.Play, card.PositionSeconds is not null ? "Resume" : "Play", CardMenuIcon.Play));
         }
 
         entries.AddRange(ForFlags(card.Flags));
         if (home && IsProgressRow(sectionType) && HomeCardDismissal.For(card) is { } dismissal)
         {
-            entries.Add(new(CardAction.RemoveFromHome, dismissal.Label));
+            entries.Add(new(CardAction.RemoveFromHome, dismissal.Label, CardMenuIcon.Close));
         }
 
         return entries;
@@ -38,19 +51,46 @@ public static class CardMenu
     public static IReadOnlyList<CardMenuEntry> ForEpisode(bool played, bool favorite) =>
         ForFlags(new ItemFlags(false, favorite, played), watchlist: false);
 
-    private static IReadOnlyList<CardMenuEntry> ForFlags(ItemFlags flags, bool watchlist = true)
+    public static IReadOnlyList<CardMenuEntry> ForFlags(ItemFlags flags, bool watchlist = true)
     {
         var entries = new List<CardMenuEntry>
         {
-            new(CardAction.Watched, flags.Played ? "Mark as Unwatched" : "Mark as Watched"),
-            new(CardAction.Favorite, flags.IsFavorite ? "Remove from Favorites" : "Add to Favorites"),
+            new(CardAction.Watched, flags.Played ? "Mark as Unwatched" : "Mark as Watched",
+                flags.Played ? CardMenuIcon.VisibilityOff : CardMenuIcon.Check),
+            new(CardAction.Favorite, flags.IsFavorite ? "Remove from Favorites" : "Add to Favorites",
+                flags.IsFavorite ? CardMenuIcon.Favorite : CardMenuIcon.FavoriteBorder),
         };
         if (watchlist)
         {
-            entries.Add(new(CardAction.Watchlist, flags.InWatchlist ? "Remove from Watchlist" : "Add to Watchlist"));
+            entries.Add(new(CardAction.Watchlist, flags.InWatchlist ? "Remove from Watchlist" : "Add to Watchlist",
+                flags.InWatchlist ? CardMenuIcon.BookmarkRemove : CardMenuIcon.BookmarkAdd));
         }
 
         return entries;
+    }
+
+    public static ItemFlags Toggle(ItemFlags flags, CardAction action) => action switch
+    {
+        CardAction.Watched => flags with { Played = !flags.Played },
+        CardAction.Favorite => flags with { IsFavorite = !flags.IsFavorite },
+        CardAction.Watchlist => flags with { InWatchlist = !flags.InWatchlist },
+        _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Not a card toggle."),
+    };
+
+    /// <summary>Use Detail's existing writes; callers can optimistically apply Toggle and roll back on failure.</summary>
+    public static async Task<ItemFlags> ToggleAsync(DetailFeed feed, string contentId, ItemFlags before, CardAction action,
+        CancellationToken cancellationToken = default)
+    {
+        var after = Toggle(before, action);
+        await (action switch
+        {
+            CardAction.Watched => feed.SetPlayedAsync(contentId, after.Played, cancellationToken),
+            CardAction.Favorite => feed.SetFavoriteAsync(contentId, after.IsFavorite, cancellationToken),
+            CardAction.Watchlist => feed.SetWatchlistAsync(contentId, after.InWatchlist, cancellationToken),
+            _ => throw new ArgumentOutOfRangeException(nameof(action)),
+        }).ConfigureAwait(false);
+        feed.Forget(contentId);
+        return after;
     }
 
     public static bool IsContinueWatching(string sectionType) =>
@@ -74,6 +114,12 @@ public sealed record HomeCardDismissal(string Surface, string Label)
 
     public static IReadOnlyList<MediaRow> Remove(IReadOnlyList<MediaRow> rows, MediaCard dismissed)
     {
+        // HomeViewModel only publishes a dismissal while the observed target/anchor is still current.
+        if (For(dismissed) is null || !rows.Where(row => CardMenu.IsProgressRow(row.SectionType)).SelectMany(row => row.Cards).Any(MatchesAnchor))
+        {
+            return rows;
+        }
+
         var series = dismissed.Type.Trim().ToLowerInvariant() switch
         {
             "series" => dismissed.ContentId,
@@ -85,9 +131,10 @@ public sealed record HomeCardDismissal(string Surface, string Label)
             Cards = row.Cards.Where(card => !Matches(card)).ToList(),
         }).Where(row => row.Cards.Count > 0).ToList();
 
-        bool Matches(MediaCard card) =>
-            (card.ContentId == dismissed.ContentId && (dismissed.ProgressUpdatedAt is not null
-                ? card.ProgressUpdatedAt == dismissed.ProgressUpdatedAt : card.SeriesId == dismissed.SeriesId))
+        bool MatchesAnchor(MediaCard card) => card.ContentId == dismissed.ContentId && (dismissed.ProgressUpdatedAt is not null
+            ? card.ProgressUpdatedAt == dismissed.ProgressUpdatedAt : card.SeriesId == dismissed.SeriesId);
+
+        bool Matches(MediaCard card) => MatchesAnchor(card)
             || (!string.IsNullOrWhiteSpace(series) && (card.ContentId == series || card.SeriesId == series));
     }
 }

@@ -48,6 +48,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     private bool _returning;
     private int _focusVersion;
     private readonly ObservableCollection<RowView> _rows = new();
+    private readonly CardMenuHost _cardMenu;
     private MaskedArt? _art;
     private AmbientTint.WashAnimation? _wash;
     private Color? _tint;
@@ -58,6 +59,10 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     public BrowsePage()
     {
         InitializeComponent();
+        _cardMenu = new CardMenuHost(this, RowsScroller, OpenCard,
+            view => _libraryId is null && !_forYou ? _rows.FirstOrDefault(row => row.Cards.Contains(view))?.Row : null);
+        _cardMenu.Changed += OnCardChanged;
+        _cardMenu.DismissedFromHome += OnHomeCardDismissed;
 
         Rows.ItemsSource = _rows;
         // The tunnelling pass runs before the ListView can make its own geometric (sideways) move.
@@ -525,12 +530,40 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     }
 
     /// <summary>TvHomeScreen.kt preserves episode selection; DetailPage resolves the episode to its series.</summary>
-    private void OnCardClick(object sender, ItemClickEventArgs e)
+    private void OnCardClick(object sender, ItemClickEventArgs e) => OpenCard(e.ClickedItem);
+
+    private void OpenCard(object item)
     {
-        if (e.ClickedItem is CardView { Card: var card })
+        if (item is CardView { Card: var card })
         {
             ShellPage.Current?.OpenDetail(card.ContentId);
         }
+    }
+
+    private void OnCardChanged(object item)
+    {
+        if (item is not CardView view) return;
+        // Keep duplicate appearances and the row snapshots in sync without replacing card containers.
+        foreach (var row in _rows.Where(row => row.Cards.Any(card => card.Card.ContentId == view.Card.ContentId)))
+        {
+            row.Update(row.Row with { Cards = row.Row.Cards.Select(card => card.ContentId == view.Card.ContentId ? view.Card : card).ToList() });
+        }
+
+        if (_shownMarquee?.Card.ContentId == view.Card.ContentId) ShowFacts(view.Card);
+    }
+
+    private void OnHomeCardDismissed(MediaCard card)
+    {
+        var restore = IsInPage(FocusManager.GetFocusedElement() as DependencyObject);
+        UpdateRows(HomeCardDismissal.Remove(_rows.Select(row => row.Row).ToList(), card), preserveFocus: true);
+        if (_rows.Count == 0)
+        {
+            ShowEmpty(restore);
+            return;
+        }
+
+        ShowMarquee(_lastCard?.Card ?? _rows[0].Cards[0], refresh: true);
+        if (restore) RestoreCardFocus(refreshHome: false);
     }
 
     /// <summary>TvHomeScreen.kt defers its resume refresh until the shell has restored return focus.</summary>

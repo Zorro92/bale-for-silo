@@ -119,6 +119,9 @@ public sealed partial class CardView : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    /// <summary>A personal-state write keeps the view/container, artwork and rail position intact.</summary>
+    public void UpdateCard(MediaCard card) => Update(card, RowTitle, Width, Height, Height < Width);
+
     public MediaCard Card { get; private set; } = null!;
 
     /// <summary>Which row the card came from.</summary>
@@ -156,6 +159,13 @@ public sealed partial class CardView : INotifyPropertyChanged
     public double ProgressFillWidth => Math.Max(0, Width * ProgressPercent / 100);
 
     public Visibility ProgressVisibility { get; private set; }
+
+    // TvMediaCard.kt / RowDimens: poster watched badges scale with width, clamped to 20..32 dp.
+    public Visibility WatchedVisibility => Card.Flags.Played && Height >= Width ? Visibility.Visible : Visibility.Collapsed;
+    public double WatchedSize => Math.Clamp(Width * 0.24, 20, 32);
+    public double WatchedIconSize => WatchedSize * 0.55;
+    public CornerRadius WatchedRadius => new(WatchedSize / 2);
+    public Thickness WatchedInset => new(Math.Clamp(Width * 0.06, 4, 8));
 
     public Visibility FallbackVisibility { get; private set; }
 

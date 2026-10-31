@@ -19,6 +19,7 @@ public sealed partial class PersonPage : Page, IBackHandler, IRestoresFocus
 {
     private static readonly ArtworkWidths WorksArtwork = ArtworkWidths.Tv1080 with { Poster = 276 };
     private readonly ObservableCollection<CardView> _cards = [];
+    private readonly CardMenuHost _cardMenu;
     private readonly Rail _filterRail;
     private readonly CancellationTokenSource _lifetime = new();
     private PersonPageEntry _entry = null!;
@@ -31,6 +32,8 @@ public sealed partial class PersonPage : Page, IBackHandler, IRestoresFocus
     public PersonPage()
     {
         InitializeComponent();
+        _cardMenu = new CardMenuHost(this, Works, OpenWork);
+        _cardMenu.Changed += item => { if (item is CardView view) _entry.Works.UpdateCard(view.Card); };
         Works.ItemsSource = _cards;
         _filterRail = Rail.Attach(Filters);
         _filterRail.Pin = false;
@@ -403,9 +406,11 @@ public sealed partial class PersonPage : Page, IBackHandler, IRestoresFocus
         if (e.OriginalSource is ContentControl { Content: CardView } item) CardFocus.Apply(item, false);
     }
 
-    private void OnWorkClick(object sender, ItemClickEventArgs e)
+    private void OnWorkClick(object sender, ItemClickEventArgs e) => OpenWork(e.ClickedItem);
+
+    private void OpenWork(object item)
     {
-        if (e.ClickedItem is not CardView view) return;
+        if (item is not CardView view) return;
         _entry.ReturnItemId = view.Card.ContentId;
         var frame = Frame;
         if (frame.Navigate(typeof(DetailPage), view.Card.ContentId) && frame.BackStack.Count > 0)

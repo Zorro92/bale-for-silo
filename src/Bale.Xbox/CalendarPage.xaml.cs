@@ -24,6 +24,7 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
     private readonly Rail _filterRail;
     private readonly Rail _dateRail;
     private readonly Rail _actionRail;
+    private readonly CardMenuHost _cardMenu;
     private CalendarFilter _filter = CalendarFilters.FromPreference(AppSettings.CalendarFilter);
     private DateOnly _today = DateOnly.FromDateTime(DateTime.Now);
     private DateOnly _weekStart;
@@ -50,6 +51,8 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
     public CalendarPage()
     {
         InitializeComponent();
+        _cardMenu = new CardMenuHost(this, CalendarScroller, OpenCard);
+        _cardMenu.Changed += OnCardChanged;
         _week = CalendarWeek.Empty(_today);
         _weekStart = _week.Start;
         _selectedDay = _today;
@@ -390,6 +393,7 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
     /// <summary>Every vertical move is explicit. Edges consume Up/Down even when focus cannot move.</summary>
     private void OnPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        if (e.Handled || _cardMenu.IsOpen) return;
         try
         {
             var step = e.Key switch
@@ -526,6 +530,7 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
 
     private void OnGettingFocus(UIElement sender, GettingFocusEventArgs args)
     {
+        if (_cardMenu.IsOpen) return;
         try
         {
             if (!_returning && !IsWithin(args.OldFocusedElement, this) && IsWithin(args.NewFocusedElement, this)
@@ -575,9 +580,11 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
         }
     }
 
-    private void OnCardClick(object sender, ItemClickEventArgs e)
+    private void OnCardClick(object sender, ItemClickEventArgs e) => OpenCard(e.ClickedItem);
+
+    private void OpenCard(object item)
     {
-        if (e.ClickedItem is CalendarCardView view && sender is FrameworkElement { DataContext: CalendarDayView day }
+        if (item is CalendarCardView view && _days.FirstOrDefault(candidate => candidate.Cards.Contains(view)) is { } day
             && ShellPage.Current is { } shell)
         {
             _returnTarget = new CalendarReturnTarget(day.Date, view.Item.ContentId, _days.IndexOf(day), day.Cards.IndexOf(view));
@@ -593,6 +600,23 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
                 shell.OpenDetail(view.Item.ContentId);
             }
         }
+    }
+
+    private void OnCardChanged(object item)
+    {
+        if (item is not CalendarCardView view) return;
+        foreach (var card in _days.SelectMany(day => day.Cards).Where(card => card.Item.ContentId == view.Item.ContentId))
+        {
+            card.Update(card.Item with { Watched = view.Item.Watched });
+        }
+
+        _week = _week with
+        {
+            Days = _week.Days.Select(day => day with
+            {
+                Items = day.Items.Select(card => card.ContentId == view.Item.ContentId ? card with { Watched = view.Item.Watched } : card).ToList(),
+            }).ToList(),
+        };
     }
 
     /// <summary>Back belongs to the shell's normal content → tab → Home chain.</summary>

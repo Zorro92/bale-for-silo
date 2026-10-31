@@ -15,16 +15,19 @@ public sealed partial class EpisodeView : INotifyPropertyChanged
     {
         Episode = episode;
         CurrentVisibility = isCurrent ? Visibility.Visible : Visibility.Collapsed;
-        ProgressVisibility = episode.Progress is > 0 ? Visibility.Visible : Visibility.Collapsed;
-        ProgressFillWidth = StillWidth * (episode.Progress ?? 0);
-        WatchedVisibility = episode.Played ? Visibility.Visible : Visibility.Collapsed;
         if (episode.StillUrl is not null)
         {
             Still = Services.Artwork.Load(episode.StillUrl, width: (int)StillWidth);
         }
     }
 
-    public EpisodeCard Episode { get; }
+    public EpisodeCard Episode { get; private set; }
+
+    public void Update(EpisodeCard episode)
+    {
+        Episode = episode;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+    }
 
     public string Caption => Episode.Caption;
 
@@ -47,11 +50,11 @@ public sealed partial class EpisodeView : INotifyPropertyChanged
 
     public BitmapImage? Still { get; }
 
-    public Visibility ProgressVisibility { get; }
+    public Visibility ProgressVisibility => Episode.Progress is > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-    public double ProgressFillWidth { get; }
+    public double ProgressFillWidth => StillWidth * (Episode.Progress ?? 0);
 
-    public Visibility WatchedVisibility { get; }
+    public Visibility WatchedVisibility => Episode.Played ? Visibility.Visible : Visibility.Collapsed;
 }
 
 /// <summary>A cast member (TvCastCrewSection): 100 px round photo, name, role.</summary>

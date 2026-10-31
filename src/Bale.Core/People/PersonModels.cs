@@ -110,6 +110,13 @@ public sealed class PersonWorks
     public string? CountLabel => Total > 0 ? Total == 1 ? "1 title" : $"{Total} titles"
         : _items.Count == 0 ? null : HasMore ? $"{_items.Count}+ titles" : _items.Count == 1 ? "1 title" : $"{_items.Count} titles";
 
+    /// <summary>Keep card actions in the retained route snapshot without resetting filmography focus/paging.</summary>
+    public void UpdateCard(MediaCard card)
+    {
+        var index = _items.FindIndex(item => item.ContentId == card.ContentId);
+        if (index >= 0) _items[index] = card;
+    }
+
     public PersonWorksRequest Begin(PersonMediaFilter filter)
     {
         _generation++;

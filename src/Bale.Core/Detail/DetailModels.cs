@@ -114,6 +114,15 @@ public sealed record EpisodeCard(
 
     public bool IsInProgress { get; init; }
 
+    /// <summary>CatalogModels.withWatched clears resume state for either watched direction.</summary>
+    public EpisodeCard WithPlayed(bool played) => this with
+    {
+        Played = played,
+        Progress = null,
+        ResumeSeconds = null,
+        IsInProgress = false,
+    };
+
     /// <summary>"S01E02 · Pilot", or the code alone (EpisodeCardCaption.title).</summary>
     public string Caption
     {
