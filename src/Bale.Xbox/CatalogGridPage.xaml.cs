@@ -47,6 +47,7 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
     partial void OnSourceLoaded();
     partial void UpdateSourceState();
     partial void OnGridTopUp(ref bool handled);
+    partial void OnGridRightEdge(ref bool handled);
     partial void RestoreSourceFocus(ref bool handled);
     partial void CleanupSource();
 
@@ -220,6 +221,13 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
             }
 
             var target = CatalogGridNavigation.Move(index, _cards.Count, Columns, direction.Value);
+            if (target == index && direction == GridDirection.Right)
+            {
+                var handled = false;
+                OnGridRightEdge(ref handled);
+                if (handled) return;
+            }
+
             if (target != index) FocusAt(target);
             else if (direction == GridDirection.Down && MoreErrorPanel.Visibility == Visibility.Visible)
             {
