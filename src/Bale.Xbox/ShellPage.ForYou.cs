@@ -78,7 +78,4 @@ public sealed partial class ShellPage
         if (target < 0) _panelTab?.Focus(FocusState.Programmatic);
         else if (target < buttons.Count) buttons[target].Focus(FocusState.Programmatic);
     }
-
-    // TEMP: replaced at merge by ShellPage.Personal.cs
-    private static void OpenPersonalList(string kind) { }
 }

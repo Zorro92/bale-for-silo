@@ -8,8 +8,11 @@ namespace Bale.Core.Browse;
 public sealed record LibrarySortOption(string Label, string Field, bool DescendingByDefault = true)
 {
     public static LibrarySortOption CollectionOrder { get; } = new("Collection Order", string.Empty, false);
+    public static LibrarySortOption ListOrder { get; } = new("Recently Saved", string.Empty, false);
     public static LibrarySortOption Title { get; } = new("Title", "title", false);
     public static LibrarySortOption DateAdded { get; } = new("Date Added", "added_at");
+    public static IReadOnlyList<LibrarySortOption> Personal { get; } =
+        [ListOrder, Title, DateAdded, new("Year", "year"), new("Rating", "rating_imdb"), new("Runtime", "runtime")];
     public static IReadOnlyList<LibrarySortOption> Video { get; } =
         [Title, DateAdded, new("Release Date", "release_date"), new("Year", "year"), new("Rating", "rating_imdb"), new("Runtime", "runtime"), new("Resolution", "resolution")];
     public static IReadOnlyList<LibrarySortOption> Audiobooks { get; } =
@@ -177,7 +180,8 @@ public sealed record LibraryBrowseFilter
     public LibraryBrowseFilter ApplyFacets(LibraryFacetSelection facets) => this with { Facets = facets, NamePrefix = null };
 }
 
-public sealed record LibraryBrowseQuery(string LibraryId, string? MediaType, LibraryBrowseFilter Filter, string? CollectionId = null, bool UserCollection = false);
+public sealed record LibraryBrowseQuery(string? LibraryId, string? MediaType, LibraryBrowseFilter Filter, string? CollectionId = null,
+    bool UserCollection = false, string? PersonalList = null);
 
 /// <summary>A library cursor belongs to exactly the query and artwork widths that produced it.</summary>
 public sealed class LibraryBrowseContinuation
@@ -194,7 +198,7 @@ public sealed class LibraryBrowseContinuation
     internal IReadOnlyCollection<string> Seen { get; }
 }
 
-public sealed record LibraryBrowseResult(IReadOnlyList<MediaCard> Cards, LibraryBrowseContinuation? Continuation, bool? LibraryHasItems = null)
+public sealed record LibraryBrowseResult(IReadOnlyList<MediaCard> Cards, LibraryBrowseContinuation? Continuation, bool? LibraryHasItems = null, long? Total = null)
 {
     public bool HasMore => Continuation is not null;
 }

@@ -53,5 +53,6 @@ public sealed class CatalogGridEntry(ICatalogGridSource source, SiloClient clien
     public string? ProfileId { get; } = client.ProfileId;
     public CatalogGridResults Results { get; } = new();
     public string? ReturnItemId { get; set; }
+    public int ReturnItemIndex { get; set; }
     public bool IsCurrent(SiloClient? current) => ReferenceEquals(Client, current) && current?.ProfileId == ProfileId;
 }

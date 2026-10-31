@@ -10,7 +10,7 @@ namespace Bale.Core.Browse;
 /// Rows for Home and library landings, and search results. Row order and contents are the
 /// server's (and the profile's customizations); Bale never invents its own rows.
 /// </summary>
-public sealed class BrowseFeed
+public sealed partial class BrowseFeed
 {
     /// <summary>SectionRowLimits.kt: full sections live on their paged "Explore all" screen.</summary>
     public const int CardsPerRow = 20;

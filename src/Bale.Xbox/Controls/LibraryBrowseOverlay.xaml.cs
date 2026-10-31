@@ -54,7 +54,7 @@ public sealed partial class LibraryBrowseOverlay : UserControl
 
     public void Update(bool available = true)
     {
-        AlphabetScroller.Visibility = available && _source?.Query.Filter.ShowsAlphabet == true ? Visibility.Visible : Visibility.Collapsed;
+        AlphabetScroller.Visibility = available && _source?.ShowsAlphabet == true ? Visibility.Visible : Visibility.Collapsed;
         foreach (var letter in _letters) letter.Update(_expanded, _source?.Query.Filter.NamePrefix);
     }
 
@@ -123,7 +123,9 @@ public sealed partial class LibraryBrowseOverlay : UserControl
         PanelEyebrow.Text = "SORT BY";
         PanelTitle.Visibility = PanelDivider.Visibility = Visibility.Collapsed;
         ResetRows();
-        foreach (var sort in LibrarySortOption.For(_source.Query.MediaType, _source.Query.CollectionId is not null))
+        // TvLibrarySortOption.availableForPersonalList: Recently Saved, Title, Date Added, Year, Rating, Runtime.
+        var sorts = _source.IsPersonal ? LibrarySortOption.Personal : LibrarySortOption.For(_source.Query.MediaType, _source.Query.CollectionId is not null);
+        foreach (var sort in sorts)
         {
             Add(sort.Field, sort.Label, () =>
             {
@@ -180,7 +182,7 @@ public sealed partial class LibraryBrowseOverlay : UserControl
             }
             Add("all", "All selected filters", () => { _draft = _draft with { MatchAll = true }; RefreshRows(); }, row => row.Update(mark: _draft.MatchAll ? "●" : "○"));
             Add("any", "Any selected filter", () => { _draft = _draft with { MatchAll = false }; RefreshRows(); }, row => row.Update(mark: !_draft.MatchAll ? "●" : "○"));
-            if (_source.Query.CollectionId is null)
+            if (!_source.IsPersonal && _source.Query.CollectionId is null)
             {
                 Add("preserve", "Preserve sort & filters", () => { _preserve = !_preserve; PreserveChanged?.Invoke(_preserve); RefreshRows(); }, row => row.Update(mark: _preserve ? "☑" : "☐"));
             }

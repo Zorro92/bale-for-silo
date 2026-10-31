@@ -286,6 +286,45 @@
     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
   </Style>
 
+  <!-- TvMainShell.ProfileDropdownRow / TvSkylinePanelChrome.kt: no scrim, 240dp panel,
+       8dp row corners, 15/18sp labels and the official filled Material icons. -->
+  <LinearGradientBrush x:Key="SkylineProfilePanelFill" StartPoint="0,0" EndPoint="0,1">
+    <GradientStop Color="#FF1D1F24" Offset="0" /><GradientStop Color="#FF17181B" Offset="1" />
+  </LinearGradientBrush>
+  <LinearGradientBrush x:Key="SkylineProfilePanelBorder" StartPoint="0,0" EndPoint="0,1">
+    <GradientStop Color="#38FFFFFF" Offset="0" /><GradientStop Color="#0DFFFFFF" Offset="1" />
+  </LinearGradientBrush>
+  <Style x:Key="SkylineProfilePanelStyle" TargetType="Border">
+    <Setter Property="Width" Value="240" /><Setter Property="Margin" Value="0,66,44,0" />
+    <Setter Property="Padding" Value="0,6" /><Setter Property="CornerRadius" Value="11" />
+    <Setter Property="BorderThickness" Value="0.5" /><Setter Property="BorderBrush" Value="{StaticResource SkylineProfilePanelBorder}" />
+    <Setter Property="Background" Value="{StaticResource SkylineProfilePanelFill}" />
+    <Setter Property="HorizontalAlignment" Value="Right" /><Setter Property="VerticalAlignment" Value="Top" />
+  </Style>
+  <Style x:Key="SkylineProfileMenuRowStyle" TargetType="Button" BasedOn="{StaticResource SkylinePanelRowStyle}">
+    <Setter Property="Height" Value="Auto" /><Setter Property="MinHeight" Value="0" />
+    <Setter Property="Padding" Value="12,8" /><Setter Property="Margin" Value="8,0" />
+    <Setter Property="FontSize" Value="12.9" /><Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Foreground" Value="#E6EDEDED" />
+  </Style>
+  <Style x:Key="SkylineProfileMenuLabelStyle" TargetType="TextBlock">
+    <Setter Property="LineHeight" Value="15.48" /><Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" /><Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineProfileMenuIconStyle" TargetType="Viewbox">
+    <Setter Property="Width" Value="16" /><Setter Property="Height" Value="16" /><Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineProfileMenuIconPathStyle" TargetType="Path">
+    <Setter Property="Width" Value="24" /><Setter Property="Height" Value="24" /><Setter Property="Fill" Value="#E6EDEDED" />
+  </Style>
+  <PathGeometry x:Key="SkylinePeopleIcon" Figures="M16,11 C17.66,11 18.99,9.66 18.99,8 C18.99,6.34 17.66,5 16,5 C14.34,5 13,6.34 13,8 C13,9.66 14.34,11 16,11 Z M8,11 C9.66,11 10.99,9.66 10.99,8 C10.99,6.34 9.66,5 8,5 C6.34,5 5,6.34 5,8 C5,9.66 6.34,11 8,11 Z M8,13 C5.67,13 1,14.17 1,16.5 V19 H15 V16.5 C15,14.17 10.33,13 8,13 Z M16,13 C15.71,13 15.38,13.02 15.03,13.05 C16.19,13.89 17,15.02 17,16.5 V19 H23 V16.5 C23,14.17 18.33,13 16,13 Z" />
+  <PathGeometry x:Key="SkylineBookmarkIcon" Figures="M17,3 H7 C5.9,3 5,3.9 5,5 V21 L12,18 L19,21 V5 C19,3.9 18.1,3 17,3 Z" />
+  <PathGeometry x:Key="SkylineBookmarkOutlineIcon" Figures="M17,3 H7 C5.9,3 5,3.9 5,5 V21 L12,18 L19,21 V5 C19,3.9 18.1,3 17,3 Z M17,18 L12,15.82 L7,18 V5 H17 Z" />
+  <PathGeometry x:Key="SkylineFavoriteIcon" Figures="M12,21.35 L10.55,20.03 C5.4,15.36 2,12.28 2,8.5 C2,5.42 4.42,3 7.5,3 C9.24,3 10.91,3.81 12,5.09 C13.09,3.81 14.76,3 16.5,3 C19.58,3 22,5.42 22,8.5 C22,12.28 18.6,15.36 13.45,20.04 Z" />
+  <PathGeometry x:Key="SkylineHistoryIcon" Figures="M13,3 C8.03,3 4,7.03 4,12 H1 L4.89,15.89 L4.96,16.03 L9,12 H6 C6,8.13 9.13,5 13,5 C16.87,5 20,8.13 20,12 C20,15.87 16.87,19 13,19 C11.07,19 9.32,18.21 8.06,16.94 L6.64,18.36 C8.27,19.99 10.51,21 13,21 C17.97,21 22,16.97 22,12 C22,7.03 17.97,3 13,3 Z M12,8 V13 L16.28,15.54 L17,14.33 L13.5,12.25 V8 Z" />
+  <PathGeometry x:Key="SkylineServerIcon" Figures="M20,13 H4 C2.9,13 2,13.9 2,15 V19 C2,20.1 2.9,21 4,21 H20 C21.1,21 22,20.1 22,19 V15 C22,13.9 21.1,13 20,13 Z M6,19 C4.9,19 4,18.1 4,17 C4,15.9 4.9,15 6,15 C7.1,15 8,15.9 8,17 C8,18.1 7.1,19 6,19 Z M20,3 H4 C2.9,3 2,3.9 2,5 V9 C2,10.1 2.9,11 4,11 H20 C21.1,11 22,10.1 22,9 V5 C22,3.9 21.1,3 20,3 Z M6,9 C4.9,9 4,8.1 4,7 C4,5.9 4.9,5 6,5 C7.1,5 8,5.9 8,7 C8,8.1 7.1,9 6,9 Z" />
+  <PathGeometry x:Key="SkylineLogoutIcon" Figures="M17,7 L15.59,8.41 L18.17,11 H8 V13 H18.17 L15.59,15.58 L17,17 L22,12 Z M4,5 H12 V3 H4 C2.89,3 2,3.9 2,5 V19 C2,20.1 2.89,21 4,21 H12 V19 H4 Z" />
+
   <!--
     Card containers. Focus is drawn by the card template's FocusRing/FocusGlow (2 px white ring
     and soft glow, rounded like the card) and a 1.05 lift of the art only, captions stay put (CardFocus).
@@ -1745,6 +1784,47 @@
     <Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="Spacing" Value="12" /><Setter Property="Margin" Value="24" />
   </Style>
+  <!-- TvPersonalScreens.kt: fixed YOUR LIBRARY header, then a six-column poster grid. -->
+  <Thickness x:Key="SkylinePersonalGridPadding">12,18,20,40</Thickness>
+  <Thickness x:Key="SkylinePersonalControlsMargin">0,0,20,32</Thickness>
+  <Thickness x:Key="SkylinePersonalInlineStateMargin">0,16,20,16</Thickness>
+  <Style x:Key="SkylinePersonalHeaderStyle" TargetType="StackPanel">
+    <Setter Property="Margin" Value="12,94,40,8" /><Setter Property="Spacing" Value="8" />
+  </Style>
+  <Style x:Key="SkylinePersonalEyebrowStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="13.76" /><Setter Property="LineHeight" Value="17.2" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="FontWeight" Value="Black" />
+    <Setter Property="Foreground" Value="#EBEDEDED" />
+  </Style>
+  <Style x:Key="SkylinePersonalTitleRowStyle" TargetType="StackPanel">
+    <Setter Property="Orientation" Value="Horizontal" /><Setter Property="Spacing" Value="12" />
+  </Style>
+  <Style x:Key="SkylinePersonalTitleIconStyle" TargetType="Viewbox">
+    <Setter Property="Width" Value="20" /><Setter Property="Height" Value="20" /><Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylinePersonalIconPathStyle" TargetType="Path">
+    <Setter Property="Width" Value="24" /><Setter Property="Height" Value="24" /><Setter Property="Fill" Value="{StaticResource SkylinePrimary}" />
+  </Style>
+  <Style x:Key="SkylinePersonalEmptyIconStyle" TargetType="Viewbox">
+    <Setter Property="Width" Value="48" /><Setter Property="Height" Value="48" /><Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylinePersonalEmptyStyle" TargetType="StackPanel">
+    <Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Center" /><Setter Property="Spacing" Value="12" />
+  </Style>
+  <Style x:Key="SkylinePersonalEmptyTextStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="18.92" /><Setter Property="LineHeight" Value="24.08" /><Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="Foreground" Value="{StaticResource SkylineSecondary}" />
+    <Setter Property="TextWrapping" Value="Wrap" /><Setter Property="TextAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylinePersonalGridItemStyle" TargetType="GridViewItem" BasedOn="{StaticResource SkylineCatalogGridItemStyle}">
+    <Setter Property="Margin" Value="0,0,20,32" />
+  </Style>
+  <Style x:Key="SkylinePersonalCountStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="15.48" /><Setter Property="LineHeight" Value="20.64" /><Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="Foreground" Value="#99EDEDED" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
   <!-- TvLibraryBrowseControls.kt: 14sp controls, 8dp gaps, 94% white focus, 55% black modal scrim. -->
   <SolidColorBrush x:Key="SkylineLibraryBrowseScrim" Color="#8C000000" />
   <Style x:Key="SkylineLibraryControlStyle" TargetType="Button" BasedOn="{StaticResource SkylineCapsuleStyle}">

@@ -22,19 +22,23 @@ public sealed partial class CatalogGridPage : IBackHandler
 
     partial void ConfigureSource()
     {
+        ConfigurePersonalSource();
         if (_entry.Source is not LibraryCatalogSource source) return;
         _librarySource = source;
         _libraryInitialFocus = !_entry.Results.HasLoaded;
         PageTitle.Visibility = Visibility.Collapsed;
-        // TvLibraryDetailScreen.kt: taller 108dp Browse inset, full-span controls then 30dp row gap.
-        Cards.Padding = new Thickness(40, 108, 20, 40);
-        ToolbarSlot.Margin = new Thickness(0, 0, 20, 30);
+        if (!source.IsPersonal)
+        {
+            // TvLibraryDetailScreen.kt: taller 108dp Browse inset, full-span controls then 30dp row gap.
+            Cards.Padding = new Thickness(40, 108, 20, 40);
+            ToolbarSlot.Margin = new Thickness(0, 0, 20, 30);
+        }
         _libraryToolbar = new LibraryBrowseToolbar();
         _libraryOverlay = new LibraryBrowseOverlay();
         ToolbarSlot.Child = _libraryToolbar;
         SourceOverlay.Child = _libraryOverlay;
         SourceOverlay.Visibility = Visibility.Visible;
-        _libraryOverlay.Configure(source, LibraryBrowseSettings.Preserve(_entry.Client, source.Query));
+        _libraryOverlay.Configure(source, !source.IsPersonal && LibraryBrowseSettings.Preserve(_entry.Client, source.Query));
         _libraryToolbar.Update(source.Query.Filter);
         _libraryToolbar.SortRequested += () => _libraryOverlay.OpenSort();
         _libraryToolbar.FilterRequested += () => _ = OpenLibraryFiltersAsync();
@@ -46,7 +50,10 @@ public sealed partial class CatalogGridPage : IBackHandler
         _libraryToolbar.TopRequested += () => ShellPage.Current?.FocusSelectedTab();
         _libraryToolbar.ContentRequested += () => { if (_cards.Count > 0) FocusAt(Math.Clamp(_lastFocusedIndex, 0, _cards.Count - 1)); };
         _libraryOverlay.FilterChanged += filter => _ = ChangeLibraryFilterAsync(filter);
-        _libraryOverlay.PreserveChanged += preserve => LibraryBrowseSettings.SetPreserve(_entry.Client, source.Query, preserve);
+        _libraryOverlay.PreserveChanged += preserve =>
+        {
+            if (!source.IsPersonal) LibraryBrowseSettings.SetPreserve(_entry.Client, source.Query, preserve);
+        };
         _libraryOverlay.PanelClosed += filter => { if (filter) _libraryToolbar.FocusFilter(); else _libraryToolbar.FocusSort(); };
         _libraryOverlay.OpenChanged += open =>
         {
@@ -63,7 +70,7 @@ public sealed partial class CatalogGridPage : IBackHandler
     {
         if (_librarySource is null) return;
         // TvAlphabetRail.kt: the edge peek expands in the SAME six-column layout; no lost column.
-        var reserved = _librarySource.Query.Filter.ShowsAlphabet ? (_libraryOverlay?.AlphabetHasFocus == true ? 96 : 18) + 16 : 0;
+        var reserved = _librarySource.ShowsAlphabet ? (_libraryOverlay?.AlphabetHasFocus == true ? 96 : 18) + 16 : 0;
         Cards.Margin = new Thickness(0, 0, reserved, 0);
         SyncCards();
     }
@@ -100,7 +107,7 @@ public sealed partial class CatalogGridPage : IBackHandler
         _libraryReloadFocus = FocusManager.GetFocusedElement() as Control;
         _libraryAlphabetReturnIndex = null; // A new query no longer contains the card the rail was entered from.
         _librarySource.SetFilter(filter);
-        LibraryBrowseSettings.Save(_entry.Client, _librarySource.Query);
+        if (!_librarySource.IsPersonal) LibraryBrowseSettings.Save(_entry.Client, _librarySource.Query);
         _libraryToolbar?.Update(filter);
         _libraryOverlay?.Update();
         UpdateLibraryGridWidth();
@@ -110,18 +117,20 @@ public sealed partial class CatalogGridPage : IBackHandler
 
     partial void OnSourceLoaded()
     {
-        if (_librarySource is null) return;
+        if (_librarySource is null || _librarySource.IsPersonal) return;
         EmptyMessage.Text = _librarySource.LibraryHasItems == false ? "This library is empty." : "No titles match the current filters.";
     }
 
     partial void UpdateSourceState()
     {
+        UpdatePersonalState();
         if (_librarySource is null) return;
-        // Controls remain available during loading and empty results, but an initial error replaces them.
-        var available = !_entry.Results.Unavailable && _entry.Results.Error is null;
+        // TvPersonalScreens.kt keeps saved-list controls reachable even when a query fails, so the
+        // viewer can undo a filter rather than being stranded with Retry for the same failed query.
+        var available = !_entry.Results.Unavailable && (_librarySource.IsPersonal || _entry.Results.Error is null);
         if (available) Cards.Visibility = Visibility.Visible;
         _libraryOverlay?.Update(available);
-        if (ErrorPanel.Children.OfType<TextBlock>().FirstOrDefault() is { } error) error.Text = "Couldn't load this library.";
+        if (!_librarySource.IsPersonal) ErrorMessage.Text = "Couldn't load this library.";
     }
 
     partial void OnGridTopUp(ref bool handled)
@@ -159,6 +168,17 @@ public sealed partial class CatalogGridPage : IBackHandler
 
     partial void RestoreSourceFocus(ref bool handled)
     {
+        if (_libraryOverlay?.IsOpen == true)
+        {
+            handled = true;
+            return;
+        }
+        if (IsPersonalGrid && _entry.Results.Error is not null)
+        {
+            FocusRetry.Until(ErrorPanel, () => !_active || RetryButton.Focus(FocusState.Programmatic));
+            handled = true;
+            return;
+        }
         if (_librarySource is null || _libraryToolbar is null) return;
         if (_libraryReloadFocus is { } target)
         {
@@ -166,15 +186,17 @@ public sealed partial class CatalogGridPage : IBackHandler
             FocusRetry.Until(this, () => !_active || target.Focus(FocusState.Programmatic));
             handled = true;
         }
-        else if (_libraryInitialFocus || _cards.Count == 0)
+        else if ((!_librarySource.IsPersonal && _libraryInitialFocus) || _cards.Count == 0)
         {
             _libraryInitialFocus = false;
             FocusRetry.Until(this, () => !_active || _entry.Results.Error is not null || _entry.Results.Unavailable || FocusLibraryToolbar());
             handled = true;
         }
+        else _libraryInitialFocus = false; // Personal first entry belongs to the first card, not Sort.
     }
 
-    private bool FocusLibraryToolbar() => _libraryToolbar?.FocusControls() == true;
+    private bool FocusLibraryToolbar() => _librarySource?.IsPersonal == true
+        ? _libraryToolbar?.FocusSort() == true : _libraryToolbar?.FocusControls() == true;
 
     internal bool ShowsLibrary(string libraryId, string? mediaScope) => _entry.IsCurrent(Session.Client)
         && _librarySource?.Query is { CollectionId: null } query && query.LibraryId == libraryId && query.MediaType == mediaScope;
@@ -189,7 +211,7 @@ public sealed partial class CatalogGridPage : IBackHandler
     private void OnLibraryPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Handled || _libraryOverlay?.IsOpen == true) return;
-        if (e.Key == VirtualKey.Tab && _librarySource?.Query.Filter.ShowsAlphabet == true)
+        if (e.Key == VirtualKey.Tab && _librarySource?.ShowsAlphabet == true)
         {
             e.Handled = _libraryOverlay?.AlphabetHasFocus == true
                 ? _libraryOverlay.FocusAlphabet()

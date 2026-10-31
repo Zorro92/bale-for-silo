@@ -13,8 +13,10 @@ public sealed class LibraryBrowseFeed(SiloApiClient api, BrowseFeed browse)
         LibraryBrowseContinuation? continuation = null, CancellationToken cancellationToken = default)
     {
         var filter = query.Filter;
-        var key = string.Join('\n', query.LibraryId, query.MediaType, query.CollectionId, query.UserCollection,
+        var key = string.Join('\n', query.LibraryId, query.MediaType, query.CollectionId, query.UserCollection, query.PersonalList,
             widths, LibraryBrowsePreferences.Serialize(filter), filter.NamePrefix);
+        var source = Source(query);
+        var pageSize = query.PersonalList is null ? PageSize : 40;
         if (continuation is not null && continuation.Key != key)
         {
             throw new InvalidOperationException("The query changed. Reload from the first page.");
@@ -32,8 +34,14 @@ public sealed class LibraryBrowseFeed(SiloApiClient api, BrowseFeed browse)
                 // CatalogV2Api.kt uses POST for structured facets; only artwork remains in the URL.
                 response = await api.Api.V2.Catalog.Query.PostAsync(new CatalogQuery
                 {
-                    Source = query.CollectionId is null ? CatalogQuery_source.Query
-                        : query.UserCollection ? CatalogQuery_source.User_collection :CatalogQuery_source.Library_collection,
+                    Source = source switch
+                    {
+                        GetSourceQueryParameterType.Favorites => CatalogQuery_source.Favorites,
+                        GetSourceQueryParameterType.Watchlist => CatalogQuery_source.Watchlist,
+                        GetSourceQueryParameterType.User_collection => CatalogQuery_source.User_collection,
+                        GetSourceQueryParameterType.Library_collection => CatalogQuery_source.Library_collection,
+                        _ => CatalogQuery_source.Query,
+                    },
                     LibraryId = query.LibraryId,
                     CollectionId = query.CollectionId,
                     Type = query.MediaType,
@@ -42,7 +50,7 @@ public sealed class LibraryBrowseFeed(SiloApiClient api, BrowseFeed browse)
                     Match = filter.Facets.MatchAll ? CatalogQuery_match.All : CatalogQuery_match.Any,
                     Sort = filter.Sort.Field.Length == 0 ? null : filter.Sort.Field,
                     Order = filter.Sort.Field.Length == 0 ? null : filter.Descending ? CatalogQuery_order.Desc : CatalogQuery_order.Asc,
-                    Limit = PageSize,
+                    Limit = pageSize,
                     Cursor = cursor,
                 }, config =>
                 {
@@ -56,15 +64,14 @@ public sealed class LibraryBrowseFeed(SiloApiClient api, BrowseFeed browse)
             {
                 response = await api.Api.V2.Catalog.GetAsync(config =>
                 {
-                    config.QueryParameters.Source = query.CollectionId is null ? GetSourceQueryParameterType.Query
-                        : query.UserCollection ? GetSourceQueryParameterType.User_collection :GetSourceQueryParameterType.Library_collection;
+                    config.QueryParameters.Source = source;
                     config.QueryParameters.LibraryId = query.LibraryId;
                     config.QueryParameters.CollectionId = query.CollectionId;
                     config.QueryParameters.Type = query.MediaType;
                     config.QueryParameters.NamePrefix = filter.NamePrefix;
                     config.QueryParameters.Sort = filter.Sort.Field.Length == 0 ? null : (filter.Descending ? "-" : string.Empty) + filter.Sort.Field;
                     config.QueryParameters.Cursor = cursor;
-                    config.QueryParameters.Limit = PageSize;
+                    config.QueryParameters.Limit = pageSize;
                     config.QueryParameters.PosterWidth = widths.Poster;
                     config.QueryParameters.BackdropWidth = widths.Backdrop;
                     config.QueryParameters.LogoWidth = widths.Logo;
@@ -98,12 +105,12 @@ public sealed class LibraryBrowseFeed(SiloApiClient api, BrowseFeed browse)
             bool? libraryHasItems = null;
             if (continuation is null && cards.Count == 0)
             {
-                libraryHasItems = items.Count > 0 || (filter.IsNarrowed
+                libraryHasItems = items.Count > 0 || (query.PersonalList is null && filter.IsNarrowed
                     ? await HasItemsAsync(query, cancellationToken).ConfigureAwait(false)
                     : false);
             }
 
-            return new LibraryBrowseResult(cards, next, libraryHasItems);
+            return new LibraryBrowseResult(cards, next, libraryHasItems, response?.Total);
         }
     }
 
@@ -121,14 +128,28 @@ public sealed class LibraryBrowseFeed(SiloApiClient api, BrowseFeed browse)
         return page?.Items is { Count: > 0 };
     }
 
-    public Task<CatalogFilters?> FiltersAsync(string libraryId, string? collectionId = null, bool userCollection = false,
-        CancellationToken cancellationToken = default) => api.Api.V2.Catalog.Filters.GetAsync(config =>
+    private static GetSourceQueryParameterType Source(LibraryBrowseQuery query) => query.PersonalList switch
+    {
+        "favorites" => GetSourceQueryParameterType.Favorites,
+        "watchlist" => GetSourceQueryParameterType.Watchlist,
+        null => query.CollectionId is null ? GetSourceQueryParameterType.Query
+            : query.UserCollection ? GetSourceQueryParameterType.User_collection : GetSourceQueryParameterType.Library_collection,
+        _ => throw new ArgumentException("Unknown personal list.", nameof(query)),
+    };
+
+    public Task<CatalogFilters?> FiltersAsync(string? libraryId, string? collectionId = null, bool userCollection = false,
+        CancellationToken cancellationToken = default, string? personalList = null) => api.Api.V2.Catalog.Filters.GetAsync(config =>
         {
             config.QueryParameters.LibraryId = libraryId;
             config.QueryParameters.CollectionId = collectionId;
-            config.QueryParameters.Source = collectionId is null ? null : userCollection
-                ? Api.Api.V2.Catalog.Filters.GetSourceQueryParameterType.User_collection
-                : Api.Api.V2.Catalog.Filters.GetSourceQueryParameterType.Library_collection;
+            config.QueryParameters.Source = personalList switch
+            {
+                "favorites" => Api.Api.V2.Catalog.Filters.GetSourceQueryParameterType.Favorites,
+                "watchlist" => Api.Api.V2.Catalog.Filters.GetSourceQueryParameterType.Watchlist,
+                _ => collectionId is null ? null : userCollection
+                    ? Api.Api.V2.Catalog.Filters.GetSourceQueryParameterType.User_collection
+                    : Api.Api.V2.Catalog.Filters.GetSourceQueryParameterType.Library_collection,
+            };
             config.QueryParameters.SkipTechnical = false;
         }, cancellationToken);
 

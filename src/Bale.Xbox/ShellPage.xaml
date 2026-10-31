@@ -117,8 +117,7 @@
     <views:ForYouSelector x:Name="ForYouPanel" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,66,0,0" Visibility="Collapsed" />
 
     <!-- TvMainShell.kt: no page scrim, and directional focus stays inside this dropdown. -->
-    <Border x:Name="ProfilePanel" Width="240" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,66,44,0" Padding="0,6"
-            Background="{StaticResource SkylineGlassStrong}" CornerRadius="{StaticResource SkylinePanelRadius}" Visibility="Collapsed">
+    <Border x:Name="ProfilePanel" Style="{StaticResource SkylineProfilePanelStyle}" Visibility="Collapsed">
       <StackPanel Spacing="2">
         <Grid Margin="16,6" ColumnSpacing="10">
           <Grid.ColumnDefinitions>
@@ -137,17 +136,42 @@
           </StackPanel>
         </Grid>
         <Rectangle Height="1" Fill="#1AFFFFFF" Margin="12,4" />
-        <Button x:Name="SwitchProfileRow" Style="{StaticResource SkylinePanelRowStyle}" Click="OnSwitchProfileClick" Margin="8,0" Height="Auto" Padding="12,8">
+        <Button x:Name="SwitchProfileRow" Style="{StaticResource SkylineProfileMenuRowStyle}" Click="OnSwitchProfileClick" GotFocus="OnProfileRowFocus" LostFocus="OnProfileRowBlur">
           <StackPanel Orientation="Horizontal" Spacing="10">
-            <FontIcon Glyph="&#xE748;" FontSize="16" />
-            <TextBlock Text="Switch Profile" />
+            <Viewbox Style="{StaticResource SkylineProfileMenuIconStyle}"><Path Style="{StaticResource SkylineProfileMenuIconPathStyle}" Data="{StaticResource SkylinePeopleIcon}" /></Viewbox>
+            <TextBlock Text="Switch Profile" Style="{StaticResource SkylineProfileMenuLabelStyle}" />
           </StackPanel>
         </Button>
-        <Rectangle Height="1" Fill="#1AFFFFFF" Margin="12,4" />
-        <Button x:Name="SignOutRow" Style="{StaticResource SkylinePanelRowStyle}" Click="OnSignOutClick" Margin="8,0" Height="Auto" Padding="12,8">
+        <Button x:Name="WatchlistRow" Tag="watchlist" Style="{StaticResource SkylineProfileMenuRowStyle}" Click="OnPersonalListClick" GotFocus="OnProfileRowFocus" LostFocus="OnProfileRowBlur">
           <StackPanel Orientation="Horizontal" Spacing="10">
-            <FontIcon Glyph="&#xF3B1;" FontSize="16" />
-            <TextBlock Text="Sign Out" />
+            <Viewbox Style="{StaticResource SkylineProfileMenuIconStyle}"><Path Style="{StaticResource SkylineProfileMenuIconPathStyle}" Data="{StaticResource SkylineBookmarkIcon}" /></Viewbox>
+            <TextBlock Text="Watchlist" Style="{StaticResource SkylineProfileMenuLabelStyle}" />
+          </StackPanel>
+        </Button>
+        <Button x:Name="FavoritesRow" Tag="favorites" Style="{StaticResource SkylineProfileMenuRowStyle}" Click="OnPersonalListClick" GotFocus="OnProfileRowFocus" LostFocus="OnProfileRowBlur">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <Viewbox Style="{StaticResource SkylineProfileMenuIconStyle}"><Path Style="{StaticResource SkylineProfileMenuIconPathStyle}" Data="{StaticResource SkylineFavoriteIcon}" /></Viewbox>
+            <TextBlock Text="Favorites" Style="{StaticResource SkylineProfileMenuLabelStyle}" />
+          </StackPanel>
+        </Button>
+        <Button x:Name="HistoryRow" Tag="history" Style="{StaticResource SkylineProfileMenuRowStyle}" Click="OnPersonalListClick" GotFocus="OnProfileRowFocus" LostFocus="OnProfileRowBlur">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <Viewbox Style="{StaticResource SkylineProfileMenuIconStyle}"><Path Style="{StaticResource SkylineProfileMenuIconPathStyle}" Data="{StaticResource SkylineHistoryIcon}" /></Viewbox>
+            <TextBlock Text="History" Style="{StaticResource SkylineProfileMenuLabelStyle}" />
+          </StackPanel>
+        </Button>
+        <!-- Settings has no Bale page yet; do not advertise a placeholder destination. -->
+        <Rectangle Height="1" Fill="#1AFFFFFF" Margin="12,4" />
+        <Button x:Name="SwitchServerRow" Style="{StaticResource SkylineProfileMenuRowStyle}" Click="OnSwitchServerClick" GotFocus="OnProfileRowFocus" LostFocus="OnProfileRowBlur">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <Viewbox Style="{StaticResource SkylineProfileMenuIconStyle}"><Path Style="{StaticResource SkylineProfileMenuIconPathStyle}" Data="{StaticResource SkylineServerIcon}" /></Viewbox>
+            <TextBlock Text="Switch Server" Style="{StaticResource SkylineProfileMenuLabelStyle}" />
+          </StackPanel>
+        </Button>
+        <Button x:Name="SignOutRow" Style="{StaticResource SkylineProfileMenuRowStyle}" Click="OnSignOutClick" GotFocus="OnProfileRowFocus" LostFocus="OnProfileRowBlur">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <Viewbox Style="{StaticResource SkylineProfileMenuIconStyle}"><Path Style="{StaticResource SkylineProfileMenuIconPathStyle}" Data="{StaticResource SkylineLogoutIcon}" /></Viewbox>
+            <TextBlock Text="Sign Out" Style="{StaticResource SkylineProfileMenuLabelStyle}" />
           </StackPanel>
         </Button>
       </StackPanel>

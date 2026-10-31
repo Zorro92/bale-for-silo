@@ -45,44 +45,99 @@
     </DataTemplate>
   </Page.Resources>
 
-  <!-- TvSectionBrowseScreen.kt / TvCatalogGrid.kt: full-page scrolling grid, no library sort/filter chrome. -->
+  <!-- TvSectionBrowseScreen.kt / TvCatalogGrid.kt: the renderer is shared; personal chrome is optional. -->
   <Grid x:Name="Root" SizeChanged="OnRootSizeChanged">
-    <GridView x:Name="Cards" Padding="{StaticResource SkylineCatalogPagePadding}" IsTabStop="False" SelectionMode="None" IsItemClickEnabled="True"
-              ItemTemplate="{StaticResource CardTemplate}" ItemContainerStyle="{StaticResource SkylineCatalogGridItemStyle}"
-              ItemClick="OnCardClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur" Visibility="Collapsed"
-              ScrollViewer.HorizontalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Hidden">
-      <GridView.ItemsPanel>
-        <ItemsPanelTemplate><ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="6" /></ItemsPanelTemplate>
-      </GridView.ItemsPanel>
-      <GridView.Header>
-        <StackPanel>
-          <TextBlock x:Name="PageTitle" Style="{StaticResource SkylineCatalogTitleStyle}" Margin="{StaticResource SkylineCatalogHeaderMargin}" />
-          <!-- Optional source chrome scrolls with the cards (TvCatalogGrid's spanning header).
-               A Border slot can be populated through Child under Native AOT. -->
-          <Border x:Name="ToolbarSlot" />
-        </StackPanel>
-      </GridView.Header>
-      <GridView.Footer>
-        <StackPanel>
-          <TextBlock x:Name="EmptyMessage" Text="This row has no titles right now." Style="{StaticResource SkylineCatalogMessageStyle}" Visibility="Collapsed" />
-          <StackPanel x:Name="MoreErrorPanel" Style="{StaticResource SkylineCatalogRetryPanelStyle}" Visibility="Collapsed">
-            <TextBlock Text="Couldn't load more" Style="{StaticResource SkylinePersonStatusStyle}" />
-            <Button x:Name="MoreRetryButton" Content="Retry" Style="{StaticResource SkylineButtonStyle}" HorizontalAlignment="Center" Click="OnMoreRetryClick" />
+    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+    <VisualStateManager.VisualStateGroups>
+      <VisualStateGroup x:Name="SourceLayout">
+        <VisualState x:Name="Catalog" />
+        <VisualState x:Name="Personal">
+          <VisualState.Setters>
+            <Setter Target="PersonalHeader.Visibility" Value="Visible" />
+            <Setter Target="PageTitle.Visibility" Value="Collapsed" />
+            <Setter Target="Cards.Padding" Value="{StaticResource SkylinePersonalGridPadding}" />
+            <Setter Target="Cards.ItemContainerStyle" Value="{StaticResource SkylinePersonalGridItemStyle}" />
+            <Setter Target="ToolbarSlot.Margin" Value="{StaticResource SkylinePersonalControlsMargin}" />
+          </VisualState.Setters>
+        </VisualState>
+      </VisualStateGroup>
+      <VisualStateGroup x:Name="PersonalKind">
+        <VisualState x:Name="PersonalWatchlist"><VisualState.Setters>
+          <Setter Target="PersonalTitleIcon.Data" Value="{StaticResource SkylineBookmarkOutlineIcon}" />
+          <Setter Target="PersonalEmptyIcon.Data" Value="{StaticResource SkylineBookmarkOutlineIcon}" />
+        </VisualState.Setters></VisualState>
+        <VisualState x:Name="PersonalFavorites"><VisualState.Setters>
+          <Setter Target="PersonalTitleIcon.Data" Value="{StaticResource SkylineFavoriteIcon}" />
+          <Setter Target="PersonalEmptyIcon.Data" Value="{StaticResource SkylineFavoriteIcon}" />
+        </VisualState.Setters></VisualState>
+        <VisualState x:Name="PersonalHistory"><VisualState.Setters>
+          <Setter Target="PersonalTitleIcon.Data" Value="{StaticResource SkylineHistoryIcon}" />
+          <Setter Target="PersonalEmptyIcon.Data" Value="{StaticResource SkylineHistoryIcon}" />
+        </VisualState.Setters></VisualState>
+      </VisualStateGroup>
+      <VisualStateGroup x:Name="PersonalControls">
+        <VisualState x:Name="PersonalWithoutControls" />
+        <VisualState x:Name="PersonalWithControls"><VisualState.Setters>
+          <Setter Target="PersonalEmptyPanel.Margin" Value="{StaticResource SkylinePersonalInlineStateMargin}" />
+        </VisualState.Setters></VisualState>
+      </VisualStateGroup>
+    </VisualStateManager.VisualStateGroups>
+
+    <!-- TvPersonalScreens.kt keeps this title outside the scrolling grid. -->
+    <StackPanel x:Name="PersonalHeader" Style="{StaticResource SkylinePersonalHeaderStyle}" Visibility="Collapsed">
+      <TextBlock Text="YOUR LIBRARY" Style="{StaticResource SkylinePersonalEyebrowStyle}" />
+      <StackPanel Style="{StaticResource SkylinePersonalTitleRowStyle}">
+        <Viewbox Style="{StaticResource SkylinePersonalTitleIconStyle}">
+          <Path x:Name="PersonalTitleIcon" Style="{StaticResource SkylinePersonalIconPathStyle}" />
+        </Viewbox>
+        <TextBlock x:Name="PersonalTitle" Style="{StaticResource SkylineCatalogTitleStyle}" />
+      </StackPanel>
+    </StackPanel>
+
+    <Grid x:Name="ContentArea" Grid.Row="1">
+      <GridView x:Name="Cards" Padding="{StaticResource SkylineCatalogPagePadding}" IsTabStop="False" SelectionMode="None" IsItemClickEnabled="True"
+                ItemTemplate="{StaticResource CardTemplate}" ItemContainerStyle="{StaticResource SkylineCatalogGridItemStyle}"
+                ItemClick="OnCardClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur" Visibility="Collapsed"
+                ScrollViewer.HorizontalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Hidden">
+        <GridView.ItemsPanel>
+          <ItemsPanelTemplate><ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="6" /></ItemsPanelTemplate>
+        </GridView.ItemsPanel>
+        <GridView.Header>
+          <StackPanel>
+            <TextBlock x:Name="PageTitle" Style="{StaticResource SkylineCatalogTitleStyle}" Margin="{StaticResource SkylineCatalogHeaderMargin}" />
+            <!-- Optional source chrome scrolls with the cards (TvCatalogGrid's spanning header).
+                 A Border slot can be populated through Child under Native AOT. -->
+            <Border x:Name="ToolbarSlot" />
           </StackPanel>
-          <ProgressRing x:Name="MoreLoading" Style="{StaticResource SkylinePersonLoadingStyle}" IsActive="False" Visibility="Collapsed" />
-        </StackPanel>
-      </GridView.Footer>
-    </GridView>
-    <ProgressRing x:Name="LoadingRing" Style="{StaticResource SkylinePersonLoadingStyle}" IsActive="False" Visibility="Collapsed" />
-    <StackPanel x:Name="ErrorPanel" Style="{StaticResource SkylineCatalogRetryPanelStyle}" Visibility="Collapsed">
-      <TextBlock Text="Couldn't load this row." Style="{StaticResource SkylineCatalogMessageStyle}" />
-      <Button x:Name="RetryButton" Content="Retry" Style="{StaticResource SkylineButtonStyle}" HorizontalAlignment="Center" Click="OnRetryClick" />
-    </StackPanel>
-    <StackPanel x:Name="UnavailablePanel" Padding="{StaticResource SkylineCatalogPagePadding}" Visibility="Collapsed">
-      <TextBlock x:Name="UnavailableTitle" Style="{StaticResource SkylineCatalogTitleStyle}" />
-      <TextBlock Text="This row is no longer available." Style="{StaticResource SkylineCatalogMessageStyle}" />
-    </StackPanel>
+        </GridView.Header>
+        <GridView.Footer>
+          <StackPanel x:Name="GridStates">
+            <TextBlock x:Name="EmptyMessage" Text="This row has no titles right now." Style="{StaticResource SkylineCatalogMessageStyle}" Visibility="Collapsed" />
+            <StackPanel x:Name="MoreErrorPanel" Style="{StaticResource SkylineCatalogRetryPanelStyle}" Visibility="Collapsed">
+              <TextBlock Text="Couldn't load more" Style="{StaticResource SkylinePersonStatusStyle}" />
+              <Button x:Name="MoreRetryButton" Content="Retry" Style="{StaticResource SkylineButtonStyle}" HorizontalAlignment="Center" Click="OnMoreRetryClick" />
+            </StackPanel>
+            <ProgressRing x:Name="MoreLoading" Style="{StaticResource SkylinePersonLoadingStyle}" IsActive="False" Visibility="Collapsed" />
+          </StackPanel>
+        </GridView.Footer>
+      </GridView>
+      <StackPanel x:Name="PersonalEmptyPanel" Style="{StaticResource SkylinePersonalEmptyStyle}" Visibility="Collapsed" IsHitTestVisible="False">
+        <Viewbox Style="{StaticResource SkylinePersonalEmptyIconStyle}">
+          <Path x:Name="PersonalEmptyIcon" Style="{StaticResource SkylinePersonalIconPathStyle}" Fill="{StaticResource SkylineSecondary}" />
+        </Viewbox>
+        <TextBlock x:Name="PersonalEmptyMessage" Style="{StaticResource SkylinePersonalEmptyTextStyle}" />
+      </StackPanel>
+      <ProgressRing x:Name="LoadingRing" Style="{StaticResource SkylinePersonLoadingStyle}" IsActive="False" Visibility="Collapsed" />
+      <StackPanel x:Name="ErrorPanel" Style="{StaticResource SkylineCatalogRetryPanelStyle}" Visibility="Collapsed">
+        <TextBlock x:Name="ErrorMessage" Text="Couldn't load this row." Style="{StaticResource SkylineCatalogMessageStyle}" />
+        <Button x:Name="RetryButton" Content="Retry" Style="{StaticResource SkylineButtonStyle}" HorizontalAlignment="Center" Click="OnRetryClick" />
+      </StackPanel>
+      <StackPanel x:Name="UnavailablePanel" Padding="{StaticResource SkylineCatalogPagePadding}" Visibility="Collapsed">
+        <TextBlock x:Name="UnavailableTitle" Style="{StaticResource SkylineCatalogTitleStyle}" />
+        <TextBlock Text="This row is no longer available." Style="{StaticResource SkylineCatalogMessageStyle}" />
+      </StackPanel>
+    </Grid>
     <!-- Source-specific full-page overlays (for example a toolbar dialog); empty for section pages. -->
-    <Border x:Name="SourceOverlay" Visibility="Collapsed" />
+    <Border x:Name="SourceOverlay" Grid.RowSpan="2" Visibility="Collapsed" />
   </Grid>
 </Page>
