@@ -41,6 +41,8 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     private CardView? _pendingMarquee;
     private CardView? _shownMarquee;
     private string? _libraryId;
+    private string? _libraryMediaScope;
+    private string? _libraryTitle;
     private bool _focusFirstRow;
     private bool _loading;
     private bool _isLoaded;
@@ -136,11 +138,19 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         var parameter = e.Parameter as string ?? HomeParameter;
         _forYou = parameter == ForYouParameter;
         _libraryId = null;
-        if (parameter.StartsWith("library:", StringComparison.Ordinal))
+        _libraryMediaScope = null;
+        _libraryTitle = null;
+        if (e.Parameter is LibraryRecommendedEntry library)
+        {
+            _libraryId = library.LibraryId;
+            _libraryMediaScope = library.MediaScope;
+            _libraryTitle = library.Title;
+        }
+        else if (parameter.StartsWith("library:", StringComparison.Ordinal))
         {
             var parts = parameter.Split(new[] { ':' }, 3);
             _libraryId = parts[1];
-            ScopeCaption.Text = parts.Length > 2 ? parts[2] : string.Empty;
+            _libraryTitle = parts.Length > 2 ? parts[2] : "This library";
         }
 
         VisualStateManager.GoToState(this, _forYou ? "ForYou" : _libraryId is null ? "Home" : "Library", false);
@@ -170,6 +180,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
                 return;
             }
 
+            if (_libraryId is not null) rows = LibraryRecommendedRows.For(rows, _libraryMediaScope);
             var restoreFocus = UpdateRows(rows, refresh);
             if (_rows.Count == 0)
             {
@@ -648,7 +659,8 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         _returning = false;
         if (EmptyPanel.Visibility == Visibility.Visible)
         {
-            FocusStateButton(RefreshButton, EmptyPanel);
+            if (_libraryId is null) FocusStateButton(RefreshButton, EmptyPanel);
+            else ShellPage.Current?.FocusSelectedTab();
         }
         else if (ErrorPanel.Visibility == Visibility.Visible)
         {
@@ -936,11 +948,12 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     {
         ClearMarquee();
         // TvHomeScreen.kt: an empty feed is not an error, and has its own Refresh action.
-        EmptyTitle.Text = _forYou ? "No recommendations yet" : _libraryId is null ? "Nothing to watch yet" : "This library is empty";
+        EmptyTitle.Text = _forYou ? "No recommendations yet" : _libraryId is null ? "Nothing to watch yet" : $"{_libraryTitle} is empty.";
         EmptyMessage.Text = _forYou ? "Watch a few titles and check back."
-            : _libraryId is null ? "Add media to your libraries or start watching to see it here." : "Add media to this library and refresh to see it here.";
+            : _libraryId is null ? "Add media to your libraries or start watching to see it here." : string.Empty;
+        EmptyMessage.Visibility = RefreshButton.Visibility = _libraryId is null ? Visibility.Visible : Visibility.Collapsed;
         VisualStateManager.GoToState(this, "Empty", false);
-        if (focus)
+        if (focus && _libraryId is null)
         {
             FocusStateButton(RefreshButton, EmptyPanel);
         }

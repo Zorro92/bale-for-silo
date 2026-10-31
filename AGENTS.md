@@ -87,6 +87,10 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
   `<!-- rail-layout: non-card — reason -->` comment (a `//` comment for code-built non-card lists).
   Declare card lists in XAML so they can use the style without Native AOT resource lookups.
 - **Grids** stop Left/Right at row ends too (see `SearchPage.OnResultsPreviewKeyDown`).
+  `CatalogGridPage` does the same (`CatalogGridNavigation`). One deliberate exception, matching the
+  official library screen: in Library Browse, Right from a row's last card enters the A–Z rail at
+  All (`OnGridRightEdge` in `CatalogGridPage.Library.cs`) and Left returns to the remembered card.
+  Don't copy it to other grids.
 - **Bumpers, triggers and Page Up/Down do nothing**, app-wide (`App.OnPreviewKeyDown`); the official
   app handles none of them, and a ScrollViewer would page away from focus.
 - **Back to a page restores its focus** through `IRestoresFocus` + `FocusRetry`.

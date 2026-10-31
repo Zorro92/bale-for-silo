@@ -1,0 +1,12 @@
+<UserControl
+    x:Class="Bale.Xbox.Controls.LibraryBrowseToolbar"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- rail-layout: non-card — TvLibraryBrowseControls.kt Sort / Filter / Clear filters pills. -->
+  <ItemsControl x:Name="Controls" IsTabStop="False" PreviewKeyDown="OnControlsKeyDown">
+    <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+    <Button x:Name="SortButton" Style="{StaticResource SkylineLibraryControlStyle}" Click="OnSortClick" />
+    <Button x:Name="FilterButton" Style="{StaticResource SkylineLibraryControlStyle}" Click="OnFilterClick" />
+    <Button x:Name="ClearButton" Content="Clear filters" Style="{StaticResource SkylineLibraryControlStyle}" Click="OnClearClick" Visibility="Collapsed" />
+  </ItemsControl>
+</UserControl>

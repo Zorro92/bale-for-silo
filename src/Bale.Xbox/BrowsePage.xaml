@@ -109,14 +109,8 @@
           </VisualState.Setters>
         </VisualState>
         <VisualState x:Name="ForYou" />
-        <!-- Library landing: pills under the bar and a smaller title. -->
-        <VisualState x:Name="Library">
-          <VisualState.Setters>
-            <Setter Target="PillRow.Visibility" Value="Visible" />
-            <Setter Target="MarqueeTitle.FontSize" Value="{StaticResource SkylineMarqueeTitleCompactSize}" />
-            <Setter Target="MarqueeTitle.LineHeight" Value="35" />
-          </VisualState.Setters>
-        </VisualState>
+        <!-- TvLibraryDetailScreen.kt: Recommended uses the feed; the shell cascade owns all section pills. -->
+        <VisualState x:Name="Library" />
       </VisualStateGroup>
       <!-- TvHomeScreen.kt distinguishes first load, error, empty, and content; refresh keeps content visible. -->
       <VisualStateGroup x:Name="LoadState">
@@ -157,15 +151,6 @@
         </LinearGradientBrush>
       </Rectangle.Fill>
     </Rectangle>
-
-    <!-- Library tabs: sub-destination pills under the bar. Only Browse exists so far. -->
-    <Grid x:Name="PillRow" Margin="44,72,44,0" VerticalAlignment="Top" Visibility="Collapsed">
-      <Button x:Name="BrowsePill" Content="Browse" Style="{StaticResource SkylineCapsuleStyle}" FontSize="{StaticResource SkylinePillSize}"
-              Background="{StaticResource SkylinePrimary}" Foreground="{StaticResource SkylineBackground}" Padding="12,0" Height="{StaticResource SkylineSubPillHeight}"
-              CornerRadius="{StaticResource SkylineSubPill}" HorizontalAlignment="Left" />
-      <TextBlock x:Name="ScopeCaption" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="{StaticResource SkylineCardSubtitleSize}"
-                 Foreground="{StaticResource SkylineTertiary}" />
-    </Grid>
 
     <!--
       TvFocusMarquee: passive, never focusable, anchored just above the rows. Rows of 6: the logo

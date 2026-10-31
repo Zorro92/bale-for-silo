@@ -1,5 +1,5 @@
 {
-  "descriptionHash": "467FDD4F53F4FE45BE29972621C3C028745072EAB33D43BEA4A12785C64000B3CD1EDFB587873860DF1D764513F33CE8AE3C641995EF090B2E09BEF286172730",
+  "descriptionHash": "D020FD7313A59048F1CE8EDB81614E8910198E249A1C72C238B3C9EAB98A9EB86B96E3944CA9638B4110A92CB271275E4CF8DA4DBD2D6ABB74F2B787C36061FB",
   "descriptionLocation": "../../../.cache/silo-openapi-44a345dbfb8c0a5892dc366ee0dd33fc091b7cf2.json",
   "lockFileVersion": "1.0.0",
   "kiotaVersion": "1.36.1",
@@ -46,6 +46,9 @@
     "/api/v2/home/sections/{id}/items",
     "/api/v2/catalog/items/{id}",
     "/api/v2/catalog",
+    "/api/v2/catalog/query",
+    "/api/v2/catalog/filters",
+    "/api/v2/library/{id}/collections",
     "/api/v2/catalog/people",
     "/api/v2/catalog/people/{id}",
     "/api/v2/recommendations/similar/{item_id}",
