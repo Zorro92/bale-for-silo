@@ -46,6 +46,7 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
     partial void ConfigureSource();
     partial void OnSourceLoaded();
     partial void UpdateSourceState();
+    partial void AdjustSourceCardWidth(ref double width);
     partial void OnGridTopUp(ref bool handled);
     partial void OnGridRightEdge(ref bool handled);
     partial void RestoreSourceFocus(ref bool handled);
@@ -119,6 +120,7 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
     {
         // TvSectionBrowseScreen: 40dp left/right, five 20dp gaps, six equal artwork columns.
         var width = Math.Max(1, ((Root.ActualWidth > 0 ? Root.ActualWidth : Window.Current.Bounds.Width) - 80 - 5 * 20) / Columns);
+        AdjustSourceCardWidth(ref width);
         foreach (var card in _entry.Results.Items.Skip(_cards.Count))
         {
             _cards.Add(new CardView(card, _entry.Source.Title, width, CardHeight(card, width), landscape: false)
@@ -277,8 +279,9 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
     {
         if (item is not CardView view || !_entry.IsCurrent(Session.Client)) return;
         _entry.ReturnItemId = view.Card.ContentId;
-        // The normal journal already holds this entry (including its pages and return identity).
-        Frame.Navigate(typeof(DetailPage), view.Card.ContentId);
+        // A Library tab hosts this page in the shell's nested frame; details still cover the shell.
+        // A pushed section grid has no current shell and uses its own (outer) PageFrame/journal.
+        (ShellPage.Current?.Frame ?? Frame).Navigate(typeof(DetailPage), view.Card.ContentId);
     }
 
     public void RestoreFocus()
