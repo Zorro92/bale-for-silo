@@ -45,6 +45,9 @@ public sealed record MediaCard(
 
     public double? PositionSeconds { get; init; }
 
+    /// <summary>TvMediaTypeFilters.kt: audiobook covers are square; other TV posters are 2:3.</summary>
+    public double PosterAspectRatio => Type.Trim().ToLowerInvariant() is "audiobook" or "audiobooks" ? 1 : 2d / 3;
+
     /// <summary>The observed server stamp, required to dismiss a Continue Watching card safely.</summary>
     public DateTimeOffset? ProgressUpdatedAt { get; init; }
 
@@ -118,7 +121,20 @@ public sealed record MediaCard(
     }
 }
 
-public sealed record MediaRow(string Id, string Title, string SectionType, bool Featured, CardShape Shape, IReadOnlyList<MediaCard> Cards);
+public sealed record MediaRow(string Id, string Title, string SectionType, bool Featured, CardShape Shape, IReadOnlyList<MediaCard> Cards)
+{
+    /// <summary>Only server-defined Home/library sections have a full section page; discovery rows do not.</summary>
+    public SectionBrowseSource? ExploreSource { get; init; }
+
+    // SectionRowLimits.kt: even a short row can have titles hidden by Home's cross-row deduplication.
+    public bool OffersExploreAll => ExploreSource is not null && !Featured && Cards.Count > 0;
+
+    /// <summary>TvHomeScreen.kt: only Home's For You row has the header shortcut to the For You tab.</summary>
+    public bool OffersSeeAll => ExploreSource is { LibraryId: null } &&
+        (SectionType.ToLowerInvariant() is "for_you" or "foryou" or "recommendations"
+         || Title.Equals("for you", StringComparison.OrdinalIgnoreCase)
+         || Title.Equals("recommended for you", StringComparison.OrdinalIgnoreCase));
+}
 
 /// <summary>Device-pixel widths the TV draws each kind of art at, so the server sends the right size.</summary>
 public sealed record ArtworkWidths(int Poster, int Backdrop, int Logo, int Still)

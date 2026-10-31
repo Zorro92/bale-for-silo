@@ -16,9 +16,9 @@ public sealed partial class RowView : INotifyPropertyChanged
     public const double PosterWidth = 88;
     public const double PosterHeight = 132;
 
-    /// <summary>16:9 Continue Watching / episode thumb: 180x100 dp.</summary>
+    /// <summary>TvEpisodeCard.kt: 180dp wide, with an exact 16:9 artwork aspect ratio.</summary>
     public const double ThumbWidth = 180;
-    public const double ThumbHeight = 100;
+    public const double ThumbHeight = ThumbWidth * 9 / 16;
 
     public RowView(MediaRow row) => Update(row);
 
@@ -28,15 +28,21 @@ public sealed partial class RowView : INotifyPropertyChanged
 
     // The shared rail layout follows the same dimensions as its cards, including quiet refreshes.
     public double CardWidth => Row.Shape == CardShape.Landscape ? ThumbWidth : PosterWidth;
-    public double CardHeight => Row.Shape == CardShape.Landscape ? ThumbHeight : PosterHeight;
+    public double CardHeight => Row.Shape == CardShape.Landscape ? ThumbHeight
+        : Row.Cards.Select(card => PosterWidth / card.PosterAspectRatio).DefaultIfEmpty(PosterHeight).Max();
 
     /// <summary>Progress rows (Continue Watching, Next Up) get the play glyph before their title.</summary>
     public Visibility IconVisibility => Row.Shape == CardShape.Landscape ? Visibility.Visible : Visibility.Collapsed;
 
-    public ObservableCollection<CardView> Cards { get; } = new();
+    public Services.RailFocusVisual FocusVisual => Row.OffersExploreAll && Row.Shape == CardShape.Poster
+        ? Services.RailFocusVisual.ExplorePoster : Services.RailFocusVisual.Card;
 
-    /// <summary>The card focus last sat on in this row: Up/Down come back to it (TvMediaRow's focusRestorer).</summary>
-    public CardView? LastFocused { get; set; }
+    public Visibility SeeAllVisibility => Row.OffersSeeAll ? Visibility.Visible : Visibility.Collapsed;
+
+    public ObservableCollection<BrowseTileView> Cards { get; } = new();
+
+    /// <summary>The card/end card focus last sat on: Up/Down come back to it (TvMediaRow's focusRestorer).</summary>
+    public BrowseTileView? LastFocused { get; set; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -52,10 +58,11 @@ public sealed partial class RowView : INotifyPropertyChanged
         // TvMediaRow.kt deduplicates by contentId before displaying the rail.
         foreach (var card in row.Cards.DistinctBy(card => card.ContentId))
         {
-            var existing = Cards.Skip(index).FirstOrDefault(view => view.Card.ContentId == card.ContentId);
+            var artHeight = landscape ? height : width / card.PosterAspectRatio;
+            var existing = Cards.Skip(index).OfType<CardView>().FirstOrDefault(view => view.Card.ContentId == card.ContentId);
             if (existing is null)
             {
-                Cards.Insert(index, new CardView(card, row.Title, width, height, landscape));
+                Cards.Insert(index, new CardView(card, row.Title, width, artHeight, landscape));
             }
             else
             {
@@ -65,9 +72,28 @@ public sealed partial class RowView : INotifyPropertyChanged
                     Cards.Move(oldIndex, index);
                 }
 
-                existing.Update(card, row.Title, width, height, landscape);
+                existing.Update(card, row.Title, width, artHeight, landscape);
             }
 
+            index++;
+        }
+
+        if (row.OffersExploreAll)
+        {
+            var explore = Cards.OfType<ExploreAllView>().FirstOrDefault();
+            if (explore is null)
+            {
+                explore = new ExploreAllView();
+                Cards.Insert(index, explore);
+            }
+            else if (Cards.IndexOf(explore) != index)
+            {
+                Cards.Move(Cards.IndexOf(explore), index);
+            }
+
+            // TvMediaRow.kt sizes the end card like the last rendered card, including square covers.
+            var endHeight = landscape ? height : Cards.Take(index).OfType<CardView>().Last().Height;
+            explore.Update(row.ExploreSource!, width, endHeight);
             index++;
         }
 
@@ -85,8 +111,9 @@ public sealed partial class RowView : INotifyPropertyChanged
     }
 }
 
-public sealed partial class CardView : INotifyPropertyChanged
+public sealed partial class CardView : BrowseTileView, INotifyPropertyChanged
 {
+    public override string Key => Card.ContentId;
     public CardView(MediaCard card, string rowTitle, double width, double height, bool landscape) =>
         Update(card, rowTitle, width, height, landscape);
 
@@ -154,9 +181,12 @@ public sealed partial class CardView : INotifyPropertyChanged
 
     public double Height { get; private set; }
 
+    /// <summary>Catalog posters use the 1.10 focus lift from TvMediaCard / siloCardDefaults.</summary>
+    public Services.RailFocusVisual GridFocusVisual { get; init; } = Services.RailFocusVisual.Card;
+
     /// <summary>Vertical grids need the same focus envelope inside each item when it scrolls into view.</summary>
     public Thickness GridHeadroom => new(0, Math.Max(Services.CardRailMetrics.GridTopInset,
-        Services.CardRailMetrics.Headroom(Height)), 0, 0);
+        Services.CardRailMetrics.Headroom(Height, GridFocusVisual)), 0, 0);
 
     /// <summary>Gap between the art and its caption: 11 under posters, 7 under thumbs.</summary>
     public double CaptionSpacing { get; private set; }
