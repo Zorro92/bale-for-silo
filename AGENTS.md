@@ -124,6 +124,10 @@ Each of these crashed or silently broke the app on the console while compiling f
 - **An exception thrown from a handler attached with `AddHandler(..., handledEventsToo: true)`
   ends the app without reaching `UnhandledException`** and without a log line. Wrap those
   handlers in try/catch and log.
+- **Icons are inline `Path Data="M…"` strings** inside a `Viewbox` (Path 24×24 for Material data).
+  UWP can't build a `PathGeometry` resource from a `Figures="M…"` string (WMC0055), and a
+  `PathIcon` doesn't scale its geometry, so 24-unit data in a smaller box draws as a clipped blob.
+  To switch icons by state, stack one `Path` per icon and toggle `Visibility`.
 - `DebugSettings.XamlResourceReferenceFailed` is WinUI 3 only. `GettingFocus` args are
   `GettingFocusEventArgs`. Injected gamepad buttons are `Windows.Gaming.Input.GamepadButtons`.
 - Windows can only partly draw SVG; Silo's DiceBear preset avatars load as PNG

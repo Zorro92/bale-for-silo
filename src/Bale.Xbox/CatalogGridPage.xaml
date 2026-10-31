@@ -63,16 +63,16 @@
       </VisualStateGroup>
       <VisualStateGroup x:Name="PersonalKind">
         <VisualState x:Name="PersonalWatchlist"><VisualState.Setters>
-          <Setter Target="PersonalTitleIcon.Data" Value="{StaticResource SkylineBookmarkOutlineIcon}" />
-          <Setter Target="PersonalEmptyIcon.Data" Value="{StaticResource SkylineBookmarkOutlineIcon}" />
+          <Setter Target="PersonalTitleWatchlistIcon.Visibility" Value="Visible" />
+          <Setter Target="PersonalEmptyWatchlistIcon.Visibility" Value="Visible" />
         </VisualState.Setters></VisualState>
         <VisualState x:Name="PersonalFavorites"><VisualState.Setters>
-          <Setter Target="PersonalTitleIcon.Data" Value="{StaticResource SkylineFavoriteIcon}" />
-          <Setter Target="PersonalEmptyIcon.Data" Value="{StaticResource SkylineFavoriteIcon}" />
+          <Setter Target="PersonalTitleFavoritesIcon.Visibility" Value="Visible" />
+          <Setter Target="PersonalEmptyFavoritesIcon.Visibility" Value="Visible" />
         </VisualState.Setters></VisualState>
         <VisualState x:Name="PersonalHistory"><VisualState.Setters>
-          <Setter Target="PersonalTitleIcon.Data" Value="{StaticResource SkylineHistoryIcon}" />
-          <Setter Target="PersonalEmptyIcon.Data" Value="{StaticResource SkylineHistoryIcon}" />
+          <Setter Target="PersonalTitleHistoryIcon.Visibility" Value="Visible" />
+          <Setter Target="PersonalEmptyHistoryIcon.Visibility" Value="Visible" />
         </VisualState.Setters></VisualState>
       </VisualStateGroup>
       <VisualStateGroup x:Name="PersonalControls">
@@ -88,7 +88,14 @@
       <TextBlock Text="YOUR LIBRARY" Style="{StaticResource SkylinePersonalEyebrowStyle}" />
       <StackPanel Style="{StaticResource SkylinePersonalTitleRowStyle}">
         <Viewbox Style="{StaticResource SkylinePersonalTitleIconStyle}">
-          <Path x:Name="PersonalTitleIcon" Style="{StaticResource SkylinePersonalIconPathStyle}" />
+          <Grid Width="24" Height="24">
+            <Path x:Name="PersonalTitleWatchlistIcon" Style="{StaticResource SkylinePersonalIconPathStyle}" Visibility="Collapsed"
+                Data="M17,3 H7 C5.9,3 5,3.9 5,5 V21 L12,18 L19,21 V5 C19,3.9 18.1,3 17,3 Z M17,18 L12,15.82 L7,18 V5 H17 Z" />
+            <Path x:Name="PersonalTitleFavoritesIcon" Style="{StaticResource SkylinePersonalIconPathStyle}" Visibility="Collapsed"
+                Data="M12,21.35 L10.55,20.03 C5.4,15.36 2,12.28 2,8.5 C2,5.42 4.42,3 7.5,3 C9.24,3 10.91,3.81 12,5.09 C13.09,3.81 14.76,3 16.5,3 C19.58,3 22,5.42 22,8.5 C22,12.28 18.6,15.36 13.45,20.04 Z" />
+            <Path x:Name="PersonalTitleHistoryIcon" Style="{StaticResource SkylinePersonalIconPathStyle}" Visibility="Collapsed"
+                Data="M13,3 C8.03,3 4,7.03 4,12 H1 L4.89,15.89 L4.96,16.03 L9,12 H6 C6,8.13 9.13,5 13,5 C16.87,5 20,8.13 20,12 C20,15.87 16.87,19 13,19 C11.07,19 9.32,18.21 8.06,16.94 L6.64,18.36 C8.27,19.99 10.51,21 13,21 C17.97,21 22,16.97 22,12 C22,7.03 17.97,3 13,3 Z M12,8 V13 L16.28,15.54 L17,14.33 L13.5,12.25 V8 Z" />
+          </Grid>
         </Viewbox>
         <TextBlock x:Name="PersonalTitle" Style="{StaticResource SkylineCatalogTitleStyle}" />
       </StackPanel>
@@ -123,7 +130,14 @@
       </GridView>
       <StackPanel x:Name="PersonalEmptyPanel" Style="{StaticResource SkylinePersonalEmptyStyle}" Visibility="Collapsed" IsHitTestVisible="False">
         <Viewbox Style="{StaticResource SkylinePersonalEmptyIconStyle}">
-          <Path x:Name="PersonalEmptyIcon" Style="{StaticResource SkylinePersonalIconPathStyle}" Fill="{StaticResource SkylineSecondary}" />
+          <Grid Width="24" Height="24">
+            <Path x:Name="PersonalEmptyWatchlistIcon" Style="{StaticResource SkylinePersonalIconPathStyle}" Fill="{StaticResource SkylineSecondary}" Visibility="Collapsed"
+                Data="M17,3 H7 C5.9,3 5,3.9 5,5 V21 L12,18 L19,21 V5 C19,3.9 18.1,3 17,3 Z M17,18 L12,15.82 L7,18 V5 H17 Z" />
+            <Path x:Name="PersonalEmptyFavoritesIcon" Style="{StaticResource SkylinePersonalIconPathStyle}" Fill="{StaticResource SkylineSecondary}" Visibility="Collapsed"
+                Data="M12,21.35 L10.55,20.03 C5.4,15.36 2,12.28 2,8.5 C2,5.42 4.42,3 7.5,3 C9.24,3 10.91,3.81 12,5.09 C13.09,3.81 14.76,3 16.5,3 C19.58,3 22,5.42 22,8.5 C22,12.28 18.6,15.36 13.45,20.04 Z" />
+            <Path x:Name="PersonalEmptyHistoryIcon" Style="{StaticResource SkylinePersonalIconPathStyle}" Fill="{StaticResource SkylineSecondary}" Visibility="Collapsed"
+                Data="M13,3 C8.03,3 4,7.03 4,12 H1 L4.89,15.89 L4.96,16.03 L9,12 H6 C6,8.13 9.13,5 13,5 C16.87,5 20,8.13 20,12 C20,15.87 16.87,19 13,19 C11.07,19 9.32,18.21 8.06,16.94 L6.64,18.36 C8.27,19.99 10.51,21 13,21 C17.97,21 22,16.97 22,12 C22,7.03 17.97,3 13,3 Z M12,8 V13 L16.28,15.54 L17,14.33 L13.5,12.25 V8 Z" />
+          </Grid>
         </Viewbox>
         <TextBlock x:Name="PersonalEmptyMessage" Style="{StaticResource SkylinePersonalEmptyTextStyle}" />
       </StackPanel>
