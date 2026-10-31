@@ -22,6 +22,7 @@ public sealed partial class ShellPage
         AvatarButton.GotFocus += OnAvatarFocus;
         AvatarButton.LostFocus += OnAvatarBlur;
         ProfilePanel.PreviewKeyDown += OnProfilePanelPreviewKeyDown;
+        ProfilePanel.PreviewKeyUp += OnProfilePanelPreviewKeyUp;
         _avatarDwell.Tick += (_, _) =>
         {
             _avatarDwell.Stop();
@@ -74,10 +75,24 @@ public sealed partial class ShellPage
         });
     }
 
+    private void OnProfilePanelPreviewKeyUp(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key is not (VirtualKey.Escape or VirtualKey.Back)) return;
+        e.Handled = true;
+        DismissProfileMenu();
+    }
+
     private void OnProfilePanelPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
         try
         {
+            // TvProfileDropdown dismisses on KeyUp. Consume KeyDown so the app-wide Back policy
+            // cannot close this menu early or handle a held Escape again on the underlying page.
+            if (e.Key is VirtualKey.Escape or VirtualKey.Back)
+            {
+                e.Handled = true;
+                return;
+            }
             var step = e.Key switch
             {
                 VirtualKey.Up or VirtualKey.GamepadDPadUp or VirtualKey.GamepadLeftThumbstickUp => -1,
