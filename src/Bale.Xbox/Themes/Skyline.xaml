@@ -1630,4 +1630,102 @@
     <Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="Spacing" Value="12" /><Setter Property="Margin" Value="24" />
   </Style>
+  <!-- TvLibraryBrowseControls.kt: 14sp controls, 8dp gaps, 94% white focus, 55% black modal scrim. -->
+  <SolidColorBrush x:Key="SkylineLibraryBrowseScrim" Color="#8C000000" />
+  <Style x:Key="SkylineLibraryControlStyle" TargetType="Button" BasedOn="{StaticResource SkylineCapsuleStyle}">
+    <Setter Property="Height" Value="30" /><Setter Property="CornerRadius" Value="15" />
+    <Setter Property="Padding" Value="14,7" /><Setter Property="FontSize" Value="12.04" />
+    <Setter Property="Background" Value="#14FFFFFF" /><Setter Property="BorderBrush" Value="#0FFFFFFF" /><Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Surface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="15" Padding="{TemplateBinding Padding}" RenderTransformOrigin="0.5,0.5">
+            <Border.RenderTransform><ScaleTransform x:Name="Lift" /></Border.RenderTransform>
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Unfocused" />
+                <VisualState x:Name="Focused"><VisualState.Setters>
+                  <Setter Target="Surface.Background" Value="#F0FFFFFF" /><Setter Target="Content.Foreground" Value="#FF000000" />
+                  <Setter Target="Lift.ScaleX" Value="1.04" /><Setter Target="Lift.ScaleY" Value="1.04" />
+                </VisualState.Setters></VisualState>
+                <VisualState x:Name="PointerFocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" FontSize="{TemplateBinding FontSize}" FontFamily="{TemplateBinding FontFamily}"
+                              Foreground="#FFFFFFFF" FontWeight="SemiBold" VerticalContentAlignment="Center" HorizontalContentAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="SkylineLibraryBrowsePanelStyle" TargetType="Border">
+    <Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Background" Value="{StaticResource SkylineGlassStrong}" /><Setter Property="CornerRadius" Value="{StaticResource SkylinePanelRadius}" />
+    <Setter Property="BorderBrush" Value="#1FFFFFFF" /><Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style x:Key="SkylineLibraryBrowseEyebrowStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineMono}" /><Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontSize" Value="12.04" /><Setter Property="LineHeight" Value="15.48" />
+    <Setter Property="CharacterSpacing" Value="143" /><Setter Property="Foreground" Value="#99EDEDED" /><Setter Property="Margin" Value="10,4,0,6" />
+  </Style>
+  <Style x:Key="SkylineLibraryBrowsePanelTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="16.34" /><Setter Property="LineHeight" Value="19.78" />
+    <Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="#FFFFFFFF" />
+  </Style>
+  <Style x:Key="SkylineLibraryBrowseRowStyle" TargetType="Button">
+    <Setter Property="HorizontalAlignment" Value="Stretch" /><Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="FontSize" Value="12.04" /><Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" /><Setter Property="Padding" Value="12,9" />
+    <Setter Property="MinHeight" Value="0" /><Setter Property="MinWidth" Value="0" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Surface" CornerRadius="8" Background="Transparent" Padding="{TemplateBinding Padding}">
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Unfocused" /><VisualState x:Name="PointerFocused" />
+                <VisualState x:Name="Focused"><VisualState.Setters>
+                  <Setter Target="Surface.Background" Value="#FFFFFFFF" /><Setter Target="Content.Foreground" Value="#FF000000" />
+                </VisualState.Setters></VisualState>
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" FontSize="{TemplateBinding FontSize}" FontFamily="{TemplateBinding FontFamily}"
+                              Foreground="#FFFFFFFF" HorizontalContentAlignment="Stretch" />
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <!-- TvAlphabetRail.kt: 42dp letter chips, 18sp mono, selected/focused white, persistent collapsed dot nodes. -->
+  <Style x:Key="SkylineLibraryAlphabetStyle" TargetType="ToggleButton">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineMono}" /><Setter Property="FontSize" Value="15.48" /><Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="MinWidth" Value="0" /><Setter Property="MinHeight" Value="0" /><Setter Property="Padding" Value="0" />
+    <Setter Property="Margin" Value="0,1" /><Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToggleButton">
+          <Border x:Name="Surface" CornerRadius="8" Background="Transparent">
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" /><VisualState x:Name="Disabled" />
+                <VisualState x:Name="Checked"><VisualState.Setters>
+                  <Setter Target="Surface.Background" Value="#FFFFFFFF" /><Setter Target="Content.Foreground" Value="#FF000000" />
+                </VisualState.Setters></VisualState>
+                <VisualState x:Name="CheckedPointerOver" /><VisualState x:Name="CheckedPressed" /><VisualState x:Name="CheckedDisabled" /><VisualState x:Name="Indeterminate" />
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Unfocused" /><VisualState x:Name="PointerFocused" />
+                <VisualState x:Name="Focused"><VisualState.Setters>
+                  <Setter Target="Surface.Background" Value="#FFFFFFFF" /><Setter Target="Content.Foreground" Value="#FF000000" />
+                </VisualState.Setters></VisualState>
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" FontSize="{TemplateBinding FontSize}" FontFamily="{TemplateBinding FontFamily}"
+                              FontWeight="{TemplateBinding FontWeight}" Foreground="#8CFFFFFF" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
 </ResourceDictionary>
