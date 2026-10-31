@@ -22,8 +22,8 @@ public sealed partial class PageFrame : Frame
     private static readonly TimeSpan Fade = TimeSpan.FromMilliseconds(500);
     private static int _activeTransitions;
 
-    private ContentPresenter? _current;
-    private ContentPresenter? _spare;
+    private Border? _current;
+    private Border? _spare;
     private CancellationTokenSource? _preparing;
     private CompositionScopedBatch? _batch;
     private bool _blocksInput;
@@ -51,25 +51,25 @@ public sealed partial class PageFrame : Frame
         FinishTransition();
         if (_current is not null)
         {
-            _current.Content = null;
+            _current.Child = null;
         }
 
         base.OnApplyTemplate();
+        // Slots are Borders: under Native AOT a template's ContentPresenter comes back as a plain
+        // FrameworkElement (see Rail.cs), so it can't be cast to set its content.
         var first = GetTemplateChild("FirstPresenter");
         var second = GetTemplateChild("SecondPresenter");
-        if (first is not ContentPresenter firstPresenter || second is not ContentPresenter secondPresenter)
+        if (first is not Border firstSlot || second is not Border secondSlot)
         {
-            // Native AOT can hand template parts back as an unprojected base type. Without both
-            // slots, FirstPresenter's TemplateBinding still shows the page; it just won't fade.
             Log.Info($"PageFrame: no fade slots ({first?.GetType().FullName ?? "null"}, {second?.GetType().FullName ?? "null"})");
             _current = null;
             _spare = null;
             return;
         }
 
-        _current = firstPresenter;
-        _spare = secondPresenter;
-        _current.Content = Content;
+        _current = firstSlot;
+        _spare = secondSlot;
+        _current.Child = Content as UIElement;
         SetOpacity(_current, 1);
         SetOpacity(_spare, 0);
     }
@@ -79,7 +79,7 @@ public sealed partial class PageFrame : Frame
         // Programmatic redirects (notably session expiry) must not be dropped by the input gate.
         // Finish the old fade before starting their replacement; stale preparation is canceled.
         FinishTransition();
-        if (!e.Cancel && _current?.Content is not null)
+        if (!e.Cancel && _current?.Child is not null)
         {
             _blocksInput = true;
             _activeTransitions++;
@@ -96,7 +96,7 @@ public sealed partial class PageFrame : Frame
         }
 
         ApplyTemplate();
-        if (_current is null || _spare is null || ReferenceEquals(_current.Content, e.Content))
+        if (_current is null || _spare is null || ReferenceEquals(_current.Child, e.Content))
         {
             // The initial destination has no outgoing page, as with a NavHost's start destination.
             FinishTransition();
@@ -109,7 +109,7 @@ public sealed partial class PageFrame : Frame
         SetOpacity(incoming, 0);
         Canvas.SetZIndex(incoming, 1);
         Canvas.SetZIndex(_spare, 0);
-        incoming.Content = e.Content;
+        incoming.Child = e.Content as UIElement;
 
         _preparing = new CancellationTokenSource();
         _ = PrepareFadeAsync((FrameworkElement)e.Content, e.NavigationMode == NavigationMode.Back,
@@ -200,7 +200,7 @@ public sealed partial class PageFrame : Frame
         if (_spare is not null)
         {
             SetOpacity(_spare, 0);
-            _spare.Content = null;
+            _spare.Child = null;
         }
 
         if (_blocksInput)

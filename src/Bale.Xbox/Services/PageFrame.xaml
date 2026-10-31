@@ -5,10 +5,10 @@
   <Frame.Template>
     <ControlTemplate TargetType="Frame">
       <Grid Background="{TemplateBinding Background}">
-        <!-- PageFrame replaces FirstPresenter's TemplateBinding with explicit content so the outgoing
-             page stays loaded until its fade ends; the binding is only the no-fade fallback. -->
-        <ContentPresenter x:Name="FirstPresenter" Content="{TemplateBinding Content}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
-        <ContentPresenter x:Name="SecondPresenter" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+        <!-- PageFrame puts pages in these Borders itself (not TemplateBinding) so the outgoing page
+             stays loaded until its fade ends. Borders, because AOT can't cast a ContentPresenter. -->
+        <Border x:Name="FirstPresenter" />
+        <Border x:Name="SecondPresenter" />
       </Grid>
     </ControlTemplate>
   </Frame.Template>
