@@ -1,3 +1,4 @@
+using System.Net;
 using Bale.Core.Api;
 using Microsoft.Kiota.Abstractions.Authentication;
 using Microsoft.Kiota.Http.HttpClientLibrary;
@@ -16,7 +17,12 @@ public sealed class SiloConnection : IDisposable
     public SiloConnection(Uri server, ClientIdentity identity, Func<CancellationToken, Task<RequestCredentials?>>? credentials = null, HttpMessageHandler? transport = null)
     {
         Server = server;
-        var siloHandler = new SiloRequestHandler(identity, credentials, transport ?? new HttpClientHandler());
+        // The server compresses API responses (zstd, br, gzip); a bare handler sends no Accept-Encoding
+        // and gets plain JSON. .NET can't decode zstd, so offer the rest.
+        var siloHandler = new SiloRequestHandler(identity, credentials, transport ?? new HttpClientHandler
+        {
+            AutomaticDecompression = DecompressionMethods.Brotli | DecompressionMethods.GZip | DecompressionMethods.Deflate,
+        });
         _http = KiotaClientFactory.Create(siloHandler);
         var adapter = new HttpClientRequestAdapter(new AnonymousAuthenticationProvider(), httpClient: _http)
         {
