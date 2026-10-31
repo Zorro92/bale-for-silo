@@ -16,7 +16,7 @@
         <TextBlock Text="Who's watching?" FontSize="{StaticResource SkylineProfileTitleSize}" FontWeight="ExtraBold" HorizontalAlignment="Center" />
         <TextBlock x:Name="AccountText" Text=" " FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineSecondary}"
                    HorizontalAlignment="Center" Margin="0,7,0,0" />
-        <GridView x:Name="Profiles" Margin="0,20,0,0" MaxWidth="852" MaxHeight="310" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnProfileClick"
+        <GridView x:Name="Profiles" Margin="0,20,0,0" MaxWidth="852" MaxHeight="310" ScrollViewer.VerticalScrollBarVisibility="Hidden" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnProfileClick"
                   GotFocus="OnProfileFocus" LostFocus="OnProfileBlur" PreviewKeyDown="OnProfilesPreviewKeyDown" HorizontalAlignment="Center"
                   Padding="0" ItemContainerStyle="{StaticResource SkylineProfileItemStyle}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                   ScrollViewer.VerticalScrollBarVisibility="Hidden">

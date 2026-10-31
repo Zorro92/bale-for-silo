@@ -352,7 +352,19 @@ public sealed partial class SearchPage : Page, IRestoresFocus
         }
 
         var card = _cards[index];
-        bool TryFocus() => ResultContainers().FirstOrDefault(container => ReferenceEquals(container.Content, card))?.Focus(FocusState.Programmatic) == true;
+        bool TryFocus()
+        {
+            if (ResultContainers().FirstOrDefault(container => ReferenceEquals(container.Content, card)) is not { } container
+                || !container.Focus(FocusState.Programmatic))
+            {
+                return false;
+            }
+
+            // Programmatic focus never scrolls; without this Up/Down left the focused poster off screen.
+            // OnResultBringIntoViewRequested adds the same margins a directional move gets.
+            container.StartBringIntoView();
+            return true;
+        }
         if (TryFocus())
         {
             return;

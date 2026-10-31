@@ -42,7 +42,7 @@
     The grid spans the page so a focused poster's lift and ring are never clipped.
   -->
   <Grid>
-    <GridView x:Name="Results" Padding="40,2,8,40" SelectionMode="None" IsItemClickEnabled="True"
+    <GridView x:Name="Results" Padding="40,2,8,40" SelectionMode="None" IsItemClickEnabled="True" ScrollViewer.VerticalScrollBarVisibility="Hidden"
               ItemClick="OnResultClick" GotFocus="OnResultFocus" LostFocus="OnResultBlur">
       <GridView.Header>
         <StackPanel Margin="0,90,0,0">
