@@ -14,6 +14,18 @@ public sealed class LibraryCatalogSource(string title, LibraryBrowseQuery query,
     public string Title { get; } = title;
     public LibraryBrowseQuery Query { get; private set; } = query;
     public bool? LibraryHasItems { get; private set; }
+    public long? Total { get; private set; }
+    public bool IsPersonal => Query.PersonalList is not null;
+    public bool ShowsAlphabet => !IsPersonal && Query.Filter.ShowsAlphabet;
+    public string EmptyMessage => Query.PersonalList == "watchlist" ? "Your watchlist is empty" : "No favorites yet";
+
+    /// <summary>PersonalListViewModels.kt: cross-library, forty cards, server's stored list order.</summary>
+    public static LibraryCatalogSource Personal(string kind, LibraryBrowseFeed library) => kind switch
+    {
+        "watchlist" => new("Watchlist", new(null, null, new() { Sort = LibrarySortOption.ListOrder }, PersonalList: kind), library),
+        "favorites" => new("Favorites", new(null, null, new() { Sort = LibrarySortOption.ListOrder }, PersonalList: kind), library),
+        _ => throw new ArgumentException("Unknown personal list.", nameof(kind)),
+    };
 
     public void SetFilter(LibraryBrowseFilter filter)
     {
@@ -22,7 +34,7 @@ public sealed class LibraryCatalogSource(string title, LibraryBrowseQuery query,
     }
 
     public Task<CatalogFilters?> FiltersAsync(CancellationToken cancellationToken = default) =>
-        library.FiltersAsync(Query.LibraryId, Query.CollectionId, Query.UserCollection, cancellationToken);
+        library.FiltersAsync(Query.LibraryId, Query.CollectionId, Query.UserCollection, cancellationToken, Query.PersonalList);
 
     public async Task<SearchResultPage> LoadPageAsync(BrowseFeed feed, ArtworkWidths widths, SearchContinuation? continuation,
         CancellationToken cancellationToken = default)
@@ -42,7 +54,11 @@ public sealed class LibraryCatalogSource(string title, LibraryBrowseQuery query,
             _continuations.Add(next, more);
         }
 
-        if (Query == requestedQuery && continuation is null) LibraryHasItems = page.LibraryHasItems;
-        return new SearchResultPage(page.Cards, page.Cards.Count, false, next);
+        if (Query == requestedQuery)
+        {
+            if (continuation is null) LibraryHasItems = page.LibraryHasItems;
+            Total = page.Total;
+        }
+        return new SearchResultPage(page.Cards, page.Total ?? page.Cards.Count, page.Total is not null, next);
     }
 }
