@@ -1,0 +1,15 @@
+<Frame
+    x:Class="Bale.Xbox.Services.PageFrame"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Frame.Template>
+    <ControlTemplate TargetType="Frame">
+      <Grid Background="{TemplateBinding Background}">
+        <!-- Content is assigned by PageFrame, not TemplateBinding: the outgoing page must stay
+             loaded until its fade ends, including its Composition artwork and remembered focus. -->
+        <ContentPresenter x:Name="FirstPresenter" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+        <ContentPresenter x:Name="SecondPresenter" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+      </Grid>
+    </ControlTemplate>
+  </Frame.Template>
+</Frame>

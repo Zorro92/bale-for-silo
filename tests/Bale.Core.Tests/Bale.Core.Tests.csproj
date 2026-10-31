@@ -19,6 +19,8 @@
     <ProjectReference Include="../../src/Bale.Core/Bale.Core.csproj" />
     <!-- Exercise Xbox's pure layout math on Linux without referencing UWP/XAML. -->
     <Compile Include="../../src/Bale.Xbox/Services/CardRailMetrics.cs" Link="CardRailMetrics.cs" />
+    <!-- Test focus retry coordination against a minimal event/tree stand-in, not the UWP runtime. -->
+    <Compile Include="../../src/Bale.Xbox/Services/FocusRetry.cs" Link="FocusRetry.cs" />
   </ItemGroup>
 
 </Project>
