@@ -1,9 +1,19 @@
 namespace Bale.Core.Browse;
 
-/// <summary>A paged grid's item source, separate from its presentation (no sort/filter UI assumptions).</summary>
+/// <summary>
+/// A paged grid's item source, separate from its presentation (no sort/filter UI assumptions).
+/// The page retains one source per navigation entry. A source may own mutable query state; changing
+/// it must restart the grid, never reuse a continuation from the previous query.
+/// </summary>
 public interface ICatalogGridSource
 {
     string Title { get; }
+
+    /// <summary>
+    /// Null continuation starts a query; later calls receive only this source's opaque continuation.
+    /// Return poster cards in server order and drain filtered-only pages until a card or the end.
+    /// Honor cancellation; the page also fences late responses, so an old query cannot replace a new one.
+    /// </summary>
     Task<SearchResultPage> LoadPageAsync(BrowseFeed feed, ArtworkWidths widths, SearchContinuation? continuation,
         CancellationToken cancellationToken = default);
 }

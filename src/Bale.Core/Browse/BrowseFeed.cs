@@ -28,20 +28,14 @@ public sealed class BrowseFeed
     /// <summary>Home's rows.</summary>
     public async Task<IReadOnlyList<MediaRow>> LoadHomeAsync(ArtworkWidths widths, CancellationToken cancellationToken = default)
     {
-        // item_limit is only safe to send when the server advertises it.
-        _capabilities ??= await _api.Api.V2.Home.Capabilities.GetAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-        var limitMax = _capabilities?.SectionItemLimitMax;
-
+        var itemLimit = await SectionItemLimitAsync(cancellationToken).ConfigureAwait(false);
         var response = await _api.Api.V2.Home.Sections.GetAsync(config =>
         {
             config.QueryParameters.PosterWidth = widths.Poster;
             config.QueryParameters.BackdropWidth = widths.Backdrop;
             config.QueryParameters.LogoWidth = widths.Logo;
             config.QueryParameters.StillWidth = widths.Still;
-            if (limitMax is > 0)
-            {
-                config.QueryParameters.ItemLimit = Math.Min(CardsPerRow, limitMax.Value);
-            }
+            config.QueryParameters.ItemLimit = itemLimit;
         }, cancellationToken).ConfigureAwait(false);
 
         return ToRows(response?.Sections);
@@ -67,15 +61,26 @@ public sealed class BrowseFeed
     /// <summary>A library's Browse landing: its server-defined rows.</summary>
     public async Task<IReadOnlyList<MediaRow>> LoadLibraryAsync(string libraryId, ArtworkWidths widths, CancellationToken cancellationToken = default)
     {
+        var itemLimit = await SectionItemLimitAsync(cancellationToken).ConfigureAwait(false);
         var response = await _api.Api.V2.Library[libraryId].Sections.GetAsync(config =>
         {
             config.QueryParameters.PosterWidth = widths.Poster;
             config.QueryParameters.BackdropWidth = widths.Backdrop;
             config.QueryParameters.LogoWidth = widths.Logo;
             config.QueryParameters.StillWidth = widths.Still;
+            config.QueryParameters.ItemLimit = itemLimit;
         }, cancellationToken).ConfigureAwait(false);
 
         return ToRows(response?.Sections, libraryId);
+    }
+
+    private async Task<int?> SectionItemLimitAsync(CancellationToken cancellationToken)
+    {
+        // SectionApi.kt / SectionRowLimits.kt: Home and library rows share the advertised cap.
+        // Older servers reject an unknown item_limit parameter, so null must omit it entirely.
+        _capabilities ??= await _api.Api.V2.Home.Capabilities.GetAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+        var maximum = _capabilities?.SectionItemLimitMax;
+        return maximum is > 0 ? (int)Math.Min(CardsPerRow, maximum.Value) : null;
     }
 
     /// <summary>For You: the server's recommendation rows (TvRecommendationsScreen, /recommendations/discover).</summary>
@@ -97,7 +102,8 @@ public sealed class BrowseFeed
                 row.Kind ?? string.Empty,
                 false,
                 CardShape.Poster,
-                row.Items!.Take(CardsPerRow).Select(item => ToCard(item, CardShape.Poster)).ToList()))
+                // TvSkylineSectionFeed caps only section rows that can open their full grid.
+                row.Items!.Select(item => ToCard(item, CardShape.Poster)).ToList()))
             .ToList();
     }
 

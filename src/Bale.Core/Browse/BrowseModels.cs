@@ -45,6 +45,9 @@ public sealed record MediaCard(
 
     public double? PositionSeconds { get; init; }
 
+    /// <summary>TvMediaTypeFilters.kt: audiobook covers are square; other TV posters are 2:3.</summary>
+    public double PosterAspectRatio => Type.Trim().ToLowerInvariant() is "audiobook" or "audiobooks" ? 1 : 2d / 3;
+
     /// <summary>The observed server stamp, required to dismiss a Continue Watching card safely.</summary>
     public DateTimeOffset? ProgressUpdatedAt { get; init; }
 

@@ -13,6 +13,10 @@ public class CardRailMetricsTests
     [InlineData(180, 101, RailFocusVisual.Episode, 5, 4)]
     [InlineData(124, 186, RailFocusVisual.Calendar, 8, 10)]
     [InlineData(235, 180, RailFocusVisual.Trailer, 7, 6)]
+    [InlineData(88, 132, RailFocusVisual.ExplorePoster, 13, 15)]
+    [InlineData(88, 88, RailFocusVisual.ExplorePoster, 13, 13)]
+    [InlineData(130, 195, RailFocusVisual.ExplorePoster, 15, 18)]
+    [InlineData(276, 414, RailFocusVisual.ExplorePoster, 22, 29)]
     public void EveryCardShapeHasEnoughRoomForItsExistingFocusVisual(double width, double height,
         RailFocusVisual visual, double horizontal, double vertical)
     {
@@ -47,6 +51,21 @@ public class CardRailMetricsTests
         Assert.Equal(inset.Bottom, padding.Bottom + margin.Bottom);
         Assert.True(padding.Right >= CardRailMetrics.Headroom(width));
         Assert.Equal(0, margin.Right); // Negative right margins would lose the last card to the page clip.
+    }
+
+    [Fact]
+    public void ExplorePosterEnvelopePreservesBothHomeSafeAreasAndTheRestingRowPosition()
+    {
+        var inset = new RailInsets(44, 7, 40, 7);
+        var (padding, margin) = CardRailMetrics.Layout(88, 132, inset, RailFocusVisual.ExplorePoster);
+
+        Assert.Equal(44, padding.Left);
+        Assert.Equal(40, padding.Right);
+        Assert.Equal(0, margin.Left);
+        Assert.Equal(0, margin.Right);
+        Assert.Equal(inset.Top, padding.Top + margin.Top);
+        Assert.Equal(inset.Bottom, padding.Bottom + margin.Bottom);
+        Assert.True(padding.Top >= 132 * (1.10f - 1) / 2 + CardRailMetrics.GlowOutset * 1.10f + CardRailMetrics.SafetyMargin);
     }
 
     [Fact]
