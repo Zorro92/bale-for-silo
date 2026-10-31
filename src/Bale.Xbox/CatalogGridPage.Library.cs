@@ -16,6 +16,7 @@ public sealed partial class CatalogGridPage : IBackHandler
     private LibraryBrowseToolbar? _libraryToolbar;
     private LibraryBrowseOverlay? _libraryOverlay;
     private Control? _libraryReloadFocus;
+    private int? _libraryAlphabetReturnIndex;
     private bool _libraryInitialFocus;
     private bool _libraryFilterOpening;
 
@@ -52,11 +53,7 @@ public sealed partial class CatalogGridPage : IBackHandler
             Cards.IsEnabled = !open;
             _libraryToolbar.IsEnabled = !open;
         };
-        _libraryOverlay.GridRequested += () =>
-        {
-            if (_cards.Count > 0) FocusAt(Math.Clamp(_lastFocusedIndex, 0, _cards.Count - 1));
-            else _libraryToolbar.FocusControls();
-        };
+        _libraryOverlay.GridRequested += RestoreLibraryGridFocus;
         _libraryOverlay.AlphabetExpanded += _ => UpdateLibraryGridWidth();
         PreviewKeyDown += OnLibraryPreviewKeyDown;
         UpdateLibraryGridWidth();
@@ -69,16 +66,6 @@ public sealed partial class CatalogGridPage : IBackHandler
         var reserved = _librarySource.Query.Filter.ShowsAlphabet ? (_libraryOverlay?.AlphabetHasFocus == true ? 96 : 18) + 16 : 0;
         Cards.Margin = new Thickness(0, 0, reserved, 0);
         SyncCards();
-    }
-
-    partial void AdjustSourceCardWidth(ref double width)
-    {
-        if (_librarySource is null) return;
-        var reserved = _librarySource.Query.Filter.ShowsAlphabet ? (_libraryOverlay?.AlphabetHasFocus == true ? 96 : 18) + 16 : 0;
-        var viewport = Root.ActualWidth > 0 ? Root.ActualWidth : Window.Current.Bounds.Width;
-        // ItemsWrapGrid measures all six trailing 20dp item margins, not just the five visible gaps.
-        // Include the actual XAML padding or a nominal six-column calculation wraps down to five.
-        width = Math.Max(1, (viewport - reserved - Cards.Padding.Left - Cards.Padding.Right - 6 * 20) / 6);
     }
 
     private async Task OpenLibraryFiltersAsync()
@@ -111,6 +98,7 @@ public sealed partial class CatalogGridPage : IBackHandler
             return;
         }
         _libraryReloadFocus = FocusManager.GetFocusedElement() as Control;
+        _libraryAlphabetReturnIndex = null; // A new query no longer contains the card the rail was entered from.
         _librarySource.SetFilter(filter);
         LibraryBrowseSettings.Save(_entry.Client, _librarySource.Query);
         _libraryToolbar?.Update(filter);
@@ -144,11 +132,29 @@ public sealed partial class CatalogGridPage : IBackHandler
         handled = true;
     }
 
-    partial void OnGridRightEdge(ref bool handled)
+    partial void OnGridRightEdge(int index, ref bool handled)
     {
         // TvAlphabetRail.kt's enter target is always All. This is a library-only grid-edge exception:
         // horizontal card rails still stop at both ends, and every Up/Down remains column-preserving.
-        handled = _libraryOverlay?.FocusAlphabet() == true;
+        handled = FocusLibraryAlphabet(index);
+    }
+
+    private bool FocusLibraryAlphabet(int index)
+    {
+        // Latch the departure before expansion reflows the grid. Unlike _lastFocusedIndex, this
+        // target cannot be overwritten by incidental card focus during layout or rail traversal.
+        var previous = _libraryAlphabetReturnIndex;
+        _libraryAlphabetReturnIndex = index;
+        _focusGeneration++;
+        if (_libraryOverlay?.FocusAlphabet() == true) return true;
+        _libraryAlphabetReturnIndex = previous;
+        return false;
+    }
+
+    private void RestoreLibraryGridFocus()
+    {
+        if (_cards.Count > 0) FocusAt(Math.Clamp(_libraryAlphabetReturnIndex ?? _lastFocusedIndex, 0, _cards.Count - 1));
+        else _libraryToolbar?.FocusControls();
     }
 
     partial void RestoreSourceFocus(ref bool handled)
@@ -185,7 +191,9 @@ public sealed partial class CatalogGridPage : IBackHandler
         if (e.Handled || _libraryOverlay?.IsOpen == true) return;
         if (e.Key == VirtualKey.Tab && _librarySource?.Query.Filter.ShowsAlphabet == true)
         {
-            e.Handled = _libraryOverlay?.FocusAlphabet() == true;
+            e.Handled = _libraryOverlay?.AlphabetHasFocus == true
+                ? _libraryOverlay.FocusAlphabet()
+                : FocusLibraryAlphabet(_lastFocusedIndex);
         }
     }
 

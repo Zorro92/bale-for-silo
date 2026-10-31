@@ -234,6 +234,63 @@ public class CatalogGridTests
     }
 
     [Theory]
+    [InlineData(960, 0, 150, 130)]
+    [InlineData(960, 34, 144, 124)]
+    [InlineData(960, 112, 131, 111)]
+    [InlineData(1920, 0, 310, 290)]
+    [InlineData(1920, 34, 304, 284)]
+    [InlineData(1920, 112, 291, 271)]
+    public void SixColumnsFitWithNoAlphabetOrACollapsedOrExpandedRail(double pageWidth, double railMargin, double itemWidth, double cardWidth)
+    {
+        // Cards.ActualWidth has already lost the rail reservation. Its 40/20 padding and each
+        // container's trailing 20px margin must be counted exactly once, including the sixth margin.
+        var gridWidth = pageWidth - railMargin;
+        var available = gridWidth - 40 - 20;
+
+        var layout = CatalogGridLayout.Measure(available, 6, 20);
+
+        Assert.Equal(itemWidth, layout.ItemWidth);
+        Assert.Equal(cardWidth, layout.CardWidth);
+        Assert.Equal(layout.ItemWidth, layout.CardWidth + 20);
+        Assert.True(layout.ItemWidth * 6 <= available);
+        Assert.True(available - layout.ItemWidth * 6 < 6);
+    }
+
+    [Theory]
+    [InlineData(960)]
+    [InlineData(1920)]
+    public void FractionalViewportWidthsCannotRoundTheSixthSlotOntoAnotherRow(double pageWidth)
+    {
+        for (var railMargin = 0d; railMargin <= 112; railMargin += 0.25)
+        {
+            var available = pageWidth - railMargin - 60;
+            var layout = CatalogGridLayout.Measure(available, 6, 20);
+
+            Assert.Equal(Math.Floor(layout.ItemWidth), layout.ItemWidth);
+            Assert.True(Math.Ceiling(layout.CardWidth + 20) * 6 <= available);
+            Assert.Equal(6d, Math.Floor(available / layout.ItemWidth));
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-100)]
+    [InlineData(60)]
+    public void UnmeasuredOrTinyViewportsKeepAPositiveCardWidth(double available)
+    {
+        var layout = CatalogGridLayout.Measure(available, 6, 20);
+
+        Assert.Equal(1, layout.CardWidth);
+        Assert.Equal(21, layout.ItemWidth);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void LayoutRequiresAPositiveColumnCount(int columns) =>
+        Assert.Throws<ArgumentOutOfRangeException>(() => CatalogGridLayout.Measure(900, columns, 20));
+
+    [Theory]
     [InlineData(0, 14, 6, GridDirection.Left, 0)]
     [InlineData(5, 14, 6, GridDirection.Right, 5)]
     [InlineData(6, 14, 6, GridDirection.Left, 6)]
