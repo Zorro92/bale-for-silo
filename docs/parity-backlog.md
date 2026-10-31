@@ -55,8 +55,8 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 - [ ] Home refreshes when returned to
 
 ## Wave 2: missing pieces of existing screens
-- [ ] Detail: Trailers & More, Recommended/Related, Details facts table
-- [ ] Cast clickable → Person page
+- [x] Detail: Trailers & More, Recommended/Related, Details facts table
+- [x] Cast clickable → Person page
 - [ ] Long-press / Menu card actions (Play, watched, favorite, watchlist, remove from Home); episode card menu
 - [ ] "Explore all" end card; "See all" header
 - [ ] Library: "Recommended" pill; Browse grid (6 cols, sort, filter, A–Z, paging); Collections; cascade level 2 + footer hint; "MOVIE LIBRARIES"
