@@ -596,6 +596,109 @@
     </Setter>
   </Style>
 
+  <!--
+    TvMediaCardActions.kt: a scrim-free anchored popup, not Detail's centered dialog. Compose's
+    border overlays its padding, so the outline must not subtract from the 260-wide row content.
+  -->
+  <Style x:Key="SkylineCardMenuPanelStyle" TargetType="Border">
+    <Setter Property="Width" Value="276" />
+    <Setter Property="Padding" Value="8" />
+    <Setter Property="CornerRadius" Value="14" />
+    <Setter Property="Background" Value="{StaticResource SkylineSurfaceElevated}" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+  </Style>
+  <Style x:Key="SkylineCardMenuOutlineStyle" TargetType="Border">
+    <Setter Property="Margin" Value="-8" />
+    <Setter Property="CornerRadius" Value="14" />
+    <Setter Property="BorderBrush" Value="#2EFFFFFF" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+  <Style x:Key="SkylineCardMenuOptionsStyle" TargetType="StackPanel">
+    <Setter Property="Spacing" Value="3" />
+  </Style>
+  <Style x:Key="SkylineCardMenuContentStyle" TargetType="Grid">
+    <Setter Property="ColumnSpacing" Value="8" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineCardMenuIconStyle" TargetType="Viewbox">
+    <Setter Property="Width" Value="17" />
+    <Setter Property="Height" Value="17" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineCardMenuLabelStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="12.04" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="LineHeight" Value="15.48" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineCardMenuRowStyle" TargetType="Button">
+    <Setter Property="Height" Value="38" />
+    <Setter Property="Padding" Value="10,0" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="12.04" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="#FFFFFFFF" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid>
+            <!-- CardActionMenu adds a rounded-mask Composition shadow: white @ 14%, blur 10. -->
+            <Border x:Name="GlowHost" Opacity="0" IsHitTestVisible="False">
+              <Rectangle x:Name="GlowMask" RadiusX="10" RadiusY="10" Fill="#FFFFFFFF" />
+            </Border>
+            <Border x:Name="Row" Background="#0AFFFFFF" CornerRadius="10" />
+            <!-- SurfaceBorder.kt strokes the outline's center, half outside the row. -->
+            <Border x:Name="FocusBorder" Margin="-0.75" CornerRadius="10.75" BorderThickness="1.5"
+                    BorderBrush="#FFFFFFFF" Opacity="0" IsHitTestVisible="False" />
+            <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}"
+                              Foreground="{TemplateBinding Foreground}" FontFamily="{TemplateBinding FontFamily}"
+                              FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}"
+                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+            <!-- TvMenuRow fixes every scale at 1; Surface colors, border and glow change without a tween. -->
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" />
+                <VisualState x:Name="PointerOver" />
+                <VisualState x:Name="Pressed">
+                  <VisualState.Setters>
+                    <Setter Target="Row.Background" Value="{StaticResource SkylinePrimary}" />
+                    <Setter Target="Content.Foreground" Value="{StaticResource SkylineBackground}" />
+                    <Setter Target="FocusBorder.Opacity" Value="1" />
+                    <Setter Target="GlowHost.Opacity" Value="0" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="Disabled" />
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters>
+                    <Setter Target="Row.Background" Value="{StaticResource SkylinePrimary}" />
+                    <Setter Target="Content.Foreground" Value="{StaticResource SkylineBackground}" />
+                    <Setter Target="FocusBorder.Opacity" Value="1" />
+                    <Setter Target="GlowHost.Opacity" Value="1" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="PointerFocused" />
+                <VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- Detail's centered More Actions panel (TvOptionDialog.kt / TvPlayerChrome.kt), not an anchored flyout. -->
   <Style x:Key="SkylineDetailDialogPanelStyle" TargetType="Border">
     <Setter Property="Background" Value="#FF17181B" />

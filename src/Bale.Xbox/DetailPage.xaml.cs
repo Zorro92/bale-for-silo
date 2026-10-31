@@ -816,6 +816,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
 
     private static void ApplyCardFocus(ContentControl? item, bool focused)
     {
+        if (!focused && item is not null && CardFocus.IsRetained(item)) return;
         if (item?.ContentTemplateRoot is not FrameworkElement root)
         {
             return;

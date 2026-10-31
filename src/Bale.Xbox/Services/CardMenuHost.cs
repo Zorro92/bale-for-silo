@@ -28,8 +28,8 @@ internal sealed class CardMenuHost
     private VirtualKey? _heldKey;
     private bool _longPress;
     private bool _loaded;
-    private bool _surfaceEnabled;
-    private bool _surfaceDisabled;
+    private bool _surfaceHitTestVisible;
+    private bool _surfaceBlocked;
     private int _generation;
     private CancellationTokenSource? _opening;
     private ContentControl? _origin;
@@ -50,6 +50,7 @@ internal sealed class CardMenuHost
         ((Grid)page.Content).Children.Add(_menu);
         page.PreviewKeyDown += OnKeyDown;
         page.PreviewKeyUp += OnKeyUp;
+        surface.GettingFocus += OnSurfaceGettingFocus;
         page.Loaded += (_, _) => _loaded = true;
         page.Unloaded += (_, _) =>
         {
@@ -161,6 +162,19 @@ internal sealed class CardMenuHost
         }
     }
 
+    private void OnSurfaceGettingFocus(UIElement sender, GettingFocusEventArgs args)
+    {
+        try
+        {
+            // Keep programmatic/page-refresh focus moves inside the popup too, without disabling cards.
+            if (_menu.IsOpen && _menu.FocusTarget is { } row) args.TrySetNewFocusedElement(row);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Card menu focus capture", ex);
+        }
+    }
+
     private async Task OpenAsync(ContentControl origin)
     {
         if (!_loaded || IsOpen || Session.Client is not { } client || origin.Content is not { } item) return;
@@ -187,9 +201,12 @@ internal sealed class CardMenuHost
             _origin = origin;
             _client = client;
             _profile = profile;
-            _surfaceEnabled = _surface.IsEnabled;
-            _surfaceDisabled = true;
-            _surface.IsEnabled = false;
+            // A focusable Android Popup leaves its card enabled and visually focused. Block input
+            // without UWP's disabled-content dimming, then suppress the card's ordinary blur styling.
+            CardFocus.Retain(origin);
+            _surfaceHitTestVisible = _surface.IsHitTestVisible;
+            _surfaceBlocked = true;
+            _surface.IsHitTestVisible = false;
             _menu.Show(target.Entries, origin);
         }
         catch (OperationCanceledException) when (opening.IsCancellationRequested)
@@ -306,13 +323,18 @@ internal sealed class CardMenuHost
         _opening = null;
         var origin = _origin;
         var item = _target?.Item;
-        if (_surfaceDisabled)
+        _menu.Hide();
+        if (origin is not null)
         {
-            _surfaceDisabled = false;
-            _surface.IsEnabled = _surfaceEnabled;
+            CardFocus.Release(origin, clearVisuals: !restore || !_loaded || !ReferenceEquals(origin.Content, item));
         }
 
-        _menu.Hide();
+        if (_surfaceBlocked)
+        {
+            _surfaceBlocked = false;
+            _surface.IsHitTestVisible = _surfaceHitTestVisible;
+        }
+
         _origin = null;
         _target = null;
         _client = null;

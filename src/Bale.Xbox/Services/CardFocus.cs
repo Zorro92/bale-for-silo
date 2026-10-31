@@ -15,9 +15,25 @@ internal static class CardFocus
     public const float ArtScale = CardRailMetrics.ArtScale;
 
     private static readonly TimeSpan Duration = TimeSpan.FromMilliseconds(120);
+    private static ContentControl? _retained;
+
+    // TvMediaCardContextMenu owns input in a separate popup without unfocusing the underlying card.
+    // Retain its existing visuals, including page-specific scale/ring treatment, not actual focus.
+    public static bool IsRetained(ContentControl item) => ReferenceEquals(_retained, item);
+    public static void Retain(ContentControl item) => _retained = item;
+
+    public static void Release(ContentControl item, bool clearVisuals)
+    {
+        if (!IsRetained(item)) return;
+        _retained = null;
+        if (!clearVisuals) return;
+        Apply(item, false);
+        if (item.ContentTemplateRoot is FrameworkElement root) SetOpacity(root, "EpisodeFocusRing", 0);
+    }
 
     public static void Apply(ContentControl item, bool focused, float artScale = ArtScale)
     {
+        if (!focused && IsRetained(item)) return;
         if (item.ContentTemplateRoot is not FrameworkElement root)
         {
             return;
