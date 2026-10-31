@@ -902,4 +902,282 @@
     <Setter Property="Background" Value="{StaticResource SkylinePinKeyFill}" />
     <Setter Property="BorderThickness" Value="1" />
   </Style>
+
+  <!-- Calendar parity: TvCalendarScreen.kt (controls, day shelves and event cards).
+       Keep this section together: Calendar is developed independently of the Detail/Person styles. -->
+  <LinearGradientBrush x:Key="SkylineCalendarBackdrop" StartPoint="1,0" EndPoint="0,1">
+    <GradientStop Color="#FF14365A" Offset="0" />
+    <GradientStop Color="#8014365A" Offset="0.45" />
+    <GradientStop Color="#2E14365A" Offset="1" />
+  </LinearGradientBrush>
+  <SolidColorBrush x:Key="SkylineCalendarWhite" Color="#FFFFFFFF" />
+  <SolidColorBrush x:Key="SkylineCalendarCapsuleFill" Color="#0FFFFFFF" />
+  <SolidColorBrush x:Key="SkylineCalendarSelectedFill" Color="#E0FFFFFF" />
+  <SolidColorBrush x:Key="SkylineCalendarDayFill" Color="#0DFFFFFF" />
+  <SolidColorBrush x:Key="SkylineCalendarTodayBorder" Color="#59FFFFFF" />
+  <SolidColorBrush x:Key="SkylineCalendarTitle" Color="#D9FFFFFF" />
+  <SolidColorBrush x:Key="SkylineCalendarSubtitle" Color="#BFFFFFFF" />
+  <SolidColorBrush x:Key="SkylineCalendarMuted" Color="#80FFFFFF" />
+  <SolidColorBrush x:Key="SkylineCalendarMessageCopy" Color="#9EFFFFFF" />
+  <SolidColorBrush x:Key="SkylineCalendarMonth" Color="#99FFFFFF" />
+  <SolidColorBrush x:Key="SkylineCalendarBadgeFill" Color="#EBFFFFFF" />
+  <SolidColorBrush x:Key="SkylineCalendarTimeFill" Color="#9E000000" />
+  <Thickness x:Key="SkylineCalendarTopInset">0,94,0,0</Thickness>
+  <Thickness x:Key="SkylineCalendarContentPadding">0,8,0,28</Thickness>
+  <Thickness x:Key="SkylineCalendarSafeInset">40,0,40,0</Thickness>
+  <Thickness x:Key="SkylineCalendarRailPadding">40,8,40,4</Thickness>
+  <Thickness x:Key="SkylineCalendarOverlayInset">6</Thickness>
+  <Thickness x:Key="SkylineCalendarFilterPadding">6</Thickness>
+  <CornerRadius x:Key="SkylineCalendarFilterRadius">18.31</CornerRadius>
+  <CornerRadius x:Key="SkylineCalendarPosterRadius">10</CornerRadius>
+  <CornerRadius x:Key="SkylineCalendarDayRadius">6</CornerRadius>
+  <x:Double x:Key="SkylineCalendarControlsHeight">108</x:Double>
+  <x:Double x:Key="SkylineCalendarControlGap">12</x:Double>
+  <x:Double x:Key="SkylineCalendarDayGap">10</x:Double>
+  <x:Double x:Key="SkylineCalendarFilterGap">6</x:Double>
+  <x:Double x:Key="SkylineCalendarShelfGap">8</x:Double>
+  <x:Double x:Key="SkylineCalendarCaptionGap">8</x:Double>
+  <x:Double x:Key="SkylineCalendarCaptionLineGap">2</x:Double>
+  <x:Double x:Key="SkylineCalendarBadgeGap">4</x:Double>
+  <x:Double x:Key="SkylineCalendarActionGap">16</x:Double>
+  <x:Double x:Key="SkylineCalendarMessageGap">10</x:Double>
+  <x:Double x:Key="SkylineCalendarPosterWidth">124</x:Double>
+  <x:Double x:Key="SkylineCalendarPosterHeight">186</x:Double>
+  <x:Double x:Key="SkylineCalendarDayWidth">52</x:Double>
+  <x:Double x:Key="SkylineCalendarDayHeight">60</x:Double>
+  <Thickness x:Key="SkylineCalendarEmptyMessageInset">40,32,40,0</Thickness>
+
+  <Style x:Key="SkylineCalendarSegmentStyle" TargetType="ToggleButton" BasedOn="{StaticResource SkylineFilterChipStyle}">
+    <Setter Property="Height" Value="24.62" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Padding" Value="12,0" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineTertiary}" />
+    <Setter Property="FontSize" Value="12.04" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToggleButton">
+          <!-- Like SkylineFilterChipStyle, separate selection/focus layers avoid state-group collisions.
+               Content is a string, never a visual: it is presented in all three layers. -->
+          <Grid RenderTransformOrigin="0.5,0.5">
+            <Grid.RenderTransform><ScaleTransform x:Name="Lift" /></Grid.RenderTransform>
+            <ContentPresenter Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}" Foreground="{TemplateBinding Foreground}"
+                              FontSize="{TemplateBinding FontSize}" FontWeight="SemiBold" VerticalContentAlignment="Center" />
+            <Grid x:Name="CheckedLayer" Opacity="0">
+              <Border CornerRadius="12.31" Background="{StaticResource SkylineCalendarSelectedFill}" />
+              <ContentPresenter Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}" Foreground="{StaticResource SkylineBackground}"
+                                FontSize="{TemplateBinding FontSize}" FontWeight="SemiBold" VerticalContentAlignment="Center" />
+            </Grid>
+            <Grid x:Name="FocusLayer" Opacity="0">
+              <Border CornerRadius="12.31" Background="{StaticResource SkylinePrimary}" />
+              <ContentPresenter Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}" Foreground="{StaticResource SkylineBackground}"
+                                FontSize="{TemplateBinding FontSize}" FontWeight="SemiBold" VerticalContentAlignment="Center" />
+            </Grid>
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" /><VisualState x:Name="Disabled" />
+                <VisualState x:Name="Checked"><VisualState.Setters><Setter Target="CheckedLayer.Opacity" Value="1" /></VisualState.Setters></VisualState>
+                <VisualState x:Name="CheckedPointerOver"><VisualState.Setters><Setter Target="CheckedLayer.Opacity" Value="1" /></VisualState.Setters></VisualState>
+                <VisualState x:Name="CheckedPressed"><VisualState.Setters><Setter Target="CheckedLayer.Opacity" Value="1" /></VisualState.Setters></VisualState>
+                <VisualState x:Name="CheckedDisabled" />
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters><Setter Target="FocusLayer.Opacity" Value="1" /></VisualState.Setters>
+                  <Storyboard>
+                    <DoubleAnimation Storyboard.TargetName="Lift" Storyboard.TargetProperty="ScaleX" To="1.05" Duration="0:0:0.12" />
+                    <DoubleAnimation Storyboard.TargetName="Lift" Storyboard.TargetProperty="ScaleY" To="1.05" Duration="0:0:0.12" />
+                  </Storyboard>
+                </VisualState>
+                <VisualState x:Name="PointerFocused" /><VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style x:Key="SkylineCalendarDayStyle" TargetType="ToggleButton" BasedOn="{StaticResource SkylineCalendarSegmentStyle}">
+    <Setter Property="Width" Value="{StaticResource SkylineCalendarDayWidth}" />
+    <Setter Property="Height" Value="{StaticResource SkylineCalendarDayHeight}" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToggleButton">
+          <!-- Content is the weekday string and Tag is the day-number string; no duplicated visual. -->
+          <Grid RenderTransformOrigin="0.5,0.5">
+            <Grid.RenderTransform><ScaleTransform x:Name="Lift" /></Grid.RenderTransform>
+            <Border Background="{StaticResource SkylineCalendarDayFill}" CornerRadius="{StaticResource SkylineCalendarDayRadius}" />
+            <StackPanel Spacing="3" VerticalAlignment="Center">
+              <ContentPresenter Content="{TemplateBinding Content}" FontSize="12.04" Foreground="{StaticResource SkylineCalendarSubtitle}"
+                                HorizontalAlignment="Center" />
+              <ContentPresenter Content="{TemplateBinding Tag}" FontSize="13.76" FontWeight="Bold" Foreground="{StaticResource SkylineCalendarWhite}"
+                                HorizontalAlignment="Center" />
+              <Border Height="4" />
+            </StackPanel>
+            <Grid x:Name="CheckedLayer" Opacity="0">
+              <Border Background="{StaticResource SkylineCalendarSelectedFill}" CornerRadius="{StaticResource SkylineCalendarDayRadius}" />
+              <StackPanel Spacing="3" VerticalAlignment="Center">
+                <ContentPresenter Content="{TemplateBinding Content}" FontSize="12.04" Foreground="{StaticResource SkylineBackground}"
+                                  Opacity="0.7" HorizontalAlignment="Center" />
+                <ContentPresenter Content="{TemplateBinding Tag}" FontSize="13.76" FontWeight="Bold" Foreground="{StaticResource SkylineBackground}"
+                                  HorizontalAlignment="Center" />
+                <Border Height="4" />
+              </StackPanel>
+            </Grid>
+            <Grid x:Name="FocusLayer" Opacity="0">
+              <Border Background="{StaticResource SkylinePrimary}" CornerRadius="{StaticResource SkylineCalendarDayRadius}" />
+              <StackPanel Spacing="3" VerticalAlignment="Center">
+                <ContentPresenter Content="{TemplateBinding Content}" FontSize="12.04" Foreground="{StaticResource SkylineBackground}"
+                                  Opacity="0.7" HorizontalAlignment="Center" />
+                <ContentPresenter Content="{TemplateBinding Tag}" FontSize="13.76" FontWeight="Bold" Foreground="{StaticResource SkylineBackground}"
+                                  HorizontalAlignment="Center" />
+                <Border Height="4" />
+              </StackPanel>
+            </Grid>
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" /><VisualState x:Name="Disabled" />
+                <VisualState x:Name="Checked"><VisualState.Setters><Setter Target="CheckedLayer.Opacity" Value="1" /></VisualState.Setters></VisualState>
+                <VisualState x:Name="CheckedPointerOver"><VisualState.Setters><Setter Target="CheckedLayer.Opacity" Value="1" /></VisualState.Setters></VisualState>
+                <VisualState x:Name="CheckedPressed"><VisualState.Setters><Setter Target="CheckedLayer.Opacity" Value="1" /></VisualState.Setters></VisualState>
+                <VisualState x:Name="CheckedDisabled" />
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters><Setter Target="FocusLayer.Opacity" Value="1" /></VisualState.Setters>
+                  <Storyboard>
+                    <DoubleAnimation Storyboard.TargetName="Lift" Storyboard.TargetProperty="ScaleX" To="1.06" Duration="0:0:0.12" />
+                    <DoubleAnimation Storyboard.TargetName="Lift" Storyboard.TargetProperty="ScaleY" To="1.06" Duration="0:0:0.12" />
+                  </Storyboard>
+                </VisualState>
+                <VisualState x:Name="PointerFocused" /><VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style x:Key="SkylineCalendarTodayOutlineStyle" TargetType="Border">
+    <Setter Property="CornerRadius" Value="{StaticResource SkylineCalendarDayRadius}" />
+    <Setter Property="BorderBrush" Value="{StaticResource SkylineCalendarTodayBorder}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+  <Style x:Key="SkylineCalendarEventDotStyle" TargetType="Ellipse">
+    <Setter Property="Width" Value="4" /><Setter Property="Height" Value="4" />
+    <Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Bottom" />
+    <Setter Property="Margin" Value="0,0,0,8" /><Setter Property="Fill" Value="{StaticResource SkylineCalendarWhite}" />
+    <Setter Property="Opacity" Value="0.8" /><Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+  <Style x:Key="SkylineCalendarSelectedDotStyle" TargetType="Ellipse" BasedOn="{StaticResource SkylineCalendarEventDotStyle}">
+    <Setter Property="Fill" Value="{StaticResource SkylineBackground}" /><Setter Property="Opacity" Value="1" />
+  </Style>
+  <Style x:Key="SkylineCalendarChevronStyle" TargetType="Button" BasedOn="{StaticResource SkylineCapsuleStyle}">
+    <Setter Property="Width" Value="28" /><Setter Property="Height" Value="28" />
+    <Setter Property="MinWidth" Value="0" /><Setter Property="MinHeight" Value="0" />
+    <Setter Property="CornerRadius" Value="14" /><Setter Property="Padding" Value="0" />
+    <Setter Property="Background" Value="{StaticResource SkylineChromeResting}" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineTertiary}" />
+  </Style>
+  <Style x:Key="SkylineCalendarChevronIconStyle" TargetType="FontIcon"><Setter Property="FontSize" Value="24" /></Style>
+  <Style x:Key="SkylineCalendarTodayStyle" TargetType="Button" BasedOn="{StaticResource SkylineCapsuleStyle}">
+    <Setter Property="Height" Value="36.36" /><Setter Property="CornerRadius" Value="18.18" />
+    <Setter Property="Padding" Value="10,0" /><Setter Property="FontSize" Value="17.2" />
+    <Setter Property="Background" Value="{StaticResource SkylineChromeResting}" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineCalendarSubtitle}" />
+  </Style>
+  <Style x:Key="SkylineCalendarMonthStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="13.33" /><Setter Property="LineHeight" Value="15.91" />
+    <Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="{StaticResource SkylineCalendarMonth}" />
+    <Setter Property="VerticalAlignment" Value="Center" /><Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="SkylineCalendarHeaderStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="18.92" /><Setter Property="LineHeight" Value="24.08" />
+    <Setter Property="FontWeight" Value="Bold" /><Setter Property="Foreground" Value="{StaticResource SkylineCalendarWhite}" />
+    <Setter Property="Margin" Value="{StaticResource SkylineCalendarSafeInset}" />
+  </Style>
+  <Style x:Key="SkylineCalendarCardItemStyle" TargetType="ListViewItem" BasedOn="{StaticResource SkylineCardItemStyle}">
+    <Setter Property="Margin" Value="0,0,18,0" />
+  </Style>
+  <Style x:Key="SkylineCalendarPosterStyle" TargetType="Grid">
+    <Setter Property="Width" Value="{StaticResource SkylineCalendarPosterWidth}" />
+    <Setter Property="Height" Value="{StaticResource SkylineCalendarPosterHeight}" />
+  </Style>
+  <Style x:Key="SkylineCalendarPosterSurfaceStyle" TargetType="Grid">
+    <Setter Property="CornerRadius" Value="{StaticResource SkylineCalendarPosterRadius}" />
+    <Setter Property="Background" Value="{StaticResource SkylineCalendarCapsuleFill}" />
+  </Style>
+  <Style x:Key="SkylineCalendarFocusRingStyle" TargetType="Border">
+    <Setter Property="Margin" Value="-2.5" /><Setter Property="CornerRadius" Value="12.5" />
+    <Setter Property="BorderBrush" Value="{StaticResource SkylineFocusRing}" /><Setter Property="BorderThickness" Value="2.5" />
+    <Setter Property="Opacity" Value="0" /><Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+  <Style x:Key="SkylineCalendarCardTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="15.05" /><Setter Property="LineHeight" Value="17.63" />
+    <Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="{StaticResource SkylineCalendarTitle}" />
+    <Setter Property="TextWrapping" Value="Wrap" /><Setter Property="MaxLines" Value="2" /><Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="SkylineCalendarCardSubtitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="12.04" /><Setter Property="LineHeight" Value="15.48" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineCalendarSubtitle}" /><Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="SkylineCalendarFallbackStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineCalendarCardSubtitleStyle}">
+    <Setter Property="TextWrapping" Value="Wrap" /><Setter Property="TextAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" /><Setter Property="Margin" Value="8" />
+  </Style>
+  <Style x:Key="SkylineCalendarBadgeStyle" TargetType="Border">
+    <Setter Property="Height" Value="21.48" /><Setter Property="CornerRadius" Value="10.74" /><Setter Property="Padding" Value="8,0" />
+    <Setter Property="Background" Value="{StaticResource SkylineCalendarBadgeFill}" /><Setter Property="HorizontalAlignment" Value="Left" />
+  </Style>
+  <Style x:Key="SkylineCalendarBadgeTextStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="12.04" /><Setter Property="LineHeight" Value="15.48" /><Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineBackground}" /><Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" /><Setter Property="MaxLines" Value="1" />
+  </Style>
+  <Style x:Key="SkylineCalendarTimeStyle" TargetType="Border" BasedOn="{StaticResource SkylineCalendarBadgeStyle}">
+    <Setter Property="Background" Value="{StaticResource SkylineCalendarTimeFill}" /><Setter Property="Padding" Value="9,0" />
+    <Setter Property="Margin" Value="{StaticResource SkylineCalendarOverlayInset}" /><Setter Property="HorizontalAlignment" Value="Right" />
+    <Setter Property="VerticalAlignment" Value="Bottom" />
+  </Style>
+  <Style x:Key="SkylineCalendarTimeTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineCalendarBadgeTextStyle}">
+    <Setter Property="Foreground" Value="{StaticResource SkylineCalendarWhite}" /><Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style x:Key="SkylineCalendarWatchedStyle" TargetType="Border">
+    <Setter Property="Width" Value="17" /><Setter Property="Height" Value="17" /><Setter Property="CornerRadius" Value="8.5" />
+    <Setter Property="Background" Value="{StaticResource SkylineCalendarWhite}" /><Setter Property="Margin" Value="{StaticResource SkylineCalendarOverlayInset}" />
+    <Setter Property="HorizontalAlignment" Value="Right" /><Setter Property="VerticalAlignment" Value="Top" />
+  </Style>
+  <Style x:Key="SkylineCalendarWatchedIconStyle" TargetType="FontIcon">
+    <Setter Property="FontSize" Value="12" /><Setter Property="Foreground" Value="{StaticResource SkylineBackground}" />
+  </Style>
+  <Style x:Key="SkylineCalendarNothingIconStyle" TargetType="FontIcon">
+    <Setter Property="FontSize" Value="20" /><Setter Property="Foreground" Value="{StaticResource SkylineCalendarWhite}" /><Setter Property="Opacity" Value="0.32" />
+  </Style>
+  <Style x:Key="SkylineCalendarNothingStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="17.2" /><Setter Property="LineHeight" Value="24.08" /><Setter Property="Foreground" Value="{StaticResource SkylineCalendarMuted}" />
+  </Style>
+  <Style x:Key="SkylineCalendarMessageIconStyle" TargetType="FontIcon">
+    <Setter Property="FontSize" Value="22" /><Setter Property="Foreground" Value="{StaticResource SkylineCalendarWhite}" /><Setter Property="Opacity" Value="0.3" />
+  </Style>
+  <Style x:Key="SkylineCalendarMessageTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="13.33" /><Setter Property="LineHeight" Value="15.91" /><Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineCalendarWhite}" /><Setter Property="TextAlignment" Value="Center" /><Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style x:Key="SkylineCalendarMessageCopyStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineCalendarMessageTitleStyle}">
+    <Setter Property="FontSize" Value="12.47" /><Setter Property="LineHeight" Value="15.05" /><Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineCalendarMessageCopy}" />
+  </Style>
+  <Style x:Key="SkylineCalendarMessageActionStyle" TargetType="Button" BasedOn="{StaticResource SkylineCapsuleStyle}">
+    <Setter Property="Width" Value="140" /><Setter Property="Height" Value="29.91" /><Setter Property="CornerRadius" Value="14.955" />
+    <Setter Property="FontSize" Value="13.33" /><Setter Property="Padding" Value="0" /><Setter Property="Background" Value="#1AFFFFFF" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineCalendarWhite}" />
+  </Style>
+  <Style x:Key="SkylineCalendarLoadingStyle" TargetType="ProgressRing">
+    <Setter Property="Width" Value="32" /><Setter Property="Height" Value="32" /><Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
+  </Style>
+  <!-- End Calendar parity. -->
 </ResourceDictionary>

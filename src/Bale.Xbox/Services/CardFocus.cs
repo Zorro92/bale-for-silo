@@ -16,7 +16,7 @@ internal static class CardFocus
 
     private static readonly TimeSpan Duration = TimeSpan.FromMilliseconds(120);
 
-    public static void Apply(ContentControl item, bool focused)
+    public static void Apply(ContentControl item, bool focused, float artScale = ArtScale)
     {
         if (item.ContentTemplateRoot is not FrameworkElement root)
         {
@@ -25,11 +25,13 @@ internal static class CardFocus
 
         SetOpacity(root, "FocusRing", focused ? 1 : 0);
         SetOpacity(root, "FocusGlow", focused ? 1 : 0);
+        // CalendarEventCard brightens its caption but keeps it outside the focus lift.
+        SetOpacity(root, "FocusCaption", focused ? 1 : 0);
         if (root.FindName("Art") is FrameworkElement art)
         {
             art.ScaleTransition ??= new Vector3Transition { Duration = Duration };
             art.CenterPoint = new Vector3((float)art.ActualWidth / 2, (float)art.ActualHeight / 2, 0);
-            var scale = focused ? ArtScale : 1f;
+            var scale = focused ? artScale : 1f;
             art.Scale = new Vector3(scale, scale, 1);
         }
     }

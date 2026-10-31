@@ -1,5 +1,6 @@
 using Bale.Core.Api.Models;
 using Bale.Core.Browse;
+using Bale.Core.Detail;
 using Bale.Xbox.Services;
 using Bale.Xbox.Views;
 using Windows.UI.Xaml;
@@ -91,6 +92,10 @@ public sealed partial class ShellPage : Page, IBackHandler
             else if (ContentFrame.Content is BrowsePage browse)
             {
                 browse.FocusContent();
+            }
+            else if (ContentFrame.Content is CalendarPage calendar)
+            {
+                calendar.FocusContent();
             }
             else
             {
@@ -475,6 +480,13 @@ public sealed partial class ShellPage : Page, IBackHandler
     {
         ClosePanels();
         Frame.Navigate(typeof(DetailPage), contentId);
+    }
+
+    /// <summary>TvCalendarScreen carries an exact episode selection into the combined Series page.</summary>
+    internal void OpenDetail(SeriesDetailEntry entry)
+    {
+        ClosePanels();
+        Frame.Navigate(typeof(DetailPage), entry);
     }
 
     /// <summary>Explicit sign-out returns to server entry; session expiry instead keeps the login server.</summary>

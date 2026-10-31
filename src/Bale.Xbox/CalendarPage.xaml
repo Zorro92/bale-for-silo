@@ -2,14 +2,178 @@
     x:Class="Bale.Xbox.CalendarPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:Bale.Xbox.Views"
     Background="{StaticResource SkylineBackground}">
 
-  <!-- Placeholder for the Calendar root (TvCalendarScreen): upcoming episodes and releases come later. -->
-  <StackPanel Margin="44,0,44,0" VerticalAlignment="Center" HorizontalAlignment="Left" Orientation="Horizontal" Spacing="14">
-    <FontIcon Glyph="&#xE787;" FontSize="24" Foreground="#80FFFFFF" VerticalAlignment="Top" Margin="0,2,0,0" />
-    <StackPanel Spacing="4">
-      <TextBlock Text="Calendar is coming to Bale" FontSize="17.2" FontWeight="SemiBold" />
-      <TextBlock Text="Upcoming episodes and releases from your libraries will show here." FontSize="13" Foreground="{StaticResource SkylineSecondary}" />
-    </StackPanel>
-  </StackPanel>
+  <Page.Resources>
+    <DataTemplate x:Key="FilterTemplate" x:DataType="views:CalendarFilterView">
+      <ToggleButton Content="{x:Bind Label}" IsChecked="{x:Bind Selected, Mode=OneWay}"
+                    Style="{StaticResource SkylineCalendarSegmentStyle}" Click="OnFilterClick" />
+    </DataTemplate>
+    <DataTemplate x:Key="DayTemplate" x:DataType="views:CalendarDayView">
+      <Grid Width="{StaticResource SkylineCalendarDayWidth}" Height="{StaticResource SkylineCalendarDayHeight}">
+        <ToggleButton Content="{x:Bind Weekday, Mode=OneWay}" Tag="{x:Bind Number, Mode=OneWay}"
+                      IsChecked="{x:Bind Selected, Mode=OneWay}" AutomationProperties.Name="{x:Bind AccessibleDate, Mode=OneWay}"
+                      Style="{StaticResource SkylineCalendarDayStyle}" Click="OnDayClick" GotFocus="OnDayFocus" LostFocus="OnDayBlur" />
+        <Border Style="{StaticResource SkylineCalendarTodayOutlineStyle}" Visibility="{x:Bind TodayOutlineVisibility, Mode=OneWay}" />
+        <Ellipse Style="{StaticResource SkylineCalendarEventDotStyle}" Visibility="{x:Bind RestingDotVisibility, Mode=OneWay}" />
+        <Ellipse Style="{StaticResource SkylineCalendarSelectedDotStyle}" Visibility="{x:Bind InvertedDotVisibility, Mode=OneWay}" />
+      </Grid>
+    </DataTemplate>
+    <DataTemplate x:Key="BadgeTemplate" x:DataType="views:CalendarBadgeView">
+      <Border Style="{StaticResource SkylineCalendarBadgeStyle}">
+        <TextBlock Text="{x:Bind Text}" Style="{StaticResource SkylineCalendarBadgeTextStyle}" />
+      </Border>
+    </DataTemplate>
+    <!-- Browse/Search's Art + FocusRing card pattern and shared CardFocus animation, adapted to
+         CalendarEventCard: portrait, white premiere/finale pills, watched check and real air time. -->
+    <DataTemplate x:Key="CardTemplate" x:DataType="views:CalendarCardView">
+      <StackPanel Width="{StaticResource SkylineCalendarPosterWidth}" Spacing="{StaticResource SkylineCalendarCaptionGap}"
+                  Opacity="{x:Bind WatchedOpacity, Mode=OneWay}">
+        <Grid x:Name="Art" Style="{StaticResource SkylineCalendarPosterStyle}">
+          <Grid Style="{StaticResource SkylineCalendarPosterSurfaceStyle}">
+            <TextBlock Text="{x:Bind Title, Mode=OneWay}" Visibility="{x:Bind FallbackVisibility, Mode=OneWay}" Style="{StaticResource SkylineCalendarFallbackStyle}" />
+            <Image Source="{x:Bind Image, Mode=OneWay}" Stretch="UniformToFill" SizeChanged="OnPosterSizeChanged" />
+            <ItemsControl ItemsSource="{x:Bind Badges, Mode=OneWay}" ItemTemplate="{StaticResource BadgeTemplate}"
+                          Margin="{StaticResource SkylineCalendarOverlayInset}" HorizontalAlignment="Left" VerticalAlignment="Top"
+                          IsTabStop="False" IsHitTestVisible="False">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><StackPanel Spacing="{StaticResource SkylineCalendarBadgeGap}" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+            </ItemsControl>
+            <Border Style="{StaticResource SkylineCalendarWatchedStyle}" Visibility="{x:Bind WatchedVisibility, Mode=OneWay}">
+              <FontIcon Glyph="&#xE73E;" Style="{StaticResource SkylineCalendarWatchedIconStyle}" AutomationProperties.Name="Watched" />
+            </Border>
+            <Border Style="{StaticResource SkylineCalendarTimeStyle}" Visibility="{x:Bind AirTimeVisibility, Mode=OneWay}">
+              <TextBlock Text="{x:Bind AirTime, Mode=OneWay}" Style="{StaticResource SkylineCalendarTimeTextStyle}" />
+            </Border>
+          </Grid>
+          <Border x:Name="FocusRing" Style="{StaticResource SkylineCalendarFocusRingStyle}" />
+        </Grid>
+        <StackPanel Spacing="{StaticResource SkylineCalendarCaptionLineGap}">
+          <Grid>
+            <TextBlock Text="{x:Bind Title, Mode=OneWay}" Style="{StaticResource SkylineCalendarCardTitleStyle}" />
+            <TextBlock x:Name="FocusCaption" Text="{x:Bind Title, Mode=OneWay}" Style="{StaticResource SkylineCalendarCardTitleStyle}"
+                       Foreground="{StaticResource SkylineCalendarWhite}" Opacity="0" />
+          </Grid>
+          <TextBlock Text="{x:Bind Subtitle, Mode=OneWay}" Visibility="{x:Bind SubtitleVisibility, Mode=OneWay}"
+                     Style="{StaticResource SkylineCalendarCardSubtitleStyle}" />
+        </StackPanel>
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate x:Key="ShelfTemplate" x:DataType="views:CalendarDayView">
+      <StackPanel Spacing="{StaticResource SkylineCalendarControlGap}">
+        <TextBlock Text="{x:Bind Header, Mode=OneWay}" Opacity="{x:Bind HeaderOpacity, Mode=OneWay}" Style="{StaticResource SkylineCalendarHeaderStyle}" />
+        <StackPanel Orientation="Horizontal" Margin="{StaticResource SkylineCalendarSafeInset}" Spacing="{StaticResource SkylineCalendarShelfGap}"
+                    Visibility="{x:Bind EmptyVisibility, Mode=OneWay}">
+          <FontIcon Glyph="&#xE787;" Style="{StaticResource SkylineCalendarNothingIconStyle}" />
+          <TextBlock Text="Nothing scheduled" Style="{StaticResource SkylineCalendarNothingStyle}" />
+        </StackPanel>
+        <ListView ItemsSource="{x:Bind Cards}" ItemTemplate="{StaticResource CardTemplate}" ItemContainerStyle="{StaticResource SkylineCalendarCardItemStyle}"
+                  Visibility="{x:Bind EventVisibility, Mode=OneWay}" SelectionMode="None" IsItemClickEnabled="True"
+                  ItemClick="OnCardClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur" Loaded="OnRailLoaded"
+                  Padding="{StaticResource SkylineCalendarRailPadding}" ScrollViewer.HorizontalScrollMode="Enabled"
+                  ScrollViewer.HorizontalScrollBarVisibility="Hidden" ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+          <ListView.ItemsPanel>
+            <ItemsPanelTemplate><ItemsStackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+          </ListView.ItemsPanel>
+        </ListView>
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate x:Key="ActionTemplate" x:DataType="views:CalendarActionView">
+      <Button Content="{x:Bind Label}" Style="{StaticResource SkylineCalendarMessageActionStyle}" Click="OnActionClick" />
+    </DataTemplate>
+  </Page.Resources>
+
+  <Grid>
+    <VisualStateManager.VisualStateGroups>
+      <VisualStateGroup x:Name="LoadState">
+        <VisualState x:Name="Content" />
+        <VisualState x:Name="Loading">
+          <VisualState.Setters>
+            <Setter Target="DayShelves.Visibility" Value="Collapsed" />
+            <Setter Target="StatePanel.Visibility" Value="Visible" />
+            <Setter Target="LoadingRing.Visibility" Value="Visible" />
+            <Setter Target="LoadingRing.IsActive" Value="True" />
+          </VisualState.Setters>
+        </VisualState>
+        <VisualState x:Name="Empty">
+          <VisualState.Setters>
+            <Setter Target="DayShelves.Visibility" Value="Collapsed" />
+            <Setter Target="StatePanel.Visibility" Value="Visible" />
+            <Setter Target="MessagePanel.Visibility" Value="Visible" />
+          </VisualState.Setters>
+        </VisualState>
+        <VisualState x:Name="Error">
+          <VisualState.Setters>
+            <Setter Target="DayShelves.Visibility" Value="Collapsed" />
+            <Setter Target="StatePanel.Visibility" Value="Visible" />
+            <Setter Target="MessagePanel.Visibility" Value="Visible" />
+            <Setter Target="MessagePanel.VerticalAlignment" Value="Center" />
+            <Setter Target="MessagePanel.Margin" Value="{StaticResource SkylineCalendarSafeInset}" />
+          </VisualState.Setters>
+        </VisualState>
+      </VisualStateGroup>
+    </VisualStateManager.VisualStateGroups>
+
+    <Rectangle x:Name="Wash" Fill="{StaticResource SkylineCalendarBackdrop}" IsHitTestVisible="False" />
+    <!-- TvCalendarScreen uses ONE vertical surface. Controls scroll away when a shelf snaps to
+         the top; the page owns vertical scrolling and Rail suppresses card bring-into-view. -->
+    <ScrollViewer x:Name="CalendarScroller" Margin="{StaticResource SkylineCalendarTopInset}" Padding="{StaticResource SkylineCalendarContentPadding}"
+                  HorizontalScrollMode="Disabled" VerticalScrollBarVisibility="Hidden" IsTabStop="False">
+      <StackPanel x:Name="CalendarContent" Spacing="{StaticResource SkylineCalendarShelfGap}">
+        <StackPanel x:Name="Controls" Margin="{StaticResource SkylineCalendarSafeInset}" MinHeight="{StaticResource SkylineCalendarControlsHeight}"
+                    Spacing="{StaticResource SkylineCalendarControlGap}" GotFocus="OnControlsFocus">
+          <Border Background="{StaticResource SkylineCalendarCapsuleFill}" Padding="{StaticResource SkylineCalendarFilterPadding}"
+                  CornerRadius="{StaticResource SkylineCalendarFilterRadius}" HorizontalAlignment="Left">
+            <ItemsControl x:Name="Filters" ItemTemplate="{StaticResource FilterTemplate}" XYFocusKeyboardNavigation="Enabled" IsTabStop="False">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylineCalendarFilterGap}" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+            </ItemsControl>
+          </Border>
+          <Grid x:Name="WeekStrip">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylineCalendarControlGap}">
+              <Button x:Name="PreviousWeekButton" Style="{StaticResource SkylineCalendarChevronStyle}" Click="OnPreviousWeekClick" AutomationProperties.Name="Previous week">
+                <FontIcon Glyph="&#xE76B;" Style="{StaticResource SkylineCalendarChevronIconStyle}" />
+              </Button>
+              <ItemsControl x:Name="WeekDates" ItemTemplate="{StaticResource DayTemplate}" XYFocusKeyboardNavigation="Enabled" IsTabStop="False">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylineCalendarDayGap}" /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+              </ItemsControl>
+              <Button x:Name="NextWeekButton" Style="{StaticResource SkylineCalendarChevronStyle}" Click="OnNextWeekClick" AutomationProperties.Name="Next week">
+                <FontIcon Glyph="&#xE76C;" Style="{StaticResource SkylineCalendarChevronIconStyle}" />
+              </Button>
+              <Button x:Name="TodayButton" Content="Today" Style="{StaticResource SkylineCalendarTodayStyle}" Click="OnTodayClick" Visibility="Collapsed" />
+            </StackPanel>
+            <TextBlock x:Name="MonthYear" Grid.Column="1" HorizontalAlignment="Right" Style="{StaticResource SkylineCalendarMonthStyle}" />
+          </Grid>
+        </StackPanel>
+
+        <ItemsControl x:Name="DayShelves" ItemTemplate="{StaticResource ShelfTemplate}" IsTabStop="False">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><StackPanel Spacing="{StaticResource SkylineCalendarShelfGap}" /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+        </ItemsControl>
+        <Grid x:Name="StatePanel" Height="{Binding ActualHeight, ElementName=CalendarScroller}" Visibility="Collapsed">
+          <ProgressRing x:Name="LoadingRing" Style="{StaticResource SkylineCalendarLoadingStyle}" IsActive="False" Visibility="Collapsed" />
+          <StackPanel x:Name="MessagePanel" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="{StaticResource SkylineCalendarEmptyMessageInset}"
+                      Spacing="{StaticResource SkylineCalendarMessageGap}" Visibility="Collapsed">
+            <FontIcon Glyph="&#xE787;" Style="{StaticResource SkylineCalendarMessageIconStyle}" />
+            <TextBlock x:Name="MessageTitle" Style="{StaticResource SkylineCalendarMessageTitleStyle}" />
+            <TextBlock x:Name="MessageCopy" Style="{StaticResource SkylineCalendarMessageCopyStyle}" />
+            <ItemsControl x:Name="StateActions" ItemTemplate="{StaticResource ActionTemplate}" HorizontalAlignment="Center" IsTabStop="False" XYFocusKeyboardNavigation="Enabled">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylineCalendarActionGap}" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+            </ItemsControl>
+          </StackPanel>
+        </Grid>
+        <!-- Enough trailing room to pin even Sunday's shelf; it follows the viewport, not a fixed TV size. -->
+        <Border Height="{Binding ActualHeight, ElementName=CalendarScroller}" IsHitTestVisible="False" />
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
 </Page>

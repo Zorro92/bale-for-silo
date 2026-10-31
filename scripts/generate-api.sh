@@ -35,6 +35,7 @@ dotnet kiota generate \
   --include-path '/api/v2/account/me' \
   --include-path '/api/v2/profiles' \
   --include-path '/api/v2/profiles/{id}/verify-pin' \
+  --include-path '/api/v2/calendar' \
   --include-path '/api/v2/home/capabilities' \
   --include-path '/api/v2/home/layout' \
   --include-path '/api/v2/home/sections' \

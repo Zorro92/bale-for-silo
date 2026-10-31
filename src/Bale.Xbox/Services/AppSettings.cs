@@ -85,6 +85,13 @@ internal static class AppSettings
     public static void SetLibraryScope(string? profileId, string tab, string libraryId) =>
         Local.Values[$"Scope.{profileId}.{tab}"] = libraryId;
 
+    /// <summary>CalendarViewModel remembers the Following / Trending / All view across launches.</summary>
+    public static string? CalendarFilter
+    {
+        get => Local.Values["calendar.filter"] as string;
+        set => Local.Values["calendar.filter"] = value;
+    }
+
     public static string? LoadRefreshToken(string server) => LoadCredential(VaultResource, server);
 
     public static void SaveRefreshToken(string server, string refreshToken) => SaveCredential(VaultResource, server, refreshToken);

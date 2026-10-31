@@ -2,6 +2,7 @@
 #pragma warning disable CS0618
 using Bale.Core.Api.Api.V2.Account;
 using Bale.Core.Api.Api.V2.Auth;
+using Bale.Core.Api.Api.V2.Calendar;
 using Bale.Core.Api.Api.V2.Catalog;
 using Bale.Core.Api.Api.V2.Favorites;
 using Bale.Core.Api.Api.V2.Home;
@@ -34,6 +35,11 @@ namespace Bale.Core.Api.Api.V2
         public global::Bale.Core.Api.Api.V2.Auth.AuthRequestBuilder Auth
         {
             get => new global::Bale.Core.Api.Api.V2.Auth.AuthRequestBuilder(PathParameters, RequestAdapter);
+        }
+        /// <summary>The calendar property</summary>
+        public global::Bale.Core.Api.Api.V2.Calendar.CalendarRequestBuilder Calendar
+        {
+            get => new global::Bale.Core.Api.Api.V2.Calendar.CalendarRequestBuilder(PathParameters, RequestAdapter);
         }
         /// <summary>The catalog property</summary>
         public global::Bale.Core.Api.Api.V2.Catalog.CatalogRequestBuilder Catalog
