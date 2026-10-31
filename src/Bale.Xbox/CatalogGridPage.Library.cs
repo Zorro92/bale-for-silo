@@ -76,7 +76,9 @@ public sealed partial class CatalogGridPage : IBackHandler
         if (_librarySource is null) return;
         var reserved = _librarySource.Query.Filter.ShowsAlphabet ? (_libraryOverlay?.AlphabetHasFocus == true ? 96 : 18) + 16 : 0;
         var viewport = Root.ActualWidth > 0 ? Root.ActualWidth : Window.Current.Bounds.Width;
-        width = Math.Max(1, (viewport - reserved - 40 - 16 - 5 * 20) / 6);
+        // ItemsWrapGrid measures all six trailing 20dp item margins, not just the five visible gaps.
+        // Include the actual XAML padding or a nominal six-column calculation wraps down to five.
+        width = Math.Max(1, (viewport - reserved - Cards.Padding.Left - Cards.Padding.Right - 6 * 20) / 6);
     }
 
     private async Task OpenLibraryFiltersAsync()
