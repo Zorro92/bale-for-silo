@@ -15,6 +15,18 @@ public class PersonalCatalogTests
     private static Dictionary<string, string> Query(HttpRequestMessage request) => request.RequestUri!.Query.TrimStart('?')
         .Split('&').Select(pair => pair.Split('=', 2)).ToDictionary(pair => Uri.UnescapeDataString(pair[0]), pair => Uri.UnescapeDataString(pair[1]));
 
+    [Fact]
+    public void PersonalSortOptionsMatchTheOfficialSavedLists()
+    {
+        Assert.Equal(["Recently Saved", "Title", "Date Added", "Year", "Rating", "Runtime"],
+            LibrarySortOption.Personal.Select(sort => sort.Label));
+        Assert.Equal(["", "title", "added_at", "year", "rating_imdb", "runtime"],
+            LibrarySortOption.Personal.Select(sort => sort.Field));
+        Assert.Equal("Default", LibrarySortOption.ListOrder.DirectionLabel(true));
+        Assert.Equal("Default", LibrarySortOption.ListOrder.DirectionLabel(false));
+        Assert.False(new LibraryBrowseFilter().SelectSort(LibrarySortOption.ListOrder).Descending);
+    }
+
     [Theory]
     [InlineData("watchlist", "Watchlist", "Your watchlist is empty")]
     [InlineData("favorites", "Favorites", "No favorites yet")]

@@ -101,6 +101,10 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
         {
             await LoadAsync(entry.Results.Begin());
         }
+        else if (IsPersonalGrid)
+        {
+            await RefreshPersonalAsync();
+        }
         else
         {
             SyncCards();
@@ -135,8 +139,8 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
         }
         catch (Exception ex)
         {
-            Log.Error("Section grid load", ex);
-            if (_active && _entry.IsCurrent(Session.Client) && _entry.Results.Fail(request, ex is ApiException { ResponseStatusCode: 404 }))
+            Log.Error("Catalog grid load", ex);
+            if (_active && _entry.IsCurrent(Session.Client) && _entry.Results.Fail(request, !IsPersonalGrid && ex is ApiException { ResponseStatusCode: 404 }))
             {
                 UpdateState();
                 if (!request.Append && !_entry.Results.Unavailable)
@@ -219,7 +223,7 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
 
     private void QueuePagingCheck()
     {
-        if (!_active || _entry is null || _pagingCheckQueued || !_entry.IsCurrent(Session.Client)
+        if (!_active || _entry is null || _personalRefreshing || _pagingCheckQueued || !_entry.IsCurrent(Session.Client)
             || !_entry.Results.HasMore || _entry.Results.IsLoading || _entry.Results.LoadMoreError is not null) return;
         _pagingCheckQueued = true;
         _ = Dispatcher.RunAsync(CoreDispatcherPriority.Low, async () =>
@@ -228,7 +232,7 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
             try
             {
                 HookScroller();
-                if (!_active || !_entry.IsCurrent(Session.Client) || _scroller is not { } scroller) return;
+                if (!_active || _personalRefreshing || !_entry.IsCurrent(Session.Client) || _scroller is not { } scroller) return;
                 var lastVisible = Containers().Where(container =>
                 {
                     var top = container.TransformToVisual(scroller).TransformPoint(new Point(0, 0)).Y;
@@ -339,6 +343,7 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
     {
         if (item is not CardView view || !_entry.IsCurrent(Session.Client)) return;
         _entry.ReturnItemId = view.Card.ContentId;
+        _entry.ReturnItemIndex = _cards.IndexOf(view);
         // A Library tab hosts this page in the shell's nested frame; details still cover the shell.
         // A pushed section grid has no current shell and uses its own (outer) PageFrame/journal.
         (ShellPage.Current?.Frame ?? Frame).Navigate(typeof(DetailPage), view.Card.ContentId);
@@ -346,12 +351,14 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
 
     public void RestoreFocus()
     {
-        if (!_active || _entry is null || !_entry.IsCurrent(Session.Client)) return;
+        if (!_active || _entry is null || _personalRefreshing || !_entry.IsCurrent(Session.Client)) return;
         var handled = false;
         RestoreSourceFocus(ref handled);
         if (handled) return;
+        if (_cards.Count == 0) return;
         var index = _cards.ToList().FindIndex(view => view.Card.ContentId == _entry.ReturnItemId);
-        if (_cards.Count > 0) FocusAt(index >= 0 ? index : 0);
+        if (index < 0) index = IsPersonalGrid ? Math.Clamp(_entry.ReturnItemIndex, 0, _cards.Count - 1) : 0;
+        FocusAt(index);
     }
 
     /// <summary>
@@ -362,8 +369,12 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
     public Task ReloadAsync()
     {
         if (!_active || _entry is null || !_entry.IsCurrent(Session.Client)) return Task.CompletedTask;
+        // A new sort/filter supersedes any in-flight personal return-target search.
+        _personalRestoreVersion++;
+        _personalRefreshing = false;
         _focusGeneration++;
         _entry.ReturnItemId = null;
+        _entry.ReturnItemIndex = 0;
         _lastFocusedIndex = 0;
         _cards.Clear();
         return LoadAsync(_entry.Results.Begin());

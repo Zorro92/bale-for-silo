@@ -32,8 +32,15 @@ public sealed partial class LibraryBrowseToolbar : UserControl
         ClearButton.Visibility = filter.Facets.CanReset ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    public void UpdateCount(long? total)
+    {
+        // TvPersonalScreens.PersonalControlHeader hides the count while a query is being replaced.
+        ItemCount.Text = total == 1 ? "1 item" : $"{total} items";
+        ItemCount.Visibility = total > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     public bool FocusControls() => _rail.Focus();
-    public void FocusSort() => SortButton.Focus(FocusState.Programmatic);
+    public bool FocusSort() => SortButton.Focus(FocusState.Programmatic);
     public void FocusFilter() => FilterButton.Focus(FocusState.Programmatic);
     private void OnSortClick(object sender, RoutedEventArgs e) => SortRequested?.Invoke();
     private void OnFilterClick(object sender, RoutedEventArgs e) => FilterRequested?.Invoke();

@@ -8,9 +8,11 @@ namespace Bale.Core.Browse;
 public sealed record LibrarySortOption(string Label, string Field, bool DescendingByDefault = true)
 {
     public static LibrarySortOption CollectionOrder { get; } = new("Collection Order", string.Empty, false);
-    public static LibrarySortOption ListOrder { get; } = new("List Order", string.Empty, false);
+    public static LibrarySortOption ListOrder { get; } = new("Recently Saved", string.Empty, false);
     public static LibrarySortOption Title { get; } = new("Title", "title", false);
     public static LibrarySortOption DateAdded { get; } = new("Date Added", "added_at");
+    public static IReadOnlyList<LibrarySortOption> Personal { get; } =
+        [ListOrder, Title, DateAdded, new("Year", "year"), new("Rating", "rating_imdb"), new("Runtime", "runtime")];
     public static IReadOnlyList<LibrarySortOption> Video { get; } =
         [Title, DateAdded, new("Release Date", "release_date"), new("Year", "year"), new("Rating", "rating_imdb"), new("Runtime", "runtime"), new("Resolution", "resolution")];
     public static IReadOnlyList<LibrarySortOption> Audiobooks { get; } =

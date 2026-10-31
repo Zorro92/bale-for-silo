@@ -31,6 +31,7 @@ public sealed class LibraryCatalogSource(string title, LibraryBrowseQuery query,
     {
         Query = Query with { Filter = filter };
         LibraryHasItems = null;
+        Total = null;
     }
 
     public Task<CatalogFilters?> FiltersAsync(CancellationToken cancellationToken = default) =>
