@@ -407,21 +407,6 @@
     <Setter Property="Padding" Value="24,0" />
     <Setter Property="FontSize" Value="15.5" />
   </Style>
-  <!-- TvSearchPeopleRow.kt / TvCastCrewSection.kt: 14sp, 18sp line, reserve two lines. -->
-  <Style x:Key="SkylineSearchPersonNameStyle" TargetType="TextBlock">
-    <Setter Property="FontSize" Value="12" />
-    <Setter Property="LineHeight" Value="15.5" />
-    <Setter Property="MinHeight" Value="31" />
-    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
-    <Setter Property="FontWeight" Value="SemiBold" />
-    <Setter Property="Foreground" Value="#FFFFFFFF" />
-    <Setter Property="Opacity" Value="0.88" />
-    <Setter Property="TextAlignment" Value="Center" />
-    <Setter Property="TextWrapping" Value="Wrap" />
-    <Setter Property="MaxLines" Value="2" />
-    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-  </Style>
-
   <!-- Outlined marquee badge (TvFocusMarquee.MarqueeBadge): "4K", "HDR", "EAC3", "TV-MA". -->
   <Style x:Key="SkylineBadgeStyle" TargetType="Border">
     <Setter Property="Background" Value="{StaticResource SkylineBadgeFill}" />
@@ -510,6 +495,12 @@
     <Setter Property="TextAlignment" Value="Center" />
     <Setter Property="TextWrapping" Value="Wrap" />
     <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <!-- TvSearchPeopleRow.kt reuses TvCastCrewSection.kt's two-line name. Share its fixed
+       two-line height so single- and two-line search names keep every card aligned. -->
+  <Style x:Key="SkylineSearchPersonNameStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineDetailCastNameStyle}">
+    <Setter Property="Foreground" Value="#FFFFFFFF" />
+    <Setter Property="Opacity" Value="0.88" />
   </Style>
   <Style x:Key="SkylineDetailCastRoleStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineDetailCastNameStyle}">
     <Setter Property="FontWeight" Value="Normal" />
