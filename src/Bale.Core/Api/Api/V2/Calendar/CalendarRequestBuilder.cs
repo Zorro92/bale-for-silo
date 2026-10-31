@@ -104,7 +104,7 @@ namespace Bale.Core.Api.Api.V2.Calendar
         /// Upcoming and recent airings and releases in a window of the viewer&apos;s local days, grouped by day.
         /// </summary>
         [global::System.CodeDom.Compiler.GeneratedCode("Kiota", "1.0.0")]
-        public partial class CalendarRequestBuilderGetQueryParameters
+        public partial class CalendarRequestBuilderGetQueryParameters 
         {
             /// <summary>Last local day of the window, YYYY-MM-DD; at most 30 days after start</summary>
             [QueryParameter("end")]

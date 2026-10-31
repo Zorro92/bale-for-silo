@@ -80,6 +80,30 @@ public sealed partial class CastView
     public Visibility PlaceholderVisibility { get; }
 }
 
+/// <summary>A local extra or supported remote trailer (TvDetailTrailersSection).</summary>
+public sealed partial class TrailerView
+{
+    public TrailerView(TrailerCard card)
+    {
+        Card = card;
+        Thumbnail = card.ThumbnailUrl is { } url ? Services.Artwork.Load(url, width: 235) : null;
+    }
+
+    public TrailerCard Card { get; }
+    public string Title => Card.Title;
+    public string Secondary => Card.Secondary ?? string.Empty;
+    public BitmapImage? Thumbnail { get; }
+    public Visibility PlaceholderVisibility => Thumbnail is null ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility SecondaryVisibility => Card.Secondary is null ? Visibility.Collapsed : Visibility.Visible;
+}
+
+public sealed partial class DetailFactView(DetailFact fact, int index)
+{
+    public string Label => fact.Label.ToUpperInvariant();
+    public string Value => fact.Value;
+    public Visibility DividerVisibility => index == 0 ? Visibility.Collapsed : Visibility.Visible;
+}
+
 /// <summary>A tab in the series mode row: "Show" (no season), then each season (TvSeriesModePicker).</summary>
 public sealed partial class SeasonView
 {

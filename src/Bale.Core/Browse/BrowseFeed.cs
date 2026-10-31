@@ -92,8 +92,17 @@ public sealed class BrowseFeed
     /// TvSearchViewModel.kt pages source=query in batches of 40 using the opaque page.next_cursor,
     /// never an offset/seek. Drain hidden-only pages: an empty grid cannot trigger its own load-more.
     /// </summary>
-    public async Task<SearchResultPage> SearchPageAsync(string query, ArtworkWidths widths, string? type = null,
-        SearchContinuation? continuation = null, bool showAudiobooks = false, int limit = 40, CancellationToken cancellationToken = default)
+    public Task<SearchResultPage> SearchPageAsync(string query, ArtworkWidths widths, string? type = null,
+        SearchContinuation? continuation = null, bool showAudiobooks = false, int limit = 40, CancellationToken cancellationToken = default) =>
+        CatalogPageAsync(GetSourceQueryParameterType.Query, query.Trim(), null, widths, type, continuation, showAudiobooks, limit, cancellationToken);
+
+    /// <summary>TvPersonDetailViewModel uses the same opaque catalog pagination, with source=person and sixty-card pages.</summary>
+    internal Task<SearchResultPage> PersonWorksPageAsync(string personId, ArtworkWidths widths, string? type,
+        SearchContinuation? continuation, bool showAudiobooks, CancellationToken cancellationToken) =>
+        CatalogPageAsync(GetSourceQueryParameterType.Person, null, personId, widths, type, continuation, showAudiobooks, 60, cancellationToken);
+
+    private async Task<SearchResultPage> CatalogPageAsync(GetSourceQueryParameterType source, string? query, string? personId,
+        ArtworkWidths widths, string? type, SearchContinuation? continuation, bool showAudiobooks, int limit, CancellationToken cancellationToken)
     {
         var cursor = continuation?.Cursor;
         var seen = new HashSet<string>(continuation?.Seen ?? [], StringComparer.Ordinal);
@@ -102,8 +111,9 @@ public sealed class BrowseFeed
             cancellationToken.ThrowIfCancellationRequested();
             var response = await _api.Api.V2.Catalog.GetAsync(config =>
             {
-                config.QueryParameters.Source = GetSourceQueryParameterType.Query;
-                config.QueryParameters.Q = query.Trim();
+                config.QueryParameters.Source = source;
+                config.QueryParameters.Q = query;
+                config.QueryParameters.PersonId = personId;
                 config.QueryParameters.Type = type;
                 config.QueryParameters.Cursor = cursor;
                 config.QueryParameters.Limit = limit;
@@ -128,7 +138,7 @@ public sealed class BrowseFeed
                 next = new SearchContinuation(nextCursor, seen);
             }
 
-            var cards = items.Where(item => IsVisibleSearchType(item.Type, showAudiobooks))
+            var cards = items.Where(item => IsVisibleTvType(item.Type, showAudiobooks))
                 .Select(item => ToCard(item, CardShape.Poster) is var card && item.Type == "episode" && !string.IsNullOrWhiteSpace(item.Title)
                     ? card with { Title = item.Title!, Subtitle = item.Year is > 0 ? item.Year.Value.ToString(CultureInfo.InvariantCulture) : null }
                     : card)
@@ -143,7 +153,7 @@ public sealed class BrowseFeed
         }
     }
 
-    private static bool IsVisibleSearchType(string? type, bool showAudiobooks) => type?.Trim().ToLowerInvariant() switch
+    internal static bool IsVisibleTvType(string? type, bool showAudiobooks) => type?.Trim().ToLowerInvariant() switch
     {
         // TvMediaTypeFilters.kt / MediaMode.kt: TV has no ebook, comic or manga reader.
         "ebook" or "ebooks" or "book" or "books" or "comic" or "comics" or "manga" or "reading" => false,

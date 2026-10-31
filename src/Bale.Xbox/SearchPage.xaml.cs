@@ -40,6 +40,7 @@ public sealed partial class SearchPage : Page, IRestoresFocus
     private bool _pagingCheckQueued;
     private ScrollViewer? _resultScroller;
     private CardView? _lastResult;
+    private SearchPersonView? _returnPerson;
     private CancellationTokenSource? _search;
 
     private bool ShowAudiobooks => _filters.Contains(SearchMediaFilter.Audiobooks);
@@ -679,12 +680,24 @@ public sealed partial class SearchPage : Page, IRestoresFocus
 
     private void OnPersonClick(object sender, ItemClickEventArgs e)
     {
-        // TODO: person page, wave 2. Keep A harmless while the official-shaped row is focusable.
+        if (e.ClickedItem is SearchPersonView person)
+        {
+            _returnPerson = person;
+            _peopleRail.Remembered = person;
+            ShellPage.Current?.Frame.Navigate(typeof(PersonPage), new PersonPageEntry(person.Person.Id));
+        }
     }
 
     /// <summary>Back from a detail page lands on the result that opened it.</summary>
     public void RestoreFocus()
     {
+        if (_returnPerson is { } person && _peopleViews.Contains(person))
+        {
+            People.ScrollIntoView(person);
+            FocusRetry.Until(People, () => _peopleRail.FocusItem(person));
+            return;
+        }
+
         if (_lastResult is null)
         {
             return;
@@ -699,6 +712,7 @@ public sealed partial class SearchPage : Page, IRestoresFocus
     {
         if (e.ClickedItem is CardView { Card: var card })
         {
+            _returnPerson = null;
             ShellPage.Current?.OpenDetail(card.Type == "episode" && card.SeriesId is { } series ? series : card.ContentId);
         }
     }

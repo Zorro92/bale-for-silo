@@ -1,0 +1,111 @@
+<Page
+    x:Class="Bale.Xbox.PersonPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:Bale.Xbox.Views"
+    FontFamily="{StaticResource SkylineFont}"
+    Background="{StaticResource SkylineBackground}">
+  <Page.Resources>
+    <DataTemplate x:Key="PersonBadgeTemplate" x:DataType="views:PersonBadgeView">
+      <Border Style="{StaticResource SkylinePersonBadgeStyle}">
+        <TextBlock Text="{x:Bind Text}" Style="{StaticResource SkylinePersonBadgeTextStyle}" />
+      </Border>
+    </DataTemplate>
+    <DataTemplate x:Key="PersonFilterTemplate" x:DataType="views:PersonFilterView">
+      <ToggleButton Content="{x:Bind Label}" IsChecked="{x:Bind Selected}" Style="{StaticResource SkylinePersonFilterStyle}" Click="OnFilterClick" />
+    </DataTemplate>
+    <DataTemplate x:Key="PosterBadgeTemplate" x:DataType="views:BadgeView">
+      <Border Style="{StaticResource SkylineDetailPosterBadgeStyle}" BorderThickness="{x:Bind Border}" CornerRadius="{x:Bind Radius}" Padding="{x:Bind Padding}">
+        <TextBlock Text="{x:Bind Text}" Style="{StaticResource SkylineDetailPosterBadgeTextStyle}" FontSize="{x:Bind FontSize}" />
+      </Border>
+    </DataTemplate>
+    <DataTemplate x:Key="WorkTemplate" x:DataType="views:CardView">
+      <StackPanel Width="{x:Bind Width, Mode=OneWay}" Spacing="{StaticResource SkylinePersonCardCaptionGap}" Margin="{StaticResource SkylinePersonCardHeadroom}">
+        <Grid x:Name="Art" Width="{x:Bind Width, Mode=OneWay}" Height="{x:Bind Height, Mode=OneWay}">
+          <Grid CornerRadius="{StaticResource SkylineCardRadius}" Background="{StaticResource SkylineCardPlaceholder}">
+            <TextBlock Text="{x:Bind Title}" Visibility="{x:Bind FallbackVisibility}" Style="{StaticResource SkylineDetailTrailerSecondaryStyle}" TextWrapping="Wrap" VerticalAlignment="Center" />
+            <Image Source="{x:Bind Image, Mode=OneWay}" Stretch="UniformToFill" />
+            <ItemsControl ItemsSource="{x:Bind CornerTop}" ItemTemplate="{StaticResource PosterBadgeTemplate}" Margin="{x:Bind CornerInset}"
+                          HorizontalAlignment="Left" VerticalAlignment="Top" IsTabStop="False" IsHitTestVisible="False" />
+            <ItemsControl ItemsSource="{x:Bind CornerBottom}" ItemTemplate="{StaticResource PosterBadgeTemplate}" Margin="{x:Bind CornerInset}"
+                          HorizontalAlignment="Left" VerticalAlignment="Bottom" IsTabStop="False" IsHitTestVisible="False" />
+          </Grid>
+          <Border x:Name="FocusGlow" Style="{StaticResource SkylineDetailPosterGlowStyle}" />
+          <Border x:Name="FocusRing" Style="{StaticResource SkylineDetailPosterRingStyle}" />
+        </Grid>
+        <StackPanel>
+          <TextBlock Text="{x:Bind Title}" Style="{StaticResource SkylineDetailPosterTitleStyle}" />
+          <TextBlock Text="{x:Bind Subtitle}" Visibility="{x:Bind SubtitleVisibility}" Style="{StaticResource SkylineDetailPosterSubtitleStyle}" />
+        </StackPanel>
+      </StackPanel>
+    </DataTemplate>
+  </Page.Resources>
+
+  <!-- TvPersonDetailScreen.kt: one scrolling six-column grid; identity and filters form its full-span header. -->
+  <Grid x:Name="Root" SizeChanged="OnRootSizeChanged">
+    <GridView x:Name="Works" Padding="{StaticResource SkylinePersonPagePadding}" IsTabStop="False" SelectionMode="None" IsItemClickEnabled="True"
+              ItemTemplate="{StaticResource WorkTemplate}" ItemClick="OnWorkClick" GotFocus="OnWorkFocus" LostFocus="OnWorkBlur"
+              ScrollViewer.HorizontalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Hidden" Visibility="Collapsed">
+      <GridView.ItemsPanel>
+        <ItemsPanelTemplate><ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="6" /></ItemsPanelTemplate>
+      </GridView.ItemsPanel>
+      <GridView.ItemContainerStyle>
+        <Style TargetType="GridViewItem" BasedOn="{StaticResource SkylineGridItemStyle}">
+          <Setter Property="Margin" Value="{StaticResource SkylinePersonGridGap}" />
+        </Style>
+      </GridView.ItemContainerStyle>
+      <GridView.Header>
+        <StackPanel x:Name="Header" Margin="{StaticResource SkylinePersonHeaderMargin}" Spacing="{StaticResource SkylinePersonHeaderGap}">
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+            <Grid Style="{StaticResource SkylinePersonPortraitStyle}">
+              <TextBlock x:Name="Initials" Style="{StaticResource SkylinePersonInitialsStyle}" />
+              <Image x:Name="Portrait" Stretch="UniformToFill" />
+            </Grid>
+            <StackPanel Grid.Column="1" Margin="{StaticResource SkylinePersonInfoInset}" Spacing="{StaticResource SkylinePersonInfoGap}">
+              <TextBlock x:Name="PersonName" Style="{StaticResource SkylinePersonNameStyle}" />
+              <ItemsControl x:Name="Metadata" ItemTemplate="{StaticResource PersonBadgeTemplate}" IsTabStop="False">
+                <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylinePersonBadgeGap}" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              </ItemsControl>
+              <Button x:Name="BioButton" Style="{StaticResource SkylinePersonBioButtonStyle}" Click="OnBioClick" GotFocus="OnHeaderFocus" Visibility="Collapsed" AutomationProperties.Name="Biography">
+                <TextBlock x:Name="Bio" Style="{StaticResource SkylinePersonBioStyle}" />
+              </Button>
+              <TextBlock x:Name="EmptyBio" Text="No biography or personal details are available yet." Style="{StaticResource SkylinePersonEmptyBioStyle}" Visibility="Collapsed" />
+            </StackPanel>
+          </Grid>
+          <StackPanel Spacing="{StaticResource SkylinePersonFilmographyGap}">
+            <StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylinePersonFilterGap}">
+              <TextBlock Text="Filmography" Style="{StaticResource SkylinePersonFilmographyTitleStyle}" />
+              <TextBlock x:Name="Count" Style="{StaticResource SkylinePersonCountStyle}" />
+            </StackPanel>
+            <ItemsControl x:Name="Filters" ItemTemplate="{StaticResource PersonFilterTemplate}" IsTabStop="False" GotFocus="OnHeaderFocus">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylinePersonFilterGap}" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            </ItemsControl>
+          </StackPanel>
+        </StackPanel>
+      </GridView.Header>
+      <GridView.Footer>
+        <StackPanel Spacing="{StaticResource SkylinePersonInfoGap}">
+          <TextBlock x:Name="EmptyWorks" Text="No titles found." Style="{StaticResource SkylinePersonStatusStyle}" Visibility="Collapsed" />
+          <TextBlock x:Name="WorksError" Style="{StaticResource SkylinePersonStatusStyle}" Visibility="Collapsed" />
+          <Button x:Name="WorksRetryButton" Content="Retry" Style="{StaticResource SkylineButtonStyle}" HorizontalAlignment="Left" Click="OnWorksRetryClick" Visibility="Collapsed" />
+          <ProgressRing x:Name="WorksLoading" Style="{StaticResource SkylinePersonLoadingStyle}" IsActive="False" Visibility="Collapsed" />
+        </StackPanel>
+      </GridView.Footer>
+    </GridView>
+    <ProgressRing x:Name="LoadingRing" Style="{StaticResource SkylinePersonLoadingStyle}" IsActive="True" />
+    <StackPanel x:Name="ErrorPanel" Style="{StaticResource SkylinePersonErrorPanelStyle}" Visibility="Collapsed">
+      <TextBlock Text="Couldn't load this person. Try again." Style="{StaticResource SkylinePersonStatusStyle}" />
+      <Button x:Name="RetryButton" Content="Try Again" Style="{StaticResource SkylineButtonStyle}" HorizontalAlignment="Center" Click="OnRetryClick" />
+    </StackPanel>
+
+    <!-- The biography expands into a modal, not inline. Back/Select dismiss; Up/Down scroll by 180dp. -->
+    <Grid x:Name="BioDialog" Background="{StaticResource SkylinePersonDialogScrim}" Visibility="Collapsed" TabFocusNavigation="Cycle" Tapped="OnBioBackgroundTapped">
+      <Border x:Name="BioDialogPanel" Style="{StaticResource SkylineDetailDialogPanelStyle}">
+        <ScrollViewer x:Name="BioScroller" IsTabStop="True" UseSystemFocusVisuals="False" VerticalScrollBarVisibility="Hidden" HorizontalScrollMode="Disabled">
+          <TextBlock x:Name="FullBio" Margin="{StaticResource SkylinePersonBioDialogPadding}" Style="{StaticResource SkylinePersonBioDialogTextStyle}" />
+        </ScrollViewer>
+      </Border>
+    </Grid>
+  </Grid>
+</Page>

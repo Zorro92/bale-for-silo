@@ -9,7 +9,7 @@ namespace Bale.Core.Detail;
 /// Loads a title's detail page and its seasons and episodes, and changes the viewer's flags on it.
 /// Wording and ordering follow Silo's Android TV app (TvDetailMetadata, TvItemDetailScreen).
 /// </summary>
-public sealed class DetailFeed
+public sealed partial class DetailFeed
 {
     /// <summary>Device-pixel widths for a 1080p TV: the detail backdrop box, the 325-wide logo, 100 dp cast photos, 180 dp stills.</summary>
     private const int BackdropWidth = 1920;
@@ -111,6 +111,21 @@ public sealed class DetailFeed
         return (episodes?.Items ?? []).Select(episode => ToEpisode(episode, seasonNumber)).ToList();
     }
 
+    /// <summary>TvItemDetailViewModel loads twelve ranked cards independently of the hero, excluding the source and TV-hidden types.</summary>
+    public async Task<IReadOnlyList<MediaCard>> SimilarAsync(string contentId, CancellationToken cancellationToken = default)
+    {
+        var response = await _api.Api.V2.Recommendations.Similar[contentId].GetAsync(config =>
+        {
+            config.QueryParameters.Limit = 12;
+            // TvArtworkLayout's SIMILAR surface: 130dp posters at 1080p's 2x density.
+            config.QueryParameters.PosterWidth = 260;
+        }, cancellationToken).ConfigureAwait(false);
+        return (response?.Items ?? [])
+            .Where(item => !string.IsNullOrWhiteSpace(item.ContentId) && item.ContentId != contentId && BrowseFeed.IsVisibleTvType(item.Type, showAudiobooks: true))
+            .DistinctBy(item => item.ContentId)
+            .Select(item => _browse.ToCard(item, CardShape.Poster)).ToList();
+    }
+
     public Task SetWatchlistAsync(string contentId, bool on, CancellationToken cancellationToken = default) =>
         on ? _api.Api.V2.Watchlist[contentId].PutAsync(cancellationToken: cancellationToken)
            : _api.Api.V2.Watchlist[contentId].DeleteAsync(cancellationToken: cancellationToken);
@@ -146,7 +161,7 @@ public sealed class DetailFeed
             isSeries ? StarringCredit(item) : DirectorCredit(item),
             (item.Cast ?? [])
                 .Where(credit => !string.IsNullOrWhiteSpace(credit.Name))
-                .Select(credit => new CastMember(credit.Name!.Trim(), FirstRole(credit.Character), _browse.Resolve(credit.PhotoUrl)))
+                .Select(credit => new CastMember(credit.Name!.Trim(), FirstRole(credit.Character), _browse.Resolve(credit.PhotoUrl)) { PersonId = credit.PersonId?.Trim() })
                 .ToList(),
             isSeries ? item.ContentId : item.SeriesId,
             item.PlayContentId ?? item.ContentId ?? string.Empty,
@@ -161,6 +176,8 @@ public sealed class DetailFeed
         {
             MarqueeLine = MarqueeLine(item),
             SeasonNumber = item.SeasonNumber,
+            Trailers = Trailers(item),
+            Details = DetailFacts(item),
         };
     }
 

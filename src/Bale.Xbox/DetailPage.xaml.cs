@@ -91,6 +91,11 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
             }
         };
 
+        _trailersRail = Rail.Attach(Trailers);
+        _trailersRail.Entered += () => AnchorSection(TrailersSection);
+        _similarRail = Rail.Attach(Similar);
+        _similarRail.Entered += () => AnchorSection(SimilarSection);
+
         ActionButton.Attach(StartOverButton);
         ActionButton.Attach(WatchlistButton);
         ActionButton.Attach(MoreButton);
@@ -128,6 +133,8 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
             var left = e.Key is VirtualKey.Left or VirtualKey.GamepadDPadLeft or VirtualKey.GamepadLeftThumbstickLeft;
             if (right || left)
             {
+                // Any deliberate direction revokes a pending exact-card restore (TvSimilarFocusRestoration.kt).
+                _focusGeneration++;
                 // Match TvItemDetailScreen.kt's action row focusGroup: Left/Right stop at the ends.
                 var actions = Actions.Children.Where(child => child is Control c && c.Visibility == Visibility.Visible && c.IsEnabled && c.IsTabStop);
                 var edge = right ? actions.LastOrDefault() : actions.FirstOrDefault();
@@ -144,11 +151,8 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
                 return;
             }
 
-            // TvExpandableSynopsis.kt is the only stop above actions. Up at it stays put.
-            if (direction != FocusNavigationDirection.Up || !IsWithin(e.OriginalSource as DependencyObject, SynopsisButton))
-            {
-                FocusManager.TryMoveFocus(direction);
-            }
+            // Logical section steps never let geometric search fall sideways at a rail/grid edge.
+            MoveSectionFocus(e.OriginalSource as DependencyObject, direction);
 
             // Handled even when nothing lies that way: a vertical key never scrolls or moves focus sideways.
             e.Handled = true;
@@ -162,6 +166,13 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
+        _active = true;
+        if (e.Parameter is DetailReturnEntry saved)
+        {
+            RestoreEntry(saved);
+            return;
+        }
+
         _routeEntry = e.Parameter as SeriesDetailEntry;
         _contentId = _routeEntry?.SeriesId ?? e.Parameter as string ?? string.Empty;
         Log.Info("Detail: navigated to " + _contentId);
@@ -209,7 +220,11 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
             _detail = detail;
             ShowHero(detail);
             ShowCast(detail);
-            FocusRetry.Until(PlayButton, () => PlayButton.Focus(FocusState.Programmatic));
+            ShowSupportingSections(detail);
+            // TvItemDetailViewModel loads recommendations after publishing the hero, never in its critical path.
+            LoadingRing.Visibility = Visibility.Collapsed;
+            _ = LoadSimilarAsync(detail);
+            FocusRetry.Until(PlayButton, () => !_active || PlayButton.Focus(FocusState.Programmatic));
 
             if (detail.PlaysEpisodes)
             {
@@ -469,6 +484,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
             Log.Error("Detail seasons", ex);
         }
 
+        if (!_active) return;
         Seasons.ItemsSource = _tabs.ToList();
         var entrySeason = entry?.SeasonNumber ?? detail.SeasonNumber;
         var selected = _tabs.FirstOrDefault(tab => tab.Season?.Number == entrySeason) ?? _tabs.FirstOrDefault();
@@ -710,13 +726,10 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
 
     private void ShowCast(ItemDetail detail)
     {
-        CastSection.Visibility = detail.Cast.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        CastSection.Visibility = detail.ShowsSupportingSections && detail.Cast.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         // TvCastCrewSection.kt caps the rail at 24 people, preserving the server's cast order.
         Cast.ItemsSource = detail.Cast.Take(24).Select(member => new CastView(member)).ToList();
-        if (!detail.IsSeries)
-        {
-            CastSection.Margin = new Thickness(0, 10, 0, 0);
-        }
+        VisualStateManager.GoToState(this, detail.IsSeries ? "SeriesBody" : "LeafBody", useTransitions: false);
     }
 
     private async void OnSeasonFocus(object sender, RoutedEventArgs e)
@@ -817,6 +830,14 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
                 var scale = focused ? 1.04f : 1;
                 art.Scale = new Vector3(scale, scale, 1);
             }
+        }
+        else if (item.Content is TrailerView)
+        {
+            ApplyTrailerFocus(root, focused);
+        }
+        else if (item.Content is CardView)
+        {
+            CardFocus.Apply(item, focused);
         }
         else if (item.Content is CastView)
         {
@@ -954,9 +975,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         return true;
     }
 
-    public void RestoreFocus() => FocusRetry.Until(PageContent, () =>
-        (_lastFocused is { IsEnabled: true, Visibility: Visibility.Visible } control && control.Focus(FocusState.Programmatic))
-        || PlayButton.Focus(FocusState.Programmatic));
+    public void RestoreFocus() => RestoreSectionFocus();
 
     private void OnDialogBackgroundTapped(object sender, TappedRoutedEventArgs e)
     {

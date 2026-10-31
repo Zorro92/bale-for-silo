@@ -42,6 +42,15 @@ public sealed record ItemDetail(
 
     public long? SeasonNumber { get; init; }
 
+    /// <summary>Supporting sections from TvDetailTrailersSection and TvDetailFactsTable; neither needs another hero request.</summary>
+    public IReadOnlyList<TrailerCard> Trailers { get; init; } = [];
+
+    public IReadOnlyList<DetailFact> Details { get; init; } = [];
+
+    public bool ShowsSupportingSections => Type is not ("audiobook" or "audiobooks");
+
+    public string SimilarTitle => IsSeries ? "Recommended Series" : "Related Movies";
+
     /// <summary>
     /// TvItemDetailScreen.tvSeriesDetailRedirect keeps incomplete hierarchies standalone instead
     /// of redirecting to a missing parent or back to themselves.
@@ -66,7 +75,15 @@ public sealed record DisplayRating(string Source, string Name, string Display);
 public sealed record ItemFlags(bool InWatchlist, bool IsFavorite, bool Played);
 
 /// <param name="Role">The first character played, or the crew job.</param>
-public sealed record CastMember(string Name, string? Role, Uri? PhotoUrl);
+public sealed record CastMember(string Name, string? Role, Uri? PhotoUrl)
+{
+    public string? PersonId { get; init; }
+}
+
+public sealed record DetailFact(string Label, string Value);
+
+/// <summary>A local extra or YouTube video, in TrailerRail.kt's local-first, deduplicated order.</summary>
+public sealed record TrailerCard(string Key, string Title, string? Secondary, Uri? ThumbnailUrl);
 
 /// <summary>A combined Series-page entry, including the one-shot rail selection (TvItemDetailScreen).</summary>
 public sealed record SeriesDetailEntry(string SeriesId, long SeasonNumber, string? EpisodeId);
