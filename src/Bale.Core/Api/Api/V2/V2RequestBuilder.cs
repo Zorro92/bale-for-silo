@@ -5,6 +5,7 @@ using Bale.Core.Api.Api.V2.Auth;
 using Bale.Core.Api.Api.V2.Calendar;
 using Bale.Core.Api.Api.V2.Catalog;
 using Bale.Core.Api.Api.V2.Favorites;
+using Bale.Core.Api.Api.V2.History;
 using Bale.Core.Api.Api.V2.Home;
 using Bale.Core.Api.Api.V2.Library;
 using Bale.Core.Api.Api.V2.Profiles;
@@ -50,6 +51,11 @@ namespace Bale.Core.Api.Api.V2
         public global::Bale.Core.Api.Api.V2.Favorites.FavoritesRequestBuilder Favorites
         {
             get => new global::Bale.Core.Api.Api.V2.Favorites.FavoritesRequestBuilder(PathParameters, RequestAdapter);
+        }
+        /// <summary>The history property</summary>
+        public global::Bale.Core.Api.Api.V2.History.HistoryRequestBuilder History
+        {
+            get => new global::Bale.Core.Api.Api.V2.History.HistoryRequestBuilder(PathParameters, RequestAdapter);
         }
         /// <summary>The home property</summary>
         public global::Bale.Core.Api.Api.V2.Home.HomeRequestBuilder Home
