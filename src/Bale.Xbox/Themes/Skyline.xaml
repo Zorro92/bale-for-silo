@@ -1890,9 +1890,6 @@
       </Setter.Value>
     </Setter>
   </Style>
-  <Style x:Key="SkylineForYouIconStyle" TargetType="PathIcon">
-    <Setter Property="Width" Value="15" /><Setter Property="Height" Value="15" />
-  </Style>
   <!-- TvMainShell.kt / TvServerOfflinePill: labelLarge (18/22sp), 22x10dp padding, 1.02 focus scale. -->
   <Style x:Key="SkylineOfflinePillTextStyle" TargetType="TextBlock">
     <Setter Property="FontSize" Value="15.48" /><Setter Property="FontWeight" Value="SemiBold" />
