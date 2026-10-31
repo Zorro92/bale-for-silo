@@ -34,7 +34,6 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         _actions = Rail.Attach(PickerActions);
         _actions.Pin = false;
         Rail.Attach(RememberActions).Pin = false;
-        PreviewKeyDown += OnPagePreviewKeyDown;
         RetryButton.PreviewKeyDown += OnRetryPreviewKeyDown;
     }
 
@@ -70,14 +69,6 @@ public sealed partial class ProfilesPage : Page, IBackHandler
             Application.Current.Exit();
         }
         return true;
-    }
-
-    private void OnPagePreviewKeyDown(object sender, KeyRoutedEventArgs e)
-    {
-        if (e.Key == VirtualKey.Escape)
-        {
-            e.Handled = OnBack();
-        }
     }
 
     private async void OnRetryClick(object sender, RoutedEventArgs e) => await LoadAsync();

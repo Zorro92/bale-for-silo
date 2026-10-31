@@ -87,7 +87,8 @@ public sealed partial class App : Application
     /// <summary>
     /// Bumpers, triggers and Page Up/Down do nothing anywhere, as on Silo's Android TV app, which
     /// handles none of them. Left alone, a ScrollViewer pages its content with them and leaves focus
-    /// behind, off screen. Runs on the tunnelling pass so no ScrollViewer sees them.
+    /// behind, off screen. Runs on the tunnelling pass so no ScrollViewer sees them. Escape instead
+    /// waits for OnBackKey on the bubbling pass so dialogs and text controls get first refusal.
     /// </summary>
     private static void OnPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
@@ -99,23 +100,36 @@ public sealed partial class App : Application
         }
     }
 
-    /// <summary>Routes system Back through the same policy as keyboard Backspace.</summary>
+    /// <summary>Routes system Back through the same policy as keyboard Escape and Backspace.</summary>
     private static void OnBackRequested(Frame frame, BackRequestedEventArgs args)
     {
         args.Handled = GoBack(frame);
     }
 
-    /// <summary>Backspace follows Back outside text fields; controls get first chance on the bubbling pass.</summary>
+    /// <summary>Escape follows Back everywhere; Backspace does so only outside text fields.</summary>
     private static void OnBackKey(Frame frame, KeyRoutedEventArgs args)
     {
         try
         {
-            if (args.Key != VirtualKey.Back || FocusManager.GetFocusedElement() is TextBox or PasswordBox or RichEditBox)
+            // Android TV maps Escape to Back (MainTvActivity.kt). Wait for the bubbling pass,
+            // not PreviewKeyDown, so a dialog or text control cannot also send its page back.
+            if (args.Handled || args.Key is not (VirtualKey.Escape or VirtualKey.Back))
+            {
+                return;
+            }
+
+            if (args.Key == VirtualKey.Back && FocusManager.GetFocusedElement() is TextBox or PasswordBox or RichEditBox)
             {
                 return;
             }
 
             args.Handled = GoBack(frame);
+            if (args.Key == VirtualKey.Escape && !args.Handled)
+            {
+                // Unhandled system Back leaves the app at its root; Escape has no OS fallback.
+                args.Handled = true;
+                Application.Current.Exit();
+            }
         }
         catch (Exception ex)
         {

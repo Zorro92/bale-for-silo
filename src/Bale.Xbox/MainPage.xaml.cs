@@ -31,7 +31,6 @@ public sealed partial class MainPage : Page, IBackHandler
         InitializeComponent();
         Rail.Attach(ServerActions).Pin = false;
         Rail.Attach(CodeActions).Pin = false;
-        PreviewKeyDown += OnPagePreviewKeyDown;
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -95,14 +94,6 @@ public sealed partial class MainPage : Page, IBackHandler
         }
 
         return false;
-    }
-
-    private void OnPagePreviewKeyDown(object sender, KeyRoutedEventArgs e)
-    {
-        if (e.Key == VirtualKey.Escape)
-        {
-            e.Handled = OnBack();
-        }
     }
 
     private void OnServerBoxKeyDown(object sender, KeyRoutedEventArgs e)
