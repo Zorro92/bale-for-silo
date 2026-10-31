@@ -233,6 +233,23 @@ public class LibraryBrowseTests
         Assert.Equal(expected, LibraryGridNavigation.Move(index, 10, horizontal, vertical));
 
     [Fact]
+    public async Task SharedGridAdapterKeepsLibraryQueryAndCursorFencing()
+    {
+        var stub = new StubHandler().Enqueue(MorePage).Enqueue(LastPage);
+        using var client = Create(stub);
+        var source = new LibraryCatalogSource("Movies", Library(), client.LibraryBrowse);
+        var first = await source.LoadPageAsync(client.Browse, ArtworkWidths.Tv1080, null);
+        var other = new LibraryCatalogSource("Other", Library(), client.LibraryBrowse);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => other.LoadPageAsync(client.Browse, ArtworkWidths.Tv1080, first.Continuation));
+        source.SetFilter(new LibraryBrowseFilter().SelectSort(LibrarySortOption.Title));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => source.LoadPageAsync(client.Browse, ArtworkWidths.Tv1080, first.Continuation));
+        var reloaded = await source.LoadPageAsync(client.Browse, ArtworkWidths.Tv1080, null);
+        Assert.Equal("m2", Assert.Single(reloaded.Cards).ContentId);
+        Assert.Equal("title", Query(stub.Requests[1])["sort"]);
+        Assert.False(Query(stub.Requests[1]).ContainsKey("cursor"));
+    }
+
+    [Fact]
     public void PagingThresholdAndPreferencesMatchOfficialDefaults()
     {
         Assert.False(LibraryGridNavigation.IsNearEnd(51, 100));
