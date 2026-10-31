@@ -55,8 +55,20 @@ public sealed partial class PageFrame : Frame
         }
 
         base.OnApplyTemplate();
-        _current = (ContentPresenter)GetTemplateChild("FirstPresenter");
-        _spare = (ContentPresenter)GetTemplateChild("SecondPresenter");
+        var first = GetTemplateChild("FirstPresenter");
+        var second = GetTemplateChild("SecondPresenter");
+        if (first is not ContentPresenter firstPresenter || second is not ContentPresenter secondPresenter)
+        {
+            // Native AOT can hand template parts back as an unprojected base type. Without both
+            // slots, FirstPresenter's TemplateBinding still shows the page; it just won't fade.
+            Log.Info($"PageFrame: no fade slots ({first?.GetType().FullName ?? "null"}, {second?.GetType().FullName ?? "null"})");
+            _current = null;
+            _spare = null;
+            return;
+        }
+
+        _current = firstPresenter;
+        _spare = secondPresenter;
         _current.Content = Content;
         SetOpacity(_current, 1);
         SetOpacity(_spare, 0);

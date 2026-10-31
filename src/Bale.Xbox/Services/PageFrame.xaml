@@ -5,9 +5,9 @@
   <Frame.Template>
     <ControlTemplate TargetType="Frame">
       <Grid Background="{TemplateBinding Background}">
-        <!-- Content is assigned by PageFrame, not TemplateBinding: the outgoing page must stay
-             loaded until its fade ends, including its Composition artwork and remembered focus. -->
-        <ContentPresenter x:Name="FirstPresenter" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+        <!-- PageFrame replaces FirstPresenter's TemplateBinding with explicit content so the outgoing
+             page stays loaded until its fade ends; the binding is only the no-fade fallback. -->
+        <ContentPresenter x:Name="FirstPresenter" Content="{TemplateBinding Content}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
         <ContentPresenter x:Name="SecondPresenter" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
       </Grid>
     </ControlTemplate>
