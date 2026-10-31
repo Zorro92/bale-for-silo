@@ -326,7 +326,7 @@
   <!-- Insets are the existing resting layout, not focus headroom. Browse binds the active
        poster/thumb dimensions so a refreshed row also recalculates its viewport. -->
   <Style x:Key="SkylineBrowseRailStyle" TargetType="ListView" BasedOn="{StaticResource SkylineCardRailStyle}">
-    <Setter Property="services:RailLayout.ContentInset" Value="44,7,0,7" />
+    <Setter Property="services:RailLayout.ContentInset" Value="44,7,40,7" />
   </Style>
   <Style x:Key="SkylineSearchPeopleRailStyle" TargetType="ListView" BasedOn="{StaticResource SkylineCardRailStyle}">
     <Setter Property="services:RailLayout.CardWidth" Value="100" />
@@ -1578,7 +1578,7 @@
     </Setter>
   </Style>
 
-  <!-- TvSectionHeader.kt / FocusModifier.kt: text + 16dp chevron, transparent, 6dp outline on focus. -->
+  <!-- TvSectionHeader.kt / FocusModifier.kt: 16dp chevron, 2dp outline with 6dp radius on focus. -->
   <Style x:Key="SkylineSeeAllButtonStyle" TargetType="Button">
     <Setter Property="MinWidth" Value="0" /><Setter Property="MinHeight" Value="0" />
     <Setter Property="UseSystemFocusVisuals" Value="False" /><Setter Property="VerticalAlignment" Value="Bottom" />
@@ -1591,8 +1591,9 @@
             <StackPanel Orientation="Horizontal" Spacing="4" Padding="8,4">
               <TextBlock Text="See all" FontFamily="{StaticResource SkylineFont}" FontSize="13.76" LineHeight="17.2"
                          LineStackingStrategy="BlockLineHeight" FontWeight="SemiBold" Foreground="#BFFFFFFF" />
-              <Path Width="16" Height="16" Stretch="Uniform" Fill="#BFFFFFFF" VerticalAlignment="Center"
-                    Data="M8.59,16.59 L13.17,12 L8.59,7.41 L10,6 L16,12 L10,18 Z" />
+              <Viewbox Width="16" Height="16" VerticalAlignment="Center">
+                <Path Width="24" Height="24" Fill="#BFFFFFFF" Data="M8.59,16.59 L13.17,12 L8.59,7.41 L10,6 L16,12 L10,18 Z" />
+              </Viewbox>
             </StackPanel>
             <VisualStateManager.VisualStateGroups>
               <VisualStateGroup x:Name="FocusStates">
@@ -1600,7 +1601,9 @@
                 <VisualState x:Name="Focused"><VisualState.Setters>
                   <Setter Target="Outline.Opacity" Value="1" /><Setter Target="Lift.ScaleX" Value="1.06" /><Setter Target="Lift.ScaleY" Value="1.06" />
                 </VisualState.Setters></VisualState>
-                <VisualState x:Name="PointerFocused"><VisualState.Setters><Setter Target="Outline.Opacity" Value="1" /></VisualState.Setters></VisualState>
+                <VisualState x:Name="PointerFocused"><VisualState.Setters>
+                  <Setter Target="Outline.Opacity" Value="1" /><Setter Target="Lift.ScaleX" Value="1.06" /><Setter Target="Lift.ScaleY" Value="1.06" />
+                </VisualState.Setters></VisualState>
               </VisualStateGroup>
             </VisualStateManager.VisualStateGroups>
           </Grid>
@@ -1612,7 +1615,16 @@
   <!-- TvSectionBrowseScreen.kt: six equal columns, 40dp safe area, 30dp top/gaps, 40dp bottom. -->
   <Thickness x:Key="SkylineCatalogPagePadding">40,30,20,40</Thickness>
   <Thickness x:Key="SkylineCatalogHeaderMargin">0,0,20,30</Thickness>
-  <x:Double x:Key="SkylineCatalogCaptionGap">9</x:Double>
+  <x:Double x:Key="SkylineCatalogCaptionGap">11</x:Double>
+  <!-- TvMediaCard.kt: 15.5/18.5sp title, 14/18sp year; only the title brightens on focus. -->
+  <Style x:Key="SkylineCatalogCardTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineDetailPosterTitleStyle}">
+    <Setter Property="FontSize" Value="13.33" /><Setter Property="LineHeight" Value="15.91" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="Foreground" Value="#C7FFFFFF" />
+  </Style>
+  <Style x:Key="SkylineCatalogCardSubtitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineDetailPosterSubtitleStyle}">
+    <Setter Property="FontSize" Value="12.04" /><Setter Property="LineHeight" Value="15.48" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="Foreground" Value="#B3FFFFFF" />
+  </Style>
   <Style x:Key="SkylineCatalogGridItemStyle" TargetType="GridViewItem" BasedOn="{StaticResource SkylineGridItemStyle}">
     <Setter Property="Margin" Value="0,0,20,30" />
   </Style>

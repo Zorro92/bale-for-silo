@@ -33,10 +33,14 @@
           <Border x:Name="FocusGlow" Style="{StaticResource SkylineDetailPosterGlowStyle}" />
           <Border x:Name="FocusRing" Style="{StaticResource SkylineDetailPosterRingStyle}" />
         </Grid>
-        <StackPanel>
-          <TextBlock Text="{x:Bind Title, Mode=OneWay}" Style="{StaticResource SkylineDetailPosterTitleStyle}" />
-          <TextBlock Text="{x:Bind Subtitle, Mode=OneWay}" Visibility="{x:Bind SubtitleVisibility, Mode=OneWay}" Style="{StaticResource SkylineDetailPosterSubtitleStyle}" />
-        </StackPanel>
+        <Grid>
+          <StackPanel>
+            <TextBlock Text="{x:Bind Title, Mode=OneWay}" Style="{StaticResource SkylineCatalogCardTitleStyle}" />
+            <TextBlock Text="{x:Bind Subtitle, Mode=OneWay}" Visibility="{x:Bind SubtitleVisibility, Mode=OneWay}" Style="{StaticResource SkylineCatalogCardSubtitleStyle}" />
+          </StackPanel>
+          <TextBlock x:Name="FocusCaption" Text="{x:Bind Title, Mode=OneWay}" Style="{StaticResource SkylineCatalogCardTitleStyle}"
+                     VerticalAlignment="Top" Foreground="{StaticResource SkylinePrimary}" Opacity="0" IsHitTestVisible="False" />
+        </Grid>
       </StackPanel>
     </DataTemplate>
   </Page.Resources>

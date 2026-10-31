@@ -16,9 +16,9 @@ public sealed partial class RowView : INotifyPropertyChanged
     public const double PosterWidth = 88;
     public const double PosterHeight = 132;
 
-    /// <summary>16:9 Continue Watching / episode thumb: 180x100 dp.</summary>
+    /// <summary>TvEpisodeCard.kt: 180dp wide, with an exact 16:9 artwork aspect ratio.</summary>
     public const double ThumbWidth = 180;
-    public const double ThumbHeight = 100;
+    public const double ThumbHeight = ThumbWidth * 9 / 16;
 
     public RowView(MediaRow row) => Update(row);
 
@@ -28,7 +28,8 @@ public sealed partial class RowView : INotifyPropertyChanged
 
     // The shared rail layout follows the same dimensions as its cards, including quiet refreshes.
     public double CardWidth => Row.Shape == CardShape.Landscape ? ThumbWidth : PosterWidth;
-    public double CardHeight => Row.Shape == CardShape.Landscape ? ThumbHeight : PosterHeight;
+    public double CardHeight => Row.Shape == CardShape.Landscape ? ThumbHeight
+        : Row.Cards.Select(card => PosterWidth / card.PosterAspectRatio).DefaultIfEmpty(PosterHeight).Max();
 
     /// <summary>Progress rows (Continue Watching, Next Up) get the play glyph before their title.</summary>
     public Visibility IconVisibility => Row.Shape == CardShape.Landscape ? Visibility.Visible : Visibility.Collapsed;
@@ -57,10 +58,11 @@ public sealed partial class RowView : INotifyPropertyChanged
         // TvMediaRow.kt deduplicates by contentId before displaying the rail.
         foreach (var card in row.Cards.DistinctBy(card => card.ContentId))
         {
+            var artHeight = landscape ? height : width / card.PosterAspectRatio;
             var existing = Cards.Skip(index).OfType<CardView>().FirstOrDefault(view => view.Card.ContentId == card.ContentId);
             if (existing is null)
             {
-                Cards.Insert(index, new CardView(card, row.Title, width, height, landscape));
+                Cards.Insert(index, new CardView(card, row.Title, width, artHeight, landscape));
             }
             else
             {
@@ -70,7 +72,7 @@ public sealed partial class RowView : INotifyPropertyChanged
                     Cards.Move(oldIndex, index);
                 }
 
-                existing.Update(card, row.Title, width, height, landscape);
+                existing.Update(card, row.Title, width, artHeight, landscape);
             }
 
             index++;
@@ -89,7 +91,9 @@ public sealed partial class RowView : INotifyPropertyChanged
                 Cards.Move(Cards.IndexOf(explore), index);
             }
 
-            explore.Update(row.ExploreSource!, width, height);
+            // TvMediaRow.kt sizes the end card like the last rendered card, including square covers.
+            var endHeight = landscape ? height : Cards.Take(index).OfType<CardView>().Last().Height;
+            explore.Update(row.ExploreSource!, width, endHeight);
             index++;
         }
 

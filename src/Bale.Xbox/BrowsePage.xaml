@@ -64,13 +64,13 @@
 
     <!-- TvExploreAllCard.kt: the same artwork bounds as its rail, without a media caption or menu. -->
     <DataTemplate x:Key="ExploreAllTemplate" x:DataType="views:ExploreAllView">
-      <Grid x:Name="Art" Width="{x:Bind Width, Mode=OneWay}" Height="{x:Bind Height, Mode=OneWay}">
-        <ContentControl x:Name="ExploreAll" Style="{StaticResource SkylineExploreAllCardStyle}" />
-        <Border x:Name="FocusGlow" Margin="-6" CornerRadius="{StaticResource SkylineFocusGlowRadius}" BorderThickness="3"
-                BorderBrush="{StaticResource SkylineFocusGlow}" Opacity="0" IsHitTestVisible="False" />
-        <Border x:Name="FocusRing" Margin="-3" CornerRadius="{StaticResource SkylineFocusRingRadius}" BorderThickness="2"
-                BorderBrush="{StaticResource SkylineFocusRing}" Opacity="0" IsHitTestVisible="False" />
-      </Grid>
+      <StackPanel Width="{x:Bind Width, Mode=OneWay}" AutomationProperties.Name="Explore all">
+        <Grid x:Name="Art" Width="{x:Bind Width, Mode=OneWay}" Height="{x:Bind Height, Mode=OneWay}">
+          <ContentControl x:Name="ExploreAll" Style="{StaticResource SkylineExploreAllCardStyle}" />
+          <Border x:Name="FocusGlow" Style="{StaticResource SkylineDetailPosterGlowStyle}" />
+          <Border x:Name="FocusRing" Style="{StaticResource SkylineDetailPosterRingStyle}" />
+        </Grid>
+      </StackPanel>
     </DataTemplate>
     <views:BrowseTileTemplateSelector x:Key="TileTemplates" MediaTemplate="{StaticResource CardTemplate}" ExploreTemplate="{StaticResource ExploreAllTemplate}" />
 
