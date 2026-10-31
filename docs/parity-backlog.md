@@ -57,13 +57,13 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 ## Wave 2: missing pieces of existing screens
 - [x] Detail: Trailers & More, Recommended/Related, Details facts table
 - [x] Cast clickable → Person page
-- [ ] Long-press / Menu card actions (Play, watched, favorite, watchlist, remove from Home); episode card menu
+- [x] Long-press / Menu card actions (Play, watched, favorite, watchlist, remove from Home); episode card menu
 - [ ] "Explore all" end card; "See all" header
 - [ ] Library: "Recommended" pill; Browse grid (6 cols, sort, filter, A–Z, paging); Collections; cascade level 2 + footer hint; "MOVIE LIBRARIES"
 - [ ] Calendar
 - [ ] Profile menu: Watchlist, Favorites, History, Settings, Switch Server; opens on dwell/Down
 - [ ] For You Watchlist/Favorites dropdown; offline pill; drop key repeats while a rail animates
-- [ ] 500 ms fade page transitions
+- [x] 500 ms fade page transitions
 
 ## Wave 3: new screens
 - [ ] Watchlist / Favorites / History grids
