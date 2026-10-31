@@ -1861,4 +1861,86 @@
     <Setter Property="CharacterSpacing" Value="32" /><Setter Property="Foreground" Value="#85EDEDED" /><Setter Property="Margin" Value="8,6,8,3" />
     <Setter Property="TextWrapping" Value="Wrap" /><Setter Property="MaxLines" Value="3" /><Setter Property="TextTrimming" Value="CharacterEllipsis" />
   </Style>
+  <!-- TvCascadeSelector.kt / TvForYouSelector: 230dp column, 15dp Material icons, standard cascade rows. -->
+  <Style x:Key="SkylineForYouPanelStyle" TargetType="Border">
+    <Setter Property="Width" Value="230" /><Setter Property="Padding" Value="7" />
+    <Setter Property="CornerRadius" Value="{StaticResource SkylinePanelRadius}" />
+    <Setter Property="Background" Value="{StaticResource SkylineGlassStrong}" />
+  </Style>
+  <Style x:Key="SkylineForYouRowStyle" TargetType="Button" BasedOn="{StaticResource SkylineLibrarySectionRowStyle}">
+    <Setter Property="Margin" Value="0,2" /><Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="#E6EDEDED" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Surface" CornerRadius="{TemplateBinding CornerRadius}" Background="Transparent" Padding="{TemplateBinding Padding}">
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Unfocused" /><VisualState x:Name="PointerFocused" />
+                <VisualState x:Name="Focused"><VisualState.Setters>
+                  <Setter Target="Surface.Background" Value="{StaticResource SkylinePrimary}" />
+                  <Setter Target="Content.Foreground" Value="{StaticResource SkylineBackground}" />
+                </VisualState.Setters></VisualState>
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" FontSize="{TemplateBinding FontSize}" FontFamily="{TemplateBinding FontFamily}"
+                              FontWeight="{TemplateBinding FontWeight}" Foreground="{TemplateBinding Foreground}" HorizontalContentAlignment="Stretch" />
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="SkylineForYouIconStyle" TargetType="PathIcon">
+    <Setter Property="Width" Value="15" /><Setter Property="Height" Value="15" />
+  </Style>
+  <!-- TvMainShell.kt / TvServerOfflinePill: labelLarge (18/22sp), 22x10dp padding, 1.02 focus scale. -->
+  <Style x:Key="SkylineOfflinePillTextStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="15.48" /><Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="LineHeight" Value="18.92" /><Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="MaxLines" Value="1" /><Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="SkylineOfflinePillStyle" TargetType="Button">
+    <Setter Property="Foreground" Value="#FFFFFFFF" /><Setter Property="Background" Value="#F03A1F22" />
+    <Setter Property="BorderBrush" Value="#29FFFFFF" /><Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Height" Value="38.92" /><Setter Property="CornerRadius" Value="19.46" />
+    <Setter Property="MaxWidth" Value="460" /><Setter Property="Padding" Value="22,10" />
+    <Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Top" />
+    <Setter Property="Margin" Value="0,92,0,0" /><Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid RenderTransformOrigin="0.5,0.5">
+            <Grid.RenderTransform><ScaleTransform x:Name="Lift" /></Grid.RenderTransform>
+            <Border x:Name="Pill" CornerRadius="{TemplateBinding CornerRadius}" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" />
+            <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}"
+                              Foreground="{TemplateBinding Foreground}" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" />
+                <VisualState x:Name="Pressed">
+                  <VisualState.Setters>
+                    <Setter Target="Pill.Background" Value="{StaticResource SkylinePrimary}" />
+                    <Setter Target="Content.Foreground" Value="{StaticResource SkylineBackground}" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="Disabled" />
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters>
+                    <Setter Target="Pill.Background" Value="{StaticResource SkylinePrimary}" />
+                    <Setter Target="Pill.BorderBrush" Value="{StaticResource SkylinePrimary}" />
+                    <Setter Target="Content.Foreground" Value="{StaticResource SkylineBackground}" />
+                    <Setter Target="Lift.ScaleX" Value="1.02" /><Setter Target="Lift.ScaleY" Value="1.02" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="PointerFocused" /><VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
 </ResourceDictionary>

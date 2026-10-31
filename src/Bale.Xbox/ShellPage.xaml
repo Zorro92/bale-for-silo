@@ -70,6 +70,11 @@
       </StackPanel>
     </Grid>
 
+    <!-- TvMainShell.kt: top-center at 92dp, above content but below the cascade overlays. -->
+    <Button x:Name="OfflinePill" Style="{StaticResource SkylineOfflinePillStyle}" Visibility="Collapsed" Click="OnOfflineRetryClick">
+      <TextBlock Text="Offline mode - select to retry" Style="{StaticResource SkylineOfflinePillTextStyle}" />
+    </Button>
+
     <!-- Cascading library selector, level 1 (guide §5.3): anchored under the focused tab. -->
     <Border x:Name="LibraryPanel" Width="230" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,66,0,0" Padding="7"
             Background="{StaticResource SkylineGlassStrong}" CornerRadius="{StaticResource SkylinePanelRadius}" Visibility="Collapsed">
@@ -107,6 +112,9 @@
         <ItemsControl x:Name="LibrarySectionRows" IsTabStop="False" ItemTemplate="{StaticResource LibraryFlyoutTemplate}" />
       </StackPanel>
     </Border>
+
+    <!-- TvCascadeSelector.kt / TvForYouSelector: Recommendations, Favorites, Watchlist. -->
+    <views:ForYouSelector x:Name="ForYouPanel" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,66,0,0" Visibility="Collapsed" />
 
     <!-- TvMainShell.kt: no page scrim, and directional focus stays inside this dropdown. -->
     <Border x:Name="ProfilePanel" Width="240" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,66,44,0" Padding="0,6"
