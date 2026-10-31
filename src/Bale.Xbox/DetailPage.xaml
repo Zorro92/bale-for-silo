@@ -184,6 +184,7 @@
         </StackPanel>
 
         <StackPanel x:Name="EpisodesSection" Margin="0,8,0,0" Visibility="Collapsed">
+          <!-- rail-layout: non-card — Show/season tabs, not media cards. -->
           <ItemsControl x:Name="Seasons" IsTabStop="False">
             <ItemsControl.Template>
               <ControlTemplate TargetType="ItemsControl">
@@ -206,20 +207,13 @@
           </ItemsControl>
           <!-- TvItemDetailScreen.kt keeps the rail footprint and tabs mounted on empty/failed loads. -->
           <Grid Height="155">
-            <ListView x:Name="Episodes" ItemTemplate="{StaticResource EpisodeTemplate}" SelectionMode="None" IsItemClickEnabled="True"
-                      ItemClick="OnEpisodeClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur" IsTabStop="False"
-                      Padding="50,10,0,6" ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden"
-                      ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+            <ListView x:Name="Episodes" ItemTemplate="{StaticResource EpisodeTemplate}" Style="{StaticResource SkylineDetailEpisodeRailStyle}"
+                      ItemClick="OnEpisodeClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur">
               <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem" BasedOn="{StaticResource SkylineCardItemStyle}">
                   <Setter Property="Margin" Value="0,0,20,0" />
                 </Style>
               </ListView.ItemContainerStyle>
-              <ListView.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <ItemsStackPanel Orientation="Horizontal" />
-                </ItemsPanelTemplate>
-              </ListView.ItemsPanel>
             </ListView>
             <TextBlock x:Name="NoEpisodes" Text="No episodes available" FontSize="12" Foreground="#B3FFFFFF"
                        HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
@@ -230,20 +224,13 @@
         <StackPanel x:Name="SupportingSections" Margin="{StaticResource SkylineDetailLeafBodyInset}" Spacing="{StaticResource SkylineDetailSectionGap}">
           <StackPanel x:Name="CastSection" Spacing="14" Visibility="Collapsed">
             <TextBlock Text="Cast &amp; Crew" Margin="50,0,50,0" Style="{StaticResource SkylineDetailSectionHeaderStyle}" />
-            <ListView x:Name="Cast" ItemTemplate="{StaticResource CastTemplate}" SelectionMode="None" IsItemClickEnabled="True" IsTabStop="False"
-                      ItemClick="OnCastClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur"
-                      Padding="50,12,0,12" ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden"
-                      ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+            <ListView x:Name="Cast" ItemTemplate="{StaticResource CastTemplate}" Style="{StaticResource SkylineDetailCastRailStyle}"
+                      ItemClick="OnCastClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur">
               <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem" BasedOn="{StaticResource SkylineCardItemStyle}">
                   <Setter Property="Margin" Value="0,0,22,0" />
                 </Style>
               </ListView.ItemContainerStyle>
-              <ListView.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <ItemsStackPanel Orientation="Horizontal" />
-                </ItemsPanelTemplate>
-              </ListView.ItemsPanel>
             </ListView>
           </StackPanel>
 
@@ -257,7 +244,6 @@
                   <Setter Property="Margin" Value="{StaticResource SkylineDetailTrailerGap}" />
                 </Style>
               </ListView.ItemContainerStyle>
-              <ListView.ItemsPanel><ItemsPanelTemplate><ItemsStackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ListView.ItemsPanel>
             </ListView>
           </StackPanel>
           <StackPanel x:Name="SimilarSection" Spacing="{StaticResource SkylineDetailRelatedGapSize}" Visibility="Collapsed">
@@ -269,7 +255,6 @@
                   <Setter Property="Margin" Value="{StaticResource SkylineDetailRailGap}" />
                 </Style>
               </ListView.ItemContainerStyle>
-              <ListView.ItemsPanel><ItemsPanelTemplate><ItemsStackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ListView.ItemsPanel>
             </ListView>
           </StackPanel>
           <Button x:Name="DetailsSection" Style="{StaticResource SkylineDetailFactsStopStyle}" Visibility="Collapsed"

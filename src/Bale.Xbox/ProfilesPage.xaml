@@ -61,6 +61,7 @@
           <Button x:Name="RetryButton" Content="Retry" Click="OnRetryClick" HorizontalAlignment="Center" Style="{StaticResource SkylineButtonStyle}" />
         </StackPanel>
       </StackPanel>
+      <!-- rail-layout: non-card — Profile picker actions. -->
       <ItemsControl x:Name="PickerActions" Grid.Row="1" HorizontalAlignment="Center" PreviewKeyDown="OnPickerActionsPreviewKeyDown">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="10" /></ItemsPanelTemplate>
@@ -115,6 +116,7 @@
       <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="600" Spacing="18">
         <TextBlock x:Name="RememberTitle" FontSize="{StaticResource SkylineProfileTitleSize}" FontWeight="ExtraBold" TextAlignment="Center" TextWrapping="Wrap" />
         <TextBlock Text="Open this profile when Bale starts on this TV." FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineSecondary}" HorizontalAlignment="Center" />
+        <!-- rail-layout: non-card — Remember-profile confirmation actions. -->
         <ItemsControl x:Name="RememberActions" HorizontalAlignment="Center">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="11" /></ItemsPanelTemplate>

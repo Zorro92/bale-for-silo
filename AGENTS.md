@@ -77,6 +77,15 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
   at its ends instead of jumping to another row, entering it lands on the remembered or selected item,
   the focused card pins to the start padding, and its bring-into-view never scrolls the page. Pages
   move vertically only on purpose (`Entered` → row pinning, section anchors), as the official apps do.
+- **Horizontal card rails use `SkylineCardRailStyle`** (or a Skyline style based on it), with their
+  card dimensions supplied to `Services/RailLayout`. Never set page-local rail padding, panel
+  headroom, clipping overrides or compensating margins: the shared layout derives the zoom/ring/glow
+  envelope from `CardRailMetrics` and keeps it inside the scroll viewport. Keep resting insets in
+  the theme's derived styles. Search/Person remain vertical grids and use `CardView.GridHeadroom`
+  for the same envelope inside each item. Run `python3 scripts/check-rail-layout.py`; a non-card
+  horizontal list (tabs, filter pills, actions, metadata) must have an immediately preceding
+  `<!-- rail-layout: non-card — reason -->` comment (a `//` comment for code-built non-card lists).
+  Declare card lists in XAML so they can use the style without Native AOT resource lookups.
 - **Grids** stop Left/Right at row ends too (see `SearchPage.OnResultsPreviewKeyDown`).
 - **Bumpers, triggers and Page Up/Down do nothing**, app-wide (`App.OnPreviewKeyDown`); the official
   app handles none of them, and a ScrollViewer would page away from focus.

@@ -20,7 +20,7 @@
       </Border>
     </DataTemplate>
     <DataTemplate x:Key="WorkTemplate" x:DataType="views:CardView">
-      <StackPanel Width="{x:Bind Width, Mode=OneWay}" Spacing="{StaticResource SkylinePersonCardCaptionGap}" Margin="{StaticResource SkylinePersonCardHeadroom}">
+      <StackPanel Width="{x:Bind Width, Mode=OneWay}" Spacing="{StaticResource SkylinePersonCardCaptionGap}" Margin="{x:Bind GridHeadroom, Mode=OneWay}">
         <Grid x:Name="Art" Width="{x:Bind Width, Mode=OneWay}" Height="{x:Bind Height, Mode=OneWay}">
           <Grid CornerRadius="{StaticResource SkylineCardRadius}" Background="{StaticResource SkylineCardPlaceholder}">
             <TextBlock Text="{x:Bind Title}" Visibility="{x:Bind FallbackVisibility}" Style="{StaticResource SkylineDetailTrailerSecondaryStyle}" TextWrapping="Wrap" VerticalAlignment="Center" />
@@ -64,6 +64,7 @@
             </Grid>
             <StackPanel Grid.Column="1" Margin="{StaticResource SkylinePersonInfoInset}" Spacing="{StaticResource SkylinePersonInfoGap}">
               <TextBlock x:Name="PersonName" Style="{StaticResource SkylinePersonNameStyle}" />
+              <!-- rail-layout: non-card — Non-focusable identity badges. -->
               <ItemsControl x:Name="Metadata" ItemTemplate="{StaticResource PersonBadgeTemplate}" IsTabStop="False">
                 <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylinePersonBadgeGap}" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
               </ItemsControl>
@@ -78,6 +79,7 @@
               <TextBlock Text="Filmography" Style="{StaticResource SkylinePersonFilmographyTitleStyle}" />
               <TextBlock x:Name="Count" Style="{StaticResource SkylinePersonCountStyle}" />
             </StackPanel>
+            <!-- rail-layout: non-card — Filmography filter pills. -->
             <ItemsControl x:Name="Filters" ItemTemplate="{StaticResource PersonFilterTemplate}" IsTabStop="False" GotFocus="OnHeaderFocus">
               <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylinePersonFilterGap}" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
             </ItemsControl>

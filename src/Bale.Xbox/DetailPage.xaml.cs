@@ -827,7 +827,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
             {
                 art.ScaleTransition ??= new Vector3Transition { Duration = TimeSpan.FromMilliseconds(180) };
                 art.CenterPoint = new Vector3((float)art.ActualWidth / 2, (float)art.ActualHeight / 2, 0);
-                var scale = focused ? 1.04f : 1;
+                var scale = focused ? CardRailMetrics.EpisodeScale : 1;
                 art.Scale = new Vector3(scale, scale, 1);
             }
         }

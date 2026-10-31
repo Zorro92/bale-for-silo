@@ -70,14 +70,8 @@
           <TextBlock Text="Nothing scheduled" Style="{StaticResource SkylineCalendarNothingStyle}" />
         </StackPanel>
         <ListView ItemsSource="{x:Bind Cards}" ItemTemplate="{StaticResource CardTemplate}" ItemContainerStyle="{StaticResource SkylineCalendarCardItemStyle}"
-                  Visibility="{x:Bind EventVisibility, Mode=OneWay}" SelectionMode="None" IsItemClickEnabled="True"
-                  ItemClick="OnCardClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur" Loaded="OnRailLoaded"
-                  Padding="{StaticResource SkylineCalendarRailPadding}" ScrollViewer.HorizontalScrollMode="Enabled"
-                  ScrollViewer.HorizontalScrollBarVisibility="Hidden" ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
-          <ListView.ItemsPanel>
-            <ItemsPanelTemplate><ItemsStackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
-          </ListView.ItemsPanel>
-        </ListView>
+                  Style="{StaticResource SkylineCalendarCardRailStyle}" Visibility="{x:Bind EventVisibility, Mode=OneWay}"
+                  ItemClick="OnCardClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur" Loaded="OnRailLoaded" />
       </StackPanel>
     </DataTemplate>
     <DataTemplate x:Key="ActionTemplate" x:DataType="views:CalendarActionView">
@@ -126,6 +120,7 @@
                     Spacing="{StaticResource SkylineCalendarControlGap}" GotFocus="OnControlsFocus">
           <Border Background="{StaticResource SkylineCalendarCapsuleFill}" Padding="{StaticResource SkylineCalendarFilterPadding}"
                   CornerRadius="{StaticResource SkylineCalendarFilterRadius}" HorizontalAlignment="Left">
+            <!-- rail-layout: non-card — Calendar filter pills. -->
             <ItemsControl x:Name="Filters" ItemTemplate="{StaticResource FilterTemplate}" XYFocusKeyboardNavigation="Enabled" IsTabStop="False">
               <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylineCalendarFilterGap}" /></ItemsPanelTemplate>
@@ -138,6 +133,7 @@
               <Button x:Name="PreviousWeekButton" Style="{StaticResource SkylineCalendarChevronStyle}" Click="OnPreviousWeekClick" AutomationProperties.Name="Previous week">
                 <FontIcon Glyph="&#xE76B;" Style="{StaticResource SkylineCalendarChevronIconStyle}" />
               </Button>
+              <!-- rail-layout: non-card — Weekday selector buttons. -->
               <ItemsControl x:Name="WeekDates" ItemTemplate="{StaticResource DayTemplate}" XYFocusKeyboardNavigation="Enabled" IsTabStop="False">
                 <ItemsControl.ItemsPanel>
                   <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylineCalendarDayGap}" /></ItemsPanelTemplate>
@@ -164,6 +160,7 @@
             <FontIcon Glyph="&#xE787;" Style="{StaticResource SkylineCalendarMessageIconStyle}" />
             <TextBlock x:Name="MessageTitle" Style="{StaticResource SkylineCalendarMessageTitleStyle}" />
             <TextBlock x:Name="MessageCopy" Style="{StaticResource SkylineCalendarMessageCopyStyle}" />
+            <!-- rail-layout: non-card — Empty/error state actions. -->
             <ItemsControl x:Name="StateActions" ItemTemplate="{StaticResource ActionTemplate}" HorizontalAlignment="Center" IsTabStop="False" XYFocusKeyboardNavigation="Enabled">
               <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylineCalendarActionGap}" /></ItemsPanelTemplate>

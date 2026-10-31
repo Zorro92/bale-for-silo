@@ -8,7 +8,8 @@
 -->
 <ResourceDictionary
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:services="using:Bale.Xbox.Services">
 
   <!-- Typeface: Inter, as bundled by the Android apps (OFL, see THIRD_PARTY_NOTICES.md). -->
   <FontFamily x:Key="SkylineFont">ms-appx:///Assets/Fonts/InterVariable.ttf#Inter Variable</FontFamily>
@@ -298,6 +299,52 @@
     <Setter Property="HorizontalContentAlignment" Value="Left" />
     <Setter Property="UseSystemFocusVisuals" Value="False" />
     <Setter Property="Background" Value="Transparent" />
+  </Style>
+
+  <!--
+    Every horizontal card rail derives from this style (TvMediaRow.kt). RailLayout computes
+    ceil(cardSize * (focusScale - 1) / 2 + scaled ring/glow outset + 1) on each axis.
+    ListView's native template puts Padding on the ItemsPresenter inside the ScrollViewer,
+    so focus stays inside the viewport clip. ContentInset preserves resting geometry; the
+    helper compensates extra vertical headroom with outer margins, never by disabling clipping.
+  -->
+  <Style x:Key="SkylineCardRailStyle" TargetType="ListView">
+    <Setter Property="services:RailLayout.IsEnabled" Value="True" />
+    <Setter Property="SelectionMode" Value="None" />
+    <Setter Property="IsItemClickEnabled" Value="True" />
+    <Setter Property="ItemContainerStyle" Value="{StaticResource SkylineCardItemStyle}" />
+    <Setter Property="ScrollViewer.HorizontalScrollMode" Value="Enabled" />
+    <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Hidden" />
+    <Setter Property="ScrollViewer.VerticalScrollMode" Value="Disabled" />
+    <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
+    <Setter Property="ItemsPanel">
+      <Setter.Value>
+        <ItemsPanelTemplate><ItemsStackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <!-- Insets are the existing resting layout, not focus headroom. Browse binds the active
+       poster/thumb dimensions so a refreshed row also recalculates its viewport. -->
+  <Style x:Key="SkylineBrowseRailStyle" TargetType="ListView" BasedOn="{StaticResource SkylineCardRailStyle}">
+    <Setter Property="services:RailLayout.ContentInset" Value="44,7,0,7" />
+  </Style>
+  <Style x:Key="SkylineSearchPeopleRailStyle" TargetType="ListView" BasedOn="{StaticResource SkylineCardRailStyle}">
+    <Setter Property="services:RailLayout.CardWidth" Value="100" />
+    <Setter Property="services:RailLayout.CardHeight" Value="100" />
+    <Setter Property="services:RailLayout.ContentInset" Value="40,12,40,4" />
+  </Style>
+  <Style x:Key="SkylineDetailEpisodeRailStyle" TargetType="ListView" BasedOn="{StaticResource SkylineCardRailStyle}">
+    <Setter Property="services:RailLayout.CardWidth" Value="180" />
+    <Setter Property="services:RailLayout.CardHeight" Value="101" />
+    <Setter Property="services:RailLayout.FocusVisual" Value="Episode" />
+    <Setter Property="services:RailLayout.ContentInset" Value="50,10,0,6" />
+    <Setter Property="IsTabStop" Value="False" />
+  </Style>
+  <Style x:Key="SkylineDetailCastRailStyle" TargetType="ListView" BasedOn="{StaticResource SkylineCardRailStyle}">
+    <Setter Property="services:RailLayout.CardWidth" Value="100" />
+    <Setter Property="services:RailLayout.CardHeight" Value="100" />
+    <Setter Property="services:RailLayout.ContentInset" Value="50,12,0,12" />
+    <Setter Property="IsTabStop" Value="False" />
   </Style>
 
   <Style x:Key="SkylineGridItemStyle" TargetType="GridViewItem">
@@ -925,7 +972,6 @@
   <Thickness x:Key="SkylineCalendarTopInset">0,94,0,0</Thickness>
   <Thickness x:Key="SkylineCalendarContentPadding">0,8,0,28</Thickness>
   <Thickness x:Key="SkylineCalendarSafeInset">40,0,40,0</Thickness>
-  <Thickness x:Key="SkylineCalendarRailPadding">40,8,40,4</Thickness>
   <Thickness x:Key="SkylineCalendarOverlayInset">6</Thickness>
   <Thickness x:Key="SkylineCalendarFilterPadding">6</Thickness>
   <CornerRadius x:Key="SkylineCalendarFilterRadius">18.31</CornerRadius>
@@ -1100,6 +1146,12 @@
     <Setter Property="FontWeight" Value="Bold" /><Setter Property="Foreground" Value="{StaticResource SkylineCalendarWhite}" />
     <Setter Property="Margin" Value="{StaticResource SkylineCalendarSafeInset}" />
   </Style>
+  <Style x:Key="SkylineCalendarCardRailStyle" TargetType="ListView" BasedOn="{StaticResource SkylineCardRailStyle}">
+    <Setter Property="services:RailLayout.CardWidth" Value="{StaticResource SkylineCalendarPosterWidth}" />
+    <Setter Property="services:RailLayout.CardHeight" Value="{StaticResource SkylineCalendarPosterHeight}" />
+    <Setter Property="services:RailLayout.FocusVisual" Value="Calendar" />
+    <Setter Property="services:RailLayout.ContentInset" Value="40,8,40,4" />
+  </Style>
   <Style x:Key="SkylineCalendarCardItemStyle" TargetType="ListViewItem" BasedOn="{StaticResource SkylineCardItemStyle}">
     <Setter Property="Margin" Value="0,0,18,0" />
   </Style>
@@ -1198,18 +1250,19 @@
   <CornerRadius x:Key="SkylineDetailTrailerRadius">9</CornerRadius>
   <SolidColorBrush x:Key="SkylineDetailTrailerRing" Color="#F0FFFFFF" />
   <SolidColorBrush x:Key="SkylineDetailFactDivider" Color="#14FFFFFF" />
-  <Style x:Key="SkylineDetailExtraRailStyle" TargetType="ListView">
-    <Setter Property="Padding" Value="50,6,50,6" />
-    <Setter Property="SelectionMode" Value="None" />
-    <Setter Property="IsItemClickEnabled" Value="True" />
+  <Style x:Key="SkylineDetailExtraRailStyle" TargetType="ListView" BasedOn="{StaticResource SkylineCardRailStyle}">
+    <Setter Property="services:RailLayout.CardWidth" Value="{StaticResource SkylineDetailTrailerWidth}" />
+    <!-- Trailers scale the whole card: 132 art + up to 48 for two single-line captions/gaps. -->
+    <Setter Property="services:RailLayout.CardHeight" Value="180" />
+    <Setter Property="services:RailLayout.FocusVisual" Value="Trailer" />
+    <Setter Property="services:RailLayout.ContentInset" Value="50,6,50,6" />
     <Setter Property="IsTabStop" Value="False" />
-    <Setter Property="ScrollViewer.HorizontalScrollMode" Value="Enabled" />
-    <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Hidden" />
-    <Setter Property="ScrollViewer.VerticalScrollMode" Value="Disabled" />
-    <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
   </Style>
-  <Style x:Key="SkylineDetailRelatedRailStyle" TargetType="ListView" BasedOn="{StaticResource SkylineDetailExtraRailStyle}">
-    <Setter Property="Padding" Value="50,0,50,24" />
+  <Style x:Key="SkylineDetailRelatedRailStyle" TargetType="ListView" BasedOn="{StaticResource SkylineCardRailStyle}">
+    <Setter Property="services:RailLayout.CardWidth" Value="{StaticResource SkylineDetailRelatedWidth}" />
+    <Setter Property="services:RailLayout.CardHeight" Value="{StaticResource SkylineDetailRelatedHeight}" />
+    <Setter Property="services:RailLayout.ContentInset" Value="50,0,50,24" />
+    <Setter Property="IsTabStop" Value="False" />
   </Style>
   <Style x:Key="SkylineDetailTrailerRingStyle" TargetType="Border">
     <Setter Property="CornerRadius" Value="{StaticResource SkylineDetailTrailerRadius}" />
@@ -1304,7 +1357,6 @@
   <Thickness x:Key="SkylinePersonPagePadding">50,24,30,36</Thickness>
   <Thickness x:Key="SkylinePersonHeaderMargin">0,0,20,24</Thickness>
   <Thickness x:Key="SkylinePersonGridGap">0,0,20,20</Thickness>
-  <Thickness x:Key="SkylinePersonCardHeadroom">0,12,0,0</Thickness>
   <x:Double x:Key="SkylinePersonHeaderGap">24</x:Double>
   <x:Double x:Key="SkylinePersonInfoGap">11</x:Double>
   <x:Double x:Key="SkylinePersonFilmographyGap">10</x:Double>

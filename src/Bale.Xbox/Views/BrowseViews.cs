@@ -26,6 +26,10 @@ public sealed partial class RowView : INotifyPropertyChanged
 
     public string Title => Row.Title;
 
+    // The shared rail layout follows the same dimensions as its cards, including quiet refreshes.
+    public double CardWidth => Row.Shape == CardShape.Landscape ? ThumbWidth : PosterWidth;
+    public double CardHeight => Row.Shape == CardShape.Landscape ? ThumbHeight : PosterHeight;
+
     /// <summary>Progress rows (Continue Watching, Next Up) get the play glyph before their title.</summary>
     public Visibility IconVisibility => Row.Shape == CardShape.Landscape ? Visibility.Visible : Visibility.Collapsed;
 
@@ -42,8 +46,8 @@ public sealed partial class RowView : INotifyPropertyChanged
         var rememberedIndex = LastFocused is { } last ? Cards.IndexOf(last) : -1;
         Row = row;
         var landscape = row.Shape == CardShape.Landscape;
-        var width = landscape ? ThumbWidth : PosterWidth;
-        var height = landscape ? ThumbHeight : PosterHeight;
+        var width = CardWidth;
+        var height = CardHeight;
         var index = 0;
         // TvMediaRow.kt deduplicates by contentId before displaying the rail.
         foreach (var card in row.Cards.DistinctBy(card => card.ContentId))
@@ -146,6 +150,10 @@ public sealed partial class CardView : INotifyPropertyChanged
     public double Width { get; private set; }
 
     public double Height { get; private set; }
+
+    /// <summary>Vertical grids need the same focus envelope inside each item when it scrolls into view.</summary>
+    public Thickness GridHeadroom => new(0, Math.Max(Services.CardRailMetrics.GridTopInset,
+        Services.CardRailMetrics.Headroom(Height)), 0, 0);
 
     /// <summary>Gap between the art and its caption: 11 under posters, 7 under thumbs.</summary>
     public double CaptionSpacing { get; private set; }
