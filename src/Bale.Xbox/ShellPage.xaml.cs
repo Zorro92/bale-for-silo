@@ -148,9 +148,6 @@ public sealed partial class ShellPage : Page, IBackHandler
             case Windows.System.VirtualKey.GamepadLeftThumbstickRight:
                 e.Handled = true;
                 break;
-            case Windows.System.VirtualKey.Escape:
-                e.Handled = OnBack();
-                break;
         }
     }
 
