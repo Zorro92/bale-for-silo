@@ -44,6 +44,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
     private SeasonView? _selectedTab;
     private long? _shownSeason;
     private bool _busy;
+    private bool _restoringDialogFocus;
 
     /// <summary>Set while the rail swaps seasons: focus briefly falls elsewhere and must not move the page.</summary>
     private bool _swapping;
@@ -94,7 +95,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         ActionButton.Attach(WatchlistButton);
         ActionButton.Attach(MoreButton);
 
-        // Entering the action row from outside always lands on Play (HeroActionRow's focusProperties enter).
+        // Normal action row entry lands on Play (TvItemDetailScreen.kt's HeroActionRow focusProperties enter).
         Actions.GettingFocus += OnActionsGettingFocus;
         Actions.GotFocus += (_, _) =>
         {
@@ -755,7 +756,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
     {
         try
         {
-            if (!IsWithin(args.OldFocusedElement, Actions) && IsWithin(args.NewFocusedElement, Actions)
+            if (!_restoringDialogFocus && !IsWithin(args.OldFocusedElement, Actions) && IsWithin(args.NewFocusedElement, Actions)
                 && !ReferenceEquals(args.NewFocusedElement, PlayButton))
             {
                 args.TrySetNewFocusedElement(PlayButton);
@@ -922,9 +923,24 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
 
     private void CloseDialog()
     {
+        var opener = MorePanel.Visibility == Visibility.Visible ? MoreButton : SynopsisButton;
         DialogLayer.Visibility = Visibility.Collapsed;
         PageScroller.IsEnabled = true;
-        RestoreFocus();
+
+        // TvItemDetailScreen.kt / TvExpandableSynopsis.kt return to the dialog's opener.
+        // Bypass the action row's normal enter-on-Play redirect while restoring it.
+        FocusRetry.Until(PageContent, () =>
+        {
+            _restoringDialogFocus = true;
+            try
+            {
+                return opener.Focus(FocusState.Programmatic);
+            }
+            finally
+            {
+                _restoringDialogFocus = false;
+            }
+        });
     }
 
     public bool OnBack()
