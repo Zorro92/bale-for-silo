@@ -43,6 +43,9 @@ dotnet kiota generate \
   --include-path '/api/v2/home/sections/{id}/items' \
   --include-path '/api/v2/catalog/items/{id}' \
   --include-path '/api/v2/catalog' \
+  --include-path '/api/v2/catalog/query' \
+  --include-path '/api/v2/catalog/filters' \
+  --include-path '/api/v2/library/{id}/collections' \
   --include-path '/api/v2/catalog/people' \
   --include-path '/api/v2/catalog/people/{id}' \
   --include-path '/api/v2/recommendations/similar/{item_id}' \

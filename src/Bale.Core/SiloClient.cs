@@ -29,6 +29,7 @@ public sealed class SiloClient : IDisposable
         _connection = new SiloConnection(server, identity, CurrentCredentialsAsync, transport);
         DeviceLogin = new DeviceLoginFlow(_connection.Api, time);
         Browse = new BrowseFeed(_connection.Api, server);
+        LibraryBrowse = new LibraryBrowseFeed(_connection.Api, Browse);
         Detail = new DetailFeed(_connection.Api, Browse);
         People = new People.PersonFeed(_connection.Api, Browse);
     }
@@ -40,6 +41,8 @@ public sealed class SiloClient : IDisposable
     public DeviceLoginFlow DeviceLogin { get; }
 
     public BrowseFeed Browse { get; }
+
+    public LibraryBrowseFeed LibraryBrowse { get; }
 
     public DetailFeed Detail { get; }
 
