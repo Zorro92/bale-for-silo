@@ -7,6 +7,7 @@ public enum RailFocusVisual
     Episode,
     Calendar,
     Trailer,
+    ExplorePoster,
 }
 
 /// <summary>Viewport geometry only. Kept free of XAML types so the padding contract can be tested on Linux.</summary>
@@ -28,6 +29,8 @@ internal static class CardRailMetrics
             RailFocusVisual.Episode => (EpisodeScale, 0d),
             RailFocusVisual.Calendar => (CalendarScale, 2.5),
             RailFocusVisual.Trailer => (ArtScale, 0d),
+            // TvExploreAllCard.kt lifts posters 1.10; neighbouring media cards still use their own scale.
+            RailFocusVisual.ExplorePoster => (1.10f, GlowOutset),
             _ => (ArtScale, GlowOutset),
         };
         return Math.Ceiling(size * (scale - 1) / 2 + outset * scale + SafetyMargin);

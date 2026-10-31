@@ -1541,4 +1541,93 @@
     <Setter Property="Spacing" Value="12" />
   </Style>
   <!-- End Wave 2 detail extras + people. -->
+
+  <!-- TvExploreAllCard.kt: 8dp shape, 44dp arrow circle, 10dp gap, 15.5sp label. -->
+  <Style x:Key="SkylineExploreAllCardStyle" TargetType="ContentControl">
+    <Setter Property="IsTabStop" Value="False" />
+    <Setter Property="IsHitTestVisible" Value="False" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ContentControl">
+          <Border x:Name="Surface" Background="#14FFFFFF" CornerRadius="8">
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CardStates">
+                <VisualState x:Name="Resting" />
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters>
+                    <Setter Target="Surface.Background" Value="#29FFFFFF" />
+                    <Setter Target="Circle.Background" Value="#3DFFFFFF" />
+                    <Setter Target="Label.Foreground" Value="#FFFFFFFF" />
+                  </VisualState.Setters>
+                </VisualState>
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <StackPanel Spacing="10" HorizontalAlignment="Center" VerticalAlignment="Center">
+              <Border x:Name="Circle" Width="44" Height="44" CornerRadius="22" Background="#24FFFFFF" HorizontalAlignment="Center">
+                <Path Width="24" Height="24" Fill="#FFFFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center"
+                      Data="M12,4 L10.59,5.41 L16.17,11 L4,11 L4,13 L16.17,13 L10.59,18.59 L12,20 L20,12 Z" />
+              </Border>
+              <TextBlock x:Name="Label" Text="Explore all" FontFamily="{StaticResource SkylineFont}" FontSize="13.33" LineHeight="15.91"
+                         LineStackingStrategy="BlockLineHeight" FontWeight="SemiBold" Foreground="#D9FFFFFF" TextAlignment="Center" />
+            </StackPanel>
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- TvSectionHeader.kt / FocusModifier.kt: text + 16dp chevron, transparent, 6dp outline on focus. -->
+  <Style x:Key="SkylineSeeAllButtonStyle" TargetType="Button">
+    <Setter Property="MinWidth" Value="0" /><Setter Property="MinHeight" Value="0" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" /><Setter Property="VerticalAlignment" Value="Bottom" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid RenderTransformOrigin="0.5,0.5">
+            <Grid.RenderTransform><ScaleTransform x:Name="Lift" /></Grid.RenderTransform>
+            <Border x:Name="Outline" CornerRadius="6" BorderBrush="#FFFFFFFF" BorderThickness="2" Opacity="0" />
+            <StackPanel Orientation="Horizontal" Spacing="4" Padding="8,4">
+              <TextBlock Text="See all" FontFamily="{StaticResource SkylineFont}" FontSize="13.76" LineHeight="17.2"
+                         LineStackingStrategy="BlockLineHeight" FontWeight="SemiBold" Foreground="#BFFFFFFF" />
+              <Path Width="16" Height="16" Stretch="Uniform" Fill="#BFFFFFFF" VerticalAlignment="Center"
+                    Data="M8.59,16.59 L13.17,12 L8.59,7.41 L10,6 L16,12 L10,18 Z" />
+            </StackPanel>
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Unfocused" />
+                <VisualState x:Name="Focused"><VisualState.Setters>
+                  <Setter Target="Outline.Opacity" Value="1" /><Setter Target="Lift.ScaleX" Value="1.06" /><Setter Target="Lift.ScaleY" Value="1.06" />
+                </VisualState.Setters></VisualState>
+                <VisualState x:Name="PointerFocused"><VisualState.Setters><Setter Target="Outline.Opacity" Value="1" /></VisualState.Setters></VisualState>
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- TvSectionBrowseScreen.kt: six equal columns, 40dp safe area, 30dp top/gaps, 40dp bottom. -->
+  <Thickness x:Key="SkylineCatalogPagePadding">40,30,20,40</Thickness>
+  <Thickness x:Key="SkylineCatalogHeaderMargin">0,0,20,30</Thickness>
+  <x:Double x:Key="SkylineCatalogCaptionGap">9</x:Double>
+  <Style x:Key="SkylineCatalogGridItemStyle" TargetType="GridViewItem" BasedOn="{StaticResource SkylineGridItemStyle}">
+    <Setter Property="Margin" Value="0,0,20,30" />
+  </Style>
+  <Style x:Key="SkylineCatalogTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="24.08" /><Setter Property="LineHeight" Value="27.52" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="FontWeight" Value="Black" />
+    <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
+  </Style>
+  <Style x:Key="SkylineCatalogMessageStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="18.92" /><Setter Property="Foreground" Value="{StaticResource SkylineSecondary}" />
+    <Setter Property="TextWrapping" Value="Wrap" /><Setter Property="TextAlignment" Value="Center" />
+    <Setter Property="Margin" Value="48" />
+  </Style>
+  <Style x:Key="SkylineCatalogRetryPanelStyle" TargetType="StackPanel">
+    <Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Spacing" Value="12" /><Setter Property="Margin" Value="24" />
+  </Style>
 </ResourceDictionary>

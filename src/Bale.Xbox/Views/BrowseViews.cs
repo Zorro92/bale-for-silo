@@ -33,10 +33,15 @@ public sealed partial class RowView : INotifyPropertyChanged
     /// <summary>Progress rows (Continue Watching, Next Up) get the play glyph before their title.</summary>
     public Visibility IconVisibility => Row.Shape == CardShape.Landscape ? Visibility.Visible : Visibility.Collapsed;
 
-    public ObservableCollection<CardView> Cards { get; } = new();
+    public Services.RailFocusVisual FocusVisual => Row.OffersExploreAll && Row.Shape == CardShape.Poster
+        ? Services.RailFocusVisual.ExplorePoster : Services.RailFocusVisual.Card;
 
-    /// <summary>The card focus last sat on in this row: Up/Down come back to it (TvMediaRow's focusRestorer).</summary>
-    public CardView? LastFocused { get; set; }
+    public Visibility SeeAllVisibility => Row.OffersSeeAll ? Visibility.Visible : Visibility.Collapsed;
+
+    public ObservableCollection<BrowseTileView> Cards { get; } = new();
+
+    /// <summary>The card/end card focus last sat on: Up/Down come back to it (TvMediaRow's focusRestorer).</summary>
+    public BrowseTileView? LastFocused { get; set; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -52,7 +57,7 @@ public sealed partial class RowView : INotifyPropertyChanged
         // TvMediaRow.kt deduplicates by contentId before displaying the rail.
         foreach (var card in row.Cards.DistinctBy(card => card.ContentId))
         {
-            var existing = Cards.Skip(index).FirstOrDefault(view => view.Card.ContentId == card.ContentId);
+            var existing = Cards.Skip(index).OfType<CardView>().FirstOrDefault(view => view.Card.ContentId == card.ContentId);
             if (existing is null)
             {
                 Cards.Insert(index, new CardView(card, row.Title, width, height, landscape));
@@ -71,6 +76,23 @@ public sealed partial class RowView : INotifyPropertyChanged
             index++;
         }
 
+        if (row.OffersExploreAll)
+        {
+            var explore = Cards.OfType<ExploreAllView>().FirstOrDefault();
+            if (explore is null)
+            {
+                explore = new ExploreAllView();
+                Cards.Insert(index, explore);
+            }
+            else if (Cards.IndexOf(explore) != index)
+            {
+                Cards.Move(Cards.IndexOf(explore), index);
+            }
+
+            explore.Update(row.ExploreSource!, width, height);
+            index++;
+        }
+
         while (Cards.Count > index)
         {
             Cards.RemoveAt(Cards.Count - 1);
@@ -85,8 +107,9 @@ public sealed partial class RowView : INotifyPropertyChanged
     }
 }
 
-public sealed partial class CardView : INotifyPropertyChanged
+public sealed partial class CardView : BrowseTileView, INotifyPropertyChanged
 {
+    public override string Key => Card.ContentId;
     public CardView(MediaCard card, string rowTitle, double width, double height, bool landscape) =>
         Update(card, rowTitle, width, height, landscape);
 

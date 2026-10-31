@@ -62,19 +62,37 @@
       </StackPanel>
     </DataTemplate>
 
+    <!-- TvExploreAllCard.kt: the same artwork bounds as its rail, without a media caption or menu. -->
+    <DataTemplate x:Key="ExploreAllTemplate" x:DataType="views:ExploreAllView">
+      <Grid x:Name="Art" Width="{x:Bind Width, Mode=OneWay}" Height="{x:Bind Height, Mode=OneWay}">
+        <ContentControl x:Name="ExploreAll" Style="{StaticResource SkylineExploreAllCardStyle}" />
+        <Border x:Name="FocusGlow" Margin="-6" CornerRadius="{StaticResource SkylineFocusGlowRadius}" BorderThickness="3"
+                BorderBrush="{StaticResource SkylineFocusGlow}" Opacity="0" IsHitTestVisible="False" />
+        <Border x:Name="FocusRing" Margin="-3" CornerRadius="{StaticResource SkylineFocusRingRadius}" BorderThickness="2"
+                BorderBrush="{StaticResource SkylineFocusRing}" Opacity="0" IsHitTestVisible="False" />
+      </Grid>
+    </DataTemplate>
+    <views:BrowseTileTemplateSelector x:Key="TileTemplates" MediaTemplate="{StaticResource CardTemplate}" ExploreTemplate="{StaticResource ExploreAllTemplate}" />
+
     <DataTemplate x:Key="RowTemplate" x:DataType="views:RowView">
       <!-- TvMediaRow.kt / TvSkylineSectionFeed.kt: 12 header-to-rail, 14 between rows, 7 rail padding. -->
       <StackPanel Spacing="12" Margin="0,0,0,14">
         <!-- TvSectionHeader.kt carries 4 bottom padding; the icon carries its own horizontal gap. -->
-        <StackPanel Orientation="Horizontal" Margin="44,0,0,4">
-          <Grid Width="22" Height="22" Margin="0,0,8,0" Visibility="{x:Bind IconVisibility, Mode=OneWay}" VerticalAlignment="Center">
-            <Ellipse Fill="{StaticResource SkylinePrimary}" />
-            <Polygon Points="8.5,6 16,11 8.5,16" Fill="{StaticResource SkylineBackground}" />
-          </Grid>
-          <TextBlock Text="{x:Bind Title, Mode=OneWay}" FontSize="{StaticResource SkylineRowTitleSize}" FontWeight="SemiBold" LineHeight="18.9" VerticalAlignment="Center" />
-        </StackPanel>
-        <ListView ItemsSource="{x:Bind Cards}" ItemTemplate="{StaticResource CardTemplate}" Style="{StaticResource SkylineBrowseRailStyle}"
+        <Grid Margin="44,0,40,4">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
+            <Grid Width="22" Height="22" Margin="0,0,8,0" Visibility="{x:Bind IconVisibility, Mode=OneWay}" VerticalAlignment="Center">
+              <Ellipse Fill="{StaticResource SkylinePrimary}" />
+              <Polygon Points="8.5,6 16,11 8.5,16" Fill="{StaticResource SkylineBackground}" />
+            </Grid>
+            <TextBlock Text="{x:Bind Title, Mode=OneWay}" FontSize="{StaticResource SkylineRowTitleSize}" FontWeight="SemiBold" LineHeight="18.9" VerticalAlignment="Center" />
+          </StackPanel>
+          <Button x:Name="SeeAllButton" Grid.Column="1" Style="{StaticResource SkylineSeeAllButtonStyle}" Visibility="{x:Bind SeeAllVisibility, Mode=OneWay}"
+                  Click="OnSeeAllClick" GotFocus="OnSeeAllFocus" AutomationProperties.Name="See all" />
+        </Grid>
+        <ListView ItemsSource="{x:Bind Cards}" ItemTemplateSelector="{StaticResource TileTemplates}" Style="{StaticResource SkylineBrowseRailStyle}"
                   services:RailLayout.CardWidth="{x:Bind CardWidth, Mode=OneWay}" services:RailLayout.CardHeight="{x:Bind CardHeight, Mode=OneWay}"
+                  services:RailLayout.FocusVisual="{x:Bind FocusVisual, Mode=OneWay}"
                   ItemClick="OnCardClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur" Loaded="OnRailLoaded" />
       </StackPanel>
     </DataTemplate>

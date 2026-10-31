@@ -12,8 +12,8 @@ namespace Bale.Core.Browse;
 /// </summary>
 public sealed class BrowseFeed
 {
-    /// <summary>Cards per row the TV asks for; rows can show "see all" past this later.</summary>
-    public const int CardsPerRow = 24;
+    /// <summary>SectionRowLimits.kt: full sections live on their paged "Explore all" screen.</summary>
+    public const int CardsPerRow = 20;
 
     private readonly SiloApiClient _api;
     private readonly Uri _server;
@@ -75,7 +75,7 @@ public sealed class BrowseFeed
             config.QueryParameters.StillWidth = widths.Still;
         }, cancellationToken).ConfigureAwait(false);
 
-        return ToRows(response?.Sections);
+        return ToRows(response?.Sections, libraryId);
     }
 
     /// <summary>For You: the server's recommendation rows (TvRecommendationsScreen, /recommendations/discover).</summary>
@@ -118,8 +118,25 @@ public sealed class BrowseFeed
         SearchContinuation? continuation, bool showAudiobooks, CancellationToken cancellationToken) =>
         CatalogPageAsync(GetSourceQueryParameterType.Person, null, personId, widths, type, continuation, showAudiobooks, 60, cancellationToken);
 
+    /// <summary>SectionApi.kt: source=section, explicit home/library scope, opaque cursors, fifty-item pages.</summary>
+    public Task<SearchResultPage> SectionPageAsync(SectionBrowseSource section, ArtworkWidths widths,
+        SearchContinuation? continuation = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(section.SectionId);
+        if (section.LibraryId is { } libraryId && (!long.TryParse(libraryId, out var id) || id <= 0))
+        {
+            throw new ArgumentException("Invalid section library.", nameof(section));
+        }
+
+        // SectionBrowseViewModel applies mediaScope locally; changing the catalog query's type would change the row.
+        // The TV section page hides reading media, but unlike Search it does not hide audiobooks.
+        return CatalogPageAsync(GetSourceQueryParameterType.Section, null, null, widths, null, continuation,
+            showAudiobooks: true, 50, cancellationToken, section);
+    }
+
     private async Task<SearchResultPage> CatalogPageAsync(GetSourceQueryParameterType source, string? query, string? personId,
-        ArtworkWidths widths, string? type, SearchContinuation? continuation, bool showAudiobooks, int limit, CancellationToken cancellationToken)
+        ArtworkWidths widths, string? type, SearchContinuation? continuation, bool showAudiobooks, int limit, CancellationToken cancellationToken,
+        SectionBrowseSource? section = null)
     {
         var cursor = continuation?.Cursor;
         var seen = new HashSet<string>(continuation?.Seen ?? [], StringComparer.Ordinal);
@@ -131,6 +148,13 @@ public sealed class BrowseFeed
                 config.QueryParameters.Source = source;
                 config.QueryParameters.Q = query;
                 config.QueryParameters.PersonId = personId;
+                if (section is not null)
+                {
+                    config.QueryParameters.SectionId = section.SectionId;
+                    config.QueryParameters.Scope = section.LibraryId is null ? GetScopeQueryParameterType.Home : GetScopeQueryParameterType.Library;
+                    config.QueryParameters.LibraryId = section.LibraryId;
+                }
+
                 config.QueryParameters.Type = type;
                 config.QueryParameters.Cursor = cursor;
                 config.QueryParameters.Limit = limit;
@@ -155,7 +179,7 @@ public sealed class BrowseFeed
                 next = new SearchContinuation(nextCursor, seen);
             }
 
-            var cards = items.Where(item => IsVisibleTvType(item.Type, showAudiobooks))
+            var cards = items.Where(item => IsVisibleTvType(item.Type, showAudiobooks) && (section?.MatchesMediaScope(item.Type) ?? true))
                 .Select(item => ToCard(item, CardShape.Poster) is var card && item.Type == "episode" && !string.IsNullOrWhiteSpace(item.Title)
                     ? card with { Title = item.Title!, Subtitle = item.Year is > 0 ? item.Year.Value.ToString(CultureInfo.InvariantCulture) : null }
                     : card)
@@ -276,13 +300,13 @@ public sealed class BrowseFeed
         return LibraryTabs.From(response?.Items ?? []);
     }
 
-    private IReadOnlyList<MediaRow> ToRows(IEnumerable<Section>? sections) =>
+    private IReadOnlyList<MediaRow> ToRows(IEnumerable<Section>? sections, string? libraryId = null) =>
         (sections ?? [])
             .Where(section => section.Items is { Count: > 0 })
-            .Select(ToRow)
+            .Select(section => ToRow(section, libraryId))
             .ToList();
 
-    internal MediaRow ToRow(Section section)
+    internal MediaRow ToRow(Section section, string? libraryId = null)
     {
         // Servers without section_item_limit_max send whole sections; long rows cost memory on a console.
         var items = section.Items!.Take(CardsPerRow).ToList();
@@ -293,7 +317,10 @@ public sealed class BrowseFeed
             section.SectionType ?? string.Empty,
             section.Featured == true,
             shape,
-            items.Select(item => ToCard(item, shape)).ToList());
+            items.Select(item => ToCard(item, shape)).ToList())
+        {
+            ExploreSource = string.IsNullOrWhiteSpace(section.Id) ? null : new SectionBrowseSource(section.Id, section.Title ?? string.Empty, libraryId),
+        };
     }
 
     /// <summary>Continue Watching / Next Up: the server marks their cards with item_source.</summary>

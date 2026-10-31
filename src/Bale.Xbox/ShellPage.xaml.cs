@@ -336,6 +336,12 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         }
     }
 
+    /// <summary>TvHomeScreen.kt's "See all" is a For You tab shortcut, not a section grid.</summary>
+    internal void OpenForYou()
+    {
+        if (_tabs.FirstOrDefault(tab => tab.Page == "foryou") is { } tab) Select(tab);
+    }
+
     private void UpdateChecked()
     {
         foreach (var tab in _tabs)

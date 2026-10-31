@@ -54,7 +54,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     private Color? _tint;
 
     /// <summary>The last card focused anywhere on the page: where Down from the top bar returns.</summary>
-    private (int Row, CardView Card)? _lastCard;
+    private (int Row, BrowseTileView Card)? _lastCard;
 
     public BrowsePage()
     {
@@ -178,7 +178,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             }
 
             VisualStateManager.GoToState(this, "Content", false);
-            ShowMarquee(_lastCard?.Card ?? _rows[0].Cards[0], refresh);
+            ShowMarquee((_lastCard?.Card as CardView) ?? _shownMarquee ?? _rows[0].Cards.OfType<CardView>().First(), refresh);
             if (refresh)
             {
                 if (restoreFocus)
@@ -262,7 +262,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             {
                 var row = _rows.FirstOrDefault(view => ReferenceEquals(view, rememberedRow))
                     ?? _rows[Math.Clamp(last?.Row ?? 0, 0, _rows.Count - 1)];
-                var target = row.Cards.FirstOrDefault(card => card.Card.ContentId == last?.Card.Card.ContentId)
+                var target = row.Cards.FirstOrDefault(card => card.Key == last?.Card.Key)
                     ?? row.Cards[Math.Clamp(rememberedIndex, 0, row.Cards.Count - 1)];
                 row.LastFocused = target;
                 _lastCard = (_rows.IndexOf(row), target);
@@ -335,9 +335,9 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
 
     private void OnCardFocus(object sender, RoutedEventArgs e)
     {
-        if (e.OriginalSource is ContentControl { Content: CardView view } item)
+        if (e.OriginalSource is ContentControl { Content: BrowseTileView view } item)
         {
-            CardFocus.Apply(item, focused: true);
+            ApplyTileFocus(item, view, focused: true);
             if (_updatingRows || _returning)
             {
                 return;
@@ -353,9 +353,13 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
                 }
             }
 
-            _pendingMarquee = view;
-            _marqueeTimer.Stop();
-            _marqueeTimer.Start();
+            // TvSkylineSectionFeed.kt: the end card moves return focus, but keeps the last media preview.
+            if (view is CardView media)
+            {
+                _pendingMarquee = media;
+                _marqueeTimer.Stop();
+                _marqueeTimer.Start();
+            }
         }
     }
 
@@ -386,8 +390,31 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             VirtualKey.Up or VirtualKey.GamepadDPadUp or VirtualKey.GamepadLeftThumbstickUp => -1,
             _ => 0,
         };
+        var header = SeeAllButtonOf(e.OriginalSource as DependencyObject);
+        if (header is not null && e.Key is VirtualKey.Left or VirtualKey.Right or VirtualKey.GamepadDPadLeft or VirtualKey.GamepadDPadRight
+            or VirtualKey.GamepadLeftThumbstickLeft or VirtualKey.GamepadLeftThumbstickRight)
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (step == 0 || RowIndexOf(e.OriginalSource as DependencyObject) is not { } index)
         {
+            return;
+        }
+
+        // TvSectionHeader is outside the LazyRow's focus group: Up reaches its action, Down re-enters
+        // the remembered rail. Don't let the platform turn either handoff into a sideways card move.
+        if (header is not null && step > 0)
+        {
+            e.Handled = true;
+            FocusRow(index);
+            return;
+        }
+
+        if (header is null && step < 0 && FocusSeeAll(index))
+        {
+            e.Handled = true;
             return;
         }
 
@@ -401,22 +428,40 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             return;
         }
 
-        if (targetIndex >= Rows.Items.Count
-            || Rows.ContainerFromIndex(targetIndex) is not DependencyObject next || FindChild<ListView>(next) is not { } target)
+        if (step > 0 && FocusSeeAll(targetIndex)) return;
+        FocusRow(targetIndex);
+    }
+
+    private void FocusRow(int index)
+    {
+        if (index < 0 || index >= _rows.Count || Rows.ContainerFromIndex(index) is not DependencyObject container
+            || FindChild<ListView>(container) is not { } target) return;
+        if (target.Tag is Rail rail) rail.Focus(FocusState.Keyboard);
+        else target.Focus(FocusState.Keyboard);
+    }
+
+    private bool FocusSeeAll(int index) => index >= 0 && index < _rows.Count && _rows[index].Row.OffersSeeAll
+        && Rows.ContainerFromIndex(index) is DependencyObject container
+        && FindChild<Button>(container)?.Focus(FocusState.Keyboard) == true;
+
+    private static Button? SeeAllButtonOf(DependencyObject? element)
+    {
+        for (var node = element; node is not null; node = VisualTreeHelper.GetParent(node))
         {
-            return;
+            if (node is Button { Name: "SeeAllButton" } button) return button;
         }
 
-        // The row's rail lands on its remembered card, or the first card on a first visit.
-        if (target.Tag is Rail rail)
-        {
-            rail.Focus(FocusState.Keyboard);
-        }
-        else
-        {
-            target.Focus(FocusState.Keyboard);
-        }
+        return null;
     }
+
+    private void OnSeeAllFocus(object sender, RoutedEventArgs e)
+    {
+        _focusVersion++;
+        if (RowIndexOf(sender as DependencyObject) is { } index && Rows.ContainerFromIndex(index) is DependencyObject container
+            && FindChild<ListView>(container) is { } row) PinRow(row);
+    }
+
+    private void OnSeeAllClick(object sender, RoutedEventArgs e) => ShellPage.Current?.OpenForYou();
 
     /// <summary>The index of the row holding <paramref name="element"/>.</summary>
     private int? RowIndexOf(DependencyObject? element)
@@ -505,7 +550,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         {
             if (!_updatingRows && !_returning)
             {
-                row.LastFocused = item as CardView;
+                row.LastFocused = item as BrowseTileView;
             }
         };
         list.Tag = rail;
@@ -523,9 +568,18 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
 
     private void OnCardBlur(object sender, RoutedEventArgs e)
     {
-        if (e.OriginalSource is ContentControl { Content: CardView } item)
+        if (e.OriginalSource is ContentControl { Content: BrowseTileView view } item)
         {
-            CardFocus.Apply(item, focused: false);
+            ApplyTileFocus(item, view, focused: false);
+        }
+    }
+
+    private static void ApplyTileFocus(ContentControl item, BrowseTileView view, bool focused)
+    {
+        CardFocus.Apply(item, focused, view is ExploreAllView explore ? explore.FocusScale : CardFocus.ArtScale);
+        if (item.ContentTemplateRoot is FrameworkElement root && root.FindName("ExploreAll") is Control surface)
+        {
+            VisualStateManager.GoToState(surface, focused ? "Focused" : "Resting", false);
         }
     }
 
@@ -534,7 +588,11 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
 
     private void OpenCard(object item)
     {
-        if (item is CardView { Card: var card })
+        if (item is ExploreAllView explore && Session.Client is { } client)
+        {
+            ShellPage.Current?.Frame.Navigate(typeof(CatalogGridPage), new CatalogGridEntry(explore.Source, client));
+        }
+        else if (item is CardView { Card: var card })
         {
             ShellPage.Current?.OpenDetail(card.ContentId);
         }
@@ -544,7 +602,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     {
         if (item is not CardView view) return;
         // Keep duplicate appearances and the row snapshots in sync without replacing card containers.
-        foreach (var row in _rows.Where(row => row.Cards.Any(card => card.Card.ContentId == view.Card.ContentId)))
+        foreach (var row in _rows.Where(row => row.Row.Cards.Any(card => card.ContentId == view.Card.ContentId)))
         {
             row.Update(row.Row with { Cards = row.Row.Cards.Select(card => card.ContentId == view.Card.ContentId ? view.Card : card).ToList() });
         }
@@ -562,7 +620,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             return;
         }
 
-        ShowMarquee(_lastCard?.Card ?? _rows[0].Cards[0], refresh: true);
+        ShowMarquee((_lastCard?.Card as CardView) ?? _shownMarquee ?? _rows[0].Cards.OfType<CardView>().First(), refresh: true);
         if (restore) RestoreCardFocus(refreshHome: false);
     }
 
@@ -632,7 +690,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             }
 
             PinRow(row);
-            ShowMarquee(last.Card);
+            if (last.Card is CardView media) ShowMarquee(media);
             if (refreshHome)
             {
                 _ = LoadAsync(refresh: true);
@@ -655,7 +713,8 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         for (var i = Math.Max(0, index - 2); i <= Math.Min(row.Cards.Count - 1, index + 2); i++)
         {
             // Details too: the marquee's cast line, and the page a press opens (an episode opens its series).
-            var card = row.Cards[i].Card;
+            if (row.Cards[i] is not CardView neighbour) continue;
+            var card = neighbour.Card;
             detail?.Preload(card.ContentId);
             if (card.Type == "episode" && card.SeriesId is { } series)
             {
@@ -664,8 +723,8 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
 
             if (i != index)
             {
-                Artwork.Warm(row.Cards[i].Card.BackdropUrl);
-                Artwork.Warm(row.Cards[i].Card.LogoUrl);
+                Artwork.Warm(card.BackdropUrl);
+                Artwork.Warm(card.LogoUrl);
             }
         }
     }
