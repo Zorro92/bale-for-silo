@@ -126,8 +126,8 @@ public sealed partial class ShellPage
         {
             e.Handled = true;
             var anchor = _panelTab;
-            ClosePanels();
             FocusAfterCascadeDismiss(anchor);
+            ClosePanels();
             return;
         }
         var inFlyout = IsWithin(e.OriginalSource as DependencyObject, LibrarySectionPanel);
@@ -173,6 +173,8 @@ public sealed partial class ShellPage
 
     private void FocusAfterCascadeDismiss(Control? anchor)
     {
+        // TvShellFocusState.kt closePanelOntoAnchor: callers focus the anchor *before* collapsing the
+        // panel, or XAML hands focus from the collapsed panel to the first bar control (Home).
         // TvTopMenuBar.kt: the focus used to close a cascade must not immediately dwell-open it again.
         if (anchor is { FocusState: FocusState.Unfocused, DataContext: TabView { } tab }
             && (tab.LibraryTab is not null || tab.Page == "foryou")) _cascadeDismissTarget = anchor;

@@ -51,8 +51,8 @@ public sealed partial class ShellPage
         {
             e.Handled = true;
             var anchor = _panelTab;
-            ClosePanels();
             FocusAfterCascadeDismiss(anchor);
+            ClosePanels();
             return;
         }
 

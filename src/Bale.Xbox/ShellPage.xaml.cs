@@ -274,8 +274,8 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         if (LibraryPanel.Visibility == Visibility.Visible || ForYouPanel.Visibility == Visibility.Visible || ProfilePanel.Visibility == Visibility.Visible)
         {
             Control? anchor = ProfilePanel.Visibility == Visibility.Visible ? AvatarButton : _panelTab;
-            ClosePanels();
             FocusAfterCascadeDismiss(anchor);
+            ClosePanels();
             return true;
         }
 
