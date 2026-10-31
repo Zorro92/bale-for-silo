@@ -130,6 +130,19 @@ public sealed partial class DetailFeed
         on ? _api.Api.V2.Watchlist[contentId].PutAsync(cancellationToken: cancellationToken)
            : _api.Api.V2.Watchlist[contentId].DeleteAsync(cancellationToken: cancellationToken);
 
+    /// <summary>Episode lists have no membership flags; read the existing favorite endpoint before opening their menu.</summary>
+    public async Task<bool> IsFavoriteAsync(string contentId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await _api.Api.V2.Favorites[contentId].GetAsync(cancellationToken: cancellationToken).ConfigureAwait(false) is not null;
+        }
+        catch (Microsoft.Kiota.Abstractions.ApiException ex) when (ex.ResponseStatusCode == 404)
+        {
+            return false;
+        }
+    }
+
     public Task SetFavoriteAsync(string contentId, bool on, CancellationToken cancellationToken = default) =>
         on ? _api.Api.V2.Favorites[contentId].PutAsync(cancellationToken: cancellationToken)
            : _api.Api.V2.Favorites[contentId].DeleteAsync(cancellationToken: cancellationToken);

@@ -86,9 +86,11 @@ public sealed partial class DetailPage
         // Playback is not implemented yet. Keep the official-shaped trailer/extra cards selectable without launching a player.
     }
 
-    private void OnSimilarClick(object sender, ItemClickEventArgs e)
+    private void OnSimilarClick(object sender, ItemClickEventArgs e) => OpenSimilar(e.ClickedItem);
+
+    private void OpenSimilar(object item)
     {
-        if (e.ClickedItem is CardView { Card: var card })
+        if (item is CardView { Card: var card })
         {
             _returnCastIndex = null;
             _returnSimilarId = card.ContentId;

@@ -140,7 +140,7 @@ public sealed partial class App : Application
     /// <summary>Offers Back to the page before navigating, without returning to sign-in.</summary>
     private static bool GoBack(Frame frame)
     {
-        if (frame.Content is IBackHandler page && page.OnBack())
+        if (CardMenuHost.CloseActive() || frame.Content is IBackHandler page && page.OnBack())
         {
             return true;
         }

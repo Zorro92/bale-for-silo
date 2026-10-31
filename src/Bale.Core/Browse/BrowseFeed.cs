@@ -47,6 +47,23 @@ public sealed class BrowseFeed
         return ToRows(response?.Sections);
     }
 
+    /// <summary>HomeSectionsV2Api.kt sends only the observed progress stamp or the Next Up series ID.</summary>
+    public Task DismissFromHomeAsync(MediaCard card, CancellationToken cancellationToken = default)
+    {
+        var dismissal = HomeCardDismissal.For(card)
+            ?? throw new ArgumentException("A Home dismissal needs its observed progress stamp or series ID.", nameof(card));
+        if (string.IsNullOrWhiteSpace(card.ContentId))
+        {
+            throw new ArgumentException("A Home dismissal needs a content ID.", nameof(card));
+        }
+
+        return _api.Api.V2.Home.Dismissals[dismissal.Surface][card.ContentId].PutAsync(new Api.Models.HomeDismissal
+        {
+            ProgressUpdatedAt = dismissal.Surface == "continue_watching" ? card.ProgressUpdatedAt : null,
+            SeriesId = dismissal.Surface == "next_up" ? card.SeriesId : null,
+        }, cancellationToken: cancellationToken);
+    }
+
     /// <summary>A library's Browse landing: its server-defined rows.</summary>
     public async Task<IReadOnlyList<MediaRow>> LoadLibraryAsync(string libraryId, ArtworkWidths widths, CancellationToken cancellationToken = default)
     {
@@ -282,8 +299,7 @@ public sealed class BrowseFeed
     /// <summary>Continue Watching / Next Up: the server marks their cards with item_source.</summary>
     internal static bool IsProgressRow(Section section, IReadOnlyCollection<CatalogItem> items) =>
         items.Any(item => !string.IsNullOrEmpty(item.ItemSource))
-        || (section.SectionType ?? string.Empty).IndexOf("continue", StringComparison.OrdinalIgnoreCase) >= 0
-        || (section.SectionType ?? string.Empty).IndexOf("next_up", StringComparison.OrdinalIgnoreCase) >= 0;
+        || CardMenu.IsProgressRow(section.SectionType ?? string.Empty);
 
     internal MediaCard ToCard(CatalogItem item, CardShape shape)
     {
@@ -315,6 +331,9 @@ public sealed class BrowseFeed
             item.Type == "episode" ? item.Title : null,
             Runtime(item.Runtime))
         {
+            Flags = new Detail.ItemFlags(item.UserState?.InWatchlist == true, item.UserState?.IsFavorite == true, item.UserState?.Played == true),
+            PositionSeconds = item.PositionSeconds,
+            ProgressUpdatedAt = item.ProgressUpdatedAt,
             ContentRating = string.IsNullOrWhiteSpace(item.ContentRating) ? null : item.ContentRating!.Trim().ToUpperInvariant(),
             MarqueeFacts = MarqueeFacts(item, isEpisode),
             Rating = isEpisode ? null : Detail.DetailFeed.OutOfTen("imdb", "IMDb", item.RatingImdb) ?? Detail.DetailFeed.OutOfTen("tmdb", "TMDB", item.RatingTmdb),

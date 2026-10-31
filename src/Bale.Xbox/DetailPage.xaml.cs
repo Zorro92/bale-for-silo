@@ -30,6 +30,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
     private readonly Rail _seasonsRail;
     private readonly Rail _episodesRail;
     private readonly Rail _castRail;
+    private readonly CardMenuHost _cardMenu;
     private string _contentId = string.Empty;
     private ItemDetail? _detail;
     private EpisodeCard? _playEpisode;
@@ -52,6 +53,12 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
     public DetailPage()
     {
         InitializeComponent();
+        _cardMenu = new CardMenuHost(this, PageScroller, item =>
+        {
+            if (item is EpisodeView) _ = Playback.ShowComingAsync();
+            else OpenSimilar(item);
+        });
+        _cardMenu.Changed += OnMenuCardChanged;
         Loaded += (_, _) =>
         {
             try
@@ -868,15 +875,20 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
 
     private async void OnEpisodeClick(object sender, ItemClickEventArgs e) => await PlaybackComingAsync();
 
-    private static async Task PlaybackComingAsync()
+    private static Task PlaybackComingAsync() => Playback.ShowComingAsync();
+
+    private void OnMenuCardChanged(object item)
     {
-        var dialog = new ContentDialog
+        if (item is EpisodeView view)
         {
-            Title = "Playback is next",
-            Content = new TextBlock { Text = "Playing titles arrives in the next milestone.", TextWrapping = TextWrapping.Wrap, FontSize = 12 },
-            CloseButtonText = "OK",
-        };
-        await dialog.ShowAsync();
+            if (_playEpisode?.ContentId == view.Episode.ContentId) SetPlayEpisode(view.Episode);
+            // Container aggregate flags are re-read on the next visit, without reloading or replacing this rail.
+            if (_detail is { } detail) Session.Client?.Detail.Forget(detail.ContentId);
+        }
+        else if (item is CardView card)
+        {
+            _similarCards = _similarCards.Select(existing => existing.ContentId == card.Card.ContentId ? card.Card : existing).ToList();
+        }
     }
 
     private static FocusNavigationDirection VerticalDirection(VirtualKey key) => key switch

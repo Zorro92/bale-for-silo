@@ -80,6 +80,13 @@ public sealed class SearchResults
     public string? Status => SearchText.Status(Query, Total, IsSearching, Error,
         Filter.Type is null && HasMore, !TotalExact, People.Count > 0);
 
+    /// <summary>Personal card actions preserve result order, generation and paging.</summary>
+    public void UpdateCard(MediaCard card)
+    {
+        var index = _items.FindIndex(item => item.ContentId == card.ContentId);
+        if (index >= 0) _items[index] = card;
+    }
+
     /// <summary>Invalidate immediately, before the debounce, so an old page cannot land mid-keystroke.</summary>
     public void ChangeQuery(string query, SearchMediaFilter filter)
     {
