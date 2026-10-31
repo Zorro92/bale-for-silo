@@ -17,6 +17,7 @@ namespace Bale.Xbox;
 public sealed partial class CatalogGridPage : Page, IRestoresFocus
 {
     private const int Columns = 6;
+    private const double ItemRightMargin = 20; // SkylineCatalogGridItemStyle; included in the wrap-grid slot.
     private static readonly ArtworkWidths GridArtwork = ArtworkWidths.Tv1080 with { Poster = 276 };
     private readonly ObservableCollection<CardView> _cards = [];
     private readonly CardMenuHost _cardMenu;
@@ -25,6 +26,7 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
     private ScrollViewer? _scroller;
     private bool _active;
     private bool _pagingCheckQueued;
+    private bool _loggedGridPanelFallback;
     private int _focusGeneration;
     private int _lastFocusedIndex;
 
@@ -36,9 +38,9 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
         Cards.ItemsSource = _cards;
         Cards.PreviewKeyDown += OnGridPreviewKeyDown;
         MoreRetryButton.PreviewKeyDown += OnRetryPreviewKeyDown;
-        Cards.Loaded += (_, _) => HookScroller();
-        Cards.ContainerContentChanging += (_, _) => QueuePagingCheck();
-        Cards.SizeChanged += (_, _) => QueuePagingCheck();
+        Cards.Loaded += (_, _) => { HookScroller(); if (_entry is not null) SyncCards(); };
+        Cards.ContainerContentChanging += (_, _) => { UpdateGridLayout(); QueuePagingCheck(); };
+        Cards.SizeChanged += (sender, e) => { OnRootSizeChanged(sender, e); QueuePagingCheck(); };
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
     }
@@ -76,9 +78,8 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
     partial void ConfigureSource();
     partial void OnSourceLoaded();
     partial void UpdateSourceState();
-    partial void AdjustSourceCardWidth(ref double width);
     partial void OnGridTopUp(ref bool handled);
-    partial void OnGridRightEdge(ref bool handled);
+    partial void OnGridRightEdge(int index, ref bool handled);
     partial void RestoreSourceFocus(ref bool handled);
     partial void CleanupSource();
 
@@ -146,11 +147,33 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
         }
     }
 
+    private double UpdateGridLayout()
+    {
+        // TvLibraryDetailScreen.kt / TvSectionBrowseScreen.kt keep six columns. Cards.ActualWidth
+        // already excludes the alphabet rail's margin; never reserve that space a second time.
+        var viewport = (Root.ActualWidth > 0 ? Root.ActualWidth : Window.Current.Bounds.Width) - Cards.Margin.Left - Cards.Margin.Right;
+        var measured = Cards.ActualWidth > 0 ? Math.Min(Cards.ActualWidth, viewport) : viewport;
+        var layout = CatalogGridLayout.Measure(measured - Cards.Padding.Left - Cards.Padding.Right, Columns, ItemRightMargin);
+        var root = Cards.ItemsPanelRoot;
+        // CsWinRT AOT can project the panel only as its base type. Integral card widths also fit
+        // when the panel must fall back to measuring its first container instead of an explicit slot.
+        var panel = root as ItemsWrapGrid;
+        if (panel is not null)
+        {
+            panel.MaximumRowsOrColumns = Columns;
+            if (panel.ItemWidth != layout.ItemWidth) panel.ItemWidth = layout.ItemWidth;
+        }
+        else if (root is not null && !_loggedGridPanelFallback)
+        {
+            _loggedGridPanelFallback = true;
+            Log.Info("Catalog grid panel not projected as ItemsWrapGrid; using measured card widths");
+        }
+        return layout.CardWidth;
+    }
+
     private void SyncCards()
     {
-        // TvSectionBrowseScreen: 40dp left/right, five 20dp gaps, six equal artwork columns.
-        var width = Math.Max(1, ((Root.ActualWidth > 0 ? Root.ActualWidth : Window.Current.Bounds.Width) - 80 - 5 * 20) / Columns);
-        AdjustSourceCardWidth(ref width);
+        var width = UpdateGridLayout();
         foreach (var card in _entry.Results.Items.Skip(_cards.Count))
         {
             _cards.Add(new CardView(card, _entry.Source.Title, width, CardHeight(card, width), landscape: false)
@@ -263,7 +286,7 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
             if (target == index && direction == GridDirection.Right)
             {
                 var handled = false;
-                OnGridRightEdge(ref handled);
+                OnGridRightEdge(index, ref handled);
                 if (handled) return;
             }
 

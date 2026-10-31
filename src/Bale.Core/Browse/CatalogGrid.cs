@@ -110,6 +110,19 @@ public sealed class CatalogGridResults
     }
 }
 
+/// <summary>TvLibraryDetailScreen.kt / TvSectionBrowseScreen.kt: equal slots, including each item's trailing gap.</summary>
+public readonly record struct CatalogGridLayout(double ItemWidth, double CardWidth)
+{
+    public static CatalogGridLayout Measure(double availableWidth, int columns, double itemMargin)
+    {
+        if (columns <= 0) throw new ArgumentOutOfRangeException(nameof(columns));
+        // Auto-sized fractional slots can round up during XAML layout and wrap the sixth card.
+        // Round the whole slot down, not just the art, so all columns fit the measured viewport.
+        var itemWidth = Math.Max(itemMargin + 1, Math.Floor(availableWidth / columns));
+        return new CatalogGridLayout(itemWidth, itemWidth - itemMargin);
+    }
+}
+
 public enum GridDirection { Left, Right, Up, Down }
 
 /// <summary>Exact column steps; an absent cell is never replaced by a sideways neighbour.</summary>
