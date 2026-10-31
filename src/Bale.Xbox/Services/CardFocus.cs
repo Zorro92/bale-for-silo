@@ -12,7 +12,7 @@ namespace Bale.Xbox.Services;
 /// </summary>
 internal static class CardFocus
 {
-    public const float ArtScale = 1.05f;
+    public const float ArtScale = CardRailMetrics.ArtScale;
 
     private static readonly TimeSpan Duration = TimeSpan.FromMilliseconds(120);
 

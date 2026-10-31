@@ -50,6 +50,7 @@
           <TextBox x:Name="QueryBox" HorizontalAlignment="Left" PlaceholderText="Search movies and series"
                    Style="{StaticResource SkylineSearchTextBoxStyle}" TextChanged="OnQueryChanged" InputScope="Search" PreventKeyboardDisplayOnProgrammaticFocus="True" />
 
+          <!-- rail-layout: non-card — Search filter pills. -->
           <ItemsControl x:Name="Filters" Margin="0,8,0,0" ItemTemplate="{StaticResource FilterTemplate}" XYFocusKeyboardNavigation="Enabled">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
@@ -60,20 +61,13 @@
 
           <StackPanel x:Name="PeopleSection" Margin="-40,12,-8,0" Visibility="Collapsed" Spacing="4">
             <TextBlock Text="People" Margin="40,0,40,4" FontSize="15.5" LineHeight="18.9" FontWeight="SemiBold" Foreground="White" />
-            <ListView x:Name="People" ItemTemplate="{StaticResource PersonTemplate}" SelectionMode="None" IsItemClickEnabled="True"
-                      ItemClick="OnPersonClick" GotFocus="OnPersonFocus" LostFocus="OnPersonBlur"
-                      Padding="40,12,40,4" ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden"
-                      ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+            <ListView x:Name="People" ItemTemplate="{StaticResource PersonTemplate}" Style="{StaticResource SkylineSearchPeopleRailStyle}"
+                      ItemClick="OnPersonClick" GotFocus="OnPersonFocus" LostFocus="OnPersonBlur">
               <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem" BasedOn="{StaticResource SkylineCardItemStyle}">
                   <Setter Property="Margin" Value="0,0,22,0" />
                 </Style>
               </ListView.ItemContainerStyle>
-              <ListView.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <ItemsStackPanel Orientation="Horizontal" />
-                </ItemsPanelTemplate>
-              </ListView.ItemsPanel>
             </ListView>
           </StackPanel>
 
@@ -92,9 +86,9 @@
         </StackPanel>
       </GridView.Header>
       <!--
-        Keep 12px headroom inside each result container; the row gap stays 20 (TvSearchScreen.kt).
-        The grid scrolls only enough to show the container, so this includes the focused poster's
-        lift and ring when scrolling up.
+        Use the shared focus envelope inside each grid item too (TvSearchScreen.kt).
+        Preserve the existing minimum inset, expanding it only when the art's zoom/ring needs more.
+        Bring-into-view therefore includes the focused poster's top when scrolling up.
       -->
       <GridView.ItemContainerStyle>
         <Style TargetType="GridViewItem" BasedOn="{StaticResource SkylineGridItemStyle}">
@@ -103,7 +97,7 @@
       </GridView.ItemContainerStyle>
       <GridView.ItemTemplate>
         <DataTemplate x:DataType="views:CardView">
-          <StackPanel Width="{x:Bind Width}" Spacing="9" Margin="0,12,0,0">
+          <StackPanel Width="{x:Bind Width}" Spacing="9" Margin="{x:Bind GridHeadroom}">
             <Grid x:Name="Art" Width="{x:Bind Width}" Height="{x:Bind Height}">
               <Grid CornerRadius="{StaticResource SkylineCardRadius}" Background="{StaticResource SkylineCardPlaceholder}">
                 <TextBlock Text="{x:Bind Title}" Visibility="{x:Bind FallbackVisibility}" TextWrapping="Wrap" TextAlignment="Center"

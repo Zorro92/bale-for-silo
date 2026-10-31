@@ -168,7 +168,7 @@ public sealed partial class DetailPage
         // TvDetailTrailersSection.kt scales the entire card, unlike the shared art-only poster lift.
         root.ScaleTransition ??= new Vector3Transition { Duration = TimeSpan.FromMilliseconds(180) };
         root.CenterPoint = new Vector3((float)root.ActualWidth / 2, (float)root.ActualHeight / 2, 0);
-        var scale = focused ? 1.05f : 1;
+        var scale = focused ? CardRailMetrics.ArtScale : 1;
         root.Scale = new Vector3(scale, scale, 1);
     }
 

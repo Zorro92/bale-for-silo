@@ -562,7 +562,7 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
     {
         if (e.OriginalSource is ContentControl { Content: CalendarCardView view } item)
         {
-            CardFocus.Apply(item, focused: true, artScale: 1.06f);
+            CardFocus.Apply(item, focused: true, artScale: CardRailMetrics.CalendarScale);
             _ = UpdateTintAsync(view.Item.PosterUrl);
         }
     }
@@ -571,7 +571,7 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
     {
         if (e.OriginalSource is ContentControl { Content: CalendarCardView } item)
         {
-            CardFocus.Apply(item, focused: false, artScale: 1.06f);
+            CardFocus.Apply(item, focused: false, artScale: CardRailMetrics.CalendarScale);
         }
     }
 

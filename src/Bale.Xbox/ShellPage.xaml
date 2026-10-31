@@ -24,6 +24,7 @@
       <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center" XYFocusKeyboardNavigation="Enabled">
         <Button x:Name="SearchButton" Style="{StaticResource SkylineBarIconStyle}" Click="OnSearchClick" Content="&#xE721;"
                 AutomationProperties.Name="Search" VerticalAlignment="Center" />
+        <!-- rail-layout: non-card — Top navigation tabs. -->
         <ItemsControl x:Name="Tabs" VerticalAlignment="Center" IsTabStop="False">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>

@@ -23,6 +23,7 @@
                KeyDown="OnServerBoxKeyDown" Style="{StaticResource SkylineTextBoxStyle}" />
       <TextBlock x:Name="ServerError" MaxWidth="380" HorizontalAlignment="Left" Margin="0,8,0,0" FontSize="{StaticResource SkylineAuthCaptionSize}"
                  Foreground="{StaticResource SkylineError}" TextWrapping="Wrap" Visibility="Collapsed" />
+      <!-- rail-layout: non-card — Server sign-in actions. -->
       <ItemsControl x:Name="ServerActions" Margin="0,20,0,0" PreviewKeyDown="OnServerActionsPreviewKeyDown">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="11" /></ItemsPanelTemplate>
@@ -45,6 +46,7 @@
         <TextBlock x:Name="SignInTitle" FontSize="{StaticResource SkylineMarqueeTitleSize}" FontWeight="ExtraBold" TextWrapping="Wrap" />
         <TextBlock x:Name="SignInInstructions" FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineSecondary}"
                    TextWrapping="Wrap" Margin="0,13,0,0" />
+        <!-- rail-layout: non-card — Device sign-in actions. -->
         <ItemsControl x:Name="CodeActions" Margin="0,24,0,0" PreviewKeyDown="OnCodeActionsPreviewKeyDown">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="11" /></ItemsPanelTemplate>
