@@ -45,7 +45,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         Root.GettingFocus += OnRootGettingFocus;
         TopBar.GettingFocus += OnTopBarGettingFocus;
         TopBar.PreviewKeyDown += OnTopBarPreviewKeyDown;
-        ProfilePanel.PreviewKeyDown += OnProfilePanelPreviewKeyDown;
+        InitializeProfileMenu();
         InitializeLibraryCascade();
     }
 
@@ -57,7 +57,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
     {
         try
         {
-            if (!IsInTopBar(args.OldFocusedElement) && IsInTopBar(args.NewFocusedElement)
+            if (!_restoringProfileFocus && !IsInTopBar(args.OldFocusedElement) && IsInTopBar(args.NewFocusedElement)
                 && (_searchSelected ? (Control?)SearchButton : ButtonFor(_selected)) is { } target
                 && !ReferenceEquals(target, args.NewFocusedElement))
             {
@@ -131,33 +131,6 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         catch (Exception ex)
         {
             Log.Error("Profile panel focus", ex);
-        }
-    }
-
-    private void OnProfilePanelPreviewKeyDown(object sender, KeyRoutedEventArgs e)
-    {
-        switch (e.Key)
-        {
-            case Windows.System.VirtualKey.Up:
-            case Windows.System.VirtualKey.GamepadDPadUp:
-            case Windows.System.VirtualKey.GamepadLeftThumbstickUp:
-                SwitchProfileRow.Focus(FocusState.Keyboard);
-                e.Handled = true;
-                break;
-            case Windows.System.VirtualKey.Down:
-            case Windows.System.VirtualKey.GamepadDPadDown:
-            case Windows.System.VirtualKey.GamepadLeftThumbstickDown:
-                SignOutRow.Focus(FocusState.Keyboard);
-                e.Handled = true;
-                break;
-            case Windows.System.VirtualKey.Left:
-            case Windows.System.VirtualKey.Right:
-            case Windows.System.VirtualKey.GamepadDPadLeft:
-            case Windows.System.VirtualKey.GamepadDPadRight:
-            case Windows.System.VirtualKey.GamepadLeftThumbstickLeft:
-            case Windows.System.VirtualKey.GamepadLeftThumbstickRight:
-                e.Handled = true;
-                break;
         }
     }
 
@@ -255,6 +228,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
     {
         base.OnNavigatedFrom(e);
         _dwell.Stop();
+        _avatarDwell.Stop();
         if (Current == this)
         {
             Current = null;
@@ -262,19 +236,35 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
     }
 
     /// <summary>The outer PageFrame owns return timing; the selected root screen owns the target.</summary>
-    public void RestoreFocus() => (ContentFrame.Content as IRestoresFocus)?.RestoreFocus();
+    public void RestoreFocus()
+    {
+        if (_personalReturnToProfile)
+        {
+            _personalReturnToProfile = false;
+            DismissProfileMenu();
+        }
+        else
+        {
+            (ContentFrame.Content as IRestoresFocus)?.RestoreFocus();
+        }
+    }
 
     /// <summary>Back chain (guide §7): panel → close; content → top bar; another tab → Home; Home → leave the app.</summary>
     public bool OnBack()
     {
-        if (ContentFrame.Content is IBackHandler content && content.OnBack()) return true;
-        if (LibraryPanel.Visibility == Visibility.Visible || ProfilePanel.Visibility == Visibility.Visible)
+        if (ProfilePanel.Visibility == Visibility.Visible)
         {
-            Control? anchor = ProfilePanel.Visibility == Visibility.Visible ? AvatarButton : _panelTab;
+            DismissProfileMenu();
+            return true;
+        }
+        if (LibraryPanel.Visibility == Visibility.Visible)
+        {
+            var anchor = _panelTab;
             ClosePanels();
             FocusAfterCascadeDismiss(anchor);
             return true;
         }
+        if (ContentFrame.Content is IBackHandler content && content.OnBack()) return true;
 
         if (!IsInTopBar(FocusManager.GetFocusedElement() as DependencyObject))
         {
@@ -407,6 +397,8 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
             _panelTab = null;
         }
 
+        _avatarDwell.Stop();
+        _profileMenuEntered = false;
         AvatarButton.XYFocusDown = null;
         LibraryPanel.Visibility = Visibility.Collapsed;
         ProfilePanel.Visibility = Visibility.Collapsed;
@@ -418,7 +410,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
     {
         var inBar = IsInTopBar(e.OriginalSource as DependencyObject);
         TopBar.Opacity = inBar ? 1 : 0.7;
-        if (!inBar || ReferenceEquals(e.OriginalSource, SearchButton) || ReferenceEquals(e.OriginalSource, AvatarButton))
+        if (!inBar || ReferenceEquals(e.OriginalSource, SearchButton))
         {
             ClosePanels();
         }
@@ -443,16 +435,6 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         _searchSelected = true;
         UpdateChecked();
         ShowContent(typeof(SearchPage), string.Empty);
-    }
-
-    private void OnAvatarClick(object sender, RoutedEventArgs e) => OpenProfilePanel();
-
-    private void OpenProfilePanel()
-    {
-        ClosePanels();
-        ProfilePanel.Visibility = Visibility.Visible;
-        AvatarButton.XYFocusDown = SwitchProfileRow;
-        FocusRetry.Until(ProfilePanel, () => ProfilePanel.Visibility != Visibility.Visible || SwitchProfileRow.Focus(FocusState.Programmatic));
     }
 
     private void OnSwitchProfileClick(object sender, RoutedEventArgs e)
