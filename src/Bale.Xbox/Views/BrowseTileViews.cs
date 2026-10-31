@@ -39,8 +39,14 @@ public sealed partial class BrowseTileTemplateSelector : DataTemplateSelector
     protected override DataTemplate SelectTemplateCore(object item, DependencyObject container) => SelectTemplateCore(item);
 }
 
-/// <summary>Per navigation entry: nested grids/details cannot overwrite another section's cursor or return card.</summary>
-internal sealed class CatalogGridEntry(ICatalogGridSource source, SiloClient client)
+/// <summary>
+/// Navigation parameter for CatalogGridPage. Create one per grid visit; the normal Frame journal
+/// retains its pages and return-card identity across details. A source may own mutable query state
+/// and ask the page to ReloadAsync when it changes. Optional source chrome is installed by the
+/// page's ConfigureSource partial in ToolbarSlot (scrolling header) or SourceOverlay (full page).
+/// Never reuse an entry for a different client or acting profile.
+/// </summary>
+public sealed class CatalogGridEntry(ICatalogGridSource source, SiloClient client)
 {
     public ICatalogGridSource Source { get; } = source;
     public SiloClient Client { get; } = client;

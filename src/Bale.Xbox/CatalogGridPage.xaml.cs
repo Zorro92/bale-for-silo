@@ -41,12 +41,22 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
         Cards.SizeChanged += (_, _) => QueuePagingCheck();
     }
 
+    // Source-specific chrome lives in a partial, not in the section/grid renderer. ToolbarSlot and
+    // SourceOverlay are Borders so Native AOT callers can fill Child without casting a presenter.
+    partial void ConfigureSource();
+    partial void OnSourceLoaded();
+    partial void UpdateSourceState();
+    partial void OnGridTopUp(ref bool handled);
+    partial void RestoreSourceFocus(ref bool handled);
+    partial void CleanupSource();
+
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
         if (e.Parameter is not CatalogGridEntry entry) return;
         _entry = entry;
         _active = true;
+        ConfigureSource();
         PageTitle.Text = UnavailableTitle.Text = entry.Source.Title;
         if (!entry.IsCurrent(Session.Client))
         {
@@ -62,11 +72,8 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
         {
             SyncCards();
             UpdateState();
-            var generation = _focusGeneration;
-            _ = Dispatcher.RunAsync(CoreDispatcherPriority.Low, () =>
-            {
-                if (_active && generation == _focusGeneration) RestoreFocus();
-            });
+            OnSourceLoaded();
+            // PageFrame calls IRestoresFocus after layout, before revealing the incoming page.
             QueuePagingCheck();
         }
     }
@@ -81,6 +88,7 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
             if (!_active || _lifetime.IsCancellationRequested || !_entry.IsCurrent(Session.Client) || !_entry.Results.Apply(request, page)) return;
             SyncCards();
             UpdateState();
+            OnSourceLoaded();
             // TvSectionBrowseScreen: only first entry/retry restores; later pages never take focus.
             if (!request.Append) RestoreFocus();
             QueuePagingCheck();
@@ -141,6 +149,7 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
         MoreErrorPanel.Visibility = state.LoadMoreError is not null ? Visibility.Visible : Visibility.Collapsed;
         MoreLoading.IsActive = state.IsLoading && state.HasLoaded;
         MoreLoading.Visibility = MoreLoading.IsActive ? Visibility.Visible : Visibility.Collapsed;
+        UpdateSourceState();
     }
 
     private void HookScroller()
@@ -203,6 +212,13 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
             if (index < 0) return;
             e.Handled = true;
             _focusGeneration++;
+            if (direction == GridDirection.Up && index < Columns)
+            {
+                var handled = false;
+                OnGridTopUp(ref handled);
+                if (handled) return;
+            }
+
             var target = CatalogGridNavigation.Move(index, _cards.Count, Columns, direction.Value);
             if (target != index) FocusAt(target);
             else if (direction == GridDirection.Down && MoreErrorPanel.Visibility == Visibility.Visible)
@@ -253,25 +269,36 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
     {
         if (item is not CardView view || !_entry.IsCurrent(Session.Client)) return;
         _entry.ReturnItemId = view.Card.ContentId;
-        var frame = Frame;
-        if (frame.Navigate(typeof(DetailPage), view.Card.ContentId) && frame.BackStack.Count > 0)
-        {
-            frame.BackStack[frame.BackStack.Count - 1] = new PageStackEntry(typeof(CatalogGridPage), _entry, null);
-        }
+        // The normal journal already holds this entry (including its pages and return identity).
+        Frame.Navigate(typeof(DetailPage), view.Card.ContentId);
     }
 
     public void RestoreFocus()
     {
         if (!_active || _entry is null || !_entry.IsCurrent(Session.Client)) return;
+        var handled = false;
+        RestoreSourceFocus(ref handled);
+        if (handled) return;
         var index = _cards.ToList().FindIndex(view => view.Card.ContentId == _entry.ReturnItemId);
         if (_cards.Count > 0) FocusAt(index >= 0 ? index : 0);
     }
 
-    private async void OnRetryClick(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Restarts the current source after its query changes. The source owns sort/filter state;
+    /// the page owns clearing cards, fencing older responses and returning to the first result.
+    /// Call on the UI thread, after updating the source, not from ConfigureSource.
+    /// </summary>
+    public Task ReloadAsync()
     {
+        if (!_active || _entry is null || !_entry.IsCurrent(Session.Client)) return Task.CompletedTask;
+        _focusGeneration++;
+        _entry.ReturnItemId = null;
+        _lastFocusedIndex = 0;
         _cards.Clear();
-        await LoadAsync(_entry.Results.Begin());
+        return LoadAsync(_entry.Results.Begin());
     }
+
+    private async void OnRetryClick(object sender, RoutedEventArgs e) => await ReloadAsync();
 
     private async void OnMoreRetryClick(object sender, RoutedEventArgs e)
     {
@@ -292,6 +319,7 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
         _focusGeneration++;
         _lifetime.Cancel();
         _entry?.Results.StopLoading();
+        CleanupSource();
         base.OnNavigatedFrom(e);
     }
 }
