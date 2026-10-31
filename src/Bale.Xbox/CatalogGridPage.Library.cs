@@ -168,6 +168,9 @@ public sealed partial class CatalogGridPage : IBackHandler
 
     private bool FocusLibraryToolbar() => _libraryToolbar?.FocusControls() == true;
 
+    internal bool ShowsLibrary(string libraryId, string? mediaScope) => _entry.IsCurrent(Session.Client)
+        && _librarySource?.Query is { CollectionId: null } query && query.LibraryId == libraryId && query.MediaType == mediaScope;
+
     internal void FocusLibraryContent()
     {
         if (_entry.Results.Error is not null) RetryButton.Focus(FocusState.Programmatic);

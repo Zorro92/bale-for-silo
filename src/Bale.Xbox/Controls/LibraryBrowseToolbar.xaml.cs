@@ -41,6 +41,13 @@ public sealed partial class LibraryBrowseToolbar : UserControl
 
     private void OnControlsKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        // A collapsed optional item is still counted by ItemsControl; stop at the last visible pill.
+        if (ClearButton.Visibility != Visibility.Visible && ReferenceEquals(FocusManager.GetFocusedElement(), FilterButton)
+            && e.Key is VirtualKey.Right or VirtualKey.GamepadDPadRight or VirtualKey.GamepadLeftThumbstickRight)
+        {
+            e.Handled = true;
+            return;
+        }
         if (e.Key is VirtualKey.Up or VirtualKey.GamepadDPadUp or VirtualKey.GamepadLeftThumbstickUp)
         {
             e.Handled = true;

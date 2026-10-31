@@ -46,6 +46,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         TopBar.GettingFocus += OnTopBarGettingFocus;
         TopBar.PreviewKeyDown += OnTopBarPreviewKeyDown;
         ProfilePanel.PreviewKeyDown += OnProfilePanelPreviewKeyDown;
+        InitializeLibraryCascade();
     }
 
     /// <summary>
@@ -83,15 +84,19 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
             {
                 OpenProfilePanel();
             }
-            else if (e.OriginalSource is Control { DataContext: TabView { LibraryTab.Libraries.Count: > 1 } } tab)
+            else if (e.OriginalSource is Control { DataContext: TabView { LibraryTab.Libraries.Count: > 0 } } tab)
             {
                 _dwell.Stop();
                 OpenLibraryPanel(tab);
-                (tab.XYFocusDown as Control)?.Focus(FocusState.Keyboard);
+                FocusLibraryCascadeEntry();
             }
             else if (ContentFrame.Content is BrowsePage browse)
             {
                 browse.FocusContent();
+            }
+            else if (ContentFrame.Content is CatalogGridPage grid)
+            {
+                grid.FocusLibraryContent();
             }
             else if (ContentFrame.Content is CalendarPage calendar)
             {
@@ -262,11 +267,12 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
     /// <summary>Back chain (guide §7): panel → close; content → top bar; another tab → Home; Home → leave the app.</summary>
     public bool OnBack()
     {
+        if (ContentFrame.Content is IBackHandler content && content.OnBack()) return true;
         if (LibraryPanel.Visibility == Visibility.Visible || ProfilePanel.Visibility == Visibility.Visible)
         {
             Control? anchor = ProfilePanel.Visibility == Visibility.Visible ? AvatarButton : _panelTab;
             ClosePanels();
-            anchor?.Focus(FocusState.Programmatic);
+            FocusAfterCascadeDismiss(anchor);
             return true;
         }
 
@@ -297,8 +303,13 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
     private void OnTabFocus(object sender, RoutedEventArgs e)
     {
         _dwell.Stop();
+        if (ReferenceEquals(sender, _cascadeDismissTarget))
+        {
+            _cascadeDismissTarget = null;
+            return;
+        }
         // Match on Control: under Native AOT a sender can arrive typed as its base class.
-        if (sender is Control { DataContext: TabView { LibraryTab.Libraries.Count: > 1 } } button)
+        if (sender is Control { DataContext: TabView { LibraryTab.Libraries.Count: > 0 } } button)
         {
             _dwell.Interval = LibraryPanel.Visibility == Visibility.Visible ? PanelSwitchDwell : PanelDwell;
             _dwellTab = button;
@@ -328,7 +339,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         else if (tab.LibraryTab is { } libraryTab)
         {
             var scope = ScopeFor(libraryTab);
-            ShowContent(typeof(BrowsePage), BrowsePage.LibraryParameter(scope.Id!, scope.Name ?? libraryTab.Title));
+            ShowContent(typeof(BrowsePage), new LibraryRecommendedEntry(scope.Id!, scope.Name ?? libraryTab.Title, LibraryMediaScope(libraryTab)));
         }
         else
         {
@@ -356,7 +367,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
     private ToggleButton? ButtonFor(TabView? tab) =>
         tab is not null && Tabs.ContainerFromItem(tab) is DependencyObject container ? FindChild<ToggleButton>(container) : null;
 
-    private void ShowContent(Type page, string parameter)
+    private void ShowContent(Type page, object parameter)
     {
         ContentFrame.Navigate(page, parameter);
         ContentFrame.BackStack.Clear();
@@ -373,35 +384,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         return tab.Libraries.FirstOrDefault(library => library.Id == saved) ?? tab.Libraries[0];
     }
 
-    private void OpenLibraryPanel(Control tabButton)
-    {
-        if (tabButton.DataContext is not TabView { LibraryTab: { } tab })
-        {
-            return;
-        }
-
-        var current = ScopeFor(tab);
-        var choices = tab.Libraries.Select(library => new LibraryChoiceView(library.Id!, library.Name ?? string.Empty, library.Id == current.Id)).ToList();
-        LibraryPanelHeader.Text = $"{tab.Title.ToUpperInvariant()} LIBRARIES";
-        LibraryRows.ItemsSource = choices;
-
-        // Centre the panel under its tab.
-        var tabLeft = tabButton.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0, 0)).X;
-        LibraryPanel.Margin = new Thickness(Math.Max(44, tabLeft + tabButton.ActualWidth / 2 - LibraryPanel.Width / 2), 66, 0, 0);
-        LibraryPanel.Visibility = Visibility.Visible;
-        PanelScrim.Visibility = Visibility.Visible;
-        if (_panelTab is not null)
-        {
-            _panelTab.XYFocusDown = null;
-        }
-
-        _panelTab = tabButton;
-
-        // Down from the tab enters the panel on the current scope's row; focus stays on the tab until then.
-        LibraryRows.UpdateLayout();
-        var currentChoice = choices.First(choice => choice.IsCurrent);
-        tabButton.XYFocusDown = LibraryRows.ContainerFromItem(currentChoice) is DependencyObject row ? FindChild<Control>(row) : null;
-    }
+    private void OpenLibraryPanel(Control tabButton) => OpenLibraryCascade(tabButton);
 
     private void OnLibraryRowClick(object sender, RoutedEventArgs e)
     {
@@ -415,6 +398,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
 
     private void ClosePanels()
     {
+        CloseLibraryCascade();
         _dwell.Stop();
         _dwellTab = null;
         if (_panelTab is not null)
@@ -444,7 +428,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
     {
         for (var node = element; node is not null; node = VisualTreeHelper.GetParent(node))
         {
-            if (node == TopBar || node == LibraryPanel || node == ProfilePanel)
+            if (node == TopBar || node == LibraryPanel || node == LibrarySectionPanel || node == ProfilePanel)
             {
                 return true;
             }

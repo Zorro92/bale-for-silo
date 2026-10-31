@@ -7,6 +7,25 @@
     NavigationCacheMode="Required"
     Background="{StaticResource SkylineBackground}">
 
+  <Page.Resources>
+    <DataTemplate x:Key="LibrarySectionTemplate" x:DataType="views:LibrarySectionChoiceView">
+      <Button Style="{StaticResource SkylineLibrarySectionRowStyle}" Click="OnLibrarySectionClick">
+        <StackPanel Orientation="Horizontal" Spacing="7">
+          <FontIcon Glyph="{x:Bind Icon}" FontSize="15" />
+          <TextBlock Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+      </Button>
+    </DataTemplate>
+    <DataTemplate x:Key="LibraryFlyoutTemplate" x:DataType="views:LibrarySectionChoiceView">
+      <Button Style="{StaticResource SkylineLibraryFlyoutRowStyle}" Click="OnLibrarySectionClick">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <FontIcon Glyph="{x:Bind Icon}" FontSize="9" />
+          <TextBlock Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+      </Button>
+    </DataTemplate>
+  </Page.Resources>
+
   <!-- Root screens (Home, library tabs, Search) live in ContentFrame under the Skyline top bar (guide §5.1). -->
   <Grid x:Name="Root">
     <services:PageFrame x:Name="ContentFrame" />
@@ -55,12 +74,12 @@
     <Border x:Name="LibraryPanel" Width="230" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,66,0,0" Padding="7"
             Background="{StaticResource SkylineGlassStrong}" CornerRadius="{StaticResource SkylinePanelRadius}" Visibility="Collapsed">
       <StackPanel Spacing="2">
-        <TextBlock x:Name="LibraryPanelHeader" FontFamily="{StaticResource SkylineMono}" FontSize="{StaticResource SkylineDropdownHeaderSize}"
-                   FontWeight="SemiBold" CharacterSpacing="260" Foreground="{StaticResource SkylineTertiary}" Margin="9,4,9,4" />
+        <TextBlock x:Name="LibraryPanelHeader" Style="{StaticResource SkylineLibraryCascadeHeaderStyle}" />
+        <ScrollViewer x:Name="LibraryListScroller" MaxHeight="180" VerticalScrollBarVisibility="Hidden" HorizontalScrollMode="Disabled" IsTabStop="False">
         <ItemsControl x:Name="LibraryRows" IsTabStop="False">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="views:LibraryChoiceView">
-              <Button Style="{StaticResource SkylinePanelRowStyle}" Click="OnLibraryRowClick" Margin="0,1">
+              <Button Style="{StaticResource SkylineLibrarySectionRowStyle}" Click="OnLibraryRowClick" GotFocus="OnLibraryChoiceFocus" Margin="0,1">
                 <Grid ColumnSpacing="10">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -73,6 +92,19 @@
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
+        </ScrollViewer>
+        <ItemsControl x:Name="SingleLibrarySections" IsTabStop="False" ItemTemplate="{StaticResource LibrarySectionTemplate}" Visibility="Collapsed" />
+        <Rectangle Height="0.5" Fill="#1FFFFFFF" Margin="6,3,6,0" />
+        <TextBlock x:Name="LibraryFooterHint" Style="{StaticResource SkylineLibraryCascadeFooterStyle}" />
+      </StackPanel>
+    </Border>
+
+    <!-- TvCascadeSelector.kt: a separate 150dp flyout, 9dp right of its anchored library row. -->
+    <Border x:Name="LibrarySectionPanel" Width="150" Padding="5" CornerRadius="9" Background="{StaticResource SkylineGlassStrong}"
+            HorizontalAlignment="Left" VerticalAlignment="Top" Visibility="Collapsed">
+      <StackPanel Spacing="2">
+        <TextBlock x:Name="LibrarySectionHeader" Style="{StaticResource SkylineLibraryCascadeHeaderStyle}" Margin="7,3,7,4" />
+        <ItemsControl x:Name="LibrarySectionRows" IsTabStop="False" ItemTemplate="{StaticResource LibraryFlyoutTemplate}" />
       </StackPanel>
     </Border>
 

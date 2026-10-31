@@ -233,6 +233,20 @@ public class LibraryBrowseTests
         Assert.Equal(expected, LibraryGridNavigation.Move(index, 10, horizontal, vertical));
 
     [Fact]
+    public async Task RecommendedHidesFeaturedRowsAndScopesMixedLibraryCardsAndExploreSources()
+    {
+        var stub = new StubHandler().Enqueue("""{"sections":[{"id":"hero","featured":true,"items":[{"content_id":"h","type":"movie"}]},{"id":"mixed","title":"Mixed","items":[{"content_id":"m","type":"movie"},{"content_id":"s","type":"series"},{"content_id":"e","type":"episode"},{"content_id":"b","type":"ebook"}]}]}""");
+        using var client = Create(stub);
+        var rows = await client.Browse.LoadLibraryAsync("7", ArtworkWidths.Tv1080);
+        var movies = Assert.Single(LibraryRecommendedRows.For(rows, "movie"));
+        Assert.Equal("m", Assert.Single(movies.Cards).ContentId);
+        Assert.Equal("movie", movies.ExploreSource!.MediaScope);
+        Assert.Equal("7", movies.ExploreSource.LibraryId);
+        Assert.Equal(["s", "e"], Assert.Single(LibraryRecommendedRows.For(rows, "series")).Cards.Select(card => card.ContentId));
+        Assert.Equal(3, Assert.Single(LibraryRecommendedRows.For(rows, null)).Cards.Count);
+    }
+
+    [Fact]
     public async Task SharedGridAdapterKeepsLibraryQueryAndCursorFencing()
     {
         var stub = new StubHandler().Enqueue(MorePage).Enqueue(LastPage);
