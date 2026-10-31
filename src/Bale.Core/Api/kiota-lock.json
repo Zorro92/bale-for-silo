@@ -1,5 +1,5 @@
 {
-  "descriptionHash": "A1BC2BF0983BE187C6EAA33B83EABC84E6EAE58B9EB9B26A343AAEDF81A9A8350DD3535140CC9B8B4BBBDCC941805C1290BF2AF2CBEEBDCD08D51527557CCF9B",
+  "descriptionHash": "467FDD4F53F4FE45BE29972621C3C028745072EAB33D43BEA4A12785C64000B3CD1EDFB587873860DF1D764513F33CE8AE3C641995EF090B2E09BEF286172730",
   "descriptionLocation": "../../../.cache/silo-openapi-44a345dbfb8c0a5892dc366ee0dd33fc091b7cf2.json",
   "lockFileVersion": "1.0.0",
   "kiotaVersion": "1.36.1",
@@ -40,6 +40,7 @@
     "/api/v2/profiles/{id}/verify-pin",
     "/api/v2/calendar",
     "/api/v2/home/capabilities",
+    "/api/v2/home/dismissals/{surface}/{item_id}",
     "/api/v2/home/layout",
     "/api/v2/home/sections",
     "/api/v2/home/sections/{id}/items",

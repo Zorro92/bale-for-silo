@@ -41,6 +41,22 @@ public sealed record MediaCard(
     string? EpisodeTitle,
     string? RuntimeText)
 {
+    public Detail.ItemFlags Flags { get; init; } = new(false, false, false);
+
+    public double? PositionSeconds { get; init; }
+
+    /// <summary>The observed server stamp, required to dismiss a Continue Watching card safely.</summary>
+    public DateTimeOffset? ProgressUpdatedAt { get; init; }
+
+    /// <summary>Both watched and unwatched clear resume progress (CatalogModels.withWatched).</summary>
+    public MediaCard WithPlayed(bool played) => this with
+    {
+        Flags = Flags with { Played = played },
+        PositionSeconds = 0,
+        Progress = null,
+        RemainingMinutes = null,
+    };
+
     /// <summary>The outlined chip that leads the marquee's facts line: "PG", "TV-MA".</summary>
     public string? ContentRating { get; init; }
 
