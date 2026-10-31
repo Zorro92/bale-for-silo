@@ -3,7 +3,6 @@ using Bale.Core.Browse;
 using Bale.Core.Detail;
 using Bale.Xbox.Services;
 using Bale.Xbox.Views;
-using Windows.UI.Core;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Input;
@@ -244,12 +243,7 @@ public sealed partial class DetailPage
 
         LoadingRing.Visibility = Visibility.Collapsed;
         if (!_similarLoaded) _ = LoadSimilarAsync(saved.Detail);
-        // Wait until Windows has made its first-focus pick; deliberate input can revoke this return meanwhile.
-        var generation = _focusGeneration;
-        _ = Dispatcher.RunAsync(CoreDispatcherPriority.Low, () =>
-        {
-            if (_active && generation == _focusGeneration) RestoreFocus();
-        });
+        // PageFrame restores return focus after layout, before revealing this page.
     }
 
     private void RestoreSectionFocus()

@@ -41,12 +41,13 @@ public sealed partial class App : Application
             }
 
             // Inter for everything under the root frame (literal path: resources can't be read from code under AOT).
-            frame = new Frame { FontFamily = new Windows.UI.Xaml.Media.FontFamily("ms-appx:///Assets/Fonts/InterVariable.ttf#Inter Variable") };
+            frame = new PageFrame { FontFamily = new Windows.UI.Xaml.Media.FontFamily("ms-appx:///Assets/Fonts/InterVariable.ttf#Inter Variable") };
             // Arrow keys move focus like the d-pad everywhere; without root keyboard XY navigation,
             // panels that enable it (top bar, chips, detail actions) trap arrows inside them.
             frame.XYFocusKeyboardNavigation = XYFocusKeyboardNavigationMode.Enabled;
             Window.Current.Content = frame;
             frame.PreviewKeyDown += OnPreviewKeyDown;
+            frame.PreviewKeyUp += OnPreviewKeyUp;
             frame.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler((_, args) => OnBackKey(frame, args)), handledEventsToo: false);
             SystemNavigationManager.GetForCurrentView().BackRequested += (_, args) => OnBackRequested(frame, args);
         }
@@ -92,12 +93,18 @@ public sealed partial class App : Application
     /// </summary>
     private static void OnPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (e.Key is VirtualKey.GamepadLeftShoulder or VirtualKey.GamepadRightShoulder
+        if (PageFrame.IsTransitioning || e.Key is VirtualKey.GamepadLeftShoulder or VirtualKey.GamepadRightShoulder
             or VirtualKey.GamepadLeftTrigger or VirtualKey.GamepadRightTrigger
             or VirtualKey.PageUp or VirtualKey.PageDown)
         {
             e.Handled = true;
         }
+    }
+
+    private static void OnPreviewKeyUp(object sender, KeyRoutedEventArgs e)
+    {
+        // A Select released after navigation must not activate the incoming page's first control.
+        if (PageFrame.IsTransitioning) e.Handled = true;
     }
 
     /// <summary>Routes system Back through the same policy as keyboard Escape and Backspace.</summary>
@@ -140,6 +147,11 @@ public sealed partial class App : Application
     /// <summary>Offers Back to the page before navigating, without returning to sign-in.</summary>
     private static bool GoBack(Frame frame)
     {
+        if (PageFrame.IsTransitioning)
+        {
+            return true;
+        }
+
         if (CardMenuHost.CloseActive() || frame.Content is IBackHandler page && page.OnBack())
         {
             return true;

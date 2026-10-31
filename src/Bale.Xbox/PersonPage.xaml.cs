@@ -67,11 +67,7 @@ public sealed partial class PersonPage : Page, IBackHandler, IRestoresFocus
             ShowProfile();
             SyncCards();
             UpdateWorks();
-            var generation = _focusGeneration;
-            _ = Dispatcher.RunAsync(CoreDispatcherPriority.Low, () =>
-            {
-                if (_active && generation == _focusGeneration) RestoreFocus();
-            });
+            // PageFrame restores return focus after layout, before revealing this page.
             if (!_entry.Works.HasLoaded) await LoadWorksAsync(_entry.Works.Begin(_entry.Works.Filter));
         }
     }
