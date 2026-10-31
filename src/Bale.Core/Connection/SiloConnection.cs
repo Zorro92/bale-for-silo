@@ -21,7 +21,7 @@ public sealed class SiloConnection : IDisposable
         // and gets plain JSON. .NET can't decode zstd, so offer the rest.
         var siloHandler = new SiloRequestHandler(identity, credentials, transport ?? new HttpClientHandler
         {
-            AutomaticDecompression = DecompressionMethods.Brotli | DecompressionMethods.GZip | DecompressionMethods.Deflate,
+            AutomaticDecompression = DecompressionMethods.Brotli,
         });
         _http = KiotaClientFactory.Create(siloHandler);
         var adapter = new HttpClientRequestAdapter(new AnonymousAuthenticationProvider(), httpClient: _http)
