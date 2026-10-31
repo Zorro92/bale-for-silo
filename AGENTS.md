@@ -101,6 +101,9 @@ Each of these crashed or silently broke the app on the console while compiling f
 - **Focus events report list containers as `ContentControl`**, never `ListViewItem`/`GridViewItem`.
   Match `e.OriginalSource is ContentControl { Content: CardView v }`. Same caution for `sender`:
   match on `Control`/`FrameworkElement`.
+- **`ContentPresenter` doesn't project**: from `GetTemplateChild`, the visual tree or focus events it
+  comes back as a plain `FrameworkElement`, so `(ContentPresenter)x` throws and `is ContentPresenter`
+  is false. Use a `Border` (set `Child`) for slots you fill from code (`PageFrame`).
 - **`ListView.ContainerFromIndex` returns null** for the rails. Find containers in
   `ItemsPanelRoot.Children` by `Content`.
 - **Classes handed to XAML lists must be `partial`**, and the project needs `AllowUnsafeBlocks`
