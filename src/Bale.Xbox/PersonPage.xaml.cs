@@ -287,7 +287,9 @@ public sealed partial class PersonPage : Page, IBackHandler, IRestoresFocus
     private async void OnRetryClick(object sender, RoutedEventArgs e) => await LoadProfileAsync();
 
     private IEnumerable<ContentControl> Containers() => Works.ItemsPanelRoot?.Children.OfType<ContentControl>().Where(item => item.Content is CardView) ?? [];
-    private IEnumerable<ToggleButton> FilterButtons() => Filters.ItemsPanelRoot?.Children.OfType<ContentPresenter>().Select(item => item.ContentTemplateRoot).OfType<ToggleButton>() ?? [];
+    private IEnumerable<ToggleButton> FilterButtons() =>
+        Filters.ItemsPanelRoot?.Children.OfType<DependencyObject>()
+            .Select(container => FocusManager.FindFirstFocusableElement(container)).OfType<ToggleButton>() ?? [];
 
     private bool FocusSelectedFilter() => _filterRail.Focus();
 
