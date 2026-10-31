@@ -27,6 +27,8 @@ namespace Bale.Xbox.Services;
 internal sealed class Rail
 {
     private readonly ItemsControl _list;
+    private readonly RailScrollState _scrollState = new();
+    private ScrollViewer? _scroller;
     private bool _hasFocus;
 
     private Rail(ItemsControl list)
@@ -37,6 +39,8 @@ internal sealed class Rail
         list.GotFocus += OnGotFocus;
         list.LostFocus += OnLostFocus;
         list.BringIntoViewRequested += (_, args) => args.Handled = true;
+        list.Loaded += (_, _) => { Scroller(); };
+        list.Unloaded += (_, _) => { ReleaseScroller(); _hasFocus = false; };
     }
 
     public static Rail Attach(ItemsControl list) => new(list);
@@ -88,6 +92,14 @@ internal sealed class Rail
         };
         if (step == 0 || ContainerOf(e.OriginalSource as DependencyObject) is not { } container)
         {
+            return;
+        }
+
+        // Layout.kt / tvRailPinOnFocus gates only horizontal input. WasKeyDown keeps a new
+        // press responsive, including on entry from another row; never delay or replay a repeat.
+        if (_scrollState.ShouldDrop(step, e.KeyStatus.WasKeyDown))
+        {
+            e.Handled = true;
             return;
         }
 
@@ -159,25 +171,63 @@ internal sealed class Rail
 
     private void PinToStart(FrameworkElement container)
     {
-        if (FindChild<ScrollViewer>(_list) is not { } scroller)
+        if (Scroller() is not { } scroller)
         {
             return;
         }
 
         var x = container.TransformToVisual(scroller).TransformPoint(new Windows.Foundation.Point(0, 0)).X;
         var padding = _list is Control control ? control.Padding.Left : 0;
-        scroller.ChangeView(scroller.HorizontalOffset + x - padding, null, null);
+        ScrollTo(scroller, scroller.HorizontalOffset + x - padding);
     }
 
     private void CenterOn(FrameworkElement container)
     {
-        if (FindChild<ScrollViewer>(_list) is not { } scroller)
+        if (Scroller() is not { } scroller)
         {
             return;
         }
 
         var x = container.TransformToVisual(scroller).TransformPoint(new Windows.Foundation.Point(0, 0)).X;
-        scroller.ChangeView(scroller.HorizontalOffset + x + container.ActualWidth / 2 - scroller.ViewportWidth / 2, null, null);
+        ScrollTo(scroller, scroller.HorizontalOffset + x + container.ActualWidth / 2 - scroller.ViewportWidth / 2);
+    }
+
+    private void ScrollTo(ScrollViewer scroller, double offset)
+    {
+        if (_scrollState.Begin(scroller.HorizontalOffset, offset, scroller.ScrollableWidth) is not { } target) return;
+        if (!scroller.ChangeView(target, null, null)) _scrollState.Reset();
+    }
+
+    private ScrollViewer? Scroller()
+    {
+        var scroller = FindChild<ScrollViewer>(_list);
+        if (ReferenceEquals(scroller, _scroller)) return _scroller;
+        ReleaseScroller();
+        _scroller = scroller;
+        if (scroller is not null)
+        {
+            scroller.ViewChanging += OnViewChanging;
+            scroller.ViewChanged += OnViewChanged;
+        }
+        return scroller;
+    }
+
+    private void OnViewChanging(object sender, ScrollViewerViewChangingEventArgs e)
+    {
+        if (sender is ScrollViewer scroller) _scrollState.ViewChanging(scroller.HorizontalOffset, e.FinalView.HorizontalOffset);
+    }
+
+    private void OnViewChanged(object sender, ScrollViewerViewChangedEventArgs e) => _scrollState.ViewChanged(e.IsIntermediate);
+
+    private void ReleaseScroller()
+    {
+        if (_scroller is { } scroller)
+        {
+            scroller.ViewChanging -= OnViewChanging;
+            scroller.ViewChanged -= OnViewChanged;
+        }
+        _scroller = null;
+        _scrollState.Reset();
     }
 
     private IEnumerable<DependencyObject> Containers() =>
