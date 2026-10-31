@@ -81,7 +81,7 @@ public sealed partial class DetailPage
 
     private void OnDetailsFocus(object sender, RoutedEventArgs e) => AnchorSection(DetailsSection);
 
-    private static void OnTrailerClick(object sender, ItemClickEventArgs e)
+    private void OnTrailerClick(object sender, ItemClickEventArgs e)
     {
         // Playback is not implemented yet. Keep the official-shaped trailer/extra cards selectable without launching a player.
     }
