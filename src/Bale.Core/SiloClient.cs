@@ -30,6 +30,7 @@ public sealed class SiloClient : IDisposable
         DeviceLogin = new DeviceLoginFlow(_connection.Api, time);
         Browse = new BrowseFeed(_connection.Api, server);
         Detail = new DetailFeed(_connection.Api, Browse);
+        People = new People.PersonFeed(_connection.Api, Browse);
     }
 
     public Uri Server => _connection.Server;
@@ -41,6 +42,8 @@ public sealed class SiloClient : IDisposable
     public BrowseFeed Browse { get; }
 
     public DetailFeed Detail { get; }
+
+    public People.PersonFeed People { get; }
 
     public string? AccessToken { get; private set; }
 

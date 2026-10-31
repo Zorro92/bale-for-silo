@@ -902,4 +902,313 @@
     <Setter Property="Background" Value="{StaticResource SkylinePinKeyFill}" />
     <Setter Property="BorderThickness" Value="1" />
   </Style>
+  <!-- Wave 2 detail extras + people: TvDetailTrailersSection.kt, TvDetailFactsTable.kt,
+       TvPersonDetailScreen.kt. Keep these scoped so Calendar and other screens remain unchanged. -->
+  <Thickness x:Key="SkylineDetailHeaderInset">50,0,50,0</Thickness>
+  <Thickness x:Key="SkylineDetailLeafBodyInset">0,10,0,0</Thickness>
+  <Thickness x:Key="SkylineDetailSeriesBodyInset">0,32,0,0</Thickness>
+  <Thickness x:Key="SkylineDetailRailGap">0,0,20,0</Thickness>
+  <Thickness x:Key="SkylineDetailTrailerGap">0,0,24,0</Thickness>
+  <x:Double x:Key="SkylineDetailSectionGap">32</x:Double>
+  <x:Double x:Key="SkylineDetailTrailerGapSize">7</x:Double>
+  <x:Double x:Key="SkylineDetailRelatedGapSize">20</x:Double>
+  <x:Double x:Key="SkylineDetailTrailerWidth">235</x:Double>
+  <x:Double x:Key="SkylineDetailTrailerHeight">132</x:Double>
+  <!-- TvMediaRow default (not Home/Browse's dense cards). -->
+  <x:Double x:Key="SkylineDetailRelatedWidth">130</x:Double>
+  <x:Double x:Key="SkylineDetailRelatedHeight">195</x:Double>
+  <CornerRadius x:Key="SkylineDetailTrailerRadius">9</CornerRadius>
+  <SolidColorBrush x:Key="SkylineDetailTrailerRing" Color="#F0FFFFFF" />
+  <SolidColorBrush x:Key="SkylineDetailFactDivider" Color="#14FFFFFF" />
+  <Style x:Key="SkylineDetailExtraRailStyle" TargetType="ListView">
+    <Setter Property="Padding" Value="50,6,50,6" />
+    <Setter Property="SelectionMode" Value="None" />
+    <Setter Property="IsItemClickEnabled" Value="True" />
+    <Setter Property="IsTabStop" Value="False" />
+    <Setter Property="ScrollViewer.HorizontalScrollMode" Value="Enabled" />
+    <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Hidden" />
+    <Setter Property="ScrollViewer.VerticalScrollMode" Value="Disabled" />
+    <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
+  </Style>
+  <Style x:Key="SkylineDetailRelatedRailStyle" TargetType="ListView" BasedOn="{StaticResource SkylineDetailExtraRailStyle}">
+    <Setter Property="Padding" Value="50,0,50,24" />
+  </Style>
+  <Style x:Key="SkylineDetailTrailerRingStyle" TargetType="Border">
+    <Setter Property="CornerRadius" Value="{StaticResource SkylineDetailTrailerRadius}" />
+    <Setter Property="BorderThickness" Value="2" />
+    <Setter Property="BorderBrush" Value="{StaticResource SkylineDetailTrailerRing}" />
+    <Setter Property="Opacity" Value="0" />
+    <Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+  <Style x:Key="SkylineDetailTrailerTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="12.04" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
+    <Setter Property="Opacity" Value="0.92" />
+    <Setter Property="TextAlignment" Value="Center" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="SkylineDetailTrailerSecondaryStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineDetailTrailerTitleStyle}">
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineSecondary}" />
+    <Setter Property="Opacity" Value="1" />
+  </Style>
+  <Style x:Key="SkylineDetailTrailerPlayStyle" TargetType="Border">
+    <Setter Property="Width" Value="30" />
+    <Setter Property="Height" Value="30" />
+    <Setter Property="CornerRadius" Value="15" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Background" Value="#FF000000" />
+    <Setter Property="Opacity" Value="0.55" />
+  </Style>
+  <Style x:Key="SkylineDetailTrailerPlayIconStyle" TargetType="FontIcon">
+    <Setter Property="FontSize" Value="18" />
+    <Setter Property="Foreground" Value="#FFFFFFFF" />
+  </Style>
+  <Style x:Key="SkylineDetailTrailerPlaceholderStyle" TargetType="FontIcon">
+    <Setter Property="FontSize" Value="30" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineSecondary}" />
+  </Style>
+  <Style x:Key="SkylineDetailFactsStopStyle" TargetType="Button">
+    <Setter Property="Margin" Value="30,0,30,0" />
+    <Setter Property="Padding" Value="20,12" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid>
+            <Border x:Name="Highlight" CornerRadius="18" Background="#0FFFFFFF" Opacity="0" />
+            <ContentPresenter Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}" HorizontalContentAlignment="Stretch" />
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Unfocused" />
+                <VisualState x:Name="Focused"><VisualState.Setters><Setter Target="Highlight.Opacity" Value="1" /></VisualState.Setters></VisualState>
+                <VisualState x:Name="PointerFocused"><VisualState.Setters><Setter Target="Highlight.Opacity" Value="1" /></VisualState.Setters></VisualState>
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <x:Double x:Key="SkylineDetailFactsGap">28</x:Double>
+  <x:Double x:Key="SkylineDetailFactsWidth">700</x:Double>
+  <Style x:Key="SkylineDetailFactRowStyle" TargetType="Grid">
+    <Setter Property="Padding" Value="0,11" />
+  </Style>
+  <Style x:Key="SkylineDetailFactLabelStyle" TargetType="TextBlock">
+    <Setter Property="Width" Value="140" />
+    <Setter Property="Margin" Value="0,0,32,0" />
+    <Setter Property="FontSize" Value="12.04" />
+    <Setter Property="LineHeight" Value="15.48" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="CharacterSpacing" Value="71" />
+    <Setter Property="Foreground" Value="#B3FFFFFF" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style x:Key="SkylineDetailFactValueStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineDetailFactLabelStyle}">
+    <Setter Property="Width" Value="Auto" />
+    <Setter Property="Margin" Value="0" />
+    <Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="CharacterSpacing" Value="0" />
+    <Setter Property="Foreground" Value="#FFFFFFFF" />
+  </Style>
+  <Style x:Key="SkylineDetailFactDividerStyle" TargetType="Border">
+    <Setter Property="Height" Value="1" />
+    <Setter Property="Background" Value="{StaticResource SkylineDetailFactDivider}" />
+  </Style>
+
+  <Thickness x:Key="SkylinePersonPagePadding">50,24,30,36</Thickness>
+  <Thickness x:Key="SkylinePersonHeaderMargin">0,0,20,24</Thickness>
+  <Thickness x:Key="SkylinePersonGridGap">0,0,20,20</Thickness>
+  <Thickness x:Key="SkylinePersonCardHeadroom">0,12,0,0</Thickness>
+  <x:Double x:Key="SkylinePersonHeaderGap">24</x:Double>
+  <x:Double x:Key="SkylinePersonInfoGap">11</x:Double>
+  <x:Double x:Key="SkylinePersonFilmographyGap">10</x:Double>
+  <x:Double x:Key="SkylinePersonFilterGap">8</x:Double>
+  <x:Double x:Key="SkylinePersonBadgeGap">6</x:Double>
+  <x:Double x:Key="SkylinePersonCardCaptionGap">9</x:Double>
+  <Thickness x:Key="SkylinePersonInfoInset">24,5,0,0</Thickness>
+  <Style x:Key="SkylinePersonPortraitStyle" TargetType="Grid">
+    <Setter Property="Width" Value="150" />
+    <Setter Property="Height" Value="225" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Background" Value="{StaticResource SkylineSurfaceElevated}" />
+    <Setter Property="BorderBrush" Value="#1AFFFFFF" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+  </Style>
+  <Style x:Key="SkylinePersonInitialsStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="36.12" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="#99EDEDED" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylinePersonNameStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="30.96" />
+    <Setter Property="LineHeight" Value="34.4" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="Foreground" Value="#FFFFFFFF" />
+    <Setter Property="MaxLines" Value="2" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="SkylinePersonBadgeStyle" TargetType="Border">
+    <Setter Property="Background" Value="#14FFFFFF" />
+    <Setter Property="Padding" Value="10,5" />
+    <Setter Property="Height" Value="26" />
+    <Setter Property="CornerRadius" Value="13" />
+  </Style>
+  <Style x:Key="SkylinePersonBadgeTextStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="12.04" />
+    <Setter Property="LineHeight" Value="15.48" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Foreground" Value="#D9FFFFFF" />
+  </Style>
+  <Style x:Key="SkylinePersonBioStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="12.9" />
+    <Setter Property="LineHeight" Value="17.2" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="Foreground" Value="#99EDEDED" />
+    <Setter Property="MaxWidth" Value="530" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="MaxLines" Value="7" />
+    <Setter Property="TextTrimming" Value="WordEllipsis" />
+  </Style>
+  <Style x:Key="SkylinePersonEmptyBioStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylinePersonBioStyle}">
+    <Setter Property="Foreground" Value="#7AFFFFFF" />
+  </Style>
+  <Style x:Key="SkylinePersonBioButtonStyle" TargetType="Button" BasedOn="{StaticResource SkylineDetailSynopsisStyle}">
+    <Setter Property="MaxWidth" Value="530" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="Padding" Value="0,4" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid>
+            <Border x:Name="Highlight" CornerRadius="4" Background="#8CEDEDED" Opacity="0" />
+            <ContentPresenter Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}" />
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Unfocused" />
+                <VisualState x:Name="Focused"><VisualState.Setters><Setter Target="Highlight.Opacity" Value="1" /></VisualState.Setters></VisualState>
+                <VisualState x:Name="PointerFocused"><VisualState.Setters><Setter Target="Highlight.Opacity" Value="1" /></VisualState.Setters></VisualState>
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="SkylinePersonFilmographyTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="15.48" />
+    <Setter Property="LineHeight" Value="18.92" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="#FFFFFFFF" />
+  </Style>
+  <Style x:Key="SkylinePersonCountStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylinePersonBadgeTextStyle}">
+    <Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="Foreground" Value="#99EDEDED" />
+    <Setter Property="VerticalAlignment" Value="Bottom" />
+    <Setter Property="Margin" Value="0,0,0,2" />
+  </Style>
+  <Style x:Key="SkylinePersonStatusStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylinePersonCountStyle}">
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="Margin" Value="0" />
+  </Style>
+  <!-- Person chips differ from Search chips: selected is white@22%, only focus inverts. -->
+  <Style x:Key="SkylinePersonFilterStyle" TargetType="ToggleButton">
+    <Setter Property="Height" Value="30" />
+    <Setter Property="Padding" Value="13,6" />
+    <Setter Property="FontSize" Value="12.04" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToggleButton">
+          <Grid RenderTransformOrigin="0.5,0.5">
+            <Grid.RenderTransform><ScaleTransform x:Name="Lift" /></Grid.RenderTransform>
+            <Border CornerRadius="15" Background="#14FFFFFF" BorderThickness="1" BorderBrush="#0FFFFFFF" />
+            <ContentPresenter Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}" FontSize="{TemplateBinding FontSize}"
+                              FontWeight="{TemplateBinding FontWeight}" Foreground="#D9FFFFFF" VerticalContentAlignment="Center" />
+            <Grid x:Name="CheckedLayer" Opacity="0">
+              <Border CornerRadius="15" Background="#38FFFFFF" BorderBrush="#59FFFFFF" BorderThickness="1" />
+              <ContentPresenter Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}" FontSize="{TemplateBinding FontSize}"
+                                FontWeight="{TemplateBinding FontWeight}" Foreground="#FFFFFFFF" VerticalContentAlignment="Center" />
+            </Grid>
+            <Grid x:Name="FocusLayer" Opacity="0">
+              <Border CornerRadius="15" Background="#F0FFFFFF" />
+              <ContentPresenter Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}" FontSize="{TemplateBinding FontSize}"
+                                FontWeight="{TemplateBinding FontWeight}" Foreground="#FF000000" VerticalContentAlignment="Center" />
+            </Grid>
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" /><VisualState x:Name="Disabled" />
+                <VisualState x:Name="Checked"><VisualState.Setters><Setter Target="CheckedLayer.Opacity" Value="1" /></VisualState.Setters></VisualState>
+                <VisualState x:Name="CheckedPointerOver"><VisualState.Setters><Setter Target="CheckedLayer.Opacity" Value="1" /></VisualState.Setters></VisualState>
+                <VisualState x:Name="CheckedPressed"><VisualState.Setters><Setter Target="CheckedLayer.Opacity" Value="1" /></VisualState.Setters></VisualState>
+                <VisualState x:Name="CheckedDisabled" /><VisualState x:Name="Indeterminate" />
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Unfocused" />
+                <VisualState x:Name="Focused"><VisualState.Setters><Setter Target="FocusLayer.Opacity" Value="1" /><Setter Target="Lift.ScaleX" Value="1.05" /><Setter Target="Lift.ScaleY" Value="1.05" /></VisualState.Setters></VisualState>
+                <VisualState x:Name="PointerFocused"><VisualState.Setters><Setter Target="FocusLayer.Opacity" Value="1" /></VisualState.Setters></VisualState>
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="SkylinePersonLoadingStyle" TargetType="ProgressRing">
+    <Setter Property="Width" Value="32" /><Setter Property="Height" Value="32" />
+    <Setter Property="Margin" Value="24" /><Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylinePersonBioDialogTextStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="13.76" /><Setter Property="LineHeight" Value="19.78" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="Foreground" Value="#D1FFFFFF" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Thickness x:Key="SkylinePersonBioDialogPadding">32,28</Thickness>
+  <SolidColorBrush x:Key="SkylinePersonDialogScrim" Color="#C7000000" />
+  <Style x:Key="SkylineDetailPosterBadgeStyle" TargetType="Border">
+    <Setter Property="Background" Value="#99000000" /><Setter Property="BorderBrush" Value="#26FFFFFF" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+  </Style>
+  <Style x:Key="SkylineDetailPosterBadgeTextStyle" TargetType="TextBlock">
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineFocusRing}" />
+  </Style>
+  <Style x:Key="SkylineDetailPosterRingStyle" TargetType="Border">
+    <Setter Property="Margin" Value="-3" /><Setter Property="CornerRadius" Value="{StaticResource SkylineFocusRingRadius}" />
+    <Setter Property="BorderThickness" Value="2" /><Setter Property="BorderBrush" Value="{StaticResource SkylineFocusRing}" />
+    <Setter Property="Opacity" Value="0" /><Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+  <Style x:Key="SkylineDetailPosterGlowStyle" TargetType="Border" BasedOn="{StaticResource SkylineDetailPosterRingStyle}">
+    <Setter Property="Margin" Value="-6" /><Setter Property="CornerRadius" Value="{StaticResource SkylineFocusGlowRadius}" />
+    <Setter Property="BorderThickness" Value="3" /><Setter Property="BorderBrush" Value="{StaticResource SkylineFocusGlow}" />
+  </Style>
+  <Style x:Key="SkylineDetailPosterTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource SkylineCardTitleSize}" /><Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineCaptionTitle}" /><Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="SkylineDetailPosterSubtitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineDetailPosterTitleStyle}">
+    <Setter Property="FontSize" Value="{StaticResource SkylineCardSubtitleSize}" /><Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineCaptionSubtitle}" />
+  </Style>
+  <Style x:Key="SkylinePersonErrorPanelStyle" TargetType="StackPanel">
+    <Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Spacing" Value="12" />
+  </Style>
+  <!-- End Wave 2 detail extras + people. -->
 </ResourceDictionary>

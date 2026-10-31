@@ -55,9 +55,69 @@
         <TextBlock Text="{x:Bind Role}" Margin="0,2,0,0" Style="{StaticResource SkylineDetailCastRoleStyle}" Visibility="{x:Bind RoleVisibility}" />
       </StackPanel>
     </DataTemplate>
+    <DataTemplate x:Key="TrailerTemplate" x:DataType="views:TrailerView">
+      <StackPanel Width="{StaticResource SkylineDetailTrailerWidth}" Spacing="{StaticResource SkylineDetailTrailerGapSize}">
+        <Grid Width="{StaticResource SkylineDetailTrailerWidth}" Height="{StaticResource SkylineDetailTrailerHeight}">
+          <Grid CornerRadius="{StaticResource SkylineDetailTrailerRadius}" Background="{StaticResource SkylineSurfaceElevated}">
+            <FontIcon Glyph="&#xE8B2;" Style="{StaticResource SkylineDetailTrailerPlaceholderStyle}" Visibility="{x:Bind PlaceholderVisibility}" />
+            <Image Source="{x:Bind Thumbnail}" Stretch="UniformToFill" />
+            <Border x:Name="PlayScrim" Style="{StaticResource SkylineDetailTrailerPlayStyle}" />
+            <FontIcon Glyph="&#xF5B0;" Style="{StaticResource SkylineDetailTrailerPlayIconStyle}" />
+          </Grid>
+          <Border x:Name="TrailerFocusRing" Style="{StaticResource SkylineDetailTrailerRingStyle}" />
+        </Grid>
+        <TextBlock x:Name="TrailerTitle" Text="{x:Bind Title}" Style="{StaticResource SkylineDetailTrailerTitleStyle}" />
+        <TextBlock Text="{x:Bind Secondary}" Visibility="{x:Bind SecondaryVisibility}" Style="{StaticResource SkylineDetailTrailerSecondaryStyle}" />
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate x:Key="DetailFactTemplate" x:DataType="views:DetailFactView">
+      <StackPanel>
+        <Border Style="{StaticResource SkylineDetailFactDividerStyle}" Visibility="{x:Bind DividerVisibility}" />
+        <Grid Style="{StaticResource SkylineDetailFactRowStyle}">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+          <TextBlock Text="{x:Bind Label}" Style="{StaticResource SkylineDetailFactLabelStyle}" />
+          <TextBlock Grid.Column="1" Text="{x:Bind Value}" Style="{StaticResource SkylineDetailFactValueStyle}" />
+        </Grid>
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate x:Key="PosterBadgeTemplate" x:DataType="views:BadgeView">
+      <Border Style="{StaticResource SkylineDetailPosterBadgeStyle}" BorderThickness="{x:Bind Border}" CornerRadius="{x:Bind Radius}" Padding="{x:Bind Padding}">
+        <TextBlock Text="{x:Bind Text}" Style="{StaticResource SkylineDetailPosterBadgeTextStyle}" FontSize="{x:Bind FontSize}" />
+      </Border>
+    </DataTemplate>
+    <DataTemplate x:Key="RelatedTemplate" x:DataType="views:CardView">
+      <StackPanel Width="{StaticResource SkylineDetailRelatedWidth}" Spacing="{x:Bind CaptionSpacing}">
+        <Grid x:Name="Art" Width="{StaticResource SkylineDetailRelatedWidth}" Height="{StaticResource SkylineDetailRelatedHeight}">
+          <Grid CornerRadius="{StaticResource SkylineCardRadius}" Background="{StaticResource SkylineCardPlaceholder}">
+            <TextBlock Text="{x:Bind Title}" Visibility="{x:Bind FallbackVisibility}" Style="{StaticResource SkylineDetailTrailerSecondaryStyle}" TextWrapping="Wrap" VerticalAlignment="Center" />
+            <Image Source="{x:Bind Image}" Stretch="UniformToFill" />
+            <ItemsControl ItemsSource="{x:Bind CornerTop}" ItemTemplate="{StaticResource PosterBadgeTemplate}" Margin="{x:Bind CornerInset}"
+                          HorizontalAlignment="Left" VerticalAlignment="Top" IsTabStop="False" IsHitTestVisible="False" />
+            <ItemsControl ItemsSource="{x:Bind CornerBottom}" ItemTemplate="{StaticResource PosterBadgeTemplate}" Margin="{x:Bind CornerInset}"
+                          HorizontalAlignment="Left" VerticalAlignment="Bottom" IsTabStop="False" IsHitTestVisible="False" />
+          </Grid>
+          <Border x:Name="FocusGlow" Style="{StaticResource SkylineDetailPosterGlowStyle}" />
+          <Border x:Name="FocusRing" Style="{StaticResource SkylineDetailPosterRingStyle}" />
+        </Grid>
+        <StackPanel>
+          <TextBlock Text="{x:Bind Title}" Style="{StaticResource SkylineDetailPosterTitleStyle}" />
+          <TextBlock Text="{x:Bind Subtitle}" Visibility="{x:Bind SubtitleVisibility}" Style="{StaticResource SkylineDetailPosterSubtitleStyle}" />
+        </StackPanel>
+      </StackPanel>
+    </DataTemplate>
   </Page.Resources>
 
   <Grid x:Name="Root" SizeChanged="OnRootSizeChanged">
+    <VisualStateManager.VisualStateGroups>
+      <VisualStateGroup x:Name="DetailBodyStates">
+        <VisualState x:Name="LeafBody">
+          <VisualState.Setters><Setter Target="SupportingSections.Margin" Value="{StaticResource SkylineDetailLeafBodyInset}" /></VisualState.Setters>
+        </VisualState>
+        <VisualState x:Name="SeriesBody">
+          <VisualState.Setters><Setter Target="SupportingSections.Margin" Value="{StaticResource SkylineDetailSeriesBodyInset}" /></VisualState.Setters>
+        </VisualState>
+      </VisualStateGroup>
+    </VisualStateManager.VisualStateGroups>
     <!-- TvItemDetailScreen.kt composites one sampled tint over black into an opaque page surface. -->
     <Rectangle x:Name="Wash" Fill="#FF040D0F" IsHitTestVisible="False" />
     <Grid x:Name="ArtBox" Width="614" Height="378" HorizontalAlignment="Right" VerticalAlignment="Top" IsHitTestVisible="False" />
@@ -167,23 +227,59 @@
           </Grid>
         </StackPanel>
 
-        <StackPanel x:Name="CastSection" Margin="0,32,0,0" Spacing="14" Visibility="Collapsed">
-          <TextBlock Text="Cast &amp; Crew" Margin="50,0,50,0" Style="{StaticResource SkylineDetailSectionHeaderStyle}" />
-          <ListView x:Name="Cast" ItemTemplate="{StaticResource CastTemplate}" SelectionMode="None" IsItemClickEnabled="False" IsTabStop="False"
-                    GotFocus="OnCardFocus" LostFocus="OnCardBlur"
-                    Padding="50,12,0,12" ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden"
-                    ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
-            <ListView.ItemContainerStyle>
-              <Style TargetType="ListViewItem" BasedOn="{StaticResource SkylineCardItemStyle}">
-                <Setter Property="Margin" Value="0,0,22,0" />
-              </Style>
-            </ListView.ItemContainerStyle>
-            <ListView.ItemsPanel>
-              <ItemsPanelTemplate>
-                <ItemsStackPanel Orientation="Horizontal" />
-              </ItemsPanelTemplate>
-            </ListView.ItemsPanel>
-          </ListView>
+        <StackPanel x:Name="SupportingSections" Margin="{StaticResource SkylineDetailLeafBodyInset}" Spacing="{StaticResource SkylineDetailSectionGap}">
+          <StackPanel x:Name="CastSection" Spacing="14" Visibility="Collapsed">
+            <TextBlock Text="Cast &amp; Crew" Margin="50,0,50,0" Style="{StaticResource SkylineDetailSectionHeaderStyle}" />
+            <ListView x:Name="Cast" ItemTemplate="{StaticResource CastTemplate}" SelectionMode="None" IsItemClickEnabled="True" IsTabStop="False"
+                      ItemClick="OnCastClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur"
+                      Padding="50,12,0,12" ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden"
+                      ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+              <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem" BasedOn="{StaticResource SkylineCardItemStyle}">
+                  <Setter Property="Margin" Value="0,0,22,0" />
+                </Style>
+              </ListView.ItemContainerStyle>
+              <ListView.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <ItemsStackPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ListView.ItemsPanel>
+            </ListView>
+          </StackPanel>
+
+          <!-- TvItemDetailScreen.kt: Cast → Trailers → Related/Recommended → Details, omitting empty sections. -->
+          <StackPanel x:Name="TrailersSection" Spacing="{StaticResource SkylineDetailTrailerGapSize}" Visibility="Collapsed">
+            <TextBlock Text="Trailers &amp; More" Margin="{StaticResource SkylineDetailHeaderInset}" Style="{StaticResource SkylineDetailSectionHeaderStyle}" />
+            <ListView x:Name="Trailers" Style="{StaticResource SkylineDetailExtraRailStyle}" ItemTemplate="{StaticResource TrailerTemplate}"
+                      ItemClick="OnTrailerClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur">
+              <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem" BasedOn="{StaticResource SkylineCardItemStyle}">
+                  <Setter Property="Margin" Value="{StaticResource SkylineDetailTrailerGap}" />
+                </Style>
+              </ListView.ItemContainerStyle>
+              <ListView.ItemsPanel><ItemsPanelTemplate><ItemsStackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ListView.ItemsPanel>
+            </ListView>
+          </StackPanel>
+          <StackPanel x:Name="SimilarSection" Spacing="{StaticResource SkylineDetailRelatedGapSize}" Visibility="Collapsed">
+            <TextBlock x:Name="SimilarHeader" Margin="{StaticResource SkylineDetailHeaderInset}" Style="{StaticResource SkylineDetailSectionHeaderStyle}" />
+            <ListView x:Name="Similar" Style="{StaticResource SkylineDetailRelatedRailStyle}" ItemTemplate="{StaticResource RelatedTemplate}"
+                      ItemClick="OnSimilarClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur">
+              <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem" BasedOn="{StaticResource SkylineCardItemStyle}">
+                  <Setter Property="Margin" Value="{StaticResource SkylineDetailRailGap}" />
+                </Style>
+              </ListView.ItemContainerStyle>
+              <ListView.ItemsPanel><ItemsPanelTemplate><ItemsStackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ListView.ItemsPanel>
+            </ListView>
+          </StackPanel>
+          <Button x:Name="DetailsSection" Style="{StaticResource SkylineDetailFactsStopStyle}" Visibility="Collapsed"
+                  GotFocus="OnDetailsFocus" AutomationProperties.Name="Details">
+            <StackPanel Spacing="{StaticResource SkylineDetailFactsGap}">
+              <TextBlock Text="Details" Style="{StaticResource SkylineDetailSectionHeaderStyle}" />
+              <ItemsControl x:Name="DetailFacts" Width="{StaticResource SkylineDetailFactsWidth}" MaxWidth="{StaticResource SkylineDetailFactsWidth}" HorizontalAlignment="Left"
+                            HorizontalContentAlignment="Stretch" ItemTemplate="{StaticResource DetailFactTemplate}" IsTabStop="False" />
+            </StackPanel>
+          </Button>
         </StackPanel>
       </StackPanel>
     </ScrollViewer>

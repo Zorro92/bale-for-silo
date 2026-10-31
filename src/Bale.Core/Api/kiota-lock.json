@@ -1,5 +1,5 @@
 {
-  "descriptionHash": "9477B841AD18F10D9CBB67BA86C6E919299B4ED219B67D2CAC1278BD39A3B0C0A5CE4558C04353509AE19C24E96227C75F2C6A73CB8FC39F37EB652CA2A58235",
+  "descriptionHash": "8B9EFFD4E099213A5D5227A897658045F4FFE70FCE0AE6CB846AA79BD6DA90E08F0D0B98ED61EC8761F1569E41AC287F99BC6D5ED80F34BD3D18D59E014FEF71",
   "descriptionLocation": "../../../.cache/silo-openapi-44a345dbfb8c0a5892dc366ee0dd33fc091b7cf2.json",
   "lockFileVersion": "1.0.0",
   "kiotaVersion": "1.36.1",
@@ -45,6 +45,8 @@
     "/api/v2/catalog/items/{id}",
     "/api/v2/catalog",
     "/api/v2/catalog/people",
+    "/api/v2/catalog/people/{id}",
+    "/api/v2/recommendations/similar/{item_id}",
     "/api/v2/catalog/search/capabilities",
     "/api/v2/user/libraries",
     "/api/v2/library/{id}/sections",
