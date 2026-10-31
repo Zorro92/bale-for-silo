@@ -48,6 +48,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         ProfilePanel.PreviewKeyDown += OnProfilePanelPreviewKeyDown;
         InitializeLibraryCascade();
         InitializeForYouCascade();
+        InitializeOfflinePill();
     }
 
     /// <summary>

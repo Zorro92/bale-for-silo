@@ -26,6 +26,8 @@ public sealed partial class App : Application
 #endif
         };
         DebugSettings.BindingFailed += (_, e) => Log.Info($"XAML binding failed: {e.Message}");
+        Suspending += (_, _) => Session.SetForeground(false);
+        Resuming += (_, _) => Session.SetForeground(Window.Current?.Visible == true);
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs e)
@@ -46,6 +48,7 @@ public sealed partial class App : Application
             // panels that enable it (top bar, chips, detail actions) trap arrows inside them.
             frame.XYFocusKeyboardNavigation = XYFocusKeyboardNavigationMode.Enabled;
             Window.Current.Content = frame;
+            Window.Current.VisibilityChanged += (_, args) => Session.SetForeground(args.Visible);
             frame.PreviewKeyDown += OnPreviewKeyDown;
             frame.PreviewKeyUp += OnPreviewKeyUp;
             frame.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler((_, args) => OnBackKey(frame, args)), handledEventsToo: false);
@@ -67,6 +70,7 @@ public sealed partial class App : Application
         }
 
         Window.Current.Activate();
+        Session.SetForeground(Window.Current.Visible);
     }
 
 #if DEBUG_SERVER

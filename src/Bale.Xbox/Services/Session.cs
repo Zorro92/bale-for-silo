@@ -11,8 +11,11 @@ internal static class Session
 {
     private static Frame? _rootFrame;
     private static bool _routingExpiry;
+    private static bool _foreground = true;
 
     public static SiloClient? Client { get; private set; }
+
+    public static ServerReachabilityMonitor? Reachability { get; private set; }
 
     /// <summary>Shown on the top bar's profile button.</summary>
     public static string? ProfileName { get; set; }
@@ -22,10 +25,22 @@ internal static class Session
 
     public static void Attach(Frame frame) => _rootFrame = frame;
 
+    /// <summary>MainTvActivity.kt starts fresh discovery only while the app is in the foreground.</summary>
+    public static void SetForeground(bool foreground)
+    {
+        if (_foreground == foreground) return;
+        _foreground = foreground;
+        if (foreground) Reachability?.StartForeground();
+        else Reachability?.StopForeground();
+    }
+
     public static SiloClient Connect(Uri server)
     {
+        Reachability?.Dispose();
         Client?.Dispose();
         var client = Client = new SiloClient(server, DeviceIdentity.Current());
+        Reachability = new ServerReachabilityMonitor(server);
+        if (_foreground) Reachability.StartForeground();
         _routingExpiry = false;
         client.TokensRefreshed += (_, _) =>
         {
@@ -153,6 +168,8 @@ internal static class Session
 
     public static async Task SignOutAsync()
     {
+        Reachability?.Dispose();
+        Reachability = null;
         var client = Client;
         Client = null; // A late refresh must not write a signed-out session back to the vault.
         if (client is not null)
