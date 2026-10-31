@@ -270,7 +270,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
     /// <summary>Back chain (guide §7): panel → close; content → top bar; another tab → Home; Home → leave the app.</summary>
     public bool OnBack()
     {
-        if (ContentFrame.Content is IBackHandler content && content.OnBack()) return true;
+        // TvShellFocusState.kt: an open panel closes onto its anchor tab before content sees Back.
         if (LibraryPanel.Visibility == Visibility.Visible || ForYouPanel.Visibility == Visibility.Visible || ProfilePanel.Visibility == Visibility.Visible)
         {
             Control? anchor = ProfilePanel.Visibility == Visibility.Visible ? AvatarButton : _panelTab;
@@ -279,6 +279,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
             return true;
         }
 
+        if (ContentFrame.Content is IBackHandler content && content.OnBack()) return true;
         if (!IsInTopBar(FocusManager.GetFocusedElement() as DependencyObject))
         {
             (_searchSelected ? (Control?)SearchButton : ButtonFor(_selected))?.Focus(FocusState.Programmatic);
