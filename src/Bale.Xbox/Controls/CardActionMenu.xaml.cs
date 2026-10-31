@@ -1,3 +1,4 @@
+using System.Numerics;
 using Bale.Core.Browse;
 using Bale.Xbox.Services;
 using Windows.Foundation;
@@ -6,6 +7,8 @@ using Windows.UI;
 using Windows.UI.Core;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Controls.Primitives;
+using Windows.UI.Xaml.Hosting;
 using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Shapes;
@@ -16,7 +19,8 @@ namespace Bale.Xbox.Controls;
 public sealed partial class CardActionMenu : UserControl
 {
     private readonly DispatcherTimer _statusTimer = new() { Interval = TimeSpan.FromSeconds(5) };
-    private FrameworkElement? _origin;
+    private ContentControl? _origin;
+    private Control? _focusedRow;
 
     public CardActionMenu()
     {
@@ -29,11 +33,13 @@ public sealed partial class CardActionMenu : UserControl
     public event Action<CardAction>? Chosen;
     public event Action? Dismissed;
     public bool IsOpen => ModalLayer.Visibility == Visibility.Visible;
+    internal Control? FocusTarget => _focusedRow is { Visibility: Visibility.Visible } ? _focusedRow : VisibleRows().FirstOrDefault();
 
-    public void Show(IReadOnlyList<CardMenuEntry> entries, FrameworkElement origin)
+    public void Show(IReadOnlyList<CardMenuEntry> entries, ContentControl origin)
     {
         ClearStatus();
         _origin = origin;
+        _focusedRow = null;
         foreach (var button in Options.Children.OfType<Button>()) button.Visibility = Visibility.Collapsed;
         foreach (var entry in entries)
         {
@@ -67,6 +73,7 @@ public sealed partial class CardActionMenu : UserControl
         ModalLayer.Visibility = Visibility.Collapsed;
         IsHitTestVisible = false;
         _origin = null;
+        _focusedRow = null;
     }
 
     public void ShowStatus(string message)
@@ -114,14 +121,20 @@ public sealed partial class CardActionMenu : UserControl
         if (!IsOpen || _origin is null || ActualWidth <= 0 || ActualHeight <= 0) return false;
         try
         {
-            // AboveAnchorPopupPositionProvider (TvMediaCardActions.kt): centered above, else below, clamped to the window.
             MenuPanel.UpdateLayout();
-            var anchor = _origin.TransformToVisual(this).TransformBounds(new Rect(0, 0, _origin.ActualWidth, _origin.ActualHeight));
-            var width = MenuPanel.ActualWidth;
-            var height = MenuPanel.ActualHeight;
-            var x = Math.Clamp(anchor.Left + (anchor.Width - width) / 2, 0, Math.Max(0, ActualWidth - width));
-            var above = anchor.Top - height - 8;
-            var y = above >= 0 ? above : Math.Clamp(anchor.Bottom + 8, 0, Math.Max(0, ActualHeight - height));
+            // TvMediaCardContextMenu precedes the art in a zero-height Box. Use its unscaled layout
+            // slot, including grid headroom, not the zoomed art bounds or the container's caption.
+            var anchor = _origin.TransformToVisual(this).TransformBounds(new Rect(0, 0, _origin.ActualWidth, 0));
+            if (_origin.ContentTemplateRoot is FrameworkElement root && root.FindName("Art") is FrameworkElement art
+                && VisualTreeHelper.GetParent(art) is UIElement parent)
+            {
+                var slot = LayoutInformation.GetLayoutSlot(art);
+                anchor = parent.TransformToVisual(this).TransformBounds(new Rect(slot.X + art.Margin.Left,
+                    slot.Y + art.Margin.Top, art.ActualWidth, 0));
+            }
+
+            var (x, y) = CardMenuPlacement.Position(anchor.Left, anchor.Top, anchor.Width, ActualWidth, ActualHeight,
+                MenuPanel.ActualWidth, MenuPanel.ActualHeight);
             MenuPanel.Margin = new Thickness(x, y, 0, 0);
             return true;
         }
@@ -145,16 +158,50 @@ public sealed partial class CardActionMenu : UserControl
         }
     }
 
-    // Like DetailPage.OnMoreRowFocus: paths need explicit recoloring when the row's foreground flips.
-    private void OnRowFocus(object sender, RoutedEventArgs args) => RecolorIcons(sender as DependencyObject, true);
-    private void OnRowBlur(object sender, RoutedEventArgs args) => RecolorIcons(sender as DependencyObject, false);
+    private void OnRowFocus(object sender, RoutedEventArgs args)
+    {
+        if (sender is not ContentControl row) return;
+        _focusedRow = row;
+        Canvas.SetZIndex(row, 1);
+        EnsureRowGlow(row);
+        // Only recolor the content icons, never the template's white glow mask.
+        RecolorIcons(row.Content as DependencyObject, true);
+    }
+
+    private void OnRowBlur(object sender, RoutedEventArgs args)
+    {
+        if (sender is not ContentControl row) return;
+        Canvas.SetZIndex(row, 0);
+        RecolorIcons(row.Content as DependencyObject, false);
+    }
+
+    private static void EnsureRowGlow(ContentControl row)
+    {
+        if (VisualTreeHelper.GetChildrenCount(row) == 0
+            || VisualTreeHelper.GetChild(row, 0) is not FrameworkElement root
+            || root.FindName("GlowHost") is not FrameworkElement host
+            || root.FindName("GlowMask") is not Shape mask
+            || ElementCompositionPreview.GetElementChildVisual(host) is not null) return;
+
+        // TvMenuRow / SurfaceGlow.kt: a rounded, zero-offset white shadow at 14%, with 10dp blur.
+        var compositor = ElementCompositionPreview.GetElementVisual(host).Compositor;
+        var shadow = compositor.CreateDropShadow();
+        shadow.Color = Colors.White;
+        shadow.Opacity = 0.14f;
+        shadow.BlurRadius = 10;
+        shadow.Mask = mask.GetAlphaMask();
+        var glow = compositor.CreateSpriteVisual();
+        glow.RelativeSizeAdjustment = Vector2.One;
+        glow.Shadow = shadow;
+        ElementCompositionPreview.SetElementChildVisual(host, glow);
+    }
 
     private static void RecolorIcons(DependencyObject? node, bool focused)
     {
         if (node is null) return;
         if (node is Shape { Fill: not null } shape)
         {
-            shape.Fill = new SolidColorBrush(focused ? Color.FromArgb(255, 11, 11, 12) : Color.FromArgb(255, 237, 237, 237));
+            shape.Fill = new SolidColorBrush(focused ? Colors.Black : Colors.White);
         }
 
         for (var i = 0; i < VisualTreeHelper.GetChildrenCount(node); i++) RecolorIcons(VisualTreeHelper.GetChild(node, i), focused);
