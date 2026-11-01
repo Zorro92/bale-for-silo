@@ -61,6 +61,10 @@ The console runs the user's real account against their real Silo server.
 
 ## 4. Drive the exact scenario
 
+Use `./scripts/bale-debug.sh targets` and `./scripts/bale-debug.sh goto "Unwatched#2"` to get into
+position for setup only. Check the reported focus: a rail may redirect to its remembered item.
+Then drive the behavior under test with real `key`/`press` input, never `goto`.
+
 Reproduce what the user did, or the interaction you changed, with real input:
 
 ```sh

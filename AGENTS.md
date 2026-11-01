@@ -59,10 +59,17 @@ MSIX (~2 min). Then, with `XBOX_HOST` set to the console's IP:
 ./scripts/bale-debug.sh key escape            # real keystrokes
 ./scripts/bale-debug.sh type dune             # typed text
 ./scripts/bale-debug.sh focus                 # what has focus, and its text
+./scripts/bale-debug.sh goto "Unwatched#2"     # setup only: focus the second matching control
+./scripts/bale-debug.sh targets               # controls goto can reach
 ./scripts/bale-debug.sh tree                  # visible element tree with bounds
 ./scripts/xbox-screenshot.sh out.png          # what's on the TV
 ./scripts/xbox-logs.sh                        # the log file (survives crashes)
 ```
+
+Use `targets` and `goto` only to get into position for a test. `goto` matches a control's name,
+automation name or read text (case-insensitively); append `#N` for the Nth match. It reports actual
+focus, including rail redirects. Drive the behavior under test with real `key`/`press` input,
+not `goto`.
 
 **Verify every UI or behavior change on the console** by driving it with `bale-debug.sh` and taking a
 screenshot. Don't report a change as working from a successful build alone. The debug server

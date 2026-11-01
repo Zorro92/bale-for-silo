@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Drives and inspects Bale on the console through its development debug server (Services/DebugServer.cs).
+# Requires XBOX_HOST to be set to the console host.
 #
-#   XBOX_HOST=192.168.1.50 scripts/bale-debug.sh log            follow the live log (Ctrl+C to stop)
-#   XBOX_HOST=192.168.1.50 scripts/bale-debug.sh press down a   press buttons in order: up down left right a b menu view lb rb lt rt
-#   XBOX_HOST=192.168.1.50 scripts/bale-debug.sh key enter      keystrokes by name: enter escape tab down back f5...
-#   XBOX_HOST=192.168.1.50 scripts/bale-debug.sh type dune      type text as real keystrokes
-#   XBOX_HOST=192.168.1.50 scripts/bale-debug.sh focus          what has focus, and the text on it
-#   XBOX_HOST=192.168.1.50 scripts/bale-debug.sh tree           the visible element tree with bounds
+#   scripts/bale-debug.sh log                   follow the live log (Ctrl+C to stop)
+#   scripts/bale-debug.sh press down a          press buttons in order: up down left right a b menu view lb rb lt rt
+#   scripts/bale-debug.sh key enter             keystrokes by name: enter escape tab down back f5...
+#   scripts/bale-debug.sh type dune             type text as real keystrokes
+#   scripts/bale-debug.sh focus                 what has focus, and the text on it
+#   scripts/bale-debug.sh goto "Unwatched#2"     setup only: focus the second matching control
+#   scripts/bale-debug.sh targets               list controls goto can reach
+#   scripts/bale-debug.sh tree                  the visible element tree with bounds
 set -euo pipefail
 HOST="${XBOX_HOST:?Set XBOX_HOST to your Xbox IP (shown in Dev Home)}"
 BASE="http://$HOST:8790"
@@ -40,9 +43,14 @@ case "${1:-}" in
     curl -fsS -X POST -G "$BASE/type" --data-urlencode "text=$*"
     ;;
   focus) curl -fsS "$BASE/focus" ;;
+  goto)
+    shift
+    curl --fail-with-body -sS -X POST -G "$BASE/goto" --data-urlencode "target=$*"
+    ;;
+  targets) curl -fsS "$BASE/targets" ;;
   tree) curl -fsS "$BASE/tree" ;;
   *)
-    sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac
