@@ -10,14 +10,26 @@ namespace Bale.Core.Browse;
 public sealed class LibraryCatalogSource(string title, LibraryBrowseQuery query, LibraryBrowseFeed library) : ICatalogGridSource
 {
     private readonly ConditionalWeakTable<SearchContinuation, LibraryBrowseContinuation> _continuations = new();
+    private LibraryBrowseQuery _query = query;
+    private LibraryCatalogSource? _personalControls;
+    private LibraryBrowseQuery? _resultQuery;
+    private bool? _libraryHasItems;
+    private long? _total;
 
     public string Title { get; } = title;
-    public LibraryBrowseQuery Query { get; private set; } = query;
-    public bool? LibraryHasItems { get; private set; }
-    public long? Total { get; private set; }
+    public LibraryBrowseQuery Query => _personalControls is { } controls ? _query with { Filter = controls.Query.Filter } : _query;
+    public bool? LibraryHasItems => Query == _resultQuery ? _libraryHasItems : null;
+    public long? Total => Query == _resultQuery ? _total : null;
     public bool IsPersonal => Query.PersonalList is not null;
     public bool ShowsAlphabet => !IsPersonal && Query.Filter.ShowsAlphabet;
-    public string EmptyMessage => Query.PersonalList == "watchlist" ? "Your watchlist is empty" : "No favorites yet";
+    // TvPersonalScreens.kt: only inline Favorites narrows its empty copy by Movies / TV Shows.
+    public string EmptyMessage => (Query.PersonalList, Query.MediaType) switch
+    {
+        ("watchlist", _) => "Your watchlist is empty",
+        ("favorites", "movie") => "No favorite movies yet",
+        ("favorites", "series") => "No favorite TV shows yet",
+        _ => "No favorites yet",
+    };
 
     /// <summary>PersonalListViewModels.kt: cross-library, forty cards, server's stored list order.</summary>
     public static LibraryCatalogSource Personal(string kind, LibraryBrowseFeed library) => kind switch
@@ -27,11 +39,32 @@ public sealed class LibraryCatalogSource(string title, LibraryBrowseQuery query,
         _ => throw new ArgumentException("Unknown personal list.", nameof(kind)),
     };
 
+    /// <summary>
+    /// TvPersonalScreens.kt TvFavoritesInline keeps its media kind local, while
+    /// rememberPersonalListControls shares sort/facets with the standalone Favorites screen.
+    /// </summary>
+    public LibraryCatalogSource ForInlineFavorites()
+    {
+        if (Query.PersonalList != "favorites") throw new InvalidOperationException("Only Favorites has inline media kinds.");
+        return new LibraryCatalogSource(Title, Query with { MediaType = "movie" }, library)
+        {
+            _personalControls = _personalControls ?? this,
+        };
+    }
+
+    public void SetFavoriteMediaType(string mediaType)
+    {
+        if (_personalControls is null) throw new InvalidOperationException("Media kinds belong to inline Favorites only.");
+        if (mediaType is not ("movie" or "series")) throw new ArgumentException("Unknown favorite media kind.", nameof(mediaType));
+        _query = _query with { MediaType = mediaType };
+        _resultQuery = null;
+    }
+
     public void SetFilter(LibraryBrowseFilter filter)
     {
-        Query = Query with { Filter = filter };
-        LibraryHasItems = null;
-        Total = null;
+        if (_personalControls is { } controls) controls.SetFilter(filter);
+        else _query = _query with { Filter = filter };
+        _resultQuery = null;
     }
 
     public Task<CatalogFilters?> FiltersAsync(CancellationToken cancellationToken = default) =>
@@ -57,8 +90,9 @@ public sealed class LibraryCatalogSource(string title, LibraryBrowseQuery query,
 
         if (Query == requestedQuery)
         {
-            if (continuation is null) LibraryHasItems = page.LibraryHasItems;
-            Total = page.Total;
+            _resultQuery = requestedQuery;
+            if (continuation is null) _libraryHasItems = page.LibraryHasItems;
+            _total = page.Total;
         }
         return new SearchResultPage(page.Cards, page.Total ?? page.Cards.Count, page.Total is not null, next);
     }

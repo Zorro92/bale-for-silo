@@ -47,7 +47,7 @@ public sealed partial class CatalogGridPage : IBackHandler
             _libraryToolbar.FocusFilter();
             _ = ChangeLibraryFilterAsync(source.Query.Filter.ApplyFacets(new()));
         };
-        _libraryToolbar.TopRequested += () => ShellPage.Current?.FocusSelectedTab();
+        _libraryToolbar.TopRequested += FocusAboveLibraryControls;
         _libraryToolbar.ContentRequested += () => { if (_cards.Count > 0) FocusAt(Math.Clamp(_lastFocusedIndex, 0, _cards.Count - 1)); };
         _libraryOverlay.FilterChanged += filter => _ = ChangeLibraryFilterAsync(filter);
         _libraryOverlay.PreserveChanged += preserve =>

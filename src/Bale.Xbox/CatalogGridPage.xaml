@@ -93,6 +93,12 @@
           <Setter Target="PersonalEmptyHistoryIcon.Visibility" Value="Visible" />
         </VisualState.Setters></VisualState>
       </VisualStateGroup>
+      <VisualStateGroup x:Name="PersonalMediaKindsState">
+        <VisualState x:Name="NoPersonalMediaKinds" />
+        <VisualState x:Name="InlineFavoriteMediaKinds"><VisualState.Setters>
+          <Setter Target="PersonalMediaKinds.Visibility" Value="Visible" />
+        </VisualState.Setters></VisualState>
+      </VisualStateGroup>
       <VisualStateGroup x:Name="PersonalControls">
         <VisualState x:Name="PersonalWithoutControls" />
         <VisualState x:Name="PersonalWithControls"><VisualState.Setters>
@@ -136,6 +142,12 @@
         <GridView.Header>
           <StackPanel>
             <TextBlock x:Name="PageTitle" Style="{StaticResource SkylineCatalogTitleStyle}" Margin="{StaticResource SkylineCatalogHeaderMargin}" />
+            <!-- rail-layout: non-card — TvPersonalScreens.kt inline Favorites' Movies / TV Shows chips. -->
+            <ItemsControl x:Name="PersonalMediaKinds" Style="{StaticResource SkylinePersonalMediaKindsStyle}" Visibility="Collapsed" PreviewKeyDown="OnPersonalMediaKindsKeyDown">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ToggleButton x:Name="PersonalMovies" Content="Movies" Tag="movie" Style="{StaticResource SkylinePersonalMediaKindStyle}" Click="OnPersonalMediaKindClick" />
+              <ToggleButton x:Name="PersonalTvShows" Content="TV Shows" Tag="series" Style="{StaticResource SkylinePersonalMediaKindStyle}" Click="OnPersonalMediaKindClick" />
+            </ItemsControl>
             <!-- Optional source chrome scrolls with the cards (TvCatalogGrid's spanning header).
                  A Border slot can be populated through Child under Native AOT. -->
             <Border x:Name="ToolbarSlot" />

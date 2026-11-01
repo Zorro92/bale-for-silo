@@ -1789,6 +1789,13 @@
     <Setter Property="FontSize" Value="13.76" /><Setter Property="LineHeight" Value="17.2" />
     <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="Foreground" Value="#BFFFFFFF" />
   </Style>
+  <!-- TvPersonalScreens.kt PersonalInlineGrid: Favorites' media chips, 8dp apart and 10dp above Sort. -->
+  <Style x:Key="SkylinePersonalMediaKindsStyle" TargetType="ItemsControl">
+    <Setter Property="IsTabStop" Value="False" /><Setter Property="Margin" Value="0,0,20,10" />
+  </Style>
+  <Style x:Key="SkylinePersonalMediaKindStyle" TargetType="ToggleButton" BasedOn="{StaticResource SkylineFilterChipStyle}">
+    <Setter Property="Padding" Value="16,7" />
+  </Style>
   <!-- TvPersonalScreens.kt: fixed YOUR LIBRARY header, then a six-column poster grid. -->
   <Thickness x:Key="SkylinePersonalGridPadding">12,18,20,40</Thickness>
   <Thickness x:Key="SkylinePersonalControlsMargin">0,0,20,32</Thickness>

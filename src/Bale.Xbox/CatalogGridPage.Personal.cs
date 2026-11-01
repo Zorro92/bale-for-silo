@@ -1,6 +1,8 @@
 using Bale.Core.Browse;
 using Bale.Xbox.Services;
 using Windows.UI.Xaml;
+using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Input;
 
 namespace Bale.Xbox;
 
@@ -8,6 +10,7 @@ public sealed partial class CatalogGridPage
 {
     private bool _personalRefreshing;
     private int _personalRestoreVersion;
+    private Rail? _personalMediaRail;
     private bool IsPersonalGrid => _entry?.Source is LibraryCatalogSource { IsPersonal: true } or HistoryCatalogSource;
     private bool IsInlinePersonalGrid => _entry is { InlinePersonal: true, Source: LibraryCatalogSource { IsPersonal: true } };
 
@@ -26,6 +29,13 @@ public sealed partial class CatalogGridPage
         };
         VisualStateManager.GoToState(this, kind, false);
 
+        var showMediaKinds = IsInlinePersonalGrid && _entry.Source is LibraryCatalogSource { Query.PersonalList: "favorites" };
+        VisualStateManager.GoToState(this, showMediaKinds ? "InlineFavoriteMediaKinds" : "NoPersonalMediaKinds", false);
+        if (showMediaKinds)
+        {
+            _personalMediaRail = Rail.Attach(PersonalMediaKinds);
+            _personalMediaRail.Pin = false;
+        }
         if (_entry.Source is not LibraryCatalogSource) return;
         VisualStateManager.GoToState(this, "PersonalWithControls", false);
         // TvPersonalScreens.kt keeps controls mounted on loading/error/empty queries. Put states
@@ -40,6 +50,11 @@ public sealed partial class CatalogGridPage
     private void UpdatePersonalState()
     {
         if (!IsPersonalGrid) return;
+        if (_personalMediaRail is not null)
+        {
+            PersonalMovies.IsChecked = _librarySource?.Query.MediaType == "movie";
+            PersonalTvShows.IsChecked = _librarySource?.Query.MediaType == "series";
+        }
         var state = _entry.Results;
         EmptyMessage.Visibility = Visibility.Collapsed;
         PersonalEmptyPanel.Visibility = state.HasLoaded && !state.IsLoading && state.Error is null && _cards.Count == 0
@@ -58,6 +73,42 @@ public sealed partial class CatalogGridPage
             _ => "Couldn't load watch history.",
         };
         _libraryToolbar?.UpdateCount(state.HasLoaded && state.Error is null ? _librarySource?.Total : null);
+    }
+
+    private void FocusAboveLibraryControls()
+    {
+        // TvPersonalScreens.kt PersonalInlineGrid places Favorites' media row above Sort/Filter.
+        // Explicit vertical handoffs avoid XAML choosing a sideways neighbour at either row edge.
+        if (_personalMediaRail is { } rail)
+        {
+            rail.Remembered = _librarySource?.Query.MediaType == "series" ? PersonalTvShows : PersonalMovies;
+            _scroller?.ChangeView(null, 0, null, true);
+            rail.Focus();
+        }
+        else ShellPage.Current?.FocusSelectedTab();
+    }
+
+    private void OnPersonalMediaKindsKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        var direction = Direction(e.Key);
+        if (direction is not (GridDirection.Up or GridDirection.Down)) return;
+        e.Handled = true;
+        if (direction == GridDirection.Up) ShellPage.Current?.FocusSelectedTab();
+        else _libraryToolbar?.FocusControls();
+    }
+
+    private async void OnPersonalMediaKindClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { Tag: string mediaType } button || _librarySource is null || !_active || !_entry.IsCurrent(Session.Client)) return;
+        // TvPersonalScreens.kt TvFavoritesInline: Movies by default, TV Shows selects type=series.
+        // Keep focus on the clicked chip through the reload, not on the new first card.
+        PersonalMovies.IsChecked = mediaType == "movie";
+        PersonalTvShows.IsChecked = mediaType == "series";
+        if (_librarySource.Query.MediaType == mediaType) return;
+        _libraryReloadFocus = button;
+        _librarySource.SetFavoriteMediaType(mediaType);
+        _scroller?.ChangeView(null, 0, null, true);
+        await ReloadAsync();
     }
 
     private async Task RefreshPersonalAsync()

@@ -30,7 +30,9 @@ public sealed partial class ShellPage
         _searchSelected = false;
         UpdateChecked();
         ClosePanels();
-        ShowContent(typeof(CatalogGridPage), new CatalogGridEntry(PersonalSource(kind, client), client)
+        var source = PersonalSource(kind, client);
+        if (kind == "favorites") source = source.ForInlineFavorites();
+        ShowContent(typeof(CatalogGridPage), new CatalogGridEntry(source, client)
         {
             InlinePersonal = true,
             SavedListFallback = fallback,
