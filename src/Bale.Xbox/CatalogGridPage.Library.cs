@@ -173,7 +173,7 @@ public sealed partial class CatalogGridPage : IBackHandler
             handled = true;
             return;
         }
-        if (IsPersonalGrid && _entry.Results.Error is not null)
+        if (IsPersonalGrid && !IsInlinePersonalGrid && _entry.Results.Error is not null)
         {
             FocusRetry.Until(ErrorPanel, () => !_active || RetryButton.Focus(FocusState.Programmatic));
             handled = true;
@@ -189,7 +189,8 @@ public sealed partial class CatalogGridPage : IBackHandler
         else if ((!_librarySource.IsPersonal && _libraryInitialFocus) || _cards.Count == 0)
         {
             _libraryInitialFocus = false;
-            FocusRetry.Until(this, () => !_active || _entry.Results.Error is not null || _entry.Results.Unavailable || FocusLibraryToolbar());
+            FocusRetry.Until(this, () => !_active || (!IsInlinePersonalGrid && _entry.Results.Error is not null)
+                || _entry.Results.Unavailable || FocusLibraryToolbar());
             handled = true;
         }
         else _libraryInitialFocus = false; // Personal first entry belongs to the first card, not Sort.
@@ -203,7 +204,13 @@ public sealed partial class CatalogGridPage : IBackHandler
 
     internal void FocusLibraryContent()
     {
-        if (_entry.Results.Error is not null) RetryButton.Focus(FocusState.Programmatic);
+        // TvRecommendationsScreen.kt claimSavedListFocus waits for cards, then falls back to Sort
+        // only after the initial request has finished (TvPersonalScreens.kt PersonalInlineGrid).
+        if (IsInlinePersonalGrid && _cards.Count == 0)
+        {
+            if (!_entry.Results.IsLoading) _libraryToolbar?.FocusSort();
+        }
+        else if (_entry.Results.Error is not null) RetryButton.Focus(FocusState.Programmatic);
         else if (_cards.Count > 0) FocusAt(Math.Clamp(_lastFocusedIndex, 0, _cards.Count - 1));
         else _libraryToolbar?.FocusControls();
     }

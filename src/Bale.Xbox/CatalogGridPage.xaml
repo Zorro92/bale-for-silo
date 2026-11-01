@@ -60,6 +60,16 @@
             <Setter Target="ToolbarSlot.Margin" Value="{StaticResource SkylinePersonalControlsMargin}" />
           </VisualState.Setters>
         </VisualState>
+        <!-- TvPersonalScreens.kt PersonalInlineGrid: no secondary-page header; 40dp leading edge. -->
+        <VisualState x:Name="PersonalInline">
+          <VisualState.Setters>
+            <Setter Target="PersonalInlineHeader.Visibility" Value="Visible" />
+            <Setter Target="PageTitle.Visibility" Value="Collapsed" />
+            <Setter Target="Cards.Padding" Value="{StaticResource SkylinePersonalInlineGridPadding}" />
+            <Setter Target="Cards.ItemContainerStyle" Value="{StaticResource SkylinePersonalGridItemStyle}" />
+            <Setter Target="ToolbarSlot.Margin" Value="{StaticResource SkylinePersonalControlsMargin}" />
+          </VisualState.Setters>
+        </VisualState>
       </VisualStateGroup>
       <VisualStateGroup x:Name="PersonalKind">
         <VisualState x:Name="PersonalWatchlist"><VisualState.Setters>
@@ -83,7 +93,10 @@
       </VisualStateGroup>
     </VisualStateManager.VisualStateGroups>
 
-    <!-- TvPersonalScreens.kt keeps this title outside the scrolling grid. -->
+    <!-- TvRecommendationsScreen.kt: keep the saved-list viewport below TvTopMenuLayout.contentTopInset. -->
+    <Grid x:Name="PersonalInlineHeader" Height="{StaticResource SkylinePersonalInlineTopInset}" Visibility="Collapsed" />
+
+    <!-- TvPersonalScreens.kt keeps this title outside the scrolling grid on SECONDARY routes only. -->
     <StackPanel x:Name="PersonalHeader" Style="{StaticResource SkylinePersonalHeaderStyle}" Visibility="Collapsed">
       <TextBlock Text="YOUR LIBRARY" Style="{StaticResource SkylinePersonalEyebrowStyle}" />
       <StackPanel Style="{StaticResource SkylinePersonalTitleRowStyle}">

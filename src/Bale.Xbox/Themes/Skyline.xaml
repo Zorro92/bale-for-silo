@@ -1777,6 +1777,10 @@
     <Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="Spacing" Value="12" /><Setter Property="Margin" Value="24" />
   </Style>
+  <!-- TvRecommendationsScreen.kt / TvPersonalScreens.kt PersonalInlineGrid: top bar inset,
+       then 12dp grid padding, 40dp safe area and 24dp bottom. The last slot owns its 20dp gap. -->
+  <x:Double x:Key="SkylinePersonalInlineTopInset">94</x:Double>
+  <Thickness x:Key="SkylinePersonalInlineGridPadding">40,12,20,24</Thickness>
   <!-- TvPersonalScreens.kt: fixed YOUR LIBRARY header, then a six-column poster grid. -->
   <Thickness x:Key="SkylinePersonalGridPadding">12,18,20,40</Thickness>
   <Thickness x:Key="SkylinePersonalControlsMargin">0,0,20,32</Thickness>

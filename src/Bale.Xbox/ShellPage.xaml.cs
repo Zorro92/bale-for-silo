@@ -248,6 +248,8 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         }
         else
         {
+            // TvRecommendationsScreen.kt / TvForYouEntryRequest.kt retain the saved-list selection
+            // on detail return. Restore the existing root; only an explicit tab/dropdown pick resets it.
             (ContentFrame.Content as IRestoresFocus)?.RestoreFocus();
         }
     }
@@ -272,7 +274,9 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         if (ContentFrame.Content is IBackHandler content && content.OnBack()) return true;
         if (!IsInTopBar(FocusManager.GetFocusedElement() as DependencyObject))
         {
-            (_searchSelected ? (Control?)SearchButton : ButtonFor(_selected))?.Focus(FocusState.Programmatic);
+            // TvMainShell.kt / TvShellFocusState.kt: Back climbs to the selected root tab with
+            // dwell suppressed, rather than immediately reopening that tab's preview dropdown.
+            FocusAfterCascadeDismiss(_searchSelected ? SearchButton : ButtonFor(_selected));
             return true;
         }
 

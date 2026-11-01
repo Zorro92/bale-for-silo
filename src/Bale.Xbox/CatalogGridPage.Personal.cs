@@ -9,12 +9,14 @@ public sealed partial class CatalogGridPage
     private bool _personalRefreshing;
     private int _personalRestoreVersion;
     private bool IsPersonalGrid => _entry?.Source is LibraryCatalogSource { IsPersonal: true } or HistoryCatalogSource;
+    private bool IsInlinePersonalGrid => _entry is { InlinePersonal: true, Source: LibraryCatalogSource { IsPersonal: true } };
 
     private void ConfigurePersonalSource()
     {
         if (!IsPersonalGrid) return;
         PersonalTitle.Text = _entry.Source.Title;
-        VisualStateManager.GoToState(this, "Personal", false);
+        // TvPersonalScreens.kt PersonalInlineGrid omits YOUR LIBRARY, the title and its icon.
+        VisualStateManager.GoToState(this, IsInlinePersonalGrid ? "PersonalInline" : "Personal", false);
         var kind = _entry.Source switch
         {
             LibraryCatalogSource { Query.PersonalList: "watchlist" } => "PersonalWatchlist",

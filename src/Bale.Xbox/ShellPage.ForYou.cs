@@ -16,18 +16,21 @@ public sealed partial class ShellPage
         ForYouPanel.Selected += kind =>
         {
             if (_panelTab?.DataContext is not TabView { Page: "foryou" } tab) return;
-            if (kind == "recommendations")
-            {
-                Select(tab);
-                return;
-            }
-
-            _selected = tab;
-            _searchSelected = false;
-            UpdateChecked();
-            ClosePanels();
-            OpenPersonalList(kind);
+            if (kind == "recommendations") Select(tab);
+            else ShowForYouSavedList(tab, kind);
         };
+    }
+
+    private void ShowForYouSavedList(TabView tab, string kind)
+    {
+        if (Session.Client is not { } client) return;
+        // TvMainShell.kt openForYou(selection): replace the For You ROOT, not the outer journal.
+        // TvPersonalScreens.kt shares saved-list sort/filter selections with the profile routes.
+        _selected = tab;
+        _searchSelected = false;
+        UpdateChecked();
+        ClosePanels();
+        ShowContent(typeof(CatalogGridPage), new CatalogGridEntry(PersonalSource(kind, client), client) { InlinePersonal = true });
     }
 
     private void OpenForYouCascade(Control tabButton)

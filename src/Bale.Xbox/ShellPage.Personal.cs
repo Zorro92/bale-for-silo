@@ -24,8 +24,8 @@ public sealed partial class ShellPage
     }
 
     /// <summary>
-    /// TvMainShell.kt: profile/For You shortcuts push the same personal grids. Keep this entry point
-    /// shared so neither dropdown can accidentally put a secondary screen inside the root frame.
+    /// TvMainShell.kt: profile shortcuts are secondary routes on the outer journal. For You's
+    /// saved lists instead use ShowForYouSavedList, keeping Back on that selected tab root.
     /// </summary>
     public static void OpenPersonalList(string kind)
     {
