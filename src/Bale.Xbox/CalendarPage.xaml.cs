@@ -631,6 +631,13 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
     public void RestoreFocus()
     {
         Log.Info($"Calendar: restore focus (target={_returnTarget is not null}, needsLoad={_needsLoad}, active={_active})");
+        // OnLoaded may already have put focus back on the opened card and cleared the target;
+        // falling through to FocusContent would then move it up to the selected pill.
+        if (_returnTarget is null && !_needsLoad && IsWithin(FocusManager.GetFocusedElement() as DependencyObject, DayShelves))
+        {
+            return;
+        }
+
         _entryPending = false;
         _returning = _returnTarget is not null;
         if (_needsLoad)
@@ -671,6 +678,7 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
                 rail.Remembered = card;
                 if (rail.Focus() && ItemControl(rail.List, card) is { FocusState: not FocusState.Unfocused })
                 {
+                    Log.Info("Calendar: return target restored");
                     day.LastFocused = card;
                     _returnTarget = null;
                     _returning = false;
