@@ -16,6 +16,9 @@ public sealed partial class ShellPage
         ForYouPanel.Selected += kind =>
         {
             if (_panelTab?.DataContext is not TabView { Page: "foryou" } tab) return;
+            // TvMainShell.kt moveFocusToContent parks a failed/loading handover on the selected
+            // tab. Give the collapsing dropdown that successor until the first card can claim focus.
+            FocusAfterCascadeDismiss(_panelTab);
             if (kind == "recommendations") Select(tab);
             else ShowForYouSavedList(tab, kind);
         };
@@ -30,6 +33,7 @@ public sealed partial class ShellPage
         _searchSelected = false;
         UpdateChecked();
         ClosePanels();
+        if (ContentFrame.Content is CatalogGridPage existing && existing.EnterInlinePersonal(kind, fallback)) return;
         var source = PersonalSource(kind, client);
         if (kind == "favorites") source = source.ForInlineFavorites();
         ShowContent(typeof(CatalogGridPage), new CatalogGridEntry(source, client)

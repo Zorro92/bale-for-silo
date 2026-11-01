@@ -75,6 +75,22 @@ public sealed partial class CatalogGridPage
         _libraryToolbar?.UpdateCount(state.HasLoaded && state.Error is null ? _librarySource?.Total : null);
     }
 
+    internal bool EnterInlinePersonal(string kind, bool fallback)
+    {
+        if (!IsInlinePersonalGrid || !_entry.IsCurrent(Session.Client) || _librarySource?.Query.PersonalList != kind) return false;
+        // TvForYouEntryRequest.kt / TvRecommendationsScreen.kt: another explicit pick resets the
+        // entry focus and fallback caption, not TvFavoritesInline's remembered Movies / TV Shows.
+        // Detail return never takes this path; it still restores the launch-card identity.
+        _entry.SavedListFallback = fallback;
+        VisualStateManager.GoToState(this, fallback ? "SavedListFallback" : "NoSavedListCaption", false);
+        _entry.ReturnItemId = null;
+        _entry.ReturnItemIndex = _lastFocusedIndex = 0;
+        _libraryReloadFocus = null;
+        _focusGeneration++;
+        if (!_entry.Results.IsLoading || _cards.Count > 0) RestoreFocus();
+        return true;
+    }
+
     private void FocusAboveLibraryControls()
     {
         // TvPersonalScreens.kt PersonalInlineGrid places Favorites' media row above Sort/Filter.
