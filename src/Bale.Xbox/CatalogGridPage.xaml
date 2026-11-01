@@ -71,6 +71,14 @@
           </VisualState.Setters>
         </VisualState>
       </VisualStateGroup>
+      <!-- TvRecommendationsScreen.kt: a caption only for the automatic Watchlist fallback. -->
+      <VisualStateGroup x:Name="SavedListCaptionState">
+        <VisualState x:Name="NoSavedListCaption" />
+        <VisualState x:Name="SavedListFallback"><VisualState.Setters>
+          <Setter Target="PersonalInlineHeader.Height" Value="{StaticResource SkylinePersonalFallbackTopInset}" />
+          <Setter Target="SavedListCaption.Visibility" Value="Visible" />
+        </VisualState.Setters></VisualState>
+      </VisualStateGroup>
       <VisualStateGroup x:Name="PersonalKind">
         <VisualState x:Name="PersonalWatchlist"><VisualState.Setters>
           <Setter Target="PersonalTitleWatchlistIcon.Visibility" Value="Visible" />
@@ -94,7 +102,10 @@
     </VisualStateManager.VisualStateGroups>
 
     <!-- TvRecommendationsScreen.kt: keep the saved-list viewport below TvTopMenuLayout.contentTopInset. -->
-    <Grid x:Name="PersonalInlineHeader" Height="{StaticResource SkylinePersonalInlineTopInset}" Visibility="Collapsed" />
+    <Grid x:Name="PersonalInlineHeader" Height="{StaticResource SkylinePersonalInlineTopInset}" Visibility="Collapsed">
+      <TextBlock x:Name="SavedListCaption" Text="No recommendations yet — showing your saved titles."
+                 Style="{StaticResource SkylinePersonalFallbackCaptionStyle}" Visibility="Collapsed" />
+    </Grid>
 
     <!-- TvPersonalScreens.kt keeps this title outside the scrolling grid on SECONDARY routes only. -->
     <StackPanel x:Name="PersonalHeader" Style="{StaticResource SkylinePersonalHeaderStyle}" Visibility="Collapsed">

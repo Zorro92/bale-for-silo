@@ -4,6 +4,7 @@ using Bale.Xbox.Services;
 using Bale.Xbox.Views;
 using Microsoft.Kiota.Abstractions;
 using Windows.UI;
+using Windows.UI.Core;
 using Windows.UI.Xaml;
 using Windows.System;
 using Windows.UI.Xaml.Controls;
@@ -27,6 +28,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     public const string ForYouParameter = "foryou";
 
     private bool _forYou;
+    private bool _savedListFallbackPending;
 
     /// <summary>Marquee updates wait for focus to rest this long, so scrubbing a row doesn't thrash backdrops (guide §4.2).</summary>
     private static readonly TimeSpan MarqueeSettle = TimeSpan.FromMilliseconds(150);
@@ -99,6 +101,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         _isLoaded = true;
+        QueueSavedListFallback();
         try
         {
             _wash = new AmbientTint.WashAnimation(Wash);
@@ -182,6 +185,15 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
 
             if (_libraryId is not null) rows = LibraryRecommendedRows.For(rows, _libraryMediaScope);
             var restoreFocus = UpdateRows(rows, refresh);
+            _savedListFallbackPending = _forYou && _rows.Count == 0;
+            if (_savedListFallbackPending)
+            {
+                // TvRecommendationsScreen.kt chooses inline Watchlist only after a successful
+                // load has no visible sections; neither loading nor an error is a fallback.
+                ClearMarquee();
+                QueueSavedListFallback();
+                return;
+            }
             if (_rows.Count == 0)
             {
                 ShowEmpty(!refresh || restoreFocus);
@@ -222,6 +234,18 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         {
             _loading = false;
         }
+    }
+
+    private void QueueSavedListFallback()
+    {
+        if (!_savedListFallbackPending) return;
+        // TvRecommendationsScreen.kt applies its fallback after entry. Defer out of Frame.Navigate
+        // (a cached API response can finish synchronously), then let the shell fence stale pages.
+        // A load completing under a profile route is retried on Loaded/RestoreFocus instead.
+        _ = Dispatcher.RunAsync(CoreDispatcherPriority.Low, () =>
+        {
+            if (_savedListFallbackPending) ShellPage.Current?.ShowForYouWatchlistFallback(this);
+        });
     }
 
     /// <summary>
@@ -640,6 +664,11 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     {
         // The shell has finished its initial focus pass; explicit restoration now owns the target.
         _returning = false;
+        if (_savedListFallbackPending)
+        {
+            QueueSavedListFallback();
+            return;
+        }
         if (_lastCard is null)
         {
             if (_libraryId is null && !_forYou)
@@ -657,6 +686,11 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     internal void FocusContent()
     {
         _returning = false;
+        if (_savedListFallbackPending)
+        {
+            QueueSavedListFallback();
+            return;
+        }
         if (EmptyPanel.Visibility == Visibility.Visible)
         {
             if (_libraryId is null) FocusStateButton(RefreshButton, EmptyPanel);

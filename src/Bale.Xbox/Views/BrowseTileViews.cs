@@ -53,6 +53,7 @@ public sealed class CatalogGridEntry(ICatalogGridSource source, SiloClient clien
     public string? ProfileId { get; } = client.ProfileId;
     // TvPersonalScreens.kt: the For You variant shares the grid, without secondary-page chrome.
     public bool InlinePersonal { get; init; }
+    public bool SavedListFallback { get; init; }
     public CatalogGridResults Results { get; } = new();
     public string? ReturnItemId { get; set; }
     public int ReturnItemIndex { get; set; }

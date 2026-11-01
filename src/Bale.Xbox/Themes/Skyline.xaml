@@ -1781,6 +1781,14 @@
        then 12dp grid padding, 40dp safe area and 24dp bottom. The last slot owns its 20dp gap. -->
   <x:Double x:Key="SkylinePersonalInlineTopInset">94</x:Double>
   <Thickness x:Key="SkylinePersonalInlineGridPadding">40,12,20,24</Thickness>
+  <!-- TvRecommendationsScreen.kt: SavedListCaptionInset = 34dp above the inline grid,
+       16/20sp caption at contentTopInset, white at 75%. -->
+  <x:Double x:Key="SkylinePersonalFallbackTopInset">128</x:Double>
+  <Style x:Key="SkylinePersonalFallbackCaptionStyle" TargetType="TextBlock">
+    <Setter Property="Margin" Value="40,94,40,0" /><Setter Property="VerticalAlignment" Value="Top" />
+    <Setter Property="FontSize" Value="13.76" /><Setter Property="LineHeight" Value="17.2" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="Foreground" Value="#BFFFFFFF" />
+  </Style>
   <!-- TvPersonalScreens.kt: fixed YOUR LIBRARY header, then a six-column poster grid. -->
   <Thickness x:Key="SkylinePersonalGridPadding">12,18,20,40</Thickness>
   <Thickness x:Key="SkylinePersonalControlsMargin">0,0,20,32</Thickness>

@@ -17,6 +17,7 @@ public sealed partial class CatalogGridPage
         PersonalTitle.Text = _entry.Source.Title;
         // TvPersonalScreens.kt PersonalInlineGrid omits YOUR LIBRARY, the title and its icon.
         VisualStateManager.GoToState(this, IsInlinePersonalGrid ? "PersonalInline" : "Personal", false);
+        VisualStateManager.GoToState(this, IsInlinePersonalGrid && _entry.SavedListFallback ? "SavedListFallback" : "NoSavedListCaption", false);
         var kind = _entry.Source switch
         {
             LibraryCatalogSource { Query.PersonalList: "watchlist" } => "PersonalWatchlist",

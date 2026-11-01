@@ -21,7 +21,7 @@ public sealed partial class ShellPage
         };
     }
 
-    private void ShowForYouSavedList(TabView tab, string kind)
+    private void ShowForYouSavedList(TabView tab, string kind, bool fallback = false)
     {
         if (Session.Client is not { } client) return;
         // TvMainShell.kt openForYou(selection): replace the For You ROOT, not the outer journal.
@@ -30,7 +30,21 @@ public sealed partial class ShellPage
         _searchSelected = false;
         UpdateChecked();
         ClosePanels();
-        ShowContent(typeof(CatalogGridPage), new CatalogGridEntry(PersonalSource(kind, client), client) { InlinePersonal = true });
+        ShowContent(typeof(CatalogGridPage), new CatalogGridEntry(PersonalSource(kind, client), client)
+        {
+            InlinePersonal = true,
+            SavedListFallback = fallback,
+        });
+    }
+
+    internal void ShowForYouWatchlistFallback(BrowsePage feed)
+    {
+        // TvRecommendationsScreen.kt: only a successful, empty visible feed chooses Watchlist.
+        // Like TvForYouEntryRequest.kt's sequence guard, an old feed must never override a newer
+        // dropdown/tab selection, nor navigate while the shell is covered by a secondary route.
+        if (!ReferenceEquals(Current, this) || _searchSelected || _selected is not { Page: "foryou" } tab
+            || !ReferenceEquals(ContentFrame.Content, feed)) return;
+        ShowForYouSavedList(tab, "watchlist", fallback: true);
     }
 
     private void OpenForYouCascade(Control tabButton)
