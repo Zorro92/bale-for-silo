@@ -18,6 +18,15 @@ public sealed partial class LibraryBrowseToolbar : UserControl
         InitializeComponent();
         _rail = Rail.Attach(Controls);
         _rail.Pin = false;
+        FocusManager.GettingFocus += (_, e) =>
+        {
+            try
+            {
+                if (e.NewFocusedElement is Windows.UI.Xaml.Controls.Primitives.ToggleButton || e.NewFocusedElement == SortButton)
+                    Log.Info($"DIAG getting focus {e.NewFocusedElement?.GetType().Name}#{(e.NewFocusedElement as FrameworkElement)?.Name} from {e.OldFocusedElement?.GetType().Name}#{(e.OldFocusedElement as FrameworkElement)?.Name} reason={e.FocusState} dir={e.Direction} input={e.InputDevice}\n{System.Environment.StackTrace}");
+            }
+            catch { }
+        };
     }
 
     public event Action? SortRequested;
