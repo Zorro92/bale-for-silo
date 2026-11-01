@@ -6,7 +6,6 @@ using Bale.Xbox.Views;
 using Windows.System;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Controls.Primitives;
 using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
 
@@ -34,6 +33,7 @@ public sealed partial class LibraryBrowseOverlay : UserControl
         InitializeComponent();
         PanelRows.ItemsSource = _rows;
         Alphabet.ItemsSource = _letters;
+        VisualStateManager.GoToState(this, "AlphabetCollapsed", false);
     }
 
     public event Action<LibraryBrowseFilter>? FilterChanged;
@@ -41,9 +41,10 @@ public sealed partial class LibraryBrowseOverlay : UserControl
     public event Action<bool>? PanelClosed;
     public event Action<bool>? OpenChanged;
     public event Action? GridRequested;
-    public event Action<bool>? AlphabetExpanded;
+    public event Action? AlphabetWidthChanged;
     public bool IsOpen => Modal.Visibility == Visibility.Visible;
     public bool AlphabetHasFocus => _expanded;
+    public double AlphabetWidth => (AlphabetScroller.ActualWidth > 0 ? AlphabetScroller.ActualWidth : AlphabetScroller.Width) + AlphabetScroller.Margin.Right;
 
     public void Configure(LibraryCatalogSource source, bool preserve)
     {
@@ -55,7 +56,12 @@ public sealed partial class LibraryBrowseOverlay : UserControl
     public void Update(bool available = true)
     {
         AlphabetScroller.Visibility = available && _source?.ShowsAlphabet == true ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var letter in _letters) letter.Update(_expanded, _source?.Query.Filter.NamePrefix);
+        foreach (var letter in _letters) letter.Update(_source?.Query.Filter.NamePrefix);
+        if (Alphabet.ItemsPanelRoot is not { } panel) return;
+        foreach (var root in panel.Children.OfType<FrameworkElement>())
+        {
+            if (Rail.FindChild<Control>(root) is { } button) UpdateLetterStates(button);
+        }
     }
 
     public bool FocusAlphabet()
@@ -72,10 +78,27 @@ public sealed partial class LibraryBrowseOverlay : UserControl
     {
         if (_expanded == expanded) return;
         _expanded = expanded;
-        AlphabetScroller.Width = expanded ? 96 : 18;
-        AlphabetScroller.Margin = expanded ? new Thickness(0, 110, 16, 80) : new Thickness(0, 72, 16, 48);
+        VisualStateManager.GoToState(this, expanded ? "AlphabetExpanded" : "AlphabetCollapsed", true);
         Update();
-        AlphabetExpanded?.Invoke(expanded);
+    }
+
+    private void OnAlphabetSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        // TvAlphabetRail.kt: the grid yields width throughout the 180ms tween, not in one jump at focus entry.
+        if (e.NewSize.Width != e.PreviousSize.Width) AlphabetWidthChanged?.Invoke();
+    }
+
+    private void OnLetterLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is Control button) UpdateLetterStates(button);
+    }
+
+    private void UpdateLetterStates(Control button)
+    {
+        if (button.DataContext is not LibraryAlphabetEntry letter) return;
+        button.ApplyTemplate();
+        VisualStateManager.GoToState(button, _expanded ? "Expanded" : "Collapsed", false);
+        VisualStateManager.GoToState(button, letter.ShowCollapsedDot ? "DotVisible" : "DotHidden", false);
     }
 
     private void OnAlphabetFocus(object sender, RoutedEventArgs e)

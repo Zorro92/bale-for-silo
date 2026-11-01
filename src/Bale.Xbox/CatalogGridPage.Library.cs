@@ -61,7 +61,7 @@ public sealed partial class CatalogGridPage : IBackHandler
             _libraryToolbar.IsEnabled = !open;
         };
         _libraryOverlay.GridRequested += RestoreLibraryGridFocus;
-        _libraryOverlay.AlphabetExpanded += _ => UpdateLibraryGridWidth();
+        _libraryOverlay.AlphabetWidthChanged += UpdateLibraryGridWidth;
         PreviewKeyDown += OnLibraryPreviewKeyDown;
         UpdateLibraryGridWidth();
     }
@@ -69,8 +69,8 @@ public sealed partial class CatalogGridPage : IBackHandler
     private void UpdateLibraryGridWidth()
     {
         if (_librarySource is null) return;
-        // TvAlphabetRail.kt: the edge peek expands in the SAME six-column layout; no lost column.
-        var reserved = _librarySource.ShowsAlphabet ? (_libraryOverlay?.AlphabetHasFocus == true ? 96 : 18) + 16 : 0;
+        // TvAlphabetRail.kt: yield the rail's measured width throughout its 180ms tween in the SAME six-column grid.
+        var reserved = _librarySource.ShowsAlphabet ? _libraryOverlay?.AlphabetWidth ?? 0 : 0;
         Cards.Margin = new Thickness(0, 0, reserved, 0);
         SyncCards();
     }

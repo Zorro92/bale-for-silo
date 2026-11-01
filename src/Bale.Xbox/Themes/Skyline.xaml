@@ -1838,22 +1838,79 @@
   </Style>
 
   <!-- TvLibraryBrowseControls.kt: 14sp controls, 8dp gaps, 94% white focus, 55% black modal scrim. -->
+  <!-- TvLibraryDetailScreen.kt.RecommendedTab: safeArea (40dp) x 16dp warning bar, 16dp action gap.
+       Color.kt supplies DarkSurface; Type.kt bodyLarge is 20/28sp, mapped by TvUiFontScale (x 0.86). -->
+  <Style x:Key="SkylineLibraryRefillWarningStyle" TargetType="Border">
+    <Setter Property="Background" Value="#FF0A0A0A" /><Setter Property="Padding" Value="40,16" />
+    <Setter Property="VerticalAlignment" Value="Bottom" />
+  </Style>
+  <Style x:Key="SkylineLibraryRefillContentStyle" TargetType="Grid">
+    <Setter Property="ColumnSpacing" Value="16" />
+  </Style>
+  <Style x:Key="SkylineLibraryRefillWarningTextStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" /><Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="FontSize" Value="17.2" /><Setter Property="LineHeight" Value="24.08" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" /><Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
   <SolidColorBrush x:Key="SkylineLibraryBrowseScrim" Color="#8C000000" />
+  <SolidColorBrush x:Key="SkylineLibraryControlText" Color="#FFFFFFFF" />
+  <SolidColorBrush x:Key="SkylineLibraryControlFocusedText" Color="#FF000000" />
+  <SolidColorBrush x:Key="SkylineLibraryControlDirection" Color="#99EDEDED" />
+  <SolidColorBrush x:Key="SkylineLibraryControlFocusedDirection" Color="#8C000000" />
+  <SolidColorBrush x:Key="SkylineLibraryControlActive" Color="#38FFFFFF" />
+  <!-- TvLibraryBrowseControls.kt: badge adds 2dp to a 30dp pill; radius stays exactly half-height. -->
+  <x:Double x:Key="SkylineLibraryBadgeControlHeight">32</x:Double>
+  <CornerRadius x:Key="SkylineLibraryBadgeControlRadius">16</CornerRadius>
+  <Style x:Key="SkylineLibraryControlsRowStyle" TargetType="StackPanel">
+    <Setter Property="Orientation" Value="Horizontal" /><Setter Property="Spacing" Value="8" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineLibraryControlContentStyle" TargetType="StackPanel">
+    <Setter Property="Orientation" Value="Horizontal" /><Setter Property="Spacing" Value="6" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineLibraryControlIconStyle" TargetType="Viewbox">
+    <Setter Property="Width" Value="16" /><Setter Property="Height" Value="16" /><Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineLibraryControlGlyphStyle" TargetType="Path">
+    <Setter Property="Width" Value="24" /><Setter Property="Height" Value="24" />
+    <Setter Property="Fill" Value="{StaticResource SkylineLibraryControlText}" />
+  </Style>
+  <Style x:Key="SkylineLibraryControlLabelStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="12.04" /><Setter Property="LineHeight" Value="15.48" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" /><Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineLibraryControlText}" />
+  </Style>
+  <Style x:Key="SkylineLibraryControlDirectionStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineLibraryControlLabelStyle}">
+    <Setter Property="Foreground" Value="{StaticResource SkylineLibraryControlDirection}" />
+  </Style>
+  <Style x:Key="SkylineLibraryControlBadgeStyle" TargetType="Border">
+    <Setter Property="Height" Value="18" /><Setter Property="CornerRadius" Value="9" /><Setter Property="Padding" Value="6,1" />
+    <Setter Property="Background" Value="#40000000" /><Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineLibraryControlBadgeTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineLibraryControlLabelStyle}">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineMono}" /><Setter Property="FontWeight" Value="Bold" />
+  </Style>
   <Style x:Key="SkylineLibraryControlStyle" TargetType="Button" BasedOn="{StaticResource SkylineCapsuleStyle}">
     <Setter Property="Height" Value="30" /><Setter Property="CornerRadius" Value="15" />
-    <Setter Property="Padding" Value="14,7" /><Setter Property="FontSize" Value="12.04" />
+    <!-- Include the 1dp stroke in Android's 14x7dp content inset rather than adding to its pill height. -->
+    <Setter Property="Padding" Value="13,6" /><Setter Property="FontSize" Value="12.04" />
+    <Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="Background" Value="#14FFFFFF" /><Setter Property="BorderBrush" Value="#0FFFFFFF" /><Setter Property="BorderThickness" Value="1" />
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="Button">
           <Border x:Name="Surface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
-                  CornerRadius="15" Padding="{TemplateBinding Padding}" RenderTransformOrigin="0.5,0.5">
+                  CornerRadius="{TemplateBinding CornerRadius}" Padding="{TemplateBinding Padding}" RenderTransformOrigin="0.5,0.5">
             <Border.RenderTransform><ScaleTransform x:Name="Lift" /></Border.RenderTransform>
             <VisualStateManager.VisualStateGroups>
               <VisualStateGroup x:Name="FocusStates">
                 <VisualState x:Name="Unfocused" />
                 <VisualState x:Name="Focused"><VisualState.Setters>
-                  <Setter Target="Surface.Background" Value="#F0FFFFFF" /><Setter Target="Content.Foreground" Value="#FF000000" />
+                  <Setter Target="Surface.Background" Value="#F0FFFFFF" /><Setter Target="Surface.BorderBrush" Value="Transparent" />
+                  <Setter Target="Content.Foreground" Value="#FF000000" />
                   <Setter Target="Lift.ScaleX" Value="1.04" /><Setter Target="Lift.ScaleY" Value="1.04" />
                 </VisualState.Setters></VisualState>
                 <VisualState x:Name="PointerFocused" />
@@ -1905,33 +1962,137 @@
       </Setter.Value>
     </Setter>
   </Style>
-  <!-- TvAlphabetRail.kt: 42dp letter chips, 18sp mono, selected/focused white, persistent collapsed dot nodes. -->
+  <!-- TvAlphabetRail.kt: 18/96dp width, margins outside the viewport, 180ms FastOutSlowIn tween in the overlay. -->
+  <x:Double x:Key="SkylineLibraryAlphabetCollapsedWidth">18</x:Double>
+  <x:Double x:Key="SkylineLibraryAlphabetExpandedWidth">96</x:Double>
+  <Thickness x:Key="SkylineLibraryAlphabetCollapsedMargin">0,72,16,48</Thickness>
+  <Thickness x:Key="SkylineLibraryAlphabetExpandedMargin">0,110,16,80</Thickness>
+  <Style x:Key="SkylineLibraryAlphabetRailStyle" TargetType="ScrollViewer">
+    <Setter Property="Width" Value="{StaticResource SkylineLibraryAlphabetCollapsedWidth}" />
+    <Setter Property="Margin" Value="{StaticResource SkylineLibraryAlphabetCollapsedMargin}" />
+    <Setter Property="HorizontalAlignment" Value="Right" /><Setter Property="IsTabStop" Value="False" />
+    <Setter Property="VerticalScrollBarVisibility" Value="Hidden" /><Setter Property="HorizontalScrollMode" Value="Disabled" />
+  </Style>
+  <!-- TvAlphabetRail.kt: ONE persistent target; 8dp collapsed node, 4dp/35% dot or 6dp/90% selected dot.
+       Expansion hides the dot layer, never the control. The 42dp, 18sp mono letter chip inverts when selected. -->
   <Style x:Key="SkylineLibraryAlphabetStyle" TargetType="ToggleButton">
     <Setter Property="FontFamily" Value="{StaticResource SkylineMono}" /><Setter Property="FontSize" Value="15.48" /><Setter Property="FontWeight" Value="SemiBold" />
     <Setter Property="MinWidth" Value="0" /><Setter Property="MinHeight" Value="0" /><Setter Property="Padding" Value="0" />
-    <Setter Property="Margin" Value="0,1" /><Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="UseSystemFocusVisuals" Value="False" />
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="ToggleButton">
-          <Border x:Name="Surface" CornerRadius="8" Background="Transparent">
+          <Grid x:Name="Root" Width="8" Height="8" Margin="0,0,0,1" Background="Transparent">
             <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="ExpansionStates">
+                <VisualState x:Name="Collapsed" />
+                <VisualState x:Name="Expanded"><VisualState.Setters>
+                  <Setter Target="Root.Width" Value="42" /><Setter Target="Root.Height" Value="42" /><Setter Target="Root.Margin" Value="0,0,0,4" />
+                  <Setter Target="Chips.Opacity" Value="1" /><Setter Target="Dots.Visibility" Value="Collapsed" />
+                </VisualState.Setters></VisualState>
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="DotStates">
+                <VisualState x:Name="DotVisible" />
+                <VisualState x:Name="DotHidden"><VisualState.Setters><Setter Target="Dot.Opacity" Value="0" /></VisualState.Setters></VisualState>
+              </VisualStateGroup>
               <VisualStateGroup x:Name="CommonStates">
                 <VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" /><VisualState x:Name="Disabled" />
                 <VisualState x:Name="Checked"><VisualState.Setters>
-                  <Setter Target="Surface.Background" Value="#FFFFFFFF" /><Setter Target="Content.Foreground" Value="#FF000000" />
+                  <Setter Target="SelectedChip.Opacity" Value="1" /><Setter Target="RestingChip.Visibility" Value="Collapsed" />
+                  <Setter Target="SelectedDot.Visibility" Value="Visible" /><Setter Target="Dot.Visibility" Value="Collapsed" />
                 </VisualState.Setters></VisualState>
                 <VisualState x:Name="CheckedPointerOver" /><VisualState x:Name="CheckedPressed" /><VisualState x:Name="CheckedDisabled" /><VisualState x:Name="Indeterminate" />
               </VisualStateGroup>
               <VisualStateGroup x:Name="FocusStates">
                 <VisualState x:Name="Unfocused" /><VisualState x:Name="PointerFocused" />
                 <VisualState x:Name="Focused"><VisualState.Setters>
-                  <Setter Target="Surface.Background" Value="#FFFFFFFF" /><Setter Target="Content.Foreground" Value="#FF000000" />
+                  <Setter Target="FocusedChip.Opacity" Value="1" /><Setter Target="LowerChips.Visibility" Value="Collapsed" />
                 </VisualState.Setters></VisualState>
               </VisualStateGroup>
             </VisualStateManager.VisualStateGroups>
-            <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" FontSize="{TemplateBinding FontSize}" FontFamily="{TemplateBinding FontFamily}"
-                              FontWeight="{TemplateBinding FontWeight}" Foreground="#8CFFFFFF" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
-          </Border>
+            <!-- Separate layers keep focus loss from overwriting the checked entry's appearance.
+                 Content is always a string, as required by SkylineTabStyle's repeated presenters. -->
+            <Grid x:Name="Chips" Opacity="0">
+              <Grid x:Name="LowerChips">
+                <ContentPresenter x:Name="RestingChip" Content="{TemplateBinding Content}" FontSize="{TemplateBinding FontSize}" FontFamily="{TemplateBinding FontFamily}"
+                                  FontWeight="{TemplateBinding FontWeight}" Foreground="#8CFFFFFF" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+                <Border x:Name="SelectedChip" CornerRadius="8" Background="#FFFFFFFF" Opacity="0">
+                  <ContentPresenter Content="{TemplateBinding Content}" FontSize="{TemplateBinding FontSize}" FontFamily="{TemplateBinding FontFamily}"
+                                    FontWeight="{TemplateBinding FontWeight}" Foreground="#FF000000" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+                </Border>
+              </Grid>
+              <Border x:Name="FocusedChip" CornerRadius="8" Background="#FFFFFFFF" Opacity="0">
+                <ContentPresenter Content="{TemplateBinding Content}" FontSize="{TemplateBinding FontSize}" FontFamily="{TemplateBinding FontFamily}"
+                                  FontWeight="{TemplateBinding FontWeight}" Foreground="#FF000000" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+              </Border>
+            </Grid>
+            <Grid x:Name="Dots">
+              <Ellipse x:Name="Dot" Width="4" Height="4" Fill="#59FFFFFF" />
+              <Ellipse x:Name="SelectedDot" Width="6" Height="6" Fill="#E6FFFFFF" Visibility="Collapsed" />
+            </Grid>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <!-- TvAlphabetRail.kt: All uses 14sp app type, 14x6dp padding, 8%/22%/94% pill fills, 1.05 focus scale.
+       16sp line x 0.86 + 12dp padding rounds to 26dp; the UWP pill radius must be exactly half its height. -->
+  <Style x:Key="SkylineLibraryAlphabetAllStyle" TargetType="ToggleButton" BasedOn="{StaticResource SkylineLibraryAlphabetStyle}">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" /><Setter Property="FontSize" Value="12.04" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToggleButton">
+          <Grid x:Name="Root" Width="8" Height="8" Margin="0,0,0,1" Background="Transparent" RenderTransformOrigin="0.5,0.5">
+            <Grid.RenderTransform><ScaleTransform x:Name="Lift" /></Grid.RenderTransform>
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="ExpansionStates">
+                <VisualState x:Name="Collapsed" />
+                <VisualState x:Name="Expanded"><VisualState.Setters>
+                  <Setter Target="Root.Width" Value="Auto" /><Setter Target="Root.Height" Value="26" /><Setter Target="Root.Margin" Value="0,0,0,4" />
+                  <Setter Target="Chips.Opacity" Value="1" /><Setter Target="Dots.Visibility" Value="Collapsed" />
+                </VisualState.Setters></VisualState>
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="DotStates">
+                <VisualState x:Name="DotVisible" />
+                <VisualState x:Name="DotHidden"><VisualState.Setters><Setter Target="Dot.Opacity" Value="0" /></VisualState.Setters></VisualState>
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" /><VisualState x:Name="Disabled" />
+                <VisualState x:Name="Checked"><VisualState.Setters>
+                  <Setter Target="SelectedChip.Opacity" Value="1" /><Setter Target="RestingChip.Visibility" Value="Collapsed" />
+                  <Setter Target="SelectedDot.Visibility" Value="Visible" /><Setter Target="Dot.Visibility" Value="Collapsed" />
+                </VisualState.Setters></VisualState>
+                <VisualState x:Name="CheckedPointerOver" /><VisualState x:Name="CheckedPressed" /><VisualState x:Name="CheckedDisabled" /><VisualState x:Name="Indeterminate" />
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Unfocused" /><VisualState x:Name="PointerFocused" />
+                <VisualState x:Name="Focused"><VisualState.Setters>
+                  <Setter Target="FocusedChip.Opacity" Value="1" /><Setter Target="LowerChips.Visibility" Value="Collapsed" />
+                  <Setter Target="Lift.ScaleX" Value="1.05" /><Setter Target="Lift.ScaleY" Value="1.05" />
+                </VisualState.Setters></VisualState>
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <Grid x:Name="Chips" Opacity="0">
+              <Grid x:Name="LowerChips">
+                <Border x:Name="RestingChip" CornerRadius="13" Background="#14FFFFFF">
+                  <ContentPresenter Content="{TemplateBinding Content}" FontSize="{TemplateBinding FontSize}" FontFamily="{TemplateBinding FontFamily}"
+                                    FontWeight="{TemplateBinding FontWeight}" Foreground="#D9FFFFFF" Margin="14,6" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+                </Border>
+                <Border x:Name="SelectedChip" CornerRadius="13" Background="#38FFFFFF" Opacity="0">
+                  <ContentPresenter Content="{TemplateBinding Content}" FontSize="{TemplateBinding FontSize}" FontFamily="{TemplateBinding FontFamily}"
+                                    FontWeight="{TemplateBinding FontWeight}" Foreground="#FFFFFFFF" Margin="14,6" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+                </Border>
+              </Grid>
+              <Border x:Name="FocusedChip" CornerRadius="13" Background="#F0FFFFFF" Opacity="0">
+                <ContentPresenter Content="{TemplateBinding Content}" FontSize="{TemplateBinding FontSize}" FontFamily="{TemplateBinding FontFamily}"
+                                  FontWeight="{TemplateBinding FontWeight}" Foreground="#FF000000" Margin="14,6" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+              </Border>
+            </Grid>
+            <Grid x:Name="Dots">
+              <Ellipse x:Name="Dot" Width="4" Height="4" Fill="#59FFFFFF" />
+              <Ellipse x:Name="SelectedDot" Width="6" Height="6" Fill="#E6FFFFFF" Visibility="Collapsed" />
+            </Grid>
+          </Grid>
         </ControlTemplate>
       </Setter.Value>
     </Setter>

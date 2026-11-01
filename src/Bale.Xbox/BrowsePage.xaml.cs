@@ -117,10 +117,12 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             // The marquee remains usable even if the optional Composition backdrop cannot load.
             Log.Error("Marquee backdrop", ex);
         }
+        ResumeLibraryRecommendedLoad();
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        SuspendLibraryRecommendedLoad();
         _isLoaded = false;
         _returning = _lastCard is not null;
         _focusVersion++;
@@ -162,6 +164,11 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
 
     private async Task LoadAsync(bool refresh = false)
     {
+        if (_libraryId is not null)
+        {
+            await LoadLibraryRecommendedAsync(refresh);
+            return;
+        }
         if (_loading || Session.Client is not { } client)
         {
             return;
@@ -176,14 +183,12 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         try
         {
             var rows = _forYou ? await client.Browse.LoadForYouAsync(ArtworkWidths.Tv1080)
-                : _libraryId is null ? await client.Browse.LoadHomeAsync(ArtworkWidths.Tv1080)
-                : await client.Browse.LoadLibraryAsync(_libraryId, ArtworkWidths.Tv1080);
+                : await client.Browse.LoadHomeAsync(ArtworkWidths.Tv1080);
             if (!ReferenceEquals(client, Session.Client) || (refresh && !_isLoaded))
             {
                 return;
             }
 
-            if (_libraryId is not null) rows = LibraryRecommendedRows.For(rows, _libraryMediaScope);
             var restoreFocus = UpdateRows(rows, refresh);
             _savedListFallbackPending = _forYou && _rows.Count == 0;
             if (_savedListFallbackPending)
@@ -463,6 +468,12 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             return;
         }
 
+        // TvLibraryDetailScreen.kt.RecommendedTab exposes a bottom Retry action for incomplete scoped shelves.
+        if (step > 0 && targetIndex >= _rows.Count && LibraryRefillWarning.Visibility == Visibility.Visible)
+        {
+            LibraryRefillRetryButton.Focus(FocusState.Keyboard);
+            return;
+        }
         if (step > 0 && FocusSeeAll(targetIndex)) return;
         FocusRow(targetIndex);
     }
