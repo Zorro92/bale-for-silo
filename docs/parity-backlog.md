@@ -66,9 +66,9 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 - [x] Profile menu: Watchlist, Favorites, History, Settings, Switch Server; opens on dwell/Down
   - [ ] Settings row (Bale has no Settings page yet); Watch Party row
   - [ ] Dropdown drop shadows
-- [ ] For You Watchlist/Favorites dropdown; offline pill; drop key repeats while a rail animates
+- [x] For You Watchlist/Favorites dropdown; offline pill; drop key repeats while a rail animates
   - [x] Dropdown, Recommendations, offline pill and rail repeat gate (pill not seen on console: needs the server down)
-  - [ ] Watchlist/Favorites inline in the For You tab (TvRecommendationsScreen.kt), not a pushed screen; empty feed falls back to Watchlist
+  - [x] Watchlist/Favorites inline in the For You tab (TvRecommendationsScreen.kt), not a pushed screen; empty feed falls back to Watchlist
 - [x] 500 ms fade page transitions
 
 ## Wave 3: new screens
