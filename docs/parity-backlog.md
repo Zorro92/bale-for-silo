@@ -72,7 +72,7 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 - [x] 500 ms fade page transitions
 
 ## Wave 3: new screens
-- [ ] Watchlist / Favorites / History grids
+- [x] Watchlist / Favorites / History grids (landed with the wave 2 profile menu)
 - [ ] Settings (incl. Home sections editor)
 - [ ] Requests tab + request detail
 - [ ] Notifications inbox
