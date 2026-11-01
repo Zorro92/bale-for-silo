@@ -1819,6 +1819,21 @@
   </Style>
 
   <!-- TvLibraryBrowseControls.kt: 14sp controls, 8dp gaps, 94% white focus, 55% black modal scrim. -->
+  <!-- TvLibraryDetailScreen.kt.RecommendedTab: safeArea (40dp) x 16dp warning bar, 16dp action gap.
+       Color.kt supplies DarkSurface; Type.kt bodyLarge is 20/28sp, mapped by TvUiFontScale (x 0.86). -->
+  <Style x:Key="SkylineLibraryRefillWarningStyle" TargetType="Border">
+    <Setter Property="Background" Value="#FF0A0A0A" /><Setter Property="Padding" Value="40,16" />
+    <Setter Property="VerticalAlignment" Value="Bottom" />
+  </Style>
+  <Style x:Key="SkylineLibraryRefillContentStyle" TargetType="Grid">
+    <Setter Property="ColumnSpacing" Value="16" />
+  </Style>
+  <Style x:Key="SkylineLibraryRefillWarningTextStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" /><Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="FontSize" Value="17.2" /><Setter Property="LineHeight" Value="24.08" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" /><Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
   <SolidColorBrush x:Key="SkylineLibraryBrowseScrim" Color="#8C000000" />
   <SolidColorBrush x:Key="SkylineLibraryControlText" Color="#FFFFFFFF" />
   <SolidColorBrush x:Key="SkylineLibraryControlFocusedText" Color="#FF000000" />

@@ -179,6 +179,15 @@
       <ItemsControl x:Name="Rows" ItemTemplate="{StaticResource RowTemplate}" IsTabStop="False" Padding="0,0,0,260" />
     </ScrollViewer>
 
+    <!-- TvLibraryDetailScreen.kt.RecommendedTab: partial scoped shelves stay usable, with a bottom warning and Retry. -->
+    <Border x:Name="LibraryRefillWarning" Style="{StaticResource SkylineLibraryRefillWarningStyle}" Visibility="Collapsed" PreviewKeyDown="OnLibraryRefillKeyDown">
+      <Grid Style="{StaticResource SkylineLibraryRefillContentStyle}">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+        <TextBlock x:Name="LibraryRefillText" Style="{StaticResource SkylineLibraryRefillWarningTextStyle}" />
+        <Button x:Name="LibraryRefillRetryButton" Grid.Column="1" Content="Retry" Style="{StaticResource SkylineButtonStyle}" Click="OnLibraryRefillRetryClick" />
+      </Grid>
+    </Border>
+
     <ProgressRing x:Name="LoadingRing" Width="32" Height="32" IsActive="False" Visibility="Collapsed" Foreground="{StaticResource SkylinePrimary}" />
     <StackPanel x:Name="EmptyPanel" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="16" Margin="48" Visibility="Collapsed">
       <TextBlock x:Name="EmptyTitle" Text="Nothing to watch yet" FontSize="20.6" TextAlignment="Center" />

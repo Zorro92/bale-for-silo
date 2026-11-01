@@ -61,7 +61,7 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 - [x] "Explore all" end card; "See all" header
 - [x] Library: "Recommended" pill; Browse grid (6 cols, sort, filter, A–Z, paging); cascade level 2 + footer hint; "MOVIE LIBRARIES"
   - [ ] Collections UI (API/models in place); Shuffle; filtered-error "Clear filters"; remote audiobook facet search
-  - [ ] Polish: toolbar icons/badges, alphabet selected/All treatment, 180 ms rail expansion; Recommended scope refill
+  - [ ] Polish: toolbar icons/badges, alphabet selected/All treatment, 180 ms rail expansion; Recommended scope refill (implemented; console verification pending)
 - [ ] Calendar
 - [x] Profile menu: Watchlist, Favorites, History, Settings, Switch Server; opens on dwell/Down
   - [ ] Settings row (Bale has no Settings page yet); Watch Party row

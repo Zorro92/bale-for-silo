@@ -114,10 +114,12 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             // The marquee remains usable even if the optional Composition backdrop cannot load.
             Log.Error("Marquee backdrop", ex);
         }
+        ResumeLibraryRecommendedLoad();
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        SuspendLibraryRecommendedLoad();
         _isLoaded = false;
         _returning = _lastCard is not null;
         _focusVersion++;
@@ -184,7 +186,6 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
                 return;
             }
 
-            if (_libraryId is not null) rows = LibraryRecommendedRows.For(rows, _libraryMediaScope);
             var restoreFocus = UpdateRows(rows, refresh);
             if (_rows.Count == 0)
             {
@@ -443,6 +444,12 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             return;
         }
 
+        // TvLibraryDetailScreen.kt.RecommendedTab exposes a bottom Retry action for incomplete scoped shelves.
+        if (step > 0 && targetIndex >= _rows.Count && LibraryRefillWarning.Visibility == Visibility.Visible)
+        {
+            LibraryRefillRetryButton.Focus(FocusState.Keyboard);
+            return;
+        }
         if (step > 0 && FocusSeeAll(targetIndex)) return;
         FocusRow(targetIndex);
     }
