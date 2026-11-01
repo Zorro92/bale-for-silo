@@ -268,19 +268,25 @@ internal sealed class DebugServer
 
         var chosen = matches[occurrence - 1].Control;
         var focused = chosen.Focus(FocusState.Keyboard);
-        var redirected = true;
+        // Rail.OnGettingFocus sends focus entering a rail from outside to its remembered item. goto is
+        // for setup, so focus again: now coming from inside the rail, the second request isn't redirected.
+        var retried = !FocusIsWithin(chosen);
+        if (retried) focused = chosen.Focus(FocusState.Keyboard);
+        var redirected = !FocusIsWithin(chosen);
+
+        var tierName = tier switch { 1 => "x:Name", 2 => "automation name", 3 => "text", _ => "substring" };
+        var note = redirected ? "; redirected" : retried ? "; entered rail, refocused" : string.Empty;
+        return (redirected ? "409 Conflict" : "200 OK", $"tier={tier} ({tierName}) matches={matches.Count} match={occurrence} chosen={Describe(chosen)} focus={focused}{note}; {DescribeFocus()}\n");
+    }
+
+    private static bool FocusIsWithin(DependencyObject target)
+    {
         for (var node = FocusManager.GetFocusedElement() as DependencyObject; node is not null; node = VisualTreeHelper.GetParent(node))
         {
-            if (ReferenceEquals(node, chosen))
-            {
-                redirected = false;
-                break;
-            }
+            if (ReferenceEquals(node, target)) return true;
         }
 
-        // Rail.OnGettingFocus may choose its remembered item instead. Report that, never retry it.
-        var tierName = tier switch { 1 => "x:Name", 2 => "automation name", 3 => "text", _ => "substring" };
-        return ("200 OK", $"tier={tier} ({tierName}) matches={matches.Count} match={occurrence} chosen={Describe(chosen)} focus={focused}{(redirected ? "; redirected" : string.Empty)}; {DescribeFocus()}\n");
+        return false;
     }
 
     private static int MatchTier(Control control, string target)

@@ -67,8 +67,9 @@ MSIX (~2 min). Then, with `XBOX_HOST` set to the console's IP:
 ```
 
 Use `targets` and `goto` only to get into position for a test. `goto` matches a control's name,
-automation name or read text (case-insensitively); append `#N` for the Nth match. It reports actual
-focus, including rail redirects. Drive the behavior under test with real `key`/`press` input,
+automation name or read text (case-insensitively); append `#N` for the Nth match. It refocuses once when
+a rail redirects entry to its remembered item, and exits non-zero on no match or if focus still lands
+elsewhere, so chain the next keys with `&&`. Drive the behavior under test with real `key`/`press` input,
 not `goto`.
 
 **Verify every UI or behavior change on the console** by driving it with `bale-debug.sh` and taking a
