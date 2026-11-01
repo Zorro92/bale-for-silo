@@ -16,7 +16,8 @@ public sealed class LibraryBrowseFeed(SiloApiClient api, BrowseFeed browse)
         var key = string.Join('\n', query.LibraryId, query.MediaType, query.CollectionId, query.UserCollection, query.PersonalList,
             widths, LibraryBrowsePreferences.Serialize(filter), filter.NamePrefix);
         var source = Source(query);
-        var pageSize = query.PersonalList is null ? PageSize : 40;
+        // screens/library/TvLibraryCollectionDetailViewModel.kt uses sixty-member collection pages.
+        var pageSize = query.PersonalList is not null ? 40 : query.CollectionId is not null ? 60 : PageSize;
         if (continuation is not null && continuation.Key != key)
         {
             throw new InvalidOperationException("The query changed. Reload from the first page.");

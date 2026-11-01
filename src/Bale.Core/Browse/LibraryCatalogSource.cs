@@ -21,7 +21,9 @@ public sealed class LibraryCatalogSource(string title, LibraryBrowseQuery query,
     public bool? LibraryHasItems => Query == _resultQuery ? _libraryHasItems : null;
     public long? Total => Query == _resultQuery ? _total : null;
     public bool IsPersonal => Query.PersonalList is not null;
-    public bool ShowsAlphabet => !IsPersonal && Query.Filter.ShowsAlphabet;
+    public bool IsCollection => Query.CollectionId is not null;
+    // screens/library/TvLibraryCollectionDetailScreen.kt has Sort/Filter, but no A–Z rail.
+    public bool ShowsAlphabet => !IsPersonal && !IsCollection && Query.Filter.ShowsAlphabet;
     // TvPersonalScreens.kt: only inline Favorites narrows its empty copy by Movies / TV Shows.
     public string EmptyMessage => (Query.PersonalList, Query.MediaType) switch
     {
@@ -30,6 +32,11 @@ public sealed class LibraryCatalogSource(string title, LibraryBrowseQuery query,
         ("favorites", "series") => "No favorite TV shows yet",
         _ => "No favorites yet",
     };
+
+    /// <summary>screens/library/TvLibraryCollectionDetailViewModel.kt: source kind and stored collection order.</summary>
+    public static LibraryCatalogSource Collection(string libraryId, string? mediaScope, LibraryCollection collection, LibraryBrowseFeed library) =>
+        new(collection.Title, new(mediaScope is null ? null : libraryId, mediaScope,
+            new() { Sort = LibrarySortOption.CollectionOrder }, collection.Id, collection.UserCollection), library);
 
     /// <summary>PersonalListViewModels.kt: cross-library, forty cards, server's stored list order.</summary>
     public static LibraryCatalogSource Personal(string kind, LibraryBrowseFeed library) => kind switch
@@ -68,7 +75,7 @@ public sealed class LibraryCatalogSource(string title, LibraryBrowseQuery query,
     }
 
     public Task<CatalogFilters?> FiltersAsync(CancellationToken cancellationToken = default) =>
-        library.FiltersAsync(Query.LibraryId, Query.CollectionId, Query.UserCollection, cancellationToken, Query.PersonalList);
+        library.FiltersAsync(IsCollection ? null : Query.LibraryId, Query.CollectionId, Query.UserCollection, cancellationToken, Query.PersonalList);
 
     public async Task<SearchResultPage> LoadPageAsync(BrowseFeed feed, ArtworkWidths widths, SearchContinuation? continuation,
         CancellationToken cancellationToken = default)
