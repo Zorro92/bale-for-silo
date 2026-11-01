@@ -63,6 +63,8 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
 
         Filters.ItemsSource = _filters;
         WeekDates.ItemsSource = DayShelves.ItemsSource = _days;
+        // Deliberately follow Apple TV's CalendarFilterBar / CalendarWeekStrip defaultFocus
+        // (silo-apple PR #527), not Android TV's geometric entry or last-focused controls.
         _filterRail = Rail.Attach(Filters);
         _filterRail.Pin = false;
         _filterRail.EntryItem = () => _filters.First(view => view.Filter == _filter);
@@ -328,7 +330,7 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
                 PinShelf(day);
                 if (day.Cards.Count > 0)
                 {
-                    FocusDay(day, day.Cards[0]);
+                    FocusDay(day, CalendarFocusEntry.First);
                 }
             }
         }
@@ -352,7 +354,7 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
 
     private void OnControlsFocus(object sender, RoutedEventArgs e) => ScrollToControls();
 
-    /// <summary>TvMainShell hands Calendar entry to the active filter, not a geometric descendant.</summary>
+    /// <summary>Apple TV CalendarFilterBar (PR #527): enter at the active filter, not a geometric descendant.</summary>
     internal void FocusContent()
     {
         _entryPending = false;
@@ -369,7 +371,7 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
         FocusRetry.Until(WeekDates, () => !_active || version != _focusVersion || _dateRail.Focus());
     }
 
-    private void FocusDay(CalendarDayView day, CalendarCardView? card = null)
+    private void FocusDay(CalendarDayView day, CalendarFocusEntry entry = CalendarFocusEntry.Remembered)
     {
         var version = ++_focusVersion;
         FocusRetry.Until(DayShelves, () =>
@@ -385,8 +387,14 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
                 return false;
             }
 
-            rail.Remembered = card ?? day.LastFocused;
-            return rail.Focus(FocusState.Keyboard);
+            if (entry == CalendarFocusEntry.First)
+            {
+                return rail.FocusFirst(FocusState.Keyboard);
+            }
+
+            // Only day rows restore memory. Returning vertically must not re-pin the row sideways.
+            rail.Remembered = day.LastFocused;
+            return rail.Focus(FocusState.Keyboard, preserveHorizontalOffset: true);
         });
     }
 
@@ -409,64 +417,64 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
                 return;
             }
 
+            // Never leave an unhandled vertical edge for geometric focus to turn into a sideways move.
             e.Handled = true;
-            // calendarUpFallbackAction holds repeated Up at a shelf/control handoff until release.
-            if (step < 0 && e.KeyStatus.WasKeyDown && IsWithin(source, Controls))
+            CalendarFocusRegion region;
+            var dayIndex = -1;
+            if (IsWithin(source, Filters))
+            {
+                region = CalendarFocusRegion.Filters;
+            }
+            else if (IsWithin(source, WeekStrip))
+            {
+                region = CalendarFocusRegion.WeekStrip;
+            }
+            else if (FocusedDay(source) is { } day)
+            {
+                region = CalendarFocusRegion.DayRow;
+                dayIndex = _days.IndexOf(day);
+            }
+            else if (IsWithin(source, StateActions))
+            {
+                region = CalendarFocusRegion.StateActions;
+            }
+            else
             {
                 return;
             }
 
-            if (IsWithin(source, Filters))
+            if (CalendarFocus.Move(_week, region, step, dayIndex) is not { } target)
             {
-                if (step < 0)
-                {
+                return;
+            }
+
+            // Keep the existing held-Up handoff: release before leaving shelves or controls.
+            if (step < 0 && e.KeyStatus.WasKeyDown
+                && (IsWithin(source, Controls) || region == CalendarFocusRegion.DayRow && target.Region == CalendarFocusRegion.WeekStrip))
+            {
+                return;
+            }
+
+            switch (target.Region)
+            {
+                case CalendarFocusRegion.TopBar:
                     _focusVersion++;
                     ShellPage.Current?.FocusSelectedTab();
-                }
-                else
-                {
-                    FocusSelectedDay();
-                }
-            }
-            else if (IsWithin(source, WeekStrip))
-            {
-                if (step < 0)
-                {
+                    break;
+                case CalendarFocusRegion.Filters:
                     FocusContent();
-                }
-                else if (DayShelves.Visibility == Visibility.Visible && _days.FirstOrDefault(day => day.Cards.Count > 0) is { } first)
-                {
-                    FocusDay(first);
-                }
-                else if (StatePanel.Visibility == Visibility.Visible && !_loading)
-                {
+                    break;
+                case CalendarFocusRegion.WeekStrip:
+                    FocusSelectedDay();
+                    break;
+                case CalendarFocusRegion.DayRow when DayShelves.Visibility == Visibility.Visible:
+                    FocusDay(_days[target.DayIndex], target.Entry);
+                    break;
+                case CalendarFocusRegion.StateActions when StatePanel.Visibility == Visibility.Visible && !_loading:
                     _focusVersion++;
+                    _actionRail.Remembered = null;
                     _actionRail.Focus(FocusState.Keyboard);
-                }
-            }
-            else if (FocusedDay(source) is { } day)
-            {
-                var index = _days.IndexOf(day) + step;
-                while (index >= 0 && index < _days.Count && _days[index].Cards.Count == 0)
-                {
-                    index += step;
-                }
-
-                if (index < 0)
-                {
-                    if (!e.KeyStatus.WasKeyDown)
-                    {
-                        FocusSelectedDay();
-                    }
-                }
-                else if (index < _days.Count)
-                {
-                    FocusDay(_days[index]);
-                }
-            }
-            else if (IsWithin(source, StateActions) && step < 0)
-            {
-                FocusSelectedDay();
+                    break;
             }
         }
         catch (Exception ex)

@@ -30,6 +30,7 @@ internal sealed class Rail
     private readonly RailScrollState _scrollState = new();
     private ScrollViewer? _scroller;
     private bool _hasFocus;
+    private bool _preserveHorizontalOffset;
 
     private Rail(ItemsControl list)
     {
@@ -68,13 +69,57 @@ internal sealed class Rail
 
     public ItemsControl List => _list;
 
-    /// <summary>Focus the item focus should land on when entering the rail.</summary>
-    public bool Focus(FocusState state = FocusState.Programmatic) =>
-        Target() is { } target ? target.Focus(state) : _list.Focus(state);
+    /// <summary>
+    /// Focus the entry item. Vertical moves can keep the row's offset instead of re-pinning its
+    /// remembered card; ordinary entry and Left/Right retain the shared positioning behavior.
+    /// </summary>
+    public bool Focus(FocusState state = FocusState.Programmatic, bool preserveHorizontalOffset = false) =>
+        FocusControl(Target() ?? _list, state, preserveHorizontalOffset);
 
     /// <summary>Focus <paramref name="item"/>, when its container exists.</summary>
-    public bool FocusItem(object item, FocusState state = FocusState.Programmatic) =>
-        FocusableIn(ContainerFor(item)) is { } target && target.Focus(state);
+    public bool FocusItem(object item, FocusState state = FocusState.Programmatic, bool preserveHorizontalOffset = false) =>
+        FocusableIn(ContainerFor(item)) is { } target && FocusControl(target, state, preserveHorizontalOffset);
+
+    /// <summary>
+    /// Explicit first-card entry resets the offset without a sideways animation. Do not fall back
+    /// to the first realized container: a scrolled/virtualized rail may not have card zero yet.
+    /// Call through FocusRetry, just like other entry moves.
+    /// </summary>
+    public bool FocusFirst(FocusState state = FocusState.Programmatic)
+    {
+        if (_list.Items.Count == 0) return false;
+        var first = _list.Items[0];
+        Remembered = first;
+        if (Scroller() is { } scroller && (scroller.HorizontalOffset != 0 || _scrollState.IsAnimating))
+        {
+            scroller.ChangeView(0, null, null, disableAnimation: true);
+        }
+
+        var entry = EntryItem;
+        EntryItem = () => first;
+        try
+        {
+            return FocusItem(first, state, preserveHorizontalOffset: true);
+        }
+        finally
+        {
+            EntryItem = entry;
+        }
+    }
+
+    private bool FocusControl(Control target, FocusState state, bool preserveHorizontalOffset)
+    {
+        var previous = _preserveHorizontalOffset;
+        _preserveHorizontalOffset |= preserveHorizontalOffset;
+        try
+        {
+            return target.Focus(state);
+        }
+        finally
+        {
+            _preserveHorizontalOffset = previous;
+        }
+    }
 
     private Control? Target()
     {
@@ -142,13 +187,10 @@ internal sealed class Rail
             var entered = !_hasFocus;
             _hasFocus = true;
             Remembered = item;
-            if (Pin && container is FrameworkElement element)
+            if (!_preserveHorizontalOffset && container is FrameworkElement element)
             {
-                PinToStart(element);
-            }
-            else if (Center && container is FrameworkElement centered)
-            {
-                CenterOn(centered);
+                if (Pin) PinToStart(element);
+                else if (Center) CenterOn(element);
             }
 
             ItemFocused?.Invoke(e.OriginalSource as Control ?? (Control)container, item);
