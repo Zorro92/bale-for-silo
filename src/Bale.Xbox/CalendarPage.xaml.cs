@@ -357,6 +357,7 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
     /// <summary>Apple TV CalendarFilterBar (PR #527): enter at the active filter, not a geometric descendant.</summary>
     internal void FocusContent()
     {
+        Log.Info("Calendar: focus content (selected pill)");
         _entryPending = false;
         _returning = false;
         var version = ++_focusVersion;
@@ -629,6 +630,7 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
     /// <summary>Back belongs to the shell's normal content → tab → Home chain.</summary>
     public void RestoreFocus()
     {
+        Log.Info($"Calendar: restore focus (target={_returnTarget is not null}, needsLoad={_needsLoad}, active={_active})");
         _entryPending = false;
         _returning = _returnTarget is not null;
         if (_needsLoad)
@@ -645,6 +647,7 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
     {
         if (_returnTarget is not { } target || DayShelves.Visibility != Visibility.Visible || _week.Locate(target) is not { } location)
         {
+            Log.Info($"Calendar: return target unresolved (target={_returnTarget is not null}, shelves={DayShelves.Visibility})");
             _returnTarget = null;
             FocusContent();
             return;
@@ -677,6 +680,7 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
 
             if (++attempts >= 50)
             {
+                Log.Info($"Calendar: return target focus gave up (list={ShelfList(day) is not null}, tag={ShelfList(day)?.Tag is Rail})");
                 _returnTarget = null;
                 FocusContent();
                 return true;
