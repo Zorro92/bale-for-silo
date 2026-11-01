@@ -46,6 +46,8 @@ public sealed partial class CalendarDayView : INotifyPropertyChanged
     public Visibility EmptyVisibility => Cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     public double HeaderOpacity => Cards.Count == 0 ? 0.45 : 1;
     public ObservableCollection<CalendarCardView> Cards { get; } = new();
+    // Only the shelf Rail uses this memory, including across re-created containers. The week
+    // strip deliberately follows Apple TV's selected-day defaultFocus (silo-apple PR #527).
     public CalendarCardView? LastFocused { get; set; }
 
     public event PropertyChangedEventHandler? PropertyChanged;

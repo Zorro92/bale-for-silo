@@ -387,7 +387,7 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
                 return false;
             }
 
-            if (entry == CalendarFocusEntry.First)
+            if (entry == CalendarFocusEntry.First || day.LastFocused is null)
             {
                 return rail.FocusFirst(FocusState.Keyboard);
             }
@@ -501,7 +501,6 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
         e.Handled = true;
         if (IsWithin(source, PreviousWeekButton) && step > 0)
         {
-            _dateRail.Remembered = _days[0];
             FocusDateEdge(_days[0]);
         }
         else if (IsWithin(source, NextWeekButton))

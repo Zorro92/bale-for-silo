@@ -73,8 +73,17 @@ internal sealed class Rail
     /// Focus the entry item. Vertical moves can keep the row's offset instead of re-pinning its
     /// remembered card; ordinary entry and Left/Right retain the shared positioning behavior.
     /// </summary>
-    public bool Focus(FocusState state = FocusState.Programmatic, bool preserveHorizontalOffset = false) =>
-        FocusControl(Target() ?? _list, state, preserveHorizontalOffset);
+    public bool Focus(FocusState state = FocusState.Programmatic, bool preserveHorizontalOffset = false)
+    {
+        // A virtualized entry item may need another layout. Do not replace a remembered vertical
+        // target with whichever container happens to be realized while the row is being revealed.
+        if (preserveHorizontalOffset && (EntryItem?.Invoke() ?? Remembered) is { } item)
+        {
+            return FocusItem(item, state, preserveHorizontalOffset: true);
+        }
+
+        return FocusControl(Target() ?? _list, state, preserveHorizontalOffset);
+    }
 
     /// <summary>Focus <paramref name="item"/>, when its container exists.</summary>
     public bool FocusItem(object item, FocusState state = FocusState.Programmatic, bool preserveHorizontalOffset = false) =>

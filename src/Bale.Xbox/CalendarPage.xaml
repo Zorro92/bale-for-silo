@@ -114,7 +114,7 @@
     <!-- TvCalendarScreen uses ONE vertical surface. Controls scroll away when a shelf snaps to
          the top; the page owns vertical scrolling and Rail suppresses card bring-into-view. -->
     <ScrollViewer x:Name="CalendarScroller" Margin="{StaticResource SkylineCalendarTopInset}" Padding="{StaticResource SkylineCalendarContentPadding}"
-                  HorizontalScrollMode="Disabled" VerticalScrollBarVisibility="Hidden" IsTabStop="False">
+                  HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden" IsTabStop="False">
       <StackPanel x:Name="CalendarContent" Spacing="{StaticResource SkylineCalendarShelfGap}">
         <StackPanel x:Name="Controls" Margin="{StaticResource SkylineCalendarSafeInset}" MinHeight="{StaticResource SkylineCalendarControlsHeight}"
                     Spacing="{StaticResource SkylineCalendarControlGap}" GotFocus="OnControlsFocus">
