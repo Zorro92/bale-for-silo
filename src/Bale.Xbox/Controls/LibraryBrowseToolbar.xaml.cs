@@ -2,6 +2,7 @@ using Bale.Core.Browse;
 using Bale.Xbox.Services;
 using Windows.System;
 using Windows.UI.Xaml;
+using Windows.UI.Xaml.Automation;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Input;
 
@@ -27,9 +28,14 @@ public sealed partial class LibraryBrowseToolbar : UserControl
 
     public void Update(LibraryBrowseFilter filter)
     {
-        SortButton.Content = $"Sort · {filter.Sort.Label}   {filter.Sort.DirectionLabel(filter.Descending)}";
-        FilterButton.Content = filter.Facets.ActiveCount > 0 ? $"Filter   {filter.Facets.ActiveCount}" : "Filter";
-        ClearButton.Visibility = filter.Facets.CanReset ? Visibility.Visible : Visibility.Collapsed;
+        SortLabel.Text = $"Sort · {filter.Sort.Label}";
+        SortDirection.Text = filter.Sort.DirectionLabel(filter.Descending);
+        FilterCount.Text = filter.Facets.ActiveCount.ToString();
+        // TvLibraryBrowseControls.kt counts active dimensions, not individual selected facet values.
+        VisualStateManager.GoToState(this, filter.Facets.ActiveCount > 0 ? "FilterActive" : "FilterInactive", false);
+        ClearButton.Visibility = filter.Facets.ActiveCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+        AutomationProperties.SetName(SortButton, $"{SortLabel.Text}, {SortDirection.Text}");
+        AutomationProperties.SetName(FilterButton, filter.Facets.ActiveCount > 0 ? $"Filter, {filter.Facets.ActiveCount} active" : "Filter");
     }
 
     public void UpdateCount(long? total)
@@ -45,6 +51,15 @@ public sealed partial class LibraryBrowseToolbar : UserControl
     private void OnSortClick(object sender, RoutedEventArgs e) => SortRequested?.Invoke();
     private void OnFilterClick(object sender, RoutedEventArgs e) => FilterRequested?.Invoke();
     private void OnClearClick(object sender, RoutedEventArgs e) => ClearRequested?.Invoke();
+    private void OnPillFocus(object sender, RoutedEventArgs e) => SetPillFocus(sender, true);
+    private void OnPillBlur(object sender, RoutedEventArgs e) => SetPillFocus(sender, false);
+
+    private void SetPillFocus(object sender, bool focused)
+    {
+        var prefix = sender is FrameworkElement { Name: "SortButton" } ? "Sort"
+            : sender is FrameworkElement { Name: "FilterButton" } ? "Filter" : "Clear";
+        VisualStateManager.GoToState(this, prefix + (focused ? "Focused" : "Resting"), false);
+    }
 
     private void OnControlsKeyDown(object sender, KeyRoutedEventArgs e)
     {

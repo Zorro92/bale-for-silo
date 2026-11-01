@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using Windows.UI.Xaml;
+using Windows.UI.Xaml.Controls;
 
 namespace Bale.Xbox.Views;
 
@@ -34,19 +36,23 @@ public sealed partial class LibraryPanelRow(string key, string title, Action cho
 public sealed partial class LibraryAlphabetEntry(string letter, int index) : INotifyPropertyChanged
 {
     public string Letter { get; } = letter;
-    public string Text { get; private set; } = string.Empty;
-    public double Width { get; private set; } = 8;
-    public double Height { get; private set; } = 8;
+    public bool ShowCollapsedDot { get; } = index % 2 == 0;
     public bool Selected { get; private set; }
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public void Update(bool expanded, string? prefix)
+    public void Update(string? prefix)
     {
-        var selected = Letter switch { "All" => prefix is null, "#" => prefix == "0-9", _ => Letter == prefix };
-        Text = expanded ? Letter : index % 2 == 0 || selected ? "•" : string.Empty;
-        Width = expanded ? Letter == "All" ? 56 : 42 : 8;
-        Height = expanded ? Letter == "All" ? 28 : 42 : 8;
-        Selected = expanded && selected;
+        // TvAlphabetRail.kt: the selected dot stays visible even between the alternating ordinary dots.
+        Selected = Letter switch { "All" => prefix is null, "#" => prefix is "0-9" or "#", _ => Letter == prefix };
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
     }
+}
+
+/// <summary>TvAlphabetRail.kt: All is an app pill, not a square monospaced letter chip.</summary>
+public sealed partial class LibraryAlphabetTemplateSelector : DataTemplateSelector
+{
+    public DataTemplate AllTemplate { get; set; } = null!;
+    public DataTemplate LetterTemplate { get; set; } = null!;
+    protected override DataTemplate SelectTemplateCore(object item) => item is LibraryAlphabetEntry { Letter: "All" } ? AllTemplate : LetterTemplate;
+    protected override DataTemplate SelectTemplateCore(object item, DependencyObject container) => SelectTemplateCore(item);
 }
