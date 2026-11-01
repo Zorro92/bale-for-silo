@@ -18,15 +18,6 @@ public sealed partial class LibraryBrowseToolbar : UserControl
         InitializeComponent();
         _rail = Rail.Attach(Controls);
         _rail.Pin = false;
-        FocusManager.GettingFocus += (_, e) =>
-        {
-            try
-            {
-                if (e.NewFocusedElement is Windows.UI.Xaml.Controls.Primitives.ToggleButton || e.NewFocusedElement == SortButton)
-                    Log.Info($"DIAG getting focus {e.NewFocusedElement?.GetType().Name}#{(e.NewFocusedElement as FrameworkElement)?.Name} from {e.OldFocusedElement?.GetType().Name}#{(e.OldFocusedElement as FrameworkElement)?.Name} reason={e.FocusState} dir={e.Direction} input={e.InputDevice}\n{System.Environment.StackTrace}");
-            }
-            catch { }
-        };
     }
 
     public event Action? SortRequested;
@@ -61,6 +52,11 @@ public sealed partial class LibraryBrowseToolbar : UserControl
     // Coming from outside the toolbar (the facet panel, a reload), Rail entry redirects to its
     // remembered pill, which after Clear is the collapsed Clear pill and falls back to Sort.
     // TvLibraryBrowseControls.kt claims the Filter pill explicitly, so name it as the entry first.
+    /// <summary>Focuses one of this toolbar's pills as its Rail entry; null when the control isn't one.</summary>
+    public bool? FocusPill(Control control) => control is Button pill && (pill == SortButton || pill == FilterButton || pill == ClearButton)
+        ? (pill.Visibility == Visibility.Visible ? FocusPill(pill) : FocusPill(FilterButton))
+        : null;
+
     private bool FocusPill(Button pill)
     {
         _rail.Remembered = pill.Content;
@@ -77,8 +73,6 @@ public sealed partial class LibraryBrowseToolbar : UserControl
         var prefix = sender is FrameworkElement { Name: "SortButton" } ? "Sort"
             : sender is FrameworkElement { Name: "FilterButton" } ? "Filter" : "Clear";
         VisualStateManager.GoToState(this, prefix + (focused ? "Focused" : "Resting"), false);
-        if (focused) Log.Info($"Library toolbar: {prefix} focused{(prefix == "Sort" ? "\n" + System.Environment.StackTrace : "")}");
-        else Log.Info($"Library toolbar: {prefix} blurred -> {(FocusManager.GetFocusedElement() as FrameworkElement)?.GetType().Name}#{(FocusManager.GetFocusedElement() as FrameworkElement)?.Name}");
     }
 
     private void OnControlsKeyDown(object sender, KeyRoutedEventArgs e)

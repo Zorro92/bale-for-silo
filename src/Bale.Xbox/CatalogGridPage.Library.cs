@@ -105,7 +105,6 @@ public sealed partial class CatalogGridPage : IBackHandler
             return;
         }
         _libraryReloadFocus = FocusManager.GetFocusedElement() as Control;
-        Log.Info($"Library: reload focus captured {_libraryReloadFocus?.Name}");
         _libraryAlphabetReturnIndex = null; // A new query no longer contains the card the rail was entered from.
         _librarySource.SetFilter(filter);
         if (!_librarySource.IsPersonal) LibraryBrowseSettings.Save(_entry.Client, _librarySource.Query);
@@ -113,8 +112,14 @@ public sealed partial class CatalogGridPage : IBackHandler
         _libraryOverlay?.Update();
         UpdateLibraryGridWidth();
         _scroller?.ChangeView(null, 0, null, true);
-        await ReloadAsync();
+        var reload = ReloadAsync();
+        // Resetting the GridView's items moves focus out of its header; put it straight back on the
+        // pill the change came from (TvLibraryBrowseControls.kt claims Filter before clearing).
+        if (_libraryReloadFocus is { } target) FocusReloadTarget(target);
+        await reload;
     }
+
+    private bool FocusReloadTarget(Control target) => _libraryToolbar?.FocusPill(target) ?? target.Focus(FocusState.Programmatic);
 
     partial void OnSourceLoaded()
     {
@@ -184,14 +189,12 @@ public sealed partial class CatalogGridPage : IBackHandler
         if (_libraryReloadFocus is { } target)
         {
             _libraryReloadFocus = null;
-            Log.Info($"Library: restoring reload focus to {target.Name}");
-            FocusRetry.Until(this, () => !_active || target.Focus(FocusState.Programmatic));
+            FocusRetry.Until(this, () => !_active || FocusReloadTarget(target));
             handled = true;
         }
         else if ((!_librarySource.IsPersonal && _libraryInitialFocus) || _cards.Count == 0)
         {
             _libraryInitialFocus = false;
-            Log.Info("Library: initial/empty focus to toolbar");
             FocusRetry.Until(this, () => !_active || (!IsInlinePersonalGrid && _entry.Results.Error is not null)
                 || _entry.Results.Unavailable || FocusLibraryToolbar());
             handled = true;

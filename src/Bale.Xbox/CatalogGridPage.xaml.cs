@@ -203,14 +203,17 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
     {
         var state = _entry.Results;
         var initialLoading = state.IsLoading && !state.HasLoaded;
-        LoadingRing.IsActive = initialLoading;
-        LoadingRing.Visibility = initialLoading ? Visibility.Visible : Visibility.Collapsed;
+        // TvLibraryDetailScreen.kt keeps the browse controls in the grid while a query loads and shows
+        // an inline loading item under them. Hiding the grid would also hide the focused pill.
+        var inlineLoading = initialLoading && _libraryToolbar is not null;
+        LoadingRing.IsActive = initialLoading && !inlineLoading;
+        LoadingRing.Visibility = LoadingRing.IsActive ? Visibility.Visible : Visibility.Collapsed;
         UnavailablePanel.Visibility = state.Unavailable ? Visibility.Visible : Visibility.Collapsed;
         ErrorPanel.Visibility = state.Error is not null && !state.Unavailable ? Visibility.Visible : Visibility.Collapsed;
-        Cards.Visibility = !initialLoading && !state.Unavailable && state.Error is null ? Visibility.Visible : Visibility.Collapsed;
+        Cards.Visibility = (!initialLoading || inlineLoading) && !state.Unavailable && state.Error is null ? Visibility.Visible : Visibility.Collapsed;
         EmptyMessage.Visibility = state.HasLoaded && _cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         MoreErrorPanel.Visibility = state.LoadMoreError is not null ? Visibility.Visible : Visibility.Collapsed;
-        MoreLoading.IsActive = state.IsLoading && state.HasLoaded;
+        MoreLoading.IsActive = state.IsLoading && (state.HasLoaded || inlineLoading);
         MoreLoading.Visibility = MoreLoading.IsActive ? Visibility.Visible : Visibility.Collapsed;
         UpdateSourceState();
     }
