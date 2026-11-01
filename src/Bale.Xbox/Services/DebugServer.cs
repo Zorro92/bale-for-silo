@@ -7,6 +7,7 @@ using Windows.Storage.Streams;
 using Windows.UI.Core;
 using Windows.UI.Input.Preview.Injection;
 using Windows.UI.Xaml;
+using Windows.UI.Xaml.Automation;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
@@ -22,6 +23,8 @@ namespace Bale.Xbox.Services;
 ///   POST /key/{key}       a real keystroke, by VirtualKey name: Enter, Escape, Tab, Down, Back, F5...
 ///   POST /type?text=...   types text as real keystrokes into whatever has focus
 ///   GET  /focus           the focused element and its text
+///   POST /goto?target=... focus a named or labelled control (optional #N), for setup only
+///   GET  /targets         the visible, enabled tab-stop controls goto can reach
 ///   GET  /tree            the visible element tree with bounds and text
 ///
 /// Only started on sideloaded builds (see App). Anyone on the LAN can reach it while it runs, so it
@@ -105,11 +108,24 @@ internal sealed class DebugServer
             case ("GET", "/focus"):
                 return ("200 OK", await OnUiAsync(DescribeFocus) + "\n");
 
+            case ("POST", "/goto"):
+                var gotoStatus = "500 Internal Server Error";
+                var gotoBody = await OnUiAsync(() =>
+                {
+                    var response = GoTo(query.GetValueOrDefault("target") ?? string.Empty);
+                    gotoStatus = response.Status;
+                    return response.Body;
+                });
+                return (gotoStatus, gotoBody);
+
+            case ("GET", "/targets"):
+                return ("200 OK", await OnUiAsync(() => DescribeTargets(FindTargets())));
+
             case ("GET", "/tree"):
                 return ("200 OK", await OnUiAsync(DescribeTree));
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /tree\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, POST /goto?target=, GET /targets, GET /tree\n");
         }
     }
 
@@ -208,6 +224,189 @@ internal sealed class DebugServer
         return $"{Describe(element)} text=\"{TextOf(element, 6)}\"";
     }
 
+    private static (string Status, string Body) GoTo(string target)
+    {
+        var occurrence = 1;
+        var suffix = target.LastIndexOf('#');
+        if (suffix >= 0 && int.TryParse(target.Substring(suffix + 1), out var index))
+        {
+            target = target.Substring(0, suffix);
+            occurrence = index;
+        }
+
+        if (string.IsNullOrWhiteSpace(target) || occurrence < 1)
+        {
+            return ("400 Bad Request", "target is required; an optional #N must be 1-based\n");
+        }
+
+        var candidates = FindTargets();
+        var matches = new List<(Control Control, FrameworkElement Root)>();
+        var tier = int.MaxValue;
+        foreach (var candidate in candidates)
+        {
+            var matchTier = MatchTier(candidate.Control, target);
+            if (matchTier == 0 || matchTier > tier)
+            {
+                continue;
+            }
+
+            if (matchTier < tier)
+            {
+                tier = matchTier;
+                matches.Clear();
+            }
+
+            matches.Add(candidate);
+        }
+
+        if (occurrence > matches.Count)
+        {
+            var detail = matches.Count == 0 ? "no matches" : $"tier={tier} matches={matches.Count}";
+            var near = candidates.OrderByDescending(candidate => NearScore(candidate.Control, target)).Take(20);
+            return ("404 Not Found", $"no match for target=\"{EscapeText(target)}\" #{occurrence}; {detail}\nnear targets:\n" + DescribeTargets(near));
+        }
+
+        var chosen = matches[occurrence - 1].Control;
+        var focused = chosen.Focus(FocusState.Keyboard);
+        var redirected = true;
+        for (var node = FocusManager.GetFocusedElement() as DependencyObject; node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (ReferenceEquals(node, chosen))
+            {
+                redirected = false;
+                break;
+            }
+        }
+
+        // Rail.OnGettingFocus may choose its remembered item instead. Report that, never retry it.
+        var tierName = tier switch { 1 => "x:Name", 2 => "automation name", 3 => "text", _ => "substring" };
+        return ("200 OK", $"tier={tier} ({tierName}) matches={matches.Count} match={occurrence} chosen={Describe(chosen)} focus={focused}{(redirected ? "; redirected" : string.Empty)}; {DescribeFocus()}\n");
+    }
+
+    private static int MatchTier(Control control, string target)
+    {
+        if (string.Equals(control.Name, target, StringComparison.OrdinalIgnoreCase))
+        {
+            return 1;
+        }
+
+        var automationName = AutomationProperties.GetName(control) ?? string.Empty;
+        if (string.Equals(automationName, target, StringComparison.OrdinalIgnoreCase))
+        {
+            return 2;
+        }
+
+        var text = TextOf(control, 6);
+        var texts = TextsOf(control, int.MaxValue);
+        if (string.Equals(text, target, StringComparison.OrdinalIgnoreCase)
+            || texts.Any(value => string.Equals(value, target, StringComparison.OrdinalIgnoreCase)))
+        {
+            return 3;
+        }
+
+        return automationName.Contains(target, StringComparison.OrdinalIgnoreCase)
+            || text.Contains(target, StringComparison.OrdinalIgnoreCase)
+            || texts.Any(value => value.Contains(target, StringComparison.OrdinalIgnoreCase)) ? 4 : 0;
+    }
+
+    private static List<(Control Control, FrameworkElement Root)> FindTargets()
+    {
+        var targets = new List<(Control Control, FrameworkElement Root)>();
+        var window = Window.Current;
+        if (window.Content is FrameworkElement root)
+        {
+            CollectTargets(root, root, 0, targets);
+        }
+
+        foreach (var popup in VisualTreeHelper.GetOpenPopups(window))
+        {
+            if (popup.Visibility == Visibility.Visible && popup.Opacity != 0 && popup.Child is FrameworkElement popupRoot)
+            {
+                // Popup children live outside Window.Content's tree; their bounds use the popup root.
+                CollectTargets(popupRoot, popupRoot, 0, targets);
+            }
+        }
+
+        return targets;
+    }
+
+    private static void CollectTargets(FrameworkElement element, FrameworkElement root, int depth, List<(Control Control, FrameworkElement Root)> targets)
+    {
+        if (element.Visibility != Visibility.Visible || element.Opacity == 0 || depth > 60)
+        {
+            return;
+        }
+
+        if (element is Control { IsEnabled: true, IsTabStop: true, ActualWidth: > 0, ActualHeight: > 0 } control)
+        {
+            targets.Add((control, root));
+        }
+
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++)
+        {
+            if (VisualTreeHelper.GetChild(element, i) is FrameworkElement child)
+            {
+                CollectTargets(child, root, depth + 1, targets);
+            }
+        }
+    }
+
+    private static string DescribeTargets(IEnumerable<(Control Control, FrameworkElement Root)> targets)
+    {
+        var builder = new StringBuilder();
+        foreach (var (control, root) in targets)
+        {
+            if (builder.Length > 400_000)
+            {
+                break;
+            }
+
+            var bounds = Bounds(control, root);
+            builder.Append(Describe(control).Replace("\r", "\\r").Replace("\n", "\\n"))
+                .Append($" [{bounds.X:0},{bounds.Y:0} {bounds.Width:0}x{bounds.Height:0}]");
+            var automationName = AutomationProperties.GetName(control);
+            if (!string.IsNullOrEmpty(automationName))
+            {
+                builder.Append($" automation=\"{EscapeText(automationName)}\"");
+            }
+
+            builder.Append($" text=\"{EscapeText(TextOf(control, 6))}\"\n");
+        }
+
+        return builder.ToString();
+    }
+
+    private static int NearScore(Control control, string target)
+    {
+        int Score(string value)
+        {
+            if (value.Length == 0)
+            {
+                return 0;
+            }
+
+            if (value.Contains(target, StringComparison.OrdinalIgnoreCase) || target.Contains(value, StringComparison.OrdinalIgnoreCase))
+            {
+                return Math.Min(value.Length, target.Length);
+            }
+
+            var prefix = 0;
+            while (prefix < Math.Min(value.Length, target.Length)
+                && string.Compare(value, prefix, target, prefix, 1, StringComparison.OrdinalIgnoreCase) == 0)
+            {
+                prefix++;
+            }
+
+            return prefix;
+        }
+
+        return Math.Max(Score(control.Name ?? string.Empty),
+            Math.Max(Score(AutomationProperties.GetName(control) ?? string.Empty), Score(TextOf(control, 6))));
+    }
+
+    private static string EscapeText(string text) =>
+        text.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "\\r").Replace("\n", "\\n");
+
     private static string DescribeTree()
     {
         var builder = new StringBuilder();
@@ -247,7 +446,9 @@ internal sealed class DebugServer
     }
 
     /// <summary>The first few TextBlock texts under an element, joined: what a person would read on it.</summary>
-    private static string TextOf(DependencyObject element, int limit)
+    private static string TextOf(DependencyObject element, int limit) => string.Join(" | ", TextsOf(element, limit));
+
+    private static List<string> TextsOf(DependencyObject element, int limit)
     {
         var texts = new List<string>();
         void Collect(DependencyObject node)
@@ -269,7 +470,7 @@ internal sealed class DebugServer
         }
 
         Collect(element);
-        return string.Join(" | ", texts);
+        return texts;
     }
 
     private static Rect Bounds(FrameworkElement element, FrameworkElement root)
