@@ -16,18 +16,41 @@ public sealed partial class ShellPage
         ForYouPanel.Selected += kind =>
         {
             if (_panelTab?.DataContext is not TabView { Page: "foryou" } tab) return;
-            if (kind == "recommendations")
-            {
-                Select(tab);
-                return;
-            }
-
-            _selected = tab;
-            _searchSelected = false;
-            UpdateChecked();
-            ClosePanels();
-            OpenPersonalList(kind);
+            // TvMainShell.kt moveFocusToContent parks a failed/loading handover on the selected
+            // tab. Give the collapsing dropdown that successor until the first card can claim focus.
+            FocusAfterCascadeDismiss(_panelTab);
+            if (kind == "recommendations") Select(tab);
+            else ShowForYouSavedList(tab, kind);
         };
+    }
+
+    private void ShowForYouSavedList(TabView tab, string kind, bool fallback = false)
+    {
+        if (Session.Client is not { } client) return;
+        // TvMainShell.kt openForYou(selection): replace the For You ROOT, not the outer journal.
+        // TvPersonalScreens.kt shares saved-list sort/filter selections with the profile routes.
+        _selected = tab;
+        _searchSelected = false;
+        UpdateChecked();
+        ClosePanels();
+        if (ContentFrame.Content is CatalogGridPage existing && existing.EnterInlinePersonal(kind, fallback)) return;
+        var source = PersonalSource(kind, client);
+        if (kind == "favorites") source = source.ForInlineFavorites();
+        ShowContent(typeof(CatalogGridPage), new CatalogGridEntry(source, client)
+        {
+            InlinePersonal = true,
+            SavedListFallback = fallback,
+        });
+    }
+
+    internal void ShowForYouWatchlistFallback(BrowsePage feed)
+    {
+        // TvRecommendationsScreen.kt: only a successful, empty visible feed chooses Watchlist.
+        // Like TvForYouEntryRequest.kt's sequence guard, an old feed must never override a newer
+        // dropdown/tab selection, nor navigate while the shell is covered by a secondary route.
+        if (!ReferenceEquals(Current, this) || _searchSelected || _selected is not { Page: "foryou" } tab
+            || !ReferenceEquals(ContentFrame.Content, feed)) return;
+        ShowForYouSavedList(tab, "watchlist", fallback: true);
     }
 
     private void OpenForYouCascade(Control tabButton)

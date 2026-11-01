@@ -145,7 +145,10 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
                 UpdateState();
                 if (!request.Append && !_entry.Results.Unavailable)
                 {
-                    FocusRetry.Until(ErrorPanel, () => !_active || RetryButton.Focus(FocusState.Programmatic));
+                    // TvPersonalScreens.kt PersonalInlineGrid gives an empty/error list's entry
+                    // claim to Sort, keeping the controls reachable instead of focusing Retry.
+                    if (IsInlinePersonalGrid) RestoreFocus();
+                    else FocusRetry.Until(ErrorPanel, () => !_active || RetryButton.Focus(FocusState.Programmatic));
                 }
             }
         }

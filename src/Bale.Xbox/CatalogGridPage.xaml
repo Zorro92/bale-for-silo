@@ -60,6 +60,24 @@
             <Setter Target="ToolbarSlot.Margin" Value="{StaticResource SkylinePersonalControlsMargin}" />
           </VisualState.Setters>
         </VisualState>
+        <!-- TvPersonalScreens.kt PersonalInlineGrid: no secondary-page header; 40dp leading edge. -->
+        <VisualState x:Name="PersonalInline">
+          <VisualState.Setters>
+            <Setter Target="PersonalInlineHeader.Visibility" Value="Visible" />
+            <Setter Target="PageTitle.Visibility" Value="Collapsed" />
+            <Setter Target="Cards.Padding" Value="{StaticResource SkylinePersonalInlineGridPadding}" />
+            <Setter Target="Cards.ItemContainerStyle" Value="{StaticResource SkylinePersonalGridItemStyle}" />
+            <Setter Target="ToolbarSlot.Margin" Value="{StaticResource SkylinePersonalControlsMargin}" />
+          </VisualState.Setters>
+        </VisualState>
+      </VisualStateGroup>
+      <!-- TvRecommendationsScreen.kt: a caption only for the automatic Watchlist fallback. -->
+      <VisualStateGroup x:Name="SavedListCaptionState">
+        <VisualState x:Name="NoSavedListCaption" />
+        <VisualState x:Name="SavedListFallback"><VisualState.Setters>
+          <Setter Target="PersonalInlineHeader.Height" Value="{StaticResource SkylinePersonalFallbackTopInset}" />
+          <Setter Target="SavedListCaption.Visibility" Value="Visible" />
+        </VisualState.Setters></VisualState>
       </VisualStateGroup>
       <VisualStateGroup x:Name="PersonalKind">
         <VisualState x:Name="PersonalWatchlist"><VisualState.Setters>
@@ -75,6 +93,12 @@
           <Setter Target="PersonalEmptyHistoryIcon.Visibility" Value="Visible" />
         </VisualState.Setters></VisualState>
       </VisualStateGroup>
+      <VisualStateGroup x:Name="PersonalMediaKindsState">
+        <VisualState x:Name="NoPersonalMediaKinds" />
+        <VisualState x:Name="InlineFavoriteMediaKinds"><VisualState.Setters>
+          <Setter Target="PersonalMediaKinds.Visibility" Value="Visible" />
+        </VisualState.Setters></VisualState>
+      </VisualStateGroup>
       <VisualStateGroup x:Name="PersonalControls">
         <VisualState x:Name="PersonalWithoutControls" />
         <VisualState x:Name="PersonalWithControls"><VisualState.Setters>
@@ -83,7 +107,13 @@
       </VisualStateGroup>
     </VisualStateManager.VisualStateGroups>
 
-    <!-- TvPersonalScreens.kt keeps this title outside the scrolling grid. -->
+    <!-- TvRecommendationsScreen.kt: keep the saved-list viewport below TvTopMenuLayout.contentTopInset. -->
+    <Grid x:Name="PersonalInlineHeader" Height="{StaticResource SkylinePersonalInlineTopInset}" Visibility="Collapsed">
+      <TextBlock x:Name="SavedListCaption" Text="No recommendations yet — showing your saved titles."
+                 Style="{StaticResource SkylinePersonalFallbackCaptionStyle}" Visibility="Collapsed" />
+    </Grid>
+
+    <!-- TvPersonalScreens.kt keeps this title outside the scrolling grid on SECONDARY routes only. -->
     <StackPanel x:Name="PersonalHeader" Style="{StaticResource SkylinePersonalHeaderStyle}" Visibility="Collapsed">
       <TextBlock Text="YOUR LIBRARY" Style="{StaticResource SkylinePersonalEyebrowStyle}" />
       <StackPanel Style="{StaticResource SkylinePersonalTitleRowStyle}">
@@ -112,6 +142,12 @@
         <GridView.Header>
           <StackPanel>
             <TextBlock x:Name="PageTitle" Style="{StaticResource SkylineCatalogTitleStyle}" Margin="{StaticResource SkylineCatalogHeaderMargin}" />
+            <!-- rail-layout: non-card — TvPersonalScreens.kt inline Favorites' Movies / TV Shows chips. -->
+            <ItemsControl x:Name="PersonalMediaKinds" Style="{StaticResource SkylinePersonalMediaKindsStyle}" Visibility="Collapsed" PreviewKeyDown="OnPersonalMediaKindsKeyDown">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ToggleButton x:Name="PersonalMovies" Content="Movies" Tag="movie" Style="{StaticResource SkylinePersonalMediaKindStyle}" Click="OnPersonalMediaKindClick" />
+              <ToggleButton x:Name="PersonalTvShows" Content="TV Shows" Tag="series" Style="{StaticResource SkylinePersonalMediaKindStyle}" Click="OnPersonalMediaKindClick" />
+            </ItemsControl>
             <!-- Optional source chrome scrolls with the cards (TvCatalogGrid's spanning header).
                  A Border slot can be populated through Child under Native AOT. -->
             <Border x:Name="ToolbarSlot" />

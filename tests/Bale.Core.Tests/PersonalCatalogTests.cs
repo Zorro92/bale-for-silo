@@ -82,6 +82,88 @@ public class PersonalCatalogTests
         Assert.False(source.ShowsAlphabet); // Personal grids never get the library-only A–Z edge.
     }
 
+    [Fact]
+    public void InlineFavoritesSharesControlsButNeverNarrowsTheProfileRoute()
+    {
+        // TvPersonalScreens.kt shares the controls holder, not TvFavoritesInline's media kind.
+        using var client = Create(new StubHandler());
+        var fullScreen = LibraryCatalogSource.Personal("favorites", client.LibraryBrowse);
+        var inline = fullScreen.ForInlineFavorites();
+        Assert.Equal("movie", inline.Query.MediaType);
+        Assert.Equal("No favorite movies yet", inline.EmptyMessage);
+
+        inline.SetFilter(inline.Query.Filter.SelectSort(LibrarySortOption.Personal.Single(sort => sort.Field == "year"))
+            .ApplyFacets(new LibraryFacetSelection().Toggle(LibraryFacet.Genre, "Drama")));
+        inline.SetFavoriteMediaType("series");
+        Assert.Equal(inline.Query.Filter, fullScreen.Query.Filter);
+        Assert.Equal("No favorite TV shows yet", inline.EmptyMessage);
+        Assert.Null(fullScreen.Query.MediaType);
+        Assert.Equal("No favorites yet", fullScreen.EmptyMessage);
+
+        fullScreen.SetFilter(fullScreen.Query.Filter.SelectSort(LibrarySortOption.Title));
+        Assert.Equal(fullScreen.Query.Filter, inline.Query.Filter);
+        Assert.Equal("series", inline.Query.MediaType);
+        var freshEntry = fullScreen.ForInlineFavorites();
+        Assert.Equal("movie", freshEntry.Query.MediaType);
+        Assert.Equal(fullScreen.Query.Filter, freshEntry.Query.Filter);
+        Assert.False(inline.ShowsAlphabet);
+    }
+
+    [Fact]
+    public async Task InlineFavoritesMediaChangesRestartPagingWithoutLeakingToFullScreen()
+    {
+        var stub = new StubHandler()
+            .Enqueue("""{"items":[{"content_id":"m","type":"movie"}],"total":2,"page":{"has_more":true,"next_cursor":"movies"}}""")
+            .Enqueue("""{"items":[{"content_id":"s","type":"series"}],"total":1,"page":{"has_more":false}}""")
+            .Enqueue("""{"items":[{"content_id":"m","type":"movie"},{"content_id":"s","type":"series"}],"total":2,"page":{"has_more":false}}""");
+        using var client = Create(stub);
+        var fullScreen = LibraryCatalogSource.Personal("favorites", client.LibraryBrowse);
+        var inline = fullScreen.ForInlineFavorites();
+        var first = await inline.LoadPageAsync(client.Browse, ArtworkWidths.Tv1080, null);
+        Assert.Equal(2, inline.Total);
+        Assert.Equal("movie", Query(stub.Requests[0])["type"]);
+
+        inline.SetFavoriteMediaType("series");
+        Assert.Null(inline.Total);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => inline.LoadPageAsync(client.Browse, ArtworkWidths.Tv1080, first.Continuation));
+        var series = await inline.LoadPageAsync(client.Browse, ArtworkWidths.Tv1080, null);
+        Assert.Equal("s", Assert.Single(series.Cards).ContentId);
+        Assert.Equal(1, inline.Total);
+        Assert.Equal("series", Query(stub.Requests[1])["type"]);
+
+        var all = await fullScreen.LoadPageAsync(client.Browse, ArtworkWidths.Tv1080, null);
+        Assert.Equal(["m", "s"], all.Cards.Select(card => card.ContentId));
+        Assert.False(Query(stub.Requests[2]).ContainsKey("type"));
+        Assert.All(stub.Requests, request => Assert.Equal("favorites", Query(request)["source"]));
+    }
+
+    [Theory]
+    [InlineData("movie")]
+    [InlineData("series")]
+    public async Task InlineFavoritesFacetsKeepMediaTypeAndSharedControlChangesInvalidateCounts(string mediaType)
+    {
+        var stub = new StubHandler().Enqueue("""{"items":[],"total":0,"page":{"has_more":false}}""");
+        using var client = Create(stub);
+        var fullScreen = LibraryCatalogSource.Personal("favorites", client.LibraryBrowse);
+        var inline = fullScreen.ForInlineFavorites();
+        inline.SetFavoriteMediaType(mediaType);
+        inline.SetFilter(inline.Query.Filter.SelectSort(LibrarySortOption.Personal.Single(sort => sort.Field == "year"))
+            .ApplyFacets(new LibraryFacetSelection().Toggle(LibraryFacet.Genre, "Drama")));
+        await inline.LoadPageAsync(client.Browse, ArtworkWidths.Tv1080, null);
+        Assert.Equal(0, inline.Total);
+        Assert.Equal(HttpMethod.Post, Assert.Single(stub.Requests).Method);
+        using var document = JsonDocument.Parse(stub.RequestBodies[0]!);
+        Assert.Equal("favorites", document.RootElement.GetProperty("source").GetString());
+        Assert.Equal(mediaType, document.RootElement.GetProperty("type").GetString());
+        Assert.Equal("year", document.RootElement.GetProperty("sort").GetString());
+        Assert.Null(fullScreen.Query.MediaType);
+
+        fullScreen.SetFilter(fullScreen.Query.Filter.SelectSort(LibrarySortOption.Title));
+        Assert.Equal(LibrarySortOption.Title, inline.Query.Filter.Sort);
+        Assert.Null(inline.Total);
+        Assert.Null(inline.LibraryHasItems);
+    }
+
     [Theory]
     [InlineData("watchlist")]
     [InlineData("favorites")]

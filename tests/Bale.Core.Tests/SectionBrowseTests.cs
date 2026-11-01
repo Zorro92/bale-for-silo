@@ -208,4 +208,46 @@ public class SectionBrowseTests
         Assert.False(row.OffersExploreAll);
         Assert.False(row.OffersSeeAll);
     }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{"items":[]}""")]
+    [InlineData("""{"items":[{"key":"empty","items":[]}]}""")]
+    [InlineData("""{"items":[{"key":"reading","items":[{"content_id":"b","type":"ebook"},{"content_id":"c","type":"comic"},{"content_id":"g","type":"manga"}]}]}""")]
+    public async Task ForYouWithoutVisibleSectionsReturnsAnEmptySuccessfulFeed(string json)
+    {
+        // TvRecommendationsScreen.kt defaults only an empty SUCCESSFUL visible feed to Watchlist.
+        using var client = Create(new StubHandler().Enqueue(json));
+        Assert.Empty(await client.Browse.LoadForYouAsync(ArtworkWidths.Tv1080));
+    }
+
+    [Fact]
+    public async Task ForYouVisibleSectionsKeepServerOrderAndAudiobooksButHideReadingMedia()
+    {
+        var stub = new StubHandler().Enqueue("""
+            {"items":[
+                {"key":"reading","items":[{"content_id":"b","type":"ebook"}]},
+                {"key":"mixed","items":[{"content_id":"m","type":"movie"},{"content_id":"c","type":"comic"},{"content_id":"s","type":"series"}]},
+                {"key":"audio","items":[{"content_id":"a","type":"audiobook"}]}
+            ]}
+            """);
+        using var client = Create(stub);
+
+        var rows = await client.Browse.LoadForYouAsync(ArtworkWidths.Tv1080);
+
+        Assert.Equal(["mixed", "audio"], rows.Select(row => row.Id));
+        Assert.Equal(["m", "s"], rows[0].Cards.Select(card => card.ContentId));
+        Assert.Equal("a", Assert.Single(rows[1].Cards).ContentId);
+        var query = Query(Assert.Single(stub.Requests));
+        Assert.Equal("208", query["poster_width"]);
+        Assert.EndsWith("/recommendations/discover", stub.Requests[0].RequestUri!.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task ForYouErrorsAreNotConvertedIntoAnEmptyFeed()
+    {
+        using var client = Create(new StubHandler().Enqueue(HttpStatusCode.BadRequest, """{"title":"Bad request","status":400}"""));
+        var error = await Assert.ThrowsAnyAsync<Microsoft.Kiota.Abstractions.ApiException>(() => client.Browse.LoadForYouAsync(ArtworkWidths.Tv1080));
+        Assert.Equal(400, error.ResponseStatusCode);
+    }
 }

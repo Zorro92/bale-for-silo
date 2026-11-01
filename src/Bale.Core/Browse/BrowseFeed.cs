@@ -103,7 +103,11 @@ public sealed partial class BrowseFeed
                 false,
                 CardShape.Poster,
                 // TvSkylineSectionFeed caps only section rows that can open their full grid.
-                row.Items!.Select(item => ToCard(item, CardShape.Poster)).ToList()))
+                row.Items!.Where(item => IsVisibleTvType(item.Type, showAudiobooks: true))
+                    .Select(item => ToCard(item, CardShape.Poster)).ToList()))
+            // TvRecommendationsScreen.kt / TvMediaTypeFilters.kt: the Watchlist fallback is based
+            // on VISIBLE sections, not raw server rows. Reading-only sections do not block it.
+            .Where(row => row.Cards.Count > 0)
             .ToList();
     }
 
