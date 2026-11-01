@@ -68,7 +68,8 @@ public sealed partial class LibraryBrowseToolbar : UserControl
         var prefix = sender is FrameworkElement { Name: "SortButton" } ? "Sort"
             : sender is FrameworkElement { Name: "FilterButton" } ? "Filter" : "Clear";
         VisualStateManager.GoToState(this, prefix + (focused ? "Focused" : "Resting"), false);
-        if (focused) Log.Info($"Library toolbar: {prefix} focused");
+        if (focused) Log.Info($"Library toolbar: {prefix} focused{(prefix == "Sort" ? "\n" + System.Environment.StackTrace : "")}");
+        else Log.Info($"Library toolbar: {prefix} blurred -> {(FocusManager.GetFocusedElement() as FrameworkElement)?.GetType().Name}#{(FocusManager.GetFocusedElement() as FrameworkElement)?.Name}");
     }
 
     private void OnControlsKeyDown(object sender, KeyRoutedEventArgs e)
