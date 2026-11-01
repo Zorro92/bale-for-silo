@@ -105,6 +105,7 @@ public sealed partial class CatalogGridPage : IBackHandler
             return;
         }
         _libraryReloadFocus = FocusManager.GetFocusedElement() as Control;
+        Log.Info($"Library: reload focus captured {_libraryReloadFocus?.Name}");
         _libraryAlphabetReturnIndex = null; // A new query no longer contains the card the rail was entered from.
         _librarySource.SetFilter(filter);
         if (!_librarySource.IsPersonal) LibraryBrowseSettings.Save(_entry.Client, _librarySource.Query);
@@ -183,12 +184,14 @@ public sealed partial class CatalogGridPage : IBackHandler
         if (_libraryReloadFocus is { } target)
         {
             _libraryReloadFocus = null;
+            Log.Info($"Library: restoring reload focus to {target.Name}");
             FocusRetry.Until(this, () => !_active || target.Focus(FocusState.Programmatic));
             handled = true;
         }
         else if ((!_librarySource.IsPersonal && _libraryInitialFocus) || _cards.Count == 0)
         {
             _libraryInitialFocus = false;
+            Log.Info("Library: initial/empty focus to toolbar");
             FocusRetry.Until(this, () => !_active || (!IsInlinePersonalGrid && _entry.Results.Error is not null)
                 || _entry.Results.Unavailable || FocusLibraryToolbar());
             handled = true;

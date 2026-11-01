@@ -68,6 +68,7 @@ public sealed partial class LibraryBrowseToolbar : UserControl
         var prefix = sender is FrameworkElement { Name: "SortButton" } ? "Sort"
             : sender is FrameworkElement { Name: "FilterButton" } ? "Filter" : "Clear";
         VisualStateManager.GoToState(this, prefix + (focused ? "Focused" : "Resting"), false);
+        if (focused) Log.Info($"Library toolbar: {prefix} focused");
     }
 
     private void OnControlsKeyDown(object sender, KeyRoutedEventArgs e)
