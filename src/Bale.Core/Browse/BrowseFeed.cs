@@ -59,7 +59,10 @@ public sealed partial class BrowseFeed
     }
 
     /// <summary>A library's Browse landing: its server-defined rows.</summary>
-    public async Task<IReadOnlyList<MediaRow>> LoadLibraryAsync(string libraryId, ArtworkWidths widths, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<MediaRow>> LoadLibraryAsync(string libraryId, ArtworkWidths widths, CancellationToken cancellationToken = default) =>
+        ToRows(await LibrarySectionsAsync(libraryId, widths, cancellationToken).ConfigureAwait(false), libraryId);
+
+    private async Task<List<Section>?> LibrarySectionsAsync(string libraryId, ArtworkWidths widths, CancellationToken cancellationToken)
     {
         var itemLimit = await SectionItemLimitAsync(cancellationToken).ConfigureAwait(false);
         var response = await _api.Api.V2.Library[libraryId].Sections.GetAsync(config =>
@@ -71,7 +74,7 @@ public sealed partial class BrowseFeed
             config.QueryParameters.ItemLimit = itemLimit;
         }, cancellationToken).ConfigureAwait(false);
 
-        return ToRows(response?.Sections, libraryId);
+        return response?.Sections;
     }
 
     private async Task<int?> SectionItemLimitAsync(CancellationToken cancellationToken)
