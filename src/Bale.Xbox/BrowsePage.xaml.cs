@@ -159,6 +159,11 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
 
     private async Task LoadAsync(bool refresh = false)
     {
+        if (_libraryId is not null)
+        {
+            await LoadLibraryRecommendedAsync(refresh);
+            return;
+        }
         if (_loading || Session.Client is not { } client)
         {
             return;
@@ -173,8 +178,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         try
         {
             var rows = _forYou ? await client.Browse.LoadForYouAsync(ArtworkWidths.Tv1080)
-                : _libraryId is null ? await client.Browse.LoadHomeAsync(ArtworkWidths.Tv1080)
-                : await client.Browse.LoadLibraryAsync(_libraryId, ArtworkWidths.Tv1080);
+                : await client.Browse.LoadHomeAsync(ArtworkWidths.Tv1080);
             if (!ReferenceEquals(client, Session.Client) || (refresh && !_isLoaded))
             {
                 return;
