@@ -46,8 +46,17 @@ public sealed partial class LibraryBrowseToolbar : UserControl
     }
 
     public bool FocusControls() => _rail.Focus();
-    public bool FocusSort() => SortButton.Focus(FocusState.Programmatic);
-    public void FocusFilter() => FilterButton.Focus(FocusState.Programmatic);
+    public bool FocusSort() => FocusPill(SortButton);
+    public void FocusFilter() => FocusPill(FilterButton);
+
+    // Coming from outside the toolbar (the facet panel, a reload), Rail entry redirects to its
+    // remembered pill, which after Clear is the collapsed Clear pill and falls back to Sort.
+    // TvLibraryBrowseControls.kt claims the Filter pill explicitly, so name it as the entry first.
+    private bool FocusPill(Button pill)
+    {
+        _rail.Remembered = pill.Content;
+        return pill.Focus(FocusState.Programmatic);
+    }
     private void OnSortClick(object sender, RoutedEventArgs e) => SortRequested?.Invoke();
     private void OnFilterClick(object sender, RoutedEventArgs e) => FilterRequested?.Invoke();
     private void OnClearClick(object sender, RoutedEventArgs e) => ClearRequested?.Invoke();
