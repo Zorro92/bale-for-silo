@@ -1828,11 +1828,21 @@
     <Setter Property="Margin" Value="48" /><Setter Property="Spacing" Value="24" />
     <Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Center" />
   </Style>
-  <!-- components/StatusViews.kt: labelLarge (18/22sp), 32x12dp content padding, 8dp extra above Retry. -->
+  <!-- components/StatusViews.kt: labelLarge (18/22sp), 32x12dp content padding. The 8dp
+       Spacer has a 24dp Column gap on both sides, so Retry adds 32dp to the panel's 24dp gap. -->
   <Style x:Key="SkylineCollectionRetryStyle" TargetType="Button" BasedOn="{StaticResource SkylineButtonStyle}">
     <Setter Property="FontSize" Value="15.48" /><Setter Property="Padding" Value="32,12" />
     <Setter Property="Height" Value="43" /><Setter Property="CornerRadius" Value="21.5" />
-    <Setter Property="Margin" Value="0,8,0,0" /><Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="Margin" Value="0,32,0,0" /><Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <!-- screens/library/TvLibraryDetailScreen.kt LibraryTab adds 40dp safe sides and the
+       94dp shell inset outside components/StatusViews.kt's own 48dp error padding. -->
+  <Style x:Key="SkylineLibraryErrorStyle" TargetType="StackPanel" BasedOn="{StaticResource SkylineCollectionsErrorStyle}">
+    <Setter Property="Margin" Value="88,142,88,48" />
+  </Style>
+  <!-- components/StatusViews.kt: the secondary action has only the ordinary 24dp Column gap. -->
+  <Style x:Key="SkylineLibraryErrorClearStyle" TargetType="Button" BasedOn="{StaticResource SkylineCollectionRetryStyle}">
+    <Setter Property="Margin" Value="0" />
   </Style>
   <!-- TvRecommendationsScreen.kt / TvPersonalScreens.kt PersonalInlineGrid: top bar inset,
        then 12dp grid padding, 40dp safe area and 24dp bottom. The last slot owns its 20dp gap. -->

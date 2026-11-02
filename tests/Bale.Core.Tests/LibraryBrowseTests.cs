@@ -1,6 +1,8 @@
+using System.Net;
 using System.Text.Json;
 using Bale.Core.Browse;
 using Bale.Core.Connection;
+using Microsoft.Kiota.Abstractions;
 
 namespace Bale.Core.Tests;
 
@@ -111,6 +113,66 @@ public class LibraryBrowseTests
         Assert.Equal(1, selection.Clear(LibraryFacet.Genre).ActiveCount);
         Assert.True(new LibraryFacetSelection { MatchAll = false }.CanReset);
         Assert.Equal(["Title", "Date Added", "Release Date", "Year", "Rating", "Runtime", "Resolution"], LibrarySortOption.Video.Select(option => option.Label));
+    }
+
+    [Theory]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, true)]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, true)]
+    public void ErrorFilterResetIsAvailableOnlyForLibraryFacetChanges(bool selected, bool matchAll, bool expected)
+    {
+        var facets = new LibraryFacetSelection { MatchAll = matchAll };
+        if (selected) facets = facets.Toggle(LibraryFacet.Genre, "Drama");
+        var filter = new LibraryBrowseFilter { Sort = LibrarySortOption.Title, Descending = true, NamePrefix = "T", Facets = facets };
+        using var client = Create(new StubHandler());
+        var source = new LibraryCatalogSource("Movies", Library(filter), client.LibraryBrowse);
+        Assert.Equal(expected, source.CanClearErrorFilters);
+
+        var personal = LibraryCatalogSource.Personal("favorites", client.LibraryBrowse);
+        personal.SetFilter(filter);
+        Assert.False(personal.CanClearErrorFilters);
+        var collection = LibraryCatalogSource.Collection("7", "movie", new("12", "Twelve", null, false), client.LibraryBrowse);
+        collection.SetFilter(filter);
+        Assert.False(collection.CanClearErrorFilters);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.NotFound)]
+    public async Task ClearingRejectedFacetsDropsPrefixAndPersistsTheExistingSort(HttpStatusCode status)
+    {
+        var facets = new LibraryFacetSelection { MatchAll = false }.Toggle(LibraryFacet.Genre, "Drama");
+        var filter = new LibraryBrowseFilter { Sort = LibrarySortOption.Title, Descending = true, NamePrefix = "T", Facets = facets };
+        var stub = new StubHandler().Enqueue(status, """{"title":"Rejected filter"}""").Enqueue(LastPage);
+        using var client = Create(stub);
+        var source = new LibraryCatalogSource("Movies", Library(filter), client.LibraryBrowse);
+        var error = await Assert.ThrowsAnyAsync<ApiException>(() => source.LoadPageAsync(client.Browse, ArtworkWidths.Tv1080, null));
+        Assert.Equal((int)status, error.ResponseStatusCode);
+        Assert.True(source.CanClearErrorFilters);
+
+        source.SetFilter(source.Query.Filter.ApplyFacets(new()));
+        var restored = LibraryBrowsePreferences.Deserialize(LibraryBrowsePreferences.Serialize(source.Query.Filter), "movie")!;
+        Assert.Equal(filter.Sort, restored.Sort);
+        Assert.Equal(filter.Descending, restored.Descending);
+        Assert.True(restored.Facets.MatchAll);
+        Assert.Equal(0, restored.Facets.ActiveCount);
+        Assert.False(source.CanClearErrorFilters);
+        Assert.Null(source.Query.Filter.NamePrefix);
+        Assert.Null(restored.NamePrefix);
+
+        var page = await source.LoadPageAsync(client.Browse, ArtworkWidths.Tv1080, null);
+        Assert.Equal("m2", Assert.Single(page.Cards).ContentId);
+        Assert.Equal(HttpMethod.Post, stub.Requests[0].Method);
+        Assert.Equal(HttpMethod.Get, stub.Requests[1].Method);
+        Assert.Null(stub.RequestBodies[1]);
+        var query = Query(stub.Requests[1]);
+        Assert.Equal("query", query["source"]);
+        Assert.Equal("7", query["library_id"]);
+        Assert.Equal("movie", query["type"]);
+        Assert.Equal("-title", query["sort"]);
+        Assert.False(query.ContainsKey("name_prefix"));
+        Assert.False(query.ContainsKey("cursor"));
     }
 
     [Fact]

@@ -140,8 +140,10 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
         catch (Exception ex)
         {
             Log.Error("Catalog grid load", ex);
+            // screens/library/TvLibraryDetailScreen.kt / TvLibraryCollectionDetailScreen.kt keep
+            // catalog failures retryable, including a 404 for a rejected preserved facet query.
             if (_active && _entry.IsCurrent(Session.Client) && _entry.Results.Fail(request,
-                !IsPersonalGrid && _librarySource?.IsCollection != true && ex is ApiException { ResponseStatusCode: 404 }))
+                !IsPersonalGrid && _librarySource is null && ex is ApiException { ResponseStatusCode: 404 }))
             {
                 UpdateState();
                 if ((!request.Append || _librarySource?.IsCollection == true) && !_entry.Results.Unavailable)

@@ -100,7 +100,7 @@ public sealed partial class CatalogGridPage : IBackHandler
         finally { _libraryFilterOpening = false; }
     }
 
-    private async Task ChangeLibraryFilterAsync(LibraryBrowseFilter filter)
+    private async Task ChangeLibraryFilterAsync(LibraryBrowseFilter filter, bool restoreFilterFocus = false)
     {
         if (_librarySource is null || !_active || !_entry.IsCurrent(Session.Client)) return;
         var previous = _librarySource.Query.Filter;
@@ -109,7 +109,7 @@ public sealed partial class CatalogGridPage : IBackHandler
             _libraryOverlay?.Update();
             return;
         }
-        _libraryReloadFocus = FocusManager.GetFocusedElement() as Control;
+        _libraryReloadFocus = restoreFilterFocus ? _libraryToolbar?.FilterFocusTarget : FocusManager.GetFocusedElement() as Control;
         _libraryAlphabetReturnIndex = null; // A new query no longer contains the card the rail was entered from.
         _librarySource.SetFilter(filter);
         if (!_librarySource.IsPersonal) LibraryBrowseSettings.Save(_entry.Client, _librarySource.Query);
@@ -126,6 +126,29 @@ public sealed partial class CatalogGridPage : IBackHandler
 
     private bool FocusReloadTarget(Control target) => _libraryToolbar?.FocusPill(target) ?? target.Focus(FocusState.Programmatic);
 
+    private async void OnErrorClearFiltersClick(object sender, RoutedEventArgs e)
+    {
+        if (_entry.Results.Error is null || _librarySource?.CanClearErrorFilters != true) return;
+        // screens/library/TvLibraryDetailScreen.kt LibraryTab applies the empty facet selection,
+        // including resetting Match Any and the per-visit prefix, then overwrites preserved filters.
+        // The error action disappears on reload, so claim Filter rather than retaining a hidden button.
+        await ChangeLibraryFilterAsync(_librarySource.Query.Filter.ApplyFacets(new()), restoreFilterFocus: true);
+    }
+
+    private void OnErrorActionsPreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Handled || ErrorClearFiltersButton.Visibility != Visibility.Visible || Direction(e.Key) is not { } direction) return;
+        e.Handled = true;
+        // components/StatusViews.kt lays Retry and its secondary action out vertically, not as a rail.
+        if (direction == GridDirection.Down && ReferenceEquals(FocusManager.GetFocusedElement(), RetryButton))
+            ErrorClearFiltersButton.Focus(FocusState.Keyboard);
+        else if (direction == GridDirection.Up)
+        {
+            if (ReferenceEquals(FocusManager.GetFocusedElement(), ErrorClearFiltersButton)) RetryButton.Focus(FocusState.Keyboard);
+            else ShellPage.Current?.FocusSelectedTab();
+        }
+    }
+
     partial void OnSourceLoaded()
     {
         if (_librarySource is null || _librarySource.IsPersonal) return;
@@ -137,6 +160,8 @@ public sealed partial class CatalogGridPage : IBackHandler
     partial void UpdateSourceState()
     {
         UpdatePersonalState();
+        ErrorClearFiltersButton.Visibility = _entry.Results.Error is not null && _librarySource?.CanClearErrorFilters == true
+            ? Visibility.Visible : Visibility.Collapsed;
         if (_librarySource is null) return;
         // TvPersonalScreens.kt keeps saved-list controls reachable even when a query fails, so the
         // viewer can undo a filter rather than being stranded with Retry for the same failed query.

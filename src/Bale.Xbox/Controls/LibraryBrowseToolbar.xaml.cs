@@ -47,6 +47,7 @@ public sealed partial class LibraryBrowseToolbar : UserControl
         ItemCount.Visibility = total > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    public Control FilterFocusTarget => FilterButton;
     public bool FocusControls() => _rail.Focus();
     public bool FocusSort() => FocusPill(SortButton);
     public void FocusFilter() => FocusPill(FilterButton);

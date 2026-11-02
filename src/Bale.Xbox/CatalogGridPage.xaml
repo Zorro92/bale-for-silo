@@ -55,12 +55,18 @@
         <VisualState x:Name="LibraryBrowse"><VisualState.Setters>
           <Setter Target="Cards.Padding" Value="{StaticResource SkylineLibraryBrowseGridPadding}" />
           <Setter Target="ToolbarSlot.Margin" Value="{StaticResource SkylineCatalogHeaderMargin}" />
+          <Setter Target="ErrorPanel.Style" Value="{StaticResource SkylineLibraryErrorStyle}" />
+          <Setter Target="ErrorMessage.Style" Value="{StaticResource SkylineCollectionsErrorTextStyle}" />
+          <Setter Target="RetryButton.Style" Value="{StaticResource SkylineCollectionRetryStyle}" />
         </VisualState.Setters></VisualState>
         <!-- screens/library/TvLibraryCollectionDetailScreen.kt CollectionHeader scrolls with the cards. -->
         <VisualState x:Name="Collection"><VisualState.Setters>
           <Setter Target="PageTitle.Visibility" Value="Visible" />
           <Setter Target="PageTitle.Margin" Value="{StaticResource SkylineCollectionTitleMargin}" />
           <Setter Target="ToolbarSlot.Margin" Value="{StaticResource SkylineCatalogHeaderMargin}" />
+          <Setter Target="ErrorPanel.Style" Value="{StaticResource SkylineCollectionsErrorStyle}" />
+          <Setter Target="ErrorMessage.Style" Value="{StaticResource SkylineCollectionsErrorTextStyle}" />
+          <Setter Target="RetryButton.Style" Value="{StaticResource SkylineCollectionRetryStyle}" />
         </VisualState.Setters></VisualState>
         <VisualState x:Name="Personal">
           <VisualState.Setters>
@@ -189,9 +195,11 @@
         <TextBlock x:Name="PersonalEmptyMessage" Style="{StaticResource SkylinePersonalEmptyTextStyle}" />
       </StackPanel>
       <ProgressRing x:Name="LoadingRing" Style="{StaticResource SkylinePersonLoadingStyle}" IsActive="False" Visibility="Collapsed" />
-      <StackPanel x:Name="ErrorPanel" Style="{StaticResource SkylineCatalogRetryPanelStyle}" Visibility="Collapsed">
+      <StackPanel x:Name="ErrorPanel" Style="{StaticResource SkylineCatalogRetryPanelStyle}" Visibility="Collapsed" PreviewKeyDown="OnErrorActionsPreviewKeyDown">
         <TextBlock x:Name="ErrorMessage" Text="Couldn't load this row." Style="{StaticResource SkylineCatalogMessageStyle}" />
         <Button x:Name="RetryButton" Content="Retry" Style="{StaticResource SkylineButtonStyle}" HorizontalAlignment="Center" Click="OnRetryClick" />
+        <!-- screens/library/TvLibraryDetailScreen.kt LibraryTab: escape a rejected preserved facet query. -->
+        <Button x:Name="ErrorClearFiltersButton" Content="Clear filters" Style="{StaticResource SkylineLibraryErrorClearStyle}" Visibility="Collapsed" Click="OnErrorClearFiltersClick" />
       </StackPanel>
       <StackPanel x:Name="UnavailablePanel" Padding="{StaticResource SkylineCatalogPagePadding}" Visibility="Collapsed">
         <TextBlock x:Name="UnavailableTitle" Style="{StaticResource SkylineCatalogTitleStyle}" />

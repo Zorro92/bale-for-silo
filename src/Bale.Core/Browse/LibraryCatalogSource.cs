@@ -22,6 +22,9 @@ public sealed class LibraryCatalogSource(string title, LibraryBrowseQuery query,
     public long? Total => Query == _resultQuery ? _total : null;
     public bool IsPersonal => Query.PersonalList is not null;
     public bool IsCollection => Query.CollectionId is not null;
+    // screens/library/TvLibraryDetailScreen.kt LibraryTab's canClearFilters is facet canReset,
+    // not merely an active filter count (Match Any without a selected facet is resettable too).
+    public bool CanClearErrorFilters => !IsPersonal && !IsCollection && Query.Filter.Facets.CanReset;
     public string? ControlsMediaType { get; private init; } = query.MediaType;
     // screens/library/TvLibraryCollectionDetailScreen.kt has Sort/Filter, but no A–Z rail.
     public bool ShowsAlphabet => !IsPersonal && !IsCollection && Query.Filter.ShowsAlphabet;
