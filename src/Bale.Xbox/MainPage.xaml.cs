@@ -6,6 +6,7 @@ using Bale.Xbox.Services;
 using Windows.Storage.Streams;
 using Windows.System;
 using Windows.UI.Core;
+using Windows.UI.ViewManagement;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Input;
@@ -25,6 +26,8 @@ public sealed partial class MainPage : Page, IBackHandler
     private bool _active;
     private bool _connecting;
     private bool _expiredNotice;
+    private InputPane? _inputPane;
+    private bool _keyboardVisible;
 
 #if DEBUG_SERVER
     private DebugServer.AuthPreview? _preview;
@@ -54,6 +57,8 @@ public sealed partial class MainPage : Page, IBackHandler
     public MainPage()
     {
         InitializeComponent();
+        // TvServerSetupScreen.kt rememberTvName(): the model/friendly name of this TV, not the server.
+        TvNameText.Text = DeviceIdentity.Current().DeviceName;
         Rail.Attach(ServerActions).Pin = false;
         var codeActions = Rail.Attach(CodeActions);
         codeActions.Pin = false;
@@ -65,6 +70,9 @@ public sealed partial class MainPage : Page, IBackHandler
     {
         base.OnNavigatedTo(e);
         _active = true;
+        _inputPane = InputPane.GetForCurrentView();
+        _inputPane.Showing += OnInputPaneShowing;
+        _inputPane.Hiding += OnInputPaneHiding;
 #if DEBUG_SERVER
         if (e.Parameter is DebugServer.AuthPreview preview)
         {
@@ -109,10 +117,23 @@ public sealed partial class MainPage : Page, IBackHandler
         base.OnNavigatedFrom(e);
         _active = false;
         _pairing?.Cancel();
+        HideKeyboard();
+        if (_inputPane is { } pane)
+        {
+            pane.Showing -= OnInputPaneShowing;
+            pane.Hiding -= OnInputPaneHiding;
+            _inputPane = null;
+        }
     }
 
     public bool OnBack()
     {
+        // TvServerSetupScreen.kt: Back first dismisses the stock IME, not the address screen.
+        if (_keyboardVisible)
+        {
+            HideKeyboard();
+            return true;
+        }
 #if DEBUG_SERVER
         if (_preview is not null)
         {
@@ -153,20 +174,59 @@ public sealed partial class MainPage : Page, IBackHandler
             : "Secure HTTPS is tried automatically.";
     }
 
-    private void OnServerBoxKeyDown(object sender, KeyRoutedEventArgs e)
+    private void OnInputPaneShowing(InputPane sender, InputPaneVisibilityEventArgs args)
     {
-        if (e.Key == VirtualKey.Enter)
+        if (!_active || ServerPanel.Visibility != Visibility.Visible) return;
+        _keyboardVisible = true;
+        // TvServerSetupScreen.kt imePadding + TvMarqueeScreen's copyScroll: shrink the deck,
+        // then reveal the editing field rather than letting the IME cover it or pan the whole page.
+        AuthLayout.Padding = new Thickness(0, 0, 0, args.OccludedRect.Height);
+        args.EnsuredFocusedElementInView = true;
+        AuthLayout.UpdateLayout();
+        ServerBox.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false });
+    }
+
+    private void OnInputPaneHiding(InputPane sender, InputPaneVisibilityEventArgs args)
+    {
+        _keyboardVisible = false;
+        AuthLayout.Padding = new Thickness(0);
+    }
+
+    private void HideKeyboard()
+    {
+        _inputPane?.TryHide();
+        _keyboardVisible = false;
+        AuthLayout.Padding = new Thickness(0);
+    }
+
+    private void OnServerBoxPreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (_keyboardVisible)
+        {
+            if (e.Key == VirtualKey.Enter)
+            {
+                // TvMarqueeField.kt ImeAction.Go submits. Other keys belong to the stock IME.
+                e.Handled = true;
+                OnConnectClick(sender, e);
+            }
+            return;
+        }
+        if (e.Key is VirtualKey.Enter or VirtualKey.GamepadA)
         {
             e.Handled = true;
-            OnConnectClick(sender, e);
+            // TvMarqueeField.kt tvShowImeOnSelect: a closed field opens IME, never Connect.
+            if (!_connecting) _inputPane?.TryShow();
         }
         else if (IsDown(e.Key))
         {
             e.Handled = true;
             ConnectButton.Focus(FocusState.Keyboard);
         }
-        else if (IsUp(e.Key))
+        else if (IsUp(e.Key) || e.Key is VirtualKey.Left or VirtualKey.Right
+            or VirtualKey.GamepadDPadLeft or VirtualKey.GamepadDPadRight
+            or VirtualKey.GamepadLeftThumbstickLeft or VirtualKey.GamepadLeftThumbstickRight)
         {
+            // TvMarqueeField.kt doesn't move an invisible caret with the keyboard closed.
             e.Handled = true;
         }
     }
@@ -176,7 +236,7 @@ public sealed partial class MainPage : Page, IBackHandler
         if (IsUp(e.Key))
         {
             e.Handled = true;
-            ServerBox.Focus(FocusState.Keyboard);
+            ServerBox.Focus(FocusState.Programmatic);
         }
         else if (IsDown(e.Key))
         {
@@ -199,6 +259,7 @@ public sealed partial class MainPage : Page, IBackHandler
             return;
         }
 
+        HideKeyboard();
         if (!ServerAddress.TryParse(ServerBox.Text, out var server))
         {
             // TvServerSetupScreen.kt AddressEntryScreen submits blank input to validation too.
@@ -403,6 +464,8 @@ public sealed partial class MainPage : Page, IBackHandler
 
     private void ShowServerEntry(string? server, string? error = null)
     {
+        HideKeyboard();
+        TvNameChip.Visibility = Visibility.Visible;
         ServerPanel.Visibility = Visibility.Visible;
         CodePanel.Visibility = Visibility.Collapsed;
         ServerBox.Text = server ?? string.Empty;
@@ -416,6 +479,8 @@ public sealed partial class MainPage : Page, IBackHandler
     private void ShowCodeScreen(Uri server)
     {
         var entering = CodePanel.Visibility != Visibility.Visible;
+        HideKeyboard();
+        TvNameChip.Visibility = Visibility.Collapsed;
         ServerPanel.Visibility = Visibility.Collapsed;
         CodePanel.Visibility = Visibility.Visible;
         ShowServerContext(new SignInServer(server, AppSettings.GetServerName(ServerAddress.ToBaseUrl(server)), AppSettings.GetServerBranding(server)));
