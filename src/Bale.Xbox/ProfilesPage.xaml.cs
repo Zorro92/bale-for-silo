@@ -203,7 +203,9 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         if (root.FindName("ProfileCaption") is TextBlock caption)
         {
             caption.Foreground = new SolidColorBrush(focused ? Colors.White : Color.FromArgb(191, 237, 237, 237));
-            caption.Margin = new Thickness(0, focused ? 22 : 13, 0, 0);
+            // Move the name 13 → 22 below the avatar without changing layout: a taller focused tile
+            // overflows its ItemsWrapGrid cell (sized from the first tile) and gets clipped.
+            caption.Translation = new Vector3(0, focused ? 9 : 0, 0);
         }
     }
 
