@@ -21,10 +21,6 @@ public sealed partial class PlaybackSelectorMenu : UserControl
     public static readonly DependencyProperty WindowInsetProperty = DependencyProperty.Register(
         nameof(WindowInset), typeof(double), typeof(PlaybackSelectorMenu), new PropertyMetadata(0d));
 
-    public static readonly DependencyProperty EdgeFadeHeightProperty = DependencyProperty.Register(
-        nameof(EdgeFadeHeight), typeof(double), typeof(PlaybackSelectorMenu), new PropertyMetadata(0d));
-
-    private SelectorEdgeFade? _edgeFade;
     private Button? _origin;
     private int _focusedIndex;
     private List<PlaybackOptionView> _options = [];
@@ -33,22 +29,11 @@ public sealed partial class PlaybackSelectorMenu : UserControl
     {
         InitializeComponent();
         SizeChanged += (_, _) => PositionMenu();
-        Loaded += (_, _) =>
-        {
-            _edgeFade ??= new SelectorEdgeFade(Scroller, ListDisplay);
-            UpdateOverflow();
-        };
-        Unloaded += (_, _) =>
-        {
-            _edgeFade?.Dispose();
-            _edgeFade = null;
-            ListSource.Opacity = 1;
-        };
+        Loaded += (_, _) => UpdateOverflow();
     }
 
     public double AnchorGap { get => (double)GetValue(AnchorGapProperty); set => SetValue(AnchorGapProperty, value); }
     public double WindowInset { get => (double)GetValue(WindowInsetProperty); set => SetValue(WindowInsetProperty, value); }
-    public double EdgeFadeHeight { get => (double)GetValue(EdgeFadeHeightProperty); set => SetValue(EdgeFadeHeightProperty, value); }
     public bool IsOpen => ModalLayer.Visibility == Visibility.Visible;
     public event Action<PlaybackSelectorOption>? Chosen;
     public event Action? Dismissed;
@@ -182,10 +167,8 @@ public sealed partial class PlaybackSelectorMenu : UserControl
         var bottom = Scroller.VerticalOffset < Scroller.ScrollableHeight;
         TopOverflow.Visibility = top ? Visibility.Visible : Visibility.Collapsed;
         BottomOverflow.Visibility = bottom ? Visibility.Visible : Visibility.Collapsed;
-        _edgeFade?.Update(Scroller.ActualWidth, Scroller.ActualHeight, EdgeFadeHeight, top, bottom);
-        var masked = _edgeFade is not null && (top || bottom) && Scroller.ActualWidth > 0 && Scroller.ActualHeight > 0;
-        ListSource.Opacity = masked ? 0 : 1;
-        ListDisplay.Visibility = masked ? Visibility.Visible : Visibility.Collapsed;
+        TopFade.Visibility = TopOverflow.Visibility;
+        BottomFade.Visibility = BottomOverflow.Visibility;
     }
 
     private static T? FindChild<T>(DependencyObject parent) where T : DependencyObject

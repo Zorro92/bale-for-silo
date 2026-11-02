@@ -13,9 +13,7 @@
       <StackPanel>
         <TextBlock x:Name="Header" Style="{StaticResource SkylinePlaybackSelectorHeaderStyle}" />
         <Grid>
-          <!-- Capture Scroller, not its parent: hiding the original must not hide the captured pixels.
-               The transparent original still owns keyboard focus and pointer input. -->
-          <Grid x:Name="ListSource">
+          <Grid>
             <ScrollViewer x:Name="Scroller" MaxHeight="{StaticResource SkylinePlaybackSelectorListHeight}"
                           VerticalScrollBarVisibility="Hidden" HorizontalScrollMode="Disabled" IsTabStop="False"
                           ViewChanged="OnScrollChanged" SizeChanged="OnListSizeChanged">
@@ -45,7 +43,25 @@
               </ItemsControl>
             </ScrollViewer>
           </Grid>
-          <Grid x:Name="ListDisplay" IsHitTestVisible="False" />
+          <!-- TvAnchoredSelectorMenu.kt selectorMenuEdgeFade: rows fade toward an edge that can still scroll.
+               Painted in the panel fill (SkylinePanelChromeFill runs #1D1F24 to #17181B, so a fixed color per
+               edge is within a level or two). Composition capture of the list rendered nothing on the console. -->
+          <Rectangle x:Name="TopFade" Height="{StaticResource SkylinePlaybackSelectorEdgeFadeHeight}" VerticalAlignment="Top"
+                     IsHitTestVisible="False" Visibility="Collapsed">
+            <Rectangle.Fill>
+              <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Color="#FF1C1E23" Offset="0" /><GradientStop Color="#001C1E23" Offset="1" />
+              </LinearGradientBrush>
+            </Rectangle.Fill>
+          </Rectangle>
+          <Rectangle x:Name="BottomFade" Height="{StaticResource SkylinePlaybackSelectorEdgeFadeHeight}" VerticalAlignment="Bottom"
+                     IsHitTestVisible="False" Visibility="Collapsed">
+            <Rectangle.Fill>
+              <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Color="#0018191D" Offset="0" /><GradientStop Color="#FF18191D" Offset="1" />
+              </LinearGradientBrush>
+            </Rectangle.Fill>
+          </Rectangle>
           <!-- TvAnchoredSelectorMenu.kt keeps both chevrons outside the faded list. -->
           <Viewbox x:Name="TopOverflow" Style="{StaticResource SkylinePlaybackSelectorOverflowStyle}" VerticalAlignment="Top" Visibility="Collapsed">
             <Path Width="{StaticResource SkylineMaterialIconCanvas}" Height="{StaticResource SkylineMaterialIconCanvas}"
