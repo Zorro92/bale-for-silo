@@ -20,14 +20,19 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 - [x] Episode cards: watched still dimmed black@0.35; focus = 3px white@0.9 inner border, scale 1.04 (already in place per TvDetailEpisodeRail.kt; focus verified on The Lion Guard, watched dim not seen on screen)
 - [x] Starring sorted by billing order; runtime ≥ 1h as "1h 5m" (already in place per seriesStarringCredit / TvDetailMetadata.kt; seen on The Lion Guard and Coyote)
 - [x] More menu: titled "More Actions" with icons; Favorites, type-worded Watched, Mark Season Watched, Go to Season / Go to Series
-- [ ] Version / Audio / Subtitles readout line and round selector menus in the action row (Up from season tabs lands on Version)
+- [x] Version / Audio / Subtitles readout line and round selector menus in the action row (Up from season tabs lands on Version) (TvPlaybackSelectorRow.kt / TvAnchoredSelectorMenu.kt; menus compared side by side with the APK on The Lion King, Up from Season 2 verified on The Lion Guard)
+  - [ ] Selector list top/bottom alpha edge fades (26dp; Bale shows only the chevrons)
+  - [ ] Edition selector and edition-scoped Version options
+  - [ ] AUDIO readout resolves the device track ("Auto · Spanish · AC3 · 5.1" on the APK); Bale has no audio-capability resolver yet
 
 ### Profiles and sign-in (`screens/profiles/*`, `screens/auth/*`, `navigation/TvAppNavigation.kt`)
 - [x] Profile tiles: round 110 avatar in 128 column, 14 gap, 6 columns, focus scale 1.12 + 3px white ring 6 outside, name 12.9 SemiBold secondary → white
 - [x] Header "Who's watching?" 27.5 ExtraBold + "Signed in as <user>"
 - [x] Lock badge bottom-right 30 #1C1C1E circle; "KIDS" pill (per MarqueeProfileAvatar.kt, scaled by 110/92; verified on the console with a test PIN and a kids profile)
 - [x] PIN: full-screen avatar + 4 dots + round keypad, auto-submit at 4, "Checking…" (already in place per TvPinEntryDialog.kt; verified on a test PIN: wrong PIN → red dots + "Wrong PIN. Try again.", right PIN → "Checking…" → Home)
-- [ ] Picker error screen with Retry; Sign out / Change server buttons
+- [x] Picker error screen with Retry; Sign out / Change server buttons (StatusViews.kt TvErrorScreen, TvMarqueeButton Glass, TvSignOutDialog.kt; error via `bale-debug.sh fault profiles` → Retry reloads; sign-out dialog opened and cancelled on the console)
+  - [ ] Picker backdrop: the APK draws the colored Aurora light, Bale a dark gradient
+  - [ ] Avatar fill for profiles without an image (APK: Kids is salmon, Bale slate)
 - [x] Back from Switch Profile exits (picker is the root)
 - [ ] Login: two columns, "Sign in to <server>", QR + code card + status ("Continue on your phone"), actions row; declined stays with retry; Back on the code screen exits
 - [ ] Server entry copy: "Enter your server address", Connect / Back
