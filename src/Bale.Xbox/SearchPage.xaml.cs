@@ -427,6 +427,9 @@ public sealed partial class SearchPage : Page, IRestoresFocus
         _ = SearchPeopleAsync(client.Browse, request, showAudiobooks, search.Token);
         try
         {
+#if DEBUG_SERVER
+            DebugServer.ThrowIfSearchFaulted();
+#endif
             var page = await client.Browse.SearchPageAsync(request.Query, SearchArtwork, request.Type,
                 showAudiobooks: showAudiobooks, cancellationToken: search.Token);
             if (!search.IsCancellationRequested && _state.ApplyPage(request, page))
@@ -551,6 +554,9 @@ public sealed partial class SearchPage : Page, IRestoresFocus
         UpdatePresentation();
         try
         {
+#if DEBUG_SERVER
+            DebugServer.ThrowIfSearchFaulted();
+#endif
             var page = await client.Browse.SearchPageAsync(request.Query, SearchArtwork, request.Type,
                 request.Continuation, ShowAudiobooks, cancellationToken: search.Token);
             if (!search.IsCancellationRequested && _state.ApplyPage(request, page))

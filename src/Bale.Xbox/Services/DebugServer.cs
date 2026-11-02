@@ -28,6 +28,7 @@ namespace Bale.Xbox.Services;
 ///   GET  /targets         the visible, enabled tab-stop controls goto can reach
 ///   GET  /tree            the visible element tree with bounds and text
 ///   POST /fault/profiles  fail the next picker profile-list load once (Retry then uses the server)
+///   POST /fault/search    fail the next title-search request once (Try again then uses the server)
 ///   POST /show/login      preview Login for the saved server, without changing the live session
 ///   POST /show/login/expired  preview Login with the session-expired notice
 ///   POST /show/server     preview manual server entry; Back returns to the signed-in page
@@ -43,6 +44,7 @@ internal sealed class DebugServer
     internal enum AuthPreview { Login, Expired, Server }
 
     private static int _failProfilesOnce;
+    private static int _failSearchOnce;
 
     // Exercise TvProfileSelectionScreen.kt's error branch without making a real server unreachable.
     // Both this hook and its call site are absent when BaleDebugServer=false (DEBUG_SERVER unset).
@@ -51,6 +53,16 @@ internal sealed class DebugServer
         if (Interlocked.Exchange(ref _failProfilesOnce, 0) != 0)
         {
             throw new HttpRequestException("Injected profile-list failure (fault profiles).");
+        }
+    }
+
+    // TvSearchViewModel.kt keeps people independent; fault only the next title page, not people.
+    // Like the profile hook, this and its call sites disappear when BaleDebugServer=false.
+    internal static void ThrowIfSearchFaulted()
+    {
+        if (Interlocked.Exchange(ref _failSearchOnce, 0) != 0)
+        {
+            throw new HttpRequestException("Injected title-search failure (fault search).");
         }
     }
 
@@ -148,6 +160,10 @@ internal sealed class DebugServer
                 Interlocked.Exchange(ref _failProfilesOnce, 1);
                 return ("200 OK", "next picker profile-list load will fail once; Retry will load normally\n");
 
+            case ("POST", "/fault/search"):
+                Interlocked.Exchange(ref _failSearchOnce, 1);
+                return ("200 OK", "next title-search request will fail once; Try again will search normally\n");
+
             case ("POST", "/show/login"):
             case ("POST", "/show/login/expired"):
             case ("POST", "/show/server"):
@@ -162,7 +178,7 @@ internal sealed class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, POST /goto?target=, GET /targets, GET /tree, POST /fault/profiles, POST /show/{login|login/expired|server|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search}, POST /show/{login|login/expired|server|home}\n");
         }
     }
 
