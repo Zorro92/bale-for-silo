@@ -6,6 +6,17 @@ Bale bundles [Inter](https://github.com/rsms/inter) 4.1 (`src/Bale.Xbox/Assets/F
 the typeface Silo's Android TV app uses. Inter is distributed under the SIL Open Font License 1.1;
 the full text is in `src/Bale.Xbox/Assets/Fonts/Inter-OFL.txt`.
 
+## Inter Tight
+
+Bale bundles [Inter Tight](https://github.com/rsms/inter) Black
+(`src/Bale.Xbox/Assets/Fonts/InterTight-Black.ttf`), copied unchanged from Silo's Android TV app
+(`androidTvApp/src/androidMain/res/font/inter_tight_black.ttf`) for the detail hero title.
+
+Copyright 2022 The Inter Project Authors (https://github.com/rsms/inter-tight).
+
+The Inter Tight Project Authors / Rasmus Andersson distribute it under the SIL Open Font License 1.1;
+it uses the same OFL 1.1 license text included in `src/Bale.Xbox/Assets/Fonts/Inter-OFL.txt`.
+
 ## QRCoder
 
 Bale uses [QRCoder](https://github.com/codebude/QRCoder) 1.6.0 to generate the phone sign-in QR

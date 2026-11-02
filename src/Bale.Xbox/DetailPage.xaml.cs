@@ -260,7 +260,21 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
     {
         var (title, subtitle) = DetailTitle.Split(detail.Title);
         TitleText.Text = title.ToUpperInvariant();
-        SubtitleText.Text = (detail.Subtitle ?? subtitle)?.ToUpperInvariant() ?? string.Empty;
+        // TvDetailHero.kt's EpisodeHierarchyTitle keeps episode case without tracking;
+        // only HeroTextTitle uppercases its split tail. Use literal colors for Native AOT.
+        if (detail.Subtitle is { } episodeTitle)
+        {
+            SubtitleText.Text = episodeTitle;
+            SubtitleText.Foreground = new SolidColorBrush(Color.FromArgb(0xF0, 0xFF, 0xFF, 0xFF));
+            SubtitleText.CharacterSpacing = 0;
+        }
+        else
+        {
+            SubtitleText.Text = subtitle?.ToUpperInvariant() ?? string.Empty;
+            SubtitleText.ClearValue(TextBlock.ForegroundProperty);
+            SubtitleText.ClearValue(TextBlock.CharacterSpacingProperty);
+        }
+
         SubtitleSlot.Visibility = SubtitleText.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         TitleLogo.Opacity = 0;
         // As on Home: a title with logo art waits briefly for it before showing the text title.
@@ -455,14 +469,15 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
 
     private static void AttachTitleShadow(TextBlock text, FrameworkElement host)
     {
-        // TvDetailHero.heroDisplayHero: black @ 0.55, blur 16, y 4. A text alpha mask keeps
-        // the shadow on the glyphs, not a rectangular ThemeShadow behind the whole title slot.
+        // TvDetailHero.kt's heroDisplayHero shadow is in px, not dp: Android TV density 2
+        // halves blur 16 / y 4 to blur 8 / y 2 on Bale's dp-equivalent canvas.
+        // A text alpha mask keeps black @ 0.55 on the glyphs, not a rectangular title slot.
         var compositor = ElementCompositionPreview.GetElementVisual(host).Compositor;
         var shadow = compositor.CreateDropShadow();
         shadow.Color = Colors.Black;
         shadow.Opacity = 0.55f;
-        shadow.BlurRadius = 16;
-        shadow.Offset = new Vector3(0, 4, 0);
+        shadow.BlurRadius = 8;
+        shadow.Offset = new Vector3(0, 2, 0);
         shadow.Mask = text.GetAlphaMask();
         var visual = compositor.CreateSpriteVisual();
         visual.Shadow = shadow;

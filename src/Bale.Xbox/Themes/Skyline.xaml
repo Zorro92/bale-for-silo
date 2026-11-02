@@ -14,6 +14,7 @@
 
   <!-- Typeface: Inter, as bundled by the Android apps (OFL, see THIRD_PARTY_NOTICES.md). -->
   <FontFamily x:Key="SkylineFont">ms-appx:///Assets/Fonts/InterVariable.ttf#Inter Variable</FontFamily>
+  <FontFamily x:Key="SkylineHeroTitleFont">ms-appx:///Assets/Fonts/InterTight-Black.ttf#Inter Tight</FontFamily>
   <FontFamily x:Key="SkylineMono">Consolas</FontFamily>
 
   <!-- Colors (Color.kt). Monochrome white-at-opacity; the page tint comes from the focused art. -->
@@ -614,9 +615,9 @@
   </Style>
 
   <!-- Detail-only type: TvDetailHero.kt / TvDetailSectionHeader.kt / TvCastCrewSection.kt.
-       InterVariable.ttf includes Black; Inter Tight is not bundled. Keep Home's type unchanged. -->
+       Bundle TvDetailHero.kt's Inter Tight Black for the hero; keep Home's Inter type unchanged. -->
   <Style x:Key="SkylineDetailTitleStyle" TargetType="TextBlock">
-    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontFamily" Value="{StaticResource SkylineHeroTitleFont}" />
     <Setter Property="FontSize" Value="36" />
     <Setter Property="FontWeight" Value="Black" />
     <Setter Property="LineHeight" Value="39.6" />
@@ -625,9 +626,10 @@
     <Setter Property="TextWrapping" Value="Wrap" />
     <Setter Property="MaxLines" Value="2" />
   </Style>
+  <!-- TvDetailHero.kt's heroCondensedFamily maps ExtraBold to the same Black font file. -->
   <Style x:Key="SkylineDetailSubtitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineDetailTitleStyle}">
     <Setter Property="FontSize" Value="17.2" />
-    <Setter Property="FontWeight" Value="ExtraBold" />
+    <Setter Property="FontWeight" Value="Black" />
     <Setter Property="LineHeight" Value="18.9" />
     <Setter Property="CharacterSpacing" Value="38" />
     <Setter Property="Foreground" Value="#F2FFFFFF" />
