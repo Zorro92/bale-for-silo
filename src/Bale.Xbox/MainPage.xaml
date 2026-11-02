@@ -53,10 +53,16 @@
         </Border>
         <Border Style="{StaticResource SkylineLoginServerCardStyle}">
           <StackPanel Orientation="Horizontal">
-            <Border Style="{StaticResource SkylineLoginServerMarkStyle}">
-              <!-- TvMarqueeServerCard: a 40dp mark; use a server symbol without a branded asset. -->
-              <Viewbox><Path Data="M20,6H4V4H20M20,11H4V9H20M4,16H20V14H4M20,1H4C2.9,1 2,1.9 2,3V7C2,8.1 2.9,9 4,9C2.9,9 2,9.9 2,11V15C2,16.1 2.9,17 4,17C2.9,17 2,17.9 2,19V21C2,22.1 2.9,23 4,23H20C21.1,23 22,22.1 22,21V19C22,17.9 21.1,17 20,17C21.1,17 22,16.1 22,15V11C22,9.9 21.1,9 20,9C21.1,9 22,8.1 22,7V3C22,1.9 21.1,1 20,1Z" Fill="{StaticResource SkylinePrimary}" /></Viewbox>
-            </Border>
+            <!-- MarqueeServerMark.kt: branded mark over a serif initial, or a plain dark tile. -->
+            <Grid>
+              <Border Style="{StaticResource SkylineLoginEmptyServerMarkStyle}" />
+              <Border x:Name="ServerInitialMark" Style="{StaticResource SkylineLoginServerMarkStyle}">
+                <TextBlock x:Name="ServerInitialText" Style="{StaticResource SkylineLoginServerInitialStyle}" />
+              </Border>
+              <Border x:Name="ServerImageMark" Visibility="Collapsed" Style="{StaticResource SkylineLoginServerMarkStyle}">
+                <Border.Background><ImageBrush x:Name="ServerMarkBrush" Stretch="UniformToFill" /></Border.Background>
+              </Border>
+            </Grid>
             <StackPanel Style="{StaticResource SkylineLoginServerLabelsStyle}">
               <TextBlock x:Name="ServerNameText" Style="{StaticResource SkylineLoginServerNameStyle}" />
               <TextBlock x:Name="ServerAddressText" Style="{StaticResource SkylineLoginServerAddressStyle}" />

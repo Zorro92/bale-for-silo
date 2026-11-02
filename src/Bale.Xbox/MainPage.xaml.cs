@@ -249,7 +249,6 @@ public sealed partial class MainPage : Page, IBackHandler
 #else
         var client = Session.Client is { } existing && existing.Server == server ? existing : Session.Connect(server);
 #endif
-        _ = RefreshServerNameAsync(server, pairing);
         DeviceLoginTicket? ticket = null;
         var showingCode = !fromServerEntry;
         var approved = false;
@@ -260,6 +259,7 @@ public sealed partial class MainPage : Page, IBackHandler
         if (showingCode)
         {
             ShowCodeScreen(server);
+            _ = RefreshServerBrandingAsync(server, pairing);
         }
 
         try
@@ -285,6 +285,7 @@ public sealed partial class MainPage : Page, IBackHandler
             {
                 showingCode = true;
                 ShowCodeScreen(server);
+                _ = RefreshServerBrandingAsync(server, pairing);
             }
 
             var identity = DeviceIdentity.Current();
@@ -417,7 +418,7 @@ public sealed partial class MainPage : Page, IBackHandler
         var entering = CodePanel.Visibility != Visibility.Visible;
         ServerPanel.Visibility = Visibility.Collapsed;
         CodePanel.Visibility = Visibility.Visible;
-        ShowServerContext(new SignInServer(server, AppSettings.GetServerName(ServerAddress.ToBaseUrl(server))));
+        ShowServerContext(new SignInServer(server, AppSettings.GetServerName(ServerAddress.ToBaseUrl(server)), AppSettings.GetServerBranding(server)));
         // TvLoginScreen.kt: use the server's activate URL even before the first code arrives.
         SetSignInInstructions(DeviceCodeFormat.ActivateText(ServerAddress.ToBaseUrl(server) + "/activate", string.Empty));
         SessionNotice.Visibility = _expiredNotice ? Visibility.Visible : Visibility.Collapsed;
@@ -450,6 +451,29 @@ public sealed partial class MainPage : Page, IBackHandler
         // TvMarquee.kt TvMarqueeServerCard + SignInServer.kt: branded/saved name, host and TLS badge.
         ServerNameText.Text = server.Name;
         ServerAddressText.Text = server.Address;
+        ServerInitialText.Text = server.Initial;
+        ServerInitialMark.Visibility = server.Initial.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        // MarqueeServerMark.kt keeps its initial underneath the optional image, including on failure.
+        // An ImageBrush clips to the Border's radius; a child Image would keep square corners in UWP.
+        if (ServerMarkBrush.ImageSource is not BitmapImage current || current.UriSource != server.MarkUrl)
+        {
+            ServerImageMark.Visibility = Visibility.Collapsed;
+            ServerMarkBrush.ImageSource = null;
+            if (server.MarkUrl is { } mark)
+            {
+                var image = new BitmapImage();
+                image.ImageOpened += (_, _) =>
+                {
+                    if (ReferenceEquals(ServerMarkBrush.ImageSource, image)) ServerImageMark.Visibility = Visibility.Visible;
+                };
+                image.ImageFailed += (_, _) =>
+                {
+                    if (ReferenceEquals(ServerMarkBrush.ImageSource, image)) ServerImageMark.Visibility = Visibility.Collapsed;
+                };
+                ServerMarkBrush.ImageSource = image;
+                image.UriSource = mark;
+            }
+        }
         SecureBadge.Visibility = server.IsSecure ? Visibility.Visible : Visibility.Collapsed;
         HttpBadge.Visibility = server.IsSecure ? Visibility.Collapsed : Visibility.Visible;
         SignInTitle.Text = $"Sign in to {server.Name}";
@@ -457,19 +481,19 @@ public sealed partial class MainPage : Page, IBackHandler
         SessionNoticeText.Text = $"You were signed out of {server.Name}. Sign in again.";
     }
 
-    private async Task RefreshServerNameAsync(Uri server, CancellationTokenSource pairing)
+    private async Task RefreshServerBrandingAsync(Uri server, CancellationTokenSource pairing)
     {
         try
         {
-            var name = await SignInServer.FetchNameAsync(server, pairing.Token);
-            if (name is null || !IsCurrent(pairing)) return;
+            var branding = await ServerBranding.FetchAsync(server, pairing.Token);
+            if (branding is null || !IsCurrent(pairing)) return;
 #if DEBUG_SERVER
             if (_preview is null)
 #endif
-            AppSettings.SetServerName(ServerAddress.ToBaseUrl(server), name);
+            AppSettings.SetServerBranding(ServerAddress.ToBaseUrl(server), branding);
             if (_loginServer == server && CodePanel.Visibility == Visibility.Visible)
             {
-                ShowServerContext(new SignInServer(server, name));
+                ShowServerContext(new SignInServer(server, AppSettings.GetServerName(ServerAddress.ToBaseUrl(server)), branding));
             }
         }
         catch (OperationCanceledException) when (pairing.IsCancellationRequested)
@@ -478,7 +502,7 @@ public sealed partial class MainPage : Page, IBackHandler
         catch (Exception ex)
         {
             // SignInServer.kt treats optional branding as a fallback, never a sign-in failure.
-            Log.Error("Sign-in server name", ex);
+            Log.Error("Sign-in server branding", ex);
         }
     }
 

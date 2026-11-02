@@ -1,3 +1,5 @@
+using Bale.Core.Auth;
+using Bale.Core.Connection;
 using Windows.Security.Credentials;
 using Windows.Storage;
 
@@ -95,7 +97,17 @@ internal static class AppSettings
     // SignInServer.kt / ServerBranding.kt cache the public name per server, including after sign-out.
     public static string? GetServerName(string server) => Local.Values[$"ServerName.{server}"] as string;
 
-    public static void SetServerName(string server, string name) => Local.Values[$"ServerName.{server}"] = name;
+    public static ServerBranding GetServerBranding(Uri server)
+    {
+        var url = ServerAddress.ToBaseUrl(server);
+        return new ServerBranding(GetServerName(url), ServerBranding.ResolveAsset(server, Local.Values[$"ServerMark.{url}"] as string));
+    }
+
+    public static void SetServerBranding(string server, ServerBranding branding)
+    {
+        if (branding.ServerName is { } name) Local.Values[$"ServerName.{server}"] = name;
+        Local.Values[$"ServerMark.{server}"] = branding.MarkUrl?.AbsoluteUri;
+    }
 
     public static string? LoadRefreshToken(string server) => LoadCredential(VaultResource, server);
 

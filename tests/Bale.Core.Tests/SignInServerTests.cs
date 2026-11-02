@@ -18,6 +18,20 @@ public class SignInServerTests
         Assert.Equal(secure, server.IsSecure);
     }
 
+    [Theory]
+    [InlineData("  Family Media  ", "Family Media", "F")]
+    [InlineData("", "Saved name", "S")]
+    [InlineData(null, "Saved name", "S")]
+    public void PrefersTheBrandedNameAndUsesItsUppercasedInitial(string? brandedName, string expectedName, string initial)
+    {
+        var mark = new Uri("https://media.example.com/assets/mark.png");
+        var server = new SignInServer(new Uri("https://media.example.com/"), "Saved name", new ServerBranding(brandedName, mark));
+
+        Assert.Equal(expectedName, server.Name);
+        Assert.Equal(initial, server.Initial);
+        Assert.Equal(mark, server.MarkUrl);
+    }
+
     [Fact]
     public async Task ReadsThePublicBrandingWithoutCredentialsAndPreservesTheServerPath()
     {

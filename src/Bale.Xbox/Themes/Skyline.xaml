@@ -1748,19 +1748,41 @@
     <Setter Property="CornerRadius" Value="15" />
     <Setter Property="Padding" Value="12" />
   </Style>
+  <!-- MarqueeServerMark.kt: size * 0.25 radius, white @18% rim, and the three-stop warm gradient. -->
   <Style x:Key="SkylineLoginServerMarkStyle" TargetType="Border">
     <Setter Property="Width" Value="40" />
     <Setter Property="Height" Value="40" />
     <Setter Property="CornerRadius" Value="10" />
-    <Setter Property="Padding" Value="9" />
+    <Setter Property="BorderBrush" Value="#2EFFFFFF" />
+    <Setter Property="BorderThickness" Value="1" />
     <Setter Property="Background">
       <Setter.Value>
         <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-          <GradientStop Color="#FFF4AE60" Offset="0" />
-          <GradientStop Color="#FF753718" Offset="1" />
+          <GradientStop Color="#FFEAA65C" Offset="0" />
+          <GradientStop Color="#FFA8521D" Offset="0.5" />
+          <GradientStop Color="#FF5E290D" Offset="1" />
         </LinearGradientBrush>
       </Setter.Value>
     </Setter>
+  </Style>
+  <Style x:Key="SkylineLoginEmptyServerMarkStyle" TargetType="Border" BasedOn="{StaticResource SkylineLoginServerMarkStyle}">
+    <Setter Property="Background">
+      <Setter.Value>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+          <GradientStop Color="#FF2B2D33" Offset="0" />
+          <GradientStop Color="#FF15171C" Offset="1" />
+        </LinearGradientBrush>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="SkylineLoginServerInitialStyle" TargetType="TextBlock">
+    <!-- MarqueeServerMark.kt: Bold Serif, 40 * 0.54 sp * TvUiFontScale (0.86). -->
+    <Setter Property="FontFamily" Value="Georgia" />
+    <Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="FontSize" Value="18.576" />
+    <Setter Property="Foreground" Value="#FFFFF6EA" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
   <Style x:Key="SkylineLoginServerLabelsStyle" TargetType="StackPanel">
     <Setter Property="Margin" Value="11,0,0,0" />
