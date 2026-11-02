@@ -28,6 +28,10 @@ namespace Bale.Xbox.Services;
 ///   GET  /targets         the visible, enabled tab-stop controls goto can reach
 ///   GET  /tree            the visible element tree with bounds and text
 ///   POST /fault/profiles  fail the next picker profile-list load once (Retry then uses the server)
+///   POST /show/login      preview Login for the saved server, without changing the live session
+///   POST /show/login/expired  preview Login with the session-expired notice
+///   POST /show/server     preview manual server entry; Back returns to the signed-in page
+///   POST /show/home       close an auth preview and return to the signed-in app
 ///
 /// Only started on sideloaded builds (see App). Anyone on the LAN can reach it while it runs, so it
 /// must never ship in a Store build.
@@ -35,6 +39,8 @@ namespace Bale.Xbox.Services;
 internal sealed class DebugServer
 {
     public const int Port = 8790;
+
+    internal enum AuthPreview { Login, Expired, Server }
 
     private static int _failProfilesOnce;
 
@@ -142,9 +148,63 @@ internal sealed class DebugServer
                 Interlocked.Exchange(ref _failProfilesOnce, 1);
                 return ("200 OK", "next picker profile-list load will fail once; Retry will load normally\n");
 
+            case ("POST", "/show/login"):
+            case ("POST", "/show/login/expired"):
+            case ("POST", "/show/server"):
+            case ("POST", "/show/home"):
+                var showStatus = "200 OK";
+                var showBody = await OnUiAsync(() =>
+                {
+                    var response = Show(path);
+                    showStatus = response.Status;
+                    return response.Body;
+                });
+                return (showStatus, showBody);
+
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, POST /goto?target=, GET /targets, GET /tree, POST /fault/profiles\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, POST /goto?target=, GET /targets, GET /tree, POST /fault/profiles, POST /show/{login|login/expired|server|home}\n");
         }
+    }
+
+    private static (string Status, string Body) Show(string path)
+    {
+        if (Window.Current.Content is not Frame frame || Session.Client?.IsSignedIn != true)
+        {
+            return ("409 Conflict", "auth previews require an existing signed-in session\n");
+        }
+
+        if (path == "/show/home")
+        {
+            CloseAuthPreview(frame);
+            return ("200 OK", "returned to the signed-in app; session unchanged\n");
+        }
+
+        var preview = path switch
+        {
+            "/show/server" => AuthPreview.Server,
+            "/show/login/expired" => AuthPreview.Expired,
+            _ => AuthPreview.Login,
+        };
+        if (frame.Content is MainPage { IsAuthPreview: true } page)
+        {
+            page.ShowPreview(preview);
+        }
+        else
+        {
+            // Keep the signed-in journal entry: Back returns without invoking sign-out or restore.
+            frame.Navigate(typeof(MainPage), preview);
+        }
+
+        return ("200 OK", "auth preview opened; approvals ignored, saved session unchanged; Back or show home returns\n");
+    }
+
+    internal static bool CloseAuthPreview(Frame frame)
+    {
+        if (frame.Content is not MainPage { IsAuthPreview: true }) return false;
+        if (frame.CanGoBack) frame.GoBack();
+        else Session.ContinueToHome(frame);
+        frame.ForwardStack.Clear();
+        return true;
     }
 
     /// <summary>A real gamepad press and release, so focus, XY navigation, ItemClick and Back behave exactly as with a controller.</summary>

@@ -1566,11 +1566,250 @@
     </Setter>
   </Style>
 
+  <!-- TvMarquee.kt: 38dp capsule, 14.5sp label, 1.06 focus lift and 12dp shadow. -->
   <Style x:Key="SkylineAuthButtonStyle" TargetType="Button" BasedOn="{StaticResource SkylineButtonStyle}">
     <Setter Property="Height" Value="38" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="MinWidth" Value="0" />
     <Setter Property="CornerRadius" Value="19" />
     <Setter Property="Padding" Value="20,0" />
-    <Setter Property="FontSize" Value="12.5" />
+    <Setter Property="FontSize" Value="12.47" />
+    <Setter Property="Background" Value="#14FFFFFF" />
+    <Setter Property="BorderBrush" Value="#24FFFFFF" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="services:SurfaceShadow.Elevation" Value="12" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid RenderTransformOrigin="0.5,0.5">
+            <Grid.RenderTransform><ScaleTransform x:Name="Lift" /></Grid.RenderTransform>
+            <Border x:Name="ShadowHost" Opacity="0" IsHitTestVisible="False">
+              <Rectangle x:Name="ShadowMask" RadiusX="19" RadiusY="19" Fill="Black" />
+            </Border>
+            <Border x:Name="Capsule" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}" />
+            <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}"
+                              FontFamily="{TemplateBinding FontFamily}" FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}"
+                              Foreground="{TemplateBinding Foreground}" HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" />
+                <VisualState x:Name="Disabled"><VisualState.Setters><Setter Target="Content.Opacity" Value="0.45" /></VisualState.Setters></VisualState>
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters>
+                    <Setter Target="Capsule.Background" Value="{StaticResource SkylinePrimary}" />
+                    <Setter Target="Capsule.BorderThickness" Value="0" />
+                    <Setter Target="Content.Foreground" Value="{StaticResource SkylineBackground}" />
+                    <Setter Target="Content.FontWeight" Value="SemiBold" />
+                    <Setter Target="ShadowHost.Opacity" Value="1" />
+                  </VisualState.Setters>
+                  <Storyboard>
+                    <DoubleAnimation Storyboard.TargetName="Lift" Storyboard.TargetProperty="ScaleX" To="1.06" Duration="0:0:0.12" />
+                    <DoubleAnimation Storyboard.TargetName="Lift" Storyboard.TargetProperty="ScaleY" To="1.06" Duration="0:0:0.12" />
+                  </Storyboard>
+                </VisualState>
+                <VisualState x:Name="PointerFocused" /><VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Login: TvMarquee.kt / TvLoginScreen.kt. Geometry is dp 1:1; text is sp x 0.86.
+       The current official Login screenshot has a single status line, not a second phone heading. -->
+  <GridLength x:Key="SkylineAuthHeaderRow">32</GridLength>
+  <GridLength x:Key="SkylineAuthCopyColumn">450</GridLength>
+  <GridLength x:Key="SkylineAuthCardColumn">320</GridLength>
+  <x:Double x:Key="SkylineAuthColumnGap">40</x:Double>
+  <x:Double x:Key="SkylineAuthActionGap">11</x:Double>
+  <SolidColorBrush x:Key="SkylineAuthSecondary" Color="#9EEDEDED" />
+  <SolidColorBrush x:Key="SkylineAuthTertiary" Color="#66EDEDED" />
+  <SolidColorBrush x:Key="SkylineAuthHairline" Color="#24FFFFFF" />
+  <SolidColorBrush x:Key="SkylineAuthError" Color="#FFFF6961" />
+  <SolidColorBrush x:Key="SkylineAuthWarning" Color="#FFF4C869" />
+  <SolidColorBrush x:Key="SkylineAuthLive" Color="#FF30D158" />
+  <Style x:Key="SkylineAuthLayoutStyle" TargetType="Grid">
+    <Setter Property="Margin" Value="45,30" />
+  </Style>
+  <Style x:Key="SkylineLoginTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="37.84" />
+    <Setter Property="LineHeight" Value="41.28" />
+    <Setter Property="FontWeight" Value="ExtraBold" />
+    <Setter Property="CharacterSpacing" Value="-23" />
+    <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="Margin" Value="0,22,0,0" />
+  </Style>
+  <Style x:Key="SkylineAuthBodyStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="12.04" />
+    <Setter Property="LineHeight" Value="16.25" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineAuthSecondary}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style x:Key="SkylineLoginInstructionsStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineAuthBodyStyle}">
+    <Setter Property="Margin" Value="0,13,0,0" />
+  </Style>
+  <Style x:Key="SkylineLoginHintRowStyle" TargetType="StackPanel">
+    <Setter Property="Orientation" Value="Horizontal" />
+    <Setter Property="Spacing" Value="6" />
+    <Setter Property="Margin" Value="0,12,0,0" />
+  </Style>
+  <Style x:Key="SkylineLoginHintStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineAuthBodyStyle}">
+    <Setter Property="Foreground" Value="{StaticResource SkylineAuthTertiary}" />
+    <!-- TvLoginScreen.kt: keep the 13dp phone + 6dp gap inside TvMarqueeMetrics.CopyWidth (450). -->
+    <Setter Property="MaxWidth" Value="431" />
+  </Style>
+  <Style x:Key="SkylineLoginPhoneIconStyle" TargetType="Viewbox">
+    <Setter Property="Width" Value="13" />
+    <Setter Property="Height" Value="13" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineLoginActionsStyle" TargetType="ItemsControl">
+    <Setter Property="Margin" Value="0,24,0,0" />
+  </Style>
+  <!-- TvMarquee.kt: Plain actions are bare secondary text until focused. -->
+  <Style x:Key="SkylineAuthPlainButtonStyle" TargetType="Button" BasedOn="{StaticResource SkylineAuthButtonStyle}">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineAuthSecondary}" />
+    <Setter Property="FontWeight" Value="Medium" />
+  </Style>
+  <Style x:Key="SkylineLoginServerCardStyle" TargetType="Border">
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="Background" Value="#12FFFFFF" />
+    <Setter Property="BorderBrush" Value="{StaticResource SkylineAuthHairline}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="15" />
+    <Setter Property="Padding" Value="12" />
+  </Style>
+  <Style x:Key="SkylineLoginServerMarkStyle" TargetType="Border">
+    <Setter Property="Width" Value="40" />
+    <Setter Property="Height" Value="40" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Padding" Value="9" />
+    <Setter Property="Background">
+      <Setter.Value>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+          <GradientStop Color="#FFF4AE60" Offset="0" />
+          <GradientStop Color="#FF753718" Offset="1" />
+        </LinearGradientBrush>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="SkylineLoginServerLabelsStyle" TargetType="StackPanel">
+    <Setter Property="Margin" Value="11,0,0,0" />
+    <Setter Property="Spacing" Value="1" />
+    <Setter Property="MaxWidth" Value="280" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineLoginServerNameStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="14.62" />
+    <Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="SkylineLoginServerAddressStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineAuthBodyStyle}">
+    <Setter Property="Foreground" Value="{StaticResource SkylineAuthTertiary}" />
+    <Setter Property="TextWrapping" Value="NoWrap" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="SkylineLoginSecureBadgeStyle" TargetType="Border">
+    <Setter Property="Height" Value="19" />
+    <Setter Property="CornerRadius" Value="9.5" />
+    <Setter Property="Padding" Value="8,0" />
+    <Setter Property="Margin" Value="11,0,0,0" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Background" Value="#73000000" />
+    <Setter Property="BorderBrush" Value="{StaticResource SkylineAuthHairline}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style x:Key="SkylineLoginHttpBadgeStyle" TargetType="Border" BasedOn="{StaticResource SkylineLoginSecureBadgeStyle}">
+    <Setter Property="Background" Value="#14F4C869" />
+    <Setter Property="BorderBrush" Value="#59F4C869" />
+  </Style>
+  <Style x:Key="SkylineLoginSecurityTextStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="7.74" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="CharacterSpacing" Value="89" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineLoginCardStyle" TargetType="Border">
+    <Setter Property="Background" Value="{StaticResource SkylineAuthCardFill}" />
+    <Setter Property="BorderBrush" Value="{StaticResource SkylineAuthHairline}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="20" />
+    <Setter Property="Padding" Value="26" />
+  </Style>
+  <Style x:Key="SkylineLoginQrFrameStyle" TargetType="Border">
+    <Setter Property="Width" Value="190" />
+    <Setter Property="Height" Value="190" />
+    <Setter Property="Background" Value="White" />
+    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="Padding" Value="10" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineLoginQrImageStyle" TargetType="Image">
+    <Setter Property="Width" Value="170" />
+    <Setter Property="Height" Value="170" />
+    <Setter Property="Stretch" Value="Uniform" />
+  </Style>
+  <Style x:Key="SkylineLoginLoadingRingStyle" TargetType="ProgressRing">
+    <Setter Property="Width" Value="28" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="Foreground" Value="Black" />
+  </Style>
+  <Style x:Key="SkylineLoginQrFallbackStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineAuthBodyStyle}">
+    <Setter Property="Foreground" Value="Black" />
+    <Setter Property="TextAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineLoginCodeBoxStyle" TargetType="Viewbox">
+    <Setter Property="MaxWidth" Value="260" />
+    <Setter Property="Height" Value="42" />
+    <Setter Property="Stretch" Value="Uniform" />
+    <Setter Property="StretchDirection" Value="DownOnly" />
+    <Setter Property="Margin" Value="0,17,0,0" />
+  </Style>
+  <Style x:Key="SkylineLoginCodeStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource SkylineAuthCodeSize}" />
+    <Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="TextAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineLoginActivateStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineAuthBodyStyle}">
+    <Setter Property="TextAlignment" Value="Center" />
+    <Setter Property="MaxWidth" Value="260" />
+    <Setter Property="Margin" Value="0,9,0,0" />
+  </Style>
+  <Style x:Key="SkylineLoginStatusRowStyle" TargetType="StackPanel">
+    <Setter Property="Orientation" Value="Horizontal" />
+    <Setter Property="Spacing" Value="7" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="Margin" Value="0,12,0,0" />
+  </Style>
+  <Style x:Key="SkylineLoginStatusRingStyle" TargetType="ProgressRing">
+    <Setter Property="Width" Value="13" />
+    <Setter Property="Height" Value="13" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineAuthSecondary}" />
+  </Style>
+  <Style x:Key="SkylineLoginStatusStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineAuthBodyStyle}">
+    <Setter Property="MaxWidth" Value="240" />
+    <Setter Property="TextAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineLoginErrorStatusStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineLoginStatusStyle}">
+    <Setter Property="Foreground" Value="{StaticResource SkylineAuthError}" />
+  </Style>
+  <Style x:Key="SkylineLoginProblemSymbolStyle" TargetType="Viewbox">
+    <Setter Property="Width" Value="56" />
+    <Setter Property="Height" Value="56" />
+  </Style>
+  <Style x:Key="SkylineLoginApprovedSymbolStyle" TargetType="Viewbox">
+    <Setter Property="Width" Value="70" />
+    <Setter Property="Height" Value="70" />
   </Style>
 
   <!-- TvPinEntryDialog.kt: 50dp circular keys; no implicit transitions inside templates. -->

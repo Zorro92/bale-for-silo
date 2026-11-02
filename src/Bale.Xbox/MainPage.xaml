@@ -5,9 +5,9 @@
     Background="{StaticResource SkylineAurora}">
 
   <!-- TvMarquee.kt: 45dp safe sides, left copy and a 320dp card, no signed-in shell chrome. -->
-  <Grid Margin="45,30">
+  <Grid Style="{StaticResource SkylineAuthLayoutStyle}">
     <Grid.RowDefinitions>
-      <RowDefinition Height="32" />
+      <RowDefinition Height="{StaticResource SkylineAuthHeaderRow}" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
     <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Left">
@@ -33,51 +33,78 @@
       </ItemsControl>
     </StackPanel>
 
-    <!-- TvLoginScreen.kt: every phone sign-in instruction stays on the code screen, including errors. -->
+    <!-- TvLoginScreen.kt / TvMarquee.kt: server context and copy opposite a single QR/code/status card. -->
     <Grid x:Name="CodePanel" Grid.Row="1" Visibility="Collapsed" VerticalAlignment="Center">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="450" />
-        <ColumnDefinition Width="*" MinWidth="40" />
-        <ColumnDefinition Width="320" />
+        <ColumnDefinition Width="{StaticResource SkylineAuthCopyColumn}" />
+        <ColumnDefinition Width="*" MinWidth="{StaticResource SkylineAuthColumnGap}" />
+        <ColumnDefinition Width="{StaticResource SkylineAuthCardColumn}" />
       </Grid.ColumnDefinitions>
       <StackPanel VerticalAlignment="Center">
         <TextBlock x:Name="SessionNotice" FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineError}"
                    TextWrapping="Wrap" Visibility="Collapsed" Margin="0,0,0,12" />
-        <TextBlock x:Name="SignInTitle" FontSize="{StaticResource SkylineMarqueeTitleSize}" FontWeight="ExtraBold" TextWrapping="Wrap" />
-        <TextBlock x:Name="SignInInstructions" FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineSecondary}"
-                   TextWrapping="Wrap" Margin="0,13,0,0" />
-        <!-- rail-layout: non-card — Device sign-in actions. -->
-        <ItemsControl x:Name="CodeActions" Margin="0,24,0,0" PreviewKeyDown="OnCodeActionsPreviewKeyDown">
+        <Border Style="{StaticResource SkylineLoginServerCardStyle}">
+          <StackPanel Orientation="Horizontal">
+            <Border Style="{StaticResource SkylineLoginServerMarkStyle}">
+              <!-- TvMarqueeServerCard: a 40dp mark; use a server symbol without a branded asset. -->
+              <Viewbox><Path Data="M20,6H4V4H20M20,11H4V9H20M4,16H20V14H4M20,1H4C2.9,1 2,1.9 2,3V7C2,8.1 2.9,9 4,9C2.9,9 2,9.9 2,11V15C2,16.1 2.9,17 4,17C2.9,17 2,17.9 2,19V21C2,22.1 2.9,23 4,23H20C21.1,23 22,22.1 22,21V19C22,17.9 21.1,17 20,17C21.1,17 22,16.1 22,15V11C22,9.9 21.1,9 20,9C21.1,9 22,8.1 22,7V3C22,1.9 21.1,1 20,1Z" Fill="{StaticResource SkylinePrimary}" /></Viewbox>
+            </Border>
+            <StackPanel Style="{StaticResource SkylineLoginServerLabelsStyle}">
+              <TextBlock x:Name="ServerNameText" Style="{StaticResource SkylineLoginServerNameStyle}" />
+              <TextBlock x:Name="ServerAddressText" Style="{StaticResource SkylineLoginServerAddressStyle}" />
+            </StackPanel>
+            <Border x:Name="SecureBadge" Style="{StaticResource SkylineLoginSecureBadgeStyle}">
+              <TextBlock Text="SECURE" Style="{StaticResource SkylineLoginSecurityTextStyle}" />
+            </Border>
+            <Border x:Name="HttpBadge" Visibility="Collapsed" Style="{StaticResource SkylineLoginHttpBadgeStyle}">
+              <TextBlock Text="HTTP" Foreground="{StaticResource SkylineAuthWarning}" Style="{StaticResource SkylineLoginSecurityTextStyle}" />
+            </Border>
+          </StackPanel>
+        </Border>
+        <TextBlock x:Name="SignInTitle" Style="{StaticResource SkylineLoginTitleStyle}" />
+        <TextBlock x:Name="SignInInstructions" Style="{StaticResource SkylineLoginInstructionsStyle}" />
+        <StackPanel Style="{StaticResource SkylineLoginHintRowStyle}">
+          <Viewbox Style="{StaticResource SkylineLoginPhoneIconStyle}">
+            <Path Data="M17,1H7A2,2 0 0,0 5,3V21A2,2 0 0,0 7,23H17A2,2 0 0,0 19,21V3A2,2 0 0,0 17,1M17,19H7V5H17M13,22H11V20H13Z" Fill="{StaticResource SkylineAuthTertiary}" />
+          </Viewbox>
+          <TextBlock Text="Have Silo on your phone? Open it on the same Wi‑Fi to sign in this TV." Style="{StaticResource SkylineLoginHintStyle}" />
+        </StackPanel>
+        <!-- rail-layout: non-card — TvLoginScreen.kt CodeActions; password sign-in is a later backlog item. -->
+        <ItemsControl x:Name="CodeActions" Style="{StaticResource SkylineLoginActionsStyle}" PreviewKeyDown="OnCodeActionsPreviewKeyDown">
           <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="11" /></ItemsPanelTemplate>
+            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylineAuthActionGap}" /></ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
-          <Button x:Name="NewCodeButton" Content="Show a new code" Click="OnNewCodeClick" Style="{StaticResource SkylineAuthButtonStyle}" />
-          <Button x:Name="ChangeServerButton" Content="Change server" Click="OnChangeServerClick" Style="{StaticResource SkylineAuthButtonStyle}" />
+          <Button x:Name="NewCodeButton" Content="Show a new code" Click="OnNewCodeClick" Visibility="Collapsed" Style="{StaticResource SkylineAuthButtonStyle}" />
+          <Button x:Name="ChangeServerButton" Content="Change server" Click="OnChangeServerClick" Style="{StaticResource SkylineAuthPlainButtonStyle}" />
         </ItemsControl>
       </StackPanel>
-      <Border Grid.Column="2" Background="{StaticResource SkylineAuthCardFill}" BorderBrush="{StaticResource SkylineHairline}"
-              BorderThickness="1" CornerRadius="20" Padding="26">
+      <Border Grid.Column="2" Style="{StaticResource SkylineLoginCardStyle}">
         <StackPanel HorizontalAlignment="Center">
-          <Border Width="190" Height="190" Background="White" CornerRadius="12" Padding="10">
-            <Grid>
-              <Image x:Name="QrImage" Width="170" Height="170" Stretch="Uniform" AutomationProperties.Name="Scan to sign in on your phone" />
-              <ProgressRing x:Name="CodeLoadingRing" IsActive="True" Width="28" Height="28" Foreground="Black" />
-              <TextBlock x:Name="QrFallback" Text="Use the address&#x0A;and code below" FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="Black"
-                         TextAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
-            </Grid>
-          </Border>
-          <!-- TvMarqueeCodeTiles currently draws one grouped, tabular line, shrinking long codes to fit. -->
-          <Viewbox MaxWidth="260" Height="42" Stretch="Uniform" StretchDirection="DownOnly" Margin="0,17,0,0">
-            <TextBlock x:Name="CodeText" FontSize="{StaticResource SkylineAuthCodeSize}" FontWeight="Bold" TextAlignment="Center"
-                       Typography.NumeralAlignment="Tabular" />
+          <StackPanel x:Name="CodeDetails">
+            <Border Style="{StaticResource SkylineLoginQrFrameStyle}">
+              <Grid>
+                <Image x:Name="QrImage" Style="{StaticResource SkylineLoginQrImageStyle}" AutomationProperties.Name="Scan to sign in on your phone" />
+                <ProgressRing x:Name="CodeLoadingRing" IsActive="True" Style="{StaticResource SkylineLoginLoadingRingStyle}" />
+                <TextBlock x:Name="QrFallback" Text="Use the address&#x0A;and code below" Visibility="Collapsed" Style="{StaticResource SkylineLoginQrFallbackStyle}" />
+              </Grid>
+            </Border>
+            <!-- TvMarqueeCodeTiles: grouped tabular digits, shrinking long codes to fit. -->
+            <Viewbox Style="{StaticResource SkylineLoginCodeBoxStyle}">
+              <TextBlock x:Name="CodeText" Style="{StaticResource SkylineLoginCodeStyle}" Typography.NumeralAlignment="Tabular" Typography.SlashedZero="True" />
+            </Viewbox>
+            <TextBlock x:Name="ActivateText" Style="{StaticResource SkylineLoginActivateStyle}" />
+          </StackPanel>
+          <Viewbox x:Name="CodeProblemIcon" Visibility="Collapsed" Style="{StaticResource SkylineLoginProblemSymbolStyle}">
+            <Path Data="M11,15H13V17H11M11,7H13V13H11M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20Z" Fill="{StaticResource SkylineAuthWarning}" />
           </Viewbox>
-          <TextBlock x:Name="ActivateText" FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineSecondary}"
-                     TextWrapping="Wrap" TextAlignment="Center" Margin="0,9,0,0" MaxWidth="260" />
-          <TextBlock Text="Continue on your phone" FontSize="{StaticResource SkylineAuthCaptionSize}" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,12,0,0" />
-          <StackPanel Orientation="Horizontal" Spacing="7" HorizontalAlignment="Center" Margin="0,7,0,0">
-            <ProgressRing x:Name="PairingRing" IsActive="True" Width="13" Height="13" Foreground="{StaticResource SkylineSecondary}" />
-            <TextBlock x:Name="PairingStatus" Text="Getting a code…" MaxWidth="240" FontSize="{StaticResource SkylineAuthCaptionSize}"
-                       Foreground="{StaticResource SkylineSecondary}" TextWrapping="Wrap" TextAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+          <Viewbox x:Name="CodeApprovedIcon" Visibility="Collapsed" Style="{StaticResource SkylineLoginApprovedSymbolStyle}">
+            <Path Data="M9,16.17L4.83,12L3.41,13.41L9,19L21,7L19.59,5.59Z" Fill="{StaticResource SkylineAuthLive}" />
+          </Viewbox>
+          <!-- TvLoginScreen.kt CodeCard: Opened replaces Waiting with Continue on your phone. -->
+          <StackPanel Style="{StaticResource SkylineLoginStatusRowStyle}">
+            <ProgressRing x:Name="PairingRing" IsActive="True" Style="{StaticResource SkylineLoginStatusRingStyle}" />
+            <TextBlock x:Name="PairingStatus" Text="Getting a sign-in code…" Style="{StaticResource SkylineLoginStatusStyle}" AutomationProperties.LiveSetting="Polite" />
+            <TextBlock x:Name="PairingError" Visibility="Collapsed" Style="{StaticResource SkylineLoginErrorStatusStyle}" AutomationProperties.LiveSetting="Polite" />
           </StackPanel>
         </StackPanel>
       </Border>

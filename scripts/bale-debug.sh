@@ -11,6 +11,10 @@
 #   scripts/bale-debug.sh targets               list controls goto can reach
 #   scripts/bale-debug.sh tree                  the visible element tree with bounds
 #   scripts/bale-debug.sh fault profiles        fail the next picker profile-list load once
+#   scripts/bale-debug.sh show login            preview Login without changing the saved session
+#   scripts/bale-debug.sh show login expired    preview the session-expired Login notice
+#   scripts/bale-debug.sh show server           preview manual server entry
+#   scripts/bale-debug.sh show home             return from an auth preview to the signed-in app
 set -euo pipefail
 HOST="${XBOX_HOST:?Set XBOX_HOST to your Xbox IP (shown in Dev Home)}"
 BASE="http://$HOST:8790"
@@ -57,8 +61,21 @@ case "${1:-}" in
     fi
     curl -fsS -X POST "$BASE/fault/profiles"
     ;;
+  show)
+    case "${*:2}" in
+      login) route=login ;;
+      "login expired") route=login/expired ;;
+      server) route=server ;;
+      home) route=home ;;
+      *)
+        echo "usage: scripts/bale-debug.sh show {login|login expired|server|home}" >&2
+        exit 2
+        ;;
+    esac
+    curl --fail-with-body -sS -X POST "$BASE/show/$route"
+    ;;
   *)
-    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac

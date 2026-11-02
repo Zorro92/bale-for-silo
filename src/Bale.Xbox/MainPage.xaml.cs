@@ -26,17 +26,53 @@ public sealed partial class MainPage : Page, IBackHandler
     private bool _connecting;
     private bool _expiredNotice;
 
+#if DEBUG_SERVER
+    private DebugServer.AuthPreview? _preview;
+
+    internal bool IsAuthPreview => _preview is not null;
+
+    // Debug-only navigation must never restore, replace or persist the live session.
+    internal void ShowPreview(DebugServer.AuthPreview preview)
+    {
+        _preview = preview;
+        _expiredNotice = preview == DebugServer.AuthPreview.Expired;
+        _pairing?.Cancel();
+        _connecting = false;
+        ConnectButton.Content = "Connect";
+        if (Session.Client is not { } client) return;
+        _loginServer = client.Server;
+        if (preview == DebugServer.AuthPreview.Server)
+        {
+            ShowServerEntry(ServerAddress.ToBaseUrl(client.Server));
+        }
+        else
+        {
+            _ = StartPairingAsync(client.Server);
+        }
+    }
+#endif
+
     public MainPage()
     {
         InitializeComponent();
         Rail.Attach(ServerActions).Pin = false;
-        Rail.Attach(CodeActions).Pin = false;
+        var codeActions = Rail.Attach(CodeActions);
+        codeActions.Pin = false;
+        // TvLoginScreen.kt focuses only actions offered by the current status, never a hidden retry.
+        codeActions.EntryItem = () => NewCodeButton.Visibility == Visibility.Visible ? NewCodeButton : ChangeServerButton;
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
         _active = true;
+#if DEBUG_SERVER
+        if (e.Parameter is DebugServer.AuthPreview preview)
+        {
+            ShowPreview(preview);
+            return;
+        }
+#endif
         _expiredNotice = e.Parameter as string == SessionExpired;
         var saved = AppSettings.ServerUrl;
         if (!ServerAddress.TryParse(saved ?? string.Empty, out var server))
@@ -78,6 +114,12 @@ public sealed partial class MainPage : Page, IBackHandler
 
     public bool OnBack()
     {
+#if DEBUG_SERVER
+        if (_preview is not null)
+        {
+            return DebugServer.CloseAuthPreview(Frame);
+        }
+#endif
         if (CodePanel.Visibility == Visibility.Visible)
         {
             // TvAppNavigation.kt replaces ServerSetup with Login. TvLoginScreen.kt intercepts Back
@@ -170,6 +212,13 @@ public sealed partial class MainPage : Page, IBackHandler
 
     private async void OnServerBackClick(object sender, RoutedEventArgs e)
     {
+#if DEBUG_SERVER
+        if (_preview is not null)
+        {
+            DebugServer.CloseAuthPreview(Frame);
+            return;
+        }
+#endif
         if (_loginServer is { } server)
         {
             await StartPairingAsync(server);
@@ -181,7 +230,15 @@ public sealed partial class MainPage : Page, IBackHandler
         _pairing?.Cancel();
         using var pairing = new CancellationTokenSource();
         _pairing = pairing;
+#if DEBUG_SERVER
+        // A preview can request and poll a real code, but owns a separate, unauthenticated client.
+        // Neither a changed address nor a late approval can dispose/overwrite the signed-in client.
+        using var previewClient = _preview is not null ? new SiloClient(server, DeviceIdentity.Current()) : null;
+        var client = previewClient ?? (Session.Client is { } existing && existing.Server == server ? existing : Session.Connect(server));
+#else
         var client = Session.Client is { } existing && existing.Server == server ? existing : Session.Connect(server);
+#endif
+        _ = RefreshServerNameAsync(server, pairing);
         DeviceLoginTicket? ticket = null;
         var showingCode = !fromServerEntry;
         var approved = false;
@@ -209,6 +266,9 @@ public sealed partial class MainPage : Page, IBackHandler
             }
 
             _loginServer = server;
+#if DEBUG_SERVER
+            if (_preview is null)
+#endif
             AppSettings.ServerUrl = ServerAddress.ToBaseUrl(server);
             _connecting = false;
             ConnectButton.Content = "Connect";
@@ -219,6 +279,7 @@ public sealed partial class MainPage : Page, IBackHandler
             }
 
             var identity = DeviceIdentity.Current();
+            var renewed = false;
             while (IsCurrent(pairing))
             {
                 ticket = await client.DeviceLogin.StartAsync(identity.DeviceName, identity.Platform, pairing.Token);
@@ -227,7 +288,7 @@ public sealed partial class MainPage : Page, IBackHandler
                     return;
                 }
 
-                await ShowCodeAsync(ticket, pairing);
+                await ShowCodeAsync(ticket, pairing, renewed);
                 if (!IsCurrent(pairing))
                 {
                     return;
@@ -238,7 +299,8 @@ public sealed partial class MainPage : Page, IBackHandler
                     {
                         if (IsCurrent(pairing))
                         {
-                            PairingStatus.Text = "Approve the request on your phone.";
+                            // TvLoginScreen.kt statusText / tv_signin_status_opened in strings.xml.
+                            PairingStatus.Text = "Continue on your phone";
                         }
                     }), cancellationToken: pairing.Token);
                 if (!IsCurrent(pairing))
@@ -250,19 +312,36 @@ public sealed partial class MainPage : Page, IBackHandler
                 {
                     case DeviceLoginOutcome.Approved:
                         approved = true;
+#if DEBUG_SERVER
+                        // Preview approvals are deliberately ignored: no token adoption, vault writes or routing.
+                        if (previewClient is not null)
+                        {
+                            ShowCodeApproved(result.Tokens?.User?.Username);
+                            return;
+                        }
+#endif
                         client.SignIn(result.Tokens!, result.ProfileId, result.ProfileToken);
                         Session.Persist();
+                        ShowCodeApproved(result.Tokens?.User?.Username);
                         Session.ContinueToHome(Frame);
                         return;
                     case DeviceLoginOutcome.Expired:
-                        // TvLoginScreen.kt renews in place without a countdown or another focus grab.
-                        PairingStatus.Text = "Getting a new code…";
+                        // TvLoginViewModel.kt publishes NewCode after expiry; no countdown or focus grab.
+                        renewed = true;
+                        QrImage.Source = null;
+                        CodeText.Text = string.Empty;
+                        ActivateText.Text = string.Empty;
+                        CodeLoadingRing.Visibility = Visibility.Visible;
+                        CodeLoadingRing.IsActive = true;
+                        PairingStatus.Text = "Getting a sign-in code…";
                         break;
                     case DeviceLoginOutcome.Denied:
-                        ShowCodeFailure("Sign-in was declined on your phone.", "Show a new code");
+                        // TvLoginScreen.kt withdraws a declined QR and stays with the retry action focused.
+                        SignInInstructions.Text = "Show a new code to try again.";
+                        ShowCodeFailure("Sign-in was declined.", "Show a new code");
                         return;
                     default:
-                        ShowCodeFailure("Sign-in was canceled. Show a new code to try again.", "Show a new code");
+                        ShowCodeFailure("Sign-in paused.", "Show a new code");
                         return;
                 }
             }
@@ -277,7 +356,8 @@ public sealed partial class MainPage : Page, IBackHandler
             {
                 if (showingCode)
                 {
-                    ShowCodeFailure($"Couldn't finish signing in. {ex.Message}", "Try again");
+                    // TvLoginScreen.kt statusText: Failed before a code, CouldntFinish afterwards.
+                    ShowCodeFailure(ticket is null ? "Couldn't get a sign-in code." : "Couldn't finish signing in on this TV.", "Try again");
                 }
                 else
                 {
@@ -320,6 +400,9 @@ public sealed partial class MainPage : Page, IBackHandler
         ServerError.Text = error ?? string.Empty;
         ServerError.Visibility = error is null ? Visibility.Collapsed : Visibility.Visible;
         ServerBackButton.Visibility = _loginServer is null ? Visibility.Collapsed : Visibility.Visible;
+#if DEBUG_SERVER
+        if (_preview is not null) ServerBackButton.Visibility = Visibility.Visible;
+#endif
         FocusRetry.Until(ServerPanel, () => !_active || ServerPanel.Visibility != Visibility.Visible
             || (string.IsNullOrEmpty(ServerBox.Text) ? (Control)ServerBox : ConnectButton).Focus(FocusState.Programmatic));
     }
@@ -329,11 +412,15 @@ public sealed partial class MainPage : Page, IBackHandler
         var entering = CodePanel.Visibility != Visibility.Visible;
         ServerPanel.Visibility = Visibility.Collapsed;
         CodePanel.Visibility = Visibility.Visible;
-        SignInTitle.Text = $"Sign in to {server.Host}";
-        SignInInstructions.Text = "Scan the code with your phone's camera, or go to your server's /activate page and enter it. "
-            + "Approve on your phone and this TV signs in by itself.";
-        SessionNotice.Text = $"You were signed out of {server.Host}. Sign in again.";
+        ShowServerContext(new SignInServer(server, AppSettings.GetServerName(ServerAddress.ToBaseUrl(server))));
+        // TvLoginScreen.kt: use the server's activate URL even before the first code arrives.
+        SetSignInInstructions(DeviceCodeFormat.ActivateText(ServerAddress.ToBaseUrl(server) + "/activate", string.Empty));
         SessionNotice.Visibility = _expiredNotice ? Visibility.Visible : Visibility.Collapsed;
+        CodeDetails.Visibility = Visibility.Visible;
+        CodeProblemIcon.Visibility = Visibility.Collapsed;
+        CodeApprovedIcon.Visibility = Visibility.Collapsed;
+        PairingStatus.Visibility = Visibility.Visible;
+        PairingError.Visibility = Visibility.Collapsed;
         QrImage.Source = null;
         QrFallback.Visibility = Visibility.Collapsed;
         CodeText.Text = string.Empty;
@@ -342,21 +429,64 @@ public sealed partial class MainPage : Page, IBackHandler
         CodeLoadingRing.IsActive = true;
         PairingRing.Visibility = Visibility.Visible;
         PairingRing.IsActive = true;
-        PairingStatus.Text = "Getting a code…";
-        NewCodeButton.Content = "Show a new code";
-        if (entering)
+        PairingStatus.Text = "Getting a sign-in code…";
+        var retryFocused = NewCodeButton.FocusState != FocusState.Unfocused;
+        NewCodeButton.Visibility = Visibility.Collapsed;
+        if (entering || retryFocused)
         {
-            FocusRetry.Until(CodePanel, () => !_active || CodePanel.Visibility != Visibility.Visible || NewCodeButton.Focus(FocusState.Programmatic));
+            // TvLoginScreen.kt CodeActions: only a problem offers a new-code action. With password
+            // sign-in deferred, Change server is the first available action on a live code screen.
+            FocusRetry.Until(CodePanel, () => !_active || CodePanel.Visibility != Visibility.Visible || ChangeServerButton.Focus(FocusState.Programmatic));
         }
     }
 
-    private async Task ShowCodeAsync(DeviceLoginTicket ticket, CancellationTokenSource pairing)
+    private void ShowServerContext(SignInServer server)
+    {
+        // TvMarquee.kt TvMarqueeServerCard + SignInServer.kt: branded/saved name, host and TLS badge.
+        ServerNameText.Text = server.Name;
+        ServerAddressText.Text = server.Address;
+        SecureBadge.Visibility = server.IsSecure ? Visibility.Visible : Visibility.Collapsed;
+        HttpBadge.Visibility = server.IsSecure ? Visibility.Collapsed : Visibility.Visible;
+        SignInTitle.Text = $"Sign in to {server.Name}";
+        SessionNotice.Text = $"You were signed out of {server.Name}. Sign in again.";
+    }
+
+    private async Task RefreshServerNameAsync(Uri server, CancellationTokenSource pairing)
+    {
+        try
+        {
+            var name = await SignInServer.FetchNameAsync(server, pairing.Token);
+            if (name is null || !IsCurrent(pairing)) return;
+#if DEBUG_SERVER
+            if (_preview is null)
+#endif
+            AppSettings.SetServerName(ServerAddress.ToBaseUrl(server), name);
+            if (_loginServer == server && CodePanel.Visibility == Visibility.Visible)
+            {
+                ShowServerContext(new SignInServer(server, name));
+            }
+        }
+        catch (OperationCanceledException) when (pairing.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            // SignInServer.kt treats optional branding as a fallback, never a sign-in failure.
+            Log.Error("Sign-in server name", ex);
+        }
+    }
+
+    private void SetSignInInstructions(string activate) =>
+        SignInInstructions.Text = $"Scan the code with your phone's camera, or go to {activate} and enter it. "
+            + "Approve on your phone and this TV signs in by itself.";
+
+    private async Task ShowCodeAsync(DeviceLoginTicket ticket, CancellationTokenSource pairing, bool renewed)
     {
         ActivateText.Text = ticket.ActivateText;
-        CodeText.Text = ticket.DisplayCode;
-        SignInInstructions.Text = $"Scan the code with your phone's camera, or go to {ticket.ActivateText} and enter it. "
-            + "Approve on your phone and this TV signs in by itself.";
-        PairingStatus.Text = "Waiting for approval";
+        // TvMarqueeCodeTiles widens the grouping space to an en space; the underlying code is unchanged.
+        CodeText.Text = ticket.DisplayCode.Replace(' ', ' ');
+        SetSignInInstructions(ticket.ActivateText);
+        PairingStatus.Text = renewed ? "New code. Waiting for approval." : "Waiting for approval";
         QrImage.Source = null;
         try
         {
@@ -394,14 +524,31 @@ public sealed partial class MainPage : Page, IBackHandler
         }
     }
 
+    private void ShowCodeApproved(string? accountName)
+    {
+        // TvLoginScreen.kt CodeCard / strings.xml: withdraw the QR and confirm the saved account.
+        CodeDetails.Visibility = Visibility.Collapsed;
+        CodeApprovedIcon.Visibility = Visibility.Visible;
+        PairingRing.IsActive = false;
+        PairingRing.Visibility = Visibility.Collapsed;
+        PairingStatus.Text = string.IsNullOrWhiteSpace(accountName) ? "Signed in" : $"Signed in as {accountName}";
+    }
+
     private void ShowCodeFailure(string message, string action)
     {
+        // TvLoginScreen.kt CodeCard: denied/failed codes are no longer live and must not remain scannable.
+        QrImage.Source = null;
+        CodeDetails.Visibility = Visibility.Collapsed;
+        CodeProblemIcon.Visibility = Visibility.Visible;
         PairingRing.IsActive = false;
         PairingRing.Visibility = Visibility.Collapsed;
         CodeLoadingRing.IsActive = false;
         CodeLoadingRing.Visibility = Visibility.Collapsed;
-        PairingStatus.Text = message;
+        PairingStatus.Visibility = Visibility.Collapsed;
+        PairingError.Text = message;
+        PairingError.Visibility = Visibility.Visible;
         NewCodeButton.Content = action;
+        NewCodeButton.Visibility = Visibility.Visible;
         FocusRetry.Until(CodePanel, () => !_active || CodePanel.Visibility != Visibility.Visible || NewCodeButton.Focus(FocusState.Programmatic));
     }
 

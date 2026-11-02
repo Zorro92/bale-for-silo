@@ -92,6 +92,11 @@ internal static class AppSettings
         set => Local.Values["calendar.filter"] = value;
     }
 
+    // SignInServer.kt / ServerBranding.kt cache the public name per server, including after sign-out.
+    public static string? GetServerName(string server) => Local.Values[$"ServerName.{server}"] as string;
+
+    public static void SetServerName(string server, string name) => Local.Values[$"ServerName.{server}"] = name;
+
     public static string? LoadRefreshToken(string server) => LoadCredential(VaultResource, server);
 
     public static void SaveRefreshToken(string server, string refreshToken) => SaveCredential(VaultResource, server, refreshToken);
