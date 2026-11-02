@@ -97,7 +97,6 @@ public sealed partial class App : Application
     /// </summary>
     private static void OnPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (e.Key is VirtualKey.Escape) Log.Info($"PreviewEscape transitioning={PageFrame.IsTransitioning} src={e.OriginalSource?.GetType().Name}");
         if (PageFrame.IsTransitioning || e.Key is VirtualKey.GamepadLeftShoulder or VirtualKey.GamepadRightShoulder
             or VirtualKey.GamepadLeftTrigger or VirtualKey.GamepadRightTrigger
             or VirtualKey.PageUp or VirtualKey.PageDown)
@@ -115,7 +114,6 @@ public sealed partial class App : Application
     /// <summary>Routes system Back through the same policy as keyboard Escape and Backspace.</summary>
     private static void OnBackRequested(Frame frame, BackRequestedEventArgs args)
     {
-        Log.Info($"BackRequested transitioning={PageFrame.IsTransitioning} canGoBack={frame.CanGoBack}");
         args.Handled = GoBack(frame);
     }
 
@@ -124,8 +122,6 @@ public sealed partial class App : Application
     {
         try
         {
-            if (args.Key is VirtualKey.Escape or VirtualKey.Back)
-                Log.Info($"BackKey {args.Key} handled={args.Handled} repeat={args.KeyStatus.WasKeyDown} transitioning={PageFrame.IsTransitioning} canGoBack={frame.CanGoBack} content={frame.Content?.GetType().Name} src={args.OriginalSource?.GetType().Name}");
             // Android TV maps Escape to Back (MainTvActivity.kt). Wait for the bubbling pass,
             // not PreviewKeyDown, so a dialog or text control cannot also send its page back.
             if (args.Handled || args.Key is not (VirtualKey.Escape or VirtualKey.Back))
