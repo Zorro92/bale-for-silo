@@ -19,11 +19,8 @@ namespace Bale.Xbox;
 /// </summary>
 public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
 {
-    // TvTopMenuBar.kt: first preview waits longer than switching an already-open panel.
-    private static readonly TimeSpan PanelDwell = TimeSpan.FromMilliseconds(180);
-    private static readonly TimeSpan PanelSwitchDwell = TimeSpan.FromMilliseconds(80);
-
-    private readonly DispatcherTimer _dwell = new() { Interval = PanelDwell };
+    // TvTopMenuBar.kt: first preview waits 180ms; switching an open library/For You panel waits 80ms.
+    private readonly DispatcherTimer _dwell = new() { Interval = TopMenuPreviewTiming.Delay(hasOpenPanel: false) };
     private readonly List<TabView> _tabs = new();
     private TabView? _selected;
     private bool _searchSelected;
@@ -320,7 +317,9 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         // Match on Control: under Native AOT a sender can arrive typed as its base class.
         if (sender is Control { DataContext: TabView { LibraryTab.Libraries.Count: > 0 } or TabView { Page: "foryou" } } button)
         {
-            _dwell.Interval = LibraryPanel.Visibility == Visibility.Visible || ForYouPanel.Visibility == Visibility.Visible ? PanelSwitchDwell : PanelDwell;
+            // TvTopMenuBar.kt samples openPanel on focus; retain the old preview until this delay ends.
+            _dwell.Interval = TopMenuPreviewTiming.Delay(
+                hasOpenPanel: LibraryPanel.Visibility == Visibility.Visible || ForYouPanel.Visibility == Visibility.Visible);
             _dwellTab = button;
             _dwell.Start();
         }

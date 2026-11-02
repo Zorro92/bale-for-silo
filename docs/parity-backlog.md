@@ -52,7 +52,7 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 ### Shell and Home (`shell/TvTopMenuBar.kt`, `shell/TvMainShell.kt`, `components/TvMediaRow.kt`, `components/TvSkylineSectionFeed.kt`)
 - [x] Avatar focus: keep 18% white fill, ring 1dp white 18% → 2dp OnSurface
 - [ ] Tabs Medium at rest, SemiBold selected/focused; selected border 1; resting alpha 0.62; search glyph 19 (implemented; Xbox verification pending)
-- [ ] Panel dwell 180 ms first, 80 ms switching
+- [ ] Panel dwell 180 ms first, 80 ms switching (implemented; Xbox verification pending)
 - [x] Profile panel: no scrim, traps focus; header uppercase "subtitle · server" 11.2 @0.38; icons 16; divider 1 @10%
 - [ ] Row header→rail 12, progress icon 22, row gap / card padding per TvSkylineSectionFeed
 - [x] Ambient tint animates, art crossfades

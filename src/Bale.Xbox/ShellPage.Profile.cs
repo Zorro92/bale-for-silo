@@ -12,7 +12,7 @@ namespace Bale.Xbox;
 public sealed partial class ShellPage
 {
     // TvTopMenuBar.kt: the avatar always waits 180ms, even when switching from another panel.
-    private readonly DispatcherTimer _avatarDwell = new() { Interval = TimeSpan.FromMilliseconds(180) };
+    private readonly DispatcherTimer _avatarDwell = new() { Interval = TopMenuPreviewTiming.Delay(hasOpenPanel: false, isProfile: true) };
     private bool _profileMenuEntered;
     private bool _profileDwellSuppressed;
     private bool _restoringProfileFocus;
@@ -35,7 +35,11 @@ public sealed partial class ShellPage
 
     private void OnAvatarFocus(object sender, RoutedEventArgs e)
     {
-        ClosePanels();
+        // TvTopMenuBar.kt leaves the old cascade visible until the 180ms profile dwell finishes;
+        // TvShellFocusState.kt previewProfileMenu closes it only when that preview actually opens.
+        _dwell.Stop();
+        _dwellTab = null;
+        _avatarDwell.Stop();
         if (!_profileDwellSuppressed) _avatarDwell.Start();
     }
 
