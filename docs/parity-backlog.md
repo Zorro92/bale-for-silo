@@ -34,10 +34,11 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
   - [ ] Picker backdrop: the APK draws the colored Aurora light, Bale a dark gradient
   - [ ] Avatar fill for profiles without an image (APK: Kids is salmon, Bale slate)
 - [x] Back from Switch Profile exits (picker is the root)
-- [ ] Login: two columns, "Sign in to <server>", QR + code card + status ("Continue on your phone"), actions row; declined stays with retry; Back on the code screen exits
-- [ ] Server entry copy: "Enter your server address", Connect / Back
-- [ ] Session expiry → Login with "You were signed out of <server>. Sign in again."; all pages, not only Home
-- [ ] Startup with saved tokens goes straight to Main (no network gate)
+- [ ] Login: two columns, "Sign in to <server>", QR + code card + status ("Continue on your phone"), actions row; declined stays with retry; Back on the code screen exits (source-matched implementation landed, including branded mark / serif initial fallback; Xbox verification pending)
+- [ ] Server entry copy: "Enter your server address", Connect / Back (source-matched field centering, select-to-open keyboard, Language icon and TV-name chip landed; Xbox verification pending)
+  - [ ] Advanced options: Auto / HTTPS / HTTP and port with matching URL-candidate probing (deliberately absent rather than exposing a partial control)
+- [ ] Session expiry → Login with "You were signed out of <server>. Sign in again."; all pages, not only Home (single root-owned transition after rejected refresh; Core coverage passes; Xbox verification pending)
+- [ ] Startup with saved tokens goes straight to Main (no network gate) (local restore chooses the picker / shell before validation; offline and expired-token Core coverage passes; Xbox verification pending)
 - [x] Startup profile rule: ask Every Time by default; offer "Open X automatically?" after first pick
 
 ### Search (`screens/search/TvSearchScreen.kt`, `TvSearchViewModel.kt`)
