@@ -54,11 +54,11 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 - [ ] Tabs Medium at rest, SemiBold selected/focused; selected border 1; resting alpha 0.62; search glyph 19 (implemented; Xbox verification pending)
 - [ ] Panel dwell 180 ms first, 80 ms switching (implemented; Xbox verification pending)
 - [x] Profile panel: no scrim, traps focus; header uppercase "subtitle · server" 11.2 @0.38; icons 16; divider 1 @10%
-- [ ] Row header→rail 12, progress icon 22, row gap / card padding per TvSkylineSectionFeed
+- [ ] Row header→rail 12, progress icon 22, row gap / card padding per TvSkylineSectionFeed (implemented; Xbox verification pending)
 - [x] Ambient tint animates, art crossfades
-- [ ] Empty state "Nothing to watch yet" + Refresh; separate loading/error
+- [ ] Empty state "Nothing to watch yet" + Refresh; separate loading/error (implemented; Xbox verification pending)
 - [x] Continue Watching opens the series with season/episode selected
-- [ ] Home refreshes when returned to
+- [ ] Home refreshes when returned to (implemented; Xbox verification pending)
 
 ## Wave 2: missing pieces of existing screens
 - [x] Detail: Trailers & More, Recommended/Related, Details facts table
