@@ -10,16 +10,29 @@
   <Page.Resources>
     <DataTemplate x:Key="LibrarySectionTemplate" x:DataType="views:LibrarySectionChoiceView">
       <Button Style="{StaticResource SkylineLibrarySectionRowStyle}" Click="OnLibrarySectionClick">
-        <StackPanel Orientation="Horizontal" Spacing="7">
-          <FontIcon Glyph="{x:Bind Icon}" FontSize="15" />
+        <!-- shell/TvLibraryPill.kt: Material AutoAwesome, GridView and Collections glyphs. -->
+        <StackPanel Style="{StaticResource SkylineLibrarySectionContentStyle}">
+          <Viewbox Style="{StaticResource SkylineLibrarySectionIconStyle}">
+            <Grid Width="24" Height="24">
+              <Path Style="{StaticResource SkylineLibrarySectionGlyphStyle}" Visibility="{x:Bind RecommendedVisibility}" Data="M19,9 L20.25,6.25 L23,5 L20.25,3.75 L19,1 L17.75,3.75 L15,5 L17.75,6.25 Z M11,9 L8.5,3 L6,9 L0,11.5 L6,14 L8.5,20 L11,14 L17,11.5 Z M19,15 L17.75,17.75 L15,19 L17.75,20.25 L19,23 L20.25,20.25 L23,19 L20.25,17.75 Z" />
+              <Path Style="{StaticResource SkylineLibrarySectionGlyphStyle}" Visibility="{x:Bind BrowseVisibility}" Data="M3,3 H11 V11 H3 Z M13,3 H21 V11 H13 Z M3,13 H11 V21 H3 Z M13,13 H21 V21 H13 Z" />
+              <Path Style="{StaticResource SkylineLibrarySectionGlyphStyle}" Visibility="{x:Bind CollectionsVisibility}" Data="M22,16 V4 C22,2.9 21.1,2 20,2 H8 C6.9,2 6,2.9 6,4 V16 C6,17.1 6.9,18 8,18 H20 C21.1,18 22,17.1 22,16 Z M11,12 L13.03,14.71 L16,11 L20,16 H8 Z M2,6 V20 C2,21.1 2.9,22 4,22 H18 V20 H4 V6 Z" />
+            </Grid>
+          </Viewbox>
           <TextBlock Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
         </StackPanel>
       </Button>
     </DataTemplate>
     <DataTemplate x:Key="LibraryFlyoutTemplate" x:DataType="views:LibrarySectionChoiceView">
       <Button Style="{StaticResource SkylineLibraryFlyoutRowStyle}" Click="OnLibrarySectionClick">
-        <StackPanel Orientation="Horizontal" Spacing="6">
-          <FontIcon Glyph="{x:Bind Icon}" FontSize="9" />
+        <StackPanel Style="{StaticResource SkylineLibraryFlyoutContentStyle}">
+          <Viewbox Style="{StaticResource SkylineLibraryFlyoutIconStyle}">
+            <Grid Width="24" Height="24">
+              <Path Style="{StaticResource SkylineLibrarySectionGlyphStyle}" Visibility="{x:Bind RecommendedVisibility}" Data="M19,9 L20.25,6.25 L23,5 L20.25,3.75 L19,1 L17.75,3.75 L15,5 L17.75,6.25 Z M11,9 L8.5,3 L6,9 L0,11.5 L6,14 L8.5,20 L11,14 L17,11.5 Z M19,15 L17.75,17.75 L15,19 L17.75,20.25 L19,23 L20.25,20.25 L23,19 L20.25,17.75 Z" />
+              <Path Style="{StaticResource SkylineLibrarySectionGlyphStyle}" Visibility="{x:Bind BrowseVisibility}" Data="M3,3 H11 V11 H3 Z M13,3 H21 V11 H13 Z M3,13 H11 V21 H3 Z M13,13 H21 V21 H13 Z" />
+              <Path Style="{StaticResource SkylineLibrarySectionGlyphStyle}" Visibility="{x:Bind CollectionsVisibility}" Data="M22,16 V4 C22,2.9 21.1,2 20,2 H8 C6.9,2 6,2.9 6,4 V16 C6,17.1 6.9,18 8,18 H20 C21.1,18 22,17.1 22,16 Z M11,12 L13.03,14.71 L16,11 L20,16 H8 Z M2,6 V20 C2,21.1 2.9,22 4,22 H18 V20 H4 V6 Z" />
+            </Grid>
+          </Viewbox>
           <TextBlock Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
         </StackPanel>
       </Button>

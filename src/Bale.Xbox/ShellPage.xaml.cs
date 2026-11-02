@@ -162,6 +162,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         // Back from a detail page: the cached shell keeps its tabs and content; just restore focus.
         if (e.NavigationMode == NavigationMode.Back && _tabs.Count > 0)
         {
+            if (_librariesWithCollections is null) _ = ProbeLibraryCollectionsAsync();
             // PageFrame restores the selected content while the incoming shell is still transparent.
             return;
         }
@@ -196,6 +197,8 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         Tabs.ItemsSource = _tabs.ToList();
         Tabs.UpdateLayout();
         Select(_tabs[0]);
+        _librariesWithCollections = null;
+        _ = ProbeLibraryCollectionsAsync();
     }
 
     private async Task LoadProfileSubtitleAsync()
@@ -232,6 +235,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         base.OnNavigatedFrom(e);
         _dwell.Stop();
         _avatarDwell.Stop();
+        _collectionProbe?.Cancel();
         if (Current == this)
         {
             Current = null;

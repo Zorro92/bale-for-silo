@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Bale.Core.Browse;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 
@@ -6,11 +7,13 @@ namespace Bale.Xbox.Views;
 
 internal sealed record LibraryRecommendedEntry(string LibraryId, string Title, string? MediaScope);
 
-public sealed partial class LibrarySectionChoiceView(string title, bool browse)
+public sealed partial class LibrarySectionChoiceView(LibrarySection section)
 {
-    public string Title { get; } = title;
-    public bool Browse { get; } = browse;
-    public string Icon => Browse ? "" : "";
+    public LibrarySection Section { get; } = section;
+    public string Title => Section.ToString();
+    public Visibility RecommendedVisibility => Section == LibrarySection.Recommended ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility BrowseVisibility => Section == LibrarySection.Browse ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility CollectionsVisibility => Section == LibrarySection.Collections ? Visibility.Visible : Visibility.Collapsed;
 }
 
 public sealed partial class LibraryPanelRow(string key, string title, Action choose) : INotifyPropertyChanged

@@ -17,17 +17,67 @@ public sealed partial class ShellPage
     private Control? _cascadeAnchor;
     private Control? _cascadeDismissTarget;
     private List<LibraryChoiceView> _cascadeChoices = [];
+    private IReadOnlyList<LibrarySection> _cascadeSections = [];
+    private HashSet<string>? _librariesWithCollections;
+    private CancellationTokenSource? _collectionProbe;
 
     private void InitializeLibraryCascade()
     {
-        // TvLibraryPill.set: Recommended is always first and the default; Collections is a later wave.
-        var sections = new[] { new LibrarySectionChoiceView("Recommended", false), new LibrarySectionChoiceView("Browse", true) };
-        SingleLibrarySections.ItemsSource = sections;
-        LibrarySectionRows.ItemsSource = sections;
         LibraryPanel.PreviewKeyDown += OnLibraryCascadeKeyDown;
         LibrarySectionPanel.PreviewKeyDown += OnLibraryCascadeKeyDown;
         _cascadeFollow.Tick += (_, _) => { _cascadeFollow.Stop(); if (LibrarySectionPanel.Visibility == Visibility.Visible) OpenLibraryFlyout(); };
     }
+
+    private async Task ProbeLibraryCollectionsAsync()
+    {
+        if (Session.Client is not { } client) return;
+        _collectionProbe?.Cancel();
+        _collectionProbe?.Dispose();
+        var probe = _collectionProbe = new CancellationTokenSource();
+        var profileId = client.ProfileId;
+        var libraries = _tabs.Where(tab => tab.LibraryTab is not null).SelectMany(tab => tab.LibraryTab!.Libraries)
+            .DistinctBy(library => library.Id).ToList();
+        if (libraries.Count == 0) return;
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        // shell/TvMainShell.kt librariesWithCollections probes every accessible library, then publishes
+        // one complete set. Unknown stays visible; failed probes exclude that library, not the others.
+        foreach (var library in libraries)
+        {
+            if (probe.IsCancellationRequested || !ReferenceEquals(client, Session.Client) || client.ProfileId != profileId) return;
+            try
+            {
+                var sections = await client.LibraryBrowse.CollectionsAsync(library.Id!, probe.Token);
+                if (sections.Any(section => section.Collections.Count > 0)) ids.Add(library.Id!);
+            }
+            catch (OperationCanceledException) when (probe.IsCancellationRequested) { return; }
+            catch (Exception ex) { Log.Error("Library collections probe", ex); }
+        }
+        if (probe.IsCancellationRequested || !ReferenceEquals(client, Session.Client) || client.ProfileId != profileId) return;
+        _librariesWithCollections = ids;
+        UpdateLibrarySections();
+    }
+
+    private void UpdateLibrarySections()
+    {
+        if (_panelTab?.DataContext is not TabView { LibraryTab: { } tab } || _cascadeLibrary is null) return;
+        // components/TvCascadeSelector.kt recomputes on BOTH anchor changes and probe completion.
+        var sections = LibrarySections.For(tab.Type, _librariesWithCollections?.Contains(_cascadeLibrary.Id!));
+        if (_cascadeSections.SequenceEqual(sections)) return;
+        var focused = FocusManager.GetFocusedElement() as FrameworkElement;
+        var restore = focused?.DataContext as LibrarySectionChoiceView;
+        var list = IsWithin(focused, LibrarySectionRows) ? LibrarySectionRows : SingleLibrarySections;
+        _cascadeSections = sections;
+        var choices = sections.Select(section => new LibrarySectionChoiceView(section)).ToList();
+        SingleLibrarySections.ItemsSource = LibrarySectionRows.ItemsSource = choices;
+        if (restore is not null)
+        {
+            var target = sections.Contains(restore.Section) ? restore.Section : LibrarySection.Recommended;
+            FocusRetry.Until(list, () => LibraryPanel.Visibility != Visibility.Visible || CascadeButtons(list)
+                .FirstOrDefault(button => button.DataContext is LibrarySectionChoiceView choice && choice.Section == target)?.Focus(FocusState.Programmatic) == true);
+        }
+    }
+
+    partial void OpenLibraryCollections(UserLibrary library, LibraryTab tab);
 
     private static string? LibraryMediaScope(LibraryTab tab) => tab.Type switch
     {
@@ -45,6 +95,7 @@ public sealed partial class ShellPage
         _panelTab = tabButton;
         var current = ScopeFor(tab);
         _cascadeLibrary = current;
+        UpdateLibrarySections();
         var single = tab.Libraries.Count == 1;
         _cascadeChoices = tab.Libraries.Select(library => new LibraryChoiceView(library.Id!, library.Name ?? string.Empty, library.Id == current.Id)).ToList();
         LibraryRows.ItemsSource = _cascadeChoices;
@@ -81,6 +132,7 @@ public sealed partial class ShellPage
         if (sender is not Control { DataContext: LibraryChoiceView choice } button || _panelTab?.DataContext is not TabView { LibraryTab: { } tab }) return;
         _cascadeAnchor = button;
         _cascadeLibrary = tab.Libraries.FirstOrDefault(library => library.Id == choice.Id);
+        UpdateLibrarySections();
         if (LibrarySectionPanel.Visibility == Visibility.Visible) { _cascadeFollow.Stop(); _cascadeFollow.Start(); }
     }
 
@@ -103,9 +155,15 @@ public sealed partial class ShellPage
         _searchSelected = false;
         UpdateChecked();
         ClosePanels();
-        if (!section.Browse)
+        if (section.Section == LibrarySection.Recommended)
         {
             ShowContent(typeof(BrowsePage), new LibraryRecommendedEntry(library.Id!, library.Name ?? tab.Title, scope));
+            return;
+        }
+        if (section.Section == LibrarySection.Collections)
+        {
+            // shell/TvMainShell.kt maps the Collections pill to the library's Collections tab.
+            OpenLibraryCollections(library, tab);
             return;
         }
         if (ContentFrame.Content is CatalogGridPage existing && existing.ShowsLibrary(library.Id!, scope))
