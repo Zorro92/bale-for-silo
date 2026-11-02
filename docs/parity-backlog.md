@@ -60,7 +60,9 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 - [x] Long-press / Menu card actions (Play, watched, favorite, watchlist, remove from Home); episode card menu
 - [x] "Explore all" end card; "See all" header
 - [x] Library: "Recommended" pill; Browse grid (6 cols, sort, filter, A–Z, paging); cascade level 2 + footer hint; "MOVIE LIBRARIES"
-  - [ ] Collections UI (API/models in place); Shuffle; filtered-error "Clear filters"; remote audiobook facet search
+  - [x] Collections pill (only when the library has collections), grouped grid, collection page with Collection Order
+  - [ ] Filtered-error "Clear filters" (built; not seen on the console, needs a failing filtered load)
+  - [ ] Shuffle (waits for the player); remote audiobook facet search (no audiobook library to test)
   - [x] Polish: toolbar icons/badges, alphabet selected/All treatment, 180 ms rail expansion; Recommended scope refill; Filter keeps focus across filter reloads
 - [x] Calendar (focus follows the selected pill/day, first card, per-row memory: a deliberate deviation)
 - [x] Profile menu: Watchlist, Favorites, History, Settings, Switch Server; opens on dwell/Down
