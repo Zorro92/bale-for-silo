@@ -200,7 +200,17 @@
                 <TextBlock Text="Start Over" VerticalAlignment="Center" />
               </StackPanel>
             </Button>
-            <!-- TvPlaybackActionSelectors: Movie, VolumeUp and Chat, in the utility-action order. -->
+            <!-- TvPlaybackSelectorRow.kt: optional Layers (Edition), then Movie, VolumeUp and Chat. -->
+            <Button x:Name="EditionSelector" Style="{StaticResource SkylineActionButtonStyle}" Click="OnEditionSelectorClick"
+                    AutomationProperties.Name="Edition" Visibility="Collapsed">
+              <StackPanel Style="{StaticResource SkylineDetailActionContentStyle}">
+                <Viewbox Style="{StaticResource SkylineDetailActionIconStyle}">
+                  <Path Width="{StaticResource SkylineMaterialIconCanvas}" Height="{StaticResource SkylineMaterialIconCanvas}" Fill="{StaticResource SkylineFocusRing}"
+                        Data="M12,2 L3,9 L12,16 L21,9 Z M11.99,18.54 L4.62,12.81 L3,14.07 L12,21.07 L21,14.07 L19.37,12.8 Z" />
+                </Viewbox>
+                <TextBlock Text="Edition" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
             <Button x:Name="VersionSelector" Style="{StaticResource SkylineActionButtonStyle}" Click="OnVersionSelectorClick" AutomationProperties.Name="Version">
               <StackPanel Style="{StaticResource SkylineDetailActionContentStyle}">
                 <Viewbox Style="{StaticResource SkylineDetailActionIconStyle}">

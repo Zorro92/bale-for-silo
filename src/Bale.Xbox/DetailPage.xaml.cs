@@ -111,6 +111,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         _similarRail.Entered += () => AnchorSection(SimilarSection);
 
         ActionButton.Attach(StartOverButton);
+        ActionButton.Attach(EditionSelector);
         ActionButton.Attach(VersionSelector);
         ActionButton.Attach(AudioSelector);
         ActionButton.Attach(SubtitleSelector);

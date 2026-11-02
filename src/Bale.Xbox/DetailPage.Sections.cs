@@ -135,10 +135,10 @@ public sealed partial class DetailPage
             stops.Add((SynopsisButton, () => SynopsisButton.Focus(FocusState.Keyboard)));
         }
 
-        // TvItemDetailScreen.kt's selectorFocus: Up from season tabs enters Version,
-        // while ordinary entry from the synopsis still starts on Play.
+        // TvItemDetailScreen.kt / TvPlaybackSelectorRow.kt's selectorFocus: Up from season tabs
+        // enters Edition when shown, otherwise Version. Ordinary synopsis entry still starts on Play.
         stops.Add((Actions, () => FocusAction(direction == FocusNavigationDirection.Up && IsWithin(source, Seasons)
-            ? VersionSelector : PlayButton, FocusState.Keyboard)));
+            ? PlaybackSelectorEntry : PlayButton, FocusState.Keyboard)));
         if (EpisodesSection.Visibility == Visibility.Visible)
         {
             if (Seasons.Items.Count > 0)

@@ -24,6 +24,10 @@ public sealed partial class DetailPage
             : detail
         : null;
 
+    // TvPlaybackSelectorRow.kt attaches the shared selectorFocus requester to Edition when shown.
+    private Button PlaybackSelectorEntry => EditionSelector.Visibility == Visibility.Visible ? EditionSelector : VersionSelector;
+
+    private void OnEditionSelectorClick(object sender, RoutedEventArgs e) => OpenSelectorMenu(PlaybackSelectorKind.Edition, EditionSelector, "Edition");
     private void OnVersionSelectorClick(object sender, RoutedEventArgs e) => OpenSelectorMenu(PlaybackSelectorKind.Version, VersionSelector, "Version");
     private void OnAudioSelectorClick(object sender, RoutedEventArgs e) => OpenSelectorMenu(PlaybackSelectorKind.Audio, AudioSelector, "Audio");
     private void OnSubtitleSelectorClick(object sender, RoutedEventArgs e) => OpenSelectorMenu(PlaybackSelectorKind.Subtitles, SubtitleSelector, "Subtitles");
@@ -53,9 +57,9 @@ public sealed partial class DetailPage
         var selection = _playbackSelections.Select(detail, kind, option);
         CloseSelectorMenu();
         ShowPlaybackSummary();
-        // A version switch clears file-specific indexes but must not delete durable preferences
-        // (TvItemDetailViewModel.kt's onVersionSelected / onNextUpVersionSelected).
-        if (kind == PlaybackSelectorKind.Version || Session.Client is not { } client
+        // Edition uses the same version callback and resets file-specific indexes without deleting
+        // durable preferences (TvPlaybackSelectorRow.kt / TvItemDetailViewModel.kt).
+        if (kind is PlaybackSelectorKind.Edition or PlaybackSelectorKind.Version || Session.Client is not { } client
             || PlaybackFormatting.SelectDisplayVersion(detail.Versions, selection.FileId, detail.LastFileId) is not { } version) return;
 
         var revision = ++_trackChoiceRevision;
@@ -108,6 +112,7 @@ public sealed partial class DetailPage
                 _detail = current with
                 {
                     Versions = refreshed.Versions,
+                    PlaybackVariants = refreshed.PlaybackVariants,
                     LastFileId = refreshed.LastFileId,
                     EffectiveSubtitleLanguage = refreshed.EffectiveSubtitleLanguage,
                     EffectiveSubtitleMode = refreshed.EffectiveSubtitleMode,
@@ -162,7 +167,26 @@ public sealed partial class DetailPage
 
     private void ShowSelectorDescriptions(PlaybackSummaryValues values)
     {
-        AutomationProperties.SetName(VersionSelector, SelectorDescription("Version", values.Version));
+        string? editionValue = null;
+        var versionValue = values.Version;
+        if (PlaybackDetail is { } detail)
+        {
+            var selection = _playbackSelections.For(detail);
+            var version = PlaybackFormatting.SelectDisplayVersion(detail.Versions, selection.FileId, detail.LastFileId);
+            var editions = PlaybackEditions.For(detail.Versions, detail.PlaybackVariants);
+            // TvPlaybackSelectorRow.kt: only distinct edition labels and a resolved playable file
+            // show Edition. A series/season uses its identity-checked Play episode, never the container.
+            if (version is not null && PlaybackEditions.HasChoices(editions))
+            {
+                editionValue = PlaybackEditions.Current(editions, version)?.Label;
+                // The Version trigger omits global Auto with editions, unlike the quiet hero readout.
+                versionValue = PlaybackFormatting.VersionCompactLabel(version);
+            }
+        }
+
+        EditionSelector.Visibility = editionValue is null ? Visibility.Collapsed : Visibility.Visible;
+        AutomationProperties.SetName(EditionSelector, SelectorDescription("Edition", editionValue));
+        AutomationProperties.SetName(VersionSelector, SelectorDescription("Version", versionValue));
         AutomationProperties.SetName(AudioSelector, SelectorDescription("Audio", values.Audio));
         AutomationProperties.SetName(SubtitleSelector, SelectorDescription("Subtitles", values.Subtitles));
     }
