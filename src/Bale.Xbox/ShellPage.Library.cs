@@ -77,7 +77,16 @@ public sealed partial class ShellPage
         }
     }
 
-    partial void OpenLibraryCollections(UserLibrary library, LibraryTab tab);
+    private void OpenLibraryCollections(UserLibrary library, LibraryTab tab)
+    {
+        var scope = LibraryMediaScope(tab);
+        if (ContentFrame.Content is LibraryCollectionsPage existing && existing.ShowsLibrary(library.Id!, scope))
+        {
+            existing.FocusContent();
+            return;
+        }
+        ShowContent(typeof(LibraryCollectionsPage), new LibraryCollectionsEntry(library.Id!, scope, Session.Client!));
+    }
 
     private static string? LibraryMediaScope(LibraryTab tab) => tab.Type switch
     {

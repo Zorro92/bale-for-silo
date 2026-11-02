@@ -56,6 +56,13 @@ public class LibraryCollectionsTests
     }
 
     [Theory]
+    [InlineData(65, 195, 540, 94, -29)]
+    [InlineData(94, 195, 540, 94, 0)]
+    [InlineData(300, 195, 540, 94, 73.8)]
+    public void GridRevealRespectsTheTopBarAndOfficialGutters(double offset, double size, double viewport, double inset, double expected) =>
+        Assert.Equal(expected, LibraryCollectionsGrid.ScrollDistance(offset, size, viewport, inset), precision: 6);
+
+    [Theory]
     [InlineData(false, null)]
     [InlineData(true, "movie")]
     public async Task DetailDefaultsToCollectionOrderAndUsesTheCorrectSourceAndScope(bool user, string? mediaScope)

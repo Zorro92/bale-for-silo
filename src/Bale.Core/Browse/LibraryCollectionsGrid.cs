@@ -49,6 +49,14 @@ public sealed class LibraryCollectionsGrid
     public LibraryCollectionCell? Entry(string? rememberedId) =>
         Cells.FirstOrDefault(cell => cell.Collection.Id == rememberedId) ?? Cells.FirstOrDefault();
 
+    /// <summary>theme/Layout.kt rememberTvGridBringIntoViewSpec: 12% leading / 22% trailing gutters, respecting the shell inset.</summary>
+    public static double ScrollDistance(double offset, double size, double viewport, double topInset)
+    {
+        var start = Math.Max(viewport * 0.12, topInset);
+        var end = viewport * 0.78;
+        return offset < start ? offset - start : offset + size > end ? offset + size - end : 0;
+    }
+
     public int Move(int index, GridDirection direction)
     {
         if (index < 0 || index >= Cells.Count) return index;

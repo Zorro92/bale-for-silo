@@ -105,6 +105,10 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
             {
                 calendar.FocusContent();
             }
+            else if (ContentFrame.Content is LibraryCollectionsPage collections)
+            {
+                collections.FocusContent();
+            }
             else
             {
                 return;
