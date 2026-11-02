@@ -29,6 +29,8 @@ namespace Bale.Xbox.Services;
 ///   GET  /tree            the visible element tree with bounds and text
 ///   POST /fault/profiles  fail the next picker profile-list load once (Retry then uses the server)
 ///   POST /fault/search    fail the next title-search request once (Try again then uses the server)
+///   POST /fault/home      fail the next Home load once (Retry then uses the server)
+///   POST /fault/home-empty  return no rows on the next Home load once (Refresh then uses the server)
 ///   POST /show/login      preview Login for the saved server, without changing the live session
 ///   POST /show/login/expired  preview Login with the session-expired notice
 ///   POST /show/server     preview manual server entry; Back returns to the signed-in page
@@ -45,6 +47,16 @@ internal sealed class DebugServer
 
     private static int _failProfilesOnce;
     private static int _failSearchOnce;
+    private static int _homeFaultOnce;
+
+    // TvHomeScreen.kt: exercise error/empty independently, without changing the server's libraries.
+    // The newest armed Home fault wins, and only a Home load (not a library/For You load) consumes it.
+    internal static bool TakeHomeEmptyOrThrow() => Interlocked.Exchange(ref _homeFaultOnce, 0) switch
+    {
+        1 => throw new HttpRequestException("Injected Home failure (fault home)."),
+        2 => true,
+        _ => false,
+    };
 
     // Exercise TvProfileSelectionScreen.kt's error branch without making a real server unreachable.
     // Both this hook and its call site are absent when BaleDebugServer=false (DEBUG_SERVER unset).
@@ -164,6 +176,14 @@ internal sealed class DebugServer
                 Interlocked.Exchange(ref _failSearchOnce, 1);
                 return ("200 OK", "next title-search request will fail once; Try again will search normally\n");
 
+            case ("POST", "/fault/home"):
+                Interlocked.Exchange(ref _homeFaultOnce, 1);
+                return ("200 OK", "next Home load will fail once; existing rows survive quiet refresh failures; Retry will load normally\n");
+
+            case ("POST", "/fault/home-empty"):
+                Interlocked.Exchange(ref _homeFaultOnce, 2);
+                return ("200 OK", "next Home load will return no rows once; Refresh will load normally\n");
+
             case ("POST", "/show/login"):
             case ("POST", "/show/login/expired"):
             case ("POST", "/show/server"):
@@ -178,7 +198,7 @@ internal sealed class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search}, POST /show/{login|login/expired|server|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|home|home-empty}, POST /show/{login|login/expired|server|home}\n");
         }
     }
 

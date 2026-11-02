@@ -189,18 +189,17 @@
       </Grid>
     </Border>
 
-    <ProgressRing x:Name="LoadingRing" Width="32" Height="32" IsActive="False" Visibility="Collapsed" Foreground="{StaticResource SkylinePrimary}" />
-    <StackPanel x:Name="EmptyPanel" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="16" Margin="48" Visibility="Collapsed">
-      <TextBlock x:Name="EmptyTitle" Text="Nothing to watch yet" FontSize="20.6" TextAlignment="Center" />
+    <!-- TvHomeScreen.kt / StatusViews.kt: distinct centered loading, empty and error surfaces. -->
+    <ProgressRing x:Name="LoadingRing" Style="{StaticResource SkylineHomeLoadingStyle}" IsActive="False" Visibility="Collapsed" />
+    <StackPanel x:Name="EmptyPanel" Style="{StaticResource SkylineHomeEmptyStyle}" Visibility="Collapsed">
+      <TextBlock x:Name="EmptyTitle" Text="Nothing to watch yet" Style="{StaticResource SkylineHomeStateTitleStyle}" />
       <TextBlock x:Name="EmptyMessage" Text="Add media to your libraries or start watching to see it here."
-                 FontSize="{StaticResource SkylineBodySize}" TextWrapping="Wrap" MaxWidth="600" TextAlignment="Center" Foreground="{StaticResource SkylineSecondary}" />
-      <Button x:Name="RefreshButton" Content="Refresh" Style="{StaticResource SkylineButtonStyle}" Height="Auto" Padding="32,12"
-              HorizontalAlignment="Center" Click="OnRetryClick" />
+                 Style="{StaticResource SkylineHomeEmptyCopyStyle}" />
+      <Button x:Name="RefreshButton" Content="Refresh" Style="{StaticResource SkylineHomeStateActionStyle}" Click="OnRetryClick" />
     </StackPanel>
-    <StackPanel x:Name="ErrorPanel" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12" Visibility="Collapsed">
-      <TextBlock x:Name="ErrorText" FontSize="{StaticResource SkylineBodySize}" TextWrapping="Wrap" MaxWidth="420" TextAlignment="Center"
-                 Foreground="{StaticResource SkylineSecondary}" />
-      <Button x:Name="RetryButton" Content="Try Again" Style="{StaticResource SkylineButtonStyle}" HorizontalAlignment="Center" Click="OnRetryClick" />
+    <StackPanel x:Name="ErrorPanel" Style="{StaticResource SkylineHomeErrorStyle}" Visibility="Collapsed">
+      <TextBlock x:Name="ErrorText" Style="{StaticResource SkylineHomeStateTitleStyle}" />
+      <Button x:Name="RetryButton" Content="Retry" Style="{StaticResource SkylineHomeErrorActionStyle}" Click="OnRetryClick" />
     </StackPanel>
   </Grid>
 </Page>

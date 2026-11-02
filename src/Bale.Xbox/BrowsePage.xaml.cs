@@ -181,7 +181,13 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
 
         try
         {
-            var rows = _forYou ? await client.Browse.LoadForYouAsync(ArtworkWidths.Tv1080)
+#if DEBUG_SERVER
+            var homeEmpty = !_forYou && DebugServer.TakeHomeEmptyOrThrow();
+#else
+            const bool homeEmpty = false;
+#endif
+            var rows = homeEmpty ? Array.Empty<MediaRow>()
+                : _forYou ? await client.Browse.LoadForYouAsync(ArtworkWidths.Tv1080)
                 : await client.Browse.LoadHomeAsync(ArtworkWidths.Tv1080);
             if (!ReferenceEquals(client, Session.Client) || (refresh && !_isLoaded))
             {
@@ -226,7 +232,8 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             // TvHomeScreen.kt keeps the existing feed usable when a quiet refresh fails.
             if (_rows.Count == 0)
             {
-                ShowError($"Couldn't load this page. {ex.Message}", focus: !refresh || IsInPage(FocusManager.GetFocusedElement() as DependencyObject));
+                ShowError(_forYou ? $"Couldn't load this page. {ex.Message}" : HomeFeedback.ErrorMessage(ex),
+                    focus: !refresh || IsInPage(FocusManager.GetFocusedElement() as DependencyObject));
             }
         }
         finally
@@ -987,9 +994,10 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     {
         ClearMarquee();
         // TvHomeScreen.kt: an empty feed is not an error, and has its own Refresh action.
-        EmptyTitle.Text = _forYou ? "No recommendations yet" : _libraryId is null ? "Nothing to watch yet" : $"{_libraryTitle} is empty.";
+        EmptyTitle.Text = _forYou ? "No recommendations yet" : _libraryId is null ? HomeFeedback.EmptyTitle : $"{_libraryTitle} is empty.";
         EmptyMessage.Text = _forYou ? "Watch a few titles and check back."
-            : _libraryId is null ? "Add media to your libraries or start watching to see it here." : string.Empty;
+            : _libraryId is null ? HomeFeedback.EmptyMessage : string.Empty;
+        RefreshButton.Content = HomeFeedback.RefreshLabel;
         EmptyMessage.Visibility = RefreshButton.Visibility = _libraryId is null ? Visibility.Visible : Visibility.Collapsed;
         VisualStateManager.GoToState(this, "Empty", false);
         if (focus && _libraryId is null)
@@ -1002,6 +1010,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     {
         ClearMarquee();
         ErrorText.Text = message;
+        RetryButton.Content = HomeFeedback.RetryLabel;
         VisualStateManager.GoToState(this, "Error", false);
         if (focus)
         {
@@ -1023,6 +1032,8 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             case VirtualKey.Up:
             case VirtualKey.GamepadDPadUp:
             case VirtualKey.GamepadLeftThumbstickUp:
+                // TvHomeEmptyState's focus claim must not pull the viewer back after Up to the bar.
+                _focusVersion++;
                 ShellPage.Current?.FocusSelectedTab();
                 e.Handled = true;
                 break;

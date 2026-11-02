@@ -12,6 +12,8 @@
 #   scripts/bale-debug.sh tree                  the visible element tree with bounds
 #   scripts/bale-debug.sh fault profiles        fail the next picker profile-list load once
 #   scripts/bale-debug.sh fault search          fail the next title-search request once
+#   scripts/bale-debug.sh fault home            fail the next Home load once (quiet refresh keeps existing rows)
+#   scripts/bale-debug.sh fault home-empty      return no rows on the next Home load once
 #   scripts/bale-debug.sh show login            preview Login without changing the saved session
 #   scripts/bale-debug.sh show login expired    preview the session-expired Login notice
 #   scripts/bale-debug.sh show server           preview manual server entry
@@ -56,8 +58,8 @@ case "${1:-}" in
   targets) curl -fsS "$BASE/targets" ;;
   tree) curl -fsS "$BASE/tree" ;;
   fault)
-    if [[ "$#" != 2 || ( "${2:-}" != profiles && "${2:-}" != search ) ]]; then
-      echo "usage: scripts/bale-debug.sh fault {profiles|search}" >&2
+    if [[ "$#" != 2 || ( "${2:-}" != profiles && "${2:-}" != search && "${2:-}" != home && "${2:-}" != home-empty ) ]]; then
+      echo "usage: scripts/bale-debug.sh fault {profiles|search|home|home-empty}" >&2
       exit 2
     fi
     curl -fsS -X POST "$BASE/fault/$2"
@@ -76,7 +78,7 @@ case "${1:-}" in
     curl --fail-with-body -sS -X POST "$BASE/show/$route"
     ;;
   *)
-    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac
