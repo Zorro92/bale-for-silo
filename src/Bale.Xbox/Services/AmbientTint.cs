@@ -62,11 +62,19 @@ internal static class AmbientTint
         }
     }
 
-    /// <summary>Scale the colour so its luminance is 0.22: bright art is dimmed, very dark art lifted.</summary>
+    /// <summary>
+    /// AmbientBackdropTint.kt normalizeTint: make luminance at or below 0.001 black, dim bright art to
+    /// 0.22, and cap the lift of darker art with a 0.05 luminance floor. Clamp each channel to [0, 1].
+    /// </summary>
     internal static Color Normalize(double r, double g, double b)
     {
         var luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-        var scale = luminance > 0.001 ? TargetLuminance / luminance : 1;
+        var scale = luminance switch
+        {
+            <= 0.001 => 0.0,
+            > TargetLuminance => TargetLuminance / luminance,
+            _ => Math.Max(1.0, TargetLuminance / Math.Max(luminance, 0.05)),
+        };
         byte Channel(double value) => (byte)Math.Round(Math.Clamp(value * scale, 0, 1) * 255);
         return Color.FromArgb(255, Channel(r), Channel(g), Channel(b));
     }
