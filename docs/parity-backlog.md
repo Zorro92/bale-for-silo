@@ -25,7 +25,7 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 ### Profiles and sign-in (`screens/profiles/*`, `screens/auth/*`, `navigation/TvAppNavigation.kt`)
 - [x] Profile tiles: round 110 avatar in 128 column, 14 gap, 6 columns, focus scale 1.12 + 3px white ring 6 outside, name 12.9 SemiBold secondary → white
 - [x] Header "Who's watching?" 27.5 ExtraBold + "Signed in as <user>"
-- [ ] Lock badge bottom-right 30 #1C1C1E circle; "KIDS" pill
+- [x] Lock badge bottom-right 30 #1C1C1E circle; "KIDS" pill (per MarqueeProfileAvatar.kt, scaled by 110/92; verified on the console with a test PIN and a kids profile)
 - [ ] PIN: full-screen avatar + 4 dots + round keypad, auto-submit at 4, "Checking…"
 - [ ] Picker error screen with Retry; Sign out / Change server buttons
 - [x] Back from Switch Profile exits (picker is the root)
