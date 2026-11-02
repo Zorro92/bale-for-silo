@@ -13,7 +13,7 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 - [x] Episode and season items open the series page with that season/episode selected
 - [x] Season/episode load errors keep the page; skeleton while loading, "No episodes available" when empty (season switches verified; skeleton, empty and failure states load too fast / need the server down to see)
 - [x] Page background: solid sampled tint × 0.42, default (0.04, 0.12, 0.14) (already in place; normalization fixed to match AmbientBackdropTint.kt. Seen on The Lion King and dark-art titles)
-- [ ] Text title: 36 Inter Tight Black, uppercase, black@0.55 shadow, "A: B" split onto a 20sp line
+- [x] Text title: 36 Inter Tight Black, uppercase, black@0.55 shadow, "A: B" split onto a 20sp line (verified on Coyote (2017), 0.1.140; matches TvDetailHero.kt heroDisplayHero)
 - [x] Synopsis focusable, 13sp white@0.82, opens full text + tagline dialog
 - [ ] Cast: 12/12 text, 2-line name, white@0.88 → white on focus, cap 24, header gap 14, placeholder icon 40
 - [ ] Section header 18.1; Play icon 18; round action icons 19; episodes→Cast gap 32
