@@ -461,6 +461,7 @@
       </Border>
     </Grid>
     <controls:PlaybackSelectorMenu x:Name="SelectorMenu" IsHitTestVisible="False"
-                                   AnchorGap="{StaticResource SkylinePlaybackSelectorGap}" WindowInset="{StaticResource SkylinePlaybackSelectorWindowInset}" />
+                                   AnchorGap="{StaticResource SkylinePlaybackSelectorGap}" WindowInset="{StaticResource SkylinePlaybackSelectorWindowInset}"
+                                   EdgeFadeHeight="{StaticResource SkylinePlaybackSelectorEdgeFadeHeight}" />
   </Grid>
 </Page>

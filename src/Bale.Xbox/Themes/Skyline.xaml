@@ -1006,6 +1006,8 @@
   <x:Double x:Key="SkylinePlaybackSelectorGap">6</x:Double>
   <x:Double x:Key="SkylinePlaybackSelectorWindowInset">48</x:Double>
   <x:Double x:Key="SkylinePlaybackSelectorListHeight">270</x:Double>
+  <!-- TvAnchoredSelectorMenu.kt's SelectorMenuScrollEdgeHeight masks only the rows, not the chevrons. -->
+  <x:Double x:Key="SkylinePlaybackSelectorEdgeFadeHeight">26</x:Double>
   <GridLength x:Key="SkylinePlaybackSelectorCheckSlot">28</GridLength>
   <Style x:Key="SkylinePlaybackSelectorPanelStyle" TargetType="controls:SkylinePanel" BasedOn="{StaticResource SkylinePanelChromeStyle}">
     <Setter Property="MinWidth" Value="300" /><Setter Property="MaxWidth" Value="400" />
