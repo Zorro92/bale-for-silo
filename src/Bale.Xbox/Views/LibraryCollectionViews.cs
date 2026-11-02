@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Bale.Core;
 using Bale.Core.Browse;
 using Bale.Xbox.Services;
@@ -39,7 +40,9 @@ public sealed partial class LibraryCollectionRowView(string? header, IReadOnlyLi
 {
     public string Header { get; } = header ?? string.Empty;
     public bool IsHeader { get; } = header is not null;
-    public IReadOnlyList<LibraryCollectionCardView> Cards { get; } = cards;
+    // An interface-typed list bound by x:Bind reached the GridView empty under Native AOT; the
+    // concrete ObservableCollection is what CalendarViews/BrowseViews bind successfully.
+    public ObservableCollection<LibraryCollectionCardView> Cards { get; } = new(cards);
 }
 
 public sealed partial class LibraryCollectionRowTemplateSelector : DataTemplateSelector
