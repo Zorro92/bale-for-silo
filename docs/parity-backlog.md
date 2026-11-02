@@ -35,7 +35,7 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
   - [ ] Avatar fill for profiles without an image (APK: Kids is salmon, Bale slate)
 - [x] Back from Switch Profile exits (picker is the root)
 - [ ] Login: two columns, "Sign in to <server>", QR + code card + status ("Continue on your phone"), actions row; declined stays with retry; Back on the code screen exits (layout, copy, QR/code card and serif-initial mark verified on the console, 0.1.155; decline → retry and Back-exits need a real signed-out session, still to check with the owner)
-- [ ] Server entry copy: "Enter your server address", Connect / Back (source-matched field centering, select-to-open keyboard, Language icon and TV-name chip landed; Xbox verification pending)
+- [x] Server entry copy: "Enter your server address", Connect / Back (source-matched field centering, select-to-open keyboard, Language icon and TV-name chip landed) (verified on the console, 0.1.157: Down→Connect, Right→Back, Up→field, rounded corners when focused)
   - [ ] Advanced options: Auto / HTTPS / HTTP and port with matching URL-candidate probing (deliberately absent rather than exposing a partial control)
 - [ ] Session expiry → Login with "You were signed out of <server>. Sign in again."; all pages, not only Home (single root-owned transition after rejected refresh; Core coverage passes; notice verified via show login expired, 0.1.155; a real revoked session still to check with the owner)
 - [x] Startup with saved tokens goes straight to Main (no network gate) (MainTvActivity.kt resolveStartDestination; verified: 0.1.155 launched straight to the picker; offline/expired covered in Core tests)
@@ -51,14 +51,14 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 
 ### Shell and Home (`shell/TvTopMenuBar.kt`, `shell/TvMainShell.kt`, `components/TvMediaRow.kt`, `components/TvSkylineSectionFeed.kt`)
 - [x] Avatar focus: keep 18% white fill, ring 1dp white 18% → 2dp OnSurface
-- [ ] Tabs Medium at rest, SemiBold selected/focused; selected border 1; resting alpha 0.62; search glyph 19 (implemented; Xbox verification pending)
-- [ ] Panel dwell 180 ms first, 80 ms switching (implemented; Xbox verification pending)
+- [x] Tabs Medium at rest, SemiBold selected/focused; selected border 1; resting alpha 0.62; search glyph 19 (TvTopMenuBar.kt; verified on the console, 0.1.157: dim resting tabs, bordered selected Home, white focused Movies, inverted search circle)
+- [x] Panel dwell 180 ms first, 80 ms switching (TvTopMenuBar.kt TopMenuInitialPreviewDelayMillis/PanelSwitchDelayMillis; panel opened after the dwell on the console, 0.1.157)
 - [x] Profile panel: no scrim, traps focus; header uppercase "subtitle · server" 11.2 @0.38; icons 16; divider 1 @10%
-- [ ] Row header→rail 12, progress icon 22, row gap / card padding per TvSkylineSectionFeed (implemented; Xbox verification pending)
+- [x] Row header→rail 12, progress icon 22, row gap / card padding per TvSkylineSectionFeed (TvSkylineSectionFeed.kt; checked on the console, 0.1.157)
 - [x] Ambient tint animates, art crossfades
-- [ ] Empty state "Nothing to watch yet" + Refresh; separate loading/error (implemented; Xbox verification pending)
+- [x] Empty state "Nothing to watch yet" + Refresh; separate loading/error (StatusViews.kt; verified with fault home-empty / fault home on the console, 0.1.157: Refresh / Retry focused, Retry reloads 11 rows)
 - [x] Continue Watching opens the series with season/episode selected
-- [ ] Home refreshes when returned to (implemented; Xbox verification pending)
+- [x] Home refreshes when returned to (verified on the console, 0.1.157: back from Lupin keeps the card and offsets, log shows a quiet refresh)
 
 ## Wave 2: missing pieces of existing screens
 - [x] Detail: Trailers & More, Recommended/Related, Details facts table
