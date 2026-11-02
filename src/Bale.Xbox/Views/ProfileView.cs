@@ -16,6 +16,13 @@ public sealed partial class ProfileView
         LockVisibility = profile.HasPin == true ? Visibility.Visible : Visibility.Collapsed;
         KidsVisibility = profile.IsChild == true ? Visibility.Visible : Visibility.Collapsed;
         Avatar = avatarUrl is null ? null : AvatarImage(avatarUrl, 110);
+        // MarqueeProfileAvatar.kt: the ID-selected tint has a radial highlight/shade, not a flat fill.
+        // Pre-rendered by scripts/generate-profile-art.py: UWP XAML has no RadialGradientBrush.
+        AvatarFill = new ImageBrush
+        {
+            ImageSource = new BitmapImage(new Uri($"ms-appx:///Assets/ProfileAvatar-{ProfileTilePalette.Tint(profile.Id ?? string.Empty):X8}.png")),
+            Stretch = Stretch.UniformToFill,
+        };
     }
 
     public Profile Profile { get; }
@@ -27,6 +34,8 @@ public sealed partial class ProfileView
     public string Initial { get; }
 
     public ImageSource? Avatar { get; }
+
+    public ImageBrush AvatarFill { get; }
 
     public Visibility LockVisibility { get; }
 

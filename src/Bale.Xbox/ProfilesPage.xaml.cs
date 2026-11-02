@@ -354,6 +354,7 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         _verifying = false;
         PinName.Text = chosen.Name;
         PinInitial.Text = chosen.Initial;
+        PinAvatarFill.Fill = chosen.AvatarFill;
         PinAvatarBrush.ImageSource = chosen.Avatar;
         PinStatus.Text = "Enter your PIN";
         PinStatus.Foreground = new SolidColorBrush(Color.FromArgb(191, 237, 237, 237));

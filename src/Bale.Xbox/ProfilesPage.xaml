@@ -4,9 +4,12 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:views="using:Bale.Xbox.Views"
     xmlns:controls="using:Bale.Xbox.Controls"
-    Background="{StaticResource SkylineAurora}">
+    Background="{StaticResource SkylineProfileBackdrop}">
 
   <Grid>
+    <!-- TvProfileSelectionScreen.kt uses MarqueeScene.Focus.Profiles + MarqueeScrim(Ambient)
+         over TvAppNavigation.kt's mirrored MarqueeBackdrop, not the legacy TvAuroraBackdrop. -->
+    <Rectangle Fill="{StaticResource SkylineProfileBackdropScrim}" IsHitTestVisible="False" />
     <!-- TvProfileSelectionScreen.kt: six 128dp columns, 14dp gaps, round 110dp avatars. -->
     <Grid x:Name="PickerPanel" Margin="44,30">
       <Grid.RowDefinitions>
@@ -30,11 +33,12 @@
             <DataTemplate x:DataType="views:ProfileView">
               <StackPanel Width="{StaticResource SkylineProfileColumnWidth}">
                 <Grid x:Name="Art" Width="{StaticResource SkylineProfileAvatarSize}" Height="{StaticResource SkylineProfileAvatarSize}" HorizontalAlignment="Center">
-                  <Ellipse Fill="{StaticResource SkylineProfileAvatarFill}" />
+                  <Ellipse Fill="{x:Bind AvatarFill}" />
                   <TextBlock Text="{x:Bind Initial}" FontSize="36" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                   <Ellipse>
                     <Ellipse.Fill><ImageBrush ImageSource="{x:Bind Avatar}" Stretch="UniformToFill" /></Ellipse.Fill>
                   </Ellipse>
+                  <Ellipse Stroke="{StaticResource SkylineProfileAvatarBorder}" StrokeThickness="{StaticResource SkylineProfileAvatarBorderWidth}" />
                   <!-- The ring's centre is 6dp outside the avatar; its 3dp stroke extends another 1.5dp. -->
                   <Ellipse x:Name="FocusRing" Margin="-7.5" StrokeThickness="3" Stroke="{StaticResource SkylineFocusRing}" Opacity="0" />
                   <!-- MarqueeProfileAvatar.kt: badges sit outside the circular crop, inside Art's focus scale. -->
@@ -115,9 +119,10 @@
     <Grid x:Name="PinPanel" Visibility="Collapsed" Background="{StaticResource SkylinePinScrim}" PreviewKeyDown="OnPinPreviewKeyDown">
       <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
         <Grid Width="80" Height="80">
-          <Ellipse Fill="{StaticResource SkylineProfileAvatarFill}" />
+          <Ellipse x:Name="PinAvatarFill" />
           <TextBlock x:Name="PinInitial" FontSize="28" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
           <Ellipse><Ellipse.Fill><ImageBrush x:Name="PinAvatarBrush" Stretch="UniformToFill" /></Ellipse.Fill></Ellipse>
+          <Ellipse Stroke="{StaticResource SkylineProfileAvatarBorder}" StrokeThickness="{StaticResource SkylineProfileAvatarBorderWidth}" />
         </Grid>
         <TextBlock x:Name="PinName" FontSize="{StaticResource SkylinePinNameSize}" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,11,0,0" />
         <StackPanel x:Name="PinDots" Orientation="Horizontal" Spacing="14" HorizontalAlignment="Center" Margin="0,17,0,0" AutomationProperties.Name="PIN entry">
