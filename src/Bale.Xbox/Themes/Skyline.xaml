@@ -1118,11 +1118,20 @@
   <x:Double x:Key="SkylineProfileAvatarSize">110</x:Double>
   <CornerRadius x:Key="SkylineProfileAvatarRadius">55</CornerRadius>
   <x:Double x:Key="SkylineProfileColumnWidth">128</x:Double>
-  <x:Double x:Key="SkylineProfileLockSize">30</x:Double>
-  <CornerRadius x:Key="SkylineProfileLockRadius">15</CornerRadius>
-  <x:Double x:Key="SkylineProfileKidsHeight">22</x:Double>
-  <CornerRadius x:Key="SkylineProfileKidsRadius">11</CornerRadius>
-  <x:Double x:Key="SkylineProfileKidsSize">9.5</x:Double>
+  <!-- MarqueeProfileAvatar.kt: TvProfileSelectionScreen.kt passes size 110 and baseSize 92.
+       Badge geometry scales by 110/92 before Art applies the existing focus lift. -->
+  <x:Double x:Key="SkylineProfileLockSize">35.869566</x:Double>
+  <CornerRadius x:Key="SkylineProfileLockRadius">17.934783</CornerRadius>
+  <Thickness x:Key="SkylineProfileLockBorder">2.51087</Thickness>
+  <Thickness x:Key="SkylineProfileLockOffset">0,0,-2.869565,-2.869565</Thickness>
+  <x:Double x:Key="SkylineProfileLockIconSize">15.065217</x:Double>
+  <x:Double x:Key="SkylineProfileKidsHeight">26.304348</x:Double>
+  <CornerRadius x:Key="SkylineProfileKidsRadius">13.152174</CornerRadius>
+  <x:Double x:Key="SkylineProfileKidsSize">11.31087</x:Double>
+  <Thickness x:Key="SkylineProfileKidsPadding">9.86413,0,9.86413,0</Thickness>
+  <Thickness x:Key="SkylineProfileKidsOffset">0,-2.630435,-6.576087,0</Thickness>
+  <!-- 0.4sp tracking at 11 * 110/92 sp, rounded to UWP's integer thousandths of an em. -->
+  <x:Int32 x:Key="SkylineProfileKidsTracking">30</x:Int32>
   <SolidColorBrush x:Key="SkylineProfileLockFill" Color="#FF1C1C1E" />
   <SolidColorBrush x:Key="SkylineProfileAvatarFill" Color="#FF66758B" />
   <SolidColorBrush x:Key="SkylinePinKeyFill" Color="#21FFFFFF" />

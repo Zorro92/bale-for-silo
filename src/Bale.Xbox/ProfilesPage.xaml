@@ -36,15 +36,28 @@
                   </Ellipse>
                   <!-- The ring's centre is 6dp outside the avatar; its 3dp stroke extends another 1.5dp. -->
                   <Ellipse x:Name="FocusRing" Margin="-7.5" StrokeThickness="3" Stroke="{StaticResource SkylineFocusRing}" Opacity="0" />
-                  <!-- MarqueeProfileAvatar.kt badges are outside the circular crop. -->
+                  <!-- MarqueeProfileAvatar.kt: badges sit outside the circular crop, inside Art's focus scale. -->
                   <Border Width="{StaticResource SkylineProfileLockSize}" Height="{StaticResource SkylineProfileLockSize}" CornerRadius="{StaticResource SkylineProfileLockRadius}"
-                          Background="{StaticResource SkylineProfileLockFill}" BorderBrush="Black" BorderThickness="2" HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                          Margin="0,0,-2.4,-2.4" Visibility="{x:Bind LockVisibility}">
-                    <FontIcon Glyph="&#xE72E;" FontSize="12.6" Foreground="{StaticResource SkylineSecondary}" />
+                          Background="{StaticResource SkylineProfileLockFill}" BorderBrush="Black" BorderThickness="{StaticResource SkylineProfileLockBorder}"
+                          HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="{StaticResource SkylineProfileLockOffset}" Visibility="{x:Bind LockVisibility}">
+                    <!-- LockGlyph draws a shackle and rounded body, not a platform font icon. -->
+                    <Viewbox Width="{StaticResource SkylineProfileLockIconSize}" Height="{StaticResource SkylineProfileLockIconSize}"
+                             HorizontalAlignment="Center" VerticalAlignment="Center">
+                      <Grid Width="24" Height="24">
+                        <Path Width="24" Height="24" Stroke="{StaticResource SkylineSecondary}" StrokeThickness="3.84"
+                              Data="M5.76,8.16 A6.24,7.2 0 0 1 18.24,8.16" />
+                        <Path Width="24" Height="24" Fill="{StaticResource SkylineSecondary}"
+                              Data="M5.76,8.16 H9.6 V11.04 H5.76 Z M14.4,8.16 H18.24 V11.04 H14.4 Z" />
+                        <Path Width="24" Height="24" Fill="{StaticResource SkylineSecondary}"
+                              Data="M5.28,10.56 H18.72 A2.88,2.88 0 0 1 21.6,13.44 V21.12 A2.88,2.88 0 0 1 18.72,24 H5.28 A2.88,2.88 0 0 1 2.4,21.12 V13.44 A2.88,2.88 0 0 1 5.28,10.56 Z" />
+                      </Grid>
+                    </Viewbox>
                   </Border>
-                  <Border Height="{StaticResource SkylineProfileKidsHeight}" CornerRadius="{StaticResource SkylineProfileKidsRadius}" Background="White" Padding="8,0"
-                          HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-5.5,0" Visibility="{x:Bind KidsVisibility}">
-                    <TextBlock Text="KIDS" FontSize="{StaticResource SkylineProfileKidsSize}" FontWeight="Black" Foreground="Black" VerticalAlignment="Center" />
+                  <Border Height="{StaticResource SkylineProfileKidsHeight}" CornerRadius="{StaticResource SkylineProfileKidsRadius}"
+                          Background="White" Padding="{StaticResource SkylineProfileKidsPadding}" HorizontalAlignment="Right" VerticalAlignment="Top"
+                          Margin="{StaticResource SkylineProfileKidsOffset}" Visibility="{x:Bind KidsVisibility}">
+                    <TextBlock Text="KIDS" FontSize="{StaticResource SkylineProfileKidsSize}" FontWeight="Black" CharacterSpacing="{StaticResource SkylineProfileKidsTracking}"
+                               Foreground="Black" VerticalAlignment="Center" />
                   </Border>
                 </Grid>
                 <TextBlock x:Name="ProfileCaption" Text="{x:Bind Name}" FontSize="{StaticResource SkylineProfileNameSize}" FontWeight="SemiBold"
