@@ -1,3 +1,5 @@
+using Bale.Core.Settings;
+
 namespace Bale.Core.Browse;
 
 public sealed record HomeLoadRequest(int Generation, bool Quiet);
@@ -15,11 +17,16 @@ public sealed class HomeFeedState
     private bool _restoringFocus;
     private bool _refreshPending;
 
+    // TvHomeScreen.kt keeps the populated server sections separate from their local projection.
+    // Hiding every row must not lose the rows the Settings editor needs to show again.
+    public IReadOnlyList<MediaRow> AvailableRows { get; private set; } = [];
     public IReadOnlyList<MediaRow> Rows { get; private set; } = [];
+    public HomeSectionLayout Layout { get; private set; } = new();
+    public bool SectionsHiddenByPreference => Layout.AllHidden(AvailableRows);
     public string? Error { get; private set; }
     public bool IsShown { get; private set; }
     public bool IsBusy => _request is not null;
-    public bool IsLoading => !_hasResult || (_request is { Quiet: false } && Rows.Count == 0);
+    public bool IsLoading => !_hasResult || (_request is { Quiet: false } && AvailableRows.Count == 0);
     public HomeFeedStatus Status => HomeFeedback.Status(IsLoading, Rows.Count, Error);
 
     /// <summary>Initial load or an explicit Refresh/Retry; never race an existing read.</summary>
@@ -93,15 +100,22 @@ public sealed class HomeFeedState
         _hasResult = true;
         _request = null;
         // TvHomeScreen.kt leaves good prior sections visible, without a blocking error or spinner.
-        Error = Rows.Count > 0 ? null : HomeFeedback.ErrorMessage(error);
+        Error = AvailableRows.Count > 0 ? null : HomeFeedback.ErrorMessage(error);
         return true;
     }
 
     /// <summary>HomeViewModel.kt's optimistic card removals also change whether Home is empty.</summary>
     public void SetRows(IReadOnlyList<MediaRow> rows)
     {
-        Rows = rows.Where(row => row.Cards.Count > 0).ToList();
+        AvailableRows = rows.Where(row => row.Cards.Count > 0).ToList();
+        Rows = Layout.Arrange(AvailableRows);
         _hasResult = true;
         Error = null;
+    }
+
+    public void SetLayout(HomeSectionLayout layout)
+    {
+        Layout = layout;
+        Rows = Layout.Arrange(AvailableRows);
     }
 }
