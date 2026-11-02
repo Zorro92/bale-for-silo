@@ -236,18 +236,18 @@ public sealed partial class SearchPage : Page, IRestoresFocus
         else if (IsDown(e.Key))
         {
             e.Handled = true;
-            // TvSearchScreen.kt's first-content precedence: people, titles, then the error action.
-            if (_peopleViews.Count > 0)
+            // TvSearchScreen.kt's first-content precedence is shared with the Core feedback model.
+            switch (_state.FirstContentTarget)
             {
-                _peopleRail.Focus();
-            }
-            else if (_cards.Count > 0)
-            {
-                FocusResultAt(0);
-            }
-            else if (RetryButton.Visibility == Visibility.Visible)
-            {
-                RetryButton.Focus(FocusState.Programmatic);
+                case SearchContentTarget.People:
+                    _peopleRail.Focus();
+                    break;
+                case SearchContentTarget.Titles:
+                    FocusResultAt(0);
+                    break;
+                case SearchContentTarget.Retry:
+                    RetryButton.Focus(FocusState.Programmatic);
+                    break;
             }
         }
     }
@@ -585,41 +585,36 @@ public sealed partial class SearchPage : Page, IRestoresFocus
         Status.Text = _state.Status ?? string.Empty;
         LoadingMoreRing.IsActive = _state.IsLoadingMore;
         LoadingMoreRing.Visibility = _state.IsLoadingMore ? Visibility.Visible : Visibility.Collapsed;
-        RetryButton.Visibility = Visibility.Collapsed;
-        if (_state.Query.Length == 0)
+        var feedback = _state.Feedback(_filters);
+        var showRetry = feedback?.ActionLabel is not null;
+        if (!showRetry && RetryButton.FocusState != FocusState.Unfocused)
         {
-            ShowEmpty("Search your library", SearchText.Description(_filters));
+            // TvSearchScreen.kt removes the action while loading; retain a stable content target.
+            FocusSelectedFilter();
         }
-        else if (_state.IsSearching || _cards.Count > 0)
+
+        RetryButton.Visibility = showRetry ? Visibility.Visible : Visibility.Collapsed;
+        EmptyState.Visibility = feedback is null ? Visibility.Collapsed : Visibility.Visible;
+        if (feedback is not null)
         {
-            EmptyState.Visibility = Visibility.Collapsed;
+            EmptyTitle.Text = feedback.Title;
+            EmptyBody.Text = feedback.Body;
+            RetryButton.Content = feedback.ActionLabel ?? string.Empty;
         }
-        else if (_state.Error is { } error)
-        {
-            ShowEmpty("Search is unavailable", error);
-            RetryButton.Visibility = Visibility.Visible;
-        }
-        else if (_peopleViews.Count > 0)
-        {
-            // TvSearchScreen.kt: the people row is the answer; the status already says no titles.
-            EmptyState.Visibility = Visibility.Collapsed;
-        }
-        else
-        {
-            ShowEmpty($"No matches for “{_state.Query}”", "Try a shorter title or a different filter.");
-        }
+        // TvSearchScreen.kt never moves focus on a debounced response, including errors: typing
+        // must stay in the field. Down from the chips reaches people, titles, then Try again.
     }
 
-    private void ShowEmpty(string title, string body)
+    private void OnFeedbackFocus(object sender, RoutedEventArgs e)
     {
-        EmptyTitle.Text = title;
-        EmptyBody.Text = body;
-        EmptyState.Visibility = Visibility.Visible;
+        // TvSearchScreen.kt brings header item zero back when the feedback action gets focus.
+        ScrollHeaderIntoView();
     }
 
     private async void OnRetryClick(object sender, RoutedEventArgs e)
     {
-        // The feedback action disappears during a reset; leave focus on a stable chip, not the shell.
+        // TvSearchViewModel.kt submitSearch resets the current query/filter (including people),
+        // never the failed cursor. The action disappears; keep focus on the selected chip.
         FocusSelectedFilter();
         await SearchAsync(QueryBox.Text.Trim());
     }

@@ -44,8 +44,8 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 - [x] Field: leading 20 search icon @72%, radius 14, 17.2 text, 5.5% white fill / 12% border, focused ElevatedSurface / 94% border; placeholder from media types
 - [x] Any non-blank query after 300 ms
 - [x] Paging 40 at a time; status line 13.8 with Searching… / No results / N+ / About N
-- [ ] Error: "Search is unavailable" + message + Try again
-- [ ] Empty state sizes: title 18.9, body 15.5 @62%, icon 28 @34%
+- [x] Error: "Search is unavailable" + message + Try again (source-matched; Xbox verification pending)
+- [x] Empty state sizes: title 18.9, body 15.5 @62%, icon 28 @34% (source-matched; Xbox verification pending)
 - [x] People row; dynamic chips (Audiobooks)
 
 ### Shell and Home (`shell/TvTopMenuBar.kt`, `shell/TvMainShell.kt`, `components/TvMediaRow.kt`, `components/TvSkylineSectionFeed.kt`)
