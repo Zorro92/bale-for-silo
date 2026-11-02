@@ -11,7 +11,7 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 ### Detail (`screens/detail/TvItemDetailScreen.kt`, `TvDetailHero.kt`, `TvDetailEpisodeRail.kt`)
 - [x] Series Play/Resume and Start Over follow the focused episode (target, label, resume point); series resume comes from next-up, not the series
 - [x] Episode and season items open the series page with that season/episode selected
-- [ ] Season/episode load errors keep the page; skeleton while loading, "No episodes available" when empty
+- [x] Season/episode load errors keep the page; skeleton while loading, "No episodes available" when empty (season switches verified; skeleton, empty and failure states load too fast / need the server down to see)
 - [ ] Page background: solid sampled tint × 0.42, default (0.04, 0.12, 0.14)
 - [ ] Text title: 36 Inter Tight Black, uppercase, black@0.55 shadow, "A: B" split onto a 20sp line
 - [x] Synopsis focusable, 13sp white@0.82, opens full text + tagline dialog
