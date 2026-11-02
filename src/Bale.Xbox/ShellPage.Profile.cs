@@ -16,6 +16,7 @@ public sealed partial class ShellPage
     private bool _profileMenuEntered;
     private bool _profileDwellSuppressed;
     private bool _restoringProfileFocus;
+    private bool _signingOut;
 
     private void InitializeProfileMenu()
     {
@@ -23,6 +24,8 @@ public sealed partial class ShellPage
         AvatarButton.LostFocus += OnAvatarBlur;
         ProfilePanel.PreviewKeyDown += OnProfilePanelPreviewKeyDown;
         ProfilePanel.PreviewKeyUp += OnProfilePanelPreviewKeyUp;
+        SignOutPrompt.SignOutRequested += OnSignOutRequested;
+        SignOutPrompt.Dismissed += OnSignOutDismissed;
         _avatarDwell.Tick += (_, _) =>
         {
             _avatarDwell.Stop();
@@ -140,10 +143,26 @@ public sealed partial class ShellPage
         if (sender is FrameworkElement { Tag: string kind }) OpenPersonalList(kind);
     }
 
+    private void OnSignOutClick(object sender, RoutedEventArgs e)
+    {
+        if (_signingOut) return;
+        // TvMainShell.kt hides the profile dropdown before opening TvSignOutDialog.kt.
+        ClosePanels();
+        SignOutPrompt.Show();
+    }
+
+    private async void OnSignOutRequested(bool removeServer) => await SignOutAsync(removeServer);
+
+    private void OnSignOutDismissed()
+    {
+        // TvMainShell.kt's dismissProfileMenu restores the avatar, not the old Sign Out row.
+        if (Current == this && !_signingOut) DismissProfileMenu();
+    }
+
     private async void OnSwitchServerClick(object sender, RoutedEventArgs e)
     {
-        // ProfilesPage.LeaveServerAsync already defines Bale's single-server change-server flow.
+        // Keep Bale's existing single-server change-server flow, separate from confirmed sign-out.
         ClosePanels();
-        await SignOutAsync();
+        await SignOutAsync(changeServer: true);
     }
 }

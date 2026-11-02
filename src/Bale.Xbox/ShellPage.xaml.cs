@@ -162,6 +162,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         base.OnNavigatedTo(e);
         Log.Info("Shell: navigated to " + (e.Parameter as string ?? ""));
         Current = this;
+        _signingOut = false;
 
         // Back from a detail page: the cached shell keeps its tabs and content; just restore focus.
         if (e.NavigationMode == NavigationMode.Back && _tabs.Count > 0)
@@ -240,6 +241,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         _dwell.Stop();
         _avatarDwell.Stop();
         _collectionProbe?.Cancel();
+        SignOutPrompt.Hide();
         if (Current == this)
         {
             Current = null;
@@ -265,6 +267,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
     /// <summary>Back chain (guide §7): panel → close; content → top bar; another tab → Home; Home → leave the app.</summary>
     public bool OnBack()
     {
+        if (SignOutPrompt.Dismiss()) return true;
         if (ProfilePanel.Visibility == Visibility.Visible)
         {
             DismissProfileMenu();
@@ -468,12 +471,6 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         Session.ShowProfilePicker(Frame);
     }
 
-    private async void OnSignOutClick(object sender, RoutedEventArgs e)
-    {
-        ClosePanels();
-        await SignOutAsync();
-    }
-
     /// <summary>Pushes a title's detail page full screen over the shell (Skyline: detail has no top bar).</summary>
     internal void OpenDetail(string contentId)
     {
@@ -488,12 +485,18 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         Frame.Navigate(typeof(DetailPage), entry);
     }
 
-    /// <summary>Explicit sign-out returns to server entry; session expiry instead keeps the login server.</summary>
-    internal async Task SignOutAsync()
+    /// <summary>TvAppNavigation.kt keeps the server for Login unless the viewer explicitly removes it.</summary>
+    internal async Task SignOutAsync(bool removeServer = false, bool changeServer = false)
     {
-        await Session.SignOutAsync();
-        Frame.Navigate(typeof(MainPage), MainPage.ServerEntry);
-        Frame.BackStack.Clear();
+        if (_signingOut) return;
+        _signingOut = true;
+        await Session.SignOutAsync(removeServer);
+        if (Current == this && Session.Client is null)
+        {
+            // Change server retains Bale's editable-address route; it is not the keep-server sign-out.
+            Frame.Navigate(typeof(MainPage), removeServer || changeServer ? MainPage.ServerEntry : null);
+            Frame.BackStack.Clear();
+        }
     }
 
     private static T? FindChild<T>(DependencyObject parent) where T : DependencyObject

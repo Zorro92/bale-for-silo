@@ -35,6 +35,8 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         _actions.Pin = false;
         Rail.Attach(RememberActions).Pin = false;
         RetryButton.PreviewKeyDown += OnRetryPreviewKeyDown;
+        SignOutPrompt.SignOutRequested += OnSignOutRequested;
+        SignOutPrompt.Dismissed += RestoreSignOutFocus;
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -52,10 +54,12 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         _active = false;
         _loading?.Cancel();
         _pinVerification?.Cancel();
+        SignOutPrompt.Hide();
     }
 
     public bool OnBack()
     {
+        if (SignOutPrompt.Dismiss()) return true;
         if (_pinProfile is not null)
         {
             ClosePin();
@@ -614,11 +618,23 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         Frame.BackStack.Clear();
     }
 
-    private async void OnSignOutClick(object sender, RoutedEventArgs e) => await LeaveServerAsync();
+    private void OnSignOutClick(object sender, RoutedEventArgs e)
+    {
+        if (!_leaving) SignOutPrompt.Show();
+    }
 
-    private async void OnChangeServerClick(object sender, RoutedEventArgs e) => await LeaveServerAsync();
+    private async void OnSignOutRequested(bool removeServer) => await LeaveServerAsync(removeServer);
 
-    private async Task LeaveServerAsync()
+    private void RestoreSignOutFocus()
+    {
+        // TvProfileSelectionScreen.kt keeps the utility row mounted behind TvSignOutDialog.kt.
+        FocusRetry.Until(SignOutButton, () => !_active || _leaving || SignOutPrompt.IsOpen
+            || PickerPanel.Visibility != Visibility.Visible || SignOutButton.Focus(FocusState.Programmatic));
+    }
+
+    private async void OnChangeServerClick(object sender, RoutedEventArgs e) => await LeaveServerAsync(changeServer: true);
+
+    private async Task LeaveServerAsync(bool removeServer = false, bool changeServer = false)
     {
         if (_leaving)
         {
@@ -626,12 +642,12 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         }
         _leaving = true;
         _loading?.Cancel();
-        await Session.SignOutAsync();
-        if (_active)
+        await Session.SignOutAsync(removeServer);
+        if (_active && Session.Client is null)
         {
-            // Bale currently holds one server. Both utilities return to its editable address form;
-            // the official TvAppNavigation.kt Sign out also clears the stack to ServerSetup.
-            Frame.Navigate(typeof(MainPage), MainPage.ServerEntry);
+            // TvAppNavigation.kt: keep → Login, remove → resolve remaining server or ServerSetup.
+            // Bale has one server, so removal opens blank entry; Change server still edits its address.
+            Frame.Navigate(typeof(MainPage), removeServer || changeServer ? MainPage.ServerEntry : null);
             Frame.BackStack.Clear();
         }
     }

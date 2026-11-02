@@ -190,5 +190,8 @@
         </Button>
       </StackPanel>
     </controls:SkylinePanel>
+
+    <!-- TvMainShell.kt closes the dropdown before opening the shared TvSignOutDialog.kt modal. -->
+    <controls:SignOutDialog x:Name="SignOutPrompt" />
   </Grid>
 </Page>

@@ -1402,6 +1402,121 @@
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
 
+  <!-- Sign-out confirmation: components/TvSignOutDialog.kt widens TvDialog.kt's card to 640dp.
+       TvDialog.kt: scrim 78%, radius 22dp, 1dp PanelStroke, 30dp elevation; content 32/30/32/28dp,
+       message top 8dp, actions top 24dp / gap 12dp. Colors/type come from TvPlayerChrome.kt. -->
+  <SolidColorBrush x:Key="SkylineDialogScrim" Color="#C7000000" />
+  <x:Double x:Key="SkylineDialogActionGap">12</x:Double>
+  <Style x:Key="SkylineSignOutDialogCardStyle" TargetType="Grid">
+    <Setter Property="Width" Value="640" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="services:SurfaceShadow.Elevation" Value="30" />
+  </Style>
+  <Style x:Key="SkylineDialogShadowMaskStyle" TargetType="Rectangle">
+    <Setter Property="RadiusX" Value="22" /><Setter Property="RadiusY" Value="22" />
+    <Setter Property="Fill" Value="Black" />
+  </Style>
+  <Style x:Key="SkylineDialogSurfaceStyle" TargetType="Border">
+    <Setter Property="Background" Value="#FF17181B" />
+    <Setter Property="BorderBrush" Value="#1AFFFFFF" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="22" />
+  </Style>
+  <Style x:Key="SkylineDialogContentStyle" TargetType="StackPanel">
+    <Setter Property="Margin" Value="32,30,32,28" />
+  </Style>
+  <!-- TvPlayerChrome.kt TvPlayerType.ConfirmTitle: Bold 24/30sp, -0.015em tracking, scaled 0.86. -->
+  <Style x:Key="SkylineDialogTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="20.64" /><Setter Property="LineHeight" Value="25.8" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="FontWeight" Value="Bold" /><Setter Property="CharacterSpacing" Value="-15" />
+    <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
+  </Style>
+  <!-- TvPlayerChrome.kt TvPlayerType.Body: Normal 15/22sp, Graphite = Paper at 60%. -->
+  <Style x:Key="SkylineDialogMessageStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="12.9" /><Setter Property="LineHeight" Value="18.92" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="FontWeight" Value="Normal" /><Setter Property="Foreground" Value="#99EDEDED" />
+    <Setter Property="Margin" Value="0,8,0,0" /><Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style x:Key="SkylineDialogActionsStyle" TargetType="ItemsControl">
+    <Setter Property="Margin" Value="0,24,0,0" />
+  </Style>
+  <!-- TvDialog.kt TvDialogButton: 44dp capsule, 26dp horizontal padding, no scale; focus elevation 12dp.
+       TvPlayerChrome.kt Button is SemiBold 15/19sp; Default rests white 8%, focus Paper/Ink. -->
+  <Style x:Key="SkylineDialogButtonStyle" TargetType="Button">
+    <Setter Property="Height" Value="44" /><Setter Property="MinWidth" Value="0" />
+    <Setter Property="CornerRadius" Value="22" /><Setter Property="Padding" Value="26,0" />
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="12.9" /><Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Background" Value="#14FFFFFF" /><Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="services:SurfaceShadow.Elevation" Value="12" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid>
+            <Border x:Name="ShadowHost" Opacity="0" IsHitTestVisible="False">
+              <Rectangle x:Name="ShadowMask" RadiusX="22" RadiusY="22" Fill="Black" />
+            </Border>
+            <Border x:Name="Capsule" Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}" />
+            <TextBlock x:Name="Label" Text="{TemplateBinding Content}" Margin="{TemplateBinding Padding}" FontFamily="{TemplateBinding FontFamily}"
+                       FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}" Foreground="{TemplateBinding Foreground}"
+                       LineHeight="16.34" LineStackingStrategy="BlockLineHeight" HorizontalAlignment="Center" VerticalAlignment="Center" MaxLines="1" />
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" />
+                <VisualState x:Name="Disabled"><VisualState.Setters><Setter Target="Label.Opacity" Value="0.4" /></VisualState.Setters></VisualState>
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused"><VisualState.Setters>
+                  <Setter Target="Capsule.Background" Value="{StaticResource SkylinePrimary}" />
+                  <Setter Target="Label.Foreground" Value="#FF0B0B0C" /><Setter Target="ShadowHost.Opacity" Value="1" />
+                </VisualState.Setters></VisualState>
+                <VisualState x:Name="PointerFocused" /><VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <!-- TvDialog.kt destructive actions rest StopText (#FF6961) on Stop at 12%, and focus Stop/White. -->
+  <Style x:Key="SkylineDialogDestructiveButtonStyle" TargetType="Button" BasedOn="{StaticResource SkylineDialogButtonStyle}">
+    <Setter Property="Background" Value="#1FFF453A" /><Setter Property="Foreground" Value="#FFFF6961" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid>
+            <Border x:Name="ShadowHost" Opacity="0" IsHitTestVisible="False">
+              <Rectangle x:Name="ShadowMask" RadiusX="22" RadiusY="22" Fill="Black" />
+            </Border>
+            <Border x:Name="Capsule" Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}" />
+            <TextBlock x:Name="Label" Text="{TemplateBinding Content}" Margin="{TemplateBinding Padding}" FontFamily="{TemplateBinding FontFamily}"
+                       FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}" Foreground="{TemplateBinding Foreground}"
+                       LineHeight="16.34" LineStackingStrategy="BlockLineHeight" HorizontalAlignment="Center" VerticalAlignment="Center" MaxLines="1" />
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" />
+                <VisualState x:Name="Disabled"><VisualState.Setters><Setter Target="Label.Opacity" Value="0.4" /></VisualState.Setters></VisualState>
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused"><VisualState.Setters>
+                  <Setter Target="Capsule.Background" Value="#FFFF453A" />
+                  <Setter Target="Label.Foreground" Value="White" /><Setter Target="ShadowHost.Opacity" Value="1" />
+                </VisualState.Setters></VisualState>
+                <VisualState x:Name="PointerFocused" /><VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- Auth/profile-only metrics: TvProfileSelectionScreen.kt, TvPinEntryDialog.kt, TvMarquee.kt.
        Geometry is dp 1:1; type is sp x 0.86. Keep this group independent of shared browse styles. -->
   <x:Double x:Key="SkylineProfileTitleSize">27.5</x:Double>

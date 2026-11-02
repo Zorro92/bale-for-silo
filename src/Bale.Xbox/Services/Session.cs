@@ -166,17 +166,21 @@ internal static class Session
         frame.BackStack.Clear();
     }
 
-    public static async Task SignOutAsync()
+    public static async Task SignOutAsync(bool removeServer = false)
     {
         Reachability?.Dispose();
         Reachability = null;
         var client = Client;
+        var server = client is not null ? ServerAddress.ToBaseUrl(client.Server) : AppSettings.ServerUrl;
         Client = null; // A late refresh must not write a signed-out session back to the vault.
-        if (client is not null)
+        if (server is not null)
         {
-            AppSettings.ForgetTokens(ServerAddress.ToBaseUrl(client.Server));
+            AppSettings.ForgetTokens(server);
         }
 
+        // TvSignOut.kt keeps the server registry entry unless explicitly asked to remove it.
+        // Bale has one saved address: clear credentials first, then keep it for Login or forget it.
+        AppSettings.ServerUrl = removeServer ? null : server;
         ClearProfile();
         AppSettings.AccountName = null;
         if (client is not null)
