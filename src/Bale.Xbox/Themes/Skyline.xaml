@@ -391,9 +391,59 @@
     <Setter Property="services:RailLayout.CardHeight" Value="100" />
     <Setter Property="services:RailLayout.ContentInset" Value="40,12,40,4" />
   </Style>
+  <!-- TvDetailEpisodeRail.kt: share the existing series-card geometry with its skeleton,
+       including the rounded 16:9 still, so loading never changes the caption positions. -->
+  <x:Double x:Key="SkylineDetailEpisodeWidth">180</x:Double>
+  <x:Double x:Key="SkylineDetailEpisodeHeight">101</x:Double>
+  <x:Double x:Key="SkylineDetailEpisodeRailHeight">155</x:Double>
+  <x:Double x:Key="SkylineDetailEpisodeGap">20</x:Double>
+  <x:Double x:Key="SkylineDetailEpisodeCaptionGap">7</x:Double>
+  <x:Double x:Key="SkylineDetailEpisodeCaptionLineGap">3</x:Double>
+  <x:Double x:Key="SkylineDetailEpisodeTitleLineHeight">12</x:Double>
+  <x:Double x:Key="SkylineDetailEpisodeMetadataLineHeight">11.2</x:Double>
+  <!-- TvSeriesEpisodeRailSkeleton uses 65% / 45% of the 180dp card width. -->
+  <x:Double x:Key="SkylineDetailEpisodeSkeletonTitleWidth">117</x:Double>
+  <x:Double x:Key="SkylineDetailEpisodeSkeletonMetadataWidth">81</x:Double>
+  <Style x:Key="SkylineDetailEpisodeCardStyle" TargetType="StackPanel">
+    <Setter Property="Width" Value="{StaticResource SkylineDetailEpisodeWidth}" />
+    <Setter Property="Spacing" Value="{StaticResource SkylineDetailEpisodeCaptionGap}" />
+  </Style>
+  <Style x:Key="SkylineDetailEpisodeCaptionStyle" TargetType="StackPanel">
+    <Setter Property="Spacing" Value="{StaticResource SkylineDetailEpisodeCaptionLineGap}" />
+  </Style>
+  <Style x:Key="SkylineDetailEpisodeSkeletonRailStyle" TargetType="StackPanel">
+    <Setter Property="Orientation" Value="Horizontal" />
+    <Setter Property="Spacing" Value="{StaticResource SkylineDetailEpisodeGap}" />
+    <Setter Property="Padding" Value="50,6,50,6" />
+    <Setter Property="HorizontalAlignment" Value="Left" /><Setter Property="VerticalAlignment" Value="Top" />
+    <Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+  <Style x:Key="SkylineDetailEpisodeSkeletonBarStyle" TargetType="Border">
+    <Setter Property="Background" Value="{StaticResource SkylineSurfaceElevated}" />
+    <Setter Property="CornerRadius" Value="3" /><Setter Property="HorizontalAlignment" Value="Left" />
+  </Style>
+  <Style x:Key="SkylineDetailEpisodeSkeletonStillStyle" TargetType="Border" BasedOn="{StaticResource SkylineDetailEpisodeSkeletonBarStyle}">
+    <Setter Property="Width" Value="{StaticResource SkylineDetailEpisodeWidth}" />
+    <Setter Property="Height" Value="{StaticResource SkylineDetailEpisodeHeight}" />
+    <Setter Property="CornerRadius" Value="{StaticResource SkylineCardRadius}" />
+  </Style>
+  <Style x:Key="SkylineDetailEpisodeSkeletonTitleStyle" TargetType="Border" BasedOn="{StaticResource SkylineDetailEpisodeSkeletonBarStyle}">
+    <Setter Property="Width" Value="{StaticResource SkylineDetailEpisodeSkeletonTitleWidth}" />
+    <Setter Property="Height" Value="{StaticResource SkylineDetailEpisodeTitleLineHeight}" />
+  </Style>
+  <Style x:Key="SkylineDetailEpisodeSkeletonMetadataStyle" TargetType="Border" BasedOn="{StaticResource SkylineDetailEpisodeSkeletonBarStyle}">
+    <Setter Property="Width" Value="{StaticResource SkylineDetailEpisodeSkeletonMetadataWidth}" />
+    <Setter Property="Height" Value="{StaticResource SkylineDetailEpisodeMetadataLineHeight}" />
+  </Style>
+  <!-- TvItemDetailScreen.kt: titleMedium (20sp * 0.86), top-start, with the rail inset. -->
+  <Style x:Key="SkylineDetailNoEpisodesStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="17.2" /><Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Foreground" Value="#8CFFFFFF" /><Setter Property="Padding" Value="50,8,50,8" />
+    <Setter Property="TextAlignment" Value="Left" /><Setter Property="VerticalAlignment" Value="Top" />
+  </Style>
   <Style x:Key="SkylineDetailEpisodeRailStyle" TargetType="ListView" BasedOn="{StaticResource SkylineCardRailStyle}">
-    <Setter Property="services:RailLayout.CardWidth" Value="180" />
-    <Setter Property="services:RailLayout.CardHeight" Value="101" />
+    <Setter Property="services:RailLayout.CardWidth" Value="{StaticResource SkylineDetailEpisodeWidth}" />
+    <Setter Property="services:RailLayout.CardHeight" Value="{StaticResource SkylineDetailEpisodeHeight}" />
     <Setter Property="services:RailLayout.FocusVisual" Value="Episode" />
     <Setter Property="services:RailLayout.ContentInset" Value="50,10,0,6" />
     <Setter Property="IsTabStop" Value="False" />

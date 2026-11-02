@@ -10,8 +10,8 @@
        focus moves between the hero, season tabs and episodes. Supporting sections anchor below it. -->
   <Page.Resources>
     <DataTemplate x:Key="EpisodeTemplate" x:DataType="views:EpisodeView">
-      <StackPanel Width="180" Spacing="7">
-        <Grid x:Name="Art" Width="180" Height="101">
+      <StackPanel Style="{StaticResource SkylineDetailEpisodeCardStyle}">
+        <Grid x:Name="Art" Width="{StaticResource SkylineDetailEpisodeWidth}" Height="{StaticResource SkylineDetailEpisodeHeight}">
           <Grid CornerRadius="8" Background="{StaticResource SkylineCardPlaceholder}">
             <Image Source="{x:Bind Still}" Stretch="UniformToFill" />
             <!-- TvDetailEpisodeRail.kt dims only the watched still, not its badge or caption. -->
@@ -29,10 +29,10 @@
           <Border x:Name="EpisodeFocusRing" CornerRadius="8" BorderThickness="3" BorderBrush="#E6FFFFFF"
                   Opacity="0" IsHitTestVisible="False" />
         </Grid>
-        <StackPanel Spacing="3">
-          <TextBlock Text="{x:Bind Caption}" FontSize="9.9" LineHeight="12" LineStackingStrategy="BlockLineHeight" FontWeight="SemiBold"
+        <StackPanel Style="{StaticResource SkylineDetailEpisodeCaptionStyle}">
+          <TextBlock Text="{x:Bind Caption}" FontSize="9.9" LineHeight="{StaticResource SkylineDetailEpisodeTitleLineHeight}" LineStackingStrategy="BlockLineHeight" FontWeight="SemiBold"
                      Foreground="#EBEDEDED" TextTrimming="CharacterEllipsis" />
-          <TextBlock Text="{x:Bind CaptionMeta}" FontSize="9" LineHeight="11.2" LineStackingStrategy="BlockLineHeight" FontWeight="Medium"
+          <TextBlock Text="{x:Bind CaptionMeta}" FontSize="9" LineHeight="{StaticResource SkylineDetailEpisodeMetadataLineHeight}" LineStackingStrategy="BlockLineHeight" FontWeight="Medium"
                      Foreground="#B3EDEDED" TextTrimming="CharacterEllipsis" />
         </StackPanel>
       </StackPanel>
@@ -213,7 +213,7 @@
             </ItemsControl.ItemTemplate>
           </ItemsControl>
           <!-- TvItemDetailScreen.kt keeps the rail footprint and tabs mounted on empty/failed loads. -->
-          <Grid Height="155">
+          <Grid Height="{StaticResource SkylineDetailEpisodeRailHeight}">
             <ListView x:Name="Episodes" ItemTemplate="{StaticResource EpisodeTemplate}" Style="{StaticResource SkylineDetailEpisodeRailStyle}"
                       ItemClick="OnEpisodeClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur">
               <ListView.ItemContainerStyle>
@@ -222,9 +222,48 @@
                 </Style>
               </ListView.ItemContainerStyle>
             </ListView>
-            <TextBlock x:Name="NoEpisodes" Text="No episodes available" FontSize="12" Foreground="#B3FFFFFF"
-                       HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
-            <ProgressRing x:Name="EpisodesLoading" Width="24" Height="24" IsActive="False" Foreground="{StaticResource SkylinePrimary}" Visibility="Collapsed" />
+            <TextBlock x:Name="NoEpisodes" Text="No episodes available" Style="{StaticResource SkylineDetailNoEpisodesStyle}" Visibility="Collapsed" />
+            <!-- TvDetailEpisodeRail.kt clips its five non-interactive skeleton cards to the rail,
+                 not the page, so the last placeholder cannot spill into supporting sections. -->
+            <Grid x:Name="EpisodesLoading" IsHitTestVisible="False" Visibility="Collapsed" SizeChanged="OnEpisodesLoadingSizeChanged">
+              <StackPanel Style="{StaticResource SkylineDetailEpisodeSkeletonRailStyle}">
+                <StackPanel Style="{StaticResource SkylineDetailEpisodeCardStyle}">
+                  <Border Style="{StaticResource SkylineDetailEpisodeSkeletonStillStyle}" />
+                  <StackPanel Style="{StaticResource SkylineDetailEpisodeCaptionStyle}">
+                    <Border Style="{StaticResource SkylineDetailEpisodeSkeletonTitleStyle}" />
+                    <Border Style="{StaticResource SkylineDetailEpisodeSkeletonMetadataStyle}" />
+                  </StackPanel>
+                </StackPanel>
+                <StackPanel Style="{StaticResource SkylineDetailEpisodeCardStyle}">
+                  <Border Style="{StaticResource SkylineDetailEpisodeSkeletonStillStyle}" />
+                  <StackPanel Style="{StaticResource SkylineDetailEpisodeCaptionStyle}">
+                    <Border Style="{StaticResource SkylineDetailEpisodeSkeletonTitleStyle}" />
+                    <Border Style="{StaticResource SkylineDetailEpisodeSkeletonMetadataStyle}" />
+                  </StackPanel>
+                </StackPanel>
+                <StackPanel Style="{StaticResource SkylineDetailEpisodeCardStyle}">
+                  <Border Style="{StaticResource SkylineDetailEpisodeSkeletonStillStyle}" />
+                  <StackPanel Style="{StaticResource SkylineDetailEpisodeCaptionStyle}">
+                    <Border Style="{StaticResource SkylineDetailEpisodeSkeletonTitleStyle}" />
+                    <Border Style="{StaticResource SkylineDetailEpisodeSkeletonMetadataStyle}" />
+                  </StackPanel>
+                </StackPanel>
+                <StackPanel Style="{StaticResource SkylineDetailEpisodeCardStyle}">
+                  <Border Style="{StaticResource SkylineDetailEpisodeSkeletonStillStyle}" />
+                  <StackPanel Style="{StaticResource SkylineDetailEpisodeCaptionStyle}">
+                    <Border Style="{StaticResource SkylineDetailEpisodeSkeletonTitleStyle}" />
+                    <Border Style="{StaticResource SkylineDetailEpisodeSkeletonMetadataStyle}" />
+                  </StackPanel>
+                </StackPanel>
+                <StackPanel Style="{StaticResource SkylineDetailEpisodeCardStyle}">
+                  <Border Style="{StaticResource SkylineDetailEpisodeSkeletonStillStyle}" />
+                  <StackPanel Style="{StaticResource SkylineDetailEpisodeCaptionStyle}">
+                    <Border Style="{StaticResource SkylineDetailEpisodeSkeletonTitleStyle}" />
+                    <Border Style="{StaticResource SkylineDetailEpisodeSkeletonMetadataStyle}" />
+                  </StackPanel>
+                </StackPanel>
+              </StackPanel>
+            </Grid>
           </Grid>
         </StackPanel>
 

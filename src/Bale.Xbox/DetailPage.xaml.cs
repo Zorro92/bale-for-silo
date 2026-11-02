@@ -43,7 +43,10 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
     private MaskedArt? _art;
     private List<SeasonView> _tabs = new();
     private SeasonView? _selectedTab;
+    // TvItemDetailViewModel.kt's loadedSeason: belongs to the mounted rail, not the pending tab.
     private long? _shownSeason;
+    private bool _seasonsLoading;
+    private bool _episodesLoading;
     private bool _busy;
     private bool _restoringDialogFocus;
 
@@ -476,7 +479,8 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         _tabs = detail.IsSeries ? [new SeasonView(null)] : [];
         Seasons.ItemsSource = _tabs;
         EpisodesSection.Visibility = Visibility.Visible;
-        SetEpisodesLoading(true);
+        _seasonsLoading = true;
+        SetEpisodesLoading(false);
         var seriesId = detail.IsSeries ? detail.ContentId : detail.SeriesId;
         try
         {
@@ -491,6 +495,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
             Log.Error("Detail seasons", ex);
         }
 
+        _seasonsLoading = false;
         if (!_active) return;
         Seasons.ItemsSource = _tabs.ToList();
         var entrySeason = entry?.SeasonNumber ?? detail.SeasonNumber;
@@ -523,9 +528,12 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         _selectedTab = tab;
         UpdateTabs();
         var season = tab.Season ?? _tabs.Select(view => view.Season).FirstOrDefault(choice => choice?.Number == _shownSeason) ?? PlaySeason();
+        // TvItemDetailViewModel.kt uses request generations even when selection returns to the
+        // already-loaded season: A -> B -> A must invalidate B without reloading or clearing A.
+        var version = ++_episodeLoadVersion;
         if (season is null)
         {
-            _episodeLoadVersion++;
+            _swapping = false;
             _shownSeason = null;
             Episodes.ItemsSource = new List<EpisodeView>();
             _episodesRail.Remembered = null;
@@ -537,6 +545,8 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
 
         if (!reload && season.Number == _shownSeason && Episodes.Items.Count > 0)
         {
+            _swapping = false;
+            SetEpisodesLoading(false);
             if (tab.Season is null && Episodes.ItemsSource is List<EpisodeView> existing)
             {
                 SetPlayEpisode(DetailEpisodes.NextUp(existing.Select(view => view.Episode).ToList()));
@@ -546,15 +556,11 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
             return;
         }
 
-        var version = ++_episodeLoadVersion;
-        _shownSeason = season.Number;
-        _playEpisode = null;
-        ShowPlayback();
+        // TvItemDetailScreen.kt keeps a loaded series rail mounted while the next season loads.
+        // Leave its remembered card, Play target and editorial intact until a successful response.
         _swapping = focusEdge;
-        Episodes.ItemsSource = new List<EpisodeView>();
-        _episodesRail.Remembered = null;
         SetEpisodesLoading(true);
-        IReadOnlyList<EpisodeCard> episodes;
+        IReadOnlyList<EpisodeCard>? episodes = null;
         try
         {
             var seriesId = detail.IsSeries ? detail.ContentId : detail.SeriesId;
@@ -563,7 +569,6 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         catch (Exception ex)
         {
             Log.Error("Detail episodes", ex);
-            episodes = [];
         }
 
         // A -> B -> A can complete out of order. Season number alone isn't a request identity.
@@ -572,11 +577,32 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
             return;
         }
 
+        if (episodes is null)
+        {
+            // TvItemDetailViewModel.kt's quiet-failure contract: _shownSeason still identifies
+            // the loaded rail. Revert only a season selection, never Show or keyboard focus.
+            if (_selectedTab?.Season is not null && _shownSeason is { } loadedSeason
+                && _tabs.FirstOrDefault(view => view.Season?.Number == loadedSeason) is { } loadedTab)
+            {
+                _selectedTab = loadedTab;
+                UpdateTabs();
+            }
+
+            _swapping = false;
+            SetEpisodesLoading(false);
+            return;
+        }
+
         var suggested = episodes.FirstOrDefault(episode => episode.ContentId == preferredEpisodeId) ?? DetailEpisodes.NextUp(episodes);
         var views = episodes.Select(episode => new EpisodeView(episode, episode.ContentId == suggested?.ContentId)).ToList();
         var target = focusEdge && views.Count > 0
             ? edge > 0 ? views[0] : views[^1]
             : views.FirstOrDefault(view => view.Episode.ContentId == suggested?.ContentId);
+        // TvDetailEpisodeRail.kt hands focus to the replacement target. Keeping the old rail
+        // mounted lets the viewer enter it while loading, not only through an edge transition.
+        var focusRail = focusEdge || IsWithin(FocusManager.GetFocusedElement() as DependencyObject, Episodes);
+        _swapping = focusRail;
+        _shownSeason = season.Number;
         Episodes.ItemsSource = views;
         _episodesRail.Remembered = target;
         SetPlayEpisode(target?.Episode);
@@ -587,23 +613,33 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         {
             // TvDetailEpisodeRail.kt centers the route/suggested episode once per season, not
             // after every Left/Right. Rail retains its normal pin-on-focus behavior afterwards.
-            RevealEpisode(target, focusEdge || (focusEntry && target.Episode.ContentId == preferredEpisodeId), center: !focusEdge);
+            RevealEpisode(target, focusRail || (focusEntry && target.Episode.ContentId == preferredEpisodeId), center: !focusEdge);
         }
-        else
+        else if (focusRail)
         {
-            _swapping = false;
-            if (focusEdge)
-            {
-                FocusRetry.Until(Seasons, () => _seasonsRail.Focus());
-            }
+            FocusRetry.Until(Seasons, () => _seasonsRail.Focus());
         }
     }
 
     private void SetEpisodesLoading(bool loading)
     {
-        EpisodesLoading.IsActive = loading;
-        EpisodesLoading.Visibility = loading ? Visibility.Visible : Visibility.Collapsed;
-        NoEpisodes.Visibility = !loading && Episodes.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _episodesLoading = loading;
+        // TvItemDetailScreen.kt waits for both requests. Focusing Show while seasons are still
+        // loading must not replace the empty rail's skeleton with the final empty message.
+        var pending = loading || _seasonsLoading;
+        var empty = Episodes.Items.Count == 0;
+        EpisodesLoading.Visibility = pending && empty ? Visibility.Visible : Visibility.Collapsed;
+        NoEpisodes.Visibility = !pending && empty ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void OnEpisodesLoadingSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        // TvSeriesEpisodeRailSkeleton clips to its footprint, without changing the real rail's
+        // shared focus envelope. Use the host's actual width so the fifth card clips on resize.
+        if (sender is FrameworkElement skeleton)
+        {
+            skeleton.Clip = new RectangleGeometry { Rect = new Windows.Foundation.Rect(0, 0, e.NewSize.Width, e.NewSize.Height) };
+        }
     }
 
     private void SetPlayEpisode(EpisodeCard? episode)
@@ -694,6 +730,9 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
     /// <summary>Right past the last episode continues into the next season, Left past the first into the previous one.</summary>
     private async Task StepSeasonAsync(int step)
     {
+        // TvItemDetailViewModel.kt deduplicates pending carousel edge loads. The mounted old
+        // rail can still receive Right/Left repeats, but they must not restart that request.
+        if (_seasonsLoading || _episodesLoading) return;
         try
         {
             var seasons = _tabs.Where(tab => tab.Season is not null).ToList();

@@ -196,7 +196,7 @@ public sealed partial class DetailPage
 
         var saved = new DetailReturnEntry(detail, _tabs.Select(tab => tab.Season).OfType<SeasonChoice>().ToList(),
             _selectedTab?.Season?.Number, _shownSeason, Episodes.Items.OfType<EpisodeView>().Select(view => view.Episode).ToList(),
-            EpisodesLoading.IsActive, _playEpisode?.ContentId, _similarCards, _similarLoaded, _returnCastIndex, _returnSimilarId);
+            _seasonsLoading || _episodesLoading, _playEpisode?.ContentId, _similarCards, _similarLoaded, _returnCastIndex, _returnSimilarId);
         var frame = Frame;
         if (frame.Navigate(page, parameter) && frame.BackStack.Count > 0)
         {
