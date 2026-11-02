@@ -135,7 +135,10 @@ public sealed partial class DetailPage
             stops.Add((SynopsisButton, () => SynopsisButton.Focus(FocusState.Keyboard)));
         }
 
-        stops.Add((Actions, () => PlayButton.Focus(FocusState.Keyboard)));
+        // TvItemDetailScreen.kt's selectorFocus: Up from season tabs enters Version,
+        // while ordinary entry from the synopsis still starts on Play.
+        stops.Add((Actions, () => FocusAction(direction == FocusNavigationDirection.Up && IsWithin(source, Seasons)
+            ? VersionSelector : PlayButton, FocusState.Keyboard)));
         if (EpisodesSection.Visibility == Visibility.Visible)
         {
             if (Seasons.Items.Count > 0)
@@ -182,6 +185,7 @@ public sealed partial class DetailPage
         IReadOnlyList<EpisodeCard> Episodes,
         bool EpisodesLoading,
         string? PlayEpisodeId,
+        PlaybackSelectionState PlaybackSelections,
         IReadOnlyList<MediaCard> Similar,
         bool SimilarLoaded,
         int? CastIndex,
@@ -196,7 +200,8 @@ public sealed partial class DetailPage
 
         var saved = new DetailReturnEntry(detail, _tabs.Select(tab => tab.Season).OfType<SeasonChoice>().ToList(),
             _selectedTab?.Season?.Number, _shownSeason, Episodes.Items.OfType<EpisodeView>().Select(view => view.Episode).ToList(),
-            _seasonsLoading || _episodesLoading, _playEpisode?.ContentId, _similarCards, _similarLoaded, _returnCastIndex, _returnSimilarId);
+            _seasonsLoading || _episodesLoading, _playEpisode?.ContentId, _playbackSelections,
+            _similarCards, _similarLoaded, _returnCastIndex, _returnSimilarId);
         var frame = Frame;
         if (frame.Navigate(page, parameter) && frame.BackStack.Count > 0)
         {
@@ -210,6 +215,7 @@ public sealed partial class DetailPage
         _contentId = saved.Detail.ContentId;
         _returnCastIndex = saved.CastIndex;
         _returnSimilarId = saved.SimilarId;
+        _playbackSelections = saved.PlaybackSelections;
         ShowHero(saved.Detail);
         ShowCast(saved.Detail);
         ShowSupportingSections(saved.Detail);
@@ -280,7 +286,7 @@ public sealed partial class DetailPage
         else
         {
             FocusRetry.Until(PageContent, () => !_active || generation != _focusGeneration
-                || (_lastFocused is { IsEnabled: true, Visibility: Visibility.Visible } control && control.Focus(FocusState.Programmatic))
+                || (_lastFocused is { IsEnabled: true, Visibility: Visibility.Visible } control && FocusAction(control))
                 || PlayButton.Focus(FocusState.Programmatic));
         }
     }
@@ -288,6 +294,8 @@ public sealed partial class DetailPage
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
         _active = false;
+        HideSelectorMenu(restoreFocus: false);
+        _playbackLoadVersion++;
         _episodeLoadVersion++;
         _sectionLoad?.Cancel();
         base.OnNavigatedFrom(e);

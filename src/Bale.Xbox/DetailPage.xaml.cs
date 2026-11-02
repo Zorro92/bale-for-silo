@@ -53,7 +53,6 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
     private bool _seasonsLoading;
     private bool _episodesLoading;
     private bool _busy;
-    private bool _restoringDialogFocus;
 
     /// <summary>Set while the rail swaps seasons: focus briefly falls elsewhere and must not move the page.</summary>
     private bool _swapping;
@@ -112,11 +111,19 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         _similarRail.Entered += () => AnchorSection(SimilarSection);
 
         ActionButton.Attach(StartOverButton);
+        ActionButton.Attach(VersionSelector);
+        ActionButton.Attach(AudioSelector);
+        ActionButton.Attach(SubtitleSelector);
         ActionButton.Attach(WatchlistButton);
         ActionButton.Attach(MoreButton);
+        SelectorMenu.Chosen += OnPlaybackOptionChosen;
+        SelectorMenu.Dismissed += CloseSelectorMenu;
 
-        // Normal action row entry lands on Play (TvItemDetailScreen.kt's HeroActionRow focusProperties enter).
-        Actions.GettingFocus += OnActionsGettingFocus;
+        // Normal action row entry lands on Play. Season Up and menu dismiss supply an explicit
+        // entry target without fighting Rail's focus boundary (TvItemDetailScreen.kt's selectorFocus).
+        _actionsRail = Rail.Attach(Actions);
+        _actionsRail.Pin = false;
+        _actionsRail.EntryItem = () => _actionEntryTarget ?? PlayButton;
         Actions.GotFocus += (_, _) =>
         {
             ScrollTo(0);
@@ -150,14 +157,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
             {
                 // Any deliberate direction revokes a pending exact-card restore (TvSimilarFocusRestoration.kt).
                 _focusGeneration++;
-                // Match TvItemDetailScreen.kt's action row focusGroup: Left/Right stop at the ends.
-                var actions = Actions.Children.Where(child => child is Control c && c.Visibility == Visibility.Visible && c.IsEnabled && c.IsTabStop);
-                var edge = right ? actions.LastOrDefault() : actions.FirstOrDefault();
-                if (edge is not null && IsWithin(e.OriginalSource as DependencyObject, edge))
-                {
-                    e.Handled = true;
-                    return;
-                }
+                // The shared Rail owns horizontal action/season boundaries; never leave the row.
             }
 
             var direction = VerticalDirection(e.Key);
@@ -363,7 +363,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         _synopsisTagline = episode is null ? detail.Tagline : null;
         _synopsisTitle = episode?.Title ?? detail.Subtitle ?? detail.Title;
         SynopsisButton.IsTabStop = !string.IsNullOrWhiteSpace(_synopsisOverview);
-        foreach (var action in Actions.Children.OfType<Button>())
+        foreach (var action in Actions.Items.OfType<Button>())
         {
             action.XYFocusUp = SynopsisButton.IsTabStop ? SynopsisButton : null;
         }
@@ -426,12 +426,14 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
     private void ShowPlaybackSummary()
     {
         if (_detail is not { } detail) return;
+        var selection = _playbackSelections.For(PlaybackDetail);
         var values = _playbackSummary.Update(detail, _playEpisode?.ContentId, _nextUpPlaybackDetail,
             _nextUpPlaybackLoading || _episodesLoading || _seasonsLoading,
-            selectedFileId: null, selectedAudioTrackIndex: null, selectedSubtitleTrackIndex: null);
+            selection.FileId, selection.AudioIndex, selection.SubtitleIndex);
         ShowPlaybackValue(PlaybackVersionSlot, PlaybackVersion, PlaybackVersionSkeleton, values.Version);
         ShowPlaybackValue(PlaybackAudioSlot, PlaybackAudio, PlaybackAudioSkeleton, values.Audio);
         ShowPlaybackValue(PlaybackSubtitleSlot, PlaybackSubtitle, PlaybackSubtitleSkeleton, values.Subtitles);
+        ShowSelectorDescriptions(values);
     }
 
     private static void ShowPlaybackValue(Grid slot, TextBlock value, Border skeleton, string? text)
@@ -920,22 +922,6 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         }
     }
 
-    private void OnActionsGettingFocus(UIElement sender, GettingFocusEventArgs args)
-    {
-        try
-        {
-            if (!_restoringDialogFocus && !IsWithin(args.OldFocusedElement, Actions) && IsWithin(args.NewFocusedElement, Actions)
-                && !ReferenceEquals(args.NewFocusedElement, PlayButton))
-            {
-                args.TrySetNewFocusedElement(PlayButton);
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Error("Action row focus", ex);
-        }
-    }
-
     private static bool IsWithin(DependencyObject? element, DependencyObject ancestor)
     {
         for (var node = element; node is not null; node = VisualTreeHelper.GetParent(node))
@@ -1110,23 +1096,17 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         PageScroller.IsEnabled = true;
 
         // TvItemDetailScreen.kt / TvExpandableSynopsis.kt return to the dialog's opener.
-        // Bypass the action row's normal enter-on-Play redirect while restoring it.
-        FocusRetry.Until(PageContent, () =>
-        {
-            _restoringDialogFocus = true;
-            try
-            {
-                return opener.Focus(FocusState.Programmatic);
-            }
-            finally
-            {
-                _restoringDialogFocus = false;
-            }
-        });
+        FocusRetry.Until(PageContent, () => !_active || FocusAction(opener));
     }
 
     public bool OnBack()
     {
+        if (SelectorMenu.IsOpen)
+        {
+            CloseSelectorMenu();
+            return true;
+        }
+
         if (DialogLayer.Visibility != Visibility.Visible)
         {
             return false;

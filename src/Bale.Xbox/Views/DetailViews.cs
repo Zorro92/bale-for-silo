@@ -107,6 +107,16 @@ public sealed partial class DetailFactView(DetailFact fact, int index)
     public Visibility DividerVisibility => index == 0 ? Visibility.Collapsed : Visibility.Visible;
 }
 
+/// <summary>A selector row preserves its catalog identity while subtitle rows are sorted for display.</summary>
+public sealed partial class PlaybackOptionView(PlaybackSelectorOption option, int index)
+{
+    public PlaybackSelectorOption Option { get; } = option;
+    public int Index { get; } = index;
+    public Visibility CheckVisibility => Option.IsSelected ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility DetailVisibility => string.IsNullOrWhiteSpace(Option.Detail) ? Visibility.Collapsed : Visibility.Visible;
+    public string AutomationName => string.IsNullOrWhiteSpace(Option.Detail) ? Option.Title : Option.Title + ", " + Option.Detail;
+}
+
 /// <summary>A tab in the series mode row: "Show" (no season), then each season (TvSeriesModePicker).</summary>
 public sealed partial class SeasonView
 {

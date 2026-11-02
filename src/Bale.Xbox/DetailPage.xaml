@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:views="using:Bale.Xbox.Views"
+    xmlns:controls="using:Bale.Xbox.Controls"
     FontFamily="{StaticResource SkylineFont}"
     Background="{StaticResource SkylineBackground}">
 
@@ -181,7 +182,11 @@
             </Grid>
           </StackPanel>
 
-          <StackPanel x:Name="Actions" Orientation="Horizontal" Spacing="9" Margin="0,13,0,0" XYFocusKeyboardNavigation="Enabled">
+          <!-- rail-layout: non-card — TvItemDetailScreen.kt's horizontal hero actions, not media cards. -->
+          <ItemsControl x:Name="Actions" Margin="0,13,0,0" HorizontalAlignment="Left" IsTabStop="False" XYFocusKeyboardNavigation="Enabled">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylineDetailActionGap}" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
             <Button x:Name="PlayButton" Style="{StaticResource SkylinePlayButtonStyle}" Click="OnPlayClick">
               <StackPanel Orientation="Horizontal" Spacing="9">
                 <FontIcon Glyph="&#xF5B0;" FontSize="18" />
@@ -193,6 +198,34 @@
               <StackPanel Orientation="Horizontal" Spacing="7">
                 <FontIcon Glyph="&#xE892;" FontSize="19" />
                 <TextBlock Text="Start Over" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <!-- TvPlaybackActionSelectors: Movie, VolumeUp and Chat, in the utility-action order. -->
+            <Button x:Name="VersionSelector" Style="{StaticResource SkylineActionButtonStyle}" Click="OnVersionSelectorClick" AutomationProperties.Name="Version">
+              <StackPanel Style="{StaticResource SkylineDetailActionContentStyle}">
+                <Viewbox Style="{StaticResource SkylineDetailActionIconStyle}">
+                  <Path Width="{StaticResource SkylineMaterialIconCanvas}" Height="{StaticResource SkylineMaterialIconCanvas}" Fill="{StaticResource SkylineFocusRing}"
+                        Data="M18,4 L20,8 H17 L15,4 H13 L15,8 H12 L10,4 H8 L10,8 H7 L5,4 H4 C2.9,4 2.01,4.9 2.01,6 L2,18 C2,19.1 2.9,20 4,20 H20 C21.1,20 22,19.1 22,18 V4 Z" />
+                </Viewbox>
+                <TextBlock Text="Version" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="AudioSelector" Style="{StaticResource SkylineActionButtonStyle}" Click="OnAudioSelectorClick" AutomationProperties.Name="Audio">
+              <StackPanel Style="{StaticResource SkylineDetailActionContentStyle}">
+                <Viewbox Style="{StaticResource SkylineDetailActionIconStyle}">
+                  <Path Width="{StaticResource SkylineMaterialIconCanvas}" Height="{StaticResource SkylineMaterialIconCanvas}" Fill="{StaticResource SkylineFocusRing}"
+                        Data="M3,9 V15 H7 L12,20 V4 L7,9 Z M16.5,12 C16.5,10.23 15.48,8.71 14,7.97 V16.02 C15.48,15.29 16.5,13.77 16.5,12 Z M14,3.23 V5.29 C16.89,6.15 19,8.83 19,12 C19,15.17 16.89,17.85 14,18.71 V20.77 C18.01,19.86 21,16.28 21,12 C21,7.72 18.01,4.14 14,3.23 Z" />
+                </Viewbox>
+                <TextBlock Text="Audio" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="SubtitleSelector" Style="{StaticResource SkylineActionButtonStyle}" Click="OnSubtitleSelectorClick" AutomationProperties.Name="Subtitles">
+              <StackPanel Style="{StaticResource SkylineDetailActionContentStyle}">
+                <Viewbox Style="{StaticResource SkylineDetailActionIconStyle}">
+                  <Path Width="{StaticResource SkylineMaterialIconCanvas}" Height="{StaticResource SkylineMaterialIconCanvas}" Fill="{StaticResource SkylineFocusRing}"
+                        Data="M20,2 H4 C2.9,2 2.01,2.9 2.01,4 L2,22 L6,18 H20 C21.1,18 22,17.1 22,16 V4 C22,2.9 21.1,2 20,2 Z M6,9 H18 V11 H6 Z M14,14 H6 V12 H14 Z M18,8 H6 V6 H18 Z" />
+                </Viewbox>
+                <TextBlock Text="Subtitles" VerticalAlignment="Center" />
               </StackPanel>
             </Button>
             <Button x:Name="WatchlistButton" Style="{StaticResource SkylineActionButtonStyle}" Click="OnWatchlistClick" AutomationProperties.Name="Watchlist">
@@ -211,7 +244,7 @@
                 <TextBlock Text="More" VerticalAlignment="Center" />
               </StackPanel>
             </Button>
-          </StackPanel>
+          </ItemsControl>
           <TextBlock x:Name="ActionStatus" Margin="0,6,0,0" FontSize="10.3" Foreground="{StaticResource SkylineCaptionSubtitle}" />
         </StackPanel>
 
@@ -427,5 +460,7 @@
         </ScrollViewer>
       </Border>
     </Grid>
+    <controls:PlaybackSelectorMenu x:Name="SelectorMenu" IsHitTestVisible="False"
+                                   AnchorGap="{StaticResource SkylinePlaybackSelectorGap}" WindowInset="{StaticResource SkylinePlaybackSelectorWindowInset}" />
   </Grid>
 </Page>

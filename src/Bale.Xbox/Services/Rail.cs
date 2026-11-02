@@ -287,13 +287,19 @@ internal sealed class Rail
     private DependencyObject? ContainerFor(object item) =>
         Containers().FirstOrDefault(container => ReferenceEquals(ItemOf(container), item));
 
-    private static object? ItemOf(DependencyObject container) => container switch
+    private object? ItemOf(DependencyObject container)
     {
-        ContentControl control => control.Content,
-        ContentPresenter presenter => presenter.Content,
-        FrameworkElement element => element.DataContext,
-        _ => null,
-    };
+        // Non-card action rows can declare their Buttons directly in XAML. A UIElement item is
+        // its own container; its Content is the icon/label, not the rail's item identity.
+        if (_list.Items.Contains(container)) return container;
+        return container switch
+        {
+            ContentControl control => control.Content,
+            ContentPresenter presenter => presenter.Content,
+            FrameworkElement element => element.DataContext,
+            _ => null,
+        };
+    }
 
     /// <summary>The container itself when it takes focus (ListViewItem), else its first focusable child (a chip's button).</summary>
     private static Control? FocusableIn(DependencyObject? container) => container switch

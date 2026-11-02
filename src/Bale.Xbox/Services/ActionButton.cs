@@ -32,7 +32,7 @@ internal static class ActionButton
             return;
         }
 
-        button.Padding = focused ? new Thickness(14, 0, 14, 0) : new Thickness(0);
+        VisualStateManager.GoToState(button, focused ? "Expanded" : "Collapsed", useTransitions: true);
         foreach (var child in panel.Children)
         {
             switch (child)
@@ -42,6 +42,9 @@ internal static class ActionButton
                     break;
                 case Path path:
                     Recolor(path, focused);
+                    break;
+                case Viewbox { Child: Path iconPath }:
+                    Recolor(iconPath, focused);
                     break;
                 case Panel icon:
                     foreach (var part in icon.Children.OfType<Path>())

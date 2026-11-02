@@ -847,6 +847,97 @@
     </Setter>
   </Style>
 
+  <!-- TvItemDetailScreen.kt / TvSquaredButtons.kt: dp maps 1:1; 13sp labels use the TV 0.86 font scale. -->
+  <x:Double x:Key="SkylineDetailActionGap">9</x:Double>
+  <x:Double x:Key="SkylineDetailActionIconSize">19</x:Double>
+  <x:Double x:Key="SkylineMaterialIconCanvas">24</x:Double>
+  <x:Double x:Key="SkylineDetailActionHeight">38</x:Double>
+  <x:Double x:Key="SkylineDetailActionFontSize">11.18</x:Double>
+  <Thickness x:Key="SkylineDetailActionExpandedPadding">14,0</Thickness>
+  <Style x:Key="SkylineDetailActionContentStyle" TargetType="StackPanel">
+    <Setter Property="Orientation" Value="Horizontal" /><Setter Property="Spacing" Value="7" />
+  </Style>
+  <Style x:Key="SkylineDetailActionIconStyle" TargetType="Viewbox">
+    <Setter Property="Width" Value="{StaticResource SkylineDetailActionIconSize}" />
+    <Setter Property="Height" Value="{StaticResource SkylineDetailActionIconSize}" />
+  </Style>
+
+  <!-- TvAnchoredSelectorMenu.kt: 300–400dp anchored Skyline panel, 6dp gap, pinned eyebrow,
+       270dp scrolling list, 28dp check slot, 19dp check and 10dp row corners. -->
+  <x:Double x:Key="SkylinePlaybackSelectorGap">6</x:Double>
+  <x:Double x:Key="SkylinePlaybackSelectorWindowInset">48</x:Double>
+  <x:Double x:Key="SkylinePlaybackSelectorListHeight">270</x:Double>
+  <x:Double x:Key="SkylinePlaybackSelectorCheckSlot">28</x:Double>
+  <Style x:Key="SkylinePlaybackSelectorPanelStyle" TargetType="controls:SkylinePanel" BasedOn="{StaticResource SkylinePanelChromeStyle}">
+    <Setter Property="MinWidth" Value="300" /><Setter Property="MaxWidth" Value="400" />
+    <Setter Property="CornerRadius" Value="20" /><Setter Property="Padding" Value="10,14,10,10" />
+    <Setter Property="HorizontalAlignment" Value="Left" /><Setter Property="VerticalAlignment" Value="Top" />
+  </Style>
+  <Style x:Key="SkylinePlaybackSelectorHeaderStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="9.46" /><Setter Property="LineHeight" Value="12.04" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="CharacterSpacing" Value="140" /><Setter Property="Foreground" Value="#99EDEDED" />
+    <Setter Property="Margin" Value="10,0,10,6" /><Setter Property="MaxLines" Value="1" />
+  </Style>
+  <Style x:Key="SkylinePlaybackSelectorTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="12.9" /><Setter Property="LineHeight" Value="17.2" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="MaxLines" Value="1" /><Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="SkylinePlaybackSelectorDetailStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="12.04" /><Setter Property="LineHeight" Value="15.48" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Opacity" Value="0.6" /><Setter Property="Margin" Value="0,2,0,0" />
+    <Setter Property="MaxLines" Value="2" /><Setter Property="TextWrapping" Value="Wrap" /><Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="SkylinePlaybackSelectorCheckStyle" TargetType="Viewbox">
+    <Setter Property="Width" Value="19" /><Setter Property="Height" Value="19" />
+    <Setter Property="HorizontalAlignment" Value="Left" /><Setter Property="VerticalAlignment" Value="Top" />
+    <Setter Property="Margin" Value="0,1,0,0" />
+  </Style>
+  <Style x:Key="SkylinePlaybackSelectorOverflowStyle" TargetType="Viewbox">
+    <Setter Property="Width" Value="14" /><Setter Property="Height" Value="14" />
+    <Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+  <!-- TvSelectorRowVisualState.kt: selected soft fill; Paper/Ink focus takes precedence over selection. -->
+  <Style x:Key="SkylinePlaybackSelectorRowStyle" TargetType="ToggleButton">
+    <Setter Property="Padding" Value="10,9" /><Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToggleButton">
+          <Grid>
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" />
+                <VisualState x:Name="Disabled"><VisualState.Setters><Setter Target="Content.Opacity" Value="0.38" /></VisualState.Setters></VisualState>
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="CheckStates">
+                <VisualState x:Name="Unchecked" />
+                <VisualState x:Name="Checked"><VisualState.Setters><Setter Target="Selected.Opacity" Value="1" /></VisualState.Setters></VisualState>
+                <VisualState x:Name="Indeterminate" />
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused"><VisualState.Setters>
+                  <Setter Target="FocusFill.Opacity" Value="1" /><Setter Target="Content.Foreground" Value="#FF0B0B0C" />
+                </VisualState.Setters></VisualState>
+                <VisualState x:Name="PointerFocused"><VisualState.Setters>
+                  <Setter Target="FocusFill.Opacity" Value="1" /><Setter Target="Content.Foreground" Value="#FF0B0B0C" />
+                </VisualState.Setters></VisualState>
+                <VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <Border x:Name="Selected" CornerRadius="10" Background="#13EDEDED" Opacity="0" />
+            <Border x:Name="FocusFill" CornerRadius="10" Background="{StaticResource SkylinePrimary}" Opacity="0" />
+            <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" Margin="{TemplateBinding Padding}"
+                              Foreground="{TemplateBinding Foreground}" HorizontalContentAlignment="Stretch" />
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- Detail's centered More Actions panel (TvOptionDialog.kt / TvPlayerChrome.kt), not an anchored flyout. -->
   <Style x:Key="SkylineDetailDialogPanelStyle" TargetType="Border">
     <Setter Property="Background" Value="#FF17181B" />
@@ -952,11 +1043,11 @@
     title and recolors path icons, which a template can't reach.
   -->
   <Style x:Key="SkylineActionButtonStyle" TargetType="Button">
-    <Setter Property="Height" Value="38" />
-    <Setter Property="MinWidth" Value="38" />
+    <Setter Property="Height" Value="{StaticResource SkylineDetailActionHeight}" />
+    <Setter Property="MinWidth" Value="{StaticResource SkylineDetailActionHeight}" />
     <Setter Property="Padding" Value="0" />
     <Setter Property="Foreground" Value="#FFFFFFFF" />
-    <Setter Property="FontSize" Value="11.2" />
+    <Setter Property="FontSize" Value="{StaticResource SkylineDetailActionFontSize}" />
     <Setter Property="FontWeight" Value="SemiBold" />
     <Setter Property="UseSystemFocusVisuals" Value="False" />
     <Setter Property="Template">
@@ -964,6 +1055,12 @@
         <ControlTemplate TargetType="Button">
           <Border x:Name="Pill" Background="#1AFFFFFF" CornerRadius="19" Padding="{TemplateBinding Padding}">
             <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="ActionExpansionStates">
+                <VisualState x:Name="Expanded"><VisualState.Setters>
+                  <Setter Target="Pill.Padding" Value="{StaticResource SkylineDetailActionExpandedPadding}" />
+                </VisualState.Setters></VisualState>
+                <VisualState x:Name="Collapsed" />
+              </VisualStateGroup>
               <VisualStateGroup x:Name="CommonStates">
                 <VisualState x:Name="Normal" />
                 <VisualState x:Name="PointerOver" />
