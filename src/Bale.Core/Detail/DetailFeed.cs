@@ -189,6 +189,12 @@ public sealed partial class DetailFeed
         {
             MarqueeLine = MarqueeLine(item),
             SeasonNumber = item.SeasonNumber,
+            Versions = item.Versions ?? [],
+            LastFileId = item.UserData?.LastFileId,
+            EffectiveSubtitleLanguage = item.EffectiveSubtitleLanguage,
+            EffectiveSubtitleMode = item.EffectiveSubtitleMode,
+            EffectiveShowForcedSubtitles = item.EffectiveShowForcedSubtitles,
+            EffectiveSubtitleTrackSignature = item.EffectiveSubtitleTrackSignature,
             Trailers = Trailers(item),
             Details = DetailFacts(item),
         };

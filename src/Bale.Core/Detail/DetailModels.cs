@@ -1,3 +1,5 @@
+using Bale.Core.Api.Models;
+
 namespace Bale.Core.Detail;
 
 /// <summary>
@@ -41,6 +43,20 @@ public sealed record ItemDetail(
     public bool PlaysEpisodes => Type is "series" or "season";
 
     public long? SeasonNumber { get; init; }
+
+    /// <summary>Playback inventory and last-played file used by TvDetailVersionSelection.kt.</summary>
+    public IReadOnlyList<FileVersion> Versions { get; init; } = [];
+
+    public string? LastFileId { get; init; }
+
+    /// <summary>Server-resolved subtitle preferences take precedence over profile defaults (TvItemDetailViewModel.kt).</summary>
+    public string? EffectiveSubtitleLanguage { get; init; }
+
+    public string? EffectiveSubtitleMode { get; init; }
+
+    public bool? EffectiveShowForcedSubtitles { get; init; }
+
+    public WatchSubtitleSignature? EffectiveSubtitleTrackSignature { get; init; }
 
     /// <summary>Supporting sections from TvDetailTrailersSection and TvDetailFactsTable; neither needs another hero request.</summary>
     public IReadOnlyList<TrailerCard> Trailers { get; init; } = [];

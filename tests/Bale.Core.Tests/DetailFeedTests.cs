@@ -95,6 +95,34 @@ public class DetailFeedTests
     }
 
     [Fact]
+    public async Task DetailRetainsPlaybackInventoryAndServerResolvedPreferences()
+    {
+        var handler = new StubHandler();
+        handler.Enqueue(HttpStatusCode.OK, """
+            {"content_id":"m","type":"movie","versions":[
+              {"file_id":"file-1","resolution":"2160p","hdr":true,
+               "audio_tracks":[{"language":"eng","codec":"eac3","layout":"5.1","default":true}],
+               "subtitle_tracks":[{"language":"fre","codec":"subrip","external":true}],
+               "video_tracks":[{"dv_profile":8}]}
+            ],"user_data":{"last_file_id":"file-1"},"effective_subtitle_language":"fr",
+            "effective_subtitle_mode":"always","effective_show_forced_subtitles":true,
+            "effective_subtitle_track_signature":{"language":"fre","codec":"srt","forced":false}}
+            """);
+        var detail = await Feed(handler).LoadAsync("m");
+        var version = Assert.Single(detail.Versions);
+        Assert.Equal("file-1", version.FileId);
+        Assert.Equal("file-1", detail.LastFileId);
+        Assert.Equal("eng", Assert.Single(version.AudioTracks!).Language);
+        Assert.Equal("fre", Assert.Single(version.SubtitleTracks!).Language);
+        Assert.Equal(8, Assert.Single(version.VideoTracks!).DvProfile);
+        Assert.Equal("fr", detail.EffectiveSubtitleLanguage);
+        Assert.Equal("always", detail.EffectiveSubtitleMode);
+        Assert.True(detail.EffectiveShowForcedSubtitles);
+        Assert.Equal("srt", detail.EffectiveSubtitleTrackSignature?.Codec);
+        Assert.Empty(Feed().ToDetail(new CatalogItemDetail()).Versions);
+    }
+
+    [Fact]
     public void FocusedEpisodeOwnsResumeEvenWhenTheSeriesHasDifferentProgress()
     {
         var series = Movie() with { Type = "series", ResumeSeconds = 900 };
