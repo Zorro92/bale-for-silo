@@ -97,8 +97,9 @@ public sealed partial class MainPage : Page, IBackHandler
 
         if (!_expiredNotice && AppSettings.LoadRefreshToken(ServerAddress.ToBaseUrl(server)) is { } refreshToken)
         {
-            // MainTvActivity.kt routes from local tokens, not a blocking network refresh. An offline
-            // TV stays in the picker/shell with Retry; only a real refresh 401 returns to sign-in.
+            // MainTvActivity.kt resolveStartDestination routes from saved tokens/profile scope,
+            // not token validation. Expired or unknown lifetimes still enter the picker/shell;
+            // AuthInterceptorImpl.kt handles a rejected refresh on the first normal page request.
             ServerPanel.Visibility = Visibility.Collapsed;
             Session.Restore(server, refreshToken);
             await Task.Yield();

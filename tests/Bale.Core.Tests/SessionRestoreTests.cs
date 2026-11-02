@@ -9,12 +9,37 @@ public class SessionRestoreTests
 {
     private sealed class OfflineHandler : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+        public int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestCount++;
             throw new HttpRequestException("Offline");
+        }
     }
 
     private static SiloClient Create(HttpMessageHandler transport) =>
         new(new Uri("https://silo.example/"), new ClientIdentity("d", "Test Xbox", "xbox", "Bale"), transport);
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(-60)]
+    [InlineData(60)]
+    public void SavedTokensEnterTheAppWithoutCheckingTheNetworkOrTheirExpiry(int? minutesUntilExpiry)
+    {
+        var offline = new OfflineHandler();
+        using var client = Create(offline);
+        DateTimeOffset? expiresAt = minutesUntilExpiry is { } minutes ? DateTimeOffset.UtcNow.AddMinutes(minutes) : null;
+
+        client.RestoreSession("rt", "at", expiresAt, "p", "proof");
+
+        Assert.True(client.IsSignedIn);
+        Assert.Equal("at", client.AccessToken);
+        Assert.Equal("rt", client.RefreshToken);
+        Assert.Equal("p", client.ProfileId);
+        Assert.Equal("proof", client.ProfileToken);
+        Assert.Equal(0, offline.RequestCount);
+    }
 
     [Fact]
     public async Task RestoreIsLocalAndTheFirstRequestUsesSavedTokensAndPinProof()
