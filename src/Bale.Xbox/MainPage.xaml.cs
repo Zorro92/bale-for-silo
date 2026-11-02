@@ -37,8 +37,7 @@ public sealed partial class MainPage : Page, IBackHandler
         _preview = preview;
         _expiredNotice = preview == DebugServer.AuthPreview.Expired;
         _pairing?.Cancel();
-        _connecting = false;
-        ConnectButton.Content = "Connect";
+        SetConnecting(false);
         if (Session.Client is not { } client) return;
         _loginServer = client.Server;
         if (preview == DebugServer.AuthPreview.Server)
@@ -132,10 +131,26 @@ public sealed partial class MainPage : Page, IBackHandler
         if (_loginServer is { } server)
         {
             _ = StartPairingAsync(server);
-            return true;
+        }
+        else
+        {
+            // TvServerSetupScreen.kt returns from manual entry to phone setup. Until that separate
+            // flow exists, Back from first-run manual entry leaves Bale rather than becoming inert.
+            Application.Current.Exit();
         }
 
-        return false;
+        return true;
+    }
+
+    private void OnServerTextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (ServerError is null || ServerSecurityHint is null) return;
+        // TvServerSetupViewModel.kt clears the validation error as soon as the address changes.
+        ServerError.Visibility = Visibility.Collapsed;
+        // TvServerSetupScreen.kt AddressEntryScreen: this is information, not the later HTTP consent flow.
+        ServerSecurityHint.Text = ServerBox.Text.TrimStart().StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            ? "This address uses unencrypted HTTP. Fine on a trusted home network; avoid it on public Wi-Fi."
+            : "Secure HTTPS is tried automatically.";
     }
 
     private void OnServerBoxKeyDown(object sender, KeyRoutedEventArgs e)
@@ -186,7 +201,9 @@ public sealed partial class MainPage : Page, IBackHandler
 
         if (!ServerAddress.TryParse(ServerBox.Text, out var server))
         {
-            ShowServerEntry(ServerBox.Text, "That doesn't look like a server address.");
+            // TvServerSetupScreen.kt AddressEntryScreen submits blank input to validation too.
+            ShowServerEntry(ServerBox.Text, string.IsNullOrWhiteSpace(ServerBox.Text)
+                ? "Please enter a server host." : "That doesn't look like a server address.");
             return;
         }
 
@@ -204,25 +221,19 @@ public sealed partial class MainPage : Page, IBackHandler
     private void OnChangeServerClick(object sender, RoutedEventArgs e)
     {
         _pairing?.Cancel();
-        _connecting = false;
+        SetConnecting(false);
         _expiredNotice = false;
-        ConnectButton.Content = "Connect";
         ShowServerEntry(_loginServer is { } server ? ServerAddress.ToBaseUrl(server) : AppSettings.ServerUrl);
     }
 
-    private async void OnServerBackClick(object sender, RoutedEventArgs e)
+    private void OnServerBackClick(object sender, RoutedEventArgs e) => OnBack();
+
+    private void SetConnecting(bool connecting)
     {
-#if DEBUG_SERVER
-        if (_preview is not null)
-        {
-            DebugServer.CloseAuthPreview(Frame);
-            return;
-        }
-#endif
-        if (_loginServer is { } server)
-        {
-            await StartPairingAsync(server);
-        }
+        // TvServerSetupScreen.kt fixes the address during its probe but leaves the action focusable.
+        _connecting = connecting;
+        ServerBox.IsReadOnly = connecting;
+        ConnectButton.Content = connecting ? "Connecting…" : "Connect";
     }
 
     private async Task StartPairingAsync(Uri server, bool fromServerEntry = false)
@@ -244,8 +255,7 @@ public sealed partial class MainPage : Page, IBackHandler
         var approved = false;
         if (fromServerEntry)
         {
-            _connecting = true;
-            ConnectButton.Content = "Connecting…";
+            SetConnecting(true);
         }
         if (showingCode)
         {
@@ -270,8 +280,7 @@ public sealed partial class MainPage : Page, IBackHandler
             if (_preview is null)
 #endif
             AppSettings.ServerUrl = ServerAddress.ToBaseUrl(server);
-            _connecting = false;
-            ConnectButton.Content = "Connect";
+            SetConnecting(false);
             if (!showingCode)
             {
                 showingCode = true;
@@ -370,8 +379,7 @@ public sealed partial class MainPage : Page, IBackHandler
             if (ReferenceEquals(_pairing, pairing))
             {
                 _pairing = null;
-                _connecting = false;
-                ConnectButton.Content = "Connect";
+                SetConnecting(false);
             }
 
             if (ticket is not null && !approved && pairing.IsCancellationRequested)
@@ -399,12 +407,9 @@ public sealed partial class MainPage : Page, IBackHandler
         ServerBox.Text = server ?? string.Empty;
         ServerError.Text = error ?? string.Empty;
         ServerError.Visibility = error is null ? Visibility.Collapsed : Visibility.Visible;
-        ServerBackButton.Visibility = _loginServer is null ? Visibility.Collapsed : Visibility.Visible;
-#if DEBUG_SERVER
-        if (_preview is not null) ServerBackButton.Visibility = Visibility.Visible;
-#endif
+        // TvServerSetupScreen.kt AddressEntryScreen claims the address field, even when prefilled.
         FocusRetry.Until(ServerPanel, () => !_active || ServerPanel.Visibility != Visibility.Visible
-            || (string.IsNullOrEmpty(ServerBox.Text) ? (Control)ServerBox : ConnectButton).Focus(FocusState.Programmatic));
+            || ServerBox.Focus(FocusState.Programmatic));
     }
 
     private void ShowCodeScreen(Uri server)

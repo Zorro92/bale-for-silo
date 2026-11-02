@@ -15,21 +15,22 @@
       <TextBlock Text="a client for Silo" FontSize="{StaticResource SkylineCardSubtitleSize}" Foreground="{StaticResource SkylineTertiary}" VerticalAlignment="Center" />
     </StackPanel>
 
-    <!-- TvServerSetupScreen.kt: Back is present only when this entry form has somewhere to return. -->
-    <StackPanel x:Name="ServerPanel" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Left" Width="450">
-      <TextBlock Text="Enter your&#x0A;server address" FontSize="{StaticResource SkylineMarqueeTitleSize}" FontWeight="ExtraBold" TextWrapping="Wrap" />
-      <TextBlock Text="Type the address you use for Silo." FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineSecondary}" Margin="0,11,0,0" />
-      <TextBox x:Name="ServerBox" Width="380" HorizontalAlignment="Left" Margin="0,20,0,0" PlaceholderText="media.example.com" InputScope="Url"
-               KeyDown="OnServerBoxKeyDown" Style="{StaticResource SkylineTextBoxStyle}" />
-      <TextBlock x:Name="ServerError" MaxWidth="380" HorizontalAlignment="Left" Margin="0,8,0,0" FontSize="{StaticResource SkylineAuthCaptionSize}"
-                 Foreground="{StaticResource SkylineError}" TextWrapping="Wrap" Visibility="Collapsed" />
-      <!-- rail-layout: non-card — Server sign-in actions. -->
-      <ItemsControl x:Name="ServerActions" Margin="0,20,0,0" PreviewKeyDown="OnServerActionsPreviewKeyDown">
+    <!-- TvServerSetupScreen.kt AddressEntryScreen: manual-entry copy and Connect / plain Back.
+         Phone setup, discovery and advanced connection options remain separate backlog work. -->
+    <StackPanel x:Name="ServerPanel" Grid.Row="1" Style="{StaticResource SkylineServerEntryStyle}">
+      <TextBlock Text="Enter your&#x0A;server address" Style="{StaticResource SkylineServerEntryTitleStyle}" />
+      <TextBlock Text="Type the address you use for Silo." Style="{StaticResource SkylineServerEntryCaptionStyle}" />
+      <TextBox x:Name="ServerBox" PlaceholderText="media.example.com" InputScope="Url" IsSpellCheckEnabled="False" IsTextPredictionEnabled="False"
+               TextChanged="OnServerTextChanged" KeyDown="OnServerBoxKeyDown" Style="{StaticResource SkylineServerAddressStyle}" />
+      <TextBlock x:Name="ServerError" Visibility="Collapsed" Style="{StaticResource SkylineServerEntryErrorStyle}" AutomationProperties.LiveSetting="Polite" />
+      <TextBlock x:Name="ServerSecurityHint" Text="Secure HTTPS is tried automatically." Style="{StaticResource SkylineServerEntryHintStyle}" />
+      <!-- rail-layout: non-card — TvServerSetupScreen.kt manual server-entry actions. -->
+      <ItemsControl x:Name="ServerActions" Style="{StaticResource SkylineServerEntryActionsStyle}" PreviewKeyDown="OnServerActionsPreviewKeyDown">
         <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="11" /></ItemsPanelTemplate>
+          <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylineAuthActionGap}" /></ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>
         <Button x:Name="ConnectButton" Content="Connect" Click="OnConnectClick" Style="{StaticResource SkylineAuthButtonStyle}" />
-        <Button x:Name="ServerBackButton" Content="Back" Click="OnServerBackClick" Visibility="Collapsed" Style="{StaticResource SkylineAuthButtonStyle}" />
+        <Button x:Name="ServerBackButton" Content="Back" Click="OnServerBackClick" Style="{StaticResource SkylineAuthPlainButtonStyle}" />
       </ItemsControl>
     </StackPanel>
 

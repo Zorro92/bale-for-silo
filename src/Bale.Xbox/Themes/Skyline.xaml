@@ -1812,6 +1812,49 @@
     <Setter Property="Height" Value="70" />
   </Style>
 
+  <!-- TvServerSetupScreen.kt AddressEntryScreen / TvMarqueeField.kt: the manual-entry deck only.
+       Keep the native UWP editing/keyboard template; its sizes follow TvMarqueeMetrics. -->
+  <Style x:Key="SkylineServerEntryStyle" TargetType="StackPanel">
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="Width" Value="450" />
+  </Style>
+  <Style x:Key="SkylineServerEntryTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineLoginTitleStyle}">
+    <Setter Property="Margin" Value="0" />
+  </Style>
+  <Style x:Key="SkylineServerEntryCaptionStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineAuthBodyStyle}">
+    <Setter Property="Margin" Value="0,11,0,0" />
+  </Style>
+  <Style x:Key="SkylineServerAddressStyle" TargetType="TextBox" BasedOn="{StaticResource SkylineTextBoxStyle}">
+    <Setter Property="Width" Value="380" />
+    <Setter Property="Height" Value="42" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="Margin" Value="0,20,0,0" />
+    <Setter Property="FontSize" Value="12.9" />
+    <Setter Property="Background" Value="#14FFFFFF" />
+    <Setter Property="BorderBrush" Value="#1FFFFFFF" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="15,0" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineServerEntryErrorStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineAuthBodyStyle}">
+    <Setter Property="Width" Value="380" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="Margin" Value="0,8,0,0" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineAuthError}" />
+  </Style>
+  <Style x:Key="SkylineServerEntryHintStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineAuthBodyStyle}">
+    <Setter Property="Width" Value="380" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="Margin" Value="0,9,0,0" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineAuthTertiary}" />
+  </Style>
+  <Style x:Key="SkylineServerEntryActionsStyle" TargetType="ItemsControl">
+    <Setter Property="Margin" Value="0,20,0,0" />
+  </Style>
+
   <!-- TvPinEntryDialog.kt: 50dp circular keys; no implicit transitions inside templates. -->
   <Style x:Key="SkylinePinKeyStyle" TargetType="Button" BasedOn="{StaticResource SkylineButtonStyle}">
     <Setter Property="Width" Value="50" />
