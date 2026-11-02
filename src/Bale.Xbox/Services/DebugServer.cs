@@ -1,3 +1,4 @@
+#if DEBUG_SERVER
 using System.Text;
 using Windows.ApplicationModel.Core;
 using Windows.Foundation;
@@ -26,6 +27,7 @@ namespace Bale.Xbox.Services;
 ///   POST /goto?target=... focus a named or labelled control (optional #N), for setup only
 ///   GET  /targets         the visible, enabled tab-stop controls goto can reach
 ///   GET  /tree            the visible element tree with bounds and text
+///   POST /fault/profiles  fail the next picker profile-list load once (Retry then uses the server)
 ///
 /// Only started on sideloaded builds (see App). Anyone on the LAN can reach it while it runs, so it
 /// must never ship in a Store build.
@@ -33,6 +35,18 @@ namespace Bale.Xbox.Services;
 internal sealed class DebugServer
 {
     public const int Port = 8790;
+
+    private static int _failProfilesOnce;
+
+    // Exercise TvProfileSelectionScreen.kt's error branch without making a real server unreachable.
+    // Both this hook and its call site are absent when BaleDebugServer=false (DEBUG_SERVER unset).
+    internal static void ThrowIfProfilesFaulted()
+    {
+        if (Interlocked.Exchange(ref _failProfilesOnce, 0) != 0)
+        {
+            throw new HttpRequestException("Injected profile-list failure (fault profiles).");
+        }
+    }
 
     private readonly StreamSocketListener _listener = new();
     private InputInjector? _injector;
@@ -124,8 +138,12 @@ internal sealed class DebugServer
             case ("GET", "/tree"):
                 return ("200 OK", await OnUiAsync(DescribeTree));
 
+            case ("POST", "/fault/profiles"):
+                Interlocked.Exchange(ref _failProfilesOnce, 1);
+                return ("200 OK", "next picker profile-list load will fail once; Retry will load normally\n");
+
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, POST /goto?target=, GET /targets, GET /tree\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, POST /goto?target=, GET /targets, GET /tree, POST /fault/profiles\n");
         }
     }
 
@@ -554,3 +572,4 @@ internal sealed class DebugServer
         return values;
     }
 }
+#endif

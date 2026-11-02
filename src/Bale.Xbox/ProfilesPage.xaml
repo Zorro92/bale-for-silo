@@ -67,12 +67,8 @@
             </DataTemplate>
           </GridView.ItemTemplate>
         </GridView>
-        <ProgressRing x:Name="LoadingRing" Width="24" Height="24" IsActive="True" Foreground="{StaticResource SkylinePrimary}" />
-        <StackPanel x:Name="ErrorPanel" Spacing="14" Margin="0,18,0,0" Visibility="Collapsed" HorizontalAlignment="Center">
-          <TextBlock x:Name="ErrorText" MaxWidth="600" FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineError}"
-                     HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
-          <Button x:Name="RetryButton" Content="Retry" Click="OnRetryClick" HorizontalAlignment="Center" Style="{StaticResource SkylineButtonStyle}" />
-        </StackPanel>
+        <!-- TvProfileSelectionScreen.kt: an existing grid keeps only 14sp error text, 18dp below it. -->
+        <TextBlock x:Name="InlineErrorText" Style="{StaticResource SkylineProfileInlineErrorStyle}" Visibility="Collapsed" />
       </StackPanel>
       <!-- rail-layout: non-card — Profile picker actions. -->
       <ItemsControl x:Name="PickerActions" Grid.Row="1" HorizontalAlignment="Center" PreviewKeyDown="OnPickerActionsPreviewKeyDown">
@@ -82,6 +78,17 @@
         <Button x:Name="ChangeServerButton" Content="Change server" Click="OnChangeServerClick" Style="{StaticResource SkylineButtonStyle}" />
         <Button x:Name="SignOutButton" Content="Sign out" Click="OnSignOutClick" Style="{StaticResource SkylineButtonStyle}" />
       </ItemsControl>
+    </Grid>
+
+    <!-- TvProfileSelectionScreen.kt / StatusViews.kt: first-load loading/error replace the picker,
+         including its utility actions. TvErrorScreen's 24dp spacing applies around its extra 8dp spacer. -->
+    <ProgressRing x:Name="LoadingRing" Style="{StaticResource SkylineProfileLoadingStyle}" IsActive="True" />
+    <Grid x:Name="FullScreenErrorPanel" Style="{StaticResource SkylineProfileErrorScreenStyle}" Visibility="Collapsed">
+      <StackPanel Style="{StaticResource SkylineProfileErrorContentStyle}">
+        <TextBlock x:Name="FullScreenErrorText" Style="{StaticResource SkylineProfileErrorMessageStyle}" />
+        <Border Height="{StaticResource SkylineProfileErrorSpacer}" />
+        <Button x:Name="RetryButton" Content="Retry" Click="OnRetryClick" Style="{StaticResource SkylineProfileRetryStyle}" />
+      </StackPanel>
     </Grid>
 
     <!-- TvPinEntryDialog.kt: full-screen prompt, four dots, 50dp remote-first circular keys. -->

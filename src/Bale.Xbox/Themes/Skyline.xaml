@@ -1147,6 +1147,91 @@
       </Setter.Value>
     </Setter>
   </Style>
+  <!-- Profile picker status: TvProfileSelectionScreen.kt / components/StatusViews.kt.
+       TvErrorScreen pads 48dp and spaces every child by 24dp, including its extra 8dp spacer. -->
+  <x:Double x:Key="SkylineProfileErrorSpacer">8</x:Double>
+  <Style x:Key="SkylineProfileLoadingStyle" TargetType="ProgressRing">
+    <Setter Property="Width" Value="64" />
+    <Setter Property="Height" Value="64" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
+  </Style>
+  <Style x:Key="SkylineProfileErrorScreenStyle" TargetType="Grid">
+    <Setter Property="Padding" Value="48" />
+  </Style>
+  <Style x:Key="SkylineProfileErrorContentStyle" TargetType="StackPanel">
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Spacing" Value="24" />
+  </Style>
+  <!-- theme/Type.kt headlineSmall: SemiBold 22/28sp, mapped by Theme.kt's TvUiFontScale 0.86. -->
+  <Style x:Key="SkylineProfileErrorMessageStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="18.92" />
+    <Setter Property="LineHeight" Value="24.08" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="TextAlignment" Value="Center" />
+  </Style>
+  <!-- TvProfileSelectionScreen.kt: 14sp, MarqueeColors.Error (MarqueeBackdrop.kt), top padding 18dp. -->
+  <Style x:Key="SkylineProfileInlineErrorStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="12.04" />
+    <Setter Property="Foreground" Value="#FFFF6961" />
+    <Setter Property="Margin" Value="0,18,0,0" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <!-- StatusViews.kt: TV Material Button with 32/12dp content padding, Type.kt labelLarge 18/22sp.
+       ButtonDefaults.kt supplies a capsule, surfaceVariant/onSurface at 80%, and focused scale 1.1;
+       ColorDarkTokens.kt / PaletteTokens.kt inverseOnSurface is Neutral20 (#313033). -->
+  <Style x:Key="SkylineProfileRetryStyle" TargetType="Button">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="15.48" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Background" Value="#CC0E0F12" />
+    <Setter Property="Foreground" Value="#CCEDEDED" />
+    <Setter Property="Padding" Value="32,12" />
+    <Setter Property="Height" Value="42.92" />
+    <Setter Property="CornerRadius" Value="21.46" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Capsule" Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}"
+                  Padding="{TemplateBinding Padding}" RenderTransformOrigin="0.5,0.5">
+            <Border.RenderTransform><ScaleTransform x:Name="Lift" /></Border.RenderTransform>
+            <TextBlock x:Name="Label" Text="{TemplateBinding Content}" FontFamily="{TemplateBinding FontFamily}"
+                       FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}" Foreground="{TemplateBinding Foreground}"
+                       LineHeight="18.92" LineStackingStrategy="BlockLineHeight" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" /><VisualState x:Name="Disabled" />
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters>
+                    <Setter Target="Capsule.Background" Value="{StaticResource SkylinePrimary}" />
+                    <Setter Target="Label.Foreground" Value="#FF313033" />
+                  </VisualState.Setters>
+                  <Storyboard>
+                    <DoubleAnimation Storyboard.TargetName="Lift" Storyboard.TargetProperty="ScaleX" To="1.1" Duration="0:0:0.12" />
+                    <DoubleAnimation Storyboard.TargetName="Lift" Storyboard.TargetProperty="ScaleY" To="1.1" Duration="0:0:0.12" />
+                  </Storyboard>
+                </VisualState>
+                <VisualState x:Name="PointerFocused" /><VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- Auth/profile-only metrics: TvProfileSelectionScreen.kt, TvPinEntryDialog.kt, TvMarquee.kt.
        Geometry is dp 1:1; type is sp x 0.86. Keep this group independent of shared browse styles. -->
   <x:Double x:Key="SkylineProfileTitleSize">27.5</x:Double>

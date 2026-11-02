@@ -10,6 +10,7 @@
 #   scripts/bale-debug.sh goto "Unwatched#2"     setup only: focus the second matching control
 #   scripts/bale-debug.sh targets               list controls goto can reach
 #   scripts/bale-debug.sh tree                  the visible element tree with bounds
+#   scripts/bale-debug.sh fault profiles        fail the next picker profile-list load once
 set -euo pipefail
 HOST="${XBOX_HOST:?Set XBOX_HOST to your Xbox IP (shown in Dev Home)}"
 BASE="http://$HOST:8790"
@@ -49,8 +50,15 @@ case "${1:-}" in
     ;;
   targets) curl -fsS "$BASE/targets" ;;
   tree) curl -fsS "$BASE/tree" ;;
+  fault)
+    if [[ "${2:-}" != profiles || "$#" != 2 ]]; then
+      echo "usage: scripts/bale-debug.sh fault profiles" >&2
+      exit 2
+    fi
+    curl -fsS -X POST "$BASE/fault/profiles"
+    ;;
   *)
-    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac

@@ -66,6 +66,8 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         }
         else
         {
+            // TvProfileSelectionScreen.kt / StatusViews.kt install no error-screen Back handler;
+            // TvAppNavigation.kt makes ProfileSelection a root, so Back leaves the app, not sign-in.
             Application.Current.Exit();
         }
         return true;
@@ -83,12 +85,13 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         _loading?.Cancel();
         using var loading = new CancellationTokenSource();
         _loading = loading;
-        LoadingRing.IsActive = true;
-        LoadingRing.Visibility = Visibility.Visible;
-        ErrorPanel.Visibility = Visibility.Collapsed;
+        SetLoadState(isLoading: true);
         SetAccountName(client.Account?.Username ?? AppSettings.AccountName);
         try
         {
+#if DEBUG_SERVER
+            DebugServer.ThrowIfProfilesFaulted();
+#endif
             var profiles = await client.GetProfilesAsync(loading.Token);
             if (!_active || loading.IsCancellationRequested || !ReferenceEquals(Session.Client, client))
             {
@@ -98,15 +101,18 @@ public sealed partial class ProfilesPage : Page, IBackHandler
             var views = profiles.Select(p => new ProfileView(p, ProfileAvatars.ImageUrl(p.AvatarUrl, client.Browse.Resolve))).ToList();
             Profiles.ItemsSource = views;
             Profiles.Width = Math.Min(6, Math.Max(1, views.Count)) * 142;
+            SetLoadState(isLoading: false);
             if (views.Count == 0)
             {
-                ShowError("No profiles are available on this account.");
-                return;
+                // TvProfileSelectionScreen.kt has no empty-success error or Retry; only utilities remain.
+                FocusRetry.Until(PickerActions, () => !_active || PickerPanel.Visibility != Visibility.Visible || _actions.Focus(FocusState.Programmatic));
             }
-
-            var current = views.FindIndex(p => p.Profile.Id == (client.ProfileId ?? AppSettings.ProfileId));
-            _lastProfileIndex = Math.Max(current, 0);
-            RestoreProfileFocus();
+            else
+            {
+                var current = views.FindIndex(p => p.Profile.Id == (client.ProfileId ?? AppSettings.ProfileId));
+                _lastProfileIndex = Math.Max(current, 0);
+                RestoreProfileFocus();
+            }
             if (client.Account is null)
             {
                 try
@@ -139,9 +145,11 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         catch (Exception ex)
         {
             Log.Error("Profiles load", ex);
-            if (_active && !loading.IsCancellationRequested)
+            if (_active && !loading.IsCancellationRequested && ReferenceEquals(Session.Client, client))
             {
-                ShowError($"Couldn't load profiles. {ex.Message}");
+                // TvProfileSelectionViewModel.kt: network failures use this copy; API errors keep their message.
+                ShowError(ex is HttpRequestException ? "Network error. Please try again."
+                    : string.IsNullOrWhiteSpace(ex.Message) ? "Failed to load profiles" : ex.Message);
             }
         }
         finally
@@ -157,11 +165,25 @@ public sealed partial class ProfilesPage : Page, IBackHandler
 
     private void SetAccountName(string? name) => AccountText.Text = string.IsNullOrEmpty(name) ? " " : $"Signed in as {name}";
 
+    private void SetLoadState(bool isLoading, string? error = null)
+    {
+        var state = new ProfilePickerState(isLoading, Profiles.Items.Count, error);
+        PickerPanel.Visibility = state.ShowPicker ? Visibility.Visible : Visibility.Collapsed;
+        LoadingRing.IsActive = state.ShowLoading;
+        LoadingRing.Visibility = state.ShowLoading ? Visibility.Visible : Visibility.Collapsed;
+        FullScreenErrorText.Text = InlineErrorText.Text = error ?? string.Empty;
+        FullScreenErrorPanel.Visibility = state.ShowFullScreenError ? Visibility.Visible : Visibility.Collapsed;
+        InlineErrorText.Visibility = state.ShowInlineError ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void ShowError(string error)
     {
-        ErrorText.Text = error;
-        ErrorPanel.Visibility = Visibility.Visible;
-        FocusRetry.Until(ErrorPanel, () => !_active || ErrorPanel.Visibility != Visibility.Visible || RetryButton.Focus(FocusState.Programmatic));
+        SetLoadState(isLoading: false, error);
+        if (FullScreenErrorPanel.Visibility == Visibility.Visible)
+        {
+            // StatusViews.kt: Retry is the only focusable control on the full-screen error.
+            FocusRetry.Until(FullScreenErrorPanel, () => !_active || FullScreenErrorPanel.Visibility != Visibility.Visible || RetryButton.Focus(FocusState.Programmatic));
+        }
     }
 
     private void OnProfileFocus(object sender, RoutedEventArgs e)
@@ -284,10 +306,6 @@ public sealed partial class ProfilesPage : Page, IBackHandler
                 {
                     FocusProfile(_lastProfileIndex);
                 }
-                else if (ErrorPanel.Visibility == Visibility.Visible)
-                {
-                    RetryButton.Focus(FocusState.Keyboard);
-                }
             }
         }
     }
@@ -297,15 +315,8 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         var (x, y) = Direction(e.Key);
         if (x != 0 || y != 0)
         {
+            // StatusViews.kt has no picker actions behind Retry, so every directional edge stays put.
             e.Handled = true;
-            if (y > 0)
-            {
-                _actions.Focus(FocusState.Keyboard);
-            }
-            else if (y < 0 && Profiles.Items.Count > 0)
-            {
-                FocusProfile(_lastProfileIndex);
-            }
         }
     }
 
