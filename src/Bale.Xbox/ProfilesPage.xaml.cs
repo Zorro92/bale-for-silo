@@ -139,13 +139,6 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         catch (OperationCanceledException) when (loading.IsCancellationRequested)
         {
         }
-        catch (ApiException ex) when (ex.ResponseStatusCode == 401)
-        {
-            if (_active && ReferenceEquals(Session.Client, client))
-            {
-                Session.Expire();
-            }
-        }
         catch (Exception ex)
         {
             Log.Error("Profiles load", ex);

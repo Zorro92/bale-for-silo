@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using Bale.Core.Browse;
 using Bale.Xbox.Services;
 using Bale.Xbox.Views;
-using Microsoft.Kiota.Abstractions;
 using Windows.UI;
 using Windows.UI.Core;
 using Windows.UI.Xaml;
@@ -220,11 +219,6 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
                 _focusFirstRow = true;
                 Rows.LayoutUpdated += OnRowsLayoutUpdated;
             }
-        }
-        catch (ApiException ex) when (ex.ResponseStatusCode == 401)
-        {
-            // TvAppNavigation.kt sessionExpired keeps the server and explains why sign-in is needed.
-            Session.Expire();
         }
         catch (Exception ex)
         {

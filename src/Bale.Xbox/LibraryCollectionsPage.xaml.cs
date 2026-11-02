@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using Bale.Core.Browse;
 using Bale.Xbox.Services;
 using Bale.Xbox.Views;
-using Microsoft.Kiota.Abstractions;
 using Windows.Foundation;
 using Windows.System;
 using Windows.UI.Xaml;
@@ -78,7 +77,6 @@ public sealed partial class LibraryCollectionsPage : Page, IRestoresFocus
             BuildRows();
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
-        catch (ApiException ex) when (ex.ResponseStatusCode == 401) { if (_entry.IsCurrent) Session.Expire(); }
         catch (Exception ex)
         {
             Log.Error("Library collections", ex);

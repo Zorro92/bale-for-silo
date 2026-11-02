@@ -1,7 +1,6 @@
 using Bale.Core.Browse;
 using Bale.Xbox.Services;
 using Bale.Xbox.Views;
-using Microsoft.Kiota.Abstractions;
 using Windows.System;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Input;
@@ -64,10 +63,6 @@ public sealed partial class BrowsePage
         catch (OperationCanceledException) when (load.IsCancellationRequested)
         {
             // The old library/scope must neither publish nor continue paging after it leaves the screen.
-        }
-        catch (ApiException ex) when (ex.ResponseStatusCode == 401)
-        {
-            if (IsCurrent()) Session.Expire();
         }
         catch (Exception ex)
         {

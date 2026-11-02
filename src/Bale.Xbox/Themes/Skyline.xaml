@@ -1812,6 +1812,35 @@
     <Setter Property="Height" Value="70" />
   </Style>
 
+  <!-- TvLoginScreen.kt notices + TvMarquee.kt TvMarqueeStatusChip: 30dp pill, 15dp bottom gap,
+       12dp icon and 14sp Medium secondary copy. Long names ellipsize inside the 450dp copy column. -->
+  <Style x:Key="SkylineSessionNoticeStyle" TargetType="Border">
+    <Setter Property="Height" Value="30" />
+    <Setter Property="CornerRadius" Value="15" />
+    <Setter Property="Padding" Value="11,0" />
+    <Setter Property="Margin" Value="0,0,0,15" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="Background" Value="#14FFFFFF" />
+    <Setter Property="BorderBrush" Value="{StaticResource SkylineAuthHairline}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style x:Key="SkylineSessionNoticeContentStyle" TargetType="StackPanel">
+    <Setter Property="Orientation" Value="Horizontal" />
+    <Setter Property="Spacing" Value="7" />
+  </Style>
+  <Style x:Key="SkylineSessionNoticeIconStyle" TargetType="Viewbox">
+    <Setter Property="Width" Value="12" />
+    <Setter Property="Height" Value="12" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineSessionNoticeTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineAuthBodyStyle}">
+    <Setter Property="MaxWidth" Value="407" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="TextWrapping" Value="NoWrap" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
   <!-- TvServerSetupScreen.kt AddressEntryScreen / TvMarqueeField.kt: the manual-entry deck only.
        Keep the native UWP editing/keyboard template; its sizes follow TvMarqueeMetrics. -->
   <Style x:Key="SkylineServerEntryStyle" TargetType="StackPanel">

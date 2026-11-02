@@ -133,10 +133,6 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
         {
         }
-        catch (ApiException ex) when (ex.ResponseStatusCode == 401)
-        {
-            if (_active && !_lifetime.IsCancellationRequested && _entry.IsCurrent(Session.Client)) Session.Expire();
-        }
         catch (Exception ex)
         {
             Log.Error("Catalog grid load", ex);

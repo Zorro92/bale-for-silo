@@ -3,7 +3,6 @@ using Bale.Core;
 using Bale.Core.Browse;
 using Bale.Xbox.Services;
 using Bale.Xbox.Views;
-using Microsoft.Kiota.Abstractions;
 using Windows.System;
 using Windows.UI;
 using Windows.UI.Xaml;
@@ -167,13 +166,6 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
             // A newer filter/week or leaving the page owns the result now.
-        }
-        catch (ApiException ex) when (ex.ResponseStatusCode == 401)
-        {
-            if (IsCurrentLoad())
-            {
-                Session.Expire();
-            }
         }
         catch (Exception ex)
         {

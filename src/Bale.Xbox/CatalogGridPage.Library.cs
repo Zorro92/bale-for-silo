@@ -1,7 +1,6 @@
 using Bale.Core.Browse;
 using Bale.Xbox.Controls;
 using Bale.Xbox.Services;
-using Microsoft.Kiota.Abstractions;
 using Windows.System;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
@@ -90,7 +89,6 @@ public sealed partial class CatalogGridPage : IBackHandler
             if (_active && _entry.IsCurrent(Session.Client)) _libraryOverlay.OpenFilter(options);
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
-        catch (ApiException ex) when (ex.ResponseStatusCode == 401) { Session.Expire(); }
         catch (Exception ex)
         {
             Log.Error("Library facets", ex);

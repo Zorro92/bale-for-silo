@@ -42,8 +42,15 @@
         <ColumnDefinition Width="{StaticResource SkylineAuthCardColumn}" />
       </Grid.ColumnDefinitions>
       <StackPanel VerticalAlignment="Center">
-        <TextBlock x:Name="SessionNotice" FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineError}"
-                   TextWrapping="Wrap" Visibility="Collapsed" Margin="0,0,0,12" />
+        <!-- TvLoginScreen.kt notices: a polite status chip ABOVE the server card, not an error on it. -->
+        <Border x:Name="SessionNotice" Visibility="Collapsed" Style="{StaticResource SkylineSessionNoticeStyle}">
+          <StackPanel Style="{StaticResource SkylineSessionNoticeContentStyle}">
+            <Viewbox Style="{StaticResource SkylineSessionNoticeIconStyle}">
+              <Path Data="M11,15H13V17H11M11,7H13V13H11M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20Z" Fill="{StaticResource SkylineAuthSecondary}" />
+            </Viewbox>
+            <TextBlock x:Name="SessionNoticeText" Style="{StaticResource SkylineSessionNoticeTextStyle}" AutomationProperties.LiveSetting="Polite" />
+          </StackPanel>
+        </Border>
         <Border Style="{StaticResource SkylineLoginServerCardStyle}">
           <StackPanel Orientation="Horizontal">
             <Border Style="{StaticResource SkylineLoginServerMarkStyle}">

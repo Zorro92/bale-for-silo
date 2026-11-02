@@ -453,7 +453,8 @@ public sealed partial class MainPage : Page, IBackHandler
         SecureBadge.Visibility = server.IsSecure ? Visibility.Visible : Visibility.Collapsed;
         HttpBadge.Visibility = server.IsSecure ? Visibility.Collapsed : Visibility.Visible;
         SignInTitle.Text = $"Sign in to {server.Name}";
-        SessionNotice.Text = $"You were signed out of {server.Name}. Sign in again.";
+        // TvLoginScreen.kt notices / tv_signin_session_expired in strings.xml, using the same display name.
+        SessionNoticeText.Text = $"You were signed out of {server.Name}. Sign in again.";
     }
 
     private async Task RefreshServerNameAsync(Uri server, CancellationTokenSource pairing)

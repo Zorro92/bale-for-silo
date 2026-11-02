@@ -49,6 +49,8 @@ internal static class Session
                 Persist();
             }
         };
+        // TvAppNavigation.kt collects TokenManager.sessionExpired outside every page/route.
+        // This is the only involuntary sign-out path: a page's 401 alone is not proof of expiry.
         client.SessionExpired += (_, _) =>
         {
             // Refresh runs off the UI thread. Capture the root frame, not Window.Current there.
@@ -146,8 +148,8 @@ internal static class Session
         frame.BackStack.Clear();
     }
 
-    /// <summary>Central refresh/Home-401 recovery: keep the server, but never Back into a dead session.</summary>
-    public static void Expire()
+    /// <summary>TvAppNavigation.kt: a rejected refresh on any route keeps the server, never a dead Back entry.</summary>
+    private static void Expire()
     {
         if (_routingExpiry || Client is not { } client || _rootFrame is not { } frame)
         {
