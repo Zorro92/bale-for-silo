@@ -2,6 +2,7 @@
     x:Class="Bale.Xbox.Controls.LibraryBrowseOverlay"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Bale.Xbox.Controls"
     xmlns:views="using:Bale.Xbox.Views">
   <UserControl.Resources>
     <DataTemplate x:Key="AllTemplate" x:DataType="views:LibraryAlphabetEntry">
@@ -52,7 +53,7 @@
 
     <!-- TvLibraryBrowseControls.kt: centered, modal 55% black scrim. All direction keys stay here. -->
     <Grid x:Name="Modal" Background="{StaticResource SkylineLibraryBrowseScrim}" Visibility="Collapsed" PreviewKeyDown="OnPanelKeyDown">
-      <Border x:Name="Panel" Style="{StaticResource SkylineLibraryBrowsePanelStyle}">
+      <controls:SkylinePanel x:Name="Panel" Style="{StaticResource SkylineLibraryBrowsePanelStyle}">
         <Grid>
           <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
           <StackPanel x:Name="PanelHeader" Spacing="3">
@@ -78,7 +79,7 @@
             </ItemsControl>
           </ScrollViewer>
         </Grid>
-      </Border>
+      </controls:SkylinePanel>
     </Grid>
   </Grid>
 </UserControl>
