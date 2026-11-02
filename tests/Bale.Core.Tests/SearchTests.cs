@@ -299,6 +299,98 @@ public class SearchResultsTests
     }
 
     [Fact]
+    public void FailedSearchHasRecoverableFeedbackDistinctFromNoMatches()
+    {
+        var state = new SearchResults();
+        var request = state.BeginSearch(" missing title ", SearchMediaFilter.Movies)!;
+        Assert.Null(state.Feedback([SearchMediaFilter.All, SearchMediaFilter.Movies]));
+
+        Assert.True(state.Fail(request, new HttpRequestException("private request URL")));
+        Assert.Equal(new SearchFeedback("Search is unavailable", "Unable to connect to the server.", "Try again"),
+            state.Feedback([SearchMediaFilter.All, SearchMediaFilter.Movies]));
+        Assert.Equal("Couldn't update results", state.Status);
+        Assert.Equal(SearchContentTarget.Retry, state.FirstContentTarget);
+
+        // TvSearchViewModel.kt submitSearch restarts the same query and media type, not loadMore.
+        var retry = state.BeginSearch(state.Query, state.Filter)!;
+        Assert.Equal(request.Query, retry.Query);
+        Assert.Equal(request.Type, retry.Type);
+        Assert.True(retry.Generation > request.Generation);
+        Assert.Null(retry.Continuation);
+        Assert.False(retry.Append);
+        Assert.True(state.IsSearching);
+        Assert.Null(state.Error);
+        Assert.Null(state.Feedback([SearchMediaFilter.All, SearchMediaFilter.Movies]));
+        Assert.False(state.Fail(request, new Exception()));
+        Assert.False(state.ApplyPeople(request.Generation, [new SearchPerson("stale", "Stale", null)]));
+
+        Assert.True(state.ApplyPage(retry, new SearchResultPage([], 0, true, null)));
+        Assert.Equal(new SearchFeedback("No matches for “missing title”", "Try a shorter title or a different filter."),
+            state.Feedback([SearchMediaFilter.All, SearchMediaFilter.Movies]));
+        Assert.Equal("No results", state.Status);
+        Assert.Equal(SearchContentTarget.Filters, state.FirstContentTarget);
+    }
+
+    [Fact]
+    public void BlankFeedbackKeepsTheOfficialTitleAndLibraryDerivedDescription()
+    {
+        var state = new SearchResults();
+        Assert.Equal(new SearchFeedback("Search your library", "Find your library in one place."),
+            state.Feedback([SearchMediaFilter.All]));
+        Assert.Equal(new SearchFeedback("Search your library", "Find movies and series in one place."),
+            state.Feedback([SearchMediaFilter.All, SearchMediaFilter.Movies, SearchMediaFilter.Series]));
+        Assert.Equal(new SearchFeedback("Search your library", "Find audiobooks in one place."),
+            state.Feedback([SearchMediaFilter.All, SearchMediaFilter.Audiobooks]));
+    }
+
+    [Fact]
+    public void PeopleOnlyAnswersHideNoMatchesButNeverHideTitleSearchErrors()
+    {
+        var state = new SearchResults();
+        var request = state.BeginSearch("Nolan", SearchMediaFilter.All)!;
+        state.ApplyPage(request, new SearchResultPage([], 0, true, null));
+        state.ApplyPeople(request.Generation, [new SearchPerson("7", "Nolan", null)]);
+        Assert.Null(state.Feedback([SearchMediaFilter.All]));
+        Assert.Equal("No matching titles", state.Status);
+
+        state.Fail(request, new Problem { Detail = "Try later." });
+        Assert.Equal(new SearchFeedback("Search is unavailable", "Try later.", "Try again"),
+            state.Feedback([SearchMediaFilter.All]));
+        Assert.Equal(SearchContentTarget.People, state.FirstContentTarget);
+    }
+
+    [Fact]
+    public void ResetFailureKeepsExistingTitlesInsteadOfShowingEmptyFeedback()
+    {
+        var state = new SearchResults();
+        state.ApplyPage(state.BeginSearch("old", SearchMediaFilter.All)!, Page(true, Card("1")));
+        var reset = state.BeginSearch("new", SearchMediaFilter.All)!;
+        state.Fail(reset, new HttpRequestException());
+
+        Assert.Equal("1", Assert.Single(state.Items).ContentId);
+        Assert.Null(state.Feedback([SearchMediaFilter.All]));
+        Assert.Equal("Couldn't update results", state.Status);
+        Assert.Equal(SearchContentTarget.Titles, state.FirstContentTarget);
+    }
+
+    [Theory]
+    [InlineData(false, false, false, SearchContentTarget.Filters)]
+    [InlineData(false, false, true, SearchContentTarget.Retry)]
+    [InlineData(false, true, true, SearchContentTarget.Titles)]
+    [InlineData(true, false, true, SearchContentTarget.People)]
+    [InlineData(true, true, true, SearchContentTarget.People)]
+    public void FirstContentUsesOfficialFocusPrecedence(bool people, bool titles, bool error, SearchContentTarget expected)
+    {
+        var state = new SearchResults();
+        var request = state.BeginSearch("x", SearchMediaFilter.All)!;
+        state.ApplyPage(request, Page(false, titles ? [Card("1")] : []));
+        if (people) state.ApplyPeople(request.Generation, [new SearchPerson("7", "X", null)]);
+        if (error) state.Fail(request, new HttpRequestException());
+
+        Assert.Equal(expected, state.FirstContentTarget);
+    }
+
+    [Fact]
     public void FailedPaginationKeepsCardsAndCursorAndRequiresExplicitRetry()
     {
         var state = new SearchResults();
@@ -386,6 +478,8 @@ public class SearchPresentationTests
     {
         Assert.Equal("Try later.", SearchText.ErrorMessage(new Problem { Detail = "Try later.", Title = "Unavailable" }));
         Assert.Equal("Unavailable", SearchText.ErrorMessage(new Problem { Title = "Unavailable" }));
+        Assert.Equal("Unavailable", SearchText.ErrorMessage(new Problem { Detail = " \t ", Title = "Unavailable" }));
+        Assert.Equal("Search failed", SearchText.ErrorMessage(new Problem { Detail = " \t ", Title = " \t " }));
         Assert.Equal("Unable to connect to the server.", SearchText.ErrorMessage(new HttpRequestException("https://secret.example/token")));
         Assert.Equal("The request timed out. Try again.", SearchText.ErrorMessage(new TaskCanceledException()));
         Assert.Equal("Search failed", SearchText.ErrorMessage(new Exception("internal stack trace")));

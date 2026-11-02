@@ -54,6 +54,12 @@ public sealed record SearchPerson(string Id, string Name, Uri? PhotoUrl);
 /// <summary>A request belongs to one query/filter generation, including load-more requests.</summary>
 public sealed record SearchRequest(int Generation, string Query, string? Type, SearchContinuation? Continuation, bool Append);
 
+/// <summary>TvSearchScreen.kt's feedback row; only errors have a recovery action.</summary>
+public sealed record SearchFeedback(string Title, string Body, string? ActionLabel = null);
+
+/// <summary>TvSearchScreen.kt's chip-to-content and submitted-search focus precedence.</summary>
+public enum SearchContentTarget { Filters, People, Titles, Retry }
+
 /// <summary>
 /// Search's platform-independent state. TvSearchViewModel.kt keeps old titles during a reset, but
 /// rejects pages and people from superseded queries, even if their network calls ignore cancellation.
@@ -79,6 +85,23 @@ public sealed class SearchResults
 
     public string? Status => SearchText.Status(Query, Total, IsSearching, Error,
         Filter.Type is null && HasMore, !TotalExact, People.Count > 0);
+
+    // TvSearchScreen.kt: people are nearest the chips, then titles, then the error action.
+    public SearchContentTarget FirstContentTarget => People.Count > 0 ? SearchContentTarget.People
+        : _items.Count > 0 ? SearchContentTarget.Titles
+        : Error is not null ? SearchContentTarget.Retry
+        : SearchContentTarget.Filters;
+
+    /// <summary>
+    /// TvSearchScreen.kt's emptyState: errors precede people-only answers, but never replace retained
+    /// titles. TvCatalogGrid.kt only renders this row when the title grid is empty.
+    /// </summary>
+    public SearchFeedback? Feedback(IReadOnlyList<SearchMediaFilter> filters) => Query.Length == 0
+        ? new("Search your library", SearchText.Description(filters))
+        : IsSearching || _items.Count > 0 ? null
+        : Error is { } error ? new("Search is unavailable", error, "Try again")
+        : People.Count > 0 ? null
+        : new($"No matches for “{Query}”", "Try a shorter title or a different filter.");
 
     /// <summary>Personal card actions preserve result order, generation and paging.</summary>
     public void UpdateCard(MediaCard card)
@@ -220,8 +243,8 @@ public static class SearchText
     // TvSearchViewModel.kt never displays a raw network exception (it can contain URLs/tokens).
     public static string ErrorMessage(Exception error) => error switch
     {
-        Problem { Detail: { Length: > 0 } detail } => detail,
-        Problem { Title: { Length: > 0 } title } => title,
+        Problem { Detail: { } detail } when !string.IsNullOrWhiteSpace(detail) => detail,
+        Problem { Title: { } title } when !string.IsNullOrWhiteSpace(title) => title,
         HttpRequestException => "Unable to connect to the server.",
         OperationCanceledException or TimeoutException => "The request timed out. Try again.",
         InvalidDataException => "The server returned invalid pagination. Try searching again.",
