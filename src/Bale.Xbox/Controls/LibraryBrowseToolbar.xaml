@@ -5,6 +5,13 @@
   <Grid>
     <!-- TvLibraryBrowseControls.kt: icon/label colors invert together, with a quieter sort direction. -->
     <VisualStateManager.VisualStateGroups>
+      <!-- screens/library/TvLibraryCollectionDetailScreen.kt CollectionHeader uses bodyMedium for its count. -->
+      <VisualStateGroup x:Name="HeaderKind">
+        <VisualState x:Name="LibraryHeader" />
+        <VisualState x:Name="CollectionHeader"><VisualState.Setters>
+          <Setter Target="ItemCount.Style" Value="{StaticResource SkylineCollectionCountStyle}" />
+        </VisualState.Setters></VisualState>
+      </VisualStateGroup>
       <VisualStateGroup x:Name="SortFocus">
         <VisualState x:Name="SortResting" />
         <VisualState x:Name="SortFocused"><VisualState.Setters>

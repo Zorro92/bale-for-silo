@@ -147,7 +147,7 @@ public sealed partial class LibraryBrowseOverlay : UserControl
         PanelTitle.Visibility = PanelDivider.Visibility = Visibility.Collapsed;
         ResetRows();
         // TvLibrarySortOption.availableForPersonalList: Recently Saved, Title, Date Added, Year, Rating, Runtime.
-        var sorts = _source.IsPersonal ? LibrarySortOption.Personal : LibrarySortOption.For(_source.Query.MediaType, _source.Query.CollectionId is not null);
+        var sorts = _source.IsPersonal ? LibrarySortOption.Personal : LibrarySortOption.For(_source.ControlsMediaType, _source.IsCollection);
         foreach (var sort in sorts)
         {
             Add(sort.Field, sort.Label, () =>
@@ -194,7 +194,7 @@ public sealed partial class LibraryBrowseOverlay : UserControl
         }
         else
         {
-            foreach (var item in LibraryFacets.For(_source.Query.MediaType).Where(item => item.Options(_options).Count > 0))
+            foreach (var item in LibraryFacets.For(_source.ControlsMediaType).Where(item => item.Options(_options).Count > 0))
             {
                 Add(item.ToString(), item.Title(), () => { _facet = item; BuildFilters(); FocusPanel(0); }, row =>
                 {

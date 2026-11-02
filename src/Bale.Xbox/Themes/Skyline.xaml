@@ -1750,6 +1750,10 @@
   <!-- TvSectionBrowseScreen.kt: six equal columns, 40dp safe area, 30dp top/gaps, 40dp bottom. -->
   <Thickness x:Key="SkylineCatalogPagePadding">40,30,20,40</Thickness>
   <Thickness x:Key="SkylineCatalogHeaderMargin">0,0,20,30</Thickness>
+  <!-- screens/library/TvLibraryDetailScreen.kt Browse inset; TvLibraryCollectionDetailScreen.kt
+       uses the catalog's 30dp top inset and Spacing.md (12dp) between title and controls. -->
+  <Thickness x:Key="SkylineLibraryBrowseGridPadding">40,108,20,40</Thickness>
+  <Thickness x:Key="SkylineCollectionTitleMargin">0,0,20,12</Thickness>
   <x:Double x:Key="SkylineCatalogCaptionGap">11</x:Double>
   <!-- TvMediaCard.kt: 15.5/18.5sp title, 14/18sp year; only the title brightens on focus. -->
   <Style x:Key="SkylineCatalogCardTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineDetailPosterTitleStyle}">
@@ -1890,6 +1894,12 @@
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
 
+  <!-- screens/library/TvLibraryCollectionDetailScreen.kt CollectionHeader: bodyMedium 18/24sp,
+       onBackground at 60%, with the count shown only after the visible collection is exhausted. -->
+  <Style x:Key="SkylineCollectionCountStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylinePersonalCountStyle}">
+    <Setter Property="FontSize" Value="15.48" /><Setter Property="LineHeight" Value="20.64" />
+    <Setter Property="FontWeight" Value="Normal" />
+  </Style>
   <!-- TvLibraryBrowseControls.kt: 14sp controls, 8dp gaps, 94% white focus, 55% black modal scrim. -->
   <!-- TvLibraryDetailScreen.kt.RecommendedTab: safeArea (40dp) x 16dp warning bar, 16dp action gap.
        Color.kt supplies DarkSurface; Type.kt bodyLarge is 20/28sp, mapped by TvUiFontScale (x 0.86). -->

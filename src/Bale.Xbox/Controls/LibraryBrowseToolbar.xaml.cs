@@ -38,6 +38,8 @@ public sealed partial class LibraryBrowseToolbar : UserControl
         AutomationProperties.SetName(FilterButton, filter.Facets.ActiveCount > 0 ? $"Filter, {filter.Facets.ActiveCount} active" : "Filter");
     }
 
+    public void UseCollectionHeader() => VisualStateManager.GoToState(this, "CollectionHeader", false);
+
     public void UpdateCount(long? total)
     {
         // TvPersonalScreens.PersonalControlHeader hides the count while a query is being replaced.

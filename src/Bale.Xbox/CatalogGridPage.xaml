@@ -51,6 +51,17 @@
     <VisualStateManager.VisualStateGroups>
       <VisualStateGroup x:Name="SourceLayout">
         <VisualState x:Name="Catalog" />
+        <!-- screens/library/TvLibraryDetailScreen.kt: Browse controls sit below the 108dp inset. -->
+        <VisualState x:Name="LibraryBrowse"><VisualState.Setters>
+          <Setter Target="Cards.Padding" Value="{StaticResource SkylineLibraryBrowseGridPadding}" />
+          <Setter Target="ToolbarSlot.Margin" Value="{StaticResource SkylineCatalogHeaderMargin}" />
+        </VisualState.Setters></VisualState>
+        <!-- screens/library/TvLibraryCollectionDetailScreen.kt CollectionHeader scrolls with the cards. -->
+        <VisualState x:Name="Collection"><VisualState.Setters>
+          <Setter Target="PageTitle.Visibility" Value="Visible" />
+          <Setter Target="PageTitle.Margin" Value="{StaticResource SkylineCollectionTitleMargin}" />
+          <Setter Target="ToolbarSlot.Margin" Value="{StaticResource SkylineCatalogHeaderMargin}" />
+        </VisualState.Setters></VisualState>
         <VisualState x:Name="Personal">
           <VisualState.Setters>
             <Setter Target="PersonalHeader.Visibility" Value="Visible" />

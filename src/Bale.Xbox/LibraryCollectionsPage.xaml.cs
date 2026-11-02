@@ -204,7 +204,15 @@ public sealed partial class LibraryCollectionsPage : Page, IRestoresFocus
         OpenCollection(view);
     }
 
-    partial void OpenCollection(LibraryCollectionCardView view);
+    private void OpenCollection(LibraryCollectionCardView view)
+    {
+        if (ShellPage.Current is not { } shell || !_entry.IsCurrent) return;
+        _focusGeneration++;
+        // navigation/TvAppNavigation.kt opens an outer collection route; Back returns to the cached
+        // Collections tab, whose saved ID is restored through ShellPage + IRestoresFocus/FocusRetry.
+        var source = LibraryCatalogSource.Collection(_entry.LibraryId, _entry.MediaScope, view.Cell.Collection, _entry.Client.LibraryBrowse);
+        shell.Frame.Navigate(typeof(CatalogGridPage), new CatalogGridEntry(source, _entry.Client));
+    }
 
     private async void OnRetryClick(object sender, RoutedEventArgs e) => await LoadAsync();
 

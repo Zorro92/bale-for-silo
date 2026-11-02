@@ -26,19 +26,24 @@ public sealed partial class CatalogGridPage : IBackHandler
         if (_entry.Source is not LibraryCatalogSource source) return;
         _librarySource = source;
         _libraryInitialFocus = !_entry.Results.HasLoaded;
-        PageTitle.Visibility = Visibility.Collapsed;
-        if (!source.IsPersonal)
+        if (source.IsCollection)
         {
-            // TvLibraryDetailScreen.kt: taller 108dp Browse inset, full-span controls then 30dp row gap.
-            Cards.Padding = new Thickness(40, 108, 20, 40);
-            ToolbarSlot.Margin = new Thickness(0, 0, 20, 30);
+            // screens/library/TvLibraryCollectionDetailScreen.kt: title and controls scroll INSIDE
+            // the grid header; the collection opens on its first card rather than the Sort pill.
+            VisualStateManager.GoToState(this, "Collection", false);
+        }
+        else
+        {
+            PageTitle.Visibility = Visibility.Collapsed;
+            if (!source.IsPersonal) VisualStateManager.GoToState(this, "LibraryBrowse", false);
         }
         _libraryToolbar = new LibraryBrowseToolbar();
+        if (source.IsCollection) _libraryToolbar.UseCollectionHeader();
         _libraryOverlay = new LibraryBrowseOverlay();
         ToolbarSlot.Child = _libraryToolbar;
         SourceOverlay.Child = _libraryOverlay;
         SourceOverlay.Visibility = Visibility.Visible;
-        _libraryOverlay.Configure(source, !source.IsPersonal && LibraryBrowseSettings.Preserve(_entry.Client, source.Query));
+        _libraryOverlay.Configure(source, !source.IsPersonal && !source.IsCollection && LibraryBrowseSettings.Preserve(_entry.Client, source.Query));
         _libraryToolbar.Update(source.Query.Filter);
         _libraryToolbar.SortRequested += () => _libraryOverlay.OpenSort();
         _libraryToolbar.FilterRequested += () => _ = OpenLibraryFiltersAsync();
@@ -52,7 +57,7 @@ public sealed partial class CatalogGridPage : IBackHandler
         _libraryOverlay.FilterChanged += filter => _ = ChangeLibraryFilterAsync(filter);
         _libraryOverlay.PreserveChanged += preserve =>
         {
-            if (!source.IsPersonal) LibraryBrowseSettings.SetPreserve(_entry.Client, source.Query, preserve);
+            if (!source.IsPersonal && !source.IsCollection) LibraryBrowseSettings.SetPreserve(_entry.Client, source.Query, preserve);
         };
         _libraryOverlay.PanelClosed += filter => { if (filter) _libraryToolbar.FocusFilter(); else _libraryToolbar.FocusSort(); };
         _libraryOverlay.OpenChanged += open =>
@@ -124,7 +129,9 @@ public sealed partial class CatalogGridPage : IBackHandler
     partial void OnSourceLoaded()
     {
         if (_librarySource is null || _librarySource.IsPersonal) return;
-        EmptyMessage.Text = _librarySource.LibraryHasItems == false ? "This library is empty." : "No titles match the current filters.";
+        EmptyMessage.Text = _librarySource.IsCollection
+            ? _librarySource.Query.Filter.Facets.ActiveCount > 0 ? "No titles match the current filters." : "This collection is empty."
+            : _librarySource.LibraryHasItems == false ? "This library is empty." : "No titles match the current filters.";
     }
 
     partial void UpdateSourceState()
@@ -133,10 +140,26 @@ public sealed partial class CatalogGridPage : IBackHandler
         if (_librarySource is null) return;
         // TvPersonalScreens.kt keeps saved-list controls reachable even when a query fails, so the
         // viewer can undo a filter rather than being stranded with Retry for the same failed query.
-        var available = !_entry.Results.Unavailable && (_librarySource.IsPersonal || _entry.Results.Error is null);
+        var collectionError = _librarySource.IsCollection && _entry.Results.LoadMoreError is not null;
+        var available = !_entry.Results.Unavailable && !collectionError && (_librarySource.IsPersonal || _entry.Results.Error is null);
         if (available) Cards.Visibility = Visibility.Visible;
+        if (collectionError)
+        {
+            // screens/library/TvLibraryCollectionDetailScreen.kt replaces the collection surface
+            // with Retry for paging failures too, rather than leaving an unreachable footer error.
+            Cards.Visibility = MoreErrorPanel.Visibility = Visibility.Collapsed;
+            ErrorPanel.Visibility = Visibility.Visible;
+        }
         _libraryOverlay?.Update(available);
-        if (!_librarySource.IsPersonal) ErrorMessage.Text = "Couldn't load this library.";
+        if (!_librarySource.IsPersonal) ErrorMessage.Text = _librarySource.IsCollection ? "Failed to load collection" : "Couldn't load this library.";
+        if (_librarySource.IsCollection)
+        {
+            // screens/library/TvLibraryCollectionDetailScreen.kt itemCountLabel: the server total
+            // includes TV-hidden books. Only report the visible count once all pages are exhausted.
+            var state = _entry.Results;
+            _libraryToolbar?.UpdateCount(state.HasLoaded && !state.IsLoading && !state.HasMore && state.Error is null
+                && state.LoadMoreError is null ? _cards.Count : null);
+        }
     }
 
     partial void OnGridTopUp(ref bool handled)
@@ -186,20 +209,26 @@ public sealed partial class CatalogGridPage : IBackHandler
             return;
         }
         if (_librarySource is null || _libraryToolbar is null) return;
+        if (_librarySource.IsCollection && (_entry.Results.Error is not null || _entry.Results.LoadMoreError is not null))
+        {
+            FocusRetry.Until(ErrorPanel, () => !_active || RetryButton.Focus(FocusState.Programmatic));
+            handled = true;
+            return;
+        }
         if (_libraryReloadFocus is { } target)
         {
             _libraryReloadFocus = null;
             FocusRetry.Until(this, () => !_active || FocusReloadTarget(target));
             handled = true;
         }
-        else if ((!_librarySource.IsPersonal && _libraryInitialFocus) || _cards.Count == 0)
+        else if ((!_librarySource.IsPersonal && !_librarySource.IsCollection && _libraryInitialFocus) || _cards.Count == 0)
         {
             _libraryInitialFocus = false;
             FocusRetry.Until(this, () => !_active || (!IsInlinePersonalGrid && _entry.Results.Error is not null)
                 || _entry.Results.Unavailable || FocusLibraryToolbar());
             handled = true;
         }
-        else _libraryInitialFocus = false; // Personal first entry belongs to the first card, not Sort.
+        else _libraryInitialFocus = false; // TvPersonalScreens.kt / TvLibraryCollectionDetailScreen.kt enter on the first card.
     }
 
     private bool FocusLibraryToolbar() => _librarySource?.IsPersonal == true

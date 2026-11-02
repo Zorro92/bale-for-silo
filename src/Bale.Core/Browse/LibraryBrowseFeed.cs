@@ -94,7 +94,9 @@ public sealed class LibraryBrowseFeed(SiloApiClient api, BrowseFeed browse)
                 next = new LibraryBrowseContinuation(nextCursor, key, seen);
             }
 
-            var cards = items.Where(item => BrowseFeed.IsVisibleTvType(item.Type, query.MediaType == "audiobook"))
+            // screens/library/TvLibraryCollectionDetailViewModel.kt uses visibleOnTv: keep audiobook
+            // members even in an unscoped personal collection, but never show ebook-only members.
+            var cards = items.Where(item => BrowseFeed.IsVisibleTvType(item.Type, query.MediaType == "audiobook" || query.CollectionId is not null))
                 .Select(item => browse.ToCard(item, CardShape.Poster)).ToList();
             if (cards.Count == 0 && next is not null)
             {

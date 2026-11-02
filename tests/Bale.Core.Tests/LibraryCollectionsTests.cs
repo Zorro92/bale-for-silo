@@ -65,6 +65,8 @@ public class LibraryCollectionsTests
     [Theory]
     [InlineData(false, null)]
     [InlineData(true, "movie")]
+    [InlineData(false, "series")]
+    [InlineData(true, "audiobook")]
     public async Task DetailDefaultsToCollectionOrderAndUsesTheCorrectSourceAndScope(bool user, string? mediaScope)
     {
         ServerAddress.TryParse("silo.example.com", out var server);
@@ -79,16 +81,19 @@ public class LibraryCollectionsTests
         Assert.Equal("12", query["collection_id"]);
         Assert.Equal("60", query["limit"]);
         Assert.False(query.ContainsKey("sort"));
-        Assert.Equal(mediaScope is not null, query.ContainsKey("library_id"));
-        if (mediaScope is not null)
+        var scoped = mediaScope is "movie" or "series";
+        Assert.Equal(scoped, query.ContainsKey("library_id"));
+        Assert.Equal(scoped, query.ContainsKey("type"));
+        if (scoped)
         {
-            Assert.Equal("movie", query["type"]);
+            Assert.Equal(mediaScope, query["type"]);
             Assert.Equal("7", query["library_id"]);
         }
+        Assert.Equal(mediaScope, source.ControlsMediaType);
         Assert.True(source.IsCollection);
         Assert.Equal(LibrarySortOption.CollectionOrder, source.Query.Filter.Sort);
         var selected = source.Query.Filter.SelectSort(LibrarySortOption.CollectionOrder);
-        Assert.Equal(selected, selected.SelectSort(LibrarySortOption.CollectionOrder));
+        Assert.Same(source.Query.Filter, selected);
         source.SetFilter(selected.SelectSort(LibrarySortOption.Title));
         Assert.False(source.ShowsAlphabet);
         var facets = Query(stub.Requests[1]);
@@ -96,6 +101,21 @@ public class LibraryCollectionsTests
         Assert.Equal("12", facets["collection_id"]);
         Assert.False(facets.ContainsKey("library_id"));
         Assert.Equal(LibrarySortOption.CollectionOrder, LibrarySortOption.For(mediaScope, collection: true)[0]);
+    }
+
+    [Fact]
+    public async Task CollectionMembersKeepSquareAudiobooksAndDrainEbookOnlyPages()
+    {
+        ServerAddress.TryParse("silo.example.com", out var server);
+        var stub = new StubHandler().Enqueue("""{"items":[{"content_id":"hidden","type":"ebook"}],"page":{"has_more":true,"next_cursor":"audio"}}""")
+            .Enqueue("""{"items":[{"content_id":"audio","type":"audiobook","title":"A book"}],"page":{"has_more":false}}""");
+        using var client = new SiloClient(server, new ClientIdentity("d", "Test Xbox", "xbox", "Bale"), stub);
+        var source = LibraryCatalogSource.Collection("7", null, Collection("12", true), client.LibraryBrowse);
+        var page = await source.LoadPageAsync(client.Browse, ArtworkWidths.Tv1080, null);
+        Assert.Equal("audio", Assert.Single(page.Cards).ContentId);
+        Assert.Equal(1, page.Cards[0].PosterAspectRatio);
+        Assert.Equal("audio", Query(stub.Requests[1])["cursor"]);
+        Assert.False(page.HasMore);
     }
 
     private static Dictionary<string, string> Query(HttpRequestMessage request) => request.RequestUri!.Query.TrimStart('?')

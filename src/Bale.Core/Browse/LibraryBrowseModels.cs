@@ -165,7 +165,7 @@ public sealed record LibraryBrowseFilter
     public bool IsNarrowed => NamePrefix is not null || Facets.ActiveCount > 0;
 
     // Re-selecting the active sort flips direction, without losing an A–Z prefix.
-    public LibraryBrowseFilter SelectSort(LibrarySortOption sort) => this with
+    public LibraryBrowseFilter SelectSort(LibrarySortOption sort) => Sort == sort && sort.Field.Length == 0 ? this : this with
     {
         Sort = sort,
         Descending = sort.Field.Length > 0 && (Sort == sort ? !Descending : sort.DescendingByDefault),

@@ -22,6 +22,7 @@ public sealed class LibraryCatalogSource(string title, LibraryBrowseQuery query,
     public long? Total => Query == _resultQuery ? _total : null;
     public bool IsPersonal => Query.PersonalList is not null;
     public bool IsCollection => Query.CollectionId is not null;
+    public string? ControlsMediaType { get; private init; } = query.MediaType;
     // screens/library/TvLibraryCollectionDetailScreen.kt has Sort/Filter, but no A–Z rail.
     public bool ShowsAlphabet => !IsPersonal && !IsCollection && Query.Filter.ShowsAlphabet;
     // TvPersonalScreens.kt: only inline Favorites narrows its empty copy by Movies / TV Shows.
@@ -35,8 +36,11 @@ public sealed class LibraryCatalogSource(string title, LibraryBrowseQuery query,
 
     /// <summary>screens/library/TvLibraryCollectionDetailViewModel.kt: source kind and stored collection order.</summary>
     public static LibraryCatalogSource Collection(string libraryId, string? mediaScope, LibraryCollection collection, LibraryBrowseFeed library) =>
-        new(collection.Title, new(mediaScope is null ? null : libraryId, mediaScope,
-            new() { Sort = LibrarySortOption.CollectionOrder }, collection.Id, collection.UserCollection), library);
+        // navigation/TvAppNavigation.kt accepts only movie/series route scopes. Audiobook collections
+        // keep their native facet/sort vocabulary and TV-visible covers without adding a wire type scope.
+        new(collection.Title, new(mediaScope is "movie" or "series" ? libraryId : null,
+            mediaScope is "movie" or "series" ? mediaScope : null, new() { Sort = LibrarySortOption.CollectionOrder },
+            collection.Id, collection.UserCollection), library) { ControlsMediaType = mediaScope };
 
     /// <summary>PersonalListViewModels.kt: cross-library, forty cards, server's stored list order.</summary>
     public static LibraryCatalogSource Personal(string kind, LibraryBrowseFeed library) => kind switch

@@ -127,7 +127,7 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
             UpdateState();
             OnSourceLoaded();
             // TvSectionBrowseScreen: only first entry/retry restores; later pages never take focus.
-            if (!request.Append) RestoreFocus();
+            if (!request.Append || (_librarySource?.IsCollection == true && _entry.Results.LoadMoreError is not null)) RestoreFocus();
             QueuePagingCheck();
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
@@ -140,10 +140,11 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
         catch (Exception ex)
         {
             Log.Error("Catalog grid load", ex);
-            if (_active && _entry.IsCurrent(Session.Client) && _entry.Results.Fail(request, !IsPersonalGrid && ex is ApiException { ResponseStatusCode: 404 }))
+            if (_active && _entry.IsCurrent(Session.Client) && _entry.Results.Fail(request,
+                !IsPersonalGrid && _librarySource?.IsCollection != true && ex is ApiException { ResponseStatusCode: 404 }))
             {
                 UpdateState();
-                if (!request.Append && !_entry.Results.Unavailable)
+                if ((!request.Append || _librarySource?.IsCollection == true) && !_entry.Results.Unavailable)
                 {
                     // TvPersonalScreens.kt PersonalInlineGrid gives an empty/error list's entry
                     // claim to Sort, keeping the controls reachable instead of focusing Retry.
