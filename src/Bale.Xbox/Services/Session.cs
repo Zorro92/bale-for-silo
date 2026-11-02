@@ -38,7 +38,7 @@ internal static class Session
     {
         Reachability?.Dispose();
         Client?.Dispose();
-        var client = Client = new SiloClient(server, DeviceIdentity.Current());
+        var client = Client = new SiloClient(server, DeviceIdentity.Current(), onSessionExpired: RouteExpiryAsync);
         Reachability = new ServerReachabilityMonitor(server);
         if (_foreground) Reachability.StartForeground();
         _routingExpiry = false;
@@ -49,30 +49,29 @@ internal static class Session
                 Persist();
             }
         };
-        // TvAppNavigation.kt collects TokenManager.sessionExpired outside every page/route.
-        // This is the only involuntary sign-out path: a page's 401 alone is not proof of expiry.
-        client.SessionExpired += (_, _) =>
-        {
-            // Refresh runs off the UI thread. Capture the root frame, not Window.Current there.
-            if (_rootFrame is { } frame)
-            {
-                _ = frame.Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
-                {
-                    try
-                    {
-                        if (ReferenceEquals(Client, client))
-                        {
-                            Expire();
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Error("Session expiry navigation", ex);
-                    }
-                });
-            }
-        };
         return client;
+    }
+
+    private static async Task RouteExpiryAsync(SiloClient client)
+    {
+        // TvAppNavigation.kt collects TokenManager.sessionExpired outside every page/route.
+        // Await the root replacement so no failing request can publish a page error first.
+        // Refresh runs off the UI thread: use the attached frame, never Window.Current there.
+        if (_rootFrame is not { } frame) return;
+        await frame.Dispatcher.RunAsync(CoreDispatcherPriority.High, () =>
+        {
+            try
+            {
+                if (ReferenceEquals(Client, client) && !client.IsSignedIn)
+                {
+                    Expire();
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Session expiry navigation", ex);
+            }
+        });
     }
 
     /// <summary>Restores credentials locally, without making the TV wait for a refresh (MainTvActivity.kt).</summary>

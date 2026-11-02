@@ -50,10 +50,13 @@ public class SessionRestoreTests
         Assert.Equal("Bearer at2", stub.Requests[1].Headers.Authorization!.ToString());
     }
 
-    [Fact]
-    public async Task Refresh401ClearsAllCredentialsAndReportsExpiryOnce()
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task RejectedRefreshClearsAllCredentialsAndReportsExpiryOnce(HttpStatusCode status)
     {
-        var stub = new StubHandler().Enqueue(HttpStatusCode.Unauthorized, """{"title":"Unauthorized","status":401}""");
+        var stub = new StubHandler().Enqueue(status, """{"title":"Unauthorized"}""");
         using var client = Create(stub);
         client.RestoreSession("rt", "at", DateTimeOffset.UtcNow.AddMinutes(-1), "p", "proof");
         var expired = 0;
@@ -75,9 +78,9 @@ public class SessionRestoreTests
     }
 
     [Theory]
-    [InlineData(HttpStatusCode.Forbidden)]
-    [InlineData(HttpStatusCode.BadRequest)]
-    public async Task Non401RefreshErrorsKeepTheSession(HttpStatusCode status)
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.BadGateway)]
+    public async Task TransientRefreshErrorsKeepTheSession(HttpStatusCode status)
     {
         var stub = new StubHandler().Enqueue(status, """{"title":"Unavailable"}""");
         using var client = Create(stub);

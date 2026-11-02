@@ -19,13 +19,17 @@ public sealed class SiloClient : IDisposable
 
     private readonly SiloConnection _connection;
     private readonly TimeProvider _time;
+    private readonly Func<SiloClient, Task>? _onSessionExpired;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private DateTimeOffset? _accessTokenExpiresAt;
-    private bool _sessionExpired;
+    private TaskCompletionSource? _sessionExpiry;
 
-    public SiloClient(Uri server, ClientIdentity identity, HttpMessageHandler? transport = null, TimeProvider? time = null)
+    /// <param name="onSessionExpired">Finish root sign-in navigation before failed requests reach page error handlers.</param>
+    public SiloClient(Uri server, ClientIdentity identity, HttpMessageHandler? transport = null, TimeProvider? time = null,
+        Func<SiloClient, Task>? onSessionExpired = null)
     {
         _time = time ?? TimeProvider.System;
+        _onSessionExpired = onSessionExpired;
         _connection = new SiloConnection(server, identity, CurrentCredentialsAsync, transport, RefreshRejectedCredentialsAsync);
         DeviceLogin = new DeviceLoginFlow(_connection.Api, time);
         Browse = new BrowseFeed(_connection.Api, server);
@@ -68,7 +72,7 @@ public sealed class SiloClient : IDisposable
     /// <summary>Raised when the refresh token rotates, so the app can save the new one.</summary>
     public event EventHandler? TokensRefreshed;
 
-    /// <summary>A refresh returned 401. Tokens are already cleared; keep the server and ask for sign-in.</summary>
+    /// <summary>A refresh rejected the credentials (400/401/403). Tokens are already cleared; keep the server.</summary>
     public event EventHandler? SessionExpired;
 
     /// <summary>
@@ -78,7 +82,7 @@ public sealed class SiloClient : IDisposable
     public void RestoreSession(string refreshToken, string? accessToken = null, DateTimeOffset? accessTokenExpiresAt = null,
         string? profileId = null, string? profileToken = null)
     {
-        _sessionExpired = false;
+        _sessionExpiry = null;
         RefreshToken = refreshToken;
         AccessToken = accessToken;
         _accessTokenExpiresAt = accessTokenExpiresAt ?? _time.GetUtcNow();
@@ -90,7 +94,7 @@ public sealed class SiloClient : IDisposable
     /// <summary>Adopts the tokens from an approved device login or a password login.</summary>
     public void SignIn(TokenPair tokens, string? profileId = null, string? profileToken = null)
     {
-        _sessionExpired = false;
+        _sessionExpiry = null;
         AccessToken = tokens.AccessToken;
         RefreshToken = tokens.RefreshToken;
         _accessTokenExpiresAt = ExpiresAt(tokens.ExpiresIn);
@@ -112,9 +116,9 @@ public sealed class SiloClient : IDisposable
                 new RefreshSessionInputBody { RefreshToken = refreshToken },
                 cancellationToken: cancellationToken).ConfigureAwait(false);
         }
-        catch (ApiException e) when (e.ResponseStatusCode == 401)
+        catch (ApiException e) when (RejectsRefresh(e))
         {
-            ExpireSession();
+            await ExpireSessionAsync().ConfigureAwait(false);
             return false;
         }
 
@@ -123,7 +127,7 @@ public sealed class SiloClient : IDisposable
             throw new InvalidOperationException("The server returned an empty refresh response.");
         }
 
-        _sessionExpired = false;
+        _sessionExpiry = null;
         AdoptRefreshed(refreshed, refreshToken);
         await GetAccountAsync(cancellationToken).ConfigureAwait(false);
         return true;
@@ -216,13 +220,13 @@ public sealed class SiloClient : IDisposable
 
     private async Task<RequestCredentials?> CurrentCredentialsAsync(CancellationToken cancellationToken)
     {
-        ThrowIfSessionExpired();
+        await ThrowIfSessionExpiredAsync().ConfigureAwait(false);
         if (NeedsRefresh())
         {
             await RefreshNowAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        ThrowIfSessionExpired();
+        await ThrowIfSessionExpiredAsync().ConfigureAwait(false);
         return AccessToken is null ? null : new RequestCredentials(AccessToken, ProfileId, ProfileToken);
     }
 
@@ -231,7 +235,7 @@ public sealed class SiloClient : IDisposable
         // AuthInterceptorImpl.kt double-checks inside its refresh mutex: concurrent 401s reuse
         // an already-rotated token, and a late response after sign-out cannot restore credentials.
         await RefreshNowAsync(cancellationToken, rejectedAccessToken).ConfigureAwait(false);
-        ThrowIfSessionExpired();
+        await ThrowIfSessionExpiredAsync().ConfigureAwait(false);
         return AccessToken is null ? null : new RequestCredentials(AccessToken, ProfileId, ProfileToken);
     }
 
@@ -239,26 +243,44 @@ public sealed class SiloClient : IDisposable
         RefreshToken is not null && (AccessToken is null
             || _accessTokenExpiresAt is { } expiresAt && _time.GetUtcNow() >= expiresAt - RefreshMargin);
 
-    private void ThrowIfSessionExpired()
+    private async Task ThrowIfSessionExpiredAsync()
     {
-        if (_sessionExpired)
+        if (Volatile.Read(ref _sessionExpiry) is { } expiry)
         {
+            // TvAppNavigation.kt owns expiry outside every page. Even new requests must wait
+            // for that root navigation, rather than race it with a page's own error state.
+            await expiry.Task.ConfigureAwait(false);
             throw new ApiException("The session expired. Sign in again.") { ResponseStatusCode = 401 };
         }
     }
 
-    private void ExpireSession()
+    private async Task ExpireSessionAsync()
     {
-        if (_sessionExpired)
+        var expiry = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (Interlocked.CompareExchange(ref _sessionExpiry, expiry, null) is { } existing)
         {
+            await existing.Task.ConfigureAwait(false);
             return;
         }
 
-        // TvAppNavigation.kt listens only for a real refresh 401, not offline/5xx failures.
-        _sessionExpired = true;
-        ForgetSession();
-        SessionExpired?.Invoke(this, EventArgs.Empty);
+        try
+        {
+            ForgetSession();
+            SessionExpired?.Invoke(this, EventArgs.Empty);
+            if (_onSessionExpired is not null)
+            {
+                await _onSessionExpired(this).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            expiry.TrySetResult();
+        }
     }
+
+    // AuthInterceptorImpl.kt shouldInvalidateSessionAfterRefreshFailure: only auth rejection
+    // (including invalid/forbidden refresh tokens), never an outage, proves the session is dead.
+    private static bool RejectsRefresh(ApiException error) => error.ResponseStatusCode is 400 or 401 or 403;
 
     /// <summary>One refresh at a time; requests that queue behind it reuse its result.</summary>
     private async Task RefreshNowAsync(CancellationToken cancellationToken, string? rejectedAccessToken = null)
@@ -266,7 +288,7 @@ public sealed class SiloClient : IDisposable
         await _refreshLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            ThrowIfSessionExpired();
+            await ThrowIfSessionExpiredAsync().ConfigureAwait(false);
             if (!NeedsRefresh() && (rejectedAccessToken is null || AccessToken != rejectedAccessToken || RefreshToken is null))
             {
                 return;
@@ -287,9 +309,9 @@ public sealed class SiloClient : IDisposable
                 // the credentials now; never resurrect the old session or overwrite its replacement.
                 if (RefreshToken == current) AdoptRefreshed(refreshed, current);
             }
-            catch (ApiException e) when (e.ResponseStatusCode == 401)
+            catch (ApiException e) when (RejectsRefresh(e))
             {
-                if (RefreshToken == current) ExpireSession();
+                if (RefreshToken == current) await ExpireSessionAsync().ConfigureAwait(false);
                 throw;
             }
         }

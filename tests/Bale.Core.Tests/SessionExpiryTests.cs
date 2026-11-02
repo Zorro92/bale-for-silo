@@ -48,6 +48,62 @@ public class SessionExpiryTests
         Assert.Null(stub.Requests[1].Headers.Authorization);
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task ARejectedRefreshInvalidatesTheSessionAfterABearer401(HttpStatusCode status)
+    {
+        var stub = new StubHandler().Enqueue(HttpStatusCode.Unauthorized, Unauthorized)
+            .Enqueue(status, """{"title":"Rejected refresh"}""");
+        using var client = Restore(stub);
+        var expired = 0;
+        client.SessionExpired += (_, _) => expired++;
+
+        await Assert.ThrowsAnyAsync<ApiException>(() => client.GetProfilesAsync());
+
+        Assert.False(client.IsSignedIn);
+        Assert.Equal(1, expired);
+        Assert.Equal(2, stub.Requests.Count);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AllFailuresWaitForOneRootNavigationBeforeReachingPageErrorHandlers(bool proactive)
+    {
+        var enteredNavigation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finishNavigation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var transport = new ConcurrentRejectionHandler(rejectRefresh: true);
+        var navigations = 0;
+        using var client = new SiloClient(new Uri("https://media.example.com/"),
+            new ClientIdentity("d", "Test Xbox", "xbox", "Bale"), transport, onSessionExpired: _ =>
+            {
+                Interlocked.Increment(ref navigations);
+                enteredNavigation.SetResult();
+                return finishNavigation.Task;
+            });
+        client.RestoreSession("old-rt", "old-at", DateTimeOffset.UtcNow.AddHours(proactive ? -1 : 1));
+        var requests = Enumerable.Range(0, 4).Select(_ => client.GetProfilesAsync()).ToList();
+        await enteredNavigation.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        requests.Add(client.GetProfilesAsync()); // New callers during navigation must wait too.
+
+        try
+        {
+            Assert.All(requests, request => Assert.False(request.IsCompleted));
+            Assert.False(client.IsSignedIn);
+        }
+        finally
+        {
+            finishNavigation.SetResult();
+        }
+        foreach (var request in requests)
+        {
+            await Assert.ThrowsAnyAsync<ApiException>(() => request);
+        }
+        Assert.Equal(1, navigations);
+        Assert.Equal(1, transport.RefreshCount);
+    }
+
     [Fact]
     public async Task ARejectedBearerRefreshesAndRetriesWithoutSigningOut()
     {
@@ -87,9 +143,9 @@ public class SessionExpiryTests
     }
 
     [Theory]
-    [InlineData(HttpStatusCode.BadRequest)]
-    [InlineData(HttpStatusCode.Forbidden)]
-    public async Task ATransientOrNonAuthRefreshFailureKeepsTheSession(HttpStatusCode status)
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.BadGateway)]
+    public async Task ATransientRefreshFailureKeepsTheSession(HttpStatusCode status)
     {
         var stub = new StubHandler().Enqueue(HttpStatusCode.Unauthorized, Unauthorized)
             .Enqueue(status, """{"title":"Unavailable"}""");
@@ -194,7 +250,7 @@ public class SessionExpiryTests
         _ => client.GetProfilesAsync(),
     };
 
-    private sealed class ConcurrentRejectionHandler : HttpMessageHandler
+    private sealed class ConcurrentRejectionHandler(bool rejectRefresh = false) : HttpMessageHandler
     {
         public int RefreshCount;
 
@@ -206,7 +262,7 @@ public class SessionExpiryTests
                 Interlocked.Increment(ref RefreshCount);
                 await Task.Yield();
             }
-            var rejected = !refresh && request.Headers.Authorization?.Parameter == "old-at";
+            var rejected = refresh ? rejectRefresh : request.Headers.Authorization?.Parameter == "old-at";
             return new HttpResponseMessage(rejected ? HttpStatusCode.Unauthorized : HttpStatusCode.OK)
             {
                 RequestMessage = request,
