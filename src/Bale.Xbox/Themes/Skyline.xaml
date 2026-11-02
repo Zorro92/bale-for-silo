@@ -1232,6 +1232,78 @@
     </Setter>
   </Style>
 
+  <!-- Profile picker utilities: TvProfileSelectionScreen.kt uses TvMarquee.kt Glass + compact.
+       38dp * 0.8 height, 20dp * 0.7 padding, 14.5sp * 0.85 * 0.86 text; 14dp icon with 7dp gap.
+       MarqueeBackdrop.kt supplies GlassFill (white 8%), Hairline (white 14%) and Ink (#EDEDED). -->
+  <Style x:Key="SkylineMarqueeCompactGlassStyle" TargetType="Button">
+    <Setter Property="Height" Value="30.4" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="CornerRadius" Value="15.2" />
+    <Setter Property="Padding" Value="14,0" />
+    <Setter Property="Background" Value="#14FFFFFF" />
+    <Setter Property="BorderBrush" Value="#24FFFFFF" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="10.5995" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="services:SurfaceShadow.Elevation" Value="12" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid RenderTransformOrigin="0.5,0.5">
+            <Grid.RenderTransform><ScaleTransform x:Name="Lift" /></Grid.RenderTransform>
+            <Border x:Name="ShadowHost" Opacity="0" IsHitTestVisible="False">
+              <Rectangle x:Name="ShadowMask" RadiusX="15.2" RadiusY="15.2" Fill="Black" />
+            </Border>
+            <Border x:Name="Capsule" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}" />
+            <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}"
+                              FontFamily="{TemplateBinding FontFamily}" FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}"
+                              Foreground="{TemplateBinding Foreground}" HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" />
+                <VisualState x:Name="Disabled"><VisualState.Setters><Setter Target="Content.Opacity" Value="0.45" /></VisualState.Setters></VisualState>
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters>
+                    <Setter Target="Capsule.Background" Value="{StaticResource SkylinePrimary}" />
+                    <Setter Target="Capsule.BorderThickness" Value="0" />
+                    <Setter Target="Content.Foreground" Value="{StaticResource SkylineBackground}" />
+                    <Setter Target="ShadowHost.Opacity" Value="1" />
+                  </VisualState.Setters>
+                  <!-- TvMarquee.kt lifts the entire compact capsule 1.06, without changing its layout slot. -->
+                  <Storyboard>
+                    <DoubleAnimation Storyboard.TargetName="Lift" Storyboard.TargetProperty="ScaleX" To="1.06" Duration="0:0:0.12" />
+                    <DoubleAnimation Storyboard.TargetName="Lift" Storyboard.TargetProperty="ScaleY" To="1.06" Duration="0:0:0.12" />
+                  </Storyboard>
+                </VisualState>
+                <VisualState x:Name="PointerFocused" /><VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="SkylineMarqueeCompactContentStyle" TargetType="StackPanel">
+    <Setter Property="Orientation" Value="Horizontal" />
+    <Setter Property="Spacing" Value="7" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineMarqueeCompactIconStyle" TargetType="Viewbox">
+    <Setter Property="Width" Value="14" />
+    <Setter Property="Height" Value="14" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
   <!-- Auth/profile-only metrics: TvProfileSelectionScreen.kt, TvPinEntryDialog.kt, TvMarquee.kt.
        Geometry is dp 1:1; type is sp x 0.86. Keep this group independent of shared browse styles. -->
   <x:Double x:Key="SkylineProfileTitleSize">27.5</x:Double>

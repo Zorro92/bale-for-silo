@@ -294,6 +294,17 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         }
     }
 
+    private void OnPickerActionFocus(object sender, RoutedEventArgs e) => ColorPickerAction(sender, focused: true);
+
+    private void OnPickerActionBlur(object sender, RoutedEventArgs e) => ColorPickerAction(sender, focused: false);
+
+    private void ColorPickerAction(object sender, bool focused)
+    {
+        // TvMarquee.kt uses the same Ink for its label and icon; a Path does not inherit Foreground.
+        var icon = ReferenceEquals(sender, ChangeServerButton) ? ChangeServerIcon : SignOutIcon;
+        icon.Fill = new SolidColorBrush(focused ? Colors.Black : Color.FromArgb(255, 237, 237, 237));
+    }
+
     private void OnPickerActionsPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
         var (_, y) = Direction(e.Key);

@@ -75,8 +75,27 @@
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="10" /></ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>
-        <Button x:Name="ChangeServerButton" Content="Change server" Click="OnChangeServerClick" Style="{StaticResource SkylineButtonStyle}" />
-        <Button x:Name="SignOutButton" Content="Sign out" Click="OnSignOutClick" Style="{StaticResource SkylineButtonStyle}" />
+        <!-- TvProfileSelectionScreen.kt: Material Outlined Dns and AutoMirrored Outlined Logout. -->
+        <Button x:Name="ChangeServerButton" Click="OnChangeServerClick" GotFocus="OnPickerActionFocus" LostFocus="OnPickerActionBlur"
+                Style="{StaticResource SkylineMarqueeCompactGlassStyle}" AutomationProperties.Name="Change server">
+          <StackPanel Style="{StaticResource SkylineMarqueeCompactContentStyle}">
+            <Viewbox Style="{StaticResource SkylineMarqueeCompactIconStyle}">
+              <Path x:Name="ChangeServerIcon" Width="24" Height="24" Fill="{StaticResource SkylinePrimary}"
+                    Data="M19 15v4H5v-4h14m1-2H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1v-6c0-.55-.45-1-1-1zM7 18.5c-.82 0-1.5-.67-1.5-1.5s.68-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM19 5v4H5V5h14m1-2H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1zM7 8.5c-.82 0-1.5-.67-1.5-1.5S6.18 5.5 7 5.5s1.5.68 1.5 1.5S7.83 8.5 7 8.5z" />
+            </Viewbox>
+            <TextBlock Text="Change server" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+        <Button x:Name="SignOutButton" Click="OnSignOutClick" GotFocus="OnPickerActionFocus" LostFocus="OnPickerActionBlur"
+                Style="{StaticResource SkylineMarqueeCompactGlassStyle}" AutomationProperties.Name="Sign out">
+          <StackPanel Style="{StaticResource SkylineMarqueeCompactContentStyle}">
+            <Viewbox Style="{StaticResource SkylineMarqueeCompactIconStyle}">
+              <Path x:Name="SignOutIcon" Width="24" Height="24" Fill="{StaticResource SkylinePrimary}"
+                    Data="M17,8l-1.41,1.41L17.17,11H9v2h8.17l-1.58,1.58L17,16l4-4L17,8z M5,5h7V3H5C3.9,3,3,3.9,3,5v14c0,1.1,0.9,2,2,2h7v-2H5V5z" />
+            </Viewbox>
+            <TextBlock Text="Sign out" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
       </ItemsControl>
     </Grid>
 
