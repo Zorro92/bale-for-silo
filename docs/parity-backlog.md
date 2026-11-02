@@ -22,7 +22,7 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 - [x] More menu: titled "More Actions" with icons; Favorites, type-worded Watched, Mark Season Watched, Go to Season / Go to Series
 - [x] Version / Audio / Subtitles readout line and round selector menus in the action row (Up from season tabs lands on Version) (TvPlaybackSelectorRow.kt / TvAnchoredSelectorMenu.kt; menus compared side by side with the APK on The Lion King, Up from Season 2 verified on The Lion Guard)
   - [x] Selector list top/bottom alpha edge fades (26dp, TvAnchoredSelectorMenu.kt; painted in the panel fill, shown with each chevron; verified on The Lion King subtitles, 0.1.160)
-  - [ ] Edition selector and edition-scoped Version options (implemented; Xbox verification pending)
+  - [ ] Edition selector and edition-scoped Version options (PlaybackEditions.kt / TvPlaybackSelectorRow.kt; console 0.1.164: single-edition The Lion King hides Edition, Version stays closed with one file as the official selectorIsInteractive does; a multi-edition title still to find, bale-cli 422 blocks a library scan)
   - [ ] AUDIO readout resolves the device track ("Auto · Spanish · AC3 · 5.1" on the APK); Bale has no audio-capability resolver yet
 
 ### Profiles and sign-in (`screens/profiles/*`, `screens/auth/*`, `navigation/TvAppNavigation.kt`)
