@@ -56,7 +56,8 @@
       <!-- Center cluster (TvTopMenuBar): Search just left of Home, the tabs, and an invisible twin of the
            search icon after them so the tabs themselves stay centered on screen. -->
       <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center" XYFocusKeyboardNavigation="Enabled">
-        <Button x:Name="SearchButton" Style="{StaticResource SkylineBarIconStyle}" Click="OnSearchClick" Content="&#xE721;"
+        <!-- TvTopMenuBar.kt: the style supplies the 19dp Material Outlined.Search vector. -->
+        <Button x:Name="SearchButton" Style="{StaticResource SkylineBarIconStyle}" Click="OnSearchClick"
                 AutomationProperties.Name="Search" VerticalAlignment="Center" />
         <!-- rail-layout: non-card — Top navigation tabs. -->
         <ItemsControl x:Name="Tabs" VerticalAlignment="Center" IsTabStop="False">

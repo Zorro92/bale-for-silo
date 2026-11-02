@@ -209,12 +209,20 @@
               <VisualStateGroup x:Name="FocusStates">
                 <VisualState x:Name="Focused">
                   <VisualState.Setters>
+                    <Setter Target="SelectedFill.Visibility" Value="Collapsed" />
                     <Setter Target="FocusFill.Opacity" Value="1" />
                     <Setter Target="Content.Opacity" Value="0" />
                     <Setter Target="FocusedContent.Opacity" Value="1" />
                   </VisualState.Setters>
                 </VisualState>
-                <VisualState x:Name="PointerFocused" />
+                <VisualState x:Name="PointerFocused">
+                  <VisualState.Setters>
+                    <Setter Target="SelectedFill.Visibility" Value="Collapsed" />
+                    <Setter Target="FocusFill.Opacity" Value="1" />
+                    <Setter Target="Content.Opacity" Value="0" />
+                    <Setter Target="FocusedContent.Opacity" Value="1" />
+                  </VisualState.Setters>
+                </VisualState>
                 <VisualState x:Name="Unfocused" />
               </VisualStateGroup>
             </VisualStateManager.VisualStateGroups>
@@ -659,23 +667,23 @@
   </Style>
 
   <!--
-    Top bar icon (TvTopMenuBar.TvTopMenuIconButton): a 28 circle, bare at rest with the glyph at
-    62%, solid white with a black glyph on focus. Content must be a glyph string.
+    TvTopMenuBar.kt TvTopMenuIconButton: 28dp circle, 19dp Icons.Outlined.Search vector at 62%,
+    solid OnSurface with a DarkBackground glyph on focus. A font's 19sp em is not a 19dp icon viewport.
   -->
   <Style x:Key="SkylineBarIconStyle" TargetType="Button">
     <Setter Property="Width" Value="28" />
     <Setter Property="Height" Value="28" />
-    <Setter Property="Foreground" Value="#9EEDEDED" />
-    <Setter Property="FontFamily" Value="{ThemeResource SymbolThemeFontFamily}" />
-    <Setter Property="FontSize" Value="19" />
+    <Setter Property="Foreground" Value="{StaticResource SkylineTabResting}" />
     <Setter Property="UseSystemFocusVisuals" Value="False" />
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="Button">
           <Grid>
             <Ellipse x:Name="Disc" Fill="Transparent" />
-            <ContentPresenter x:Name="Glyph" Content="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" FontFamily="{TemplateBinding FontFamily}"
-                              FontSize="{TemplateBinding FontSize}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <Viewbox Width="19" Height="19" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+              <Path x:Name="Glyph" Width="24" Height="24" Fill="{TemplateBinding Foreground}"
+                    Data="M15.5,14H14.71L14.43,13.73C15.41,12.59 16,11.11 16,9.5C16,5.91 13.09,3 9.5,3C5.91,3 3,5.91 3,9.5C3,13.09 5.91,16 9.5,16C11.11,16 12.59,15.41 13.73,14.43L14,14.71V15.5L19,20.49L20.49,19L15.5,14Z M9.5,14C7.01,14 5,11.99 5,9.5C5,7.01 7.01,5 9.5,5C11.99,5 14,7.01 14,9.5C14,11.99 11.99,14 9.5,14Z" />
+            </Viewbox>
             <VisualStateManager.VisualStateGroups>
               <VisualStateGroup x:Name="CommonStates">
                 <VisualState x:Name="Normal" />
@@ -687,10 +695,15 @@
                 <VisualState x:Name="Focused">
                   <VisualState.Setters>
                     <Setter Target="Disc.Fill" Value="{StaticResource SkylinePrimary}" />
-                    <Setter Target="Glyph.Foreground" Value="{StaticResource SkylineBackground}" />
+                    <Setter Target="Glyph.Fill" Value="{StaticResource SkylineBackground}" />
                   </VisualState.Setters>
                 </VisualState>
-                <VisualState x:Name="PointerFocused" />
+                <VisualState x:Name="PointerFocused">
+                  <VisualState.Setters>
+                    <Setter Target="Disc.Fill" Value="{StaticResource SkylinePrimary}" />
+                    <Setter Target="Glyph.Fill" Value="{StaticResource SkylineBackground}" />
+                  </VisualState.Setters>
+                </VisualState>
                 <VisualState x:Name="Unfocused" />
               </VisualStateGroup>
             </VisualStateManager.VisualStateGroups>

@@ -61,6 +61,55 @@ public class SkylineChromeTests
             setter => (string?)setter.Attribute("Target") == "FieldError.Opacity");
     }
 
+    [Fact]
+    public void TopMenuTabsKeepOfficialWeightsAlphaAndSelectedBorderWithStringPresenters()
+    {
+        // TvTopMenuBar.kt: Medium at 62%, SemiBold selected/focused; 1dp selected border, none focused.
+        var tab = Style("SkylineTabStyle");
+        Assert.Equal("Medium", Value(tab, "FontWeight"));
+        Assert.Equal("{StaticResource SkylineTabResting}", Value(tab, "Foreground"));
+        Assert.Equal("#9EEDEDED", (string?)Theme.Root!.Elements(Ui + "SolidColorBrush")
+            .Single(element => (string?)element.Attribute(Xaml + "Key") == "SkylineTabResting").Attribute("Color"));
+        Assert.Equal("1", (string?)Named(tab, "SelectedFill").Attribute("BorderThickness"));
+        foreach (var state in new[] { "Checked", "CheckedPointerOver", "CheckedPressed" })
+        {
+            Assert.Equal("SemiBold", StateValue(Named(tab, state), "Content.FontWeight"));
+            Assert.Equal("{StaticResource SkylinePrimary}", StateValue(Named(tab, state), "Content.Foreground"));
+        }
+        foreach (var state in new[] { "Focused", "PointerFocused" })
+        {
+            Assert.Equal("Collapsed", StateValue(Named(tab, state), "SelectedFill.Visibility"));
+            Assert.Equal("1", StateValue(Named(tab, state), "FocusedContent.Opacity"));
+            Assert.Equal("0", StateValue(Named(tab, state), "Content.Opacity"));
+        }
+        Assert.Equal("SemiBold", (string?)Named(tab, "FocusedContent").Attribute("FontWeight"));
+        Assert.All(new[] { "Content", "FocusedContent" }, name =>
+            Assert.Equal("{TemplateBinding Content}", (string?)Named(tab, name).Attribute("Content")));
+    }
+
+    [Fact]
+    public void TopMenuSearchUsesA19DpMaterialVectorRatherThanAFontEm()
+    {
+        // TvTopMenuBar.kt TvTopMenuIconButton: a 19dp viewport inside a 28dp circle.
+        var search = Style("SkylineBarIconStyle");
+        var viewport = search.Descendants(Ui + "Viewbox").Single();
+        var glyph = Named(search, "Glyph");
+        Assert.Equal("28", Value(search, "Width"));
+        Assert.Equal("28", Value(search, "Height"));
+        Assert.Equal("19", (string?)viewport.Attribute("Width"));
+        Assert.Equal("19", (string?)viewport.Attribute("Height"));
+        Assert.Equal(Ui + "Path", glyph.Name);
+        Assert.Equal("24", (string?)glyph.Attribute("Width"));
+        Assert.Equal("24", (string?)glyph.Attribute("Height"));
+        Assert.Equal("{TemplateBinding Foreground}", (string?)glyph.Attribute("Fill"));
+        Assert.Equal("{StaticResource SkylineTabResting}", Value(search, "Foreground"));
+        foreach (var state in new[] { "Focused", "PointerFocused" })
+        {
+            Assert.Equal("{StaticResource SkylinePrimary}", StateValue(Named(search, state), "Disc.Fill"));
+            Assert.Equal("{StaticResource SkylineBackground}", StateValue(Named(search, state), "Glyph.Fill"));
+        }
+    }
+
     private static XElement Style(string key) => Theme.Root!.Elements(Ui + "Style")
         .Single(element => (string?)element.Attribute(Xaml + "Key") == key);
 
