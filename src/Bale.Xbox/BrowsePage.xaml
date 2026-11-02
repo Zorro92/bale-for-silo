@@ -75,17 +75,18 @@
     <views:BrowseTileTemplateSelector x:Key="TileTemplates" MediaTemplate="{StaticResource CardTemplate}" ExploreTemplate="{StaticResource ExploreAllTemplate}" />
 
     <DataTemplate x:Key="RowTemplate" x:DataType="views:RowView">
-      <!-- TvMediaRow.kt / TvSkylineSectionFeed.kt: 12 header-to-rail, 14 between rows, 7 rail padding. -->
-      <StackPanel Spacing="12" Margin="0,0,0,14">
-        <!-- TvSectionHeader.kt carries 4 bottom padding; the icon carries its own horizontal gap. -->
-        <Grid Margin="44,0,40,4">
+      <!-- TvMediaRow.kt / TvSkylineSectionFeed.kt: shared resting geometry plus RailLayout's focus envelope. -->
+      <StackPanel Style="{StaticResource SkylineBrowseRowStyle}">
+        <Grid Style="{StaticResource SkylineBrowseHeaderStyle}">
           <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
           <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
-            <Grid Width="22" Height="22" Margin="0,0,8,0" Visibility="{x:Bind IconVisibility, Mode=OneWay}" VerticalAlignment="Center">
-              <Ellipse Fill="{StaticResource SkylinePrimary}" />
-              <Polygon Points="8.5,6 16,11 8.5,16" Fill="{StaticResource SkylineBackground}" />
+            <Grid Style="{StaticResource SkylineBrowseProgressIconStyle}" Visibility="{x:Bind IconVisibility, Mode=OneWay}">
+              <!-- TvHomeScreen.kt: Icons.Filled.PlayCircle, scaled from its Material 24-unit path. -->
+              <Viewbox>
+                <Path Style="{StaticResource SkylineBrowseProgressGlyphStyle}" Data="M12,2 C6.48,2 2,6.48 2,12 C2,17.52 6.48,22 12,22 C17.52,22 22,17.52 22,12 C22,6.48 17.52,2 12,2 Z M10,16.5 L10,7.5 L16,12 Z" />
+              </Viewbox>
             </Grid>
-            <TextBlock Text="{x:Bind Title, Mode=OneWay}" FontSize="{StaticResource SkylineRowTitleSize}" FontWeight="SemiBold" LineHeight="18.9" VerticalAlignment="Center" />
+            <TextBlock Text="{x:Bind Title, Mode=OneWay}" Style="{StaticResource SkylineBrowseHeaderTitleStyle}" />
           </StackPanel>
           <Button x:Name="SeeAllButton" Grid.Column="1" Style="{StaticResource SkylineSeeAllButtonStyle}" Visibility="{x:Bind SeeAllVisibility, Mode=OneWay}"
                   Click="OnSeeAllClick" GotFocus="OnSeeAllFocus" AutomationProperties.Name="See all" />

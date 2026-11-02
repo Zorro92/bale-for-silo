@@ -39,17 +39,24 @@ public class CardRailMetricsTests
     }
 
     [Theory]
-    [InlineData(88, 132)]
-    [InlineData(180, 100)]
-    public void HomeKeepsItsRestingRowHeightButAddsSpaceInsideBothViewportEdges(double width, double height)
+    [InlineData(88, 132, RailFocusVisual.Card)]
+    [InlineData(88, 132, RailFocusVisual.ExplorePoster)]
+    [InlineData(88, 88, RailFocusVisual.ExplorePoster)]
+    [InlineData(180, 101.25, RailFocusVisual.Card)]
+    public void HomeKeepsItsRestingRowHeightButAddsSpaceInsideBothViewportEdges(double width, double height, RailFocusVisual visual)
     {
-        var inset = new RailInsets(44, 7, 0, 7);
-        var (padding, margin) = CardRailMetrics.Layout(width, height, inset);
+        // TvSkylineSectionFeed.kt's 44/40 safe areas and 7dp card padding, not page-local headroom.
+        var inset = new RailInsets(44, 7, 40, 7);
+        var (padding, margin) = CardRailMetrics.Layout(width, height, inset, visual);
 
         Assert.Equal(44, padding.Left);
+        Assert.Equal(40, padding.Right);
         Assert.Equal(inset.Top, padding.Top + margin.Top);
         Assert.Equal(inset.Bottom, padding.Bottom + margin.Bottom);
-        Assert.True(padding.Right >= CardRailMetrics.Headroom(width));
+        // TvMediaRow.kt's 12dp header gap and the feed's 14dp next-row gap survive the focus envelope.
+        Assert.Equal(12 + 7, 12 + padding.Top + margin.Top);
+        Assert.Equal(7 + 14, padding.Bottom + margin.Bottom + 14);
+        Assert.True(padding.Right >= CardRailMetrics.Headroom(width, visual));
         Assert.Equal(0, margin.Right); // Negative right margins would lose the last card to the page clip.
     }
 
