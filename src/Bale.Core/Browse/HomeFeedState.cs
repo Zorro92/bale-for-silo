@@ -32,6 +32,8 @@ public sealed class HomeFeedState
         _restoringFocus = deferUntilFocusRestored;
         // TvHomeScreen.kt skips the resume read while the very first load is still running.
         // A first load that finished before Loaded must not be fetched a second time either.
+        // Bale has no realtime socket yet: a real return supplies one freshness signal, held
+        // behind Detail-return focus restoration like TvHomeScreen.kt's pending realtime read.
         if (_everShown && _hasResult) _refreshPending = true;
         _everShown = true;
         return TakePendingRefresh();

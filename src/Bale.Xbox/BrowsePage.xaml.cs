@@ -117,11 +117,13 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             Log.Error("Marquee backdrop", ex);
         }
         ResumeLibraryRecommendedLoad();
+        AttachHomeLifecycle();
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         SuspendLibraryRecommendedLoad();
+        DetachHomeLifecycle();
         _isLoaded = false;
         _returning = _lastCard is not null;
         _focusVersion++;
@@ -168,6 +170,12 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             await LoadLibraryRecommendedAsync(refresh);
             return;
         }
+        if (IsHome)
+        {
+            var request = refresh ? _homeState.RequestRefresh() : _homeState.BeginLoad();
+            if (request is not null) await LoadHomeAsync(request);
+            return;
+        }
         if (_loading || Session.Client is not { } client)
         {
             return;
@@ -181,14 +189,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
 
         try
         {
-#if DEBUG_SERVER
-            var homeEmpty = !_forYou && DebugServer.TakeHomeEmptyOrThrow();
-#else
-            const bool homeEmpty = false;
-#endif
-            var rows = homeEmpty ? Array.Empty<MediaRow>()
-                : _forYou ? await client.Browse.LoadForYouAsync(ArtworkWidths.Tv1080)
-                : await client.Browse.LoadHomeAsync(ArtworkWidths.Tv1080);
+            var rows = await client.Browse.LoadForYouAsync(ArtworkWidths.Tv1080);
             if (!ReferenceEquals(client, Session.Client) || (refresh && !_isLoaded))
             {
                 return;
@@ -216,7 +217,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             {
                 if (restoreFocus)
                 {
-                    RestoreCardFocus(refreshHome: false);
+                    RestoreCardFocus();
                 }
             }
             else
@@ -232,8 +233,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             // TvHomeScreen.kt keeps the existing feed usable when a quiet refresh fails.
             if (_rows.Count == 0)
             {
-                ShowError(_forYou ? $"Couldn't load this page. {ex.Message}" : HomeFeedback.ErrorMessage(ex),
-                    focus: !refresh || IsInPage(FocusManager.GetFocusedElement() as DependencyObject));
+                ShowError($"Couldn't load this page. {ex.Message}", focus: !refresh || IsInPage(FocusManager.GetFocusedElement() as DependencyObject));
             }
         }
         finally
@@ -263,8 +263,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         var focused = FocusManager.GetFocusedElement() as DependencyObject;
         var restoreFocus = preserveFocus && IsInPage(focused);
         var last = _lastCard;
-        var rememberedRow = last is { } previous && previous.Row < _rows.Count ? _rows[previous.Row] : null;
-        var rememberedIndex = last is { } remembered ? rememberedRow?.Cards.IndexOf(remembered.Card) ?? 0 : 0;
+        var remembered = RememberedTarget();
         _updatingRows = true;
         try
         {
@@ -299,15 +298,16 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             {
                 _lastCard = null;
             }
-            else if (last is not null || restoreFocus)
+            else if ((last is not null || restoreFocus)
+                && BrowseFocus.Resolve(_rows.Select(row => row.Row).ToList(), remembered) is { } position)
             {
-                var row = _rows.FirstOrDefault(view => ReferenceEquals(view, rememberedRow))
-                    ?? _rows[Math.Clamp(last?.Row ?? 0, 0, _rows.Count - 1)];
-                var target = row.Cards.FirstOrDefault(card => card.Key == last?.Card.Key)
-                    ?? row.Cards[Math.Clamp(rememberedIndex, 0, row.Cards.Count - 1)];
+                var row = _rows[position.SectionIndex];
+                var target = row.Cards[position.ItemIndex];
                 row.LastFocused = target;
-                _lastCard = (_rows.IndexOf(row), target);
+                _lastCard = (position.SectionIndex, target);
             }
+
+            if (IsHome) _homeState.SetRows(_rows.Select(row => row.Row).ToList());
 
             // Existing rails outlive a refresh too; don't let their entry targets retain deleted cards.
             for (var i = 0; i < _rows.Count; i++)
@@ -325,6 +325,9 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
 
         return restoreFocus;
     }
+
+    private BrowseReturnTarget? RememberedTarget() => _lastCard is { } last && last.Row < _rows.Count
+        ? new(_rows[last.Row].Row.Id, last.Card.Key, last.Row, _rows[last.Row].Cards.IndexOf(last.Card)) : null;
 
     /// <summary>
     /// Entry focus: the first card of the first row (Skyline §6.1). Windows hands focus to the first
@@ -637,10 +640,12 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     {
         if (item is ExploreAllView explore && Session.Client is { } client)
         {
+            PauseHomeForNavigation();
             ShellPage.Current?.Frame.Navigate(typeof(CatalogGridPage), new CatalogGridEntry(explore.Source, client));
         }
         else if (item is CardView { Card: var card })
         {
+            PauseHomeForNavigation();
             ShellPage.Current?.OpenDetail(card.ContentId);
         }
     }
@@ -654,6 +659,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             row.Update(row.Row with { Cards = row.Row.Cards.Select(card => card.ContentId == view.Card.ContentId ? view.Card : card).ToList() });
         }
 
+        if (IsHome) _homeState.SetRows(_rows.Select(row => row.Row).ToList());
         if (_shownMarquee?.Card.ContentId == view.Card.ContentId) ShowFacts(view.Card);
     }
 
@@ -668,12 +674,17 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         }
 
         ShowMarquee((_lastCard?.Card as CardView) ?? _shownMarquee ?? _rows[0].Cards.OfType<CardView>().First(), refresh: true);
-        if (restore) RestoreCardFocus(refreshHome: false);
+        if (restore) RestoreCardFocus();
     }
 
     /// <summary>TvHomeScreen.kt defers its resume refresh until the shell has restored return focus.</summary>
     public void RestoreFocus()
     {
+        if (IsHome)
+        {
+            _ = RestoreHomeFocusAsync();
+            return;
+        }
         // The shell has finished its initial focus pass; explicit restoration now owns the target.
         _returning = false;
         if (_savedListFallbackPending)
@@ -681,17 +692,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             QueueSavedListFallback();
             return;
         }
-        if (_lastCard is null)
-        {
-            if (_libraryId is null && !_forYou)
-            {
-                _ = LoadAsync(refresh: true);
-            }
-
-            return;
-        }
-
-        RestoreCardFocus(refreshHome: _libraryId is null && !_forYou);
+        if (_lastCard is not null) RestoreCardFocus();
     }
 
     /// <summary>TvTopMenuBar.kt hands Down to the remembered content, never a geometric neighbour.</summary>
@@ -715,17 +716,17 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         else if (_rows.Count > 0)
         {
             _lastCard ??= (0, _rows[0].Cards[0]);
-            RestoreCardFocus(refreshHome: false);
+            RestoreCardFocus();
         }
     }
 
-    private void RestoreCardFocus(bool refreshHome)
+    private void RestoreCardFocus(bool preserveScroll = false)
     {
         var version = _focusVersion;
         FocusRetry.Until(Rows, () =>
         {
             // Don't steal focus if the user has moved again while containers were being laid out.
-            if (version != _focusVersion || _lastCard is not { } last)
+            if (version != _focusVersion || (IsHome && _isLoaded && !CanFocusHome) || _lastCard is not { } last)
             {
                 return true;
             }
@@ -736,25 +737,33 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
                 return false;
             }
 
-            if (row.Tag is Rail rail)
+            // TvSkylineSectionFeed.kt restores identity without replaying entry scrolling on refresh.
+            // Suppress the page's ordinary GotFocus pinning while Rail preserves its own offset.
+            var returning = _returning;
+            _returning = true;
+            try
             {
-                rail.Remembered = last.Card;
-            }
+                bool focused;
+                if (row.Tag is Rail rail)
+                {
+                    rail.Remembered = last.Card;
+                    focused = rail.FocusItem(last.Card, preserveHorizontalOffset: preserveScroll);
+                }
+                else
+                {
+                    focused = panel.Children.OfType<ContentControl>().FirstOrDefault(c => ReferenceEquals(c.Content, last.Card))
+                        ?.Focus(FocusState.Programmatic) == true;
+                }
 
-            if (panel.Children.OfType<ContentControl>().FirstOrDefault(c => ReferenceEquals(c.Content, last.Card)) is not { } card
-                || !card.Focus(FocusState.Programmatic))
+                if (!focused) return false;
+                if (!preserveScroll) PinRow(row);
+                if (last.Card is CardView media) ShowMarquee(media);
+                return true;
+            }
+            finally
             {
-                return false;
+                _returning = returning;
             }
-
-            PinRow(row);
-            if (last.Card is CardView media) ShowMarquee(media);
-            if (refreshHome)
-            {
-                _ = LoadAsync(refresh: true);
-            }
-
-            return true;
         });
     }
 
@@ -1022,7 +1031,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     {
         var version = _focusVersion;
         FocusRetry.Until(this, () => version != _focusVersion || panel.Visibility != Visibility.Visible
-            || (_isLoaded && button.Focus(FocusState.Programmatic)));
+            || (IsHome && _isLoaded && !CanFocusHome) || (_isLoaded && button.Focus(FocusState.Programmatic)));
     }
 
     private void OnStateKeyDown(object sender, KeyRoutedEventArgs e)

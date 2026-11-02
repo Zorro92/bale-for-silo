@@ -51,7 +51,7 @@ public sealed partial class BrowsePage
             ShowMarquee((_lastCard?.Card as CardView) ?? _shownMarquee ?? _rows[0].Cards.OfType<CardView>().First(), refresh);
             if (refresh)
             {
-                if (restoreFocus) RestoreCardFocus(refreshHome: false);
+                if (restoreFocus) RestoreCardFocus();
             }
             else
             {
@@ -119,13 +119,14 @@ public sealed partial class BrowsePage
     {
         // PageFrame keeps the outgoing page loaded for its fade: stop scope refills at navigation, not after the fade.
         SuspendLibraryRecommendedLoad();
+        PauseHomeForNavigation();
         base.OnNavigatedFrom(e);
     }
 
     private async void OnLibraryRefillRetryClick(object sender, RoutedEventArgs e)
     {
         // TvLibraryDetailScreen.kt's warning disappears on retry; relinquish its button before removing it.
-        RestoreCardFocus(refreshHome: false);
+        RestoreCardFocus();
         await LoadLibraryRecommendedAsync(refresh: true);
     }
 
@@ -137,7 +138,7 @@ public sealed partial class BrowsePage
             case VirtualKey.GamepadDPadUp:
             case VirtualKey.GamepadLeftThumbstickUp:
                 e.Handled = true;
-                RestoreCardFocus(refreshHome: false);
+                RestoreCardFocus();
                 break;
             case VirtualKey.Down:
             case VirtualKey.Left:

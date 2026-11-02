@@ -15,7 +15,7 @@ public abstract partial class BrowseTileView
 public sealed partial class ExploreAllView : BrowseTileView, INotifyPropertyChanged
 {
     // TvMediaRow.kt: content IDs cannot contain NUL, so this identity survives row refreshes safely.
-    public override string Key => "\0explore-all";
+    public override string Key => BrowseFocus.ExploreAllKey;
     public SectionBrowseSource Source { get; private set; } = null!;
     public double Width { get; private set; }
     public double Height { get; private set; }
