@@ -42,11 +42,11 @@
           </ScrollViewer>
           <Viewbox x:Name="TopOverflow" Style="{StaticResource SkylinePlaybackSelectorOverflowStyle}" VerticalAlignment="Top" Visibility="Collapsed">
             <Path Width="{StaticResource SkylineMaterialIconCanvas}" Height="{StaticResource SkylineMaterialIconCanvas}"
-                  Fill="{StaticResource SkylineTertiary}" Data="M7.41,15.41 L12,10.83 L16.59,15.41 L18,14 L12,8 L6,14 Z" />
+                  Fill="{StaticResource SkylinePrimary}" Data="M7.41,15.41 L12,10.83 L16.59,15.41 L18,14 L12,8 L6,14 Z" />
           </Viewbox>
           <Viewbox x:Name="BottomOverflow" Style="{StaticResource SkylinePlaybackSelectorOverflowStyle}" VerticalAlignment="Bottom" Visibility="Collapsed">
             <Path Width="{StaticResource SkylineMaterialIconCanvas}" Height="{StaticResource SkylineMaterialIconCanvas}"
-                  Fill="{StaticResource SkylineTertiary}" Data="M7.41,8.59 L12,13.17 L16.59,8.59 L18,10 L12,16 L6,10 Z" />
+                  Fill="{StaticResource SkylinePrimary}" Data="M7.41,8.59 L12,13.17 L16.59,8.59 L18,10 L12,16 L6,10 Z" />
           </Viewbox>
         </Grid>
       </StackPanel>
