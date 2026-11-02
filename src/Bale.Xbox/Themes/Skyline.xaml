@@ -634,6 +634,44 @@
     <Setter Property="CharacterSpacing" Value="38" />
     <Setter Property="Foreground" Value="#F2FFFFFF" />
   </Style>
+  <!-- TvItemDetailScreen.kt's quiet playback readout: dp geometry, 11.5sp type x 0.86.
+       CharacterSpacing is in thousandths of an em: 0.5sp / 11.5sp = 43.48. -->
+  <x:Double x:Key="SkylineDetailPlaybackVersionWidth">156.5</x:Double>
+  <x:Double x:Key="SkylineDetailPlaybackAudioWidth">182</x:Double>
+  <x:Double x:Key="SkylineDetailPlaybackSubtitleWidth">169</x:Double>
+  <Style x:Key="SkylineDetailPlaybackSummaryStyle" TargetType="StackPanel">
+    <Setter Property="Orientation" Value="Horizontal" />
+    <Setter Property="Height" Value="22" />
+    <Setter Property="Spacing" Value="4" />
+    <Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+  <Style x:Key="SkylineDetailPlaybackItemStyle" TargetType="Grid">
+    <Setter Property="ColumnSpacing" Value="4" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+  </Style>
+  <Style x:Key="SkylineDetailPlaybackValueStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="9.89" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="LineHeight" Value="12.04" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="Foreground" Value="#D1FFFFFF" />
+    <Setter Property="MaxLines" Value="1" />
+    <Setter Property="TextWrapping" Value="NoWrap" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineDetailPlaybackLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineDetailPlaybackValueStyle}">
+    <Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="CharacterSpacing" Value="43" />
+    <Setter Property="Foreground" Value="#7AFFFFFF" />
+    <Setter Property="TextTrimming" Value="None" />
+  </Style>
+  <Style x:Key="SkylineDetailPlaybackSkeletonStyle" TargetType="Border">
+    <Setter Property="Height" Value="7" />
+    <Setter Property="CornerRadius" Value="2" />
+    <Setter Property="Background" Value="#24FFFFFF" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
   <Style x:Key="SkylineDetailSectionHeaderStyle" TargetType="TextBlock">
     <Setter Property="FontSize" Value="18.1" />
     <Setter Property="LineHeight" Value="20.6" />

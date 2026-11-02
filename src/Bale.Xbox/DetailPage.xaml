@@ -153,8 +153,33 @@
                        TextWrapping="Wrap" MaxLines="3" TextTrimming="WordEllipsis" />
           </Button>
           <TextBlock x:Name="CreditLine" Margin="0,13,0,0" Height="14" FontSize="10.3" FontWeight="Medium" Foreground="#9EFFFFFF" TextTrimming="CharacterEllipsis" />
-          <!-- Room for the Version / Audio / Subtitles summary, which arrives with playback. -->
-          <Border x:Name="SelectorSlot" Height="14" Margin="0,2,0,0" />
+          <!-- TvDetailHero.kt keeps the quiet readout directly below the fixed credit line. -->
+          <StackPanel x:Name="PlaybackSummary" Style="{StaticResource SkylineDetailPlaybackSummaryStyle}" Margin="0,4,0,0">
+            <Grid Width="{StaticResource SkylineDetailPlaybackVersionWidth}" Style="{StaticResource SkylineDetailPlaybackItemStyle}">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+              <TextBlock Text="VERSION" Style="{StaticResource SkylineDetailPlaybackLabelStyle}" />
+              <Grid x:Name="PlaybackVersionSlot" Grid.Column="1" SizeChanged="OnPlaybackValueSizeChanged">
+                <TextBlock x:Name="PlaybackVersion" Style="{StaticResource SkylineDetailPlaybackValueStyle}" Visibility="Collapsed" />
+                <Border x:Name="PlaybackVersionSkeleton" Style="{StaticResource SkylineDetailPlaybackSkeletonStyle}" />
+              </Grid>
+            </Grid>
+            <Grid Width="{StaticResource SkylineDetailPlaybackAudioWidth}" Style="{StaticResource SkylineDetailPlaybackItemStyle}">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+              <TextBlock Text="AUDIO" Style="{StaticResource SkylineDetailPlaybackLabelStyle}" />
+              <Grid x:Name="PlaybackAudioSlot" Grid.Column="1" SizeChanged="OnPlaybackValueSizeChanged">
+                <TextBlock x:Name="PlaybackAudio" Style="{StaticResource SkylineDetailPlaybackValueStyle}" Visibility="Collapsed" />
+                <Border x:Name="PlaybackAudioSkeleton" Style="{StaticResource SkylineDetailPlaybackSkeletonStyle}" />
+              </Grid>
+            </Grid>
+            <Grid Width="{StaticResource SkylineDetailPlaybackSubtitleWidth}" Style="{StaticResource SkylineDetailPlaybackItemStyle}">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+              <TextBlock Text="SUBTITLES" Style="{StaticResource SkylineDetailPlaybackLabelStyle}" />
+              <Grid x:Name="PlaybackSubtitleSlot" Grid.Column="1" SizeChanged="OnPlaybackValueSizeChanged">
+                <TextBlock x:Name="PlaybackSubtitle" Style="{StaticResource SkylineDetailPlaybackValueStyle}" Visibility="Collapsed" />
+                <Border x:Name="PlaybackSubtitleSkeleton" Style="{StaticResource SkylineDetailPlaybackSkeletonStyle}" />
+              </Grid>
+            </Grid>
+          </StackPanel>
 
           <StackPanel x:Name="Actions" Orientation="Horizontal" Spacing="9" Margin="0,13,0,0" XYFocusKeyboardNavigation="Enabled">
             <Button x:Name="PlayButton" Style="{StaticResource SkylinePlayButtonStyle}" Click="OnPlayClick">

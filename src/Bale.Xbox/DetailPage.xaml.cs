@@ -34,6 +34,11 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
     private string _contentId = string.Empty;
     private ItemDetail? _detail;
     private EpisodeCard? _playEpisode;
+    private readonly PlaybackSummaryState _playbackSummary = new();
+    private string? _nextUpPlaybackTargetId;
+    private ItemDetail? _nextUpPlaybackDetail;
+    private bool _nextUpPlaybackLoading;
+    private int _playbackLoadVersion;
     private SeriesDetailEntry? _routeEntry;
     private string _synopsisOverview = string.Empty;
     private string? _synopsisTagline;
@@ -200,6 +205,10 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         ErrorPanel.Visibility = Visibility.Collapsed;
         PageScroller.Visibility = Visibility.Visible;
         _playEpisode = null;
+        _nextUpPlaybackTargetId = null;
+        _nextUpPlaybackDetail = null;
+        _nextUpPlaybackLoading = false;
+        _playbackLoadVersion++;
         _shownSeason = null;
         _episodeLoadVersion++;
         try
@@ -311,7 +320,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         // Only a series fixes the slots; a movie's stack follows its synopsis (TvDetailHero.kt).
         SynopsisButton.Height = detail.IsSeries ? 56 : double.NaN;
         CreditLine.Margin = new Thickness(0, detail.IsSeries ? 13 : 6, 0, 0);
-        SelectorSlot.Margin = new Thickness(0, detail.IsSeries ? 2 : 6, 0, 0);
+        PlaybackSummary.Margin = new Thickness(0, detail.IsSeries ? 4 : 6, 0, 0);
         Actions.Margin = new Thickness(0, detail.IsSeries ? 13 : 19, 0, 0);
 
         ShowEditorial(detail, null);
@@ -373,6 +382,90 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
 
         PlayLabel.Text = Core.Detail.PlayLabel.For(detail, _playEpisode);
         StartOverButton.Visibility = Core.Detail.PlayLabel.ResumeFor(detail, _playEpisode) is > 0 ? Visibility.Visible : Visibility.Collapsed;
+        var targetId = detail.PlaysEpisodes ? _playEpisode?.ContentId : null;
+        if (_nextUpPlaybackTargetId != targetId)
+        {
+            _nextUpPlaybackTargetId = targetId;
+            _nextUpPlaybackDetail = null;
+            _nextUpPlaybackLoading = targetId is not null && Session.Client is not null;
+            var version = ++_playbackLoadVersion;
+            if (targetId is not null && Session.Client is { } client)
+            {
+                // The episode rail has no tracks. Fetch the same focused target that Play uses,
+                // reusing DetailFeed's cache when focus returns (TvItemDetailViewModel.kt).
+                _ = LoadNextUpPlaybackDetailAsync(client.Detail, detail.ContentId, targetId, version);
+            }
+        }
+
+        ShowPlaybackSummary();
+    }
+
+    private async Task LoadNextUpPlaybackDetailAsync(DetailFeed feed, string ownerId, string targetId, int version)
+    {
+        ItemDetail? playbackDetail = null;
+        try
+        {
+            playbackDetail = await feed.GetAsync(targetId);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Detail playback summary", ex);
+        }
+
+        // A -> B -> A can finish out of order, including after leaving this detail page.
+        if (!_active || version != _playbackLoadVersion || _detail?.ContentId != ownerId || _playEpisode?.ContentId != targetId)
+        {
+            return;
+        }
+
+        _nextUpPlaybackDetail = playbackDetail;
+        _nextUpPlaybackLoading = false;
+        ShowPlaybackSummary();
+    }
+
+    private void ShowPlaybackSummary()
+    {
+        if (_detail is not { } detail) return;
+        var values = _playbackSummary.Update(detail, _playEpisode?.ContentId, _nextUpPlaybackDetail,
+            _nextUpPlaybackLoading || _episodesLoading || _seasonsLoading,
+            selectedFileId: null, selectedAudioTrackIndex: null, selectedSubtitleTrackIndex: null);
+        ShowPlaybackValue(PlaybackVersionSlot, PlaybackVersion, PlaybackVersionSkeleton, values.Version);
+        ShowPlaybackValue(PlaybackAudioSlot, PlaybackAudio, PlaybackAudioSkeleton, values.Audio);
+        ShowPlaybackValue(PlaybackSubtitleSlot, PlaybackSubtitle, PlaybackSubtitleSkeleton, values.Subtitles);
+    }
+
+    private static void ShowPlaybackValue(Grid slot, TextBlock value, Border skeleton, string? text)
+    {
+        value.Text = text ?? string.Empty;
+        value.Visibility = text is null ? Visibility.Collapsed : Visibility.Visible;
+        skeleton.Visibility = text is null ? Visibility.Visible : Visibility.Collapsed;
+        FitPlaybackValue(slot, value);
+    }
+
+    private void OnPlaybackValueSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        FitPlaybackValue(PlaybackVersionSlot, PlaybackVersion);
+        FitPlaybackValue(PlaybackAudioSlot, PlaybackAudio);
+        FitPlaybackValue(PlaybackSubtitleSlot, PlaybackSubtitle);
+    }
+
+    /// <summary>TvPlaybackSummaryItem shrinks only the value's font to 0.75 before ellipsizing; line height stays fixed.</summary>
+    private static void FitPlaybackValue(Grid slot, TextBlock value)
+    {
+        if (slot is null || value is null || slot.ActualWidth <= 0 || value.Visibility != Visibility.Visible) return;
+        // Reset to the XAML style's size without reading a resource dictionary under Native AOT.
+        value.ClearValue(TextBlock.FontSizeProperty);
+        var fontSize = value.FontSize;
+        var measure = new TextBlock
+        {
+            Text = value.Text,
+            FontFamily = value.FontFamily,
+            FontSize = fontSize,
+            FontWeight = value.FontWeight,
+            CharacterSpacing = value.CharacterSpacing,
+        };
+        measure.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+        value.FontSize = fontSize * Math.Clamp(slot.ActualWidth / Math.Max(1, measure.DesiredSize.Width), 0.75, 1);
     }
 
     /// <summary>
@@ -645,6 +738,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         var empty = Episodes.Items.Count == 0;
         EpisodesLoading.Visibility = pending && empty ? Visibility.Visible : Visibility.Collapsed;
         NoEpisodes.Visibility = !pending && empty ? Visibility.Visible : Visibility.Collapsed;
+        ShowPlaybackSummary();
     }
 
     private void OnEpisodesLoadingSizeChanged(object sender, SizeChangedEventArgs e)
