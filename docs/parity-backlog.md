@@ -31,8 +31,8 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 - [x] Lock badge bottom-right 30 #1C1C1E circle; "KIDS" pill (per MarqueeProfileAvatar.kt, scaled by 110/92; verified on the console with a test PIN and a kids profile)
 - [x] PIN: full-screen avatar + 4 dots + round keypad, auto-submit at 4, "Checking…" (already in place per TvPinEntryDialog.kt; verified on a test PIN: wrong PIN → red dots + "Wrong PIN. Try again.", right PIN → "Checking…" → Home)
 - [x] Picker error screen with Retry; Sign out / Change server buttons (StatusViews.kt TvErrorScreen, TvMarqueeButton Glass, TvSignOutDialog.kt; error via `bale-debug.sh fault profiles` → Retry reloads; sign-out dialog opened and cancelled on the console)
-  - [ ] Picker backdrop: the APK draws the colored Aurora light, Bale a dark gradient
-  - [ ] Avatar fill for profiles without an image (APK: Kids is salmon, Bale slate)
+  - [ ] Picker backdrop: the APK draws the colored Aurora light, Bale a dark gradient (implemented; Xbox verification pending)
+  - [ ] Avatar fill for profiles without an image (APK: Kids is salmon, Bale slate) (implemented; Xbox verification pending)
 - [x] Back from Switch Profile exits (picker is the root)
 - [ ] Login: two columns, "Sign in to <server>", QR + code card + status ("Continue on your phone"), actions row; declined stays with retry; Back on the code screen exits (layout, copy, QR/code card and serif-initial mark verified on the console, 0.1.155; decline → retry and Back-exits need a real signed-out session, still to check with the owner)
 - [x] Server entry copy: "Enter your server address", Connect / Back (source-matched field centering, select-to-open keyboard, Language icon and TV-name chip landed) (verified on the console, 0.1.157: Down→Connect, Right→Back, Up→field, rounded corners when focused)
