@@ -1,3 +1,4 @@
+using Bale.Core;
 using Bale.Core.Browse;
 using Bale.Xbox.Services;
 using Bale.Xbox.Views;
@@ -11,6 +12,8 @@ namespace Bale.Xbox;
 public sealed partial class BrowsePage
 {
     private readonly HomeFeedState _homeState = new();
+    private SiloClient? _homeClient;
+    private string? _homeProfile;
     private CancellationTokenSource? _homeLoad;
     private HomeLoadRequest? _homeRequest;
     private Window? _homeWindow;
@@ -28,6 +31,9 @@ public sealed partial class BrowsePage
     {
         if (Session.Client is not { } client) return;
         var profileId = client.ProfileId;
+        _homeClient = client;
+        _homeProfile = profileId;
+        _homeState.SetLayout(HomeSectionSettings.Load(client));
         using var load = new CancellationTokenSource();
         _homeLoad = load;
         _homeRequest = request;
@@ -53,7 +59,11 @@ public sealed partial class BrowsePage
 
             var previous = RememberedTarget();
             var headerFocused = SeeAllButtonOf(FocusManager.GetFocusedElement() as DependencyObject) is not null;
+            // An initial read may finish beneath Settings. Project the latest device choice, not
+            // the preference captured before the editor's immediate saves.
+            _homeState.SetLayout(HomeSectionSettings.Load(client));
             if (!_homeState.Apply(request, rows)) return;
+            RememberHomeRows();
             var restore = UpdateRows(_homeState.Rows, preserveFocus: request.Quiet && !_cardMenu.IsOpen);
             Log.Info($"Home: loaded {_rows.Count} rows");
             if (_rows.Count == 0)
@@ -131,6 +141,7 @@ public sealed partial class BrowsePage
     private void ShowHome()
     {
         if (!_homeActive || _homeSuspended || _homeWindow?.Visible != true) return;
+        ApplyHomeSectionLayout();
         if (!_homeState.IsShown && _homeEntryFocusPending) _homeEntryFocusVersion = _focusVersion;
         var request = _homeState.OnShown(deferUntilFocusRestored: _homeReturnPending);
         FocusPendingHomeEntry();
@@ -145,7 +156,7 @@ public sealed partial class BrowsePage
         if (_homeRequest is { Quiet: true }) _homeLoad?.Cancel();
     }
 
-    private void PauseHomeForNavigation()
+    internal void PauseHomeForNavigation()
     {
         if (!IsHome) return;
         // TvHomeScreen.kt.onPauseOrDispose: the outgoing page may still be loaded for its fade.
@@ -183,6 +194,28 @@ public sealed partial class BrowsePage
         if (_homeEntryFocusVersion == _focusVersion) FocusContent();
     }
 
+    private void RememberHomeRows()
+    {
+        if (_homeClient is { } client) HomeSectionSettings.Remember(client, _homeProfile, _homeState.AvailableRows);
+    }
+
+    private void ApplyHomeSectionLayout()
+    {
+        if (_homeClient is not { } client || !ReferenceEquals(client, Session.Client) || client.ProfileId != _homeProfile) return;
+        var layout = HomeSectionSettings.Load(client);
+        if (layout.Serialize() == _homeState.Layout.Serialize()) return;
+        // TvHomeScreen.kt observes the local projection immediately, even with no connection.
+        _homeState.SetLayout(layout);
+        UpdateRows(_homeState.Rows, preserveFocus: false);
+        if (_homeState.IsLoading) return;
+        if (_rows.Count == 0) ShowEmpty(focus: false);
+        else
+        {
+            VisualStateManager.GoToState(this, "Content", false);
+            ShowMarquee((_lastCard?.Card as CardView) ?? _rows[0].Cards.OfType<CardView>().First(), refresh: true);
+        }
+    }
+
     private async Task RestoreHomeFocusAsync()
     {
         var version = ++_homeReturnVersion;
@@ -190,6 +223,7 @@ public sealed partial class BrowsePage
         {
             // TvMainShell.kt restores the launch card before allowing resume refreshes. PageFrame
             // waits on these same FocusRetry moves while the incoming shell is still transparent.
+            ApplyHomeSectionLayout();
             FocusContent();
             await FocusRetry.WhenSettledAsync(this, CancellationToken.None);
             if (version != _homeReturnVersion || !_homeActive || !_isLoaded) return;

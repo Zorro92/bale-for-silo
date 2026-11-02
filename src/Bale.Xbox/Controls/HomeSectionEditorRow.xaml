@@ -2,6 +2,7 @@
     x:Class="Bale.Xbox.Controls.HomeSectionEditorRow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    FontFamily="{StaticResource SkylineFont}"
     IsTabStop="False" PreviewKeyDown="OnPreviewKeyDown">
   <!-- TvHomeSectionsEditor.kt: stable row controls survive immediate order/visibility saves. -->
   <Border Style="{StaticResource SkylineHomeSectionRowStyle}">

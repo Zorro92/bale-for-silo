@@ -3530,7 +3530,7 @@
     <Setter Property="HorizontalScrollMode" Value="Disabled" /><Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
     <Setter Property="VerticalScrollMode" Value="Auto" /><Setter Property="VerticalScrollBarVisibility" Value="Hidden" /><Setter Property="IsTabStop" Value="False" />
   </Style>
-  <Style x:Key="SkylineSettingsGroupsStyle" TargetType="StackPanel"><Setter Property="Spacing" Value="10" /><Setter Property="Padding" Value="0,0,0,40" /><Setter Property="MaxWidth" Value="540" /><Setter Property="HorizontalAlignment" Value="Left" /></Style>
+  <Style x:Key="SkylineSettingsGroupsStyle" TargetType="StackPanel"><Setter Property="Spacing" Value="10" /><Setter Property="Padding" Value="0,0,0,40" /><Setter Property="Width" Value="540" /><Setter Property="HorizontalAlignment" Value="Left" /></Style>
   <Style x:Key="SkylineSettingsGroupStyle" TargetType="StackPanel"><Setter Property="Spacing" Value="4" /></Style>
   <Style x:Key="SkylineSettingsGroupHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineSettingsSmallTextStyle}">
     <Setter Property="FontWeight" Value="SemiBold" /><Setter Property="CharacterSpacing" Value="71" /><Setter Property="Margin" Value="12,8,0,2" />
@@ -3556,6 +3556,10 @@
     <Setter Property="Background" Value="{StaticResource SkylineSurfaceElevated}" /><Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Center" />
   </Style>
   <Style x:Key="SkylineSettingsPickerHeaderStyle" TargetType="Grid"><Setter Property="Padding" Value="18,16,14,12" /></Style>
+  <Style x:Key="SkylineSettingsPickerTitleStyle" TargetType="StackPanel"><Setter Property="Spacing" Value="2" /></Style>
+  <Style x:Key="SkylineSettingsPickerHintContentStyle" TargetType="StackPanel"><Setter Property="Orientation" Value="Horizontal" /><Setter Property="Spacing" Value="4" /><Setter Property="VerticalAlignment" Value="Center" /></Style>
+  <Style x:Key="SkylineSettingsPickerHintIconStyle" TargetType="Viewbox"><Setter Property="Width" Value="14" /><Setter Property="Height" Value="14" /></Style>
+  <x:Double x:Key="SkylineSettingsHintOpacity">0.6</x:Double>
   <Style x:Key="SkylineSettingsPickerHintStyle" TargetType="Border">
     <Setter Property="Background" Value="#0EFFFFFF" /><Setter Property="CornerRadius" Value="11.74" /><Setter Property="Padding" Value="9,4" /><Setter Property="VerticalAlignment" Value="Top" />
   </Style>
@@ -3569,20 +3573,20 @@
       <Border x:Name="Row" Background="{StaticResource SkylineSettingsRowFill}" BorderBrush="{StaticResource SkylineSettingsRowBorder}" BorderThickness="1" CornerRadius="7" Padding="{TemplateBinding Padding}">
         <Grid>
           <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-          <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" HorizontalContentAlignment="Stretch" />
+          <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" FontWeight="Normal" HorizontalContentAlignment="Stretch" />
           <Viewbox x:Name="Check" Grid.Column="1" Width="16" Height="16" Margin="10,0,0,0" Visibility="Collapsed" VerticalAlignment="Center">
             <Path x:Name="Glyph" Width="24" Height="24" Fill="White" Data="M12,2 C6.48,2 2,6.48 2,12 C2,17.52 6.48,22 12,22 C17.52,22 22,17.52 22,12 C22,6.48 17.52,2 12,2 Z M10,17 L5,12 L6.41,10.59 L10,14.17 L17.59,6.59 L19,8 Z" />
           </Viewbox>
         </Grid>
         <VisualStateManager.VisualStateGroups>
           <VisualStateGroup x:Name="CommonStates"><VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" /><VisualState x:Name="Disabled" /></VisualStateGroup>
-          <VisualStateGroup x:Name="SelectionStates"><VisualState x:Name="Unselected" /><VisualState x:Name="Selected"><VisualState.Setters><Setter Target="Row.Background" Value="{StaticResource SkylineChromeSelected}" /><Setter Target="Check.Visibility" Value="Visible" /></VisualState.Setters></VisualState></VisualStateGroup>
+          <VisualStateGroup x:Name="SelectionStates"><VisualState x:Name="Unselected" /><VisualState x:Name="Selected"><VisualState.Setters><Setter Target="Row.Background" Value="{StaticResource SkylineChromeSelected}" /><Setter Target="Content.FontWeight" Value="SemiBold" /><Setter Target="Check.Visibility" Value="Visible" /></VisualState.Setters></VisualState></VisualStateGroup>
           <VisualStateGroup x:Name="FocusStates"><VisualState x:Name="Focused"><VisualState.Setters><Setter Target="Row.Background" Value="{StaticResource SkylinePrimary}" /><Setter Target="Content.Foreground" Value="Black" /><Setter Target="Glyph.Fill" Value="Black" /></VisualState.Setters></VisualState><VisualState x:Name="PointerFocused" /><VisualState x:Name="Unfocused" /></VisualStateGroup>
         </VisualStateManager.VisualStateGroups>
       </Border>
     </ControlTemplate></Setter.Value></Setter>
   </Style>
-  <Style x:Key="SkylineSettingsPickerDetailStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineSettingsSmallTextStyle}"><Setter Property="Opacity" Value="0.72" /><Setter Property="Margin" Value="0,2,0,0" /></Style>
+  <Style x:Key="SkylineSettingsPickerDetailStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineSettingsSmallTextStyle}"><Setter Property="FontWeight" Value="Normal" /><Setter Property="Opacity" Value="0.72" /><Setter Property="Margin" Value="0,2,0,0" /></Style>
   <!-- Full-screen Home row editor: max 560dp including 36dp horizontal padding. -->
   <Style x:Key="SkylineHomeSectionsEditorStyle" TargetType="Grid">
     <Setter Property="MaxWidth" Value="560" /><Setter Property="HorizontalAlignment" Value="Stretch" /><Setter Property="Padding" Value="36,18" />
@@ -3603,14 +3607,17 @@
   <Style x:Key="SkylineHomeSectionRowStyle" TargetType="Border" BasedOn="{StaticResource SkylineHomeSectionsCardStyle}"><Setter Property="Padding" Value="12,6" /></Style>
   <Style x:Key="SkylineHomeSectionCaptionStyle" TargetType="StackPanel"><Setter Property="Spacing" Value="1" /><Setter Property="VerticalAlignment" Value="Center" /></Style>
   <Style x:Key="SkylineHiddenHomeSectionCaptionStyle" TargetType="StackPanel" BasedOn="{StaticResource SkylineHomeSectionCaptionStyle}"><Setter Property="Opacity" Value="0.42" /></Style>
+  <Style x:Key="SkylineHomeSectionsToolbarCaptionStyle" TargetType="StackPanel" BasedOn="{StaticResource SkylineHomeSectionCaptionStyle}"><Setter Property="Spacing" Value="2" /></Style>
   <Style x:Key="SkylineHomeSectionTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineSettingsSmallTextStyle}">
     <Setter Property="LineHeight" Value="14.62" /><Setter Property="FontWeight" Value="Medium" /><Setter Property="Foreground" Value="{StaticResource SkylineFocusRing}" />
     <Setter Property="TextWrapping" Value="NoWrap" /><Setter Property="TextTrimming" Value="CharacterEllipsis" />
   </Style>
-  <Style x:Key="SkylineHomeSectionsToolbarTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineSettingsRowTextStyle}"><Setter Property="FontWeight" Value="Medium" /><Setter Property="Foreground" Value="{StaticResource SkylineFocusRing}" /></Style>
+  <Style x:Key="SkylineHomeSectionsToolbarTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineSettingsRowTextStyle}"><Setter Property="LineHeight" Value="15.48" /><Setter Property="FontWeight" Value="Medium" /><Setter Property="Foreground" Value="{StaticResource SkylineFocusRing}" /></Style>
   <Style x:Key="SkylineHomeSectionCountStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineSettingsSmallTextStyle}"><Setter Property="Foreground" Value="{StaticResource SkylineSecondary}" /></Style>
+  <Style x:Key="SkylineHomeSectionsToolbarDescriptionStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineHomeSectionCountStyle}"><Setter Property="LineHeight" Value="14.62" /></Style>
+  <Style x:Key="SkylineHomeSectionsMessageBoxStyle" TargetType="Border"><Setter Property="Height" Value="100" /><Setter Property="VerticalAlignment" Value="Top" /><Setter Property="IsHitTestVisible" Value="False" /></Style>
   <Style x:Key="SkylineHomeSectionsMessageStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineSettingsSmallTextStyle}">
-    <Setter Property="Height" Value="100" /><Setter Property="TextAlignment" Value="Center" /><Setter Property="Foreground" Value="{StaticResource SkylineSecondary}" /><Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="TextAlignment" Value="Center" /><Setter Property="Foreground" Value="{StaticResource SkylineSecondary}" /><Setter Property="VerticalAlignment" Value="Center" />
   </Style>
   <Style x:Key="SkylineHomeSectionsFooterStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineSettingsSmallTextStyle}"><Setter Property="Foreground" Value="{StaticResource SkylineSecondary}" /><Setter Property="Margin" Value="0,12,0,0" /></Style>
   <Style x:Key="SkylineHomeSectionsActionsStyle" TargetType="ItemsControl"><Setter Property="Margin" Value="7,0,0,0" /><Setter Property="IsTabStop" Value="False" /></Style>
@@ -3659,5 +3666,8 @@
         </VisualStateManager.VisualStateGroups>
       </Border>
     </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style x:Key="SkylineSettingsProfileMenuContentStyle" TargetType="StackPanel">
+    <Setter Property="Orientation" Value="Horizontal" /><Setter Property="Spacing" Value="10" />
   </Style>
 </ResourceDictionary>

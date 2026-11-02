@@ -175,7 +175,13 @@
             <TextBlock Text="History" Style="{StaticResource SkylineProfileMenuLabelStyle}" />
           </StackPanel>
         </Button>
-        <!-- Settings has no Bale page yet; do not advertise a placeholder destination. -->
+        <!-- TvMainShell.kt: Settings follows History, before the server/account actions. -->
+        <Button x:Name="SettingsRow" Style="{StaticResource SkylineProfileMenuRowStyle}" Click="OnSettingsClick" GotFocus="OnProfileRowFocus" LostFocus="OnProfileRowBlur">
+          <StackPanel Style="{StaticResource SkylineSettingsProfileMenuContentStyle}">
+            <Viewbox Style="{StaticResource SkylineProfileMenuIconStyle}"><Path Style="{StaticResource SkylineProfileMenuIconPathStyle}" Data="M19.43,12.98 C19.47,12.66 19.5,12.34 19.5,12 C19.5,11.66 19.47,11.34 19.43,11.02 L21.54,9.37 L19.54,5.91 L17.05,6.91 C16.54,6.52 15.98,6.19 15.37,5.94 L15,3 H9 L8.63,5.94 C8.02,6.19 7.46,6.52 6.95,6.91 L4.46,5.91 L2.46,9.37 L4.57,11.02 C4.53,11.34 4.5,11.66 4.5,12 C4.5,12.34 4.53,12.66 4.57,12.98 L2.46,14.63 L4.46,18.09 L6.95,17.09 C7.46,17.48 8.02,17.81 8.63,18.06 L9,21 H15 L15.37,18.06 C15.98,17.81 16.54,17.48 17.05,17.09 L19.54,18.09 L21.54,14.63 Z M12,15.5 C10.07,15.5 8.5,13.93 8.5,12 C8.5,10.07 10.07,8.5 12,8.5 C13.93,8.5 15.5,10.07 15.5,12 C15.5,13.93 13.93,15.5 12,15.5 Z" /></Viewbox>
+            <TextBlock Text="Settings" Style="{StaticResource SkylineProfileMenuLabelStyle}" />
+          </StackPanel>
+        </Button>
         <Rectangle Height="1" Fill="#1AFFFFFF" Margin="12,4" />
         <Button x:Name="SwitchServerRow" Style="{StaticResource SkylineProfileMenuRowStyle}" Click="OnSwitchServerClick" GotFocus="OnProfileRowFocus" LostFocus="OnProfileRowBlur">
           <StackPanel Orientation="Horizontal" Spacing="10">

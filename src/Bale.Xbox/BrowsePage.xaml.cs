@@ -307,7 +307,8 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
                 _lastCard = (position.SectionIndex, target);
             }
 
-            if (IsHome) _homeState.SetRows(_rows.Select(row => row.Row).ToList());
+            // This collection is the visible projection. Never write it back over Home's raw
+            // populated sections: Settings still needs the rows that are locally hidden.
 
             // Existing rails outlive a refresh too; don't let their entry targets retain deleted cards.
             for (var i = 0; i < _rows.Count; i++)
@@ -659,14 +660,23 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             row.Update(row.Row with { Cards = row.Row.Cards.Select(card => card.ContentId == view.Card.ContentId ? view.Card : card).ToList() });
         }
 
-        if (IsHome) _homeState.SetRows(_rows.Select(row => row.Row).ToList());
+        if (IsHome)
+        {
+            _homeState.SetRows(_homeState.AvailableRows.Select(row => row with
+            {
+                Cards = row.Cards.Select(card => card.ContentId == view.Card.ContentId ? view.Card : card).ToList(),
+            }).ToList());
+            RememberHomeRows();
+        }
         if (_shownMarquee?.Card.ContentId == view.Card.ContentId) ShowFacts(view.Card);
     }
 
     private void OnHomeCardDismissed(MediaCard card)
     {
         var restore = IsInPage(FocusManager.GetFocusedElement() as DependencyObject);
-        UpdateRows(HomeCardDismissal.Remove(_rows.Select(row => row.Row).ToList(), card), preserveFocus: true);
+        _homeState.SetRows(HomeCardDismissal.Remove(_homeState.AvailableRows, card));
+        RememberHomeRows();
+        UpdateRows(_homeState.Rows, preserveFocus: true);
         if (_rows.Count == 0)
         {
             ShowEmpty(restore);
@@ -1007,6 +1017,12 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         EmptyMessage.Text = _forYou ? "Watch a few titles and check back."
             : _libraryId is null ? HomeFeedback.EmptyMessage : string.Empty;
         RefreshButton.Content = HomeFeedback.RefreshLabel;
+        if (IsHome && _homeState.SectionsHiddenByPreference)
+        {
+            EmptyTitle.Text = HomeFeedback.HiddenTitle;
+            EmptyMessage.Text = HomeFeedback.HiddenMessage;
+            RefreshButton.Content = HomeFeedback.OpenSettingsLabel;
+        }
         EmptyMessage.Visibility = RefreshButton.Visibility = _libraryId is null ? Visibility.Visible : Visibility.Collapsed;
         VisualStateManager.GoToState(this, "Empty", false);
         if (focus && _libraryId is null)
@@ -1062,6 +1078,11 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
 
     private async void OnRetryClick(object sender, RoutedEventArgs e)
     {
+        if (IsHome && _homeState.SectionsHiddenByPreference && ReferenceEquals(sender, RefreshButton))
+        {
+            ShellPage.Current?.OpenSettings();
+            return;
+        }
         await LoadAsync();
     }
 }

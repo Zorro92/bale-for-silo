@@ -24,6 +24,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
     private readonly List<TabView> _tabs = new();
     private TabView? _selected;
     private bool _searchSelected;
+    private bool _settingsReturnHome;
     private Control? _dwellTab;
     private Control? _panelTab;
 
@@ -164,11 +165,19 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         // Back from a detail page: the cached shell keeps its tabs and content; just restore focus.
         if (e.NavigationMode == NavigationMode.Back && _tabs.Count > 0)
         {
+            // TvSettingsScreen.kt.onNavigateHome does not return to the library/avatar that opened it.
+            if (_settingsReturnHome)
+            {
+                _settingsReturnHome = false;
+                _personalReturnToProfile = false;
+                if (_searchSelected || _selected != _tabs[0]) Select(_tabs[0]);
+            }
             if (_librariesWithCollections is null) _ = ProbeLibraryCollectionsAsync();
             // PageFrame restores the selected content while the incoming shell is still transparent.
             return;
         }
 
+        _settingsReturnHome = false;
         var name = Session.ProfileName ?? Session.Client?.Account?.Username ?? "?";
         AvatarInitial.Text = PanelInitial.Text = name.Substring(0, 1).ToUpperInvariant();
         PanelProfileName.Text = name;
@@ -468,6 +477,17 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
     {
         ClosePanels();
         Session.ShowProfilePicker(Frame);
+    }
+
+    /// <summary>TvMainShell.kt / TvSettingsScreen.kt: hide all shell chrome and return to Home.</summary>
+    internal void OpenSettings()
+    {
+        if (Current != this || !ReferenceEquals(Frame.Content, this)) return;
+        ClosePanels();
+        _personalReturnToProfile = false;
+        _settingsReturnHome = true;
+        if (ContentFrame.Content is BrowsePage browse) browse.PauseHomeForNavigation();
+        Frame.Navigate(typeof(SettingsPage));
     }
 
     /// <summary>Pushes a title's detail page full screen over the shell (Skyline: detail has no top bar).</summary>

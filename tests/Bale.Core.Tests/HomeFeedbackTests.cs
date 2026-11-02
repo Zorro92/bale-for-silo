@@ -25,6 +25,15 @@ public class HomeFeedbackTests
     }
 
     [Fact]
+    public void HiddenHomeOffersSettingsInsteadOfRefreshingHiddenRows()
+    {
+        Assert.Equal("Home sections are hidden", HomeFeedback.HiddenTitle);
+        Assert.Equal("Choose which rows appear in Settings → General → Home Sections.", HomeFeedback.HiddenMessage);
+        Assert.Equal("Open Settings", HomeFeedback.OpenSettingsLabel);
+        Assert.NotEqual(HomeFeedback.RefreshLabel, HomeFeedback.OpenSettingsLabel);
+    }
+
+    [Fact]
     public void ApiFeedbackUsesTheServerMessageOrTheHomeFallback()
     {
         Assert.Equal("Home is unavailable", HomeFeedback.ErrorMessage(new Problem { Detail = "Home is unavailable", Title = "Failure" }));

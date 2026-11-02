@@ -11,6 +11,10 @@ public static class HomeFeedback
     public const string EmptyMessage = "Add media to your libraries or start watching to see it here.";
     public const string RefreshLabel = "Refresh";
     public const string RetryLabel = "Retry";
+    // TvHomeScreen.kt has a separate populated-but-hidden branch, never a misleading Refresh loop.
+    public const string HiddenTitle = "Home sections are hidden";
+    public const string HiddenMessage = "Choose which rows appear in Settings → General → Home Sections.";
+    public const string OpenSettingsLabel = "Open Settings";
 
     // TvHomeScreen.kt only replaces the feed with loading/error feedback when no sections survive.
     public static HomeFeedStatus Status(bool isLoading, int visibleRowCount, string? error) => visibleRowCount > 0

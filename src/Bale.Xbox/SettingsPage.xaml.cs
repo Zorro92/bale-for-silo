@@ -263,6 +263,9 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     private void UpdatePolicy()
     {
         ProfileSelectionValue.Text = AppSettings.OpenProfileAutomatically ? "Automatic" : "Every Time";
+        ProfileSelectionDescription.Text = AppSettings.OpenProfileAutomatically
+            ? "Use the last selected profile when Bale launches. A protected profile can reopen without its PIN."
+            : "Show Who's Watching each time Bale launches.";
         AutomaticButton.ApplyTemplate();
         EveryTimeButton.ApplyTemplate();
         VisualStateManager.GoToState(AutomaticButton, AppSettings.OpenProfileAutomatically ? "Selected" : "Unselected", false);
@@ -291,6 +294,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         {
             // ProfileLaunchPreferences.kt: only automatic/askEveryLaunch have an honored Bale policy.
             AppSettings.OpenProfileAutomatically = ReferenceEquals(sender, AutomaticButton);
+            AppSettings.ProfileRememberOfferAnswered = true;
             SettingsError.Visibility = Visibility.Collapsed;
             UpdatePolicy();
         }
@@ -301,6 +305,12 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             SettingsError.Visibility = Visibility.Visible;
         }
         ClosePicker();
+    }
+
+    private void OnSignOutFocus(object sender, RoutedEventArgs e)
+    {
+        // TvSettingsScreen.kt hides the category selection while the bottom rail action owns focus.
+        GeneralCategory.IsChecked = ServerCategory.IsChecked = false;
     }
 
     private void OnSignOutClick(object sender, RoutedEventArgs e) => ConfirmSignOut(changeServer: false);

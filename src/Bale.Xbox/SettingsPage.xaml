@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:Bale.Xbox.Controls"
     NavigationCacheMode="Required"
+    FontFamily="{StaticResource SkylineFont}"
     Background="{StaticResource SkylineBackground}">
   <!-- TvSettingsScreen.kt: this is an outer-frame route, not content beneath the top menu. -->
   <Grid x:Name="Root" PreviewKeyDown="OnPreviewKeyDown" PreviewKeyUp="OnPreviewKeyUp">
@@ -33,7 +34,7 @@
           </StackPanel>
         </StackPanel>
         <StackPanel Grid.Row="1">
-          <Button x:Name="SignOutButton" Content="Sign Out" Style="{StaticResource SkylineSettingsSignOutStyle}" Click="OnSignOutClick" />
+          <Button x:Name="SignOutButton" Content="Sign Out" Style="{StaticResource SkylineSettingsSignOutStyle}" Click="OnSignOutClick" GotFocus="OnSignOutFocus" />
           <TextBlock x:Name="RailVersion" Style="{StaticResource SkylineSettingsVersionStyle}" />
         </StackPanel>
       </Grid>
@@ -58,21 +59,21 @@
           <Grid>
             <StackPanel x:Name="GeneralPane" Style="{StaticResource SkylineSettingsGroupsStyle}">
               <StackPanel Style="{StaticResource SkylineSettingsGroupStyle}">
-                <TextBlock Text="PROFILES" Style="{StaticResource SkylineSettingsGroupHeaderStyle}" />
+                <TextBlock Text="PROFILE AT LAUNCH" Style="{StaticResource SkylineSettingsGroupHeaderStyle}" />
                 <Button x:Name="ProfileSelectionButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnProfileSelectionClick">
                   <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                     <TextBlock Text="Profile Selection" Style="{StaticResource SkylineSettingsRowTextStyle}" />
                     <TextBlock x:Name="ProfileSelectionValue" Grid.Column="1" Style="{StaticResource SkylineSettingsValueTextStyle}" />
                   </Grid>
                 </Button>
-                <TextBlock Text="Choose which profile opens when you launch Bale." Style="{StaticResource SkylineSettingsFooterStyle}" />
+                <TextBlock x:Name="ProfileSelectionDescription" Style="{StaticResource SkylineSettingsFooterStyle}" />
               </StackPanel>
               <StackPanel Style="{StaticResource SkylineSettingsGroupStyle}">
-                <TextBlock Text="HOME" Style="{StaticResource SkylineSettingsGroupHeaderStyle}" />
+                <TextBlock Text="HOME SECTIONS" Style="{StaticResource SkylineSettingsGroupHeaderStyle}" />
                 <Button x:Name="HomeSectionsButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnHomeSectionsClick">
                   <TextBlock Text="Home Sections" Style="{StaticResource SkylineSettingsRowTextStyle}" />
                 </Button>
-                <TextBlock Text="Choose which rows appear on Home and arrange their order." Style="{StaticResource SkylineSettingsFooterStyle}" />
+                <TextBlock Text="Choose which Home rows are visible and edit the order in which they appear on this Xbox." Style="{StaticResource SkylineSettingsFooterStyle}" />
               </StackPanel>
               <TextBlock x:Name="SettingsError" Style="{StaticResource SkylineSettingsErrorStyle}" Visibility="Collapsed" />
             </StackPanel>
@@ -81,7 +82,7 @@
                 <TextBlock Text="ACTIVE SERVER" Style="{StaticResource SkylineSettingsGroupHeaderStyle}" />
                 <Border Style="{StaticResource SkylineSettingsInfoRowStyle}">
                   <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                    <TextBlock Text="Server Name" Style="{StaticResource SkylineSettingsInfoLabelStyle}" />
+                    <TextBlock Text="Server" Style="{StaticResource SkylineSettingsInfoLabelStyle}" />
                     <TextBlock x:Name="ServerName" Grid.Column="1" Style="{StaticResource SkylineSettingsInfoValueStyle}" />
                   </Grid>
                 </Border>
@@ -116,8 +117,16 @@
         <StackPanel>
           <Grid Style="{StaticResource SkylineSettingsPickerHeaderStyle}">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-            <TextBlock Text="Profile Selection" Style="{StaticResource SkylineSettingsPaneTitleStyle}" />
-            <Border Grid.Column="1" Style="{StaticResource SkylineSettingsPickerHintStyle}"><TextBlock Text="Back to close" Style="{StaticResource SkylineSettingsPickerHintTextStyle}" /></Border>
+            <StackPanel Style="{StaticResource SkylineSettingsPickerTitleStyle}">
+              <TextBlock Text="Profile Selection" Style="{StaticResource SkylineSettingsPaneTitleStyle}" />
+              <TextBlock Text="Choose an option" Style="{StaticResource SkylineSettingsPickerHintTextStyle}" />
+            </StackPanel>
+            <Border Grid.Column="1" Style="{StaticResource SkylineSettingsPickerHintStyle}">
+              <StackPanel Style="{StaticResource SkylineSettingsPickerHintContentStyle}">
+                <Viewbox Style="{StaticResource SkylineSettingsPickerHintIconStyle}"><Path Style="{StaticResource SkylineSettingsGlyphStyle}" Opacity="{StaticResource SkylineSettingsHintOpacity}" Data="M12.5,8 C9.85,8 7.45,8.99 5.6,10.6 L2,7 V16 H11 L7.38,12.38 C8.77,11.22 10.54,10.5 12.5,10.5 C16.04,10.5 19.05,12.81 20.1,16 L22.47,15.22 C21.08,11.03 17.15,8 12.5,8 Z" /></Viewbox>
+                <TextBlock Text="Back to close" Style="{StaticResource SkylineSettingsPickerHintTextStyle}" />
+              </StackPanel>
+            </Border>
           </Grid>
           <Border Style="{StaticResource SkylineSettingsPickerDividerStyle}" />
           <StackPanel Style="{StaticResource SkylineSettingsPickerOptionsStyle}">

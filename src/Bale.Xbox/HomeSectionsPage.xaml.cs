@@ -118,6 +118,7 @@ public sealed partial class HomeSectionsPage : Page, IBackHandler, IRestoresFocu
         EditButton.IsEnabled = sections.Count > 1;
         StatusMessage.Text = "Home has no populated rows to arrange yet.";
         StatusMessage.Visibility = sections.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        EditorFooter.Visibility = sections.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void OnRowActivated(HomeSectionEditorRow row, int action)

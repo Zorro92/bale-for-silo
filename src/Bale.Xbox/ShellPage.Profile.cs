@@ -17,6 +17,7 @@ public sealed partial class ShellPage
     private bool _profileDwellSuppressed;
     private bool _restoringProfileFocus;
     private bool _signingOut;
+    private bool _signOutChangesServer;
 
     private void InitializeProfileMenu()
     {
@@ -109,7 +110,7 @@ public sealed partial class ShellPage
             if (step != 0)
             {
                 e.Handled = true;
-                Control[] rows = [SwitchProfileRow, WatchlistRow, FavoritesRow, HistoryRow, SwitchServerRow, SignOutRow];
+                Control[] rows = [SwitchProfileRow, WatchlistRow, FavoritesRow, HistoryRow, SettingsRow, SwitchServerRow, SignOutRow];
                 var focused = FocusManager.GetFocusedElement() as DependencyObject;
                 var index = Array.FindIndex(rows, row => IsWithin(focused, row));
                 rows[Math.Clamp(index + step, 0, rows.Length - 1)].Focus(FocusState.Keyboard);
@@ -152,10 +153,11 @@ public sealed partial class ShellPage
         if (_signingOut) return;
         // TvMainShell.kt hides the profile dropdown before opening TvSignOutDialog.kt.
         ClosePanels();
+        _signOutChangesServer = false;
         SignOutPrompt.Show();
     }
 
-    private async void OnSignOutRequested(bool removeServer) => await SignOutAsync(removeServer);
+    private async void OnSignOutRequested(bool removeServer) => await SignOutAsync(removeServer, changeServer: _signOutChangesServer);
 
     private void OnSignOutDismissed()
     {
@@ -163,10 +165,14 @@ public sealed partial class ShellPage
         if (Current == this && !_signingOut) DismissProfileMenu();
     }
 
-    private async void OnSwitchServerClick(object sender, RoutedEventArgs e)
+    private void OnSwitchServerClick(object sender, RoutedEventArgs e)
     {
-        // Keep Bale's existing single-server change-server flow, separate from confirmed sign-out.
+        if (_signingOut) return;
+        // The single-server route signs out too; never bypass TvSignOutDialog.kt's confirmation.
         ClosePanels();
-        await SignOutAsync(changeServer: true);
+        _signOutChangesServer = true;
+        SignOutPrompt.Show();
     }
+
+    private void OnSettingsClick(object sender, RoutedEventArgs e) => OpenSettings();
 }
