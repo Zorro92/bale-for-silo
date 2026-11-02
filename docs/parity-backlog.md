@@ -17,7 +17,7 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 - [x] Synopsis focusable, 13sp white@0.82, opens full text + tagline dialog
 - [x] Cast: 12/12 text, 2-line name, white@0.88 → white on focus, cap 24, header gap 14, placeholder icon 40 (already in place per TvCastCrewSection.kt; verified on Coyote (2017))
 - [x] Section header 18.1; Play icon 18; round action icons 19; episodes→Cast gap 32 (already in place per TvDetailSectionHeader.kt / TvItemDetailScreen.kt TvDetailSectionGap; verified on Coyote and The Lion Guard)
-- [ ] Episode cards: watched still dimmed black@0.35; focus = 3px white@0.9 inner border, scale 1.04
+- [x] Episode cards: watched still dimmed black@0.35; focus = 3px white@0.9 inner border, scale 1.04 (already in place per TvDetailEpisodeRail.kt; focus verified on The Lion Guard, watched dim not seen on screen)
 - [ ] Starring sorted by billing order; runtime ≥ 1h as "1h 5m"
 - [x] More menu: titled "More Actions" with icons; Favorites, type-worded Watched, Mark Season Watched, Go to Season / Go to Series
 - [ ] Version / Audio / Subtitles readout line and round selector menus in the action row (Up from season tabs lands on Version)
