@@ -67,7 +67,7 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 - [x] Calendar (focus follows the selected pill/day, first card, per-row memory: a deliberate deviation)
 - [x] Profile menu: Watchlist, Favorites, History, Settings, Switch Server; opens on dwell/Down
   - [ ] Settings row (Bale has no Settings page yet); Watch Party row
-  - [ ] Dropdown drop shadows
+  - [x] Dropdown drop shadows: one shared panel chrome (TvSkylinePanelChrome.kt) on the cascade, flyout, For You, profile, Sort and Filter panels
 - [x] For You Watchlist/Favorites dropdown; offline pill; drop key repeats while a rail animates
   - [x] Dropdown, Recommendations, offline pill and rail repeat gate (pill not seen on console: needs the server down)
   - [x] Watchlist/Favorites inline in the For You tab (TvRecommendationsScreen.kt), not a pushed screen; empty feed falls back to Watchlist
