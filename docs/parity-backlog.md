@@ -34,19 +34,19 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
   - [ ] Picker backdrop: the APK draws the colored Aurora light, Bale a dark gradient
   - [ ] Avatar fill for profiles without an image (APK: Kids is salmon, Bale slate)
 - [x] Back from Switch Profile exits (picker is the root)
-- [ ] Login: two columns, "Sign in to <server>", QR + code card + status ("Continue on your phone"), actions row; declined stays with retry; Back on the code screen exits (source-matched implementation landed, including branded mark / serif initial fallback; Xbox verification pending)
+- [ ] Login: two columns, "Sign in to <server>", QR + code card + status ("Continue on your phone"), actions row; declined stays with retry; Back on the code screen exits (layout, copy, QR/code card and serif-initial mark verified on the console, 0.1.155; decline → retry and Back-exits need a real signed-out session, still to check with the owner)
 - [ ] Server entry copy: "Enter your server address", Connect / Back (source-matched field centering, select-to-open keyboard, Language icon and TV-name chip landed; Xbox verification pending)
   - [ ] Advanced options: Auto / HTTPS / HTTP and port with matching URL-candidate probing (deliberately absent rather than exposing a partial control)
-- [ ] Session expiry → Login with "You were signed out of <server>. Sign in again."; all pages, not only Home (single root-owned transition after rejected refresh; Core coverage passes; Xbox verification pending)
-- [ ] Startup with saved tokens goes straight to Main (no network gate) (local restore chooses the picker / shell before validation; offline and expired-token Core coverage passes; Xbox verification pending)
+- [ ] Session expiry → Login with "You were signed out of <server>. Sign in again."; all pages, not only Home (single root-owned transition after rejected refresh; Core coverage passes; notice verified via show login expired, 0.1.155; a real revoked session still to check with the owner)
+- [x] Startup with saved tokens goes straight to Main (no network gate) (MainTvActivity.kt resolveStartDestination; verified: 0.1.155 launched straight to the picker; offline/expired covered in Core tests)
 - [x] Startup profile rule: ask Every Time by default; offer "Open X automatically?" after first pick
 
 ### Search (`screens/search/TvSearchScreen.kt`, `TvSearchViewModel.kt`)
 - [x] Field: leading 20 search icon @72%, radius 14, 17.2 text, 5.5% white fill / 12% border, focused ElevatedSurface / 94% border; placeholder from media types
 - [x] Any non-blank query after 300 ms
 - [x] Paging 40 at a time; status line 13.8 with Searching… / No results / N+ / About N
-- [x] Error: "Search is unavailable" + message + Try again (source-matched; Xbox verification pending)
-- [x] Empty state sizes: title 18.9, body 15.5 @62%, icon 28 @34% (source-matched; Xbox verification pending)
+- [x] Error: "Search is unavailable" + message + Try again (TvSearchScreen.kt; verified on the console with fault search, 0.1.155: copy, Down field → chip → Try again, retry → no-match state)
+- [x] Empty state sizes: title 18.9, body 15.5 @62%, icon 28 @34% (verified on the console, 0.1.155: blank, unavailable and no-match states)
 - [x] People row; dynamic chips (Audiobooks)
 
 ### Shell and Home (`shell/TvTopMenuBar.kt`, `shell/TvMainShell.kt`, `components/TvMediaRow.kt`, `components/TvSkylineSectionFeed.kt`)
