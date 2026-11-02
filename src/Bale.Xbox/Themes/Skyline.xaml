@@ -1960,13 +1960,14 @@
   </Style>
 
   <!-- TvServerSetupScreen.kt imePadding / TvMarquee.kt: copy scrolls only when it cannot fit.
-       Eight pixels of headroom contain TvMarqueeField's 1.04 focus lift without moving its resting edge. -->
+       TvMarqueeField.kt scales 380dp by 1.04: reserve 8dp INSIDE the scroll content for its 7.6dp
+       leftward lift. ScrollViewer.Padding is outside the viewport clip and cuts both left corners off. -->
   <Style x:Key="SkylineServerEntryScrollStyle" TargetType="ScrollViewer">
     <Setter Property="Width" Value="458" />
     <Setter Property="HorizontalAlignment" Value="Left" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
     <Setter Property="Margin" Value="-8,0,0,0" />
-    <Setter Property="Padding" Value="8,8,0,8" />
+    <Setter Property="Padding" Value="0" />
     <Setter Property="HorizontalScrollMode" Value="Disabled" />
     <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
     <Setter Property="VerticalScrollMode" Value="Auto" />
@@ -1977,7 +1978,8 @@
   <Style x:Key="SkylineServerEntryStyle" TargetType="StackPanel">
     <Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="HorizontalAlignment" Value="Left" />
-    <Setter Property="Width" Value="450" />
+    <Setter Property="Width" Value="458" />
+    <Setter Property="Padding" Value="8,8,0,8" />
   </Style>
   <Style x:Key="SkylineServerEntryTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineLoginTitleStyle}">
     <Setter Property="Margin" Value="0" />
@@ -2011,8 +2013,7 @@
                 <VisualState x:Name="PointerOver" />
                 <VisualState x:Name="Focused">
                   <VisualState.Setters>
-                    <Setter Target="Field.Background" Value="{StaticResource SkylinePrimary}" />
-                    <Setter Target="Field.BorderThickness" Value="0" />
+                    <Setter Target="FocusedField.Opacity" Value="1" />
                     <Setter Target="ContentElement.Foreground" Value="Black" />
                     <Setter Target="PlaceholderTextContentPresenter.Foreground" Value="#66000000" />
                     <Setter Target="LanguageIcon.Fill" Value="#73000000" />
@@ -2024,9 +2025,26 @@
                   <VisualState.Setters><Setter Target="FieldContent.Opacity" Value="0.5" /></VisualState.Setters>
                 </VisualState>
               </VisualStateGroup>
+              <!-- TvMarqueeField.kt: error glass is 6%; its 1.5dp error stroke survives focus. -->
+              <VisualStateGroup x:Name="ValidationStates">
+                <VisualState x:Name="Valid" />
+                <VisualState x:Name="Invalid">
+                  <VisualState.Setters>
+                    <Setter Target="Field.Background" Value="#0FFFFFFF" />
+                    <Setter Target="Field.BorderBrush" Value="Transparent" />
+                    <Setter Target="FieldError.Opacity" Value="1" />
+                  </VisualState.Setters>
+                </VisualState>
+              </VisualStateGroup>
             </VisualStateManager.VisualStateGroups>
             <Border x:Name="Field" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
                     BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}" />
+            <!-- TvMarqueeField.kt uses the same RoundedCornerShape for every fill/stroke.
+                 Separate focus fill and error stroke keep validation independent of focus state. -->
+            <Border x:Name="FocusedField" Background="{StaticResource SkylinePrimary}"
+                    CornerRadius="{TemplateBinding CornerRadius}" Opacity="0" />
+            <Border x:Name="FieldError" BorderBrush="#BFFF6961" BorderThickness="1.5"
+                    CornerRadius="{TemplateBinding CornerRadius}" Opacity="0" IsHitTestVisible="False" />
             <Grid x:Name="FieldContent" Margin="{TemplateBinding Padding}">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="16" />

@@ -23,6 +23,8 @@
     <Compile Include="../../src/Bale.Xbox/Services/RailScrollState.cs" Link="RailScrollState.cs" />
     <!-- Test focus retry coordination against a minimal event/tree stand-in, not the UWP runtime. -->
     <Compile Include="../../src/Bale.Xbox/Services/FocusRetry.cs" Link="FocusRetry.cs" />
+    <!-- Check declarative Skyline geometry/states on Linux; this does not render or compile UWP. -->
+    <None Include="../../src/Bale.Xbox/Themes/Skyline.xaml" Link="Skyline.xaml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

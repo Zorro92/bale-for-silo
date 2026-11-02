@@ -169,6 +169,7 @@ public sealed partial class MainPage : Page, IBackHandler
         if (ServerError is null || ServerSecurityHint is null) return;
         // TvServerSetupViewModel.kt clears the validation error as soon as the address changes.
         ServerError.Visibility = Visibility.Collapsed;
+        VisualStateManager.GoToState(ServerBox, "Valid", false);
         // TvServerSetupScreen.kt AddressEntryScreen: this is information, not the later HTTP consent flow.
         ServerSecurityHint.Text = ServerBox.Text.TrimStart().StartsWith("http://", StringComparison.OrdinalIgnoreCase)
             ? "This address uses unencrypted HTTP. Fine on a trusted home network; avoid it on public Wi-Fi."
@@ -472,6 +473,9 @@ public sealed partial class MainPage : Page, IBackHandler
         ServerBox.Text = server ?? string.Empty;
         ServerError.Text = error ?? string.Empty;
         ServerError.Visibility = error is null ? Visibility.Collapsed : Visibility.Visible;
+        // TvServerSetupScreen.kt passes isError into TvMarqueeField, including while it is focused.
+        ServerBox.ApplyTemplate();
+        VisualStateManager.GoToState(ServerBox, error is null ? "Valid" : "Invalid", false);
         // TvServerSetupScreen.kt AddressEntryScreen claims the address field, even when prefilled.
         FocusRetry.Until(ServerPanel, () => !_active || ServerPanel.Visibility != Visibility.Visible
             || ServerBox.Focus(FocusState.Programmatic));
