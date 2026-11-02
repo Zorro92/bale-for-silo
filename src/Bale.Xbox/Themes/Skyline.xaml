@@ -865,7 +865,10 @@
   <!-- TvAnchoredSelectorMenu.kt: 300–400dp anchored Skyline panel, 6dp gap, pinned eyebrow,
        270dp scrolling list, 28dp check slot, 19dp check and 10dp row corners.
        Text is TvPlayerType at plain sp (no 0.86): the menu is hosted in a Material DropdownMenu
-       popup, which draws outside SiloTvTheme's fontScale; measured on the shipping APK. -->
+       popup, which draws outside SiloTvTheme's fontScale; measured on the shipping APK.
+       Compose's default LineHeightStyle trims the line-height padding above the first and below the
+       last line, so a one-line Text is only Inter's natural 1.21 em tall: 11→13.3, 15→18.15,
+       14→16.95. That makes a two-line row 55dp, as measured on the APK (58 untrimmed). -->
   <x:Double x:Key="SkylinePlaybackSelectorGap">6</x:Double>
   <x:Double x:Key="SkylinePlaybackSelectorWindowInset">48</x:Double>
   <x:Double x:Key="SkylinePlaybackSelectorListHeight">270</x:Double>
@@ -876,18 +879,18 @@
     <Setter Property="HorizontalAlignment" Value="Left" /><Setter Property="VerticalAlignment" Value="Top" />
   </Style>
   <Style x:Key="SkylinePlaybackSelectorHeaderStyle" TargetType="TextBlock">
-    <Setter Property="FontSize" Value="11" /><Setter Property="LineHeight" Value="14" />
+    <Setter Property="FontSize" Value="11" /><Setter Property="LineHeight" Value="13.3" />
     <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="FontWeight" Value="SemiBold" />
     <Setter Property="CharacterSpacing" Value="140" /><Setter Property="Foreground" Value="#99EDEDED" />
     <Setter Property="Margin" Value="10,0,10,6" /><Setter Property="MaxLines" Value="1" />
   </Style>
   <Style x:Key="SkylinePlaybackSelectorTitleStyle" TargetType="TextBlock">
-    <Setter Property="FontSize" Value="15" /><Setter Property="LineHeight" Value="20" />
+    <Setter Property="FontSize" Value="15" /><Setter Property="LineHeight" Value="18.15" />
     <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="FontWeight" Value="Medium" />
     <Setter Property="MaxLines" Value="1" /><Setter Property="TextTrimming" Value="CharacterEllipsis" />
   </Style>
   <Style x:Key="SkylinePlaybackSelectorDetailStyle" TargetType="TextBlock">
-    <Setter Property="FontSize" Value="14" /><Setter Property="LineHeight" Value="18" />
+    <Setter Property="FontSize" Value="14" /><Setter Property="LineHeight" Value="16.95" />
     <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="FontWeight" Value="Medium" />
     <Setter Property="Opacity" Value="0.6" /><Setter Property="Margin" Value="0,2,0,0" />
     <Setter Property="MaxLines" Value="2" /><Setter Property="TextWrapping" Value="Wrap" /><Setter Property="TextTrimming" Value="CharacterEllipsis" />
