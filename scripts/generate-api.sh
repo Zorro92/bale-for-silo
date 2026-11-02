@@ -58,6 +58,8 @@ dotnet kiota generate \
   --include-path '/api/v2/favorites/{item_id}' \
   --include-path '/api/v2/watchlist/{item_id}' \
   --include-path '/api/v2/watched/{id}' \
+  --include-path '/api/v2/audio-prefs/{series_id}' \
+  --include-path '/api/v2/subtitle-prefs/{series_id}' \
   --include-path '/api/v2/recommendations/discover'
 
 echo "Generated client from Silo-Server/silo-server@$SILO_REF"
