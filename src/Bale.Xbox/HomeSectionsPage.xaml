@@ -1,0 +1,35 @@
+<Page
+    x:Class="Bale.Xbox.HomeSectionsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="{StaticResource SkylineBackground}">
+  <!-- TvHomeSectionsEditor.kt's full-screen dialog, with a 560dp top-centered column. -->
+  <Grid x:Name="Root" Style="{StaticResource SkylineHomeSectionsEditorStyle}" PreviewKeyDown="OnPreviewKeyDown" PreviewKeyUp="OnPreviewKeyUp">
+    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+    <TextBlock Text="Home Sections" Style="{StaticResource SkylineHomeSectionsTitleStyle}" />
+    <TextBlock Grid.Row="1" Text="HOME SECTIONS" Style="{StaticResource SkylineHomeSectionsHeaderStyle}" />
+    <Border Grid.Row="2" Style="{StaticResource SkylineHomeSectionsToolbarStyle}">
+      <Grid>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+        <StackPanel Style="{StaticResource SkylineHomeSectionCaptionStyle}">
+          <TextBlock Text="Home Sections" Style="{StaticResource SkylineHomeSectionsToolbarTitleStyle}" />
+          <TextBlock x:Name="EditorDescription" Text="Choose which rows appear on Home." Style="{StaticResource SkylineHomeSectionCountStyle}" />
+        </StackPanel>
+        <!-- rail-layout: non-card — editor mode and close actions. -->
+        <ItemsControl x:Name="HeaderActions" Grid.Column="1" Style="{StaticResource SkylineHomeSectionsToolbarActionsStyle}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylineSettingsEditorHeaderActionGap}" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <Button x:Name="EditButton" Content="Edit" Style="{StaticResource SkylineHomeSectionsButtonStyle}" IsEnabled="False" Click="OnEditClick" />
+          <Button x:Name="DoneButton" Content="Done" Style="{StaticResource SkylineHomeSectionsButtonStyle}" Click="OnDoneClick" />
+        </ItemsControl>
+      </Grid>
+    </Border>
+    <Grid Grid.Row="3">
+      <ScrollViewer x:Name="RowsScroller" Style="{StaticResource SkylineSettingsDetailScrollerStyle}">
+        <StackPanel x:Name="SectionRows" Style="{StaticResource SkylineHomeSectionsRowsStyle}" />
+      </ScrollViewer>
+      <TextBlock x:Name="StatusMessage" Text="Loading Home sections…" Style="{StaticResource SkylineHomeSectionsMessageStyle}" />
+    </Grid>
+    <TextBlock x:Name="SaveError" Grid.Row="4" Style="{StaticResource SkylineSettingsErrorStyle}" Visibility="Collapsed" />
+    <TextBlock x:Name="EditorFooter" Grid.Row="5" Text="Open eye: visible on Home. Closed eye: hidden. Hidden rows leave no gap." Style="{StaticResource SkylineHomeSectionsFooterStyle}" />
+  </Grid>
+</Page>

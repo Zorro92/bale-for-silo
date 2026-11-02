@@ -1,0 +1,136 @@
+<Page
+    x:Class="Bale.Xbox.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Bale.Xbox.Controls"
+    NavigationCacheMode="Required"
+    Background="{StaticResource SkylineBackground}">
+  <!-- TvSettingsScreen.kt: this is an outer-frame route, not content beneath the top menu. -->
+  <Grid x:Name="Root" PreviewKeyDown="OnPreviewKeyDown" PreviewKeyUp="OnPreviewKeyUp">
+    <Grid Style="{StaticResource SkylineSettingsLayoutStyle}">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+      <Grid x:Name="CategoryRail" Style="{StaticResource SkylineSettingsRailStyle}">
+        <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+        <StackPanel Style="{StaticResource SkylineSettingsRailTopStyle}">
+          <TextBlock Text="Settings" Style="{StaticResource SkylineSettingsTitleStyle}" />
+          <Button x:Name="AccountButton" Style="{StaticResource SkylineSettingsAccountButtonStyle}" Click="OnAccountClick" AutomationProperties.Name="Switch Profile">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+              <Grid Style="{StaticResource SkylineSettingsAvatarStyle}">
+                <Ellipse Style="{StaticResource SkylineSettingsAvatarFillStyle}" />
+                <TextBlock x:Name="AvatarInitial" Style="{StaticResource SkylineSettingsAvatarInitialStyle}" />
+                <Ellipse x:Name="AvatarPicture" Visibility="Collapsed" />
+              </Grid>
+              <StackPanel Grid.Column="1" Style="{StaticResource SkylineSettingsAccountTextStyle}">
+                <TextBlock x:Name="AccountName" Style="{StaticResource SkylineSettingsAccountNameStyle}" />
+                <TextBlock x:Name="AccountSubtitle" Style="{StaticResource SkylineSettingsAccountSubtitleStyle}" />
+              </StackPanel>
+            </Grid>
+          </Button>
+          <StackPanel Style="{StaticResource SkylineSettingsCategoriesStyle}">
+            <ToggleButton x:Name="GeneralCategory" Content="General" Tag="App and navigation" Style="{StaticResource SkylineSettingsCategoryStyle}" GotFocus="OnCategoryFocus" Click="OnCategoryClick" />
+            <ToggleButton x:Name="ServerCategory" Content="Server" Tag="Connection and version" Style="{StaticResource SkylineSettingsCategoryStyle}" GotFocus="OnCategoryFocus" Click="OnCategoryClick" />
+          </StackPanel>
+        </StackPanel>
+        <StackPanel Grid.Row="1">
+          <Button x:Name="SignOutButton" Content="Sign Out" Style="{StaticResource SkylineSettingsSignOutStyle}" Click="OnSignOutClick" />
+          <TextBlock x:Name="RailVersion" Style="{StaticResource SkylineSettingsVersionStyle}" />
+        </StackPanel>
+      </Grid>
+      <Grid x:Name="DetailPane" Grid.Column="1" Style="{StaticResource SkylineSettingsPaneStyle}">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <Grid Style="{StaticResource SkylineSettingsPaneHeaderStyle}">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+          <Border Style="{StaticResource SkylineSettingsPaneTileStyle}">
+            <Viewbox Style="{StaticResource SkylineSettingsPaneGlyphStyle}">
+              <Grid>
+                <Path x:Name="GeneralHeaderIcon" Style="{StaticResource SkylineSettingsGlyphStyle}" Data="M19.43,12.98 C19.47,12.66 19.5,12.34 19.5,12 C19.5,11.66 19.47,11.34 19.43,11.02 L21.54,9.37 L19.54,5.91 L17.05,6.91 C16.54,6.52 15.98,6.19 15.37,5.94 L15,3 H9 L8.63,5.94 C8.02,6.19 7.46,6.52 6.95,6.91 L4.46,5.91 L2.46,9.37 L4.57,11.02 C4.53,11.34 4.5,11.66 4.5,12 C4.5,12.34 4.53,12.66 4.57,12.98 L2.46,14.63 L4.46,18.09 L6.95,17.09 C7.46,17.48 8.02,17.81 8.63,18.06 L9,21 H15 L15.37,18.06 C15.98,17.81 16.54,17.48 17.05,17.09 L19.54,18.09 L21.54,14.63 Z M12,15.5 C10.07,15.5 8.5,13.93 8.5,12 C8.5,10.07 10.07,8.5 12,8.5 C13.93,8.5 15.5,10.07 15.5,12 C15.5,13.93 13.93,15.5 12,15.5 Z" />
+                <Path x:Name="ServerHeaderIcon" Style="{StaticResource SkylineSettingsGlyphStyle}" Visibility="Collapsed" Data="M20,3 H4 C2.9,3 2,3.9 2,5 V9 C2,10.1 2.9,11 4,11 H20 C21.1,11 22,10.1 22,9 V5 C22,3.9 21.1,3 20,3 Z M20,9 H4 V5 H20 Z M6,6 H8 V8 H6 Z M20,13 H4 C2.9,13 2,13.9 2,15 V19 C2,20.1 2.9,21 4,21 H20 C21.1,21 22,20.1 22,19 V15 C22,13.9 21.1,13 20,13 Z M20,19 H4 V15 H20 Z M6,16 H8 V18 H6 Z" />
+              </Grid>
+            </Viewbox>
+          </Border>
+          <StackPanel Grid.Column="1" Style="{StaticResource SkylineSettingsPaneHeaderTextStyle}">
+            <TextBlock x:Name="PaneTitle" Style="{StaticResource SkylineSettingsPaneTitleStyle}" />
+            <TextBlock x:Name="PaneBlurb" Style="{StaticResource SkylineSettingsPaneBlurbStyle}" />
+          </StackPanel>
+        </Grid>
+        <ScrollViewer x:Name="DetailScroller" Grid.Row="1" Style="{StaticResource SkylineSettingsDetailScrollerStyle}">
+          <Grid>
+            <StackPanel x:Name="GeneralPane" Style="{StaticResource SkylineSettingsGroupsStyle}">
+              <StackPanel Style="{StaticResource SkylineSettingsGroupStyle}">
+                <TextBlock Text="PROFILES" Style="{StaticResource SkylineSettingsGroupHeaderStyle}" />
+                <Button x:Name="ProfileSelectionButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnProfileSelectionClick">
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBlock Text="Profile Selection" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+                    <TextBlock x:Name="ProfileSelectionValue" Grid.Column="1" Style="{StaticResource SkylineSettingsValueTextStyle}" />
+                  </Grid>
+                </Button>
+                <TextBlock Text="Choose which profile opens when you launch Bale." Style="{StaticResource SkylineSettingsFooterStyle}" />
+              </StackPanel>
+              <StackPanel Style="{StaticResource SkylineSettingsGroupStyle}">
+                <TextBlock Text="HOME" Style="{StaticResource SkylineSettingsGroupHeaderStyle}" />
+                <Button x:Name="HomeSectionsButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnHomeSectionsClick">
+                  <TextBlock Text="Home Sections" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+                </Button>
+                <TextBlock Text="Choose which rows appear on Home and arrange their order." Style="{StaticResource SkylineSettingsFooterStyle}" />
+              </StackPanel>
+              <TextBlock x:Name="SettingsError" Style="{StaticResource SkylineSettingsErrorStyle}" Visibility="Collapsed" />
+            </StackPanel>
+            <StackPanel x:Name="ServerPane" Style="{StaticResource SkylineSettingsGroupsStyle}" Visibility="Collapsed">
+              <StackPanel Style="{StaticResource SkylineSettingsGroupStyle}">
+                <TextBlock Text="ACTIVE SERVER" Style="{StaticResource SkylineSettingsGroupHeaderStyle}" />
+                <Border Style="{StaticResource SkylineSettingsInfoRowStyle}">
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                    <TextBlock Text="Server Name" Style="{StaticResource SkylineSettingsInfoLabelStyle}" />
+                    <TextBlock x:Name="ServerName" Grid.Column="1" Style="{StaticResource SkylineSettingsInfoValueStyle}" />
+                  </Grid>
+                </Border>
+                <Border Style="{StaticResource SkylineSettingsAddressRowStyle}">
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                    <TextBlock Text="Address" Style="{StaticResource SkylineSettingsInfoLabelStyle}" />
+                    <TextBlock x:Name="ServerAddress" Grid.Column="1" Style="{StaticResource SkylineSettingsAddressStyle}" />
+                  </Grid>
+                </Border>
+                <Button x:Name="ChangeServerButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnChangeServerClick">
+                  <TextBlock Text="Switch Server" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+                </Button>
+                <TextBlock Text="Sign out before connecting to another server." Style="{StaticResource SkylineSettingsFooterStyle}" />
+              </StackPanel>
+              <StackPanel Style="{StaticResource SkylineSettingsGroupStyle}">
+                <TextBlock Text="ABOUT" Style="{StaticResource SkylineSettingsGroupHeaderStyle}" />
+                <Border Style="{StaticResource SkylineSettingsInfoRowStyle}">
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBlock Text="App Version" Style="{StaticResource SkylineSettingsInfoLabelStyle}" />
+                    <TextBlock x:Name="AppVersion" Grid.Column="1" Style="{StaticResource SkylineSettingsInfoValueStyle}" />
+                  </Grid>
+                </Border>
+              </StackPanel>
+            </StackPanel>
+          </Grid>
+        </ScrollViewer>
+      </Grid>
+    </Grid>
+    <!-- TvSettingsPickerSheet: only policies Bale actually honors at launch are offered. -->
+    <Grid x:Name="ProfilePicker" Visibility="Collapsed" Background="{StaticResource SkylineSettingsPickerScrim}">
+      <Border Style="{StaticResource SkylineSettingsPickerCardStyle}">
+        <StackPanel>
+          <Grid Style="{StaticResource SkylineSettingsPickerHeaderStyle}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <TextBlock Text="Profile Selection" Style="{StaticResource SkylineSettingsPaneTitleStyle}" />
+            <Border Grid.Column="1" Style="{StaticResource SkylineSettingsPickerHintStyle}"><TextBlock Text="Back to close" Style="{StaticResource SkylineSettingsPickerHintTextStyle}" /></Border>
+          </Grid>
+          <Border Style="{StaticResource SkylineSettingsPickerDividerStyle}" />
+          <StackPanel Style="{StaticResource SkylineSettingsPickerOptionsStyle}">
+            <Button x:Name="AutomaticButton" Tag="automatic" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnPolicyClick">
+              <StackPanel><TextBlock Text="Automatic" Style="{StaticResource SkylineSettingsRowTextStyle}" /><TextBlock Text="Use the last selected profile when Bale launches. A protected profile can reopen without its PIN." Style="{StaticResource SkylineSettingsPickerDetailStyle}" /></StackPanel>
+            </Button>
+            <Button x:Name="EveryTimeButton" Tag="askEveryLaunch" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnPolicyClick">
+              <StackPanel><TextBlock Text="Every Time" Style="{StaticResource SkylineSettingsRowTextStyle}" /><TextBlock Text="Show Who's Watching each time Bale launches." Style="{StaticResource SkylineSettingsPickerDetailStyle}" /></StackPanel>
+            </Button>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </Grid>
+    <controls:SignOutDialog x:Name="SignOutPrompt" />
+  </Grid>
+</Page>

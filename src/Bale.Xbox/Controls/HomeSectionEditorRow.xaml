@@ -1,0 +1,29 @@
+<UserControl
+    x:Class="Bale.Xbox.Controls.HomeSectionEditorRow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    IsTabStop="False" PreviewKeyDown="OnPreviewKeyDown">
+  <!-- TvHomeSectionsEditor.kt: stable row controls survive immediate order/visibility saves. -->
+  <Border Style="{StaticResource SkylineHomeSectionRowStyle}">
+    <Grid>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+      <Grid>
+        <StackPanel x:Name="ShownCaption" Style="{StaticResource SkylineHomeSectionCaptionStyle}">
+          <TextBlock x:Name="ShownTitle" Style="{StaticResource SkylineHomeSectionTitleStyle}" />
+          <TextBlock x:Name="ShownCount" Style="{StaticResource SkylineHomeSectionCountStyle}" />
+        </StackPanel>
+        <StackPanel x:Name="HiddenCaption" Style="{StaticResource SkylineHiddenHomeSectionCaptionStyle}" Visibility="Collapsed">
+          <TextBlock x:Name="HiddenTitle" Style="{StaticResource SkylineHomeSectionTitleStyle}" />
+          <TextBlock x:Name="HiddenCount" Style="{StaticResource SkylineHomeSectionCountStyle}" />
+        </StackPanel>
+      </Grid>
+      <!-- rail-layout: non-card — compact move and visibility buttons, never media cards. -->
+      <ItemsControl x:Name="Actions" Grid.Column="1" Style="{StaticResource SkylineHomeSectionsActionsStyle}">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylineSettingsEditorActionGap}" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        <Button x:Name="MoveUpButton" Style="{StaticResource SkylineHomeSectionIconButtonStyle}" Click="OnMoveUpClick" Visibility="Collapsed" />
+        <Button x:Name="MoveDownButton" Style="{StaticResource SkylineHomeSectionIconButtonStyle}" Click="OnMoveDownClick" Visibility="Collapsed" />
+        <Button x:Name="VisibilityButton" Style="{StaticResource SkylineHomeSectionIconButtonStyle}" Click="OnVisibilityClick" />
+      </ItemsControl>
+    </Grid>
+  </Border>
+</UserControl>
