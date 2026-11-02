@@ -190,6 +190,7 @@ public sealed partial class DetailFeed
             MarqueeLine = MarqueeLine(item),
             SeasonNumber = item.SeasonNumber,
             Versions = item.Versions ?? [],
+            PlaybackVariants = item.PlaybackVariants ?? [],
             LastFileId = item.UserData?.LastFileId,
             EffectiveSubtitleLanguage = item.EffectiveSubtitleLanguage,
             EffectiveSubtitleMode = item.EffectiveSubtitleMode,

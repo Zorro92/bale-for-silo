@@ -3,7 +3,7 @@ using Bale.Core.Api.Models;
 
 namespace Bale.Core.Detail;
 
-public enum PlaybackSelectorKind { Version, Audio, Subtitles }
+public enum PlaybackSelectorKind { Version, Audio, Subtitles, Edition }
 
 /// <summary>Menu identity is independent of display order (TvPlaybackSelectorRow.kt).</summary>
 public sealed record PlaybackSelectorOption(string Title, string Detail, bool IsSelected,
@@ -12,19 +12,21 @@ public sealed record PlaybackSelectorOption(string Title, string Detail, bool Is
 public static partial class PlaybackFormatting
 {
     /// <summary>
-    /// All three circular triggers stay visible/focusable, including single-choice versions.
-    /// Only Version counts real choices; Audio allows any track and Subtitles allows Auto/Off.
-    /// Matches TvPlaybackActionSelectors, not its older selectorIsInteractive comment.
+    /// Version/Audio/Subtitles remain focusable even when non-interactive; Edition appears only
+    /// with distinct edition choices. Version counts edition-scoped files, not the global Auto row.
+    /// Matches TvPlaybackSelectorRow.kt's TvPlaybackActionSelectors, not its older interactivity comment.
     /// </summary>
     public static bool SelectorIsInteractive(PlaybackSelectorKind kind, ItemDetail? detail, PlaybackSelection selection)
     {
-        var version = detail is null ? null : SelectDisplayVersion(detail.Versions, selection.FileId, detail.LastFileId);
-        return version is not null && kind switch
+        if (detail is null || SelectDisplayVersion(detail.Versions, selection.FileId, detail.LastFileId) is not { } version) return false;
+        if (kind is PlaybackSelectorKind.Edition or PlaybackSelectorKind.Version)
         {
-            PlaybackSelectorKind.Version => detail!.Versions.Count > 1,
-            PlaybackSelectorKind.Audio => version.AudioTracks is { Count: > 0 },
-            _ => true,
-        };
+            var editions = PlaybackEditions.For(detail.Versions, detail.PlaybackVariants);
+            return kind == PlaybackSelectorKind.Edition ? PlaybackEditions.HasChoices(editions)
+                : PlaybackEditions.ScopedVersions(detail.Versions, editions, version).Count > 1;
+        }
+
+        return kind != PlaybackSelectorKind.Audio || version.AudioTracks is { Count: > 0 };
     }
 
     public static IReadOnlyList<PlaybackSelectorOption> SelectorOptions(PlaybackSelectorKind kind,
@@ -33,11 +35,8 @@ public static partial class PlaybackFormatting
         var version = SelectDisplayVersion(detail.Versions, selection.FileId, detail.LastFileId);
         return kind switch
         {
-            PlaybackSelectorKind.Version => new[]
-            {
-                new PlaybackSelectorOption("Auto", "Best match for this device", selection.FileId is null),
-            }.Concat(detail.Versions.Select(file => new PlaybackSelectorOption(
-                VersionShortLabel(file), VersionDetailLabel(file), file.FileId == selection.FileId, FileId: file.FileId))).ToList(),
+            PlaybackSelectorKind.Edition => EditionOptions(detail, version),
+            PlaybackSelectorKind.Version => VersionOptions(detail, selection.FileId, version),
             PlaybackSelectorKind.Audio => new[]
             {
                 new PlaybackSelectorOption("Auto", "Use your Playback audio preference", selection.AudioIndex is null),
@@ -45,6 +44,29 @@ public static partial class PlaybackFormatting
                 AudioTitle(track, ordinal), AudioDetail(track, ordinal, version!), selection.AudioIndex == ordinal, TrackIndex: ordinal))).ToList(),
             _ => SubtitleOptions(version, selection.SubtitleIndex, detail.EffectiveSubtitleLanguage),
         };
+    }
+
+    private static IReadOnlyList<PlaybackSelectorOption> EditionOptions(ItemDetail detail, FileVersion? version)
+    {
+        var editions = PlaybackEditions.For(detail.Versions, detail.PlaybackVariants);
+        var current = PlaybackEditions.Current(editions, version);
+        // TvPlaybackSelectorRow.kt: selecting an edition starts its first part's default file,
+        // not the highest-quality file across editions (or the variant's later-part default).
+        return editions.Select(edition => new PlaybackSelectorOption(edition.Label, VersionShortLabel(edition.DefaultVersion),
+            edition.Id == current?.Id, FileId: edition.DefaultVersion.FileId)).ToList();
+    }
+
+    private static IReadOnlyList<PlaybackSelectorOption> VersionOptions(ItemDetail detail, string? selectedFileId, FileVersion? version)
+    {
+        var editions = PlaybackEditions.For(detail.Versions, detail.PlaybackVariants);
+        var showEditions = PlaybackEditions.HasChoices(editions);
+        var options = new List<PlaybackSelectorOption>();
+        // TvPlaybackSelectorRow.kt: Auto is global, so omit it rather than escape the chosen edition.
+        if (!showEditions) options.Add(new PlaybackSelectorOption("Auto", "Best match for this device", selectedFileId is null));
+        var selected = selectedFileId ?? (showEditions ? version?.FileId : null);
+        options.AddRange(PlaybackEditions.ScopedVersions(detail.Versions, editions, version).Select(file => new PlaybackSelectorOption(
+            VersionShortLabel(file), VersionDetailLabel(file), file.FileId == selected, FileId: file.FileId)));
+        return options;
     }
 
     public static string VersionShortLabel(FileVersion version)

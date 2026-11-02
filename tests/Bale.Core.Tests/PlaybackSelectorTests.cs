@@ -219,7 +219,7 @@ public class PlaybackSelectorTests
     }
 
     [Fact]
-    public async Task ContainerAndVersionSelectionsNeverWriteServerPreferences()
+    public async Task ContainerVersionAndEditionSelectionsNeverWriteServerPreferences()
     {
         var handler = new StubHandler();
         var address = new Uri("https://silo.example.com");
@@ -228,6 +228,7 @@ public class PlaybackSelectorTests
         await feed.SaveTrackChoiceAsync(Detail("show") with { Type = "series" }, Version(), PlaybackSelectorKind.Audio, 1);
         await feed.SaveTrackChoiceAsync(Detail("season") with { Type = "season", SeriesId = "show" }, Version(), PlaybackSelectorKind.Subtitles, -1);
         await feed.SaveTrackChoiceAsync(Detail("movie"), Version(), PlaybackSelectorKind.Version, null);
+        await feed.SaveTrackChoiceAsync(Detail("movie"), Version(), PlaybackSelectorKind.Edition, null);
         Assert.Empty(handler.Requests);
     }
 

@@ -46,7 +46,8 @@ public sealed class PlaybackSelectionState
         var current = For(detail);
         var selected = kind switch
         {
-            PlaybackSelectorKind.Version => new PlaybackSelection(option.FileId),
+            // TvPlaybackSelectorRow.kt routes Edition through the same onSelectVersion callback.
+            PlaybackSelectorKind.Version or PlaybackSelectorKind.Edition => new PlaybackSelection(option.FileId),
             PlaybackSelectorKind.Audio => current with { AudioIndex = option.TrackIndex },
             _ => current with { SubtitleIndex = option.TrackIndex },
         };

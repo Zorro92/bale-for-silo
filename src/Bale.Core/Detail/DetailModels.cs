@@ -47,6 +47,9 @@ public sealed record ItemDetail(
     /// <summary>Playback inventory and last-played file used by TvDetailVersionSelection.kt.</summary>
     public IReadOnlyList<FileVersion> Versions { get; init; } = [];
 
+    /// <summary>Server edition/part groups from CatalogDetailReadV2Models.kt; absent on older servers.</summary>
+    public IReadOnlyList<PlaybackVariant> PlaybackVariants { get; init; } = [];
+
     public string? LastFileId { get; init; }
 
     /// <summary>Server-resolved subtitle preferences take precedence over profile defaults (TvItemDetailViewModel.kt).</summary>

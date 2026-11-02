@@ -79,13 +79,13 @@ public sealed partial class DetailFeed
 
     /// <summary>
     /// Explicit detail picks persist across devices even without a player (TvItemDetailViewModel.kt).
-    /// Auto deletes the series/movie choice. Version changes must never call this method.
+    /// Auto deletes the series/movie choice. Version/Edition selections never write track preferences.
     /// Serialize writes so rapid picks cannot leave an older choice on the server.
     /// </summary>
     public async Task SaveTrackChoiceAsync(ItemDetail detail, FileVersion version, PlaybackSelectorKind kind,
         int? trackIndex, CancellationToken cancellationToken = default)
     {
-        if (kind == PlaybackSelectorKind.Version || detail.Type is not ("movie" or "episode")) return;
+        if (kind is not (PlaybackSelectorKind.Audio or PlaybackSelectorKind.Subtitles) || detail.Type is not ("movie" or "episode")) return;
         var ownerId = PlaybackTrackChoices.OwnerId(detail);
         await _trackChoiceWrites.WaitAsync(cancellationToken).ConfigureAwait(false);
         try

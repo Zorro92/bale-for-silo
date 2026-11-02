@@ -100,17 +100,29 @@ public class DetailFeedTests
         var handler = new StubHandler();
         handler.Enqueue(HttpStatusCode.OK, """
             {"content_id":"m","type":"movie","versions":[
-              {"file_id":"file-1","resolution":"2160p","hdr":true,
+              {"file_id":"file-1","resolution":"2160p","hdr":true,"edition_raw":"Extended","edition_key":"extended",
                "audio_tracks":[{"language":"eng","codec":"eac3","layout":"5.1","default":true}],
                "subtitle_tracks":[{"language":"fre","codec":"subrip","external":true}],
                "video_tracks":[{"dv_profile":8}]}
-            ],"user_data":{"last_file_id":"file-1"},"effective_subtitle_language":"fr",
+            ],"playback_variants":[{"variant_id":"extended","edition_raw":"Extended","edition_key":"extended",
+              "parts":[{"part_index":1,"default_file_id":"file-1","versions":[{"file_id":"file-1"}]}]}],
+            "user_data":{"last_file_id":"file-1"},"effective_subtitle_language":"fr",
             "effective_subtitle_mode":"always","effective_show_forced_subtitles":true,
             "effective_subtitle_track_signature":{"language":"fre","codec":"srt","forced":false}}
             """);
         var detail = await Feed(handler).LoadAsync("m");
         var version = Assert.Single(detail.Versions);
         Assert.Equal("file-1", version.FileId);
+        Assert.Equal("Extended", version.EditionRaw);
+        Assert.Equal("extended", version.EditionKey);
+        var variant = Assert.Single(detail.PlaybackVariants);
+        Assert.Equal("extended", variant.VariantId);
+        Assert.Equal("Extended", variant.EditionRaw);
+        var part = Assert.Single(variant.Parts!);
+        Assert.Equal(1, part.PartIndex);
+        Assert.Equal("file-1", part.DefaultFileId);
+        Assert.Equal("file-1", Assert.Single(part.Versions!).FileId);
+        Assert.Same(version, Assert.Single(PlaybackEditions.For(detail.Versions, detail.PlaybackVariants)).DefaultVersion);
         Assert.Equal("file-1", detail.LastFileId);
         Assert.Equal("eng", Assert.Single(version.AudioTracks!).Language);
         Assert.Equal("fre", Assert.Single(version.SubtitleTracks!).Language);
@@ -120,6 +132,7 @@ public class DetailFeedTests
         Assert.True(detail.EffectiveShowForcedSubtitles);
         Assert.Equal("srt", detail.EffectiveSubtitleTrackSignature?.Codec);
         Assert.Empty(Feed().ToDetail(new CatalogItemDetail()).Versions);
+        Assert.Empty(Feed().ToDetail(new CatalogItemDetail()).PlaybackVariants);
     }
 
     [Fact]
