@@ -83,6 +83,22 @@ public class PlaybackSelectorTests
     }
 
     [Fact]
+    public void SubtitleSortingUsesCatalogForcedFlagButDisplayAlsoRecognizesForcedTitle()
+    {
+        var version = Version();
+        version.SubtitleTracks =
+        [
+            new() { Language = "eng", Codec = "srt", Title = "forced" },
+            new() { Language = "eng", Codec = "srt" },
+            new() { Language = "eng", Codec = "srt", Forced = true },
+        ];
+        var options = PlaybackFormatting.SelectorOptions(PlaybackSelectorKind.Subtitles,
+            Detail("movie") with { Versions = [version] }, PlaybackSelection.Auto);
+        Assert.Equal(new int?[] { null, -1, 0, 1, 2 }, options.Select(option => option.TrackIndex));
+        Assert.Equal("SRT · Forced", options[2].Detail);
+    }
+
+    [Fact]
     public void VersionChangeResetsBothTracksEvenWhenChoosingAuto()
     {
         var state = new PlaybackSelectionState();
@@ -185,6 +201,34 @@ public class PlaybackSelectorTests
         Assert.Null(off.TrackSignature);
         Assert.Null(off.ShowForcedSubtitles);
         Assert.Equal("movie", PlaybackTrackChoices.OwnerId(Detail("movie")));
+    }
+
+    [Fact]
+    public void AudioChoiceOmitsAnEmptySignatureAndRejectsUnknownServerLanguage()
+    {
+        var empty = PlaybackTrackChoices.Audio(new FileVersion { AudioTracks = [new() { Channels = 0, Default = true }] }, 0);
+        Assert.Equal(0, empty.AudioTrackIndex);
+        Assert.Null(empty.AudioLanguage);
+        Assert.Null(empty.TrackSignature);
+        var unknown = PlaybackTrackChoices.Audio(new FileVersion { AudioTracks = [new() { Language = "und", Title = "Commentary" }] }, 0);
+        Assert.Null(unknown.AudioLanguage);
+        Assert.Equal("Commentary", unknown.TrackSignature!.Title);
+        var legacy = PlaybackTrackChoices.Audio(new FileVersion { AudioTracks = [new() { Language = "English" }] }, 0);
+        Assert.Equal("en", legacy.AudioLanguage);
+        Assert.Equal("English", legacy.TrackSignature!.Language);
+    }
+
+    [Fact]
+    public async Task ContainerAndVersionSelectionsNeverWriteServerPreferences()
+    {
+        var handler = new StubHandler();
+        var address = new Uri("https://silo.example.com");
+        var connection = new SiloConnection(address, new ClientIdentity("d", "x", "xbox", "Bale"), transport: handler);
+        var feed = new DetailFeed(connection.Api, new BrowseFeed(connection.Api, address));
+        await feed.SaveTrackChoiceAsync(Detail("show") with { Type = "series" }, Version(), PlaybackSelectorKind.Audio, 1);
+        await feed.SaveTrackChoiceAsync(Detail("season") with { Type = "season", SeriesId = "show" }, Version(), PlaybackSelectorKind.Subtitles, -1);
+        await feed.SaveTrackChoiceAsync(Detail("movie"), Version(), PlaybackSelectorKind.Version, null);
+        Assert.Empty(handler.Requests);
     }
 
     private static FileVersion Version() => new()

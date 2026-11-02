@@ -13,16 +13,19 @@ public static partial class PlaybackTrackChoices
     public static AudioPreferenceUpdate Audio(FileVersion version, int ordinal)
     {
         var track = version.AudioTracks![ordinal];
+        var signature = new AudioTrackSignature
+        {
+            Language = Clean(track.Language), Title = Clean(track.Title), EmbeddedTitle = Clean(track.EmbeddedTitle),
+            Codec = Clean(track.Codec), Layout = Clean(track.Layout), Channels = track.Channels is > 0 ? track.Channels : null,
+            // Default is intentionally absent: it is not part of Android's signature match.
+        };
         return new AudioPreferenceUpdate
         {
             AudioTrackIndex = ordinal,
             AudioLanguage = ServerLanguageTag(track.Language),
-            TrackSignature = new AudioTrackSignature
-            {
-                Language = Clean(track.Language), Title = Clean(track.Title), EmbeddedTitle = Clean(track.EmbeddedTitle),
-                Codec = Clean(track.Codec), Layout = Clean(track.Layout), Channels = track.Channels is > 0 ? track.Channels : null,
-                // Default is intentionally absent: it is not part of Android's signature match.
-            },
+            // SeriesAudioChoice.kt omits an empty signature rather than pinning an empty match.
+            TrackSignature = signature.Language is null && signature.Title is null && signature.EmbeddedTitle is null
+                && signature.Codec is null && signature.Layout is null && signature.Channels is null ? null : signature,
         };
     }
 

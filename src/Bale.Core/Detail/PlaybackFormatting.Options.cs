@@ -100,7 +100,7 @@ public static partial class PlaybackFormatting
             .ThenBy(i => LanguageDisplayName(SubtitleLanguageKey(tracks[i].Language)), StringComparer.OrdinalIgnoreCase)
             .ThenBy(i => SubtitleLanguageKey(tracks[i].Language), StringComparer.Ordinal)
             .ThenBy(i => SubtitleFormatRank(tracks[i].Codec))
-            .ThenBy(i => LabelIndicatesHearingImpaired(tracks[i].Title) ? 2 : IsForcedSubtitle(tracks[i]) ? 1 : 0)
+            .ThenBy(i => LabelIndicatesHearingImpaired(tracks[i].Title) ? 2 : tracks[i].Forced == true ? 1 : 0)
             .ThenBy(i => tracks[i].Default == true ? 0 : 1).ThenBy(i => i);
         return new[]
         {
