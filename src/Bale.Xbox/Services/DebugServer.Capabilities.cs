@@ -1,19 +1,236 @@
 #if DEBUG_SERVER
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
 using Windows.Devices.Enumeration;
+using Windows.Foundation.Collections;
 using Windows.Foundation.Metadata;
 using Windows.Graphics.Display;
 using Windows.Graphics.Display.Core;
 using Windows.Media.Audio;
 using Windows.Media.Core;
 using Windows.Media.Devices;
+using Windows.Media.Playback;
 using Windows.Media.Render;
 
 namespace Bale.Xbox.Services;
 
 internal sealed partial class DebugServer
 {
+    private static int _playtestBusy;
+
+    private static async Task<(string Status, string Body)> PlaytestAsync(string? url, string? seconds)
+    {
+        if (!DebugPlaytest.TryParse(url, seconds, out var uri, out var duration, out var error))
+            return ("400 Bad Request", error + "\n");
+        if (Interlocked.CompareExchange(ref _playtestBusy, 1, 0) != 0)
+            return ("409 Conflict", "a playtest is already running\n");
+
+        var builder = new StringBuilder();
+        var failures = new ConcurrentQueue<string>();
+        var didOpen = false;
+        var initialPosition = TimeSpan.Zero;
+        var finalPosition = TimeSpan.Zero;
+        void Attempt(string step, Action action)
+        {
+            try { action(); }
+            catch (Exception ex)
+            {
+                failures.Enqueue($"{step}: {DebugScreenText.Compact(ex.Message, 300)} (0x{unchecked((uint)ex.HResult):X8})");
+                Log.Error("Debug playtest: " + step, ex);
+            }
+        }
+
+        try
+        {
+            // These breadcrumbs survive a native media failure that never reaches a managed catch.
+            Log.Info("Debug playtest: before open");
+            using var source = MediaSource.CreateFromUri(uri);
+            using var player = new MediaPlayer { IsMuted = true, AutoPlay = false };
+            // MediaPlaybackItem/MediaPlaybackSession are not disposable; the player and source are.
+            var item = new MediaPlaybackItem(source);
+            var opened = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var failed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var gate = new object();
+            var observing = true;
+            var videoTracks = new Dictionary<VideoTrack, string>();
+
+            void OnOpened(MediaPlayer sender, object args)
+            {
+                try { opened.TrySetResult(true); }
+                catch (Exception ex)
+                {
+                    failures.Enqueue("MediaOpened handler: " + ex.Message);
+                    Log.Error("Debug playtest: MediaOpened", ex);
+                }
+            }
+            void OnFailed(MediaPlayer sender, MediaPlayerFailedEventArgs args)
+            {
+                try
+                {
+                    failures.Enqueue($"MediaFailed: Error={args.Error} ErrorMessage=\"{EscapeText(DebugScreenText.Compact(args.ErrorMessage, 500))}\""
+                        + $" ExtendedErrorCode=0x{unchecked((uint)(args.ExtendedErrorCode?.HResult ?? 0)):X8}");
+                }
+                catch (Exception ex)
+                {
+                    failures.Enqueue("MediaFailed handler: " + ex.Message);
+                    Log.Error("Debug playtest: MediaFailed", ex);
+                }
+                finally
+                {
+                    failed.TrySetResult(true);
+                    opened.TrySetResult(false);
+                }
+            }
+            void OnVideoOpenFailed(VideoTrack track, VideoTrackOpenFailedEventArgs args)
+            {
+                try
+                {
+                    var detail = $"0x{unchecked((uint)(args.ExtendedError?.HResult ?? 0)):X8} {DebugScreenText.Compact(args.ExtendedError?.Message ?? string.Empty, 300)}";
+                    lock (gate) videoTracks[track] = detail;
+                    failures.Enqueue("VideoTrack.OpenFailed ExtendedError=" + detail);
+                }
+                catch (Exception ex)
+                {
+                    failures.Enqueue("VideoTrack.OpenFailed handler: " + ex.Message);
+                    Log.Error("Debug playtest: VideoTrack.OpenFailed", ex);
+                }
+            }
+            void WatchVideoTracks()
+            {
+                lock (gate)
+                {
+                    if (!observing) return;
+                    foreach (var track in item.VideoTracks)
+                    {
+                        if (!videoTracks.TryAdd(track, string.Empty)) continue;
+                        track.OpenFailed += OnVideoOpenFailed;
+                    }
+                }
+            }
+            void OnVideoTracksChanged(MediaPlaybackItem sender, IVectorChangedEventArgs args)
+            {
+                try { WatchVideoTracks(); }
+                catch (Exception ex)
+                {
+                    failures.Enqueue("VideoTracksChanged handler: " + ex.Message);
+                    Log.Error("Debug playtest: VideoTracksChanged", ex);
+                }
+            }
+
+            try
+            {
+                player.MediaOpened += OnOpened;
+                player.MediaFailed += OnFailed;
+                // Subscribe before setting Source: tracks can fail before MediaOpened is raised.
+                item.VideoTracksChanged += OnVideoTracksChanged;
+                WatchVideoTracks();
+                player.Source = item;
+                if (await Task.WhenAny(opened.Task, Task.Delay(DebugPlaytest.OpenTimeoutMs)) == opened.Task)
+                    didOpen = await opened.Task;
+                else failures.Enqueue($"open timed out after {DebugPlaytest.OpenTimeoutMs} ms");
+
+                if (didOpen && !failed.Task.IsCompleted)
+                {
+                    initialPosition = player.PlaybackSession.Position;
+                    Log.Info("Debug playtest: before play");
+                    player.Play();
+                    await Task.WhenAny(Task.Delay(TimeSpan.FromSeconds(duration)), failed.Task);
+                }
+            }
+            finally
+            {
+                Attempt("session snapshot", () =>
+                {
+                    var session = player.PlaybackSession;
+                    finalPosition = session.Position;
+                    builder.Append(string.Create(CultureInfo.InvariantCulture,
+                        $"PlaybackSession: NaturalVideoWidth={session.NaturalVideoWidth} NaturalVideoHeight={session.NaturalVideoHeight}"
+                        + $" PlaybackState={session.PlaybackState} Position={finalPosition.TotalSeconds:0.###}s InitialPosition={initialPosition.TotalSeconds:0.###}s\n"));
+                });
+                Attempt("pause", () => player.Pause());
+                KeyValuePair<VideoTrack, string>[] videos;
+                lock (gate)
+                {
+                    observing = false;
+                    videos = videoTracks.ToArray();
+                }
+                Attempt("unsubscribe VideoTracksChanged", () => item.VideoTracksChanged -= OnVideoTracksChanged);
+                foreach (var (track, _) in videos)
+                    Attempt("unsubscribe VideoTrack.OpenFailed", () => track.OpenFailed -= OnVideoOpenFailed);
+                Attempt("unsubscribe MediaOpened", () => player.MediaOpened -= OnOpened);
+                Attempt("unsubscribe MediaFailed", () => player.MediaFailed -= OnFailed);
+                Attempt("track snapshot", () => AppendPlaytestTracks(builder, item, videos, failures));
+                // MediaPlayer has no Stop; Pause + detach stops this isolated probe before disposal.
+                Attempt("detach source", () => player.Source = null);
+            }
+        }
+        catch (Exception ex)
+        {
+            failures.Enqueue($"probe: {DebugScreenText.Compact(ex.Message, 500)} (0x{unchecked((uint)ex.HResult):X8})");
+            Log.Error("Debug playtest", ex);
+        }
+        finally
+        {
+            Log.Info("Debug playtest: done");
+            Interlocked.Exchange(ref _playtestBusy, 0);
+        }
+
+        var reasons = failures.ToArray();
+        return ("200 OK", $"Opened: {(didOpen ? "yes" : "no")}\n" + builder
+            + (reasons.Length == 0 ? string.Empty : "Failures:\n" + string.Join("\n", reasons.Select(reason => "  " + DebugScreenText.Compact(reason, 800))) + "\n")
+            + DebugPlaytest.Verdict(didOpen, initialPosition, finalPosition, reasons));
+    }
+
+    private static void AppendPlaytestTracks(StringBuilder builder, MediaPlaybackItem item,
+        KeyValuePair<VideoTrack, string>[] videos, ConcurrentQueue<string> failures)
+    {
+        var names = KnownCodecNames();
+        builder.Append($"Video tracks: {videos.Length}\n");
+        for (var i = 0; i < videos.Length; i++)
+        {
+            var (track, openError) = videos[i];
+            builder.Append($"  Video {i + 1}:");
+            if (openError.Length > 0) builder.Append(" OpenFailed.ExtendedError=").Append(openError);
+            try
+            {
+                var format = track.GetEncodingProperties();
+                var support = track.SupportInfo;
+                builder.Append(string.Create(CultureInfo.InvariantCulture,
+                    $" Subtype={names.Describe(format.Subtype)} {format.Width}x{format.Height}"
+                    + $" FrameRate={format.FrameRate.Numerator}/{format.FrameRate.Denominator} Bitrate={format.Bitrate}"
+                    + $" DecoderStatus={support.DecoderStatus} MediaSourceStatus={support.MediaSourceStatus}\n"));
+                if (support.DecoderStatus != MediaDecoderStatus.FullySupported)
+                    failures.Enqueue($"Video {i + 1} DecoderStatus={support.DecoderStatus}");
+            }
+            catch (Exception ex)
+            {
+                builder.Append(" error: ").Append(DebugScreenText.Compact(ex.Message, 300)).Append('\n');
+                failures.Enqueue($"could not inspect Video {i + 1}: {ex.Message}");
+            }
+        }
+        builder.Append($"Audio tracks: {item.AudioTracks.Count}\n");
+        for (var i = 0; i < item.AudioTracks.Count; i++)
+        {
+            builder.Append($"  Audio {i + 1}:");
+            try
+            {
+                var track = item.AudioTracks[i];
+                var format = track.GetEncodingProperties();
+                var support = track.SupportInfo;
+                builder.Append($" Subtype={names.Describe(format.Subtype)} ChannelCount={format.ChannelCount} SampleRate={format.SampleRate}"
+                    + $" DecoderStatus={support.DecoderStatus} DegradationReason={support.DegradationReason}\n");
+                if (support.DecoderStatus != MediaDecoderStatus.FullySupported)
+                    failures.Enqueue($"Audio {i + 1} DecoderStatus={support.DecoderStatus}");
+            }
+            catch (Exception ex)
+            {
+                builder.Append(" error: ").Append(DebugScreenText.Compact(ex.Message, 300)).Append('\n');
+                failures.Enqueue($"could not inspect Audio {i + 1}: {ex.Message}");
+            }
+        }
+    }
+
     // only=video|audio|display|device|graph runs one section; each logs a breadcrumb first because
     // a native failure in a media API ends the app without reaching any catch.
     private static async Task<string> DescribeCapabilitiesAsync(string? only)

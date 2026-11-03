@@ -15,6 +15,9 @@
 #   scripts/bale-debug.sh wait --timeout 12000 loaded  default 8000 ms; 0–15000; timeout prints where and fails
 #   scripts/bale-debug.sh caps [section]        installed decoders, display modes, audio mix and baseline
 #                                               (section: video, audio, display, device or graph)
+#   scripts/bale-debug.sh playtest <url> [seconds]  muted public http(s) stream probe (1–10 s, default 3)
+#   timeout 300 scripts/bale-debug.sh playtest suite [seconds]  Chromium samples, one at a time
+#                                               (the whole suite needs more than the usual timeout 20)
 #   scripts/bale-debug.sh goto "Unwatched#2"     setup only: focus the second matching control
 #   scripts/bale-debug.sh targets               list controls goto can reach
 #   scripts/bale-debug.sh tree                  the visible element tree with bounds
@@ -74,6 +77,39 @@ case "${1:-}" in
   focus) curl -fsS "$BASE/focus" ;;
   where) curl -fsS --max-time 5 "$BASE/where" ;;
   caps) curl -fsS --max-time 18 -G "$BASE/caps" ${2:+--data-urlencode "only=$2"} ;;
+  playtest)
+    playtest_seconds="${3:-3}"
+    if [[ "$#" -lt 2 || "$#" -gt 3 || ! "$playtest_seconds" =~ ^([1-9]|10)$ ]]; then
+      echo 'usage: scripts/bale-debug.sh playtest <http(s)-url|suite> [seconds] (1–10, default 3; suite needs timeout 300)' >&2
+      exit 2
+    fi
+    playtest_url() {
+      # 8 s to open + playback + 1 s margin; at most 19 s under the usual outer timeout 20.
+      curl --fail-with-body -sS --max-time "$((playtest_seconds + 9))" -G "$BASE/playtest" \
+        --data-urlencode "url=$1" --data-urlencode "seconds=$playtest_seconds"
+    }
+    if [[ "$2" == suite ]]; then
+      suite_base='https://raw.githubusercontent.com/chromium/chromium/main/media/test/data'
+      suite_status=0
+      for sample in \
+        bear-1280x720.mp4 \
+        bear-hevc-frag.mp4 \
+        bear-320x240-v_frag-hevc.mp4 \
+        bear-vp9.webm \
+        bear-av1.mp4 \
+        bear-av1.webm \
+        bear-av1-320x180-10bit.mp4 \
+        bear-ac3-only-frag.mp4 \
+        bear-eac3-only-frag.mp4 \
+        bear-flac.mp4 \
+        bear-opus.mp4; do
+        printf '\n=== %s/%s ===\n' "$suite_base" "$sample"
+        playtest_url "$suite_base/$sample" || suite_status=$?
+      done
+      exit "$suite_status"
+    fi
+    playtest_url "$2"
+    ;;
   wait)
     shift
     wait_timeout=8000

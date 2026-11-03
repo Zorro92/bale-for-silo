@@ -31,6 +31,7 @@ namespace Bale.Xbox.Services;
 ///   GET  /wait?for=...    wait for page Detail | loaded | text ... | focus ...; timeout=8000 ms (max 15000)
 ///                         returns /where on success or HTTP 408 on timeout (with /where body)
 ///   GET  /caps            installed decoders, HDMI/advanced color, default audio mix and baseline
+///   GET  /playtest?url=...  muted public http(s) stream probe; seconds=3 (1–10), open timeout 8 s
 ///   POST /goto?target=... focus a named or labelled control (optional #N), for setup only
 ///   GET  /targets         the visible, enabled tab-stop controls goto can reach
 ///   GET  /tree            the visible element tree with bounds and text
@@ -201,6 +202,9 @@ internal sealed partial class DebugServer
             case ("GET", "/caps"):
                 return ("200 OK", await DescribeCapabilitiesAsync(query.GetValueOrDefault("only")));
 
+            case ("GET", "/playtest"):
+                return await PlaytestAsync(query.GetValueOrDefault("url"), query.GetValueOrDefault("seconds"));
+
             case ("GET", "/wait"):
                 if (!DebugWaitCondition.TryParse(query.GetValueOrDefault("for"), query.GetValueOrDefault("timeout"), out var condition, out var error))
                     return ("400 Bad Request", error + "\n");
@@ -275,7 +279,7 @@ internal sealed partial class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /caps, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /caps, GET /playtest?url=...&seconds=3, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 
