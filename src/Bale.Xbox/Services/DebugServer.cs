@@ -31,6 +31,9 @@ namespace Bale.Xbox.Services;
 ///   POST /fault/search    fail the next title-search request once (Try again then uses the server)
 ///   POST /fault/home      fail the next Home load once (Retry then uses the server)
 ///   POST /fault/home-empty  return no rows on the next Home load once (Refresh then uses the server)
+///   POST /fault/requests  fail the next Requests hub load once (Retry then uses the server)
+///   POST /fault/requests-empty  return no rows on the next Requests hub load once
+///   POST /fault/request-detail  fail the next request-detail load once (Retry then uses the server)
 ///   POST /show/login      preview Login for the saved server, without changing the live session
 ///   POST /show/login/expired  preview Login with the session-expired notice
 ///   POST /show/server     preview manual server entry; Back returns to the signed-in page

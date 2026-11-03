@@ -81,7 +81,7 @@ case "${1:-}" in
     curl --fail-with-body -sS -X POST "$BASE/show/$route"
     ;;
   *)
-    sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '/^#/{s/^# \{0,1\}//;p;};/^set /q' "$0"
     exit 2
     ;;
 esac
