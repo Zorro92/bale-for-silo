@@ -261,6 +261,11 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         }
     }
 
+#if DEBUG_SERVER
+    internal Page? DebugContentPage => ContentFrame.Content as Page;
+    internal string DebugTab => _searchSelected ? "Search" : _selected?.Title ?? "none";
+#endif
+
     /// <summary>The outer PageFrame owns return timing; the selected root screen owns the target.</summary>
     public void RestoreFocus()
     {

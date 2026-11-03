@@ -16,6 +16,21 @@ namespace Bale.Xbox;
 /// <summary>TvSectionBrowseScreen.kt: a reusable paged catalog surface, initially backed by Home/library sections.</summary>
 public sealed partial class CatalogGridPage : Page, IRestoresFocus
 {
+#if DEBUG_SERVER
+    internal string DebugRoute => _entry?.Source switch
+    {
+        LibraryCatalogSource source => $"library={source.Query.LibraryId ?? "all"} section={source.Title}"
+            + $" sort={source.Query.Filter.Sort.Label}/{source.Query.Filter.Sort.DirectionLabel(source.Query.Filter.Descending)}"
+            + $" filters={source.Query.Filter.Facets.ActiveCount} match={(source.Query.Filter.Facets.MatchAll ? "all" : "any")}"
+            + $" prefix={source.Query.Filter.NamePrefix ?? "All"}"
+            + (source.Query.CollectionId is { } collection ? $" collection={collection}" : string.Empty)
+            + (source.Query.PersonalList is { } personal ? $" list={personal}" : string.Empty),
+        SectionBrowseSource source => $"library={source.LibraryId ?? "all"} section={source.SectionId} ({source.Title})",
+        { } source => $"section={source.Title}",
+        _ => string.Empty,
+    };
+#endif
+
     private const int Columns = 6;
     private const double ItemRightMargin = 20; // SkylineCatalogGridItemStyle; included in the wrap-grid slot.
     private static readonly ArtworkWidths GridArtwork = ArtworkWidths.Tv1080 with { Poster = 276 };

@@ -11,6 +11,7 @@ using Windows.UI.Input.Preview.Injection;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Automation;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Controls.Primitives;
 using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
 
@@ -25,6 +26,7 @@ namespace Bale.Xbox.Services;
 ///   POST /key/{key}       a real keystroke, by VirtualKey name: Enter, Escape, Tab, Down, Back, F5...
 ///   POST /type?text=...   types text as real keystrokes into whatever has focus
 ///   GET  /focus           the focused element and its text
+///   GET  /where           compact page, overlays, focus, status and on-screen controls
 ///   POST /goto?target=... focus a named or labelled control (optional #N), for setup only
 ///   GET  /targets         the visible, enabled tab-stop controls goto can reach
 ///   GET  /tree            the visible element tree with bounds and text
@@ -189,6 +191,9 @@ internal sealed class DebugServer
             case ("GET", "/focus"):
                 return ("200 OK", await OnUiAsync(DescribeFocus) + "\n");
 
+            case ("GET", "/where"):
+                return ("200 OK", await OnUiAsync(DescribeWhere));
+
             case ("POST", "/goto"):
                 var gotoStatus = "500 Internal Server Error";
                 var gotoBody = await OnUiAsync(() =>
@@ -258,7 +263,7 @@ internal sealed class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 
@@ -436,6 +441,181 @@ internal sealed class DebugServer
         }
 
         return $"{Describe(element)} text=\"{TextOf(element, 6)}\"";
+    }
+
+    private static Page? CurrentPage(out ShellPage? shell)
+    {
+        // PageFrame retains an outgoing page in its template during fades. Frame.Content, not a
+        // search for the first visual Page, is the navigation journal's current destination.
+        var page = Window.Current.Content is Frame frame ? frame.Content as Page : Window.Current.Content as Page;
+        shell = page as ShellPage;
+        return shell?.DebugContentPage ?? page;
+    }
+
+    private static string DescribePage()
+    {
+        var page = CurrentPage(out var shell);
+        var route = page switch
+        {
+            DetailPage detail => detail.DebugRoute,
+            CatalogGridPage grid => grid.DebugRoute,
+            _ => string.Empty,
+        };
+        return DebugScreenText.Compact((page?.GetType().Name ?? "none")
+            + (shell is null ? string.Empty : $" tab={shell.DebugTab}")
+            + (route.Length == 0 ? string.Empty : " " + route), 320);
+    }
+
+    private static string ElementName(FrameworkElement element) =>
+        element.GetType().Name + (string.IsNullOrEmpty(element.Name) ? string.Empty : "#" + element.Name);
+
+    private static List<(Popup Popup, FrameworkElement Root)> OpenPopups() =>
+        VisualTreeHelper.GetOpenPopups(Window.Current).Reverse()
+            .Where(popup => popup.IsOpen && popup.Visibility == Visibility.Visible && popup.Opacity != 0)
+            .Where(popup => popup.Child is FrameworkElement)
+            .Select(popup => (popup, (FrameworkElement)popup.Child)).ToList();
+
+    private static IEnumerable<FrameworkElement> VisibleElements(FrameworkElement element, int depth = 0)
+    {
+        if (element.Visibility != Visibility.Visible || element.Opacity == 0 || depth > 60) yield break;
+        yield return element;
+        if (element is PasswordBox) yield break; // Never read native/revealed credential template parts.
+        if (element is PageFrame frame)
+        {
+            if (frame.Content is FrameworkElement page)
+                foreach (var child in VisibleElements(page, depth + 1)) yield return child;
+            yield break;
+        }
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++)
+        {
+            if (VisualTreeHelper.GetChild(element, i) is FrameworkElement child)
+                foreach (var descendant in VisibleElements(child, depth + 1)) yield return descendant;
+        }
+    }
+
+    private static IEnumerable<DependencyObject> Ancestors(DependencyObject element)
+    {
+        for (DependencyObject? node = element; node is not null; node = VisualTreeHelper.GetParent(node))
+            yield return node;
+    }
+
+    private static bool IsOnScreen(FrameworkElement element)
+    {
+        if (element.ActualWidth <= 0 || element.ActualHeight <= 0) return false;
+        // A null target transforms to the window's coordinate space, including popup offsets.
+        var bounds = Bounds(element, null);
+        bounds.Intersect(new Rect(0, 0, Window.Current.Bounds.Width, Window.Current.Bounds.Height));
+        foreach (var scroller in Ancestors(element).Skip(1).OfType<ScrollViewer>())
+            bounds.Intersect(Bounds(scroller, null));
+        return !bounds.IsEmpty && bounds.Width > 0 && bounds.Height > 0;
+    }
+
+    private static List<FrameworkElement> ScreenElements(List<(Popup Popup, FrameworkElement Root)> popups)
+    {
+        var roots = popups.Select(popup => popup.Root).ToList();
+        if (Window.Current.Content is FrameworkElement root) roots.Add(root);
+        return roots.SelectMany(root => VisibleElements(root)).Where(IsOnScreen).Distinct().ToList();
+    }
+
+    private static ItemsControl? ContainingList(FrameworkElement element) =>
+        Ancestors(element).Skip(1).OfType<ItemsControl>().FirstOrDefault();
+
+    private static int IndexIn(FrameworkElement element, ItemsControl list)
+    {
+        foreach (var node in Ancestors(element).TakeWhile(node => !ReferenceEquals(node, list)))
+        {
+            // XAML-declared action buttons are their own items. Native AOT list containers project
+            // as ContentControl, not ListViewItem/GridViewItem; never cast them to those types.
+            var index = list.Items.IndexOf(node);
+            if (index < 0 && node is ContentControl content) index = list.Items.IndexOf(content.Content);
+            if (index < 0 && node is FrameworkElement item) index = list.Items.IndexOf(item.DataContext);
+            if (index >= 0) return index;
+        }
+        return -1;
+    }
+
+    private static string ControlGroup(Control control)
+    {
+        if (ContainingList(control) is { } list) return ElementName(list);
+        var panel = Ancestors(control).Skip(1).OfType<FrameworkElement>()
+            .FirstOrDefault(element => element is Panel or Border or UserControl && !string.IsNullOrEmpty(element.Name));
+        return panel is null ? "page" : ElementName(panel);
+    }
+
+    private static DebugVisibleControl VisibleControl(Control control, string scope)
+    {
+        var text = TextOf(control, 3, visibleOnly: true);
+        if (string.IsNullOrWhiteSpace(text)) text = AutomationProperties.GetName(control) ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(text) && control is ContentControl { Content: string content }) text = content;
+        var list = ContainingList(control);
+        var index = list is null ? -1 : IndexIn(control, list);
+        var selected = index >= 0 && list is ListViewBase selection && selection.SelectedItems.Contains(list.Items[index]);
+        return new DebugVisibleControl(scope + ControlGroup(control),
+            ElementName(control) + (text.Length == 0 ? string.Empty : $" \"{EscapeText(DebugScreenText.Compact(text, 100))}\""),
+            Focused: ReferenceEquals(FocusManager.GetFocusedElement(), control),
+            Checked: control is ToggleButton { IsChecked: true } or ToggleSwitch { IsOn: true } or ToggleMenuFlyoutItem { IsChecked: true },
+            Selected: selected, Disabled: !control.IsEnabled);
+    }
+
+    private static string? StatusKind(FrameworkElement element)
+    {
+        if (element is ProgressRing ring) return ring.IsActive ? "loading" : null;
+        var name = element.Name ?? string.Empty;
+        if (name.Contains("Error", StringComparison.OrdinalIgnoreCase)) return "error";
+        if (name.Contains("Empty", StringComparison.OrdinalIgnoreCase)) return "empty";
+        if (name.Contains("Loading", StringComparison.OrdinalIgnoreCase)) return "loading";
+        return null;
+    }
+
+    private static string DescribeWhere()
+    {
+        var builder = new StringBuilder("Page: " + DescribePage() + "\n");
+        var popups = OpenPopups();
+        builder.Append(popups.Count == 0 ? "Overlays: none\n" : "Overlays:\n");
+        foreach (var (popup, root) in popups.Take(8))
+        {
+            var presenter = VisibleElements(root).FirstOrDefault(element => element is ContentDialog or FlyoutPresenter or MenuFlyoutPresenter) ?? root;
+            var title = presenter is ContentDialog { Title: string dialogTitle } ? dialogTitle : TextOf(presenter, 3, visibleOnly: true);
+            builder.Append("  ").Append(ElementName(popup)).Append(" / ").Append(ElementName(presenter))
+                .Append(" title=\"").Append(EscapeText(DebugScreenText.Compact(title))).Append("\"\n");
+        }
+        if (popups.Count > 8) builder.Append($"  +{popups.Count - 8} more\n");
+        builder.Append("Focus: ").Append(DebugScreenText.Compact(DescribeFocus(), 320));
+        if (FocusManager.GetFocusedElement() is FrameworkElement focus && ContainingList(focus) is { } list)
+        {
+            var index = IndexIn(focus, list);
+            builder.Append($" in {ElementName(list)} {(index < 0 ? "?" : (index + 1).ToString())}/{list.Items.Count}");
+        }
+        builder.Append('\n');
+
+        var statuses = new List<string>();
+        var statusRoots = new Dictionary<DependencyObject, string>();
+        foreach (var element in ScreenElements(popups))
+        {
+            if (StatusKind(element) is not { } kind
+                || Ancestors(element).Skip(1).Any(parent => statusRoots.GetValueOrDefault(parent) == kind)) continue;
+            statusRoots[element] = kind;
+            statuses.Add($"{kind}: {ElementName(element)} \"{EscapeText(DebugScreenText.Compact(TextOf(element, 4, visibleOnly: true)))}\""
+                + (element is ProgressRing ? " [active]" : string.Empty));
+        }
+        builder.Append(statuses.Count == 0 ? "Status: none\n" : "Status:\n");
+        foreach (var status in statuses.Take(12)) builder.Append("  ").Append(status).Append('\n');
+        if (statuses.Count > 12) builder.Append($"  +{statuses.Count - 12} more\n");
+
+        // While a popup owns input, don't offer the background page's inaccessible controls.
+        var controls = new List<DebugVisibleControl>();
+        if (popups.Count > 0)
+        {
+            foreach (var (_, root) in popups)
+                controls.AddRange(VisibleElements(root).OfType<Control>().Where(control => control.IsTabStop && IsOnScreen(control))
+                    .Select(control => VisibleControl(control, "popup " + ElementName(root) + "/")));
+        }
+        else if (Window.Current.Content is FrameworkElement windowRoot)
+        {
+            controls.AddRange(VisibleElements(windowRoot).OfType<Control>().Where(control => control.IsTabStop && IsOnScreen(control))
+                .Select(control => VisibleControl(control, string.Empty)));
+        }
+        return builder.Append(DebugScreenText.Visible(controls)).ToString();
     }
 
     private static (string Status, string Body) GoTo(string target)
@@ -667,10 +847,13 @@ internal sealed class DebugServer
     }
 
     /// <summary>The first few TextBlock texts under an element, joined: what a person would read on it.</summary>
-    private static string TextOf(DependencyObject element, int limit) => string.Join(" | ", TextsOf(element, limit));
+    private static string TextOf(DependencyObject element, int limit, bool visibleOnly = false) => string.Join(" | ", TextsOf(element, limit, visibleOnly));
 
-    private static List<string> TextsOf(DependencyObject element, int limit)
+    private static List<string> TextsOf(DependencyObject element, int limit, bool visibleOnly = false)
     {
+        if (visibleOnly && element is FrameworkElement root)
+            return VisibleElements(root).OfType<TextBlock>().Where(block => IsOnScreen(block) && !string.IsNullOrWhiteSpace(block.Text))
+                .Select(block => block.Text).Take(limit).ToList();
         var texts = new List<string>();
         void Collect(DependencyObject node)
         {
@@ -694,7 +877,7 @@ internal sealed class DebugServer
         return texts;
     }
 
-    private static Rect Bounds(FrameworkElement element, FrameworkElement root)
+    private static Rect Bounds(FrameworkElement element, FrameworkElement? root)
     {
         try
         {

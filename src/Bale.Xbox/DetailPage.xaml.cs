@@ -19,6 +19,10 @@ namespace Bale.Xbox;
 /// <summary>A title's detail page (TvItemDetailScreen). Opened with the content id as the navigation parameter.</summary>
 public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
 {
+#if DEBUG_SERVER
+    internal string DebugRoute => $"content={_contentId}";
+#endif
+
     private const double LogoHeight = 80;
 
     /// <summary>TvDetailHero's 0.42 sampled-tint strength over black.</summary>

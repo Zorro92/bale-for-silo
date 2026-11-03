@@ -7,6 +7,7 @@
 #   scripts/bale-debug.sh key enter             keystrokes by name: enter escape tab down back f5...
 #   scripts/bale-debug.sh type dune             type text as real keystrokes
 #   scripts/bale-debug.sh focus                 what has focus, and the text on it
+#   scripts/bale-debug.sh where                 page, overlays, focus, status and on-screen controls
 #   scripts/bale-debug.sh goto "Unwatched#2"     setup only: focus the second matching control
 #   scripts/bale-debug.sh targets               list controls goto can reach
 #   scripts/bale-debug.sh tree                  the visible element tree with bounds
@@ -64,6 +65,7 @@ case "${1:-}" in
     curl -fsS -X POST -G "$BASE/type" --data-urlencode "text=$*"
     ;;
   focus) curl -fsS "$BASE/focus" ;;
+  where) curl -fsS --max-time 5 "$BASE/where" ;;
   goto)
     shift
     curl --fail-with-body -sS -X POST -G "$BASE/goto" --data-urlencode "target=$*"
