@@ -26,6 +26,8 @@ public sealed partial class ShellPage
         {
             var capability = await client.Requests.RefreshCapabilityAsync(cancellation.Token);
             if (cancellation.IsCancellationRequested || Current != this || !ReferenceEquals(Session.Client, client) || client.ProfileId != profile) return;
+            if (client.Requests.LastProbeError is { } error) Log.Error("Requests capability probe", error);
+            else Log.Info($"Requests capability: enabled={capability.Enabled}, {client.Requests.LastProbeSummary}");
             var hadFocus = RequestsRow.FocusState != FocusState.Unfocused;
             RequestsRow.Visibility = capability.Enabled ? Visibility.Visible : Visibility.Collapsed;
             if (!capability.Enabled && hadFocus) HistoryRow.Focus(FocusState.Programmatic);

@@ -25,13 +25,40 @@ public class RequestsFeedTests
         var feed = new RequestsFeed(connection.Api);
         Assert.False(feed.Capability.Enabled);
         Assert.False(feed.Capability.Resolved);
-        Assert.True((await feed.RefreshCapabilityAsync()).Enabled);
-        Assert.True((await feed.RefreshCapabilityAsync()).Enabled);
+        Assert.Null(feed.LastProbeError);
+        Assert.Null(feed.LastProbeSummary);
+        var capability = await feed.RefreshCapabilityAsync();
+        Assert.True(capability.Enabled);
+        Assert.Null(feed.LastProbeError);
+        Assert.Equal("requests_enabled=true, allowed=true, state=available, follow_supported=true", feed.LastProbeSummary);
+        Assert.Equal(capability, await feed.RefreshCapabilityAsync());
+        var error = Assert.IsType<Problem>(feed.LastProbeError);
+        Assert.Equal(403, error.ResponseStatusCode);
+        Assert.Equal("No", error.Detail);
+        Assert.Null(feed.LastProbeSummary);
         feed.Reset();
         Assert.False(feed.Capability.Enabled);
         Assert.False(feed.Capability.FollowSupported);
+        Assert.Null(feed.LastProbeError);
+        Assert.Null(feed.LastProbeSummary);
         Assert.False((await feed.RefreshCapabilityAsync()).Enabled);
         Assert.True(feed.Capability.Resolved);
+        Assert.Null(feed.LastProbeError);
+        Assert.Equal("requests_enabled=true, allowed=null, state=available, follow_supported=null", feed.LastProbeSummary);
+    }
+
+    [Fact]
+    public async Task CapturesInitialProbeFailureAndClearsItAfterSuccess()
+    {
+        var handler = new StubHandler().Enqueue(HttpStatusCode.Forbidden, """{"detail":"No"}""").Enqueue(Enabled);
+        using var connection = Connect(handler);
+        var feed = new RequestsFeed(connection.Api);
+        Assert.Equal(new RequestsCapability(Resolved: true), await feed.RefreshCapabilityAsync());
+        Assert.IsType<Problem>(feed.LastProbeError);
+        Assert.Null(feed.LastProbeSummary);
+        Assert.True((await feed.RefreshCapabilityAsync()).Enabled);
+        Assert.Null(feed.LastProbeError);
+        Assert.Equal("requests_enabled=true, allowed=true, state=available, follow_supported=true", feed.LastProbeSummary);
     }
 
     [Fact]

@@ -23,11 +23,15 @@ public sealed class RequestsFeed(SiloApiClient api, TimeProvider? time = null)
     private IReadOnlyList<MediaRequest> _mine = [];
     private DateTimeOffset? _mineReadAt;
     private RequestsCapability _capability = new();
+    private Exception? _lastProbeError;
+    private string? _lastProbeSummary;
     private int _generation;
     private int _mutations;
 
     private sealed record Hold(DateTimeOffset Since, DateTimeOffset? UpdatedAt = null);
     public RequestsCapability Capability { get { lock (_sync) return _capability; } }
+    public Exception? LastProbeError { get { lock (_sync) return _lastProbeError; } }
+    public string? LastProbeSummary { get { lock (_sync) return _lastProbeSummary; } }
 
     public void Reset()
     {
@@ -38,6 +42,8 @@ public sealed class RequestsFeed(SiloApiClient api, TimeProvider? time = null)
             _mine = [];
             _mineReadAt = null;
             _capability = new();
+            _lastProbeError = null;
+            _lastProbeSummary = null;
             _submissions.Clear();
             _cancellations.Clear();
             _inFlight.Clear();
@@ -56,16 +62,22 @@ public sealed class RequestsFeed(SiloApiClient api, TimeProvider? time = null)
                 CheckGeneration(generation);
                 var enabled = RequestPresentation.IsEnabled(status);
                 _capability = new(enabled, true, enabled && status.FollowSupported == true);
+                _lastProbeError = null;
+                _lastProbeSummary = ($"requests_enabled={status.RequestsEnabled?.ToString() ?? "null"}, "
+                    + $"allowed={status.Allowed?.ToString() ?? "null"}, state={status.State?.ToString() ?? "null"}, "
+                    + $"follow_supported={status.FollowSupported?.ToString() ?? "null"}").ToLowerInvariant();
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-        catch
+        catch (Exception ex)
         {
             // RequestsFeatureStore.kt: start hidden, retain the last answer on a transient failure.
             lock (_sync)
             {
                 CheckGeneration(generation);
                 _capability = _capability with { Resolved = true };
+                _lastProbeError = ex;
+                _lastProbeSummary = null;
             }
         }
         return Capability;
