@@ -17,7 +17,6 @@ namespace Bale.Xbox;
 public sealed partial class ProfilesPage : Page, IBackHandler
 {
     private readonly Rail _actions;
-    private readonly ProfilePin _pin = new();
     private CancellationTokenSource? _loading;
     private CancellationTokenSource? _pinVerification;
     private ProfileView? _pinProfile;
@@ -25,7 +24,6 @@ public sealed partial class ProfilesPage : Page, IBackHandler
     private int _lastProfileIndex;
     private bool _active;
     private bool _verifying;
-    private bool _pinError;
     private bool _leaving;
 
     public ProfilesPage()
@@ -35,6 +33,8 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         _actions.Pin = false;
         Rail.Attach(RememberActions).Pin = false;
         RetryButton.PreviewKeyDown += OnRetryPreviewKeyDown;
+        PinPrompt.PinEntered += pin => _ = VerifyPinAsync(pin);
+        PinPrompt.Dismissed += ClosePin;
         SignOutPrompt.SignOutRequested += OnSignOutRequested;
         SignOutPrompt.Dismissed += RestoreSignOutFocus;
     }
@@ -54,6 +54,7 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         _active = false;
         _loading?.Cancel();
         _pinVerification?.Cancel();
+        PinPrompt.Hide(restoreFocus: false);
         SignOutPrompt.Hide();
     }
 
@@ -349,19 +350,9 @@ public sealed partial class ProfilesPage : Page, IBackHandler
     private void OpenPin(ProfileView chosen)
     {
         _pinProfile = chosen;
-        _pin.Clear();
-        _pinError = false;
         _verifying = false;
-        PinName.Text = chosen.Name;
-        PinInitial.Text = chosen.Initial;
-        PinAvatarFill.Fill = chosen.AvatarFill;
-        PinAvatarBrush.ImageSource = chosen.Avatar;
-        PinStatus.Text = "Enter your PIN";
-        PinStatus.Foreground = new SolidColorBrush(Color.FromArgb(191, 237, 237, 237));
-        PaintDots();
+        PinPrompt.Show(chosen);
         PickerPanel.Visibility = Visibility.Collapsed;
-        PinPanel.Visibility = Visibility.Visible;
-        FocusRetry.Until(PinPanel, () => !_active || !ReferenceEquals(_pinProfile, chosen) || PinFiveButton.Focus(FocusState.Programmatic));
     }
 
     private void ClosePin()
@@ -369,128 +360,13 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         _pinVerification?.Cancel();
         Session.Client?.UseProfile(null);
         _pinProfile = null;
-        _pin.Clear();
         _verifying = false;
-        PinPanel.Visibility = Visibility.Collapsed;
+        PinPrompt.Hide(restoreFocus: false);
         PickerPanel.Visibility = Visibility.Visible;
         RestoreProfileFocus();
     }
 
-    private void OnPinCancelClick(object sender, RoutedEventArgs e) => ClosePin();
-
-    private void OnPinKeyClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: string tag })
-        {
-            if (tag == "delete")
-            {
-                DeleteDigit();
-            }
-            else if (tag.Length == 1)
-            {
-                EnterDigit(tag[0]);
-            }
-        }
-    }
-
-    private void OnPinPreviewKeyDown(object sender, KeyRoutedEventArgs e)
-    {
-        if (e.Key == VirtualKey.Back)
-        {
-            // App.OnBackKey handles Backspace outside text boxes. Consume it on the tunnelling pass
-            // before it bubbles there, so it deletes a dot instead of closing this prompt.
-            e.Handled = true;
-            DeleteDigit();
-            return;
-        }
-
-        var key = (int)e.Key;
-        if (key >= (int)VirtualKey.Number0 && key <= (int)VirtualKey.Number9)
-        {
-            e.Handled = true;
-            EnterDigit((char)('0' + key - (int)VirtualKey.Number0));
-            return;
-        }
-        if (key >= (int)VirtualKey.NumberPad0 && key <= (int)VirtualKey.NumberPad9)
-        {
-            e.Handled = true;
-            EnterDigit((char)('0' + key - (int)VirtualKey.NumberPad0));
-            return;
-        }
-
-        var (x, y) = Direction(e.Key);
-        if (x == 0 && y == 0)
-        {
-            return;
-        }
-
-        e.Handled = true;
-        if (FocusManager.GetFocusedElement() is not Button focused)
-        {
-            return;
-        }
-        if (focused == PinCancelButton)
-        {
-            if (y < 0)
-            {
-                PinZeroButton.Focus(FocusState.Keyboard);
-            }
-            return;
-        }
-        if (!PinKeypad.Children.Contains(focused))
-        {
-            return;
-        }
-
-        var row = Grid.GetRow(focused);
-        var column = Grid.GetColumn(focused);
-        var target = PinKeypad.Children.OfType<Button>().FirstOrDefault(button =>
-            Grid.GetRow(button) == row + y * 2 && Grid.GetColumn(button) == column + x * 2);
-        if (target is not null)
-        {
-            target.Focus(FocusState.Keyboard);
-        }
-        else if (y > 0 && focused == PinZeroButton)
-        {
-            PinCancelButton.Focus(FocusState.Keyboard);
-        }
-        // The empty cell below 7 and every other keypad edge stay put, never shift sideways.
-    }
-
-    private void EnterDigit(char digit)
-    {
-        if (_verifying || _pinProfile is null || !_pin.Append(digit))
-        {
-            return;
-        }
-
-        ClearPinError();
-        PaintDots();
-        if (_pin.IsComplete)
-        {
-            _ = VerifyPinAsync();
-        }
-    }
-
-    private void DeleteDigit()
-    {
-        if (_verifying)
-        {
-            return;
-        }
-        _pin.Delete();
-        ClearPinError();
-        PaintDots();
-    }
-
-    private void ClearPinError()
-    {
-        _pinError = false;
-        PinStatus.Text = "Enter your PIN";
-        PinStatus.Foreground = new SolidColorBrush(Color.FromArgb(191, 237, 237, 237));
-    }
-
-    private async Task VerifyPinAsync()
+    private async Task VerifyPinAsync(string pin)
     {
         if (_pinProfile is not { } chosen || Session.Client is not { } client || _verifying)
         {
@@ -500,10 +376,10 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         using var verification = new CancellationTokenSource();
         _pinVerification = verification;
         _verifying = true;
-        PinStatus.Text = "Checking…";
+        PinPrompt.SetVerifying(true);
         try
         {
-            var valid = await client.VerifyPinAsync(chosen.Profile.Id!, _pin.Digits, verification.Token);
+            var valid = await client.VerifyPinAsync(chosen.Profile.Id!, pin, verification.Token);
             if (!_active || verification.IsCancellationRequested || !ReferenceEquals(_pinProfile, chosen) || !ReferenceEquals(Session.Client, client))
             {
                 return;
@@ -512,12 +388,12 @@ public sealed partial class ProfilesPage : Page, IBackHandler
             if (valid)
             {
                 _pinProfile = null;
-                PinPanel.Visibility = Visibility.Collapsed;
+                PinPrompt.Hide(restoreFocus: false);
                 CompleteSelection(chosen);
             }
             else
             {
-                ShowPinError("Wrong PIN. Try again.");
+                PinPrompt.ShowError("Wrong PIN. Try again.");
             }
         }
         catch (OperationCanceledException) when (verification.IsCancellationRequested)
@@ -528,7 +404,7 @@ public sealed partial class ProfilesPage : Page, IBackHandler
             Log.Error("Profile PIN", ex);
             if (_active && !verification.IsCancellationRequested && ReferenceEquals(_pinProfile, chosen))
             {
-                ShowPinError("Network error. Please try again.");
+                PinPrompt.ShowError("Network error. Please try again.");
             }
         }
         finally
@@ -538,28 +414,6 @@ public sealed partial class ProfilesPage : Page, IBackHandler
                 _pinVerification = null;
                 _verifying = false;
             }
-        }
-    }
-
-    private void ShowPinError(string message)
-    {
-        _pin.Clear();
-        _pinError = true;
-        PinStatus.Text = message;
-        PinStatus.Foreground = new SolidColorBrush(Color.FromArgb(255, 255, 138, 128));
-        PaintDots();
-        // TvPinEntryDialog.kt keeps the keypad focusable while checking; no retry focus grab is needed.
-    }
-
-    private void PaintDots()
-    {
-        var index = 0;
-        foreach (var dot in PinDots.Children.OfType<Border>())
-        {
-            var filled = _pinError || index++ < _pin.Digits.Length;
-            var ink = _pinError ? Color.FromArgb(255, 255, 138, 128) : Colors.White;
-            dot.BorderBrush = new SolidColorBrush(ink);
-            dot.Background = new SolidColorBrush(filled ? ink : Colors.Transparent);
         }
     }
 
