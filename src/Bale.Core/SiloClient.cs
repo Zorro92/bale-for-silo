@@ -36,6 +36,7 @@ public sealed class SiloClient : IDisposable
         LibraryBrowse = new LibraryBrowseFeed(_connection.Api, Browse);
         Detail = new DetailFeed(_connection.Api, Browse);
         People = new People.PersonFeed(_connection.Api, Browse);
+        Requests = new Requests.RequestsFeed(_connection.Api, _time);
     }
 
     public Uri Server => _connection.Server;
@@ -51,6 +52,8 @@ public sealed class SiloClient : IDisposable
     public DetailFeed Detail { get; }
 
     public People.PersonFeed People { get; }
+
+    public Requests.RequestsFeed Requests { get; }
 
     public string? AccessToken { get; private set; }
 
@@ -83,6 +86,7 @@ public sealed class SiloClient : IDisposable
         string? profileId = null, string? profileToken = null)
     {
         _sessionExpiry = null;
+        Requests.Reset();
         RefreshToken = refreshToken;
         AccessToken = accessToken;
         _accessTokenExpiresAt = accessTokenExpiresAt ?? _time.GetUtcNow();
@@ -95,6 +99,7 @@ public sealed class SiloClient : IDisposable
     public void SignIn(TokenPair tokens, string? profileId = null, string? profileToken = null)
     {
         _sessionExpiry = null;
+        Requests.Reset();
         AccessToken = tokens.AccessToken;
         RefreshToken = tokens.RefreshToken;
         _accessTokenExpiresAt = ExpiresAt(tokens.ExpiresIn);
@@ -150,6 +155,7 @@ public sealed class SiloClient : IDisposable
     /// <summary>Acts as this profile; null clears selection. New locked picks need <see cref="VerifyPinAsync"/>.</summary>
     public void UseProfile(string? profileId)
     {
+        Requests.Reset();
         ProfileId = profileId;
         ProfileToken = null;
     }
@@ -176,6 +182,7 @@ public sealed class SiloClient : IDisposable
 
         // TvProfileSelectionViewModel.kt drops a late answer after Cancel or another profile pick.
         cancellationToken.ThrowIfCancellationRequested();
+        Requests.Reset();
         ProfileId = profileId;
         ProfileToken = verification.ProfileToken;
         return true;
@@ -204,6 +211,7 @@ public sealed class SiloClient : IDisposable
     /// <summary>Forgets credentials locally without a logout request, including after session expiry.</summary>
     public void ForgetSession()
     {
+        Requests.Reset();
         AccessToken = null;
         RefreshToken = null;
         _accessTokenExpiresAt = null;
