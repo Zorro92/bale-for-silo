@@ -17,9 +17,14 @@
 #   scripts/bale-debug.sh fault requests        fail the next Requests hub load once
 #   scripts/bale-debug.sh fault requests-empty  return no Requests rows on the next hub load once
 #   scripts/bale-debug.sh fault request-detail  fail the next request-detail load once
-#   scripts/bale-debug.sh show login            preview Login without changing the saved session
+# Connection previews use disposable fixtures: no network, passwords sent, vault or saved-list writes.
+#   scripts/bale-debug.sh show login            preview phone Login (no live ticket)
 #   scripts/bale-debug.sh show login expired    preview the session-expired Login notice
-#   scripts/bale-debug.sh show server           preview manual server entry
+#   scripts/bale-debug.sh show login password   preview password fields, reveal and local validation/errors
+#   scripts/bale-debug.sh show servers          preview Add / Switch / Remove on an in-memory list
+#   scripts/bale-debug.sh show server           preview manual server entry and advanced options
+#   scripts/bale-debug.sh show server http-warning  preview Connect / Cancel origin consent
+#   scripts/bale-debug.sh show server discovery  preview two nearby rows (no LAN browsing)
 #   scripts/bale-debug.sh show home             return from an auth preview to the signed-in app
 set -euo pipefail
 HOST="${XBOX_HOST:?Set XBOX_HOST to your Xbox IP (shown in Dev Home)}"
@@ -71,10 +76,14 @@ case "${1:-}" in
     case "${*:2}" in
       login) route=login ;;
       "login expired") route=login/expired ;;
+      "login password") route=login/password ;;
+      servers) route=servers ;;
       server) route=server ;;
+      "server http-warning") route=server/http-warning ;;
+      "server discovery") route=server/discovery ;;
       home) route=home ;;
       *)
-        echo "usage: scripts/bale-debug.sh show {login|login expired|server|home}" >&2
+        echo "usage: scripts/bale-debug.sh show {login|login expired|login password|servers|server|server http-warning|server discovery|home}" >&2
         exit 2
         ;;
     esac

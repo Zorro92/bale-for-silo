@@ -519,15 +519,15 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
     }
 
     /// <summary>TvAppNavigation.kt keeps the server for Login unless the viewer explicitly removes it.</summary>
-    internal async Task SignOutAsync(bool removeServer = false, bool changeServer = false)
+    internal async Task SignOutAsync(bool removeServer = false)
     {
         if (_signingOut) return;
         _signingOut = true;
         await Session.SignOutAsync(removeServer);
         if (Current == this && Session.Client is null)
         {
-            // Change server retains Bale's editable-address route; it is not the keep-server sign-out.
-            Frame.Navigate(typeof(MainPage), removeServer || changeServer ? MainPage.ServerEntry : null);
+            // Removal resolves the MRU survivor; keeping the entry returns to Login on the same server.
+            Frame.Navigate(typeof(MainPage));
             Frame.BackStack.Clear();
         }
     }

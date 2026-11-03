@@ -3887,4 +3887,209 @@
   <SolidColorBrush x:Key="SkylineRequestSummaryInk" Color="#E6FFFFFF" />
   <Style x:Key="SkylineRequestActionLineStyle" TargetType="Grid"><Setter Property="Margin" Value="0,13,0,0" /><Setter Property="ColumnSpacing" Value="9" /><Setter Property="MaxWidth" Value="860" /></Style>
   <Style x:Key="SkylineRequestPrimarySpinnerStyle" TargetType="ProgressRing" BasedOn="{StaticResource SkylineRequestSpinnerStyle}"><Setter Property="Foreground" Value="Black" /></Style>
+  <!-- TvServerListScreen.kt: black settings surface, compact flat rows (no focus scale). -->
+  <x:Double x:Key="SkylineSavedServerActionGap">8</x:Double>
+  <Style x:Key="SkylineServerListLayoutStyle" TargetType="Grid"><Setter Property="Margin" Value="44,40,44,40" /></Style>
+  <Style x:Key="SkylineServerListEyebrowStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="13.76" /><Setter Property="FontWeight" Value="Medium" /><Setter Property="Foreground" Value="#8CFFFFFF" /></Style>
+  <Style x:Key="SkylineServerListTitleStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="18.92" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="White" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
+  <Style x:Key="SkylineServerListCaptionStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="13.76" /><Setter Property="Foreground" Value="#9EFFFFFF" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
+  <Style x:Key="SkylineServerListScrollerStyle" TargetType="ScrollViewer"><Setter Property="MaxHeight" Value="340" /><Setter Property="IsTabStop" Value="False" /><Setter Property="VerticalScrollBarVisibility" Value="Hidden" /><Setter Property="HorizontalScrollMode" Value="Disabled" /><Setter Property="HorizontalScrollBarVisibility" Value="Disabled" /></Style>
+  <Style x:Key="SkylineSavedServerButtonStyle" TargetType="Button">
+    <Setter Property="HorizontalAlignment" Value="Stretch" /><Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="Padding" Value="16,8" /><Setter Property="Background" Value="#0EFFFFFF" />
+    <Setter Property="Foreground" Value="White" /><Setter Property="FontSize" Value="15.48" /><Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+      <Border x:Name="Surface" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+        <VisualStateManager.VisualStateGroups>
+          <VisualStateGroup x:Name="CommonStates"><VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" /><VisualState x:Name="Disabled"><VisualState.Setters><Setter Target="Surface.Opacity" Value="0.5" /></VisualState.Setters></VisualState></VisualStateGroup>
+          <VisualStateGroup x:Name="FocusStates"><VisualState x:Name="Unfocused" /><VisualState x:Name="PointerFocused" /><VisualState x:Name="Focused"><VisualState.Setters><Setter Target="Surface.Background" Value="White" /><Setter Target="Label.Foreground" Value="Black" /></VisualState.Setters></VisualState></VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+        <ContentPresenter x:Name="Label" Content="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" FontSize="{TemplateBinding FontSize}" HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" />
+      </Border>
+    </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style x:Key="SkylineSavedServerAddButtonStyle" TargetType="Button" BasedOn="{StaticResource SkylineSavedServerButtonStyle}"><Setter Property="Padding" Value="16,10" /></Style>
+  <Style x:Key="SkylineSavedServerRemoveButtonStyle" TargetType="Button" BasedOn="{StaticResource SkylineSavedServerButtonStyle}"><Setter Property="Width" Value="48" /><Setter Property="Height" Value="48" /><Setter Property="Padding" Value="14" /><Setter Property="VerticalAlignment" Value="Center" /></Style>
+  <Style x:Key="SkylineSavedServerNameStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="15.48" /><Setter Property="MaxLines" Value="1" /><Setter Property="TextTrimming" Value="CharacterEllipsis" /></Style>
+  <Style x:Key="SkylineSavedServerAddressStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="13.76" /><Setter Property="FontWeight" Value="Medium" /><Setter Property="Opacity" Value="0.62" /><Setter Property="MaxLines" Value="1" /><Setter Property="TextTrimming" Value="CharacterEllipsis" /></Style>
+  <Style x:Key="SkylineSavedServerIconStyle" TargetType="Viewbox"><Setter Property="Width" Value="20" /><Setter Property="Height" Value="20" /><Setter Property="VerticalAlignment" Value="Center" /></Style>
+  <!-- TvOptionDialog.kt reuses the existing player option-row typography/surface. -->
+  <Style x:Key="SkylineConnectionRemoveDialogStyle" TargetType="Border" BasedOn="{StaticResource SkylineDetailDialogPanelStyle}"><Setter Property="Width" Value="380" /><Setter Property="Padding" Value="10,14,10,10" /></Style>
+  <Style x:Key="SkylineConnectionRemoveTitleStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="10.32" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="#9EFFFFFF" /><Setter Property="Margin" Value="10,0,10,6" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
+  <Style x:Key="SkylineConnectionRemoveMessageStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="11.18" /><Setter Property="Opacity" Value="0.62" /><Setter Property="Margin" Value="0,2,0,0" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
+  <!-- TvServerSetupScreen.kt's Material AlertDialog uses the explicit #1C1C1E surface. -->
+  <Style x:Key="SkylineHttpDialogStyle" TargetType="Border"><Setter Property="Width" Value="560" /><Setter Property="Padding" Value="24" /><Setter Property="CornerRadius" Value="28" /><Setter Property="Background" Value="#FF1C1C1E" /><Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Center" /></Style>
+  <Style x:Key="SkylineHttpDialogTitleStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="20.64" /><Setter Property="Foreground" Value="#FFEDEDED" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
+  <Style x:Key="SkylineHttpDialogMessageStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="13.76" /><Setter Property="Foreground" Value="#9EEDEDED" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
+  <Style x:Key="SkylineCredentialFieldStyle" TargetType="TextBox" BasedOn="{StaticResource SkylineTextBoxStyle}">
+    <Setter Property="Width" Value="380" />
+    <Setter Property="Height" Value="42" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="Margin" Value="0" />
+    <Setter Property="FontSize" Value="12.9" />
+    <Setter Property="Background" Value="#14FFFFFF" />
+    <Setter Property="BorderBrush" Value="#1FFFFFFF" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="15,0" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <!-- TvMarqueeField.kt: 16dp credential icon + 9dp gap; center the actual native editing parts,
+         not VerticalContentAlignment, which the stock UWP TextBox template ignores. -->
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TextBox">
+          <Grid RenderTransformOrigin="0.5,0.5">
+            <Grid.RenderTransform><ScaleTransform x:Name="FieldLift" /></Grid.RenderTransform>
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" />
+                <VisualState x:Name="PointerOver" />
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters>
+                    <Setter Target="FocusedField.Opacity" Value="1" />
+                    <Setter Target="ContentElement.Foreground" Value="Black" />
+                    <Setter Target="PlaceholderTextContentPresenter.Foreground" Value="#66000000" />
+                    <Setter Target="LanguageIcon.Fill" Value="#73000000" />
+                    <Setter Target="FieldLift.ScaleX" Value="1.04" />
+                    <Setter Target="FieldLift.ScaleY" Value="1.04" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="Disabled">
+                  <VisualState.Setters><Setter Target="FieldContent.Opacity" Value="0.5" /></VisualState.Setters>
+                </VisualState>
+              </VisualStateGroup>
+              <!-- TvMarqueeField.kt: error glass is 6%; its 1.5dp error stroke survives focus. -->
+              <VisualStateGroup x:Name="ValidationStates">
+                <VisualState x:Name="Valid" />
+                <VisualState x:Name="Invalid">
+                  <VisualState.Setters>
+                    <Setter Target="Field.Background" Value="#0FFFFFFF" />
+                    <Setter Target="Field.BorderBrush" Value="Transparent" />
+                    <Setter Target="FieldError.Opacity" Value="1" />
+                  </VisualState.Setters>
+                </VisualState>
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <Border x:Name="Field" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}" />
+            <!-- TvMarqueeField.kt uses the same RoundedCornerShape for every fill/stroke.
+                 Separate focus fill and error stroke keep validation independent of focus state. -->
+            <Border x:Name="FocusedField" Background="{StaticResource SkylinePrimary}"
+                    CornerRadius="{TemplateBinding CornerRadius}" Opacity="0" />
+            <Border x:Name="FieldError" BorderBrush="#BFFF6961" BorderThickness="1.5"
+                    CornerRadius="{TemplateBinding CornerRadius}" Opacity="0" IsHitTestVisible="False" />
+            <Grid x:Name="FieldContent" Margin="{TemplateBinding Padding}">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="9" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Viewbox Width="16" Height="16" IsHitTestVisible="False">
+                <Path x:Name="LanguageIcon" Fill="{StaticResource SkylineAuthTertiary}"
+                      Data="M12,12A4,4 0 1,0 12,4A4,4 0 0,0 12,12M12,14C7.58,14 4,15.79 4,18V20H20V18C20,15.79 16.42,14 12,14Z" />
+              </Viewbox>
+              <ScrollViewer x:Name="ContentElement" Grid.Column="2" VerticalAlignment="Center"
+                            Foreground="{TemplateBinding Foreground}" HorizontalScrollMode="Auto" HorizontalScrollBarVisibility="Hidden"
+                            VerticalScrollMode="Disabled" VerticalScrollBarVisibility="Disabled" ZoomMode="Disabled" IsTabStop="False" />
+              <ContentControl x:Name="PlaceholderTextContentPresenter" Grid.Column="2" VerticalAlignment="Center"
+                              Content="{TemplateBinding PlaceholderText}" Foreground="{StaticResource SkylineAuthTertiary}"
+                              FontFamily="{TemplateBinding FontFamily}" FontSize="{TemplateBinding FontSize}"
+                              IsTabStop="False" IsHitTestVisible="False" />
+            </Grid>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="SkylineCredentialPasswordStyle" TargetType="PasswordBox">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
+    <Setter Property="Width" Value="316" />
+    <Setter Property="Height" Value="42" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="Margin" Value="0" />
+    <Setter Property="FontSize" Value="12.9" />
+    <Setter Property="Background" Value="#14FFFFFF" />
+    <Setter Property="BorderBrush" Value="#1FFFFFFF" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="15,0" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <!-- TvMarqueeField.kt: 16dp credential icon + 9dp gap; center the actual native editing parts,
+         not VerticalContentAlignment, which the stock UWP TextBox template ignores. -->
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="PasswordBox">
+          <Grid RenderTransformOrigin="0.5,0.5">
+            <Grid.RenderTransform><ScaleTransform x:Name="FieldLift" /></Grid.RenderTransform>
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" />
+                <VisualState x:Name="PointerOver" />
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters>
+                    <Setter Target="FocusedField.Opacity" Value="1" />
+                    <Setter Target="ContentElement.Foreground" Value="Black" />
+                    <Setter Target="PlaceholderTextContentPresenter.Foreground" Value="#66000000" />
+                    <Setter Target="LanguageIcon.Fill" Value="#73000000" />
+                    <Setter Target="FieldLift.ScaleX" Value="1.04" />
+                    <Setter Target="FieldLift.ScaleY" Value="1.04" />
+                  </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="Disabled">
+                  <VisualState.Setters><Setter Target="FieldContent.Opacity" Value="0.5" /></VisualState.Setters>
+                </VisualState>
+              </VisualStateGroup>
+              <!-- TvMarqueeField.kt: error glass is 6%; its 1.5dp error stroke survives focus. -->
+              <VisualStateGroup x:Name="ValidationStates">
+                <VisualState x:Name="Valid" />
+                <VisualState x:Name="Invalid">
+                  <VisualState.Setters>
+                    <Setter Target="Field.Background" Value="#0FFFFFFF" />
+                    <Setter Target="Field.BorderBrush" Value="Transparent" />
+                    <Setter Target="FieldError.Opacity" Value="1" />
+                  </VisualState.Setters>
+                </VisualState>
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <Border x:Name="Field" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}" />
+            <!-- TvMarqueeField.kt uses the same RoundedCornerShape for every fill/stroke.
+                 Separate focus fill and error stroke keep validation independent of focus state. -->
+            <Border x:Name="FocusedField" Background="{StaticResource SkylinePrimary}"
+                    CornerRadius="{TemplateBinding CornerRadius}" Opacity="0" />
+            <Border x:Name="FieldError" BorderBrush="#BFFF6961" BorderThickness="1.5"
+                    CornerRadius="{TemplateBinding CornerRadius}" Opacity="0" IsHitTestVisible="False" />
+            <Grid x:Name="FieldContent" Margin="{TemplateBinding Padding}">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="9" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Viewbox Width="16" Height="16" IsHitTestVisible="False">
+                <Path x:Name="LanguageIcon" Fill="{StaticResource SkylineAuthTertiary}"
+                      Data="M18,8H17V6A5,5 0 0,0 7,6V8H6A2,2 0 0,0 4,10V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V10A2,2 0 0,0 18,8M9,6A3,3 0 0,1 15,6V8H9V6M18,20H6V10H18V20M12,17A2,2 0 1,0 12,13A2,2 0 0,0 12,17Z" />
+              </Viewbox>
+              <ScrollViewer x:Name="ContentElement" Grid.Column="2" VerticalAlignment="Center"
+                            Foreground="{TemplateBinding Foreground}" HorizontalScrollMode="Auto" HorizontalScrollBarVisibility="Hidden"
+                            VerticalScrollMode="Disabled" VerticalScrollBarVisibility="Disabled" ZoomMode="Disabled" IsTabStop="False" />
+              <ContentControl x:Name="PlaceholderTextContentPresenter" Grid.Column="2" VerticalAlignment="Center"
+                              Content="{TemplateBinding PlaceholderText}" Foreground="{StaticResource SkylineAuthTertiary}"
+                              FontFamily="{TemplateBinding FontFamily}" FontSize="{TemplateBinding FontSize}"
+                              IsTabStop="False" IsHitTestVisible="False" />
+            </Grid>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="SkylineConnectionSchemeStyle" TargetType="ToggleButton" BasedOn="{StaticResource SkylineTabStyle}"><Setter Property="Height" Value="38" /><Setter Property="FontSize" Value="12.47" /></Style>
+  <Style x:Key="SkylineConnectionAdvancedButtonStyle" TargetType="Button" BasedOn="{StaticResource SkylineAuthPlainButtonStyle}"><Setter Property="Margin" Value="0,10,0,0" /><Setter Property="Padding" Value="0" /></Style>
+  <Style x:Key="SkylineConnectionPortStyle" TargetType="TextBox" BasedOn="{StaticResource SkylineCredentialFieldStyle}"><Setter Property="Width" Value="130" /></Style>
+  <Style x:Key="SkylineCredentialRevealStyle" TargetType="Button" BasedOn="{StaticResource SkylineAuthButtonStyle}"><Setter Property="Width" Value="56" /></Style>
+  <Style x:Key="SkylineConnectionNearbyPanelStyle" TargetType="StackPanel"><Setter Property="Width" Value="380" /><Setter Property="HorizontalAlignment" Value="Left" /><Setter Property="Margin" Value="0,20,0,0" /></Style>
+  <Style x:Key="SkylineConnectionLoginScrollerStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SkylineServerEntryScrollStyle}"><Setter Property="Width" Value="466" /></Style>
+  <Style x:Key="SkylineConnectionLoginCopyStyle" TargetType="StackPanel"><Setter Property="Width" Value="466" /><Setter Property="Padding" Value="8" /></Style>
 </ResourceDictionary>

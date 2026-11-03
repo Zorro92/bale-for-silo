@@ -17,7 +17,6 @@ public sealed partial class ShellPage
     private bool _profileDwellSuppressed;
     private bool _restoringProfileFocus;
     private bool _signingOut;
-    private bool _signOutChangesServer;
 
     private void InitializeProfileMenu()
     {
@@ -155,11 +154,10 @@ public sealed partial class ShellPage
         if (_signingOut) return;
         // TvMainShell.kt hides the profile dropdown before opening TvSignOutDialog.kt.
         ClosePanels();
-        _signOutChangesServer = false;
         SignOutPrompt.Show();
     }
 
-    private async void OnSignOutRequested(bool removeServer) => await SignOutAsync(removeServer, changeServer: _signOutChangesServer);
+    private async void OnSignOutRequested(bool removeServer) => await SignOutAsync(removeServer);
 
     private void OnSignOutDismissed()
     {
@@ -170,10 +168,10 @@ public sealed partial class ShellPage
     private void OnSwitchServerClick(object sender, RoutedEventArgs e)
     {
         if (_signingOut) return;
-        // The single-server route signs out too; never bypass TvSignOutDialog.kt's confirmation.
+        // TvAppNavigation.kt opens ServerList without destroying the signed-in session.
         ClosePanels();
-        _signOutChangesServer = true;
-        SignOutPrompt.Show();
+        _personalReturnToProfile = true;
+        Frame.Navigate(typeof(ServerListPage));
     }
 
     private void OnSettingsClick(object sender, RoutedEventArgs e) => OpenSettings();

@@ -23,7 +23,6 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     private UIElement? _focusRoot;
     private bool _active;
     private bool _backPressed;
-    private bool _changeServer;
     private bool _signingOut;
 
     public SettingsPage()
@@ -313,15 +312,18 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         GeneralCategory.IsChecked = ServerCategory.IsChecked = false;
     }
 
-    private void OnSignOutClick(object sender, RoutedEventArgs e) => ConfirmSignOut(changeServer: false);
-    private void OnChangeServerClick(object sender, RoutedEventArgs e) => ConfirmSignOut(changeServer: true);
-
-    private void ConfirmSignOut(bool changeServer)
+    private void OnSignOutClick(object sender, RoutedEventArgs e)
     {
         if (!OwnsSettings || _signingOut) return;
-        _changeServer = changeServer;
-        _returnTarget = changeServer ? ChangeServerButton : SignOutButton;
+        _returnTarget = SignOutButton;
         SignOutPrompt.Show();
+    }
+
+    private void OnChangeServerClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings || _signingOut) return;
+        _returnTarget = ChangeServerButton;
+        Frame.Navigate(typeof(ServerListPage));
     }
 
     private async void OnSignOutRequested(bool removeServer)
@@ -331,7 +333,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         await Session.SignOutAsync(removeServer);
         if (_active && ReferenceEquals(Frame.Content, this) && Session.Client is null)
         {
-            Frame.Navigate(typeof(MainPage), removeServer || _changeServer ? MainPage.ServerEntry : null);
+            Frame.Navigate(typeof(MainPage));
             Frame.BackStack.Clear();
         }
     }

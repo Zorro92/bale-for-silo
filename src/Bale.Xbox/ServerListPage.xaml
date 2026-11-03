@@ -1,0 +1,34 @@
+<Page
+    x:Class="Bale.Xbox.ServerListPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Bale.Xbox.Controls"
+    NavigationCacheMode="Required"
+    FontFamily="{StaticResource SkylineFont}"
+    Background="Black">
+  <!-- TvServerListScreen.kt: 44dp sides, 40dp top/bottom; 200dp copy, 32dp gap, 620dp list. -->
+  <Grid>
+    <Grid Style="{StaticResource SkylineServerListLayoutStyle}">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="200" /><ColumnDefinition Width="32" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+      <StackPanel Spacing="8">
+        <TextBlock Text="CONNECTION" Style="{StaticResource SkylineServerListEyebrowStyle}" />
+        <TextBlock Text="Manage Servers" Style="{StaticResource SkylineServerListTitleStyle}" />
+        <TextBlock Text="Choose, rename, add, or remove a Silo server." Style="{StaticResource SkylineServerListCaptionStyle}" />
+      </StackPanel>
+      <StackPanel Grid.Column="2" MaxWidth="620" HorizontalAlignment="Stretch" Spacing="10">
+        <TextBlock Text="Saved Servers" Style="{StaticResource SkylineServerListCaptionStyle}" />
+        <Button x:Name="AddButton" Style="{StaticResource SkylineSavedServerAddButtonStyle}" Click="OnAddClick" PreviewKeyDown="OnAddPreviewKeyDown" GotFocus="OnAddGotFocus">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Viewbox Style="{StaticResource SkylineSavedServerIconStyle}"><Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19Z" Fill="{Binding Foreground, ElementName=AddLabel}" /></Viewbox>
+            <TextBlock x:Name="AddLabel" Text="Add Server" />
+          </StackPanel>
+        </Button>
+        <ScrollViewer x:Name="Scroller" Style="{StaticResource SkylineServerListScrollerStyle}">
+          <StackPanel x:Name="Rows" Spacing="6" />
+        </ScrollViewer>
+        <TextBlock x:Name="ErrorText" Style="{StaticResource SkylineServerEntryErrorStyle}" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite" />
+      </StackPanel>
+    </Grid>
+    <controls:ConnectionDialog x:Name="RemovePrompt" />
+  </Grid>
+</Page>

@@ -1,0 +1,35 @@
+<UserControl
+    x:Class="Bale.Xbox.Controls.ConnectionDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    IsTabStop="False" IsHitTestVisible="False">
+  <Grid x:Name="ModalLayer" Background="{StaticResource SkylineDialogScrim}" Visibility="Collapsed"
+        PreviewKeyDown="OnPreviewKeyDown" PreviewKeyUp="OnPreviewKeyUp" Tapped="OnBackgroundTapped">
+    <!-- TvServerSetupScreen.kt AlertDialog: exact HTTP copy, Connect / Cancel. -->
+    <Border x:Name="HttpCard" Style="{StaticResource SkylineHttpDialogStyle}">
+      <StackPanel Spacing="20">
+        <TextBlock Text="Connect without encryption?" Style="{StaticResource SkylineHttpDialogTitleStyle}" />
+        <TextBlock x:Name="HttpMessage" Style="{StaticResource SkylineHttpDialogMessageStyle}" />
+        <!-- rail-layout: non-card — cleartext consent's Connect / Cancel actions. -->
+        <ItemsControl x:Name="HttpActions" HorizontalAlignment="Right">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <Button x:Name="HttpConfirm" Content="Connect" Style="{StaticResource SkylineAuthPlainButtonStyle}" Click="OnConfirmClick" />
+          <Button x:Name="HttpCancel" Content="Cancel" Style="{StaticResource SkylineAuthPlainButtonStyle}" Click="OnCancelClick" />
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+    <!-- TvServerListScreen.kt uses TvOptionDialog.kt, with the destructive option first. -->
+    <Border x:Name="RemoveCard" Style="{StaticResource SkylineConnectionRemoveDialogStyle}" Visibility="Collapsed">
+      <StackPanel>
+        <TextBlock x:Name="RemoveTitle" Style="{StaticResource SkylineConnectionRemoveTitleStyle}" />
+        <Button x:Name="RemoveConfirm" Style="{StaticResource SkylineDetailMenuRowStyle}" Click="OnConfirmClick">
+          <StackPanel Margin="28,0,0,0">
+            <TextBlock x:Name="RemoveLabel" TextWrapping="Wrap" />
+            <TextBlock x:Name="RemoveMessage" Style="{StaticResource SkylineConnectionRemoveMessageStyle}" />
+          </StackPanel>
+        </Button>
+        <Button x:Name="RemoveCancel" Content="Cancel" Padding="38,9,10,9" Style="{StaticResource SkylineDetailMenuRowStyle}" Click="OnCancelClick" />
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

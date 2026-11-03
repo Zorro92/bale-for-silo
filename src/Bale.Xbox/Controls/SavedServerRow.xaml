@@ -1,0 +1,32 @@
+<UserControl
+    x:Class="Bale.Xbox.Controls.SavedServerRow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    IsTabStop="False" SizeChanged="OnSizeChanged" PreviewKeyDown="OnPreviewKeyDown">
+  <!-- rail-layout: non-card — TvServerListScreen.kt's saved server and adjacent Remove action. -->
+  <ItemsControl x:Name="Actions" IsTabStop="False">
+    <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+    <Button x:Name="SelectButton" Style="{StaticResource SkylineSavedServerButtonStyle}" Click="OnSelectClick" GotFocus="OnButtonGotFocus">
+      <Grid>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+        <StackPanel Spacing="4">
+          <TextBlock x:Name="NameText" Style="{StaticResource SkylineSavedServerNameStyle}" />
+          <TextBlock x:Name="AddressText" Style="{StaticResource SkylineSavedServerAddressStyle}" />
+        </StackPanel>
+        <Viewbox x:Name="ActiveCheck" Grid.Column="1" Style="{StaticResource SkylineSavedServerIconStyle}" Margin="8,0,0,0" Opacity="0.72">
+          <Path Data="M9,16.17L4.83,12L3.41,13.41L9,19L21,7L19.59,5.59Z" Fill="{Binding Foreground, ElementName=NameText}" />
+        </Viewbox>
+      </Grid>
+    </Button>
+    <Border x:Name="Gap" Width="{StaticResource SkylineSavedServerActionGap}" />
+    <Button x:Name="RemoveButton" Style="{StaticResource SkylineSavedServerRemoveButtonStyle}" Click="OnRemoveClick" GotFocus="OnButtonGotFocus">
+      <Grid>
+        <TextBlock x:Name="RemoveInk" />
+        <Viewbox Style="{StaticResource SkylineSavedServerIconStyle}">
+          <Path Data="M6,19C6,20.1 6.9,21 8,21H16C17.1,21 18,20.1 18,19V7H6V19M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19V4Z" Fill="{Binding Foreground, ElementName=RemoveInk}" />
+        </Viewbox>
+      </Grid>
+    </Button>
+    <!-- Inherit the template's focused foreground without reading XAML resources from code. -->
+  </ItemsControl>
+</UserControl>

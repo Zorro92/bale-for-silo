@@ -93,9 +93,8 @@
                   </Grid>
                 </Border>
                 <Button x:Name="ChangeServerButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnChangeServerClick">
-                  <TextBlock Text="Switch Server" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+                  <TextBlock Text="Manage Servers" Style="{StaticResource SkylineSettingsRowTextStyle}" />
                 </Button>
-                <TextBlock Text="Sign out before connecting to another server." Style="{StaticResource SkylineSettingsFooterStyle}" />
               </StackPanel>
               <StackPanel Style="{StaticResource SkylineSettingsGroupStyle}">
                 <TextBlock Text="ABOUT" Style="{StaticResource SkylineSettingsGroupHeaderStyle}" />

@@ -1,5 +1,6 @@
 #if DEBUG_SERVER
 using System.Text;
+using Bale.Core.Connection;
 using Windows.ApplicationModel.Core;
 using Windows.Foundation;
 using Windows.Gaming.Input;
@@ -34,7 +35,11 @@ namespace Bale.Xbox.Services;
 ///   POST /fault/requests  fail the next Requests hub load once (Retry then uses the server)
 ///   POST /fault/requests-empty  return no rows on the next Requests hub load once
 ///   POST /fault/request-detail  fail the next request-detail load once (Retry then uses the server)
-///   POST /show/login      preview Login for the saved server, without changing the live session
+///   POST /show/login      preview Login with disposable fixtures, without any network or saved-state writes
+///   POST /show/login/password  preview password sign-in (submissions are local simulated failures)
+///   POST /show/servers    preview saved-server switching/removal on an in-memory registry
+///   POST /show/server/http-warning  preview exact-origin HTTP consent
+///   POST /show/server/discovery  preview two identity-confirmed nearby rows
 ///   POST /show/login/expired  preview Login with the session-expired notice
 ///   POST /show/server     preview manual server entry; Back returns to the signed-in page
 ///   POST /show/home       close an auth preview and return to the signed-in app
@@ -45,8 +50,6 @@ namespace Bale.Xbox.Services;
 internal sealed class DebugServer
 {
     public const int Port = 8790;
-
-    internal enum AuthPreview { Login, Expired, Server }
 
     private static int _failProfilesOnce;
     private static int _failSearchOnce;
@@ -217,7 +220,11 @@ internal sealed class DebugServer
 
             case ("POST", "/show/login"):
             case ("POST", "/show/login/expired"):
+            case ("POST", "/show/login/password"):
             case ("POST", "/show/server"):
+            case ("POST", "/show/server/http-warning"):
+            case ("POST", "/show/server/discovery"):
+            case ("POST", "/show/servers"):
             case ("POST", "/show/home"):
                 var showStatus = "200 OK";
                 var showBody = await OnUiAsync(() =>
@@ -229,7 +236,7 @@ internal sealed class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|home|home-empty|requests|requests-empty|request-detail}, POST /show/{login|login/expired|server|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|home|home-empty|requests|requests-empty|request-detail}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|home}\n");
         }
     }
 
@@ -242,36 +249,51 @@ internal sealed class DebugServer
 
         if (path == "/show/home")
         {
-            CloseAuthPreview(frame);
+            CloseAuthPreview(frame, all: true);
             return ("200 OK", "returned to the signed-in app; session unchanged\n");
         }
 
-        var preview = path switch
+        // Only disposable fixtures: even Connect, password submission, switch/remove and consent stay in memory.
+        var fixture = new ConnectionPreview();
+        if (path == "/show/servers")
         {
-            "/show/server" => AuthPreview.Server,
-            "/show/login/expired" => AuthPreview.Expired,
-            _ => AuthPreview.Login,
-        };
-        if (frame.Content is MainPage { IsAuthPreview: true } page)
-        {
-            page.ShowPreview(preview);
+            CloseAuthPreview(frame, all: true);
+            frame.Navigate(typeof(ServerListPage), fixture);
         }
         else
         {
-            // Keep the signed-in journal entry: Back returns without invoking sign-out or restore.
-            frame.Navigate(typeof(MainPage), preview);
+            var screen = path switch
+            {
+                "/show/server" => ConnectionScreen.Server,
+                "/show/server/http-warning" => ConnectionScreen.HttpWarning,
+                "/show/server/discovery" => ConnectionScreen.Discovery,
+                "/show/login/expired" => ConnectionScreen.Expired,
+                "/show/login/password" => ConnectionScreen.Password,
+                _ => ConnectionScreen.Login,
+            };
+            var request = new ConnectionNavigation(fixture, screen);
+            if (frame.Content is MainPage { IsAuthPreview: true } page) page.ShowPreview(request);
+            else
+            {
+                CloseAuthPreview(frame, all: true);
+                frame.Navigate(typeof(MainPage), request);
+            }
         }
-
-        return ("200 OK", "auth preview opened; approvals ignored, saved session unchanged; Back or show home returns\n");
+        return ("200 OK", "connection preview opened; no network requests or saved-state writes; Back or show home returns\n");
     }
 
-    internal static bool CloseAuthPreview(Frame frame)
+    internal static bool CloseAuthPreview(Frame frame, bool all = false)
     {
-        if (frame.Content is not MainPage { IsAuthPreview: true }) return false;
-        if (frame.CanGoBack) frame.GoBack();
-        else Session.ContinueToHome(frame);
-        frame.ForwardStack.Clear();
-        return true;
+        var closed = false;
+        while (frame.Content is MainPage { IsAuthPreview: true } or ServerListPage { IsAuthPreview: true })
+        {
+            closed = true;
+            if (frame.CanGoBack) frame.GoBack();
+            else { Session.ContinueToHome(frame); break; }
+            if (!all) break;
+        }
+        if (closed) frame.ForwardStack.Clear();
+        return closed;
     }
 
     /// <summary>A real gamepad press and release, so focus, XY navigation, ItemClick and Back behave exactly as with a controller.</summary>
@@ -356,7 +378,8 @@ internal sealed class DebugServer
             _injector.InjectKeyboardInput(new[] { down, up });
         }
 
-        return $"typed \"{text}\"";
+        // Never echo entered credentials, including when the software keyboard owns focus.
+        return $"typed {text.Length} characters";
     }
 
     private static string DescribeFocus()
@@ -579,6 +602,7 @@ internal sealed class DebugServer
         var text = element is TextBlock block && !string.IsNullOrWhiteSpace(block.Text) ? $" \"{block.Text}\"" : string.Empty;
         var bounds = Bounds(element, root);
         builder.Append(' ', depth * 2).Append(Describe(element)).Append($" [{bounds.X:0},{bounds.Y:0} {bounds.Width:0}x{bounds.Height:0}]").Append(text).Append('\n');
+        if (element is PasswordBox) return; // Do not inspect native/revealed credential template parts.
         for (var i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++)
         {
             if (VisualTreeHelper.GetChild(element, i) is FrameworkElement child)
@@ -604,7 +628,7 @@ internal sealed class DebugServer
         var texts = new List<string>();
         void Collect(DependencyObject node)
         {
-            if (texts.Count >= limit)
+            if (texts.Count >= limit || node is PasswordBox)
             {
                 return;
             }

@@ -26,6 +26,10 @@
     <Compile Include="../../src/Bale.Xbox/Services/FocusRetry.cs" Link="FocusRetry.cs" />
     <!-- Check declarative Skyline geometry/states on Linux; this does not render or compile UWP. -->
     <None Include="../../src/Bale.Xbox/Themes/Skyline.xaml" Link="Skyline.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/MainPage.xaml" Link="MainPage.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/ServerListPage.xaml" Link="ServerListPage.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Controls/ConnectionDialog.xaml" Link="ConnectionDialog.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Controls/SavedServerRow.xaml" Link="SavedServerRow.xaml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

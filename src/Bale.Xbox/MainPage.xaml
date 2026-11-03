@@ -2,8 +2,9 @@
     x:Class="Bale.Xbox.MainPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Bale.Xbox.Controls"
     Background="{StaticResource SkylineAurora}">
-
+  <Grid>
   <!-- TvMarquee.kt: 45dp safe sides, left copy and a 320dp card, no signed-in shell chrome. -->
   <Grid x:Name="AuthLayout" Style="{StaticResource SkylineAuthLayoutStyle}">
     <Grid.RowDefinitions>
@@ -26,8 +27,7 @@
       </Border>
     </Grid>
 
-    <!-- TvServerSetupScreen.kt AddressEntryScreen: manual-entry copy and Connect / plain Back.
-         Phone setup, discovery and advanced connection options remain separate backlog work. -->
+    <!-- TvServerSetupScreen.kt AddressEntryScreen: advanced scheme/port and identity-confirmed LAN rows. -->
     <ScrollViewer x:Name="ServerPanel" Grid.Row="1" Style="{StaticResource SkylineServerEntryScrollStyle}">
       <StackPanel Style="{StaticResource SkylineServerEntryStyle}">
         <TextBlock Text="Enter your&#x0A;server address" Style="{StaticResource SkylineServerEntryTitleStyle}" />
@@ -35,6 +35,18 @@
         <TextBox x:Name="ServerBox" PlaceholderText="media.example.com" InputScope="Url" IsSpellCheckEnabled="False" IsTextPredictionEnabled="False"
                  PreventKeyboardDisplayOnProgrammaticFocus="True" TextChanged="OnServerTextChanged"
                  PreviewKeyDown="OnServerBoxPreviewKeyDown" Style="{StaticResource SkylineServerAddressStyle}" />
+        <Button x:Name="AdvancedButton" Content="Advanced options" Style="{StaticResource SkylineConnectionAdvancedButtonStyle}" Click="OnAdvancedClick" PreviewKeyDown="OnSetupControlPreviewKeyDown" />
+        <StackPanel x:Name="AdvancedPanel" Visibility="Collapsed" Spacing="10" Margin="0,10,0,0">
+          <!-- rail-layout: non-card — ServerSetupAddress.kt Auto / HTTPS / HTTP scheme options. -->
+          <ItemsControl x:Name="SchemeActions" PreviewKeyDown="OnSetupControlPreviewKeyDown">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            <ToggleButton x:Name="AutoButton" IsChecked="True" Content="Auto" Tag="Auto" Style="{StaticResource SkylineConnectionSchemeStyle}" Click="OnSchemeClick" />
+            <ToggleButton x:Name="HttpsButton" Content="HTTPS" Tag="Https" Style="{StaticResource SkylineConnectionSchemeStyle}" Click="OnSchemeClick" />
+            <ToggleButton x:Name="HttpButton" Content="HTTP" Tag="Http" Style="{StaticResource SkylineConnectionSchemeStyle}" Click="OnSchemeClick" />
+          </ItemsControl>
+          <TextBox x:Name="PortBox" PlaceholderText="Port: auto" InputScope="Number" PreventKeyboardDisplayOnProgrammaticFocus="True"
+                   Style="{StaticResource SkylineConnectionPortStyle}" TextChanged="OnServerTextChanged" PreviewKeyDown="OnSetupControlPreviewKeyDown" />
+        </StackPanel>
         <TextBlock x:Name="ServerError" Visibility="Collapsed" Style="{StaticResource SkylineServerEntryErrorStyle}" AutomationProperties.LiveSetting="Polite" />
         <TextBlock x:Name="ServerSecurityHint" Text="Secure HTTPS is tried automatically." Style="{StaticResource SkylineServerEntryHintStyle}" />
         <!-- rail-layout: non-card — TvServerSetupScreen.kt manual server-entry actions. -->
@@ -45,6 +57,15 @@
           <Button x:Name="ConnectButton" Content="Connect" Click="OnConnectClick" Style="{StaticResource SkylineAuthButtonStyle}" />
           <Button x:Name="ServerBackButton" Content="Back" Click="OnServerBackClick" Style="{StaticResource SkylineAuthPlainButtonStyle}" />
         </ItemsControl>
+        <StackPanel x:Name="NearbyPanel" Visibility="Collapsed" Style="{StaticResource SkylineConnectionNearbyPanelStyle}" Spacing="6">
+          <TextBlock Text="Found nearby" Style="{StaticResource SkylineServerListCaptionStyle}" />
+          <Button x:Name="NearbyFirst" Style="{StaticResource SkylineSavedServerButtonStyle}" Click="OnNearbyClick" PreviewKeyDown="OnSetupControlPreviewKeyDown">
+            <StackPanel Spacing="4"><TextBlock x:Name="NearbyFirstName" /><TextBlock x:Name="NearbyFirstAddress" Style="{StaticResource SkylineSavedServerAddressStyle}" /></StackPanel>
+          </Button>
+          <Button x:Name="NearbySecond" Style="{StaticResource SkylineSavedServerButtonStyle}" Click="OnNearbyClick" PreviewKeyDown="OnSetupControlPreviewKeyDown" Visibility="Collapsed">
+            <StackPanel Spacing="4"><TextBlock x:Name="NearbySecondName" /><TextBlock x:Name="NearbySecondAddress" Style="{StaticResource SkylineSavedServerAddressStyle}" /></StackPanel>
+          </Button>
+        </StackPanel>
       </StackPanel>
     </ScrollViewer>
 
@@ -55,7 +76,8 @@
         <ColumnDefinition Width="*" MinWidth="{StaticResource SkylineAuthColumnGap}" />
         <ColumnDefinition Width="{StaticResource SkylineAuthCardColumn}" />
       </Grid.ColumnDefinitions>
-      <StackPanel VerticalAlignment="Center">
+      <ScrollViewer Style="{StaticResource SkylineConnectionLoginScrollerStyle}">
+      <StackPanel Style="{StaticResource SkylineConnectionLoginCopyStyle}">
         <!-- TvLoginScreen.kt notices: a polite status chip ABOVE the server card, not an error on it. -->
         <Border x:Name="SessionNotice" Visibility="Collapsed" Style="{StaticResource SkylineSessionNoticeStyle}">
           <StackPanel Style="{StaticResource SkylineSessionNoticeContentStyle}">
@@ -91,22 +113,58 @@
         </Border>
         <TextBlock x:Name="SignInTitle" Style="{StaticResource SkylineLoginTitleStyle}" />
         <TextBlock x:Name="SignInInstructions" Style="{StaticResource SkylineLoginInstructionsStyle}" />
-        <StackPanel Style="{StaticResource SkylineLoginHintRowStyle}">
+        <StackPanel x:Name="PhoneHint" Style="{StaticResource SkylineLoginHintRowStyle}">
           <Viewbox Style="{StaticResource SkylineLoginPhoneIconStyle}">
             <Path Data="M17,1H7A2,2 0 0,0 5,3V21A2,2 0 0,0 7,23H17A2,2 0 0,0 19,21V3A2,2 0 0,0 17,1M17,19H7V5H17M13,22H11V20H13Z" Fill="{StaticResource SkylineAuthTertiary}" />
           </Viewbox>
           <TextBlock Text="Have Silo on your phone? Open it on the same Wi‑Fi to sign in this TV." Style="{StaticResource SkylineLoginHintStyle}" />
         </StackPanel>
-        <!-- rail-layout: non-card — TvLoginScreen.kt CodeActions; password sign-in is a later backlog item. -->
+        <StackPanel x:Name="PasswordPanel" Visibility="Collapsed" Margin="0,20,0,0">
+          <TextBox x:Name="UsernameBox" PlaceholderText="Username" InputScope="PersonalFullName" IsSpellCheckEnabled="False" IsTextPredictionEnabled="False"
+                   PreventKeyboardDisplayOnProgrammaticFocus="True" Style="{StaticResource SkylineCredentialFieldStyle}" TextChanged="OnUsernameChanged" PreviewKeyDown="OnCredentialPreviewKeyDown" />
+          <!-- rail-layout: non-card — TvLoginScreen.kt password field and reveal action. -->
+          <ItemsControl x:Name="PasswordRow" Margin="0,10,0,0" PreviewKeyDown="OnCredentialPreviewKeyDown">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            <PasswordBox x:Name="PasswordInput" PlaceholderText="Password" PasswordRevealMode="Hidden" PreventKeyboardDisplayOnProgrammaticFocus="True"
+                         Style="{StaticResource SkylineCredentialPasswordStyle}" PasswordChanged="OnPasswordChanged" />
+            <Button x:Name="RevealButton" Style="{StaticResource SkylineCredentialRevealStyle}" AutomationProperties.Name="Show password" Click="OnRevealClick">
+              <Grid>
+                <TextBlock x:Name="RevealInk" />
+                <Viewbox Width="16" Height="16"><Grid>
+                  <Path x:Name="RevealIcon" Fill="{Binding Foreground, ElementName=RevealInk}" Data="M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5S21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5M12,17A5,5 0 1,1 12,7A5,5 0 0,1 12,17M12,9A3,3 0 1,0 12,15A3,3 0 0,0 12,9Z" />
+                  <Path x:Name="HideIcon" Visibility="Collapsed" Fill="{Binding Foreground, ElementName=RevealInk}" Data="M2,4.27L4.28,6.55C2.82,8.01 1.69,9.86 1,12C2.73,16.39 7,19.5 12,19.5C13.76,19.5 15.44,19.11 16.96,18.4L19.73,21.17L21.14,19.76L3.41,2.86L2,4.27M12,17A5,5 0 0,1 7,12C7,11.23 7.18,10.5 7.5,9.85L9.06,11.41A3,3 0 0,0 12.59,14.94L14.15,16.5C13.5,16.82 12.77,17 12,17M12,4.5C17,4.5 21.27,7.61 23,12C22.36,13.61 21.36,15.04 20.14,16.18L17.27,13.31C17.42,12.89 17.5,12.45 17.5,12A5.5,5.5 0 0,0 12,6.5C11.55,6.5 11.11,6.58 10.69,6.73L8.57,4.61C9.68,4.29 10.83,4.5 12,4.5Z" />
+                </Grid></Viewbox>
+              </Grid>
+            </Button>
+          </ItemsControl>
+          <TextBlock x:Name="PasswordError" Style="{StaticResource SkylineServerEntryErrorStyle}" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite" />
+          <TextBlock x:Name="ProviderHint" Style="{StaticResource SkylineServerEntryHintStyle}" Visibility="Collapsed" />
+          <!-- rail-layout: non-card — TvLoginScreen.kt's Sign in and secondary actions. -->
+          <ItemsControl x:Name="PasswordActions" Margin="0,20,0,0" PreviewKeyDown="OnPasswordActionsPreviewKeyDown">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="11" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            <Button x:Name="SignInButton" Content="Sign in" Style="{StaticResource SkylineAuthButtonStyle}" Click="OnSignInClick" />
+            <Button x:Name="UsePhoneButton" Content="Use your phone instead" Style="{StaticResource SkylineAuthPlainButtonStyle}" Click="OnUsePhoneClick" />
+            <Button x:Name="PasswordChangeServerButton" Content="Change server" Style="{StaticResource SkylineAuthPlainButtonStyle}" Click="OnChangeServerClick" />
+          </ItemsControl>
+        </StackPanel>
+        <!-- rail-layout: non-card — TvLoginScreen.kt CodeActions, including password sign-in. -->
         <ItemsControl x:Name="CodeActions" Style="{StaticResource SkylineLoginActionsStyle}" PreviewKeyDown="OnCodeActionsPreviewKeyDown">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylineAuthActionGap}" /></ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
           <Button x:Name="NewCodeButton" Content="Show a new code" Click="OnNewCodeClick" Visibility="Collapsed" Style="{StaticResource SkylineAuthButtonStyle}" />
+          <Button x:Name="PasswordButton" Content="Sign in with a password" Click="OnPasswordClick" Style="{StaticResource SkylineAuthButtonStyle}" />
           <Button x:Name="ChangeServerButton" Content="Change server" Click="OnChangeServerClick" Style="{StaticResource SkylineAuthPlainButtonStyle}" />
         </ItemsControl>
       </StackPanel>
-      <Border Grid.Column="2" Style="{StaticResource SkylineLoginCardStyle}">
+      </ScrollViewer>
+      <Border x:Name="PhoneHelpCard" Grid.Column="2" Style="{StaticResource SkylineLoginCardStyle}" Visibility="Collapsed">
+        <StackPanel Spacing="18">
+          <TextBlock Text="Use your phone" Style="{StaticResource SkylineServerListTitleStyle}" />
+          <TextBlock x:Name="PhoneHelpText" Style="{StaticResource SkylineHttpDialogMessageStyle}" />
+        </StackPanel>
+      </Border>
+      <Border x:Name="CodeCard" Grid.Column="2" Style="{StaticResource SkylineLoginCardStyle}">
         <StackPanel HorizontalAlignment="Center">
           <StackPanel x:Name="CodeDetails">
             <Border Style="{StaticResource SkylineLoginQrFrameStyle}">
@@ -137,5 +195,7 @@
         </StackPanel>
       </Border>
     </Grid>
+  </Grid>
+  <controls:ConnectionDialog x:Name="HttpPrompt" />
   </Grid>
 </Page>

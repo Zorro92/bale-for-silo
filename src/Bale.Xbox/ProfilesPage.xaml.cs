@@ -626,9 +626,12 @@ public sealed partial class ProfilesPage : Page, IBackHandler
             || PickerPanel.Visibility != Visibility.Visible || SignOutButton.Focus(FocusState.Programmatic));
     }
 
-    private async void OnChangeServerClick(object sender, RoutedEventArgs e) => await LeaveServerAsync(changeServer: true);
+    private void OnChangeServerClick(object sender, RoutedEventArgs e)
+    {
+        if (!_leaving) Frame.Navigate(typeof(ServerListPage));
+    }
 
-    private async Task LeaveServerAsync(bool removeServer = false, bool changeServer = false)
+    private async Task LeaveServerAsync(bool removeServer = false)
     {
         if (_leaving)
         {
@@ -640,8 +643,7 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         if (_active && Session.Client is null)
         {
             // TvAppNavigation.kt: keep → Login, remove → resolve remaining server or ServerSetup.
-            // Bale has one server, so removal opens blank entry; Change server still edits its address.
-            Frame.Navigate(typeof(MainPage), removeServer || changeServer ? MainPage.ServerEntry : null);
+            Frame.Navigate(typeof(MainPage));
             Frame.BackStack.Clear();
         }
     }
