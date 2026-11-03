@@ -11,6 +11,7 @@ using Bale.Core.Api.Api.V2.Home;
 using Bale.Core.Api.Api.V2.Library;
 using Bale.Core.Api.Api.V2.Profiles;
 using Bale.Core.Api.Api.V2.Recommendations;
+using Bale.Core.Api.Api.V2.Requests;
 using Bale.Core.Api.Api.V2.SubtitlePrefs;
 using Bale.Core.Api.Api.V2.User;
 using Bale.Core.Api.Api.V2.Watched;
@@ -83,6 +84,11 @@ namespace Bale.Core.Api.Api.V2
         public global::Bale.Core.Api.Api.V2.Recommendations.RecommendationsRequestBuilder Recommendations
         {
             get => new global::Bale.Core.Api.Api.V2.Recommendations.RecommendationsRequestBuilder(PathParameters, RequestAdapter);
+        }
+        /// <summary>The requests property</summary>
+        public global::Bale.Core.Api.Api.V2.Requests.RequestsRequestBuilder Requests
+        {
+            get => new global::Bale.Core.Api.Api.V2.Requests.RequestsRequestBuilder(PathParameters, RequestAdapter);
         }
         /// <summary>The subtitlePrefs property</summary>
         public global::Bale.Core.Api.Api.V2.SubtitlePrefs.SubtitlePrefsRequestBuilder SubtitlePrefs

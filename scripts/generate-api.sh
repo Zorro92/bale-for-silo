@@ -60,6 +60,14 @@ dotnet kiota generate \
   --include-path '/api/v2/watched/{id}' \
   --include-path '/api/v2/audio-prefs/{series_id}' \
   --include-path '/api/v2/subtitle-prefs/{series_id}' \
-  --include-path '/api/v2/recommendations/discover'
+  --include-path '/api/v2/recommendations/discover' \
+  --include-path '/api/v2/requests/status' \
+  --include-path '/api/v2/requests/discover' \
+  --include-path '/api/v2/requests/search' \
+  --include-path '/api/v2/requests/detail/{media_type}/{tmdb_id}' \
+  --include-path '/api/v2/requests/mine' \
+  --include-path '/api/v2/requests' \
+  --include-path '/api/v2/requests/{id}/cancel' \
+  --include-path '/api/v2/requests/follows/{media_type}/{tmdb_id}'
 
 echo "Generated client from Silo-Server/silo-server@$SILO_REF"
