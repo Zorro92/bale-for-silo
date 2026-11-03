@@ -36,6 +36,9 @@
                 <Border Style="{StaticResource SkylineProfileManageExtentStyle}" Visibility="{x:Bind ManageVisibility}" />
                 <StackPanel>
                 <Grid x:Name="Art" Width="{StaticResource SkylineProfileAvatarSize}" Height="{StaticResource SkylineProfileAvatarSize}" HorizontalAlignment="Center">
+                  <!-- Behind the avatar and its badges: TvProfileSelectionScreen.kt focusRing is a drawBehind on the
+                       tile, so the KIDS pill and lock cover the ring. It stays outside the managed avatar's 0.6 opacity. -->
+                  <Ellipse x:Name="FocusRing" Margin="-7.5" StrokeThickness="3" Stroke="{StaticResource SkylineFocusRing}" Opacity="0" />
                   <Grid Visibility="{x:Bind ProfileVisibility}" Opacity="{x:Bind AvatarOpacity}">
                   <Ellipse Fill="{x:Bind AvatarFill}" />
                   <TextBlock Text="{x:Bind Initial}" FontSize="36" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -73,8 +76,6 @@
                     <Viewbox Style="{StaticResource SkylineProfileAddIconStyle}"><Path x:Name="AddIcon" Fill="{StaticResource SkylineProfileAddInk}" Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6Z" /></Viewbox>
                   </Grid>
                   <Viewbox Style="{StaticResource SkylineProfilePencilStyle}" Visibility="{x:Bind PencilVisibility}"><Path Fill="{StaticResource SkylineFocusRing}" Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25m17.71-10.2a.996.996 0 0 0 0-1.41l-2.34-2.34a.996.996 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83Z" /></Viewbox>
-                  <!-- The ring stays fully opaque above the managed avatar's 0.6 opacity. -->
-                  <Ellipse x:Name="FocusRing" Margin="-7.5" StrokeThickness="3" Stroke="{StaticResource SkylineFocusRing}" Opacity="0" />
                 </Grid>
                 <TextBlock x:Name="ProfileCaption" Text="{x:Bind Name}" FontSize="{StaticResource SkylineProfileNameSize}" FontWeight="SemiBold"
                            Foreground="{StaticResource SkylineSecondary}" HorizontalAlignment="Center" Margin="0,13,0,0"
