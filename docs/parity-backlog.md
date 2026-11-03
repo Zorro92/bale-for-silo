@@ -72,7 +72,8 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
   - [x] Polish: toolbar icons/badges, alphabet selected/All treatment, 180 ms rail expansion; Recommended scope refill; Filter keeps focus across filter reloads
 - [x] Calendar (focus follows the selected pill/day, first card, per-row memory: a deliberate deviation)
 - [x] Profile menu: Watchlist, Favorites, History, Settings, Switch Server; opens on dwell/Down
-  - [ ] Settings row (Bale has no Settings page yet); Watch Party row
+  - [x] Settings row (implemented; Xbox verification pending): full-screen Settings, returning to Home; Switch Server now uses the shared sign-out confirmation
+  - [ ] Watch Party row (deferred until the player); unsupported Settings controls remain deferred as listed in wave 3
   - [x] Dropdown drop shadows: one shared panel chrome (TvSkylinePanelChrome.kt) on the cascade, flyout, For You, profile, Sort and Filter panels
 - [x] For You Watchlist/Favorites dropdown; offline pill; drop key repeats while a rail animates
   - [x] Dropdown, Recommendations, offline pill and rail repeat gate (pill not seen on console: needs the server down)
@@ -81,7 +82,11 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 
 ## Wave 3: new screens
 - [x] Watchlist / Favorites / History grids (landed with the wave 2 profile menu)
-- [ ] Settings (incl. Home sections editor)
+- [x] Settings (incl. Home sections editor) (implemented; Xbox verification pending)
+  - Matched `TvSettingsScreen.kt`, `TvHomeSectionsEditor.kt`, `TvHomeSectionPreferences.kt`, `TvMainShell.kt`, and `TvHomeScreen.kt`: black full-screen category rail/detail pane, focus-selected General/Server, detail → category → Home Back chain, profile identity/switching, server information/version, and shared confirmed Sign Out/Switch Server
+  - General offers only the honored launch choices (Automatic / Every Time) and a populated Home rows editor: immediate device-local visibility/order saves scoped to server/profile, same-row move focus, and no sideways Up/Down fallback. Hidden Home offers Open Settings; preferences reapply before Home focus returns, including offline cached rows
+  - Deferred: Playback/audio/subtitles (quality/bitrate, autoplay/skip, appearance), connection speed test/learned bandwidth, theme music, Diagnostics, timed-away profile policies (1h/12h) and warm-return profile prompting, unsupported card/poster/title-art/top-menu controls, full multi-server management, and Privacy Policy/QR surfaces. No nonfunctional placeholders are shown
+  - Home preferences intentionally follow the TV device-local model; profile-wide server Home overrides are not used. Windows compilation and Xbox rendering/focus/persistence verification remain pending
 - [ ] Requests tab + request detail
 - [ ] Notifications inbox
 - [ ] Multi-server list, password sign-in, server discovery, HTTP warning
