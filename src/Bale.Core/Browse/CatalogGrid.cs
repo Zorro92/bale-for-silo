@@ -85,14 +85,14 @@ public sealed class CatalogGridResults
         return true;
     }
 
-    public bool Fail(CatalogGridRequest request, bool notFound = false)
+    public bool Fail(CatalogGridRequest request, bool notFound = false, string? errorMessage = null)
     {
         if (request.Generation != _generation) return false;
         IsLoading = false;
         Unavailable = notFound;
         if (notFound) Continuation = null;
         else if (request.Append) LoadMoreError = "Couldn't load more";
-        else Error = "Couldn't load this row.";
+        else Error = errorMessage ?? "Couldn't load this row.";
         return true;
     }
 

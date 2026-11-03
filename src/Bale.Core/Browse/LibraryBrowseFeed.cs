@@ -1,6 +1,7 @@
 using Bale.Core.Api;
 using Bale.Core.Api.Api.V2.Catalog;
 using Bale.Core.Api.Models;
+using Microsoft.Kiota.Abstractions;
 
 namespace Bale.Core.Browse;
 
@@ -8,6 +9,15 @@ namespace Bale.Core.Browse;
 public sealed class LibraryBrowseFeed(SiloApiClient api, BrowseFeed browse)
 {
     public const int PageSize = 100;
+
+    // TvLibraryDetailViewModel.kt loadBrowse: server feedback or the library fallback; transport failures include their message.
+    public static string ErrorMessage(Exception error) => error switch
+    {
+        Problem { Detail: { } detail } when !string.IsNullOrWhiteSpace(detail) => detail,
+        Problem { Title: { } title } when !string.IsNullOrWhiteSpace(title) => title,
+        ApiException => "Failed to load library",
+        _ => $"Network error: {(string.IsNullOrWhiteSpace(error.Message) ? "unknown" : error.Message)}",
+    };
 
     public async Task<LibraryBrowseResult> LoadAsync(LibraryBrowseQuery query, ArtworkWidths widths,
         LibraryBrowseContinuation? continuation = null, CancellationToken cancellationToken = default)

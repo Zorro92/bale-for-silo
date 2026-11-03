@@ -106,13 +106,33 @@ public class CatalogGridTests
     }
 
     [Fact]
+    public void InitialFailureRetainsSourceCopyUntilRetryAndRejectsStaleFailures()
+    {
+        var state = new CatalogGridResults();
+        var failed = state.Begin();
+
+        Assert.True(state.Fail(failed, errorMessage: "Network error: Offline"));
+
+        Assert.Equal("Network error: Offline", state.Error);
+        Assert.Null(state.LoadMoreError);
+        Assert.False(state.IsLoading);
+        var retry = state.Begin();
+        Assert.Null(state.Error);
+        Assert.False(state.Fail(failed, errorMessage: "Stale server message"));
+        Assert.Null(state.Error);
+        Assert.True(state.IsLoading);
+        Assert.True(state.Apply(retry, Page(false)));
+        Assert.Null(state.Error);
+    }
+
+    [Fact]
     public void FailedAppendKeepsCardsAndCursorAndRequiresExplicitRetry()
     {
         var state = new CatalogGridResults();
         state.Apply(state.Begin(), Page(true, Card("1")));
         var more = state.BeginMore()!;
 
-        Assert.True(state.Fail(more));
+        Assert.True(state.Fail(more, errorMessage: "Initial-page copy does not replace paging feedback"));
 
         Assert.Equal("1", Assert.Single(state.Items).ContentId);
         Assert.Null(state.Error);
