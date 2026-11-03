@@ -4128,6 +4128,8 @@
   <Style x:Key="SkylineProfileAddOutlineStyle" TargetType="Ellipse"><Setter Property="Stroke" Value="#40FFFFFF" /><Setter Property="StrokeThickness" Value="2" /><Setter Property="StrokeDashArray" Value="3,2.5" /></Style>
   <SolidColorBrush x:Key="SkylineProfileAddInk" Color="#66FFFFFF" />
   <SolidColorBrush x:Key="SkylineProfileAddFocusFill" Color="#24FFFFFF" />
+  <!-- TvProfileForm.kt still uses TvAuroraBackdrop.Profile, unlike the Marquee profile picker. -->
+  <ImageBrush x:Key="SkylineProfileEditorBackdrop" ImageSource="ms-appx:///Assets/ProfileEditorBackdrop.png" Stretch="Fill" />
 
   <!-- TvProfileForm.kt / TvProfileAccessControls.kt. Geometry is dp; type is sp × 0.86. -->
   <Style x:Key="SkylineProfileEditorLayoutStyle" TargetType="Grid"><Setter Property="Margin" Value="80,60,80,0" /></Style>

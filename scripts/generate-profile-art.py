@@ -9,7 +9,9 @@ Sources in Silo-Server/silo-android:
 
 Use the Profiles mesh (stage 2), frozen at phase 0: also the official reduced-motion
 and low-RAM pose. The Ambient scrim remains declarative in Themes/Skyline.xaml.
-The old TvAuroraBackdrop.kt is no longer used by the official profile picker.
+The old TvAuroraBackdrop.kt is no longer used by the official profile picker,
+but the shared TvProfileForm.kt still uses its Profile variant. Bake that
+ribbon-free bloom, starfield, scrims and dither separately for the editor.
 Only the Python standard library is needed. Run with --check to detect stale assets.
 """
 
@@ -167,6 +169,68 @@ def backdrop():
     return png(width, height, pixels)
 
 
+class KotlinRandom:
+    """Seeded Kotlin Random uses XorWow; keep the official star/grain poses."""
+
+    def __init__(self, seed):
+        self.x, self.y, self.z, self.w = seed & 0xFFFFFFFF, (seed >> 31) & 0xFFFFFFFF, 0, 0
+        self.v = self.x ^ 0xFFFFFFFF
+        self.addend = ((self.x << 10) ^ (self.y >> 4)) & 0xFFFFFFFF
+        for _ in range(64):
+            self.next_int()
+
+    def next_int(self):
+        t = self.x ^ (self.x >> 2)
+        self.x, self.y, self.z, self.w = self.y, self.z, self.w, self.v
+        self.v = (self.v ^ (self.v << 4) ^ t ^ (t << 1)) & 0xFFFFFFFF
+        self.addend = (self.addend + 362437) & 0xFFFFFFFF
+        return (self.v + self.addend) & 0xFFFFFFFF
+
+    def next_float(self):
+        return (self.next_int() >> 8) / (1 << 24)
+
+
+def editor_backdrop():
+    # TvAuroraBackdrop.kt: Profile (-10°, centerY .27, intensity .66, NO ribbons).
+    # No animation/blur is involved in this variant: it can be pre-rendered at output resolution.
+    width, height = 1920, 1080
+    night = tuple(rgb(color) for color in (0xFF1C1329, 0xFF0D0A17, 0xFF070509))
+    warm = rgb(0xFFFFDCA6)
+    rng = KotlinRandom(0x5110)
+    stars = {}
+    for _ in range(90):
+        cx, cy, alpha = rng.next_float() * width, rng.next_float() * 0.62 * height, (0.25 + rng.next_float() * 0.55) * 0.65
+        # Compose draws sharp 1.5px circles; supersample only their tiny edge envelopes.
+        for y in range(max(0, math.floor(cy - 2)), min(height, math.ceil(cy + 2))):
+            for x in range(max(0, math.floor(cx - 2)), min(width, math.ceil(cx + 2))):
+                covered = sum((x + (sx + 0.5) / 4 - cx) ** 2 + (y + (sy + 0.5) / 4 - cy) ** 2 <= 2.25
+                              for sy in range(4) for sx in range(4)) / 16
+                if covered:
+                    old = stars.get((x, y), 0)
+                    stars[(x, y)] = 1 - (1 - old) * (1 - alpha * covered)
+    rng = KotlinRandom(0x6261)
+    grain = [1 if rng.next_int() >> 31 else 0 for _ in range(160 * 160)]
+    pixels = bytearray()
+    for y in range(height):
+        vertical = (y + 0.5) / height * 2
+        index = min(1, int(vertical))
+        base = tuple(lerp(a, b, vertical - index) for a, b in zip(night[index], night[index + 1]))
+        top = max(0, 1 - (y + 0.5) / (height * 0.22)) * 0.66
+        for x in range(width):
+            distance = math.hypot(x + 0.5 - width / 2, y + 0.5 - height / 2)
+            bloom = max(0, 1 - math.hypot(x + 0.5 - width * 0.7, y + 0.5 - height * 0.24) / (width * 0.55)) * 0.50 * 0.66
+            star = stars.get((x, y), 0)
+            vignette = min(1, distance / (height * 0.95)) * 0.45
+            soft = min(1, distance / (height / 2)) * 0.72
+            noise = grain[(y % 160) * 160 + x % 160]
+            for c in range(3):
+                value = min(1, base[c] + warm[c] * bloom)  # additive warm key light
+                value = lerp(value, 1, star) * (1 - vignette)
+                value = lerp(lerp(value, night[2][c], soft), night[2][c], top)
+                pixels.append(byte(lerp(value, noise, 10 / 255)))
+    return png(width, height, pixels)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="compare with committed PNGs without writing")
@@ -178,6 +242,7 @@ def main():
         raise SystemExit("Expected eight colors in ProfileTilePalette.cs")
     assets = {f"ProfileAvatar-{color:08X}.png": avatar(color) for color in colors}
     assets["ProfileBackdrop.png"] = backdrop()
+    assets["ProfileEditorBackdrop.png"] = editor_backdrop()
     stale = []
     for name, data in assets.items():
         path = ASSETS / name

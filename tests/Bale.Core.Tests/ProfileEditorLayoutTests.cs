@@ -49,6 +49,16 @@ public sealed class ProfileEditorLayoutTests
     }
 
     [Fact]
+    public void SharedEditorUsesTheProfileAuroraNotThePickerMarqueeBackdrop()
+    {
+        var form = Load("ProfileEditorPage.xaml");
+        Assert.Equal("{StaticResource SkylineProfileEditorBackdrop}", (string?)form.Root!.Attribute("Background"));
+        var backdrop = Load("Skyline.xaml").Root!.Elements(Ui + "ImageBrush")
+            .Single(brush => (string?)brush.Attribute(Xaml + "Key") == "SkylineProfileEditorBackdrop");
+        Assert.Equal("ms-appx:///Assets/ProfileEditorBackdrop.png", (string?)backdrop.Attribute("ImageSource"));
+    }
+
+    [Fact]
     public void AssignableLibrariesHideReadingMediaAndPreserveServerOrder()
     {
         UserLibrary[] libraries = [
