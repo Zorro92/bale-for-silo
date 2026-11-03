@@ -82,7 +82,7 @@ public static partial class PlaybackFormatting
 
     private static string Normalize(string? value) => value?.Trim().ToLowerInvariant() ?? string.Empty;
 
-    private static string? SubtitleLanguageKey(string? value)
+    internal static string? SubtitleLanguageKey(string? value)
     {
         var normalized = NonEmpty(value)?.ToLowerInvariant();
         if (normalized is null or "und") return null;
