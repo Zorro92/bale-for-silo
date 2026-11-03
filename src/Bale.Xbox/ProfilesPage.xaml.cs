@@ -401,6 +401,7 @@ public sealed partial class ProfilesPage : Page, IBackHandler, IRestoresFocus
         _pinVerification?.Cancel();
         if (!_pinForManagement && !IsProfilePreview) Session.Client?.UseProfile(null);
         _gate?.CancelPin();
+        ReturnFocusToProfile(_pinProfile?.Profile.Id);
         _pinForManagement = false;
         _pinProfile = null;
         _verifying = false;
@@ -438,6 +439,7 @@ public sealed partial class ProfilesPage : Page, IBackHandler, IRestoresFocus
                 PinPrompt.Hide(restoreFocus: false);
                 if (management)
                 {
+                    ReturnFocusToProfile(chosen.Profile.Id);
                     PickerPanel.Visibility = Visibility.Visible;
                     ApplyManagementAction(_gate!.CompletePin(proof));
                 }

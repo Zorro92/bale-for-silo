@@ -51,6 +51,17 @@ public sealed partial class ProfilesPage
         _lastDelete &= views.ElementAtOrDefault(_lastProfileIndex)?.DeleteVisibility == Visibility.Visible;
     }
 
+    // TvProfileSelectionScreen (pinOpenedBy): closing a PIN prompt, whether it was
+    // accepted or cancelled, puts focus back on the profile it asked about. The
+    // manage gate asks for the primary profile's PIN, so that tile, not Manage.
+    private void ReturnFocusToProfile(string? id)
+    {
+        var index = Profiles.Items.IndexOf(Profiles.Items.OfType<ProfileView>().FirstOrDefault(view => !view.IsAdd && view.Profile.Id == id));
+        if (index < 0) return;
+        _lastProfileIndex = index;
+        _lastDelete = _focusInUtilities = false;
+    }
+
     public void RestoreFocus()
     {
         if (!_active || PinPrompt.IsOpen || DeletePrompt.IsOpen || SignOutPrompt.IsOpen || RememberPanel.Visibility == Visibility.Visible) return;
