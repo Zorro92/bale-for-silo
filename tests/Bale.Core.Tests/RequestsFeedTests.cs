@@ -143,7 +143,9 @@ public class RequestsFeedTests
         var feed = new RequestsFeed(connection.Api);
         await feed.RefreshCapabilityAsync();
         var record = new MediaRequest { Id = "r1", MediaType = "movie", TmdbId = 1, State = "pending", Status = "pending", Outcome = "active" };
+        Assert.True(feed.CanCancel(record));
         var result = await feed.CancelAsync(record);
+        Assert.False(feed.CanCancel(record));
         Assert.True(result.Unconfirmed);
         Assert.Equal(RequestPresentation.UnconfirmedCancel, result.Message);
         Assert.False((await feed.CancelAsync(record)).Succeeded);

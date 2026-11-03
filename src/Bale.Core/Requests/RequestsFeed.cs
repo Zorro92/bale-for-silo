@@ -204,6 +204,14 @@ public sealed class RequestsFeed(SiloApiClient api, TimeProvider? time = null)
             "Failed to submit request").ConfigureAwait(false);
     }
 
+    public bool CanCancel(MediaRequest record)
+    {
+        lock (_sync)
+            return _capability.Enabled && Valid(record) && RequestPresentation.Progress(record).Display == RequestDisplay.Pending
+                && (!_cancellations.TryGetValue(record.Id!, out var held) || Expired(held))
+                && !_inFlight.Contains($"cancel:{record.Id}");
+    }
+
     public async Task<RequestMutationResult> CancelAsync(MediaRequest record, CancellationToken cancellationToken = default)
     {
         if (!Valid(record)) return new(false);
