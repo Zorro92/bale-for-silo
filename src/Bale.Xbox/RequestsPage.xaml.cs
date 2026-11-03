@@ -99,7 +99,10 @@ public sealed partial class RequestsPage : Page, IRestoresFocus, IBackHandler
         {
             _rows.Clear();
             _lastRow = null;
-            _preview = null;
+            _preview = _pendingPreview = null;
+            _previewTimer.Stop();
+            _art?.Hide();
+            _wash?.Show(null);
             _entryPending = true;
         }
         _client = client;

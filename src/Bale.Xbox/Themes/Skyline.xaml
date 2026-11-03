@@ -3821,6 +3821,12 @@
   <Style x:Key="SkylineRequestEmptyCopyStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineRequestSecondaryStyle}"><Setter Property="Foreground" Value="#ADFFFFFF" /><Setter Property="TextAlignment" Value="Center" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
   <Style x:Key="SkylineRequestSkeletonStyle" TargetType="Border"><Setter Property="Background" Value="#1AFFFFFF" /><Setter Property="CornerRadius" Value="3" /><Setter Property="HorizontalAlignment" Value="Left" /></Style>
   <Style x:Key="SkylineRequestSkeletonTitleStyle" TargetType="Border" BasedOn="{StaticResource SkylineRequestSkeletonStyle}"><Setter Property="Width" Value="260" /><Setter Property="Height" Value="36" /><Setter Property="CornerRadius" Value="6" /><Setter Property="Background" Value="#24FFFFFF" /></Style>
+  <Style x:Key="SkylineRequestSkeletonMetadataStyle" TargetType="StackPanel"><Setter Property="Orientation" Value="Horizontal" /><Setter Property="Spacing" Value="7" /></Style>
+  <Style x:Key="SkylineRequestSkeletonYearStyle" TargetType="Border" BasedOn="{StaticResource SkylineRequestSkeletonStyle}"><Setter Property="Width" Value="59" /><Setter Property="Height" Value="11" /></Style>
+  <Style x:Key="SkylineRequestSkeletonTypeStyle" TargetType="Border" BasedOn="{StaticResource SkylineRequestSkeletonYearStyle}"><Setter Property="Width" Value="41" /></Style>
+  <Style x:Key="SkylineRequestSkeletonRatingStyle" TargetType="Border" BasedOn="{StaticResource SkylineRequestSkeletonYearStyle}"><Setter Property="Width" Value="75" /></Style>
+  <Style x:Key="SkylineRequestSkeletonOverviewStyle" TargetType="Border" BasedOn="{StaticResource SkylineRequestSkeletonStyle}"><Setter Property="Width" Value="360" /><Setter Property="Height" Value="9" /></Style>
+  <Style x:Key="SkylineRequestSkeletonOverviewLastStyle" TargetType="Border" BasedOn="{StaticResource SkylineRequestSkeletonOverviewStyle}"><Setter Property="Width" Value="305" /></Style>
   <Style x:Key="SkylineRequestSkeletonHeaderStyle" TargetType="Border" BasedOn="{StaticResource SkylineRequestSkeletonStyle}"><Setter Property="Width" Value="140" /><Setter Property="Height" Value="18" /></Style>
   <Style x:Key="SkylineRequestSkeletonPosterStyle" TargetType="Border" BasedOn="{StaticResource SkylineRequestSkeletonStyle}"><Setter Property="Width" Value="{StaticResource SkylineRequestPosterWidth}" /><Setter Property="Height" Value="{StaticResource SkylineRequestPosterHeight}" /><Setter Property="CornerRadius" Value="8" /></Style>
   <Style x:Key="SkylineRequestPreviewSkeletonStyle" TargetType="StackPanel" BasedOn="{StaticResource SkylineRequestMarqueeStyle}"><Setter Property="Spacing" Value="10" /></Style>
@@ -3863,7 +3869,7 @@
   <Style x:Key="SkylineRequestRatingTextStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="9.5" /><Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" /></Style>
   <Style x:Key="SkylineRequestSynopsisStyle" TargetType="Button" BasedOn="{StaticResource SkylineDetailSynopsisStyle}"><Setter Property="Margin" Value="0,4,0,0" /><Setter Property="Height" Value="56" /><Setter Property="Width" Value="{StaticResource SkylineRequestHeroWidth}" /><Setter Property="HorizontalAlignment" Value="Left" /></Style>
   <!-- rail-layout: non-card — TvRequestDetailScreen.kt's stable horizontal primary/secondary action row. -->
-  <Style x:Key="SkylineRequestActionsStyle" TargetType="ItemsControl"><Setter Property="Margin" Value="0,13,0,0" /><Setter Property="HorizontalAlignment" Value="Left" /><Setter Property="IsTabStop" Value="False" /><Setter Property="XYFocusKeyboardNavigation" Value="Enabled" /></Style>
+  <Style x:Key="SkylineRequestActionsStyle" TargetType="ItemsControl"><Setter Property="HorizontalAlignment" Value="Left" /><Setter Property="IsTabStop" Value="False" /><Setter Property="XYFocusKeyboardNavigation" Value="Enabled" /></Style>
   <Style x:Key="SkylineRequestIconStyle" TargetType="Viewbox"><Setter Property="Width" Value="{StaticResource SkylineRequestIconSize}" /><Setter Property="Height" Value="{StaticResource SkylineRequestIconSize}" /></Style>
   <Style x:Key="SkylineRequestAddIconStyle" TargetType="Viewbox" BasedOn="{StaticResource SkylineRequestIconStyle}"><Setter Property="Width" Value="{StaticResource SkylineRequestAddIconSize}" /><Setter Property="Height" Value="{StaticResource SkylineRequestAddIconSize}" /></Style>
   <Style x:Key="SkylineRequestPrimaryGlyphStyle" TargetType="Path"><Setter Property="Width" Value="24" /><Setter Property="Height" Value="24" /><Setter Property="Fill" Value="Black" /></Style>
@@ -3879,6 +3885,6 @@
   <Style x:Key="SkylineRequestTaglineStyle" TargetType="TextBlock"><Setter Property="FontFamily" Value="Georgia" /><Setter Property="FontStyle" Value="Italic" /><Setter Property="FontSize" Value="13.8" /><Setter Property="LineHeight" Value="18.1" /><Setter Property="Foreground" Value="#D1FFFFFF" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
   <Style x:Key="SkylineRequestFullSynopsisStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="14.6" /><Setter Property="LineHeight" Value="21.5" /><Setter Property="Foreground" Value="#DBFFFFFF" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
   <SolidColorBrush x:Key="SkylineRequestSummaryInk" Color="#E6FFFFFF" />
-  <Style x:Key="SkylineRequestActionLineStyle" TargetType="Grid"><Setter Property="ColumnSpacing" Value="9" /><Setter Property="MaxWidth" Value="860" /></Style>
+  <Style x:Key="SkylineRequestActionLineStyle" TargetType="Grid"><Setter Property="Margin" Value="0,13,0,0" /><Setter Property="ColumnSpacing" Value="9" /><Setter Property="MaxWidth" Value="860" /></Style>
   <Style x:Key="SkylineRequestPrimarySpinnerStyle" TargetType="ProgressRing" BasedOn="{StaticResource SkylineRequestSpinnerStyle}"><Setter Property="Foreground" Value="Black" /></Style>
 </ResourceDictionary>

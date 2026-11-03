@@ -42,13 +42,13 @@
           <Grid Style="{StaticResource SkylineRequestMarqueeRegionStyle}">
             <StackPanel Style="{StaticResource SkylineRequestPreviewSkeletonStyle}">
               <Border Style="{StaticResource SkylineRequestSkeletonTitleStyle}" />
-              <StackPanel Orientation="Horizontal" Spacing="7">
-                <Border Width="59" Height="11" Style="{StaticResource SkylineRequestSkeletonStyle}" />
-                <Border Width="41" Height="11" Style="{StaticResource SkylineRequestSkeletonStyle}" />
-                <Border Width="75" Height="11" Style="{StaticResource SkylineRequestSkeletonStyle}" />
+              <StackPanel Style="{StaticResource SkylineRequestSkeletonMetadataStyle}">
+                <Border Style="{StaticResource SkylineRequestSkeletonYearStyle}" />
+                <Border Style="{StaticResource SkylineRequestSkeletonTypeStyle}" />
+                <Border Style="{StaticResource SkylineRequestSkeletonRatingStyle}" />
               </StackPanel>
-              <Border Width="360" Height="9" Style="{StaticResource SkylineRequestSkeletonStyle}" />
-              <Border Width="305" Height="9" Style="{StaticResource SkylineRequestSkeletonStyle}" />
+              <Border Style="{StaticResource SkylineRequestSkeletonOverviewStyle}" />
+              <Border Style="{StaticResource SkylineRequestSkeletonOverviewLastStyle}" />
               <TextBlock Text="Loading Requests" Style="{StaticResource SkylineRequestSecondaryStyle}" />
             </StackPanel>
           </Grid>

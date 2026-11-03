@@ -1,7 +1,6 @@
 using Bale.Xbox.Services;
 using Bale.Xbox.Views;
 using Windows.UI.Xaml;
-using Windows.UI.Xaml.Navigation;
 
 namespace Bale.Xbox;
 

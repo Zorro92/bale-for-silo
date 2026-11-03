@@ -80,6 +80,9 @@ public sealed partial class RequestDetailPage : Page, IRestoresFocus, IBackHandl
             entry.ScrollOffset = PageScroller.VerticalOffset;
             entry.RailOffset = Rail.FindChild<ScrollViewer>(Recommendations)?.HorizontalOffset ?? 0;
         }
+        _active = false;
+        _focusVersion++;
+        _load?.Cancel();
         base.OnNavigatedFrom(args);
     }
 
@@ -189,7 +192,12 @@ public sealed partial class RequestDetailPage : Page, IRestoresFocus, IBackHandl
             _art?.Show(backdrop);
             _ = TintAsync(backdrop);
         }
-        else _art?.Hide();
+        else
+        {
+            _art?.Hide();
+            // Native AOT: match SkylineRequestDetailSurface without reading XAML resources in code.
+            Wash.Fill = new SolidColorBrush(Color.FromArgb(255, 4, 13, 15));
+        }
         LoadingOwner.Visibility = ErrorPanel.Visibility = Visibility.Collapsed;
         PageScroller.Visibility = Visibility.Visible;
     }
@@ -505,7 +513,9 @@ public sealed partial class RequestDetailPage : Page, IRestoresFocus, IBackHandl
         if (!_active || backdrop != _backdrop) return;
         // TvDetailPageSurfaceColor: sampled tint at .42 over black, not the hub's diagonal wash.
         byte Channel(byte value) => (byte)Math.Round(value * .42);
-        if (tint is { } color) Wash.Fill = new SolidColorBrush(Color.FromArgb(255, Channel(color.R), Channel(color.G), Channel(color.B)));
+        Wash.Fill = new SolidColorBrush(tint is { } color
+            ? Color.FromArgb(255, Channel(color.R), Channel(color.G), Channel(color.B))
+            : Color.FromArgb(255, 4, 13, 15));
     }
 
     private static void AttachTitleShadow(TextBlock text, FrameworkElement host)
