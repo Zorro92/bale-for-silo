@@ -43,8 +43,10 @@ public sealed class SavedServerRegistry
             _state = JsonSerializer.Deserialize(json, SavedServerJson.Default.SavedServerState)
                 ?? throw new JsonException("Saved server list is unreadable.");
             if (_state.Entries is null || _state.ApprovedHttpOrigins is null
-                || _state.Entries.Any(s => s is null || !ServerAddress.TryParse(s.Url, out _) || string.IsNullOrWhiteSpace(s.CredentialKey))
-                || _state.Entries.Select(s => s.Id).Distinct().Count() != _state.Entries.Length)
+                || _state.Entries.Any(s => s is null || !ServerAddress.TryParse(s.Url, out var server)
+                    || s.Url != ServerAddress.ToBaseUrl(server) || s.Id != IdFor(server) || string.IsNullOrWhiteSpace(s.CredentialKey))
+                || _state.Entries.Select(s => s.Id).Distinct().Count() != _state.Entries.Length
+                || (_state.Entries.Length == 0 ? _state.ActiveServerId is not null : !_state.Entries.Any(s => s.Id == _state.ActiveServerId)))
             {
                 throw new JsonException("Saved server list is unreadable.");
             }

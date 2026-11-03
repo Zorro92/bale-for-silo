@@ -132,6 +132,32 @@ public class SavedServerRegistryTests
         Assert.Equal(1, storage.Writes);
     }
 
+    [Theory]
+    [InlineData("id")]
+    [InlineData("url")]
+    [InlineData("missing-active")]
+    [InlineData("null-active")]
+    [InlineData("empty-active")]
+    public void InconsistentRegistryIsNeverRemigratedOrOverwritten(string inconsistency)
+    {
+        var storage = new Storage();
+        var registry = new SavedServerRegistry(storage, new LegacyServerSession("https://example.com"));
+        var state = registry.Snapshot;
+        state = inconsistency switch
+        {
+            "id" => state with { Entries = [state.Entries[0] with { Id = "wrong" }] },
+            "url" => state with { Entries = [state.Entries[0] with { Url = "https://EXAMPLE.com:443/" }] },
+            "missing-active" => state with { ActiveServerId = "missing" },
+            "null-active" => state with { ActiveServerId = null },
+            _ => state with { Entries = [] },
+        };
+        storage.Json = JsonSerializer.Serialize(state);
+        var before = storage.Json;
+        Assert.Throws<JsonException>(() => new SavedServerRegistry(storage, new LegacyServerSession("https://example.com")));
+        Assert.Equal(before, storage.Json);
+        Assert.Equal(1, storage.Writes);
+    }
+
     [Fact]
     public void HttpApprovalIsPersistedAsDigestAndScopedToExactOrigin()
     {
