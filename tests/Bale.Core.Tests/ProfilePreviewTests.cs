@@ -44,6 +44,40 @@ public sealed class ProfilePreviewTests
     }
 
     [Fact]
+    public void DirectEditorSnapshotCannotMutateTheFixture()
+    {
+        var preview = new ProfilePreview();
+        var snapshot = preview.Snapshot;
+        snapshot[1].Name = "Not saved";
+        snapshot[2].AllowedLibraryIds!.Clear();
+        Assert.Equal("Sam", preview.Snapshot[1].Name);
+        Assert.Equal(["fixture-movies"], preview.Snapshot[2].AllowedLibraryIds);
+    }
+
+    [Fact]
+    public void DebugRoutesRemainDevelopmentOnlyAndUseAnExplicitDisposableHousehold()
+    {
+        // Source guards only: Linux cannot execute the UWP navigation host or its debug server.
+        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "DebugServer.cs.txt"));
+        Assert.StartsWith("#if DEBUG_SERVER", source);
+        foreach (var route in new[] { "profiles/manage", "profile/create", "profile/edit" })
+            Assert.Contains($"case (\"POST\", \"/show/{route}\"):", source);
+        var profileBranch = source[source.IndexOf("        if (path is \"/show/profiles/manage\"", StringComparison.Ordinal)
+            ..source.IndexOf("        // Only disposable fixtures:", StringComparison.Ordinal)];
+        Assert.Contains("new ProfilePreview()", profileBranch);
+        Assert.Contains("IsPreview: true", profileBranch);
+        Assert.Contains("frame.Navigate(typeof(ProfilesPage), household)", profileBranch);
+        Assert.Contains("new ProfileEditorNavigation(household, edit)", profileBranch);
+        Assert.DoesNotContain("Session.", profileBranch);
+        Assert.DoesNotContain("AppSettings.", profileBranch);
+        Assert.Contains("or ProfilesPage { IsProfilePreview: true } or ProfileEditorPage { IsProfilePreview: true }", source);
+        Assert.Contains("if (frame.Content is ProfilesPage or ProfileEditorPage) break;", source);
+        var script = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "bale-debug.sh"));
+        foreach (var route in new[] { "profiles manage", "profile create", "profile edit" })
+            Assert.Contains($"\"{route}\") route={route.Replace(' ', '/')} ;;", script);
+    }
+
+    [Fact]
     public async Task PreviewPatchHonorsExplicitClearsAndCancellation()
     {
         var preview = new ProfilePreview();

@@ -17,6 +17,7 @@ internal sealed class ProfilePreview : IProfileRepository
     private readonly Dictionary<string, string> _pins = new() { ["fixture-primary"] = "1234" };
     private int _nextId;
     public HouseholdManagementSession Management { get; }
+    public IReadOnlyList<Profile> Snapshot => _profiles.Select(Copy).ToArray();
 
     public ProfilePreview()
     {
@@ -28,7 +29,7 @@ internal sealed class ProfilePreview : IProfileRepository
     public Task<IReadOnlyList<Profile>> ListAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult<IReadOnlyList<Profile>>(_profiles.Select(Copy).ToArray());
+        return Task.FromResult(Snapshot);
     }
 
     public Task<IReadOnlyList<UserLibrary>> ListLibrariesAsync(CancellationToken cancellationToken = default)

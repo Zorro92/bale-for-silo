@@ -25,7 +25,11 @@
 #   scripts/bale-debug.sh show server           preview manual server entry and advanced options
 #   scripts/bale-debug.sh show server http-warning  preview Connect / Cancel origin consent
 #   scripts/bale-debug.sh show server discovery  preview two nearby rows (no LAN browsing)
-#   scripts/bale-debug.sh show home             return from an auth preview to the signed-in app
+# Profile previews use a fresh in-memory household: Save/Delete never change real profiles or selection.
+#   scripts/bale-debug.sh show profiles manage  preview Manage/Done, Add and Delete (primary PIN 1234)
+#   scripts/bale-debug.sh show profile create   preview Create Profile over the fixture picker
+#   scripts/bale-debug.sh show profile edit     preview Edit Profile over the fixture picker
+#   scripts/bale-debug.sh show home             return from a disposable preview to the signed-in app
 set -euo pipefail
 HOST="${XBOX_HOST:?Set XBOX_HOST to your Xbox IP (shown in Dev Home)}"
 BASE="http://$HOST:8790"
@@ -81,9 +85,12 @@ case "${1:-}" in
       server) route=server ;;
       "server http-warning") route=server/http-warning ;;
       "server discovery") route=server/discovery ;;
+      "profiles manage") route=profiles/manage ;;
+      "profile create") route=profile/create ;;
+      "profile edit") route=profile/edit ;;
       home) route=home ;;
       *)
-        echo "usage: scripts/bale-debug.sh show {login|login expired|login password|servers|server|server http-warning|server discovery|home}" >&2
+        echo "usage: scripts/bale-debug.sh show {login|login expired|login password|servers|server|server http-warning|server discovery|profiles manage|profile create|profile edit|home}" >&2
         exit 2
         ;;
     esac

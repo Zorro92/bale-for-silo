@@ -25,6 +25,8 @@
     <Compile Include="../../src/Bale.Xbox/Services/TopMenuPreviewTiming.cs" Link="TopMenuPreviewTiming.cs" />
     <!-- The DEBUG_SERVER fixture has no UWP, network, client or storage dependency. -->
     <Compile Include="../../src/Bale.Xbox/Services/ProfilePreview.cs" Link="ProfilePreview.cs" />
+    <None Include="../../src/Bale.Xbox/Services/DebugServer.cs" Link="DebugServer.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/bale-debug.sh" Link="bale-debug.sh" CopyToOutputDirectory="PreserveNewest" />
     <!-- Test focus retry coordination against a minimal event/tree stand-in, not the UWP runtime. -->
     <Compile Include="../../src/Bale.Xbox/Services/FocusRetry.cs" Link="FocusRetry.cs" />
     <!-- Check declarative Skyline geometry/states on Linux; this does not render or compile UWP. -->

@@ -111,6 +111,7 @@ public sealed partial class ProfileEditorPage : Page, IBackHandler, IRestoresFoc
         _active = false;
         _lifetime?.Cancel();
         _reverify.Deactivate();
+        if (args.SourcePageType != typeof(ProfilesPage)) _household?.Repository.Management.End();
         TextPrompt.Hide(restoreFocus: false);
         PinPrompt.Hide(restoreFocus: false);
         base.OnNavigatedFrom(args);

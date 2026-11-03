@@ -42,7 +42,10 @@ namespace Bale.Xbox.Services;
 ///   POST /show/server/discovery  preview two identity-confirmed nearby rows
 ///   POST /show/login/expired  preview Login with the session-expired notice
 ///   POST /show/server     preview manual server entry; Back returns to the signed-in page
-///   POST /show/home       close an auth preview and return to the signed-in app
+///   POST /show/profiles/manage  preview Manage/Done, Add and non-primary deletion in a disposable household
+///   POST /show/profile/create  preview Create Profile; Save only changes the fixture
+///   POST /show/profile/edit  preview Edit Profile; Save only changes the fixture
+///   POST /show/home       close a disposable preview and return to the signed-in app
 ///
 /// Only started on sideloaded builds (see App). Anyone on the LAN can reach it while it runs, so it
 /// must never ship in a Store build.
@@ -225,6 +228,9 @@ internal sealed class DebugServer
             case ("POST", "/show/server/http-warning"):
             case ("POST", "/show/server/discovery"):
             case ("POST", "/show/servers"):
+            case ("POST", "/show/profiles/manage"):
+            case ("POST", "/show/profile/create"):
+            case ("POST", "/show/profile/edit"):
             case ("POST", "/show/home"):
                 var showStatus = "200 OK";
                 var showBody = await OnUiAsync(() =>
@@ -236,7 +242,7 @@ internal sealed class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|home|home-empty|requests|requests-empty|request-detail}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|home|home-empty|requests|requests-empty|request-detail}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 
@@ -244,13 +250,29 @@ internal sealed class DebugServer
     {
         if (Window.Current.Content is not Frame frame || Session.Client?.IsSignedIn != true)
         {
-            return ("409 Conflict", "auth previews require an existing signed-in session\n");
+            return ("409 Conflict", "previews require an existing signed-in session\n");
         }
 
         if (path == "/show/home")
         {
             CloseAuthPreview(frame, all: true);
             return ("200 OK", "returned to the signed-in app; session unchanged\n");
+        }
+
+        if (path is "/show/profiles/manage" or "/show/profile/create" or "/show/profile/edit")
+        {
+            CloseAuthPreview(frame, all: true);
+            var profiles = new ProfilePreview();
+            var household = new ProfileNavigation(profiles,
+                static value => Uri.TryCreate(value, UriKind.Absolute, out var url) ? url : null, IsPreview: true);
+            // Keep the fixture picker under both editors: Save/Back cannot enter the real household.
+            frame.Navigate(typeof(ProfilesPage), household);
+            if (path != "/show/profiles/manage")
+            {
+                var edit = path == "/show/profile/edit" ? profiles.Snapshot.First(profile => profile.IsPrimary != true) : null;
+                frame.Navigate(typeof(ProfileEditorPage), new ProfileEditorNavigation(household, edit));
+            }
+            return ("200 OK", "profile preview opened; Save/Delete only change this disposable household; primary PIN 1234; Back or show home returns; signed-in profile unchanged\n");
         }
 
         // Only disposable fixtures: even Connect, password submission, switch/remove and consent stay in memory.
@@ -285,11 +307,19 @@ internal sealed class DebugServer
     internal static bool CloseAuthPreview(Frame frame, bool all = false)
     {
         var closed = false;
-        while (frame.Content is MainPage { IsAuthPreview: true } or ServerListPage { IsAuthPreview: true })
+        while (frame.Content is MainPage { IsAuthPreview: true } or ServerListPage { IsAuthPreview: true }
+            or ProfilesPage { IsProfilePreview: true } or ProfileEditorPage { IsProfilePreview: true })
         {
+            if (!frame.CanGoBack)
+            {
+                // Profile previews must never re-resolve, select or persist a real profile, even without an opener.
+                if (frame.Content is ProfilesPage or ProfileEditorPage) break;
+                Session.ContinueToHome(frame);
+                closed = true;
+                break;
+            }
             closed = true;
-            if (frame.CanGoBack) frame.GoBack();
-            else { Session.ContinueToHome(frame); break; }
+            frame.GoBack();
             if (!all) break;
         }
         if (closed) frame.ForwardStack.Clear();
