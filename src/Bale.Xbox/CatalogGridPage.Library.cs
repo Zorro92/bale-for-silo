@@ -174,7 +174,11 @@ public sealed partial class CatalogGridPage : IBackHandler
             ErrorPanel.Visibility = Visibility.Visible;
         }
         _libraryOverlay?.Update(available);
-        if (!_librarySource.IsPersonal) ErrorMessage.Text = _librarySource.IsCollection ? "Failed to load collection" : "Couldn't load this library.";
+        if (!_librarySource.IsPersonal)
+        {
+            ErrorMessage.Text = _librarySource.IsCollection
+                ? "Failed to load collection" : _entry.Results.Error ?? "Failed to load library";
+        }
         if (_librarySource.IsCollection)
         {
             // screens/library/TvLibraryCollectionDetailScreen.kt itemCountLabel: the server total

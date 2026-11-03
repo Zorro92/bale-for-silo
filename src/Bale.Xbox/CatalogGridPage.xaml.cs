@@ -139,10 +139,14 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
         catch (Exception ex)
         {
             Log.Error("Catalog grid load", ex);
+            // TvLibraryDetailViewModel.kt loadBrowse preserves server feedback and prefixes network
+            // failures; collections and personal lists retain their separate error copy.
+            var errorMessage = _librarySource is { IsPersonal: false, IsCollection: false }
+                ? LibraryBrowseFeed.ErrorMessage(ex) : null;
             // screens/library/TvLibraryDetailScreen.kt / TvLibraryCollectionDetailScreen.kt keep
             // catalog failures retryable, including a 404 for a rejected preserved facet query.
             if (_active && _entry.IsCurrent(Session.Client) && _entry.Results.Fail(request,
-                !IsPersonalGrid && _librarySource is null && ex is ApiException { ResponseStatusCode: 404 }))
+                !IsPersonalGrid && _librarySource is null && ex is ApiException { ResponseStatusCode: 404 }, errorMessage))
             {
                 UpdateState();
                 if ((!request.Append || _librarySource?.IsCollection == true) && !_entry.Results.Unavailable)

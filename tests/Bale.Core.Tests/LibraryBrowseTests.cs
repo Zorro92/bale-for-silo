@@ -149,6 +149,7 @@ public class LibraryBrowseTests
         var source = new LibraryCatalogSource("Movies", Library(filter), client.LibraryBrowse);
         var error = await Assert.ThrowsAnyAsync<ApiException>(() => source.LoadPageAsync(client.Browse, ArtworkWidths.Tv1080, null));
         Assert.Equal((int)status, error.ResponseStatusCode);
+        Assert.Equal("Rejected filter", LibraryBrowseFeed.ErrorMessage(error));
         Assert.True(source.CanClearErrorFilters);
 
         source.SetFilter(source.Query.Filter.ApplyFacets(new()));
