@@ -30,35 +30,55 @@ internal static class AppSettings
         }
     }
 
+    private static readonly Lazy<SavedServerRegistry> ServerRegistry = new(LoadServers);
+    public static SavedServerRegistry Servers => ServerRegistry.Value;
+
+    private static SavedServerRegistry LoadServers()
+    {
+        // AndroidServerRegistry.kt migrates synchronously before route resolution. Keep the old vault
+        // usernames untouched; metadata moves once into a durable file (LocalSettings strings are size-limited).
+        var legacy = new LegacyServerSession(Local.Values[nameof(ServerUrl)] as string,
+            Local.Values[$"ServerName.{Local.Values[nameof(ServerUrl)] as string}"] as string,
+            Local.Values[nameof(ProfileId)] as string, Local.Values[nameof(ProfileName)] as string,
+            Local.Values[nameof(ProfileAvatar)] as string, Local.Values[nameof(AccountName)] as string,
+            Local.Values[nameof(AccessTokenExpiresAt)] is long seconds ? DateTimeOffset.FromUnixTimeSeconds(seconds) : null);
+        var registry = new SavedServerRegistry(new FileSavedServerStorage(Path.Combine(ApplicationData.Current.LocalFolder.Path, "servers.v1.json")), legacy);
+        Log.Info($"Server registry loaded count={registry.Snapshot.Entries.Length}");
+        return registry;
+    }
+
     public static string? ServerUrl
     {
-        get => Local.Values[nameof(ServerUrl)] as string;
-        set => Local.Values[nameof(ServerUrl)] = value;
+        get => Servers.Active?.Url;
+        set
+        {
+            if (value is not null && ServerAddress.TryParse(value, out var server)) Servers.AddAndActivate(server);
+        }
     }
 
     /// <summary>The last pick, not permission to open it automatically (ProfileLaunchPreferences.kt).</summary>
     public static string? ProfileId
     {
-        get => Local.Values[nameof(ProfileId)] as string;
-        set => Local.Values[nameof(ProfileId)] = value;
+        get => Servers.Active?.ProfileId;
+        set => Servers.UpdateActive(s => s with { ProfileId = value });
     }
 
     public static string? ProfileName
     {
-        get => Local.Values[nameof(ProfileName)] as string;
-        set => Local.Values[nameof(ProfileName)] = value;
+        get => Servers.Active?.ProfileName;
+        set => Servers.UpdateActive(s => s with { ProfileName = value });
     }
 
     public static string? ProfileAvatar
     {
-        get => Local.Values[nameof(ProfileAvatar)] as string;
-        set => Local.Values[nameof(ProfileAvatar)] = value;
+        get => Servers.Active?.ProfileAvatar;
+        set => Servers.UpdateActive(s => s with { ProfileAvatar = value });
     }
 
     public static string? AccountName
     {
-        get => Local.Values[nameof(AccountName)] as string;
-        set => Local.Values[nameof(AccountName)] = value;
+        get => Servers.Active?.AccountName;
+        set => Servers.UpdateActive(s => s with { AccountName = value });
     }
 
     // The device-wide choice survives sign-out, as in ProfileLaunchPreferences.kt; a new TV asks.
@@ -76,16 +96,27 @@ internal static class AppSettings
 
     public static DateTimeOffset? AccessTokenExpiresAt
     {
-        get => Local.Values[nameof(AccessTokenExpiresAt)] is long seconds ? DateTimeOffset.FromUnixTimeSeconds(seconds) : null;
-        set => Local.Values[nameof(AccessTokenExpiresAt)] = value?.ToUnixTimeSeconds();
+        get => Servers.Active?.AccessTokenExpiresAt;
+        set => Servers.UpdateActive(s => s with { AccessTokenExpiresAt = value });
     }
 
-    /// <summary>The library a multi-library tab is scoped to, per profile and tab (Skyline §8: persisted).</summary>
-    public static string? GetLibraryScope(string? profileId, string tab) =>
-        Local.Values[$"Scope.{profileId}.{tab}"] as string;
+    /// <summary>The library a multi-library tab is scoped to, per server, profile and tab (Skyline §8).</summary>
+    public static string? GetLibraryScope(string? profileId, string tab)
+    {
+        if (Servers.Active is not { } server) return null;
+        var key = $"ServerScope.{server.Id}.{profileId}.{tab}";
+        if (Local.Values[key] is string scope) return scope;
+        // Only the migrated server may inherit the old install-wide scope, never a second server.
+        if (server.CredentialKey != Local.Values[nameof(ServerUrl)] as string) return null;
+        if (Local.Values[$"Scope.{profileId}.{tab}"] is not string legacy) return null;
+        Local.Values[key] = legacy;
+        return legacy;
+    }
 
-    public static void SetLibraryScope(string? profileId, string tab, string libraryId) =>
-        Local.Values[$"Scope.{profileId}.{tab}"] = libraryId;
+    public static void SetLibraryScope(string? profileId, string tab, string libraryId)
+    {
+        if (Servers.Active is { } server) Local.Values[$"ServerScope.{server.Id}.{profileId}.{tab}"] = libraryId;
+    }
 
     /// <summary>CalendarViewModel remembers the Following / Trending / All view across launches.</summary>
     public static string? CalendarFilter
@@ -95,7 +126,8 @@ internal static class AppSettings
     }
 
     // SignInServer.kt / ServerBranding.kt cache the public name per server, including after sign-out.
-    public static string? GetServerName(string server) => Local.Values[$"ServerName.{server}"] as string;
+    public static string? GetServerName(string server) =>
+        ServerAddress.TryParse(server, out var address) && Servers.Find(address)?.FetchedName is { } name ? name : Local.Values[$"ServerName.{server}"] as string;
 
     public static ServerBranding GetServerBranding(Uri server)
     {
@@ -105,7 +137,11 @@ internal static class AppSettings
 
     public static void SetServerBranding(string server, ServerBranding branding)
     {
-        if (branding.ServerName is { } name) Local.Values[$"ServerName.{server}"] = name;
+        if (branding.ServerName is { } name)
+        {
+            Local.Values[$"ServerName.{server}"] = name;
+            if (Servers.Active?.Url == server) Servers.UpdateActive(s => s with { FetchedName = name });
+        }
         Local.Values[$"ServerMark.{server}"] = branding.MarkUrl?.AbsoluteUri;
     }
 
@@ -126,11 +162,15 @@ internal static class AppSettings
         ForgetCredential(VaultResource, server);
         ForgetCredential(AccessResource, server);
         ForgetCredential(ProfileResource, server);
-        AccessTokenExpiresAt = null;
+        if (Servers.Active is { } active && (active.Url == server || active.CredentialKey == server)) AccessTokenExpiresAt = null;
     }
+
+    private static string CredentialKey(string server) =>
+        ServerAddress.TryParse(server, out var address) ? Servers.Find(address)?.CredentialKey ?? server : server;
 
     private static string? LoadCredential(string resource, string server)
     {
+        server = CredentialKey(server);
         try
         {
             var credential = new PasswordVault().Retrieve(resource, server);
@@ -146,6 +186,7 @@ internal static class AppSettings
 
     private static void SaveCredential(string resource, string server, string? token)
     {
+        server = CredentialKey(server);
         ForgetCredential(resource, server);
         if (!string.IsNullOrEmpty(token))
         {
@@ -155,6 +196,7 @@ internal static class AppSettings
 
     private static void ForgetCredential(string resource, string server)
     {
+        server = CredentialKey(server);
         var vault = new PasswordVault();
         try
         {

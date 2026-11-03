@@ -9,6 +9,7 @@ namespace Bale.Xbox.Services;
 /// <summary>The one signed-in Silo session the app works with, shared by every page.</summary>
 internal static class Session
 {
+    private static readonly object StateGate = new();
     private static Frame? _rootFrame;
     private static bool _routingExpiry;
     private static bool _foreground = true;
@@ -36,20 +37,73 @@ internal static class Session
 
     public static SiloClient Connect(Uri server)
     {
-        Reachability?.Dispose();
-        Client?.Dispose();
-        var client = Client = new SiloClient(server, DeviceIdentity.Current(), onSessionExpired: RouteExpiryAsync);
-        Reachability = new ServerReachabilityMonitor(server);
-        if (_foreground) Reachability.StartForeground();
-        _routingExpiry = false;
-        client.TokensRefreshed += (_, _) =>
+        lock (StateGate)
         {
-            if (ReferenceEquals(Client, client))
+            // TvServerResolver.kt never lets stored credentials reach an unapproved HTTP origin.
+            if (AppSettings.Servers.RequiresHttpApproval(server)) throw new InvalidOperationException("HTTP approval is required.");
+            Disconnect();
+            var client = Client = new SiloClient(server, DeviceIdentity.Current(), onSessionExpired: RouteExpiryAsync);
+            Reachability = new ServerReachabilityMonitor(server);
+            if (_foreground) Reachability.StartForeground();
+            _routingExpiry = false;
+            client.TokensRefreshed += (_, _) =>
             {
-                Persist();
-            }
-        };
-        return client;
+                lock (StateGate)
+                {
+                    // A late refresh from the old server can never reactivate it or overwrite the new scope.
+                    if (ReferenceEquals(Client, client)) Persist();
+                }
+            };
+            return client;
+        }
+    }
+
+    private static void Disconnect()
+    {
+        Reachability?.Dispose();
+        Reachability = null;
+        var old = Client;
+        Client = null;
+        old?.Dispose();
+        ProfileName = null;
+        ProfileAvatar = null;
+    }
+
+    public static void ActivateServer(Uri server, string? name = null, string? verifiedServerId = null)
+    {
+        lock (StateGate)
+        {
+            Persist();
+            AppSettings.Servers.AddAndActivate(server, name, verifiedServerId);
+            Disconnect();
+            Log.Info("Server selection committed; saved credentials retained");
+        }
+    }
+
+    public static void SwitchServer(string id)
+    {
+        lock (StateGate)
+        {
+            Persist();
+            AppSettings.Servers.Activate(id);
+            Disconnect();
+            Log.Info("Saved server switched; resolving saved session");
+        }
+    }
+
+    public static bool RemoveServer(string id)
+    {
+        lock (StateGate)
+        {
+            var entry = AppSettings.Servers.Snapshot.Entries.First(s => s.Id == id);
+            var wasActive = AppSettings.Servers.Active?.Id == id;
+            // Persist the removal before destroying credentials; a failed local write leaves the session usable.
+            AppSettings.Servers.Remove(id);
+            if (wasActive) Disconnect();
+            AppSettings.ForgetTokens(entry.CredentialKey);
+            Log.Info($"Saved server removed active={wasActive}");
+            return wasActive;
+        }
     }
 
     private static async Task RouteExpiryAsync(SiloClient client)
@@ -88,24 +142,24 @@ internal static class Session
     /// <summary>Saves resumable credentials, including secure PIN proof for an explicitly automatic profile.</summary>
     public static void Persist()
     {
-        if (Client is not { RefreshToken: { } refreshToken } client)
+        lock (StateGate)
         {
-            return;
-        }
-
-        _routingExpiry = false;
-        var server = ServerAddress.ToBaseUrl(client.Server);
-        AppSettings.ServerUrl = server;
-        AppSettings.SaveRefreshToken(server, refreshToken);
-        AppSettings.SaveAccessToken(server, client.AccessToken);
-        AppSettings.AccessTokenExpiresAt = client.AccessTokenExpiresAt;
-        AppSettings.ProfileId = client.ProfileId;
-        AppSettings.SaveProfileToken(server, client.ProfileToken);
-        AppSettings.ProfileName = ProfileName;
-        AppSettings.ProfileAvatar = ProfileAvatar?.AbsoluteUri;
-        if (client.Account?.Username is { } accountName)
-        {
-            AppSettings.AccountName = accountName;
+            if (Client is not { RefreshToken: { } refreshToken } client) return;
+            var server = ServerAddress.ToBaseUrl(client.Server);
+            if (AppSettings.Servers.Active?.Url != server) return;
+            _routingExpiry = false;
+            AppSettings.SaveRefreshToken(server, refreshToken);
+            AppSettings.SaveAccessToken(server, client.AccessToken);
+            AppSettings.SaveProfileToken(server, client.ProfileToken);
+            AppSettings.Servers.UpdateActive(s => s with
+            {
+                AccessTokenExpiresAt = client.AccessTokenExpiresAt,
+                // The picker has no acting profile; switching there must retain the last saved pick.
+                ProfileId = client.ProfileId ?? s.ProfileId,
+                ProfileName = client.ProfileId is null ? s.ProfileName : ProfileName,
+                ProfileAvatar = client.ProfileId is null ? s.ProfileAvatar : ProfileAvatar?.AbsoluteUri,
+                AccountName = client.Account?.Username ?? s.AccountName,
+            });
         }
     }
 
@@ -169,21 +223,25 @@ internal static class Session
 
     public static async Task SignOutAsync(bool removeServer = false)
     {
-        Reachability?.Dispose();
-        Reachability = null;
-        var client = Client;
-        var server = client is not null ? ServerAddress.ToBaseUrl(client.Server) : AppSettings.ServerUrl;
-        Client = null; // A late refresh must not write a signed-out session back to the vault.
-        if (server is not null)
+        SiloClient? client;
+        lock (StateGate)
         {
-            AppSettings.ForgetTokens(server);
+            var entry = AppSettings.Servers.Active;
+            // TvServerResolver.kt: durable removal first. Failure leaves the old session usable.
+            if (removeServer && entry is not null) AppSettings.Servers.Remove(entry.Id);
+            else AppSettings.Servers.UpdateActive(s => s with
+            {
+                ProfileId = null, ProfileName = null, ProfileAvatar = null, AccountName = null, AccessTokenExpiresAt = null,
+            });
+            Reachability?.Dispose();
+            Reachability = null;
+            client = Client;
+            Client = null; // A late refresh must not write a signed-out session back to the vault.
+            if (entry is not null) AppSettings.ForgetTokens(entry.CredentialKey);
+            ProfileName = null;
+            ProfileAvatar = null;
+            Log.Info($"Sign out committed removeServer={removeServer}");
         }
-
-        // TvSignOut.kt keeps the server registry entry unless explicitly asked to remove it.
-        // Bale has one saved address: clear credentials first, then keep it for Login or forget it.
-        AppSettings.ServerUrl = removeServer ? null : server;
-        ClearProfile();
-        AppSettings.AccountName = null;
         if (client is not null)
         {
             try
