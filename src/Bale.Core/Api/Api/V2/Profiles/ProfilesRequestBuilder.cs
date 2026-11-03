@@ -19,7 +19,7 @@ namespace Bale.Core.Api.Api.V2.Profiles
     public partial class ProfilesRequestBuilder : BaseRequestBuilder
     {
         /// <summary>Gets an item from the Bale.Core.Api.api.v2.profiles.item collection</summary>
-        /// <param name="position">The profile whose PIN is checked</param>
+        /// <param name="position">The profile</param>
         /// <returns>A <see cref="global::Bale.Core.Api.Api.V2.Profiles.Item.ProfilesItemRequestBuilder"/></returns>
         public global::Bale.Core.Api.Api.V2.Profiles.Item.ProfilesItemRequestBuilder this[string position]
         {

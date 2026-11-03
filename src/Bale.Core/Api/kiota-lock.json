@@ -1,5 +1,5 @@
 {
-  "descriptionHash": "957E63A8B42612D4F4496277D070D3886FEDF537A0D83781F8351053B425B9C46A307EF7818022D2B303CA238D3EB9FF5127A4E5DEBA3ED4304BB6D99F19E763",
+  "descriptionHash": "C2AE2A464AE64CF679F2019B01D60E4F276A6B24702CFFE76160D8F0A94CCBBB3E1CE4B7734D9CD9B6218CB03881DB337F82E16F12F23E4734EF8F43EA2BB11C",
   "descriptionLocation": "../../../.cache/silo-openapi-44a345dbfb8c0a5892dc366ee0dd33fc091b7cf2.json",
   "lockFileVersion": "1.0.0",
   "kiotaVersion": "1.36.1",
@@ -39,6 +39,7 @@
     "/api/v2/auth/logout",
     "/api/v2/account/me",
     "/api/v2/profiles",
+    "/api/v2/profiles/{id}",
     "/api/v2/profiles/{id}/verify-pin",
     "/api/v2/calendar",
     "/api/v2/history",

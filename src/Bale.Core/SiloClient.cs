@@ -23,6 +23,7 @@ public sealed class SiloClient : IDisposable
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private DateTimeOffset? _accessTokenExpiresAt;
     private TaskCompletionSource? _sessionExpiry;
+    private long _accountGeneration;
 
     /// <param name="onSessionExpired">Finish root sign-in navigation before failed requests reach page error handlers.</param>
     public SiloClient(Uri server, ClientIdentity identity, HttpMessageHandler? transport = null, TimeProvider? time = null,
@@ -37,6 +38,10 @@ public sealed class SiloClient : IDisposable
         Detail = new DetailFeed(_connection.Api, Browse);
         People = new People.PersonFeed(_connection.Api, Browse);
         Requests = new Requests.RequestsFeed(_connection.Api, _time);
+        Profiles = new Profiles.ProfileRepository(_connection.Api, () => Interlocked.Read(ref _accountGeneration), id =>
+        {
+            if (ProfileId == id) UseProfile(null);
+        });
     }
 
     public Uri Server => _connection.Server;
@@ -54,6 +59,8 @@ public sealed class SiloClient : IDisposable
     public People.PersonFeed People { get; }
 
     public Requests.RequestsFeed Requests { get; }
+
+    public Profiles.ProfileRepository Profiles { get; }
 
     public string? AccessToken { get; private set; }
 
@@ -86,6 +93,8 @@ public sealed class SiloClient : IDisposable
         string? profileId = null, string? profileToken = null)
     {
         _sessionExpiry = null;
+        Interlocked.Increment(ref _accountGeneration);
+        Profiles.Management.End();
         Requests.Reset();
         RefreshToken = refreshToken;
         AccessToken = accessToken;
@@ -99,6 +108,8 @@ public sealed class SiloClient : IDisposable
     public void SignIn(TokenPair tokens, string? profileId = null, string? profileToken = null)
     {
         _sessionExpiry = null;
+        Interlocked.Increment(ref _accountGeneration);
+        Profiles.Management.End();
         Requests.Reset();
         AccessToken = tokens.AccessToken;
         RefreshToken = tokens.RefreshToken;
@@ -148,8 +159,7 @@ public sealed class SiloClient : IDisposable
     /// <summary>The household profiles on this account, for a "Who's watching?" screen.</summary>
     public async Task<IReadOnlyList<Profile>> GetProfilesAsync(CancellationToken cancellationToken = default)
     {
-        var profiles = await Api.Api.V2.Profiles.GetAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-        return profiles?.Items ?? [];
+        return await Profiles.ListAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Acts as this profile; null clears selection. New locked picks need <see cref="VerifyPinAsync"/>.</summary>
@@ -163,19 +173,18 @@ public sealed class SiloClient : IDisposable
     /// <summary>Checks a locked profile's PIN and, when it's right, acts as that profile.</summary>
     public async Task<bool> VerifyPinAsync(string profileId, string pin, CancellationToken cancellationToken = default)
     {
-        ProfileVerification? verification;
+        var generation = Interlocked.Read(ref _accountGeneration);
+        string? proof;
         try
         {
-            verification = await Api.Api.V2.Profiles[profileId].VerifyPin.PostAsync(
-                new ProfilePINCheck { Pin = pin },
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+            proof = await Profiles.VerifyPinAsync(profileId, pin, cancellationToken).ConfigureAwait(false);
         }
         catch (ApiException e) when (e.ResponseStatusCode is 401 or 403)
         {
             return false;
         }
 
-        if (verification?.Valid != true || string.IsNullOrEmpty(verification.ProfileToken))
+        if (proof is null || generation != Interlocked.Read(ref _accountGeneration))
         {
             return false;
         }
@@ -184,7 +193,7 @@ public sealed class SiloClient : IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         Requests.Reset();
         ProfileId = profileId;
-        ProfileToken = verification.ProfileToken;
+        ProfileToken = proof;
         return true;
     }
 
@@ -211,6 +220,8 @@ public sealed class SiloClient : IDisposable
     /// <summary>Forgets credentials locally without a logout request, including after session expiry.</summary>
     public void ForgetSession()
     {
+        Interlocked.Increment(ref _accountGeneration);
+        Profiles.Management.End();
         Requests.Reset();
         AccessToken = null;
         RefreshToken = null;
@@ -222,6 +233,7 @@ public sealed class SiloClient : IDisposable
 
     public void Dispose()
     {
+        Profiles.Management.End();
         _connection.Dispose();
         _refreshLock.Dispose();
     }

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using Microsoft.Kiota.Http.HttpClientLibrary.Extensions;
 
 namespace Bale.Core.Connection;
 
@@ -25,6 +26,8 @@ internal sealed class SiloRequestHandler : DelegatingHandler
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var headers = request.Headers;
+        var profile = request.GetRequestOption<ProfileRequestOption>();
+        profile?.CheckCurrent();
         headers.TryAddWithoutValidation("X-Silo-Device-Id", _identity.DeviceId);
         headers.TryAddWithoutValidation("X-Silo-Device-Name", _identity.DeviceName);
         headers.TryAddWithoutValidation("X-Silo-Device-Platform", _identity.Platform);
@@ -46,8 +49,9 @@ internal sealed class SiloRequestHandler : DelegatingHandler
         if (headers.Authorization is null && _credentials is not null && !IsAnonymousAuth(request)
             && await _credentials(cancellationToken).ConfigureAwait(false) is { AccessToken.Length: > 0 } credentials)
         {
+            profile?.CheckCurrent();
             sent = credentials;
-            SetCredentials(headers, credentials);
+            SetCredentials(headers, credentials, profile);
         }
 
         // AuthInterceptorImpl.kt SiloAuthPlugin: any authenticated endpoint may discover a revoked
@@ -84,7 +88,8 @@ internal sealed class SiloRequestHandler : DelegatingHandler
         retry.Headers.Remove("Authorization");
         retry.Headers.Remove("X-Profile-Id");
         retry.Headers.Remove("X-Profile-Token");
-        SetCredentials(retry.Headers, refreshed);
+        profile?.CheckCurrent();
+        SetCredentials(retry.Headers, refreshed, profile);
         if (body is not null)
         {
             retry.Content = new ByteArrayContent(body);
@@ -101,11 +106,13 @@ internal sealed class SiloRequestHandler : DelegatingHandler
         && (path.EndsWith("/api/v2/auth/refresh", StringComparison.Ordinal)
             || path.Contains("/api/v2/auth/device/", StringComparison.Ordinal));
 
-    private static void SetCredentials(HttpRequestHeaders headers, RequestCredentials credentials)
+    private static void SetCredentials(HttpRequestHeaders headers, RequestCredentials credentials, ProfileRequestOption? profile)
     {
         headers.Authorization = new AuthenticationHeaderValue("Bearer", credentials.AccessToken);
-        AddIfPresent(headers, "X-Profile-Id", credentials.ProfileId);
-        AddIfPresent(headers, "X-Profile-Token", credentials.ProfileToken);
+        headers.Remove("X-Profile-Id");
+        headers.Remove("X-Profile-Token");
+        AddIfPresent(headers, "X-Profile-Id", profile is null ? credentials.ProfileId : profile.ProfileId);
+        AddIfPresent(headers, "X-Profile-Token", profile is null ? credentials.ProfileToken : profile.ProfileToken);
     }
 
     private static void AddIfPresent(HttpRequestHeaders headers, string name, string? value)
