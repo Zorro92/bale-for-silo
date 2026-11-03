@@ -4234,5 +4234,42 @@
   <Style x:Key="SkylineProfileSwitchSubtitleStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="13.76" /><Setter Property="LineHeight" Value="17.2" /><Setter Property="Foreground" Value="#8CFFFFFF" /><Setter Property="Margin" Value="0,2,0,0" /></Style>
   <Style x:Key="SkylineProfileTextDialogStyle" TargetType="Border"><Setter Property="Width" Value="320" /><Setter Property="Padding" Value="24" /><Setter Property="CornerRadius" Value="12" /><Setter Property="Background" Value="{StaticResource SkylineSurfaceElevated}" /><Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Center" /></Style>
   <Style x:Key="SkylineProfileTextTitleStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="16.34" /><Setter Property="LineHeight" Value="18.92" /><Setter Property="FontWeight" Value="SemiBold" /></Style>
+  <!-- TvTextInputDialog.kt: outlined 56dp inputs stretch inside the 320dp card. Keep the native
+       editing parts, but not Login's fixed widths, credential icons or white Marquee focus fill. -->
+  <Style x:Key="SkylineProfileTextFieldStyle" TargetType="TextBox" BasedOn="{StaticResource SkylineCredentialFieldStyle}">
+    <Setter Property="Width" Value="Auto" /><Setter Property="Height" Value="56" /><Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="FontSize" Value="13.76" /><Setter Property="Background" Value="Transparent" /><Setter Property="BorderBrush" Value="#9EEDEDED" /><Setter Property="CornerRadius" Value="4" /><Setter Property="Padding" Value="16,0" />
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TextBox">
+      <Grid>
+        <Border x:Name="Field" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="{TemplateBinding CornerRadius}" />
+        <Border Background="{StaticResource SkylineSurfaceElevated}" Padding="4,0" Margin="12,-8,0,0" HorizontalAlignment="Left" VerticalAlignment="Top">
+          <ContentControl Content="{TemplateBinding Header}" Foreground="{TemplateBinding Foreground}" FontSize="10.32" IsTabStop="False" IsHitTestVisible="False" />
+        </Border>
+        <ScrollViewer x:Name="ContentElement" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" Foreground="{TemplateBinding Foreground}" HorizontalScrollMode="Auto" HorizontalScrollBarVisibility="Hidden" VerticalScrollMode="Disabled" VerticalScrollBarVisibility="Disabled" ZoomMode="Disabled" IsTabStop="False" />
+        <VisualStateManager.VisualStateGroups><VisualStateGroup x:Name="CommonStates">
+          <VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Disabled" />
+          <VisualState x:Name="Focused"><VisualState.Setters><Setter Target="Field.BorderBrush" Value="{StaticResource SkylinePrimary}" /><Setter Target="Field.BorderThickness" Value="2" /></VisualState.Setters></VisualState>
+        </VisualStateGroup></VisualStateManager.VisualStateGroups>
+      </Grid>
+    </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style x:Key="SkylineProfileTextPasswordStyle" TargetType="PasswordBox" BasedOn="{StaticResource SkylineCredentialPasswordStyle}">
+    <Setter Property="Width" Value="Auto" /><Setter Property="Height" Value="56" /><Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="FontSize" Value="13.76" /><Setter Property="Background" Value="Transparent" /><Setter Property="BorderBrush" Value="#9EEDEDED" /><Setter Property="CornerRadius" Value="4" /><Setter Property="Padding" Value="16,0" />
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="PasswordBox">
+      <Grid>
+        <Border x:Name="Field" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="{TemplateBinding CornerRadius}" />
+        <Border Background="{StaticResource SkylineSurfaceElevated}" Padding="4,0" Margin="12,-8,0,0" HorizontalAlignment="Left" VerticalAlignment="Top">
+          <ContentControl Content="{TemplateBinding Header}" Foreground="{TemplateBinding Foreground}" FontSize="10.32" IsTabStop="False" IsHitTestVisible="False" />
+        </Border>
+        <ScrollViewer x:Name="ContentElement" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" Foreground="{TemplateBinding Foreground}" HorizontalScrollMode="Auto" HorizontalScrollBarVisibility="Hidden" VerticalScrollMode="Disabled" VerticalScrollBarVisibility="Disabled" ZoomMode="Disabled" IsTabStop="False" />
+        <VisualStateManager.VisualStateGroups><VisualStateGroup x:Name="CommonStates">
+          <VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Disabled" />
+          <VisualState x:Name="Focused"><VisualState.Setters><Setter Target="Field.BorderBrush" Value="{StaticResource SkylinePrimary}" /><Setter Target="Field.BorderThickness" Value="2" /></VisualState.Setters></VisualState>
+        </VisualStateGroup></VisualStateManager.VisualStateGroups>
+      </Grid>
+    </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style x:Key="SkylineProfileTextActionStyle" TargetType="Button" BasedOn="{StaticResource SkylineSearchRetryStyle}"><Setter Property="FontSize" Value="12.04" /><Setter Property="Padding" Value="16,8" /><Setter Property="Margin" Value="0" /></Style>
   <SolidColorBrush x:Key="SkylineProfileTextScrim" Color="#D9000000" />
 </ResourceDictionary>

@@ -399,7 +399,7 @@ public sealed partial class ProfileEditorPage : Page, IBackHandler, IRestoresFoc
             if (x != 0) { if (target >= 0 && target < _presets.Count && target / 6 == index / 6) FocusAvatar(target); }
             else if (target >= 0 && target < _presets.Count) FocusAvatar(target);
             else if (y > 0) FocusTarget(NameField);
-            else _stylesRail.Focus();
+            else FocusTarget(ShuffleButton);
             return;
         }
         var inStyles = SettingsInput.IsWithin(focused, Styles);
@@ -407,13 +407,24 @@ public sealed partial class ProfileEditorPage : Page, IBackHandler, IRestoresFoc
         var inModes = SettingsInput.IsWithin(focused, LibraryModes);
         if (x != 0)
         {
-            // The shared Rails own horizontal motion; single fields and vertical library rows have no sideways exit.
-            if (!inStyles && !inRatings && !inModes) args.Handled = true;
+            // TvProfileForm.kt explicitly links Name → PIN → Child. Keep those vertical links;
+            // the PIN section's trailing Remove pill has a deliberate Right / Left utility link.
+            // Grid edges above and every other field/vertical library row still stop horizontally.
+            if (!inStyles && !inRatings && !inModes)
+            {
+                args.Handled = true;
+                if (focused == PinField && x > 0 && RemovePinButton.Visibility == Visibility.Visible) FocusTarget(RemovePinButton);
+                else if (focused == RemovePinButton && x < 0) FocusTarget(PinField);
+            }
             return;
         }
         args.Handled = true;
         if (focused == CancelButton) { if (y > 0) _stylesRail.Focus(); }
-        else if (inStyles) { if (y > 0) EnterAvatars(); else if (!_form.IsEditing) FocusTarget(CancelButton); }
+        else if (inStyles)
+        {
+            if (y > 0) { if (_form.AvatarStyleId == "initials") FocusTarget(NameField); else FocusTarget(ShuffleButton); }
+            else if (!_form.IsEditing) FocusTarget(CancelButton);
+        }
         else if (focused == ShuffleButton) { if (y > 0) EnterAvatars(); else _stylesRail.Focus(); }
         else if (focused == NameField) { if (y > 0) FocusTarget(PinField); else if (_form.AvatarStyleId == "initials") _stylesRail.Focus(); else EnterAvatars(); }
         else if (focused == PinField) FocusTarget(y > 0 ? ChildSwitch : NameField);

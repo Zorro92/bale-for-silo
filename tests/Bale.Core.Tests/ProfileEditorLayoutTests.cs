@@ -25,6 +25,41 @@ public sealed class ProfileEditorLayoutTests
         Assert.Equal("NumericPin", (string?)modal.Descendants(Ui + "PasswordBox").Single().Attribute("InputScope"));
     }
 
+    [Theory]
+    [InlineData("TextBox", "SkylineProfileTextFieldStyle")]
+    [InlineData("PasswordBox", "SkylineProfileTextPasswordStyle")]
+    public void TextDialogFieldsStretchWithinTheCardAndRetainNativeEditingParts(string type, string key)
+    {
+        var modal = Load("ProfileTextDialog.xaml");
+        var input = modal.Descendants(Ui + type).Single();
+        Assert.Equal($"{{StaticResource {key}}}", (string?)input.Attribute("Style"));
+        var style = Load("Skyline.xaml").Root!.Elements(Ui + "Style")
+            .Single(element => (string?)element.Attribute(Xaml + "Key") == key);
+        string? Value(string property) => (string?)style.Elements(Ui + "Setter")
+            .Single(setter => (string?)setter.Attribute("Property") == property).Attribute("Value");
+        Assert.Equal("Auto", Value("Width"));
+        Assert.Equal("Stretch", Value("HorizontalAlignment"));
+        Assert.Equal("56", Value("Height"));
+        Assert.Contains(style.Descendants(Ui + "ScrollViewer"), element => (string?)element.Attribute(Xaml + "Name") == "ContentElement");
+        Assert.Contains(style.Descendants(Ui + "ContentControl"), element => (string?)element.Attribute("Content") == "{TemplateBinding Header}");
+        Assert.Empty(style.Descendants(Ui + "Path")); // No inherited Login credential icon.
+    }
+
+    [Fact]
+    public void RemoteFocusIncludesTrailingActionsWithoutChangingTheGridColumnOrPinVerticalLinks()
+    {
+        // Declarative/source guards only, not execution of UWP's focus system.
+        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "ProfileEditorPage.cs.txt"));
+        Assert.Contains("target / 6 == index / 6", source);
+        Assert.Contains("var target = index + x + y * 6;", source);
+        Assert.Contains("else FocusTarget(ShuffleButton);", source);
+        Assert.Contains("if (focused == PinField && x > 0 && RemovePinButton.Visibility == Visibility.Visible) FocusTarget(RemovePinButton);", source);
+        Assert.Contains("else if (focused == RemovePinButton && x < 0) FocusTarget(PinField);", source);
+        Assert.Contains("if (y > 0) FocusTarget(PinField);", source);
+        Assert.Contains("else if (focused == PinField) FocusTarget(y > 0 ? ChildSwitch : NameField);", source);
+        Assert.Contains("else if (focused == RemovePinButton) FocusTarget(y > 0 ? PinField : NameField);", source);
+    }
+
     [Fact]
     public void EditorMatchesOfficialGeometryWithoutInventingPreferenceSections()
     {

@@ -10,15 +10,15 @@
       <StackPanel Spacing="12">
         <TextBlock x:Name="Title" Style="{StaticResource SkylineProfileTextTitleStyle}" />
         <TextBox x:Name="NameInput" Header="Profile name" MaxLength="200" IsSpellCheckEnabled="False" IsTextPredictionEnabled="False"
-                 PreventKeyboardDisplayOnProgrammaticFocus="True" Style="{StaticResource SkylineCredentialFieldStyle}" TextChanged="OnTextChanged" />
+                 PreventKeyboardDisplayOnProgrammaticFocus="True" Style="{StaticResource SkylineProfileTextFieldStyle}" TextChanged="OnTextChanged" />
         <PasswordBox x:Name="PinInput" Header="4-digit PIN" InputScope="NumericPin" MaxLength="200" PasswordRevealMode="Hidden"
-                     PreventKeyboardDisplayOnProgrammaticFocus="True" Style="{StaticResource SkylineCredentialPasswordStyle}"
+                     PreventKeyboardDisplayOnProgrammaticFocus="True" Style="{StaticResource SkylineProfileTextPasswordStyle}"
                      PasswordChanged="OnPasswordChanged" Visibility="Collapsed" />
         <!-- rail-layout: non-card — text dialog Cancel / Done actions. -->
         <ItemsControl x:Name="Actions" HorizontalAlignment="Right">
           <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-          <Button x:Name="CancelButton" Content="Cancel" Style="{StaticResource SkylineAuthPlainButtonStyle}" Click="OnCancelClick" />
-          <Button x:Name="DoneButton" Content="Done" Style="{StaticResource SkylineAuthPlainButtonStyle}" Click="OnDoneClick" />
+          <Button x:Name="CancelButton" Content="Cancel" Style="{StaticResource SkylineProfileTextActionStyle}" Click="OnCancelClick" />
+          <Button x:Name="DoneButton" Content="Done" Style="{StaticResource SkylineProfileTextActionStyle}" Click="OnDoneClick" />
         </ItemsControl>
       </StackPanel>
     </Border>
