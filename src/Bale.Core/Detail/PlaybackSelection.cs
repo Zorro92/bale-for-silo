@@ -14,6 +14,22 @@ public sealed record PlaybackSelection(string? FileId = null, int? AudioIndex = 
 public sealed class PlaybackSelectionState
 {
     private readonly Dictionary<string, (PlaybackSelection Selection, string? TrackFileId)> _items = new();
+    private readonly Dictionary<string, PickedAudioChoice> _audioChoices = new();
+
+    private sealed record PickedAudioChoice(string ContentId, long?[] EffectiveAudio, PendingSeriesAudioChoice Pending);
+
+    /// <summary>
+    /// TvItemDetailViewModel.kt / shared/src/commonMain/kotlin/org/siloserver/silo/model/playback/PickedSeriesChoiceBaseline.kt:
+    /// keep a page pick/reset over stale details after its write lands, until that same item answers differently.
+    /// Another episode's different file ordinals do not supersede the choice.
+    /// </summary>
+    public PendingSeriesAudioChoice? PendingAudioChoiceFor(ItemDetail? detail)
+    {
+        if (detail is null || !_audioChoices.TryGetValue(PlaybackTrackChoices.OwnerId(detail), out var picked)) return null;
+        return detail.ContentId == picked.ContentId
+            && !detail.Versions.Select(version => version.EffectiveAudioTrackIndex).SequenceEqual(picked.EffectiveAudio)
+            ? null : picked.Pending;
+    }
 
     public PlaybackSelection For(ItemDetail? detail)
     {
@@ -52,6 +68,14 @@ public sealed class PlaybackSelectionState
             _ => current with { SubtitleIndex = option.TrackIndex },
         };
         var version = PlaybackFormatting.SelectDisplayVersion(detail.Versions, selected.FileId, detail.LastFileId);
+        if (kind == PlaybackSelectorKind.Audio && detail.Type is "movie" or "episode" && version is not null
+            && (selected.AudioIndex is null || selected.AudioIndex >= 0 && selected.AudioIndex < (version.AudioTracks?.Count ?? 0)))
+        {
+            var choice = selected.AudioIndex is { } ordinal ? PlaybackTrackChoices.Audio(version, ordinal) : null;
+            _audioChoices[PlaybackTrackChoices.OwnerId(detail)] = new(detail.ContentId,
+                detail.Versions.Select(file => file.EffectiveAudioTrackIndex).ToArray(), new(choice));
+        }
+
         _items[detail.ContentId] = (selected, version?.FileId);
         return For(detail);
     }

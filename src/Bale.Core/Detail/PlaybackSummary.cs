@@ -16,12 +16,8 @@ public sealed record PlaybackSummaryValues(string? Version, string? Audio, strin
         if (version is null) return Empty;
         var compact = PlaybackFormatting.VersionCompactLabel(version);
         var versionValue = selectedFileId is null && compact != "Auto" ? "Auto · " + compact : compact;
-        // TvItemDetailViewModel.kt's automaticAudioOrdinal gives a server-resolved series choice precedence.
-        if (version.EffectiveAudioTrackIndex is >= 0 and var effective && effective < (version.AudioTracks?.Count ?? 0))
-        {
-            automaticAudioTrackOrdinal = (int)effective;
-        }
-
+        // TvItemDetailScreen.kt passes automaticAudioOrdinal after server/pending-choice resolution.
+        // Do not replace it with the stale effective index that a pending pick/reset just overlaid.
         var audioValue = selectedAudioTrackIndex is null && !automaticAudioResolutionKnown ? "Auto"
             : PlaybackFormatting.AudioValueLabel(version, selectedAudioTrackIndex, automaticAudioTrackOrdinal).Replace("Auto: ", "Auto · ");
         SubtitleAutoContext? context = null;
@@ -53,7 +49,9 @@ public sealed class PlaybackSummaryState
 
     public PlaybackSummaryValues Update(ItemDetail detail, string? nextUpTargetId = null,
         ItemDetail? nextUpPlaybackDetail = null, bool transitioning = false,
-        string? selectedFileId = null, int? selectedAudioTrackIndex = null, int? selectedSubtitleTrackIndex = null)
+        string? selectedFileId = null, int? selectedAudioTrackIndex = null, int? selectedSubtitleTrackIndex = null,
+        bool automaticAudioResolutionKnown = false, int? automaticAudioTrackOrdinal = null,
+        SubtitleAutoContext? subtitleAutoContext = null)
     {
         if (_contentId != detail.ContentId)
         {
@@ -64,7 +62,9 @@ public sealed class PlaybackSummaryState
         var playbackDetail = detail.PlaysEpisodes
             ? nextUpTargetId is not null && nextUpPlaybackDetail?.ContentId == nextUpTargetId ? nextUpPlaybackDetail : null
             : detail;
-        var resolved = PlaybackSummaryValues.For(playbackDetail, selectedFileId, selectedAudioTrackIndex, selectedSubtitleTrackIndex);
+        var resolved = PlaybackSummaryValues.For(playbackDetail, selectedFileId, selectedAudioTrackIndex, selectedSubtitleTrackIndex,
+            automaticAudioResolutionKnown: automaticAudioResolutionKnown, automaticAudioTrackOrdinal: automaticAudioTrackOrdinal,
+            subtitleAutoContext: subtitleAutoContext);
         if (detail.PlaysEpisodes && transitioning) return _previous ?? resolved;
         _previous = resolved;
         return resolved;

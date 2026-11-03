@@ -149,6 +149,70 @@ public class PlaybackSelectorTests
     }
 
     [Fact]
+    public void PageAutoResetOutlivesItsWriteUntilTheSameItemsEffectiveAudioChanges()
+    {
+        // TvTrackSelectionPersistenceTest.kt: DELETE can land before loaded detail fields are refreshed.
+        var detail = Detail("e1") with { Type = "episode", SeriesId = "show", Versions = [Version()] };
+        var state = new PlaybackSelectionState();
+        state.Select(detail, PlaybackSelectorKind.Audio, new("Auto", "", true));
+        var pending = state.PendingAudioChoiceFor(detail);
+        Assert.NotNull(pending);
+        Assert.Null(pending.Choice);
+        Assert.Null(PlaybackAudioSelection.AutomaticAudioOrdinal(detail.Versions[0], "en", null, pending));
+        Assert.Equal("Auto", Assert.Single(PlaybackFormatting.SelectorOptions(PlaybackSelectorKind.Audio, detail,
+            state.For(detail)), option => option.IsSelected).Title);
+
+        var refreshed = detail with { Versions = [Version()] };
+        refreshed.Versions[0].EffectiveAudioTrackIndex = 0;
+        Assert.Null(state.PendingAudioChoiceFor(refreshed));
+        Assert.Equal(0, PlaybackAudioSelection.AutomaticAudioOrdinal(refreshed.Versions[0], "ja", null,
+            state.PendingAudioChoiceFor(refreshed)));
+    }
+
+    [Fact]
+    public void PendingSeriesPickFollowsSignaturesAcrossEpisodesAndVersionsWithoutChangingMenuChecks()
+    {
+        var state = new PlaybackSelectionState();
+        var first = Detail("e1") with { Type = "episode", SeriesId = "show", Versions = [Version()] };
+        var otherVersion = Version();
+        otherVersion.FileId = "other";
+        otherVersion.AudioTracks!.Reverse();
+        otherVersion.EffectiveAudioTrackIndex = 0;
+        var second = first with { ContentId = "e2", Versions = [otherVersion] };
+        state.Select(first, PlaybackSelectorKind.Audio, new("Japanese", "", true, TrackIndex: 1));
+        var pending = state.PendingAudioChoiceFor(second);
+        Assert.NotNull(pending);
+        Assert.Equal(0, PlaybackAudioSelection.AutomaticAudioOrdinal(otherVersion, "en", null, pending));
+        Assert.Equal(PlaybackSelection.Auto, state.For(second));
+        Assert.Equal("Auto", Assert.Single(PlaybackFormatting.SelectorOptions(PlaybackSelectorKind.Audio, second,
+            state.For(second)), option => option.IsSelected).Title);
+        Assert.Null(state.PendingAudioChoiceFor(second with { SeriesId = "another-show" }));
+        Assert.Null(state.PendingAudioChoiceFor(null));
+        Assert.NotNull(state.PendingAudioChoiceFor(second));
+    }
+
+    [Fact]
+    public void VersionAndEditionChangesKeepTheSeriesOverlayButClearFileSpecificChoices()
+    {
+        var state = new PlaybackSelectionState();
+        var first = Version();
+        var other = Version();
+        other.FileId = "other";
+        other.AudioTracks!.Reverse();
+        var detail = Detail("movie") with { Versions = [first, other] };
+        state.Select(detail, PlaybackSelectorKind.Audio, new("Japanese", "", true, TrackIndex: 1));
+        var pending = state.PendingAudioChoiceFor(detail);
+        var selection = state.Select(detail, PlaybackSelectorKind.Edition, new("Other", "", true, FileId: "other"));
+        Assert.Equal(new PlaybackSelection("other"), selection);
+        Assert.Same(pending, state.PendingAudioChoiceFor(detail));
+        Assert.Equal(0, PlaybackAudioSelection.AutomaticAudioOrdinal(other, "en", null, pending));
+        state.Select(detail, PlaybackSelectorKind.Audio, new("Auto", "", true));
+        Assert.Null(state.PendingAudioChoiceFor(detail)!.Choice);
+        state.Select(detail, PlaybackSelectorKind.Version, new("Auto", "", true));
+        Assert.Null(state.PendingAudioChoiceFor(detail)!.Choice);
+    }
+
+    [Fact]
     public void MenuFocusStartsOnCheckedRowStopsAtEdgesAndRevealsBelowFoldRows()
     {
         PlaybackSelectorOption[] options = [new("Auto", "", false), new("Off", "", true)];

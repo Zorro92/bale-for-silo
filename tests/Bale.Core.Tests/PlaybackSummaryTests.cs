@@ -46,10 +46,65 @@ public class PlaybackSummaryTests
         var movie = Item("m") with { EffectiveSubtitleLanguage = "en", EffectiveSubtitleMode = "always" };
         movie.Versions[0].AudioTracks!.Add(new AudioTrack { Language = "fre" });
         movie.Versions[0].EffectiveAudioTrackIndex = 1;
-        var values = PlaybackSummaryValues.For(movie, automaticAudioResolutionKnown: true, automaticAudioTrackOrdinal: 0,
+        var automaticAudio = PlaybackAudioSelection.AutomaticAudioOrdinal(movie.Versions[0], "en", new(["aac", "eac3"]));
+        var values = PlaybackSummaryValues.For(movie, automaticAudioResolutionKnown: true, automaticAudioTrackOrdinal: automaticAudio,
             subtitleAutoContext: new SubtitleAutoContext("fr", "off"));
         Assert.Equal("Auto · French", values.Audio);
         Assert.Equal("Auto · English · SRT", values.Subtitles);
+    }
+
+    [Fact]
+    public void DeviceAudioOrdinalFeedsTheReadoutAndTheSameSubtitleAutoContext()
+    {
+        var movie = Item("m") with { EffectiveSubtitleLanguage = "es", EffectiveSubtitleMode = "auto" };
+        var version = movie.Versions[0];
+        version.AudioTracks!.Add(new() { Language = "spa", Codec = "ac3", Channels = 6 });
+        version.SubtitleTracks = [new() { Language = "es", Codec = "srt" }];
+        var automaticAudio = PlaybackAudioSelection.AutomaticAudioOrdinal(version, "es", new(["aac", "ac3", "eac3"]));
+        var state = new PlaybackSummaryState();
+        var values = state.Update(movie, automaticAudioResolutionKnown: true, automaticAudioTrackOrdinal: automaticAudio);
+        Assert.Equal("Auto · Spanish · AC3 · 5.1", values.Audio);
+        Assert.Equal("Auto · None", values.Subtitles);
+        Assert.Equal("Auto · Spanish · SRT", state.Update(movie, selectedAudioTrackIndex: 0,
+            automaticAudioResolutionKnown: true, automaticAudioTrackOrdinal: automaticAudio).Subtitles);
+        Assert.Equal("Auto", state.Update(movie, automaticAudioResolutionKnown: false, automaticAudioTrackOrdinal: automaticAudio).Audio);
+    }
+
+    [Fact]
+    public void PendingAutoResetDoesNotLetStaleEffectiveAudioReplaceTheResolvedOrdinal()
+    {
+        var movie = Item("m") with { EffectiveSubtitleLanguage = "en", EffectiveSubtitleMode = "auto" };
+        var version = movie.Versions[0];
+        version.AudioTracks!.Add(new() { Language = "spa", Codec = "ac3", Channels = 6 });
+        version.EffectiveAudioTrackIndex = 1;
+        var automaticAudio = PlaybackAudioSelection.AutomaticAudioOrdinal(version, "en", new(["aac", "eac3"]), new(null));
+        var values = PlaybackSummaryValues.For(movie, automaticAudioResolutionKnown: true, automaticAudioTrackOrdinal: automaticAudio);
+        Assert.Equal("Auto · English · EAC3 · 5.1", values.Audio);
+        Assert.Equal("Auto · None", values.Subtitles);
+    }
+
+    [Theory]
+    [InlineData("series")]
+    [InlineData("season")]
+    public void EpisodeAudioResolutionUsesThePlayTargetsVersionAndRetainsItDuringTransitions(string type)
+    {
+        var container = Item("s", type);
+        var episode = Item("e1", "episode");
+        episode.Versions[0].AudioTracks = [new() { Language = "spa", Codec = "ac3", Channels = 6 }];
+        var state = new PlaybackSummaryState();
+        Assert.Equal(PlaybackSummaryValues.Empty, state.Update(container, "e1", Item("wrong", "episode"),
+            automaticAudioResolutionKnown: true, automaticAudioTrackOrdinal: 0));
+        var values = state.Update(container, "e1", episode, automaticAudioResolutionKnown: true, automaticAudioTrackOrdinal: 0);
+        Assert.Equal("Auto · Spanish · AC3 · 5.1", values.Audio);
+        Assert.Equal(values, state.Update(container, "e2", transitioning: true, automaticAudioResolutionKnown: true));
+    }
+
+    [Fact]
+    public void ProfileSubtitleFallbackIsUsedWhenTheServerDoesNotSupplyEffectiveFields()
+    {
+        var movie = Item("m");
+        Assert.Equal("Auto · None", new PlaybackSummaryState().Update(movie, automaticAudioResolutionKnown: true,
+            automaticAudioTrackOrdinal: 0, subtitleAutoContext: new("en", "auto", true)).Subtitles);
     }
 
     [Fact]
