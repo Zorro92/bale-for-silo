@@ -63,6 +63,79 @@ public class ConnectionChromeTests
     }
 
     [Fact]
+    public void NearbyServersUseSingleLineMarqueeGlassButtonsInsteadOfSavedServerCards()
+    {
+        // TvServerSetupScreen.kt FoundServerRows / TvMarquee.kt: 38dp Glass, 9dp gaps, inline labels.
+        var page = Document("MainPage.xaml").Root!;
+        var panel = Style("SkylineConnectionNearbyPanelStyle");
+        Assert.Equal("450", Value(panel, "Width"));
+        Assert.Equal("0,24,0,0", Value(panel, "Margin"));
+        Assert.Equal("9", Value(panel, "Spacing"));
+        Assert.Equal("{StaticResource SkylineAuthTertiary}", Value(Style("SkylineConnectionNearbyCaptionStyle"), "Foreground"));
+        Assert.Equal("12.04", Value(Style("SkylineAuthBodyStyle"), "FontSize"));
+        Assert.Equal("{StaticResource SkylineAuthButtonStyle}", Attribute(Style("SkylineConnectionNearbyButtonStyle"), "BasedOn"));
+        Assert.Equal("38", Value(Style("SkylineAuthButtonStyle"), "Height"));
+        Assert.Equal("19", Value(Style("SkylineAuthButtonStyle"), "CornerRadius"));
+        Assert.Equal("20,0", Value(Style("SkylineAuthButtonStyle"), "Padding"));
+        Assert.Equal("12.47", Value(Style("SkylineAuthButtonStyle"), "FontSize"));
+        Assert.Equal("7", Value(Style("SkylineConnectionNearbyContentStyle"), "ColumnSpacing"));
+        foreach (var name in new[] { "NearbyFirst", "NearbySecond" })
+        {
+            var button = Named(page, name);
+            Assert.Equal("{StaticResource SkylineConnectionNearbyButtonStyle}", Attribute(button, "Style"));
+            Assert.Single(button.Elements(Ui + "Grid"));
+            Assert.Equal("{StaticResource SkylineConnectionNearbyNameStyle}", Attribute(Named(button, name + "Name"), "Style"));
+            Assert.Equal("{StaticResource SkylineConnectionNearbyDetailStyle}", Attribute(Named(button, name + "Address"), "Style"));
+            Assert.Equal("1", Attribute(Named(button, name + "Address"), "Grid.Column"));
+        }
+        var label = Style("SkylineConnectionNearbyNameStyle");
+        var detail = Style("SkylineConnectionNearbyDetailStyle");
+        Assert.Equal("1", Value(label, "MaxLines"));
+        Assert.Equal("NoWrap", Value(label, "TextWrapping"));
+        Assert.Equal("CharacterEllipsis", Value(label, "TextTrimming"));
+        Assert.Equal("{StaticResource SkylineConnectionNearbyNameStyle}", Attribute(detail, "BasedOn"));
+        Assert.Equal("12.04", Value(detail, "FontSize"));
+        Assert.Equal("Normal", Value(detail, "FontWeight"));
+        Assert.Equal("0.62", Value(detail, "Opacity"));
+        // Both labels inherit the marquee button's ink, including black when focused.
+        Assert.DoesNotContain(label.Elements(Ui + "Setter").Concat(detail.Elements(Ui + "Setter")),
+            setter => (string?)setter.Attribute("Property") == "Foreground");
+    }
+
+    [Fact]
+    public void ServerEntryKeepsTheOfficialPhoneCardBesideItsVerticallyScrollableCopy()
+    {
+        // TvServerSetupScreen.kt AddressEntry / TvMarquee.kt TvUsePhoneCard.
+        var page = Document("MainPage.xaml").Root!;
+        var panel = Named(page, "ServerPanel");
+        Assert.Equal(Ui + "Grid", panel.Name);
+        Assert.Equal(new[] { "{StaticResource SkylineAuthCopyColumn}", "*", "{StaticResource SkylineAuthCardColumn}" },
+            panel.Element(Ui + "Grid.ColumnDefinitions")!.Elements().Select(column => Attribute(column, "Width")).ToArray());
+        var scroller = Named(panel, "ServerScroller");
+        Assert.Equal("OnServerControlFocus", Attribute(scroller, "GotFocus"));
+        Assert.Equal("OnServerViewportChanged", Attribute(scroller, "SizeChanged"));
+        Assert.Equal("OnServerBringIntoViewRequested", Attribute(scroller, "BringIntoViewRequested"));
+        Assert.Equal("OnServerViewportChanged", Attribute(Named(panel, "ServerCopy"), "SizeChanged"));
+        Assert.Equal("Disabled", Value(Style("SkylineServerEntryScrollStyle"), "HorizontalScrollMode"));
+        Assert.Equal("Auto", Value(Style("SkylineServerEntryScrollStyle"), "VerticalScrollMode"));
+        var card = Named(panel, "ServerPhoneCard");
+        Assert.Equal("2", Attribute(card, "Grid.Column"));
+        Assert.Equal("{StaticResource SkylineServerPhoneCardStyle}", Attribute(card, "Style"));
+        Assert.Equal("{StaticResource SkylineLoginCardStyle}", Attribute(Style("SkylineServerPhoneCardStyle"), "BasedOn"));
+        Assert.Equal("Center", Value(Style("SkylineServerPhoneCardStyle"), "VerticalAlignment"));
+        Assert.Contains(card.Descendants(Ui + "TextBlock"), text => (string?)text.Attribute("Text") == "Easier with a phone");
+        Assert.Contains(card.Descendants(Ui + "TextBlock"), text => (string?)text.Attribute("Text") ==
+            "Open Silo on a phone or tablet on the same Wi‑Fi and tap Set up. It finishes this for you.");
+        Assert.Equal("56", Value(Style("SkylineServerPhoneSymbolStyle"), "Width"));
+        Assert.Equal("56", Value(Style("SkylineServerPhoneSymbolStyle"), "Height"));
+        Assert.Equal("25.76", Value(Style("SkylineServerPhoneIconStyle"), "Width"));
+        Assert.Equal("17.2", Value(Style("SkylineServerPhoneTitleStyle"), "FontSize"));
+        Assert.Equal("0,17,0,0", Value(Style("SkylineServerPhoneTitleStyle"), "Margin"));
+        Assert.Equal("Center", Value(Style("SkylineServerPhoneBodyStyle"), "TextAlignment"));
+        Assert.Equal("0,7,0,0", Value(Style("SkylineServerPhoneBodyStyle"), "Margin"));
+    }
+
+    [Fact]
     public void ConsentAndRemovalHaveDifferentOfficialSurfaces()
     {
         // TvServerSetupScreen.kt AlertDialog vs TvOptionDialog.kt's compact vertical choices.

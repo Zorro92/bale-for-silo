@@ -1,5 +1,6 @@
 using Bale.Core.Connection;
 using Bale.Xbox.Services;
+using Windows.Foundation;
 using Windows.System;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
@@ -42,6 +43,31 @@ public sealed partial class MainPage
     {
         _discovery?.Dispose();
         _discovery = null;
+    }
+
+    private void OnServerControlFocus(object sender, RoutedEventArgs args) => RevealServerFocus();
+    private void OnServerViewportChanged(object sender, SizeChangedEventArgs args) => RevealServerFocus();
+
+    private void OnServerBringIntoViewRequested(UIElement sender, BringIntoViewRequestedEventArgs args)
+    {
+        args.Handled = true;
+        RevealServerFocus();
+    }
+
+    private void RevealServerFocus()
+    {
+        if (!_active || HttpPrompt.IsOpen || ServerPanel.Visibility != Visibility.Visible || ServerScroller.ViewportHeight <= 0
+            || FocusManager.GetFocusedElement() is not FrameworkElement control || control.ActualHeight <= 0
+            || !SettingsInput.IsWithin(control, ServerScroller)) return;
+        // TvServerSetupScreen.kt / TvMarquee.kt: overflowing copy scrolls to its focused control.
+        // Include the theme's focus-lift gutter, and never let a bring-into-view shift horizontally.
+        var bounds = control.TransformToVisual(ServerScroller).TransformBounds(new Rect(0, 0, control.ActualWidth, control.ActualHeight));
+        var top = bounds.Top - ServerCopy.Padding.Top;
+        var bottom = bounds.Bottom + ServerCopy.Padding.Bottom;
+        var distance = top < 0 ? top : Math.Max(0, bottom - ServerScroller.ViewportHeight);
+        var offset = Math.Clamp(ServerScroller.VerticalOffset + distance, 0, ServerScroller.ScrollableHeight);
+        if (Math.Abs(offset - ServerScroller.VerticalOffset) > 0.5)
+            ServerScroller.ChangeView(null, offset, null, disableAnimation: true);
     }
 
     private void OnServerTextChanged(object sender, TextChangedEventArgs args)

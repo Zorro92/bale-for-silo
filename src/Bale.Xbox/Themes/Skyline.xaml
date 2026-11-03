@@ -1916,6 +1916,27 @@
     <Setter Property="CornerRadius" Value="20" />
     <Setter Property="Padding" Value="26" />
   </Style>
+  <!-- TvMarquee.kt TvUsePhoneCard: 56dp glass symbol, 20sp heading and centered 14sp body. -->
+  <Style x:Key="SkylineServerPhoneCardStyle" TargetType="Border" BasedOn="{StaticResource SkylineLoginCardStyle}">
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineServerPhoneSymbolStyle" TargetType="Border">
+    <Setter Property="Width" Value="56" /><Setter Property="Height" Value="56" />
+    <Setter Property="CornerRadius" Value="28" /><Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="Background" Value="#14FFFFFF" /><Setter Property="BorderBrush" Value="{StaticResource SkylineAuthHairline}" /><Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style x:Key="SkylineServerPhoneIconStyle" TargetType="Viewbox">
+    <Setter Property="Width" Value="25.76" /><Setter Property="Height" Value="25.76" />
+    <Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineServerPhoneTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="17.2" /><Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" /><Setter Property="TextAlignment" Value="Center" />
+    <Setter Property="Margin" Value="0,17,0,0" />
+  </Style>
+  <Style x:Key="SkylineServerPhoneBodyStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineAuthBodyStyle}">
+    <Setter Property="TextAlignment" Value="Center" /><Setter Property="Margin" Value="0,7,0,0" />
+  </Style>
   <Style x:Key="SkylineLoginQrFrameStyle" TargetType="Border">
     <Setter Property="Width" Value="190" />
     <Setter Property="Height" Value="190" />
@@ -2023,14 +2044,14 @@
     <Setter Property="MaxWidth" Value="250" />
   </Style>
 
-  <!-- TvServerSetupScreen.kt imePadding / TvMarquee.kt: copy scrolls only when it cannot fit.
-       TvMarqueeField.kt scales 380dp by 1.04: reserve 8dp INSIDE the scroll content for its 7.6dp
-       leftward lift. ScrollViewer.Padding is outside the viewport clip and cuts both left corners off. -->
+  <!-- TvServerSetupScreen.kt / TvMarquee.kt: the 450dp copy scrolls only when it cannot fit.
+       Glass discovery buttons can fill that width and scale 1.06: reserve 14dp INSIDE each
+       viewport edge for the 13.5dp lift. ScrollViewer.Padding is outside the viewport clip. -->
   <Style x:Key="SkylineServerEntryScrollStyle" TargetType="ScrollViewer">
-    <Setter Property="Width" Value="458" />
+    <Setter Property="Width" Value="478" />
     <Setter Property="HorizontalAlignment" Value="Left" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
-    <Setter Property="Margin" Value="-8,0,0,0" />
+    <Setter Property="Margin" Value="-14,0,0,0" />
     <Setter Property="Padding" Value="0" />
     <Setter Property="HorizontalScrollMode" Value="Disabled" />
     <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
@@ -2042,8 +2063,8 @@
   <Style x:Key="SkylineServerEntryStyle" TargetType="StackPanel">
     <Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="HorizontalAlignment" Value="Left" />
-    <Setter Property="Width" Value="458" />
-    <Setter Property="Padding" Value="8,8,0,8" />
+    <Setter Property="Width" Value="478" />
+    <Setter Property="Padding" Value="14,8,14,8" />
   </Style>
   <Style x:Key="SkylineServerEntryTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineLoginTitleStyle}">
     <Setter Property="Margin" Value="0" />
@@ -4089,7 +4110,14 @@
   <Style x:Key="SkylineConnectionAdvancedButtonStyle" TargetType="Button" BasedOn="{StaticResource SkylineAuthPlainButtonStyle}"><Setter Property="Margin" Value="0,10,0,0" /><Setter Property="Padding" Value="0" /></Style>
   <Style x:Key="SkylineConnectionPortStyle" TargetType="TextBox" BasedOn="{StaticResource SkylineCredentialFieldStyle}"><Setter Property="Width" Value="130" /></Style>
   <Style x:Key="SkylineCredentialRevealStyle" TargetType="Button" BasedOn="{StaticResource SkylineAuthButtonStyle}"><Setter Property="Width" Value="56" /></Style>
-  <Style x:Key="SkylineConnectionNearbyPanelStyle" TargetType="StackPanel"><Setter Property="Width" Value="380" /><Setter Property="HorizontalAlignment" Value="Left" /><Setter Property="Margin" Value="0,20,0,0" /></Style>
-  <Style x:Key="SkylineConnectionLoginScrollerStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SkylineServerEntryScrollStyle}"><Setter Property="Width" Value="466" /></Style>
+  <!-- TvServerSetupScreen.kt FoundServerRows: 24dp heading inset and 9dp gaps; labels share a 38dp Glass capsule. -->
+  <Style x:Key="SkylineConnectionNearbyPanelStyle" TargetType="StackPanel"><Setter Property="Width" Value="450" /><Setter Property="HorizontalAlignment" Value="Left" /><Setter Property="Margin" Value="0,24,0,0" /><Setter Property="Spacing" Value="9" /></Style>
+  <Style x:Key="SkylineConnectionNearbyCaptionStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineAuthBodyStyle}"><Setter Property="Foreground" Value="{StaticResource SkylineAuthTertiary}" /></Style>
+  <Style x:Key="SkylineConnectionNearbyButtonStyle" TargetType="Button" BasedOn="{StaticResource SkylineAuthButtonStyle}"><Setter Property="MaxWidth" Value="450" /><Setter Property="HorizontalAlignment" Value="Left" /><Setter Property="HorizontalContentAlignment" Value="Stretch" /></Style>
+  <Style x:Key="SkylineConnectionNearbyContentStyle" TargetType="Grid"><Setter Property="ColumnSpacing" Value="7" /><Setter Property="VerticalAlignment" Value="Center" /></Style>
+  <!-- Bound the leading label to the 450dp copy minus 40dp button padding and the 7dp label gap. -->
+  <Style x:Key="SkylineConnectionNearbyNameStyle" TargetType="TextBlock"><Setter Property="MaxWidth" Value="403" /><Setter Property="MaxLines" Value="1" /><Setter Property="TextWrapping" Value="NoWrap" /><Setter Property="TextTrimming" Value="CharacterEllipsis" /></Style>
+  <Style x:Key="SkylineConnectionNearbyDetailStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineConnectionNearbyNameStyle}"><Setter Property="FontSize" Value="12.04" /><Setter Property="FontWeight" Value="Normal" /><Setter Property="Opacity" Value="0.62" /></Style>
+  <Style x:Key="SkylineConnectionLoginScrollerStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SkylineServerEntryScrollStyle}"><Setter Property="Width" Value="466" /><Setter Property="Margin" Value="-8,0,0,0" /></Style>
   <Style x:Key="SkylineConnectionLoginCopyStyle" TargetType="StackPanel"><Setter Property="Width" Value="466" /><Setter Property="Padding" Value="8" /></Style>
 </ResourceDictionary>

@@ -27,9 +27,16 @@
       </Border>
     </Grid>
 
-    <!-- TvServerSetupScreen.kt AddressEntryScreen: advanced scheme/port and identity-confirmed LAN rows. -->
-    <ScrollViewer x:Name="ServerPanel" Grid.Row="1" Style="{StaticResource SkylineServerEntryScrollStyle}">
-      <StackPanel Style="{StaticResource SkylineServerEntryStyle}">
+    <!-- TvServerSetupScreen.kt AddressEntry: scrollable copy beside TvMarquee.kt's TvUsePhoneCard. -->
+    <Grid x:Name="ServerPanel" Grid.Row="1">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="{StaticResource SkylineAuthCopyColumn}" />
+        <ColumnDefinition Width="*" MinWidth="{StaticResource SkylineAuthColumnGap}" />
+        <ColumnDefinition Width="{StaticResource SkylineAuthCardColumn}" />
+      </Grid.ColumnDefinitions>
+      <ScrollViewer x:Name="ServerScroller" Style="{StaticResource SkylineServerEntryScrollStyle}"
+                    GotFocus="OnServerControlFocus" SizeChanged="OnServerViewportChanged" BringIntoViewRequested="OnServerBringIntoViewRequested">
+      <StackPanel x:Name="ServerCopy" Style="{StaticResource SkylineServerEntryStyle}" SizeChanged="OnServerViewportChanged">
         <TextBlock Text="Enter your&#x0A;server address" Style="{StaticResource SkylineServerEntryTitleStyle}" />
         <TextBlock Text="Type the address you use for Silo." Style="{StaticResource SkylineServerEntryCaptionStyle}" />
         <TextBox x:Name="ServerBox" PlaceholderText="media.example.com" InputScope="Url" IsSpellCheckEnabled="False" IsTextPredictionEnabled="False"
@@ -57,17 +64,38 @@
           <Button x:Name="ConnectButton" Content="Connect" Click="OnConnectClick" Style="{StaticResource SkylineAuthButtonStyle}" />
           <Button x:Name="ServerBackButton" Content="Back" Click="OnServerBackClick" Style="{StaticResource SkylineAuthPlainButtonStyle}" />
         </ItemsControl>
-        <StackPanel x:Name="NearbyPanel" Visibility="Collapsed" Style="{StaticResource SkylineConnectionNearbyPanelStyle}" Spacing="6">
-          <TextBlock Text="Found nearby" Style="{StaticResource SkylineServerListCaptionStyle}" />
-          <Button x:Name="NearbyFirst" Style="{StaticResource SkylineSavedServerButtonStyle}" Click="OnNearbyClick" PreviewKeyDown="OnSetupControlPreviewKeyDown">
-            <StackPanel Spacing="4"><TextBlock x:Name="NearbyFirstName" /><TextBlock x:Name="NearbyFirstAddress" Style="{StaticResource SkylineSavedServerAddressStyle}" /></StackPanel>
+        <!-- TvServerSetupScreen.kt FoundServerRows: 38dp Glass buttons, name then secondary detail on one line. -->
+        <StackPanel x:Name="NearbyPanel" Visibility="Collapsed" Style="{StaticResource SkylineConnectionNearbyPanelStyle}">
+          <TextBlock Text="Found nearby" Style="{StaticResource SkylineConnectionNearbyCaptionStyle}" />
+          <Button x:Name="NearbyFirst" Style="{StaticResource SkylineConnectionNearbyButtonStyle}" Click="OnNearbyClick" PreviewKeyDown="OnSetupControlPreviewKeyDown">
+            <Grid Style="{StaticResource SkylineConnectionNearbyContentStyle}">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+              <TextBlock x:Name="NearbyFirstName" Style="{StaticResource SkylineConnectionNearbyNameStyle}" />
+              <TextBlock x:Name="NearbyFirstAddress" Grid.Column="1" Style="{StaticResource SkylineConnectionNearbyDetailStyle}" />
+            </Grid>
           </Button>
-          <Button x:Name="NearbySecond" Style="{StaticResource SkylineSavedServerButtonStyle}" Click="OnNearbyClick" PreviewKeyDown="OnSetupControlPreviewKeyDown" Visibility="Collapsed">
-            <StackPanel Spacing="4"><TextBlock x:Name="NearbySecondName" /><TextBlock x:Name="NearbySecondAddress" Style="{StaticResource SkylineSavedServerAddressStyle}" /></StackPanel>
+          <Button x:Name="NearbySecond" Style="{StaticResource SkylineConnectionNearbyButtonStyle}" Click="OnNearbyClick" PreviewKeyDown="OnSetupControlPreviewKeyDown" Visibility="Collapsed">
+            <Grid Style="{StaticResource SkylineConnectionNearbyContentStyle}">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+              <TextBlock x:Name="NearbySecondName" Style="{StaticResource SkylineConnectionNearbyNameStyle}" />
+              <TextBlock x:Name="NearbySecondAddress" Grid.Column="1" Style="{StaticResource SkylineConnectionNearbyDetailStyle}" />
+            </Grid>
           </Button>
         </StackPanel>
       </StackPanel>
-    </ScrollViewer>
+      </ScrollViewer>
+      <Border x:Name="ServerPhoneCard" Grid.Column="2" Style="{StaticResource SkylineServerPhoneCardStyle}">
+        <StackPanel>
+          <Border Style="{StaticResource SkylineServerPhoneSymbolStyle}">
+            <Viewbox Style="{StaticResource SkylineServerPhoneIconStyle}">
+              <Path Data="M16,1H8C6.34,1 5,2.34 5,4V20C5,21.66 6.34,23 8,23H16C17.66,23 19,21.66 19,20V4C19,2.34 17.66,1 16,1M16,18H8V6H16M13,22H11V20H13Z" Fill="{StaticResource SkylinePrimary}" />
+            </Viewbox>
+          </Border>
+          <TextBlock Text="Easier with a phone" Style="{StaticResource SkylineServerPhoneTitleStyle}" />
+          <TextBlock Text="Open Silo on a phone or tablet on the same Wi‑Fi and tap Set up. It finishes this for you." Style="{StaticResource SkylineServerPhoneBodyStyle}" />
+        </StackPanel>
+      </Border>
+    </Grid>
 
     <!-- TvLoginScreen.kt / TvMarquee.kt: server context and copy opposite a single QR/code/status card. -->
     <Grid x:Name="CodePanel" Grid.Row="1" Visibility="Collapsed" VerticalAlignment="Center">

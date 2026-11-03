@@ -37,6 +37,35 @@ public class SkylineChromeTests
     }
 
     [Fact]
+    public void NearbyButtonFocusLiftStaysInsideTheScrollViewportWithoutMovingItsRestingEdge()
+    {
+        // TvMarquee.kt: a Glass capsule can fill the 450dp copy and lifts 1.06 on focus.
+        var scroll = Style("SkylineServerEntryScrollStyle");
+        var content = Style("SkylineServerEntryStyle");
+        var button = Style("SkylineAuthButtonStyle");
+        var focus = Named(button, "Focused");
+        var padding = Numbers(Value(content, "Padding"));
+        var margin = Numbers(Value(scroll, "Margin"));
+        var width = Number(Value(Style("SkylineConnectionNearbyButtonStyle"), "MaxWidth"));
+        var height = Number(Value(button, "Height"));
+        var lift = focus.Descendants(Ui + "DoubleAnimation")
+            .Where(animation => (string?)animation.Attribute("Storyboard.TargetName") == "Lift").ToArray();
+        var scaleX = Number((string)lift.Single(animation => (string?)animation.Attribute("Storyboard.TargetProperty") == "ScaleX").Attribute("To")!);
+        var scaleY = Number((string)lift.Single(animation => (string?)animation.Attribute("Storyboard.TargetProperty") == "ScaleY").Attribute("To")!);
+
+        Assert.Equal(450, width);
+        Assert.Equal(1.06, scaleX);
+        Assert.Equal(1.06, scaleY);
+        Assert.Equal(0, margin[0] + padding[0]);
+        Assert.True(padding[0] >= width * (scaleX - 1) / 2);
+        Assert.True(Number(Value(scroll, "Width")) - padding[0] - width >= width * (scaleX - 1) / 2);
+        Assert.True(padding[1] >= height * (scaleY - 1) / 2);
+        Assert.True(padding[3] >= height * (scaleY - 1) / 2);
+        // Login still uses its original 8dp field inset, not the wider discovery-button gutter.
+        Assert.Equal("-8,0,0,0", Value(Style("SkylineConnectionLoginScrollerStyle"), "Margin"));
+    }
+
+    [Fact]
     public void ServerFieldUsesTheSameFourRoundedCornersForRestFocusAndError()
     {
         // TvMarqueeField.kt / TvMarqueeMetrics: 8dp corners, 42dp high, 15sp × 0.86 text.
