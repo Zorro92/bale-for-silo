@@ -73,7 +73,7 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 - [x] Library: "Recommended" pill; Browse grid (6 cols, sort, filter, A–Z, paging); cascade level 2 + footer hint; "MOVIE LIBRARIES"
   - [x] Collections pill (only when the library has collections), grouped grid, collection page with Collection Order
   - [x] Filtered-error "Clear filters" (TvLibraryDetailScreen.kt TvErrorScreen secondary action; console 0.1.191 with `bale-debug.sh fault catalog` + Genre Action: Retry focused, Clear filters reloads with Filter 0)
-  - [ ] Browse error text: the APK shows the server message, "Failed to load library" or "Network error: …" (TvLibraryDetailViewModel.kt); Bale always says "Couldn't load this library."
+  - [x] Browse error text: the APK shows the server message, "Failed to load library" or "Network error: …" (TvLibraryDetailViewModel.kt); Bale always said "Couldn't load this library." (console 0.1.193: "Network error: Injected catalog failure (fault catalog).", Clear filters still reloads)
   - [ ] Shuffle (waits for the player); remote audiobook facet search (no audiobook library to test)
   - [x] Polish: toolbar icons/badges, alphabet selected/All treatment, 180 ms rail expansion; Recommended scope refill; Filter keeps focus across filter reloads
 - [x] Calendar (focus follows the selected pill/day, first card, per-row memory: a deliberate deviation)
