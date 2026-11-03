@@ -44,6 +44,17 @@ public static class ProfileAvatarPresets
         return Batch(styleId, batch)[0].Reference;
     }
 
+    /// <summary>TvProfileForm.kt profilePreviewTint: Kotlin's UTF-16 hash, not .NET's randomized string hash.</summary>
+    public static uint PreviewTint(string name, string avatar)
+    {
+        var hash = 0;
+        foreach (var character in $"{name}-{avatar}") hash = unchecked(hash * 31 + character);
+        return PreviewPalette[(int)(Math.Abs((long)hash) % PreviewPalette.Length)];
+    }
+
+    private static readonly uint[] PreviewPalette = [
+        0xFFB56F5F, 0xFF6B7C93, 0xFF8A785E, 0xFF607C6A, 0xFF92656E, 0xFF6F668B, 0xFF577B83, 0xFFA28453,
+    ];
     private static int Mod(int value, int count) => (value % count + count) % count;
     private static readonly string[] Adjectives = [
         "cosmic", "jelly", "starlight", "mango", "bubble", "neon", "marble", "comet", "snappy", "pepper", "glimmer", "ripple", "pocket", "candy",

@@ -84,6 +84,87 @@ public sealed class ProfileEditorLayoutTests
     }
 
     [Fact]
+    public void FormUsesHeroPillsRatherThanMarqueeLoginButtons()
+    {
+        var theme = Load("Skyline.xaml");
+        XElement Style(string key) => theme.Root!.Elements(Ui + "Style").Single(style => (string?)style.Attribute(Xaml + "Key") == key);
+        string? Value(string key, string property) => (string?)Style(key).Elements(Ui + "Setter")
+            .Single(setter => (string?)setter.Attribute("Property") == property).Attribute("Value");
+        Assert.Equal("58", Value("SkylineProfileSubmitStyle", "Height"));
+        Assert.Equal("29", Value("SkylineProfileSubmitStyle", "CornerRadius"));
+        Assert.Equal("32,0", Value("SkylineProfileSubmitStyle", "Padding"));
+        Assert.Equal("15.48", Value("SkylineProfileSubmitStyle", "FontSize"));
+        Assert.Equal("24", Value("SkylineProfileSmallActionStyle", "Height"));
+        Assert.Equal("13.76", Value("SkylineProfileSmallActionStyle", "FontSize"));
+        Assert.Equal("#6B000000", Value("SkylineProfileSmallActionStyle", "Background"));
+        Assert.Equal("22", Value("SkylineProfileCancelStyle", "Height"));
+        Assert.Equal("32", Value("SkylineProfileRetryLibrariesStyle", "Height"));
+        Assert.Equal("14,0", Value("SkylineProfileRetryLibrariesStyle", "Padding"));
+        Assert.Equal("10", Value("SkylineProfileActionContentStyle", "Spacing"));
+        Assert.Single(Style("SkylineProfileSubmitStyle").Descendants(Ui + "ContentPresenter"));
+        Assert.Equal("17.2", Value("SkylineProfilePreviewNameStyle", "FontSize"));
+        Assert.Equal("SemiBold", Value("SkylineProfilePreviewNameStyle", "FontWeight"));
+    }
+
+    [Theory]
+    [InlineData("SkylineProfileSubmitStyle", "20", "0.20", "1.05")]
+    [InlineData("SkylineProfileAvatarChoiceStyle", "16", "0.18", "1.08")]
+    [InlineData("SkylineProfileSegmentStyle", "14", "0.45", "1.06")]
+    public void FormFocusUsesTheOfficialWhiteCenteredGlowAndScale(string key, string elevation, string opacity, string scale)
+    {
+        var style = Load("Skyline.xaml").Root!.Elements(Ui + "Style").Single(element => (string?)element.Attribute(Xaml + "Key") == key);
+        string? Value(string property) => (string?)style.Elements(Ui + "Setter")
+            .Single(setter => (string?)setter.Attribute("Property") == property).Attribute("Value");
+        Assert.Equal(elevation, Value("services:SurfaceShadow.Elevation"));
+        Assert.Equal("White", Value("services:SurfaceShadow.Color"));
+        Assert.Equal(opacity, Value("services:SurfaceShadow.Opacity"));
+        Assert.Equal("0", Value("services:SurfaceShadow.OffsetScale"));
+        var focused = style.Descendants(Ui + "VisualState").Single(state => (string?)state.Attribute(Xaml + "Name") == "Focused");
+        Assert.Contains(focused.Descendants(Ui + "Setter"), setter => (string?)setter.Attribute("Target") == "Lift.ScaleX" && (string?)setter.Attribute("Value") == scale);
+        Assert.Contains(focused.Descendants(Ui + "Setter"), setter => (string?)setter.Attribute("Target") == "ShadowHost.Opacity" && (string?)setter.Attribute("Value") == "1");
+        Assert.DoesNotContain(style.Descendants(), element => element.Name.LocalName.EndsWith("Transition", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AccessRowsUseTheOfficialFocusWashWithoutEntryFieldScaling()
+    {
+        var theme = Load("Skyline.xaml");
+        XElement Style(string key) => theme.Root!.Elements(Ui + "Style").Single(style => (string?)style.Attribute(Xaml + "Key") == key);
+        var rows = Style("SkylineProfileSwitchStyle");
+        Assert.Contains(rows.Elements(Ui + "Setter"), setter => (string?)setter.Attribute("Property") == "Background" && (string?)setter.Attribute("Value") == "#14FFFFFF");
+        Assert.Contains(Style("SkylineProfileLibraryCheckStyle").Elements(Ui + "Setter"), setter => (string?)setter.Attribute("Property") == "Background" && (string?)setter.Attribute("Value") == "#1AFFFFFF");
+        Assert.Contains(rows.Descendants(Ui + "Setter"), setter => (string?)setter.Attribute("Target") == "Lift.ScaleX" && (string?)setter.Attribute("Value") == "1.02");
+        Assert.Contains(rows.Descendants(Ui + "Border"), border => (string?)border.Attribute("BorderBrush") == "#59FFFFFF" && (string?)border.Attribute("BorderThickness") == "1");
+        Assert.Single(rows.Descendants(Ui + "ContentPresenter"));
+        // Only connected text segments can use the selected/unselected double-presenter template.
+        var form = Load("ProfileEditorPage.xaml");
+        foreach (var segment in form.Descendants(Ui + "ToggleButton").Where(button => (string?)button.Attribute("Style") == "{StaticResource SkylineProfileSegmentStyle}"))
+        {
+            Assert.NotNull(segment.Attribute("Content"));
+            Assert.Empty(segment.Elements());
+        }
+    }
+
+    [Theory]
+    [InlineData("CancelButton", "CancelLabel")]
+    [InlineData("ShuffleButton", "ShuffleLabel")]
+    [InlineData("RemovePinButton", "RemovePinLabel")]
+    [InlineData("RetryLibraries", "RetryLibrariesLabel")]
+    [InlineData("SubmitButton", "SubmitLabel")]
+    public void InlineActionIconsFollowTheirLabelInkWithoutReplacingElementContent(string button, string label)
+    {
+        var action = Load("ProfileEditorPage.xaml").Descendants(Ui + "Button")
+            .Single(element => (string?)element.Attribute(Xaml + "Name") == button);
+        var icon = action.Descendants(Ui + "Viewbox").Single().Element(Ui + "Path")!;
+        Assert.Equal("24", (string?)icon.Attribute("Width"));
+        Assert.Equal("24", (string?)icon.Attribute("Height"));
+        Assert.Equal($"{{Binding Foreground, ElementName={label}}}", (string?)icon.Attribute("Fill"));
+        Assert.Contains(action.Descendants(Ui + "TextBlock"), element => (string?)element.Attribute(Xaml + "Name") == label);
+        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "ProfileEditorPage.cs.txt"));
+        Assert.DoesNotContain($"{button}.Content =", source);
+    }
+
+    [Fact]
     public void SharedEditorUsesTheProfileAuroraNotThePickerMarqueeBackdrop()
     {
         var form = Load("ProfileEditorPage.xaml");

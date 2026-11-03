@@ -121,7 +121,7 @@ public sealed partial class ProfileEditorPage : Page, IBackHandler, IRestoresFoc
     {
         Title.Text = _form.IsEditing ? "Edit Profile" : "New Profile";
         Subtitle.Text = _form.IsEditing ? "Pick a look and update this profile." : "Pick a look and give it a name.";
-        SubmitButton.Content = _form.IsEditing ? "Save Changes" : "Create Profile";
+        SubmitLabel.Text = _form.IsEditing ? "Save Changes" : "Create Profile";
         CancelButton.Visibility = _form.IsEditing ? Visibility.Collapsed : Visibility.Visible;
         _styles = ProfileAvatarPresets.Styles.Select(style => new ProfileChoiceView(style.Id, style.Label)).ToList();
         Styles.ItemsSource = _styles;
@@ -147,6 +147,8 @@ public sealed partial class ProfileEditorPage : Page, IBackHandler, IRestoresFoc
         foreach (var style in _styles) style.Update(style.Key == _form.AvatarStyleId);
         foreach (var preset in _presets) preset.Update(_form.ActivePresetSeed);
         PreviewName.Text = string.IsNullOrWhiteSpace(_form.Name) ? "Your Name" : _form.Name;
+        var tint = ProfileAvatarPresets.PreviewTint(PreviewName.Text, _form.EffectiveAvatar);
+        PreviewArt.Background = new SolidColorBrush(Color.FromArgb((byte)(tint >> 24), (byte)(tint >> 16), (byte)(tint >> 8), (byte)tint));
         PreviewHint.Visibility = string.IsNullOrWhiteSpace(_form.Name) ? Visibility.Visible : Visibility.Collapsed;
         PreviewInitial.Text = string.IsNullOrWhiteSpace(_form.Name) ? "Y" : _form.Name[..1].ToUpperInvariant();
         var url = ProfileAvatars.ImageUrl(_form.PreviewAvatarUrl, _household!.ResolveAvatar)
@@ -184,7 +186,7 @@ public sealed partial class ProfileEditorPage : Page, IBackHandler, IRestoresFoc
         _loadingLibraries = true;
         var retry = _librariesError is not null;
         var handoff = retry && ReferenceEquals(FocusManager.GetFocusedElement(), RetryLibraries);
-        if (retry) RetryLibraries.Content = "Loading…"; // Keep the focused retry button mounted and enabled.
+        if (retry) RetryLibrariesLabel.Text = "Loading…"; // Keep the focused retry button mounted and enabled.
         try
         {
             var libraries = await _household!.Repository.ListLibrariesAsync(lifetime.Token);
@@ -214,7 +216,7 @@ public sealed partial class ProfileEditorPage : Page, IBackHandler, IRestoresFoc
             if (IsCurrent)
             {
                 RetryLibraries.Visibility = _librariesError is null ? Visibility.Collapsed : Visibility.Visible;
-                RetryLibraries.Content = "Try Again";
+                RetryLibrariesLabel.Text = "Try Again";
                 LibrariesStatus.Text = _librariesError ?? (_librariesLoaded ? "No libraries are available to assign." : "Loading libraries…");
                 LibrariesStatus.Visibility = _librariesError is not null || !_librariesLoaded || _libraries.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             }
@@ -291,7 +293,7 @@ public sealed partial class ProfileEditorPage : Page, IBackHandler, IRestoresFoc
         if (error is not null) { SetError(error); return; }
         _saving = true;
         SetError(null);
-        SubmitButton.Content = "Saving...";
+        SubmitLabel.Text = "Saving...";
         try
         {
             var repository = _household!.Repository;
@@ -316,7 +318,7 @@ public sealed partial class ProfileEditorPage : Page, IBackHandler, IRestoresFoc
         finally
         {
             _saving = false;
-            SubmitButton.Content = _form.IsEditing ? "Save Changes" : "Create Profile";
+            SubmitLabel.Text = _form.IsEditing ? "Save Changes" : "Create Profile";
         }
     }
 

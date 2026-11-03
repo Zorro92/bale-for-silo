@@ -118,6 +118,16 @@ public class ProfileFormTests
         Assert.Null(form.PreviewAvatarUrl);
     }
 
+    [Theory]
+    [InlineData("", "", 0xFF6F668Bu)]
+    [InlineData("A", "b", 0xFF577B83u)]
+    [InlineData("Å", "ab", 0xFF6B7C93u)]
+    [InlineData("😀", "", 0xFF8A785Eu)]
+    public void PreviewTintMatchesKotlinUtf16HashAndPalette(string name, string avatar, uint expected)
+    {
+        Assert.Equal(expected, ProfileAvatarPresets.PreviewTint(name, avatar));
+    }
+
     [Fact]
     public void PresetContractUsesAllFiveStylesAndEighteenPngImages()
     {

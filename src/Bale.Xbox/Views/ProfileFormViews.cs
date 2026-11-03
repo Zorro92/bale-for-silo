@@ -14,6 +14,8 @@ public sealed partial class ProfileChoiceView(string? key, string label) : INoti
     public string Label { get; } = label;
     public bool Selected { get; private set; }
     public Brush Fill { get; private set; } = new SolidColorBrush(Color.FromArgb(8, 255, 255, 255));
+    public Brush Ink { get; private set; } = new SolidColorBrush(Color.FromArgb(158, 255, 255, 255));
+    public Brush Stroke { get; private set; } = new SolidColorBrush(Color.FromArgb(41, 255, 255, 255));
     public double Width { get; private set; } = double.NaN;
     // TvProfileAccessControls.kt ladderShape: rounded outer ends, tight inner joins.
     public CornerRadius Radius { get; private set; } = new(5);
@@ -22,6 +24,8 @@ public sealed partial class ProfileChoiceView(string? key, string label) : INoti
     {
         Selected = selected;
         Fill = new SolidColorBrush(Color.FromArgb(included ? (byte)46 : (byte)8, 255, 255, 255));
+        Ink = new SolidColorBrush(Color.FromArgb(included ? (byte)255 : (byte)158, 255, 255, 255));
+        Stroke = new SolidColorBrush(Color.FromArgb(selected || included ? (byte)0 : (byte)41, 255, 255, 255));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
     }
     public void SetGeometry(double width, int index, int count)
@@ -51,6 +55,7 @@ public sealed partial class ProfileLibraryView(UserLibrary library) : INotifyPro
     public string Id => library.Id!;
     public string Name => library.Name ?? string.Empty;
     public bool Allowed { get; private set; }
+    public Brush Ink { get; private set; } = new SolidColorBrush(Color.FromArgb(158, 255, 255, 255));
     public Visibility CheckVisibility => Allowed ? Visibility.Visible : Visibility.Collapsed;
     public Visibility EmptyVisibility => Allowed ? Visibility.Collapsed : Visibility.Visible;
     public string AccessibleName => $"{Name}, {(Allowed ? "selected" : "not selected")}";
@@ -58,6 +63,7 @@ public sealed partial class ProfileLibraryView(UserLibrary library) : INotifyPro
     public void Update(IReadOnlySet<string> allowed)
     {
         Allowed = allowed.Contains(Id);
+        Ink = new SolidColorBrush(Color.FromArgb(Allowed ? (byte)255 : (byte)158, 255, 255, 255));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
     }
 }
