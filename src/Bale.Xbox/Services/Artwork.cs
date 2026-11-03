@@ -266,7 +266,12 @@ internal static class Artwork
     private static string Key(Uri uri)
     {
         // Keep the extension, so a cached file can be identified by eye.
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(uri.Host + uri.AbsolutePath));
+        // Server art is keyed by path because its signed query changes while the image doesn't.
+        // DiceBear avatars are generated from the query (?seed=), so it must stay in the key or
+        // every preset of a style shares one file (ThumbhashImage.kt keys by URL by default).
+        var identity = uri.Host + uri.AbsolutePath;
+        if (uri.Host.EndsWith("dicebear.com", StringComparison.OrdinalIgnoreCase)) identity += uri.Query;
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(identity));
         var extension = Path.GetExtension(uri.AbsolutePath);
         return Convert.ToHexString(hash, 0, 16) + (extension.Length is > 1 and <= 5 ? extension.ToLowerInvariant() : ".img");
     }

@@ -22,7 +22,7 @@
         </Button>
       </Grid>
       <Grid Grid.Row="1">
-        <Grid.ColumnDefinitions><ColumnDefinition Width="180" /><ColumnDefinition Width="40" /><ColumnDefinition Width="584" /></Grid.ColumnDefinitions>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="180" /><ColumnDefinition Width="40" /><ColumnDefinition Width="580" /></Grid.ColumnDefinitions>
         <StackPanel Style="{StaticResource SkylineProfilePreviewColumnStyle}">
           <StackPanel>
             <Border x:Name="PreviewArt" Style="{StaticResource SkylineProfilePreviewArtStyle}">
