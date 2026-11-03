@@ -1,5 +1,6 @@
 using System.Net;
 using Bale.Core.Api;
+using Microsoft.Kiota.Abstractions;
 using Microsoft.Kiota.Abstractions.Authentication;
 using Microsoft.Kiota.Http.HttpClientLibrary;
 
@@ -26,16 +27,18 @@ public sealed class SiloConnection : IDisposable
             AutomaticDecompression = DecompressionMethods.Brotli | DecompressionMethods.GZip | DecompressionMethods.Deflate,
         }, refreshRejected);
         _http = KiotaClientFactory.Create(siloHandler);
-        var adapter = new HttpClientRequestAdapter(new AnonymousAuthenticationProvider(), httpClient: _http)
+        RequestAdapter = new HttpClientRequestAdapter(new AnonymousAuthenticationProvider(), httpClient: _http)
         {
             BaseUrl = ServerAddress.ToBaseUrl(server),
         };
-        Api = new SiloApiClient(adapter);
+        Api = new SiloApiClient(RequestAdapter);
     }
 
     public Uri Server { get; }
 
     public SiloApiClient Api { get; }
+
+    internal IRequestAdapter RequestAdapter { get; }
 
     public void Dispose() => _http.Dispose();
 }

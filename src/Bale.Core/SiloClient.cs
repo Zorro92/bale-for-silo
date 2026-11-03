@@ -24,6 +24,7 @@ public sealed class SiloClient : IDisposable
     private DateTimeOffset? _accessTokenExpiresAt;
     private TaskCompletionSource? _sessionExpiry;
     private long _accountGeneration;
+    private long _playbackProfileGeneration;
 
     /// <param name="onSessionExpired">Finish root sign-in navigation before failed requests reach page error handlers.</param>
     public SiloClient(Uri server, ClientIdentity identity, HttpMessageHandler? transport = null, TimeProvider? time = null,
@@ -38,6 +39,7 @@ public sealed class SiloClient : IDisposable
         Detail = new DetailFeed(_connection.Api, Browse);
         People = new People.PersonFeed(_connection.Api, Browse);
         Requests = new Requests.RequestsFeed(_connection.Api, _time);
+        Playback = new Playback.PlaybackClient(_connection.Api, _connection.RequestAdapter, server, CapturePlaybackScope);
         Profiles = new Profiles.ProfileRepository(_connection.Api, () => Interlocked.Read(ref _accountGeneration), id =>
         {
             if (ProfileId == id) UseProfile(null);
@@ -59,6 +61,8 @@ public sealed class SiloClient : IDisposable
     public People.PersonFeed People { get; }
 
     public Requests.RequestsFeed Requests { get; }
+
+    public Playback.PlaybackClient Playback { get; }
 
     public Profiles.ProfileRepository Profiles { get; }
 
@@ -165,6 +169,7 @@ public sealed class SiloClient : IDisposable
     /// <summary>Acts as this profile; null clears selection. New locked picks need <see cref="VerifyPinAsync"/>.</summary>
     public void UseProfile(string? profileId)
     {
+        Interlocked.Increment(ref _playbackProfileGeneration);
         Requests.Reset();
         ProfileId = profileId;
         ProfileToken = null;
@@ -191,6 +196,7 @@ public sealed class SiloClient : IDisposable
 
         // TvProfileSelectionViewModel.kt drops a late answer after Cancel or another profile pick.
         cancellationToken.ThrowIfCancellationRequested();
+        Interlocked.Increment(ref _playbackProfileGeneration);
         Requests.Reset();
         ProfileId = profileId;
         ProfileToken = proof;
@@ -236,6 +242,19 @@ public sealed class SiloClient : IDisposable
         Profiles.Management.End();
         _connection.Dispose();
         _refreshLock.Dispose();
+    }
+
+    private Playback.PlaybackRequestScope CapturePlaybackScope()
+    {
+        if (!IsSignedIn || string.IsNullOrWhiteSpace(ProfileId))
+            throw new InvalidOperationException("Playback needs a signed-in profile.");
+        var generation = Interlocked.Read(ref _accountGeneration);
+        var profileGeneration = Interlocked.Read(ref _playbackProfileGeneration);
+        var profileId = ProfileId;
+        // repository/SequencedPlayback.kt fences every playback mutation after a viewer/login change.
+        return new(Account?.Id, profileId, new ProfileRequestOption(profileId, ProfileToken,
+            () => generation == Interlocked.Read(ref _accountGeneration)
+                && profileGeneration == Interlocked.Read(ref _playbackProfileGeneration) && ProfileId == profileId && IsSignedIn));
     }
 
     private async Task<RequestCredentials?> CurrentCredentialsAsync(CancellationToken cancellationToken)

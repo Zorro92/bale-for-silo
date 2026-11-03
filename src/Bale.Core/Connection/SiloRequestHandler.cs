@@ -60,7 +60,8 @@ internal sealed class SiloRequestHandler : DelegatingHandler
         var body = sent is not null && _refreshRejected is not null && request.Content is not null
             ? await request.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false) : null;
         var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        if (response.StatusCode != HttpStatusCode.Unauthorized || sent is null || _refreshRejected is null)
+        if (response.StatusCode != HttpStatusCode.Unauthorized || sent is null || _refreshRejected is null
+            || request.GetRequestOption<SingleAttemptRequestOption>() is not null)
         {
             return response;
         }
