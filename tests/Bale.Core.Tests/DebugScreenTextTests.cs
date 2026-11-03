@@ -60,6 +60,24 @@ public class DebugScreenTextTests
     }
 
     [Fact]
+    public void FocusTextUsesVisibleDescendantsAndRejectsHiddenAncestors()
+    {
+        // Visibility/layout belong to UWP, so check that focus uses the same path as Visible.
+        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "DebugServer.cs.txt"));
+        var focus = source[source.IndexOf("private static string DescribeFocus()", StringComparison.Ordinal)
+            ..source.IndexOf("private static async Task<(string Status, string Body)> WaitAsync", StringComparison.Ordinal)];
+        Assert.Contains("TextOf(element, 6, visibleOnly: true)", focus);
+        Assert.Contains("element.Opacity <= 0 || depth > 60) yield break;", source);
+        var text = source[source.IndexOf("private static List<string> TextsOf", StringComparison.Ordinal)
+            ..source.IndexOf("private static Rect Bounds", StringComparison.Ordinal)];
+        Assert.Contains("Ancestors(root).OfType<UIElement>().Any", text);
+        Assert.Contains("ancestor.Visibility != Visibility.Visible", text);
+        Assert.Contains("ancestor.Opacity <= 0 || ancestor is PasswordBox", text);
+        Assert.Contains("VisibleElements(root).OfType<TextBlock>()", text);
+        Assert.Contains("IsOnScreen(block)", text);
+    }
+
+    [Fact]
     public void ScreenInspectionStaysGuardedAndUsesTheActiveNavigationContent()
     {
         // Source checks cannot replace compiling/running UWP, but protect the release-build guard.

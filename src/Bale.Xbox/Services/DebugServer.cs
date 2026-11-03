@@ -456,7 +456,7 @@ internal sealed partial class DebugServer
             return "nothing focused";
         }
 
-        return $"{Describe(element)} text=\"{TextOf(element, 6)}\"";
+        return $"{Describe(element)} text=\"{TextOf(element, 6, visibleOnly: true)}\"";
     }
 
     private static async Task<(string Status, string Body)> WaitAsync(DebugWaitCondition condition)
@@ -533,7 +533,7 @@ internal sealed partial class DebugServer
 
     private static IEnumerable<FrameworkElement> VisibleElements(FrameworkElement element, int depth = 0)
     {
-        if (element.Visibility != Visibility.Visible || element.Opacity == 0 || depth > 60) yield break;
+        if (element.Visibility != Visibility.Visible || element.Opacity <= 0 || depth > 60) yield break;
         yield return element;
         if (element is PasswordBox) yield break; // Never read native/revealed credential template parts.
         if (element is PageFrame frame)
@@ -908,8 +908,13 @@ internal sealed partial class DebugServer
     private static List<string> TextsOf(DependencyObject element, int limit, bool visibleOnly = false)
     {
         if (visibleOnly && element is FrameworkElement root)
+        {
+            // Focus/text inspection can start midway down a tree, beneath a hidden ancestor.
+            if (Ancestors(root).OfType<UIElement>().Any(ancestor => ancestor.Visibility != Visibility.Visible
+                || ancestor.Opacity <= 0 || ancestor is PasswordBox)) return [];
             return VisibleElements(root).OfType<TextBlock>().Where(block => IsOnScreen(block) && !string.IsNullOrWhiteSpace(block.Text))
                 .Select(block => block.Text).Take(limit).ToList();
+        }
         var texts = new List<string>();
         void Collect(DependencyObject node)
         {
