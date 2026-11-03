@@ -80,11 +80,13 @@ internal sealed partial class DebugServer
         try
         {
             var codecs = await new CodecQuery().FindAllAsync(kind, CodecCategory.Decoder, string.Empty).AsTask();
+            Log.Info($"Debug caps: {kind} query returned {codecs.Count}");
             var names = KnownCodecNames();
             var subtypes = new List<string>();
             builder.Append($"  {kind}: {codecs.Count} decoders\n");
             foreach (var codec in codecs)
             {
+                Log.Info($"Debug caps: {kind} codec {codec.DisplayName}");
                 var supported = codec.Subtypes.ToList();
                 subtypes.AddRange(supported);
                 builder.Append($"    {EscapeText(DebugScreenText.Compact(codec.DisplayName, 240))} IsTrusted={codec.IsTrusted}\n")
