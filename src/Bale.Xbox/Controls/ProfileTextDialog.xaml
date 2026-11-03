@@ -1,0 +1,26 @@
+<UserControl
+    x:Class="Bale.Xbox.Controls.ProfileTextDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    IsTabStop="False" IsHitTestVisible="False">
+  <!-- TvTextInputDialog.kt. Only opening this modal asks for the platform keyboard. -->
+  <Grid x:Name="ModalLayer" Background="{StaticResource SkylineProfileTextScrim}" Visibility="Collapsed"
+        PreviewKeyDown="OnPreviewKeyDown" PreviewKeyUp="OnPreviewKeyUp" Tapped="OnBackgroundTapped">
+    <Border Style="{StaticResource SkylineProfileTextDialogStyle}">
+      <StackPanel Spacing="12">
+        <TextBlock x:Name="Title" Style="{StaticResource SkylineProfileTextTitleStyle}" />
+        <TextBox x:Name="NameInput" Header="Profile name" MaxLength="200" IsSpellCheckEnabled="False" IsTextPredictionEnabled="False"
+                 PreventKeyboardDisplayOnProgrammaticFocus="True" Style="{StaticResource SkylineCredentialFieldStyle}" TextChanged="OnTextChanged" />
+        <PasswordBox x:Name="PinInput" Header="4-digit PIN" InputScope="NumericPin" MaxLength="200" PasswordRevealMode="Hidden"
+                     PreventKeyboardDisplayOnProgrammaticFocus="True" Style="{StaticResource SkylineCredentialPasswordStyle}"
+                     PasswordChanged="OnPasswordChanged" Visibility="Collapsed" />
+        <!-- rail-layout: non-card — text dialog Cancel / Done actions. -->
+        <ItemsControl x:Name="Actions" HorizontalAlignment="Right">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <Button x:Name="CancelButton" Content="Cancel" Style="{StaticResource SkylineAuthPlainButtonStyle}" Click="OnCancelClick" />
+          <Button x:Name="DoneButton" Content="Done" Style="{StaticResource SkylineAuthPlainButtonStyle}" Click="OnDoneClick" />
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

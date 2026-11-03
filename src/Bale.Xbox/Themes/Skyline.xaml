@@ -4120,4 +4120,108 @@
   <Style x:Key="SkylineConnectionNearbyDetailStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineConnectionNearbyNameStyle}"><Setter Property="FontSize" Value="12.04" /><Setter Property="FontWeight" Value="Normal" /><Setter Property="Opacity" Value="0.62" /></Style>
   <Style x:Key="SkylineConnectionLoginScrollerStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SkylineServerEntryScrollStyle}"><Setter Property="Width" Value="466" /><Setter Property="Margin" Value="-8,0,0,0" /></Style>
   <Style x:Key="SkylineConnectionLoginCopyStyle" TargetType="StackPanel"><Setter Property="Width" Value="466" /><Setter Property="Padding" Value="8" /></Style>
+  <!-- TvProfileForm.kt / TvProfileAccessControls.kt. Geometry is dp; type is sp × 0.86. -->
+  <Style x:Key="SkylineProfileEditorLayoutStyle" TargetType="Grid"><Setter Property="Margin" Value="80,60,80,0" /></Style>
+  <Style x:Key="SkylineProfileEditorTitleStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="30.96" /><Setter Property="LineHeight" Value="34.4" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="White" /></Style>
+  <Style x:Key="SkylineProfileEditorSubtitleStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="13.76" /><Setter Property="LineHeight" Value="17.2" /><Setter Property="Foreground" Value="#8CFFFFFF" /></Style>
+  <Style x:Key="SkylineProfilePreviewColumnStyle" TargetType="StackPanel"><Setter Property="Width" Value="180" /><Setter Property="Margin" Value="0,8,0,0" /><Setter Property="Spacing" Value="24" /></Style>
+  <Style x:Key="SkylineProfilePreviewArtStyle" TargetType="Border"><Setter Property="Width" Value="140" /><Setter Property="Height" Value="140" /><Setter Property="CornerRadius" Value="18" /><Setter Property="BorderThickness" Value="1" /><Setter Property="BorderBrush" Value="#24FFFFFF" /><Setter Property="Background" Value="#FF3D376B" /><Setter Property="HorizontalAlignment" Value="Center" /></Style>
+  <Style x:Key="SkylineProfilePreviewNameStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="13.76" /><Setter Property="FontWeight" Value="Medium" /><Setter Property="Foreground" Value="#B8FFFFFF" /><Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="Margin" Value="0,12,0,0" /><Setter Property="MaxWidth" Value="180" /><Setter Property="TextTrimming" Value="CharacterEllipsis" /></Style>
+  <Style x:Key="SkylineProfileFormScrollerStyle" TargetType="ScrollViewer"><Setter Property="Width" Value="584" /><Setter Property="IsTabStop" Value="False" /><Setter Property="HorizontalScrollMode" Value="Disabled" /><Setter Property="HorizontalScrollBarVisibility" Value="Disabled" /><Setter Property="VerticalScrollBarVisibility" Value="Hidden" /><Setter Property="ZoomMode" Value="Disabled" /><Setter Property="HorizontalContentAlignment" Value="Stretch" /></Style>
+  <Style x:Key="SkylineProfileFormStackStyle" TargetType="StackPanel"><Setter Property="Spacing" Value="8" /><Setter Property="Padding" Value="0,0,0,48" /></Style>
+  <Style x:Key="SkylineProfileSectionStyle" TargetType="StackPanel"><Setter Property="Spacing" Value="8" /></Style>
+  <Style x:Key="SkylineProfileSectionTitleStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="12.04" /><Setter Property="LineHeight" Value="14.62" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="CharacterSpacing" Value="114" /><Setter Property="Foreground" Value="#80FFFFFF" /><Setter Property="VerticalAlignment" Value="Center" /></Style>
+  <Style x:Key="SkylineProfileHintStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="12.04" /><Setter Property="Foreground" Value="#80FFFFFF" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
+  <Style x:Key="SkylineProfilePanelLabelStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="15.48" /><Setter Property="LineHeight" Value="18.92" /><Setter Property="FontWeight" Value="Medium" /><Setter Property="Margin" Value="0,0,0,10" /></Style>
+  <Style x:Key="SkylineProfileAccessPanelStyle" TargetType="Border"><Setter Property="CornerRadius" Value="16" /><Setter Property="Background" Value="#0AFFFFFF" /><Setter Property="BorderBrush" Value="#1AFFFFFF" /><Setter Property="BorderThickness" Value="1" /><Setter Property="Padding" Value="18,16" /></Style>
+  <Style x:Key="SkylineProfileAccessSeparatorStyle" TargetType="Border"><Setter Property="Height" Value="1" /><Setter Property="Margin" Value="0,18" /><Setter Property="Background" Value="#1AFFFFFF" /></Style>
+  <Style x:Key="SkylineProfileSmallActionStyle" TargetType="Button" BasedOn="{StaticResource SkylineAuthPlainButtonStyle}"><Setter Property="Height" Value="24" /><Setter Property="CornerRadius" Value="12" /><Setter Property="FontSize" Value="10.32" /><Setter Property="Padding" Value="10,0" /></Style>
+  <Style x:Key="SkylineProfileCancelStyle" TargetType="Button" BasedOn="{StaticResource SkylineProfileSmallActionStyle}"><Setter Property="Height" Value="22" /><Setter Property="CornerRadius" Value="11" /></Style>
+  <Style x:Key="SkylineProfileSubmitStyle" TargetType="Button" BasedOn="{StaticResource SkylineAuthButtonStyle}"><Setter Property="HorizontalAlignment" Value="Left" /><Setter Property="Background" Value="White" /><Setter Property="Foreground" Value="Black" /></Style>
+
+  <!-- One presenter: avatar cells contain elements, so unlike SkylineTabStyle they must never present Content twice. -->
+  <Style x:Key="SkylineProfileChoiceStyle" TargetType="ToggleButton">
+    <Setter Property="Height" Value="28" /><Setter Property="MinWidth" Value="0" /><Setter Property="MinHeight" Value="0" /><Setter Property="Padding" Value="7,6" />
+    <Setter Property="CornerRadius" Value="14" /><Setter Property="FontSize" Value="12.04" /><Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Foreground" Value="#BFFFFFFF" /><Setter Property="Background" Value="#0FFFFFFF" /><Setter Property="BorderBrush" Value="#2EFFFFFF" />
+    <Setter Property="BorderThickness" Value="1" /><Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" /><Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToggleButton">
+      <Grid RenderTransformOrigin="0.5,0.5">
+        <Grid.RenderTransform><ScaleTransform x:Name="Lift" /></Grid.RenderTransform>
+        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}" />
+        <Border x:Name="FocusWash" Background="#26FFFFFF" CornerRadius="{TemplateBinding CornerRadius}" Opacity="0" />
+        <Border x:Name="SelectedFill" Background="White" CornerRadius="{TemplateBinding CornerRadius}" Opacity="0" />
+        <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}" Foreground="{TemplateBinding Foreground}"
+                          FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}" FontFamily="{TemplateBinding FontFamily}"
+                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+        <Border x:Name="FocusOutline" BorderBrush="#E6FFFFFF" BorderThickness="1.5" CornerRadius="{TemplateBinding CornerRadius}" Opacity="0" IsHitTestVisible="False" />
+        <VisualStateManager.VisualStateGroups>
+          <VisualStateGroup x:Name="CommonStates">
+            <VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" /><VisualState x:Name="Disabled" />
+            <VisualState x:Name="Checked"><VisualState.Setters><Setter Target="SelectedFill.Opacity" Value="1" /><Setter Target="Content.Foreground" Value="Black" /></VisualState.Setters></VisualState>
+            <VisualState x:Name="CheckedPointerOver"><VisualState.Setters><Setter Target="SelectedFill.Opacity" Value="1" /><Setter Target="Content.Foreground" Value="Black" /></VisualState.Setters></VisualState>
+            <VisualState x:Name="CheckedPressed"><VisualState.Setters><Setter Target="SelectedFill.Opacity" Value="1" /><Setter Target="Content.Foreground" Value="Black" /></VisualState.Setters></VisualState>
+            <VisualState x:Name="CheckedDisabled"><VisualState.Setters><Setter Target="SelectedFill.Opacity" Value="1" /><Setter Target="Content.Foreground" Value="Black" /></VisualState.Setters></VisualState>
+            <VisualState x:Name="Indeterminate" />
+          </VisualStateGroup>
+          <VisualStateGroup x:Name="FocusStates">
+            <VisualState x:Name="Unfocused" /><VisualState x:Name="PointerFocused" />
+            <VisualState x:Name="Focused"><VisualState.Setters><Setter Target="FocusOutline.Opacity" Value="1" /><Setter Target="FocusWash.Opacity" Value="1" /><Setter Target="Lift.ScaleX" Value="1.03" /><Setter Target="Lift.ScaleY" Value="1.03" /></VisualState.Setters></VisualState>
+          </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+      </Grid>
+    </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style x:Key="SkylineProfileAvatarChoiceStyle" TargetType="ToggleButton" BasedOn="{StaticResource SkylineProfileChoiceStyle}">
+    <Setter Property="Width" Value="92.333333" /><Setter Property="Height" Value="46" /><Setter Property="Padding" Value="2" /><Setter Property="CornerRadius" Value="18" /><Setter Property="Background" Value="#0AFFFFFF" /><Setter Property="BorderBrush" Value="#1FFFFFFF" />
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToggleButton">
+      <Grid RenderTransformOrigin="0.5,0.5">
+        <Grid.RenderTransform><ScaleTransform x:Name="Lift" /></Grid.RenderTransform>
+        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="{TemplateBinding CornerRadius}" />
+        <Border x:Name="SelectedStroke" BorderBrush="White" BorderThickness="2" CornerRadius="{TemplateBinding CornerRadius}" Opacity="0" />
+        <ContentPresenter Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+        <Border x:Name="FocusStroke" BorderBrush="#80FFFFFF" BorderThickness="1" CornerRadius="{TemplateBinding CornerRadius}" Opacity="0" />
+        <VisualStateManager.VisualStateGroups>
+          <VisualStateGroup x:Name="CommonStates"><VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" /><VisualState x:Name="Disabled" />
+            <VisualState x:Name="Checked"><VisualState.Setters><Setter Target="SelectedStroke.Opacity" Value="1" /></VisualState.Setters></VisualState>
+            <VisualState x:Name="CheckedPointerOver"><VisualState.Setters><Setter Target="SelectedStroke.Opacity" Value="1" /></VisualState.Setters></VisualState>
+            <VisualState x:Name="CheckedPressed"><VisualState.Setters><Setter Target="SelectedStroke.Opacity" Value="1" /></VisualState.Setters></VisualState>
+            <VisualState x:Name="CheckedDisabled"><VisualState.Setters><Setter Target="SelectedStroke.Opacity" Value="1" /></VisualState.Setters></VisualState>
+          </VisualStateGroup>
+          <VisualStateGroup x:Name="FocusStates"><VisualState x:Name="Unfocused" /><VisualState x:Name="PointerFocused" /><VisualState x:Name="Focused"><VisualState.Setters><Setter Target="FocusStroke.Opacity" Value="1" /><Setter Target="Lift.ScaleX" Value="1.08" /><Setter Target="Lift.ScaleY" Value="1.08" /></VisualState.Setters></VisualState></VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+      </Grid>
+    </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style x:Key="SkylineProfileSegmentStyle" TargetType="ToggleButton" BasedOn="{StaticResource SkylineProfileChoiceStyle}"><Setter Property="Height" Value="48" /><Setter Property="Padding" Value="0" /><Setter Property="FontSize" Value="15.48" /><Setter Property="Foreground" Value="#9EFFFFFF" /><Setter Property="Background" Value="#08FFFFFF" /><Setter Property="BorderBrush" Value="#29FFFFFF" /><Setter Property="CornerRadius" Value="5" /></Style>
+  <!-- The final 6dp item gutter overhangs the 584dp column; all six visible cells end at 584. -->
+  <Style x:Key="SkylineProfileAvatarListStyle" TargetType="GridView"><Setter Property="Width" Value="590" /><Setter Property="Margin" Value="0,0,-6,0" /><Setter Property="Height" Value="154" /><Setter Property="SelectionMode" Value="None" /><Setter Property="IsItemClickEnabled" Value="False" /><Setter Property="IsTabStop" Value="False" /><Setter Property="Padding" Value="0" /><Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" /><Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" /></Style>
+  <Style x:Key="SkylineProfileAvatarItemStyle" TargetType="GridViewItem"><Setter Property="IsTabStop" Value="False" /><Setter Property="Padding" Value="0" /><Setter Property="Margin" Value="0,0,6,6" /><Setter Property="MinWidth" Value="0" /><Setter Property="MinHeight" Value="0" /><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="GridViewItem"><ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" /></ControlTemplate></Setter.Value></Setter></Style>
+  <Style x:Key="SkylineProfileAvatarImageStyle" TargetType="Image"><Setter Property="Width" Value="42" /><Setter Property="Height" Value="42" /><Setter Property="Stretch" Value="UniformToFill" /></Style>
+  <Style x:Key="SkylineProfileInitialsHintStyle" TargetType="Border"><Setter Property="Padding" Value="14" /><Setter Property="CornerRadius" Value="12" /><Setter Property="Background" Value="#0AFFFFFF" /><Setter Property="BorderBrush" Value="#14FFFFFF" /><Setter Property="BorderThickness" Value="1" /></Style>
+
+  <Style x:Key="SkylineProfileEntryStyle" TargetType="Button">
+    <Setter Property="Height" Value="52" /><Setter Property="MinWidth" Value="0" /><Setter Property="Padding" Value="18,0" /><Setter Property="FontSize" Value="15.48" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" /><Setter Property="HorizontalContentAlignment" Value="Left" /><Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="#E0FFFFFF" /><Setter Property="Background" Value="#33000000" /><Setter Property="CornerRadius" Value="6" />
+    <Setter Property="BorderBrush" Value="#33FFFFFF" /><Setter Property="BorderThickness" Value="1" /><Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+      <Grid RenderTransformOrigin="0.5,0.5">
+        <Grid.RenderTransform><ScaleTransform x:Name="Lift" /></Grid.RenderTransform>
+        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}" />
+        <Border x:Name="FocusStroke" BorderBrush="#9EFFFFFF" BorderThickness="1.5" CornerRadius="{TemplateBinding CornerRadius}" Opacity="0" />
+        <ContentPresenter Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}" Foreground="{TemplateBinding Foreground}" FontFamily="{TemplateBinding FontFamily}" FontSize="{TemplateBinding FontSize}" HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+        <VisualStateManager.VisualStateGroups><VisualStateGroup x:Name="CommonStates"><VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" /><VisualState x:Name="Disabled" /></VisualStateGroup><VisualStateGroup x:Name="FocusStates"><VisualState x:Name="Unfocused" /><VisualState x:Name="PointerFocused" /><VisualState x:Name="Focused"><VisualState.Setters><Setter Target="FocusStroke.Opacity" Value="1" /><Setter Target="Lift.ScaleX" Value="1.01" /><Setter Target="Lift.ScaleY" Value="1.01" /></VisualState.Setters></VisualState></VisualStateGroup></VisualStateManager.VisualStateGroups>
+      </Grid>
+    </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <!-- Switch and check rows keep one content instance; icons are inline Paths in the page. -->
+  <Style x:Key="SkylineProfileSwitchStyle" TargetType="Button" BasedOn="{StaticResource SkylineProfileEntryStyle}"><Setter Property="Height" Value="Auto" /><Setter Property="Padding" Value="16,12" /><Setter Property="CornerRadius" Value="12" /><Setter Property="Background" Value="Transparent" /><Setter Property="BorderBrush" Value="Transparent" /><Setter Property="HorizontalContentAlignment" Value="Stretch" /></Style>
+  <Style x:Key="SkylineProfileLibraryCheckStyle" TargetType="Button" BasedOn="{StaticResource SkylineProfileSwitchStyle}"><Setter Property="Padding" Value="12" /></Style>
+  <Style x:Key="SkylineProfileSwitchTitleStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="17.2" /><Setter Property="LineHeight" Value="21.5" /><Setter Property="FontWeight" Value="Medium" /></Style>
+  <Style x:Key="SkylineProfileSwitchSubtitleStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="13.76" /><Setter Property="LineHeight" Value="17.2" /><Setter Property="Foreground" Value="#8CFFFFFF" /><Setter Property="Margin" Value="0,2,0,0" /></Style>
+  <Style x:Key="SkylineProfileTextDialogStyle" TargetType="Border"><Setter Property="Width" Value="320" /><Setter Property="Padding" Value="24" /><Setter Property="CornerRadius" Value="12" /><Setter Property="Background" Value="{StaticResource SkylineSurfaceElevated}" /><Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Center" /></Style>
+  <Style x:Key="SkylineProfileTextTitleStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="16.34" /><Setter Property="LineHeight" Value="18.92" /><Setter Property="FontWeight" Value="SemiBold" /></Style>
+  <SolidColorBrush x:Key="SkylineProfileTextScrim" Color="#D9000000" />
 </ResourceDictionary>

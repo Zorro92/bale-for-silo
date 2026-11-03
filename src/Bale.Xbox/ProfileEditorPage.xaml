@@ -1,0 +1,142 @@
+<Page
+    x:Class="Bale.Xbox.ProfileEditorPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:Bale.Xbox.Views"
+    xmlns:controls="using:Bale.Xbox.Controls"
+    Background="{StaticResource SkylineAurora}">
+  <!-- TvCreateProfileScreen.kt / TvEditProfileScreen.kt share TvProfileForm.kt, not a settings screen. -->
+  <Grid>
+    <Grid x:Name="EditorLayout" Style="{StaticResource SkylineProfileEditorLayoutStyle}" PreviewKeyDown="OnFormPreviewKeyDown" GotFocus="OnFormGotFocus">
+      <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+      <Grid>
+        <StackPanel Spacing="4">
+          <TextBlock x:Name="Title" Style="{StaticResource SkylineProfileEditorTitleStyle}" Text="New Profile" />
+          <TextBlock x:Name="Subtitle" Style="{StaticResource SkylineProfileEditorSubtitleStyle}" Text="Pick a look and give it a name." />
+        </StackPanel>
+        <Button x:Name="CancelButton" Style="{StaticResource SkylineProfileCancelStyle}" HorizontalAlignment="Right" VerticalAlignment="Center" Click="OnCancelClick" Content="×  Cancel" />
+      </Grid>
+      <Grid Grid.Row="1">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="180" /><ColumnDefinition Width="40" /><ColumnDefinition Width="584" /></Grid.ColumnDefinitions>
+        <StackPanel Style="{StaticResource SkylineProfilePreviewColumnStyle}">
+          <StackPanel>
+            <Border x:Name="PreviewArt" Style="{StaticResource SkylineProfilePreviewArtStyle}">
+              <Grid>
+                <TextBlock x:Name="PreviewInitial" Text="Y" FontSize="51.6" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <Border CornerRadius="18"><Border.Background><ImageBrush x:Name="PreviewImage" Stretch="UniformToFill" /></Border.Background></Border>
+                <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12" IsHitTestVisible="False">
+                  <Border x:Name="ChildBadge" Width="34" Height="34" CornerRadius="17" Background="#8C000000" Visibility="Collapsed">
+                    <Viewbox Width="18" Height="18"><Path Fill="White" Data="M12 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8M5 22v-4H3v-6h18v6h-2v4h-5v-6h-4v6Z" /></Viewbox>
+                  </Border>
+                  <Border x:Name="PinBadge" Width="34" Height="34" CornerRadius="17" Background="#8C000000" Visibility="Collapsed">
+                    <Viewbox Width="18" Height="18"><Path Fill="White" Data="M18 8h-1V6A5 5 0 0 0 7 6v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2M9 6a3 3 0 0 1 6 0v2H9Z" /></Viewbox>
+                  </Border>
+                </StackPanel>
+              </Grid>
+            </Border>
+            <TextBlock x:Name="PreviewName" Style="{StaticResource SkylineProfilePreviewNameStyle}" Text="Your Name" />
+          </StackPanel>
+          <TextBlock x:Name="PreviewHint" Style="{StaticResource SkylineProfileHintStyle}" Text="Your tile will look like this." TextAlignment="Center" />
+        </StackPanel>
+        <ScrollViewer x:Name="FormScroller" Grid.Column="2" Style="{StaticResource SkylineProfileFormScrollerStyle}">
+          <StackPanel Style="{StaticResource SkylineProfileFormStackStyle}">
+            <StackPanel Style="{StaticResource SkylineProfileSectionStyle}">
+              <TextBlock Text="STYLE" Style="{StaticResource SkylineProfileSectionTitleStyle}" />
+              <!-- rail-layout: non-card — profile avatar style choices. -->
+              <ItemsControl x:Name="Styles">
+                <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate><DataTemplate x:DataType="views:ProfileChoiceView">
+                  <ToggleButton Content="{x:Bind Label}" IsChecked="{x:Bind Selected, Mode=OneWay}" Style="{StaticResource SkylineProfileChoiceStyle}" Click="OnStyleClick" />
+                </DataTemplate></ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+            <StackPanel Style="{StaticResource SkylineProfileSectionStyle}">
+              <Grid>
+                <TextBlock Text="AVATAR" Style="{StaticResource SkylineProfileSectionTitleStyle}" />
+                <Button x:Name="ShuffleButton" Content="Shuffle" HorizontalAlignment="Right" Style="{StaticResource SkylineProfileSmallActionStyle}" Click="OnShuffleClick" />
+              </Grid>
+              <GridView x:Name="Avatars" Style="{StaticResource SkylineProfileAvatarListStyle}" ItemContainerStyle="{StaticResource SkylineProfileAvatarItemStyle}">
+                <GridView.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="6" /></ItemsPanelTemplate></GridView.ItemsPanel>
+                <GridView.ItemTemplate><DataTemplate x:DataType="views:ProfilePresetView">
+                  <ToggleButton x:Name="AvatarButton" Style="{StaticResource SkylineProfileAvatarChoiceStyle}" IsChecked="{x:Bind Selected, Mode=OneWay}" AutomationProperties.Name="{x:Bind Label}" Click="OnAvatarClick">
+                    <Image Source="{x:Bind Image}" Style="{StaticResource SkylineProfileAvatarImageStyle}" />
+                  </ToggleButton>
+                </DataTemplate></GridView.ItemTemplate>
+              </GridView>
+              <Border x:Name="InitialsHint" Style="{StaticResource SkylineProfileInitialsHintStyle}" Visibility="Collapsed">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="Uses your profile name" Style="{StaticResource SkylineProfileEditorSubtitleStyle}" />
+                  <TextBlock Text="The first letters of the name below appear on your tile." Style="{StaticResource SkylineProfileHintStyle}" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+            <StackPanel Style="{StaticResource SkylineProfileSectionStyle}">
+              <TextBlock Text="NAME" Style="{StaticResource SkylineProfileSectionTitleStyle}" />
+              <Button x:Name="NameField" Style="{StaticResource SkylineProfileEntryStyle}" AutomationProperties.Name="Profile name" Click="OnNameClick" />
+            </StackPanel>
+            <StackPanel Style="{StaticResource SkylineProfileSectionStyle}">
+              <Grid>
+                <TextBlock Text="PIN (OPTIONAL)" Style="{StaticResource SkylineProfileSectionTitleStyle}" />
+                <Button x:Name="RemovePinButton" Content="Remove" HorizontalAlignment="Right" Style="{StaticResource SkylineProfileSmallActionStyle}" Visibility="Collapsed" Click="OnRemovePinClick" />
+              </Grid>
+              <Button x:Name="PinField" Style="{StaticResource SkylineProfileEntryStyle}" AutomationProperties.Name="Profile PIN" Click="OnPinClick" />
+            </StackPanel>
+            <Button x:Name="ChildSwitch" Style="{StaticResource SkylineProfileSwitchStyle}" Click="OnChildClick" AutomationProperties.Name="Child Profile">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="58" /></Grid.ColumnDefinitions>
+                <StackPanel><TextBlock Text="Child Profile" Style="{StaticResource SkylineProfileSwitchTitleStyle}" /><TextBlock Text="Fills in kid-friendly limits below" Style="{StaticResource SkylineProfileSwitchSubtitleStyle}" /></StackPanel>
+                <Border x:Name="SwitchTrack" Grid.Column="1" Height="34" CornerRadius="17" Background="#33FFFFFF" VerticalAlignment="Center" Padding="4">
+                  <Ellipse x:Name="SwitchThumb" Width="26" Height="26" Fill="White" HorizontalAlignment="Left" />
+                </Border>
+              </Grid>
+            </Button>
+            <Border Style="{StaticResource SkylineProfileAccessPanelStyle}">
+              <StackPanel>
+                <TextBlock Text="Maximum rating" Style="{StaticResource SkylineProfilePanelLabelStyle}" />
+                <!-- rail-layout: non-card — connected profile rating ladder. -->
+                <ItemsControl x:Name="Ratings" SizeChanged="OnSegmentsSizeChanged">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate><DataTemplate x:DataType="views:ProfileChoiceView">
+                    <ToggleButton Content="{x:Bind Label}" Width="{x:Bind Width, Mode=OneWay}" CornerRadius="{x:Bind Radius, Mode=OneWay}" Background="{x:Bind Fill, Mode=OneWay}" IsChecked="{x:Bind Selected, Mode=OneWay}" Style="{StaticResource SkylineProfileSegmentStyle}" Click="OnRatingClick" />
+                  </DataTemplate></ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock x:Name="RatingCaption" Style="{StaticResource SkylineProfileHintStyle}" Margin="0,10,0,0" />
+                <Border Style="{StaticResource SkylineProfileAccessSeparatorStyle}" />
+                <TextBlock Text="Libraries" Style="{StaticResource SkylineProfilePanelLabelStyle}" />
+                <!-- rail-layout: non-card — all / restricted library choices. -->
+                <ItemsControl x:Name="LibraryModes" SizeChanged="OnSegmentsSizeChanged">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ToggleButton x:Name="AllLibraries" Content="All libraries" Style="{StaticResource SkylineProfileSegmentStyle}" CornerRadius="14,5,5,14" Click="OnAllLibrariesClick" />
+                  <ToggleButton x:Name="ChooseLibraries" Content="Choose libraries" Style="{StaticResource SkylineProfileSegmentStyle}" CornerRadius="5,14,14,5" Click="OnChooseLibrariesClick" />
+                </ItemsControl>
+                <StackPanel x:Name="RestrictedLibraries" Margin="0,14,0,0" Visibility="Collapsed">
+                  <TextBlock x:Name="LibrariesStatus" Text="Loading libraries…" Style="{StaticResource SkylineProfileHintStyle}" />
+                  <Button x:Name="RetryLibraries" Content="Try Again" Style="{StaticResource SkylineProfileSmallActionStyle}" HorizontalAlignment="Right" Click="OnRetryLibrariesClick" Visibility="Collapsed" />
+                  <ItemsControl x:Name="Libraries">
+                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="4" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate><DataTemplate x:DataType="views:ProfileLibraryView">
+                      <Button x:Name="LibraryButton" Style="{StaticResource SkylineProfileLibraryCheckStyle}" Click="OnLibraryClick" AutomationProperties.Name="{x:Bind AccessibleName, Mode=OneWay}">
+                        <Grid>
+                          <Grid.ColumnDefinitions><ColumnDefinition Width="24" /><ColumnDefinition Width="*" /><ColumnDefinition Width="28" /></Grid.ColumnDefinitions>
+                          <Viewbox Width="24" Height="24"><Path Fill="#9EFFFFFF" Data="M4 6H2v14a2 2 0 0 0 2 2h14v-2H4V6m16-4H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2m-8 12V6l6 4Z" /></Viewbox>
+                          <TextBlock Grid.Column="1" Text="{x:Bind Name}" Style="{StaticResource SkylineProfileSwitchTitleStyle}" Margin="12,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                          <Viewbox Grid.Column="2" Width="28" Height="28" Visibility="{x:Bind CheckVisibility, Mode=OneWay}"><Path Fill="White" Data="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20m-2 15-5-5 1.4-1.4 3.6 3.6 7.6-7.6L19 8Z" /></Viewbox>
+                          <Ellipse Grid.Column="2" Width="24" Height="24" Stroke="#9EFFFFFF" StrokeThickness="2" Visibility="{x:Bind EmptyVisibility, Mode=OneWay}" />
+                        </Grid>
+                      </Button>
+                    </DataTemplate></ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+            <TextBlock x:Name="ErrorText" Foreground="{StaticResource SkylineError}" Style="{StaticResource SkylineProfileHintStyle}" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite" />
+            <Button x:Name="SubmitButton" Content="Create Profile" Style="{StaticResource SkylineProfileSubmitStyle}" Click="OnSubmitClick" />
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+    </Grid>
+    <ProgressRing x:Name="LoadingRing" Style="{StaticResource SkylineProfileLoadingStyle}" IsActive="False" Visibility="Collapsed" />
+    <controls:ProfileTextDialog x:Name="TextPrompt" />
+    <controls:ProfilePinDialog x:Name="PinPrompt" />
+  </Grid>
+</Page>
