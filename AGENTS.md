@@ -60,6 +60,8 @@ MSIX (~2 min). Then, with `XBOX_HOST` set to the console's IP:
 ./scripts/bale-debug.sh type dune             # typed text
 ./scripts/bale-debug.sh focus                 # what has focus, and its text
 ./scripts/bale-debug.sh where                 # page, overlays, focus, status and on-screen controls
+./scripts/bale-debug.sh wait page Detail      # wait up to 8 s, then print where (also loaded / text / focus)
+./scripts/bale-debug.sh wait --timeout 12000 text "Clear filters"  # 0–15000 ms; HTTP 408 keeps the where body
 ./scripts/bale-debug.sh goto "Unwatched#2"     # setup only: focus the second matching control
 ./scripts/bale-debug.sh targets               # controls goto can reach
 ./scripts/bale-debug.sh tree                  # visible element tree with bounds

@@ -1,4 +1,5 @@
 #if DEBUG_SERVER
+using System.Diagnostics;
 using System.Text;
 using Bale.Core.Connection;
 using Windows.ApplicationModel.Core;
@@ -27,6 +28,8 @@ namespace Bale.Xbox.Services;
 ///   POST /type?text=...   types text as real keystrokes into whatever has focus
 ///   GET  /focus           the focused element and its text
 ///   GET  /where           compact page, overlays, focus, status and on-screen controls
+///   GET  /wait?for=...    wait for page Detail | loaded | text ... | focus ...; timeout=8000 ms (max 15000)
+///                         returns /where on success or HTTP 408 on timeout (with /where body)
 ///   POST /goto?target=... focus a named or labelled control (optional #N), for setup only
 ///   GET  /targets         the visible, enabled tab-stop controls goto can reach
 ///   GET  /tree            the visible element tree with bounds and text
@@ -194,6 +197,11 @@ internal sealed class DebugServer
             case ("GET", "/where"):
                 return ("200 OK", await OnUiAsync(DescribeWhere));
 
+            case ("GET", "/wait"):
+                if (!DebugWaitCondition.TryParse(query.GetValueOrDefault("for"), query.GetValueOrDefault("timeout"), out var condition, out var error))
+                    return ("400 Bad Request", error + "\n");
+                return await WaitAsync(condition);
+
             case ("POST", "/goto"):
                 var gotoStatus = "500 Internal Server Error";
                 var gotoBody = await OnUiAsync(() =>
@@ -263,7 +271,7 @@ internal sealed class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 
@@ -441,6 +449,46 @@ internal sealed class DebugServer
         }
 
         return $"{Describe(element)} text=\"{TextOf(element, 6)}\"";
+    }
+
+    private static async Task<(string Status, string Body)> WaitAsync(DebugWaitCondition condition)
+    {
+        var elapsed = Stopwatch.StartNew();
+        while (true)
+        {
+            var matched = false;
+            var summary = await OnUiAsync(() =>
+            {
+                matched = MatchesWait(condition);
+                return matched || elapsed.ElapsedMilliseconds >= condition.TimeoutMs ? DescribeWhere() : string.Empty;
+            });
+            if (summary.Length > 0)
+            {
+                var status = summary.StartsWith("error: ", StringComparison.Ordinal) ? "500 Internal Server Error"
+                    : matched ? "200 OK" : "408 Request Timeout";
+                return (status, summary);
+            }
+            // Don't block the dispatcher: navigation, layout and loading all have to keep running.
+            await Task.Delay((int)Math.Clamp(condition.TimeoutMs - elapsed.ElapsedMilliseconds, 1, 100));
+        }
+    }
+
+    private static bool MatchesWait(DebugWaitCondition condition)
+    {
+        if (condition.Kind == "page")
+            return CurrentPage(out _)?.GetType().Name.Contains(condition.Value, StringComparison.OrdinalIgnoreCase) == true;
+        if (condition.Kind == "focus")
+            return DescribeFocus().Contains(condition.Value, StringComparison.OrdinalIgnoreCase);
+        var elements = ScreenElements(OpenPopups());
+        if (condition.Kind == "loaded")
+            return !PageFrame.IsTransitioning && !elements.Any(element => StatusKind(element) == "loading");
+        return elements.Any(element => (element switch
+        {
+            TextBlock block => block.Text,
+            TextBox box => box.Text,
+            ContentControl { Content: string content } => content,
+            _ => string.Empty,
+        }).Contains(condition.Value, StringComparison.OrdinalIgnoreCase));
     }
 
     private static Page? CurrentPage(out ShellPage? shell)

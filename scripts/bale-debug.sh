@@ -8,6 +8,11 @@
 #   scripts/bale-debug.sh type dune             type text as real keystrokes
 #   scripts/bale-debug.sh focus                 what has focus, and the text on it
 #   scripts/bale-debug.sh where                 page, overlays, focus, status and on-screen controls
+#   scripts/bale-debug.sh wait page Detail      wait for a page name containing Detail, then print where
+#   scripts/bale-debug.sh wait loaded           wait for visible loading indicators to disappear
+#   scripts/bale-debug.sh wait text "Clear filters"  wait for visible text (case-insensitive)
+#   scripts/bale-debug.sh wait focus Play       wait for a focused description containing Play
+#   scripts/bale-debug.sh wait --timeout 12000 loaded  default 8000 ms; 0–15000; timeout prints where and fails
 #   scripts/bale-debug.sh goto "Unwatched#2"     setup only: focus the second matching control
 #   scripts/bale-debug.sh targets               list controls goto can reach
 #   scripts/bale-debug.sh tree                  the visible element tree with bounds
@@ -66,6 +71,43 @@ case "${1:-}" in
     ;;
   focus) curl -fsS "$BASE/focus" ;;
   where) curl -fsS --max-time 5 "$BASE/where" ;;
+  wait)
+    shift
+    wait_timeout=8000
+    wait_args=()
+    wait_usage='usage: scripts/bale-debug.sh wait [--timeout MS] {page <substring>|loaded|text <substring>|focus <substring>} (0–15000 ms)'
+    while (( $# > 0 )); do
+      if [[ "$1" == --timeout ]]; then
+        if [[ "$#" -lt 2 || ! "$2" =~ ^[0-9]{1,5}$ ]]; then
+          echo "$wait_usage" >&2
+          exit 2
+        fi
+        wait_timeout=$((10#$2))
+        shift 2
+      else
+        wait_args+=("$1")
+        shift
+      fi
+    done
+    if (( wait_timeout > 15000 )); then
+      echo "$wait_usage" >&2
+      exit 2
+    fi
+    case "${wait_args[0]:-}" in
+      loaded) valid_wait=$(( ${#wait_args[@]} == 1 )) ;;
+      page|text|focus)
+        if [[ "${wait_args[*]:1}" == *[![:space:]]* ]]; then valid_wait=1; else valid_wait=0; fi
+        ;;
+      *) valid_wait=0 ;;
+    esac
+    if (( ! valid_wait )); then
+      echo "$wait_usage" >&2
+      exit 2
+    fi
+    # Leave room for dispatch and the summary response, still below the usual outer timeout 20.
+    curl --fail-with-body -sS --max-time "$(( (wait_timeout + 999) / 1000 + 2 ))" -G "$BASE/wait" \
+      --data-urlencode "for=${wait_args[*]}" --data-urlencode "timeout=$wait_timeout"
+    ;;
   goto)
     shift
     curl --fail-with-body -sS -X POST -G "$BASE/goto" --data-urlencode "target=$*"
