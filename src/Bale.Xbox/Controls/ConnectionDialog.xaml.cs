@@ -42,6 +42,16 @@ public sealed partial class ConnectionDialog : UserControl
         Show(http: false);
     }
 
+    public void ShowDeleteProfile(string name)
+    {
+        // TvProfileSelectionScreen.kt also uses TvOptionDialog.kt: destructive option first.
+        RemoveTitle.Text = $"Delete {name}?".ToUpperInvariant();
+        RemoveLabel.Text = "Delete profile";
+        RemoveMessage.Text = "This cannot be undone.";
+        RemoveMessage.Visibility = Visibility.Visible;
+        Show(http: false);
+    }
+
     private void Show(bool http)
     {
         Hide();

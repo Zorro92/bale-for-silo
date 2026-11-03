@@ -8,9 +8,11 @@ namespace Bale.Xbox.Views;
 
 public sealed partial class ProfileView
 {
-    public ProfileView(Profile profile, Uri? avatarUrl)
+    public ProfileView(Profile profile, Uri? avatarUrl, bool managing = false, bool isAdd = false)
     {
         Profile = profile;
+        IsManaging = managing;
+        IsAdd = isAdd;
         AvatarUrl = avatarUrl;
         Initial = string.IsNullOrEmpty(profile.Name) ? "?" : profile.Name!.Substring(0, 1).ToUpperInvariant();
         LockVisibility = profile.HasPin == true ? Visibility.Visible : Visibility.Collapsed;
@@ -29,7 +31,18 @@ public sealed partial class ProfileView
 
     public Uri? AvatarUrl { get; }
 
-    public string Name => Profile.Name ?? string.Empty;
+    public bool IsManaging { get; }
+    public bool IsAdd { get; }
+    public string Name => IsAdd ? "Add profile" : Profile.Name ?? string.Empty;
+    public double AvatarOpacity => IsManaging ? 0.6 : 1;
+    public Visibility ProfileVisibility => IsAdd ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility AddVisibility => IsAdd ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility ManageVisibility => IsManaging ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility PencilVisibility => IsManaging && !IsAdd ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility DeleteVisibility => IsManaging && !IsAdd && Core.Profiles.ProfileManagementGate.CanDelete(Profile) ? Visibility.Visible : Visibility.Collapsed;
+    public string AccessibleName => IsAdd ? Name : string.Join(", ", new[] { Name,
+        Profile.HasPin == true ? "PIN protected" : null, Profile.IsChild == true ? "Kids profile" : null,
+        IsManaging ? "Edit" : null }.Where(value => value is not null));
 
     public string Initial { get; }
 

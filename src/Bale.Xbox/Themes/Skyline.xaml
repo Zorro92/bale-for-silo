@@ -4120,6 +4120,15 @@
   <Style x:Key="SkylineConnectionNearbyDetailStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineConnectionNearbyNameStyle}"><Setter Property="FontSize" Value="12.04" /><Setter Property="FontWeight" Value="Normal" /><Setter Property="Opacity" Value="0.62" /></Style>
   <Style x:Key="SkylineConnectionLoginScrollerStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SkylineServerEntryScrollStyle}"><Setter Property="Width" Value="466" /><Setter Property="Margin" Value="-8,0,0,0" /></Style>
   <Style x:Key="SkylineConnectionLoginCopyStyle" TargetType="StackPanel"><Setter Property="Width" Value="466" /><Setter Property="Padding" Value="8" /></Style>
+  <!-- TvProfileSelectionScreen.kt: dimmed avatars, white edit pencil, dashed Add and compact Plain Delete. -->
+  <Style x:Key="SkylineProfileManageExtentStyle" TargetType="Border"><Setter Property="Height" Value="184" /><Setter Property="IsHitTestVisible" Value="False" /></Style>
+  <Style x:Key="SkylineProfileDeleteStyle" TargetType="Button" BasedOn="{StaticResource SkylineMarqueeCompactGlassStyle}"><Setter Property="Margin" Value="0,4,0,0" /><Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" /><Setter Property="Foreground" Value="{StaticResource SkylineSecondary}" /></Style>
+  <Style x:Key="SkylineProfilePencilStyle" TargetType="Viewbox"><Setter Property="Width" Value="30" /><Setter Property="Height" Value="30" /><Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Center" /><Setter Property="IsHitTestVisible" Value="False" /></Style>
+  <Style x:Key="SkylineProfileAddIconStyle" TargetType="Viewbox" BasedOn="{StaticResource SkylineProfilePencilStyle}"><Setter Property="Width" Value="33" /><Setter Property="Height" Value="33" /></Style>
+  <Style x:Key="SkylineProfileAddOutlineStyle" TargetType="Ellipse"><Setter Property="Stroke" Value="#40FFFFFF" /><Setter Property="StrokeThickness" Value="2" /><Setter Property="StrokeDashArray" Value="3,2.5" /></Style>
+  <SolidColorBrush x:Key="SkylineProfileAddInk" Color="#66FFFFFF" />
+  <SolidColorBrush x:Key="SkylineProfileAddFocusFill" Color="#24FFFFFF" />
+
   <!-- TvProfileForm.kt / TvProfileAccessControls.kt. Geometry is dp; type is sp × 0.86. -->
   <Style x:Key="SkylineProfileEditorLayoutStyle" TargetType="Grid"><Setter Property="Margin" Value="80,60,80,0" /></Style>
   <Style x:Key="SkylineProfileEditorTitleStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="30.96" /><Setter Property="LineHeight" Value="34.4" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="White" /></Style>

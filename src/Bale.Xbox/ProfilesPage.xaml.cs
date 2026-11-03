@@ -1,5 +1,6 @@
 using System.Numerics;
 using Bale.Core.Auth;
+using Bale.Core.Profiles;
 using Bale.Xbox.Services;
 using Bale.Xbox.Views;
 using Microsoft.Kiota.Abstractions;
@@ -14,7 +15,7 @@ using Windows.UI.Xaml.Navigation;
 namespace Bale.Xbox;
 
 /// <summary>Who's watching, including the remote-first PIN and first-pick remember offer.</summary>
-public sealed partial class ProfilesPage : Page, IBackHandler
+public sealed partial class ProfilesPage : Page, IBackHandler, IRestoresFocus
 {
     private readonly Rail _actions;
     private CancellationTokenSource? _loading;
@@ -29,12 +30,16 @@ public sealed partial class ProfilesPage : Page, IBackHandler
     public ProfilesPage()
     {
         InitializeComponent();
+        NavigationCacheMode = NavigationCacheMode.Required;
+        _reverify = new(PinPrompt, ViewFor);
+        DeletePrompt.Confirmed += OnDeleteConfirmed;
+        DeletePrompt.Dismissed += () => { _deleteCandidate = null; RestoreFocus(); };
         _actions = Rail.Attach(PickerActions);
         _actions.Pin = false;
         Rail.Attach(RememberActions).Pin = false;
         RetryButton.PreviewKeyDown += OnRetryPreviewKeyDown;
         PinPrompt.PinEntered += pin => _ = VerifyPinAsync(pin);
-        PinPrompt.Dismissed += ClosePin;
+        PinPrompt.Dismissed += () => { if (_pinProfile is not null) ClosePin(); };
         SignOutPrompt.SignOutRequested += OnSignOutRequested;
         SignOutPrompt.Dismissed += RestoreSignOutFocus;
     }
@@ -43,9 +48,36 @@ public sealed partial class ProfilesPage : Page, IBackHandler
     {
         base.OnNavigatedTo(e);
         _active = true;
-        // TvAppNavigation.kt onSwitchProfile replaces Main: Back from the picker leaves the app.
-        Frame.BackStack.Clear();
-        await LoadAsync();
+        _leaving = false;
+        var household = e.Parameter as ProfileNavigation;
+        if (household is null && Session.Client is { } client) household = new(client.Profiles, client.Browse.Resolve);
+        if (household is null) return;
+        var returning = e.NavigationMode == NavigationMode.Back && ReferenceEquals(_household?.Repository, household.Repository);
+        _pinProfile = _chosen = null;
+        _pinForManagement = _verifying = _deleting = false;
+        _mutation = _pinVerification = null;
+        _deleteCandidate = null;
+        RememberPanel.Visibility = Visibility.Collapsed;
+        if (!returning)
+        {
+            _lastProfileIndex = 0;
+            _lastDelete = _focusInUtilities = false;
+            _lastAction = null;
+        }
+        if (!ReferenceEquals(_household?.Repository, household.Repository))
+        {
+            _profiles = [];
+            Profiles.ItemsSource = null;
+            _gate = new(household.Repository.Management);
+            _lastProfileIndex = 0;
+            _lastDelete = _focusInUtilities = false;
+            _lastAction = null;
+        }
+        _household = household;
+        _reverify.Activate(household.Repository.Management);
+        // TvAppNavigation.kt makes the real picker a root; pushed editors and disposable previews retain Back.
+        if (!household.IsPreview && e.NavigationMode != NavigationMode.Back) Frame.BackStack.Clear();
+        await LoadAsync(restoreFocus: returning);
     }
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
@@ -54,13 +86,17 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         _active = false;
         _loading?.Cancel();
         _pinVerification?.Cancel();
+        _mutation?.Cancel();
+        _reverify.Deactivate();
+        if (e.SourcePageType != typeof(ProfileEditorPage)) _gate?.Done();
         PinPrompt.Hide(restoreFocus: false);
         SignOutPrompt.Hide();
+        DeletePrompt.Hide();
     }
 
     public bool OnBack()
     {
-        if (SignOutPrompt.Dismiss()) return true;
+        if (DeletePrompt.Dismiss() || _reverify.Dismiss() || SignOutPrompt.Dismiss()) return true;
         if (_pinProfile is not null)
         {
             ClosePin();
@@ -71,6 +107,9 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         }
         else
         {
+#if DEBUG_SERVER
+            if (IsProfilePreview) return DebugServer.CloseAuthPreview(Frame);
+#endif
             // TvProfileSelectionScreen.kt / StatusViews.kt install no error-screen Back handler;
             // TvAppNavigation.kt makes ProfileSelection a root, so Back leaves the app, not sign-in.
             Application.Current.Exit();
@@ -80,50 +119,32 @@ public sealed partial class ProfilesPage : Page, IBackHandler
 
     private async void OnRetryClick(object sender, RoutedEventArgs e) => await LoadAsync();
 
-    private async Task LoadAsync()
+    private async Task LoadAsync(bool restoreFocus = false)
     {
-        if (Session.Client is not { } client)
-        {
-            return;
-        }
-
+        if (_household is not { } household || !IsCurrent) return;
+        var client = household.IsPreview ? null : Session.Client;
         _loading?.Cancel();
         using var loading = new CancellationTokenSource();
         _loading = loading;
         SetLoadState(isLoading: true);
-        SetAccountName(client.Account?.Username ?? AppSettings.AccountName);
+        SetAccountName(household.IsPreview ? "Preview household" : client?.Account?.Username ?? AppSettings.AccountName);
         try
         {
 #if DEBUG_SERVER
-            DebugServer.ThrowIfProfilesFaulted();
+            if (!household.IsPreview) DebugServer.ThrowIfProfilesFaulted();
 #endif
-            var profiles = await client.GetProfilesAsync(loading.Token);
-            if (!_active || loading.IsCancellationRequested || !ReferenceEquals(Session.Client, client))
-            {
-                return;
-            }
-
-            var views = profiles.Select(p => new ProfileView(p, ProfileAvatars.ImageUrl(p.AvatarUrl, client.Browse.Resolve))).ToList();
-            Profiles.ItemsSource = views;
-            Profiles.Width = Math.Min(6, Math.Max(1, views.Count)) * 142;
+            var profiles = await household.Repository.ListAsync(loading.Token);
+            if (!IsCurrent || loading.IsCancellationRequested || !ReferenceEquals(_household, household)) return;
+            _profiles = profiles;
+            RebuildProfiles(restoreFocus);
             SetLoadState(isLoading: false);
-            if (views.Count == 0)
-            {
-                // TvProfileSelectionScreen.kt has no empty-success error or Retry; only utilities remain.
-                FocusRetry.Until(PickerActions, () => !_active || PickerPanel.Visibility != Visibility.Visible || _actions.Focus(FocusState.Programmatic));
-            }
-            else
-            {
-                var current = views.FindIndex(p => p.Profile.Id == (client.ProfileId ?? AppSettings.ProfileId));
-                _lastProfileIndex = Math.Max(current, 0);
-                RestoreProfileFocus();
-            }
-            if (client.Account is null)
+            RestoreFocus();
+            if (client is { Account: null })
             {
                 try
                 {
                     var account = await client.GetAccountAsync(loading.Token);
-                    if (_active && !loading.IsCancellationRequested && ReferenceEquals(Session.Client, client))
+                    if (IsCurrent && !loading.IsCancellationRequested && ReferenceEquals(Session.Client, client))
                     {
                         SetAccountName(account?.Username);
                         AppSettings.AccountName = account?.Username;
@@ -143,7 +164,7 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         catch (Exception ex)
         {
             Log.Error("Profiles load", ex);
-            if (_active && !loading.IsCancellationRequested && ReferenceEquals(Session.Client, client))
+            if (IsCurrent && !loading.IsCancellationRequested && ReferenceEquals(_household, household))
             {
                 // TvProfileSelectionViewModel.kt: network failures use this copy; API errors keep their message.
                 ShowError(ex is HttpRequestException ? "Network error. Please try again."
@@ -186,19 +207,21 @@ public sealed partial class ProfilesPage : Page, IBackHandler
 
     private void OnProfileFocus(object sender, RoutedEventArgs e)
     {
-        if (e.OriginalSource is ContentControl { Content: ProfileView } item)
+        var focused = FocusManager.GetFocusedElement() as DependencyObject;
+        if (ProfileContainer(focused) is { Content: ProfileView view } item)
         {
             _lastProfileIndex = Math.Max(Profiles.IndexFromContainer(item), 0);
-            ApplyProfileFocus(item, focused: true);
+            _lastDelete = focused is Button;
+            _focusInUtilities = false;
+            Windows.UI.Xaml.Automation.AutomationProperties.SetName(item, view.AccessibleName);
+            ApplyProfileFocus(item, focused: ReferenceEquals(focused, item));
         }
     }
 
     private void OnProfileBlur(object sender, RoutedEventArgs e)
     {
-        if (e.OriginalSource is ContentControl { Content: ProfileView } item)
-        {
+        if (ProfileContainer(e.OriginalSource as DependencyObject) is { } item)
             ApplyProfileFocus(item, focused: false);
-        }
     }
 
     private static void ApplyProfileFocus(ContentControl item, bool focused)
@@ -220,6 +243,17 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         {
             ring.Opacity = focused ? 1 : 0;
         }
+        if (root.FindName("AddFill") is UIElement addFill) addFill.Opacity = focused ? 1 : 0;
+        if (root.FindName("AddOutline") is Windows.UI.Xaml.Shapes.Ellipse outline)
+            outline.Stroke = new SolidColorBrush(Color.FromArgb(focused ? (byte)179 : (byte)64, 255, 255, 255));
+        if (root.FindName("AddIcon") is Windows.UI.Xaml.Shapes.Path addIcon)
+            addIcon.Fill = new SolidColorBrush(Color.FromArgb(focused ? (byte)255 : (byte)102, 255, 255, 255));
+        if (root.FindName("DeleteButton") is Button deleteButton)
+        {
+            deleteButton.Translation = new Vector3(0, focused ? 9 : 0, 0);
+            if (root.FindName("DeleteIcon") is Windows.UI.Xaml.Shapes.Path deleteIcon)
+                deleteIcon.Fill = new SolidColorBrush(ReferenceEquals(FocusManager.GetFocusedElement(), deleteButton) ? Colors.Black : Color.FromArgb(191, 237, 237, 237));
+        }
         if (root.FindName("ProfileCaption") is TextBlock caption)
         {
             caption.Foreground = new SolidColorBrush(focused ? Colors.White : Color.FromArgb(191, 237, 237, 237));
@@ -229,7 +263,7 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         }
     }
 
-    private bool FocusProfile(int index)
+    private bool FocusProfile(int index, bool delete = false)
     {
         if (index < 0 || index >= Profiles.Items.Count || Profiles.ItemsPanelRoot is not { } panel)
         {
@@ -237,12 +271,15 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         }
 
         // Native AOT reports ContentControl, and ContainerFromIndex can return null (Rail.cs).
-        return panel.Children.OfType<ContentControl>().FirstOrDefault(item => ReferenceEquals(item.Content, Profiles.Items[index]))
-            ?.Focus(FocusState.Programmatic) == true;
+        var container = panel.Children.OfType<ContentControl>().FirstOrDefault(item => ReferenceEquals(item.Content, Profiles.Items[index]));
+        if (!delete) return container?.Focus(FocusState.Programmatic) == true;
+        return container?.ContentTemplateRoot is FrameworkElement root && root.FindName("DeleteButton") is Button { Visibility: Visibility.Visible } button
+            && button.Focus(FocusState.Programmatic);
     }
 
     private void RestoreProfileFocus() => FocusRetry.Until(Profiles,
-        () => !_active || PickerPanel.Visibility != Visibility.Visible || FocusProfile(_lastProfileIndex));
+        () => !_active || PickerPanel.Visibility != Visibility.Visible || PinPrompt.IsOpen || DeletePrompt.IsOpen
+            || FocusProfile(_lastProfileIndex, _lastDelete));
 
     private void OnProfilesPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
@@ -253,11 +290,10 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         }
 
         e.Handled = true;
-        var item = FocusManager.GetFocusedElement() as ContentControl;
-        if (item?.Content is not ProfileView)
-        {
-            return;
-        }
+        var focused = FocusManager.GetFocusedElement() as DependencyObject;
+        var item = ProfileContainer(focused);
+        if (item?.Content is not ProfileView view) return;
+        var onDelete = focused is Button;
 
         var index = Profiles.IndexFromContainer(item);
         if (index < 0)
@@ -271,16 +307,19 @@ public sealed partial class ProfilesPage : Page, IBackHandler
             var target = index + x;
             if (target >= 0 && target < Profiles.Items.Count && target / columns == index / columns)
             {
-                FocusProfile(target);
+                FocusProfile(target, onDelete);
             }
         }
+        else if (y < 0 && onDelete) FocusProfile(index);
         else if (y < 0 && index >= columns)
         {
-            FocusProfile(index - columns);
+            var previous = (ProfileView)Profiles.Items[index - columns];
+            FocusProfile(index - columns, previous.DeleteVisibility == Visibility.Visible);
         }
         else if (y > 0)
         {
-            if (index + columns < Profiles.Items.Count)
+            if (!onDelete && view.DeleteVisibility == Visibility.Visible) FocusProfile(index, delete: true);
+            else if (index + columns < Profiles.Items.Count)
             {
                 FocusProfile(index + columns);
             }
@@ -292,14 +331,19 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         }
     }
 
-    private void OnPickerActionFocus(object sender, RoutedEventArgs e) => ColorPickerAction(sender, focused: true);
+    private void OnPickerActionFocus(object sender, RoutedEventArgs e)
+    {
+        _focusInUtilities = true;
+        _lastAction = sender as Control;
+        ColorPickerAction(sender, focused: true);
+    }
 
     private void OnPickerActionBlur(object sender, RoutedEventArgs e) => ColorPickerAction(sender, focused: false);
 
     private void ColorPickerAction(object sender, bool focused)
     {
         // TvMarquee.kt uses the same Ink for its label and icon; a Path does not inherit Foreground.
-        var icon = ReferenceEquals(sender, ChangeServerButton) ? ChangeServerIcon : SignOutIcon;
+        var icon = ReferenceEquals(sender, ManageButton) ? ManageIcon : ReferenceEquals(sender, ChangeServerButton) ? ChangeServerIcon : SignOutIcon;
         icon.Fill = new SolidColorBrush(focused ? Colors.Black : Color.FromArgb(255, 237, 237, 237));
     }
 
@@ -313,7 +357,7 @@ public sealed partial class ProfilesPage : Page, IBackHandler
             {
                 if (Profiles.Items.Count > 0)
                 {
-                    FocusProfile(_lastProfileIndex);
+                    FocusProfile(_lastProfileIndex, _lastDelete);
                 }
             }
         }
@@ -331,44 +375,43 @@ public sealed partial class ProfilesPage : Page, IBackHandler
 
     private void OnProfileClick(object sender, ItemClickEventArgs e)
     {
-        if (_leaving || e.ClickedItem is not ProfileView chosen || Session.Client is not { } client || string.IsNullOrEmpty(chosen.Profile.Id))
-        {
-            return;
-        }
-
-        if (chosen.Profile.HasPin == true)
-        {
-            OpenPin(chosen);
-        }
+        if (_leaving || _deleting || !IsCurrent || e.ClickedItem is not ProfileView chosen || FocusManager.GetFocusedElement() is Button) return;
+        if (chosen.IsAdd) { ApplyManagementAction(_gate!.Request(_profiles, add: true)); return; }
+        if (string.IsNullOrEmpty(chosen.Profile.Id)) return;
+        if (_gate?.IsManaging == true) { OpenEditor(chosen.Profile); return; }
+        if (chosen.Profile.HasPin == true) OpenPin(chosen);
         else
         {
-            client.UseProfile(chosen.Profile.Id);
+            if (!IsProfilePreview) Session.Client!.UseProfile(chosen.Profile.Id);
             CompleteSelection(chosen);
         }
     }
 
-    private void OpenPin(ProfileView chosen)
+    private void OpenPin(ProfileView chosen, bool management = false)
     {
         _pinProfile = chosen;
+        _pinForManagement = management;
         _verifying = false;
-        PinPrompt.Show(chosen);
+        PinPrompt.Show(chosen, management ? "Enter this PIN to manage profiles" : "Enter your PIN");
         PickerPanel.Visibility = Visibility.Collapsed;
     }
 
     private void ClosePin()
     {
         _pinVerification?.Cancel();
-        Session.Client?.UseProfile(null);
+        if (!_pinForManagement && !IsProfilePreview) Session.Client?.UseProfile(null);
+        _gate?.CancelPin();
+        _pinForManagement = false;
         _pinProfile = null;
         _verifying = false;
         PinPrompt.Hide(restoreFocus: false);
         PickerPanel.Visibility = Visibility.Visible;
-        RestoreProfileFocus();
+        RestoreFocus();
     }
 
     private async Task VerifyPinAsync(string pin)
     {
-        if (_pinProfile is not { } chosen || Session.Client is not { } client || _verifying)
+        if (_pinProfile is not { } chosen || _household is not { } household || !IsCurrent || _verifying)
         {
             return;
         }
@@ -379,8 +422,11 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         PinPrompt.SetVerifying(true);
         try
         {
-            var valid = await client.VerifyPinAsync(chosen.Profile.Id!, pin, verification.Token);
-            if (!_active || verification.IsCancellationRequested || !ReferenceEquals(_pinProfile, chosen) || !ReferenceEquals(Session.Client, client))
+            var management = _pinForManagement;
+            var proof = management || household.IsPreview ? await household.Repository.VerifyPinAsync(chosen.Profile.Id!, pin, verification.Token) : null;
+            var valid = management || household.IsPreview ? !string.IsNullOrWhiteSpace(proof)
+                : await Session.Client!.VerifyPinAsync(chosen.Profile.Id!, pin, verification.Token);
+            if (!IsCurrent || verification.IsCancellationRequested || !ReferenceEquals(_pinProfile, chosen) || !ReferenceEquals(_household, household))
             {
                 return;
             }
@@ -388,8 +434,14 @@ public sealed partial class ProfilesPage : Page, IBackHandler
             if (valid)
             {
                 _pinProfile = null;
+                _pinForManagement = false;
                 PinPrompt.Hide(restoreFocus: false);
-                CompleteSelection(chosen);
+                if (management)
+                {
+                    PickerPanel.Visibility = Visibility.Visible;
+                    ApplyManagementAction(_gate!.CompletePin(proof));
+                }
+                else CompleteSelection(chosen);
             }
             else
             {
@@ -402,7 +454,7 @@ public sealed partial class ProfilesPage : Page, IBackHandler
         catch (Exception ex)
         {
             Log.Error("Profile PIN", ex);
-            if (_active && !verification.IsCancellationRequested && ReferenceEquals(_pinProfile, chosen))
+            if (IsCurrent && !verification.IsCancellationRequested && ReferenceEquals(_pinProfile, chosen))
             {
                 PinPrompt.ShowError("Network error. Please try again.");
             }
@@ -419,6 +471,13 @@ public sealed partial class ProfilesPage : Page, IBackHandler
 
     private void CompleteSelection(ProfileView chosen)
     {
+        if (IsProfilePreview)
+        {
+            PickerPanel.Visibility = Visibility.Visible;
+            ShowError($"Preview selected {chosen.Name}; signed-in profile unchanged.");
+            RestoreFocus();
+            return;
+        }
         _chosen = chosen;
         Session.ProfileName = chosen.Name;
         Session.ProfileAvatar = chosen.AvatarUrl;
@@ -460,6 +519,7 @@ public sealed partial class ProfilesPage : Page, IBackHandler
 
     private void OpenHome()
     {
+        if (IsProfilePreview) return;
         _leaving = true;
         Session.Persist();
         Frame.Navigate(typeof(ShellPage));
@@ -468,7 +528,8 @@ public sealed partial class ProfilesPage : Page, IBackHandler
 
     private void OnSignOutClick(object sender, RoutedEventArgs e)
     {
-        if (!_leaving) SignOutPrompt.Show();
+        if (IsProfilePreview) { ShowError("Profile preview; signed-in session unchanged."); return; }
+        if (!_leaving && !_deleting) SignOutPrompt.Show();
     }
 
     private async void OnSignOutRequested(bool removeServer) => await LeaveServerAsync(removeServer);
@@ -482,12 +543,13 @@ public sealed partial class ProfilesPage : Page, IBackHandler
 
     private void OnChangeServerClick(object sender, RoutedEventArgs e)
     {
-        if (!_leaving) Frame.Navigate(typeof(ServerListPage));
+        if (IsProfilePreview) { ShowError("Profile preview; signed-in server unchanged."); return; }
+        if (!_leaving && !_deleting) Frame.Navigate(typeof(ServerListPage));
     }
 
     private async Task LeaveServerAsync(bool removeServer = false)
     {
-        if (_leaving)
+        if (_leaving || IsProfilePreview)
         {
             return;
         }

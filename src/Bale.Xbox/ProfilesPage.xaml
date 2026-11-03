@@ -31,16 +31,18 @@
           </GridView.ItemsPanel>
           <GridView.ItemTemplate>
             <DataTemplate x:DataType="views:ProfileView">
-              <StackPanel Width="{StaticResource SkylineProfileColumnWidth}">
+              <Grid Width="{StaticResource SkylineProfileColumnWidth}" AutomationProperties.Name="{x:Bind AccessibleName}">
+                <!-- Keep every managed cell tall enough even when the first (primary) has no Delete. -->
+                <Border Style="{StaticResource SkylineProfileManageExtentStyle}" Visibility="{x:Bind ManageVisibility}" />
+                <StackPanel>
                 <Grid x:Name="Art" Width="{StaticResource SkylineProfileAvatarSize}" Height="{StaticResource SkylineProfileAvatarSize}" HorizontalAlignment="Center">
+                  <Grid Visibility="{x:Bind ProfileVisibility}" Opacity="{x:Bind AvatarOpacity}">
                   <Ellipse Fill="{x:Bind AvatarFill}" />
                   <TextBlock Text="{x:Bind Initial}" FontSize="36" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                   <Ellipse>
                     <Ellipse.Fill><ImageBrush ImageSource="{x:Bind Avatar}" Stretch="UniformToFill" /></Ellipse.Fill>
                   </Ellipse>
                   <Ellipse Stroke="{StaticResource SkylineProfileAvatarBorder}" StrokeThickness="{StaticResource SkylineProfileAvatarBorderWidth}" />
-                  <!-- The ring's centre is 6dp outside the avatar; its 3dp stroke extends another 1.5dp. -->
-                  <Ellipse x:Name="FocusRing" Margin="-7.5" StrokeThickness="3" Stroke="{StaticResource SkylineFocusRing}" Opacity="0" />
                   <!-- MarqueeProfileAvatar.kt: badges sit outside the circular crop, inside Art's focus scale. -->
                   <Border Width="{StaticResource SkylineProfileLockSize}" Height="{StaticResource SkylineProfileLockSize}" CornerRadius="{StaticResource SkylineProfileLockRadius}"
                           Background="{StaticResource SkylineProfileLockFill}" BorderBrush="Black" BorderThickness="{StaticResource SkylineProfileLockBorder}"
@@ -64,11 +66,27 @@
                     <TextBlock Text="KIDS" FontSize="{StaticResource SkylineProfileKidsSize}" FontWeight="Black" CharacterSpacing="{StaticResource SkylineProfileKidsTracking}"
                                Foreground="Black" VerticalAlignment="Center" />
                   </Border>
+                  </Grid>
+                  <Grid Visibility="{x:Bind AddVisibility}">
+                    <Ellipse x:Name="AddFill" Fill="{StaticResource SkylineProfileAddFocusFill}" Opacity="0" />
+                    <Ellipse x:Name="AddOutline" Style="{StaticResource SkylineProfileAddOutlineStyle}" />
+                    <Viewbox Style="{StaticResource SkylineProfileAddIconStyle}"><Path x:Name="AddIcon" Fill="{StaticResource SkylineProfileAddInk}" Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6Z" /></Viewbox>
+                  </Grid>
+                  <Viewbox Style="{StaticResource SkylineProfilePencilStyle}" Visibility="{x:Bind PencilVisibility}"><Path Fill="{StaticResource SkylineFocusRing}" Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25m17.71-10.2a.996.996 0 0 0 0-1.41l-2.34-2.34a.996.996 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83Z" /></Viewbox>
+                  <!-- The ring stays fully opaque above the managed avatar's 0.6 opacity. -->
+                  <Ellipse x:Name="FocusRing" Margin="-7.5" StrokeThickness="3" Stroke="{StaticResource SkylineFocusRing}" Opacity="0" />
                 </Grid>
                 <TextBlock x:Name="ProfileCaption" Text="{x:Bind Name}" FontSize="{StaticResource SkylineProfileNameSize}" FontWeight="SemiBold"
                            Foreground="{StaticResource SkylineSecondary}" HorizontalAlignment="Center" Margin="0,13,0,0"
                            TextTrimming="CharacterEllipsis" MaxWidth="{StaticResource SkylineProfileColumnWidth}" />
-              </StackPanel>
+                <Button x:Name="DeleteButton" Style="{StaticResource SkylineProfileDeleteStyle}" Visibility="{x:Bind DeleteVisibility}" Click="OnDeleteProfileClick" AutomationProperties.Name="Delete profile">
+                  <StackPanel Style="{StaticResource SkylineMarqueeCompactContentStyle}">
+                    <Viewbox Style="{StaticResource SkylineMarqueeCompactIconStyle}"><Path x:Name="DeleteIcon" Fill="{StaticResource SkylineSecondary}" Data="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12M19 4h-3.5l-1-1h-5l-1 1H5v2h14Z" /></Viewbox>
+                    <TextBlock Text="Delete" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+                </StackPanel>
+              </Grid>
             </DataTemplate>
           </GridView.ItemTemplate>
         </GridView>
@@ -80,6 +98,16 @@
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="10" /></ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>
+        <!-- TvProfileSelectionScreen.kt: household-primary Manage/Done, never account-role gated. -->
+        <Button x:Name="ManageButton" Click="OnManageClick" GotFocus="OnPickerActionFocus" LostFocus="OnPickerActionBlur"
+                Style="{StaticResource SkylineMarqueeCompactGlassStyle}" AutomationProperties.Name="Manage" Visibility="Collapsed">
+          <StackPanel Style="{StaticResource SkylineMarqueeCompactContentStyle}">
+            <Viewbox x:Name="ManageIconBox" Style="{StaticResource SkylineMarqueeCompactIconStyle}">
+              <Path x:Name="ManageIcon" Width="24" Height="24" Fill="{StaticResource SkylinePrimary}" Data="M10 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8m0 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4M2 20v-2c0-2.7 5.3-4 8-4 1.1 0 2.4.2 3.5.5l-.5 2c-1-.3-2.1-.5-3-.5-3 0-6 1.5-6 2v0h7v2H2m19-8 1.4 1.4-1 1.6.1.6 1.8.7v2l-1.8.7-.1.6 1 1.6L21 22.6l-1.6-1-.6.1-.7 1.8h-2l-.7-1.8-.6-.1-1.6 1-1.4-1.4 1-1.6-.1-.6-1.8-.7v-2l1.8-.7.1-.6-1-1.6 1.4-1.4 1.6 1 .6-.1.7-1.8h2l.7 1.8.6.1L21 12m-4 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z" />
+            </Viewbox>
+            <TextBlock x:Name="ManageLabel" Text="Manage" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
         <!-- TvProfileSelectionScreen.kt: Material Outlined Dns and AutoMirrored Outlined Logout. -->
         <Button x:Name="ChangeServerButton" Click="OnChangeServerClick" GotFocus="OnPickerActionFocus" LostFocus="OnPickerActionBlur"
                 Style="{StaticResource SkylineMarqueeCompactGlassStyle}" AutomationProperties.Name="Change server">
@@ -133,5 +161,6 @@
     </Grid>
 
     <controls:SignOutDialog x:Name="SignOutPrompt" />
+    <controls:ConnectionDialog x:Name="DeletePrompt" />
   </Grid>
 </Page>
