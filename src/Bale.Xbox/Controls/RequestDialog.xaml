@@ -1,0 +1,25 @@
+<UserControl
+    x:Class="Bale.Xbox.Controls.RequestDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    IsTabStop="False" IsHitTestVisible="False">
+  <!-- TvRequestActionDialog: Close is first. TvExpandableSynopsis uses the same contained modal. -->
+  <Grid x:Name="ModalLayer" Background="{StaticResource SkylineDialogScrim}" Visibility="Collapsed"
+        PreviewKeyDown="OnPreviewKeyDown" PreviewKeyUp="OnPreviewKeyUp" Tapped="OnBackgroundTapped">
+    <Grid Style="{StaticResource SkylineSignOutDialogCardStyle}">
+      <Border Style="{StaticResource SkylineDialogSurfaceStyle}" />
+      <StackPanel Style="{StaticResource SkylineDialogContentStyle}">
+        <TextBlock x:Name="TitleText" Style="{StaticResource SkylineDialogTitleStyle}" />
+        <ScrollViewer Style="{StaticResource SkylineRequestDialogScrollerStyle}">
+          <TextBlock x:Name="MessageText" Style="{StaticResource SkylineDialogMessageStyle}" />
+        </ScrollViewer>
+        <!-- rail-layout: non-card — TvDialog.kt's horizontal Close and optional explicit cancellation. -->
+        <ItemsControl x:Name="Actions" Style="{StaticResource SkylineDialogActionsStyle}" IsTabStop="False">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylineDialogActionGap}" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <Button x:Name="CloseButton" Content="Close" Style="{StaticResource SkylineDialogButtonStyle}" Click="OnCloseClick" />
+          <Button x:Name="CancelButton" Content="Cancel Request" Style="{StaticResource SkylineDialogDestructiveButtonStyle}" Click="OnCancelClick" Visibility="Collapsed" />
+        </ItemsControl>
+      </StackPanel>
+    </Grid>
+  </Grid>
+</UserControl>

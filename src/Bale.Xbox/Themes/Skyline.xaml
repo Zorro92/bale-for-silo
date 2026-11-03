@@ -3670,4 +3670,212 @@
   <Style x:Key="SkylineSettingsProfileMenuContentStyle" TargetType="StackPanel">
     <Setter Property="Orientation" Value="Horizontal" /><Setter Property="Spacing" Value="10" />
   </Style>
+  <!-- Requests: TvRequestsPage.kt, TvRequestComponents.kt and TvRequestDetailScreen.kt.
+       Geometry is dp 1:1; 14/15.5/18.5sp text is multiplied by TvUiFontScale (.86). -->
+  <SolidColorBrush x:Key="SkylineRequestAmber" Color="#FFF59E0B" />
+  <SolidColorBrush x:Key="SkylineRequestSky" Color="#FF38BDF8" />
+  <SolidColorBrush x:Key="SkylineRequestEmerald" Color="#FF34D399" />
+  <SolidColorBrush x:Key="SkylineRequestRose" Color="#FFFB7185" />
+  <SolidColorBrush x:Key="SkylineRequestTrackRest" Color="#24FFFFFF" />
+  <SolidColorBrush x:Key="SkylineRequestTrackComplete" Color="#D1EDEDED" />
+  <SolidColorBrush x:Key="SkylineRequestDetailSurface" Color="#FF040D0F" />
+  <x:Double x:Key="SkylineRequestItemSpacing">20</x:Double>
+  <x:Double x:Key="SkylineRequestPosterWidth">88</x:Double>
+  <x:Double x:Key="SkylineRequestPosterHeight">132</x:Double>
+  <x:Double x:Key="SkylineRequestDetailTrackWidth">420</x:Double>
+  <x:Double x:Key="SkylineRequestPreviewTrackWidth">120</x:Double>
+  <x:Double x:Key="SkylineRequestFieldWidth">150</x:Double>
+  <x:Double x:Key="SkylineRequestActionGap">9</x:Double>
+  <x:Double x:Key="SkylineRequestIconSize">16</x:Double>
+  <x:Double x:Key="SkylineRequestAddIconSize">18</x:Double>
+  <x:Double x:Key="SkylineRequestSpinnerSize">14</x:Double>
+  <x:Double x:Key="SkylineRequestHeroWidth">540</x:Double>
+  <x:Double x:Key="SkylineRequestHeroTitleHeight">80</x:Double>
+  <Thickness x:Key="SkylineRequestHeroInset">50,58,50,0</Thickness>
+  <Thickness x:Key="SkylineRequestRecommendationsInset">0,28,0,0</Thickness>
+  <Style x:Key="SkylineRequestRailStyle" TargetType="ListView" BasedOn="{StaticResource SkylineBrowseRailStyle}">
+    <Setter Property="services:RailLayout.CardWidth" Value="{StaticResource SkylineRequestPosterWidth}" />
+    <Setter Property="services:RailLayout.CardHeight" Value="{StaticResource SkylineRequestPosterHeight}" />
+  </Style>
+  <Style x:Key="SkylineRequestDetailRailStyle" TargetType="ListView" BasedOn="{StaticResource SkylineRequestRailStyle}">
+    <Setter Property="services:RailLayout.ContentInset" Value="50,8,50,8" />
+    <Setter Property="ItemContainerStyle"><Setter.Value><Style TargetType="ListViewItem" BasedOn="{StaticResource SkylineCardItemStyle}">
+      <Setter Property="Margin" Value="0,0,20,0" />
+    </Style></Setter.Value></Setter>
+  </Style>
+  <Style x:Key="SkylineRequestPosterStyle" TargetType="StackPanel">
+    <Setter Property="Width" Value="{StaticResource SkylineRequestPosterWidth}" /><Setter Property="Spacing" Value="11" />
+  </Style>
+  <Style x:Key="SkylineRequestArtStyle" TargetType="Grid">
+    <Setter Property="Width" Value="{StaticResource SkylineRequestPosterWidth}" /><Setter Property="Height" Value="{StaticResource SkylineRequestPosterHeight}" />
+  </Style>
+  <Style x:Key="SkylineRequestArtSurfaceStyle" TargetType="Grid">
+    <Setter Property="CornerRadius" Value="8" /><Setter Property="Background" Value="#0FFFFFFF" />
+  </Style>
+  <Style x:Key="SkylineRequestCardTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="13.33" /><Setter Property="LineHeight" Value="15.91" /><Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="#C7FFFFFF" /><Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="SkylineRequestFocusedTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineRequestCardTitleStyle}"><Setter Property="Foreground" Value="White" /></Style>
+  <Style x:Key="SkylineRequestSecondaryStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="12.04" /><Setter Property="LineHeight" Value="15.48" /><Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="Foreground" Value="#B3FFFFFF" /><Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="SkylineRequestNoticeStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineRequestSecondaryStyle}">
+    <Setter Property="Foreground" Value="#B8FFFFFF" /><Setter Property="MaxLines" Value="2" /><Setter Property="TextWrapping" Value="Wrap" /><Setter Property="Margin" Value="0,6,0,0" />
+  </Style>
+  <Style x:Key="SkylineRequestStatusContentStyle" TargetType="StackPanel"><Setter Property="Spacing" Value="9" /></Style>
+  <Style x:Key="SkylineRequestStatusLabelRowStyle" TargetType="StackPanel"><Setter Property="Orientation" Value="Horizontal" /><Setter Property="Spacing" Value="6" /></Style>
+  <Style x:Key="SkylineRequestTrackStyle" TargetType="Grid"><Setter Property="ColumnSpacing" Value="3" /></Style>
+  <Style x:Key="SkylineRequestSegmentStyle" TargetType="ContentControl">
+    <Setter Property="IsTabStop" Value="False" /><Setter Property="IsHitTestVisible" Value="False" />
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ContentControl">
+      <StackPanel Spacing="5">
+        <Border x:Name="Fill" Height="3" CornerRadius="1.5" Background="{StaticResource SkylineRequestTrackRest}" />
+        <TextBlock x:Name="Label" Text="{TemplateBinding Content}" Visibility="Collapsed" FontSize="12.04" FontWeight="SemiBold" Foreground="#73EDEDED" TextTrimming="CharacterEllipsis" />
+        <VisualStateManager.VisualStateGroups>
+          <VisualStateGroup x:Name="ProgressStates">
+            <VisualState x:Name="Future" />
+            <VisualState x:Name="Complete"><VisualState.Setters><Setter Target="Fill.Background" Value="{StaticResource SkylineRequestTrackComplete}" /><Setter Target="Label.Foreground" Value="{StaticResource SkylinePrimary}" /></VisualState.Setters></VisualState>
+            <VisualState x:Name="Amber"><VisualState.Setters><Setter Target="Fill.Background" Value="{StaticResource SkylineRequestAmber}" /><Setter Target="Label.Foreground" Value="{StaticResource SkylineRequestAmber}" /></VisualState.Setters></VisualState>
+            <VisualState x:Name="Sky"><VisualState.Setters><Setter Target="Fill.Background" Value="{StaticResource SkylineRequestSky}" /><Setter Target="Label.Foreground" Value="{StaticResource SkylineRequestSky}" /></VisualState.Setters></VisualState>
+            <VisualState x:Name="Emerald"><VisualState.Setters><Setter Target="Fill.Background" Value="{StaticResource SkylineRequestEmerald}" /><Setter Target="Label.Foreground" Value="{StaticResource SkylineRequestEmerald}" /></VisualState.Setters></VisualState>
+            <VisualState x:Name="Rose"><VisualState.Setters><Setter Target="Fill.Background" Value="{StaticResource SkylineRequestRose}" /><Setter Target="Label.Foreground" Value="{StaticResource SkylineRequestRose}" /></VisualState.Setters></VisualState>
+            <VisualState x:Name="Neutral" />
+          </VisualStateGroup>
+          <VisualStateGroup x:Name="LabelStates"><VisualState x:Name="Unlabelled" /><VisualState x:Name="Labelled"><VisualState.Setters><Setter Target="Label.Visibility" Value="Visible" /></VisualState.Setters></VisualState></VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+      </StackPanel>
+    </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style x:Key="SkylineRequestDotStyle" TargetType="ContentControl">
+    <Setter Property="Width" Value="6" /><Setter Property="Height" Value="6" /><Setter Property="VerticalAlignment" Value="Center" /><Setter Property="IsTabStop" Value="False" />
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ContentControl">
+      <Ellipse x:Name="Dot" Fill="{StaticResource SkylineSecondary}">
+        <VisualStateManager.VisualStateGroups><VisualStateGroup x:Name="TintStates">
+          <VisualState x:Name="Neutral" />
+          <VisualState x:Name="Amber"><VisualState.Setters><Setter Target="Dot.Fill" Value="{StaticResource SkylineRequestAmber}" /></VisualState.Setters></VisualState>
+          <VisualState x:Name="Sky"><VisualState.Setters><Setter Target="Dot.Fill" Value="{StaticResource SkylineRequestSky}" /></VisualState.Setters></VisualState>
+          <VisualState x:Name="Emerald"><VisualState.Setters><Setter Target="Dot.Fill" Value="{StaticResource SkylineRequestEmerald}" /></VisualState.Setters></VisualState>
+          <VisualState x:Name="Rose"><VisualState.Setters><Setter Target="Dot.Fill" Value="{StaticResource SkylineRequestRose}" /></VisualState.Setters></VisualState>
+        </VisualStateGroup></VisualStateManager.VisualStateGroups>
+      </Ellipse>
+    </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style x:Key="SkylineRequestPrimaryDotStyle" TargetType="ContentControl" BasedOn="{StaticResource SkylineRequestDotStyle}"><Setter Property="Width" Value="9" /><Setter Property="Height" Value="9" /></Style>
+  <!-- RowDimens watched badge: 88dp * .14 clamped to 18dp; 88dp * .045 clamped to 5dp. -->
+  <Style x:Key="SkylineRequestBadgeStyle" TargetType="ContentControl">
+    <Setter Property="Width" Value="18" /><Setter Property="Height" Value="18" /><Setter Property="Margin" Value="5" />
+    <Setter Property="HorizontalAlignment" Value="Right" /><Setter Property="VerticalAlignment" Value="Bottom" /><Setter Property="IsTabStop" Value="False" />
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ContentControl">
+      <Grid x:Name="Badge">
+        <Ellipse x:Name="Disc" Fill="{StaticResource SkylineRequestAmber}" />
+        <Viewbox Width="10.8" Height="10.8">
+          <Grid Width="24" Height="24">
+            <Path x:Name="Clock" Fill="White" Data="M12,2 C6.48,2 2,6.48 2,12 C2,17.52 6.48,22 12,22 C17.52,22 22,17.52 22,12 C22,6.48 17.52,2 12,2 Z M12,20 C7.58,20 4,16.42 4,12 C4,7.58 7.58,4 12,4 C16.42,4 20,7.58 20,12 C20,16.42 16.42,20 12,20 Z M12.5,7 H11 V13 L16.25,16.15 L17,14.92 L12.5,12.25 Z" />
+            <Path x:Name="Download" Fill="White" Visibility="Collapsed" Data="M20,12 L18.59,10.59 L13,16.17 V4 H11 V16.17 L5.41,10.59 L4,12 L12,20 Z" />
+            <Path x:Name="Check" Fill="White" Visibility="Collapsed" Data="M9,16.17 L4.83,12 L3.41,13.41 L9,19 L21,7 L19.59,5.59 Z" />
+            <Path x:Name="Attention" Fill="White" Visibility="Collapsed" Data="M11,7 H13 V15 H11 Z M11,17 H13 V19 H11 Z" />
+          </Grid>
+        </Viewbox>
+        <VisualStateManager.VisualStateGroups><VisualStateGroup x:Name="StatusStates">
+          <VisualState x:Name="Pending" />
+          <VisualState x:Name="OnTheWay"><VisualState.Setters><Setter Target="Disc.Fill" Value="{StaticResource SkylineRequestSky}" /><Setter Target="Clock.Visibility" Value="Collapsed" /><Setter Target="Download.Visibility" Value="Visible" /></VisualState.Setters></VisualState>
+          <VisualState x:Name="InLibrary"><VisualState.Setters><Setter Target="Disc.Fill" Value="{StaticResource SkylineRequestEmerald}" /><Setter Target="Clock.Visibility" Value="Collapsed" /><Setter Target="Check.Visibility" Value="Visible" /></VisualState.Setters></VisualState>
+          <VisualState x:Name="Declined"><VisualState.Setters><Setter Target="Disc.Fill" Value="{StaticResource SkylineRequestRose}" /><Setter Target="Clock.Visibility" Value="Collapsed" /><Setter Target="Attention.Visibility" Value="Visible" /></VisualState.Setters></VisualState>
+          <VisualState x:Name="Failed"><VisualState.Setters><Setter Target="Disc.Fill" Value="{StaticResource SkylineRequestRose}" /><Setter Target="Clock.Visibility" Value="Collapsed" /><Setter Target="Attention.Visibility" Value="Visible" /></VisualState.Setters></VisualState>
+          <VisualState x:Name="Unavailable"><VisualState.Setters><Setter Target="Badge.Visibility" Value="Collapsed" /></VisualState.Setters></VisualState>
+        </VisualStateGroup></VisualStateManager.VisualStateGroups>
+      </Grid>
+    </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style x:Key="SkylineRequestArtBoxStyle" TargetType="Grid">
+    <Setter Property="Width" Value="614" /><Setter Property="Height" Value="378" /><Setter Property="HorizontalAlignment" Value="Right" /><Setter Property="VerticalAlignment" Value="Top" /><Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+  <Style x:Key="SkylineRequestMarqueeRegionStyle" TargetType="Grid"><Setter Property="Height" Value="266" /><Setter Property="VerticalAlignment" Value="Top" /><Setter Property="IsHitTestVisible" Value="False" /></Style>
+  <Style x:Key="SkylineRequestMarqueeStyle" TargetType="StackPanel">
+    <Setter Property="Margin" Value="44,70,0,0" /><Setter Property="Width" Value="440" /><Setter Property="HorizontalAlignment" Value="Left" /><Setter Property="VerticalAlignment" Value="Bottom" /><Setter Property="Spacing" Value="6" />
+  </Style>
+  <Style x:Key="SkylineRequestMarqueeTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource SkylineMarqueeTitleSize}" /><Setter Property="LineHeight" Value="{StaticResource SkylineMarqueeTitleLine}" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="FontWeight" Value="Black" /><Setter Property="MaxLines" Value="2" /><Setter Property="TextWrapping" Value="Wrap" /><Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="SkylineRequestFactsStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineRequestSecondaryStyle}"><Setter Property="Height" Value="18" /></Style>
+  <Style x:Key="SkylineRequestOverviewStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource SkylineSynopsisSize}" /><Setter Property="LineHeight" Value="{StaticResource SkylineSynopsisLine}" /><Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="TextWrapping" Value="Wrap" /><Setter Property="MaxLines" Value="2" /><Setter Property="TextTrimming" Value="WordEllipsis" /><Setter Property="MaxWidth" Value="390" /><Setter Property="HorizontalAlignment" Value="Left" /><Setter Property="Foreground" Value="{StaticResource SkylineSecondary}" />
+  </Style>
+  <Style x:Key="SkylineRequestRowsScrollerStyle" TargetType="ScrollViewer">
+    <Setter Property="Margin" Value="0,270,0,0" /><Setter Property="VerticalScrollBarVisibility" Value="Hidden" /><Setter Property="HorizontalScrollMode" Value="Disabled" /><Setter Property="IsTabStop" Value="False" />
+  </Style>
+  <Style x:Key="SkylineRequestRowsStyle" TargetType="ItemsControl"><Setter Property="Padding" Value="0,0,0,260" /><Setter Property="IsTabStop" Value="False" /></Style>
+  <Style x:Key="SkylineRequestEyebrowStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineRequestSecondaryStyle}"><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Margin" Value="0,0,0,4" /></Style>
+  <Style x:Key="SkylineRequestPlaceholderStyle" TargetType="Button">
+    <Setter Property="Background" Value="Transparent" /><Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="VerticalContentAlignment" Value="Stretch" /><Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><ContentPresenter Content="{TemplateBinding Content}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" /></ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style x:Key="SkylineRequestEmptyStyle" TargetType="StackPanel"><Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Center" /><Setter Property="Spacing" Value="12" /></Style>
+  <Style x:Key="SkylineRequestEmptyIconStyle" TargetType="Viewbox"><Setter Property="Width" Value="36" /><Setter Property="Height" Value="36" /><Setter Property="HorizontalAlignment" Value="Center" /></Style>
+  <Style x:Key="SkylineRequestEmptyGlyphStyle" TargetType="Path"><Setter Property="Width" Value="24" /><Setter Property="Height" Value="24" /><Setter Property="Fill" Value="#9EFFFFFF" /></Style>
+  <Style x:Key="SkylineRequestEmptyTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineHomeStateTitleStyle}"><Setter Property="TextAlignment" Value="Center" /></Style>
+  <Style x:Key="SkylineRequestEmptyCopyStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineRequestSecondaryStyle}"><Setter Property="Foreground" Value="#ADFFFFFF" /><Setter Property="TextAlignment" Value="Center" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
+  <Style x:Key="SkylineRequestSkeletonStyle" TargetType="Border"><Setter Property="Background" Value="#1AFFFFFF" /><Setter Property="CornerRadius" Value="3" /><Setter Property="HorizontalAlignment" Value="Left" /></Style>
+  <Style x:Key="SkylineRequestSkeletonTitleStyle" TargetType="Border" BasedOn="{StaticResource SkylineRequestSkeletonStyle}"><Setter Property="Width" Value="260" /><Setter Property="Height" Value="36" /><Setter Property="CornerRadius" Value="6" /><Setter Property="Background" Value="#24FFFFFF" /></Style>
+  <Style x:Key="SkylineRequestSkeletonHeaderStyle" TargetType="Border" BasedOn="{StaticResource SkylineRequestSkeletonStyle}"><Setter Property="Width" Value="140" /><Setter Property="Height" Value="18" /></Style>
+  <Style x:Key="SkylineRequestSkeletonPosterStyle" TargetType="Border" BasedOn="{StaticResource SkylineRequestSkeletonStyle}"><Setter Property="Width" Value="{StaticResource SkylineRequestPosterWidth}" /><Setter Property="Height" Value="{StaticResource SkylineRequestPosterHeight}" /><Setter Property="CornerRadius" Value="8" /></Style>
+  <Style x:Key="SkylineRequestPreviewSkeletonStyle" TargetType="StackPanel" BasedOn="{StaticResource SkylineRequestMarqueeStyle}"><Setter Property="Spacing" Value="10" /></Style>
+  <Style x:Key="SkylineRequestSkeletonRowStyle" TargetType="StackPanel"><Setter Property="Margin" Value="44,270,0,0" /><Setter Property="Spacing" Value="12" /><Setter Property="VerticalAlignment" Value="Top" /></Style>
+  <Style x:Key="SkylineRequestToastStyle" TargetType="Border">
+    <Setter Property="HorizontalAlignment" Value="Left" /><Setter Property="VerticalAlignment" Value="Bottom" /><Setter Property="Margin" Value="44,0,44,20" /><Setter Property="Padding" Value="14,8" /><Setter Property="CornerRadius" Value="8" /><Setter Property="Background" Value="#E6000000" />
+  </Style>
+  <Style x:Key="SkylineRequestPrimaryStyle" TargetType="Button" BasedOn="{StaticResource SkylinePlayButtonStyle}">
+    <Setter Property="Padding" Value="20,0" /><Setter Property="FontSize" Value="12.04" /><Setter Property="Foreground" Value="Black" />
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+      <Grid>
+        <Border x:Name="Ring" BorderBrush="White" BorderThickness="2" CornerRadius="22" Margin="-4" Opacity="0" />
+        <Border Background="White" CornerRadius="19" Padding="{TemplateBinding Padding}">
+          <ContentPresenter Content="{TemplateBinding Content}" Foreground="Black" FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}" VerticalAlignment="Center" HorizontalAlignment="Center" />
+        </Border>
+        <VisualStateManager.VisualStateGroups><VisualStateGroup x:Name="FocusStates">
+          <VisualState x:Name="Unfocused" /><VisualState x:Name="PointerFocused" />
+          <VisualState x:Name="Focused"><VisualState.Setters><Setter Target="Ring.Opacity" Value="1" /></VisualState.Setters></VisualState>
+        </VisualStateGroup></VisualStateManager.VisualStateGroups>
+      </Grid>
+    </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style x:Key="SkylineRequestActionStyle" TargetType="Button" BasedOn="{StaticResource SkylinePlayButtonStyle}"><Setter Property="Padding" Value="18,0" /><Setter Property="FontSize" Value="12.04" /></Style>
+  <Style x:Key="SkylineRequestActionContentStyle" TargetType="StackPanel"><Setter Property="Orientation" Value="Horizontal" /><Setter Property="Spacing" Value="8" /><Setter Property="VerticalAlignment" Value="Center" /></Style>
+  <Style x:Key="SkylineRequestPrimaryContentStyle" TargetType="StackPanel" BasedOn="{StaticResource SkylineRequestActionContentStyle}"><Setter Property="Spacing" Value="9" /></Style>
+  <Style x:Key="SkylineRequestSummaryStyle" TargetType="StackPanel"><Setter Property="Margin" Value="0,7,0,0" /><Setter Property="Spacing" Value="9" /></Style>
+  <Style x:Key="SkylineRequestFieldStyle" TargetType="StackPanel"><Setter Property="Width" Value="{StaticResource SkylineRequestFieldWidth}" /><Setter Property="Spacing" Value="3" /></Style>
+  <Style x:Key="SkylineRequestFieldLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineRequestSecondaryStyle}"><Setter Property="FontWeight" Value="Bold" /><Setter Property="Foreground" Value="#7AFFFFFF" /><Setter Property="CharacterSpacing" Value="39" /></Style>
+  <Style x:Key="SkylineRequestFieldValueStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineRequestSecondaryStyle}"><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="#E6FFFFFF" /></Style>
+  <Style x:Key="SkylineRequestDetailSynopsisTextStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="11.2" /><Setter Property="LineHeight" Value="15.1" /><Setter Property="LineStackingStrategy" Value="BlockLineHeight" /><Setter Property="TextWrapping" Value="Wrap" /><Setter Property="MaxLines" Value="3" /><Setter Property="TextTrimming" Value="WordEllipsis" /></Style>
+  <Style x:Key="SkylineRequestCreditStyle" TargetType="TextBlock"><Setter Property="Margin" Value="0,13,0,0" /><Setter Property="Height" Value="14" /><Setter Property="FontSize" Value="10.3" /><Setter Property="FontWeight" Value="Medium" /><Setter Property="Foreground" Value="#9EFFFFFF" /><Setter Property="TextTrimming" Value="CharacterEllipsis" /></Style>
+  <Style x:Key="SkylineRequestDetailContentStyle" TargetType="StackPanel"><Setter Property="Padding" Value="0,0,0,100" /></Style>
+  <Style x:Key="SkylineRequestDetailLoaderStyle" TargetType="Button" BasedOn="{StaticResource SkylineRequestPlaceholderStyle}"><Setter Property="Width" Value="64" /><Setter Property="Height" Value="64" /><Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Center" /></Style>
+  <Style x:Key="SkylineRequestDialogScrollerStyle" TargetType="ScrollViewer"><Setter Property="MaxHeight" Value="260" /><Setter Property="VerticalScrollBarVisibility" Value="Hidden" /><Setter Property="HorizontalScrollMode" Value="Disabled" /><Setter Property="IsTabStop" Value="False" /></Style>
+  <Style x:Key="SkylineRequestHeroStyle" TargetType="StackPanel"><Setter Property="Margin" Value="{StaticResource SkylineRequestHeroInset}" /><Setter Property="HorizontalAlignment" Value="Left" /></Style>
+  <Style x:Key="SkylineRequestHeroTitleSlotStyle" TargetType="Grid"><Setter Property="Height" Value="{StaticResource SkylineRequestHeroTitleHeight}" /><Setter Property="MaxWidth" Value="{StaticResource SkylineRequestHeroWidth}" /><Setter Property="HorizontalAlignment" Value="Left" /></Style>
+  <Style x:Key="SkylineRequestHeroTextTitleStyle" TargetType="StackPanel"><Setter Property="VerticalAlignment" Value="Bottom" /><Setter Property="Spacing" Value="2" /></Style>
+  <Style x:Key="SkylineRequestMetadataStyle" TargetType="StackPanel"><Setter Property="Margin" Value="0,7,0,0" /><Setter Property="Orientation" Value="Horizontal" /><Setter Property="Spacing" Value="7" /><Setter Property="Height" Value="18" /><Setter Property="MaxWidth" Value="{StaticResource SkylineRequestHeroWidth}" /></Style>
+  <Style x:Key="SkylineRequestRatingChipStyle" TargetType="Border"><Setter Property="Padding" Value="4,0" /><Setter Property="CornerRadius" Value="3" /><Setter Property="BorderThickness" Value="1" /><Setter Property="BorderBrush" Value="#66FFFFFF" /><Setter Property="VerticalAlignment" Value="Center" /></Style>
+  <Style x:Key="SkylineRequestRatingTextStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="9.5" /><Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" /></Style>
+  <Style x:Key="SkylineRequestSynopsisStyle" TargetType="Button" BasedOn="{StaticResource SkylineDetailSynopsisStyle}"><Setter Property="Margin" Value="0,4,0,0" /><Setter Property="Height" Value="56" /><Setter Property="Width" Value="{StaticResource SkylineRequestHeroWidth}" /><Setter Property="HorizontalAlignment" Value="Left" /></Style>
+  <!-- rail-layout: non-card — TvRequestDetailScreen.kt's stable horizontal primary/secondary action row. -->
+  <Style x:Key="SkylineRequestActionsStyle" TargetType="ItemsControl"><Setter Property="Margin" Value="0,13,0,0" /><Setter Property="HorizontalAlignment" Value="Left" /><Setter Property="IsTabStop" Value="False" /><Setter Property="XYFocusKeyboardNavigation" Value="Enabled" /></Style>
+  <Style x:Key="SkylineRequestIconStyle" TargetType="Viewbox"><Setter Property="Width" Value="{StaticResource SkylineRequestIconSize}" /><Setter Property="Height" Value="{StaticResource SkylineRequestIconSize}" /></Style>
+  <Style x:Key="SkylineRequestAddIconStyle" TargetType="Viewbox" BasedOn="{StaticResource SkylineRequestIconStyle}"><Setter Property="Width" Value="{StaticResource SkylineRequestAddIconSize}" /><Setter Property="Height" Value="{StaticResource SkylineRequestAddIconSize}" /></Style>
+  <Style x:Key="SkylineRequestPrimaryGlyphStyle" TargetType="Path"><Setter Property="Width" Value="24" /><Setter Property="Height" Value="24" /><Setter Property="Fill" Value="Black" /></Style>
+  <Style x:Key="SkylineRequestActionGlyphStyle" TargetType="Path"><Setter Property="Width" Value="24" /><Setter Property="Height" Value="24" /><Setter Property="Fill" Value="White" /></Style>
+  <Style x:Key="SkylineRequestSpinnerStyle" TargetType="ProgressRing"><Setter Property="Width" Value="{StaticResource SkylineRequestSpinnerSize}" /><Setter Property="Height" Value="{StaticResource SkylineRequestSpinnerSize}" /><Setter Property="MinWidth" Value="0" /><Setter Property="MinHeight" Value="0" /></Style>
+  <Style x:Key="SkylineRequestSummaryFieldsStyle" TargetType="StackPanel"><Setter Property="Orientation" Value="Horizontal" /><Setter Property="Spacing" Value="4" /></Style>
+  <Style x:Key="SkylineRequestActionNoticeStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineRequestNoticeStyle}"><Setter Property="Margin" Value="0" /><Setter Property="MaxWidth" Value="260" /><Setter Property="VerticalAlignment" Value="Center" /></Style>
+  <Style x:Key="SkylineRequestRecommendationsStyle" TargetType="StackPanel"><Setter Property="Margin" Value="{StaticResource SkylineRequestRecommendationsInset}" /><Setter Property="Spacing" Value="20" /></Style>
+  <Style x:Key="SkylineRequestSynopsisDialogStyle" TargetType="Border" BasedOn="{StaticResource SkylineDetailDialogPanelStyle}"><Setter Property="CornerRadius" Value="22" /></Style>
+  <Style x:Key="SkylineRequestSynopsisScrollerStyle" TargetType="ScrollViewer"><Setter Property="VerticalScrollBarVisibility" Value="Hidden" /><Setter Property="HorizontalScrollMode" Value="Disabled" /><Setter Property="IsTabStop" Value="True" /><Setter Property="UseSystemFocusVisuals" Value="False" /></Style>
+  <Style x:Key="SkylineRequestSynopsisBodyStyle" TargetType="StackPanel"><Setter Property="Padding" Value="32,28" /><Setter Property="Spacing" Value="12" /></Style>
+  <Style x:Key="SkylineRequestSynopsisTitleStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="20.6" /><Setter Property="LineHeight" Value="24.1" /><Setter Property="FontWeight" Value="Bold" /><Setter Property="Foreground" Value="White" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
+  <Style x:Key="SkylineRequestTaglineStyle" TargetType="TextBlock"><Setter Property="FontFamily" Value="Georgia" /><Setter Property="FontStyle" Value="Italic" /><Setter Property="FontSize" Value="13.8" /><Setter Property="LineHeight" Value="18.1" /><Setter Property="Foreground" Value="#D1FFFFFF" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
+  <Style x:Key="SkylineRequestFullSynopsisStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="14.6" /><Setter Property="LineHeight" Value="21.5" /><Setter Property="Foreground" Value="#DBFFFFFF" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
 </ResourceDictionary>

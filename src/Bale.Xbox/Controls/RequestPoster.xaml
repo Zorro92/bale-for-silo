@@ -1,0 +1,26 @@
+<UserControl
+    x:Class="Bale.Xbox.Controls.RequestPoster"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Bale.Xbox.Controls"
+    IsTabStop="False" IsHitTestVisible="False">
+  <!-- TvRequestPosterCard: only the art lifts; captions stay still (Services/CardFocus). -->
+  <StackPanel Style="{StaticResource SkylineRequestPosterStyle}">
+    <Grid x:Name="Art" Style="{StaticResource SkylineRequestArtStyle}">
+      <Grid Style="{StaticResource SkylineRequestArtSurfaceStyle}">
+        <Image x:Name="PosterImage" Stretch="UniformToFill" />
+        <ContentControl x:Name="Badge" Style="{StaticResource SkylineRequestBadgeStyle}" />
+      </Grid>
+      <Border x:Name="FocusGlow" Style="{StaticResource SkylineDetailPosterGlowStyle}" />
+      <Border x:Name="FocusRing" Style="{StaticResource SkylineDetailPosterRingStyle}" />
+    </Grid>
+    <StackPanel>
+      <Grid>
+        <TextBlock x:Name="TitleText" Style="{StaticResource SkylineRequestCardTitleStyle}" />
+        <TextBlock x:Name="FocusCaption" Style="{StaticResource SkylineRequestFocusedTitleStyle}" Opacity="0" />
+      </Grid>
+      <controls:RequestStatusView x:Name="Status" />
+      <TextBlock x:Name="YearText" Style="{StaticResource SkylineRequestSecondaryStyle}" />
+    </StackPanel>
+  </StackPanel>
+</UserControl>
