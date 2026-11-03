@@ -199,7 +199,7 @@ internal sealed partial class DebugServer
                 return ("200 OK", await OnUiAsync(DescribeWhere));
 
             case ("GET", "/caps"):
-                return ("200 OK", await DescribeCapabilitiesAsync());
+                return ("200 OK", await DescribeCapabilitiesAsync(query.GetValueOrDefault("only")));
 
             case ("GET", "/wait"):
                 if (!DebugWaitCondition.TryParse(query.GetValueOrDefault("for"), query.GetValueOrDefault("timeout"), out var condition, out var error))

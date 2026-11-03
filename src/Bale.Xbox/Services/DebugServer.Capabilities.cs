@@ -14,15 +14,24 @@ namespace Bale.Xbox.Services;
 
 internal sealed partial class DebugServer
 {
-    private static async Task<string> DescribeCapabilitiesAsync()
+    // only=video|audio|display|device|graph runs one section; each logs a breadcrumb first because
+    // a native failure in a media API ends the app without reaching any catch.
+    private static async Task<string> DescribeCapabilitiesAsync(string? only)
     {
+        bool Run(string section)
+        {
+            if (!string.IsNullOrEmpty(only) && !string.Equals(only, section, StringComparison.OrdinalIgnoreCase)) return false;
+            Log.Info($"Debug caps: {section}");
+            return true;
+        }
         var builder = new StringBuilder("Decoders (installed; not a guarantee of playback/profile support or passthrough):\n");
-        await AppendDecodersAsync(builder, CodecKind.Video, ["H264", "HEVC", "VP8", "VP9", "AV1", "MPEG2", "VC1"]);
-        await AppendDecodersAsync(builder, CodecKind.Audio, ["AAC", "AC3", "EAC3", "DTS", "DTS-HD", "TrueHD/MLP", "FLAC", "ALAC", "Opus", "MP3", "PCM"]);
+        if (Run("video")) await AppendDecodersAsync(builder, CodecKind.Video, ["H264", "HEVC", "VP8", "VP9", "AV1", "MPEG2", "VC1"]);
+        if (Run("audio")) await AppendDecodersAsync(builder, CodecKind.Audio, ["AAC", "AC3", "EAC3", "DTS", "DTS-HD", "TrueHD/MLP", "FLAC", "ALAC", "Opus", "MP3", "PCM"]);
         // These view-scoped display APIs must run on the UI thread, unlike codec/device enumeration.
-        builder.Append("Display:\n").Append(await OnUiAsync(DescribeDisplayCapabilities));
+        if (Run("display")) builder.Append("Display:\n").Append(await OnUiAsync(DescribeDisplayCapabilities));
         builder.Append("Audio:\n");
-        await AppendAudioCapabilitiesAsync(builder);
+        await AppendAudioCapabilitiesAsync(builder, Run("device"), Run("graph"));
+        Log.Info("Debug caps: done");
         return builder.ToString();
     }
 
@@ -142,9 +151,9 @@ internal sealed partial class DebugServer
             + $" IsDolbyVisionLowLatencySupported={dolbyVision}");
     }
 
-    private static async Task AppendAudioCapabilitiesAsync(StringBuilder builder)
+    private static async Task AppendAudioCapabilitiesAsync(StringBuilder builder, bool runDevice, bool runGraph)
     {
-        try
+        if (runDevice) try
         {
             var id = MediaDevice.GetDefaultAudioRenderId(AudioDeviceRole.Default);
             if (string.IsNullOrEmpty(id)) builder.Append("  Default render: none\n");
@@ -158,7 +167,7 @@ internal sealed partial class DebugServer
         {
             builder.Append($"  Default render: error: {DebugScreenText.Compact(ex.Message, 500)}\n");
         }
-        try
+        if (runGraph) try
         {
             // Read the default graph format without starting playback or changing audio routing.
             var created = await AudioGraph.CreateAsync(new AudioGraphSettings(AudioRenderCategory.Media)).AsTask();

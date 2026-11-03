@@ -87,6 +87,6 @@ public class DebugCodecNamesTests
         var server = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "DebugServer.cs.txt"));
         Assert.Contains("case (\"GET\", \"/caps\"):", server);
         var script = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "bale-debug.sh"));
-        Assert.Contains("caps) curl -fsS --max-time 18 \"$BASE/caps\" ;;", script);
+        Assert.Contains("caps) curl -fsS --max-time 18 -G \"$BASE/caps\"", script);
     }
 }
