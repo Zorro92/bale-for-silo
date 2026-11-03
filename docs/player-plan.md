@@ -15,11 +15,22 @@ Evidence so far (console, `bale-debug.sh caps`, build 0.1.200):
 
 | | |
 |---|---|
-| Video decoders | H.264, HEVC, VP8/VP9, MPEG-2, VC-1. **AV1: none listed** (pending `playtest`). No Dolby Vision decoder. |
+| Video decoders | H.264, HEVC, VP8/VP9, MPEG-2, VC-1. **AV1: none.** No Dolby Vision decoder. |
 | Audio decoders | AAC, AC3, EAC3, FLAC, ALAC, Opus, MP3 (PCM needs none) |
 | Passthrough only | TrueHD, DTS, DTS-HD (IEC-61937 converters, no decoder) |
 | Output | Digital Output, 8 ch / 48 kHz float mix |
 | Display | 720p/1080p at 50/59.94 Hz, SDR only (no HDR10/DV modes reported) |
+
+`bale-debug.sh playtest suite` (0.1.201, Chromium's `bear-*` clips, muted `MediaPlayer`):
+
+| Clip | Result |
+|---|---|
+| MP4 H.264 + AAC, MP4 HEVC (2 clips), MP4 AC3, MP4 EAC3 | **plays** |
+| MP4 / WebM AV1 (8-bit and 10-bit) | **fails**: `UnsupportedSubtype`, MediaFailed 0xC00D5212 (no decoder). Definitive: MediaPlayer can't play AV1 here. |
+| WebM VP8+Vorbis, VP9, VP9+Opus | opens, decoders report FullySupported, but never leaves Paused at 0 s. Unexplained; WebM is rare in libraries, so don't claim it. |
+| MP4 FLAC, MP4 Opus | `UnsupportedSubtype`: MP4's `fLaC`/`Opus` sample entries aren't mapped, though the FLAC/Opus decoders exist. Retest inside MKV with real files. |
+
+Still to test with real library files: MKV, HEVC Main10, TrueHD/DTS passthrough to a receiver.
 
 The capability claims Bale sends the server must come from this kind of evidence, never from
 guesses. `playtest` (debug only) checks actual playback, not just installed decoders.
