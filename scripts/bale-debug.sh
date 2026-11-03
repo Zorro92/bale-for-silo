@@ -13,6 +13,7 @@
 #   scripts/bale-debug.sh wait text "Clear filters"  wait for visible text (case-insensitive)
 #   scripts/bale-debug.sh wait focus Play       wait for a focused description containing Play
 #   scripts/bale-debug.sh wait --timeout 12000 loaded  default 8000 ms; 0–15000; timeout prints where and fails
+#   scripts/bale-debug.sh caps                  installed decoders, display modes, audio mix and baseline
 #   scripts/bale-debug.sh goto "Unwatched#2"     setup only: focus the second matching control
 #   scripts/bale-debug.sh targets               list controls goto can reach
 #   scripts/bale-debug.sh tree                  the visible element tree with bounds
@@ -71,6 +72,7 @@ case "${1:-}" in
     ;;
   focus) curl -fsS "$BASE/focus" ;;
   where) curl -fsS --max-time 5 "$BASE/where" ;;
+  caps) curl -fsS --max-time 18 "$BASE/caps" ;;
   wait)
     shift
     wait_timeout=8000

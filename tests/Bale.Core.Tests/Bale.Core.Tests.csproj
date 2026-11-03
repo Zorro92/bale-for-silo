@@ -29,6 +29,8 @@
     <Compile Include="../../src/Bale.Xbox/Services/ProfilePreview.cs" Link="ProfilePreview.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugScreenText.cs" Link="DebugScreenText.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugWaitCondition.cs" Link="DebugWaitCondition.cs" />
+    <Compile Include="../../src/Bale.Xbox/Services/DebugCodecNames.cs" Link="DebugCodecNames.cs" />
+    <None Include="../../src/Bale.Xbox/Services/DebugServer.Capabilities.cs" Link="DebugServer.Capabilities.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugServer.cs" Link="DebugServer.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/bale-debug.sh" Link="bale-debug.sh" CopyToOutputDirectory="PreserveNewest" />
     <!-- Test focus retry coordination against a minimal event/tree stand-in, not the UWP runtime. -->
