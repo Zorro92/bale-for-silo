@@ -9,11 +9,12 @@ public sealed partial class RequestStatusView : UserControl
 {
     public RequestStatusView() => InitializeComponent();
 
-    public void Show(RequestProgress? progress, string? text = null, bool track = false, bool steps = false, bool label = true)
+    public void Show(RequestProgress? progress, string? text = null, bool track = false, bool steps = false, bool label = true, bool summary = false)
     {
         Visibility = progress is null ? Visibility.Collapsed : Visibility.Visible;
         if (progress is null) return;
         LabelText.Text = text ?? progress.ShortLabel;
+        VisualStateManager.GoToState(this, summary ? "SummaryLabel" : "NormalLabel", false);
         LabelRow.Visibility = label ? Visibility.Visible : Visibility.Collapsed;
         Track.Visibility = track ? Visibility.Visible : Visibility.Collapsed;
         Dot.ApplyTemplate();

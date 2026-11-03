@@ -175,7 +175,14 @@
             <TextBlock Text="History" Style="{StaticResource SkylineProfileMenuLabelStyle}" />
           </StackPanel>
         </Button>
-        <!-- TvMainShell.kt: Settings follows History, before the server/account actions. -->
+        <!-- TvMainShell.kt: Requests is a capability-gated profile row immediately after History, not a root tab. -->
+        <Button x:Name="RequestsRow" Style="{StaticResource SkylineProfileMenuRowStyle}" Click="OnRequestsClick" GotFocus="OnProfileRowFocus" LostFocus="OnProfileRowBlur" Visibility="Collapsed">
+          <StackPanel Style="{StaticResource SkylineSettingsProfileMenuContentStyle}">
+            <Viewbox Style="{StaticResource SkylineProfileMenuIconStyle}"><Path Style="{StaticResource SkylineProfileMenuIconPathStyle}" Data="M19,3 H4.99 C3.88,3 3.01,3.9 3.01,5 L3,19 C3,20.1 3.88,21 4.99,21 H19 C20.1,21 21,20.1 21,19 V5 C21,3.9 20.1,3 19,3 Z M19,15 H15 C15,16.66 13.65,18 12,18 C10.35,18 9,16.66 9,15 H5 V5 H19 Z" /></Viewbox>
+            <TextBlock Text="Requests" Style="{StaticResource SkylineProfileMenuLabelStyle}" />
+          </StackPanel>
+        </Button>
+        <!-- Settings follows the optional Requests/Watch Party rows, before server/account actions. -->
         <Button x:Name="SettingsRow" Style="{StaticResource SkylineProfileMenuRowStyle}" Click="OnSettingsClick" GotFocus="OnProfileRowFocus" LostFocus="OnProfileRowBlur">
           <StackPanel Style="{StaticResource SkylineSettingsProfileMenuContentStyle}">
             <Viewbox Style="{StaticResource SkylineProfileMenuIconStyle}"><Path Style="{StaticResource SkylineProfileMenuIconPathStyle}" Data="M19.43,12.98 C19.47,12.66 19.5,12.34 19.5,12 C19.5,11.66 19.47,11.34 19.43,11.02 L21.54,9.37 L19.54,5.91 L17.05,6.91 C16.54,6.52 15.98,6.19 15.37,5.94 L15,3 H9 L8.63,5.94 C8.02,6.19 7.46,6.52 6.95,6.91 L4.46,5.91 L2.46,9.37 L4.57,11.02 C4.53,11.34 4.5,11.66 4.5,12 C4.5,12.34 4.53,12.66 4.57,12.98 L2.46,14.63 L4.46,18.09 L6.95,17.09 C7.46,17.48 8.02,17.81 8.63,18.06 L9,21 H15 L15.37,18.06 C15.98,17.81 16.54,17.48 17.05,17.09 L19.54,18.09 L21.54,14.63 Z M12,15.5 C10.07,15.5 8.5,13.93 8.5,12 C8.5,10.07 10.07,8.5 12,8.5 C13.93,8.5 15.5,10.07 15.5,12 C15.5,13.93 13.93,15.5 12,15.5 Z" /></Viewbox>

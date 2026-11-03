@@ -58,7 +58,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         try
         {
             if (!_restoringProfileFocus && !IsInTopBar(args.OldFocusedElement) && IsInTopBar(args.NewFocusedElement)
-                && (_searchSelected ? (Control?)SearchButton : ButtonFor(_selected)) is { } target
+                && (ContentFrame.Content is RequestsPage ? AvatarButton : _searchSelected ? (Control?)SearchButton : ButtonFor(_selected)) is { } target
                 && !ReferenceEquals(target, args.NewFocusedElement))
             {
                 args.TrySetNewFocusedElement(target);
@@ -98,6 +98,10 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
             else if (ContentFrame.Content is CatalogGridPage grid)
             {
                 grid.FocusLibraryContent();
+            }
+            else if (ContentFrame.Content is RequestsPage requests)
+            {
+                requests.FocusContent();
             }
             else if (ContentFrame.Content is CalendarPage calendar)
             {
@@ -161,6 +165,8 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         Log.Info("Shell: navigated to " + (e.Parameter as string ?? ""));
         Current = this;
         _signingOut = false;
+        // Capability probing must not depend on a successful library-list load.
+        _ = RefreshRequestsCapabilityAsync();
 
         // Back from a detail page: the cached shell keeps its tabs and content; just restore focus.
         if (e.NavigationMode == NavigationMode.Back && _tabs.Count > 0)
@@ -247,6 +253,7 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         _dwell.Stop();
         _avatarDwell.Stop();
         _collectionProbe?.Cancel();
+        _requestsProbe?.Cancel();
         SignOutPrompt.Hide();
         if (Current == this)
         {
@@ -289,6 +296,13 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         }
 
         if (ContentFrame.Content is IBackHandler content && content.OnBack()) return true;
+        if (ContentFrame.Content is RequestsPage)
+        {
+            // TvMainShell.kt delegates secondary-route Back to navigation, even from content.
+            if (ContentFrame.CanGoBack) ContentFrame.GoBack();
+            else if (_tabs.Count > 0) Select(_tabs[0]);
+            return true;
+        }
         if (!IsInTopBar(FocusManager.GetFocusedElement() as DependencyObject))
         {
             // TvMainShell.kt / TvShellFocusState.kt: Back climbs to the selected root tab with

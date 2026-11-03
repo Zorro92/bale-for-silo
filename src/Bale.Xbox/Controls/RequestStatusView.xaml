@@ -5,6 +5,13 @@
     IsTabStop="False" IsHitTestVisible="False">
   <!-- TvRequestComponents.kt / RequestStatusStrip: four equally weighted stages, never focusable. -->
   <StackPanel Style="{StaticResource SkylineRequestStatusContentStyle}">
+    <VisualStateManager.VisualStateGroups><VisualStateGroup x:Name="LabelWeightStates">
+      <VisualState x:Name="NormalLabel" />
+      <VisualState x:Name="SummaryLabel"><VisualState.Setters>
+        <Setter Target="LabelText.Foreground" Value="{StaticResource SkylineRequestSummaryInk}" />
+        <Setter Target="LabelText.FontWeight" Value="SemiBold" />
+      </VisualState.Setters></VisualState>
+    </VisualStateGroup></VisualStateManager.VisualStateGroups>
     <StackPanel x:Name="LabelRow" Style="{StaticResource SkylineRequestStatusLabelRowStyle}">
       <ContentControl x:Name="Dot" Style="{StaticResource SkylineRequestDotStyle}" />
       <TextBlock x:Name="LabelText" Style="{StaticResource SkylineRequestSecondaryStyle}" />

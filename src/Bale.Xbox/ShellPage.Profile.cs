@@ -63,6 +63,7 @@ public sealed partial class ShellPage
         ClosePanels();
         _profileMenuEntered = enter;
         ProfilePanel.Visibility = Visibility.Visible;
+        _ = RefreshRequestsCapabilityAsync();
         AvatarButton.XYFocusDown = SwitchProfileRow;
         if (enter)
         {
@@ -110,7 +111,8 @@ public sealed partial class ShellPage
             if (step != 0)
             {
                 e.Handled = true;
-                Control[] rows = [SwitchProfileRow, WatchlistRow, FavoritesRow, HistoryRow, SettingsRow, SwitchServerRow, SignOutRow];
+                Control[] candidates = [SwitchProfileRow, WatchlistRow, FavoritesRow, HistoryRow, RequestsRow, SettingsRow, SwitchServerRow, SignOutRow];
+                var rows = candidates.Where(row => row.Visibility == Visibility.Visible && row.IsEnabled).ToArray();
                 var focused = FocusManager.GetFocusedElement() as DependencyObject;
                 var index = Array.FindIndex(rows, row => IsWithin(focused, row));
                 rows[Math.Clamp(index + step, 0, rows.Length - 1)].Focus(FocusState.Keyboard);

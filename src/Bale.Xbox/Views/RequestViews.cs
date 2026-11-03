@@ -59,4 +59,11 @@ public sealed partial class RequestRowView(RequestRow row) : INotifyPropertyChan
     }
 }
 
-public sealed record RequestDetailEntry(string MediaType, long TmdbId);
+// The Frame journal retains this per-entry snapshot; recommendations push distinct instances.
+public sealed record RequestDetailEntry(string MediaType, long TmdbId)
+{
+    public string FocusArea { get; set; } = "primary";
+    public string? RecommendationKey { get; set; }
+    public double ScrollOffset { get; set; }
+    public double RailOffset { get; set; }
+}

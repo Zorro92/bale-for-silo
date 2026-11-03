@@ -1,0 +1,114 @@
+<Page
+    x:Class="Bale.Xbox.RequestDetailPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:Bale.Xbox.Views"
+    xmlns:controls="using:Bale.Xbox.Controls"
+    Background="{StaticResource SkylineBackground}">
+  <Page.Resources>
+    <DataTemplate x:Key="RecommendationTemplate" x:DataType="views:RequestCardView"><controls:RequestPoster /></DataTemplate>
+  </Page.Resources>
+  <Grid x:Name="Root">
+    <!-- TvRequestDetailScreen.kt reuses TvDetailHero and the normal opaque sampled detail tint. -->
+    <Rectangle x:Name="Wash" Fill="{StaticResource SkylineRequestDetailSurface}" IsHitTestVisible="False" />
+    <Grid x:Name="ArtBox" Style="{StaticResource SkylineRequestArtBoxStyle}" />
+    <ScrollViewer x:Name="PageScroller" VerticalScrollBarVisibility="Hidden" HorizontalScrollMode="Disabled" IsTabStop="False" Visibility="Collapsed">
+      <StackPanel x:Name="PageContent" Style="{StaticResource SkylineRequestDetailContentStyle}">
+        <StackPanel Style="{StaticResource SkylineRequestHeroStyle}">
+          <Grid Style="{StaticResource SkylineRequestHeroTitleSlotStyle}">
+            <StackPanel Style="{StaticResource SkylineRequestHeroTextTitleStyle}">
+              <Grid><Grid x:Name="TitleShadow" IsHitTestVisible="False" /><TextBlock x:Name="TitleText" Style="{StaticResource SkylineDetailTitleStyle}" /></Grid>
+              <Grid x:Name="SubtitleSlot" Visibility="Collapsed"><Grid x:Name="SubtitleShadow" IsHitTestVisible="False" /><TextBlock x:Name="SubtitleText" Style="{StaticResource SkylineDetailSubtitleStyle}" /></Grid>
+            </StackPanel>
+          </Grid>
+          <StackPanel Style="{StaticResource SkylineRequestMetadataStyle}">
+            <Border x:Name="RatingChip" Style="{StaticResource SkylineRequestRatingChipStyle}" Visibility="Collapsed"><TextBlock x:Name="RatingText" Style="{StaticResource SkylineRequestRatingTextStyle}" /></Border>
+            <TextBlock x:Name="FactsText" Style="{StaticResource SkylineRequestSecondaryStyle}" />
+            <TextBlock x:Name="GenresText" Style="{StaticResource SkylineRequestSecondaryStyle}" />
+          </StackPanel>
+          <Button x:Name="SynopsisButton" Style="{StaticResource SkylineRequestSynopsisStyle}" Click="OnSynopsisClick">
+            <TextBlock x:Name="Synopsis" Style="{StaticResource SkylineRequestDetailSynopsisTextStyle}" />
+          </Button>
+          <TextBlock x:Name="CreditText" Style="{StaticResource SkylineRequestCreditStyle}" />
+          <StackPanel x:Name="StatusStrip" Style="{StaticResource SkylineRequestSummaryStyle}" Visibility="Collapsed">
+            <StackPanel Style="{StaticResource SkylineRequestSummaryFieldsStyle}">
+              <StackPanel Style="{StaticResource SkylineRequestFieldStyle}">
+                <TextBlock Text="STATUS" Style="{StaticResource SkylineRequestFieldLabelStyle}" />
+                <controls:RequestStatusView x:Name="StatusValue" />
+              </StackPanel>
+              <StackPanel x:Name="RequestedField" Style="{StaticResource SkylineRequestFieldStyle}">
+                <TextBlock Text="REQUESTED" Style="{StaticResource SkylineRequestFieldLabelStyle}" />
+                <TextBlock x:Name="RequestedText" Style="{StaticResource SkylineRequestFieldValueStyle}" />
+              </StackPanel>
+              <StackPanel x:Name="QualityField" Style="{StaticResource SkylineRequestFieldStyle}">
+                <TextBlock Text="QUALITY" Style="{StaticResource SkylineRequestFieldLabelStyle}" />
+                <TextBlock x:Name="QualityText" Style="{StaticResource SkylineRequestFieldValueStyle}" />
+              </StackPanel>
+            </StackPanel>
+            <controls:RequestStatusView x:Name="StageTrack" Width="{StaticResource SkylineRequestDetailTrackWidth}" HorizontalAlignment="Left" />
+          </StackPanel>
+          <Grid Style="{StaticResource SkylineRequestActionLineStyle}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+            <!-- rail-layout: non-card — TvRequestDetailScreen.kt's stable primary, Cancel and Follow pills. -->
+            <ItemsControl x:Name="Actions" Style="{StaticResource SkylineRequestActionsStyle}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylineRequestActionGap}" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <!-- This node never disappears or disables while submitting or displaying status. -->
+              <Button x:Name="PrimaryButton" Style="{StaticResource SkylineRequestPrimaryStyle}" Click="OnPrimaryClick">
+                <StackPanel Style="{StaticResource SkylineRequestPrimaryContentStyle}">
+                  <Viewbox x:Name="AddIcon" Style="{StaticResource SkylineRequestAddIconStyle}"><Path Style="{StaticResource SkylineRequestPrimaryGlyphStyle}" Data="M19,13 H13 V19 H11 V13 H5 V11 H11 V5 H13 V11 H19 Z" /></Viewbox>
+                  <Viewbox x:Name="OpenIcon" Style="{StaticResource SkylineRequestIconStyle}" Visibility="Collapsed"><Path Style="{StaticResource SkylineRequestPrimaryGlyphStyle}" Data="M19,19 H5 V5 H12 V3 H5 C3.89,3 3,3.9 3,5 V19 C3,20.1 3.89,21 5,21 H19 C20.1,21 21,20.1 21,19 V12 H19 Z M14,3 V5 H17.59 L7.76,14.83 L9.17,16.24 L19,6.41 V10 H21 V3 Z" /></Viewbox>
+                  <ProgressRing x:Name="SubmitSpinner" Style="{StaticResource SkylineRequestPrimarySpinnerStyle}" IsActive="False" Visibility="Collapsed" />
+                  <ContentControl x:Name="PrimaryDot" Style="{StaticResource SkylineRequestPrimaryDotStyle}" Visibility="Collapsed" />
+                  <TextBlock x:Name="PrimaryLabel" Text="Request" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <Button x:Name="CancelButton" Style="{StaticResource SkylineRequestActionStyle}" Click="OnCancelClick" GotFocus="OnSecondaryFocus" LostFocus="OnSecondaryBlur" Visibility="Collapsed">
+                <StackPanel Style="{StaticResource SkylineRequestActionContentStyle}">
+                  <Viewbox Style="{StaticResource SkylineRequestIconStyle}"><Path x:Name="CancelGlyph" Style="{StaticResource SkylineRequestActionGlyphStyle}" Data="M19,6.41 L17.59,5 L12,10.59 L6.41,5 L5,6.41 L10.59,12 L5,17.59 L6.41,19 L12,13.41 L17.59,19 L19,17.59 L13.41,12 Z" /></Viewbox>
+                  <TextBlock Text="Cancel Request" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <Button x:Name="FollowButton" Style="{StaticResource SkylineRequestActionStyle}" Click="OnFollowClick" GotFocus="OnSecondaryFocus" LostFocus="OnSecondaryBlur" Visibility="Collapsed">
+                <StackPanel Style="{StaticResource SkylineRequestActionContentStyle}">
+                  <Viewbox x:Name="FollowIcon" Style="{StaticResource SkylineRequestIconStyle}">
+                    <Grid Width="{StaticResource SkylineMaterialIconCanvas}" Height="{StaticResource SkylineMaterialIconCanvas}">
+                      <Path x:Name="NotifyGlyph" Style="{StaticResource SkylineRequestActionGlyphStyle}" Data="M12,22 C13.1,22 14,21.1 14,20 H10 C10,21.1 10.9,22 12,22 Z M18,16 V11 C18,7.93 16.37,5.36 13.5,4.68 V4 C13.5,3.17 12.83,2.5 12,2.5 C11.17,2.5 10.5,3.17 10.5,4 V4.68 C7.64,5.36 6,7.92 6,11 V16 L4,18 V19 H20 V18 Z" />
+                      <Path x:Name="NotifyOffGlyph" Style="{StaticResource SkylineRequestActionGlyphStyle}" Visibility="Collapsed" Data="M20,18.69 L7.84,6.53 L3.27,1.96 L2,3.23 L6,7.23 V16 L4,18 V19 H17.73 L19.73,21 Z M12,22 C13.1,22 14,21.1 14,20 H10 C10,21.1 10.9,22 12,22 Z M18,11 C18,7.93 16.37,5.36 13.5,4.68 V4 C13.5,3.17 12.83,2.5 12,2.5 C11.17,2.5 10.5,3.17 10.5,4 V4.68 C10.14,4.76 9.8,4.88 9.48,5.03 L18,13.55 Z" />
+                    </Grid>
+                  </Viewbox>
+                  <ProgressRing x:Name="FollowSpinner" Style="{StaticResource SkylineRequestSpinnerStyle}" IsActive="False" Visibility="Collapsed" />
+                  <TextBlock x:Name="FollowLabel" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </ItemsControl>
+            <TextBlock x:Name="ActionNotice" Grid.Column="1" Style="{StaticResource SkylineRequestActionNoticeStyle}" Visibility="Collapsed" />
+          </Grid>
+        </StackPanel>
+        <StackPanel x:Name="RecommendationsSection" Style="{StaticResource SkylineRequestRecommendationsStyle}" Visibility="Collapsed">
+          <TextBlock Text="More like this" Style="{StaticResource SkylineDetailSectionHeaderStyle}" Margin="{StaticResource SkylineDetailHeaderInset}" />
+          <ListView x:Name="Recommendations" Style="{StaticResource SkylineRequestDetailRailStyle}" ItemTemplate="{StaticResource RecommendationTemplate}"
+                    ItemClick="OnRecommendationClick" GotFocus="OnRecommendationFocus" LostFocus="OnRecommendationBlur" />
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+    <Button x:Name="LoadingOwner" Style="{StaticResource SkylineRequestDetailLoaderStyle}" AutomationProperties.Name="Loading request details">
+      <ProgressRing Style="{StaticResource SkylineHomeLoadingStyle}" IsActive="True" />
+    </Button>
+    <StackPanel x:Name="ErrorPanel" Style="{StaticResource SkylineHomeErrorStyle}" Visibility="Collapsed">
+      <TextBlock x:Name="ErrorText" Style="{StaticResource SkylineHomeStateTitleStyle}" />
+      <Button x:Name="RetryButton" Content="Retry" Style="{StaticResource SkylineHomeErrorActionStyle}" Click="OnRetryClick" />
+    </StackPanel>
+    <!-- TvExpandableSynopsis: Back closes the overlay before it can pop this detail entry. -->
+    <Grid x:Name="DialogLayer" Background="{StaticResource SkylineDialogScrim}" Visibility="Collapsed" TabFocusNavigation="Cycle" Tapped="OnDialogTapped">
+      <Border Style="{StaticResource SkylineRequestSynopsisDialogStyle}">
+        <ScrollViewer x:Name="SynopsisScroller" Style="{StaticResource SkylineRequestSynopsisScrollerStyle}">
+          <StackPanel Style="{StaticResource SkylineRequestSynopsisBodyStyle}">
+            <TextBlock x:Name="FullSynopsisTitle" Style="{StaticResource SkylineRequestSynopsisTitleStyle}" />
+            <TextBlock x:Name="FullSynopsisTagline" Style="{StaticResource SkylineRequestTaglineStyle}" />
+            <TextBlock x:Name="FullSynopsis" Style="{StaticResource SkylineRequestFullSynopsisStyle}" />
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+  </Grid>
+</Page>
