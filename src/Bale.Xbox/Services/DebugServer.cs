@@ -598,6 +598,12 @@ internal sealed partial class DebugServer
         return panel is null ? "page" : ElementName(panel);
     }
 
+    private static IEnumerable<Control> VisibleControls(FrameworkElement root) =>
+        // ItemsControl inherits IsTabStop, but its aggregate text is a group, not an action.
+        // ListView/GridView share that base; keep their AOT-projected ContentControl items.
+        VisibleElements(root).OfType<Control>()
+            .Where(control => control.IsTabStop && control is not ItemsControl && IsOnScreen(control));
+
     private static DebugVisibleControl VisibleControl(Control control, string scope)
     {
         var text = TextOf(control, 3, visibleOnly: true);
@@ -663,12 +669,12 @@ internal sealed partial class DebugServer
         if (popups.Count > 0)
         {
             foreach (var (_, root) in popups)
-                controls.AddRange(VisibleElements(root).OfType<Control>().Where(control => control.IsTabStop && IsOnScreen(control))
+                controls.AddRange(VisibleControls(root)
                     .Select(control => VisibleControl(control, "popup " + ElementName(root) + "/")));
         }
         else if (Window.Current.Content is FrameworkElement windowRoot)
         {
-            controls.AddRange(VisibleElements(windowRoot).OfType<Control>().Where(control => control.IsTabStop && IsOnScreen(control))
+            controls.AddRange(VisibleControls(windowRoot)
                 .Select(control => VisibleControl(control, string.Empty)));
         }
         return builder.Append(DebugScreenText.Visible(controls)).ToString();

@@ -60,6 +60,30 @@ public class DebugScreenTextTests
     }
 
     [Fact]
+    public void WhereTreatsItemCollectionsAsGroupsAndKeepsTheirFocusableItemContainers()
+    {
+        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "DebugServer.cs.txt"));
+        var controls = source[source.IndexOf("private static IEnumerable<Control> VisibleControls", StringComparison.Ordinal)
+            ..source.IndexOf("private static DebugVisibleControl VisibleControl", StringComparison.Ordinal)];
+        Assert.Contains("VisibleElements(root).OfType<Control>()", controls); // Panels cannot be control lines.
+        Assert.Contains("control.IsTabStop && control is not ItemsControl && IsOnScreen(control)", controls);
+        Assert.DoesNotContain("not ContentControl", controls); // AOT projects ListViewItem/GridViewItem this way.
+        Assert.Contains("controls.AddRange(VisibleControls(root)", source); // Popups use the same filter.
+        Assert.Contains("controls.AddRange(VisibleControls(windowRoot)", source);
+
+        var output = DebugScreenText.Visible(
+        [
+            new("ItemsControl#PickerActions", "Button#Manage \"Manage\""),
+            new("ItemsControl#PickerActions", "Button#ChangeServer \"Change server\""),
+            new("ItemsControl#PickerActions", "Button#SignOut \"Sign out\""),
+        ]);
+        Assert.Contains("  ItemsControl#PickerActions:\n", output);
+        Assert.DoesNotContain("    ItemsControl#PickerActions", output);
+        Assert.DoesNotContain("Grid#PickerPanel", output);
+        Assert.Equal(3, output.Split('\n').Count(line => line.StartsWith("    Button", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public void FocusTextUsesVisibleDescendantsAndRejectsHiddenAncestors()
     {
         // Visibility/layout belong to UWP, so check that focus uses the same path as Visible.
