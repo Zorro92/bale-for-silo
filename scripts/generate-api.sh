@@ -30,6 +30,8 @@ dotnet kiota generate \
   --include-path '/api/v2/auth/device/poll' \
   --include-path '/api/v2/auth/device/cancel' \
   --include-path '/api/v2/auth/device/capability' \
+  --include-path '/api/v2/auth/login' \
+  --include-path '/api/v2/auth/providers' \
   --include-path '/api/v2/auth/refresh' \
   --include-path '/api/v2/auth/logout' \
   --include-path '/api/v2/account/me' \

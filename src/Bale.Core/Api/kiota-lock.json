@@ -1,5 +1,5 @@
 {
-  "descriptionHash": "9A0A6A5DED4A3982FBB4BBEC910D11C3A945BE58AD418557B1C1306336FFDFBAEAE772D370A5BAB24ADB2EB9443C137FE9CE49A18D4C3F43E7520563C3B51817",
+  "descriptionHash": "957E63A8B42612D4F4496277D070D3886FEDF537A0D83781F8351053B425B9C46A307EF7818022D2B303CA238D3EB9FF5127A4E5DEBA3ED4304BB6D99F19E763",
   "descriptionLocation": "../../../.cache/silo-openapi-44a345dbfb8c0a5892dc366ee0dd33fc091b7cf2.json",
   "lockFileVersion": "1.0.0",
   "kiotaVersion": "1.36.1",
@@ -33,6 +33,8 @@
     "/api/v2/auth/device/poll",
     "/api/v2/auth/device/cancel",
     "/api/v2/auth/device/capability",
+    "/api/v2/auth/login",
+    "/api/v2/auth/providers",
     "/api/v2/auth/refresh",
     "/api/v2/auth/logout",
     "/api/v2/account/me",
