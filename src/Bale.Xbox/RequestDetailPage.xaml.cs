@@ -330,7 +330,7 @@ public sealed partial class RequestDetailPage : Page, IRestoresFocus, IBackHandl
         if (!_restoringFocus) { _lastRecommendation = card; _focusArea = "recommendations"; PinRecommendations(); }
     }
 
-    private static void OnRecommendationBlur(object sender, RoutedEventArgs args)
+    private void OnRecommendationBlur(object sender, RoutedEventArgs args)
     {
         if (args.OriginalSource is ContentControl { Content: RequestCardView } container) CardFocus.Apply(container, false);
     }

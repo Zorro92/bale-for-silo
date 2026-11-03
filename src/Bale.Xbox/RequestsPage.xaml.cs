@@ -222,7 +222,7 @@ public sealed partial class RequestsPage : Page, IRestoresFocus, IBackHandler
         _previewTimer.Start();
     }
 
-    private static void OnCardBlur(object sender, RoutedEventArgs args)
+    private void OnCardBlur(object sender, RoutedEventArgs args)
     {
         if (args.OriginalSource is ContentControl { Content: RequestCardView } container) CardFocus.Apply(container, false);
     }
