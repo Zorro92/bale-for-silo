@@ -69,11 +69,14 @@ public sealed class ProfileEditorLayoutTests
             .Single(setter => (string?)setter.Attribute("Property") == property).Attribute("Value");
         Assert.Equal("80,60,80,0", Value("SkylineProfileEditorLayoutStyle", "Margin"));
         Assert.Equal("180", Value("SkylineProfilePreviewColumnStyle", "Width"));
-        Assert.Equal("584", Value("SkylineProfileFormScrollerStyle", "Width"));
+        // TvProfileForm.kt's 584dp column gets the 580dp left in its row; the scroller overhangs 16dp each side.
+        Assert.Equal("612", Value("SkylineProfileFormScrollerStyle", "Width"));
+        Assert.Equal("-16,0,-16,0", Value("SkylineProfileFormScrollerStyle", "Margin"));
+        Assert.Equal("586", Value("SkylineProfileAvatarListStyle", "Width"));
         Assert.Equal("154", Value("SkylineProfileAvatarListStyle", "Height"));
         Assert.Equal("52", Value("SkylineProfileEntryStyle", "Height"));
         Assert.Equal("48", Value("SkylineProfileSegmentStyle", "Height"));
-        Assert.Equal("0,0,0,48", Value("SkylineProfileFormStackStyle", "Padding"));
+        Assert.Equal("16,0,16,48", Value("SkylineProfileFormStackStyle", "Padding"));
         var form = Load("ProfileEditorPage.xaml");
         var labels = form.Descendants(Ui + "TextBlock").Select(element => (string?)element.Attribute("Text")).ToArray();
         Assert.Contains("STYLE", labels);
