@@ -72,10 +72,12 @@
                   </Grid>
                   <Grid Visibility="{x:Bind AddVisibility}">
                     <Ellipse x:Name="AddFill" Fill="{StaticResource SkylineProfileAddFocusFill}" Opacity="0" />
-                    <Ellipse x:Name="AddOutline" Style="{StaticResource SkylineProfileAddOutlineStyle}" />
-                    <Viewbox Style="{StaticResource SkylineProfileAddIconStyle}"><Path x:Name="AddIcon" Fill="{StaticResource SkylineProfileAddInk}" Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6Z" /></Viewbox>
+                    <!-- TvProfileSelectionScreen.kt: 6dp on / 5dp off at 2dp stroke.
+                         Keep StrokeDashArray inline: its style setter doesn't apply on UWP. -->
+                    <Ellipse x:Name="AddOutline" Style="{StaticResource SkylineProfileAddOutlineStyle}" StrokeDashArray="3,2.5" />
+                    <Viewbox Style="{StaticResource SkylineProfileAddIconStyle}"><Path x:Name="AddIcon" Width="24" Height="24" Fill="{StaticResource SkylineProfileAddInk}" Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6Z" /></Viewbox>
                   </Grid>
-                  <Viewbox Style="{StaticResource SkylineProfilePencilStyle}" Visibility="{x:Bind PencilVisibility}"><Path Fill="{StaticResource SkylineFocusRing}" Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25m17.71-10.2a.996.996 0 0 0 0-1.41l-2.34-2.34a.996.996 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83Z" /></Viewbox>
+                  <Viewbox Style="{StaticResource SkylineProfilePencilStyle}" Visibility="{x:Bind PencilVisibility}"><Path Width="24" Height="24" Fill="{StaticResource SkylineFocusRing}" Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25m17.71-10.2a.996.996 0 0 0 0-1.41l-2.34-2.34a.996.996 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83Z" /></Viewbox>
                 </Grid>
                 <TextBlock x:Name="ProfileCaption" Text="{x:Bind Name}" FontSize="{StaticResource SkylineProfileNameSize}" FontWeight="SemiBold"
                            Foreground="{StaticResource SkylineSecondary}" HorizontalAlignment="Center" Margin="0,13,0,0"

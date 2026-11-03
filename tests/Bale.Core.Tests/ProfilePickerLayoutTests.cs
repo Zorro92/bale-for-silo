@@ -44,13 +44,28 @@ public sealed class ProfilePickerLayoutTests
     public void AddUsesTheOfficialDashedCircleAndManagedCellsReserveDeleteHeight()
     {
         var theme = Load("Skyline.xaml");
-        string? Value(string key, string property) => (string?)theme.Root!.Elements(Ui + "Style")
-            .Single(style => (string?)style.Attribute(Xaml + "Key") == key).Elements(Ui + "Setter")
+        XElement Style(string key) => theme.Root!.Elements(Ui + "Style")
+            .Single(style => (string?)style.Attribute(Xaml + "Key") == key);
+        string? Value(string key, string property) => (string?)Style(key).Elements(Ui + "Setter")
             .Single(setter => (string?)setter.Attribute("Property") == property).Attribute("Value");
         Assert.Equal("2", Value("SkylineProfileAddOutlineStyle", "StrokeThickness"));
-        Assert.Equal("3,2.5", Value("SkylineProfileAddOutlineStyle", "StrokeDashArray"));
+        Assert.Equal("3,2.5", (string?)Named(Load("ProfilesPage.xaml"), "AddOutline").Attribute("StrokeDashArray"));
+        Assert.DoesNotContain(Style("SkylineProfileAddOutlineStyle").Elements(Ui + "Setter"),
+            setter => (string?)setter.Attribute("Property") == "StrokeDashArray");
         Assert.Equal("30", Value("SkylineProfilePencilStyle", "Width"));
         Assert.Equal("33", Value("SkylineProfileAddIconStyle", "Width"));
         Assert.Equal("184", Value("SkylineProfileManageExtentStyle", "Height"));
+    }
+
+    [Theory]
+    [InlineData("SkylineProfileAddIconStyle")]
+    [InlineData("SkylineProfilePencilStyle")]
+    public void AddAndPencilPathsPreserveTheMaterialIconViewport(string key)
+    {
+        var icon = Load("ProfilesPage.xaml").Descendants(Ui + "Viewbox")
+            .Single(element => (string?)element.Attribute("Style") == $"{{StaticResource {key}}}")
+            .Elements(Ui + "Path").Single();
+        Assert.Equal("24", (string?)icon.Attribute("Width"));
+        Assert.Equal("24", (string?)icon.Attribute("Height"));
     }
 }
