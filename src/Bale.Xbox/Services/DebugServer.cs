@@ -48,6 +48,22 @@ internal sealed class DebugServer
     private static int _failProfilesOnce;
     private static int _failSearchOnce;
     private static int _homeFaultOnce;
+    private static int _requestsFaultOnce;
+    private static int _requestDetailFaultOnce;
+
+    // Read-only, one-shot placeholders; these hooks cannot create/cancel/follow anything.
+    internal static bool TakeRequestsEmptyOrThrow() => Interlocked.Exchange(ref _requestsFaultOnce, 0) switch
+    {
+        1 => throw new HttpRequestException("Injected Requests failure (fault requests)."),
+        2 => true,
+        _ => false,
+    };
+
+    internal static void ThrowIfRequestDetailFaulted()
+    {
+        if (Interlocked.Exchange(ref _requestDetailFaultOnce, 0) != 0)
+            throw new HttpRequestException("Injected request-detail failure (fault request-detail).");
+    }
 
     // TvHomeScreen.kt: exercise error/empty independently, without changing the server's libraries.
     // The newest armed Home fault wins, and only a Home load (not a library/For You load) consumes it.
@@ -184,6 +200,18 @@ internal sealed class DebugServer
                 Interlocked.Exchange(ref _homeFaultOnce, 2);
                 return ("200 OK", "next Home load will return no rows once; Refresh will load normally\n");
 
+            case ("POST", "/fault/requests"):
+                Interlocked.Exchange(ref _requestsFaultOnce, 1);
+                return ("200 OK", "next Requests load will fail once; existing shelves survive; Retry will read normally\n");
+
+            case ("POST", "/fault/requests-empty"):
+                Interlocked.Exchange(ref _requestsFaultOnce, 2);
+                return ("200 OK", "next Requests load will return no rows once; re-enter Requests to read normally\n");
+
+            case ("POST", "/fault/request-detail"):
+                Interlocked.Exchange(ref _requestDetailFaultOnce, 1);
+                return ("200 OK", "next request-detail load will fail once; Retry will read normally\n");
+
             case ("POST", "/show/login"):
             case ("POST", "/show/login/expired"):
             case ("POST", "/show/server"):
@@ -198,7 +226,7 @@ internal sealed class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|home|home-empty}, POST /show/{login|login/expired|server|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|home|home-empty|requests|requests-empty|request-detail}, POST /show/{login|login/expired|server|home}\n");
         }
     }
 

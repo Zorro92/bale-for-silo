@@ -14,6 +14,9 @@
 #   scripts/bale-debug.sh fault search          fail the next title-search request once
 #   scripts/bale-debug.sh fault home            fail the next Home load once (quiet refresh keeps existing rows)
 #   scripts/bale-debug.sh fault home-empty      return no rows on the next Home load once
+#   scripts/bale-debug.sh fault requests        fail the next Requests hub load once
+#   scripts/bale-debug.sh fault requests-empty  return no Requests rows on the next hub load once
+#   scripts/bale-debug.sh fault request-detail  fail the next request-detail load once
 #   scripts/bale-debug.sh show login            preview Login without changing the saved session
 #   scripts/bale-debug.sh show login expired    preview the session-expired Login notice
 #   scripts/bale-debug.sh show server           preview manual server entry
@@ -58,8 +61,8 @@ case "${1:-}" in
   targets) curl -fsS "$BASE/targets" ;;
   tree) curl -fsS "$BASE/tree" ;;
   fault)
-    if [[ "$#" != 2 || ( "${2:-}" != profiles && "${2:-}" != search && "${2:-}" != home && "${2:-}" != home-empty ) ]]; then
-      echo "usage: scripts/bale-debug.sh fault {profiles|search|home|home-empty}" >&2
+    if [[ "$#" != 2 || ( "${2:-}" != profiles && "${2:-}" != search && "${2:-}" != home && "${2:-}" != home-empty && "${2:-}" != requests && "${2:-}" != requests-empty && "${2:-}" != request-detail ) ]]; then
+      echo "usage: scripts/bale-debug.sh fault {profiles|search|home|home-empty|requests|requests-empty|request-detail}" >&2
       exit 2
     fi
     curl -fsS -X POST "$BASE/fault/$2"
