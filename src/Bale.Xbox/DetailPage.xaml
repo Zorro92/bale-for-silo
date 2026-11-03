@@ -57,7 +57,10 @@
       </StackPanel>
     </DataTemplate>
     <DataTemplate x:Key="TrailerTemplate" x:DataType="views:TrailerView">
-      <StackPanel Width="{StaticResource SkylineDetailTrailerWidth}" Spacing="{StaticResource SkylineDetailTrailerGapSize}">
+      <!-- The focus lift scales TrailerLift, never the template root: the list item's press tilt
+           sets a Projection on the root, and UWP throws (ending the app) on an element with ScaleTransition. -->
+      <Grid>
+      <StackPanel x:Name="TrailerLift" Width="{StaticResource SkylineDetailTrailerWidth}" Spacing="{StaticResource SkylineDetailTrailerGapSize}">
         <Grid Width="{StaticResource SkylineDetailTrailerWidth}" Height="{StaticResource SkylineDetailTrailerHeight}">
           <Grid CornerRadius="{StaticResource SkylineDetailTrailerRadius}" Background="{StaticResource SkylineSurfaceElevated}">
             <FontIcon Glyph="&#xE8B2;" Style="{StaticResource SkylineDetailTrailerPlaceholderStyle}" Visibility="{x:Bind PlaceholderVisibility}" />
@@ -70,6 +73,7 @@
         <TextBlock x:Name="TrailerTitle" Text="{x:Bind Title}" Style="{StaticResource SkylineDetailTrailerTitleStyle}" />
         <TextBlock Text="{x:Bind Secondary}" Visibility="{x:Bind SecondaryVisibility}" Style="{StaticResource SkylineDetailTrailerSecondaryStyle}" />
       </StackPanel>
+      </Grid>
     </DataTemplate>
     <DataTemplate x:Key="DetailFactTemplate" x:DataType="views:DetailFactView">
       <StackPanel>

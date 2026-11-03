@@ -170,10 +170,13 @@ public sealed partial class DetailPage
         if (root.FindName("TrailerTitle") is TextBlock title) title.Opacity = focused ? 1 : 0.92;
         if (root.FindName("PlayScrim") is Border scrim) scrim.Opacity = focused ? 0.72 : 0.55;
         // TvDetailTrailersSection.kt scales the entire card, unlike the shared art-only poster lift.
-        root.ScaleTransition ??= new Vector3Transition { Duration = TimeSpan.FromMilliseconds(180) };
-        root.CenterPoint = new Vector3((float)root.ActualWidth / 2, (float)root.ActualHeight / 2, 0);
+        // Scale the inner TrailerLift: a ScaleTransition on the template root crashes on gamepad A,
+        // when the list item's press tilt sets a Projection on that root.
+        if (root.FindName("TrailerLift") is not FrameworkElement lift) return;
+        lift.ScaleTransition ??= new Vector3Transition { Duration = TimeSpan.FromMilliseconds(180) };
+        lift.CenterPoint = new Vector3((float)lift.ActualWidth / 2, (float)lift.ActualHeight / 2, 0);
         var scale = focused ? CardRailMetrics.ArtScale : 1;
-        root.Scale = new Vector3(scale, scale, 1);
+        lift.Scale = new Vector3(scale, scale, 1);
     }
 
     /// <summary>A snapshot belongs to this exact stack entry; a per-type Frame cache cannot preserve nested Detail routes.</summary>

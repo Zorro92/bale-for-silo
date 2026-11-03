@@ -122,6 +122,10 @@ Each of these crashed or silently broke the app on the console while compiling f
   plus `CsWinRTAotOptimizerEnabled=Auto` (already set), or `ItemsSource` throws `E_INVALIDARG`.
 - **No implicit transitions (`BrushTransition`, `ScalarTransition`) inside `ControlTemplate`s**: the
   first layout crashed natively. They're fine on plain elements.
+- **Never put `ScaleTransition`/`Scale` on a list item's template root.** Gamepad A's press tilt
+  sets a `Projection` on that root, and UWP throws `UnauthorizedAccessException` ("Calling
+  Projection API is not allowed ... ScaleTransition") and the app ends. Keyboard Enter doesn't
+  tilt, so test focus lifts with `press a` too. Scale an inner element (`Art`, `TrailerLift`).
 - **A template that presents `Content` twice must get a string**, never an element (one element
   can't have two parents). `SkylineTabStyle` does this.
 - **No XAML `OpacityTransition` on an element you also use with `ElementCompositionPreview`**;

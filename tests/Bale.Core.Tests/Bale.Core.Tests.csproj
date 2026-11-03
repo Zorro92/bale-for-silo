@@ -36,6 +36,7 @@
     <None Include="../../src/Bale.Xbox/MainPage.xaml" Link="MainPage.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/ServerListPage.xaml" Link="ServerListPage.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/ProfilesPage.xaml" Link="ProfilesPage.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/DetailPage.xaml" Link="DetailPage.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/ProfileEditorPage.xaml" Link="ProfileEditorPage.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/ProfileEditorPage.xaml.cs" Link="ProfileEditorPage.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Controls/ProfileTextDialog.xaml" Link="ProfileTextDialog.xaml" CopyToOutputDirectory="PreserveNewest" />
