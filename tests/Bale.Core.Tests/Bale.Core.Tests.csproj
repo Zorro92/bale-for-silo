@@ -23,6 +23,8 @@
     <Compile Include="../../src/Bale.Xbox/Services/CardMenuPlacement.cs" Link="CardMenuPlacement.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/RailScrollState.cs" Link="RailScrollState.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/TopMenuPreviewTiming.cs" Link="TopMenuPreviewTiming.cs" />
+    <!-- Xbox's conservative audio snapshot has no UWP/reflection dependency. -->
+    <Compile Include="../../src/Bale.Xbox/Services/XboxAudioCapabilities.cs" Link="XboxAudioCapabilities.cs" />
     <!-- The DEBUG_SERVER fixture has no UWP, network, client or storage dependency. -->
     <Compile Include="../../src/Bale.Xbox/Services/ProfilePreview.cs" Link="ProfilePreview.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugServer.cs" Link="DebugServer.cs.txt" CopyToOutputDirectory="PreserveNewest" />

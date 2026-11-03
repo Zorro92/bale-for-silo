@@ -183,6 +183,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
     {
         base.OnNavigatedTo(e);
         _active = true;
+        if (Session.Client is { } client) _ = LoadAutomaticAudioPolicyAsync(client);
         if (e.Parameter is DetailReturnEntry saved)
         {
             RestoreEntry(saved);
@@ -427,10 +428,19 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
     private void ShowPlaybackSummary()
     {
         if (_detail is not { } detail) return;
-        var selection = _playbackSelections.For(PlaybackDetail);
+        var playbackDetail = PlaybackDetail;
+        var selection = _playbackSelections.For(playbackDetail);
+        var version = playbackDetail is null ? null : PlaybackFormatting.SelectDisplayVersion(
+            playbackDetail.Versions, selection.FileId, playbackDetail.LastFileId);
+        // TvItemDetailScreen.kt / TvPlaybackSelectorRow.kt share this ordinal and known-state between
+        // the Audio value and subtitle Auto context. A series/season resolves only its Play episode.
+        var automaticAudio = PlaybackAudioSelection.AutomaticAudioOrdinal(version, _preferredAudioLanguage,
+            _audioSelectionCapabilities, _playbackSelections.PendingAudioChoiceFor(playbackDetail));
         var values = _playbackSummary.Update(detail, _playEpisode?.ContentId, _nextUpPlaybackDetail,
             _nextUpPlaybackLoading || _episodesLoading || _seasonsLoading,
-            selection.FileId, selection.AudioIndex, selection.SubtitleIndex);
+            selection.FileId, selection.AudioIndex, selection.SubtitleIndex,
+            automaticAudioResolutionKnown: _audioSelectionCapabilities is not null,
+            automaticAudioTrackOrdinal: automaticAudio, subtitleAutoContext: _subtitleAutoContext);
         ShowPlaybackValue(PlaybackVersionSlot, PlaybackVersion, PlaybackVersionSkeleton, values.Version);
         ShowPlaybackValue(PlaybackAudioSlot, PlaybackAudio, PlaybackAudioSkeleton, values.Audio);
         ShowPlaybackValue(PlaybackSubtitleSlot, PlaybackSubtitle, PlaybackSubtitleSkeleton, values.Subtitles);

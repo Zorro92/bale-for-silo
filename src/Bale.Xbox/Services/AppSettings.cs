@@ -118,6 +118,14 @@ internal static class AppSettings
         if (Servers.Active is { } server) Local.Values[$"ServerScope.{server.Id}.{profileId}.{tab}"] = libraryId;
     }
 
+    // TrackSelectionPresets.kt: a device audio-language setting overrides the active profile's language.
+    // Bale has no Playback settings editor yet, so an unset value follows the profile (then English).
+    public static string? AudioLanguage
+    {
+        get => Local.Values[nameof(AudioLanguage)] as string;
+        set => Local.Values[nameof(AudioLanguage)] = value;
+    }
+
     /// <summary>CalendarViewModel remembers the Following / Trending / All view across launches.</summary>
     public static string? CalendarFilter
     {
