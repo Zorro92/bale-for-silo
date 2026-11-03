@@ -59,6 +59,14 @@ public class DebugCodecNamesTests
     }
 
     [Fact]
+    public void Av1UsesItsGuidWithoutRequiringANewerUwpProjection()
+    {
+        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "DebugServer.Capabilities.cs.txt"));
+        Assert.Contains("(\"31305641-0000-0010-8000-00aa00389b71\", \"AV1\")", source);
+        Assert.DoesNotContain("CodecSubtypes.VideoFormatAv1", source);
+    }
+
+    [Fact]
     public void CapabilityProbesStayGuardedSeparateAndReadOnly()
     {
         var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "DebugServer.Capabilities.cs.txt"));

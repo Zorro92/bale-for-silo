@@ -28,10 +28,6 @@ internal sealed partial class DebugServer
 
     private static DebugCodecNames KnownCodecNames()
     {
-        // VideoFormatAv1 was only added in SDK 26100. Native API metadata probing (not managed
-        // reflection) keeps this diagnostic usable on older Xbox OS versions; AV01 is the MF GUID.
-        var av1 = ApiInformation.IsPropertyPresent("Windows.Media.Core.CodecSubtypes", "VideoFormatAv1")
-            ? CodecSubtypes.VideoFormatAv1 : "31305641-0000-0010-8000-00aa00389b71";
         return new DebugCodecNames(
         [
             (CodecSubtypes.VideoFormatH264, "H264"),
@@ -41,7 +37,9 @@ internal sealed partial class DebugServer
             (CodecSubtypes.VideoFormatHevcES, "HEVC"),
             (CodecSubtypes.VideoFormatVP80, "VP8"),
             (CodecSubtypes.VideoFormatVP90, "VP9"),
-            (av1, "AV1"),
+            // The UWP projection lacks an AV1 property; a runtime check cannot guard a missing
+            // compile-time member. Use the Media Foundation AV01 subtype GUID directly.
+            ("31305641-0000-0010-8000-00aa00389b71", "AV1"),
             (CodecSubtypes.VideoFormatMpeg2, "MPEG2"),
             (CodecSubtypes.VideoFormatWvc1, "VC1"),
             (CodecSubtypes.VideoFormatWmv3, "VC1"),
