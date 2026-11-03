@@ -63,6 +63,11 @@ dotnet kiota generate \
   --include-path '/api/v2/watched/{id}' \
   --include-path '/api/v2/audio-prefs/{series_id}' \
   --include-path '/api/v2/subtitle-prefs/{series_id}' \
+  --include-path '/api/v2/playback/capabilities' \
+  --include-path '/api/v2/playback/start' \
+  --include-path '/api/v2/playback/{session_id}/progress' \
+  --include-path '/api/v2/playback/{session_id}' \
+  --include-path '/api/v2/playback/{session_id}/replan' \
   --include-path '/api/v2/recommendations/discover' \
   --include-path '/api/v2/requests/status' \
   --include-path '/api/v2/requests/discover' \

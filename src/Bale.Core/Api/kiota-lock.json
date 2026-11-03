@@ -1,5 +1,5 @@
 {
-  "descriptionHash": "C2AE2A464AE64CF679F2019B01D60E4F276A6B24702CFFE76160D8F0A94CCBBB3E1CE4B7734D9CD9B6218CB03881DB337F82E16F12F23E4734EF8F43EA2BB11C",
+  "descriptionHash": "2A2D4A82844E230DA7B8D00FF0B59FF0D091A0B5D31652547549618D7F21B2040587DE82CA56BD7BA0F97D28D19D8ABA824E5EC14133DECBB3C68E767BC1A5F0",
   "descriptionLocation": "../../../.cache/silo-openapi-44a345dbfb8c0a5892dc366ee0dd33fc091b7cf2.json",
   "lockFileVersion": "1.0.0",
   "kiotaVersion": "1.36.1",
@@ -66,6 +66,11 @@
     "/api/v2/watched/{id}",
     "/api/v2/audio-prefs/{series_id}",
     "/api/v2/subtitle-prefs/{series_id}",
+    "/api/v2/playback/capabilities",
+    "/api/v2/playback/start",
+    "/api/v2/playback/{session_id}/progress",
+    "/api/v2/playback/{session_id}",
+    "/api/v2/playback/{session_id}/replan",
     "/api/v2/recommendations/discover",
     "/api/v2/requests/status",
     "/api/v2/requests/discover",

@@ -9,6 +9,7 @@ using Bale.Core.Api.Api.V2.Favorites;
 using Bale.Core.Api.Api.V2.History;
 using Bale.Core.Api.Api.V2.Home;
 using Bale.Core.Api.Api.V2.Library;
+using Bale.Core.Api.Api.V2.Playback;
 using Bale.Core.Api.Api.V2.Profiles;
 using Bale.Core.Api.Api.V2.Recommendations;
 using Bale.Core.Api.Api.V2.Requests;
@@ -74,6 +75,11 @@ namespace Bale.Core.Api.Api.V2
         public global::Bale.Core.Api.Api.V2.Library.LibraryRequestBuilder Library
         {
             get => new global::Bale.Core.Api.Api.V2.Library.LibraryRequestBuilder(PathParameters, RequestAdapter);
+        }
+        /// <summary>The playback property</summary>
+        public global::Bale.Core.Api.Api.V2.Playback.PlaybackRequestBuilder Playback
+        {
+            get => new global::Bale.Core.Api.Api.V2.Playback.PlaybackRequestBuilder(PathParameters, RequestAdapter);
         }
         /// <summary>The profiles property</summary>
         public global::Bale.Core.Api.Api.V2.Profiles.ProfilesRequestBuilder Profiles
