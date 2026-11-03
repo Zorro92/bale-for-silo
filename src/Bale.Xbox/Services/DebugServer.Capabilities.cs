@@ -25,7 +25,7 @@ internal sealed partial class DebugServer
             return true;
         }
         var builder = new StringBuilder("Decoders (installed; not a guarantee of playback/profile support or passthrough):\n");
-        if (Run("video")) await AppendDecodersAsync(builder, CodecKind.Video, ["H264", "HEVC", "VP8", "VP9", "AV1", "MPEG2", "VC1"]);
+        if (Run("video")) await AppendVideoDecodersBySubtypeAsync(builder);
         if (Run("audio")) await AppendDecodersAsync(builder, CodecKind.Audio, ["AAC", "AC3", "EAC3", "DTS", "DTS-HD", "TrueHD/MLP", "FLAC", "ALAC", "Opus", "MP3", "PCM"]);
         // These view-scoped display APIs must run on the UI thread, unlike codec/device enumeration.
         if (Run("display")) builder.Append("Display:\n").Append(await OnUiAsync(DescribeDisplayCapabilities));
@@ -73,6 +73,39 @@ internal sealed partial class DebugServer
             // MLP FourCC, also used by LAVFilters common/includes/moreuuids.h (no SDK property).
             ("20504c4d-0000-0010-8000-00aa00389b71", "TrueHD/MLP"),
         ]);
+    }
+
+    // On the Xbox, an unfiltered video CodecQuery ends the app natively before it returns, so
+    // video asks for one subtype at a time (each logged first, to name the one that fails).
+    private static readonly (string Name, string Subtype)[] VideoSubtypes =
+    [
+        ("H264", CodecSubtypes.VideoFormatH264),
+        ("HEVC", CodecSubtypes.VideoFormatHevc),
+        ("VP8", CodecSubtypes.VideoFormatVP80),
+        ("VP9", CodecSubtypes.VideoFormatVP90),
+        ("AV1", "31305641-0000-0010-8000-00aa00389b71"),
+        ("MPEG2", CodecSubtypes.VideoFormatMpeg2),
+        ("VC1", CodecSubtypes.VideoFormatWvc1),
+        ("DolbyVision dvhe", "65687664-0000-0010-8000-00aa00389b71"), // FourCC literals: CI's projection may predate these
+        ("DolbyVision dvh1", "31687664-0000-0010-8000-00aa00389b71"),
+    ];
+
+    private static async Task AppendVideoDecodersBySubtypeAsync(StringBuilder builder)
+    {
+        builder.Append("  Video (queried per subtype):\n");
+        foreach (var (name, subtype) in VideoSubtypes)
+        {
+            try
+            {
+                Log.Info($"Debug caps: video {name}");
+                var codecs = await new CodecQuery().FindAllAsync(CodecKind.Video, CodecCategory.Decoder, subtype).AsTask();
+                builder.Append($"    {name}: {(codecs.Count == 0 ? "no decoder" : string.Join("; ", codecs.Select(c => $"{EscapeText(DebugScreenText.Compact(c.DisplayName, 120))} IsTrusted={c.IsTrusted}")))}\n");
+            }
+            catch (Exception ex)
+            {
+                builder.Append($"    {name}: error: {DebugScreenText.Compact(ex.Message, 300)}\n");
+            }
+        }
     }
 
     private static async Task AppendDecodersAsync(StringBuilder builder, CodecKind kind, string[] codecNames)
