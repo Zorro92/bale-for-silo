@@ -28,6 +28,7 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
     private InputPane? _inputPane;
     private bool _keyboardVisible;
     private ConnectionPreview? _preview;
+    private Button? _httpPromptOpener;
     private SavedServerRegistry Servers => _preview?.Servers ?? AppSettings.Servers;
     internal bool IsAuthPreview => _preview is not null;
 
@@ -52,7 +53,7 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
         codeActions.EntryItem = () => NewCodeButton.Visibility == Visibility.Visible ? NewCodeButton
             : PasswordButton.Visibility == Visibility.Visible ? PasswordButton : ChangeServerButton;
         HttpPrompt.Confirmed += OnHttpConfirmed;
-        HttpPrompt.Dismissed += () => { _pendingServer = null; Log.Info("HTTP consent cancelled; credentials untouched"); RestoreFocus(); };
+        HttpPrompt.Dismissed += OnHttpDismissed;
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs args)
@@ -115,6 +116,7 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
         _probeLife?.Cancel();
         StopDiscovery();
         HttpPrompt.Hide();
+        _httpPromptOpener = null;
         _pendingServer = null;
         ClearPassword();
         _nearby = [];
@@ -132,7 +134,7 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
             _pendingServer = new ServerSetupResult(server);
             _pendingActivation = false;
             Log.Info("HTTP credential gate awaiting exact-origin consent");
-            HttpPrompt.ShowHttp(server.Authority);
+            ShowHttpPrompt(server);
             return;
         }
         if (!_expiredNotice && _preview is null && AppSettings.LoadRefreshToken(ServerAddress.ToBaseUrl(server)) is { } refresh)
@@ -348,7 +350,7 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
             {
                 _pendingServer = new ServerSetupResult(new Uri("http://192.0.2.10:8090"));
                 _pendingActivation = true;
-                HttpPrompt.ShowHttp(_pendingServer.Server!.Authority);
+                ShowHttpPrompt(_pendingServer.Server!);
             }
             if (request.Screen == ConnectionScreen.Discovery) ShowNearbyPreview();
         }
@@ -360,6 +362,38 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
         }
     }
 #endif
+
+    private void ShowHttpPrompt(Uri server, Button? opener = null)
+    {
+        _httpPromptOpener = opener;
+        HttpPrompt.ShowHttp(server.Authority);
+    }
+
+    private void OnHttpDismissed()
+    {
+        _pendingServer = null;
+        var opener = _httpPromptOpener;
+        _httpPromptOpener = null;
+        Log.Info("HTTP consent cancelled; credentials untouched");
+        if (HttpPrompt.IsOpen || !_active) return;
+        // TvServerSetupScreen.kt: Compose AlertDialog restores its opener. Never focus a field
+        // on dismissal: the activating Enter/A KeyUp can otherwise open the Xbox keyboard.
+        FrameworkElement panel = ServerPanel.Visibility == Visibility.Visible ? ServerPanel
+            : PasswordPanel.Visibility == Visibility.Visible ? PasswordPanel : CodePanel;
+        FocusRetry.Until(panel, () =>
+        {
+            if (!_active || HttpPrompt.IsOpen || panel.Visibility != Visibility.Visible
+                || (ReferenceEquals(panel, CodePanel) && PasswordPanel.Visibility == Visibility.Visible)) return true;
+            if (opener is not null && SettingsInput.IsWithin(opener, panel) && opener.Focus(FocusState.Programmatic)) return true;
+            Button primary;
+            if (ReferenceEquals(panel, ServerPanel)) primary = ConnectButton;
+            else if (ReferenceEquals(panel, PasswordPanel))
+                primary = SignInButton.IsEnabled ? SignInButton : _passwordOnly ? PasswordChangeServerButton : UsePhoneButton;
+            else primary = NewCodeButton.Visibility == Visibility.Visible ? NewCodeButton
+                : PasswordButton.Visibility == Visibility.Visible ? PasswordButton : ChangeServerButton;
+            return primary.Focus(FocusState.Programmatic);
+        });
+    }
 
     public void RestoreFocus()
     {

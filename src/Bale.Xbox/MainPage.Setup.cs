@@ -82,7 +82,7 @@ public sealed partial class MainPage
     {
         if (_connecting || HttpPrompt.IsOpen) return;
         HideKeyboard();
-        try { await ProbeServerAsync(ServerSetupAddress.Candidates(ServerBox.Text, _scheme, PortBox.Text)); }
+        try { await ProbeServerAsync(ServerSetupAddress.Candidates(ServerBox.Text, _scheme, PortBox.Text), ConnectButton); }
         catch (ArgumentException ex)
         {
             ServerError.Text = ex.Message;
@@ -92,7 +92,7 @@ public sealed partial class MainPage
         }
     }
 
-    private async Task ProbeServerAsync(IReadOnlyList<Uri> candidates)
+    private async Task ProbeServerAsync(IReadOnlyList<Uri> candidates, Button opener)
     {
         _probeLife?.Cancel();
         _probeLife?.Dispose();
@@ -133,7 +133,7 @@ public sealed partial class MainPage
             {
                 HideKeyboard();
                 Log.Info("HTTP setup gate awaiting exact-origin consent");
-                HttpPrompt.ShowHttp(server.Authority);
+                ShowHttpPrompt(server, opener);
                 return;
             }
             await FinishServerSelectionAsync(result);
@@ -152,6 +152,7 @@ public sealed partial class MainPage
 
     private async void OnHttpConfirmed()
     {
+        _httpPromptOpener = null;
         if (!_active || _pendingServer is not { Server: { } server } result) return;
         _pendingServer = null;
         try
@@ -275,7 +276,7 @@ public sealed partial class MainPage
         var index = ReferenceEquals(sender, NearbySecond) ? 1 : 0;
         if (_nearby.ElementAtOrDefault(index) is not { } row) return;
         ServerBox.Text = ServerAddress.ToBaseUrl(row.Server);
-        await ProbeServerAsync([row.Server]); // Still run the contract/setup and HTTP gates before saving anything.
+        await ProbeServerAsync([row.Server], index == 1 ? NearbySecond : NearbyFirst); // Still run the contract/setup and HTTP gates before saving anything.
     }
 
     private void ShowNearbyPreview() => UpdateNearby([
