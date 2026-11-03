@@ -42,7 +42,7 @@ public sealed class PlaybackClient
     public Task<PlaybackCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default) =>
         GetCapabilitiesAsync(_captureScope(), cancellationToken);
 
-    private async Task<PlaybackCapabilities> GetCapabilitiesAsync(PlaybackRequestScope scope, CancellationToken cancellationToken)
+    internal async Task<PlaybackCapabilities> GetCapabilitiesAsync(PlaybackRequestScope scope, CancellationToken cancellationToken)
     {
         var response = await _api.Api.V2.Playback.Capabilities.GetAsync(config => config.Options.Add(scope.Request), cancellationToken)
             .ConfigureAwait(false);
@@ -67,6 +67,21 @@ public sealed class PlaybackClient
 
         return await PostAsync("/api/v2/playback/start", request with { InstallationId = installationId },
             PlaybackJson.Default.PlaybackStartRequestV3, scope, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// loginId must be persisted with the saved login, and replaced on a new sign-in. Load Account first
+    /// after restoring tokens, as repository/SequencedPlayback.kt does before admitting playback.
+    /// </summary>
+    public PlaybackProgressReporter CreateProgressReporter(IPlaybackInstallationId installation, IPlaybackJournal journal,
+        string loginId, TimeProvider? time = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(loginId);
+        var scope = _captureScope();
+        if (string.IsNullOrWhiteSpace(scope.AccountId))
+            throw new InvalidOperationException("Load the signed-in account before creating a playback reporter.");
+        var owner = new PlaybackJournalOwner(Server.AbsoluteUri, loginId, scope.AccountId, scope.ProfileId, InstallationId(installation));
+        return new(this, journal, owner, scope, time ?? TimeProvider.System);
     }
 
     public Task<PlaybackDecision> ReplanAsync(string sessionId, PlaybackReplanRequestV3 request, IPlaybackInstallationId installation,
