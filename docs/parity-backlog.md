@@ -97,6 +97,8 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
   - Deferred: global Search's Available to request results/entry (the endpoint is generated but not wired to Search; the matched empty-state Search hint therefore does not yet lead to requestable results), audiobook request detail/create beyond the pinned movie/series contract (library-backed cards still open the library; other audiobook cards show an explanatory notice), and card-density preferences beyond the default dense layout
   - Development-only read faults: `fault requests`, `fault requests-empty`, and `fault request-detail` each affect one read and never mutate Silo records. Local Core/declarative tests, rail checks and XML/resource validation pass
   - 0.1.171 console: Windows build passes; the capability probe logs `requests_enabled=false, allowed=false, state=disabled` for this server, and the Requests row is correctly hidden (Down from History reaches Settings). Hub/detail rendering and focus checks wait for the owner to enable Requests on the server
-- [ ] Notifications inbox
+- [ ] Notifications inbox (not reachable in the official TV app; parked for the owner's call)
+  - silo-android main 65664d7: `TvInboxScreen.kt` / `TvInboxFormatters.kt` exist, but `TvMainShell.kt`, `TvRoute.kt` and `TvAppNavigation.kt` have no inbox route, menu row or gate, and `TvTopMenuBar.kt` draws no unread badge (only comments mention one). Matching the official app means Bale adds no inbox for now
+  - If the official app wires it up later, the screen is a flat newest-first list with Mark all read first when unread > 0; activating an item marks it read and opens series → episode → library target; opening the inbox does not mark anything read; no dismiss/clear-all
 - [ ] Multi-server list, password sign-in, server discovery, HTTP warning
 - [ ] Profile create / edit / manage
