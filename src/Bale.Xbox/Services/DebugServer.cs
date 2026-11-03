@@ -30,6 +30,7 @@ namespace Bale.Xbox.Services;
 ///   GET  /tree            the visible element tree with bounds and text
 ///   POST /fault/profiles  fail the next picker profile-list load once (Retry then uses the server)
 ///   POST /fault/search    fail the next title-search request once (Try again then uses the server)
+///   POST /fault/catalog   fail the next Library Browse grid page load once (Clear filters / Retry then uses the server)
 ///   POST /fault/home      fail the next Home load once (Retry then uses the server)
 ///   POST /fault/home-empty  return no rows on the next Home load once (Refresh then uses the server)
 ///   POST /fault/requests  fail the next Requests hub load once (Retry then uses the server)
@@ -56,6 +57,7 @@ internal sealed class DebugServer
 
     private static int _failProfilesOnce;
     private static int _failSearchOnce;
+    private static int _failCatalogOnce;
     private static int _homeFaultOnce;
     private static int _requestsFaultOnce;
     private static int _requestDetailFaultOnce;
@@ -100,6 +102,16 @@ internal sealed class DebugServer
         if (Interlocked.Exchange(ref _failSearchOnce, 0) != 0)
         {
             throw new HttpRequestException("Injected title-search failure (fault search).");
+        }
+    }
+
+    // TvLibraryDetailScreen.kt LibraryTab: exercise Retry / Clear filters without failing other grids.
+    // Like the search hook, this and its call site disappear when BaleDebugServer=false.
+    internal static void ThrowIfCatalogFaulted()
+    {
+        if (Interlocked.Exchange(ref _failCatalogOnce, 0) != 0)
+        {
+            throw new HttpRequestException("Injected catalog failure (fault catalog).");
         }
     }
 
@@ -201,6 +213,10 @@ internal sealed class DebugServer
                 Interlocked.Exchange(ref _failSearchOnce, 1);
                 return ("200 OK", "next title-search request will fail once; Try again will search normally\n");
 
+            case ("POST", "/fault/catalog"):
+                Interlocked.Exchange(ref _failCatalogOnce, 1);
+                return ("200 OK", "next Library Browse grid page load will fail once; Clear filters / Retry will load normally\n");
+
             case ("POST", "/fault/home"):
                 Interlocked.Exchange(ref _homeFaultOnce, 1);
                 return ("200 OK", "next Home load will fail once; existing rows survive quiet refresh failures; Retry will load normally\n");
@@ -242,7 +258,7 @@ internal sealed class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|home|home-empty|requests|requests-empty|request-detail}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 

@@ -121,6 +121,9 @@ public sealed partial class CatalogGridPage : Page, IRestoresFocus
         UpdateState();
         try
         {
+#if DEBUG_SERVER
+            if (_librarySource is { IsPersonal: false, IsCollection: false }) DebugServer.ThrowIfCatalogFaulted();
+#endif
             var page = await _entry.Source.LoadPageAsync(_entry.Client.Browse, GridArtwork, request.Continuation, _lifetime.Token);
             if (!_active || _lifetime.IsCancellationRequested || !_entry.IsCurrent(Session.Client) || !_entry.Results.Apply(request, page)) return;
             SyncCards();
