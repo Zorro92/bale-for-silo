@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <IsPackable>false</IsPackable>
+    <DefineConstants>$(DefineConstants);DEBUG_SERVER</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,6 +23,8 @@
     <Compile Include="../../src/Bale.Xbox/Services/CardMenuPlacement.cs" Link="CardMenuPlacement.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/RailScrollState.cs" Link="RailScrollState.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/TopMenuPreviewTiming.cs" Link="TopMenuPreviewTiming.cs" />
+    <!-- The DEBUG_SERVER fixture has no UWP, network, client or storage dependency. -->
+    <Compile Include="../../src/Bale.Xbox/Services/ProfilePreview.cs" Link="ProfilePreview.cs" />
     <!-- Test focus retry coordination against a minimal event/tree stand-in, not the UWP runtime. -->
     <Compile Include="../../src/Bale.Xbox/Services/FocusRetry.cs" Link="FocusRetry.cs" />
     <!-- Check declarative Skyline geometry/states on Linux; this does not render or compile UWP. -->
