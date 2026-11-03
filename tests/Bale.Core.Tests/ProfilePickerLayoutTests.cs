@@ -24,7 +24,7 @@ public sealed class ProfilePickerLayoutTests
     }
 
     [Fact]
-    public void OnlyTheAvatarIsDimmedWithThePencilAndRingDrawnAboveIt()
+    public void OnlyTheAvatarIsDimmedWithTheRingBehindBadgesAndThePencilAboveIt()
     {
         var picker = Load("ProfilesPage.xaml");
         var art = Named(picker, "Art");
@@ -32,7 +32,9 @@ public sealed class ProfilePickerLayoutTests
         Assert.Equal("{x:Bind ProfileVisibility}", (string?)avatar.Attribute("Visibility"));
         var pencil = art.Elements(Ui + "Viewbox").Single();
         Assert.Equal("{x:Bind PencilVisibility}", (string?)pencil.Attribute("Visibility"));
-        Assert.Equal("FocusRing", (string?)art.Elements().Last().Attribute(Xaml + "Name"));
+        // TvProfileSelectionScreen.kt's focusRing is drawBehind, below the avatar's KIDS/lock badges.
+        Assert.Equal("FocusRing", (string?)art.Elements().First().Attribute(Xaml + "Name"));
+        Assert.Same(pencil, art.Elements().Last());
         var delete = Named(picker, "DeleteButton");
         Assert.Equal("{x:Bind DeleteVisibility}", (string?)delete.Attribute("Visibility"));
         Assert.Equal("OnDeleteProfileClick", (string?)delete.Attribute("Click"));
