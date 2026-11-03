@@ -85,4 +85,5 @@ public sealed record PlaybackReplanRequestV3(
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(PlaybackStartRequestV3))]
 [JsonSerializable(typeof(PlaybackReplanRequestV3))]
+[JsonSerializable(typeof(PlaybackJournalEntry[]))]
 internal partial class PlaybackJson : JsonSerializerContext;

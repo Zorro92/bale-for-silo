@@ -26,7 +26,7 @@ public sealed record PlaybackJournalEntry(PlaybackJournalOwner Owner, string Ses
 
 /// <summary>
 /// repository/SequencedPlayback.kt's PlaybackJournalStore: atomic durable writes complete before returning;
-/// a failed write prevents dispatch. Give a journal one coordinator at a time. Disk persistence comes later.
+/// a failed write prevents dispatch. Give a journal one coordinator at a time.
 /// </summary>
 public interface IPlaybackJournal
 {

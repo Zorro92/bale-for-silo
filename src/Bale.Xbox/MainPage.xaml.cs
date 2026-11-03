@@ -275,6 +275,7 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
         try
         {
             client.SignIn(tokens, profileId, profileToken);
+            AppSettings.RenewPlaybackLogin();
             Session.Persist();
         }
         catch (Exception ex)

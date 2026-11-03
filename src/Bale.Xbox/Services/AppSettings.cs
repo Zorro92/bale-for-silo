@@ -30,6 +30,24 @@ internal static class AppSettings
         }
     }
 
+    // repository/SequencedPlayback.kt binds recovery to the saved login, not rotating refresh tokens.
+    public static string PlaybackLoginId
+    {
+        get
+        {
+            var key = PlaybackLoginKey;
+            if (Local.Values[key] is string id) return id;
+            id = Guid.NewGuid().ToString();
+            Local.Values[key] = id;
+            return id;
+        }
+    }
+
+    public static void RenewPlaybackLogin() => Local.Values[PlaybackLoginKey] = Guid.NewGuid().ToString();
+
+    private static string PlaybackLoginKey => "PlaybackLogin." + (Servers.Active?.Id
+        ?? throw new InvalidOperationException("Playback needs a saved server."));
+
     private static readonly Lazy<SavedServerRegistry> ServerRegistry = new(LoadServers);
     public static SavedServerRegistry Servers => ServerRegistry.Value;
 

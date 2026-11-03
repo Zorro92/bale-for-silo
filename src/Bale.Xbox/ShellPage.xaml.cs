@@ -165,6 +165,8 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         Log.Info("Shell: navigated to " + (e.Parameter as string ?? ""));
         Current = this;
         _signingOut = false;
+        // Recovery runs after the saved login and acting profile have both been restored.
+        _ = PlaybackSessions.ReplayAsync();
         // Capability probing must not depend on a successful library-list load.
         _ = RefreshRequestsCapabilityAsync();
 
