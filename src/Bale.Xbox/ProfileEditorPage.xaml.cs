@@ -54,6 +54,15 @@ public sealed partial class ProfileEditorPage : Page, IBackHandler, IRestoresFoc
         _librariesRail.EntryItem = () => _form.Access.LibraryRestrictionsEnabled ? ChooseLibraries : AllLibraries;
         _reverify = new(PinPrompt, profile => new ProfileView(profile, ProfileAvatars.ImageUrl(profile.AvatarUrl, _household!.ResolveAvatar)));
         TextPrompt.Confirmed += OnTextConfirmed;
+        foreach (var (button, label) in new (Button, TextBlock)[] {
+            (CancelButton, CancelLabel), (ShuffleButton, ShuffleLabel), (RemovePinButton, RemovePinLabel), (RetryLibraries, RetryLibrariesLabel) })
+        {
+            // The Focused state inks the ContentPresenter black, but each icon binds to its label's
+            // own Foreground, which inheritance doesn't change: set it so the glyph flips with the text
+            // (TvHeroActionPill.kt draws icon and label in one content color).
+            button.GotFocus += (_, _) => label.Foreground = new SolidColorBrush(Colors.Black);
+            button.LostFocus += (_, _) => label.ClearValue(TextBlock.ForegroundProperty);
+        }
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs args)

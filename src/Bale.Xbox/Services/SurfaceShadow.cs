@@ -59,6 +59,15 @@ public sealed partial class SurfaceShadow : DependencyObject
             // TvMarquee.kt and TvDialog.kt use Android elevation (12dp buttons, 30dp dialog).
             // UWP has no equivalent: approximate that elevation with a masked blur/offset.
             // Skyline.xaml also owns focus-glow color/opacity/offset; no resource lookup or implicit transition.
+            // A shared template can serve pills of different heights (SkylineProfileSubmitStyle and
+            // its 24dp SkylineProfileSmallActionStyle). The mask is drawn under the capsule, so a
+            // tighter radius than the control's shows as square corners around a focused pill.
+            if (element is Control { CornerRadius.TopLeft: var corner } && mask is Rectangle rectangle && rectangle.RadiusX < corner)
+            {
+                rectangle.RadiusX = corner;
+                rectangle.RadiusY = corner;
+            }
+
             var elevation = (float)GetElevation(element);
             var compositor = ElementCompositionPreview.GetElementVisual(host).Compositor;
             var shadow = compositor.CreateDropShadow();
