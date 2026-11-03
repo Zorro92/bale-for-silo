@@ -332,17 +332,17 @@ internal sealed partial class DebugServer
             var codecs = await new CodecQuery().FindAllAsync(kind, CodecCategory.Decoder, string.Empty).AsTask();
             Log.Info($"Debug caps: {kind} query returned {codecs.Count}");
             var names = KnownCodecNames();
-            var subtypes = new List<string>();
+            var observed = new List<(string DisplayName, IEnumerable<string> Subtypes)>();
             builder.Append($"  {kind}: {codecs.Count} decoders\n");
             foreach (var codec in codecs)
             {
                 Log.Info($"Debug caps: {kind} codec {codec.DisplayName}");
                 var supported = codec.Subtypes.ToList();
-                subtypes.AddRange(supported);
+                observed.Add((codec.DisplayName, supported));
                 builder.Append($"    {EscapeText(DebugScreenText.Compact(codec.DisplayName, 240))} IsTrusted={codec.IsTrusted}\n")
                     .Append("      Subtypes: ").Append(supported.Count == 0 ? "none" : string.Join(", ", supported.Select(names.Describe))).Append('\n');
             }
-            builder.Append(names.Summary(subtypes, codecNames));
+            builder.Append(names.Summary(observed, codecNames));
         }
         catch (Exception ex)
         {

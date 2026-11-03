@@ -10,6 +10,9 @@ public class DebugCodecNamesTests
         ("31435641-0000-0010-8000-00aa00389b71", "H264"),
         ("00000001-0000-0010-8000-00aa00389b71", "PCM"),
         ("00000003-0000-0010-8000-00aa00389b71", "PCM"),
+        ("e06d802c-db46-11cf-b4d1-00805f6cbbea", "AC3"),
+        ("a7fb87af-2d02-42fb-a4d4-05cd93843bdd", "EAC3"),
+        ("00002001-0000-0010-8000-00aa00389b71", "DTS"),
         ("eb27cec4-163e-4ca3-8b74-8e25f91b517e", "TrueHD/MLP"),
         ("20504c4d-0000-0010-8000-00aa00389b71", "TrueHD/MLP"),
     ]);
@@ -28,15 +31,15 @@ public class DebugCodecNamesTests
     public void UnknownAndEncodedOutputSubtypesStayRaw(string raw)
     {
         Assert.Equal(raw, Names().Describe(raw));
-        Assert.Equal("    TrueHD/MLP: supported no\n", Names().Summary([raw], ["TrueHD/MLP"]));
+        Assert.Equal("    TrueHD/MLP: no\n", Names().Summary([("Decoder MFT", [raw])], ["TrueHD/MLP"]));
     }
 
     [Fact]
-    public void AliasSupportIsUnionedAndEveryNamedCodecGetsAYesOrNo()
+    public void AliasSupportIsUnionedAndEveryNamedCodecGetsADecodeOrNativeStatus()
     {
         string[] observed = ["{31435641-0000-0010-8000-00AA00389B71}", "00000003-0000-0010-8000-00aa00389b71"];
-        Assert.Equal("    H264: supported yes\n    HEVC: supported no\n    PCM: supported yes\n    TrueHD/MLP: supported no\n",
-            Names().Summary(observed, ["H264", "HEVC", "PCM", "TrueHD/MLP"]));
+        Assert.Equal("    H264: decode yes\n    HEVC: no\n    PCM: native (no decoder needed)\n    TrueHD/MLP: no\n",
+            Names().Summary([("Decoder MFT", observed)], ["H264", "HEVC", "PCM", "TrueHD/MLP"]));
     }
 
     [Theory]
@@ -44,7 +47,7 @@ public class DebugCodecNamesTests
     [InlineData("20504c4d-0000-0010-8000-00aa00389b71")]
     public void TrueHdAndMlpAreBothRecognizedWithoutNameGuessing(string raw)
     {
-        Assert.Equal("    TrueHD/MLP: supported yes\n", Names().Summary([raw], ["TrueHD/MLP"]));
+        Assert.Equal("    TrueHD/MLP: decode yes\n", Names().Summary([("Decoder MFT", [raw])], ["TrueHD/MLP"]));
     }
 
     [Fact]
@@ -52,10 +55,74 @@ public class DebugCodecNamesTests
     {
         var names = new DebugCodecNames(
         [
-            ("00000001-0000-0010-8000-00aa00389b71", "PCM"),
-            ("{00000001-0000-0010-8000-00AA00389B71}", "PCM"),
+            ("34363248-0000-0010-8000-00aa00389b71", "H264"),
+            ("{34363248-0000-0010-8000-00AA00389B71}", "H264"),
         ]);
-        Assert.Equal("    PCM: supported yes\n", names.Summary(["00000001-0000-0010-8000-00aa00389b71"], ["PCM", "pcm"]));
+        Assert.Equal("    H264: decode yes\n", names.Summary([("Decoder MFT", ["34363248-0000-0010-8000-00aa00389b71"])], ["H264", "h264"]));
+    }
+
+    [Theory]
+    [InlineData("DTS IEC-61937 converter MFT", "00002001-0000-0010-8000-00aa00389b71", "DTS")]
+    [InlineData("Dolby TrueHD IEC-61937 converter MFT", "eb27cec4-163e-4ca3-8b74-8e25f91b517e", "TrueHD/MLP")]
+    [InlineData("Dolby MLP IEC61937 converter MFT", "20504c4d-0000-0010-8000-00aa00389b71", "TrueHD/MLP")]
+    [InlineData("dts iec61937 converter mft", "{00002001-0000-0010-8000-00AA00389B71}", "DTS")]
+    public void Iec61937ConvertersAloneNeverClaimDecoding(string displayName, string subtype, string name)
+    {
+        Assert.Equal($"    {name}: passthrough only (IEC-61937 converter)\n",
+            Names().Summary([(displayName, [subtype])], [name]));
+    }
+
+    [Fact]
+    public void DolbyDecodersAndConvertersAreReportedSeparatelyPerSubtype()
+    {
+        const string ac3 = "e06d802c-db46-11cf-b4d1-00805f6cbbea";
+        const string eac3 = "a7fb87af-2d02-42fb-a4d4-05cd93843bdd";
+        Assert.Equal("    AC3: decode yes, passthrough converter yes\n    EAC3: decode yes, passthrough converter yes\n    DTS: no\n",
+            Names().Summary(
+            [
+                ("Microsoft Dolby Digital Plus Decoder MFT", [ac3, eac3]),
+                ("Dolby Digital IEC-61937 converter MFT", [ac3]),
+                ("Dolby Digital Plus IEC61937 converter MFT", [eac3]),
+            ], ["AC3", "EAC3", "DTS"]));
+    }
+
+    [Fact]
+    public void AnotherCodecsDecoderCannotTurnAConverterIntoDecodeSupport()
+    {
+        Assert.Equal("    H264: decode yes\n    DTS: passthrough only (IEC-61937 converter)\n    EAC3: no\n",
+            Names().Summary(
+            [
+                ("Video Decoder MFT", ["34363248-0000-0010-8000-00aa00389b71"]),
+                ("DTS IEC-61937 converter MFT", ["00002001-0000-0010-8000-00aa00389b71"]),
+                ("Dolby Digital Plus Decoder MFT", []),
+            ], ["H264", "DTS", "EAC3"]));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ARealTrueHdDecoderCountsEvenWhenAConverterListsADifferentAlias(bool reverse)
+    {
+        (string DisplayName, IEnumerable<string> Subtypes)[] codecs =
+        [
+            ("TrueHD Decoder MFT", ["{EB27CEC4-163E-4CA3-8B74-8E25F91B517E}"]),
+            ("Dolby MLP IEC-61937 converter MFT", ["20504c4d-0000-0010-8000-00aa00389b71"]),
+        ];
+        Assert.Equal("    TrueHD/MLP: decode yes, passthrough converter yes\n",
+            Names().Summary(reverse ? codecs.Reverse() : codecs, ["TrueHD/MLP"]));
+    }
+
+    [Fact]
+    public void NativePcmNeedsNoDecoderMft()
+    {
+        Assert.Equal("    PCM: native (no decoder needed)\n    DTS: no\n", Names().Summary([], ["PCM", "DTS"]));
+    }
+
+    [Fact]
+    public void EncodedOutputSubtypesDoNotImplyInputSupportEvenOnAConverter()
+    {
+        Assert.Equal("    TrueHD/MLP: no\n",
+            Names().Summary([("Dolby TrueHD IEC61937 converter MFT", ["0000000c-0cea-0010-8000-00aa00389b71"])], ["TrueHD/MLP"]));
     }
 
     [Fact]
@@ -74,6 +141,8 @@ public class DebugCodecNamesTests
         Assert.Contains("FindAllAsync(kind, CodecCategory.Decoder, string.Empty).AsTask()", source);
         Assert.Contains("CodecKind.Video", source);
         Assert.Contains("CodecKind.Audio", source);
+        Assert.Contains("observed.Add((codec.DisplayName, supported));", source);
+        Assert.Contains("names.Summary(observed, codecNames)", source);
         Assert.Contains("await OnUiAsync(DescribeDisplayCapabilities)", source);
         Assert.Contains("if (hdmi is null)", source);
         Assert.Contains("GetSupportedDisplayModes().Select(DescribeDisplayMode).Distinct", source);
