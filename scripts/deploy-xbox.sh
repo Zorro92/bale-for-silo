@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installs a Bale build on an Xbox in Developer Mode through Windows Device Portal, then launches it.
 #
-#   XBOX_HOST=192.168.1.50 scripts/deploy-xbox.sh            newest successful CI build on main
+#   XBOX_HOST=192.168.1.50 scripts/deploy-xbox.sh            the CI build of HEAD (waits for it; BALE_RUN_ID=<id> overrides)
 #   XBOX_HOST=192.168.1.50 scripts/deploy-xbox.sh <dir>      a package folder you already have
 #
 # Set XBOX_USER and XBOX_PASS too if Device Portal authentication is turned on in Dev Home.
@@ -15,8 +15,34 @@ trap 'rm -rf "$WORK"' EXIT
 
 DIR="${1:-}"
 if [[ -z "$DIR" ]]; then
-  RUN_ID="$(gh run list --workflow ci.yml --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId')"
-  [[ -n "$RUN_ID" ]] || { echo "No successful CI build on main yet." >&2; exit 1; }
+  # Deploy the CI run for one exact commit, never "the newest successful run": right after a
+  # run finishes, GitHub's run list can still report the previous one as newest, and a failed
+  # run would silently fall back to an older build. BALE_RUN_ID=<id> picks a run explicitly.
+  RUN_ID="${BALE_RUN_ID:-}"
+  if [[ -z "$RUN_ID" ]]; then
+    git -C "$ROOT" fetch -q origin main 2>/dev/null || true
+    SHA="$(git -C "$ROOT" rev-parse HEAD)"
+    if ! git -C "$ROOT" merge-base --is-ancestor "$SHA" origin/main 2>/dev/null; then
+      SHA="$(git -C "$ROOT" rev-parse origin/main)"
+      echo "Warning: HEAD isn't pushed; deploying origin/main (${SHA:0:7}) instead." >&2
+    fi
+    for _ in $(seq 40); do
+      RUN_ID="$(gh run list --workflow ci.yml --commit "$SHA" --event push --limit 1 --json databaseId -q '.[0].databaseId')"
+      [[ -n "$RUN_ID" ]] && break
+      sleep 3
+    done
+    [[ -n "$RUN_ID" ]] || { echo "No CI run for ${SHA:0:7} after 2 minutes." >&2; exit 1; }
+    if [[ "$(gh run view "$RUN_ID" --json status -q .status)" != completed ]]; then
+      echo "Waiting for CI run $RUN_ID (${SHA:0:7})..."
+      gh run watch "$RUN_ID" >/dev/null || true
+    fi
+    CONCLUSION="$(gh run view "$RUN_ID" --json conclusion -q .conclusion)"
+    if [[ "$CONCLUSION" != success ]]; then
+      echo "CI run $RUN_ID for ${SHA:0:7} ended '$CONCLUSION'; not deploying an older build in its place." >&2
+      echo "Fix CI, or set BALE_RUN_ID to a specific run." >&2
+      exit 1
+    fi
+  fi
   DIR="$ROOT/.cache/build-$RUN_ID"
   if [[ ! -d "$DIR" ]]; then
     echo "Downloading CI build $RUN_ID..."

@@ -53,7 +53,7 @@ The Xbox app only compiles on Windows: push to `main` and GitHub Actions builds 
 MSIX (~2 min). Then, with `XBOX_HOST` set to the console's IP:
 
 ```sh
-./scripts/deploy-xbox.sh        # install the newest CI build and launch it
+./scripts/deploy-xbox.sh        # install the CI build of HEAD (waits for CI) and launch it
 ./scripts/bale-debug.sh log     # follow the live log
 ./scripts/bale-debug.sh press down down a     # real gamepad input: up down left right a b menu view lb rb lt rt
 ./scripts/bale-debug.sh key escape            # real keystrokes
