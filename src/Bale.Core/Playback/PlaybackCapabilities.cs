@@ -46,8 +46,8 @@ public static class ConsoleEvidence
         {
             // H.264/AAC MP4 playback is verified on the console (docs/player-plan.md).
             new VideoDecodeCapability("h264", "Media Foundation", [], [], [8], 1920, 1080, 60, 25000, true),
-            // HEVC MP4 playback is verified, but Main10 is not (docs/player-plan.md); claim only 8-bit.
-            new VideoDecodeCapability("hevc", "Media Foundation", [], [], [8], 1920, 1080, 60, 25000, true),
+            // HEVC MP4 playback, including Main10, is verified on the console (docs/player-plan.md).
+            new VideoDecodeCapability("hevc", "Media Foundation", [], [], [8, 10], 1920, 1080, 60, 25000, true),
         }),
         DisplayHdrEvidence = "exact",
     };

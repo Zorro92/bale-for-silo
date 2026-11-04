@@ -136,12 +136,13 @@ public class PlaybackStartTests
         Assert.Empty(caps.GetProperty("codecs_video_hardware").EnumerateArray());
         var videoDecode = caps.GetProperty("video_decode").EnumerateArray().ToArray();
         Assert.Equal(new[] { "h264", "hevc" }, videoDecode.Select(entry => entry.GetProperty("codec").GetString()));
+        Assert.Equal(new[] { 8 }, videoDecode[0].GetProperty("bit_depths").EnumerateArray().Select(value => value.GetInt32()));
+        Assert.Equal(new[] { 8, 10 }, videoDecode[1].GetProperty("bit_depths").EnumerateArray().Select(value => value.GetInt32()));
         Assert.All(videoDecode, entry =>
         {
             Assert.Equal("Media Foundation", entry.GetProperty("decoder_name").GetString());
             Assert.Empty(entry.GetProperty("profiles").EnumerateArray());
             Assert.Empty(entry.GetProperty("levels").EnumerateArray());
-            Assert.Equal(new[] { 8 }, entry.GetProperty("bit_depths").EnumerateArray().Select(value => value.GetInt32()));
             Assert.Equal(1920, entry.GetProperty("max_width").GetInt32());
             Assert.Equal(1080, entry.GetProperty("max_height").GetInt32());
             Assert.Equal(60, entry.GetProperty("max_frame_rate").GetDouble());

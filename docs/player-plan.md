@@ -11,6 +11,11 @@ historical; use them only for intent.
 The engine is Windows' built-in `MediaPlayer` + `MediaPlayerElement`: hardware decode, HDR output and
 Dolby/DTS passthrough on the console. It only uses decoders registered with Windows.
 
+Server behavior: any video transcode re-encodes audio to AAC (max 6 ch); silo-server's
+`planVideoTranscodeV3` always adds `audio_to_aac`. Audio is only copied when the video is copied
+(direct play or remux). So an AV1 + EAC3 5.1 file arrives as HEVC + AAC 5.1 until Bale can decode
+AV1 itself.
+
 Evidence so far (console, `bale-debug.sh caps`, build 0.1.200):
 
 | | |
@@ -26,11 +31,12 @@ Evidence so far (console, `bale-debug.sh caps`, build 0.1.200):
 | Clip | Result |
 |---|---|
 | MP4 H.264 + AAC, MP4 HEVC (2 clips), MP4 AC3, MP4 EAC3 | **plays** |
+| MP4 HEVC Main10 1280x720 (SDR and HDR10-tagged), MP4 HEVC 3840x2160 8-bit | **plays** (0.1.215). Bale claims HEVC 8 and 10-bit. |
 | MP4 / WebM AV1 (8-bit and 10-bit) | **fails**: `UnsupportedSubtype`, MediaFailed 0xC00D5212 (no decoder). Definitive: MediaPlayer can't play AV1 here. |
 | WebM VP8+Vorbis, VP9, VP9+Opus | opens, decoders report FullySupported, but never leaves Paused at 0 s. Unexplained; WebM is rare in libraries, so don't claim it. |
 | MP4 FLAC, MP4 Opus | `UnsupportedSubtype`: MP4's `fLaC`/`Opus` sample entries aren't mapped, though the FLAC/Opus decoders exist. Retest inside MKV with real files. |
 
-Still to test with real library files: MKV, HEVC Main10, TrueHD/DTS passthrough to a receiver.
+Still to test with real library files: TrueHD/DTS passthrough to a receiver.
 
 The capability claims Bale sends the server must come from this kind of evidence, never from
 guesses. `playtest` (debug only) checks actual playback, not just installed decoders.

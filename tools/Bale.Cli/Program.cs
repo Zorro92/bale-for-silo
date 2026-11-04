@@ -131,6 +131,16 @@ switch (command)
             Console.WriteLine($"delivery={plan.Delivery} protocol={stream.Protocol} container={stream.Container} mime={stream.MimeType}");
             Console.WriteLine($"url={scheme} query-keys=[{keys}] header-keys=[{string.Join(",", stream.Headers?.AdditionalData.Keys ?? [])}]");
             Console.WriteLine($"reason={plan.DecisionReason} quirks=[{string.Join(",", plan.AppliedQuirks?.Select(q => q.Id) ?? [])}] warnings=[{string.Join(",", plan.DegradationWarnings?.Select(w => w.Code) ?? [])}]");
+            var source = plan.Source;
+            var recipe = plan.EffectiveRecipe;
+            Console.WriteLine($"source container={source?.Container} video={source?.VideoCodec}" +
+                $" profile={source?.VideoProfile} level={source?.VideoLevel} bits={source?.BitDepth}" +
+                $" {source?.Width}x{source?.Height}@{source?.FrameRate} range={source?.DynamicRange}" +
+                $" kbps={source?.BitrateKbps} audio={source?.AudioCodec} ch={source?.AudioChannels} layout={source?.AudioLayout}");
+            Console.WriteLine($"recipe video={recipe?.VideoCodec} sample={recipe?.VideoSampleEntry}" +
+                $" {recipe?.Width}x{recipe?.Height} audio={recipe?.AudioCodec} ch={recipe?.AudioChannels}" +
+                $" seg={recipe?.SegmentContainer} kbps={recipe?.BitrateKbps} quality={plan.ActiveQuality}" +
+                $" corrections=[{string.Join(",", plan.RuntimeCorrections ?? [])}]");
             Console.WriteLine($"resolves={Bale.Core.Playback.PlaybackMediaUrl.Resolve(raw, client.Server) is not null}");
             Console.WriteLine($"timeline source={plan.Timeline?.SourceStartSeconds} player={plan.Timeline?.PlayerStartSeconds} offset={plan.Timeline?.TimelineOffsetSeconds} duration={plan.Source?.DurationSeconds}");
         }
