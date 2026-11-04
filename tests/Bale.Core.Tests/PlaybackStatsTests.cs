@@ -12,9 +12,9 @@ public class PlaybackStatsTests
         var stats = new PlaybackStats
         {
             BackendDisplayName = "Windows MediaPlayer",
-            BackendRoute = "Direct play",
-            SubtitleRendering = "burn_in",
-            HardContainers = "mp4, mkv",
+            BackendRoute = "Native Direct",
+            SubtitleRendering = "Media3Text", // Exercise the row order for a backend with a renderer.
+            HardContainers = "No",
             VideoCodec = "HEVC",
             Resolution = "1920x1080",
             FrameRate = 23.976023,
@@ -25,6 +25,7 @@ public class PlaybackStatsTests
             EstimatedBandwidthBps = 151_300_000,
             DroppedFrames = 2,
             AudioUnderruns = 1,
+            Delivery = "Direct play (source_compatible)",
             Source = "mkv · hevc · Main 10 · 10-bit · 1920x1080 · aac 6 ch",
             MediaBitrateBps = 19_000_000,
             BufferingCount = 3,
@@ -33,9 +34,9 @@ public class PlaybackStatsTests
         Assert.Equal(new (string, string)[]
         {
             ("Backend", "Windows MediaPlayer"),
-            ("Route", "Direct play"),
-            ("Subtitles", "burn_in"),
-            ("Hard containers", "mp4, mkv"),
+            ("Route", "Native Direct"),
+            ("Subtitles", "Media3Text"),
+            ("Hard containers", "No"),
             ("Video codec", "HEVC"),
             ("Resolution", "1920x1080"),
             ("Frame rate", "23.976 fps"),
@@ -46,6 +47,7 @@ public class PlaybackStatsTests
             ("Estimated bandwidth", "151.3 Mbps"),
             ("Dropped frames", "2"),
             ("Audio underruns", "1"),
+            ("Delivery", "Direct play (source_compatible)"),
             ("Source", "mkv · hevc · Main 10 · 10-bit · 1920x1080 · aac 6 ch"),
             ("Media bitrate", "19.0 Mbps"),
             ("Buffering", "3 times, 2.8 s"),
@@ -75,10 +77,10 @@ public class PlaybackStatsTests
     [Fact]
     public void SparseRowsKeepTheirRelativeOrderAndZeroBandwidthIsAValue()
     {
-        var stats = new PlaybackStats { AudioCodec = "AAC", EstimatedBandwidthBps = 0, Source = "mp4" };
+        var stats = new PlaybackStats { AudioCodec = "AAC", EstimatedBandwidthBps = 0, Delivery = "Remux", Source = "mp4" };
         Assert.Equal(new (string, string)[]
         {
-            ("Audio codec", "AAC"), ("Estimated bandwidth", "0 bps"), ("Source", "mp4"),
+            ("Audio codec", "AAC"), ("Estimated bandwidth", "0 bps"), ("Delivery", "Remux"), ("Source", "mp4"),
         }, stats.HudRows());
     }
 
@@ -116,18 +118,67 @@ public class PlaybackStatsTests
     }
 
     [Theory]
-    [InlineData("original_http", "Direct play")]
-    [InlineData("server_remux_hls", "Remux")]
-    [InlineData("server_remux_progressive", "Remux")]
-    [InlineData("server_transcode_hls", "Transcode")]
-    [InlineData("progressive", "progressive")]
-    [InlineData(null, null)]
-    public void RouteDescribesDeliveryAndAppendsTheDecisionReason(string? delivery, string? route)
+    [InlineData("original_http", "Direct play", "Native Direct")]
+    [InlineData("server_remux_hls", "Remux", "HLS")]
+    [InlineData("server_remux_progressive", "Remux", "Native Direct")]
+    [InlineData("server_transcode_hls", "Transcode", "HLS")]
+    [InlineData("progressive", "Direct play", "Native Direct")]
+    [InlineData(null, null, null)]
+    public void BackendRouteIsSeparateFromDeliveryAndItsDecisionReason(string? delivery, string? decision, string? route)
     {
         var plan = new PlaybackPlan { Delivery = delivery, DecisionReason = "source_compatible" };
-        Assert.Equal(route is null ? null : route + " (source_compatible)", PlaybackStats.FromPlan(plan).BackendRoute);
+        var stats = PlaybackStats.FromPlan(plan);
+        Assert.Equal(route, stats.BackendRoute);
+        Assert.Equal(decision is null ? null : decision + " (source_compatible)", stats.Delivery);
         plan.DecisionReason = null;
-        Assert.Equal(route, PlaybackStats.FromPlan(plan).BackendRoute);
+        stats = PlaybackStats.FromPlan(plan);
+        Assert.Equal(route, stats.BackendRoute);
+        Assert.Equal(decision, stats.Delivery);
+    }
+
+    [Fact]
+    public void RouteAndFrameRateUseTheStreamProtocolOrActualTransport()
+    {
+        var plan = new PlaybackPlan
+        {
+            Delivery = "original_http",
+            Stream = new StreamV3 { Protocol = "HLS" },
+            Source = new PlaybackSource { FrameRate = 23.976 },
+            EffectiveRecipe = new EffectiveRecipeV3 { FrameRate = 24 },
+        };
+        var stats = PlaybackStats.FromPlan(plan);
+        Assert.Equal("HLS", stats.BackendRoute);
+        Assert.Equal(24, stats.FrameRate);
+        stats = PlaybackStats.FromPlan(plan, isHls: false);
+        Assert.Equal("Native Direct", stats.BackendRoute);
+        Assert.Equal(23.976, stats.FrameRate);
+        plan.Stream = null;
+        stats = PlaybackStats.FromPlan(plan, isHls: true);
+        Assert.Equal("HLS", stats.BackendRoute);
+        Assert.Equal(24, stats.FrameRate);
+    }
+
+    [Theory]
+    [InlineData(true, null, 23.976, 30.0, 23.976)]
+    [InlineData(true, 24.0, 23.976, 30.0, 24.0)]
+    [InlineData(true, 24.0, null, 30.0, 24.0)]
+    [InlineData(true, null, null, 30.0, null)]
+    [InlineData(true, null, 23.976, null, 23.976)]
+    [InlineData(false, 24.0, 23.976, 30.0, 30.0)]
+    [InlineData(false, 24.0, 23.976, null, 23.976)]
+    [InlineData(false, 24.0, null, null, null)]
+    [InlineData(false, null, null, 30.0, 30.0)]
+    public void HlsUsesPlanFrameRateWhileDirectPlayPrefersTheVideoTrack(bool isHls,
+        double? recipeFrameRate, double? sourceFrameRate, double? trackFrameRate, double? expected)
+    {
+        var plan = new PlaybackPlan
+        {
+            Delivery = isHls ? "server_transcode_hls" : "original_http",
+            EffectiveRecipe = new EffectiveRecipeV3 { FrameRate = recipeFrameRate },
+            Source = new PlaybackSource { FrameRate = sourceFrameRate },
+        };
+        Assert.Equal(expected, PlaybackStats.ResolveFrameRate(plan, isHls, trackFrameRate));
+        Assert.Equal(isHls ? recipeFrameRate ?? sourceFrameRate : sourceFrameRate, PlaybackStats.FromPlan(plan).FrameRate);
     }
 
     [Fact]
@@ -147,7 +198,8 @@ public class PlaybackStatsTests
         var stats = PlaybackStats.FromPlan(plan);
         Assert.Equal("mkv · hevc · Main 10 · 10-bit · 3840x2160 · eac3 6 ch", stats.Source);
         Assert.Equal("SDR", stats.HdrMode);
-        Assert.Equal("burn_in", stats.SubtitleRendering);
+        Assert.Null(stats.SubtitleRendering);
+        Assert.DoesNotContain(stats.HudRows(), row => row.Label == "Subtitles");
         Assert.Equal(19_000_000, stats.MediaBitrateBps);
         Assert.Null(stats.EstimatedBandwidthBps);
         Assert.Null(stats.VideoCodec); // Runtime codec/resolution must come from the opened item.
@@ -165,6 +217,8 @@ public class PlaybackStatsTests
         Assert.Equal("SDR", stats.HdrMode);
         Assert.Null(stats.Source);
         Assert.Null(stats.BackendRoute);
+        Assert.Null(stats.Delivery);
+        Assert.Null(stats.FrameRate);
         Assert.Null(stats.MediaBitrateBps);
         Assert.Null(PlaybackStats.FromPlan(new PlaybackPlan { EffectiveRecipe = new EffectiveRecipeV3 { BitrateKbps = long.MaxValue } }).MediaBitrateBps);
     }
@@ -184,7 +238,8 @@ public class PlaybackStatsTests
             Stream = new StreamV3 { Url = "https://example.invalid/video?st=secret" },
         };
         var stats = PlaybackStats.FromPlan(plan);
-        Assert.Equal("Direct play", stats.BackendRoute);
+        Assert.Equal("Native Direct", stats.BackendRoute);
+        Assert.Equal("Direct play", stats.Delivery);
         Assert.Equal("mkv · hevc", stats.Source);
         Assert.DoesNotContain(stats.HudRows(), row => row.Value.Contains("secret", StringComparison.Ordinal));
     }

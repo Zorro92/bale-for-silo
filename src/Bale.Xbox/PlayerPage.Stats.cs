@@ -26,10 +26,11 @@ public sealed partial class PlayerPage
         catch (Exception ex) { LogFailure("stats toggle", ex); }
     }
 
-    private static PlaybackStats PlanStats(PlaybackPlan? plan) => (plan is null ? new PlaybackStats() : PlaybackStats.FromPlan(plan)) with
+    private static PlaybackStats PlanStats(PlaybackPlan? plan, bool? isHls = null) => (plan is null ? new PlaybackStats() : PlaybackStats.FromPlan(plan, isHls)) with
     {
         BackendDisplayName = "Windows MediaPlayer",
-        HardContainers = string.Join(", ", ConsoleEvidence.Default.Containers),
+        // VideoBackendCapabilities.kt reports backend support, not a claimed container list.
+        HardContainers = "No",
     };
 
     private void ResetStats(PlaybackPlan? plan = null)
@@ -42,12 +43,12 @@ public sealed partial class PlayerPage
     {
         try
         {
-            var stats = PlanStats(attempt.Plan);
+            var stats = PlanStats(attempt.Plan, attempt.Media?.Transport.IsHls);
             if (attempt.Media is { } media)
             {
                 if (media is { Opened: true, Item: { } item })
                 {
-                    stats = ReadVideoStats(stats, item);
+                    stats = ReadVideoStats(stats, item, attempt.Plan, media.Transport.IsHls);
                     stats = ReadAudioStats(stats, item);
                 }
                 long? bandwidth = null;
@@ -75,7 +76,7 @@ public sealed partial class PlayerPage
         catch (Exception ex) { LogFailure("stats refresh", ex); }
     }
 
-    private static PlaybackStats ReadVideoStats(PlaybackStats stats, MediaPlaybackItem item)
+    private static PlaybackStats ReadVideoStats(PlaybackStats stats, MediaPlaybackItem item, PlaybackPlan? plan, bool isHls)
     {
         try
         {
@@ -88,8 +89,9 @@ public sealed partial class PlayerPage
                 VideoCodec = format.Subtype,
                 Resolution = format.Width > 0 && format.Height > 0
                     ? string.Create(CultureInfo.InvariantCulture, $"{format.Width}x{format.Height}") : null,
-                FrameRate = format.FrameRate.Numerator > 0 && format.FrameRate.Denominator > 0
-                    ? (double)format.FrameRate.Numerator / format.FrameRate.Denominator : null,
+                FrameRate = PlaybackStats.ResolveFrameRate(plan, isHls,
+                    format.FrameRate.Numerator > 0 && format.FrameRate.Denominator > 0
+                        ? (double)format.FrameRate.Numerator / format.FrameRate.Denominator : null),
             };
             stats = stats with { VideoDecoderName = $"Media Foundation ({track.SupportInfo.DecoderStatus})" };
         }

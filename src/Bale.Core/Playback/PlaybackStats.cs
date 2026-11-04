@@ -25,6 +25,7 @@ public sealed record PlaybackStats
     public long? EstimatedBandwidthBps { get; init; }
     public long DroppedFrames { get; init; }
     public long AudioUnderruns { get; init; }
+    public string? Delivery { get; init; }
     public string? Source { get; init; }
     public long? MediaBitrateBps { get; init; }
     public int BufferingCount { get; init; }
@@ -57,6 +58,7 @@ public sealed record PlaybackStats
         if (AudioUnderruns > 0) Add("Audio underruns", AudioUnderruns.ToString(CultureInfo.InvariantCulture));
 
         // Bale-only diagnostics stay after the official rows so a future HUD can reuse the snapshot.
+        Add("Delivery", Delivery);
         Add("Source", Source);
         if (MediaBitrateBps is > 0 and { } bitrate) Add("Media bitrate", FormatBitrate(bitrate));
         if (BufferingCount > 0)
@@ -78,22 +80,30 @@ public sealed record PlaybackStats
     };
 
     /// <summary>Copy only diagnostic metadata, never the plan's stream URL, headers or credentials.</summary>
-    public static PlaybackStats FromPlan(PlaybackPlan plan)
+    public static PlaybackStats FromPlan(PlaybackPlan plan, bool? isHls = null)
     {
         var delivery = MetadataId(plan.Delivery);
-        var route = delivery switch
+        var decision = delivery switch
         {
-            "original_http" => "Direct play",
+            "original_http" or "progressive" => "Direct play",
             "server_transcode_hls" => "Transcode",
             not null when delivery.Contains("remux", StringComparison.OrdinalIgnoreCase) => "Remux",
             _ => delivery,
         };
-        if (route is not null && MetadataId(plan.DecisionReason) is { } reason) route += $" ({reason})";
+        if (decision is not null && MetadataId(plan.DecisionReason) is { } reason) decision += $" ({reason})";
+        var hls = isHls ?? (string.Equals(plan.Stream?.Protocol, "hls", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(delivery, "hls", StringComparison.OrdinalIgnoreCase)
+            || delivery?.EndsWith("_hls", StringComparison.OrdinalIgnoreCase) == true);
         var dynamicRange = MetadataId(plan.EffectiveRecipe?.DynamicRange) ?? MetadataId(plan.Source?.DynamicRange);
         return new()
         {
-            BackendRoute = route,
-            SubtitleRendering = MetadataId(plan.Subtitle?.Mode),
+            // PlayerViewModel.kt uses PlaybackRoute's engine/source names, not the server decision.
+            // Windows MediaPlayer is Native Direct for progressive; a future FFmpegInteropX backend
+            // must advertise its own route name.
+            BackendRoute = plan.Stream is null && delivery is null && isHls is null ? null : hls ? "HLS" : "Native Direct",
+            // VideoBackendCapabilities.kt describes the renderer, not the selection. Bale has none yet.
+            SubtitleRendering = null,
+            FrameRate = ResolveFrameRate(plan, hls, null),
             HdrMode = dynamicRange?.ToLowerInvariant() switch
             {
                 null or "sdr" => "SDR",
@@ -103,10 +113,17 @@ public sealed record PlaybackStats
                 "dolby_vision" or "dv" => "Dolby Vision",
                 _ => dynamicRange,
             },
+            Delivery = decision,
             Source = DescribeSource(plan.Source),
             MediaBitrateBps = plan.EffectiveRecipe?.BitrateKbps is > 0 and <= long.MaxValue / 1000 and { } kbps ? kbps * 1000 : null,
         };
     }
+
+    // silo-server preserves frame timing when transcoding (no -r/fps filter). Windows' HLS track
+    // encoding properties can report a placeholder, so use the recipe/source instead.
+    public static double? ResolveFrameRate(PlaybackPlan? plan, bool isHls, double? trackFrameRate) => isHls
+        ? plan?.EffectiveRecipe?.FrameRate ?? plan?.Source?.FrameRate
+        : trackFrameRate ?? plan?.Source?.FrameRate;
 
     private static string? DescribeSource(PlaybackSource? source)
     {
