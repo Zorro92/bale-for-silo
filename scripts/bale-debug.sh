@@ -13,6 +13,7 @@
 #   scripts/bale-debug.sh wait text "Clear filters"  wait for visible text (case-insensitive)
 #   scripts/bale-debug.sh wait focus Play       wait for a focused description containing Play
 #   scripts/bale-debug.sh wait --timeout 12000 loaded  default 8000 ms; 0–15000; timeout prints where and fails
+#   scripts/bale-debug.sh ffmpeg <mode>         next real-player attempt: off (default)|auto|software|system; memory only, HLS unchanged
 #   scripts/bale-debug.sh caps [section]        installed decoders, GPU decode profiles, display modes, audio mix and baseline
 #                                               (section: video, gpu, audio, display, device or graph)
 #   scripts/bale-debug.sh playtest <url> [seconds]  muted public http(s) stream probe (1–10 s, default 3)
@@ -80,6 +81,13 @@ case "${1:-}" in
   focus) curl -fsS "$BASE/focus" ;;
   where) curl -fsS --max-time 5 "$BASE/where" ;;
   caps) curl -fsS --max-time 18 -G "$BASE/caps" ${2:+--data-urlencode "only=$2"} ;;
+  ffmpeg)
+    if [[ "$#" != 2 || ! "${2:-}" =~ ^(off|auto|software|system)$ ]]; then
+      echo 'usage: scripts/bale-debug.sh ffmpeg {off|auto|software|system}' >&2
+      exit 2
+    fi
+    curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/ffmpeg" --data-urlencode "mode=$2"
+    ;;
   playtest|playtest-ffmpeg)
     playtest_route="$1"
     playtest_seconds="${3:-3}"

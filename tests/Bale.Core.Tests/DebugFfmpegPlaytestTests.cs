@@ -101,7 +101,8 @@ public class DebugFfmpegPlaytestTests
         var source = Read("DebugProcessCpu.cs.txt");
         Assert.StartsWith("#if DEBUG_SERVER", source);
         Assert.Contains("GetProcessTimes(new IntPtr(-1)", source);
-        Assert.Contains("SetLastError = true", source);
+        Assert.Contains("[LibraryImport(\"kernel32.dll\", SetLastError = true)]", source);
+        Assert.Contains("private static partial int GetProcessTimes", source);
         Assert.Contains("Marshal.GetHRForLastWin32Error()", source);
         Assert.Contains("ex.HResult", source);
         Assert.DoesNotContain("ex.Message", source);
@@ -148,8 +149,10 @@ public class DebugFfmpegPlaytestTests
             "player.PlaybackSession.PlaybackState.ToString()", "if (end > maximum) maximum = end", "Task.Delay(100)",
             "DebugFfmpegPlaytest.Verdict(didOpen, start, maximum, wall, reasons)",
         ];
-        foreach (var text in required) Assert.Contains(text, source);
-        Assert.DoesNotContain("ex.Message", source);
+        var shared = Read("DebugFfmpegSource.cs.txt");
+        Assert.Contains("DebugFfmpegSource.Configuration(decoderMode)", source);
+        foreach (var text in required) Assert.Contains(text, source + shared);
+        Assert.DoesNotContain("ex.Message", source + shared);
         Assert.DoesNotContain("args.ErrorMessage", source);
         Assert.DoesNotContain("Log.Error(", source);
         Assert.DoesNotContain("Session.Client", source);

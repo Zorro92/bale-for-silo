@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Bale.Core.Api.Models;
 using Bale.Core.Playback;
+using Bale.Xbox.Services;
 using Windows.Media.Playback;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
@@ -44,9 +45,15 @@ public sealed partial class PlayerPage
         try
         {
             var stats = PlanStats(attempt.Plan, attempt.Media?.Transport.IsHls);
+            string? processCpu = null;
             if (attempt.Media is { } media)
             {
-                if (media is { Opened: true, Item: { } item })
+                if (media.FfmpegSource is not null)
+                {
+                    stats = ReadFfmpegStats(stats, media);
+                    processCpu = ReadProcessCpu(media);
+                }
+                else if (media is { Opened: true, Item: { } item })
                 {
                     stats = ReadVideoStats(stats, item, attempt.Plan, media.Transport.IsHls);
                     stats = ReadAudioStats(stats, item);
@@ -71,9 +78,53 @@ public sealed partial class PlayerPage
                     // counter. Leave both at zero (hidden), not estimates from buffering events.
                 };
             }
-            SetStats(stats);
+            SetStats(stats, processCpu);
         }
         catch (Exception ex) { LogFailure("stats refresh", ex); }
+    }
+
+    private static PlaybackStats ReadFfmpegStats(PlaybackStats stats, Mount media)
+    {
+        stats = stats with { BackendDisplayName = $"FFmpegInteropX ({media.FfmpegMode})", BackendRoute = "FFmpeg Direct" };
+        try
+        {
+            if (media.FfmpegSource!.CurrentVideoStream is { } video)
+                stats = stats with
+                {
+                    VideoCodec = DebugScreenText.Compact(video.CodecName, 80),
+                    VideoDecoderName = DebugFfmpegSource.DecoderName(video.DecoderEngine),
+                    Resolution = video.PixelWidth > 0 && video.PixelHeight > 0
+                        ? string.Create(CultureInfo.InvariantCulture, $"{video.PixelWidth}x{video.PixelHeight}") : null,
+                    FrameRate = video.FramesPerSecond > 0 ? video.FramesPerSecond : null,
+                };
+        }
+        catch (Exception ex) { LogFailure("stats FFmpeg video", ex); }
+        try
+        {
+            if (media.FfmpegSource!.CurrentAudioStream is { } audio)
+                stats = stats with
+                {
+                    AudioCodec = DebugScreenText.Compact(audio.CodecName, 80),
+                    AudioDecoderName = DebugFfmpegSource.DecoderName(audio.DecoderEngine),
+                    AudioChannelCount = audio.Channels,
+                    AudioSampleRate = audio.SampleRate,
+                };
+        }
+        catch (Exception ex) { LogFailure("stats FFmpeg audio", ex); }
+        return stats;
+    }
+
+    private static string ReadProcessCpu(Mount media)
+    {
+        var now = Stopwatch.GetTimestamp();
+        var value = DebugProcessCpu.Read(out var failure);
+        if (failure is not null && failure != media.LastCpuFailure) Log.Info("player: " + failure);
+        media.LastCpuFailure = failure;
+        var wall = media.CpuTimestamp is { } previous ? Stopwatch.GetElapsedTime(previous, now) : TimeSpan.Zero;
+        var cores = DebugFfmpegPlaytest.CpuCores(media.CpuTime, value, wall);
+        media.CpuTime = value;
+        media.CpuTimestamp = now;
+        return failure ?? cores;
     }
 
     private static PlaybackStats ReadVideoStats(PlaybackStats stats, MediaPlaybackItem item, PlaybackPlan? plan, bool isHls)
@@ -143,9 +194,11 @@ public sealed partial class PlayerPage
         });
     }
 
-    private void SetStats(PlaybackStats stats)
+    private void SetStats(PlaybackStats stats, string? processCpu = null)
     {
         var rows = stats.HudRows();
+        // Debug-only process load is a Bale diagnostic, after the official HUD rows.
+        if (processCpu is not null) rows = [.. rows, ("CPU", processCpu)];
         if (_statsRows.SequenceEqual(rows)) return;
         _statsRows = rows;
         if (DebugStatsVisible) RenderStatsRows();

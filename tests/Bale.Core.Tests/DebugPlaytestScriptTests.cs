@@ -65,6 +65,34 @@ public class DebugPlaytestScriptTests
         Assert.Equal(builtin.Output, ffmpeg.Output);
     }
 
+    [Theory]
+    [InlineData("off")]
+    [InlineData("auto")]
+    [InlineData("software")]
+    [InlineData("system")]
+    public async Task FfmpegTogglePostsOnlyAValidatedMode(string mode)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["ffmpeg", mode]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/ffmpeg\n", result.Arguments);
+        Assert.Contains("-X\nPOST\n", result.Arguments);
+        Assert.Contains("--data-urlencode\nmode=" + mode, result.Arguments);
+        Assert.Contains("--max-time\n5\n", result.Arguments);
+    }
+
+    [Fact]
+    public async Task InvalidFfmpegToggleArgumentsNeverReachCurl()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[] { new[] { "ffmpeg" }, ["ffmpeg", "hardware"], ["ffmpeg", "Software"], ["ffmpeg", "auto", "extra"] })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
     private static async Task<(int ExitCode, string Output, string Arguments)> RunAsync(string[] arguments)
     {
         var directory = Directory.CreateTempSubdirectory("bale-curl-stub-").FullName;

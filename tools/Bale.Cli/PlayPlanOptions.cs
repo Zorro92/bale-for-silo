@@ -44,11 +44,6 @@ internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldS
         return true;
     }
 
-    internal DeviceCapabilities Capabilities() => !ClaimAv1 ? ConsoleEvidence.Default : ConsoleEvidence.Default with
-    {
-        // Deliberate debug overclaim, not new console evidence or a production capability.
-        VideoCodecs = [.. ConsoleEvidence.Default.VideoCodecs, "av1"],
-        VideoDecode = [.. ConsoleEvidence.Default.VideoDecode,
-            new("av1", "dav1d (debug claim)", [], [], [8, 10], 3840, 2160, null, null, false)],
-    };
+    internal DeviceCapabilities Capabilities() => ClaimAv1
+        ? DebugPlaybackCapabilities.Av1SoftwareClaim : ConsoleEvidence.Default;
 }

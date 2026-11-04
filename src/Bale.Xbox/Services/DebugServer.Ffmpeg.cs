@@ -65,17 +65,7 @@ internal sealed partial class DebugServer
         try
         {
             Log.Info("Debug FFmpeg: before configuration");
-            // The native default logger can print complete URLs. A null provider drops all FFmpeg logs.
-            FFmpegInteropLogging.SetLogProvider(null);
-            var config = new MediaSourceConfig();
-            config.Video.VideoDecoderMode = decoderMode switch
-            {
-                "software" => VideoDecoderMode.ForceFFmpegSoftwareDecoder,
-                "system" => VideoDecoderMode.ForceSystemDecoder,
-                _ => VideoDecoderMode.Automatic,
-            };
-            // Bound individual HTTP reads too; the overall creation deadline below covers probing.
-            config.FFmpegOptions["rw_timeout"] = "10000000";
+            var config = DebugFfmpegSource.Configuration(decoderMode);
             Log.Info("Debug FFmpeg: before create");
             var creation = FFmpegMediaSource.CreateFromUriAsync(uri.AbsoluteUri, config).AsTask();
             if (await Task.WhenAny(creation, Task.Delay(DebugFfmpegPlaytest.CreateTimeoutMs)) != creation)
@@ -190,13 +180,13 @@ internal sealed partial class DebugServer
                         builder.Append(string.Create(CultureInfo.InvariantCulture,
                             $"Video: codec={DebugScreenText.Compact(video.CodecName, 80)} {video.PixelWidth}x{video.PixelHeight}"
                             + $" fps={video.FramesPerSecond:0.###}"
-                            + $" DecoderEngine={DescribeFfmpegDecoder(video.DecoderEngine)}\n"));
+                            + $" DecoderEngine={DebugFfmpegSource.DecoderName(video.DecoderEngine)}\n"));
                     });
                     Attempt("audio snapshot", () =>
                     {
                         if (source.CurrentAudioStream is not { } audio) { builder.Append("Audio: none\n"); return; }
                         builder.Append($"Audio: codec={DebugScreenText.Compact(audio.CodecName, 80)} channels={audio.Channels}"
-                            + $" DecoderEngine={DescribeFfmpegDecoder(audio.DecoderEngine)}\n");
+                            + $" DecoderEngine={DebugFfmpegSource.DecoderName(audio.DecoderEngine)}\n");
                     });
                     Attempt("unsubscribe MediaOpened", () => player.MediaOpened -= OnOpened);
                     Attempt("unsubscribe MediaFailed", () => player.MediaFailed -= OnFailed);
@@ -290,14 +280,6 @@ internal sealed partial class DebugServer
             attempt("dispose render container", () => _container?.Dispose());
         }
     }
-
-    private static string DescribeFfmpegDecoder(DecoderEngine engine) => engine switch
-    {
-        DecoderEngine.SystemDecoder => "system",
-        DecoderEngine.FFmpegSoftwareDecoder => "FFmpeg software",
-        DecoderEngine.FFmpegD3D11HardwareDecoder => "FFmpeg D3D11",
-        _ => "unknown",
-    };
 
     private static async Task DisposeLateFfmpegSourceAsync(Task<FFmpegMediaSource> creation)
     {

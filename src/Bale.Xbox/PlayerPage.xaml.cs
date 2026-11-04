@@ -56,6 +56,10 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public bool Replanned { get; set; }
         public double Position { get; set; }
         public Mount? Media { get; set; }
+#if DEBUG_SERVER
+        // Match the capability claim and backend even if the debug toggle changes during a request/replan.
+        public string FfmpegMode { get; } = DebugFfmpegPlayback.Mode;
+#endif
         public CancellationTokenSource? ReportingCancellation { get; set; }
         public Task? ReportingTask { get; set; }
     }
@@ -148,8 +152,12 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 var startPosition = PlaybackStartPosition.ForStartRequest(request.OverridePosition,
                     request.Detail.PlaybackPositionSeconds,
                     request.SuppressResumeRewind ? 0 : PlaybackStartPosition.DefaultResumeRewindSeconds);
+                var capabilities = ConsoleEvidence.Default;
+#if DEBUG_SERVER
+                capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode);
+#endif
                 var start = attempt.Start = PlaybackStartBuilder.Build(request.Detail, request.Selection,
-                    services.ProfileId, Guid.NewGuid().ToString(), startPosition, ConsoleEvidence.Default, DeviceIdentity.Current());
+                    services.ProfileId, Guid.NewGuid().ToString(), startPosition, capabilities, DeviceIdentity.Current());
                 var decision = await client.Playback.StartAsync(start, services.Installation, ct);
                 var validation = PlaybackMessages.ValidatePlayable(decision);
                 if (!validation.IsPlayable)

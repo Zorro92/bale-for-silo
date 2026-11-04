@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 namespace Bale.Xbox.Services;
 
 /// <summary>Fresh current-process counters without the diagnostic-report cache or other-process access.</summary>
-internal static class DebugProcessCpu
+internal static partial class DebugProcessCpu
 {
     internal static TimeSpan? Read(out string? failure)
     {
@@ -20,8 +20,8 @@ internal static class DebugProcessCpu
         return null;
     }
 
-    // Blittable arguments/return value keep the P/Invoke compatible with Native AOT and disabled marshalling.
-    [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
-    private static extern int GetProcessTimes(IntPtr process, out long creation, out long exit, out long kernel, out long user);
+    // Generate the by-ref/last-error stub: DllImport cannot handle these with DisableRuntimeMarshalling=true.
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    private static partial int GetProcessTimes(IntPtr process, out long creation, out long exit, out long kernel, out long user);
 }
 #endif

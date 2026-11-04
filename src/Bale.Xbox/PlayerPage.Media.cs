@@ -6,6 +6,9 @@ using Windows.Media.Core;
 using Windows.Media.Playback;
 using Windows.Media.Streaming.Adaptive;
 using Windows.Storage.Streams;
+#if DEBUG_SERVER
+using FFmpegInteropX;
+#endif
 
 namespace Bale.Xbox;
 
@@ -37,6 +40,11 @@ public sealed partial class PlayerPage
         public AdaptiveMediaSource? Adaptive { get; set; }
         public TypedEventHandler<AdaptiveMediaSource, AdaptiveMediaSourceDownloadRequestedEventArgs>? DownloadHandler { get; set; }
 #if DEBUG_SERVER
+        public FFmpegMediaSource? FfmpegSource { get; set; }
+        public string FfmpegMode { get; set; } = "off";
+        public TimeSpan? CpuTime { get; set; }
+        public long? CpuTimestamp { get; set; }
+        public string? LastCpuFailure { get; set; }
         public MediaPlaybackItem? Item { get; set; }
         public PlaybackThroughputMeter Throughput { get; } = new();
         public int BufferingCount { get; set; }
@@ -78,7 +86,23 @@ public sealed partial class PlayerPage
             media.Stream = await transport.OpenStreamAsync(media.Token);
             media.Token.ThrowIfCancellationRequested();
             media.RandomStream = media.Stream.AsRandomAccessStream();
-            media.Source = MediaSource.CreateFromStream(media.RandomStream, transport.MimeType ?? "video/mp4");
+#if DEBUG_SERVER
+            if (DebugFfmpegPlayback.UseForDirectStream(attempt.FfmpegMode, transport.IsHls))
+            {
+                // Keep auth, profile ownership and range cancellation in Core; FFmpeg receives bytes, not a bare URI.
+                media.FfmpegMode = attempt.FfmpegMode;
+                Log.Info($"player: FFmpeg {media.FfmpegMode} before create stream");
+                var config = DebugFfmpegSource.Configuration(media.FfmpegMode);
+                media.FfmpegSource = await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream, config).AsTask();
+                media.Token.ThrowIfCancellationRequested();
+                Log.Info("player: FFmpeg stream created; before item");
+                media.Item = media.FfmpegSource.CreateMediaPlaybackItem();
+            }
+            else
+#endif
+            {
+                media.Source = MediaSource.CreateFromStream(media.RandomStream, transport.MimeType ?? "video/mp4");
+            }
         }
 
         media.Token.ThrowIfCancellationRequested();
@@ -93,7 +117,7 @@ public sealed partial class PlayerPage
         player.PlaybackSession.BufferingStarted += OnStatsBufferingStarted;
         player.PlaybackSession.BufferingEnded += OnStatsBufferingEnded;
         // The item exposes the actual selected native tracks, not the source/recipe's predictions.
-        media.Item = new MediaPlaybackItem(media.Source);
+        media.Item ??= new MediaPlaybackItem(media.Source);
         player.Source = media.Item;
 #else
         player.Source = media.Source;
@@ -149,6 +173,9 @@ public sealed partial class PlayerPage
             || !IsCurrent(attempt, media) || media.FailureQueued) return;
         try
         {
+#if DEBUG_SERVER
+            if (media.FfmpegSource is { } ffmpeg) ffmpeg.PlaybackSession = sender.PlaybackSession;
+#endif
             // TvVideoPlaybackStarter.kt's player coordinate may be zero on reanchored HLS even
             // when the source is minutes into the title. Set it once, only after native opening.
             sender.PlaybackSession.Position = TimeSpan.FromSeconds(media.StartPosition);
@@ -245,6 +272,10 @@ public sealed partial class PlayerPage
         if (media.Adaptive is { } adaptive && media.DownloadHandler is { } handler)
             Cleanup("detach downloads", () => adaptive.DownloadRequested -= handler);
         Cleanup("dispose source", () => media.Source?.Dispose());
+#if DEBUG_SERVER
+        // The native source owns its MSS/item and must outlive the player, but not the authenticated stream.
+        Cleanup("dispose FFmpeg source", () => media.FfmpegSource?.Dispose());
+#endif
         Cleanup("dispose adaptive", () => media.Adaptive?.Dispose());
         Cleanup("dispose random stream", () => media.RandomStream?.Dispose());
         Cleanup("dispose stream", () => media.Stream?.Dispose());

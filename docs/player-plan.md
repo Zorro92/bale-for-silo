@@ -55,6 +55,17 @@ real-time software AV1. Until then, whatever the console can't play goes to the 
 Edge plays AV1 on this console through Chromium's own
 decoders, which doesn't prove MediaPlayer can.
 
+**Debug experiment:** `bale-debug.sh ffmpeg software` opts the next real-player attempt into
+FFmpegInteropX (`off` is the default; `auto` and `system` are also available). The toggle is memory-only,
+uses the existing MediaPlayerElement, and feeds the authenticated Core random-access stream into
+FFmpeg. HLS stays on AdaptiveMediaSource. Enabling it deliberately claims software AV1 at 8/10-bit,
+up to 3840×2160, for planning; this is **not** new console capability evidence. Backend, decoder engines,
+codecs and process CPU cores appear in Stats / `where`. Set `ffmpeg off` before returning to normal testing.
+
+The standalone `playtest-ffmpeg` URI probe is for public or independently fetchable media. A private
+`play-plan --url-file` file protects the URL on disk, but does not convey Bale's profile/authentication
+headers to FFmpeg. Use the real-player toggle for library files, under **Bale Test**.
+
 ## Phases
 
 Each phase ships on its own, is verified on the console and is ticked here.
