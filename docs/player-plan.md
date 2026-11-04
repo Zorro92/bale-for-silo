@@ -50,8 +50,8 @@ guesses. `playtest` (debug only) checks actual playback, not just installed deco
 
 **Open decision: a bundled decoder (FFmpegInteropX).** It would add software AV1 (dav1d), DTS/TrueHD
 decode without a receiver, broader MKV and ASS styling. The costs are package size, an untested
-Native AOT fit and a second pipeline. Next: a debug test build to check Native AOT activation and
-real-time software AV1. Until then, whatever the console can't play goes to the server to transcode.
+Native AOT fit and a second pipeline. The debug test build below answers the AOT and 1080p AV1
+questions. Until then, whatever the console can't play goes to the server to transcode.
 Edge plays AV1 on this console through Chromium's own
 decoders, which doesn't prove MediaPlayer can.
 
@@ -65,6 +65,23 @@ codecs and process CPU cores appear in Stats / `where`. Set `ffmpeg off` before 
 The standalone `playtest-ffmpeg` URI probe is for public or independently fetchable media. A private
 `play-plan --url-file` file protects the URL on disk, but does not convey Bale's profile/authentication
 headers to FFmpeg. Use the real-player toggle for library files, under **Bale Test**.
+
+Results (0.1.229–0.1.230, Series X, Bale Test):
+
+| Test | Result |
+|---|---|
+| Native AOT | FFmpegInteropX activates and plays; no AOT warnings. |
+| Headless probe without a render target | FFmpeg-decoded video stalls at 0 s; it needs a surface (composition or MediaPlayerElement). |
+| Chromium AV1 clips (8 and 10-bit), `auto` | dav1d software decode, real time. H.264/HEVC/VP9 go to FFmpeg's D3D11 decoder. |
+| Fight Club, AV1 Main 10-bit 1080p + EAC3 5.1 MKV, `software` | **Direct play**, real time (30.1 s per 30 s), about **1.3 CPU cores**, picture correct. |
+| Avatar: Fire and Ash, HEVC Main10 1080p + EAC3 7.1 MKV, `auto` | Direct play, real time, FFmpeg D3D11 video, 0.1–0.2 cores. |
+
+The server only accepts a software `video_decode` entry when the client sends
+`software_video_decode_v1` (silo-server `capabilities_v3.go` `videoEligibleV3`); Bale sends it only
+when such an entry exists. In this build FFmpeg decodes audio itself (EAC3 7.1 included), which
+would block Dolby/DTS passthrough; an integration must leave audio to the system path or pass it
+through. Still open: 4K AV1 in software, and what decides `auto` vs. the system decoder for formats
+Media Foundation already plays.
 
 ## Phases
 
