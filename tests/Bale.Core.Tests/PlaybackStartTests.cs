@@ -98,6 +98,28 @@ public class PlaybackStartTests
     }
 
     [Fact]
+    public void DeviceVideoDecodeDefaultsToEmpty()
+    {
+        var device = new DeviceCapabilities([], [], [], [], 2, new(), new());
+        var start = PlaybackStartBuilder.Build("file", "profile", "attempt-id", null, PlaybackSelection.Auto, device, Identity);
+
+        Assert.Empty(device.VideoDecode);
+        Assert.Empty(start.ClientCapabilities.VideoDecode);
+    }
+
+    [Fact]
+    public void BuilderCopiesDeviceVideoDecodeEntries()
+    {
+        var device = ConsoleEvidence.Default with
+        {
+            VideoDecode = [new("h264", "test decoder", ["high"], [40], [8], 1280, 720, 30, 5000, true)],
+        };
+        var start = PlaybackStartBuilder.Build("file", "profile", "attempt-id", null, PlaybackSelection.Auto, device, Identity);
+
+        Assert.Same(device.VideoDecode, start.ClientCapabilities.VideoDecode);
+    }
+
+    [Fact]
     public async Task ConsoleClaimsOnlyTheMeasuredBaselineInEveryDelivery()
     {
         var stub = new StubHandler().Enqueue(Capabilities).Enqueue(HttpStatusCode.Created, Decision);
@@ -111,6 +133,21 @@ public class PlaybackStartTests
         Assert.False(caps.GetProperty("hdr").GetBoolean());
         Assert.Empty(caps.GetProperty("audio_passthrough").GetProperty("passthrough_codecs").EnumerateArray());
         Assert.Equal("platform_attested", caps.GetProperty("video_evidence").GetString());
+        Assert.Empty(caps.GetProperty("codecs_video_hardware").EnumerateArray());
+        var videoDecode = caps.GetProperty("video_decode").EnumerateArray().ToArray();
+        Assert.Equal(new[] { "h264", "hevc" }, videoDecode.Select(entry => entry.GetProperty("codec").GetString()));
+        Assert.All(videoDecode, entry =>
+        {
+            Assert.Equal("Media Foundation", entry.GetProperty("decoder_name").GetString());
+            Assert.Empty(entry.GetProperty("profiles").EnumerateArray());
+            Assert.Empty(entry.GetProperty("levels").EnumerateArray());
+            Assert.Equal(new[] { 8 }, entry.GetProperty("bit_depths").EnumerateArray().Select(value => value.GetInt32()));
+            Assert.Equal(1920, entry.GetProperty("max_width").GetInt32());
+            Assert.Equal(1080, entry.GetProperty("max_height").GetInt32());
+            Assert.Equal(60, entry.GetProperty("max_frame_rate").GetDouble());
+            Assert.Equal(25000, entry.GetProperty("max_bitrate_kbps").GetInt32());
+            Assert.True(entry.GetProperty("hardware").GetBoolean());
+        });
         var context = json.RootElement.GetProperty("client_playback_context");
         Assert.Equal("tv", context.GetProperty("form_factor").GetString());
         Assert.Equal("0.1.0", context.GetProperty("app_version").GetString());

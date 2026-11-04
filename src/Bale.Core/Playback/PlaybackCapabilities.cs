@@ -18,6 +18,7 @@ public sealed record DeviceCapabilities(
     public string VideoEvidence { get; init; } = "platform_attested";
     public string AudioEvidence { get; init; } = "platform_attested";
     public IReadOnlyList<string> HardwareVideoCodecs { get; init; } = [];
+    public IReadOnlyList<VideoDecodeCapability> VideoDecode { get; init; } = [];
     public IReadOnlyList<AudioPassthroughEntry> PassthroughEntries { get; init; } = [];
     public string DisplayHdrEvidence { get; init; } = "unknown";
     public bool OriginalHttpSupported { get; init; } = true;
@@ -39,11 +40,32 @@ public static class ConsoleEvidence
         Hdr: new(), // The measured display reports SDR only, regardless of installed HEVC decoding.
         Subtitles: new()) // No subtitle rendering has been measured yet; permit server burn-in instead.
     {
+        // Mirror silo-apple's iosApp/iosApp/Shared/AppleDecodeCapabilities.swift bounded attestation.
+        // The display tops out at 1080p (docs/player-plan.md), so make no 4K claim.
+        VideoDecode = Array.AsReadOnly(new[]
+        {
+            // H.264/AAC MP4 playback is verified on the console (docs/player-plan.md).
+            new VideoDecodeCapability("h264", "Media Foundation", [], [], [8], 1920, 1080, 60, 25000, true),
+            // HEVC MP4 playback is verified, but Main10 is not (docs/player-plan.md); claim only 8-bit.
+            new VideoDecodeCapability("hevc", "Media Foundation", [], [], [8], 1920, 1080, 60, 25000, true),
+        }),
         DisplayHdrEvidence = "exact",
     };
 }
 
 // Wire shapes from shared/src/commonMain/kotlin/org/siloserver/silo/model/playback/PlaybackModels.kt.
+public sealed record VideoDecodeCapability(
+    string Codec,
+    string? DecoderName,
+    IReadOnlyList<string> Profiles,
+    IReadOnlyList<int> Levels,
+    IReadOnlyList<int> BitDepths,
+    int? MaxWidth,
+    int? MaxHeight,
+    double? MaxFrameRate,
+    int? MaxBitrateKbps,
+    bool Hardware);
+
 public sealed record HdrCapabilities
 {
     public bool Hdr10 { get; init; }
@@ -84,6 +106,7 @@ public sealed record ClientCodecCapabilities(
     string AudioEvidence,
     IReadOnlyList<string> CodecsVideo,
     IReadOnlyList<string> CodecsVideoHardware,
+    IReadOnlyList<VideoDecodeCapability> VideoDecode,
     IReadOnlyList<string> CodecsAudio,
     IReadOnlyList<string> Containers,
     bool Hdr,

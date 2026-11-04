@@ -35,7 +35,7 @@ public static class PlaybackStartBuilder
 
         var passthrough = new AudioPassthroughCapabilities(device.AudioPassthroughCodecs, device.MaxChannels, device.PassthroughEntries);
         var caps = new ClientCodecCapabilities(device.VideoEvidence, device.AudioEvidence, device.VideoCodecs,
-            device.HardwareVideoCodecs, device.AudioDecodeCodecs, device.Containers,
+            device.HardwareVideoCodecs, device.VideoDecode, device.AudioDecodeCodecs, device.Containers,
             device.Hdr.Hdr10 || device.Hdr.Hdr10Plus || device.Hdr.Hlg || device.Hdr.DolbyVisionProfiles.Count > 0,
             device.Hdr, passthrough);
         var output = new PlaybackOutputContext(device.Hdr, passthrough)
