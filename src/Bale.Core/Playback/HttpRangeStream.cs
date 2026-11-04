@@ -134,11 +134,13 @@ public sealed class HttpRangeStream : Stream
             }
             else
             {
+                bool disposed;
                 lock (_cacheLock)
                 {
-                    ThrowIfDisposed();
-                    block = FindCachedBlockLocked(index);
+                    disposed = _disposed;
+                    block = disposed ? null : FindCachedBlockLocked(index);
                 }
+                ThrowIfDisposed(disposed);
                 // Stream reads need not fill the buffer: don't wait on another block after copying bytes.
                 if (block is null) break;
                 PrefetchFollowingBlocks(index);
@@ -172,31 +174,40 @@ public sealed class HttpRangeStream : Stream
 
     private async Task<CachedBlock> GetBlockAsync(long index, CancellationToken ct)
     {
-        BlockFetch fetch;
+        BlockFetch? fetch = null;
+        CachedBlock? ready = null;
+        bool disposed;
         lock (_cacheLock)
         {
-            ThrowIfDisposed();
-            if (FindCachedBlockLocked(index) is { } cached) return cached;
-            fetch = _inFlight.TryGetValue(index, out var existing) ? existing : StartFetchLocked(index, false);
+            disposed = _disposed;
+            if (!disposed && (ready = FindCachedBlockLocked(index)) is null)
+                fetch = _inFlight.TryGetValue(index, out var existing) ? existing : StartFetchLocked(index, false);
         }
+        ThrowIfDisposed(disposed);
+        if (ready is not null) return ready;
+        var shared = fetch!;
         CachedBlock block;
         try
         {
             // A caller abandoning its read must not cancel a fetch shared with later reads.
-            block = await fetch.Task.WaitAsync(ct).ConfigureAwait(false);
+            block = await shared.Task.WaitAsync(ct).ConfigureAwait(false);
         }
-        catch (Exception) when (fetch.IsPrefetch && !ct.IsCancellationRequested && !_fetchToken.IsCancellationRequested)
+        catch (Exception) when (shared.IsPrefetch && !ct.IsCancellationRequested && !_fetchToken.IsCancellationRequested)
         {
             // Speculation gets one attempt. A read joining failed speculation gets its own demand retry policy.
             return await GetBlockAsync(index, ct).ConfigureAwait(false);
         }
         lock (_cacheLock)
         {
-            ThrowIfDisposed();
-            if (_cache.TryGetValue(index, out var cached) && ReferenceEquals(block, cached)) TouchBlockLocked(block);
-            // Waiting on speculation isn't a hit on an already-ready prefetched block.
-            block.Prefetched = false;
+            disposed = _disposed;
+            if (!disposed)
+            {
+                if (_cache.TryGetValue(index, out var cached) && ReferenceEquals(block, cached)) TouchBlockLocked(block);
+                // Waiting on speculation isn't a hit on an already-ready prefetched block.
+                block.Prefetched = false;
+            }
         }
+        ThrowIfDisposed(disposed);
         return block;
     }
 
@@ -253,18 +264,13 @@ public sealed class HttpRangeStream : Stream
                         using var body = await response.Content.ReadAsStreamAsync(_fetchToken).ConfigureAwait(false);
                         await body.ReadExactlyAsync(data, _fetchToken).ConfigureAwait(false);
                         var block = new CachedBlock(data, prefetch);
+                        var disposed = false;
                         lock (_cacheLock)
                         {
-                            ThrowIfDisposed();
-                            block.Node = _lru.AddLast(index);
-                            _cache.Add(index, block);
-                            if (_cache.Count > CacheCapacity)
-                            {
-                                var oldest = _lru.First!;
-                                _cache.Remove(oldest.Value);
-                                _lru.RemoveFirst();
-                            }
+                            disposed = _disposed;
+                            if (!disposed) AddBlockLocked(index, block);
                         }
+                        ThrowIfDisposed(disposed);
                         return block;
                     }
                     catch (Exception error) when (!prefetch && attempt == 0 && error is IOException or HttpRequestException)
@@ -281,6 +287,18 @@ public sealed class HttpRangeStream : Stream
         finally
         {
             lock (_cacheLock) _inFlight.Remove(index);
+        }
+    }
+
+    private void AddBlockLocked(long index, CachedBlock block)
+    {
+        block.Node = _lru.AddLast(index);
+        _cache.Add(index, block);
+        if (_cache.Count > CacheCapacity)
+        {
+            var oldest = _lru.First!;
+            _cache.Remove(oldest.Value);
+            _lru.RemoveFirst();
         }
     }
 
@@ -334,14 +352,19 @@ public sealed class HttpRangeStream : Stream
 
     private async Task ReopenSequentialAsync(CancellationToken ct)
     {
-        HttpResponseMessage? previous;
+        HttpResponseMessage? previous = null;
+        bool disposed;
         lock (_cacheLock)
         {
-            ThrowIfDisposed();
-            previous = _response;
-            _response = null;
-            _body = null;
+            disposed = _disposed;
+            if (!disposed)
+            {
+                previous = _response;
+                _response = null;
+                _body = null;
+            }
         }
+        ThrowIfDisposed(disposed);
         previous?.Dispose();
         // A 200 response at open means Range is unsupported. Reopen at zero and let the same
         // skip-reader advance to the target, rather than mistaking a full body for a ranged one.
@@ -355,11 +378,15 @@ public sealed class HttpRangeStream : Stream
             var body = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
             lock (_cacheLock)
             {
-                ThrowIfDisposed();
-                _response = response;
-                _body = body;
-                _bodyPosition = 0;
+                disposed = _disposed;
+                if (!disposed)
+                {
+                    _response = response;
+                    _body = body;
+                    _bodyPosition = 0;
+                }
             }
+            ThrowIfDisposed(disposed);
         }
         catch
         {
@@ -440,5 +467,9 @@ public sealed class HttpRangeStream : Stream
         base.Dispose(disposing);
     }
 
-    private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
+    // Every lock in this type records disposal and throws after leaving the lock. A disposal racing a
+    // background fetch threw inside the lock, and on 2-CPU CI runners the lock stayed held by an idle
+    // pool thread (seen in a dump), which hung Dispose for good.
+    private void ThrowIfDisposed() => ThrowIfDisposed(_disposed);
+    private void ThrowIfDisposed(bool disposed) => ObjectDisposedException.ThrowIf(disposed, this);
 }
