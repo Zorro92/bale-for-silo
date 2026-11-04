@@ -89,7 +89,17 @@ public sealed partial class PlayerPage : Page, IBackHandler
 
     private async void OnRetryClick(object sender, RoutedEventArgs e)
     {
-        try { await StartAttemptAsync(); }
+        try
+        {
+            // TvPlayerViewModel.kt retry(): resume exactly where it failed, with no skip-back nudge.
+            if (_request is { } request)
+                _request = request with
+                {
+                    OverridePosition = _sourcePosition > 0 ? _sourcePosition : null,
+                    SuppressResumeRewind = true,
+                };
+            await StartAttemptAsync();
+        }
         catch (Exception ex) { LogFailure("retry", ex); }
     }
 
@@ -126,7 +136,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 // TvVideoPlaybackStarter.kt uses the leaf's user-data position. ResumeSeconds is
                 // only PlayLabel's thresholded display value; never use a series container's clock.
                 var startPosition = PlaybackStartPosition.ForStartRequest(request.OverridePosition,
-                    request.Detail.PlaybackPositionSeconds);
+                    request.Detail.PlaybackPositionSeconds,
+                    request.SuppressResumeRewind ? 0 : PlaybackStartPosition.DefaultResumeRewindSeconds);
                 var start = attempt.Start = PlaybackStartBuilder.Build(request.Detail, request.Selection,
                     services.ProfileId, Guid.NewGuid().ToString(), startPosition, ConsoleEvidence.Default, DeviceIdentity.Current());
                 var decision = await client.Playback.StartAsync(start, services.Installation, ct);
@@ -284,6 +295,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 [], 1, position, failure);
             var decision = await attempt.Client.Playback.ReplanAsync(attempt.SessionId!, request,
                 services.Installation, attempt.Cancellation.Token);
+            // Outcome and reason are server enum codes; never log the plan, its URL or message.
+            Log.Info($"player: replan outcome={decision.Outcome} reason={decision.Terminal?.Reason}");
             if (!PlaybackMessages.ValidatePlayable(decision).IsPlayable)
             {
                 await ShowErrorAsync(PlaybackMessages.PlaybackFailed);
@@ -468,9 +481,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
             _shutdown = null;
             _timer.Start();
             // Suspension stops the session, rather than playing unexpectedly on resume. Retry
-            // starts a fresh attempt from the final source position, including a prior Start Over.
-            if (_request is { } request)
-                _request = request with { OverridePosition = _sourcePosition };
+            // starts a fresh attempt from the final source position (OnRetryClick).
             await ShowErrorAsync(PlaybackMessages.PlaybackFailed);
         }
         catch (Exception ex) { LogFailure("resume", ex); }

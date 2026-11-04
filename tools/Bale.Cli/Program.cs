@@ -86,6 +86,21 @@ switch (command)
         }
     }
 
+    case "progress":
+    {
+        // Read-only: what a profile's Detail sees as progress (defaults to Bale Test, like play-plan).
+        if (args.Length < 2) return Usage();
+        using var client = await CliSession.ResumeAsync(identity, cts.Token);
+        if (client is null) { Console.Error.WriteLine("Not signed in."); return 1; }
+        var profileName = args.Length > 2 ? string.Join(' ', args.Skip(2)) : "Bale Test";
+        var profile = (await client.GetProfilesAsync(cts.Token)).FirstOrDefault(p => p.Name == profileName);
+        if (profile?.Id is null) { Console.Error.WriteLine($"No profile named {profileName}."); return 1; }
+        client.UseProfile(profile.Id);
+        var detail = await client.Detail.LoadAsync(args[1], cts.Token);
+        Console.WriteLine($"{detail.Title} resume={detail.ResumeSeconds} position={detail.PlaybackPositionSeconds} flags={detail.Flags} play={detail.PlayTargetId}");
+        return 0;
+    }
+
     case "play-plan":
     {
         if (args.Length < 2) return Usage();
@@ -122,9 +137,11 @@ switch (command)
         {
             var journal = new Bale.Core.Playback.FilePlaybackJournal(Path.Combine(Path.GetTempPath(), "bale-cli-playback.json"));
             var reporter = client.Playback.CreateProgressReporter(installation, journal, "bale-cli");
+            // BALE_STOP_AT=<seconds> stops at that position instead of 0 (a progress write, Bale Test only).
+            var stopAt = double.TryParse(Environment.GetEnvironmentVariable("BALE_STOP_AT"), System.Globalization.CultureInfo.InvariantCulture, out var at) ? at : 0;
             await reporter.AttachSessionAsync(sessionId, 0, true);
-            await reporter.StopAsync(sessionId, 0, true, cts.Token);
-            Console.WriteLine("session stopped");
+            try { await reporter.StopAsync(sessionId, stopAt, true, cts.Token); Console.WriteLine($"session stopped at {stopAt}"); }
+            catch (Exception ex) { Console.WriteLine($"stop failed type={ex.GetType().Name} status={(ex as Microsoft.Kiota.Abstractions.ApiException)?.ResponseStatusCode}"); }
         }
         return 0;
     }

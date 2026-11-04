@@ -25,6 +25,7 @@ public sealed partial class PlayerPage
         public CancellationToken Token { get; }
         public double StartPosition { get; set; }
         public bool Opened { get; set; }
+        public bool Started { get; set; }
         public bool FailureQueued { get; set; }
         public MediaPlayer? Player { get; set; }
         public MediaSource? Source { get; set; }
@@ -170,10 +171,14 @@ public sealed partial class PlayerPage
     private void UpdatePlaybackState(Attempt attempt, Mount media)
     {
         var state = media.Player!.PlaybackSession.PlaybackState;
+        if (state == MediaPlaybackState.Playing) media.Started = true;
+        // ExoPlayer stays STATE_BUFFERING from prepare until ready, so PlayerSpinnerVisibility.kt sees
+        // one continuous load. MediaPlayer still reports Paused right after Play(); counting that as
+        // paused restarted the 500 ms show delay mid-load. Paused only counts once playback has begun.
         _state = !media.Opened ? "loading" : state switch
         {
             MediaPlaybackState.Playing => "playing",
-            MediaPlaybackState.Paused => "paused",
+            MediaPlaybackState.Paused => media.Started ? "paused" : "loading",
             MediaPlaybackState.Buffering => "buffering",
             _ => "loading",
         };
