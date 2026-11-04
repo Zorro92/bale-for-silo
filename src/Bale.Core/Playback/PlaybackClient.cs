@@ -28,15 +28,26 @@ public sealed class PlaybackClient
 {
     private readonly SiloApiClient _api;
     private readonly IRequestAdapter _adapter;
+    private readonly HttpClient _http;
     private readonly Func<PlaybackRequestScope> _captureScope;
     internal Uri Server { get; }
 
-    internal PlaybackClient(SiloApiClient api, IRequestAdapter adapter, Uri server, Func<PlaybackRequestScope> captureScope)
+    internal PlaybackClient(SiloApiClient api, IRequestAdapter adapter, HttpClient http, Uri server, Func<PlaybackRequestScope> captureScope)
     {
         _api = api;
         _adapter = adapter;
+        _http = http;
         Server = server;
         _captureScope = captureScope;
+    }
+
+    /// <summary>Capture this plan's credential owner once; later reads must never adopt another viewer.</summary>
+    public PlaybackMedia OpenMedia(PlaybackPlan plan)
+    {
+        var scope = _captureScope();
+        var uri = PlaybackMediaUrl.Resolve(plan.Stream?.Url, Server)
+            ?? throw new InvalidDataException("The playback plan has no playable stream.");
+        return new(_http, Server, scope, plan, uri);
     }
 
     public Task<PlaybackCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default) =>

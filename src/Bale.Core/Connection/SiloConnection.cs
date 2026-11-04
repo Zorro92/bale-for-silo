@@ -40,5 +40,7 @@ public sealed class SiloConnection : IDisposable
 
     internal IRequestAdapter RequestAdapter { get; }
 
+    internal HttpClient Http => _http;
+
     public void Dispose() => _http.Dispose();
 }

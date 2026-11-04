@@ -39,7 +39,7 @@ public sealed class SiloClient : IDisposable
         Detail = new DetailFeed(_connection.Api, Browse);
         People = new People.PersonFeed(_connection.Api, Browse);
         Requests = new Requests.RequestsFeed(_connection.Api, _time);
-        Playback = new Playback.PlaybackClient(_connection.Api, _connection.RequestAdapter, server, CapturePlaybackScope);
+        Playback = new Playback.PlaybackClient(_connection.Api, _connection.RequestAdapter, _connection.Http, server, CapturePlaybackScope);
         Profiles = new Profiles.ProfileRepository(_connection.Api, () => Interlocked.Read(ref _accountGeneration), id =>
         {
             if (ProfileId == id) UseProfile(null);
