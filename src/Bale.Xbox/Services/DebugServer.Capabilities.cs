@@ -294,11 +294,11 @@ internal sealed partial class DebugServer
         public int OutputFormat;
     }
 
-    // Blittable arguments and raw COM calls avoid runtime COM marshalling under Native AOT.
+    // Pointer outputs avoid by-ref marshalling, which DisableRuntimeMarshalling disallows.
     [DllImport("d3d11.dll", ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
-    private static extern int D3D11CreateDevice(IntPtr adapter, int driverType, IntPtr software,
+    private static extern unsafe int D3D11CreateDevice(IntPtr adapter, int driverType, IntPtr software,
         uint flags, IntPtr featureLevels, uint featureLevelCount, uint sdkVersion,
-        out IntPtr device, out int featureLevel, out IntPtr immediateContext);
+        IntPtr* device, int* featureLevel, IntPtr* immediateContext);
 
     private static unsafe void AppendGpuCapabilities(StringBuilder builder)
     {
@@ -310,8 +310,9 @@ internal sealed partial class DebugServer
             builder.Append("GPU (D3D11 hardware video decode; independent of installed decoders):\n");
             Log.Info("Debug caps: gpu before device creation");
             // HARDWARE=1, VIDEO_SUPPORT=0x800, SDK_VERSION=7; never fall back to software.
+            var featureLevel = 0;
             Marshal.ThrowExceptionForHR(D3D11CreateDevice(IntPtr.Zero, 1, IntPtr.Zero, 0x800,
-                IntPtr.Zero, 0, 7, out device, out var featureLevel, out context));
+                IntPtr.Zero, 0, 7, &device, &featureLevel, &context));
             builder.Append($"  Feature level: 0x{featureLevel:X4}\n");
             var videoDeviceId = new Guid("10ec4d5b-975a-4689-b9e4-d0aac30fe333");
             var deviceVtable = *(void***)device;
