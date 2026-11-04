@@ -92,6 +92,7 @@ public sealed partial class DetailPage
         if (item is CardView { Card: var card })
         {
             _returnCastIndex = null;
+            _returnPlaybackFocus = null;
             _returnSimilarId = card.ContentId;
             NavigateWithReturn(typeof(DetailPage), card.ContentId);
         }
@@ -111,6 +112,7 @@ public sealed partial class DetailPage
             if (_active && ReferenceEquals(client, Session.Client) && !string.IsNullOrWhiteSpace(personId))
             {
                 _returnSimilarId = null;
+                _returnPlaybackFocus = null;
                 _returnCastIndex = Cast.Items.IndexOf(view);
                 NavigateWithReturn(typeof(PersonPage), new PersonPageEntry(personId));
             }
@@ -192,7 +194,8 @@ public sealed partial class DetailPage
         IReadOnlyList<MediaCard> Similar,
         bool SimilarLoaded,
         int? CastIndex,
-        string? SimilarId);
+        string? SimilarId,
+        PlaybackReturnFocus? PlaybackFocus);
 
     private void NavigateWithReturn(Type page, object parameter)
     {
@@ -204,7 +207,7 @@ public sealed partial class DetailPage
         var saved = new DetailReturnEntry(detail, _tabs.Select(tab => tab.Season).OfType<SeasonChoice>().ToList(),
             _selectedTab?.Season?.Number, _shownSeason, Episodes.Items.OfType<EpisodeView>().Select(view => view.Episode).ToList(),
             _seasonsLoading || _episodesLoading, _playEpisode?.ContentId, _playbackSelections,
-            _similarCards, _similarLoaded, _returnCastIndex, _returnSimilarId);
+            _similarCards, _similarLoaded, _returnCastIndex, _returnSimilarId, _returnPlaybackFocus);
         var frame = Frame;
         if (frame.Navigate(page, parameter) && frame.BackStack.Count > 0)
         {
@@ -218,6 +221,7 @@ public sealed partial class DetailPage
         _contentId = saved.Detail.ContentId;
         _returnCastIndex = saved.CastIndex;
         _returnSimilarId = saved.SimilarId;
+        _returnPlaybackFocus = saved.PlaybackFocus;
         _playbackSelections = saved.PlaybackSelections;
         ShowHero(saved.Detail);
         ShowCast(saved.Detail);
@@ -253,15 +257,29 @@ public sealed partial class DetailPage
         LoadingRing.Visibility = Visibility.Collapsed;
         if (!_similarLoaded) _ = LoadSimilarAsync(saved.Detail);
         // PageFrame restores return focus after layout, before revealing this page.
+        if (saved.PlaybackFocus is { } playback) _ = RefreshAfterPlaybackAsync(playback);
     }
 
     private void RestoreSectionFocus()
     {
         var generation = ++_focusGeneration;
+        if (_returnPlaybackFocus is { EpisodeId: null } playback)
+        {
+            var action = playback.StartOver && StartOverButton.Visibility == Visibility.Visible ? StartOverButton : PlayButton;
+            FocusRetry.Until(PageContent, () => !_active || generation != _focusGeneration || FocusAction(action));
+            return;
+        }
+
         ListView? list = null;
         Rail? rail = null;
         object? target = null;
-        if (_returnCastIndex is { } index && Cast.Items.Count > 0)
+        if (_returnPlaybackFocus?.EpisodeId is { } episodeId)
+        {
+            list = Episodes;
+            rail = _episodesRail;
+            target = Episodes.Items.OfType<EpisodeView>().FirstOrDefault(view => view.Episode.ContentId == episodeId);
+        }
+        else if (_returnCastIndex is { } index && Cast.Items.Count > 0)
         {
             list = Cast;
             rail = _castRail;

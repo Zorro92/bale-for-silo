@@ -192,6 +192,7 @@ public sealed partial class DetailFeed
             Versions = item.Versions ?? [],
             PlaybackVariants = item.PlaybackVariants ?? [],
             LastFileId = item.UserData?.LastFileId,
+            PlaybackPositionSeconds = isSeries || type == "season" ? null : item.UserData?.PositionSeconds,
             EffectiveSubtitleLanguage = item.EffectiveSubtitleLanguage,
             EffectiveSubtitleMode = item.EffectiveSubtitleMode,
             EffectiveShowForcedSubtitles = item.EffectiveShowForcedSubtitles,

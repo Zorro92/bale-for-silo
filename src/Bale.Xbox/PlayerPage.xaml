@@ -1,0 +1,23 @@
+<Page
+    x:Class="Bale.Xbox.PlayerPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="Black"
+    IsTabStop="True"
+    UseSystemFocusVisuals="False">
+
+  <Grid Background="Black">
+    <MediaPlayerElement x:Name="Video" AreTransportControlsEnabled="False" Stretch="Uniform" IsTabStop="False" />
+    <!-- TvPlayerScreen.kt TvPlayerLoadingSpinner: one plain, centered 64dp paper spinner. -->
+    <ProgressRing x:Name="LoadingRing" Style="{StaticResource SkylinePlayerLoadingStyle}"
+                  AutomationProperties.Name="Loading" Visibility="Collapsed" IsActive="False" />
+    <!-- StatusViews.kt TvErrorScreen: keep the shared 24dp arrangement around its 8dp spacer. -->
+    <Grid x:Name="ErrorPanel" Style="{StaticResource SkylineProfileErrorScreenStyle}" Visibility="Collapsed">
+      <StackPanel Style="{StaticResource SkylineProfileErrorContentStyle}">
+        <TextBlock x:Name="ErrorText" Style="{StaticResource SkylineProfileErrorMessageStyle}" />
+        <Border Height="{StaticResource SkylineProfileErrorSpacer}" />
+        <Button x:Name="RetryButton" Content="Retry" Click="OnRetryClick" Style="{StaticResource SkylineProfileRetryStyle}" />
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Page>

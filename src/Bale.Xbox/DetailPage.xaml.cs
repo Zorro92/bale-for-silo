@@ -1009,23 +1009,18 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
     private async void OnPlayClick(object sender, RoutedEventArgs e)
     {
         // TvItemDetailScreen.kt never plays an empty series container while its target loads.
-        if (PlayTargetId is not null)
-        {
-            await PlaybackComingAsync();
-        }
+        if (PlayTargetId is { } target) await OpenPlayerAsync(target, null, fromEpisode: false);
     }
 
     private async void OnStartOverClick(object sender, RoutedEventArgs e)
     {
-        if (PlayTargetId is not null)
-        {
-            await PlaybackComingAsync();
-        }
+        if (PlayTargetId is { } target) await OpenPlayerAsync(target, 0.0, fromEpisode: false);
     }
 
-    private async void OnEpisodeClick(object sender, ItemClickEventArgs e) => await PlaybackComingAsync();
-
-    private static Task PlaybackComingAsync() => Playback.ShowComingAsync();
+    private async void OnEpisodeClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is EpisodeView view) await OpenPlayerAsync(view.Episode.ContentId, null, fromEpisode: true);
+    }
 
     private void OnMenuCardChanged(object item)
     {

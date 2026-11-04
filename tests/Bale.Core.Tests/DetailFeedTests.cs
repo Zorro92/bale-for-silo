@@ -71,6 +71,23 @@ public class DetailFeedTests
         Assert.Equal("Play S1:E2", PlayLabel.For(series, nextUp));
     }
 
+    [Theory]
+    [InlineData("movie", 20, null)]
+    [InlineData("episode", 600, 600.0)]
+    [InlineData("episode", 998, null)]
+    [InlineData("series", 600, null)]
+    [InlineData("season", 600, null)]
+    public void PlaybackKeepsLeafUserDataPositionSeparateFromTheResumeLabel(string type, double position, double? label)
+    {
+        var detail = Feed().ToDetail(new CatalogItemDetail
+        {
+            Type = type,
+            UserData = new() { PositionSeconds = position, DurationSeconds = 1000 },
+        });
+        Assert.Equal(label, detail.ResumeSeconds);
+        Assert.Equal(type is "series" or "season" ? (double?)null : position, detail.PlaybackPositionSeconds);
+    }
+
     [Fact]
     public void EpisodeCaptionsReadLikeTheOfficialRail()
     {

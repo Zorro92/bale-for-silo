@@ -1408,6 +1408,10 @@
     <Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" />
   </Style>
+  <!-- TvPlayerScreen.kt / TvPlayerChrome.kt: the player uses Paper, not the accent color. -->
+  <Style x:Key="SkylinePlayerLoadingStyle" TargetType="ProgressRing" BasedOn="{StaticResource SkylineProfileLoadingStyle}">
+    <Setter Property="Foreground" Value="#FFEDEDED" />
+  </Style>
   <Style x:Key="SkylineProfileErrorScreenStyle" TargetType="Grid">
     <Setter Property="Padding" Value="48" />
   </Style>

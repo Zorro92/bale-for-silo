@@ -43,6 +43,7 @@ namespace Bale.Xbox.Services;
 ///   POST /fault/requests  fail the next Requests hub load once (Retry then uses the server)
 ///   POST /fault/requests-empty  return no rows on the next Requests hub load once
 ///   POST /fault/request-detail  fail the next request-detail load once (Retry then uses the server)
+///   POST /fault/playback  inject a decoder failure into the current player (one replan, then error)
 ///   POST /show/login      preview Login with disposable fixtures, without any network or saved-state writes
 ///   POST /show/login/password  preview password sign-in (submissions are local simulated failures)
 ///   POST /show/servers    preview saved-server switching/removal on an in-memory registry
@@ -258,6 +259,16 @@ internal sealed partial class DebugServer
                 Interlocked.Exchange(ref _requestDetailFaultOnce, 1);
                 return ("200 OK", "next request-detail load will fail once; Retry will read normally\n");
 
+            case ("POST", "/fault/playback"):
+                var injected = false;
+                var playbackBody = await OnUiAsync(() =>
+                {
+                    injected = CurrentPage(out _) is PlayerPage player && player.DebugFailPlayback();
+                    return injected ? "injected playback decoding failure; one replan, then error\n"
+                        : "no active player pipeline\n";
+                });
+                return (injected ? "200 OK" : "409 Conflict", playbackBody);
+
             case ("POST", "/show/login"):
             case ("POST", "/show/login/expired"):
             case ("POST", "/show/login/password"):
@@ -279,7 +290,7 @@ internal sealed partial class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /caps, GET /playtest?url=...&seconds=3, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /caps, GET /playtest?url=...&seconds=3, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 
@@ -632,6 +643,11 @@ internal sealed partial class DebugServer
     private static string DescribeWhere()
     {
         var builder = new StringBuilder("Page: " + DescribePage() + "\n");
+        if (CurrentPage(out _) is PlayerPage player)
+        {
+            builder.Append("Player: ").Append(player.DebugPlayback).Append('\n');
+            builder.Append("Player error: \"").Append(EscapeText(DebugScreenText.Compact(player.DebugError))).Append("\"\n");
+        }
         var popups = OpenPopups();
         builder.Append(popups.Count == 0 ? "Overlays: none\n" : "Overlays:\n");
         foreach (var (popup, root) in popups.Take(8))

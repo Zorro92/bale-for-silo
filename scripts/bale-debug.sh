@@ -29,6 +29,7 @@
 #   scripts/bale-debug.sh fault requests        fail the next Requests hub load once
 #   scripts/bale-debug.sh fault requests-empty  return no Requests rows on the next hub load once
 #   scripts/bale-debug.sh fault request-detail  fail the next request-detail load once
+#   scripts/bale-debug.sh fault playback        inject a decoder failure into the player (one replan, then error)
 # Connection previews use disposable fixtures: no network, passwords sent, vault or saved-list writes.
 #   scripts/bale-debug.sh show login            preview phone Login (no live ticket)
 #   scripts/bale-debug.sh show login expired    preview the session-expired Login notice
@@ -154,8 +155,8 @@ case "${1:-}" in
   targets) curl -fsS "$BASE/targets" ;;
   tree) curl -fsS "$BASE/tree" ;;
   fault)
-    if [[ "$#" != 2 || ( "${2:-}" != profiles && "${2:-}" != search && "${2:-}" != catalog && "${2:-}" != home && "${2:-}" != home-empty && "${2:-}" != requests && "${2:-}" != requests-empty && "${2:-}" != request-detail ) ]]; then
-      echo "usage: scripts/bale-debug.sh fault {profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail}" >&2
+    if [[ "$#" != 2 || ( "${2:-}" != profiles && "${2:-}" != search && "${2:-}" != catalog && "${2:-}" != home && "${2:-}" != home-empty && "${2:-}" != requests && "${2:-}" != requests-empty && "${2:-}" != request-detail && "${2:-}" != playback ) ]]; then
+      echo "usage: scripts/bale-debug.sh fault {profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}" >&2
       exit 2
     fi
     curl -fsS -X POST "$BASE/fault/$2"

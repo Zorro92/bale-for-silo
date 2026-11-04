@@ -52,6 +52,12 @@ public sealed record ItemDetail(
 
     public string? LastFileId { get; init; }
 
+    /// <summary>
+    /// TvVideoPlaybackStarter.kt uses userData.positionSeconds, not the hero label's 30-second /
+    /// end-of-title threshold. Keep that raw position separate from ResumeSeconds (PlayLabel).
+    /// </summary>
+    public double? PlaybackPositionSeconds { get; init; }
+
     /// <summary>Server-resolved subtitle preferences take precedence over profile defaults (TvItemDetailViewModel.kt).</summary>
     public string? EffectiveSubtitleLanguage { get; init; }
 
