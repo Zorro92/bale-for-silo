@@ -26,6 +26,7 @@ public sealed partial class PlayerPage
         public double StartPosition { get; set; }
         public bool Opened { get; set; }
         public bool Started { get; set; }
+        public double? PlayingFrom { get; set; }
         public bool FailureQueued { get; set; }
         public MediaPlayer? Player { get; set; }
         public MediaSource? Source { get; set; }
@@ -170,15 +171,23 @@ public sealed partial class PlayerPage
 
     private void UpdatePlaybackState(Attempt attempt, Mount media)
     {
-        var state = media.Player!.PlaybackSession.PlaybackState;
-        if (state == MediaPlaybackState.Playing) media.Started = true;
+        var session = media.Player!.PlaybackSession;
+        var state = session.PlaybackState;
         // ExoPlayer stays STATE_BUFFERING from prepare until ready, so PlayerSpinnerVisibility.kt sees
-        // one continuous load. MediaPlayer still reports Paused right after Play(); counting that as
-        // paused restarted the 500 ms show delay mid-load. Paused only counts once playback has begun.
-        _state = !media.Opened ? "loading" : state switch
+        // one continuous load. MediaPlayer reports Paused right after Play() and, after a start seek,
+        // a brief Playing before Buffering; either restarted the 500 ms show delay mid-load. The first
+        // load lasts until the clock moves while Playing (OnTick re-polls until then). Measure from the
+        // first Playing sample, not StartPosition: the seek may land on an earlier keyframe.
+        if (media.Opened && !media.Started && state == MediaPlaybackState.Playing)
+        {
+            var position = session.Position.TotalSeconds;
+            media.PlayingFrom ??= position;
+            if (position > media.PlayingFrom.Value + 0.05) media.Started = true;
+        }
+        _state = !media.Opened || !media.Started ? "loading" : state switch
         {
             MediaPlaybackState.Playing => "playing",
-            MediaPlaybackState.Paused => media.Started ? "paused" : "loading",
+            MediaPlaybackState.Paused => "paused",
             MediaPlaybackState.Buffering => "buffering",
             _ => "loading",
         };

@@ -211,6 +211,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
     {
         // RecordPositionAsync needs each sample: it tracks the latest position in memory and
         // journals only 10 content seconds / pause changes; RunAsync owns the 10s HTTP heartbeat.
+        if (_attempt is { Media: { Opened: true, Started: false, FailureQueued: false, Player: not null } first } current
+            && IsCurrent(current, first)) UpdatePlaybackState(current, first);
         UpdateSpinner();
         if (_recording) return;
         _recording = true;
