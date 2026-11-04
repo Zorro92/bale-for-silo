@@ -18,7 +18,7 @@ public static class PlaybackMediaUrl
         var queryStart = raw.IndexOf('?');
         var path = queryStart < 0 ? raw : raw[..queryStart];
         if (!IsMediaPath(path, "") || !IsSafePath(path)
-            || (queryStart >= 0 && !IsSeekQuery(raw[(queryStart + 1)..]))) return null;
+            || (queryStart >= 0 && !IsPlanQuery(raw[(queryStart + 1)..]))) return null;
 
         return Uri.TryCreate(server.ToString().TrimEnd('/') + raw, UriKind.Absolute, out var uri)
             && IsAllowedChild(uri, server) ? uri : null;
@@ -61,12 +61,31 @@ public static class PlaybackMediaUrl
         return pathEnd < 0 ? raw[pathStart..] : raw[pathStart..pathEnd];
     }
 
-    private static bool IsSeekQuery(string query)
+    // StreamRequest.swift allowed only seek=. The server now also stamps a session-scoped stream token
+    // (st=) on transcode URLs (CastPlaybackPreparer.kt relies on it; the Android player passes the URL
+    // through unchanged). Accept at most one of each, nothing else. The token is a credential: never log it.
+    private static bool IsPlanQuery(string query)
     {
-        if (query.Contains('&')) return false;
-        var equals = query.IndexOf('=');
-        return equals > 0 && Uri.UnescapeDataString(query[..equals]) == "seek"
-            && double.TryParse(Uri.UnescapeDataString(query[(equals + 1)..]), NumberStyles.Float,
-                CultureInfo.InvariantCulture, out var seconds) && double.IsFinite(seconds) && seconds >= 0;
+        bool seenSeek = false, seenToken = false;
+        foreach (var pair in query.Split('&'))
+        {
+            var equals = pair.IndexOf('=');
+            if (equals <= 0) return false;
+            var key = Uri.UnescapeDataString(pair[..equals]);
+            var value = Uri.UnescapeDataString(pair[(equals + 1)..]);
+            if (key == "seek" && !seenSeek)
+            {
+                if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds)
+                    || !double.IsFinite(seconds) || seconds < 0) return false;
+                seenSeek = true;
+            }
+            else if (key == "st" && !seenToken)
+            {
+                if (string.IsNullOrWhiteSpace(value)) return false;
+                seenToken = true;
+            }
+            else return false;
+        }
+        return true;
     }
 }

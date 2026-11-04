@@ -14,6 +14,9 @@ public class PlaybackMediaUrlTests
     [InlineData("/api/v2/stream/session/file.mp4?seek=0")]
     [InlineData("/api/v2/stream/session/file.mp4?seek=1e2")]
     [InlineData("/api/v2/stream/session/file.mp4?%73eek=2%2E5")]
+    [InlineData("/api/v2/playback/transcode/session/master.m3u8?st=abc.def-_")]
+    [InlineData("/api/v2/playback/transcode/session/master.m3u8?st=abc&seek=12")]
+    [InlineData("/api/v2/stream/session/file.mp4?seek=12&st=abc")]
     public void ResolveAcceptsOnlyApiLocalMediaWithAnOptionalSeek(string raw) =>
         Assert.Equal(new Uri(Server.ToString().TrimEnd('/') + raw), PlaybackMediaUrl.Resolve(raw, Server));
 
@@ -54,6 +57,12 @@ public class PlaybackMediaUrlTests
     [InlineData("/api/v2/stream/file.mp4?seek=1&%73eek=2")]
     [InlineData("/api/v2/stream/file.mp4?seek=1&other=2")]
     [InlineData("/api/v2/stream/file.mp4?seek=1&")]
+    [InlineData("/api/v2/stream/file.mp4?st=")]
+    [InlineData("/api/v2/stream/file.mp4?st=%20")]
+    [InlineData("/api/v2/stream/file.mp4?st")]
+    [InlineData("/api/v2/stream/file.mp4?st=a&st=b")]
+    [InlineData("/api/v2/stream/file.mp4?st=a&other=b")]
+    [InlineData("/api/v2/stream/file.mp4?ST=a")]
     public void ResolveRejectsContractViolations(string? raw) => Assert.Null(PlaybackMediaUrl.Resolve(raw, Server));
 
     [Theory]

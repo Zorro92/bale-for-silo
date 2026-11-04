@@ -7,6 +7,7 @@
 //   bale-cli home [--json] [--for-you]         print the home rows Bale would show
 //   bale-cli detail <content-id>   print a title's detail page as Bale shows it
 //   bale-cli search <query>        print search results and their artwork
+//   bale-cli play-plan <content-id> [profile name]   start + stop a playback session; print the plan shape
 //   bale-cli logout
 //
 // Run with: dotnet run --project tools/Bale.Cli -- <command> ...
@@ -83,6 +84,49 @@ switch (command)
             Console.WriteLine("Canceled.");
             return 1;
         }
+    }
+
+    case "play-plan":
+    {
+        if (args.Length < 2) return Usage();
+        using var client = await CliSession.ResumeAsync(identity, cts.Token);
+        if (client is null) { Console.Error.WriteLine("Not signed in."); return 1; }
+        // Playback writes progress, so never default to the account's own profile.
+        var profileName = args.Length > 2 ? string.Join(' ', args.Skip(2)) : "Bale Test";
+        var profile = (await client.GetProfilesAsync(cts.Token)).FirstOrDefault(p => p.Name == profileName);
+        if (profile?.Id is null) { Console.Error.WriteLine($"No profile named {profileName}."); return 1; }
+        client.UseProfile(profile.Id);
+        await client.GetAccountAsync(cts.Token);
+        var capability = await client.Playback.GetCapabilitiesAsync(cts.Token);
+        var installation = new CliInstallation(capability.InstallationId!);
+        var detail = await client.Detail.LoadAsync(args[1], cts.Token);
+        var start = Bale.Core.Playback.PlaybackStartBuilder.Build(detail, Bale.Core.Detail.PlaybackSelection.Auto, profile.Id,
+            Guid.NewGuid().ToString(), null, Bale.Core.Playback.ConsoleEvidence.Default, identity);
+        var decision = await client.Playback.StartAsync(start, installation, cts.Token);
+        Console.WriteLine($"outcome={decision.Outcome} terminal={decision.Terminal?.Reason} {decision.Terminal?.Message}");
+        var plan = decision.PlaybackPlan;
+        if (plan?.Stream is { } stream)
+        {
+            // Print the URL's shape only: query values and absolute hosts can carry grants.
+            var raw = stream.Url ?? "";
+            var q = raw.IndexOf('?');
+            var path = q < 0 ? raw : raw[..q];
+            var keys = q < 0 ? "" : string.Join(",", raw[(q + 1)..].Split('&').Select(kv => kv.Split('=')[0]));
+            var scheme = path.Contains("://") ? path[..path.IndexOf("://")] + "://<host>" + new Uri(path).AbsolutePath : path;
+            Console.WriteLine($"delivery={plan.Delivery} protocol={stream.Protocol} container={stream.Container} mime={stream.MimeType}");
+            Console.WriteLine($"url={scheme} query-keys=[{keys}] header-keys=[{string.Join(",", stream.Headers?.AdditionalData.Keys ?? [])}]");
+            Console.WriteLine($"resolves={Bale.Core.Playback.PlaybackMediaUrl.Resolve(raw, client.Server) is not null}");
+            Console.WriteLine($"timeline source={plan.Timeline?.SourceStartSeconds} player={plan.Timeline?.PlayerStartSeconds} offset={plan.Timeline?.TimelineOffsetSeconds} duration={plan.Source?.DurationSeconds}");
+        }
+        if (decision.SessionId is { Length: > 0 } sessionId)
+        {
+            var journal = new Bale.Core.Playback.FilePlaybackJournal(Path.Combine(Path.GetTempPath(), "bale-cli-playback.json"));
+            var reporter = client.Playback.CreateProgressReporter(installation, journal, "bale-cli");
+            await reporter.AttachSessionAsync(sessionId, 0, true);
+            await reporter.StopAsync(sessionId, 0, true, cts.Token);
+            Console.WriteLine("session stopped");
+        }
+        return 0;
     }
 
     case "profiles" or "home" or "logout" or "detail" or "search":
@@ -205,9 +249,11 @@ catch (Bale.Core.Api.Models.Problem problem)
 
 static int Usage()
 {
-    Console.Error.WriteLine("usage: bale-cli <capability|pair-test|login> <server> | <profiles|home [--json] [--for-you]|detail <id>|search <query>|logout>");
+    Console.Error.WriteLine("usage: bale-cli <capability|pair-test|login> <server> | <profiles|home [--json] [--for-you]|detail <id>|search <query>|play-plan <id> [profile]|logout>");
     return 2;
 }
+
+internal sealed record CliInstallation(string InstallationId) : Bale.Core.Playback.IPlaybackInstallationId;
 
 /// <summary>The CLI's saved session. Only for development: the refresh token sits in a 0600 file.</summary>
 internal sealed record CliSession(string Server, string RefreshToken, string? ProfileId)
