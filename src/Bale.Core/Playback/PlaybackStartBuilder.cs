@@ -87,7 +87,7 @@ public static class PlaybackStartBuilder
         // android-shared/src/androidMain/kotlin/org/siloserver/silo/common/player/PlaybackSessionManager.kt
         // filters Off from the V3 body: the server rejects negative indexes and an absent pair means Off.
         var subtitle = selection.SubtitleIndex is >= 0 ? selection.SubtitleIndex : null;
-        return new(fileId, profileId, attemptId, PlaybackProtocol.SoloClientFeatures(context), caps, context)
+        return new(fileId, profileId, attemptId, PlaybackProtocol.SoloClientFeatures(context, caps.VideoDecode), caps, context)
         {
             StartPosition = startPosition,
             AudioTrackIndex = selection.AudioIndex,

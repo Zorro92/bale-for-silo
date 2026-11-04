@@ -8,7 +8,10 @@ public static class PlaybackProtocol
     public const int Version = 3;
     public const string SequencedProgressFeature = "sequenced_progress_v1";
 
-    public static IReadOnlyList<string> SoloClientFeatures(ClientPlaybackContext context)
+    public const string SoftwareVideoDecodeFeature = "software_video_decode_v1";
+
+    public static IReadOnlyList<string> SoloClientFeatures(ClientPlaybackContext context,
+        IReadOnlyList<VideoDecodeCapability>? videoDecode = null)
     {
         // playbackClientFeaturesV3: these describe the protocol, not Android-only engine abilities.
         var features = new List<string>
@@ -19,6 +22,9 @@ public static class PlaybackProtocol
         if (context.Deliveries.TryGetValue("original_http", out var original) && original.Subtitles.NativeEmbedded.Count > 0)
             features.Add("embedded_subtitles_v1");
         if (context.Output.AudioPassthrough.Entries.Count > 0) features.Add("layout_aware_passthrough");
+        // silo-server capabilities_v3.go videoEligibleV3 ignores non-hardware decode entries unless the
+        // client opts in. Only the debug FFmpeg claim has one; the measured baseline is all hardware.
+        if (videoDecode?.Any(decoder => !decoder.Hardware) == true) features.Add(SoftwareVideoDecodeFeature);
         // Native Media3 HLS recipes/renditions are not evidence for the Windows player.
         return features.AsReadOnly();
     }

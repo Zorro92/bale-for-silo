@@ -71,6 +71,11 @@ public class PlayPlanOptionsTests
             Bale.Core.Detail.PlaybackSelection.Auto, capabilities, PlaybackTestSupport.Identity);
         Assert.Contains("av1", start.ClientCapabilities.CodecsVideo);
         Assert.Contains("av1", start.ClientPlaybackContext.Deliveries["original_http"].VideoCodecs);
+        // silo-server videoEligibleV3 drops software entries without this opt-in.
+        Assert.Contains(PlaybackProtocol.SoftwareVideoDecodeFeature, start.ClientFeatures);
+        var baseline = PlaybackStartBuilder.Build("file", "profile", "attempt", null,
+            Bale.Core.Detail.PlaybackSelection.Auto, ConsoleEvidence.Default, PlaybackTestSupport.Identity);
+        Assert.DoesNotContain(PlaybackProtocol.SoftwareVideoDecodeFeature, baseline.ClientFeatures);
     }
 
     [Fact]
