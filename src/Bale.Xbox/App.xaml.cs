@@ -103,12 +103,24 @@ public sealed partial class App : Application
         {
             e.Handled = true;
         }
+#if DEBUG_SERVER
+        else if (sender is Frame { Content: PlayerPage player } && e.Key is VirtualKey.GamepadView or VirtualKey.I)
+        {
+            // Consume on the tunnelling pass so View/I cannot also activate a player control.
+            e.Handled = true;
+            if (!e.KeyStatus.WasKeyDown) player.ToggleDebugStats();
+        }
+#endif
     }
 
     private static void OnPreviewKeyUp(object sender, KeyRoutedEventArgs e)
     {
         // A Select released after navigation must not activate the incoming page's first control.
         if (PageFrame.IsTransitioning) e.Handled = true;
+#if DEBUG_SERVER
+        else if (sender is Frame { Content: PlayerPage } && e.Key is VirtualKey.GamepadView or VirtualKey.I)
+            e.Handled = true;
+#endif
     }
 
     /// <summary>Routes system Back through the same policy as keyboard Escape and Backspace.</summary>

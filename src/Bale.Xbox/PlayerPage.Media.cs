@@ -36,6 +36,13 @@ public sealed partial class PlayerPage
         public IInputStream? PlaylistInput { get; set; }
         public AdaptiveMediaSource? Adaptive { get; set; }
         public TypedEventHandler<AdaptiveMediaSource, AdaptiveMediaSourceDownloadRequestedEventArgs>? DownloadHandler { get; set; }
+#if DEBUG_SERVER
+        public MediaPlaybackItem? Item { get; set; }
+        public PlaybackThroughputMeter Throughput { get; } = new();
+        public int BufferingCount { get; set; }
+        public long BufferingTicks { get; set; }
+        public long? BufferingSince { get; set; }
+#endif
     }
 
     private async Task MountPlanAsync(Attempt attempt, double playerStart)
@@ -44,6 +51,9 @@ public sealed partial class PlayerPage
         var media = attempt.Media = new Mount(transport, attempt.Cancellation.Token) { StartPosition = playerStart };
         _delivery = transport.Delivery;
         _duration = transport.DurationSeconds;
+#if DEBUG_SERVER
+        ResetStats(attempt.Plan);
+#endif
         // Delivery is a protocol identifier, never a URL or server-supplied diagnostic string.
         var delivery = _delivery is { Length: > 0 and < 80 } value
             && value.All(c => char.IsAsciiLetterOrDigit(c) || c == '_') ? value : "unknown";
@@ -79,7 +89,15 @@ public sealed partial class PlayerPage
         player.PlaybackSession.PlaybackStateChanged += OnPlaybackStateChanged;
         Video.SetMediaPlayer(player);
         // Subscribe before Source: native opening/decoding can fail before MediaOpened is raised.
+#if DEBUG_SERVER
+        player.PlaybackSession.BufferingStarted += OnStatsBufferingStarted;
+        player.PlaybackSession.BufferingEnded += OnStatsBufferingEnded;
+        // The item exposes the actual selected native tracks, not the source/recipe's predictions.
+        media.Item = new MediaPlaybackItem(media.Source);
+        player.Source = media.Item;
+#else
         player.Source = media.Source;
+#endif
     }
 
     private async void OnDownloadRequested(Attempt attempt, Mount media, AdaptiveMediaSourceDownloadRequestedEventArgs args)
@@ -215,6 +233,10 @@ public sealed partial class PlayerPage
                 player.MediaFailed -= OnMediaFailed;
                 player.MediaEnded -= OnMediaEnded;
                 player.PlaybackSession.PlaybackStateChanged -= OnPlaybackStateChanged;
+#if DEBUG_SERVER
+                player.PlaybackSession.BufferingStarted -= OnStatsBufferingStarted;
+                player.PlaybackSession.BufferingEnded -= OnStatsBufferingEnded;
+#endif
             });
             Cleanup("pause pipeline", player.Pause);
             Cleanup("detach source", () => player.Source = null);

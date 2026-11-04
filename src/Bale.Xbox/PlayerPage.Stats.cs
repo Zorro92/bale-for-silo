@@ -1,0 +1,172 @@
+#if DEBUG_SERVER
+using System.Diagnostics;
+using System.Globalization;
+using Bale.Core.Api.Models;
+using Bale.Core.Playback;
+using Windows.Media.Playback;
+using Windows.UI.Xaml;
+using Windows.UI.Xaml.Controls;
+
+namespace Bale.Xbox;
+
+public sealed partial class PlayerPage
+{
+    private IReadOnlyList<(string Label, string Value)> _statsRows = [];
+
+    internal IReadOnlyList<(string Label, string Value)> DebugStatsRows => _statsRows;
+    internal bool DebugStatsVisible => StatsPanel.Visibility == Visibility.Visible;
+
+    internal void ToggleDebugStats()
+    {
+        try
+        {
+            StatsPanel.Visibility = DebugStatsVisible ? Visibility.Collapsed : Visibility.Visible;
+            if (DebugStatsVisible) RenderStatsRows();
+        }
+        catch (Exception ex) { LogFailure("stats toggle", ex); }
+    }
+
+    private static PlaybackStats PlanStats(PlaybackPlan? plan) => (plan is null ? new PlaybackStats() : PlaybackStats.FromPlan(plan)) with
+    {
+        BackendDisplayName = "Windows MediaPlayer",
+        HardContainers = string.Join(", ", ConsoleEvidence.Default.Containers),
+    };
+
+    private void ResetStats(PlaybackPlan? plan = null)
+    {
+        try { SetStats(PlanStats(plan)); }
+        catch (Exception ex) { LogFailure("stats reset", ex); }
+    }
+
+    private void RefreshStats(Attempt attempt)
+    {
+        try
+        {
+            var stats = PlanStats(attempt.Plan);
+            if (attempt.Media is { } media)
+            {
+                if (media is { Opened: true, Item: { } item })
+                {
+                    stats = ReadVideoStats(stats, item);
+                    stats = ReadAudioStats(stats, item);
+                }
+                long? bandwidth = null;
+                try
+                {
+                    if (media.Stream is { } stream)
+                        bandwidth = media.Throughput.Sample(stream.DownloadedBytes, stream.DownloadTime);
+                    else if (media.Adaptive is { } adaptive && adaptive.InboundBitsPerSecond is > 0 and <= long.MaxValue and var inbound)
+                        bandwidth = (long)inbound;
+                }
+                catch (Exception ex) { LogFailure("stats bandwidth", ex); }
+                var bufferingTicks = media.BufferingTicks;
+                if (media.BufferingSince is { } started) bufferingTicks += Math.Max(0, Stopwatch.GetTimestamp() - started);
+                stats = stats with
+                {
+                    EstimatedBandwidthBps = bandwidth,
+                    BufferingCount = media.BufferingCount,
+                    BufferingSeconds = bufferingTicks / (double)Stopwatch.Frequency,
+                    // Windows.Media.Playback exposes neither a dropped-frame nor an audio-underrun
+                    // counter. Leave both at zero (hidden), not estimates from buffering events.
+                };
+            }
+            SetStats(stats);
+        }
+        catch (Exception ex) { LogFailure("stats refresh", ex); }
+    }
+
+    private static PlaybackStats ReadVideoStats(PlaybackStats stats, MediaPlaybackItem item)
+    {
+        try
+        {
+            var index = item.VideoTracks.SelectedIndex;
+            if (index < 0 || index >= item.VideoTracks.Count) return stats;
+            var track = item.VideoTracks[index];
+            var format = track.GetEncodingProperties();
+            stats = stats with
+            {
+                VideoCodec = format.Subtype,
+                Resolution = format.Width > 0 && format.Height > 0
+                    ? string.Create(CultureInfo.InvariantCulture, $"{format.Width}x{format.Height}") : null,
+                FrameRate = format.FrameRate.Numerator > 0 && format.FrameRate.Denominator > 0
+                    ? (double)format.FrameRate.Numerator / format.FrameRate.Denominator : null,
+            };
+            stats = stats with { VideoDecoderName = $"Media Foundation ({track.SupportInfo.DecoderStatus})" };
+        }
+        catch (Exception ex) { LogFailure("stats video", ex); }
+        return stats;
+    }
+
+    private static PlaybackStats ReadAudioStats(PlaybackStats stats, MediaPlaybackItem item)
+    {
+        try
+        {
+            var index = item.AudioTracks.SelectedIndex;
+            if (index < 0 || index >= item.AudioTracks.Count) return stats;
+            var track = item.AudioTracks[index];
+            var format = track.GetEncodingProperties();
+            stats = stats with
+            {
+                AudioCodec = format.Subtype,
+                AudioChannelCount = format.ChannelCount,
+                AudioSampleRate = format.SampleRate,
+            };
+            stats = stats with { AudioDecoderName = $"Media Foundation ({track.SupportInfo.DecoderStatus})" };
+        }
+        catch (Exception ex) { LogFailure("stats audio", ex); }
+        return stats;
+    }
+
+    private void OnStatsBufferingStarted(MediaPlaybackSession sender, object args) => RecordBuffering(sender, starting: true);
+    private void OnStatsBufferingEnded(MediaPlaybackSession sender, object args) => RecordBuffering(sender, starting: false);
+
+    private void RecordBuffering(MediaPlaybackSession sender, bool starting)
+    {
+        // Capture event time before dispatch so a busy UI does not inflate the buffering duration.
+        var now = Stopwatch.GetTimestamp();
+        _ = DispatchAsync(() =>
+        {
+            if (_attempt is not { Media: { Player: { } player } media } attempt
+                || !ReferenceEquals(player.PlaybackSession, sender) || !IsCurrent(attempt, media) || media.FailureQueued) return;
+            if (starting && media.BufferingSince is null)
+            {
+                media.BufferingCount++;
+                media.BufferingSince = now;
+            }
+            else if (!starting && media.BufferingSince is { } started)
+            {
+                media.BufferingTicks += Math.Max(0, now - started);
+                media.BufferingSince = null;
+            }
+        });
+    }
+
+    private void SetStats(PlaybackStats stats)
+    {
+        var rows = stats.HudRows();
+        if (_statsRows.SequenceEqual(rows)) return;
+        _statsRows = rows;
+        if (DebugStatsVisible) RenderStatsRows();
+    }
+
+    private void RenderStatsRows()
+    {
+        StatsLeftRows.Children.Clear();
+        StatsRightRows.Children.Clear();
+        // TvPlayerHud.kt HudStatsPane: fill top-to-bottom, then across, with the extra row on the left.
+        var split = (_statsRows.Count + 1) / 2;
+        for (var i = 0; i < _statsRows.Count; i++)
+        {
+            var (label, value) = _statsRows[i];
+            var row = new Grid { Style = StatsRowStyleSource.Style };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.Children.Add(new TextBlock { Text = label, Style = StatsLabelStyleSource.Style });
+            var text = new TextBlock { Text = value, Style = StatsValueStyleSource.Style };
+            Grid.SetColumn(text, 1);
+            row.Children.Add(text);
+            (i < split ? StatsLeftRows : StatsRightRows).Children.Add(row);
+        }
+    }
+}
+#endif

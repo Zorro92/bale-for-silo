@@ -8,6 +8,23 @@
 
   <Grid Background="Black">
     <MediaPlayerElement x:Name="Video" AreTransportControlsEnabled="False" Stretch="Uniform" IsTabStop="False" />
+    <!-- Only DEBUG_SERVER code makes this visible. Read-only: it must never take player focus. -->
+    <Border x:Name="StatsPanel" Style="{StaticResource SkylinePlayerStatsPanelStyle}"
+            Visibility="Collapsed" IsHitTestVisible="False">
+      <Grid ColumnSpacing="{StaticResource SkylinePlayerStatsColumnGap}">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <StackPanel x:Name="StatsLeftRows" />
+        <StackPanel x:Name="StatsRightRows" Grid.Column="1" />
+        <!-- Copy these XAML-assigned Styles, not resource dictionary entries: Native AOT safe. -->
+        <Grid x:Name="StatsRowStyleSource" Style="{StaticResource SkylinePlayerStatsRowStyle}" Visibility="Collapsed">
+          <TextBlock x:Name="StatsLabelStyleSource" Style="{StaticResource SkylinePlayerStatsLabelStyle}" />
+          <TextBlock x:Name="StatsValueStyleSource" Style="{StaticResource SkylinePlayerStatsValueStyle}" />
+        </Grid>
+      </Grid>
+    </Border>
     <!-- TvPlayerScreen.kt TvPlayerLoadingSpinner: one plain, centered 64dp paper spinner. -->
     <ProgressRing x:Name="LoadingRing" Style="{StaticResource SkylinePlayerLoadingStyle}"
                   AutomationProperties.Name="Loading" Visibility="Collapsed" IsActive="False" />

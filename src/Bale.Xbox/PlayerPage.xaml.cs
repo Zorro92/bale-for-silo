@@ -63,6 +63,10 @@ public sealed partial class PlayerPage : Page, IBackHandler
     public PlayerPage()
     {
         InitializeComponent();
+#if DEBUG_SERVER
+        StatsPanel.Visibility = Visibility.Visible;
+        ResetStats();
+#endif
         _timer.Tick += OnTick;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
@@ -121,6 +125,9 @@ public sealed partial class PlayerPage : Page, IBackHandler
             _duration = null;
             _sourcePosition = 0;
             _state = "loading";
+#if DEBUG_SERVER
+            ResetStats();
+#endif
             SetLoading(true);
             SetDisplayActive(true);
             if (_request is not { } request || Session.Client is not { } client)
@@ -226,6 +233,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 || _attempt is not { Attached: true, Media: { Opened: true, FailureQueued: false } } attempt) return;
             _lastSample = now;
 #if DEBUG_SERVER
+            RefreshStats(attempt);
             // Range stats are a development diagnostic: counts only, never URLs.
             if (attempt.Media.Stream is { } range && now - _lastRangeLog >= 5000)
             {

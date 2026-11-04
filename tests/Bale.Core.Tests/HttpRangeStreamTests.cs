@@ -58,6 +58,56 @@ public class HttpRangeStreamTests
     }
 
     [Fact]
+    public async Task NetworkCountersExcludeCacheReadsAndTheUnconsumedProbeBody()
+    {
+        var handler = new RangeHandler { Payload = Data[..32768] };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        Assert.Equal(0, stream.DownloadedBytes);
+        Assert.Equal(TimeSpan.Zero, stream.DownloadTime);
+        await stream.ReadExactlyAsync(new byte[100]);
+        Assert.Equal(handler.Payload.Length, stream.DownloadedBytes);
+        Assert.True(stream.DownloadTime > TimeSpan.Zero);
+        var downloadTime = stream.DownloadTime;
+        stream.Position = 0;
+        await stream.ReadExactlyAsync(new byte[100]);
+        Assert.Equal(handler.Payload.Length, stream.DownloadedBytes);
+        Assert.Equal(downloadTime, stream.DownloadTime);
+        Assert.Equal(200, stream.BytesRead);
+    }
+
+    [Fact]
+    public async Task NetworkCountersIncludePartialDownloadsRetriedAfterBodyFailure()
+    {
+        var handler = new RangeHandler
+        {
+            Payload = Data[..32768],
+            FailAfterBytes = (_, request) => request == 2 ? 8192 : null,
+        };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        await stream.ReadExactlyAsync(new byte[100]);
+        Assert.Equal(handler.Payload.Length + 8192, stream.DownloadedBytes);
+        Assert.True(stream.DownloadTime > TimeSpan.Zero);
+        Assert.Equal(100, stream.BytesRead);
+        Assert.Equal(2, stream.BlockFetches);
+    }
+
+    [Fact]
+    public async Task NetworkCountersIncludeBytesDiscardedBySequentialSeeks()
+    {
+        var handler = new RangeHandler { IgnoreRanges = true };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        await stream.ReadExactlyAsync(new byte[100]);
+        stream.Position = 1000;
+        await stream.ReadExactlyAsync(new byte[100]);
+        Assert.Equal(1100, stream.DownloadedBytes);
+        Assert.True(stream.DownloadTime > TimeSpan.Zero);
+        Assert.Equal(200, stream.BytesRead);
+    }
+
+    [Fact]
     public async Task AlternatingPositionsTenMiBApartDoNotRefetchCachedBlocks()
     {
         var handler = new RangeHandler { Payload = LargeData };
@@ -121,6 +171,8 @@ public class HttpRangeStreamTests
         await stream.ReadExactlyAsync(bytes);
         Assert.Equal(Data[(2 * BlockSize)..(2 * BlockSize + bytes.Length)], bytes);
         Assert.Equal(2, stream.PrefetchHits);
+        Assert.Equal(Data.Length, stream.DownloadedBytes); // Demand and both concurrent prefetch bodies.
+        Assert.True(stream.DownloadTime > TimeSpan.Zero);
         Assert.Equal(3, maximum);
         Assert.Equal(4, handler.Requests.Count);
     }

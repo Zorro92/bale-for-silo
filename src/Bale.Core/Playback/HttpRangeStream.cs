@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Diagnostics;
 using System.Net;
 
 namespace Bale.Core.Playback;
@@ -28,7 +29,15 @@ public sealed class HttpRangeStream : Stream
     private Stream? _body;
     private long _bodyPosition;
     private long _position;
+    private long _downloadedBytes;
+    private long _downloadTicks;
     private volatile bool _disposed;
+
+    /// <summary>Actual HTTP body bytes, including prefetch, skipped bytes and partial failed downloads; cache reads do not count.</summary>
+    public long DownloadedBytes => Interlocked.Read(ref _downloadedBytes);
+
+    /// <summary>Time inside HTTP body reads, summed across concurrent fetches; excludes cache reads and idle playback.</summary>
+    public TimeSpan DownloadTime => TimeSpan.FromSeconds((double)Interlocked.Read(ref _downloadTicks) / Stopwatch.Frequency);
 
     /// <summary>Diagnostics only: counts, never offsets tied to URLs. PrefetchHits counts first use of ready prefetched blocks.</summary>
     public long Reads, BlockFetches, CacheHits, PrefetchHits, BytesRead, SmallestRead = long.MaxValue;
@@ -262,7 +271,13 @@ public sealed class HttpRangeStream : Stream
 
                         var data = new byte[size];
                         using var body = await response.Content.ReadAsStreamAsync(_fetchToken).ConfigureAwait(false);
-                        await body.ReadExactlyAsync(data, _fetchToken).ConfigureAwait(false);
+                        var downloaded = 0;
+                        while (downloaded < data.Length)
+                        {
+                            var count = await ReadNetworkAsync(body, data.AsMemory(downloaded), _fetchToken).ConfigureAwait(false);
+                            if (count == 0) throw new EndOfStreamException("The media block ended before its declared length.");
+                            downloaded += count;
+                        }
                         var block = new CachedBlock(data, prefetch);
                         var disposed = false;
                         lock (_cacheLock)
@@ -316,7 +331,7 @@ public sealed class HttpRangeStream : Stream
             {
                 await SkipToPositionAsync(token).ConfigureAwait(false);
                 var body = _body ?? throw new ObjectDisposedException(nameof(HttpRangeStream));
-                var count = await body.ReadAsync(buffer[..(int)Math.Min(buffer.Length, _length - _position)], token)
+                var count = await ReadNetworkAsync(body, buffer[..(int)Math.Min(buffer.Length, _length - _position)], token)
                     .ConfigureAwait(false);
                 if (count == 0) throw new IOException("The media stream ended before its declared length.");
                 _bodyPosition += count;
@@ -338,7 +353,7 @@ public sealed class HttpRangeStream : Stream
         {
             while (_bodyPosition < _position)
             {
-                var count = await body.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, _position - _bodyPosition)), ct)
+                var count = await ReadNetworkAsync(body, buffer.AsMemory(0, (int)Math.Min(buffer.Length, _position - _bodyPosition)), ct)
                     .ConfigureAwait(false);
                 if (count == 0) throw new IOException("The media stream ended before the seek position.");
                 _bodyPosition += count;
@@ -347,6 +362,22 @@ public sealed class HttpRangeStream : Stream
         finally
         {
             ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    private async ValueTask<int> ReadNetworkAsync(Stream body, Memory<byte> buffer, CancellationToken ct)
+    {
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            var count = await body.ReadAsync(buffer, ct).ConfigureAwait(false);
+            Interlocked.Add(ref _downloadedBytes, count);
+            return count;
+        }
+        finally
+        {
+            // Also count time spent in failed reads. This runs outside _cacheLock, just like I/O.
+            Interlocked.Add(ref _downloadTicks, Stopwatch.GetTimestamp() - started);
         }
     }
 

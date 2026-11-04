@@ -646,6 +646,10 @@ internal sealed partial class DebugServer
         if (CurrentPage(out _) is PlayerPage player)
         {
             builder.Append("Player: ").Append(player.DebugPlayback).Append('\n');
+            builder.Append("Stats: visible=").Append(player.DebugStatsVisible ? "true" : "false");
+            foreach (var (label, value) in player.DebugStatsRows)
+                builder.Append(" | ").Append(label).Append('=').Append(EscapeText(value));
+            builder.Append('\n');
             builder.Append("Player error: \"").Append(EscapeText(DebugScreenText.Compact(player.DebugError))).Append("\"\n");
         }
         var popups = OpenPopups();

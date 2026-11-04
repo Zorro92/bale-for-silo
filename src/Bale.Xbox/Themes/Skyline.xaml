@@ -1412,6 +1412,42 @@
   <Style x:Key="SkylinePlayerLoadingStyle" TargetType="ProgressRing" BasedOn="{StaticResource SkylineProfileLoadingStyle}">
     <Setter Property="Foreground" Value="#FFEDEDED" />
   </Style>
+  <!-- Debug playback readout, pending the real HUD: TvPlayerHud.kt HudStatsPane/HudReadOnlyRow
+       supplies the 26dp column gap, 34dp rows, 10dp/4dp padding and 12dp label/value gap.
+       TvPlayerChrome.kt supplies Smoke, Paper/Graphite and Row/Value type at the TV 0.86 scale. -->
+  <x:Double x:Key="SkylinePlayerStatsColumnGap">26</x:Double>
+  <Style x:Key="SkylinePlayerStatsPanelStyle" TargetType="Border">
+    <Setter Property="Width" Value="864" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+    <Setter Property="Margin" Value="48,26,0,0" />
+    <Setter Property="Padding" Value="12" />
+    <Setter Property="Background" Value="#F4131417" />
+    <Setter Property="BorderBrush" Value="#1AFFFFFF" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="10" />
+  </Style>
+  <Style x:Key="SkylinePlayerStatsRowStyle" TargetType="Grid">
+    <Setter Property="MinHeight" Value="34" />
+    <Setter Property="Padding" Value="10,4" />
+  </Style>
+  <Style x:Key="SkylinePlayerStatsLabelStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="12.9" />
+    <Setter Property="LineHeight" Value="17.2" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Foreground" Value="#FFEDEDED" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    <Setter Property="MaxLines" Value="1" />
+  </Style>
+  <Style x:Key="SkylinePlayerStatsValueStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylinePlayerStatsLabelStyle}">
+    <Setter Property="FontSize" Value="12.04" />
+    <Setter Property="LineHeight" Value="15.48" />
+    <Setter Property="Foreground" Value="#99EDEDED" />
+    <Setter Property="Margin" Value="12,0,0,0" />
+    <Setter Property="TextAlignment" Value="Right" />
+  </Style>
   <Style x:Key="SkylineProfileErrorScreenStyle" TargetType="Grid">
     <Setter Property="Padding" Value="48" />
   </Style>
