@@ -20,6 +20,9 @@ public sealed class HttpRangeStream : Stream
     private long _position;
     private bool _disposed;
 
+    /// <summary>Diagnostics only: counts, never offsets tied to URLs.</summary>
+    public long Reads, Reopens, BackwardJumps, ForwardJumps, BytesRead, SmallestRead = long.MaxValue;
+
     private HttpRangeStream(PlaybackMedia media, HttpResponseMessage response, Stream body, long length, bool supportsRanges)
     {
         _media = media;
@@ -75,6 +78,10 @@ public sealed class HttpRangeStream : Stream
             ThrowIfDisposed();
             if (buffer.Length == 0 || _position >= _length) return 0;
             var forward = _position - _bodyPosition;
+            Reads++;
+            SmallestRead = Math.Min(SmallestRead, buffer.Length);
+            if (forward < 0) BackwardJumps++;
+            else if (forward > ForwardSkipLimit) ForwardJumps++;
             if (_body is null || forward < 0 || forward > ForwardSkipLimit)
                 await ReopenAsync(_position, cancellationToken).ConfigureAwait(false);
 
@@ -88,6 +95,7 @@ public sealed class HttpRangeStream : Stream
                     if (count == 0) throw new IOException("The media stream ended before its declared length.");
                     _bodyPosition += count;
                     _position += count;
+                    BytesRead += count;
                     return count;
                 }
                 catch (Exception error) when (attempt == 0 && error is IOException or HttpRequestException)
@@ -126,6 +134,7 @@ public sealed class HttpRangeStream : Stream
 
     private async Task ReopenAsync(long position, CancellationToken ct)
     {
+        Reopens++;
         _response?.Dispose();
         _response = null;
         _body = null;

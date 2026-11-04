@@ -31,6 +31,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
     private bool _suspended;
     private bool _displayActive;
     private bool _loading;
+    private long _lastRangeLog;
     private bool _recording;
     private bool _starting;
     private long _lastSample;
@@ -222,6 +223,11 @@ public sealed partial class PlayerPage : Page, IBackHandler
             if (!_active || _leaving || _suspended || now - _lastSample < 1000
                 || _attempt is not { Attached: true, Media: { Opened: true, FailureQueued: false } } attempt) return;
             _lastSample = now;
+            if (attempt.Media.Stream is { } range && now - _lastRangeLog >= 5000)
+            {
+                _lastRangeLog = now;
+                Log.Info($"player: range reads={range.Reads} reopens={range.Reopens} back={range.BackwardJumps} fwd={range.ForwardJumps} bytes={range.BytesRead} minread={range.SmallestRead}");
+            }
             var position = SourcePosition(attempt);
             var paused = attempt.Media.Player!.PlaybackSession.PlaybackState == MediaPlaybackState.Paused;
             await attempt.Services!.Reporter.RecordPositionAsync(attempt.SessionId!, position, paused, attempt.Cancellation.Token);
