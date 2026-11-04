@@ -7,8 +7,26 @@ namespace Bale.Core.Tests;
 
 public class HttpRangeStreamTests
 {
+    private const int BlockSize = 1024 * 1024;
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);
+    private static readonly byte[] LargeData = CreateLargeData();
+
+    private static byte[] CreateLargeData()
+    {
+        var data = new byte[40 * BlockSize + 317];
+        new Random(314159).NextBytes(data);
+        return data;
+    }
+
+    private static bool IsBlockRequest(HttpRequestMessage request) => request.Headers.Range?.Ranges.Single().To is not null;
+
+    private static int BlockRequests(RangeHandler handler, long index) => handler.Requests.Count(request =>
+        IsBlockRequest(request) && request.Headers.Range!.Ranges.Single().From == index * BlockSize);
+
+    private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     [Fact]
-    public async Task SequentialReadMatchesTheFullSourceAndUsesOneAuthenticatedRangeRequest()
+    public async Task SequentialReadMatchesTheFullSourceAndUsesAuthenticatedAlignedBlocks()
     {
         var handler = new RangeHandler();
         using var client = Create(handler);
@@ -17,39 +35,508 @@ public class HttpRangeStreamTests
         Assert.True(stream.CanRead);
         Assert.True(stream.CanSeek);
         Assert.False(stream.CanWrite);
+        Assert.True(Assert.Single(handler.Bodies).IsDisposed);
         using var output = new MemoryStream();
         await stream.CopyToAsync(output);
         Assert.Equal(Data, output.ToArray());
         Assert.Equal(Data.Length, stream.Position);
         Assert.Equal(0, await stream.ReadAsync(new byte[1].AsMemory()));
-        var request = Assert.Single(handler.Requests);
-        Assert.Equal("bytes=0-", request.Headers.Range!.ToString());
-        Assert.Equal("Bearer test-access", request.Headers.Authorization!.ToString());
-        Assert.Equal("profile", Assert.Single(request.Headers.GetValues("X-Profile-Id")));
+        Assert.Equal(4, handler.Requests.Count);
+        Assert.Equal("bytes=0-", handler.Requests[0].Headers.Range!.ToString());
+        Assert.Equal(new[] { "bytes=0-1048575", "bytes=1048576-2097151", "bytes=2097152-3145727" },
+            handler.Requests.Skip(1).OrderBy(request => request.Headers.Range!.Ranges.Single().From)
+                .Select(request => request.Headers.Range!.ToString()));
+        Assert.All(handler.Requests, request =>
+        {
+            Assert.Equal("Bearer test-access", request.Headers.Authorization!.ToString());
+            Assert.Equal("profile", Assert.Single(request.Headers.GetValues("X-Profile-Id")));
+        });
+        Assert.Equal(3, stream.BlockFetches);
+        Assert.Equal(Data.Length, stream.BytesRead);
+        await Task.WhenAll(handler.Bodies.Select(body => body.Disposal)).WaitAsync(Timeout);
+        Assert.All(handler.Bodies, body => Assert.True(body.IsDisposed));
     }
 
     [Fact]
-    public async Task FarForwardSeekReopensLazilyAtTheRequestedByte()
+    public async Task AlternatingPositionsTenMiBApartDoNotRefetchCachedBlocks()
+    {
+        var handler = new RangeHandler { Payload = LargeData };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        var bytes = new byte[4096];
+        for (var read = 0; read < 40; read++)
+        {
+            var position = read % 2 == 0 ? 37 : 10 * BlockSize + 73;
+            stream.Position = position;
+            await stream.ReadExactlyAsync(bytes);
+            Assert.Equal(LargeData[position..(position + bytes.Length)], bytes);
+        }
+        await handler.WaitForRequestsAsync(7);
+        Assert.Equal(7, handler.Requests.Count); // One probe, two demanded blocks, four speculative blocks.
+        Assert.Equal(1, BlockRequests(handler, 0));
+        Assert.Equal(1, BlockRequests(handler, 10));
+        Assert.Equal(40, stream.Reads);
+        Assert.Equal(38, stream.CacheHits);
+        Assert.Equal(4096, stream.SmallestRead);
+        Assert.Equal(40 * bytes.Length, stream.BytesRead);
+    }
+
+    [Fact]
+    public async Task SequentialReadsPrefetchTheNextTwoBlocksWithAtMostThreeFetchesInFlight()
+    {
+        var release = Signal();
+        var started = Signal();
+        var active = 0;
+        var maximum = 0;
+        var counterLock = new object();
+        var handler = new RangeHandler
+        {
+            BeforeReadAsync = async (request, ct) =>
+            {
+                if (!IsBlockRequest(request)) return;
+                var current = Interlocked.Increment(ref active);
+                lock (counterLock) maximum = Math.Max(maximum, current);
+                if (current == 3) started.TrySetResult();
+                try { await release.Task.WaitAsync(ct); }
+                finally { Interlocked.Decrement(ref active); }
+            },
+        };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        var bytes = new byte[100];
+        var read = stream.ReadAsync(bytes.AsMemory()).AsTask();
+        await started.Task.WaitAsync(Timeout);
+        Assert.Equal(3, Volatile.Read(ref active));
+        Assert.Equal(4, handler.Requests.Count);
+        Assert.Equal(new long?[] { 0, BlockSize, 2 * BlockSize }, handler.Requests.Skip(1)
+            .Select(request => request.Headers.Range!.Ranges.Single().From).Order());
+        release.SetResult();
+        Assert.Equal(bytes.Length, await read);
+        Assert.Equal(Data[..bytes.Length], bytes);
+        await Task.WhenAll(handler.Bodies.Select(body => body.Disposal)).WaitAsync(Timeout);
+        stream.Position = BlockSize;
+        await stream.ReadExactlyAsync(bytes);
+        Assert.Equal(Data[BlockSize..(BlockSize + bytes.Length)], bytes);
+        stream.Position = 2 * BlockSize;
+        await stream.ReadExactlyAsync(bytes);
+        Assert.Equal(Data[(2 * BlockSize)..(2 * BlockSize + bytes.Length)], bytes);
+        Assert.Equal(2, stream.PrefetchHits);
+        Assert.Equal(3, maximum);
+        Assert.Equal(4, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task FarForwardSeekFetchesLazilyAtAnAlignedBlock()
     {
         var handler = new RangeHandler();
         using var client = Create(handler);
         await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
-        stream.Position = 2 * 1024 * 1024;
+        stream.Position = 2 * BlockSize + 17;
         Assert.Single(handler.Requests);
         var bytes = new byte[4096];
         Assert.Equal(bytes.Length, await stream.ReadAsync(bytes.AsMemory()));
-        Assert.Equal(Data[(2 * 1024 * 1024)..(2 * 1024 * 1024 + bytes.Length)], bytes);
+        Assert.Equal(Data[(2 * BlockSize + 17)..(2 * BlockSize + 17 + bytes.Length)], bytes);
         Assert.Equal(2, handler.Requests.Count);
-        Assert.Equal("bytes=2097152-", handler.Requests[1].Headers.Range!.ToString());
-        Assert.True(handler.Bodies[0].IsDisposed);
+        Assert.Equal("bytes=2097152-3145727", handler.Requests[1].Headers.Range!.ToString());
     }
 
     [Theory]
     [InlineData(1)]
     [InlineData(256 * 1024)]
-    public async Task SmallForwardSeekSkipsWithoutOpeningANewRequest(int skip)
+    public async Task ForwardSeeksInsideACachedBlockDoNotFetchAgain(int skip)
     {
         var handler = new RangeHandler();
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        var bytes = new byte[1024];
+        await stream.ReadExactlyAsync(bytes);
+        await handler.WaitForRequestsAsync(4);
+        stream.Seek(skip, SeekOrigin.Current);
+        await stream.ReadExactlyAsync(bytes);
+        Assert.Equal(Data[(1024 + skip)..(2048 + skip)], bytes);
+        Assert.Equal(4, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task BackwardSeekAndSeekFromEndUseCachedBlocksAndSynchronousReads()
+    {
+        var handler = new RangeHandler();
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        var bytes = new byte[100];
+        stream.ReadExactly(bytes);
+        Assert.Equal(10, stream.Seek(10, SeekOrigin.Begin));
+        Assert.Equal(100, stream.Read(bytes, 0, bytes.Length));
+        Assert.Equal(Data[10..110], bytes);
+        Assert.Equal(Data.Length - 100, stream.Seek(-100, SeekOrigin.End));
+        stream.ReadExactly(bytes);
+        Assert.Equal(Data[^100..], bytes);
+        await handler.WaitForRequestsAsync(4);
+        Assert.Equal(4, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task AReadSpansCachedBlockBoundariesAndHandlesTheLastPartialBlock()
+    {
+        var payload = Data[..(2 * BlockSize + 123)];
+        var handler = new RangeHandler { Payload = payload };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        stream.Position = BlockSize;
+        await stream.ReadExactlyAsync(new byte[1]);
+        stream.Position = 2 * BlockSize;
+        await stream.ReadExactlyAsync(new byte[1]);
+        stream.Position = BlockSize - 17;
+        var bytes = new byte[BlockSize + 140];
+        Assert.Equal(bytes.Length, await stream.ReadAsync(bytes.AsMemory()));
+        Assert.Equal(payload[(BlockSize - 17)..], bytes);
+        Assert.Equal(payload.Length, stream.Position);
+        Assert.Equal(0, await stream.ReadAsync(new byte[1].AsMemory()));
+        Assert.Equal(4, handler.Requests.Count);
+        var last = Assert.Single(handler.Requests, request =>
+            request.Headers.Range!.Ranges.Single().From == 2 * BlockSize);
+        Assert.Equal($"bytes={2 * BlockSize}-{payload.Length - 1}", last.Headers.Range!.ToString());
+    }
+
+    [Fact]
+    public async Task AReadReturnsAvailableBytesWithoutWaitingForTheNextBlock()
+    {
+        var release = Signal();
+        var handler = new RangeHandler
+        {
+            BeforeReadAsync = async (request, ct) =>
+            {
+                if (request.Headers.Range!.Ranges.Single().From > 0) await release.Task.WaitAsync(ct);
+            },
+        };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        stream.Position = BlockSize - 17;
+        var bytes = new byte[100];
+        Assert.Equal(17, await stream.ReadAsync(bytes.AsMemory()).AsTask().WaitAsync(Timeout));
+        Assert.Equal(Data[(BlockSize - 17)..BlockSize], bytes[..17]);
+        release.SetResult();
+    }
+
+    [Fact]
+    public async Task SeededRandomSeekReadSequencesAlwaysMatchThePayload()
+    {
+        var handler = new RangeHandler { Payload = LargeData };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        var random = new Random(271828);
+        for (var read = 0; read < 128; read++)
+        {
+            var position = random.Next(LargeData.Length + 1024);
+            var size = Math.Min(random.Next(1, 128 * 1024), Math.Max(0, LargeData.Length - position));
+            stream.Seek(position, SeekOrigin.Begin);
+            var bytes = new byte[size];
+            await stream.ReadExactlyAsync(bytes);
+            Assert.Equal(LargeData.AsSpan(Math.Min(position, LargeData.Length), size).ToArray(), bytes);
+            Assert.Equal(position + size, stream.Position);
+        }
+    }
+
+    [Fact]
+    public async Task LeastRecentlyUsedBlocksAreEvictedAfterTheThirtyTwoBlockLimit()
+    {
+        var handler = new RangeHandler { Payload = LargeData };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        for (var block = 0; block <= 34; block++)
+        {
+            stream.Position = block * BlockSize;
+            var bytes = new byte[1];
+            await stream.ReadExactlyAsync(bytes);
+            Assert.Equal(LargeData[block * BlockSize], bytes[0]);
+        }
+        Assert.Equal(1, BlockRequests(handler, 0));
+        stream.Position = 0;
+        var first = new byte[100];
+        await stream.ReadExactlyAsync(first);
+        Assert.Equal(LargeData[..100], first);
+        Assert.Equal(2, BlockRequests(handler, 0));
+        var recentFetches = BlockRequests(handler, 34);
+        stream.Position = 34 * BlockSize;
+        await stream.ReadExactlyAsync(first);
+        Assert.Equal(LargeData[(34 * BlockSize)..(34 * BlockSize + 100)], first);
+        Assert.Equal(recentFetches, BlockRequests(handler, 34));
+    }
+
+    [Fact]
+    public async Task LengthComesFromContentRangeNotThePartialBodyLength()
+    {
+        var handler = new RangeHandler
+        {
+            ConfigureResponse = (response, _) =>
+                response.Content.Headers.ContentRange = new ContentRangeHeaderValue(0, Data.Length - 1, Data.Length + 1000),
+        };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        Assert.Equal(Data.Length + 1000, stream.Length);
+        Assert.True(Assert.Single(handler.Bodies).IsDisposed);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ATransientDemandBodyFailureRetriesTheWholeBlockOnce(bool httpError)
+    {
+        var attempts = 0;
+        var handler = new RangeHandler
+        {
+            FailAfterBytes = (request, _) => IsBlockRequest(request) && request.Headers.Range!.Ranges.Single().From == 0
+                && Interlocked.Increment(ref attempts) == 1 ? 8192 : null,
+            ReadError = () => httpError ? new HttpRequestException("Simulated body failure.") : new IOException("Simulated body failure."),
+        };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        var bytes = new byte[16384];
+        await stream.ReadExactlyAsync(bytes);
+        Assert.Equal(Data[..bytes.Length], bytes);
+        Assert.Equal(2, attempts);
+        Assert.Equal(2, BlockRequests(handler, 0));
+        Assert.Equal(bytes.Length, stream.Position);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ATransientDemandRequestFailureIsRetriedOnce(bool httpError)
+    {
+        var attempts = 0;
+        var handler = new RangeHandler
+        {
+            BeforeSendAsync = (request, _, _) =>
+            {
+                if (IsBlockRequest(request) && request.Headers.Range!.Ranges.Single().From == 0
+                    && Interlocked.Increment(ref attempts) == 1)
+                    throw httpError ? new HttpRequestException("Simulated request failure.") : new IOException("Simulated request failure.");
+                return Task.CompletedTask;
+            },
+        };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        var bytes = new byte[100];
+        await stream.ReadExactlyAsync(bytes);
+        Assert.Equal(Data[..bytes.Length], bytes);
+        Assert.Equal(2, attempts);
+        Assert.Equal(2, BlockRequests(handler, 0));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ASecondDemandFailureThrowsWithoutReturningPartialBlockBytes(bool httpError)
+    {
+        var handler = new RangeHandler
+        {
+            FailAfterBytes = (request, _) => IsBlockRequest(request) && request.Headers.Range!.Ranges.Single().From == 0 ? 8192 : null,
+            ReadError = () => httpError ? new HttpRequestException("Simulated body failure.") : new IOException("Simulated body failure."),
+        };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        var read = stream.ReadAsync(new byte[100].AsMemory()).AsTask();
+        if (httpError) await Assert.ThrowsAsync<HttpRequestException>(() => read);
+        else await Assert.ThrowsAsync<IOException>(() => read);
+        Assert.Equal(2, BlockRequests(handler, 0));
+        Assert.Equal(0, stream.Position);
+        Assert.Equal(0, stream.BytesRead);
+    }
+
+    [Fact]
+    public async Task AReadRefetchesAFailedPrefetchUsingTheDemandRetryPolicy()
+    {
+        var attempts = 0;
+        var handler = new RangeHandler
+        {
+            BeforeSendAsync = (request, _, _) =>
+            {
+                if (request.Headers.Range!.Ranges.Single().From == BlockSize && Interlocked.Increment(ref attempts) <= 2)
+                    throw new IOException("Simulated speculative and first demand failures.");
+                return Task.CompletedTask;
+            },
+        };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        await stream.ReadExactlyAsync(new byte[1]);
+        await handler.WaitForRequestsAsync(4);
+        stream.Position = BlockSize;
+        var bytes = new byte[100];
+        await stream.ReadExactlyAsync(bytes);
+        Assert.Equal(Data[BlockSize..(BlockSize + bytes.Length)], bytes);
+        Assert.Equal(3, attempts);
+        Assert.Equal(3, BlockRequests(handler, 1));
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("ignored-range")]
+    [InlineData("wrong-start")]
+    [InlineData("wrong-end")]
+    [InlineData("changed-length")]
+    [InlineData("wrong-unit")]
+    public async Task InvalidBlockContentRangeThrows(string kind)
+    {
+        var handler = new RangeHandler
+        {
+            ConfigureResponse = (response, _) =>
+            {
+                if (response.Content.Headers.ContentRange?.From != BlockSize) return;
+                if (kind == "ignored-range") response.StatusCode = HttpStatusCode.OK;
+                else response.Content.Headers.ContentRange = kind switch
+                {
+                    "wrong-start" => new ContentRangeHeaderValue(BlockSize + 1, 2 * BlockSize - 1, Data.Length),
+                    "wrong-end" => new ContentRangeHeaderValue(BlockSize, 2 * BlockSize - 2, Data.Length),
+                    "changed-length" => new ContentRangeHeaderValue(BlockSize, 2 * BlockSize - 1, Data.Length + 1),
+                    "wrong-unit" => new ContentRangeHeaderValue(BlockSize, 2 * BlockSize - 1, Data.Length) { Unit = "items" },
+                    _ => null,
+                };
+            },
+        };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        stream.Position = BlockSize;
+        var error = await Assert.ThrowsAsync<IOException>(async () => await stream.ReadExactlyAsync(new byte[1]));
+        Assert.Equal("The media server returned an invalid range response.", error.Message);
+        Assert.Equal(2, BlockRequests(handler, 1));
+        Assert.Equal(BlockSize, stream.Position);
+    }
+
+    [Fact]
+    public async Task CallerCancellationOnlyCancelsTheWaitAndTheNextReadSharesTheFetch()
+    {
+        var release = Signal();
+        var started = Signal();
+        var active = 0;
+        var canceled = 0;
+        var handler = new RangeHandler
+        {
+            BeforeReadAsync = async (request, ct) =>
+            {
+                if (!IsBlockRequest(request)) return;
+                if (Interlocked.Increment(ref active) == 3) started.TrySetResult();
+                try { await release.Task.WaitAsync(ct); }
+                catch (OperationCanceledException) { Interlocked.Increment(ref canceled); throw; }
+                finally { Interlocked.Decrement(ref active); }
+            },
+        };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        using var cancellation = new CancellationTokenSource();
+        var first = stream.ReadAsync(new byte[100].AsMemory(), cancellation.Token).AsTask();
+        await started.Task.WaitAsync(Timeout);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+        Assert.Equal(0, stream.Position);
+        Assert.Equal(0, canceled);
+        Assert.Equal(3, active);
+        var bytes = new byte[100];
+        var second = stream.ReadAsync(bytes.AsMemory()).AsTask();
+        release.SetResult();
+        Assert.Equal(bytes.Length, await second.WaitAsync(Timeout));
+        Assert.Equal(Data[..bytes.Length], bytes);
+        Assert.Equal(4, handler.Requests.Count);
+        Assert.Equal(1, BlockRequests(handler, 0));
+    }
+
+    [Fact]
+    public async Task QueuedDemandAndPrefetchRequestsNeverExceedThreeActiveFetches()
+    {
+        var release = Signal();
+        var started = Signal();
+        var active = 0;
+        var maximum = 0;
+        var counterLock = new object();
+        var handler = new RangeHandler
+        {
+            Payload = LargeData,
+            BeforeReadAsync = async (request, ct) =>
+            {
+                if (!IsBlockRequest(request)) return;
+                lock (counterLock)
+                {
+                    active++;
+                    maximum = Math.Max(maximum, active);
+                    if (active == 3) started.TrySetResult();
+                }
+                try { await release.Task.WaitAsync(ct); }
+                finally { lock (counterLock) active--; }
+            },
+        };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        using var cancellation = new CancellationTokenSource();
+        var first = stream.ReadAsync(new byte[1].AsMemory(), cancellation.Token).AsTask();
+        await started.Task.WaitAsync(Timeout);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+        stream.Position = 10 * BlockSize;
+        var bytes = new byte[100];
+        var second = stream.ReadAsync(bytes.AsMemory()).AsTask();
+        Assert.Equal(4, handler.Requests.Count);
+        release.SetResult();
+        Assert.Equal(bytes.Length, await second.WaitAsync(Timeout));
+        await handler.WaitForRequestsAsync(7);
+        Assert.Equal(LargeData[(10 * BlockSize)..(10 * BlockSize + bytes.Length)], bytes);
+        Assert.Equal(3, maximum);
+        Assert.Equal(7, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task DisposeCancelsAllInFlightFetchesAndDisposesTheirBodies()
+    {
+        var started = Signal();
+        var allCanceled = Signal();
+        var active = 0;
+        var canceled = 0;
+        var handler = new RangeHandler
+        {
+            BeforeReadAsync = async (request, ct) =>
+            {
+                if (!IsBlockRequest(request)) return;
+                if (Interlocked.Increment(ref active) == 3) started.TrySetResult();
+                try { await Task.Delay(System.Threading.Timeout.Infinite, ct); }
+                catch (OperationCanceledException)
+                {
+                    if (Interlocked.Increment(ref canceled) == 3) allCanceled.TrySetResult();
+                    throw;
+                }
+            },
+        };
+        using var client = Create(handler);
+        using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        var read = stream.ReadAsync(new byte[100].AsMemory()).AsTask();
+        await started.Task.WaitAsync(Timeout);
+        stream.Dispose();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read);
+        await allCanceled.Task.WaitAsync(Timeout);
+        await Task.WhenAll(handler.Bodies.Select(body => body.Disposal)).WaitAsync(Timeout);
+        Assert.Equal(3, canceled);
+        Assert.All(handler.Bodies, body => Assert.True(body.IsDisposed));
+        Assert.False(stream.CanRead);
+        Assert.False(stream.CanSeek);
+    }
+
+    [Fact]
+    public async Task IgnoredRangesReadSequentiallyWithOneBody()
+    {
+        var handler = new RangeHandler { IgnoreRanges = true };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        using var output = new MemoryStream();
+        await stream.CopyToAsync(output);
+        Assert.Equal(Data, output.ToArray());
+        Assert.Single(handler.Requests);
+        Assert.Equal(0, stream.BlockFetches);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(256 * 1024)]
+    public async Task IgnoredRangesSkipSmallForwardSeeksWithoutReopening(int skip)
+    {
+        var handler = new RangeHandler { IgnoreRanges = true };
         using var client = Create(handler);
         await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
         var bytes = new byte[1024];
@@ -61,46 +548,32 @@ public class HttpRangeStreamTests
     }
 
     [Fact]
-    public async Task BackwardSeekAndSeekFromEndUseTheRightRangeAndSynchronousReads()
+    public async Task IgnoredRangesUseContentLengthAndReopenFromZeroToSeek()
     {
-        var handler = new RangeHandler();
+        var handler = new RangeHandler { IgnoreRanges = true };
         using var client = Create(handler);
         await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        Assert.Equal(Data.Length, stream.Length);
+        stream.Position = 2 * BlockSize;
         var bytes = new byte[100];
-        stream.ReadExactly(bytes);
-        Assert.Equal(10, stream.Seek(10, SeekOrigin.Begin));
-        Assert.Equal(100, stream.Read(bytes, 0, bytes.Length));
+        await stream.ReadExactlyAsync(bytes);
+        Assert.Equal(Data[(2 * BlockSize)..(2 * BlockSize + 100)], bytes);
+        stream.Position = 10;
+        await stream.ReadExactlyAsync(bytes);
         Assert.Equal(Data[10..110], bytes);
-        Assert.Equal("bytes=10-", handler.Requests[1].Headers.Range!.ToString());
-        Assert.Equal(Data.Length - 100, stream.Seek(-100, SeekOrigin.End));
-        stream.ReadExactly(bytes);
-        Assert.Equal(Data[^100..], bytes);
-        Assert.Equal($"bytes={Data.Length - 100}-", handler.Requests[2].Headers.Range!.ToString());
-    }
-
-    [Fact]
-    public async Task LengthComesFromContentRangeNotThePartialBodyLength()
-    {
-        var handler = new RangeHandler
-        {
-            ConfigureResponse = (response, _) =>
-            {
-                response.Content.Headers.ContentRange = new ContentRangeHeaderValue(0, Data.Length - 1, Data.Length + 1000);
-            },
-        };
-        using var client = Create(handler);
-        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
-        Assert.Equal(Data.Length + 1000, stream.Length);
+        Assert.Equal(3, handler.Requests.Count);
+        Assert.All(handler.Requests, request => Assert.Equal("bytes=0-", request.Headers.Range!.ToString()));
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task MidBodyFailureReconnectsAtTheConfirmedPositionOnce(bool httpError)
+    public async Task IgnoredRangesRetryAMidBodyFailureOnce(bool httpError)
     {
         var handler = new RangeHandler
         {
-            FailAfterBytes = request => request == 1 ? 8192 : null,
+            IgnoreRanges = true,
+            FailAfterBytes = (_, request) => request == 1 ? 8192 : null,
             ReadError = () => httpError ? new HttpRequestException("Simulated body failure.") : new IOException("Simulated body failure."),
         };
         using var client = Create(handler);
@@ -109,14 +582,13 @@ public class HttpRangeStreamTests
         await stream.CopyToAsync(output, 8192);
         Assert.Equal(Data, output.ToArray());
         Assert.Equal(2, handler.Requests.Count);
-        Assert.Equal("bytes=8192-", handler.Requests[1].Headers.Range!.ToString());
         Assert.True(handler.Bodies[0].IsDisposed);
     }
 
     [Fact]
-    public async Task ASecondBodyFailureIsReturnedWithoutAReconnectLoop()
+    public async Task IgnoredRangesReturnASecondBodyFailureWithoutAReconnectLoop()
     {
-        var handler = new RangeHandler { FailAfterBytes = request => request == 1 ? 8192 : 0 };
+        var handler = new RangeHandler { IgnoreRanges = true, FailAfterBytes = (_, request) => request == 1 ? 8192 : 0 };
         using var client = Create(handler);
         await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
         var bytes = new byte[8192];
@@ -127,34 +599,17 @@ public class HttpRangeStreamTests
     }
 
     [Fact]
-    public async Task ABodyFailureWhileSkippingReopensAtTheDesiredPosition()
+    public async Task IgnoredRangesRetryABodyFailureWhileSkipping()
     {
-        var handler = new RangeHandler { FailAfterBytes = request => request == 1 ? 8192 : null };
+        var handler = new RangeHandler { IgnoreRanges = true, FailAfterBytes = (_, request) => request == 1 ? 8192 : null };
         using var client = Create(handler);
         await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
         stream.Position = 32 * 1024;
         var bytes = new byte[100];
         await stream.ReadExactlyAsync(bytes);
         Assert.Equal(Data[(32 * 1024)..(32 * 1024 + 100)], bytes);
-        Assert.Equal("bytes=32768-", handler.Requests[1].Headers.Range!.ToString());
-    }
-
-    [Fact]
-    public async Task IgnoredRangesUseContentLengthAndReopenFromZeroToSeek()
-    {
-        var handler = new RangeHandler { IgnoreRanges = true };
-        using var client = Create(handler);
-        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
-        Assert.Equal(Data.Length, stream.Length);
-        stream.Position = 2 * 1024 * 1024;
-        var bytes = new byte[100];
-        await stream.ReadExactlyAsync(bytes);
-        Assert.Equal(Data[(2 * 1024 * 1024)..(2 * 1024 * 1024 + 100)], bytes);
-        stream.Position = 10;
-        await stream.ReadExactlyAsync(bytes);
-        Assert.Equal(Data[10..110], bytes);
-        Assert.Equal(3, handler.Requests.Count);
-        Assert.All(handler.Requests, request => Assert.Equal("bytes=0-", request.Headers.Range!.ToString()));
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal("bytes=0-", handler.Requests[1].Headers.Range!.ToString());
     }
 
     [Theory]
@@ -196,31 +651,6 @@ public class HttpRangeStreamTests
         Assert.True(Assert.Single(handler.Bodies).IsDisposed);
     }
 
-    [Theory]
-    [InlineData("ignored-range")]
-    [InlineData("wrong-start")]
-    [InlineData("changed-length")]
-    public async Task InvalidReopenedResponsesThrowWithoutRetrying(string kind)
-    {
-        var handler = new RangeHandler
-        {
-            ConfigureResponse = (response, request) =>
-            {
-                if (request == 1) return;
-                if (kind == "ignored-range") response.StatusCode = HttpStatusCode.OK;
-                else if (kind == "wrong-start") response.Content.Headers.ContentRange = new ContentRangeHeaderValue(0, Data.Length - 1, Data.Length);
-                else response.Content.Headers.ContentRange = new ContentRangeHeaderValue(1024 * 1024, Data.Length - 1, Data.Length + 1);
-            },
-        };
-        using var client = Create(handler);
-        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
-        stream.Position = 1024 * 1024;
-        var error = await Assert.ThrowsAsync<IOException>(async () => await stream.ReadExactlyAsync(new byte[1]));
-        Assert.Equal("The media server returned an invalid range response.", error.Message);
-        Assert.Equal(2, handler.Requests.Count);
-        Assert.All(handler.Bodies, body => Assert.True(body.IsDisposed));
-    }
-
     [Fact]
     public async Task SeekBeyondEndAndEmptyReadsDoNotFetchMoreBytes()
     {
@@ -229,7 +659,7 @@ public class HttpRangeStreamTests
         await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
         stream.Position = Data.Length + 1L;
         Assert.Equal(0, await stream.ReadAsync(new byte[1].AsMemory()));
-        stream.Position = 1024 * 1024;
+        stream.Position = BlockSize;
         Assert.Equal(0, await stream.ReadAsync(Memory<byte>.Empty));
         Assert.Single(handler.Requests);
         Assert.Throws<ArgumentOutOfRangeException>(() => stream.Position = -1);
@@ -239,21 +669,23 @@ public class HttpRangeStreamTests
     }
 
     [Fact]
-    public async Task ReopensCannotCrossAProfileFence()
+    public async Task BlockFetchesCannotCrossAProfileFence()
     {
         var handler = new RangeHandler();
         using var client = Create(handler);
         await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
         client.UseProfile("other-profile");
-        stream.Position = 1024 * 1024;
+        stream.Position = BlockSize;
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await stream.ReadExactlyAsync(new byte[1]));
         Assert.Single(handler.Requests);
     }
 
-    [Fact]
-    public async Task DisposalClosesTheBodyAndRejectsFurtherReads()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DisposalClosesTheBodyAndRejectsFurtherReads(bool ignoredRange)
     {
-        var handler = new RangeHandler();
+        var handler = new RangeHandler { IgnoreRanges = ignoredRange };
         using var client = Create(handler);
         var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
         stream.Dispose();
@@ -266,7 +698,7 @@ public class HttpRangeStreamTests
     }
 
     [Fact]
-    public async Task CanceledReadDoesNotReopenTheStream()
+    public async Task CanceledReadDoesNotFetchAnyBlocks()
     {
         var handler = new RangeHandler();
         using var client = Create(handler);

@@ -4,32 +4,52 @@ using System.Net;
 namespace Bale.Core.Playback;
 
 /// <summary>
-/// A read-only, seekable HTTP body for the platform's random-access stream adapter. Reads stay on one
-/// connection where possible; every reopen still passes through PlaybackMedia's captured auth scope.
+/// A read-only, seekable HTTP body for the platform's random-access stream adapter. Windows' MKV
+/// source alternates read positions; one request per jump starved playback. Bounded, aligned blocks
+/// keep both positions warm, with every fetch still inside PlaybackMedia's captured auth scope.
 /// </summary>
 public sealed class HttpRangeStream : Stream
 {
+    private const int BlockSize = 1024 * 1024;
+    private const int CacheCapacity = 32;
     private const int ForwardSkipLimit = 256 * 1024;
     private readonly PlaybackMedia _media;
     private readonly long _length;
     private readonly bool _supportsRanges;
     private readonly SemaphoreSlim _readLock = new(1, 1);
+    private readonly SemaphoreSlim _fetchSlots = new(3, 3);
+    private readonly CancellationTokenSource _fetchCancellation = new();
+    private readonly CancellationToken _fetchToken;
+    private readonly object _cacheLock = new();
+    private readonly Dictionary<long, CachedBlock> _cache = [];
+    private readonly LinkedList<long> _lru = new();
+    private readonly Dictionary<long, BlockFetch> _inFlight = [];
     private HttpResponseMessage? _response;
     private Stream? _body;
     private long _bodyPosition;
     private long _position;
-    private bool _disposed;
+    private volatile bool _disposed;
 
-    /// <summary>Diagnostics only: counts, never offsets tied to URLs.</summary>
-    public long Reads, Reopens, BackwardJumps, ForwardJumps, BytesRead, SmallestRead = long.MaxValue;
+    /// <summary>Diagnostics only: counts, never offsets tied to URLs. PrefetchHits counts first use of ready prefetched blocks.</summary>
+    public long Reads, BlockFetches, CacheHits, PrefetchHits, BytesRead, SmallestRead = long.MaxValue;
 
-    private HttpRangeStream(PlaybackMedia media, HttpResponseMessage response, Stream body, long length, bool supportsRanges)
+    private sealed class CachedBlock(byte[] data, bool prefetched)
+    {
+        public byte[] Data { get; } = data;
+        public bool Prefetched { get; set; } = prefetched;
+        public LinkedListNode<long>? Node { get; set; }
+    }
+
+    private sealed record BlockFetch(Task<CachedBlock> Task, bool IsPrefetch);
+
+    private HttpRangeStream(PlaybackMedia media, HttpResponseMessage? response, Stream? body, long length, bool supportsRanges)
     {
         _media = media;
         _response = response;
         _body = body;
         _length = length;
         _supportsRanges = supportsRanges;
+        _fetchToken = _fetchCancellation.Token;
     }
 
     internal static async Task<HttpRangeStream> OpenAsync(PlaybackMedia media, CancellationToken ct)
@@ -44,8 +64,14 @@ public sealed class HttpRangeStream : Stream
             else if (response.StatusCode == HttpStatusCode.OK && response.Content.Headers.ContentLength is >= 0 and { } size) length = size;
             else throw new InvalidDataException("The media response has no valid total length.");
 
+            if (supportsRanges)
+            {
+                // The open-ended probe supplies the total, not a body to keep alive between seeks.
+                response.Dispose();
+                return new(media, null, null, length, true);
+            }
             var body = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-            return new(media, response, body, length, supportsRanges);
+            return new(media, response, body, length, false);
         }
         catch
         {
@@ -77,34 +103,14 @@ public sealed class HttpRangeStream : Stream
         {
             ThrowIfDisposed();
             if (buffer.Length == 0 || _position >= _length) return 0;
-            var forward = _position - _bodyPosition;
             Reads++;
             SmallestRead = Math.Min(SmallestRead, buffer.Length);
-            if (forward < 0) BackwardJumps++;
-            else if (forward > ForwardSkipLimit) ForwardJumps++;
-            if (_body is null || forward < 0 || forward > ForwardSkipLimit)
-                await ReopenAsync(_position, cancellationToken).ConfigureAwait(false);
-
-            for (var attempt = 0; ; attempt++)
-            {
-                try
-                {
-                    await SkipToPositionAsync(cancellationToken).ConfigureAwait(false);
-                    var count = await _body!.ReadAsync(buffer[..(int)Math.Min(buffer.Length, _length - _position)], cancellationToken)
-                        .ConfigureAwait(false);
-                    if (count == 0) throw new IOException("The media stream ended before its declared length.");
-                    _bodyPosition += count;
-                    _position += count;
-                    BytesRead += count;
-                    return count;
-                }
-                catch (Exception error) when (attempt == 0 && error is IOException or HttpRequestException)
-                {
-                    // A paused body may have lost its connection. Reopen once at the last confirmed
-                    // position; a second body failure is the caller's playback-recovery decision.
-                    await ReopenAsync(_position, cancellationToken).ConfigureAwait(false);
-                }
-            }
+            var count = _supportsRanges
+                ? await ReadBlocksAsync(buffer, cancellationToken).ConfigureAwait(false)
+                : await ReadSequentialAsync(buffer, cancellationToken).ConfigureAwait(false);
+            _position += count;
+            BytesRead += count;
+            return count;
         }
         finally
         {
@@ -112,15 +118,209 @@ public sealed class HttpRangeStream : Stream
         }
     }
 
+    private async Task<int> ReadBlocksAsync(Memory<byte> buffer, CancellationToken ct)
+    {
+        var copied = 0;
+        while (copied < buffer.Length && _position + copied < _length)
+        {
+            var position = _position + copied;
+            var index = position / BlockSize;
+            CachedBlock? block;
+            if (copied == 0)
+            {
+                var pending = GetBlockAsync(index, ct);
+                PrefetchFollowingBlocks(index);
+                block = await pending.ConfigureAwait(false);
+            }
+            else
+            {
+                lock (_cacheLock)
+                {
+                    ThrowIfDisposed();
+                    block = FindCachedBlockLocked(index);
+                }
+                // Stream reads need not fill the buffer: don't wait on another block after copying bytes.
+                if (block is null) break;
+                PrefetchFollowingBlocks(index);
+            }
+            var offset = (int)(position % BlockSize);
+            var count = Math.Min(buffer.Length - copied, block.Data.Length - offset);
+            block.Data.AsMemory(offset, count).CopyTo(buffer[copied..]);
+            copied += count;
+        }
+        return copied;
+    }
+
+    private CachedBlock? FindCachedBlockLocked(long index)
+    {
+        if (!_cache.TryGetValue(index, out var block)) return null;
+        TouchBlockLocked(block);
+        CacheHits++;
+        if (block.Prefetched)
+        {
+            PrefetchHits++;
+            block.Prefetched = false;
+        }
+        return block;
+    }
+
+    private void TouchBlockLocked(CachedBlock block)
+    {
+        _lru.Remove(block.Node!);
+        _lru.AddLast(block.Node!);
+    }
+
+    private async Task<CachedBlock> GetBlockAsync(long index, CancellationToken ct)
+    {
+        BlockFetch fetch;
+        lock (_cacheLock)
+        {
+            ThrowIfDisposed();
+            if (FindCachedBlockLocked(index) is { } cached) return cached;
+            fetch = _inFlight.TryGetValue(index, out var existing) ? existing : StartFetchLocked(index, false);
+        }
+        CachedBlock block;
+        try
+        {
+            // A caller abandoning its read must not cancel a fetch shared with later reads.
+            block = await fetch.Task.WaitAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception) when (fetch.IsPrefetch && !ct.IsCancellationRequested && !_fetchToken.IsCancellationRequested)
+        {
+            // Speculation gets one attempt. A read joining failed speculation gets its own demand retry policy.
+            return await GetBlockAsync(index, ct).ConfigureAwait(false);
+        }
+        lock (_cacheLock)
+        {
+            ThrowIfDisposed();
+            if (_cache.TryGetValue(index, out var cached) && ReferenceEquals(block, cached)) TouchBlockLocked(block);
+            // Waiting on speculation isn't a hit on an already-ready prefetched block.
+            block.Prefetched = false;
+        }
+        return block;
+    }
+
+    private void PrefetchFollowingBlocks(long index)
+    {
+        lock (_cacheLock)
+        {
+            if (_disposed) return;
+            for (var next = index + 1; next <= index + 2 && next <= (_length - 1) / BlockSize; next++)
+            {
+                if (!_cache.ContainsKey(next) && !_inFlight.ContainsKey(next)) StartFetchLocked(next, true);
+            }
+        }
+    }
+
+    private BlockFetch StartFetchLocked(long index, bool prefetch)
+    {
+        // Schedule outside the read path. The cache lock ensures registration precedes completion,
+        // even when a transport supplies a whole block synchronously.
+        var fetch = new BlockFetch(Task.Run(() => FetchBlockAsync(index, prefetch)), prefetch);
+        _inFlight.Add(index, fetch);
+        _ = ObserveFetchAsync(fetch.Task);
+        return fetch;
+    }
+
+    private static async Task ObserveFetchAsync(Task<CachedBlock> task)
+    {
+        try { await task.ConfigureAwait(false); }
+        catch (Exception) { } // Also observe demand fetches whose only waiter was canceled; never log transport details.
+    }
+
+    private async Task<CachedBlock> FetchBlockAsync(long index, bool prefetch)
+    {
+        try
+        {
+            await _fetchSlots.WaitAsync(_fetchToken).ConfigureAwait(false);
+            try
+            {
+                for (var attempt = 0; ; attempt++)
+                {
+                    try
+                    {
+                        var start = index * BlockSize;
+                        var size = (int)Math.Min(BlockSize, _length - start);
+                        Interlocked.Increment(ref BlockFetches);
+                        using var response = await _media.SendAsync(_media.Uri, start, size,
+                            HttpCompletionOption.ResponseHeadersRead, _fetchToken).ConfigureAwait(false);
+                        PlaybackMedia.RequireSuccess(response);
+                        if (!TryRangeLength(response, start, out var total) || total != _length
+                            || response.Content.Headers.ContentRange!.To != start + size - 1)
+                            throw new IOException("The media server returned an invalid range response.");
+
+                        var data = new byte[size];
+                        using var body = await response.Content.ReadAsStreamAsync(_fetchToken).ConfigureAwait(false);
+                        await body.ReadExactlyAsync(data, _fetchToken).ConfigureAwait(false);
+                        var block = new CachedBlock(data, prefetch);
+                        lock (_cacheLock)
+                        {
+                            ThrowIfDisposed();
+                            block.Node = _lru.AddLast(index);
+                            _cache.Add(index, block);
+                            if (_cache.Count > CacheCapacity)
+                            {
+                                var oldest = _lru.First!;
+                                _cache.Remove(oldest.Value);
+                                _lru.RemoveFirst();
+                            }
+                        }
+                        return block;
+                    }
+                    catch (Exception error) when (!prefetch && attempt == 0 && error is IOException or HttpRequestException)
+                    {
+                        // Retry a demand block once; a second failure belongs to playback recovery.
+                    }
+                }
+            }
+            finally
+            {
+                _fetchSlots.Release();
+            }
+        }
+        finally
+        {
+            lock (_cacheLock) _inFlight.Remove(index);
+        }
+    }
+
+    private async Task<int> ReadSequentialAsync(Memory<byte> buffer, CancellationToken ct)
+    {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct, _fetchToken);
+        var token = cancellation.Token;
+        var forward = _position - _bodyPosition;
+        if (_body is null || forward < 0 || forward > ForwardSkipLimit)
+            await ReopenSequentialAsync(token).ConfigureAwait(false);
+
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                await SkipToPositionAsync(token).ConfigureAwait(false);
+                var body = _body ?? throw new ObjectDisposedException(nameof(HttpRangeStream));
+                var count = await body.ReadAsync(buffer[..(int)Math.Min(buffer.Length, _length - _position)], token)
+                    .ConfigureAwait(false);
+                if (count == 0) throw new IOException("The media stream ended before its declared length.");
+                _bodyPosition += count;
+                return count;
+            }
+            catch (Exception error) when (attempt == 0 && error is IOException or HttpRequestException)
+            {
+                await ReopenSequentialAsync(token).ConfigureAwait(false);
+            }
+        }
+    }
+
     private async Task SkipToPositionAsync(CancellationToken ct)
     {
         if (_bodyPosition == _position) return;
+        var body = _body ?? throw new ObjectDisposedException(nameof(HttpRangeStream));
         var buffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
         try
         {
             while (_bodyPosition < _position)
             {
-                var count = await _body!.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, _position - _bodyPosition)), ct)
+                var count = await body.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, _position - _bodyPosition)), ct)
                     .ConfigureAwait(false);
                 if (count == 0) throw new IOException("The media stream ended before the seek position.");
                 _bodyPosition += count;
@@ -132,26 +332,34 @@ public sealed class HttpRangeStream : Stream
         }
     }
 
-    private async Task ReopenAsync(long position, CancellationToken ct)
+    private async Task ReopenSequentialAsync(CancellationToken ct)
     {
-        Reopens++;
-        _response?.Dispose();
-        _response = null;
-        _body = null;
+        HttpResponseMessage? previous;
+        lock (_cacheLock)
+        {
+            ThrowIfDisposed();
+            previous = _response;
+            _response = null;
+            _body = null;
+        }
+        previous?.Dispose();
         // A 200 response at open means Range is unsupported. Reopen at zero and let the same
         // skip-reader advance to the target, rather than mistaking a full body for a ranged one.
-        var start = _supportsRanges ? position : 0;
-        var response = await _media.SendAsync(_media.Uri, start, null, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        var response = await _media.SendAsync(_media.Uri, 0, null, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         try
         {
-            var validRange = TryRangeLength(response, start, out var total) && total == _length;
-            var validFullBody = !_supportsRanges && response.StatusCode == HttpStatusCode.OK
-                && response.Content.Headers.ContentLength == _length;
+            var validRange = TryRangeLength(response, 0, out var total) && total == _length
+                && response.Content.Headers.ContentRange!.To == _length - 1;
+            var validFullBody = response.StatusCode == HttpStatusCode.OK && response.Content.Headers.ContentLength == _length;
             if (!validRange && !validFullBody) throw new IOException("The media server returned an invalid range response.");
             var body = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-            _response = response;
-            _body = body;
-            _bodyPosition = start;
+            lock (_cacheLock)
+            {
+                ThrowIfDisposed();
+                _response = response;
+                _body = body;
+                _bodyPosition = 0;
+            }
         }
         catch
         {
@@ -204,12 +412,30 @@ public sealed class HttpRangeStream : Stream
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing && !_disposed)
+        if (disposing)
         {
-            _disposed = true;
-            _response?.Dispose();
-            _response = null;
-            _body = null;
+            HttpResponseMessage? response = null;
+            var cancel = false;
+            lock (_cacheLock)
+            {
+                if (!_disposed)
+                {
+                    _disposed = true;
+                    _cache.Clear();
+                    _lru.Clear();
+                    _inFlight.Clear();
+                    response = _response;
+                    _response = null;
+                    _body = null;
+                    cancel = true;
+                }
+            }
+            if (cancel)
+            {
+                _fetchCancellation.Cancel();
+                _fetchCancellation.Dispose();
+                response?.Dispose();
+            }
         }
         base.Dispose(disposing);
     }

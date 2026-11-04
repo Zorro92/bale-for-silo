@@ -226,7 +226,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
             if (attempt.Media.Stream is { } range && now - _lastRangeLog >= 5000)
             {
                 _lastRangeLog = now;
-                Log.Info($"player: range reads={range.Reads} reopens={range.Reopens} back={range.BackwardJumps} fwd={range.ForwardJumps} bytes={range.BytesRead} minread={range.SmallestRead}");
+                Log.Info($"player: range reads={range.Reads} fetches={range.BlockFetches} hits={range.CacheHits} prefetchhits={range.PrefetchHits} bytes={range.BytesRead} minread={range.SmallestRead}");
             }
             var position = SourcePosition(attempt);
             var paused = attempt.Media.Player!.PlaybackSession.PlaybackState == MediaPlaybackState.Paused;
