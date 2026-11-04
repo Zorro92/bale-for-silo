@@ -18,6 +18,7 @@ jobs:
   core:
     name: Core (Linux)
     runs-on: ubuntu-26.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - name: Check shared card rail layouts
@@ -33,6 +34,7 @@ jobs:
   xbox:
     name: Xbox package (Windows)
     runs-on: windows-latest
+    timeout-minutes: 30
     env:
       NUGET_PACKAGES: ${{ github.workspace }}\.nuget\packages
     steps:

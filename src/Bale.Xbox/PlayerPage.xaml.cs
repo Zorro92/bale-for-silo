@@ -31,7 +31,9 @@ public sealed partial class PlayerPage : Page, IBackHandler
     private bool _suspended;
     private bool _displayActive;
     private bool _loading;
+#if DEBUG_SERVER
     private long _lastRangeLog;
+#endif
     private bool _recording;
     private bool _starting;
     private long _lastSample;
@@ -223,11 +225,14 @@ public sealed partial class PlayerPage : Page, IBackHandler
             if (!_active || _leaving || _suspended || now - _lastSample < 1000
                 || _attempt is not { Attached: true, Media: { Opened: true, FailureQueued: false } } attempt) return;
             _lastSample = now;
+#if DEBUG_SERVER
+            // Range stats are a development diagnostic: counts only, never URLs.
             if (attempt.Media.Stream is { } range && now - _lastRangeLog >= 5000)
             {
                 _lastRangeLog = now;
                 Log.Info($"player: range reads={range.Reads} fetches={range.BlockFetches} hits={range.CacheHits} prefetchhits={range.PrefetchHits} bytes={range.BytesRead} minread={range.SmallestRead}");
             }
+#endif
             var position = SourcePosition(attempt);
             var paused = attempt.Media.Player!.PlaybackSession.PlaybackState == MediaPlaybackState.Paused;
             await attempt.Services!.Reporter.RecordPositionAsync(attempt.SessionId!, position, paused, attempt.Cancellation.Token);
