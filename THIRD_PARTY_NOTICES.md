@@ -26,6 +26,16 @@ from [Silo's Android client](https://github.com/Silo-Server/silo-android):
 and `MarqueeProfileAvatar.kt`. Silo's Android client is distributed under the
 GNU Affero General Public License v3.0, as is Bale (see `LICENSE`).
 
+## FFmpegInteropX (debug builds only)
+
+Development builds bundle [FFmpegInteropX.UWP.Lib](https://github.com/ffmpeginteropx/FFmpegInteropX)
+2.1.0 (Apache-2.0) and FFmpegInteropX.UWP.FFmpeg 8.1.2, including dav1d for software AV1.
+FFmpeg is LGPL-2.1-or-later; its bundled dependencies retain their own licenses. The upstream
+license texts are packaged under `Licenses/FFmpegInteropX.txt` and `Licenses/FFmpeg/`.
+The FFmpeg build's source revision is `38b88335f99e76ed89ff3c93f877fdefce736c13`; build scripts
+and dependency sources are in the [FFmpegInteropX repository](https://github.com/ffmpeginteropx/FFmpegInteropX/tree/release/v2.1).
+Build with `-p:BaleDebugServer=false` to exclude this experimental pipeline and its native DLLs.
+
 ## QRCoder
 
 Bale uses [QRCoder](https://github.com/codebude/QRCoder) 1.6.0 to generate the phone sign-in QR

@@ -18,6 +18,8 @@
 #   scripts/bale-debug.sh playtest <url> [seconds]  muted public http(s) stream probe (1–10 s, default 3)
 #   timeout 300 scripts/bale-debug.sh playtest suite [seconds]  Chromium samples, one at a time
 #                                               (the whole suite needs more than the usual timeout 20)
+#   scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [mode]  debug FFmpeg probe (1–60 s, default 3; auto|software|system)
+#   timeout 900 scripts/bale-debug.sh playtest-ffmpeg suite 15 software  same Chromium samples; allow 30 s create + 15 s open per clip
 #   scripts/bale-debug.sh goto "Unwatched#2"     setup only: focus the second matching control
 #   scripts/bale-debug.sh targets               list controls goto can reach
 #   scripts/bale-debug.sh tree                  the visible element tree with bounds
@@ -78,16 +80,39 @@ case "${1:-}" in
   focus) curl -fsS "$BASE/focus" ;;
   where) curl -fsS --max-time 5 "$BASE/where" ;;
   caps) curl -fsS --max-time 18 -G "$BASE/caps" ${2:+--data-urlencode "only=$2"} ;;
-  playtest)
+  playtest|playtest-ffmpeg)
+    playtest_route="$1"
     playtest_seconds="${3:-3}"
-    if [[ "$#" -lt 2 || "$#" -gt 3 || ! "$playtest_seconds" =~ ^([1-9]|10)$ ]]; then
+    playtest_max_seconds=10
+    playtest_max_args=3
+    playtest_open_margin=9
+    playtest_mode_args=()
+    if [[ "$playtest_route" == playtest-ffmpeg ]]; then
+      playtest_max_seconds=60
+      playtest_max_args=4
+      # 30 s native create + 15 s MediaOpened + 5 s response/cleanup margin.
+      playtest_open_margin=50
+      playtest_mode_args=(--data-urlencode "mode=${4:-auto}")
+    fi
+    if [[ "$#" -lt 2 || "$#" -gt "$playtest_max_args" || ! "$playtest_seconds" =~ ^([1-9]|[1-5][0-9]|60)$ ]] \
+      || (( playtest_seconds > playtest_max_seconds )) \
+      || [[ "$playtest_route" == playtest-ffmpeg && ! "${4:-auto}" =~ ^(auto|software|system)$ ]]; then
       echo 'usage: scripts/bale-debug.sh playtest <http(s)-url|suite> [seconds] (1–10, default 3; suite needs timeout 300)' >&2
+      echo '       scripts/bale-debug.sh playtest-ffmpeg <http(s)-url|@file|suite> [seconds] [auto|software|system] (1–60, default 3)' >&2
       exit 2
     fi
     playtest_url() {
-      # 8 s to open + playback + 1 s margin; at most 19 s under the usual outer timeout 20.
-      curl --fail-with-body -sS --max-time "$((playtest_seconds + 9))" -G "$BASE/playtest" \
-        --data-urlencode "url=$1" --data-urlencode "seconds=$playtest_seconds"
+      local url_data="url=$1"
+      if [[ "$1" == @* ]]; then
+        if [[ ! -r "${1#@}" ]]; then
+          echo 'URL file is not readable' >&2
+          return 2
+        fi
+        # curl reads the file directly: the URL never reaches output or curl's argument list.
+        url_data="url@${1#@}"
+      fi
+      curl --fail-with-body -sS --max-time "$((playtest_seconds + playtest_open_margin))" -G "$BASE/$playtest_route" \
+        --data-urlencode "$url_data" --data-urlencode "seconds=$playtest_seconds" "${playtest_mode_args[@]}"
     }
     if [[ "$2" == suite ]]; then
       suite_base='https://raw.githubusercontent.com/chromium/chromium/main/media/test/data'
@@ -104,7 +129,7 @@ case "${1:-}" in
         bear-eac3-only-frag.mp4 \
         bear-flac.mp4 \
         bear-opus.mp4; do
-        printf '\n=== %s/%s ===\n' "$suite_base" "$sample"
+        printf '\n=== %s ===\n' "$sample"
         playtest_url "$suite_base/$sample" || suite_status=$?
       done
       exit "$suite_status"

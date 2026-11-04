@@ -107,8 +107,10 @@ public class DebugPlaytestTests
     public void WrapperEncodesUrlsAndKeepsEachCallUnderTwentySecondsWithALongerSuiteTimeout()
     {
         var script = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "bale-debug.sh"));
-        Assert.Contains("--max-time \"$((playtest_seconds + 9))\"", script);
-        Assert.Contains("--data-urlencode \"url=$1\" --data-urlencode \"seconds=$playtest_seconds\"", script);
+        Assert.Contains("playtest_open_margin=9", script);
+        Assert.Contains("--max-time \"$((playtest_seconds + playtest_open_margin))\"", script);
+        Assert.Contains("local url_data=\"url=$1\"", script);
+        Assert.Contains("--data-urlencode \"$url_data\" --data-urlencode \"seconds=$playtest_seconds\"", script);
         Assert.Contains("timeout 300 scripts/bale-debug.sh playtest suite", script);
         Assert.Contains("suite_base='https://raw.githubusercontent.com/chromium/chromium/main/media/test/data'", script);
         Assert.Contains("playtest_url \"$suite_base/$sample\" || suite_status=$?", script);

@@ -7,7 +7,8 @@
 //   bale-cli home [--json] [--for-you]         print the home rows Bale would show
 //   bale-cli detail <content-id>   print a title's detail page as Bale shows it
 //   bale-cli search <query>        print search results and their artwork
-//   bale-cli play-plan <content-id> [profile name]   start + stop a playback session; print the plan shape
+//   bale-cli play-plan <content-id> [Bale Test] [--claim-av1] [--url-file <path>] [--hold <seconds>]
+//       Bale Test only; private original_http URL file, hold 0–3600 s then stop (also on Ctrl+C)
 //   bale-cli logout
 //
 // Run with: dotnet run --project tools/Bale.Cli -- <command> ...
@@ -104,57 +105,14 @@ switch (command)
     case "play-plan":
     {
         if (args.Length < 2) return Usage();
+        if (!PlayPlanOptions.TryParse(args.Skip(2), out var options, out var error))
+        {
+            Console.Error.WriteLine(error);
+            return Usage();
+        }
         using var client = await CliSession.ResumeAsync(identity, cts.Token);
         if (client is null) { Console.Error.WriteLine("Not signed in."); return 1; }
-        // Playback writes progress, so never default to the account's own profile.
-        var profileName = args.Length > 2 ? string.Join(' ', args.Skip(2)) : "Bale Test";
-        var profile = (await client.GetProfilesAsync(cts.Token)).FirstOrDefault(p => p.Name == profileName);
-        if (profile?.Id is null) { Console.Error.WriteLine($"No profile named {profileName}."); return 1; }
-        client.UseProfile(profile.Id);
-        await client.GetAccountAsync(cts.Token);
-        var capability = await client.Playback.GetCapabilitiesAsync(cts.Token);
-        var installation = new CliInstallation(capability.InstallationId!);
-        var detail = await client.Detail.LoadAsync(args[1], cts.Token);
-        var start = Bale.Core.Playback.PlaybackStartBuilder.Build(detail, Bale.Core.Detail.PlaybackSelection.Auto, profile.Id,
-            Guid.NewGuid().ToString(), null, Bale.Core.Playback.ConsoleEvidence.Default, identity);
-        var decision = await client.Playback.StartAsync(start, installation, cts.Token);
-        Console.WriteLine($"outcome={decision.Outcome} terminal={decision.Terminal?.Reason} {decision.Terminal?.Message}");
-        var plan = decision.PlaybackPlan;
-        if (plan?.Stream is { } stream)
-        {
-            // Print the URL's shape only: query values and absolute hosts can carry grants.
-            var raw = stream.Url ?? "";
-            var q = raw.IndexOf('?');
-            var path = q < 0 ? raw : raw[..q];
-            var keys = q < 0 ? "" : string.Join(",", raw[(q + 1)..].Split('&').Select(kv => kv.Split('=')[0]));
-            var scheme = path.Contains("://") ? path[..path.IndexOf("://")] + "://<host>" + new Uri(path).AbsolutePath : path;
-            Console.WriteLine($"delivery={plan.Delivery} protocol={stream.Protocol} container={stream.Container} mime={stream.MimeType}");
-            Console.WriteLine($"url={scheme} query-keys=[{keys}] header-keys=[{string.Join(",", stream.Headers?.AdditionalData.Keys ?? [])}]");
-            Console.WriteLine($"reason={plan.DecisionReason} quirks=[{string.Join(",", plan.AppliedQuirks?.Select(q => q.Id) ?? [])}] warnings=[{string.Join(",", plan.DegradationWarnings?.Select(w => w.Code) ?? [])}]");
-            var source = plan.Source;
-            var recipe = plan.EffectiveRecipe;
-            Console.WriteLine($"source container={source?.Container} video={source?.VideoCodec}" +
-                $" profile={source?.VideoProfile} level={source?.VideoLevel} bits={source?.BitDepth}" +
-                $" {source?.Width}x{source?.Height}@{source?.FrameRate} range={source?.DynamicRange}" +
-                $" kbps={source?.BitrateKbps} audio={source?.AudioCodec} ch={source?.AudioChannels} layout={source?.AudioLayout}");
-            Console.WriteLine($"recipe video={recipe?.VideoCodec} sample={recipe?.VideoSampleEntry}" +
-                $" {recipe?.Width}x{recipe?.Height} audio={recipe?.AudioCodec} ch={recipe?.AudioChannels}" +
-                $" seg={recipe?.SegmentContainer} kbps={recipe?.BitrateKbps} quality={plan.ActiveQuality}" +
-                $" corrections=[{string.Join(",", plan.RuntimeCorrections ?? [])}]");
-            Console.WriteLine($"resolves={Bale.Core.Playback.PlaybackMediaUrl.Resolve(raw, client.Server) is not null}");
-            Console.WriteLine($"timeline source={plan.Timeline?.SourceStartSeconds} player={plan.Timeline?.PlayerStartSeconds} offset={plan.Timeline?.TimelineOffsetSeconds} duration={plan.Source?.DurationSeconds}");
-        }
-        if (decision.SessionId is { Length: > 0 } sessionId)
-        {
-            var journal = new Bale.Core.Playback.FilePlaybackJournal(Path.Combine(Path.GetTempPath(), "bale-cli-playback.json"));
-            var reporter = client.Playback.CreateProgressReporter(installation, journal, "bale-cli");
-            // BALE_STOP_AT=<seconds> stops at that position instead of 0 (a progress write, Bale Test only).
-            var stopAt = double.TryParse(Environment.GetEnvironmentVariable("BALE_STOP_AT"), System.Globalization.CultureInfo.InvariantCulture, out var at) ? at : 0;
-            await reporter.AttachSessionAsync(sessionId, 0, true);
-            try { await reporter.StopAsync(sessionId, stopAt, true, cts.Token); Console.WriteLine($"session stopped at {stopAt}"); }
-            catch (Exception ex) { Console.WriteLine($"stop failed type={ex.GetType().Name} status={(ex as Microsoft.Kiota.Abstractions.ApiException)?.ResponseStatusCode}"); }
-        }
-        return 0;
+        return await PlayPlanCommand.RunAsync(client, identity, args[1], options, cts.Token);
     }
 
     case "profiles" or "home" or "logout" or "detail" or "search":
@@ -275,6 +233,11 @@ switch (command)
         return Usage();
 }
 }
+catch (Exception ex) when (command == "play-plan")
+{
+    PlayPlanCommand.PrintFailure("play-plan", ex);
+    return 1;
+}
 catch (Bale.Core.Api.Models.Problem problem)
 {
     Console.Error.WriteLine($"Server said {problem.Status}: {problem.Title}. {problem.Detail}");
@@ -283,7 +246,7 @@ catch (Bale.Core.Api.Models.Problem problem)
 
 static int Usage()
 {
-    Console.Error.WriteLine("usage: bale-cli <capability|pair-test|login> <server> | <profiles|home [--json] [--for-you]|detail <id>|search <query>|play-plan <id> [profile]|logout>");
+    Console.Error.WriteLine("usage: bale-cli <capability|pair-test|login> <server> | <profiles|home [--json] [--for-you]|detail <id>|search <query>|play-plan <id> [Bale Test] [--claim-av1] [--url-file <path>] [--hold <seconds>]|logout>");
     return 2;
 }
 

@@ -65,6 +65,7 @@ MSIX (~2 min). Then, with `XBOX_HOST` set to the console's IP:
 ./scripts/bale-debug.sh caps                  # installed decoders, display modes, audio mix and baseline
 ./scripts/bale-debug.sh playtest "https://example.org/public.mp4" 3  # muted built-in-player probe; 1–10 s (default 3)
 timeout 300 ./scripts/bale-debug.sh playtest suite 3  # Chromium codec samples, sequential; needs a larger outer timeout
+./scripts/bale-debug.sh playtest-ffmpeg @/tmp/x 30 software  # debug FFmpegInteropX; URL, @file or suite; 1–60 s; auto|software|system
 ./scripts/bale-debug.sh goto "Unwatched#2"     # setup only: focus the second matching control
 ./scripts/bale-debug.sh targets               # controls goto can reach
 ./scripts/bale-debug.sh tree                  # visible element tree with bounds

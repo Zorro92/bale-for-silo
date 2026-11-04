@@ -8,16 +8,16 @@ internal static class DebugPlaytest
 {
     internal const int OpenTimeoutMs = 8000;
 
-    internal static bool TryParse(string? url, string? seconds, out Uri uri, out int duration, out string error)
+    internal static bool TryParse(string? url, string? seconds, out Uri uri, out int duration, out string error, int maxDuration = 10)
     {
         uri = null!;
         duration = 3;
         error = "url must be an absolute http(s) URL without credentials";
         if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed)
             || parsed.Scheme is not ("http" or "https") || parsed.UserInfo.Length != 0) return false;
-        error = "seconds must be an integer from 1 to 10";
+        error = $"seconds must be an integer from 1 to {maxDuration}";
         if (seconds is not null && (!int.TryParse(seconds, NumberStyles.None, CultureInfo.InvariantCulture, out duration)
-            || duration is < 1 or > 10)) return false;
+            || duration < 1 || duration > maxDuration)) return false;
         uri = parsed;
         error = string.Empty;
         return true;

@@ -80,6 +80,14 @@ jobs:
           /p:AppxPackageSigningEnabled=true
           /p:PackageCertificateThumbprint=${{ steps.cert.outputs.thumbprint }}
 
+      - name: Check FFmpeg native activation and package contents
+        shell: pwsh
+        run: |
+          $package = Get-ChildItem out -Recurse -Filter '*.msix' |
+            Where-Object { $_.FullName -notmatch '[\\/]Dependencies[\\/]' } | Select-Object -First 1
+          if (-not $package) { throw 'No application MSIX found' }
+          ./scripts/check-ffmpeg-package.ps1 -PackagePath $package.FullName
+
       - uses: actions/upload-artifact@v7
         with:
           name: bale-xbox-x64

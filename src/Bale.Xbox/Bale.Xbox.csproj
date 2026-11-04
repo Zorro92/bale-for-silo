@@ -42,4 +42,27 @@
     <ProjectReference Include="..\Bale.Core\Bale.Core.csproj" />
   </ItemGroup>
 
+  <!-- Test pipeline only: production builds must not carry the FFmpeg projection or native DLLs. -->
+  <ItemGroup Condition="'$(BaleDebugServer)' == 'true'">
+    <PackageReference Include="FFmpegInteropX.UWP.Lib" Version="2.1.0" />
+    <PackageReference Include="FFmpegInteropX.UWP.FFmpeg" Version="8.1.2" GeneratePathProperty="true" />
+    <Content Include="$(PkgFFmpegInteropX_UWP_FFmpeg)\licenses\*.txt" Link="Licenses\FFmpeg\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\FFmpegInteropX-LICENSE.txt" Link="Licenses\FFmpegInteropX.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- The net6 CsWinRT projection does not register the native component with UWP packaging.
+       Transform the stamped manifest, leaving the release manifest and its identity untouched. -->
+  <Target Name="PrepareFFmpegManifest" BeforeTargets="PrepareForBuild" Condition="'$(BaleDebugServer)' == 'true'">
+    <PropertyGroup>
+      <_FFmpegManifest>$(IntermediateOutputPath)ffmpeg\Package.appxmanifest</_FFmpegManifest>
+    </PropertyGroup>
+    <MakeDir Directories="$(IntermediateOutputPath)ffmpeg" />
+    <XslTransformation XmlInputPaths="Package.appxmanifest" XslInputPath="Build\FFmpegManifest.xslt" OutputPaths="$(_FFmpegManifest)" />
+    <ItemGroup>
+      <AppxManifest Remove="@(AppxManifest)" />
+      <AppxManifest Include="$(_FFmpegManifest)" />
+      <FileWrites Include="$(_FFmpegManifest)" />
+    </ItemGroup>
+  </Target>
+
 </Project>
