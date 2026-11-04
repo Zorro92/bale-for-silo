@@ -501,8 +501,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         catch (Exception ex) { LogFailure("dispatch", ex); }
     }
 
-    private static bool IsNetworkFailure(Exception ex) => ex is HttpRequestException
-        || ex is IOException and not InvalidDataException || ex is ApiException { ResponseStatusCode: 0 };
+    private static bool IsNetworkFailure(Exception ex) => ex is HttpRequestException or IOException
+        || ex is ApiException { ResponseStatusCode: 0 };
 
     private static void LogFailure(string operation, Exception ex) =>
         Log.Info($"player: {operation} type={ex.GetType().Name} hr=0x{unchecked((uint)ex.HResult):X8}");

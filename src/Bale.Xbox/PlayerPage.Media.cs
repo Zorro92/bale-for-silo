@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices.WindowsRuntime;
 using Bale.Core.Playback;
+using Bale.Xbox.Services;
 using Windows.Foundation;
 using Windows.Media.Core;
 using Windows.Media.Playback;
