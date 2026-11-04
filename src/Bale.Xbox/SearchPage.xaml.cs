@@ -495,8 +495,17 @@ public sealed partial class SearchPage : Page, IRestoresFocus
         var focused = FocusManager.GetFocusedElement() as Control;
         var headerFocus = focused is ToggleButton or TextBox or ContentControl { Content: SearchPersonView }
             || ReferenceEquals(focused, RetryButton) ? focused : null;
+        var resultFocus = reset && focused is ContentControl { Content: CardView };
         if (reset)
         {
+            if (resultFocus)
+            {
+                // TvSearchScreen.kt keeps focus on a stable content target. Removing the focused
+                // container otherwise sends UWP to the first control, QueryBox. Park on the selected
+                // chip until the new result is realized, or stay there if the results are empty.
+                FocusSelectedFilter();
+            }
+
             _cards.Clear();
             _lastResult = null;
         }
@@ -507,7 +516,11 @@ public sealed partial class SearchPage : Page, IRestoresFocus
         }
 
         HookResults();
-        if (headerFocus?.FocusState == FocusState.Unfocused)
+        if (resultFocus && _cards.Count > 0)
+        {
+            FocusResultAt(0);
+        }
+        else if (headerFocus?.FocusState == FocusState.Unfocused)
         {
             headerFocus.Focus(FocusState.Programmatic);
         }
