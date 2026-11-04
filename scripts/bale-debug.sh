@@ -13,8 +13,8 @@
 #   scripts/bale-debug.sh wait text "Clear filters"  wait for visible text (case-insensitive)
 #   scripts/bale-debug.sh wait focus Play       wait for a focused description containing Play
 #   scripts/bale-debug.sh wait --timeout 12000 loaded  default 8000 ms; 0–15000; timeout prints where and fails
-#   scripts/bale-debug.sh caps [section]        installed decoders, display modes, audio mix and baseline
-#                                               (section: video, audio, display, device or graph)
+#   scripts/bale-debug.sh caps [section]        installed decoders, GPU decode profiles, display modes, audio mix and baseline
+#                                               (section: video, gpu, audio, display, device or graph)
 #   scripts/bale-debug.sh playtest <url> [seconds]  muted public http(s) stream probe (1–10 s, default 3)
 #   timeout 300 scripts/bale-debug.sh playtest suite [seconds]  Chromium samples, one at a time
 #                                               (the whole suite needs more than the usual timeout 20)

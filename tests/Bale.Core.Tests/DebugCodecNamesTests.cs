@@ -141,6 +141,7 @@ public class DebugCodecNamesTests
         Assert.Contains("FindAllAsync(kind, CodecCategory.Decoder, string.Empty).AsTask()", source);
         Assert.Contains("CodecKind.Video", source);
         Assert.Contains("CodecKind.Audio", source);
+        Assert.Contains("if (Run(\"gpu\")) AppendGpuCapabilities(builder);", source);
         Assert.Contains("observed.Add((codec.DisplayName, supported));", source);
         Assert.Contains("names.Summary(observed, codecNames)", source);
         Assert.Contains("await OnUiAsync(DescribeDisplayCapabilities)", source);

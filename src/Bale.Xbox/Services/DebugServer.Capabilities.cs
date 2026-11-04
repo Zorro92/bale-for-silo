@@ -1,6 +1,7 @@
 #if DEBUG_SERVER
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text;
 using Windows.Devices.Enumeration;
 using Windows.Foundation.Collections;
@@ -231,7 +232,7 @@ internal sealed partial class DebugServer
         }
     }
 
-    // only=video|audio|display|device|graph runs one section; each logs a breadcrumb first because
+    // only=video|gpu|audio|display|device|graph runs one section; each logs a breadcrumb first because
     // a native failure in a media API ends the app without reaching any catch.
     private static async Task<string> DescribeCapabilitiesAsync(string? only)
     {
@@ -243,6 +244,7 @@ internal sealed partial class DebugServer
         }
         var builder = new StringBuilder("Decoders (installed; not a guarantee of playback/profile support or passthrough):\n");
         if (Run("video")) await AppendVideoDecodersBySubtypeAsync(builder);
+        if (Run("gpu")) AppendGpuCapabilities(builder);
         if (Run("audio")) await AppendDecodersAsync(builder, CodecKind.Audio, ["AAC", "AC3", "EAC3", "DTS", "DTS-HD", "TrueHD/MLP", "FLAC", "ALAC", "Opus", "MP3", "PCM"]);
         // These view-scoped display APIs must run on the UI thread, unlike codec/device enumeration.
         if (Run("display")) builder.Append("Display:\n").Append(await OnUiAsync(DescribeDisplayCapabilities));
@@ -250,6 +252,133 @@ internal sealed partial class DebugServer
         await AppendAudioCapabilitiesAsync(builder, Run("device"), Run("graph"));
         Log.Info("Debug caps: done");
         return builder.ToString();
+    }
+
+    // GUIDs, descriptor layout and ID3D11VideoDevice slots match the Windows SDK's d3d11.h
+    // (microsoft/win32metadata, generation/WinSDK/RecompiledIdlHeaders/um/d3d11.h).
+    private static readonly Dictionary<Guid, string> GpuDecoderProfileNames = new()
+    {
+        [new Guid("1b81be68-a0c7-11d3-b984-00c04f2e73c5")] = "H264_VLD_NOFGT",
+        [new Guid("5b11d51b-2f4c-4452-bcc3-09f2a1160cc0")] = "HEVC_VLD_MAIN",
+        [new Guid("107af0e0-ef1a-4d19-aba8-67a163073d13")] = "HEVC_VLD_MAIN10",
+        [new Guid("463707f8-a1d0-4585-876d-83aa6d60b89e")] = "VP9_VLD_PROFILE0",
+        [new Guid("a4c749ef-6ecf-48aa-8448-50a7a1165ff7")] = "VP9_VLD_10BIT_PROFILE2",
+        [new Guid("b8be4ccb-cf53-46ba-8d59-d6b8a6da5d2a")] = "AV1_VLD_PROFILE0",
+        [new Guid("6936ff0f-45b1-4163-9cc1-646ef6946108")] = "AV1_VLD_PROFILE1",
+        [new Guid("0c5f2aa1-e541-4089-bb7b-98110a19d7c8")] = "AV1_VLD_PROFILE2",
+        [new Guid("90b899ea-3a62-4705-88b3-8df04b2744e7")] = "VP8_VLD",
+        [new Guid("ee27417f-5e28-4e65-beea-1d26b508adc9")] = "MPEG2_VLD",
+        [new Guid("86695f12-340e-4f04-9fd3-9253dd327460")] = "MPEG2and1_VLD",
+        [new Guid("1b81bea4-a0c7-11d3-b984-00c04f2e73c5")] = "VC1_D2010",
+    };
+
+    private static readonly (string Name, int Format)[] GpuDecoderOutputFormats =
+    [
+        ("NV12", 103),
+        ("P010", 104),
+    ];
+
+    private static readonly (string Name, uint Width, uint Height)[] GpuDecoderSizes =
+    [
+        ("1080p", 1920, 1080),
+        ("4K", 3840, 2160),
+        ("8K", 7680, 4320),
+    ];
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct D3D11VideoDecoderDesc
+    {
+        public Guid Guid;
+        public uint SampleWidth;
+        public uint SampleHeight;
+        public int OutputFormat;
+    }
+
+    // Blittable arguments and raw COM calls avoid runtime COM marshalling under Native AOT.
+    [DllImport("d3d11.dll", ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+    private static extern int D3D11CreateDevice(IntPtr adapter, int driverType, IntPtr software,
+        uint flags, IntPtr featureLevels, uint featureLevelCount, uint sdkVersion,
+        out IntPtr device, out int featureLevel, out IntPtr immediateContext);
+
+    private static unsafe void AppendGpuCapabilities(StringBuilder builder)
+    {
+        var device = IntPtr.Zero;
+        var context = IntPtr.Zero;
+        var videoDevice = IntPtr.Zero;
+        try
+        {
+            builder.Append("GPU (D3D11 hardware video decode; independent of installed decoders):\n");
+            Log.Info("Debug caps: gpu before device creation");
+            // HARDWARE=1, VIDEO_SUPPORT=0x800, SDK_VERSION=7; never fall back to software.
+            Marshal.ThrowExceptionForHR(D3D11CreateDevice(IntPtr.Zero, 1, IntPtr.Zero, 0x800,
+                IntPtr.Zero, 0, 7, out device, out var featureLevel, out context));
+            builder.Append($"  Feature level: 0x{featureLevel:X4}\n");
+            var videoDeviceId = new Guid("10ec4d5b-975a-4689-b9e4-d0aac30fe333");
+            var deviceVtable = *(void***)device;
+            var queryInterface = (delegate* unmanaged[Stdcall]<IntPtr, Guid*, IntPtr*, int>)deviceVtable[0];
+            Marshal.ThrowExceptionForHR(queryInterface(device, &videoDeviceId, &videoDevice));
+
+            var videoVtable = *(void***)videoDevice;
+            // ID3D11VideoDevice derives directly from IUnknown: profile queries occupy slots 11–14.
+            var getProfileCount = (delegate* unmanaged[Stdcall]<IntPtr, uint>)videoVtable[11];
+            var getProfile = (delegate* unmanaged[Stdcall]<IntPtr, uint, Guid*, int>)videoVtable[12];
+            var checkFormat = (delegate* unmanaged[Stdcall]<IntPtr, Guid*, int, int*, int>)videoVtable[13];
+            var getConfigCount = (delegate* unmanaged[Stdcall]<IntPtr, D3D11VideoDecoderDesc*, uint*, int>)videoVtable[14];
+            var profileCount = getProfileCount(videoDevice);
+            builder.Append($"  Decoder profiles: {profileCount}\n");
+            Log.Info($"Debug caps: gpu before profile loop ({profileCount} profiles)");
+            for (uint index = 0; index < profileCount; index++)
+            {
+                var profile = Guid.Empty;
+                Marshal.ThrowExceptionForHR(getProfile(videoDevice, index, &profile));
+                var line = new StringBuilder("  ")
+                    .Append(GpuDecoderProfileNames.TryGetValue(profile, out var name) ? name : profile.ToString())
+                    .Append(": ");
+                var hasFormat = false;
+                foreach (var (formatName, format) in GpuDecoderOutputFormats)
+                {
+                    var supported = 0;
+                    Marshal.ThrowExceptionForHR(checkFormat(videoDevice, &profile, format, &supported));
+                    if (supported == 0) continue;
+                    if (hasFormat) line.Append("; ");
+                    line.Append(formatName);
+                    hasFormat = true;
+                    foreach (var (sizeName, width, height) in GpuDecoderSizes)
+                    {
+                        var desc = new D3D11VideoDecoderDesc
+                        {
+                            Guid = profile,
+                            SampleWidth = width,
+                            SampleHeight = height,
+                            OutputFormat = format,
+                        };
+                        uint count = 0;
+                        // A format can be supported while a particular size has no valid configuration.
+                        if (getConfigCount(videoDevice, &desc, &count) >= 0 && count > 0)
+                            line.Append(' ').Append(sizeName);
+                    }
+                }
+                if (!hasFormat) line.Append("(no output formats)");
+                builder.Append(line).Append('\n');
+            }
+        }
+        catch (Exception ex)
+        {
+            builder.Append($"gpu error: 0x{unchecked((uint)ex.HResult):X8}\n");
+        }
+        finally
+        {
+            ReleaseGpuCom(videoDevice);
+            ReleaseGpuCom(context);
+            ReleaseGpuCom(device);
+        }
+    }
+
+    private static unsafe void ReleaseGpuCom(IntPtr instance)
+    {
+        if (instance == IntPtr.Zero) return;
+        var release = (delegate* unmanaged[Stdcall]<IntPtr, uint>)(*(void***)instance)[2];
+        release(instance);
     }
 
     private static DebugCodecNames KnownCodecNames()
