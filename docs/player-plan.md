@@ -36,6 +36,13 @@ Evidence so far (console, `bale-debug.sh caps`, build 0.1.200):
 | WebM VP8+Vorbis, VP9, VP9+Opus | opens, decoders report FullySupported, but never leaves Paused at 0 s. Unexplained; WebM is rare in libraries, so don't claim it. |
 | MP4 FLAC, MP4 Opus | `UnsupportedSubtype`: MP4's `fLaC`/`Opus` sample entries aren't mapped, though the FLAC/Opus decoders exist. Retest inside MKV with real files. |
 
+### GPU decode (`caps gpu`, D3D11 video device, build 0.1.223)
+
+Series X: feature level 11_0 (0xB000), 11 profiles. H.264 (VLD_NOFGT, multiview), MPEG-2,
+VC-1 and MPEG-4 Part 2 simple at 1080p; HEVC Main and Main10 (P010) up to 8K; VP9 profile 0
+and profile 2 10-bit (P010) up to 4K. **No AV1 profile**: the GPU path doesn't help AV1 on this
+console. AV1 needs software decode (dav1d).
+
 Still to test with real library files: TrueHD/DTS passthrough to a receiver.
 
 The capability claims Bale sends the server must come from this kind of evidence, never from
@@ -43,8 +50,9 @@ guesses. `playtest` (debug only) checks actual playback, not just installed deco
 
 **Open decision: a bundled decoder (FFmpegInteropX).** It would add software AV1 (dav1d), DTS/TrueHD
 decode without a receiver, broader MKV and ASS styling. The costs are package size, an untested
-Native AOT fit and a second pipeline. Not in the first phases. Until then, whatever the console
-can't play goes to the server to transcode. Edge plays AV1 on this console through Chromium's own
+Native AOT fit and a second pipeline. Next: a debug test build to check Native AOT activation and
+real-time software AV1. Until then, whatever the console can't play goes to the server to transcode.
+Edge plays AV1 on this console through Chromium's own
 decoders, which doesn't prove MediaPlayer can.
 
 ## Phases

@@ -259,6 +259,9 @@ internal sealed partial class DebugServer
     private static readonly Dictionary<Guid, string> GpuDecoderProfileNames = new()
     {
         [new Guid("1b81be68-a0c7-11d3-b984-00c04f2e73c5")] = "H264_VLD_NOFGT",
+        [new Guid("705b9d82-76cf-49d6-b7e6-ac8872db013c")] = "H264_VLD_MULTIVIEW_NOFGT",
+        [new Guid("efd64d74-c9e8-41d7-a5e9-e9b0e39fa319")] = "MPEG4PT2_VLD_SIMPLE",
+        [new Guid("1b81bea3-a0c7-11d3-b984-00c04f2e73c5")] = "VC1_VLD",
         [new Guid("5b11d51b-2f4c-4452-bcc3-09f2a1160cc0")] = "HEVC_VLD_MAIN",
         [new Guid("107af0e0-ef1a-4d19-aba8-67a163073d13")] = "HEVC_VLD_MAIN10",
         [new Guid("463707f8-a1d0-4585-876d-83aa6d60b89e")] = "VP9_VLD_PROFILE0",

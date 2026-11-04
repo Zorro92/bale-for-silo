@@ -133,6 +133,16 @@ public class DebugCodecNamesTests
         Assert.DoesNotContain("CodecSubtypes.VideoFormatAv1", source);
     }
 
+    [Theory]
+    [InlineData("1b81bea3-a0c7-11d3-b984-00c04f2e73c5", "VC1_VLD")]
+    [InlineData("efd64d74-c9e8-41d7-a5e9-e9b0e39fa319", "MPEG4PT2_VLD_SIMPLE")]
+    [InlineData("705b9d82-76cf-49d6-b7e6-ac8872db013c", "H264_VLD_MULTIVIEW_NOFGT")]
+    public void SeriesXGpuProfilesHaveExplicitNames(string guid, string name)
+    {
+        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "DebugServer.Capabilities.cs.txt"));
+        Assert.Contains($"[new Guid(\"{guid}\")] = \"{name}\"", source);
+    }
+
     [Fact]
     public void CapabilityProbesStayGuardedSeparateAndReadOnly()
     {
