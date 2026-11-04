@@ -2,10 +2,16 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using System.Numerics;
 using System.Text;
 using FFmpegInteropX;
+using Windows.ApplicationModel.Core;
+using Windows.Foundation;
 using Windows.Media.Playback;
-using Windows.System.Diagnostics;
+using Windows.UI.Composition;
+using Windows.UI.Core;
+using Windows.UI.Xaml;
+using Windows.UI.Xaml.Hosting;
 
 namespace Bale.Xbox.Services;
 
@@ -19,11 +25,14 @@ internal sealed partial class DebugServer
         if (Interlocked.CompareExchange(ref _playtestBusy, 1, 0) != 0)
             return ("409 Conflict", "a playtest is already running\n");
 
-        var builder = new StringBuilder($"Mode: {decoderMode}\n");
+        var builder = new StringBuilder($"Mode: {decoderMode}\nCPU source: GetProcessTimes (100 ns ticks)\n");
         var failures = new ConcurrentQueue<string>();
+        var cpuDiagnostics = new List<string>();
         var didOpen = false;
         var start = TimeSpan.Zero;
         var end = TimeSpan.Zero;
+        var maximum = TimeSpan.Zero;
+        var playbackState = "unavailable";
         var wall = TimeSpan.Zero;
         TimeSpan? cpuStart = null;
         TimeSpan? cpuEnd = null;
@@ -44,16 +53,13 @@ internal sealed partial class DebugServer
         }
         TimeSpan? ReadCpu()
         {
-            try
+            var value = DebugProcessCpu.Read(out var failure);
+            if (failure is not null)
             {
-                var report = ProcessDiagnosticInfo.GetForCurrentProcess().CpuUsage.GetReport();
-                return report is null ? null : report.UserTime + report.KernelTime;
+                cpuDiagnostics.Add(failure);
+                Log.Info("Debug FFmpeg: " + failure);
             }
-            catch (Exception ex)
-            {
-                Log.Info("Debug FFmpeg: " + DebugFfmpegPlaytest.Failure("CPU unavailable", ex.HResult));
-                return null;
-            }
+            return value;
         }
 
         try
@@ -84,7 +90,8 @@ internal sealed partial class DebugServer
             {
                 using var source = await creation;
                 Log.Info("Debug FFmpeg: created; before player");
-                using var player = new MediaPlayer { IsMuted = true, AutoPlay = false };
+                using var player = await OnFfmpegUiAsync(() => new MediaPlayer { IsMuted = true, AutoPlay = false });
+                var renderTarget = new FfmpegRenderTarget();
                 var opened = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 var stopped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -118,6 +125,11 @@ internal sealed partial class DebugServer
                     try { Interlocked.Increment(ref buffering); }
                     catch (Exception ex) { Failure("BufferingStarted handler", ex); }
                 }
+                void SnapshotPosition()
+                {
+                    end = player.PlaybackSession.Position;
+                    if (end > maximum) maximum = end;
+                }
 
                 try
                 {
@@ -125,9 +137,12 @@ internal sealed partial class DebugServer
                     player.MediaFailed += OnFailed;
                     player.MediaEnded += OnEnded;
                     player.BufferingStarted += OnBuffering;
-                    Log.Info("Debug FFmpeg: before item/open");
+                    Log.Info("Debug FFmpeg: before render target");
+                    await OnFfmpegUiAsync(() => { renderTarget.Attach(player); return true; });
+                    builder.Append("Surface: composition 160x90\n");
+                    Log.Info("Debug FFmpeg: render target attached; before item/open");
                     var item = source.CreateMediaPlaybackItem();
-                    player.Source = item;
+                    await OnFfmpegUiAsync(() => { player.Source = item; return true; });
                     if (await Task.WhenAny(opened.Task, Task.Delay(DebugFfmpegPlaytest.OpenTimeoutMs)) == opened.Task)
                         didOpen = await opened.Task;
                     else failures.Enqueue($"open timed out after {DebugFfmpegPlaytest.OpenTimeoutMs} ms");
@@ -136,19 +151,25 @@ internal sealed partial class DebugServer
                     {
                         source.PlaybackSession = player.PlaybackSession;
                         start = player.PlaybackSession.Position;
+                        maximum = start;
                         cpuStart = ReadCpu();
                         Log.Info("Debug FFmpeg: before play");
                         var clock = Stopwatch.StartNew();
                         try
                         {
-                            player.Play();
-                            // End short sample clips promptly so the ratio measures only their playback interval.
-                            await Task.WhenAny(Task.Delay(TimeSpan.FromSeconds(duration)), stopped.Task);
+                            await OnFfmpegUiAsync(() => { player.Play(); return true; });
+                            // Keep a high-water mark: an end-of-stream reset must not erase observed progress.
+                            var deadline = Task.Delay(TimeSpan.FromSeconds(duration));
+                            while (!deadline.IsCompleted && !stopped.Task.IsCompleted)
+                            {
+                                await Task.WhenAny(deadline, stopped.Task, Task.Delay(100));
+                                SnapshotPosition();
+                            }
                         }
                         finally
                         {
                             wall = clock.Elapsed;
-                            Attempt("position snapshot", () => end = player.PlaybackSession.Position);
+                            Attempt("position snapshot", SnapshotPosition);
                             cpuEnd = ReadCpu();
                         }
                     }
@@ -156,13 +177,19 @@ internal sealed partial class DebugServer
                 finally
                 {
                     Log.Info("Debug FFmpeg: before snapshot/cleanup");
-                    Attempt("pause", () => player.Pause());
+                    // Capture the state before Pause/Source=null changes it during cleanup.
+                    Attempt("playback snapshot", () =>
+                    {
+                        SnapshotPosition();
+                        playbackState = player.PlaybackSession.PlaybackState.ToString();
+                    });
                     Attempt("video snapshot", () =>
                     {
                         if (source.CurrentVideoStream is not { } video) { builder.Append("Video: none\n"); return; }
+                        // BitsPerSample is container-dependent (24 for 8-bit H.264, 0 for WebM), not component depth.
                         builder.Append(string.Create(CultureInfo.InvariantCulture,
                             $"Video: codec={DebugScreenText.Compact(video.CodecName, 80)} {video.PixelWidth}x{video.PixelHeight}"
-                            + $" bits={video.BitsPerSample} fps={video.FramesPerSecond:0.###}"
+                            + $" fps={video.FramesPerSecond:0.###}"
                             + $" DecoderEngine={DescribeFfmpegDecoder(video.DecoderEngine)}\n"));
                     });
                     Attempt("audio snapshot", () =>
@@ -175,7 +202,17 @@ internal sealed partial class DebugServer
                     Attempt("unsubscribe MediaFailed", () => player.MediaFailed -= OnFailed);
                     Attempt("unsubscribe MediaEnded", () => player.MediaEnded -= OnEnded);
                     Attempt("unsubscribe BufferingStarted", () => player.BufferingStarted -= OnBuffering);
-                    Attempt("detach source", () => player.Source = null);
+                    try
+                    {
+                        await OnFfmpegUiAsync(() =>
+                        {
+                            Attempt("pause", () => player.Pause());
+                            Attempt("detach source", () => player.Source = null);
+                            renderTarget.Close(Attempt);
+                            return true;
+                        });
+                    }
+                    catch (Exception ex) { Failure("render target cleanup", ex); }
                     Log.Info("Debug FFmpeg: before player/source disposal");
                 }
             }
@@ -189,9 +226,69 @@ internal sealed partial class DebugServer
 
         var reasons = failures.ToArray();
         return ("200 OK", $"Opened: {(didOpen ? "yes" : "no")}\n" + builder
-            + DebugFfmpegPlaytest.Measurements(start, end, wall, buffering, cpuStart, cpuEnd)
+            + DebugFfmpegPlaytest.Measurements(start, end, wall, buffering, cpuStart, cpuEnd, maximum, playbackState)
+            + (cpuDiagnostics.Count == 0 ? string.Empty : "CPU diagnostics:\n  " + string.Join("\n  ", cpuDiagnostics.Distinct()) + "\n")
             + (reasons.Length == 0 ? string.Empty : "Failures:\n  " + string.Join("\n  ", reasons) + "\n")
-            + DebugFfmpegPlaytest.Verdict(didOpen, start, end, wall, reasons));
+            + DebugFfmpegPlaytest.Verdict(didOpen, start, maximum, wall, reasons));
+    }
+
+    private static async Task<T> OnFfmpegUiAsync<T>(Func<T> action)
+    {
+        var done = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+        {
+            try { done.SetResult(action()); }
+            // Unlike the general debug UI helper, propagate without formatting media exception text.
+            catch (Exception ex) { done.SetException(ex); }
+        });
+        return await done.Task;
+    }
+
+    private sealed class FfmpegRenderTarget
+    {
+        private UIElement? _host;
+        private Visual? _previous;
+        private ContainerVisual? _container;
+        private SpriteVisual? _visual;
+        private CompositionSurfaceBrush? _brush;
+        private MediaPlayerSurface? _surface;
+        private bool _replaced;
+
+        internal void Attach(MediaPlayer player)
+        {
+            _host = Window.Current.Content ?? throw new InvalidOperationException();
+            var compositor = ElementCompositionPreview.GetElementVisual(_host).Compositor;
+            _previous = ElementCompositionPreview.GetElementChildVisual(_host);
+            _container = compositor.CreateContainerVisual();
+            _container.Size = new Vector2(160, 90);
+            // A visible, nonzero target keeps uncompressed MSS video presenting; opacity 0/offscreen can cull it.
+            player.SetSurfaceSize(new Size(160, 90));
+            _surface = player.GetSurface(compositor);
+            _brush = compositor.CreateSurfaceBrush(_surface.CompositionSurface);
+            _visual = compositor.CreateSpriteVisual();
+            _visual.Size = new Vector2(160, 90);
+            _visual.Brush = _brush;
+            _container.Children.InsertAtTop(_visual);
+            // Borrow only the root's child-visual slot, preserving any existing composition content.
+            _replaced = true;
+            ElementCompositionPreview.SetElementChildVisual(_host, null);
+            if (_previous is not null) _container.Children.InsertAtBottom(_previous);
+            ElementCompositionPreview.SetElementChildVisual(_host, _container);
+        }
+
+        internal void Close(Action<string, Action> attempt)
+        {
+            if (_replaced)
+            {
+                attempt("detach render visuals", () => _container?.Children.RemoveAll());
+                attempt("restore child visual", () => ElementCompositionPreview.SetElementChildVisual(_host!, _previous));
+            }
+            attempt("detach surface brush", () => { if (_brush is not null) _brush.Surface = null; });
+            attempt("dispose render visual", () => _visual?.Dispose());
+            attempt("dispose surface brush", () => _brush?.Dispose());
+            attempt("dispose player surface", () => _surface?.Dispose());
+            attempt("dispose render container", () => _container?.Dispose());
+        }
     }
 
     private static string DescribeFfmpegDecoder(DecoderEngine engine) => engine switch

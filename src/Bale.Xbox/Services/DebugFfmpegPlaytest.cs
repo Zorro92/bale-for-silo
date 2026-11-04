@@ -24,16 +24,24 @@ internal static class DebugFfmpegPlaytest
     internal static double Ratio(TimeSpan start, TimeSpan end, TimeSpan wall) =>
         wall > TimeSpan.Zero ? (end - start).TotalSeconds / wall.TotalSeconds : 0;
 
+    internal static TimeSpan CpuTime(long kernelTicks, long userTicks) => TimeSpan.FromTicks(checked(kernelTicks + userTicks));
+
     internal static string Measurements(TimeSpan start, TimeSpan end, TimeSpan wall, int buffering,
-        TimeSpan? cpuStart, TimeSpan? cpuEnd)
+        TimeSpan? cpuStart, TimeSpan? cpuEnd, TimeSpan maximum, string playbackState)
     {
-        var cpu = cpuStart is { } first && cpuEnd is { } last && last >= first && wall > TimeSpan.Zero
-            ? string.Create(CultureInfo.InvariantCulture, $"{(last - first).TotalSeconds / wall.TotalSeconds:0.0} cores")
-            : "unavailable";
+        var cpu = CpuCores(cpuStart, cpuEnd, wall);
         return string.Create(CultureInfo.InvariantCulture,
-            $"Position: start={start.TotalSeconds:0.###}s end={end.TotalSeconds:0.###}s"
-            + $" wall={wall.TotalSeconds:0.###}s ratio={Ratio(start, end, wall):0.###}\n"
+            $"PlaybackState: {playbackState}\nPosition: start={start.TotalSeconds:0.###}s end={end.TotalSeconds:0.###}s"
+            + $" max={maximum.TotalSeconds:0.###}s wall={wall.TotalSeconds:0.###}s ratio={Ratio(start, maximum, wall):0.###}\n"
             + $"Buffering entries: {buffering}\nCPU: {cpu}\n");
+    }
+
+    internal static string CpuCores(TimeSpan? start, TimeSpan? end, TimeSpan wall)
+    {
+        if (start is not { } first || end is not { } last || last < first || wall <= TimeSpan.Zero) return "unavailable";
+        // A zero delta on an active player can mean unsupported/stale platform counters, not zero CPU usage.
+        if (last == first) return "unavailable (process times did not advance)";
+        return string.Create(CultureInfo.InvariantCulture, $"{(last - first).TotalSeconds / wall.TotalSeconds:0.000} cores");
     }
 
     internal static string Verdict(bool opened, TimeSpan start, TimeSpan end, TimeSpan wall, IEnumerable<string> failures)

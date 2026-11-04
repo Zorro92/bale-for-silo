@@ -35,6 +35,7 @@
     <Compile Include="../../tools/Bale.Cli/PlayPlanOptions.cs" Link="PlayPlanOptions.cs" />
     <Compile Include="../../tools/Bale.Cli/PlayPlanUrlFile.cs" Link="PlayPlanUrlFile.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugServer.Ffmpeg.cs" Link="DebugServer.Ffmpeg.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Services/DebugProcessCpu.cs" Link="DebugProcessCpu.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Bale.Xbox.csproj" Link="Bale.Xbox.csproj.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Package.appxmanifest" Link="Package.appxmanifest" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Build/FFmpegManifest.xslt" Link="FFmpegManifest.xslt" CopyToOutputDirectory="PreserveNewest" />

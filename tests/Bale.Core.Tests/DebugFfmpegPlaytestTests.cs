@@ -72,9 +72,10 @@ public class DebugFfmpegPlaytestTests
         try
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
-            Assert.Equal("Position: start=2s end=11.5s wall=10s ratio=0.95\nBuffering entries: 3\nCPU: 2.5 cores\n",
+            Assert.Equal("PlaybackState: Playing\nPosition: start=2s end=11.5s max=11.5s wall=10s ratio=0.95\nBuffering entries: 3\nCPU: 2.500 cores\n",
                 DebugFfmpegPlaytest.Measurements(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(11.5),
-                    TimeSpan.FromSeconds(10), 3, TimeSpan.FromSeconds(100), TimeSpan.FromSeconds(125)));
+                    TimeSpan.FromSeconds(10), 3, TimeSpan.FromSeconds(100), TimeSpan.FromSeconds(125),
+                    TimeSpan.FromSeconds(11.5), "Playing"));
         }
         finally { CultureInfo.CurrentCulture = previous; }
     }
@@ -83,9 +84,40 @@ public class DebugFfmpegPlaytestTests
     public void MissingCpuAndZeroWallTimeStayFinite()
     {
         Assert.Equal(0, DebugFfmpegPlaytest.Ratio(TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero));
-        Assert.Contains("CPU: unavailable", DebugFfmpegPlaytest.Measurements(TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, 0, null, null));
+        Assert.Contains("CPU: unavailable", DebugFfmpegPlaytest.Measurements(TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero,
+            0, null, null, TimeSpan.Zero, "None"));
         Assert.Contains("CPU: unavailable", DebugFfmpegPlaytest.Measurements(TimeSpan.Zero, TimeSpan.Zero,
-            TimeSpan.FromSeconds(1), 0, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(1)));
+            TimeSpan.FromSeconds(1), 0, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(1), TimeSpan.Zero, "Paused"));
+        Assert.Equal("unavailable (process times did not advance)", DebugFfmpegPlaytest.CpuCores(
+            TimeSpan.Zero, TimeSpan.Zero, TimeSpan.FromSeconds(10)));
+    }
+
+    [Fact]
+    public void CpuUsesFileTimeTicksAndKeepsSmallLoadsVisible()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(3.5), DebugFfmpegPlaytest.CpuTime(10_000_000, 25_000_000));
+        Assert.Equal("0.004 cores", DebugFfmpegPlaytest.CpuCores(TimeSpan.FromSeconds(10),
+            TimeSpan.FromSeconds(10.04), TimeSpan.FromSeconds(10)));
+        var source = Read("DebugProcessCpu.cs.txt");
+        Assert.StartsWith("#if DEBUG_SERVER", source);
+        Assert.Contains("GetProcessTimes(new IntPtr(-1)", source);
+        Assert.Contains("SetLastError = true", source);
+        Assert.Contains("Marshal.GetHRForLastWin32Error()", source);
+        Assert.Contains("ex.HResult", source);
+        Assert.DoesNotContain("ex.Message", source);
+        Assert.DoesNotContain("ProcessDiagnosticInfo", source);
+    }
+
+    [Fact]
+    public void EndOfStreamResetKeepsTheMaximumObservedPositionAndState()
+    {
+        var maximum = TimeSpan.FromSeconds(9.5);
+        var text = DebugFfmpegPlaytest.Measurements(TimeSpan.Zero, TimeSpan.Zero, TimeSpan.FromSeconds(10),
+            0, null, null, maximum, "Paused");
+        Assert.Contains("PlaybackState: Paused", text);
+        Assert.Contains("start=0s end=0s max=9.5s wall=10s ratio=0.95", text);
+        Assert.StartsWith("Verdict: PLAYS - real time", DebugFfmpegPlaytest.Verdict(true,
+            TimeSpan.Zero, maximum, TimeSpan.FromSeconds(10), []));
     }
 
     [Fact]
@@ -97,22 +129,36 @@ public class DebugFfmpegPlaytestTests
         [
             "Interlocked.CompareExchange(ref _playtestBusy, 1, 0)", "409 Conflict",
             "FFmpegInteropLogging.SetLogProvider(null)", "FFmpegMediaSource.CreateFromUriAsync(uri.AbsoluteUri, config).AsTask()",
-            "using var source = await creation", "using var player = new MediaPlayer { IsMuted = true, AutoPlay = false }",
+            "using var source = await creation", "using var player = await OnFfmpegUiAsync(() => new MediaPlayer { IsMuted = true, AutoPlay = false })",
             "source.CreateMediaPlaybackItem()", "VideoDecoderMode.Automatic", "VideoDecoderMode.ForceFFmpegSoftwareDecoder",
-            "VideoDecoderMode.ForceSystemDecoder", "source.CurrentVideoStream", "source.CurrentAudioStream", "video.BitsPerSample",
-            "video.DecoderEngine", "audio.DecoderEngine", "ProcessDiagnosticInfo.GetForCurrentProcess().CpuUsage.GetReport()",
-            "report.UserTime + report.KernelTime", "Stopwatch.StartNew()", "Task.Delay(DebugFfmpegPlaytest.CreateTimeoutMs)",
+            "VideoDecoderMode.ForceSystemDecoder", "source.CurrentVideoStream", "source.CurrentAudioStream",
+            "video.DecoderEngine", "audio.DecoderEngine", "DebugProcessCpu.Read(out var failure)",
+            "cpuDiagnostics.Add(failure)", "Stopwatch.StartNew()", "Task.Delay(DebugFfmpegPlaytest.CreateTimeoutMs)",
             "Task.Delay(DebugFfmpegPlaytest.OpenTimeoutMs)", "Task.Delay(TimeSpan.FromSeconds(duration))",
             "Interlocked.Increment(ref buffering)", "player.Pause()", "player.Source = null",
             "player.MediaOpened -= OnOpened", "player.MediaFailed -= OnFailed", "player.MediaEnded -= OnEnded",
             "player.BufferingStarted -= OnBuffering", "DisposeLateFfmpegSourceAsync(creation)",
-            "Debug FFmpeg: before create", "Debug FFmpeg: before item/open", "Debug FFmpeg: before play", "Debug FFmpeg: done",
+            "Debug FFmpeg: before create", "before item/open", "Debug FFmpeg: before play", "Debug FFmpeg: done",
+            "await OnFfmpegUiAsync(() => { renderTarget.Attach(player); return true; })",
+            "CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync", "player.SetSurfaceSize(new Size(160, 90))",
+            "player.GetSurface(compositor)", "CreateSurfaceBrush(_surface.CompositionSurface)", "CreateSpriteVisual()",
+            "_visual.Size = new Vector2(160, 90)", "ElementCompositionPreview.SetElementChildVisual(_host, _container)",
+            "ElementCompositionPreview.SetElementChildVisual(_host!, _previous)", "renderTarget.Close(Attempt)",
+            "_surface?.Dispose()", "_brush?.Dispose()", "_visual?.Dispose()", "_container?.Dispose()",
+            "player.PlaybackSession.PlaybackState.ToString()", "if (end > maximum) maximum = end", "Task.Delay(100)",
+            "DebugFfmpegPlaytest.Verdict(didOpen, start, maximum, wall, reasons)",
         ];
         foreach (var text in required) Assert.Contains(text, source);
         Assert.DoesNotContain("ex.Message", source);
         Assert.DoesNotContain("args.ErrorMessage", source);
         Assert.DoesNotContain("Log.Error(", source);
         Assert.DoesNotContain("Session.Client", source);
+        Assert.DoesNotContain("video.BitsPerSample", source);
+        Assert.DoesNotContain(" bits=", source);
+        Assert.True(source.IndexOf("renderTarget.Attach(player)", StringComparison.Ordinal)
+            < source.IndexOf("player.Source = item", StringComparison.Ordinal));
+        Assert.True(source.IndexOf("playbackState = player.PlaybackSession.PlaybackState", StringComparison.Ordinal)
+            < source.IndexOf("player.Pause()", StringComparison.Ordinal));
         Assert.Contains("case (\"GET\", \"/playtest-ffmpeg\"):", Read("DebugServer.cs.txt"));
     }
 
