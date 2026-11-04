@@ -130,6 +130,7 @@ switch (command)
             var scheme = path.Contains("://") ? path[..path.IndexOf("://")] + "://<host>" + new Uri(path).AbsolutePath : path;
             Console.WriteLine($"delivery={plan.Delivery} protocol={stream.Protocol} container={stream.Container} mime={stream.MimeType}");
             Console.WriteLine($"url={scheme} query-keys=[{keys}] header-keys=[{string.Join(",", stream.Headers?.AdditionalData.Keys ?? [])}]");
+            Console.WriteLine($"reason={plan.DecisionReason} quirks=[{string.Join(",", plan.AppliedQuirks?.Select(q => q.Id) ?? [])}] warnings=[{string.Join(",", plan.DegradationWarnings?.Select(w => w.Code) ?? [])}]");
             Console.WriteLine($"resolves={Bale.Core.Playback.PlaybackMediaUrl.Resolve(raw, client.Server) is not null}");
             Console.WriteLine($"timeline source={plan.Timeline?.SourceStartSeconds} player={plan.Timeline?.PlayerStartSeconds} offset={plan.Timeline?.TimelineOffsetSeconds} duration={plan.Source?.DurationSeconds}");
         }
@@ -163,8 +164,14 @@ switch (command)
             return 0;
         }
 
-        if (client.ProfileId is null
-            && ProfileChoice.Automatic(await client.GetProfilesAsync(cts.Token), null) is { } automatic)
+        // BALE_PROFILE=<name> picks a profile when the account has several (Automatic picks none).
+        var profiles = await client.GetProfilesAsync(cts.Token);
+        if (Environment.GetEnvironmentVariable("BALE_PROFILE") is { Length: > 0 } wanted
+            && profiles.FirstOrDefault(p => p.Name == wanted)?.Id is { } wantedId)
+        {
+            client.UseProfile(wantedId);
+        }
+        else if (client.ProfileId is null && ProfileChoice.Automatic(profiles, null) is { } automatic)
         {
             client.UseProfile(automatic.Id!);
         }
