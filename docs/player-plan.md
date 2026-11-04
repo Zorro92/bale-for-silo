@@ -71,6 +71,18 @@ Each phase ships on its own, is verified on the console and is ticked here.
 - Back stops playback (stop + final position) and returns to Detail with focus restored.
 - Verify: plays direct and transcoded titles, resume point lands, Detail shows the new progress.
 
+**Done, verified on the console (0.1.215, Bale Test profile):**
+- **Transcoded HLS** (`?st=` stream token) plays, and so does **direct MKV** (`original_http`, 1080p EAC3). Direct play keeps real time: 15.04 s of source per 15 s.
+- **Resume** lands 7 s early (`PlaybackStartPosition.kt`). Start Over starts at 0.
+- **Back** stops playback and restores focus to Resume / Start Over. The Detail label refreshes, e.g. Resume 14:38 → 15:20.
+- **Spinner** follows `PlayerSpinnerVisibility.kt`: 500 ms show delay, 500 ms minimum.
+- **Playback failure:** a fault triggers one `replan`, then the error notice with Retry focused. Retry resumes at the failed position with no rewind (`TvPlayerViewModel.kt` `retry()`).
+
+Things learned on the way:
+- **Server:** it only stores a resume point at ≥ 5% of runtime.
+- **Direct-play evidence:** the server needs `video_decode` entries before `platform_attested` evidence allows direct play (Apple's `AppleDecodeCapabilities.swift`).
+- **Range reads:** Windows' MKV source alternates read positions, so `HttpRangeStream` serves 1 MiB blocks from a small LRU cache with read-ahead. With one request per jump, playback crawled.
+
 ### 3. Transport overlay (`TvPlayerScreen.kt`, `TvPlayerTransportCluster.kt`, `TvPlayerScrubber.kt`)
 - Controls auto-hide after 5 s (`CONTROLS_AUTO_HIDE_MS`). Skip feedback shows 1.2 s.
 - From clean playback:
