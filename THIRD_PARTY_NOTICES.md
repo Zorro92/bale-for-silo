@@ -26,15 +26,35 @@ from [Silo's Android client](https://github.com/Silo-Server/silo-android):
 and `MarqueeProfileAvatar.kt`. Silo's Android client is distributed under the
 GNU Affero General Public License v3.0, as is Bale (see `LICENSE`).
 
-## FFmpegInteropX (debug builds only)
+## FFmpegInteropX
 
-Development builds bundle [FFmpegInteropX.UWP.Lib](https://github.com/ffmpeginteropx/FFmpegInteropX)
-2.1.0 (Apache-2.0) and FFmpegInteropX.UWP.FFmpeg 8.1.2, including dav1d for software AV1.
-FFmpeg is LGPL-2.1-or-later; its bundled dependencies retain their own licenses. The upstream
-license texts are packaged under `Licenses/FFmpegInteropX.txt` and `Licenses/FFmpeg/`.
-The FFmpeg build's source revision is `38b88335f99e76ed89ff3c93f877fdefce736c13`; build scripts
-and dependency sources are in the [FFmpegInteropX repository](https://github.com/ffmpeginteropx/FFmpegInteropX/tree/release/v2.1).
-Build with `-p:BaleDebugServer=false` to exclude this experimental pipeline and its native DLLs.
+All Bale builds bundle [FFmpegInteropX.UWP.Lib](https://github.com/ffmpeginteropx/FFmpegInteropX)
+2.1.0 under the Apache License 2.0. Its full license text is packaged as
+`Licenses/FFmpegInteropX.txt` (source copy: `src/Bale.Xbox/Assets/FFmpegInteropX-LICENSE.txt`).
+Bale remains AGPL-3.0-or-later; third-party components retain their own licenses.
+
+## FFmpeg
+
+All builds bundle FFmpegInteropX.UWP.FFmpeg 8.1.2. The **bundled x64 build is LGPL-2.1-or-later**,
+not a GPL/nonfree FFmpeg build: its `avutil-60.dll` configuration contains `--disable-gpl` and
+`--disable-version3`, and its license string is `LGPL version 2.1 or later`. The package's
+`licenses/ffmpeg.txt` is the LGPL 2.1 text, shipped as `Licenses/FFmpeg/ffmpeg.txt`.
+It is a shared-library build (`--enable-shared`), including `--enable-libdav1d`.
+
+The FFmpeg build's source revision is `38b88335f99e76ed89ff3c93f877fdefce736c13`; corresponding
+build scripts and dependency sources are in the
+[FFmpegInteropX release/v2.1 repository](https://github.com/ffmpeginteropx/FFmpegInteropX/tree/release/v2.1).
+Other bundled dependencies (bzip2, iconv, liblzma, libxml2, OpenSSL and zlib) retain their respective
+license texts, all packaged under `Licenses/FFmpeg/` regardless of `BaleDebugServer`.
+
+## dav1d
+
+The FFmpeg package includes [dav1d](https://code.videolan.org/videolan/dav1d), the software AV1
+decoder, under the BSD 2-Clause License.
+
+Copyright © 2018–2019, VideoLAN and dav1d authors. All rights reserved.
+
+The full bundled notice and license are shipped as `Licenses/FFmpeg/dav1d.txt` in every build.
 
 ## QRCoder
 

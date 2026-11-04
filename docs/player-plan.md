@@ -1,6 +1,6 @@
 # Video player plan
 
-Bale has no player yet. This is the phased plan for one. Like everything else, it copies the
+Bale has a bare player with session recovery and debug stats. This is its phased plan. It copies the
 official Android TV player (`silo-android/androidTvApp/.../tv/ui/screens/player/`, protocol in
 `shared/.../model/playback/PlaybackProtocolV3.kt`, `network/apiv2/PlaybackV2Api.kt`,
 `repository/SequencedPlayback.kt`). The tvOS docs under `silo-apple/docs/tvos-player/` are marked
@@ -8,13 +8,16 @@ historical; use them only for intent.
 
 ## Engine
 
-The engine is Windows' built-in `MediaPlayer` + `MediaPlayerElement`: hardware decode, HDR output and
-Dolby/DTS passthrough on the console. It only uses decoders registered with Windows.
+The renderer is Windows' `MediaPlayer` + `MediaPlayerElement`. Ordinary direct playback uses
+`MediaSource.CreateFromStream` and registered system decoders. Production FFmpegInteropX is the
+fallback for allowlisted AV1 video or selected audio that needs bundled decoding; HLS always uses
+`AdaptiveMediaSource`. Passthrough is still unclaimed until verified with a receiver.
 
 Server behavior: any video transcode re-encodes audio to AAC (max 6 ch); silo-server's
 `planVideoTranscodeV3` always adds `audio_to_aac`. Audio is only copied when the video is copied
-(direct play or remux). So an AV1 + EAC3 5.1 file arrives as HEVC + AAC 5.1 until Bale can decode
-AV1 itself.
+(direct play or remux). With the production AV1 fallback, a supported AV1 + EAC3 5.1 file can
+stay direct. When that fallback is disabled, fails, or exceeds the measured bounds, server video
+transcode produces HEVC + AAC 5.1 instead.
 
 Evidence so far (console, `bale-debug.sh caps`, build 0.1.200):
 
@@ -48,19 +51,48 @@ Still to test with real library files: TrueHD/DTS passthrough to a receiver.
 The capability claims Bale sends the server must come from this kind of evidence, never from
 guesses. `playtest` (debug only) checks actual playback, not just installed decoders.
 
-**Open decision: a bundled decoder (FFmpegInteropX).** It would add software AV1 (dav1d), DTS/TrueHD
-decode without a receiver, broader MKV and ASS styling. The costs are package size, an untested
-Native AOT fit and a second pipeline. The debug test build below answers the AOT and 1080p AV1
-questions. Until then, whatever the console can't play goes to the server to transcode.
-Edge plays AV1 on this console through Chromium's own
-decoders, which doesn't prove MediaPlayer can.
+**Decision: ship FFmpegInteropX as the production fallback.** By the project owner's rule,
+software **video** decode is **AV1 only**. `SoftwareDecodePolicy.VideoCodecs` is an explicit,
+owner-maintained allowlist; nothing else may be added without them. Unsupported non-AV1 video
+goes to the server to transcode, never FFmpeg software or D3D11 video. The 0.1.230 Fight Club test
+is the measured AV1 evidence: 8/10-bit, max 1920×1080, max 30 fps. **4K software AV1 is untested
+and is not claimed.** Audio may use FFmpeg software whenever the system path cannot handle it.
 
-**Debug experiment:** `bale-debug.sh ffmpeg software` opts the next real-player attempt into
-FFmpegInteropX (`off` is the default; `auto` and `system` are also available). The toggle is memory-only,
-uses the existing MediaPlayerElement, and feeds the authenticated Core random-access stream into
-FFmpeg. HLS stays on AdaptiveMediaSource. Enabling it deliberately claims software AV1 at 8/10-bit,
-up to 3840×2160, for planning; this is **not** new console capability evidence. Backend, decoder engines,
-codecs and process CPU cores appear in Stats / `where`. Set `ffmpeg off` before returning to normal testing.
+Current production capability claims (`ConsoleEvidence.Default`, max audio channels **8**):
+
+| Stream | Claims / engine | Bounds / limitations |
+|---|---|---|
+| H.264 / HEVC video | Media Foundation, hardware | 1920×1080, 60 fps, 25 Mbps; H.264 8-bit, HEVC 8/10-bit |
+| AV1 video | dav1d, **non-hardware**; `software_video_decode_v1` opt-in | 8/10-bit, **1920×1080, 30 fps**; no 4K claim |
+| System audio | `aac`, `ac3`, `eac3`, `mp3`, `pcm` | Retains the native direct path unless AV1 needs FFmpeg |
+| FFmpeg fallback audio | `dts`, `dts_hd`, `truehd`, `flac`, `opus`, `vorbis`, `alac` | Decode to PCM, not passthrough; real-library console verification pending |
+| Audio passthrough | None | Receiver verification pending |
+| HLS | System video/audio claims only | AdaptiveMediaSource cannot use FFmpeg fallbacks |
+| Subtitles | None locally | Server burn-in; **TODO:** add FFmpeg subtitle fallback when Bale renders subtitles |
+
+`PlaybackRoutePolicy.Decide` selects the pipeline separately for every mount. `original_http` /
+progressive uses FFmpeg only for AV1 or the **selected** fallback audio codec. AV1 sets
+`Video.VideoDecoderMode = ForceFFmpegSoftwareDecoder`; audio-only fallback sets
+`ForceSystemDecoder`. Never use automatic or FFmpeg D3D11 video in real playback. The pinned
+2.1.0 implementation can fall back even in ForceSystemDecoder for unsupported formats, so Bale
+also validates all reported video decoder engines before mounting/reading frames.
+
+`Audio.SystemDecoderAAC` and `Audio.SystemDecoderMP3` are enabled. The pinned winmd has **no
+system AC3/EAC3/PCM or encoded-passthrough switches**: those use FFmpeg audio on the AV1 path,
+while ordinary HEVC/H.264 + AC3/EAC3 remains native. FFmpegInteropX moves its preferred audio
+stream first; Bale restores Silo's audio ordinal by sorting `AudioStreams[].StreamIndex` and sets
+`MediaPlaybackItem.AudioTracks.SelectedIndex` after MediaOpened, **before Play**. A missing or
+unmappable planned track fails rather than silently playing FFmpeg's default. A server progressive
+remux has only its selected audio stream, so its local ordinal is zero.
+
+**Debug override:** `bale-debug.sh ffmpeg policy` is the default production rule.
+`bale-debug.sh ffmpeg off` never uses FFmpeg and withdraws AV1 software/audio fallback claims
+before planning (including the software-video opt-in). Only `policy` and `off` are accepted; the
+memory-only setting is captured at attempt creation so toggling during a request cannot mismatch
+claims and engine. Backend, actual per-stream decoder engines, codecs and CPU cores remain in
+Stats / `where`. The CLI's old `--claim-av1` is a compatibility no-op; its normal baseline now
+contains only the measured, bounded AV1 claim. FFmpeg packages, activation and licenses ship
+with or without `BaleDebugServer`; the CI package checker remains required.
 
 The standalone `playtest-ffmpeg` URI probe is for public or independently fetchable media. A private
 `play-plan --url-file` file protects the URL on disk, but does not convey Bale's profile/authentication
@@ -76,12 +108,21 @@ Results (0.1.229–0.1.230, Series X, Bale Test):
 | Fight Club, AV1 Main 10-bit 1080p + EAC3 5.1 MKV, `software` | **Direct play**, real time (30.1 s per 30 s), about **1.3 CPU cores**, picture correct. |
 | Avatar: Fire and Ash, HEVC Main10 1080p + EAC3 7.1 MKV, `auto` | Direct play, real time, FFmpeg D3D11 video, 0.1–0.2 cores. |
 
+These results used the earlier debug-only forced modes; they are evidence, not production route
+choices. The standalone `playtest-ffmpeg` probe may still use `auto|software|system` for experiments;
+those modes are not available to the real player.
+
 The server only accepts a software `video_decode` entry when the client sends
-`software_video_decode_v1` (silo-server `capabilities_v3.go` `videoEligibleV3`); Bale sends it only
-when such an entry exists. In this build FFmpeg decodes audio itself (EAC3 7.1 included), which
-would block Dolby/DTS passthrough; an integration must leave audio to the system path or pass it
-through. Still open: 4K AV1 in software, and what decides `auto` vs. the system decoder for formats
-Media Foundation already plays.
+`software_video_decode_v1` (silo-server `capabilities_v3.go` `videoEligibleV3`); Bale sends it
+when the bounded AV1 entry exists. Both FFmpeg Create/open failures and MediaFailed use the
+existing **single** failure-recovery replan. The request withdraws the triggering AV1 codec/decode
+entry and software-video opt-in, and/or the failed selected fallback audio codec, from global and
+per-delivery claims. It classifies the failure as `decoder_failure` with an explicit
+`FFmpegInteropX failed; server transcode required` reason and only a safe HRESULT diagnostic.
+The server then transcodes video and/or converts audio instead of retrying the failing local decoder.
+The source clock, selected tracks and attempt identities are preserved; a failed recovery still
+shows the normal error notice/Retry. Core tests cover policy, bounded claims, track mapping,
+withdrawal and serialization. The production integration still needs the owner's console checks.
 
 ## Phases
 

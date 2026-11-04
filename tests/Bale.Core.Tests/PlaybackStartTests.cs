@@ -42,7 +42,7 @@ public class PlaybackStartTests
         Assert.False(body.GetProperty("metered").GetBoolean());
         Assert.False(body.TryGetProperty("allow_alternate_versions", out _));
         Assert.False(body.TryGetProperty("fileId", out _));
-        Assert.Equal(new[] { "playback_plan_v3", "client_video_transformations_v1", "device_quirks_v1", "seek_reanchor_v1", "direct_stream_resume_v1" },
+        Assert.Equal(new[] { "playback_plan_v3", "client_video_transformations_v1", "device_quirks_v1", "seek_reanchor_v1", "direct_stream_resume_v1", "software_video_decode_v1" },
             body.GetProperty("client_features").EnumerateArray().Select(value => value.GetString()));
     }
 
@@ -128,17 +128,17 @@ public class PlaybackStartTests
         using var json = JsonDocument.Parse(stub.RequestBodies[1]!);
         var caps = json.RootElement.GetProperty("client_capabilities");
         Assert.Equal(new[] { "mp4", "mkv" }, Strings(caps.GetProperty("containers")));
-        Assert.Equal(new[] { "h264", "hevc" }, Strings(caps.GetProperty("codecs_video")));
-        Assert.Equal(new[] { "aac", "ac3", "eac3", "mp3", "pcm" }, Strings(caps.GetProperty("codecs_audio")));
+        Assert.Equal(new[] { "h264", "hevc", "av1" }, Strings(caps.GetProperty("codecs_video")));
+        Assert.Equal(new[] { "aac", "ac3", "eac3", "mp3", "pcm", "dts", "dts_hd", "truehd", "flac", "opus", "vorbis", "alac" }, Strings(caps.GetProperty("codecs_audio")));
         Assert.False(caps.GetProperty("hdr").GetBoolean());
         Assert.Empty(caps.GetProperty("audio_passthrough").GetProperty("passthrough_codecs").EnumerateArray());
         Assert.Equal("platform_attested", caps.GetProperty("video_evidence").GetString());
         Assert.Empty(caps.GetProperty("codecs_video_hardware").EnumerateArray());
         var videoDecode = caps.GetProperty("video_decode").EnumerateArray().ToArray();
-        Assert.Equal(new[] { "h264", "hevc" }, videoDecode.Select(entry => entry.GetProperty("codec").GetString()));
+        Assert.Equal(new[] { "h264", "hevc", "av1" }, videoDecode.Select(entry => entry.GetProperty("codec").GetString()));
         Assert.Equal(new[] { 8 }, videoDecode[0].GetProperty("bit_depths").EnumerateArray().Select(value => value.GetInt32()));
         Assert.Equal(new[] { 8, 10 }, videoDecode[1].GetProperty("bit_depths").EnumerateArray().Select(value => value.GetInt32()));
-        Assert.All(videoDecode, entry =>
+        Assert.All(videoDecode.Take(2), entry =>
         {
             Assert.Equal("Media Foundation", entry.GetProperty("decoder_name").GetString());
             Assert.Empty(entry.GetProperty("profiles").EnumerateArray());
@@ -149,6 +149,14 @@ public class PlaybackStartTests
             Assert.Equal(25000, entry.GetProperty("max_bitrate_kbps").GetInt32());
             Assert.True(entry.GetProperty("hardware").GetBoolean());
         });
+        var av1 = videoDecode[2];
+        Assert.Equal("dav1d", av1.GetProperty("decoder_name").GetString());
+        Assert.False(av1.GetProperty("hardware").GetBoolean());
+        Assert.Equal(new[] { 8, 10 }, av1.GetProperty("bit_depths").EnumerateArray().Select(value => value.GetInt32()));
+        Assert.Equal(1920, av1.GetProperty("max_width").GetInt32());
+        Assert.Equal(1080, av1.GetProperty("max_height").GetInt32());
+        Assert.Equal(30, av1.GetProperty("max_frame_rate").GetDouble());
+        Assert.False(av1.TryGetProperty("max_bitrate_kbps", out _));
         var context = json.RootElement.GetProperty("client_playback_context");
         Assert.Equal("tv", context.GetProperty("form_factor").GetString());
         Assert.Equal("0.1.0", context.GetProperty("app_version").GetString());
@@ -161,8 +169,10 @@ public class PlaybackStartTests
         foreach (var property in deliveries.EnumerateObject())
         {
             var delivery = property.Value;
-            Assert.Equal(new[] { "h264", "hevc" }, Strings(delivery.GetProperty("video_codecs")));
-            Assert.Equal(new[] { "aac", "ac3", "eac3", "mp3", "pcm" }, Strings(delivery.GetProperty("audio_decode_codecs")));
+            Assert.Equal(property.Name == "hls" ? new[] { "h264", "hevc" } : new[] { "h264", "hevc", "av1" },
+                Strings(delivery.GetProperty("video_codecs")));
+            Assert.Equal(property.Name == "hls" ? SoftwareDecodePolicy.SystemAudioCodecs : ConsoleEvidence.Default.AudioDecodeCodecs,
+                Strings(delivery.GetProperty("audio_decode_codecs")));
             Assert.Empty(delivery.GetProperty("audio_passthrough_codecs").EnumerateArray());
             Assert.Equal(8, delivery.GetProperty("max_channels").GetInt32());
             var hdr = delivery.GetProperty("hdr_details");

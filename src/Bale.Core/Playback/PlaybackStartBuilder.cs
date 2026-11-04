@@ -32,6 +32,8 @@ public static class PlaybackStartBuilder
         if (selection.AudioIndex is < 0) throw new ArgumentOutOfRangeException(nameof(selection));
         if (selection.SubtitleIndex is < -1) throw new ArgumentOutOfRangeException(nameof(selection));
         if (device.MaxChannels < 1) throw new ArgumentOutOfRangeException(nameof(device));
+        if (device.VideoDecode.Any(decode => !decode.Hardware && !SoftwareDecodePolicy.VideoCodecs.Contains(decode.Codec)))
+            throw new ArgumentException("Software video decoding is restricted to the owner's allowlist.", nameof(device));
 
         var passthrough = new AudioPassthroughCapabilities(device.AudioPassthroughCodecs, device.MaxChannels, device.PassthroughEntries);
         var caps = new ClientCodecCapabilities(device.VideoEvidence, device.AudioEvidence, device.VideoCodecs,
@@ -68,6 +70,9 @@ public static class PlaybackStartBuilder
             Enabled = device.HlsSupported,
             SupportedOnDevice = device.HlsSupported,
             Containers = ["m3u8", "hls"],
+            // AdaptiveMediaSource cannot use the bundled FFmpeg fallbacks.
+            VideoCodecs = original.VideoCodecs.Where(codec => !SoftwareDecodePolicy.VideoCodecs.Contains(codec)).ToArray(),
+            AudioDecodeCodecs = original.AudioDecodeCodecs.Where(codec => !SoftwareDecodePolicy.AudioCodecs.Contains(codec)).ToArray(),
             Subtitles = device.Subtitles with { NativeEmbedded = [] },
         };
         var context = new ClientPlaybackContext("tv", identity.ClientVersion ?? "unknown",

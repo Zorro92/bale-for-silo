@@ -166,7 +166,7 @@ public class DebugFfmpegPlaytestTests
     }
 
     [Fact]
-    public void DebugManifestRegistersAllSixteenFactoriesAndPreservesTheStampedApp()
+    public void ManifestRegistersAllSixteenFactoriesAndPreservesTheStampedApp()
     {
         var original = XDocument.Parse(Read("Package.appxmanifest"));
         var transform = new XslCompiledTransform();
@@ -194,16 +194,19 @@ public class DebugFfmpegPlaytestTests
     }
 
     [Fact]
-    public void BothPackagesAndTheManifestTransformShareTheDebugServerCondition()
+    public void PackagesActivationAndLicensesAreUnconditional()
     {
         var project = XDocument.Parse(Read("Bale.Xbox.csproj.txt"));
         var packages = project.Descendants("PackageReference").Where(p => p.Attribute("Include")!.Value.StartsWith("FFmpegInteropX.")).ToArray();
         Assert.Equal(2, packages.Length);
-        Assert.All(packages, p => Assert.Equal("'$(BaleDebugServer)' == 'true'", p.Parent!.Attribute("Condition")!.Value));
+        Assert.All(packages, p => Assert.DoesNotContain(p.AncestorsAndSelf(), element => element.Attribute("Condition") is not null));
         Assert.Equal("2.1.0", packages.Single(p => p.Attribute("Include")!.Value.EndsWith(".Lib")).Attribute("Version")!.Value);
         Assert.Equal("8.1.2", packages.Single(p => p.Attribute("Include")!.Value.EndsWith(".FFmpeg")).Attribute("Version")!.Value);
         var target = project.Descendants("Target").Single(t => t.Attribute("Name")!.Value == "PrepareFFmpegManifest");
-        Assert.Equal("'$(BaleDebugServer)' == 'true'", target.Attribute("Condition")!.Value);
+        Assert.Null(target.Attribute("Condition"));
+        var licenses = project.Descendants("Content").Where(content => content.Attribute("Link")?.Value.StartsWith("Licenses") == true).ToArray();
+        Assert.Equal(2, licenses.Length);
+        Assert.All(licenses, license => Assert.DoesNotContain(license.AncestorsAndSelf(), element => element.Attribute("Condition") is not null));
     }
 
     private static string Read(string file) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, file));

@@ -32,7 +32,11 @@ jobs:
       - run: dotnet build tools/Bale.Cli --configuration Release
 
   xbox:
-    name: Xbox package (Windows)
+    name: Xbox package (Windows, debug=${{ matrix.debug_server }})
+    strategy:
+      fail-fast: false
+      matrix:
+        debug_server: ['true', 'false']
     runs-on: windows-latest
     timeout-minutes: 30
     env:
@@ -75,6 +79,7 @@ jobs:
         run: >
           msbuild src/Bale.Xbox/Bale.Xbox.csproj /restore /m /v:minimal
           /p:Configuration=Release /p:Platform=x64
+          /p:BaleDebugServer=${{ matrix.debug_server }}
           /p:GenerateAppxPackageOnBuild=true
           /p:AppxPackageDir=${{ github.workspace }}\out\
           /p:AppxPackageSigningEnabled=true
@@ -90,6 +95,6 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: bale-xbox-x64
+          name: bale-xbox-x64${{ matrix.debug_server == 'false' && '-production' || '' }}
           path: out/
           if-no-files-found: error

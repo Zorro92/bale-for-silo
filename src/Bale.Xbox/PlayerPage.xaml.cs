@@ -59,6 +59,9 @@ public sealed partial class PlayerPage : Page, IBackHandler
 #if DEBUG_SERVER
         // Match the capability claim and backend even if the debug toggle changes during a request/replan.
         public string FfmpegMode { get; } = DebugFfmpegPlayback.Mode;
+        public bool FfmpegEnabled => FfmpegMode == "policy";
+#else
+        public bool FfmpegEnabled => true;
 #endif
         public CancellationTokenSource? ReportingCancellation { get; set; }
         public Task? ReportingTask { get; set; }
@@ -194,7 +197,6 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 {
                     var message = ex switch
                     {
-                        Problem problem => PlaybackMessages.StartFailed(problem.Detail ?? problem.Title ?? "Please try again."),
                         _ when IsNetworkFailure(ex) || ex is OperationCanceledException => PlaybackMessages.ServerUnreachable,
                         _ => PlaybackMessages.StartFailed("Please try again."),
                     };
@@ -312,6 +314,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         attempt.Replanned = true;
         _state = "loading";
         SetLoading(true);
+        var failedRoute = attempt.Media?.Route;
         DisposeMount(attempt);
         Log.Info("player: replan");
         try
@@ -321,7 +324,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
             var services = attempt.Services!;
             var failure = PlaybackReplan.Classify(hresult, isDecoder, isNetwork);
             var request = PlaybackReplan.ForFailure(attempt.Start!, attempt.Plan!, attempt.PlanAttemptId,
-                [], 1, position, failure);
+                [], 1, position, failure, failedRoute);
             var decision = await attempt.Client.Playback.ReplanAsync(attempt.SessionId!, request,
                 services.Installation, attempt.Cancellation.Token);
             // Outcome and reason are server enum codes; never log the plan, its URL or message.

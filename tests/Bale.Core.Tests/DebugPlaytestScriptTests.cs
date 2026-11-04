@@ -67,9 +67,7 @@ public class DebugPlaytestScriptTests
 
     [Theory]
     [InlineData("off")]
-    [InlineData("auto")]
-    [InlineData("software")]
-    [InlineData("system")]
+    [InlineData("policy")]
     public async Task FfmpegTogglePostsOnlyAValidatedMode(string mode)
     {
         if (!OperatingSystem.IsLinux()) return;
@@ -85,7 +83,7 @@ public class DebugPlaytestScriptTests
     public async Task InvalidFfmpegToggleArgumentsNeverReachCurl()
     {
         if (!OperatingSystem.IsLinux()) return;
-        foreach (var args in new[] { new[] { "ffmpeg" }, ["ffmpeg", "hardware"], ["ffmpeg", "Software"], ["ffmpeg", "auto", "extra"] })
+        foreach (var args in new[] { new[] { "ffmpeg" }, ["ffmpeg", "hardware"], ["ffmpeg", "Software"], ["ffmpeg", "auto"], ["ffmpeg", "software"], ["ffmpeg", "system"], ["ffmpeg", "policy", "extra"] })
         {
             var result = await RunAsync(args);
             Assert.Equal(2, result.ExitCode);

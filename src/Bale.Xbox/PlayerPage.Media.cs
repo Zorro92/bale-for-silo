@@ -1,14 +1,12 @@
 using System.Runtime.InteropServices.WindowsRuntime;
 using Bale.Core.Playback;
 using Bale.Xbox.Services;
+using FFmpegInteropX;
 using Windows.Foundation;
 using Windows.Media.Core;
 using Windows.Media.Playback;
 using Windows.Media.Streaming.Adaptive;
 using Windows.Storage.Streams;
-#if DEBUG_SERVER
-using FFmpegInteropX;
-#endif
 
 namespace Bale.Xbox;
 
@@ -39,13 +37,13 @@ public sealed partial class PlayerPage
         public IInputStream? PlaylistInput { get; set; }
         public AdaptiveMediaSource? Adaptive { get; set; }
         public TypedEventHandler<AdaptiveMediaSource, AdaptiveMediaSourceDownloadRequestedEventArgs>? DownloadHandler { get; set; }
-#if DEBUG_SERVER
         public FFmpegMediaSource? FfmpegSource { get; set; }
-        public string FfmpegMode { get; set; } = "off";
+        public PlaybackRouteDecision Route { get; set; } = null!;
+        public MediaPlaybackItem? Item { get; set; }
+#if DEBUG_SERVER
         public TimeSpan? CpuTime { get; set; }
         public long? CpuTimestamp { get; set; }
         public string? LastCpuFailure { get; set; }
-        public MediaPlaybackItem? Item { get; set; }
         public PlaybackThroughputMeter Throughput { get; } = new();
         public int BufferingCount { get; set; }
         public long BufferingTicks { get; set; }
@@ -56,7 +54,11 @@ public sealed partial class PlayerPage
     private async Task MountPlanAsync(Attempt attempt, double playerStart)
     {
         var transport = attempt.Client.Playback.OpenMedia(attempt.Plan!);
-        var media = attempt.Media = new Mount(transport, attempt.Cancellation.Token) { StartPosition = playerStart };
+        var media = attempt.Media = new Mount(transport, attempt.Cancellation.Token)
+        {
+            StartPosition = playerStart,
+            Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled),
+        };
         _delivery = transport.Delivery;
         _duration = transport.DurationSeconds;
 #if DEBUG_SERVER
@@ -86,20 +88,18 @@ public sealed partial class PlayerPage
             media.Stream = await transport.OpenStreamAsync(media.Token);
             media.Token.ThrowIfCancellationRequested();
             media.RandomStream = media.Stream.AsRandomAccessStream();
-#if DEBUG_SERVER
-            if (DebugFfmpegPlayback.UseForDirectStream(attempt.FfmpegMode, transport.IsHls))
+            if (media.Route.UseFfmpeg)
             {
                 // Keep auth, profile ownership and range cancellation in Core; FFmpeg receives bytes, not a bare URI.
-                media.FfmpegMode = attempt.FfmpegMode;
-                Log.Info($"player: FFmpeg {media.FfmpegMode} before create stream");
-                var config = DebugFfmpegSource.Configuration(media.FfmpegMode);
+                Log.Info("player: FFmpeg before create stream");
+                var config = FfmpegSource.Configuration(media.Route);
                 media.FfmpegSource = await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream, config).AsTask();
                 media.Token.ThrowIfCancellationRequested();
+                FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route);
                 Log.Info("player: FFmpeg stream created; before item");
                 media.Item = media.FfmpegSource.CreateMediaPlaybackItem();
             }
             else
-#endif
             {
                 media.Source = MediaSource.CreateFromStream(media.RandomStream, transport.MimeType ?? "video/mp4");
             }
@@ -116,12 +116,10 @@ public sealed partial class PlayerPage
 #if DEBUG_SERVER
         player.PlaybackSession.BufferingStarted += OnStatsBufferingStarted;
         player.PlaybackSession.BufferingEnded += OnStatsBufferingEnded;
-        // The item exposes the actual selected native tracks, not the source/recipe's predictions.
+#endif
+        // The item exposes native track selection in production as well as debug stats.
         media.Item ??= new MediaPlaybackItem(media.Source);
         player.Source = media.Item;
-#else
-        player.Source = media.Source;
-#endif
     }
 
     private async void OnDownloadRequested(Attempt attempt, Mount media, AdaptiveMediaSourceDownloadRequestedEventArgs args)
@@ -173,9 +171,21 @@ public sealed partial class PlayerPage
             || !IsCurrent(attempt, media) || media.FailureQueued) return;
         try
         {
-#if DEBUG_SERVER
-            if (media.FfmpegSource is { } ffmpeg) ffmpeg.PlaybackSession = sender.PlaybackSession;
-#endif
+            if (media.FfmpegSource is { } ffmpeg)
+            {
+                ffmpeg.PlaybackSession = sender.PlaybackSession;
+                // AudioStreams and AudioTracks have the same (best-stream-first) order in 2.1.0.
+                // Wait until MediaOpened populates native tracks, then select before the first Play.
+                var streams = ffmpeg.AudioStreams.Select(stream => stream.StreamIndex).ToArray();
+                if (media.Item!.AudioTracks.Count != streams.Length)
+                    throw new InvalidDataException("The planned audio tracks could not be mapped.");
+                var fileId = attempt.Plan?.Source?.MediaFileId ?? attempt.Start?.FileId;
+                var expectedCount = attempt.Request.Detail.Versions.FirstOrDefault(version => version.FileId == fileId)?.AudioTracks?.Count;
+                if (attempt.Plan?.Delivery == "server_remux_progressive") expectedCount = 1;
+                // FFmpeg may omit an undecodable stream. Do not let that shift Silo's audio ordinals.
+                var index = PlaybackRoutePolicy.AudioTrackIndex(media.Route.AudioOrdinal, streams, expectedCount is > 0 ? expectedCount : null);
+                if (index >= 0) media.Item.AudioTracks.SelectedIndex = index;
+            }
             // TvVideoPlaybackStarter.kt's player coordinate may be zero on reanchored HLS even
             // when the source is minutes into the title. Set it once, only after native opening.
             sender.PlaybackSession.Position = TimeSpan.FromSeconds(media.StartPosition);
@@ -272,10 +282,8 @@ public sealed partial class PlayerPage
         if (media.Adaptive is { } adaptive && media.DownloadHandler is { } handler)
             Cleanup("detach downloads", () => adaptive.DownloadRequested -= handler);
         Cleanup("dispose source", () => media.Source?.Dispose());
-#if DEBUG_SERVER
         // The native source owns its MSS/item and must outlive the player, but not the authenticated stream.
         Cleanup("dispose FFmpeg source", () => media.FfmpegSource?.Dispose());
-#endif
         Cleanup("dispose adaptive", () => media.Adaptive?.Dispose());
         Cleanup("dispose random stream", () => media.RandomStream?.Dispose());
         Cleanup("dispose stream", () => media.Stream?.Dispose());

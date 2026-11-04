@@ -23,7 +23,7 @@ public static class PlaybackProtocol
             features.Add("embedded_subtitles_v1");
         if (context.Output.AudioPassthrough.Entries.Count > 0) features.Add("layout_aware_passthrough");
         // silo-server capabilities_v3.go videoEligibleV3 ignores non-hardware decode entries unless the
-        // client opts in. Only the debug FFmpeg claim has one; the measured baseline is all hardware.
+        // client opts in. The measured dav1d AV1 entry supplies this in production.
         if (videoDecode?.Any(decoder => !decoder.Hardware) == true) features.Add(SoftwareVideoDecodeFeature);
         // Native Media3 HLS recipes/renditions are not evidence for the Windows player.
         return features.AsReadOnly();

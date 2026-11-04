@@ -6,8 +6,15 @@ namespace Bale.Core.Playback;
 public static class PlaybackReplan
 {
     public static PlaybackReplanRequestV3 ForFailure(PlaybackStartRequestV3 start, PlaybackPlan plan, string planAttemptId,
-        IReadOnlyList<string> priorAttemptedKeys, int attemptCount, double sourcePositionSeconds, PlaybackFailureV3 failure)
+        IReadOnlyList<string> priorAttemptedKeys, int attemptCount, double sourcePositionSeconds, PlaybackFailureV3 failure,
+        PlaybackRouteDecision? failedRoute = null)
     {
+        if (failedRoute is { UseFfmpeg: true })
+        {
+            // Do not offer the failing local decoder again: make the server adapt the affected streams.
+            start = SoftwareDecodePolicy.WithoutFailedFallbacks(start, failedRoute);
+            failure = new("decoder_failure", "FFmpegInteropX failed; server transcode required. " + failure.Message, "FFmpegInteropX");
+        }
         if (string.IsNullOrWhiteSpace(plan.PlanId) || string.IsNullOrWhiteSpace(plan.PlanAttemptKey))
             throw new InvalidDataException("The playback plan has no recovery identity.");
         var attemptedKeys = priorAttemptedKeys.Append(plan.PlanAttemptKey)

@@ -38,6 +38,7 @@
     <None Include="../../src/Bale.Xbox/Services/DebugServer.Ffmpeg.cs" Link="DebugServer.Ffmpeg.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugProcessCpu.cs" Link="DebugProcessCpu.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugFfmpegPlayback.cs" Link="DebugFfmpegPlayback.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Services/FfmpegSource.cs" Link="FfmpegSource.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugFfmpegSource.cs" Link="DebugFfmpegSource.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/PlayerPage.Media.cs" Link="PlayerPage.Media.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/PlayerPage.Stats.cs" Link="PlayerPage.Stats.cs.txt" CopyToOutputDirectory="PreserveNewest" />

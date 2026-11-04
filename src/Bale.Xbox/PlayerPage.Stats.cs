@@ -85,14 +85,14 @@ public sealed partial class PlayerPage
 
     private static PlaybackStats ReadFfmpegStats(PlaybackStats stats, Mount media)
     {
-        stats = stats with { BackendDisplayName = $"FFmpegInteropX ({media.FfmpegMode})", BackendRoute = "FFmpeg Direct" };
+        stats = stats with { BackendDisplayName = "FFmpegInteropX", BackendRoute = "FFmpeg Direct" };
         try
         {
             if (media.FfmpegSource!.CurrentVideoStream is { } video)
                 stats = stats with
                 {
                     VideoCodec = DebugScreenText.Compact(video.CodecName, 80),
-                    VideoDecoderName = DebugFfmpegSource.DecoderName(video.DecoderEngine),
+                    VideoDecoderName = FfmpegSource.DecoderName(video.DecoderEngine),
                     Resolution = video.PixelWidth > 0 && video.PixelHeight > 0
                         ? string.Create(CultureInfo.InvariantCulture, $"{video.PixelWidth}x{video.PixelHeight}") : null,
                     FrameRate = video.FramesPerSecond > 0 ? video.FramesPerSecond : null,
@@ -105,7 +105,7 @@ public sealed partial class PlayerPage
                 stats = stats with
                 {
                     AudioCodec = DebugScreenText.Compact(audio.CodecName, 80),
-                    AudioDecoderName = DebugFfmpegSource.DecoderName(audio.DecoderEngine),
+                    AudioDecoderName = FfmpegSource.DecoderName(audio.DecoderEngine),
                     AudioChannelCount = audio.Channels,
                     AudioSampleRate = audio.SampleRate,
                 };

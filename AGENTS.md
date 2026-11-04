@@ -66,7 +66,7 @@ MSIX (~2 min). Then, with `XBOX_HOST` set to the console's IP:
 ./scripts/bale-debug.sh playtest "https://example.org/public.mp4" 3  # muted built-in-player probe; 1–10 s (default 3)
 timeout 300 ./scripts/bale-debug.sh playtest suite 3  # Chromium codec samples, sequential; needs a larger outer timeout
 ./scripts/bale-debug.sh playtest-ffmpeg @/tmp/x 30 software  # debug FFmpegInteropX; URL, @file or suite; 1–60 s; auto|software|system
-./scripts/bale-debug.sh ffmpeg software      # next real-player attempt; off (default)|auto|software|system; HLS unchanged
+./scripts/bale-debug.sh ffmpeg policy        # next real-player attempt; policy (default)|off; HLS unchanged
 ./scripts/bale-debug.sh goto "Unwatched#2"     # setup only: focus the second matching control
 ./scripts/bale-debug.sh targets               # controls goto can reach
 ./scripts/bale-debug.sh tree                  # visible element tree with bounds
@@ -110,6 +110,27 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
 - **Bumpers, triggers and Page Up/Down do nothing**, app-wide (`App.OnPreviewKeyDown`); the official
   app handles none of them, and a ScrollViewer would page away from focus.
 - **Back to a page restores its focus** through `IRestoresFocus` + `FocusRetry`.
+
+## Playback decoder policy
+
+- FFmpegInteropX packages, native activation and license texts ship in **all** builds. Keep the CI
+  package checker; CsWinRT's projection alone does not register the WinRT factories for Native AOT.
+- `SoftwareDecodePolicy.VideoCodecs` is the project owner's explicit **AV1-only** software video
+  allowlist. Add nothing without them. Other unsupported video goes to server transcode, never
+  FFmpeg software or D3D11. Measured AV1 evidence is 0.1.230: 8/10-bit, **1080p30**, not 4K.
+- `PlaybackRoutePolicy` decides each mount. HLS always stays on AdaptiveMediaSource. Direct AV1
+  forces FFmpeg software video; audio-only fallback forces the system video decoder and validates
+  reported engines before playback. AAC/MP3 use the pinned winmd's system audio switches; no
+  AC3/EAC3 or passthrough switches exist in 2.1.0. Passthrough remains unclaimed.
+- FFmpeg audio selection must honor the server's ordinal, not FFmpeg's reordered default:
+  map `AudioStreams[].StreamIndex` back to demux order, then set the item's AudioTracks.SelectedIndex
+  before Play. Fail closed if the selected stream is missing.
+- An FFmpeg create/open/MediaFailed failure gets the existing single replan with its triggering
+  codec claims removed and an explicit server-transcode reason; never retry the same capability.
+- Debug real-player override is **policy** (default) or **off** only; off also withdraws fallback
+  claims. The standalone `playtest-ffmpeg` probe retains its experimental modes. See docs/player-plan.md.
+- Never print media URLs, stream grants, headers or media/session exception messages. Log only safe
+  HRESULTs, IDs/codecs and fixed diagnostics; keep FFmpeg's native log provider disabled.
 
 ## Native AOT + UWP pitfalls (all hit for real)
 

@@ -148,6 +148,57 @@ public class PlaybackReplanTests
         Assert.Null(failure.DecoderName);
     }
 
+    [Theory]
+    [InlineData("av1", "eac3", true, false)]
+    [InlineData("hevc", "dts", false, true)]
+    [InlineData("av1", "truehd", true, true)]
+    public void FfmpegFailureRemovesOnlyTheTriggeringClaimsAndRequestsServerAdaptation(string video, string audio, bool dropAv1, bool dropAudio)
+    {
+        var start = Start();
+        var plan = PlaybackRoutePolicyTests.Plan("original_http", video, audio);
+        var route = PlaybackRoutePolicy.Decide(plan, false);
+        var request = PlaybackReplan.ForFailure(start, plan, "plan-attempt", [], 1, 42,
+            PlaybackReplan.Classify(unchecked((int)0xC00D5212), false, false), route);
+        Assert.Equal(!dropAv1, request.ClientCapabilities.CodecsVideo.Contains("av1"));
+        Assert.Equal(!dropAv1, request.ClientCapabilities.VideoDecode.Any(decode => decode.Codec == "av1"));
+        Assert.Equal(!dropAv1, request.ClientFeatures.Contains(PlaybackProtocol.SoftwareVideoDecodeFeature));
+        Assert.Equal(!dropAudio, request.ClientCapabilities.CodecsAudio.Contains(audio));
+        foreach (var delivery in request.ClientPlaybackContext.Deliveries.Where(pair => pair.Key != "hls").Select(pair => pair.Value))
+        {
+            Assert.Equal(!dropAv1, delivery.VideoCodecs.Contains("av1"));
+            Assert.Equal(!dropAudio, delivery.AudioDecodeCodecs.Contains(audio));
+        }
+        Assert.Contains("hevc", request.ClientCapabilities.CodecsVideo);
+        Assert.Contains("aac", request.ClientCapabilities.CodecsAudio);
+        Assert.Contains("flac", request.ClientCapabilities.CodecsAudio);
+        Assert.Equal("decoder_failure", request.Failure!.Classification);
+        Assert.Equal("FFmpegInteropX", request.Failure.DecoderName);
+        Assert.Contains("server transcode required", request.Failure.Message);
+        Assert.Contains("0xC00D5212", request.Failure.Message);
+        Assert.Equal(3, request.SelectedTracks.Audio!.Index);
+        Assert.Equal(42, request.PositionSeconds);
+        Assert.Equal("plan-attempt", request.PlanAttemptId);
+        // Recovery must not mutate the baseline or the original request shared by Retry.
+        Assert.Contains("av1", start.ClientCapabilities.CodecsVideo);
+        Assert.Contains(audio, start.ClientCapabilities.CodecsAudio);
+        Assert.Contains("av1", ConsoleEvidence.Default.VideoCodecs);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(request, PlaybackJson.Default.PlaybackReplanRequestV3));
+        Assert.Equal(!dropAv1, json.RootElement.GetProperty("client_features").EnumerateArray()
+            .Any(feature => feature.GetString() == PlaybackProtocol.SoftwareVideoDecodeFeature));
+    }
+
+    [Fact]
+    public void SystemFailuresDoNotWithdrawWorkingFfmpegClaims()
+    {
+        var start = Start();
+        var plan = PlaybackRoutePolicyTests.Plan("original_http", "hevc", "eac3");
+        var request = PlaybackReplan.ForFailure(start, plan, "attempt", [], 1, 0,
+            PlaybackReplan.Classify(1, false, true), PlaybackRoutePolicy.Decide(plan, false));
+        Assert.Same(start.ClientCapabilities, request.ClientCapabilities);
+        Assert.Same(start.ClientFeatures, request.ClientFeatures);
+        Assert.Equal("http_failure", request.Failure!.Classification);
+    }
+
     [Fact]
     public void RecoverySerializationKeepsTheV3SnakeCaseContract()
     {

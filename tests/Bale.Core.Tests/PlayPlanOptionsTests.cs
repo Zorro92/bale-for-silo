@@ -55,27 +55,23 @@ public class PlayPlanOptionsTests
     }
 
     [Fact]
-    public void Av1ClaimIsSoftwareEightAndTenBitUpTo4KWithoutMutatingTheBaseline()
+    public void LegacyAv1FlagIsANoOpAndCannotExpandTheMeasuredProductionClaim()
     {
-        var capabilities = new PlayPlanOptions(true, null, 0).Capabilities();
-        var av1 = Assert.Single(capabilities.VideoDecode, codec => codec.Codec == "av1");
+        Assert.True(PlayPlanOptions.TryParse(["--claim-av1"], out var legacy, out _));
+        Assert.True(PlayPlanOptions.TryParse([], out var normal, out _));
+        Assert.Same(ConsoleEvidence.Default, legacy.Capabilities());
+        Assert.Same(normal.Capabilities(), legacy.Capabilities());
+        var av1 = Assert.Single(legacy.Capabilities().VideoDecode, codec => codec.Codec == "av1");
         Assert.Equal(new[] { 8, 10 }, av1.BitDepths);
-        Assert.Equal(3840, av1.MaxWidth);
-        Assert.Equal(2160, av1.MaxHeight);
+        Assert.Equal(1920, av1.MaxWidth);
+        Assert.Equal(1080, av1.MaxHeight);
+        Assert.Equal(30, av1.MaxFrameRate);
         Assert.False(av1.Hardware);
-        Assert.Contains("av1", capabilities.VideoCodecs);
-        Assert.DoesNotContain("av1", capabilities.HardwareVideoCodecs);
-        Assert.DoesNotContain("av1", ConsoleEvidence.Default.VideoCodecs);
-        Assert.DoesNotContain(ConsoleEvidence.Default.VideoDecode, codec => codec.Codec == "av1");
         var start = PlaybackStartBuilder.Build("file", "profile", "attempt", null,
-            Bale.Core.Detail.PlaybackSelection.Auto, capabilities, PlaybackTestSupport.Identity);
-        Assert.Contains("av1", start.ClientCapabilities.CodecsVideo);
-        Assert.Contains("av1", start.ClientPlaybackContext.Deliveries["original_http"].VideoCodecs);
-        // silo-server videoEligibleV3 drops software entries without this opt-in.
+            Bale.Core.Detail.PlaybackSelection.Auto, normal.Capabilities(), PlaybackTestSupport.Identity);
         Assert.Contains(PlaybackProtocol.SoftwareVideoDecodeFeature, start.ClientFeatures);
-        var baseline = PlaybackStartBuilder.Build("file", "profile", "attempt", null,
-            Bale.Core.Detail.PlaybackSelection.Auto, ConsoleEvidence.Default, PlaybackTestSupport.Identity);
-        Assert.DoesNotContain(PlaybackProtocol.SoftwareVideoDecodeFeature, baseline.ClientFeatures);
+        Assert.Contains("av1", start.ClientPlaybackContext.Deliveries["original_http"].VideoCodecs);
+        Assert.DoesNotContain("av1", start.ClientPlaybackContext.Deliveries["hls"].VideoCodecs);
     }
 
     [Fact]

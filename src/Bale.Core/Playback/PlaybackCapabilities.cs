@@ -30,10 +30,10 @@ public sealed record DeviceCapabilities(
 public static class ConsoleEvidence
 {
     public static DeviceCapabilities Default { get; } = new(
-        Containers: Array.AsReadOnly(new[] { "mp4", "mkv" }), // MKV still pending verification; see docs/player-plan.md.
-        VideoCodecs: Array.AsReadOnly(new[] { "h264", "hevc" }), // No AV1 or VP9/WebM claim.
-        // FLAC/Opus in MP4 failed; leave them out until verified in MKV (docs/player-plan.md).
-        AudioDecodeCodecs: Array.AsReadOnly(new[] { "aac", "ac3", "eac3", "mp3", "pcm" }),
+        Containers: Array.AsReadOnly(new[] { "mp4", "mkv" }), // Both verified; see docs/player-plan.md.
+        VideoCodecs: Array.AsReadOnly(new[] { "h264", "hevc", "av1" }), // No VP9/WebM claim.
+        // The system baseline plus bundled FFmpeg audio decode; no encoded output/passthrough promise.
+        AudioDecodeCodecs: Array.AsReadOnly(SoftwareDecodePolicy.SystemAudioCodecs.Concat(SoftwareDecodePolicy.AudioCodecs).ToArray()),
         // TrueHD/DTS converters exist, but no receiver has verified passthrough yet.
         AudioPassthroughCodecs: [],
         MaxChannels: 8,
@@ -48,6 +48,9 @@ public static class ConsoleEvidence
             new VideoDecodeCapability("h264", "Media Foundation", [], [], [8], 1920, 1080, 60, 25000, true),
             // HEVC MP4 playback, including Main10, is verified on the console (docs/player-plan.md).
             new VideoDecodeCapability("hevc", "Media Foundation", [], [], [8, 10], 1920, 1080, 60, 25000, true),
+            // 0.1.230 Fight Club test: dav1d, AV1 Main 10-bit 1080p23.976, real time (~1.3 cores).
+            // 8-bit clips also verified. Bound the claim to 1080p30; 4K software AV1 is untested.
+            new VideoDecodeCapability("av1", "dav1d", [], [], [8, 10], 1920, 1080, 30, null, false),
         }),
         DisplayHdrEvidence = "exact",
     };

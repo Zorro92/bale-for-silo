@@ -98,8 +98,8 @@ public sealed record PlaybackStats
         return new()
         {
             // PlayerViewModel.kt uses PlaybackRoute's engine/source names, not the server decision.
-            // Windows MediaPlayer is Native Direct for progressive; a future FFmpegInteropX backend
-            // must advertise its own route name.
+            // Windows MediaPlayer is Native Direct for progressive; FFmpegInteropX overrides this
+            // with its actual mounted route rather than a prediction from the server's decision.
             BackendRoute = plan.Stream is null && delivery is null && isHls is null ? null : hls ? "HLS" : "Native Direct",
             // VideoBackendCapabilities.kt describes the renderer, not the selection. Bale has none yet.
             SubtitleRendering = null,

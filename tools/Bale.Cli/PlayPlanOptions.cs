@@ -44,6 +44,6 @@ internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldS
         return true;
     }
 
-    internal DeviceCapabilities Capabilities() => ClaimAv1
-        ? DebugPlaybackCapabilities.Av1SoftwareClaim : ConsoleEvidence.Default;
+    // --claim-av1 remains a compatibility no-op; the measured production baseline includes AV1.
+    internal DeviceCapabilities Capabilities() => ConsoleEvidence.Default;
 }
