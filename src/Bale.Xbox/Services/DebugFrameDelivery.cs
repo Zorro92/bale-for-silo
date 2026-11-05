@@ -13,6 +13,7 @@ internal sealed class DebugFrameDelivery : IDisposable
     private readonly MediaPlaybackSession _session;
     private readonly PlaybackFrameDeliveryMeter _meter = new();
     private int _unavailable;
+    private int _requests;
 
     internal DebugFrameDelivery(FFmpegMediaSource source, MediaPlaybackSession session)
     {
@@ -28,6 +29,7 @@ internal sealed class DebugFrameDelivery : IDisposable
             _source.Starting -= OnStarting;
             throw;
         }
+        Log.Info("player: frame delivery observer attached");
     }
 
     internal void SetSeeking(bool seeking) => _meter.SetSeeking(seeking);
@@ -46,6 +48,9 @@ internal sealed class DebugFrameDelivery : IDisposable
         if (Volatile.Read(ref _unavailable) != 0) return;
         try
         {
+            var n = Interlocked.Increment(ref _requests);
+            if (n <= 4)
+                Log.Info($"player: frame delivery request {n} video={args.Request.StreamDescriptor is VideoStreamDescriptor} sample={args.Request.Sample is not null} descriptor={args.Request.StreamDescriptor?.GetType().Name}");
             if (args.Request.StreamDescriptor is not VideoStreamDescriptor || args.Request.Sample is not { } sample) return;
             _meter.Observe(sample.Timestamp, sample.Duration, _session.Position,
                 _session.PlaybackState == MediaPlaybackState.Playing, sample.Discontinuous, Environment.TickCount64);

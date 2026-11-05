@@ -146,6 +146,7 @@ public sealed partial class PlayerPage
             try { media.FrameDelivery = new DebugFrameDelivery(softwareSource, player.PlaybackSession); }
             catch (Exception ex) { LogFailure("frame delivery observer", ex); }
         }
+        else Log.Info($"player: frame delivery not attached softwareVideo={media.Route.SoftwareVideo} ffmpeg={media.FfmpegSource is not null}");
 #endif
         // The item exposes native track selection in production as well as debug stats.
         media.Item ??= new MediaPlaybackItem(media.Source);
