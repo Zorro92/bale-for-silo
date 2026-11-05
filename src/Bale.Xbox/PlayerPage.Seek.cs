@@ -1,4 +1,5 @@
 using Bale.Core.Playback;
+using Bale.Xbox.Services;
 using Windows.Media.Playback;
 using Windows.System;
 
