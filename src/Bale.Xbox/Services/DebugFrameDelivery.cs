@@ -14,6 +14,7 @@ internal sealed class DebugFrameDelivery : IDisposable
     private readonly PlaybackFrameDeliveryMeter _meter = new();
     private int _unavailable;
     private int _requests;
+    private readonly Dictionary<object, bool> _kinds = new(ReferenceEqualityComparer.Instance);
 
     internal DebugFrameDelivery(FFmpegMediaSource source, MediaPlaybackSession session)
     {
@@ -48,14 +49,29 @@ internal sealed class DebugFrameDelivery : IDisposable
         if (Volatile.Read(ref _unavailable) != 0) return;
         try
         {
-            var n = Interlocked.Increment(ref _requests);
-            if (n <= 4)
-                Log.Info($"player: frame delivery request {n} video={args.Request.StreamDescriptor is VideoStreamDescriptor} sample={args.Request.Sample is not null} descriptor={args.Request.StreamDescriptor?.GetType().Name}");
-            if (args.Request.StreamDescriptor is not VideoStreamDescriptor || args.Request.Sample is not { } sample) return;
+            if (args.Request.Sample is not { } sample || !IsVideo(args.Request.StreamDescriptor)) return;
             _meter.Observe(sample.Timestamp, sample.Duration, _session.Position,
                 _session.PlaybackState == MediaPlaybackState.Playing, sample.Discontinuous, Environment.TickCount64);
         }
         catch (Exception ex) { Unavailable(ex); }
+    }
+
+    // Native AOT: CsWinRT hands the descriptor back as a plain IInspectable wrapper, so a C# type
+    // test (is VideoStreamDescriptor) is always false. QueryInterface once per descriptor instead;
+    // the wrappers are cached per native object, so the lookup stays tiny (audio + video).
+    private bool IsVideo(IMediaStreamDescriptor? descriptor)
+    {
+        if (descriptor is null) return false;
+        lock (_kinds)
+        {
+            if (_kinds.TryGetValue(descriptor, out var known)) return known;
+            bool video;
+            try { video = WinRT.CastExtensions.As<VideoStreamDescriptor>(descriptor) is not null; }
+            catch (InvalidCastException) { video = false; }
+            if (_kinds.Count < 16) _kinds[descriptor] = video;
+            if (Interlocked.Increment(ref _requests) <= 4) Log.Info($"player: frame delivery descriptor video={video} known={_kinds.Count}");
+            return video;
+        }
     }
 
     private void Unavailable(Exception ex)
