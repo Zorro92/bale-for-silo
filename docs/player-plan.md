@@ -131,6 +131,67 @@ The source clock, selected tracks and attempt identities are preserved; a failed
 shows the normal error notice/Retry. Core tests cover policy, bounded claims, track mapping,
 withdrawal and serialization. The production integration still needs the owner's console checks.
 
+### Native FFmpeg / dav1d build
+
+Bale uses `FFmpegInteropX.UWP.Lib` **2.1.0** with the custom x64 native package
+`FFmpegInteropX.UWP.FFmpeg` **8.1.2-bale.dav1d.1.5.4**. The public 8.1.2 x64 `avcodec-62.dll`
+embeds dav1d **1.0.0-0-g99172b1** (March 2022); upgrading the wrapper cannot update that static
+library. This rebuild is an A/B candidate for occasional AV1 stutter/2–4-core CPU spikes, **not a
+confirmed stutter fix**. The reported stutter has no supplied title or timestamp; the earlier
+Fight Club validation above must not be mistaken for that scene. HUD CPU measures the whole
+process, not dav1d alone. `Video.MaxDecoderThreads` remains upstream's default zero (available
+logical CPUs); this change does not tune threads, broaden the AV1-only allowlist or raise bounds.
+Console performance verification remains the owner's task.
+
+[Native build 42001326165](https://github.com/Zorro92/bale-for-silo/actions/runs/42001326165)
+published the release below. Its actual x64 `avcodec-62.dll` embeds **1.5.4-0-g54706fc6**;
+`scripts/ffmpeg-native.json` records the independently verified package SHA256 and NuGet content
+hash (obtained with NuGet's hash API, not inferred from a signed package's archive SHA512).
+
+**Provenance:** the immutable baseline is upstream `v2.1.0`, commit
+`88428c66e106852338b48554a4a00c9e48da588f`. Its FFmpeg gitlink is
+`38b88335f99e76ed89ff3c93f877fdefce736c13`, matching the public native 8.1.2 nuspec. All its
+submodule pins also match the wrapper package's recorded source commit
+`841fc8e79346a235906f1dbd45be53034b2e2f52`; the two later release-tag changes fix parallel wrapper
+builds and clean the FFmpeg intermediate directory, not dependency pins/configure flags. The
+native nuspec records FFmpeg's commit, **not the outer build-repository commit**, so this establishes
+the release source baseline, not the original packaging machine or a byte-identical rebuild.
+
+Only `Libs/dav1d` moves: `99172b11470776177939c3d2bc366fe8d904eab7` → tag **1.5.4**, commit
+`54706fc6bc0cdecab7e9593974a4039cc038fca7`. The workflow checks every other submodule against the
+selected ref and leaves upstream `Build-FFmpeg.ps1`, dependency build scripts, compiler/SDK defaults
+and `FFmpegConfig.sh` unchanged. Explicit defaults are UWP/x64/Release/shared, GPL/version3 off,
+encoders/devices/programs off. **No x264/x265 or GPL/nonfree components are built or linked.**
+Transport uses official GitHub mirrors for FFmpeg/dav1d/x264 without changing their pins. Packaging
+alone removes x86/ARM64 globs from a copy of the upstream nuspec and adds `SOURCES.txt`; the wrapper
+and its native activation registration are unchanged.
+
+**Rebuild / integrate:**
+
+1. Run `gh workflow run ffmpeg-native.yml --ref main` (and watch its run with
+   `gh run watch <run-id> --exit-status`). Optional `-f upstream_repository=owner/repository`,
+   `-f upstream_ref=<ref>` and `-f dav1d_tag=1.5.4` inputs permit a later Bale fork without editing
+   the workflow. Defaults are upstream plus the immutable release commit above and dav1d 1.5.4.
+2. The workflow uses the upstream build entrypoint, asserts disabled GPL/version3/nonfree/x264/x265
+   in generated configuration and checks the built DLLs. Its release includes the x64 NuGet,
+   `.sha256`, exact `SOURCES.txt`, configure log and corresponding `ffmpeg-native-sources.tar.gz`.
+   The source archive retains all built dependencies but excludes downloaded tools/build outputs,
+   Git credentials and unused GPL encoder sources.
+3. Release `native-ffmpeg-8.1.2-dav1d-1.5.4` and its assets are **immutable**. A rebuild retains
+   Actions artifacts but refuses to replace an existing release. A genuinely new published build
+   needs a new package version/release tag before its reviewed hash can replace the pin.
+4. `scripts/ffmpeg-native.json` pins the asset's SHA256. Windows CI downloads it into an isolated
+   staging directory, verifies the hash, then populates `.cache/ffmpeg-native` before restore.
+   `NuGet.Config` maps only this package ID to that feed; the project requires its exact version.
+   The downloader clears this package's cached extraction in CI so the verified asset is used.
+   For a local Windows build, run `pwsh -File scripts/restore-ffmpeg-native.ps1` first.
+5. Update the project reference and both native entries in `src/Bale.Xbox/packages.lock.json`
+   together with a reviewed package/hash change. Keep wrapper 2.1.0 unless a real ABI dependency
+   requires otherwise. Run Core tests and watch debug **and** production MSIX CI. The package checker
+   reads the actual MSIX `avcodec-62.dll` and rejects anything without dav1d **1.5.4**; update its
+   expected version/tests deliberately for a later dav1d upgrade. Licenses and provenance ship in
+   both configurations.
+
 ## Display HDR
 
 Display HDR is detected at runtime on the UI thread at each player start, not inferred from the
@@ -166,7 +227,20 @@ completion and prints actual source/player positions. HLS timeline offsets are m
 than treating a reanchored player clock as movie time. Non-seekable/loading players, positions
 outside the current timeline/duration and seeks that do not complete within 10 seconds fail
 explicitly. These endpoints and the player hooks compile only under `DEBUG_SERVER`; production
-builds cannot use either override. Console comparison/seek verification is still pending.
+builds cannot use either override.
+
+**Decision: keep server tone mapping.** The owner's console comparison on **0.1.237** used
+*Avatar Aang* (1080p HEVC Main10 HDR10+) at **600 / 1800 / 3000 / 4500 seconds**. The media
+pipeline's automatic HDR-to-SDR conversion (`hdr pretend`) looked washed out and desaturated,
+with lifted blacks; the server's BT.2390/Hable transcode retained color and contrast. Keep
+`hdr pretend` as a debug comparison tool, not the normal SDR playback path.
+
+Microsoft's media pipeline exposes no tone-mapping algorithm or parameter controls.
+FFmpegInteropX's `SetFFmpegVideoFilters` is not a practical alternative: filters run on the CPU,
+this build has no zimg/zscale, and neither OpenCL nor Vulkan is available for `tonemap_opencl`
+or libplacebo. HEVC on the FFmpeg route is hardware-decoded by the system, so its decoded frames
+never reach FFmpeg's filters. A Bale GPU tone-mapping shader remains a possible future option
+**only if server transcoding becomes a bottleneck**.
 
 Before an HDR10 direct-play mount (including progressive remux with an unchanged HDR picture),
 Bale requests a non-stereo PQ HDMI mode with `HdmiDisplayHdrOption.Eotf2084`. It keeps the current

@@ -49,8 +49,16 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}\.nuget\packages
-          key: nuget-windows-${{ hashFiles('**/*.csproj', 'Directory.Build.props', 'global.json') }}
+          key: nuget-windows-${{ hashFiles('**/*.csproj', '**/packages.lock.json', 'Directory.Build.props', 'global.json', 'NuGet.Config', 'scripts/ffmpeg-native.json') }}
           restore-keys: nuget-windows-
+
+      - name: Test native package validation scripts
+        shell: pwsh
+        run: ./scripts/test-ffmpeg-checks.ps1
+
+      - name: Download and verify pinned native FFmpeg package
+        shell: pwsh
+        run: ./scripts/restore-ffmpeg-native.ps1
 
       # Every build gets a higher version so the Xbox accepts it as an update.
       - name: Stamp version

@@ -26,9 +26,17 @@ try {
         if (-not $native -or $native.Length -eq 0) { throw "Missing native DLL $dll" }
         Write-Output "Native DLL: $dll ($($native.Length) bytes)"
     }
-    foreach ($license in @('Licenses/FFmpegInteropX.txt', 'Licenses/FFmpeg/ffmpeg.txt', 'Licenses/FFmpeg/dav1d.txt')) {
-        if (-not $archive.GetEntry($license)) { throw "Missing license $license" }
+    $codec = $archive.GetEntry('avcodec-62.dll').Open()
+    $bytes = [System.IO.MemoryStream]::new()
+    try {
+        $codec.CopyTo($bytes)
+        & "$PSScriptRoot/check-dav1d-version.ps1" -Bytes $bytes.ToArray()
     }
-    Write-Output 'FFmpegInteropX activation and native packaging: PASS'
+    finally { $codec.Dispose(); $bytes.Dispose() }
+    foreach ($license in @('Licenses/FFmpegInteropX.txt', 'Licenses/FFmpeg/ffmpeg.txt', 'Licenses/FFmpeg/dav1d.txt',
+        'Licenses/FFmpeg/SOURCES.txt')) {
+        if (-not $archive.GetEntry($license)) { throw "Missing license/provenance $license" }
+    }
+    Write-Output 'FFmpegInteropX activation, native packaging and dav1d 1.5.4: PASS'
 }
 finally { $archive.Dispose() }

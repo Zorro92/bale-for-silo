@@ -115,6 +115,14 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
 
 - FFmpegInteropX packages, native activation and license texts ship in **all** builds. Keep the CI
   package checker; CsWinRT's projection alone does not register the WinRT factories for Native AOT.
+- Native FFmpeg is **8.1.2-bale.dav1d.1.5.4**, not public 8.1.2 (which embeds dav1d 1.0.0).
+  Keep wrapper `FFmpegInteropX.UWP.Lib` at 2.1.0. `scripts/ffmpeg-native.json` pins the release and
+  SHA256; run `scripts/restore-ffmpeg-native.ps1` before Windows restore/build. `NuGet.Config`
+  maps this package only to the verified local feed. CI checks the actual MSIX's dav1d version.
+  Rebuild with the manual `ffmpeg-native.yml` workflow (repository/ref/dav1d-tag inputs), preserving
+  all other upstream submodule pins and FFmpeg flags: GPL/version3/encoders remain disabled;
+  never enable x264/x265. Releases are immutable. See `docs/player-plan.md` for provenance and
+  rebuild steps; do not overwrite assets or update a pinned hash without reviewing the new build.
 - `SoftwareDecodePolicy.VideoCodecs` is the project owner's explicit **AV1-only** software video
   allowlist. Add nothing without them. Other unsupported video goes to server transcode, never
   FFmpeg software or D3D11. Measured AV1 evidence is 0.1.230: 8/10-bit, **1080p30**, not 4K.

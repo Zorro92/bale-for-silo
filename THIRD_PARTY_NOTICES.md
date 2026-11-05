@@ -35,24 +35,34 @@ Bale remains AGPL-3.0-or-later; third-party components retain their own licenses
 
 ## FFmpeg
 
-All builds bundle FFmpegInteropX.UWP.FFmpeg 8.1.2. The **bundled x64 build is LGPL-2.1-or-later**,
-not a GPL/nonfree FFmpeg build: its `avutil-60.dll` configuration contains `--disable-gpl` and
-`--disable-version3`, and its license string is `LGPL version 2.1 or later`. The package's
+All builds bundle the UWP x64 package **FFmpegInteropX.UWP.FFmpeg
+8.1.2-bale.dav1d.1.5.4**, rebuilt by Bale to update only dav1d. The **bundled x64 build is
+LGPL-2.1-or-later**, not a GPL/nonfree FFmpeg build: its `avutil-60.dll` configuration contains
+`--disable-gpl`, `--disable-version3` and `--disable-encoders`, and its license string is
+`LGPL version 2.1 or later`. Neither x264 nor x265 is built or linked. The package's
 `licenses/ffmpeg.txt` is the LGPL 2.1 text, shipped as `Licenses/FFmpeg/ffmpeg.txt`.
-It is a shared-library build (`--enable-shared`), including `--enable-libdav1d`.
+It remains a shared-library build (`--enable-shared`), including `--enable-libdav1d`.
 
-The FFmpeg build's source revision is `38b88335f99e76ed89ff3c93f877fdefce736c13`; corresponding
-build scripts and dependency sources are in the
-[FFmpegInteropX release/v2.1 repository](https://github.com/ffmpeginteropx/FFmpegInteropX/tree/release/v2.1).
+FFmpeg remains at `38b88335f99e76ed89ff3c93f877fdefce736c13`. The build baseline is
+[FFmpegInteropX v2.1.0, commit 88428c66e106852338b48554a4a00c9e48da588f](https://github.com/ffmpeginteropx/FFmpegInteropX/tree/88428c66e106852338b48554a4a00c9e48da588f),
+with its other dependency revisions and FFmpeg configure flags unchanged. The x64-only NuGet
+omits unused architecture globs and adds provenance; the interop wrapper remains 2.1.0.
+
+The [native release](https://github.com/Zorro92/bale-for-silo/releases/tag/native-ffmpeg-8.1.2-dav1d-1.5.4)
+provides the package, SHA256, `SOURCES.txt` with every submodule revision and build parameters,
+and `ffmpeg-native-sources.tar.gz` containing corresponding source for all built dependencies.
+Provenance also ships in the NuGet and MSIX (`Licenses/FFmpeg/SOURCES.txt`). The expected package
+hash is pinned in `scripts/ffmpeg-native.json`; rebuild instructions are in `docs/player-plan.md`.
 Other bundled dependencies (bzip2, iconv, liblzma, libxml2, OpenSSL and zlib) retain their respective
 license texts, all packaged under `Licenses/FFmpeg/` regardless of `BaleDebugServer`.
 
 ## dav1d
 
-The FFmpeg package includes [dav1d](https://code.videolan.org/videolan/dav1d), the software AV1
-decoder, under the BSD 2-Clause License.
+The FFmpeg package statically links [dav1d](https://code.videolan.org/videolan/dav1d) **1.5.4**
+(commit `54706fc6bc0cdecab7e9593974a4039cc038fca7`), the software AV1 decoder, under the
+BSD 2-Clause License. CI checks the version embedded in the actual packaged `avcodec-62.dll`.
 
-Copyright © 2018–2019, VideoLAN and dav1d authors. All rights reserved.
+Copyright © 2018–2025, VideoLAN and dav1d authors. All rights reserved.
 
 The full bundled notice and license are shipped as `Licenses/FFmpeg/dav1d.txt` in every build.
 

@@ -49,6 +49,11 @@
     <None Include="../../src/Bale.Xbox/PlayerPage.Stats.cs" Link="PlayerPage.Stats.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/PlayerPage.xaml.cs" Link="PlayerPage.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Bale.Xbox.csproj" Link="Bale.Xbox.csproj.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/packages.lock.json" Link="Bale.Xbox.packages.lock.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/ffmpeg-native.json" Link="ffmpeg-native.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/restore-ffmpeg-native.ps1" Link="restore-ffmpeg-native.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../NuGet.Config" Link="NuGet.Config" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../.github/workflows/ci.yml" Link="ci.yml.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Package.appxmanifest" Link="Package.appxmanifest" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Build/FFmpegManifest.xslt" Link="FFmpegManifest.xslt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/Bale.Cli/PlayPlanCommand.cs" Link="PlayPlanCommand.cs.txt" CopyToOutputDirectory="PreserveNewest" />
