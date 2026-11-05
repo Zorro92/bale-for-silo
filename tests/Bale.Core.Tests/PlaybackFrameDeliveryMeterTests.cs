@@ -101,7 +101,11 @@ public class PlaybackFrameDeliveryMeterTests
         var observer = Read("DebugFrameDelivery.cs.txt");
         Assert.StartsWith("#if DEBUG_SERVER", observer);
         Assert.Contains("source.GetMediaStreamSource()", observer);
-        Assert.Contains("args.Request.StreamDescriptor is not VideoStreamDescriptor", observer);
+        // Native AOT returns the descriptor as a plain IInspectable wrapper: a C# type test is
+        // always false there (0.1.243 console log), so the video check must QueryInterface.
+        Assert.DoesNotContain("is not VideoStreamDescriptor", observer);
+        Assert.Contains("!IsVideo(args.Request.StreamDescriptor)", observer);
+        Assert.Contains("WinRT.CastExtensions.As<VideoStreamDescriptor>(descriptor)", observer);
         Assert.Contains("args.Request.Sample is not { } sample", observer);
         Assert.Contains("_source.SampleRequested -= OnSampleRequested", observer);
         Assert.DoesNotContain("args.Request.Sample =", observer);
