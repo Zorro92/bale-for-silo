@@ -25,6 +25,7 @@ public sealed partial class PlayerPage
             session.SeekCompleted += OnSeekCompleted;
             try
             {
+                media.FrameDelivery?.SetSeeking(true);
                 if (request.Pause) player.Pause();
                 if (Math.Abs(session.Position.TotalSeconds - target) > 0.000001)
                 {
@@ -44,7 +45,11 @@ public sealed partial class PlayerPage
                 Log.Info("player: debug seek " + body.TrimEnd());
                 return ("200 OK", body);
             }
-            finally { session.SeekCompleted -= OnSeekCompleted; }
+            finally
+            {
+                session.SeekCompleted -= OnSeekCompleted;
+                media.FrameDelivery?.SetSeeking(false);
+            }
         }
         catch (OperationCanceledException) { return ("409 Conflict", "player stopped during seek\n"); }
         catch (Exception ex)

@@ -148,6 +148,24 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
 - Never print media URLs, stream grants, headers or media/session exception messages. Log only safe
   HRESULTs, IDs/codecs and fixed diagnostics; keep FFmpeg's native log provider disabled.
 
+## Player diagnostics
+
+- `I` / gamepad View toggles the read-only stats panel; `scripts/bale-debug.sh where` includes the
+  same rows even when hidden. Process CPU is the kernel+user `GetProcessTimes` delta divided by
+  wall time: **cores**, then cores / `Environment.ProcessorCount` as a percentage, and that logical
+  CPU count. This is app-process load, not system-wide CPU or a single decoder thread's load.
+- **Late frames** is available only for FFmpeg software video. The pinned FFmpegInteropX
+  `Source/FFmpegMediaSource.cpp` `OnSampleRequested` assigns decoded video samples synchronously;
+  a later observer compares each sample's PTS with `MediaPlaybackSession.Position` at delivery.
+  The count is per mount, with a rolling last-10-wall-second count/rate. Preroll, paused/buffering
+  delivery, discontinuities and seeks are excluded. **Delivered ahead** is the last decoded sample
+  end minus the current player clock, floored at zero; it is not a renderer queue depth.
+- UWP `MediaPlayer` / `MediaPlaybackSession` exposes no renderer-drop statistics or decoded queue.
+  Native direct, HLS and FFmpeg system-video decoding therefore show late delivery/ahead as
+  **unavailable**. Actual dropped frames are unavailable on every route. Never infer drops from
+  buffering, clock polling, expected FPS, or the 23.976-on-59.94 display cadence. The MF media-engine
+  statistics interface is not an interface exposed by this WinRT MediaPlayer pipeline.
+
 ## Native AOT + UWP pitfalls (all hit for real)
 
 Each of these crashed or silently broke the app on the console while compiling fine:

@@ -44,6 +44,16 @@ internal static class DebugFfmpegPlaytest
         return string.Create(CultureInfo.InvariantCulture, $"{(last - first).TotalSeconds / wall.TotalSeconds:0.000} cores");
     }
 
+    internal static string CpuUsage(TimeSpan? start, TimeSpan? end, TimeSpan wall, int processorCount)
+    {
+        var cores = CpuCores(start, end, wall);
+        if (processorCount <= 0) return cores + " · CPU count unavailable";
+        var percent = start is { } first && end is { } last && last > first && wall > TimeSpan.Zero
+            ? ((last - first).TotalSeconds / wall.TotalSeconds / processorCount * 100).ToString("0.0", CultureInfo.InvariantCulture) + "% of "
+            : string.Empty;
+        return string.Create(CultureInfo.InvariantCulture, $"{cores} · {percent}{processorCount} CPUs");
+    }
+
     internal static string Verdict(bool opened, TimeSpan start, TimeSpan end, TimeSpan wall, IEnumerable<string> failures)
     {
         var basic = DebugPlaytest.Verdict(opened, start, end, failures);

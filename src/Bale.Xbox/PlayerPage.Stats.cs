@@ -47,12 +47,14 @@ public sealed partial class PlayerPage
         {
             var stats = PlanStats(attempt.Plan, attempt.Media?.Transport.IsHls);
             string? processCpu = null;
+            PlaybackFrameDeliverySnapshot? frames = null;
             if (attempt.Media is { } media)
             {
+                processCpu = ReadProcessCpu(media);
+                frames = media.FrameDelivery?.Read();
                 if (media.FfmpegSource is not null)
                 {
                     stats = ReadFfmpegStats(stats, media);
-                    processCpu = ReadProcessCpu(media);
                 }
                 else if (media is { Opened: true, Item: { } item })
                 {
@@ -75,11 +77,10 @@ public sealed partial class PlayerPage
                     EstimatedBandwidthBps = bandwidth,
                     BufferingCount = media.BufferingCount,
                     BufferingSeconds = bufferingTicks / (double)Stopwatch.Frequency,
-                    // Windows.Media.Playback exposes neither a dropped-frame nor an audio-underrun
-                    // counter. Leave both at zero (hidden), not estimates from buffering events.
+                    // Buffering is not evidence of dropped frames or audio underruns.
                 };
             }
-            SetStats(stats, processCpu);
+            SetStats(stats, processCpu, frames);
         }
         catch (Exception ex) { LogFailure("stats refresh", ex); }
     }
@@ -122,10 +123,10 @@ public sealed partial class PlayerPage
         if (failure is not null && failure != media.LastCpuFailure) Log.Info("player: " + failure);
         media.LastCpuFailure = failure;
         var wall = media.CpuTimestamp is { } previous ? Stopwatch.GetElapsedTime(previous, now) : TimeSpan.Zero;
-        var cores = DebugFfmpegPlaytest.CpuCores(media.CpuTime, value, wall);
+        var usage = DebugFfmpegPlaytest.CpuUsage(media.CpuTime, value, wall, Environment.ProcessorCount);
         media.CpuTime = value;
         media.CpuTimestamp = now;
-        return failure ?? cores;
+        return failure is null ? usage : string.Create(CultureInfo.InvariantCulture, $"{failure} · {Environment.ProcessorCount} CPUs");
     }
 
     private static PlaybackStats ReadVideoStats(PlaybackStats stats, MediaPlaybackItem item, PlaybackPlan? plan, bool isHls)
@@ -195,10 +196,16 @@ public sealed partial class PlayerPage
         });
     }
 
-    private void SetStats(PlaybackStats stats, string? processCpu = null)
+    private void SetStats(PlaybackStats stats, string? processCpu = null, PlaybackFrameDeliverySnapshot? frames = null)
     {
         var rows = stats.HudRows();
-        rows = [.. rows, ("HDR output", DebugHdrOutput)];
+        rows = [.. rows, ("HDR output", DebugHdrOutput),
+            ("Late frames", frames is null ? "unavailable" : string.Create(CultureInfo.InvariantCulture,
+                $"{frames.LateFrames} · {frames.RecentLateFrames}/10s ({frames.RecentLateFramesPerSecond:0.0}/s)")),
+            ("Delivered ahead", frames?.DeliveredAheadSeconds is { } ahead
+                ? ahead.ToString("0.000", CultureInfo.InvariantCulture) + " s" : "unavailable"),
+            // Neither MediaPlayer's WinRT API nor the pinned FFmpeg wrapper exposes render drops.
+            ("Dropped frames", "unavailable")];
         // Debug-only process load is a Bale diagnostic, after the official HUD rows.
         if (processCpu is not null) rows = [.. rows, ("CPU", processCpu)];
         if (_statsRows.SequenceEqual(rows)) return;

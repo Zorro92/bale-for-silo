@@ -109,6 +109,23 @@ public class DebugFfmpegPlaytestTests
         Assert.DoesNotContain("ProcessDiagnosticInfo", source);
     }
 
+    [Theory]
+    [InlineData(2.5, 6, "2.500 cores · 41.7% of 6 CPUs")]
+    [InlineData(0.008, 8, "0.008 cores · 0.1% of 8 CPUs")]
+    [InlineData(0, 6, "unavailable (process times did not advance) · 6 CPUs")]
+    public void ProcessCpuPercentageUsesTheExplicitLogicalCpuDenominator(double cores, int processors, string expected)
+    {
+        var previous = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
+            Assert.Equal(expected, DebugFfmpegPlaytest.CpuUsage(TimeSpan.Zero, TimeSpan.FromSeconds(cores * 10),
+                TimeSpan.FromSeconds(10), processors));
+        }
+        finally { CultureInfo.CurrentCulture = previous; }
+        Assert.Equal("unavailable · 6 CPUs", DebugFfmpegPlaytest.CpuUsage(null, null, TimeSpan.Zero, 6));
+    }
+
     [Fact]
     public void EndOfStreamResetKeepsTheMaximumObservedPositionAndState()
     {

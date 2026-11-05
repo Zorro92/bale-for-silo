@@ -41,6 +41,7 @@ public sealed partial class PlayerPage
         public PlaybackRouteDecision Route { get; set; } = null!;
         public MediaPlaybackItem? Item { get; set; }
 #if DEBUG_SERVER
+        public DebugFrameDelivery? FrameDelivery { get; set; }
         public TimeSpan? CpuTime { get; set; }
         public long? CpuTimestamp { get; set; }
         public string? LastCpuFailure { get; set; }
@@ -137,6 +138,11 @@ public sealed partial class PlayerPage
 #if DEBUG_SERVER
         player.PlaybackSession.BufferingStarted += OnStatsBufferingStarted;
         player.PlaybackSession.BufferingEnded += OnStatsBufferingEnded;
+        if (media.Route.SoftwareVideo && media.FfmpegSource is { } softwareSource)
+        {
+            try { media.FrameDelivery = new DebugFrameDelivery(softwareSource, player.PlaybackSession); }
+            catch (Exception ex) { LogFailure("frame delivery observer", ex); }
+        }
 #endif
         // The item exposes native track selection in production as well as debug stats.
         media.Item ??= new MediaPlaybackItem(media.Source);
@@ -282,6 +288,9 @@ public sealed partial class PlayerPage
         if (attempt.Media is not { } media) return;
         attempt.Media = null;
         media.Cancellation.Cancel();
+#if DEBUG_SERVER
+        Cleanup("detach frame delivery", () => media.FrameDelivery?.Dispose());
+#endif
         if (media.Player is { } player)
         {
             Cleanup("detach element", () => Video.SetMediaPlayer(null));

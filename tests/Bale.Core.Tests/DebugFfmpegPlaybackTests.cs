@@ -144,7 +144,7 @@ public class DebugFfmpegPlaybackTests
             "VideoDecoderName = FfmpegSource.DecoderName(video.DecoderEngine)",
             "AudioDecoderName = FfmpegSource.DecoderName(audio.DecoderEngine)",
             "DebugProcessCpu.Read(out var failure)", "Stopwatch.GetElapsedTime(previous, now)",
-            "DebugFfmpegPlaytest.CpuCores(media.CpuTime, value, wall)", "SetStats(stats, processCpu)", "(\"CPU\", processCpu)",
+            "DebugFfmpegPlaytest.CpuUsage(media.CpuTime, value, wall, Environment.ProcessorCount)", "SetStats(stats, processCpu, frames)", "(\"CPU\", processCpu)",
         ];
         foreach (var text in required) Assert.Contains(text, source);
         Assert.DoesNotContain("ex.Message", source);
