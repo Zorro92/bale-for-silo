@@ -22,6 +22,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private readonly DisplayRequest _display = new();
+    private readonly DisplayHdrOutput _hdrOutput = new();
     private readonly PlayerSpinnerVisibility _spinner = new();
     private PlayerRequest? _request;
     private Attempt? _attempt;
@@ -155,9 +156,9 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 var startPosition = PlaybackStartPosition.ForStartRequest(request.OverridePosition,
                     request.Detail.PlaybackPositionSeconds,
                     request.SuppressResumeRewind ? 0 : PlaybackStartPosition.DefaultResumeRewindSeconds);
-                var capabilities = ConsoleEvidence.Default;
+                var capabilities = DisplayHdrOutput.DetectCapabilities();
 #if DEBUG_SERVER
-                capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode);
+                capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);
 #endif
                 var start = attempt.Start = PlaybackStartBuilder.Build(request.Detail, request.Selection,
                     services.ProfileId, Guid.NewGuid().ToString(), startPosition, capabilities, DeviceIdentity.Current());
@@ -299,7 +300,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         finally { _lifecycle.Release(); }
     }
 
-    private async Task RecoverCoreAsync(Attempt attempt, int hresult, bool isDecoder, bool isNetwork)
+    private async Task RecoverCoreAsync(Attempt attempt, int hresult, bool isDecoder, bool isNetwork, bool hdrOutputFailed = false)
     {
         if (!_active || _leaving || _suspended || attempt.Cancellation.IsCancellationRequested) return;
         Log.Info($"player: failed hr=0x{unchecked((uint)hresult):X8}");
@@ -316,6 +317,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         SetLoading(true);
         var failedRoute = attempt.Media?.Route;
         DisposeMount(attempt);
+        await _hdrOutput.RestoreAsync();
+        attempt.Cancellation.Token.ThrowIfCancellationRequested();
         Log.Info("player: replan");
         try
         {
@@ -323,8 +326,10 @@ public sealed partial class PlayerPage : Page, IBackHandler
             // fallback, carrying the failed plan's identity and the SOURCE clock, not player time.
             var services = attempt.Services!;
             var failure = PlaybackReplan.Classify(hresult, isDecoder, isNetwork);
-            var request = PlaybackReplan.ForFailure(attempt.Start!, attempt.Plan!, attempt.PlanAttemptId,
-                [], 1, position, failure, failedRoute);
+            var request = hdrOutputFailed
+                ? PlaybackReplan.ForHdrOutputFailure(attempt.Start!, attempt.Plan!, attempt.PlanAttemptId, [], 1, position)
+                : PlaybackReplan.ForFailure(attempt.Start!, attempt.Plan!, attempt.PlanAttemptId,
+                    [], 1, position, failure, failedRoute);
             var decision = await attempt.Client.Playback.ReplanAsync(attempt.SessionId!, request,
                 services.Installation, attempt.Cancellation.Token);
             // Outcome and reason are server enum codes; never log the plan, its URL or message.
@@ -346,6 +351,12 @@ public sealed partial class PlayerPage : Page, IBackHandler
             attempt.Plan = decision.PlaybackPlan!;
             attempt.PlanAttemptId = Guid.NewGuid().ToString();
             attempt.Cancellation.Token.ThrowIfCancellationRequested();
+            if (hdrOutputFailed && DisplayHdrPolicy.RequiresHdr10(attempt.Plan))
+            {
+                // Fail closed if the replacement ignores the withdrawn HDR output claim.
+                await ShowErrorAsync(PlaybackMessages.PlaybackFailed);
+                return;
+            }
             var timeline = PlaybackTimeline.From(attempt.Plan.Timeline);
             await MountPlanAsync(attempt, timeline.PlayerForSource(position) ?? timeline.PlayerStartSeconds);
         }
@@ -427,12 +438,19 @@ public sealed partial class PlayerPage : Page, IBackHandler
 
     private async Task StopAttemptAsync()
     {
-        if (_attempt is not { } attempt) return;
+        if (_attempt is not { } attempt)
+        {
+            await _hdrOutput.RestoreAsync();
+            return;
+        }
         Pause(attempt);
         var position = SourcePosition(attempt);
         attempt.Cancellation.Cancel();
         try
         {
+            // Restore before a potentially slow final server report, including suspend/error paths.
+            DisposeMount(attempt);
+            await _hdrOutput.RestoreAsync();
             Log.Info("player: stop");
             await StopSessionAsync(attempt, position);
         }
@@ -484,6 +502,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         catch (Exception ex) { LogFailure("shutdown", ex); }
         finally
         {
+            await _hdrOutput.RestoreAsync();
             SetDisplayActive(false);
             _lifecycle.Release();
         }

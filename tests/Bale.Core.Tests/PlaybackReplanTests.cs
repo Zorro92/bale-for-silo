@@ -200,6 +200,66 @@ public class PlaybackReplanTests
     }
 
     [Fact]
+    public void HdrOutputFailureWithdrawsEveryHdrClaimWithoutDroppingCodecsOrRecoveryContext()
+    {
+        var hdr = new HdrCapabilities { Hdr10 = true, Hdr10Plus = true, Hlg = true, DolbyVisionProfiles = [5] };
+        var device = ConsoleEvidence.Default with { Hdr = hdr, DisplayHdrEvidence = "exact" };
+        var start = PlaybackStartBuilder.Build("file", "profile", "attempt", 123.5,
+            new PlaybackSelection(AudioIndex: 1, SubtitleIndex: 2), device, Identity) with
+        {
+            QualityPreference = "1080p", Metered = true, BandwidthCapKbps = 5000,
+        };
+        var request = PlaybackReplan.ForHdrOutputFailure(start, Plan(), "plan-attempt", ["prior"], 1, 123.5);
+        Assert.False(request.ClientCapabilities.Hdr);
+        AssertNoHdr(request.ClientCapabilities.HdrDetails);
+        AssertNoHdr(request.ClientPlaybackContext.Output.HdrDetails);
+        AssertNoHdr(request.ClientPlaybackContext.Output.Display!.HdrTypes);
+        Assert.Equal("unknown", request.ClientPlaybackContext.Output.Display.HdrEvidence);
+        Assert.All(request.ClientPlaybackContext.Deliveries.Values, delivery => AssertNoHdr(delivery.HdrDetails));
+        Assert.Same(start.ClientCapabilities.CodecsVideo, request.ClientCapabilities.CodecsVideo);
+        Assert.Same(start.ClientCapabilities.VideoDecode, request.ClientCapabilities.VideoDecode);
+        Assert.Same(start.ClientCapabilities.CodecsAudio, request.ClientCapabilities.CodecsAudio);
+        Assert.Same(start.ClientFeatures, request.ClientFeatures);
+        Assert.Same(start.ClientPlaybackContext.Output.AudioPassthrough, request.ClientPlaybackContext.Output.AudioPassthrough);
+        Assert.Equal("failed-plan", request.FailedPlanId);
+        Assert.Equal("plan-attempt", request.PlanAttemptId);
+        Assert.Equal(new[] { "prior", "opaque-key" }, request.AttemptedPlanKeys);
+        Assert.Equal(start.PlaybackAttemptId, request.PlaybackAttemptId);
+        Assert.Equal(123.5, request.PositionSeconds);
+        Assert.Equal(new PlaybackTrackIdentityV3("selected-audio", 7), request.SelectedTracks.Audio);
+        Assert.Equal(new PlaybackTrackIdentityV3("selected-subtitle", 8), request.SelectedTracks.Subtitle);
+        Assert.Equal("1080p", request.QualityPreference);
+        Assert.True(request.Metered);
+        Assert.Equal(5000, request.BandwidthCapKbps);
+        Assert.Equal("failure_recovery", request.Operation);
+        Assert.Equal("player_failure", request.Failure!.Classification);
+        Assert.Equal("HDR output switch failed; server tone mapping required.", request.Failure.Message);
+        // The device baseline and admitted request remain immutable for other sessions / Retry.
+        Assert.True(start.ClientCapabilities.Hdr);
+        Assert.Same(hdr, start.ClientPlaybackContext.Output.Display!.HdrTypes);
+        Assert.Equal("exact", start.ClientPlaybackContext.Output.Display.HdrEvidence);
+        Assert.All(start.ClientPlaybackContext.Deliveries.Values, delivery => Assert.Same(hdr, delivery.HdrDetails));
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(request, PlaybackJson.Default.PlaybackReplanRequestV3));
+        var body = json.RootElement;
+        Assert.False(body.GetProperty("client_capabilities").GetProperty("hdr").GetBoolean());
+        Assert.False(body.GetProperty("client_capabilities").GetProperty("hdr_details").GetProperty("hdr10").GetBoolean());
+        var output = body.GetProperty("client_playback_context").GetProperty("output");
+        Assert.False(output.GetProperty("hdr_details").GetProperty("hdr10").GetBoolean());
+        Assert.Equal("unknown", output.GetProperty("display").GetProperty("hdr_evidence").GetString());
+        Assert.False(output.GetProperty("display").GetProperty("hdr_types").GetProperty("hdr10").GetBoolean());
+        foreach (var delivery in body.GetProperty("client_playback_context").GetProperty("deliveries").EnumerateObject())
+            Assert.False(delivery.Value.GetProperty("hdr_details").GetProperty("hdr10").GetBoolean());
+
+        static void AssertNoHdr(HdrCapabilities capabilities)
+        {
+            Assert.False(capabilities.Hdr10);
+            Assert.False(capabilities.Hdr10Plus);
+            Assert.False(capabilities.Hlg);
+            Assert.Empty(capabilities.DolbyVisionProfiles);
+        }
+    }
+
+    [Fact]
     public void RecoverySerializationKeepsTheV3SnakeCaseContract()
     {
         var request = PlaybackReplan.ForFailure(Start(), Plan(), "plan-attempt", ["prior"], 1, 40,

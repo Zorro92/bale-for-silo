@@ -163,7 +163,7 @@ public class PlaybackStartTests
         Assert.Equal("xbox", context.GetProperty("device").GetProperty("platform").GetString());
         Assert.False(context.TryGetProperty("platform", out _));
         Assert.False(context.TryGetProperty("features", out _));
-        Assert.Equal("exact", context.GetProperty("output").GetProperty("display").GetProperty("hdr_evidence").GetString());
+        Assert.Equal("unknown", context.GetProperty("output").GetProperty("display").GetProperty("hdr_evidence").GetString());
         var deliveries = context.GetProperty("deliveries");
         Assert.Equal(new[] { "original_http", "progressive", "hls" }, deliveries.EnumerateObject().Select(property => property.Name));
         foreach (var property in deliveries.EnumerateObject())

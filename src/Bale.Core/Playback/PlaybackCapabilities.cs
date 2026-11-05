@@ -37,7 +37,7 @@ public static class ConsoleEvidence
         // TrueHD/DTS converters exist, but no receiver has verified passthrough yet.
         AudioPassthroughCodecs: [],
         MaxChannels: 8,
-        Hdr: new(), // The measured display reports SDR only, regardless of installed HEVC decoding.
+        Hdr: new(), // Unknown until the player reads the connected display; installed HEVC is not HDR evidence.
         Subtitles: new()) // No subtitle rendering has been measured yet; permit server burn-in instead.
     {
         // Mirror silo-apple's iosApp/iosApp/Shared/AppleDecodeCapabilities.swift bounded attestation.
@@ -52,7 +52,7 @@ public static class ConsoleEvidence
             // 8-bit clips also verified. Bound the claim to 1080p30; 4K software AV1 is untested.
             new VideoDecodeCapability("av1", "dav1d", [], [], [8, 10], 1920, 1080, 30, null, false),
         }),
-        DisplayHdrEvidence = "exact",
+        DisplayHdrEvidence = "unknown",
     };
 }
 

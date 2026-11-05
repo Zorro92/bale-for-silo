@@ -56,12 +56,25 @@ public class DebugFfmpegPlaybackTests
         Assert.Contains("dts", ConsoleEvidence.Default.AudioDecodeCodecs);
     }
 
+    [Theory]
+    [InlineData("policy")]
+    [InlineData("off")]
+    public void BothOverridesKeepTheRuntimeDisplay(string mode)
+    {
+        var detected = ConsoleEvidence.Default with { Hdr = new() { Hdr10 = true }, DisplayHdrEvidence = "exact" };
+        var capabilities = DebugFfmpegPlayback.Capabilities(mode, detected);
+        Assert.Same(detected.Hdr, capabilities.Hdr);
+        Assert.Equal("exact", capabilities.DisplayHdrEvidence);
+        Assert.Equal(mode == "policy", capabilities.VideoCodecs.Contains("av1"));
+    }
+
     [Fact]
     public void TheAttemptCapturesTheOverrideBeforePlanningAndRecoveryKeepsTheFailedRoute()
     {
         var source = Read("PlayerPage.cs.txt");
         Assert.Contains("public string FfmpegMode { get; } = DebugFfmpegPlayback.Mode", source);
-        Assert.Contains("capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode)", source);
+        Assert.Contains("var capabilities = DisplayHdrOutput.DetectCapabilities()", source);
+        Assert.Contains("capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities)", source);
         Assert.Contains("public bool FfmpegEnabled => true", source);
         Assert.Contains("var failedRoute = attempt.Media?.Route", source);
         Assert.Contains("position, failure, failedRoute)", source);

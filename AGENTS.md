@@ -125,6 +125,12 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
 - FFmpeg audio selection must honor the server's ordinal, not FFmpeg's reordered default:
   map `AudioStreams[].StreamIndex` back to demux order, then set the item's AudioTracks.SelectedIndex
   before Play. Fail closed if the selected stream is missing.
+- Display HDR is detected from HDMI modes on the UI thread at player start, including debug
+  FFmpeg overrides. The bare baseline is unknown, not a hardcoded SDR display. Claim only HDR10
+  from non-stereo PQ modes; HDR10+/HLG/DV remain unverified. HDR on a non-HDR display must be
+  server-transcoded/tone-mapped, never console tone-mapped. Direct HDR10 switches HDMI to PQ
+  before mounting; restore the default on stop/error, recovery, unload/navigation and suspend.
+  A failed switch uses the single replan with all HDR claims withdrawn, not a codec withdrawal.
 - An FFmpeg create/open/MediaFailed failure gets the existing single replan with its triggering
   codec claims removed and an explicit server-transcode reason; never retry the same capability.
 - Debug real-player override is **policy** (default) or **off** only; off also withdraws fallback

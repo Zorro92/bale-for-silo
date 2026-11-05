@@ -486,6 +486,10 @@ internal sealed partial class DebugServer
     private static string DescribeDisplayCapabilities()
     {
         var builder = new StringBuilder();
+        var capabilities = DisplayHdrOutput.DetectCapabilities();
+        builder.Append($"  Bale HDR: Hdr10={capabilities.Hdr.Hdr10} Hdr10Plus={capabilities.Hdr.Hdr10Plus}"
+            + $" Hlg={capabilities.Hdr.Hlg} DolbyVisionProfiles={capabilities.Hdr.DolbyVisionProfiles.Count}"
+            + $" hdr_evidence={capabilities.DisplayHdrEvidence}\n");
         try
         {
             var hdmi = HdmiDisplayInformation.GetForCurrentView();

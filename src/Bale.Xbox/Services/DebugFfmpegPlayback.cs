@@ -17,7 +17,10 @@ internal static class DebugFfmpegPlayback
         return true;
     }
 
-    internal static DeviceCapabilities Capabilities(string mode) => mode == "policy"
-        ? ConsoleEvidence.Default : SoftwareDecodePolicy.WithoutFallbacks(ConsoleEvidence.Default);
+    internal static DeviceCapabilities Capabilities(string mode, DeviceCapabilities? capabilities = null)
+    {
+        capabilities ??= ConsoleEvidence.Default;
+        return mode == "policy" ? capabilities : SoftwareDecodePolicy.WithoutFallbacks(capabilities);
+    }
 }
 #endif

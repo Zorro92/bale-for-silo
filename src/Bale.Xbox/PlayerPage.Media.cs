@@ -53,6 +53,18 @@ public sealed partial class PlayerPage
 
     private async Task MountPlanAsync(Attempt attempt, double playerStart)
     {
+        if (DisplayHdrPolicy.RequiresHdr10(attempt.Plan!))
+        {
+            if (!await _hdrOutput.TryEnableHdr10Async())
+            {
+                attempt.Cancellation.Token.ThrowIfCancellationRequested();
+                await RecoverCoreAsync(attempt, 0, isDecoder: false, isNetwork: false, hdrOutputFailed: true);
+                return;
+            }
+        }
+        else await _hdrOutput.RestoreAsync();
+        // Back/suspend may arrive during the HDMI handshake. Do not open or start that mount.
+        attempt.Cancellation.Token.ThrowIfCancellationRequested();
         var transport = attempt.Client.Playback.OpenMedia(attempt.Plan!);
         var media = attempt.Media = new Mount(transport, attempt.Cancellation.Token)
         {

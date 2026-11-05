@@ -34,6 +34,26 @@ public static class PlaybackReplan
         };
     }
 
+    public static PlaybackReplanRequestV3 ForHdrOutputFailure(PlaybackStartRequestV3 start, PlaybackPlan plan, string planAttemptId,
+        IReadOnlyList<string> priorAttemptedKeys, int attemptCount, double sourcePositionSeconds)
+    {
+        // An enumerated HDR mode is not usable if the output switch fails. Withdraw every copy
+        // of the claim so the server tone-maps instead of retrying HDR on an SDR HDMI signal.
+        var hdr = new HdrCapabilities();
+        var context = start.ClientPlaybackContext;
+        start = start with
+        {
+            ClientCapabilities = start.ClientCapabilities with { Hdr = false, HdrDetails = hdr },
+            ClientPlaybackContext = context with
+            {
+                Output = context.Output with { HdrDetails = hdr, Display = new("unknown", hdr) },
+                Deliveries = context.Deliveries.ToDictionary(pair => pair.Key, pair => pair.Value with { HdrDetails = hdr }),
+            },
+        };
+        return ForFailure(start, plan, planAttemptId, priorAttemptedKeys, attemptCount, sourcePositionSeconds,
+            new("player_failure", "HDR output switch failed; server tone mapping required."));
+    }
+
     public static PlaybackFailureV3 Classify(int? hresult, bool isDecoderError, bool isNetworkError) => new(
         isDecoderError ? "decoder_failure" : isNetworkError ? "http_failure" : "player_failure",
         hresult is { } code ? $"MediaFailed 0x{code:X8}" : "MediaFailed");

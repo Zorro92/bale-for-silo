@@ -27,7 +27,7 @@ Evidence so far (console, `bale-debug.sh caps`, build 0.1.200):
 | Audio decoders | AAC, AC3, EAC3, FLAC, ALAC, Opus, MP3 (PCM needs none) |
 | Passthrough only | TrueHD, DTS, DTS-HD (IEC-61937 converters, no decoder) |
 | Output | Digital Output, 8 ch / 48 kHz float mix |
-| Display | 720p/1080p at 50/59.94 Hz, SDR only (no HDR10/DV modes reported) |
+| Developer's display | 720p/1080p at 50/59.94 Hz, SDR only (no HDR10/DV modes reported); not a hardcoded client assumption |
 
 `bale-debug.sh playtest suite` (0.1.201, Chromium's `bear-*` clips, muted `MediaPlayer`):
 
@@ -58,7 +58,7 @@ goes to the server to transcode, never FFmpeg software or D3D11 video. The 0.1.2
 is the measured AV1 evidence: 8/10-bit, max 1920×1080, max 30 fps. **4K software AV1 is untested
 and is not claimed.** Audio may use FFmpeg software whenever the system path cannot handle it.
 
-Current production capability claims (`ConsoleEvidence.Default`, max audio channels **8**):
+Current production capability claims (`ConsoleEvidence.Default` plus runtime display detection, max audio channels **8**):
 
 | Stream | Claims / engine | Bounds / limitations |
 |---|---|---|
@@ -67,6 +67,7 @@ Current production capability claims (`ConsoleEvidence.Default`, max audio chann
 | System audio | `aac`, `ac3`, `eac3`, `mp3`, `pcm` | Retains the native direct path unless AV1 needs FFmpeg |
 | FFmpeg fallback audio | `dts`, `dts_hd`, `truehd`, `flac`, `opus`, `vorbis`, `alac` | Decode to PCM, not passthrough; real-library console verification pending |
 | Audio passthrough | None | Receiver verification pending |
+| Display HDR | Runtime HDMI detection, HDR10 only | Exact evidence after a successful read; unknown/empty HDR on failure |
 | HLS | System video/audio claims only | AdaptiveMediaSource cannot use FFmpeg fallbacks |
 | Subtitles | None locally | Server burn-in; **TODO:** add FFmpeg subtitle fallback when Bale renders subtitles |
 
@@ -77,9 +78,15 @@ progressive uses FFmpeg only for AV1 or the **selected** fallback audio codec. A
 2.1.0 implementation can fall back even in ForceSystemDecoder for unsupported formats, so Bale
 also validates all reported video decoder engines before mounting/reading frames.
 
-`Audio.SystemDecoderAAC` and `Audio.SystemDecoderMP3` are enabled. The pinned winmd has **no
-system AC3/EAC3/PCM or encoded-passthrough switches**: those use FFmpeg audio on the AV1 path,
-while ordinary HEVC/H.264 + AC3/EAC3 remains native. FFmpegInteropX moves its preferred audio
+`Audio.SystemDecoderAAC` and `Audio.SystemDecoderMP3` are enabled. Upstream FFmpegInteropX
+**2.1.0 and master only have `SystemDecoderAAC` / `SystemDecoderMP3`**; there are no system
+AC3/EAC3/PCM or encoded-passthrough switches. **Dolby Atmos (E-AC3 JOC) stays on the
+direct/system-player path for now**; do not move it to FFmpeg merely for audio. Ordinary
+HEVC/H.264 + AC3/EAC3 remains native. When AV1 requires the FFmpeg route, FFmpeg decodes
+E-AC3 itself to PCM and **loses Atmos**. A later goal is to patch FFmpegInteropX so AC3/E-AC3
+can use the system audio decoder or passthrough, rather than lose the object metadata.
+
+FFmpegInteropX moves its preferred audio
 stream first; Bale restores Silo's audio ordinal by sorting `AudioStreams[].StreamIndex` and sets
 `MediaPlaybackItem.AudioTracks.SelectedIndex` after MediaOpened, **before Play**. A missing or
 unmappable planned track fails rather than silently playing FFmpeg's default. A server progressive
@@ -123,6 +130,42 @@ The server then transcodes video and/or converts audio instead of retrying the f
 The source clock, selected tracks and attempt identities are preserved; a failed recovery still
 shows the normal error notice/Retry. Core tests cover policy, bounded claims, track mapping,
 withdrawal and serialization. The production integration still needs the owner's console checks.
+
+## Display HDR
+
+Display HDR is detected at runtime on the UI thread at each player start, not inferred from the
+developer's SDR display or installed codecs. `DisplayHdrOutput` reads the supported HDMI modes;
+`DisplayHdrPolicy` claims HDR10 if any non-stereo mode supports SMPTE ST 2084 (PQ). ST 2086
+metadata support is recorded but is not required for that claim. A successful read reports
+`output.display.hdr_evidence = "exact"`, including an empty claim for a non-HDR display. A failed
+or unavailable read reports `"unknown"` with empty HDR, so the server fails closed. Both production
+and the debug FFmpeg `policy|off` paths use the detected display. `caps` shows the claim/evidence.
+HDR10+, HLG and Dolby Vision remain unclaimed/unverified; Xbox Dolby Vision is low-latency DV
+(profile 5) only, to revisit later.
+
+**HDR sources on a non-HDR display go to the server for transcode and tone mapping, never console
+tone mapping.** The server's `outputRangeEligibleV3` / `nativeOutputHDRV3` gates direct HDR on
+exact display evidence and supported HDR types. The bare `ConsoleEvidence.Default` is unknown
+until augmented by display detection; CLI planning without HDMI evidence stays conservative.
+
+Before an HDR10 direct-play mount (including progressive remux with an unchanged HDR picture),
+Bale requests a non-stereo PQ HDMI mode with `HdmiDisplayHdrOption.Eotf2084`. It keeps the current
+resolution/refresh when available, otherwise chooses the smallest supported resolution at least
+as large, then the closest refresh rate. Server-validated HDR10 base-layer playback of HDR10+ /
+legacy unknown-range sources switches the same way. General title refresh-rate matching is still
+future work. HDR10 direct play switches HDMI to HDR and restores the default afterwards: Back,
+end of playback, error, replan to transcode, page unload/navigation and app suspend all restore it.
+Restore failures log only a boolean and retain restore authority for the next teardown attempt.
+
+A false/throwing switch request, no eligible mode or lost display uses the existing **single**
+failure-recovery replan before opening media. The request withdraws all global/output/per-delivery
+HDR claims, sets display evidence to unknown, and asks for server tone mapping at the same source
+position with the same selected tracks and attempt identity. This is an output failure, not a codec
+failure: working decoder claims stay intact. A replacement that still requires HDR, or a failed
+recovery, shows the normal error/Retry rather than knowingly sending HDR as SDR.
+
+**Untested on real HDR hardware so far.** Pure mapping, selection, serialization and HDR-claim
+withdrawal have Core tests; Windows CI builds both debug and production Native AOT packages.
 
 ## Phases
 
@@ -190,9 +233,10 @@ Things learned on the way:
 - Watched state at the end, next episode becomes the series' Play target.
 
 ### 6. Display mode matching
-- Match HDMI refresh rate (and HDR when the display has it) to the title during playback,
-  restoring the default on exit (`RefreshRateMatcher.kt`; jellyfin-xbox `FullScreenManager.cs`
-  uses the same `HdmiDisplayInformation` calls).
+- HDR10 output switching and restore are implemented above, pending real HDR hardware checks.
+- Later: match HDMI refresh rate to the title during playback and restore the default on exit
+  (`HdrDisplayController.kt` / `RefreshRateMatcher.kt`); the current HDR switch preserves the
+  current display's resolution/refresh where possible.
 
 ### Later
 - Shuffle, intro/credits skip (`TvIntroAutoSkipBanner.kt`), trickplay thumbnails.

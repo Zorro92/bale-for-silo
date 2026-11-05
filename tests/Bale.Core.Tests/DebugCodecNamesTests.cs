@@ -156,6 +156,9 @@ public class DebugCodecNamesTests
         Assert.Contains("observed.Add((codec.DisplayName, supported));", source);
         Assert.Contains("names.Summary(observed, codecNames)", source);
         Assert.Contains("await OnUiAsync(DescribeDisplayCapabilities)", source);
+        Assert.Contains("var capabilities = DisplayHdrOutput.DetectCapabilities()", source);
+        Assert.Contains("  Bale HDR: Hdr10={capabilities.Hdr.Hdr10}", source);
+        Assert.Contains("hdr_evidence={capabilities.DisplayHdrEvidence}", source);
         Assert.Contains("if (hdmi is null)", source);
         Assert.Contains("GetSupportedDisplayModes().Select(DescribeDisplayMode).Distinct", source);
         Assert.Contains("GetDefaultAudioRenderId(AudioDeviceRole.Default)", source);
