@@ -115,6 +115,15 @@ public class DisplayHdrPolicyTests
         ]));
     }
 
+    [Fact]
+    public void A120HzDesktopSelectsA60HzMediaModeAndNeverRequests120Hz()
+    {
+        var current = Mode(3840, 2160, 120, pq: false);
+        Assert.Equal(2, DisplayHdrPolicy.PickHdr10Mode(current,
+            [Mode(3840, 2160, 120), Mode(3840, 2160, 50), Mode(3840, 2160, 60)]));
+        Assert.Null(DisplayHdrPolicy.PickHdr10Mode(current, [Mode(3840, 2160, 120)]));
+    }
+
     [Theory]
     [InlineData(double.NaN)]
     [InlineData(double.PositiveInfinity)]

@@ -177,6 +177,9 @@ public class DebugFfmpegPlaytestTests
         XNamespace ns = "http://schemas.microsoft.com/appx/manifest/foundation/windows10";
         Assert.True(XNode.DeepEquals(original.Root!.Element(ns + "Identity"), generated.Root!.Element(ns + "Identity")));
         Assert.True(XNode.DeepEquals(original.Root.Element(ns + "Dependencies"), generated.Root.Element(ns + "Dependencies")));
+        Assert.True(XNode.DeepEquals(original.Root.Element(ns + "Capabilities"), generated.Root.Element(ns + "Capabilities")));
+        XNamespace rescap = "http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities";
+        Assert.Single(generated.Descendants(rescap + "Capability"), capability => capability.Attribute("Name")?.Value == "hevcPlayback");
         Assert.Empty(original.Descendants(ns + "ActivatableClass"));
         var extensions = generated.Root.Element(ns + "Extensions");
         Assert.NotNull(extensions);

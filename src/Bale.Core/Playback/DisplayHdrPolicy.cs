@@ -31,7 +31,8 @@ public static class DisplayHdrPolicy
         return modes.Select((mode, index) => (Mode: mode, Index: index))
             .Where(pair => !pair.Mode.Stereo && pair.Mode.Smpte2084
                 && pair.Mode.Width >= current.Width && pair.Mode.Height >= current.Height
-                && double.IsFinite(pair.Mode.RefreshRate) && pair.Mode.RefreshRate > 0)
+                // Microsoft's Xbox media guidance excludes 120 Hz; media modes top out at 60 Hz.
+                && double.IsFinite(pair.Mode.RefreshRate) && pair.Mode.RefreshRate is > 0 and <= 60)
             .OrderBy(pair => (ulong)pair.Mode.Width * pair.Mode.Height)
             .ThenBy(pair => Math.Abs(pair.Mode.RefreshRate - current.RefreshRate))
             .ThenByDescending(pair => pair.Mode.Metadata2086)

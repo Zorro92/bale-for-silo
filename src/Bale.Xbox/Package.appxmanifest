@@ -43,6 +43,9 @@
   <Capabilities>
     <Capability Name="internetClient" />
     <Capability Name="privateNetworkClientServer" />
+    <!-- Xbox HDR10/4K requires this flag (Microsoft's UWP hevc-xbox guidance). It also opts
+         into the media memory budget and suspends/closes the app when a game launches. -->
+    <rescap:Capability Name="hevcPlayback" />
     <!-- Development only: lets the debug server inject gamepad input (Services/DebugServer.cs). Remove for the Store. -->
     <rescap:Capability Name="inputInjectionBrokered" />
   </Capabilities>

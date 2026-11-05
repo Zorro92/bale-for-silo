@@ -145,13 +145,16 @@ HDR10+, HLG and Dolby Vision remain unclaimed/unverified; Xbox Dolby Vision is l
 
 **HDR sources on a non-HDR display go to the server for transcode and tone mapping, never console
 tone mapping.** The server's `outputRangeEligibleV3` / `nativeOutputHDRV3` gates direct HDR on
-exact display evidence and supported HDR types. The bare `ConsoleEvidence.Default` is unknown
-until augmented by display detection; CLI planning without HDMI evidence stays conservative.
+exact display evidence and supported HDR types. Microsoft documents automatic media-pipeline
+HDR-to-SDR tone mapping, but Bale deliberately does not rely on it: the product policy remains
+server tone mapping. The bare `ConsoleEvidence.Default` is unknown until augmented by display
+detection; CLI planning without HDMI evidence stays conservative.
 
 Before an HDR10 direct-play mount (including progressive remux with an unchanged HDR picture),
 Bale requests a non-stereo PQ HDMI mode with `HdmiDisplayHdrOption.Eotf2084`. It keeps the current
 resolution/refresh when available, otherwise chooses the smallest supported resolution at least
-as large, then the closest refresh rate. Server-validated HDR10 base-layer playback of HDR10+ /
+as large, then the closest refresh rate. Media modes are capped at 60 Hz: Microsoft's Xbox
+guidance explicitly excludes 120 Hz for media playback, even when that is the desktop mode. Server-validated HDR10 base-layer playback of HDR10+ /
 legacy unknown-range sources switches the same way. General title refresh-rate matching is still
 future work. HDR10 direct play switches HDMI to HDR and restores the default afterwards: Back,
 end of playback, error, replan to transcode, page unload/navigation and app suspend all restore it.
@@ -164,8 +167,23 @@ position with the same selected tracks and attempt identity. This is an output f
 failure: working decoder claims stay intact. A replacement that still requires HDR, or a failed
 recovery, shows the normal error/Retry rather than knowingly sending HDR as SDR.
 
+The manifest declares the restricted `hevcPlayback` capability required for Xbox HDR10/4K.
+This opts into the 3.25 GB media memory budget and prevents simultaneous app/game execution:
+launching a game suspends/closes Bale, and launching Bale waits for a game to close. It does not
+broaden the measured codec/resolution claims above or add a background-music feature.
+
+References supplied by the owner:
+- [Microsoft: 4K video playback for UWP apps on Xbox](https://learn.microsoft.com/en-us/windows/uwp/audio-video-camera/hevc-xbox)
+  documents the manifest flag, HDMI switch/restore APIs and media refresh-rate restrictions.
+- [Microsoft: supported media type strings](https://learn.microsoft.com/en-us/windows/uwp/audio-video-camera/supported-play-type-strings)
+  describes `ProtectionCapabilities.IsTypeSupported` decode/display queries as a future source of
+  bounded evidence; it is not proof of actual playback. Audio `codecs=ec-3` decode support is
+  distinct from an endpoint's `audio-endpoint-codec=DD+JOC` support. The endpoint feature is
+  Media Foundation-only, not supported by WinRT query APIs. No new passthrough claim is made.
+
 **Untested on real HDR hardware so far.** Pure mapping, selection, serialization and HDR-claim
-withdrawal have Core tests; Windows CI builds both debug and production Native AOT packages.
+withdrawal have Core tests, plus output failure/restore tests using an HDMI stand-in; Windows CI
+builds both debug and production Native AOT packages.
 
 ## Phases
 

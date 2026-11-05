@@ -131,6 +131,8 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
   server-transcoded/tone-mapped, never console tone-mapped. Direct HDR10 switches HDMI to PQ
   before mounting; restore the default on stop/error, recovery, unload/navigation and suspend.
   A failed switch uses the single replan with all HDR claims withdrawn, not a codec withdrawal.
+  Keep the manifest's `hevcPlayback` capability (required for Xbox HDR10/4K, with media memory
+  and app/game concurrency implications). Never select 120 Hz for media; use at most 60 Hz.
 - An FFmpeg create/open/MediaFailed failure gets the existing single replan with its triggering
   codec claims removed and an explicit server-transcode reason; never retry the same capability.
 - Debug real-player override is **policy** (default) or **off** only; off also withdraws fallback
