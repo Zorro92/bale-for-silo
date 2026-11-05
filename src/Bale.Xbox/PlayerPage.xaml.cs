@@ -60,6 +60,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
 #if DEBUG_SERVER
         // Match the capability claim and backend even if the debug toggle changes during a request/replan.
         public string FfmpegMode { get; } = DebugFfmpegPlayback.Mode;
+        public bool PretendHdr { get; } = DebugHdrPlayback.Pretend;
         public bool FfmpegEnabled => FfmpegMode == "policy";
 #else
         public bool FfmpegEnabled => true;
@@ -159,6 +160,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 var capabilities = DisplayHdrOutput.DetectCapabilities();
 #if DEBUG_SERVER
                 capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);
+                capabilities = DebugHdrPlayback.Capabilities(attempt.PretendHdr, capabilities);
 #endif
                 var start = attempt.Start = PlaybackStartBuilder.Build(request.Detail, request.Selection,
                     services.ProfileId, Guid.NewGuid().ToString(), startPosition, capabilities, DeviceIdentity.Current());

@@ -14,6 +14,8 @@
 #   scripts/bale-debug.sh wait focus Play       wait for a focused description containing Play
 #   scripts/bale-debug.sh wait --timeout 12000 loaded  default 8000 ms; 0–15000; timeout prints where and fails
 #   scripts/bale-debug.sh ffmpeg <mode>         next real-player attempt: policy (default)|off; memory only, HLS unchanged
+#   scripts/bale-debug.sh hdr pretend|off|status  next attempt: pretend HDR10, skip HDMI switching for console SDR tone mapping; default off, memory only
+#   scripts/bale-debug.sh seek <seconds> [pause]  seek active native/FFmpeg/HLS player to absolute source seconds; optional pause, print completed position
 #   scripts/bale-debug.sh caps [section]        installed decoders, GPU decode profiles, display modes, audio mix and baseline
 #                                               (section: video, gpu, audio, display, device or graph)
 #   scripts/bale-debug.sh playtest <url> [seconds]  muted public http(s) stream probe (1–10 s, default 3)
@@ -87,6 +89,27 @@ case "${1:-}" in
       exit 2
     fi
     curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/ffmpeg" --data-urlencode "mode=$2"
+    ;;
+  hdr)
+    if [[ "$#" != 2 || ! "${2:-}" =~ ^(pretend|off|status)$ ]]; then
+      echo 'usage: scripts/bale-debug.sh hdr {pretend|off|status}' >&2
+      exit 2
+    fi
+    if [[ "$2" == status ]]; then
+      curl --fail-with-body -sS --max-time 5 "$BASE/hdr"
+    else
+      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/hdr" --data-urlencode "mode=$2"
+    fi
+    ;;
+  seek)
+    if [[ "$#" -lt 2 || "$#" -gt 3 || ! "${2:-}" =~ ^[0-9]+([.][0-9]+)?$ || ( "$#" == 3 && "$3" != pause ) ]]; then
+      echo 'usage: scripts/bale-debug.sh seek <non-negative-seconds> [pause]' >&2
+      exit 2
+    fi
+    seek_pause=false
+    if [[ "${3:-}" == pause ]]; then seek_pause=true; fi
+    curl --fail-with-body -sS --max-time 13 -X POST -G "$BASE/seek" \
+      --data-urlencode "seconds=$2" --data-urlencode "pause=$seek_pause"
     ;;
   playtest|playtest-ffmpeg)
     playtest_route="$1"

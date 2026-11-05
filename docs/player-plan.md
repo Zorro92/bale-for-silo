@@ -150,6 +150,24 @@ HDR-to-SDR tone mapping, but Bale deliberately does not rely on it: the product 
 server tone mapping. The bare `ConsoleEvidence.Default` is unknown until augmented by display
 detection; CLI planning without HDMI evidence stays conservative.
 
+**Debug-only tone-mapping comparison:** `scripts/bale-debug.sh hdr pretend|off|status` defaults to
+`off` and is memory-only (restart resets it). `pretend` affects later playback attempts: it claims
+only HDR10 with exact display evidence, preserves the FFmpeg policy and all other capabilities,
+and skips the HDMI switch entirely. The current SDR output is left alone so Microsoft's media
+pipeline can tone-map a direct HDR10 picture (including the server's validated HDR10 base-layer
+fallback for HDR10+). This is an explicit experiment, not a production-policy change or proof of
+picture quality. Stats and `where` show `HDR output: console tone map (debug)` for that plan;
+turning the toggle off mid-play does not change the captured attempt. Restart playback after
+`hdr off` to compare with the normal server tone-mapped transcode.
+
+For the same-frame comparison, `scripts/bale-debug.sh seek <seconds> [pause]` seeks the active
+native, FFmpeg or HLS player to absolute **source/movie** time, optionally pauses, waits for seek
+completion and prints actual source/player positions. HLS timeline offsets are mapped rather
+than treating a reanchored player clock as movie time. Non-seekable/loading players, positions
+outside the current timeline/duration and seeks that do not complete within 10 seconds fail
+explicitly. These endpoints and the player hooks compile only under `DEBUG_SERVER`; production
+builds cannot use either override. Console comparison/seek verification is still pending.
+
 Before an HDR10 direct-play mount (including progressive remux with an unchanged HDR picture),
 Bale requests a non-stereo PQ HDMI mode with `HdmiDisplayHdrOption.Eotf2084`. It keeps the current
 resolution/refresh when available, otherwise chooses the smallest supported resolution at least

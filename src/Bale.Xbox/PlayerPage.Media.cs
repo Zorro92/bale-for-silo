@@ -53,6 +53,15 @@ public sealed partial class PlayerPage
 
     private async Task MountPlanAsync(Attempt attempt, double playerStart)
     {
+#if DEBUG_SERVER
+        if (attempt.PretendHdr)
+        {
+            // Microsoft hevc-xbox: HDR10 can be tone-mapped by the media pipeline in SDR mode.
+            // This explicit comparison never requests PQ or replans for an unavailable HDR mode.
+            Log.Info("player: HDR output: " + DebugHdrPlayback.Output(true, attempt.Plan));
+        }
+        else
+#endif
         if (DisplayHdrPolicy.RequiresHdr10(attempt.Plan!))
         {
             if (!await _hdrOutput.TryEnableHdr10Async())

@@ -35,6 +35,9 @@ namespace Bale.Xbox.Services;
 ///   GET  /playtest?url=...  muted public http(s) stream probe; seconds=3 (1–10), open timeout 8 s
 ///   GET  /playtest-ffmpeg?url=...  muted FFmpegInteropX probe; seconds=3 (1–60), mode=auto|software|system
 ///   POST /ffmpeg?mode=...  next real-player attempt: policy (default)|off; memory only
+///   GET  /hdr             memory-only HDR comparison mode; default off
+///   POST /hdr?mode=...    pretend|off; pretend HDR10 and keep SDR output for console tone mapping
+///   POST /seek?seconds=...&pause=true  absolute source seconds on the active player; optional pause
 ///   POST /goto?target=... focus a named or labelled control (optional #N), for setup only
 ///   GET  /targets         the visible, enabled tab-stop controls goto can reach
 ///   GET  /tree            the visible element tree with bounds and text
@@ -220,6 +223,19 @@ internal sealed partial class DebugServer
                 Log.Info($"Debug FFmpeg mode: {ffmpegMode}; applies to the next playback attempt");
                 return ("200 OK", $"FFmpeg mode: {ffmpegMode}; applies to the next playback attempt\n");
 
+            case ("GET", "/hdr"):
+                return ("200 OK", $"HDR mode: {DebugHdrPlayback.Mode}; applies to the next playback attempt\n");
+
+            case ("POST", "/hdr"):
+                var hdrMode = query.GetValueOrDefault("mode");
+                if (!DebugHdrPlayback.TrySet(hdrMode))
+                    return ("400 Bad Request", "mode must be pretend or off\n");
+                Log.Info($"Debug HDR mode: {hdrMode}; applies to the next playback attempt");
+                return ("200 OK", $"HDR mode: {hdrMode}; applies to the next playback attempt\n");
+
+            case ("POST", "/seek"):
+                return await SeekPlaybackAsync(query.GetValueOrDefault("seconds"), query.GetValueOrDefault("pause"));
+
             case ("GET", "/wait"):
                 if (!DebugWaitCondition.TryParse(query.GetValueOrDefault("for"), query.GetValueOrDefault("timeout"), out var condition, out var error))
                     return ("400 Bad Request", error + "\n");
@@ -304,7 +320,7 @@ internal sealed partial class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, POST /ffmpeg?mode={policy|off}, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, POST /ffmpeg?mode={policy|off}, GET /hdr, POST /hdr?mode={pretend|off}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 
@@ -660,6 +676,7 @@ internal sealed partial class DebugServer
         if (CurrentPage(out _) is PlayerPage player)
         {
             builder.Append("Player: ").Append(player.DebugPlayback).Append('\n');
+            builder.Append("HDR output: ").Append(player.DebugHdrOutput).Append('\n');
             builder.Append("Stats: visible=").Append(player.DebugStatsVisible ? "true" : "false");
             foreach (var (label, value) in player.DebugStatsRows)
                 builder.Append(" | ").Append(label).Append('=').Append(EscapeText(value));

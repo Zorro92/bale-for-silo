@@ -16,6 +16,7 @@ public sealed partial class PlayerPage
 
     internal IReadOnlyList<(string Label, string Value)> DebugStatsRows => _statsRows;
     internal bool DebugStatsVisible => StatsPanel.Visibility == Visibility.Visible;
+    internal string DebugHdrOutput => DebugHdrPlayback.Output(_attempt?.PretendHdr == true, _attempt?.Plan);
 
     internal void ToggleDebugStats()
     {
@@ -197,6 +198,7 @@ public sealed partial class PlayerPage
     private void SetStats(PlaybackStats stats, string? processCpu = null)
     {
         var rows = stats.HudRows();
+        rows = [.. rows, ("HDR output", DebugHdrOutput)];
         // Debug-only process load is a Bale diagnostic, after the official HUD rows.
         if (processCpu is not null) rows = [.. rows, ("CPU", processCpu)];
         if (_statsRows.SequenceEqual(rows)) return;

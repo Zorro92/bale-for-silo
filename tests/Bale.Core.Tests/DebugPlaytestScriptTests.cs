@@ -91,6 +91,53 @@ public class DebugPlaytestScriptTests
         }
     }
 
+    [Theory]
+    [InlineData("pretend")]
+    [InlineData("off")]
+    [InlineData("status")]
+    public async Task HdrComparisonUsesValidatedModesAndAReadOnlyStatus(string mode)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["hdr", mode]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/hdr\n", result.Arguments);
+        Assert.Contains("--max-time\n5\n", result.Arguments);
+        if (mode == "status") Assert.DoesNotContain("-X\nPOST", result.Arguments);
+        else
+        {
+            Assert.Contains("-X\nPOST\n", result.Arguments);
+            Assert.Contains("--data-urlencode\nmode=" + mode, result.Arguments);
+        }
+    }
+
+    [Theory]
+    [InlineData("0", false)]
+    [InlineData("123.456", true)]
+    public async Task SeekPostsAbsoluteSecondsAndOptionalPause(string seconds, bool pause)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(pause ? ["seek", seconds, "pause"] : ["seek", seconds]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/seek\n", result.Arguments);
+        Assert.Contains("-X\nPOST\n", result.Arguments);
+        Assert.Contains("--max-time\n13\n", result.Arguments);
+        Assert.Contains("--data-urlencode\nseconds=" + seconds, result.Arguments);
+        Assert.Contains("--data-urlencode\npause=" + (pause ? "true" : "false"), result.Arguments);
+    }
+
+    [Fact]
+    public async Task InvalidHdrAndSeekArgumentsNeverReachCurl()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[] { new[] { "hdr" }, ["hdr", "on"], ["hdr", "Pretend"], ["hdr", "status", "extra"],
+            ["seek"], ["seek", "-1"], ["seek", "NaN"], ["seek", "1", "play"], ["seek", "1", "pause", "extra"] })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
     private static async Task<(int ExitCode, string Output, string Arguments)> RunAsync(string[] arguments)
     {
         var directory = Directory.CreateTempSubdirectory("bale-curl-stub-").FullName;
