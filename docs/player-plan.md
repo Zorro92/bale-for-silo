@@ -237,9 +237,10 @@ with lifted blacks; the server's BT.2390/Hable transcode retained color and cont
 
 Microsoft's media pipeline exposes no tone-mapping algorithm or parameter controls.
 FFmpegInteropX's `SetFFmpegVideoFilters` is not a practical alternative: filters run on the CPU,
-this build has no zimg/zscale, and neither OpenCL nor Vulkan is available for `tonemap_opencl`
-or libplacebo. HEVC on the FFmpeg route is hardware-decoded by the system, so its decoded frames
-never reach FFmpeg's filters. A Bale GPU tone-mapping shader remains a possible future option
+this build has no zimg/zscale or libplacebo, and Xbox offers no usable OpenCL/Vulkan path for
+`tonemap_opencl` or libplacebo. The configure log's `vulkan=yes` is not Xbox runtime evidence.
+HEVC on the FFmpeg route is hardware-decoded by the system, so its decoded frames never reach
+FFmpeg's filters. A Bale GPU tone-mapping shader remains a possible future option
 **only if server transcoding becomes a bottleneck**.
 
 Before an HDR10 direct-play mount (including progressive remux with an unchanged HDR picture),
