@@ -1,0 +1,117 @@
+name: Native FFmpeg (dav1d)
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_repository:
+        description: FFmpegInteropX repository (owner/name; may be a Bale fork)
+        type: string
+        required: true
+        default: ffmpeginteropx/FFmpegInteropX
+      upstream_ref:
+        description: FFmpegInteropX ref (v2.1.0 commit; FFmpeg 8.1.2 source/dependency pins)
+        type: string
+        required: true
+        default: 88428c66e106852338b48554a4a00c9e48da588f
+      dav1d_tag:
+        description: dav1d release tag
+        type: string
+        required: true
+        default: 1.5.4
+
+permissions:
+  contents: read
+
+# Native release assets are immutable: never cancel a build to replace a published package.
+concurrency:
+  group: native-ffmpeg-${{ inputs.dav1d_tag }}
+  cancel-in-progress: false
+
+jobs:
+  native:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: bale
+          persist-credentials: false
+
+      - name: Test native package validation scripts
+        shell: pwsh
+        run: ./bale/scripts/test-ffmpeg-checks.ps1
+
+      # Official GitHub mirrors avoid the FFmpeg/VideoLAN hosts' bot/clone restrictions.
+      # Git still checks out the exact upstream gitlinks, never a moving dependency branch.
+      - name: Configure submodule transports
+        shell: pwsh
+        run: |
+          git config --global url.https://github.com/FFmpeg/FFmpeg.git.insteadOf https://git.ffmpeg.org/ffmpeg.git
+          git config --global url.https://github.com/videolan/dav1d.git.insteadOf https://code.videolan.org/videolan/dav1d.git
+          git config --global url.https://github.com/mirror/x264.git.insteadOf https://code.videolan.org/videolan/x264.git
+
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ inputs.upstream_repository }}
+          ref: ${{ inputs.upstream_ref }}
+          path: upstream
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - uses: NuGet/setup-nuget@v2
+        with:
+          nuget-version: 6.14.0
+
+      # The upstream dav1d script requires /mingw64/bin/{meson,ninja}, while Build-FFmpeg.ps1
+      # expects C:\msys64. Preserve both paths and upstream's MSVC/SDK/configuration defaults.
+      - uses: msys2/setup-msys2@v2
+        with:
+          location: 'C:\'
+          msystem: MINGW64
+          path-type: inherit
+          update: true
+          install: >-
+            make diffutils gcc perl nasm yasm
+            mingw-w64-x86_64-meson mingw-w64-x86_64-ninja
+
+      - name: Build LGPL UWP x64 native package
+        id: build
+        shell: pwsh
+        env:
+          UPSTREAM_REPOSITORY: ${{ inputs.upstream_repository }}
+          UPSTREAM_REF: ${{ inputs.upstream_ref }}
+          DAV1D_TAG: ${{ inputs.dav1d_tag }}
+        run: |
+          ./bale/scripts/build-ffmpeg-native.ps1 -SourcePath ./upstream `
+            -UpstreamRepository $env:UPSTREAM_REPOSITORY -UpstreamRef $env:UPSTREAM_REF -Dav1dTag $env:DAV1D_TAG
+
+      - name: Preserve package, provenance and build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-native-uwp-x64-${{ github.run_id }}
+          path: |
+            upstream/Output/NuGet/
+            upstream/Intermediate/FFmpegUWP/*.log
+            upstream/Intermediate/FFmpegUWP/x64/int/dav1d/meson-logs/meson-log.txt
+            upstream/Intermediate/FFmpegUWP/x64/int/ffmpeg/ffbuild/config.log
+          if-no-files-found: warn
+
+      - name: Publish immutable native release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.build.outputs.release_tag }}
+          PACKAGE_SHA256: ${{ steps.build.outputs.package_sha256 }}
+        run: |
+          gh release view $env:RELEASE_TAG *> $null
+          if ($LASTEXITCODE -eq 0) { throw 'Native release already exists; do not replace a hash-pinned package' }
+          $notes = "LGPL UWP x64 FFmpeg build; wrapper remains 2.1.0. See SOURCES.txt for exact source pins and build parameters. Package SHA256: $env:PACKAGE_SHA256. Corresponding source and unchanged configuration are attached."
+          $assets = @(Get-ChildItem upstream/Output/NuGet -File | ForEach-Object { $_.FullName })
+          gh release create $env:RELEASE_TAG @assets --target $env:GITHUB_SHA `
+            --title $env:RELEASE_TAG --notes $notes --latest=false
+          if ($LASTEXITCODE -ne 0) { throw 'Native release publication failed' }
