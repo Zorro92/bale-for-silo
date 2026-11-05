@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $pin = Get-Content (Join-Path $PSScriptRoot 'ffmpeg-native.json') -Raw | ConvertFrom-Json
-if ($pin.sha256 -notmatch '^[0-9a-f]{64}$' -or $pin.dav1d_version -notmatch '^\d+\.\d+\.\d+$'
-    -or $pin.version -ne "8.1.2-bale.dav1d.$($pin.dav1d_version)") {
+if ($pin.sha256 -notmatch '^[0-9a-f]{64}$' -or $pin.dav1d_version -notmatch '^\d+\.\d+\.\d+$' -or
+    $pin.version -ne "8.1.2-bale.dav1d.$($pin.dav1d_version)") {
     throw 'Invalid native FFmpeg package pin'
 }
 if ($pin.release_tag -ne "native-ffmpeg-8.1.2-dav1d-$($pin.dav1d_version)") { throw 'Inconsistent native release tag' }
