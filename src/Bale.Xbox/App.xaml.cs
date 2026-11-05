@@ -90,19 +90,20 @@ public sealed partial class App : Application
 #endif
 
     /// <summary>
-    /// Bumpers, triggers and Page Up/Down do nothing anywhere, as on Silo's Android TV app, which
-    /// handles none of them. Left alone, a ScrollViewer pages its content with them and leaves focus
-    /// behind, off screen. Runs on the tunnelling pass so no ScrollViewer sees them. Escape instead
-    /// waits for OnBackKey on the bubbling pass so dialogs and text controls get first refusal.
+    /// Bumpers, triggers and Page Up/Down never page a ScrollViewer away from focus. The player
+    /// alone maps triggers (and keyboard J/L) to the official TV app's dedicated skip actions.
+    /// Escape waits for OnBackKey on the bubbling pass so dialogs and text controls get first refusal.
     /// </summary>
     private static void OnPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (PageFrame.IsTransitioning || e.Key is VirtualKey.GamepadLeftShoulder or VirtualKey.GamepadRightShoulder
+        if (PageFrame.IsTransitioning)
+            e.Handled = true;
+        else if (sender is Frame { Content: PlayerPage transport } && transport.HandleSkipKey(e.Key, firstDown: !e.KeyStatus.WasKeyDown))
+            e.Handled = true;
+        else if (e.Key is VirtualKey.GamepadLeftShoulder or VirtualKey.GamepadRightShoulder
             or VirtualKey.GamepadLeftTrigger or VirtualKey.GamepadRightTrigger
             or VirtualKey.PageUp or VirtualKey.PageDown)
-        {
             e.Handled = true;
-        }
 #if DEBUG_SERVER
         else if (sender is Frame { Content: PlayerPage player } && e.Key is VirtualKey.GamepadView or VirtualKey.I)
         {
@@ -117,6 +118,8 @@ public sealed partial class App : Application
     {
         // A Select released after navigation must not activate the incoming page's first control.
         if (PageFrame.IsTransitioning) e.Handled = true;
+        else if (sender is Frame { Content: PlayerPage transport } && transport.HandleSkipKey(e.Key, firstDown: false))
+            e.Handled = true;
 #if DEBUG_SERVER
         else if (sender is Frame { Content: PlayerPage } && e.Key is VirtualKey.GamepadView or VirtualKey.I)
             e.Handled = true;

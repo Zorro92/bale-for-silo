@@ -120,7 +120,7 @@ public class DebugPlaytestScriptTests
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("/seek\n", result.Arguments);
         Assert.Contains("-X\nPOST\n", result.Arguments);
-        Assert.Contains("--max-time\n13\n", result.Arguments);
+        Assert.Contains("--max-time\n45\n", result.Arguments);
         Assert.Contains("--data-urlencode\nseconds=" + seconds, result.Arguments);
         Assert.Contains("--data-urlencode\npause=" + (pause ? "true" : "false"), result.Arguments);
     }

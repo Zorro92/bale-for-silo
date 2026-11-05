@@ -25,6 +25,8 @@ public sealed partial class PlayerPage
         public CancellationTokenSource Cancellation { get; }
         public CancellationToken Token { get; }
         public double StartPosition { get; set; }
+        public bool StartPaused { get; set; }
+        public TaskCompletionSource<bool> Opening { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool Opened { get; set; }
         public bool Started { get; set; }
         public double? PlayingFrom { get; set; }
@@ -52,7 +54,7 @@ public sealed partial class PlayerPage
 #endif
     }
 
-    private async Task MountPlanAsync(Attempt attempt, double playerStart)
+    private async Task MountPlanAsync(Attempt attempt, double playerStart, bool paused = false)
     {
 #if DEBUG_SERVER
         if (attempt.PretendHdr)
@@ -79,6 +81,7 @@ public sealed partial class PlayerPage
         var media = attempt.Media = new Mount(transport, attempt.Cancellation.Token)
         {
             StartPosition = playerStart,
+            StartPaused = paused,
             Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled),
         };
         _delivery = transport.Delivery;
@@ -218,8 +221,10 @@ public sealed partial class PlayerPage
             sender.PlaybackSession.Position = TimeSpan.FromSeconds(media.StartPosition);
             media.Opened = true;
             Log.Info("player: opened");
-            sender.Play();
+            if (media.StartPaused) media.Started = true;
+            else sender.Play();
             UpdatePlaybackState(attempt, media);
+            media.Opening.TrySetResult(true);
         }
         catch (Exception ex)
         {
@@ -288,6 +293,7 @@ public sealed partial class PlayerPage
         if (attempt.Media is not { } media) return;
         attempt.Media = null;
         media.Cancellation.Cancel();
+        media.Opening.TrySetCanceled(media.Token);
 #if DEBUG_SERVER
         Cleanup("detach frame delivery", () => media.FrameDelivery?.Dispose());
 #endif

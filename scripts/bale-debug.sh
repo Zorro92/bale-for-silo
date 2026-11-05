@@ -15,7 +15,10 @@
 #   scripts/bale-debug.sh wait --timeout 12000 loaded  default 8000 ms; 0–15000; timeout prints where and fails
 #   scripts/bale-debug.sh ffmpeg <mode>         next real-player attempt: policy (default)|off; memory only, HLS unchanged
 #   scripts/bale-debug.sh hdr pretend|off|status  next attempt: pretend HDR10, skip HDMI switching for console SDR tone mapping; default off, memory only
-#   scripts/bale-debug.sh seek <seconds> [pause]  seek active native/FFmpeg/HLS player to absolute source seconds; optional pause, print completed position
+#   scripts/bale-debug.sh seek <seconds> [pause]  shared absolute-source seek (native/FFmpeg/HLS, reanchors outside the mounted window); optional pause
+#   scripts/bale-debug.sh key j                 player: skip back 10s (same as press lt); one skip per press, ignores repeats
+#   scripts/bale-debug.sh key l                 player: skip forward 30s (same as press rt); passive bar/chip hides after 1200ms
+#   scripts/bale-debug.sh key i                 player: toggle stats (same as press view); where includes counters even when hidden
 #   scripts/bale-debug.sh caps [section]        installed decoders, GPU decode profiles, display modes, audio mix and baseline
 #                                               (section: video, gpu, audio, display, device or graph)
 #   scripts/bale-debug.sh playtest <url> [seconds]  muted public http(s) stream probe (1–10 s, default 3)
@@ -103,12 +106,12 @@ case "${1:-}" in
     ;;
   seek)
     if [[ "$#" -lt 2 || "$#" -gt 3 || ! "${2:-}" =~ ^[0-9]+([.][0-9]+)?$ || ( "$#" == 3 && "$3" != pause ) ]]; then
-      echo 'usage: scripts/bale-debug.sh seek <non-negative-seconds> [pause]' >&2
+      echo 'usage: scripts/bale-debug.sh seek <non-negative-seconds> [pause] (may reanchor HLS outside its mounted window)' >&2
       exit 2
     fi
     seek_pause=false
     if [[ "${3:-}" == pause ]]; then seek_pause=true; fi
-    curl --fail-with-body -sS --max-time 13 -X POST -G "$BASE/seek" \
+    curl --fail-with-body -sS --max-time 45 -X POST -G "$BASE/seek" \
       --data-urlencode "seconds=$2" --data-urlencode "pause=$seek_pause"
     ;;
   playtest|playtest-ffmpeg)

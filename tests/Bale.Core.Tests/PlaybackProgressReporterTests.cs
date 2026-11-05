@@ -140,6 +140,24 @@ public class PlaybackProgressReporterTests
     }
 
     [Fact]
+    public async Task SeekFlushPersistsShortClampedSourceMovementAndPreservesPauseThroughStop()
+    {
+        var handler = new MutationHandler();
+        using var client = Create(handler);
+        var journal = new InMemoryPlaybackJournal();
+        var reporter = client.Playback.CreateProgressReporter(new Installation(), journal, "login");
+        await reporter.AttachSessionAsync("session", 3, true);
+        var source = PlaybackSeek.SkipTarget(3, 100, forward: false);
+        await reporter.ReportProgressAsync("session", source, true);
+        Assert.Equal(new PlaybackPosition(0, true), Assert.Single(await journal.ReadAsync()).LastPosition);
+        Assert.Equal(0, Value(handler.Bodies[0], "position").GetDouble());
+        Assert.True(Value(handler.Bodies[0], "is_paused").GetBoolean());
+        await reporter.StopAsync("session", source, true);
+        Assert.Equal(0, Value(handler.Bodies[1], "position").GetDouble());
+        Assert.True(Value(handler.Bodies[1], "is_paused").GetBoolean());
+    }
+
+    [Fact]
     public async Task HeartbeatUsesTenWallSecondsIncludingPausedPlayback()
     {
         var handler = new MutationHandler();

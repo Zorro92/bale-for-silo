@@ -18,7 +18,6 @@ internal sealed record DebugPlaybackSeek(double Seconds, bool Pause)
     }
 
     internal double? PlayerPosition(PlaybackTimeline timeline, double? duration) =>
-        duration is > 0 && Seconds > duration ? null
-        : timeline.PlayerForSource(Seconds) is { } player && player < TimeSpan.MaxValue.TotalSeconds ? player : null;
+        new PlaybackSeek(Seconds, Pause).PlayerPosition(timeline, duration);
 }
 #endif

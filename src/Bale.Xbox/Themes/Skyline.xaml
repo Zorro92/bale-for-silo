@@ -1412,6 +1412,80 @@
   <Style x:Key="SkylinePlayerLoadingStyle" TargetType="ProgressRing" BasedOn="{StaticResource SkylineProfileLoadingStyle}">
     <Setter Property="Foreground" Value="#FFEDEDED" />
   </Style>
+  <!-- silo-android androidTvApp/.../player/TvPlayerChrome.kt / TvPlayerScrubber.kt:
+       Android dp maps 1:1; Time is 14sp × 0.86. Resting track has no puck/focus.
+       Bottom 86 = 26 inset + 44 transport + 16 gap, preserving the future transport geometry.
+       TvSkipSeekIndicator.kt supplies the 42% black chip, 14/8dp padding and 9dp gap. -->
+  <x:Double x:Key="SkylinePlayerSkipChipGap">9</x:Double>
+  <Style x:Key="SkylinePlayerTransportScrimStyle" TargetType="Border">
+    <Setter Property="Height" Value="270" />
+    <Setter Property="VerticalAlignment" Value="Bottom" />
+    <Setter Property="Background">
+      <Setter.Value>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+          <GradientStop Color="#00000000" Offset="0" />
+          <GradientStop Color="#8C000000" Offset="0.56" />
+          <GradientStop Color="#DB000000" Offset="1" />
+        </LinearGradientBrush>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="SkylinePlayerTransportStyle" TargetType="Grid">
+    <Setter Property="VerticalAlignment" Value="Bottom" />
+    <Setter Property="Margin" Value="48,0,48,86" />
+  </Style>
+  <Style x:Key="SkylinePlayerSkipChipStyle" TargetType="Border">
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="Height" Value="40" />
+    <Setter Property="CornerRadius" Value="20" />
+    <Setter Property="Padding" Value="14,8" />
+    <Setter Property="Margin" Value="0,0,0,8" />
+    <Setter Property="Background" Value="#6B000000" />
+  </Style>
+  <Style x:Key="SkylinePlayerSkipDeltaStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineMono}" />
+    <Setter Property="FontSize" Value="18.92" />
+    <Setter Property="FontWeight" Value="Black" />
+    <Setter Property="Foreground" Value="White" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="MaxLines" Value="1" />
+  </Style>
+  <Style x:Key="SkylinePlayerSkipLandingStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylinePlayerSkipDeltaStyle}">
+    <Setter Property="FontSize" Value="13.76" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="#BFFFFFFF" />
+  </Style>
+  <Style x:Key="SkylinePlayerTrackHostStyle" TargetType="Grid">
+    <Setter Property="Height" Value="28" />
+  </Style>
+  <Style x:Key="SkylinePlayerTrackStyle" TargetType="Grid">
+    <Setter Property="Height" Value="4" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylinePlayerTrackRailStyle" TargetType="Border">
+    <Setter Property="CornerRadius" Value="2" />
+    <Setter Property="Background" Value="#38FFFFFF" />
+  </Style>
+  <Style x:Key="SkylinePlayerTrackPlayedStyle" TargetType="Border" BasedOn="{StaticResource SkylinePlayerTrackRailStyle}">
+    <Setter Property="Background" Value="#FFEDEDED" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+  </Style>
+  <Style x:Key="SkylinePlayerClockRowStyle" TargetType="Grid">
+    <Setter Property="Margin" Value="0,8,0,0" />
+  </Style>
+  <Style x:Key="SkylinePlayerTimeStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="12.04" />
+    <Setter Property="LineHeight" Value="15.48" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="#FFEDEDED" />
+    <Setter Property="MaxLines" Value="1" />
+  </Style>
+  <Style x:Key="SkylinePlayerRemainingStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylinePlayerTimeStyle}">
+    <Setter Property="Foreground" Value="#99EDEDED" />
+    <Setter Property="TextAlignment" Value="Right" />
+  </Style>
   <!-- Debug playback readout, pending the real HUD: TvPlayerHud.kt HudStatsPane/HudReadOnlyRow
        supplies the 26dp column gap, 34dp rows, 10dp/4dp padding and 12dp label/value gap.
        TvPlayerChrome.kt supplies Smoke, Paper/Graphite and Row/Value type at the TV 0.86 scale. -->

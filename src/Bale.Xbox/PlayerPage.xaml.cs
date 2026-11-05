@@ -14,7 +14,7 @@ using Windows.UI.Xaml.Navigation;
 
 namespace Bale.Xbox;
 
-/// <summary>The bare full-screen player; transport/HUD controls are a later milestone.</summary>
+/// <summary>Full-screen playback with passive skip transport; focusable transport/HUD controls come later.</summary>
 public sealed partial class PlayerPage : Page, IBackHandler
 {
     // All lifecycle operations run on the UI thread and serialize across awaits. Native callbacks
@@ -51,6 +51,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public PlaybackSessionServices? Services { get; set; }
         public PlaybackStartRequestV3? Start { get; set; }
         public PlaybackPlan? Plan { get; set; }
+        public IReadOnlyList<string> ServerFeatures { get; set; } = [];
+        public IReadOnlyList<string> AttemptedPlanKeys { get; set; } = [];
         public string PlanAttemptId { get; set; } = string.Empty;
         public string? SessionId { get; set; }
         public bool Attached { get; set; }
@@ -174,6 +176,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
 
                 attempt.SessionId = decision.SessionId!;
                 attempt.Plan = decision.PlaybackPlan!;
+                attempt.ServerFeatures = decision.ServerFeatures ?? [];
                 attempt.PlanAttemptId = Guid.NewGuid().ToString();
                 var timeline = PlaybackTimeline.From(attempt.Plan.Timeline);
                 attempt.Position = _sourcePosition = timeline.SourceStart(startPosition, request.OverridePosition);
@@ -237,7 +240,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         if (_attempt is { Media: { Opened: true, Started: false, FailureQueued: false, Player: not null } first } current
             && IsCurrent(current, first)) UpdatePlaybackState(current, first);
         UpdateSpinner();
-        if (_recording) return;
+        UpdateTransport();
+        if (_recording || _seeking) return;
         _recording = true;
         try
         {
@@ -283,6 +287,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
     {
         if (!IsCurrent(attempt, media) || media.FailureQueued) return;
         media.FailureQueued = true;
+        media.Opening.TrySetResult(false);
         _ = RecoverAsync(attempt, media, hresult, isDecoder, isNetwork);
     }
 
@@ -315,6 +320,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         }
 
         attempt.Replanned = true;
+        HideTransport();
         _state = "loading";
         SetLoading(true);
         var failedRoute = attempt.Media?.Route;
@@ -351,6 +357,14 @@ public sealed partial class PlayerPage : Page, IBackHandler
             }
 
             attempt.Plan = decision.PlaybackPlan!;
+            attempt.ServerFeatures = decision.ServerFeatures ?? [];
+            attempt.AttemptedPlanKeys = request.AttemptedPlanKeys;
+            attempt.Start = attempt.Start! with
+            {
+                ClientFeatures = request.ClientFeatures,
+                ClientCapabilities = request.ClientCapabilities,
+                ClientPlaybackContext = request.ClientPlaybackContext,
+            };
             attempt.PlanAttemptId = Guid.NewGuid().ToString();
             attempt.Cancellation.Token.ThrowIfCancellationRequested();
             if (hdrOutputFailed && DisplayHdrPolicy.RequiresHdr10(attempt.Plan))
@@ -440,6 +454,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
 
     private async Task StopAttemptAsync()
     {
+        HideTransport();
         if (_attempt is not { } attempt)
         {
             await _hdrOutput.RestoreAsync();
@@ -493,6 +508,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
             SourcePosition(attempt);
         }
         _timer.Stop();
+        HideTransport();
         SetLoading(false);
         return _shutdown = ShutdownCoreAsync();
     }

@@ -8,6 +8,42 @@
 
   <Grid Background="Black">
     <MediaPlayerElement x:Name="Video" AreTransportControlsEnabled="False" Stretch="Uniform" IsTabStop="False" />
+    <!-- TvSkipSeekIndicator.kt / TvPlayerScrubber.kt: passive feedback, never a focus surface.
+         Keep the resting scrubber's geometry, reserving the official transport row below for later. -->
+    <Grid x:Name="TransportFeedback" Visibility="Collapsed" IsHitTestVisible="False">
+      <Border Style="{StaticResource SkylinePlayerTransportScrimStyle}" />
+      <Grid Style="{StaticResource SkylinePlayerTransportStyle}">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Border Style="{StaticResource SkylinePlayerSkipChipStyle}">
+          <Grid ColumnSpacing="{StaticResource SkylinePlayerSkipChipGap}">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="SkipDelta" Style="{StaticResource SkylinePlayerSkipDeltaStyle}" />
+            <TextBlock x:Name="SkipLanding" Grid.Column="1" Style="{StaticResource SkylinePlayerSkipLandingStyle}" />
+          </Grid>
+        </Border>
+        <Grid Grid.Row="1" Style="{StaticResource SkylinePlayerTrackHostStyle}">
+          <Grid x:Name="TransportTrack" Style="{StaticResource SkylinePlayerTrackStyle}" SizeChanged="OnTransportSizeChanged">
+            <Border Style="{StaticResource SkylinePlayerTrackRailStyle}" />
+            <Border x:Name="TransportPlayed" Style="{StaticResource SkylinePlayerTrackPlayedStyle}" Width="0" />
+          </Grid>
+        </Grid>
+        <Grid Grid.Row="2" Style="{StaticResource SkylinePlayerClockRowStyle}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBlock x:Name="TransportElapsed" Style="{StaticResource SkylinePlayerTimeStyle}" Typography.NumeralAlignment="Tabular" />
+          <TextBlock x:Name="TransportRemaining" Grid.Column="1" Style="{StaticResource SkylinePlayerRemainingStyle}" Typography.NumeralAlignment="Tabular" />
+        </Grid>
+      </Grid>
+    </Grid>
     <!-- Only DEBUG_SERVER code makes this visible. Read-only: it must never take player focus. -->
     <Border x:Name="StatsPanel" Style="{StaticResource SkylinePlayerStatsPanelStyle}"
             Visibility="Collapsed" IsHitTestVisible="False">

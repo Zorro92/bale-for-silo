@@ -64,16 +64,20 @@ public class DebugPlaybackSeekTests
     }
 
     [Fact]
-    public void ActivePlayerSeekIsDebugOnlySerializedAndWaitsForTheMediaClock()
+    public void DebugSeekDelegatesToTheSerializedRealPlayerSeekAndWaitsForTheMediaClock()
     {
-        var source = Read("PlayerPage.Debug.cs.txt");
-        Assert.StartsWith("#if DEBUG_SERVER", source);
-        foreach (var required in new[] { "_lifecycle.Wait(0)", "IsCurrent(attempt, media)", "PlaybackSession.CanSeek",
+        var wrapper = Read("PlayerPage.Debug.cs.txt");
+        Assert.StartsWith("#if DEBUG_SERVER", wrapper);
+        Assert.Contains("await SeekAsync(new PlaybackSeek(request.Seconds, request.Pause))", wrapper);
+        var source = Read("PlayerPage.Seek.cs.txt");
+        Assert.DoesNotContain("#if DEBUG_SERVER\nusing", source);
+        foreach (var required in new[] { "_lifecycle.Wait(0)", "IsCurrent(attempt, media)", "session.CanSeek",
             "request.PlayerPosition(media.Transport.Timeline, _duration)", "session.SeekCompleted += OnSeekCompleted",
             "session.SeekCompleted -= OnSeekCompleted", "session.Position = TimeSpan.FromSeconds(target)",
-            "Task.WhenAny(completed.Task", "if (request.Pause) player.Pause()", "SourcePosition(attempt)", "_lifecycle.Release()" })
+            "Task.WhenAny(completed.Task", "if (paused) player.Pause()", "SourcePosition(attempt)", "_lifecycle.Release()",
+            "Reporter.ReportProgressAsync(attempt.SessionId!, source, paused", "ReanchorSeekAsync", "FrameDelivery?.SetSeeking(true)" })
             Assert.Contains(required, source);
-        Assert.DoesNotContain("ex.Message", source);
+        Assert.DoesNotContain("ex.Message", source + wrapper);
         var endpoint = Read("DebugServer.Playback.cs.txt");
         Assert.StartsWith("#if DEBUG_SERVER", endpoint);
         Assert.Contains("OnFfmpegUiAsync", endpoint);

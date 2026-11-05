@@ -38,6 +38,10 @@
     <None Include="../../src/Bale.Xbox/Services/DebugHdrPlayback.cs" Link="DebugHdrPlayback.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugServer.Playback.cs" Link="DebugServer.Playback.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/PlayerPage.Debug.cs" Link="PlayerPage.Debug.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/PlayerPage.Seek.cs" Link="PlayerPage.Seek.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/PlayerPage.Transport.cs" Link="PlayerPage.Transport.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/PlayerPage.xaml" Link="PlayerPage.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/App.xaml.cs" Link="App.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../tools/Bale.Cli/PlayPlanOptions.cs" Link="PlayPlanOptions.cs" />
     <Compile Include="../../tools/Bale.Cli/PlayPlanUrlFile.cs" Link="PlayPlanUrlFile.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugServer.Ffmpeg.cs" Link="DebugServer.Ffmpeg.cs.txt" CopyToOutputDirectory="PreserveNewest" />

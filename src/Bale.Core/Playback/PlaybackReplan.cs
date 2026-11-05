@@ -2,7 +2,7 @@ using Bale.Core.Api.Models;
 
 namespace Bale.Core.Playback;
 
-/// <summary>PlaybackSessionManager.kt prepareActiveVideoSessionReplan, for failure recovery only.</summary>
+/// <summary>PlaybackSessionManager.kt failure recovery and same-route seek re-anchoring.</summary>
 public static class PlaybackReplan
 {
     public static PlaybackReplanRequestV3 ForFailure(PlaybackStartRequestV3 start, PlaybackPlan plan, string planAttemptId,
@@ -15,10 +15,26 @@ public static class PlaybackReplan
             start = SoftwareDecodePolicy.WithoutFailedFallbacks(start, failedRoute);
             failure = new("decoder_failure", "FFmpegInteropX failed; server transcode required. " + failure.Message, "FFmpegInteropX");
         }
+        return Build(start, plan, planAttemptId, priorAttemptedKeys.Append(plan.PlanAttemptKey!).ToArray(),
+            attemptCount, sourcePositionSeconds, "failure_recovery", failure);
+    }
+
+    public static PlaybackReplanRequestV3 ForSeek(PlaybackStartRequestV3 start, PlaybackPlan plan, string planAttemptId,
+        IReadOnlyList<string> priorAttemptedKeys, int attemptCount, double sourcePositionSeconds)
+    {
+        if (!double.IsFinite(sourcePositionSeconds) || sourcePositionSeconds < 0)
+            throw new ArgumentOutOfRangeException(nameof(sourcePositionSeconds));
+        // reanchorActiveVideoSession: a seek must not spend failure-recovery budget or blacklist
+        // the working route. Retain its identity, tracks, capabilities and quality preferences.
+        return Build(start, plan, planAttemptId, priorAttemptedKeys, attemptCount, sourcePositionSeconds, "seek_reanchor", null);
+    }
+
+    private static PlaybackReplanRequestV3 Build(PlaybackStartRequestV3 start, PlaybackPlan plan, string planAttemptId,
+        IReadOnlyList<string> priorAttemptedKeys, int attemptCount, double sourcePositionSeconds, string operation, PlaybackFailureV3? failure)
+    {
         if (string.IsNullOrWhiteSpace(plan.PlanId) || string.IsNullOrWhiteSpace(plan.PlanAttemptKey))
             throw new InvalidDataException("The playback plan has no recovery identity.");
-        var attemptedKeys = priorAttemptedKeys.Append(plan.PlanAttemptKey)
-            .Where(key => !string.IsNullOrWhiteSpace(key)).Distinct(StringComparer.Ordinal).ToArray();
+        var attemptedKeys = priorAttemptedKeys.Where(key => !string.IsNullOrWhiteSpace(key)).Distinct(StringComparer.Ordinal).ToArray();
         var tracks = new SelectedPlaybackTracksV3(
             Track(plan.SelectedTracks?.Audio, start.AudioTrackId, start.AudioTrackIndex),
             Track(plan.SelectedTracks?.Subtitle, start.SubtitleTrackId, start.SubtitleTrackIndex, subtitle: true));
@@ -26,7 +42,7 @@ public static class PlaybackReplan
             attemptedKeys, attemptCount, double.IsFinite(sourcePositionSeconds) ? Math.Max(0, sourcePositionSeconds) : 0,
             tracks, start.ClientFeatures, start.ClientCapabilities, start.ClientPlaybackContext)
         {
-            Operation = "failure_recovery",
+            Operation = operation,
             Failure = failure,
             QualityPreference = start.QualityPreference,
             Metered = start.Metered,

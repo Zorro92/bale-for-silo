@@ -107,8 +107,9 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
   official library screen: in Library Browse, Right from a row's last card enters the A–Z rail at
   All (`OnGridRightEdge` in `CatalogGridPage.Library.cs`) and Left returns to the remembered card.
   Don't copy it to other grids.
-- **Bumpers, triggers and Page Up/Down do nothing**, app-wide (`App.OnPreviewKeyDown`); the official
-  app handles none of them, and a ScrollViewer would page away from focus.
+- **Bumpers, triggers and Page Up/Down never page a ScrollViewer**, app-wide
+  (`App.OnPreviewKeyDown`). Only the player maps LT/RT to dedicated skip back/forward (see below);
+  elsewhere they do nothing, keeping focus on screen.
 - **Back to a page restores its focus** through `IRestoresFocus` + `FocusRetry`.
 
 ## Playback decoder policy
@@ -147,6 +148,27 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
   claims. The standalone `playtest-ffmpeg` probe retains its experimental modes. See docs/player-plan.md.
 - Never print media URLs, stream grants, headers or media/session exception messages. Log only safe
   HRESULTs, IDs/codecs and fixed diagnostics; keep FFmpeg's native log provider disabled.
+
+## Player skip transport
+
+- While the player is showing, **LT / keyboard J skips back 10 s**, **RT / keyboard L skips forward
+  30 s**. Test with `scripts/bale-debug.sh key j`, `key l`, `press lt` and `press rt`. Both real analog
+  trigger injection and keyboards go through the root preview-key path. Only the first DOWN acts;
+  repeats and key UP are consumed, with no hold-to-scrub (`silo-android androidTvApp/.../player/TvPlayerRemoteKeyAction.kt`).
+- Intervals are `TvPlayerScreen.kt`'s `LEGACY_TV_VIDEO_SEEK_INTERVALS`, also the defaults in
+  `shared/.../model/settings/SeekIntervals.kt`: 10 back / 30 forward. Clamp to 0 / known movie
+  duration. Rapid presses accumulate from the last requested source target, not a stale player clock.
+- Skips and `bale-debug.sh seek` share `PlayerPage.Seek.cs`'s absolute-source path. A local seek waits
+  for `SeekCompleted`; a target outside a produced/reanchored HLS window uses negotiated protocol-v3
+  `seek_reanchor`, retaining the same route, plan, session and tracks. This does not spend failure
+  recovery budget. Seek completion flushes the actual landed source position through the sequenced
+  progress reporter/journal, including short clamped seeks; pause state is preserved.
+- Passive feedback copies `TvSkipSeekIndicator.kt`, `TvPlayerScrubber.kt` and `TvPlayerChrome.kt`:
+  a signed skip/landing-time chip, resting 4dp track (white at 22% / Paper fill), elapsed and
+  minus-remaining / wall-clock end time. Inter uses the TV 0.86 text scale; Android dp is 1:1 with
+  Xbox effective pixels. No puck or focusable scrubbing, no transport buttons yet (the official
+  44dp button metrics live in `TvPlayerTransportVisualPolicy.kt`). Every press restarts the official
+  `SKIP_FEEDBACK_HIDE_MS = 1200` timer. Feedback never moves focus or changes Back / I / View.
 
 ## Player diagnostics
 
