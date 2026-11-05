@@ -48,6 +48,7 @@ jobs:
       - name: Configure submodule transports
         shell: pwsh
         run: |
+          git config --global core.autocrlf input
           git config --global url.https://github.com/FFmpeg/FFmpeg.git.insteadOf https://git.ffmpeg.org/ffmpeg.git
           git config --global url.https://github.com/videolan/dav1d.git.insteadOf https://code.videolan.org/videolan/dav1d.git
           git config --global url.https://github.com/mirror/x264.git.insteadOf https://code.videolan.org/videolan/x264.git
@@ -69,6 +70,7 @@ jobs:
       # expects C:\msys64. Preserve both paths and upstream's MSVC/SDK/configuration defaults.
       - uses: msys2/setup-msys2@v2
         with:
+          release: false
           location: 'C:\'
           msystem: MINGW64
           path-type: inherit
