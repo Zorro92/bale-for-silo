@@ -15,6 +15,8 @@ internal sealed class DebugFrameDelivery : IDisposable
     private string? _outputPixelFormat;
     private int _unavailable;
     private int _requests;
+    private int _videoSamples;
+    private const int CollectEvery = 24;
     private readonly Dictionary<object, bool> _kinds = new(ReferenceEqualityComparer.Instance);
 
     internal DebugFrameDelivery(FFmpegMediaSource source, MediaPlaybackSession session, bool collectAheadStatistics = false)
@@ -56,6 +58,11 @@ internal sealed class DebugFrameDelivery : IDisposable
             if (args.Request.Sample is not { } sample || !IsVideo(args.Request.StreamDescriptor)) return;
             _meter.Observe(sample.Timestamp, sample.Duration, _session.Position,
                 _session.PlaybackState == MediaPlaybackState.Playing, sample.Discontinuous, Environment.TickCount64);
+            // Each managed sample wrapper keeps its native decoded frame (~6 MB at 1080p P010)
+            // alive until the GC finalizes it. Observing adds almost no managed allocation, so
+            // without this a bounded probe reached 3.4 GB commit and E_OUTOFMEMORY in ~19 s.
+            // A gen0 pass about once a second lets the finalizer release the frames.
+            if (++_videoSamples % CollectEvery == 0) GC.Collect(0, GCCollectionMode.Forced, blocking: false);
         }
         catch (Exception ex) { Unavailable(ex); }
     }
