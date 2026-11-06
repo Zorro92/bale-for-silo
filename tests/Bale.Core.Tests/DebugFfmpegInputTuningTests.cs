@@ -120,7 +120,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("if (enabled)", experiment);
         Assert.Contains("config.General.ReadAheadBufferSize = DebugFfmpegInputTuning.ReadAheadCapBytes", experiment);
         Assert.Contains("config.General.ReadAheadBufferDuration = DebugFfmpegInputTuning.ReadAheadCapDuration", experiment);
-        Assert.Contains("if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = readSize", experiment);
+        Assert.Contains("if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = checked((uint)readSize)", experiment);
         Assert.Contains("public DebugFfmpegInputTuning FfmpegTuning { get; } = DebugFfmpegInputTuning.Current", Read("PlayerPage.cs.txt"));
         var player = Read("PlayerPage.Media.cs.txt");
         Assert.Contains("media.Route.UseFfmpeg ? attempt.FfmpegTuning.Prefetch ?? HttpRangeStream.DefaultPrefetchBlocks", player);

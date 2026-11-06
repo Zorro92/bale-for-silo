@@ -39,7 +39,7 @@ internal static class FfmpegSource
                 config.General.ReadAheadBufferDuration = DebugFfmpegInputTuning.ReadAheadCapDuration;
             }
         }
-        if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = readSize;
+        if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = checked((uint)readSize);
         return config;
     }
 #endif

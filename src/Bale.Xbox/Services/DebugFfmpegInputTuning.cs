@@ -58,7 +58,7 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
     internal static string ReadAheadText(bool enabled, long bytes, TimeSpan duration) => string.Create(CultureInfo.InvariantCulture,
         $"{(enabled ? "on" : "off")} · {bytes / (1024.0 * 1024):0.#} MiB / {duration.TotalSeconds:0.#} s");
 
-    internal static string StreamReadsText(int readSize, int prefetch) => string.Create(CultureInfo.InvariantCulture,
+    internal static string StreamReadsText(uint readSize, int prefetch) => string.Create(CultureInfo.InvariantCulture,
         $"{readSize} B · prefetch={prefetch}");
 
     private static bool TryNumber(string value, int minimum, int maximum, out int? number)
