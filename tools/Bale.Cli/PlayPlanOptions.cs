@@ -1,7 +1,7 @@
 using System.Globalization;
 using Bale.Core.Playback;
 
-internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldSeconds)
+internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldSeconds, string? SaveHead = null, int HeadMegabytes = 0)
 {
     internal static bool TryParse(IEnumerable<string> arguments, out PlayPlanOptions options, out string error)
     {
@@ -27,6 +27,14 @@ internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldS
                         || seconds is < 0 or > 3600) return false;
                     holdSeen = true;
                     options = options with { HoldSeconds = seconds };
+                    break;
+                case "--save-head" when options.SaveHead is null && i + 2 < args.Length:
+                    // --save-head <path> <MiB>: debug copy of the first bytes of the original file.
+                    var head = args[++i];
+                    if (string.IsNullOrWhiteSpace(head) || head.StartsWith("--", StringComparison.Ordinal)) return false;
+                    if (!int.TryParse(args[++i], NumberStyles.None, CultureInfo.InvariantCulture, out var megabytes)
+                        || megabytes is < 1 or > 2048) return false;
+                    options = options with { SaveHead = head, HeadMegabytes = megabytes };
                     break;
                 default:
                     if (args[i].StartsWith("--", StringComparison.Ordinal)) return false;

@@ -26,6 +26,19 @@ public class PlayPlanOptionsTests
         Assert.True(PlayPlanOptions.TryParse(["--hold", "3600", "Bale Test"], out _, out _));
     }
 
+    [Fact]
+    public void SaveHeadTakesAPathAndABoundedMebibyteCount()
+    {
+        Assert.True(PlayPlanOptions.TryParse(["--save-head", "/tmp/h.mkv", "200"], out var options, out _));
+        Assert.Equal("/tmp/h.mkv", options.SaveHead);
+        Assert.Equal(200, options.HeadMegabytes);
+        Assert.False(PlayPlanOptions.TryParse(["--save-head", "/tmp/h.mkv", "0"], out _, out _));
+        Assert.False(PlayPlanOptions.TryParse(["--save-head", "/tmp/h.mkv", "2049"], out _, out _));
+        Assert.False(PlayPlanOptions.TryParse(["--save-head", "--hold", "5"], out _, out _));
+        Assert.False(PlayPlanOptions.TryParse(["--save-head", "/tmp/h.mkv"], out _, out _));
+        Assert.False(PlayPlanOptions.TryParse(["--save-head", "/a", "1", "--save-head", "/b", "1"], out _, out _));
+    }
+
     [Theory]
     [InlineData("--unknown")]
     [InlineData("--url-file")]

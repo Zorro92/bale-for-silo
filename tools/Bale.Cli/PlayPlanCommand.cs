@@ -60,6 +60,17 @@ internal static class PlayPlanCommand
                 await PlayPlanUrlFile.WriteAsync(path, url, cancellationToken);
                 Console.WriteLine("url written");
             }
+            if (options.SaveHead is { } headPath)
+            {
+                if (sessionId is not { Length: > 0 } || plan.Delivery != "original_http")
+                {
+                    Console.Error.WriteLine("head not saved: no playable original_http session");
+                    return 1;
+                }
+                var saved = await PlayPlanHeadFile.SaveAsync(client.Playback.OpenMedia(plan), headPath,
+                    options.HeadMegabytes * 1024L * 1024, cancellationToken);
+                Console.WriteLine($"head saved bytes={saved}");
+            }
             if (options.HoldSeconds > 0)
             {
                 if (sessionId is not { Length: > 0 }) return 1;
