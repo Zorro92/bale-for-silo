@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
 using System.Text;
+using Bale.Core.Playback;
 using FFmpegInteropX;
 using Windows.ApplicationModel.Core;
 using Windows.Foundation;
@@ -17,9 +18,11 @@ namespace Bale.Xbox.Services;
 
 internal sealed partial class DebugServer
 {
-    private static async Task<(string Status, string Body)> PlaytestFfmpegAsync(string? url, string? seconds, string? mode)
+    private static async Task<(string Status, string Body)> PlaytestFfmpegAsync(string? url, string? seconds, string? mode,
+        string? threads, string? output10bit, string? rate)
     {
-        if (!DebugFfmpegPlaytest.TryParse(url, seconds, mode, out var uri, out var duration, out var decoderMode, out var error))
+        if (!DebugFfmpegPlaytest.TryParse(url, seconds, mode, out var uri, out var duration, out var decoderMode, out var error)
+            || !DebugFfmpegPlaytest.TryParseTuning(threads, output10bit, rate, out var tuning, out error))
             return ("400 Bad Request", error + "\n");
         // Share the built-in probe's gate: never run two isolated players at once.
         if (Interlocked.CompareExchange(ref _playtestBusy, 1, 0) != 0)
@@ -38,6 +41,9 @@ internal sealed partial class DebugServer
         TimeSpan? cpuEnd = null;
         var buffering = 0;
         var releaseGate = true;
+        var playbackRate = tuning.Rate;
+        PlaybackFrameDeliverySnapshot? frames = null;
+        string? outputPixelFormat = null;
 
         void Failure(string step, Exception ex)
         {
@@ -65,7 +71,9 @@ internal sealed partial class DebugServer
         try
         {
             Log.Info("Debug FFmpeg: before configuration");
-            var config = DebugFfmpegSource.Configuration(decoderMode);
+            var config = DebugFfmpegSource.Configuration(decoderMode, tuning);
+            builder.Append(DebugFfmpegPlaytest.Settings(config.Video.MaxDecoderThreads, config.Video.VideoOutputAllow10bit,
+                Environment.ProcessorCount, tuning));
             Log.Info("Debug FFmpeg: before create");
             var creation = FFmpegMediaSource.CreateFromUriAsync(uri.AbsoluteUri, config).AsTask();
             if (await Task.WhenAny(creation, Task.Delay(DebugFfmpegPlaytest.CreateTimeoutMs)) != creation)
@@ -82,6 +90,7 @@ internal sealed partial class DebugServer
                 Log.Info("Debug FFmpeg: created; before player");
                 using var player = await OnFfmpegUiAsync(() => new MediaPlayer { IsMuted = true, AutoPlay = false });
                 var renderTarget = new FfmpegRenderTarget();
+                DebugFrameDelivery? frameDelivery = null;
                 var opened = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 var stopped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -132,6 +141,11 @@ internal sealed partial class DebugServer
                     builder.Append("Surface: composition 160x90\n");
                     Log.Info("Debug FFmpeg: render target attached; before item/open");
                     var item = source.CreateMediaPlaybackItem();
+                    // Subscribe after FFmpeg's synchronous sample handler, before any player requests.
+                    // Compressed/system-video samples cannot measure decoded frame delivery.
+                    if (source.CurrentVideoStream?.DecoderEngine == DecoderEngine.FFmpegSoftwareDecoder)
+                        Attempt("frame delivery observer", () => frameDelivery = new DebugFrameDelivery(source,
+                            player.PlaybackSession, collectAheadStatistics: true));
                     await OnFfmpegUiAsync(() => { player.Source = item; return true; });
                     if (await Task.WhenAny(opened.Task, Task.Delay(DebugFfmpegPlaytest.OpenTimeoutMs)) == opened.Task)
                         didOpen = await opened.Task;
@@ -140,6 +154,12 @@ internal sealed partial class DebugServer
                     if (didOpen && !stopped.Task.IsCompleted)
                     {
                         source.PlaybackSession = player.PlaybackSession;
+                        playbackRate = await OnFfmpegUiAsync(() =>
+                        {
+                            player.PlaybackSession.PlaybackRate = tuning.Rate;
+                            return player.PlaybackSession.PlaybackRate;
+                        });
+                        builder.Append(string.Create(CultureInfo.InvariantCulture, $"Playback rate: {playbackRate:0.###}\n"));
                         start = player.PlaybackSession.Position;
                         maximum = start;
                         cpuStart = ReadCpu();
@@ -173,6 +193,11 @@ internal sealed partial class DebugServer
                         SnapshotPosition();
                         playbackState = player.PlaybackSession.PlaybackState.ToString();
                     });
+                    Attempt("frame delivery snapshot", () =>
+                    {
+                        frames = frameDelivery?.Read();
+                        outputPixelFormat = frameDelivery?.OutputPixelFormat;
+                    });
                     Attempt("video snapshot", () =>
                     {
                         if (source.CurrentVideoStream is not { } video) { builder.Append("Video: none\n"); return; }
@@ -188,6 +213,7 @@ internal sealed partial class DebugServer
                         builder.Append($"Audio: codec={DebugScreenText.Compact(audio.CodecName, 80)} channels={audio.Channels}"
                             + $" DecoderEngine={DebugFfmpegSource.DecoderName(audio.DecoderEngine)}\n");
                     });
+                    Attempt("detach frame delivery observer", () => frameDelivery?.Dispose());
                     Attempt("unsubscribe MediaOpened", () => player.MediaOpened -= OnOpened);
                     Attempt("unsubscribe MediaFailed", () => player.MediaFailed -= OnFailed);
                     Attempt("unsubscribe MediaEnded", () => player.MediaEnded -= OnEnded);
@@ -216,10 +242,12 @@ internal sealed partial class DebugServer
 
         var reasons = failures.ToArray();
         return ("200 OK", $"Opened: {(didOpen ? "yes" : "no")}\n" + builder
-            + DebugFfmpegPlaytest.Measurements(start, end, wall, buffering, cpuStart, cpuEnd, maximum, playbackState)
+            + $"Output pixel format: {outputPixelFormat ?? "unavailable"}\n"
+            + DebugFfmpegPlaytest.FrameDelivery(frames)
+            + DebugFfmpegPlaytest.Measurements(start, end, wall, buffering, cpuStart, cpuEnd, maximum, playbackState, playbackRate)
             + (cpuDiagnostics.Count == 0 ? string.Empty : "CPU diagnostics:\n  " + string.Join("\n  ", cpuDiagnostics.Distinct()) + "\n")
             + (reasons.Length == 0 ? string.Empty : "Failures:\n  " + string.Join("\n  ", reasons) + "\n")
-            + DebugFfmpegPlaytest.Verdict(didOpen, start, maximum, wall, reasons));
+            + DebugFfmpegPlaytest.Verdict(didOpen, start, maximum, wall, reasons, playbackRate));
     }
 
     private static async Task<T> OnFfmpegUiAsync<T>(Func<T> action)

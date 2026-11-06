@@ -5,7 +5,7 @@ namespace Bale.Xbox.Services;
 
 internal static class DebugFfmpegSource
 {
-    internal static MediaSourceConfig Configuration(string mode)
+    internal static MediaSourceConfig Configuration(string mode, DebugFfmpegTuning tuning)
     {
         // The native default logger can expose media URLs. Never install it for either debug path.
         FFmpegInteropLogging.SetLogProvider(null);
@@ -16,6 +16,8 @@ internal static class DebugFfmpegSource
             "system" => VideoDecoderMode.ForceSystemDecoder,
             _ => VideoDecoderMode.Automatic,
         };
+        if (tuning.Threads is { } threads) config.Video.MaxDecoderThreads = threads;
+        if (tuning.Allow10bit is { } allow10bit) config.Video.VideoOutputAllow10bit = allow10bit;
         config.FFmpegOptions["rw_timeout"] = "10000000";
         return config;
     }

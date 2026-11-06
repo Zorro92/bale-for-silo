@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Xml;
 using System.Xml.Linq;
 using System.Xml.Xsl;
+using Bale.Core.Playback;
 using Bale.Xbox.Services;
 
 namespace Bale.Core.Tests;
@@ -42,6 +43,95 @@ public class DebugFfmpegPlaytestTests
         DebugFfmpegPlaytest.TryParse(url, "3", "auto", out _, out _, out _, out _));
 
     [Theory]
+    [InlineData(null, null, null, null, null, 1.0)]
+    [InlineData("0", "on", "0.5", 0, true, 0.5)]
+    [InlineData("16", "off", "2.0", 16, false, 2.0)]
+    [InlineData("4", null, "1.25", 4, null, 1.25)]
+    [InlineData(null, "off", null, null, false, 1.0)]
+    [InlineData(null, null, "0.75", null, null, 0.75)]
+    public void ParsesOptionalTuningWithoutOverridingOmittedNativeSettings(string? threads, string? output10bit, string? rate,
+        int? expectedThreads, bool? expected10bit, double expectedRate)
+    {
+        var previous = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
+            Assert.True(DebugFfmpegPlaytest.TryParseTuning(threads, output10bit, rate, out var tuning, out var error));
+            Assert.Equal(expectedThreads is { } count ? (uint?)count : null, tuning.Threads);
+            Assert.Equal(expected10bit, tuning.Allow10bit);
+            Assert.Equal(expectedRate, tuning.Rate);
+            Assert.Empty(error);
+        }
+        finally { CultureInfo.CurrentCulture = previous; }
+    }
+
+    [Theory]
+    [InlineData("-1", null, null, "threads")]
+    [InlineData("17", null, null, "threads")]
+    [InlineData("4294967296", null, null, "threads")]
+    [InlineData("1.5", null, null, "threads")]
+    [InlineData(" 4", null, null, "threads")]
+    [InlineData("", null, null, "threads")]
+    [InlineData(null, "true", null, "10bit")]
+    [InlineData(null, "OFF", null, "10bit")]
+    [InlineData(null, "", null, "10bit")]
+    [InlineData(null, null, "0.49", "rate")]
+    [InlineData(null, null, "2.01", "rate")]
+    [InlineData(null, null, "NaN", "rate")]
+    [InlineData(null, null, "Infinity", "rate")]
+    [InlineData(null, null, "1,5", "rate")]
+    [InlineData(null, null, "1e0", "rate")]
+    [InlineData(null, null, " 1", "rate")]
+    [InlineData(null, null, "", "rate")]
+    public void RejectsInvalidTuningWithFixedNonReflectingErrors(string? threads, string? output10bit, string? rate, string field)
+    {
+        Assert.False(DebugFfmpegPlaytest.TryParseTuning(threads, output10bit, rate, out var tuning, out var error));
+        Assert.StartsWith(field + " must be", error);
+        Assert.Equal(new DebugFfmpegTuning(), tuning);
+    }
+
+    [Theory]
+    [InlineData(0.5, 5, 1, "PLAYS - target rate")]
+    [InlineData(0.5, 4, 0.8, "SLOW - below target rate")]
+    [InlineData(1.5, 15, 1, "PLAYS - target rate")]
+    [InlineData(2.0, 10, 0.5, "SLOW - below target rate")]
+    [InlineData(2.0, 20, 1, "PLAYS - target rate")]
+    [InlineData(2.0, 24, 1.2, "PLAYS - clock faster than target rate")]
+    public void RatioAndVerdictUseWallTimeTimesTheAppliedRate(double rate, double advance, double expectedRatio, string verdict)
+    {
+        var start = TimeSpan.FromSeconds(20);
+        var end = start + TimeSpan.FromSeconds(advance);
+        var wall = TimeSpan.FromSeconds(10);
+        Assert.Equal(expectedRatio, DebugFfmpegPlaytest.Ratio(start, end, wall, rate), precision: 6);
+        Assert.StartsWith("Verdict: " + verdict, DebugFfmpegPlaytest.Verdict(true, start, end, wall, [], rate));
+        var text = DebugFfmpegPlaytest.Measurements(start, end, wall, 0, null, null, end, "Playing", rate);
+        Assert.Contains("expected=" + (10 * rate).ToString("0.###", CultureInfo.InvariantCulture) + "s", text);
+        Assert.Contains("ratio=" + expectedRatio.ToString("0.###", CultureInfo.InvariantCulture), text);
+    }
+
+    [Fact]
+    public void SettingsAndFrameSummaryAreInvariantAndDistinguishUnavailableFromZero()
+    {
+        var previous = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
+            Assert.Equal("Threads: 0 (0=logical CPU count; default)\n10-bit output: on (default)\nLogical CPUs: 8\nRate requested: 1\n",
+                DebugFfmpegPlaytest.Settings(0, true, 8, new()));
+            Assert.Equal("Threads: 4 (0=logical CPU count; override)\n10-bit output: off (override)\nLogical CPUs: 8\nRate requested: 0.75\n",
+                DebugFfmpegPlaytest.Settings(4, false, 8, new(4, false, 0.75)));
+            Assert.Contains("Late frames total: unavailable", DebugFfmpegPlaytest.FrameDelivery(null));
+            Assert.Contains("Total frames delivered: unavailable", DebugFfmpegPlaytest.FrameDelivery(null));
+            Assert.Contains("min=unavailable median=unavailable", DebugFfmpegPlaytest.FrameDelivery(new(0, 0, 0, 1)));
+            var summary = DebugFfmpegPlaytest.FrameDelivery(new PlaybackFrameDeliverySnapshot(0, 0, 0.5, 100, 0, 0.125));
+            Assert.Contains("Late frames total: 0\nTotal frames delivered: 100\n", summary);
+            Assert.Contains("min=0s median=0.125s", summary);
+            Assert.Contains("not renderer queue depth", summary);
+        }
+        finally { CultureInfo.CurrentCulture = previous; }
+    }
+
+    [Theory]
     [InlineData(0, "FAILS")]
     [InlineData(5, "SLOW")]
     [InlineData(9, "PLAYS - real time")]
@@ -72,7 +162,7 @@ public class DebugFfmpegPlaytestTests
         try
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
-            Assert.Equal("PlaybackState: Playing\nPosition: start=2s end=11.5s max=11.5s wall=10s ratio=0.95\nBuffering entries: 3\nCPU: 2.500 cores\n",
+            Assert.Equal("PlaybackState: Playing\nPosition: start=2s end=11.5s max=11.5s wall=10s expected=10s ratio=0.95\nBuffering entries: 3\nCPU: 2.500 cores\n",
                 DebugFfmpegPlaytest.Measurements(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(11.5),
                     TimeSpan.FromSeconds(10), 3, TimeSpan.FromSeconds(100), TimeSpan.FromSeconds(125),
                     TimeSpan.FromSeconds(11.5), "Playing"));
@@ -133,7 +223,7 @@ public class DebugFfmpegPlaytestTests
         var text = DebugFfmpegPlaytest.Measurements(TimeSpan.Zero, TimeSpan.Zero, TimeSpan.FromSeconds(10),
             0, null, null, maximum, "Paused");
         Assert.Contains("PlaybackState: Paused", text);
-        Assert.Contains("start=0s end=0s max=9.5s wall=10s ratio=0.95", text);
+        Assert.Contains("start=0s end=0s max=9.5s wall=10s expected=10s ratio=0.95", text);
         Assert.StartsWith("Verdict: PLAYS - real time", DebugFfmpegPlaytest.Verdict(true,
             TimeSpan.Zero, maximum, TimeSpan.FromSeconds(10), []));
     }
@@ -164,10 +254,17 @@ public class DebugFfmpegPlaytestTests
             "ElementCompositionPreview.SetElementChildVisual(_host!, _previous)", "renderTarget.Close(Attempt)",
             "_surface?.Dispose()", "_brush?.Dispose()", "_visual?.Dispose()", "_container?.Dispose()",
             "player.PlaybackSession.PlaybackState.ToString()", "if (end > maximum) maximum = end", "Task.Delay(100)",
-            "DebugFfmpegPlaytest.Verdict(didOpen, start, maximum, wall, reasons)",
+            "DebugFfmpegPlaytest.Verdict(didOpen, start, maximum, wall, reasons, playbackRate)",
+            "TryParseTuning(threads, output10bit, rate", "config.Video.MaxDecoderThreads", "config.Video.VideoOutputAllow10bit",
+            "player.PlaybackSession.PlaybackRate = tuning.Rate", "return player.PlaybackSession.PlaybackRate",
+            "DebugFfmpegPlaytest.FrameDelivery(frames)", "Output pixel format:", "frameDelivery?.Read()",
+            "frameDelivery?.OutputPixelFormat", "frameDelivery?.Dispose()", "new DebugFrameDelivery(source,",
+            "source.CurrentVideoStream?.DecoderEngine == DecoderEngine.FFmpegSoftwareDecoder", "collectAheadStatistics: true",
+            "if (tuning.Threads is { } threads) config.Video.MaxDecoderThreads = threads;",
+            "if (tuning.Allow10bit is { } allow10bit) config.Video.VideoOutputAllow10bit = allow10bit;",
         ];
         var shared = Read("DebugFfmpegSource.cs.txt");
-        Assert.Contains("DebugFfmpegSource.Configuration(decoderMode)", source);
+        Assert.Contains("DebugFfmpegSource.Configuration(decoderMode, tuning)", source);
         foreach (var text in required) Assert.Contains(text, source + shared);
         Assert.DoesNotContain("ex.Message", source + shared);
         Assert.DoesNotContain("args.ErrorMessage", source);
@@ -177,6 +274,14 @@ public class DebugFfmpegPlaytestTests
         Assert.DoesNotContain(" bits=", source);
         Assert.True(source.IndexOf("renderTarget.Attach(player)", StringComparison.Ordinal)
             < source.IndexOf("player.Source = item", StringComparison.Ordinal));
+        Assert.True(source.IndexOf("source.CreateMediaPlaybackItem()", StringComparison.Ordinal)
+            < source.IndexOf("new DebugFrameDelivery(source,", StringComparison.Ordinal));
+        Assert.True(source.IndexOf("new DebugFrameDelivery(source,", StringComparison.Ordinal)
+            < source.IndexOf("player.Source = item", StringComparison.Ordinal));
+        Assert.True(source.IndexOf("frameDelivery?.Dispose()", StringComparison.Ordinal)
+            < source.IndexOf("player.Source = null", StringComparison.Ordinal));
+        Assert.True(source.IndexOf("player.PlaybackSession.PlaybackRate = tuning.Rate", StringComparison.Ordinal)
+            < source.IndexOf("player.Play()", StringComparison.Ordinal));
         Assert.True(source.IndexOf("playbackState = player.PlaybackSession.PlaybackState", StringComparison.Ordinal)
             < source.IndexOf("player.Pause()", StringComparison.Ordinal));
         Assert.Contains("case (\"GET\", \"/playtest-ffmpeg\"):", Read("DebugServer.cs.txt"));

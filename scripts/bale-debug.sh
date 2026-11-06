@@ -24,7 +24,10 @@
 #   scripts/bale-debug.sh playtest <url> [seconds]  muted public http(s) stream probe (1–10 s, default 3)
 #   timeout 300 scripts/bale-debug.sh playtest suite [seconds]  Chromium samples, one at a time
 #                                               (the whole suite needs more than the usual timeout 20)
-#   scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [mode]  debug FFmpeg probe (1–60 s, default 3; auto|software|system)
+#   scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [mode] [threads=N] [10bit=on|off] [rate=R]
+#                                               debug FFmpeg probe (1–60 s, default 3; auto|software|system, default auto)
+#                                               tuning after seconds/mode, any order: threads 0–16 (0=CPU count), rate 0.5–2.0 (default 1)
+#                                               threads/10bit omitted = native defaults; reports actual settings/output and software frame delivery
 #   timeout 900 scripts/bale-debug.sh playtest-ffmpeg suite 15 software  same Chromium samples; allow 30 s create + 15 s open per clip
 #   scripts/bale-debug.sh goto "Unwatched#2"     setup only: focus the second matching control
 #   scripts/bale-debug.sh targets               list controls goto can reach
@@ -123,7 +126,7 @@ case "${1:-}" in
     playtest_mode_args=()
     if [[ "$playtest_route" == playtest-ffmpeg ]]; then
       playtest_max_seconds=60
-      playtest_max_args=4
+      playtest_max_args=7
       # 30 s native create + 15 s MediaOpened + 5 s response/cleanup margin.
       playtest_open_margin=50
       playtest_mode_args=(--data-urlencode "mode=${4:-auto}")
@@ -132,8 +135,27 @@ case "${1:-}" in
       || (( playtest_seconds > playtest_max_seconds )) \
       || [[ "$playtest_route" == playtest-ffmpeg && ! "${4:-auto}" =~ ^(auto|software|system)$ ]]; then
       echo 'usage: scripts/bale-debug.sh playtest <http(s)-url|suite> [seconds] (1–10, default 3; suite needs timeout 300)' >&2
-      echo '       scripts/bale-debug.sh playtest-ffmpeg <http(s)-url|@file|suite> [seconds] [auto|software|system] (1–60, default 3)' >&2
+      echo '       scripts/bale-debug.sh playtest-ffmpeg <http(s)-url|@file|suite> [seconds] [auto|software|system] [threads=N] [10bit=on|off] [rate=R] (1–60 s, default 3; tuning requires seconds/mode)' >&2
       exit 2
+    fi
+    if [[ "$playtest_route" == playtest-ffmpeg ]]; then
+      declare -A playtest_tuning_seen=()
+      for option in "${@:5}"; do
+        name="${option%%=*}"
+        value="${option#*=}"
+        valid_tuning=false
+        case "$option" in
+          threads=*) [[ "$value" =~ ^0*([0-9]|1[0-6])$ ]] && valid_tuning=true ;;
+          10bit=*) [[ "$value" =~ ^(on|off)$ ]] && valid_tuning=true ;;
+          rate=*) [[ "$value" =~ ^(0*[.][5-9][0-9]*|0*1([.][0-9]*)?|0*2([.]0*)?)$ ]] && valid_tuning=true ;;
+        esac
+        if [[ "$valid_tuning" != true || -n "${playtest_tuning_seen[$name]:-}" ]]; then
+          echo 'tuning after seconds/mode: [threads=N] [10bit=on|off] [rate=R], any order, no duplicates; N=0–16 (0=CPU count), R=0.5–2.0' >&2
+          exit 2
+        fi
+        playtest_tuning_seen[$name]=true
+        playtest_mode_args+=(--data-urlencode "$option")
+      done
     fi
     playtest_url() {
       local url_data="url=$1"

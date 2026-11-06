@@ -11,13 +11,15 @@ internal sealed class DebugFrameDelivery : IDisposable
 {
     private readonly MediaStreamSource _source;
     private readonly MediaPlaybackSession _session;
-    private readonly PlaybackFrameDeliveryMeter _meter = new();
+    private readonly PlaybackFrameDeliveryMeter _meter;
+    private string? _outputPixelFormat;
     private int _unavailable;
     private int _requests;
     private readonly Dictionary<object, bool> _kinds = new(ReferenceEqualityComparer.Instance);
 
-    internal DebugFrameDelivery(FFmpegMediaSource source, MediaPlaybackSession session)
+    internal DebugFrameDelivery(FFmpegMediaSource source, MediaPlaybackSession session, bool collectAheadStatistics = false)
     {
+        _meter = new(collectAheadStatistics);
         _session = session;
         _source = source.GetMediaStreamSource();
         // FFmpegInteropX Source/FFmpegMediaSource.cpp OnSampleRequested (pinned 2.1.0 wrapper):
@@ -32,6 +34,8 @@ internal sealed class DebugFrameDelivery : IDisposable
         }
         Log.Info("player: frame delivery observer attached");
     }
+
+    internal string? OutputPixelFormat => Volatile.Read(ref _outputPixelFormat);
 
     internal void SetSeeking(bool seeking) => _meter.SetSeeking(seeking);
 
@@ -68,6 +72,18 @@ internal sealed class DebugFrameDelivery : IDisposable
             bool video;
             try { video = WinRT.CastExtensions.As<VideoStreamDescriptor>(descriptor) is not null; }
             catch (InvalidCastException) { video = false; }
+            if (video)
+            {
+                // This is the decoded MSS output subtype (e.g. NV12/P010), not container bit depth.
+                // A missing optional format must not disable the frame-delivery measurements.
+                try
+                {
+                    var subtype = WinRT.CastExtensions.As<VideoStreamDescriptor>(descriptor).EncodingProperties.Subtype;
+                    if (!string.IsNullOrWhiteSpace(subtype))
+                        Volatile.Write(ref _outputPixelFormat, DebugScreenText.Compact(subtype, 40));
+                }
+                catch { }
+            }
             if (_kinds.Count < 16) _kinds[descriptor] = video;
             if (Interlocked.Increment(ref _requests) <= 4) Log.Info($"player: frame delivery descriptor video={video} known={_kinds.Count}");
             return video;

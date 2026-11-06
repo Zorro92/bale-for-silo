@@ -66,6 +66,7 @@ MSIX (~2 min). Then, with `XBOX_HOST` set to the console's IP:
 ./scripts/bale-debug.sh playtest "https://example.org/public.mp4" 3  # muted built-in-player probe; 1–10 s (default 3)
 timeout 300 ./scripts/bale-debug.sh playtest suite 3  # Chromium codec samples, sequential; needs a larger outer timeout
 ./scripts/bale-debug.sh playtest-ffmpeg @/tmp/x 30 software  # debug FFmpegInteropX; URL, @file or suite; 1–60 s; auto|software|system
+./scripts/bale-debug.sh playtest-ffmpeg @/tmp/x 30 software threads=4 10bit=off rate=0.75  # debug-only tuning, no rebuild
 ./scripts/bale-debug.sh ffmpeg policy        # next real-player attempt; policy (default)|off; HLS unchanged
 ./scripts/bale-debug.sh goto "Unwatched#2"     # setup only: focus the second matching control
 ./scripts/bale-debug.sh targets               # controls goto can reach
@@ -171,6 +172,23 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
   `SKIP_FEEDBACK_HIDE_MS = 1200` timer. Feedback never moves focus or changes Back / I / View.
 
 ## Player diagnostics
+
+- Debug probe syntax: `playtest-ffmpeg <url|@file|suite> [seconds] [auto|software|system]
+  [threads=N] [10bit=on|off] [rate=R]`. Supply seconds and mode before tuning; tuning keys may be in
+  any order, at most once each. Seconds are 1–60 (default 3), mode defaults to auto, threads are
+  0–16 (0 = logical CPU count), and rate is an invariant decimal 0.5–2.0 (default 1). Omitted
+  threads/10bit do not set either native property (defaults: 0/true). `10bit=off` requests 8-bit NV12
+  instead of 10-bit P010 for 10-bit AV1. The response reports actual config values, logical CPUs,
+  applied playback rate and decoded MSS output subtype when available. Ratio/verdict compare media
+  advance with wall time × applied rate, not unadjusted wall time. These options affect only that
+  probe, never `FfmpegSource`/the real player, and are absent with `BaleDebugServer=false`.
+- Software-video probes reuse the player's AOT-safe `DebugFrameDelivery` observer. Late totals and
+  min/median sample-end-ahead (floored at zero, sampled **at delivery**) exclude preroll, paused or
+  buffering delivery, seeks and discontinuities. Total delivered counts all observed video samples
+  except seeks, including preroll/non-playing frames. Min/median collection is opt-in for the bounded
+  probe only; the regular player retains no per-frame history. System-video/audio-only/no-sample
+  probes report unavailable, not zero. Neither late delivery nor delivered-ahead measures renderer
+  drops/queue depth. Codec-private dav1d options are not available in the pinned wrapper.
 
 - `I` / gamepad View toggles the read-only stats panel; `scripts/bale-debug.sh where` includes the
   same rows even when hidden. Process CPU is the kernel+user `GetProcessTimes` delta divided by

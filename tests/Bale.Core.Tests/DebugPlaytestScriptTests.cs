@@ -36,6 +36,81 @@ public class DebugPlaytestScriptTests
     }
 
     [Theory]
+    [InlineData("threads=0", "10bit=off", "rate=0.5")]
+    [InlineData("rate=2.0", "threads=16", "10bit=on")]
+    [InlineData("10bit=off", "rate=1.25", "threads=4")]
+    public async Task FfmpegTuningIsEncodedInAnyOrderAndAppliedToEverySuiteSample(string first, string second, string third)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["playtest-ffmpeg", "@fixture", "30", "software", first, second, third]);
+        Assert.Equal(0, result.ExitCode);
+        foreach (var option in new[] { first, second, third }) Assert.Contains("--data-urlencode\n" + option + "\n", result.Arguments);
+        Assert.DoesNotContain("not-a-real-grant", result.Output + result.Arguments);
+        var suite = await RunAsync(["playtest-ffmpeg", "suite", "30", "software", first, second, third]);
+        Assert.Equal(0, suite.ExitCode);
+        foreach (var option in new[] { first, second, third })
+            Assert.Equal(11, suite.Arguments.Split('\n').Count(line => line == option));
+    }
+
+    [Fact]
+    public async Task OmittedTuningDoesNotSendNativeOverrides()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["playtest-ffmpeg", "@fixture"]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("seconds=3", result.Arguments);
+        Assert.Contains("mode=auto", result.Arguments);
+        Assert.DoesNotContain("threads=", result.Arguments);
+        Assert.DoesNotContain("10bit=", result.Arguments);
+        Assert.DoesNotContain("rate=", result.Arguments);
+        var rateOnly = await RunAsync(["playtest-ffmpeg", "@fixture", "30", "software", "rate=0.75"]);
+        Assert.Equal(0, rateOnly.ExitCode);
+        Assert.Contains("rate=0.75", rateOnly.Arguments);
+        Assert.DoesNotContain("threads=", rateOnly.Arguments);
+        Assert.DoesNotContain("10bit=", rateOnly.Arguments);
+    }
+
+    [Theory]
+    [InlineData("threads=-1")]
+    [InlineData("threads=17")]
+    [InlineData("threads=18446744073709551616")]
+    [InlineData("threads=")]
+    [InlineData("10bit=true")]
+    [InlineData("10bit=OFF")]
+    [InlineData("rate=0.49")]
+    [InlineData("rate=2.01")]
+    [InlineData("rate=NaN")]
+    [InlineData("rate=1,5")]
+    [InlineData("rate=1e0")]
+    [InlineData("rate=")]
+    [InlineData("unknown=1")]
+    [InlineData("")]
+    public async Task InvalidTuningNeverInvokesCurl(string option)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["playtest-ffmpeg", "@fixture", "30", "software", option]);
+        Assert.Equal(2, result.ExitCode);
+        Assert.Empty(result.Arguments);
+    }
+
+    [Fact]
+    public async Task DuplicateTuningAndTuningWithoutSecondsAndModeNeverInvokeCurl()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[]
+        {
+            new[] { "playtest-ffmpeg", "@fixture", "30", "software", "threads=4", "threads=8" },
+            ["playtest-ffmpeg", "@fixture", "30", "rate=1.5"],
+            ["playtest-ffmpeg", "@fixture", "rate=1.5"],
+        })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
+    [Theory]
     [InlineData("playtest", "11", "auto")]
     [InlineData("playtest-ffmpeg", "61", "auto")]
     [InlineData("playtest-ffmpeg", "0", "auto")]

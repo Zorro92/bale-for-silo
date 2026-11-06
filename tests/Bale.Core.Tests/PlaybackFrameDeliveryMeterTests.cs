@@ -95,6 +95,65 @@ public class PlaybackFrameDeliveryMeterTests
         Assert.Equal(0, meter.Read(TimeSpan.FromSeconds(10), 10_000)!.LateFrames);
     }
 
+    [Theory]
+    [InlineData(1, 0.44, 0.44)]
+    [InlineData(2, 0.14, 0.29)]
+    [InlineData(3, 0.14, 0.24)]
+    public void OptionalAheadStatisticsUseEveryEligibleDeliveryAndAnExactMedian(int count, double minimum, double median)
+    {
+        var meter = new PlaybackFrameDeliveryMeter(collectAheadStatistics: true);
+        Observe(meter, 0, 0); // Preroll counts as delivered but not toward the distribution.
+        double[] horizons = [0.4, 0.1, 0.2];
+        for (var index = 0; index < count; index++) Observe(meter, 1 + horizons[index], 1);
+        var snapshot = meter.Read(TimeSpan.FromSeconds(50), 0)!;
+        Assert.Equal(count + 1, snapshot.TotalFramesDelivered);
+        Assert.Equal(minimum, snapshot.MinDeliveredAheadSeconds!.Value, precision: 6);
+        Assert.Equal(median, snapshot.MedianDeliveredAheadSeconds!.Value, precision: 6);
+        Assert.Equal(0, snapshot.DeliveredAheadSeconds); // Read-time clock does not resample the distribution.
+        Assert.Equal(snapshot, meter.Read(TimeSpan.FromSeconds(50), 0));
+    }
+
+    [Fact]
+    public void AheadStatisticsShareLateFrameExclusionsAndFloorLateSampleEndsAtZero()
+    {
+        var meter = new PlaybackFrameDeliveryMeter(collectAheadStatistics: true);
+        Observe(meter, 0, 10, playing: false);
+        Observe(meter, 1, 10); // First playing frame.
+        Observe(meter, 10, 9.5); // 0.54 s ahead.
+        Observe(meter, 11, 12); // Late; horizon floored to zero.
+        Observe(meter, 12, 30, discontinuous: true);
+        meter.SetSeeking(true);
+        Observe(meter, 13, 300); // Not counted as delivered during a seek.
+        meter.SetSeeking(false);
+        Observe(meter, 30, 31); // Post-seek preroll.
+        Observe(meter, 31, 40, playing: false);
+        Observe(meter, 32, 40); // First playing frame after pause/buffering.
+        meter.InvalidateTimeline();
+        Observe(meter, 40, 50); // Post-Starting preroll.
+        var snapshot = meter.Read(TimeSpan.Zero, 0)!;
+        Assert.Equal(9, snapshot.TotalFramesDelivered);
+        Assert.Equal(1, snapshot.LateFrames);
+        Assert.Equal(0, snapshot.MinDeliveredAheadSeconds);
+        Assert.Equal(0.27, snapshot.MedianDeliveredAheadSeconds!.Value, precision: 6);
+    }
+
+    [Fact]
+    public void DefaultPlayerMeterRetainsNoAheadHistoryAndPrerollAloneHasNoDistribution()
+    {
+        var meter = new PlaybackFrameDeliveryMeter();
+        Observe(meter, 0, 0);
+        Observe(meter, 1, 0.5);
+        var snapshot = meter.Read(TimeSpan.Zero, 0)!;
+        Assert.Equal(2, snapshot.TotalFramesDelivered);
+        Assert.Null(snapshot.MinDeliveredAheadSeconds);
+        Assert.Null(snapshot.MedianDeliveredAheadSeconds);
+        var probe = new PlaybackFrameDeliveryMeter(collectAheadStatistics: true);
+        Assert.Null(probe.Read(TimeSpan.Zero, 0));
+        Observe(probe, 0, 0);
+        Assert.Null(probe.Read(TimeSpan.Zero, 0)!.MinDeliveredAheadSeconds);
+        Assert.Null(probe.Read(TimeSpan.Zero, 0)!.MedianDeliveredAheadSeconds);
+    }
+
     [Fact]
     public void SoftwareObserverIsPassiveDebugOnlyAndDetachedBeforePlayerDisposal()
     {
@@ -106,6 +165,9 @@ public class PlaybackFrameDeliveryMeterTests
         Assert.DoesNotContain("is not VideoStreamDescriptor", observer);
         Assert.Contains("!IsVideo(args.Request.StreamDescriptor)", observer);
         Assert.Contains("WinRT.CastExtensions.As<VideoStreamDescriptor>(descriptor)", observer);
+        Assert.Contains(".EncodingProperties.Subtype", observer);
+        Assert.Contains("internal string? OutputPixelFormat", observer);
+        Assert.Contains("bool collectAheadStatistics = false", observer);
         Assert.Contains("args.Request.Sample is not { } sample", observer);
         Assert.Contains("_source.SampleRequested -= OnSampleRequested", observer);
         Assert.DoesNotContain("args.Request.Sample =", observer);

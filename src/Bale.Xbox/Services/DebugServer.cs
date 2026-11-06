@@ -34,6 +34,7 @@ namespace Bale.Xbox.Services;
 ///                         only=video|gpu|audio|display|device|graph runs one section
 ///   GET  /playtest?url=...  muted public http(s) stream probe; seconds=3 (1–10), open timeout 8 s
 ///   GET  /playtest-ffmpeg?url=...  muted FFmpegInteropX probe; seconds=3 (1–60), mode=auto|software|system
+///                         optional threads=0–16, 10bit=on|off, rate=0.5–2.0 (default 1)
 ///   POST /ffmpeg?mode=...  next real-player attempt: policy (default)|off; memory only
 ///   GET  /hdr             memory-only HDR comparison mode; default off
 ///   POST /hdr?mode=...    pretend|off; pretend HDR10 and keep SDR output for console tone mapping
@@ -214,7 +215,8 @@ internal sealed partial class DebugServer
                 return await PlaytestAsync(query.GetValueOrDefault("url"), query.GetValueOrDefault("seconds"));
 
             case ("GET", "/playtest-ffmpeg"):
-                return await PlaytestFfmpegAsync(query.GetValueOrDefault("url"), query.GetValueOrDefault("seconds"), query.GetValueOrDefault("mode"));
+                return await PlaytestFfmpegAsync(query.GetValueOrDefault("url"), query.GetValueOrDefault("seconds"), query.GetValueOrDefault("mode"),
+                    query.GetValueOrDefault("threads"), query.GetValueOrDefault("10bit"), query.GetValueOrDefault("rate"));
 
             case ("POST", "/ffmpeg"):
                 var ffmpegMode = query.GetValueOrDefault("mode");
