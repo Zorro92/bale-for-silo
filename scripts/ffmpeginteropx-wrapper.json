@@ -1,4 +1,8 @@
 {
+  "version": "2.1.0-bale.1",
+  "release_tag": "wrapper-ffmpeginteropx-2.1.0-bale.1",
+  "sha256": "81271e28b62ef1840d512d1204472ffd16520fa01f233fbacdda0403c7a0384a",
+  "nuget_content_hash": "JN2gRCOcL8vBylswhg2MAGbmBoX+CTJ2GR+e40xrlSGzJKahsi1fquTrigH2gZCuLPHep3asPkyH6CwUEfOuqg==",
   "upstream_repository": "ffmpeginteropx/FFmpegInteropX",
   "upstream_commit": "88428c66e106852338b48554a4a00c9e48da588f",
   "original_package_id": "FFmpegInteropX.UWP.Lib",

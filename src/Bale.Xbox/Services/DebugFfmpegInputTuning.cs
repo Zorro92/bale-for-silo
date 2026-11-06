@@ -4,8 +4,9 @@ using Bale.Core.Playback;
 
 namespace Bale.Xbox.Services;
 
-/// <summary>Memory-only FFmpeg input experiment, captured once per attempt and never applied to probes or native/HLS routes.</summary>
-internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadSize = null, int? Prefetch = null, int? BufferMs = null)
+/// <summary>Memory-only FFmpeg experiment, captured once per attempt and never applied to probes or native/HLS routes.</summary>
+internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadSize = null, int? Prefetch = null, int? BufferMs = null,
+    int? DecodeAheadFrames = null, int? SwsThreads = null, int? Dav1dMaxFrameDelay = null)
 {
     internal const int MinimumReadSize = 16 * 1024;
     internal const int MaximumReadSize = 1024 * 1024;
@@ -14,7 +15,7 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
     // Keep the extra native packet queue below its 100 MB / 60 s defaults on Xbox.
     internal const long ReadAheadCapBytes = 64L * 1024 * 1024;
     internal static readonly TimeSpan ReadAheadCapDuration = TimeSpan.FromSeconds(30);
-    internal const string Usage = "expected [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms); omitted keys keep their overrides";
+    internal const string Usage = "expected [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [sws=1..16|default] [delay=0..64|default]; omitted keys keep their overrides";
     private static readonly object Gate = new();
     private static DebugFfmpegInputTuning _current = new();
 
@@ -23,7 +24,10 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
     internal string Description => $"readahead={(ReadAhead is { } enabled ? enabled ? "on" : "off" : "default")} "
         + $"readsize={ReadSize?.ToString(CultureInfo.InvariantCulture) ?? "default"} "
         + $"prefetch={Prefetch?.ToString(CultureInfo.InvariantCulture) ?? "default"}"
-        + (BufferMs is { } buffer ? $" buffer={buffer.ToString(CultureInfo.InvariantCulture)}" : "");
+        + (BufferMs is { } buffer ? $" buffer={buffer.ToString(CultureInfo.InvariantCulture)}" : "")
+        + (DecodeAheadFrames is { } ahead ? $" ahead={ahead.ToString(CultureInfo.InvariantCulture)}" : "")
+        + (SwsThreads is { } sws ? $" sws={sws.ToString(CultureInfo.InvariantCulture)}" : "")
+        + (Dav1dMaxFrameDelay is { } delay ? $" delay={delay.ToString(CultureInfo.InvariantCulture)}" : "");
 
     internal static bool TrySet(IReadOnlyDictionary<string, string> options, out DebugFfmpegInputTuning tuning)
     {
@@ -50,6 +54,18 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
                     case "buffer":
                         if (!TryNumber(value, 0, MaximumBufferMs, out var bufferMs)) return false;
                         next = next with { BufferMs = bufferMs };
+                        break;
+                    case "ahead":
+                        if (!TryNumber(value, 0, 64, out var ahead)) return false;
+                        next = next with { DecodeAheadFrames = ahead };
+                        break;
+                    case "sws":
+                        if (!TryNumber(value, 1, 16, out var sws)) return false;
+                        next = next with { SwsThreads = sws };
+                        break;
+                    case "delay":
+                        if (!TryNumber(value, 0, 64, out var delay)) return false;
+                        next = next with { Dav1dMaxFrameDelay = delay };
                         break;
                     default:
                         return false;

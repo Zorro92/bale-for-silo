@@ -56,7 +56,7 @@ public class DebugFfmpegPlaytestTests
         try
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
-            Assert.True(DebugFfmpegPlaytest.TryParseTuning(threads, output10bit, rate, out var tuning, out var error));
+            Assert.True(DebugFfmpegPlaytest.TryParseTuning(threads, output10bit, rate, null, null, null, out var tuning, out var error));
             Assert.Equal(expectedThreads is { } count ? (uint?)count : null, tuning.Threads);
             Assert.Equal(expected10bit, tuning.Allow10bit);
             Assert.Equal(expectedRate, tuning.Rate);
@@ -85,9 +85,69 @@ public class DebugFfmpegPlaytestTests
     [InlineData(null, null, "", "rate")]
     public void RejectsInvalidTuningWithFixedNonReflectingErrors(string? threads, string? output10bit, string? rate, string field)
     {
-        Assert.False(DebugFfmpegPlaytest.TryParseTuning(threads, output10bit, rate, out var tuning, out var error));
+        Assert.False(DebugFfmpegPlaytest.TryParseTuning(threads, output10bit, rate, null, null, null, out var tuning, out var error));
         Assert.StartsWith(field + " must be", error);
         Assert.Equal(new DebugFfmpegTuning(), tuning);
+    }
+
+    [Theory]
+    [InlineData(null, null, null)]
+    [InlineData("0", "1", "0")]
+    [InlineData("64", "16", "64")]
+    [InlineData("0008", "04", "001")]
+    public void ProbeForkOptionsAreOptionalBoundedInvariantDecimals(string? ahead, string? sws, string? delay)
+    {
+        var previous = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
+            Assert.True(DebugFfmpegPlaytest.TryParseTuning("4", "off", "0.75", ahead, sws, delay, out var tuning, out var error));
+            Assert.Equal(new DebugFfmpegTuning(4, false, 0.75,
+                ahead is null ? null : int.Parse(ahead, CultureInfo.InvariantCulture),
+                sws is null ? null : int.Parse(sws, CultureInfo.InvariantCulture),
+                delay is null ? null : int.Parse(delay, CultureInfo.InvariantCulture)), tuning);
+            Assert.Empty(error);
+        }
+        finally { CultureInfo.CurrentCulture = previous; }
+    }
+
+    [Theory]
+    [InlineData("ahead", 0, 64)]
+    [InlineData("sws", 1, 16)]
+    [InlineData("delay", 0, 64)]
+    public void ProbeRejectsInvalidForkOptionsWithoutPublishingPartialTuning(string key, int minimum, int maximum)
+    {
+        foreach (var value in new[] { "-1", "+1", " 1", "1 ", "1.0", "1,0", "1e0", "0x1", "", "default", "2147483648",
+            (minimum - 1).ToString(CultureInfo.InvariantCulture), (maximum + 1).ToString(CultureInfo.InvariantCulture) })
+        {
+            Assert.False(DebugFfmpegPlaytest.TryParseTuning("4", "off", "0.75", key == "ahead" ? value : "8",
+                key == "sws" ? value : "4", key == "delay" ? value : "1", out var tuning, out var error));
+            Assert.StartsWith(key + " must be an integer from ", error);
+            Assert.Equal(new DebugFfmpegTuning(), tuning);
+        }
+    }
+
+    [Fact]
+    public void ProbeAppliesOnlyExplicitForkOptionsAndReportsTheirDefaultsAndOverrides()
+    {
+        var source = Read("DebugFfmpegSource.cs.txt");
+        Assert.StartsWith("#if DEBUG_SERVER", source);
+        foreach (var (property, variable, option) in new[]
+        {
+            ("DecodeAheadFrames", "ahead", "bale_decode_ahead_frames"), ("SwsThreads", "sws", "bale_sws_threads"),
+            ("Dav1dMaxFrameDelay", "delay", "bale_dav1d_max_frame_delay"),
+        })
+            Assert.Contains($"if (tuning.{property} is {{ }} {variable}) config.FFmpegOptions[\"{option}\"] = {variable}.ToString(CultureInfo.InvariantCulture)", source);
+        var report = DebugFfmpegPlaytest.Settings(4, false, 8, new(4, false, 0.75, 8, 4, 1));
+        Assert.Contains("Decode ahead: 8 (0=off; override)\n", report);
+        Assert.Contains("SWS threads: 4 (1=upstream; override)\n", report);
+        Assert.Contains("dav1d max frame delay: 1 (0=dav1d default; override)\n", report);
+        var server = Read("DebugServer.cs.txt");
+        foreach (var key in new[] { "ahead", "sws", "delay" }) Assert.Contains($"query.GetValueOrDefault(\"{key}\")", server);
+        Assert.Contains("duplicateQueryKeys && path is (\"/playtest-ffmpeg\" or \"/ffmpeg-tune\")", server);
+        Assert.Contains("if (values.ContainsKey(key)) duplicateKeys = true", server);
+        Assert.Contains("TryParseTuning(threads, output10bit, rate, ahead, sws, delay", Read("DebugServer.Ffmpeg.cs.txt"));
+        Assert.DoesNotContain("DebugFfmpegInputTuning.Current", source);
     }
 
     [Theory]
@@ -116,9 +176,10 @@ public class DebugFfmpegPlaytestTests
         try
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
-            Assert.Equal("Threads: 0 (0=logical CPU count; default)\n10-bit output: on (default)\nLogical CPUs: 8\nRate requested: 1\n",
+            const string defaults = "Decode ahead: 0 (0=off; default)\nSWS threads: 1 (1=upstream; default)\ndav1d max frame delay: 0 (0=dav1d default; default)\n";
+            Assert.Equal("Threads: 0 (0=logical CPU count; default)\n10-bit output: on (default)\nLogical CPUs: 8\nRate requested: 1\n" + defaults,
                 DebugFfmpegPlaytest.Settings(0, true, 8, new()));
-            Assert.Equal("Threads: 4 (0=logical CPU count; override)\n10-bit output: off (override)\nLogical CPUs: 8\nRate requested: 0.75\n",
+            Assert.Equal("Threads: 4 (0=logical CPU count; override)\n10-bit output: off (override)\nLogical CPUs: 8\nRate requested: 0.75\n" + defaults,
                 DebugFfmpegPlaytest.Settings(4, false, 8, new(4, false, 0.75)));
             Assert.Contains("Late frames total: unavailable", DebugFfmpegPlaytest.FrameDelivery(null));
             Assert.Contains("Total frames delivered: unavailable", DebugFfmpegPlaytest.FrameDelivery(null));
@@ -325,13 +386,14 @@ public class DebugFfmpegPlaytestTests
         var packages = project.Descendants("PackageReference").Where(p => p.Attribute("Include")!.Value.StartsWith("FFmpegInteropX.")).ToArray();
         Assert.Equal(2, packages.Length);
         Assert.All(packages, p => Assert.DoesNotContain(p.AncestorsAndSelf(), element => element.Attribute("Condition") is not null));
-        Assert.Equal("2.1.0", packages.Single(p => p.Attribute("Include")!.Value.EndsWith(".Lib")).Attribute("Version")!.Value);
+        Assert.Equal("[2.1.0-bale.1]", packages.Single(p => p.Attribute("Include")!.Value.EndsWith(".Lib")).Attribute("Version")!.Value);
         Assert.Equal("[8.1.2-bale.dav1d.1.5.4]", packages.Single(p => p.Attribute("Include")!.Value.EndsWith(".FFmpeg")).Attribute("Version")!.Value);
         var target = project.Descendants("Target").Single(t => t.Attribute("Name")!.Value == "PrepareFFmpegManifest");
         Assert.Null(target.Attribute("Condition"));
         var licenses = project.Descendants("Content").Where(content => content.Attribute("Link")?.Value.StartsWith("Licenses") == true).ToArray();
-        Assert.Equal(3, licenses.Length);
+        Assert.Equal(4, licenses.Length);
         Assert.Contains(licenses, license => license.Attribute("Link")!.Value == @"Licenses\FFmpeg\SOURCES.txt");
+        Assert.Contains(licenses, license => license.Attribute("Link")!.Value == @"Licenses\FFmpegInteropX\SOURCES.txt");
         Assert.All(licenses, license => Assert.DoesNotContain(license.AncestorsAndSelf(), element => element.Attribute("Condition") is not null));
     }
 

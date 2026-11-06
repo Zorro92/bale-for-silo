@@ -49,7 +49,7 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}\.nuget\packages
-          key: nuget-windows-${{ hashFiles('**/*.csproj', '**/packages.lock.json', 'Directory.Build.props', 'global.json', 'NuGet.Config', 'scripts/ffmpeg-native.json') }}
+          key: nuget-windows-${{ hashFiles('**/*.csproj', '**/packages.lock.json', 'Directory.Build.props', 'global.json', 'NuGet.Config', 'scripts/ffmpeg-native.json', 'scripts/ffmpeginteropx-wrapper.json') }}
           restore-keys: nuget-windows-
 
       - name: Test native package validation scripts
@@ -58,7 +58,7 @@ jobs:
           ./scripts/test-ffmpeg-checks.ps1
           ./scripts/test-ffmpeginteropx-wrapper.ps1
 
-      - name: Download and verify pinned native FFmpeg package
+      - name: Download and verify pinned FFmpeg native and wrapper packages
         shell: pwsh
         run: ./scripts/restore-ffmpeg-native.ps1
 

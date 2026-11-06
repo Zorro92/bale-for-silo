@@ -66,7 +66,7 @@ MSIX (~2 min). Then, with `XBOX_HOST` set to the console's IP:
 ./scripts/bale-debug.sh playtest "https://example.org/public.mp4" 3  # muted built-in-player probe; 1–10 s (default 3)
 timeout 300 ./scripts/bale-debug.sh playtest suite 3  # Chromium codec samples, sequential; needs a larger outer timeout
 ./scripts/bale-debug.sh playtest-ffmpeg @/tmp/x 30 software  # debug FFmpegInteropX; URL, @file or suite; 1–60 s; auto|software|system
-./scripts/bale-debug.sh playtest-ffmpeg @/tmp/x 30 software threads=4 10bit=off rate=0.75  # debug-only tuning, no rebuild
+./scripts/bale-debug.sh playtest-ffmpeg @/tmp/x 30 software threads=4 10bit=off rate=0.75 ahead=8 sws=4 delay=1  # debug-only tuning, no rebuild
 ./scripts/bale-debug.sh ffmpeg policy        # next real-player attempt; policy (default)|off; HLS unchanged
 ./scripts/bale-debug.sh goto "Unwatched#2"     # setup only: focus the second matching control
 ./scripts/bale-debug.sh targets               # controls goto can reach
@@ -118,9 +118,12 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
 - FFmpegInteropX packages, native activation and license texts ship in **all** builds. Keep the CI
   package checker; CsWinRT's projection alone does not register the WinRT factories for Native AOT.
 - Native FFmpeg is **8.1.2-bale.dav1d.1.5.4**, not public 8.1.2 (which embeds dav1d 1.0.0).
-  Keep wrapper `FFmpegInteropX.UWP.Lib` at 2.1.0. `scripts/ffmpeg-native.json` pins the release and
-  SHA256; run `scripts/restore-ffmpeg-native.ps1` before Windows restore/build. `NuGet.Config`
-  maps this package only to the verified local feed. CI checks the actual MSIX's dav1d version.
+  Keep wrapper `FFmpegInteropX.UWP.Lib` on the pinned **2.1.0-bale.N** fork (currently **2.1.0-bale.1**),
+  built by `ffmpeginteropx-wrapper.yml`. `scripts/ffmpeg-native.json` and
+  `scripts/ffmpeginteropx-wrapper.json` pin their release tags and SHA256s; run
+  `scripts/restore-ffmpeg-native.ps1` before Windows restore/build. `NuGet.Config` maps both IDs only
+  to the verified local feed. CI checks the actual MSIX's dav1d version and compares the wrapper DLL
+  and provenance hashes with the pinned wrapper package.
   Rebuild with the manual `ffmpeg-native.yml` workflow (repository/ref/dav1d-tag inputs), preserving
   all other upstream submodule pins and FFmpeg flags: GPL/version3/encoders remain disabled;
   never enable x264/x265. Releases are immutable. See `docs/player-plan.md` for provenance and
@@ -175,11 +178,13 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
 ## Player diagnostics
 
 - Debug probe syntax: `playtest-ffmpeg <url|@file|suite> [seconds] [auto|software|system]
-  [threads=N] [10bit=on|off] [rate=R]`. Supply seconds and mode before tuning; tuning keys may be in
-  any order, at most once each. Seconds are 1–60 (default 3), mode defaults to auto, threads are
-  0–16 (0 = logical CPU count), and rate is an invariant decimal 0.5–2.0 (default 1). Omitted
-  threads/10bit do not set either native property (defaults: 0/true). `10bit=off` requests 8-bit NV12
-  instead of 10-bit P010 for 10-bit AV1. The response reports actual config values, logical CPUs,
+  [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N]`. Supply seconds and mode before
+  tuning; keys may be in any order, at most once each. Seconds are 1–60 (default 3), mode defaults
+  to auto, threads are 0–16 (0 = logical CPU count), and rate is an invariant decimal 0.5–2.0
+  (default 1). `ahead` is 0–64 decoded frames (0 = off), `sws` is 1–16 scaler threads (1 = upstream),
+  and `delay` is 0–64 dav1d frames (0 = dav1d default). Omitted native options remain unset;
+  threads/10bit defaults are 0/true. `10bit=off` requests 8-bit NV12 instead of 10-bit P010 for
+  10-bit AV1. The response reports applied values/defaults for the fork keys, actual config values, logical CPUs,
   applied playback rate and decoded MSS output subtype when available. Ratio/verdict compare media
   advance with wall time × applied rate, not unadjusted wall time. These options affect only that
   probe, never `FfmpegSource`/the real player, and are absent with `BaleDebugServer=false`.
@@ -189,7 +194,13 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
   except seeks, including preroll/non-playing frames. Min/median collection is opt-in for the bounded
   probe only; the regular player retains no per-frame history. System-video/audio-only/no-sample
   probes report unavailable, not zero. Neither late delivery nor delivered-ahead measures renderer
-  drops/queue depth. Codec-private dav1d options are not available in the pinned wrapper.
+  drops/queue depth. The fork consumes decimal-string `FFmpegOptions` keys
+  `bale_decode_ahead_frames`, `bale_sws_threads` and `bale_dav1d_max_frame_delay` itself, never passing
+  them to FFmpeg. With none set, wrapper behavior equals upstream 2.1.0.
+- `ffmpeg-tune` also accepts `ahead=N|default`, `sws=N|default` and `delay=N|default` with the same
+  ranges. These memory-only real-player overrides are captured per attempt; omitted keys keep their
+  values, `default` clears only that key, and invalid updates change nothing. They do not affect an
+  open player, native/HLS routes or the standalone probe. Production builds set none of the fork keys.
 
 - `I` / gamepad View toggles the read-only stats panel; `scripts/bale-debug.sh where` includes the
   same rows even when hidden. Process CPU is the kernel+user `GetProcessTimes` delta divided by

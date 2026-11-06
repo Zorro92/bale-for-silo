@@ -16,8 +16,8 @@ New-Item -ItemType Directory -Force $output | Out-Null
 $staging = Join-Path ([System.IO.Path]::GetTempPath()) "bale-wrapper-build-$([guid]::NewGuid())"
 New-Item -ItemType Directory $staging | Out-Null
 try {
-    # Use the app's verified download path, never upstream's 8.1.2-pre01 packages.config entries.
-    & "$PSScriptRoot/restore-ffmpeg-native.ps1"
+    # Use only the verified native dependency: building a wrapper must not require a prior wrapper release.
+    & "$PSScriptRoot/restore-ffmpeg-native.ps1" -NativeOnly
     $nativePackage = Join-Path $PSScriptRoot "../.cache/ffmpeg-native/FFmpegInteropX.UWP.FFmpeg.$($nativePin.version).nupkg"
     if ((Get-FileHash $nativePackage -Algorithm SHA256).Hash.ToLowerInvariant() -ne $nativePin.sha256) {
         throw 'Verified native FFmpeg package changed before extraction'

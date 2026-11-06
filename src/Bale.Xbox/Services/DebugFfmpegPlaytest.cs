@@ -21,7 +21,7 @@ internal static class DebugFfmpegPlaytest
     }
 
     internal static bool TryParseTuning(string? threads, string? output10bit, string? rate,
-        out DebugFfmpegTuning tuning, out string error)
+        string? ahead, string? sws, string? delay, out DebugFfmpegTuning tuning, out string error)
     {
         tuning = new();
         error = string.Empty;
@@ -52,7 +52,32 @@ internal static class DebugFfmpegPlaytest
             error = "rate must be a decimal from 0.5 to 2.0";
             return false;
         }
-        tuning = new(decoderThreads, allow10bit, playbackRate);
+        if (!TryNativeOption(ahead, 0, 64, out var decodeAheadFrames))
+        {
+            error = "ahead must be an integer from 0 to 64";
+            return false;
+        }
+        if (!TryNativeOption(sws, 1, 16, out var swsThreads))
+        {
+            error = "sws must be an integer from 1 to 16";
+            return false;
+        }
+        if (!TryNativeOption(delay, 0, 64, out var dav1dMaxFrameDelay))
+        {
+            error = "delay must be an integer from 0 to 64";
+            return false;
+        }
+        tuning = new(decoderThreads, allow10bit, playbackRate, decodeAheadFrames, swsThreads, dav1dMaxFrameDelay);
+        return true;
+    }
+
+    private static bool TryNativeOption(string? value, int minimum, int maximum, out int? number)
+    {
+        number = null;
+        if (value is null) return true;
+        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) || parsed < minimum || parsed > maximum)
+            return false;
+        number = parsed;
         return true;
     }
 
@@ -60,7 +85,10 @@ internal static class DebugFfmpegPlaytest
         string.Create(CultureInfo.InvariantCulture,
             $"Threads: {threads} (0=logical CPU count; {(tuning.Threads is null ? "default" : "override")})\n"
             + $"10-bit output: {(allow10bit ? "on" : "off")} ({(tuning.Allow10bit is null ? "default" : "override")})\n"
-            + $"Logical CPUs: {processorCount}\nRate requested: {tuning.Rate:0.###}\n");
+            + $"Logical CPUs: {processorCount}\nRate requested: {tuning.Rate:0.###}\n"
+            + $"Decode ahead: {tuning.DecodeAheadFrames ?? 0} (0=off; {(tuning.DecodeAheadFrames is null ? "default" : "override")})\n"
+            + $"SWS threads: {tuning.SwsThreads ?? 1} (1=upstream; {(tuning.SwsThreads is null ? "default" : "override")})\n"
+            + $"dav1d max frame delay: {tuning.Dav1dMaxFrameDelay ?? 0} (0=dav1d default; {(tuning.Dav1dMaxFrameDelay is null ? "default" : "override")})\n");
 
     internal static string FrameDelivery(PlaybackFrameDeliverySnapshot? frames)
     {
@@ -121,5 +149,6 @@ internal static class DebugFfmpegPlaytest
 }
 
 // Nullable decoder settings leave the pinned FFmpegInteropX defaults untouched unless requested.
-internal sealed record DebugFfmpegTuning(uint? Threads = null, bool? Allow10bit = null, double Rate = 1.0);
+internal sealed record DebugFfmpegTuning(uint? Threads = null, bool? Allow10bit = null, double Rate = 1.0,
+    int? DecodeAheadFrames = null, int? SwsThreads = null, int? Dav1dMaxFrameDelay = null);
 #endif

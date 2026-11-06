@@ -52,6 +52,60 @@ public class DebugPlaytestScriptTests
             Assert.Equal(11, suite.Arguments.Split('\n').Count(line => line == option));
     }
 
+    [Theory]
+    [InlineData("threads=0", "ahead=0", "10bit=off", "sws=1", "rate=0.5", "delay=0")]
+    [InlineData("delay=64", "rate=2.0", "sws=16", "10bit=on", "ahead=64", "threads=16")]
+    [InlineData("sws=04", "10bit=off", "ahead=0008", "threads=4", "delay=001", "rate=0.75")]
+    public async Task AllSixProbeTuningKeysWorkTogetherInAnyOrderAndForEverySuiteSample(string first, string second,
+        string third, string fourth, string fifth, string sixth)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        string[] options = [first, second, third, fourth, fifth, sixth];
+        foreach (var target in new[] { "@fixture", "suite" })
+        {
+            var result = await RunAsync(["playtest-ffmpeg", target, "30", "software", .. options]);
+            Assert.Equal(0, result.ExitCode);
+            foreach (var option in options)
+                Assert.Equal(target == "suite" ? 11 : 1, result.Arguments.Split('\n').Count(line => line == option));
+            Assert.DoesNotContain("not-a-real-grant", result.Output + result.Arguments);
+        }
+    }
+
+    [Theory]
+    [InlineData("ahead", 0, 64)]
+    [InlineData("sws", 1, 16)]
+    [InlineData("delay", 0, 64)]
+    public async Task InvalidForkTuningAndDuplicatesNeverInvokeCurlOnEitherPath(string key, int minimum, int maximum)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var value in new[] { "-1", "+1", " 1", "1 ", "1.0", "1,0", "1e0", "0x1", "", "DEFAULT", "2147483648",
+            (minimum - 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            (maximum + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) })
+        {
+            foreach (var args in new[]
+            {
+                new[] { "playtest-ffmpeg", "@fixture", "30", "software", key + "=" + value },
+                ["ffmpeg-tune", "readahead=on", key + "=" + value],
+            })
+            {
+                var result = await RunAsync(args);
+                Assert.Equal(2, result.ExitCode);
+                Assert.Empty(result.Arguments);
+            }
+        }
+        foreach (var args in new[]
+        {
+            new[] { "playtest-ffmpeg", "@fixture", "30", "software", key + "=1", key + "=2" },
+            ["ffmpeg-tune", key + "=1", key + "=default"],
+            ["playtest-ffmpeg", "@fixture", "30", "software", key + "=default"],
+        })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
     [Fact]
     public async Task OmittedTuningDoesNotSendNativeOverrides()
     {
@@ -63,11 +117,13 @@ public class DebugPlaytestScriptTests
         Assert.DoesNotContain("threads=", result.Arguments);
         Assert.DoesNotContain("10bit=", result.Arguments);
         Assert.DoesNotContain("rate=", result.Arguments);
+        foreach (var key in new[] { "ahead", "sws", "delay" }) Assert.DoesNotContain("\n" + key + "=", result.Arguments);
         var rateOnly = await RunAsync(["playtest-ffmpeg", "@fixture", "30", "software", "rate=0.75"]);
         Assert.Equal(0, rateOnly.ExitCode);
         Assert.Contains("rate=0.75", rateOnly.Arguments);
         Assert.DoesNotContain("threads=", rateOnly.Arguments);
         Assert.DoesNotContain("10bit=", rateOnly.Arguments);
+        foreach (var key in new[] { "ahead", "sws", "delay" }) Assert.DoesNotContain(key + "=", rateOnly.Arguments);
     }
 
     [Theory]
@@ -182,6 +238,10 @@ public class DebugPlaytestScriptTests
     [InlineData("readahead=on", "readsize=16384", "prefetch=2")]
     [InlineData("prefetch=16", "readahead=off", "readsize=1048576")]
     [InlineData("readsize=default", "prefetch=default", "readahead=default")]
+    [InlineData("ahead=0", "sws=1", "delay=0")]
+    [InlineData("delay=64", "ahead=64", "sws=16")]
+    [InlineData("sws=04", "delay=001", "ahead=0008")]
+    [InlineData("delay=default", "sws=default", "ahead=default")]
     public async Task FfmpegInputTuningPostsValidatedOptionsInAnyOrder(string first, string second, string third)
     {
         if (!OperatingSystem.IsLinux()) return;
@@ -201,6 +261,7 @@ public class DebugPlaytestScriptTests
         Assert.Contains("readahead=on", result.Arguments);
         Assert.DoesNotContain("readsize=", result.Arguments);
         Assert.DoesNotContain("prefetch=", result.Arguments);
+        foreach (var key in new[] { "ahead", "sws", "delay" }) Assert.DoesNotContain("\n" + key + "=", result.Arguments);
     }
 
     [Theory]

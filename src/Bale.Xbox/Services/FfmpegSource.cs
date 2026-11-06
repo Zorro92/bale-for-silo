@@ -1,3 +1,4 @@
+using System.Globalization;
 using Bale.Core.Playback;
 using FFmpegInteropX;
 
@@ -40,6 +41,9 @@ internal static class FfmpegSource
             }
         }
         if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = checked((uint)readSize);
+        if (tuning.DecodeAheadFrames is { } ahead) config.FFmpegOptions["bale_decode_ahead_frames"] = ahead.ToString(CultureInfo.InvariantCulture);
+        if (tuning.SwsThreads is { } sws) config.FFmpegOptions["bale_sws_threads"] = sws.ToString(CultureInfo.InvariantCulture);
+        if (tuning.Dav1dMaxFrameDelay is { } delay) config.FFmpegOptions["bale_dav1d_max_frame_delay"] = delay.ToString(CultureInfo.InvariantCulture);
         return config;
     }
 #endif

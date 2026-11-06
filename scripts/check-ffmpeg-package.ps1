@@ -1,4 +1,8 @@
-param([Parameter(Mandatory = $true)][string]$PackagePath)
+param(
+    [Parameter(Mandatory = $true)][string]$PackagePath,
+    [string]$WrapperPackagePath,
+    [string]$ExpectedWrapperPackageSha256
+)
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -34,9 +38,39 @@ try {
     }
     finally { $codec.Dispose(); $bytes.Dispose() }
     foreach ($license in @('Licenses/FFmpegInteropX.txt', 'Licenses/FFmpeg/ffmpeg.txt', 'Licenses/FFmpeg/dav1d.txt',
-        'Licenses/FFmpeg/SOURCES.txt')) {
+        'Licenses/FFmpeg/SOURCES.txt', 'Licenses/FFmpegInteropX/SOURCES.txt')) {
         if (-not $archive.GetEntry($license)) { throw "Missing license/provenance $license" }
     }
-    Write-Output 'FFmpegInteropX activation, native packaging and dav1d 1.5.4: PASS'
+    # Compare the shipped wrapper and provenance with the independently hash-pinned nupkg,
+    # not the extracted NuGet cache that packaging could accidentally have reused.
+    $pin = Get-Content (Join-Path $PSScriptRoot 'ffmpeginteropx-wrapper.json') -Raw | ConvertFrom-Json
+    if (-not $WrapperPackagePath) {
+        $WrapperPackagePath = Join-Path $PSScriptRoot "../.cache/ffmpeg-native/FFmpegInteropX.UWP.Lib.$($pin.version).nupkg"
+    }
+    if (-not $ExpectedWrapperPackageSha256) { $ExpectedWrapperPackageSha256 = $pin.sha256 }
+    $actual = (Get-FileHash $WrapperPackagePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actual -ne $ExpectedWrapperPackageSha256) { throw 'Wrapper package SHA256 mismatch' }
+    $wrapper = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $WrapperPackagePath))
+    try {
+        $payload = @{
+            'FFmpegInteropX.dll' = 'runtimes/win-x64/native/FFmpegInteropX.dll'
+            'Licenses/FFmpegInteropX/SOURCES.txt' = 'SOURCES.txt'
+        }
+        foreach ($name in $payload.Keys) {
+            $entry = $wrapper.GetEntry($payload[$name])
+            if (-not $entry -or $entry.Length -eq 0) { throw "Wrapper package is missing $($payload[$name])" }
+            $expectedStream = $entry.Open()
+            $shippedStream = $archive.GetEntry($name).Open()
+            try {
+                $expectedHash = (Get-FileHash -InputStream $expectedStream -Algorithm SHA256).Hash
+                $shippedHash = (Get-FileHash -InputStream $shippedStream -Algorithm SHA256).Hash
+                if ($shippedHash -ne $expectedHash) { throw "MSIX $name does not match the pinned wrapper package" }
+                Write-Output "Wrapper payload: $name SHA256 $($shippedHash.ToLowerInvariant())"
+            }
+            finally { $expectedStream.Dispose(); $shippedStream.Dispose() }
+        }
+    }
+    finally { $wrapper.Dispose() }
+    Write-Output 'FFmpegInteropX activation, pinned wrapper payload, native packaging and dav1d 1.5.4: PASS'
 }
 finally { $archive.Dispose() }

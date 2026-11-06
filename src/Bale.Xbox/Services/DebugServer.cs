@@ -34,10 +34,11 @@ namespace Bale.Xbox.Services;
 ///                         only=video|gpu|audio|display|device|graph runs one section
 ///   GET  /playtest?url=...  muted public http(s) stream probe; seconds=3 (1–10), open timeout 8 s
 ///   GET  /playtest-ffmpeg?url=...  muted FFmpegInteropX probe; seconds=3 (1–60), mode=auto|software|system
-///                         optional threads=0–16, 10bit=on|off, rate=0.5–2.0 (default 1)
+///                         optional threads=0–16, 10bit=on|off, rate=0.5–2.0 (default 1), ahead=0–64, sws=1–16, delay=0–64
 ///   POST /ffmpeg?mode=...  next real-player attempt: policy (default)|off; memory only
-///   GET  /ffmpeg-tune     current memory-only FFmpeg input overrides
+///   GET  /ffmpeg-tune     current memory-only FFmpeg overrides
 ///   POST /ffmpeg-tune?readahead=on&readsize=65536&prefetch=8  next FFmpeg player attempt; each key accepts default
+///                         optional buffer=0–5000, ahead=0–64, sws=1–16, delay=0–64
 ///   GET  /hdr             memory-only HDR comparison mode; default off
 ///   POST /hdr?mode=...    pretend|off; pretend HDR10 and keep SDR output for console tone mapping
 ///   POST /seek?seconds=...&pause=true  absolute source seconds on the active player; optional pause
@@ -180,7 +181,9 @@ internal sealed partial class DebugServer
         var method = parts[0];
         var target = new Uri("http://bale" + parts[1]);
         var path = target.AbsolutePath.TrimEnd('/');
-        var query = ParseQuery(target.Query);
+        var query = ParseQuery(target.Query, out var duplicateQueryKeys);
+        if (duplicateQueryKeys && path is ("/playtest-ffmpeg" or "/ffmpeg-tune"))
+            return ("400 Bad Request", "query keys must appear at most once\n");
 
         switch (method, path)
         {
@@ -218,7 +221,8 @@ internal sealed partial class DebugServer
 
             case ("GET", "/playtest-ffmpeg"):
                 return await PlaytestFfmpegAsync(query.GetValueOrDefault("url"), query.GetValueOrDefault("seconds"), query.GetValueOrDefault("mode"),
-                    query.GetValueOrDefault("threads"), query.GetValueOrDefault("10bit"), query.GetValueOrDefault("rate"));
+                    query.GetValueOrDefault("threads"), query.GetValueOrDefault("10bit"), query.GetValueOrDefault("rate"),
+                    query.GetValueOrDefault("ahead"), query.GetValueOrDefault("sws"), query.GetValueOrDefault("delay"));
 
             case ("POST", "/ffmpeg"):
                 var ffmpegMode = query.GetValueOrDefault("mode");
@@ -332,7 +336,7 @@ internal sealed partial class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16, GET /hdr, POST /hdr?mode={pretend|off}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&sws=1..16&delay=0..64 (each key accepts default), GET /hdr, POST /hdr?mode={pretend|off}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 
@@ -1070,13 +1074,16 @@ internal sealed partial class DebugServer
         writer.DetachStream();
     }
 
-    private static Dictionary<string, string> ParseQuery(string query)
+    private static Dictionary<string, string> ParseQuery(string query, out bool duplicateKeys)
     {
         var values = new Dictionary<string, string>();
+        duplicateKeys = false;
         foreach (var pair in query.TrimStart('?').Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries))
         {
             var split = pair.Split(new[] { '=' }, 2);
-            values[Uri.UnescapeDataString(split[0])] = split.Length > 1 ? Uri.UnescapeDataString(split[1].Replace('+', ' ')) : string.Empty;
+            var key = Uri.UnescapeDataString(split[0]);
+            if (values.ContainsKey(key)) duplicateKeys = true;
+            values[key] = split.Length > 1 ? Uri.UnescapeDataString(split[1].Replace('+', ' ')) : string.Empty;
         }
 
         return values;

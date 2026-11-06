@@ -105,7 +105,8 @@ with or without `BaleDebugServer`; the CI package checker remains required.
 
 ```sh
 scripts/bale-debug.sh ffmpeg-tune
-scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default] [prefetch=N|default]
+scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default] [prefetch=N|default] \
+  [buffer=ms|default] [ahead=N|default] [sws=N|default] [delay=N|default]
 ```
 
 No arguments reads the current process-wide overrides (`GET /ffmpeg-tune`); arguments update them
@@ -124,17 +125,34 @@ open player, Native Direct, HLS or the standalone probe. `ffmpeg policy|off` rem
 - `prefetch=N` sets the authenticated `HttpRangeStream` depth, inclusively **2–16** aligned 1 MiB
   blocks. The default stays **2**. This immutable per-stream Core hook does not change the 32-block
   cache or the three-concurrent-fetch limit; deeper speculation queues behind that limit.
-- Production (`BaleDebugServer=false`) never applies the experiment and keeps all original defaults.
+- `buffer=ms` sets `MediaStreamSource.BufferTime`, inclusively **0–5000 ms**; the wrapper's default
+  is zero. This can retain substantial decoded-frame memory and is independent of demux read-ahead.
+- `ahead=N` writes decimal-string `FFmpegOptions["bale_decode_ahead_frames"]`, inclusively **0–64**
+  decoded frames; **0 = off**. This is native decoded-frame lookahead, not the packet read-ahead queue.
+- `sws=N` writes `FFmpegOptions["bale_sws_threads"]`, inclusively **1–16** scaler threads;
+  **1 = upstream behavior**.
+- `delay=N` writes `FFmpegOptions["bale_dav1d_max_frame_delay"]`, inclusively **0–64** frames;
+  **0 = dav1d default**. It applies only to the libdav1d decoder.
+- The fork consumes these three options itself, never forwarding them to FFmpeg. Numeric values use
+  strict invariant decimal parsing (no signs, spaces, fractions or exponents). `default` removes the
+  override rather than setting an option; description text appends `ahead=N sws=N delay=N` only for
+  keys that are set. With all three omitted, wrapper behavior equals upstream 2.1.0.
+- Production (`BaleDebugServer=false`) never applies the experiment and sets none of the fork keys.
+  This is an A/B facility, not a change to the production decoder policy or a verified performance fix.
 
 For an isolated comparison, close the current player, set the baseline, then open the same title:
 
 ```sh
-scripts/bale-debug.sh ffmpeg-tune readahead=default readsize=default prefetch=default
+scripts/bale-debug.sh ffmpeg-tune readahead=default readsize=default prefetch=default \
+  buffer=default ahead=default sws=default delay=default
 # After closing the baseline player, change only native read-ahead and reopen:
 scripts/bale-debug.sh ffmpeg-tune readahead=on
 # Optional, separate experiments (close/reopen after each change):
 scripts/bale-debug.sh ffmpeg-tune readsize=65536
 scripts/bale-debug.sh ffmpeg-tune prefetch=8
+scripts/bale-debug.sh ffmpeg-tune ahead=8
+scripts/bale-debug.sh ffmpeg-tune sws=4
+scripts/bale-debug.sh ffmpeg-tune delay=1
 ```
 
 The player logs the actual native read-ahead enable/size/duration, read size and stream prefetch
@@ -152,6 +170,21 @@ delivery; neither counter is evidence of renderer drops or decoder CPU saturatio
 The standalone `playtest-ffmpeg` URI probe is for public or independently fetchable media. A private
 `play-plan --url-file` file protects the URL on disk, but does not convey Bale's profile/authentication
 headers to FFmpeg. Use the real-player toggle for library files, under **Bale Test**.
+
+Standalone syntax (independent of process-wide `ffmpeg-tune`):
+
+```sh
+scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [auto|software|system] \
+  [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N]
+```
+
+Supply seconds/mode before tuning, then keys in any order, at most once each. Seconds are 1–60
+(default 3), threads are 0–16 (0 = logical CPU count), 10bit is on/off, and rate is an invariant
+0.5–2.0 (default 1). The fork keys have the same ranges/defaults as above; omitted native keys remain
+unset, and this one-shot probe does not accept `default`. The response reports threads/10-bit output,
+logical CPUs, requested/applied rate, fork-option values with default/override labels, and decoded
+output subtype plus software frame-delivery measurements when available. Ratio/verdict use wall time
+multiplied by applied rate. All tuning code is absent with `BaleDebugServer=false`.
 
 Results (0.1.229–0.1.230, Series X, Bale Test):
 
@@ -181,7 +214,7 @@ withdrawal and serialization. The production integration still needs the owner's
 
 ### Native FFmpeg / dav1d build
 
-Bale uses `FFmpegInteropX.UWP.Lib` **2.1.0** with the custom x64 native package
+Bale uses `FFmpegInteropX.UWP.Lib` **2.1.0-bale.1** with the custom x64 native package
 `FFmpegInteropX.UWP.FFmpeg` **8.1.2-bale.dav1d.1.5.4**. The public 8.1.2 x64 `avcodec-62.dll`
 embeds dav1d **1.0.0-0-g99172b1** (March 2022); upgrading the wrapper cannot update that static
 library. This rebuild is an A/B candidate for occasional AV1 stutter/2–4-core CPU spikes, **not a
@@ -230,26 +263,41 @@ and its native activation registration are unchanged.
    needs a new package version/release tag before its reviewed hash can replace the pin.
 4. `scripts/ffmpeg-native.json` pins the asset's SHA256. Windows CI downloads it into an isolated
    staging directory, verifies the hash, then populates `.cache/ffmpeg-native` before restore.
-   `NuGet.Config` maps only this package ID to that feed; the project requires its exact version.
-   The downloader clears this package's cached extraction in CI so the verified asset is used.
+   The same script verifies/restores the wrapper fork using its separate pin (below). `NuGet.Config`
+   maps both fork IDs only to that feed; the project requires exact versions. The downloader clears
+   both cached extractions so restore uses the verified assets, including after a broad CI cache hit.
    For a local Windows build, run `pwsh -File scripts/restore-ffmpeg-native.ps1` first.
 5. Update the project reference and both native entries in `src/Bale.Xbox/packages.lock.json`
-   together with a reviewed package/hash change. Keep wrapper 2.1.0 unless a real ABI dependency
-   requires otherwise. Run Core tests and watch debug **and** production MSIX CI. The package checker
+   together with a reviewed package/hash change. Keep the wrapper on its pinned `2.1.0-bale.N`
+   fork without changing the upstream 2.1.0 ABI. Run Core tests and watch debug **and** production
+   MSIX CI. The package checker
    reads the actual MSIX `avcodec-62.dll` and rejects anything without dav1d **1.5.4**; update its
    expected version/tests deliberately for a later dav1d upgrade. Licenses and provenance ship in
    both configurations.
 
-### Native FFmpegInteropX wrapper fork (step A)
+### Native FFmpegInteropX wrapper fork
 
-The manual `ffmpeginteropx-wrapper.yml` workflow builds only the **Release_UWP x64** native wrapper.
-It does **not** switch Bale to the fork: the app, lock file, source mapping and restore scripts still
-use nuget.org `FFmpegInteropX.UWP.Lib` **2.1.0**. Integration is a separate step B after release review.
+Bale now requires exactly `[2.1.0-bale.1]` of `FFmpegInteropX.UWP.Lib`, from immutable release
+[`wrapper-ffmpeginteropx-2.1.0-bale.1`](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.1).
+The independently verified nupkg SHA256 is
+`81271e28b62ef1840d512d1204472ffd16520fa01f233fbacdda0403c7a0384a`. The release tag, SHA256 and
+NuGet content hash are pinned in `scripts/ffmpeginteropx-wrapper.json`; both framework/RID lock
+entries agree. `restore-ffmpeg-native.ps1` downloads it into isolated staging, verifies before moving
+it to `.cache/ffmpeg-native`, and clears its cached extraction. Source mapping allows the wrapper
+only from that verified feed, never nuget.org. `Licenses/FFmpegInteropX/SOURCES.txt` ships in debug
+and production MSIX files next to the license texts. The package checker compares the actual MSIX
+`FFmpegInteropX.dll` with `runtimes/win-x64/native/FFmpegInteropX.dll` in the hash-pinned nupkg, and
+checks that the shipped wrapper provenance is identical too. Activation/factory and dav1d/license
+checks remain enabled in both configurations.
+
+The manual `ffmpeginteropx-wrapper.yml` workflow builds only the **Release_UWP x64** native wrapper;
+producing a new release does not automatically update Bale's app pin.
 
 `scripts/ffmpeginteropx-wrapper.json` pins upstream commit
 `88428c66e106852338b48554a4a00c9e48da588f` and the original nuget.org 2.1.0 package SHA256
 `927f23e66688b6c86659121fd20c12c44507581b3b00de5437274741bb506881`. The source checkout omits
-submodules. Native FFmpeg comes only from `restore-ffmpeg-native.ps1` and its existing hash pin;
+submodules. Native FFmpeg comes only from `restore-ffmpeg-native.ps1 -NativeOnly` and its hash pin
+(the wrapper build must not require an already-published wrapper);
 upstream's `8.1.2-pre01` FFmpeg packages are never restored. Only the vcxproj's three pinned
 build-tool packages are restored from nuget.org. The native MSBuild settings follow upstream:
 `Release_UWP`, `x64`, toolset `v145`, SDK `10.0.26100.0`, minimum `10.0.17763.0` and
@@ -257,7 +305,9 @@ build-tool packages are restored from nuget.org. The native MSBuild settings fol
 it neither rebuilds the managed projection nor downloads a different FFmpeg. Compiler flags and
 IDL remain unchanged; the native FFmpeg package version is explicitly overridden.
 
-`scripts/ffmpeginteropx-patches/` initially contains **zero patches**. Every `*.patch` is applied
+The released fork includes `scripts/ffmpeginteropx-patches/0001-decode-ahead-threaded-sws.patch`:
+opt-in decoded-frame lookahead, threaded swscale and libdav1d max-frame-delay, exposed through the
+three decimal-string `bale_*` keys documented above. No keys are set in production. Every `*.patch` is applied
 with `git apply --index` in ordinal filename order; any failure aborts. Only `Source/` `.cpp`/`.h`
 changes are accepted, **never IDL**, project files or dependency changes. The build compares the
 built winmd's public type-name set against the original; a difference aborts packaging. This is a
@@ -270,15 +320,17 @@ OPC core-properties versions/content types are updated. The original NuGet repos
 is removed because modification invalidates it. The fork is unsigned and intended for **x64 only**;
 retained other-architecture binaries are not fork builds.
 
-Run `gh workflow run ffmpeginteropx-wrapper.yml --ref main -f version=2.1.0-bale.0`, then
-`gh run watch <run-id> --exit-status`. Release `wrapper-ffmpeginteropx-2.1.0-bale.0` contains the
+For the next release, run `gh workflow run ffmpeginteropx-wrapper.yml --ref main -f version=2.1.0-bale.2`,
+then `gh run watch <run-id> --exit-status` (choose a fresh number if that tag already exists). The release contains the
 nupkg, `.sha256`, `SOURCES.txt`, `winmd-public-types.txt`, build log and corresponding patched
 wrapper source archive. Provenance records the upstream/Bale commits, ordered patch names/hashes,
 original/native package hashes, native FFmpeg version, tool packages, SDK/toolset and runner image.
 Existing release **tags** are rejected before building and again before publishing; choose a new
 `2.1.0-bale.N` version rather than overwriting. This is a pinned, repeatable build recipe, not a
-claim of bit-identical compiler output across hosted runner revisions. Before step B, independently
-verify the released package and obtain its NuGet content hash, following the native FFmpeg process.
+claim of bit-identical compiler output across hosted runner revisions. Before changing the app pin,
+independently verify the new package and obtain its NuGet content hash, following the native FFmpeg
+process. Update the wrapper JSON, exact project reference and both lock entries together; never
+replace assets or silently repin a published version.
 
 `test-ffmpeginteropx-wrapper.ps1` exercises empty/ordered/rejected patches, the IDL restriction,
 WinMD type mismatch, SHA256 failure and byte-preserving repack with small offline fixtures. Both

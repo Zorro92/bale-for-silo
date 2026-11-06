@@ -10,9 +10,9 @@
       },
       "FFmpegInteropX.UWP.Lib": {
         "type": "Direct",
-        "requested": "[2.1.0, )",
-        "resolved": "2.1.0",
-        "contentHash": "T7VYEgKcQhOD4CpsGF8QJEM0syQsIGcYYzfP5CdIXJ8NBbJ1VOW1cY25zV9yhSgIX1u74zmi/uHK7enmnfZATA==",
+        "requested": "[2.1.0-bale.1, 2.1.0-bale.1]",
+        "resolved": "2.1.0-bale.1",
+        "contentHash": "JN2gRCOcL8vBylswhg2MAGbmBoX+CTJ2GR+e40xrlSGzJKahsi1fquTrigH2gZCuLPHep3asPkyH6CwUEfOuqg==",
         "dependencies": {
           "Microsoft.Windows.CsWinRT": "2.2.0"
         }
@@ -153,9 +153,9 @@
       },
       "FFmpegInteropX.UWP.Lib": {
         "type": "Direct",
-        "requested": "[2.1.0, )",
-        "resolved": "2.1.0",
-        "contentHash": "T7VYEgKcQhOD4CpsGF8QJEM0syQsIGcYYzfP5CdIXJ8NBbJ1VOW1cY25zV9yhSgIX1u74zmi/uHK7enmnfZATA==",
+        "requested": "[2.1.0-bale.1, 2.1.0-bale.1]",
+        "resolved": "2.1.0-bale.1",
+        "contentHash": "JN2gRCOcL8vBylswhg2MAGbmBoX+CTJ2GR+e40xrlSGzJKahsi1fquTrigH2gZCuLPHep3asPkyH6CwUEfOuqg==",
         "dependencies": {
           "Microsoft.Windows.CsWinRT": "2.2.0"
         }

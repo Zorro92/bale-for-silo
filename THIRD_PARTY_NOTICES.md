@@ -29,8 +29,20 @@ GNU Affero General Public License v3.0, as is Bale (see `LICENSE`).
 ## FFmpegInteropX
 
 All Bale builds bundle [FFmpegInteropX.UWP.Lib](https://github.com/ffmpeginteropx/FFmpegInteropX)
-2.1.0 under the Apache License 2.0. Its full license text is packaged as
-`Licenses/FFmpegInteropX.txt` (source copy: `src/Bale.Xbox/Assets/FFmpegInteropX-LICENSE.txt`).
+**2.1.0-bale.1**, a Bale x64 native-wrapper fork of upstream 2.1.0, under the Apache License 2.0.
+Its full license text is packaged as `Licenses/FFmpegInteropX.txt`
+(source copy: `src/Bale.Xbox/Assets/FFmpegInteropX-LICENSE.txt`). The fork starts at upstream commit
+`88428c66e106852338b48554a4a00c9e48da588f` and applies
+`scripts/ffmpeginteropx-patches/0001-decode-ahead-threaded-sws.patch` for opt-in decode-ahead,
+threaded scaling and dav1d frame-delay tuning. The original winmd and managed projection are retained;
+with the new keys unset, behavior is unchanged from upstream 2.1.0.
+
+The [wrapper release](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.1)
+provides the nupkg, SHA256, `SOURCES.txt`, metadata comparison and corresponding patched source in
+`ffmpeginteropx-wrapper-sources.tar.gz`. Provenance records the upstream/build commits, patch hash,
+native dependency and build tools; it ships in all MSIX builds as
+`Licenses/FFmpegInteropX/SOURCES.txt`. The release tag and expected package SHA256 are pinned in
+`scripts/ffmpeginteropx-wrapper.json`; build/integration details are in `docs/player-plan.md`.
 Bale remains AGPL-3.0-or-later; third-party components retain their own licenses.
 
 ## FFmpeg
@@ -46,7 +58,8 @@ It remains a shared-library build (`--enable-shared`), including `--enable-libda
 FFmpeg remains at `38b88335f99e76ed89ff3c93f877fdefce736c13`. The build baseline is
 [FFmpegInteropX v2.1.0, commit 88428c66e106852338b48554a4a00c9e48da588f](https://github.com/ffmpeginteropx/FFmpegInteropX/tree/88428c66e106852338b48554a4a00c9e48da588f),
 with its other dependency revisions and FFmpeg configure flags unchanged. The x64-only NuGet
-omits unused architecture globs and adds provenance; the interop wrapper remains 2.1.0.
+omits unused architecture globs and adds provenance; the separately rebuilt interop wrapper is
+2.1.0-bale.1 as described above.
 
 The [native release](https://github.com/Zorro92/bale-for-silo/releases/tag/native-ffmpeg-8.1.2-dav1d-1.5.4)
 provides the package, SHA256, `SOURCES.txt` with every submodule revision and build parameters,
