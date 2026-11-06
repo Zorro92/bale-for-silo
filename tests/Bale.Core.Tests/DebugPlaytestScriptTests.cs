@@ -166,6 +166,81 @@ public class DebugPlaytestScriptTests
         }
     }
 
+    [Fact]
+    public async Task FfmpegInputTuningWithoutArgumentsOnlyReadsStatus()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["ffmpeg-tune"]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/ffmpeg-tune\n", result.Arguments);
+        Assert.Contains("--max-time\n5\n", result.Arguments);
+        Assert.DoesNotContain("POST", result.Arguments);
+        Assert.DoesNotContain("--data-urlencode", result.Arguments);
+    }
+
+    [Theory]
+    [InlineData("readahead=on", "readsize=16384", "prefetch=2")]
+    [InlineData("prefetch=16", "readahead=off", "readsize=1048576")]
+    [InlineData("readsize=default", "prefetch=default", "readahead=default")]
+    public async Task FfmpegInputTuningPostsValidatedOptionsInAnyOrder(string first, string second, string third)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["ffmpeg-tune", first, second, third]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/ffmpeg-tune\n", result.Arguments);
+        Assert.Contains("-X\nPOST\n", result.Arguments);
+        foreach (var option in new[] { first, second, third }) Assert.Contains("--data-urlencode\n" + option + "\n", result.Arguments);
+    }
+
+    [Fact]
+    public async Task FfmpegInputTuningDoesNotSendOmittedKeys()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["ffmpeg-tune", "readahead=on"]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("readahead=on", result.Arguments);
+        Assert.DoesNotContain("readsize=", result.Arguments);
+        Assert.DoesNotContain("prefetch=", result.Arguments);
+    }
+
+    [Theory]
+    [InlineData("readahead=ON")]
+    [InlineData("readahead=true")]
+    [InlineData("readahead=")]
+    [InlineData("readsize=16383")]
+    [InlineData("readsize=1048577")]
+    [InlineData("readsize=18446744073709551616")]
+    [InlineData("readsize=16KB")]
+    [InlineData("readsize=-16384")]
+    [InlineData("readsize=")]
+    [InlineData("prefetch=1")]
+    [InlineData("prefetch=17")]
+    [InlineData("prefetch=18446744073709551616")]
+    [InlineData("prefetch=2.0")]
+    [InlineData("prefetch=")]
+    [InlineData("unknown=1")]
+    [InlineData("=on")]
+    [InlineData("")]
+    public async Task InvalidFfmpegInputTuningNeverReachesCurl(string option)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["ffmpeg-tune", "readahead=on", option]);
+        Assert.Equal(2, result.ExitCode);
+        Assert.Empty(result.Arguments);
+    }
+
+    [Theory]
+    [InlineData("readahead=on", "readahead=off")]
+    [InlineData("readsize=16384", "readsize=65536")]
+    [InlineData("prefetch=2", "prefetch=8")]
+    public async Task DuplicateFfmpegInputTuningNeverReachesCurl(string first, string second)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["ffmpeg-tune", first, second]);
+        Assert.Equal(2, result.ExitCode);
+        Assert.Empty(result.Arguments);
+    }
+
     [Theory]
     [InlineData("pretend")]
     [InlineData("off")]

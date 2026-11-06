@@ -26,6 +26,24 @@ internal static class FfmpegSource
         return config;
     }
 
+#if DEBUG_SERVER
+    internal static MediaSourceConfig Configuration(PlaybackRouteDecision route, DebugFfmpegInputTuning tuning)
+    {
+        var config = Configuration(route);
+        if (tuning.ReadAhead is { } enabled)
+        {
+            config.General.ReadAheadBufferEnabled = enabled;
+            if (enabled)
+            {
+                config.General.ReadAheadBufferSize = DebugFfmpegInputTuning.ReadAheadCapBytes;
+                config.General.ReadAheadBufferDuration = DebugFfmpegInputTuning.ReadAheadCapDuration;
+            }
+        }
+        if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = readSize;
+        return config;
+    }
+#endif
+
     internal static void ValidateVideoDecoders(FFmpegMediaSource source, PlaybackRouteDecision route)
     {
         // ForceSystemDecoder falls back to FFmpeg for codecs with no compressed provider in 2.1.0.

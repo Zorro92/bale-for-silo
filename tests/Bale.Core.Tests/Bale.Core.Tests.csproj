@@ -33,6 +33,8 @@
     <Compile Include="../../src/Bale.Xbox/Services/DebugPlaytest.cs" Link="DebugPlaytest.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugFfmpegPlaytest.cs" Link="DebugFfmpegPlaytest.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugFfmpegPlayback.cs" Link="DebugFfmpegPlayback.cs" />
+    <Compile Include="../../src/Bale.Xbox/Services/DebugFfmpegInputTuning.cs" Link="DebugFfmpegInputTuning.cs" />
+    <None Include="../../src/Bale.Xbox/Services/DebugFfmpegInputTuning.cs" Link="DebugFfmpegInputTuning.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugHdrPlayback.cs" Link="DebugHdrPlayback.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugPlaybackSeek.cs" Link="DebugPlaybackSeek.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugHdrPlayback.cs" Link="DebugHdrPlayback.cs.txt" CopyToOutputDirectory="PreserveNewest" />

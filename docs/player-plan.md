@@ -101,6 +101,54 @@ Stats / `where`. The CLI's old `--claim-av1` is a compatibility no-op; its norma
 contains only the measured, bounded AV1 claim. FFmpeg packages, activation and licenses ship
 with or without `BaleDebugServer`; the CI package checker remains required.
 
+**Debug FFmpeg input A/B experiment (`DEBUG_SERVER` only):**
+
+```sh
+scripts/bale-debug.sh ffmpeg-tune
+scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default] [prefetch=N|default]
+```
+
+No arguments reads the current process-wide overrides (`GET /ffmpeg-tune`); arguments update them
+atomically (`POST /ffmpeg-tune` with the same query keys). Keys may be supplied in any order, once
+each. Omitted keys keep their previous overrides; `default` clears only that key. Restarting the
+process clears all overrides. Settings are captured at playback-attempt creation, retained through
+recovery/remounts, and applied only to the next real FFmpeg Direct player attempt, not an already
+open player, Native Direct, HLS or the standalone probe. `ffmpeg policy|off` remains independent.
+
+- `readahead=on` enables FFmpegInteropX's native demux/packet read-ahead queue with **64 MiB /
+  30 s** caps, rather than its larger 100 MB / 60 s defaults, to bound the extra Xbox memory use.
+  These are the wrapper's queue thresholds, not a total-process memory ceiling. `off` explicitly
+  disables it; `default` does not set any read-ahead property (native default: disabled).
+- `readsize=N` sets `General.FileStreamReadSize`, in **bytes**, inclusively 16384–1048576.
+  `default` leaves the native 16384-byte default alone.
+- `prefetch=N` sets the authenticated `HttpRangeStream` depth, inclusively **2–16** aligned 1 MiB
+  blocks. The default stays **2**. This immutable per-stream Core hook does not change the 32-block
+  cache or the three-concurrent-fetch limit; deeper speculation queues behind that limit.
+- Production (`BaleDebugServer=false`) never applies the experiment and keeps all original defaults.
+
+For an isolated comparison, close the current player, set the baseline, then open the same title:
+
+```sh
+scripts/bale-debug.sh ffmpeg-tune readahead=default readsize=default prefetch=default
+# After closing the baseline player, change only native read-ahead and reopen:
+scripts/bale-debug.sh ffmpeg-tune readahead=on
+# Optional, separate experiments (close/reopen after each change):
+scripts/bale-debug.sh ffmpeg-tune readsize=65536
+scripts/bale-debug.sh ffmpeg-tune prefetch=8
+```
+
+The player logs the actual native read-ahead enable/size/duration, read size and stream prefetch
+once per attempt, without media request details. The read-only stats panel (`I` / View) and `where`
+share **Read-ahead**, **Stream reads** (bytes / prefetch blocks) and **Stream waits** rows. Stream
+waits count reads that find an unfinished demand or speculative block fetch and await it; they
+exclude ready-cache hits, empty/EOF reads, the serialized-read lock and speculative work that no
+read waits for. Total/max wall-clock milliseconds cover completed waits, including failed/canceled
+reads and any fetch retries, counted once per read. Counts include an in-progress wait before its
+duration is added, include opening/seeking (unlike late-frame counts), and reset with each mounted
+stream. Non-range HTTP, HLS and absent streams show waits as unavailable, not measured zero.
+The effective FFmpeg rows show unavailable on non-FFmpeg routes. Compare wait bursts with late
+delivery; neither counter is evidence of renderer drops or decoder CPU saturation.
+
 The standalone `playtest-ffmpeg` URI probe is for public or independently fetchable media. A private
 `play-plan --url-file` file protects the URL on disk, but does not convey Bale's profile/authentication
 headers to FFmpeg. Use the real-player toggle for library files, under **Bale Test**.

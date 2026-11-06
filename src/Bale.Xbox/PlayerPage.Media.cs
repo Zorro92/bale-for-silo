@@ -43,6 +43,8 @@ public sealed partial class PlayerPage
         public PlaybackRouteDecision Route { get; set; } = null!;
         public MediaPlaybackItem? Item { get; set; }
 #if DEBUG_SERVER
+        public string? FfmpegReadAhead { get; set; }
+        public string? FfmpegStreamReads { get; set; }
         public DebugFrameDelivery? FrameDelivery { get; set; }
         public TimeSpan? CpuTime { get; set; }
         public long? CpuTimestamp { get; set; }
@@ -110,14 +112,33 @@ public sealed partial class PlayerPage
         }
         else
         {
+#if DEBUG_SERVER
+            var prefetch = media.Route.UseFfmpeg ? attempt.FfmpegTuning.Prefetch ?? HttpRangeStream.DefaultPrefetchBlocks
+                : HttpRangeStream.DefaultPrefetchBlocks;
+            media.Stream = await transport.OpenStreamAsync(media.Token, prefetch);
+#else
             media.Stream = await transport.OpenStreamAsync(media.Token);
+#endif
             media.Token.ThrowIfCancellationRequested();
             media.RandomStream = media.Stream.AsRandomAccessStream();
             if (media.Route.UseFfmpeg)
             {
                 // Keep auth, profile ownership and range cancellation in Core; FFmpeg receives bytes, not a bare URI.
                 Log.Info("player: FFmpeg before create stream");
+#if DEBUG_SERVER
+                var config = FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning);
+                // Read actual native properties, not the current override (which may have changed since this attempt began).
+                media.FfmpegReadAhead = DebugFfmpegInputTuning.ReadAheadText(config.General.ReadAheadBufferEnabled,
+                    config.General.ReadAheadBufferSize, config.General.ReadAheadBufferDuration);
+                media.FfmpegStreamReads = DebugFfmpegInputTuning.StreamReadsText(config.General.FileStreamReadSize, media.Stream.PrefetchBlocks);
+                if (!attempt.FfmpegTuningLogged)
+                {
+                    Log.Info($"player: FFmpeg input read-ahead={media.FfmpegReadAhead} · readsize={media.FfmpegStreamReads}");
+                    attempt.FfmpegTuningLogged = true;
+                }
+#else
                 var config = FfmpegSource.Configuration(media.Route);
+#endif
                 media.FfmpegSource = await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream, config).AsTask();
                 media.Token.ThrowIfCancellationRequested();
                 FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route);

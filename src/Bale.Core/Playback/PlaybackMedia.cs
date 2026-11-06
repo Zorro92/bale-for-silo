@@ -67,7 +67,8 @@ public sealed class PlaybackMedia
         return (await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false), response.Content.Headers.ContentType?.MediaType);
     }
 
-    public Task<HttpRangeStream> OpenStreamAsync(CancellationToken ct) => HttpRangeStream.OpenAsync(this, ct);
+    public Task<HttpRangeStream> OpenStreamAsync(CancellationToken ct, int prefetchBlocks = HttpRangeStream.DefaultPrefetchBlocks) =>
+        HttpRangeStream.OpenAsync(this, ct, prefetchBlocks);
 
     internal static void RequireSuccess(HttpResponseMessage response)
     {

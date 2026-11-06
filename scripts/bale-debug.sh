@@ -14,6 +14,10 @@
 #   scripts/bale-debug.sh wait focus Play       wait for a focused description containing Play
 #   scripts/bale-debug.sh wait --timeout 12000 loaded  default 8000 ms; 0–15000; timeout prints where and fails
 #   scripts/bale-debug.sh ffmpeg <mode>         next real-player attempt: policy (default)|off; memory only, HLS unchanged
+#   scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default] [prefetch=N|default]
+#                                               no args = current overrides; omitted keys unchanged; default clears that key
+#                                               next FFmpeg player attempt only; on = 64 MiB / 30 s, readsize 16384–1048576 bytes, prefetch 2–16 blocks
+#                                               key i / where show applied settings and demand block waits (count/max/total ms)
 #   scripts/bale-debug.sh hdr pretend|off|status  next attempt: pretend HDR10, skip HDMI switching for console SDR tone mapping; default off, memory only
 #   scripts/bale-debug.sh seek <seconds> [pause]  shared absolute-source seek (native/FFmpeg/HLS, reanchors outside the mounted window); optional pause
 #   scripts/bale-debug.sh key j                 player: skip back 10s (same as press lt); one skip per press, ignores repeats
@@ -95,6 +99,36 @@ case "${1:-}" in
       exit 2
     fi
     curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/ffmpeg" --data-urlencode "mode=$2"
+    ;;
+  ffmpeg-tune)
+    shift
+    ffmpeg_tune_args=()
+    declare -A ffmpeg_tune_seen=()
+    for option in "$@"; do
+      name="${option%%=*}"
+      value="${option#*=}"
+      valid_tuning=false
+      case "$option" in
+        readahead=*) [[ "$value" =~ ^(on|off|default)$ ]] && valid_tuning=true ;;
+        readsize=*)
+          if [[ "$value" == default ]] || { [[ "$value" =~ ^[0-9]{1,7}$ ]] && (( 10#$value >= 16384 && 10#$value <= 1048576 )); }; then valid_tuning=true; fi
+          ;;
+        prefetch=*)
+          if [[ "$value" == default ]] || { [[ "$value" =~ ^[0-9]{1,7}$ ]] && (( 10#$value >= 2 && 10#$value <= 16 )); }; then valid_tuning=true; fi
+          ;;
+      esac
+      if [[ "$valid_tuning" != true ]] || [[ -n "${ffmpeg_tune_seen[$name]:-}" ]]; then
+        echo 'usage: scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] (any order, no duplicates; no args = status)' >&2
+        exit 2
+      fi
+      ffmpeg_tune_seen[$name]=true
+      ffmpeg_tune_args+=(--data-urlencode "$option")
+    done
+    if (( $# == 0 )); then
+      curl --fail-with-body -sS --max-time 5 "$BASE/ffmpeg-tune"
+    else
+      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/ffmpeg-tune" "${ffmpeg_tune_args[@]}"
+    fi
     ;;
   hdr)
     if [[ "$#" != 2 || ! "${2:-}" =~ ^(pretend|off|status)$ ]]; then

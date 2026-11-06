@@ -11,6 +11,8 @@ namespace Bale.Core.Playback;
 /// </summary>
 public sealed class HttpRangeStream : Stream
 {
+    public const int DefaultPrefetchBlocks = 2;
+    public const int MaximumPrefetchBlocks = 16;
     private const int BlockSize = 1024 * 1024;
     private const int CacheCapacity = 32;
     private const int ForwardSkipLimit = 256 * 1024;
@@ -31,7 +33,21 @@ public sealed class HttpRangeStream : Stream
     private long _position;
     private long _downloadedBytes;
     private long _downloadTicks;
+    private long _demandWaits;
+    private long _demandWaitTicks;
+    private long _maxDemandWaitTicks;
     private volatile bool _disposed;
+
+    /// <summary>Immutable per-stream speculation depth; the cache and three-fetch concurrency limit are unchanged.</summary>
+    public int PrefetchBlocks { get; }
+    public bool SupportsRanges => _supportsRanges;
+
+    /// <summary>Reads that awaited an unfinished block fetch, including joined prefetches; excludes cache hits and the read lock.</summary>
+    public long DemandWaits => Interlocked.Read(ref _demandWaits);
+
+    /// <summary>Completed demand waits, including canceled/failed reads and retries; unavailable without HTTP range support.</summary>
+    public TimeSpan DemandWaitTime => TimeSpan.FromSeconds((double)Interlocked.Read(ref _demandWaitTicks) / Stopwatch.Frequency);
+    public TimeSpan MaxDemandWaitTime => TimeSpan.FromSeconds((double)Interlocked.Read(ref _maxDemandWaitTicks) / Stopwatch.Frequency);
 
     /// <summary>Actual HTTP body bytes, including prefetch, skipped bytes and partial failed downloads; cache reads do not count.</summary>
     public long DownloadedBytes => Interlocked.Read(ref _downloadedBytes);
@@ -51,8 +67,9 @@ public sealed class HttpRangeStream : Stream
 
     private sealed record BlockFetch(Task<CachedBlock> Task, bool IsPrefetch);
 
-    private HttpRangeStream(PlaybackMedia media, HttpResponseMessage? response, Stream? body, long length, bool supportsRanges)
+    private HttpRangeStream(PlaybackMedia media, HttpResponseMessage? response, Stream? body, long length, bool supportsRanges, int prefetchBlocks)
     {
+        PrefetchBlocks = prefetchBlocks;
         _media = media;
         _response = response;
         _body = body;
@@ -61,8 +78,10 @@ public sealed class HttpRangeStream : Stream
         _fetchToken = _fetchCancellation.Token;
     }
 
-    internal static async Task<HttpRangeStream> OpenAsync(PlaybackMedia media, CancellationToken ct)
+    internal static async Task<HttpRangeStream> OpenAsync(PlaybackMedia media, CancellationToken ct, int prefetchBlocks)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(prefetchBlocks, DefaultPrefetchBlocks);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(prefetchBlocks, MaximumPrefetchBlocks);
         var response = await media.SendAsync(media.Uri, 0, null, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         try
         {
@@ -77,10 +96,10 @@ public sealed class HttpRangeStream : Stream
             {
                 // The open-ended probe supplies the total, not a body to keep alive between seeks.
                 response.Dispose();
-                return new(media, null, null, length, true);
+                return new(media, null, null, length, true, prefetchBlocks);
             }
             var body = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-            return new(media, response, body, length, false);
+            return new(media, response, body, length, false, prefetchBlocks);
         }
         catch
         {
@@ -138,8 +157,24 @@ public sealed class HttpRangeStream : Stream
             if (copied == 0)
             {
                 var pending = GetBlockAsync(index, ct);
-                PrefetchFollowingBlocks(index);
-                block = await pending.ConfigureAwait(false);
+                var waitStarted = pending.IsCompleted ? (long?)null : Stopwatch.GetTimestamp();
+                if (waitStarted is not null) Interlocked.Increment(ref _demandWaits);
+                try
+                {
+                    PrefetchFollowingBlocks(index);
+                    block = await pending.ConfigureAwait(false);
+                }
+                finally
+                {
+                    if (waitStarted is { } started)
+                    {
+                        // One read waits once even if failed speculation falls back to demand retries.
+                        var elapsed = Stopwatch.GetTimestamp() - started;
+                        Interlocked.Add(ref _demandWaitTicks, elapsed);
+                        // _readLock serializes writers; the stats reader only needs atomic long reads.
+                        Interlocked.Exchange(ref _maxDemandWaitTicks, Math.Max(_maxDemandWaitTicks, elapsed));
+                    }
+                }
             }
             else
             {
@@ -225,7 +260,7 @@ public sealed class HttpRangeStream : Stream
         lock (_cacheLock)
         {
             if (_disposed) return;
-            for (var next = index + 1; next <= index + 2 && next <= (_length - 1) / BlockSize; next++)
+            for (var next = index + 1; next <= index + PrefetchBlocks && next <= (_length - 1) / BlockSize; next++)
             {
                 if (!_cache.ContainsKey(next) && !_inFlight.ContainsKey(next)) StartFetchLocked(next, true);
             }

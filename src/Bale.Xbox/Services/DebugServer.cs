@@ -36,6 +36,8 @@ namespace Bale.Xbox.Services;
 ///   GET  /playtest-ffmpeg?url=...  muted FFmpegInteropX probe; seconds=3 (1–60), mode=auto|software|system
 ///                         optional threads=0–16, 10bit=on|off, rate=0.5–2.0 (default 1)
 ///   POST /ffmpeg?mode=...  next real-player attempt: policy (default)|off; memory only
+///   GET  /ffmpeg-tune     current memory-only FFmpeg input overrides
+///   POST /ffmpeg-tune?readahead=on&readsize=65536&prefetch=8  next FFmpeg player attempt; each key accepts default
 ///   GET  /hdr             memory-only HDR comparison mode; default off
 ///   POST /hdr?mode=...    pretend|off; pretend HDR10 and keep SDR output for console tone mapping
 ///   POST /seek?seconds=...&pause=true  absolute source seconds on the active player; optional pause
@@ -225,6 +227,14 @@ internal sealed partial class DebugServer
                 Log.Info($"Debug FFmpeg mode: {ffmpegMode}; applies to the next playback attempt");
                 return ("200 OK", $"FFmpeg mode: {ffmpegMode}; applies to the next playback attempt\n");
 
+            case ("GET", "/ffmpeg-tune"):
+                return ("200 OK", $"FFmpeg tuning: {DebugFfmpegInputTuning.Current.Description}; applies to the next FFmpeg player attempt\n");
+
+            case ("POST", "/ffmpeg-tune"):
+                if (!DebugFfmpegInputTuning.TrySet(query, out var tuning))
+                    return ("400 Bad Request", DebugFfmpegInputTuning.Usage + "\n");
+                return ("200 OK", $"FFmpeg tuning: {tuning.Description}; applies to the next FFmpeg player attempt\n");
+
             case ("GET", "/hdr"):
                 return ("200 OK", $"HDR mode: {DebugHdrPlayback.Mode}; applies to the next playback attempt\n");
 
@@ -322,7 +332,7 @@ internal sealed partial class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, POST /ffmpeg?mode={policy|off}, GET /hdr, POST /hdr?mode={pretend|off}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16, GET /hdr, POST /hdr?mode={pretend|off}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using Bale.Core.Playback;
 using static Bale.Core.Tests.PlaybackMediaTestSupport;
 using static Bale.Core.Tests.PlaybackTestSupport;
 
@@ -105,6 +106,10 @@ public class HttpRangeStreamTests
         Assert.Equal(1100, stream.DownloadedBytes);
         Assert.True(stream.DownloadTime > TimeSpan.Zero);
         Assert.Equal(200, stream.BytesRead);
+        Assert.False(stream.SupportsRanges);
+        Assert.Equal(0, stream.DemandWaits);
+        Assert.Equal(TimeSpan.Zero, stream.DemandWaitTime);
+        Assert.Equal(TimeSpan.Zero, stream.MaxDemandWaitTime);
     }
 
     [Fact]
@@ -175,6 +180,186 @@ public class HttpRangeStreamTests
         Assert.True(stream.DownloadTime > TimeSpan.Zero);
         Assert.Equal(3, maximum);
         Assert.Equal(4, handler.Requests.Count);
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(4)]
+    [InlineData(16)]
+    public async Task ConfiguredPrefetchDepthKeepsAlignedRequestsAndTheThreeFetchLimit(int depth)
+    {
+        var release = Signal();
+        var started = Signal();
+        var active = 0;
+        var maximum = 0;
+        var counterLock = new object();
+        var handler = new RangeHandler
+        {
+            Payload = LargeData,
+            BeforeReadAsync = async (request, ct) =>
+            {
+                if (!IsBlockRequest(request)) return;
+                var current = Interlocked.Increment(ref active);
+                lock (counterLock) maximum = Math.Max(maximum, current);
+                if (current == 3) started.TrySetResult();
+                try { await release.Task.WaitAsync(ct); }
+                finally { Interlocked.Decrement(ref active); }
+            },
+        };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default, depth);
+        Assert.Equal(depth, stream.PrefetchBlocks);
+        var read = stream.ReadAsync(new byte[1].AsMemory()).AsTask();
+        await started.Task.WaitAsync(Timeout);
+        Assert.Equal(4, handler.Requests.Count); // Probe plus three active fetches; deeper speculation is queued.
+        release.SetResult();
+        Assert.Equal(1, await read.WaitAsync(Timeout));
+        await handler.WaitForRequestsAsync(depth + 2);
+        Assert.Equal(3, maximum);
+        Assert.Equal(Enumerable.Range(0, depth + 1).Select(index => (long?)index * BlockSize),
+            handler.Requests.Skip(1).Select(request => request.Headers.Range!.Ranges.Single().From).Order());
+    }
+
+    [Fact]
+    public async Task PrefetchOverridesArePerStreamAndTheDefaultRemainsTwo()
+    {
+        var handler = new RangeHandler();
+        using var client = Create(handler);
+        var media = client.Playback.OpenMedia(Plan());
+        await using var tuned = await media.OpenStreamAsync(default, 8);
+        await using var baseline = await media.OpenStreamAsync(default);
+        Assert.Equal(8, tuned.PrefetchBlocks);
+        Assert.Equal(2, HttpRangeStream.DefaultPrefetchBlocks);
+        Assert.Equal(2, baseline.PrefetchBlocks);
+        Assert.True(baseline.SupportsRanges);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(17)]
+    [InlineData(int.MaxValue)]
+    public async Task InvalidPrefetchDepthIsRejectedBeforeMakingAnyRequest(int depth)
+    {
+        var handler = new RangeHandler();
+        using var client = Create(handler);
+        var error = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => client.Playback.OpenMedia(Plan()).OpenStreamAsync(default, depth));
+        Assert.Equal("prefetchBlocks", error.ParamName);
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
+    public async Task DemandWaitsMeasureUnfinishedFetchesButNotCacheHitsEmptyReadsOrEof()
+    {
+        var release = Signal();
+        var started = Signal();
+        var handler = new RangeHandler
+        {
+            Payload = Data[..32768],
+            BeforeReadAsync = async (_, ct) =>
+            {
+                started.TrySetResult();
+                await release.Task.WaitAsync(ct);
+            },
+        };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        Assert.Equal(0, stream.DemandWaits);
+        Assert.Equal(TimeSpan.Zero, stream.DemandWaitTime);
+        Assert.Equal(TimeSpan.Zero, stream.MaxDemandWaitTime);
+        var read = stream.ReadAsync(new byte[100].AsMemory()).AsTask();
+        await started.Task.WaitAsync(Timeout);
+        Assert.Equal(1, stream.DemandWaits);
+        Assert.Equal(TimeSpan.Zero, stream.DemandWaitTime); // The in-progress wait is counted but not timed until it finishes.
+        release.SetResult();
+        Assert.Equal(100, await read.WaitAsync(Timeout));
+        Assert.True(stream.DemandWaitTime > TimeSpan.Zero);
+        Assert.Equal(stream.DemandWaitTime, stream.MaxDemandWaitTime);
+        var total = stream.DemandWaitTime;
+        stream.Position = 0;
+        await stream.ReadExactlyAsync(new byte[100]);
+        Assert.Equal(0, await stream.ReadAsync(Memory<byte>.Empty));
+        stream.Position = stream.Length;
+        Assert.Equal(0, await stream.ReadAsync(new byte[1].AsMemory()));
+        Assert.Equal(1, stream.DemandWaits);
+        Assert.Equal(total, stream.DemandWaitTime);
+        Assert.Equal(total, stream.MaxDemandWaitTime);
+    }
+
+    [Fact]
+    public async Task JoiningUnfinishedPrefetchAddsOneWaitAndAccumulatesTotalAndMaximum()
+    {
+        var releaseFirst = Signal();
+        var releasePrefetch = Signal();
+        var prefetchStarted = Signal();
+        var handler = new RangeHandler
+        {
+            BeforeReadAsync = async (request, ct) =>
+            {
+                if (request.Headers.Range!.Ranges.Single().From == 0) await releaseFirst.Task.WaitAsync(ct);
+                if (request.Headers.Range!.Ranges.Single().From == BlockSize)
+                {
+                    prefetchStarted.TrySetResult();
+                    await releasePrefetch.Task.WaitAsync(ct);
+                }
+            },
+        };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        var first = stream.ReadAsync(new byte[1].AsMemory()).AsTask();
+        await prefetchStarted.Task.WaitAsync(Timeout);
+        releaseFirst.SetResult();
+        Assert.Equal(1, await first.WaitAsync(Timeout));
+        var firstWait = stream.DemandWaitTime;
+        Assert.Equal(1, stream.DemandWaits);
+        Assert.True(firstWait > TimeSpan.Zero);
+        stream.Position = BlockSize;
+        var second = stream.ReadAsync(new byte[1].AsMemory()).AsTask();
+        Assert.Equal(2, stream.DemandWaits);
+        releasePrefetch.SetResult();
+        Assert.Equal(1, await second.WaitAsync(Timeout));
+        Assert.Equal(1, BlockRequests(handler, 1));
+        Assert.Equal(0, stream.PrefetchHits); // Joining speculation is a wait, not an already-ready hit.
+        Assert.True(stream.DemandWaitTime > firstWait);
+        Assert.True(stream.MaxDemandWaitTime >= firstWait);
+        Assert.True(stream.MaxDemandWaitTime <= stream.DemandWaitTime);
+    }
+
+    [Fact]
+    public async Task AWaitSpansFailedSpeculationAndDemandRetriesWithoutDoubleCounting()
+    {
+        var release = Signal();
+        var started = Signal();
+        var attempts = 0;
+        var handler = new RangeHandler
+        {
+            BeforeSendAsync = async (request, _, ct) =>
+            {
+                if (request.Headers.Range!.Ranges.Single().From != BlockSize) return;
+                var attempt = Interlocked.Increment(ref attempts);
+                if (attempt == 1)
+                {
+                    started.TrySetResult();
+                    await release.Task.WaitAsync(ct);
+                }
+                if (attempt <= 2) throw new IOException("Simulated speculation and first demand failures.");
+            },
+        };
+        using var client = Create(handler);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default);
+        await stream.ReadExactlyAsync(new byte[1]);
+        await started.Task.WaitAsync(Timeout);
+        var previousWaits = stream.DemandWaits;
+        var previousTime = stream.DemandWaitTime;
+        stream.Position = BlockSize;
+        var read = stream.ReadAsync(new byte[1].AsMemory()).AsTask();
+        Assert.Equal(previousWaits + 1, stream.DemandWaits);
+        release.SetResult();
+        Assert.Equal(1, await read.WaitAsync(Timeout));
+        Assert.Equal(3, attempts);
+        Assert.Equal(previousWaits + 1, stream.DemandWaits);
+        Assert.True(stream.DemandWaitTime > previousTime);
     }
 
     [Fact]
@@ -483,13 +668,20 @@ public class HttpRangeStreamTests
         Assert.Equal(0, stream.Position);
         Assert.Equal(0, canceled);
         Assert.Equal(3, active);
+        Assert.Equal(1, stream.DemandWaits);
+        Assert.True(stream.DemandWaitTime > TimeSpan.Zero);
+        Assert.Equal(stream.DemandWaitTime, stream.MaxDemandWaitTime);
+        var canceledWaitTime = stream.DemandWaitTime;
         var bytes = new byte[100];
         var second = stream.ReadAsync(bytes.AsMemory()).AsTask();
+        Assert.Equal(2, stream.DemandWaits);
         release.SetResult();
         Assert.Equal(bytes.Length, await second.WaitAsync(Timeout));
         Assert.Equal(Data[..bytes.Length], bytes);
         Assert.Equal(4, handler.Requests.Count);
         Assert.Equal(1, BlockRequests(handler, 0));
+        Assert.True(stream.DemandWaitTime > canceledWaitTime);
+        Assert.True(stream.MaxDemandWaitTime <= stream.DemandWaitTime);
     }
 
     [Fact]
