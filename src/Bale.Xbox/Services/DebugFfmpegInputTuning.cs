@@ -5,14 +5,16 @@ using Bale.Core.Playback;
 namespace Bale.Xbox.Services;
 
 /// <summary>Memory-only FFmpeg input experiment, captured once per attempt and never applied to probes or native/HLS routes.</summary>
-internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadSize = null, int? Prefetch = null)
+internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadSize = null, int? Prefetch = null, int? BufferMs = null)
 {
     internal const int MinimumReadSize = 16 * 1024;
     internal const int MaximumReadSize = 1024 * 1024;
+    // Decoded 1080p P010 frames are ~6 MB each: 5 s at 24 fps is ~750 MB, the most worth trying on Xbox.
+    internal const int MaximumBufferMs = 5000;
     // Keep the extra native packet queue below its 100 MB / 60 s defaults on Xbox.
     internal const long ReadAheadCapBytes = 64L * 1024 * 1024;
     internal static readonly TimeSpan ReadAheadCapDuration = TimeSpan.FromSeconds(30);
-    internal const string Usage = "expected [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default]; omitted keys keep their overrides";
+    internal const string Usage = "expected [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms); omitted keys keep their overrides";
     private static readonly object Gate = new();
     private static DebugFfmpegInputTuning _current = new();
 
@@ -20,7 +22,8 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
 
     internal string Description => $"readahead={(ReadAhead is { } enabled ? enabled ? "on" : "off" : "default")} "
         + $"readsize={ReadSize?.ToString(CultureInfo.InvariantCulture) ?? "default"} "
-        + $"prefetch={Prefetch?.ToString(CultureInfo.InvariantCulture) ?? "default"}";
+        + $"prefetch={Prefetch?.ToString(CultureInfo.InvariantCulture) ?? "default"}"
+        + (BufferMs is { } buffer ? $" buffer={buffer.ToString(CultureInfo.InvariantCulture)}" : "");
 
     internal static bool TrySet(IReadOnlyDictionary<string, string> options, out DebugFfmpegInputTuning tuning)
     {
@@ -43,6 +46,10 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
                     case "prefetch":
                         if (!TryNumber(value, HttpRangeStream.DefaultPrefetchBlocks, HttpRangeStream.MaximumPrefetchBlocks, out var prefetch)) return false;
                         next = next with { Prefetch = prefetch };
+                        break;
+                    case "buffer":
+                        if (!TryNumber(value, 0, MaximumBufferMs, out var bufferMs)) return false;
+                        next = next with { BufferMs = bufferMs };
                         break;
                     default:
                         return false;

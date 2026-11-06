@@ -20,6 +20,21 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     }
 
     [Fact]
+    public void BufferTimeIsBoundedMillisecondsAndDescribedOnlyWhenSet()
+    {
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "1500" }, out var set));
+        Assert.Equal(1500, set.BufferMs);
+        Assert.Equal("readahead=default readsize=default prefetch=default buffer=1500", set.Description);
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "0" }, out var zero));
+        Assert.Equal(0, zero.BufferMs);
+        Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "5001" }, out _));
+        Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "-1" }, out _));
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "default" }, out var cleared));
+        Assert.Null(cleared.BufferMs);
+        Assert.Equal("readahead=default readsize=default prefetch=default", cleared.Description);
+    }
+
+    [Fact]
     public void UpdatesPublishImmutableSnapshotsAndOmittedKeysKeepTheirOverrides()
     {
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string>
