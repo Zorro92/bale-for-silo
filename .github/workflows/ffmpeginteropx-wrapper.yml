@@ -1,0 +1,99 @@
+name: FFmpegInteropX wrapper
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Wrapper NuGet version (2.1.0-bale.N; use a new number for each release)
+        type: string
+        required: true
+        default: 2.1.0-bale.0
+
+permissions:
+  contents: read
+
+# Never cancel a build in order to replace an immutable package at the same version.
+concurrency:
+  group: ffmpeginteropx-wrapper-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  wrapper:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: bale
+          persist-credentials: false
+
+      - name: Validate pins and refuse an existing release tag
+        id: pin
+        shell: pwsh
+        env:
+          PACKAGE_VERSION: ${{ inputs.version }}
+        run: |
+          . ./bale/scripts/ffmpeginteropx-wrapper-common.ps1
+          if ($env:PACKAGE_VERSION -cnotmatch '^2\.1\.0-bale\.(0|[1-9]\d*)$') { throw 'Expected version 2.1.0-bale.N' }
+          $pin = Get-WrapperPin
+          Assert-WrapperReleaseAvailable $env:GITHUB_REPOSITORY "wrapper-ffmpeginteropx-$env:PACKAGE_VERSION"
+          "upstream_repository=$($pin.upstream_repository)" >> $env:GITHUB_OUTPUT
+          "upstream_commit=$($pin.upstream_commit)" >> $env:GITHUB_OUTPUT
+          git config --global core.autocrlf input
+
+      - name: Test package checks and wrapper fixtures
+        shell: pwsh
+        run: |
+          ./bale/scripts/test-ffmpeg-checks.ps1
+          ./bale/scripts/test-ffmpeginteropx-wrapper.ps1
+
+      # The wrapper does not use upstream Libs or any FFmpeg submodule/source build.
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.pin.outputs.upstream_repository }}
+          ref: ${{ steps.pin.outputs.upstream_commit }}
+          path: upstream
+          sparse-checkout: |
+            Source
+            Build
+          submodules: false
+          persist-credentials: false
+
+      - uses: microsoft/setup-msbuild@v3
+      - uses: NuGet/setup-nuget@v2
+        with:
+          nuget-version: 6.14.0
+
+      - name: Build and repack UWP x64 wrapper
+        id: build
+        shell: pwsh
+        env:
+          PACKAGE_VERSION: ${{ inputs.version }}
+        run: |
+          ./bale/scripts/build-ffmpeginteropx-wrapper.ps1 -SourcePath ./upstream -Version $env:PACKAGE_VERSION
+
+      - name: Preserve package, provenance and build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeginteropx-wrapper-uwp-x64-${{ github.run_id }}
+          path: upstream/Output/NuGet/
+          if-no-files-found: warn
+
+      - name: Publish immutable wrapper release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.build.outputs.release_tag }}
+          PACKAGE_SHA256: ${{ steps.build.outputs.package_sha256 }}
+        run: |
+          . ./bale/scripts/ffmpeginteropx-wrapper-common.ps1
+          Assert-WrapperReleaseAvailable $env:GITHUB_REPOSITORY $env:RELEASE_TAG
+          $notes = "UWP x64 native wrapper only; original 2.1.0 managed projection and winmd retained. See SOURCES.txt and winmd-public-types.txt. Package SHA256: $env:PACKAGE_SHA256. Step A only: Bale package references are unchanged."
+          $assets = @(Get-ChildItem upstream/Output/NuGet -File | ForEach-Object { $_.FullName })
+          gh release create $env:RELEASE_TAG @assets --target $env:GITHUB_SHA `
+            --title $env:RELEASE_TAG --notes $notes --latest=false
+          if ($LASTEXITCODE -ne 0) { throw 'Wrapper release publication failed' }

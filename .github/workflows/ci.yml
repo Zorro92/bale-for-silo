@@ -54,7 +54,9 @@ jobs:
 
       - name: Test native package validation scripts
         shell: pwsh
-        run: ./scripts/test-ffmpeg-checks.ps1
+        run: |
+          ./scripts/test-ffmpeg-checks.ps1
+          ./scripts/test-ffmpeginteropx-wrapper.ps1
 
       - name: Download and verify pinned native FFmpeg package
         shell: pwsh

@@ -125,6 +125,7 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
   all other upstream submodule pins and FFmpeg flags: GPL/version3/encoders remain disabled;
   never enable x264/x265. Releases are immutable. See `docs/player-plan.md` for provenance and
   rebuild steps; do not overwrite assets or update a pinned hash without reviewing the new build.
+- The wrapper fork pipeline is `ffmpeginteropx-wrapper.yml`; its patches must not change the IDL.
 - `SoftwareDecodePolicy.VideoCodecs` is the project owner's explicit **AV1-only** software video
   allowlist. Add nothing without them. Other unsupported video goes to server transcode, never
   FFmpeg software or D3D11. Measured AV1 evidence is 0.1.230: 8/10-bit, **1080p30**, not 4K.

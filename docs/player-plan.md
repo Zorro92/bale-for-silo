@@ -240,6 +240,50 @@ and its native activation registration are unchanged.
    expected version/tests deliberately for a later dav1d upgrade. Licenses and provenance ship in
    both configurations.
 
+### Native FFmpegInteropX wrapper fork (step A)
+
+The manual `ffmpeginteropx-wrapper.yml` workflow builds only the **Release_UWP x64** native wrapper.
+It does **not** switch Bale to the fork: the app, lock file, source mapping and restore scripts still
+use nuget.org `FFmpegInteropX.UWP.Lib` **2.1.0**. Integration is a separate step B after release review.
+
+`scripts/ffmpeginteropx-wrapper.json` pins upstream commit
+`88428c66e106852338b48554a4a00c9e48da588f` and the original nuget.org 2.1.0 package SHA256
+`927f23e66688b6c86659121fd20c12c44507581b3b00de5437274741bb506881`. The source checkout omits
+submodules. Native FFmpeg comes only from `restore-ffmpeg-native.ps1` and its existing hash pin;
+upstream's `8.1.2-pre01` FFmpeg packages are never restored. Only the vcxproj's three pinned
+build-tool packages are restored from nuget.org. The native MSBuild settings follow upstream:
+`Release_UWP`, `x64`, toolset `v145`, SDK `10.0.26100.0`, minimum `10.0.17763.0` and
+`LibraryVersionNumber=2.1.0.0`. The workflow bypasses upstream's full build/restore entrypoint so
+it neither rebuilds the managed projection nor downloads a different FFmpeg. Compiler flags and
+IDL remain unchanged; the native FFmpeg package version is explicitly overridden.
+
+`scripts/ffmpeginteropx-patches/` initially contains **zero patches**. Every `*.patch` is applied
+with `git apply --index` in ordinal filename order; any failure aborts. Only `Source/` `.cpp`/`.h`
+changes are accepted, **never IDL**, project files or dependency changes. The build compares the
+built winmd's public type-name set against the original; a difference aborts packaging. This is a
+minimum metadata guard, not a complete member/ABI comparison. Patches must preserve that ABI.
+
+Packaging starts from the hash-verified original nupkg, preserving its **winmd, managed projection,
+XML, targets, documentation and x86/ARM64 binaries byte-for-byte**. Only the x64 DLL is replaced.
+The built x64 PDB is added (the original nupkg has none), along with `SOURCES.txt`; nuspec and
+OPC core-properties versions/content types are updated. The original NuGet repository signature
+is removed because modification invalidates it. The fork is unsigned and intended for **x64 only**;
+retained other-architecture binaries are not fork builds.
+
+Run `gh workflow run ffmpeginteropx-wrapper.yml --ref main -f version=2.1.0-bale.0`, then
+`gh run watch <run-id> --exit-status`. Release `wrapper-ffmpeginteropx-2.1.0-bale.0` contains the
+nupkg, `.sha256`, `SOURCES.txt`, `winmd-public-types.txt`, build log and corresponding patched
+wrapper source archive. Provenance records the upstream/Bale commits, ordered patch names/hashes,
+original/native package hashes, native FFmpeg version, tool packages, SDK/toolset and runner image.
+Existing release **tags** are rejected before building and again before publishing; choose a new
+`2.1.0-bale.N` version rather than overwriting. This is a pinned, repeatable build recipe, not a
+claim of bit-identical compiler output across hosted runner revisions. Before step B, independently
+verify the released package and obtain its NuGet content hash, following the native FFmpeg process.
+
+`test-ffmpeginteropx-wrapper.ps1` exercises empty/ordered/rejected patches, the IDL restriction,
+WinMD type mismatch, SHA256 failure and byte-preserving repack with small offline fixtures. Both
+Windows CI configurations and the manual wrapper workflow run it alongside the native checks.
+
 ## Display HDR
 
 Display HDR is detected at runtime on the UI thread at each player start, not inferred from the

@@ -1,0 +1,11 @@
+{
+  "upstream_repository": "ffmpeginteropx/FFmpegInteropX",
+  "upstream_commit": "88428c66e106852338b48554a4a00c9e48da588f",
+  "original_package_id": "FFmpegInteropX.UWP.Lib",
+  "original_package_version": "2.1.0",
+  "original_package_sha256": "927f23e66688b6c86659121fd20c12c44507581b3b00de5437274741bb506881",
+  "windows_sdk": "10.0.26100.0",
+  "windows_min_version": "10.0.17763.0",
+  "platform_toolset": "v145",
+  "library_version": "2.1.0.0"
+}
