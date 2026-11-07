@@ -13,6 +13,7 @@ internal sealed class DebugFrameDelivery : IDisposable
     private readonly MediaPlaybackSession _session;
     private readonly PlaybackFrameDeliveryMeter _meter;
     private string? _outputPixelFormat;
+    private string? _outputColour;
     private int _unavailable;
     private int _requests;
     private int _videoSamples;
@@ -38,6 +39,9 @@ internal sealed class DebugFrameDelivery : IDisposable
     }
 
     internal string? OutputPixelFormat => Volatile.Read(ref _outputPixelFormat);
+
+    /// <summary>The decoded output's MF colour attributes (matrix, transfer, primaries, range), as set by the wrapper.</summary>
+    internal string? OutputColour => Volatile.Read(ref _outputColour);
 
     internal void SetSeeking(bool seeking) => _meter.SetSeeking(seeking);
 
@@ -88,6 +92,12 @@ internal sealed class DebugFrameDelivery : IDisposable
                     var subtype = WinRT.CastExtensions.As<VideoStreamDescriptor>(descriptor).EncodingProperties.Subtype;
                     if (!string.IsNullOrWhiteSpace(subtype))
                         Volatile.Write(ref _outputPixelFormat, DebugScreenText.Compact(subtype, 40));
+                }
+                catch { }
+                try
+                {
+                    var properties = WinRT.CastExtensions.As<VideoStreamDescriptor>(descriptor).EncodingProperties.Properties;
+                    Volatile.Write(ref _outputColour, DebugVideoColour.Describe(properties));
                 }
                 catch { }
             }

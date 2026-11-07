@@ -44,6 +44,7 @@ internal sealed partial class DebugServer
         var playbackRate = tuning.Rate;
         PlaybackFrameDeliverySnapshot? frames = null;
         string? outputPixelFormat = null;
+        string? outputColour = null;
 
         void Failure(string step, Exception ex)
         {
@@ -199,6 +200,7 @@ internal sealed partial class DebugServer
                     {
                         frames = frameDelivery?.Read();
                         outputPixelFormat = frameDelivery?.OutputPixelFormat;
+                        outputColour = frameDelivery?.OutputColour;
                     });
                     Attempt("video snapshot", () =>
                     {
@@ -250,6 +252,7 @@ internal sealed partial class DebugServer
         var reasons = failures.ToArray();
         return ("200 OK", $"Opened: {(didOpen ? "yes" : "no")}\n" + builder
             + $"Output pixel format: {outputPixelFormat ?? "unavailable"}\n"
+            + $"Output colour: {outputColour ?? "unavailable"}\n"
             + DebugFfmpegPlaytest.FrameDelivery(frames)
             + DebugFfmpegPlaytest.Measurements(start, end, wall, buffering, cpuStart, cpuEnd, maximum, playbackState, playbackRate)
             + (cpuDiagnostics.Count == 0 ? string.Empty : "CPU diagnostics:\n  " + string.Join("\n  ", cpuDiagnostics.Distinct()) + "\n")
