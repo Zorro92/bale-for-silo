@@ -12,7 +12,7 @@
 #   scripts/bale-debug.sh stats-rows [list|hide <labels>|show <labels>|only <labels>|reset]
 #                                               list (default) shows each current label on/off; changes affect only the overlay, immediately
 #                                               labels are one comma-separated argument, exact and case-insensitive; unknown labels are allowed and reported
-#                                               example: stats-rows hide "Read-ahead,Stream reads,Dropped frames"; only also hides future unlisted rows
+#                                               example: stats-rows hide "Read-ahead,Stream reads,Dropped frames"; only also hides future unlisted rows; Dropped frames is hidden by default
 #                                               memory only, resets on app restart; works before a player opens; stats/where always keep every row
 #   scripts/bale-debug.sh wait page Detail      wait for a page name containing Detail, then print where
 #   scripts/bale-debug.sh wait loaded           wait for visible loading indicators to disappear

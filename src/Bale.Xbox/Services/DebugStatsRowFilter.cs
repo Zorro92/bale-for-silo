@@ -7,7 +7,19 @@ namespace Bale.Xbox.Services;
 internal sealed class DebugStatsRowFilter
 {
     internal const string Usage = "expected list|hide <labels>|show <labels>|only <labels>|reset; labels are one non-empty comma-separated argument";
-    private readonly HashSet<string> _labels = new(StringComparer.OrdinalIgnoreCase);
+    // Every row label the player can show, so commands sent before a player opens are not reported unknown.
+    internal static readonly string[] KnownLabels =
+    [
+        "Backend", "Route", "Subtitles", "Hard containers", "Video codec", "Resolution", "Frame rate", "HDR mode",
+        "Video decoder", "Audio codec", "Audio decoder", "Estimated bandwidth", "Dropped frames", "Audio underruns",
+        "Delivery", "Source", "Media bitrate", "Buffering", "HDR output", "Display mode", "Late frames",
+        "Stream waits", "Read-ahead", "Stream reads", "Delivered ahead", "CPU",
+    ];
+
+    // No route exposes render drops, so that row always reads "unavailable"; hide it until asked for.
+    private static readonly string[] DefaultHidden = ["Dropped frames"];
+
+    private readonly HashSet<string> _labels = new(DefaultHidden, StringComparer.OrdinalIgnoreCase);
     private bool _only;
 
     internal bool IsHidden(string label) => _only ? !_labels.Contains(label) : _labels.Contains(label);
@@ -21,6 +33,7 @@ internal sealed class DebugStatsRowFilter
             if (action == "reset")
             {
                 _labels.Clear();
+                _labels.UnionWith(DefaultHidden);
                 _only = false;
             }
             return true;
@@ -29,7 +42,7 @@ internal sealed class DebugStatsRowFilter
             return false;
         var requested = labels.Split(',').Select(label => label.Trim()).ToArray();
         if (requested.Any(label => label.Length == 0)) return false;
-        unknownLabels = requested.Except(knownLabels, StringComparer.OrdinalIgnoreCase).ToArray();
+        unknownLabels = requested.Except(knownLabels.Concat(KnownLabels), StringComparer.OrdinalIgnoreCase).ToArray();
         switch (action)
         {
             case "hide":

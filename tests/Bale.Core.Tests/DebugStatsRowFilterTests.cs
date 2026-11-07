@@ -12,12 +12,23 @@ public class DebugStatsRowFilterTests
     ];
 
     [Fact]
-    public void AllRowsStartOnAndListKeepsSnapshotOrder()
+    public void OnlyDroppedFramesStartsHiddenAndListKeepsSnapshotOrder()
     {
         var filter = new DebugStatsRowFilter();
-        Assert.All(Rows, row => Assert.False(filter.IsHidden(row.Label)));
+        Assert.All(Rows.Where(row => row.Label != "Dropped frames"), row => Assert.False(filter.IsHidden(row.Label)));
+        Assert.True(filter.IsHidden("dropped frames"));
         Assert.False(filter.IsHidden("Future row"));
-        Assert.Equal("Read-ahead: on\nStream reads: on\nDropped frames: on\nCPU: on\n", filter.DescribeLabels(Rows));
+        Assert.Equal("Read-ahead: on\nStream reads: on\nDropped frames: off\nCPU: on\n", filter.DescribeLabels(Rows));
+    }
+
+    [Fact]
+    public void ShowBringsBackTheDefaultHiddenDroppedFramesRow()
+    {
+        var filter = new DebugStatsRowFilter();
+        Assert.Empty(Apply(filter, "show", "Dropped frames"));
+        Assert.False(filter.IsHidden("Dropped frames"));
+        Assert.Empty(Apply(filter, "reset", null));
+        Assert.True(filter.IsHidden("Dropped frames"));
     }
 
     [Fact]
@@ -51,9 +62,10 @@ public class DebugStatsRowFilterTests
     public void CommandsWithoutCurrentRowsStillRememberTheNextPlayersSelection()
     {
         var filter = new DebugStatsRowFilter();
-        Assert.True(filter.TryApply("hide", "CPU,Read-ahead", [], out var unknown));
-        Assert.Equal(["CPU", "Read-ahead"], unknown);
-        Assert.Equal("Read-ahead: off\nStream reads: on\nDropped frames: on\nCPU: off\n", filter.DescribeLabels(Rows));
+        // Before a player opens there are no live rows, but known overlay labels are still not "unknown".
+        Assert.True(filter.TryApply("hide", "CPU,Read-ahead,Future row", [], out var unknown));
+        Assert.Equal(["Future row"], unknown);
+        Assert.Equal("Read-ahead: off\nStream reads: on\nDropped frames: off\nCPU: off\n", filter.DescribeLabels(Rows));
     }
 
     [Fact]
@@ -81,7 +93,7 @@ public class DebugStatsRowFilterTests
     [Theory]
     [InlineData("hide")]
     [InlineData("only")]
-    public void ListIsReadOnlyAndResetShowsAllCurrentAndFutureRows(string action)
+    public void ListIsReadOnlyAndResetRestoresTheDefaultForCurrentAndFutureRows(string action)
     {
         var filter = new DebugStatsRowFilter();
         Apply(filter, action, "Read-ahead,Future row");
@@ -89,7 +101,8 @@ public class DebugStatsRowFilterTests
         Assert.Empty(Apply(filter, "list", null));
         Assert.Equal(before, filter.DescribeLabels(Rows));
         Assert.Empty(Apply(filter, "reset", null));
-        Assert.All(Rows, row => Assert.False(filter.IsHidden(row.Label)));
+        Assert.All(Rows.Where(row => row.Label != "Dropped frames"), row => Assert.False(filter.IsHidden(row.Label)));
+        Assert.True(filter.IsHidden("Dropped frames"));
         Assert.False(filter.IsHidden("Future row"));
         Assert.False(filter.IsHidden("Unlisted row"));
     }
