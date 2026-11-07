@@ -129,7 +129,7 @@ with or without `BaleDebugServer`; the CI package checker remains required.
 scripts/bale-debug.sh ffmpeg-tune
 scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default] [prefetch=N|default] \
   [buffer=ms|default] [ahead=N|default] [sws=N|default] [delay=N|default] [prio=N|default] \
-  [maxres=0|1|default] [dpb=N|default]
+  [maxres=0|1|default] [dpb=N|default] [grain=on|off|default]
 ```
 
 No arguments reads the current process-wide overrides (`GET /ffmpeg-tune`); arguments update them
@@ -140,6 +140,10 @@ creation, retained through recovery/remounts, and applied only to the next real 
 attempt, not an already open player, Native Direct, HLS or the standalone probe. `ffmpeg policy|off`
 remains independent.
 
+- `grain=off` (software video only) sends `bale_dav1d_export_film_grain=1` like the probe's `grain=off`:
+  dav1d exports AV1 film-grain parameters instead of applying them, so frames show no grain. It exists
+  to time grain cost on authenticated library files, which the URL-only probe cannot open. `on`/`default`
+  send no key (release behaviour, grain applied).
 - `readahead=on` enables FFmpegInteropX's native demux/packet read-ahead queue with **64 MiB /
   30 s** caps, rather than its larger 100 MB / 60 s defaults, to bound the extra Xbox memory use.
   These are the wrapper's queue thresholds, not a total-process memory ceiling. `off` explicitly

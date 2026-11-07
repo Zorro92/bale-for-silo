@@ -163,6 +163,21 @@ public class DebugPlaytestScriptTests
     }
 
     [Theory]
+    [InlineData("grain=off")]
+    [InlineData("grain=on")]
+    [InlineData("grain=default")]
+    public async Task GrainTuneOverrideIsSentToTheRealPlayer(string grain)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["ffmpeg-tune", "prio=2", grain]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/ffmpeg-tune\n", result.Arguments);
+        Assert.Contains("--data-urlencode\n" + grain + "\n", result.Arguments);
+    }
+
+    [Theory]
+    [InlineData("ffmpeg-tune", "grain=OFF")]
+    [InlineData("ffmpeg-tune", "grain=1")]
     [InlineData("playtest-ffmpeg", "grain=OFF")]
     [InlineData("playtest-ffmpeg", "grain=1")]
     [InlineData("playtest-engine", "csharp")]
@@ -170,7 +185,12 @@ public class DebugPlaytestScriptTests
     public async Task InvalidGrainOrEngineModeNeverInvokesCurl(string command, string option)
     {
         if (!OperatingSystem.IsLinux()) return;
-        string[] args = command == "playtest-engine" ? [command, "@fixture", "3", option] : [command, "@fixture", "30", "software", option];
+        string[] args = command switch
+        {
+            "playtest-engine" => [command, "@fixture", "3", option],
+            "ffmpeg-tune" => [command, option],
+            _ => [command, "@fixture", "30", "software", option],
+        };
         var result = await RunAsync(args);
         Assert.Equal(2, result.ExitCode);
         Assert.Empty(result.Arguments);

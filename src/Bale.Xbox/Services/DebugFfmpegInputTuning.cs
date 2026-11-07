@@ -7,7 +7,7 @@ namespace Bale.Xbox.Services;
 /// <summary>Memory-only overrides of release settings, captured per attempt and never applied to probes or native/HLS routes.</summary>
 internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadSize = null, int? Prefetch = null, int? BufferMs = null,
     int? DecodeAheadFrames = null, int? SwsThreads = null, int? Dav1dMaxFrameDelay = null, int? DecodeThreadPriority = null,
-    int? DecoderUseMaxResolution = null, int? DecoderMaxDpbCount = null)
+    int? DecoderUseMaxResolution = null, int? DecoderMaxDpbCount = null, bool? FilmGrain = null)
 {
     internal const int MinimumReadSize = 16 * 1024;
     internal const int MaximumReadSize = 1024 * 1024;
@@ -16,7 +16,7 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
     // Keep the extra native packet queue below its 100 MB / 60 s defaults on Xbox.
     internal const long ReadAheadCapBytes = 64L * 1024 * 1024;
     internal static readonly TimeSpan ReadAheadCapDuration = TimeSpan.FromSeconds(30);
-    internal const string Usage = "expected [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [sws=1..16|default] [delay=0..64|default] [prio=0..2|default] (0=off, 1=above normal, 2=highest) [maxres=0|1|default] [dpb=0..16|default] (system video only; 0=unset); omitted keys keep their overrides; default restores the release setting (software video: ahead=16, sws=4, delay=8 above 1080p (unset otherwise), prio unset; system video: maxres/dpb unset)";
+    internal const string Usage = "expected [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [sws=1..16|default] [delay=0..64|default] [prio=0..2|default] (0=off, 1=above normal, 2=highest) [maxres=0|1|default] [dpb=0..16|default] (system video only; 0=unset) [grain=on|off|default] (software video only; off = dav1d exports grain instead of applying it); omitted keys keep their overrides; default restores the release setting (software video: ahead=16, sws=4, delay=8 above 1080p (unset otherwise), prio unset; system video: maxres/dpb unset)";
     private static readonly object Gate = new();
     private static DebugFfmpegInputTuning _current = new();
 
@@ -31,7 +31,8 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
         + (Dav1dMaxFrameDelay is { } delay ? $" delay={delay.ToString(CultureInfo.InvariantCulture)}" : "")
         + (DecodeThreadPriority is { } priority ? $" prio={priority.ToString(CultureInfo.InvariantCulture)}" : "")
         + (DecoderUseMaxResolution is { } maxres ? $" maxres={maxres.ToString(CultureInfo.InvariantCulture)}" : "")
-        + (DecoderMaxDpbCount is { } dpb ? $" dpb={dpb.ToString(CultureInfo.InvariantCulture)}" : "");
+        + (DecoderMaxDpbCount is { } dpb ? $" dpb={dpb.ToString(CultureInfo.InvariantCulture)}" : "")
+        + (FilmGrain is { } grain ? grain ? " grain=on" : " grain=off" : "");
 
     internal static bool TrySet(IReadOnlyDictionary<string, string> options, out DebugFfmpegInputTuning tuning)
     {
@@ -82,6 +83,10 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
                     case "dpb":
                         if (!TryNumber(value, 0, 16, out var dpb)) return false;
                         next = next with { DecoderMaxDpbCount = dpb };
+                        break;
+                    case "grain":
+                        if (value is not ("on" or "off" or "default")) return false;
+                        next = next with { FilmGrain = value == "default" ? null : value == "on" };
                         break;
                     default:
                         return false;

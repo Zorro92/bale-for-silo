@@ -254,7 +254,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = checked((uint)readSize)", experiment);
         Assert.Contains("var config = Configuration(route)", experiment);
         Assert.DoesNotContain("bale_decode_thread_priority", configuration[..start]);
-        Assert.Contains("if (route.SoftwareVideo)\n        {\n            ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.SwsThreads, tuning.Dav1dMaxFrameDelay));\n            if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions[\"bale_decode_thread_priority\"] = priority.ToString(CultureInfo.InvariantCulture);\n        }", experiment);
+        Assert.Contains("if (route.SoftwareVideo)\n        {\n            ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.SwsThreads, tuning.Dav1dMaxFrameDelay));\n            if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions[\"bale_decode_thread_priority\"] = priority.ToString(CultureInfo.InvariantCulture);\n            // Wrapper patch 0005 (2.1.0-bale.5+): dav1d exports the grain parameters instead of synthesizing grain.\n            if (tuning.FilmGrain is false) config.FFmpegOptions[\"bale_dav1d_export_film_grain\"] = \"1\";\n        }", experiment);
         Assert.True(experiment.IndexOf("var config = Configuration(route)", StringComparison.Ordinal)
             < experiment.IndexOf("if (route.SoftwareVideo)", StringComparison.Ordinal));
         Assert.Contains("ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight))", configuration[..start]);
@@ -292,6 +292,39 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("dpb=0..16|default", DebugFfmpegInputTuning.Usage);
     }
 
+    [Theory]
+    [InlineData("on", true, " grain=on")]
+    [InlineData("off", false, " grain=off")]
+    public void FilmGrainOverrideIsCapturedAndClearedWithoutChangingOtherOverrides(string value, bool expected, string description)
+    {
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["prio"] = "2" }, out _));
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["grain"] = value }, out var set));
+        Assert.Equal(expected, set.FilmGrain);
+        Assert.Equal(2, set.DecodeThreadPriority);
+        Assert.EndsWith(" prio=2" + description, set.Description);
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["grain"] = "default" }, out var cleared));
+        Assert.Null(cleared.FilmGrain);
+        Assert.DoesNotContain("grain=", cleared.Description);
+        foreach (var invalid in new[] { "OFF", "1", "", "true" })
+            Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["grain"] = invalid }, out _));
+        Assert.Null(DebugFfmpegInputTuning.Current.FilmGrain);
+    }
+
+    [Fact]
+    public void FilmGrainExportIsDebugOnlyAndAppliedOnlyToSoftwareVideo()
+    {
+        var configuration = Read("FfmpegSource.cs.txt");
+        var start = configuration.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal);
+        var end = configuration.IndexOf("#endif", start, StringComparison.Ordinal);
+        Assert.DoesNotContain("bale_dav1d_export_film_grain", configuration[..start]);
+        var experiment = configuration[start..end];
+        var software = experiment.IndexOf("if (route.SoftwareVideo)", StringComparison.Ordinal);
+        var system = experiment.IndexOf("else\n", software, StringComparison.Ordinal);
+        var key = experiment.IndexOf("if (tuning.FilmGrain is false) config.FFmpegOptions[\"bale_dav1d_export_film_grain\"] = \"1\";", StringComparison.Ordinal);
+        Assert.True(software >= 0 && key > software && key < system);
+        Assert.Contains("grain=on|off|default", DebugFfmpegInputTuning.Usage);
+    }
+
     [Fact]
     public void StatsAndWhereShareTheAppliedValuesAndRangeWaitCounters()
     {
@@ -320,6 +353,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         ["prio"] = tuning.DecodeThreadPriority?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["maxres"] = tuning.DecoderUseMaxResolution?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["dpb"] = tuning.DecoderMaxDpbCount?.ToString(CultureInfo.InvariantCulture) ?? "default",
+        ["grain"] = tuning.FilmGrain is { } grain ? grain ? "on" : "off" : "default",
     }, out _));
 
     private static string Read(string file) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, file));

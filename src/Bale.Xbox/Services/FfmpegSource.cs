@@ -53,6 +53,8 @@ internal static class FfmpegSource
         {
             ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.SwsThreads, tuning.Dav1dMaxFrameDelay));
             if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions["bale_decode_thread_priority"] = priority.ToString(CultureInfo.InvariantCulture);
+            // Wrapper patch 0005 (2.1.0-bale.5+): dav1d exports the grain parameters instead of synthesizing grain.
+            if (tuning.FilmGrain is false) config.FFmpegOptions["bale_dav1d_export_film_grain"] = "1";
         }
         else
         {

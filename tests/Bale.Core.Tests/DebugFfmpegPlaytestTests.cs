@@ -212,7 +212,9 @@ public class DebugFfmpegPlaytestTests
         Assert.Contains("if (tuning.FilmGrain is false) config.FFmpegOptions[\"bale_dav1d_export_film_grain\"] = \"1\";", source);
         Assert.Single(source.Split("bale_dav1d_export_film_grain").Skip(1));
         Assert.Contains("query.GetValueOrDefault(\"grain\")", Read("DebugServer.cs.txt"));
-        Assert.DoesNotContain("bale_dav1d_export_film_grain", Read("FfmpegSource.cs.txt"));
+        // The real player sets it only from the debug ffmpeg-tune override (DebugFfmpegInputTuningTests).
+        var player = Read("FfmpegSource.cs.txt");
+        Assert.DoesNotContain("bale_dav1d_export_film_grain", player[..player.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal)]);
     }
 
     [Theory]
