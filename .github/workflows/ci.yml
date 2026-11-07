@@ -74,8 +74,13 @@ jobs:
         shell: pwsh
         run: |
           rustup target add x86_64-pc-windows-msvc
-          cargo build --release --locked --target x86_64-pc-windows-msvc --manifest-path native/bale-gpu/Cargo.toml
-          if ($LASTEXITCODE -ne 0) { throw 'cargo build failed' }
+          # Run inside the crate: cargo reads .cargo/config.toml (static CRT) from the working directory,
+          # not from --manifest-path.
+          Push-Location native/bale-gpu
+          cargo build --release --locked --target x86_64-pc-windows-msvc
+          $cargoExit = $LASTEXITCODE
+          Pop-Location
+          if ($cargoExit -ne 0) { throw 'cargo build failed' }
           $dll = 'native/bale-gpu/target/x86_64-pc-windows-msvc/release/bale_gpu.dll'
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vs = & $vswhere -latest -products * -property installationPath
