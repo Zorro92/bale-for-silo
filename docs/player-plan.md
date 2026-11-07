@@ -361,8 +361,20 @@ minimum metadata guard, not a complete member/ABI comparison. Patches must prese
 unset), never applied to FFmpeg-decoded output. Debug-only `maxres=0|1|default` / `dpb=N|default`
 controls in `ffmpeg-tune` and `playtest-ffmpeg` both default to unset, leaving production unchanged.
 It ships in the pinned `2.1.0-bale.3` release.
-Microsoft's Xbox recommendation (`maxres=1 dpb=3`) is pending console A/B on an HEVC
-FFmpeg-passthrough stream, not a verified improvement or a release default.
+Microsoft's Xbox recommendation (`maxres=1 dpb=3`) was A/B'd on 0.1.269.0 (Series X, app mode) with
+20 s `playtest-ffmpeg ... system` probes of the public Jellyfin HEVC 10-bit clips. 1080p 10 Mbps:
+every run played at real time (ratio 0.994–0.998) either way, and the hints raised peak commit by
+~450 MiB. 4K 60 Mbps: ratios were 0.735/0.785/0.79/0.733 unset and 0.781/0.996/0.994/0.78 with the
+hints, which is within network/start-up noise; peak commit was again higher with them. No measured
+benefit, so the keys stay unset (not a release default). Revisit only for mid-stream resolution
+changes, which these clips do not exercise.
+
+**Known debug-probe leak.** Each `playtest-ffmpeg` probe leaves ~25–30 MiB (1080p) to ~100+ MiB (4K)
+of native, non-GC memory behind (`mem gc` frees none of it; the managed heap stays <10 MiB), in both
+software and system modes. Long probe batches therefore approach the 3328 MiB app limit; redeploy or
+restart Bale between large batches. Repeated real-player sessions did not grow monotonically
+(352→685→571 MiB after forced GC over five plays). The probe path differs from the player in using
+`CreateFromUriAsync` and its own composition surface; the leak is not yet bisected.
 
 Packaging starts from the hash-verified original nupkg, preserving its **winmd, managed projection,
 XML, targets, documentation and x86/ARM64 binaries byte-for-byte**. Only the x64 DLL is replaced.
