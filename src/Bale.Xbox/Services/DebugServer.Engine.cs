@@ -38,8 +38,18 @@ internal sealed partial class DebugServer
                 var item = source.CreateMediaPlaybackItem();
                 var streamSource = source.GetMediaStreamSource();
                 var pointer = ((WinRT.IWinRTObject)streamSource).NativeObject.ThisPtr;
-                body = "FFmpeg source: software decoder mode, release tuning\n"
+                body = "FFmpeg source: software decoder mode, release tuning\nAttempt 1: MediaStreamSource\n"
                     + await RunEngineThreadAsync(() => DebugRustProbe.RunEngineSource(pointer, duration));
+                if (body.Contains("MF_MEDIASOURCE_SERVICE: fails", StringComparison.Ordinal)
+                    || body.Contains("at QI IMFGetService", StringComparison.Ordinal))
+                {
+                    // The WinRT MediaSource wrapper is what MediaPlayer consumes; try its IMFGetService instead.
+                    using var wrapper = Windows.Media.Core.MediaSource.CreateFromMediaStreamSource(streamSource);
+                    var wrapperPointer = ((WinRT.IWinRTObject)wrapper).NativeObject.ThisPtr;
+                    body += "Attempt 2: MediaSource.CreateFromMediaStreamSource\n"
+                        + await RunEngineThreadAsync(() => DebugRustProbe.RunEngineSource(wrapperPointer, duration));
+                    GC.KeepAlive(wrapper);
+                }
                 GC.KeepAlive(streamSource);
                 GC.KeepAlive(item);
             }

@@ -27,7 +27,7 @@ use windows::Win32::Media::MediaFoundation::{
     CLSID_MFMediaEngineClassFactory, IMFAsyncCallback, IMFAsyncResult, IMFAttributes, IMFByteStream,
     IMFDXGIDeviceManager, IMFGetService, IMFMediaEngine, IMFMediaEngineClassFactory, IMFMediaEngineEx,
     IMFMediaEngineExtension, IMFMediaEngineExtension_Impl, IMFMediaEngineNotify, IMFMediaEngineNotify_Impl,
-    IMFMediaSource, IMFMediaSourceEx, MF_E_UNEXPECTED, MF_MEDIA_ENGINE_CALLBACK, MF_MEDIA_ENGINE_CANPLAY,
+    IMFMediaSource, IMFMediaSourceEx, MF_E_UNEXPECTED, MF_MEDIASOURCE_SERVICE, MF_MEDIA_ENGINE_CALLBACK, MF_MEDIA_ENGINE_CANPLAY,
     MF_MEDIA_ENGINE_CANPLAY_MAYBE, MF_MEDIA_ENGINE_DXGI_MANAGER, MF_MEDIA_ENGINE_EXTENSION, MF_MEDIA_ENGINE_STATISTIC,
     MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT, MF_OBJECT_MEDIASOURCE, MF_OBJECT_TYPE, MFARGB, MFCreateAsyncResult,
     MFCreateAttributes, MFCreateDXGIDeviceManager, MFInvokeCallback, MFSTARTUP_FULL, MFShutdown, MFStartup,
@@ -261,8 +261,20 @@ unsafe fn play(
                     object.cast::<IMFMediaSourceEx>().is_ok(),
                     object.cast::<IMFGetService>().is_ok()
                 );
+                // A WinRT media source exposes its IMFMediaSource as a service rather than through QI.
+                let source = match source {
+                    Ok(source) => source,
+                    Err(_) => {
+                        let service = object
+                            .cast::<IMFGetService>()
+                            .step("QI IMFGetService")?
+                            .GetService::<IMFMediaSource>(&MF_MEDIASOURCE_SERVICE);
+                        let _ = writeln!(report, "GetService(MF_MEDIASOURCE_SERVICE): {}", if service.is_ok() { "ok" } else { "fails" });
+                        service.step("GetService MF_MEDIASOURCE_SERVICE")?
+                    }
+                };
                 let extension: IMFMediaEngineExtension =
-                    SourceExtension { source: source.step("QI IMFMediaSource")?, shared: Arc::clone(shared) }.into();
+                    SourceExtension { source, shared: Arc::clone(shared) }.into();
                 attributes.SetUnknown(&MF_MEDIA_ENGINE_EXTENSION, &extension).step("SetUnknown extension")?;
                 BSTR::from("bale-mss:probe")
             }
