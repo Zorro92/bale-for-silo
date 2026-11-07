@@ -382,8 +382,23 @@ sRGB, BT.1361 ECG, SMPTE 428 and BT.2020 constant luminance. `MF_MT_VIDEO_PRIMAR
 SMPTE 428 (XYZ) and SMPTE 431/432 (DCI-P3) and no longer maps reserved values. The existing HDR gate
 is kept (HDR primaries/transfer and mastering/CLL metadata still need `applyHdrColorInfo`); the matrix
 is set unconditionally. Nominal range and per-sample chroma siting are unchanged. The patch is
-always on (no `bale_*` key) and ships in the pinned `2.1.0-bale.4` release; it needs a console check of SDR and
-HDR AV1 software decode colour.
+always on (no `bale_*` key) and ships in the pinned `2.1.0-bale.4` release. Console check on 0.1.278.0 (`playtest-ffmpeg ... software`,
+`Output colour:` line): the Jellyfin 1080p AV1 10-bit SDR clip (tagged bt709 matrix/primaries, transfer
+unknown) reports `matrix=1(BT709) transfer=unset primaries=2(BT709) range=2(limited)`; the 1080p AV1
+HDR10 clip (bt2020nc, smpte2084, bt2020) reports `matrix=4(BT2020_10)` with transfer/primaries unset,
+because Bale leaves `Video.HdrSupport` at Automatic and the wrapper only applies HDR colour info when
+the HDMI mode is already BT.2020 at creation (`UwpCheckUseHdr`). On an HDR TV the player switches HDMI
+before mounting, so PQ/BT.2020 should then be set; that path is unverified (no HDR display here).
+
+**Software AV1 tuning A/B (0.1.274.0, 20 s `playtest-ffmpeg ... software`, two interleaved reps).**
+1080p AV1 10-bit 10 Mbps 60 fps plays at real time (0.997–0.998) in every configuration: release
+defaults (ahead=16, sws=4, priority unset) 1.91–1.98 cores, `ahead=0` 1.81–1.84, `prio=1` 1.91–1.96,
+`prio=2` 1.98–2.01. `sws=1` vs `sws=4`: 1.72/1.85 vs 1.91/1.97 cores. 4K AV1 10-bit 40 Mbps stays
+decode-bound at 0.53–0.58 (5.8–6.8 cores) whatever the setting; `sws=4` vs `sws=1` was 0.55–0.59 vs
+0.48–0.54 in a separate run. Thread priority shows no benefit and stays unset. Decode-ahead costs
+~0.1 core on these steady clips, which cannot show its jitter-absorbing purpose; it stays at 16 pending
+real-library checks. A burst of ~150–170 late frames appeared in about half the 1080p runs regardless
+of setting (also with sws=1); its cause is not yet known.
 
 **Fixed debug-probe leak.** Through 0.1.271.0 each `playtest-ffmpeg` probe left ~25–30 MiB (1080p) to
 ~100+ MiB (4K) of native memory behind because its `MediaPlayer` was disposed from a worker after the
