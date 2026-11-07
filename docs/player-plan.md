@@ -392,6 +392,9 @@ HDR10 clip (bt2020nc, smpte2084, bt2020) reports `matrix=4(BT2020_10)` with tran
 because Bale leaves `Video.HdrSupport` at Automatic and the wrapper only applies HDR colour info when
 the HDMI mode is already BT.2020 at creation (`UwpCheckUseHdr`). On an HDR TV the player switches HDMI
 before mounting, so PQ/BT.2020 should then be set; that path is unverified (no HDR display here).
+On 0.1.280.0 the same HDR10 clip with `hdr=on` reports `matrix=4(BT2020_10) transfer=15(2084/PQ)
+primaries=9(BT2020)` and `IsHdrActive=True`; `hdr=off` and the default report transfer/primaries unset
+and `IsHdrActive=False`. So the PQ/BT.2020 tags depend only on HdrSupport resolving to on, not on 0004.
 
 **Software AV1 tuning A/B (0.1.274.0, 20 s `playtest-ffmpeg ... software`, two interleaved reps).**
 1080p AV1 10-bit 10 Mbps 60 fps plays at real time (0.997–0.998) in every configuration: release
