@@ -4,6 +4,10 @@
 //! device (Xbox-ATG-Samples UWPSamples/Graphics/VideoTextureUWP, MediaEnginePlayer.cpp), then reports
 //! the engine's own render/drop statistics. The report never contains the URL or system error text:
 //! only step names and HRESULTs.
+//!
+//! `Input::Source` plays a caller-supplied COM object instead (FFmpegInteropX's MediaStreamSource):
+//! it must expose `IMFMediaSource`, which an `IMFMediaEngineExtension` hands to the engine for a
+//! private URL, as Chromium's MediaFoundationRenderer does (media/renderers/win/media_engine_extension.cc).
 
 use std::fmt::Write as _;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -20,14 +24,16 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
 use windows::Win32::Media::MediaFoundation::{
-    CLSID_MFMediaEngineClassFactory, IMFAttributes, IMFDXGIDeviceManager, IMFMediaEngine,
-    IMFMediaEngineClassFactory, IMFMediaEngineEx, IMFMediaEngineNotify, IMFMediaEngineNotify_Impl,
-    MF_MEDIA_ENGINE_CALLBACK, MF_MEDIA_ENGINE_DXGI_MANAGER, MF_MEDIA_ENGINE_STATISTIC,
-    MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT, MFARGB, MFCreateAttributes, MFCreateDXGIDeviceManager, MFSTARTUP_FULL,
-    MFShutdown, MFStartup,
+    CLSID_MFMediaEngineClassFactory, IMFAsyncCallback, IMFAsyncResult, IMFAttributes, IMFByteStream,
+    IMFDXGIDeviceManager, IMFGetService, IMFMediaEngine, IMFMediaEngineClassFactory, IMFMediaEngineEx,
+    IMFMediaEngineExtension, IMFMediaEngineExtension_Impl, IMFMediaEngineNotify, IMFMediaEngineNotify_Impl,
+    IMFMediaSource, IMFMediaSourceEx, MF_E_UNEXPECTED, MF_MEDIA_ENGINE_CALLBACK, MF_MEDIA_ENGINE_CANPLAY,
+    MF_MEDIA_ENGINE_CANPLAY_MAYBE, MF_MEDIA_ENGINE_DXGI_MANAGER, MF_MEDIA_ENGINE_EXTENSION, MF_MEDIA_ENGINE_STATISTIC,
+    MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT, MF_OBJECT_MEDIASOURCE, MF_OBJECT_TYPE, MFARGB, MFCreateAsyncResult,
+    MFCreateAttributes, MFCreateDXGIDeviceManager, MFInvokeCallback, MFSTARTUP_FULL, MFShutdown, MFStartup,
 };
 use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes, SetEvent};
-use windows::core::{BSTR, GUID, HRESULT, Interface, implement};
+use windows::core::{BOOL, BSTR, GUID, HRESULT, IUnknown, Interface, OutRef, Ref, implement};
 
 const MF_VERSION: u32 = 0x0002_0070; // MF_SDK_VERSION 2 << 16 | MF_API_VERSION 0x70
 const OPEN_TIMEOUT: Duration = Duration::from_secs(20);
@@ -62,6 +68,65 @@ struct Shared {
     ended: AtomicBool,
     first_frame: AtomicBool,
     events: Mutex<Vec<(u32, u128)>>,
+    /// Object types the extension was asked for (source input only).
+    extension_requests: Mutex<Vec<i32>>,
+}
+
+/// What the probe plays.
+pub enum Input<'a> {
+    /// A public http(s) URL, UTF-16.
+    Url(&'a [u16]),
+    /// A COM object that should expose `IMFMediaSource`.
+    Source(IUnknown),
+}
+
+/// Hands the caller's media source to the engine for any URL (only the private one is ever set).
+#[implement(IMFMediaEngineExtension)]
+struct SourceExtension {
+    source: IMFMediaSource,
+    shared: Arc<Shared>,
+}
+
+impl IMFMediaEngineExtension_Impl for SourceExtension_Impl {
+    fn CanPlayType(&self, _audio_only: BOOL, _mime_type: &BSTR) -> windows::core::Result<MF_MEDIA_ENGINE_CANPLAY> {
+        Ok(MF_MEDIA_ENGINE_CANPLAY_MAYBE)
+    }
+
+    fn BeginCreateObject(
+        &self,
+        _url: &BSTR,
+        _byte_stream: Ref<IMFByteStream>,
+        kind: MF_OBJECT_TYPE,
+        _cancel_cookie: OutRef<IUnknown>,
+        callback: Ref<IMFAsyncCallback>,
+        state: Ref<IUnknown>,
+    ) -> windows::core::Result<()> {
+        if let Ok(mut requests) = self.shared.extension_requests.lock() {
+            requests.push(kind.0);
+        }
+        if kind != MF_OBJECT_MEDIASOURCE {
+            return Err(MF_E_UNEXPECTED.into());
+        }
+        // SAFETY: the async result holds its own references to the source, callback and state.
+        unsafe {
+            let result = MFCreateAsyncResult(&self.source, callback.as_ref(), state.as_ref())?;
+            result.SetStatus(HRESULT(0))?;
+            MFInvokeCallback(&result)
+        }
+    }
+
+    fn CancelObjectCreation(&self, _cancel_cookie: Ref<IUnknown>) -> windows::core::Result<()> {
+        Ok(())
+    }
+
+    fn EndCreateObject(&self, result: Ref<IMFAsyncResult>) -> windows::core::Result<IUnknown> {
+        let result = result.ok()?;
+        // SAFETY: `result` is the async result created in BeginCreateObject.
+        unsafe {
+            result.GetStatus()?;
+            result.GetObject()
+        }
+    }
 }
 
 #[implement(IMFMediaEngineNotify)]
@@ -106,8 +171,11 @@ impl<T> StepResult<T> for windows::core::Result<T> {
 }
 
 /// Runs the probe and returns the plain-text report.
-pub fn run(url: &[u16], seconds: u32) -> String {
-    let mut report = String::from("Media engine probe (Rust bale_gpu.dll; frame-server mode, muted, own D3D11 device)\n");
+pub fn run(input: Input, seconds: u32) -> String {
+    let mut report = String::from(match input {
+        Input::Url(_) => "Media engine probe (Rust bale_gpu.dll; frame-server mode, muted, own D3D11 device)\n",
+        Input::Source(_) => "Media engine probe (Rust bale_gpu.dll; caller media source via engine extension; frame-server mode, muted)\n",
+    });
     let shared = Arc::new(Shared {
         clock: Instant::now(),
         can_play: AtomicBool::new(false),
@@ -115,6 +183,7 @@ pub fn run(url: &[u16], seconds: u32) -> String {
         ended: AtomicBool::new(false),
         first_frame: AtomicBool::new(false),
         events: Mutex::new(Vec::new()),
+        extension_requests: Mutex::new(Vec::new()),
     });
     // SAFETY: plain MF startup; paired with MFShutdown below only on success.
     if let Err(error) = unsafe { MFStartup(MF_VERSION, MFSTARTUP_FULL) } {
@@ -123,7 +192,7 @@ pub fn run(url: &[u16], seconds: u32) -> String {
     }
     let mut engine: Option<IMFMediaEngine> = None;
     // SAFETY: every COM object is created and used on this thread inside `play`.
-    let outcome = unsafe { play(url, seconds, &shared, &mut engine, &mut report) };
+    let outcome = unsafe { play(&input, seconds, &shared, &mut engine, &mut report) };
     if let Err(Step(name, hr)) = outcome {
         let _ = writeln!(report, "Error: 0x{:08X} at {name}", hr.0 as u32);
     }
@@ -135,6 +204,7 @@ pub fn run(url: &[u16], seconds: u32) -> String {
         }
     }
     append_events(&mut report, &shared);
+    drop(input);
     // SAFETY: all MF objects created after MFStartup have been released above.
     unsafe {
         let _ = MFShutdown();
@@ -143,7 +213,7 @@ pub fn run(url: &[u16], seconds: u32) -> String {
 }
 
 unsafe fn play(
-    url: &[u16],
+    input: &Input,
     seconds: u32,
     shared: &Arc<Shared>,
     engine_slot: &mut Option<IMFMediaEngine>,
@@ -180,6 +250,23 @@ unsafe fn play(
         MFCreateAttributes(&mut attributes, 3).step("MFCreateAttributes")?;
         let attributes = attributes.ok_or(Step("MFCreateAttributes", HRESULT(0x8000_4003u32 as i32)))?;
         let notify: IMFMediaEngineNotify = Notify(Arc::clone(shared)).into();
+        let url = match input {
+            Input::Url(url) => BSTR::from_wide(url),
+            Input::Source(object) => {
+                let source = object.cast::<IMFMediaSource>();
+                let _ = writeln!(
+                    report,
+                    "Source interfaces: IMFMediaSource={} IMFMediaSourceEx={} IMFGetService={}",
+                    source.is_ok(),
+                    object.cast::<IMFMediaSourceEx>().is_ok(),
+                    object.cast::<IMFGetService>().is_ok()
+                );
+                let extension: IMFMediaEngineExtension =
+                    SourceExtension { source: source.step("QI IMFMediaSource")?, shared: Arc::clone(shared) }.into();
+                attributes.SetUnknown(&MF_MEDIA_ENGINE_EXTENSION, &extension).step("SetUnknown extension")?;
+                BSTR::from("bale-mss:probe")
+            }
+        };
         attributes.SetUnknown(&MF_MEDIA_ENGINE_DXGI_MANAGER, &manager).step("SetUnknown DXGI manager")?;
         attributes.SetUnknown(&MF_MEDIA_ENGINE_CALLBACK, &notify).step("SetUnknown callback")?;
         attributes
@@ -203,8 +290,7 @@ unsafe fn play(
         report.push_str("Engine: created\n");
 
         engine.SetMuted(true).step("SetMuted")?;
-        let source = BSTR::from_wide(url);
-        engine.SetSource(&source).step("SetSource")?;
+        engine.SetSource(&url).step("SetSource")?;
 
         let open = Instant::now();
         while !shared.can_play.load(Ordering::Acquire)
@@ -384,6 +470,11 @@ fn append_events(report: &mut String, shared: &Shared) {
         .map(|(event, ms)| format!("{}@{ms}", event_name(*event)))
         .collect();
     let _ = writeln!(report, "Events (progress/timeupdate omitted): {}", listed.join(" "));
+    let requests = shared.extension_requests.lock().map(|requests| requests.clone()).unwrap_or_default();
+    if !requests.is_empty() {
+        let kinds: Vec<String> = requests.iter().map(|kind| kind.to_string()).collect();
+        let _ = writeln!(report, "Extension requests (0=media source, 1=byte stream): {}", kinds.join(" "));
+    }
     let _ = writeln!(
         report,
         "First frame ready: {}",

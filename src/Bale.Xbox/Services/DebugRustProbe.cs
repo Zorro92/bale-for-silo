@@ -11,7 +11,7 @@ namespace Bale.Xbox.Services;
 /// </summary>
 internal static unsafe class DebugRustProbe
 {
-    private const uint ExpectedAbi = 2;
+    private const uint ExpectedAbi = 3;
     private const int EngineReportCapacity = 16 * 1024;
 
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern uint bale_gpu_abi_version();
@@ -19,6 +19,27 @@ internal static unsafe class DebugRustProbe
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_d3d11_probe(uint* featureLevel);
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern uint bale_gpu_engine_probe(char* url, uint urlLength, uint seconds, byte* report, uint reportCapacity);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)]
+    private static extern uint bale_gpu_engine_probe_source(nint source, uint seconds, byte* report, uint reportCapacity);
+
+    /// <summary>Plays a live COM media source (borrowed; the caller keeps it alive) through the Rust engine probe.</summary>
+    internal static string RunEngineSource(nint source, int seconds)
+    {
+        try
+        {
+            var abi = bale_gpu_abi_version();
+            if (abi != ExpectedAbi) return $"Rust GPU layer ABI {abi} (expected {ExpectedAbi}) MISMATCH\n";
+            var buffer = new byte[EngineReportCapacity];
+            uint written;
+            fixed (byte* report = buffer)
+                written = bale_gpu_engine_probe_source(source, (uint)seconds, report, (uint)buffer.Length);
+            return Encoding.UTF8.GetString(buffer, 0, (int)Math.Min(written, (uint)buffer.Length));
+        }
+        catch (Exception ex)
+        {
+            return $"Rust engine probe: FAILS ({ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8})\n";
+        }
+    }
 
     /// <summary>The Rust port of <see cref="DebugMediaEngine.Run"/>; same report shape, URL never echoed.</summary>
     internal static string RunEngine(Uri uri, int seconds)

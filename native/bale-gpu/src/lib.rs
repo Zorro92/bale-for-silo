@@ -17,7 +17,7 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 /// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched DLL.
-pub const ABI_VERSION: u32 = 2;
+pub const ABI_VERSION: u32 = 3;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_gpu_abi_version() -> u32 {
@@ -97,7 +97,37 @@ pub unsafe extern "C" fn bale_gpu_engine_probe(url: *const u16, url_len: u32, se
     }
     // SAFETY: the caller guarantees `url_len` readable code units.
     let url = unsafe { std::slice::from_raw_parts(url, url_len as usize) };
-    let text = engine::run(url, seconds.clamp(1, 60));
+    let text = engine::run(engine::Input::Url(url), seconds.clamp(1, 60));
+    // SAFETY: the caller guarantees `report_capacity` writable bytes.
+    unsafe { write_report(&text, report, report_capacity) }
+}
+
+/// Like [`bale_gpu_engine_probe`], but plays `source`, a COM object that should expose `IMFMediaSource`
+/// (FFmpegInteropX's MediaStreamSource), through an `IMFMediaEngineExtension`. The pointer is borrowed:
+/// the probe takes its own reference and releases it before returning.
+///
+/// # Safety
+/// `source` must be a live COM pointer for the call; `report` must point to `report_capacity` writable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_gpu_engine_probe_source(
+    source: *mut core::ffi::c_void,
+    seconds: u32,
+    report: *mut u8,
+    report_capacity: u32,
+) -> u32 {
+    if source.is_null() || report.is_null() {
+        return 0;
+    }
+    // SAFETY: the caller guarantees a live COM pointer; clone takes our own reference.
+    let Some(object) = (unsafe { <windows::core::IUnknown as windows::core::Interface>::from_raw_borrowed(&source) }).cloned() else {
+        return 0;
+    };
+    let text = engine::run(engine::Input::Source(object), seconds.clamp(1, 60));
+    // SAFETY: the caller guarantees `report_capacity` writable bytes.
+    unsafe { write_report(&text, report, report_capacity) }
+}
+
+unsafe fn write_report(text: &str, report: *mut u8, report_capacity: u32) -> u32 {
     let mut length = text.len().min(report_capacity as usize);
     while !text.is_char_boundary(length) {
         length -= 1;

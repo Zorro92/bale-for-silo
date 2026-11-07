@@ -1,32 +1,69 @@
 #if DEBUG_SERVER
+using FFmpegInteropX;
+
 namespace Bale.Xbox.Services;
 
 internal sealed partial class DebugServer
 {
-    // Debug-only IMFMediaEngine spike (DebugMediaEngine); shares the playtest gate so probes never overlap.
-    // mode=cs (default) runs the C# probe, mode=rust its Rust port in bale_gpu.dll.
+    // Debug-only IMFMediaEngine spike; shares the playtest gate so probes never overlap.
+    // mode=cs (default) runs the C# probe (DebugMediaEngine), mode=rust its Rust port in bale_gpu.dll, and
+    // mode=rust-ffmpeg plays an FFmpegInteropX software-decoded source through the Rust engine
+    // (its MediaStreamSource handed over as IMFMediaSource via an IMFMediaEngineExtension).
     private static async Task<(string Status, string Body)> PlaytestEngineAsync(string? url, string? seconds, string? mode = null)
     {
         if (!DebugMediaEngine.TryParse(url, seconds, out var uri, out var duration, out var error))
             return ("400 Bad Request", error + "\n");
-        if (mode is not (null or "cs" or "rust"))
-            return ("400 Bad Request", "mode must be cs or rust\n");
-        var rust = mode == "rust";
+        if (mode is not (null or "cs" or "rust" or "rust-ffmpeg"))
+            return ("400 Bad Request", "mode must be cs, rust or rust-ffmpeg\n");
         if (Interlocked.CompareExchange(ref _playtestBusy, 1, 0) != 0)
             return ("409 Conflict", "a playtest is already running\n");
+        var releaseGate = true;
         try
         {
-            Log.Info(rust ? "Debug engine probe (rust): start" : "Debug engine probe: start");
-            // A dedicated thread: the poll loop sleeps and must not tie up a thread-pool worker.
-            var body = await Task.Factory.StartNew(() => rust ? DebugRustProbe.RunEngine(uri, duration) : DebugMediaEngine.Run(uri, duration),
-                CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            Log.Info($"Debug engine probe ({mode ?? "cs"}): start");
+            string body;
+            if (mode == "rust-ffmpeg")
+            {
+                var config = DebugFfmpegSource.Configuration("software", new DebugFfmpegTuning());
+                var creation = FFmpegMediaSource.CreateFromUriAsync(uri.AbsoluteUri, config).AsTask();
+                if (await Task.WhenAny(creation, Task.Delay(DebugFfmpegPlaytest.CreateTimeoutMs)) != creation)
+                {
+                    // Native creation may ignore cancellation; the late disposal releases the gate.
+                    releaseGate = false;
+                    _ = DisposeLateFfmpegSourceAsync(creation);
+                    return ("200 OK", $"FFmpeg create timed out after {DebugFfmpegPlaytest.CreateTimeoutMs} ms\n");
+                }
+                using var source = await creation;
+                // CreateMediaPlaybackItem installs the MediaStreamSource's sample handlers (see DebugFrameDelivery).
+                var item = source.CreateMediaPlaybackItem();
+                var streamSource = source.GetMediaStreamSource();
+                var pointer = ((WinRT.IWinRTObject)streamSource).NativeObject.ThisPtr;
+                body = "FFmpeg source: software decoder mode, release tuning\n"
+                    + await RunEngineThreadAsync(() => DebugRustProbe.RunEngineSource(pointer, duration));
+                GC.KeepAlive(streamSource);
+                GC.KeepAlive(item);
+            }
+            else
+            {
+                var rust = mode == "rust";
+                body = await RunEngineThreadAsync(() => rust ? DebugRustProbe.RunEngine(uri, duration) : DebugMediaEngine.Run(uri, duration));
+            }
             Log.Info("Debug engine probe: done");
             return ("200 OK", body);
         }
+        catch (Exception ex)
+        {
+            // Type and HRESULT only: never the message (it may echo media details).
+            return ("200 OK", $"Engine probe error: {ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8}\n");
+        }
         finally
         {
-            Interlocked.Exchange(ref _playtestBusy, 0);
+            if (releaseGate) Interlocked.Exchange(ref _playtestBusy, 0);
         }
     }
+
+    // A dedicated thread: the poll loop sleeps and must not tie up a thread-pool worker.
+    private static Task<string> RunEngineThreadAsync(Func<string> probe)
+        => Task.Factory.StartNew(probe, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 }
 #endif
