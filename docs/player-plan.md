@@ -46,6 +46,12 @@ VC-1 and MPEG-4 Part 2 simple at 1080p; HEVC Main and Main10 (P010) up to 8K; VP
 and profile 2 10-bit (P010) up to 4K. **No AV1 profile**: the GPU path doesn't help AV1 on this
 console. AV1 needs software decode (dav1d).
 
+`caps gpu` also reports expanded-resource (game-mode) status, console model, DXGI adapter memory
+and software flags, and D3D12 app-mode availability: default-adapter LUID matching, maximum feature
+level/shader model, compute-queue creation, and explicit non-software adapter device creation.
+This probes hardware access, not video decode support or a new playback route.
+Results: pending console run
+
 Still to test with real library files: TrueHD/DTS passthrough to a receiver.
 
 The capability claims Bale sends the server must come from this kind of evidence, never from

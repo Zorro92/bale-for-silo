@@ -63,6 +63,7 @@ MSIX (~2 min). Then, with `XBOX_HOST` set to the console's IP:
 ./scripts/bale-debug.sh wait page Detail      # wait up to 8 s, then print where (also loaded / text / focus)
 ./scripts/bale-debug.sh wait --timeout 12000 text "Clear filters"  # 0–15000 ms; HTTP 408 keeps the where body
 ./scripts/bale-debug.sh caps                  # installed decoders, display modes, audio mix and baseline
+./scripts/bale-debug.sh caps gpu              # D3D11 decode; D3D12 app-mode adapters/compute, game mode and console model
 ./scripts/bale-debug.sh playtest "https://example.org/public.mp4" 3  # muted built-in-player probe; 1–10 s (default 3)
 timeout 300 ./scripts/bale-debug.sh playtest suite 3  # Chromium codec samples, sequential; needs a larger outer timeout
 ./scripts/bale-debug.sh playtest-ffmpeg @/tmp/x 30 software  # debug FFmpegInteropX; URL, @file or suite; 1–60 s; auto|software|system

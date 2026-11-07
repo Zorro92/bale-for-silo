@@ -376,11 +376,390 @@ internal sealed partial class DebugServer
             ReleaseGpuCom(context);
             ReleaseGpuCom(device);
         }
+        // App-mode D3D12 availability is independent of D3D11 video-device support.
+        AppendD3D12GpuCapabilities(builder);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct GamingDeviceModelInformation
+    {
+        public uint VendorId;
+        public uint DeviceId;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct GpuLuid
+    {
+        public uint LowPart;
+        public int HighPart;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private unsafe struct DxgiAdapterDesc1
+    {
+        public fixed char Description[128];
+        public uint VendorId;
+        public uint DeviceId;
+        public uint SubSysId;
+        public uint Revision;
+        public nuint DedicatedVideoMemory;
+        public nuint DedicatedSystemMemory;
+        public nuint SharedSystemMemory;
+        public GpuLuid AdapterLuid;
+        public uint Flags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private unsafe struct D3D12FeatureDataFeatureLevels
+    {
+        public uint NumFeatureLevels;
+        public int* FeatureLevelsRequested;
+        public int MaxSupportedFeatureLevel;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct D3D12FeatureDataShaderModel
+    {
+        public int HighestShaderModel;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct D3D12CommandQueueDesc
+    {
+        public int Type;
+        public int Priority;
+        public uint Flags;
+        public uint NodeMask;
+    }
+
+    private sealed record GpuAdapter(uint Index, IntPtr Instance, string Description, uint Flags, GpuLuid Luid)
+    {
+        public bool IsSoftware => (Flags & 2) != 0;
+    }
+
+    private static readonly Guid D3D12DeviceId = new("189819f1-1db6-4b57-be54-1821339b85f7");
+
+    private static void AppendD3D12GpuCapabilities(StringBuilder builder)
+    {
+        builder.Append("GPU (D3D12, app-mode availability):\n");
+        AppendGpuGameMode(builder);
+        AppendGpuConsoleModel(builder);
+        var adapters = new List<GpuAdapter>();
+        var dxgiLibrary = IntPtr.Zero;
+        try
+        {
+            AppendGpuAdapters(builder, adapters, out dxgiLibrary);
+            AppendD3D12Devices(builder, adapters);
+        }
+        finally
+        {
+            foreach (var adapter in adapters) ReleaseGpuCom(adapter.Instance);
+            // Keep DXGI loaded until all adapter COM references have been released.
+            FreeGpuLibrary(dxgiLibrary, "dxgi.dll");
+        }
+    }
+
+    private static bool TryLoadGpuExport(StringBuilder builder, string libraryName, string exportName,
+        out IntPtr library, out IntPtr export)
+    {
+        library = IntPtr.Zero;
+        export = IntPtr.Zero;
+        Log.Info($"Debug caps: gpu before loading {libraryName}");
+        if (!NativeLibrary.TryLoad(libraryName, out library))
+        {
+            builder.Append($"  {exportName}: error ({libraryName} missing)\n");
+            return false;
+        }
+        Log.Info($"Debug caps: gpu before resolving {exportName}");
+        if (NativeLibrary.TryGetExport(library, exportName, out export)) return true;
+        builder.Append($"  {exportName}: error (export missing)\n");
+        return false;
+    }
+
+    private static unsafe void AppendGpuGameMode(StringBuilder builder)
+    {
+        var library = IntPtr.Zero;
+        try
+        {
+            if (!TryLoadGpuExport(builder, "api-ms-win-gaming-expandedresources-l1-1-0.dll",
+                "HasExpandedResources", out library, out var export)) return;
+            var hasExpandedResources = (delegate* unmanaged[Stdcall]<int*, int>)export;
+            var expanded = 0; // Win32 BOOL, not a marshalled managed bool.
+            Log.Info("Debug caps: gpu before HasExpandedResources");
+            Marshal.ThrowExceptionForHR(hasExpandedResources(&expanded));
+            builder.Append($"  HasExpandedResources (game mode): {(expanded != 0 ? "yes" : "no")}\n");
+        }
+        catch (Exception ex)
+        {
+            builder.Append($"  HasExpandedResources: error: 0x{unchecked((uint)ex.HResult):X8}\n");
+        }
+        finally
+        {
+            FreeGpuLibrary(library, "api-ms-win-gaming-expandedresources-l1-1-0.dll");
+        }
+    }
+
+    private static unsafe void AppendGpuConsoleModel(StringBuilder builder)
+    {
+        var library = IntPtr.Zero;
+        try
+        {
+            if (!TryLoadGpuExport(builder, "api-ms-win-gaming-deviceinformation-l1-1-0.dll",
+                "GetGamingDeviceModelInformation", out library, out var export)) return;
+            var getModel = (delegate* unmanaged[Stdcall]<GamingDeviceModelInformation*, int>)export;
+            var model = default(GamingDeviceModelInformation);
+            Log.Info("Debug caps: gpu before GetGamingDeviceModelInformation");
+            Marshal.ThrowExceptionForHR(getModel(&model));
+            var name = model.DeviceId switch
+            {
+                0x1D27FABB => "Xbox Series S",
+                0x2F7A3DFF => "Xbox Series X",
+                _ => "other",
+            };
+            builder.Append($"  Console model: VendorId=0x{model.VendorId:X8} DeviceId=0x{model.DeviceId:X8} ({name})\n");
+        }
+        catch (Exception ex)
+        {
+            builder.Append($"  Console model: error: 0x{unchecked((uint)ex.HResult):X8}\n");
+        }
+        finally
+        {
+            FreeGpuLibrary(library, "api-ms-win-gaming-deviceinformation-l1-1-0.dll");
+        }
+    }
+
+    private static unsafe void AppendGpuAdapters(StringBuilder builder, List<GpuAdapter> adapters, out IntPtr library)
+    {
+        library = IntPtr.Zero;
+        var factory = IntPtr.Zero;
+        try
+        {
+            if (!TryLoadGpuExport(builder, "dxgi.dll", "CreateDXGIFactory2", out library, out var export)) return;
+            var createFactory = (delegate* unmanaged[Stdcall]<uint, Guid*, IntPtr*, int>)export;
+            var factoryId = new Guid("770aae78-f26f-4dba-a829-253c83d1b387"); // IID_IDXGIFactory1
+            Log.Info("Debug caps: gpu before CreateDXGIFactory2 (IDXGIFactory1)");
+            Marshal.ThrowExceptionForHR(createFactory(0, &factoryId, &factory));
+            // Windows SDK dxgi.h declaration order: IUnknown(3) + IDXGIObject(4) = 7.
+            // IDXGIFactory's five methods occupy 7–11; IDXGIFactory1::EnumAdapters1 = 7 + 5 = 12.
+            // IDXGIAdapter's EnumOutputs/GetDesc/CheckInterfaceSupport occupy 7–9;
+            // IDXGIAdapter1::GetDesc1 = 7 + 3 = 10.
+            var enumAdapters = (delegate* unmanaged[Stdcall]<IntPtr, uint, IntPtr*, int>)(*(void***)factory)[12];
+            builder.Append("  DXGI adapters (memory in bytes; Flags SOFTWARE=2):\n");
+            for (uint index = 0; ; index++)
+            {
+                var adapter = IntPtr.Zero;
+                try
+                {
+                    Log.Info($"Debug caps: gpu before EnumAdapters1 ({index})");
+                    var hr = enumAdapters(factory, index, &adapter);
+                    if (hr == unchecked((int)0x887A0002)) break; // DXGI_ERROR_NOT_FOUND
+                    if (hr < 0)
+                    {
+                        builder.Append($"    EnumAdapters1 ({index}): error: 0x{unchecked((uint)hr):X8}\n");
+                        break;
+                    }
+                    var getDesc = (delegate* unmanaged[Stdcall]<IntPtr, DxgiAdapterDesc1*, int>)(*(void***)adapter)[10];
+                    var desc = default(DxgiAdapterDesc1);
+                    Log.Info($"Debug caps: gpu before GetDesc1 ({index})");
+                    Marshal.ThrowExceptionForHR(getDesc(adapter, &desc));
+                    var length = 0;
+                    while (length < 128 && desc.Description[length] != '\0') length++;
+                    var description = EscapeText(new string(desc.Description, 0, length));
+                    builder.Append($"    {index}: {description}; VendorId=0x{desc.VendorId:X4} DeviceId=0x{desc.DeviceId:X4}"
+                        + $" DedicatedVideoMemory={desc.DedicatedVideoMemory} DedicatedSystemMemory={desc.DedicatedSystemMemory}"
+                        + $" SharedSystemMemory={desc.SharedSystemMemory} Flags=0x{desc.Flags:X8}\n");
+                    adapters.Add(new GpuAdapter(index, adapter, description, desc.Flags, desc.AdapterLuid));
+                    adapter = IntPtr.Zero; // Ownership transfers to the caller's finally block.
+                }
+                catch (Exception ex)
+                {
+                    builder.Append($"    DXGI adapter {index}: error: 0x{unchecked((uint)ex.HResult):X8}\n");
+                }
+                finally
+                {
+                    ReleaseGpuCom(adapter);
+                }
+            }
+            if (adapters.Count == 0) builder.Append("    none described\n");
+        }
+        catch (Exception ex)
+        {
+            builder.Append($"  DXGI adapters: error: 0x{unchecked((uint)ex.HResult):X8}\n");
+        }
+        finally
+        {
+            ReleaseGpuCom(factory);
+        }
+    }
+
+    private static unsafe void AppendD3D12Devices(StringBuilder builder, List<GpuAdapter> adapters)
+    {
+        var library = IntPtr.Zero;
+        try
+        {
+            if (!TryLoadGpuExport(builder, "d3d12.dll", "D3D12CreateDevice", out library, out var export)) return;
+            var createDevice = (delegate* unmanaged[Stdcall]<IntPtr, int, Guid*, IntPtr*, int>)export;
+            AppendD3D12DefaultDevice(builder, createDevice, adapters);
+            var deviceId = D3D12DeviceId;
+            foreach (var adapter in adapters)
+            {
+                if (adapter.IsSoftware) continue;
+                var device = IntPtr.Zero;
+                try
+                {
+                    Log.Info($"Debug caps: gpu before D3D12CreateDevice (DXGI {adapter.Index})");
+                    var hr = createDevice(adapter.Instance, 0xB000, &deviceId, &device); // D3D_FEATURE_LEVEL_11_0
+                    builder.Append($"  D3D12CreateDevice (DXGI {adapter.Index}, {adapter.Description}): 0x{unchecked((uint)hr):X8}\n");
+                }
+                catch (Exception ex)
+                {
+                    builder.Append($"  D3D12CreateDevice (DXGI {adapter.Index}): error: 0x{unchecked((uint)ex.HResult):X8}\n");
+                }
+                finally
+                {
+                    ReleaseGpuCom(device);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            builder.Append($"  D3D12: error: 0x{unchecked((uint)ex.HResult):X8}\n");
+        }
+        finally
+        {
+            FreeGpuLibrary(library, "d3d12.dll");
+        }
+    }
+
+    private static unsafe void AppendD3D12DefaultDevice(StringBuilder builder,
+        delegate* unmanaged[Stdcall]<IntPtr, int, Guid*, IntPtr*, int> createDevice, List<GpuAdapter> adapters)
+    {
+        var device = IntPtr.Zero;
+        try
+        {
+            var deviceId = D3D12DeviceId;
+            Log.Info("Debug caps: gpu before D3D12CreateDevice (default adapter)");
+            var hr = createDevice(IntPtr.Zero, 0xB000, &deviceId, &device);
+            builder.Append($"  D3D12CreateDevice (default, FL 11_0): 0x{unchecked((uint)hr):X8}\n");
+            if (hr < 0 || device == IntPtr.Zero) return;
+            AppendD3D12Adapter(builder, device, adapters);
+            AppendD3D12FeatureLevels(builder, device);
+            AppendD3D12ShaderModel(builder, device);
+            AppendD3D12ComputeQueue(builder, device);
+        }
+        catch (Exception ex)
+        {
+            builder.Append($"  D3D12 default device: error: 0x{unchecked((uint)ex.HResult):X8}\n");
+        }
+        finally
+        {
+            ReleaseGpuCom(device);
+        }
+    }
+
+    // Windows SDK d3d12.h: IUnknown(3) + ID3D12Object(4) = 7 inherited slots.
+    // ID3D12Device starts at GetNodeCount=7, CreateCommandQueue=8, CreateCommandAllocator=9,
+    // CreateGraphicsPipelineState=10, CreateComputePipelineState=11, CreateCommandList=12,
+    // CheckFeatureSupport=13. GetAdapterLuid is its 37th declared method: 7 + 36 = 43.
+    private static unsafe void AppendD3D12Adapter(StringBuilder builder, IntPtr device, List<GpuAdapter> adapters)
+    {
+        try
+        {
+            // x64 MSVC COM struct return: hidden return buffer follows this; return value is that buffer.
+            var getLuid = (delegate* unmanaged[Stdcall]<IntPtr, GpuLuid*, GpuLuid*>)(*(void***)device)[43];
+            var luid = default(GpuLuid);
+            Log.Info("Debug caps: gpu before ID3D12Device::GetAdapterLuid");
+            getLuid(device, &luid);
+            GpuAdapter? adapter = null;
+            foreach (var candidate in adapters)
+            {
+                if (candidate.Luid.LowPart != luid.LowPart || candidate.Luid.HighPart != luid.HighPart) continue;
+                adapter = candidate;
+                break;
+            }
+            builder.Append($"  D3D12 adapter LUID={unchecked((uint)luid.HighPart):X8}:{luid.LowPart:X8}: ");
+            if (adapter is null) builder.Append("no DXGI match (hardware/software unknown)\n");
+            else builder.Append($"DXGI {adapter.Index}, {adapter.Description}; SOFTWARE={(adapter.IsSoftware ? "yes" : "no")}\n");
+        }
+        catch (Exception ex)
+        {
+            builder.Append($"  D3D12 adapter: error: 0x{unchecked((uint)ex.HResult):X8}\n");
+        }
+    }
+
+    private static unsafe void AppendD3D12FeatureLevels(StringBuilder builder, IntPtr device)
+    {
+        try
+        {
+            var checkFeature = (delegate* unmanaged[Stdcall]<IntPtr, int, void*, uint, int>)(*(void***)device)[13];
+            int* levels = stackalloc int[] { 0xB000, 0xB100, 0xC000, 0xC100, 0xC200 }; // 11_0 through 12_2
+            var data = new D3D12FeatureDataFeatureLevels { NumFeatureLevels = 5, FeatureLevelsRequested = levels };
+            Log.Info("Debug caps: gpu before CheckFeatureSupport (FEATURE_LEVELS)");
+            Marshal.ThrowExceptionForHR(checkFeature(device, 2, &data, (uint)sizeof(D3D12FeatureDataFeatureLevels)));
+            builder.Append($"  Max feature level: 0x{data.MaxSupportedFeatureLevel:X4}\n");
+        }
+        catch (Exception ex)
+        {
+            builder.Append($"  Feature levels: error: 0x{unchecked((uint)ex.HResult):X8}\n");
+        }
+    }
+
+    private static unsafe void AppendD3D12ShaderModel(StringBuilder builder, IntPtr device)
+    {
+        try
+        {
+            var checkFeature = (delegate* unmanaged[Stdcall]<IntPtr, int, void*, uint, int>)(*(void***)device)[13];
+            ReadOnlySpan<int> models = [0x66, 0x65, 0x64, 0x63, 0x62, 0x61, 0x60, 0x51];
+            foreach (var model in models)
+            {
+                var data = new D3D12FeatureDataShaderModel { HighestShaderModel = model };
+                Log.Info($"Debug caps: gpu before CheckFeatureSupport (SHADER_MODEL 0x{model:X2})");
+                var hr = checkFeature(device, 7, &data, (uint)sizeof(D3D12FeatureDataShaderModel));
+                if (hr == unchecked((int)0x80070057) && model != 0x51) continue; // E_INVALIDARG: older runtime.
+                Marshal.ThrowExceptionForHR(hr);
+                builder.Append($"  Max shader model: {data.HighestShaderModel >> 4}.{data.HighestShaderModel & 15} (0x{data.HighestShaderModel:X2})\n");
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            builder.Append($"  Shader model: error: 0x{unchecked((uint)ex.HResult):X8}\n");
+        }
+    }
+
+    private static unsafe void AppendD3D12ComputeQueue(StringBuilder builder, IntPtr device)
+    {
+        var queue = IntPtr.Zero;
+        try
+        {
+            var createQueue = (delegate* unmanaged[Stdcall]<IntPtr, D3D12CommandQueueDesc*, Guid*, IntPtr*, int>)(*(void***)device)[8];
+            var desc = new D3D12CommandQueueDesc { Type = 2 }; // COMPUTE; normal priority, no flags, node mask 0.
+            var queueId = new Guid("0ec870a6-5d7e-4c22-8cfc-5baae07616ed"); // IID_ID3D12CommandQueue
+            Log.Info("Debug caps: gpu before ID3D12Device::CreateCommandQueue (COMPUTE)");
+            var hr = createQueue(device, &desc, &queueId, &queue);
+            builder.Append($"  CreateCommandQueue (COMPUTE): 0x{unchecked((uint)hr):X8}\n");
+        }
+        catch (Exception ex)
+        {
+            builder.Append($"  CreateCommandQueue (COMPUTE): error: 0x{unchecked((uint)ex.HResult):X8}\n");
+        }
+        finally
+        {
+            ReleaseGpuCom(queue);
+        }
+    }
+
+    private static void FreeGpuLibrary(IntPtr library, string libraryName)
+    {
+        if (library == IntPtr.Zero) return;
+        Log.Info($"Debug caps: gpu before unloading {libraryName}");
+        NativeLibrary.Free(library);
     }
 
     private static unsafe void ReleaseGpuCom(IntPtr instance)
     {
         if (instance == IntPtr.Zero) return;
+        Log.Info("Debug caps: gpu before COM release");
         var release = (delegate* unmanaged[Stdcall]<IntPtr, uint>)(*(void***)instance)[2];
         release(instance);
     }
