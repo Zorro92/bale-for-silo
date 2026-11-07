@@ -87,6 +87,16 @@ internal static class DebugFfmpegPlaytest
         return true;
     }
 
+    /// <summary>hdr=on|off forces FFmpegInteropX HdrSupport Enabled/Disabled; default or omitted keeps Automatic.</summary>
+    internal static bool TryParseHdr(string? hdr, out bool? enabled, out string error)
+    {
+        error = string.Empty;
+        enabled = hdr switch { "on" => true, "off" => false, _ => null };
+        if (hdr is null or "default" or "on" or "off") return true;
+        error = "hdr must be on, off or default";
+        return false;
+    }
+
     private static bool TryNativeOption(string? value, int minimum, int maximum, out int? number)
     {
         number = null;
@@ -109,7 +119,8 @@ internal static class DebugFfmpegPlaytest
             + $"dav1d max frame delay: {decode.Dav1dMaxFrameDelay ?? 0} (0=dav1d default; {(tuning.Dav1dMaxFrameDelay is null ? "default" : "override")})\n"
             + $"Decode thread priority: {tuning.DecodeThreadPriority ?? 0} (0=off, 1=above normal, 2=highest; {(tuning.DecodeThreadPriority is null ? "default" : "override")})\n"
             + $"Decoder use max resolution: {tuning.DecoderUseMaxResolution ?? 0} (0=unset, 1=on; {(tuning.DecoderUseMaxResolution is null ? "default" : "override")}; system video only)\n"
-            + $"Decoder max DPB count: {tuning.DecoderMaxDpbCount ?? 0} (0=unset; {(tuning.DecoderMaxDpbCount is null ? "default" : "override")}; system video only)\n");
+            + $"Decoder max DPB count: {tuning.DecoderMaxDpbCount ?? 0} (0=unset; {(tuning.DecoderMaxDpbCount is null ? "default" : "override")}; system video only)\n"
+            + $"HDR support: {tuning.HdrSupport switch { true => "on (override)", false => "off (override)", null => "automatic (default)" }}\n");
     }
 
     internal static string FrameDelivery(PlaybackFrameDeliverySnapshot? frames)
@@ -173,7 +184,7 @@ internal static class DebugFfmpegPlaytest
 // Nullable settings use release software-video defaults or the wrapper's defaults for other modes.
 internal sealed record DebugFfmpegTuning(uint? Threads = null, bool? Allow10bit = null, double Rate = 1.0,
     int? DecodeAheadFrames = null, int? SwsThreads = null, int? Dav1dMaxFrameDelay = null, int? DecodeThreadPriority = null,
-    int? DecoderUseMaxResolution = null, int? DecoderMaxDpbCount = null)
+    int? DecoderUseMaxResolution = null, int? DecoderMaxDpbCount = null, bool? HdrSupport = null)
 {
     internal SoftwareDecodeTuning DecodeTuning(string mode)
     {

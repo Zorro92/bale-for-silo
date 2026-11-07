@@ -209,7 +209,7 @@ Standalone syntax (independent of process-wide `ffmpeg-tune`):
 ```sh
 scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [auto|software|system] \
   [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] \
-  [maxres=0|1|default] [dpb=N|default]
+  [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default]
 ```
 
 Supply seconds/mode before tuning, then keys in any order, at most once each. Seconds are 1–60
@@ -220,6 +220,9 @@ so delay remains unset unless explicitly overridden (use `delay=8` for a known a
 Priority remains unset unless `prio=0..2` is supplied, with the same levels as above. These four
 fork options affect only software video, including an auto-mode probe that selects software decoding;
 hardware/system video ignores them. Auto/system modes retain wrapper defaults for omitted keys.
+`hdr=on|off` forces the wrapper's `Video.HdrSupport` to Enabled/Disabled (omitted or `default` keeps
+Automatic, which applies HDR colour info only when the HDMI mode is already BT.2020); the report adds
+`HDR support:` and the video stream's `HasHdrMetadata` / `IsHdrActive`. Production never sets it.
 The system-video hints below accept `default` as omitted; other one-shot probe keys do not. The response
 reports threads/10-bit output, logical CPUs, requested/applied rate, applied fork-option values with
 default/override labels, and decoded output subtype plus software frame-delivery

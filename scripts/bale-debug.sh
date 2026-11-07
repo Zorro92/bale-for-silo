@@ -40,7 +40,8 @@
 #   scripts/bale-debug.sh playtest <url> [seconds]  muted public http(s) stream probe (1–10 s, default 3)
 #   timeout 300 scripts/bale-debug.sh playtest suite [seconds]  Chromium samples, one at a time
 #                                               (the whole suite needs more than the usual timeout 20)
-#   scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [mode] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default]
+#   scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [mode] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default]
+#                                               hdr=on|off forces the wrapper's HdrSupport Enabled/Disabled (default omitted = Automatic: HDR colour info only if HDMI is already BT.2020)
 #                                               debug FFmpeg probe (1–60 s, default 3; auto|software|system, default auto)
 #                                               tuning after seconds/mode, any order: threads 0–16 (0=CPU count), rate 0.5–2.0 (default 1)
 #                                               software video only: ahead 0–64 (0=off), sws 1–16 (1=upstream), delay 0–64 (0=dav1d default)
@@ -238,7 +239,7 @@ case "${1:-}" in
     playtest_mode_args=()
     if [[ "$playtest_route" == playtest-ffmpeg ]]; then
       playtest_max_seconds=60
-      playtest_max_args=13
+      playtest_max_args=14
       # 30 s native create + 15 s MediaOpened + 5 s response/cleanup margin.
       playtest_open_margin=50
       playtest_mode_args=(--data-urlencode "mode=${4:-auto}")
@@ -247,7 +248,7 @@ case "${1:-}" in
       || (( playtest_seconds > playtest_max_seconds )) \
       || [[ "$playtest_route" == playtest-ffmpeg && ! "${4:-auto}" =~ ^(auto|software|system)$ ]]; then
       echo 'usage: scripts/bale-debug.sh playtest <http(s)-url|suite> [seconds] (1–10, default 3; suite needs timeout 300)' >&2
-      echo '       scripts/bale-debug.sh playtest-ffmpeg <http(s)-url|@file|suite> [seconds] [auto|software|system] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] (1–60 s, default 3; tuning requires seconds/mode)' >&2
+      echo '       scripts/bale-debug.sh playtest-ffmpeg <http(s)-url|@file|suite> [seconds] [auto|software|system] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] (1–60 s, default 3; tuning requires seconds/mode)' >&2
       exit 2
     fi
     if [[ "$playtest_route" == playtest-ffmpeg ]]; then
@@ -262,12 +263,13 @@ case "${1:-}" in
           prio=*) [[ "$value" =~ ^0*[0-2]$ ]] && valid_tuning=true ;;
           maxres=*) [[ "$value" == default || "$value" =~ ^0*[01]$ ]] && valid_tuning=true ;;
           dpb=*) [[ "$value" == default || "$value" =~ ^0*([0-9]|1[0-6])$ ]] && valid_tuning=true ;;
+          hdr=*) [[ "$value" =~ ^(on|off|default)$ ]] && valid_tuning=true ;;
           threads=*) [[ "$value" =~ ^0*([0-9]|1[0-6])$ ]] && valid_tuning=true ;;
           10bit=*) [[ "$value" =~ ^(on|off)$ ]] && valid_tuning=true ;;
           rate=*) [[ "$value" =~ ^(0*[.][5-9][0-9]*|0*1([.][0-9]*)?|0*2([.]0*)?)$ ]] && valid_tuning=true ;;
         esac
         if [[ "$valid_tuning" != true || -n "${playtest_tuning_seen[$name]:-}" ]]; then
-          echo 'tuning after seconds/mode: [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default], any order, no duplicates; N=0–16 (0=CPU count), R=0.5–2.0, ahead/delay=0–64, sws=1–16, prio=0–2 (0=off, 1=above normal, 2=highest); system video only: maxres=0–1, dpb=0–16 (0=unset), default = omitted' >&2
+          echo 'tuning after seconds/mode: [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default], any order, no duplicates; N=0–16 (0=CPU count), R=0.5–2.0, ahead/delay=0–64, sws=1–16, prio=0–2 (0=off, 1=above normal, 2=highest); system video only: maxres=0–1, dpb=0–16 (0=unset), default = omitted; hdr=on|off forces wrapper HdrSupport Enabled/Disabled (default Automatic)' >&2
           exit 2
         fi
         playtest_tuning_seen[$name]=true

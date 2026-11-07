@@ -131,6 +131,37 @@ public class DebugPlaytestScriptTests
         }
     }
 
+    [Theory]
+    [InlineData("hdr=on")]
+    [InlineData("hdr=off")]
+    [InlineData("hdr=default")]
+    public async Task HdrProbeOverrideWorksAlongsideAllOtherTuningKeys(string hdr)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        string[] options = ["threads=4", "10bit=on", "rate=1", "ahead=8", "sws=4", "delay=8", "prio=1", "maxres=default", "dpb=default", hdr];
+        var result = await RunAsync(["playtest-ffmpeg", "@fixture", "30", "software", .. options]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("--data-urlencode\n" + hdr + "\n", result.Arguments);
+        Assert.DoesNotContain("not-a-real-grant", result.Output + result.Arguments);
+    }
+
+    [Theory]
+    [InlineData("hdr=")]
+    [InlineData("hdr=ON")]
+    [InlineData("hdr=1")]
+    [InlineData("hdr=pretend")]
+    [InlineData("hdr=on hdr=off")]
+    public async Task InvalidHdrProbeOverrideNeverInvokesCurl(string option)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["playtest-ffmpeg", "@fixture", "30", "software", .. option.Split(' ')]);
+        Assert.Equal(2, result.ExitCode);
+        Assert.Empty(result.Arguments);
+        var tune = await RunAsync(["ffmpeg-tune", "hdr=on"]);
+        Assert.Equal(2, tune.ExitCode);
+        Assert.Empty(tune.Arguments);
+    }
+
     [Fact]
     public async Task OmittedTuningDoesNotSendNativeOverrides()
     {

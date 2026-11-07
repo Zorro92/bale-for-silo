@@ -151,6 +151,38 @@ public class DebugFfmpegPlaytestTests
     }
 
     [Theory]
+    [InlineData(null, null)]
+    [InlineData("default", null)]
+    [InlineData("on", true)]
+    [InlineData("off", false)]
+    public void HdrProbeOverrideIsOptIn(string? hdr, bool? expected)
+    {
+        Assert.True(DebugFfmpegPlaytest.TryParseHdr(hdr, out var enabled, out var error));
+        Assert.Equal(expected, enabled);
+        Assert.Empty(error);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("ON")]
+    [InlineData("1")]
+    [InlineData("pretend")]
+    public void InvalidHdrProbeOverrideIsRejected(string hdr)
+    {
+        Assert.False(DebugFfmpegPlaytest.TryParseHdr(hdr, out _, out var error));
+        Assert.Equal("hdr must be on, off or default", error);
+    }
+
+    [Fact]
+    public void HdrProbeOverrideReachesWrapperConfigOnlyWhenSet()
+    {
+        var source = Read("DebugFfmpegSource.cs.txt");
+        Assert.Contains("if (tuning.HdrSupport is { } hdr) config.Video.HdrSupport = hdr ? HdrSupport.Enabled : HdrSupport.Disabled;", source);
+        Assert.Contains("query.GetValueOrDefault(\"hdr\")", Read("DebugServer.cs.txt"));
+        Assert.Contains("tuning = tuning with { HdrSupport = hdrSupport };", Read("DebugServer.Ffmpeg.cs.txt"));
+    }
+
+    [Theory]
     [InlineData("maxres", 1)]
     [InlineData("dpb", 16)]
     public void ProbeRejectsInvalidDecoderHintsWithoutPublishingPartialTuning(string key, int maximum)
@@ -275,7 +307,8 @@ public class DebugFfmpegPlaytestTests
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
             const string defaults = "Decode ahead: 0 (0=off; default)\nSWS threads: 1 (1=upstream; default)\ndav1d max frame delay: 0 (0=dav1d default; default)\nDecode thread priority: 0 (0=off, 1=above normal, 2=highest; default)\n"
-                + "Decoder use max resolution: 0 (0=unset, 1=on; default; system video only)\nDecoder max DPB count: 0 (0=unset; default; system video only)\n";
+                + "Decoder use max resolution: 0 (0=unset, 1=on; default; system video only)\nDecoder max DPB count: 0 (0=unset; default; system video only)\n"
+                + "HDR support: automatic (default)\n";
             Assert.Equal("Threads: 0 (0=logical CPU count; default)\n10-bit output: on (default)\nLogical CPUs: 8\nRate requested: 1\n" + defaults,
                 DebugFfmpegPlaytest.Settings(0, true, 8, new(), "auto"));
             Assert.Equal("Threads: 4 (0=logical CPU count; override)\n10-bit output: off (override)\nLogical CPUs: 8\nRate requested: 0.75\n" + defaults,
