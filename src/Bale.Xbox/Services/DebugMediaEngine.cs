@@ -187,6 +187,7 @@ internal static unsafe class DebugMediaEngine
             report.Append(_error ? "Verdict: FAILS - engine error\n"
                 : advanced <= 0 ? "Verdict: FAILS - position did not advance\n"
                 : frames == 0 ? "Verdict: FAILS - no frames transferred\n"
+                : advanced / wallSeconds < 0.9 ? "Verdict: SLOW - below real time (ratio < 0.9)\n"
                 : "Verdict: PLAYS\n");
             return Finish(report, engine);
         }

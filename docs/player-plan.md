@@ -439,6 +439,44 @@ replace assets or silently repin a published version.
 WinMD type mismatch, SHA256 failure and byte-preserving repack with small offline fixtures. Both
 Windows CI configurations and the manual wrapper workflow run it alongside the native checks.
 
+### IMFMediaEngine spike and the Rust GPU layer (debug only)
+
+`scripts/bale-debug.sh playtest-engine <url|@file|suite> [seconds] [cs|rust|rust-ffmpeg]` plays a clip
+muted in IMFMediaEngine **frame-server mode**: `OnVideoStreamTick` + `TransferVideoFrame` into our own
+BGRA texture on our own hardware D3D11 device (Xbox-ATG-Samples `UWPSamples/Graphics/VideoTextureUWP`,
+`MediaEnginePlayer.cpp`), then reports the engine's own statistics (rendered/dropped/corrupted frames,
+jitter, frame delay). `cs` is the C# probe (`DebugMediaEngine.cs`, raw vtable slots); `rust` is its typed
+windows-rs port in `native/bale-gpu` (`bale_gpu_engine_probe`); `rust-ffmpeg` creates an FFmpegInteropX
+source in software-decoder mode and hands it to the Rust engine (`bale_gpu_engine_probe_source`).
+`scripts/bale-debug.sh rust` is the DLL loader check. Production playback is unchanged.
+
+The bridge: the FFmpegInteropX MediaStreamSource does not QI to `IMFMediaSource`, but its `IMFGetService`
+returns one for `MF_MEDIASOURCE_SERVICE`. An `IMFMediaEngineExtension` (`MF_MEDIA_ENGINE_EXTENSION`)
+returns that source for a private URL, as Chromium's MediaFoundationRenderer does
+(`media/renderers/win/media_engine_extension.cc`); the engine asks for a byte stream (refused) and then
+a media source. `CreateMediaPlaybackItem` must run first: it installs the source's sample handlers.
+
+Results (Series X, app mode, 3 s Chromium clips unless noted):
+
+- 0.1.283.0 C# probe, `bear-1280x720.mp4` (H.264): canplay 990 ms, 82/82 frames, 0 dropped,
+  TransferVideoFrame mean 2.7 ms, ratio 0.962, 0.076 cores.
+- 0.1.287.0 Rust port, same clip: 82/82, 0 dropped, ratio 0.970, identical statistics to the C# probe.
+  The DLL loads with a static CRT; std threads, `#[implement]` COM callbacks and D3D11 all work.
+- Rust suite: H.264, HEVC (both fragmented clips) and VP9 play through system decoders; AV1 (mp4, webm,
+  10-bit) and Opus fail at open with `0xC00D5212` (MF_E_TOPO_CODEC_NOT_FOUND: no AV1 or Opus MFT);
+  AC3, EAC3 and FLAC audio-only clips open.
+- 0.1.289.0 `rust-ffmpeg`, `bear-av1.mp4`: 82/82 frames, 0 dropped, ratio 0.984. So AV1 reaches
+  MediaEngine through dav1d.
+- 20 s A/B against the current MediaPlayer path (`playtest-ffmpeg ... software`), Jellyfin AV1 10-bit:
+  1080p 10 Mbps 60 fps: MediaPlayer 0.995 / 1.89 cores, MediaEngine 0.989 / 2.31 cores (1187 frames,
+  0 dropped). 4K 40 Mbps: MediaPlayer 0.521 / 5.87 cores, MediaEngine 0.528 / 6.79 cores (24 dropped).
+
+Conclusion: MediaEngine adds no throughput. 4K AV1 stays dav1d CPU-bound on either renderer, and
+frame-server copies cost ~0.4–0.9 core more. Its value is control (our own D3D11 device, per-frame access
+for GPU passes, engine drop statistics), not speed. Only GPU-side AV1 decode (no D3D11 AV1 profile on
+Xbox; a D3D12 compute decoder is the remaining option) or a cheaper decode (grain export via patch 0005,
+`grain=off`) can move 4K AV1.
+
 ## Display HDR
 
 Display HDR is detected at runtime on the UI thread at each player start, not inferred from the

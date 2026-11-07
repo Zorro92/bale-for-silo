@@ -429,6 +429,8 @@ unsafe fn play(
             "Verdict: FAILS - position did not advance\n"
         } else if frames == 0 {
             "Verdict: FAILS - no frames transferred\n"
+        } else if advanced / wall_seconds < 0.9 {
+            "Verdict: SLOW - below real time (ratio < 0.9)\n"
         } else {
             "Verdict: PLAYS\n"
         });
