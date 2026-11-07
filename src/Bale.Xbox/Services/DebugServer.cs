@@ -34,11 +34,11 @@ namespace Bale.Xbox.Services;
 ///                         only=video|gpu|audio|display|platform|device|graph runs one section
 ///   GET  /playtest?url=...  muted public http(s) stream probe; seconds=3 (1–10), open timeout 8 s
 ///   GET  /playtest-ffmpeg?url=...  muted FFmpegInteropX probe; seconds=3 (1–60), mode=auto|software|system
-///                         optional threads=0–16, 10bit=on|off, rate=0.5–2.0 (default 1), ahead=0–64, sws=1–16, delay=0–64, prio=0–2
+///                         optional threads=0–16, 10bit=on|off, rate=0.5–2.0 (default 1), ahead=0–64, sws=1–16, delay=0–64, prio=0–2, maxres=0|1|default, dpb=0–16|default (system video only)
 ///   POST /ffmpeg?mode=...  next real-player attempt: policy (default)|off; memory only
 ///   GET  /ffmpeg-tune     current memory-only FFmpeg overrides
 ///   POST /ffmpeg-tune?readahead=on&readsize=65536&prefetch=8  next FFmpeg player attempt; each key accepts default
-///                         optional buffer=0–5000, ahead=0–64, sws=1–16, delay=0–64, prio=0–2
+///                         optional buffer=0–5000, ahead=0–64, sws=1–16, delay=0–64, prio=0–2, maxres=0|1|default, dpb=0–16|default (system video only)
 ///   GET  /hdr             memory-only HDR comparison mode; default off
 ///   POST /hdr?mode=...    pretend|off; pretend HDR10 and keep SDR output for console tone mapping
 ///   POST /seek?seconds=...&pause=true  absolute source seconds on the active player; optional pause
@@ -222,7 +222,8 @@ internal sealed partial class DebugServer
             case ("GET", "/playtest-ffmpeg"):
                 return await PlaytestFfmpegAsync(query.GetValueOrDefault("url"), query.GetValueOrDefault("seconds"), query.GetValueOrDefault("mode"),
                     query.GetValueOrDefault("threads"), query.GetValueOrDefault("10bit"), query.GetValueOrDefault("rate"),
-                    query.GetValueOrDefault("ahead"), query.GetValueOrDefault("sws"), query.GetValueOrDefault("delay"), query.GetValueOrDefault("prio"));
+                    query.GetValueOrDefault("ahead"), query.GetValueOrDefault("sws"), query.GetValueOrDefault("delay"), query.GetValueOrDefault("prio"),
+                    query.GetValueOrDefault("maxres"), query.GetValueOrDefault("dpb"));
 
             case ("POST", "/ffmpeg"):
                 var ffmpegMode = query.GetValueOrDefault("mode");
@@ -336,7 +337,7 @@ internal sealed partial class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&sws=1..16&delay=0..64&prio=0..2 (each key accepts default), GET /hdr, POST /hdr?mode={pretend|off}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&sws=1..16&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16 (each key accepts default), GET /hdr, POST /hdr?mode={pretend|off}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 

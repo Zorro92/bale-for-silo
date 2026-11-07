@@ -101,10 +101,10 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     }
 
     [Theory]
-    [InlineData("0", "1", "0", "0")]
-    [InlineData("64", "16", "64", "2")]
-    [InlineData("0008", "04", "001", "001")]
-    public void ForkOptionsUseInclusiveBoundsAndInvariantDescriptions(string ahead, string sws, string delay, string prio)
+    [InlineData("0", "1", "0", "0", "0", "0")]
+    [InlineData("64", "16", "64", "2", "1", "16")]
+    [InlineData("0008", "04", "001", "001", "001", "003")]
+    public void ForkOptionsUseInclusiveBoundsAndInvariantDescriptions(string ahead, string sws, string delay, string prio, string maxres, string dpb)
     {
         var previous = CultureInfo.CurrentCulture;
         try
@@ -112,13 +112,14 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
             Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string>
             {
-                ["delay"] = delay, ["prio"] = prio, ["ahead"] = ahead, ["sws"] = sws,
+                ["delay"] = delay, ["prio"] = prio, ["ahead"] = ahead, ["sws"] = sws, ["dpb"] = dpb, ["maxres"] = maxres,
             }, out var tuning));
             var expected = new DebugFfmpegInputTuning(DecodeAheadFrames: int.Parse(ahead, CultureInfo.InvariantCulture),
                 SwsThreads: int.Parse(sws, CultureInfo.InvariantCulture), Dav1dMaxFrameDelay: int.Parse(delay, CultureInfo.InvariantCulture),
-                DecodeThreadPriority: int.Parse(prio, CultureInfo.InvariantCulture));
+                DecodeThreadPriority: int.Parse(prio, CultureInfo.InvariantCulture), DecoderUseMaxResolution: int.Parse(maxres, CultureInfo.InvariantCulture),
+                DecoderMaxDpbCount: int.Parse(dpb, CultureInfo.InvariantCulture));
             Assert.Equal(expected, tuning);
-            Assert.Equal($"readahead=default readsize=default prefetch=default ahead={expected.DecodeAheadFrames} sws={expected.SwsThreads} delay={expected.Dav1dMaxFrameDelay} prio={expected.DecodeThreadPriority}", tuning.Description);
+            Assert.Equal($"readahead=default readsize=default prefetch=default ahead={expected.DecodeAheadFrames} sws={expected.SwsThreads} delay={expected.Dav1dMaxFrameDelay} prio={expected.DecodeThreadPriority} maxres={expected.DecoderUseMaxResolution} dpb={expected.DecoderMaxDpbCount}", tuning.Description);
         }
         finally { CultureInfo.CurrentCulture = previous; }
     }
@@ -148,6 +149,8 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     [InlineData("sws", 1, 16)]
     [InlineData("delay", 0, 64)]
     [InlineData("prio", 0, 2)]
+    [InlineData("maxres", 0, 1)]
+    [InlineData("dpb", 0, 16)]
     public void InvalidForkOptionUpdatesAreStrictAndAtomic(string key, int minimum, int maximum)
     {
         Set(new(false, 65536, 4, 1500, 8, 4, 1, 1));
@@ -158,6 +161,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
             var options = new Dictionary<string, string>
             {
                 ["readahead"] = "on", ["buffer"] = "0", ["ahead"] = "64", ["sws"] = "16", ["delay"] = "64", ["prio"] = "2",
+                ["maxres"] = "1", ["dpb"] = "16",
             };
             options[key] = value;
             Assert.False(DebugFfmpegInputTuning.TrySet(options, out var current), key + "=" + value);
@@ -181,6 +185,34 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["prio"] = "default" }, out var cleared));
         Assert.Equal(captured, cleared);
         Assert.DoesNotContain("prio=", cleared.Description);
+    }
+
+    [Theory]
+    [InlineData("0", "0")]
+    [InlineData("1", "3")]
+    [InlineData("1", "16")]
+    public void DecoderHintsAreCapturedAndClearedIndependentlyWithoutChangingOtherOverrides(string maxres, string dpb)
+    {
+        Set(new(true, 65536, 8, 1500, 8, 4, 1, 2));
+        var captured = DebugFfmpegInputTuning.Current;
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["maxres"] = maxres, ["dpb"] = dpb }, out var set));
+        Assert.Equal(captured with
+        {
+            DecoderUseMaxResolution = int.Parse(maxres, CultureInfo.InvariantCulture),
+            DecoderMaxDpbCount = int.Parse(dpb, CultureInfo.InvariantCulture),
+        }, set);
+        Assert.Contains(" maxres=" + maxres + " dpb=" + dpb, set.Description);
+        Assert.Null(captured.DecoderUseMaxResolution);
+        Assert.Null(captured.DecoderMaxDpbCount);
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["maxres"] = "default" }, out var first));
+        Assert.Equal(set with { DecoderUseMaxResolution = null }, first);
+        Assert.DoesNotContain("maxres=", first.Description);
+        Assert.Contains(" dpb=" + dpb, first.Description);
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["dpb"] = "default" }, out var cleared));
+        Assert.Equal(captured, cleared);
+        Assert.DoesNotContain("dpb=", cleared.Description);
+        Assert.Equal(int.Parse(maxres, CultureInfo.InvariantCulture), set.DecoderUseMaxResolution);
+        Assert.Equal(int.Parse(dpb, CultureInfo.InvariantCulture), set.DecoderMaxDpbCount);
     }
 
     [Fact]
@@ -247,6 +279,20 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     }
 
     [Fact]
+    public void DecoderHintsAreDebugOnlyAndAppliedOnlyToTheSystemVideoRoute()
+    {
+        var configuration = Read("FfmpegSource.cs.txt");
+        var start = configuration.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal);
+        var end = configuration.IndexOf("#endif", start, StringComparison.Ordinal);
+        var experiment = configuration[start..end];
+        foreach (var option in new[] { "bale_decoder_use_max_resolution", "bale_decoder_max_dpb_count" })
+            Assert.DoesNotContain(option, configuration[..start]);
+        Assert.Contains("else\n        {\n            if (tuning.DecoderUseMaxResolution is { } maxres) config.FFmpegOptions[\"bale_decoder_use_max_resolution\"] = maxres.ToString(CultureInfo.InvariantCulture);\n            if (tuning.DecoderMaxDpbCount is { } dpb) config.FFmpegOptions[\"bale_decoder_max_dpb_count\"] = dpb.ToString(CultureInfo.InvariantCulture);\n        }", experiment);
+        Assert.Contains("maxres=0|1|default", DebugFfmpegInputTuning.Usage);
+        Assert.Contains("dpb=0..16|default", DebugFfmpegInputTuning.Usage);
+    }
+
+    [Fact]
     public void StatsAndWhereShareTheAppliedValuesAndRangeWaitCounters()
     {
         var stats = Read("PlayerPage.Stats.cs.txt");
@@ -272,6 +318,8 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         ["sws"] = tuning.SwsThreads?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["delay"] = tuning.Dav1dMaxFrameDelay?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["prio"] = tuning.DecodeThreadPriority?.ToString(CultureInfo.InvariantCulture) ?? "default",
+        ["maxres"] = tuning.DecoderUseMaxResolution?.ToString(CultureInfo.InvariantCulture) ?? "default",
+        ["dpb"] = tuning.DecoderMaxDpbCount?.ToString(CultureInfo.InvariantCulture) ?? "default",
     }, out _));
 
     private static string Read(string file) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, file));

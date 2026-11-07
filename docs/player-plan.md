@@ -128,7 +128,8 @@ with or without `BaleDebugServer`; the CI package checker remains required.
 ```sh
 scripts/bale-debug.sh ffmpeg-tune
 scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default] [prefetch=N|default] \
-  [buffer=ms|default] [ahead=N|default] [sws=N|default] [delay=N|default] [prio=N|default]
+  [buffer=ms|default] [ahead=N|default] [sws=N|default] [delay=N|default] [prio=N|default] \
+  [maxres=0|1|default] [dpb=N|default]
 ```
 
 No arguments reads the current process-wide overrides (`GET /ffmpeg-tune`); arguments update them
@@ -207,7 +208,8 @@ Standalone syntax (independent of process-wide `ffmpeg-tune`):
 
 ```sh
 scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [auto|software|system] \
-  [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N]
+  [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] \
+  [maxres=0|1|default] [dpb=N|default]
 ```
 
 Supply seconds/mode before tuning, then keys in any order, at most once each. Seconds are 1–60
@@ -218,9 +220,9 @@ so delay remains unset unless explicitly overridden (use `delay=8` for a known a
 Priority remains unset unless `prio=0..2` is supplied, with the same levels as above. These four
 fork options affect only software video, including an auto-mode probe that selects software decoding;
 hardware/system video ignores them. Auto/system modes retain wrapper defaults for omitted keys.
-This one-shot probe does not accept `default`. The response reports threads/10-bit output, logical CPUs,
-requested/applied rate, applied
-fork-option values with default/override labels, and decoded output subtype plus software frame-delivery
+The system-video hints below accept `default` as omitted; other one-shot probe keys do not. The response
+reports threads/10-bit output, logical CPUs, requested/applied rate, applied fork-option values with
+default/override labels, and decoded output subtype plus software frame-delivery
 measurements when available. Ratio/verdict use wall time multiplied by applied rate. Probe and override
 code is absent with `BaleDebugServer=false`; release software-video defaults remain.
 
@@ -353,6 +355,14 @@ any failure aborts. Only `Source/` `.cpp`/`.h`
 changes are accepted, **never IDL**, project files or dependency changes. The build compares the
 built winmd's public type-name set against the original; a difference aborts packaging. This is a
 minimum metadata guard, not a complete member/ABI comparison. Patches must preserve that ABI.
+
+`0003-decoder-max-resolution.patch` prepares opt-in system/passthrough-video hints
+`bale_decoder_use_max_resolution` (0/1) and `bale_decoder_max_dpb_count` (0–16; 0 leaves attributes
+unset), never applied to FFmpeg-decoded output. Debug-only `maxres=0|1|default` / `dpb=N|default`
+controls in `ffmpeg-tune` and `playtest-ffmpeg` both default to unset, leaving production unchanged.
+The patch needs a later wrapper release/repin before use; the current `2.1.0-bale.2` pin is unchanged.
+Microsoft's Xbox recommendation (`maxres=1 dpb=3`) is pending console A/B on an HEVC
+FFmpeg-passthrough stream, not a verified improvement or a release default.
 
 Packaging starts from the hash-verified original nupkg, preserving its **winmd, managed projection,
 XML, targets, documentation and x86/ARM64 binaries byte-for-byte**. Only the x64 DLL is replaced.

@@ -14,11 +14,12 @@
 #   scripts/bale-debug.sh wait focus Play       wait for a focused description containing Play
 #   scripts/bale-debug.sh wait --timeout 12000 loaded  default 8000 ms; 0–15000; timeout prints where and fails
 #   scripts/bale-debug.sh ffmpeg <mode>         next real-player attempt: policy (default)|off; memory only, HLS unchanged
-#   scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default] [prefetch=N|default] [buffer=ms|default] [ahead=N|default] [sws=N|default] [delay=N|default] [prio=N|default]
+#   scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default] [prefetch=N|default] [buffer=ms|default] [ahead=N|default] [sws=N|default] [delay=N|default] [prio=N|default] [maxres=0|1|default] [dpb=N|default]
 #                                               no args = current overrides; omitted keys unchanged; default restores that key's release setting
 #                                               next FFmpeg player attempt only; on = 64 MiB / 30 s, readsize 16384–1048576 bytes, prefetch 2–16 blocks, buffer = MediaStreamSource.BufferTime 0–5000 ms (FFmpegInteropX sets 0)
 #                                               software video only: ahead 0–64 decoded frames (0=off), sws 1–16 scaler threads, delay 0–64 dav1d frames (0=dav1d default)
 #                                               prio 0–2 (0=off, 1=THREAD_PRIORITY_ABOVE_NORMAL, 2=THREAD_PRIORITY_HIGHEST); software video only, release default unset
+#                                               system/passthrough video only: maxres 0–1, dpb 0–16 (0=unset); both default unset, opt-in pending wrapper release/repin
 #                                               software-video release defaults: ahead=16, sws=4; delay=8 only above 1080p (width >1920 or height >1080), otherwise unset
 #                                               key i / where show applied settings and demand block waits (count/max/total ms)
 #   scripts/bale-debug.sh hdr pretend|off|status  next attempt: pretend HDR10, skip HDMI switching for console SDR tone mapping; default off, memory only
@@ -31,11 +32,12 @@
 #   scripts/bale-debug.sh playtest <url> [seconds]  muted public http(s) stream probe (1–10 s, default 3)
 #   timeout 300 scripts/bale-debug.sh playtest suite [seconds]  Chromium samples, one at a time
 #                                               (the whole suite needs more than the usual timeout 20)
-#   scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [mode] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N]
+#   scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [mode] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default]
 #                                               debug FFmpeg probe (1–60 s, default 3; auto|software|system, default auto)
 #                                               tuning after seconds/mode, any order: threads 0–16 (0=CPU count), rate 0.5–2.0 (default 1)
 #                                               software video only: ahead 0–64 (0=off), sws 1–16 (1=upstream), delay 0–64 (0=dav1d default)
 #                                               prio 0–2 (0=off, 1=THREAD_PRIORITY_ABOVE_NORMAL, 2=THREAD_PRIORITY_HIGHEST); software video only, default unset
+#                                               system/passthrough video only: maxres 0–1, dpb 0–16 (0=unset); default = omitted, both unset unless supplied; pending wrapper release/repin
 #                                               software mode defaults: ahead=16, sws=4; delay unset (URI size unknown before open; use delay=8 for known above-1080p media)
 #                                               auto/system retain wrapper defaults unless overridden; reports actual settings/output and software frame delivery
 #   timeout 900 scripts/bale-debug.sh playtest-ffmpeg suite 15 software  same Chromium samples; allow 30 s create + 15 s open per clip
@@ -128,10 +130,12 @@ case "${1:-}" in
         ahead=*|delay=*) [[ "$value" == default || "$value" =~ ^0*([0-9]|[1-5][0-9]|6[0-4])$ ]] && valid_tuning=true ;;
         sws=*) [[ "$value" == default || "$value" =~ ^0*([1-9]|1[0-6])$ ]] && valid_tuning=true ;;
         prio=*) [[ "$value" == default || "$value" =~ ^0*[0-2]$ ]] && valid_tuning=true ;;
+        maxres=*) [[ "$value" == default || "$value" =~ ^0*[01]$ ]] && valid_tuning=true ;;
+        dpb=*) [[ "$value" == default || "$value" =~ ^0*([0-9]|1[0-6])$ ]] && valid_tuning=true ;;
       esac
       if [[ "$valid_tuning" != true ]] || [[ -n "${ffmpeg_tune_seen[$name]:-}" ]]; then
-        echo 'usage: scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] [ahead=0..64|default] [sws=1..16|default] [delay=0..64|default] [prio=0..2|default] (any order, no duplicates; no args = status; default restores release settings)' >&2
-        echo 'software video defaults: ahead=16, sws=4; delay=8 only above 1080p (width >1920 or height >1080), otherwise unset; prio unset (0=off, 1=above normal, 2=highest)' >&2
+        echo 'usage: scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] [ahead=0..64|default] [sws=1..16|default] [delay=0..64|default] [prio=0..2|default] [maxres=0|1|default] [dpb=0..16|default] (system video only, 0=unset; any order, no duplicates; no args = status; default restores release settings)' >&2
+        echo 'software video defaults: ahead=16, sws=4; delay=8 only above 1080p (width >1920 or height >1080), otherwise unset; prio unset (0=off, 1=above normal, 2=highest); system video defaults: maxres/dpb unset' >&2
         exit 2
       fi
       ffmpeg_tune_seen[$name]=true
@@ -173,7 +177,7 @@ case "${1:-}" in
     playtest_mode_args=()
     if [[ "$playtest_route" == playtest-ffmpeg ]]; then
       playtest_max_seconds=60
-      playtest_max_args=11
+      playtest_max_args=13
       # 30 s native create + 15 s MediaOpened + 5 s response/cleanup margin.
       playtest_open_margin=50
       playtest_mode_args=(--data-urlencode "mode=${4:-auto}")
@@ -182,7 +186,7 @@ case "${1:-}" in
       || (( playtest_seconds > playtest_max_seconds )) \
       || [[ "$playtest_route" == playtest-ffmpeg && ! "${4:-auto}" =~ ^(auto|software|system)$ ]]; then
       echo 'usage: scripts/bale-debug.sh playtest <http(s)-url|suite> [seconds] (1–10, default 3; suite needs timeout 300)' >&2
-      echo '       scripts/bale-debug.sh playtest-ffmpeg <http(s)-url|@file|suite> [seconds] [auto|software|system] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] (1–60 s, default 3; tuning requires seconds/mode)' >&2
+      echo '       scripts/bale-debug.sh playtest-ffmpeg <http(s)-url|@file|suite> [seconds] [auto|software|system] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] (1–60 s, default 3; tuning requires seconds/mode)' >&2
       exit 2
     fi
     if [[ "$playtest_route" == playtest-ffmpeg ]]; then
@@ -195,12 +199,14 @@ case "${1:-}" in
           ahead=*|delay=*) [[ "$value" =~ ^0*([0-9]|[1-5][0-9]|6[0-4])$ ]] && valid_tuning=true ;;
           sws=*) [[ "$value" =~ ^0*([1-9]|1[0-6])$ ]] && valid_tuning=true ;;
           prio=*) [[ "$value" =~ ^0*[0-2]$ ]] && valid_tuning=true ;;
+          maxres=*) [[ "$value" == default || "$value" =~ ^0*[01]$ ]] && valid_tuning=true ;;
+          dpb=*) [[ "$value" == default || "$value" =~ ^0*([0-9]|1[0-6])$ ]] && valid_tuning=true ;;
           threads=*) [[ "$value" =~ ^0*([0-9]|1[0-6])$ ]] && valid_tuning=true ;;
           10bit=*) [[ "$value" =~ ^(on|off)$ ]] && valid_tuning=true ;;
           rate=*) [[ "$value" =~ ^(0*[.][5-9][0-9]*|0*1([.][0-9]*)?|0*2([.]0*)?)$ ]] && valid_tuning=true ;;
         esac
         if [[ "$valid_tuning" != true || -n "${playtest_tuning_seen[$name]:-}" ]]; then
-          echo 'tuning after seconds/mode: [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N], any order, no duplicates; N=0–16 (0=CPU count), R=0.5–2.0, ahead/delay=0–64, sws=1–16, prio=0–2 (0=off, 1=above normal, 2=highest)' >&2
+          echo 'tuning after seconds/mode: [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default], any order, no duplicates; N=0–16 (0=CPU count), R=0.5–2.0, ahead/delay=0–64, sws=1–16, prio=0–2 (0=off, 1=above normal, 2=highest); system video only: maxres=0–1, dpb=0–16 (0=unset), default = omitted' >&2
           exit 2
         fi
         playtest_tuning_seen[$name]=true

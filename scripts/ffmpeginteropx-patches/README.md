@@ -5,6 +5,11 @@ dav1d max frame delay), a demux lock for concurrent packet readers, and the deco
 `0002` adds `bale_decode_thread_priority` (0 off, 1 above normal, 2 highest): the decode-ahead
 thread is raised directly, and threads created during libdav1d `avcodec_open2` or `sws_init_context`
 are raised from a `DLL_THREAD_ATTACH` hook (`Source/BaleThreadBoost.h`).
+`0003` adds opt-in `bale_decoder_use_max_resolution` (0/1) and `bale_decoder_max_dpb_count`
+(0–16) hints to compressed/passthrough video encoding properties only, never FFmpeg-decoded output.
+Both default to 0 (attributes unset); positive values insert the SDK `mfapi.h` GUIDs as UINT32s.
+The debug `maxres` / `dpb` controls require a later wrapper release/repin; the current pin is unchanged.
+Microsoft's Xbox HEVC recommendation (`maxres=1 dpb=3`) is pending console A/B, not a release default.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.
