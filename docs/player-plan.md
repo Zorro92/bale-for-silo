@@ -234,7 +234,26 @@ report). `on`/`default`/omitted keep normal synthesis and send no key. Productio
 Console check on 0.1.291.0 (bale.5, 20 s `software`): the key is accepted and reported as exported.
 The public Jellyfin AV1 clips carry no grain (`film_grain_params_present = 0` in the 1080p and 4K
 sequence headers), so the 1080p 10 Mbps run is unchanged (ratio 0.992 / 1.87 cores with synthesis,
-0.998 / 1.90 exported). Measuring the grain cost still needs a grain-carrying 1080p/4K AV1 clip.
+0.998 / 1.90 exported).
+
+**Grain cost, measured (0.1.293.0, Series X, app mode).** A 1080p23.976 AV1 10-bit SDR library movie
+(mkv, 6.6 Mbps average, Opus 5.1) whose sequence header has `film_grain_params_present = 1` and
+`apply_grain = 1` on every frame, played in the real player (FFmpeg Direct, software AV1) as Bale Test
+with `ffmpeg-tune grain=default|off`, alternating runs, CPU sampled every 2 s. Scenes were chosen from
+a bitrate map built from the file's Matroska Cues (`bale-cli play-plan --save-range`): median 6.2 Mbps
+per minute, heaviest minute 18.6 Mbps, peak 10 s window 75 Mbps.
+
+| Scene (bitrate) | Grain applied | Grain exported | Difference |
+|---|---|---|---|
+| Opening 0:15–0:45 (12.1 Mbps), 3 pairs | 1.53 cores | 1.16 cores | −0.37 |
+| Heaviest minute (18.6 Mbps), 3 pairs, 60 s each | 1.81 cores | 1.56 cores | −0.25 |
+| 75 Mbps 10 s burst, 1 pair, 24 s | 1.56 cores | 1.28 cores | −0.28 |
+
+Grain synthesis costs about **0.25–0.4 cores at 1080p** (roughly 15–25 % of decode CPU), and every run
+played in real time either way. Late frames in the heaviest minute were the same with and without grain
+(13–23 per 60 s), so grain does not cause the 1080p late-frame bursts. Synthesis cost scales with pixel
+count, so at 4K it would be about 1–1.6 cores, worth moving to a GPU shader only once 4K AV1 decode
+itself keeps up (it does not today; see the MediaEngine section).
 The system-video hints below accept `default` as omitted; other one-shot probe keys do not. The response
 reports threads/10-bit output, logical CPUs, requested/applied rate, applied fork-option values with
 default/override labels, and decoded output subtype plus software frame-delivery

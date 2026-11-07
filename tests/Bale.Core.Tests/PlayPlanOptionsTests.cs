@@ -39,6 +39,21 @@ public class PlayPlanOptionsTests
         Assert.False(PlayPlanOptions.TryParse(["--save-head", "/a", "1", "--save-head", "/b", "1"], out _, out _));
     }
 
+    [Fact]
+    public void SaveRangeTakesAPathAnOffsetAndABoundedByteCount()
+    {
+        Assert.True(PlayPlanOptions.TryParse(["--save-range", "/tmp/c.bin", "9018564004", "183497"], out var options, out _));
+        Assert.Equal("/tmp/c.bin", options.SaveRange);
+        Assert.Equal(9018564004L, options.RangeOffset);
+        Assert.Equal(183497, options.RangeBytes);
+        Assert.False(PlayPlanOptions.TryParse(["--save-range", "/tmp/c.bin", "0", "0"], out _, out _));
+        Assert.False(PlayPlanOptions.TryParse(["--save-range", "/tmp/c.bin", "-1", "10"], out _, out _));
+        Assert.False(PlayPlanOptions.TryParse(["--save-range", "/tmp/c.bin", "0", "67108865"], out _, out _));
+        Assert.False(PlayPlanOptions.TryParse(["--save-range", "/tmp/c.bin", "0"], out _, out _));
+        Assert.False(PlayPlanOptions.TryParse(["--save-range", "--hold", "0", "1"], out _, out _));
+        Assert.False(PlayPlanOptions.TryParse(["--save-range", "/a", "0", "1", "--save-range", "/b", "0", "1"], out _, out _));
+    }
+
     [Theory]
     [InlineData("--unknown")]
     [InlineData("--url-file")]

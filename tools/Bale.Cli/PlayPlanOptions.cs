@@ -1,7 +1,8 @@
 using System.Globalization;
 using Bale.Core.Playback;
 
-internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldSeconds, string? SaveHead = null, int HeadMegabytes = 0)
+internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldSeconds, string? SaveHead = null, int HeadMegabytes = 0,
+    string? SaveRange = null, long RangeOffset = 0, int RangeBytes = 0)
 {
     internal static bool TryParse(IEnumerable<string> arguments, out PlayPlanOptions options, out string error)
     {
@@ -35,6 +36,15 @@ internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldS
                     if (!int.TryParse(args[++i], NumberStyles.None, CultureInfo.InvariantCulture, out var megabytes)
                         || megabytes is < 1 or > 2048) return false;
                     options = options with { SaveHead = head, HeadMegabytes = megabytes };
+                    break;
+                case "--save-range" when options.SaveRange is null && i + 3 < args.Length:
+                    // --save-range <path> <offset> <bytes>: debug copy of one byte range (e.g. a Matroska Cues index).
+                    var range = args[++i];
+                    if (string.IsNullOrWhiteSpace(range) || range.StartsWith("--", StringComparison.Ordinal)) return false;
+                    if (!long.TryParse(args[++i], NumberStyles.None, CultureInfo.InvariantCulture, out var offset)
+                        || !int.TryParse(args[++i], NumberStyles.None, CultureInfo.InvariantCulture, out var bytes)
+                        || bytes is < 1 or > 64 * 1024 * 1024) return false;
+                    options = options with { SaveRange = range, RangeOffset = offset, RangeBytes = bytes };
                     break;
                 default:
                     if (args[i].StartsWith("--", StringComparison.Ordinal)) return false;
