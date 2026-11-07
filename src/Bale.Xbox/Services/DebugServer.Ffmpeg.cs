@@ -88,7 +88,9 @@ internal sealed partial class DebugServer
             {
                 using var source = await creation;
                 Log.Info("Debug FFmpeg: created; before player");
-                using var player = await OnFfmpegUiAsync(() => new MediaPlayer { IsMuted = true, AutoPlay = false });
+                // Disposed on the UI thread during cleanup, before the source, as PlayerPage.DisposeMount does:
+                // disposing from the worker after the scope ended left ~25-100 MiB of native memory per probe.
+                var player = await OnFfmpegUiAsync(() => new MediaPlayer { IsMuted = true, AutoPlay = false });
                 var renderTarget = new FfmpegRenderTarget();
                 DebugFrameDelivery? frameDelivery = null;
                 var opened = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -225,10 +227,15 @@ internal sealed partial class DebugServer
                             Attempt("pause", () => player.Pause());
                             Attempt("detach source", () => player.Source = null);
                             renderTarget.Close(Attempt);
+                            Attempt("dispose player", player.Dispose);
                             return true;
                         });
                     }
-                    catch (Exception ex) { Failure("render target cleanup", ex); }
+                    catch (Exception ex)
+                    {
+                        Failure("render target cleanup", ex);
+                        Attempt("dispose player", player.Dispose);
+                    }
                     Log.Info("Debug FFmpeg: before player/source disposal");
                 }
             }
