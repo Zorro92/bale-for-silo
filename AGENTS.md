@@ -238,6 +238,10 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   Changes re-render a visible panel immediately, also work before a player opens, and reset on app
   restart; `where` keeps every row. `Dropped frames` (always unavailable) is hidden by default;
   `reset` restores that default and `show "Dropped frames"` brings it back.
+- `mem [gc]` reports the managed GC heap/committed bytes, collection counts and
+  `MemoryManager.AppMemoryUsage`; "non-GC" is app usage minus GC committed (native decoders, Media
+  Foundation, WinRT, Composition). `gc` first forces two full blocking collections with finalizers, so
+  memory that drops afterwards was only awaiting collection, not leaked.
 - `I` / gamepad View toggles the read-only stats panel; `scripts/bale-debug.sh where` includes the
   same rows even when hidden. Process CPU is the kernel+user `GetProcessTimes` delta divided by
   wall time: **cores**, then cores / `Environment.ProcessorCount` as a percentage, and that logical

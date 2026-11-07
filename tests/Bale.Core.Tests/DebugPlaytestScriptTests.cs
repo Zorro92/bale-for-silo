@@ -359,6 +359,31 @@ public class DebugPlaytestScriptTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MemoryReadoutIsAGetWithOptionalForcedCollection(bool collect)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(collect ? ["mem", "gc"] : ["mem"]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.DoesNotContain("-X\nPOST", result.Arguments);
+        Assert.Contains(collect ? "/mem?gc=1\n" : "/mem\n", result.Arguments);
+        Assert.Contains(collect ? "--max-time\n60\n" : "--max-time\n5\n", result.Arguments);
+    }
+
+    [Fact]
+    public async Task InvalidMemoryArgumentsNeverReachCurl()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[] { new[] { "mem", "" }, ["mem", "GC"], ["mem", "gc", "extra"] })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
     [Fact]
     public async Task InvalidDisplayMatchingArgumentsNeverReachCurl()
     {

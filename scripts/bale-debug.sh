@@ -28,6 +28,7 @@
 #                                               system/passthrough video only: maxres 0–1, dpb 0–16 (0=unset); both default unset, opt-in pending wrapper release/repin
 #                                               software-video release defaults: ahead=16, sws=4; delay=8 only above 1080p (width >1920 or height >1080), otherwise unset
 #                                               key i / where show applied settings and demand block waits (count/max/total ms)
+#   scripts/bale-debug.sh mem [gc]               managed GC heap vs app memory; gc forces a full collection + finalizers first
 #   scripts/bale-debug.sh display-match [on|off|status]  match content HDMI resolution/refresh on the next playback; default off, memory only (restart resets); no args = status
 #   scripts/bale-debug.sh hdr pretend|off|status  next attempt: pretend HDR10, skip HDMI switching for console SDR tone mapping; default off, memory only
 #   scripts/bale-debug.sh seek <seconds> [pause]  shared absolute-source seek (native/FFmpeg/HLS, reanchors outside the mounted window); optional pause
@@ -183,6 +184,17 @@ case "${1:-}" in
       curl --fail-with-body -sS --max-time 5 "$BASE/ffmpeg-tune"
     else
       curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/ffmpeg-tune" "${ffmpeg_tune_args[@]}"
+    fi
+    ;;
+  mem)
+    if [[ "$#" -gt 2 || ( "$#" -eq 2 && "$2" != gc ) ]]; then
+      echo 'usage: scripts/bale-debug.sh mem [gc]' >&2
+      exit 2
+    fi
+    if [[ "${2-}" == gc ]]; then
+      curl --fail-with-body -sS --max-time 60 "$BASE/mem?gc=1"
+    else
+      curl --fail-with-body -sS --max-time 5 "$BASE/mem"
     fi
     ;;
   display-match)
