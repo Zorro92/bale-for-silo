@@ -369,12 +369,11 @@ hints, which is within network/start-up noise; peak commit was again higher with
 benefit, so the keys stay unset (not a release default). Revisit only for mid-stream resolution
 changes, which these clips do not exercise.
 
-**Known debug-probe leak.** Each `playtest-ffmpeg` probe leaves ~25–30 MiB (1080p) to ~100+ MiB (4K)
-of native, non-GC memory behind (`mem gc` frees none of it; the managed heap stays <10 MiB), in both
-software and system modes. Long probe batches therefore approach the 3328 MiB app limit; redeploy or
-restart Bale between large batches. Repeated real-player sessions did not grow monotonically
-(352→685→571 MiB after forced GC over five plays). The probe path differs from the player in using
-`CreateFromUriAsync` and its own composition surface; the leak is not yet bisected.
+**Fixed debug-probe leak.** Through 0.1.271.0 each `playtest-ffmpeg` probe left ~25–30 MiB (1080p) to
+~100+ MiB (4K) of native memory behind because its `MediaPlayer` was disposed from a worker after the
+scope ended. Disposing it on the UI thread right after detaching the source, as `PlayerPage.DisposeMount`
+does, holds app memory flat (~110–118 MiB over six probes on 0.1.274.0, `mem gc`). Repeated
+real-player sessions never grew monotonically (470–650 MiB over ten plays).
 
 Packaging starts from the hash-verified original nupkg, preserving its **winmd, managed projection,
 XML, targets, documentation and x86/ARM64 binaries byte-for-byte**. Only the x64 DLL is replaced.
