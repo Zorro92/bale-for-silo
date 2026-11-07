@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      production:
+        description: Also build the production (debug server off) package
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -36,7 +41,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        debug_server: ['true', 'false']
+        # Bale is in a build/debug phase: pushes and PRs build only the debug-server package.
+        # Run this workflow manually with production=true to also build and check production.
+        debug_server: ${{ fromJSON(inputs.production && '["true", "false"]' || '["true"]') }}
     runs-on: windows-latest
     timeout-minutes: 30
     env:
