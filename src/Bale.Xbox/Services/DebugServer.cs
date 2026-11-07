@@ -28,6 +28,9 @@ namespace Bale.Xbox.Services;
 ///   POST /type?text=...   types text as real keystrokes into whatever has focus
 ///   GET  /focus           the focused element and its text
 ///   GET  /where           compact page, overlays, focus, status and on-screen controls
+///   GET  /stats           all active player stat rows, with [hidden] on overlay-hidden rows
+///   GET  /stats-rows      current row labels with on/off overlay state
+///   POST /stats-rows?action=hide&labels=Read-ahead,Stream%20reads  hide|show|only|reset; memory only
 ///   GET  /wait?for=...    wait for page Detail | loaded | text ... | focus ...; timeout=8000 ms (max 15000)
 ///                         returns /where on success or HTTP 408 on timeout (with /where body)
 ///   GET  /caps            installed decoders, GPU decode profiles, HDMI/advanced color, platform, default audio mix and baseline
@@ -182,7 +185,7 @@ internal sealed partial class DebugServer
         var target = new Uri("http://bale" + parts[1]);
         var path = target.AbsolutePath.TrimEnd('/');
         var query = ParseQuery(target.Query, out var duplicateQueryKeys);
-        if (duplicateQueryKeys && path is ("/playtest-ffmpeg" or "/ffmpeg-tune"))
+        if (duplicateQueryKeys && path is ("/playtest-ffmpeg" or "/ffmpeg-tune" or "/stats-rows"))
             return ("400 Bad Request", "query keys must appear at most once\n");
 
         switch (method, path)
@@ -212,6 +215,17 @@ internal sealed partial class DebugServer
 
             case ("GET", "/where"):
                 return ("200 OK", await OnUiAsync(DescribeWhere));
+
+            case ("GET", "/stats"):
+                return await StatsAsync();
+
+            case ("GET", "/stats-rows"):
+                return await StatsRowsAsync("list", null);
+
+            case ("POST", "/stats-rows"):
+                if (query.Keys.Any(key => key is not ("action" or "labels")))
+                    return ("400 Bad Request", DebugStatsRowFilter.Usage + "\n");
+                return await StatsRowsAsync(query.GetValueOrDefault("action"), query.GetValueOrDefault("labels"));
 
             case ("GET", "/caps"):
                 return ("200 OK", await DescribeCapabilitiesAsync(query.GetValueOrDefault("only")));
@@ -337,7 +351,7 @@ internal sealed partial class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&sws=1..16&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16 (each key accepts default), GET /hdr, POST /hdr?mode={pretend|off}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /stats, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&sws=1..16&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16 (each key accepts default), GET /hdr, POST /hdr?mode={pretend|off}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 

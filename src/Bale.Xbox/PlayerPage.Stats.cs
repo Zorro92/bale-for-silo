@@ -28,6 +28,11 @@ public sealed partial class PlayerPage
         catch (Exception ex) { LogFailure("stats toggle", ex); }
     }
 
+    internal void RefreshDebugStatsRows()
+    {
+        if (DebugStatsVisible) RenderStatsRows();
+    }
+
     private static PlaybackStats PlanStats(PlaybackPlan? plan, bool? isHls = null) => (plan is null ? new PlaybackStats() : PlaybackStats.FromPlan(plan, isHls)) with
     {
         BackendDisplayName = "Windows MediaPlayer",
@@ -222,11 +227,13 @@ public sealed partial class PlayerPage
     {
         StatsLeftRows.Children.Clear();
         StatsRightRows.Children.Clear();
+        // Filter only the rendered copy; DebugStatsRows/where retain the complete snapshot.
+        var rows = _statsRows.Where(row => !DebugServer.StatsRowFilter.IsHidden(row.Label)).ToArray();
         // TvPlayerHud.kt HudStatsPane: fill top-to-bottom, then across, with the extra row on the left.
-        var split = (_statsRows.Count + 1) / 2;
-        for (var i = 0; i < _statsRows.Count; i++)
+        var split = (rows.Length + 1) / 2;
+        for (var i = 0; i < rows.Length; i++)
         {
-            var (label, value) = _statsRows[i];
+            var (label, value) = rows[i];
             var row = new Grid { Style = StatsRowStyleSource.Style };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });

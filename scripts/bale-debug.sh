@@ -8,6 +8,12 @@
 #   scripts/bale-debug.sh type dune             type text as real keystrokes
 #   scripts/bale-debug.sh focus                 what has focus, and the text on it
 #   scripts/bale-debug.sh where                 page, overlays, focus, status and on-screen controls
+#   scripts/bale-debug.sh stats                 all current player rows as Label: value, including overlay-hidden rows marked [hidden]
+#   scripts/bale-debug.sh stats-rows [list|hide <labels>|show <labels>|only <labels>|reset]
+#                                               list (default) shows each current label on/off; changes affect only the overlay, immediately
+#                                               labels are one comma-separated argument, exact and case-insensitive; unknown labels are allowed and reported
+#                                               example: stats-rows hide "Read-ahead,Stream reads,Dropped frames"; only also hides future unlisted rows
+#                                               memory only, resets on app restart; works before a player opens; stats/where always keep every row
 #   scripts/bale-debug.sh wait page Detail      wait for a page name containing Detail, then print where
 #   scripts/bale-debug.sh wait loaded           wait for visible loading indicators to disappear
 #   scripts/bale-debug.sh wait text "Clear filters"  wait for visible text (case-insensitive)
@@ -100,6 +106,37 @@ case "${1:-}" in
     ;;
   focus) curl -fsS "$BASE/focus" ;;
   where) curl -fsS --max-time 5 "$BASE/where" ;;
+  stats)
+    if [[ "$#" != 1 ]]; then
+      echo 'usage: scripts/bale-debug.sh stats' >&2
+      exit 2
+    fi
+    curl --fail-with-body -sS --max-time 5 "$BASE/stats"
+    ;;
+  stats-rows)
+    stats_rows_action="${2-list}"
+    valid_stats_rows=false
+    case "$stats_rows_action" in
+      list|reset) [[ "$#" -le 2 ]] && valid_stats_rows=true ;;
+      hide|show|only)
+        if [[ "$#" == 3 && "$3" != *[[:cntrl:]]* && ! "$3" =~ (^|,)[[:space:]]*(,|$) ]]; then
+          valid_stats_rows=true
+        fi
+        ;;
+    esac
+    if [[ "$valid_stats_rows" != true ]]; then
+      echo 'usage: scripts/bale-debug.sh stats-rows [list|hide <labels>|show <labels>|only <labels>|reset] (one non-empty comma-separated argument)' >&2
+      exit 2
+    fi
+    if [[ "$stats_rows_action" == list ]]; then
+      curl --fail-with-body -sS --max-time 5 "$BASE/stats-rows"
+    elif [[ "$stats_rows_action" == reset ]]; then
+      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/stats-rows" --data-urlencode "action=reset"
+    else
+      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/stats-rows" \
+        --data-urlencode "action=$stats_rows_action" --data-urlencode "labels=$3"
+    fi
+    ;;
   caps) curl -fsS --max-time 18 -G "$BASE/caps" ${2:+--data-urlencode "only=$2"} ;;
   ffmpeg)
     if [[ "$#" != 2 || ! "${2:-}" =~ ^(policy|off)$ ]]; then

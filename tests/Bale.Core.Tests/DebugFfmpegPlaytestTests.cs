@@ -181,7 +181,9 @@ public class DebugFfmpegPlaytestTests
         Assert.Contains("Decode thread priority: 2 (0=off, 1=above normal, 2=highest; override)\n", report);
         var server = Read("DebugServer.cs.txt");
         foreach (var key in new[] { "ahead", "sws", "delay", "prio", "maxres", "dpb" }) Assert.Contains($"query.GetValueOrDefault(\"{key}\")", server);
-        Assert.Contains("duplicateQueryKeys && path is (\"/playtest-ffmpeg\" or \"/ffmpeg-tune\")", server);
+        var duplicateGuard = server.Split('\n').Single(line => line.Contains("duplicateQueryKeys && path is", StringComparison.Ordinal));
+        Assert.Contains("\"/playtest-ffmpeg\"", duplicateGuard);
+        Assert.Contains("\"/ffmpeg-tune\"", duplicateGuard);
         Assert.Contains("if (values.ContainsKey(key)) duplicateKeys = true", server);
         Assert.Contains("TryParseTuning(threads, output10bit, rate, ahead, sws, delay, prio, maxres, dpb", Read("DebugServer.Ffmpeg.cs.txt"));
         Assert.DoesNotContain("DebugFfmpegInputTuning.Current", source);

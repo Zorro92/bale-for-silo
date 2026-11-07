@@ -382,13 +382,104 @@ public class DebugPlaytestScriptTests
         }
     }
 
-    private static async Task<(int ExitCode, string Output, string Arguments)> RunAsync(string[] arguments)
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StatsRowsDefaultsToAReadOnlyList(bool explicitList)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(explicitList ? ["stats-rows", "list"] : ["stats-rows"]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/stats-rows\n", result.Arguments);
+        Assert.Contains("--max-time\n5\n", result.Arguments);
+        Assert.Contains("--fail-with-body", result.Arguments);
+        Assert.DoesNotContain("POST", result.Arguments);
+        Assert.DoesNotContain("--data-urlencode", result.Arguments);
+    }
+
+    [Theory]
+    [InlineData("hide")]
+    [InlineData("show")]
+    [InlineData("only")]
+    public async Task StatsRowsForwardsOneCommaSeparatedArgumentWithoutSplittingLabels(string action)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        const string labels = "Read-ahead,Stream reads,Dropped frames,Future (decoder)";
+        var result = await RunAsync(["stats-rows", action, labels]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/stats-rows\n", result.Arguments);
+        Assert.Contains("-X\nPOST\n", result.Arguments);
+        Assert.Contains("--data-urlencode\naction=" + action + "\n", result.Arguments);
+        Assert.Contains("--data-urlencode\nlabels=" + labels + "\n", result.Arguments);
+        Assert.DoesNotContain(labels, result.Output);
+    }
+
+    [Fact]
+    public async Task StatsRowsResetPostsWithoutLabels()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["stats-rows", "reset"]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("-X\nPOST\n", result.Arguments);
+        Assert.Contains("/stats-rows\n", result.Arguments);
+        Assert.Contains("--data-urlencode\naction=reset\n", result.Arguments);
+        Assert.DoesNotContain("labels=", result.Arguments);
+    }
+
+    [Fact]
+    public async Task InvalidStatsArgumentsNeverReachCurl()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[]
+        {
+            new[] { "stats", "extra" }, ["stats-rows", ""], ["stats-rows", "unknown"], ["stats-rows", "HIDE", "CPU"],
+            ["stats-rows", "list", "CPU"], ["stats-rows", "reset", "CPU"], ["stats-rows", "hide"],
+            ["stats-rows", "hide", "CPU", "Read-ahead"], ["stats-rows", "only", ""], ["stats-rows", "show", " "],
+            ["stats-rows", "hide", ",CPU"], ["stats-rows", "hide", "CPU,"], ["stats-rows", "hide", "CPU, ,Read-ahead"],
+            ["stats-rows", "hide", "CPU,,Read-ahead"], ["stats-rows", "hide", "CPU\nRead-ahead"],
+            ["stats-rows", "hide", "CPU\r"], ["stats-rows", "hide", "CPU\t"],
+        })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
+    [Fact]
+    public async Task StatsPrintsTheCompleteReadoutIncludingHiddenMarkersWithoutOtherOutput()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        const string rows = "CPU: 1.2 cores\nRead-ahead: on [hidden]\nDropped frames: unavailable [hidden]\n";
+        var result = await RunAsync(["stats"], rows);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(rows, result.Output);
+        Assert.Contains("/stats\n", result.Arguments);
+        Assert.Contains("--max-time\n5\n", result.Arguments);
+        Assert.Contains("--fail-with-body", result.Arguments);
+        Assert.DoesNotContain("POST", result.Arguments);
+    }
+
+    [Theory]
+    [InlineData("stats", 22)]
+    [InlineData("stats-rows", 0)]
+    public async Task NoPlayerMessageAndExitStatusArePreserved(string command, int exitCode)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync([command], "no active player page\n", exitCode);
+        Assert.Equal(exitCode, result.ExitCode);
+        Assert.Equal("no active player page\n", result.Output);
+        Assert.Contains("--fail-with-body", result.Arguments);
+    }
+
+    private static async Task<(int ExitCode, string Output, string Arguments)> RunAsync(string[] arguments,
+        string output = "probe result\n", int exitCode = 0)
     {
         var directory = Directory.CreateTempSubdirectory("bale-curl-stub-").FullName;
         try
         {
             var curl = Path.Combine(directory, "curl");
-            await File.WriteAllTextAsync(curl, "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" >> \"$BALE_CURL_ARGS\"\nprintf 'probe result\\n'\n");
+            await File.WriteAllTextAsync(curl, "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" >> \"$BALE_CURL_ARGS\"\nprintf '%s' \"$BALE_CURL_OUTPUT\"\nexit \"$BALE_CURL_EXIT_CODE\"\n");
             if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(curl, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             var privateFile = Path.Combine(directory, "url");
             await File.WriteAllTextAsync(privateFile, "https://example.org/direct?st=not-a-real-grant");
@@ -399,6 +490,8 @@ public class DebugPlaytestScriptTests
             info.Environment["PATH"] = directory + ":" + Environment.GetEnvironmentVariable("PATH");
             info.Environment["XBOX_HOST"] = "debug.invalid";
             info.Environment["BALE_CURL_ARGS"] = captured;
+            info.Environment["BALE_CURL_OUTPUT"] = output;
+            info.Environment["BALE_CURL_EXIT_CODE"] = exitCode.ToString(System.Globalization.CultureInfo.InvariantCulture);
             using var process = Process.Start(info)!;
             var stdout = process.StandardOutput.ReadToEndAsync();
             var stderr = process.StandardError.ReadToEndAsync();

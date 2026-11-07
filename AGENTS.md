@@ -230,6 +230,12 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   four overrides apply only to software video; they do not affect an open player, native/HLS routes or
   the standalone probe. Production uses the release defaults without debug overrides.
 
+- `scripts/bale-debug.sh stats` prints all current player rows as `Label: value`, marking overlay-hidden
+  rows `[hidden]`; no active player exits non-zero. `stats-rows [list|hide <labels>|show <labels>|only
+  <labels>|reset]` filters only the overlay using one comma-separated argument of exact, case-insensitive
+  labels (for example, `stats-rows hide "Read-ahead,Stream reads,Dropped frames"`). Unknown labels are
+  accepted and reported; `only` also hides future unlisted rows. Changes re-render a visible panel
+  immediately, also work before a player opens, and reset on app restart; `where` keeps every row.
 - `I` / gamepad View toggles the read-only stats panel; `scripts/bale-debug.sh where` includes the
   same rows even when hidden. Process CPU is the kernel+user `GetProcessTimes` delta divided by
   wall time: **cores**, then cores / `Environment.ProcessorCount` as a percentage, and that logical
