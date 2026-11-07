@@ -40,6 +40,7 @@
 #   scripts/bale-debug.sh playtest <url> [seconds]  muted public http(s) stream probe (1–10 s, default 3)
 #   timeout 300 scripts/bale-debug.sh playtest suite [seconds]  Chromium samples, one at a time
 #                                               (the whole suite needs more than the usual timeout 20)
+#   scripts/bale-debug.sh playtest-engine <url|@file|suite> [seconds]  debug IMFMediaEngine frame-server probe (1–60 s, default 3)
 #   scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [mode] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default]
 #                                               hdr=on|off forces the wrapper's HdrSupport Enabled/Disabled (default omitted = Automatic: HDR colour info only if HDMI is already BT.2020)
 #                                               debug FFmpeg probe (1–60 s, default 3; auto|software|system, default auto)
@@ -230,13 +231,18 @@ case "${1:-}" in
     curl --fail-with-body -sS --max-time 45 -X POST -G "$BASE/seek" \
       --data-urlencode "seconds=$2" --data-urlencode "pause=$seek_pause"
     ;;
-  playtest|playtest-ffmpeg)
+  playtest|playtest-ffmpeg|playtest-engine)
     playtest_route="$1"
     playtest_seconds="${3:-3}"
     playtest_max_seconds=10
     playtest_max_args=3
     playtest_open_margin=9
     playtest_mode_args=()
+    if [[ "$playtest_route" == playtest-engine ]]; then
+      playtest_max_seconds=60
+      # 20 s engine open budget plus teardown.
+      playtest_open_margin=30
+    fi
     if [[ "$playtest_route" == playtest-ffmpeg ]]; then
       playtest_max_seconds=60
       playtest_max_args=14
@@ -248,6 +254,7 @@ case "${1:-}" in
       || (( playtest_seconds > playtest_max_seconds )) \
       || [[ "$playtest_route" == playtest-ffmpeg && ! "${4:-auto}" =~ ^(auto|software|system)$ ]]; then
       echo 'usage: scripts/bale-debug.sh playtest <http(s)-url|suite> [seconds] (1–10, default 3; suite needs timeout 300)' >&2
+      echo '       scripts/bale-debug.sh playtest-engine <http(s)-url|@file|suite> [seconds] (1–60 s, default 3)' >&2
       echo '       scripts/bale-debug.sh playtest-ffmpeg <http(s)-url|@file|suite> [seconds] [auto|software|system] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] (1–60 s, default 3; tuning requires seconds/mode)' >&2
       exit 2
     fi

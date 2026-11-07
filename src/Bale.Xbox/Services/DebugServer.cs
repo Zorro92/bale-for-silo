@@ -243,6 +243,9 @@ internal sealed partial class DebugServer
                     query.GetValueOrDefault("ahead"), query.GetValueOrDefault("sws"), query.GetValueOrDefault("delay"), query.GetValueOrDefault("prio"),
                     query.GetValueOrDefault("maxres"), query.GetValueOrDefault("dpb"), query.GetValueOrDefault("hdr"));
 
+            case ("GET", "/playtest-engine"):
+                return await PlaytestEngineAsync(query.GetValueOrDefault("url"), query.GetValueOrDefault("seconds"));
+
             case ("POST", "/ffmpeg"):
                 var ffmpegMode = query.GetValueOrDefault("mode");
                 if (!DebugFfmpegPlayback.TrySet(ffmpegMode))

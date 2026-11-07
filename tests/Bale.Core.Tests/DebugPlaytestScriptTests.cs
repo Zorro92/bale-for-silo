@@ -25,6 +25,8 @@ public class DebugPlaytestScriptTests
     [InlineData("playtest", "3", null, 12)]
     [InlineData("playtest", "10", null, 19)]
     [InlineData("playtest-ffmpeg", "60", "software", 110)]
+    [InlineData("playtest-engine", "60", null, 90)]
+    [InlineData("playtest-engine", "3", null, 33)]
     [InlineData("playtest-ffmpeg", "1", "system", 51)]
     public async Task WrapperUsesTheCorrectRouteEncodingModeAndOpenBudget(string command, string seconds, string? mode, int timeout)
     {
