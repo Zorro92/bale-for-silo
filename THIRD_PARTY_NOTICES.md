@@ -40,6 +40,10 @@ and `scripts/ffmpeginteropx-patches/0003-decoder-max-resolution.patch` for opt-i
 resolution/DPB hints.
 The original winmd and managed projection are retained;
 with the new keys unset, behavior is unchanged from upstream 2.1.0.
+The next wrapper release (2.1.0-bale.4 onward) also applies
+`scripts/ffmpeginteropx-patches/0004-mf-video-color-attributes.patch`, an unchanged backport of
+upstream FFmpegInteropX PR #482 (Apache License 2.0) that corrects the colour attributes of
+FFmpeg-decoded video; it is always on.
 
 The [wrapper release](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.3)
 provides the nupkg, SHA256, `SOURCES.txt`, metadata comparison and corresponding patched source in

@@ -369,6 +369,22 @@ hints, which is within network/start-up noise; peak commit was again higher with
 benefit, so the keys stay unset (not a release default). Revisit only for mid-stream resolution
 changes, which these clips do not exercise.
 
+`0004-mf-video-color-attributes.patch` backports upstream PR #482 (fix for upstream issue #481)
+unchanged; the resulting `CreateStreamDescriptor` is identical to upstream `master`. It changes only
+the media type of **FFmpeg-decoded** video (`UncompressedVideoSampleProvider`, including the FFmpeg
+D3D11 path that inherits it); compressed/passthrough streams decoded by the system decoder are
+untouched, since that decoder reports colour from the bitstream itself. Changes: `MF_MT_YUV_MATRIX`
+is now set from `color_space` (BT.709, BT.601, SMPTE 240M, FCC, YCgCo, SMPTE 2085, BT.2020 NCL
+10/12-bit, BT.2020 CL/chroma-derived, ICtCp); before, it was never set, leaving Media Foundation to
+pick a default (typically from resolution), which is wrong for BT.2020 software-decoded AV1.
+`MF_MT_TRANSFER_FUNCTION` maps BT.709/SMPTE 170M to `MFVideoTransFunc_709` (was gamma 2.2) and adds
+sRGB, BT.1361 ECG, SMPTE 428 and BT.2020 constant luminance. `MF_MT_VIDEO_PRIMARIES` adds EBU 3213,
+SMPTE 428 (XYZ) and SMPTE 431/432 (DCI-P3) and no longer maps reserved values. The existing HDR gate
+is kept (HDR primaries/transfer and mastering/CLL metadata still need `applyHdrColorInfo`); the matrix
+is set unconditionally. Nominal range and per-sample chroma siting are unchanged. The patch is
+always on (no `bale_*` key) and first ships in `2.1.0-bale.4`; it needs a console check of SDR and
+HDR AV1 software decode colour.
+
 **Fixed debug-probe leak.** Through 0.1.271.0 each `playtest-ffmpeg` probe left ~25–30 MiB (1080p) to
 ~100+ MiB (4K) of native memory behind because its `MediaPlayer` was disposed from a worker after the
 scope ended. Disposing it on the UI thread right after detaching the source, as `PlayerPage.DisposeMount`
