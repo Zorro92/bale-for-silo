@@ -261,7 +261,7 @@ withdrawal and serialization. The production integration still needs the owner's
 
 ### Native FFmpeg / dav1d build
 
-Bale uses `FFmpegInteropX.UWP.Lib` **2.1.0-bale.4** with the custom x64 native package
+Bale uses `FFmpegInteropX.UWP.Lib` **2.1.0-bale.5** with the custom x64 native package
 `FFmpegInteropX.UWP.FFmpeg` **8.1.2-bale.dav1d.1.5.4**. The public 8.1.2 x64 `avcodec-62.dll`
 embeds dav1d **1.0.0-0-g99172b1** (March 2022); upgrading the wrapper cannot update that static
 library. This rebuild is an A/B candidate for occasional AV1 stutter/2–4-core CPU spikes, **not a
@@ -324,10 +324,10 @@ and its native activation registration are unchanged.
 
 ### Native FFmpegInteropX wrapper fork
 
-Bale now requires exactly `[2.1.0-bale.4]` of `FFmpegInteropX.UWP.Lib`, from immutable release
-[`wrapper-ffmpeginteropx-2.1.0-bale.4`](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.4).
+Bale now requires exactly `[2.1.0-bale.5]` of `FFmpegInteropX.UWP.Lib`, from immutable release
+[`wrapper-ffmpeginteropx-2.1.0-bale.5`](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.5).
 The independently verified nupkg SHA256 is
-`31e96e1ce212f93071ebcc2b603bc63c534793d9e8474b833acd025189fda7c6`. The release tag, SHA256 and
+`519386d2ff1c3a0d65a9edfce30df187b2510c6088dcc04c643fb0ddf4432fbd`. The release tag, SHA256 and
 NuGet content hash are pinned in `scripts/ffmpeginteropx-wrapper.json`; both framework/RID lock
 entries agree. `restore-ffmpeg-native.ps1` downloads it into isolated staging, verifies before moving
 it to `.cache/ffmpeg-native`, and clears its cached extraction. Source mapping allows the wrapper
@@ -389,7 +389,7 @@ sRGB, BT.1361 ECG, SMPTE 428 and BT.2020 constant luminance. `MF_MT_VIDEO_PRIMAR
 SMPTE 428 (XYZ) and SMPTE 431/432 (DCI-P3) and no longer maps reserved values. The existing HDR gate
 is kept (HDR primaries/transfer and mastering/CLL metadata still need `applyHdrColorInfo`); the matrix
 is set unconditionally. Nominal range and per-sample chroma siting are unchanged. The patch is
-always on (no `bale_*` key) and ships in the pinned `2.1.0-bale.4` release. Console check on 0.1.278.0 (`playtest-ffmpeg ... software`,
+always on (no `bale_*` key) and first shipped in `2.1.0-bale.4`. Console check on 0.1.278.0 (`playtest-ffmpeg ... software`,
 `Output colour:` line): the Jellyfin 1080p AV1 10-bit SDR clip (tagged bt709 matrix/primaries, transfer
 unknown) reports `matrix=1(BT709) transfer=unset primaries=2(BT709) range=2(limited)`; the 1080p AV1
 HDR10 clip (bt2020nc, smpte2084, bt2020) reports `matrix=4(BT2020_10)` with transfer/primaries unset,
@@ -423,7 +423,7 @@ OPC core-properties versions/content types are updated. The original NuGet repos
 is removed because modification invalidates it. The fork is unsigned and intended for **x64 only**;
 retained other-architecture binaries are not fork builds.
 
-For the next release, run `gh workflow run ffmpeginteropx-wrapper.yml --ref main -f version=2.1.0-bale.5`,
+For the next release, run `gh workflow run ffmpeginteropx-wrapper.yml --ref main -f version=2.1.0-bale.6`,
 then `gh run watch <run-id> --exit-status` (choose a fresh number if that tag already exists). The release contains the
 nupkg, `.sha256`, `SOURCES.txt`, `winmd-public-types.txt`, build log and corresponding patched
 wrapper source archive. Provenance records the upstream/Bale commits, ordered patch names/hashes,

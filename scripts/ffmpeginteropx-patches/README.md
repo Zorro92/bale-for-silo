@@ -15,12 +15,12 @@ output (`UncompressedVideoSampleProvider`, also the D3D11 path) now sets `MF_MT_
 `color_space` (previously never set), maps BT.709/BT.601 transfer to `MFVideoTransFunc_709` instead
 of gamma 2.2, adds sRGB, BT.1361, SMPTE 428, BT.2020 constant-luminance, EBU 3213, XYZ and DCI-P3
 mappings, and drops the reserved-primaries mapping. It is not a `bale_*` key and is always on;
-compressed/passthrough output is unchanged. It ships in the pinned `2.1.0-bale.4` release.
+compressed/passthrough output is unchanged. It first shipped in `2.1.0-bale.4`.
 `0005` adds opt-in `bale_dav1d_export_film_grain` (0/1, default 0). When 1 and the video codec is
 `libdav1d`, `AV_CODEC_EXPORT_DATA_FILM_GRAIN` is set before `avcodec_open2`: dav1d then skips grain
 synthesis and attaches `AV_FRAME_DATA_FILM_GRAIN_PARAMS` instead, so frames are output grain-free.
 It is a debug measurement of grain CPU cost (and groundwork for GPU grain); production never sets it.
-Releases before `2.1.0-bale.5` reject the key as unknown.
+It ships in the pinned `2.1.0-bale.5` release; earlier releases reject the key as unknown.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.
