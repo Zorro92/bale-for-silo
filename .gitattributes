@@ -1,2 +1,3 @@
 # Wrapper patches must stay byte-exact (LF) so git apply matches the LF upstream checkout on Windows.
 scripts/ffmpeginteropx-patches/*.patch -text
+scripts/av1-gpu-testplayer/*.patch -text
