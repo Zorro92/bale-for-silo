@@ -114,6 +114,21 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
   elsewhere they do nothing, keeping focus on screen.
 - **Back to a page restores its focus** through `IRestoresFocus` + `FocusRetry`.
 
+## Platform docs (check before guessing)
+
+Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
+
+- [UWP audio, video and camera](https://learn.microsoft.com/en-us/windows/uwp/audio-video-camera/)
+  (most useful): MediaPlayer, MediaSource/AdaptiveMediaSource, codecs, HDR, audio, timed text,
+  custom media sources.
+- [Xbox HEVC/4K guidance](https://learn.microsoft.com/en-us/windows/uwp/audio-video-camera/hevc-xbox):
+  `hevcPlayback`, ProtectionCapabilities checks, extended memory, display modes (60 Hz with
+  3:2 pulldown; no 120 Hz media modes), `MF_MT_DECODER_USE_MAX_RESOLUTION` and DPB count.
+- [UWP on Xbox](https://learn.microsoft.com/en-us/windows/uwp/xbox-apps/) and the general
+  [UWP docs](https://learn.microsoft.com/en-us/windows/uwp/): app model, suspend/resume,
+  capabilities, system resources (Series apps get D3D11/D3D12 at FL 11.0; see docs/player-plan.md
+  for what was measured).
+
 ## Playback decoder policy
 
 - FFmpegInteropX packages, native activation and license texts ship in **all** builds. Keep the CI
