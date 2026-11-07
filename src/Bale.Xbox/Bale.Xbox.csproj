@@ -44,7 +44,7 @@
 
   <!-- Production fallback: native decoders, activation and license texts ship in every build. -->
   <ItemGroup>
-    <PackageReference Include="FFmpegInteropX.UWP.Lib" Version="[2.1.0-bale.3]" GeneratePathProperty="true" />
+    <PackageReference Include="FFmpegInteropX.UWP.Lib" Version="[2.1.0-bale.4]" GeneratePathProperty="true" />
     <PackageReference Include="FFmpegInteropX.UWP.FFmpeg" Version="[8.1.2-bale.dav1d.1.5.4]" GeneratePathProperty="true" />
     <Content Include="$(PkgFFmpegInteropX_UWP_FFmpeg)\licenses\*.txt" Link="Licenses\FFmpeg\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="$(PkgFFmpegInteropX_UWP_FFmpeg)\SOURCES.txt" Link="Licenses\FFmpeg\SOURCES.txt" CopyToOutputDirectory="PreserveNewest" />
