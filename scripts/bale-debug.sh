@@ -41,7 +41,7 @@
 #   scripts/bale-debug.sh playtest <url> [seconds]  muted public http(s) stream probe (1–10 s, default 3)
 #   timeout 300 scripts/bale-debug.sh playtest suite [seconds]  Chromium samples, one at a time
 #                                               (the whole suite needs more than the usual timeout 20)
-#   scripts/bale-debug.sh playtest-engine <url|@file|suite> [seconds]  debug IMFMediaEngine frame-server probe (1–60 s, default 3)
+#   scripts/bale-debug.sh playtest-engine <url|@file|suite> [seconds] [cs|rust]  debug IMFMediaEngine frame-server probe (1–60 s, default 3; rust = bale_gpu.dll port)
 #   scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [mode] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=on|off|default]
 #                                               hdr=on|off forces the wrapper's HdrSupport Enabled/Disabled (default omitted = Automatic: HDR colour info only if HDMI is already BT.2020)
 #                                               grain=off: dav1d exports film grain instead of applying it (grain CPU cost A/B; wrapper 2.1.0-bale.5+)
@@ -249,8 +249,10 @@ case "${1:-}" in
     playtest_mode_args=()
     if [[ "$playtest_route" == playtest-engine ]]; then
       playtest_max_seconds=60
+      playtest_max_args=4
       # 20 s engine open budget plus teardown.
       playtest_open_margin=30
+      playtest_mode_args=(--data-urlencode "mode=${4:-cs}")
     fi
     if [[ "$playtest_route" == playtest-ffmpeg ]]; then
       playtest_max_seconds=60
@@ -261,9 +263,10 @@ case "${1:-}" in
     fi
     if [[ "$#" -lt 2 || "$#" -gt "$playtest_max_args" || ! "$playtest_seconds" =~ ^([1-9]|[1-5][0-9]|60)$ ]] \
       || (( playtest_seconds > playtest_max_seconds )) \
-      || [[ "$playtest_route" == playtest-ffmpeg && ! "${4:-auto}" =~ ^(auto|software|system)$ ]]; then
+      || [[ "$playtest_route" == playtest-ffmpeg && ! "${4:-auto}" =~ ^(auto|software|system)$ ]] \
+      || [[ "$playtest_route" == playtest-engine && ! "${4:-cs}" =~ ^(cs|rust)$ ]]; then
       echo 'usage: scripts/bale-debug.sh playtest <http(s)-url|suite> [seconds] (1–10, default 3; suite needs timeout 300)' >&2
-      echo '       scripts/bale-debug.sh playtest-engine <http(s)-url|@file|suite> [seconds] (1–60 s, default 3)' >&2
+      echo '       scripts/bale-debug.sh playtest-engine <http(s)-url|@file|suite> [seconds] [cs|rust] (1–60 s, default 3; default cs)' >&2
       echo '       scripts/bale-debug.sh playtest-ffmpeg <http(s)-url|@file|suite> [seconds] [auto|software|system] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=on|off|default] (1–60 s, default 3; tuning requires seconds/mode)' >&2
       exit 2
     fi

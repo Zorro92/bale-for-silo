@@ -27,6 +27,8 @@ public class DebugPlaytestScriptTests
     [InlineData("playtest-ffmpeg", "60", "software", 110)]
     [InlineData("playtest-engine", "60", null, 90)]
     [InlineData("playtest-engine", "3", null, 33)]
+    [InlineData("playtest-engine", "3", "rust", 33)]
+    [InlineData("playtest-engine", "60", "cs", 90)]
     [InlineData("playtest-ffmpeg", "1", "system", 51)]
     public async Task WrapperUsesTheCorrectRouteEncodingModeAndOpenBudget(string command, string seconds, string? mode, int timeout)
     {
@@ -145,6 +147,32 @@ public class DebugPlaytestScriptTests
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("--data-urlencode\n" + hdr + "\n", result.Arguments);
         Assert.DoesNotContain("not-a-real-grant", result.Output + result.Arguments);
+    }
+
+    [Theory]
+    [InlineData("grain=on")]
+    [InlineData("grain=off")]
+    [InlineData("grain=default")]
+    public async Task GrainProbeOverrideWorksAlongsideHdr(string grain)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["playtest-ffmpeg", "@fixture", "30", "software", "hdr=on", grain]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("--data-urlencode\n" + grain + "\n", result.Arguments);
+    }
+
+    [Theory]
+    [InlineData("playtest-ffmpeg", "grain=OFF")]
+    [InlineData("playtest-ffmpeg", "grain=1")]
+    [InlineData("playtest-engine", "csharp")]
+    [InlineData("playtest-engine", "RUST")]
+    public async Task InvalidGrainOrEngineModeNeverInvokesCurl(string command, string option)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        string[] args = command == "playtest-engine" ? [command, "@fixture", "3", option] : [command, "@fixture", "30", "software", option];
+        var result = await RunAsync(args);
+        Assert.Equal(2, result.ExitCode);
+        Assert.Empty(result.Arguments);
     }
 
     [Theory]

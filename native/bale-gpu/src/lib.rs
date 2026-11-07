@@ -2,7 +2,9 @@
 //!
 //! Step 1 is only a loader check: the DLL must load inside the Xbox UWP app container, Rust std
 //! (threads, synchronisation, clocks) must work there, and the `windows` crate's D3D11 bindings must
-//! reach the hardware device. Media Engine and compute work build on this once it is proven.
+//! reach the hardware device. Step 2 ports the debug IMFMediaEngine frame-server probe (`engine`).
+
+mod engine;
 
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -15,7 +17,7 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 /// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched DLL.
-pub const ABI_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = 2;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_gpu_abi_version() -> u32 {
@@ -79,4 +81,28 @@ pub unsafe extern "C" fn bale_gpu_d3d11_probe(feature_level: *mut u32) -> i32 {
         }
         Err(error) => error.code().0,
     }
+}
+
+/// Runs the debug IMFMediaEngine frame-server probe on `url` (UTF-16, `url_len` code units) for
+/// `seconds` (clamped to 1–60) and writes the plain-text report as UTF-8 into `report`. Returns the
+/// bytes written; a report longer than `report_capacity` is cut at a character boundary. The report
+/// never contains the URL or system error text. Blocks the calling thread (an MTA thread) for the run.
+///
+/// # Safety
+/// `url` must point to `url_len` readable `u16`s; `report` must point to `report_capacity` writable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_gpu_engine_probe(url: *const u16, url_len: u32, seconds: u32, report: *mut u8, report_capacity: u32) -> u32 {
+    if url.is_null() || report.is_null() || url_len == 0 {
+        return 0;
+    }
+    // SAFETY: the caller guarantees `url_len` readable code units.
+    let url = unsafe { std::slice::from_raw_parts(url, url_len as usize) };
+    let text = engine::run(url, seconds.clamp(1, 60));
+    let mut length = text.len().min(report_capacity as usize);
+    while !text.is_char_boundary(length) {
+        length -= 1;
+    }
+    // SAFETY: `length` <= `report_capacity`, which the caller guarantees is writable.
+    unsafe { std::ptr::copy_nonoverlapping(text.as_ptr(), report, length) };
+    length as u32
 }
