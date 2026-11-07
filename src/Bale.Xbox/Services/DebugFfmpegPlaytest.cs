@@ -97,6 +97,17 @@ internal static class DebugFfmpegPlaytest
         return false;
     }
 
+    /// <summary>grain=off sets bale_dav1d_export_film_grain=1 (dav1d skips grain synthesis; needs wrapper 2.1.0-bale.5);
+    /// on, default or omitted keeps dav1d's normal grain synthesis.</summary>
+    internal static bool TryParseGrain(string? grain, out bool? synthesize, out string error)
+    {
+        error = string.Empty;
+        synthesize = grain switch { "on" => true, "off" => false, _ => null };
+        if (grain is null or "default" or "on" or "off") return true;
+        error = "grain must be on, off or default";
+        return false;
+    }
+
     private static bool TryNativeOption(string? value, int minimum, int maximum, out int? number)
     {
         number = null;
@@ -120,7 +131,8 @@ internal static class DebugFfmpegPlaytest
             + $"Decode thread priority: {tuning.DecodeThreadPriority ?? 0} (0=off, 1=above normal, 2=highest; {(tuning.DecodeThreadPriority is null ? "default" : "override")})\n"
             + $"Decoder use max resolution: {tuning.DecoderUseMaxResolution ?? 0} (0=unset, 1=on; {(tuning.DecoderUseMaxResolution is null ? "default" : "override")}; system video only)\n"
             + $"Decoder max DPB count: {tuning.DecoderMaxDpbCount ?? 0} (0=unset; {(tuning.DecoderMaxDpbCount is null ? "default" : "override")}; system video only)\n"
-            + $"HDR support: {tuning.HdrSupport switch { true => "on (override)", false => "off (override)", null => "automatic (default)" }}\n");
+            + $"HDR support: {tuning.HdrSupport switch { true => "on (override)", false => "off (override)", null => "automatic (default)" }}\n"
+            + $"Film grain: {tuning.FilmGrain switch { true => "synthesized (override)", false => "exported, not applied (override; libdav1d only)", null => "synthesized (default)" }}\n");
     }
 
     internal static string FrameDelivery(PlaybackFrameDeliverySnapshot? frames)
@@ -184,7 +196,7 @@ internal static class DebugFfmpegPlaytest
 // Nullable settings use release software-video defaults or the wrapper's defaults for other modes.
 internal sealed record DebugFfmpegTuning(uint? Threads = null, bool? Allow10bit = null, double Rate = 1.0,
     int? DecodeAheadFrames = null, int? SwsThreads = null, int? Dav1dMaxFrameDelay = null, int? DecodeThreadPriority = null,
-    int? DecoderUseMaxResolution = null, int? DecoderMaxDpbCount = null, bool? HdrSupport = null)
+    int? DecoderUseMaxResolution = null, int? DecoderMaxDpbCount = null, bool? HdrSupport = null, bool? FilmGrain = null)
 {
     internal SoftwareDecodeTuning DecodeTuning(string mode)
     {

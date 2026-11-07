@@ -209,7 +209,7 @@ Standalone syntax (independent of process-wide `ffmpeg-tune`):
 ```sh
 scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [auto|software|system] \
   [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] \
-  [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default]
+  [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=on|off|default]
 ```
 
 Supply seconds/mode before tuning, then keys in any order, at most once each. Seconds are 1–60
@@ -223,6 +223,10 @@ hardware/system video ignores them. Auto/system modes retain wrapper defaults fo
 `hdr=on|off` forces the wrapper's `Video.HdrSupport` to Enabled/Disabled (omitted or `default` keeps
 Automatic, which applies HDR colour info only when the HDMI mode is already BT.2020); the report adds
 `HDR support:` and the video stream's `HasHdrMetadata` / `IsHdrActive`. Production never sets it.
+`grain=off` sends `bale_dav1d_export_film_grain=1` (wrapper patch 0005, `2.1.0-bale.5`+; older wrappers
+reject the key and the open fails): libdav1d skips film-grain synthesis and exports the parameters as
+frame side data, so a grain-carrying AV1 clip can be timed with and without grain (`Film grain:` in the
+report). `on`/`default`/omitted keep normal synthesis and send no key. Production never sets it.
 The system-video hints below accept `default` as omitted; other one-shot probe keys do not. The response
 reports threads/10-bit output, logical CPUs, requested/applied rate, applied fork-option values with
 default/override labels, and decoded output subtype plus software frame-delivery

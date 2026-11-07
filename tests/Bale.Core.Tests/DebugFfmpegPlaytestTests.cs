@@ -179,7 +179,40 @@ public class DebugFfmpegPlaytestTests
         var source = Read("DebugFfmpegSource.cs.txt");
         Assert.Contains("if (tuning.HdrSupport is { } hdr) config.Video.HdrSupport = hdr ? HdrSupport.Enabled : HdrSupport.Disabled;", source);
         Assert.Contains("query.GetValueOrDefault(\"hdr\")", Read("DebugServer.cs.txt"));
-        Assert.Contains("tuning = tuning with { HdrSupport = hdrSupport };", Read("DebugServer.Ffmpeg.cs.txt"));
+        Assert.Contains("tuning = tuning with { HdrSupport = hdrSupport, FilmGrain = filmGrain };", Read("DebugServer.Ffmpeg.cs.txt"));
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("default", null)]
+    [InlineData("on", true)]
+    [InlineData("off", false)]
+    public void GrainProbeOverrideIsOptIn(string? grain, bool? expected)
+    {
+        Assert.True(DebugFfmpegPlaytest.TryParseGrain(grain, out var synthesize, out var error));
+        Assert.Equal(expected, synthesize);
+        Assert.Empty(error);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("OFF")]
+    [InlineData("0")]
+    [InlineData("export")]
+    public void InvalidGrainProbeOverrideIsRejected(string grain)
+    {
+        Assert.False(DebugFfmpegPlaytest.TryParseGrain(grain, out _, out var error));
+        Assert.Equal("grain must be on, off or default", error);
+    }
+
+    [Fact]
+    public void GrainExportKeyIsSentOnlyForGrainOff()
+    {
+        var source = Read("DebugFfmpegSource.cs.txt");
+        Assert.Contains("if (tuning.FilmGrain is false) config.FFmpegOptions[\"bale_dav1d_export_film_grain\"] = \"1\";", source);
+        Assert.Single(source.Split("bale_dav1d_export_film_grain").Skip(1));
+        Assert.Contains("query.GetValueOrDefault(\"grain\")", Read("DebugServer.cs.txt"));
+        Assert.DoesNotContain("bale_dav1d_export_film_grain", Read("FfmpegSource.cs.txt"));
     }
 
     [Theory]
@@ -308,7 +341,8 @@ public class DebugFfmpegPlaytestTests
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
             const string defaults = "Decode ahead: 0 (0=off; default)\nSWS threads: 1 (1=upstream; default)\ndav1d max frame delay: 0 (0=dav1d default; default)\nDecode thread priority: 0 (0=off, 1=above normal, 2=highest; default)\n"
                 + "Decoder use max resolution: 0 (0=unset, 1=on; default; system video only)\nDecoder max DPB count: 0 (0=unset; default; system video only)\n"
-                + "HDR support: automatic (default)\n";
+                + "HDR support: automatic (default)\n"
+                + "Film grain: synthesized (default)\n";
             Assert.Equal("Threads: 0 (0=logical CPU count; default)\n10-bit output: on (default)\nLogical CPUs: 8\nRate requested: 1\n" + defaults,
                 DebugFfmpegPlaytest.Settings(0, true, 8, new(), "auto"));
             Assert.Equal("Threads: 4 (0=logical CPU count; override)\n10-bit output: off (override)\nLogical CPUs: 8\nRate requested: 0.75\n" + defaults,

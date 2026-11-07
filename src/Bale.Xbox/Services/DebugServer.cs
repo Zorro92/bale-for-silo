@@ -38,7 +38,8 @@ namespace Bale.Xbox.Services;
 ///   GET  /playtest?url=...  muted public http(s) stream probe; seconds=3 (1–10), open timeout 8 s
 ///   GET  /playtest-ffmpeg?url=...  muted FFmpegInteropX probe; seconds=3 (1–60), mode=auto|software|system
 ///                         optional threads=0–16, 10bit=on|off, rate=0.5–2.0 (default 1), ahead=0–64, sws=1–16, delay=0–64, prio=0–2, maxres=0|1|default, dpb=0–16|default (system video only),
-///                         hdr=on|off|default (wrapper HdrSupport Enabled/Disabled; default Automatic)
+///                         hdr=on|off|default (wrapper HdrSupport Enabled/Disabled; default Automatic),
+///                         grain=on|off|default (off: dav1d exports film grain instead of applying it; wrapper 2.1.0-bale.5+)
 ///   POST /ffmpeg?mode=...  next real-player attempt: policy (default)|off; memory only
 ///   GET  /ffmpeg-tune     current memory-only FFmpeg overrides
 ///   POST /ffmpeg-tune?readahead=on&readsize=65536&prefetch=8  next FFmpeg player attempt; each key accepts default
@@ -241,7 +242,7 @@ internal sealed partial class DebugServer
                 return await PlaytestFfmpegAsync(query.GetValueOrDefault("url"), query.GetValueOrDefault("seconds"), query.GetValueOrDefault("mode"),
                     query.GetValueOrDefault("threads"), query.GetValueOrDefault("10bit"), query.GetValueOrDefault("rate"),
                     query.GetValueOrDefault("ahead"), query.GetValueOrDefault("sws"), query.GetValueOrDefault("delay"), query.GetValueOrDefault("prio"),
-                    query.GetValueOrDefault("maxres"), query.GetValueOrDefault("dpb"), query.GetValueOrDefault("hdr"));
+                    query.GetValueOrDefault("maxres"), query.GetValueOrDefault("dpb"), query.GetValueOrDefault("hdr"), query.GetValueOrDefault("grain"));
 
             case ("GET", "/playtest-engine"):
                 return await PlaytestEngineAsync(query.GetValueOrDefault("url"), query.GetValueOrDefault("seconds"));

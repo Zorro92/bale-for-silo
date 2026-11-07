@@ -24,6 +24,8 @@ internal static class DebugFfmpegSource
         if (tuning.DecoderUseMaxResolution is { } maxres) config.FFmpegOptions["bale_decoder_use_max_resolution"] = maxres.ToString(CultureInfo.InvariantCulture);
         if (tuning.DecoderMaxDpbCount is { } dpb) config.FFmpegOptions["bale_decoder_max_dpb_count"] = dpb.ToString(CultureInfo.InvariantCulture);
         if (tuning.HdrSupport is { } hdr) config.Video.HdrSupport = hdr ? HdrSupport.Enabled : HdrSupport.Disabled;
+        // grain=off only: older wrappers (before 2.1.0-bale.5) reject the unknown key with E_INVALIDARG.
+        if (tuning.FilmGrain is false) config.FFmpegOptions["bale_dav1d_export_film_grain"] = "1";
         config.FFmpegOptions["rw_timeout"] = "10000000";
         return config;
     }
