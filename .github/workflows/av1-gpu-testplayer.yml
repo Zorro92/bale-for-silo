@@ -93,6 +93,9 @@ jobs:
         shell: pwsh
         env:
           CERT_THUMBPRINT: ${{ steps.cert.outputs.thumbprint }}
+          # /sdl promotes upstream's deprecated GetDesktopDpi call to C4996 even without /WX.
+          # _CL_ appends this override after the project's compiler options; no source patch is needed.
+          _CL_: /wd4996
         run: |
           $ErrorActionPreference = 'Stop'
           $packageDirectory = Join-Path $env:GITHUB_WORKSPACE 'out/packages/'

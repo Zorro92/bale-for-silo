@@ -25,7 +25,9 @@ and applies the patches with `git apply`. It builds `av1xbox.sln` (the player an
 `uwp_common`/`libav1` dependencies) as Release x64 with the same MSBuild action,
 `v145` toolset and `10.0.26100.0` Windows SDK used by the wrapper build. The minimum
 Windows version is overridden to `10.0.17763.0`. Upstream FXC/Shader Model 5.0 compute
-shader settings and decoder behavior remain unchanged.
+shader settings and decoder behavior remain unchanged. An appended compiler option
+`/wd4996` suppresses the newer SDK's deprecated `GetDesktopDpi` diagnostic (promoted
+to an error by upstream's `/sdl`), without changing the upstream player source.
 
 Before building, the workflow sets the package identity to `Av1GpuTestPlayer`, its
 publisher to `CN=Bale Development`, and both display names to **AV1 GPU Test Player**.
