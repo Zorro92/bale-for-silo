@@ -50,7 +50,14 @@ console. AV1 needs software decode (dav1d).
 and software flags, and D3D12 app-mode availability: default-adapter LUID matching, maximum feature
 level/shader model, compute-queue creation, and explicit non-software adapter device creation.
 This probes hardware access, not video decode support or a new playback route.
-Results: pending console run
+Results (Series X, Bale 0.1.257.0, app mode, 2026-11-07): `HasExpandedResources` = no (not game
+mode). DXGI lists the hardware adapter `SraKmd_arden` (VendorId 0x1414, 512 MiB dedicated, ~2.6 GiB
+shared) and the software Basic Render Driver. Default `D3D12CreateDevice` at FL 11_0 succeeds on
+the **hardware** adapter (LUID matches DXGI 0, not WARP): max feature level 11_0, shader model 6.4,
+compute queue created. Explicit creation on DXGI 0 while the default device is alive returns
+0x887A0006 (`DXGI_ERROR_DEVICE_HUNG`); use the default adapter. So D3D12 compute is available to
+Bale without game mode, which is the prerequisite for a GPU AV1 path (e.g. av1-xbox-one's compute
+decoder). D3D11 still exposes no AV1 decoder profile.
 
 Still to test with real library files: TrueHD/DTS passthrough to a receiver.
 
