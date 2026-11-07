@@ -1,0 +1,4 @@
+# UWP packages only provide the *_app VC runtime (vcruntime140_app.dll), not the desktop
+# vcruntime140.dll Rust links by default, so link the CRT statically.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

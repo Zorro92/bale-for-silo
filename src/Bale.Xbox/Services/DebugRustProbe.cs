@@ -1,0 +1,50 @@
+#if DEBUG_SERVER
+using System.Runtime.InteropServices;
+using System.Text;
+
+namespace Bale.Xbox.Services;
+
+/// <summary>
+/// Loader check for native/bale-gpu (Rust, C ABI): the DLL loads in the app container, Rust std threads work,
+/// and the windows crate reaches a hardware D3D11 device. Every call is guarded so a missing export or DLL
+/// reports instead of ending the app.
+/// </summary>
+internal static unsafe class DebugRustProbe
+{
+    private const uint ExpectedAbi = 1;
+
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern uint bale_gpu_abi_version();
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern ulong bale_gpu_std_probe();
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_d3d11_probe(uint* featureLevel);
+
+    internal static string Run()
+    {
+        var report = new StringBuilder("Rust GPU layer (bale_gpu.dll):\n");
+        uint abi;
+        try
+        {
+            Log.Info("Debug rust: before load");
+            abi = bale_gpu_abi_version();
+        }
+        catch (Exception ex)
+        {
+            report.Append($"  Load: FAILS ({ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8})\n");
+            return report.ToString();
+        }
+        report.Append($"  Load: ok; ABI {abi} (expected {ExpectedAbi}){(abi == ExpectedAbi ? string.Empty : " MISMATCH")}\n");
+        if (abi != ExpectedAbi) return report.ToString();
+
+        Log.Info("Debug rust: before std probe");
+        var micros = bale_gpu_std_probe();
+        report.Append(micros == ulong.MaxValue ? "  std thread + mutex: FAILS\n" : $"  std thread + mutex: ok ({micros} µs)\n");
+
+        Log.Info("Debug rust: before D3D11 probe");
+        uint level = 0;
+        var hr = bale_gpu_d3d11_probe(&level);
+        report.Append(hr >= 0 ? $"  D3D11 hardware device (windows crate): ok, feature level 0x{level:X4}\n"
+            : $"  D3D11 hardware device (windows crate): FAILS 0x{unchecked((uint)hr):X8}\n");
+        Log.Info("Debug rust: done");
+        return report.ToString();
+    }
+}
+#endif

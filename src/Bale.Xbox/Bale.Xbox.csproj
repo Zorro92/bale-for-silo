@@ -49,6 +49,8 @@
     <Content Include="$(PkgFFmpegInteropX_UWP_FFmpeg)\licenses\*.txt" Link="Licenses\FFmpeg\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="$(PkgFFmpegInteropX_UWP_FFmpeg)\SOURCES.txt" Link="Licenses\FFmpeg\SOURCES.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="$(PkgFFmpegInteropX_UWP_Lib)\SOURCES.txt" Link="Licenses\FFmpegInteropX\SOURCES.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Rust GPU/media layer (native/bale-gpu), built by CI with cargo before msbuild. -->
+    <Content Include="..\..\native\bale-gpu\target\x86_64-pc-windows-msvc\release\bale_gpu.dll" Link="bale_gpu.dll" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\FFmpegInteropX-LICENSE.txt" Link="Licenses\FFmpegInteropX.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

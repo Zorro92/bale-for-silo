@@ -261,6 +261,9 @@ internal sealed partial class DebugServer
                     return ("400 Bad Request", DebugFfmpegInputTuning.Usage + "\n");
                 return ("200 OK", $"FFmpeg tuning: {tuning.Description}; applies to the next FFmpeg player attempt\n");
 
+            case ("GET", "/rust"):
+                return ("200 OK", await Task.Run(DebugRustProbe.Run));
+
             case ("GET", "/mem"):
                 if (query.Count > 1 || (query.Count == 1 && query.GetValueOrDefault("gc") is not "1"))
                     return ("400 Bad Request", "only gc=1 is accepted\n");

@@ -69,6 +69,22 @@ jobs:
         shell: pwsh
         run: ./scripts/restore-ffmpeg-native.ps1
 
+      # Rust GPU/media layer: static CRT (native/bale-gpu/.cargo/config.toml), packaged by the csproj.
+      - name: Build Rust GPU layer
+        shell: pwsh
+        run: |
+          rustup target add x86_64-pc-windows-msvc
+          cargo build --release --locked --target x86_64-pc-windows-msvc --manifest-path native/bale-gpu/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'cargo build failed' }
+          $dll = 'native/bale-gpu/target/x86_64-pc-windows-msvc/release/bale_gpu.dll'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -property installationPath
+          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe |
+            Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+          # Imported DLLs, for checking against what the Xbox app container provides.
+          & $dumpbin.FullName /dependents $dll
+          if ((& $dumpbin.FullName /dependents $dll) -match 'vcruntime140\.dll|msvcp140\.dll') { throw 'bale_gpu.dll must link the CRT statically' }
+
       # Every build gets a higher version so the Xbox accepts it as an update.
       - name: Stamp version
         shell: pwsh
@@ -109,6 +125,9 @@ jobs:
             Where-Object { $_.FullName -notmatch '[\\/]Dependencies[\\/]' } | Select-Object -First 1
           if (-not $package) { throw 'No application MSIX found' }
           ./scripts/check-ffmpeg-package.ps1 -PackagePath $package.FullName
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [IO.Compression.ZipFile]::OpenRead($package.FullName)
+          try { if (-not $zip.GetEntry('bale_gpu.dll')) { throw 'bale_gpu.dll missing from the MSIX' } } finally { $zip.Dispose() }
 
       - uses: actions/upload-artifact@v7
         with:

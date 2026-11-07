@@ -1,0 +1,27 @@
+[package]
+name = "bale-gpu"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+description = "Bale's native GPU/media layer for Xbox (C ABI for the C# app)"
+publish = false
+
+[lib]
+name = "bale_gpu"
+crate-type = ["cdylib"]
+
+[dependencies.windows]
+version = "0.62.2"
+features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+# Unwinding never crosses the C ABI; abort keeps the DLL small.
+panic = "abort"

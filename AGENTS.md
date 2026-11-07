@@ -34,6 +34,7 @@ px: halve them. Prefer the Android code's values when the two disagree; they're 
 | `tests/Bale.Core.Tests` | xUnit tests for Core | anywhere |
 | `tools/Bale.Cli` | `bale-cli`: runs Core against a real server (keeps a dev session) | anywhere |
 | `src/Bale.Xbox` | The Xbox app: UWP on .NET 10, Native AOT, XAML | Windows only (CI) |
+| `native/bale-gpu` | Rust GPU/media layer (`bale_gpu.dll`, C ABI, `windows` crate, static CRT); CI builds it before the MSIX | Windows (CI); `cargo check --target x86_64-pc-windows-msvc` anywhere |
 | `src/Bale.Xbox/Themes/Skyline.xaml` | **Every** color, size and control style | — |
 | `scripts/` | API generation, deploy, logs, screenshots, remote control | Linux |
 
