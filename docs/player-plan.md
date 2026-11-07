@@ -227,6 +227,10 @@ Automatic, which applies HDR colour info only when the HDMI mode is already BT.2
 reject the key and the open fails): libdav1d skips film-grain synthesis and exports the parameters as
 frame side data, so a grain-carrying AV1 clip can be timed with and without grain (`Film grain:` in the
 report). `on`/`default`/omitted keep normal synthesis and send no key. Production never sets it.
+Console check on 0.1.291.0 (bale.5, 20 s `software`): the key is accepted and reported as exported.
+The public Jellyfin AV1 clips carry no grain (`film_grain_params_present = 0` in the 1080p and 4K
+sequence headers), so the 1080p 10 Mbps run is unchanged (ratio 0.992 / 1.87 cores with synthesis,
+0.998 / 1.90 exported). Measuring the grain cost still needs a grain-carrying 1080p/4K AV1 clip.
 The system-video hints below accept `default` as omitted; other one-shot probe keys do not. The response
 reports threads/10-bit output, logical CPUs, requested/applied rate, applied fork-option values with
 default/override labels, and decoded output subtype plus software frame-delivery
