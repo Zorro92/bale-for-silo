@@ -397,7 +397,8 @@ public class DebugFfmpegPlaytestTests
         [
             "Interlocked.CompareExchange(ref _playtestBusy, 1, 0)", "409 Conflict",
             "FFmpegInteropLogging.SetLogProvider(null)", "FFmpegMediaSource.CreateFromUriAsync(uri.AbsoluteUri, config).AsTask()",
-            "using var source = await creation", "using var player = await OnFfmpegUiAsync(() => new MediaPlayer { IsMuted = true, AutoPlay = false })",
+            "using var source = await creation", "var player = await OnFfmpegUiAsync(() => new MediaPlayer { IsMuted = true, AutoPlay = false })",
+            "Attempt(\"dispose player\", player.Dispose)",
             "source.CreateMediaPlaybackItem()", "VideoDecoderMode.Automatic", "VideoDecoderMode.ForceFFmpegSoftwareDecoder",
             "VideoDecoderMode.ForceSystemDecoder", "source.CurrentVideoStream", "source.CurrentAudioStream",
             "video.DecoderEngine", "audio.DecoderEngine", "DebugProcessCpu.Read(out var failure)",
