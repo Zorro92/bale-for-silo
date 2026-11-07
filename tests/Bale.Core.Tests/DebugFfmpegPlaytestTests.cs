@@ -128,17 +128,12 @@ public class DebugFfmpegPlaytestTests
     }
 
     [Fact]
-    public void ProbeAppliesOnlyExplicitForkOptionsAndReportsTheirDefaultsAndOverrides()
+    public void ProbeAppliesSharedSoftwareDefaultsAndReportsTheirOverrides()
     {
         var source = Read("DebugFfmpegSource.cs.txt");
         Assert.StartsWith("#if DEBUG_SERVER", source);
-        foreach (var (property, variable, option) in new[]
-        {
-            ("DecodeAheadFrames", "ahead", "bale_decode_ahead_frames"), ("SwsThreads", "sws", "bale_sws_threads"),
-            ("Dav1dMaxFrameDelay", "delay", "bale_dav1d_max_frame_delay"),
-        })
-            Assert.Contains($"if (tuning.{property} is {{ }} {variable}) config.FFmpegOptions[\"{option}\"] = {variable}.ToString(CultureInfo.InvariantCulture)", source);
-        var report = DebugFfmpegPlaytest.Settings(4, false, 8, new(4, false, 0.75, 8, 4, 1));
+        Assert.Contains("FfmpegSource.ApplyDecodeTuning(config, tuning.DecodeTuning(mode))", source);
+        var report = DebugFfmpegPlaytest.Settings(4, false, 8, new(4, false, 0.75, 8, 4, 1), "software");
         Assert.Contains("Decode ahead: 8 (0=off; override)\n", report);
         Assert.Contains("SWS threads: 4 (1=upstream; override)\n", report);
         Assert.Contains("dav1d max frame delay: 1 (0=dav1d default; override)\n", report);
@@ -148,6 +143,41 @@ public class DebugFfmpegPlaytestTests
         Assert.Contains("if (values.ContainsKey(key)) duplicateKeys = true", server);
         Assert.Contains("TryParseTuning(threads, output10bit, rate, ahead, sws, delay", Read("DebugServer.Ffmpeg.cs.txt"));
         Assert.DoesNotContain("DebugFfmpegInputTuning.Current", source);
+    }
+
+    [Theory]
+    [InlineData("software", 16, 4)]
+    [InlineData("auto", null, null)]
+    [InlineData("system", null, null)]
+    public void ProbeUsesReleaseSoftwareDefaultsWithUnknownDimensions(string mode, int? ahead, int? sws)
+    {
+        var tuning = new DebugFfmpegTuning();
+        Assert.Equal(new SoftwareDecodeTuning(ahead, sws), tuning.DecodeTuning(mode));
+        var report = DebugFfmpegPlaytest.Settings(0, true, 8, tuning, mode);
+        Assert.Contains($"Decode ahead: {ahead ?? 0} (0=off; default)\n", report);
+        Assert.Contains($"SWS threads: {sws ?? 1} (1=upstream; default)\n", report);
+        Assert.Contains("dav1d max frame delay: 0 (0=dav1d default; default)\n", report);
+    }
+
+    [Theory]
+    [InlineData(0, 1, 0)]
+    [InlineData(8, 2, 1)]
+    [InlineData(64, 16, 64)]
+    public void ExplicitProbeValuesWinOverReleaseDefaultsIncludingZero(int ahead, int sws, int delay)
+    {
+        var tuning = new DebugFfmpegTuning(DecodeAheadFrames: ahead, SwsThreads: sws, Dav1dMaxFrameDelay: delay);
+        Assert.Equal(new SoftwareDecodeTuning(ahead, sws, delay), tuning.DecodeTuning("software"));
+    }
+
+    [Theory]
+    [InlineData(0, null, null, 0, 4, null)]
+    [InlineData(null, 1, null, 16, 1, null)]
+    [InlineData(null, null, 8, 16, 4, 8)]
+    public void ProbeOverridesLeaveUnspecifiedReleaseDefaultsIntact(int? ahead, int? sws, int? delay,
+        int expectedAhead, int expectedSws, int? expectedDelay)
+    {
+        var tuning = new DebugFfmpegTuning(DecodeAheadFrames: ahead, SwsThreads: sws, Dav1dMaxFrameDelay: delay);
+        Assert.Equal(new SoftwareDecodeTuning(expectedAhead, expectedSws, expectedDelay), tuning.DecodeTuning("software"));
     }
 
     [Theory]
@@ -178,9 +208,9 @@ public class DebugFfmpegPlaytestTests
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
             const string defaults = "Decode ahead: 0 (0=off; default)\nSWS threads: 1 (1=upstream; default)\ndav1d max frame delay: 0 (0=dav1d default; default)\n";
             Assert.Equal("Threads: 0 (0=logical CPU count; default)\n10-bit output: on (default)\nLogical CPUs: 8\nRate requested: 1\n" + defaults,
-                DebugFfmpegPlaytest.Settings(0, true, 8, new()));
+                DebugFfmpegPlaytest.Settings(0, true, 8, new(), "auto"));
             Assert.Equal("Threads: 4 (0=logical CPU count; override)\n10-bit output: off (override)\nLogical CPUs: 8\nRate requested: 0.75\n" + defaults,
-                DebugFfmpegPlaytest.Settings(4, false, 8, new(4, false, 0.75)));
+                DebugFfmpegPlaytest.Settings(4, false, 8, new(4, false, 0.75), "auto"));
             Assert.Contains("Late frames total: unavailable", DebugFfmpegPlaytest.FrameDelivery(null));
             Assert.Contains("Total frames delivered: unavailable", DebugFfmpegPlaytest.FrameDelivery(null));
             Assert.Contains("min=unavailable median=unavailable", DebugFfmpegPlaytest.FrameDelivery(new(0, 0, 0, 1)));

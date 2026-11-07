@@ -4,7 +4,7 @@ using Bale.Core.Playback;
 
 namespace Bale.Xbox.Services;
 
-/// <summary>Memory-only FFmpeg experiment, captured once per attempt and never applied to probes or native/HLS routes.</summary>
+/// <summary>Memory-only overrides of release settings, captured per attempt and never applied to probes or native/HLS routes.</summary>
 internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadSize = null, int? Prefetch = null, int? BufferMs = null,
     int? DecodeAheadFrames = null, int? SwsThreads = null, int? Dav1dMaxFrameDelay = null)
 {
@@ -15,7 +15,7 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
     // Keep the extra native packet queue below its 100 MB / 60 s defaults on Xbox.
     internal const long ReadAheadCapBytes = 64L * 1024 * 1024;
     internal static readonly TimeSpan ReadAheadCapDuration = TimeSpan.FromSeconds(30);
-    internal const string Usage = "expected [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [sws=1..16|default] [delay=0..64|default]; omitted keys keep their overrides";
+    internal const string Usage = "expected [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [sws=1..16|default] [delay=0..64|default]; omitted keys keep their overrides; default restores the release setting (software video: ahead=16, sws=4, delay=8 above 1080p (unset otherwise))";
     private static readonly object Gate = new();
     private static DebugFfmpegInputTuning _current = new();
 

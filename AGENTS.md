@@ -129,6 +129,11 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
   never enable x264/x265. Releases are immutable. See `docs/player-plan.md` for provenance and
   rebuild steps; do not overwrite assets or update a pinned hash without reviewing the new build.
 - The wrapper fork pipeline is `ffmpeginteropx-wrapper.yml`; its patches must not change the IDL.
+- All builds tune software AV1 with `bale_decode_ahead_frames=16` and `bale_sws_threads=4`.
+  `SoftwareDecodeTuning` also sets `bale_dav1d_max_frame_delay=8` above 1080p (width > 1920 or
+  height > 1080), using route dimensions from the source for original delivery or the effective
+  recipe with source fallback otherwise. Unknown size leaves delay unset; hardware/system video
+  gets none of these keys. This tuning does not expand the measured software-video capability bounds.
 - `SoftwareDecodePolicy.VideoCodecs` is the project owner's explicit **AV1-only** software video
   allowlist. Add nothing without them. Other unsupported video goes to server transcode, never
   FFmpeg software or D3D11. Measured AV1 evidence is 0.1.230: 8/10-bit, **1080p30**, not 4K.
@@ -182,12 +187,15 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
   tuning; keys may be in any order, at most once each. Seconds are 1–60 (default 3), mode defaults
   to auto, threads are 0–16 (0 = logical CPU count), and rate is an invariant decimal 0.5–2.0
   (default 1). `ahead` is 0–64 decoded frames (0 = off), `sws` is 1–16 scaler threads (1 = upstream),
-  and `delay` is 0–64 dav1d frames (0 = dav1d default). Omitted native options remain unset;
-  threads/10bit defaults are 0/true. `10bit=off` requests 8-bit NV12 instead of 10-bit P010 for
-  10-bit AV1. The response reports applied values/defaults for the fork keys, actual config values, logical CPUs,
+  and `delay` is 0–64 dav1d frames (0 = dav1d default). Software-mode probes use the release
+  ahead=16/sws=4 defaults; URI probes have unknown dimensions before creation, so delay stays
+  unset unless overridden (use delay=8 for a known above-1080p comparison). Auto/system probes
+  retain the wrapper defaults unless overridden; threads/10bit defaults are 0/true. `10bit=off`
+  requests 8-bit NV12 instead of 10-bit P010 for 10-bit AV1. The response reports applied values/defaults
+  for the fork keys, actual config values, logical CPUs,
   applied playback rate and decoded MSS output subtype when available. Ratio/verdict compare media
-  advance with wall time × applied rate, not unadjusted wall time. These options affect only that
-  probe, never `FfmpegSource`/the real player, and are absent with `BaleDebugServer=false`.
+  advance with wall time × applied rate, not unadjusted wall time. These overrides affect only that
+  probe, never the real player, and are absent with `BaleDebugServer=false`; release defaults remain.
 - Software-video probes reuse the player's AOT-safe `DebugFrameDelivery` observer. Late totals and
   min/median sample-end-ahead (floored at zero, sampled **at delivery**) exclude preroll, paused or
   buffering delivery, seeks and discontinuities. Total delivered counts all observed video samples
@@ -196,11 +204,13 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
   probes report unavailable, not zero. Neither late delivery nor delivered-ahead measures renderer
   drops/queue depth. The fork consumes decimal-string `FFmpegOptions` keys
   `bale_decode_ahead_frames`, `bale_sws_threads` and `bale_dav1d_max_frame_delay` itself, never passing
-  them to FFmpeg. With none set, wrapper behavior equals upstream 2.1.0.
+  them to FFmpeg. Bale sets the software-video defaults listed above in every build.
 - `ffmpeg-tune` also accepts `ahead=N|default`, `sws=N|default` and `delay=N|default` with the same
   ranges. These memory-only real-player overrides are captured per attempt; omitted keys keep their
-  values, `default` clears only that key, and invalid updates change nothing. They do not affect an
-  open player, native/HLS routes or the standalone probe. Production builds set none of the fork keys.
+  values, `default` clears only that override and restores the release setting, and invalid updates
+  change nothing. Explicit values win, including zero for ahead/delay. These three overrides apply
+  only to software video; they do not affect an open player, native/HLS routes or the standalone
+  probe. Production uses the release defaults without debug overrides.
 
 - `I` / gamepad View toggles the read-only stats panel; `scripts/bale-debug.sh where` includes the
   same rows even when hidden. Process CPU is the kernel+user `GetProcessTimes` delta divided by

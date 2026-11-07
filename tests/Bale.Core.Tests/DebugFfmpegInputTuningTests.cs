@@ -11,10 +11,11 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     public void Dispose() => Set(_previous);
 
     [Fact]
-    public void DefaultsLeaveEveryNativeSettingUnsetAndDescribeOnlyOverrides()
+    public void DefaultsKeepReleaseSettingsAndDescribeOnlyOverrides()
     {
         Assert.Equal(new DebugFfmpegInputTuning(), DebugFfmpegInputTuning.Current);
         Assert.Equal("readahead=default readsize=default prefetch=default", DebugFfmpegInputTuning.Current.Description);
+        Assert.Contains("default restores the release setting", DebugFfmpegInputTuning.Usage);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string>(), out var current));
         Assert.Same(DebugFfmpegInputTuning.Current, current);
     }
@@ -197,14 +198,17 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("config.General.ReadAheadBufferSize = DebugFfmpegInputTuning.ReadAheadCapBytes", experiment);
         Assert.Contains("config.General.ReadAheadBufferDuration = DebugFfmpegInputTuning.ReadAheadCapDuration", experiment);
         Assert.Contains("if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = checked((uint)readSize)", experiment);
+        Assert.Contains("var config = Configuration(route)", experiment);
+        Assert.Contains("if (route.SoftwareVideo)\n            ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.SwsThreads, tuning.Dav1dMaxFrameDelay))", experiment);
+        Assert.Contains("ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight))", configuration[..start]);
         foreach (var (property, variable, option) in new[]
         {
             ("DecodeAheadFrames", "ahead", "bale_decode_ahead_frames"), ("SwsThreads", "sws", "bale_sws_threads"),
             ("Dav1dMaxFrameDelay", "delay", "bale_dav1d_max_frame_delay"),
         })
         {
-            Assert.Contains($"if (tuning.{property} is {{ }} {variable}) config.FFmpegOptions[\"{option}\"] = {variable}.ToString(CultureInfo.InvariantCulture)", experiment);
-            Assert.DoesNotContain(option, configuration[..start] + configuration[end..]);
+            Assert.Contains($"if (tuning.{property} is {{ }} {variable}) config.FFmpegOptions[\"{option}\"] = {variable}.ToString(CultureInfo.InvariantCulture)", configuration[..start]);
+            Assert.DoesNotContain(option, experiment);
         }
         Assert.Contains("public DebugFfmpegInputTuning FfmpegTuning { get; } = DebugFfmpegInputTuning.Current", Read("PlayerPage.cs.txt"));
         var player = Read("PlayerPage.Media.cs.txt");

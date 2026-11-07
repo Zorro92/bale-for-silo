@@ -113,6 +113,79 @@ public class PlaybackRoutePolicyTests
     }
 
     [Theory]
+    [InlineData("original_http", 3840L, 2160L)]
+    [InlineData("progressive", 1280L, 720L)]
+    [InlineData("server_remux_progressive", 1280L, 720L)]
+    public void VideoDimensionsFollowTheSameSourceAsTheVideoCodec(string delivery, long width, long height)
+    {
+        var plan = Plan(delivery, "av1", "aac");
+        plan.Source!.Width = 3840;
+        plan.Source.Height = 2160;
+        plan.EffectiveRecipe = new EffectiveRecipeV3 { VideoCodec = "av1", Width = 1280, Height = 720 };
+        var route = PlaybackRoutePolicy.Decide(plan, false);
+        Assert.Equal(width, route.VideoWidth);
+        Assert.Equal(height, route.VideoHeight);
+        Assert.Equal(delivery == "original_http" ? 8 : (int?)null,
+            SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight).Dav1dMaxFrameDelay);
+    }
+
+    [Theory]
+    [InlineData("progressive", null, null, 3840L, 2160L)]
+    [InlineData("progressive", 1280L, null, 1280L, 2160L)]
+    [InlineData("progressive", null, 720L, 3840L, 720L)]
+    [InlineData("server_remux_progressive", null, null, 3840L, 2160L)]
+    [InlineData("server_remux_progressive", 1280L, null, 1280L, 2160L)]
+    [InlineData("server_remux_progressive", null, 720L, 3840L, 720L)]
+    public void MissingRecipeDimensionsFallBackToTheSourceIndependently(string delivery, long? recipeWidth, long? recipeHeight,
+        long width, long height)
+    {
+        var plan = Plan(delivery, "av1", "aac");
+        plan.Source!.Width = 3840;
+        plan.Source.Height = 2160;
+        plan.EffectiveRecipe = new EffectiveRecipeV3 { Width = recipeWidth, Height = recipeHeight };
+        var route = PlaybackRoutePolicy.Decide(plan, false);
+        Assert.Equal(width, route.VideoWidth);
+        Assert.Equal(height, route.VideoHeight);
+        plan.EffectiveRecipe = null;
+        route = PlaybackRoutePolicy.Decide(plan, false);
+        Assert.Equal(3840, route.VideoWidth);
+        Assert.Equal(2160, route.VideoHeight);
+    }
+
+    [Fact]
+    public void OriginalDoesNotUseRecipeDimensionsWhenSourceDimensionsAreUnknown()
+    {
+        var plan = Plan("original_http", "av1", "aac");
+        plan.EffectiveRecipe = new EffectiveRecipeV3 { Width = 3840, Height = 2160 };
+        var route = PlaybackRoutePolicy.Decide(plan, false);
+        Assert.Null(route.VideoWidth);
+        Assert.Null(route.VideoHeight);
+    }
+
+    [Fact]
+    public void RecipeDimensionsDoNotRequireASource()
+    {
+        var plan = new PlaybackPlan
+        {
+            Delivery = "progressive",
+            EffectiveRecipe = new EffectiveRecipeV3 { VideoCodec = "av1", Width = 3840, Height = 2160 },
+        };
+        var route = PlaybackRoutePolicy.Decide(plan, false);
+        Assert.Equal(3840, route.VideoWidth);
+        Assert.Equal(2160, route.VideoHeight);
+    }
+
+    [Theory]
+    [InlineData("original_http")]
+    [InlineData("progressive")]
+    public void MissingSourceAndRecipeLeaveDimensionsUnknown(string delivery)
+    {
+        var route = PlaybackRoutePolicy.Decide(new PlaybackPlan { Delivery = delivery }, false);
+        Assert.Null(route.VideoWidth);
+        Assert.Null(route.VideoHeight);
+    }
+
+    [Theory]
     [InlineData(0, 1)]
     [InlineData(1, 2)]
     [InlineData(2, 0)]

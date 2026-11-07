@@ -73,7 +73,7 @@ internal sealed partial class DebugServer
             Log.Info("Debug FFmpeg: before configuration");
             var config = DebugFfmpegSource.Configuration(decoderMode, tuning);
             builder.Append(DebugFfmpegPlaytest.Settings(config.Video.MaxDecoderThreads, config.Video.VideoOutputAllow10bit,
-                Environment.ProcessorCount, tuning));
+                Environment.ProcessorCount, tuning, decoderMode));
             Log.Info("Debug FFmpeg: before create");
             var creation = FFmpegMediaSource.CreateFromUriAsync(uri.AbsoluteUri, config).AsTask();
             if (await Task.WhenAny(creation, Task.Delay(DebugFfmpegPlaytest.CreateTimeoutMs)) != creation)

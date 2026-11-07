@@ -118,9 +118,10 @@ public class DebugFfmpegPlaybackTests
     public void ProductionConfigurationHasNoAutomaticOrD3D11VideoModeAndUsesOnlySupportedSystemAudioSwitches()
     {
         var source = Read("FfmpegSource.cs.txt");
-        // The production overload keeps native defaults; the experiment is a separate debug-only overload.
+        // Production tunes software video only; input experiments stay in the debug-only overload.
         var production = source[..source.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal)];
         Assert.DoesNotContain("config.General.", production);
+        Assert.Contains("ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight))", production);
         Assert.Contains("FFmpegInteropLogging.SetLogProvider(null)", production);
         Assert.Contains("VideoDecoderMode.ForceFFmpegSoftwareDecoder : VideoDecoderMode.ForceSystemDecoder", source);
         Assert.DoesNotContain("VideoDecoderMode.Automatic", source);

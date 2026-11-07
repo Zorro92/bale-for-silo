@@ -81,14 +81,17 @@ internal static class DebugFfmpegPlaytest
         return true;
     }
 
-    internal static string Settings(uint threads, bool allow10bit, int processorCount, DebugFfmpegTuning tuning) =>
-        string.Create(CultureInfo.InvariantCulture,
+    internal static string Settings(uint threads, bool allow10bit, int processorCount, DebugFfmpegTuning tuning, string mode)
+    {
+        var decode = tuning.DecodeTuning(mode);
+        return string.Create(CultureInfo.InvariantCulture,
             $"Threads: {threads} (0=logical CPU count; {(tuning.Threads is null ? "default" : "override")})\n"
             + $"10-bit output: {(allow10bit ? "on" : "off")} ({(tuning.Allow10bit is null ? "default" : "override")})\n"
             + $"Logical CPUs: {processorCount}\nRate requested: {tuning.Rate:0.###}\n"
-            + $"Decode ahead: {tuning.DecodeAheadFrames ?? 0} (0=off; {(tuning.DecodeAheadFrames is null ? "default" : "override")})\n"
-            + $"SWS threads: {tuning.SwsThreads ?? 1} (1=upstream; {(tuning.SwsThreads is null ? "default" : "override")})\n"
-            + $"dav1d max frame delay: {tuning.Dav1dMaxFrameDelay ?? 0} (0=dav1d default; {(tuning.Dav1dMaxFrameDelay is null ? "default" : "override")})\n");
+            + $"Decode ahead: {decode.DecodeAheadFrames ?? 0} (0=off; {(tuning.DecodeAheadFrames is null ? "default" : "override")})\n"
+            + $"SWS threads: {decode.SwsThreads ?? 1} (1=upstream; {(tuning.SwsThreads is null ? "default" : "override")})\n"
+            + $"dav1d max frame delay: {decode.Dav1dMaxFrameDelay ?? 0} (0=dav1d default; {(tuning.Dav1dMaxFrameDelay is null ? "default" : "override")})\n");
+    }
 
     internal static string FrameDelivery(PlaybackFrameDeliverySnapshot? frames)
     {
@@ -148,7 +151,16 @@ internal static class DebugFfmpegPlaytest
     }
 }
 
-// Nullable decoder settings leave the pinned FFmpegInteropX defaults untouched unless requested.
+// Nullable settings use release software-video defaults or the wrapper's defaults for other modes.
 internal sealed record DebugFfmpegTuning(uint? Threads = null, bool? Allow10bit = null, double Rate = 1.0,
-    int? DecodeAheadFrames = null, int? SwsThreads = null, int? Dav1dMaxFrameDelay = null);
+    int? DecodeAheadFrames = null, int? SwsThreads = null, int? Dav1dMaxFrameDelay = null)
+{
+    internal SoftwareDecodeTuning DecodeTuning(string mode)
+    {
+        // URI probes have no playback plan/dimensions before creation, so leave the size-dependent delay unset.
+        var defaults = SoftwareDecodeTuning.ForVideo(mode == "software");
+        return new(DecodeAheadFrames ?? defaults.DecodeAheadFrames, SwsThreads ?? defaults.SwsThreads,
+            Dav1dMaxFrameDelay ?? defaults.Dav1dMaxFrameDelay);
+    }
+}
 #endif

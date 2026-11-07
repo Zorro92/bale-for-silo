@@ -78,6 +78,14 @@ progressive uses FFmpeg only for AV1 or the **selected** fallback audio codec. A
 2.1.0 implementation can fall back even in ForceSystemDecoder for unsupported formats, so Bale
 also validates all reported video decoder engines before mounting/reading frames.
 
+All builds, including production (`BaleDebugServer=false`), apply the wrapper-fork defaults from
+`SoftwareDecodeTuning` to software AV1: `bale_decode_ahead_frames=16` and `bale_sws_threads=4`.
+`bale_dav1d_max_frame_delay=8` is set only above 1080p (width > 1920 or height > 1080). Route
+width/height follow the video codec's plan selection: original delivery uses `plan.Source`; other
+deliveries use `plan.EffectiveRecipe`, falling back to `plan.Source` for each missing dimension.
+Unknown size leaves delay unset. Hardware/system video routes set none of the three keys. This
+is decode tuning, not new 4K capability evidence or a verified performance improvement.
+
 `Audio.SystemDecoderAAC` and `Audio.SystemDecoderMP3` are enabled. Upstream FFmpegInteropX
 **2.1.0 and master only have `SystemDecoderAAC` / `SystemDecoderMP3`**; there are no system
 AC3/EAC3/PCM or encoded-passthrough switches. **Dolby Atmos (E-AC3 JOC) stays on the
@@ -111,10 +119,11 @@ scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default
 
 No arguments reads the current process-wide overrides (`GET /ffmpeg-tune`); arguments update them
 atomically (`POST /ffmpeg-tune` with the same query keys). Keys may be supplied in any order, once
-each. Omitted keys keep their previous overrides; `default` clears only that key. Restarting the
-process clears all overrides. Settings are captured at playback-attempt creation, retained through
-recovery/remounts, and applied only to the next real FFmpeg Direct player attempt, not an already
-open player, Native Direct, HLS or the standalone probe. `ffmpeg policy|off` remains independent.
+each. Omitted keys keep their previous overrides; `default` clears only that key, restoring its
+release setting. Restarting the process clears all overrides. Settings are captured at playback-attempt
+creation, retained through recovery/remounts, and applied only to the next real FFmpeg Direct player
+attempt, not an already open player, Native Direct, HLS or the standalone probe. `ffmpeg policy|off`
+remains independent.
 
 - `readahead=on` enables FFmpegInteropX's native demux/packet read-ahead queue with **64 MiB /
   30 s** caps, rather than its larger 100 MB / 60 s defaults, to bound the extra Xbox memory use.
@@ -134,11 +143,14 @@ open player, Native Direct, HLS or the standalone probe. `ffmpeg policy|off` rem
 - `delay=N` writes `FFmpegOptions["bale_dav1d_max_frame_delay"]`, inclusively **0–64** frames;
   **0 = dav1d default**. It applies only to the libdav1d decoder.
 - The fork consumes these three options itself, never forwarding them to FFmpeg. Numeric values use
-  strict invariant decimal parsing (no signs, spaces, fractions or exponents). `default` removes the
-  override rather than setting an option; description text appends `ahead=N sws=N delay=N` only for
-  keys that are set. With all three omitted, wrapper behavior equals upstream 2.1.0.
-- Production (`BaleDebugServer=false`) never applies the experiment and sets none of the fork keys.
-  This is an A/B facility, not a change to the production decoder policy or a verified performance fix.
+  strict invariant decimal parsing (no signs, spaces, fractions or exponents). On software video,
+  explicit overrides win over release defaults, including `ahead=0` / `delay=0`. `default` removes
+  only that override, restoring ahead=16, sws=4 or the size-dependent delay setting. Description text
+  appends `ahead=N sws=N delay=N` only for explicit overrides. Hardware/system video ignores these
+  three overrides; the input/read-ahead options remain available on all real FFmpeg routes.
+- Production (`BaleDebugServer=false`) applies the release software-video defaults, never the
+  memory-only debug overrides. The A/B facility does not change the production decoder allowlist
+  or establish a verified performance improvement.
 
 For an isolated comparison, close the current player, set the baseline, then open the same title:
 
@@ -151,7 +163,7 @@ scripts/bale-debug.sh ffmpeg-tune readahead=on
 scripts/bale-debug.sh ffmpeg-tune readsize=65536
 scripts/bale-debug.sh ffmpeg-tune prefetch=8
 scripts/bale-debug.sh ffmpeg-tune ahead=8
-scripts/bale-debug.sh ffmpeg-tune sws=4
+scripts/bale-debug.sh ffmpeg-tune sws=2
 scripts/bale-debug.sh ffmpeg-tune delay=1
 ```
 
@@ -180,11 +192,14 @@ scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [auto|software
 
 Supply seconds/mode before tuning, then keys in any order, at most once each. Seconds are 1–60
 (default 3), threads are 0–16 (0 = logical CPU count), 10bit is on/off, and rate is an invariant
-0.5–2.0 (default 1). The fork keys have the same ranges/defaults as above; omitted native keys remain
-unset, and this one-shot probe does not accept `default`. The response reports threads/10-bit output,
-logical CPUs, requested/applied rate, fork-option values with default/override labels, and decoded
-output subtype plus software frame-delivery measurements when available. Ratio/verdict use wall time
-multiplied by applied rate. All tuning code is absent with `BaleDebugServer=false`.
+0.5–2.0 (default 1). The fork keys have the same ranges as above; software-mode probes use the release
+ahead=16 / sws=4 defaults when omitted. URI probes have no playback plan/dimensions before creation,
+so delay remains unset unless explicitly overridden (use `delay=8` for a known above-1080p comparison).
+Auto/system modes retain wrapper defaults for omitted keys. This one-shot probe does not accept
+`default`. The response reports threads/10-bit output, logical CPUs, requested/applied rate, applied
+fork-option values with default/override labels, and decoded output subtype plus software frame-delivery
+measurements when available. Ratio/verdict use wall time multiplied by applied rate. Probe and override
+code is absent with `BaleDebugServer=false`; release software-video defaults remain.
 
 Results (0.1.229–0.1.230, Series X, Bale Test):
 

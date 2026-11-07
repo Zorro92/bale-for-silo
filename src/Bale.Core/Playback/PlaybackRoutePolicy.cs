@@ -2,7 +2,8 @@ using Bale.Core.Api.Models;
 
 namespace Bale.Core.Playback;
 
-public sealed record PlaybackRouteDecision(bool UseFfmpeg, bool SoftwareVideo, string? VideoCodec, string? AudioCodec, long? AudioOrdinal)
+public sealed record PlaybackRouteDecision(bool UseFfmpeg, bool SoftwareVideo, string? VideoCodec, string? AudioCodec, long? AudioOrdinal,
+    long? VideoWidth, long? VideoHeight)
 {
     public bool SoftwareAudio => UseFfmpeg && SoftwareDecodePolicy.AudioCodecs.Contains(AudioCodec!);
 }
@@ -18,6 +19,8 @@ public static class PlaybackRoutePolicy
         // A remux's recipe describes its actual output, which has only the selected audio stream.
         var video = SoftwareDecodePolicy.NormalizeCodec(original ? plan.Source?.VideoCodec
             : plan.EffectiveRecipe?.VideoCodec ?? plan.Source?.VideoCodec);
+        var width = original ? plan.Source?.Width : plan.EffectiveRecipe?.Width ?? plan.Source?.Width;
+        var height = original ? plan.Source?.Height : plan.EffectiveRecipe?.Height ?? plan.Source?.Height;
         var audio = SoftwareDecodePolicy.NormalizeCodec(original ? plan.Source?.AudioCodec
             : plan.EffectiveRecipe?.AudioCodec ?? plan.Source?.AudioCodec);
         var ordinal = delivery == "server_remux_progressive" ? 0 : plan.SelectedTracks?.Audio?.Index;
@@ -28,7 +31,7 @@ public static class PlaybackRoutePolicy
         var softwareAudio = !SoftwareDecodePolicy.SystemAudioCodecs.Contains(audio!)
             && SoftwareDecodePolicy.AudioCodecs.Contains(audio!);
         var ffmpeg = ffmpegEnabled && direct && !hls && (softwareVideo || softwareAudio);
-        return new(ffmpeg, ffmpeg && softwareVideo, video, audio, ordinal);
+        return new(ffmpeg, ffmpeg && softwareVideo, video, audio, ordinal, width, height);
     }
 
     /// <summary>FFmpegInteropX moves its best stream first; Silo indexes audio in demux order.</summary>

@@ -15,9 +15,10 @@
 #   scripts/bale-debug.sh wait --timeout 12000 loaded  default 8000 ms; 0–15000; timeout prints where and fails
 #   scripts/bale-debug.sh ffmpeg <mode>         next real-player attempt: policy (default)|off; memory only, HLS unchanged
 #   scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default] [prefetch=N|default] [buffer=ms|default] [ahead=N|default] [sws=N|default] [delay=N|default]
-#                                               no args = current overrides; omitted keys unchanged; default clears that key
+#                                               no args = current overrides; omitted keys unchanged; default restores that key's release setting
 #                                               next FFmpeg player attempt only; on = 64 MiB / 30 s, readsize 16384–1048576 bytes, prefetch 2–16 blocks, buffer = MediaStreamSource.BufferTime 0–5000 ms (FFmpegInteropX sets 0)
-#                                               ahead 0–64 decoded frames (0=off), sws 1–16 scaler threads, delay 0–64 dav1d frames (0=default)
+#                                               ahead 0–64 decoded frames (0=off), sws 1–16 scaler threads, delay 0–64 dav1d frames (0=dav1d default)
+#                                               software-video release defaults: ahead=16, sws=4; delay=8 only above 1080p (width >1920 or height >1080), otherwise unset
 #                                               key i / where show applied settings and demand block waits (count/max/total ms)
 #   scripts/bale-debug.sh hdr pretend|off|status  next attempt: pretend HDR10, skip HDMI switching for console SDR tone mapping; default off, memory only
 #   scripts/bale-debug.sh seek <seconds> [pause]  shared absolute-source seek (native/FFmpeg/HLS, reanchors outside the mounted window); optional pause
@@ -33,7 +34,8 @@
 #                                               debug FFmpeg probe (1–60 s, default 3; auto|software|system, default auto)
 #                                               tuning after seconds/mode, any order: threads 0–16 (0=CPU count), rate 0.5–2.0 (default 1)
 #                                               ahead 0–64 (0=off), sws 1–16 (1=upstream), delay 0–64 (0=dav1d default)
-#                                               omitted native options leave defaults untouched; reports actual settings/output and software frame delivery
+#                                               software mode defaults: ahead=16, sws=4; delay unset (URI size unknown before open; use delay=8 for known above-1080p media)
+#                                               auto/system retain wrapper defaults unless overridden; reports actual settings/output and software frame delivery
 #   timeout 900 scripts/bale-debug.sh playtest-ffmpeg suite 15 software  same Chromium samples; allow 30 s create + 15 s open per clip
 #   scripts/bale-debug.sh goto "Unwatched#2"     setup only: focus the second matching control
 #   scripts/bale-debug.sh targets               list controls goto can reach
@@ -125,7 +127,8 @@ case "${1:-}" in
         sws=*) [[ "$value" == default || "$value" =~ ^0*([1-9]|1[0-6])$ ]] && valid_tuning=true ;;
       esac
       if [[ "$valid_tuning" != true ]] || [[ -n "${ffmpeg_tune_seen[$name]:-}" ]]; then
-        echo 'usage: scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] [ahead=0..64|default] [sws=1..16|default] [delay=0..64|default] (any order, no duplicates; no args = status)' >&2
+        echo 'usage: scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] [ahead=0..64|default] [sws=1..16|default] [delay=0..64|default] (any order, no duplicates; no args = status; default restores release settings)' >&2
+        echo 'software video defaults: ahead=16, sws=4; delay=8 only above 1080p (width >1920 or height >1080), otherwise unset' >&2
         exit 2
       fi
       ffmpeg_tune_seen[$name]=true

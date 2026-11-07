@@ -24,7 +24,15 @@ internal static class FfmpegSource
         config.Audio.SystemDecoderMP3 = true;
         config.Subtitles.AutoSelectForcedSubtitles = false;
         config.FFmpegOptions["rw_timeout"] = "10000000";
+        ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight));
         return config;
+    }
+
+    internal static void ApplyDecodeTuning(MediaSourceConfig config, SoftwareDecodeTuning tuning)
+    {
+        if (tuning.DecodeAheadFrames is { } ahead) config.FFmpegOptions["bale_decode_ahead_frames"] = ahead.ToString(CultureInfo.InvariantCulture);
+        if (tuning.SwsThreads is { } sws) config.FFmpegOptions["bale_sws_threads"] = sws.ToString(CultureInfo.InvariantCulture);
+        if (tuning.Dav1dMaxFrameDelay is { } delay) config.FFmpegOptions["bale_dav1d_max_frame_delay"] = delay.ToString(CultureInfo.InvariantCulture);
     }
 
 #if DEBUG_SERVER
@@ -41,9 +49,8 @@ internal static class FfmpegSource
             }
         }
         if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = checked((uint)readSize);
-        if (tuning.DecodeAheadFrames is { } ahead) config.FFmpegOptions["bale_decode_ahead_frames"] = ahead.ToString(CultureInfo.InvariantCulture);
-        if (tuning.SwsThreads is { } sws) config.FFmpegOptions["bale_sws_threads"] = sws.ToString(CultureInfo.InvariantCulture);
-        if (tuning.Dav1dMaxFrameDelay is { } delay) config.FFmpegOptions["bale_dav1d_max_frame_delay"] = delay.ToString(CultureInfo.InvariantCulture);
+        if (route.SoftwareVideo)
+            ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.SwsThreads, tuning.Dav1dMaxFrameDelay));
         return config;
     }
 #endif
