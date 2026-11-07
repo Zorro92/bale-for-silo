@@ -254,7 +254,7 @@ withdrawal and serialization. The production integration still needs the owner's
 
 ### Native FFmpeg / dav1d build
 
-Bale uses `FFmpegInteropX.UWP.Lib` **2.1.0-bale.2** with the custom x64 native package
+Bale uses `FFmpegInteropX.UWP.Lib` **2.1.0-bale.3** with the custom x64 native package
 `FFmpegInteropX.UWP.FFmpeg` **8.1.2-bale.dav1d.1.5.4**. The public 8.1.2 x64 `avcodec-62.dll`
 embeds dav1d **1.0.0-0-g99172b1** (March 2022); upgrading the wrapper cannot update that static
 library. This rebuild is an A/B candidate for occasional AV1 stutter/2–4-core CPU spikes, **not a
@@ -317,10 +317,10 @@ and its native activation registration are unchanged.
 
 ### Native FFmpegInteropX wrapper fork
 
-Bale now requires exactly `[2.1.0-bale.2]` of `FFmpegInteropX.UWP.Lib`, from immutable release
-[`wrapper-ffmpeginteropx-2.1.0-bale.2`](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.2).
+Bale now requires exactly `[2.1.0-bale.3]` of `FFmpegInteropX.UWP.Lib`, from immutable release
+[`wrapper-ffmpeginteropx-2.1.0-bale.3`](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.3).
 The independently verified nupkg SHA256 is
-`45b0312ad771b5c22f77af3328c8624e0f2ec2960eaf49a23e90905679e5b0c6`. The release tag, SHA256 and
+`6ad2442fc9b66638dc0cba3fe52e241af05751ec87f87d1f04d785021e2af2b4`. The release tag, SHA256 and
 NuGet content hash are pinned in `scripts/ffmpeginteropx-wrapper.json`; both framework/RID lock
 entries agree. `restore-ffmpeg-native.ps1` downloads it into isolated staging, verifies before moving
 it to `.cache/ffmpeg-native`, and clears its cached extraction. Source mapping allows the wrapper
@@ -360,7 +360,7 @@ minimum metadata guard, not a complete member/ABI comparison. Patches must prese
 `bale_decoder_use_max_resolution` (0/1) and `bale_decoder_max_dpb_count` (0–16; 0 leaves attributes
 unset), never applied to FFmpeg-decoded output. Debug-only `maxres=0|1|default` / `dpb=N|default`
 controls in `ffmpeg-tune` and `playtest-ffmpeg` both default to unset, leaving production unchanged.
-The patch needs a later wrapper release/repin before use; the current `2.1.0-bale.2` pin is unchanged.
+It ships in the pinned `2.1.0-bale.3` release.
 Microsoft's Xbox recommendation (`maxres=1 dpb=3`) is pending console A/B on an HEVC
 FFmpeg-passthrough stream, not a verified improvement or a release default.
 
@@ -371,7 +371,7 @@ OPC core-properties versions/content types are updated. The original NuGet repos
 is removed because modification invalidates it. The fork is unsigned and intended for **x64 only**;
 retained other-architecture binaries are not fork builds.
 
-For the next release, run `gh workflow run ffmpeginteropx-wrapper.yml --ref main -f version=2.1.0-bale.3`,
+For the next release, run `gh workflow run ffmpeginteropx-wrapper.yml --ref main -f version=2.1.0-bale.4`,
 then `gh run watch <run-id> --exit-status` (choose a fresh number if that tag already exists). The release contains the
 nupkg, `.sha256`, `SOURCES.txt`, `winmd-public-types.txt`, build log and corresponding patched
 wrapper source archive. Provenance records the upstream/Bale commits, ordered patch names/hashes,

@@ -8,7 +8,7 @@ are raised from a `DLL_THREAD_ATTACH` hook (`Source/BaleThreadBoost.h`).
 `0003` adds opt-in `bale_decoder_use_max_resolution` (0/1) and `bale_decoder_max_dpb_count`
 (0–16) hints to compressed/passthrough video encoding properties only, never FFmpeg-decoded output.
 Both default to 0 (attributes unset); positive values insert the SDK `mfapi.h` GUIDs as UINT32s.
-The debug `maxres` / `dpb` controls require a later wrapper release/repin; the current pin is unchanged.
+The debug `maxres` / `dpb` controls are live from the pinned `2.1.0-bale.3` release onward.
 Microsoft's Xbox HEVC recommendation (`maxres=1 dpb=3`) is pending console A/B, not a release default.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
