@@ -336,6 +336,43 @@ public class DebugPlaytestScriptTests
     }
 
     [Theory]
+    [InlineData("on")]
+    [InlineData("off")]
+    [InlineData("status")]
+    [InlineData(null)]
+    public async Task DisplayMatchingValidatesModesAndDefaultsToReadOnlyStatus(string? mode)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(mode is null ? ["display-match"] : ["display-match", mode]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/display-match\n", result.Arguments);
+        Assert.Contains("--max-time\n5\n", result.Arguments);
+        if (mode is null or "status")
+        {
+            Assert.DoesNotContain("-X\nPOST", result.Arguments);
+            Assert.DoesNotContain("--data-urlencode", result.Arguments);
+        }
+        else
+        {
+            Assert.Contains("-X\nPOST\n", result.Arguments);
+            Assert.Contains("--data-urlencode\nmode=" + mode + "\n", result.Arguments);
+        }
+    }
+
+    [Fact]
+    public async Task InvalidDisplayMatchingArgumentsNeverReachCurl()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[] { new[] { "display-match", "" }, ["display-match", "ON"],
+            ["display-match", "true"], ["display-match", "on", "extra"], ["display-match", "status", "extra"] })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
+    [Theory]
     [InlineData("pretend")]
     [InlineData("off")]
     [InlineData("status")]

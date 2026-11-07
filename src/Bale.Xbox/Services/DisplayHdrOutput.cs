@@ -4,7 +4,7 @@ using Windows.Graphics.Display.Core;
 namespace Bale.Xbox.Services;
 
 /// <summary>View-scoped HDMI operations. Call on the UI thread, serialized by the player's lifecycle.</summary>
-internal sealed class DisplayHdrOutput
+internal sealed partial class DisplayHdrOutput
 {
     private HdmiDisplayInformation? _hdmi;
     private bool _restoreRequired;
@@ -61,6 +61,9 @@ internal sealed class DisplayHdrOutput
 
     internal async Task RestoreAsync()
     {
+#if DEBUG_SERVER
+        _lastMatch = null;
+#endif
         if (!_restoreRequired || _hdmi is not { } hdmi) return;
         var restored = false;
         try

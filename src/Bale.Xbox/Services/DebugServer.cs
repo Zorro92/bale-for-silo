@@ -42,6 +42,8 @@ namespace Bale.Xbox.Services;
 ///   GET  /ffmpeg-tune     current memory-only FFmpeg overrides
 ///   POST /ffmpeg-tune?readahead=on&readsize=65536&prefetch=8  next FFmpeg player attempt; each key accepts default
 ///                         optional buffer=0–5000, ahead=0–64, sws=1–16, delay=0–64, prio=0–2, maxres=0|1|default, dpb=0–16|default (system video only)
+///   GET  /display-match   memory-only content frame-rate matching; default off
+///   POST /display-match?mode=on  on|off; applies to the next playback attempt
 ///   GET  /hdr             memory-only HDR comparison mode; default off
 ///   POST /hdr?mode=...    pretend|off; pretend HDR10 and keep SDR output for console tone mapping
 ///   POST /seek?seconds=...&pause=true  absolute source seconds on the active player; optional pause
@@ -185,7 +187,7 @@ internal sealed partial class DebugServer
         var target = new Uri("http://bale" + parts[1]);
         var path = target.AbsolutePath.TrimEnd('/');
         var query = ParseQuery(target.Query, out var duplicateQueryKeys);
-        if (duplicateQueryKeys && path is ("/playtest-ffmpeg" or "/ffmpeg-tune" or "/stats-rows"))
+        if (duplicateQueryKeys && path is ("/playtest-ffmpeg" or "/ffmpeg-tune" or "/stats-rows" or "/display-match"))
             return ("400 Bad Request", "query keys must appear at most once\n");
 
         switch (method, path)
@@ -253,6 +255,15 @@ internal sealed partial class DebugServer
                 if (!DebugFfmpegInputTuning.TrySet(query, out var tuning))
                     return ("400 Bad Request", DebugFfmpegInputTuning.Usage + "\n");
                 return ("200 OK", $"FFmpeg tuning: {tuning.Description}; applies to the next FFmpeg player attempt\n");
+
+            case ("GET", "/display-match"):
+                return ("200 OK", $"Display match: {DebugDisplayMatch.Mode}; applies to the next playback attempt\n");
+
+            case ("POST", "/display-match"):
+                if (query.Count != 1 || !DebugDisplayMatch.TrySet(query.GetValueOrDefault("mode")))
+                    return ("400 Bad Request", "mode must be on or off\n");
+                Log.Info($"Debug display match: {DebugDisplayMatch.Mode}; applies to the next playback attempt");
+                return ("200 OK", $"Display match: {DebugDisplayMatch.Mode}; applies to the next playback attempt\n");
 
             case ("GET", "/hdr"):
                 return ("200 OK", $"HDR mode: {DebugHdrPlayback.Mode}; applies to the next playback attempt\n");
@@ -351,7 +362,7 @@ internal sealed partial class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /stats, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&sws=1..16&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16 (each key accepts default), GET /hdr, POST /hdr?mode={pretend|off}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /stats, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&sws=1..16&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16 (each key accepts default), GET /display-match, POST /display-match?mode={on|off}, GET /hdr, POST /hdr?mode={pretend|off}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 

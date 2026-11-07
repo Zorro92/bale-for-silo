@@ -69,13 +69,23 @@ public sealed partial class PlayerPage
 #endif
         if (DisplayHdrPolicy.RequiresHdr10(attempt.Plan!))
         {
+#if DEBUG_SERVER
+            var hdrEnabled = attempt.MatchContentFrameRate
+                ? await _hdrOutput.TryMatchContentAsync(attempt.Plan!)
+                : await _hdrOutput.TryEnableHdr10Async();
+            if (!hdrEnabled)
+#else
             if (!await _hdrOutput.TryEnableHdr10Async())
+#endif
             {
                 attempt.Cancellation.Token.ThrowIfCancellationRequested();
                 await RecoverCoreAsync(attempt, 0, isDecoder: false, isNetwork: false, hdrOutputFailed: true);
                 return;
             }
         }
+#if DEBUG_SERVER
+        else if (attempt.MatchContentFrameRate) await _hdrOutput.TryMatchContentAsync(attempt.Plan!);
+#endif
         else await _hdrOutput.RestoreAsync();
         // Back/suspend may arrive during the HDMI handshake. Do not open or start that mount.
         attempt.Cancellation.Token.ThrowIfCancellationRequested();

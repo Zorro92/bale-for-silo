@@ -206,6 +206,7 @@ public sealed partial class PlayerPage
         var rows = stats.HudRows();
         var media = _attempt?.Media;
         rows = [.. rows, ("HDR output", DebugHdrOutput),
+            ("Display mode", DisplayHdrOutput.CurrentModeText()),
             ("Late frames", frames is null ? "unavailable" : string.Create(CultureInfo.InvariantCulture,
                 $"{frames.LateFrames} · {frames.RecentLateFrames}/10s ({frames.RecentLateFramesPerSecond:0.0}/s)")),
             ("Stream waits", media?.Stream is { SupportsRanges: true } stream ? string.Create(CultureInfo.InvariantCulture,

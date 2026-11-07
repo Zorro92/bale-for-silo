@@ -75,6 +75,9 @@
     <None Include="../../scripts/bale-debug.sh" Link="bale-debug.sh" CopyToOutputDirectory="PreserveNewest" />
     <!-- Exercise HDMI failure/restore orchestration against a minimal API stand-in, not a display. -->
     <Compile Include="../../src/Bale.Xbox/Services/DisplayHdrOutput.cs" Link="DisplayHdrOutput.cs" />
+    <Compile Include="../../src/Bale.Xbox/Services/DisplayHdrOutput.Match.cs" Link="DisplayHdrOutput.Match.cs" />
+    <Compile Include="../../src/Bale.Xbox/Services/DebugDisplayMatch.cs" Link="DebugDisplayMatch.cs" />
+    <None Include="../../src/Bale.Xbox/Services/DebugDisplayMatch.cs" Link="DebugDisplayMatch.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <!-- Test focus retry coordination against a minimal event/tree stand-in, not the UWP runtime. -->
     <Compile Include="../../src/Bale.Xbox/Services/FocusRetry.cs" Link="FocusRetry.cs" />
     <!-- Check declarative Skyline geometry/states on Linux; this does not render or compile UWP. -->

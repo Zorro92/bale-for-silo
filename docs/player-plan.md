@@ -443,8 +443,9 @@ Bale requests a non-stereo PQ HDMI mode with `HdmiDisplayHdrOption.Eotf2084`. It
 resolution/refresh when available, otherwise chooses the smallest supported resolution at least
 as large, then the closest refresh rate. Media modes are capped at 60 Hz: Microsoft's Xbox
 guidance explicitly excludes 120 Hz for media playback, even when that is the desktop mode. Server-validated HDR10 base-layer playback of HDR10+ /
-legacy unknown-range sources switches the same way. General title refresh-rate matching is still
-future work. HDR10 direct play switches HDMI to HDR and restores the default afterwards: Back,
+legacy unknown-range sources switches the same way. The default production behavior still preserves
+resolution/refresh; the debug-only content-matching experiment in section 6 combines the PQ and
+refresh selection in one request. HDR10 direct play switches HDMI to HDR and restores the default afterwards: Back,
 end of playback, error, replan to transcode, page unload/navigation and app suspend all restore it.
 Restore failures log only a boolean and retain restore authority for the next teardown attempt.
 
@@ -539,10 +540,28 @@ Things learned on the way:
 - Watched state at the end, next episode becomes the series' Play target.
 
 ### 6. Display mode matching
-- HDR10 output switching and restore are implemented above, pending real HDR hardware checks.
-- Later: match HDMI refresh rate to the title during playback and restore the default on exit
-  (`HdrDisplayController.kt` / `RefreshRateMatcher.kt`); the current HDR switch preserves the
-  current display's resolution/refresh where possible.
+- **Debug switch implemented; console HDMI verification pending.**
+  `scripts/bale-debug.sh display-match [on|off|status]` (no argument = status) is memory-only,
+  defaults to off and resets on restart. It is captured for the next playback attempt, never
+  changes an open player, and is absent with `BaleDebugServer=false`. Production behavior is unchanged.
+- Matches Android TV's `HdrDisplayController.kt` / `RefreshRateSelector.kt`: first exact video
+  width/height, otherwise modes that hold the video, otherwise the largest modes. Integer-multiple
+  refresh rates beat non-integer cadence; closest refresh wins within that class. Rates within
+  0.005 Hz of the best delta tie, preferring 16:9 over DCI 4096×2160, then the largest pixel area.
+  Xbox candidates exclude stereo and anything above 60 Hz, even on a 120 Hz desktop.
+- At mount, use the plan's frame rate (`PlaybackStats.ResolveFrameRate`; recipe/source for HLS)
+  and output dimensions (source for original delivery, otherwise effective recipe with source
+  fallback). Unknown frame rate/size skips matching and logs why; normal HDR10 negotiation remains.
+  Direct HDR10 restricts the same selection to PQ and makes one `Eotf2084` request; other matched
+  content requests `HdmiDisplayHdrOption.None`. `hdr pretend` still bypasses all HDMI changes.
+- Equal current modes and repeated width/height/milli-fps signatures avoid redundant handshakes
+  (the signature also includes HDR10 output). Requests share HDR's existing default-mode restore
+  authority on Back/end/error/replan/unload/suspend, including retry after a failed restore. A failed
+  HDR match uses the existing HDR-withdrawal replan; SDR matching failure does not fail playback.
+- The safe log is `display match: content=<fps> <W>x<H> picked=<W>x<H>@<Hz> switched=<bool>`.
+  Debug Stats / `where` add **Display mode**, reading current HDMI timing and active HDR/SDR rather
+  than treating PQ support as active HDR. **Later:** the Match Content Frame Rate Settings row and
+  mid-playback video-size/frame-rate notifications, as in `TvPlayerScreen.kt`.
 
 ### Later
 - Shuffle, intro/credits skip (`TvIntroAutoSkipBanner.kt`), trickplay thumbnails.
