@@ -26,8 +26,8 @@
 #   scripts/bale-debug.sh key j                 player: skip back 10s (same as press lt); one skip per press, ignores repeats
 #   scripts/bale-debug.sh key l                 player: skip forward 30s (same as press rt); passive bar/chip hides after 1200ms
 #   scripts/bale-debug.sh key i                 player: toggle stats (same as press view); where includes counters even when hidden
-#   scripts/bale-debug.sh caps [section]        installed decoders, GPU decode profiles, display modes, audio mix and baseline
-#                                               (section: video, gpu, audio, display, device or graph)
+#   scripts/bale-debug.sh caps [section]        installed decoders, GPU decode profiles, display modes, platform, audio mix and baseline
+#                                               (section: video, gpu, audio, display, platform, device or graph)
 #   scripts/bale-debug.sh playtest <url> [seconds]  muted public http(s) stream probe (1–10 s, default 3)
 #   timeout 300 scripts/bale-debug.sh playtest suite [seconds]  Chromium samples, one at a time
 #                                               (the whole suite needs more than the usual timeout 20)

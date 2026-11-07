@@ -30,8 +30,8 @@ namespace Bale.Xbox.Services;
 ///   GET  /where           compact page, overlays, focus, status and on-screen controls
 ///   GET  /wait?for=...    wait for page Detail | loaded | text ... | focus ...; timeout=8000 ms (max 15000)
 ///                         returns /where on success or HTTP 408 on timeout (with /where body)
-///   GET  /caps            installed decoders, GPU decode profiles, HDMI/advanced color, default audio mix and baseline
-///                         only=video|gpu|audio|display|device|graph runs one section
+///   GET  /caps            installed decoders, GPU decode profiles, HDMI/advanced color, platform, default audio mix and baseline
+///                         only=video|gpu|audio|display|platform|device|graph runs one section
 ///   GET  /playtest?url=...  muted public http(s) stream probe; seconds=3 (1–10), open timeout 8 s
 ///   GET  /playtest-ffmpeg?url=...  muted FFmpegInteropX probe; seconds=3 (1–60), mode=auto|software|system
 ///                         optional threads=0–16, 10bit=on|off, rate=0.5–2.0 (default 1), ahead=0–64, sws=1–16, delay=0–64, prio=0–2

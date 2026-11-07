@@ -152,6 +152,7 @@ public class DebugCodecNamesTests
         Assert.Contains("CodecKind.Video", source);
         Assert.Contains("CodecKind.Audio", source);
         Assert.Contains("if (Run(\"gpu\")) AppendGpuCapabilities(builder);", source);
+        Assert.Contains("if (Run(\"platform\")) await AppendPlatformCapabilitiesAsync(builder);", source);
         Assert.Contains("IntPtr* device, int* featureLevel, IntPtr* immediateContext", source);
         Assert.Contains("observed.Add((codec.DisplayName, supported));", source);
         Assert.Contains("names.Summary(observed, codecNames)", source);

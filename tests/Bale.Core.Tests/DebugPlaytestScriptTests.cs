@@ -5,6 +5,23 @@ namespace Bale.Core.Tests;
 public class DebugPlaytestScriptTests
 {
     [Theory]
+    [InlineData("video")]
+    [InlineData("gpu")]
+    [InlineData("audio")]
+    [InlineData("display")]
+    [InlineData("platform")]
+    [InlineData("device")]
+    [InlineData("graph")]
+    public async Task CapsForwardsEachDocumentedSection(string section)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["caps", section]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/caps\n", result.Arguments);
+        Assert.Contains("--data-urlencode\nonly=" + section + "\n", result.Arguments);
+    }
+
+    [Theory]
     [InlineData("playtest", "3", null, 12)]
     [InlineData("playtest", "10", null, 19)]
     [InlineData("playtest-ffmpeg", "60", "software", 110)]

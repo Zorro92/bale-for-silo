@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics.X86;
 using System.Text;
 using Windows.Devices.Enumeration;
 using Windows.Foundation.Collections;
@@ -12,7 +13,9 @@ using Windows.Media.Audio;
 using Windows.Media.Core;
 using Windows.Media.Devices;
 using Windows.Media.Playback;
+using Windows.Media.Protection;
 using Windows.Media.Render;
+using Windows.System;
 
 namespace Bale.Xbox.Services;
 
@@ -232,7 +235,7 @@ internal sealed partial class DebugServer
         }
     }
 
-    // only=video|gpu|audio|display|device|graph runs one section; each logs a breadcrumb first because
+    // only=video|gpu|audio|display|platform|device|graph runs one section; each logs a breadcrumb first because
     // a native failure in a media API ends the app without reaching any catch.
     private static async Task<string> DescribeCapabilitiesAsync(string? only)
     {
@@ -248,10 +251,190 @@ internal sealed partial class DebugServer
         if (Run("audio")) await AppendDecodersAsync(builder, CodecKind.Audio, ["AAC", "AC3", "EAC3", "DTS", "DTS-HD", "TrueHD/MLP", "FLAC", "ALAC", "Opus", "MP3", "PCM"]);
         // These view-scoped display APIs must run on the UI thread, unlike codec/device enumeration.
         if (Run("display")) builder.Append("Display:\n").Append(await OnUiAsync(DescribeDisplayCapabilities));
+        if (Run("platform")) await AppendPlatformCapabilitiesAsync(builder);
         builder.Append("Audio:\n");
         await AppendAudioCapabilitiesAsync(builder, Run("device"), Run("graph"));
         Log.Info("Debug caps: done");
         return builder.ToString();
+    }
+
+    // Windows SDK winnt.h (microsoft/win32metadata, generation/WinSDK/RecompiledIdlHeaders/um).
+    private static readonly (string Name, uint Feature)[] PlatformProcessorFeatures =
+    [
+        ("SSE4.1", 37), // PF_SSE4_1_INSTRUCTIONS_AVAILABLE
+        ("SSE4.2", 38), // PF_SSE4_2_INSTRUCTIONS_AVAILABLE
+        ("AVX", 39), // PF_AVX_INSTRUCTIONS_AVAILABLE
+        ("AVX2", 40), // PF_AVX2_INSTRUCTIONS_AVAILABLE
+        ("AVX512F", 41), // PF_AVX512F_INSTRUCTIONS_AVAILABLE
+    ];
+
+    [LibraryImport("kernel32.dll")]
+    private static partial int IsProcessorFeaturePresent(uint processorFeature); // Win32 BOOL, not managed bool.
+
+    private static async Task AppendPlatformCapabilitiesAsync(StringBuilder builder)
+    {
+        builder.Append("Platform:\n  CPU:");
+        foreach (var (name, feature) in PlatformProcessorFeatures)
+            builder.Append($" {name}={ReadPlatformCapability(() => IsProcessorFeaturePresent(feature) != 0 ? "yes" : "no")}");
+        builder.Append($" (runtime Avx2={ReadPlatformCapability(() => Avx2.IsSupported ? "yes" : "no")}"
+            + $" Avx512F={ReadPlatformCapability(() => Avx512F.IsSupported ? "yes" : "no")})\n");
+
+        Log.Info("Debug caps: platform before MemoryManager queries");
+        builder.Append("  Memory: AppMemoryUsage=")
+            .Append(ReadPlatformCapability(() => $"{MemoryManager.AppMemoryUsage / (1024 * 1024)} MiB"))
+            .Append(" AppMemoryUsageLimit=")
+            .Append(ReadPlatformCapability(() => $"{MemoryManager.AppMemoryUsageLimit / (1024 * 1024)} MiB"))
+            .Append(" ExpectedAppMemoryUsageLimit=")
+            .Append(ReadPlatformCapability(() => $"{MemoryManager.ExpectedAppMemoryUsageLimit / (1024 * 1024)} MiB"))
+            .Append('\n');
+        AppendPlatformExtendedMemory(builder);
+        await AppendPlatformProtectionCapabilitiesAsync(builder);
+    }
+
+    private static string ReadPlatformCapability(Func<string> query)
+    {
+        try { return query(); }
+        catch (Exception ex) { return PlatformUnavailable(ex); }
+    }
+
+    // Never include exception messages: capability reports must not expose URLs or grants.
+    private static string PlatformUnavailable(Exception ex) =>
+        DebugScreenText.Compact($"unavailable (0x{unchecked((uint)ex.HResult):X8})", 120);
+
+    // Microsoft hevc-xbox.md, Memory usage information: IApplicationResourcesStatics2 derives
+    // from IInspectable (six inherited slots); extended memory is the Series X|S graphics partition.
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ExtendedMemoryInfo
+    {
+        public ulong AppMemoryUsage;
+        public ulong AppMemoryLimit;
+        public ulong ExtendedMemoryUsage;
+        public ulong ExtendedMemoryLimit;
+    }
+
+    // Pointer-only signatures keep the HSTRING/COM ABI blittable with DisableRuntimeMarshalling.
+    [LibraryImport("combase.dll")]
+    private static unsafe partial int WindowsCreateString(char* sourceString, uint length, nint* hstring);
+
+    [LibraryImport("combase.dll")]
+    private static partial int WindowsDeleteString(nint hstring);
+
+    [LibraryImport("combase.dll")]
+    private static unsafe partial int RoGetActivationFactory(nint classId, Guid* iid, nint* factory);
+
+    private static unsafe void AppendPlatformExtendedMemory(StringBuilder builder)
+    {
+        nint classId = 0;
+        nint factory = 0;
+        nint resources = 0;
+        try
+        {
+            const string runtimeClass = "Windows.Xbox.ApplicationModel.ApplicationResources";
+            Log.Info("Debug caps: platform before WindowsCreateString");
+            fixed (char* name = runtimeClass)
+                Marshal.ThrowExceptionForHR(WindowsCreateString(name, (uint)runtimeClass.Length, &classId));
+            var inspectableId = new Guid("af86e2e0-b12d-4c6a-9c5a-d7aa65101e90"); // IID_IInspectable
+            Log.Info("Debug caps: platform before RoGetActivationFactory (ApplicationResources)");
+            Marshal.ThrowExceptionForHR(RoGetActivationFactory(classId, &inspectableId, &factory));
+            var resourcesId = new Guid("dd36a017-b640-45f7-a023-1615cf098923");
+            var queryInterface = (delegate* unmanaged[Stdcall]<nint, Guid*, nint*, int>)(*(void***)factory)[0];
+            Log.Info("Debug caps: platform before QueryInterface (IApplicationResourcesStatics2)");
+            Marshal.ThrowExceptionForHR(queryInterface(factory, &resourcesId, &resources));
+            var getExtendedMemoryInfo = (delegate* unmanaged[Stdcall]<nint, ExtendedMemoryInfo*, int>)(*(void***)resources)[6];
+            var memory = default(ExtendedMemoryInfo);
+            Log.Info("Debug caps: platform before GetExtendedMemoryInfo");
+            Marshal.ThrowExceptionForHR(getExtendedMemoryInfo(resources, &memory));
+            builder.Append(string.Create(CultureInfo.InvariantCulture,
+                $"  Extended memory: app={memory.AppMemoryUsage / (1024 * 1024)}/{memory.AppMemoryLimit / (1024 * 1024)} MiB"
+                + $" graphics={memory.ExtendedMemoryUsage / (1024 * 1024)}/{memory.ExtendedMemoryLimit / (1024 * 1024)} MiB\n"));
+        }
+        catch (Exception ex)
+        {
+            builder.Append($"  Extended memory: {PlatformUnavailable(ex)}\n");
+        }
+        finally
+        {
+            ReleasePlatformCom(builder, resources);
+            ReleasePlatformCom(builder, factory);
+            if (classId != 0) try
+            {
+                Log.Info("Debug caps: platform before WindowsDeleteString");
+                Marshal.ThrowExceptionForHR(WindowsDeleteString(classId));
+            }
+            catch (Exception ex)
+            {
+                builder.Append($"  Extended memory HSTRING release: {PlatformUnavailable(ex)}\n");
+            }
+        }
+    }
+
+    private static unsafe void ReleasePlatformCom(StringBuilder builder, nint instance)
+    {
+        if (instance == 0) return;
+        try
+        {
+            Log.Info("Debug caps: platform before COM release");
+            var release = (delegate* unmanaged[Stdcall]<nint, uint>)(*(void***)instance)[2];
+            release(instance);
+        }
+        catch (Exception ex)
+        {
+            builder.Append($"  Extended memory COM release: {PlatformUnavailable(ex)}\n");
+        }
+    }
+
+    // Microsoft hevc-xbox.md, Capability checks. HDCP must be last because it is slow.
+    // AV1 is informational: PlayReady hardware is expected to report NotSupported for this query.
+    private static readonly (string Name, string Type)[] PlatformProtectionTypes =
+    [
+        ("HEVC 4K decode", "video/mp4;codecs=\"hvc1,mp4a\";features=\"decode-res-x=3840,decode-res-y=2160,decode-bitrate=20000,decode-fps=30,decode-bpc=10\""),
+        ("HEVC 4K decode+display", "video/mp4;codecs=\"hvc1,mp4a\";features=\"decode-res-x=3840,decode-res-y=2160,decode-bitrate=20000,decode-fps=30,decode-bpc=10,display-res-x=3840,display-res-y=2160,display-bpc=8\""),
+        ("HEVC 4K HDR", "video/mp4;codecs=\"hvc1,mp4a\";features=\"decode-res-x=3840,decode-res-y=2160,decode-bitrate=20000,decode-fps=30,decode-bpc=10,display-res-x=3840,display-res-y=2160,display-bpc=10,hdr=1\""),
+        ("HEVC 4K60 HDR", "video/mp4;codecs=\"hvc1,mp4a\";features=\"decode-res-x=3840,decode-res-y=2160,decode-bitrate=20000,decode-fps=60,decode-bpc=10,display-res-x=3840,display-res-y=2160,display-bpc=10,hdr=1\""),
+        ("AV1 4K HDR", "video/mp4;codecs=\"av01,mp4a\";features=\"decode-res-x=3840,decode-res-y=2160,decode-bitrate=20000,decode-fps=30,decode-bpc=10,display-res-x=3840,display-res-y=2160,display-bpc=10,hdr=1\""),
+        ("VP9 4K HDR", "video/mp4;codecs=\"vp09,mp4a\";features=\"decode-res-x=3840,decode-res-y=2160,decode-bitrate=20000,decode-fps=30,decode-bpc=10,display-res-x=3840,display-res-y=2160,display-bpc=10,hdr=1\""),
+        ("HDCP 2.2", "video/mp4;codecs=\"hvc1,mp4a\";features=\"hdcp=2\""),
+    ];
+
+    private static async Task AppendPlatformProtectionCapabilitiesAsync(StringBuilder builder)
+    {
+        builder.Append("  Protection capabilities (PlayReady hardware):\n");
+        ProtectionCapabilities protection;
+        try
+        {
+            Log.Info("Debug caps: platform before ProtectionCapabilities activation");
+            protection = new ProtectionCapabilities();
+        }
+        catch (Exception ex)
+        {
+            builder.Append($"    {PlatformUnavailable(ex)}\n");
+            return;
+        }
+        foreach (var (name, type) in PlatformProtectionTypes)
+        {
+            var attempts = 0;
+            try
+            {
+                var result = ProtectionCapabilityResult.Maybe;
+                // IsTypeSupported guidance: Maybe can mean the result is still being computed.
+                // Bound each query to ten attempts, with no delay after its final result.
+                while (attempts < 10)
+                {
+                    attempts++;
+                    Log.Info($"Debug caps: platform before {name} (attempt {attempts})");
+                    result = protection.IsTypeSupported(type, "com.microsoft.playready.hardware");
+                    if (result != ProtectionCapabilityResult.Maybe || attempts == 10) break;
+                    await Task.Delay(100);
+                }
+                builder.Append($"    {name}: {result}");
+            }
+            catch (Exception ex)
+            {
+                builder.Append($"    {name}: {PlatformUnavailable(ex)}");
+            }
+            if (attempts > 1) builder.Append($" ({attempts} attempts)");
+            builder.Append('\n');
+        }
     }
 
     // GUIDs, descriptor layout and ID3D11VideoDevice slots match the Windows SDK's d3d11.h
