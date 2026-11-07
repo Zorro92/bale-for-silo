@@ -101,10 +101,10 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     }
 
     [Theory]
-    [InlineData("0", "1", "0")]
-    [InlineData("64", "16", "64")]
-    [InlineData("0008", "04", "001")]
-    public void ForkOptionsUseInclusiveBoundsAndInvariantDescriptions(string ahead, string sws, string delay)
+    [InlineData("0", "1", "0", "0")]
+    [InlineData("64", "16", "64", "2")]
+    [InlineData("0008", "04", "001", "001")]
+    public void ForkOptionsUseInclusiveBoundsAndInvariantDescriptions(string ahead, string sws, string delay, string prio)
     {
         var previous = CultureInfo.CurrentCulture;
         try
@@ -112,12 +112,13 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
             Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string>
             {
-                ["delay"] = delay, ["ahead"] = ahead, ["sws"] = sws,
+                ["delay"] = delay, ["prio"] = prio, ["ahead"] = ahead, ["sws"] = sws,
             }, out var tuning));
             var expected = new DebugFfmpegInputTuning(DecodeAheadFrames: int.Parse(ahead, CultureInfo.InvariantCulture),
-                SwsThreads: int.Parse(sws, CultureInfo.InvariantCulture), Dav1dMaxFrameDelay: int.Parse(delay, CultureInfo.InvariantCulture));
+                SwsThreads: int.Parse(sws, CultureInfo.InvariantCulture), Dav1dMaxFrameDelay: int.Parse(delay, CultureInfo.InvariantCulture),
+                DecodeThreadPriority: int.Parse(prio, CultureInfo.InvariantCulture));
             Assert.Equal(expected, tuning);
-            Assert.Equal($"readahead=default readsize=default prefetch=default ahead={expected.DecodeAheadFrames} sws={expected.SwsThreads} delay={expected.Dav1dMaxFrameDelay}", tuning.Description);
+            Assert.Equal($"readahead=default readsize=default prefetch=default ahead={expected.DecodeAheadFrames} sws={expected.SwsThreads} delay={expected.Dav1dMaxFrameDelay} prio={expected.DecodeThreadPriority}", tuning.Description);
         }
         finally { CultureInfo.CurrentCulture = previous; }
     }
@@ -125,7 +126,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     [Fact]
     public void ForkOptionsAreCapturedAndClearedIndependentlyWithoutResettingOtherOverrides()
     {
-        Set(new(true, 65536, 8, 1500, 8, 4, 1));
+        Set(new(true, 65536, 8, 1500, 8, 4, 1, 2));
         var captured = DebugFfmpegInputTuning.Current;
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["ahead"] = "default" }, out var first));
         Assert.Equal(captured with { DecodeAheadFrames = null }, first);
@@ -134,31 +135,52 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Equal(first with { SwsThreads = null }, second);
         Assert.DoesNotContain("sws=", second.Description);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["delay"] = "default" }, out var third));
-        Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8, 1500), third);
-        Assert.Equal("readahead=on readsize=65536 prefetch=8 buffer=1500", third.Description);
-        Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8, 1500, 8, 4, 1), captured);
+        Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8, 1500, DecodeThreadPriority: 2), third);
+        Assert.Equal("readahead=on readsize=65536 prefetch=8 buffer=1500 prio=2", third.Description);
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["prio"] = "default" }, out var fourth));
+        Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8, 1500), fourth);
+        Assert.DoesNotContain("prio=", fourth.Description);
+        Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8, 1500, 8, 4, 1, 2), captured);
     }
 
     [Theory]
     [InlineData("ahead", 0, 64)]
     [InlineData("sws", 1, 16)]
     [InlineData("delay", 0, 64)]
+    [InlineData("prio", 0, 2)]
     public void InvalidForkOptionUpdatesAreStrictAndAtomic(string key, int minimum, int maximum)
     {
-        Set(new(false, 65536, 4, 1500, 8, 4, 1));
+        Set(new(false, 65536, 4, 1500, 8, 4, 1, 1));
         var before = DebugFfmpegInputTuning.Current;
         foreach (var value in new[] { "-1", "+1", " 1", "1 ", "1.0", "1,0", "1e0", "0x1", "", "DEFAULT", "2147483648",
             (minimum - 1).ToString(CultureInfo.InvariantCulture), (maximum + 1).ToString(CultureInfo.InvariantCulture) })
         {
             var options = new Dictionary<string, string>
             {
-                ["readahead"] = "on", ["buffer"] = "0", ["ahead"] = "64", ["sws"] = "16", ["delay"] = "64",
+                ["readahead"] = "on", ["buffer"] = "0", ["ahead"] = "64", ["sws"] = "16", ["delay"] = "64", ["prio"] = "2",
             };
             options[key] = value;
             Assert.False(DebugFfmpegInputTuning.TrySet(options, out var current), key + "=" + value);
             Assert.Same(before, current);
             Assert.Same(before, DebugFfmpegInputTuning.Current);
         }
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("1")]
+    [InlineData("2")]
+    public void PriorityUpdatesAndClearingPreserveOtherOverridesAndCapturedAttempts(string prio)
+    {
+        Set(new(true, 65536, 8, 1500, 8, 4, 1));
+        var captured = DebugFfmpegInputTuning.Current;
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["prio"] = prio }, out var set));
+        Assert.Equal(captured with { DecodeThreadPriority = int.Parse(prio, CultureInfo.InvariantCulture) }, set);
+        Assert.Contains(" prio=" + prio, set.Description);
+        Assert.Null(captured.DecodeThreadPriority);
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["prio"] = "default" }, out var cleared));
+        Assert.Equal(captured, cleared);
+        Assert.DoesNotContain("prio=", cleared.Description);
     }
 
     [Fact]
@@ -199,7 +221,10 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("config.General.ReadAheadBufferDuration = DebugFfmpegInputTuning.ReadAheadCapDuration", experiment);
         Assert.Contains("if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = checked((uint)readSize)", experiment);
         Assert.Contains("var config = Configuration(route)", experiment);
-        Assert.Contains("if (route.SoftwareVideo)\n            ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.SwsThreads, tuning.Dav1dMaxFrameDelay))", experiment);
+        Assert.DoesNotContain("bale_decode_thread_priority", configuration[..start]);
+        Assert.Contains("if (route.SoftwareVideo)\n        {\n            ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.SwsThreads, tuning.Dav1dMaxFrameDelay));\n            if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions[\"bale_decode_thread_priority\"] = priority.ToString(CultureInfo.InvariantCulture);\n        }", experiment);
+        Assert.True(experiment.IndexOf("var config = Configuration(route)", StringComparison.Ordinal)
+            < experiment.IndexOf("if (route.SoftwareVideo)", StringComparison.Ordinal));
         Assert.Contains("ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight))", configuration[..start]);
         foreach (var (property, variable, option) in new[]
         {
@@ -246,6 +271,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         ["ahead"] = tuning.DecodeAheadFrames?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["sws"] = tuning.SwsThreads?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["delay"] = tuning.Dav1dMaxFrameDelay?.ToString(CultureInfo.InvariantCulture) ?? "default",
+        ["prio"] = tuning.DecodeThreadPriority?.ToString(CultureInfo.InvariantCulture) ?? "default",
     }, out _));
 
     private static string Read(string file) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, file));

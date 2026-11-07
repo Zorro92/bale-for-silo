@@ -1,4 +1,5 @@
 #if DEBUG_SERVER
+using System.Globalization;
 using FFmpegInteropX;
 
 namespace Bale.Xbox.Services;
@@ -19,6 +20,7 @@ internal static class DebugFfmpegSource
         if (tuning.Threads is { } threads) config.Video.MaxDecoderThreads = threads;
         if (tuning.Allow10bit is { } allow10bit) config.Video.VideoOutputAllow10bit = allow10bit;
         FfmpegSource.ApplyDecodeTuning(config, tuning.DecodeTuning(mode));
+        if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions["bale_decode_thread_priority"] = priority.ToString(CultureInfo.InvariantCulture);
         config.FFmpegOptions["rw_timeout"] = "10000000";
         return config;
     }

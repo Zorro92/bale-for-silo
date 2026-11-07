@@ -21,7 +21,7 @@ internal static class DebugFfmpegPlaytest
     }
 
     internal static bool TryParseTuning(string? threads, string? output10bit, string? rate,
-        string? ahead, string? sws, string? delay, out DebugFfmpegTuning tuning, out string error)
+        string? ahead, string? sws, string? delay, string? prio, out DebugFfmpegTuning tuning, out string error)
     {
         tuning = new();
         error = string.Empty;
@@ -67,7 +67,12 @@ internal static class DebugFfmpegPlaytest
             error = "delay must be an integer from 0 to 64";
             return false;
         }
-        tuning = new(decoderThreads, allow10bit, playbackRate, decodeAheadFrames, swsThreads, dav1dMaxFrameDelay);
+        if (!TryNativeOption(prio, 0, 2, out var decodeThreadPriority))
+        {
+            error = "prio must be an integer from 0 to 2";
+            return false;
+        }
+        tuning = new(decoderThreads, allow10bit, playbackRate, decodeAheadFrames, swsThreads, dav1dMaxFrameDelay, decodeThreadPriority);
         return true;
     }
 
@@ -90,7 +95,8 @@ internal static class DebugFfmpegPlaytest
             + $"Logical CPUs: {processorCount}\nRate requested: {tuning.Rate:0.###}\n"
             + $"Decode ahead: {decode.DecodeAheadFrames ?? 0} (0=off; {(tuning.DecodeAheadFrames is null ? "default" : "override")})\n"
             + $"SWS threads: {decode.SwsThreads ?? 1} (1=upstream; {(tuning.SwsThreads is null ? "default" : "override")})\n"
-            + $"dav1d max frame delay: {decode.Dav1dMaxFrameDelay ?? 0} (0=dav1d default; {(tuning.Dav1dMaxFrameDelay is null ? "default" : "override")})\n");
+            + $"dav1d max frame delay: {decode.Dav1dMaxFrameDelay ?? 0} (0=dav1d default; {(tuning.Dav1dMaxFrameDelay is null ? "default" : "override")})\n"
+            + $"Decode thread priority: {tuning.DecodeThreadPriority ?? 0} (0=off, 1=above normal, 2=highest; {(tuning.DecodeThreadPriority is null ? "default" : "override")})\n");
     }
 
     internal static string FrameDelivery(PlaybackFrameDeliverySnapshot? frames)
@@ -153,7 +159,7 @@ internal static class DebugFfmpegPlaytest
 
 // Nullable settings use release software-video defaults or the wrapper's defaults for other modes.
 internal sealed record DebugFfmpegTuning(uint? Threads = null, bool? Allow10bit = null, double Rate = 1.0,
-    int? DecodeAheadFrames = null, int? SwsThreads = null, int? Dav1dMaxFrameDelay = null)
+    int? DecodeAheadFrames = null, int? SwsThreads = null, int? Dav1dMaxFrameDelay = null, int? DecodeThreadPriority = null)
 {
     internal SoftwareDecodeTuning DecodeTuning(string mode)
     {

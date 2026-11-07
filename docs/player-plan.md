@@ -96,8 +96,9 @@ All builds, including production (`BaleDebugServer=false`), apply the wrapper-fo
 `bale_dav1d_max_frame_delay=8` is set only above 1080p (width > 1920 or height > 1080). Route
 width/height follow the video codec's plan selection: original delivery uses `plan.Source`; other
 deliveries use `plan.EffectiveRecipe`, falling back to `plan.Source` for each missing dimension.
-Unknown size leaves delay unset. Hardware/system video routes set none of the three keys. This
-is decode tuning, not new 4K capability evidence or a verified performance improvement.
+Unknown size leaves delay unset. Hardware/system video routes set none of the three keys.
+`bale_decode_thread_priority` remains unset in production; only the debug `prio` overrides below
+can emit it. This is decode tuning, not new 4K capability evidence or a verified performance improvement.
 
 `Audio.SystemDecoderAAC` and `Audio.SystemDecoderMP3` are enabled. Upstream FFmpegInteropX
 **2.1.0 and master only have `SystemDecoderAAC` / `SystemDecoderMP3`**; there are no system
@@ -127,7 +128,7 @@ with or without `BaleDebugServer`; the CI package checker remains required.
 ```sh
 scripts/bale-debug.sh ffmpeg-tune
 scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default] [prefetch=N|default] \
-  [buffer=ms|default] [ahead=N|default] [sws=N|default] [delay=N|default]
+  [buffer=ms|default] [ahead=N|default] [sws=N|default] [delay=N|default] [prio=N|default]
 ```
 
 No arguments reads the current process-wide overrides (`GET /ffmpeg-tune`); arguments update them
@@ -155,12 +156,17 @@ remains independent.
   **1 = upstream behavior**.
 - `delay=N` writes `FFmpegOptions["bale_dav1d_max_frame_delay"]`, inclusively **0–64** frames;
   **0 = dav1d default**. It applies only to the libdav1d decoder.
-- The fork consumes these three options itself, never forwarding them to FFmpeg. Numeric values use
-  strict invariant decimal parsing (no signs, spaces, fractions or exponents). On software video,
-  explicit overrides win over release defaults, including `ahead=0` / `delay=0`. `default` removes
-  only that override, restoring ahead=16, sws=4 or the size-dependent delay setting. Description text
-  appends `ahead=N sws=N delay=N` only for explicit overrides. Hardware/system video ignores these
-  three overrides; the input/read-ahead options remain available on all real FFmpeg routes.
+- `prio=N` writes `FFmpegOptions["bale_decode_thread_priority"]`, inclusively **0–2**:
+  **0 = off**, **1 = THREAD_PRIORITY_ABOVE_NORMAL**, **2 = THREAD_PRIORITY_HIGHEST**. It boosts
+  the decode-ahead worker and newly created libdav1d / threaded swscale workers. The release default
+  is **unset** (no key emitted, no boost); this is a debug-only experiment, not production tuning.
+- The fork consumes these four options itself, never forwarding them to FFmpeg. Numeric values use
+  strict invariant decimal parsing (no signs, spaces, fractions or exponents); invalid native values
+  return `E_INVALIDARG`. On software video, explicit overrides win over release defaults, including
+  `ahead=0` / `delay=0` / `prio=0`. `default` removes only that override, restoring ahead=16, sws=4,
+  the size-dependent delay setting or an unset priority key. Description text appends
+  `ahead=N sws=N delay=N prio=N` only for explicit overrides. Hardware/system video ignores these
+  four overrides; the input/read-ahead options remain available on all real FFmpeg routes.
 - Production (`BaleDebugServer=false`) applies the release software-video defaults, never the
   memory-only debug overrides. The A/B facility does not change the production decoder allowlist
   or establish a verified performance improvement.
@@ -169,7 +175,7 @@ For an isolated comparison, close the current player, set the baseline, then ope
 
 ```sh
 scripts/bale-debug.sh ffmpeg-tune readahead=default readsize=default prefetch=default \
-  buffer=default ahead=default sws=default delay=default
+  buffer=default ahead=default sws=default delay=default prio=default
 # After closing the baseline player, change only native read-ahead and reopen:
 scripts/bale-debug.sh ffmpeg-tune readahead=on
 # Optional, separate experiments (close/reopen after each change):
@@ -178,6 +184,7 @@ scripts/bale-debug.sh ffmpeg-tune prefetch=8
 scripts/bale-debug.sh ffmpeg-tune ahead=8
 scripts/bale-debug.sh ffmpeg-tune sws=2
 scripts/bale-debug.sh ffmpeg-tune delay=1
+scripts/bale-debug.sh ffmpeg-tune prio=1
 ```
 
 The player logs the actual native read-ahead enable/size/duration, read size and stream prefetch
@@ -200,7 +207,7 @@ Standalone syntax (independent of process-wide `ffmpeg-tune`):
 
 ```sh
 scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [auto|software|system] \
-  [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N]
+  [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N]
 ```
 
 Supply seconds/mode before tuning, then keys in any order, at most once each. Seconds are 1–60
@@ -208,8 +215,11 @@ Supply seconds/mode before tuning, then keys in any order, at most once each. Se
 0.5–2.0 (default 1). The fork keys have the same ranges as above; software-mode probes use the release
 ahead=16 / sws=4 defaults when omitted. URI probes have no playback plan/dimensions before creation,
 so delay remains unset unless explicitly overridden (use `delay=8` for a known above-1080p comparison).
-Auto/system modes retain wrapper defaults for omitted keys. This one-shot probe does not accept
-`default`. The response reports threads/10-bit output, logical CPUs, requested/applied rate, applied
+Priority remains unset unless `prio=0..2` is supplied, with the same levels as above. These four
+fork options affect only software video, including an auto-mode probe that selects software decoding;
+hardware/system video ignores them. Auto/system modes retain wrapper defaults for omitted keys.
+This one-shot probe does not accept `default`. The response reports threads/10-bit output, logical CPUs,
+requested/applied rate, applied
 fork-option values with default/override labels, and decoded output subtype plus software frame-delivery
 measurements when available. Ratio/verdict use wall time multiplied by applied rate. Probe and override
 code is absent with `BaleDebugServer=false`; release software-video defaults remain.
@@ -242,7 +252,7 @@ withdrawal and serialization. The production integration still needs the owner's
 
 ### Native FFmpeg / dav1d build
 
-Bale uses `FFmpegInteropX.UWP.Lib` **2.1.0-bale.1** with the custom x64 native package
+Bale uses `FFmpegInteropX.UWP.Lib` **2.1.0-bale.2** with the custom x64 native package
 `FFmpegInteropX.UWP.FFmpeg` **8.1.2-bale.dav1d.1.5.4**. The public 8.1.2 x64 `avcodec-62.dll`
 embeds dav1d **1.0.0-0-g99172b1** (March 2022); upgrading the wrapper cannot update that static
 library. This rebuild is an A/B candidate for occasional AV1 stutter/2–4-core CPU spikes, **not a
@@ -305,10 +315,10 @@ and its native activation registration are unchanged.
 
 ### Native FFmpegInteropX wrapper fork
 
-Bale now requires exactly `[2.1.0-bale.1]` of `FFmpegInteropX.UWP.Lib`, from immutable release
-[`wrapper-ffmpeginteropx-2.1.0-bale.1`](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.1).
+Bale now requires exactly `[2.1.0-bale.2]` of `FFmpegInteropX.UWP.Lib`, from immutable release
+[`wrapper-ffmpeginteropx-2.1.0-bale.2`](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.2).
 The independently verified nupkg SHA256 is
-`81271e28b62ef1840d512d1204472ffd16520fa01f233fbacdda0403c7a0384a`. The release tag, SHA256 and
+`45b0312ad771b5c22f77af3328c8624e0f2ec2960eaf49a23e90905679e5b0c6`. The release tag, SHA256 and
 NuGet content hash are pinned in `scripts/ffmpeginteropx-wrapper.json`; both framework/RID lock
 entries agree. `restore-ffmpeg-native.ps1` downloads it into isolated staging, verifies before moving
 it to `.cache/ffmpeg-native`, and clears its cached extraction. Source mapping allows the wrapper
@@ -334,9 +344,12 @@ it neither rebuilds the managed projection nor downloads a different FFmpeg. Com
 IDL remain unchanged; the native FFmpeg package version is explicitly overridden.
 
 The released fork includes `scripts/ffmpeginteropx-patches/0001-decode-ahead-threaded-sws.patch`:
-opt-in decoded-frame lookahead, threaded swscale and libdav1d max-frame-delay, exposed through the
-three decimal-string `bale_*` keys documented above. No keys are set in production. Every `*.patch` is applied
-with `git apply --index` in ordinal filename order; any failure aborts. Only `Source/` `.cpp`/`.h`
+opt-in decoded-frame lookahead, threaded swscale and libdav1d max-frame-delay. It also includes
+`scripts/ffmpeginteropx-patches/0002-decode-thread-priority.patch`, adding optional priority boosts
+for the decode-ahead worker, libdav1d workers and threaded swscale workers. The four decimal-string
+`bale_*` keys are documented above; production sets the three `SoftwareDecodeTuning` defaults,
+never the priority key. Every `*.patch` is applied with `git apply --index` in ordinal filename order;
+any failure aborts. Only `Source/` `.cpp`/`.h`
 changes are accepted, **never IDL**, project files or dependency changes. The build compares the
 built winmd's public type-name set against the original; a difference aborts packaging. This is a
 minimum metadata guard, not a complete member/ABI comparison. Patches must preserve that ABI.
@@ -348,7 +361,7 @@ OPC core-properties versions/content types are updated. The original NuGet repos
 is removed because modification invalidates it. The fork is unsigned and intended for **x64 only**;
 retained other-architecture binaries are not fork builds.
 
-For the next release, run `gh workflow run ffmpeginteropx-wrapper.yml --ref main -f version=2.1.0-bale.2`,
+For the next release, run `gh workflow run ffmpeginteropx-wrapper.yml --ref main -f version=2.1.0-bale.3`,
 then `gh run watch <run-id> --exit-status` (choose a fresh number if that tag already exists). The release contains the
 nupkg, `.sha256`, `SOURCES.txt`, `winmd-public-types.txt`, build log and corresponding patched
 wrapper source archive. Provenance records the upstream/Bale commits, ordered patch names/hashes,
