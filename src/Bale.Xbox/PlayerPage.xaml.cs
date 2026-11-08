@@ -68,7 +68,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public bool FfmpegTuningLogged { get; set; }
         public bool PretendHdr { get; } = DebugHdrPlayback.Pretend;
         public bool MatchContentFrameRate { get; } = DebugDisplayMatch.Enabled;
-        public bool ObserveFrameDelivery { get; } = DebugFrameDeliverySwitch.Enabled;
+        public string FrameDeliveryMode { get; } = DebugFrameDeliverySwitch.Mode;
         public bool UsePooledStreamAdapter { get; } = DebugStreamAdapterSwitch.Pooled;
         public bool FfmpegEnabled => FfmpegMode == "policy";
 #else

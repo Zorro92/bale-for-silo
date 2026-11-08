@@ -534,12 +534,14 @@ public class DebugPlaytestScriptTests
 
     [Theory]
     [InlineData(null)]
+    [InlineData("native")]
+    [InlineData("managed")]
     [InlineData("on")]
     [InlineData("off")]
     public async Task FrameDeliveryReadsStatusOrPostsOnlyAValidatedMode(string? mode)
     {
         if (!OperatingSystem.IsLinux()) return;
-        var readout = "frame-delivery=" + (mode ?? "on") + "\n";
+        var readout = "frame-delivery=" + (mode is null or "on" ? "native" : mode) + "\n";
         var result = await RunAsync(mode is null ? ["frame-delivery"] : ["frame-delivery", mode], readout);
         Assert.Equal(0, result.ExitCode);
         Assert.Equal(readout, result.Output);
@@ -565,13 +567,14 @@ public class DebugPlaytestScriptTests
         foreach (var args in new[]
         {
             new[] { "frame-delivery", "" }, ["frame-delivery", "status"], ["frame-delivery", "ON"],
-            ["frame-delivery", "true"], ["frame-delivery", " on"], ["frame-delivery", "off "],
+            ["frame-delivery", "true"], ["frame-delivery", "NATIVE"], ["frame-delivery", "Managed"],
+            ["frame-delivery", " on"], ["frame-delivery", "native "], ["frame-delivery", "off "],
             ["frame-delivery", "on&extra=1"], ["frame-delivery", "on", "off"], ["frame-delivery", "off", ""],
         })
         {
             var result = await RunAsync(args);
             Assert.Equal(2, result.ExitCode);
-            Assert.Equal("usage: scripts/bale-debug.sh frame-delivery [on|off]\n", result.Output);
+            Assert.Equal("usage: scripts/bale-debug.sh frame-delivery [native|managed|off]\n", result.Output);
             Assert.Empty(result.Arguments);
         }
     }
@@ -582,7 +585,7 @@ public class DebugPlaytestScriptTests
     public async Task FrameDeliveryFailurePreservesTheResponseBodyAndExitStatus(string? mode)
     {
         if (!OperatingSystem.IsLinux()) return;
-        const string failure = "mode must be on or off\n";
+        const string failure = "mode must be native, managed or off (on aliases native)\n";
         var result = await RunAsync(mode is null ? ["frame-delivery"] : ["frame-delivery", mode], failure, 22);
         Assert.Equal(22, result.ExitCode);
         Assert.Equal(failure, result.Output);

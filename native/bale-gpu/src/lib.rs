@@ -5,6 +5,7 @@
 //! reach the hardware device. Step 2 ports the debug IMFMediaEngine frame-server probe (`engine`).
 
 mod engine;
+mod frames;
 
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -17,7 +18,7 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 /// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched DLL.
-pub const ABI_VERSION: u32 = 3;
+pub const ABI_VERSION: u32 = 4;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_gpu_abi_version() -> u32 {

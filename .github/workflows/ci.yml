@@ -70,6 +70,17 @@ jobs:
         run: ./scripts/restore-ffmpeg-native.ps1
 
       # Rust GPU/media layer: static CRT (native/bale-gpu/.cargo/config.toml), packaged by the csproj.
+      - name: Test Rust GPU layer
+        shell: pwsh
+        run: |
+          rustup target add x86_64-pc-windows-msvc
+          # Run inside the crate so cargo reads .cargo/config.toml, including the static CRT setting.
+          Push-Location native/bale-gpu
+          cargo test --release --locked --target x86_64-pc-windows-msvc
+          $cargoExit = $LASTEXITCODE
+          Pop-Location
+          if ($cargoExit -ne 0) { throw 'cargo test failed' }
+
       - name: Build Rust GPU layer
         shell: pwsh
         run: |

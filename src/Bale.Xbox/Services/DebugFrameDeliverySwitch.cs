@@ -1,18 +1,17 @@
 #if DEBUG_SERVER
 namespace Bale.Xbox.Services;
 
-/// <summary>Memory-only observer switch, captured per playback attempt; on after restart.</summary>
+/// <summary>Memory-only observer mode, captured per playback attempt; native after restart.</summary>
 internal static class DebugFrameDeliverySwitch
 {
-    private static int _enabled = 1;
+    private static string _mode = "native";
 
-    internal static bool Enabled => Volatile.Read(ref _enabled) != 0;
-    internal static string Mode => Enabled ? "on" : "off";
+    internal static string Mode => Volatile.Read(ref _mode);
 
     internal static bool TrySet(string? mode)
     {
-        if (mode is not ("on" or "off")) return false;
-        Interlocked.Exchange(ref _enabled, mode == "on" ? 1 : 0);
+        if (mode is not ("native" or "managed" or "off" or "on")) return false;
+        Interlocked.Exchange(ref _mode, mode == "on" ? "native" : mode);
         return true;
     }
 }

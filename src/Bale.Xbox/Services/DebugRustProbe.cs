@@ -11,7 +11,7 @@ namespace Bale.Xbox.Services;
 /// </summary>
 internal static unsafe class DebugRustProbe
 {
-    private const uint ExpectedAbi = 3;
+    private const uint ExpectedAbi = 4;
     private const int EngineReportCapacity = 16 * 1024;
 
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern uint bale_gpu_abi_version();

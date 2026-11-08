@@ -215,10 +215,18 @@ delivery; neither counter is evidence of renderer drops or decoder CPU saturatio
   plus process-lifetime managed allocations (`allocated=... MiB`, approximate; compare deltas over equal intervals).
   `gc latency batch|interactive|sustained|default` changes the app-wide mode immediately, in memory only;
   `default` restores the helper's saved pre-playback mode even if the first `/gc` request is during playback.
-- Debug-only `bale-debug.sh frame-delivery [on|off]` (`GET /frame-delivery`, `POST /frame-delivery?mode=on|off`)
-  toggles the regular player's software-video frame delivery observer for the next playback attempt;
-  no argument prints `frame-delivery=on|off`. It defaults to on and resets on restart. Off leaves late-frame,
-  delivered-ahead and frame-trace diagnostics unavailable; the standalone FFmpeg probe is unchanged.
+- Debug-only `bale-debug.sh frame-delivery [native|managed|off]` (`GET /frame-delivery`,
+  `POST /frame-delivery?mode=native|managed|off`) selects the regular player's software-video observer for
+  the next playback attempt; no argument prints `frame-delivery=native|managed|off`. Native is the restart
+  default (`on` is an alias): Rust observes/releases samples without managed wrappers or forced GC;
+  a background C# thread samples GC/stream counters every 25 ms and drains ordered records every 250 ms
+  into the existing delivery meter/trace. Counter lookup allows a 50 ms post-delivery sampling race;
+  classifications remain concurrent evidence, not proven causes. The bounded native ring drops oldest
+  on overflow; diagnostics then fail closed rather than silently lose seek markers or samples.
+  Managed retains the old per-sample WinRT observer and forced gen-0 collections for A/B comparison.
+  Off leaves late-frame, delivered-ahead and frame-trace diagnostics unavailable. The attempt logs
+  `player: frame delivery observer=native|managed|off`; reopen the same title to change backends.
+  The standalone FFmpeg probe remains managed. Console performance remains to be verified.
 - FFmpeg routes use a pooled, read-only random-access stream adapter in all builds. It rents temporary
   managed storage and copies into FFmpeg's own native `IBuffer`, returning the same buffer instead of
   allocating a pinned CsWinRT replacement for each read. Native direct and HLS routes are unchanged.

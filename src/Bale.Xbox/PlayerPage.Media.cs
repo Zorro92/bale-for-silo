@@ -45,7 +45,7 @@ public sealed partial class PlayerPage
 #if DEBUG_SERVER
         public string? FfmpegReadAhead { get; set; }
         public string? FfmpegStreamReads { get; set; }
-        public DebugFrameDelivery? FrameDelivery { get; set; }
+        public IDebugFrameDelivery? FrameDelivery { get; set; }
         public TimeSpan? CpuTime { get; set; }
         public long? CpuTimestamp { get; set; }
         public string? LastCpuFailure { get; set; }
@@ -187,14 +187,21 @@ public sealed partial class PlayerPage
 #if DEBUG_SERVER
         player.PlaybackSession.BufferingStarted += OnStatsBufferingStarted;
         player.PlaybackSession.BufferingEnded += OnStatsBufferingEnded;
-        if (!attempt.ObserveFrameDelivery)
-            Log.Info("player: frame delivery observer disabled by debug switch");
-        else if (media.Route.SoftwareVideo && media.FfmpegSource is { } softwareSource)
+        Log.Info($"player: frame delivery observer={attempt.FrameDeliveryMode}");
+        if (attempt.FrameDeliveryMode != "off")
         {
-            try { media.FrameDelivery = new DebugFrameDelivery(softwareSource, player.PlaybackSession, stream: media.Stream); }
-            catch (Exception ex) { LogFailure("frame delivery observer", ex); }
+            if (media.Route.SoftwareVideo && media.FfmpegSource is { } softwareSource)
+            {
+                try
+                {
+                    media.FrameDelivery = attempt.FrameDeliveryMode == "managed"
+                        ? new DebugFrameDelivery(softwareSource, player.PlaybackSession, stream: media.Stream)
+                        : new NativeFrameDelivery(softwareSource, player.PlaybackSession, stream: media.Stream);
+                }
+                catch (Exception ex) { LogFailure("frame delivery observer", ex); }
+            }
+            else Log.Info($"player: frame delivery not attached softwareVideo={media.Route.SoftwareVideo} ffmpeg={media.FfmpegSource is not null}");
         }
-        else Log.Info($"player: frame delivery not attached softwareVideo={media.Route.SoftwareVideo} ffmpeg={media.FfmpegSource is not null}");
 #endif
         // The item exposes native track selection in production as well as debug stats.
         media.Item ??= new MediaPlaybackItem(media.Source);

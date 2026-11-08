@@ -204,10 +204,10 @@ public class PlaybackLateFrameTraceTests
         foreach (var required in new[] { "HttpRangeStream? stream = null", "PlaybackLateFrameTrace _lateFrameTrace = new()", "Stopwatch.GetTimestamp()",
             "var late = _meter.Observe", "if (!_seeking)", "_lateFrameTrace.Sample", "_stream?.DemandWaits", "_stream?.DemandWaitTime",
             "GC.GetTotalPauseDuration()", "GC.CollectionCount(0)", "GC.CollectionCount(1)", "GC.CollectionCount(2)",
-            "internal string DescribeLateFrameTrace()", "internal void ResetLateFrameTrace()" })
+            "public string DescribeLateFrameTrace()", "public void ResetLateFrameTrace()" })
             Assert.Contains(required, observer);
-        var seeking = observer[observer.IndexOf("internal void SetSeeking", StringComparison.Ordinal)
-            ..observer.IndexOf("internal string DescribeLateFrameTrace", StringComparison.Ordinal)];
+        var seeking = observer[observer.IndexOf("public void SetSeeking", StringComparison.Ordinal)
+            ..observer.IndexOf("public string DescribeLateFrameTrace", StringComparison.Ordinal)];
         Assert.Contains("_seeking = seeking", seeking);
         Assert.Contains("_lateFrameTrace.Reset()", seeking);
         var starting = observer[observer.IndexOf("private void OnStarting", StringComparison.Ordinal)

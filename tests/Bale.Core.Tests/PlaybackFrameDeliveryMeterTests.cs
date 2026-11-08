@@ -189,7 +189,7 @@ public class PlaybackFrameDeliveryMeterTests
         Assert.Contains("!IsVideo(args.Request.StreamDescriptor)", observer);
         Assert.Contains("WinRT.CastExtensions.As<VideoStreamDescriptor>(descriptor)", observer);
         Assert.Contains(".EncodingProperties.Subtype", observer);
-        Assert.Contains("internal string? OutputPixelFormat", observer);
+        Assert.Contains("public string? OutputPixelFormat", observer);
         Assert.Contains("bool collectAheadStatistics = false", observer);
         Assert.Contains("args.Request.Sample is not { } sample", observer);
         Assert.Contains("_source.SampleRequested -= OnSampleRequested", observer);

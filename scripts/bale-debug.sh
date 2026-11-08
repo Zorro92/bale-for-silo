@@ -34,7 +34,7 @@
 #   scripts/bale-debug.sh mem [gc]               managed GC heap vs app memory; gc forces a full collection + finalizers first
 #   scripts/bale-debug.sh gc                     GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
 #   scripts/bale-debug.sh gc latency <batch|interactive|sustained|default>  change latency app-wide now; default restores the saved pre-playback mode; playback acquires sustained automatically
-#   scripts/bale-debug.sh frame-delivery [on|off]  next playback attempt's frame delivery observer; default on, memory only (restart resets); no args = status
+#   scripts/bale-debug.sh frame-delivery [native|managed|off]  next playback attempt's observer; default native, on aliases native; memory only (restart resets); no args = status
 #   scripts/bale-debug.sh stream-adapter [pooled|builtin]  next FFmpeg playback attempt's stream adapter; default pooled, memory only (restart resets); no args = status
 #   scripts/bale-debug.sh display-match [on|off|status]  match content HDMI resolution/refresh on the next playback; default off, memory only (restart resets); no args = status
 #   scripts/bale-debug.sh hdr pretend|off|status  next attempt: pretend HDR10, skip HDMI switching for console SDR tone mapping; default off, memory only
@@ -239,8 +239,8 @@ case "${1:-}" in
     fi
     ;;
   frame-delivery)
-    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^(on|off)$ ) ]]; then
-      echo 'usage: scripts/bale-debug.sh frame-delivery [on|off]' >&2
+    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^(native|managed|off|on)$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh frame-delivery [native|managed|off]' >&2
       exit 2
     fi
     if [[ "$#" == 1 ]]; then

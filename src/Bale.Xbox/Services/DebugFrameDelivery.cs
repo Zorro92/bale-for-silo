@@ -8,7 +8,7 @@ using Windows.Media.Playback;
 namespace Bale.Xbox.Services;
 
 /// <summary>A passive observer of FFmpeg's decoded video delivery; never changes or retains a sample.</summary>
-internal sealed class DebugFrameDelivery : IDisposable
+internal sealed class DebugFrameDelivery : IDebugFrameDelivery
 {
     private readonly MediaStreamSource _source;
     private readonly MediaPlaybackSession _session;
@@ -45,12 +45,12 @@ internal sealed class DebugFrameDelivery : IDisposable
         Log.Info("player: frame delivery observer attached");
     }
 
-    internal string? OutputPixelFormat => Volatile.Read(ref _outputPixelFormat);
+    public string? OutputPixelFormat => Volatile.Read(ref _outputPixelFormat);
 
     /// <summary>The decoded output's MF colour attributes (matrix, transfer, primaries, range), as set by the wrapper.</summary>
-    internal string? OutputColour => Volatile.Read(ref _outputColour);
+    public string? OutputColour => Volatile.Read(ref _outputColour);
 
-    internal void SetSeeking(bool seeking)
+    public void SetSeeking(bool seeking)
     {
         lock (_timelineGate)
         {
@@ -60,14 +60,14 @@ internal sealed class DebugFrameDelivery : IDisposable
         }
     }
 
-    internal string DescribeLateFrameTrace() => _lateFrameTrace.Describe();
+    public string DescribeLateFrameTrace() => _lateFrameTrace.Describe();
 
-    internal void ResetLateFrameTrace()
+    public void ResetLateFrameTrace()
     {
         lock (_timelineGate) _lateFrameTrace.Reset();
     }
 
-    internal PlaybackFrameDeliverySnapshot? Read()
+    public PlaybackFrameDeliverySnapshot? Read()
     {
         if (Volatile.Read(ref _unavailable) != 0) return null;
         try { return _meter.Read(_session.Position, Environment.TickCount64); }
