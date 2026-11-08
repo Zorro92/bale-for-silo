@@ -60,6 +60,8 @@ internal static class FfmpegSource
             if (DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain) is { } grain) config.FFmpegOptions[grain.Key] = grain.Value;
             // Upload remains independent: GPU requests without variant 1 keep dav1d at open (patch 0010).
             if (tuning.D3d11Upload is { } upload) config.FFmpegOptions["bale_d3d11_upload"] = upload.ToString(CultureInfo.InvariantCulture);
+            // Patch 0011 debug fault: forces the mid-stream GPU-to-CPU switch without real memory pressure.
+            if (tuning.UploadFaultFrames is { } fault) config.FFmpegOptions["bale_d3d11_upload_fault_frames"] = fault.ToString(CultureInfo.InvariantCulture);
         }
         else
         {

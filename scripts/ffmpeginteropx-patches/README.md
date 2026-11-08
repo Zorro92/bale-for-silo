@@ -79,6 +79,11 @@ The current CPU-buffer retry also clears cached grain after a mode-0 downgrade; 
 skip `Prepare`. Dav1d cannot resume synthesis without reopening once export is enabled. Existing
 once-per-stream guards and fixed HRESULT-only diagnostics distinguish CPU from ungrained fallback;
 seeks do not reset the downgrade. Explicit CPU streams are unaffected. It ships in `2.1.0-bale.10`.
+`0011` adds a debug-only fault: `bale_d3d11_upload_fault_frames=N` (0..999, default 0 = off) makes
+the upload after N successful uploads throw `E_OUTOFMEMORY` at the same point as a real pool texture
+failure (staging mapped and filled), so the existing fallback disables upload and retries that frame
+in a CPU buffer. It exists to test the mid-stream surface-to-buffer switch without real memory
+pressure; Bale sets it only from the DEBUG_SERVER `uploadfault` tuning. It ships in `2.1.0-bale.11`.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.

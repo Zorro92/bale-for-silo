@@ -450,7 +450,10 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         var key = experiment.IndexOf("if (tuning.D3d11Upload is { } upload) config.FFmpegOptions[\"bale_d3d11_upload\"] = upload.ToString(CultureInfo.InvariantCulture);", StringComparison.Ordinal);
         Assert.True(software >= 0 && key > software && key < system);
         Assert.DoesNotContain("upload > 0", experiment);
-        Assert.Equal(2, configuration.Split("bale_d3d11_upload").Length - 1);
+        Assert.Equal(2, configuration.Split("\"bale_d3d11_upload\"").Length - 1);
+        var fault = experiment.IndexOf("if (tuning.UploadFaultFrames is { } fault) config.FFmpegOptions[\"bale_d3d11_upload_fault_frames\"] = fault.ToString(CultureInfo.InvariantCulture);", StringComparison.Ordinal);
+        Assert.True(fault > software && fault < system);
+        Assert.Equal(1, configuration.Split("bale_d3d11_upload_fault_frames").Length - 1);
         Assert.Contains("if (tuning.FilmGrain is DebugFilmGrain.Gpu) config.FFmpegOptions[\"bale_d3d11_upload\"] = \"1\";", Read("DebugFfmpegSource.cs.txt"));
         Assert.Contains("upload=on|off|default|1..5", DebugFfmpegInputTuning.Usage);
         var server = Read("DebugServer.cs.txt");
@@ -488,7 +491,40 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         ["dpb"] = tuning.DecoderMaxDpbCount?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["grain"] = DebugFfmpegPlaytest.GrainName(tuning.FilmGrain),
         ["upload"] = tuning.D3d11Upload is { } upload ? upload == 0 ? "off" : upload.ToString(CultureInfo.InvariantCulture) : "default",
+        ["uploadfault"] = tuning.UploadFaultFrames?.ToString(CultureInfo.InvariantCulture) ?? "default",
     }, out _));
+
+    [Theory]
+    [InlineData("1", 1)]
+    [InlineData("240", 240)]
+    [InlineData("999", 999)]
+    public void UploadFaultIsADescribedDebugKnob(string value, int expected)
+    {
+        Set(new());
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["uploadfault"] = value }, out var set));
+        Assert.Equal(expected, set.UploadFaultFrames);
+        Assert.EndsWith($" uploadfault={expected}", set.Description);
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["uploadfault"] = "default" }, out var cleared));
+        Assert.Null(cleared.UploadFaultFrames);
+        Assert.DoesNotContain("uploadfault", cleared.Description);
+        Assert.Contains("uploadfault=1..999|default", DebugFfmpegInputTuning.Usage);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("1000")]
+    [InlineData("-1")]
+    [InlineData("on")]
+    [InlineData("")]
+    public void InvalidUploadFaultIsRejectedAtomically(string value)
+    {
+        Set(new(UploadFaultFrames: 5));
+        var captured = DebugFfmpegInputTuning.Current;
+        Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["uploadfault"] = value }, out var rejected));
+        Assert.Same(captured, rejected);
+        Assert.Same(captured, DebugFfmpegInputTuning.Current);
+        Set(new());
+    }
 
     private static string Read(string file) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, file));
 }
