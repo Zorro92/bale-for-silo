@@ -41,7 +41,10 @@ mod buffer {
 
     impl Ring {
         pub fn new() -> Self {
-            Self { records: VecDeque::with_capacity(CAPACITY), dropped: 0 }
+            Self {
+                records: VecDeque::with_capacity(CAPACITY),
+                dropped: 0,
+            }
         }
 
         pub fn push(&mut self, record: FrameRecord) {
@@ -55,7 +58,9 @@ mod buffer {
         pub fn drain(&mut self, output: &mut [FrameRecord]) -> usize {
             let mut count = 0;
             for destination in output {
-                let Some(record) = self.records.pop_front() else { break };
+                let Some(record) = self.records.pop_front() else {
+                    break;
+                };
                 *destination = record;
                 count += 1;
             }
@@ -68,7 +73,11 @@ mod buffer {
         use super::*;
 
         fn record(timestamp: i64) -> FrameRecord {
-            FrameRecord { kind: 1, timestamp, ..FrameRecord::default() }
+            FrameRecord {
+                kind: 1,
+                timestamp,
+                ..FrameRecord::default()
+            }
         }
 
         #[test]
@@ -85,10 +94,15 @@ mod buffer {
         #[test]
         fn push_and_drain_preserve_order() {
             let mut ring = Ring::new();
-            for timestamp in 0..3 { ring.push(record(timestamp)); }
+            for timestamp in 0..3 {
+                ring.push(record(timestamp));
+            }
             let mut output = [FrameRecord::default(); 4];
             assert_eq!(ring.drain(&mut output), 3);
-            assert_eq!(output.get(..3), Some([record(0), record(1), record(2)].as_slice()));
+            assert_eq!(
+                output.get(..3),
+                Some([record(0), record(1), record(2)].as_slice())
+            );
             assert_eq!(ring.drain(&mut output), 0);
             assert_eq!(ring.dropped, 0);
         }
@@ -96,7 +110,9 @@ mod buffer {
         #[test]
         fn overflow_drops_oldest_and_counts_all_losses() {
             let mut ring = Ring::new();
-            for timestamp in 0..(CAPACITY + 3) { ring.push(record(timestamp as i64)); }
+            for timestamp in 0..(CAPACITY + 3) {
+                ring.push(record(timestamp as i64));
+            }
             let mut output = vec![FrameRecord::default(); CAPACITY];
             assert_eq!(ring.drain(&mut output), CAPACITY);
             assert_eq!(output.first(), Some(&record(3)));
@@ -109,7 +125,9 @@ mod buffer {
         #[test]
         fn partial_and_empty_drains_leave_the_remaining_records() {
             let mut ring = Ring::new();
-            for timestamp in 0..5 { ring.push(record(timestamp)); }
+            for timestamp in 0..5 {
+                ring.push(record(timestamp));
+            }
             assert_eq!(ring.drain(&mut []), 0);
             let mut output = [FrameRecord::default(); 2];
             assert_eq!(ring.drain(&mut output), 2);
@@ -136,7 +154,9 @@ struct State {
 
 impl State {
     fn fail(&self, error: &Error) {
-        let _ = self.status.compare_exchange(0, error.code().0, Ordering::AcqRel, Ordering::Acquire);
+        let _ =
+            self.status
+                .compare_exchange(0, error.code().0, Ordering::AcqRel, Ordering::Acquire);
         self.unavailable.store(true, Ordering::Release);
     }
 
@@ -156,13 +176,17 @@ impl State {
         let video = match descriptor.cast::<VideoStreamDescriptor>() {
             Ok(video) => {
                 let mut first = self.video.lock().map_err(|_| Error::from_hresult(E_FAIL))?;
-                if first.is_none() { *first = Some(video); }
+                if first.is_none() {
+                    *first = Some(video);
+                }
                 true
             }
             Err(error) if error.code() == E_NOINTERFACE => false,
             Err(error) => return Err(error),
         };
-        if kinds.len() < 16 { kinds.push((pointer, video)); }
+        if kinds.len() < 16 {
+            kinds.push((pointer, video));
+        }
         Ok(video)
     }
 
@@ -170,11 +194,17 @@ impl State {
         // Markers, starts and samples share this gate, including their QPC timestamps. A seek cannot
         // land between observing a sample's clock/state and inserting its record in the timeline.
         let mut ring = self.ring.lock().map_err(|_| Error::from_hresult(E_FAIL))?;
-        if self.unavailable.load(Ordering::Acquire) { return Ok(()) }
+        if self.unavailable.load(Ordering::Acquire) {
+            return Ok(());
+        }
         let request = args.Request()?;
         // A null sample (or a sample getter error) means the upstream handler delivered nothing.
-        let Ok(sample) = request.Sample() else { return Ok(()) };
-        if !self.is_video(&request.StreamDescriptor()?)? { return Ok(()) }
+        let Ok(sample) = request.Sample() else {
+            return Ok(());
+        };
+        if !self.is_video(&request.StreamDescriptor()?)? {
+            return Ok(());
+        }
         let timestamp = sample.Timestamp()?.Duration;
         let duration = sample.Duration()?.Duration;
         let discontinuous = sample.Discontinuous()?;
@@ -194,8 +224,14 @@ impl State {
 
     fn mark(&self, kind: u32) -> Result<()> {
         let mut ring = self.ring.lock().map_err(|_| Error::from_hresult(E_FAIL))?;
-        if self.unavailable.load(Ordering::Acquire) { return Ok(()) }
-        ring.push(FrameRecord { kind, now_ms: self.now_ms()?, ..FrameRecord::default() });
+        if self.unavailable.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        ring.push(FrameRecord {
+            kind,
+            now_ms: self.now_ms()?,
+            ..FrameRecord::default()
+        });
         Ok(())
     }
 }
@@ -220,7 +256,9 @@ fn create(source: MediaStreamSource, session: MediaPlaybackSession) -> Result<Ob
     let mut frequency = 0;
     // SAFETY: the out-pointer is a valid local.
     unsafe { QueryPerformanceFrequency(&mut frequency)? };
-    if frequency <= 0 { return Err(Error::from_hresult(E_FAIL)) }
+    if frequency <= 0 {
+        return Err(Error::from_hresult(E_FAIL));
+    }
     let state = Arc::new(State {
         ring: Mutex::new(buffer::Ring::new()),
         kinds: Mutex::new(Vec::with_capacity(16)),
@@ -231,20 +269,29 @@ fn create(source: MediaStreamSource, session: MediaPlaybackSession) -> Result<Ob
         status: AtomicI32::new(0),
     });
     let starting_state = Arc::clone(&state);
-    let starting = TypedEventHandler::<MediaStreamSource, MediaStreamSourceStartingEventArgs>::new(move |_, _| {
-        if let Err(error) = starting_state.mark(2) { starting_state.fail(&error); }
-        Ok(())
-    });
+    let starting = TypedEventHandler::<MediaStreamSource, MediaStreamSourceStartingEventArgs>::new(
+        move |_, _| {
+            if let Err(error) = starting_state.mark(2) {
+                starting_state.fail(&error);
+            }
+            Ok(())
+        },
+    );
     let starting_token = source.Starting(&starting)?;
     let sample_state = Arc::clone(&state);
-    let sample = TypedEventHandler::<MediaStreamSource, MediaStreamSourceSampleRequestedEventArgs>::new(move |_, args| {
-        if !sample_state.unavailable.load(Ordering::Acquire) {
-            let result = args.ok().and_then(|args| sample_state.sample(args));
-            if let Err(error) = result { sample_state.fail(&error); }
-        }
-        // Diagnostics must never fail the upstream delivery, even if their own COM call failed.
-        Ok(())
-    });
+    let sample =
+        TypedEventHandler::<MediaStreamSource, MediaStreamSourceSampleRequestedEventArgs>::new(
+            move |_, args| {
+                if !sample_state.unavailable.load(Ordering::Acquire) {
+                    let result = args.ok().and_then(|args| sample_state.sample(args));
+                    if let Err(error) = result {
+                        sample_state.fail(&error);
+                    }
+                }
+                // Diagnostics must never fail the upstream delivery, even if their own COM call failed.
+                Ok(())
+            },
+        );
     let sample_token = match source.SampleRequested(&sample) {
         Ok(token) => token,
         Err(error) => {
@@ -253,7 +300,12 @@ fn create(source: MediaStreamSource, session: MediaPlaybackSession) -> Result<Ob
             return Err(error);
         }
     };
-    Ok(Observer { source, state, sample_token, starting_token })
+    Ok(Observer {
+        source,
+        state,
+        sample_token,
+        starting_token,
+    })
 }
 
 /// Subscribes after FFmpeg's synchronous sample handler; takes its own references to both objects.
@@ -262,14 +314,25 @@ fn create(source: MediaStreamSource, session: MediaPlaybackSession) -> Result<Ob
 /// `source` and `session` must be live borrowed default-interface pointers for MediaStreamSource and
 /// MediaPlaybackSession. `out` must point to one writable pointer. Destroy the returned handle once.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn bale_frame_observer_create(source: *mut c_void, session: *mut c_void, out: *mut *mut c_void) -> i32 {
-    if out.is_null() { return E_POINTER.0 }
+pub unsafe extern "C" fn bale_frame_observer_create(
+    source: *mut c_void,
+    session: *mut c_void,
+    out: *mut *mut c_void,
+) -> i32 {
+    if out.is_null() {
+        return E_POINTER.0;
+    }
     // SAFETY: caller guarantees a writable out-pointer; initialize it even on failure.
     unsafe { *out = core::ptr::null_mut() };
     // SAFETY: the caller guarantees live default-interface pointers; clones take our own references.
-    let Some(source) = (unsafe { MediaStreamSource::from_raw_borrowed(&source) }).cloned() else { return E_POINTER.0 };
+    let Some(source) = (unsafe { MediaStreamSource::from_raw_borrowed(&source) }).cloned() else {
+        return E_POINTER.0;
+    };
     // SAFETY: same borrowing contract as source above.
-    let Some(session) = (unsafe { MediaPlaybackSession::from_raw_borrowed(&session) }).cloned() else { return E_POINTER.0 };
+    let Some(session) = (unsafe { MediaPlaybackSession::from_raw_borrowed(&session) }).cloned()
+    else {
+        return E_POINTER.0;
+    };
     match create(source, session) {
         Ok(observer) => {
             // SAFETY: out is writable; ownership of this allocation passes to destroy.
@@ -287,11 +350,18 @@ pub unsafe extern "C" fn bale_frame_observer_create(source: *mut c_void, session
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bale_frame_observer_mark(obs: *mut c_void, kind: u32) -> i32 {
     // SAFETY: guaranteed by the handle contract.
-    let Some(observer) = (unsafe { obs.cast::<Observer>().as_ref() }) else { return E_POINTER.0 };
-    if kind != 3 && kind != 4 { return E_INVALIDARG.0 }
+    let Some(observer) = (unsafe { obs.cast::<Observer>().as_ref() }) else {
+        return E_POINTER.0;
+    };
+    if kind != 3 && kind != 4 {
+        return E_INVALIDARG.0;
+    }
     match observer.state.mark(kind) {
         Ok(()) => observer.state.status.load(Ordering::Acquire),
-        Err(error) => { observer.state.fail(&error); error.code().0 }
+        Err(error) => {
+            observer.state.fail(&error);
+            error.code().0
+        }
     }
 }
 
@@ -301,9 +371,16 @@ pub unsafe extern "C" fn bale_frame_observer_mark(obs: *mut c_void, kind: u32) -
 /// `obs` must be null or a live handle, not concurrently destroyed. Non-null `records` must point to
 /// `capacity` writable FrameRecords; non-null `dropped` must point to a writable u64. Outputs must not alias.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn bale_frame_observer_drain(obs: *mut c_void, records: *mut FrameRecord, capacity: u32, dropped: *mut u64) -> u32 {
+pub unsafe extern "C" fn bale_frame_observer_drain(
+    obs: *mut c_void,
+    records: *mut FrameRecord,
+    capacity: u32,
+    dropped: *mut u64,
+) -> u32 {
     // SAFETY: guaranteed by the handle contract.
-    let Some(observer) = (unsafe { obs.cast::<Observer>().as_ref() }) else { return 0 };
+    let Some(observer) = (unsafe { obs.cast::<Observer>().as_ref() }) else {
+        return 0;
+    };
     let Ok(mut ring) = observer.state.ring.lock() else {
         observer.state.fail(&Error::from_hresult(E_FAIL));
         return 0;
@@ -312,7 +389,9 @@ pub unsafe extern "C" fn bale_frame_observer_drain(obs: *mut c_void, records: *m
         // SAFETY: caller guarantees a writable non-null dropped pointer.
         unsafe { *dropped = ring.dropped };
     }
-    if records.is_null() || capacity == 0 { return 0 }
+    if records.is_null() || capacity == 0 {
+        return 0;
+    }
     // SAFETY: caller guarantees capacity writable records, disjoint from dropped and the observer.
     let output = unsafe { core::slice::from_raw_parts_mut(records, capacity as usize) };
     ring.drain(output) as u32
@@ -338,7 +417,9 @@ pub unsafe extern "C" fn bale_frame_observer_status(obs: *mut c_void) -> i32 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bale_frame_observer_video_descriptor(obs: *mut c_void) -> *mut c_void {
     // SAFETY: guaranteed by the handle contract.
-    let Some(observer) = (unsafe { obs.cast::<Observer>().as_ref() }) else { return core::ptr::null_mut() };
+    let Some(observer) = (unsafe { obs.cast::<Observer>().as_ref() }) else {
+        return core::ptr::null_mut();
+    };
     if let Ok(video) = observer.state.video.lock()
         && let Some(video) = video.as_ref()
     {

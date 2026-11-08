@@ -19,18 +19,20 @@ use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_L
 use windows::Win32::Graphics::Direct3D10::ID3D10Multithread;
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-    D3D11_CREATE_DEVICE_VIDEO_SUPPORT, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT,
-    D3D11CreateDevice, ID3D11Device, ID3D11Texture2D,
+    D3D11_CREATE_DEVICE_VIDEO_SUPPORT, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
+    D3D11_USAGE_DEFAULT, D3D11CreateDevice, ID3D11Device, ID3D11Texture2D,
 };
 use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
 use windows::Win32::Media::MediaFoundation::{
-    CLSID_MFMediaEngineClassFactory, IMFAsyncCallback, IMFAsyncResult, IMFAttributes, IMFByteStream,
-    IMFDXGIDeviceManager, IMFGetService, IMFMediaEngine, IMFMediaEngineClassFactory, IMFMediaEngineEx,
-    IMFMediaEngineExtension, IMFMediaEngineExtension_Impl, IMFMediaEngineNotify, IMFMediaEngineNotify_Impl,
-    IMFMediaSource, IMFMediaSourceEx, MF_E_UNEXPECTED, MF_MEDIASOURCE_SERVICE, MF_MEDIA_ENGINE_CALLBACK, MF_MEDIA_ENGINE_CANPLAY,
-    MF_MEDIA_ENGINE_CANPLAY_MAYBE, MF_MEDIA_ENGINE_DXGI_MANAGER, MF_MEDIA_ENGINE_EXTENSION, MF_MEDIA_ENGINE_STATISTIC,
-    MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT, MF_OBJECT_MEDIASOURCE, MF_OBJECT_TYPE, MFARGB, MFCreateAsyncResult,
-    MFCreateAttributes, MFCreateDXGIDeviceManager, MFInvokeCallback, MFSTARTUP_FULL, MFShutdown, MFStartup,
+    CLSID_MFMediaEngineClassFactory, IMFAsyncCallback, IMFAsyncResult, IMFAttributes,
+    IMFByteStream, IMFDXGIDeviceManager, IMFGetService, IMFMediaEngine, IMFMediaEngineClassFactory,
+    IMFMediaEngineEx, IMFMediaEngineExtension, IMFMediaEngineExtension_Impl, IMFMediaEngineNotify,
+    IMFMediaEngineNotify_Impl, IMFMediaSource, IMFMediaSourceEx, MF_E_UNEXPECTED,
+    MF_MEDIA_ENGINE_CALLBACK, MF_MEDIA_ENGINE_CANPLAY, MF_MEDIA_ENGINE_CANPLAY_MAYBE,
+    MF_MEDIA_ENGINE_DXGI_MANAGER, MF_MEDIA_ENGINE_EXTENSION, MF_MEDIA_ENGINE_STATISTIC,
+    MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT, MF_MEDIASOURCE_SERVICE, MF_OBJECT_MEDIASOURCE,
+    MF_OBJECT_TYPE, MFARGB, MFCreateAsyncResult, MFCreateAttributes, MFCreateDXGIDeviceManager,
+    MFInvokeCallback, MFSTARTUP_FULL, MFShutdown, MFStartup,
 };
 use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes, SetEvent};
 use windows::core::{BOOL, BSTR, GUID, HRESULT, IUnknown, Interface, OutRef, Ref, implement};
@@ -88,7 +90,11 @@ struct SourceExtension {
 }
 
 impl IMFMediaEngineExtension_Impl for SourceExtension_Impl {
-    fn CanPlayType(&self, _audio_only: BOOL, _mime_type: &BSTR) -> windows::core::Result<MF_MEDIA_ENGINE_CANPLAY> {
+    fn CanPlayType(
+        &self,
+        _audio_only: BOOL,
+        _mime_type: &BSTR,
+    ) -> windows::core::Result<MF_MEDIA_ENGINE_CANPLAY> {
         Ok(MF_MEDIA_ENGINE_CANPLAY_MAYBE)
     }
 
@@ -173,8 +179,12 @@ impl<T> StepResult<T> for windows::core::Result<T> {
 /// Runs the probe and returns the plain-text report.
 pub fn run(input: Input, seconds: u32) -> String {
     let mut report = String::from(match input {
-        Input::Url(_) => "Media engine probe (Rust bale_gpu.dll; frame-server mode, muted, own D3D11 device)\n",
-        Input::Source(_) => "Media engine probe (Rust bale_gpu.dll; caller media source via engine extension; frame-server mode, muted)\n",
+        Input::Url(_) => {
+            "Media engine probe (Rust bale_gpu.dll; frame-server mode, muted, own D3D11 device)\n"
+        }
+        Input::Source(_) => {
+            "Media engine probe (Rust bale_gpu.dll; caller media source via engine extension; frame-server mode, muted)\n"
+        }
     });
     let shared = Arc::new(Shared {
         clock: Instant::now(),
@@ -187,7 +197,11 @@ pub fn run(input: Input, seconds: u32) -> String {
     });
     // SAFETY: plain MF startup; paired with MFShutdown below only on success.
     if let Err(error) = unsafe { MFStartup(MF_VERSION, MFSTARTUP_FULL) } {
-        let _ = writeln!(report, "Error: 0x{:08X} at MFStartup", error.code().0 as u32);
+        let _ = writeln!(
+            report,
+            "Error: 0x{:08X} at MFStartup",
+            error.code().0 as u32
+        );
         return report;
     }
     let mut engine: Option<IMFMediaEngine> = None;
@@ -243,12 +257,16 @@ unsafe fn play(
         let mut token = 0u32;
         let mut manager: Option<IMFDXGIDeviceManager> = None;
         MFCreateDXGIDeviceManager(&mut token, &mut manager).step("MFCreateDXGIDeviceManager")?;
-        let manager = manager.ok_or(Step("MFCreateDXGIDeviceManager", HRESULT(0x8000_4003u32 as i32)))?;
+        let manager = manager.ok_or(Step(
+            "MFCreateDXGIDeviceManager",
+            HRESULT(0x8000_4003u32 as i32),
+        ))?;
         manager.ResetDevice(&device, token).step("ResetDevice")?;
 
         let mut attributes: Option<IMFAttributes> = None;
         MFCreateAttributes(&mut attributes, 3).step("MFCreateAttributes")?;
-        let attributes = attributes.ok_or(Step("MFCreateAttributes", HRESULT(0x8000_4003u32 as i32)))?;
+        let attributes =
+            attributes.ok_or(Step("MFCreateAttributes", HRESULT(0x8000_4003u32 as i32)))?;
         let notify: IMFMediaEngineNotify = Notify(Arc::clone(shared)).into();
         let url = match input {
             Input::Url(url) => BSTR::from_wide(url),
@@ -269,20 +287,36 @@ unsafe fn play(
                             .cast::<IMFGetService>()
                             .step("QI IMFGetService")?
                             .GetService::<IMFMediaSource>(&MF_MEDIASOURCE_SERVICE);
-                        let _ = writeln!(report, "GetService(MF_MEDIASOURCE_SERVICE): {}", if service.is_ok() { "ok" } else { "fails" });
+                        let _ = writeln!(
+                            report,
+                            "GetService(MF_MEDIASOURCE_SERVICE): {}",
+                            if service.is_ok() { "ok" } else { "fails" }
+                        );
                         service.step("GetService MF_MEDIASOURCE_SERVICE")?
                     }
                 };
-                let extension: IMFMediaEngineExtension =
-                    SourceExtension { source, shared: Arc::clone(shared) }.into();
-                attributes.SetUnknown(&MF_MEDIA_ENGINE_EXTENSION, &extension).step("SetUnknown extension")?;
+                let extension: IMFMediaEngineExtension = SourceExtension {
+                    source,
+                    shared: Arc::clone(shared),
+                }
+                .into();
+                attributes
+                    .SetUnknown(&MF_MEDIA_ENGINE_EXTENSION, &extension)
+                    .step("SetUnknown extension")?;
                 BSTR::from("bale-mss:probe")
             }
         };
-        attributes.SetUnknown(&MF_MEDIA_ENGINE_DXGI_MANAGER, &manager).step("SetUnknown DXGI manager")?;
-        attributes.SetUnknown(&MF_MEDIA_ENGINE_CALLBACK, &notify).step("SetUnknown callback")?;
         attributes
-            .SetUINT32(&MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM.0 as u32)
+            .SetUnknown(&MF_MEDIA_ENGINE_DXGI_MANAGER, &manager)
+            .step("SetUnknown DXGI manager")?;
+        attributes
+            .SetUnknown(&MF_MEDIA_ENGINE_CALLBACK, &notify)
+            .step("SetUnknown callback")?;
+        attributes
+            .SetUINT32(
+                &MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT,
+                DXGI_FORMAT_B8G8R8A8_UNORM.0 as u32,
+            )
             .step("SetUINT32 output format")?;
 
         let mut raw = core::ptr::null_mut();
@@ -296,7 +330,9 @@ unsafe fn play(
         .ok()
         .step("CoCreateInstance MediaEngineClassFactory")?;
         let factory = IMFMediaEngineClassFactory::from_raw(raw);
-        let engine = factory.CreateInstance(0, &attributes).step("CreateInstance")?;
+        let engine = factory
+            .CreateInstance(0, &attributes)
+            .step("CreateInstance")?;
         *engine_slot = Some(engine.clone());
         let engine_ex: IMFMediaEngineEx = engine.cast().step("QI IMFMediaEngineEx")?;
         report.push_str("Engine: created\n");
@@ -319,7 +355,11 @@ unsafe fn play(
         } else {
             "timeout"
         };
-        let _ = writeln!(report, "Open: {state} after {} ms", open.elapsed().as_millis());
+        let _ = writeln!(
+            report,
+            "Open: {state} after {} ms",
+            open.elapsed().as_millis()
+        );
         if !can_play {
             return Ok(());
         }
@@ -346,14 +386,19 @@ unsafe fn play(
             MipLevels: 1,
             ArraySize: 1,
             Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
             Usage: D3D11_USAGE_DEFAULT,
             BindFlags: (D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_SHADER_RESOURCE.0) as u32,
             CPUAccessFlags: 0,
             MiscFlags: 0,
         };
         let mut texture: Option<ID3D11Texture2D> = None;
-        device.CreateTexture2D(&desc, None, Some(&mut texture)).step("CreateTexture2D")?;
+        device
+            .CreateTexture2D(&desc, None, Some(&mut texture))
+            .step("CreateTexture2D")?;
         let texture = texture.ok_or(Step("CreateTexture2D", HRESULT(0x8000_4003u32 as i32)))?;
 
         let cpu_before = process_cpu();
@@ -364,7 +409,12 @@ unsafe fn play(
         let (mut polls, mut ticks, mut frames, mut failures) = (0u64, 0u64, 0u64, 0u64);
         let mut first_failure = HRESULT(0);
         let (mut transfer_total, mut transfer_max) = (Duration::ZERO, Duration::ZERO);
-        let target = RECT { left: 0, top: 0, right: width as i32, bottom: height as i32 };
+        let target = RECT {
+            left: 0,
+            top: 0,
+            right: width as i32,
+            bottom: height as i32,
+        };
         let border = MFARGB::default(); // transparent black
         let tick = Interface::vtable(&engine).OnVideoStreamTick;
         while wall.elapsed() < limit
@@ -397,8 +447,15 @@ unsafe fn play(
         let end_position = engine.GetCurrentTime();
         let cpu_after = process_cpu();
 
-        let _ = writeln!(report, "Poll loop: {polls} polls ({:.0}/s; thread::sleep(1 ms))", polls as f64 / wall_seconds);
-        let _ = write!(report, "Stream ticks: {ticks}; transferred frames: {frames}; transfer failures: {failures}");
+        let _ = writeln!(
+            report,
+            "Poll loop: {polls} polls ({:.0}/s; thread::sleep(1 ms))",
+            polls as f64 / wall_seconds
+        );
+        let _ = write!(
+            report,
+            "Stream ticks: {ticks}; transferred frames: {frames}; transfer failures: {failures}"
+        );
         if failures > 0 {
             let _ = write!(report, " (first 0x{:08X})", first_failure.0 as u32);
         }
@@ -420,7 +477,11 @@ unsafe fn play(
             advanced / wall_seconds
         );
         if let (Some(before), Some(after)) = (cpu_before, cpu_after) {
-            let _ = writeln!(report, "CPU: {:.3} cores (process)", (after - before) / wall_seconds);
+            let _ = writeln!(
+                report,
+                "CPU: {:.3} cores (process)",
+                (after - before) / wall_seconds
+            );
         }
         append_statistics(report, &engine_ex);
         report.push_str(if shared.error.load(Ordering::Acquire) {
@@ -470,46 +531,87 @@ unsafe fn append_error(report: &mut String, engine: &IMFMediaEngine) {
             Err(error) => error.code().0 as u32,
         };
         if code != 0 || extended != 0 {
-            let _ = writeln!(report, "Engine error: code={code} extended=0x{extended:08X}");
+            let _ = writeln!(
+                report,
+                "Engine error: code={code} extended=0x{extended:08X}"
+            );
         }
     }
 }
 
 fn append_events(report: &mut String, shared: &Shared) {
-    let events = shared.events.lock().map(|events| events.clone()).unwrap_or_default();
+    let events = shared
+        .events
+        .lock()
+        .map(|events| events.clone())
+        .unwrap_or_default();
     let listed: Vec<String> = events
         .iter()
         .filter(|(event, _)| !matches!(event, 2 | 18))
         .take(40)
         .map(|(event, ms)| format!("{}@{ms}", event_name(*event)))
         .collect();
-    let _ = writeln!(report, "Events (progress/timeupdate omitted): {}", listed.join(" "));
-    let requests = shared.extension_requests.lock().map(|requests| requests.clone()).unwrap_or_default();
+    let _ = writeln!(
+        report,
+        "Events (progress/timeupdate omitted): {}",
+        listed.join(" ")
+    );
+    let requests = shared
+        .extension_requests
+        .lock()
+        .map(|requests| requests.clone())
+        .unwrap_or_default();
     if !requests.is_empty() {
         let kinds: Vec<String> = requests.iter().map(|kind| kind.to_string()).collect();
-        let _ = writeln!(report, "Extension requests (0=media source, 1=byte stream): {}", kinds.join(" "));
+        let _ = writeln!(
+            report,
+            "Extension requests (0=media source, 1=byte stream): {}",
+            kinds.join(" ")
+        );
     }
     let _ = writeln!(
         report,
         "First frame ready: {}",
-        if shared.first_frame.load(Ordering::Acquire) { "True" } else { "False" }
+        if shared.first_frame.load(Ordering::Acquire) {
+            "True"
+        } else {
+            "False"
+        }
     );
 }
 
 /// Process kernel+user CPU time in seconds.
 fn process_cpu() -> Option<f64> {
-    let (mut creation, mut exit, mut kernel, mut user) =
-        (FILETIME::default(), FILETIME::default(), FILETIME::default(), FILETIME::default());
+    let (mut creation, mut exit, mut kernel, mut user) = (
+        FILETIME::default(),
+        FILETIME::default(),
+        FILETIME::default(),
+        FILETIME::default(),
+    );
     // SAFETY: GetCurrentProcess is a pseudo-handle; all out-pointers are valid locals.
-    unsafe { GetProcessTimes(GetCurrentProcess(), &mut creation, &mut exit, &mut kernel, &mut user) }.ok()?;
-    let ticks = |time: FILETIME| (u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime);
+    unsafe {
+        GetProcessTimes(
+            GetCurrentProcess(),
+            &mut creation,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        )
+    }
+    .ok()?;
+    let ticks =
+        |time: FILETIME| (u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime);
     Some((ticks(kernel) + ticks(user)) as f64 / 10_000_000.0)
 }
 
 /// Formats like .NET "0.###": up to `places` decimals, trailing zeros trimmed.
 fn trim(value: f64, places: usize) -> String {
     let text = format!("{value:.places$}");
-    if text.contains('.') { text.trim_end_matches('0').trim_end_matches('.').to_string() } else { text }
+    if text.contains('.') {
+        text.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        text
+    }
 }
 
 fn event_name(id: u32) -> String {
