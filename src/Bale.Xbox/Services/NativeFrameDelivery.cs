@@ -84,6 +84,7 @@ internal sealed unsafe partial class NativeFrameDelivery : IDebugFrameDelivery
 
     public string? OutputPixelFormat => Volatile.Read(ref _outputPixelFormat);
     public string? OutputColour => Volatile.Read(ref _outputColour);
+    public string? SampleMemory => null;
 
     public void SetSeeking(bool seeking)
     {

@@ -217,6 +217,7 @@ public sealed partial class PlayerPage
                 $"{stream.DemandWaits} · max {stream.MaxDemandWaitTime.TotalMilliseconds:0.0} ms · total {stream.DemandWaitTime.TotalMilliseconds:0.0} ms · blocks {stream.BlockFetches} new {stream.BlockAllocations} reused {stream.BlockReuses}") : "unavailable"),
             ("Read-ahead", media?.FfmpegReadAhead ?? "unavailable"),
             ("Stream reads", media?.FfmpegStreamReads ?? "unavailable"),
+            ("Sample memory", media?.FrameDelivery?.SampleMemory ?? DebugSampleMemory.Unavailable),
             ("Delivered ahead", frames?.DeliveredAheadSeconds is { } ahead
                 ? ahead.ToString("0.000", CultureInfo.InvariantCulture) + " s" : "unavailable"),
             // Neither MediaPlayer's WinRT API nor the pinned FFmpeg wrapper exposes render drops.

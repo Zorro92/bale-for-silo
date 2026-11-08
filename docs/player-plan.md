@@ -151,6 +151,13 @@ remains independent.
 - `upload=on` (software video only, wrapper `2.1.0-bale.6`+) sends `bale_d3d11_upload=1`;
   `off`/`default` send no key and use CPU buffers. Status always reports `upload=on|off`.
   This switch is independent of `grain`; the standalone probe and production never set it.
+  To verify actual delivery (including the wrapper's silent CPU fallback), select
+  `scripts/bale-debug.sh frame-delivery managed` before opening the player, then read **Sample memory**
+  in the stats overlay, `where` or `scripts/bale-debug.sh stats`. It reports `GPU texture (42/42 checked)`,
+  `CPU buffer (42/42 checked)` or `mixed: texture 10 · buffer 32` from the first video sample and every
+  24th sample, resetting on each MSS Starting event (including seeks). Native/off observers and no
+  successful checks show `unavailable (use frame-delivery managed)`; these are checked samples, not
+  all delivered frames or proof of hardware decoding.
 - `readahead=on` enables FFmpegInteropX's native demux/packet read-ahead queue with **64 MiB /
   30 s** caps, rather than its larger 100 MB / 60 s defaults, to bound the extra Xbox memory use.
   These are the wrapper's queue thresholds, not a total-process memory ceiling. `off` explicitly

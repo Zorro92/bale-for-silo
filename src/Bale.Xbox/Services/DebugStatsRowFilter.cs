@@ -13,7 +13,7 @@ internal sealed class DebugStatsRowFilter
         "Backend", "Route", "Subtitles", "Hard containers", "Video codec", "Resolution", "Frame rate", "HDR mode",
         "Video decoder", "Audio codec", "Audio decoder", "Estimated bandwidth", "Dropped frames", "Audio underruns",
         "Delivery", "Source", "Media bitrate", "Buffering", "HDR output", "Display mode", "Late frames",
-        "Stream waits", "Read-ahead", "Stream reads", "Delivered ahead", "CPU",
+        "Stream waits", "Read-ahead", "Stream reads", "Sample memory", "Delivered ahead", "CPU",
     ];
 
     // No route exposes render drops, so that row always reads "unavailable"; hide it until asked for.

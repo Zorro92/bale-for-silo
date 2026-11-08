@@ -8,6 +8,7 @@ internal interface IDebugFrameDelivery : IDisposable
 {
     string? OutputPixelFormat { get; }
     string? OutputColour { get; }
+    string? SampleMemory { get; }
     void SetSeeking(bool seeking);
     string DescribeLateFrameTrace();
     void ResetLateFrameTrace();

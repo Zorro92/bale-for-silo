@@ -22,6 +22,9 @@ internal sealed partial class DebugFrameDelivery : IDebugFrameDelivery
     private int _unavailable;
     private int _requests;
     private int _videoSamples;
+    private long _memorySamples;
+    private long _textureSamples;
+    private long _bufferSamples;
     private const int CollectEvery = 24;
     private readonly Dictionary<object, bool> _kinds = new(ReferenceEqualityComparer.Instance);
 
@@ -49,6 +52,9 @@ internal sealed partial class DebugFrameDelivery : IDebugFrameDelivery
 
     /// <summary>The decoded output's MF colour attributes (matrix, transfer, primaries, range), as set by the wrapper.</summary>
     public string? OutputColour => Volatile.Read(ref _outputColour);
+
+    public string? SampleMemory => DebugSampleMemory.Describe(
+        Volatile.Read(ref _textureSamples), Volatile.Read(ref _bufferSamples));
 
     public void SetSeeking(bool seeking)
     {
@@ -80,6 +86,9 @@ internal sealed partial class DebugFrameDelivery : IDebugFrameDelivery
         {
             _meter.InvalidateTimeline();
             _lateFrameTrace.Reset();
+            Interlocked.Exchange(ref _memorySamples, 0);
+            Interlocked.Exchange(ref _textureSamples, 0);
+            Interlocked.Exchange(ref _bufferSamples, 0);
         }
     }
 
@@ -89,10 +98,22 @@ internal sealed partial class DebugFrameDelivery : IDebugFrameDelivery
         try
         {
             if (args.Request.Sample is not { } sample || !IsVideo(args.Request.StreamDescriptor)) return;
-            // Serialize timeline resets with the meter/trace pair so a delivery cannot straddle a
-            // trace reset.
+            // Serialize timeline resets with the meter/trace and memory counts so a delivery cannot
+            // straddle a reset.
             lock (_timelineGate)
             {
+                if (DebugSampleMemory.ShouldCheck(Interlocked.Increment(ref _memorySamples)))
+                {
+                    // Optional metadata must not disable timing diagnostics. The returned wrapper
+                    // holds a COM reference; dispose it immediately, never retaining the surface.
+                    try
+                    {
+                        using var surface = sample.Direct3D11Surface;
+                        if (surface is not null) Interlocked.Increment(ref _textureSamples);
+                        else Interlocked.Increment(ref _bufferSamples);
+                    }
+                    catch { }
+                }
                 var nowMilliseconds = Stopwatch.GetTimestamp() * (1000.0 / Stopwatch.Frequency);
                 var timestamp = sample.Timestamp;
                 var duration = sample.Duration;
