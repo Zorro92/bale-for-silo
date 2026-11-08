@@ -14,7 +14,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     public void DefaultsKeepReleaseSettingsAndDescribeOnlyOverrides()
     {
         Assert.Equal(new DebugFfmpegInputTuning(), DebugFfmpegInputTuning.Current);
-        Assert.Equal("readahead=default readsize=default prefetch=default upload=0", DebugFfmpegInputTuning.Current.Description);
+        Assert.Equal("readahead=default readsize=default prefetch=default upload=1 (render target+shader resource)", DebugFfmpegInputTuning.Current.Description);
         Assert.Contains("default restores the release setting (buffer=1000 for software video;", DebugFfmpegInputTuning.Usage);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string>(), out var current));
         Assert.Same(DebugFfmpegInputTuning.Current, current);
@@ -25,14 +25,14 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     {
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "1500" }, out var set));
         Assert.Equal(1500, set.BufferMs);
-        Assert.Equal("readahead=default readsize=default prefetch=default upload=0 buffer=1500", set.Description);
+        Assert.Equal("readahead=default readsize=default prefetch=default upload=1 (render target+shader resource) buffer=1500", set.Description);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "0" }, out var zero));
         Assert.Equal(0, zero.BufferMs);
         Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "5001" }, out _));
         Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "-1" }, out _));
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "default" }, out var cleared));
         Assert.Null(cleared.BufferMs);
-        Assert.Equal("readahead=default readsize=default prefetch=default upload=0", cleared.Description);
+        Assert.Equal("readahead=default readsize=default prefetch=default upload=1 (render target+shader resource)", cleared.Description);
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
             ["prefetch"] = "8", ["readahead"] = "on", ["readsize"] = "65536",
         }, out var captured));
         Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8), captured);
-        Assert.Equal("readahead=on readsize=65536 prefetch=8 upload=0", captured.Description);
+        Assert.Equal("readahead=on readsize=65536 prefetch=8 upload=1 (render target+shader resource)", captured.Description);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["readsize"] = "1048576", ["readahead"] = "off" }, out var next));
         Assert.Equal(new DebugFfmpegInputTuning(false, 1048576, 8), next);
         Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8), captured);
@@ -132,7 +132,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
                 DecodeThreadPriority: int.Parse(prio, CultureInfo.InvariantCulture), DecoderUseMaxResolution: int.Parse(maxres, CultureInfo.InvariantCulture),
                 DecoderMaxDpbCount: int.Parse(dpb, CultureInfo.InvariantCulture));
             Assert.Equal(expected, tuning);
-            Assert.Equal($"readahead=default readsize=default prefetch=default upload=0 ahead={expected.DecodeAheadFrames} sws={expected.SwsThreads} delay={expected.Dav1dMaxFrameDelay} prio={expected.DecodeThreadPriority} maxres={expected.DecoderUseMaxResolution} dpb={expected.DecoderMaxDpbCount}", tuning.Description);
+            Assert.Equal($"readahead=default readsize=default prefetch=default upload=1 (render target+shader resource) ahead={expected.DecodeAheadFrames} sws={expected.SwsThreads} delay={expected.Dav1dMaxFrameDelay} prio={expected.DecodeThreadPriority} maxres={expected.DecoderUseMaxResolution} dpb={expected.DecoderMaxDpbCount}", tuning.Description);
         }
         finally { CultureInfo.CurrentCulture = previous; }
     }
@@ -150,7 +150,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.DoesNotContain("sws=", second.Description);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["delay"] = "default" }, out var third));
         Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8, 1500, DecodeThreadPriority: 2), third);
-        Assert.Equal("readahead=on readsize=65536 prefetch=8 upload=0 buffer=1500 prio=2", third.Description);
+        Assert.Equal("readahead=on readsize=65536 prefetch=8 upload=1 (render target+shader resource) buffer=1500 prio=2", third.Description);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["prio"] = "default" }, out var fourth));
         Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8, 1500), fourth);
         Assert.DoesNotContain("prio=", fourth.Description);
@@ -267,7 +267,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = checked((uint)readSize)", experiment);
         Assert.Contains("var config = Configuration(route)", experiment);
         Assert.DoesNotContain("bale_decode_thread_priority", configuration[..start]);
-        Assert.Contains("if (route.SoftwareVideo)\n        {\n            ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.SwsThreads, tuning.Dav1dMaxFrameDelay));\n            if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions[\"bale_decode_thread_priority\"] = priority.ToString(CultureInfo.InvariantCulture);\n            // Wrapper patch 0005 (2.1.0-bale.5+): dav1d exports the grain parameters instead of synthesizing grain.\n            if (tuning.FilmGrain is false) config.FFmpegOptions[\"bale_dav1d_export_film_grain\"] = \"1\";\n            // Wrapper patch 0008 (2.1.0-bale.8+): 1 = render target + shader resource; decoder and grain are unchanged.\n            if (tuning.D3d11Upload is { } upload && upload > 0) config.FFmpegOptions[\"bale_d3d11_upload\"] = upload.ToString(CultureInfo.InvariantCulture);\n        }", experiment);
+        Assert.Contains("if (route.SoftwareVideo)\n        {\n            ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.SwsThreads, tuning.Dav1dMaxFrameDelay));\n            if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions[\"bale_decode_thread_priority\"] = priority.ToString(CultureInfo.InvariantCulture);\n            // Wrapper patch 0005 (2.1.0-bale.5+): dav1d exports the grain parameters instead of synthesizing grain.\n            if (tuning.FilmGrain is false) config.FFmpegOptions[\"bale_dav1d_export_film_grain\"] = \"1\";\n            // Wrapper patch 0008 (2.1.0-bale.8+): 1 = render target + shader resource; decoder and grain are unchanged.\n            if (tuning.D3d11Upload is { } upload) config.FFmpegOptions[\"bale_d3d11_upload\"] = upload.ToString(CultureInfo.InvariantCulture);\n        }", experiment);
         Assert.True(experiment.IndexOf("var config = Configuration(route)", StringComparison.Ordinal)
             < experiment.IndexOf("if (route.SoftwareVideo)", StringComparison.Ordinal));
         Assert.Contains("ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight))", configuration[..start]);
@@ -351,7 +351,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Set(new(DecodeAheadFrames: 8, FilmGrain: false));
         var captured = DebugFfmpegInputTuning.Current;
         Assert.Null(captured.D3d11Upload);
-        Assert.Contains("upload=0", captured.Description);
+        Assert.Contains("upload=1 (render target+shader resource)", captured.Description);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["upload"] = value }, out var set));
         Assert.Equal(captured with { D3d11Upload = expected }, set);
         Assert.Contains(" upload=" + expected.ToString(CultureInfo.InvariantCulture), set.Description);
@@ -361,10 +361,24 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Equal(captured with { D3d11Upload = expected }, set);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["upload"] = "default" }, out var cleared));
         Assert.Equal(captured with { SwsThreads = 4 }, cleared);
-        Assert.Contains("upload=0", cleared.Description);
+        Assert.Contains("upload=1 (render target+shader resource)", cleared.Description);
+    }
+
+    [Fact]
+    public void UploadOffExplicitlySelectsCpuBuffersAndDefaultRestoresVariantOne()
+    {
+        Set(new(D3d11Upload: 5));
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["upload"] = "off" }, out var off));
+        Assert.Equal(0, off.D3d11Upload);
+        Assert.Equal("readahead=default readsize=default prefetch=default upload=0", off.Description);
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["upload"] = "default" }, out var restored));
+        Assert.Null(restored.D3d11Upload);
+        Assert.Equal("readahead=default readsize=default prefetch=default upload=1 (render target+shader resource)", restored.Description);
+        Assert.Equal(0, off.D3d11Upload);
     }
 
     [Theory]
+    [InlineData("default", 1, "render target+shader resource")]
     [InlineData("on", 1, "render target+shader resource")]
     [InlineData("1", 1, "render target+shader resource")]
     [InlineData("2", 2, "decoder+shader resource")]
@@ -377,7 +391,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["upload"] = value }, out var tuning));
         Assert.Equal($"readahead=default readsize=default prefetch=default upload={variant} ({flags})", tuning.Description);
         Assert.Contains($"{variant}={flags.Replace("; known MF failure", " (known MF failure)", StringComparison.Ordinal)}", DebugFfmpegInputTuning.Usage);
-        Assert.Contains("on=1, off/default=0", DebugFfmpegInputTuning.Usage);
+        Assert.Contains("on/default=1, off=0", DebugFfmpegInputTuning.Usage);
         Assert.Contains("wrapper 2.1.0-bale.8+", DebugFfmpegInputTuning.Usage);
     }
 
@@ -408,18 +422,19 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     }
 
     [Fact]
-    public void UploadIsDebugOnlyOptInSoftwareVideoAndNotAStandaloneProbeSetting()
+    public void ReleaseUploadDefaultAndDebugOverridesApplyOnlyToSoftwareVideoAndNotStandaloneProbes()
     {
         var configuration = Read("FfmpegSource.cs.txt");
         var start = configuration.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal);
         var end = configuration.IndexOf("#endif", start, StringComparison.Ordinal);
-        Assert.DoesNotContain("bale_d3d11_upload", configuration[..start]);
+        Assert.Contains("if (SoftwareDecodeTuning.D3d11Upload(route) is { } upload) config.FFmpegOptions[\"bale_d3d11_upload\"] = upload.ToString(CultureInfo.InvariantCulture);", configuration[..start]);
         var experiment = configuration[start..end];
         var software = experiment.IndexOf("if (route.SoftwareVideo)", StringComparison.Ordinal);
         var system = experiment.IndexOf("else\n", software, StringComparison.Ordinal);
-        var key = experiment.IndexOf("if (tuning.D3d11Upload is { } upload && upload > 0) config.FFmpegOptions[\"bale_d3d11_upload\"] = upload.ToString(CultureInfo.InvariantCulture);", StringComparison.Ordinal);
+        var key = experiment.IndexOf("if (tuning.D3d11Upload is { } upload) config.FFmpegOptions[\"bale_d3d11_upload\"] = upload.ToString(CultureInfo.InvariantCulture);", StringComparison.Ordinal);
         Assert.True(software >= 0 && key > software && key < system);
-        Assert.Single(configuration.Split("bale_d3d11_upload").Skip(1));
+        Assert.DoesNotContain("upload > 0", experiment);
+        Assert.Equal(2, configuration.Split("bale_d3d11_upload").Length - 1);
         Assert.DoesNotContain("bale_d3d11_upload", Read("DebugFfmpegSource.cs.txt"));
         Assert.Contains("upload=on|off|default|1..5", DebugFfmpegInputTuning.Usage);
         var server = Read("DebugServer.cs.txt");

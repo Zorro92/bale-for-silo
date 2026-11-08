@@ -27,7 +27,7 @@
 #                                               software video only: ahead 0–64 decoded frames (0=off), sws 1–16 scaler threads, delay 0–64 dav1d frames (0=dav1d default)
 #                                               prio 0–2 (0=off, 1=THREAD_PRIORITY_ABOVE_NORMAL, 2=THREAD_PRIORITY_HIGHEST); software video only, release default unset
 #                                               grain=off: dav1d exports film grain instead of applying it; software video only, release default unset (wrapper 2.1.0-bale.5+)
-#                                               upload=on aliases 1; off/default = 0 (CPU buffers); 1..5 select D3D11 texture flags, status shows the number and flags (wrapper 2.1.0-bale.8+)
+#                                               upload=on aliases 1; default=on (variant 1); off=0 (CPU buffers); 1..5 select D3D11 texture flags, status shows the number and flags (wrapper 2.1.0-bale.8+)
 #                                               upload variants: 1=RENDER_TARGET|SHADER_RESOURCE, 2=DECODER|SHADER_RESOURCE, 3=DECODER, 4=SHADER_RESOURCE, 5=SHADER_RESOURCE+MISC_SHARED; 4/5 known MF failures; no grain shader
 #                                               system/passthrough video only: maxres 0–1, dpb 0–16 (0=unset); both default unset, opt-in pending wrapper release/repin
 #                                               software-video release defaults: ahead=16, sws=4; delay=8 only above 1080p (width >1920 or height >1080), otherwise unset
@@ -199,9 +199,9 @@ case "${1:-}" in
         upload=*) [[ "$value" =~ ^(on|off|default|[1-5])$ ]] && valid_tuning=true ;;
       esac
       if [[ "$valid_tuning" != true ]] || [[ -n "${ffmpeg_tune_seen[$name]:-}" ]]; then
-        echo 'usage: scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] [ahead=0..64|default] [sws=1..16|default] [delay=0..64|default] [prio=0..2|default] [maxres=0|1|default] [dpb=0..16|default] (system video only, 0=unset) [grain=on|off|default] [upload=on|off|default|1..5] (software video only; upload default off; any order, no duplicates; no args = status; default restores release settings)' >&2
+        echo 'usage: scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] [ahead=0..64|default] [sws=1..16|default] [delay=0..64|default] [prio=0..2|default] [maxres=0|1|default] [dpb=0..16|default] (system video only, 0=unset) [grain=on|off|default] [upload=on|off|default|1..5] (software video only; upload default on (variant 1); any order, no duplicates; no args = status; default restores release settings)' >&2
         echo 'software video defaults: ahead=16, sws=4; delay=8 only above 1080p (width >1920 or height >1080), otherwise unset; prio unset (0=off, 1=above normal, 2=highest); system video defaults: maxres/dpb unset' >&2
-        echo 'upload=on aliases 1; off/default=0 (CPU buffers); wrapper 2.1.0-bale.8+ variants: 1=RENDER_TARGET|SHADER_RESOURCE, 2=DECODER|SHADER_RESOURCE, 3=DECODER, 4=SHADER_RESOURCE, 5=SHADER_RESOURCE+MISC_SHARED; 4/5 known MF failures; no grain shader' >&2
+        echo 'upload=on aliases 1; default=on (variant 1); off=0 (CPU buffers); wrapper 2.1.0-bale.8+ variants: 1=RENDER_TARGET|SHADER_RESOURCE, 2=DECODER|SHADER_RESOURCE, 3=DECODER, 4=SHADER_RESOURCE, 5=SHADER_RESOURCE+MISC_SHARED; 4/5 known MF failures; no grain shader' >&2
         exit 2
       fi
       ffmpeg_tune_seen[$name]=true

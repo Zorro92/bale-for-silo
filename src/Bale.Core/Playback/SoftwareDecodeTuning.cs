@@ -4,6 +4,10 @@ namespace Bale.Core.Playback;
 public sealed record SoftwareDecodeTuning(int? DecodeAheadFrames = null, int? SwsThreads = null, int? Dav1dMaxFrameDelay = null)
 {
     public const int DefaultBufferMs = 1000;
+    public const int DefaultD3d11Upload = 1;
+
+    public static int? D3d11Upload(PlaybackRouteDecision route) =>
+        route.SoftwareVideo ? DefaultD3d11Upload : null;
 
     public static int? BufferTimeMs(bool softwareVideo, int? overrideMs = null) =>
         overrideMs ?? (softwareVideo ? DefaultBufferMs : null);

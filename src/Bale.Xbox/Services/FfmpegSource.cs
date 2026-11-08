@@ -25,6 +25,7 @@ internal static class FfmpegSource
         config.Subtitles.AutoSelectForcedSubtitles = false;
         config.FFmpegOptions["rw_timeout"] = "10000000";
         ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight));
+        if (SoftwareDecodeTuning.D3d11Upload(route) is { } upload) config.FFmpegOptions["bale_d3d11_upload"] = upload.ToString(CultureInfo.InvariantCulture);
         return config;
     }
 
@@ -56,7 +57,7 @@ internal static class FfmpegSource
             // Wrapper patch 0005 (2.1.0-bale.5+): dav1d exports the grain parameters instead of synthesizing grain.
             if (tuning.FilmGrain is false) config.FFmpegOptions["bale_dav1d_export_film_grain"] = "1";
             // Wrapper patch 0008 (2.1.0-bale.8+): 1 = render target + shader resource; decoder and grain are unchanged.
-            if (tuning.D3d11Upload is { } upload && upload > 0) config.FFmpegOptions["bale_d3d11_upload"] = upload.ToString(CultureInfo.InvariantCulture);
+            if (tuning.D3d11Upload is { } upload) config.FFmpegOptions["bale_d3d11_upload"] = upload.ToString(CultureInfo.InvariantCulture);
         }
         else
         {

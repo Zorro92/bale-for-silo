@@ -152,15 +152,17 @@ remains independent.
   to time grain cost on authenticated library files, which the URL-only probe cannot open. `on`/`default`
   send no key (release behaviour, grain applied).
 - `upload=on|1..5` (software video only, wrapper `2.1.0-bale.8`+) sends `bale_d3d11_upload=N`;
-  `on` aliases **1**, and `off`/`default` send no key and use CPU buffers. Status reports the effective
-  number and its texture flags, e.g. `upload=1 (render target+shader resource)`; off/default report
-  `upload=0`. The DEFAULT texture flags are **1** = RENDER_TARGET | SHADER_RESOURCE (the default
-  when enabled, suitable for stage-2 grain rendering), **2** = DECODER | SHADER_RESOURCE,
-  **3** = DECODER, **4** = SHADER_RESOURCE only (**known MF failure**),
+  `on` aliases **1**, `default` restores the release default of **1**, and `off` explicitly sends **0**
+  to use CPU buffers. Status reports the effective number and its texture flags, e.g.
+  `upload=1 (render target+shader resource)`; off reports `upload=0`. The DEFAULT texture flags are
+  **1** = RENDER_TARGET | SHADER_RESOURCE (the software-video default, suitable for stage-2 grain
+  rendering), **2** = DECODER | SHADER_RESOURCE, **3** = DECODER,
+  **4** = SHADER_RESOURCE only (**known MF failure**),
   **5** = SHADER_RESOURCE with RESOURCE_MISC_SHARED (**known MF failure**).
   This swaps bale.7 variants 1 and 4; 2/3/5 keep their numbers. MiscFlags is 0 for variants 1–4;
   any failed texture creation retains the same CPU fallback.
-  This switch is independent of `grain`; the standalone probe and production never set it.
+  This switch is independent of `grain`; the standalone probe never sets it, and production sets it
+  only for software video.
   To verify actual delivery (including the wrapper's silent CPU fallback), select
   `scripts/bale-debug.sh frame-delivery managed` before opening the player, then read **Sample memory**
   in the stats overlay, `where` or `scripts/bale-debug.sh stats`. It reports `GPU texture (42/42 checked)`,
@@ -296,16 +298,17 @@ The public Jellyfin AV1 clips carry no grain (`film_grain_params_present = 0` in
 sequence headers), so the 1080p 10 Mbps run is unchanged (ratio 0.992 / 1.87 cores with synthesis,
 0.998 / 1.90 exported).
 
-**GPU grain, stage 1 (wrapper patch 0006, `2.1.0-bale.6`).** Debug-only
-`ffmpeg-tune upload=on|off` selects D3D11 texture delivery for software NV12/P010 output on the
-next real-player attempt (memory-only, default off; `default` also restores off). The existing
+**GPU grain, stage 1 (wrapper patch 0006, `2.1.0-bale.6`).** D3D11 texture delivery supports software
+NV12/P010 output on the real-player route. **Upload variant 1 is now the default for software video
+in all builds; `upload=off` is the debug escape hatch.** The existing
 copy/sws output step writes directly into a three-texture STAGING ring, then CopyResource + Flush
 uploads to pooled DEFAULT textures on the MSS renderer's multithread-protected device. Samples use
 `CreateFromDirect3D11Surface`; Processed returns textures, and seek/size changes discard the old pool
 without reusing MF-held surfaces. A device/texture/map/surface failure permanently falls back to CPU
 buffers for the stream, including the failing frame. No grain shader yet: leave `grain=default` for
-an upload-only CPU/visual A/B; `grain=off` still removes grain, independently. Playback and CPU parity
-need console verification; CI only builds/checks this path.
+an upload-only CPU/visual A/B; `grain=off` still removes grain, independently. The owner's console
+verification found all GPU textures, zero late frames, lower CPU and pixel-identical output;
+CI only builds/checks this path.
 
 **Early upload failure / patch 0007 (`2.1.0-bale.7`).** The owner's bale.6 console test of 1080p AV1
 10-bit → P010 fails about **0.1 s** after open with **0x80070057 (`E_INVALIDARG`)** when upload is on;
@@ -337,16 +340,15 @@ across seek/size generations; returns also drop textures whose full descriptor n
 Callback/detach exceptions are logged **once** without setting a failure flag or disabling upload;
 real synchronous D3D/MF failures (including Map, CreateTexture2D, device removal and
 CreateFromDirect3D11Surface) retain permanent CPU fallback. No decoder, staging or grain change.
-Variant **1** is now RT|SRV so the next stage can render grain into the uploaded texture; upload still
-defaults **off** and stage 2 is not implemented.
+Variant **1** is now RT|SRV so the next stage can render grain into the uploaded texture;
+stage 2 is not implemented.
 
 The first-three diagnostics below remain. Additionally, once the uploader has issued **240 texture
 samples** (including decoded lookahead, not just actual MSS handoffs), it logs one snapshot:
 `Bale D3D11 upload steady: issued=N processed=M pooled=P`. N/M are uploader-lifetime totals, retained
 across Flush; P is the current free pool size. Use that together with **Sample memory** to check sustained
-texture delivery/recycling and bounded in-flight textures. Corrected recycling, seek/size changes and
-NV12/P010 presentation still need the owner's console verification; no console or server was accessed
-for this change.
+texture delivery/recycling and bounded in-flight textures. Seek/size changes still need the owner's
+console verification; no console or server was accessed for this default change.
 
 Debug builds now forward **only** native messages starting exactly `Bale ` to Bale's log as `ffmpeg: …`
 (trailing newlines trimmed), with Info enabled. Everything else is dropped before logging because

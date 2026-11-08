@@ -16,7 +16,7 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
     // Keep the extra native packet queue below its 100 MB / 60 s defaults on Xbox.
     internal const long ReadAheadCapBytes = 64L * 1024 * 1024;
     internal static readonly TimeSpan ReadAheadCapDuration = TimeSpan.FromSeconds(30);
-    internal const string Usage = "expected [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [sws=1..16|default] [delay=0..64|default] [prio=0..2|default] (0=off, 1=above normal, 2=highest) [maxres=0|1|default] [dpb=0..16|default] (system video only; 0=unset) [grain=on|off|default] (software video only; off = dav1d exports grain instead of applying it) [upload=on|off|default|1..5] (software video only; on=1, off/default=0; D3D11 texture flags (wrapper 2.1.0-bale.8+): 1=render target+shader resource, 2=decoder+shader resource, 3=decoder, 4=shader resource (known MF failure), 5=shared shader resource (known MF failure); no grain shader); omitted keys keep their overrides; default restores the release setting (buffer=1000 for software video; software video: ahead=16, sws=4, delay=8 above 1080p (unset otherwise), prio unset; system video: maxres/dpb unset)";
+    internal const string Usage = "expected [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [sws=1..16|default] [delay=0..64|default] [prio=0..2|default] (0=off, 1=above normal, 2=highest) [maxres=0|1|default] [dpb=0..16|default] (system video only; 0=unset) [grain=on|off|default] (software video only; off = dav1d exports grain instead of applying it) [upload=on|off|default|1..5] (software video only; on/default=1, off=0; D3D11 texture flags (wrapper 2.1.0-bale.8+): 1=render target+shader resource, 2=decoder+shader resource, 3=decoder, 4=shader resource (known MF failure), 5=shared shader resource (known MF failure); no grain shader); omitted keys keep their overrides; default restores the release setting (buffer=1000 for software video; software video: ahead=16, sws=4, delay=8 above 1080p (unset otherwise), prio unset; system video: maxres/dpb unset)";
     private static readonly object Gate = new();
     private static DebugFfmpegInputTuning _current = new();
 
@@ -103,9 +103,9 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
         }
     }
 
-    private string UploadDescription => (D3d11Upload ?? 0).ToString(CultureInfo.InvariantCulture) + (D3d11Upload switch
+    private string UploadDescription => (D3d11Upload ?? SoftwareDecodeTuning.DefaultD3d11Upload).ToString(CultureInfo.InvariantCulture) + (D3d11Upload switch
     {
-        1 => " (render target+shader resource)",
+        null or 1 => " (render target+shader resource)",
         2 => " (decoder+shader resource)",
         3 => " (decoder)",
         4 => " (shader resource; known MF failure)",

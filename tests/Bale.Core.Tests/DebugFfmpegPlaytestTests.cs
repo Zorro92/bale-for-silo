@@ -238,6 +238,7 @@ public class DebugFfmpegPlaytestTests
         var source = Read("DebugFfmpegSource.cs.txt");
         Assert.StartsWith("#if DEBUG_SERVER", source);
         Assert.Contains("FfmpegSource.ApplyDecodeTuning(config, tuning.DecodeTuning(mode))", source);
+        Assert.DoesNotContain("bale_d3d11_upload", source);
         Assert.Contains("if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions[\"bale_decode_thread_priority\"] = priority.ToString(CultureInfo.InvariantCulture)", source);
         Assert.Contains("if (tuning.DecoderUseMaxResolution is { } maxres) config.FFmpegOptions[\"bale_decoder_use_max_resolution\"] = maxres.ToString(CultureInfo.InvariantCulture)", source);
         Assert.Contains("if (tuning.DecoderMaxDpbCount is { } dpb) config.FFmpegOptions[\"bale_decoder_max_dpb_count\"] = dpb.ToString(CultureInfo.InvariantCulture)", source);
