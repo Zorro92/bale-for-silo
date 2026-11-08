@@ -15,7 +15,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     {
         Assert.Equal(new DebugFfmpegInputTuning(), DebugFfmpegInputTuning.Current);
         Assert.Equal("readahead=default readsize=default prefetch=default", DebugFfmpegInputTuning.Current.Description);
-        Assert.Contains("default restores the release setting", DebugFfmpegInputTuning.Usage);
+        Assert.Contains("default restores the release setting (buffer=2000 for software video;", DebugFfmpegInputTuning.Usage);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string>(), out var current));
         Assert.Same(DebugFfmpegInputTuning.Current, current);
     }
@@ -33,6 +33,19 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "default" }, out var cleared));
         Assert.Null(cleared.BufferMs);
         Assert.Equal("readahead=default readsize=default prefetch=default", cleared.Description);
+    }
+
+    [Fact]
+    public void BufferTimeIsAppliedAfterItemCreationWithOnlyTheOverrideDebugGuarded()
+    {
+        var player = Read("PlayerPage.Media.cs.txt");
+        Assert.Contains("int? bufferOverrideMs = null;\n#if DEBUG_SERVER\n                bufferOverrideMs = attempt.FfmpegTuning.BufferMs;\n#endif\n                if (SoftwareDecodeTuning.BufferTimeMs(media.Route.SoftwareVideo, bufferOverrideMs) is { } bufferMs)", player);
+        var item = player.IndexOf("media.Item = media.FfmpegSource.CreateMediaPlaybackItem();", StringComparison.Ordinal);
+        var buffering = player.IndexOf("if (SoftwareDecodeTuning.BufferTimeMs(", StringComparison.Ordinal);
+        Assert.True(item >= 0 && buffering > item);
+        Assert.Contains("var mss = media.FfmpegSource.GetMediaStreamSource();\n                    if (mss is null)", player);
+        Assert.Contains("mss.BufferTime = TimeSpan.FromMilliseconds(bufferMs);", player);
+        Assert.Contains("Log.Info($\"player: FFmpeg MediaStreamSource BufferTime={bufferMs} ms\");", player);
     }
 
     [Fact]

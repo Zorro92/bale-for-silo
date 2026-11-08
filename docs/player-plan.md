@@ -99,6 +99,10 @@ deliveries use `plan.EffectiveRecipe`, falling back to `plan.Source` for each mi
 Unknown size leaves delay unset. Hardware/system video routes set none of the three keys.
 `bale_decode_thread_priority` remains unset in production; only the debug `prio` overrides below
 can emit it. This is decode tuning, not new 4K capability evidence or a verified performance improvement.
+All builds also set `MediaStreamSource.BufferTime` to **2000 ms for software video**, using
+`SoftwareDecodeTuning.DefaultBufferMs`; FFmpeg system-video routes retain the wrapper's zero default.
+Console A/B tests increased queued decoded video from ~0.3 s to ~2.3 s without added late frames,
+trading ~1 s of buffering at start/seek for the larger queue.
 
 `Audio.SystemDecoderAAC` and `Audio.SystemDecoderMP3` are enabled. Upstream FFmpegInteropX
 **2.1.0 and master only have `SystemDecoderAAC` / `SystemDecoderMP3`**; there are no system
@@ -153,8 +157,11 @@ remains independent.
 - `prefetch=N` sets the authenticated `HttpRangeStream` depth, inclusively **2–16** aligned 1 MiB
   blocks. The default stays **2**. This immutable per-stream Core hook does not change the 32-block
   cache or the three-concurrent-fetch limit; deeper speculation queues behind that limit.
-- `buffer=ms` sets `MediaStreamSource.BufferTime`, inclusively **0–5000 ms**; the wrapper's default
-  is zero. This can retain substantial decoded-frame memory and is independent of demux read-ahead.
+- `buffer=ms` sets `MediaStreamSource.BufferTime`, inclusively **0–5000 ms**, with explicit overrides
+  (including zero) winning on any FFmpeg route; `default` restores **2000 ms for software video** and
+  leaves system-video routes untouched (wrapper default: zero). This is the release setting chosen
+  from the console A/B results above; it can retain substantial decoded-frame memory and is independent
+  of demux read-ahead.
 - `ahead=N` writes decimal-string `FFmpegOptions["bale_decode_ahead_frames"]`, inclusively **0–64**
   decoded frames; **0 = off**. This is native decoded-frame lookahead, not the packet read-ahead queue.
 - `sws=N` writes `FFmpegOptions["bale_sws_threads"]`, inclusively **1–16** scaler threads;

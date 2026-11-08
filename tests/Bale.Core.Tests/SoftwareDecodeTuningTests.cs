@@ -5,6 +5,18 @@ namespace Bale.Core.Tests;
 public class SoftwareDecodeTuningTests
 {
     [Theory]
+    [InlineData(true, null, 2000)]
+    [InlineData(false, null, null)]
+    [InlineData(true, 0, 0)]
+    [InlineData(false, 0, 0)]
+    [InlineData(true, 1500, 1500)]
+    [InlineData(false, 1500, 1500)]
+    [InlineData(true, 5000, 5000)]
+    [InlineData(false, 5000, 5000)]
+    public void BufferTimeUsesSoftwareVideoDefaultUnlessExplicitlyOverridden(bool softwareVideo, int? overrideMs, int? expected) =>
+        Assert.Equal(expected, SoftwareDecodeTuning.BufferTimeMs(softwareVideo, overrideMs));
+
+    [Theory]
     [InlineData(1280L, 720L, null)]
     [InlineData(1920L, 1080L, null)]
     [InlineData(3840L, 2160L, 8)]

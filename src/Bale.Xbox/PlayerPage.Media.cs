@@ -160,20 +160,22 @@ public sealed partial class PlayerPage
                 FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route);
                 Log.Info("player: FFmpeg stream created; before item");
                 media.Item = media.FfmpegSource.CreateMediaPlaybackItem();
-#if DEBUG_SERVER
                 // The MSS only exists after CreateMediaPlaybackItem and is kept alive by the item.
                 // FFmpegInteropX sets BufferTime 0, so the renderer pulls decoded frames only ~0.3 s ahead.
-                if (attempt.FfmpegTuning.BufferMs is { } bufferMs)
+                int? bufferOverrideMs = null;
+#if DEBUG_SERVER
+                bufferOverrideMs = attempt.FfmpegTuning.BufferMs;
+#endif
+                if (SoftwareDecodeTuning.BufferTimeMs(media.Route.SoftwareVideo, bufferOverrideMs) is { } bufferMs)
                 {
                     var mss = media.FfmpegSource.GetMediaStreamSource();
-                    if (mss is null) Log.Info("player: FFmpeg MediaStreamSource unavailable; BufferTime override skipped");
+                    if (mss is null) Log.Info("player: FFmpeg MediaStreamSource unavailable; BufferTime setting skipped");
                     else
                     {
                         mss.BufferTime = TimeSpan.FromMilliseconds(bufferMs);
                         Log.Info($"player: FFmpeg MediaStreamSource BufferTime={bufferMs} ms");
                     }
                 }
-#endif
             }
             else
             {
