@@ -180,7 +180,9 @@ public sealed partial class PlayerPage
 #if DEBUG_SERVER
         player.PlaybackSession.BufferingStarted += OnStatsBufferingStarted;
         player.PlaybackSession.BufferingEnded += OnStatsBufferingEnded;
-        if (media.Route.SoftwareVideo && media.FfmpegSource is { } softwareSource)
+        if (!attempt.ObserveFrameDelivery)
+            Log.Info("player: frame delivery observer disabled by debug switch");
+        else if (media.Route.SoftwareVideo && media.FfmpegSource is { } softwareSource)
         {
             try { media.FrameDelivery = new DebugFrameDelivery(softwareSource, player.PlaybackSession, stream: media.Stream); }
             catch (Exception ex) { LogFailure("frame delivery observer", ex); }

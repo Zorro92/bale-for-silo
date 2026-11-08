@@ -27,6 +27,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
     private PlayerRequest? _request;
     private Attempt? _attempt;
     private Task? _shutdown;
+    private IDisposable? _gcLatencyLease;
     private bool _active;
     private bool _leaving;
     private bool _suspended;
@@ -66,6 +67,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public bool FfmpegTuningLogged { get; set; }
         public bool PretendHdr { get; } = DebugHdrPlayback.Pretend;
         public bool MatchContentFrameRate { get; } = DebugDisplayMatch.Enabled;
+        public bool ObserveFrameDelivery { get; } = DebugFrameDeliverySwitch.Enabled;
         public bool FfmpegEnabled => FfmpegMode == "policy";
 #else
         public bool FfmpegEnabled => true;
@@ -132,6 +134,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         try
         {
             if (!_active || _leaving || _suspended) return;
+            _gcLatencyLease ??= PlaybackGcLatency.Shared.Acquire();
             await StopAttemptAsync();
             ErrorPanel.Visibility = Visibility.Collapsed;
             ErrorText.Text = string.Empty;
@@ -525,6 +528,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         {
             await _hdrOutput.RestoreAsync();
             SetDisplayActive(false);
+            _gcLatencyLease?.Dispose();
+            _gcLatencyLease = null;
             _lifecycle.Release();
         }
     }

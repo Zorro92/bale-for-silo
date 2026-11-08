@@ -209,9 +209,15 @@ delivery; neither counter is evidence of renderer drops or decoder CPU saturatio
   `stream` (wait time increased), `gc` (pause delta ≥4 ms), `gap` (delivery gap >2× sample duration),
   `other`. These are correlations, not proven causes or renderer drops. `frame-trace reset` clears
   the trace/totals; starting and seeking also reset it, and seek samples are skipped.
-- Debug-only `bale-debug.sh gc` reports GC latency mode, pauses and the last collections; use
-  `bale-debug.sh gc latency sustained` to A/B full blocking GC pauses during playback. The change
-  is app-wide and memory-only; `gc latency default` restores the first observed mode, and restart resets it.
+- All builds hold `SustainedLowLatency` GC mode from playback start until page shutdown (including
+  suspend/navigation); overlapping pages share leases, and the last release restores the pre-playback mode.
+  Debug-only `bale-debug.sh gc` reports mode, `playback-lease=0|1`, pauses and the last collections.
+  `gc latency batch|interactive|sustained|default` changes the app-wide mode immediately, in memory only;
+  `default` restores the helper's saved pre-playback mode even if the first `/gc` request is during playback.
+- Debug-only `bale-debug.sh frame-delivery [on|off]` (`GET /frame-delivery`, `POST /frame-delivery?mode=on|off`)
+  toggles the regular player's software-video frame delivery observer for the next playback attempt;
+  no argument prints `frame-delivery=on|off`. It defaults to on and resets on restart. Off leaves late-frame,
+  delivered-ahead and frame-trace diagnostics unavailable; the standalone FFmpeg probe is unchanged.
 
 The standalone `playtest-ffmpeg` URI probe is for public or independently fetchable media. A private
 `play-plan --url-file` file protects the URL on disk, but does not convey Bale's profile/authentication

@@ -32,8 +32,9 @@
 #                                               key i / where show applied settings and demand block waits (count/max/total ms)
 #   scripts/bale-debug.sh rust                   load check for the Rust GPU layer (bale_gpu.dll): ABI, std threads, D3D11
 #   scripts/bale-debug.sh mem [gc]               managed GC heap vs app memory; gc forces a full collection + finalizers first
-#   scripts/bale-debug.sh gc                     GC mode, total pauses and last full-blocking/background/ephemeral collections
-#   scripts/bale-debug.sh gc latency <batch|interactive|sustained|default>  change latency app-wide now; default restores the first observed mode; restart resets
+#   scripts/bale-debug.sh gc                     GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
+#   scripts/bale-debug.sh gc latency <batch|interactive|sustained|default>  change latency app-wide now; default restores the saved pre-playback mode; playback acquires sustained automatically
+#   scripts/bale-debug.sh frame-delivery [on|off]  next playback attempt's frame delivery observer; default on, memory only (restart resets); no args = status
 #   scripts/bale-debug.sh display-match [on|off|status]  match content HDMI resolution/refresh on the next playback; default off, memory only (restart resets); no args = status
 #   scripts/bale-debug.sh hdr pretend|off|status  next attempt: pretend HDR10, skip HDMI switching for console SDR tone mapping; default off, memory only
 #   scripts/bale-debug.sh seek <seconds> [pause]  shared absolute-source seek (native/FFmpeg/HLS, reanchors outside the mounted window); optional pause
@@ -234,6 +235,17 @@ case "${1:-}" in
       curl --fail-with-body -sS --max-time 5 "$BASE/gc"
     else
       curl --fail-with-body -sS --max-time 5 -X POST "$BASE/gc?latency=$value"
+    fi
+    ;;
+  frame-delivery)
+    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^(on|off)$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh frame-delivery [on|off]' >&2
+      exit 2
+    fi
+    if [[ "$#" == 1 ]]; then
+      curl --fail-with-body -sS --max-time 5 "$BASE/frame-delivery"
+    else
+      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/frame-delivery" --data-urlencode "mode=$2"
     fi
     ;;
   display-match)

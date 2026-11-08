@@ -470,7 +470,7 @@ public class DebugPlaytestScriptTests
     public async Task GcReadoutIsAGetThatPreservesTheDiagnosticOutput()
     {
         if (!OperatingSystem.IsLinux()) return;
-        const string readout = "GC: server=False latency=Interactive pause-total=350.0 ms collections gen0=3 gen1=2 gen2=1\n";
+        const string readout = "GC: server=False latency=Interactive playback-lease=0 pause-total=350.0 ms collections gen0=3 gen1=2 gen2=1\n";
         var result = await RunAsync(["gc"], readout);
         Assert.Equal(0, result.ExitCode);
         Assert.Equal(readout, result.Output);
@@ -527,6 +527,63 @@ public class DebugPlaytestScriptTests
         if (!OperatingSystem.IsLinux()) return;
         const string failure = "latency change failed hr=0x80131509\n";
         var result = await RunAsync(["gc", "latency", "sustained"], failure, 22);
+        Assert.Equal(22, result.ExitCode);
+        Assert.Equal(failure, result.Output);
+        Assert.Contains("--fail-with-body", result.Arguments);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("on")]
+    [InlineData("off")]
+    public async Task FrameDeliveryReadsStatusOrPostsOnlyAValidatedMode(string? mode)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var readout = "frame-delivery=" + (mode ?? "on") + "\n";
+        var result = await RunAsync(mode is null ? ["frame-delivery"] : ["frame-delivery", mode], readout);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(readout, result.Output);
+        Assert.Contains("/frame-delivery\n", result.Arguments);
+        Assert.Contains("--max-time\n5\n", result.Arguments);
+        Assert.Contains("--fail-with-body", result.Arguments);
+        if (mode is null)
+        {
+            Assert.DoesNotContain("POST", result.Arguments);
+            Assert.DoesNotContain("--data-urlencode", result.Arguments);
+        }
+        else
+        {
+            Assert.Contains("-X\nPOST\n", result.Arguments);
+            Assert.Contains("--data-urlencode\nmode=" + mode + "\n", result.Arguments);
+        }
+    }
+
+    [Fact]
+    public async Task InvalidFrameDeliveryArgumentsShowUsageWithoutInvokingCurl()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[]
+        {
+            new[] { "frame-delivery", "" }, ["frame-delivery", "status"], ["frame-delivery", "ON"],
+            ["frame-delivery", "true"], ["frame-delivery", " on"], ["frame-delivery", "off "],
+            ["frame-delivery", "on&extra=1"], ["frame-delivery", "on", "off"], ["frame-delivery", "off", ""],
+        })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Equal("usage: scripts/bale-debug.sh frame-delivery [on|off]\n", result.Output);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("off")]
+    public async Task FrameDeliveryFailurePreservesTheResponseBodyAndExitStatus(string? mode)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        const string failure = "mode must be on or off\n";
+        var result = await RunAsync(mode is null ? ["frame-delivery"] : ["frame-delivery", mode], failure, 22);
         Assert.Equal(22, result.ExitCode);
         Assert.Equal(failure, result.Output);
         Assert.Contains("--fail-with-body", result.Arguments);

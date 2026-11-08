@@ -14,10 +14,12 @@ public class DebugGcTests
             "info.GenerationInfo", "SizeBeforeBytes", "SizeAfterBytes", "\"gen0\", \"gen1\", \"gen2\", \"loh\", \"poh\"",
             "CultureInfo.InvariantCulture", "\"batch\" => GCLatencyMode.Batch", "\"interactive\" => GCLatencyMode.Interactive",
             "\"sustained\" => GCLatencyMode.SustainedLowLatency", "\"default\" => defaultLatencyMode",
-            "DefaultGcLatencyMode.Value", "catch (Exception ex)", "latency change failed hr=0x", "ex.HResult.ToString(\"X8\"" })
+            "PlaybackGcLatency.Shared.OriginalMode", "\" playback-lease=\"", "PlaybackGcLatency.Shared.IsHeld ? 1 : 0",
+            "catch (Exception ex)", "latency change failed hr=0x", "ex.HResult.ToString(\"X8\"" })
             Assert.Contains(required, source);
-        Assert.True(source.IndexOf("DefaultGcLatencyMode.Value", StringComparison.Ordinal)
+        Assert.True(source.IndexOf("PlaybackGcLatency.Shared.OriginalMode", StringComparison.Ordinal)
             < source.IndexOf("GCSettings.LatencyMode =", StringComparison.Ordinal));
+        Assert.DoesNotContain("DefaultGcLatencyMode", source);
         Assert.DoesNotContain("GCLatencyMode.LowLatency", source);
         Assert.DoesNotContain("GCLatencyMode.NoGCRegion", source);
         Assert.DoesNotContain("ex.Message", source);
@@ -36,7 +38,7 @@ public class DebugGcTests
         Assert.Contains("\"400 Bad Request\", GcUsage", get);
         Assert.Contains("return GcStatus()", get);
         var post = routes[routes.IndexOf("case (\"POST\", \"/gc\")", StringComparison.Ordinal)
-            ..routes.IndexOf("case (\"GET\", \"/display-match\")", StringComparison.Ordinal)];
+            ..routes.IndexOf("case (\"GET\", \"/frame-delivery\")", StringComparison.Ordinal)];
         Assert.Contains("query.Count != 1 || !query.ContainsKey(\"latency\")", post);
         Assert.Contains("\"400 Bad Request\", GcUsage", post);
         Assert.Contains("return GcStatus(query[\"latency\"])", post);
