@@ -58,7 +58,7 @@ internal static class FfmpegSource
             if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions["bale_decode_thread_priority"] = priority.ToString(CultureInfo.InvariantCulture);
             // Patch 0009: explicit Rust modes; off retains the independent export-only override.
             if (DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain) is { } grain) config.FFmpegOptions[grain.Key] = grain.Value;
-            // Upload remains independent: only variant 1 supports GPU grain; others downgrade to CPU.
+            // Upload remains independent: GPU requests without variant 1 keep dav1d at open (patch 0010).
             if (tuning.D3d11Upload is { } upload) config.FFmpegOptions["bale_d3d11_upload"] = upload.ToString(CultureInfo.InvariantCulture);
         }
         else

@@ -98,7 +98,7 @@ internal static class DebugFfmpegPlaytest
     }
 
     /// <summary>off remains export-only; on aliases dav1d. CPU/GPU require wrapper patch 0009.
-    /// Default or omitted keeps the production dav1d default, without emitting a new grain option.</summary>
+    /// Default or omitted emits no override: the player uses production GPU grain, probes keep dav1d.</summary>
     internal static bool TryParseGrain(string? grain, out DebugFilmGrain? selection, out string error)
     {
         error = string.Empty;
@@ -157,7 +157,7 @@ internal static class DebugFfmpegPlaytest
             + $"Decoder use max resolution: {tuning.DecoderUseMaxResolution ?? 0} (0=unset, 1=on; {(tuning.DecoderUseMaxResolution is null ? "default" : "override")}; system video only)\n"
             + $"Decoder max DPB count: {tuning.DecoderMaxDpbCount ?? 0} (0=unset; {(tuning.DecoderMaxDpbCount is null ? "default" : "override")}; system video only)\n"
             + $"HDR support: {tuning.HdrSupport switch { true => "on (override)", false => "off (override)", null => "automatic (default)" }}\n"
-            + $"Film grain requested: {tuning.FilmGrain switch { DebugFilmGrain.Dav1d => "dav1d (override)", DebugFilmGrain.Cpu => "Rust CPU (override)", DebugFilmGrain.Gpu => "GPU (override; CPU fallback)", DebugFilmGrain.Off => "exported, not applied (override; libdav1d only)", _ => "dav1d (production default)" }}\n"
+            + $"Film grain requested: {tuning.FilmGrain switch { DebugFilmGrain.Dav1d => "dav1d (override)", DebugFilmGrain.Cpu => "Rust CPU (override)", DebugFilmGrain.Gpu => "GPU (override; CPU fallback through 1080p, ungrained above 1080p)", DebugFilmGrain.Off => "exported, not applied (override; libdav1d only)", _ => "dav1d (probe default; CPU buffers; production default is GPU)" }}\n"
             + $"D3D11 upload requested: {(tuning.FilmGrain is DebugFilmGrain.Gpu ? "1 (GPU grain; render target+shader resource)" : "0 (probe default; CPU buffers)")}\n"
             + $"Effective grain mode/fallback: see Bale film grain native diagnostics\n");
     }
@@ -222,7 +222,8 @@ internal static class DebugFfmpegPlaytest
 
 internal enum DebugFilmGrain { Dav1d, Cpu, Gpu, Off }
 
-// Nullable settings use release software-video defaults or the wrapper's defaults for other modes.
+// Nullable decode settings use release software-video defaults or the wrapper's defaults for other modes.
+// Grain stays dav1d on CPU-buffer probes, independently of the production GPU default.
 internal sealed record DebugFfmpegTuning(uint? Threads = null, bool? Allow10bit = null, double Rate = 1.0,
     int? DecodeAheadFrames = null, int? SwsThreads = null, int? Dav1dMaxFrameDelay = null, int? DecodeThreadPriority = null,
     int? DecoderUseMaxResolution = null, int? DecoderMaxDpbCount = null, bool? HdrSupport = null, DebugFilmGrain? FilmGrain = null)

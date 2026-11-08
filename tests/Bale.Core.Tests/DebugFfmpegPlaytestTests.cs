@@ -220,12 +220,12 @@ public class DebugFfmpegPlaytestTests
     }
 
     [Theory]
-    [InlineData(null, null, null, "dav1d (production default)")]
-    [InlineData("default", null, null, "dav1d (production default)")]
+    [InlineData(null, null, null, "dav1d (probe default; CPU buffers; production default is GPU)")]
+    [InlineData("default", null, null, "dav1d (probe default; CPU buffers; production default is GPU)")]
     [InlineData("on", "bale_film_grain_mode", "0", "dav1d (override)")]
     [InlineData("dav1d", "bale_film_grain_mode", "0", "dav1d (override)")]
     [InlineData("cpu", "bale_film_grain_mode", "1", "Rust CPU (override)")]
-    [InlineData("gpu", "bale_film_grain_mode", "2", "GPU (override; CPU fallback)")]
+    [InlineData("gpu", "bale_film_grain_mode", "2", "GPU (override; CPU fallback through 1080p, ungrained above 1080p)")]
     [InlineData("off", "bale_dav1d_export_film_grain", "1", "exported, not applied (override; libdav1d only)")]
     public void GrainOptionEmissionAndReportPreserveExportOnlyAndDav1dDefaults(string? input, string? key, string? value, string description)
     {
@@ -261,6 +261,9 @@ public class DebugFfmpegPlaytestTests
         Assert.Contains("FfmpegSource.ApplyDecodeTuning(config, tuning.DecodeTuning(mode))", source);
         Assert.Contains("if (tuning.FilmGrain is DebugFilmGrain.Gpu) config.FFmpegOptions[\"bale_d3d11_upload\"] = \"1\";", source);
         Assert.Single(source.Split("bale_d3d11_upload").Skip(1));
+        Assert.DoesNotContain("SoftwareDecodeTuning.FilmGrainMode", source);
+        Assert.DoesNotContain("DefaultFilmGrainMode", source);
+        Assert.Null(DebugFfmpegPlaytest.GrainOption(new DebugFfmpegTuning().FilmGrain));
         Assert.Contains("if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions[\"bale_decode_thread_priority\"] = priority.ToString(CultureInfo.InvariantCulture)", source);
         Assert.Contains("if (tuning.DecoderUseMaxResolution is { } maxres) config.FFmpegOptions[\"bale_decoder_use_max_resolution\"] = maxres.ToString(CultureInfo.InvariantCulture)", source);
         Assert.Contains("if (tuning.DecoderMaxDpbCount is { } dpb) config.FFmpegOptions[\"bale_decoder_max_dpb_count\"] = dpb.ToString(CultureInfo.InvariantCulture)", source);
@@ -367,7 +370,7 @@ public class DebugFfmpegPlaytestTests
             const string defaults = "Decode ahead: 0 (0=off; default)\nSWS threads: 1 (1=upstream; default)\ndav1d max frame delay: 0 (0=dav1d default; default)\nDecode thread priority: 0 (0=off, 1=above normal, 2=highest; default)\n"
                 + "Decoder use max resolution: 0 (0=unset, 1=on; default; system video only)\nDecoder max DPB count: 0 (0=unset; default; system video only)\n"
                 + "HDR support: automatic (default)\n"
-                + "Film grain requested: dav1d (production default)\n"
+                + "Film grain requested: dav1d (probe default; CPU buffers; production default is GPU)\n"
                 + "D3D11 upload requested: 0 (probe default; CPU buffers)\n"
                 + "Effective grain mode/fallback: see Bale film grain native diagnostics\n";
             Assert.Equal("Threads: 0 (0=logical CPU count; default)\n10-bit output: on (default)\nLogical CPUs: 8\nRate requested: 1\n" + defaults,
@@ -580,7 +583,7 @@ public class DebugFfmpegPlaytestTests
         var packages = project.Descendants("PackageReference").Where(p => p.Attribute("Include")!.Value.StartsWith("FFmpegInteropX.")).ToArray();
         Assert.Equal(2, packages.Length);
         Assert.All(packages, p => Assert.DoesNotContain(p.AncestorsAndSelf(), element => element.Attribute("Condition") is not null));
-        Assert.Equal("[2.1.0-bale.9]", packages.Single(p => p.Attribute("Include")!.Value.EndsWith(".Lib")).Attribute("Version")!.Value);
+        Assert.Equal("[2.1.0-bale.10]", packages.Single(p => p.Attribute("Include")!.Value.EndsWith(".Lib")).Attribute("Version")!.Value);
         Assert.Equal("[8.1.2-bale.dav1d.1.5.4]", packages.Single(p => p.Attribute("Include")!.Value.EndsWith(".FFmpeg")).Attribute("Version")!.Value);
         var target = project.Descendants("Target").Single(t => t.Attribute("Name")!.Value == "PrepareFFmpegManifest");
         Assert.Null(target.Attribute("Condition"));

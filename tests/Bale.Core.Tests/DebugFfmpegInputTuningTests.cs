@@ -1,4 +1,5 @@
 using System.Globalization;
+using Bale.Core.Playback;
 using Bale.Xbox.Services;
 
 namespace Bale.Core.Tests;
@@ -323,6 +324,9 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["grain"] = "default" }, out var cleared));
         Assert.Null(cleared.FilmGrain);
         Assert.DoesNotContain("grain=", cleared.Description);
+        var route = PlaybackRoutePolicy.Decide(PlaybackRoutePolicyTests.Plan("original_http", "av1", "aac"), false);
+        Assert.Equal(2, SoftwareDecodeTuning.FilmGrainMode(route));
+        Assert.Null(DebugFfmpegPlaytest.GrainOption(cleared.FilmGrain));
         foreach (var invalid in new[] { "OFF", "1", "", "true" })
             Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["grain"] = invalid }, out _));
         Assert.Null(DebugFfmpegInputTuning.Current.FilmGrain);
@@ -342,6 +346,12 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.True(software >= 0 && key > software && key < system);
         Assert.Contains("grain=dav1d|cpu|gpu|off|on|default", DebugFfmpegInputTuning.Usage);
         Assert.Contains("SoftwareDecodeTuning.FilmGrainMode(route) is { } grainMode && grainMode != 0", configuration[..start]);
+        Assert.Contains("config.FFmpegOptions[\"bale_film_grain_mode\"] = grainMode.ToString(CultureInfo.InvariantCulture);", configuration[..start]);
+        Assert.Equal(("bale_film_grain_mode", "0"), DebugFfmpegPlaytest.GrainOption(DebugFilmGrain.Dav1d));
+        Assert.Contains("default=gpu (production), on/dav1d=dav1d", DebugFfmpegInputTuning.Usage);
+        Assert.Contains("production default=gpu, on/dav1d=dav1d", Read("DebugServer.cs.txt"));
+        Assert.Contains("grain=default: gpu (production default); on/dav1d: dav1d", Read("bale-debug.sh"));
+        Assert.Contains("probe default; CPU buffers, unlike production GPU", Read("bale-debug.sh"));
     }
 
     [Theory]

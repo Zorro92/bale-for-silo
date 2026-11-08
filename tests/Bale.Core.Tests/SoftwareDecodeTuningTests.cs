@@ -19,8 +19,8 @@ public class SoftwareDecodeTuningTests
         var route = PlaybackRoutePolicy.Decide(PlaybackRoutePolicyTests.Plan(delivery, video, audio), isHls, ffmpegEnabled);
         Assert.Equal(expected is not null, route.SoftwareVideo);
         Assert.Equal(expected, SoftwareDecodeTuning.D3d11Upload(route));
-        Assert.Equal(0, SoftwareDecodeTuning.DefaultFilmGrainMode);
-        Assert.Equal(expected is not null ? (int?)0 : null, SoftwareDecodeTuning.FilmGrainMode(route));
+        Assert.Equal(2, SoftwareDecodeTuning.DefaultFilmGrainMode);
+        Assert.Equal(expected is not null ? (int?)2 : null, SoftwareDecodeTuning.FilmGrainMode(route));
     }
 
     [Theory]

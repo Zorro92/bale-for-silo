@@ -1,21 +1,24 @@
 # Bale stage 2: GPU AV1 film grain (design)
 
-Status: 2026-11-08. Steps 1–2 implemented and verified: Rust CPU oracle/fallback, dav1d fixtures and
-integer GPU passes. [Windows CI run 42505455358](https://github.com/Zorro92/bale-for-silo/actions/runs/42505455358)
+Status: 2026-11-08. **Steps 1–5 done; GPU grain is the production default. Next is step 6: the 4K
+decode-ahead cap.** Rust CPU oracles, dav1d fixtures and integer GPU passes are verified:
+[Windows CI run 42505455358](https://github.com/Zorro92/bale-for-silo/actions/runs/42505455358)
 passes real FXC compilation, strict Windows Clippy, all four create-time self-tests and all 44 WARP
 fixtures / 88 frames, including padding and pipeline-state checks. Local formatting, strict Linux
 and Windows cross-target Clippy, and Linux bit-exact release tests also pass. The Linux cross-check
 uses placeholder shaders, not GPU execution. Step 3's synthetic console probe passed on the Xbox
-(build 0.1.327.0; results in section 7). Step 4 is implemented: wrapper patch 0009, debug grain modes
-and the packaged-DLL export check. Wrapper `2.1.0-bale.9` compiled and was released by
-[run 42513374008](https://github.com/Zorro92/bale-for-silo/actions/runs/42513374008); package, patch
-hashes and corresponding source were independently verified. The production default remains dav1d
-grain; wrapper playback console verification is pending. Steps 5–6 remain future work.
+(build 0.1.327.0). Step 4 added wrapper patch 0009, debug grain modes and the packaged-DLL export check;
+wrapper `2.1.0-bale.9` was released by
+[run 42513374008](https://github.com/Zorro92/bale-for-silo/actions/runs/42513374008), with independently
+verified package, patches and corresponding source. Step 5 passed in real playback on build
+0.1.330.0 with that wrapper: screenshot identity, lower CPU, zero late frames and no meaningful
+memory growth (section 7). Patch 0010 (`2.1.0-bale.10`) changes fallback policy using those results
+(section 6); runtime GPU-loss fallbacks still need the owner's console verification.
 Reference algorithm: dav1d 1.5.4, commit `54706fc6bc0cdecab7e9593974a4039cc038fca7`,
 `src/filmgrain_tmpl.c` + `src/fg_apply_tmpl.c` + the Gaussian sequence in `src/tables.c` (BSD-2).
 Ported files retain the original copyright and full licence; `native/bale-gpu/NOTICE` records provenance.
-The eventual GPU goal is byte-identical output at a fraction of dav1d's CPU cost; this step establishes
-correctness, not a CPU performance improvement over dav1d.
+Steps 1–2 established byte-identical synthesis; step 5 measured the real-playback CPU reduction
+against dav1d. The 4K decode/memory gate and HDR playback parity are still open.
 
 ## 1. Where it runs
 - MediaPlayer + FFmpegInteropX MSS stay (MediaEngine was not faster; frame-server copies cost more).
@@ -28,24 +31,27 @@ correctness, not a CPU performance improvement over dav1d.
 ## 2. Mode selection (decided at codec open, because dav1d reads apply_grain only at init)
 | Condition at open | Export | Grain applied by |
 |-------------------|--------|------------------|
-| `grain=dav1d` / default (`bale_film_grain_mode=0`) | off | dav1d |
+| `grain=dav1d` / `grain=on` (`bale_film_grain_mode=0`), or probe default | off | dav1d |
 | Requested Rust mode but DLL/exports missing, grain ABI ≠ 1, hardware/non-libdav1d decoder, or incompatible input/output | off | Existing decoder (dav1d for software AV1) |
 | Software libdav1d, 4:2:0 8/10-bit → matching NV12/P010, `grain=cpu` | on | Rust CPU, with or without upload |
-| Same compatible formats, `grain=gpu`, upload variant 1 | on | GPU; permanent Rust CPU fallback |
-| Same compatible formats, `grain=gpu`, upload off or variant 2–5 | on | Rust CPU from the start |
-- `bale_film_grain_mode` is opt-in (0 dav1d, 1 Rust CPU, 2 GPU). Debug `ffmpeg-tune` and the standalone
-  probe accept `grain=dav1d|cpu|gpu|off|on|default`; `on` aliases dav1d, and `off` retains the independent
+| Same compatible formats, `grain=gpu` / production default, upload variant 1 | on | GPU; runtime loss → CPU through 1080p, no grain above 1080p |
+| Same compatible formats, `grain=gpu`, upload off or variant 2–5 (patch 0010) | off | dav1d from the start |
+- The wrapper key remains opt-in (0 dav1d, 1 Rust CPU, 2 GPU); **production software video now sends
+  `bale_film_grain_mode=2`**. Debug `ffmpeg-tune` and the standalone probe accept
+  `grain=dav1d|cpu|gpu|off|on|default`; `on` aliases dav1d, and `off` retains the independent
   `bale_dav1d_export_film_grain=1` measurement mode. Export-only wins over a requested Rust mode and
-  suppresses both dav1d and Rust synthesis. Default/omitted and production emit no grain option,
-  keeping the wrapper's mode 0. Default stays dav1d until the step-5 console gates pass.
+  suppresses both dav1d and Rust synthesis. Real-player `default` clears the override and restores
+  production GPU grain. The CPU-buffer URI probe deliberately keeps dav1d for default/omitted grain
+  (no grain key); only an explicit `grain=gpu` enables upload variant 1 on that probe.
 - GPU requires upload variant 1: RENDER_TARGET | SHADER_RESOURCE, already Bale's production
   software-video upload default. CPU mode does not require upload. An explicit `grain=gpu` URI probe
   also opts that probe into upload variant 1; other probe modes leave upload at the wrapper default off.
-- Runtime GPU create/self-test or apply failure permanently selects Rust CPU for that stream.
+- Runtime GPU create/self-test or apply failure, upload disable or missing upload permanently selects
+  Rust CPU through 1080p, or **no grain above 1080p** (width > 1920 or height > 1080; initial codec size).
   The failed GPU target is overwritten with the clean staging copy and that sample is ungrained;
-  following frames get CPU grain in staging if upload is still available. Upload failure/unavailability
-  also permanently selects CPU grain, on the CPU-buffer path. After export is on, dav1d cannot resume
-  grain without reopening. Seek does not reset a downgrade.
+  following frames get the selected fallback. Upload failure retries the current frame on the
+  CPU-buffer path, honoring the size-dependent fallback immediately. After export is on, dav1d cannot
+  resume grain without reopening. Seek does not reset a downgrade. Explicit CPU streams stay CPU.
 - Each runtime fallback logs once per stream, with a fixed diagnostic and only an HRESULT when
   available, never grain parameters, URLs, paths or exception text. Scaled/unsupported output or invalid
   per-frame parameters is shown ungrained, not handed back to dav1d.
@@ -230,14 +236,30 @@ Order, all on MF's immediate context:
   offsets and full application, not only preparation. It is a host CPU baseline, not an Xbox result
   or a dav1d comparison. The ignored test is `timing_1080p_10bit`.
 
-## 6. Wrapper patch 0009 (C++, implemented)
+## 6. Wrapper patches 0009–0010 (C++, implemented)
+- **0010 fallback policy (`2.1.0-bale.10`):** step 5 measured ~1.1 cores with dav1d grain versus
+  ~1.9 with Rust CPU grain in mapped upload staging at 1080p. At open, a GPU request without upload
+  variant 1 now selects mode 0, leaves export off and keeps dav1d synthesis instead of choosing Rust
+  CPU. Explicit `grain=cpu` stays CPU. Once a stream starts in GPU mode, export is already enabled:
+  dav1d cannot take over without reopening. `GpuFailed` (create/apply), `UploadDisabled` and `NoUpload`
+  therefore select mode 1 (Rust CPU) through 1080p, or mode 0 (**no grain**) above 1080p. The provider
+  captures `width > 1920 || height > 1080` from the codec context next to the initial mode assignment,
+  matching the app's threshold. All three runtime entry points require current mode 2, so explicit
+  CPU streams and already-downgraded streams are unaffected. Mode 0 makes `Prepare` return false;
+  after upload loss, the CPU-buffer path also clears the current frame's cached `hasGrain` before
+  direct-buffer selection or CPU apply. Downgrades survive seek. Each loss reason logs once per
+  stream, with fixed text ending in `using CPU grain.` or `showing ungrained frames (above 1080p).`
+  and only an HRESULT where available; no parameters, URLs, paths or exception text. These new
+  fallback branches are source-contract tested and compiled by the wrapper workflow, not yet
+  console-verified. Patch 0009 remains immutable; 0010 applies on top.
 - **Open / `SelectMode`:** `FFmpegMediaSource::CreateVideoStream` shares
   `UncompressedVideoSampleProvider::SelectOutputPixelFormat` with normal output selection, then calls
   `BaleFilmGrain::SelectMode` before `avcodec_open2`. It checks software libdav1d, known compatible
   4:2:0 8/10-bit input, matching NV12/P010 output and the complete grain ABI. GPU requests without
-  upload variant 1 become CPU mode. Only selected Rust modes enable grain export, except that the
-  independent 0005 export-only knob still wins and leaves Rust mode 0. The selected mode is copied
-  to the software-video provider; no hardware-decoder policy or WinRT/public ABI changes.
+  upload variant 1 keep dav1d (0010). Only selected Rust modes enable grain export, except that the
+  independent 0005 export-only knob still wins and leaves Rust mode 0. The selected mode and initial
+  size class are copied to the software-video provider; no hardware-decoder policy or WinRT/public
+  ABI changes.
 - **DLL load:** thread-safe static initialization makes one `LoadPackagedLibrary(L"bale_gpu.dll")`
   attempt per process. All six exports (version, validate, CPU apply, GPU create/apply/destroy) and
   grain ABI 1 are required even for CPU mode. Failure unloads an incompatible module and keeps dav1d;
@@ -262,12 +284,15 @@ Order, all on MF's immediate context:
   is the production software-video upload default; no new texture-bind change is needed. The pass
   reads clean staging and writes only the Bale-owned pooled texture. Missing parameters/CPU mode
   uses CopyResource, followed by the existing Flush, device-removal check, surface sample and tracking.
-  GPU create/apply failure destroys the handle, permanently changes the stream to CPU mode, and
-  overwrites any partial GPU destination with the clean staging copy: that sample is ungrained,
-  subsequent samples use CPU grain. An upload exception separately disables upload and retries the
-  same frame through the CPU-buffer path, with CPU grain.
-- **CPU-buffer path:** `FilmGrain.NoUpload` permanently downgrades a GPU stream without an uploader.
-  Direct decoder-buffer references are allowed only when `hasGrain` is false. Otherwise allocate
+  GPU create/apply failure destroys the handle, permanently changes the stream to CPU mode through
+  1080p or no-grain mode above 1080p (0010), and overwrites any partial GPU destination with the clean
+  staging copy: that sample is ungrained, subsequent samples use the selected fallback. An upload
+  exception separately disables upload and retries the same frame through the CPU-buffer path,
+  with CPU grain through 1080p or no grain above 1080p.
+- **CPU-buffer path:** `FilmGrain.NoUpload` permanently downgrades a GPU stream without an uploader
+  to CPU through 1080p or no grain above 1080p (0010). Cached `hasGrain` is cleared in no-grain mode,
+  including the current frame after upload disable. Direct decoder-buffer references are allowed
+  only when `hasGrain` is false. Otherwise allocate
   Bale-owned output with `FillLinesAndBuffer`, copy/repack using `CopyFrameToOutput`, then apply CPU
   grain. Failure refills clean output before creating the native buffer. The decoder's AVFrame is
   never grained: dav1d may retain it as a reference picture. Scaled output is intentionally ungrained;
@@ -279,14 +304,15 @@ Order, all on MF's immediate context:
   `FFmpegMediaSource`'s AheadPause/AheadShutdown and main mutex serialize production with seek/close.
   Ownership can move between those threads, but handle calls never overlap; Processed callbacks
   only recycle tracked textures under their existing mutex and never touch grain state/handles.
-  Seek may recreate a GPU handle, but never resets a permanent CPU downgrade or once-only log guards.
+  Seek may recreate a GPU handle, but never resets a permanent CPU/no-grain downgrade or once-only log guards.
 - **Diagnostics / packaging:** each runtime fallback has its own per-stream once guard and fixed
   `Bale film grain:` message, with only an HRESULT when available, no parameters/media details or
   exception text. Debug's existing safe `Bale ` prefix filter captures these; production native
   logging stays off. App CI extracts the actual MSIX's `bale_gpu.dll` and requires all six exports.
   Core source-contract tests cover the loader, mapping, owned-output paths, fallbacks and export gate;
-  the wrapper release workflow compiles the complete nine-patch series. Playback verification is
-  still the owner's console gate, not established by compilation or source-contract tests.
+  the wrapper release workflow compiles the complete ten-patch series. Step 5 verified playback with
+  0009; the 0010 fallback branches still need the owner's console gate, not established by compilation
+  or source-contract tests.
 
 ## 7. Tests
 ### Step 1: committed dav1d oracles
@@ -390,8 +416,47 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
 
   No disjoint samples. CPU fallback, P010 1080p: 20.05 ms (1 thread), 6.33 ms (auto, 4 threads).
   The probe uses its own hardware device, not MF's, and does not enable GPU grain in playback.
-  After wrapper integration, paused-frame `grain=dav1d` vs `grain=gpu` screenshots, CPU A/B
-  (target −0.25 to −0.4 cores), late frames and Sample memory remain future gates.
+  The subsequent wrapper-playback screenshot, CPU, late-frame and memory gates passed in step 5 below.
+
+### Step 5: real-player console verification (done)
+- **Owner's console results:** Xbox build **0.1.330.0**, wrapper **2.1.0-bale.9**, 1080p 10-bit AV1
+  film-grain title, **P010 upload variant 1**, SDR, app mode. These are playback measurements, unlike
+  the private-device synthetic probe. GPU grain is now the production software-video default;
+  `ffmpeg-tune grain=default` restores GPU, while `grain=dav1d` explicitly requests mode 0. The URI
+  playtest probe keeps its separate dav1d/CPU-buffer default unless `grain=gpu` is supplied.
+- **Picture identity:** Device Portal screenshots of paused frames, comparing video regions outside
+  the stats panel, found dav1d vs Rust CPU **bit-identical on one frame**, and GPU vs Rust CPU
+  **bit-identical on another frame**. Each differs from export-only (no-grain) output by a mean
+  **2.4–4.1/255 per channel**, confirming grain was present. Paused seeks did not always land on the
+  same frame across runs, so pairs were compared only where they did; this is not a claim that every
+  seek or all three modes were compared on one common frame.
+- **CPU:** two interleaved runs per mode, **12 × 10 s samples each**, from the same position.
+
+  | Mode | Run 1 (cores) | Run 2 (cores) | Late frames |
+  |------|---------------|---------------|-------------|
+  | No grain (export-only) | 0.779 | 0.800 | 0 in every run |
+  | dav1d | 1.112 | 1.093 | 0 in every run |
+  | GPU | 0.891 | 0.842 | 0 in every run |
+
+  GPU saves **~0.24 cores vs dav1d (~22%)**, and costs **~0.08 cores above no grain**. These results
+  are for this 1080p SDR title and do not establish 4K decode capability or HDR presentation parity.
+- **Memory:** app non-GC MiB at each run's end; no meaningful growth was observed.
+
+  | Mode | Run 1 (MiB) | Run 2 (MiB) |
+  |------|-------------|-------------|
+  | No grain (export-only) | 864 | 861 |
+  | dav1d | 877 | 789 |
+  | GPU | 881 | 881 |
+
+- **Rust CPU grain with upload on:** ~**1.9 cores** (samples **1.5–2.1**), **0 late frames** at 1080p.
+  Likely causes are slower synthesis than dav1d's SIMD assembly and reading back from
+  `CPU_ACCESS_WRITE` staging, which may be write-combined; neither cause is isolated by this test.
+  This motivates patch 0010's dav1d-at-open and size-dependent runtime fallback policy (section 6),
+  rather than choosing the slower Rust CPU path whenever GPU is unavailable. Low-priority open item:
+  faster CPU fallback, either grain in a cached heap buffer then copy, or SIMD.
+- **Next:** step 6, measure and cap decode-ahead with a 4K grain title. The next CPU-offload candidate
+  after that is letting the GPU grain pass read dav1d's planar `yuv420p` output directly and write
+  P010/NV12, removing the CPU sws repack + copy.
 
 ## 8. 4K memory cap
 - 4K P010 ≈ 24.9 MB per texture vs 6.2 MB at 1080p. ~55 in flight would be ~1.3 GB of the 3.25 GB budget.
@@ -413,9 +478,10 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
    Real shader compilation and WARP results are gated by Windows CI; no console verification.
 3. **Passed on the console:** hardware self-tests, full-size 1080p bit-exact match, GPU 0.84 ms (1080p)
    / 3.11 ms (4K) per frame, 0.37 ms CPU submit.
-4. **Implemented:** wrapper patch 0009 + `grain=` tune knob + packaged-DLL export check; production
-   default remains dav1d. Wrapper playback console verification is pending.
-5. Console screenshot identity, CPU A/B, late frames and Sample memory; then default gpu. Also measure
-   `grain=cpu` with upload on: CPU synthesis reads back from CPU_ACCESS_WRITE staging, which may be
-   write-combined memory and cost more than the ordinary CPU-buffer/probe baseline.
-6. 4K decode-ahead cap, measured with a 4K grain title.
+4. **Done:** wrapper patch 0009 + `grain=` tune knob + packaged-DLL export check, followed by
+   patch 0010's measured-cost fallback policy (`2.1.0-bale.10`).
+5. **Passed on the console (0.1.330.0 / wrapper bale.9):** matched paused-frame screenshots,
+   ~0.24-core GPU saving (~22%) vs dav1d, zero late frames and no meaningful memory growth.
+   Rust CPU grain with upload costs ~1.9 cores. **GPU is the production default.** Results and
+   matched-frame comparison limits are recorded in section 7; 0010 runtime fallbacks remain unverified.
+6. **Next:** 4K decode-ahead cap, measured with a 4K grain title.

@@ -1,8 +1,8 @@
 {
-  "version": "2.1.0-bale.9",
-  "release_tag": "wrapper-ffmpeginteropx-2.1.0-bale.9",
-  "sha256": "73d879b31a936d5bf7d3cbf653a9fe02cd87e07800dbc40895f08838067cdaf3",
-  "nuget_content_hash": "jMpnJ0vwtiRr5RoTRFa4EnIb0o8XJtcJPNov9zJrW6P0SKwud0N41jt6LEVG6pxMm9h0nhPmoiYLIybJ5XqdnA==",
+  "version": "2.1.0-bale.10",
+  "release_tag": "wrapper-ffmpeginteropx-2.1.0-bale.10",
+  "sha256": "a6216b544d6806bc368f119ac5b15467506c6ffe743b12cbd4529e4ee2c77d7c",
+  "nuget_content_hash": "f+JtQ61k1ws+IV1W5eC7GOKn4iBNGDFXVQHUCtylmVv7QUq82SQUdAes/cn7kNdX98vCQ6Em2cSWh2W7GvDG4w==",
   "upstream_repository": "ffmpeginteropx/FFmpegInteropX",
   "upstream_commit": "88428c66e106852338b48554a4a00c9e48da588f",
   "original_package_id": "FFmpegInteropX.UWP.Lib",

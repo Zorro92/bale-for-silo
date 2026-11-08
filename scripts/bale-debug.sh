@@ -26,7 +26,7 @@
 #                                               next FFmpeg player attempt only; on = 64 MiB / 30 s, readsize 16384–1048576 bytes, prefetch 2–16 blocks, buffer = MediaStreamSource.BufferTime 0–5000 ms (FFmpegInteropX sets 0)
 #                                               software video only: ahead 0–64 decoded frames (0=off), sws 1–16 scaler threads, delay 0–64 dav1d frames (0=dav1d default)
 #                                               prio 0–2 (0=off, 1=THREAD_PRIORITY_ABOVE_NORMAL, 2=THREAD_PRIORITY_HIGHEST); software video only, release default unset
-#                                               grain=default/on/dav1d: dav1d (production default); cpu: Rust CPU; gpu: GPU with CPU fallback; off: export-only (software video; wrapper 2.1.0-bale.9+)
+#                                               grain=default: gpu (production default); on/dav1d: dav1d; cpu: Rust CPU; gpu: GPU (runtime loss: CPU through 1080p, no grain above 1080p); off: export-only (software video; wrapper 2.1.0-bale.10+)
 #                                               upload=on aliases 1; default=on (variant 1); off=0 (CPU buffers); 1..5 select D3D11 texture flags, status shows the number and flags (wrapper 2.1.0-bale.8+)
 #                                               upload variants: 1=RENDER_TARGET|SHADER_RESOURCE, 2=DECODER|SHADER_RESOURCE, 3=DECODER, 4=SHADER_RESOURCE, 5=SHADER_RESOURCE+MISC_SHARED; 4/5 known MF failures; GPU grain requires variant 1
 #                                               system/passthrough video only: maxres 0–1, dpb 0–16 (0=unset); both default unset, opt-in pending wrapper release/repin
@@ -53,7 +53,7 @@
 #   scripts/bale-debug.sh playtest-engine <url|@file|suite> [seconds] [cs|rust|rust-ffmpeg]  debug IMFMediaEngine frame-server probe (1–60 s, default 3; rust = bale_gpu.dll port; rust-ffmpeg = FFmpeg software source)
 #   scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [mode] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|cpu|gpu|off|on|default]
 #                                               hdr=on|off forces the wrapper's HdrSupport Enabled/Disabled (default omitted = Automatic: HDR colour info only if HDMI is already BT.2020)
-#                                               grain=default/on/dav1d keeps dav1d; cpu uses Rust CPU; gpu also opts this probe into upload variant 1; off exports only (wrapper 2.1.0-bale.9+)
+#                                               grain=default/on/dav1d keeps dav1d (probe default; CPU buffers, unlike production GPU); cpu uses Rust CPU; gpu also opts this probe into upload variant 1; off exports only (wrapper 2.1.0-bale.10+)
 #                                               debug FFmpeg probe (1–60 s, default 3; auto|software|system, default auto)
 #                                               tuning after seconds/mode, any order: threads 0–16 (0=CPU count), rate 0.5–2.0 (default 1)
 #                                               software video only: ahead 0–64 (0=off), sws 1–16 (1=upstream), delay 0–64 (0=dav1d default)

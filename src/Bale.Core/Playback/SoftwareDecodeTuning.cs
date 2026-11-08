@@ -5,8 +5,9 @@ public sealed record SoftwareDecodeTuning(int? DecodeAheadFrames = null, int? Sw
 {
     public const int DefaultBufferMs = 1000;
     public const int DefaultD3d11Upload = 1;
-    // Keep dav1d synthesis in production; Rust grain is opt-in until console integration is verified.
-    public const int DefaultFilmGrainMode = 0;
+    // GPU grain is the production default since console step 5. The wrapper keeps dav1d when GPU
+    // is unavailable at open; runtime GPU loss uses CPU grain through 1080p or no grain above 1080p.
+    public const int DefaultFilmGrainMode = 2;
 
     public static int? FilmGrainMode(PlaybackRouteDecision route) =>
         route.SoftwareVideo ? DefaultFilmGrainMode : null;
