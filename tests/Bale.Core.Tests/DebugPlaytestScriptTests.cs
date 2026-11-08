@@ -196,6 +196,19 @@ public class DebugPlaytestScriptTests
     }
 
     [Fact]
+    public async Task UploadUsageExplainsTheRenderTargetDefaultAndKnownFailingVariants()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["ffmpeg-tune", "upload=6"]);
+        Assert.Equal(2, result.ExitCode);
+        Assert.Empty(result.Arguments);
+        foreach (var text in new[] { "upload=on aliases 1", "off/default=0 (CPU buffers)", "wrapper 2.1.0-bale.8+",
+            "1=RENDER_TARGET|SHADER_RESOURCE", "2=DECODER|SHADER_RESOURCE", "3=DECODER", "4=SHADER_RESOURCE",
+            "5=SHADER_RESOURCE+MISC_SHARED", "4/5 known MF failures" })
+            Assert.Contains(text, result.Output);
+    }
+
+    [Fact]
     public async Task InvalidOrDuplicateUploadTuningNeverInvokesCurlAndProbesRejectIt()
     {
         if (!OperatingSystem.IsLinux()) return;

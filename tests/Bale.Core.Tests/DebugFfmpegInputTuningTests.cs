@@ -267,7 +267,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = checked((uint)readSize)", experiment);
         Assert.Contains("var config = Configuration(route)", experiment);
         Assert.DoesNotContain("bale_decode_thread_priority", configuration[..start]);
-        Assert.Contains("if (route.SoftwareVideo)\n        {\n            ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.SwsThreads, tuning.Dav1dMaxFrameDelay));\n            if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions[\"bale_decode_thread_priority\"] = priority.ToString(CultureInfo.InvariantCulture);\n            // Wrapper patch 0005 (2.1.0-bale.5+): dav1d exports the grain parameters instead of synthesizing grain.\n            if (tuning.FilmGrain is false) config.FFmpegOptions[\"bale_dav1d_export_film_grain\"] = \"1\";\n            // Wrapper patch 0007 (2.1.0-bale.7+): choose upload texture flags, without changing the decoder or grain.\n            if (tuning.D3d11Upload is { } upload && upload > 0) config.FFmpegOptions[\"bale_d3d11_upload\"] = upload.ToString(CultureInfo.InvariantCulture);\n        }", experiment);
+        Assert.Contains("if (route.SoftwareVideo)\n        {\n            ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.SwsThreads, tuning.Dav1dMaxFrameDelay));\n            if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions[\"bale_decode_thread_priority\"] = priority.ToString(CultureInfo.InvariantCulture);\n            // Wrapper patch 0005 (2.1.0-bale.5+): dav1d exports the grain parameters instead of synthesizing grain.\n            if (tuning.FilmGrain is false) config.FFmpegOptions[\"bale_dav1d_export_film_grain\"] = \"1\";\n            // Wrapper patch 0008 (2.1.0-bale.8+): 1 = render target + shader resource; decoder and grain are unchanged.\n            if (tuning.D3d11Upload is { } upload && upload > 0) config.FFmpegOptions[\"bale_d3d11_upload\"] = upload.ToString(CultureInfo.InvariantCulture);\n        }", experiment);
         Assert.True(experiment.IndexOf("var config = Configuration(route)", StringComparison.Ordinal)
             < experiment.IndexOf("if (route.SoftwareVideo)", StringComparison.Ordinal));
         Assert.Contains("ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight))", configuration[..start]);
@@ -362,6 +362,23 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["upload"] = "default" }, out var cleared));
         Assert.Equal(captured with { SwsThreads = 4 }, cleared);
         Assert.Contains("upload=0", cleared.Description);
+    }
+
+    [Theory]
+    [InlineData("on", 1, "render target+shader resource")]
+    [InlineData("1", 1, "render target+shader resource")]
+    [InlineData("2", 2, "decoder+shader resource")]
+    [InlineData("3", 3, "decoder")]
+    [InlineData("4", 4, "shader resource; known MF failure")]
+    [InlineData("5", 5, "shared shader resource; known MF failure")]
+    public void UploadStatusAndHelpDescribeTheRenumberedTextureFlags(string value, int variant, string flags)
+    {
+        Set(new());
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["upload"] = value }, out var tuning));
+        Assert.Equal($"readahead=default readsize=default prefetch=default upload={variant} ({flags})", tuning.Description);
+        Assert.Contains($"{variant}={flags.Replace("; known MF failure", " (known MF failure)", StringComparison.Ordinal)}", DebugFfmpegInputTuning.Usage);
+        Assert.Contains("on=1, off/default=0", DebugFfmpegInputTuning.Usage);
+        Assert.Contains("wrapper 2.1.0-bale.8+", DebugFfmpegInputTuning.Usage);
     }
 
     [Theory]

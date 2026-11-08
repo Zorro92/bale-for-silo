@@ -55,7 +55,7 @@ internal static class FfmpegSource
             if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions["bale_decode_thread_priority"] = priority.ToString(CultureInfo.InvariantCulture);
             // Wrapper patch 0005 (2.1.0-bale.5+): dav1d exports the grain parameters instead of synthesizing grain.
             if (tuning.FilmGrain is false) config.FFmpegOptions["bale_dav1d_export_film_grain"] = "1";
-            // Wrapper patch 0007 (2.1.0-bale.7+): choose upload texture flags, without changing the decoder or grain.
+            // Wrapper patch 0008 (2.1.0-bale.8+): 1 = render target + shader resource; decoder and grain are unchanged.
             if (tuning.D3d11Upload is { } upload && upload > 0) config.FFmpegOptions["bale_d3d11_upload"] = upload.ToString(CultureInfo.InvariantCulture);
         }
         else
