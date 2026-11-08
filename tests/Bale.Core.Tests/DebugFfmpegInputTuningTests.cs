@@ -15,7 +15,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     {
         Assert.Equal(new DebugFfmpegInputTuning(), DebugFfmpegInputTuning.Current);
         Assert.Equal("readahead=default readsize=default prefetch=default upload=off", DebugFfmpegInputTuning.Current.Description);
-        Assert.Contains("default restores the release setting (buffer=2000 for software video;", DebugFfmpegInputTuning.Usage);
+        Assert.Contains("default restores the release setting (buffer=1000 for software video;", DebugFfmpegInputTuning.Usage);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string>(), out var current));
         Assert.Same(DebugFfmpegInputTuning.Current, current);
     }

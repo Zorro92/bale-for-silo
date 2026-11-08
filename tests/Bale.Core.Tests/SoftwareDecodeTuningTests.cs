@@ -5,7 +5,7 @@ namespace Bale.Core.Tests;
 public class SoftwareDecodeTuningTests
 {
     [Theory]
-    [InlineData(true, null, 2000)]
+    [InlineData(true, null, 1000)]
     [InlineData(false, null, null)]
     [InlineData(true, 0, 0)]
     [InlineData(false, 0, 0)]

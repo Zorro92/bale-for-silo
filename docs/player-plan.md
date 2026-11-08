@@ -99,10 +99,13 @@ deliveries use `plan.EffectiveRecipe`, falling back to `plan.Source` for each mi
 Unknown size leaves delay unset. Hardware/system video routes set none of the three keys.
 `bale_decode_thread_priority` remains unset in production; only the debug `prio` overrides below
 can emit it. This is decode tuning, not new 4K capability evidence or a verified performance improvement.
-All builds also set `MediaStreamSource.BufferTime` to **2000 ms for software video**, using
+All builds also set `MediaStreamSource.BufferTime` to **1000 ms for software video**, using
 `SoftwareDecodeTuning.DefaultBufferMs`; FFmpeg system-video routes retain the wrapper's zero default.
-Console A/B tests increased queued decoded video from ~0.3 s to ~2.3 s without added late frames,
-trading ~1 s of buffering at start/seek for the larger queue.
+A 3×3 interleaved console A/B on BvS 1080p AV1 found comparable CPU at 1000/2000 ms: averages
+of 1.415/1.434 cores within a 1.31–1.56 run-to-run spread, with zero late frames for both.
+Delivered-ahead was ~1.3/~2.3 s, not a renderer queue-depth measurement; start/seek buffering
+was ~0.2–0.3/~0.5–0.7 s. The user prefers the 1 s default for less start/seek buffering;
+these results do not establish a CPU improvement.
 
 `Audio.SystemDecoderAAC` and `Audio.SystemDecoderMP3` are enabled. Upstream FFmpegInteropX
 **2.1.0 and master only have `SystemDecoderAAC` / `SystemDecoderMP3`**; there are no system
@@ -168,7 +171,7 @@ remains independent.
   blocks. The default stays **2**. This immutable per-stream Core hook does not change the 32-block
   cache or the three-concurrent-fetch limit; deeper speculation queues behind that limit.
 - `buffer=ms` sets `MediaStreamSource.BufferTime`, inclusively **0–5000 ms**, with explicit overrides
-  (including zero) winning on any FFmpeg route; `default` restores **2000 ms for software video** and
+  (including zero) winning on any FFmpeg route; `default` restores **1000 ms for software video** and
   leaves system-video routes untouched (wrapper default: zero). This is the release setting chosen
   from the console A/B results above; it can retain substantial decoded-frame memory and is independent
   of demux read-ahead.
