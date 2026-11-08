@@ -558,7 +558,7 @@ public class HttpRangeStreamTests
     public async Task EvictionDuringACopyDoesNotRecycleTheLeasedArray()
     {
         // The copy deliberately blocks a pool thread while ~50 fetches need others; allow for slow
-        // thread injection on a loaded CI machine (one 5 s timeout seen under a parallel build).
+        // thread injection on a loaded CI machine.
         var timeout = TimeSpan.FromSeconds(30);
         var releaseFirst = Signal();
         var releaseRest = Signal();
@@ -567,8 +567,13 @@ public class HttpRangeStreamTests
         var handler = new RangeHandler
         {
             Payload = LargeData,
-            BeforeReadAsync = (request, ct) =>
-                (request.Headers.Range!.Ranges.Single().From == 0 ? releaseFirst : releaseRest).Task.WaitAsync(ct),
+            // Block 0 waits for releaseFirst and blocks 17+ wait for releaseRest; blocks 1-16 flow freely.
+            BeforeReadAsync = (request, ct) => request.Headers.Range!.Ranges.Single().From switch
+            {
+                0 => releaseFirst.Task.WaitAsync(ct),
+                >= 17 * BlockSize => releaseRest.Task.WaitAsync(ct),
+                _ => Task.CompletedTask,
+            },
         };
         using var client = Create(handler);
         await using var stream = await client.Playback.OpenMedia(Plan()).OpenStreamAsync(default, HttpRangeStream.MaximumPrefetchBlocks);
@@ -580,6 +585,15 @@ public class HttpRangeStreamTests
             var canceled = stream.ReadAsync(new byte[1].AsMemory(), cancellation.Token).AsTask();
             cancellation.Cancel();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceled);
+            if (block != 0) continue;
+            // Only three fetches run at once. Block 0 must hold a slot before the releaseRest-gated
+            // fetches are queued, or they can take every slot and starve it (an intermittent hang).
+            var deadline = DateTime.UtcNow + timeout;
+            while (BlockRequests(handler, 0) == 0)
+            {
+                if (DateTime.UtcNow > deadline) throw new TimeoutException("block 0 never got a fetch slot");
+                await Task.Delay(5);
+            }
         }
         stream.Position = 0;
         var bytes = new byte[4096];
