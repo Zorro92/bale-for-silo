@@ -40,9 +40,18 @@ public static class ConsoleEvidence
         Hdr: new(), // Unknown until the player reads the connected display; installed HEVC is not HDR evidence.
         Subtitles: new()) // No subtitle rendering has been measured yet; permit server burn-in instead.
     {
+        VideoDecode = BuildVideoDecode(),
+        DisplayHdrEvidence = "unknown",
+    };
+
+    /// <summary>Measured decode claims; optional AV1 bounds let debug callers test unmeasured sizes.</summary>
+    public static IReadOnlyList<VideoDecodeCapability> BuildVideoDecode(int av1MaxWidth = 1920, int av1MaxHeight = 1080)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(av1MaxWidth);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(av1MaxHeight);
         // Mirror silo-apple's iosApp/iosApp/Shared/AppleDecodeCapabilities.swift bounded attestation.
-        // The display tops out at 1080p (docs/player-plan.md), so make no 4K claim.
-        VideoDecode = Array.AsReadOnly(new[]
+        // The measured display tops out at 1080p (docs/player-plan.md), so keep system claims there.
+        return Array.AsReadOnly(new[]
         {
             // H.264/AAC MP4 playback is verified on the console (docs/player-plan.md).
             new VideoDecodeCapability("h264", "Media Foundation", [], [], [8], 1920, 1080, 60, 25000, true),
@@ -50,10 +59,9 @@ public static class ConsoleEvidence
             new VideoDecodeCapability("hevc", "Media Foundation", [], [], [8, 10], 1920, 1080, 60, 25000, true),
             // 0.1.230 Fight Club test: dav1d, AV1 Main 10-bit 1080p23.976, real time (~1.3 cores).
             // 8-bit clips also verified. Bound the claim to 1080p30; 4K software AV1 is untested.
-            new VideoDecodeCapability("av1", "dav1d", [], [], [8, 10], 1920, 1080, 30, null, false),
-        }),
-        DisplayHdrEvidence = "unknown",
-    };
+            new VideoDecodeCapability("av1", "dav1d", [], [], [8, 10], av1MaxWidth, av1MaxHeight, 30, null, false),
+        });
+    }
 }
 
 // Wire shapes from shared/src/commonMain/kotlin/org/siloserver/silo/model/playback/PlaybackModels.kt.

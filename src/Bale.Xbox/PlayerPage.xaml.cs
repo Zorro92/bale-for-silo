@@ -70,6 +70,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public bool MatchContentFrameRate { get; } = DebugDisplayMatch.Enabled;
         public string FrameDeliveryMode { get; } = DebugFrameDeliverySwitch.Mode;
         public bool UsePooledStreamAdapter { get; } = DebugStreamAdapterSwitch.Pooled;
+        public int Av1ClaimMaxHeight { get; } = DebugAv1ClaimSwitch.MaxHeight;
         public bool FfmpegEnabled => FfmpegMode == "policy";
 #else
         public bool UsePooledStreamAdapter => true;
@@ -170,11 +171,17 @@ public sealed partial class PlayerPage : Page, IBackHandler
                     request.SuppressResumeRewind ? 0 : PlaybackStartPosition.DefaultResumeRewindSeconds);
                 var capabilities = DisplayHdrOutput.DetectCapabilities();
 #if DEBUG_SERVER
+                if (attempt.Av1ClaimMaxHeight == 2160)
+                    capabilities = capabilities with { VideoDecode = ConsoleEvidence.BuildVideoDecode(3840, 2160) };
                 capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);
                 capabilities = DebugHdrPlayback.Capabilities(attempt.PretendHdr, capabilities);
 #endif
                 var start = attempt.Start = PlaybackStartBuilder.Build(request.Detail, request.Selection,
                     services.ProfileId, Guid.NewGuid().ToString(), startPosition, capabilities, DeviceIdentity.Current());
+#if DEBUG_SERVER
+                if (attempt.Av1ClaimMaxHeight == 2160 && attempt.FfmpegEnabled)
+                    Log.Info("player: av1 claim=2160p (debug)");
+#endif
                 var decision = await client.Playback.StartAsync(start, services.Installation, ct);
                 var validation = PlaybackMessages.ValidatePlayable(decision);
                 if (!validation.IsPlayable)

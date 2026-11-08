@@ -649,6 +649,63 @@ public class DebugPlaytestScriptTests
         Assert.Contains("--fail-with-body", result.Arguments);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("1080")]
+    [InlineData("2160")]
+    public async Task Av1ClaimReadsStatusOrPostsOnlyAValidatedBound(string? height)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var readout = "av1-claim=" + (height ?? "1080") + "\n";
+        var result = await RunAsync(height is null ? ["av1-claim"] : ["av1-claim", height], readout);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(readout, result.Output);
+        Assert.Contains("/av1-claim\n", result.Arguments);
+        Assert.Contains("--max-time\n5\n", result.Arguments);
+        Assert.Contains("--fail-with-body", result.Arguments);
+        if (height is null)
+        {
+            Assert.DoesNotContain("POST", result.Arguments);
+            Assert.DoesNotContain("--data-urlencode", result.Arguments);
+        }
+        else
+        {
+            Assert.Contains("-X\nPOST\n", result.Arguments);
+            Assert.Contains("--data-urlencode\nheight=" + height + "\n", result.Arguments);
+        }
+    }
+
+    [Fact]
+    public async Task InvalidAv1ClaimArgumentsShowUsageWithoutInvokingCurl()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[]
+        {
+            new[] { "av1-claim", "" }, ["av1-claim", "status"], ["av1-claim", "720"], ["av1-claim", "4320"],
+            ["av1-claim", "2160p"], ["av1-claim", "02160"], ["av1-claim", "2160.0"], ["av1-claim", " 2160"],
+            ["av1-claim", "1080 "], ["av1-claim", "2160&extra=1"], ["av1-claim", "1080", "2160"], ["av1-claim", "2160", ""],
+        })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Equal("usage: scripts/bale-debug.sh av1-claim [1080|2160]\n", result.Output);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("2160")]
+    public async Task Av1ClaimFailurePreservesTheResponseBodyAndExitStatus(string? height)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        const string failure = "height must be 1080 or 2160\n";
+        var result = await RunAsync(height is null ? ["av1-claim"] : ["av1-claim", height], failure, 22);
+        Assert.Equal(22, result.ExitCode);
+        Assert.Equal(failure, result.Output);
+        Assert.Contains("--fail-with-body", result.Arguments);
+    }
+
     [Fact]
     public async Task InvalidDisplayMatchingArgumentsNeverReachCurl()
     {
