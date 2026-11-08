@@ -1,3 +1,4 @@
+using Bale.Core.Detail;
 using Bale.Core.Playback;
 
 namespace Bale.Core.Tests;
@@ -11,6 +12,8 @@ public class PlayPlanOptionsTests
         Assert.Empty(error);
         Assert.False(options.ClaimAv1);
         Assert.Null(options.UrlFile);
+        Assert.Null(options.FileId);
+        Assert.Equal(1080, options.Av1MaxHeight);
         Assert.Equal(0, options.HoldSeconds);
         Assert.Same(ConsoleEvidence.Default, options.Capabilities());
     }
@@ -25,6 +28,78 @@ public class PlayPlanOptionsTests
         Assert.True(PlayPlanOptions.TryParse(["Bale", "Test", "--hold", "0"], out _, out _));
         Assert.True(PlayPlanOptions.TryParse(["--hold", "3600", "Bale Test"], out _, out _));
     }
+
+    [Fact]
+    public void ParsesAnExplicitVersionAndAv1HeightWithAHeadSaveInEitherOrder()
+    {
+        Assert.True(PlayPlanOptions.TryParse(
+            ["--file", "file-av1", "--av1-max-height", "2160", "--save-head", "head.mkv", "1"], out var options, out var error));
+        Assert.Empty(error);
+        Assert.Equal("file-av1", options.FileId);
+        Assert.Equal(2160, options.Av1MaxHeight);
+        Assert.Equal("head.mkv", options.SaveHead);
+        Assert.Equal(1, options.HeadMegabytes);
+        Assert.True(PlayPlanOptions.TryParse(
+            ["Bale", "Test", "--save-head", "head.mkv", "1", "--av1-max-height", "2160", "--file", "file-av1"], out var reordered, out _));
+        Assert.Equal(options, reordered);
+        var start = PlaybackStartBuilder.Build("automatic-file", "profile", "attempt", null,
+            new PlaybackSelection(options.FileId), options.Capabilities(), PlaybackTestSupport.Identity);
+        Assert.Equal("file-av1", start.FileId);
+    }
+
+    [Theory]
+    [InlineData("1080", 1920, 1080)]
+    [InlineData("2160", 3840, 2160)]
+    public void ExplicitAv1HeightChangesOnlyTheRequestedDecodeBounds(string value, int width, int height)
+    {
+        Assert.True(PlayPlanOptions.TryParse(["--av1-max-height", value], out var options, out _));
+        Assert.Equal(height, options.Av1MaxHeight);
+        var capabilities = options.Capabilities();
+        Assert.Equal(ConsoleEvidence.Default with { VideoDecode = capabilities.VideoDecode }, capabilities);
+        var av1 = Assert.Single(capabilities.VideoDecode, codec => codec.Codec == "av1");
+        Assert.Equal(width, av1.MaxWidth);
+        Assert.Equal(height, av1.MaxHeight);
+        Assert.Equal(30, av1.MaxFrameRate);
+        Assert.Equal(new[] { 8, 10 }, av1.BitDepths);
+        Assert.False(av1.Hardware);
+        Assert.All(capabilities.VideoDecode.Where(codec => codec.Codec != "av1"), codec =>
+        {
+            Assert.Equal(1920, codec.MaxWidth);
+            Assert.Equal(1080, codec.MaxHeight);
+        });
+        var start = PlaybackStartBuilder.Build("file", "profile", "attempt", null,
+            PlaybackSelection.Auto, capabilities, PlaybackTestSupport.Identity);
+        Assert.Same(capabilities.VideoDecode, start.ClientCapabilities.VideoDecode);
+        var baseline = Assert.Single(ConsoleEvidence.Default.VideoDecode, codec => codec.Codec == "av1");
+        Assert.Equal(1920, baseline.MaxWidth);
+        Assert.Equal(1080, baseline.MaxHeight);
+        if (height == 1080) Assert.Same(ConsoleEvidence.Default, capabilities);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("--hold")]
+    [InlineData("--av1-max-height")]
+    public void RejectsInvalidFileIds(string fileId) => Assert.False(
+        PlayPlanOptions.TryParse(["--file", fileId], out _, out _));
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("720")]
+    [InlineData("1081")]
+    [InlineData("4320")]
+    [InlineData("2160p")]
+    [InlineData("02160")]
+    [InlineData("2160.0")]
+    [InlineData(" 2160")]
+    [InlineData("2160 ")]
+    [InlineData("+2160")]
+    [InlineData("-1080")]
+    [InlineData("999999999999999999")]
+    [InlineData("--claim-av1")]
+    public void RejectsInvalidAv1Heights(string height) => Assert.False(
+        PlayPlanOptions.TryParse(["--av1-max-height", height], out _, out _));
 
     [Fact]
     public void SaveHeadTakesAPathAndABoundedMebibyteCount()
@@ -56,6 +131,8 @@ public class PlayPlanOptionsTests
 
     [Theory]
     [InlineData("--unknown")]
+    [InlineData("--file")]
+    [InlineData("--av1-max-height")]
     [InlineData("--url-file")]
     [InlineData("--hold")]
     [InlineData("Own")]
@@ -76,6 +153,12 @@ public class PlayPlanOptionsTests
     [Fact]
     public void RejectsDuplicatesAndMissingFileValues()
     {
+        Assert.False(PlayPlanOptions.TryParse(["--file", "first", "--file", "second"], out _, out _));
+        Assert.False(PlayPlanOptions.TryParse(["--file", "same", "--file", "same"], out _, out _));
+        Assert.False(PlayPlanOptions.TryParse(["--av1-max-height", "1080", "--av1-max-height", "2160"], out _, out _));
+        Assert.False(PlayPlanOptions.TryParse(["--av1-max-height", "2160", "--av1-max-height", "1080"], out _, out _));
+        Assert.False(PlayPlanOptions.TryParse(["--av1-max-height", "1080", "--av1-max-height", "1080"], out _, out _));
+        Assert.False(PlayPlanOptions.TryParse(["--av1-max-height", "2160", "--av1-max-height", "2160"], out _, out _));
         Assert.False(PlayPlanOptions.TryParse(["--claim-av1", "--claim-av1"], out _, out _));
         Assert.False(PlayPlanOptions.TryParse(["--hold", "0", "--hold", "1"], out _, out _));
         Assert.False(PlayPlanOptions.TryParse(["--url-file", "/tmp/x", "--url-file", "/tmp/y"], out _, out _));
@@ -144,10 +227,24 @@ public class PlayPlanOptionsTests
     }
 
     [Fact]
+    public void DetailListsVersionIdsAndSharedFormatLabelsAndUsageDocumentsTheOptions()
+    {
+        var program = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "CliProgram.cs.txt"));
+        Assert.Contains("foreach (var version in detail.Versions)", program);
+        Assert.Contains("PlaybackFormatting.VersionCompactLabel(version)", program);
+        Assert.Contains("PlaybackFormatting.VersionDetailLabel(version)", program);
+        Assert.Contains("Console.WriteLine($\"  version file={version.FileId} {summary}\")", program);
+        var usage = program[program.IndexOf("static int Usage()", StringComparison.Ordinal)..];
+        Assert.Contains("[--file <fileId>]", usage);
+        Assert.Contains("[--av1-max-height <1080|2160>]", usage);
+    }
+
+    [Fact]
     public void PlayPlanHidesGrantsAndStopsInFinallyUsingAnIndependentDeadline()
     {
         var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "PlayPlanCommand.cs.txt"));
         Assert.Contains("p.Name == \"Bale Test\"", source);
+        Assert.Contains("PlaybackStartBuilder.Build(detail, new PlaybackSelection(options.FileId), profile.Id", source);
         Assert.Contains("options.Capabilities()", source);
         Assert.Contains("reporter.RunAsync(sessionId, heartbeat.Token)", source);
         Assert.Contains("Task.Delay(TimeSpan.FromSeconds(options.HoldSeconds), cancellationToken)", source);

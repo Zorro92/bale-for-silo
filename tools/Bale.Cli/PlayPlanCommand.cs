@@ -16,7 +16,7 @@ internal static class PlayPlanCommand
         var capability = await client.Playback.GetCapabilitiesAsync(cancellationToken);
         var installation = new CliInstallation(capability.InstallationId!);
         var detail = await client.Detail.LoadAsync(contentId, cancellationToken);
-        var start = PlaybackStartBuilder.Build(detail, PlaybackSelection.Auto, profile.Id,
+        var start = PlaybackStartBuilder.Build(detail, new PlaybackSelection(options.FileId), profile.Id,
             Guid.NewGuid().ToString(), null, options.Capabilities(), identity);
         var decision = await client.Playback.StartAsync(start, installation, cancellationToken);
         var sessionId = decision.SessionId;

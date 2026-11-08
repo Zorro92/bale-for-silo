@@ -7,8 +7,9 @@
 //   bale-cli home [--json] [--for-you]         print the home rows Bale would show
 //   bale-cli detail <content-id>   print a title's detail page as Bale shows it
 //   bale-cli search <query>        print search results and their artwork
-//   bale-cli play-plan <content-id> [Bale Test] [--url-file <path>] [--save-head <path> <MiB>] [--save-range <path> <offset> <bytes>] [--hold <seconds>]
+//   bale-cli play-plan <content-id> [Bale Test] [--file <fileId>] [--av1-max-height <1080|2160>] [--url-file <path>] [--save-head <path> <MiB>] [--save-range <path> <offset> <bytes>] [--hold <seconds>]
 //       Bale Test only; private original_http URL file, hold 0–3600 s then stop (also on Ctrl+C)
+//       Explicit file selection; AV1 defaults to 1080p, 2160p is an unmeasured debug claim
 //   bale-cli logout
 //
 // Run with: dotnet run --project tools/Bale.Cli -- <command> ...
@@ -186,6 +187,14 @@ switch (command)
             Console.WriteLine($"  {detail.CreditLine}");
             Console.WriteLine($"  flags: {detail.Flags}  play: {detail.PlayTargetId} (season {detail.PlaySeasonNumber})");
             Console.WriteLine($"  cast: {string.Join(", ", detail.Cast.Take(5).Select(c => $"{c.Name} ({c.Role})"))}");
+            foreach (var version in detail.Versions)
+            {
+                var summary = string.Join(" · ", new[]
+                {
+                    PlaybackFormatting.VersionCompactLabel(version), PlaybackFormatting.VersionDetailLabel(version),
+                }.Where(label => !string.IsNullOrWhiteSpace(label)));
+                Console.WriteLine($"  version file={version.FileId} {summary}");
+            }
             if (detail.IsSeries)
             {
                 var seasons = await client.Detail.SeasonsAsync(detail.ContentId, cts.Token);
@@ -246,7 +255,7 @@ catch (Bale.Core.Api.Models.Problem problem)
 
 static int Usage()
 {
-    Console.Error.WriteLine("usage: bale-cli <capability|pair-test|login> <server> | <profiles|home [--json] [--for-you]|detail <id>|search <query>|play-plan <id> [Bale Test] [--url-file <path>] [--save-head <path> <MiB>] [--save-range <path> <offset> <bytes>] [--hold <seconds>]|logout>");
+    Console.Error.WriteLine("usage: bale-cli <capability|pair-test|login> <server> | <profiles|home [--json] [--for-you]|detail <id>|search <query>|play-plan <id> [Bale Test] [--file <fileId>] [--av1-max-height <1080|2160>] [--url-file <path>] [--save-head <path> <MiB>] [--save-range <path> <offset> <bytes>] [--hold <seconds>]|logout>");
     return 2;
 }
 
