@@ -339,8 +339,10 @@ pub unsafe extern "C" fn bale_frame_observer_status(obs: *mut c_void) -> i32 {
 pub unsafe extern "C" fn bale_frame_observer_video_descriptor(obs: *mut c_void) -> *mut c_void {
     // SAFETY: guaranteed by the handle contract.
     let Some(observer) = (unsafe { obs.cast::<Observer>().as_ref() }) else { return core::ptr::null_mut() };
-    if let Ok(video) = observer.state.video.lock() {
-        if let Some(video) = video.as_ref() { return video.clone().into_raw() }
+    if let Ok(video) = observer.state.video.lock()
+        && let Some(video) = video.as_ref()
+    {
+        return video.clone().into_raw();
     }
     core::ptr::null_mut()
 }
