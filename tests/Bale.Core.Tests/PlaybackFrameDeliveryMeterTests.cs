@@ -186,12 +186,17 @@ public class PlaybackFrameDeliveryMeterTests
         // Native AOT returns the descriptor as a plain IInspectable wrapper: a C# type test is
         // always false there (0.1.243 console log), so the video check must QueryInterface.
         Assert.DoesNotContain("is not VideoStreamDescriptor", observer);
-        Assert.Contains("!IsVideo(args.Request.StreamDescriptor)", observer);
+        Assert.Contains("!IsVideo(request.StreamDescriptor)", observer);
         Assert.Contains("WinRT.CastExtensions.As<VideoStreamDescriptor>(descriptor)", observer);
         Assert.Contains(".EncodingProperties.Subtype", observer);
         Assert.Contains("internal string? OutputPixelFormat", observer);
         Assert.Contains("bool collectAheadStatistics = false", observer);
-        Assert.Contains("args.Request.Sample is not { } sample", observer);
+        Assert.Contains("sample = request.Sample;", observer);
+        // Sample and request wrappers are released deterministically, never left to finalization.
+        Assert.Contains("Release(sample);", observer);
+        Assert.Contains("Release(request);", observer);
+        Assert.Contains("winrt.NativeObject.Dispose()", observer);
+        Assert.DoesNotContain("request.Sample =", observer);
         Assert.Contains("_source.SampleRequested -= OnSampleRequested", observer);
         Assert.DoesNotContain("args.Request.Sample =", observer);
         Assert.DoesNotContain("sample.Buffer", observer);

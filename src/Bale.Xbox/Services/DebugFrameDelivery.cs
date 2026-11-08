@@ -86,9 +86,13 @@ internal sealed class DebugFrameDelivery : IDisposable
     private void OnSampleRequested(MediaStreamSource sender, MediaStreamSourceSampleRequestedEventArgs args)
     {
         if (Volatile.Read(ref _unavailable) != 0) return;
+        MediaStreamSourceSampleRequest? request = null;
+        MediaStreamSample? sample = null;
         try
         {
-            if (args.Request.Sample is not { } sample || !IsVideo(args.Request.StreamDescriptor)) return;
+            request = args.Request;
+            sample = request.Sample;
+            if (sample is null || !IsVideo(request.StreamDescriptor)) return;
             // Serialize timeline resets with the meter/trace pair so a delivery cannot straddle a
             // trace reset.
             lock (_timelineGate)
@@ -113,6 +117,21 @@ internal sealed class DebugFrameDelivery : IDisposable
             if (++_videoSamples % CollectEvery == 0) GC.Collect(0, GCCollectionMode.Forced, blocking: false);
         }
         catch (Exception ex) { Unavailable(ex); }
+        finally
+        {
+            // Release the sample and request references now instead of at finalization. Finalizable
+            // wrappers that outlive gen0 were promoted until full blocking collections paused delivery
+            // for ~340-400 ms every 5-10 s (frame-trace class=gc, 1080p AV1). The descriptor stays
+            // wrapped: _kinds caches it by reference.
+            Release(sample);
+            Release(request);
+        }
+    }
+
+    private static void Release(object? wrapper)
+    {
+        try { if (wrapper is WinRT.IWinRTObject winrt) winrt.NativeObject.Dispose(); }
+        catch { }
     }
 
     // Native AOT: CsWinRT hands the descriptor back as a plain IInspectable wrapper, so a C# type
