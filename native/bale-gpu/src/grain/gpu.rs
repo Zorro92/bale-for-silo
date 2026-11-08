@@ -541,7 +541,18 @@ fn unbind(context: &ID3D11DeviceContext) {
 }
 
 fn check_formats(device: &ID3D11Device) -> Result<()> {
-    for format in [
+    for (format, required) in required_formats() {
+        // SAFETY: live device, format is a known DXGI enum value.
+        if unsafe { device.CheckFormatSupport(format)? } & required != required {
+            return Err(E_NOTIMPL.into());
+        }
+    }
+    Ok(())
+}
+
+/// Shared with the console probe so diagnostics check exactly the create-time requirements.
+pub(super) fn required_formats() -> impl Iterator<Item = (DXGI_FORMAT, u32)> {
+    [
         DXGI_FORMAT_NV12,
         DXGI_FORMAT_P010,
         DXGI_FORMAT_R8_UINT,
@@ -550,7 +561,9 @@ fn check_formats(device: &ID3D11Device) -> Result<()> {
         DXGI_FORMAT_R16G16_UINT,
         DXGI_FORMAT_R16_SINT,
         DXGI_FORMAT_R16G16_SINT,
-    ] {
+    ]
+    .into_iter()
+    .map(|format| {
         let mut required = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32;
         if !matches!(format, DXGI_FORMAT_NV12 | DXGI_FORMAT_P010) {
             required |= D3D11_FORMAT_SUPPORT_SHADER_LOAD.0 as u32;
@@ -564,15 +577,11 @@ fn check_formats(device: &ID3D11Device) -> Result<()> {
         ) {
             required |= D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32;
         }
-        // SAFETY: live device, format is a known DXGI enum value.
-        if unsafe { device.CheckFormatSupport(format)? } & required != required {
-            return Err(E_NOTIMPL.into());
-        }
-    }
-    Ok(())
+        (format, required)
+    })
 }
 
-fn plane_formats(format: DXGI_FORMAT) -> [DXGI_FORMAT; 2] {
+pub(super) fn plane_formats(format: DXGI_FORMAT) -> [DXGI_FORMAT; 2] {
     if format == DXGI_FORMAT_P010 {
         [DXGI_FORMAT_R16_UINT, DXGI_FORMAT_R16G16_UINT]
     } else {
@@ -580,7 +589,12 @@ fn plane_formats(format: DXGI_FORMAT) -> [DXGI_FORMAT; 2] {
     }
 }
 
-fn texture_desc(width: u32, height: u32, format: DXGI_FORMAT, bind: u32) -> D3D11_TEXTURE2D_DESC {
+pub(super) fn texture_desc(
+    width: u32,
+    height: u32,
+    format: DXGI_FORMAT,
+    bind: u32,
+) -> D3D11_TEXTURE2D_DESC {
     D3D11_TEXTURE2D_DESC {
         Width: width,
         Height: height,
@@ -597,7 +611,7 @@ fn texture_desc(width: u32, height: u32, format: DXGI_FORMAT, bind: u32) -> D3D1
     }
 }
 
-fn texture(
+pub(super) fn texture(
     device: &ID3D11Device,
     desc: &D3D11_TEXTURE2D_DESC,
     data: Option<&D3D11_SUBRESOURCE_DATA>,
@@ -609,7 +623,7 @@ fn texture(
     texture.ok_or_else(|| E_FAIL.into())
 }
 
-fn shader_view(
+pub(super) fn shader_view(
     device: &ID3D11Device,
     texture: &ID3D11Texture2D,
     format: DXGI_FORMAT,
@@ -631,7 +645,7 @@ fn shader_view(
     view.ok_or_else(|| E_FAIL.into())
 }
 
-fn render_view(
+pub(super) fn render_view(
     device: &ID3D11Device,
     texture: &ID3D11Texture2D,
     format: DXGI_FORMAT,
@@ -730,7 +744,7 @@ impl Drop for MappedRead<'_> {
     }
 }
 
-fn readback_bytes(
+pub(super) fn readback_bytes(
     context: &ID3D11DeviceContext,
     texture: &ID3D11Texture2D,
     row_bytes: usize,
@@ -758,7 +772,7 @@ fn readback_bytes(
     Ok(result)
 }
 
-fn self_test_params(bit_depth: u8, csfl: bool) -> BaleGrainParams {
+pub(super) fn self_test_params(bit_depth: u8, csfl: bool) -> BaleGrainParams {
     let mut p = BaleGrainParams {
         struct_size: PARAMS_SIZE,
         seed: 45231,

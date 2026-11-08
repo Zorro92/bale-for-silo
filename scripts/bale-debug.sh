@@ -32,7 +32,7 @@
 #                                               system/passthrough video only: maxres 0–1, dpb 0–16 (0=unset); both default unset, opt-in pending wrapper release/repin
 #                                               software-video release defaults: ahead=16, sws=4; delay=8 only above 1080p (width >1920 or height >1080), otherwise unset
 #                                               key i / where show applied settings and demand block waits (count/max/total ms)
-#   scripts/bale-debug.sh rust                   load check for the Rust GPU layer (bale_gpu.dll): ABI, std threads, D3D11
+#   scripts/bale-debug.sh rust                   Rust loader + GPU film grain: hardware/self-tests, 1080p correctness, 1080p/4K GPU and CPU timings (120 s timeout)
 #   scripts/bale-debug.sh mem [gc]               managed GC heap vs app memory; gc forces a full collection + finalizers first
 #   scripts/bale-debug.sh gc                     GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
 #   scripts/bale-debug.sh gc latency <batch|interactive|sustained|default>  change latency app-wide now; default restores the saved pre-playback mode; playback acquires sustained automatically
@@ -218,7 +218,7 @@ case "${1:-}" in
       echo 'usage: scripts/bale-debug.sh rust' >&2
       exit 2
     fi
-    curl --fail-with-body -sS --max-time 15 "$BASE/rust"
+    curl --fail-with-body -sS --max-time 120 "$BASE/rust"
     ;;
   mem)
     if [[ "$#" -gt 2 || ( "$#" -eq 2 && "$2" != gc ) ]]; then

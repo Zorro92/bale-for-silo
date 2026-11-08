@@ -5,8 +5,9 @@ integer GPU passes. [Windows CI run 42505455358](https://github.com/Zorro92/bale
 passes real FXC compilation, strict Windows Clippy, all four create-time self-tests and all 44 WARP
 fixtures / 88 frames, including padding and pipeline-state checks. Local formatting, strict Linux
 and Windows cross-target Clippy, and Linux bit-exact release tests also pass. The Linux cross-check
-uses placeholder shaders, not GPU execution. Steps 3–6 remain future work; no wrapper, console
-verification or runtime-policy changes. Playback still uses dav1d grain.
+uses placeholder shaders, not GPU execution. Step 3 adds a synthetic console probe; console results
+are pending. Steps 4–6 remain future work; no wrapper or runtime-policy changes. Playback still uses
+dav1d grain.
 Reference algorithm: dav1d 1.5.4, commit `54706fc6bc0cdecab7e9593974a4039cc038fca7`,
 `src/filmgrain_tmpl.c` + `src/fg_apply_tmpl.c` + the Gaussian sequence in `src/tables.c` (BSD-2).
 Ported files retain the original copyright and full licence; `native/bale-gpu/NOTICE` records provenance.
@@ -72,6 +73,9 @@ HRESULT  bale_grain_gpu_create(ID3D11Device*, ID3D11DeviceContext*, BaleGrainGpu
 HRESULT  bale_grain_gpu_apply(BaleGrainGpu*, const BaleGrainParams*,
                               ID3D11Texture2D* src_staging, ID3D11Texture2D* dst_pooled);
 void     bale_grain_gpu_destroy(BaleGrainGpu*);
+
+// Step 3 (Windows): synthetic hardware diagnostics; bytes written, UTF-8, no trailing NUL.
+uint32_t bale_grain_gpu_probe(uint8_t* report, uint32_t capacity);
 ```
 - `HRESULT` is `i32` in Rust. The three step-1 exports each use `catch_unwind`; validation/layout
   failures return E_INVALIDARG, and a panic returns E_UNEXPECTED. Release keeps `panic = "unwind"`.
@@ -302,10 +306,23 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
 - Local required checks: `cargo fmt --check`, native/Linux strict all-target Clippy, locked release
   tests, and strict Windows all-target cross-Clippy (placeholder blobs, not GPU execution).
 
-### Future console gate (step 3; not run in step 2)
-- The probe reports Context1, view-format support and the self-test result. Paused-frame screenshots
-  for `grain=dav1d` vs `grain=gpu` should be identical, as stage 1's were. Then measure CPU A/B
-  (target −0.25 to −0.4 cores), late frames and Sample memory; these remain future targets, not results.
+### Step 3: console probe
+- Debug-only `scripts/bale-debug.sh rust` / `GET /rust` calls the additive `bale_grain_gpu_probe`
+  export (grain ABI 1, crate ABI 4 unchanged), on the existing background task with a 64 KiB report
+  buffer and a 120 s curl timeout. It creates a private hardware VIDEO_SUPPORT device, enables
+  multithread protection, reports feature level and runs the existing NV12/P010 create-time tests.
+  A failed create also reports Device1/Context1 casts, required format-support bits, context-state
+  creation and individual NV12/P010 UINT plane SRV/RTV results.
+- Synthetic 1920×1080 P010 and NV12 frames are compared byte-for-byte with `cpu::apply` (threads 0),
+  including the first differing plane/x/y if any. Timing uses changing seeds, five warm-up applies
+  then 60 frames for 1080p P010, 4K P010 and 1080p NV12: CPU submission and GPU timestamp-query
+  median/p95 in ms/frame. Disjoint samples are explicitly skipped; query polling has a bounded
+  two-second wait and reports timeouts. P010 1080p CPU fallback reports ten-frame medians for
+  threads 1 and 0 (auto, capped at four); input reset is outside the timed call.
+- **Console results pending.** No console deployment or probe run is claimed. The probe does not
+  enable GPU grain in playback. After wrapper integration, paused-frame `grain=dav1d` vs `grain=gpu`
+  screenshots, CPU A/B (target −0.25 to −0.4 cores), late frames and Sample memory remain future
+  gates, not results.
 
 ## 8. 4K memory cap
 - 4K P010 ≈ 24.9 MB per texture vs 6.2 MB at 1080p. ~55 in flight would be ~1.3 GB of the 3.25 GB budget.
@@ -325,7 +342,7 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
    in Linux and Windows CI. Local release oracles and Windows library/test cross-checks pass.
 2. **Implemented:** HLSL + gpu.rs + additive GPU ABI + strict Windows lint and mandatory WARP tests.
    Real shader compilation and WARP results are gated by Windows CI; no console verification.
-3. Probe additions; check on the console.
+3. **Probe implemented:** hardware diagnostics, full-size correctness, GPU/CPU timing; console results pending.
 4. Wrapper patch 0009 + `grain=` tune knob + packaging check; release with default dav1d.
 5. Console screenshot identity, CPU A/B, memory; then default gpu.
 6. 4K decode-ahead cap, measured with a 4K grain title.

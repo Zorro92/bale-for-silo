@@ -148,7 +148,7 @@ pub unsafe extern "C" fn bale_gpu_engine_probe_source(
     unsafe { write_report(&text, report, report_capacity) }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 unsafe fn write_report(text: &str, report: *mut u8, report_capacity: u32) -> u32 {
     let mut length = text.len().min(report_capacity as usize);
     while !text.is_char_boundary(length) {

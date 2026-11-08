@@ -222,6 +222,35 @@ pub unsafe extern "C" fn bale_grain_gpu_destroy(handle: *mut super::gpu::BaleGra
     });
 }
 
+/// Run synthetic hardware grain correctness/timing checks, blocking the calling thread.
+/// Writes UTF-8 without a trailing NUL, truncating only at character boundaries.
+/// A panic writes "panic" (capacity permitting); null/empty output returns zero.
+///
+/// # Safety
+/// A non-null `report` must point to `capacity` exclusively writable bytes for this call.
+#[cfg(windows)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_grain_gpu_probe(report: *mut u8, capacity: u32) -> u32 {
+    // SAFETY: the caller supplies writable report storage as documented above.
+    unsafe { probe_report_boundary(report, capacity, super::probe::run) }
+}
+
+#[cfg(any(windows, test))]
+unsafe fn probe_report_boundary(
+    report: *mut u8,
+    capacity: u32,
+    run: impl FnOnce() -> String,
+) -> u32 {
+    if report.is_null() || capacity == 0 {
+        return 0;
+    }
+    // All GPU resources unwind before the panic fallback is written; no exception text is exposed.
+    let text = catch_unwind(AssertUnwindSafe(run));
+    let text = text.as_deref().unwrap_or("panic");
+    // SAFETY: the caller guarantees capacity writable bytes; write_report bounds the UTF-8 copy.
+    unsafe { crate::write_report(text, report, capacity) }
+}
+
 unsafe fn read_params(params: *const BaleGrainParams) -> Result<ValidGrainParams, i32> {
     if params.is_null() || (params as usize).checked_add(4).is_none() {
         return Err(E_INVALIDARG);
@@ -252,6 +281,53 @@ mod tests {
         assert_eq!(crate::ABI_VERSION, 4);
         assert_eq!(bale_grain_abi_version(), 1);
         assert_eq!(boundary(|| panic!("test boundary")), E_UNEXPECTED);
+    }
+
+    #[test]
+    fn probe_report_truncates_utf8_without_overwriting_guards() {
+        let text = "ok µ grain";
+        for capacity in 0..=16 {
+            let mut buffer = [0xa5; 18];
+            // SAFETY: capacity bytes starting at index one are writable, with guards on both sides.
+            let written = unsafe {
+                probe_report_boundary(buffer.as_mut_ptr().add(1), capacity, || text.into())
+            } as usize;
+            let mut expected = text.len().min(capacity as usize);
+            while !text.is_char_boundary(expected) {
+                expected -= 1;
+            }
+            assert_eq!(written, expected);
+            assert_eq!(&buffer[1..1 + written], &text.as_bytes()[..written]);
+            assert_eq!(buffer[0], 0xa5);
+            assert!(buffer[1 + written..].iter().all(|&byte| byte == 0xa5));
+        }
+    }
+
+    #[test]
+    fn probe_report_contains_panics_and_skips_null_or_empty_outputs() {
+        let mut buffer = [0xa5; 8];
+        // SAFETY: non-null storage covers each requested capacity; null/empty outputs are rejected.
+        unsafe {
+            assert_eq!(
+                probe_report_boundary(std::ptr::null_mut(), 8, || panic!("not called")),
+                0
+            );
+            assert_eq!(
+                probe_report_boundary(buffer.as_mut_ptr(), 0, || panic!("not called")),
+                0
+            );
+            assert_eq!(
+                probe_report_boundary(buffer.as_mut_ptr(), 8, || panic!("test boundary")),
+                5
+            );
+            assert_eq!(&buffer[..5], b"panic");
+            assert_eq!(&buffer[5..], &[0xa5; 3]);
+            assert_eq!(
+                probe_report_boundary(buffer.as_mut_ptr(), 3, || panic!("test boundary")),
+                3
+            );
+            assert_eq!(&buffer[..3], b"pan");
+        }
     }
 
     #[test]

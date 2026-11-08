@@ -13,6 +13,9 @@ pub mod gpu;
 mod lfsr;
 mod offsets;
 pub mod params;
+#[cfg(windows)]
+#[allow(unsafe_code)]
+mod probe;
 mod scaling;
 mod template;
 
