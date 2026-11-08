@@ -182,7 +182,7 @@ public sealed partial class PlayerPage
         player.PlaybackSession.BufferingEnded += OnStatsBufferingEnded;
         if (media.Route.SoftwareVideo && media.FfmpegSource is { } softwareSource)
         {
-            try { media.FrameDelivery = new DebugFrameDelivery(softwareSource, player.PlaybackSession); }
+            try { media.FrameDelivery = new DebugFrameDelivery(softwareSource, player.PlaybackSession, stream: media.Stream); }
             catch (Exception ex) { LogFailure("frame delivery observer", ex); }
         }
         else Log.Info($"player: frame delivery not attached softwareVideo={media.Route.SoftwareVideo} ffmpeg={media.FfmpegSource is not null}");

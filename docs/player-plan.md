@@ -204,6 +204,12 @@ stream. Non-range HTTP, HLS and absent streams show waits as unavailable, not me
 The effective FFmpeg rows show unavailable on non-FFmpeg routes. Compare wait bursts with late
 delivery; neither counter is evidence of renderer drops or decoder CPU saturation.
 
+- Debug-only `bale-debug.sh frame-trace` prints totals and the last 300 software-video late deliveries,
+  with previous-sample gap, delivered-ahead, stream-wait and GC deltas. Classes, in precedence order:
+  `stream` (wait time increased), `gc` (pause delta ≥4 ms), `gap` (delivery gap >2× sample duration),
+  `other`. These are correlations, not proven causes or renderer drops. `frame-trace reset` clears
+  the trace/totals; starting and seeking also reset it, and seek samples are skipped.
+
 The standalone `playtest-ffmpeg` URI probe is for public or independently fetchable media. A private
 `play-plan --url-file` file protects the URL on disk, but does not convey Bale's profile/authentication
 headers to FFmpeg. Use the real-player toggle for library files, under **Bale Test**.

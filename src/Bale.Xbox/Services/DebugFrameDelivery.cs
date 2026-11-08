@@ -1,4 +1,5 @@
 #if DEBUG_SERVER
+using System.Diagnostics;
 using Bale.Core.Playback;
 using FFmpegInteropX;
 using Windows.Media.Core;
@@ -12,6 +13,10 @@ internal sealed class DebugFrameDelivery : IDisposable
     private readonly MediaStreamSource _source;
     private readonly MediaPlaybackSession _session;
     private readonly PlaybackFrameDeliveryMeter _meter;
+    private readonly HttpRangeStream? _stream;
+    private readonly PlaybackLateFrameTrace _lateFrameTrace = new();
+    private readonly object _timelineGate = new();
+    private bool _seeking;
     private string? _outputPixelFormat;
     private string? _outputColour;
     private int _unavailable;
@@ -20,9 +25,11 @@ internal sealed class DebugFrameDelivery : IDisposable
     private const int CollectEvery = 24;
     private readonly Dictionary<object, bool> _kinds = new(ReferenceEqualityComparer.Instance);
 
-    internal DebugFrameDelivery(FFmpegMediaSource source, MediaPlaybackSession session, bool collectAheadStatistics = false)
+    internal DebugFrameDelivery(FFmpegMediaSource source, MediaPlaybackSession session,
+        bool collectAheadStatistics = false, HttpRangeStream? stream = null)
     {
         _meter = new(collectAheadStatistics);
+        _stream = stream;
         _session = session;
         _source = source.GetMediaStreamSource();
         // FFmpegInteropX Source/FFmpegMediaSource.cpp OnSampleRequested (pinned 2.1.0 wrapper):
@@ -43,7 +50,22 @@ internal sealed class DebugFrameDelivery : IDisposable
     /// <summary>The decoded output's MF colour attributes (matrix, transfer, primaries, range), as set by the wrapper.</summary>
     internal string? OutputColour => Volatile.Read(ref _outputColour);
 
-    internal void SetSeeking(bool seeking) => _meter.SetSeeking(seeking);
+    internal void SetSeeking(bool seeking)
+    {
+        lock (_timelineGate)
+        {
+            _seeking = seeking;
+            _meter.SetSeeking(seeking);
+            _lateFrameTrace.Reset();
+        }
+    }
+
+    internal string DescribeLateFrameTrace() => _lateFrameTrace.Describe();
+
+    internal void ResetLateFrameTrace()
+    {
+        lock (_timelineGate) _lateFrameTrace.Reset();
+    }
 
     internal PlaybackFrameDeliverySnapshot? Read()
     {
@@ -52,7 +74,14 @@ internal sealed class DebugFrameDelivery : IDisposable
         catch (Exception ex) { Unavailable(ex); return null; }
     }
 
-    private void OnStarting(MediaStreamSource sender, MediaStreamSourceStartingEventArgs args) => _meter.InvalidateTimeline();
+    private void OnStarting(MediaStreamSource sender, MediaStreamSourceStartingEventArgs args)
+    {
+        lock (_timelineGate)
+        {
+            _meter.InvalidateTimeline();
+            _lateFrameTrace.Reset();
+        }
+    }
 
     private void OnSampleRequested(MediaStreamSource sender, MediaStreamSourceSampleRequestedEventArgs args)
     {
@@ -60,13 +89,26 @@ internal sealed class DebugFrameDelivery : IDisposable
         try
         {
             if (args.Request.Sample is not { } sample || !IsVideo(args.Request.StreamDescriptor)) return;
-            _meter.Observe(sample.Timestamp, sample.Duration, _session.Position,
-                _session.PlaybackState == MediaPlaybackState.Playing, sample.Discontinuous, Environment.TickCount64);
-            // Each managed sample wrapper keeps its native decoded frame (~6 MB at 1080p P010)
-            // alive until the GC finalizes it. Observing adds almost no managed allocation, so
-            // without this a bounded probe reached 3.4 GB commit and E_OUTOFMEMORY in ~19 s.
-            // A gen0 pass about once a second lets the finalizer release the frames.
-            if (++_videoSamples % CollectEvery == 0) GC.Collect(0, GCCollectionMode.Forced, blocking: false);
+            // Serialize timeline resets with the meter/trace pair so a delivery cannot straddle a
+            // trace reset. Keep the existing wrapper collection cadence unchanged.
+            lock (_timelineGate)
+            {
+                var nowMilliseconds = Stopwatch.GetTimestamp() * (1000.0 / Stopwatch.Frequency);
+                var timestamp = sample.Timestamp;
+                var duration = sample.Duration;
+                var position = _session.Position;
+                var late = _meter.Observe(timestamp, duration, position,
+                    _session.PlaybackState == MediaPlaybackState.Playing, sample.Discontinuous, Environment.TickCount64);
+                if (!_seeking)
+                    _lateFrameTrace.Sample(nowMilliseconds, timestamp, duration, position, late,
+                        _stream?.DemandWaits, _stream?.DemandWaitTime, GC.GetTotalPauseDuration(),
+                        GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2));
+                // Each managed sample wrapper keeps its native decoded frame (~6 MB at 1080p P010)
+                // alive until the GC finalizes it. Observing adds almost no managed allocation, so
+                // without this a bounded probe reached 3.4 GB commit and E_OUTOFMEMORY in ~19 s.
+                // A gen0 pass about once a second lets the finalizer release the frames.
+                if (++_videoSamples % CollectEvery == 0) GC.Collect(0, GCCollectionMode.Forced, blocking: false);
+            }
         }
         catch (Exception ex) { Unavailable(ex); }
     }

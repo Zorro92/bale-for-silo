@@ -30,6 +30,29 @@ public class PlaybackFrameDeliveryMeterTests
     }
 
     [Fact]
+    public void ObserveReturnsTrueExactlyWhenTheLateCounterIncreases()
+    {
+        var meter = new PlaybackFrameDeliveryMeter();
+        Assert.False(Observe(meter, 0, 1)); // Preroll.
+        Assert.False(Observe(meter, 1, 1)); // At the deadline.
+        Assert.False(Observe(meter, 2, 1)); // Ahead.
+        Assert.True(Observe(meter, 3, 4));
+        Assert.False(Observe(meter, 4, 5, playing: false));
+        Assert.False(Observe(meter, 5, 6)); // First playing frame after pause/buffering.
+        Assert.False(Observe(meter, 6, 7, discontinuous: true));
+        Assert.True(Observe(meter, 7, 8));
+        meter.SetSeeking(true);
+        Assert.False(Observe(meter, 8, 300));
+        meter.SetSeeking(false);
+        Assert.False(Observe(meter, 9, 300)); // Post-seek preroll.
+        Assert.True(Observe(meter, 300, 301));
+        meter.InvalidateTimeline();
+        Assert.False(Observe(meter, 400, 401));
+        Assert.True(Observe(meter, 401, 402));
+        Assert.Equal(4, meter.Read(TimeSpan.Zero, 0)!.LateFrames);
+    }
+
+    [Fact]
     public void RecentWindowExpiresEvenWhenNoNewSamplesArrive()
     {
         var meter = new PlaybackFrameDeliveryMeter();
@@ -184,7 +207,7 @@ public class PlaybackFrameDeliveryMeterTests
         Assert.Contains("player.DebugStatsRows", Read("DebugServer.cs.txt"));
     }
 
-    private static void Observe(PlaybackFrameDeliveryMeter meter, double pts, double position,
+    private static bool Observe(PlaybackFrameDeliveryMeter meter, double pts, double position,
         bool playing = true, bool discontinuous = false, long now = 0) =>
         meter.Observe(TimeSpan.FromSeconds(pts), TimeSpan.FromMilliseconds(40), TimeSpan.FromSeconds(position),
             playing, discontinuous, now);

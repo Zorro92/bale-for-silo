@@ -42,12 +42,14 @@ public sealed class PlaybackFrameDeliveryMeter
     }
 
     /// <param name="nowMilliseconds">Monotonic wall time, shared with Read.</param>
-    public void Observe(TimeSpan timestamp, TimeSpan duration, TimeSpan position, bool playing,
+    /// <returns>Whether this sample counted as a late frame.</returns>
+    public bool Observe(TimeSpan timestamp, TimeSpan duration, TimeSpan position, bool playing,
         bool discontinuous, long nowMilliseconds)
     {
         lock (_gate)
         {
-            if (_seeking) return;
+            if (_seeking) return false;
+            var late = false;
             _observed = true;
             _delivered++;
             _deliveredEnd = timestamp + duration;
@@ -59,10 +61,12 @@ public sealed class PlaybackFrameDeliveryMeter
                 {
                     _late++;
                     _recent.Enqueue(nowMilliseconds);
+                    late = true;
                 }
             }
             _ignoreNext = !playing;
             Trim(nowMilliseconds);
+            return late;
         }
     }
 

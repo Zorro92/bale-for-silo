@@ -529,6 +529,58 @@ public class DebugPlaytestScriptTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task FrameTraceReadsOrResetsAndPreservesTheTraceOutput(bool reset)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        const string trace = "samples=2 late=1 stream=0 gc=0 gap=0 other=1 max-gap=10.0 long-gaps=0\n"
+            + "t=10.0 pts=100.0 late=1.0 ahead=-61.0 gap=10.0 dw=- gc=0.0 g0=0 g1=0 g2=0 class=other\n";
+        var result = await RunAsync(reset ? ["frame-trace", "reset"] : ["frame-trace"], trace);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(trace, result.Output);
+        Assert.Contains("/frame-trace\n", result.Arguments);
+        Assert.Contains("--max-time\n5\n", result.Arguments);
+        Assert.Contains("--fail-with-body", result.Arguments);
+        if (reset)
+        {
+            Assert.Contains("-X\nPOST\n", result.Arguments);
+            Assert.Contains("--data-urlencode\naction=reset\n", result.Arguments);
+        }
+        else
+        {
+            Assert.DoesNotContain("POST", result.Arguments);
+            Assert.DoesNotContain("--data-urlencode", result.Arguments);
+        }
+    }
+
+    [Fact]
+    public async Task InvalidFrameTraceArgumentsShowUsageWithoutInvokingCurl()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[] { new[] { "frame-trace", "" }, ["frame-trace", "list"], ["frame-trace", "RESET"],
+            ["frame-trace", "unknown"], ["frame-trace", "reset", "extra"], ["frame-trace", "reset", ""] })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Equal("usage: scripts/bale-debug.sh frame-trace [reset]\n", result.Output);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FrameTracePreservesUnavailableObserverOutput(bool reset)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        const string unavailable = "frame trace unavailable (no software video observer)\n";
+        var result = await RunAsync(reset ? ["frame-trace", "reset"] : ["frame-trace"], unavailable);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(unavailable, result.Output);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task StatsRowsDefaultsToAReadOnlyList(bool explicitList)
     {
         if (!OperatingSystem.IsLinux()) return;
@@ -607,6 +659,7 @@ public class DebugPlaytestScriptTests
     [Theory]
     [InlineData("stats", 22)]
     [InlineData("stats-rows", 0)]
+    [InlineData("frame-trace", 22)]
     public async Task NoPlayerMessageAndExitStatusArePreserved(string command, int exitCode)
     {
         if (!OperatingSystem.IsLinux()) return;

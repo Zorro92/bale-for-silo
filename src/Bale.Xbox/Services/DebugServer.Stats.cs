@@ -11,6 +11,14 @@ internal sealed partial class DebugServer
             ? ("200 OK", StatsRowFilter.DescribeStats(player.DebugStatsRows))
             : ("409 Conflict", "no active player page\n"));
 
+    private static Task<(string Status, string Body)> FrameTraceAsync(bool reset = false) => OnStatsUiAsync(() =>
+    {
+        if (CurrentPage(out _) is not PlayerPage player)
+            return ("409 Conflict", "no active player page\n");
+        if (reset) player.ResetDebugLateFrameTrace();
+        return ("200 OK", player.DebugLateFrameTrace);
+    });
+
     private static Task<(string Status, string Body)> StatsRowsAsync(string? action, string? labels) => OnStatsUiAsync(() =>
     {
         var player = CurrentPage(out _) as PlayerPage;

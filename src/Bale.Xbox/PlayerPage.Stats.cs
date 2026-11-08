@@ -17,6 +17,10 @@ public sealed partial class PlayerPage
     internal IReadOnlyList<(string Label, string Value)> DebugStatsRows => _statsRows;
     internal bool DebugStatsVisible => StatsPanel.Visibility == Visibility.Visible;
     internal string DebugHdrOutput => DebugHdrPlayback.Output(_attempt?.PretendHdr == true, _attempt?.Plan);
+    internal string DebugLateFrameTrace => _attempt?.Media?.FrameDelivery?.DescribeLateFrameTrace()
+        ?? "frame trace unavailable (no software video observer)\n";
+
+    internal void ResetDebugLateFrameTrace() => _attempt?.Media?.FrameDelivery?.ResetLateFrameTrace();
 
     internal void ToggleDebugStats()
     {
