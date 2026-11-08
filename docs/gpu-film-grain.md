@@ -1,7 +1,7 @@
 # Bale stage 2: GPU AV1 film grain (design)
 
-Status: 2026-11-08. **Steps 1–5 done; GPU grain is the production default. Next is step 6: the 4K
-decode-ahead cap.** Rust CPU oracles, dav1d fixtures and integer GPU passes are verified:
+Status: 2026-11-08. **Steps 1–6 done; GPU grain is the production default and above-1080p queues are
+capped (section 8).** Rust CPU oracles, dav1d fixtures and integer GPU passes are verified:
 [Windows CI run 42505455358](https://github.com/Zorro92/bale-for-silo/actions/runs/42505455358)
 passes real FXC compilation, strict Windows Clippy, all four create-time self-tests and all 44 WARP
 fixtures / 88 frames, including padding and pipeline-state checks. Local formatting, strict Linux
@@ -454,8 +454,7 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
   This motivates patch 0010's dav1d-at-open and size-dependent runtime fallback policy (section 6),
   rather than choosing the slower Rust CPU path whenever GPU is unavailable. Low-priority open item:
   faster CPU fallback, either grain in a cached heap buffer then copy, or SIMD.
-- **Next:** step 6, measure and cap decode-ahead with a 4K grain title. The next CPU-offload candidate
-  after that is letting the GPU grain pass read dav1d's planar `yuv420p` output directly and write
+- **Next:** step 6 is done (section 8). The next CPU-offload candidate is letting the GPU grain pass read dav1d's planar `yuv420p` output directly and write
   P010/NV12, removing the CPU sws repack + copy.
 
 ## 8. 4K memory cap
@@ -464,6 +463,21 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
   starting budget 640 MB (≈ 25 frames at 4K; 1080p unchanged). Tune from Device Portal numbers and
   GetExtendedMemoryInfo, since it is unclear whether GPU textures count in commit.
 - Grain itself adds one intermediate texture plus ~24 KB per handle.
+- **Measured (2026-11-08, build 0.1.334.0, Brawl in Cell Block 99 4K AV1 10-bit 3840x2076, GPU grain):**
+  app memory while playing, from a ~300 MiB baseline. Every run had zero late frames.
+
+  | Setting | Steady MiB | Notes |
+  |---------|-----------|-------|
+  | ahead 16, buffer 1000 ms, delay 8 (old default) | ~2630 | refills to 1.3 s ahead ~1.5 s after a seek |
+  | ahead 8 / 4 | ~2400 / ~2340 | ~23 MiB per decode-ahead frame |
+  | buffer 500 / 250 ms | ~2340 / ~2200 | |
+  | delay 4 | ~2250 | post-seek refill ~3× slower: less decode headroom, rejected |
+  | **ahead 8, buffer 500 ms, delay 8 (new default above 1080p)** | **~2170** | same fast refill; ~0.8 s delivered ahead |
+
+  Heavy late scenes ran at ~6.7–7.7 of 8 cores in both configurations, so 4K decode has little CPU
+  headroom regardless of queue sizes. The earlier ~3.2 GiB start spike came from opening on top of the
+  previous session's unreleased memory, fixed by `PlaybackMemoryRelease`; fresh starts no longer overshoot
+  steady state. Most of the remaining ~1.9 GiB is dav1d frame threads/pictures and the MF renderer.
 
 ## 9. HDR / DV
 - Grain works on coded values (PQ for HDR10), exactly as dav1d does; patch 0004 color attributes are
@@ -484,4 +498,4 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
    ~0.24-core GPU saving (~22%) vs dav1d, zero late frames and no meaningful memory growth.
    Rust CPU grain with upload costs ~1.9 cores. **GPU is the production default.** Results and
    matched-frame comparison limits are recorded in section 7; 0010 runtime fallbacks remain unverified.
-6. **Next:** 4K decode-ahead cap, measured with a 4K grain title.
+6. **Done:** above-1080p cap (decode-ahead 8, BufferTime 500 ms), measured with a 4K grain title (section 8).

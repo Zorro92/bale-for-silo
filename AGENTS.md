@@ -146,8 +146,9 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   never enable x264/x265. Releases are immutable. See `docs/player-plan.md` for provenance and
   rebuild steps; do not overwrite assets or update a pinned hash without reviewing the new build.
 - The wrapper fork pipeline is `ffmpeginteropx-wrapper.yml`; its patches must not change the IDL.
-- All builds tune software AV1 with `bale_decode_ahead_frames=16` and `bale_sws_threads=4`.
-  `SoftwareDecodeTuning` also sets `bale_dav1d_max_frame_delay=8` above 1080p (width > 1920 or
+- All builds tune software AV1 with `bale_decode_ahead_frames=16`, `bale_sws_threads=4` and a 1000 ms
+  MSS BufferTime. Above 1080p `SoftwareDecodeTuning` trims decode-ahead to 8 and BufferTime to 500 ms
+  (~460 MiB less at 4K, console-measured) and sets `bale_dav1d_max_frame_delay=8` (width > 1920 or
   height > 1080), using route dimensions from the source for original delivery or the effective
   recipe with source fallback otherwise. Unknown size leaves delay unset; hardware/system video
   gets none of these keys. This tuning does not expand the measured software-video capability bounds.

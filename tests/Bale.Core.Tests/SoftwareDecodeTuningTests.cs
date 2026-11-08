@@ -47,8 +47,24 @@ public class SoftwareDecodeTuningTests
     [InlineData(null, 1080L, null)]
     [InlineData(3840L, null, 8)]
     [InlineData(null, 2160L, 8)]
-    public void SoftwareVideoUsesReleaseDefaultsAndOnlyLimitsDelayAbove1080p(long? width, long? height, int? delay) =>
-        Assert.Equal(new SoftwareDecodeTuning(16, 4, delay), SoftwareDecodeTuning.ForVideo(true, width, height));
+    public void SoftwareVideoUsesReleaseDefaultsAndOnlyTrimsQueuesAbove1080p(long? width, long? height, int? delay) =>
+        Assert.Equal(new SoftwareDecodeTuning(delay is null ? 16 : 8, 4, delay), SoftwareDecodeTuning.ForVideo(true, width, height));
+
+    [Theory]
+    [InlineData(1920L, 1080L, null, 1000)]
+    [InlineData(null, null, null, 1000)]
+    [InlineData(3840L, 2160L, null, 500)]
+    [InlineData(3840L, 2076L, null, 500)]
+    [InlineData(1921L, null, null, 500)]
+    [InlineData(null, 1081L, null, 500)]
+    [InlineData(3840L, 2160L, 1000, 1000)]
+    [InlineData(3840L, 2160L, 0, 0)]
+    public void SoftwareBufferTimeHalvesAbove1080pUnlessOverridden(long? width, long? height, int? overrideMs, int expected) =>
+        Assert.Equal(expected, SoftwareDecodeTuning.BufferTimeMs(true, overrideMs, width, height));
+
+    [Fact]
+    public void SystemVideoBufferStaysUnsetAt4K() =>
+        Assert.Null(SoftwareDecodeTuning.BufferTimeMs(false, null, 3840, 2160));
 
     [Theory]
     [InlineData("hevc", "aac", false)]

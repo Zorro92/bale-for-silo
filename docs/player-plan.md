@@ -93,14 +93,15 @@ also validates all reported video decoder engines before mounting/reading frames
 
 All builds, including production (`BaleDebugServer=false`), apply the wrapper-fork defaults from
 `SoftwareDecodeTuning` to software AV1: `bale_decode_ahead_frames=16` and `bale_sws_threads=4`.
+Above 1080p, decode-ahead drops to 8 and BufferTime to 500 ms (see docs/gpu-film-grain.md section 8).
 `bale_dav1d_max_frame_delay=8` is set only above 1080p (width > 1920 or height > 1080). Route
 width/height follow the video codec's plan selection: original delivery uses `plan.Source`; other
 deliveries use `plan.EffectiveRecipe`, falling back to `plan.Source` for each missing dimension.
 Unknown size leaves delay unset. Hardware/system video routes set none of the three keys.
 `bale_decode_thread_priority` remains unset in production; only the debug `prio` overrides below
 can emit it. This is decode tuning, not new 4K capability evidence or a verified performance improvement.
-All builds also set `MediaStreamSource.BufferTime` to **1000 ms for software video**, using
-`SoftwareDecodeTuning.DefaultBufferMs`; FFmpeg system-video routes retain the wrapper's zero default.
+All builds also set `MediaStreamSource.BufferTime` to **1000 ms for software video** (500 ms above
+1080p, `Above1080pBufferMs`), using `SoftwareDecodeTuning.DefaultBufferMs`; FFmpeg system-video routes retain the wrapper's zero default.
 A 3×3 interleaved console A/B on BvS 1080p AV1 found comparable CPU at 1000/2000 ms: averages
 of 1.415/1.434 cores within a 1.31–1.56 run-to-run spread, with zero late frames for both.
 Delivered-ahead was ~1.3/~2.3 s, not a renderer queue-depth measurement; start/seek buffering

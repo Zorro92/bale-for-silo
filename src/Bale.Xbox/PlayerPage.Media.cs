@@ -166,7 +166,8 @@ public sealed partial class PlayerPage
 #if DEBUG_SERVER
                 bufferOverrideMs = attempt.FfmpegTuning.BufferMs;
 #endif
-                if (SoftwareDecodeTuning.BufferTimeMs(media.Route.SoftwareVideo, bufferOverrideMs) is { } bufferMs)
+                if (SoftwareDecodeTuning.BufferTimeMs(media.Route.SoftwareVideo, bufferOverrideMs,
+                        media.Route.VideoWidth, media.Route.VideoHeight) is { } bufferMs)
                 {
                     var mss = media.FfmpegSource.GetMediaStreamSource();
                     if (mss is null) Log.Info("player: FFmpeg MediaStreamSource unavailable; BufferTime setting skipped");

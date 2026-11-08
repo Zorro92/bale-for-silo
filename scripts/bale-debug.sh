@@ -30,7 +30,7 @@
 #                                               upload=on aliases 1; default=on (variant 1); off=0 (CPU buffers); 1..5 select D3D11 texture flags, status shows the number and flags (wrapper 2.1.0-bale.8+)
 #                                               upload variants: 1=RENDER_TARGET|SHADER_RESOURCE, 2=DECODER|SHADER_RESOURCE, 3=DECODER, 4=SHADER_RESOURCE, 5=SHADER_RESOURCE+MISC_SHARED; 4/5 known MF failures; GPU grain requires variant 1
 #                                               system/passthrough video only: maxres 0–1, dpb 0–16 (0=unset); both default unset, opt-in pending wrapper release/repin
-#                                               software-video release defaults: ahead=16, sws=4; delay=8 only above 1080p (width >1920 or height >1080), otherwise unset
+#                                               software-video release defaults: ahead=16, sws=4, buffer=1000 ms, delay unset; above 1080p (width >1920 or height >1080) ahead=8, buffer=500 ms, delay=8
 #                                               key i / where show applied settings and demand block waits (count/max/total ms)
 #   scripts/bale-debug.sh rust                   Rust loader + GPU film grain: hardware/self-tests, 1080p correctness, 1080p/4K GPU and CPU timings (120 s timeout)
 #   scripts/bale-debug.sh mem [gc]               managed GC heap vs app memory; gc forces a full collection + finalizers first
@@ -200,7 +200,7 @@ case "${1:-}" in
       esac
       if [[ "$valid_tuning" != true ]] || [[ -n "${ffmpeg_tune_seen[$name]:-}" ]]; then
         echo 'usage: scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] [ahead=0..64|default] [sws=1..16|default] [delay=0..64|default] [prio=0..2|default] [maxres=0|1|default] [dpb=0..16|default] (system video only, 0=unset) [grain=dav1d|cpu|gpu|off|on|default] [upload=on|off|default|1..5] (software video only; upload default on (variant 1); any order, no duplicates; no args = status; default restores release settings)' >&2
-        echo 'software video defaults: ahead=16, sws=4; delay=8 only above 1080p (width >1920 or height >1080), otherwise unset; prio unset (0=off, 1=above normal, 2=highest); system video defaults: maxres/dpb unset' >&2
+        echo 'software video defaults: ahead=16, sws=4, buffer=1000 ms, delay unset; above 1080p (width >1920 or height >1080) ahead=8, buffer=500 ms, delay=8; prio unset (0=off, 1=above normal, 2=highest); system video defaults: maxres/dpb unset' >&2
         echo 'upload=on aliases 1; default=on (variant 1); off=0 (CPU buffers); wrapper 2.1.0-bale.8+ variants: 1=RENDER_TARGET|SHADER_RESOURCE, 2=DECODER|SHADER_RESOURCE, 3=DECODER, 4=SHADER_RESOURCE, 5=SHADER_RESOURCE+MISC_SHARED; 4/5 known MF failures; GPU grain requires variant 1' >&2
         exit 2
       fi

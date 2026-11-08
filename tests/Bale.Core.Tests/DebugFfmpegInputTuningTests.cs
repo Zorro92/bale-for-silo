@@ -40,7 +40,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     public void BufferTimeIsAppliedAfterItemCreationWithOnlyTheOverrideDebugGuarded()
     {
         var player = Read("PlayerPage.Media.cs.txt");
-        Assert.Contains("int? bufferOverrideMs = null;\n#if DEBUG_SERVER\n                bufferOverrideMs = attempt.FfmpegTuning.BufferMs;\n#endif\n                if (SoftwareDecodeTuning.BufferTimeMs(media.Route.SoftwareVideo, bufferOverrideMs) is { } bufferMs)", player);
+        Assert.Contains("int? bufferOverrideMs = null;\n#if DEBUG_SERVER\n                bufferOverrideMs = attempt.FfmpegTuning.BufferMs;\n#endif\n                if (SoftwareDecodeTuning.BufferTimeMs(media.Route.SoftwareVideo, bufferOverrideMs,\n                        media.Route.VideoWidth, media.Route.VideoHeight) is { } bufferMs)", player);
         var item = player.IndexOf("media.Item = media.FfmpegSource.CreateMediaPlaybackItem();", StringComparison.Ordinal);
         var buffering = player.IndexOf("if (SoftwareDecodeTuning.BufferTimeMs(", StringComparison.Ordinal);
         Assert.True(item >= 0 && buffering > item);
