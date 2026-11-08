@@ -5,9 +5,9 @@ integer GPU passes. [Windows CI run 42505455358](https://github.com/Zorro92/bale
 passes real FXC compilation, strict Windows Clippy, all four create-time self-tests and all 44 WARP
 fixtures / 88 frames, including padding and pipeline-state checks. Local formatting, strict Linux
 and Windows cross-target Clippy, and Linux bit-exact release tests also pass. The Linux cross-check
-uses placeholder shaders, not GPU execution. Step 3 adds a synthetic console probe; console results
-are pending. Steps 4–6 remain future work; no wrapper or runtime-policy changes. Playback still uses
-dav1d grain.
+uses placeholder shaders, not GPU execution. Step 3's synthetic console probe passed on the Xbox
+(build 0.1.327.0; results in section 7). Steps 4–6 remain future work; no wrapper or runtime-policy
+changes. Playback still uses dav1d grain.
 Reference algorithm: dav1d 1.5.4, commit `54706fc6bc0cdecab7e9593974a4039cc038fca7`,
 `src/filmgrain_tmpl.c` + `src/fg_apply_tmpl.c` + the Gaussian sequence in `src/tables.c` (BSD-2).
 Ported files retain the original copyright and full licence; `native/bale-gpu/NOTICE` records provenance.
@@ -319,10 +319,21 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
   median/p95 in ms/frame. Disjoint samples are explicitly skipped; query polling has a bounded
   two-second wait and reports timeouts. P010 1080p CPU fallback reports ten-frame medians for
   threads 1 and 0 (auto, capped at four); input reset is outside the timed call.
-- **Console results pending.** No console deployment or probe run is claimed. The probe does not
-  enable GPU grain in playback. After wrapper integration, paused-frame `grain=dav1d` vs `grain=gpu`
-  screenshots, CPU A/B (target −0.25 to −0.4 cores), late frames and Sample memory remain future
-  gates, not results.
+- **Console results (2026-11-08, build 0.1.327.0, Xbox hardware D3D11 device, feature level 11_0,
+  app mode):** create and all four NV12/P010 self-tests passed on the real GPU; full-size 1080p P010
+  and NV12 frames match the CPU oracle byte for byte (plane views by format selection work on the
+  console driver). Per frame, median (p95), 60 frames with changing seeds:
+
+  | Case          | CPU submit       | GPU time         |
+  |---------------|------------------|------------------|
+  | P010 1080p    | 0.366 (0.378) ms | 0.843 (0.847) ms |
+  | P010 2160p    | 0.387 (0.479) ms | 3.113 (3.121) ms |
+  | NV12 1080p    | 0.363 (0.421) ms | 1.027 (1.029) ms |
+
+  No disjoint samples. CPU fallback, P010 1080p: 20.05 ms (1 thread), 6.33 ms (auto, 4 threads).
+  The probe uses its own hardware device, not MF's, and does not enable GPU grain in playback.
+  After wrapper integration, paused-frame `grain=dav1d` vs `grain=gpu` screenshots, CPU A/B
+  (target −0.25 to −0.4 cores), late frames and Sample memory remain future gates.
 
 ## 8. 4K memory cap
 - 4K P010 ≈ 24.9 MB per texture vs 6.2 MB at 1080p. ~55 in flight would be ~1.3 GB of the 3.25 GB budget.
@@ -342,7 +353,8 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
    in Linux and Windows CI. Local release oracles and Windows library/test cross-checks pass.
 2. **Implemented:** HLSL + gpu.rs + additive GPU ABI + strict Windows lint and mandatory WARP tests.
    Real shader compilation and WARP results are gated by Windows CI; no console verification.
-3. **Probe implemented:** hardware diagnostics, full-size correctness, GPU/CPU timing; console results pending.
+3. **Passed on the console:** hardware self-tests, full-size 1080p bit-exact match, GPU 0.84 ms (1080p)
+   / 3.11 ms (4K) per frame, 0.37 ms CPU submit.
 4. Wrapper patch 0009 + `grain=` tune knob + packaging check; release with default dav1d.
 5. Console screenshot identity, CPU A/B, memory; then default gpu.
 6. 4K decode-ahead cap, measured with a 4K grain title.
