@@ -214,7 +214,7 @@ public sealed partial class PlayerPage
             ("Late frames", frames is null ? "unavailable" : string.Create(CultureInfo.InvariantCulture,
                 $"{frames.LateFrames} · {frames.RecentLateFrames}/10s ({frames.RecentLateFramesPerSecond:0.0}/s)")),
             ("Stream waits", media?.Stream is { SupportsRanges: true } stream ? string.Create(CultureInfo.InvariantCulture,
-                $"{stream.DemandWaits} · max {stream.MaxDemandWaitTime.TotalMilliseconds:0.0} ms · total {stream.DemandWaitTime.TotalMilliseconds:0.0} ms") : "unavailable"),
+                $"{stream.DemandWaits} · max {stream.MaxDemandWaitTime.TotalMilliseconds:0.0} ms · total {stream.DemandWaitTime.TotalMilliseconds:0.0} ms · blocks {stream.BlockFetches} new {stream.BlockAllocations} reused {stream.BlockReuses}") : "unavailable"),
             ("Read-ahead", media?.FfmpegReadAhead ?? "unavailable"),
             ("Stream reads", media?.FfmpegStreamReads ?? "unavailable"),
             ("Delivered ahead", frames?.DeliveredAheadSeconds is { } ahead
