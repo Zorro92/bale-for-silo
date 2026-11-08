@@ -29,7 +29,16 @@ uploads to pooled DEFAULT/SHADER_RESOURCE textures returned as Direct3D11Surface
 Processed events return textures; seek/size changes detach tracking and discard the old pool so
 in-flight MF textures are never overwritten. Any upload failure permanently restores CPU buffers
 for that stream, including the current frame. No shader or grain change; the decoder stays software.
-It ships in `2.1.0-bale.6`; Bale only sets it from debug `ffmpeg-tune upload=on`.
+It first shipped in `2.1.0-bale.6`; Bale only sets it from debug `ffmpeg-tune`.
+`0007` widens `bale_d3d11_upload` to 0–5 (default 0, CPU buffers). DEFAULT texture variants:
+1 = SHADER_RESOURCE, 2 = DECODER | SHADER_RESOURCE, 3 = DECODER,
+4 = RENDER_TARGET | SHADER_RESOURCE, 5 = SHADER_RESOURCE with RESOURCE_MISC_SHARED.
+All other variants use MiscFlags 0; staging, decode, grain and failure-to-CPU behavior are unchanged.
+Device/protection, declared output and pool descriptors, first three MSS handoffs/Processed callbacks
+and failure HRESULTs use `av_log`, always prefixed `Bale D3D11 upload`, with no URLs or paths.
+This diagnoses the early MF `E_INVALIDARG` seen with bale.6 P010 uploads; none of the variants is
+runtime-verified. It ships in `2.1.0-bale.7`; debug `upload=on` aliases 1, and `upload=1..5` selects
+an explicit variant. Only debug builds capture the safe `Bale ` log prefix; production logging stays off.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.
