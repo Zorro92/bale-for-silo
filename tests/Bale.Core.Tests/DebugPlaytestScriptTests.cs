@@ -176,6 +176,44 @@ public class DebugPlaytestScriptTests
     }
 
     [Theory]
+    [InlineData("upload=on")]
+    [InlineData("upload=off")]
+    [InlineData("upload=default")]
+    public async Task UploadTuneOverrideWorksAlongsideGrainAndOtherKeys(string upload)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["ffmpeg-tune", "prio=2", upload, "grain=off"]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/ffmpeg-tune\n", result.Arguments);
+        Assert.Contains("-X\nPOST\n", result.Arguments);
+        foreach (var option in new[] { "prio=2", upload, "grain=off" })
+            Assert.Contains("--data-urlencode\n" + option + "\n", result.Arguments);
+    }
+
+    [Fact]
+    public async Task InvalidOrDuplicateUploadTuningNeverInvokesCurlAndProbesRejectIt()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var value in new[] { "", "ON", "OFF", "1", "true", " on", "off ", "DEFAULT" })
+        {
+            var result = await RunAsync(["ffmpeg-tune", "grain=off", "upload=" + value]);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+        }
+        foreach (var options in new[]
+        {
+            new[] { "ffmpeg-tune", "upload=on", "upload=off" },
+            ["ffmpeg-tune", "upload=default", "upload=on"],
+            ["playtest-ffmpeg", "@fixture", "30", "software", "upload=on"],
+        })
+        {
+            var result = await RunAsync(options);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
+    [Theory]
     [InlineData("ffmpeg-tune", "grain=OFF")]
     [InlineData("ffmpeg-tune", "grain=1")]
     [InlineData("playtest-ffmpeg", "grain=OFF")]
@@ -224,7 +262,7 @@ public class DebugPlaytestScriptTests
         Assert.DoesNotContain("threads=", result.Arguments);
         Assert.DoesNotContain("10bit=", result.Arguments);
         Assert.DoesNotContain("rate=", result.Arguments);
-        foreach (var key in new[] { "ahead", "sws", "delay", "prio", "maxres", "dpb" }) Assert.DoesNotContain("\n" + key + "=", result.Arguments);
+        foreach (var key in new[] { "ahead", "sws", "delay", "prio", "maxres", "dpb", "upload" }) Assert.DoesNotContain("\n" + key + "=", result.Arguments);
         var rateOnly = await RunAsync(["playtest-ffmpeg", "@fixture", "30", "software", "rate=0.75"]);
         Assert.Equal(0, rateOnly.ExitCode);
         Assert.Contains("rate=0.75", rateOnly.Arguments);
@@ -376,7 +414,7 @@ public class DebugPlaytestScriptTests
         Assert.Contains("readahead=on", result.Arguments);
         Assert.DoesNotContain("readsize=", result.Arguments);
         Assert.DoesNotContain("prefetch=", result.Arguments);
-        foreach (var key in new[] { "ahead", "sws", "delay", "prio", "maxres", "dpb" }) Assert.DoesNotContain("\n" + key + "=", result.Arguments);
+        foreach (var key in new[] { "ahead", "sws", "delay", "prio", "maxres", "dpb", "upload" }) Assert.DoesNotContain("\n" + key + "=", result.Arguments);
     }
 
     [Theory]

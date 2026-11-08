@@ -133,7 +133,7 @@ with or without `BaleDebugServer`; the CI package checker remains required.
 scripts/bale-debug.sh ffmpeg-tune
 scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default] [prefetch=N|default] \
   [buffer=ms|default] [ahead=N|default] [sws=N|default] [delay=N|default] [prio=N|default] \
-  [maxres=0|1|default] [dpb=N|default] [grain=on|off|default]
+  [maxres=0|1|default] [dpb=N|default] [grain=on|off|default] [upload=on|off|default]
 ```
 
 No arguments reads the current process-wide overrides (`GET /ffmpeg-tune`); arguments update them
@@ -148,6 +148,9 @@ remains independent.
   dav1d exports AV1 film-grain parameters instead of applying them, so frames show no grain. It exists
   to time grain cost on authenticated library files, which the URL-only probe cannot open. `on`/`default`
   send no key (release behaviour, grain applied).
+- `upload=on` (software video only, wrapper `2.1.0-bale.6`+) sends `bale_d3d11_upload=1`;
+  `off`/`default` send no key and use CPU buffers. Status always reports `upload=on|off`.
+  This switch is independent of `grain`; the standalone probe and production never set it.
 - `readahead=on` enables FFmpegInteropX's native demux/packet read-ahead queue with **64 MiB /
   30 s** caps, rather than its larger 100 MB / 60 s defaults, to bound the extra Xbox memory use.
   These are the wrapper's queue thresholds, not a total-process memory ceiling. `off` explicitly
@@ -275,6 +278,18 @@ Console check on 0.1.291.0 (bale.5, 20 s `software`): the key is accepted and re
 The public Jellyfin AV1 clips carry no grain (`film_grain_params_present = 0` in the 1080p and 4K
 sequence headers), so the 1080p 10 Mbps run is unchanged (ratio 0.992 / 1.87 cores with synthesis,
 0.998 / 1.90 exported).
+
+**GPU grain, stage 1 (wrapper patch 0006, `2.1.0-bale.6`).** Debug-only
+`ffmpeg-tune upload=on|off` selects D3D11 texture delivery for software NV12/P010 output on the
+next real-player attempt (memory-only, default off; `default` also restores off). The existing
+copy/sws output step writes directly into a three-texture STAGING ring, then CopyResource + Flush
+uploads to pooled DEFAULT textures on the MSS renderer's multithread-protected device. Samples use
+`CreateFromDirect3D11Surface`; Processed returns textures, and seek/size changes discard the old pool
+without reusing MF-held surfaces. A device/texture/map/surface failure permanently falls back to CPU
+buffers for the stream, including the failing frame. No grain shader yet: leave `grain=default` for
+an upload-only CPU/visual A/B; `grain=off` still removes grain, independently. Playback and CPU parity
+need console verification; CI only builds/checks this path. Wrapper diagnostics use its existing
+native logger, which Bale deliberately keeps disabled (no new native log capture).
 
 **Grain cost, measured (0.1.293.0, Series X, app mode).** A 1080p23.976 AV1 10-bit SDR library movie
 (mkv, 6.6 Mbps average, Opus 5.1) whose sequence header has `film_grain_params_present = 1` and

@@ -21,6 +21,15 @@ compressed/passthrough output is unchanged. It first shipped in `2.1.0-bale.4`.
 synthesis and attaches `AV_FRAME_DATA_FILM_GRAIN_PARAMS` instead, so frames are output grain-free.
 It is a debug measurement of grain CPU cost (and groundwork for GPU grain); production never sets it.
 It ships in the pinned `2.1.0-bale.5` release; earlier releases reject the key as unknown.
+`0006` adds opt-in `bale_d3d11_upload` (0/1, default 0) for software-decoded NV12/P010 output.
+On first MSS start it acquires a separate device-manager handle, protects the shared immediate
+context with `ID3D10Multithread`, and hands the device to the software provider (no AVHWDeviceContext).
+The same copy/sws step writes directly into a three-texture STAGING ring; CopyResource + Flush
+uploads to pooled DEFAULT/SHADER_RESOURCE textures returned as Direct3D11Surface samples.
+Processed events return textures; seek/size changes detach tracking and discard the old pool so
+in-flight MF textures are never overwritten. Any upload failure permanently restores CPU buffers
+for that stream, including the current frame. No shader or grain change; the decoder stays software.
+It ships in `2.1.0-bale.6`; Bale only sets it from debug `ffmpeg-tune upload=on`.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.

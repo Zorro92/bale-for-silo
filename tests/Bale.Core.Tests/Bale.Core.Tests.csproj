@@ -65,6 +65,7 @@
     <None Include="../../scripts/ffmpeg-native.json" Link="ffmpeg-native.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/ffmpeginteropx-wrapper.json" Link="ffmpeginteropx-wrapper.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/build-ffmpeginteropx-wrapper.ps1" Link="build-ffmpeginteropx-wrapper.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/ffmpeginteropx-patches/0006-d3d11-software-upload.patch" Link="0006-d3d11-software-upload.patch" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/check-ffmpeg-package.ps1" Link="check-ffmpeg-package.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/restore-ffmpeg-native.ps1" Link="restore-ffmpeg-native.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../NuGet.Config" Link="NuGet.Config" CopyToOutputDirectory="PreserveNewest" />
