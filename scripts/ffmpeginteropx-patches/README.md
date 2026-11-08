@@ -68,7 +68,17 @@ permanently selects CPU grain for the stream; upload failure retries the same fr
 CPU grain failure refills clean output. Each runtime fallback is logged once per stream with fixed
 diagnostics and HRESULT only when available, never parameters, paths, URLs or exception text.
 `bale_dav1d_export_film_grain` still wins as export-only, suppressing both dav1d and Rust synthesis.
-It ships in `2.1.0-bale.9`; production grain remains dav1d pending console integration verification.
+It ships in `2.1.0-bale.9`; that release kept production grain on dav1d pending console integration verification.
+`0010` changes the GPU fallback policy after console step 5 measured dav1d grain at ~1.1 cores versus
+Rust CPU grain with upload at ~1.9 cores (1080p). At open, GPU requests without upload variant 1
+select mode 0 and leave export off, keeping dav1d synthesis; explicit CPU requests stay CPU.
+After a stream starts in GPU mode, GPU create/apply failure or upload loss permanently selects
+Rust CPU grain at 1080p and below, or mode 0 (ungrained exported frames) above 1080p
+(width > 1920 or height > 1080, captured from the codec context when creating the provider).
+The current CPU-buffer retry also clears cached grain after a mode-0 downgrade; subsequent frames
+skip `Prepare`. Dav1d cannot resume synthesis without reopening once export is enabled. Existing
+once-per-stream guards and fixed HRESULT-only diagnostics distinguish CPU from ungrained fallback;
+seeks do not reset the downgrade. Explicit CPU streams are unaffected. It ships in `2.1.0-bale.10`.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.

@@ -72,6 +72,7 @@
     <None Include="../../scripts/ffmpeginteropx-patches/0007-d3d11-upload-variants-diagnostics.patch" Link="0007-d3d11-upload-variants-diagnostics.patch" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/ffmpeginteropx-patches/0008-d3d11-upload-processed-lifetime.patch" Link="0008-d3d11-upload-processed-lifetime.patch" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/ffmpeginteropx-patches/0009-rust-film-grain.patch" Link="0009-rust-film-grain.patch" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/ffmpeginteropx-patches/0010-film-grain-fallback-policy.patch" Link="0010-film-grain-fallback-policy.patch" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/check-ffmpeg-package.ps1" Link="check-ffmpeg-package.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/restore-ffmpeg-native.ps1" Link="restore-ffmpeg-native.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../NuGet.Config" Link="NuGet.Config" CopyToOutputDirectory="PreserveNewest" />
