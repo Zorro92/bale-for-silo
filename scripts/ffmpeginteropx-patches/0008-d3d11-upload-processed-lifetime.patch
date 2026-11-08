@@ -1,0 +1,187 @@
+diff --git a/Source/BaleD3D11Upload.h b/Source/BaleD3D11Upload.h
+index 5faf450..23fdead 100644
+--- a/Source/BaleD3D11Upload.h
++++ b/Source/BaleD3D11Upload.h
+@@ -38,8 +38,8 @@ public:
+         {
+         case 2: bindFlags = D3D11_BIND_DECODER | D3D11_BIND_SHADER_RESOURCE; break;
+         case 3: bindFlags = D3D11_BIND_DECODER; break;
+-        case 4: bindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE; break;
+-        case 5: miscFlags = D3D11_RESOURCE_MISC_SHARED; break;
++        case 4: bindFlags = D3D11_BIND_SHADER_RESOURCE; break;
++        case 5: bindFlags = D3D11_BIND_SHADER_RESOURCE; miscFlags = D3D11_RESOURCE_MISC_SHARED; break;
+         }
+     }
+ 
+@@ -47,8 +47,7 @@ public:
+ 
+     HRESULT Map(UINT width, UINT height, DXGI_FORMAT format, Mapping& target)
+     {
+-        auto hr = failure.load();
+-        if (FAILED(hr)) return hr;
++        // Only synchronous D3D/MF failures reach the provider's permanent CPU fallback.
+         if (width != stagingDesc.Width || height != stagingDesc.Height || format != stagingDesc.Format)
+         {
+             Flush();
+@@ -77,7 +76,7 @@ public:
+         target.context = context;
+         target.texture = staging;
+         // WRITE (not DISCARD) on a small staging ring: Map waits if the previous GPU copy still uses it.
+-        hr = context->Map(staging.get(), 0, D3D11_MAP_WRITE, 0, &target.mapped);
++        auto hr = context->Map(staging.get(), 0, D3D11_MAP_WRITE, 0, &target.mapped);
+         if (FAILED(hr)) av_log(nullptr, AV_LOG_WARNING, "Bale D3D11 upload Map failed (hr=0x%08X).\n", static_cast<unsigned>(hr));
+         return hr;
+     }
+@@ -113,13 +112,20 @@ public:
+                 auto token = sample.Processed(weak_handler(this, &BaleD3D11Upload::OnProcessed));
+                 try
+                 {
+-                    trackedSamples.emplace(native, token);
++                    // MF can close the sample's surface (and timestamp) before Processed fires.
++                    trackedSamples.emplace(native, TrackedSample{ token, texture, position });
+                 }
+                 catch (...)
+                 {
+-                    sample.Processed(token);
++                    DetachProcessed(native, token);
+                     throw;
+                 }
++                // Count texture samples issued by this uploader, including decoded lookahead.
++                if (++issuedSamples == 240)
++                {
++                    av_log(nullptr, AV_LOG_INFO, "Bale D3D11 upload steady: issued=%u processed=%u pooled=%zu.\n",
++                        issuedSamples, processedSamples, texturePool.PooledTextureCount());
++                }
+             }
+             *surface = directSurface;
+             return sample;
+@@ -136,7 +142,7 @@ public:
+         std::lock_guard lock(samplesMutex);
+         for (auto& entry : trackedSamples)
+         {
+-            entry.first.as<MediaStreamSample>().Processed(entry.second);
++            DetachProcessed(entry.first, entry.second.token);
+         }
+         trackedSamples.clear();
+         // Some samples were decoded ahead but never issued; others may still be held by MF.
+@@ -149,47 +155,72 @@ public:
+     }
+ 
+ private:
++    struct TrackedSample
++    {
++        winrt::event_token token;
++        winrt::com_ptr<ID3D11Texture2D> texture;
++        TimeSpan position;
++    };
++
++    void LogProcessedFailure() noexcept
++    {
++        // Benign event/cleanup problems must not poison subsequent D3D uploads.
++        auto hr = winrt::to_hresult();
++        if (!processedFailureLogged.exchange(true))
++        {
++            av_log(nullptr, AV_LOG_WARNING, "Bale D3D11 upload OnProcessed failed (hr=0x%08X).\n", static_cast<unsigned>(hr));
++        }
++    }
++
++    void DetachProcessed(winrt::Windows::Foundation::IUnknown const& sample, winrt::event_token token) noexcept
++    {
++        try
++        {
++            sample.as<MediaStreamSample>().Processed(token);
++        }
++        catch (...)
++        {
++            LogProcessedFailure();
++        }
++    }
++
+     void OnProcessed(MediaStreamSample const& sender, winrt::Windows::Foundation::IInspectable const&)
+     {
+         try
+         {
+             std::lock_guard lock(samplesMutex);
+-            if (processedSamples < 3)
+-            {
+-                av_log(nullptr, AV_LOG_INFO, "Bale D3D11 upload Processed index=%u position_ms=%lld.\n",
+-                    ++processedSamples, static_cast<long long>(sender.Timestamp().count() / 10000));
+-            }
+             auto native = sender.as<winrt::Windows::Foundation::IUnknown>();
+             auto entry = trackedSamples.find(native);
+-            if (entry != trackedSamples.end())
++            if (entry == trackedSamples.end()) return; // Already flushed: never recycle across generations.
++            auto tracked = std::move(entry->second);
++            trackedSamples.erase(entry); // Release tracking even if cleanup or pool allocation throws.
++            DetachProcessed(native, tracked.token);
++            texturePool.ReturnUploadTexture(std::move(tracked.texture));
++            if (++processedSamples <= 3)
+             {
+-                sender.Processed(entry->second);
+-                trackedSamples.erase(entry);
+-                winrt::com_ptr<IDXGISurface> surface;
+-                winrt::check_hresult(DirectXInteropHelper::GetDXGISurface(sender.Direct3D11Surface(), surface));
+-                texturePool.ReturnTexture(surface.as<ID3D11Texture2D>());
++                av_log(nullptr, AV_LOG_INFO, "Bale D3D11 upload Processed index=%u position_ms=%lld.\n",
++                    processedSamples, static_cast<long long>(tracked.position.count() / 10000));
+             }
+         }
+         catch (...)
+         {
+-            // Discard that texture and let the decode thread log/disable upload on the next frame.
+-            // Never throw out of an MF event handler.
+-            auto hr = winrt::to_hresult();
+-            failure.store(hr);
+-            av_log(nullptr, AV_LOG_WARNING, "Bale D3D11 upload OnProcessed failed (hr=0x%08X).\n", static_cast<unsigned>(hr));
++            // Drop this texture on a cleanup failure, but never throw out of an MF event handler.
++            LogProcessedFailure();
+         }
+     }
+ 
+     winrt::com_ptr<ID3D11Device> device;
+     winrt::com_ptr<ID3D11DeviceContext> context;
+     TexturePool texturePool;
+-    UINT bindFlags = D3D11_BIND_SHADER_RESOURCE;
++    UINT bindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+     UINT miscFlags = 0;
+-    unsigned processedSamples = 0; // Protected by samplesMutex; bounded diagnostics, not per-frame logging.
++    // Protected by samplesMutex; totals survive Flush, so each diagnostic is logged once per uploader.
++    unsigned issuedSamples = 0;
++    unsigned processedSamples = 0;
+     std::array<winrt::com_ptr<ID3D11Texture2D>, 3> stagingTextures;
+     D3D11_TEXTURE2D_DESC stagingDesc{};
+     size_t nextStaging = 0;
+-    std::map<winrt::Windows::Foundation::IUnknown, winrt::event_token> trackedSamples;
++    std::map<winrt::Windows::Foundation::IUnknown, TrackedSample> trackedSamples;
+     std::mutex samplesMutex;
+-    std::atomic<HRESULT> failure{ S_OK };
++    std::atomic<bool> processedFailureLogged{ false };
+ };
+diff --git a/Source/TexturePool.h b/Source/TexturePool.h
+index a34e44f..5f517d5 100644
+--- a/Source/TexturePool.h
++++ b/Source/TexturePool.h
+@@ -130,6 +130,23 @@ public:
+         return hr;
+     }
+ 
++    // Bale: only return matching upload resources; the hardware-decoder pool remains unchanged.
++    void ReturnUploadTexture(winrt::com_ptr<ID3D11Texture2D> texture)
++    {
++        D3D11_TEXTURE2D_DESC desc{};
++        texture->GetDesc(&desc);
++        if (desc.Width == desc_shared.Width && desc.Height == desc_shared.Height && desc.Format == desc_shared.Format &&
++            desc.MipLevels == desc_shared.MipLevels && desc.ArraySize == desc_shared.ArraySize &&
++            desc.SampleDesc.Count == desc_shared.SampleDesc.Count && desc.SampleDesc.Quality == desc_shared.SampleDesc.Quality &&
++            desc.Usage == desc_shared.Usage && desc.BindFlags == desc_shared.BindFlags &&
++            desc.CPUAccessFlags == desc_shared.CPUAccessFlags && desc.MiscFlags == desc_shared.MiscFlags)
++        {
++            pool.push_back(std::move(texture));
++        }
++    }
++
++    size_t PooledTextureCount() const { return pool.size(); } // Caller holds its pool mutex.
++
+     void ReturnTexture(winrt::com_ptr<ID3D11Texture2D> texture)
+     {
+         D3D11_TEXTURE2D_DESC desc;

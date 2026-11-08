@@ -36,9 +36,23 @@ It first shipped in `2.1.0-bale.6`; Bale only sets it from debug `ffmpeg-tune`.
 All other variants use MiscFlags 0; staging, decode, grain and failure-to-CPU behavior are unchanged.
 Device/protection, declared output and pool descriptors, first three MSS handoffs/Processed callbacks
 and failure HRESULTs use `av_log`, always prefixed `Bale D3D11 upload`, with no URLs or paths.
-This diagnoses the early MF `E_INVALIDARG` seen with bale.6 P010 uploads; none of the variants is
-runtime-verified. It ships in `2.1.0-bale.7`; debug `upload=on` aliases 1, and `upload=1..5` selects
-an explicit variant. Only debug builds capture the safe `Bale ` log prefix; production logging stays off.
+It first shipped in `2.1.0-bale.7`; only debug builds capture the safe `Bale ` log prefix;
+production logging stays off. The owner's 1080p AV1 → P010 console tests found that MF accepts
+variants 2/3/4 but rejects 1/5 with `E_INVALIDARG`. All five then fell back to CPU after 1–2 samples:
+Processed tried to reopen MF's already-closed surface and got `RO_E_CLOSED` (`0x80000013`).
+`0008` retains each tracked sample's texture, event token and diagnostic timestamp, returning that
+stored texture without touching closed surface/timestamp properties. Unknown callbacks after Flush
+are ignored; Flush drops tracked textures and the pool, never recycling across seek/size generations.
+Upload returns check the full texture descriptor; hardware-decoder pool behavior is unchanged.
+Callback/detach exceptions are logged once without disabling upload; synchronous D3D/MF failures
+still permanently fall back to CPU. First-three diagnostics remain, plus one steady snapshot after
+240 texture samples are issued by the uploader (including decoded lookahead):
+`Bale D3D11 upload steady: issued=N processed=M pooled=P` (P is the free texture pool size).
+It ships in `2.1.0-bale.8` and renumbers variants: 1 = RENDER_TARGET | SHADER_RESOURCE (`upload=on`,
+ready for stage-2 grain rendering), 2 = DECODER | SHADER_RESOURCE, 3 = DECODER,
+4 = SHADER_RESOURCE only (known MF failure), 5 = SHADER_RESOURCE + RESOURCE_MISC_SHARED (known MF failure).
+`upload=on` aliases 1; `upload=1..5` selects explicitly; off/default remain CPU buffers, not variant 1.
+The corrected recycling path still needs the owner's console verification.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.
