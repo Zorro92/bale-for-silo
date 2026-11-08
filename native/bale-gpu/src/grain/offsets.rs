@@ -58,6 +58,11 @@ impl Offsets {
     pub(super) fn get(&self, col: usize, row: usize) -> u8 {
         self.values[row * self.cols + col]
     }
+
+    #[cfg(windows)]
+    pub(super) fn as_bytes(&self) -> &[u8] {
+        &self.values
+    }
 }
 
 #[cfg(test)]

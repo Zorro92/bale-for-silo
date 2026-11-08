@@ -1,8 +1,9 @@
 AV1 film grain synthesis
 
 The Rust implementation in src/grain/{lfsr,template,scaling,offsets,cpu}.rs,
-its parameter representation in src/grain/params.rs, and the AV1 Gaussian
-sequence in src/grain/gaussian.rs derive from dav1d 1.5.4, commit
+its parameter representation in src/grain/params.rs, the AV1 Gaussian
+sequence in src/grain/gaussian.rs, and the pixel shaders in
+shaders/grain_{luma,chroma}_ps.hlsl derive from dav1d 1.5.4, commit
 54706fc6bc0cdecab7e9593974a4039cc038fca7:
 https://code.videolan.org/videolan/dav1d
 

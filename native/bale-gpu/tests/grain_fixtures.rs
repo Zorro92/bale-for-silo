@@ -1,79 +1,13 @@
 //! Committed synthetic dav1d 1.5.4 oracles. No ffmpeg, C compiler or network in CI.
 
+mod common;
+
 use std::fs;
-use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use bale_gpu::grain::BaleGrainParams;
 use bale_gpu::grain::cpu::{self, PixelFormat};
-use flate2::read::GzDecoder;
-
-struct ParamReader<'a> {
-    data: &'a [u8],
-    pos: usize,
-}
-
-impl ParamReader<'_> {
-    fn byte(&mut self) -> u8 {
-        let value = self.data[self.pos];
-        self.pos += 1;
-        value
-    }
-
-    fn uint(&mut self) -> u32 {
-        u32::from_le_bytes(std::array::from_fn(|_| self.byte()))
-    }
-
-    fn short(&mut self) -> i16 {
-        i16::from_le_bytes(std::array::from_fn(|_| self.byte()))
-    }
-
-    fn params(&mut self) -> BaleGrainParams {
-        BaleGrainParams {
-            struct_size: self.uint(),
-            seed: self.uint(),
-            width: self.uint(),
-            height: self.uint(),
-            bit_depth: self.byte(),
-            matrix_identity: self.byte(),
-            num_y_points: self.byte(),
-            chroma_scaling_from_luma: self.byte(),
-            num_uv_points: std::array::from_fn(|_| self.byte()),
-            scaling_shift: self.byte(),
-            ar_coeff_lag: self.byte(),
-            ar_coeff_shift: self.byte(),
-            grain_scale_shift: self.byte(),
-            overlap_flag: self.byte(),
-            clip_to_restricted_range: self.byte(),
-            y_points: std::array::from_fn(|_| std::array::from_fn(|_| self.byte())),
-            uv_points: std::array::from_fn(|_| {
-                std::array::from_fn(|_| std::array::from_fn(|_| self.byte()))
-            }),
-            ar_coeffs_y: std::array::from_fn(|_| self.byte() as i8),
-            ar_coeffs_uv: std::array::from_fn(|_| std::array::from_fn(|_| self.byte() as i8)),
-            reserved0: std::array::from_fn(|_| self.byte()),
-            uv_mult: std::array::from_fn(|_| self.short()),
-            uv_luma_mult: std::array::from_fn(|_| self.short()),
-            uv_offset: std::array::from_fn(|_| self.short()),
-        }
-    }
-}
-
-fn inflate(path: &Path) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    GzDecoder::new(fs::File::open(path).unwrap())
-        .read_to_end(&mut bytes)
-        .unwrap();
-    bytes
-}
-
-fn planar_sample(bytes: &[u8], sample: usize, depth: u8) -> u16 {
-    if depth == 8 {
-        u16::from(bytes[sample])
-    } else {
-        u16::from_le_bytes([bytes[2 * sample], bytes[2 * sample + 1]])
-    }
-}
+use common::{fixture_root, fixtures, planar_sample};
 
 /// One-byte guard before the base deliberately makes P010's base unaligned.
 /// Odd padded pitches exercise unaligned words on alternate rows too.
@@ -230,54 +164,12 @@ fn compare_frame(
     uv.assert_padding_unchanged();
 }
 
-fn fixture_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/grain")
-}
-
 #[test]
 fn every_fixture_matches_dav1d_byte_for_byte() {
-    let root = fixture_root();
-    let manifest = fs::read_to_string(root.join("manifest.tsv")).unwrap();
     let mut cases = 0;
     let mut frames = 0;
-    for line in manifest
-        .lines()
-        .filter(|line| !line.starts_with('#') && !line.is_empty())
-    {
-        let fields: Vec<_> = line.split('\t').collect();
-        assert_eq!(fields.len(), 8);
-        let name = fields[0];
-        let dir = root.join(name);
-        let params = fs::read(dir.join("params.bin")).unwrap();
-        assert_eq!(params.len(), 2 * 184);
-        let plain = inflate(&dir.join("plain.yuv.gz"));
-        let expected = inflate(&dir.join("grained.yuv.gz"));
-        assert_eq!(plain.len(), expected.len());
-        assert_eq!(fields[4], "2");
-        let mut last_seed = None;
-        for (frame, record) in params.as_chunks::<184>().0.iter().enumerate() {
-            let mut reader = ParamReader {
-                data: record,
-                pos: 0,
-            };
-            let params = reader.params();
-            assert_eq!(reader.pos, 184);
-            assert_eq!(params.width.to_string(), fields[1]);
-            assert_eq!(params.height.to_string(), fields[2]);
-            assert_eq!(params.bit_depth.to_string(), fields[3]);
-            assert_ne!(
-                last_seed,
-                Some(params.seed),
-                "{name}: frame seeds must differ"
-            );
-            last_seed = Some(params.seed);
-            let w = params.width as usize;
-            let h = params.height as usize;
-            let len = (w * h + 2 * w.div_ceil(2) * h.div_ceil(2))
-                * if params.bit_depth == 8 { 1 } else { 2 };
-            assert_eq!(plain.len(), len * 2);
-            let plain = &plain[frame * len..(frame + 1) * len];
-            let expected = &expected[frame * len..(frame + 1) * len];
+    for fixture in fixtures() {
+        for (frame, data) in fixture.frames.iter().enumerate() {
             for (threads, ry, ruv) in [
                 (1, false, false),
                 (4, false, false),
@@ -286,7 +178,15 @@ fn every_fixture_matches_dav1d_byte_for_byte() {
                 (4, false, true),
                 (4, true, true),
             ] {
-                compare_frame(name, frame, &params, plain, expected, threads, (ry, ruv));
+                compare_frame(
+                    &fixture.name,
+                    frame,
+                    &data.params,
+                    &data.plain,
+                    &data.grained,
+                    threads,
+                    (ry, ruv),
+                );
             }
             frames += 1;
         }

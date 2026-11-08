@@ -85,13 +85,32 @@ jobs:
         run: ./scripts/restore-ffmpeg-native.ps1
 
       # Rust GPU/media layer: static CRT (native/bale-gpu/.cargo/config.toml), packaged by the csproj.
+      - name: Locate Windows shader compiler
+        shell: pwsh
+        run: |
+          $fxc = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\fxc.exe" |
+            Sort-Object { [version]$_.Directory.Parent.Name } -Descending | Select-Object -First 1
+          if (-not $fxc) { throw 'Windows SDK fxc.exe is required for real grain shaders' }
+          "FXC=$($fxc.FullName)" >> $env:GITHUB_ENV
+
+      - name: Lint Rust GPU layer (Windows)
+        shell: pwsh
+        run: |
+          rustup component add clippy
+          rustup target add x86_64-pc-windows-msvc
+          Push-Location native/bale-gpu
+          cargo clippy --all-targets --locked --target x86_64-pc-windows-msvc -- -D warnings
+          $cargoExit = $LASTEXITCODE
+          Pop-Location
+          if ($cargoExit -ne 0) { throw 'cargo clippy failed' }
+
       - name: Test Rust GPU layer
         shell: pwsh
         run: |
           rustup target add x86_64-pc-windows-msvc
           # Run inside the crate so cargo reads .cargo/config.toml, including the static CRT setting.
           Push-Location native/bale-gpu
-          cargo test --release --locked --target x86_64-pc-windows-msvc
+          cargo test --release --locked --target x86_64-pc-windows-msvc -- --nocapture
           $cargoExit = $LASTEXITCODE
           Pop-Location
           if ($cargoExit -ne 0) { throw 'cargo test failed' }

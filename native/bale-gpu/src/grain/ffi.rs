@@ -108,6 +108,120 @@ pub unsafe extern "C" fn bale_grain_cpu_apply(
     })
 }
 
+/// Create a decode-thread-only GPU grain handle. Success includes the NV12/P010 self-test.
+/// The device/context are retained; caller textures are never retained by the handle.
+///
+/// # Safety
+/// Non-null device/context pointers must be live ID3D11Device/ID3D11DeviceContext interfaces.
+/// `out` must be null or writable for one aligned handle pointer. All pointers stay live for
+/// this call; on failure a non-null `out` is always set to null.
+#[cfg(windows)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_grain_gpu_create(
+    device: *mut core::ffi::c_void,
+    context: *mut core::ffi::c_void,
+    out: *mut *mut super::gpu::BaleGrainGpu,
+) -> i32 {
+    use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext};
+    use windows::core::Interface;
+
+    boundary(|| {
+        if out.is_null() {
+            return E_INVALIDARG;
+        }
+        // SAFETY: the caller guarantees writable, aligned output storage.
+        unsafe { out.write(std::ptr::null_mut()) };
+        // SAFETY: non-null inputs are live borrowed interfaces for this call. The handle's
+        // QueryInterface calls acquire its own references without consuming the caller's.
+        let (Some(device), Some(context)) = (unsafe {
+            (
+                ID3D11Device::from_raw_borrowed(&device),
+                ID3D11DeviceContext::from_raw_borrowed(&context),
+            )
+        }) else {
+            return E_INVALIDARG;
+        };
+        match super::gpu::BaleGrainGpu::create(device, context) {
+            Ok(gpu) => {
+                // SAFETY: the output is valid; ownership transfers to destroy on the same thread.
+                unsafe { out.write(Box::into_raw(Box::new(gpu))) };
+                S_OK
+            }
+            Err(error) => error.code().0,
+        }
+    })
+}
+
+/// Apply GPU grain without flushing or changing the caller's pipeline state.
+/// A panic or device loss permanently poisons this stream's handle.
+///
+/// # Safety
+/// A non-null handle must be live, exclusively used on its creating decode thread, and not
+/// concurrently destroyed. Parameters follow [`bale_grain_validate`]'s contract. Non-null
+/// source/destination pointers must be live ID3D11Texture2D interfaces on the handle's device,
+/// unmapped and exclusively available for this call (including their underlying resources).
+#[cfg(windows)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_grain_gpu_apply(
+    handle: *mut super::gpu::BaleGrainGpu,
+    params: *const BaleGrainParams,
+    src_staging: *mut core::ffi::c_void,
+    dst_pooled: *mut core::ffi::c_void,
+) -> i32 {
+    use windows::Win32::Graphics::Direct3D11::ID3D11Texture2D;
+    use windows::core::Interface;
+
+    boundary(|| {
+        // SAFETY: a non-null handle is exclusively borrowed on its decode thread by contract.
+        let Some(gpu) = (unsafe { handle.as_mut() }) else {
+            return E_INVALIDARG;
+        };
+        if let Some(hr) = gpu.failure() {
+            return hr;
+        }
+        let hr = boundary(|| {
+            // SAFETY: parameters are readable as documented; validation produces an owned copy.
+            let params = match unsafe { read_params(params) } {
+                Ok(params) => params,
+                Err(hr) => return hr,
+            };
+            // SAFETY: the caller supplies live interfaces. Borrow only, never consume references.
+            let (Some(src), Some(dst)) = (unsafe {
+                (
+                    ID3D11Texture2D::from_raw_borrowed(&src_staging),
+                    ID3D11Texture2D::from_raw_borrowed(&dst_pooled),
+                )
+            }) else {
+                return E_INVALIDARG;
+            };
+            gpu.apply(&params, src, dst)
+                .map_or_else(|error| error.code().0, |()| S_OK)
+        });
+        if hr == E_UNEXPECTED {
+            // The inner boundary runs after ContextGuard unwinds/restores state and releases its lock.
+            gpu.poison(hr);
+        }
+        hr
+    })
+}
+
+/// Release a GPU handle and its retained device/context references. Null is a no-op.
+///
+/// # Safety
+/// A non-null pointer must be a live handle returned by create, on its creating decode thread,
+/// with no concurrent calls. It must be destroyed exactly once and never used afterwards.
+#[cfg(windows)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_grain_gpu_destroy(handle: *mut super::gpu::BaleGrainGpu) {
+    boundary(|| {
+        if !handle.is_null() {
+            // SAFETY: ownership of this once-created Box returns exclusively to this call.
+            unsafe { drop(Box::from_raw(handle)) };
+        }
+        S_OK
+    });
+}
+
 unsafe fn read_params(params: *const BaleGrainParams) -> Result<ValidGrainParams, i32> {
     if params.is_null() || (params as usize).checked_add(4).is_none() {
         return Err(E_INVALIDARG);

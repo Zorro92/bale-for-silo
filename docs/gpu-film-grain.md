@@ -1,8 +1,10 @@
 # Bale stage 2: GPU AV1 film grain (design)
 
-Status: 2026-11-08. Step 1 (Rust CPU oracle/fallback and committed dav1d fixtures) implemented and
-passing local bit-exact release tests. Steps 2–6 below remain future work; no GPU, shader, wrapper,
-console verification or runtime-policy changes in step 1. Existing playback still uses dav1d grain.
+Status: 2026-11-08. Steps 1–2 implemented: the Rust CPU oracle/fallback, committed dav1d fixtures,
+integer GPU passes and mandatory Windows WARP tests. Local formatting, strict Linux and Windows
+cross-target Clippy, and Linux bit-exact release tests pass. Real FXC compilation and WARP execution
+are Windows CI gates, not exercised by the Linux placeholder-shader cross-check. Steps 3–6 remain
+future work; no wrapper, console verification or runtime-policy changes. Playback still uses dav1d grain.
 Reference algorithm: dav1d 1.5.4, commit `54706fc6bc0cdecab7e9593974a4039cc038fca7`,
 `src/filmgrain_tmpl.c` + `src/fg_apply_tmpl.c` + the Gaussian sequence in `src/tables.c` (BSD-2).
 Ported files retain the original copyright and full licence; `native/bale-gpu/NOTICE` records provenance.
@@ -63,7 +65,7 @@ HRESULT  bale_grain_cpu_apply(const BaleGrainParams*, uint32_t format /*1 NV12, 
                               uint8_t* y, intptr_t y_pitch, uint8_t* uv, intptr_t uv_pitch,
                               uint32_t threads /*0 = auto, max 4*/);   // in place
 
-// Future step 2; these GPU exports do not exist in step 1.
+// Step 2 (Windows): opaque, decode-thread-only GPU handle; create includes a self-test.
 HRESULT  bale_grain_gpu_create(ID3D11Device*, ID3D11DeviceContext*, BaleGrainGpu** out);
 HRESULT  bale_grain_gpu_apply(BaleGrainGpu*, const BaleGrainParams*,
                               ID3D11Texture2D* src_staging, ID3D11Texture2D* dst_pooled);
@@ -91,10 +93,22 @@ void     bale_grain_gpu_destroy(BaleGrainGpu*);
   The safe Rust API additionally verifies slice lengths, with slices starting at each plane's lowest
   addressed byte rather than its first logical row. Validation errors leave both planes unchanged;
   callers must not assume rollback if synthesis panics.
-- Future GPU handle contract: COM pointers are borrowed for the call; `create` AddRefs device and
-  context and keeps them until `destroy`. One handle per stream, used only from the decode thread
-  (the wrapper already serializes Map / CreateSample / Flush). GPU exports will also use
-  `catch_unwind`; a panic will return E_UNEXPECTED and poison the handle.
+- GPU handle contract (implemented): COM pointers are borrowed for the call; `create` AddRefs device
+  and context and keeps them until `destroy`. One handle per stream, created, used and destroyed only
+  on the decode thread (the wrapper already serializes Map / CreateSample / Flush). All three GPU
+  exports use the same unwind boundary. Create nulls its output before fallible work; destroy(null)
+  is a no-op. A panic returns E_UNEXPECTED and permanently poisons an existing handle. Device-loss
+  errors also poison it; subsequent applies return that same failure without any D3D calls.
+- Create requires Device1, an immediate Context1 on that device and ID3D10Multithread, checks the
+  required texture/view-format support, and propagates D3D HRESULTs. Context state uses flags=0,
+  the device's own feature level and the ID3D11Device emulated interface (never SINGLETHREADED).
+  Unsupported formats/interfaces or a failed self-test fail closed; there is no partial handle.
+- Apply rejects invalid parameters/pointers before submitting work: distinct source/destination,
+  same device/format/size, NV12+8-bit or P010+10-bit, even dimensions covering the visible image,
+  one mip/array slice/sample (quality zero), and destination BIND_RENDER_TARGET. Source/destination
+  must be unmapped for the call. Argument failures return E_INVALIDARG without writes. Nonfatal D3D
+  errors propagate; GetDeviceRemovedReason is checked after each submitted apply. Failed/panicking
+  synthesis is not transactional, so callers must not consume a failed destination.
 - Loading: `LoadPackagedLibrary(L"bale_gpu.dll")` + `GetProcAddress`, once per process; the version
   check fails closed (export off).
 
@@ -118,13 +132,38 @@ Order, all on MF's immediate context:
 6. Draw 2, chroma: viewport = texture size / 2, SRV planes 0+1 (chroma reads un-grained luma
    from the intermediate), RTV plane 1 as R16G16_UINT / R8G8_UINT.
 7. Unbind, swap the state back, `Leave()`. The wrapper then does its existing Flush + sample.
-- UINT views: exact integers, no float rounding (P010 = value << 6). These view formats are valid for
-  P010/NV12 per DXGI; create checks CheckFormatSupport and fails closed.
-- P010/NV12 textures must have even sizes; pixels outside the visible w×h are copied unchanged.
-- Shaders: HLSL SM 5.0 (Series X is FL 11_0), integer only, Load only (no samplers), compiled by
-  `fxc /T ps_5_0 /WX` in build.rs, embedded with include_bytes!. No runtime compiler.
-- Create runs a self-test: a 64×64 synthetic P010 frame with fixed params through the GPU, read
-  back, compared with the Rust CPU path. A mismatch fails create (CPU fallback, logged once).
+- UINT views: exact integers, no float rounding (P010 = value << 6). Plane creation uses the base
+  CreateShaderResourceView/CreateRenderTargetView APIs: the format selects luma (R8_UINT/R16_UINT)
+  or chroma (R8G8_UINT/R16G16_UINT). This is the D3D11.1 format-selected route documented by
+  [DXGI_FORMAT](https://learn.microsoft.com/en-us/windows/win32/api/dxgiformat/ne-dxgiformat-dxgi_format),
+  avoiding an additional Device3/PlaneSlice requirement. CheckFormatSupport and real planar
+  create-time self-tests fail closed; WARP tests require the same views, without a planar fallback.
+- P010/NV12 textures must have even sizes; pixels outside the visible w×h (or ceil(w/2)×ceil(h/2)
+  chroma area) are written unchanged, including P010 low bits. Inactive planes also pass through
+  without clipping. Intermediate/LUT/offset resources are reused until texture size or format
+  changes. The offset texture has ceil(texture-width/32)×ceil(texture-height/32) capacity; only the
+  visible grid is uploaded, so changes in visible dimensions alone never require reallocation.
+- ContextGuard pairs Multithread Enter/Leave and state swap/restore on success, errors and panic
+  unwinding. Both passes unbind SRVs/RTVs before restoring state. No Flush; the wrapper owns that.
+- Shaders: `fullscreen_vs.hlsl`, `grain_luma_ps.hlsl`, `grain_chroma_ps.hlsl` and shared
+  `grain_common.hlsli`, SM 5.0 (Series X is FL 11_0). Grain math is integer-only, Texture2D.Load only,
+  with no samplers; only vertex clip-space geometry and SV_Position use floats. The pixel shaders
+  retain dav1d's BSD-2 header. `gpu.rs` shares cpu.rs's preparation cache and clip-range helper.
+- On a Windows host targeting Windows, build.rs uses the FXC environment override or the newest
+  numerically sorted Windows Kits/10/bin/<version>/x64/fxc.exe. Each shader compiles with
+  `/nologo /O3 /WX /Qstrip_debug /Qstrip_reflect`, `/E main`, and vs_5_0 or ps_5_0, into OUT_DIR.
+  Missing/failed FXC or empty output fails the build. Shader/include files and FXC changes trigger
+  rebuilds. include_bytes! embeds the blobs; there is no runtime compiler or compiler dependency.
+- On a non-Windows host targeting Windows, build.rs writes empty placeholders and declares/enables
+  bale_grain_no_shaders; create returns E_NOTIMPL before D3D work. This permits Linux cross-target
+  lint/type checks only. Shipped DLLs must come from the Windows CI job with real FXC shaders.
+- Every successful create runs four self-tests under the same multithread lock and state swap:
+  64×64 NV12 and P010, each with visible 63×61, deterministic nontrivial source data, overlap,
+  lag 3, nonzero signed UV multipliers/offsets, restricted clipping, explicit chroma scaling and
+  a second csfl case (also exercising identity-matrix chroma clipping). STAGING/READ Map readback
+  treats UV as starting at RowPitch*Height. All texture bytes, including visible samples and
+  padding pixels, must equal cpu::apply; pitch-only driver padding is not image content. Mismatch
+  returns E_FAIL with no handle. Map synchronizes the test without an explicit Flush.
 
 ### Per-pixel math (mirrors dav1d exactly)
 - One offset grid serves all planes: dav1d draws one rand8 per 32-luma-px block column with the same
@@ -143,9 +182,9 @@ Order, all on MF's immediate context:
   Grain clip ±(128 << (bd-8)). `>>` is arithmetic on negatives, as in C.
 
 ## 5. CPU side in Rust (implemented in step 1)
-- Modules: `grain/{params,lfsr,gaussian,template,scaling,offsets,cpu,ffi}.rs` plus `mod.rs`.
-  `gpu.rs` and `grain.hlsl` are future step 2. The synthesis module denies unsafe code; only `ffi.rs`
-  is exempt, with a SAFETY comment at every unsafe block. No runtime dependencies were added.
+- Modules: `grain/{params,lfsr,gaussian,template,scaling,offsets,cpu,ffi}.rs` plus `mod.rs` and
+  Windows-only `gpu.rs`. Synthesis denies unsafe code; only `ffi.rs` and `gpu.rs` are exempt,
+  with SAFETY comments for raw-pointer/COM calls. No runtime dependencies were added.
 - `template.rs`: direct port of generate_grain_y / generate_grain_uv (4:2:0), including the
   luma-average AR term (only when num_y_points > 0), the uv seed xor 0xb524 / 0x49d8, and the rule that
   chroma templates exist only if num_uv_points[pl] or csfl. The luma template is always generated.
@@ -174,6 +213,10 @@ Order, all on MF's immediate context:
   and validate; pass it to `CreateSample(target, pos, surface, grain)`.
   CreateSample: grain && gpu → `bale_grain_gpu_apply(staging, pooled)` instead of CopyResource.
   A device-level error reuses the existing "re-run this frame on the CPU path" route, plus CPU grain.
+- Step 4 integration prerequisites: pooled upload textures currently use only BIND_SHADER_RESOURCE;
+  the wrapper must also add BIND_RENDER_TARGET. The C++ parameter mapper must zero reserved0 and
+  every unused coefficient tail (including all coefficients of inactive planes) before validation.
+  Step 2 deliberately does not modify the wrapper or enable grain export in playback.
 - CPU output path (`CreateBufferFromFrame`): if export is on and the frame has params → `bale_grain_cpu_apply`
   on the destination buffer after conversion. The decoder's AVFrame is never modified (it can still be
   a dav1d reference picture).
@@ -237,14 +280,30 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
   The only added dependency is development-only `flate2` with its pure-Rust backend. No ffmpeg,
   libaom, dav1d, C compiler or network access is needed by the fixture tests themselves.
 
-### Future gates (not implemented or run in step 1)
-2. **GPU vs CPU (CI, Windows runner, WARP device).** The same fixtures go through the real shaders on
-   WARP, byte-compared. If WARP lacks P010 UINT views, test with plain R16/R16G16 textures and keep the
-   planar check for the console.
-3. **Console.** The probe reports Context1, view-format support and the self-test result. Paused-frame
-   screenshots for `grain=dav1d` vs `grain=gpu` should be identical, as stage 1's were. Then measure
-   CPU A/B (target −0.25 to −0.4 cores), late frames and Sample memory; these are future targets,
-   not results established by step 1.
+### Step 2: real GPU vs dav1d (mandatory Windows WARP gate)
+- `tests/common/mod.rs` shares fixture loading with the unchanged CPU comparison/layout checks.
+- `tests/grain_gpu_warp.rs` creates a protected WARP FL11_0 device; create must succeed, including
+  all four synthetic self-tests. It executes **all 44 cases / 88 frames** through the embedded real
+  shaders, with even-rounded STAGING uploads and DEFAULT RENDER_TARGET|SHADER_RESOURCE outputs.
+  Comparisons cover every NV12/P010 byte against dav1d, sentinel padding pixels and unchanged source
+  textures. Output starts with a different sentinel so a missed padding write cannot pass unnoticed.
+- State-preservation coverage installs a viewport, pixel shader and render target before create;
+  checks them after create's self-tests, two applies, and destroy. Argument coverage checks nulls,
+  source/destination aliasing, invalid params, wrong depth/format, unequal/insufficient dimensions,
+  and a missing render-target bind, with no image writes on rejection. D3D cannot create odd planar
+  textures: a creatable odd R8 texture exercises ABI rejection, and GPU unit tests directly check
+  odd NV12 descriptors (plus mip, array and sample constraints) without D3D submission.
+- Windows CI locates FXC, runs strict `cargo clippy --all-targets --locked --target
+  x86_64-pc-windows-msvc -- -D warnings`, and release tests with `--nocapture` so the self-test and
+  44-fixture success lines appear in logs, before building/packaging the DLL. WARP missing planar
+  UINT support is a test failure, never a skip or a substitute nonplanar test.
+- Local required checks: `cargo fmt --check`, native/Linux strict all-target Clippy, locked release
+  tests, and strict Windows all-target cross-Clippy (placeholder blobs, not GPU execution).
+
+### Future console gate (step 3; not run in step 2)
+- The probe reports Context1, view-format support and the self-test result. Paused-frame screenshots
+  for `grain=dav1d` vs `grain=gpu` should be identical, as stage 1's were. Then measure CPU A/B
+  (target −0.25 to −0.4 cores), late frames and Sample memory; these remain future targets, not results.
 
 ## 8. 4K memory cap
 - 4K P010 ≈ 24.9 MB per texture vs 6.2 MB at 1080p. ~55 in flight would be ~1.3 GB of the 3.25 GB budget.
@@ -262,7 +321,8 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
 ## 10. Build order (each step gated before the next)
 1. **Implemented:** fixture script + Rust params/template/scaling/offsets/cpu/ffi + bit-exact tests
    in Linux and Windows CI. Local release oracles and Windows library/test cross-checks pass.
-2. HLSL + gpu.rs + WARP test in CI.
+2. **Implemented:** HLSL + gpu.rs + additive GPU ABI + strict Windows lint and mandatory WARP tests.
+   Real shader compilation and WARP results are gated by Windows CI; no console verification.
 3. Probe additions; check on the console.
 4. Wrapper patch 0009 + `grain=` tune knob + packaging check; release with default dav1d.
 5. Console screenshot identity, CPU A/B, memory; then default gpu.

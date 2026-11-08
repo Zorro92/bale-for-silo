@@ -154,10 +154,10 @@ impl IMFMediaEngineNotify_Impl for Notify_Impl {
             1009 => shared.first_frame.store(true, Ordering::Release),
             _ => {}
         }
-        if let Ok(mut events) = shared.events.lock() {
-            if events.len() < 400 {
-                events.push((event, shared.clock.elapsed().as_millis()));
-            }
+        if let Ok(mut events) = shared.events.lock()
+            && events.len() < 400
+        {
+            events.push((event, shared.clock.elapsed().as_millis()));
         }
         Ok(())
     }

@@ -192,11 +192,11 @@ impl PlaneMut<'_> {
     }
 }
 
-struct Prepared {
+pub(super) struct Prepared {
     params: ValidGrainParams,
-    templates: Templates,
-    scaling: [Vec<u8>; 3],
-    offsets: Offsets,
+    pub(super) templates: Templates,
+    pub(super) scaling: [Vec<u8>; 3],
+    pub(super) offsets: Offsets,
 }
 
 impl Prepared {
@@ -248,17 +248,21 @@ pub fn apply(
     } else {
         threads as usize
     };
+    with_prepared(params, |prepared| match format {
+        PixelFormat::Nv12 => parallel_apply::<Nv12>(prepared, y, uv, workers),
+        PixelFormat::P010 => parallel_apply::<P010>(prepared, y, uv, workers),
+    });
+    Ok(())
+}
+
+/// The GPU uploads precisely the same prepared inputs as the CPU oracle consumes.
+pub(super) fn with_prepared<R>(params: &ValidGrainParams, f: impl FnOnce(&Prepared) -> R) -> R {
     CACHE.with_borrow_mut(|cache| {
         if cache.as_ref().is_none_or(|entry| entry.params != *params) {
             *cache = Some(Prepared::new(params));
         }
-        let prepared = cache.as_ref().unwrap();
-        match format {
-            PixelFormat::Nv12 => parallel_apply::<Nv12>(prepared, y, uv, workers),
-            PixelFormat::P010 => parallel_apply::<P010>(prepared, y, uv, workers),
-        }
-    });
-    Ok(())
+        f(cache.as_ref().unwrap())
+    })
 }
 
 trait Pixel {
@@ -432,7 +436,7 @@ fn grain_block<const W: usize, const H: usize>(
     }
 }
 
-fn clip_range(params: &ValidGrainParams, chroma: bool) -> (i32, i32) {
+pub(super) fn clip_range(params: &ValidGrainParams, chroma: bool) -> (i32, i32) {
     if params.as_raw().clip_to_restricted_range != 0 {
         let max = if chroma && params.as_raw().matrix_identity == 0 {
             240
