@@ -27,6 +27,7 @@ public sealed class HttpRangeStream : Stream
     private readonly Dictionary<long, CachedBlock> _cache = [];
     private readonly LinkedList<long> _lru = new();
     private readonly Dictionary<long, BlockFetch> _inFlight = [];
+    private readonly Stack<byte[]> _freeBlocks = new();
     private HttpResponseMessage? _response;
     private Stream? _body;
     private long _bodyPosition;
@@ -36,6 +37,8 @@ public sealed class HttpRangeStream : Stream
     private long _demandWaits;
     private long _demandWaitTicks;
     private long _maxDemandWaitTicks;
+    private long _blockAllocations;
+    private long _blockReuses;
     private volatile bool _disposed;
 
     /// <summary>Immutable per-stream speculation depth; the cache and three-fetch concurrency limit are unchanged.</summary>
@@ -55,6 +58,12 @@ public sealed class HttpRangeStream : Stream
     /// <summary>Time inside HTTP body reads, summed across concurrent fetches; excludes cache reads and idle playback.</summary>
     public TimeSpan DownloadTime => TimeSpan.FromSeconds((double)Interlocked.Read(ref _downloadTicks) / Stopwatch.Frequency);
 
+    /// <summary>Full-size block arrays allocated on the large object heap; excludes the unpooled tail block.</summary>
+    public long BlockAllocations => Interlocked.Read(ref _blockAllocations);
+
+    /// <summary>Full-size block fetches that reused an evicted or failed attempt's array.</summary>
+    public long BlockReuses => Interlocked.Read(ref _blockReuses);
+
     /// <summary>Diagnostics only: counts, never offsets tied to URLs. PrefetchHits counts first use of ready prefetched blocks.</summary>
     public long Reads, BlockFetches, CacheHits, PrefetchHits, BytesRead, SmallestRead = long.MaxValue;
 
@@ -63,9 +72,15 @@ public sealed class HttpRangeStream : Stream
         public byte[] Data { get; } = data;
         public bool Prefetched { get; set; } = prefetched;
         public LinkedListNode<long>? Node { get; set; }
+        public int Leases { get; set; }
+        public bool Evicted { get; set; }
     }
 
-    private sealed record BlockFetch(Task<CachedBlock> Task, bool IsPrefetch);
+    private sealed record BlockFetch(Task<CachedBlock> Task, bool IsPrefetch)
+    {
+        public int Waiters { get; set; }
+        public CachedBlock? Block { get; set; }
+    }
 
     private HttpRangeStream(PlaybackMedia media, HttpResponseMessage? response, Stream? body, long length, bool supportsRanges, int prefetchBlocks)
     {
@@ -183,16 +198,24 @@ public sealed class HttpRangeStream : Stream
                 {
                     disposed = _disposed;
                     block = disposed ? null : FindCachedBlockLocked(index);
+                    if (block is not null) block.Leases++;
                 }
                 ThrowIfDisposed(disposed);
                 // Stream reads need not fill the buffer: don't wait on another block after copying bytes.
                 if (block is null) break;
-                PrefetchFollowingBlocks(index);
             }
-            var offset = (int)(position % BlockSize);
-            var count = Math.Min(buffer.Length - copied, block.Data.Length - offset);
-            block.Data.AsMemory(offset, count).CopyTo(buffer[copied..]);
-            copied += count;
+            try
+            {
+                if (copied != 0) PrefetchFollowingBlocks(index);
+                var offset = (int)(position % BlockSize);
+                var count = Math.Min(buffer.Length - copied, block.Data.Length - offset);
+                block.Data.AsMemory(offset, count).CopyTo(buffer[copied..]);
+                copied += count;
+            }
+            finally
+            {
+                lock (_cacheLock) ReleaseBlockLocked(block);
+            }
         }
         return copied;
     }
@@ -224,35 +247,56 @@ public sealed class HttpRangeStream : Stream
         lock (_cacheLock)
         {
             disposed = _disposed;
-            if (!disposed && (ready = FindCachedBlockLocked(index)) is null)
-                fetch = _inFlight.TryGetValue(index, out var existing) ? existing : StartFetchLocked(index, false);
+            if (!disposed)
+            {
+                ready = FindCachedBlockLocked(index);
+                if (ready is not null) ready.Leases++;
+                else
+                {
+                    fetch = _inFlight.TryGetValue(index, out var existing) ? existing : StartFetchLocked(index, false);
+                    fetch.Waiters++;
+                    if (fetch.Block is { } completed) completed.Leases++;
+                }
+            }
         }
         ThrowIfDisposed(disposed);
         if (ready is not null) return ready;
         var shared = fetch!;
-        CachedBlock block;
         try
         {
-            // A caller abandoning its read must not cancel a fetch shared with later reads.
-            block = await shared.Task.WaitAsync(ct).ConfigureAwait(false);
-        }
-        catch (Exception) when (shared.IsPrefetch && !ct.IsCancellationRequested && !_fetchToken.IsCancellationRequested)
-        {
-            // Speculation gets one attempt. A read joining failed speculation gets its own demand retry policy.
-            return await GetBlockAsync(index, ct).ConfigureAwait(false);
-        }
-        lock (_cacheLock)
-        {
-            disposed = _disposed;
-            if (!disposed)
+            CachedBlock block;
+            try
             {
-                if (_cache.TryGetValue(index, out var cached) && ReferenceEquals(block, cached)) TouchBlockLocked(block);
-                // Waiting on speculation isn't a hit on an already-ready prefetched block.
-                block.Prefetched = false;
+                // A caller abandoning its read must not cancel a fetch shared with later reads.
+                block = await shared.Task.WaitAsync(ct).ConfigureAwait(false);
+            }
+            catch (Exception) when (shared.IsPrefetch && !ct.IsCancellationRequested && !_fetchToken.IsCancellationRequested)
+            {
+                // Speculation gets one attempt. A read joining failed speculation gets its own demand retry policy.
+                return await GetBlockAsync(index, ct).ConfigureAwait(false);
+            }
+            lock (_cacheLock)
+            {
+                disposed = _disposed;
+                if (!disposed)
+                {
+                    block.Leases++;
+                    if (_cache.TryGetValue(index, out var cached) && ReferenceEquals(block, cached)) TouchBlockLocked(block);
+                    // Waiting on speculation isn't a hit on an already-ready prefetched block.
+                    block.Prefetched = false;
+                }
+            }
+            ThrowIfDisposed(disposed);
+            return block;
+        }
+        finally
+        {
+            lock (_cacheLock)
+            {
+                shared.Waiters--;
+                if (shared.Block is { } completed) ReleaseBlockLocked(completed);
             }
         }
-        ThrowIfDisposed(disposed);
-        return block;
     }
 
     private void PrefetchFollowingBlocks(long index)
@@ -285,6 +329,7 @@ public sealed class HttpRangeStream : Stream
 
     private async Task<CachedBlock> FetchBlockAsync(long index, bool prefetch)
     {
+        CachedBlock? fetchedBlock = null;
         try
         {
             await _fetchSlots.WaitAsync(_fetchToken).ConfigureAwait(false);
@@ -292,6 +337,7 @@ public sealed class HttpRangeStream : Stream
             {
                 for (var attempt = 0; ; attempt++)
                 {
+                    byte[]? data = null;
                     try
                     {
                         var start = index * BlockSize;
@@ -304,7 +350,19 @@ public sealed class HttpRangeStream : Stream
                             || response.Content.Headers.ContentRange!.To != start + size - 1)
                             throw new IOException("The media server returned an invalid range response.");
 
-                        var data = new byte[size];
+                        if (size == BlockSize)
+                        {
+                            lock (_cacheLock)
+                            {
+                                if (_freeBlocks.TryPop(out data)) Interlocked.Increment(ref _blockReuses);
+                            }
+                            if (data is null)
+                            {
+                                data = new byte[BlockSize];
+                                Interlocked.Increment(ref _blockAllocations);
+                            }
+                        }
+                        else data = new byte[size];
                         using var body = await response.Content.ReadAsStreamAsync(_fetchToken).ConfigureAwait(false);
                         var downloaded = 0;
                         while (downloaded < data.Length)
@@ -318,7 +376,16 @@ public sealed class HttpRangeStream : Stream
                         lock (_cacheLock)
                         {
                             disposed = _disposed;
-                            if (!disposed) AddBlockLocked(index, block);
+                            if (!disposed)
+                            {
+                                var fetch = _inFlight[index];
+                                // Pin the in-flight result and its waiters until each takes a copy lease or cancels.
+                                block.Leases = 1 + fetch.Waiters;
+                                AddBlockLocked(index, block);
+                                fetch.Block = block;
+                                fetchedBlock = block;
+                                data = null; // The cache and leases now own the array, even if it is evicted.
+                            }
                         }
                         ThrowIfDisposed(disposed);
                         return block;
@@ -326,6 +393,13 @@ public sealed class HttpRangeStream : Stream
                     catch (Exception error) when (!prefetch && attempt == 0 && error is IOException or HttpRequestException)
                     {
                         // Retry a demand block once; a second failure belongs to playback recovery.
+                    }
+                    finally
+                    {
+                        if (data is not null)
+                        {
+                            lock (_cacheLock) RecycleBlockLocked(data);
+                        }
                     }
                 }
             }
@@ -336,7 +410,11 @@ public sealed class HttpRangeStream : Stream
         }
         finally
         {
-            lock (_cacheLock) _inFlight.Remove(index);
+            lock (_cacheLock)
+            {
+                _inFlight.Remove(index);
+                if (fetchedBlock is not null) ReleaseBlockLocked(fetchedBlock);
+            }
         }
     }
 
@@ -347,9 +425,22 @@ public sealed class HttpRangeStream : Stream
         if (_cache.Count > CacheCapacity)
         {
             var oldest = _lru.First!;
+            var evicted = _cache[oldest.Value];
             _cache.Remove(oldest.Value);
             _lru.RemoveFirst();
+            evicted.Evicted = true;
+            if (evicted.Leases == 0) RecycleBlockLocked(evicted.Data);
         }
+    }
+
+    private void ReleaseBlockLocked(CachedBlock block)
+    {
+        if (--block.Leases == 0 && block.Evicted) RecycleBlockLocked(block.Data);
+    }
+
+    private void RecycleBlockLocked(byte[] data)
+    {
+        if (data.Length == BlockSize && _freeBlocks.Count < 4) _freeBlocks.Push(data);
     }
 
     private async Task<int> ReadSequentialAsync(Memory<byte> buffer, CancellationToken ct)
@@ -517,6 +608,7 @@ public sealed class HttpRangeStream : Stream
                     _cache.Clear();
                     _lru.Clear();
                     _inFlight.Clear();
+                    _freeBlocks.Clear();
                     response = _response;
                     _response = null;
                     _body = null;
