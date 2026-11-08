@@ -30,6 +30,7 @@
     <Compile Include="../../src/Bale.Xbox/Services/DebugScreenText.cs" Link="DebugScreenText.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugStatsRowFilter.cs" Link="DebugStatsRowFilter.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugServer.Stats.cs" Link="DebugServer.Stats.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Services/DebugServer.Gc.cs" Link="DebugServer.Gc.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugWaitCondition.cs" Link="DebugWaitCondition.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugCodecNames.cs" Link="DebugCodecNames.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugPlaytest.cs" Link="DebugPlaytest.cs" />

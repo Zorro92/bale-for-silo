@@ -557,6 +557,9 @@ public class HttpRangeStreamTests
     [Fact]
     public async Task EvictionDuringACopyDoesNotRecycleTheLeasedArray()
     {
+        // The copy deliberately blocks a pool thread while ~50 fetches need others; allow for slow
+        // thread injection on a loaded CI machine (one 5 s timeout seen under a parallel build).
+        var timeout = TimeSpan.FromSeconds(30);
         var releaseFirst = Signal();
         var releaseRest = Signal();
         var copying = Signal();
@@ -583,16 +586,16 @@ public class HttpRangeStreamTests
         using var memory = new CopyMemory(bytes, () =>
         {
             copying.TrySetResult();
-            releaseCopy.Task.WaitAsync(Timeout).GetAwaiter().GetResult();
+            releaseCopy.Task.WaitAsync(timeout).GetAwaiter().GetResult();
         });
         var read = Task.Run(async () => await stream.ReadAsync(memory.Memory));
         try
         {
             releaseFirst.SetResult();
-            await copying.Task.WaitAsync(Timeout);
+            await copying.Task.WaitAsync(timeout);
             releaseRest.SetResult();
             await handler.WaitForRequestsAsync(1 + (LargeData.Length + BlockSize - 1) / BlockSize);
-            await Task.WhenAll(handler.Bodies.Select(body => body.Disposal)).WaitAsync(Timeout);
+            await Task.WhenAll(handler.Bodies.Select(body => body.Disposal)).WaitAsync(timeout);
             Assert.True(stream.BlockReuses > 0);
         }
         finally
@@ -601,7 +604,7 @@ public class HttpRangeStreamTests
             releaseRest.TrySetResult();
             releaseCopy.TrySetResult();
         }
-        Assert.Equal(bytes.Length, await read.WaitAsync(Timeout));
+        Assert.Equal(bytes.Length, await read.WaitAsync(timeout));
         Assert.Equal(LargeData[..bytes.Length], bytes);
         Assert.Equal(1, BlockRequests(handler, 0));
     }

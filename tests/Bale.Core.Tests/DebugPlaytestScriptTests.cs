@@ -467,6 +467,72 @@ public class DebugPlaytestScriptTests
     }
 
     [Fact]
+    public async Task GcReadoutIsAGetThatPreservesTheDiagnosticOutput()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        const string readout = "GC: server=False latency=Interactive pause-total=350.0 ms collections gen0=3 gen1=2 gen2=1\n";
+        var result = await RunAsync(["gc"], readout);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(readout, result.Output);
+        Assert.Contains("/gc\n", result.Arguments);
+        Assert.Contains("--max-time\n5\n", result.Arguments);
+        Assert.Contains("--fail-with-body", result.Arguments);
+        Assert.DoesNotContain("POST", result.Arguments);
+        Assert.DoesNotContain("latency=", result.Arguments);
+    }
+
+    [Theory]
+    [InlineData("batch")]
+    [InlineData("interactive")]
+    [InlineData("sustained")]
+    [InlineData("default")]
+    public async Task GcLatencyPostsOnlyAValidatedMode(string mode)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["gc", "latency", mode]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal("probe result\n", result.Output);
+        Assert.Contains("/gc?latency=" + mode + "\n", result.Arguments);
+        Assert.Contains("-X\nPOST\n", result.Arguments);
+        Assert.Contains("--max-time\n5\n", result.Arguments);
+        Assert.Contains("--fail-with-body", result.Arguments);
+        Assert.DoesNotContain("--data-urlencode", result.Arguments);
+    }
+
+    [Fact]
+    public async Task InvalidGcArgumentsShowUsageWithoutInvokingCurl()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[]
+        {
+            new[] { "gc", "" }, ["gc", "status"], ["gc", "batch"], ["gc", "latency"], ["gc", "LATENCY", "sustained"],
+            ["gc", "latency", ""], ["gc", "latency", "BATCH"], ["gc", "latency", " interactive"],
+            ["gc", "latency", "sustained "], ["gc", "latency", "unknown"], ["gc", "latency", "low"],
+            ["gc", "latency", "LowLatency"], ["gc", "latency", "NoGCRegion"], ["gc", "latency", "sustainedlowlatency"],
+            ["gc", "latency", "sustained&extra=1"], ["gc", "latency", "batch", "extra"],
+            ["gc", "latency", "interactive", "extra"], ["gc", "latency", "sustained", "extra"],
+            ["gc", "latency", "default", ""],
+        })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Equal("usage: scripts/bale-debug.sh gc [latency <batch|interactive|sustained|default>]\n", result.Output);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
+    [Fact]
+    public async Task GcLatencyFailurePreservesTheResponseBodyAndExitStatus()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        const string failure = "latency change failed hr=0x80131509\n";
+        var result = await RunAsync(["gc", "latency", "sustained"], failure, 22);
+        Assert.Equal(22, result.ExitCode);
+        Assert.Equal(failure, result.Output);
+        Assert.Contains("--fail-with-body", result.Arguments);
+    }
+
+    [Fact]
     public async Task InvalidDisplayMatchingArgumentsNeverReachCurl()
     {
         if (!OperatingSystem.IsLinux()) return;
