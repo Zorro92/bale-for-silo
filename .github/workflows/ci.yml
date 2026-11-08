@@ -177,7 +177,30 @@ jobs:
           ./scripts/check-ffmpeg-package.ps1 -PackagePath $package.FullName
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $zip = [IO.Compression.ZipFile]::OpenRead($package.FullName)
-          try { if (-not $zip.GetEntry('bale_gpu.dll')) { throw 'bale_gpu.dll missing from the MSIX' } } finally { $zip.Dispose() }
+          $inspection = Join-Path $env:RUNNER_TEMP "bale-grain-exports-$([guid]::NewGuid())"
+          New-Item -ItemType Directory $inspection | Out-Null
+          $packagedDll = Join-Path $inspection 'bale_gpu.dll'
+          try {
+            try {
+              $entry = $zip.GetEntry('bale_gpu.dll')
+              if (-not $entry) { throw 'bale_gpu.dll missing from the MSIX' }
+              [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $packagedDll)
+            } finally { $zip.Dispose() }
+            $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+            $vs = & $vswhere -latest -products * -property installationPath
+            $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe |
+              Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+            if (-not $dumpbin) { throw 'dumpbin.exe is required to inspect the packaged grain DLL' }
+            $exports = & $dumpbin.FullName /exports $packagedDll
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect packaged bale_gpu.dll exports' }
+            foreach ($symbol in @('bale_grain_abi_version', 'bale_grain_validate', 'bale_grain_cpu_apply',
+                'bale_grain_gpu_create', 'bale_grain_gpu_apply', 'bale_grain_gpu_destroy')) {
+              if (-not ($exports | Select-String -Pattern "\s$([regex]::Escape($symbol))\s*$" -Quiet)) {
+                throw "Packaged bale_gpu.dll is missing export $symbol"
+              }
+            }
+            Write-Output 'Packaged bale_gpu.dll: all six grain ABI exports verified'
+          } finally { Remove-Item $inspection -Recurse -Force }
 
       - uses: actions/upload-artifact@v7
         with:

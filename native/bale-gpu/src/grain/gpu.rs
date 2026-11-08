@@ -1,5 +1,6 @@
 //! Integer D3D11 grain passes. All context work is serialized and state-isolated.
-//! The opaque handle is decode-thread-only, including destruction.
+//! The C-ABI caller provides one serialized owner for create/apply/destroy. Ownership may
+//! move between producer, seek and close threads; there must be no concurrent handle calls.
 
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -153,7 +154,9 @@ pub struct BaleGrainGpu {
     chroma: InputTexture,
     frame: Option<FrameResources>,
     poison: Option<i32>,
-    _decode_thread_only: PhantomData<Rc<()>>,
+    // Keep safe Rust conservative (!Send/!Sync). The unsafe C ABI may transfer sole
+    // ownership between threads under its external serialization contract, not affinity.
+    _not_send_sync: PhantomData<Rc<()>>,
 }
 
 impl BaleGrainGpu {
@@ -225,7 +228,7 @@ impl BaleGrainGpu {
             constants: constants.ok_or(E_FAIL)?,
             frame: None,
             poison: None,
-            _decode_thread_only: PhantomData,
+            _not_send_sync: PhantomData,
         };
         gpu.self_test()?;
         Ok(gpu)

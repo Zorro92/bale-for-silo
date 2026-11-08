@@ -49,7 +49,10 @@ of software-decoded NV12/P010 frames (default off; no grain shader or decoder ch
 DEFAULT texture flag variants and URL/path-free upload diagnostics, followed by
 `scripts/ffmpeginteropx-patches/0008-d3d11-upload-processed-lifetime.patch` to recycle tracked textures
 without reopening MF-closed surfaces, keep callback cleanup errors nonfatal, make variant 1 render-target
-plus shader-resource, and add a one-shot steady pool diagnostic.
+plus shader-resource, and add a one-shot steady pool diagnostic. The next wrapper, **2.1.0-bale.9**, adds
+`scripts/ffmpeginteropx-patches/0009-rust-film-grain.patch` for opt-in Rust CPU/GPU AV1 grain via the
+packaged `bale_gpu.dll` grain ABI, with permanent per-stream CPU fallback after GPU failure. Grain
+only modifies Bale-owned output, never dav1d reference frames; production keeps dav1d synthesis.
 The original winmd and managed projection are retained; with the new `bale_*` keys unset, behavior
 equals upstream 2.1.0 plus that colour-attribute fix.
 
@@ -95,10 +98,11 @@ Copyright © 2018–2025, VideoLAN and dav1d authors. All rights reserved.
 
 The full bundled notice and license are shipped as `Licenses/FFmpeg/dav1d.txt` in every build.
 
-The CPU AV1 film-grain implementation in `native/bale-gpu/src/grain` is also a Rust port of
-this dav1d revision's `filmgrain_tmpl.c`, `fg_apply_tmpl.c` and Gaussian sequence in `tables.c`.
-Ported files retain the original copyright notices and full BSD 2-Clause licence text;
-`native/bale-gpu/NOTICE` records their provenance. This adds no decoder, GPU shader or wrapper change.
+The CPU AV1 film-grain implementation in `native/bale-gpu/src/grain` and integer GPU grain shaders
+in `native/bale-gpu/shaders` also port this dav1d revision's `filmgrain_tmpl.c`, `fg_apply_tmpl.c` and
+Gaussian sequence in `tables.c`. Ported files retain the original copyright notices and full BSD
+2-Clause licence text; `native/bale-gpu/NOTICE` records their provenance. The wrapper's opt-in Rust
+grain modes use these implementations; dav1d remains the production grain default.
 
 ## QRCoder
 

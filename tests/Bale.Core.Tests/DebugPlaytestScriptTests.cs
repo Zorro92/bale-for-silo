@@ -154,6 +154,9 @@ public class DebugPlaytestScriptTests
     [InlineData("grain=on")]
     [InlineData("grain=off")]
     [InlineData("grain=default")]
+    [InlineData("grain=dav1d")]
+    [InlineData("grain=cpu")]
+    [InlineData("grain=gpu")]
     public async Task GrainProbeOverrideWorksAlongsideHdr(string grain)
     {
         if (!OperatingSystem.IsLinux()) return;
@@ -166,6 +169,9 @@ public class DebugPlaytestScriptTests
     [InlineData("grain=off")]
     [InlineData("grain=on")]
     [InlineData("grain=default")]
+    [InlineData("grain=dav1d")]
+    [InlineData("grain=cpu")]
+    [InlineData("grain=gpu")]
     public async Task GrainTuneOverrideIsSentToTheRealPlayer(string grain)
     {
         if (!OperatingSystem.IsLinux()) return;

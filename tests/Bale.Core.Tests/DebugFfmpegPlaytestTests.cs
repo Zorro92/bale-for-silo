@@ -185,12 +185,15 @@ public class DebugFfmpegPlaytestTests
     [Theory]
     [InlineData(null, null)]
     [InlineData("default", null)]
-    [InlineData("on", true)]
-    [InlineData("off", false)]
-    public void GrainProbeOverrideIsOptIn(string? grain, bool? expected)
+    [InlineData("on", "Dav1d")]
+    [InlineData("dav1d", "Dav1d")]
+    [InlineData("cpu", "Cpu")]
+    [InlineData("gpu", "Gpu")]
+    [InlineData("off", "Off")]
+    public void GrainProbeOverrideIsOptIn(string? grain, string? expected)
     {
-        Assert.True(DebugFfmpegPlaytest.TryParseGrain(grain, out var synthesize, out var error));
-        Assert.Equal(expected, synthesize);
+        Assert.True(DebugFfmpegPlaytest.TryParseGrain(grain, out var selection, out var error));
+        Assert.Equal(expected, selection?.ToString());
         Assert.Empty(error);
     }
 
@@ -202,19 +205,37 @@ public class DebugFfmpegPlaytestTests
     public void InvalidGrainProbeOverrideIsRejected(string grain)
     {
         Assert.False(DebugFfmpegPlaytest.TryParseGrain(grain, out _, out var error));
-        Assert.Equal("grain must be on, off or default", error);
+        Assert.Equal("grain must be dav1d, cpu, gpu, off, on or default", error);
     }
 
     [Fact]
     public void GrainExportKeyIsSentOnlyForGrainOff()
     {
         var source = Read("DebugFfmpegSource.cs.txt");
-        Assert.Contains("if (tuning.FilmGrain is false) config.FFmpegOptions[\"bale_dav1d_export_film_grain\"] = \"1\";", source);
-        Assert.Single(source.Split("bale_dav1d_export_film_grain").Skip(1));
+        Assert.Contains("if (DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain) is { } grain) config.FFmpegOptions[grain.Key] = grain.Value;", source);
         Assert.Contains("query.GetValueOrDefault(\"grain\")", Read("DebugServer.cs.txt"));
         // The real player sets it only from the debug ffmpeg-tune override (DebugFfmpegInputTuningTests).
         var player = Read("FfmpegSource.cs.txt");
         Assert.DoesNotContain("bale_dav1d_export_film_grain", player[..player.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal)]);
+    }
+
+    [Theory]
+    [InlineData(null, null, null, "dav1d (production default)")]
+    [InlineData("default", null, null, "dav1d (production default)")]
+    [InlineData("on", "bale_film_grain_mode", "0", "dav1d (override)")]
+    [InlineData("dav1d", "bale_film_grain_mode", "0", "dav1d (override)")]
+    [InlineData("cpu", "bale_film_grain_mode", "1", "Rust CPU (override)")]
+    [InlineData("gpu", "bale_film_grain_mode", "2", "GPU (override; CPU fallback)")]
+    [InlineData("off", "bale_dav1d_export_film_grain", "1", "exported, not applied (override; libdav1d only)")]
+    public void GrainOptionEmissionAndReportPreserveExportOnlyAndDav1dDefaults(string? input, string? key, string? value, string description)
+    {
+        Assert.True(DebugFfmpegPlaytest.TryParseGrain(input, out var grain, out _));
+        var option = DebugFfmpegPlaytest.GrainOption(grain);
+        Assert.Equal(key, option?.Key);
+        Assert.Equal(value, option?.Value);
+        var report = DebugFfmpegPlaytest.Settings(0, true, 8, new(FilmGrain: grain), "software");
+        Assert.Contains("Film grain requested: " + description + "\n", report);
+        Assert.Contains(input == "gpu" ? "1 (GPU grain; render target+shader resource)" : "0 (probe default; CPU buffers)", report);
     }
 
     [Theory]
@@ -238,7 +259,8 @@ public class DebugFfmpegPlaytestTests
         var source = Read("DebugFfmpegSource.cs.txt");
         Assert.StartsWith("#if DEBUG_SERVER", source);
         Assert.Contains("FfmpegSource.ApplyDecodeTuning(config, tuning.DecodeTuning(mode))", source);
-        Assert.DoesNotContain("bale_d3d11_upload", source);
+        Assert.Contains("if (tuning.FilmGrain is DebugFilmGrain.Gpu) config.FFmpegOptions[\"bale_d3d11_upload\"] = \"1\";", source);
+        Assert.Single(source.Split("bale_d3d11_upload").Skip(1));
         Assert.Contains("if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions[\"bale_decode_thread_priority\"] = priority.ToString(CultureInfo.InvariantCulture)", source);
         Assert.Contains("if (tuning.DecoderUseMaxResolution is { } maxres) config.FFmpegOptions[\"bale_decoder_use_max_resolution\"] = maxres.ToString(CultureInfo.InvariantCulture)", source);
         Assert.Contains("if (tuning.DecoderMaxDpbCount is { } dpb) config.FFmpegOptions[\"bale_decoder_max_dpb_count\"] = dpb.ToString(CultureInfo.InvariantCulture)", source);
@@ -345,7 +367,9 @@ public class DebugFfmpegPlaytestTests
             const string defaults = "Decode ahead: 0 (0=off; default)\nSWS threads: 1 (1=upstream; default)\ndav1d max frame delay: 0 (0=dav1d default; default)\nDecode thread priority: 0 (0=off, 1=above normal, 2=highest; default)\n"
                 + "Decoder use max resolution: 0 (0=unset, 1=on; default; system video only)\nDecoder max DPB count: 0 (0=unset; default; system video only)\n"
                 + "HDR support: automatic (default)\n"
-                + "Film grain: synthesized (default)\n";
+                + "Film grain requested: dav1d (production default)\n"
+                + "D3D11 upload requested: 0 (probe default; CPU buffers)\n"
+                + "Effective grain mode/fallback: see Bale film grain native diagnostics\n";
             Assert.Equal("Threads: 0 (0=logical CPU count; default)\n10-bit output: on (default)\nLogical CPUs: 8\nRate requested: 1\n" + defaults,
                 DebugFfmpegPlaytest.Settings(0, true, 8, new(), "auto"));
             Assert.Equal("Threads: 4 (0=logical CPU count; override)\n10-bit output: off (override)\nLogical CPUs: 8\nRate requested: 0.75\n" + defaults,

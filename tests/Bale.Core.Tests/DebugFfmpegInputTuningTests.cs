@@ -267,7 +267,9 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = checked((uint)readSize)", experiment);
         Assert.Contains("var config = Configuration(route)", experiment);
         Assert.DoesNotContain("bale_decode_thread_priority", configuration[..start]);
-        Assert.Contains("if (route.SoftwareVideo)\n        {\n            ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.SwsThreads, tuning.Dav1dMaxFrameDelay));\n            if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions[\"bale_decode_thread_priority\"] = priority.ToString(CultureInfo.InvariantCulture);\n            // Wrapper patch 0005 (2.1.0-bale.5+): dav1d exports the grain parameters instead of synthesizing grain.\n            if (tuning.FilmGrain is false) config.FFmpegOptions[\"bale_dav1d_export_film_grain\"] = \"1\";\n            // Wrapper patch 0008 (2.1.0-bale.8+): 1 = render target + shader resource; decoder and grain are unchanged.\n            if (tuning.D3d11Upload is { } upload) config.FFmpegOptions[\"bale_d3d11_upload\"] = upload.ToString(CultureInfo.InvariantCulture);\n        }", experiment);
+        Assert.Contains("if (route.SoftwareVideo)\n        {\n            ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.SwsThreads, tuning.Dav1dMaxFrameDelay));", experiment);
+        Assert.Contains("if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions[\"bale_decode_thread_priority\"] = priority.ToString(CultureInfo.InvariantCulture);", experiment);
+        Assert.Contains("if (DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain) is { } grain) config.FFmpegOptions[grain.Key] = grain.Value;", experiment);
         Assert.True(experiment.IndexOf("var config = Configuration(route)", StringComparison.Ordinal)
             < experiment.IndexOf("if (route.SoftwareVideo)", StringComparison.Ordinal));
         Assert.Contains("ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight))", configuration[..start]);
@@ -306,13 +308,16 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     }
 
     [Theory]
-    [InlineData("on", true, " grain=on")]
-    [InlineData("off", false, " grain=off")]
-    public void FilmGrainOverrideIsCapturedAndClearedWithoutChangingOtherOverrides(string value, bool expected, string description)
+    [InlineData("on", "Dav1d", " grain=dav1d")]
+    [InlineData("dav1d", "Dav1d", " grain=dav1d")]
+    [InlineData("cpu", "Cpu", " grain=cpu")]
+    [InlineData("gpu", "Gpu", " grain=gpu")]
+    [InlineData("off", "Off", " grain=off")]
+    public void FilmGrainOverrideIsCapturedAndClearedWithoutChangingOtherOverrides(string value, string expected, string description)
     {
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["prio"] = "2" }, out _));
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["grain"] = value }, out var set));
-        Assert.Equal(expected, set.FilmGrain);
+        Assert.Equal(expected, set.FilmGrain?.ToString());
         Assert.Equal(2, set.DecodeThreadPriority);
         Assert.EndsWith(" prio=2" + description, set.Description);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["grain"] = "default" }, out var cleared));
@@ -333,9 +338,10 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         var experiment = configuration[start..end];
         var software = experiment.IndexOf("if (route.SoftwareVideo)", StringComparison.Ordinal);
         var system = experiment.IndexOf("else\n", software, StringComparison.Ordinal);
-        var key = experiment.IndexOf("if (tuning.FilmGrain is false) config.FFmpegOptions[\"bale_dav1d_export_film_grain\"] = \"1\";", StringComparison.Ordinal);
+        var key = experiment.IndexOf("if (DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain) is { } grain) config.FFmpegOptions[grain.Key] = grain.Value;", StringComparison.Ordinal);
         Assert.True(software >= 0 && key > software && key < system);
-        Assert.Contains("grain=on|off|default", DebugFfmpegInputTuning.Usage);
+        Assert.Contains("grain=dav1d|cpu|gpu|off|on|default", DebugFfmpegInputTuning.Usage);
+        Assert.Contains("SoftwareDecodeTuning.FilmGrainMode(route) is { } grainMode && grainMode != 0", configuration[..start]);
     }
 
     [Theory]
@@ -348,7 +354,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     [InlineData("5", 5)]
     public void UploadOverrideIsCapturedAndClearedIndependentlyOfGrain(string value, int expected)
     {
-        Set(new(DecodeAheadFrames: 8, FilmGrain: false));
+        Set(new(DecodeAheadFrames: 8, FilmGrain: DebugFilmGrain.Off));
         var captured = DebugFfmpegInputTuning.Current;
         Assert.Null(captured.D3d11Upload);
         Assert.Contains("upload=1 (render target+shader resource)", captured.Description);
@@ -414,7 +420,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     [InlineData("DEFAULT")]
     public void InvalidUploadUpdatesAreAtomic(string value)
     {
-        Set(new(FilmGrain: true, D3d11Upload: 5));
+        Set(new(FilmGrain: DebugFilmGrain.Dav1d, D3d11Upload: 5));
         var captured = DebugFfmpegInputTuning.Current;
         Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["grain"] = "off", ["upload"] = value }, out var rejected));
         Assert.Same(captured, rejected);
@@ -422,7 +428,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     }
 
     [Fact]
-    public void ReleaseUploadDefaultAndDebugOverridesApplyOnlyToSoftwareVideoAndNotStandaloneProbes()
+    public void ReleaseUploadDefaultIsSoftwareOnlyAndStandaloneUploadRequiresExplicitGpuGrain()
     {
         var configuration = Read("FfmpegSource.cs.txt");
         var start = configuration.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal);
@@ -435,7 +441,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.True(software >= 0 && key > software && key < system);
         Assert.DoesNotContain("upload > 0", experiment);
         Assert.Equal(2, configuration.Split("bale_d3d11_upload").Length - 1);
-        Assert.DoesNotContain("bale_d3d11_upload", Read("DebugFfmpegSource.cs.txt"));
+        Assert.Contains("if (tuning.FilmGrain is DebugFilmGrain.Gpu) config.FFmpegOptions[\"bale_d3d11_upload\"] = \"1\";", Read("DebugFfmpegSource.cs.txt"));
         Assert.Contains("upload=on|off|default|1..5", DebugFfmpegInputTuning.Usage);
         var server = Read("DebugServer.cs.txt");
         Assert.Contains("FFmpeg tuning: {DebugFfmpegInputTuning.Current.Description}", server);
@@ -470,7 +476,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         ["prio"] = tuning.DecodeThreadPriority?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["maxres"] = tuning.DecoderUseMaxResolution?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["dpb"] = tuning.DecoderMaxDpbCount?.ToString(CultureInfo.InvariantCulture) ?? "default",
-        ["grain"] = tuning.FilmGrain is { } grain ? grain ? "on" : "off" : "default",
+        ["grain"] = DebugFfmpegPlaytest.GrainName(tuning.FilmGrain),
         ["upload"] = tuning.D3d11Upload is { } upload ? upload == 0 ? "off" : upload.ToString(CultureInfo.InvariantCulture) : "default",
     }, out _));
 

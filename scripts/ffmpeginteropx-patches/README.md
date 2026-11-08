@@ -53,6 +53,22 @@ ready for stage-2 grain rendering), 2 = DECODER | SHADER_RESOURCE, 3 = DECODER,
 4 = SHADER_RESOURCE only (known MF failure), 5 = SHADER_RESOURCE + RESOURCE_MISC_SHARED (known MF failure).
 `upload=on` aliases 1; `upload=1..5` selects explicitly; off/default remain CPU buffers, not variant 1.
 The corrected recycling path still needs the owner's console verification.
+`0009` adds opt-in `bale_film_grain_mode` (0 = dav1d default, 1 = Rust CPU, 2 = GPU).
+It loads `bale_gpu.dll` once per process with `LoadPackagedLibrary`, requiring grain ABI 1 and all six
+exports; a missing/incompatible DLL keeps dav1d synthesis. Selection happens before `avcodec_open2`:
+only software `libdav1d`, 4:2:0 8/10-bit input and matching NV12/P010 output can export for Rust grain.
+GPU mode requires upload variant 1 (RENDER_TARGET | SHADER_RESOURCE, Bale's production upload default);
+upload off or another variant selects CPU grain instead. The decoder remains software.
+Per-frame AV1 parameters are mapped and validated; grain touches only Bale-owned output, never the
+decoder AVFrame (dav1d may retain it as a reference picture). GPU grain replaces CopyResource into the
+pooled texture; CPU grain runs in mapped staging when upload is on, or in a copied/repacked CPU buffer
+when off. Grained frames skip direct-buffer output. Scaled or unsupported output shows ungrained.
+GPU create/apply failure overwrites the failed target with the clean staging copy for that sample and
+permanently selects CPU grain for the stream; upload failure retries the same frame in a CPU buffer.
+CPU grain failure refills clean output. Each runtime fallback is logged once per stream with fixed
+diagnostics and HRESULT only when available, never parameters, paths, URLs or exception text.
+`bale_dav1d_export_film_grain` still wins as export-only, suppressing both dav1d and Rust synthesis.
+It ships in `2.1.0-bale.9`; production grain remains dav1d pending console integration verification.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.

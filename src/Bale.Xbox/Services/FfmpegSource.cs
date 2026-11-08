@@ -26,6 +26,8 @@ internal static class FfmpegSource
         config.FFmpegOptions["rw_timeout"] = "10000000";
         ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight));
         if (SoftwareDecodeTuning.D3d11Upload(route) is { } upload) config.FFmpegOptions["bale_d3d11_upload"] = upload.ToString(CultureInfo.InvariantCulture);
+        if (SoftwareDecodeTuning.FilmGrainMode(route) is { } grainMode && grainMode != 0)
+            config.FFmpegOptions["bale_film_grain_mode"] = grainMode.ToString(CultureInfo.InvariantCulture);
         return config;
     }
 
@@ -54,9 +56,9 @@ internal static class FfmpegSource
         {
             ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.SwsThreads, tuning.Dav1dMaxFrameDelay));
             if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions["bale_decode_thread_priority"] = priority.ToString(CultureInfo.InvariantCulture);
-            // Wrapper patch 0005 (2.1.0-bale.5+): dav1d exports the grain parameters instead of synthesizing grain.
-            if (tuning.FilmGrain is false) config.FFmpegOptions["bale_dav1d_export_film_grain"] = "1";
-            // Wrapper patch 0008 (2.1.0-bale.8+): 1 = render target + shader resource; decoder and grain are unchanged.
+            // Patch 0009: explicit Rust modes; off retains the independent export-only override.
+            if (DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain) is { } grain) config.FFmpegOptions[grain.Key] = grain.Value;
+            // Upload remains independent: only variant 1 supports GPU grain; others downgrade to CPU.
             if (tuning.D3d11Upload is { } upload) config.FFmpegOptions["bale_d3d11_upload"] = upload.ToString(CultureInfo.InvariantCulture);
         }
         else

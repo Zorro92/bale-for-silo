@@ -108,13 +108,14 @@ pub unsafe extern "C" fn bale_grain_cpu_apply(
     })
 }
 
-/// Create a decode-thread-only GPU grain handle. Success includes the NV12/P010 self-test.
+/// Create a serialized-owner GPU grain handle. Success includes the NV12/P010 self-test.
 /// The device/context are retained; caller textures are never retained by the handle.
 ///
 /// # Safety
 /// Non-null device/context pointers must be live ID3D11Device/ID3D11DeviceContext interfaces.
 /// `out` must be null or writable for one aligned handle pointer. All pointers stay live for
-/// this call; on failure a non-null `out` is always set to null.
+/// this call; on failure a non-null `out` is always set to null. The caller must serialize
+/// all handle operations, including destruction; sole ownership may move between threads.
 #[cfg(windows)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bale_grain_gpu_create(
@@ -143,7 +144,7 @@ pub unsafe extern "C" fn bale_grain_gpu_create(
         };
         match super::gpu::BaleGrainGpu::create(device, context) {
             Ok(gpu) => {
-                // SAFETY: the output is valid; ownership transfers to destroy on the same thread.
+                // SAFETY: the output is valid; ownership transfers to the serialized C-ABI owner.
                 unsafe { out.write(Box::into_raw(Box::new(gpu))) };
                 S_OK
             }
@@ -156,8 +157,8 @@ pub unsafe extern "C" fn bale_grain_gpu_create(
 /// A panic or device loss permanently poisons this stream's handle.
 ///
 /// # Safety
-/// A non-null handle must be live, exclusively used on its creating decode thread, and not
-/// concurrently destroyed. Parameters follow [`bale_grain_validate`]'s contract. Non-null
+/// A non-null handle must be live and exclusively used, with no concurrent handle calls or
+/// destruction (no permanent thread affinity). Parameters follow [`bale_grain_validate`]'s contract. Non-null
 /// source/destination pointers must be live ID3D11Texture2D interfaces on the handle's device,
 /// unmapped and exclusively available for this call (including their underlying resources).
 #[cfg(windows)]
@@ -172,7 +173,7 @@ pub unsafe extern "C" fn bale_grain_gpu_apply(
     use windows::core::Interface;
 
     boundary(|| {
-        // SAFETY: a non-null handle is exclusively borrowed on its decode thread by contract.
+        // SAFETY: a non-null handle is exclusively borrowed under the caller's serialization.
         let Some(gpu) = (unsafe { handle.as_mut() }) else {
             return E_INVALIDARG;
         };
@@ -208,8 +209,9 @@ pub unsafe extern "C" fn bale_grain_gpu_apply(
 /// Release a GPU handle and its retained device/context references. Null is a no-op.
 ///
 /// # Safety
-/// A non-null pointer must be a live handle returned by create, on its creating decode thread,
-/// with no concurrent calls. It must be destroyed exactly once and never used afterwards.
+/// A non-null pointer must be a live handle returned by create, with sole ownership and no
+/// concurrent calls. Destruction may run on a different thread after synchronizing with the
+/// previous owner. It must happen exactly once and the handle must never be used afterwards.
 #[cfg(windows)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bale_grain_gpu_destroy(handle: *mut super::gpu::BaleGrainGpu) {

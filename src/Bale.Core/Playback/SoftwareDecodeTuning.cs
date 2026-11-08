@@ -5,6 +5,11 @@ public sealed record SoftwareDecodeTuning(int? DecodeAheadFrames = null, int? Sw
 {
     public const int DefaultBufferMs = 1000;
     public const int DefaultD3d11Upload = 1;
+    // Keep dav1d synthesis in production; Rust grain is opt-in until console integration is verified.
+    public const int DefaultFilmGrainMode = 0;
+
+    public static int? FilmGrainMode(PlaybackRouteDecision route) =>
+        route.SoftwareVideo ? DefaultFilmGrainMode : null;
 
     public static int? D3d11Upload(PlaybackRouteDecision route) =>
         route.SoftwareVideo ? DefaultD3d11Upload : null;

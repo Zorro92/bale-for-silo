@@ -136,7 +136,7 @@ with or without `BaleDebugServer`; the CI package checker remains required.
 scripts/bale-debug.sh ffmpeg-tune
 scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default] [prefetch=N|default] \
   [buffer=ms|default] [ahead=N|default] [sws=N|default] [delay=N|default] [prio=N|default] \
-  [maxres=0|1|default] [dpb=N|default] [grain=on|off|default] [upload=on|off|default|1..5]
+  [maxres=0|1|default] [dpb=N|default] [grain=dav1d|cpu|gpu|off|on|default] [upload=on|off|default|1..5]
 ```
 
 No arguments reads the current process-wide overrides (`GET /ffmpeg-tune`); arguments update them
@@ -147,10 +147,15 @@ creation, retained through recovery/remounts, and applied only to the next real 
 attempt, not an already open player, Native Direct, HLS or the standalone probe. `ffmpeg policy|off`
 remains independent.
 
-- `grain=off` (software video only) sends `bale_dav1d_export_film_grain=1` like the probe's `grain=off`:
-  dav1d exports AV1 film-grain parameters instead of applying them, so frames show no grain. It exists
-  to time grain cost on authenticated library files, which the URL-only probe cannot open. `on`/`default`
-  send no key (release behaviour, grain applied).
+- `grain=dav1d|cpu|gpu` (software video only, wrapper `2.1.0-bale.9`+, patch 0009) sends
+  `bale_film_grain_mode=0|1|2`; `on` aliases dav1d, and `default` clears the override (no key, dav1d).
+  CPU grain works with or without upload; GPU requires upload variant 1, otherwise it selects CPU.
+  GPU create/apply failure permanently selects CPU for that stream; the failed GPU sample is replaced
+  with a clean, ungrained copy. All grain writes target Bale-owned staging, pooled textures or CPU
+  buffers, never dav1d's reference AVFrame. `grain=off` retains the independent
+  `bale_dav1d_export_film_grain=1` export-only measurement: no dav1d or Rust grain, even if both keys
+  are supplied. Production remains dav1d pending console playback verification. This A/B facility
+  works on authenticated library files, which the URL-only probe cannot open.
 - `upload=on|1..5` (software video only, wrapper `2.1.0-bale.8`+) sends `bale_d3d11_upload=N`;
   `on` aliases **1**, `default` restores the release default of **1**, and `off` explicitly sends **0**
   to use CPU buffers. Status reports the effective number and its texture flags, e.g.
@@ -161,8 +166,8 @@ remains independent.
   **5** = SHADER_RESOURCE with RESOURCE_MISC_SHARED (**known MF failure**).
   This swaps bale.7 variants 1 and 4; 2/3/5 keep their numbers. MiscFlags is 0 for variants 1–4;
   any failed texture creation retains the same CPU fallback.
-  This switch is independent of `grain`; the standalone probe never sets it, and production sets it
-  only for software video.
+  This switch is independent of the real-player `grain` setting; only the standalone probe's explicit
+  `grain=gpu` sets upload variant 1 there. Production sets upload only for software video.
   To verify actual delivery (including the wrapper's silent CPU fallback), select
   `scripts/bale-debug.sh frame-delivery managed` before opening the player, then read **Sample memory**
   in the stats overlay, `where` or `scripts/bale-debug.sh stats`. It reports `GPU texture (42/42 checked)`,
@@ -275,7 +280,7 @@ Standalone syntax (independent of process-wide `ffmpeg-tune`):
 ```sh
 scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [auto|software|system] \
   [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] \
-  [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=on|off|default]
+  [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|cpu|gpu|off|on|default]
 ```
 
 Supply seconds/mode before tuning, then keys in any order, at most once each. Seconds are 1–60
@@ -292,7 +297,10 @@ Automatic, which applies HDR colour info only when the HDMI mode is already BT.2
 `grain=off` sends `bale_dav1d_export_film_grain=1` (wrapper patch 0005, `2.1.0-bale.5`+; older wrappers
 reject the key and the open fails): libdav1d skips film-grain synthesis and exports the parameters as
 frame side data, so a grain-carrying AV1 clip can be timed with and without grain (`Film grain:` in the
-report). `on`/`default`/omitted keep normal synthesis and send no key. Production never sets it.
+report). With wrapper `2.1.0-bale.9`+, `dav1d`/`on` explicitly send `bale_film_grain_mode=0`,
+`cpu` sends 1 and `gpu` sends 2; only `gpu` also opts the probe into `bale_d3d11_upload=1`.
+Other probe modes retain upload off. `default`/omitted send no grain key and keep dav1d synthesis,
+which is still the production default. CPU/GPU are debug experiments, not console-verified playback.
 Console check on 0.1.291.0 (bale.5, 20 s `software`): the key is accepted and reported as exported.
 The public Jellyfin AV1 clips carry no grain (`film_grain_params_present = 0` in the 1080p and 4K
 sequence headers), so the 1080p 10 Mbps run is unchanged (ratio 0.992 / 1.87 cores with synthesis,
@@ -305,8 +313,9 @@ copy/sws output step writes directly into a three-texture STAGING ring, then Cop
 uploads to pooled DEFAULT textures on the MSS renderer's multithread-protected device. Samples use
 `CreateFromDirect3D11Surface`; Processed returns textures, and seek/size changes discard the old pool
 without reusing MF-held surfaces. A device/texture/map/surface failure permanently falls back to CPU
-buffers for the stream, including the failing frame. No grain shader yet: leave `grain=default` for
-an upload-only CPU/visual A/B; `grain=off` still removes grain, independently. The owner's console
+buffers for the stream, including the failing frame. With `grain=default` this remains an upload-only
+CPU/visual A/B using dav1d grain; patch 0009's Rust grain is opt-in. `grain=off` still removes grain,
+independently. The owner's console
 verification found all GPU textures, zero late frames, lower CPU and pixel-identical output;
 CI only builds/checks this path.
 
@@ -340,8 +349,7 @@ across seek/size generations; returns also drop textures whose full descriptor n
 Callback/detach exceptions are logged **once** without setting a failure flag or disabling upload;
 real synchronous D3D/MF failures (including Map, CreateTexture2D, device removal and
 CreateFromDirect3D11Surface) retain permanent CPU fallback. No decoder, staging or grain change.
-Variant **1** is now RT|SRV so the next stage can render grain into the uploaded texture;
-stage 2 is not implemented.
+Variant **1** is now RT|SRV, ready for patch 0009's opt-in GPU grain rendering into the uploaded texture.
 
 The first-three diagnostics below remain. Additionally, once the uploader has issued **240 texture
 samples** (including decoded lookahead, not just actual MSS handoffs), it logs one snapshot:
@@ -510,6 +518,16 @@ The corresponding-source archive SHA256 is
 The manual `ffmpeginteropx-wrapper.yml` workflow builds only the **Release_UWP x64** native wrapper;
 producing a new release does not automatically update Bale's app pin.
 
+**Step-4 candidate (`2.1.0-bale.9`, patch 0009):** the next release adds opt-in Rust CPU/GPU grain
+without changing the default from dav1d. Selection precedes `avcodec_open2`; compatible software
+libdav1d NV12/P010 output and the complete grain ABI are required, and GPU additionally needs upload
+variant 1. The 0005 export-only switch retains precedence. Grain modifies only Bale-owned output,
+with permanent CPU fallback after GPU failure, and scaled output is shown ungrained. App CI now
+checks all six grain exports in the actual packaged `bale_gpu.dll`. See `docs/gpu-film-grain.md`,
+section 6, for the mapper, output paths, failure handling and serialized-owner teardown contract.
+Console playback parity, CPU/late-frame A/B and memory checks remain pending; include CPU mode with
+upload on, whose grain reads mapped CPU_ACCESS_WRITE staging that may be write-combined.
+
 `scripts/ffmpeginteropx-wrapper.json` pins upstream commit
 `88428c66e106852338b48554a4a00c9e48da588f` and the original nuget.org 2.1.0 package SHA256
 `927f23e66688b6c86659121fd20c12c44507581b3b00de5437274741bb506881`. The source checkout omits
@@ -593,17 +611,35 @@ OPC core-properties versions/content types are updated. The original NuGet repos
 is removed because modification invalidates it. The fork is unsigned and intended for **x64 only**;
 retained other-architecture binaries are not fork builds.
 
-For the next release, run `gh workflow run ffmpeginteropx-wrapper.yml --ref main -f version=2.1.0-bale.9`,
-then `gh run watch <run-id> --exit-status` (choose a fresh number if that tag already exists). The release contains the
-nupkg, `.sha256`, `SOURCES.txt`, `winmd-public-types.txt`, build log and corresponding patched
-wrapper source archive. Provenance records the upstream/Bale commits, ordered patch names/hashes,
-original/native package hashes, native FFmpeg version, tool packages, SDK/toolset and runner image.
+**Manual wrapper release / integrate (step 4 uses `2.1.0-bale.9`):**
+
+1. Commit/push the reviewed changes to `main`, then run
+   `gh workflow run ffmpeginteropx-wrapper.yml --ref main -f version=2.1.0-bale.9` and
+   `gh run watch <run-id> --exit-status` (run the watch in the background, or poll at sensible intervals).
+   Choose a fresh number if that tag already exists. The workflow applies every `*.patch` in ordinal
+   order, so this release must record **nine** patches through `0009-rust-film-grain.patch`.
+2. The release contains the nupkg, `.sha256`, `SOURCES.txt`, `winmd-public-types.txt`, build log and
+   corresponding patched wrapper source archive. Provenance records the upstream/Bale commits,
+   ordered patch names/hashes, original/native package hashes, native FFmpeg version, tool packages,
+   SDK/toolset and runner image. Independently verify asset SHA256 digests, the package's embedded
+   provenance, ordered patch hashes and corresponding sources; confirm retained original-package
+   entries and the built/original public type-name check. Obtain the NuGet content hash with
+   `PackageArchiveReader.GetContentHash`, not an assumed archive SHA512.
+3. Update `scripts/ffmpeginteropx-wrapper.json` (`version`, `release_tag`, `sha256`,
+   `nuget_content_hash`), the exact `FFmpegInteropX.UWP.Lib` reference in `src/Bale.Xbox/Bale.Xbox.csproj`
+   and **both** wrapper entries in `src/Bale.Xbox/packages.lock.json` together. Update the reviewed
+   version/hash assertions in `NativeFfmpegPackageTests.cs` and `DebugFfmpegPlaytestTests.cs`, the
+   release/provenance paragraph above and `THIRD_PARTY_NOTICES.md`. Keep upstream/native/build-tool
+   pins unchanged unless deliberately rebuilding those too.
+4. Run Core tests, commit/push the verified pins and watch app CI to green. Also run CI manually with
+   `production=true` to check debug and production packages, including the actual packaged grain-DLL
+   exports. Build/package success is not console verification; retain dav1d as the grain default
+   until the step-5 playback gates pass.
+
 Existing release **tags** are rejected before building and again before publishing; choose a new
-`2.1.0-bale.N` version rather than overwriting. This is a pinned, repeatable build recipe, not a
-claim of bit-identical compiler output across hosted runner revisions. Before changing the app pin,
-independently verify the new package and obtain its NuGet content hash, following the native FFmpeg
-process. Update the wrapper JSON, exact project reference and both lock entries together; never
-replace assets or silently repin a published version.
+`2.1.0-bale.N` version rather than overwriting. Never replace assets or silently repin a published
+version. This is a pinned, repeatable build recipe, not a claim of bit-identical compiler output
+across hosted runner revisions.
 
 `test-ffmpeginteropx-wrapper.ps1` exercises empty/ordered/rejected patches, the IDL restriction,
 WinMD type mismatch, SHA256 failure and byte-preserving repack with small offline fixtures. Both
