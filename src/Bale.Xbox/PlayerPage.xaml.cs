@@ -140,6 +140,10 @@ public sealed partial class PlayerPage : Page, IBackHandler
             if (!_active || _leaving || _suspended) return;
             _gcLatencyLease ??= PlaybackGcLatency.Shared.Acquire();
             await StopAttemptAsync();
+            // A previous attempt or page may still hold its decoder memory; 4K starts on top of it can OOM.
+            if (!await PlaybackMemoryRelease.Shared.WaitAsync(PlaybackMemoryRelease.StartWaitLimit))
+                Log.Info("player: previous playback memory release still running");
+            if (!_active || _leaving || _suspended) return;
             ErrorPanel.Visibility = Visibility.Collapsed;
             ErrorText.Text = string.Empty;
             _delivery = null;
@@ -492,6 +496,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
             DisposeMount(attempt);
             attempt.Cancellation.Dispose();
             if (ReferenceEquals(_attempt, attempt)) _attempt = null;
+            // The torn-down pipeline's native memory is only freed when its WinRT wrappers finalize.
+            _ = PlaybackMemoryRelease.Shared.Schedule();
         }
     }
 
