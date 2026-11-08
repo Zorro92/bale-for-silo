@@ -427,7 +427,7 @@ withdrawal and serialization. The production integration still needs the owner's
 
 ### Native FFmpeg / dav1d build
 
-Bale uses `FFmpegInteropX.UWP.Lib` **2.1.0-bale.8** with the custom x64 native package
+Bale uses `FFmpegInteropX.UWP.Lib` **2.1.0-bale.9** with the custom x64 native package
 `FFmpegInteropX.UWP.FFmpeg` **8.1.2-bale.dav1d.1.5.4**. The public 8.1.2 x64 `avcodec-62.dll`
 embeds dav1d **1.0.0-0-g99172b1** (March 2022); upgrading the wrapper cannot update that static
 library. This rebuild is an A/B candidate for occasional AV1 stutter/2–4-core CPU spikes, **not a
@@ -490,10 +490,10 @@ and its native activation registration are unchanged.
 
 ### Native FFmpegInteropX wrapper fork
 
-Bale now requires exactly `[2.1.0-bale.8]` of `FFmpegInteropX.UWP.Lib`, from immutable release
-[`wrapper-ffmpeginteropx-2.1.0-bale.8`](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.8).
+Bale now requires exactly `[2.1.0-bale.9]` of `FFmpegInteropX.UWP.Lib`, from immutable release
+[`wrapper-ffmpeginteropx-2.1.0-bale.9`](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.9).
 The independently verified nupkg SHA256 is
-`82c96f9a240e2d0bd2dc76547927936db490a01ce94851c2fcf41d9b34c52d20`. The release tag, SHA256 and
+`73d879b31a936d5bf7d3cbf653a9fe02cd87e07800dbc40895f08838067cdaf3`. The release tag, SHA256 and
 NuGet content hash are pinned in `scripts/ffmpeginteropx-wrapper.json`; both framework/RID lock
 entries agree. `restore-ffmpeg-native.ps1` downloads it into isolated staging, verifies before moving
 it to `.cache/ffmpeg-native`, and clears its cached extraction. Source mapping allows the wrapper
@@ -503,22 +503,22 @@ and production MSIX files next to the license texts. The package checker compare
 checks that the shipped wrapper provenance is identical too. Activation/factory and dav1d/license
 checks remain enabled in both configurations.
 
-Release `2.1.0-bale.8` was built from Bale commit `06585a9fc79f079b49e1c21ae940c722a5567ba3`
-by [wrapper run 42491540365](https://github.com/Zorro92/bale-for-silo/actions/runs/42491540365).
-Independent verification matched every release asset's GitHub SHA256 digest, all eight ordered patch
-hashes in `SOURCES.txt`, the original/native package pins, all 129 tracked `Source/` and `Build/` files
+Release `2.1.0-bale.9` was built from Bale commit `0b9a460220dfc35c7097f5c632b5cd97b51532b0`
+by successful [wrapper run 42513374008](https://github.com/Zorro92/bale-for-silo/actions/runs/42513374008).
+Independent verification matched all six release assets' GitHub SHA256 digests, all nine ordered patch
+hashes in `SOURCES.txt`, the original/native package pins, all 130 tracked `Source/` and `Build/` files
 in the corresponding-source archive, and the nine unchanged original-package entries (including the
-original winmd, managed projection and x86/ARM64 binaries). Additional archive source files are confined
-to C++/WinRT's `Source/Generated Files/` output. The built/original public type-name check reports
-29 identical types. The NuGet content hash in the pin/lock entries was obtained with NuGet's
+original winmd, managed projection and x86/ARM64 binaries). The 1,344 additional archive source files
+are confined to C++/WinRT's `Source/Generated Files/` output. The built/original public type-name check
+reports 29 identical types. The NuGet content hash in the pin/lock entries was obtained with NuGet's
 `PackageArchiveReader.GetContentHash` API, not inferred from the archive SHA512.
 The corresponding-source archive SHA256 is
-`42422f6c57f9baf2f5c07f2b86a56ee23626f3bfb668306ad018add5bf12b079`.
+`9b4682596c14c33bdcee78b6ded2a0ebb2283581f898f4f7622ea80ab4a06cf0`.
 
 The manual `ffmpeginteropx-wrapper.yml` workflow builds only the **Release_UWP x64** native wrapper;
 producing a new release does not automatically update Bale's app pin.
 
-**Step-4 candidate (`2.1.0-bale.9`, patch 0009):** the next release adds opt-in Rust CPU/GPU grain
+**Step 4 (`2.1.0-bale.9`, patch 0009):** this release adds opt-in Rust CPU/GPU grain
 without changing the default from dav1d. Selection precedes `avcodec_open2`; compatible software
 libdav1d NV12/P010 output and the complete grain ABI are required, and GPU additionally needs upload
 variant 1. The 0005 export-only switch retains precedence. Grain modifies only Bale-owned output,
@@ -611,13 +611,14 @@ OPC core-properties versions/content types are updated. The original NuGet repos
 is removed because modification invalidates it. The fork is unsigned and intended for **x64 only**;
 retained other-architecture binaries are not fork builds.
 
-**Manual wrapper release / integrate (step 4 uses `2.1.0-bale.9`):**
+**Manual wrapper release / integrate (next unused version after step 4: `2.1.0-bale.10`):**
 
 1. Commit/push the reviewed changes to `main`, then run
-   `gh workflow run ffmpeginteropx-wrapper.yml --ref main -f version=2.1.0-bale.9` and
+   `gh workflow run ffmpeginteropx-wrapper.yml --ref main -f version=2.1.0-bale.10` and
    `gh run watch <run-id> --exit-status` (run the watch in the background, or poll at sensible intervals).
-   Choose a fresh number if that tag already exists. The workflow applies every `*.patch` in ordinal
-   order, so this release must record **nine** patches through `0009-rust-film-grain.patch`.
+   Choose a fresh number if that tag already exists; step 4's `.9` release is now immutable. The
+   workflow applies every `*.patch` in ordinal order: `.9` records **nine** patches through
+   `0009-rust-film-grain.patch`; verify the actual series at the rebuilt ref for later releases.
 2. The release contains the nupkg, `.sha256`, `SOURCES.txt`, `winmd-public-types.txt`, build log and
    corresponding patched wrapper source archive. Provenance records the upstream/Bale commits,
    ordered patch names/hashes, original/native package hashes, native FFmpeg version, tool packages,

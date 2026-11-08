@@ -29,7 +29,7 @@ GNU Affero General Public License v3.0, as is Bale (see `LICENSE`).
 ## FFmpegInteropX
 
 All Bale builds bundle [FFmpegInteropX.UWP.Lib](https://github.com/ffmpeginteropx/FFmpegInteropX)
-**2.1.0-bale.8**, a Bale x64 native-wrapper fork of upstream 2.1.0, under the Apache License 2.0.
+**2.1.0-bale.9**, a Bale x64 native-wrapper fork of upstream 2.1.0, under the Apache License 2.0.
 Its full license text is packaged as `Licenses/FFmpegInteropX.txt`
 (source copy: `src/Bale.Xbox/Assets/FFmpegInteropX-LICENSE.txt`). The fork starts at upstream commit
 `88428c66e106852338b48554a4a00c9e48da588f` and applies
@@ -49,14 +49,14 @@ of software-decoded NV12/P010 frames (default off; no grain shader or decoder ch
 DEFAULT texture flag variants and URL/path-free upload diagnostics, followed by
 `scripts/ffmpeginteropx-patches/0008-d3d11-upload-processed-lifetime.patch` to recycle tracked textures
 without reopening MF-closed surfaces, keep callback cleanup errors nonfatal, make variant 1 render-target
-plus shader-resource, and add a one-shot steady pool diagnostic. The next wrapper, **2.1.0-bale.9**, adds
+plus shader-resource, and add a one-shot steady pool diagnostic, followed by
 `scripts/ffmpeginteropx-patches/0009-rust-film-grain.patch` for opt-in Rust CPU/GPU AV1 grain via the
 packaged `bale_gpu.dll` grain ABI, with permanent per-stream CPU fallback after GPU failure. Grain
 only modifies Bale-owned output, never dav1d reference frames; production keeps dav1d synthesis.
 The original winmd and managed projection are retained; with the new `bale_*` keys unset, behavior
 equals upstream 2.1.0 plus that colour-attribute fix.
 
-The [wrapper release](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.8)
+The [wrapper release](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.9)
 provides the nupkg, SHA256, `SOURCES.txt`, metadata comparison and corresponding patched source in
 `ffmpeginteropx-wrapper-sources.tar.gz`. Provenance records the upstream/build commits, ordered patch hashes,
 native dependency and build tools; it ships in all MSIX builds as
@@ -78,7 +78,7 @@ FFmpeg remains at `38b88335f99e76ed89ff3c93f877fdefce736c13`. The build baseline
 [FFmpegInteropX v2.1.0, commit 88428c66e106852338b48554a4a00c9e48da588f](https://github.com/ffmpeginteropx/FFmpegInteropX/tree/88428c66e106852338b48554a4a00c9e48da588f),
 with its other dependency revisions and FFmpeg configure flags unchanged. The x64-only NuGet
 omits unused architecture globs and adds provenance; the separately rebuilt interop wrapper is
-2.1.0-bale.8 as described above.
+2.1.0-bale.9 as described above.
 
 The [native release](https://github.com/Zorro92/bale-for-silo/releases/tag/native-ffmpeg-8.1.2-dav1d-1.5.4)
 provides the package, SHA256, `SOURCES.txt` with every submodule revision and build parameters,

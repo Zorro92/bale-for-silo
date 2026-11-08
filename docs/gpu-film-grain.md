@@ -7,8 +7,10 @@ fixtures / 88 frames, including padding and pipeline-state checks. Local formatt
 and Windows cross-target Clippy, and Linux bit-exact release tests also pass. The Linux cross-check
 uses placeholder shaders, not GPU execution. Step 3's synthetic console probe passed on the Xbox
 (build 0.1.327.0; results in section 7). Step 4 is implemented: wrapper patch 0009, debug grain modes
-and the packaged-DLL export check. The production default remains dav1d grain; wrapper playback
-console verification is pending. Steps 5–6 remain future work.
+and the packaged-DLL export check. Wrapper `2.1.0-bale.9` compiled and was released by
+[run 42513374008](https://github.com/Zorro92/bale-for-silo/actions/runs/42513374008); package, patch
+hashes and corresponding source were independently verified. The production default remains dav1d
+grain; wrapper playback console verification is pending. Steps 5–6 remain future work.
 Reference algorithm: dav1d 1.5.4, commit `54706fc6bc0cdecab7e9593974a4039cc038fca7`,
 `src/filmgrain_tmpl.c` + `src/fg_apply_tmpl.c` + the Gaussian sequence in `src/tables.c` (BSD-2).
 Ported files retain the original copyright and full licence; `native/bale-gpu/NOTICE` records provenance.
