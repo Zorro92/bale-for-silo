@@ -1,10 +1,12 @@
 # Bale stage 2: GPU AV1 film grain (design)
 
-Status: 2026-11-08. Steps 1–2 implemented: the Rust CPU oracle/fallback, committed dav1d fixtures,
-integer GPU passes and mandatory Windows WARP tests. Local formatting, strict Linux and Windows
-cross-target Clippy, and Linux bit-exact release tests pass. Real FXC compilation and WARP execution
-are Windows CI gates, not exercised by the Linux placeholder-shader cross-check. Steps 3–6 remain
-future work; no wrapper, console verification or runtime-policy changes. Playback still uses dav1d grain.
+Status: 2026-11-08. Steps 1–2 implemented and verified: Rust CPU oracle/fallback, dav1d fixtures and
+integer GPU passes. [Windows CI run 42505455358](https://github.com/Zorro92/bale-for-silo/actions/runs/42505455358)
+passes real FXC compilation, strict Windows Clippy, all four create-time self-tests and all 44 WARP
+fixtures / 88 frames, including padding and pipeline-state checks. Local formatting, strict Linux
+and Windows cross-target Clippy, and Linux bit-exact release tests also pass. The Linux cross-check
+uses placeholder shaders, not GPU execution. Steps 3–6 remain future work; no wrapper, console
+verification or runtime-policy changes. Playback still uses dav1d grain.
 Reference algorithm: dav1d 1.5.4, commit `54706fc6bc0cdecab7e9593974a4039cc038fca7`,
 `src/filmgrain_tmpl.c` + `src/fg_apply_tmpl.c` + the Gaussian sequence in `src/tables.c` (BSD-2).
 Ported files retain the original copyright and full licence; `native/bale-gpu/NOTICE` records provenance.
