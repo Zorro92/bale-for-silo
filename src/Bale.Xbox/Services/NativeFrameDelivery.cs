@@ -12,7 +12,7 @@ namespace Bale.Xbox.Services;
 /// Rust releases every sample in its native callback. This thread only sees blittable records and
 /// samples GC/stream counters independently of delivery, without forced collections or managed events.
 /// </summary>
-internal sealed unsafe class NativeFrameDelivery : IDebugFrameDelivery
+internal sealed unsafe partial class NativeFrameDelivery : IDebugFrameDelivery
 {
     private const uint ExpectedAbi = 4;
     private const int DrainCapacity = 512;

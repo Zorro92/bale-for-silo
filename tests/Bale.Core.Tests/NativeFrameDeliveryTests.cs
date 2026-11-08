@@ -8,8 +8,8 @@ public class NativeFrameDeliveryTests
     {
         var source = Read("NativeFrameDelivery.cs.txt");
         Assert.StartsWith("#if DEBUG_SERVER", source);
-        Assert.Contains("NativeFrameDelivery : IDebugFrameDelivery", source);
-        Assert.Contains("DebugFrameDelivery : IDebugFrameDelivery", Read("DebugFrameDelivery.cs.txt"));
+        Assert.Contains("partial class NativeFrameDelivery : IDebugFrameDelivery", source);
+        Assert.Contains("partial class DebugFrameDelivery : IDebugFrameDelivery", Read("DebugFrameDelivery.cs.txt"));
         Assert.StartsWith("#if DEBUG_SERVER", Read("IDebugFrameDelivery.cs.txt"));
         Assert.Contains("private const uint ExpectedAbi = 4;", source);
         Assert.Contains("bale_gpu_abi_version() != ExpectedAbi", source);

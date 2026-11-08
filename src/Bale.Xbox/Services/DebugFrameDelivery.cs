@@ -8,7 +8,7 @@ using Windows.Media.Playback;
 namespace Bale.Xbox.Services;
 
 /// <summary>A passive observer of FFmpeg's decoded video delivery; never changes or retains a sample.</summary>
-internal sealed class DebugFrameDelivery : IDebugFrameDelivery
+internal sealed partial class DebugFrameDelivery : IDebugFrameDelivery
 {
     private readonly MediaStreamSource _source;
     private readonly MediaPlaybackSession _session;
