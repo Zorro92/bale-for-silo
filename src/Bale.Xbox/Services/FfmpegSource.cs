@@ -8,8 +8,8 @@ internal static class FfmpegSource
 {
     internal static MediaSourceConfig Configuration(PlaybackRouteDecision route)
     {
-        // Never attach the native logger: it can disclose media URLs and credentials.
-        FFmpegInteropLogging.SetLogProvider(null);
+        // Debug captures only our safe Bale diagnostics; production keeps the native logger off.
+        FfmpegLogging.Configure();
         if (!route.UseFfmpeg || (route.SoftwareVideo
             ? !SoftwareDecodePolicy.VideoCodecs.Contains(route.VideoCodec!)
             : route.VideoCodec is not null && !ConsoleEvidence.Default.VideoDecode.Any(decode => decode.Hardware && decode.Codec == route.VideoCodec)))
@@ -55,8 +55,8 @@ internal static class FfmpegSource
             if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions["bale_decode_thread_priority"] = priority.ToString(CultureInfo.InvariantCulture);
             // Wrapper patch 0005 (2.1.0-bale.5+): dav1d exports the grain parameters instead of synthesizing grain.
             if (tuning.FilmGrain is false) config.FFmpegOptions["bale_dav1d_export_film_grain"] = "1";
-            // Wrapper patch 0006 (2.1.0-bale.6+): upload software output, without changing the decoder or grain.
-            if (tuning.D3d11Upload is true) config.FFmpegOptions["bale_d3d11_upload"] = "1";
+            // Wrapper patch 0007 (2.1.0-bale.7+): choose upload texture flags, without changing the decoder or grain.
+            if (tuning.D3d11Upload is { } upload && upload > 0) config.FFmpegOptions["bale_d3d11_upload"] = upload.ToString(CultureInfo.InvariantCulture);
         }
         else
         {

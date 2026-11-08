@@ -136,7 +136,7 @@ with or without `BaleDebugServer`; the CI package checker remains required.
 scripts/bale-debug.sh ffmpeg-tune
 scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default] [prefetch=N|default] \
   [buffer=ms|default] [ahead=N|default] [sws=N|default] [delay=N|default] [prio=N|default] \
-  [maxres=0|1|default] [dpb=N|default] [grain=on|off|default] [upload=on|off|default]
+  [maxres=0|1|default] [dpb=N|default] [grain=on|off|default] [upload=on|off|default|1..5]
 ```
 
 No arguments reads the current process-wide overrides (`GET /ffmpeg-tune`); arguments update them
@@ -151,8 +151,12 @@ remains independent.
   dav1d exports AV1 film-grain parameters instead of applying them, so frames show no grain. It exists
   to time grain cost on authenticated library files, which the URL-only probe cannot open. `on`/`default`
   send no key (release behaviour, grain applied).
-- `upload=on` (software video only, wrapper `2.1.0-bale.6`+) sends `bale_d3d11_upload=1`;
-  `off`/`default` send no key and use CPU buffers. Status always reports `upload=on|off`.
+- `upload=on|1..5` (software video only, wrapper `2.1.0-bale.7`+) sends `bale_d3d11_upload=N`;
+  `on` aliases **1**, and `off`/`default` send no key and use CPU buffers. Status always reports the
+  effective number (`upload=0..5`), including **0** for off/default. The DEFAULT texture flags are
+  **1** = SHADER_RESOURCE, **2** = DECODER | SHADER_RESOURCE, **3** = DECODER,
+  **4** = RENDER_TARGET | SHADER_RESOURCE, **5** = SHADER_RESOURCE with RESOURCE_MISC_SHARED.
+  MiscFlags is 0 for variants 1–4; any failed texture creation retains the same CPU fallback.
   This switch is independent of `grain`; the standalone probe and production never set it.
   To verify actual delivery (including the wrapper's silent CPU fallback), select
   `scripts/bale-debug.sh frame-delivery managed` before opening the player, then read **Sample memory**
@@ -298,8 +302,23 @@ uploads to pooled DEFAULT textures on the MSS renderer's multithread-protected d
 without reusing MF-held surfaces. A device/texture/map/surface failure permanently falls back to CPU
 buffers for the stream, including the failing frame. No grain shader yet: leave `grain=default` for
 an upload-only CPU/visual A/B; `grain=off` still removes grain, independently. Playback and CPU parity
-need console verification; CI only builds/checks this path. Wrapper diagnostics use its existing
-native logger, which Bale deliberately keeps disabled (no new native log capture).
+need console verification; CI only builds/checks this path.
+
+**Early upload failure / patch 0007 (`2.1.0-bale.7`).** The owner's bale.6 console test of 1080p AV1
+10-bit → P010 fails about **0.1 s** after open with **0x80070057 (`E_INVALIDARG`)** when upload is on;
+upload off plays. Native and managed frame observers both reproduce it, and the wrapper's synchronous
+CPU fallback does not trigger. This suggests asynchronous MF rejection of the delivered texture sample,
+not a proven cause. Patch 0007 exposes the five DEFAULT texture flag variants above (the hardware
+path preserves DECODER bind flags; bale.6 used SHADER_RESOURCE only). Unsupported variants fall back
+to CPU on allocation failure. No variant has been verified on the console yet.
+
+Debug builds now forward **only** native messages starting exactly `Bale ` to Bale's log as `ffmpeg: …`
+(trailing newlines trimmed), with Info enabled. Everything else is dropped before logging because
+FFmpeg may include media URLs; production retains `SetLogProvider(null)`. Patch 0007 prefixes every
+new diagnostic `Bale D3D11 upload`: acquired device flags/feature level/multithread protection,
+declared output W×H/subtype, recreated pool W×H/DXGI format/bind/misc flags, first three actual MSS
+sample handoffs (index/position/texture size), first three Processed callbacks, and failure HRESULTs.
+CopyResource/Flush return void, so their failure diagnostic uses GetDeviceRemovedReason.
 
 The upload device-manager handle is independent of hardware decoding: partial initialization failure,
 device reset and source teardown close it; normal teardown first stops the decode-ahead worker.
@@ -362,7 +381,7 @@ withdrawal and serialization. The production integration still needs the owner's
 
 ### Native FFmpeg / dav1d build
 
-Bale uses `FFmpegInteropX.UWP.Lib` **2.1.0-bale.6** with the custom x64 native package
+Bale uses `FFmpegInteropX.UWP.Lib` **2.1.0-bale.7** with the custom x64 native package
 `FFmpegInteropX.UWP.FFmpeg` **8.1.2-bale.dav1d.1.5.4**. The public 8.1.2 x64 `avcodec-62.dll`
 embeds dav1d **1.0.0-0-g99172b1** (March 2022); upgrading the wrapper cannot update that static
 library. This rebuild is an A/B candidate for occasional AV1 stutter/2–4-core CPU spikes, **not a
@@ -425,10 +444,10 @@ and its native activation registration are unchanged.
 
 ### Native FFmpegInteropX wrapper fork
 
-Bale now requires exactly `[2.1.0-bale.6]` of `FFmpegInteropX.UWP.Lib`, from immutable release
-[`wrapper-ffmpeginteropx-2.1.0-bale.6`](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.6).
+Bale now requires exactly `[2.1.0-bale.7]` of `FFmpegInteropX.UWP.Lib`, from immutable release
+[`wrapper-ffmpeginteropx-2.1.0-bale.7`](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.7).
 The independently verified nupkg SHA256 is
-`915c9cf3390afd072eb20c73eac22d859b9a153d4c0c8a91729b5453da507c6f`. The release tag, SHA256 and
+`7202f0b8f4aafc39b002426856cfea7c2256d5a653c0953d6b7726f4ac694643`. The release tag, SHA256 and
 NuGet content hash are pinned in `scripts/ffmpeginteropx-wrapper.json`; both framework/RID lock
 entries agree. `restore-ffmpeg-native.ps1` downloads it into isolated staging, verifies before moving
 it to `.cache/ffmpeg-native`, and clears its cached extraction. Source mapping allows the wrapper
@@ -438,15 +457,15 @@ and production MSIX files next to the license texts. The package checker compare
 checks that the shipped wrapper provenance is identical too. Activation/factory and dav1d/license
 checks remain enabled in both configurations.
 
-Release `2.1.0-bale.6` was built from Bale commit `fc4b2618a11dd7339c08c0361db52a3b75642064`
-by [wrapper run 42485565576](https://github.com/Zorro92/bale-for-silo/actions/runs/42485565576).
-Independent verification matched all six ordered patch hashes in `SOURCES.txt`, the original/native
+Release `2.1.0-bale.7` was built from Bale commit `c7e5e27013d0710ba98bf1807ecef620ffda7d6b`
+by [wrapper run 42488956581](https://github.com/Zorro92/bale-for-silo/actions/runs/42488956581).
+Independent verification matched all seven ordered patch hashes in `SOURCES.txt`, the original/native
 package pins, all 129 tracked `Source/` and `Build/` files in the corresponding-source archive, and
 the nine unchanged original-package entries (including the original winmd, managed projection and
 x86/ARM64 binaries). The built/original public type-name check reports 29 identical types.
 The NuGet content hash in the pin/lock entries was obtained with NuGet's `PackageArchiveReader.GetContentHash`
 API, not inferred from the archive SHA512. The corresponding-source archive SHA256 is
-`9940bc856dc2a6b0b7595e42dc3ae212b579c05492aaae29117db3f6ee763574`.
+`0e248d78862dea09576b74a8c1ff8e99a506a5ff3a28b13852642dce0fedda0c`.
 
 The manual `ffmpeginteropx-wrapper.yml` workflow builds only the **Release_UWP x64** native wrapper;
 producing a new release does not automatically update Bale's app pin.
@@ -534,7 +553,7 @@ OPC core-properties versions/content types are updated. The original NuGet repos
 is removed because modification invalidates it. The fork is unsigned and intended for **x64 only**;
 retained other-architecture binaries are not fork builds.
 
-For the next release, run `gh workflow run ffmpeginteropx-wrapper.yml --ref main -f version=2.1.0-bale.7`,
+For the next release, run `gh workflow run ffmpeginteropx-wrapper.yml --ref main -f version=2.1.0-bale.8`,
 then `gh run watch <run-id> --exit-status` (choose a fresh number if that tag already exists). The release contains the
 nupkg, `.sha256`, `SOURCES.txt`, `winmd-public-types.txt`, build log and corresponding patched
 wrapper source archive. Provenance records the upstream/Bale commits, ordered patch names/hashes,

@@ -47,7 +47,7 @@ namespace Bale.Xbox.Services;
 ///   GET  /ffmpeg-tune     current memory-only FFmpeg overrides
 ///   POST /ffmpeg-tune?readahead=on&readsize=65536&prefetch=8  next FFmpeg player attempt; each key accepts default
 ///                         optional buffer=0–5000, ahead=0–64, sws=1–16, delay=0–64, prio=0–2, maxres=0|1|default, dpb=0–16|default (system video only)
-///                         grain=on|off|default, upload=on|off|default (software video only; upload defaults off; wrapper 2.1.0-bale.6+)
+///                         grain=on|off|default, upload=on|off|default|1..5 (software video only; on=1, off/default=0; status shows 0..5; wrapper 2.1.0-bale.7+)
 ///   GET  /mem?gc=1        managed GC heap vs app memory; gc=1 first forces a full collection + finalizers
 ///   GET  /gc              GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
 ///   POST /gc?latency=...  batch|interactive|sustained|default; default restores the saved pre-playback mode; memory only

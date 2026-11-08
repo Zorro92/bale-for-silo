@@ -122,7 +122,7 @@ public class DebugFfmpegPlaybackTests
         var production = source[..source.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal)];
         Assert.DoesNotContain("config.General.", production);
         Assert.Contains("ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight))", production);
-        Assert.Contains("FFmpegInteropLogging.SetLogProvider(null)", production);
+        Assert.Contains("FfmpegLogging.Configure()", production);
         Assert.Contains("VideoDecoderMode.ForceFFmpegSoftwareDecoder : VideoDecoderMode.ForceSystemDecoder", source);
         Assert.DoesNotContain("VideoDecoderMode.Automatic", source);
         Assert.Contains("config.Audio.SystemDecoderAAC = true", source);

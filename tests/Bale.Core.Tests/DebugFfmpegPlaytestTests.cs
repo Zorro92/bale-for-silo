@@ -465,7 +465,7 @@ public class DebugFfmpegPlaytestTests
         string[] required =
         [
             "Interlocked.CompareExchange(ref _playtestBusy, 1, 0)", "409 Conflict",
-            "FFmpegInteropLogging.SetLogProvider(null)", "FFmpegMediaSource.CreateFromUriAsync(uri.AbsoluteUri, config).AsTask()",
+            "FfmpegLogging.Configure()", "FFmpegMediaSource.CreateFromUriAsync(uri.AbsoluteUri, config).AsTask()",
             "using var source = await creation", "var player = await OnFfmpegUiAsync(() => new MediaPlayer { IsMuted = true, AutoPlay = false })",
             "Attempt(\"dispose player\", player.Dispose)",
             "source.CreateMediaPlaybackItem()", "VideoDecoderMode.Automatic", "VideoDecoderMode.ForceFFmpegSoftwareDecoder",
@@ -555,7 +555,7 @@ public class DebugFfmpegPlaytestTests
         var packages = project.Descendants("PackageReference").Where(p => p.Attribute("Include")!.Value.StartsWith("FFmpegInteropX.")).ToArray();
         Assert.Equal(2, packages.Length);
         Assert.All(packages, p => Assert.DoesNotContain(p.AncestorsAndSelf(), element => element.Attribute("Condition") is not null));
-        Assert.Equal("[2.1.0-bale.6]", packages.Single(p => p.Attribute("Include")!.Value.EndsWith(".Lib")).Attribute("Version")!.Value);
+        Assert.Equal("[2.1.0-bale.7]", packages.Single(p => p.Attribute("Include")!.Value.EndsWith(".Lib")).Attribute("Version")!.Value);
         Assert.Equal("[8.1.2-bale.dav1d.1.5.4]", packages.Single(p => p.Attribute("Include")!.Value.EndsWith(".FFmpeg")).Attribute("Version")!.Value);
         var target = project.Descendants("Target").Single(t => t.Attribute("Name")!.Value == "PrepareFFmpegManifest");
         Assert.Null(target.Attribute("Condition"));

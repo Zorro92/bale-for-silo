@@ -179,6 +179,11 @@ public class DebugPlaytestScriptTests
     [InlineData("upload=on")]
     [InlineData("upload=off")]
     [InlineData("upload=default")]
+    [InlineData("upload=1")]
+    [InlineData("upload=2")]
+    [InlineData("upload=3")]
+    [InlineData("upload=4")]
+    [InlineData("upload=5")]
     public async Task UploadTuneOverrideWorksAlongsideGrainAndOtherKeys(string upload)
     {
         if (!OperatingSystem.IsLinux()) return;
@@ -194,7 +199,7 @@ public class DebugPlaytestScriptTests
     public async Task InvalidOrDuplicateUploadTuningNeverInvokesCurlAndProbesRejectIt()
     {
         if (!OperatingSystem.IsLinux()) return;
-        foreach (var value in new[] { "", "ON", "OFF", "1", "true", " on", "off ", "DEFAULT" })
+        foreach (var value in new[] { "", "ON", "OFF", "0", "6", "-1", "+1", "01", "1.0", " 1", "1 ", "2147483648", "true", " on", "off ", "DEFAULT" })
         {
             var result = await RunAsync(["ffmpeg-tune", "grain=off", "upload=" + value]);
             Assert.Equal(2, result.ExitCode);
@@ -204,7 +209,9 @@ public class DebugPlaytestScriptTests
         {
             new[] { "ffmpeg-tune", "upload=on", "upload=off" },
             ["ffmpeg-tune", "upload=default", "upload=on"],
+            ["ffmpeg-tune", "upload=2", "upload=5"],
             ["playtest-ffmpeg", "@fixture", "30", "software", "upload=on"],
+            ["playtest-ffmpeg", "@fixture", "30", "software", "upload=3"],
         })
         {
             var result = await RunAsync(options);

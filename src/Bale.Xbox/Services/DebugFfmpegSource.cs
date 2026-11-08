@@ -8,8 +8,8 @@ internal static class DebugFfmpegSource
 {
     internal static MediaSourceConfig Configuration(string mode, DebugFfmpegTuning tuning)
     {
-        // The native default logger can expose media URLs. Never install it for either debug path.
-        FFmpegInteropLogging.SetLogProvider(null);
+        // Share the strict Bale-prefix filter; never attach the native default logger.
+        FfmpegLogging.Configure();
         var config = new MediaSourceConfig();
         config.Video.VideoDecoderMode = mode switch
         {
