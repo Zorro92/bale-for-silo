@@ -20,7 +20,7 @@ compressed/passthrough output is unchanged. It first shipped in `2.1.0-bale.4`.
 `libdav1d`, `AV_CODEC_EXPORT_DATA_FILM_GRAIN` is set before `avcodec_open2`: dav1d then skips grain
 synthesis and attaches `AV_FRAME_DATA_FILM_GRAIN_PARAMS` instead, so frames are output grain-free.
 It is a debug measurement of grain CPU cost (and groundwork for GPU grain); production never sets it.
-It ships in the pinned `2.1.0-bale.5` release; earlier releases reject the key as unknown.
+It first shipped in `2.1.0-bale.5`; earlier releases reject the key as unknown.
 `0006` adds opt-in `bale_d3d11_upload` (0/1, default 0) for software-decoded NV12/P010 output.
 On first MSS start it acquires a separate device-manager handle, protects the shared immediate
 context with `ID3D10Multithread`, and hands the device to the software provider (no AVHWDeviceContext).

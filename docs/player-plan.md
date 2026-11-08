@@ -291,6 +291,15 @@ an upload-only CPU/visual A/B; `grain=off` still removes grain, independently. P
 need console verification; CI only builds/checks this path. Wrapper diagnostics use its existing
 native logger, which Bale deliberately keeps disabled (no new native log capture).
 
+The upload device-manager handle is independent of hardware decoding: partial initialization failure,
+device reset and source teardown close it; normal teardown first stops the decode-ahead worker.
+No AVHWDeviceContext is created and the decoder remains FFmpeg software. `ID3D10Multithread`
+protection is enabled and verified on the shared device/context, not restored on teardown because
+MF shares that context. Only a tracked sample's Processed event returns its texture; seek/format
+changes detach old handlers and discard pool references, leaving MF's surface references alive.
+These are the implemented lifetime rules, not runtime proof: device reset, seek/format changes,
+Processed timing, NV12/P010 presentation/colour parity and CPU cost still need console validation.
+
 **Grain cost, measured (0.1.293.0, Series X, app mode).** A 1080p23.976 AV1 10-bit SDR library movie
 (mkv, 6.6 Mbps average, Opus 5.1) whose sequence header has `film_grain_params_present = 1` and
 `apply_grain = 1` on every frame, played in the real player (FFmpeg Direct, software AV1) as Bale Test
@@ -343,7 +352,7 @@ withdrawal and serialization. The production integration still needs the owner's
 
 ### Native FFmpeg / dav1d build
 
-Bale uses `FFmpegInteropX.UWP.Lib` **2.1.0-bale.5** with the custom x64 native package
+Bale uses `FFmpegInteropX.UWP.Lib` **2.1.0-bale.6** with the custom x64 native package
 `FFmpegInteropX.UWP.FFmpeg` **8.1.2-bale.dav1d.1.5.4**. The public 8.1.2 x64 `avcodec-62.dll`
 embeds dav1d **1.0.0-0-g99172b1** (March 2022); upgrading the wrapper cannot update that static
 library. This rebuild is an A/B candidate for occasional AV1 stutter/2–4-core CPU spikes, **not a
@@ -406,10 +415,10 @@ and its native activation registration are unchanged.
 
 ### Native FFmpegInteropX wrapper fork
 
-Bale now requires exactly `[2.1.0-bale.5]` of `FFmpegInteropX.UWP.Lib`, from immutable release
-[`wrapper-ffmpeginteropx-2.1.0-bale.5`](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.5).
+Bale now requires exactly `[2.1.0-bale.6]` of `FFmpegInteropX.UWP.Lib`, from immutable release
+[`wrapper-ffmpeginteropx-2.1.0-bale.6`](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.6).
 The independently verified nupkg SHA256 is
-`519386d2ff1c3a0d65a9edfce30df187b2510c6088dcc04c643fb0ddf4432fbd`. The release tag, SHA256 and
+`915c9cf3390afd072eb20c73eac22d859b9a153d4c0c8a91729b5453da507c6f`. The release tag, SHA256 and
 NuGet content hash are pinned in `scripts/ffmpeginteropx-wrapper.json`; both framework/RID lock
 entries agree. `restore-ffmpeg-native.ps1` downloads it into isolated staging, verifies before moving
 it to `.cache/ffmpeg-native`, and clears its cached extraction. Source mapping allows the wrapper
@@ -418,6 +427,16 @@ and production MSIX files next to the license texts. The package checker compare
 `FFmpegInteropX.dll` with `runtimes/win-x64/native/FFmpegInteropX.dll` in the hash-pinned nupkg, and
 checks that the shipped wrapper provenance is identical too. Activation/factory and dav1d/license
 checks remain enabled in both configurations.
+
+Release `2.1.0-bale.6` was built from Bale commit `fc4b2618a11dd7339c08c0361db52a3b75642064`
+by [wrapper run 42485565576](https://github.com/Zorro92/bale-for-silo/actions/runs/42485565576).
+Independent verification matched all six ordered patch hashes in `SOURCES.txt`, the original/native
+package pins, all 129 tracked `Source/` and `Build/` files in the corresponding-source archive, and
+the nine unchanged original-package entries (including the original winmd, managed projection and
+x86/ARM64 binaries). The built/original public type-name check reports 29 identical types.
+The NuGet content hash in the pin/lock entries was obtained with NuGet's `PackageArchiveReader.GetContentHash`
+API, not inferred from the archive SHA512. The corresponding-source archive SHA256 is
+`9940bc856dc2a6b0b7595e42dc3ae212b579c05492aaae29117db3f6ee763574`.
 
 The manual `ffmpeginteropx-wrapper.yml` workflow builds only the **Release_UWP x64** native wrapper;
 producing a new release does not automatically update Bale's app pin.
@@ -505,7 +524,7 @@ OPC core-properties versions/content types are updated. The original NuGet repos
 is removed because modification invalidates it. The fork is unsigned and intended for **x64 only**;
 retained other-architecture binaries are not fork builds.
 
-For the next release, run `gh workflow run ffmpeginteropx-wrapper.yml --ref main -f version=2.1.0-bale.6`,
+For the next release, run `gh workflow run ffmpeginteropx-wrapper.yml --ref main -f version=2.1.0-bale.7`,
 then `gh run watch <run-id> --exit-status` (choose a fresh number if that tag already exists). The release contains the
 nupkg, `.sha256`, `SOURCES.txt`, `winmd-public-types.txt`, build log and corresponding patched
 wrapper source archive. Provenance records the upstream/Bale commits, ordered patch names/hashes,
