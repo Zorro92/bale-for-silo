@@ -1,0 +1,16 @@
+AV1 film grain synthesis
+
+The Rust implementation in src/grain/{lfsr,template,scaling,offsets,cpu}.rs,
+its parameter representation in src/grain/params.rs, and the AV1 Gaussian
+sequence in src/grain/gaussian.rs derive from dav1d 1.5.4, commit
+54706fc6bc0cdecab7e9593974a4039cc038fca7:
+https://code.videolan.org/videolan/dav1d
+
+Copyright © 2018, Niklas Haas
+Copyright © 2018-2021, VideoLAN and dav1d authors
+Copyright © 2018, Two Orioles, LLC
+All rights reserved.
+
+These files retain their BSD 2-Clause copyright notices and full licence text.
+The distribution also carries the dav1d licence as Licenses/FFmpeg/dav1d.txt.
+The surrounding Bale crate remains AGPL-3.0-only.

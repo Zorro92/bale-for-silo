@@ -4,17 +4,23 @@
 //! (threads, synchronisation, clocks) must work there, and the `windows` crate's D3D11 bindings must
 //! reach the hardware device. Step 2 ports the debug IMFMediaEngine frame-server probe (`engine`).
 
+#[cfg(windows)]
 mod engine;
+#[cfg(windows)]
 mod frames;
+pub mod grain;
 
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+#[cfg(windows)]
 use windows::Win32::Foundation::HMODULE;
+#[cfg(windows)]
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL};
+#[cfg(windows)]
 use windows::Win32::Graphics::Direct3D11::{
-    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_CREATE_DEVICE_VIDEO_SUPPORT, D3D11_SDK_VERSION, D3D11CreateDevice,
-    ID3D11Device,
+    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_CREATE_DEVICE_VIDEO_SUPPORT, D3D11_SDK_VERSION,
+    D3D11CreateDevice, ID3D11Device,
 };
 
 /// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched DLL.
@@ -33,13 +39,15 @@ pub extern "C" fn bale_gpu_std_probe() -> u64 {
     let counter = Arc::new(Mutex::new(0u64));
     let worker = {
         let counter = Arc::clone(&counter);
-        std::thread::Builder::new().name("bale-gpu-probe".into()).spawn(move || {
-            for i in 0..1000u64 {
-                if let Ok(mut value) = counter.lock() {
-                    *value += i;
+        std::thread::Builder::new()
+            .name("bale-gpu-probe".into())
+            .spawn(move || {
+                for i in 0..1000u64 {
+                    if let Ok(mut value) = counter.lock() {
+                        *value += i;
+                    }
                 }
-            }
-        })
+            })
     };
     let joined = worker.map(|handle| handle.join().is_ok()).unwrap_or(false);
     let total = counter.lock().map(|value| *value).unwrap_or(0);
@@ -55,6 +63,7 @@ pub extern "C" fn bale_gpu_std_probe() -> u64 {
 /// # Safety
 /// `feature_level` must be null or point to writable memory for one `u32`.
 #[unsafe(no_mangle)]
+#[cfg(windows)]
 pub unsafe extern "C" fn bale_gpu_d3d11_probe(feature_level: *mut u32) -> i32 {
     let mut device: Option<ID3D11Device> = None;
     let mut level = D3D_FEATURE_LEVEL::default();
@@ -92,7 +101,14 @@ pub unsafe extern "C" fn bale_gpu_d3d11_probe(feature_level: *mut u32) -> i32 {
 /// # Safety
 /// `url` must point to `url_len` readable `u16`s; `report` must point to `report_capacity` writable bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn bale_gpu_engine_probe(url: *const u16, url_len: u32, seconds: u32, report: *mut u8, report_capacity: u32) -> u32 {
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_gpu_engine_probe(
+    url: *const u16,
+    url_len: u32,
+    seconds: u32,
+    report: *mut u8,
+    report_capacity: u32,
+) -> u32 {
     if url.is_null() || report.is_null() || url_len == 0 {
         return 0;
     }
@@ -110,6 +126,7 @@ pub unsafe extern "C" fn bale_gpu_engine_probe(url: *const u16, url_len: u32, se
 /// # Safety
 /// `source` must be a live COM pointer for the call; `report` must point to `report_capacity` writable bytes.
 #[unsafe(no_mangle)]
+#[cfg(windows)]
 pub unsafe extern "C" fn bale_gpu_engine_probe_source(
     source: *mut core::ffi::c_void,
     seconds: u32,
@@ -120,7 +137,10 @@ pub unsafe extern "C" fn bale_gpu_engine_probe_source(
         return 0;
     }
     // SAFETY: the caller guarantees a live COM pointer; clone takes our own reference.
-    let Some(object) = (unsafe { <windows::core::IUnknown as windows::core::Interface>::from_raw_borrowed(&source) }).cloned() else {
+    let Some(object) = (unsafe {
+        <windows::core::IUnknown as windows::core::Interface>::from_raw_borrowed(&source)
+    })
+    .cloned() else {
         return 0;
     };
     let text = engine::run(engine::Input::Source(object), seconds.clamp(1, 60));
@@ -128,6 +148,7 @@ pub unsafe extern "C" fn bale_gpu_engine_probe_source(
     unsafe { write_report(&text, report, report_capacity) }
 }
 
+#[cfg(windows)]
 unsafe fn write_report(text: &str, report: *mut u8, report_capacity: u32) -> u32 {
     let mut length = text.len().min(report_capacity as usize);
     while !text.is_char_boundary(length) {

@@ -1,0 +1,106 @@
+[
+  {
+    "width": 65,
+    "height": 33,
+    "pix_fmt": "yuv420p10le",
+    "color_space": "bt709",
+    "grain": {
+      "side_data_type": "Film grain parameters",
+      "type": "av1",
+      "seed": "45231",
+      "width": 65,
+      "height": 33,
+      "subsampling_x": 1,
+      "subsampling_y": 1,
+      "color_range": "tv",
+      "color_primaries": "unknown",
+      "color_trc": "unknown",
+      "color_space": "bt709",
+      "chroma_scaling_from_luma": 0,
+      "scaling_shift": 8,
+      "ar_coeff_lag": 0,
+      "ar_coeff_shift": 6,
+      "grain_scale_shift": 3,
+      "overlap_flag": 0,
+      "limit_output_range": 0,
+      "components": [
+        {
+          "bit_depth_luma": 0,
+          "y_points_value": "7 79 151 243",
+          "y_points_scaling": "180 21 213 23",
+          "ar_coeffs_y": ""
+        },
+        {
+          "bit_depth_chroma": 0,
+          "uv_points_value": "9 117 245",
+          "uv_points_scaling": "171 33 211",
+          "ar_coeffs_uv": "51",
+          "uv_mult": -64,
+          "uv_mult_luma": 64,
+          "uv_offset": -224
+        },
+        {
+          "bit_depth_chroma": 0,
+          "uv_points_value": "3 129 251",
+          "uv_points_scaling": "219 19 143",
+          "ar_coeffs_uv": "-83",
+          "uv_mult": -32,
+          "uv_mult_luma": 32,
+          "uv_offset": 255
+        }
+      ]
+    }
+  },
+  {
+    "width": 65,
+    "height": 33,
+    "pix_fmt": "yuv420p10le",
+    "color_space": "bt709",
+    "grain": {
+      "side_data_type": "Film grain parameters",
+      "type": "av1",
+      "seed": "48612",
+      "width": 65,
+      "height": 33,
+      "subsampling_x": 1,
+      "subsampling_y": 1,
+      "color_range": "tv",
+      "color_primaries": "unknown",
+      "color_trc": "unknown",
+      "color_space": "bt709",
+      "chroma_scaling_from_luma": 0,
+      "scaling_shift": 8,
+      "ar_coeff_lag": 0,
+      "ar_coeff_shift": 6,
+      "grain_scale_shift": 3,
+      "overlap_flag": 0,
+      "limit_output_range": 0,
+      "components": [
+        {
+          "bit_depth_luma": 0,
+          "y_points_value": "7 79 151 243",
+          "y_points_scaling": "180 21 213 23",
+          "ar_coeffs_y": ""
+        },
+        {
+          "bit_depth_chroma": 0,
+          "uv_points_value": "9 117 245",
+          "uv_points_scaling": "171 33 211",
+          "ar_coeffs_uv": "51",
+          "uv_mult": -64,
+          "uv_mult_luma": 64,
+          "uv_offset": -224
+        },
+        {
+          "bit_depth_chroma": 0,
+          "uv_points_value": "3 129 251",
+          "uv_points_scaling": "219 19 143",
+          "ar_coeffs_uv": "-83",
+          "uv_mult": -32,
+          "uv_mult_luma": 32,
+          "uv_offset": 255
+        }
+      ]
+    }
+  }
+]

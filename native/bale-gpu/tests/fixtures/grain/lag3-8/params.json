@@ -1,0 +1,106 @@
+[
+  {
+    "width": 333,
+    "height": 197,
+    "pix_fmt": "yuv420p",
+    "color_space": "bt709",
+    "grain": {
+      "side_data_type": "Film grain parameters",
+      "type": "av1",
+      "seed": "45231",
+      "width": 333,
+      "height": 197,
+      "subsampling_x": 1,
+      "subsampling_y": 1,
+      "color_range": "tv",
+      "color_primaries": "unknown",
+      "color_trc": "unknown",
+      "color_space": "bt709",
+      "chroma_scaling_from_luma": 0,
+      "scaling_shift": 11,
+      "ar_coeff_lag": 3,
+      "ar_coeff_shift": 9,
+      "grain_scale_shift": 0,
+      "overlap_flag": 1,
+      "limit_output_range": 0,
+      "components": [
+        {
+          "bit_depth_luma": 0,
+          "y_points_value": "3 17 31 49 67 83 101 119 137 157 179 201 227 251",
+          "y_points_scaling": "210 37 184 58 162 79 141 96 127 117 103 138 82 159",
+          "ar_coeffs_y": "-17 12 -7 3 -5 11 -13 19 -23 29 -31 37 -41 43 -47 53 -59 61 -67 71 -73 79 -83 89"
+        },
+        {
+          "bit_depth_chroma": 0,
+          "uv_points_value": "5 29 53 77 101 125 151 179 211 249",
+          "uv_points_scaling": "199 39 181 61 163 83 145 105 127 127",
+          "ar_coeffs_uv": "11 -9 7 -5 3 -1 13 -15 17 -19 21 -23 25 -27 29 -31 33 -35 37 -39 41 -43 45 -47 83",
+          "uv_mult": 127,
+          "uv_mult_luma": -128,
+          "uv_offset": 255
+        },
+        {
+          "bit_depth_chroma": 0,
+          "uv_points_value": "1 23 47 73 99 127 153 181 213 253",
+          "uv_points_scaling": "29 209 51 187 73 165 95 143 117 121",
+          "ar_coeffs_uv": "-3 5 -7 9 -11 13 -15 17 -19 21 -23 25 -27 29 -31 33 -35 37 -39 41 -43 45 -47 49 -97",
+          "uv_mult": -128,
+          "uv_mult_luma": 127,
+          "uv_offset": -256
+        }
+      ]
+    }
+  },
+  {
+    "width": 333,
+    "height": 197,
+    "pix_fmt": "yuv420p",
+    "color_space": "bt709",
+    "grain": {
+      "side_data_type": "Film grain parameters",
+      "type": "av1",
+      "seed": "48612",
+      "width": 333,
+      "height": 197,
+      "subsampling_x": 1,
+      "subsampling_y": 1,
+      "color_range": "tv",
+      "color_primaries": "unknown",
+      "color_trc": "unknown",
+      "color_space": "bt709",
+      "chroma_scaling_from_luma": 0,
+      "scaling_shift": 11,
+      "ar_coeff_lag": 3,
+      "ar_coeff_shift": 9,
+      "grain_scale_shift": 0,
+      "overlap_flag": 1,
+      "limit_output_range": 0,
+      "components": [
+        {
+          "bit_depth_luma": 0,
+          "y_points_value": "3 17 31 49 67 83 101 119 137 157 179 201 227 251",
+          "y_points_scaling": "210 37 184 58 162 79 141 96 127 117 103 138 82 159",
+          "ar_coeffs_y": "-17 12 -7 3 -5 11 -13 19 -23 29 -31 37 -41 43 -47 53 -59 61 -67 71 -73 79 -83 89"
+        },
+        {
+          "bit_depth_chroma": 0,
+          "uv_points_value": "5 29 53 77 101 125 151 179 211 249",
+          "uv_points_scaling": "199 39 181 61 163 83 145 105 127 127",
+          "ar_coeffs_uv": "11 -9 7 -5 3 -1 13 -15 17 -19 21 -23 25 -27 29 -31 33 -35 37 -39 41 -43 45 -47 83",
+          "uv_mult": 127,
+          "uv_mult_luma": -128,
+          "uv_offset": 255
+        },
+        {
+          "bit_depth_chroma": 0,
+          "uv_points_value": "1 23 47 73 99 127 153 181 213 253",
+          "uv_points_scaling": "29 209 51 187 73 165 95 143 117 121",
+          "ar_coeffs_uv": "-3 5 -7 9 -11 13 -15 17 -19 21 -23 25 -27 29 -31 33 -35 37 -39 41 -43 45 -47 49 -97",
+          "uv_mult": -128,
+          "uv_mult_luma": 127,
+          "uv_offset": -256
+        }
+      ]
+    }
+  }
+]

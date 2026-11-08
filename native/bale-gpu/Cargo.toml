@@ -8,13 +8,13 @@ publish = false
 
 [lib]
 name = "bale_gpu"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
-[dependencies]
+[target.'cfg(windows)'.dependencies]
 # #[implement] expands to windows_core paths.
 windows-core = "0.62.2"
 
-[dependencies.windows]
+[target.'cfg(windows)'.dependencies.windows]
 version = "0.62.2"
 features = [
     "Foundation",
@@ -39,5 +39,8 @@ features = [
 opt-level = 3
 lto = true
 codegen-units = 1
-# Unwinding never crosses the C ABI; abort keeps the DLL small.
-panic = "abort"
+# Grain exports catch panics; unwinding must remain enabled, including in the shipped DLL.
+panic = "unwind"
+
+[dev-dependencies]
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }

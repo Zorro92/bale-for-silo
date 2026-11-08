@@ -95,6 +95,11 @@ Copyright © 2018–2025, VideoLAN and dav1d authors. All rights reserved.
 
 The full bundled notice and license are shipped as `Licenses/FFmpeg/dav1d.txt` in every build.
 
+The CPU AV1 film-grain implementation in `native/bale-gpu/src/grain` is also a Rust port of
+this dav1d revision's `filmgrain_tmpl.c`, `fg_apply_tmpl.c` and Gaussian sequence in `tables.c`.
+Ported files retain the original copyright notices and full BSD 2-Clause licence text;
+`native/bale-gpu/NOTICE` records their provenance. This adds no decoder, GPU shader or wrapper change.
+
 ## QRCoder
 
 Bale uses [QRCoder](https://github.com/codebude/QRCoder) 1.6.0 to generate the phone sign-in QR

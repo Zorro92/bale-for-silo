@@ -36,6 +36,21 @@ jobs:
       - run: dotnet test tests/Bale.Core.Tests --configuration Release
       - run: dotnet build tools/Bale.Cli --configuration Release
 
+  grain:
+    name: Rust grain (Linux)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: native/bale-gpu
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust lint components
+        run: rustup component add rustfmt clippy
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --release --locked
+
   xbox:
     name: Xbox package (Windows, debug=${{ matrix.debug_server }})
     strategy:
