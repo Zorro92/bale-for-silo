@@ -46,7 +46,8 @@ internal sealed partial class DebugServer
             .Append(" pause-total=").Append(Milliseconds(GC.GetTotalPauseDuration().TotalMilliseconds))
             .Append(" ms collections gen0=").Append(GC.CollectionCount(0))
             .Append(" gen1=").Append(GC.CollectionCount(1))
-            .Append(" gen2=").Append(GC.CollectionCount(2)).Append('\n');
+            .Append(" gen2=").Append(GC.CollectionCount(2))
+            .Append(" allocated=").Append(MiB(GC.GetTotalAllocatedBytes(false))).Append(" MiB\n");
         foreach (var kind in new[] { GCKind.FullBlocking, GCKind.Background, GCKind.Ephemeral })
         {
             var info = GC.GetGCMemoryInfo(kind);

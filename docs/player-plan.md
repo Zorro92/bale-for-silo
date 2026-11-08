@@ -211,13 +211,23 @@ delivery; neither counter is evidence of renderer drops or decoder CPU saturatio
   the trace/totals; starting and seeking also reset it, and seek samples are skipped.
 - All builds hold `SustainedLowLatency` GC mode from playback start until page shutdown (including
   suspend/navigation); overlapping pages share leases, and the last release restores the pre-playback mode.
-  Debug-only `bale-debug.sh gc` reports mode, `playback-lease=0|1`, pauses and the last collections.
+  Debug-only `bale-debug.sh gc` reports mode, `playback-lease=0|1`, pauses and the last collections,
+  plus process-lifetime managed allocations (`allocated=... MiB`, approximate; compare deltas over equal intervals).
   `gc latency batch|interactive|sustained|default` changes the app-wide mode immediately, in memory only;
   `default` restores the helper's saved pre-playback mode even if the first `/gc` request is during playback.
 - Debug-only `bale-debug.sh frame-delivery [on|off]` (`GET /frame-delivery`, `POST /frame-delivery?mode=on|off`)
   toggles the regular player's software-video frame delivery observer for the next playback attempt;
   no argument prints `frame-delivery=on|off`. It defaults to on and resets on restart. Off leaves late-frame,
   delivered-ahead and frame-trace diagnostics unavailable; the standalone FFmpeg probe is unchanged.
+- FFmpeg routes use a pooled, read-only random-access stream adapter in all builds. It rents temporary
+  managed storage and copies into FFmpeg's own native `IBuffer`, returning the same buffer instead of
+  allocating a pinned CsWinRT replacement for each read. Native direct and HLS routes are unchanged.
+  Debug-only `bale-debug.sh stream-adapter [pooled|builtin]` (`GET /stream-adapter`,
+  `POST /stream-adapter?mode=pooled|builtin`) selects the next playback attempt's FFmpeg adapter;
+  no argument prints `stream-adapter=pooled|builtin`. It defaults to pooled and resets on restart.
+  The attempt captures the switch and logs `player: stream adapter=pooled|builtin` once, including
+  across seeks/remounts. Close/reopen the same title for A/B allocation and GC-pause deltas; an open
+  player and the standalone probe are unchanged. Console performance remains to be verified.
 
 The standalone `playtest-ffmpeg` URI probe is for public or independently fetchable media. A private
 `play-plan --url-file` file protects the URL on disk, but does not convey Bale's profile/authentication

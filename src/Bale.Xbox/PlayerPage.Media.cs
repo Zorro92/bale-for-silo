@@ -130,9 +130,15 @@ public sealed partial class PlayerPage
             media.Stream = await transport.OpenStreamAsync(media.Token);
 #endif
             media.Token.ThrowIfCancellationRequested();
-            media.RandomStream = media.Stream.AsRandomAccessStream();
             if (media.Route.UseFfmpeg)
             {
+                media.RandomStream = attempt.UsePooledStreamAdapter
+                    ? new RangeRandomAccessStream(media.Stream) : media.Stream.AsRandomAccessStream();
+                if (!attempt.StreamAdapterLogged)
+                {
+                    Log.Info($"player: stream adapter={(attempt.UsePooledStreamAdapter ? "pooled" : "builtin")}");
+                    attempt.StreamAdapterLogged = true;
+                }
                 // Keep auth, profile ownership and range cancellation in Core; FFmpeg receives bytes, not a bare URI.
                 Log.Info("player: FFmpeg before create stream");
 #if DEBUG_SERVER
@@ -165,6 +171,7 @@ public sealed partial class PlayerPage
             }
             else
             {
+                media.RandomStream = media.Stream.AsRandomAccessStream();
                 media.Source = MediaSource.CreateFromStream(media.RandomStream, transport.MimeType ?? "video/mp4");
             }
         }

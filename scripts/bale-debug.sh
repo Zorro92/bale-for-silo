@@ -35,6 +35,7 @@
 #   scripts/bale-debug.sh gc                     GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
 #   scripts/bale-debug.sh gc latency <batch|interactive|sustained|default>  change latency app-wide now; default restores the saved pre-playback mode; playback acquires sustained automatically
 #   scripts/bale-debug.sh frame-delivery [on|off]  next playback attempt's frame delivery observer; default on, memory only (restart resets); no args = status
+#   scripts/bale-debug.sh stream-adapter [pooled|builtin]  next FFmpeg playback attempt's stream adapter; default pooled, memory only (restart resets); no args = status
 #   scripts/bale-debug.sh display-match [on|off|status]  match content HDMI resolution/refresh on the next playback; default off, memory only (restart resets); no args = status
 #   scripts/bale-debug.sh hdr pretend|off|status  next attempt: pretend HDR10, skip HDMI switching for console SDR tone mapping; default off, memory only
 #   scripts/bale-debug.sh seek <seconds> [pause]  shared absolute-source seek (native/FFmpeg/HLS, reanchors outside the mounted window); optional pause
@@ -246,6 +247,17 @@ case "${1:-}" in
       curl --fail-with-body -sS --max-time 5 "$BASE/frame-delivery"
     else
       curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/frame-delivery" --data-urlencode "mode=$2"
+    fi
+    ;;
+  stream-adapter)
+    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^(pooled|builtin)$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh stream-adapter [pooled|builtin]' >&2
+      exit 2
+    fi
+    if [[ "$#" == 1 ]]; then
+      curl --fail-with-body -sS --max-time 5 "$BASE/stream-adapter"
+    else
+      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/stream-adapter" --data-urlencode "mode=$2"
     fi
     ;;
   display-match)

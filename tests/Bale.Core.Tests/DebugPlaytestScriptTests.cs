@@ -470,7 +470,7 @@ public class DebugPlaytestScriptTests
     public async Task GcReadoutIsAGetThatPreservesTheDiagnosticOutput()
     {
         if (!OperatingSystem.IsLinux()) return;
-        const string readout = "GC: server=False latency=Interactive playback-lease=0 pause-total=350.0 ms collections gen0=3 gen1=2 gen2=1\n";
+        const string readout = "GC: server=False latency=Interactive playback-lease=0 pause-total=350.0 ms collections gen0=3 gen1=2 gen2=1 allocated=128.5 MiB\n";
         var result = await RunAsync(["gc"], readout);
         Assert.Equal(0, result.ExitCode);
         Assert.Equal(readout, result.Output);
@@ -584,6 +584,63 @@ public class DebugPlaytestScriptTests
         if (!OperatingSystem.IsLinux()) return;
         const string failure = "mode must be on or off\n";
         var result = await RunAsync(mode is null ? ["frame-delivery"] : ["frame-delivery", mode], failure, 22);
+        Assert.Equal(22, result.ExitCode);
+        Assert.Equal(failure, result.Output);
+        Assert.Contains("--fail-with-body", result.Arguments);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("pooled")]
+    [InlineData("builtin")]
+    public async Task StreamAdapterReadsStatusOrPostsOnlyAValidatedMode(string? mode)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var readout = "stream-adapter=" + (mode ?? "pooled") + "\n";
+        var result = await RunAsync(mode is null ? ["stream-adapter"] : ["stream-adapter", mode], readout);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(readout, result.Output);
+        Assert.Contains("/stream-adapter\n", result.Arguments);
+        Assert.Contains("--max-time\n5\n", result.Arguments);
+        Assert.Contains("--fail-with-body", result.Arguments);
+        if (mode is null)
+        {
+            Assert.DoesNotContain("POST", result.Arguments);
+            Assert.DoesNotContain("--data-urlencode", result.Arguments);
+        }
+        else
+        {
+            Assert.Contains("-X\nPOST\n", result.Arguments);
+            Assert.Contains("--data-urlencode\nmode=" + mode + "\n", result.Arguments);
+        }
+    }
+
+    [Fact]
+    public async Task InvalidStreamAdapterArgumentsShowUsageWithoutInvokingCurl()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[]
+        {
+            new[] { "stream-adapter", "" }, ["stream-adapter", "status"], ["stream-adapter", "POOLED"],
+            ["stream-adapter", "on"], ["stream-adapter", " pooled"], ["stream-adapter", "builtin "],
+            ["stream-adapter", "pooled&extra=1"], ["stream-adapter", "pooled", "builtin"], ["stream-adapter", "builtin", ""],
+        })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Equal("usage: scripts/bale-debug.sh stream-adapter [pooled|builtin]\n", result.Output);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("builtin")]
+    public async Task StreamAdapterFailurePreservesTheResponseBodyAndExitStatus(string? mode)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        const string failure = "mode must be pooled or builtin\n";
+        var result = await RunAsync(mode is null ? ["stream-adapter"] : ["stream-adapter", mode], failure, 22);
         Assert.Equal(22, result.ExitCode);
         Assert.Equal(failure, result.Output);
         Assert.Contains("--fail-with-body", result.Arguments);

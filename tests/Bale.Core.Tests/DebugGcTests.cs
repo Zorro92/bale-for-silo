@@ -9,6 +9,7 @@ public class DebugGcTests
         Assert.StartsWith("#if DEBUG_SERVER", source);
         foreach (var required in new[] { "GCSettings.IsServerGC", "GCSettings.LatencyMode", "GC.GetTotalPauseDuration()",
             "GC.CollectionCount(0)", "GC.CollectionCount(1)", "GC.CollectionCount(2)",
+            ".Append(\" allocated=\").Append(MiB(GC.GetTotalAllocatedBytes(false))).Append(\" MiB\\n\")",
             "GCKind.FullBlocking", "GCKind.Background", "GCKind.Ephemeral", "info.Index == 0", "info.PauseDurations",
             "info.PromotedBytes", "info.HeapSizeBytes", "info.FragmentedBytes", "info.PinnedObjectsCount",
             "info.GenerationInfo", "SizeBeforeBytes", "SizeAfterBytes", "\"gen0\", \"gen1\", \"gen2\", \"loh\", \"poh\"",

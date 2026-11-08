@@ -60,6 +60,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public bool Replanned { get; set; }
         public double Position { get; set; }
         public Mount? Media { get; set; }
+        public bool StreamAdapterLogged { get; set; }
 #if DEBUG_SERVER
         // Match the capability claim and backend even if the debug toggle changes during a request/replan.
         public string FfmpegMode { get; } = DebugFfmpegPlayback.Mode;
@@ -68,8 +69,10 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public bool PretendHdr { get; } = DebugHdrPlayback.Pretend;
         public bool MatchContentFrameRate { get; } = DebugDisplayMatch.Enabled;
         public bool ObserveFrameDelivery { get; } = DebugFrameDeliverySwitch.Enabled;
+        public bool UsePooledStreamAdapter { get; } = DebugStreamAdapterSwitch.Pooled;
         public bool FfmpegEnabled => FfmpegMode == "policy";
 #else
+        public bool UsePooledStreamAdapter => true;
         public bool FfmpegEnabled => true;
 #endif
         public CancellationTokenSource? ReportingCancellation { get; set; }

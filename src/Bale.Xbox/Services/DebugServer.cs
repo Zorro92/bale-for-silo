@@ -52,6 +52,8 @@ namespace Bale.Xbox.Services;
 ///   POST /gc?latency=...  batch|interactive|sustained|default; default restores the saved pre-playback mode; memory only
 ///   GET  /frame-delivery  memory-only frame delivery observer switch; default on
 ///   POST /frame-delivery?mode=on  on|off; applies to the next playback attempt
+///   GET  /stream-adapter  memory-only FFmpeg stream adapter switch; default pooled
+///   POST /stream-adapter?mode=pooled  pooled|builtin; applies to the next playback attempt
 ///   GET  /display-match   memory-only content frame-rate matching; default off
 ///   POST /display-match?mode=on  on|off; applies to the next playback attempt
 ///   GET  /hdr             memory-only HDR comparison mode; default off
@@ -197,7 +199,7 @@ internal sealed partial class DebugServer
         var target = new Uri("http://bale" + parts[1]);
         var path = target.AbsolutePath.TrimEnd('/');
         var query = ParseQuery(target.Query, out var duplicateQueryKeys);
-        if (duplicateQueryKeys && path is ("/playtest-ffmpeg" or "/ffmpeg-tune" or "/stats-rows" or "/frame-trace" or "/display-match" or "/gc" or "/frame-delivery"))
+        if (duplicateQueryKeys && path is ("/playtest-ffmpeg" or "/ffmpeg-tune" or "/stats-rows" or "/frame-trace" or "/display-match" or "/gc" or "/frame-delivery" or "/stream-adapter"))
             return ("400 Bad Request", "query keys must appear at most once\n");
 
         switch (method, path)
@@ -308,6 +310,17 @@ internal sealed partial class DebugServer
                 Log.Info($"Debug frame delivery: {DebugFrameDeliverySwitch.Mode}; applies to the next playback attempt");
                 return ("200 OK", $"frame-delivery={DebugFrameDeliverySwitch.Mode}\n");
 
+            case ("GET", "/stream-adapter"):
+                if (query.Count != 0)
+                    return ("400 Bad Request", "usage: GET /stream-adapter or POST /stream-adapter?mode={pooled|builtin}\n");
+                return ("200 OK", $"stream-adapter={DebugStreamAdapterSwitch.Mode}\n");
+
+            case ("POST", "/stream-adapter"):
+                if (query.Count != 1 || !DebugStreamAdapterSwitch.TrySet(query.GetValueOrDefault("mode")))
+                    return ("400 Bad Request", "mode must be pooled or builtin\n");
+                Log.Info($"Debug stream adapter: {DebugStreamAdapterSwitch.Mode}; applies to the next playback attempt");
+                return ("200 OK", $"stream-adapter={DebugStreamAdapterSwitch.Mode}\n");
+
             case ("GET", "/display-match"):
                 return ("200 OK", $"Display match: {DebugDisplayMatch.Mode}; applies to the next playback attempt\n");
 
@@ -414,7 +427,7 @@ internal sealed partial class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /stats, GET /frame-trace, POST /frame-trace?action=reset, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, GET /playtest-engine?url=...&seconds=3&mode=cs|rust|rust-ffmpeg, GET /rust, POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&sws=1..16&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16 (each key accepts default), GET /mem?gc=1, GET /gc, POST /gc?latency={batch|interactive|sustained|default}, GET /frame-delivery, POST /frame-delivery?mode={on|off}, GET /display-match, POST /display-match?mode={on|off}, GET /hdr, POST /hdr?mode={pretend|off}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /stats, GET /frame-trace, POST /frame-trace?action=reset, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, GET /playtest-engine?url=...&seconds=3&mode=cs|rust|rust-ffmpeg, GET /rust, POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&sws=1..16&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16 (each key accepts default), GET /mem?gc=1, GET /gc, POST /gc?latency={batch|interactive|sustained|default}, GET /frame-delivery, POST /frame-delivery?mode={on|off}, GET /stream-adapter, POST /stream-adapter?mode={pooled|builtin}, GET /display-match, POST /display-match?mode={on|off}, GET /hdr, POST /hdr?mode={pretend|off}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 
