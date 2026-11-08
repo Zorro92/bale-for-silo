@@ -7,7 +7,7 @@ public class NativeFfmpegPackageTests
 {
     [Theory]
     [InlineData("ffmpeg-native.json", "FFmpegInteropX.UWP.FFmpeg", "8.1.2-bale.dav1d.1.5.4")]
-    [InlineData("ffmpeginteropx-wrapper.json", "FFmpegInteropX.UWP.Lib", "2.1.0-bale.10")]
+    [InlineData("ffmpeginteropx-wrapper.json", "FFmpegInteropX.UWP.Lib", "2.1.0-bale.11")]
     public void ExactReferenceAndBothLockEntriesMatchTheReviewedAsset(string pinFile, string packageId, string expectedVersion)
     {
         using var pin = JsonDocument.Parse(Read(pinFile));
@@ -37,9 +37,9 @@ public class NativeFfmpegPackageTests
         Assert.Equal("1.5.4", native.RootElement.GetProperty("dav1d_version").GetString());
         Assert.Equal("54706fc6bc0cdecab7e9593974a4039cc038fca7", native.RootElement.GetProperty("dav1d_commit").GetString());
         using var wrapper = JsonDocument.Parse(Read("ffmpeginteropx-wrapper.json"));
-        Assert.Equal("wrapper-ffmpeginteropx-2.1.0-bale.10", wrapper.RootElement.GetProperty("release_tag").GetString());
-        Assert.Equal("a6216b544d6806bc368f119ac5b15467506c6ffe743b12cbd4529e4ee2c77d7c", wrapper.RootElement.GetProperty("sha256").GetString());
-        Assert.Equal("f+JtQ61k1ws+IV1W5eC7GOKn4iBNGDFXVQHUCtylmVv7QUq82SQUdAes/cn7kNdX98vCQ6Em2cSWh2W7GvDG4w==", wrapper.RootElement.GetProperty("nuget_content_hash").GetString());
+        Assert.Equal("wrapper-ffmpeginteropx-2.1.0-bale.11", wrapper.RootElement.GetProperty("release_tag").GetString());
+        Assert.Equal("fbd2b45a90254949faf5da2a7b79f41aada06134b40ee9f20300c0c0d855833f", wrapper.RootElement.GetProperty("sha256").GetString());
+        Assert.Equal("x1vAKL/X8NLZ4e2dfmo3OlG04KJ7oaZMImjDcBC7QCm5bKrQCePhVQuOJNyHU9aOnQ3CGZTe2KZ0ktgPlCV9Sw==", wrapper.RootElement.GetProperty("nuget_content_hash").GetString());
         Assert.Equal(native.RootElement.GetProperty("upstream_commit").GetString(), wrapper.RootElement.GetProperty("upstream_commit").GetString());
     }
 
