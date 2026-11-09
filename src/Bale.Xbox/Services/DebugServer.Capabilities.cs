@@ -829,6 +829,7 @@ internal sealed partial class DebugServer
             AppendD3D12FeatureLevels(builder, device);
             AppendD3D12ShaderModel(builder, device);
             AppendD3D12ComputeQueue(builder, device);
+            AppendD3D12VideoDecode(builder, device);
         }
         catch (Exception ex)
         {
@@ -929,6 +930,106 @@ internal sealed partial class DebugServer
         finally
         {
             ReleaseGpuCom(queue);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct D3D12VideoDecodeProfileCount
+    {
+        public uint NodeIndex;
+        public uint ProfileCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private unsafe struct D3D12VideoDecodeProfiles
+    {
+        public uint NodeIndex;
+        public uint ProfileCount;
+        public Guid* Profiles;
+    }
+
+    // d3d12video.h D3D12_FEATURE_DATA_VIDEO_DECODE_SUPPORT, with D3D12_VIDEO_DECODE_CONFIGURATION inlined.
+    [StructLayout(LayoutKind.Sequential)]
+    private struct D3D12VideoDecodeSupport
+    {
+        public uint NodeIndex;
+        public Guid DecodeProfile;
+        public int BitstreamEncryption;
+        public int InterlaceType;
+        public uint Width;
+        public uint Height;
+        public int DecodeFormat;
+        public uint FrameRateNumerator;
+        public uint FrameRateDenominator;
+        public uint BitRate;
+        public int SupportFlags;
+        public int ConfigurationFlags;
+        public int DecodeTier;
+    }
+
+    // ID3D12VideoDevice derives directly from IUnknown: CheckFeatureSupport is slot 3.
+    // D3D12_FEATURE_VIDEO: DECODE_SUPPORT=0, DECODE_PROFILES=1, DECODE_PROFILE_COUNT=10.
+    private static unsafe void AppendD3D12VideoDecode(StringBuilder builder, IntPtr device)
+    {
+        var videoDevice = IntPtr.Zero;
+        try
+        {
+            var videoDeviceId = new Guid("1f052807-0b46-4acc-8a89-364f793718a4"); // IID_ID3D12VideoDevice
+            var queryInterface = (delegate* unmanaged[Stdcall]<IntPtr, Guid*, IntPtr*, int>)(*(void***)device)[0];
+            Log.Info("Debug caps: gpu before QueryInterface (ID3D12VideoDevice)");
+            var hr = queryInterface(device, &videoDeviceId, &videoDevice);
+            builder.Append($"  ID3D12VideoDevice: 0x{unchecked((uint)hr):X8}\n");
+            if (hr < 0 || videoDevice == IntPtr.Zero) return;
+            var checkFeature = (delegate* unmanaged[Stdcall]<IntPtr, int, void*, uint, int>)(*(void***)videoDevice)[3];
+            var count = new D3D12VideoDecodeProfileCount();
+            Log.Info("Debug caps: gpu before CheckFeatureSupport (VIDEO_DECODE_PROFILE_COUNT)");
+            Marshal.ThrowExceptionForHR(checkFeature(videoDevice, 10, &count, (uint)sizeof(D3D12VideoDecodeProfileCount)));
+            builder.Append($"  D3D12 decode profiles: {count.ProfileCount}\n");
+            if (count.ProfileCount == 0) return;
+            var profiles = new Guid[Math.Min(count.ProfileCount, 64u)];
+            fixed (Guid* list = profiles)
+            {
+                var data = new D3D12VideoDecodeProfiles { ProfileCount = (uint)profiles.Length, Profiles = list };
+                Log.Info("Debug caps: gpu before CheckFeatureSupport (VIDEO_DECODE_PROFILES)");
+                Marshal.ThrowExceptionForHR(checkFeature(videoDevice, 1, &data, (uint)sizeof(D3D12VideoDecodeProfiles)));
+            }
+            foreach (var profile in profiles)
+            {
+                var line = new StringBuilder("  D3D12 ")
+                    .Append(GpuDecoderProfileNames.TryGetValue(profile, out var name) ? name : profile.ToString())
+                    .Append(':');
+                var any = false;
+                foreach (var (formatName, format) in GpuDecoderOutputFormats)
+                {
+                    foreach (var (sizeName, width, height) in GpuDecoderSizes)
+                    {
+                        var support = new D3D12VideoDecodeSupport
+                        {
+                            DecodeProfile = profile,
+                            Width = width,
+                            Height = height,
+                            DecodeFormat = format,
+                            FrameRateNumerator = 30,
+                            FrameRateDenominator = 1,
+                        };
+                        // A failed query for one combination is "not supported", never the whole report.
+                        if (checkFeature(videoDevice, 0, &support, (uint)sizeof(D3D12VideoDecodeSupport)) < 0) continue;
+                        if ((support.SupportFlags & 1) == 0) continue;
+                        line.Append(' ').Append(formatName).Append('/').Append(sizeName).Append("(tier ").Append(support.DecodeTier).Append(')');
+                        any = true;
+                    }
+                }
+                if (!any) line.Append(" (no supported NV12/P010 size)");
+                builder.Append(line).Append('\n');
+            }
+        }
+        catch (Exception ex)
+        {
+            builder.Append($"  D3D12 video decode: error: 0x{unchecked((uint)ex.HResult):X8}\n");
+        }
+        finally
+        {
+            ReleaseGpuCom(videoDevice);
         }
     }
 
