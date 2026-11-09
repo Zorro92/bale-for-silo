@@ -4,9 +4,9 @@
     "net10.0-windows10.0.26100": {
       "FFmpegInteropX.UWP.FFmpeg": {
         "type": "Direct",
-        "requested": "[8.1.2-bale.dav1d.1.5.4, 8.1.2-bale.dav1d.1.5.4]",
-        "resolved": "8.1.2-bale.dav1d.1.5.4",
-        "contentHash": "2IIaE96dZzawuXOOoI+EI+QnuhgYdauYVZVjZrjK5jKw0ZZ9STTpUKj54USK3eJAkxiSSJvIYML83d2uZ7FCeg=="
+        "requested": "[8.1.2-bale.dav1d.1.5.4.p1, 8.1.2-bale.dav1d.1.5.4.p1]",
+        "resolved": "8.1.2-bale.dav1d.1.5.4.p1",
+        "contentHash": "OjSB2TKhUyS6l0H64P7jCVnth9JujjRxmWkk7gNyE8VytNVKOXMDILGh0FcMFPrDJ2x19GwqFcy+gIozGXju8Q=="
       },
       "FFmpegInteropX.UWP.Lib": {
         "type": "Direct",
@@ -147,9 +147,9 @@
     "net10.0-windows10.0.26100/win-x64": {
       "FFmpegInteropX.UWP.FFmpeg": {
         "type": "Direct",
-        "requested": "[8.1.2-bale.dav1d.1.5.4, 8.1.2-bale.dav1d.1.5.4]",
-        "resolved": "8.1.2-bale.dav1d.1.5.4",
-        "contentHash": "2IIaE96dZzawuXOOoI+EI+QnuhgYdauYVZVjZrjK5jKw0ZZ9STTpUKj54USK3eJAkxiSSJvIYML83d2uZ7FCeg=="
+        "requested": "[8.1.2-bale.dav1d.1.5.4.p1, 8.1.2-bale.dav1d.1.5.4.p1]",
+        "resolved": "8.1.2-bale.dav1d.1.5.4.p1",
+        "contentHash": "OjSB2TKhUyS6l0H64P7jCVnth9JujjRxmWkk7gNyE8VytNVKOXMDILGh0FcMFPrDJ2x19GwqFcy+gIozGXju8Q=="
       },
       "FFmpegInteropX.UWP.Lib": {
         "type": "Direct",

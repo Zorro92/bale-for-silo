@@ -78,8 +78,9 @@ Bale remains AGPL-3.0-or-later; third-party components retain their own licenses
 ## FFmpeg
 
 All builds bundle the UWP x64 package **FFmpegInteropX.UWP.FFmpeg
-8.1.2-bale.dav1d.1.5.4**, rebuilt by Bale to update only dav1d. The **bundled x64 build is
-LGPL-2.1-or-later**, not a GPL/nonfree FFmpeg build: its `avutil-60.dll` configuration contains
+8.1.2-bale.dav1d.1.5.4.p1**, rebuilt by Bale to update dav1d and apply one reviewed
+`libavcodec/libdav1d.c` patch (patch set p1: an opt-in for caller-supplied picture memory,
+listed with its SHA256 in `SOURCES.txt`). The **bundled x64 build is LGPL-2.1-or-later**, not a GPL/nonfree FFmpeg build: its `avutil-60.dll` configuration contains
 `--disable-gpl`, `--disable-version3` and `--disable-encoders`, and its license string is
 `LGPL version 2.1 or later`. Neither x264 nor x265 is built or linked. The package's
 `licenses/ffmpeg.txt` is the LGPL 2.1 text, shipped as `Licenses/FFmpeg/ffmpeg.txt`.
@@ -91,7 +92,7 @@ with its other dependency revisions and FFmpeg configure flags unchanged. The x6
 omits unused architecture globs and adds provenance; the separately rebuilt interop wrapper is
 2.1.0-bale.14 as described above.
 
-The [native release](https://github.com/Zorro92/bale-for-silo/releases/tag/native-ffmpeg-8.1.2-dav1d-1.5.4)
+The [native release](https://github.com/Zorro92/bale-for-silo/releases/tag/native-ffmpeg-8.1.2-dav1d-1.5.4-p1)
 provides the package, SHA256, `SOURCES.txt` with every submodule revision and build parameters,
 and `ffmpeg-native-sources.tar.gz` containing corresponding source for all built dependencies.
 Provenance also ships in the NuGet and MSIX (`Licenses/FFmpeg/SOURCES.txt`). The expected package

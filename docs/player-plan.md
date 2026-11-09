@@ -440,7 +440,8 @@ withdrawal and serialization. The production integration still needs the owner's
 ### Native FFmpeg / dav1d build
 
 Bale uses `FFmpegInteropX.UWP.Lib` **2.1.0-bale.9** with the custom x64 native package
-`FFmpegInteropX.UWP.FFmpeg` **8.1.2-bale.dav1d.1.5.4**. The public 8.1.2 x64 `avcodec-62.dll`
+`FFmpegInteropX.UWP.FFmpeg` **8.1.2-bale.dav1d.1.5.4** (now **.p1**, which adds the
+`scripts/ffmpeg-native-patches` set; see "Zero-copy design"). The public 8.1.2 x64 `avcodec-62.dll`
 embeds dav1d **1.0.0-0-g99172b1** (March 2022); upgrading the wrapper cannot update that static
 library. This rebuild is an A/B candidate for occasional AV1 stutter/2–4-core CPU spikes, **not a
 confirmed stutter fix**. The reported stutter has no supplied title or timestamp; the earlier

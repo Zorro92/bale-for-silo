@@ -1,8 +1,9 @@
 {
-  "version": "8.1.2-bale.dav1d.1.5.4",
-  "release_tag": "native-ffmpeg-8.1.2-dav1d-1.5.4",
-  "sha256": "2040753091214694caf109bb6e723962bcdd48cb4ff5988ada24041aafddefe8",
-  "nuget_content_hash": "2IIaE96dZzawuXOOoI+EI+QnuhgYdauYVZVjZrjK5jKw0ZZ9STTpUKj54USK3eJAkxiSSJvIYML83d2uZ7FCeg==",
+  "version": "8.1.2-bale.dav1d.1.5.4.p1",
+  "release_tag": "native-ffmpeg-8.1.2-dav1d-1.5.4-p1",
+  "patch_revision": "p1",
+  "sha256": "46122992937fb4f71006f6097f858bb51548a461f92be49d1376234247c37fed",
+  "nuget_content_hash": "OjSB2TKhUyS6l0H64P7jCVnth9JujjRxmWkk7gNyE8VytNVKOXMDILGh0FcMFPrDJ2x19GwqFcy+gIozGXju8Q==",
   "upstream_repository": "ffmpeginteropx/FFmpegInteropX",
   "upstream_commit": "88428c66e106852338b48554a4a00c9e48da588f",
   "ffmpeg_commit": "38b88335f99e76ed89ff3c93f877fdefce736c13",
