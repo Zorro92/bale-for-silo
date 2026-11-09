@@ -685,8 +685,38 @@ stalls fall by a third (Brawl) to three quarters (Shrek). Repack is still slight
 total CPU (process 7.6–7.7 cores on against 7.45–7.5 off on Shrek). The conversion was never the real
 cost: writing ~24 MB per 4K frame into the staging texture runs at only ~2 GB/s with 4 threads, either
 because staging memory is write-combined or because dav1d competes for memory bandwidth. Repack stays
-a debug knob. Untested next ideas: `UpdateSubresource` or a `DYNAMIC` texture with `WRITE_DISCARD`
-instead of the staging ring, and a raw write-bandwidth probe into staging memory.
+a debug knob.
+
+**Upload probe (`bale-debug.sh upload-probe`, 0.1.364.0, Series X ("arden" GPU), 4K R16 frame = 24.9 MB).**
+The memory type is not the problem; the console's state while the player is open is.
+
+| ms per 4K frame (4 threads unless noted) | Idle (detail page) | Player open: 1080p H.264 HW, playing or paused | 4K AV1 paused |
+|---|---|---|---|
+| ALU chain 1T / 4T | 22.7 / 22.9 | 28.6 / 29.2 | 28.8 / 29.5 |
+| L2-resident copy 1T | 0.45 (55 GB/s) | 0.57 (44 GB/s) | 0.56 |
+| RAM copy 1T / 4T | 3.3 / 2.1 | 18–19.5 / 8.1–8.9 | 14.9 / 7.8 |
+| Staging write (production) | 2.05 | 8.3 | — |
+| Staging write, streaming stores | 1.44 | 5.6 | — |
+| UpdateSubresource / DYNAMIC discard | 1.9 / 2.2 | 9.0 / 9.1 | — |
+
+- Idle, every upload method runs at RAM speed (~12 GB/s, streaming stores ~17 GB/s), and reads from
+  staging run at 12–16 GB/s, so staging memory is cached, not write-combined.
+- With the player page open, even paused and even for hardware-decoded 1080p (app ~0.1 core), CPU
+  work is ~25% slower (clock) and DRAM copies 4–6x slower. Leaving the player restores full speed at
+  once. Frame-rate matching was off, so no HDMI mode change was involved. During 4K AV1 playback,
+  dav1d's load adds noise on top. Device Portal GPU utilisation reads 0 for app work.
+- So the ~2 GB/s fill is a system-wide memory-bandwidth limit, which also caps dav1d itself. Faster
+  converters (libyuv instead of swscale) cannot help; fewer bytes moved can: streaming stores (~1.5x)
+  or not copying at all.
+- Open: what triggers it. The player holds a `DisplayRequest` and a `MediaPlayer` (system media
+  session); running the upload probe during the Rust frame-server engine probe (no MediaPlayer, no
+  player page) would tell them apart.
+
+**D3D12 in app mode (same probe).** Hardware device OK, max feature level 11_0, UMA and
+cache-coherent UMA true, existing heaps reported supported and row-major cross-adapter textures true,
+but `OpenExistingHeapFromAddress` on a 32 MB `VirtualAlloc` region fails with E_INVALIDARG. A
+cache-coherent UMA `CUSTOM` heap (write-back CPU pages, L0) is the other zero-copy candidate: D3D12
+allows a resource to stay mapped while the GPU reads it, so dav1d could decode straight into it.
 A one-off picture freeze (~2 s at start) seen once by the owner during an earlier repack run did not
 reproduce in 5 further starts (2 resumes with screenshots, 3 Start Over).
 
