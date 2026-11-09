@@ -1,0 +1,210 @@
+diff --git a/Source/BaleD3D11Upload.h b/Source/BaleD3D11Upload.h
+index 1711f35..85d1ecb 100644
+--- a/Source/BaleD3D11Upload.h
++++ b/Source/BaleD3D11Upload.h
+@@ -39,6 +39,7 @@ struct BaleRepackExports
+ 
+ // Bale: bale_gpu.dll zero-copy ABI 1. dav1d decodes into GPU-visible buffers from bale_zc_alloc and
+ // bale_zc_repack turns one into a P010 texture on the MSS device, with no staging map or CPU fill.
++// The optional bale_zc_repack_into writes the pooled texture itself, skipping the landing copy.
+ // Layouts mirror the Rust repr(C) structs.
+ struct BaleZcFrame
+ {
+@@ -72,6 +73,8 @@ struct BaleZeroCopyExports
+     HRESULT (__cdecl* repack)(void*, void*, const BaleZcFrame*, void**) = nullptr;
+     HRESULT (__cdecl* stats)(void*, BaleZcStats*) = nullptr;
+     void (__cdecl* destroy)(void*) = nullptr;
++    // Optional (added within ABI 1): null in an older bale_gpu, which then only lands frames.
++    HRESULT (__cdecl* repackInto)(void*, void*, const BaleZcFrame*, const BaleGrainParams*, void*) = nullptr;
+ 
+     static const BaleZeroCopyExports& Get()
+     {
+@@ -89,6 +92,7 @@ struct BaleZeroCopyExports
+             api.repack = reinterpret_cast<decltype(api.repack)>(GetProcAddress(module, "bale_zc_repack"));
+             api.stats = reinterpret_cast<decltype(api.stats)>(GetProcAddress(module, "bale_zc_stats"));
+             api.destroy = reinterpret_cast<decltype(api.destroy)>(GetProcAddress(module, "bale_zc_destroy"));
++            api.repackInto = reinterpret_cast<decltype(api.repackInto)>(GetProcAddress(module, "bale_zc_repack_into"));
+             if (!api.abiVersion || !api.create || !api.alloc || !api.release || !api.repack || !api.stats ||
+                 !api.destroy || api.abiVersion() != 1)
+             {
+@@ -135,7 +139,8 @@ struct BaleUploadTiming
+     }
+ 
+     // Called once per uploaded frame, after CreateSample. Logs average/max ms per stage.
+-    // path: 0 swscale into staging, 1 planar staging + repack, 2 zero-copy (fill = repack submit).
++    // path: 0 swscale into staging, 1 planar staging + repack, 2 zero-copy landing (fill = repack
++    // submit), 3 zero-copy direct write (gpu = repack submit).
+     void EndFrame(int path)
+     {
+         lastEnd = Now();
+@@ -288,6 +293,7 @@ public:
+                     // A failed pass may have partially written it: overwrite with the clean plain copy.
+                     context->CopyResource(texture, source.texture.get());
+                 }
++                return true;
+             });
+     }
+ 
+@@ -303,9 +309,26 @@ public:
+                 {
+                     context->CopyResource(texture, landing);
+                 }
++                return true;
+             });
+     }
+ 
++    // Zero-copy direct write needs pooled textures that D3D12 can open and write (variant 6).
++    bool CanWriteDirect() const
++    {
++        return (bindFlags & D3D11_BIND_UNORDERED_ACCESS) && (miscFlags & D3D11_RESOURCE_MISC_SHARED_NTHANDLE);
++    }
++
++    // Zero-copy direct write: `write` fills a pooled texture of the SetOutput size itself, or
++    // returns false having left it untouched; the texture then goes back to the pool and the
++    // sample is null. `position` is read only after a successful write, so `write` may set it.
++    // Failures after a write throw, like the other paths.
++    template <typename Write>
++    MediaStreamSample CreateWrittenSample(const TimeSpan& position, IDirect3DSurface* surface, Write&& write)
++    {
++        return Publish(position, surface, "zero-copy direct write", std::forward<Write>(write));
++    }
++
+     void EndGrain() { DestroyGrain(); }
+ 
+     // Producer-thread only (same serialization as Map/CreateSample).
+@@ -333,9 +356,11 @@ public:
+ 
+ private:
+     // Fills a pooled texture of the SetOutput size with `draw`, then flushes and wraps it in a
+-    // tracked MF sample. Any failure throws (the provider's permanent CPU fallback).
++    // tracked MF sample. Any failure throws (the provider's permanent CPU fallback). A draw that
++    // returns false left the texture untouched: it goes back to the pool and the sample is null.
++    // `position` is read only after `draw` succeeded.
+     template <typename Draw>
+-    MediaStreamSample Publish(TimeSpan position, IDirect3DSurface* surface, const char* drawOperation, Draw&& draw)
++    MediaStreamSample Publish(const TimeSpan& position, IDirect3DSurface* surface, const char* drawOperation, Draw&& draw)
+     {
+         auto stageStart = BaleUploadTiming::Now();
+         auto stage = [&](BaleUploadTiming::Stage done)
+@@ -353,7 +378,12 @@ private:
+                 winrt::check_hresult(texturePool.GetUploadTexture(stagingDesc.Width, stagingDesc.Height, stagingDesc.Format, bindFlags, miscFlags, texture));
+             }
+             operation = drawOperation;
+-            draw(texture.get());
++            if (!draw(texture.get()))
++            {
++                std::lock_guard lock(samplesMutex);
++                texturePool.ReturnUploadTexture(std::move(texture));
++                return MediaStreamSample{ nullptr };
++            }
+             stage(BaleUploadTiming::Gpu);
+             operation = "CopyResource/GetDeviceRemovedReason";
+             // CopyResource and Flush return void; device removal is the available HRESULT check.
+diff --git a/Source/UncompressedVideoSampleProvider.cpp b/Source/UncompressedVideoSampleProvider.cpp
+index b8d0765..a25ea12 100644
+--- a/Source/UncompressedVideoSampleProvider.cpp
++++ b/Source/UncompressedVideoSampleProvider.cpp
+@@ -1137,11 +1137,11 @@ void UncompressedVideoSampleProvider::LogZeroCopyStats(void* handle, const char*
+     BaleZcStats stats{};
+     if (BaleZeroCopyExports::Get().stats(handle, &stats) != S_OK) return;
+     av_log(nullptr, AV_LOG_INFO, "Bale zero-copy stats (%s): frames=%u repacked=%llu buffers created=%llu live=%llu peak=%llu "
+-        "pooled=%llu alloc_failures=%llu alloc_waits=%llu landing_copies=%llu.\n", when, zeroCopyFrames,
++        "pooled=%llu alloc_failures=%llu alloc_waits=%llu landing_copies=%llu direct=%u.\n", when, zeroCopyFrames,
+         static_cast<unsigned long long>(stats.framesRepacked), static_cast<unsigned long long>(stats.buffersCreated),
+         static_cast<unsigned long long>(stats.buffersLive), static_cast<unsigned long long>(stats.buffersPeak),
+         static_cast<unsigned long long>(stats.buffersPooled), static_cast<unsigned long long>(stats.allocFailures),
+-        static_cast<unsigned long long>(stats.allocWaits), static_cast<unsigned long long>(stats.landingCopies));
++        static_cast<unsigned long long>(stats.allocWaits), static_cast<unsigned long long>(stats.landingCopies), zeroCopyDirectFrames);
+ }
+ 
+ // Permanent for this stream. Callers are serialized with decoding (see zeroCopy). Buffers dav1d
+@@ -1186,9 +1186,53 @@ bool UncompressedVideoSampleProvider::TryZeroCopy(AVFrame* avFrame, IDirect3DSur
+ 
+     const auto& api = BaleZeroCopyExports::Get();
+     auto& timing = upload->timing;
++    upload->SetOutput(outputFrameWidth, outputFrameHeight, DXGI_FORMAT_P010);
++    if (UploadFaultFrames > 0 && uploadedFrames >= UploadFaultFrames)
++    {
++        av_log(nullptr, AV_LOG_WARNING, "Bale D3D11 upload fault injected after %d frames.\n", uploadedFrames);
++        winrt::throw_hresult(E_OUTOFMEMORY);
++    }
+     auto repackStart = BaleUploadTiming::Now();
++    if (timing.lastEnd) timing.Add(BaleUploadTiming::Gap, repackStart - timing.lastEnd);
++    auto picture = av_buffer_get_opaque(buffer);
++    HRESULT hr = S_FALSE;
++
++    // Direct write into the pooled texture: no landing texture, no D3D11 copy. GPU grain still
++    // needs the clean landing frame as its input.
++    if (api.repackInto && upload->CanWriteDirect() && !(params && FilmGrain.mode == 2))
++    {
++        TimeSpan position{};
++        uploadSample = upload->CreateWrittenSample(position, surface, [&](ID3D11Texture2D* texture)
++            {
++                hr = api.repackInto(handle, picture, &frame, nullptr, texture);
++                if (hr != S_OK) return false;
++                // Once per frame (frame-grabber state), and only for a frame that goes out here.
++                ReadFrameProperties(avFrame, framePts);
++                position = ConvertPosition(framePts);
++                return true;
++            });
++        if (hr == S_OK)
++        {
++            timing.EndFrame(3);
++            uploadedFrames++;
++            zeroCopyDirectFrames++;
++            if (++zeroCopyFrames == 240) LogZeroCopyStats(handle, "steady");
++            if (!zeroCopyLogged)
++            {
++                zeroCopyLogged = true;
++                av_log(nullptr, AV_LOG_INFO, "Bale zero-copy active (direct write): P010 %dx%d.\n", outputFrameWidth, outputFrameHeight);
++            }
++            return true;
++        }
++        if (hr == S_FALSE && !zeroCopyDeclineLogged)
++        {
++            zeroCopyDeclineLogged = true;
++            av_log(nullptr, AV_LOG_INFO, "Bale zero-copy direct write declined; landing frames instead.\n");
++        }
++    }
++
+     void* landing = nullptr;
+-    auto hr = api.repack(handle, av_buffer_get_opaque(buffer), &frame, &landing);
++    if (hr == S_FALSE) hr = api.repack(handle, picture, &frame, &landing);
+     if (hr == S_FALSE) return false;
+     if (hr == E_INVALIDARG)
+     {
+@@ -1205,19 +1249,11 @@ bool UncompressedVideoSampleProvider::TryZeroCopy(AVFrame* avFrame, IDirect3DSur
+         DisableZeroCopy(hr == S_OK ? E_UNEXPECTED : hr);
+         return false;
+     }
+-    auto repackEnd = BaleUploadTiming::Now();
+-    if (timing.lastEnd) timing.Add(BaleUploadTiming::Gap, repackStart - timing.lastEnd);
+-    timing.Add(BaleUploadTiming::Fill, repackEnd - repackStart);
++    timing.Add(BaleUploadTiming::Fill, BaleUploadTiming::Now() - repackStart);
+ 
+     // Borrowed from the handle: hold a reference while MF/D3D11 calls run below.
+     winrt::com_ptr<ID3D11Texture2D> texture;
+     texture.copy_from(static_cast<ID3D11Texture2D*>(landing));
+-    upload->SetOutput(outputFrameWidth, outputFrameHeight, DXGI_FORMAT_P010);
+-    if (UploadFaultFrames > 0 && uploadedFrames >= UploadFaultFrames)
+-    {
+-        av_log(nullptr, AV_LOG_WARNING, "Bale D3D11 upload fault injected after %d frames.\n", uploadedFrames);
+-        winrt::throw_hresult(E_OUTOFMEMORY);
+-    }
+     ReadFrameProperties(avFrame, framePts);
+     uploadSample = upload->CreateLandedSample(texture.get(), ConvertPosition(framePts), surface, FilmGrain, params);
+     timing.EndFrame(2);
+diff --git a/Source/UncompressedVideoSampleProvider.h b/Source/UncompressedVideoSampleProvider.h
+index 82dcd38..2e266f8 100644
+--- a/Source/UncompressedVideoSampleProvider.h
++++ b/Source/UncompressedVideoSampleProvider.h
+@@ -160,7 +160,9 @@ private:
+     bool zeroCopyHooked = false;
+     bool zeroCopyLogged = false;
+     bool zeroCopyLayoutLogged = false;
++    bool zeroCopyDeclineLogged = false;
+     unsigned zeroCopyFrames = 0;
++    unsigned zeroCopyDirectFrames = 0; // Written straight into the pooled texture (no landing copy).
+     static int get_zero_copy_buffer(AVCodecContext* avCodecContext, AVFrame* frame, int flags);
+     void CreateZeroCopy(winrt::com_ptr<ID3D11Device> const& device, winrt::com_ptr<ID3D11DeviceContext> const& context);
+     bool TryZeroCopy(AVFrame* avFrame, IDirect3DSurface* surface, int64_t& framePts, const BaleGrainParams* params);

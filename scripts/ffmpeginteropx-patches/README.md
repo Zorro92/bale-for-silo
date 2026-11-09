@@ -132,6 +132,13 @@ D3D12 needs to open and write a pooled texture directly, without the landing-tex
 tests whether MF accepts such samples. GPU grain and repack accept variant 6 like variant 1;
 zero-copy already runs with any upload variant. Production keeps variant 1. It ships in
 `2.1.0-bale.16`.
+`0017` lets zero-copy write the pooled texture itself when the upload variant makes it a
+D3D12-shareable UAV (variant 6) and `bale_gpu.dll` exports `bale_zc_repack_into` (optional, same
+ABI 1): the D3D12 repack targets the pooled texture and the landing texture and D3D11 copy are
+skipped. GPU-grain frames still land, since grain reads the clean frame. A decline (unfit texture,
+D3D12 cannot open it, too many open) returns the texture to the pool and lands the frame instead,
+logged once; frame properties are read once, after the write succeeded. Timing lines report
+`repack=3`; the stats line adds `direct=`. It ships in `2.1.0-bale.17`.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.

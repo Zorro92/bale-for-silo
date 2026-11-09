@@ -67,7 +67,9 @@ staging copy across the configured swscale thread count, and
 dav1d decodes into GPU-visible buffers from Bale's `bale_gpu.dll` and a GPU repack replaces the
 staging copy (default off), and
 `scripts/ffmpeginteropx-patches/0016-upload-variant-shared-uav.patch` for a debug-only upload
-variant whose pooled textures are also D3D12-shareable unordered-access views. Grain only modifies Bale-owned output, never dav1d
+variant whose pooled textures are also D3D12-shareable unordered-access views, and
+`scripts/ffmpeginteropx-patches/0017-zero-copy-direct-write.patch` for letting that zero-copy path
+write such a pooled texture directly, skipping the landing copy. Grain only modifies Bale-owned output, never dav1d
 reference frames.
 The original winmd and managed projection are retained; with the new `bale_*` keys unset, behavior
 equals upstream 2.1.0 plus that colour-attribute fix.
