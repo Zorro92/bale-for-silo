@@ -733,6 +733,25 @@ cache-coherent UMA true, existing heaps reported supported and row-major cross-a
 but `OpenExistingHeapFromAddress` on a 32 MB `VirtualAlloc` region fails with E_INVALIDARG. A
 cache-coherent UMA `CUSTOM` heap (write-back CPU pages, L0) is the other zero-copy candidate: D3D12
 allows a resource to stay mapped while the GPU reads it, so dav1d could decode straight into it.
+
+**Zero-copy probe (`bale-debug.sh zero-copy-probe`, 0.1.372, 2026-11-09): every check passes.**
+- The CUSTOM write-back L0 buffer creates and stays mapped. The UPLOAD and READBACK heaps are also
+  write-back L0 on this console.
+- CPU speed on it equals ordinary RAM, for both writes and reads, in both states. Per 24.9 MB frame,
+  4 threads: fill 2.0 ms and read 1.2 ms right after input; 7.3 ms and 2.9 ms after 15 s idle (RAM:
+  8.1 and 2.9). So dav1d would not slow down by decoding into it.
+- The GPU copies it in 0.8 ms (~31 GB/s) and 0.86 ms after 15 s idle. The input-idle slowdown hits
+  the CPU only, not GPU memory access.
+- The GPU sees plain cached CPU stores without Unmap or flushes (24.9 MB round trip matched).
+- A D3D12 shared P010 texture and shared fence open in D3D11 (`OpenSharedResource1`,
+  `OpenSharedFence`). The D3D11 context waits on the fence and reads back exactly what D3D12 copied
+  (both planes); copy, wait and readback take 2.5–3.3 ms.
+- P010 in D3D12 (Support1 0x3A80C320): render target, typed UAV, shader load and decoder output are
+  all supported, so a compute or pixel repack shader can write the planes directly.
+- What remains unbuilt: an FFmpeg `libdav1d.c` allocator patch (native rebuild), the repack shader
+  from dav1d's planar layout into P010, the Media Foundation handoff, and fences guarding buffer reuse.
+  Series X|S only; Xbox One app mode has no D3D12 and keeps today's path. Store certification of a
+  D3D12 app (not game) is unverified.
 A one-off picture freeze (~2 s at start) seen once by the owner during an earlier repack run did not
 reproduce in 5 further starts (2 resumes with screenshots, 3 Start Over).
 
