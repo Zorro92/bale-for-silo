@@ -2,10 +2,10 @@
 //!
 //! dav1d decodes straight into persistently mapped D3D12 buffers on a CPU-cached (write-back, L0)
 //! custom heap ([`bale_zc_alloc`]). A D3D12 compute shader reads the picture from that buffer and
-//! writes P010 into one of two shared landing textures; Media Foundation's D3D11 device opens both
-//! once and copies from the one [`bale_zc_repack`] returns. Nothing is copied on the CPU. Where
-//! D3D11 cannot open a shared UAV P010 texture (WARP), the dispatch writes a private texture and
-//! a GPU copy fills a plain shared one (`landing_copies` in the stats).
+//! writes P010 into one of two landing textures that Media Foundation's D3D11 device creates and
+//! shares (D3D12 opens them once); MF copies from the one [`bale_zc_repack`] returns. Nothing is
+//! copied on the CPU. Where D3D11 cannot share a UAV P010 texture, the dispatch writes a private
+//! texture and a GPU copy fills a plain shared one (`landing_copies` in the stats).
 //!
 //! Two shared fences order the devices without CPU stalls:
 //! - `repacked`: the D3D12 queue signals n after frame n's dispatch; the D3D11 context waits for n
@@ -35,7 +35,10 @@ use windows::Win32::Graphics::Direct3D10::ID3D10Multithread;
 use windows::Win32::Graphics::Direct3D11::*;
 use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
-use windows::Win32::Graphics::Dxgi::{IDXGIAdapter, IDXGIDevice};
+use windows::Win32::Graphics::Dxgi::{
+    DXGI_SHARED_RESOURCE_READ, DXGI_SHARED_RESOURCE_WRITE, IDXGIAdapter, IDXGIDevice,
+    IDXGIResource1,
+};
 use windows::Win32::System::LibraryLoader::GetProcAddress;
 use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
 use windows::core::{Error, HRESULT, Interface, PCWSTR, Result, s};
@@ -376,10 +379,10 @@ impl Drop for Locked {
 struct Landing {
     /// Written by the dispatch through P010 plane UAVs.
     texture: ID3D12Resource,
-    /// The shared texture when D3D11 refuses a shared UAV P010 texture (WARP does): `texture`
-    /// is then private and copied into this one after the dispatch.
+    /// The shared texture when no shared UAV P010 texture is available: `texture` is then private
+    /// and copied into this one after the dispatch.
     copy: Option<ID3D12Resource>,
-    /// D3D11's view of `copy`, or of `texture` when there is no copy.
+    /// The D3D11 texture behind `copy`, or behind `texture` when there is no copy.
     texture11: ID3D11Texture2D,
 }
 
@@ -413,7 +416,8 @@ struct Inner {
     size: Option<(u32, u32)>,
     next: usize,
     previous: Option<usize>,
-    /// D3D11 opens the shared UAV landing texture. Cleared for good once it refuses.
+    /// The dispatch writes the shared landing texture itself. Cleared for good once a shared UAV
+    /// P010 texture is refused.
     direct: bool,
     repacked_value: u64,
     released_value: u64,
@@ -578,49 +582,39 @@ impl Inner {
         Ok(())
     }
 
-    /// A landing texture written in place and shared with D3D11, or, once D3D11 has refused that
-    /// (`direct` cleared for the handle), a private one plus a shared copy target.
+    /// A shared landing texture the dispatch writes in place, or, without `direct` (cleared for
+    /// good once the UAV variant is refused), a private one plus a shared copy target.
     fn landing(&mut self, width: u32, height: u32) -> Result<Landing> {
-        let p010 = |flags| {
-            let mut desc = resource(
-                D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-                u64::from(width),
-                height,
-                DXGI_FORMAT_P010,
-                flags,
-            );
-            desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-            desc
-        };
-        let target = p010(D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-        let create = |heap_flags, desc: &D3D12_RESOURCE_DESC| {
-            committed(
-                &self.device,
-                &heap(D3D12_HEAP_TYPE_DEFAULT),
-                heap_flags,
-                desc,
-                D3D12_RESOURCE_STATE_COMMON,
-            )
-        };
         if self.direct {
-            let texture = create(D3D12_HEAP_FLAG_SHARED, &target).step("landing texture")?;
-            match self.share(&texture, width, height) {
-                Ok(texture11) => {
+            match self.shared(width, height, true) {
+                Ok((texture, texture11)) => {
                     return Ok(Landing {
                         texture,
                         copy: None,
                         texture11,
                     });
                 }
-                // WARP's D3D11 rejects a shared UAV P010 texture (E_INVALIDARG); hardware
-                // may too. Fall back for the rest of the handle's life.
+                // A device without shareable UAV P010; fall back for the handle's life.
                 Err(_) => self.direct = false,
             }
         }
-        let texture = create(D3D12_HEAP_FLAG_NONE, &target).step("landing texture")?;
-        let copy = create(D3D12_HEAP_FLAG_SHARED, &p010(D3D12_RESOURCE_FLAG_NONE))
-            .step("landing copy texture")?;
-        let texture11 = self.share(&copy, width, height)?;
+        let mut desc = resource(
+            D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+            u64::from(width),
+            height,
+            DXGI_FORMAT_P010,
+            D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+        );
+        desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+        let texture = committed(
+            &self.device,
+            &heap(D3D12_HEAP_TYPE_DEFAULT),
+            D3D12_HEAP_FLAG_NONE,
+            &desc,
+            D3D12_RESOURCE_STATE_COMMON,
+        )
+        .step("landing texture")?;
+        let (copy, texture11) = self.shared(width, height, false)?;
         Ok(Landing {
             texture,
             copy: Some(copy),
@@ -628,30 +622,54 @@ impl Inner {
         })
     }
 
-    /// Opens a shared D3D12 P010 texture on the D3D11 device and checks what D3D11 sees.
-    fn share(&self, texture: &ID3D12Resource, width: u32, height: u32) -> Result<ID3D11Texture2D> {
-        // SAFETY: live objects; default security, unnamed; the NT handle closes after the open.
+    /// A P010 texture that D3D11 creates with an NT shared handle and D3D12 opens. D3D11 created
+    /// on purpose: WARP's D3D11 opens no D3D12-created texture of any format (E_INVALIDARG),
+    /// while this direction works there for P010 with or without UAV access.
+    fn shared(
+        &self,
+        width: u32,
+        height: u32,
+        uav: bool,
+    ) -> Result<(ID3D12Resource, ID3D11Texture2D)> {
+        let mut bind = D3D11_BIND_SHADER_RESOURCE.0 as u32;
+        if uav {
+            bind |= D3D11_BIND_UNORDERED_ACCESS.0 as u32;
+        }
+        let mut desc = texture_desc(width, height, DXGI_FORMAT_P010, bind);
+        desc.MiscFlags =
+            (D3D11_RESOURCE_MISC_SHARED_NTHANDLE.0 | D3D11_RESOURCE_MISC_SHARED.0) as u32;
+        let texture11 = texture(&self.device11, &desc, None).step("D3D11 landing texture")?;
+        // SAFETY: live texture; default security, unnamed; the NT handle closes after the open.
         let shared = Handle(
             unsafe {
-                self.device
-                    .CreateSharedHandle(texture, None, GENERIC_ALL, PCWSTR::null())
+                texture11.cast::<IDXGIResource1>()?.CreateSharedHandle(
+                    None,
+                    DXGI_SHARED_RESOURCE_READ.0 | DXGI_SHARED_RESOURCE_WRITE.0,
+                    PCWSTR::null(),
+                )
             }
             .step("landing shared handle")?,
         );
-        // SAFETY: an NT handle from CreateSharedHandle on the same adapter, open for the call.
-        let texture11: ID3D11Texture2D = unsafe { self.device11.OpenSharedResource1(shared.0) }
-            .step("D3D11 open landing texture")?;
+        let mut opened: Option<ID3D12Resource> = None;
+        // SAFETY: an NT handle from CreateSharedHandle on the same adapter, open for the call;
+        // `opened` is our out-slot.
+        unsafe { self.device.OpenSharedHandle(shared.0, &mut opened) }
+            .step("D3D12 open landing texture")?;
         drop(shared);
-        let mut opened = D3D11_TEXTURE2D_DESC::default();
-        // SAFETY: live texture; `opened` is our out-slot.
-        unsafe { texture11.GetDesc(&mut opened) };
-        if (opened.Width, opened.Height, opened.Format) != (width, height, DXGI_FORMAT_P010)
-            || opened.ArraySize != 1
-            || opened.MipLevels != 1
+        let texture = opened
+            .ok_or_else(|| Error::from(E_FAIL))
+            .step("D3D12 open landing texture")?;
+        // SAFETY: live resource.
+        let seen = unsafe { texture.GetDesc() };
+        let uav_seen = seen.Flags.0 & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS.0 != 0;
+        if (seen.Width, seen.Height, seen.Format) != (u64::from(width), height, DXGI_FORMAT_P010)
+            || seen.DepthOrArraySize != 1
+            || seen.MipLevels != 1
+            || (uav && !uav_seen)
         {
-            return Err(E_FAIL.into()).step("D3D11 landing texture description");
+            return Err(E_FAIL.into()).step("D3D12 landing texture description");
         }
-        Ok(texture11)
+        Ok((texture, texture11))
     }
 
     /// Waits on the CPU for `fence`, first flushing the D3D11 context: D3D12 work may wait for a
@@ -708,7 +726,12 @@ pub struct BaleZeroCopy {
 }
 
 impl BaleZeroCopy {
-    fn create(device11: &ID3D11Device, context: &ID3D11DeviceContext) -> Result<Box<Self>> {
+    /// `direct: false` starts in the copy-landing mode (tests only).
+    fn create(
+        device11: &ID3D11Device,
+        context: &ID3D11DeviceContext,
+        direct: bool,
+    ) -> Result<Box<Self>> {
         let module = HMODULE(D3D12.load(Ordering::Acquire));
         if module.0.is_null() {
             return Err(E_NOINTERFACE.into()).step("d3d12.dll not registered");
@@ -835,7 +858,7 @@ impl BaleZeroCopy {
                 size: None,
                 next: 0,
                 previous: None,
-                direct: true,
+                direct,
                 repacked_value: 0,
                 released_value: 0,
                 event,
@@ -1069,7 +1092,7 @@ pub unsafe fn diagnose_create(
     }) else {
         return Err("null device or context".into());
     };
-    match BaleZeroCopy::create(device, context) {
+    match BaleZeroCopy::create(device, context, true) {
         Ok(handle) => {
             // SAFETY: a handle created above and never shared.
             unsafe { bale_zc_destroy(Box::into_raw(handle)) };
@@ -1115,6 +1138,33 @@ pub unsafe extern "C" fn bale_zc_create(
     context: *mut c_void,
     out: *mut *mut BaleZeroCopy,
 ) -> i32 {
+    // SAFETY: the caller's guarantees, passed on.
+    unsafe { create_into(device, context, out, true) }
+}
+
+/// [`bale_zc_create`] in the copy-landing mode, so tests cover it where the direct mode works.
+/// Not part of the C ABI.
+///
+/// # Safety
+/// As for [`bale_zc_create`].
+#[doc(hidden)]
+pub unsafe fn create_with_landing_copies(
+    device: *mut c_void,
+    context: *mut c_void,
+    out: *mut *mut BaleZeroCopy,
+) -> i32 {
+    // SAFETY: the caller's guarantees, passed on.
+    unsafe { create_into(device, context, out, false) }
+}
+
+/// # Safety
+/// As for [`bale_zc_create`].
+unsafe fn create_into(
+    device: *mut c_void,
+    context: *mut c_void,
+    out: *mut *mut BaleZeroCopy,
+    direct: bool,
+) -> i32 {
     boundary(|| {
         if out.is_null() {
             return E_INVALIDARG.0;
@@ -1130,7 +1180,7 @@ pub unsafe extern "C" fn bale_zc_create(
         }) else {
             return E_INVALIDARG.0;
         };
-        match BaleZeroCopy::create(device, context) {
+        match BaleZeroCopy::create(device, context, direct) {
             Ok(handle) => {
                 // SAFETY: the output is valid; ownership transfers to the caller.
                 unsafe { out.write(Box::into_raw(handle)) };
@@ -1269,7 +1319,12 @@ pub unsafe extern "C" fn bale_zc_repack(
                 // own reference, so the borrowed pointer outlives this clone.
                 unsafe { out_texture.write(texture.as_raw()) };
                 zero_copy.pool.frames.fetch_add(1, Ordering::Relaxed);
-                if !inner.direct {
+                // `previous` is the slot this frame just landed in.
+                let copied = inner
+                    .previous
+                    .and_then(|slot| inner.slots[slot].landing.as_ref())
+                    .is_some_and(|landing| landing.copy.is_some());
+                if copied {
                     zero_copy.pool.copies.fetch_add(1, Ordering::Relaxed);
                 }
                 return S_OK;

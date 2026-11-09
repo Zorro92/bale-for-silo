@@ -8,7 +8,7 @@ use std::ptr;
 use bale_gpu::d3d12_repack::{
     BaleZcStats, BaleZeroCopy, S_FALSE, S_OK, ZERO_COPY_ABI_VERSION, bale_zc_abi_version,
     bale_zc_alloc, bale_zc_create, bale_zc_destroy, bale_zc_register_d3d12, bale_zc_release,
-    bale_zc_repack, bale_zc_stats, diagnose_create,
+    bale_zc_repack, bale_zc_stats, create_with_landing_copies, diagnose_create,
 };
 use bale_gpu::zc_frame::{BaleZcFrame, MAX_BYTES, fill_test_planes};
 use windows::Win32::Foundation::{E_INVALIDARG, E_OUTOFMEMORY, HMODULE};
@@ -113,6 +113,18 @@ impl Warp {
                 report.join("; ")
             );
         }
+        assert!(!handle.is_null());
+        ZeroCopy(handle)
+    }
+
+    /// A handle that always repacks into a private texture and copies it to the shared one.
+    fn zero_copy_with_landing_copies(&self) -> ZeroCopy {
+        let mut handle = ptr::null_mut();
+        // SAFETY: live COM interfaces and a writable out slot.
+        let hr = unsafe {
+            create_with_landing_copies(self.device.as_raw(), self.context.as_raw(), &mut handle)
+        };
+        assert_eq!(hr, S_OK, "HRESULT=0x{:08x}", hr as u32);
         assert!(!handle.is_null());
         ZeroCopy(handle)
     }
@@ -246,10 +258,9 @@ fn abi_version_and_null_registration() {
     );
 }
 
-#[test]
-fn repacks_through_both_slots_and_size_changes() {
-    let warp = Warp::new();
-    let zero_copy = warp.zero_copy();
+/// Repacks through both slots and several size changes, odd chroma widths included, and checks
+/// every landing texture against the CPU reference.
+fn repack_sizes(warp: &Warp, zero_copy: &ZeroCopy) -> BaleZcStats {
     let sizes = [
         (64, 64),
         (128, 72),
@@ -275,19 +286,22 @@ fn repacks_through_both_slots_and_size_changes() {
     assert_eq!(stats.frames_repacked, sizes.len() as u64);
     assert_eq!(stats.buffers_live, 0);
     assert_eq!(stats.alloc_failures, 0);
-    // The landing mode is fixed by the self-test: every frame copies or none does.
-    assert!(
-        stats.landing_copies == 0 || stats.landing_copies == stats.frames_repacked,
-        "{stats:?}"
-    );
-    eprintln!(
-        "WARP landing: {}",
-        if stats.landing_copies == 0 {
-            "direct"
-        } else {
-            "copy"
-        }
-    );
+    stats
+}
+
+#[test]
+fn repacks_through_both_slots_and_size_changes() {
+    let warp = Warp::new();
+    let stats = repack_sizes(&warp, &warp.zero_copy());
+    // WARP shares D3D11-created UAV P010 textures, so the dispatch writes them in place.
+    assert_eq!(stats.landing_copies, 0, "{stats:?}");
+}
+
+#[test]
+fn landing_copies_repack_through_both_slots_and_size_changes() {
+    let warp = Warp::new();
+    let stats = repack_sizes(&warp, &warp.zero_copy_with_landing_copies());
+    assert_eq!(stats.landing_copies, stats.frames_repacked, "{stats:?}");
 }
 
 #[test]
