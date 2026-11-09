@@ -1,0 +1,163 @@
+diff --git a/Source/BaleCopyPool.h b/Source/BaleCopyPool.h
+new file mode 100644
+index 0000000..dc71959
+--- /dev/null
++++ b/Source/BaleCopyPool.h
+@@ -0,0 +1,102 @@
++#pragma once
++// Bale: small fork/join pool for the planar staging fill (FillPlanar). The caller runs slice 0 and
++// workers run slices 1..n-1. Workers start on first use and are joined by the destructor.
++// Run is called only from the serialized frame producer, so it is never reentered.
++#include <condition_variable>
++#include <functional>
++#include <mutex>
++#include <thread>
++#include <vector>
++
++class BaleCopyPool
++{
++public:
++    BaleCopyPool(int threads, int win32Priority) : threads(threads < 1 ? 1 : threads), win32Priority(win32Priority) {}
++
++    ~BaleCopyPool()
++    {
++        {
++            std::lock_guard lock(mutex);
++            stop = true;
++        }
++        start.notify_all();
++        for (auto& worker : workers) worker.join();
++    }
++
++    BaleCopyPool(const BaleCopyPool&) = delete;
++    BaleCopyPool& operator=(const BaleCopyPool&) = delete;
++
++    int Threads()
++    {
++        if (threads > 1 && workers.empty()) StartWorkers();
++        return threads;
++    }
++
++    // Runs job(slice) for every slice in [0, Threads()) and returns when all have finished.
++    // The job must not throw.
++    void Run(const std::function<void(int)>& job)
++    {
++        if (Threads() == 1)
++        {
++            job(0);
++            return;
++        }
++        {
++            std::lock_guard lock(mutex);
++            current = &job;
++            pending = threads - 1;
++            generation++;
++        }
++        start.notify_all();
++        job(0);
++        std::unique_lock lock(mutex);
++        done.wait(lock, [this] { return pending == 0; });
++        current = nullptr;
++    }
++
++private:
++    void StartWorkers()
++    {
++        try
++        {
++            for (int slice = 1; slice < threads; slice++)
++            {
++                workers.emplace_back([this, slice] { Worker(slice); });
++            }
++        }
++        catch (...)
++        {
++            // Fewer threads only: keep the slices that have a worker.
++        }
++        threads = static_cast<int>(workers.size()) + 1;
++    }
++
++    void Worker(int slice)
++    {
++        if (win32Priority != THREAD_PRIORITY_NORMAL) SetThreadPriority(GetCurrentThread(), win32Priority);
++        uint64_t seen = 0;
++        std::unique_lock lock(mutex);
++        while (true)
++        {
++            start.wait(lock, [&] { return stop || generation != seen; });
++            if (stop) return;
++            seen = generation;
++            auto job = current;
++            lock.unlock();
++            (*job)(slice);
++            lock.lock();
++            if (--pending == 0) done.notify_one();
++        }
++    }
++
++    int threads;
++    int win32Priority;
++    std::vector<std::thread> workers;
++    std::mutex mutex;
++    std::condition_variable start;
++    std::condition_variable done;
++    const std::function<void(int)>* current = nullptr;
++    uint64_t generation = 0;
++    int pending = 0;
++    bool stop = false;
++};
+diff --git a/Source/UncompressedVideoSampleProvider.cpp b/Source/UncompressedVideoSampleProvider.cpp
+index e851c80..43bc379 100644
+--- a/Source/UncompressedVideoSampleProvider.cpp
++++ b/Source/UncompressedVideoSampleProvider.cpp
+@@ -587,10 +587,25 @@ void UncompressedVideoSampleProvider::FillPlanar(AVFrame* avFrame, BYTE** data,
+     int chromaWidth = (outputWidth + 1) / 2;
+     int chromaHeight = (outputHeight + 1) / 2;
+     int linesize = static_cast<int>(pitch);
+-    av_image_copy_plane(data[0], linesize, avFrame->data[0], avFrame->linesize[0], outputWidth * bytes, outputHeight);
+-    av_image_copy_plane(data[1], linesize, avFrame->data[1], avFrame->linesize[1], chromaWidth * bytes, chromaHeight);
+-    av_image_copy_plane(data[1] + static_cast<size_t>(outputFrameWidth / 2) * bytes, linesize,
+-        avFrame->data[2], avFrame->linesize[2], chromaWidth * bytes, chromaHeight);
++    BYTE* vData = data[1] + static_cast<size_t>(outputFrameWidth / 2) * bytes;
++    // One thread fills a 4K frame in ~25-40 ms on the console (measured with 0013), most of a 24 fps
++    // frame interval. Split rows across the swscale thread count; each slice owns disjoint rows.
++    if (!copyPool) copyPool = std::make_unique<BaleCopyPool>(SwsThreads, BaleThreadBoost::ToWin32(SwsThreadPriority));
++    int slices = copyPool->Threads();
++    copyPool->Run([&](int slice)
++        {
++            auto copyRows = [&](BYTE* dst, const uint8_t* src, int srcLinesize, int rowBytes, int height)
++                {
++                    int begin = height * slice / slices;
++                    int end = height * (slice + 1) / slices;
++                    if (end <= begin) return;
++                    av_image_copy_plane(dst + static_cast<ptrdiff_t>(begin) * linesize, linesize,
++                        src + static_cast<ptrdiff_t>(begin) * srcLinesize, srcLinesize, rowBytes, end - begin);
++                };
++            copyRows(data[0], avFrame->data[0], avFrame->linesize[0], outputWidth * bytes, outputHeight);
++            copyRows(data[1], avFrame->data[1], avFrame->linesize[1], chromaWidth * bytes, chromaHeight);
++            copyRows(vData, avFrame->data[2], avFrame->linesize[2], chromaWidth * bytes, chromaHeight);
++        });
+ }
+ 
+ void UncompressedVideoSampleProvider::UploadFrame(AVFrame* avFrame, IDirect3DSurface* surface, int64_t& framePts, const BaleGrainParams* params, bool planar)
+diff --git a/Source/UncompressedVideoSampleProvider.h b/Source/UncompressedVideoSampleProvider.h
+index 0963cb5..59661fc 100644
+--- a/Source/UncompressedVideoSampleProvider.h
++++ b/Source/UncompressedVideoSampleProvider.h
+@@ -19,6 +19,7 @@
+ #pragma once
+ #include "UncompressedSampleProvider.h"
+ #include "BaleD3D11Upload.h"
++#include "BaleCopyPool.h"
+ using namespace winrt::Windows::Media::Core;
+ 
+ #pragma region Desktop Family
+@@ -137,6 +138,8 @@ private:
+     bool repackLogged = false;
+     bool CanRepack(AVFrame* avFrame, const BaleGrainParams* params) const;
+     void FillPlanar(AVFrame* avFrame, BYTE** data, UINT pitch);
++    // Bale: FillPlanar row slices; SwsThreads workers, created on the first planar frame.
++    std::unique_ptr<BaleCopyPool> copyPool;
+     void DisableRepack(HRESULT hr);
+     HRESULT ScaleFrame(AVFrame* avFrame, BYTE** data, int* linesize, AVBufferRef* buffer);
+     HRESULT CopyFrameToOutput(AVFrame* avFrame, BYTE** data, int* linesize, AVBufferRef* buffer);

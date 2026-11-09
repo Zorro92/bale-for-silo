@@ -60,7 +60,9 @@ GPU upload failure after N frames (default off),
 `scripts/ffmpeginteropx-patches/0012-d3d11-gpu-repack.patch` for an opt-in, debug-only GPU NV12/P010
 repack of planar decoder output in place of swscale (default off), and
 `scripts/ffmpeginteropx-patches/0013-d3d11-upload-stage-timing.patch` for numeric per-stage timing
-log lines in the D3D11 upload and decode-ahead paths (no behavior change). Grain only modifies Bale-owned output, never dav1d
+log lines in the D3D11 upload and decode-ahead paths (no behavior change), and
+`scripts/ffmpeginteropx-patches/0014-repack-sliced-fill.patch` to split that debug repack's planar
+staging copy across the configured swscale thread count. Grain only modifies Bale-owned output, never dav1d
 reference frames.
 The original winmd and managed projection are retained; with the new `bale_*` keys unset, behavior
 equals upstream 2.1.0 plus that colour-attribute fix.

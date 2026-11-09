@@ -76,6 +76,7 @@
     <None Include="../../scripts/ffmpeginteropx-patches/0011-d3d11-upload-fault-injection.patch" Link="0011-d3d11-upload-fault-injection.patch" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/ffmpeginteropx-patches/0012-d3d11-gpu-repack.patch" Link="0012-d3d11-gpu-repack.patch" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/ffmpeginteropx-patches/0013-d3d11-upload-stage-timing.patch" Link="0013-d3d11-upload-stage-timing.patch" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/ffmpeginteropx-patches/0014-repack-sliced-fill.patch" Link="0014-repack-sliced-fill.patch" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/check-ffmpeg-package.ps1" Link="check-ffmpeg-package.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/restore-ffmpeg-native.ps1" Link="restore-ffmpeg-native.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../NuGet.Config" Link="NuGet.Config" CopyToOutputDirectory="PreserveNewest" />

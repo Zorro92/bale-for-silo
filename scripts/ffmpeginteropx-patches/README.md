@@ -102,6 +102,13 @@ swscale, Unmap, GPU copy/repack/grain, Flush, sample creation) and logs average/
 frames as `Bale D3D11 upload timing: ...`. The decode-ahead worker logs `Bale decode-ahead timing: ...`
 every 240 samples: GetNextSample time, idle time while the queue is full, and how often and how long
 the MF request thread waited on an empty queue. Lines hold numbers only. It ships in `2.1.0-bale.13`.
+`0014` speeds up the debug-only repack fill. 0013 showed the single-threaded planar copy into the
+staging ring took 23-40 ms per 4K frame on the console (swscale on 4 threads: 9-16 ms), which
+starved decode-ahead. `FillPlanar` now splits each plane's rows into `bale_sws_threads` slices
+(no new option) run by `BaleCopyPool`, a small fork/join pool owned by the video provider: the
+caller copies slice 0, workers (started on the first planar frame, `bale_decode_thread_priority`
+boost, joined on destruction) copy the rest. If a worker cannot start, the remaining slices are
+merged. Output bytes are unchanged. It ships in `2.1.0-bale.14`.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.
