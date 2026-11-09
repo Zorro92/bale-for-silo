@@ -95,3 +95,7 @@ decoder is about 3x slower.
 budget before any entropy cost, and correctness (spike a) was not checked. Continuing would first
 need a GPU timestamp breakdown, which means patching the test player. Only a shader-side fix (a
 rewrite for RDNA2 waves, not a port) could close a gap of that size.
+
+**Decision (2026-11-09): stopped after phase 0.** The owner chose not to run the timestamp spike. The
+test player was uninstalled from the console. Bale keeps dav1d for software AV1 with the 1080p claim,
+and the server transcodes 4K AV1.
