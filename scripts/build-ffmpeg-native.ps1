@@ -65,6 +65,8 @@ $patches = @(Get-ChildItem (Join-Path $PSScriptRoot 'ffmpeg-native-patches') -Fi
 if ([bool]$PatchRevision -ne ($patches.Count -gt 0)) { throw 'PatchRevision must be set exactly when FFmpeg source patches exist' }
 Invoke-Git $ffmpeg @('diff', '--exit-code', 'HEAD') | Out-Null
 foreach ($patch in $patches) {
+    # A CRLF checkout of the patch (missing -text in .gitattributes) would not apply to LF sources.
+    if ([IO.File]::ReadAllText($patch.FullName).Contains("`r")) { throw "FFmpeg source patch has CRLF line endings: $($patch.Name)" }
     Invoke-Git $ffmpeg @('apply', '--check', $patch.FullName) | Out-Null
     Invoke-Git $ffmpeg @('apply', $patch.FullName) | Out-Null
 }

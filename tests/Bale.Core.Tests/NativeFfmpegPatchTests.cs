@@ -19,6 +19,7 @@ public class NativeFfmpegPatchTests
             Assert.Equal(new[] { "libavcodec/libdav1d.c" }, targets);
             Assert.DoesNotContain("new file mode", text);
             Assert.DoesNotContain("deleted file mode", text);
+            Assert.DoesNotContain("\r", text);
         }
     }
 
@@ -42,6 +43,7 @@ public class NativeFfmpegPatchTests
         Assert.True(build.IndexOf("Invoke-Git $ffmpeg @('apply', $patch.FullName)", StringComparison.Ordinal)
             < build.IndexOf("-File ./Build-FFmpeg.ps1", StringComparison.Ordinal));
         Assert.Contains("FFmpeg source patch set:", build);
+        Assert.Contains("throw \"FFmpeg source patch has CRLF line endings: $($patch.Name)\"", build);
         Assert.Contains("Copy-Item $patch.FullName (Join-Path $output $patch.Name)", build);
         var workflow = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "ffmpeg-native.yml.txt"));
         Assert.Contains("-PatchRevision $env:PATCH_REVISION", workflow);
