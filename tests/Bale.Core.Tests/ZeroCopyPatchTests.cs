@@ -50,7 +50,7 @@ public class ZeroCopyPatchTests
         }
         Assert.Contains("!api.destroy || api.abiVersion() != 1)", Added);
         Assert.Contains("static_assert(sizeof(BaleZcFrame) == 40", Added);
-        Assert.Contains("static_assert(sizeof(BaleZcStats) == 56", Added);
+        Assert.Contains("static_assert(sizeof(BaleZcStats) == 64", Added);
     }
 
     [Fact]

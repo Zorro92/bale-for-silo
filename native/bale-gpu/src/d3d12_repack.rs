@@ -3,7 +3,9 @@
 //! dav1d decodes straight into persistently mapped D3D12 buffers on a CPU-cached (write-back, L0)
 //! custom heap ([`bale_zc_alloc`]). A D3D12 compute shader reads the picture from that buffer and
 //! writes P010 into one of two shared landing textures; Media Foundation's D3D11 device opens both
-//! once and copies from the one [`bale_zc_repack`] returns. Nothing is copied on the CPU.
+//! once and copies from the one [`bale_zc_repack`] returns. Nothing is copied on the CPU. Where
+//! D3D11 cannot open a shared UAV P010 texture (WARP), the dispatch writes a private texture and
+//! a GPU copy fills a plain shared one (`landing_copies` in the stats).
 //!
 //! Two shared fences order the devices without CPU stalls:
 //! - `repacked`: the D3D12 queue signals n after frame n's dispatch; the D3D11 context waits for n
@@ -228,6 +230,8 @@ struct Pool {
     /// The handle is gone: returned memory is released instead of pooled.
     closed: AtomicBool,
     frames: AtomicU64,
+    /// Frames repacked through the copy fallback (see [`Landing::copy`]).
+    copies: AtomicU64,
 }
 
 impl Pool {
@@ -370,7 +374,12 @@ impl Drop for Locked {
 }
 
 struct Landing {
+    /// Written by the dispatch through P010 plane UAVs.
     texture: ID3D12Resource,
+    /// The shared texture when D3D11 refuses a shared UAV P010 texture (WARP does): `texture`
+    /// is then private and copied into this one after the dispatch.
+    copy: Option<ID3D12Resource>,
+    /// D3D11's view of `copy`, or of `texture` when there is no copy.
     texture11: ID3D11Texture2D,
 }
 
@@ -404,6 +413,8 @@ struct Inner {
     size: Option<(u32, u32)>,
     next: usize,
     previous: Option<usize>,
+    /// D3D11 opens the shared UAV landing texture. Cleared for good once it refuses.
+    direct: bool,
     repacked_value: u64,
     released_value: u64,
     event: Handle,
@@ -458,8 +469,8 @@ impl Inner {
         let value = self.repacked_value + 1;
         // SAFETY: the slot's allocator and list are idle; every bound object lives until the
         // dispatch completes (buffers are reused only after `repacked` passes `value`, landing
-        // textures and descriptors only after an idle wait). The landing texture goes COMMON ->
-        // UNORDERED_ACCESS -> COMMON, so D3D11 sees it in the common state.
+        // textures and descriptors only after an idle wait). Every texture ends in COMMON, so
+        // D3D11 sees the shared one in the common state.
         unsafe {
             current.allocator.Reset()?;
             current.list.Reset(&current.allocator, &self.pso)?;
@@ -477,11 +488,40 @@ impl Inner {
                 D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
             )]);
             current.list.Dispatch(x, y, 1);
-            current.list.ResourceBarrier(&[transition(
-                &landing.texture,
-                D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                D3D12_RESOURCE_STATE_COMMON,
-            )]);
+            match &landing.copy {
+                None => current.list.ResourceBarrier(&[transition(
+                    &landing.texture,
+                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                    D3D12_RESOURCE_STATE_COMMON,
+                )]),
+                Some(copy) => {
+                    current.list.ResourceBarrier(&[
+                        transition(
+                            &landing.texture,
+                            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                            D3D12_RESOURCE_STATE_COPY_SOURCE,
+                        ),
+                        transition(
+                            copy,
+                            D3D12_RESOURCE_STATE_COMMON,
+                            D3D12_RESOURCE_STATE_COPY_DEST,
+                        ),
+                    ]);
+                    current.list.CopyResource(copy, &landing.texture);
+                    current.list.ResourceBarrier(&[
+                        transition(
+                            &landing.texture,
+                            D3D12_RESOURCE_STATE_COPY_SOURCE,
+                            D3D12_RESOURCE_STATE_COMMON,
+                        ),
+                        transition(
+                            copy,
+                            D3D12_RESOURCE_STATE_COPY_DEST,
+                            D3D12_RESOURCE_STATE_COMMON,
+                        ),
+                    ]);
+                }
+            }
             current.list.Close()?;
             if current.released > 0 {
                 self.queue.Wait(&self.released, current.released)?;
@@ -538,28 +578,63 @@ impl Inner {
         Ok(())
     }
 
-    fn landing(&self, width: u32, height: u32) -> Result<Landing> {
-        let mut desc = resource(
-            D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-            u64::from(width),
-            height,
-            DXGI_FORMAT_P010,
-            D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
-        );
-        desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-        let texture = committed(
-            &self.device,
-            &heap(D3D12_HEAP_TYPE_DEFAULT),
-            D3D12_HEAP_FLAG_SHARED,
-            &desc,
-            D3D12_RESOURCE_STATE_COMMON,
-        )
-        .step("landing texture")?;
+    /// A landing texture written in place and shared with D3D11, or, once D3D11 has refused that
+    /// (`direct` cleared for the handle), a private one plus a shared copy target.
+    fn landing(&mut self, width: u32, height: u32) -> Result<Landing> {
+        let p010 = |flags| {
+            let mut desc = resource(
+                D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+                u64::from(width),
+                height,
+                DXGI_FORMAT_P010,
+                flags,
+            );
+            desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+            desc
+        };
+        let target = p010(D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+        let create = |heap_flags, desc: &D3D12_RESOURCE_DESC| {
+            committed(
+                &self.device,
+                &heap(D3D12_HEAP_TYPE_DEFAULT),
+                heap_flags,
+                desc,
+                D3D12_RESOURCE_STATE_COMMON,
+            )
+        };
+        if self.direct {
+            let texture = create(D3D12_HEAP_FLAG_SHARED, &target).step("landing texture")?;
+            match self.share(&texture, width, height) {
+                Ok(texture11) => {
+                    return Ok(Landing {
+                        texture,
+                        copy: None,
+                        texture11,
+                    });
+                }
+                // WARP's D3D11 rejects a shared UAV P010 texture (E_INVALIDARG); hardware
+                // may too. Fall back for the rest of the handle's life.
+                Err(_) => self.direct = false,
+            }
+        }
+        let texture = create(D3D12_HEAP_FLAG_NONE, &target).step("landing texture")?;
+        let copy = create(D3D12_HEAP_FLAG_SHARED, &p010(D3D12_RESOURCE_FLAG_NONE))
+            .step("landing copy texture")?;
+        let texture11 = self.share(&copy, width, height)?;
+        Ok(Landing {
+            texture,
+            copy: Some(copy),
+            texture11,
+        })
+    }
+
+    /// Opens a shared D3D12 P010 texture on the D3D11 device and checks what D3D11 sees.
+    fn share(&self, texture: &ID3D12Resource, width: u32, height: u32) -> Result<ID3D11Texture2D> {
         // SAFETY: live objects; default security, unnamed; the NT handle closes after the open.
         let shared = Handle(
             unsafe {
                 self.device
-                    .CreateSharedHandle(&texture, None, GENERIC_ALL, PCWSTR::null())
+                    .CreateSharedHandle(texture, None, GENERIC_ALL, PCWSTR::null())
             }
             .step("landing shared handle")?,
         );
@@ -574,9 +649,9 @@ impl Inner {
             || opened.ArraySize != 1
             || opened.MipLevels != 1
         {
-            return Err(E_FAIL.into());
+            return Err(E_FAIL.into()).step("D3D11 landing texture description");
         }
-        Ok(Landing { texture, texture11 })
+        Ok(texture11)
     }
 
     /// Waits on the CPU for `fence`, first flushing the D3D11 context: D3D12 work may wait for a
@@ -736,6 +811,7 @@ impl BaleZeroCopy {
             poisoned: AtomicBool::new(false),
             closed: AtomicBool::new(false),
             frames: AtomicU64::new(0),
+            copies: AtomicU64::new(0),
         });
         let zero_copy = Box::new(Self {
             pool,
@@ -759,6 +835,7 @@ impl BaleZeroCopy {
                 size: None,
                 next: 0,
                 previous: None,
+                direct: true,
                 repacked_value: 0,
                 released_value: 0,
                 event,
@@ -1192,6 +1269,9 @@ pub unsafe extern "C" fn bale_zc_repack(
                 // own reference, so the borrowed pointer outlives this clone.
                 unsafe { out_texture.write(texture.as_raw()) };
                 zero_copy.pool.frames.fetch_add(1, Ordering::Relaxed);
+                if !inner.direct {
+                    zero_copy.pool.copies.fetch_add(1, Ordering::Relaxed);
+                }
                 return S_OK;
             }
             Err(error) => error.code().0,
@@ -1213,6 +1293,8 @@ pub struct BaleZcStats {
     pub frames_repacked: u64,
     pub alloc_failures: u64,
     pub alloc_waits: u64,
+    /// Frames that took the extra GPU copy because D3D11 cannot open a shared UAV P010 texture.
+    pub landing_copies: u64,
 }
 
 /// Writes the handle's counters, from any thread.
@@ -1238,6 +1320,7 @@ pub unsafe extern "C" fn bale_zc_stats(handle: *const BaleZeroCopy, out: *mut Ba
             frames_repacked: zero_copy.pool.frames.load(Ordering::Relaxed),
             alloc_failures: state.failures,
             alloc_waits: state.waits,
+            landing_copies: zero_copy.pool.copies.load(Ordering::Relaxed),
         };
         S_OK
     })

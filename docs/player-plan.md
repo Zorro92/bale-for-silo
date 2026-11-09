@@ -807,6 +807,11 @@ swscale conversion (~0.6 core) and the staging fill disappear. dav1d's own cost 
    size, read from dav1d's 128-aligned picture rows, so the landing texture matches the pooled
    texture for `CopyResource`. A refused layout (`E_INVALIDARG`) takes today's path for that frame
    only; other repack failures and every upload failure destroy the handle for the stream.
+   WARP's D3D11 refuses to open a shared P010 texture created with the UAV flag (`E_INVALIDARG`
+   from `OpenSharedResource1`), while a plain shared P010 texture opens. When that open fails,
+   the handle switches to a private UAV landing texture plus a GPU `CopyResource` into a plain
+   shared one, for its whole life; `landing_copies` in the stats counts those frames, so the
+   console A/B shows which path the hardware takes.
 4. **Not in scope yet:** 8-bit and 12-bit AV1 (keep today's path), grain fused into the repack
    (later, saves one GPU pass), Xbox One (no D3D12 in app mode).
 5. **Test:** `ffmpeg-tune zerocopy=on`, then interleaved A/B against today's path on 4K AV1 in the

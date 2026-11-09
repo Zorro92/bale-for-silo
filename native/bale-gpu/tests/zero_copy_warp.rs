@@ -275,6 +275,19 @@ fn repacks_through_both_slots_and_size_changes() {
     assert_eq!(stats.frames_repacked, sizes.len() as u64);
     assert_eq!(stats.buffers_live, 0);
     assert_eq!(stats.alloc_failures, 0);
+    // The landing mode is fixed by the self-test: every frame copies or none does.
+    assert!(
+        stats.landing_copies == 0 || stats.landing_copies == stats.frames_repacked,
+        "{stats:?}"
+    );
+    eprintln!(
+        "WARP landing: {}",
+        if stats.landing_copies == 0 {
+            "direct"
+        } else {
+            "copy"
+        }
+    );
 }
 
 #[test]

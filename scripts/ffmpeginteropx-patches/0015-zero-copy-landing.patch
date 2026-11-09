@@ -1,8 +1,8 @@
 diff --git a/Source/BaleD3D11Upload.h b/Source/BaleD3D11Upload.h
-index ff88365..dd6f480 100644
+index ff88365..df109c2 100644
 --- a/Source/BaleD3D11Upload.h
 +++ b/Source/BaleD3D11Upload.h
-@@ -37,6 +37,69 @@ struct BaleRepackExports
+@@ -37,6 +37,70 @@ struct BaleRepackExports
      }
  };
  
@@ -28,8 +28,9 @@ index ff88365..dd6f480 100644
 +    uint64_t framesRepacked;
 +    uint64_t allocFailures;
 +    uint64_t allocWaits;
++    uint64_t landingCopies; // Frames that took an extra GPU copy (the device cannot share UAV P010).
 +};
-+static_assert(sizeof(BaleZcStats) == 56, "BaleZcStats must match the zero-copy ABI");
++static_assert(sizeof(BaleZcStats) == 64, "BaleZcStats must match the zero-copy ABI");
 +
 +struct BaleZeroCopyExports
 +{
@@ -72,7 +73,7 @@ index ff88365..dd6f480 100644
  // Bale debug: wall time per upload stage on the producing thread, summed per 240-frame window.
  struct BaleUploadTiming
  {
-@@ -71,7 +134,8 @@ struct BaleUploadTiming
+@@ -71,7 +135,8 @@ struct BaleUploadTiming
      }
  
      // Called once per uploaded frame, after CreateSample. Logs average/max ms per stage.
@@ -82,7 +83,7 @@ index ff88365..dd6f480 100644
      {
          lastEnd = Now();
          if (++frames < 240) return;
-@@ -80,7 +144,7 @@ struct BaleUploadTiming
+@@ -80,7 +145,7 @@ struct BaleUploadTiming
          av_log(nullptr, AV_LOG_INFO,
              "Bale D3D11 upload timing: frames=%u repack=%d avg/max ms gap=%.2f/%.1f map=%.2f/%.1f fill=%.2f/%.1f "
              "unmap=%.2f/%.1f gpu=%.2f/%.1f flush=%.2f/%.1f sample=%.2f/%.1f.\n",
@@ -91,7 +92,7 @@ index ff88365..dd6f480 100644
              avg(Unmap), top(Unmap), avg(Gpu), top(Gpu), avg(Flush), top(Flush), avg(Sample), top(Sample));
          for (int i = 0; i < Count; i++) sum[i] = peak[i] = 0;
          frames = 0;
-@@ -145,9 +209,9 @@ public:
+@@ -145,9 +210,9 @@ public:
          }
      }
  
@@ -103,7 +104,7 @@ index ff88365..dd6f480 100644
          if (width != stagingDesc.Width || height != stagingDesc.Height || format != stagingDesc.Format)
          {
              Flush();
-@@ -161,6 +225,12 @@ public:
+@@ -161,6 +226,12 @@ public:
              stagingDesc.Usage = D3D11_USAGE_STAGING;
              stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
          }
@@ -116,7 +117,7 @@ index ff88365..dd6f480 100644
  
          auto& staging = stagingTextures[nextStaging];
          if (!staging)
-@@ -185,6 +255,80 @@ public:
+@@ -185,6 +256,80 @@ public:
  
      MediaStreamSample CreateSample(Mapping& source, TimeSpan position, IDirect3DSurface* surface,
          BaleFilmGrain& grain, const BaleGrainParams* params, bool planar)
@@ -197,7 +198,7 @@ index ff88365..dd6f480 100644
      {
          auto stageStart = BaleUploadTiming::Now();
          auto stage = [&](BaleUploadTiming::Stage done)
-@@ -193,8 +337,6 @@ public:
+@@ -193,8 +338,6 @@ public:
              timing.Add(done, now - stageStart);
              stageStart = now;
          };
@@ -206,7 +207,7 @@ index ff88365..dd6f480 100644
          const char* operation = "GetUploadTexture";
          try
          {
-@@ -203,27 +345,8 @@ public:
+@@ -203,27 +346,8 @@ public:
                  std::lock_guard lock(samplesMutex);
                  winrt::check_hresult(texturePool.GetUploadTexture(stagingDesc.Width, stagingDesc.Height, stagingDesc.Format, bindFlags, miscFlags, texture));
              }
@@ -236,7 +237,7 @@ index ff88365..dd6f480 100644
              stage(BaleUploadTiming::Gpu);
              operation = "CopyResource/GetDeviceRemovedReason";
              // CopyResource and Flush return void; device removal is the available HRESULT check.
-@@ -271,32 +394,6 @@ public:
+@@ -271,32 +395,6 @@ public:
          }
      }
  
@@ -304,7 +305,7 @@ index 7eaab13..6dc93ad 100644
          int baleDecoderUseMaxResolution = 0;
          int baleDecoderMaxDpbCount = 0;
 diff --git a/Source/UncompressedVideoSampleProvider.cpp b/Source/UncompressedVideoSampleProvider.cpp
-index 43bc379..0892ebd 100644
+index 43bc379..b8d0765 100644
 --- a/Source/UncompressedVideoSampleProvider.cpp
 +++ b/Source/UncompressedVideoSampleProvider.cpp
 @@ -89,6 +89,17 @@ void UncompressedVideoSampleProvider::SelectOutputFormat()
@@ -458,11 +459,11 @@ index 43bc379..0892ebd 100644
 +    BaleZcStats stats{};
 +    if (BaleZeroCopyExports::Get().stats(handle, &stats) != S_OK) return;
 +    av_log(nullptr, AV_LOG_INFO, "Bale zero-copy stats (%s): frames=%u repacked=%llu buffers created=%llu live=%llu peak=%llu "
-+        "pooled=%llu alloc_failures=%llu alloc_waits=%llu.\n", when, zeroCopyFrames,
++        "pooled=%llu alloc_failures=%llu alloc_waits=%llu landing_copies=%llu.\n", when, zeroCopyFrames,
 +        static_cast<unsigned long long>(stats.framesRepacked), static_cast<unsigned long long>(stats.buffersCreated),
 +        static_cast<unsigned long long>(stats.buffersLive), static_cast<unsigned long long>(stats.buffersPeak),
 +        static_cast<unsigned long long>(stats.buffersPooled), static_cast<unsigned long long>(stats.allocFailures),
-+        static_cast<unsigned long long>(stats.allocWaits));
++        static_cast<unsigned long long>(stats.allocWaits), static_cast<unsigned long long>(stats.landingCopies));
 +}
 +
 +// Permanent for this stream. Callers are serialized with decoding (see zeroCopy). Buffers dav1d
