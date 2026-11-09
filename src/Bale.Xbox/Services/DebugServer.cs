@@ -294,6 +294,11 @@ internal sealed partial class DebugServer
                     return ("400 Bad Request", "only gc=1 is accepted\n");
                 return await MemoryAsync(query.Count == 1);
 
+            case ("GET", "/threads"):
+                if (query.Count > 1 || (query.Count == 1 && !query.ContainsKey("seconds")))
+                    return ("400 Bad Request", DebugThreadCpu.Usage);
+                return await DebugThreadCpu.MeasureAsync(query.GetValueOrDefault("seconds"));
+
             case ("GET", "/gc"):
                 if (query.Count != 0)
                     return ("400 Bad Request", GcUsage);

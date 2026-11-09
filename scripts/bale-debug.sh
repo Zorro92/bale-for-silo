@@ -10,6 +10,7 @@
 #   scripts/bale-debug.sh where                 page, overlays, focus, status and on-screen controls
 #   scripts/bale-debug.sh stats                 all current player rows as Label: value, including overlay-hidden rows marked [hidden]
 #   scripts/bale-debug.sh frame-trace [reset]   last 300 software-video late deliveries: stream waits, GC pauses, delivery gaps or other; reset clears trace/totals
+#   scripts/bale-debug.sh threads [seconds]     per-thread CPU over 1–30 s (default 10), in cores, grouped by thread name or start module; plus whole process
 #   scripts/bale-debug.sh stats-rows [list|hide <labels>|show <labels>|only <labels>|reset]
 #                                               list (default) shows each current label on/off; changes affect only the overlay, immediately
 #                                               labels are one comma-separated argument, exact and case-insensitive; unknown labels are allowed and reported
@@ -127,6 +128,13 @@ case "${1:-}" in
       exit 2
     fi
     curl --fail-with-body -sS --max-time 5 "$BASE/stats"
+    ;;
+  threads)
+    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^([1-9]|[12][0-9]|30)$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh threads [1-30 seconds, default 10]' >&2
+      exit 2
+    fi
+    curl --fail-with-body -sS --max-time 40 -G "$BASE/threads" ${2:+--data-urlencode "seconds=$2"}
     ;;
   frame-trace)
     if [[ "$#" -gt 2 || ( "$#" -eq 2 && "$2" != reset ) ]]; then
