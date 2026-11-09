@@ -479,6 +479,25 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
   previous session's unreleased memory, fixed by `PlaybackMemoryRelease`; fresh starts no longer overshoot
   steady state. Most of the remaining ~1.9 GiB is dav1d frame threads/pictures and the MF renderer.
 
+### 4K upload loss and buffering (build 0.1.337.0, wrapper `2.1.0-bale.11`)
+- Patch 0011's debug fault (`ffmpeg-tune uploadfault=240`) failed the upload ~9.5 s in. The wrapper
+  logged upload disabled (`0x8007000E`) and ungrained output above 1080p, and video kept playing
+  (advancing screenshots, zero late frames). MF accepts the mid-stream switch from surface to buffer
+  samples, so the earlier 4K freeze was not the switch itself; real OOM, where the CPU buffer
+  allocation also fails, remains the likely cause.
+- **Late frames hide stalls at 4K.** Under decode load MF pauses to rebuffer instead of presenting late,
+  so the stats show zero late frames while playback stutters. Watch `Buffering` instead. Same title,
+  from the start, 120 s (the heavy stretch begins ~60 s, at 6.2–7.7 of 8 cores):
+
+  | Path | Buffering at 120 s | Steady MiB |
+  |------|--------------------|-----------|
+  | upload off from open (CPU buffers, dav1d grain) | 74 times, 20.8 s | ~2210 |
+  | **upload on, GPU grain (production)** | **32 times, 6.2 s** | ~2105 |
+  | upload on, fault at 240 frames (CPU buffers, no grain after) | 47 times, 10.2 s | ~2180 |
+
+  4K AV1 software playback is CPU-bound in heavy scenes even on the production path. The next CPU
+  cut is to remove the swscale repack (GPU reads yuv420p planes and writes P010).
+
 ## 9. HDR / DV
 - Grain works on coded values (PQ for HDR10), exactly as dav1d does; patch 0004 color attributes are
   unchanged. HDR10+ (T.35 dynamic metadata) is dropped → HDR10 base.
@@ -499,3 +518,5 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
    Rust CPU grain with upload costs ~1.9 cores. **GPU is the production default.** Results and
    matched-frame comparison limits are recorded in section 7; 0010 runtime fallbacks remain unverified.
 6. **Done:** above-1080p cap (decode-ahead 8, BufferTime 500 ms), measured with a 4K grain title (section 8).
+7. **Done:** mid-stream upload-loss fallback verified with patch 0011's debug fault (section 8). 4K still
+   rebuffers in heavy scenes on every path; CPU offload is the next step.
