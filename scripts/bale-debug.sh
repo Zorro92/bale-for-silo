@@ -35,6 +35,7 @@
 #                                               key i / where show applied settings and demand block waits (count/max/total ms)
 #   scripts/bale-debug.sh rust                   Rust loader + GPU film grain: hardware/self-tests, 1080p correctness, 1080p/4K GPU and CPU timings (120 s timeout)
 #   scripts/bale-debug.sh upload-probe [frames]  4K-sized CPU-to-GPU upload bandwidth per method (staging/dynamic/UpdateSubresource/RAM), frames 1–120 (default 20)
+#   scripts/bale-debug.sh zero-copy-probe [frames]  D3D12 zero-copy feasibility: write-back custom heap vs RAM, GPU reads + coherency, D3D12→D3D11 shared P010 + fence, frames 1–60 (default 10)
 #   scripts/bale-debug.sh mem [gc]               managed GC heap vs app memory; gc forces a full collection + finalizers first
 #   scripts/bale-debug.sh gc                     GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
 #   scripts/bale-debug.sh gc latency <batch|interactive|sustained|default>  change latency app-wide now; default restores the saved pre-playback mode; playback acquires sustained automatically
@@ -239,6 +240,13 @@ case "${1:-}" in
       exit 2
     fi
     curl --fail-with-body -sS --max-time 120 -G "$BASE/upload-probe" ${2:+--data-urlencode "frames=$2"}
+    ;;
+  zero-copy-probe)
+    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^[0-9]{1,2}$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh zero-copy-probe [frames 1-60]' >&2
+      exit 2
+    fi
+    curl --fail-with-body -sS --max-time 120 -G "$BASE/zero-copy-probe" ${2:+--data-urlencode "frames=$2"}
     ;;
   mem)
     if [[ "$#" -gt 2 || ( "$#" -eq 2 && "$2" != gc ) ]]; then

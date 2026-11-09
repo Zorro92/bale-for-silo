@@ -43,7 +43,7 @@ fn spin(steps: u64) -> u64 {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum Write {
+pub(crate) enum Write {
     Copy,
     NonTemporal,
 }
@@ -52,13 +52,13 @@ type Case<'a> = (&'static str, Box<dyn Fn() -> Result<String> + 'a>);
 
 /// Where the probe writes: tightly described by a base pointer and a row pitch.
 #[derive(Clone, Copy)]
-struct Target {
-    base: usize,
-    pitch: usize,
+pub(crate) struct Target {
+    pub(crate) base: usize,
+    pub(crate) pitch: usize,
 }
 
 #[derive(Default)]
-struct Timing {
+pub(crate) struct Timing {
     sum: Duration,
     min: Option<Duration>,
     max: Duration,
@@ -66,21 +66,21 @@ struct Timing {
 }
 
 impl Timing {
-    fn add(&mut self, value: Duration) {
+    pub(crate) fn add(&mut self, value: Duration) {
         self.sum += value;
         self.min = Some(self.min.map_or(value, |min| min.min(value)));
         self.max = self.max.max(value);
         self.count += 1;
     }
 
-    fn avg_ms(&self) -> f64 {
+    pub(crate) fn avg_ms(&self) -> f64 {
         if self.count == 0 {
             return 0.0;
         }
         self.sum.as_secs_f64() * 1000.0 / f64::from(self.count)
     }
 
-    fn text(&self, bytes: usize) -> String {
+    pub(crate) fn text(&self, bytes: usize) -> String {
         let avg = self.avg_ms();
         let rate = if avg > 0.0 {
             bytes as f64 / (avg / 1000.0) / 1e9
@@ -112,7 +112,7 @@ struct Probe<'a> {
 /// # Safety
 /// `target.base` must point to `rows` writable rows of `target.pitch >= row_bytes` bytes that nothing
 /// else accesses until this returns.
-unsafe fn fill(
+pub(crate) unsafe fn fill(
     source: &[u8],
     row_bytes: usize,
     rows: usize,

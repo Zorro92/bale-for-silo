@@ -15,6 +15,8 @@ pub mod grain;
 pub mod repack;
 #[cfg(windows)]
 pub mod upload;
+#[cfg(windows)]
+pub mod zerocopy;
 
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -200,6 +202,38 @@ pub unsafe extern "C" fn bale_gpu_d3d12_probe(
     let module = HMODULE(d3d12_module);
     // SAFETY: the caller guarantees the module handle is null or loaded.
     let Ok(text) = std::panic::catch_unwind(|| unsafe { d3d12::run(module) }) else {
+        return 0;
+    };
+    // SAFETY: the caller guarantees `report_capacity` writable bytes.
+    unsafe { write_report(&text, report, report_capacity) }
+}
+
+/// Debug zero-copy feasibility probe ([`zerocopy`]): CPU speed on a mapped D3D12 write-back custom
+/// heap versus ordinary RAM, GPU reads of it (timed, and checked for coherency without Unmap), and a
+/// D3D12 -> D3D11 shared P010 texture and fence. `d3d12_module` is a `d3d12.dll` handle the caller
+/// loaded (null if it would not load). `iterations` is clamped to 1–60. Writes the plain-text report
+/// as UTF-8 into `report` and returns the bytes written (0 if the probe panicked). Blocks the
+/// calling thread for a few seconds and uses ~150 MB while it runs.
+///
+/// # Safety
+/// `d3d12_module` must be null or a loaded module handle; `report` must point to `report_capacity`
+/// writable bytes.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_gpu_zero_copy_probe(
+    d3d12_module: *mut core::ffi::c_void,
+    iterations: u32,
+    report: *mut u8,
+    report_capacity: u32,
+) -> u32 {
+    if report.is_null() {
+        return 0;
+    }
+    let module = HMODULE(d3d12_module);
+    // SAFETY: the caller guarantees the module handle is null or loaded.
+    let Ok(text) =
+        std::panic::catch_unwind(|| unsafe { zerocopy::run(module, iterations.clamp(1, 60)) })
+    else {
         return 0;
     };
     // SAFETY: the caller guarantees `report_capacity` writable bytes.

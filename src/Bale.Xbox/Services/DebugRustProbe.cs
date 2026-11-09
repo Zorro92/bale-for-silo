@@ -29,6 +29,8 @@ internal static unsafe class DebugRustProbe
     private static extern uint bale_gpu_upload_probe(uint iterations, byte* report, uint reportCapacity);
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern uint bale_gpu_d3d12_probe(nint d3d12Module, byte* report, uint reportCapacity);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)]
+    private static extern uint bale_gpu_zero_copy_probe(nint d3d12Module, uint iterations, byte* report, uint reportCapacity);
 
     /// <summary>
     /// 4K-sized CPU-to-GPU upload bandwidth per method (STAGING ring, DYNAMIC, UpdateSubresource, RAM copy),
@@ -76,6 +78,33 @@ internal static unsafe class DebugRustProbe
         catch (Exception ex)
         {
             return $"D3D12 probe: FAILS ({ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8})\n";
+        }
+    }
+
+    /// <summary>
+    /// Zero-copy feasibility: CPU speed on a mapped D3D12 write-back custom heap versus RAM, GPU reads of it
+    /// (timed and checked for coherency), and a D3D12 to D3D11 shared P010 texture and fence. Numbers only.
+    /// </summary>
+    internal static string RunZeroCopy(int frames)
+    {
+        try
+        {
+            var abi = bale_gpu_abi_version();
+            if (abi != ExpectedAbi) return $"Rust GPU layer ABI {abi} (expected {ExpectedAbi}) MISMATCH\n";
+            NativeLibrary.TryLoad("d3d12.dll", out var module);
+            var buffer = new byte[EngineReportCapacity];
+            uint written;
+            Log.Info("Debug zero-copy probe: start");
+            fixed (byte* report = buffer)
+                written = bale_gpu_zero_copy_probe(module, (uint)frames, report, (uint)buffer.Length);
+            Log.Info("Debug zero-copy probe: done");
+            return written == 0 ? "Zero-copy probe: FAILS (no report)\n"
+                : Encoding.UTF8.GetString(buffer, 0, (int)Math.Min(written, (uint)buffer.Length));
+        }
+        catch (Exception ex)
+        {
+            // Includes EntryPointNotFoundException for an older DLL; type and HRESULT only.
+            return $"Zero-copy probe: FAILS ({ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8})\n";
         }
     }
 

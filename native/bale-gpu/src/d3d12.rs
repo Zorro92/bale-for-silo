@@ -35,7 +35,7 @@ const HEAP_BYTES: usize = 32 << 20;
 const FRAME_WIDTH: u64 = 3840;
 const FRAME_ROWS: u32 = 3240;
 
-fn fails(error: &windows::core::Error) -> String {
+pub(crate) fn fails(error: &windows::core::Error) -> String {
     format!("FAILS 0x{:08X}", error.code().0 as u32)
 }
 
@@ -43,21 +43,18 @@ fn level(value: D3D_FEATURE_LEVEL) -> String {
     format!("{}_{}", (value.0 >> 12) & 0xF, (value.0 >> 8) & 0xF)
 }
 
-/// Runs the probe with `module` (a loaded `d3d12.dll`, or null when it would not load) and returns
-/// the plain-text report. Errors are HRESULTs only.
+/// Creates a hardware FL11_0 device through `module`'s `D3D12CreateDevice`, or returns the report
+/// line (label and result, no indent) that says why not.
 ///
 /// # Safety
 /// `module` must be null or a module handle that stays loaded for the call.
-pub unsafe fn run(module: HMODULE) -> String {
-    let mut report = String::from("D3D12 probe:\n");
+pub(crate) unsafe fn create_device(module: HMODULE) -> Result<ID3D12Device, String> {
     if module.0.is_null() {
-        report.push_str("  d3d12.dll                not loadable\n");
-        return report;
+        return Err("d3d12.dll                not loadable".to_owned());
     }
     // SAFETY: the caller guarantees a loaded module; the name is a static C string.
     let Some(proc) = (unsafe { GetProcAddress(module, s!("D3D12CreateDevice")) }) else {
-        report.push_str("  D3D12CreateDevice        not exported\n");
-        return report;
+        return Err("D3D12CreateDevice        not exported".to_owned());
     };
     // SAFETY: D3D12CreateDevice's documented signature; both are plain `system` fn pointers.
     let create: CreateDevice = unsafe { std::mem::transmute(proc) };
@@ -72,15 +69,30 @@ pub unsafe fn run(module: HMODULE) -> String {
         )
     };
     if let Err(error) = created.ok() {
-        let _ = writeln!(report, "  hardware device FL11_0   {}", fails(&error));
-        return report;
+        return Err(format!("hardware device FL11_0   {}", fails(&error)));
     }
     if raw.is_null() {
-        report.push_str("  hardware device FL11_0   FAILS (no device)\n");
-        return report;
+        return Err("hardware device FL11_0   FAILS (no device)".to_owned());
     }
     // SAFETY: a successful create returned an owned ID3D12Device reference.
-    let device = unsafe { ID3D12Device::from_raw(raw) };
+    Ok(unsafe { ID3D12Device::from_raw(raw) })
+}
+
+/// Runs the probe with `module` (a loaded `d3d12.dll`, or null when it would not load) and returns
+/// the plain-text report. Errors are HRESULTs only.
+///
+/// # Safety
+/// `module` must be null or a module handle that stays loaded for the call.
+pub unsafe fn run(module: HMODULE) -> String {
+    let mut report = String::from("D3D12 probe:\n");
+    // SAFETY: forwarded caller guarantee.
+    let device = match unsafe { create_device(module) } {
+        Ok(device) => device,
+        Err(line) => {
+            let _ = writeln!(report, "  {line}");
+            return report;
+        }
+    };
     report.push_str("  hardware device FL11_0   OK\n");
 
     let requested = [
@@ -243,7 +255,7 @@ unsafe fn wrap_memory(device: &ID3D12Device, report: &mut String) {
     let _ = unsafe { VirtualFree(memory, 0, MEM_RELEASE) };
 }
 
-fn resource(
+pub(crate) fn resource(
     dimension: D3D12_RESOURCE_DIMENSION,
     width: u64,
     height: u32,
