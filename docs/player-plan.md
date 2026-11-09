@@ -725,6 +725,8 @@ The memory type is not the problem; the console's state while the player is open
   - The player's held `DisplayRequest` does not.
   - A Kodi-style `DisplayRequest` `RequestActive` + `RequestRelease` pulse does not wake the console or reset the timer.
   - Media session (SMTC) `PlaybackStatus = Playing` does not, on the view or on the player. The player's `MediaPlayer` already reports Playing during playback, and the console still slows after ~15 s with no input.
+  - A WebView2 (Chromium, the engine Jellyfin's Xbox app runs in) playing a muted 720p H.264 loop does not either (`bale-debug.sh webview-test`, 0.1.370). The probe was slow after 15 s and 20 s idle while the video kept playing, and fast again after one key.
+  - `expandedResources` is not an option for a Store app: Microsoft's `ReleaseExclusiveCpuSets` page says an Xbox-targeted UWP with it "will be rejected in certification", and on Xbox it means running with a Game title's resources.
 
 **D3D12 in app mode (same probe).** Hardware device OK, max feature level 11_0, UMA and
 cache-coherent UMA true, existing heaps reported supported and row-major cross-adapter textures true,
