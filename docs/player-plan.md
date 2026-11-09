@@ -701,16 +701,17 @@ The memory type is not the problem; the console's state while the player is open
 
 - Idle, every upload method runs at RAM speed (~12 GB/s, streaming stores ~17 GB/s), and reads from
   staging run at 12–16 GB/s, so staging memory is cached, not write-combined.
-- With the player page open, even paused and even for hardware-decoded 1080p (app ~0.1 core), CPU
-  work is ~25% slower (clock) and DRAM copies 4–6x slower. Leaving the player restores full speed at
-  once. Frame-rate matching was off, so no HDMI mode change was involved. During 4K AV1 playback,
-  dav1d's load adds noise on top. Device Portal GPU utilisation reads 0 for app work.
-- So the ~2 GB/s fill is a system-wide memory-bandwidth limit, which also caps dav1d itself. Faster
-  converters (libyuv instead of swscale) cannot help; fewer bytes moved can: streaming stores (~1.5x)
-  or not copying at all.
-- Open: what triggers it. The player holds a `DisplayRequest` and a `MediaPlayer` (system media
-  session); running the upload probe during the Rust frame-server engine probe (no MediaPlayer, no
-  player page) would tell them apart.
+- About 10 s after the last controller or keyboard input, the console drops into a slow state: CPU
+  work is ~25% slower (clock) and DRAM copies 4–6x slower. Any input restores full speed at once, and
+  it falls back 10–12 s later (two runs, 1 s resolution). A key the UI ignores (F24 or Shift through
+  `InputInjector`) is enough. The state is console-wide: it shows on any page, after a full app
+  restart, with or without playback. An earlier reading tied it to the player page only because
+  probes there ran after a quiet stretch and leaving the player meant pressing Back.
+- During real playback nobody touches the controller, so a whole film runs in the slow state. The
+  ~2 GB/s fill is this bandwidth limit, which also caps dav1d itself. Faster converters (libyuv
+  instead of swscale) cannot help; fewer bytes moved can: streaming stores (~1.5x) or not copying.
+- Open: how much 4K AV1 stalls improve when input is kept fresh (A/B with F24 every 5 s), and
+  whether an app-level API holds the fast state. The player's `DisplayRequest` does not.
 
 **D3D12 in app mode (same probe).** Hardware device OK, max feature level 11_0, UMA and
 cache-coherent UMA true, existing heaps reported supported and row-major cross-adapter textures true,
