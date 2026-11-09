@@ -495,8 +495,13 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
   | **upload on, GPU grain (production)** | **32 times, 6.2 s** | ~2105 |
   | upload on, fault at 240 frames (CPU buffers, no grain after) | 47 times, 10.2 s | ~2180 |
 
-  4K AV1 software playback is CPU-bound in heavy scenes even on the production path. The next CPU
-  cut is to remove the swscale repack (GPU reads yuv420p planes and writes P010).
+  4K AV1 software playback is CPU-bound in heavy scenes even on the production path.
+- **The swscale repack is not the bottleneck.** yuv420p10 to P010 at 3840x2076 costs ~9.6 ms per frame
+  on one desktop core (~0.25–0.4 cores at 24 fps, ~5% of the heavy load). On the console, total stall
+  time over the same 120 s was 6.5 s (default, a repeat of the 6.2 s run), 6.8 s with `sws=1`,
+  5.8 s with `sws=8` and 5.6 s with `prio=1`, all within run-to-run noise. dav1d alone decodes at
+  ~89% of real time here, and the earlier 40 Mbps 4K probe ran at 0.53–0.58. Moving the repack to the
+  GPU would not make 4K viable, so it is not scheduled; production keeps the 1080p AV1 claim.
 
 ## 9. HDR / DV
 - Grain works on coded values (PQ for HDR10), exactly as dav1d does; patch 0004 color attributes are
@@ -519,4 +524,4 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
    matched-frame comparison limits are recorded in section 7; 0010 runtime fallbacks remain unverified.
 6. **Done:** above-1080p cap (decode-ahead 8, BufferTime 500 ms), measured with a 4K grain title (section 8).
 7. **Done:** mid-stream upload-loss fallback verified with patch 0011's debug fault (section 8). 4K still
-   rebuffers in heavy scenes on every path; CPU offload is the next step.
+   rebuffers in heavy scenes on every path, bound by dav1d itself, not the repack (section 8).
