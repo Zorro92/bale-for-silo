@@ -608,7 +608,28 @@ decode-bound at 0.53–0.58 (5.8–6.8 cores) whatever the setting; `sws=4` vs `
 0.48–0.54 in a separate run. Thread priority shows no benefit and stays unset. Decode-ahead costs
 ~0.1 core on these steady clips, which cannot show its jitter-absorbing purpose; it stays at 16 pending
 real-library checks. A burst of ~150–170 late frames appeared in about half the 1080p runs regardless
-of setting (also with sws=1); its cause is not yet known.
+of setting (also with sws=1).
+
+**1080p late-frame bursts are a probe startup artifact (0.1.350.0, 2026-11-09).** 5 s probes show the
+same ~146–149 late frames in 3 of 8 runs, so the whole burst falls in the first ~2.5 s. Burst runs
+reach a minimum delivered-ahead of 0 s; clean runs keep ≥0.04–0.09 s. `ahead=48` still burst (1 of 5
+vs 3 of 5 at 16) and left the median delivered-ahead unchanged (~0.096 s): MF's own pull sets that
+horizon, not the decode-ahead queue. The probe leaves `MediaStreamSource.BufferTime` at the wrapper's
+0, while the player sets 1000 ms at 1080p. Seven real-player starts of a 1080p AV1 library movie as
+Bale Test had 0 late frames (`frame-trace` late=0) with ~1.3 s delivered ahead. Decode-ahead stays 16.
+
+**In-loop filter cost on a real 4K title (desktop, 2026-11-09).** dav1d 1.5.4 with asm,
+`--inloopfilters`, 90 s heavy stretch of a 3840x2076 10-bit library movie (~16 Mbps, film grain
+applied by the CLI), i7-10610U, interleaved:
+
+| Threads | all | no CDEF | no restoration | deblock only | none |
+|---|---|---|---|---|---|
+| 4 (2 reps) | 24.2 fps | 25.9 | 25.6 | 27.1 | 28.7 |
+| 1 | 12.0 fps | 13.1 | 13.4 | — | — |
+
+CDEF is ~6–9 % and loop restoration ~5–11 % of decode time here (the Jellyfin/SVT clips: CDEF 12–32 %,
+restoration ~0). Moving CDEF/LR to the GPU would therefore gain at most ~11–20 % on real content, and
+CDEF output is a reference for later frames, which conflicts with dav1d's frame threading.
 
 **Fixed debug-probe leak.** Through 0.1.271.0 each `playtest-ffmpeg` probe left ~25–30 MiB (1080p) to
 ~100+ MiB (4K) of native memory behind because its `MediaPlayer` was disposed from a worker after the
