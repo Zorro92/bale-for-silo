@@ -123,7 +123,9 @@ pooled texture with no staging Map or CPU fill. A picture from dav1d's own pool 
 takes the existing staging paths for that frame; any other repack failure, and every upload
 failure, destroys the handle for the stream (buffers dav1d still holds stay valid). CPU grain
 frames use staging. Timing lines report the path as `repack=2`; fixed `Bale zero-copy ...` lines
-log create/disable/HRESULTs and pool counters after 240 frames and at teardown.
+log create/disable/HRESULTs and pool counters after 240 frames and at teardown (`landing_copies`
+counts frames that needed bale_gpu's extra GPU copy because the device cannot share a UAV P010
+texture). It ships in `2.1.0-bale.15`.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.
