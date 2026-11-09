@@ -11,6 +11,8 @@ mod frames;
 pub mod grain;
 #[cfg(windows)]
 pub mod repack;
+#[cfg(windows)]
+pub mod upload;
 
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -146,6 +148,31 @@ pub unsafe extern "C" fn bale_gpu_engine_probe_source(
         return 0;
     };
     let text = engine::run(engine::Input::Source(object), seconds.clamp(1, 60));
+    // SAFETY: the caller guarantees `report_capacity` writable bytes.
+    unsafe { write_report(&text, report, report_capacity) }
+}
+
+/// Debug upload bandwidth probe ([`upload`]): writes a 4K 10-bit frame's worth of data into GPU
+/// upload memory several ways on its own hardware device and writes the plain-text report as UTF-8
+/// into `report`. Returns the bytes written (0 if the probe panicked). `iterations` is clamped to
+/// 1–120. Blocks the calling thread for a few seconds and uses ~150 MB while it runs.
+///
+/// # Safety
+/// `report` must point to `report_capacity` writable bytes.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_gpu_upload_probe(
+    iterations: u32,
+    report: *mut u8,
+    report_capacity: u32,
+) -> u32 {
+    if report.is_null() {
+        return 0;
+    }
+    let Ok(text) = std::panic::catch_unwind(|| upload::run_hardware(iterations.clamp(1, 120)))
+    else {
+        return 0;
+    };
     // SAFETY: the caller guarantees `report_capacity` writable bytes.
     unsafe { write_report(&text, report, report_capacity) }
 }

@@ -25,6 +25,34 @@ internal static unsafe class DebugRustProbe
     private static extern uint bale_gpu_engine_probe(char* url, uint urlLength, uint seconds, byte* report, uint reportCapacity);
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern uint bale_gpu_engine_probe_source(nint source, uint seconds, byte* report, uint reportCapacity);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)]
+    private static extern uint bale_gpu_upload_probe(uint iterations, byte* report, uint reportCapacity);
+
+    /// <summary>
+    /// 4K-sized CPU-to-GPU upload bandwidth per method (STAGING ring, DYNAMIC, UpdateSubresource, RAM copy),
+    /// on the probe's own hardware device. Numbers only.
+    /// </summary>
+    internal static string RunUpload(int frames)
+    {
+        try
+        {
+            var abi = bale_gpu_abi_version();
+            if (abi != ExpectedAbi) return $"Rust GPU layer ABI {abi} (expected {ExpectedAbi}) MISMATCH\n";
+            var buffer = new byte[EngineReportCapacity];
+            uint written;
+            Log.Info("Debug upload probe: start");
+            fixed (byte* report = buffer)
+                written = bale_gpu_upload_probe((uint)frames, report, (uint)buffer.Length);
+            Log.Info("Debug upload probe: done");
+            return written == 0 ? "Upload probe: FAILS (no report)\n"
+                : Encoding.UTF8.GetString(buffer, 0, (int)Math.Min(written, (uint)buffer.Length));
+        }
+        catch (Exception ex)
+        {
+            // Includes EntryPointNotFoundException for an older DLL; type and HRESULT only.
+            return $"Upload probe: FAILS ({ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8})\n";
+        }
+    }
 
     /// <summary>Plays a live COM media source (borrowed; the caller keeps it alive) through the Rust engine probe.</summary>
     internal static string RunEngineSource(nint source, int seconds)

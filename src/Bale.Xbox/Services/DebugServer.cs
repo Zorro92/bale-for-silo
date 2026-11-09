@@ -50,6 +50,7 @@ namespace Bale.Xbox.Services;
 ///                         grain=dav1d|cpu|gpu|off|on|default (production default=gpu, on/dav1d=dav1d; runtime GPU loss: CPU through 1080p, no grain above 1080p; wrapper 2.1.0-bale.10+)
 ///                         upload=on|off|default|1..5 (software video only; on=1=RT|SRV, default/on=1, off=0; status shows number/flags; wrapper 2.1.0-bale.8+; GPU without variant 1 keeps dav1d at open)
 ///                         upload variants: 1=RT|SRV, 2=DECODER|SRV, 3=DECODER, 4=SRV, 5=SRV+SHARED (4/5 known MF failures)
+///   GET  /upload-probe?frames=20  4K-sized CPU-to-GPU upload bandwidth per method (bale_gpu.dll, own device; frames 1–120)
 ///   GET  /mem?gc=1        managed GC heap vs app memory; gc=1 first forces a full collection + finalizers
 ///   GET  /gc              GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
 ///   POST /gc?latency=...  batch|interactive|sustained|default; default restores the saved pre-playback mode; memory only
@@ -289,6 +290,15 @@ internal sealed partial class DebugServer
             case ("GET", "/rust"):
                 return ("200 OK", await Task.Run(DebugRustProbe.Run));
 
+            case ("GET", "/upload-probe"):
+                if (query.Count > 1 || (query.Count == 1 && !query.ContainsKey("frames")))
+                    return ("400 Bad Request", "only frames=1..120 is accepted\n");
+                var uploadFrames = 20;
+                if (query.TryGetValue("frames", out var uploadFramesText)
+                    && (!int.TryParse(uploadFramesText, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out uploadFrames) || uploadFrames is < 1 or > 120))
+                    return ("400 Bad Request", "frames must be 1..120\n");
+                return ("200 OK", await Task.Run(() => DebugRustProbe.RunUpload(uploadFrames)));
+
             case ("GET", "/mem"):
                 if (query.Count > 1 || (query.Count == 1 && query.GetValueOrDefault("gc") is not "1"))
                     return ("400 Bad Request", "only gc=1 is accepted\n");
@@ -448,7 +458,7 @@ internal sealed partial class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /stats, GET /frame-trace, POST /frame-trace?action=reset, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, GET /playtest-engine?url=...&seconds=3&mode=cs|rust|rust-ffmpeg, GET /rust, POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&sws=1..16&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16&grain=dav1d|cpu|gpu|off|on|default&upload=on|off|1..5 (each key accepts default; grain default=gpu (production), on/dav1d=dav1d; GPU loss: CPU through 1080p, no grain above 1080p; probe default=dav1d (CPU buffers); upload on=1=RT|SRV, default/on=1, off=0; 2=DECODER|SRV, 3=DECODER, 4=SRV, 5=SRV+SHARED; 4/5 known MF failures), GET /mem?gc=1, GET /gc, POST /gc?latency={batch|interactive|sustained|default}, GET /frame-delivery, POST /frame-delivery?mode={native|managed|off}, GET /stream-adapter, POST /stream-adapter?mode={pooled|builtin}, GET /av1-claim, POST /av1-claim?height={1080|2160}, GET /display-match, POST /display-match?mode={on|off}, GET /hdr, POST /hdr?mode={pretend|off}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /stats, GET /frame-trace, POST /frame-trace?action=reset, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, GET /playtest-engine?url=...&seconds=3&mode=cs|rust|rust-ffmpeg, GET /rust, GET /upload-probe?frames=20, POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&sws=1..16&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16&grain=dav1d|cpu|gpu|off|on|default&upload=on|off|1..5 (each key accepts default; grain default=gpu (production), on/dav1d=dav1d; GPU loss: CPU through 1080p, no grain above 1080p; probe default=dav1d (CPU buffers); upload on=1=RT|SRV, default/on=1, off=0; 2=DECODER|SRV, 3=DECODER, 4=SRV, 5=SRV+SHARED; 4/5 known MF failures), GET /mem?gc=1, GET /gc, POST /gc?latency={batch|interactive|sustained|default}, GET /frame-delivery, POST /frame-delivery?mode={native|managed|off}, GET /stream-adapter, POST /stream-adapter?mode={pooled|builtin}, GET /av1-claim, POST /av1-claim?height={1080|2160}, GET /display-match, POST /display-match?mode={on|off}, GET /hdr, POST /hdr?mode={pretend|off}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 
