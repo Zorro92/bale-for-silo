@@ -854,6 +854,13 @@ swscale conversion (~0.6 core) and the staging fill disappear. dav1d's own cost 
    80–100 s 5.90/5.99 vs 5.89/5.99 cores, dav1d workers 5.51/5.59 vs 5.53/5.63; 0 late frames.
    GPU grain now costs no measurable CPU, which confirms the copy was the cost. Fusing grain into
    the D3D12 repack is no longer needed for CPU.
+   **Shared pool textures accepted (0.1.391, wrapper bale.16):** debug `ffmpeg-tune upload=6` makes
+   the pooled MF textures RENDER_TARGET|SHADER_RESOURCE|UNORDERED_ACCESS with
+   `MISC_SHARED_NTHANDLE|MISC_SHARED` (log: `bind=0xA8 misc=0x802`). Brawl 4K with zero-copy and GPU
+   grain played normally: no E_INVALIDARG, `landing_copies=0`, 0 late frames, buffering 14/1.6 s
+   (one run, idle state), correct picture, and `Sample memory: GPU texture (29/29 checked)` with
+   `frame-delivery managed`. So D3D12 can in principle write the pool texture directly and drop the
+   landing→pool copy (one 4K read + write per frame, like the grain copy above). Not built.
    **Production default (2026-11-09):** `SoftwareDecodeTuning.ZeroCopy` sets `bale_zero_copy=1` for
    every software video route after `ZeroCopyRuntime.Register()` succeeds; `ffmpeg-tune zerocopy=off`
    keeps the swscale path for A/Bs. 8-bit and 12-bit pictures are still declined by the wrapper and
