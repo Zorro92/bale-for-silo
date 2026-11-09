@@ -1,0 +1,106 @@
+Bale: libdav1d decodes into caller-supplied picture memory
+
+When the caller replaces AVCodecContext.get_buffer2, the libdav1d picture allocator asks it for
+the picture first and checks the result against the dav1d allocator contract (one buffer, 64-byte
+aligned planes and strides, equal chroma strides, 64 bytes of padding after each plane). Anything
+else, including any callback error, uses the unchanged internal pool for that picture. Default
+callers are unaffected. Bale uses it to let dav1d write into GPU-readable memory on Xbox.
+
+diff --git a/libavcodec/libdav1d.c b/libavcodec/libdav1d.c
+index 14ec984..acd32de 100644
+--- a/libavcodec/libdav1d.c
++++ b/libavcodec/libdav1d.c
+@@ -74,14 +74,83 @@ static void libdav1d_log_callback(void *opaque, const char *fmt, va_list vl)
+     av_vlog(c, AV_LOG_ERROR, fmt, vl);
+ }
+ 
++/* Bale: when the caller replaced get_buffer2, let it supply the picture memory (for example
++ * GPU-visible memory). The result must meet dav1d's allocator contract: one buffer holding all
++ * three planes, DAV1D_PICTURE_ALIGNMENT-aligned data and strides, equal chroma strides and
++ * DAV1D_PICTURE_ALIGNMENT bytes of padding after each plane. Any refusal or error returns < 0
++ * and the caller uses the internal pool for that picture. Called on dav1d's main thread only. */
++static int libdav1d_user_picture(AVCodecContext *c, Dav1dPicture *p,
++                                 enum AVPixelFormat format, int w, int h)
++{
++    AVFrame *frame;
++    int ret, min_linesize[4];
++    ptrdiff_t linesize[4] = { 0 };
++    size_t plane_size[4];
++    const uint8_t *start, *end;
++
++    if (c->get_buffer2 == avcodec_default_get_buffer2 ||
++        p->p.layout == DAV1D_PIXEL_LAYOUT_I400)
++        return AVERROR(ENOSYS);
++    ret = av_image_fill_linesizes(min_linesize, format, w);
++    if (ret < 0)
++        return ret;
++
++    frame = av_frame_alloc();
++    if (!frame)
++        return AVERROR(ENOMEM);
++    frame->format = format;
++    frame->width  = w;
++    frame->height = h;
++    ret = c->get_buffer2(c, frame, AV_GET_BUFFER_FLAG_REF);
++    if (ret < 0)
++        goto end;
++
++    ret = AVERROR(EINVAL);
++    if (!frame->buf[0] || frame->buf[1] || frame->nb_extended_buf ||
++        frame->linesize[1] != frame->linesize[2])
++        goto end;
++    for (int i = 0; i < 3; i++) {
++        if (!frame->data[i] || frame->linesize[i] < min_linesize[i] ||
++            (((uintptr_t)frame->data[i] | (unsigned)frame->linesize[i]) &
++             (DAV1D_PICTURE_ALIGNMENT - 1)))
++            goto end;
++        linesize[i] = frame->linesize[i];
++    }
++    if (av_image_fill_plane_sizes(plane_size, format, h, linesize) < 0)
++        goto end;
++    start = frame->buf[0]->data;
++    end   = start + frame->buf[0]->size;
++    for (int i = 0; i < 3; i++) {
++        if (frame->data[i] < start || frame->data[i] > end ||
++            plane_size[i] + DAV1D_PICTURE_ALIGNMENT > (size_t)(end - frame->data[i]))
++            goto end;
++    }
++
++    p->data[0] = frame->data[0];
++    p->data[1] = frame->data[1];
++    p->data[2] = frame->data[2];
++    p->stride[0] = frame->linesize[0];
++    p->stride[1] = frame->linesize[1];
++    p->allocator_data = frame->buf[0];
++    frame->buf[0] = NULL;
++    ret = 0;
++end:
++    av_frame_free(&frame);
++    return ret;
++}
++
+ static int libdav1d_picture_allocator(Dav1dPicture *p, void *cookie)
+ {
+-    Libdav1dContext *dav1d = cookie;
++    AVCodecContext *c = cookie;
++    Libdav1dContext *dav1d = c->priv_data;
+     enum AVPixelFormat format = pix_fmt[p->p.layout][p->seq_hdr->hbd];
+     int ret, linesize[4], h = FFALIGN(p->p.h, 128), w = FFALIGN(p->p.w, 128);
+     uint8_t *aligned_ptr, *data[4];
+     AVBufferRef *buf;
+ 
++    if (libdav1d_user_picture(c, p, format, w, h) >= 0)
++        return 0;
++
+     ret = av_image_get_buffer_size(format, w, h, DAV1D_PICTURE_ALIGNMENT);
+     if (ret < 0)
+         return ret;
+@@ -221,7 +290,7 @@ static av_cold int libdav1d_init(AVCodecContext *c)
+     dav1d_default_settings(&s);
+     s.logger.cookie = c;
+     s.logger.callback = libdav1d_log_callback;
+-    s.allocator.cookie = dav1d;
++    s.allocator.cookie = c;
+     s.allocator.alloc_picture_callback = libdav1d_picture_allocator;
+     s.allocator.release_picture_callback = libdav1d_picture_release;
+     s.frame_size_limit = c->max_pixels;

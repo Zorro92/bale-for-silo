@@ -79,6 +79,9 @@
     <None Include="../../scripts/ffmpeginteropx-patches/0014-repack-sliced-fill.patch" Link="0014-repack-sliced-fill.patch" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/check-ffmpeg-package.ps1" Link="check-ffmpeg-package.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/restore-ffmpeg-native.ps1" Link="restore-ffmpeg-native.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/build-ffmpeg-native.ps1" Link="build-ffmpeg-native.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../.github/workflows/ffmpeg-native.yml" Link="ffmpeg-native.yml.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/ffmpeg-native-patches/*.patch" LinkBase="ffmpeg-native-patches" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../NuGet.Config" Link="NuGet.Config" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../.github/workflows/ci.yml" Link="ci.yml.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Package.appxmanifest" Link="Package.appxmanifest" CopyToOutputDirectory="PreserveNewest" />

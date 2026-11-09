@@ -2,13 +2,19 @@ param(
     [Parameter(Mandatory = $true)][string]$SourcePath,
     [Parameter(Mandatory = $true)][string]$UpstreamRepository,
     [Parameter(Mandatory = $true)][string]$UpstreamRef,
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Dav1dTag = '1.5.4'
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Dav1dTag = '1.5.4',
+    # Names the reviewed FFmpeg source patch set (scripts/ffmpeg-native-patches); empty = unpatched.
+    [ValidatePattern('^(p[1-9][0-9]*)?$')][string]$PatchRevision = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $SourcePath = (Resolve-Path $SourcePath).Path
 $version = "8.1.2-bale.dav1d.$Dav1dTag"
 $tag = "native-ffmpeg-8.1.2-dav1d-$Dav1dTag"
+if ($PatchRevision) {
+    $version += ".$PatchRevision"
+    $tag += "-$PatchRevision"
+}
 $output = Join-Path $SourcePath 'Output/NuGet'
 New-Item -ItemType Directory -Force $output | Out-Null
 
@@ -52,6 +58,23 @@ foreach ($path in $before.Keys) {
 # No configure/build-script patches: only the dav1d gitlink differs from the selected ref.
 Invoke-Git $SourcePath @('diff', '--exit-code', 'HEAD', '--', 'Build', 'Libs/build-scripts', 'Build-FFmpeg.ps1')
 
+# Reviewed FFmpeg source patches. They may change only the allowed files below (no configure,
+# build or other library changes); the source archive below is taken from this patched tree.
+$ffmpeg = Join-Path $SourcePath 'Libs/ffmpeg'
+$patches = @(Get-ChildItem (Join-Path $PSScriptRoot 'ffmpeg-native-patches') -Filter '*.patch' | Sort-Object Name)
+if ([bool]$PatchRevision -ne ($patches.Count -gt 0)) { throw 'PatchRevision must be set exactly when FFmpeg source patches exist' }
+Invoke-Git $ffmpeg @('diff', '--exit-code', 'HEAD') | Out-Null
+foreach ($patch in $patches) {
+    Invoke-Git $ffmpeg @('apply', '--check', $patch.FullName) | Out-Null
+    Invoke-Git $ffmpeg @('apply', $patch.FullName) | Out-Null
+}
+$allowedPatchFiles = @('libavcodec/libdav1d.c')
+foreach ($line in @(Invoke-Git $ffmpeg @('status', '--porcelain', '--untracked-files=all'))) {
+    if ($line -notmatch '^ M (.+)$' -or $allowedPatchFiles -notcontains $Matches[1]) {
+        throw "FFmpeg source patches changed a disallowed path: $line"
+    }
+}
+
 # Upstream runs relative tool installers and calls exit on failure; isolate its process.
 Push-Location $SourcePath
 try {
@@ -88,6 +111,14 @@ $sources = @(
     "dav1d tag: $Dav1dTag",
     "dav1d commit: $dav1dCommit",
     "Original dav1d commit: $originalDav1d",
+    "FFmpeg source patch set: $(if ($PatchRevision) { $PatchRevision } else { 'none' })"
+)
+foreach ($patch in $patches) {
+    $patchHash = (Get-FileHash $patch.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    $sources += "  $($patch.Name) sha256 $patchHash (applied to Libs/ffmpeg; included as a release asset)"
+    Copy-Item $patch.FullName (Join-Path $output $patch.Name)
+}
+$sources += @(
     '',
     'All submodule revisions (only dav1d changed from the selected FFmpegInteropX ref):'
 )

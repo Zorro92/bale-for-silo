@@ -2,11 +2,16 @@ param([switch]$NativeOnly)
 
 $ErrorActionPreference = 'Stop'
 $nativePin = Get-Content (Join-Path $PSScriptRoot 'ffmpeg-native.json') -Raw | ConvertFrom-Json
+# patch_revision names the reviewed FFmpeg source patch set (scripts/ffmpeg-native-patches); optional.
+$patchRevision = "$($nativePin.patch_revision)"
 if ($nativePin.sha256 -notmatch '^[0-9a-f]{64}$' -or $nativePin.dav1d_version -notmatch '^\d+\.\d+\.\d+$' -or
-    $nativePin.version -ne "8.1.2-bale.dav1d.$($nativePin.dav1d_version)") {
+    $patchRevision -cnotmatch '^(p[1-9][0-9]*)?$' -or
+    $nativePin.version -ne "8.1.2-bale.dav1d.$($nativePin.dav1d_version)$(if ($patchRevision) { ".$patchRevision" })") {
     throw 'Invalid native FFmpeg package pin'
 }
-if ($nativePin.release_tag -ne "native-ffmpeg-8.1.2-dav1d-$($nativePin.dav1d_version)") { throw 'Inconsistent native release tag' }
+if ($nativePin.release_tag -ne "native-ffmpeg-8.1.2-dav1d-$($nativePin.dav1d_version)$(if ($patchRevision) { "-$patchRevision" })") {
+    throw 'Inconsistent native release tag'
+}
 $packages = @([pscustomobject]@{ Id = 'FFmpegInteropX.UWP.FFmpeg'; Pin = $nativePin })
 if (-not $NativeOnly) {
     $wrapperPin = Get-Content (Join-Path $PSScriptRoot 'ffmpeginteropx-wrapper.json') -Raw | ConvertFrom-Json

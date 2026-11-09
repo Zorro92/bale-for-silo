@@ -752,6 +752,50 @@ allows a resource to stay mapped while the GPU reads it, so dav1d could decode s
   from dav1d's planar layout into P010, the Media Foundation handoff, and fences guarding buffer reuse.
   Series X|S only; Xbox One app mode has no D3D12 and keeps today's path. Store certification of a
   D3D12 app (not game) is unverified.
+
+**Zero-copy design (approved for build 2026-11-09; debug opt-in first, Series X|S only).**
+Goal: dav1d decodes straight into GPU-readable memory, and a D3D12 compute shader writes P010, so the
+swscale conversion (~0.6 core) and the staging fill disappear. dav1d's own cost is unchanged.
+1. **FFmpeg patch** (`libavcodec/libdav1d.c`, native rebuild). FFmpeg's dav1d allocator always uses
+   its private `av_buffer_pool`. The patch: if the caller replaced `AVCodecContext.get_buffer2`, ask
+   it for a `yuv420p10` frame of the 128-aligned size first. Accept the result only if it is one
+   buffer (`buf[0]` only, all planes inside it), 64-byte aligned data and strides, and
+   `linesize[1] == linesize[2]`; otherwise, or on any error, use the original pool for that picture.
+   Output code stays as it is (`frame->buf[0]` is the picture's buffer reference). libdav1d has no
+   DR1 flag, so the wrapper's existing DR1 hook never sets `get_buffer2` for it today.
+   `build-ffmpeg-native.ps1` gains a reviewed patch step (only `libavcodec/libdav1d.c` may change),
+   a new version suffix and release tag, and the patch is recorded in `SOURCES.txt`; the source
+   archive is taken from the patched tree, as the LGPL requires. Done:
+   `scripts/ffmpeg-native-patches/0001-libdav1d-user-picture-buffers.patch`, patch set `p1`.
+   Checked on Linux against FFmpeg 38b88335 + dav1d 1.5.4 (Brawl 4K 10-bit, 8 threads, grain
+   exported and applied; Jellyfin 4K, 1 thread): a valid custom buffer, a misaligned layout and a
+   failing callback all give bit-identical frames to the default pool, every buffer is freed, and
+   at most 10 pictures are alive at once (~250 MB at 4K, same as the internal pool).
+2. **`bale_gpu` zero-copy module** (Rust, ABI bump). One context per uploader, created from the MF
+   D3D11 device: a D3D12 device on the same adapter (LUID), a compute queue, two shared fences
+   (D3D12→D3D11 "repacked", D3D11→D3D12 "released"), opened in D3D11 once.
+   - Buffer pool: CUSTOM write-back L0 buffers, persistently mapped, keyed by size, grown on demand
+     up to a cap. `alloc` returns a CPU pointer and a slot; `release` may come from any dav1d
+     thread (mutex). It replaces FFmpeg's RAM pool, and the 3 staging textures go away, so memory
+     use drops slightly.
+   - Target pool: P010 textures created in D3D12 (`HEAP_FLAG_SHARED`, UAV + render target), each
+     opened in D3D11 once and handed out as `ID3D11Texture2D`.
+   - Repack: `cs_5_0` compute shader (compiled by fxc like the D3D11 shaders; root signature built
+     in code). Raw-buffer SRV on the picture, typed `R16_UINT` / `R16G16_UINT` UAVs on the P010
+     planes; each thread converts a 4×2 luma block and its 2 chroma pairs (`value << 6`).
+3. **Per frame** (decode-ahead thread, wrapper patch 0015): if the AVFrame's buffer belongs to the
+   pool, skip swscale and staging. Take a target (pooled shared texture, or the grain scratch);
+   the D3D11 context signals "released" so MF's earlier reads of that texture finish first; the
+   D3D12 queue waits on it, transitions, dispatches, returns the target to COMMON and signals
+   "repacked" N; the D3D11 context waits on N; then grain (if any) and `CreateFromDirect3D11Surface`
+   as today. The AVFrame reference is kept until "repacked" N completes, so dav1d can't reuse the
+   buffer while the GPU still reads it. Anything not from the pool, or any failure, takes today's
+   path for that frame; a failure in setup disables zero-copy for the uploader.
+4. **Not in scope yet:** 8-bit and 12-bit AV1 (keep today's path), grain fused into the repack
+   (later, saves one GPU pass), Xbox One (no D3D12 in app mode).
+5. **Test:** `ffmpeg-tune zerocopy=on`, then interleaved A/B against today's path on 4K AV1 in the
+   input-idle state (CPU, stalls, late frames), plus a readback check of the first frame against
+   swscale output.
 A one-off picture freeze (~2 s at start) seen once by the owner during an earlier repack run did not
 reproduce in 5 further starts (2 resumes with screenshots, 3 Start Over).
 

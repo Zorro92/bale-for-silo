@@ -18,13 +18,18 @@ on:
         type: string
         required: true
         default: 1.5.4
+      patch_revision:
+        description: FFmpeg source patch set (scripts/ffmpeg-native-patches); empty only when there are none
+        type: string
+        required: false
+        default: p1
 
 permissions:
   contents: read
 
 # Native release assets are immutable: never cancel a build to replace a published package.
 concurrency:
-  group: native-ffmpeg-${{ inputs.dav1d_tag }}
+  group: native-ffmpeg-${{ inputs.dav1d_tag }}-${{ inputs.patch_revision }}
   cancel-in-progress: false
 
 jobs:
@@ -86,9 +91,11 @@ jobs:
           UPSTREAM_REPOSITORY: ${{ inputs.upstream_repository }}
           UPSTREAM_REF: ${{ inputs.upstream_ref }}
           DAV1D_TAG: ${{ inputs.dav1d_tag }}
+          PATCH_REVISION: ${{ inputs.patch_revision }}
         run: |
           ./bale/scripts/build-ffmpeg-native.ps1 -SourcePath ./upstream `
-            -UpstreamRepository $env:UPSTREAM_REPOSITORY -UpstreamRef $env:UPSTREAM_REF -Dav1dTag $env:DAV1D_TAG
+            -UpstreamRepository $env:UPSTREAM_REPOSITORY -UpstreamRef $env:UPSTREAM_REF -Dav1dTag $env:DAV1D_TAG `
+            -PatchRevision $env:PATCH_REVISION
 
       - name: Preserve package, provenance and build diagnostics
         if: always()

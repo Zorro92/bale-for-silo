@@ -143,7 +143,9 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   and provenance hashes with the pinned wrapper package.
   Rebuild with the manual `ffmpeg-native.yml` workflow (repository/ref/dav1d-tag inputs), preserving
   all other upstream submodule pins and FFmpeg flags: GPL/version3/encoders remain disabled;
-  never enable x264/x265. Releases are immutable. See `docs/player-plan.md` for provenance and
+  never enable x264/x265. FFmpeg source changes go only through reviewed patches in
+  `scripts/ffmpeg-native-patches/` (named by the `patch_revision` input/pin, e.g. `p1`); the
+  build script allows them to touch only `libavcodec/libdav1d.c`. Releases are immutable. See `docs/player-plan.md` for provenance and
   rebuild steps; do not overwrite assets or update a pinned hash without reviewing the new build.
 - The wrapper fork pipeline is `ffmpeginteropx-wrapper.yml`; its patches must not change the IDL.
 - All builds tune software AV1 with `bale_decode_ahead_frames=16`, `bale_sws_threads=4` and a 1000 ms
