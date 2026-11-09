@@ -401,6 +401,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     [InlineData("3", 3, "decoder")]
     [InlineData("4", 4, "shader resource; known MF failure")]
     [InlineData("5", 5, "shared shader resource; known MF failure")]
+    [InlineData("6", 6, "shared render target+shader resource+UAV")]
     public void UploadStatusAndHelpDescribeTheRenumberedTextureFlags(string value, int variant, string flags)
     {
         Set(new());
@@ -415,7 +416,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     [InlineData("ON")]
     [InlineData("OFF")]
     [InlineData("0")]
-    [InlineData("6")]
+    [InlineData("7")]
     [InlineData("-1")]
     [InlineData("+1")]
     [InlineData("01")]
@@ -455,7 +456,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.True(fault > software && fault < system);
         Assert.Equal(1, configuration.Split("bale_d3d11_upload_fault_frames").Length - 1);
         Assert.Contains("if (tuning.FilmGrain is DebugFilmGrain.Gpu) config.FFmpegOptions[\"bale_d3d11_upload\"] = \"1\";", Read("DebugFfmpegSource.cs.txt"));
-        Assert.Contains("upload=on|off|default|1..5", DebugFfmpegInputTuning.Usage);
+        Assert.Contains("upload=on|off|default|1..6", DebugFfmpegInputTuning.Usage);
         var server = Read("DebugServer.cs.txt");
         Assert.Contains("FFmpeg tuning: {DebugFfmpegInputTuning.Current.Description}", server);
         Assert.Contains("FFmpeg tuning: {tuning.Description}", server);

@@ -205,12 +205,12 @@ public class DebugPlaytestScriptTests
     public async Task UploadUsageExplainsTheRenderTargetDefaultAndKnownFailingVariants()
     {
         if (!OperatingSystem.IsLinux()) return;
-        var result = await RunAsync(["ffmpeg-tune", "upload=6"]);
+        var result = await RunAsync(["ffmpeg-tune", "upload=7"]);
         Assert.Equal(2, result.ExitCode);
         Assert.Empty(result.Arguments);
         foreach (var text in new[] { "upload=on aliases 1", "default=on (variant 1)", "off=0 (CPU buffers)", "wrapper 2.1.0-bale.8+", "upload default on (variant 1)",
             "1=RENDER_TARGET|SHADER_RESOURCE", "2=DECODER|SHADER_RESOURCE", "3=DECODER", "4=SHADER_RESOURCE",
-            "5=SHADER_RESOURCE+MISC_SHARED", "4/5 known MF failures" })
+            "5=SHADER_RESOURCE+MISC_SHARED", "6=variant 1+UNORDERED_ACCESS+MISC_SHARED_NTHANDLE", "4/5 known MF failures" })
             Assert.Contains(text, result.Output);
     }
 
@@ -218,7 +218,7 @@ public class DebugPlaytestScriptTests
     public async Task InvalidOrDuplicateUploadTuningNeverInvokesCurlAndProbesRejectIt()
     {
         if (!OperatingSystem.IsLinux()) return;
-        foreach (var value in new[] { "", "ON", "OFF", "0", "6", "-1", "+1", "01", "1.0", " 1", "1 ", "2147483648", "true", " on", "off ", "DEFAULT" })
+        foreach (var value in new[] { "", "ON", "OFF", "0", "7", "-1", "+1", "01", "1.0", " 1", "1 ", "2147483648", "true", " on", "off ", "DEFAULT" })
         {
             var result = await RunAsync(["ffmpeg-tune", "grain=off", "upload=" + value]);
             Assert.Equal(2, result.ExitCode);

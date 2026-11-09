@@ -126,6 +126,11 @@ frames use staging. Timing lines report the path as `repack=2`; fixed `Bale zero
 log create/disable/HRESULTs and pool counters after 240 frames and at teardown (`landing_copies`
 counts frames that needed bale_gpu's extra GPU copy because the device cannot share a UAV P010
 texture). It ships in `2.1.0-bale.15`.
+`0016` widens `bale_d3d11_upload` to 0–6. Debug variant 6 is variant 1 (RENDER_TARGET |
+SHADER_RESOURCE) plus UNORDERED_ACCESS, with `MISC_SHARED_NTHANDLE | MISC_SHARED`: the flags
+D3D12 needs to open and write a pooled texture directly, without the landing-texture copy. It
+tests whether MF accepts such samples. GPU grain and repack accept variant 6 like variant 1;
+zero-copy already runs with any upload variant. Production keeps variant 1.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.
