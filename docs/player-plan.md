@@ -721,7 +721,10 @@ The memory type is not the problem; the console's state while the player is open
 
   So with fresh input, 4K AV1 plays smoothly on about two cores. Every earlier 4K CPU and stall
   figure in this document was measured in the idle state.
-- Open: whether an app-level API holds the fast state. The player's `DisplayRequest` does not.
+- Open: whether an app-level API holds the fast state. Ruled out with `bale-debug.sh idle-test` (0.1.368):
+  - The player's held `DisplayRequest` does not.
+  - A Kodi-style `DisplayRequest` `RequestActive` + `RequestRelease` pulse does not wake the console or reset the timer.
+  - Media session (SMTC) `PlaybackStatus = Playing` does not, on the view or on the player. The player's `MediaPlayer` already reports Playing during playback, and the console still slows after ~15 s with no input.
 
 **D3D12 in app mode (same probe).** Hardware device OK, max feature level 11_0, UMA and
 cache-coherent UMA true, existing heaps reported supported and row-major cross-adapter textures true,
