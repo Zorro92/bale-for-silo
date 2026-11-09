@@ -28,6 +28,8 @@ internal static class FfmpegSource
         if (SoftwareDecodeTuning.D3d11Upload(route) is { } upload) config.FFmpegOptions["bale_d3d11_upload"] = upload.ToString(CultureInfo.InvariantCulture);
         if (SoftwareDecodeTuning.FilmGrainMode(route) is { } grainMode && grainMode != 0)
             config.FFmpegOptions["bale_film_grain_mode"] = grainMode.ToString(CultureInfo.InvariantCulture);
+        // Patch 0015: bale_gpu.dll needs d3d12.dll registered before the upload device arrives.
+        if (SoftwareDecodeTuning.ZeroCopy(route)) config.FFmpegOptions["bale_zero_copy"] = ZeroCopyRuntime.Register() ? "1" : "0";
         return config;
     }
 
@@ -64,8 +66,8 @@ internal static class FfmpegSource
             if (tuning.UploadFaultFrames is { } fault) config.FFmpegOptions["bale_d3d11_upload_fault_frames"] = fault.ToString(CultureInfo.InvariantCulture);
             // Patch 0012 debug repack: planar staging plus GPU NV12/P010 repack instead of swscale.
             if (tuning.Repack is { } repack) config.FFmpegOptions["bale_d3d11_repack"] = repack ? "1" : "0";
-            // Patch 0015 debug zero-copy: bale_gpu.dll needs d3d12.dll registered before the upload device arrives.
-            if (tuning.ZeroCopy is { } zeroCopy) config.FFmpegOptions["bale_zero_copy"] = zeroCopy && DebugRustProbe.RegisterZeroCopy() ? "1" : "0";
+            // Patch 0015 debug override: off = swscale path for A/B; on = production default.
+            if (tuning.ZeroCopy is { } zeroCopy) config.FFmpegOptions["bale_zero_copy"] = zeroCopy && ZeroCopyRuntime.Register() ? "1" : "0";
         }
         else
         {

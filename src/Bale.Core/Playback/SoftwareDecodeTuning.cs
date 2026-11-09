@@ -22,6 +22,11 @@ public sealed record SoftwareDecodeTuning(int? DecodeAheadFrames = null, int? Sw
     public static int? D3d11Upload(PlaybackRouteDecision route) =>
         route.SoftwareVideo ? DefaultD3d11Upload : null;
 
+    // Zero-copy (wrapper patch 0015) is the production default since the 2026-11-09 console A/B:
+    // dav1d decodes 10-bit AV1 into D3D12 buffers and the GPU repacks them, replacing swscale.
+    // Needs upload variant 1; the wrapper still declines pictures it can't take (8-bit for now).
+    public static bool ZeroCopy(PlaybackRouteDecision route) => route.SoftwareVideo;
+
     public static int? BufferTimeMs(bool softwareVideo, int? overrideMs = null, long? width = null, long? height = null) =>
         overrideMs ?? (softwareVideo ? (Above1080p(width, height) ? Above1080pBufferMs : DefaultBufferMs) : null);
 

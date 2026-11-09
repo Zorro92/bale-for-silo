@@ -513,6 +513,8 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("zerocopy=*) [[ \"$value\" == on || \"$value\" == off || \"$value\" == default ]] && valid_tuning=true ;;", script);
         Assert.Contains("[repack=on|off|default] [zerocopy=on|off|default]", script);
         Assert.Contains("zerocopy=on = dav1d decodes into D3D12 buffers repacked on the GPU", script);
+        Assert.Contains("release default on; off = swscale path", script);
+        Assert.Contains("software video defaults: zerocopy=on,", script);
     }
 
     [Theory]
@@ -530,30 +532,33 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     }
 
     [Fact]
-    public void ZeroCopyKeyIsSetOnlyForSoftwareVideoAfterRegistration()
+    public void ZeroCopyIsTheProductionDefaultWithADebugOverrideAfterRegistration()
     {
         var configuration = Read("FfmpegSource.cs.txt");
         var start = configuration.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal);
         var end = configuration.IndexOf("#endif", start, StringComparison.Ordinal);
+        Assert.Contains("if (SoftwareDecodeTuning.ZeroCopy(route)) config.FFmpegOptions[\"bale_zero_copy\"] = ZeroCopyRuntime.Register() ? \"1\" : \"0\";", configuration[..start]);
         var experiment = configuration[start..end];
         var software = experiment.IndexOf("if (route.SoftwareVideo)", StringComparison.Ordinal);
         var system = experiment.IndexOf("else\n", software, StringComparison.Ordinal);
-        var key = experiment.IndexOf("if (tuning.ZeroCopy is { } zeroCopy) config.FFmpegOptions[\"bale_zero_copy\"] = zeroCopy && DebugRustProbe.RegisterZeroCopy() ? \"1\" : \"0\";", StringComparison.Ordinal);
+        var key = experiment.IndexOf("if (tuning.ZeroCopy is { } zeroCopy) config.FFmpegOptions[\"bale_zero_copy\"] = zeroCopy && ZeroCopyRuntime.Register() ? \"1\" : \"0\";", StringComparison.Ordinal);
         Assert.True(software >= 0 && key > software && key < system);
-        Assert.Equal(1, configuration.Split("bale_zero_copy").Length - 1);
+        Assert.Equal(2, configuration.Split("bale_zero_copy").Length - 1);
+        Assert.DoesNotContain("RegisterZeroCopy", Read("DebugRustProbe.cs.txt"));
     }
 
     [Fact]
     public void ZeroCopyRegistrationIsCachedAndLogsNoExceptionText()
     {
-        var probe = Read("DebugRustProbe.cs.txt");
-        var start = probe.IndexOf("internal static bool RegisterZeroCopy()", StringComparison.Ordinal);
+        var probe = Read("ZeroCopyRuntime.cs.txt");
+        Assert.DoesNotContain("#if", probe);
+        var start = probe.IndexOf("internal static bool Register()", StringComparison.Ordinal);
         var end = probe.IndexOf("\n    }\n", start, StringComparison.Ordinal);
         var body = probe[start..end];
         Assert.Contains("[DllImport(\"bale_gpu.dll\", ExactSpelling = true)] private static extern int bale_zc_register_d3d12(nint d3d12Module);", probe);
         Assert.Contains("if (state != 0) return state > 0;", body);
         Assert.Contains("NativeLibrary.TryLoad(\"d3d12.dll\", out var module)", body);
-        Assert.Contains("Volatile.Write(ref _zeroCopyRegistered, registered ? 1 : -1);", body);
+        Assert.Contains("Volatile.Write(ref _registered, registered ? 1 : -1);", body);
         Assert.Contains("{ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8}", body);
         Assert.DoesNotContain("ex.Message", body);
         Assert.DoesNotContain("Log.Error", body);

@@ -21,6 +21,7 @@ public class SoftwareDecodeTuningTests
         Assert.Equal(expected, SoftwareDecodeTuning.D3d11Upload(route));
         Assert.Equal(2, SoftwareDecodeTuning.DefaultFilmGrainMode);
         Assert.Equal(expected is not null ? (int?)2 : null, SoftwareDecodeTuning.FilmGrainMode(route));
+        Assert.Equal(expected is not null, SoftwareDecodeTuning.ZeroCopy(route));
     }
 
     [Theory]

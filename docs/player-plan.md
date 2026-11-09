@@ -754,7 +754,7 @@ allows a resource to stay mapped while the GPU reads it, so dav1d could decode s
   Series X|S only; Xbox One app mode has no D3D12 and keeps today's path. Store certification of a
   D3D12 app (not game) is unverified.
 
-**Zero-copy design (approved for build 2026-11-09; debug opt-in first, Series X|S only).**
+**Zero-copy design (approved for build 2026-11-09; production default since 2026-11-09 for 10-bit software AV1, Series X|S only).**
 Goal: dav1d decodes straight into GPU-readable memory, and a D3D12 compute shader writes P010, so the
 swscale conversion (~0.6 core) and the staging fill disappear. dav1d's own cost is unchanged.
 1. **FFmpeg patch** (`libavcodec/libdav1d.c`, native rebuild). FFmpeg's dav1d allocator always uses
@@ -840,6 +840,20 @@ swscale conversion (~0.6 core) and the staging fill disappear. dav1d's own cost 
    core in dav1d itself, likely because the CPU no longer competes for the throttled memory
    bandwidth with the swscale pass. Paused-frame screenshots at 1503 s (stats pane open, uncovered
    edges compared) and 2406 s (pane hidden, full frame) are **bit-identical** on vs off.
+   **Grain A/B (Brawl in Cell Block 99, 4K 10-bit AV1 with film grain, same method, zero-copy+GPU
+   grain / zero-copy without grain / today's path, interleaved ×2):** buffering 20/2.1 s and 18/1.7 s,
+   17/1.8 s and 15/2.0 s, 36/6.3 s and 40/7.0 s; process CPU at 80–100 s 6.40/6.28, 5.88/5.88,
+   6.90/6.91 cores; 0 late frames; `landing_copies=0`. GPU grain works through zero-copy. It still
+   costs ~0.45 core, almost all in the dav1d worker group (5.9 vs 5.5), although its per-frame CPU work
+   is tiny. Likely cause: the D3D11 grain pass copies the landing texture into an intermediate and
+   then reads it again, two extra 4K frame passes of shared memory traffic that slow the CPU in the
+   bandwidth-capped idle state. Untested. Fusing grain into the D3D12 repack would bring the traffic
+   to the no-grain level; skipping the intermediate copy (the landing texture is already a distinct
+   SRV) is the smaller first test.
+   **Production default (2026-11-09):** `SoftwareDecodeTuning.ZeroCopy` sets `bale_zero_copy=1` for
+   every software video route after `ZeroCopyRuntime.Register()` succeeds; `ffmpeg-tune zerocopy=off`
+   keeps the swscale path for A/Bs. 8-bit and 12-bit pictures are still declined by the wrapper and
+   take today's path until the old paths are removed.
 A one-off picture freeze (~2 s at start) seen once by the owner during an earlier repack run did not
 reproduce in 5 further starts (2 resumes with screenshots, 3 Start Over).
 
