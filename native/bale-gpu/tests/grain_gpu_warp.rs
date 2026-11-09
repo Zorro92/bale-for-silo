@@ -280,6 +280,17 @@ fn assert_bytes(
 
 #[test]
 fn all_44_fixtures_match_dav1d_on_warp() {
+    all_44_fixtures(true);
+}
+
+/// Zero-copy hands the grain pass an SRV-bound DEFAULT landing texture, sampled in place
+/// without the intermediate copy.
+#[test]
+fn all_44_fixtures_match_dav1d_on_warp_reading_source_in_place() {
+    all_44_fixtures(false);
+}
+
+fn all_44_fixtures(staging_source: bool) {
     let warp = Warp::new();
     let grain = warp.grain();
     println!(
@@ -291,7 +302,7 @@ fn all_44_fixtures_match_dav1d_on_warp() {
         for (frame, data) in fixture.frames.iter().enumerate() {
             let plain = packed(&data.plain, &data.params);
             let expected = packed(&data.grained, &data.params);
-            let src = warp.texture(&fixture_desc(&data.params, true), Some(&plain));
+            let src = warp.texture(&fixture_desc(&data.params, staging_source), Some(&plain));
             // Different initial padding proves the shaders write pass-through pixels too.
             let dst = warp.texture(
                 &fixture_desc(&data.params, false),

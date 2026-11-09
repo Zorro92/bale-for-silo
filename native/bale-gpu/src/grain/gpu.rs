@@ -89,18 +89,16 @@ impl InputTexture {
     }
 }
 
-struct FrameResources {
-    key: (u32, u32, DXGI_FORMAT),
-    intermediate: ID3D11Texture2D,
-    source_views: [ID3D11ShaderResourceView; 2],
-    scaling: InputTexture,
-    offsets: InputTexture,
+/// Scratch copy for sources the shaders can't read in place (staging, no SRV bind).
+struct Intermediate {
+    texture: ID3D11Texture2D,
+    views: [ID3D11ShaderResourceView; 2],
 }
 
-impl FrameResources {
+impl Intermediate {
     fn new(device: &ID3D11Device, desc: &D3D11_TEXTURE2D_DESC) -> Result<Self> {
         // Never inherit staging/decoder/shared flags from the caller's texture.
-        let intermediate = texture(
+        let texture = texture(
             device,
             &texture_desc(
                 desc.Width,
@@ -112,12 +110,34 @@ impl FrameResources {
         )?;
         let formats = plane_formats(desc.Format);
         Ok(Self {
-            key: (desc.Width, desc.Height, desc.Format),
-            source_views: [
-                shader_view(device, &intermediate, formats[0])?,
-                shader_view(device, &intermediate, formats[1])?,
+            views: [
+                shader_view(device, &texture, formats[0])?,
+                shader_view(device, &texture, formats[1])?,
             ],
-            intermediate,
+            texture,
+        })
+    }
+}
+
+/// A source the pixel shaders may sample directly: a DEFAULT texture with an SRV bind
+/// (the zero-copy landing texture). Anything else goes through the intermediate copy.
+fn readable_in_place(desc: &D3D11_TEXTURE2D_DESC) -> bool {
+    desc.Usage == D3D11_USAGE_DEFAULT && desc.BindFlags & D3D11_BIND_SHADER_RESOURCE.0 as u32 != 0
+}
+
+struct FrameResources {
+    key: (u32, u32, DXGI_FORMAT),
+    // Created on first use, so the zero-copy path never allocates the full-frame scratch texture.
+    intermediate: Option<Intermediate>,
+    scaling: InputTexture,
+    offsets: InputTexture,
+}
+
+impl FrameResources {
+    fn new(device: &ID3D11Device, desc: &D3D11_TEXTURE2D_DESC) -> Result<Self> {
+        Ok(Self {
+            key: (desc.Width, desc.Height, desc.Format),
+            intermediate: None,
             scaling: InputTexture::new(
                 device,
                 if desc.Format == DXGI_FORMAT_P010 {
@@ -287,19 +307,39 @@ impl BaleGrainGpu {
         {
             self.frame = Some(FrameResources::new(&self.device, desc)?);
         }
-        let frame = self.frame.as_ref().ok_or(E_FAIL)?;
         let formats = plane_formats(desc.Format);
-        // Both views are created before any writes to the caller's destination.
+        // All views are created before any writes to the caller's destination.
+        let direct_views = if readable_in_place(desc) {
+            Some([
+                shader_view(&self.device, src, formats[0])?,
+                shader_view(&self.device, src, formats[1])?,
+            ])
+        } else {
+            let frame = self.frame.as_mut().ok_or(E_FAIL)?;
+            if frame.intermediate.is_none() {
+                frame.intermediate = Some(Intermediate::new(&self.device, desc)?);
+            }
+            None
+        };
         let targets = [
             render_view(&self.device, dst, formats[0])?,
             render_view(&self.device, dst, formats[1])?,
         ];
-        // SAFETY: validated compatible single-subresource textures are distinct and not mapped.
-        unsafe { self.context.CopyResource(&frame.intermediate, src) };
+        let frame = self.frame.as_ref().ok_or(E_FAIL)?;
+        let source_views = match direct_views {
+            // src != dst is validated, so reading src while writing dst is no hazard.
+            Some(views) => views,
+            None => {
+                let intermediate = frame.intermediate.as_ref().ok_or(E_FAIL)?;
+                // SAFETY: validated compatible single-subresource textures are distinct and not mapped.
+                unsafe { self.context.CopyResource(&intermediate.texture, src) };
+                intermediate.views.clone()
+            }
+        };
         cpu::with_prepared(params, |prepared| self.upload(params, prepared, frame));
         let views = [
-            Some(frame.source_views[0].clone()),
-            Some(frame.source_views[1].clone()),
+            Some(source_views[0].clone()),
+            Some(source_views[1].clone()),
             Some(self.luma.view.clone()),
             Some(self.chroma.view.clone()),
             Some(frame.scaling.view.clone()),
@@ -457,34 +497,41 @@ impl BaleGrainGpu {
                     1,
                 )
                 .map_err(|_| E_FAIL)?;
+                let data = D3D11_SUBRESOURCE_DATA {
+                    pSysMem: plain.as_ptr().cast(),
+                    SysMemPitch: pitch as u32,
+                    SysMemSlicePitch: 0,
+                };
                 let mut staging_desc = texture_desc(64, 64, format, 0);
                 staging_desc.Usage = D3D11_USAGE_STAGING;
                 staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE.0 as u32;
-                let src = texture(
-                    &self.device,
-                    &staging_desc,
-                    Some(&D3D11_SUBRESOURCE_DATA {
-                        pSysMem: plain.as_ptr().cast(),
-                        SysMemPitch: pitch as u32,
-                        SysMemSlicePitch: 0,
-                    }),
-                )?;
                 let desc = texture_desc(
                     64,
                     64,
                     format,
                     (D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE).0 as u32,
                 );
-                let dst = texture(&self.device, &desc, None)?;
-                self.draw_frame(&params, &src, &dst, &desc)?;
-                staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ.0 as u32;
-                let readback = texture(&self.device, &staging_desc, None)?;
-                // SAFETY: matching unmapped single-subresource textures, on the locked context.
-                unsafe { self.context.CopyResource(&readback, &dst) };
-                let actual = readback_bytes(&self.context, &readback, pitch, 96)?;
-                // Compare visible samples AND all even-texture padding, including P010's low bits.
-                if actual != expected {
-                    return Err(E_FAIL.into());
+                // Staging sources take the intermediate copy; SRV-bound ones (zero-copy landing)
+                // are sampled in place. Production uses both, so both must match dav1d.
+                for in_place in [false, true] {
+                    let src_desc = if in_place {
+                        texture_desc(64, 64, format, D3D11_BIND_SHADER_RESOURCE.0 as u32)
+                    } else {
+                        staging_desc
+                    };
+                    let src = texture(&self.device, &src_desc, Some(&data))?;
+                    let dst = texture(&self.device, &desc, None)?;
+                    self.draw_frame(&params, &src, &dst, &src_desc)?;
+                    let mut readback_desc = staging_desc;
+                    readback_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ.0 as u32;
+                    let readback = texture(&self.device, &readback_desc, None)?;
+                    // SAFETY: matching unmapped single-subresource textures, on the locked context.
+                    unsafe { self.context.CopyResource(&readback, &dst) };
+                    let actual = readback_bytes(&self.context, &readback, pitch, 96)?;
+                    // Compare visible samples AND all even-texture padding, including P010's low bits.
+                    if actual != expected {
+                        return Err(E_FAIL.into());
+                    }
                 }
             }
         }
