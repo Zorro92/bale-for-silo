@@ -8,8 +8,10 @@ use std::ptr;
 use bale_gpu::d3d12_repack::{
     BaleZcStats, BaleZeroCopy, S_FALSE, S_OK, ZERO_COPY_ABI_VERSION, bale_zc_abi_version,
     bale_zc_alloc, bale_zc_create, bale_zc_destroy, bale_zc_register_d3d12, bale_zc_release,
-    bale_zc_repack, bale_zc_stats, create_with_landing_copies, diagnose_create,
+    bale_zc_repack, bale_zc_repack_into, bale_zc_stats, create_with_landing_copies,
+    diagnose_create,
 };
+use bale_gpu::grain::BaleGrainParams;
 use bale_gpu::zc_frame::{BaleZcFrame, MAX_BYTES, fill_test_planes};
 use windows::Win32::Foundation::{E_INVALIDARG, E_OUTOFMEMORY, HMODULE};
 use windows::Win32::Graphics::Direct3D::{
@@ -129,6 +131,53 @@ impl Warp {
         ZeroCopy(handle)
     }
 
+    /// A P010 texture like MF's shareable pool textures (render target, shader resource, UAV,
+    /// NT shared handle); without the render-target bind where WARP refuses it.
+    fn target(&self, width: u32, height: u32) -> ID3D11Texture2D {
+        let bind = D3D11_BIND_RENDER_TARGET.0
+            | D3D11_BIND_SHADER_RESOURCE.0
+            | D3D11_BIND_UNORDERED_ACCESS.0;
+        let misc = D3D11_RESOURCE_MISC_SHARED_NTHANDLE.0 | D3D11_RESOURCE_MISC_SHARED.0;
+        self.texture(width, height, DXGI_FORMAT_P010, bind as u32, misc as u32)
+            .or_else(|_| {
+                let bind = D3D11_BIND_SHADER_RESOURCE.0 | D3D11_BIND_UNORDERED_ACCESS.0;
+                self.texture(width, height, DXGI_FORMAT_P010, bind as u32, misc as u32)
+            })
+            .expect("shared UAV P010 texture")
+    }
+
+    fn texture(
+        &self,
+        width: u32,
+        height: u32,
+        format: DXGI_FORMAT,
+        bind: u32,
+        misc: u32,
+    ) -> windows::core::Result<ID3D11Texture2D> {
+        let desc = D3D11_TEXTURE2D_DESC {
+            Width: width,
+            Height: height,
+            MipLevels: 1,
+            ArraySize: 1,
+            Format: format,
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
+            Usage: D3D11_USAGE_DEFAULT,
+            BindFlags: bind,
+            MiscFlags: misc,
+            ..Default::default()
+        };
+        let mut texture = None;
+        // SAFETY: a complete description, no initial data, local out-slot.
+        unsafe {
+            self.device
+                .CreateTexture2D(&desc, None, Some(&mut texture))?
+        };
+        Ok(texture.expect("texture"))
+    }
+
     /// Copies a landing texture to a staging texture and returns its tight P010 bytes.
     fn read(&self, landing: *mut c_void, width: u32, height: u32) -> Vec<u8> {
         // SAFETY: a borrowed texture pointer from bale_zc_repack, valid until the next repack.
@@ -232,6 +281,11 @@ impl ZeroCopy {
         // SAFETY: live handle, readable frame, writable out slot; one test thread per handle.
         let hr = unsafe { bale_zc_repack(self.0, id, frame, &mut texture) };
         (hr, texture)
+    }
+
+    fn repack_into(&self, id: *mut c_void, frame: &BaleZcFrame, target: &ID3D11Texture2D) -> i32 {
+        // SAFETY: live handle, readable frame, live texture; one test thread per handle.
+        unsafe { bale_zc_repack_into(self.0, id, frame, ptr::null(), target.as_raw()) }
     }
 
     fn stats(&self) -> BaleZcStats {
@@ -437,4 +491,172 @@ fn buffers_outlive_their_handle() {
     unsafe { picture.data.write_bytes(0x5a, 64) };
     assert_eq!(release(picture.id), S_OK);
     assert_eq!(release(picture.id), E_INVALIDARG.0);
+}
+
+/// Direct writes into the caller's textures, mixed with landing frames on the same slots and with
+/// size changes; a reused texture is written again in place.
+#[test]
+fn direct_writes_into_shared_uav_textures() {
+    let warp = Warp::new();
+    let zero_copy = warp.zero_copy();
+    let pool = [warp.target(128, 72), warp.target(128, 72)];
+    let small = warp.target(130, 40);
+    // (size, Some(target) for a direct write, None for a landing frame)
+    let plan: [((u32, u32), Option<&ID3D11Texture2D>); 8] = [
+        ((128, 72), Some(&pool[0])),
+        ((128, 72), Some(&pool[1])),
+        ((128, 72), None),
+        ((128, 72), Some(&pool[0])),
+        ((130, 40), Some(&small)),
+        ((130, 40), None),
+        ((130, 40), None),
+        ((128, 72), Some(&pool[1])),
+    ];
+    for (seed, ((width, height), target)) in plan.into_iter().enumerate() {
+        let (picture, frame, source) = zero_copy.picture(width, height, seed as u32 + 31);
+        let expected = frame.reference_p010(&source);
+        match target {
+            Some(target) => {
+                let hr = zero_copy.repack_into(picture.id, &frame, target);
+                assert_eq!(hr, S_OK, "{seed}: HRESULT=0x{:08x}", hr as u32);
+                assert_eq!(release(picture.id), S_OK);
+                assert_eq!(
+                    warp.read(target.as_raw(), width, height),
+                    expected,
+                    "{seed}"
+                );
+            }
+            None => {
+                let (hr, texture) = zero_copy.repack(picture.id, &frame);
+                assert_eq!(hr, S_OK, "{seed}: HRESULT=0x{:08x}", hr as u32);
+                assert_eq!(release(picture.id), S_OK);
+                assert_eq!(warp.read(texture, width, height), expected, "{seed}");
+            }
+        }
+    }
+    let stats = zero_copy.stats();
+    assert_eq!(stats.frames_repacked, plan.len() as u64);
+    assert_eq!(stats.landing_copies, 0, "{stats:?}");
+    assert_eq!(stats.buffers_live, 0);
+}
+
+/// Textures the dispatch cannot write, grain, and foreign buffers are declined without GPU work
+/// and without refusing later direct writes; null inputs are rejected.
+#[test]
+fn direct_declines_without_poisoning() {
+    let warp = Warp::new();
+    let zero_copy = warp.zero_copy();
+    let (picture, frame, source) = zero_copy.picture(64, 16, 41);
+    let uav = (D3D11_BIND_SHADER_RESOURCE.0 | D3D11_BIND_UNORDERED_ACCESS.0) as u32;
+    let nt = (D3D11_RESOURCE_MISC_SHARED_NTHANDLE.0 | D3D11_RESOURCE_MISC_SHARED.0) as u32;
+    let other = Warp::new();
+    let unfit = [
+        warp.target(64, 18),
+        warp.target(66, 16),
+        warp.texture(
+            64,
+            16,
+            DXGI_FORMAT_P010,
+            D3D11_BIND_SHADER_RESOURCE.0 as u32,
+            nt,
+        )
+        .expect("shared P010 without UAV"),
+        warp.texture(64, 16, DXGI_FORMAT_P010, uav, 0)
+            .expect("unshared UAV P010"),
+        warp.texture(64, 16, DXGI_FORMAT_R16_UINT, uav, nt)
+            .expect("shared UAV R16"),
+        other.target(64, 16),
+    ];
+    for (index, target) in unfit.iter().enumerate() {
+        assert_eq!(
+            zero_copy.repack_into(picture.id, &frame, target),
+            S_FALSE,
+            "{index}"
+        );
+    }
+    let target = warp.target(64, 16);
+    for id in [ptr::null_mut(), 2 as *mut c_void] {
+        assert_eq!(zero_copy.repack_into(id, &frame, &target), S_FALSE);
+    }
+    // SAFETY: plain integer fields; all zeros is a valid value (never read: grain is declined).
+    let grain: BaleGrainParams = unsafe { std::mem::zeroed() };
+    // SAFETY: live handle, readable frame and grain, live texture; null target is rejected.
+    unsafe {
+        assert_eq!(
+            bale_zc_repack_into(zero_copy.0, picture.id, &frame, &grain, target.as_raw()),
+            S_FALSE
+        );
+        assert_eq!(
+            bale_zc_repack_into(
+                zero_copy.0,
+                picture.id,
+                &frame,
+                ptr::null(),
+                ptr::null_mut()
+            ),
+            E_INVALIDARG.0
+        );
+        assert_eq!(
+            bale_zc_repack_into(
+                zero_copy.0,
+                picture.id,
+                ptr::null(),
+                ptr::null(),
+                target.as_raw()
+            ),
+            E_INVALIDARG.0
+        );
+        assert_eq!(
+            bale_zc_repack_into(
+                ptr::null(),
+                picture.id,
+                &frame,
+                ptr::null(),
+                target.as_raw()
+            ),
+            E_INVALIDARG.0
+        );
+    }
+    let bad = BaleZcFrame { width: 63, ..frame };
+    assert_eq!(
+        zero_copy.repack_into(picture.id, &bad, &target),
+        E_INVALIDARG.0
+    );
+    assert_eq!(zero_copy.stats().frames_repacked, 0);
+
+    assert_eq!(zero_copy.repack_into(picture.id, &frame, &target), S_OK);
+    assert_eq!(
+        warp.read(target.as_raw(), 64, 16),
+        frame.reference_p010(&source)
+    );
+    assert_eq!(release(picture.id), S_OK);
+    assert_eq!(zero_copy.stats().frames_repacked, 1);
+}
+
+/// At most 32 caller textures are open; one idle for 64 frames is closed, which frees a place.
+#[test]
+fn direct_targets_are_capped_and_closed_when_idle() {
+    const MAX_TARGETS: usize = 32;
+    const IDLE_FRAMES: usize = 64;
+    let warp = Warp::new();
+    let zero_copy = warp.zero_copy();
+    let (picture, frame, source) = zero_copy.picture(64, 8, 51);
+    let targets: Vec<ID3D11Texture2D> = (0..=MAX_TARGETS).map(|_| warp.target(64, 8)).collect();
+    for target in &targets[..MAX_TARGETS] {
+        assert_eq!(zero_copy.repack_into(picture.id, &frame, target), S_OK);
+    }
+    let extra = &targets[MAX_TARGETS];
+    assert_eq!(zero_copy.repack_into(picture.id, &frame, extra), S_FALSE);
+    let busy = &targets[0];
+    for _ in 0..IDLE_FRAMES {
+        assert_eq!(zero_copy.repack_into(picture.id, &frame, busy), S_OK);
+    }
+    // Idle textures are closed once the GPU is done with them.
+    let _ = warp.read(busy.as_raw(), 64, 8);
+    assert_eq!(zero_copy.repack_into(picture.id, &frame, extra), S_OK);
+    assert_eq!(
+        warp.read(extra.as_raw(), 64, 8),
+        frame.reference_p010(&source)
+    );
+    assert_eq!(release(picture.id), S_OK);
 }

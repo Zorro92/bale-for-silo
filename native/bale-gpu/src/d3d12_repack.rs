@@ -7,12 +7,18 @@
 //! copied on the CPU. Where D3D11 cannot share a UAV P010 texture, the dispatch writes a private
 //! texture and a GPU copy fills a plain shared one (`landing_copies` in the stats).
 //!
+//! [`bale_zc_repack_into`] skips the landing texture and MF's copy: the dispatch writes the
+//! caller's own texture (a shareable UAV P010 texture from MF's pool), which D3D12 opens once and
+//! keeps while it is in use. A texture it cannot take is declined (S_FALSE) before any GPU work,
+//! and the caller lands the frame with [`bale_zc_repack`] instead.
+//!
 //! Two shared fences order the devices without CPU stalls:
 //! - `repacked`: the D3D12 queue signals n after frame n's dispatch; the D3D11 context waits for n
 //!   (GPU-side) before the caller's copy.
 //! - `released`: each repack first signals the D3D11 side of `released` for the previous landing
 //!   texture, which covers the caller's copy from it; the D3D12 queue waits for that value before
-//!   writing the texture again.
+//!   writing the texture again. A direct write signals and waits for a new value every frame, which
+//!   covers every D3D11 read of the caller's texture queued before the call.
 //!
 //! Buffers are reused only after the `repacked` fence passes the last dispatch that read them, so
 //! the caller can release a picture as soon as `bale_zc_repack` returns. `d3d12.dll` is registered
@@ -44,6 +50,7 @@ use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
 use windows::core::{Error, HRESULT, Interface, PCWSTR, Result, s};
 
 use crate::d3d12::{CreateDevice, resource};
+use crate::grain::BaleGrainParams;
 use crate::grain::gpu::{readback_bytes, same_device, texture, texture_desc};
 use crate::zc_frame::{BaleZcFrame, MAX_BYTES, fill_test_planes};
 
@@ -62,6 +69,11 @@ const MAX_BUFFERS: usize = 16;
 const ALIGNMENT: u64 = 64 << 10;
 const WAIT_MS: u64 = 5000;
 const ALLOC_WAIT_MS: u64 = 100;
+/// Caller textures opened at once; more are declined. MF's pool holds about ten.
+const MAX_TARGETS: usize = 32;
+/// A caller texture not written for this many frames is closed (once the GPU is done with it),
+/// so textures the caller dropped are not kept alive for long.
+const TARGET_IDLE_FRAMES: u64 = 64;
 
 type SerializeRootSignature = unsafe extern "system" fn(
     *const D3D12_ROOT_SIGNATURE_DESC,
@@ -386,6 +398,15 @@ struct Landing {
     texture11: ID3D11Texture2D,
 }
 
+/// A caller texture opened in D3D12. The D3D11 reference keeps its address from being reused for
+/// another texture while it is cached.
+struct Target {
+    _texture11: ID3D11Texture2D,
+    texture: ID3D12Resource,
+    /// `repacked` value of the last dispatch that wrote it.
+    used: u64,
+}
+
 struct Slot {
     allocator: ID3D12CommandAllocator,
     list: ID3D12GraphicsCommandList,
@@ -419,6 +440,11 @@ struct Inner {
     /// The dispatch writes the shared landing texture itself. Cleared for good once a shared UAV
     /// P010 texture is refused.
     direct: bool,
+    /// Caller textures by address. Dropped after the waits in `Drop for Inner`.
+    targets: BTreeMap<usize, Target>,
+    /// D3D12 could not open a caller texture, or the self-test's direct write failed: every
+    /// direct write is declined for the handle's life.
+    targets_refused: bool,
     repacked_value: u64,
     released_value: u64,
     event: Handle,
@@ -447,6 +473,103 @@ impl Inner {
             self.rebuild(frame.width, frame.height)
                 .step("landing rebuild")?;
         }
+        let current = &self.slots[slot];
+        let landing = current.landing.as_ref().ok_or(E_FAIL)?;
+        let value = self.dispatch(
+            slot,
+            memory,
+            frame,
+            &landing.texture,
+            landing.copy.as_ref(),
+            current.released,
+        )?;
+        let texture11 = landing.texture11.clone();
+        self.finish(slot, buffer, value)?;
+        self.previous = Some(slot);
+        Ok(texture11)
+    }
+
+    /// Repacks `frame` from `buffer` straight into the caller's `target`. `Ok(false)` declines
+    /// before any GPU work: `target` is not a P010 texture of the frame's size on this device with
+    /// UAV access and an NT shared handle, D3D12 cannot open it, or too many are open.
+    fn repack_into(
+        &mut self,
+        buffer: &Buffer,
+        frame: &BaleZcFrame,
+        target: &ID3D11Texture2D,
+    ) -> Result<bool> {
+        let memory = buffer.memory.as_ref().ok_or(E_FAIL)?;
+        if self.targets_refused || !fits_target(target, frame) {
+            return Ok(false);
+        }
+        let _lock = Locked::enter(&self.multithread);
+        // SAFETY: live fence.
+        let completed = unsafe { self.repacked.GetCompletedValue() };
+        let horizon = self.repacked_value.saturating_sub(TARGET_IDLE_FRAMES);
+        // Closed only once no submitted dispatch writes them.
+        self.targets
+            .retain(|_, cached| cached.used > horizon || cached.used > completed);
+        let key = target.as_raw() as usize;
+        let texture = match self.targets.get(&key) {
+            Some(cached) => cached.texture.clone(),
+            None => {
+                if self.targets.len() >= MAX_TARGETS {
+                    return Ok(false);
+                }
+                // SAFETY: live texture; the device is only compared.
+                let device = unsafe { target.GetDevice() }.step("target device")?;
+                if !same_device(&device, &self.device11)? {
+                    return Ok(false);
+                }
+                let Ok(texture) = self.open(target, frame.width, frame.height, true) else {
+                    self.targets_refused = true;
+                    return Ok(false);
+                };
+                self.targets.insert(
+                    key,
+                    Target {
+                        _texture11: target.clone(),
+                        texture: texture.clone(),
+                        used: 0,
+                    },
+                );
+                texture
+            }
+        };
+        let slot = self.next;
+        // Queued after every D3D11 command so far: MF's reads of this recycled texture and the
+        // caller's copy from the previous landing texture.
+        self.released_value += 1;
+        // SAFETY: live context and fence, under the multithread lock.
+        unsafe { self.context.Signal(&self.released11, self.released_value) }
+            .step("D3D11 signal released")?;
+        if let Some(previous) = self.previous.take() {
+            self.slots[previous].released = self.released_value;
+        }
+        // The slot's allocator and descriptors are reused only after its last dispatch ran.
+        self.wait(&self.repacked, self.slots[slot].submitted)
+            .step("slot idle wait")?;
+        let value = self.dispatch(slot, memory, frame, &texture, None, self.released_value)?;
+        if let Some(cached) = self.targets.get_mut(&key) {
+            cached.used = value;
+        }
+        self.finish(slot, buffer, value)?;
+        Ok(true)
+    }
+
+    /// Records and submits the repack of `frame` from `memory` into `texture` (P010 with UAV
+    /// access, in COMMON) on the idle `slot`, then a copy from it into `copy` when given. The
+    /// queue first waits for `released` to reach `wait` (0: no wait). Returns the `repacked`
+    /// value the dispatch signals. Caller holds the multithread lock.
+    fn dispatch(
+        &self,
+        slot: usize,
+        memory: &Memory,
+        frame: &BaleZcFrame,
+        texture: &ID3D12Resource,
+        copy: Option<&ID3D12Resource>,
+        wait: u64,
+    ) -> Result<u64> {
         let base = 3 * slot as u32;
         let view = D3D12_SHADER_RESOURCE_VIEW_DESC {
             Format: DXGI_FORMAT_R32_TYPELESS,
@@ -461,20 +584,39 @@ impl Inner {
                 },
             },
         };
-        // SAFETY: live device and buffer; the descriptor is not in use (slot idle, waited above).
+        // SAFETY: live device, buffer and texture; the slot's descriptors are not in use (the
+        // caller waited for the slot's last dispatch).
         unsafe {
             self.device
-                .CreateShaderResourceView(&memory.resource, Some(&view), self.cpu(base))
-        };
+                .CreateShaderResourceView(&memory.resource, Some(&view), self.cpu(base));
+            for plane in 0..2 {
+                let view = D3D12_UNORDERED_ACCESS_VIEW_DESC {
+                    Format: [DXGI_FORMAT_R16_UINT, DXGI_FORMAT_R16G16_UINT][plane as usize],
+                    ViewDimension: D3D12_UAV_DIMENSION_TEXTURE2D,
+                    Anonymous: D3D12_UNORDERED_ACCESS_VIEW_DESC_0 {
+                        Texture2D: D3D12_TEX2D_UAV {
+                            MipSlice: 0,
+                            PlaneSlice: plane,
+                        },
+                    },
+                };
+                self.device.CreateUnorderedAccessView(
+                    texture,
+                    None::<&ID3D12Resource>,
+                    Some(&view),
+                    self.cpu(base + 1 + plane),
+                );
+            }
+        }
         let current = &self.slots[slot];
-        let landing = current.landing.as_ref().ok_or(E_FAIL)?;
         let constants = frame.constants();
         let [x, y] = frame.groups();
         let value = self.repacked_value + 1;
         // SAFETY: the slot's allocator and list are idle; every bound object lives until the
         // dispatch completes (buffers are reused only after `repacked` passes `value`, landing
-        // textures and descriptors only after an idle wait). Every texture ends in COMMON, so
-        // D3D11 sees the shared one in the common state.
+        // textures and descriptors only after an idle wait, caller textures only once `repacked`
+        // passed their last write). Every texture ends in COMMON, so D3D11 sees the shared one
+        // in the common state.
         unsafe {
             current.allocator.Reset()?;
             current.list.Reset(&current.allocator, &self.pso)?;
@@ -487,21 +629,21 @@ impl Inner {
                 .list
                 .SetComputeRootDescriptorTable(1, self.gpu(base));
             current.list.ResourceBarrier(&[transition(
-                &landing.texture,
+                texture,
                 D3D12_RESOURCE_STATE_COMMON,
                 D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
             )]);
             current.list.Dispatch(x, y, 1);
-            match &landing.copy {
+            match copy {
                 None => current.list.ResourceBarrier(&[transition(
-                    &landing.texture,
+                    texture,
                     D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                     D3D12_RESOURCE_STATE_COMMON,
                 )]),
                 Some(copy) => {
                     current.list.ResourceBarrier(&[
                         transition(
-                            &landing.texture,
+                            texture,
                             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                             D3D12_RESOURCE_STATE_COPY_SOURCE,
                         ),
@@ -511,10 +653,10 @@ impl Inner {
                             D3D12_RESOURCE_STATE_COPY_DEST,
                         ),
                     ]);
-                    current.list.CopyResource(copy, &landing.texture);
+                    current.list.CopyResource(copy, texture);
                     current.list.ResourceBarrier(&[
                         transition(
-                            &landing.texture,
+                            texture,
                             D3D12_RESOURCE_STATE_COPY_SOURCE,
                             D3D12_RESOURCE_STATE_COMMON,
                         ),
@@ -527,22 +669,26 @@ impl Inner {
                 }
             }
             current.list.Close()?;
-            if current.released > 0 {
-                self.queue.Wait(&self.released, current.released)?;
+            if wait > 0 {
+                self.queue.Wait(&self.released, wait)?;
             }
             self.queue
                 .ExecuteCommandLists(&[Some(current.list.cast::<ID3D12CommandList>()?)]);
             self.queue.Signal(&self.repacked, value)?;
         }
-        let texture11 = landing.texture11.clone();
+        Ok(value)
+    }
+
+    /// Books the dispatch `value` submitted on `slot` from `buffer`, and makes the D3D11 context
+    /// wait for it on the GPU. Caller holds the multithread lock.
+    fn finish(&mut self, slot: usize, buffer: &Buffer, value: u64) -> Result<()> {
         self.repacked_value = value;
         self.slots[slot].submitted = value;
         buffer.gpu_fence.fetch_max(value, Ordering::AcqRel);
         // SAFETY: live context and fence, under the multithread lock.
         unsafe { self.context.Wait(&self.repacked11, value) }.step("D3D11 wait repacked")?;
-        self.previous = Some(slot);
         self.next = (slot + 1) % SLOTS;
-        Ok(texture11)
+        Ok(())
     }
 
     /// Replaces both landing textures once nothing reads or writes them.
@@ -553,30 +699,9 @@ impl Inner {
         for slot in &mut self.slots {
             slot.landing = None;
         }
+        // The plane UAVs are written per dispatch, which may target a caller texture instead.
         for index in 0..SLOTS {
-            let landing = self.landing(width, height)?;
-            for plane in 0..2 {
-                let view = D3D12_UNORDERED_ACCESS_VIEW_DESC {
-                    Format: [DXGI_FORMAT_R16_UINT, DXGI_FORMAT_R16G16_UINT][plane as usize],
-                    ViewDimension: D3D12_UAV_DIMENSION_TEXTURE2D,
-                    Anonymous: D3D12_UNORDERED_ACCESS_VIEW_DESC_0 {
-                        Texture2D: D3D12_TEX2D_UAV {
-                            MipSlice: 0,
-                            PlaneSlice: plane,
-                        },
-                    },
-                };
-                // SAFETY: live device and texture; the descriptors are idle (waited above).
-                unsafe {
-                    self.device.CreateUnorderedAccessView(
-                        &landing.texture,
-                        None::<&ID3D12Resource>,
-                        Some(&view),
-                        self.cpu(3 * index as u32 + 1 + plane),
-                    )
-                };
-            }
-            self.slots[index].landing = Some(landing);
+            self.slots[index].landing = Some(self.landing(width, height)?);
         }
         self.size = Some((width, height));
         Ok(())
@@ -639,6 +764,19 @@ impl Inner {
         desc.MiscFlags =
             (D3D11_RESOURCE_MISC_SHARED_NTHANDLE.0 | D3D11_RESOURCE_MISC_SHARED.0) as u32;
         let texture11 = texture(&self.device11, &desc, None).step("D3D11 landing texture")?;
+        let texture = self.open(&texture11, width, height, uav)?;
+        Ok((texture, texture11))
+    }
+
+    /// Opens a D3D11 P010 texture created with an NT shared handle in D3D12, and checks that D3D12
+    /// sees `width` x `height` P010 (with UAV access when `uav`).
+    fn open(
+        &self,
+        texture11: &ID3D11Texture2D,
+        width: u32,
+        height: u32,
+        uav: bool,
+    ) -> Result<ID3D12Resource> {
         // SAFETY: live texture; default security, unnamed; the NT handle closes after the open.
         let shared = Handle(
             unsafe {
@@ -648,17 +786,17 @@ impl Inner {
                     PCWSTR::null(),
                 )
             }
-            .step("landing shared handle")?,
+            .step("shared handle")?,
         );
         let mut opened: Option<ID3D12Resource> = None;
         // SAFETY: an NT handle from CreateSharedHandle on the same adapter, open for the call;
         // `opened` is our out-slot.
         unsafe { self.device.OpenSharedHandle(shared.0, &mut opened) }
-            .step("D3D12 open landing texture")?;
+            .step("D3D12 open shared texture")?;
         drop(shared);
         let texture = opened
             .ok_or_else(|| Error::from(E_FAIL))
-            .step("D3D12 open landing texture")?;
+            .step("D3D12 open shared texture")?;
         // SAFETY: live resource.
         let seen = unsafe { texture.GetDesc() };
         let uav_seen = seen.Flags.0 & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS.0 != 0;
@@ -667,9 +805,9 @@ impl Inner {
             || seen.MipLevels != 1
             || (uav && !uav_seen)
         {
-            return Err(E_FAIL.into()).step("D3D12 landing texture description");
+            return Err(E_FAIL.into()).step("D3D12 shared texture description");
         }
-        Ok((texture, texture11))
+        Ok(texture)
     }
 
     /// Waits on the CPU for `fence`, first flushing the D3D11 context: D3D12 work may wait for a
@@ -719,7 +857,8 @@ impl Drop for Inner {
 }
 
 /// Opaque C-ABI handle. `bale_zc_alloc` and `bale_zc_stats` may run on any thread at any time;
-/// `bale_zc_repack` calls are serialized by the caller; destroy runs after every other call.
+/// `bale_zc_repack` and `bale_zc_repack_into` calls are serialized by the caller; destroy runs after
+/// every other call.
 pub struct BaleZeroCopy {
     pool: Arc<Pool>,
     inner: Mutex<Inner>,
@@ -859,6 +998,8 @@ impl BaleZeroCopy {
                 next: 0,
                 previous: None,
                 direct,
+                targets: BTreeMap::new(),
+                targets_refused: false,
                 repacked_value: 0,
                 released_value: 0,
                 event,
@@ -870,40 +1011,107 @@ impl BaleZeroCopy {
     }
 
     /// Both landing slots, then a size change with an odd chroma width, through the real alloc
-    /// and repack paths; padded layouts with garbage in the padding and in the top 6 bits.
+    /// and repack paths; padded layouts with garbage in the padding and in the top 6 bits. Then a
+    /// direct write into a texture like MF's shared UAV pool textures, followed by a landing frame
+    /// on the slot it used. A failed direct write only refuses direct writes for the handle.
     fn self_test(&self) -> Result<()> {
         let mut inner = self.inner.lock().map_err(|_| E_UNEXPECTED)?;
         for (index, (width, height)) in [(64, 64), (64, 64), (66, 18)].into_iter().enumerate() {
-            let (frame, bytes) = BaleZcFrame::test_layout(width, height);
-            let buffer = self.pool.alloc(bytes).step("self-test alloc")?;
-            let memory = buffer.memory.as_ref().ok_or(E_FAIL)?;
-            let mut source = vec![0u8; bytes as usize];
-            fill_test_planes(&frame, &mut source, index as u32 + 1);
-            // SAFETY: a fresh mapped buffer of at least `bytes` that the GPU does not use yet.
-            unsafe {
-                std::ptr::copy_nonoverlapping(source.as_ptr(), memory.data as *mut u8, source.len())
-            };
-            let landing = inner.repack(&buffer, &frame).step("self-test repack")?;
-            let mut desc = texture_desc(width, height, DXGI_FORMAT_P010, 0);
-            desc.Usage = D3D11_USAGE_STAGING;
-            desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ.0 as u32;
-            let _lock = Locked::enter(&inner.multithread);
-            let staging = texture(&inner.device11, &desc, None).step("self-test staging")?;
-            // SAFETY: matching unmapped P010 textures on this device, under the lock.
-            unsafe { inner.context.CopyResource(&staging, &landing) };
-            let actual = readback_bytes(
-                &inner.context,
-                &staging,
-                2 * width as usize,
-                (height + height / 2) as usize,
-            )
-            .step("self-test readback")?;
-            if actual != frame.reference_p010(&source) {
-                return Err(E_FAIL.into()).step(&format!("self-test mismatch at {width}x{height}"));
-            }
+            self.test_frame(&mut inner, width, height, index as u32 + 1, None)?;
+        }
+        let direct = test_target(&inner.device11, 66, 18)
+            .and_then(|target| self.test_frame(&mut inner, 66, 18, 4, Some(&target)));
+        if direct.is_err() {
+            inner.targets_refused = true;
+        }
+        self.test_frame(&mut inner, 66, 18, 5, None)?;
+        let _lock = Locked::enter(&inner.multithread);
+        if inner.wait(&inner.repacked, inner.repacked_value).is_ok() {
+            inner.targets.clear();
         }
         Ok(())
     }
+
+    /// Repacks one test picture into the next landing texture, or into `target`, and checks it.
+    fn test_frame(
+        &self,
+        inner: &mut Inner,
+        width: u32,
+        height: u32,
+        seed: u32,
+        target: Option<&ID3D11Texture2D>,
+    ) -> Result<()> {
+        let (frame, bytes) = BaleZcFrame::test_layout(width, height);
+        let buffer = self.pool.alloc(bytes).step("self-test alloc")?;
+        let memory = buffer.memory.as_ref().ok_or(E_FAIL)?;
+        let mut source = vec![0u8; bytes as usize];
+        fill_test_planes(&frame, &mut source, seed);
+        // SAFETY: a fresh mapped buffer of at least `bytes` that the GPU does not use yet.
+        unsafe {
+            std::ptr::copy_nonoverlapping(source.as_ptr(), memory.data as *mut u8, source.len())
+        };
+        let output = match target {
+            None => inner.repack(&buffer, &frame).step("self-test repack")?,
+            Some(target) => {
+                if !inner
+                    .repack_into(&buffer, &frame, target)
+                    .step("self-test direct repack")?
+                {
+                    return Err(E_FAIL.into()).step("self-test direct repack declined");
+                }
+                target.clone()
+            }
+        };
+        let mut desc = texture_desc(width, height, DXGI_FORMAT_P010, 0);
+        desc.Usage = D3D11_USAGE_STAGING;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ.0 as u32;
+        let _lock = Locked::enter(&inner.multithread);
+        let staging = texture(&inner.device11, &desc, None).step("self-test staging")?;
+        // SAFETY: matching unmapped P010 textures on this device, under the lock.
+        unsafe { inner.context.CopyResource(&staging, &output) };
+        let actual = readback_bytes(
+            &inner.context,
+            &staging,
+            2 * width as usize,
+            (height + height / 2) as usize,
+        )
+        .step("self-test readback")?;
+        if actual != frame.reference_p010(&source) {
+            return Err(E_FAIL.into()).step(&format!("self-test mismatch at {width}x{height}"));
+        }
+        Ok(())
+    }
+}
+
+/// Bind flags of MF's shareable pool textures (upload variant 6): render target, shader resource
+/// and unordered access.
+const TARGET_BIND: u32 = (D3D11_BIND_RENDER_TARGET.0
+    | D3D11_BIND_SHADER_RESOURCE.0
+    | D3D11_BIND_UNORDERED_ACCESS.0) as u32;
+
+/// A texture like MF's shareable pool textures; without the render-target bind where P010 is no
+/// render target format.
+fn test_target(device: &ID3D11Device, width: u32, height: u32) -> Result<ID3D11Texture2D> {
+    let mut desc = texture_desc(width, height, DXGI_FORMAT_P010, TARGET_BIND);
+    desc.MiscFlags = (D3D11_RESOURCE_MISC_SHARED_NTHANDLE.0 | D3D11_RESOURCE_MISC_SHARED.0) as u32;
+    texture(device, &desc, None).or_else(|_| {
+        desc.BindFlags &= !(D3D11_BIND_RENDER_TARGET.0 as u32);
+        texture(device, &desc, None)
+    })
+}
+
+/// A texture the dispatch can write for `frame`: P010 of its size, one plain subresource, UAV
+/// access and an NT shared handle.
+fn fits_target(target: &ID3D11Texture2D, frame: &BaleZcFrame) -> bool {
+    let mut desc = D3D11_TEXTURE2D_DESC::default();
+    // SAFETY: live texture; local out-slot.
+    unsafe { target.GetDesc(&mut desc) };
+    desc.Format == DXGI_FORMAT_P010
+        && (desc.Width, desc.Height) == (frame.width, frame.height)
+        && (desc.MipLevels, desc.ArraySize, desc.SampleDesc.Count) == (1, 1, 1)
+        && desc.Usage == D3D11_USAGE_DEFAULT
+        && desc.BindFlags & D3D11_BIND_UNORDERED_ACCESS.0 as u32 != 0
+        && desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_NTHANDLE.0 as u32 != 0
 }
 
 /// Creates a FL11_0 D3D12 device on the D3D11 device's adapter.
@@ -1292,45 +1500,128 @@ pub unsafe extern "C" fn bale_zc_repack(
         else {
             return E_INVALIDARG.0;
         };
-        let buffer = match live() {
-            Ok(live) => live.get(&(buffer as usize)).cloned(),
-            Err(error) => return error.code().0,
+        let buffer = match picture(zero_copy, buffer, frame) {
+            Ok(buffer) => buffer,
+            Err(hr) => return hr,
         };
-        let Some(buffer) = buffer.filter(|buffer| Arc::ptr_eq(&buffer.pool, &zero_copy.pool))
-        else {
-            return S_FALSE;
-        };
-        let Some(bytes) = buffer.memory.as_ref().map(|memory| memory.bytes) else {
-            return E_FAIL.0;
-        };
-        if !frame.fits(bytes) {
-            return E_INVALIDARG.0;
-        }
-        let Ok(mut inner) = zero_copy.inner.lock() else {
-            zero_copy.pool.poisoned.store(true, Ordering::Release);
-            return E_UNEXPECTED.0;
-        };
-        if let Some(hr) = inner.poison {
-            return hr;
-        }
-        let hr = match inner.repack(&buffer, frame) {
-            Ok(texture) => {
+        let result = run(zero_copy, |inner| {
+            let texture = inner.repack(&buffer, frame)?;
+            // `previous` is the slot this frame just landed in.
+            let copied = inner
+                .previous
+                .and_then(|slot| inner.slots[slot].landing.as_ref())
+                .is_some_and(|landing| landing.copy.is_some());
+            Ok((texture, copied))
+        });
+        match result {
+            Ok((texture, copied)) => {
                 // SAFETY: the caller guarantees a writable output. The landing slot keeps its
                 // own reference, so the borrowed pointer outlives this clone.
                 unsafe { out_texture.write(texture.as_raw()) };
                 zero_copy.pool.frames.fetch_add(1, Ordering::Relaxed);
-                // `previous` is the slot this frame just landed in.
-                let copied = inner
-                    .previous
-                    .and_then(|slot| inner.slots[slot].landing.as_ref())
-                    .is_some_and(|landing| landing.copy.is_some());
                 if copied {
                     zero_copy.pool.copies.fetch_add(1, Ordering::Relaxed);
                 }
-                return S_OK;
+                S_OK
             }
-            Err(error) => error.code().0,
+            Err(hr) => hr,
+        }
+    })
+}
+
+/// Repacks the 10-bit picture `frame` in `buffer` straight into the caller's `target`, an
+/// ID3D11Texture2D on the handle's device: P010, `width` x `height`, one subresource, UAV access
+/// (render target and shader resource access are fine) and an NT shared handle
+/// (D3D11_RESOURCE_MISC_SHARED_NTHANDLE), like MF's shareable pool textures. The handle opens it
+/// once and keeps a reference while the texture is in use (it is closed after some idle frames
+/// and at destroy). The immediate context waits for the write on the GPU, so commands queued
+/// after this call see the picture. The write itself waits on the GPU for every D3D11 command
+/// queued before the call, so the caller must queue its last use of the texture's previous
+/// picture (and of any earlier landing texture) first, and must not use the texture until the
+/// call returns.
+///
+/// `grain` must be null for now; non-null is declined. Returns S_OK when written, and S_FALSE
+/// when declined with no GPU work queued: `buffer` is not a live buffer of this handle, `grain`
+/// is non-null, `target` does not qualify, D3D12 cannot open it (then every later call is
+/// declined too), or too many textures are open. The caller then lands the frame with
+/// [`bale_zc_repack`]. E_INVALIDARG for null inputs or a layout that does not fit the buffer;
+/// otherwise a failure that poisons the handle as [`bale_zc_repack`] does.
+///
+/// # Safety
+/// A non-null handle must be live; repack calls are serialized. Non-null `frame` and `grain` must
+/// be readable; a non-null `target` must be a live ID3D11Texture2D.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_zc_repack_into(
+    handle: *const BaleZeroCopy,
+    buffer: *mut c_void,
+    frame: *const BaleZcFrame,
+    grain: *const BaleGrainParams,
+    target: *mut c_void,
+) -> i32 {
+    boundary(|| {
+        // SAFETY: non-null pointers are live and readable per the caller; the texture is borrowed
+        // for the call and cached with our own reference.
+        let (Some(zero_copy), Some(frame), Some(target)) = (
+            unsafe { handle.as_ref() },
+            unsafe { frame.as_ref() },
+            unsafe { ID3D11Texture2D::from_raw_borrowed(&target) },
+        ) else {
+            return E_INVALIDARG.0;
         };
+        let buffer = match picture(zero_copy, buffer, frame) {
+            Ok(buffer) => buffer,
+            Err(hr) => return hr,
+        };
+        if !grain.is_null() {
+            return S_FALSE;
+        }
+        match run(zero_copy, |inner| inner.repack_into(&buffer, frame, target)) {
+            Ok(true) => {
+                zero_copy.pool.frames.fetch_add(1, Ordering::Relaxed);
+                S_OK
+            }
+            Ok(false) => S_FALSE,
+            Err(hr) => hr,
+        }
+    })
+}
+
+/// The live buffer `id` of this handle for `frame`: S_FALSE when it is not one, E_INVALIDARG when
+/// the layout does not fit it.
+fn picture(
+    zero_copy: &BaleZeroCopy,
+    id: *mut c_void,
+    frame: &BaleZcFrame,
+) -> std::result::Result<Arc<Buffer>, i32> {
+    let buffer = live()
+        .map_err(|error| error.code().0)?
+        .get(&(id as usize))
+        .cloned();
+    let buffer = buffer
+        .filter(|buffer| Arc::ptr_eq(&buffer.pool, &zero_copy.pool))
+        .ok_or(S_FALSE)?;
+    let bytes = buffer.memory.as_ref().ok_or(E_FAIL.0)?.bytes;
+    if !frame.fits(bytes) {
+        return Err(E_INVALIDARG.0);
+    }
+    Ok(buffer)
+}
+
+/// Runs a repack on the handle's state. A failure poisons the handle: later repacks return it
+/// and allocs fail.
+fn run<T>(
+    zero_copy: &BaleZeroCopy,
+    repack: impl FnOnce(&mut Inner) -> Result<T>,
+) -> std::result::Result<T, i32> {
+    let Ok(mut inner) = zero_copy.inner.lock() else {
+        zero_copy.pool.poisoned.store(true, Ordering::Release);
+        return Err(E_UNEXPECTED.0);
+    };
+    if let Some(hr) = inner.poison {
+        return Err(hr);
+    }
+    repack(&mut inner).map_err(|error| {
+        let hr = error.code().0;
         inner.poison = Some(hr);
         zero_copy.pool.poisoned.store(true, Ordering::Release);
         hr
