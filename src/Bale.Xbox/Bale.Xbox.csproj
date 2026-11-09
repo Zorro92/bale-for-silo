@@ -42,6 +42,12 @@
     <ProjectReference Include="..\Bale.Core\Bale.Core.csproj" />
   </ItemGroup>
 
+  <!-- Debug-server builds only: WinUI 2 for the WebView2 input-idle comparison (Services/DebugServer.WebViewTest.cs).
+       Shipped builds (BaleDebugServer=false) never reference it. -->
+  <ItemGroup Condition="'$(BaleDebugServer)' == 'true'">
+    <PackageReference Include="Microsoft.UI.Xaml" Version="[2.8.7]" />
+  </ItemGroup>
+
   <!-- Production fallback: native decoders, activation and license texts ship in every build. -->
   <ItemGroup>
     <PackageReference Include="FFmpegInteropX.UWP.Lib" Version="[2.1.0-bale.14]" GeneratePathProperty="true" />

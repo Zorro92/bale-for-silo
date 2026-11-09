@@ -16,7 +16,7 @@ public class DebugIdleTestTests
         Assert.Contains("case (\"GET\", \"/idle-test\")", server);
         Assert.Contains("case (\"POST\", \"/idle-test\")", server);
         Assert.Contains("if (query.Count != 1 || !IsIdleTestAction(idleAction))", server);
-        Assert.Contains("or \"/idle-test\"))", server);
+        Assert.Contains("or \"/idle-test\" or", server);
 
         var player = Read("PlayerPage.cs.txt");
         var debugBlock = player[player.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal)..];
