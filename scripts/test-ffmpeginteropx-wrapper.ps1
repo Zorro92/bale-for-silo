@@ -28,6 +28,8 @@ try {
     $native = Join-Path $fixture 'native'
     New-Item -ItemType Directory $repo, $patches, $native, (Join-Path $repo 'Source') | Out-Null
     Invoke-WrapperGit $repo @('init', '--quiet')
+    # Runner images may set core.autocrlf globally; LF patches must apply to this LF fixture.
+    Invoke-WrapperGit $repo @('config', 'core.autocrlf', 'false')
     "one`n" | Set-Content (Join-Path $repo 'Source/test.cpp') -NoNewline
     Invoke-WrapperGit $repo @('add', '.')
     Invoke-WrapperGit $repo @('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'Fixture baseline')
