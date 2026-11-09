@@ -3,16 +3,19 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const SHADERS: [(&str, &str); 3] = [
+const SHADERS: [(&str, &str); 5] = [
     ("fullscreen_vs", "vs_5_0"),
     ("grain_luma_ps", "ps_5_0"),
     ("grain_chroma_ps", "ps_5_0"),
+    ("repack_luma_ps", "ps_5_0"),
+    ("repack_chroma_ps", "ps_5_0"),
 ];
 
 fn main() {
     println!("cargo::rustc-check-cfg=cfg(bale_grain_no_shaders)");
     println!("cargo:rerun-if-env-changed=FXC");
     println!("cargo:rerun-if-changed=shaders/grain_common.hlsli");
+    println!("cargo:rerun-if-changed=shaders/repack_common.hlsli");
     for (name, _) in SHADERS {
         println!("cargo:rerun-if-changed=shaders/{name}.hlsl");
     }

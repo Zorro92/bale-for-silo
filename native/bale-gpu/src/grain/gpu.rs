@@ -494,14 +494,14 @@ impl BaleGrainGpu {
 }
 
 /// Owns the lock and previous state, without borrowing the handle across mutable resource changes.
-struct ContextGuard {
+pub(crate) struct ContextGuard {
     context: ID3D11DeviceContext1,
     multithread: ID3D10Multithread,
     previous: Option<ID3DDeviceContextState>,
 }
 
 impl ContextGuard {
-    fn enter(
+    pub(crate) fn enter(
         context: &ID3D11DeviceContext1,
         multithread: &ID3D10Multithread,
         state: &ID3DDeviceContextState,
@@ -535,7 +535,7 @@ impl Drop for ContextGuard {
     }
 }
 
-fn unbind(context: &ID3D11DeviceContext) {
+pub(crate) fn unbind(context: &ID3D11DeviceContext) {
     // SAFETY: called only under ContextGuard, and only clears our isolated state's bindings.
     unsafe {
         context.PSSetShaderResources(0, Some(&[None, None, None, None, None, None]));
@@ -543,7 +543,7 @@ fn unbind(context: &ID3D11DeviceContext) {
     }
 }
 
-fn check_formats(device: &ID3D11Device) -> Result<()> {
+pub(crate) fn check_formats(device: &ID3D11Device) -> Result<()> {
     for (format, required) in required_formats() {
         // SAFETY: live device, format is a known DXGI enum value.
         if unsafe { device.CheckFormatSupport(format)? } & required != required {
@@ -584,7 +584,7 @@ pub(super) fn required_formats() -> impl Iterator<Item = (DXGI_FORMAT, u32)> {
     })
 }
 
-pub(super) fn plane_formats(format: DXGI_FORMAT) -> [DXGI_FORMAT; 2] {
+pub(crate) fn plane_formats(format: DXGI_FORMAT) -> [DXGI_FORMAT; 2] {
     if format == DXGI_FORMAT_P010 {
         [DXGI_FORMAT_R16_UINT, DXGI_FORMAT_R16G16_UINT]
     } else {
@@ -592,7 +592,7 @@ pub(super) fn plane_formats(format: DXGI_FORMAT) -> [DXGI_FORMAT; 2] {
     }
 }
 
-pub(super) fn texture_desc(
+pub(crate) fn texture_desc(
     width: u32,
     height: u32,
     format: DXGI_FORMAT,
@@ -614,7 +614,7 @@ pub(super) fn texture_desc(
     }
 }
 
-pub(super) fn texture(
+pub(crate) fn texture(
     device: &ID3D11Device,
     desc: &D3D11_TEXTURE2D_DESC,
     data: Option<&D3D11_SUBRESOURCE_DATA>,
@@ -626,7 +626,7 @@ pub(super) fn texture(
     texture.ok_or_else(|| E_FAIL.into())
 }
 
-pub(super) fn shader_view(
+pub(crate) fn shader_view(
     device: &ID3D11Device,
     texture: &ID3D11Texture2D,
     format: DXGI_FORMAT,
@@ -648,7 +648,7 @@ pub(super) fn shader_view(
     view.ok_or_else(|| E_FAIL.into())
 }
 
-pub(super) fn render_view(
+pub(crate) fn render_view(
     device: &ID3D11Device,
     texture: &ID3D11Texture2D,
     format: DXGI_FORMAT,
@@ -666,7 +666,7 @@ pub(super) fn render_view(
     view.ok_or_else(|| E_FAIL.into())
 }
 
-fn same_device(a: &ID3D11Device, b: &ID3D11Device) -> Result<bool> {
+pub(crate) fn same_device(a: &ID3D11Device, b: &ID3D11Device) -> Result<bool> {
     Ok(a.cast::<IUnknown>()? == b.cast::<IUnknown>()?)
 }
 
@@ -725,7 +725,7 @@ fn validate_descs(
     Ok(())
 }
 
-fn is_device_loss(hr: HRESULT) -> bool {
+pub(crate) fn is_device_loss(hr: HRESULT) -> bool {
     matches!(
         hr,
         DXGI_ERROR_DEVICE_REMOVED
@@ -747,7 +747,7 @@ impl Drop for MappedRead<'_> {
     }
 }
 
-pub(super) fn readback_bytes(
+pub(crate) fn readback_bytes(
     context: &ID3D11DeviceContext,
     texture: &ID3D11Texture2D,
     row_bytes: usize,

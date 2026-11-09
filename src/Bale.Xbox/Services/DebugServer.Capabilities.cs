@@ -999,6 +999,8 @@ internal sealed partial class DebugServer
                     .Append(GpuDecoderProfileNames.TryGetValue(profile, out var name) ? name : profile.ToString())
                     .Append(':');
                 var any = false;
+                var firstFailure = 0;
+                var unsupportedFlags = -1;
                 foreach (var (formatName, format) in GpuDecoderOutputFormats)
                 {
                     foreach (var (sizeName, width, height) in GpuDecoderSizes)
@@ -1013,13 +1015,28 @@ internal sealed partial class DebugServer
                             FrameRateDenominator = 1,
                         };
                         // A failed query for one combination is "not supported", never the whole report.
-                        if (checkFeature(videoDevice, 0, &support, (uint)sizeof(D3D12VideoDecodeSupport)) < 0) continue;
-                        if ((support.SupportFlags & 1) == 0) continue;
+                        var supportHr = checkFeature(videoDevice, 0, &support, (uint)sizeof(D3D12VideoDecodeSupport));
+                        if (supportHr < 0)
+                        {
+                            if (firstFailure == 0) firstFailure = supportHr;
+                            continue;
+                        }
+                        if ((support.SupportFlags & 1) == 0)
+                        {
+                            if (unsupportedFlags < 0) unsupportedFlags = support.SupportFlags;
+                            continue;
+                        }
                         line.Append(' ').Append(formatName).Append('/').Append(sizeName).Append("(tier ").Append(support.DecodeTier).Append(')');
                         any = true;
                     }
                 }
-                if (!any) line.Append(" (no supported NV12/P010 size)");
+                if (!any)
+                {
+                    line.Append(" (no supported NV12/P010 size");
+                    if (firstFailure != 0) line.Append($"; first query error 0x{unchecked((uint)firstFailure):X8}");
+                    if (unsupportedFlags >= 0) line.Append($"; SupportFlags=0x{unsupportedFlags:X}");
+                    line.Append(')');
+                }
                 builder.Append(line).Append('\n');
             }
         }

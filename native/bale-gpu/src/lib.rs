@@ -9,6 +9,8 @@ mod engine;
 #[cfg(windows)]
 mod frames;
 pub mod grain;
+#[cfg(windows)]
+pub mod repack;
 
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
