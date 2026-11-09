@@ -509,6 +509,10 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Null(cleared.ZeroCopy);
         Assert.DoesNotContain("zerocopy", cleared.Description);
         Assert.Contains("zerocopy=on|off|default", DebugFfmpegInputTuning.Usage);
+        var script = Read("bale-debug.sh");
+        Assert.Contains("zerocopy=*) [[ \"$value\" == on || \"$value\" == off || \"$value\" == default ]] && valid_tuning=true ;;", script);
+        Assert.Contains("[repack=on|off|default] [zerocopy=on|off|default]", script);
+        Assert.Contains("zerocopy=on = dav1d decodes into D3D12 buffers repacked on the GPU", script);
     }
 
     [Theory]
