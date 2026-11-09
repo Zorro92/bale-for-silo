@@ -33,6 +33,7 @@ public sealed partial class App : Application
     protected override void OnLaunched(LaunchActivatedEventArgs e)
     {
         Log.Info($"Launched {Windows.ApplicationModel.Package.Current.Id.Version.Build} on {Windows.System.Profile.AnalyticsInfo.VersionInfo.DeviceFamily}");
+        _ = DeviceIdentity.SoftwareVideoSupported; // Logs the console's software video decision once per launch.
         if (Window.Current.Content is not Frame frame)
         {
             Artwork.TrimInBackground();

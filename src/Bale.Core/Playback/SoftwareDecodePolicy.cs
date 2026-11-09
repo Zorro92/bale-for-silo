@@ -23,6 +23,22 @@ public static class SoftwareDecodePolicy
         var value => value,
     };
 
+    /// <summary>
+    /// Software video (dav1d AV1) is measured only on Xbox Series (Zen 2 with AVX2). Xbox One, One S and
+    /// One X have 1.75–2.3 GHz Jaguar cores without AVX2, where dav1d drops to its SSSE3 paths, so they
+    /// claim no software video and the server transcodes AV1. A missing AVX2 alone also excludes it;
+    /// an unknown device form keeps the claim.
+    /// </summary>
+    public static bool SoftwareVideoSupported(bool avx2, string? deviceForm) =>
+        avx2 && deviceForm?.TrimStart().StartsWith("Xbox One", StringComparison.OrdinalIgnoreCase) != true;
+
+    /// <summary>Drops only the bundled software video claims; audio fallbacks stay.</summary>
+    public static DeviceCapabilities WithoutSoftwareVideo(DeviceCapabilities device) => device with
+    {
+        VideoCodecs = device.VideoCodecs.Where(codec => !VideoCodecs.Contains(codec)).ToArray(),
+        VideoDecode = device.VideoDecode.Where(decode => decode.Hardware).ToArray(),
+    };
+
     public static DeviceCapabilities WithoutFallbacks(DeviceCapabilities device) => device with
     {
         VideoCodecs = device.VideoCodecs.Where(codec => !VideoCodecs.Contains(codec)).ToArray(),

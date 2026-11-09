@@ -278,6 +278,8 @@ internal sealed partial class DebugServer
             builder.Append($" {name}={ReadPlatformCapability(() => IsProcessorFeaturePresent(feature) != 0 ? "yes" : "no")}");
         builder.Append($" (runtime Avx2={ReadPlatformCapability(() => Avx2.IsSupported ? "yes" : "no")}"
             + $" Avx512F={ReadPlatformCapability(() => Avx512F.IsSupported ? "yes" : "no")})\n");
+        builder.Append($"  DeviceForm={ReadPlatformCapability(() => Windows.System.Profile.AnalyticsInfo.DeviceForm)}"
+            + $" SoftwareVideo={ReadPlatformCapability(() => DeviceIdentity.SoftwareVideoSupported ? "yes" : "no")}\n");
 
         Log.Info("Debug caps: platform before MemoryManager queries");
         builder.Append("  Memory: AppMemoryUsage=")

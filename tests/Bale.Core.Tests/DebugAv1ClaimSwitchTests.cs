@@ -51,7 +51,7 @@ public class DebugAv1ClaimSwitchTests
         var capture = player.IndexOf(captureText, StringComparison.Ordinal);
         AssertDebugGuard(player, capture);
         Assert.DoesNotContain("DebugAv1ClaimSwitch", player[(capture + captureText.Length)..]);
-        var raised = player.IndexOf("if (attempt.Av1ClaimMaxHeight == 2160)", StringComparison.Ordinal);
+        var raised = player.IndexOf("if (attempt.Av1ClaimMaxHeight == 2160 && DeviceIdentity.SoftwareVideoSupported)", StringComparison.Ordinal);
         var off = player.IndexOf("capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);", StringComparison.Ordinal);
         AssertDebugGuard(player, raised);
         Assert.True(raised < off);

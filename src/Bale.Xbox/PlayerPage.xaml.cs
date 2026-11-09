@@ -174,8 +174,11 @@ public sealed partial class PlayerPage : Page, IBackHandler
                     request.Detail.PlaybackPositionSeconds,
                     request.SuppressResumeRewind ? 0 : PlaybackStartPosition.DefaultResumeRewindSeconds);
                 var capabilities = DisplayHdrOutput.DetectCapabilities();
+                // Xbox One (no AVX2) claims no software AV1, so the server transcodes it.
+                if (!DeviceIdentity.SoftwareVideoSupported)
+                    capabilities = SoftwareDecodePolicy.WithoutSoftwareVideo(capabilities);
 #if DEBUG_SERVER
-                if (attempt.Av1ClaimMaxHeight == 2160)
+                if (attempt.Av1ClaimMaxHeight == 2160 && DeviceIdentity.SoftwareVideoSupported)
                     capabilities = capabilities with { VideoDecode = ConsoleEvidence.BuildVideoDecode(3840, 2160) };
                 capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);
                 capabilities = DebugHdrPlayback.Capabilities(attempt.PretendHdr, capabilities);
