@@ -664,8 +664,29 @@ instead of working. Single-threaded swscale (`sws=1`) did not hurt earlier, so t
 planar copy alone is an unlikely cause. The suspects are the extra GPU work (staging copy, two
 repack draws, grain from a scratch copy) submitted under the multithread lock, and `Map` waits on the
 three-texture staging ring. The `ucrtbase.dll` group includes the decode-ahead thread (std::thread),
-so the per-thread tool cannot separate it from dav1d. Next step: per-stage wall-time counters on the
-decode-ahead thread (fill, Map wait, GPU submit, Flush) in a wrapper patch.
+so the per-thread tool cannot separate it from dav1d.
+
+**Stage timing (wrapper `2.1.0-bale.13`, patch 0013, log-only).** Averages per 240 frames on the
+decode-ahead thread at 4K: GPU repack and grain ~1 ms (~0.35 ms without grain), `Map` ~1–2 ms, `Flush`
+~1 ms, sample creation ~0.2 ms. The lock and the GPU are not the cause. The repack's single-threaded
+copy of dav1d's planes into the staging texture took **23–40 ms per frame**, against 9–17 ms for
+4-thread swscale, and dav1d sat idle waiting for it.
+
+| Title, wrapper | Repack on | Repack off (swscale) |
+|---|---|---|
+| Brawl (grain), bale.13 | 71–76 times, ~10.7 s | 31 times, 5.2–5.7 s |
+| Shrek 4K AV1 (no grain), bale.13 | 46 / 66 times, 6.7 / 10.1 s | 10 / 8 times, 1.8 / 1.3 s |
+| Brawl, bale.14 (sliced copy) | 48 times, 8.0–9.4 s | 30–31 times, 5.2–5.3 s |
+| Shrek, bale.14 (sliced copy) | 13 times, 2.2–2.7 s | 8–9 times, 1.5–2.4 s |
+
+**Sliced copy (`2.1.0-bale.14`, patch 0014).** The planar copy is split by rows over `SwsThreads`
+(caller plus workers, same priority as swscale). The copy drops to 11–16 ms, the same as swscale, and
+stalls fall by a third (Brawl) to three quarters (Shrek). Repack is still slightly behind and saves no
+total CPU (process 7.6–7.7 cores on against 7.45–7.5 off on Shrek). The conversion was never the real
+cost: writing ~24 MB per 4K frame into the staging texture runs at only ~2 GB/s with 4 threads, either
+because staging memory is write-combined or because dav1d competes for memory bandwidth. Repack stays
+a debug knob. Untested next ideas: `UpdateSubresource` or a `DYNAMIC` texture with `WRITE_DISCARD`
+instead of the staging ring, and a raw write-bandwidth probe into staging memory.
 A one-off picture freeze (~2 s at start) seen once by the owner during an earlier repack run did not
 reproduce in 5 further starts (2 resumes with screenshots, 3 Start Over).
 

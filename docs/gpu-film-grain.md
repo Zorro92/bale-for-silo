@@ -520,6 +520,10 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
   ahead drops to ~0.45 s against ~0.7 s). Likely cause: the copy and draws run on the shared immediate
   context under the multithread lock, so every frame now waits on the GPU in the decode thread.
   Not worth enabling; kept as a debug knob. 4K AV1 stays CPU-bound in dav1d.
+- Follow-up (2026-11-09, wrappers `bale.13`/`bale.14`): stage timing showed the GPU work at ~1 ms;
+  the real cause was the single-threaded planar copy into staging (23–40 ms per 4K frame). Slicing it
+  across the swscale threads (patch 0014) brings it to swscale's 11–16 ms and nearly closes the gap
+  on Shrek (13 against 8–9 stalls), but saves no CPU. Details in player-plan.md.
 
 ## 9. HDR / DV
 - Grain works on coded values (PQ for HDR10), exactly as dav1d does; patch 0004 color attributes are
