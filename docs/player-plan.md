@@ -645,6 +645,13 @@ CDEF output is a reference for later frames, which conflicts with dav1d's frame 
 dav1d is ~86 % of the process. Everything else is ~1 core, and ~0.6 of it is the avutil pool.
 The process nearly fills all 8 logical CPUs. The session buffered 30 times (2.7 s) with 0 late frames.
 
+The avutil pool is swscale: production runs `sws=4` (caller plus 3 workers). With `ffmpeg-tune repack=on`
+(resumed at ~11 min, 2 × 20 s) it disappears. dav1d's group then rises to 6.4–6.9 cores, and the process
+stays at 6.9–7.3, so dav1d absorbs the freed CPU. Buffering was 41 times (4.8 s) in a different scene,
+so the two runs aren't comparable. The earlier controlled A/B (gpu-film-grain.md section 8) showed the GPU
+repack stalls more. Freeing this ~0.6 core needs the repack's GPU work off the decode thread's
+immediate-context lock first.
+
 **Fixed debug-probe leak.** Through 0.1.271.0 each `playtest-ffmpeg` probe left ~25–30 MiB (1080p) to
 ~100+ MiB (4K) of native memory behind because its `MediaPlayer` was disposed from a worker after the
 scope ended. Disposing it on the UI thread right after detaching the source, as `PlayerPage.DisposeMount`
