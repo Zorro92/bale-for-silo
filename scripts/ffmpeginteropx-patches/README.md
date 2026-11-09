@@ -130,7 +130,8 @@ texture). It ships in `2.1.0-bale.15`.
 SHADER_RESOURCE) plus UNORDERED_ACCESS, with `MISC_SHARED_NTHANDLE | MISC_SHARED`: the flags
 D3D12 needs to open and write a pooled texture directly, without the landing-texture copy. It
 tests whether MF accepts such samples. GPU grain and repack accept variant 6 like variant 1;
-zero-copy already runs with any upload variant. Production keeps variant 1.
+zero-copy already runs with any upload variant. Production keeps variant 1. It ships in
+`2.1.0-bale.16`.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.

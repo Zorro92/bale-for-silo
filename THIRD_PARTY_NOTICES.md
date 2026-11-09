@@ -29,7 +29,7 @@ GNU Affero General Public License v3.0, as is Bale (see `LICENSE`).
 ## FFmpegInteropX
 
 All Bale builds bundle [FFmpegInteropX.UWP.Lib](https://github.com/ffmpeginteropx/FFmpegInteropX)
-**2.1.0-bale.15**, a Bale x64 native-wrapper fork of upstream 2.1.0, under the Apache License 2.0.
+**2.1.0-bale.16**, a Bale x64 native-wrapper fork of upstream 2.1.0, under the Apache License 2.0.
 Its full license text is packaged as `Licenses/FFmpegInteropX.txt`
 (source copy: `src/Bale.Xbox/Assets/FFmpegInteropX-LICENSE.txt`). The fork starts at upstream commit
 `88428c66e106852338b48554a4a00c9e48da588f` and applies
@@ -65,7 +65,9 @@ log lines in the D3D11 upload and decode-ahead paths (no behavior change), and
 staging copy across the configured swscale thread count, and
 `scripts/ffmpeginteropx-patches/0015-zero-copy-landing.patch` for an opt-in, debug-only path where
 dav1d decodes into GPU-visible buffers from Bale's `bale_gpu.dll` and a GPU repack replaces the
-staging copy (default off). Grain only modifies Bale-owned output, never dav1d
+staging copy (default off), and
+`scripts/ffmpeginteropx-patches/0016-upload-variant-shared-uav.patch` for a debug-only upload
+variant whose pooled textures are also D3D12-shareable unordered-access views. Grain only modifies Bale-owned output, never dav1d
 reference frames.
 The original winmd and managed projection are retained; with the new `bale_*` keys unset, behavior
 equals upstream 2.1.0 plus that colour-attribute fix.
@@ -93,7 +95,7 @@ FFmpeg remains at `38b88335f99e76ed89ff3c93f877fdefce736c13`. The build baseline
 [FFmpegInteropX v2.1.0, commit 88428c66e106852338b48554a4a00c9e48da588f](https://github.com/ffmpeginteropx/FFmpegInteropX/tree/88428c66e106852338b48554a4a00c9e48da588f),
 with its other dependency revisions and FFmpeg configure flags unchanged. The x64-only NuGet
 omits unused architecture globs and adds provenance; the separately rebuilt interop wrapper is
-2.1.0-bale.15 as described above.
+2.1.0-bale.16 as described above.
 
 The [native release](https://github.com/Zorro92/bale-for-silo/releases/tag/native-ffmpeg-8.1.2-dav1d-1.5.4-p1)
 provides the package, SHA256, `SOURCES.txt` with every submodule revision and build parameters,
