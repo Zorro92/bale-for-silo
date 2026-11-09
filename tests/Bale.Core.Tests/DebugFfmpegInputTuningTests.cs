@@ -493,7 +493,68 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         ["upload"] = tuning.D3d11Upload is { } upload ? upload == 0 ? "off" : upload.ToString(CultureInfo.InvariantCulture) : "default",
         ["uploadfault"] = tuning.UploadFaultFrames?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["repack"] = tuning.Repack is { } repack ? repack ? "on" : "off" : "default",
+        ["zerocopy"] = tuning.ZeroCopy is { } zeroCopy ? zeroCopy ? "on" : "off" : "default",
     }, out _));
+
+    [Theory]
+    [InlineData("on", true)]
+    [InlineData("off", false)]
+    public void ZeroCopyIsADescribedDebugKnob(string value, bool expected)
+    {
+        Set(new());
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["zerocopy"] = value }, out var set));
+        Assert.Equal(expected, set.ZeroCopy);
+        Assert.EndsWith($" zerocopy={value}", set.Description);
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["zerocopy"] = "default" }, out var cleared));
+        Assert.Null(cleared.ZeroCopy);
+        Assert.DoesNotContain("zerocopy", cleared.Description);
+        Assert.Contains("zerocopy=on|off|default", DebugFfmpegInputTuning.Usage);
+    }
+
+    [Theory]
+    [InlineData("1")]
+    [InlineData("true")]
+    [InlineData("")]
+    public void InvalidZeroCopyIsRejectedAtomically(string value)
+    {
+        Set(new(ZeroCopy: true));
+        var captured = DebugFfmpegInputTuning.Current;
+        Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["zerocopy"] = value }, out var rejected));
+        Assert.Same(captured, rejected);
+        Assert.Same(captured, DebugFfmpegInputTuning.Current);
+        Set(new());
+    }
+
+    [Fact]
+    public void ZeroCopyKeyIsSetOnlyForSoftwareVideoAfterRegistration()
+    {
+        var configuration = Read("FfmpegSource.cs.txt");
+        var start = configuration.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal);
+        var end = configuration.IndexOf("#endif", start, StringComparison.Ordinal);
+        var experiment = configuration[start..end];
+        var software = experiment.IndexOf("if (route.SoftwareVideo)", StringComparison.Ordinal);
+        var system = experiment.IndexOf("else\n", software, StringComparison.Ordinal);
+        var key = experiment.IndexOf("if (tuning.ZeroCopy is { } zeroCopy) config.FFmpegOptions[\"bale_zero_copy\"] = zeroCopy && DebugRustProbe.RegisterZeroCopy() ? \"1\" : \"0\";", StringComparison.Ordinal);
+        Assert.True(software >= 0 && key > software && key < system);
+        Assert.Equal(1, configuration.Split("bale_zero_copy").Length - 1);
+    }
+
+    [Fact]
+    public void ZeroCopyRegistrationIsCachedAndLogsNoExceptionText()
+    {
+        var probe = Read("DebugRustProbe.cs.txt");
+        var start = probe.IndexOf("internal static bool RegisterZeroCopy()", StringComparison.Ordinal);
+        var end = probe.IndexOf("\n    }\n", start, StringComparison.Ordinal);
+        var body = probe[start..end];
+        Assert.Contains("[DllImport(\"bale_gpu.dll\", ExactSpelling = true)] private static extern int bale_zc_register_d3d12(nint d3d12Module);", probe);
+        Assert.Contains("if (state != 0) return state > 0;", body);
+        Assert.Contains("NativeLibrary.TryLoad(\"d3d12.dll\", out var module)", body);
+        Assert.Contains("Volatile.Write(ref _zeroCopyRegistered, registered ? 1 : -1);", body);
+        Assert.Contains("{ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8}", body);
+        Assert.DoesNotContain("ex.Message", body);
+        Assert.DoesNotContain("Log.Error", body);
+        Assert.DoesNotContain("NativeLibrary.Free", probe);
+    }
 
     [Theory]
     [InlineData("on", true)]

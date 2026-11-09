@@ -31,6 +31,39 @@ internal static unsafe class DebugRustProbe
     private static extern uint bale_gpu_d3d12_probe(nint d3d12Module, byte* report, uint reportCapacity);
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern uint bale_gpu_zero_copy_probe(nint d3d12Module, uint iterations, byte* report, uint reportCapacity);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_zc_register_d3d12(nint d3d12Module);
+
+    private static int _zeroCopyRegistered;
+
+    /// <summary>
+    /// Registers d3d12.dll (loaded here and never freed) with bale_gpu.dll for the wrapper's zero-copy path
+    /// (patch 0015), once per process. False when the DLL or export is missing; the option then stays off.
+    /// </summary>
+    internal static bool RegisterZeroCopy()
+    {
+        var state = Volatile.Read(ref _zeroCopyRegistered);
+        if (state != 0) return state > 0;
+        var registered = false;
+        try
+        {
+            if (!NativeLibrary.TryLoad("d3d12.dll", out var module)) Log.Info("Debug zero-copy: d3d12.dll missing; zero-copy stays off");
+            else
+            {
+                var hr = bale_zc_register_d3d12(module);
+                registered = hr >= 0;
+                Log.Info(registered ? "Debug zero-copy: d3d12.dll registered"
+                    : $"Debug zero-copy: register FAILS 0x{unchecked((uint)hr):X8}; zero-copy stays off");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Includes EntryPointNotFoundException for an older DLL; type and HRESULT only.
+            Log.Info($"Debug zero-copy: register FAILS ({ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8}); zero-copy stays off");
+        }
+        // Concurrent first calls may both register: the same module, so harmless.
+        Volatile.Write(ref _zeroCopyRegistered, registered ? 1 : -1);
+        return registered;
+    }
 
     /// <summary>
     /// 4K-sized CPU-to-GPU upload bandwidth per method (STAGING ring, DYNAMIC, UpdateSubresource, RAM copy),
