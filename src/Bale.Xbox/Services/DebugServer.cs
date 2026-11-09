@@ -64,6 +64,8 @@ namespace Bale.Xbox.Services;
 ///   POST /display-match?mode=on  on|off; applies to the next playback attempt
 ///   GET  /hdr             memory-only HDR comparison mode; default off
 ///   POST /hdr?mode=...    pretend|off; pretend HDR10 and keep SDR output for console tone mapping
+///   GET  /idle-test       the media session the input-idle tests act on (player's, else the view's)
+///   POST /idle-test?action=...  display-pulse|smtc-playing|smtc-stopped (DebugServer.IdleTest.cs)
 ///   POST /seek?seconds=...&pause=true  absolute source seconds on the active player; optional pause
 ///   POST /goto?target=... focus a named or labelled control (optional #N), for setup only
 ///   GET  /targets         the visible, enabled tab-stop controls goto can reach
@@ -205,7 +207,7 @@ internal sealed partial class DebugServer
         var target = new Uri("http://bale" + parts[1]);
         var path = target.AbsolutePath.TrimEnd('/');
         var query = ParseQuery(target.Query, out var duplicateQueryKeys);
-        if (duplicateQueryKeys && path is ("/playtest-ffmpeg" or "/ffmpeg-tune" or "/stats-rows" or "/frame-trace" or "/display-match" or "/gc" or "/frame-delivery" or "/stream-adapter" or "/av1-claim"))
+        if (duplicateQueryKeys && path is ("/playtest-ffmpeg" or "/ffmpeg-tune" or "/stats-rows" or "/frame-trace" or "/display-match" or "/gc" or "/frame-delivery" or "/stream-adapter" or "/av1-claim" or "/idle-test"))
             return ("400 Bad Request", "query keys must appear at most once\n");
 
         switch (method, path)
@@ -371,6 +373,18 @@ internal sealed partial class DebugServer
                 Log.Info($"Debug HDR mode: {hdrMode}; applies to the next playback attempt");
                 return ("200 OK", $"HDR mode: {hdrMode}; applies to the next playback attempt\n");
 
+            case ("GET", "/idle-test"):
+                if (query.Count != 0)
+                    return ("400 Bad Request", IdleTestUsage);
+                return ("200 OK", await OnUiAsync(DescribeIdleTest));
+
+            case ("POST", "/idle-test"):
+                var idleAction = query.GetValueOrDefault("action");
+                if (query.Count != 1 || !IsIdleTestAction(idleAction))
+                    return ("400 Bad Request", IdleTestUsage);
+                Log.Info($"Debug idle test: {idleAction}");
+                return ("200 OK", await OnUiAsync(() => RunIdleTest(idleAction!)));
+
             case ("POST", "/seek"):
                 return await SeekPlaybackAsync(query.GetValueOrDefault("seconds"), query.GetValueOrDefault("pause"));
 
@@ -458,7 +472,7 @@ internal sealed partial class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /stats, GET /frame-trace, POST /frame-trace?action=reset, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, GET /playtest-engine?url=...&seconds=3&mode=cs|rust|rust-ffmpeg, GET /rust, GET /upload-probe?frames=20, POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&sws=1..16&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16&grain=dav1d|cpu|gpu|off|on|default&upload=on|off|1..5 (each key accepts default; grain default=gpu (production), on/dav1d=dav1d; GPU loss: CPU through 1080p, no grain above 1080p; probe default=dav1d (CPU buffers); upload on=1=RT|SRV, default/on=1, off=0; 2=DECODER|SRV, 3=DECODER, 4=SRV, 5=SRV+SHARED; 4/5 known MF failures), GET /mem?gc=1, GET /gc, POST /gc?latency={batch|interactive|sustained|default}, GET /frame-delivery, POST /frame-delivery?mode={native|managed|off}, GET /stream-adapter, POST /stream-adapter?mode={pooled|builtin}, GET /av1-claim, POST /av1-claim?height={1080|2160}, GET /display-match, POST /display-match?mode={on|off}, GET /hdr, POST /hdr?mode={pretend|off}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /stats, GET /frame-trace, POST /frame-trace?action=reset, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, GET /playtest-engine?url=...&seconds=3&mode=cs|rust|rust-ffmpeg, GET /rust, GET /upload-probe?frames=20, POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&sws=1..16&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16&grain=dav1d|cpu|gpu|off|on|default&upload=on|off|1..5 (each key accepts default; grain default=gpu (production), on/dav1d=dav1d; GPU loss: CPU through 1080p, no grain above 1080p; probe default=dav1d (CPU buffers); upload on=1=RT|SRV, default/on=1, off=0; 2=DECODER|SRV, 3=DECODER, 4=SRV, 5=SRV+SHARED; 4/5 known MF failures), GET /mem?gc=1, GET /gc, POST /gc?latency={batch|interactive|sustained|default}, GET /frame-delivery, POST /frame-delivery?mode={native|managed|off}, GET /stream-adapter, POST /stream-adapter?mode={pooled|builtin}, GET /av1-claim, POST /av1-claim?height={1080|2160}, GET /display-match, POST /display-match?mode={on|off}, GET /hdr, POST /hdr?mode={pretend|off}, GET /idle-test, POST /idle-test?action={display-pulse|smtc-playing|smtc-stopped}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 

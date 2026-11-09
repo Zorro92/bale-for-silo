@@ -87,6 +87,7 @@
     <None Include="../../tools/Bale.Cli/Program.cs" Link="CliProgram.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugServer.Capabilities.cs" Link="DebugServer.Capabilities.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugServer.cs" Link="DebugServer.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Services/DebugServer.IdleTest.cs" Link="DebugServer.IdleTest.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugRustProbe.cs" Link="DebugRustProbe.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/bale-debug.sh" Link="bale-debug.sh" CopyToOutputDirectory="PreserveNewest" />
     <!-- Exercise HDMI failure/restore orchestration against a minimal API stand-in, not a display. -->

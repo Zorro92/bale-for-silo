@@ -43,6 +43,7 @@
 #   scripts/bale-debug.sh av1-claim [1080|2160]   next playback attempt's AV1 software-decode claim at 30 fps; default 1080, memory only (restart resets); no args = status
 #   scripts/bale-debug.sh display-match [on|off|status]  match content HDMI resolution/refresh on the next playback; default off, memory only (restart resets); no args = status
 #   scripts/bale-debug.sh hdr pretend|off|status  next attempt: pretend HDR10, skip HDMI switching for console SDR tone mapping; default off, memory only
+#   scripts/bale-debug.sh idle-test [display-pulse|smtc-playing|smtc-stopped|status]  input-idle experiments: pulse a DisplayRequest or set the media session status (player's, else the view's); no args = status
 #   scripts/bale-debug.sh seek <seconds> [pause]  shared absolute-source seek (native/FFmpeg/HLS, reanchors outside the mounted window); optional pause
 #   scripts/bale-debug.sh key j                 player: skip back 10s (same as press lt); one skip per press, ignores repeats
 #   scripts/bale-debug.sh key l                 player: skip forward 30s (same as press rt); passive bar/chip hides after 1200ms
@@ -303,6 +304,17 @@ case "${1:-}" in
       curl --fail-with-body -sS --max-time 5 "$BASE/display-match"
     else
       curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/display-match" --data-urlencode "mode=$2"
+    fi
+    ;;
+  idle-test)
+    if [[ "$#" -gt 2 || ! "${2-status}" =~ ^(display-pulse|smtc-playing|smtc-stopped|status)$ ]]; then
+      echo 'usage: scripts/bale-debug.sh idle-test [display-pulse|smtc-playing|smtc-stopped|status]' >&2
+      exit 2
+    fi
+    if [[ "${2-status}" == status ]]; then
+      curl --fail-with-body -sS --max-time 5 "$BASE/idle-test"
+    else
+      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/idle-test" --data-urlencode "action=$2"
     fi
     ;;
   hdr)

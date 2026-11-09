@@ -622,6 +622,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
 
     internal string DebugError => ErrorText.Text;
 
+    internal MediaPlayer? DebugMediaPlayer => _attempt?.Media?.Player;
+
     internal bool DebugFailPlayback()
     {
         if (_attempt is not { Media: { Player: not null, FailureQueued: false } media } attempt
