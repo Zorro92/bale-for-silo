@@ -77,6 +77,7 @@
     <None Include="../../scripts/ffmpeginteropx-patches/0012-d3d11-gpu-repack.patch" Link="0012-d3d11-gpu-repack.patch" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/ffmpeginteropx-patches/0013-d3d11-upload-stage-timing.patch" Link="0013-d3d11-upload-stage-timing.patch" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/ffmpeginteropx-patches/0014-repack-sliced-fill.patch" Link="0014-repack-sliced-fill.patch" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/ffmpeginteropx-patches/0015-zero-copy-landing.patch" Link="0015-zero-copy-landing.patch" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/check-ffmpeg-package.ps1" Link="check-ffmpeg-package.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/restore-ffmpeg-native.ps1" Link="restore-ffmpeg-native.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/build-ffmpeg-native.ps1" Link="build-ffmpeg-native.ps1.txt" CopyToOutputDirectory="PreserveNewest" />

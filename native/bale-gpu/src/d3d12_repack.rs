@@ -36,7 +36,7 @@ use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Dxgi::{IDXGIAdapter, IDXGIDevice};
 use windows::Win32::System::LibraryLoader::GetProcAddress;
 use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
-use windows::core::{HRESULT, Interface, PCWSTR, Result, s};
+use windows::core::{Error, HRESULT, Interface, PCWSTR, Result, s};
 
 use crate::d3d12::{CreateDevice, resource};
 use crate::grain::gpu::{readback_bytes, same_device, texture, texture_desc};
@@ -421,13 +421,16 @@ impl Inner {
             // Queued after the caller's copy from the previous landing texture.
             self.released_value += 1;
             // SAFETY: live context and fence, under the multithread lock.
-            unsafe { self.context.Signal(&self.released11, self.released_value)? };
+            unsafe { self.context.Signal(&self.released11, self.released_value) }
+                .step("D3D11 signal released")?;
             self.slots[previous].released = self.released_value;
         }
         // The slot's allocator and descriptors are reused only after its last dispatch ran.
-        self.wait(&self.repacked, self.slots[slot].submitted)?;
+        self.wait(&self.repacked, self.slots[slot].submitted)
+            .step("slot idle wait")?;
         if self.size != Some((frame.width, frame.height)) {
-            self.rebuild(frame.width, frame.height)?;
+            self.rebuild(frame.width, frame.height)
+                .step("landing rebuild")?;
         }
         let base = 3 * slot as u32;
         let view = D3D12_SHADER_RESOURCE_VIEW_DESC {
@@ -492,7 +495,7 @@ impl Inner {
         self.slots[slot].submitted = value;
         buffer.gpu_fence.fetch_max(value, Ordering::AcqRel);
         // SAFETY: live context and fence, under the multithread lock.
-        unsafe { self.context.Wait(&self.repacked11, value)? };
+        unsafe { self.context.Wait(&self.repacked11, value) }.step("D3D11 wait repacked")?;
         self.previous = Some(slot);
         self.next = (slot + 1) % SLOTS;
         Ok(texture11)
@@ -550,17 +553,20 @@ impl Inner {
             D3D12_HEAP_FLAG_SHARED,
             &desc,
             D3D12_RESOURCE_STATE_COMMON,
-        )?;
+        )
+        .step("landing texture")?;
         // SAFETY: live objects; default security, unnamed; the NT handle closes after the open.
-        let texture11: ID3D11Texture2D = unsafe {
-            let shared = Handle(self.device.CreateSharedHandle(
-                &texture,
-                None,
-                GENERIC_ALL,
-                PCWSTR::null(),
-            )?);
-            self.device11.OpenSharedResource1(shared.0)?
-        };
+        let shared = Handle(
+            unsafe {
+                self.device
+                    .CreateSharedHandle(&texture, None, GENERIC_ALL, PCWSTR::null())
+            }
+            .step("landing shared handle")?,
+        );
+        // SAFETY: an NT handle from CreateSharedHandle on the same adapter, open for the call.
+        let texture11: ID3D11Texture2D = unsafe { self.device11.OpenSharedResource1(shared.0) }
+            .step("D3D11 open landing texture")?;
+        drop(shared);
         let mut opened = D3D11_TEXTURE2D_DESC::default();
         // SAFETY: live texture; `opened` is our out-slot.
         unsafe { texture11.GetDesc(&mut opened) };
@@ -630,47 +636,54 @@ impl BaleZeroCopy {
     fn create(device11: &ID3D11Device, context: &ID3D11DeviceContext) -> Result<Box<Self>> {
         let module = HMODULE(D3D12.load(Ordering::Acquire));
         if module.0.is_null() {
-            return Err(E_NOINTERFACE.into());
+            return Err(E_NOINTERFACE.into()).step("d3d12.dll not registered");
         }
         if cfg!(bale_grain_no_shaders) {
-            return Err(E_NOTIMPL.into());
+            return Err(E_NOTIMPL.into()).step("no compiled shader");
         }
         // SAFETY: both interfaces are live borrowed COM references. These are metadata queries.
         if unsafe { context.GetType() } != D3D11_DEVICE_CONTEXT_IMMEDIATE
             || unsafe { device11.GetFeatureLevel() }.0 < D3D_FEATURE_LEVEL_11_0.0
             || !same_device(device11, &unsafe { context.GetDevice()? })?
         {
-            return Err(E_INVALIDARG.into());
+            return Err(E_INVALIDARG.into()).step("D3D11 device and immediate context");
         }
-        let device1: ID3D11Device1 = device11.cast()?;
-        let device5: ID3D11Device5 = device11.cast()?;
-        let context4: ID3D11DeviceContext4 = context.cast()?;
-        let multithread: ID3D10Multithread = context.cast()?;
+        let (device1, device5, context4, multithread) = (|| -> Result<_> {
+            let device1: ID3D11Device1 = device11.cast()?;
+            let device5: ID3D11Device5 = device11.cast()?;
+            let context4: ID3D11DeviceContext4 = context.cast()?;
+            let multithread: ID3D10Multithread = context.cast()?;
+            Ok((device1, device5, context4, multithread))
+        })()
+        .step("D3D11 interfaces")?;
         // SAFETY: live device; the adapter reference is ours.
-        let adapter = unsafe { device11.cast::<IDXGIDevice>()?.GetAdapter()? };
+        let adapter =
+            unsafe { device11.cast::<IDXGIDevice>()?.GetAdapter() }.step("DXGI adapter")?;
         // SAFETY: the registered module stays loaded for the process.
-        let device = unsafe { create_device(module, &adapter)? };
-        check_p010(&device)?;
+        let device = unsafe { create_device(module, &adapter) }.step("D3D12CreateDevice")?;
+        check_p010(&device).step("P010 typed UAV support")?;
         // SAFETY: live device; descriptors outlive the calls.
-        let (queue, heap) = unsafe {
-            let queue: ID3D12CommandQueue =
-                device.CreateCommandQueue(&D3D12_COMMAND_QUEUE_DESC {
-                    Type: D3D12_COMMAND_LIST_TYPE_COMPUTE,
-                    ..Default::default()
-                })?;
-            let heap: ID3D12DescriptorHeap =
-                device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
-                    Type: D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-                    NumDescriptors: 3 * SLOTS as u32,
-                    Flags: D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
-                    NodeMask: 0,
-                })?;
-            (queue, heap)
-        };
-        let (repacked, repacked11) = shared_fence(&device, &device5)?;
-        let (released, released11) = shared_fence(&device, &device5)?;
+        let queue: ID3D12CommandQueue = unsafe {
+            device.CreateCommandQueue(&D3D12_COMMAND_QUEUE_DESC {
+                Type: D3D12_COMMAND_LIST_TYPE_COMPUTE,
+                ..Default::default()
+            })
+        }
+        .step("compute queue")?;
+        // SAFETY: as above.
+        let heap: ID3D12DescriptorHeap = unsafe {
+            device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
+                Type: D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+                NumDescriptors: 3 * SLOTS as u32,
+                Flags: D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
+                NodeMask: 0,
+            })
+        }
+        .step("descriptor heap")?;
+        let (repacked, repacked11) = shared_fence(&device, &device5).step("repacked fence")?;
+        let (released, released11) = shared_fence(&device, &device5).step("released fence")?;
         // SAFETY: the registered module stays loaded for the process.
-        let root = unsafe { root_signature(module, &device)? };
+        let root = unsafe { root_signature(module, &device) }.step("root signature")?;
         // SAFETY: live device and root signature; the bytecode is a static compiled shader.
         let pso: ID3D12PipelineState = unsafe {
             device.CreateComputePipelineState(&D3D12_COMPUTE_PIPELINE_STATE_DESC {
@@ -682,8 +695,9 @@ impl BaleZeroCopy {
                 NodeMask: 0,
                 CachedPSO: D3D12_CACHED_PIPELINE_STATE::default(),
                 Flags: D3D12_PIPELINE_STATE_FLAG_NONE,
-            })?
-        };
+            })
+        }
+        .step("compute pipeline")?;
         let slot = || -> Result<Slot> {
             // SAFETY: live device and pipeline; the list is closed before its first Reset.
             unsafe {
@@ -705,7 +719,7 @@ impl BaleZeroCopy {
                 })
             }
         };
-        let slots = [slot()?, slot()?];
+        let slots = (|| -> Result<_> { Ok([slot()?, slot()?]) })().step("command lists")?;
         // SAFETY: default security, auto-reset, unnamed; live device and heap.
         let (event, increment, cpu_start, gpu_start) = unsafe {
             (
@@ -761,7 +775,7 @@ impl BaleZeroCopy {
         let mut inner = self.inner.lock().map_err(|_| E_UNEXPECTED)?;
         for (index, (width, height)) in [(64, 64), (64, 64), (66, 18)].into_iter().enumerate() {
             let (frame, bytes) = BaleZcFrame::test_layout(width, height);
-            let buffer = self.pool.alloc(bytes)?;
+            let buffer = self.pool.alloc(bytes).step("self-test alloc")?;
             let memory = buffer.memory.as_ref().ok_or(E_FAIL)?;
             let mut source = vec![0u8; bytes as usize];
             fill_test_planes(&frame, &mut source, index as u32 + 1);
@@ -769,12 +783,12 @@ impl BaleZeroCopy {
             unsafe {
                 std::ptr::copy_nonoverlapping(source.as_ptr(), memory.data as *mut u8, source.len())
             };
-            let landing = inner.repack(&buffer, &frame)?;
+            let landing = inner.repack(&buffer, &frame).step("self-test repack")?;
             let mut desc = texture_desc(width, height, DXGI_FORMAT_P010, 0);
             desc.Usage = D3D11_USAGE_STAGING;
             desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ.0 as u32;
             let _lock = Locked::enter(&inner.multithread);
-            let staging = texture(&inner.device11, &desc, None)?;
+            let staging = texture(&inner.device11, &desc, None).step("self-test staging")?;
             // SAFETY: matching unmapped P010 textures on this device, under the lock.
             unsafe { inner.context.CopyResource(&staging, &landing) };
             let actual = readback_bytes(
@@ -782,9 +796,10 @@ impl BaleZeroCopy {
                 &staging,
                 2 * width as usize,
                 (height + height / 2) as usize,
-            )?;
+            )
+            .step("self-test readback")?;
             if actual != frame.reference_p010(&source) {
-                return Err(E_FAIL.into());
+                return Err(E_FAIL.into()).step(&format!("self-test mismatch at {width}x{height}"));
             }
         }
         Ok(())
@@ -844,11 +859,18 @@ fn shared_fence(
 ) -> Result<(ID3D12Fence, ID3D11Fence)> {
     // SAFETY: live devices; default security, unnamed; the NT handle closes after the open.
     unsafe {
-        let fence: ID3D12Fence = device.CreateFence(0, D3D12_FENCE_FLAG_SHARED)?;
-        let shared =
-            Handle(device.CreateSharedHandle(&fence, None, GENERIC_ALL, PCWSTR::null())?);
+        let fence: ID3D12Fence = device
+            .CreateFence(0, D3D12_FENCE_FLAG_SHARED)
+            .step("D3D12 shared fence")?;
+        let shared = Handle(
+            device
+                .CreateSharedHandle(&fence, None, GENERIC_ALL, PCWSTR::null())
+                .step("fence shared handle")?,
+        );
         let mut opened: Option<ID3D11Fence> = None;
-        device11.OpenSharedFence(shared.0, &mut opened)?;
+        device11
+            .OpenSharedFence(shared.0, &mut opened)
+            .step("D3D11 open fence")?;
         Ok((fence, opened.ok_or(E_FAIL)?))
     }
 }
@@ -937,6 +959,51 @@ fn live() -> Result<MutexGuard<'static, BTreeMap<usize, Arc<Buffer>>>> {
 
 fn boundary(f: impl FnOnce() -> i32) -> i32 {
     catch_unwind(AssertUnwindSafe(f)).unwrap_or(E_UNEXPECTED.0)
+}
+
+/// Prefixes an error with the step that failed. Only the HRESULT crosses the C ABI; the text is
+/// for [`diagnose_create`] (tests and the debug probe), and is built on failure only.
+trait Step<T> {
+    fn step(self, name: &str) -> Result<T>;
+}
+
+impl<T> Step<T> for Result<T> {
+    fn step(self, name: &str) -> Result<T> {
+        self.map_err(|error| Error::new(error.code(), format!("{name}: {}", error.message())))
+    }
+}
+
+/// Runs a zero-copy create (with its self-test) and destroys it again: `Ok` or the failing step
+/// and HRESULT. Not part of the C ABI.
+///
+/// # Safety
+/// As for [`bale_zc_create`]; both pointers must be non-null.
+#[doc(hidden)]
+pub unsafe fn diagnose_create(
+    device: *mut c_void,
+    context: *mut c_void,
+) -> std::result::Result<(), String> {
+    // SAFETY: the caller guarantees live interfaces.
+    let (Some(device), Some(context)) = (unsafe {
+        (
+            ID3D11Device::from_raw_borrowed(&device),
+            ID3D11DeviceContext::from_raw_borrowed(&context),
+        )
+    }) else {
+        return Err("null device or context".into());
+    };
+    match BaleZeroCopy::create(device, context) {
+        Ok(handle) => {
+            // SAFETY: a handle created above and never shared.
+            unsafe { bale_zc_destroy(Box::into_raw(handle)) };
+            Ok(())
+        }
+        Err(error) => Err(format!(
+            "{} (HRESULT=0x{:08x})",
+            error.message(),
+            error.code().0 as u32
+        )),
+    }
 }
 
 #[unsafe(no_mangle)]

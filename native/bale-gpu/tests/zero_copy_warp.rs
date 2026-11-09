@@ -8,14 +8,17 @@ use std::ptr;
 use bale_gpu::d3d12_repack::{
     BaleZcStats, BaleZeroCopy, S_FALSE, S_OK, ZERO_COPY_ABI_VERSION, bale_zc_abi_version,
     bale_zc_alloc, bale_zc_create, bale_zc_destroy, bale_zc_register_d3d12, bale_zc_release,
-    bale_zc_repack, bale_zc_stats,
+    bale_zc_repack, bale_zc_stats, diagnose_create,
 };
 use bale_gpu::zc_frame::{BaleZcFrame, MAX_BYTES, fill_test_planes};
 use windows::Win32::Foundation::{E_INVALIDARG, E_OUTOFMEMORY, HMODULE};
-use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL_11_0};
+use windows::Win32::Graphics::Direct3D::{
+    D3D_DRIVER_TYPE_UNKNOWN, D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL_11_0,
+};
 use windows::Win32::Graphics::Direct3D10::ID3D10Multithread;
 use windows::Win32::Graphics::Direct3D11::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
+use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIAdapter, IDXGIFactory4};
 use windows::Win32::System::LibraryLoader::LoadLibraryW;
 use windows::core::{Interface, w};
 
@@ -27,20 +30,45 @@ struct Warp {
     context: ID3D11DeviceContext,
 }
 
+/// How the test's D3D11 device reaches WARP.
+#[derive(Clone, Copy, Debug)]
+enum Kind {
+    /// `D3D_DRIVER_TYPE_WARP`: D3D11's in-process software rasterizer.
+    DriverType,
+    /// `D3D_DRIVER_TYPE_UNKNOWN` on DXGI's WARP adapter (Microsoft Basic Render Driver).
+    Adapter,
+}
+
 impl Warp {
     fn new() -> Self {
+        Self::with(Kind::DriverType)
+            .expect("WARP FL11_0 is required; zero-copy tests must not skip")
+    }
+
+    fn with(kind: Kind) -> windows::core::Result<Self> {
         // SAFETY: loads a system DLL by name; it stays loaded for the test process.
         let module =
             unsafe { LoadLibraryW(w!("d3d12.dll")) }.expect("d3d12.dll ships with Windows");
         // SAFETY: a module that is never freed.
         assert_eq!(unsafe { bale_zc_register_d3d12(module.0) }, S_OK);
+        let adapter: Option<IDXGIAdapter> = match kind {
+            Kind::DriverType => None,
+            // SAFETY: plain factory creation and enumeration.
+            Kind::Adapter => {
+                Some(unsafe { CreateDXGIFactory1::<IDXGIFactory4>()?.EnumWarpAdapter()? })
+            }
+        };
+        let driver = match kind {
+            Kind::DriverType => D3D_DRIVER_TYPE_WARP,
+            Kind::Adapter => D3D_DRIVER_TYPE_UNKNOWN,
+        };
         let mut device = None;
         let mut context = None;
-        // SAFETY: no adapter/software module; out-pointers are live local COM slots.
+        // SAFETY: a live adapter or none, no software module; out-pointers are live local slots.
         unsafe {
             D3D11CreateDevice(
-                None,
-                D3D_DRIVER_TYPE_WARP,
+                adapter.as_ref(),
+                driver,
                 HMODULE::default(),
                 D3D11_CREATE_DEVICE_FLAG(0),
                 Some(&[D3D_FEATURE_LEVEL_11_0]),
@@ -48,8 +76,7 @@ impl Warp {
                 Some(&mut device),
                 None,
                 Some(&mut context),
-            )
-            .expect("WARP FL11_0 is required; zero-copy tests must not skip");
+            )?;
         }
         let device = device.expect("WARP device");
         let context = context.expect("WARP immediate context");
@@ -57,7 +84,13 @@ impl Warp {
             context.cast().expect("WARP must expose ID3D10Multithread");
         // SAFETY: configure the newly created private context before any other use.
         let _ = unsafe { multithread.SetMultithreadProtected(true) };
-        Self { device, context }
+        Ok(Self { device, context })
+    }
+
+    /// The failing create step on this device, `Ok` when create succeeds.
+    fn diagnose(&self) -> Result<(), String> {
+        // SAFETY: live COM interfaces.
+        unsafe { diagnose_create(self.device.as_raw(), self.context.as_raw()) }
     }
 
     fn zero_copy(&self) -> ZeroCopy {
@@ -65,12 +98,21 @@ impl Warp {
         // SAFETY: live COM interfaces and a writable out slot.
         let hr =
             unsafe { bale_zc_create(self.device.as_raw(), self.context.as_raw(), &mut handle) };
-        assert_eq!(
-            hr, S_OK,
-            "zero-copy create (including its readback self-test) must succeed on WARP: \
-             HRESULT=0x{:08x}",
-            hr as u32
-        );
+        if hr != S_OK {
+            let report: Vec<String> = [Kind::DriverType, Kind::Adapter]
+                .into_iter()
+                .map(|kind| match Warp::with(kind) {
+                    Ok(warp) => format!("{kind:?}: {:?}", warp.diagnose()),
+                    Err(error) => format!("{kind:?}: no D3D11 device ({error})"),
+                })
+                .collect();
+            panic!(
+                "zero-copy create (including its readback self-test) must succeed on WARP: \
+                 HRESULT=0x{:08x}; {}",
+                hr as u32,
+                report.join("; ")
+            );
+        }
         assert!(!handle.is_null());
         ZeroCopy(handle)
     }
