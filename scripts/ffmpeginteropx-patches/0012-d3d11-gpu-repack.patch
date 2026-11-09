@@ -1,0 +1,345 @@
+diff --git a/Source/BaleD3D11Upload.h b/Source/BaleD3D11Upload.h
+index 4dafbce..1ad6d9c 100644
+--- a/Source/BaleD3D11Upload.h
++++ b/Source/BaleD3D11Upload.h
+@@ -5,6 +5,38 @@
+ #include "BaleFilmGrain.h"
+ #include "DirectXInteropHelper.h"
+ 
++// Bale: bale_gpu.dll repack ABI 1 (planar staging to NV12/P010 render target), loaded independently
++// of the grain exports so either can be missing or incompatible without affecting the other.
++struct BaleRepackExports
++{
++    uint32_t (__cdecl* abiVersion)() = nullptr;
++    HRESULT (__cdecl* create)(void*, void*, void**) = nullptr;
++    HRESULT (__cdecl* apply)(void*, void*, void*) = nullptr;
++    void (__cdecl* destroy)(void*) = nullptr;
++
++    static const BaleRepackExports& Get()
++    {
++        // One load attempt per process; a successful module stays loaded for the process lifetime.
++        static const BaleRepackExports exports = []
++        {
++            BaleRepackExports api;
++            auto module = LoadPackagedLibrary(L"bale_gpu.dll", 0);
++            if (!module) return api;
++            api.abiVersion = reinterpret_cast<decltype(api.abiVersion)>(GetProcAddress(module, "bale_repack_abi_version"));
++            api.create = reinterpret_cast<decltype(api.create)>(GetProcAddress(module, "bale_repack_gpu_create"));
++            api.apply = reinterpret_cast<decltype(api.apply)>(GetProcAddress(module, "bale_repack_gpu_apply"));
++            api.destroy = reinterpret_cast<decltype(api.destroy)>(GetProcAddress(module, "bale_repack_gpu_destroy"));
++            if (!api.abiVersion || !api.create || !api.apply || !api.destroy || api.abiVersion() != 1)
++            {
++                FreeLibrary(module);
++                return BaleRepackExports{};
++            }
++            return api;
++        }();
++        return exports;
++    }
++};
++
+ // Bale: software decode is unchanged; only the final NV12/P010 output lives on the MSS device.
+ // Decode/seek serialize Map/CreateSample/Flush. Processed can arrive on any MF thread.
+ class BaleD3D11Upload : public std::enable_shared_from_this<BaleD3D11Upload>
+@@ -44,7 +76,24 @@ public:
+         }
+     }
+ 
+-    ~BaleD3D11Upload() { Flush(); }
++    ~BaleD3D11Upload()
++    {
++        Flush();
++        DestroyRepack();
++    }
++
++    // The repack writes through render-target views: only variant 1 pooled textures qualify.
++    bool CanRepack() const { return (bindFlags & D3D11_BIND_RENDER_TARGET) && BaleRepackExports::Get().create; }
++
++    // Permanent for this uploader. The handle is serialized with frame production like grain.
++    void DestroyRepack()
++    {
++        if (repackHandle)
++        {
++            BaleRepackExports::Get().destroy(repackHandle);
++            repackHandle = nullptr;
++        }
++    }
+ 
+     HRESULT Map(UINT width, UINT height, DXGI_FORMAT format, Mapping& target)
+     {
+@@ -83,7 +132,7 @@ public:
+     }
+ 
+     MediaStreamSample CreateSample(Mapping& source, TimeSpan position, IDirect3DSurface* surface,
+-        BaleFilmGrain& grain, const BaleGrainParams* params)
++        BaleFilmGrain& grain, const BaleGrainParams* params, bool planar)
+     {
+         source.Unmap();
+         const char* operation = "GetUploadTexture";
+@@ -94,11 +143,28 @@ public:
+                 std::lock_guard lock(samplesMutex);
+                 winrt::check_hresult(texturePool.GetUploadTexture(stagingDesc.Width, stagingDesc.Height, stagingDesc.Format, bindFlags, miscFlags, texture));
+             }
+-            operation = "CopyResource/GetDeviceRemovedReason";
+-            // Grain reads clean, unmapped staging and writes only the Bale-owned pooled target.
+-            // A failed pass may have partially written it: overwrite with the clean plain copy.
+-            if (!params || grain.mode != 2 || !ApplyGrain(grain, *params, source.texture.get(), texture.get()))
++            if (planar)
++            {
++                // Planar staging is not displayable: every path must end in a repack draw.
++                operation = "repack";
++                bool grained = false;
++                if (params && grain.mode == 2)
++                {
++                    // GPU grain reads a clean NV12/P010 frame: repack into Bale-owned scratch first.
++                    auto scratch = RepackScratch();
++                    ApplyRepack(source.texture.get(), scratch);
++                    grained = ApplyGrain(grain, *params, scratch, texture.get());
++                }
++                // A failed grain pass may have partially written the target: repack it clean.
++                if (!grained) ApplyRepack(source.texture.get(), texture.get());
++            }
++            else if (!params || grain.mode != 2 || !ApplyGrain(grain, *params, source.texture.get(), texture.get()))
++            {
++                // Grain reads clean, unmapped staging and writes only the Bale-owned pooled target.
++                // A failed pass may have partially written it: overwrite with the clean plain copy.
+                 context->CopyResource(texture.get(), source.texture.get());
++            }
++            operation = "CopyResource/GetDeviceRemovedReason";
+             // CopyResource and Flush return void; device removal is the available HRESULT check.
+             context->Flush();
+             winrt::check_hresult(device->GetDeviceRemovedReason());
+@@ -158,6 +224,7 @@ public:
+         // Drop all old references, never recycle their textures into a new seek/size generation.
+         // MF's own surface references keep any in-flight textures alive until it is finished.
+         texturePool.Clear();
++        repackScratch = nullptr;
+         for (auto& texture : stagingTextures) texture = nullptr;
+         stagingDesc = {};
+         nextStaging = 0;
+@@ -165,6 +232,39 @@ public:
+ 
+ private:
+     void* grainHandle = nullptr; // Only the serialized producer/teardown owner touches this.
++    void* repackHandle = nullptr; // Same ownership as grainHandle; survives Flush (create runs a readback self-test).
++    winrt::com_ptr<ID3D11Texture2D> repackScratch; // Clean repacked frame for GPU grain; dropped on Flush.
++
++    void ApplyRepack(ID3D11Texture2D* source, ID3D11Texture2D* target)
++    {
++        const auto& api = BaleRepackExports::Get();
++        if (!api.apply) winrt::throw_hresult(E_NOINTERFACE);
++        if (!repackHandle)
++        {
++            auto hr = api.create(device.get(), context.get(), &repackHandle);
++            if (hr != S_OK || !repackHandle)
++            {
++                repackHandle = nullptr;
++                winrt::throw_hresult(hr == S_OK ? E_UNEXPECTED : hr);
++            }
++            av_log(nullptr, AV_LOG_INFO, "Bale D3D11 repack created (self-test passed).\n");
++        }
++        winrt::check_hresult(api.apply(repackHandle, source, target));
++    }
++
++    ID3D11Texture2D* RepackScratch()
++    {
++        if (!repackScratch)
++        {
++            auto desc = stagingDesc;
++            desc.Usage = D3D11_USAGE_DEFAULT;
++            desc.CPUAccessFlags = 0;
++            desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
++            desc.MiscFlags = 0;
++            winrt::check_hresult(device->CreateTexture2D(&desc, nullptr, repackScratch.put()));
++        }
++        return repackScratch.get();
++    }
+ 
+     void DestroyGrain()
+     {
+diff --git a/Source/FFmpegMediaSource.cpp b/Source/FFmpegMediaSource.cpp
+index 609c945..d8397b0 100644
+--- a/Source/FFmpegMediaSource.cpp
++++ b/Source/FFmpegMediaSource.cpp
+@@ -2348,6 +2348,7 @@ namespace winrt::FFmpegInteropX::implementation
+             auto uncompressed = new UncompressedVideoSampleProvider(m_pReader, avFormatCtx, avVideoCodecCtx, config.as<winrt::FFmpegInteropX::MediaSourceConfig>(), index, hardwareDecoderStatus, useHdr);
+             uncompressed->SwsThreads = baleSwsThreads;
+             uncompressed->UploadFaultFrames = baleD3d11UploadFaultFrames;
++            uncompressed->Repack = baleD3d11Repack;
+             uncompressed->SwsThreadPriority = baleDecodeThreadPriority;
+             uncompressed->FilmGrain.mode = filmGrainMode;
+             uncompressed->FilmGrain.above1080p = avVideoCodecCtx->width > 1920 || avVideoCodecCtx->height > 1080;
+@@ -2441,6 +2442,7 @@ namespace winrt::FFmpegInteropX::implementation
+         else if (key == "bale_film_grain_mode") { target = &baleFilmGrainMode; minimum = 0; maximum = 2; }
+         else if (key == "bale_d3d11_upload") { target = &baleD3d11Upload; minimum = 0; maximum = 5; }
+         else if (key == "bale_d3d11_upload_fault_frames") { target = &baleD3d11UploadFaultFrames; minimum = 0; maximum = 999; }
++        else if (key == "bale_d3d11_repack") { target = &baleD3d11Repack; minimum = 0; maximum = 1; }
+         else if (key == "bale_decode_thread_priority") { target = &baleDecodeThreadPriority; minimum = 0; maximum = 2; }
+         else if (key == "bale_decoder_use_max_resolution") { target = &baleDecoderUseMaxResolution; minimum = 0; maximum = 1; }
+         else if (key == "bale_decoder_max_dpb_count") { target = &baleDecoderMaxDpbCount; minimum = 0; maximum = 16; }
+diff --git a/Source/FFmpegMediaSource.h b/Source/FFmpegMediaSource.h
+index a0525cb..ea56334 100644
+--- a/Source/FFmpegMediaSource.h
++++ b/Source/FFmpegMediaSource.h
+@@ -349,6 +349,8 @@ namespace winrt::FFmpegInteropX::implementation
+         int baleD3d11Upload = 0;
+         // Debug fault injection: fail the GPU upload after this many uploaded frames (0 = off).
+         int baleD3d11UploadFaultFrames = 0;
++        // Debug: planar copy into staging plus a GPU NV12/P010 repack instead of swscale (0 = off).
++        int baleD3d11Repack = 0;
+         int baleDecodeThreadPriority = 0;
+         int baleDecoderUseMaxResolution = 0;
+         int baleDecoderMaxDpbCount = 0;
+diff --git a/Source/UncompressedVideoSampleProvider.cpp b/Source/UncompressedVideoSampleProvider.cpp
+index c068feb..8bbffdd 100644
+--- a/Source/UncompressedVideoSampleProvider.cpp
++++ b/Source/UncompressedVideoSampleProvider.cpp
+@@ -499,6 +499,16 @@ void UncompressedVideoSampleProvider::DisableUpload(HRESULT hr)
+     upload.reset();
+ }
+ 
++void UncompressedVideoSampleProvider::DisableRepack(HRESULT hr)
++{
++    if (!repackFailed)
++    {
++        repackFailed = true;
++        av_log(nullptr, AV_LOG_WARNING, "Bale D3D11 repack disabled (hr=0x%08X); using swscale.\n", static_cast<unsigned>(hr));
++    }
++    if (upload) upload->DestroyRepack();
++}
++
+ HRESULT UncompressedVideoSampleProvider::ScaleFrame(AVFrame* avFrame, BYTE** data, int* linesize, AVBufferRef* buffer)
+ {
+     bool converted = false;
+@@ -555,7 +565,35 @@ HRESULT UncompressedVideoSampleProvider::CopyFrameToOutput(AVFrame* avFrame, BYT
+     return hr;
+ }
+ 
+-void UncompressedVideoSampleProvider::UploadFrame(AVFrame* avFrame, IDirect3DSurface* surface, int64_t& framePts, const BaleGrainParams* params)
++bool UncompressedVideoSampleProvider::CanRepack(AVFrame* avFrame, const BaleGrainParams* params) const
++{
++    if (!Repack || repackFailed || !upload || !upload->CanRepack()) return false;
++    // CPU grain runs on the converted NV12/P010 layout in mapped staging.
++    if (params && FilmGrain.mode == 1) return false;
++    // YUVJ is excluded: swscale converts its full range, the repack never changes sample values.
++    auto input = static_cast<AVPixelFormat>(avFrame->format);
++    bool formats = (input == AV_PIX_FMT_YUV420P && m_OutputPixelFormat == AV_PIX_FMT_NV12) ||
++        (input == AV_PIX_FMT_YUV420P10LE && m_OutputPixelFormat == AV_PIX_FMT_P010LE);
++    // Width % 4: the V half of each chroma row must start on a whole two-sample texel.
++    return formats && avFrame->width == outputWidth && avFrame->height == outputHeight &&
++        outputFrameWidth % 4 == 0 && outputFrameHeight % 2 == 0;
++}
++
++// Unconverted samples for the GPU repack: Y rows as decoded; each chroma row holds that row's
++// U samples from byte 0 and its V samples from half the texture row (outputFrameWidth / 2 samples).
++void UncompressedVideoSampleProvider::FillPlanar(AVFrame* avFrame, BYTE** data, UINT pitch)
++{
++    int bytes = m_OutputPixelFormat == AV_PIX_FMT_P010LE ? 2 : 1;
++    int chromaWidth = (outputWidth + 1) / 2;
++    int chromaHeight = (outputHeight + 1) / 2;
++    int linesize = static_cast<int>(pitch);
++    av_image_copy_plane(data[0], linesize, avFrame->data[0], avFrame->linesize[0], outputWidth * bytes, outputHeight);
++    av_image_copy_plane(data[1], linesize, avFrame->data[1], avFrame->linesize[1], chromaWidth * bytes, chromaHeight);
++    av_image_copy_plane(data[1] + static_cast<size_t>(outputFrameWidth / 2) * bytes, linesize,
++        avFrame->data[2], avFrame->linesize[2], chromaWidth * bytes, chromaHeight);
++}
++
++void UncompressedVideoSampleProvider::UploadFrame(AVFrame* avFrame, IDirect3DSurface* surface, int64_t& framePts, const BaleGrainParams* params, bool planar)
+ {
+     auto format = m_OutputPixelFormat == AV_PIX_FMT_NV12 ? DXGI_FORMAT_NV12 : DXGI_FORMAT_P010;
+     BaleD3D11Upload::Mapping target;
+@@ -567,11 +605,18 @@ void UncompressedVideoSampleProvider::UploadFrame(AVFrame* avFrame, IDirect3DSur
+     // NV12/P010 are planar staging resources: UV starts after RowPitch * TEXTURE height, not image height.
+     data[1] = data[0] + static_cast<size_t>(pitch) * outputFrameHeight;
+     int linesize[4]{ static_cast<int>(pitch), static_cast<int>(pitch), 0, 0 };
+-    winrt::check_hresult(CopyFrameToOutput(avFrame, data, linesize, nullptr));
+-    if (params && FilmGrain.mode == 1 && !FilmGrain.ApplyCpu(*params, m_OutputPixelFormat, data, linesize))
++    if (planar)
++    {
++        FillPlanar(avFrame, data, pitch);
++    }
++    else
+     {
+-        // Refill clean output even if a contained Rust panic partially modified staging.
+         winrt::check_hresult(CopyFrameToOutput(avFrame, data, linesize, nullptr));
++        if (params && FilmGrain.mode == 1 && !FilmGrain.ApplyCpu(*params, m_OutputPixelFormat, data, linesize))
++        {
++            // Refill clean output even if a contained Rust panic partially modified staging.
++            winrt::check_hresult(CopyFrameToOutput(avFrame, data, linesize, nullptr));
++        }
+     }
+     if (UploadFaultFrames > 0 && uploadedFrames >= UploadFaultFrames)
+     {
+@@ -580,7 +625,7 @@ void UncompressedVideoSampleProvider::UploadFrame(AVFrame* avFrame, IDirect3DSur
+         winrt::throw_hresult(E_OUTOFMEMORY);
+     }
+     ReadFrameProperties(avFrame, framePts);
+-    uploadSample = upload->CreateSample(target, ConvertPosition(framePts), surface, FilmGrain, params);
++    uploadSample = upload->CreateSample(target, ConvertPosition(framePts), surface, FilmGrain, params, planar);
+     uploadedFrames++;
+     if (!uploadLogged)
+     {
+@@ -620,7 +665,33 @@ HRESULT UncompressedVideoSampleProvider::CreateBufferFromFrame(IBuffer* pBuffer,
+     {
+         try
+         {
+-            UploadFrame(avFrame, surface, framePts, hasGrain ? &grainParams : nullptr);
++            auto params = hasGrain ? &grainParams : nullptr;
++            if (CanRepack(avFrame, params))
++            {
++                try
++                {
++                    UploadFrame(avFrame, surface, framePts, params, true);
++                    if (!repackLogged)
++                    {
++                        repackLogged = true;
++                        av_log(nullptr, AV_LOG_INFO, "Bale D3D11 repack active: %dx%d.\n", outputWidth, outputHeight);
++                    }
++                    return S_OK;
++                }
++                catch (...)
++                {
++                    // Permanent for this stream; retry this same frame once through swscale.
++                    DisableRepack(winrt::to_hresult());
++                    *surface = nullptr;
++                }
++            }
++            else if (Repack && !repackLogged && !repackFailed)
++            {
++                repackLogged = true;
++                av_log(nullptr, AV_LOG_INFO, "Bale D3D11 repack not applicable (input format %d, %dx%d to %dx%d); using swscale.\n",
++                    avFrame->format, avFrame->width, avFrame->height, outputWidth, outputHeight);
++            }
++            UploadFrame(avFrame, surface, framePts, params, false);
+             return S_OK;
+         }
+         catch (...)
+diff --git a/Source/UncompressedVideoSampleProvider.h b/Source/UncompressedVideoSampleProvider.h
+index 312d8a3..0963cb5 100644
+--- a/Source/UncompressedVideoSampleProvider.h
++++ b/Source/UncompressedVideoSampleProvider.h
+@@ -89,6 +89,8 @@ public:
+     int SwsThreadPriority = 0;
+     // Bale debug: after this many uploaded frames the next upload fails with E_OUTOFMEMORY (0 = off).
+     int UploadFaultFrames = 0;
++    // Bale debug: 1 = planar staging fill plus bale_gpu repack (needs upload variant 1).
++    int Repack = 0;
+     BYTE* TargetBuffer = NULL;
+ 
+     // Bale: independent of SetHardwareDevice/AVHWDeviceContext; never changes the decoder engine.
+@@ -131,9 +133,14 @@ private:
+     bool uploadFailed = false;
+     bool uploadLogged = false;
+     int uploadedFrames = 0;
++    bool repackFailed = false;
++    bool repackLogged = false;
++    bool CanRepack(AVFrame* avFrame, const BaleGrainParams* params) const;
++    void FillPlanar(AVFrame* avFrame, BYTE** data, UINT pitch);
++    void DisableRepack(HRESULT hr);
+     HRESULT ScaleFrame(AVFrame* avFrame, BYTE** data, int* linesize, AVBufferRef* buffer);
+     HRESULT CopyFrameToOutput(AVFrame* avFrame, BYTE** data, int* linesize, AVBufferRef* buffer);
+-    void UploadFrame(AVFrame* avFrame, IDirect3DSurface* surface, int64_t& framePts, const BaleGrainParams* params);
++    void UploadFrame(AVFrame* avFrame, IDirect3DSurface* surface, int64_t& framePts, const BaleGrainParams* params, bool planar);
+     void SelectOutputFormat();
+     HRESULT InitializeScalerIfRequired(AVFrame* avFrame);
+     HRESULT FillLinesAndBuffer(int* linesize, BYTE** data, AVBufferRef** buffer, int width, int height, bool isSourceBuffer);

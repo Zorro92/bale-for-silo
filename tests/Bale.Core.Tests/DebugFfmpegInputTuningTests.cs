@@ -492,7 +492,51 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         ["grain"] = DebugFfmpegPlaytest.GrainName(tuning.FilmGrain),
         ["upload"] = tuning.D3d11Upload is { } upload ? upload == 0 ? "off" : upload.ToString(CultureInfo.InvariantCulture) : "default",
         ["uploadfault"] = tuning.UploadFaultFrames?.ToString(CultureInfo.InvariantCulture) ?? "default",
+        ["repack"] = tuning.Repack is { } repack ? repack ? "on" : "off" : "default",
     }, out _));
+
+    [Theory]
+    [InlineData("on", true)]
+    [InlineData("off", false)]
+    public void RepackIsADescribedDebugKnob(string value, bool expected)
+    {
+        Set(new());
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["repack"] = value }, out var set));
+        Assert.Equal(expected, set.Repack);
+        Assert.EndsWith($" repack={value}", set.Description);
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["repack"] = "default" }, out var cleared));
+        Assert.Null(cleared.Repack);
+        Assert.DoesNotContain("repack", cleared.Description);
+        Assert.Contains("repack=on|off|default", DebugFfmpegInputTuning.Usage);
+    }
+
+    [Theory]
+    [InlineData("1")]
+    [InlineData("true")]
+    [InlineData("")]
+    public void InvalidRepackIsRejectedAtomically(string value)
+    {
+        Set(new(Repack: true));
+        var captured = DebugFfmpegInputTuning.Current;
+        Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["repack"] = value }, out var rejected));
+        Assert.Same(captured, rejected);
+        Assert.Same(captured, DebugFfmpegInputTuning.Current);
+        Set(new());
+    }
+
+    [Fact]
+    public void RepackKeyIsSetOnlyForSoftwareVideoFromTheDebugTuning()
+    {
+        var configuration = Read("FfmpegSource.cs.txt");
+        var start = configuration.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal);
+        var end = configuration.IndexOf("#endif", start, StringComparison.Ordinal);
+        var experiment = configuration[start..end];
+        var software = experiment.IndexOf("if (route.SoftwareVideo)", StringComparison.Ordinal);
+        var system = experiment.IndexOf("else\n", software, StringComparison.Ordinal);
+        var key = experiment.IndexOf("if (tuning.Repack is { } repack) config.FFmpegOptions[\"bale_d3d11_repack\"] = repack ? \"1\" : \"0\";", StringComparison.Ordinal);
+        Assert.True(software >= 0 && key > software && key < system);
+        Assert.Equal(1, configuration.Split("bale_d3d11_repack").Length - 1);
+    }
 
     [Theory]
     [InlineData("1", 1)]

@@ -62,6 +62,8 @@ internal static class FfmpegSource
             if (tuning.D3d11Upload is { } upload) config.FFmpegOptions["bale_d3d11_upload"] = upload.ToString(CultureInfo.InvariantCulture);
             // Patch 0011 debug fault: forces the mid-stream GPU-to-CPU switch without real memory pressure.
             if (tuning.UploadFaultFrames is { } fault) config.FFmpegOptions["bale_d3d11_upload_fault_frames"] = fault.ToString(CultureInfo.InvariantCulture);
+            // Patch 0012 debug repack: planar staging plus GPU NV12/P010 repack instead of swscale.
+            if (tuning.Repack is { } repack) config.FFmpegOptions["bale_d3d11_repack"] = repack ? "1" : "0";
         }
         else
         {

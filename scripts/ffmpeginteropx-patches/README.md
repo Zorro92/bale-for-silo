@@ -84,6 +84,18 @@ the upload after N successful uploads throw `E_OUTOFMEMORY` at the same point as
 failure (staging mapped and filled), so the existing fallback disables upload and retries that frame
 in a CPU buffer. It exists to test the mid-stream surface-to-buffer switch without real memory
 pressure; Bale sets it only from the DEBUG_SERVER `uploadfault` tuning. It ships in `2.1.0-bale.11`.
+`0012` adds debug-only `bale_d3d11_repack` (0/1, default 0). When 1, upload variant 1 is active, the
+`bale_gpu.dll` repack ABI 1 loads (independently of the grain exports), the input is `yuv420p` to NV12
+or `yuv420p10le` to P010 at output size, and CPU grain isn't selected, the decoder planes are copied
+row by row into the unchanged staging ring instead of running swscale: Y as decoded, and each chroma
+row holding U from byte 0 and V from half the texture row. Two `bale_gpu` pixel shaders then shift
+(P010) and interleave into the pooled render-target texture. GPU grain repacks into a Bale-owned
+scratch texture first; a failed grain pass repacks the target clean. YUVJ input is excluded because
+swscale converts its range. Any failure in a planar attempt (including a non-repack upload failure)
+permanently disables the repack for that stream and retries the same frame through swscale; the existing
+upload fallback still applies after that. The handle is created on the first planar frame (readback
+self-test) and survives seeks. Logs are fixed `Bale D3D11 repack ...` lines with HRESULTs only.
+Bale sets it only from the DEBUG_SERVER `repack` tuning. It ships in `2.1.0-bale.12`.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.
