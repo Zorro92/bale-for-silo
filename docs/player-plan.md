@@ -652,6 +652,23 @@ so the two runs aren't comparable. The earlier controlled A/B (gpu-film-grain.md
 repack stalls more. Freeing this ~0.6 core needs the repack's GPU work off the decode thread's
 immediate-context lock first.
 
+**Repack A/B, interleaved (0.1.354.0, 2026-11-09).** Start Over, 120 s, 3 runs each, alternating:
+
+| Path | Buffering at 120 s | Position reached | Process CPU (80–100 s) | dav1d + decode-ahead group |
+|---|---|---|---|---|
+| swscale (production) | 32–35 times, 4.6–5.5 s | ~113 s | 6.98–7.05 cores | 6.00–6.06 |
+| GPU repack | 68–75 times, 10.3–11.0 s | ~107 s | 6.64–6.82 cores | 6.20–6.39 |
+
+The repack doubles the stalls again and the process uses ~0.25 cores *less*, so something waits
+instead of working. Single-threaded swscale (`sws=1`) did not hurt earlier, so the single-threaded
+planar copy alone is an unlikely cause. The suspects are the extra GPU work (staging copy, two
+repack draws, grain from a scratch copy) submitted under the multithread lock, and `Map` waits on the
+three-texture staging ring. The `ucrtbase.dll` group includes the decode-ahead thread (std::thread),
+so the per-thread tool cannot separate it from dav1d. Next step: per-stage wall-time counters on the
+decode-ahead thread (fill, Map wait, GPU submit, Flush) in a wrapper patch.
+A one-off picture freeze (~2 s at start) seen once by the owner during an earlier repack run did not
+reproduce in 5 further starts (2 resumes with screenshots, 3 Start Over).
+
 **Fixed debug-probe leak.** Through 0.1.271.0 each `playtest-ffmpeg` probe left ~25–30 MiB (1080p) to
 ~100+ MiB (4K) of native memory behind because its `MediaPlayer` was disposed from a worker after the
 scope ended. Disposing it on the UI thread right after detaching the source, as `PlayerPage.DisposeMount`
