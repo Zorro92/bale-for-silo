@@ -801,7 +801,7 @@ swscale conversion (~0.6 core) and the staging fill disappear. dav1d's own cost 
    deadlock. A buffer not from the pool (`S_FALSE`) takes today's path for that frame; any repack
    failure poisons the handle (later allocs fail, so dav1d returns to its own pool) and the wrapper
    takes today's path from then on.
-   Written (not yet built by CI, needs native `p1`): `scripts/ffmpeginteropx-patches/0015-zero-copy-landing.patch`,
+   Built in wrapper 2.1.0-bale.15 (native `p1`): `scripts/ffmpeginteropx-patches/0015-zero-copy-landing.patch`,
    option `bale_zero_copy` (only with `bale_d3d11_upload`). The hook is installed in
    `SelectOutputFormat` (dav1d asks per picture, so before the first decode is enough) and declines
    until `SetUploadDevice` has created the handle. The repack size is the 4-aligned output texture
@@ -823,6 +823,23 @@ swscale conversion (~0.6 core) and the staging fill disappear. dav1d's own cost 
 5. **Test:** `ffmpeg-tune zerocopy=on`, then interleaved A/B against today's path on 4K AV1 in the
    input-idle state (CPU, stalls, late frames), plus a readback check of the first frame against
    swscale output.
+   **Result (0.1.384.0 + script fix, Series console, Shrek 4K 10-bit AV1, Start Over, 120 s, no input,
+   interleaved on/off/on/off, 2026-11-09):** the console takes the direct landing path
+   (`landing_copies=0`, self-test passed, 0 alloc failures or waits, 2831–2860 frames repacked per
+   run).
+
+   | | zerocopy=on | today's path |
+   |---|---|---|
+   | Buffering | 3 / 0.6 s, 3 / 0.3 s | 9 / 0.9 s, 9 / 1.6 s |
+   | Stats CPU (whole run) | 5.58, 5.56 cores | 6.09, 6.38 cores |
+   | Process CPU at 80–100 s | 6.24, 6.21 cores | 7.52, 7.41 cores |
+   | dav1d workers at 80–100 s | 5.88, 5.85 cores | 6.53, 6.46 cores |
+   | `avutil-60.dll` (swscale) pool | gone | 0.61, 0.58 cores |
+
+   Late frames were 0 in every run. Zero-copy saves ~1.2 cores: the swscale ~0.6 core, plus ~0.6
+   core in dav1d itself, likely because the CPU no longer competes for the throttled memory
+   bandwidth with the swscale pass. Paused-frame screenshots at 1503 s (stats pane open, uncovered
+   edges compared) and 2406 s (pane hidden, full frame) are **bit-identical** on vs off.
 A one-off picture freeze (~2 s at start) seen once by the owner during an earlier repack run did not
 reproduce in 5 further starts (2 resumes with screenshots, 3 Start Over).
 
