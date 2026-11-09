@@ -1,0 +1,222 @@
+diff --git a/Source/BaleD3D11Upload.h b/Source/BaleD3D11Upload.h
+index 1ad6d9c..ff88365 100644
+--- a/Source/BaleD3D11Upload.h
++++ b/Source/BaleD3D11Upload.h
+@@ -37,6 +37,56 @@ struct BaleRepackExports
+     }
+ };
+ 
++// Bale debug: wall time per upload stage on the producing thread, summed per 240-frame window.
++struct BaleUploadTiming
++{
++    enum Stage { Gap, Map, Fill, Unmap, Gpu, Flush, Sample, Count };
++    int64_t sum[Count]{};
++    int64_t peak[Count]{};
++    unsigned frames = 0;
++    int64_t lastEnd = 0;
++
++    static int64_t Now()
++    {
++        LARGE_INTEGER t;
++        QueryPerformanceCounter(&t);
++        return t.QuadPart;
++    }
++
++    static double Ms(int64_t ticks)
++    {
++        static const double perMs = []
++        {
++            LARGE_INTEGER f;
++            QueryPerformanceFrequency(&f);
++            return static_cast<double>(f.QuadPart) / 1000.0;
++        }();
++        return static_cast<double>(ticks) / perMs;
++    }
++
++    void Add(Stage stage, int64_t ticks)
++    {
++        sum[stage] += ticks;
++        if (ticks > peak[stage]) peak[stage] = ticks;
++    }
++
++    // Called once per uploaded frame, after CreateSample. Logs average/max ms per stage.
++    void EndFrame(bool planar)
++    {
++        lastEnd = Now();
++        if (++frames < 240) return;
++        auto avg = [&](Stage stage) { return Ms(sum[stage]) / frames; };
++        auto top = [&](Stage stage) { return Ms(peak[stage]); };
++        av_log(nullptr, AV_LOG_INFO,
++            "Bale D3D11 upload timing: frames=%u repack=%d avg/max ms gap=%.2f/%.1f map=%.2f/%.1f fill=%.2f/%.1f "
++            "unmap=%.2f/%.1f gpu=%.2f/%.1f flush=%.2f/%.1f sample=%.2f/%.1f.\n",
++            frames, planar ? 1 : 0, avg(Gap), top(Gap), avg(Map), top(Map), avg(Fill), top(Fill),
++            avg(Unmap), top(Unmap), avg(Gpu), top(Gpu), avg(Flush), top(Flush), avg(Sample), top(Sample));
++        for (int i = 0; i < Count; i++) sum[i] = peak[i] = 0;
++        frames = 0;
++    }
++};
++
+ // Bale: software decode is unchanged; only the final NV12/P010 output lives on the MSS device.
+ // Decode/seek serialize Map/CreateSample/Flush. Processed can arrive on any MF thread.
+ class BaleD3D11Upload : public std::enable_shared_from_this<BaleD3D11Upload>
+@@ -126,7 +176,9 @@ public:
+         target.context = context;
+         target.texture = staging;
+         // WRITE (not DISCARD) on a small staging ring: Map waits if the previous GPU copy still uses it.
++        auto mapStart = BaleUploadTiming::Now();
+         auto hr = context->Map(staging.get(), 0, D3D11_MAP_WRITE, 0, &target.mapped);
++        timing.Add(BaleUploadTiming::Map, BaleUploadTiming::Now() - mapStart);
+         if (FAILED(hr)) av_log(nullptr, AV_LOG_WARNING, "Bale D3D11 upload Map failed (hr=0x%08X).\n", static_cast<unsigned>(hr));
+         return hr;
+     }
+@@ -134,7 +186,15 @@ public:
+     MediaStreamSample CreateSample(Mapping& source, TimeSpan position, IDirect3DSurface* surface,
+         BaleFilmGrain& grain, const BaleGrainParams* params, bool planar)
+     {
++        auto stageStart = BaleUploadTiming::Now();
++        auto stage = [&](BaleUploadTiming::Stage done)
++        {
++            auto now = BaleUploadTiming::Now();
++            timing.Add(done, now - stageStart);
++            stageStart = now;
++        };
+         source.Unmap();
++        stage(BaleUploadTiming::Unmap);
+         const char* operation = "GetUploadTexture";
+         try
+         {
+@@ -164,10 +224,12 @@ public:
+                 // A failed pass may have partially written it: overwrite with the clean plain copy.
+                 context->CopyResource(texture.get(), source.texture.get());
+             }
++            stage(BaleUploadTiming::Gpu);
+             operation = "CopyResource/GetDeviceRemovedReason";
+             // CopyResource and Flush return void; device removal is the available HRESULT check.
+             context->Flush();
+             winrt::check_hresult(device->GetDeviceRemovedReason());
++            stage(BaleUploadTiming::Flush);
+ 
+             operation = "GetSurface";
+             auto dxgiSurface = texture.as<IDXGISurface>();
+@@ -198,6 +260,7 @@ public:
+                         issuedSamples, processedSamples, texturePool.PooledTextureCount());
+                 }
+             }
++            stage(BaleUploadTiming::Sample);
+             *surface = directSurface;
+             return sample;
+         }
+@@ -210,6 +273,9 @@ public:
+ 
+     void EndGrain() { DestroyGrain(); }
+ 
++    // Producer-thread only (same serialization as Map/CreateSample).
++    BaleUploadTiming timing;
++
+     void Flush()
+     {
+         // Serialized with frame production, not tied to the thread that created the handle.
+diff --git a/Source/FFmpegMediaSource.cpp b/Source/FFmpegMediaSource.cpp
+index d8397b0..56c0b9d 100644
+--- a/Source/FFmpegMediaSource.cpp
++++ b/Source/FFmpegMediaSource.cpp
+@@ -2504,10 +2504,12 @@ namespace winrt::FFmpegInteropX::implementation
+             std::unique_lock lock(aheadMutex);
+             while (true)
+             {
++                auto idleStart = BaleUploadTiming::Now();
+                 aheadCv.wait(lock, [this]
+                     {
+                         return aheadStop || (aheadPauses == 0 && aheadStream && !aheadEnd && (int)aheadQueue.size() < baleDecodeAheadFrames);
+                     });
++                aheadIdleTicks += BaleUploadTiming::Now() - idleStart;
+                 if (aheadStop)
+                 {
+                     break;
+@@ -2519,6 +2521,7 @@ namespace winrt::FFmpegInteropX::implementation
+                 lock.unlock();
+ 
+                 MediaStreamSample sample{ nullptr };
++                auto workStart = BaleUploadTiming::Now();
+                 try
+                 {
+                     sample = stream->GetNextSample();
+@@ -2527,9 +2530,23 @@ namespace winrt::FFmpegInteropX::implementation
+                 {
+                     sample = nullptr;
+                 }
++                auto work = BaleUploadTiming::Now() - workStart;
+ 
+                 lock.lock();
+                 aheadBusy = false;
++                aheadWorkTicks += work;
++                if (work > aheadWorkPeak) aheadWorkPeak = work;
++                if (++aheadTimedSamples == 240)
++                {
++                    // Starved = the MF request thread found the queue empty and waited for the worker.
++                    av_log(nullptr, AV_LOG_INFO,
++                        "Bale decode-ahead timing: samples=%u queued=%zu work avg/max ms=%.2f/%.1f idle avg ms=%.2f starved=%u total/max ms=%.1f/%.1f.\n",
++                        aheadTimedSamples, aheadQueue.size(), BaleUploadTiming::Ms(aheadWorkTicks) / aheadTimedSamples,
++                        BaleUploadTiming::Ms(aheadWorkPeak), BaleUploadTiming::Ms(aheadIdleTicks) / aheadTimedSamples,
++                        aheadStarvedCount, BaleUploadTiming::Ms(aheadStarvedTicks), BaleUploadTiming::Ms(aheadStarvedPeak));
++                    aheadWorkTicks = aheadWorkPeak = aheadIdleTicks = aheadStarvedTicks = aheadStarvedPeak = 0;
++                    aheadTimedSamples = aheadStarvedCount = 0;
++                }
+                 if (generation == aheadGeneration && stream == aheadStream)
+                 {
+                     if (sample)
+@@ -2611,6 +2628,15 @@ namespace winrt::FFmpegInteropX::implementation
+             aheadThread = std::thread([this] { AheadLoop(); });
+         }
+         aheadCv.notify_all();
++        if (aheadQueue.empty() && !aheadEnd)
++        {
++            auto starvedStart = BaleUploadTiming::Now();
++            aheadCv.wait(lock, [this] { return !aheadQueue.empty() || aheadEnd || aheadStop; });
++            auto starved = BaleUploadTiming::Now() - starvedStart;
++            aheadStarvedCount++;
++            aheadStarvedTicks += starved;
++            if (starved > aheadStarvedPeak) aheadStarvedPeak = starved;
++        }
+         aheadCv.wait(lock, [this] { return !aheadQueue.empty() || aheadEnd || aheadStop; });
+         if (aheadQueue.empty())
+         {
+diff --git a/Source/FFmpegMediaSource.h b/Source/FFmpegMediaSource.h
+index ea56334..7eaab13 100644
+--- a/Source/FFmpegMediaSource.h
++++ b/Source/FFmpegMediaSource.h
+@@ -370,6 +370,9 @@ namespace winrt::FFmpegInteropX::implementation
+         bool aheadBusy = false;
+         bool aheadEnd = false;
+         bool aheadStop = false;
++        // Bale debug: QPC ticks summed per 240 produced samples, guarded by aheadMutex.
++        int64_t aheadWorkTicks = 0, aheadWorkPeak = 0, aheadIdleTicks = 0, aheadStarvedTicks = 0, aheadStarvedPeak = 0;
++        unsigned aheadTimedSamples = 0, aheadStarvedCount = 0;
+         void AheadLoop();
+         void AheadPause(bool clear);
+         void AheadResume();
+diff --git a/Source/UncompressedVideoSampleProvider.cpp b/Source/UncompressedVideoSampleProvider.cpp
+index 8bbffdd..e851c80 100644
+--- a/Source/UncompressedVideoSampleProvider.cpp
++++ b/Source/UncompressedVideoSampleProvider.cpp
+@@ -597,7 +597,10 @@ void UncompressedVideoSampleProvider::UploadFrame(AVFrame* avFrame, IDirect3DSur
+ {
+     auto format = m_OutputPixelFormat == AV_PIX_FMT_NV12 ? DXGI_FORMAT_NV12 : DXGI_FORMAT_P010;
+     BaleD3D11Upload::Mapping target;
++    auto& timing = upload->timing;
++    if (timing.lastEnd) timing.Add(BaleUploadTiming::Gap, BaleUploadTiming::Now() - timing.lastEnd);
+     winrt::check_hresult(upload->Map(outputFrameWidth, outputFrameHeight, format, target));
++    auto fillStart = BaleUploadTiming::Now();
+     auto pitch = target.mapped.RowPitch;
+     auto rowBytes = static_cast<UINT>(outputFrameWidth) * (format == DXGI_FORMAT_P010 ? 2U : 1U);
+     if (!target.mapped.pData || pitch < rowBytes || pitch > INT_MAX) winrt::throw_hresult(E_FAIL);
+@@ -625,7 +628,9 @@ void UncompressedVideoSampleProvider::UploadFrame(AVFrame* avFrame, IDirect3DSur
+         winrt::throw_hresult(E_OUTOFMEMORY);
+     }
+     ReadFrameProperties(avFrame, framePts);
++    timing.Add(BaleUploadTiming::Fill, BaleUploadTiming::Now() - fillStart);
+     uploadSample = upload->CreateSample(target, ConvertPosition(framePts), surface, FilmGrain, params, planar);
++    timing.EndFrame(planar);
+     uploadedFrames++;
+     if (!uploadLogged)
+     {

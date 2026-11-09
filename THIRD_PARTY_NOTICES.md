@@ -56,9 +56,11 @@ packaged `bale_gpu.dll` grain ABI, with permanent per-stream CPU fallback after 
 fallback policy (keep dav1d at open without render-target upload; after runtime GPU loss, CPU grain
 through 1080p or no grain above 1080p),
 `scripts/ffmpeginteropx-patches/0011-d3d11-upload-fault-injection.patch` for an opt-in, debug-only
-GPU upload failure after N frames (default off), and
+GPU upload failure after N frames (default off),
 `scripts/ffmpeginteropx-patches/0012-d3d11-gpu-repack.patch` for an opt-in, debug-only GPU NV12/P010
-repack of planar decoder output in place of swscale (default off). Grain only modifies Bale-owned output, never dav1d
+repack of planar decoder output in place of swscale (default off), and
+`scripts/ffmpeginteropx-patches/0013-d3d11-upload-stage-timing.patch` for numeric per-stage timing
+log lines in the D3D11 upload and decode-ahead paths (no behavior change). Grain only modifies Bale-owned output, never dav1d
 reference frames.
 The original winmd and managed projection are retained; with the new `bale_*` keys unset, behavior
 equals upstream 2.1.0 plus that colour-attribute fix.

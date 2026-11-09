@@ -96,6 +96,12 @@ permanently disables the repack for that stream and retries the same frame throu
 upload fallback still applies after that. The handle is created on the first planar frame (readback
 self-test) and survives seeks. Logs are fixed `Bale D3D11 repack ...` lines with HRESULTs only.
 Bale sets it only from the DEBUG_SERVER `repack` tuning. It ships in `2.1.0-bale.12`.
+`0013` adds diagnostic timing only, with no option and no behavior change. The upload producer sums
+QueryPerformanceCounter wall time per stage (gap since the previous upload, staging Map, fill or
+swscale, Unmap, GPU copy/repack/grain, Flush, sample creation) and logs average/max ms every 240
+frames as `Bale D3D11 upload timing: ...`. The decode-ahead worker logs `Bale decode-ahead timing: ...`
+every 240 samples: GetNextSample time, idle time while the queue is full, and how often and how long
+the MF request thread waited on an empty queue. Lines hold numbers only. It ships in `2.1.0-bale.13`.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.
