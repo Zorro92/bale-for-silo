@@ -631,6 +631,20 @@ CDEF is ~6–9 % and loop restoration ~5–11 % of decode time here (the Jellyfi
 restoration ~0). Moving CDEF/LR to the GPU would therefore gain at most ~11–20 % on real content, and
 CDEF output is a reference for later frames, which conflicts with dav1d's frame threading.
 
+**Per-thread CPU at 4K on the console (0.1.354.0, 2026-11-09).** Real player, same title resumed at
+~10 min, software AV1 (`av1-claim 2160`), app mode, `bale-debug.sh threads 20` three times:
+
+| Group (thread start module) | Threads | Cores |
+|---|---|---|
+| `ucrtbase.dll` (dav1d workers; the names don't reach `GetThreadDescription`) | 9 | 6.22–6.35 |
+| `avutil-60.dll` (FFmpeg slice thread pool, likely swscale) | 3 | 0.56–0.64 |
+| `ntdll.dll` (thread pool: MF, audio, I/O) | ~60 | 0.23–0.27 |
+| UI thread (`ApplicationView ASTA`) | 1 | 0.11–0.15 |
+| process total | ~85 | 7.26–7.37 of 8 |
+
+dav1d is ~86 % of the process. Everything else is ~1 core, and ~0.6 of it is the avutil pool.
+The process nearly fills all 8 logical CPUs. The session buffered 30 times (2.7 s) with 0 late frames.
+
 **Fixed debug-probe leak.** Through 0.1.271.0 each `playtest-ffmpeg` probe left ~25–30 MiB (1080p) to
 ~100+ MiB (4K) of native memory behind because its `MediaPlayer` was disposed from a worker after the
 scope ended. Disposing it on the UI thread right after detaching the source, as `PlayerPage.DisposeMount`
