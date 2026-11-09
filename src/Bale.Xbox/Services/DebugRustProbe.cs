@@ -27,6 +27,8 @@ internal static unsafe class DebugRustProbe
     private static extern uint bale_gpu_engine_probe_source(nint source, uint seconds, byte* report, uint reportCapacity);
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern uint bale_gpu_upload_probe(uint iterations, byte* report, uint reportCapacity);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)]
+    private static extern uint bale_gpu_d3d12_probe(nint d3d12Module, byte* report, uint reportCapacity);
 
     /// <summary>
     /// 4K-sized CPU-to-GPU upload bandwidth per method (STAGING ring, DYNAMIC, UpdateSubresource, RAM copy),
@@ -44,13 +46,36 @@ internal static unsafe class DebugRustProbe
             fixed (byte* report = buffer)
                 written = bale_gpu_upload_probe((uint)frames, report, (uint)buffer.Length);
             Log.Info("Debug upload probe: done");
-            return written == 0 ? "Upload probe: FAILS (no report)\n"
+            var upload = written == 0 ? "Upload probe: FAILS (no report)\n"
                 : Encoding.UTF8.GetString(buffer, 0, (int)Math.Min(written, (uint)buffer.Length));
+            return upload + RunD3D12();
         }
         catch (Exception ex)
         {
             // Includes EntryPointNotFoundException for an older DLL; type and HRESULT only.
             return $"Upload probe: FAILS ({ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8})\n";
+        }
+    }
+
+    /// <summary>
+    /// Whether the app gets a hardware D3D12 device and can wrap CPU memory as a GPU heap. d3d12.dll is
+    /// loaded here (and left loaded) so bale_gpu.dll never imports it; a missing DLL is reported, not thrown.
+    /// </summary>
+    private static string RunD3D12()
+    {
+        try
+        {
+            NativeLibrary.TryLoad("d3d12.dll", out var module);
+            var buffer = new byte[EngineReportCapacity];
+            uint written;
+            fixed (byte* report = buffer)
+                written = bale_gpu_d3d12_probe(module, report, (uint)buffer.Length);
+            return written == 0 ? "D3D12 probe: FAILS (no report)\n"
+                : Encoding.UTF8.GetString(buffer, 0, (int)Math.Min(written, (uint)buffer.Length));
+        }
+        catch (Exception ex)
+        {
+            return $"D3D12 probe: FAILS ({ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8})\n";
         }
     }
 

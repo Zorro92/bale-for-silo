@@ -29,6 +29,9 @@ fn every_variant_reports_on_warp() {
     println!("{report}");
     assert!(report.starts_with("Upload probe: 256x96 R16"));
     for label in [
+        "compute 1T",
+        "compute ",
+        "cache copy 1T",
         "RAM copy 1T",
         "RAM copy ",
         "staging write 1T",
@@ -45,7 +48,7 @@ fn every_variant_reports_on_warp() {
     ] {
         assert!(report.contains(&format!("  {label}")), "missing {label}");
     }
-    assert_eq!(report.lines().count(), 14);
+    assert_eq!(report.lines().count(), 17);
     assert!(!report.contains("FAILS"), "{report}");
     assert!(
         !report.contains("NaN") && !report.contains("inf"),

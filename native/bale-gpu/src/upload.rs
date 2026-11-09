@@ -28,6 +28,19 @@ const WARM_UP: u32 = 3;
 const RING: usize = 3;
 /// Production swscale/sliced-copy thread count (`SwsThreads`).
 const THREADS: usize = 4;
+/// Steps of the dependent multiply/rotate chain per thread in the compute case (tens of ms).
+const SPIN: u64 = 16_000_000;
+/// Source + target of the cache copy: 2 x 128 KB fits any x86-64 L2 this probe runs on.
+const CACHE_CHUNK: usize = 128 * 1024;
+
+/// A dependent chain the compiler cannot shorten: each step needs the previous result.
+fn spin(steps: u64) -> u64 {
+    let mut x = 0x9E37_79B9_7F4A_7C15u64;
+    for i in 0..steps {
+        x = (x.rotate_left(7) ^ i).wrapping_mul(0x2545_F491_4F6C_DD1D);
+    }
+    x
+}
 
 #[derive(Clone, Copy, PartialEq)]
 enum Write {
@@ -193,6 +206,57 @@ impl Probe<'_> {
         desc.Usage = usage;
         desc.CPUAccessFlags = cpu;
         desc
+    }
+
+    /// Pure ALU work, no memory traffic: `threads` threads each run the same fixed dependent chain.
+    /// If this slows during playback as much as the copies do, the app loses CPU time or clock; if
+    /// it does not, the copies lose memory bandwidth.
+    fn compute(&self, threads: usize) -> String {
+        let runs = self.iterations.min(5);
+        let mut timing = Timing::default();
+        // One warm-up run: no caches or mappings to settle, only clock ramp-up.
+        for i in 0..1 + runs {
+            let start = Instant::now();
+            std::thread::scope(|scope| {
+                for _ in 0..threads {
+                    scope.spawn(|| black_box(spin(black_box(SPIN))));
+                }
+            });
+            if i >= 1 {
+                timing.add(start.elapsed());
+            }
+        }
+        format!(
+            "{SPIN} steps per thread: avg {:.2} ms min {:.2} max {:.2}",
+            timing.avg_ms(),
+            timing.min.unwrap_or_default().as_secs_f64() * 1000.0,
+            timing.max.as_secs_f64() * 1000.0,
+        )
+    }
+
+    /// One thread copying a frame's worth of bytes through a small buffer pair that stays in the
+    /// core's L2 cache: CPU speed without DRAM traffic.
+    fn cache(&self) -> String {
+        let chunk = CACHE_CHUNK.min(self.bytes());
+        let source = &self.source[..chunk];
+        let mut target = vec![0u8; chunk];
+        let rounds = self.bytes().div_ceil(chunk);
+        let mut timing = Timing::default();
+        for i in 0..WARM_UP + self.iterations {
+            let start = Instant::now();
+            for _ in 0..rounds {
+                target.copy_from_slice(black_box(source));
+                black_box(&mut target);
+            }
+            if i >= WARM_UP {
+                timing.add(start.elapsed());
+            }
+        }
+        format!(
+            "{} KB x {rounds}: {}",
+            chunk / 1024,
+            timing.text(rounds * chunk)
+        )
     }
 
     fn ram(&self, threads: usize, write: Write) -> String {
@@ -485,6 +549,9 @@ pub fn run(
     let write = D3D11_CPU_ACCESS_WRITE.0 as u32;
     let read_write = (D3D11_CPU_ACCESS_READ | D3D11_CPU_ACCESS_WRITE).0 as u32;
     let cases: Vec<Case<'_>> = vec![
+        ("compute 1T", Box::new(|| Ok(probe.compute(1)))),
+        ("compute", Box::new(|| Ok(probe.compute(THREADS)))),
+        ("cache copy 1T", Box::new(|| Ok(probe.cache()))),
         ("RAM copy 1T", Box::new(|| Ok(probe.ram(1, Write::Copy)))),
         ("RAM copy", Box::new(|| Ok(probe.ram(THREADS, Write::Copy)))),
         (

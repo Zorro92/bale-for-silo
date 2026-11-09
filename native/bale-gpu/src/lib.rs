@@ -5,6 +5,8 @@
 //! reach the hardware device. Step 2 ports the debug IMFMediaEngine frame-server probe (`engine`).
 
 #[cfg(windows)]
+pub mod d3d12;
+#[cfg(windows)]
 mod engine;
 #[cfg(windows)]
 mod frames;
@@ -171,6 +173,33 @@ pub unsafe extern "C" fn bale_gpu_upload_probe(
     }
     let Ok(text) = std::panic::catch_unwind(|| upload::run_hardware(iterations.clamp(1, 120)))
     else {
+        return 0;
+    };
+    // SAFETY: the caller guarantees `report_capacity` writable bytes.
+    unsafe { write_report(&text, report, report_capacity) }
+}
+
+/// Debug D3D12 availability probe ([`d3d12`]): hardware device, feature level, UMA, and whether CPU
+/// memory can be wrapped as a GPU heap. `d3d12_module` is a `d3d12.dll` handle the caller loaded
+/// (null if it would not load), so this DLL never imports D3D12. Writes the plain-text report as
+/// UTF-8 into `report` and returns the bytes written (0 if the probe panicked).
+///
+/// # Safety
+/// `d3d12_module` must be null or a loaded module handle; `report` must point to `report_capacity`
+/// writable bytes.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_gpu_d3d12_probe(
+    d3d12_module: *mut core::ffi::c_void,
+    report: *mut u8,
+    report_capacity: u32,
+) -> u32 {
+    if report.is_null() {
+        return 0;
+    }
+    let module = HMODULE(d3d12_module);
+    // SAFETY: the caller guarantees the module handle is null or loaded.
+    let Ok(text) = std::panic::catch_unwind(|| unsafe { d3d12::run(module) }) else {
         return 0;
     };
     // SAFETY: the caller guarantees `report_capacity` writable bytes.

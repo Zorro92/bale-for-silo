@@ -24,6 +24,16 @@ public class DebugUploadProbeTests
     }
 
     [Fact]
+    public void D3D12ProbeLoadsTheDllAtRunTimeAndReportsOnlyTypeAndHresult()
+    {
+        var probe = Read("DebugRustProbe.cs.txt");
+        Assert.Contains("private static extern uint bale_gpu_d3d12_probe(nint d3d12Module, byte* report, uint reportCapacity);", probe);
+        Assert.Contains("NativeLibrary.TryLoad(\"d3d12.dll\", out var module);", probe);
+        Assert.Contains("return upload + RunD3D12();", probe);
+        Assert.Contains("D3D12 probe: FAILS ({ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8})", probe);
+    }
+
+    [Fact]
     public void ScriptExposesTheProbe()
     {
         var script = Read("bale-debug.sh");
