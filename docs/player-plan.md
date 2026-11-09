@@ -847,9 +847,13 @@ swscale conversion (~0.6 core) and the staging fill disappear. dav1d's own cost 
    costs ~0.45 core, almost all in the dav1d worker group (5.9 vs 5.5), although its per-frame CPU work
    is tiny. Likely cause: the D3D11 grain pass copies the landing texture into an intermediate and
    then reads it again, two extra 4K frame passes of shared memory traffic that slow the CPU in the
-   bandwidth-capped idle state. Untested. Fusing grain into the D3D12 repack would bring the traffic
-   to the no-grain level; skipping the intermediate copy (the landing texture is already a distinct
-   SRV) is the smaller first test.
+   bandwidth-capped idle state.
+   **Copy skipped (0.1.388, 7ea29d4):** the grain pass now samples SRV-bound DEFAULT sources (the
+   landing texture) in place; the intermediate is only created for staging sources. Same A/B, grain
+   on / off interleaved ×2: buffering 16/2.2 s and 17/1.6 s vs 17/1.3 s and 15/1.4 s; process CPU at
+   80–100 s 5.90/5.99 vs 5.89/5.99 cores, dav1d workers 5.51/5.59 vs 5.53/5.63; 0 late frames.
+   GPU grain now costs no measurable CPU, which confirms the copy was the cost. Fusing grain into
+   the D3D12 repack is no longer needed for CPU.
    **Production default (2026-11-09):** `SoftwareDecodeTuning.ZeroCopy` sets `bale_zero_copy=1` for
    every software video route after `ZeroCopyRuntime.Register()` succeeds; `ffmpeg-tune zerocopy=off`
    keeps the swscale path for A/Bs. 8-bit and 12-bit pictures are still declined by the wrapper and
