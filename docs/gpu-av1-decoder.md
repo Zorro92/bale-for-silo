@@ -61,3 +61,37 @@ worth doing once the GPU side is proven.
 
 Each phase is gated on the previous one. Phase 0 is the cheap part that decides whether the rest is
 worth it.
+
+## Phase 0 results (2026-11-08)
+The upstream test player (`uwp_dx12_player`, built by `.github/workflows/av1-gpu-testplayer.yml`) was
+sideloaded and run on the Series console **in app mode**. It decoded 4K 10-bit AV1 unlimited-rate
+with `-queue_size 4`. The default 16-frame queue fails to allocate output buffers in app mode.
+
+- **D3D12 compute works in app mode:** the device and all PSOs are created, with shader creation
+  taking ~5–6 s. The DEVICE_REMOVED seen with the D3D12 *video* query does not affect compute.
+- **Hidden frames hang it:** SVT-AV1 random-access encodes (hidden alt-refs plus
+  `show_existing_frame`) stop after the first frame, for both 1 and 8 tiles. Low-delay encodes with
+  every frame shown decode fine. Most real AV1 encodes use hidden frames, so this would need fixing
+  in any port.
+
+| Stream (3840x2160, 10-bit, 300–600 frames) | GPU decoder fps | Desktop 1-thread dav1d, relative |
+|---|---|---|
+| Jellyfin 40 Mbps, 1 tile | 10.3 | 1.28 |
+| SVT low-delay 40 Mbps, 1 tile | 13.3 | 1.00 |
+| SVT low-delay 40 Mbps, 8 tiles | 14.1 | 1.02 |
+| SVT low-delay 12.6 Mbps, 1 tile | 15.9 | 0.68 |
+
+For comparison, console dav1d decodes the Jellyfin clip at ~32–35 fps on ~6–7 cores. The GPU
+decoder is about 3x slower.
+
+**Reading:**
+- Eight tiles at the same bitrate gain only 6%, so tile-parallel entropy decoding is not what limits it.
+- Cutting the bitrate 3.2x gains only 19%. Fitting time = fixed + per-bit gives a fixed cost of
+  **~57 ms per 4K frame** (≤17.5 fps) even at zero bitrate. 24 fps needs ≤41.7 ms in total.
+- The fixed part is likely GPU reconstruction. That is unconfirmed, because the player does not log
+  GPU timestamps. It could also be per-frame host overhead such as fence waits or the small queue.
+
+**Gate: not met.** On the reference as built, the per-frame floor alone is ~40% over the 24 fps
+budget before any entropy cost, and correctness (spike a) was not checked. Continuing would first
+need a GPU timestamp breakdown, which means patching the test player. Only a shader-side fix (a
+rewrite for RDNA2 waves, not a port) could close a gap of that size.
