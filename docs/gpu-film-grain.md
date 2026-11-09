@@ -454,8 +454,8 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
   This motivates patch 0010's dav1d-at-open and size-dependent runtime fallback policy (section 6),
   rather than choosing the slower Rust CPU path whenever GPU is unavailable. Low-priority open item:
   faster CPU fallback, either grain in a cached heap buffer then copy, or SIMD.
-- **Next:** step 6 is done (section 8). The next CPU-offload candidate is letting the GPU grain pass read dav1d's planar `yuv420p` output directly and write
-  P010/NV12, removing the CPU sws repack + copy.
+- **Next:** step 6 is done (section 8). The GPU planar repack that would replace the CPU sws repack was
+  built and measured (section 8, "GPU repack"). It stalls more than swscale at 4K, so it stays debug-only.
 
 ## 8. 4K memory cap
 - 4K P010 ≈ 24.9 MB per texture vs 6.2 MB at 1080p. ~55 in flight would be ~1.3 GB of the 3.25 GB budget.
@@ -501,7 +501,25 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
   time over the same 120 s was 6.5 s (default, a repeat of the 6.2 s run), 6.8 s with `sws=1`,
   5.8 s with `sws=8` and 5.6 s with `prio=1`, all within run-to-run noise. dav1d alone decodes at
   ~89% of real time here, and the earlier 40 Mbps 4K probe ran at 0.53–0.58. Moving the repack to the
-  GPU would not make 4K viable, so it is not scheduled; production keeps the 1080p AV1 claim.
+  GPU would not make 4K viable; production keeps the 1080p AV1 claim.
+
+### GPU repack (debug only, build 0.1.343.0, wrapper `2.1.0-bale.12`)
+- Built anyway as an experiment: patch 0012 plus `bale_gpu` repack ABI 1. The CPU copies dav1d's
+  planes into the staging texture unchanged, and two GPU draws turn them into NV12/P010 (grain then
+  runs on a scratch copy). Off by default; `ffmpeg-tune repack=on` enables it. It passes its self-test
+  on the console, stays active for the whole run, and the frames are pixel-identical to swscale
+  (same paused 4K frame, GPU grain on, zero difference outside the stats panel).
+- Same title and 120 s from-start run as above:
+
+  | Path | Buffering at 120 s | CPU, light first minute | Steady MiB |
+  |------|--------------------|-------------------------|-----------|
+  | swscale repack (production) | 31 times, 5.6 s | 1.7–1.97 cores | ~2175 |
+  | GPU repack, run 1 / run 2 | 79 times, 11.5 s / 69 times, 10.3 s | 1.3–1.6 cores | ~2220–2450 |
+
+- It saves the expected ~0.3–0.4 cores but stalls about twice as much in the heavy stretch (delivered
+  ahead drops to ~0.45 s against ~0.7 s). Likely cause: the copy and draws run on the shared immediate
+  context under the multithread lock, so every frame now waits on the GPU in the decode thread.
+  Not worth enabling; kept as a debug knob. 4K AV1 stays CPU-bound in dav1d.
 
 ## 9. HDR / DV
 - Grain works on coded values (PQ for HDR10), exactly as dav1d does; patch 0004 color attributes are

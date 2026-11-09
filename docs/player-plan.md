@@ -64,9 +64,11 @@ default device and reports 11 decode profiles. They are the same 11 profiles D3D
 H.264 incl. multiview, MPEG-2, MPEG-4 Part 2, HEVC Main/Main10, VP9 profile 0/2). **No AV1 under
 D3D12 either**, so fixed-function AV1 decode isn't hidden behind the newer API. Every per-size
 `DECODE_SUPPORT` query reported no supported NV12/P010 size, even for HEVC, which D3D11 decodes up
-to 8K. That points to the query failing in app mode rather than real lack of support; the probe now
-prints the first query error to tell the two apart. It doesn't change the AV1 conclusion, which rests
-on the profile list.
+to 8K. Bale 0.1.343.0 prints why: the first `DECODE_SUPPORT` query returns 0x887A0005
+(`DXGI_ERROR_DEVICE_REMOVED`, SupportFlags 0), and every later query fails the same way. The video
+query removes the D3D12 device, so D3D12 video decode is unusable in app mode, not merely missing AV1.
+Keep that query out of anything that shares a device with playback. It doesn't change the AV1
+conclusion, which rests on the profile list.
 
 Still to test with real library files: TrueHD/DTS passthrough to a receiver.
 
