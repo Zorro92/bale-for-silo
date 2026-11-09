@@ -7,6 +7,8 @@
 #[cfg(windows)]
 pub mod d3d12;
 #[cfg(windows)]
+pub mod d3d12_repack;
+#[cfg(windows)]
 mod engine;
 #[cfg(windows)]
 mod frames;
@@ -15,6 +17,7 @@ pub mod grain;
 pub mod repack;
 #[cfg(windows)]
 pub mod upload;
+pub mod zc_frame;
 #[cfg(windows)]
 pub mod zerocopy;
 

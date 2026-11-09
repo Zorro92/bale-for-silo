@@ -771,26 +771,35 @@ swscale conversion (~0.6 core) and the staging fill disappear. dav1d's own cost 
    exported and applied; Jellyfin 4K, 1 thread): a valid custom buffer, a misaligned layout and a
    failing callback all give bit-identical frames to the default pool, every buffer is freed, and
    at most 10 pictures are alive at once (~250 MB at 4K, same as the internal pool).
-2. **`bale_gpu` zero-copy module** (Rust, ABI bump). One context per uploader, created from the MF
-   D3D11 device: a D3D12 device on the same adapter (LUID), a compute queue, two shared fences
-   (D3D12→D3D11 "repacked", D3D11→D3D12 "released"), opened in D3D11 once.
-   - Buffer pool: CUSTOM write-back L0 buffers, persistently mapped, keyed by size, grown on demand
-     up to a cap. `alloc` returns a CPU pointer and a slot; `release` may come from any dav1d
-     thread (mutex). It replaces FFmpeg's RAM pool, and the 3 staging textures go away, so memory
-     use drops slightly.
-   - Target pool: P010 textures created in D3D12 (`HEAP_FLAG_SHARED`, UAV + render target), each
-     opened in D3D11 once and handed out as `ID3D11Texture2D`.
+2. **`bale_gpu` zero-copy module** (Rust, separate zero-copy ABI 1; `ABI_VERSION` unchanged).
+   Done: `native/bale-gpu/src/d3d12_repack.rs` (`bale_zc_*` exports), layout checks and CPU reference
+   in `src/zc_frame.rs`, shader `shaders/repack_zc_cs.hlsl`, WARP tests `tests/zero_copy_*.rs`. One
+   handle per uploader, created from the MF D3D11 device and immediate context after the caller
+   registered its `d3d12.dll`: a D3D12 device on the D3D11 device's adapter, a compute queue, two
+   shared fences (D3D12→D3D11 "repacked", D3D11→D3D12 "released") opened in D3D11 once. Create runs
+   a readback self-test (both slots, then a size change with an odd chroma width).
+   - Buffer pool: CUSTOM write-back L0 buffers, persistently mapped, sizes rounded to 64 KiB, at
+     most 16 per handle. `alloc` (any thread) returns a CPU pointer and an opaque odd id; `release`
+     (any thread, also after destroy) returns it. A released buffer is reused only once "repacked"
+     passed the last dispatch that read it, so the caller may drop the AVFrame right after repack.
+     A full pool waits at most 100 ms, then fails; the caller falls back to FFmpeg's own pool.
+   - Landing ring (changed from the earlier "target pool"): two P010 textures created in D3D12
+     (`HEAP_FLAG_SHARED`, UAV), each opened in D3D11 once. Repack returns a borrowed D3D11 texture
+     valid until the next repack; the caller copies (or grains) it into its own pooled texture, so
+     MF never holds a shared texture and only the caller's copy has to finish before reuse.
    - Repack: `cs_5_0` compute shader (compiled by fxc like the D3D11 shaders; root signature built
      in code). Raw-buffer SRV on the picture, typed `R16_UINT` / `R16G16_UINT` UAVs on the P010
      planes; each thread converts a 4×2 luma block and its 2 chroma pairs (`value << 6`).
 3. **Per frame** (decode-ahead thread, wrapper patch 0015): if the AVFrame's buffer belongs to the
-   pool, skip swscale and staging. Take a target (pooled shared texture, or the grain scratch);
-   the D3D11 context signals "released" so MF's earlier reads of that texture finish first; the
-   D3D12 queue waits on it, transitions, dispatches, returns the target to COMMON and signals
-   "repacked" N; the D3D11 context waits on N; then grain (if any) and `CreateFromDirect3D11Surface`
-   as today. The AVFrame reference is kept until "repacked" N completes, so dav1d can't reuse the
-   buffer while the GPU still reads it. Anything not from the pool, or any failure, takes today's
-   path for that frame; a failure in setup disables zero-copy for the uploader.
+   pool, skip swscale and staging. Repack: the D3D11 context signals "released" for the previous
+   landing texture (after the caller's copy from it); the D3D12 queue waits on "released" before
+   writing a landing texture again, transitions, dispatches, returns it to COMMON and signals
+   "repacked" N; the D3D11 context waits on N. Then the wrapper copies (or grains) the landing
+   texture into its pooled texture and continues to `CreateFromDirect3D11Surface` as today. CPU
+   waits in the module flush the D3D11 context first, so an unflushed "released" signal cannot
+   deadlock. A buffer not from the pool (`S_FALSE`) takes today's path for that frame; any repack
+   failure poisons the handle (later allocs fail, so dav1d returns to its own pool) and the wrapper
+   takes today's path from then on.
 4. **Not in scope yet:** 8-bit and 12-bit AV1 (keep today's path), grain fused into the repack
    (later, saves one GPU pass), Xbox One (no D3D12 in app mode).
 5. **Test:** `ffmpeg-tune zerocopy=on`, then interleaved A/B against today's path on 4K AV1 in the

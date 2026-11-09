@@ -16,10 +16,9 @@
 
 use std::fmt::Write as _;
 use std::hint::black_box;
-use std::mem::ManuallyDrop;
 use std::time::{Duration, Instant};
 
-use windows::Win32::Foundation::{CloseHandle, E_FAIL, HANDLE, HMODULE, WAIT_OBJECT_0};
+use windows::Win32::Foundation::{E_FAIL, HMODULE, WAIT_OBJECT_0};
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
 use windows::Win32::Graphics::Direct3D11::*;
 use windows::Win32::Graphics::Direct3D12::*;
@@ -28,6 +27,7 @@ use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
 use windows::core::{Interface, PCWSTR, Result};
 
 use crate::d3d12::{create_device, fails, resource};
+use crate::d3d12_repack::{Handle, borrowed, committed, heap, map, transition, write_back};
 use crate::grain::gpu::{texture, texture_desc};
 use crate::upload::{Target, Timing, Write, fill};
 
@@ -45,18 +45,6 @@ const WAIT_MS: u32 = 5000;
 const GENERIC_ALL: u32 = 0x1000_0000;
 const SEED_COHERENCY: u64 = 0xC0FF_EE00_0000_0001;
 const SEED_SHARE: u64 = 0x5EED_0000_0000_0002;
-
-/// An owned kernel handle (event or shared NT handle), closed on drop.
-struct Handle(HANDLE);
-
-impl Drop for Handle {
-    fn drop(&mut self) {
-        if !self.0.is_invalid() {
-            // SAFETY: this wrapper owns the handle and closes it once.
-            let _ = unsafe { CloseHandle(self.0) };
-        }
-    }
-}
 
 /// One DIRECT queue with a reusable allocator, list and CPU-waitable fence. Every submission is
 /// waited for before the next one, so the single allocator is never reset while in use.
@@ -142,27 +130,6 @@ impl Drop for Gpu {
     }
 }
 
-fn heap(kind: D3D12_HEAP_TYPE) -> D3D12_HEAP_PROPERTIES {
-    D3D12_HEAP_PROPERTIES {
-        Type: kind,
-        CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-        MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
-        CreationNodeMask: 0,
-        VisibleNodeMask: 0,
-    }
-}
-
-/// The candidate decode target: CPU-cached system memory the GPU reads directly.
-fn write_back() -> D3D12_HEAP_PROPERTIES {
-    D3D12_HEAP_PROPERTIES {
-        Type: D3D12_HEAP_TYPE_CUSTOM,
-        CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_WRITE_BACK,
-        MemoryPoolPreference: D3D12_MEMORY_POOL_L0,
-        CreationNodeMask: 0,
-        VisibleNodeMask: 0,
-    }
-}
-
 fn page_name(page: D3D12_CPU_PAGE_PROPERTY) -> &'static str {
     match page {
         D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE => "not-available",
@@ -178,19 +145,6 @@ fn pool_name(pool: D3D12_MEMORY_POOL) -> &'static str {
         D3D12_MEMORY_POOL_L1 => "L1",
         _ => "unknown",
     }
-}
-
-fn committed(
-    device: &ID3D12Device,
-    properties: &D3D12_HEAP_PROPERTIES,
-    flags: D3D12_HEAP_FLAGS,
-    desc: &D3D12_RESOURCE_DESC,
-    state: D3D12_RESOURCE_STATES,
-) -> Result<ID3D12Resource> {
-    let mut out = None;
-    // SAFETY: live device; descriptors outlive the call; `out` is our slot.
-    unsafe { device.CreateCommittedResource(properties, flags, desc, state, None, &mut out)? };
-    out.ok_or_else(|| E_FAIL.into())
 }
 
 fn buffer(
@@ -219,46 +173,6 @@ fn texture_2d(width: u32, height: u32, format: DXGI_FORMAT) -> D3D12_RESOURCE_DE
     );
     desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
     desc
-}
-
-/// Maps a buffer for CPU reads and writes and leaves it mapped; D3D12 allows releasing a mapped
-/// resource, which ends the mapping.
-fn map(resource: &ID3D12Resource) -> Result<usize> {
-    let mut data = std::ptr::null_mut();
-    // SAFETY: a CPU-visible buffer; `data` is our out-slot.
-    unsafe { resource.Map(0, None, Some(&mut data))? };
-    if data.is_null() {
-        return Err(E_FAIL.into());
-    }
-    Ok(data as usize)
-}
-
-/// A non-owning copy of a resource pointer for barrier and copy-location structs, which hold it in
-/// `ManuallyDrop` and so never release it.
-fn borrowed(resource: &ID3D12Resource) -> ManuallyDrop<Option<ID3D12Resource>> {
-    // SAFETY: `Option<ID3D12Resource>` is one non-null COM pointer, the same layout as the
-    // reference; `ManuallyDrop` skips the Release this copy did not AddRef. `resource` outlives
-    // every command list that uses the struct (each submission is waited for).
-    unsafe { std::mem::transmute_copy(resource) }
-}
-
-fn transition(
-    resource: &ID3D12Resource,
-    before: D3D12_RESOURCE_STATES,
-    after: D3D12_RESOURCE_STATES,
-) -> D3D12_RESOURCE_BARRIER {
-    D3D12_RESOURCE_BARRIER {
-        Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-        Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
-        Anonymous: D3D12_RESOURCE_BARRIER_0 {
-            Transition: ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
-                pResource: borrowed(resource),
-                Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
-                StateBefore: before,
-                StateAfter: after,
-            }),
-        },
-    }
 }
 
 fn subresource(resource: &ID3D12Resource, index: u32) -> D3D12_TEXTURE_COPY_LOCATION {

@@ -23,7 +23,7 @@ use windows::Win32::System::Memory::{
 };
 use windows::core::{GUID, HRESULT, Interface, s};
 
-type CreateDevice = unsafe extern "system" fn(
+pub(crate) type CreateDevice = unsafe extern "system" fn(
     *mut c_void,
     D3D_FEATURE_LEVEL,
     *const GUID,

@@ -3,12 +3,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const SHADERS: [(&str, &str); 5] = [
+const SHADERS: [(&str, &str); 6] = [
     ("fullscreen_vs", "vs_5_0"),
     ("grain_luma_ps", "ps_5_0"),
     ("grain_chroma_ps", "ps_5_0"),
     ("repack_luma_ps", "ps_5_0"),
     ("repack_chroma_ps", "ps_5_0"),
+    ("repack_zc_cs", "cs_5_0"),
 ];
 
 fn main() {

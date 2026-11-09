@@ -1,0 +1,371 @@
+//! Zero-copy repack (D3D12 compute into shared P010 landing textures) on WARP, through the C ABI;
+//! no feature skips.
+#![cfg(windows)]
+
+use std::ffi::c_void;
+use std::ptr;
+
+use bale_gpu::d3d12_repack::{
+    BaleZcStats, BaleZeroCopy, S_FALSE, S_OK, ZERO_COPY_ABI_VERSION, bale_zc_abi_version,
+    bale_zc_alloc, bale_zc_create, bale_zc_destroy, bale_zc_register_d3d12, bale_zc_release,
+    bale_zc_repack, bale_zc_stats,
+};
+use bale_gpu::zc_frame::{BaleZcFrame, MAX_BYTES, fill_test_planes};
+use windows::Win32::Foundation::{E_INVALIDARG, E_OUTOFMEMORY, HMODULE};
+use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL_11_0};
+use windows::Win32::Graphics::Direct3D10::ID3D10Multithread;
+use windows::Win32::Graphics::Direct3D11::*;
+use windows::Win32::Graphics::Dxgi::Common::*;
+use windows::Win32::System::LibraryLoader::LoadLibraryW;
+use windows::core::{Interface, w};
+
+/// Buffers per handle (`MAX_BUFFERS` in the module).
+const MAX_BUFFERS: usize = 16;
+
+struct Warp {
+    device: ID3D11Device,
+    context: ID3D11DeviceContext,
+}
+
+impl Warp {
+    fn new() -> Self {
+        // SAFETY: loads a system DLL by name; it stays loaded for the test process.
+        let module =
+            unsafe { LoadLibraryW(w!("d3d12.dll")) }.expect("d3d12.dll ships with Windows");
+        // SAFETY: a module that is never freed.
+        assert_eq!(unsafe { bale_zc_register_d3d12(module.0) }, S_OK);
+        let mut device = None;
+        let mut context = None;
+        // SAFETY: no adapter/software module; out-pointers are live local COM slots.
+        unsafe {
+            D3D11CreateDevice(
+                None,
+                D3D_DRIVER_TYPE_WARP,
+                HMODULE::default(),
+                D3D11_CREATE_DEVICE_FLAG(0),
+                Some(&[D3D_FEATURE_LEVEL_11_0]),
+                D3D11_SDK_VERSION,
+                Some(&mut device),
+                None,
+                Some(&mut context),
+            )
+            .expect("WARP FL11_0 is required; zero-copy tests must not skip");
+        }
+        let device = device.expect("WARP device");
+        let context = context.expect("WARP immediate context");
+        let multithread: ID3D10Multithread =
+            context.cast().expect("WARP must expose ID3D10Multithread");
+        // SAFETY: configure the newly created private context before any other use.
+        let _ = unsafe { multithread.SetMultithreadProtected(true) };
+        Self { device, context }
+    }
+
+    fn zero_copy(&self) -> ZeroCopy {
+        let mut handle = ptr::null_mut();
+        // SAFETY: live COM interfaces and a writable out slot.
+        let hr =
+            unsafe { bale_zc_create(self.device.as_raw(), self.context.as_raw(), &mut handle) };
+        assert_eq!(
+            hr, S_OK,
+            "zero-copy create (including its readback self-test) must succeed on WARP: \
+             HRESULT=0x{:08x}",
+            hr as u32
+        );
+        assert!(!handle.is_null());
+        ZeroCopy(handle)
+    }
+
+    /// Copies a landing texture to a staging texture and returns its tight P010 bytes.
+    fn read(&self, landing: *mut c_void, width: u32, height: u32) -> Vec<u8> {
+        // SAFETY: a borrowed texture pointer from bale_zc_repack, valid until the next repack.
+        let landing = unsafe { ID3D11Texture2D::from_raw_borrowed(&landing) }.expect("texture");
+        let mut desc = D3D11_TEXTURE2D_DESC::default();
+        // SAFETY: live texture; local out-slot.
+        unsafe { landing.GetDesc(&mut desc) };
+        assert_eq!(
+            (
+                desc.Width,
+                desc.Height,
+                desc.Format,
+                desc.MipLevels,
+                desc.ArraySize
+            ),
+            (width, height, DXGI_FORMAT_P010, 1, 1)
+        );
+        let staging_desc = D3D11_TEXTURE2D_DESC {
+            Width: width,
+            Height: height,
+            MipLevels: 1,
+            ArraySize: 1,
+            Format: DXGI_FORMAT_P010,
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
+            Usage: D3D11_USAGE_STAGING,
+            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+            ..Default::default()
+        };
+        let mut staging = None;
+        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+        // SAFETY: matching P010 textures on this device; one Map/Unmap pair on the staging copy.
+        unsafe {
+            self.device
+                .CreateTexture2D(&staging_desc, None, Some(&mut staging))
+                .expect("staging texture");
+            let staging = staging.expect("staging texture");
+            self.context.CopyResource(&staging, landing);
+            self.context
+                .Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
+                .expect("map staging");
+            let pitch = mapped.RowPitch as usize;
+            let rows = (height + height / 2) as usize;
+            let row_bytes = 2 * width as usize;
+            assert!(pitch >= row_bytes);
+            let all = std::slice::from_raw_parts(mapped.pData.cast::<u8>(), pitch * rows);
+            let bytes = all
+                .chunks_exact(pitch)
+                .flat_map(|row| &row[..row_bytes])
+                .copied()
+                .collect();
+            self.context.Unmap(&staging, 0);
+            bytes
+        }
+    }
+}
+
+struct ZeroCopy(*mut BaleZeroCopy);
+
+impl Drop for ZeroCopy {
+    fn drop(&mut self) {
+        // SAFETY: created once by bale_zc_create, destroyed once here.
+        unsafe { bale_zc_destroy(self.0) };
+    }
+}
+
+struct Picture {
+    data: *mut u8,
+    id: *mut c_void,
+}
+
+impl ZeroCopy {
+    fn alloc(&self, bytes: u64) -> Result<Picture, i32> {
+        let (mut data, mut id) = (ptr::null_mut(), ptr::null_mut());
+        // SAFETY: live handle; writable out slots.
+        let hr = unsafe { bale_zc_alloc(self.0, bytes, &mut data, &mut id) };
+        if hr != S_OK {
+            assert!(data.is_null() && id.is_null());
+            return Err(hr);
+        }
+        assert!(!data.is_null() && !id.is_null());
+        Ok(Picture { data, id })
+    }
+
+    /// Allocates a padded `width` x `height` test picture filled with `seed` and returns it with
+    /// its layout and source bytes.
+    fn picture(&self, width: u32, height: u32, seed: u32) -> (Picture, BaleZcFrame, Vec<u8>) {
+        let (frame, bytes) = BaleZcFrame::test_layout(width, height);
+        let picture = self.alloc(bytes).expect("alloc");
+        let mut source = vec![0u8; bytes as usize];
+        fill_test_planes(&frame, &mut source, seed);
+        // SAFETY: the buffer holds at least `bytes` and no repack reads it yet.
+        unsafe { ptr::copy_nonoverlapping(source.as_ptr(), picture.data, source.len()) };
+        (picture, frame, source)
+    }
+
+    fn repack(&self, id: *mut c_void, frame: &BaleZcFrame) -> (i32, *mut c_void) {
+        let mut texture = ptr::null_mut();
+        // SAFETY: live handle, readable frame, writable out slot; one test thread per handle.
+        let hr = unsafe { bale_zc_repack(self.0, id, frame, &mut texture) };
+        (hr, texture)
+    }
+
+    fn stats(&self) -> BaleZcStats {
+        let mut stats = BaleZcStats::default();
+        // SAFETY: live handle; writable out slot.
+        assert_eq!(unsafe { bale_zc_stats(self.0, &mut stats) }, S_OK);
+        stats
+    }
+}
+
+fn release(id: *mut c_void) -> i32 {
+    // SAFETY: the test no longer touches the picture's memory.
+    unsafe { bale_zc_release(id) }
+}
+
+#[test]
+fn abi_version_and_null_registration() {
+    assert_eq!(bale_zc_abi_version(), ZERO_COPY_ABI_VERSION);
+    assert_eq!(ZERO_COPY_ABI_VERSION, 1);
+    // SAFETY: null is the rejected input.
+    assert_eq!(
+        unsafe { bale_zc_register_d3d12(ptr::null_mut()) },
+        E_INVALIDARG.0
+    );
+}
+
+#[test]
+fn repacks_through_both_slots_and_size_changes() {
+    let warp = Warp::new();
+    let zero_copy = warp.zero_copy();
+    let sizes = [
+        (64, 64),
+        (128, 72),
+        (128, 72),
+        (130, 40),
+        (130, 40),
+        (64, 64),
+        (2, 2),
+    ];
+    for (seed, (width, height)) in sizes.into_iter().enumerate() {
+        let (picture, frame, source) = zero_copy.picture(width, height, seed as u32 + 11);
+        let (hr, texture) = zero_copy.repack(picture.id, &frame);
+        assert_eq!(hr, S_OK, "{width}x{height}: HRESULT=0x{:08x}", hr as u32);
+        // Released before the copy: the GPU still reads it, so it must not be reused yet.
+        assert_eq!(release(picture.id), S_OK);
+        assert_eq!(
+            warp.read(texture, width, height),
+            frame.reference_p010(&source),
+            "{width}x{height}"
+        );
+    }
+    let stats = zero_copy.stats();
+    assert_eq!(stats.frames_repacked, sizes.len() as u64);
+    assert_eq!(stats.buffers_live, 0);
+    assert_eq!(stats.alloc_failures, 0);
+}
+
+#[test]
+fn idle_buffers_are_reused() {
+    let warp = Warp::new();
+    let zero_copy = warp.zero_copy();
+    let (first, frame, source) = zero_copy.picture(96, 32, 5);
+    let (hr, texture) = zero_copy.repack(first.id, &frame);
+    assert_eq!(hr, S_OK);
+    // The readback waits for the copy, which waited for the repack: the buffer is idle.
+    assert_eq!(warp.read(texture, 96, 32), frame.reference_p010(&source));
+    assert_eq!(release(first.id), S_OK);
+    let before = zero_copy.stats();
+    let (second, _, _) = zero_copy.picture(96, 32, 6);
+    assert_eq!(
+        second.data, first.data,
+        "an idle buffer of the same size is reused"
+    );
+    assert_ne!(second.id, first.id, "ids are never reused");
+    let after = zero_copy.stats();
+    assert_eq!(after.buffers_created, before.buffers_created);
+    assert_eq!(after.buffers_live, 1);
+    assert_eq!(release(second.id), S_OK);
+}
+
+#[test]
+fn rejects_bad_input_without_poisoning() {
+    let warp = Warp::new();
+    let zero_copy = warp.zero_copy();
+    let other = warp.zero_copy();
+    let (picture, frame, source) = zero_copy.picture(64, 16, 9);
+
+    // Not a buffer of this handle: the caller takes its ordinary path.
+    for id in [ptr::null_mut(), 2 as *mut c_void, usize::MAX as *mut c_void] {
+        let (hr, texture) = zero_copy.repack(id, &frame);
+        assert_eq!((hr, texture), (S_FALSE, ptr::null_mut()));
+    }
+    assert_eq!(other.repack(picture.id, &frame), (S_FALSE, ptr::null_mut()));
+
+    // Layouts that do not fit the buffer, or that the shader does not handle.
+    // Allocations are rounded up to 64 KiB, so the V plane at 64 KiB is past the end.
+    for bad in [
+        BaleZcFrame { width: 63, ..frame },
+        BaleZcFrame {
+            luma_stride: 64,
+            ..frame
+        },
+        BaleZcFrame {
+            offsets: [frame.offsets[0], frame.offsets[1], 64 << 10],
+            ..frame
+        },
+        BaleZcFrame {
+            height: 1 << 20,
+            ..frame
+        },
+    ] {
+        let (hr, texture) = zero_copy.repack(picture.id, &bad);
+        assert_eq!((hr, texture), (E_INVALIDARG.0, ptr::null_mut()), "{bad:?}");
+    }
+    // SAFETY: null pointers are the rejected inputs.
+    unsafe {
+        assert_eq!(
+            bale_zc_repack(zero_copy.0, picture.id, &frame, ptr::null_mut()),
+            E_INVALIDARG.0
+        );
+        let mut texture = ptr::null_mut();
+        assert_eq!(
+            bale_zc_repack(zero_copy.0, picture.id, ptr::null(), &mut texture),
+            E_INVALIDARG.0
+        );
+        assert_eq!(
+            bale_zc_repack(ptr::null(), picture.id, &frame, &mut texture),
+            E_INVALIDARG.0
+        );
+        let (mut data, mut id) = (ptr::null_mut(), ptr::null_mut());
+        assert_eq!(
+            bale_zc_alloc(ptr::null(), 64, &mut data, &mut id),
+            E_INVALIDARG.0
+        );
+        assert_eq!(
+            bale_zc_alloc(zero_copy.0, 64, ptr::null_mut(), &mut id),
+            E_INVALIDARG.0
+        );
+        assert_eq!(bale_zc_stats(zero_copy.0, ptr::null_mut()), E_INVALIDARG.0);
+    }
+    assert_eq!(zero_copy.alloc(0).err(), Some(E_INVALIDARG.0));
+    assert_eq!(zero_copy.alloc(MAX_BYTES + 1).err(), Some(E_INVALIDARG.0));
+
+    // Still healthy: the good layout repacks.
+    let (hr, texture) = zero_copy.repack(picture.id, &frame);
+    assert_eq!(hr, S_OK);
+    assert_eq!(warp.read(texture, 64, 16), frame.reference_p010(&source));
+    assert_eq!(release(picture.id), S_OK);
+    assert_eq!(release(picture.id), E_INVALIDARG.0, "double release");
+    assert_eq!(release(2 as *mut c_void), E_INVALIDARG.0, "never-issued id");
+    assert_eq!(zero_copy.stats().frames_repacked, 1);
+    assert_eq!(other.stats().frames_repacked, 0);
+}
+
+#[test]
+fn pool_limit_fails_fast_and_recovers() {
+    let warp = Warp::new();
+    let zero_copy = warp.zero_copy();
+    let held: Vec<Picture> = (0..MAX_BUFFERS)
+        .map(|_| zero_copy.alloc(4096).expect("within the limit"))
+        .collect();
+    assert_eq!(zero_copy.alloc(4096).err(), Some(E_OUTOFMEMORY.0));
+    let stats = zero_copy.stats();
+    assert_eq!(stats.buffers_live, MAX_BUFFERS as u64);
+    assert_eq!(stats.buffers_peak, MAX_BUFFERS as u64);
+    assert!(stats.alloc_failures >= 1);
+    assert_eq!(release(held[0].id), S_OK);
+    let again = zero_copy
+        .alloc(4096)
+        .expect("a released buffer is available again");
+    for picture in held.iter().skip(1).chain([&again]) {
+        assert_eq!(release(picture.id), S_OK);
+    }
+    assert_eq!(zero_copy.stats().buffers_live, 0);
+}
+
+#[test]
+fn buffers_outlive_their_handle() {
+    let warp = Warp::new();
+    let zero_copy = warp.zero_copy();
+    let (picture, frame, source) = zero_copy.picture(64, 8, 21);
+    let (hr, texture) = zero_copy.repack(picture.id, &frame);
+    assert_eq!(hr, S_OK);
+    assert_eq!(warp.read(texture, 64, 8), frame.reference_p010(&source));
+    drop(zero_copy);
+    // The decoder may still write into and then release a picture after the handle is gone.
+    // SAFETY: the buffer stays mapped until released.
+    unsafe { picture.data.write_bytes(0x5a, 64) };
+    assert_eq!(release(picture.id), S_OK);
+    assert_eq!(release(picture.id), E_INVALIDARG.0);
+}
