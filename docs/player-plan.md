@@ -710,8 +710,18 @@ The memory type is not the problem; the console's state while the player is open
 - During real playback nobody touches the controller, so a whole film runs in the slow state. The
   ~2 GB/s fill is this bandwidth limit, which also caps dav1d itself. Faster converters (libyuv
   instead of swscale) cannot help; fewer bytes moved can: streaming stores (~1.5x) or not copying.
-- Open: how much 4K AV1 stalls improve when input is kept fresh (A/B with F24 every 5 s), and
-  whether an app-level API holds the fast state. The player's `DisplayRequest` does not.
+- A/B on Shrek 4K AV1 (0.1.364.0, Start Over, 120 s, swscale, interleaved 3+3), no input versus an
+  injected Shift every 5 s. Shift leaves the screen unchanged. F24 must not be used: the Xbox shell
+  opens the Guide's Capture panel on it.
+
+  | | Buffering | CPU |
+  | --- | --- | --- |
+  | no input | 9 times, 1.4–2.2 s | 6.1–6.8 cores |
+  | Shift every 5 s | 1 time (start), 0.1 s | 1.8–2.2 cores |
+
+  So with fresh input, 4K AV1 plays smoothly on about two cores. Every earlier 4K CPU and stall
+  figure in this document was measured in the idle state.
+- Open: whether an app-level API holds the fast state. The player's `DisplayRequest` does not.
 
 **D3D12 in app mode (same probe).** Hardware device OK, max feature level 11_0, UMA and
 cache-coherent UMA true, existing heaps reported supported and row-major cross-adapter textures true,
