@@ -71,7 +71,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "setup $name failed" }
             ninja -C "build-$name" tools/dav1d.exe
             if ($LASTEXITCODE -ne 0) { throw "build $name failed" }
-            Write-Output "== $name: compile command for src/decode.c"
+            Write-Output "== ${name}: compile command for src/decode.c"
             (Get-Content "build-$name/compile_commands.json" -Raw | ConvertFrom-Json |
               Where-Object { $_.file -like '*src*decode.c' } | Select-Object -First 1).command
           }
