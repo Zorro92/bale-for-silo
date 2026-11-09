@@ -800,6 +800,13 @@ swscale conversion (~0.6 core) and the staging fill disappear. dav1d's own cost 
    deadlock. A buffer not from the pool (`S_FALSE`) takes today's path for that frame; any repack
    failure poisons the handle (later allocs fail, so dav1d returns to its own pool) and the wrapper
    takes today's path from then on.
+   Written (not yet built by CI, needs native `p1`): `scripts/ffmpeginteropx-patches/0015-zero-copy-landing.patch`,
+   option `bale_zero_copy` (only with `bale_d3d11_upload`). The hook is installed in
+   `SelectOutputFormat` (dav1d asks per picture, so before the first decode is enough) and declines
+   until `SetUploadDevice` has created the handle. The repack size is the 4-aligned output texture
+   size, read from dav1d's 128-aligned picture rows, so the landing texture matches the pooled
+   texture for `CopyResource`. A refused layout (`E_INVALIDARG`) takes today's path for that frame
+   only; other repack failures and every upload failure destroy the handle for the stream.
 4. **Not in scope yet:** 8-bit and 12-bit AV1 (keep today's path), grain fused into the repack
    (later, saves one GPU pass), Xbox One (no D3D12 in app mode).
 5. **Test:** `ffmpeg-tune zerocopy=on`, then interleaved A/B against today's path on 4K AV1 in the

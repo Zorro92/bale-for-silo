@@ -109,6 +109,21 @@ starved decode-ahead. `FillPlanar` now splits each plane's rows into `bale_sws_t
 caller copies slice 0, workers (started on the first planar frame, `bale_decode_thread_priority`
 boost, joined on destruction) copy the rest. If a worker cannot start, the remaining slices are
 merged. Output bytes are unchanged. It ships in `2.1.0-bale.14`.
+`0015` adds debug-only `bale_zero_copy` (0/1, default 0), honored only with `bale_d3d11_upload` > 0
+outside frame grabbers. It needs the native FFmpeg `p1` patch (`../ffmpeg-native-patches`), which
+lets libdav1d take picture memory from a replaced `get_buffer2`. For software `libdav1d`
+`yuv420p10le` to P010 output the provider installs such a hook before the first decode. Once
+`SetUploadDevice` has created a `bale_gpu.dll` zero-copy ABI 1 handle (the app must first register
+`d3d12.dll` with `bale_zc_register_d3d12`; create runs a readback self-test), each picture is one
+GPU-visible buffer from `bale_zc_alloc`, freed through `bale_zc_release` by the AVBuffer callback.
+The hook declines (dav1d then uses its own pool for that picture) without a handle, for other
+formats, or when the bounded pool is full. Upload then calls `bale_zc_repack`, which converts the
+buffer on the GPU into a borrowed P010 landing texture; it is copied (or GPU-grained) into the
+pooled texture with no staging Map or CPU fill. A picture from dav1d's own pool or a refused layout
+takes the existing staging paths for that frame; any other repack failure, and every upload
+failure, destroys the handle for the stream (buffers dav1d still holds stay valid). CPU grain
+frames use staging. Timing lines report the path as `repack=2`; fixed `Bale zero-copy ...` lines
+log create/disable/HRESULTs and pool counters after 240 frames and at teardown.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.
