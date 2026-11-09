@@ -1,0 +1,118 @@
+name: dav1d compiler benchmark
+
+# Pre-screen for compiler flags on dav1d's C code (its SIMD is hand-written asm and unaffected).
+# Builds the dav1d CLI once per variant on ONE runner and benchmarks them interleaved on the same
+# machine, with asm capped at AVX2 like the Xbox Series (Zen 2). Desktop Win32 build, not UWP:
+# WINAPI_FAMILY only changes API availability, not code generation. Nothing is published.
+on:
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: Interleaved benchmark rounds
+        type: string
+        default: '3'
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      DAV1D_COMMIT: 54706fc6bc0cdecab7e9593974a4039cc038fca7 # 1.5.4, same as the shipped native package
+      CLIP_URL: https://repo.jellyfin.org/test-videos/SDR/AV1/Test%20Jellyfin%204K%20AV1%2010bit%2040M.mp4
+      CLIP_SHA256: fb983a54771f79e2011743a5baf1e89d3db177655801218de1c339e71fa27765
+    steps:
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Tools
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check meson==1.9.1 ninja==1.13.0
+          choco install -y --no-progress nasm ffmpeg
+          if ($LASTEXITCODE -ne 0) { throw 'choco failed' }
+          "C:\Program Files\NASM" | Out-File -Append $env:GITHUB_PATH
+          "C:\Program Files\LLVM\bin" | Out-File -Append $env:GITHUB_PATH
+
+      - name: Source and clip
+        shell: pwsh
+        run: |
+          git init -q dav1d
+          git -C dav1d fetch -q --depth 1 https://github.com/videolan/dav1d.git $env:DAV1D_COMMIT
+          git -C dav1d checkout -q FETCH_HEAD
+          Invoke-WebRequest -Uri $env:CLIP_URL -OutFile clip.mp4
+          if ((Get-FileHash clip.mp4 -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:CLIP_SHA256) { throw 'clip hash mismatch' }
+          ffmpeg -hide_banner -loglevel error -i clip.mp4 -map 0:v:0 -c copy -f ivf clip.ivf
+          if ($LASTEXITCODE -ne 0) { throw 'ivf remux failed' }
+          (Get-CimInstance Win32_Processor | Select-Object -First 1).Name
+          clang-cl --version | Select-Object -First 1
+          cl 2>&1 | Select-Object -First 1
+
+      - name: Build variants
+        shell: pwsh
+        run: |
+          # msvc = the shipped recipe (FFmpegInteropX build-dav1d.sh: cl, buildtype=release).
+          $variants = [ordered]@{
+            'msvc'           = @{ cc = 'cl';       bt = 'release'; args = @() }
+            'clang-O2'       = @{ cc = 'clang-cl'; bt = 'release'; args = @() }
+            'clang-O3-v2'    = @{ cc = 'clang-cl'; bt = 'plain';   args = @('/clang:-O3', '/clang:-march=x86-64-v2', '/clang:-mtune=znver2') }
+            'clang-O3-znver2'= @{ cc = 'clang-cl'; bt = 'plain';   args = @('/clang:-O3', '/clang:-march=znver2') }
+          }
+          foreach ($name in $variants.Keys) {
+            $v = $variants[$name]
+            $list = (@('-MD') + $v.args | ForEach-Object { "'$_'" }) -join ', '
+            "[built-in options]`nc_args = [$list]" | Set-Content "native-$name.ini"
+            $env:CC = $v.cc
+            meson setup "build-$name" dav1d --native-file "native-$name.ini" --buildtype $v.bt -Db_ndebug=true `
+              -Ddefault_library=static -Denable_tests=false -Denable_tools=true -Denable_asm=true
+            if ($LASTEXITCODE -ne 0) { throw "setup $name failed" }
+            ninja -C "build-$name" tools/dav1d.exe
+            if ($LASTEXITCODE -ne 0) { throw "build $name failed" }
+            Write-Output "== $name: compile command for src/decode.c"
+            (Get-Content "build-$name/compile_commands.json" -Raw | ConvertFrom-Json |
+              Where-Object { $_.file -like '*src*decode.c' } | Select-Object -First 1).command
+          }
+          $variants.Keys | Set-Content variants.txt
+
+      - name: Correctness (md5 of the first 60 frames must match across variants)
+        shell: pwsh
+        run: |
+          $sums = @{}
+          foreach ($name in Get-Content variants.txt) {
+            & "build-$name/tools/dav1d.exe" -q -i clip.ivf --limit 60 --cpumask avx2 --muxer md5 -o "md5-$name.txt"
+            if ($LASTEXITCODE -ne 0) { throw "$name decode failed" }
+            $sums[$name] = (Get-Content "md5-$name.txt" -Raw).Trim()
+            Write-Output "$name $($sums[$name])"
+          }
+          if (@($sums.Values | Sort-Object -Unique).Count -ne 1) { throw 'variants decode differently' }
+
+      - name: Benchmark (interleaved)
+        shell: pwsh
+        env:
+          ROUNDS: ${{ inputs.rounds }}
+        run: |
+          $names = Get-Content variants.txt
+          $rows = @()
+          foreach ($cfg in @(@{ t = 1; n = 240 }, @{ t = 4; n = 600 })) {
+            for ($r = 1; $r -le [int]$env:ROUNDS; $r++) {
+              foreach ($name in $names) {
+                $sw = [Diagnostics.Stopwatch]::StartNew()
+                & "build-$name/tools/dav1d.exe" -q -i clip.ivf --limit $cfg.n --cpumask avx2 --threads $cfg.t --muxer null -o nul
+                $sw.Stop()
+                if ($LASTEXITCODE -ne 0) { throw "$name failed" }
+                $rows += [pscustomobject]@{ variant = $name; threads = $cfg.t; round = $r; fps = [math]::Round($cfg.n / $sw.Elapsed.TotalSeconds, 2) }
+              }
+            }
+          }
+          $rows | Format-Table -AutoSize | Out-String -Width 200
+          $summary = $rows | Group-Object threads, variant | ForEach-Object {
+            $f = $_.Group.fps | Sort-Object
+            [pscustomobject]@{ threads = $_.Group[0].threads; variant = $_.Group[0].variant; median_fps = $f[[int][math]::Floor($f.Count / 2)]; min = $f[0]; max = $f[-1] }
+          }
+          $summary | Format-Table -AutoSize | Out-String -Width 200
+          $md = "| threads | variant | median fps | min | max |`n|---|---|---|---|---|`n"
+          $summary | ForEach-Object { $md += "| $($_.threads) | $($_.variant) | $($_.median_fps) | $($_.min) | $($_.max) |`n" }
+          $md | Out-File -Append $env:GITHUB_STEP_SUMMARY
