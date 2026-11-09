@@ -11,7 +11,7 @@ namespace Bale.Xbox.Services;
 /// Threads that start or exit inside the window are counted only for the part both snapshots see,
 /// so the report also gives the whole-process figure for comparison.
 /// </summary>
-internal static unsafe partial class DebugThreadCpu
+internal static partial class DebugThreadCpu
 {
     internal const string Usage = "usage: GET /threads?seconds=1..30 (default 10)\n";
 
@@ -66,7 +66,7 @@ internal static unsafe partial class DebugThreadCpu
         return ("200 OK", text.ToString());
     }
 
-    private static Dictionary<uint, ThreadSample>? Snapshot(out string? failure)
+    private static unsafe Dictionary<uint, ThreadSample>? Snapshot(out string? failure)
     {
         failure = null;
         var snapshot = CreateToolhelp32Snapshot(Th32csSnapThread, 0);
@@ -98,7 +98,7 @@ internal static unsafe partial class DebugThreadCpu
         finally { CloseHandle(snapshot); }
     }
 
-    private static string GroupOf(IntPtr thread)
+    private static unsafe string GroupOf(IntPtr thread)
     {
         if (GetThreadDescription(thread, out var description) >= 0 && description != IntPtr.Zero)
         {
@@ -162,12 +162,12 @@ internal static unsafe partial class DebugThreadCpu
     private static partial int CloseHandle(IntPtr handle);
 
     [LibraryImport("ntdll.dll")]
-    private static partial int NtQueryInformationThread(IntPtr thread, int informationClass, void* information, int length, uint* returnLength);
+    private static unsafe partial int NtQueryInformationThread(IntPtr thread, int informationClass, void* information, int length, uint* returnLength);
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     private static partial int GetModuleHandleExW(uint flags, IntPtr address, out IntPtr module);
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
-    private static partial uint GetModuleFileNameW(IntPtr module, char* fileName, uint size);
+    private static unsafe partial uint GetModuleFileNameW(IntPtr module, char* fileName, uint size);
 }
 #endif
