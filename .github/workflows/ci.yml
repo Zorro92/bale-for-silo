@@ -127,24 +127,19 @@ jobs:
           rustup target add x86_64-pc-windows-msvc
           # Run inside the crate so cargo reads .cargo/config.toml, including the static CRT setting.
           Push-Location native/bale-gpu
-          cargo test --release --locked --target x86_64-pc-windows-msvc -- --nocapture
+          # One test at a time: zero_copy_warp crashed (access violation) about 1 run in 30 when its
+          # WARP tests ran in parallel, and always passed serially. Cause not found yet (our shared
+          # state or WARP). Serial also names a crashing test: libtest prints the name before it runs.
+          cargo test --release --locked --target x86_64-pc-windows-msvc -- --nocapture --test-threads=1
           $cargoExit = $LASTEXITCODE
           Pop-Location
           if ($cargoExit -ne 0) { throw 'cargo test failed' }
 
-      # WARP JIT-compiles for the host CPU, and runners vary. A crashed test process prints no test
-      # name, so on failure rerun the WARP suites one test at a time to name it.
-      - name: Diagnose WARP test failure
+      # WARP JIT-compiles for the host CPU, and runners vary.
+      - name: Show runner CPU on test failure
         if: failure() && steps.rust.outcome == 'success'
         shell: pwsh
-        run: |
-          Get-CimInstance Win32_Processor | Format-List Name, NumberOfCores, NumberOfLogicalProcessors
-          Push-Location native/bale-gpu
-          foreach ($suite in 'zero_copy_warp', 'grain_gpu_warp', 'subs_warp') {
-            cargo test --release --locked --target x86_64-pc-windows-msvc --test $suite -- --nocapture --test-threads=1
-            "$suite exit code: $LASTEXITCODE"
-          }
-          Pop-Location
+        run: Get-CimInstance Win32_Processor | Format-List Name, NumberOfCores, NumberOfLogicalProcessors
 
       - name: Save Rust build cache
         if: steps.rust-cache.outputs.cache-hit != 'true'
