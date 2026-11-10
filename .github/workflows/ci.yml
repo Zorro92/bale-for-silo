@@ -140,7 +140,7 @@ jobs:
         run: |
           Get-CimInstance Win32_Processor | Format-List Name, NumberOfCores, NumberOfLogicalProcessors
           Push-Location native/bale-gpu
-          foreach ($suite in 'zero_copy_warp', 'grain_gpu_warp') {
+          foreach ($suite in 'zero_copy_warp', 'grain_gpu_warp', 'subs_warp') {
             cargo test --release --locked --target x86_64-pc-windows-msvc --test $suite -- --nocapture --test-threads=1
             "$suite exit code: $LASTEXITCODE"
           }
