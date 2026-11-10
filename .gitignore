@@ -484,3 +484,6 @@ $RECYCLE.BIN/
 src/Bale.Core/Api/.kiota.log
 xbox-*.png
 .claude/worktrees/
+
+# libass static build (scripts/build-libass-native.ps1)
+.libass/

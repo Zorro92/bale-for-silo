@@ -33,6 +33,7 @@
 #                                               system/passthrough video only: maxres 0–1, dpb 0–16 (0=unset); both default unset, opt-in pending wrapper release/repin
 #                                               software-video release defaults: ahead=16, buffer=1000 ms, delay unset; above 1080p (width >1920 or height >1080) ahead=8, buffer=500 ms, delay=6
 #                                               key i / where show applied settings and demand block waits (count/max/total ms)
+#   scripts/bale-debug.sh asstest [ms out.png]   libass in bale_gpu.dll: version, DirectWrite font lookups/fallback, render timings; with ms, saves the probe script frame as PNG
 #   scripts/bale-debug.sh rust                   Rust loader + GPU film grain: hardware/self-tests, 1080p correctness, 1080p/4K GPU and CPU timings (120 s timeout)
 #   scripts/bale-debug.sh mem [gc]               managed GC heap vs app memory; gc forces a full collection + finalizers first
 #   scripts/bale-debug.sh gc                     GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
@@ -222,6 +223,17 @@ case "${1:-}" in
       curl --fail-with-body -sS --max-time 5 "$BASE/ffmpeg-tune"
     else
       curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/ffmpeg-tune" "${ffmpeg_tune_args[@]}"
+    fi
+    ;;
+  asstest)
+    if [[ "$#" -eq 1 ]]; then
+      curl --fail-with-body -sS --max-time 120 "$BASE/asstest"
+    elif [[ "$#" -eq 3 && "$2" =~ ^[0-9]+$ ]]; then
+      curl --fail-with-body -sS --max-time 120 "$BASE/asstest?png=$2" | base64 -d > "$3"
+      echo "wrote $3"
+    else
+      echo 'usage: scripts/bale-debug.sh asstest [<ms> <out.png>]' >&2
+      exit 2
     fi
     ;;
   rust)

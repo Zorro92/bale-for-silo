@@ -28,6 +28,7 @@ const SHADERS: [(&str, &str, &str, Option<&str>); 7] = [
 fn main() {
     println!("cargo::rustc-check-cfg=cfg(bale_grain_no_shaders)");
     println!("cargo:rerun-if-env-changed=FXC");
+    println!("cargo:rerun-if-env-changed=BALE_LIBASS_DIR");
     println!("cargo:rerun-if-changed=shaders/grain_common.hlsli");
     for (_, source, _, _) in SHADERS {
         println!("cargo:rerun-if-changed=shaders/{source}.hlsl");
@@ -35,6 +36,7 @@ fn main() {
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
+    link_libass();
     let out = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"));
     if !cfg!(windows) {
         // Cross-check Rust types/lints only. A DLL built this way cannot create a grain handle.
@@ -72,6 +74,29 @@ fn main() {
             "fxc produced an empty shader for {name}",
         );
     }
+}
+
+/// Links the static libass build from `scripts/build-libass-native.ps1` (subtitle rendering). A
+/// Windows host must have it; cross-checking from another host only type-checks, so it is optional.
+fn link_libass() {
+    let Some(dir) = env::var_os("BALE_LIBASS_DIR") else {
+        if cfg!(windows) {
+            panic!(
+                "BALE_LIBASS_DIR is not set; run scripts/build-libass-native.ps1 and point it at the output"
+            );
+        }
+        return;
+    };
+    let lib = PathBuf::from(dir).join("lib");
+    println!("cargo:rustc-link-search=native={}", lib.display());
+    for name in ["ass", "harfbuzz", "fribidi", "freetype"] {
+        let file = lib.join(format!("{name}.lib"));
+        assert!(file.is_file(), "missing {}", file.display());
+        println!("cargo:rerun-if-changed={}", file.display());
+        println!("cargo:rustc-link-lib=static={name}");
+    }
+    // libass's WinRT font provider calls DWriteCreateFactory directly.
+    println!("cargo:rustc-link-lib=dylib=dwrite");
 }
 
 fn find_fxc() -> PathBuf {

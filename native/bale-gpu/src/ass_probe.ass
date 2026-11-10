@@ -1,0 +1,52 @@
+[Script Info]
+; Bale libass probe script (bale_ass_probe, bale_ass_probe_png): one feature group per second, 1-8 s.
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,64,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,2,2,40,40,60,1
+Style: Box,Arial,52,&H0000C0FF,&H000000FF,&H00402000,&H80000000,1,0,0,0,100,100,0,0,3,4,0,8,40,40,40,1
+Style: Kara,Arial,72,&H00FFFFFF,&H00FF8000,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,3,0,8,40,40,80,1
+Style: CJK,Yu Gothic,64,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,40,40,60,1
+Style: Embedded,Inter Tight Black,64,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,40,40,60,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:01.00,0:00:02.00,Box,,0,0,0,,BorderStyle 3 box (opaque)
+Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,{\an4\pos(80,400)}\blur4 {\blur4}soft edges
+Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,{\an4\pos(80,520)}\be3 {\be3}edge blur
+Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,{\an4\pos(80,640)\bord8\shad8\3c&H0000FF&\4c&H800080&}thick red border, purple shadow
+Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,{\an4\pos(80,760)\1a&H80&\3a&HC0&}half-transparent fill
+Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Default: white, 3px outline, shadow
+
+Dialogue: 0,0:00:02.00,0:00:03.00,Default,,0,0,0,,{\an5\pos(500,250)\frz20}\frz20 rotated
+Dialogue: 0,0:00:02.00,0:00:03.00,Default,,0,0,0,,{\an5\pos(1400,250)\frx50}\frx50 tilted back
+Dialogue: 0,0:00:02.00,0:00:03.00,Default,,0,0,0,,{\an5\pos(500,520)\fry50}\fry50 turned
+Dialogue: 0,0:00:02.00,0:00:03.00,Default,,0,0,0,,{\an5\pos(1400,520)\fax0.4}\fax0.4 sheared
+Dialogue: 0,0:00:02.00,0:00:03.00,Default,,0,0,0,,{\an5\pos(500,780)\fscx160\fscy70}wide 160/70
+Dialogue: 0,0:00:02.00,0:00:03.00,Default,,0,0,0,,{\an5\pos(1400,780)\fsp12}spaced \fsp12
+Dialogue: 0,0:00:02.00,0:00:03.00,Default,,0,0,0,,{\an5\pos(960,950)\org(960,540)\frz-8}\org rotation around centre
+
+Dialogue: 0,0:00:03.00,0:00:04.00,Default,,0,0,0,,{\an7\pos(100,150)\bord2\shad0\1c&H3080FF&\p1}m 0 0 l 400 0 400 200 0 200 m 50 50 b 150 0 250 150 350 50 l 350 150 50 150{\p0}
+Dialogue: 0,0:00:03.00,0:00:04.00,Default,,0,0,0,,{\an7\pos(700,150)\bord3\shad0\1c&H00FF00&\p2}m 0 0 l 800 0 400 600{\p0}
+Dialogue: 0,0:00:03.00,0:00:04.00,Default,,0,0,0,,{\an5\pos(960,700)\clip(600,640,1100,720)}rect \clip shows only a band of this line
+Dialogue: 0,0:00:03.00,0:00:04.00,Default,,0,0,0,,{\an5\pos(960,850)\iclip(800,800,1100,900)}inverse \iclip hides the middle
+Dialogue: 0,0:00:03.00,0:00:04.00,Default,,0,0,0,,{\an5\pos(1500,350)\clip(m 1300 250 l 1700 250 1500 450)}vector clip triangle text here
+
+Dialogue: 0,0:00:04.00,0:00:06.00,Kara,,0,0,0,,{\k50}Ka{\k50}ra{\k50}o{\k50}ke {\kf100}sweep{\kf100}fill {\ko50}out{\ko50}line
+Dialogue: 0,0:00:04.00,0:00:06.00,Default,,0,0,0,,{\an5\move(300,500,1600,500)}\move halfway
+Dialogue: 0,0:00:04.00,0:00:06.00,Default,,0,0,0,,{\an5\pos(960,700)\t(0,2000,\fs110\1c&H0000FF&\frz10)}\t grows red
+Dialogue: 0,0:00:04.00,0:00:06.00,Default,,0,0,0,,{\fad(0,2000)}\fad out halfway
+
+Dialogue: 0,0:00:06.00,0:00:07.00,CJK,,0,0,0,,{\an8}日本語の字幕テスト、句読点。
+Dialogue: 0,0:00:06.00,0:00:07.00,Default,,0,0,0,,{\an5\pos(960,400)}Fallback: 日本語 / 한국어 / 中文
+Dialogue: 0,0:00:06.00,0:00:07.00,Default,,0,0,0,,{\an5\pos(960,560)\fnArial}العربية من اليمين إلى اليسار 123
+Dialogue: 0,0:00:06.00,0:00:07.00,CJK,,0,0,0,,{\an5\pos(1700,200)\fn@Yu Gothic\frz-90}縦書き
+
+Dialogue: 0,0:00:07.00,0:00:08.00,Default,,0,0,0,,This is a long subtitle line that should be wrapped by smart wrapping because it is far wider than the video frame allows
+Dialogue: 0,0:00:07.00,0:00:08.00,Default,,0,0,0,,{\an8}Hard\Nbreak and hard\hspace    and {\u1}under{\u0} {\s1}strike{\s0}
+Dialogue: 0,0:00:07.00,0:00:08.00,Embedded,,0,0,0,,{\an5}Embedded font: Inter Tight Black

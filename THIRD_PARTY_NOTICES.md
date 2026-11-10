@@ -178,3 +178,26 @@ LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE A
 NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
 WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+## libass, FreeType, FriBidi and HarfBuzz
+
+`bale_gpu.dll` statically links the subtitle renderer [libass](https://github.com/libass/libass) and
+its font and text-shaping dependencies. `scripts/build-libass-native.ps1` builds them from the
+upstream release tarballs pinned with their SHA256 in `scripts/libass-native.json`, unmodified:
+
+| Component | Version | License |
+|---|---|---|
+| [libass](https://github.com/libass/libass) | 0.17.5 | ISC |
+| [FreeType](https://freetype.org) | 2.15.0 | FreeType License (FTL) |
+| [FriBidi](https://github.com/fribidi/fribidi) | 1.0.17 | LGPL-2.1-or-later |
+| [HarfBuzz](https://github.com/harfbuzz/harfbuzz) | 15.0.0 | MIT |
+
+Portions of this software are copyright © The FreeType Project (https://freetype.org). All rights
+reserved.
+
+FriBidi is LGPL-2.1-or-later. Its unmodified source is the pinned upstream tarball, and the complete
+source of Bale, including the build script, is in this repository, so you can rebuild
+`bale_gpu.dll` against a modified FriBidi.
+
+Each build ships the full license texts and a `SOURCES.txt` (source URLs, SHA256 hashes, tool
+versions and build options) under `Licenses/libass/` in the MSIX.

@@ -1,8 +1,10 @@
 //! Bale's native GPU/media layer, called from the C# Xbox app and the FFmpegInteropX wrapper over a
 //! narrow C ABI: the zero-copy software AV1 repack (`d3d12_repack`, zero-copy ABI), GPU film
 //! grain ([`grain`], grain ABI), the debug frame observer (`frames`), and debug loader/engine
-//! probes (`bale_gpu_*`, this file and `engine`).
+//! probes (`bale_gpu_*`, this file and `engine`), and the debug libass subtitle probes (`ass`).
 
+#[cfg(windows)]
+mod ass;
 #[cfg(windows)]
 mod d3d12;
 #[cfg(windows)]
@@ -12,6 +14,7 @@ mod engine;
 #[cfg(windows)]
 mod frames;
 pub mod grain;
+pub mod png;
 pub mod zc_frame;
 
 use std::sync::{Arc, Mutex};
@@ -150,6 +153,71 @@ pub unsafe extern "C" fn bale_gpu_engine_probe_source(
     let text = engine::run(engine::Input::Source(object), seconds.clamp(1, 60));
     // SAFETY: the caller guarantees `report_capacity` writable bytes.
     unsafe { write_report(&text, report, report_capacity) }
+}
+
+/// Runs the libass probe (font discovery through DirectWrite, render timings) and writes the
+/// plain-text report as UTF-8 into `report`; returns the bytes written. `font` (`font_len` bytes, may
+/// be null when 0) is added as an embedded font, standing in for an MKV attachment.
+///
+/// # Safety
+/// `font` must point to `font_len` readable bytes (or be null with 0); `report` must point to
+/// `report_capacity` writable bytes.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_ass_probe(
+    font: *const u8,
+    font_len: u32,
+    report: *mut u8,
+    report_capacity: u32,
+) -> u32 {
+    if report.is_null() {
+        return 0;
+    }
+    // SAFETY: the caller guarantees `font_len` readable bytes when non-null.
+    let font = unsafe { borrowed_bytes(font, font_len) };
+    let text = std::panic::catch_unwind(|| ass::probe(font))
+        .unwrap_or_else(|_| "libass probe: panicked\n".to_owned());
+    // SAFETY: the caller guarantees `report_capacity` writable bytes.
+    unsafe { write_report(&text, report, report_capacity) }
+}
+
+/// Renders the libass probe script at `time_ms` onto a 1920x1080 frame and writes it as a PNG into
+/// `out`. Returns the PNG length, or 0 if rendering failed or `out_capacity` is too small.
+///
+/// # Safety
+/// As [`bale_ass_probe`], with `out` pointing to `out_capacity` writable bytes.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_ass_probe_png(
+    font: *const u8,
+    font_len: u32,
+    time_ms: u32,
+    out: *mut u8,
+    out_capacity: u32,
+) -> u32 {
+    if out.is_null() {
+        return 0;
+    }
+    // SAFETY: the caller guarantees `font_len` readable bytes when non-null.
+    let font = unsafe { borrowed_bytes(font, font_len) };
+    let Ok(Some(png)) = std::panic::catch_unwind(|| ass::probe_png(font, time_ms)) else {
+        return 0;
+    };
+    if png.len() > out_capacity as usize {
+        return 0;
+    }
+    // SAFETY: `png.len()` <= `out_capacity`, which the caller guarantees is writable.
+    unsafe { std::ptr::copy_nonoverlapping(png.as_ptr(), out, png.len()) };
+    png.len() as u32
+}
+
+#[cfg(windows)]
+unsafe fn borrowed_bytes<'a>(data: *const u8, length: u32) -> &'a [u8] {
+    if data.is_null() || length == 0 {
+        return &[];
+    }
+    // SAFETY: the caller guarantees `length` readable bytes.
+    unsafe { std::slice::from_raw_parts(data, length as usize) }
 }
 
 #[cfg(any(windows, test))]

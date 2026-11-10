@@ -25,6 +25,68 @@ internal static unsafe class DebugRustProbe
     private static extern uint bale_gpu_engine_probe(char* url, uint urlLength, uint seconds, byte* report, uint reportCapacity);
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern uint bale_gpu_engine_probe_source(nint source, uint seconds, byte* report, uint reportCapacity);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)]
+    private static extern uint bale_ass_probe(byte* font, uint fontLength, byte* report, uint reportCapacity);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)]
+    private static extern uint bale_ass_probe_png(byte* font, uint fontLength, uint timeMs, byte* png, uint pngCapacity);
+
+    private const int AssReportCapacity = 64 * 1024;
+    /// <summary>1920x1080 RGB in stored deflate blocks is about 6.3 MB.</summary>
+    private const int AssPngCapacity = 8 * 1024 * 1024;
+
+    /// <summary>The packaged Inter Tight Black, passed to libass as an embedded font (like an MKV attachment).</summary>
+    private static byte[] EmbeddedTestFont()
+    {
+        try
+        {
+            var path = Path.Combine(Windows.ApplicationModel.Package.Current.InstalledLocation.Path, "Assets", "Fonts", "InterTight-Black.ttf");
+            return File.ReadAllBytes(path);
+        }
+        catch (Exception ex)
+        {
+            Log.Info($"Debug asstest: embedded test font unavailable ({ex.GetType().Name})");
+            return [];
+        }
+    }
+
+    /// <summary>libass in bale_gpu.dll: version, DirectWrite font lookups and fallback, render timings.</summary>
+    internal static string RunAss()
+    {
+        try
+        {
+            var font = EmbeddedTestFont();
+            var buffer = new byte[AssReportCapacity];
+            uint written;
+            fixed (byte* fontBytes = font)
+            fixed (byte* report = buffer)
+                written = bale_ass_probe(fontBytes, (uint)font.Length, report, (uint)buffer.Length);
+            return Encoding.UTF8.GetString(buffer, 0, (int)Math.Min(written, (uint)buffer.Length));
+        }
+        catch (Exception ex)
+        {
+            return $"libass probe: FAILS ({ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8})\n";
+        }
+    }
+
+    /// <summary>The libass probe script rendered at <paramref name="timeMs"/> as a base64 PNG, or null.</summary>
+    internal static string? RunAssPng(uint timeMs)
+    {
+        try
+        {
+            var font = EmbeddedTestFont();
+            var buffer = new byte[AssPngCapacity];
+            uint written;
+            fixed (byte* fontBytes = font)
+            fixed (byte* png = buffer)
+                written = bale_ass_probe_png(fontBytes, (uint)font.Length, timeMs, png, (uint)buffer.Length);
+            return written == 0 ? null : Convert.ToBase64String(buffer, 0, (int)written);
+        }
+        catch (Exception ex)
+        {
+            Log.Info($"Debug asstest png: FAILS ({ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8})");
+            return null;
+        }
+    }
 
     /// <summary>Plays a live COM media source (borrowed; the caller keeps it alive) through the Rust engine probe.</summary>
     internal static string RunEngineSource(nint source, int seconds)

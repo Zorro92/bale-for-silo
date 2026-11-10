@@ -63,6 +63,12 @@ Don't edit the generated files by hand.
 
 See [AGENTS.md](AGENTS.md) (and `CLAUDE.md` for Claude Code, with a `verify-on-xbox` skill in `.claude/skills`).
 
+## Related projects
+
+- [ass-rs](https://github.com/wiedymi/ass-rs) is a pure-Rust ASS/SSA parser, editor and renderer. Bale's subtitle
+  renderer is being built on libass. ass-rs is the pure-Rust option we are watching, and we may use it as a future
+  renderer as it moves toward parity with libass.
+
 ## License
 
 [GNU AGPL v3.0 or later](LICENSE), the same license as Silo.

@@ -296,6 +296,15 @@ internal sealed partial class DebugServer
             case ("GET", "/rust"):
                 return ("200 OK", await Task.Run(DebugRustProbe.Run));
 
+            case ("GET", "/asstest"):
+                if (query.Count == 0)
+                    return ("200 OK", await Task.Run(DebugRustProbe.RunAss));
+                if (query.Count != 1 || !uint.TryParse(query.GetValueOrDefault("png"), out var assPngMs) || assPngMs > 60_000)
+                    return ("400 Bad Request", "usage: GET /asstest (text report) or GET /asstest?png=0..60000 (base64 PNG of the probe script at that time in ms)\n");
+                return await Task.Run(() => DebugRustProbe.RunAssPng(assPngMs)) is { } assPng
+                    ? ("200 OK", assPng)
+                    : ("500 Internal Server Error", "libass PNG render failed\n");
+
             case ("GET", "/mem"):
                 if (query.Count > 1 || (query.Count == 1 && query.GetValueOrDefault("gc") is not "1"))
                     return ("400 Bad Request", "only gc=1 is accepted\n");
@@ -479,7 +488,7 @@ internal sealed partial class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /stats, GET /frame-trace, POST /frame-trace?action=reset, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, GET /playtest-engine?url=...&seconds=3&mode=cs|rust|rust-ffmpeg, GET /rust, POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16&grain=dav1d|gpu|off|on|default (each key accepts default; grain default=gpu (production), on/dav1d=dav1d; software AV1 is fixed to zero-copy upload variant 6), GET /mem?gc=1, GET /gc, POST /gc?latency={batch|interactive|sustained|default}, GET /frame-delivery, POST /frame-delivery?mode={native|managed|off}, GET /stream-adapter, POST /stream-adapter?mode={pooled|builtin}, GET /av1-claim, POST /av1-claim?height={1080|2160}, GET /display-match, POST /display-match?mode={on|off}, GET /hdr, POST /hdr?mode={pretend|off}, GET /idle-test, POST /idle-test?action={display-pulse|smtc-playing|smtc-stopped}, GET /webview-test, POST /webview-test?action={open-video|open-blank|close}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /stats, GET /frame-trace, POST /frame-trace?action=reset, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, GET /playtest-engine?url=...&seconds=3&mode=cs|rust|rust-ffmpeg, GET /rust, GET /asstest[?png=ms], POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16&grain=dav1d|gpu|off|on|default (each key accepts default; grain default=gpu (production), on/dav1d=dav1d; software AV1 is fixed to zero-copy upload variant 6), GET /mem?gc=1, GET /gc, POST /gc?latency={batch|interactive|sustained|default}, GET /frame-delivery, POST /frame-delivery?mode={native|managed|off}, GET /stream-adapter, POST /stream-adapter?mode={pooled|builtin}, GET /av1-claim, POST /av1-claim?height={1080|2160}, GET /display-match, POST /display-match?mode={on|off}, GET /hdr, POST /hdr?mode={pretend|off}, GET /idle-test, POST /idle-test?action={display-pulse|smtc-playing|smtc-stopped}, GET /webview-test, POST /webview-test?action={open-video|open-blank|close}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 

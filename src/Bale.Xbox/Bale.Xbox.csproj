@@ -58,6 +58,9 @@
     <!-- Rust GPU/media layer (native/bale-gpu), built by CI with cargo before msbuild. -->
     <Content Include="..\..\native\bale-gpu\target\x86_64-pc-windows-msvc\release\bale_gpu.dll" Link="bale_gpu.dll" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\FFmpegInteropX-LICENSE.txt" Link="Licenses\FFmpegInteropX.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- libass, FreeType, FriBidi, HarfBuzz: static in bale_gpu.dll; CI sets BALE_LIBASS_DIR (scripts/build-libass-native.ps1). -->
+    <Content Include="$(BALE_LIBASS_DIR)\licenses\*.txt" Link="Licenses\libass\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Condition="'$(BALE_LIBASS_DIR)' != ''" />
+    <Content Include="$(BALE_LIBASS_DIR)\SOURCES.txt" Link="Licenses\libass\SOURCES.txt" CopyToOutputDirectory="PreserveNewest" Condition="'$(BALE_LIBASS_DIR)' != ''" />
   </ItemGroup>
 
   <!-- The net6 CsWinRT projection does not register the native component with UWP packaging.
