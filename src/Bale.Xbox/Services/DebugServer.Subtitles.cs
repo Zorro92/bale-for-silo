@@ -42,6 +42,7 @@ internal sealed partial class DebugServer
         var tracks = new List<SubtitleProbeTrack>();
         var didOpen = false;
         var position = TimeSpan.Zero;
+        var avCounts = "";
         FFmpegMediaSource? ffmpeg = null;
         MediaSource? native = null;
         var releaseGate = true;
@@ -157,6 +158,7 @@ internal sealed partial class DebugServer
                         await OnFfmpegUiAsync(() => { AttachNew(); return true; });
                     }
                     position = player.PlaybackSession.Position;
+                    avCounts = await OnFfmpegUiAsync(() => $"Video/audio tracks: {item.VideoTracks.Count}/{item.AudioTracks.Count}\n");
                 }
             }
             finally
@@ -195,6 +197,7 @@ internal sealed partial class DebugServer
         report.Insert(0, $"Opened: {(didOpen ? "yes" : "no")}\n");
         foreach (var note in notes) report.Append(note);
         report.Append(string.Create(CultureInfo.InvariantCulture, $"Position: {position.TotalSeconds:0.0}s of {duration}s\n"));
+        report.Append(avCounts);
         report.Append($"Tracks: {tracks.Count}\n");
         foreach (var track in tracks) report.Append(track.Report());
         var reasons = failures.ToArray();
@@ -220,9 +223,12 @@ internal sealed partial class DebugServer
             try
             {
                 var cue = args.Cue;
-                if (cue is TimedTextCue) Interlocked.Increment(ref _text);
-                else if (cue is ImageCue) Interlocked.Increment(ref _image);
-                if (Interlocked.Increment(ref _count) <= MaxCues) _cues.Enqueue(DescribeCue(cue));
+                // Cues arrive as plain IInspectable wrappers, so a type test never matches; query the interface.
+                var text = TryAs<TimedTextCue>(cue);
+                var image = text is null ? TryAs<ImageCue>(cue) : null;
+                if (text is not null) Interlocked.Increment(ref _text);
+                else if (image is not null) Interlocked.Increment(ref _image);
+                if (Interlocked.Increment(ref _count) <= MaxCues) _cues.Enqueue(DescribeCue(cue, text, image));
             }
             catch (Exception ex) { _cues.Enqueue($"cue read failed hr=0x{ex.HResult:X8}"); }
         }
@@ -242,12 +248,18 @@ internal sealed partial class DebugServer
             return builder.ToString();
         }
 
-        private static string DescribeCue(IMediaCue cue)
+        private static T? TryAs<T>(object value) where T : class
+        {
+            if (value is T direct) return direct;
+            try { return WinRT.CastExtensions.As<T>(value); }
+            catch (InvalidCastException) { return null; }
+        }
+
+        private static string DescribeCue(IMediaCue cue, TimedTextCue? text, ImageCue? image)
         {
             var time = string.Create(CultureInfo.InvariantCulture, $"{cue.StartTime.TotalSeconds:0.00}s+{cue.Duration.TotalSeconds:0.00}");
-            switch (cue)
+            if (text is not null)
             {
-                case TimedTextCue text:
                 {
                     var lines = text.Lines.Select(line => line.Text ?? "").ToList();
                     var builder = new StringBuilder($"{time} text lines={lines.Count} \"{DebugScreenText.Compact(string.Join(" / ", lines), 90)}\"");
@@ -264,14 +276,14 @@ internal sealed partial class DebugServer
                     if (subformats.Count > 0) builder.Append(" sub=[").Append(string.Join(" ", subformats)).Append(']');
                     return builder.ToString();
                 }
-                case ImageCue image:
-                    return string.Create(CultureInfo.InvariantCulture,
-                        $"{time} image pos=({image.Position.X:0.#},{image.Position.Y:0.#}{image.Position.Unit})"
-                        + $" extent={image.Extent.Width:0.#}x{image.Extent.Height:0.#}{image.Extent.Unit}"
-                        + $" bitmap={image.SoftwareBitmap?.PixelWidth ?? 0}x{image.SoftwareBitmap?.PixelHeight ?? 0}");
-                default:
-                    return $"{time} {cue.GetType().Name}";
             }
+            if (image is not null)
+                return string.Create(CultureInfo.InvariantCulture,
+                    $"{time} image pos=({image.Position.X:0.#},{image.Position.Y:0.#}{image.Position.Unit})"
+                    + $" extent={image.Extent.Width:0.#}x{image.Extent.Height:0.#}{image.Extent.Unit}"
+                    + $" bitmap={image.SoftwareBitmap?.PixelWidth ?? 0}x{image.SoftwareBitmap?.PixelHeight ?? 0}");
+            if (TryAs<DataCue>(cue) is { } data) return $"{time} data bytes={data.Data?.Length ?? 0}";
+            return $"{time} {cue.GetType().Name}";
         }
 
         private static string Colour(Windows.UI.Color colour) => $"#{colour.A:X2}{colour.R:X2}{colour.G:X2}{colour.B:X2}";
