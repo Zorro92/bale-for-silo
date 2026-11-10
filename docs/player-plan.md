@@ -106,7 +106,7 @@ All builds, including production (`BaleDebugServer=false`), apply the wrapper-fo
 `SoftwareDecodeTuning` to software AV1: `bale_decode_ahead_frames=16`, plus the fixed zero-copy keys
 (`bale_d3d11_upload=6`, `bale_zero_copy=1`, `bale_film_grain_mode=2`).
 Above 1080p, decode-ahead drops to 8 and BufferTime to 500 ms (see docs/gpu-film-grain.md section 8).
-`bale_dav1d_max_frame_delay=8` is set only above 1080p (width > 1920 or height > 1080). Route
+`bale_dav1d_max_frame_delay=6` is set only above 1080p (width > 1920 or height > 1080). Route
 width/height follow the video codec's plan selection: original delivery uses `plan.Source`; other
 deliveries use `plan.EffectiveRecipe`, falling back to `plan.Source` for each missing dimension.
 Unknown size leaves delay unset. Hardware/system video routes set none of the three keys.
@@ -298,7 +298,7 @@ Supply seconds/mode before tuning, then keys in any order, at most once each. Se
 (default 3), threads are 0–16 (0 = logical CPU count), 10bit is on/off, and rate is an invariant
 0.5–2.0 (default 1). The fork keys have the same ranges as above; software-mode probes use the release
 ahead=16 default and the production zero-copy path (GPU grain) when omitted. URI probes have no playback plan/dimensions before creation,
-so delay remains unset unless explicitly overridden (use `delay=8` for a known above-1080p comparison).
+so delay remains unset unless explicitly overridden (use `delay=6` for a known above-1080p comparison).
 Priority remains unset unless `prio=0..2` is supplied, with the same levels as above. These three
 fork options affect only software video, including an auto-mode probe that selects software decoding;
 hardware/system video ignores them. Auto/system modes retain wrapper defaults for omitted keys.

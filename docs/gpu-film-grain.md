@@ -502,6 +502,24 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
   headroom regardless of queue sizes. The earlier ~3.2 GiB start spike came from opening on top of the
   previous session's unreleased memory, fixed by `PlaybackMemoryRelease`; fresh starts no longer overshoot
   steady state. Most of the remaining ~1.9 GiB is dav1d frame threads/pictures and the MF renderer.
+- **Zero-copy retune (2026-11-09, build 0.1.410, input-idle, Start Over, interleaved).** These runs measured
+  app CPU at 80–100 s, app memory at ~100 s, buffering at ~120 s, and refill after a seek to 1500 s.
+  - Brawl, 3 runs per setting:
+
+    | Setting | CPU cores | MiB | Buffering |
+    |---------|-----------|-----|-----------|
+    | delay 8 (old default) | 5.83 | 2068 | 0.9 s |
+    | ahead 4 | 5.72 | 1981 | 1.4 s |
+    | buffer 250 ms | 5.70 | 1916 | 1.4 s |
+    | delay 4 | 5.41 | 1707 | 2.1 s |
+
+  - A second Brawl batch with delays 8, 6, 5 and 4 measured, respectively:
+    - CPU: 5.65, 5.58, 5.54 and 5.32 cores
+    - memory: 2085, 1886, 1801 and 1719 MiB
+    - buffering: 2.1, 2.0, 2.7 and 3.5 s
+  - Shrek, delay 8 vs 6: 6.13 vs 6.12 cores, 2206 vs 2016 MiB, buffering 0.6 vs 0.7 s.
+  - Stalls cluster in heavy stretches (Brawl ~60–70 s), not at start. No run had late frames.
+  - Result: **delay 6 is the default above 1080p**, keeping ahead 8 and buffer 500 ms.
 
 ### 4K upload loss and buffering (build 0.1.337.0, wrapper `2.1.0-bale.11`)
 History: the fault knob, the CPU-buffer fallback and the swscale repack measured here were removed by

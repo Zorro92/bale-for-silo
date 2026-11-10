@@ -38,15 +38,15 @@ public class SoftwareDecodeTuningTests
     [Theory]
     [InlineData(1280L, 720L, null)]
     [InlineData(1920L, 1080L, null)]
-    [InlineData(3840L, 2160L, 8)]
-    [InlineData(1921L, 1080L, 8)]
-    [InlineData(1920L, 1081L, 8)]
-    [InlineData(2560L, 1080L, 8)]
+    [InlineData(3840L, 2160L, 6)]
+    [InlineData(1921L, 1080L, 6)]
+    [InlineData(1920L, 1081L, 6)]
+    [InlineData(2560L, 1080L, 6)]
     [InlineData(null, null, null)]
     [InlineData(1920L, null, null)]
     [InlineData(null, 1080L, null)]
-    [InlineData(3840L, null, 8)]
-    [InlineData(null, 2160L, 8)]
+    [InlineData(3840L, null, 6)]
+    [InlineData(null, 2160L, 6)]
     public void SoftwareVideoUsesReleaseDefaultsAndOnlyTrimsQueuesAbove1080p(long? width, long? height, int? delay) =>
         Assert.Equal(new SoftwareDecodeTuning(delay is null ? 16 : 8, delay), SoftwareDecodeTuning.ForVideo(true, width, height));
 

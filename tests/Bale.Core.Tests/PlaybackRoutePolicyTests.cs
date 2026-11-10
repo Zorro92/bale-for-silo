@@ -125,7 +125,7 @@ public class PlaybackRoutePolicyTests
         var route = PlaybackRoutePolicy.Decide(plan, false);
         Assert.Equal(width, route.VideoWidth);
         Assert.Equal(height, route.VideoHeight);
-        Assert.Equal(delivery == "original_http" ? 8 : (int?)null,
+        Assert.Equal(delivery == "original_http" ? SoftwareDecodeTuning.Above1080pDav1dMaxFrameDelay : (int?)null,
             SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight).Dav1dMaxFrameDelay);
     }
 

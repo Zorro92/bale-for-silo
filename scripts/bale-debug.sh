@@ -30,7 +30,7 @@
 #                                               grain=default: gpu (production default); on/dav1d: dav1d; gpu: GPU; off: export-only (software video; wrapper 2.1.0-bale.10+)
 #                                               software AV1 is fixed to zero-copy direct write (upload variant 6) with GPU grain; streams it can't take transcode on the server
 #                                               system/passthrough video only: maxres 0–1, dpb 0–16 (0=unset); both default unset, opt-in pending wrapper release/repin
-#                                               software-video release defaults: ahead=16, buffer=1000 ms, delay unset; above 1080p (width >1920 or height >1080) ahead=8, buffer=500 ms, delay=8
+#                                               software-video release defaults: ahead=16, buffer=1000 ms, delay unset; above 1080p (width >1920 or height >1080) ahead=8, buffer=500 ms, delay=6
 #                                               key i / where show applied settings and demand block waits (count/max/total ms)
 #   scripts/bale-debug.sh rust                   Rust loader + GPU film grain: hardware/self-tests, 1080p correctness, 1080p/4K GPU and CPU timings (120 s timeout)
 #   scripts/bale-debug.sh mem [gc]               managed GC heap vs app memory; gc forces a full collection + finalizers first
@@ -61,7 +61,7 @@
 #                                               software video only: ahead 0–64 (0=off), delay 0–64 (0=dav1d default)
 #                                               prio 0–2 (0=off, 1=THREAD_PRIORITY_ABOVE_NORMAL, 2=THREAD_PRIORITY_HIGHEST); software video only, default unset
 #                                               system/passthrough video only: maxres 0–1, dpb 0–16 (0=unset); default = omitted, both unset unless supplied; pending wrapper release/repin
-#                                               software mode defaults: ahead=16, GPU grain; delay unset (URI size unknown before open; use delay=8 for known above-1080p media)
+#                                               software mode defaults: ahead=16, GPU grain; delay unset (URI size unknown before open; use delay=6 for known above-1080p media)
 #                                               auto/system retain wrapper defaults unless overridden; reports actual settings/output and software frame delivery
 #   timeout 900 scripts/bale-debug.sh playtest-ffmpeg suite 15 software  same Chromium samples; allow 30 s create + 15 s open per clip
 #   scripts/bale-debug.sh goto "Unwatched#2"     setup only: focus the second matching control
@@ -207,7 +207,7 @@ case "${1:-}" in
       esac
       if [[ "$valid_tuning" != true ]] || [[ -n "${ffmpeg_tune_seen[$name]:-}" ]]; then
         echo 'usage: scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] [ahead=0..64|default] [delay=0..64|default] [prio=0..2|default] [maxres=0|1|default] [dpb=0..16|default] (system video only, 0=unset) [grain=dav1d|gpu|off|on|default] (software video only); any order, no duplicates; no args = status; default restores release settings' >&2
-        echo 'software video defaults: ahead=16, buffer=1000 ms, delay unset; above 1080p (width >1920 or height >1080) ahead=8, buffer=500 ms, delay=8; prio unset (0=off, 1=above normal, 2=highest); system video defaults: maxres/dpb unset' >&2
+        echo 'software video defaults: ahead=16, buffer=1000 ms, delay unset; above 1080p (width >1920 or height >1080) ahead=8, buffer=500 ms, delay=6; prio unset (0=off, 1=above normal, 2=highest); system video defaults: maxres/dpb unset' >&2
         echo 'software AV1 is fixed to zero-copy direct write (upload variant 6, wrapper 2.1.0-bale.17+) with GPU grain; grain=default: gpu, on/dav1d: dav1d, off: export-only' >&2
         exit 2
       fi

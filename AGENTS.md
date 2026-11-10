@@ -155,7 +155,7 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   grain, staging upload, swscale thread pool, upload variant choice, debug repack or upload/zero-copy probe.
 - All builds tune software AV1 with `bale_decode_ahead_frames=16` and a 1000 ms
   MSS BufferTime. Above 1080p `SoftwareDecodeTuning` trims decode-ahead to 8 and BufferTime to 500 ms
-  (~460 MiB less at 4K, console-measured) and sets `bale_dav1d_max_frame_delay=8` (width > 1920 or
+  (~460 MiB less at 4K, console-measured) and sets `bale_dav1d_max_frame_delay=6` (width > 1920 or
   height > 1080), using route dimensions from the source for original delivery or the effective
   recipe with source fallback otherwise. Unknown size leaves delay unset; hardware/system video
   gets none of these keys. This tuning does not expand the measured software-video capability bounds.
@@ -216,7 +216,7 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   `delay` is 0–64 dav1d frames (0 = dav1d default), and `prio` is 0–2 (0 = off,
   1 = THREAD_PRIORITY_ABOVE_NORMAL, 2 = THREAD_PRIORITY_HIGHEST; default unset). Software-mode
   probes use the release ahead=16 default and the production zero-copy path; URI probes have unknown dimensions before creation, so delay stays
-  unset unless overridden (use delay=8 for a known above-1080p comparison). Auto/system probes
+  unset unless overridden (use delay=6 for a known above-1080p comparison). Auto/system probes
   retain the wrapper defaults unless overridden; threads/10bit defaults are 0/true. `10bit=off`
   requests 8-bit NV12 instead of 10-bit P010 for 10-bit AV1. The response reports applied values/defaults
   for the fork keys, actual config values, logical CPUs,
