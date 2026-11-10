@@ -866,31 +866,52 @@ fn direct_declines_without_poisoning() {
     assert_eq!(zero_copy.stats().frames_repacked, 1);
 }
 
-/// At most 32 caller textures are open; one idle for 64 frames is closed, which frees a place.
+/// At most 32 caller textures are open; a further one closes the least recently written instead
+/// of being declined, and a closed one can be written again.
 #[test]
-fn direct_targets_are_capped_and_closed_when_idle() {
+fn direct_targets_are_capped_and_the_oldest_makes_room() {
     const MAX_TARGETS: usize = 32;
-    const IDLE_FRAMES: usize = 64;
     let warp = Warp::new();
     let zero_copy = warp.zero_copy();
     let (picture, frame, source) = zero_copy.picture(64, 8, 51);
-    let targets: Vec<ID3D11Texture2D> = (0..=MAX_TARGETS).map(|_| warp.target(64, 8)).collect();
-    for target in &targets[..MAX_TARGETS] {
-        assert_eq!(zero_copy.repack_into(picture.id, &frame, target), S_OK);
+    let expected = frame.reference_p010(&source);
+    let targets: Vec<ID3D11Texture2D> = (0..2 * MAX_TARGETS).map(|_| warp.target(64, 8)).collect();
+    // Twice over: the second round rewrites textures the first round's tail closed.
+    for _ in 0..2 {
+        for target in &targets {
+            assert_eq!(zero_copy.repack_into(picture.id, &frame, target), S_OK);
+        }
     }
-    let extra = &targets[MAX_TARGETS];
-    assert_eq!(zero_copy.repack_into(picture.id, &frame, extra), S_FALSE);
-    let busy = &targets[0];
-    for _ in 0..IDLE_FRAMES {
-        assert_eq!(zero_copy.repack_into(picture.id, &frame, busy), S_OK);
+    for target in [
+        &targets[0],
+        &targets[MAX_TARGETS],
+        &targets[2 * MAX_TARGETS - 1],
+    ] {
+        assert_eq!(warp.read(target.as_raw(), 64, 8), expected);
     }
-    // Idle textures are closed once the GPU is done with them.
-    let _ = warp.read(busy.as_raw(), 64, 8);
-    assert_eq!(zero_copy.repack_into(picture.id, &frame, extra), S_OK);
-    assert_eq!(
-        warp.read(extra.as_raw(), 64, 8),
-        frame.reference_p010(&source)
-    );
+    let stats = zero_copy.stats();
+    assert_eq!(stats.frames_repacked, 4 * MAX_TARGETS as u64, "{stats:?}");
+    assert_eq!(release(picture.id), S_OK);
+}
+
+/// Landing textures are closed once direct writes resume; the next landing frame rebuilds them.
+#[test]
+fn landing_frames_work_again_after_direct_writes() {
+    let warp = Warp::new();
+    let zero_copy = warp.zero_copy();
+    let (picture, frame, source) = zero_copy.picture(64, 16, 61);
+    let expected = frame.reference_p010(&source);
+    let target = warp.target(64, 16);
+    for _ in 0..3 {
+        let (hr, landing) = zero_copy.repack(picture.id, &frame);
+        assert_eq!(hr, S_OK);
+        assert_eq!(warp.read(landing, 64, 16), expected);
+        for _ in 0..4 {
+            assert_eq!(zero_copy.repack_into(picture.id, &frame, &target), S_OK);
+            // The readback flushes D3D11, so the release of the landing textures completes.
+            assert_eq!(warp.read(target.as_raw(), 64, 16), expected);
+        }
+    }
     assert_eq!(release(picture.id), S_OK);
 }
 

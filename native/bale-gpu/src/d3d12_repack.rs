@@ -93,7 +93,9 @@ const MAX_BUFFERS: usize = 16;
 const ALIGNMENT: u64 = 64 << 10;
 const WAIT_MS: u64 = 5000;
 const ALLOC_WAIT_MS: u64 = 100;
-/// Caller textures opened at once; more are declined. MF's pool holds about ten.
+/// Caller textures opened at once. At the cap the least recently written one that the GPU is done
+/// with is closed to make room (a seek abandons the caller's in-flight textures, so new ones
+/// arrive while the old are still cached). MF's pool holds about ten.
 const MAX_TARGETS: usize = 32;
 /// A caller texture not written for this many frames is closed (once the GPU is done with it),
 /// so textures the caller dropped are not kept alive for long.
@@ -521,6 +523,8 @@ struct Inner {
     grain8_refused: bool,
     repacked_value: u64,
     released_value: u64,
+    /// `repacked` value of the last dispatch that wrote a landing texture.
+    landed: u64,
     event: Handle,
     poison: Option<i32>,
 }
@@ -579,6 +583,7 @@ impl Inner {
             Kernel::Plain,
         )?;
         let texture11 = landing.texture11.clone();
+        self.landed = value;
         self.finish(slot, buffer, value)?;
         self.previous = Some(slot);
         Ok(texture11)
@@ -587,7 +592,8 @@ impl Inner {
     /// Repacks `frame` (`bit_depth` 8 or 10, checked by the caller) from `buffer` straight into
     /// the caller's `target`, with film `grain` when given. `Ok(false)` declines before any GPU
     /// work: `target` is not a P010 texture of the frame's size on this device with UAV access
-    /// and an NT shared handle, D3D12 cannot open it, or too many are open; or 8-bit frames are
+    /// and an NT shared handle, D3D12 cannot open it, or the GPU still writes every open one; or
+    /// 8-bit frames are
     /// refused for the handle; or `grain` is not of `bit_depth`, is for another frame size, or
     /// grain at that depth is refused for the handle.
     fn repack_into(
@@ -631,12 +637,23 @@ impl Inner {
         // Closed only once no submitted dispatch writes them.
         self.targets
             .retain(|_, cached| cached.used > horizon || cached.used > completed);
+        self.close_idle_landing(completed);
         let key = target.as_raw() as usize;
         let texture = match self.targets.get(&key) {
             Some(cached) => cached.texture.clone(),
             None => {
                 if self.targets.len() >= MAX_TARGETS {
-                    return Ok(false);
+                    // Make room rather than decline: a declined frame takes the landing path.
+                    let idle = self
+                        .targets
+                        .iter()
+                        .filter(|(_, cached)| cached.used <= completed)
+                        .min_by_key(|(_, cached)| cached.used)
+                        .map(|(key, _)| *key);
+                    let Some(idle) = idle else {
+                        return Ok(false);
+                    };
+                    self.targets.remove(&idle);
                 }
                 // SAFETY: live texture; the device is only compared.
                 let device = unsafe { target.GetDevice() }.step("target device")?;
@@ -688,6 +705,24 @@ impl Inner {
         }
         self.finish(slot, buffer, value)?;
         Ok(true)
+    }
+
+    /// Closes the landing textures once direct writes have resumed and nothing reads or writes
+    /// them: the last frame was a direct write, the last landing dispatch ran (`completed` is the
+    /// `repacked` fence's completed value) and the caller's reads of both textures are through.
+    /// Never waits; the next landing frame rebuilds them.
+    fn close_idle_landing(&mut self, completed: u64) {
+        if self.size.is_none() || self.previous.is_some() || completed < self.landed {
+            return;
+        }
+        // SAFETY: live fence.
+        let released = unsafe { self.released.GetCompletedValue() };
+        if self.slots.iter().all(|slot| slot.released <= released) {
+            self.size = None;
+            for slot in &mut self.slots {
+                slot.landing = None;
+            }
+        }
     }
 
     /// Writes the grain inputs of the idle `slot`'s next dispatch, first growing its buffer when
@@ -1182,6 +1217,7 @@ impl BaleZeroCopy {
                 grain8_refused,
                 repacked_value: 0,
                 released_value: 0,
+                landed: 0,
                 event,
                 poison: None,
             }),
@@ -1785,7 +1821,7 @@ pub unsafe extern "C" fn bale_zc_repack(
 /// `bale_grain`'s CPU path on the repacked frame; null writes the plain picture. Returns S_OK when
 /// written, and S_FALSE when declined with no GPU work queued: `buffer` is not a live buffer of
 /// this handle, `target` does not qualify, D3D12 cannot open it (then every later call is
-/// declined too), or too many textures are open; or `grain` is non-null and its `struct_size` is
+/// declined too), or the GPU still writes every open texture; or `grain` is non-null and its `struct_size` is
 /// not 184, its parameters are invalid, it is not 10-bit, its width or height is not the frame's,
 /// or the handle's grain self-test failed (then every later call with grain is declined too). The
 /// caller then lands the frame with [`bale_zc_repack`] (applying grain its own way).
