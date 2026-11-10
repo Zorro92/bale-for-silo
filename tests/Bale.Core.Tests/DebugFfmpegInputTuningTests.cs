@@ -15,7 +15,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     public void DefaultsKeepReleaseSettingsAndDescribeOnlyOverrides()
     {
         Assert.Equal(new DebugFfmpegInputTuning(), DebugFfmpegInputTuning.Current);
-        Assert.Equal("readahead=default readsize=default prefetch=default upload=1 (render target+shader resource)", DebugFfmpegInputTuning.Current.Description);
+        Assert.Equal("readahead=default readsize=default prefetch=default upload=6 (shared render target+shader resource+UAV)", DebugFfmpegInputTuning.Current.Description);
         Assert.Contains("default restores the release setting (buffer=1000 for software video;", DebugFfmpegInputTuning.Usage);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string>(), out var current));
         Assert.Same(DebugFfmpegInputTuning.Current, current);
@@ -26,14 +26,14 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     {
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "1500" }, out var set));
         Assert.Equal(1500, set.BufferMs);
-        Assert.Equal("readahead=default readsize=default prefetch=default upload=1 (render target+shader resource) buffer=1500", set.Description);
+        Assert.Equal("readahead=default readsize=default prefetch=default upload=6 (shared render target+shader resource+UAV) buffer=1500", set.Description);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "0" }, out var zero));
         Assert.Equal(0, zero.BufferMs);
         Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "5001" }, out _));
         Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "-1" }, out _));
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "default" }, out var cleared));
         Assert.Null(cleared.BufferMs);
-        Assert.Equal("readahead=default readsize=default prefetch=default upload=1 (render target+shader resource)", cleared.Description);
+        Assert.Equal("readahead=default readsize=default prefetch=default upload=6 (shared render target+shader resource+UAV)", cleared.Description);
     }
 
     [Fact]
@@ -57,7 +57,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
             ["prefetch"] = "8", ["readahead"] = "on", ["readsize"] = "65536",
         }, out var captured));
         Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8), captured);
-        Assert.Equal("readahead=on readsize=65536 prefetch=8 upload=1 (render target+shader resource)", captured.Description);
+        Assert.Equal("readahead=on readsize=65536 prefetch=8 upload=6 (shared render target+shader resource+UAV)", captured.Description);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["readsize"] = "1048576", ["readahead"] = "off" }, out var next));
         Assert.Equal(new DebugFfmpegInputTuning(false, 1048576, 8), next);
         Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8), captured);
@@ -133,7 +133,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
                 DecodeThreadPriority: int.Parse(prio, CultureInfo.InvariantCulture), DecoderUseMaxResolution: int.Parse(maxres, CultureInfo.InvariantCulture),
                 DecoderMaxDpbCount: int.Parse(dpb, CultureInfo.InvariantCulture));
             Assert.Equal(expected, tuning);
-            Assert.Equal($"readahead=default readsize=default prefetch=default upload=1 (render target+shader resource) ahead={expected.DecodeAheadFrames} sws={expected.SwsThreads} delay={expected.Dav1dMaxFrameDelay} prio={expected.DecodeThreadPriority} maxres={expected.DecoderUseMaxResolution} dpb={expected.DecoderMaxDpbCount}", tuning.Description);
+            Assert.Equal($"readahead=default readsize=default prefetch=default upload=6 (shared render target+shader resource+UAV) ahead={expected.DecodeAheadFrames} sws={expected.SwsThreads} delay={expected.Dav1dMaxFrameDelay} prio={expected.DecodeThreadPriority} maxres={expected.DecoderUseMaxResolution} dpb={expected.DecoderMaxDpbCount}", tuning.Description);
         }
         finally { CultureInfo.CurrentCulture = previous; }
     }
@@ -151,7 +151,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.DoesNotContain("sws=", second.Description);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["delay"] = "default" }, out var third));
         Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8, 1500, DecodeThreadPriority: 2), third);
-        Assert.Equal("readahead=on readsize=65536 prefetch=8 upload=1 (render target+shader resource) buffer=1500 prio=2", third.Description);
+        Assert.Equal("readahead=on readsize=65536 prefetch=8 upload=6 (shared render target+shader resource+UAV) buffer=1500 prio=2", third.Description);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["prio"] = "default" }, out var fourth));
         Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8, 1500), fourth);
         Assert.DoesNotContain("prio=", fourth.Description);
@@ -367,7 +367,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Set(new(DecodeAheadFrames: 8, FilmGrain: DebugFilmGrain.Off));
         var captured = DebugFfmpegInputTuning.Current;
         Assert.Null(captured.D3d11Upload);
-        Assert.Contains("upload=1 (render target+shader resource)", captured.Description);
+        Assert.Contains("upload=6 (shared render target+shader resource+UAV)", captured.Description);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["upload"] = value }, out var set));
         Assert.Equal(captured with { D3d11Upload = expected }, set);
         Assert.Contains(" upload=" + expected.ToString(CultureInfo.InvariantCulture), set.Description);
@@ -377,7 +377,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Equal(captured with { D3d11Upload = expected }, set);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["upload"] = "default" }, out var cleared));
         Assert.Equal(captured with { SwsThreads = 4 }, cleared);
-        Assert.Contains("upload=1 (render target+shader resource)", cleared.Description);
+        Assert.Contains("upload=6 (shared render target+shader resource+UAV)", cleared.Description);
     }
 
     [Fact]
@@ -389,12 +389,12 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Equal("readahead=default readsize=default prefetch=default upload=0", off.Description);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["upload"] = "default" }, out var restored));
         Assert.Null(restored.D3d11Upload);
-        Assert.Equal("readahead=default readsize=default prefetch=default upload=1 (render target+shader resource)", restored.Description);
+        Assert.Equal("readahead=default readsize=default prefetch=default upload=6 (shared render target+shader resource+UAV)", restored.Description);
         Assert.Equal(0, off.D3d11Upload);
     }
 
     [Theory]
-    [InlineData("default", 1, "render target+shader resource")]
+    [InlineData("default", 6, "shared render target+shader resource+UAV")]
     [InlineData("on", 1, "render target+shader resource")]
     [InlineData("1", 1, "render target+shader resource")]
     [InlineData("2", 2, "decoder+shader resource")]

@@ -5,15 +5,15 @@ namespace Bale.Core.Tests;
 public class SoftwareDecodeTuningTests
 {
     [Theory]
-    [InlineData("original_http", "av1", "aac", false, true, 1)]
-    [InlineData("progressive", "av1", "opus", false, true, 1)]
-    [InlineData("server_remux_progressive", "av1", "dts", false, true, 1)]
+    [InlineData("original_http", "av1", "aac", false, true, 6)]
+    [InlineData("progressive", "av1", "opus", false, true, 6)]
+    [InlineData("server_remux_progressive", "av1", "dts", false, true, 6)]
     [InlineData("original_http", "hevc", "dts", false, true, null)]
     [InlineData("original_http", "h264", "truehd", false, true, null)]
     [InlineData("original_http", "hevc", "aac", false, true, null)]
     [InlineData("original_http", "av1", "aac", true, true, null)]
     [InlineData("original_http", "av1", "aac", false, false, null)]
-    public void UploadDefaultsToVariantOneOnlyForSoftwareVideoRoutes(string delivery, string video, string audio,
+    public void UploadDefaultsToVariantSixOnlyForSoftwareVideoRoutes(string delivery, string video, string audio,
         bool isHls, bool ffmpegEnabled, int? expected)
     {
         var route = PlaybackRoutePolicy.Decide(PlaybackRoutePolicyTests.Plan(delivery, video, audio), isHls, ffmpegEnabled);

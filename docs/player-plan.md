@@ -169,9 +169,9 @@ remains independent.
   are supplied. Production remains dav1d pending console playback verification. This A/B facility
   works on authenticated library files, which the URL-only probe cannot open.
 - `upload=on|1..5` (software video only, wrapper `2.1.0-bale.8`+) sends `bale_d3d11_upload=N`;
-  `on` aliases **1**, `default` restores the release default of **1**, and `off` explicitly sends **0**
+  `on` aliases **1**, `default` restores the release default of **6** (since 2026-11-09), and `off` explicitly sends **0**
   to use CPU buffers. Status reports the effective number and its texture flags, e.g.
-  `upload=1 (render target+shader resource)`; off reports `upload=0`. The DEFAULT texture flags are
+  `upload=6 (shared render target+shader resource+UAV)`; off reports `upload=0`. The DEFAULT texture flags are
   **1** = RENDER_TARGET | SHADER_RESOURCE (the software-video default, suitable for stage-2 grain
   rendering), **2** = DECODER | SHADER_RESOURCE, **3** = DECODER,
   **4** = SHADER_RESOURCE only (**known MF failure**),
@@ -319,8 +319,8 @@ sequence headers), so the 1080p 10 Mbps run is unchanged (ratio 0.992 / 1.87 cor
 0.998 / 1.90 exported).
 
 **GPU grain, stage 1 (wrapper patch 0006, `2.1.0-bale.6`).** D3D11 texture delivery supports software
-NV12/P010 output on the real-player route. **Upload variant 1 is now the default for software video
-in all builds; `upload=off` is the debug escape hatch.** The existing
+NV12/P010 output on the real-player route. **Upload variant 1 was then the default for software video
+in all builds (variant 6 since 2026-11-09, see zero-copy direct write); `upload=off` is the debug escape hatch.** The existing
 copy/sws output step writes directly into a three-texture STAGING ring, then CopyResource + Flush
 uploads to pooled DEFAULT textures on the MSS renderer's multithread-protected device. Samples use
 `CreateFromDirect3D11Surface`; Processed returns textures, and seek/size changes discard the old pool

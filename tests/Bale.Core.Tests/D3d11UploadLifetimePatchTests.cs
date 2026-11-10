@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
-using Bale.Core.Playback;
 
 namespace Bale.Core.Tests;
 
@@ -88,11 +87,8 @@ public class D3d11UploadLifetimePatchTests
     {
         Assert.Contains("UINT bindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;", Upload);
         Assert.Contains("UINT miscFlags = 0;", Upload);
-        if (variant == 1)
-        {
-            Assert.Equal(SoftwareDecodeTuning.DefaultD3d11Upload, variant);
-            return;
-        }
+        // Variant 1 is the patch's unswitched flags; the release default is 6 (SharedUavUploadVariantPatchTests).
+        if (variant == 1) return;
         var expected = $"case {variant}: bindFlags = {bind};";
         if (misc != "0") expected += $" miscFlags = {misc};";
         Assert.Contains(expected + " break;", Upload);

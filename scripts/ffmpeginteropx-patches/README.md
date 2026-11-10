@@ -130,7 +130,8 @@ texture). It ships in `2.1.0-bale.15`.
 SHADER_RESOURCE) plus UNORDERED_ACCESS, with `MISC_SHARED_NTHANDLE | MISC_SHARED`: the flags
 D3D12 needs to open and write a pooled texture directly, without the landing-texture copy. It
 tests whether MF accepts such samples. GPU grain and repack accept variant 6 like variant 1;
-zero-copy already runs with any upload variant. Production keeps variant 1. It ships in
+zero-copy already runs with any upload variant. Production kept variant 1 then (6 since 2026-11-09,
+after `0018`). It ships in
 `2.1.0-bale.16`.
 `0017` lets zero-copy write the pooled texture itself when the upload variant makes it a
 D3D12-shareable UAV (variant 6) and `bale_gpu.dll` exports `bale_zc_repack_into` (optional, same

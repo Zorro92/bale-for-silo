@@ -30,8 +30,8 @@ public class SharedUavUploadVariantPatchTests
     }
 
     [Fact]
-    public void ProductionStillUsesVariantOne()
+    public void ProductionUsesVariantSixForDirectWrite()
     {
-        Assert.Equal(1, Bale.Core.Playback.SoftwareDecodeTuning.DefaultD3d11Upload);
+        Assert.Equal(6, Bale.Core.Playback.SoftwareDecodeTuning.DefaultD3d11Upload);
     }
 }

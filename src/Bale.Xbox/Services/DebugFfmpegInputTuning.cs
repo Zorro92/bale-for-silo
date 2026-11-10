@@ -119,9 +119,9 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
         }
     }
 
-    private string UploadDescription => (D3d11Upload ?? SoftwareDecodeTuning.DefaultD3d11Upload).ToString(CultureInfo.InvariantCulture) + (D3d11Upload switch
+    private string UploadDescription => (D3d11Upload ?? SoftwareDecodeTuning.DefaultD3d11Upload).ToString(CultureInfo.InvariantCulture) + ((D3d11Upload ?? SoftwareDecodeTuning.DefaultD3d11Upload) switch
     {
-        null or 1 => " (render target+shader resource)",
+        1 => " (render target+shader resource)",
         2 => " (decoder+shader resource)",
         3 => " (decoder)",
         4 => " (shader resource; known MF failure)",

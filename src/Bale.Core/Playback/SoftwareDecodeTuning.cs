@@ -11,7 +11,11 @@ public sealed record SoftwareDecodeTuning(int? DecodeAheadFrames = null, int? Sw
     public const int Above1080pBufferMs = 500;
     public const int DefaultDecodeAheadFrames = 16;
     public const int Above1080pDecodeAheadFrames = 8;
-    public const int DefaultD3d11Upload = 1;
+    // Variant 6 (RT|SRV|UAV, shared NT handle) lets the zero-copy repack write the pooled texture
+    // directly, grain fused (wrapper 0017/0018), skipping the landing copy and D3D11 grain pass.
+    // 2026-11-09 interleaved 4K console A/B vs variant 1: ~0.15-0.2 cores less on Shrek and Brawl,
+    // zero late frames both ways.
+    public const int DefaultD3d11Upload = 6;
     // GPU grain is the production default since console step 5. The wrapper keeps dav1d when GPU
     // is unavailable at open; runtime GPU loss uses CPU grain through 1080p or no grain above 1080p.
     public const int DefaultFilmGrainMode = 2;
@@ -24,7 +28,7 @@ public sealed record SoftwareDecodeTuning(int? DecodeAheadFrames = null, int? Sw
 
     // Zero-copy (wrapper patch 0015) is the production default since the 2026-11-09 console A/B:
     // dav1d decodes 10-bit AV1 into D3D12 buffers and the GPU repacks them, replacing swscale.
-    // Needs upload variant 1; the wrapper still declines pictures it can't take (8-bit for now).
+    // Needs upload variant 1 or 6; the wrapper still declines pictures it can't take (8-bit for now).
     public static bool ZeroCopy(PlaybackRouteDecision route) => route.SoftwareVideo;
 
     public static int? BufferTimeMs(bool softwareVideo, int? overrideMs = null, long? width = null, long? height = null) =>

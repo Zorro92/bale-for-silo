@@ -34,7 +34,7 @@ against dav1d. The 4K decode/memory gate and HDR playback parity are still open.
 | `grain=dav1d` / `grain=on` (`bale_film_grain_mode=0`), or probe default | off | dav1d |
 | Requested Rust mode but DLL/exports missing, grain ABI ≠ 1, hardware/non-libdav1d decoder, or incompatible input/output | off | Existing decoder (dav1d for software AV1) |
 | Software libdav1d, 4:2:0 8/10-bit → matching NV12/P010, `grain=cpu` | on | Rust CPU, with or without upload |
-| Same compatible formats, `grain=gpu` / production default, upload variant 1 | on | GPU; runtime loss → CPU through 1080p, no grain above 1080p |
+| Same compatible formats, `grain=gpu` / production default, upload variant 1 or 6 | on | GPU; runtime loss → CPU through 1080p, no grain above 1080p |
 | Same compatible formats, `grain=gpu`, upload off or variant 2–5 (patch 0010) | off | dav1d from the start |
 - The wrapper key remains opt-in (0 dav1d, 1 Rust CPU, 2 GPU); **production software video now sends
   `bale_film_grain_mode=2`**. Debug `ffmpeg-tune` and the standalone probe accept
@@ -43,8 +43,11 @@ against dav1d. The 4K decode/memory gate and HDR playback parity are still open.
   suppresses both dav1d and Rust synthesis. Real-player `default` clears the override and restores
   production GPU grain. The CPU-buffer URI probe deliberately keeps dav1d for default/omitted grain
   (no grain key); only an explicit `grain=gpu` enables upload variant 1 on that probe.
-- GPU requires upload variant 1: RENDER_TARGET | SHADER_RESOURCE, already Bale's production
-  software-video upload default. CPU mode does not require upload. An explicit `grain=gpu` URI probe
+- GPU requires upload variant 1 (RENDER_TARGET | SHADER_RESOURCE) or 6 (variant 1 plus UAV and
+  shared NT handle), Bale's production software-video upload default since 2026-11-09. With 6, 10-bit
+  zero-copy frames get grain fused into the D3D12 direct write (wrapper 0018,
+  `repack_grain_zc_cs.hlsl`, bit-exact with the CPU oracle, self-tested at create); a decline lands
+  the frame and runs the D3D11 grain pass as before. CPU mode does not require upload. An explicit `grain=gpu` URI probe
   also opts that probe into upload variant 1; other probe modes leave upload at the wrapper default off.
 - Runtime GPU create/self-test or apply failure, upload disable or missing upload permanently selects
   Rust CPU through 1080p, or **no grain above 1080p** (width > 1920 or height > 1080; initial codec size).
