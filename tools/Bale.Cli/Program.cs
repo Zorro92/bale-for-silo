@@ -194,6 +194,12 @@ switch (command)
                     PlaybackFormatting.VersionCompactLabel(version), PlaybackFormatting.VersionDetailLabel(version),
                 }.Where(label => !string.IsNullOrWhiteSpace(label)));
                 Console.WriteLine($"  version file={version.FileId} {summary}");
+                var subtitles = version.SubtitleTracks ?? [];
+                for (var i = 0; i < subtitles.Count; i++)
+                {
+                    var track = subtitles[i];
+                    Console.WriteLine($"    subtitle #{i} codec={track.Codec} lang={track.Language} external={track.External} forced={track.Forced}");
+                }
             }
             if (detail.IsSeries)
             {
