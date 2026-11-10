@@ -43,7 +43,7 @@ namespace Bale.Xbox.Services;
 ///                         hdr=on|off|default (wrapper HdrSupport Enabled/Disabled; default Automatic),
 ///                         grain=dav1d|gpu|off|on|default (software mode default=gpu, production zero-copy upload 6; on/dav1d=dav1d; off=export-only; wrapper 2.1.0-bale.10+)
 ///   GET  /playtest-engine?url=...  muted IMFMediaEngine frame-server probe; seconds=3 (1–60), mode=cs|rust|rust-ffmpeg (Rust port in bale_gpu.dll; rust-ffmpeg = FFmpeg software source via engine extension)
-///   POST /ffmpeg?mode=...  next real-player attempt: policy (default)|off; memory only
+///   POST /ffmpeg?mode=...  next real-player attempt: policy (default)|direct (FFmpeg demux, system video, every direct mount)|off; memory only
 ///   GET  /ffmpeg-tune     current memory-only FFmpeg overrides
 ///   POST /ffmpeg-tune?readahead=on&readsize=65536&prefetch=8  next FFmpeg player attempt; each key accepts default
 ///                         optional buffer=0–5000, ahead=0–64, delay=0–64, prio=0–2, maxres=0|1|default, dpb=0–16|default (system video only)
@@ -277,7 +277,7 @@ internal sealed partial class DebugServer
             case ("POST", "/ffmpeg"):
                 var ffmpegMode = query.GetValueOrDefault("mode");
                 if (!DebugFfmpegPlayback.TrySet(ffmpegMode))
-                    return ("400 Bad Request", "mode must be policy or off\n");
+                    return ("400 Bad Request", "mode must be policy, direct or off\n");
                 Log.Info($"Debug FFmpeg mode: {ffmpegMode}; applies to the next playback attempt");
                 return ("200 OK", $"FFmpeg mode: {ffmpegMode}; applies to the next playback attempt\n");
 

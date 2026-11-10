@@ -11,7 +11,8 @@ public sealed record PlaybackRouteDecision(bool UseFfmpeg, bool SoftwareVideo, s
 /// <summary>Pure per-mount policy. HLS never leaves AdaptiveMediaSource.</summary>
 public static class PlaybackRoutePolicy
 {
-    public static PlaybackRouteDecision Decide(PlaybackPlan plan, bool isHls, bool ffmpegEnabled = true)
+    /// <param name="forceFfmpeg">Debug A/B only: demux every direct mount with FFmpeg, keeping system video decode.</param>
+    public static PlaybackRouteDecision Decide(PlaybackPlan plan, bool isHls, bool ffmpegEnabled = true, bool forceFfmpeg = false)
     {
         var delivery = plan.Delivery?.ToLowerInvariant();
         var original = delivery == "original_http";
@@ -30,7 +31,7 @@ public static class PlaybackRoutePolicy
         var softwareVideo = SoftwareDecodePolicy.VideoCodecs.Contains(video!);
         var softwareAudio = !SoftwareDecodePolicy.SystemAudioCodecs.Contains(audio!)
             && SoftwareDecodePolicy.AudioCodecs.Contains(audio!);
-        var ffmpeg = ffmpegEnabled && direct && !hls && (softwareVideo || softwareAudio);
+        var ffmpeg = ffmpegEnabled && direct && !hls && (softwareVideo || softwareAudio || forceFfmpeg);
         return new(ffmpeg, ffmpeg && softwareVideo, video, audio, ordinal, width, height);
     }
 

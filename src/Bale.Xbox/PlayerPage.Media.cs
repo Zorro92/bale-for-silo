@@ -94,7 +94,7 @@ public sealed partial class PlayerPage
         {
             StartPosition = playerStart,
             StartPaused = paused,
-            Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled),
+            Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled, attempt.ForceFfmpeg),
         };
         _delivery = transport.Delivery;
         _duration = transport.DurationSeconds;

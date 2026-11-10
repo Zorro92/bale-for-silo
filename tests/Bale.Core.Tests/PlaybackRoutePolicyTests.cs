@@ -96,6 +96,24 @@ public class PlaybackRoutePolicyTests
         Assert.False(PlaybackRoutePolicy.Decide(plan, false).UseFfmpeg);
     }
 
+    [Theory]
+    [InlineData("original_http", "h264", "ac3")]
+    [InlineData("original_http", "hevc", "eac3")]
+    [InlineData("progressive", "h264", "aac")]
+    public void DebugForceMovesDirectSystemCodecsOntoFfmpegWithSystemVideo(string delivery, string video, string audio)
+    {
+        var plan = Plan(delivery, video, audio);
+        Assert.False(PlaybackRoutePolicy.Decide(plan, false).UseFfmpeg);
+        var route = PlaybackRoutePolicy.Decide(plan, false, forceFfmpeg: true);
+        Assert.True(route.UseFfmpeg);
+        Assert.False(route.SoftwareVideo);
+        Assert.False(route.SoftwareAudio);
+        // HLS and the debug off switch still win over the force.
+        Assert.False(PlaybackRoutePolicy.Decide(plan, true, forceFfmpeg: true).UseFfmpeg);
+        Assert.False(PlaybackRoutePolicy.Decide(plan, false, ffmpegEnabled: false, forceFfmpeg: true).UseFfmpeg);
+        Assert.False(PlaybackRoutePolicy.Decide(Plan("server_transcode_hls", video, audio), false, forceFfmpeg: true).UseFfmpeg);
+    }
+
     [Fact]
     public void OriginalUsesTheSelectedSourceCodecAndProgressiveUsesItsActualRecipe()
     {

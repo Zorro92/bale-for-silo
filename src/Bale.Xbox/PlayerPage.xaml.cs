@@ -71,10 +71,12 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public string FrameDeliveryMode { get; } = DebugFrameDeliverySwitch.Mode;
         public bool UsePooledStreamAdapter { get; } = DebugStreamAdapterSwitch.Pooled;
         public int Av1ClaimMaxHeight { get; } = DebugAv1ClaimSwitch.MaxHeight;
-        public bool FfmpegEnabled => FfmpegMode == "policy";
+        public bool FfmpegEnabled => FfmpegMode != "off";
+        public bool ForceFfmpeg => FfmpegMode == "direct";
 #else
         public bool UsePooledStreamAdapter => true;
         public bool FfmpegEnabled => true;
+        public bool ForceFfmpeg => false;
 #endif
         public CancellationTokenSource? ReportingCancellation { get; set; }
         public Task? ReportingTask { get; set; }

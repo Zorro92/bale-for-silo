@@ -207,6 +207,14 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
 
 ## Player diagnostics
 
+- **The console throttles the app about 10–15 s after the last controller or keyboard input**, on
+  any page and for the whole console. CPU work and DRAM copies get several times slower; GPU memory
+  access does not. A film is watched in that state, so measure in it: no input after starting
+  playback, and take every reading (CPU, stalls, memory, timings) at the same offset from the last
+  key, well past 15 s. A reading right after a key press is not comparable to an idle one.
+  Debug-server calls (`seek`, `stats`, `mem`, `threads`) are not input. Never inject F24 to keep the
+  console awake: the shell opens the Guide's Capture panel on it. No app-level API tried so far holds
+  the fast state. Measurements and what was ruled out: `docs/player-plan.md`, "no input" A/B.
 - Debug probe syntax: `playtest-ffmpeg <url|@file|suite> [seconds] [auto|software|system]
   [threads=N] [10bit=on|off] [rate=R] [ahead=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default]
   [hdr=on|off|default] [grain=dav1d|gpu|off|on|default]`. Supply seconds and mode before

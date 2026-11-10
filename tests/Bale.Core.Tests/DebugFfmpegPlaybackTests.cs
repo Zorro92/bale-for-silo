@@ -7,12 +7,12 @@ namespace Bale.Core.Tests;
 public class DebugFfmpegPlaybackTests
 {
     [Fact]
-    public void ToggleOnlyAcceptsPolicyAndOffAndNeverPersistsThem()
+    public void ToggleOnlyAcceptsPolicyDirectAndOffAndNeverPersistsThem()
     {
         var previous = DebugFfmpegPlayback.Mode;
         try
         {
-            foreach (var mode in new[] { "off", "policy" })
+            foreach (var mode in new[] { "off", "direct", "policy" })
             {
                 Assert.True(DebugFfmpegPlayback.TrySet(mode));
                 Assert.Equal(mode, DebugFfmpegPlayback.Mode);
@@ -39,6 +39,7 @@ public class DebugFfmpegPlaybackTests
     public void PolicyUsesMeasuredCapabilitiesAndOffWithdrawsEveryFfmpegDependency()
     {
         Assert.Same(ConsoleEvidence.Default, DebugFfmpegPlayback.Capabilities("policy"));
+        Assert.Same(ConsoleEvidence.Default, DebugFfmpegPlayback.Capabilities("direct"));
         Assert.Same(new PlayPlanOptions(true, null, 0).Capabilities(), DebugFfmpegPlayback.Capabilities("policy"));
         var off = DebugFfmpegPlayback.Capabilities("off");
         Assert.DoesNotContain("av1", off.VideoCodecs);
@@ -76,6 +77,10 @@ public class DebugFfmpegPlaybackTests
         Assert.Contains("var capabilities = DisplayHdrOutput.DetectCapabilities()", source);
         Assert.Contains("capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities)", source);
         Assert.Contains("public bool FfmpegEnabled => true", source);
+        Assert.Contains("public bool FfmpegEnabled => FfmpegMode != \"off\"", source);
+        Assert.Contains("public bool ForceFfmpeg => FfmpegMode == \"direct\"", source);
+        // Release builds never force the FFmpeg demuxer.
+        Assert.Contains("public bool ForceFfmpeg => false", source);
         Assert.Contains("var failedRoute = attempt.Media?.Route", source);
         Assert.Contains("position, failure, failedRoute)", source);
         var recovery = source[source.IndexOf("var failedRoute =", StringComparison.Ordinal)..];
@@ -90,7 +95,7 @@ public class DebugFfmpegPlaybackTests
         Assert.DoesNotContain("#if DEBUG_SERVER\nusing FFmpegInteropX", source);
         Assert.Contains("media.Stream = await transport.OpenStreamAsync(media.Token)", source);
         Assert.Contains("media.RandomStream = media.Stream.AsRandomAccessStream()", source);
-        Assert.Contains("Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled)", source);
+        Assert.Contains("Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled, attempt.ForceFfmpeg)", source);
         Assert.Contains("if (media.Route.UseFfmpeg)", source);
         Assert.Contains("FfmpegSource.Configuration(media.Route)", source);
         Assert.Contains("media.FfmpegSource = await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream, config).AsTask()", source);
