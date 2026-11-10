@@ -146,6 +146,16 @@ with the CPU oracle; `bale_gpu.dll` self-tests it at create). A `bale_gpu.dll` t
 grain (older, or its self-test failed) declines, and the frame lands and gets the D3D11 grain pass
 as before; that decline is logged once, separately from the plain one. CPU grain (mode 1) still
 skips zero-copy. The stats line adds `direct_grain=`. It ships in `2.1.0-bale.18`.
+`0019` takes 8-bit 4:2:0 libdav1d pictures through zero-copy too. With zero-copy on, upload
+variant 6, 10-bit output allowed and a `bale_gpu.dll` exporting `bale_zc_repack_into_bits`, the
+pre-open check selects P010 output for such a stream (instead of NV12). The allocator then hands
+dav1d byte-stride buffers, and `bale_zc_repack_into_bits(..., 8, ...)` writes each sample as
+`v << 8`, which maps limited range 16..235 exactly onto P010's 64..940. GPU grain (8-bit
+parameters) is fused into that write; CPU grain keeps dav1d's synthesis. 8-bit pictures never
+land (`bale_zc_repack` reads 10-bit samples): a declined write uses staging (swscale to P010),
+logged once, and shows that frame ungrained, since staging grain only matches NV12/P010 by depth.
+YUVJ, frame grabbers and other upload variants keep NV12. The stats line adds `eight_bit=`; the
+active line reads `direct write, 8-bit`. It ships in `2.1.0-bale.19`.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.

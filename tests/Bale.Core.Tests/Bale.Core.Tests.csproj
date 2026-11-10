@@ -81,6 +81,7 @@
     <None Include="../../scripts/ffmpeginteropx-patches/0016-upload-variant-shared-uav.patch" Link="0016-upload-variant-shared-uav.patch" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/ffmpeginteropx-patches/0017-zero-copy-direct-write.patch" Link="0017-zero-copy-direct-write.patch" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/ffmpeginteropx-patches/0018-zero-copy-direct-grain.patch" Link="0018-zero-copy-direct-grain.patch" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/ffmpeginteropx-patches/0019-zero-copy-eight-bit.patch" Link="0019-zero-copy-eight-bit.patch" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/check-ffmpeg-package.ps1" Link="check-ffmpeg-package.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/restore-ffmpeg-native.ps1" Link="restore-ffmpeg-native.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/build-ffmpeg-native.ps1" Link="build-ffmpeg-native.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
