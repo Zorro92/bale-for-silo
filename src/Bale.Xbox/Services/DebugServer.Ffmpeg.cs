@@ -19,10 +19,10 @@ namespace Bale.Xbox.Services;
 internal sealed partial class DebugServer
 {
     private static async Task<(string Status, string Body)> PlaytestFfmpegAsync(string? url, string? seconds, string? mode,
-        string? threads, string? output10bit, string? rate, string? ahead, string? sws, string? delay, string? prio, string? maxres, string? dpb, string? hdr = null, string? grain = null)
+        string? threads, string? output10bit, string? rate, string? ahead, string? delay, string? prio, string? maxres, string? dpb, string? hdr = null, string? grain = null)
     {
         if (!DebugFfmpegPlaytest.TryParse(url, seconds, mode, out var uri, out var duration, out var decoderMode, out var error)
-            || !DebugFfmpegPlaytest.TryParseTuning(threads, output10bit, rate, ahead, sws, delay, prio, maxres, dpb, out var tuning, out error)
+            || !DebugFfmpegPlaytest.TryParseTuning(threads, output10bit, rate, ahead, delay, prio, maxres, dpb, out var tuning, out error)
             || !DebugFfmpegPlaytest.TryParseHdr(hdr, out var hdrSupport, out error)
             || !DebugFfmpegPlaytest.TryParseGrain(grain, out var filmGrain, out error))
             return ("400 Bad Request", error + "\n");

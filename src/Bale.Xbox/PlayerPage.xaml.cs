@@ -174,11 +174,13 @@ public sealed partial class PlayerPage : Page, IBackHandler
                     request.Detail.PlaybackPositionSeconds,
                     request.SuppressResumeRewind ? 0 : PlaybackStartPosition.DefaultResumeRewindSeconds);
                 var capabilities = DisplayHdrOutput.DetectCapabilities();
-                // Xbox One (no AVX2) claims no software AV1, so the server transcodes it.
-                if (!DeviceIdentity.SoftwareVideoSupported)
+                // Software AV1 has one path (zero-copy D3D12). Xbox One (no AVX2), or a console where
+                // bale_gpu.dll can't register d3d12.dll, claims no software AV1, so the server transcodes it.
+                var softwareVideo = DeviceIdentity.SoftwareVideoSupported && ZeroCopyRuntime.Register();
+                if (!softwareVideo)
                     capabilities = SoftwareDecodePolicy.WithoutSoftwareVideo(capabilities);
 #if DEBUG_SERVER
-                if (attempt.Av1ClaimMaxHeight == 2160 && DeviceIdentity.SoftwareVideoSupported)
+                if (attempt.Av1ClaimMaxHeight == 2160 && softwareVideo)
                     capabilities = capabilities with { VideoDecode = ConsoleEvidence.BuildVideoDecode(3840, 2160) };
                 capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);
                 capabilities = DebugHdrPlayback.Capabilities(attempt.PretendHdr, capabilities);

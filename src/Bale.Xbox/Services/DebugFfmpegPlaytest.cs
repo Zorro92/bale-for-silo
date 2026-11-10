@@ -21,7 +21,7 @@ internal static class DebugFfmpegPlaytest
     }
 
     internal static bool TryParseTuning(string? threads, string? output10bit, string? rate,
-        string? ahead, string? sws, string? delay, string? prio, string? maxres, string? dpb, out DebugFfmpegTuning tuning, out string error)
+        string? ahead, string? delay, string? prio, string? maxres, string? dpb, out DebugFfmpegTuning tuning, out string error)
     {
         tuning = new();
         error = string.Empty;
@@ -57,11 +57,6 @@ internal static class DebugFfmpegPlaytest
             error = "ahead must be an integer from 0 to 64";
             return false;
         }
-        if (!TryNativeOption(sws, 1, 16, out var swsThreads))
-        {
-            error = "sws must be an integer from 1 to 16";
-            return false;
-        }
         if (!TryNativeOption(delay, 0, 64, out var dav1dMaxFrameDelay))
         {
             error = "delay must be an integer from 0 to 64";
@@ -82,7 +77,7 @@ internal static class DebugFfmpegPlaytest
             error = "dpb must be an integer from 0 to 16 or default";
             return false;
         }
-        tuning = new(decoderThreads, allow10bit, playbackRate, decodeAheadFrames, swsThreads, dav1dMaxFrameDelay, decodeThreadPriority,
+        tuning = new(decoderThreads, allow10bit, playbackRate, decodeAheadFrames, dav1dMaxFrameDelay, decodeThreadPriority,
             decoderUseMaxResolution, decoderMaxDpbCount);
         return true;
     }
@@ -97,28 +92,26 @@ internal static class DebugFfmpegPlaytest
         return false;
     }
 
-    /// <summary>off remains export-only; on aliases dav1d. CPU/GPU require wrapper patch 0009.
-    /// Default or omitted emits no override: the player uses production GPU grain, probes keep dav1d.</summary>
+    /// <summary>off remains export-only; on aliases dav1d; gpu requires wrapper patch 0009.
+    /// Default or omitted emits no override: software video keeps production GPU grain.</summary>
     internal static bool TryParseGrain(string? grain, out DebugFilmGrain? selection, out string error)
     {
         error = string.Empty;
         selection = grain switch
         {
             "on" or "dav1d" => DebugFilmGrain.Dav1d,
-            "cpu" => DebugFilmGrain.Cpu,
             "gpu" => DebugFilmGrain.Gpu,
             "off" => DebugFilmGrain.Off,
             _ => null,
         };
-        if (grain is null or "default" or "on" or "off" or "dav1d" or "cpu" or "gpu") return true;
-        error = "grain must be dav1d, cpu, gpu, off, on or default";
+        if (grain is null or "default" or "on" or "off" or "dav1d" or "gpu") return true;
+        error = "grain must be dav1d, gpu, off, on or default";
         return false;
     }
 
     internal static (string Key, string Value)? GrainOption(DebugFilmGrain? grain) => grain switch
     {
         DebugFilmGrain.Dav1d => ("bale_film_grain_mode", "0"),
-        DebugFilmGrain.Cpu => ("bale_film_grain_mode", "1"),
         DebugFilmGrain.Gpu => ("bale_film_grain_mode", "2"),
         DebugFilmGrain.Off => ("bale_dav1d_export_film_grain", "1"),
         _ => null,
@@ -127,7 +120,6 @@ internal static class DebugFfmpegPlaytest
     internal static string GrainName(DebugFilmGrain? grain) => grain switch
     {
         DebugFilmGrain.Dav1d => "dav1d",
-        DebugFilmGrain.Cpu => "cpu",
         DebugFilmGrain.Gpu => "gpu",
         DebugFilmGrain.Off => "off",
         _ => "default",
@@ -151,14 +143,13 @@ internal static class DebugFfmpegPlaytest
             + $"10-bit output: {(allow10bit ? "on" : "off")} ({(tuning.Allow10bit is null ? "default" : "override")})\n"
             + $"Logical CPUs: {processorCount}\nRate requested: {tuning.Rate:0.###}\n"
             + $"Decode ahead: {decode.DecodeAheadFrames ?? 0} (0=off; {(tuning.DecodeAheadFrames is null ? "default" : "override")})\n"
-            + $"SWS threads: {decode.SwsThreads ?? 1} (1=upstream; {(tuning.SwsThreads is null ? "default" : "override")})\n"
             + $"dav1d max frame delay: {decode.Dav1dMaxFrameDelay ?? 0} (0=dav1d default; {(tuning.Dav1dMaxFrameDelay is null ? "default" : "override")})\n"
             + $"Decode thread priority: {tuning.DecodeThreadPriority ?? 0} (0=off, 1=above normal, 2=highest; {(tuning.DecodeThreadPriority is null ? "default" : "override")})\n"
             + $"Decoder use max resolution: {tuning.DecoderUseMaxResolution ?? 0} (0=unset, 1=on; {(tuning.DecoderUseMaxResolution is null ? "default" : "override")}; system video only)\n"
             + $"Decoder max DPB count: {tuning.DecoderMaxDpbCount ?? 0} (0=unset; {(tuning.DecoderMaxDpbCount is null ? "default" : "override")}; system video only)\n"
             + $"HDR support: {tuning.HdrSupport switch { true => "on (override)", false => "off (override)", null => "automatic (default)" }}\n"
-            + $"Film grain requested: {tuning.FilmGrain switch { DebugFilmGrain.Dav1d => "dav1d (override)", DebugFilmGrain.Cpu => "Rust CPU (override)", DebugFilmGrain.Gpu => "GPU (override; CPU fallback through 1080p, ungrained above 1080p)", DebugFilmGrain.Off => "exported, not applied (override; libdav1d only)", _ => "dav1d (probe default; CPU buffers; production default is GPU)" }}\n"
-            + $"D3D11 upload requested: {(tuning.FilmGrain is DebugFilmGrain.Gpu ? "1 (GPU grain; render target+shader resource)" : "0 (probe default; CPU buffers)")}\n"
+            + $"Film grain requested: {tuning.FilmGrain switch { DebugFilmGrain.Dav1d => "dav1d (override)", DebugFilmGrain.Gpu => "GPU (override)", DebugFilmGrain.Off => "exported, not applied (override; libdav1d only)", _ => mode == "software" ? "GPU (production default)" : "wrapper default (not software mode)" }}\n"
+            + $"D3D11 upload requested: {(mode == "software" ? "6 (production zero-copy direct write)" : "0 (not software mode)")}\n"
             + $"Effective grain mode/fallback: see Bale film grain native diagnostics\n");
     }
 
@@ -220,20 +211,19 @@ internal static class DebugFfmpegPlaytest
     }
 }
 
-internal enum DebugFilmGrain { Dav1d, Cpu, Gpu, Off }
+internal enum DebugFilmGrain { Dav1d, Gpu, Off }
 
 // Nullable decode settings use release software-video defaults or the wrapper's defaults for other modes.
-// Grain stays dav1d on CPU-buffer probes, independently of the production GPU default.
+// Software mode uses the production software-AV1 path (zero-copy, upload 6, GPU grain).
 internal sealed record DebugFfmpegTuning(uint? Threads = null, bool? Allow10bit = null, double Rate = 1.0,
-    int? DecodeAheadFrames = null, int? SwsThreads = null, int? Dav1dMaxFrameDelay = null, int? DecodeThreadPriority = null,
+    int? DecodeAheadFrames = null, int? Dav1dMaxFrameDelay = null, int? DecodeThreadPriority = null,
     int? DecoderUseMaxResolution = null, int? DecoderMaxDpbCount = null, bool? HdrSupport = null, DebugFilmGrain? FilmGrain = null)
 {
     internal SoftwareDecodeTuning DecodeTuning(string mode)
     {
         // URI probes have no playback plan/dimensions before creation, so leave the size-dependent delay unset.
         var defaults = SoftwareDecodeTuning.ForVideo(mode == "software");
-        return new(DecodeAheadFrames ?? defaults.DecodeAheadFrames, SwsThreads ?? defaults.SwsThreads,
-            Dav1dMaxFrameDelay ?? defaults.Dav1dMaxFrameDelay);
+        return new(DecodeAheadFrames ?? defaults.DecodeAheadFrames, Dav1dMaxFrameDelay ?? defaults.Dav1dMaxFrameDelay);
     }
 }
 #endif

@@ -6,9 +6,8 @@ namespace Bale.Xbox.Services;
 
 /// <summary>Memory-only overrides of release settings, captured per attempt and never applied to probes or native/HLS routes.</summary>
 internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadSize = null, int? Prefetch = null, int? BufferMs = null,
-    int? DecodeAheadFrames = null, int? SwsThreads = null, int? Dav1dMaxFrameDelay = null, int? DecodeThreadPriority = null,
-    int? DecoderUseMaxResolution = null, int? DecoderMaxDpbCount = null, DebugFilmGrain? FilmGrain = null, int? D3d11Upload = null,
-    int? UploadFaultFrames = null, bool? Repack = null, bool? ZeroCopy = null)
+    int? DecodeAheadFrames = null, int? Dav1dMaxFrameDelay = null, int? DecodeThreadPriority = null,
+    int? DecoderUseMaxResolution = null, int? DecoderMaxDpbCount = null, DebugFilmGrain? FilmGrain = null)
 {
     internal const int MinimumReadSize = 16 * 1024;
     internal const int MaximumReadSize = 1024 * 1024;
@@ -17,7 +16,7 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
     // Keep the extra native packet queue below its 100 MB / 60 s defaults on Xbox.
     internal const long ReadAheadCapBytes = 64L * 1024 * 1024;
     internal static readonly TimeSpan ReadAheadCapDuration = TimeSpan.FromSeconds(30);
-    internal const string Usage = "expected [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [sws=1..16|default] [delay=0..64|default] [prio=0..2|default] (0=off, 1=above normal, 2=highest) [maxres=0|1|default] [dpb=0..16|default] (system video only; 0=unset) [grain=dav1d|cpu|gpu|off|on|default] (software video only; default=gpu (production), on/dav1d=dav1d, cpu=Rust CPU, gpu=GPU (runtime loss: CPU through 1080p, no grain above 1080p), off=export-only; wrapper 2.1.0-bale.10+) [upload=on|off|default|1..6] (software video only; on/default=1, off=0; D3D11 texture flags (wrapper 2.1.0-bale.8+): 1=render target+shader resource, 2=decoder+shader resource, 3=decoder, 4=shader resource (known MF failure), 5=shared shader resource (known MF failure), 6=shared render target+shader resource+UAV (debug, wrapper 2.1.0-bale.16+); GPU grain requires variant 1 or 6, otherwise keeps dav1d at open) [uploadfault=1..999|default] (software video with upload; debug fault: the upload fails with E_OUTOFMEMORY after N frames, then CPU buffers; wrapper 2.1.0-bale.11+) [repack=on|off|default] (software video with upload variant 1; on = planar copy plus GPU NV12/P010 repack instead of swscale, falls back to swscale on failure; default off; wrapper 2.1.0-bale.12+) [zerocopy=on|off|default] (10-bit software AV1 with upload variant 1; on = dav1d decodes into D3D12 buffers and a GPU repack fills the upload texture, no CPU copy; falls back to the CPU paths on failure; default on (release), off = swscale path; native FFmpeg p1 and wrapper 2.1.0-bale.15+); omitted keys keep their overrides; default restores the release setting (buffer=1000 for software video; software video: ahead=16, sws=4, buffer=1000 ms, delay unset; above 1080p ahead=8, buffer=500 ms, delay=8; prio unset; system video: maxres/dpb unset)";
+    internal const string Usage = "expected [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [delay=0..64|default] [prio=0..2|default] (0=off, 1=above normal, 2=highest) [maxres=0|1|default] [dpb=0..16|default] (system video only; 0=unset) [grain=dav1d|gpu|off|on|default] (software video only; default=gpu (production), on/dav1d=dav1d, gpu=GPU, off=export-only; wrapper 2.1.0-bale.10+); software AV1 is fixed to zero-copy direct write (upload variant 6, wrapper 2.1.0-bale.17+); omitted keys keep their overrides; default restores the release setting (buffer=1000 for software video; software video: ahead=16, buffer=1000 ms, delay unset; above 1080p ahead=8, buffer=500 ms, delay=8; prio unset; system video: maxres/dpb unset)";
     private static readonly object Gate = new();
     private static DebugFfmpegInputTuning _current = new();
 
@@ -25,18 +24,14 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
 
     internal string Description => $"readahead={(ReadAhead is { } enabled ? enabled ? "on" : "off" : "default")} "
         + $"readsize={ReadSize?.ToString(CultureInfo.InvariantCulture) ?? "default"} "
-        + $"prefetch={Prefetch?.ToString(CultureInfo.InvariantCulture) ?? "default"} upload={UploadDescription}"
+        + $"prefetch={Prefetch?.ToString(CultureInfo.InvariantCulture) ?? "default"}"
         + (BufferMs is { } buffer ? $" buffer={buffer.ToString(CultureInfo.InvariantCulture)}" : "")
         + (DecodeAheadFrames is { } ahead ? $" ahead={ahead.ToString(CultureInfo.InvariantCulture)}" : "")
-        + (SwsThreads is { } sws ? $" sws={sws.ToString(CultureInfo.InvariantCulture)}" : "")
         + (Dav1dMaxFrameDelay is { } delay ? $" delay={delay.ToString(CultureInfo.InvariantCulture)}" : "")
         + (DecodeThreadPriority is { } priority ? $" prio={priority.ToString(CultureInfo.InvariantCulture)}" : "")
         + (DecoderUseMaxResolution is { } maxres ? $" maxres={maxres.ToString(CultureInfo.InvariantCulture)}" : "")
         + (DecoderMaxDpbCount is { } dpb ? $" dpb={dpb.ToString(CultureInfo.InvariantCulture)}" : "")
-        + (FilmGrain is { } grain ? " grain=" + DebugFfmpegPlaytest.GrainName(grain) : "")
-        + (UploadFaultFrames is { } fault ? $" uploadfault={fault.ToString(CultureInfo.InvariantCulture)}" : "")
-        + (Repack is { } repack ? $" repack={(repack ? "on" : "off")}" : "")
-        + (ZeroCopy is { } zeroCopy ? $" zerocopy={(zeroCopy ? "on" : "off")}" : "");
+        + (FilmGrain is { } grain ? " grain=" + DebugFfmpegPlaytest.GrainName(grain) : "");
 
     internal static bool TrySet(IReadOnlyDictionary<string, string> options, out DebugFfmpegInputTuning tuning)
     {
@@ -68,10 +63,6 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
                         if (!TryNumber(value, 0, 64, out var ahead)) return false;
                         next = next with { DecodeAheadFrames = ahead };
                         break;
-                    case "sws":
-                        if (!TryNumber(value, 1, 16, out var sws)) return false;
-                        next = next with { SwsThreads = sws };
-                        break;
                     case "delay":
                         if (!TryNumber(value, 0, 64, out var delay)) return false;
                         next = next with { Dav1dMaxFrameDelay = delay };
@@ -92,22 +83,6 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
                         if (!DebugFfmpegPlaytest.TryParseGrain(value, out var grain, out _)) return false;
                         next = next with { FilmGrain = grain };
                         break;
-                    case "upload":
-                        if (value is not ("on" or "off" or "default" or "1" or "2" or "3" or "4" or "5" or "6")) return false;
-                        next = next with { D3d11Upload = value switch { "default" => null, "off" => 0, "on" => 1, _ => value[0] - '0' } };
-                        break;
-                    case "uploadfault":
-                        if (!TryNumber(value, 1, 999, out var fault)) return false;
-                        next = next with { UploadFaultFrames = fault };
-                        break;
-                    case "repack":
-                        if (value is not ("on" or "off" or "default")) return false;
-                        next = next with { Repack = value == "default" ? null : value == "on" };
-                        break;
-                    case "zerocopy":
-                        if (value is not ("on" or "off" or "default")) return false;
-                        next = next with { ZeroCopy = value == "default" ? null : value == "on" };
-                        break;
                     default:
                         return false;
                 }
@@ -118,17 +93,6 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
             return true;
         }
     }
-
-    private string UploadDescription => (D3d11Upload ?? SoftwareDecodeTuning.DefaultD3d11Upload).ToString(CultureInfo.InvariantCulture) + ((D3d11Upload ?? SoftwareDecodeTuning.DefaultD3d11Upload) switch
-    {
-        1 => " (render target+shader resource)",
-        2 => " (decoder+shader resource)",
-        3 => " (decoder)",
-        4 => " (shader resource; known MF failure)",
-        5 => " (shared shader resource; known MF failure)",
-        6 => " (shared render target+shader resource+UAV)",
-        _ => "",
-    });
 
     internal static string ReadAheadText(bool enabled, long bytes, TimeSpan duration) => string.Create(CultureInfo.InvariantCulture,
         $"{(enabled ? "on" : "off")} · {bytes / (1024.0 * 1024):0.#} MiB / {duration.TotalSeconds:0.#} s");

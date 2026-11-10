@@ -12,6 +12,8 @@ public class PlaybackCapabilitiesTests
         foreach (var claims in new[] { ConsoleEvidence.Default.VideoDecode, ConsoleEvidence.BuildVideoDecode() })
         {
             var av1 = Assert.Single(claims, decode => decode.Codec == "av1");
+            // The server fails an empty or non-Main source profile, so those AV1 streams transcode.
+            Assert.Equal(new[] { "main" }, av1.Profiles);
             Assert.Equal(1920, av1.MaxWidth);
             Assert.Equal(1080, av1.MaxHeight);
             Assert.Equal(30, av1.MaxFrameRate);
@@ -25,7 +27,7 @@ public class PlaybackCapabilitiesTests
         Assert.Equal(new[] { "h264", "hevc", "av1" }, claims.Select(decode => decode.Codec));
         var av1 = Assert.Single(claims, decode => decode.Codec == "av1");
         Assert.Equal("dav1d", av1.DecoderName);
-        Assert.Empty(av1.Profiles);
+        Assert.Equal(new[] { "main" }, av1.Profiles);
         Assert.Empty(av1.Levels);
         Assert.Equal(new[] { 8, 10 }, av1.BitDepths);
         Assert.Equal(3840, av1.MaxWidth);

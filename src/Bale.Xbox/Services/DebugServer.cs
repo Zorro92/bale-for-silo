@@ -39,19 +39,16 @@ namespace Bale.Xbox.Services;
 ///                         only=video|gpu|audio|display|platform|device|graph runs one section
 ///   GET  /playtest?url=...  muted public http(s) stream probe; seconds=3 (1–10), open timeout 8 s
 ///   GET  /playtest-ffmpeg?url=...  muted FFmpegInteropX probe; seconds=3 (1–60), mode=auto|software|system
-///                         optional threads=0–16, 10bit=on|off, rate=0.5–2.0 (default 1), ahead=0–64, sws=1–16, delay=0–64, prio=0–2, maxres=0|1|default, dpb=0–16|default (system video only),
+///                         optional threads=0–16, 10bit=on|off, rate=0.5–2.0 (default 1), ahead=0–64, delay=0–64, prio=0–2, maxres=0|1|default, dpb=0–16|default (system video only),
 ///                         hdr=on|off|default (wrapper HdrSupport Enabled/Disabled; default Automatic),
-///                         grain=dav1d|cpu|gpu|off|on|default (probe default/on=dav1d, CPU buffers; cpu=Rust CPU; gpu enables RT upload, runtime loss: CPU through 1080p or no grain above 1080p; off=export-only; wrapper 2.1.0-bale.10+)
+///                         grain=dav1d|gpu|off|on|default (software mode default=gpu, production zero-copy upload 6; on/dav1d=dav1d; off=export-only; wrapper 2.1.0-bale.10+)
 ///   GET  /playtest-engine?url=...  muted IMFMediaEngine frame-server probe; seconds=3 (1–60), mode=cs|rust|rust-ffmpeg (Rust port in bale_gpu.dll; rust-ffmpeg = FFmpeg software source via engine extension)
 ///   POST /ffmpeg?mode=...  next real-player attempt: policy (default)|off; memory only
 ///   GET  /ffmpeg-tune     current memory-only FFmpeg overrides
 ///   POST /ffmpeg-tune?readahead=on&readsize=65536&prefetch=8  next FFmpeg player attempt; each key accepts default
-///                         optional buffer=0–5000, ahead=0–64, sws=1–16, delay=0–64, prio=0–2, maxres=0|1|default, dpb=0–16|default (system video only)
-///                         grain=dav1d|cpu|gpu|off|on|default (production default=gpu, on/dav1d=dav1d; runtime GPU loss: CPU through 1080p, no grain above 1080p; wrapper 2.1.0-bale.10+)
-///                         upload=on|off|default|1..6 (software video only; on=1=RT|SRV, default=6, off=0; status shows number/flags; wrapper 2.1.0-bale.8+; GPU without variant 1 keeps dav1d at open)
-///                         upload variants: 1=RT|SRV, 2=DECODER|SRV, 3=DECODER, 4=SRV, 5=SRV+SHARED, 6=RT|SRV|UAV+SHARED_NTHANDLE (release default; direct write bale.17+, with grain bale.18+) (4/5 known MF failures)
-///   GET  /upload-probe?frames=20  4K-sized CPU-to-GPU upload bandwidth per method (bale_gpu.dll, own device; frames 1–120)
-///   GET  /zero-copy-probe?frames=10  D3D12 zero-copy feasibility: write-back custom heap CPU speed vs RAM, GPU reads + coherency, D3D12→D3D11 shared P010 + fence (frames 1–60)
+///                         optional buffer=0–5000, ahead=0–64, delay=0–64, prio=0–2, maxres=0|1|default, dpb=0–16|default (system video only)
+///                         grain=dav1d|gpu|off|on|default (production default=gpu, on/dav1d=dav1d; off=export-only; wrapper 2.1.0-bale.10+)
+///                         software AV1 is fixed to zero-copy direct write (upload variant 6) with GPU grain
 ///   GET  /mem?gc=1        managed GC heap vs app memory; gc=1 first forces a full collection + finalizers
 ///   GET  /gc              GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
 ///   POST /gc?latency=...  batch|interactive|sustained|default; default restores the saved pre-playback mode; memory only
@@ -271,7 +268,7 @@ internal sealed partial class DebugServer
             case ("GET", "/playtest-ffmpeg"):
                 return await PlaytestFfmpegAsync(query.GetValueOrDefault("url"), query.GetValueOrDefault("seconds"), query.GetValueOrDefault("mode"),
                     query.GetValueOrDefault("threads"), query.GetValueOrDefault("10bit"), query.GetValueOrDefault("rate"),
-                    query.GetValueOrDefault("ahead"), query.GetValueOrDefault("sws"), query.GetValueOrDefault("delay"), query.GetValueOrDefault("prio"),
+                    query.GetValueOrDefault("ahead"), query.GetValueOrDefault("delay"), query.GetValueOrDefault("prio"),
                     query.GetValueOrDefault("maxres"), query.GetValueOrDefault("dpb"), query.GetValueOrDefault("hdr"), query.GetValueOrDefault("grain"));
 
             case ("GET", "/playtest-engine"):
@@ -294,24 +291,6 @@ internal sealed partial class DebugServer
 
             case ("GET", "/rust"):
                 return ("200 OK", await Task.Run(DebugRustProbe.Run));
-
-            case ("GET", "/upload-probe"):
-                if (query.Count > 1 || (query.Count == 1 && !query.ContainsKey("frames")))
-                    return ("400 Bad Request", "only frames=1..120 is accepted\n");
-                var uploadFrames = 20;
-                if (query.TryGetValue("frames", out var uploadFramesText)
-                    && (!int.TryParse(uploadFramesText, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out uploadFrames) || uploadFrames is < 1 or > 120))
-                    return ("400 Bad Request", "frames must be 1..120\n");
-                return ("200 OK", await Task.Run(() => DebugRustProbe.RunUpload(uploadFrames)));
-
-            case ("GET", "/zero-copy-probe"):
-                if (query.Count > 1 || (query.Count == 1 && !query.ContainsKey("frames")))
-                    return ("400 Bad Request", "only frames=1..60 is accepted\n");
-                var zeroCopyFrames = 10;
-                if (query.TryGetValue("frames", out var zeroCopyFramesText)
-                    && (!int.TryParse(zeroCopyFramesText, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out zeroCopyFrames) || zeroCopyFrames is < 1 or > 60))
-                    return ("400 Bad Request", "frames must be 1..60\n");
-                return ("200 OK", await Task.Run(() => DebugRustProbe.RunZeroCopy(zeroCopyFrames)));
 
             case ("GET", "/mem"):
                 if (query.Count > 1 || (query.Count == 1 && query.GetValueOrDefault("gc") is not "1"))
@@ -496,7 +475,7 @@ internal sealed partial class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /stats, GET /frame-trace, POST /frame-trace?action=reset, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, GET /playtest-engine?url=...&seconds=3&mode=cs|rust|rust-ffmpeg, GET /rust, GET /upload-probe?frames=20, GET /zero-copy-probe?frames=10, POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&sws=1..16&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16&grain=dav1d|cpu|gpu|off|on|default&upload=on|off|1..6 (each key accepts default; grain default=gpu (production), on/dav1d=dav1d; GPU loss: CPU through 1080p, no grain above 1080p; probe default=dav1d (CPU buffers); upload on=1=RT|SRV, default=6, off=0; 2=DECODER|SRV, 3=DECODER, 4=SRV, 5=SRV+SHARED, 6=RT|SRV|UAV+SHARED_NTHANDLE (default); 4/5 known MF failures), GET /mem?gc=1, GET /gc, POST /gc?latency={batch|interactive|sustained|default}, GET /frame-delivery, POST /frame-delivery?mode={native|managed|off}, GET /stream-adapter, POST /stream-adapter?mode={pooled|builtin}, GET /av1-claim, POST /av1-claim?height={1080|2160}, GET /display-match, POST /display-match?mode={on|off}, GET /hdr, POST /hdr?mode={pretend|off}, GET /idle-test, POST /idle-test?action={display-pulse|smtc-playing|smtc-stopped}, GET /webview-test, POST /webview-test?action={open-video|open-blank|close}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /stats, GET /frame-trace, POST /frame-trace?action=reset, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, GET /playtest-engine?url=...&seconds=3&mode=cs|rust|rust-ffmpeg, GET /rust, POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16&grain=dav1d|gpu|off|on|default (each key accepts default; grain default=gpu (production), on/dav1d=dav1d; software AV1 is fixed to zero-copy upload variant 6), GET /mem?gc=1, GET /gc, POST /gc?latency={batch|interactive|sustained|default}, GET /frame-delivery, POST /frame-delivery?mode={native|managed|off}, GET /stream-adapter, POST /stream-adapter?mode={pooled|builtin}, GET /av1-claim, POST /av1-claim?height={1080|2160}, GET /display-match, POST /display-match?mode={on|off}, GET /hdr, POST /hdr?mode={pretend|off}, GET /idle-test, POST /idle-test?action={display-pulse|smtc-playing|smtc-stopped}, GET /webview-test, POST /webview-test?action={open-video|open-blank|close}, POST /seek?seconds=...&pause=true, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 

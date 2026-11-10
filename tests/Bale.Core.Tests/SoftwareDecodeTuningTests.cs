@@ -5,23 +5,22 @@ namespace Bale.Core.Tests;
 public class SoftwareDecodeTuningTests
 {
     [Theory]
-    [InlineData("original_http", "av1", "aac", false, true, 6)]
-    [InlineData("progressive", "av1", "opus", false, true, 6)]
-    [InlineData("server_remux_progressive", "av1", "dts", false, true, 6)]
-    [InlineData("original_http", "hevc", "dts", false, true, null)]
-    [InlineData("original_http", "h264", "truehd", false, true, null)]
-    [InlineData("original_http", "hevc", "aac", false, true, null)]
-    [InlineData("original_http", "av1", "aac", true, true, null)]
-    [InlineData("original_http", "av1", "aac", false, false, null)]
-    public void UploadDefaultsToVariantSixOnlyForSoftwareVideoRoutes(string delivery, string video, string audio,
-        bool isHls, bool ffmpegEnabled, int? expected)
+    [InlineData("original_http", "av1", "aac", false, true, true)]
+    [InlineData("progressive", "av1", "opus", false, true, true)]
+    [InlineData("server_remux_progressive", "av1", "dts", false, true, true)]
+    [InlineData("original_http", "hevc", "dts", false, true, false)]
+    [InlineData("original_http", "h264", "truehd", false, true, false)]
+    [InlineData("original_http", "hevc", "aac", false, true, false)]
+    [InlineData("original_http", "av1", "aac", true, true, false)]
+    [InlineData("original_http", "av1", "aac", false, false, false)]
+    public void OnlyAv1SoftwareRoutesTakeTheFixedZeroCopyPath(string delivery, string video, string audio,
+        bool isHls, bool ffmpegEnabled, bool expected)
     {
         var route = PlaybackRoutePolicy.Decide(PlaybackRoutePolicyTests.Plan(delivery, video, audio), isHls, ffmpegEnabled);
-        Assert.Equal(expected is not null, route.SoftwareVideo);
-        Assert.Equal(expected, SoftwareDecodeTuning.D3d11Upload(route));
-        Assert.Equal(2, SoftwareDecodeTuning.DefaultFilmGrainMode);
-        Assert.Equal(expected is not null ? (int?)2 : null, SoftwareDecodeTuning.FilmGrainMode(route));
-        Assert.Equal(expected is not null, SoftwareDecodeTuning.ZeroCopy(route));
+        Assert.Equal(expected, route.SoftwareVideo);
+        // One path, no per-route variation: zero-copy direct write into upload variant 6, GPU grain.
+        Assert.Equal(6, SoftwareDecodeTuning.DefaultD3d11Upload);
+        Assert.Equal(2, SoftwareDecodeTuning.FilmGrainMode);
     }
 
     [Theory]
@@ -49,7 +48,7 @@ public class SoftwareDecodeTuningTests
     [InlineData(3840L, null, 8)]
     [InlineData(null, 2160L, 8)]
     public void SoftwareVideoUsesReleaseDefaultsAndOnlyTrimsQueuesAbove1080p(long? width, long? height, int? delay) =>
-        Assert.Equal(new SoftwareDecodeTuning(delay is null ? 16 : 8, 4, delay), SoftwareDecodeTuning.ForVideo(true, width, height));
+        Assert.Equal(new SoftwareDecodeTuning(delay is null ? 16 : 8, delay), SoftwareDecodeTuning.ForVideo(true, width, height));
 
     [Theory]
     [InlineData(1920L, 1080L, null, 1000)]

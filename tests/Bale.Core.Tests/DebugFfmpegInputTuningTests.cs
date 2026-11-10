@@ -15,7 +15,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     public void DefaultsKeepReleaseSettingsAndDescribeOnlyOverrides()
     {
         Assert.Equal(new DebugFfmpegInputTuning(), DebugFfmpegInputTuning.Current);
-        Assert.Equal("readahead=default readsize=default prefetch=default upload=6 (shared render target+shader resource+UAV)", DebugFfmpegInputTuning.Current.Description);
+        Assert.Equal("readahead=default readsize=default prefetch=default", DebugFfmpegInputTuning.Current.Description);
         Assert.Contains("default restores the release setting (buffer=1000 for software video;", DebugFfmpegInputTuning.Usage);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string>(), out var current));
         Assert.Same(DebugFfmpegInputTuning.Current, current);
@@ -26,14 +26,14 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     {
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "1500" }, out var set));
         Assert.Equal(1500, set.BufferMs);
-        Assert.Equal("readahead=default readsize=default prefetch=default upload=6 (shared render target+shader resource+UAV) buffer=1500", set.Description);
+        Assert.Equal("readahead=default readsize=default prefetch=default buffer=1500", set.Description);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "0" }, out var zero));
         Assert.Equal(0, zero.BufferMs);
         Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "5001" }, out _));
         Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "-1" }, out _));
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "default" }, out var cleared));
         Assert.Null(cleared.BufferMs);
-        Assert.Equal("readahead=default readsize=default prefetch=default upload=6 (shared render target+shader resource+UAV)", cleared.Description);
+        Assert.Equal("readahead=default readsize=default prefetch=default", cleared.Description);
     }
 
     [Fact]
@@ -57,7 +57,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
             ["prefetch"] = "8", ["readahead"] = "on", ["readsize"] = "65536",
         }, out var captured));
         Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8), captured);
-        Assert.Equal("readahead=on readsize=65536 prefetch=8 upload=6 (shared render target+shader resource+UAV)", captured.Description);
+        Assert.Equal("readahead=on readsize=65536 prefetch=8", captured.Description);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["readsize"] = "1048576", ["readahead"] = "off" }, out var next));
         Assert.Equal(new DebugFfmpegInputTuning(false, 1048576, 8), next);
         Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8), captured);
@@ -115,10 +115,10 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     }
 
     [Theory]
-    [InlineData("0", "1", "0", "0", "0", "0")]
-    [InlineData("64", "16", "64", "2", "1", "16")]
-    [InlineData("0008", "04", "001", "001", "001", "003")]
-    public void ForkOptionsUseInclusiveBoundsAndInvariantDescriptions(string ahead, string sws, string delay, string prio, string maxres, string dpb)
+    [InlineData("0", "0", "0", "0", "0")]
+    [InlineData("64", "64", "2", "1", "16")]
+    [InlineData("0008", "001", "001", "001", "003")]
+    public void ForkOptionsUseInclusiveBoundsAndInvariantDescriptions(string ahead, string delay, string prio, string maxres, string dpb)
     {
         var previous = CultureInfo.CurrentCulture;
         try
@@ -126,14 +126,14 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
             Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string>
             {
-                ["delay"] = delay, ["prio"] = prio, ["ahead"] = ahead, ["sws"] = sws, ["dpb"] = dpb, ["maxres"] = maxres,
+                ["delay"] = delay, ["prio"] = prio, ["ahead"] = ahead, ["dpb"] = dpb, ["maxres"] = maxres,
             }, out var tuning));
             var expected = new DebugFfmpegInputTuning(DecodeAheadFrames: int.Parse(ahead, CultureInfo.InvariantCulture),
-                SwsThreads: int.Parse(sws, CultureInfo.InvariantCulture), Dav1dMaxFrameDelay: int.Parse(delay, CultureInfo.InvariantCulture),
+                Dav1dMaxFrameDelay: int.Parse(delay, CultureInfo.InvariantCulture),
                 DecodeThreadPriority: int.Parse(prio, CultureInfo.InvariantCulture), DecoderUseMaxResolution: int.Parse(maxres, CultureInfo.InvariantCulture),
                 DecoderMaxDpbCount: int.Parse(dpb, CultureInfo.InvariantCulture));
             Assert.Equal(expected, tuning);
-            Assert.Equal($"readahead=default readsize=default prefetch=default upload=6 (shared render target+shader resource+UAV) ahead={expected.DecodeAheadFrames} sws={expected.SwsThreads} delay={expected.Dav1dMaxFrameDelay} prio={expected.DecodeThreadPriority} maxres={expected.DecoderUseMaxResolution} dpb={expected.DecoderMaxDpbCount}", tuning.Description);
+            Assert.Equal($"readahead=default readsize=default prefetch=default ahead={expected.DecodeAheadFrames} delay={expected.Dav1dMaxFrameDelay} prio={expected.DecodeThreadPriority} maxres={expected.DecoderUseMaxResolution} dpb={expected.DecoderMaxDpbCount}", tuning.Description);
         }
         finally { CultureInfo.CurrentCulture = previous; }
     }
@@ -141,40 +141,36 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     [Fact]
     public void ForkOptionsAreCapturedAndClearedIndependentlyWithoutResettingOtherOverrides()
     {
-        Set(new(true, 65536, 8, 1500, 8, 4, 1, 2));
+        Set(new(true, 65536, 8, 1500, 8, 1, 2));
         var captured = DebugFfmpegInputTuning.Current;
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["ahead"] = "default" }, out var first));
         Assert.Equal(captured with { DecodeAheadFrames = null }, first);
         Assert.DoesNotContain(" ahead=", first.Description);
-        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["sws"] = "default" }, out var second));
-        Assert.Equal(first with { SwsThreads = null }, second);
-        Assert.DoesNotContain("sws=", second.Description);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["delay"] = "default" }, out var third));
         Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8, 1500, DecodeThreadPriority: 2), third);
-        Assert.Equal("readahead=on readsize=65536 prefetch=8 upload=6 (shared render target+shader resource+UAV) buffer=1500 prio=2", third.Description);
+        Assert.Equal("readahead=on readsize=65536 prefetch=8 buffer=1500 prio=2", third.Description);
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["prio"] = "default" }, out var fourth));
         Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8, 1500), fourth);
         Assert.DoesNotContain("prio=", fourth.Description);
-        Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8, 1500, 8, 4, 1, 2), captured);
+        Assert.Equal(new DebugFfmpegInputTuning(true, 65536, 8, 1500, 8, 1, 2), captured);
     }
 
     [Theory]
     [InlineData("ahead", 0, 64)]
-    [InlineData("sws", 1, 16)]
     [InlineData("delay", 0, 64)]
     [InlineData("prio", 0, 2)]
     [InlineData("maxres", 0, 1)]
     [InlineData("dpb", 0, 16)]
     public void InvalidForkOptionUpdatesAreStrictAndAtomic(string key, int minimum, int maximum)
     {
-        Set(new(false, 65536, 4, 1500, 8, 4, 1, 1));
+        Set(new(false, 65536, 4, 1500, 8, 1, 1));
         var before = DebugFfmpegInputTuning.Current;
         foreach (var value in new[] { "-1", "+1", " 1", "1 ", "1.0", "1,0", "1e0", "0x1", "", "DEFAULT", "2147483648",
             (minimum - 1).ToString(CultureInfo.InvariantCulture), (maximum + 1).ToString(CultureInfo.InvariantCulture) })
         {
             var options = new Dictionary<string, string>
             {
-                ["readahead"] = "on", ["buffer"] = "0", ["ahead"] = "64", ["sws"] = "16", ["delay"] = "64", ["prio"] = "2",
+                ["readahead"] = "on", ["buffer"] = "0", ["ahead"] = "64", ["delay"] = "64", ["prio"] = "2",
                 ["maxres"] = "1", ["dpb"] = "16",
             };
             options[key] = value;
@@ -190,7 +186,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     [InlineData("2")]
     public void PriorityUpdatesAndClearingPreserveOtherOverridesAndCapturedAttempts(string prio)
     {
-        Set(new(true, 65536, 8, 1500, 8, 4, 1));
+        Set(new(true, 65536, 8, 1500, 8, 1));
         var captured = DebugFfmpegInputTuning.Current;
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["prio"] = prio }, out var set));
         Assert.Equal(captured with { DecodeThreadPriority = int.Parse(prio, CultureInfo.InvariantCulture) }, set);
@@ -207,7 +203,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     [InlineData("1", "16")]
     public void DecoderHintsAreCapturedAndClearedIndependentlyWithoutChangingOtherOverrides(string maxres, string dpb)
     {
-        Set(new(true, 65536, 8, 1500, 8, 4, 1, 2));
+        Set(new(true, 65536, 8, 1500, 8, 1, 2));
         var captured = DebugFfmpegInputTuning.Current;
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["maxres"] = maxres, ["dpb"] = dpb }, out var set));
         Assert.Equal(captured with
@@ -268,7 +264,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = checked((uint)readSize)", experiment);
         Assert.Contains("var config = Configuration(route)", experiment);
         Assert.DoesNotContain("bale_decode_thread_priority", configuration[..start]);
-        Assert.Contains("if (route.SoftwareVideo)\n        {\n            ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.SwsThreads, tuning.Dav1dMaxFrameDelay));", experiment);
+        Assert.Contains("if (route.SoftwareVideo)\n        {\n            ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.Dav1dMaxFrameDelay));", experiment);
         Assert.Contains("if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions[\"bale_decode_thread_priority\"] = priority.ToString(CultureInfo.InvariantCulture);", experiment);
         Assert.Contains("if (DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain) is { } grain) config.FFmpegOptions[grain.Key] = grain.Value;", experiment);
         Assert.True(experiment.IndexOf("var config = Configuration(route)", StringComparison.Ordinal)
@@ -276,7 +272,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight))", configuration[..start]);
         foreach (var (property, variable, option) in new[]
         {
-            ("DecodeAheadFrames", "ahead", "bale_decode_ahead_frames"), ("SwsThreads", "sws", "bale_sws_threads"),
+            ("DecodeAheadFrames", "ahead", "bale_decode_ahead_frames"),
             ("Dav1dMaxFrameDelay", "delay", "bale_dav1d_max_frame_delay"),
         })
         {
@@ -311,7 +307,6 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     [Theory]
     [InlineData("on", "Dav1d", " grain=dav1d")]
     [InlineData("dav1d", "Dav1d", " grain=dav1d")]
-    [InlineData("cpu", "Cpu", " grain=cpu")]
     [InlineData("gpu", "Gpu", " grain=gpu")]
     [InlineData("off", "Off", " grain=off")]
     public void FilmGrainOverrideIsCapturedAndClearedWithoutChangingOtherOverrides(string value, string expected, string description)
@@ -324,10 +319,9 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["grain"] = "default" }, out var cleared));
         Assert.Null(cleared.FilmGrain);
         Assert.DoesNotContain("grain=", cleared.Description);
-        var route = PlaybackRoutePolicy.Decide(PlaybackRoutePolicyTests.Plan("original_http", "av1", "aac"), false);
-        Assert.Equal(2, SoftwareDecodeTuning.FilmGrainMode(route));
+        Assert.Equal(2, SoftwareDecodeTuning.FilmGrainMode);
         Assert.Null(DebugFfmpegPlaytest.GrainOption(cleared.FilmGrain));
-        foreach (var invalid in new[] { "OFF", "1", "", "true" })
+        foreach (var invalid in new[] { "OFF", "1", "", "true", "cpu" })
             Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["grain"] = invalid }, out _));
         Assert.Null(DebugFfmpegInputTuning.Current.FilmGrain);
     }
@@ -344,122 +338,79 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         var system = experiment.IndexOf("else\n", software, StringComparison.Ordinal);
         var key = experiment.IndexOf("if (DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain) is { } grain) config.FFmpegOptions[grain.Key] = grain.Value;", StringComparison.Ordinal);
         Assert.True(software >= 0 && key > software && key < system);
-        Assert.Contains("grain=dav1d|cpu|gpu|off|on|default", DebugFfmpegInputTuning.Usage);
-        Assert.Contains("SoftwareDecodeTuning.FilmGrainMode(route) is { } grainMode && grainMode != 0", configuration[..start]);
-        Assert.Contains("config.FFmpegOptions[\"bale_film_grain_mode\"] = grainMode.ToString(CultureInfo.InvariantCulture);", configuration[..start]);
+        Assert.Contains("grain=dav1d|gpu|off|on|default", DebugFfmpegInputTuning.Usage);
+        Assert.Contains("config.FFmpegOptions[\"bale_film_grain_mode\"] = SoftwareDecodeTuning.FilmGrainMode.ToString(CultureInfo.InvariantCulture);", configuration[..start]);
         Assert.Equal(("bale_film_grain_mode", "0"), DebugFfmpegPlaytest.GrainOption(DebugFilmGrain.Dav1d));
         Assert.Contains("default=gpu (production), on/dav1d=dav1d", DebugFfmpegInputTuning.Usage);
         Assert.Contains("production default=gpu, on/dav1d=dav1d", Read("DebugServer.cs.txt"));
         Assert.Contains("grain=default: gpu (production default); on/dav1d: dav1d", Read("bale-debug.sh"));
-        Assert.Contains("probe default; CPU buffers, unlike production GPU", Read("bale-debug.sh"));
-    }
-
-    [Theory]
-    [InlineData("on", 1)]
-    [InlineData("off", 0)]
-    [InlineData("1", 1)]
-    [InlineData("2", 2)]
-    [InlineData("3", 3)]
-    [InlineData("4", 4)]
-    [InlineData("5", 5)]
-    public void UploadOverrideIsCapturedAndClearedIndependentlyOfGrain(string value, int expected)
-    {
-        Set(new(DecodeAheadFrames: 8, FilmGrain: DebugFilmGrain.Off));
-        var captured = DebugFfmpegInputTuning.Current;
-        Assert.Null(captured.D3d11Upload);
-        Assert.Contains("upload=6 (shared render target+shader resource+UAV)", captured.Description);
-        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["upload"] = value }, out var set));
-        Assert.Equal(captured with { D3d11Upload = expected }, set);
-        Assert.Contains(" upload=" + expected.ToString(CultureInfo.InvariantCulture), set.Description);
-        Assert.Contains(" grain=off", set.Description);
-        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["sws"] = "4" }, out var next));
-        Assert.Equal(expected, next.D3d11Upload);
-        Assert.Equal(captured with { D3d11Upload = expected }, set);
-        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["upload"] = "default" }, out var cleared));
-        Assert.Equal(captured with { SwsThreads = 4 }, cleared);
-        Assert.Contains("upload=6 (shared render target+shader resource+UAV)", cleared.Description);
+        Assert.Contains("software mode uses the production path (zero-copy, upload variant 6, GPU grain)", Read("bale-debug.sh"));
     }
 
     [Fact]
-    public void UploadOffExplicitlySelectsCpuBuffersAndDefaultRestoresVariantOne()
-    {
-        Set(new(D3d11Upload: 5));
-        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["upload"] = "off" }, out var off));
-        Assert.Equal(0, off.D3d11Upload);
-        Assert.Equal("readahead=default readsize=default prefetch=default upload=0", off.Description);
-        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["upload"] = "default" }, out var restored));
-        Assert.Null(restored.D3d11Upload);
-        Assert.Equal("readahead=default readsize=default prefetch=default upload=6 (shared render target+shader resource+UAV)", restored.Description);
-        Assert.Equal(0, off.D3d11Upload);
-    }
-
-    [Theory]
-    [InlineData("default", 6, "shared render target+shader resource+UAV")]
-    [InlineData("on", 1, "render target+shader resource")]
-    [InlineData("1", 1, "render target+shader resource")]
-    [InlineData("2", 2, "decoder+shader resource")]
-    [InlineData("3", 3, "decoder")]
-    [InlineData("4", 4, "shader resource; known MF failure")]
-    [InlineData("5", 5, "shared shader resource; known MF failure")]
-    [InlineData("6", 6, "shared render target+shader resource+UAV")]
-    public void UploadStatusAndHelpDescribeTheRenumberedTextureFlags(string value, int variant, string flags)
-    {
-        Set(new());
-        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["upload"] = value }, out var tuning));
-        Assert.Equal($"readahead=default readsize=default prefetch=default upload={variant} ({flags})", tuning.Description);
-        Assert.Contains($"{variant}={flags.Replace("; known MF failure", " (known MF failure)", StringComparison.Ordinal)}", DebugFfmpegInputTuning.Usage);
-        Assert.Contains("on/default=1, off=0", DebugFfmpegInputTuning.Usage);
-        Assert.Contains("wrapper 2.1.0-bale.8+", DebugFfmpegInputTuning.Usage);
-    }
-
-    [Theory]
-    [InlineData("ON")]
-    [InlineData("OFF")]
-    [InlineData("0")]
-    [InlineData("7")]
-    [InlineData("-1")]
-    [InlineData("+1")]
-    [InlineData("01")]
-    [InlineData("1.0")]
-    [InlineData("1 ")]
-    [InlineData(" 1")]
-    [InlineData("2147483648")]
-    [InlineData("true")]
-    [InlineData("")]
-    [InlineData(" on")]
-    [InlineData("off ")]
-    [InlineData("DEFAULT")]
-    public void InvalidUploadUpdatesAreAtomic(string value)
-    {
-        Set(new(FilmGrain: DebugFilmGrain.Dav1d, D3d11Upload: 5));
-        var captured = DebugFfmpegInputTuning.Current;
-        Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["grain"] = "off", ["upload"] = value }, out var rejected));
-        Assert.Same(captured, rejected);
-        Assert.Same(captured, DebugFfmpegInputTuning.Current);
-    }
-
-    [Fact]
-    public void ReleaseUploadDefaultIsSoftwareOnlyAndStandaloneUploadRequiresExplicitGpuGrain()
+    public void SoftwareVideoAlwaysTakesTheFixedZeroCopyPathWithNoDebugOverride()
     {
         var configuration = Read("FfmpegSource.cs.txt");
         var start = configuration.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal);
         var end = configuration.IndexOf("#endif", start, StringComparison.Ordinal);
-        Assert.Contains("if (SoftwareDecodeTuning.D3d11Upload(route) is { } upload) config.FFmpegOptions[\"bale_d3d11_upload\"] = upload.ToString(CultureInfo.InvariantCulture);", configuration[..start]);
+        var production = configuration[..start];
+        Assert.Contains("if (route.SoftwareVideo) ApplySoftwareVideo(config);", production);
+        var apply = production[production.IndexOf("internal static void ApplySoftwareVideo(MediaSourceConfig config)", StringComparison.Ordinal)..];
+        var register = apply.IndexOf("if (!ZeroCopyRuntime.Register()) throw new InvalidDataException(", StringComparison.Ordinal);
+        Assert.True(register >= 0);
+        foreach (var line in new[]
+        {
+            "config.FFmpegOptions[\"bale_d3d11_upload\"] = SoftwareDecodeTuning.DefaultD3d11Upload.ToString(CultureInfo.InvariantCulture);",
+            "config.FFmpegOptions[\"bale_film_grain_mode\"] = SoftwareDecodeTuning.FilmGrainMode.ToString(CultureInfo.InvariantCulture);",
+            "config.FFmpegOptions[\"bale_zero_copy\"] = \"1\";",
+        })
+            Assert.True(apply.IndexOf(line, StringComparison.Ordinal) > register, line);
+        foreach (var option in new[] { "\"bale_d3d11_upload\"", "\"bale_zero_copy\"", "\"bale_film_grain_mode\"" })
+            Assert.Equal(1, configuration.Split(option).Length - 1);
         var experiment = configuration[start..end];
-        var software = experiment.IndexOf("if (route.SoftwareVideo)", StringComparison.Ordinal);
-        var system = experiment.IndexOf("else\n", software, StringComparison.Ordinal);
-        var key = experiment.IndexOf("if (tuning.D3d11Upload is { } upload) config.FFmpegOptions[\"bale_d3d11_upload\"] = upload.ToString(CultureInfo.InvariantCulture);", StringComparison.Ordinal);
-        Assert.True(software >= 0 && key > software && key < system);
-        Assert.DoesNotContain("upload > 0", experiment);
-        Assert.Equal(2, configuration.Split("\"bale_d3d11_upload\"").Length - 1);
-        var fault = experiment.IndexOf("if (tuning.UploadFaultFrames is { } fault) config.FFmpegOptions[\"bale_d3d11_upload_fault_frames\"] = fault.ToString(CultureInfo.InvariantCulture);", StringComparison.Ordinal);
-        Assert.True(fault > software && fault < system);
-        Assert.Equal(1, configuration.Split("bale_d3d11_upload_fault_frames").Length - 1);
-        Assert.Contains("if (tuning.FilmGrain is DebugFilmGrain.Gpu) config.FFmpegOptions[\"bale_d3d11_upload\"] = \"1\";", Read("DebugFfmpegSource.cs.txt"));
-        Assert.Contains("upload=on|off|default|1..6", DebugFfmpegInputTuning.Usage);
+        foreach (var removed in new[] { "bale_d3d11_upload", "bale_zero_copy", "bale_d3d11_repack", "bale_d3d11_upload_fault_frames", "bale_sws_threads" })
+            Assert.DoesNotContain(removed, experiment);
+        foreach (var removed in new[] { "bale_sws_threads", "bale_d3d11_repack", "bale_d3d11_upload_fault_frames" })
+            Assert.DoesNotContain(removed, configuration);
+        // The probe takes the same path in software mode, before any grain override.
+        var probe = Read("DebugFfmpegSource.cs.txt");
+        var shared = probe.IndexOf("if (mode == \"software\") FfmpegSource.ApplySoftwareVideo(config);", StringComparison.Ordinal);
+        Assert.True(shared >= 0 && shared < probe.IndexOf("DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain)", StringComparison.Ordinal));
+        Assert.DoesNotContain("bale_d3d11_upload", probe);
+        Assert.Contains("software AV1 is fixed to zero-copy direct write (upload variant 6", DebugFfmpegInputTuning.Usage);
         var server = Read("DebugServer.cs.txt");
         Assert.Contains("FFmpeg tuning: {DebugFfmpegInputTuning.Current.Description}", server);
         Assert.Contains("FFmpeg tuning: {tuning.Description}", server);
+    }
+
+    [Theory]
+    [InlineData("sws", "4")]
+    [InlineData("upload", "6")]
+    [InlineData("upload", "default")]
+    [InlineData("uploadfault", "5")]
+    [InlineData("repack", "on")]
+    [InlineData("zerocopy", "off")]
+    [InlineData("grain", "cpu")]
+    public void RemovedSoftwareFallbackKnobsAreRejectedAtomically(string key, string value)
+    {
+        Set(new(DecodeAheadFrames: 8, FilmGrain: DebugFilmGrain.Off));
+        var captured = DebugFfmpegInputTuning.Current;
+        Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["prio"] = "1", [key] = value }, out var rejected));
+        Assert.Same(captured, rejected);
+        Assert.Same(captured, DebugFfmpegInputTuning.Current);
+        foreach (var text in new[] { "sws=", "upload=", "uploadfault=", "repack=", "zerocopy=", "cpu" })
+            Assert.DoesNotContain(text, DebugFfmpegInputTuning.Usage);
+    }
+
+    [Fact]
+    public void PlayerClaimsSoftwareVideoOnlyWhenZeroCopyRegisters()
+    {
+        var player = Read("PlayerPage.cs.txt");
+        var gate = player.IndexOf("var softwareVideo = DeviceIdentity.SoftwareVideoSupported && ZeroCopyRuntime.Register();", StringComparison.Ordinal);
+        var drop = player.IndexOf("if (!softwareVideo)\n                    capabilities = SoftwareDecodePolicy.WithoutSoftwareVideo(capabilities);", StringComparison.Ordinal);
+        var build = player.IndexOf("PlaybackStartBuilder.Build(request.Detail", StringComparison.Ordinal);
+        Assert.True(gate >= 0 && drop > gate && build > drop);
+        Assert.DoesNotContain("#if", player[gate..drop]);
     }
 
     [Fact]
@@ -485,68 +436,12 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         ["prefetch"] = tuning.Prefetch?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["buffer"] = tuning.BufferMs?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["ahead"] = tuning.DecodeAheadFrames?.ToString(CultureInfo.InvariantCulture) ?? "default",
-        ["sws"] = tuning.SwsThreads?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["delay"] = tuning.Dav1dMaxFrameDelay?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["prio"] = tuning.DecodeThreadPriority?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["maxres"] = tuning.DecoderUseMaxResolution?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["dpb"] = tuning.DecoderMaxDpbCount?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["grain"] = DebugFfmpegPlaytest.GrainName(tuning.FilmGrain),
-        ["upload"] = tuning.D3d11Upload is { } upload ? upload == 0 ? "off" : upload.ToString(CultureInfo.InvariantCulture) : "default",
-        ["uploadfault"] = tuning.UploadFaultFrames?.ToString(CultureInfo.InvariantCulture) ?? "default",
-        ["repack"] = tuning.Repack is { } repack ? repack ? "on" : "off" : "default",
-        ["zerocopy"] = tuning.ZeroCopy is { } zeroCopy ? zeroCopy ? "on" : "off" : "default",
     }, out _));
-
-    [Theory]
-    [InlineData("on", true)]
-    [InlineData("off", false)]
-    public void ZeroCopyIsADescribedDebugKnob(string value, bool expected)
-    {
-        Set(new());
-        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["zerocopy"] = value }, out var set));
-        Assert.Equal(expected, set.ZeroCopy);
-        Assert.EndsWith($" zerocopy={value}", set.Description);
-        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["zerocopy"] = "default" }, out var cleared));
-        Assert.Null(cleared.ZeroCopy);
-        Assert.DoesNotContain("zerocopy", cleared.Description);
-        Assert.Contains("zerocopy=on|off|default", DebugFfmpegInputTuning.Usage);
-        var script = Read("bale-debug.sh");
-        Assert.Contains("zerocopy=*) [[ \"$value\" == on || \"$value\" == off || \"$value\" == default ]] && valid_tuning=true ;;", script);
-        Assert.Contains("[repack=on|off|default] [zerocopy=on|off|default]", script);
-        Assert.Contains("zerocopy=on = dav1d decodes into D3D12 buffers repacked on the GPU", script);
-        Assert.Contains("release default on; off = swscale path", script);
-        Assert.Contains("software video defaults: zerocopy=on,", script);
-    }
-
-    [Theory]
-    [InlineData("1")]
-    [InlineData("true")]
-    [InlineData("")]
-    public void InvalidZeroCopyIsRejectedAtomically(string value)
-    {
-        Set(new(ZeroCopy: true));
-        var captured = DebugFfmpegInputTuning.Current;
-        Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["zerocopy"] = value }, out var rejected));
-        Assert.Same(captured, rejected);
-        Assert.Same(captured, DebugFfmpegInputTuning.Current);
-        Set(new());
-    }
-
-    [Fact]
-    public void ZeroCopyIsTheProductionDefaultWithADebugOverrideAfterRegistration()
-    {
-        var configuration = Read("FfmpegSource.cs.txt");
-        var start = configuration.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal);
-        var end = configuration.IndexOf("#endif", start, StringComparison.Ordinal);
-        Assert.Contains("if (SoftwareDecodeTuning.ZeroCopy(route)) config.FFmpegOptions[\"bale_zero_copy\"] = ZeroCopyRuntime.Register() ? \"1\" : \"0\";", configuration[..start]);
-        var experiment = configuration[start..end];
-        var software = experiment.IndexOf("if (route.SoftwareVideo)", StringComparison.Ordinal);
-        var system = experiment.IndexOf("else\n", software, StringComparison.Ordinal);
-        var key = experiment.IndexOf("if (tuning.ZeroCopy is { } zeroCopy) config.FFmpegOptions[\"bale_zero_copy\"] = zeroCopy && ZeroCopyRuntime.Register() ? \"1\" : \"0\";", StringComparison.Ordinal);
-        Assert.True(software >= 0 && key > software && key < system);
-        Assert.Equal(2, configuration.Split("bale_zero_copy").Length - 1);
-        Assert.DoesNotContain("RegisterZeroCopy", Read("DebugRustProbe.cs.txt"));
-    }
 
     [Fact]
     public void ZeroCopyRegistrationIsCachedAndLogsNoExceptionText()
@@ -564,81 +459,6 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.DoesNotContain("ex.Message", body);
         Assert.DoesNotContain("Log.Error", body);
         Assert.DoesNotContain("NativeLibrary.Free", probe);
-    }
-
-    [Theory]
-    [InlineData("on", true)]
-    [InlineData("off", false)]
-    public void RepackIsADescribedDebugKnob(string value, bool expected)
-    {
-        Set(new());
-        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["repack"] = value }, out var set));
-        Assert.Equal(expected, set.Repack);
-        Assert.EndsWith($" repack={value}", set.Description);
-        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["repack"] = "default" }, out var cleared));
-        Assert.Null(cleared.Repack);
-        Assert.DoesNotContain("repack", cleared.Description);
-        Assert.Contains("repack=on|off|default", DebugFfmpegInputTuning.Usage);
-    }
-
-    [Theory]
-    [InlineData("1")]
-    [InlineData("true")]
-    [InlineData("")]
-    public void InvalidRepackIsRejectedAtomically(string value)
-    {
-        Set(new(Repack: true));
-        var captured = DebugFfmpegInputTuning.Current;
-        Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["repack"] = value }, out var rejected));
-        Assert.Same(captured, rejected);
-        Assert.Same(captured, DebugFfmpegInputTuning.Current);
-        Set(new());
-    }
-
-    [Fact]
-    public void RepackKeyIsSetOnlyForSoftwareVideoFromTheDebugTuning()
-    {
-        var configuration = Read("FfmpegSource.cs.txt");
-        var start = configuration.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal);
-        var end = configuration.IndexOf("#endif", start, StringComparison.Ordinal);
-        var experiment = configuration[start..end];
-        var software = experiment.IndexOf("if (route.SoftwareVideo)", StringComparison.Ordinal);
-        var system = experiment.IndexOf("else\n", software, StringComparison.Ordinal);
-        var key = experiment.IndexOf("if (tuning.Repack is { } repack) config.FFmpegOptions[\"bale_d3d11_repack\"] = repack ? \"1\" : \"0\";", StringComparison.Ordinal);
-        Assert.True(software >= 0 && key > software && key < system);
-        Assert.Equal(1, configuration.Split("bale_d3d11_repack").Length - 1);
-    }
-
-    [Theory]
-    [InlineData("1", 1)]
-    [InlineData("240", 240)]
-    [InlineData("999", 999)]
-    public void UploadFaultIsADescribedDebugKnob(string value, int expected)
-    {
-        Set(new());
-        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["uploadfault"] = value }, out var set));
-        Assert.Equal(expected, set.UploadFaultFrames);
-        Assert.EndsWith($" uploadfault={expected}", set.Description);
-        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["uploadfault"] = "default" }, out var cleared));
-        Assert.Null(cleared.UploadFaultFrames);
-        Assert.DoesNotContain("uploadfault", cleared.Description);
-        Assert.Contains("uploadfault=1..999|default", DebugFfmpegInputTuning.Usage);
-    }
-
-    [Theory]
-    [InlineData("0")]
-    [InlineData("1000")]
-    [InlineData("-1")]
-    [InlineData("on")]
-    [InlineData("")]
-    public void InvalidUploadFaultIsRejectedAtomically(string value)
-    {
-        Set(new(UploadFaultFrames: 5));
-        var captured = DebugFfmpegInputTuning.Current;
-        Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["uploadfault"] = value }, out var rejected));
-        Assert.Same(captured, rejected);
-        Assert.Same(captured, DebugFfmpegInputTuning.Current);
-        Set(new());
     }
 
     private static string Read(string file) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, file));

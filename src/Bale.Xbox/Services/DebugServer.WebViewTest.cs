@@ -10,7 +10,7 @@ namespace Bale.Xbox.Services;
 /// Input-idle comparison: does a playing WebView2 (the engine Jellyfin's Xbox app runs in) keep the
 /// console out of the slow state that starts ~10 s after the last input (docs/player-plan.md)?
 /// Opens a small popup that loops a muted public sample, or a blank page. The slowdown is
-/// console-wide, so `upload-probe` in Bale measures it while the popup is open.
+/// console-wide, so a Bale probe such as `playtest-ffmpeg` measures it while the popup is open.
 /// WinUI 2 is referenced only in debug-server builds (Bale.Xbox.csproj).
 /// </summary>
 internal sealed partial class DebugServer

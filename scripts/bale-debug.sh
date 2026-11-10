@@ -22,20 +22,17 @@
 #   scripts/bale-debug.sh wait focus Play       wait for a focused description containing Play
 #   scripts/bale-debug.sh wait --timeout 12000 loaded  default 8000 ms; 0–15000; timeout prints where and fails
 #   scripts/bale-debug.sh ffmpeg <mode>         next real-player attempt: policy (default)|off; memory only, HLS unchanged
-#   scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default] [prefetch=N|default] [buffer=ms|default] [ahead=N|default] [sws=N|default] [delay=N|default] [prio=N|default] [maxres=0|1|default] [dpb=N|default] [grain=dav1d|cpu|gpu|off|on|default] [upload=on|off|default|1..6] [uploadfault=1..999|default] [repack=on|off|default] [zerocopy=on|off|default]
+#   scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default] [prefetch=N|default] [buffer=ms|default] [ahead=N|default] [delay=N|default] [prio=N|default] [maxres=0|1|default] [dpb=N|default] [grain=dav1d|gpu|off|on|default]
 #                                               no args = current overrides; omitted keys unchanged; default restores that key's release setting
 #                                               next FFmpeg player attempt only; on = 64 MiB / 30 s, readsize 16384–1048576 bytes, prefetch 2–16 blocks, buffer = MediaStreamSource.BufferTime 0–5000 ms (FFmpegInteropX sets 0)
-#                                               software video only: ahead 0–64 decoded frames (0=off), sws 1–16 scaler threads, delay 0–64 dav1d frames (0=dav1d default)
+#                                               software video only: ahead 0–64 decoded frames (0=off), delay 0–64 dav1d frames (0=dav1d default)
 #                                               prio 0–2 (0=off, 1=THREAD_PRIORITY_ABOVE_NORMAL, 2=THREAD_PRIORITY_HIGHEST); software video only, release default unset
-#                                               grain=default: gpu (production default); on/dav1d: dav1d; cpu: Rust CPU; gpu: GPU (runtime loss: CPU through 1080p, no grain above 1080p); off: export-only (software video; wrapper 2.1.0-bale.10+)
-#                                               upload=on aliases 1; default=on (variant 1); off=0 (CPU buffers); 1..6 select D3D11 texture flags, status shows the number and flags (wrapper 2.1.0-bale.8+)
-#                                               upload variants: 1=RENDER_TARGET|SHADER_RESOURCE, 2=DECODER|SHADER_RESOURCE, 3=DECODER, 4=SHADER_RESOURCE, 5=SHADER_RESOURCE+MISC_SHARED, 6=variant 1+UNORDERED_ACCESS+MISC_SHARED_NTHANDLE (debug, wrapper 2.1.0-bale.16+); 4/5 known MF failures; GPU grain requires variant 1 or 6
+#                                               grain=default: gpu (production default); on/dav1d: dav1d; gpu: GPU; off: export-only (software video; wrapper 2.1.0-bale.10+)
+#                                               software AV1 is fixed to zero-copy direct write (upload variant 6) with GPU grain; streams it can't take transcode on the server
 #                                               system/passthrough video only: maxres 0–1, dpb 0–16 (0=unset); both default unset, opt-in pending wrapper release/repin
-#                                               software-video release defaults: ahead=16, sws=4, buffer=1000 ms, delay unset; above 1080p (width >1920 or height >1080) ahead=8, buffer=500 ms, delay=8
+#                                               software-video release defaults: ahead=16, buffer=1000 ms, delay unset; above 1080p (width >1920 or height >1080) ahead=8, buffer=500 ms, delay=8
 #                                               key i / where show applied settings and demand block waits (count/max/total ms)
 #   scripts/bale-debug.sh rust                   Rust loader + GPU film grain: hardware/self-tests, 1080p correctness, 1080p/4K GPU and CPU timings (120 s timeout)
-#   scripts/bale-debug.sh upload-probe [frames]  4K-sized CPU-to-GPU upload bandwidth per method (staging/dynamic/UpdateSubresource/RAM), frames 1–120 (default 20)
-#   scripts/bale-debug.sh zero-copy-probe [frames]  D3D12 zero-copy feasibility: write-back custom heap vs RAM, GPU reads + coherency, D3D12→D3D11 shared P010 + fence, frames 1–60 (default 10)
 #   scripts/bale-debug.sh mem [gc]               managed GC heap vs app memory; gc forces a full collection + finalizers first
 #   scripts/bale-debug.sh gc                     GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
 #   scripts/bale-debug.sh gc latency <batch|interactive|sustained|default>  change latency app-wide now; default restores the saved pre-playback mode; playback acquires sustained automatically
@@ -56,15 +53,15 @@
 #   timeout 300 scripts/bale-debug.sh playtest suite [seconds]  Chromium samples, one at a time
 #                                               (the whole suite needs more than the usual timeout 20)
 #   scripts/bale-debug.sh playtest-engine <url|@file|suite> [seconds] [cs|rust|rust-ffmpeg]  debug IMFMediaEngine frame-server probe (1–60 s, default 3; rust = bale_gpu.dll port; rust-ffmpeg = FFmpeg software source)
-#   scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [mode] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|cpu|gpu|off|on|default]
+#   scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [mode] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|gpu|off|on|default]
 #                                               hdr=on|off forces the wrapper's HdrSupport Enabled/Disabled (default omitted = Automatic: HDR colour info only if HDMI is already BT.2020)
-#                                               grain=default/on/dav1d keeps dav1d (probe default; CPU buffers, unlike production GPU); cpu uses Rust CPU; gpu also opts this probe into upload variant 1; off exports only (wrapper 2.1.0-bale.10+)
+#                                               software mode uses the production path (zero-copy, upload variant 6, GPU grain); grain=on/dav1d: dav1d; gpu: GPU; off exports only (wrapper 2.1.0-bale.10+)
 #                                               debug FFmpeg probe (1–60 s, default 3; auto|software|system, default auto)
 #                                               tuning after seconds/mode, any order: threads 0–16 (0=CPU count), rate 0.5–2.0 (default 1)
-#                                               software video only: ahead 0–64 (0=off), sws 1–16 (1=upstream), delay 0–64 (0=dav1d default)
+#                                               software video only: ahead 0–64 (0=off), delay 0–64 (0=dav1d default)
 #                                               prio 0–2 (0=off, 1=THREAD_PRIORITY_ABOVE_NORMAL, 2=THREAD_PRIORITY_HIGHEST); software video only, default unset
 #                                               system/passthrough video only: maxres 0–1, dpb 0–16 (0=unset); default = omitted, both unset unless supplied; pending wrapper release/repin
-#                                               software mode defaults: ahead=16, sws=4; delay unset (URI size unknown before open; use delay=8 for known above-1080p media)
+#                                               software mode defaults: ahead=16, GPU grain; delay unset (URI size unknown before open; use delay=8 for known above-1080p media)
 #                                               auto/system retain wrapper defaults unless overridden; reports actual settings/output and software frame delivery
 #   timeout 900 scripts/bale-debug.sh playtest-ffmpeg suite 15 software  same Chromium samples; allow 30 s create + 15 s open per clip
 #   scripts/bale-debug.sh goto "Unwatched#2"     setup only: focus the second matching control
@@ -203,20 +200,15 @@ case "${1:-}" in
           if [[ "$value" == default ]] || { [[ "$value" =~ ^[0-9]{1,7}$ ]] && (( 10#$value <= 5000 )); }; then valid_tuning=true; fi
           ;;
         ahead=*|delay=*) [[ "$value" == default || "$value" =~ ^0*([0-9]|[1-5][0-9]|6[0-4])$ ]] && valid_tuning=true ;;
-        sws=*) [[ "$value" == default || "$value" =~ ^0*([1-9]|1[0-6])$ ]] && valid_tuning=true ;;
         prio=*) [[ "$value" == default || "$value" =~ ^0*[0-2]$ ]] && valid_tuning=true ;;
         maxres=*) [[ "$value" == default || "$value" =~ ^0*[01]$ ]] && valid_tuning=true ;;
         dpb=*) [[ "$value" == default || "$value" =~ ^0*([0-9]|1[0-6])$ ]] && valid_tuning=true ;;
-        grain=*) [[ "$value" =~ ^(dav1d|cpu|gpu|off|on|default)$ ]] && valid_tuning=true ;;
-        upload=*) [[ "$value" =~ ^(on|off|default|[1-6])$ ]] && valid_tuning=true ;;
-        uploadfault=*) [[ "$value" == default || "$value" =~ ^0*([1-9]|[1-9][0-9]|[1-9][0-9][0-9])$ ]] && valid_tuning=true ;;
-        repack=*) [[ "$value" == on || "$value" == off || "$value" == default ]] && valid_tuning=true ;;
-        zerocopy=*) [[ "$value" == on || "$value" == off || "$value" == default ]] && valid_tuning=true ;;
+        grain=*) [[ "$value" =~ ^(dav1d|gpu|off|on|default)$ ]] && valid_tuning=true ;;
       esac
       if [[ "$valid_tuning" != true ]] || [[ -n "${ffmpeg_tune_seen[$name]:-}" ]]; then
-        echo 'usage: scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] [ahead=0..64|default] [sws=1..16|default] [delay=0..64|default] [prio=0..2|default] [maxres=0|1|default] [dpb=0..16|default] (system video only, 0=unset) [grain=dav1d|cpu|gpu|off|on|default] [upload=on|off|default|1..6] [uploadfault=1..999|default] [repack=on|off|default] [zerocopy=on|off|default] (software video only; upload default on (variant 1); uploadfault = debug GPU upload failure after N frames, wrapper bale.11+; repack=on = GPU NV12/P010 repack instead of swscale, wrapper bale.12+; zerocopy=on = dav1d decodes into D3D12 buffers repacked on the GPU (10-bit AV1, upload variant 1, wrapper bale.15+; release default on; off = swscale path); any order, no duplicates; no args = status; default restores release settings)' >&2
-        echo 'software video defaults: zerocopy=on, ahead=16, sws=4, buffer=1000 ms, delay unset; above 1080p (width >1920 or height >1080) ahead=8, buffer=500 ms, delay=8; prio unset (0=off, 1=above normal, 2=highest); system video defaults: maxres/dpb unset' >&2
-        echo 'upload=on aliases 1; default=on (variant 1); off=0 (CPU buffers); wrapper 2.1.0-bale.8+ variants: 1=RENDER_TARGET|SHADER_RESOURCE, 2=DECODER|SHADER_RESOURCE, 3=DECODER, 4=SHADER_RESOURCE, 5=SHADER_RESOURCE+MISC_SHARED, 6=variant 1+UNORDERED_ACCESS+MISC_SHARED_NTHANDLE (debug, wrapper 2.1.0-bale.16+); 4/5 known MF failures; GPU grain requires variant 1 or 6' >&2
+        echo 'usage: scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] [ahead=0..64|default] [delay=0..64|default] [prio=0..2|default] [maxres=0|1|default] [dpb=0..16|default] (system video only, 0=unset) [grain=dav1d|gpu|off|on|default] (software video only); any order, no duplicates; no args = status; default restores release settings' >&2
+        echo 'software video defaults: ahead=16, buffer=1000 ms, delay unset; above 1080p (width >1920 or height >1080) ahead=8, buffer=500 ms, delay=8; prio unset (0=off, 1=above normal, 2=highest); system video defaults: maxres/dpb unset' >&2
+        echo 'software AV1 is fixed to zero-copy direct write (upload variant 6, wrapper 2.1.0-bale.17+) with GPU grain; grain=default: gpu, on/dav1d: dav1d, off: export-only' >&2
         exit 2
       fi
       ffmpeg_tune_seen[$name]=true
@@ -234,20 +226,6 @@ case "${1:-}" in
       exit 2
     fi
     curl --fail-with-body -sS --max-time 120 "$BASE/rust"
-    ;;
-  upload-probe)
-    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^[0-9]{1,3}$ ) ]]; then
-      echo 'usage: scripts/bale-debug.sh upload-probe [frames 1-120]' >&2
-      exit 2
-    fi
-    curl --fail-with-body -sS --max-time 120 -G "$BASE/upload-probe" ${2:+--data-urlencode "frames=$2"}
-    ;;
-  zero-copy-probe)
-    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^[0-9]{1,2}$ ) ]]; then
-      echo 'usage: scripts/bale-debug.sh zero-copy-probe [frames 1-60]' >&2
-      exit 2
-    fi
-    curl --fail-with-body -sS --max-time 120 -G "$BASE/zero-copy-probe" ${2:+--data-urlencode "frames=$2"}
     ;;
   mem)
     if [[ "$#" -gt 2 || ( "$#" -eq 2 && "$2" != gc ) ]]; then
@@ -387,7 +365,7 @@ case "${1:-}" in
       || [[ "$playtest_route" == playtest-engine && ! "${4:-cs}" =~ ^(cs|rust|rust-ffmpeg)$ ]]; then
       echo 'usage: scripts/bale-debug.sh playtest <http(s)-url|suite> [seconds] (1–10, default 3; suite needs timeout 300)' >&2
       echo '       scripts/bale-debug.sh playtest-engine <http(s)-url|@file|suite> [seconds] [cs|rust|rust-ffmpeg] (1–60 s, default 3; default cs)' >&2
-      echo '       scripts/bale-debug.sh playtest-ffmpeg <http(s)-url|@file|suite> [seconds] [auto|software|system] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|cpu|gpu|off|on|default] (1–60 s, default 3; tuning requires seconds/mode)' >&2
+      echo '       scripts/bale-debug.sh playtest-ffmpeg <http(s)-url|@file|suite> [seconds] [auto|software|system] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|gpu|off|on|default] (1–60 s, default 3; tuning requires seconds/mode)' >&2
       exit 2
     fi
     if [[ "$playtest_route" == playtest-ffmpeg ]]; then
@@ -398,18 +376,17 @@ case "${1:-}" in
         valid_tuning=false
         case "$option" in
           ahead=*|delay=*) [[ "$value" =~ ^0*([0-9]|[1-5][0-9]|6[0-4])$ ]] && valid_tuning=true ;;
-          sws=*) [[ "$value" =~ ^0*([1-9]|1[0-6])$ ]] && valid_tuning=true ;;
           prio=*) [[ "$value" =~ ^0*[0-2]$ ]] && valid_tuning=true ;;
           maxres=*) [[ "$value" == default || "$value" =~ ^0*[01]$ ]] && valid_tuning=true ;;
           dpb=*) [[ "$value" == default || "$value" =~ ^0*([0-9]|1[0-6])$ ]] && valid_tuning=true ;;
           hdr=*) [[ "$value" =~ ^(on|off|default)$ ]] && valid_tuning=true ;;
-          grain=*) [[ "$value" =~ ^(dav1d|cpu|gpu|off|on|default)$ ]] && valid_tuning=true ;;
+          grain=*) [[ "$value" =~ ^(dav1d|gpu|off|on|default)$ ]] && valid_tuning=true ;;
           threads=*) [[ "$value" =~ ^0*([0-9]|1[0-6])$ ]] && valid_tuning=true ;;
           10bit=*) [[ "$value" =~ ^(on|off)$ ]] && valid_tuning=true ;;
           rate=*) [[ "$value" =~ ^(0*[.][5-9][0-9]*|0*1([.][0-9]*)?|0*2([.]0*)?)$ ]] && valid_tuning=true ;;
         esac
         if [[ "$valid_tuning" != true || -n "${playtest_tuning_seen[$name]:-}" ]]; then
-          echo 'tuning after seconds/mode: [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|cpu|gpu|off|on|default], any order, no duplicates; N=0–16 (0=CPU count), R=0.5–2.0, ahead/delay=0–64, sws=1–16, prio=0–2 (0=off, 1=above normal, 2=highest); system video only: maxres=0–1, dpb=0–16 (0=unset), default = omitted; hdr=on|off forces wrapper HdrSupport Enabled/Disabled (default Automatic); grain=default/on/dav1d keeps dav1d, cpu=Rust CPU, gpu=GPU with CPU fallback (also enables upload variant 1 for this probe), off=export-only (wrapper 2.1.0-bale.9+)' >&2
+          echo 'tuning after seconds/mode: [threads=N] [10bit=on|off] [rate=R] [ahead=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|gpu|off|on|default], any order, no duplicates; N=0–16 (0=CPU count), R=0.5–2.0, ahead/delay=0–64, prio=0–2 (0=off, 1=above normal, 2=highest); system video only: maxres=0–1, dpb=0–16 (0=unset), default = omitted; hdr=on|off forces wrapper HdrSupport Enabled/Disabled (default Automatic); software mode uses the production zero-copy path (upload variant 6, GPU grain); grain=on/dav1d keeps dav1d, gpu=GPU, off=export-only (wrapper 2.1.0-bale.10+)' >&2
           exit 2
         fi
         playtest_tuning_seen[$name]=true

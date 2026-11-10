@@ -24,10 +24,10 @@ internal static class DebugFfmpegSource
         if (tuning.DecoderUseMaxResolution is { } maxres) config.FFmpegOptions["bale_decoder_use_max_resolution"] = maxres.ToString(CultureInfo.InvariantCulture);
         if (tuning.DecoderMaxDpbCount is { } dpb) config.FFmpegOptions["bale_decoder_max_dpb_count"] = dpb.ToString(CultureInfo.InvariantCulture);
         if (tuning.HdrSupport is { } hdr) config.Video.HdrSupport = hdr ? HdrSupport.Enabled : HdrSupport.Disabled;
+        // Software mode probes the production path (zero-copy, upload 6, GPU grain); throws when
+        // zero-copy can't register. A grain override is applied after it, as in the player.
+        if (mode == "software") FfmpegSource.ApplySoftwareVideo(config);
         if (DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain) is { } grain) config.FFmpegOptions[grain.Key] = grain.Value;
-        // Probes default to dav1d and CPU buffers, not production GPU grain. Only explicit grain=gpu
-        // opts into RT-capable upload; omitted/default grain emits no option and keeps wrapper mode 0.
-        if (tuning.FilmGrain is DebugFilmGrain.Gpu) config.FFmpegOptions["bale_d3d11_upload"] = "1";
         config.FFmpegOptions["rw_timeout"] = "10000000";
         return config;
     }

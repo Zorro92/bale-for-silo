@@ -128,9 +128,10 @@ public class DebugFfmpegPlaybackTests
         Assert.Contains("config.Audio.SystemDecoderAAC = true", source);
         Assert.Contains("config.Audio.SystemDecoderMP3 = true", source);
         Assert.Contains("config.Subtitles.AutoSelectForcedSubtitles = false", source);
-        Assert.Contains("foreach (var video in source.VideoStreams)", source);
-        Assert.Contains("video.DecoderEngine == DecoderEngine.SystemDecoder", source);
-        Assert.Contains("SoftwareDecodePolicy.VideoCodecs.Contains(codec!)", source);
+        // Every video stream goes to the shared policy (SoftwareVideoSupportTests cover it).
+        Assert.Contains("var streams = source.VideoStreams.Select(video => (video.CodecName,", source);
+        Assert.Contains("video.DecoderEngine == DecoderEngine.FFmpegSoftwareDecoder, video.DecoderEngine == DecoderEngine.SystemDecoder", source);
+        Assert.Contains("if (!SoftwareDecodePolicy.VideoDecodersAllowed(route.SoftwareVideo, streams))", source);
         Assert.DoesNotContain("ex.Message", source);
     }
 

@@ -25,18 +25,27 @@ internal static class FfmpegSource
         config.Subtitles.AutoSelectForcedSubtitles = false;
         config.FFmpegOptions["rw_timeout"] = "10000000";
         ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight));
-        if (SoftwareDecodeTuning.D3d11Upload(route) is { } upload) config.FFmpegOptions["bale_d3d11_upload"] = upload.ToString(CultureInfo.InvariantCulture);
-        if (SoftwareDecodeTuning.FilmGrainMode(route) is { } grainMode && grainMode != 0)
-            config.FFmpegOptions["bale_film_grain_mode"] = grainMode.ToString(CultureInfo.InvariantCulture);
-        // Patch 0015: bale_gpu.dll needs d3d12.dll registered before the upload device arrives.
-        if (SoftwareDecodeTuning.ZeroCopy(route)) config.FFmpegOptions["bale_zero_copy"] = ZeroCopyRuntime.Register() ? "1" : "0";
+        if (route.SoftwareVideo) ApplySoftwareVideo(config);
         return config;
+    }
+
+    /// <summary>
+    /// Software AV1's one path: zero-copy D3D12 decode, direct write into upload variant 6, GPU grain.
+    /// PlayerPage claims no software AV1 when registration fails, so this throw is a backstop; an open
+    /// failure on a software route replans to a server transcode.
+    /// </summary>
+    internal static void ApplySoftwareVideo(MediaSourceConfig config)
+    {
+        // Patch 0015: bale_gpu.dll needs d3d12.dll registered before the upload device arrives.
+        if (!ZeroCopyRuntime.Register()) throw new InvalidDataException("Software AV1 needs zero-copy.");
+        config.FFmpegOptions["bale_d3d11_upload"] = SoftwareDecodeTuning.DefaultD3d11Upload.ToString(CultureInfo.InvariantCulture);
+        config.FFmpegOptions["bale_film_grain_mode"] = SoftwareDecodeTuning.FilmGrainMode.ToString(CultureInfo.InvariantCulture);
+        config.FFmpegOptions["bale_zero_copy"] = "1";
     }
 
     internal static void ApplyDecodeTuning(MediaSourceConfig config, SoftwareDecodeTuning tuning)
     {
         if (tuning.DecodeAheadFrames is { } ahead) config.FFmpegOptions["bale_decode_ahead_frames"] = ahead.ToString(CultureInfo.InvariantCulture);
-        if (tuning.SwsThreads is { } sws) config.FFmpegOptions["bale_sws_threads"] = sws.ToString(CultureInfo.InvariantCulture);
         if (tuning.Dav1dMaxFrameDelay is { } delay) config.FFmpegOptions["bale_dav1d_max_frame_delay"] = delay.ToString(CultureInfo.InvariantCulture);
     }
 
@@ -56,18 +65,10 @@ internal static class FfmpegSource
         if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = checked((uint)readSize);
         if (route.SoftwareVideo)
         {
-            ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.SwsThreads, tuning.Dav1dMaxFrameDelay));
+            ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.Dav1dMaxFrameDelay));
             if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions["bale_decode_thread_priority"] = priority.ToString(CultureInfo.InvariantCulture);
-            // Patch 0009: explicit Rust modes; off retains the independent export-only override.
+            // Patch 0009: dav1d/gpu modes; off retains the independent export-only override.
             if (DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain) is { } grain) config.FFmpegOptions[grain.Key] = grain.Value;
-            // Upload remains independent: GPU requests without variant 1 keep dav1d at open (patch 0010).
-            if (tuning.D3d11Upload is { } upload) config.FFmpegOptions["bale_d3d11_upload"] = upload.ToString(CultureInfo.InvariantCulture);
-            // Patch 0011 debug fault: forces the mid-stream GPU-to-CPU switch without real memory pressure.
-            if (tuning.UploadFaultFrames is { } fault) config.FFmpegOptions["bale_d3d11_upload_fault_frames"] = fault.ToString(CultureInfo.InvariantCulture);
-            // Patch 0012 debug repack: planar staging plus GPU NV12/P010 repack instead of swscale.
-            if (tuning.Repack is { } repack) config.FFmpegOptions["bale_d3d11_repack"] = repack ? "1" : "0";
-            // Patch 0015 debug override: off = swscale path for A/B; on = production default.
-            if (tuning.ZeroCopy is { } zeroCopy) config.FFmpegOptions["bale_zero_copy"] = zeroCopy && ZeroCopyRuntime.Register() ? "1" : "0";
         }
         else
         {
@@ -82,14 +83,11 @@ internal static class FfmpegSource
     {
         // ForceSystemDecoder falls back to FFmpeg for codecs with no compressed provider in 2.1.0.
         // Check every stream before mounting/reading frames, including unexpected extra video tracks.
-        foreach (var video in source.VideoStreams)
-        {
-            var codec = SoftwareDecodePolicy.NormalizeCodec(video.CodecName);
-            var valid = route.SoftwareVideo
-                ? SoftwareDecodePolicy.VideoCodecs.Contains(codec!) && video.DecoderEngine == DecoderEngine.FFmpegSoftwareDecoder
-                : video.DecoderEngine == DecoderEngine.SystemDecoder;
-            if (!valid) throw new InvalidDataException("The video decoder violates the local fallback policy.");
-        }
+        // A software route with no video stream also fails, so the open failure replans to a transcode.
+        var streams = source.VideoStreams.Select(video => (video.CodecName,
+            video.DecoderEngine == DecoderEngine.FFmpegSoftwareDecoder, video.DecoderEngine == DecoderEngine.SystemDecoder)).ToArray();
+        if (!SoftwareDecodePolicy.VideoDecodersAllowed(route.SoftwareVideo, streams))
+            throw new InvalidDataException("The video decoder violates the local fallback policy.");
     }
 
     internal static string DecoderName(DecoderEngine engine) => engine switch

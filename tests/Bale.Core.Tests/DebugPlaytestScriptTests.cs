@@ -75,10 +75,10 @@ public class DebugPlaytestScriptTests
     }
 
     [Theory]
-    [InlineData("threads=0", "ahead=0", "10bit=off", "prio=0", "sws=1", "rate=0.5", "delay=0", "maxres=0", "dpb=0")]
-    [InlineData("prio=2", "maxres=1", "delay=64", "rate=2.0", "sws=16", "10bit=on", "dpb=16", "ahead=64", "threads=16")]
-    [InlineData("sws=04", "10bit=off", "ahead=0008", "dpb=003", "threads=4", "delay=001", "rate=0.75", "prio=001", "maxres=001")]
-    [InlineData("maxres=default", "threads=4", "sws=4", "10bit=on", "ahead=8", "dpb=default", "rate=1", "prio=1", "delay=8")]
+    [InlineData("threads=0", "ahead=0", "10bit=off", "prio=0", "hdr=on", "rate=0.5", "delay=0", "maxres=0", "dpb=0")]
+    [InlineData("prio=2", "maxres=1", "delay=64", "rate=2.0", "hdr=off", "10bit=on", "dpb=16", "ahead=64", "threads=16")]
+    [InlineData("hdr=default", "10bit=off", "ahead=0008", "dpb=003", "threads=4", "delay=001", "rate=0.75", "prio=001", "maxres=001")]
+    [InlineData("maxres=default", "threads=4", "hdr=on", "10bit=on", "ahead=8", "dpb=default", "rate=1", "prio=1", "delay=8")]
     public async Task AllNineProbeTuningKeysWorkTogetherInAnyOrderAndForEverySuiteSample(string first, string second,
         string third, string fourth, string fifth, string sixth, string seventh, string eighth, string ninth)
     {
@@ -96,7 +96,6 @@ public class DebugPlaytestScriptTests
 
     [Theory]
     [InlineData("ahead", 0, 64)]
-    [InlineData("sws", 1, 16)]
     [InlineData("delay", 0, 64)]
     [InlineData("prio", 0, 2)]
     [InlineData("maxres", 0, 1)]
@@ -143,7 +142,7 @@ public class DebugPlaytestScriptTests
     public async Task HdrProbeOverrideWorksAlongsideAllOtherTuningKeys(string hdr)
     {
         if (!OperatingSystem.IsLinux()) return;
-        string[] options = ["threads=4", "10bit=on", "rate=1", "ahead=8", "sws=4", "delay=8", "prio=1", "maxres=default", "dpb=default", hdr];
+        string[] options = ["threads=4", "10bit=on", "rate=1", "ahead=8", "delay=8", "prio=1", "maxres=default", "dpb=default", hdr];
         var result = await RunAsync(["playtest-ffmpeg", "@fixture", "30", "software", .. options]);
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("--data-urlencode\n" + hdr + "\n", result.Arguments);
@@ -155,7 +154,6 @@ public class DebugPlaytestScriptTests
     [InlineData("grain=off")]
     [InlineData("grain=default")]
     [InlineData("grain=dav1d")]
-    [InlineData("grain=cpu")]
     [InlineData("grain=gpu")]
     public async Task GrainProbeOverrideWorksAlongsideHdr(string grain)
     {
@@ -170,7 +168,6 @@ public class DebugPlaytestScriptTests
     [InlineData("grain=on")]
     [InlineData("grain=default")]
     [InlineData("grain=dav1d")]
-    [InlineData("grain=cpu")]
     [InlineData("grain=gpu")]
     public async Task GrainTuneOverrideIsSentToTheRealPlayer(string grain)
     {
@@ -182,61 +179,40 @@ public class DebugPlaytestScriptTests
     }
 
     [Theory]
+    [InlineData("sws=4")]
+    [InlineData("sws=default")]
     [InlineData("upload=on")]
-    [InlineData("upload=off")]
+    [InlineData("upload=6")]
     [InlineData("upload=default")]
-    [InlineData("upload=1")]
-    [InlineData("upload=2")]
-    [InlineData("upload=3")]
-    [InlineData("upload=4")]
-    [InlineData("upload=5")]
-    public async Task UploadTuneOverrideWorksAlongsideGrainAndOtherKeys(string upload)
+    [InlineData("uploadfault=5")]
+    [InlineData("repack=on")]
+    [InlineData("zerocopy=on")]
+    [InlineData("zerocopy=off")]
+    [InlineData("grain=cpu")]
+    public async Task RemovedSoftwareFallbackKnobsNeverInvokeCurlOnEitherPath(string option)
     {
         if (!OperatingSystem.IsLinux()) return;
-        var result = await RunAsync(["ffmpeg-tune", "prio=2", upload, "grain=off"]);
-        Assert.Equal(0, result.ExitCode);
-        Assert.Contains("/ffmpeg-tune\n", result.Arguments);
-        Assert.Contains("-X\nPOST\n", result.Arguments);
-        foreach (var option in new[] { "prio=2", upload, "grain=off" })
-            Assert.Contains("--data-urlencode\n" + option + "\n", result.Arguments);
-    }
-
-    [Fact]
-    public async Task UploadUsageExplainsTheRenderTargetDefaultAndKnownFailingVariants()
-    {
-        if (!OperatingSystem.IsLinux()) return;
-        var result = await RunAsync(["ffmpeg-tune", "upload=7"]);
-        Assert.Equal(2, result.ExitCode);
-        Assert.Empty(result.Arguments);
-        foreach (var text in new[] { "upload=on aliases 1", "default=on (variant 1)", "off=0 (CPU buffers)", "wrapper 2.1.0-bale.8+", "upload default on (variant 1)",
-            "1=RENDER_TARGET|SHADER_RESOURCE", "2=DECODER|SHADER_RESOURCE", "3=DECODER", "4=SHADER_RESOURCE",
-            "5=SHADER_RESOURCE+MISC_SHARED", "6=variant 1+UNORDERED_ACCESS+MISC_SHARED_NTHANDLE", "4/5 known MF failures" })
-            Assert.Contains(text, result.Output);
-    }
-
-    [Fact]
-    public async Task InvalidOrDuplicateUploadTuningNeverInvokesCurlAndProbesRejectIt()
-    {
-        if (!OperatingSystem.IsLinux()) return;
-        foreach (var value in new[] { "", "ON", "OFF", "0", "7", "-1", "+1", "01", "1.0", " 1", "1 ", "2147483648", "true", " on", "off ", "DEFAULT" })
+        foreach (var args in new[]
         {
-            var result = await RunAsync(["ffmpeg-tune", "grain=off", "upload=" + value]);
-            Assert.Equal(2, result.ExitCode);
-            Assert.Empty(result.Arguments);
-        }
-        foreach (var options in new[]
-        {
-            new[] { "ffmpeg-tune", "upload=on", "upload=off" },
-            ["ffmpeg-tune", "upload=default", "upload=on"],
-            ["ffmpeg-tune", "upload=2", "upload=5"],
-            ["playtest-ffmpeg", "@fixture", "30", "software", "upload=on"],
-            ["playtest-ffmpeg", "@fixture", "30", "software", "upload=3"],
+            new[] { "ffmpeg-tune", "prio=2", option },
+            ["playtest-ffmpeg", "@fixture", "30", "software", "hdr=on", option],
         })
         {
-            var result = await RunAsync(options);
+            var result = await RunAsync(args);
             Assert.Equal(2, result.ExitCode);
             Assert.Empty(result.Arguments);
         }
+    }
+
+    [Fact]
+    public async Task TuneUsageSaysSoftwareAv1IsFixedToZeroCopy()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["ffmpeg-tune", "upload=6"]);
+        Assert.Equal(2, result.ExitCode);
+        Assert.Contains("software AV1 is fixed to zero-copy direct write (upload variant 6", result.Output);
+        foreach (var text in new[] { "sws=", "upload=", "uploadfault=", "repack=", "zerocopy=", "cpu|" })
+            Assert.DoesNotContain(text, result.Output);
     }
 
     [Theory]
@@ -409,11 +385,11 @@ public class DebugPlaytestScriptTests
     [InlineData("readahead=on", "readsize=16384", "prefetch=2")]
     [InlineData("prefetch=16", "readahead=off", "readsize=1048576")]
     [InlineData("readsize=default", "prefetch=default", "readahead=default")]
-    [InlineData("ahead=0", "sws=1", "delay=0")]
-    [InlineData("delay=64", "ahead=64", "sws=16")]
-    [InlineData("sws=04", "delay=001", "ahead=0008")]
-    [InlineData("delay=default", "sws=default", "ahead=default")]
-    [InlineData("prio=0", "sws=4", "ahead=16")]
+    [InlineData("ahead=0", "buffer=0", "delay=0")]
+    [InlineData("delay=64", "ahead=64", "buffer=5000")]
+    [InlineData("buffer=0500", "delay=001", "ahead=0008")]
+    [InlineData("delay=default", "buffer=default", "ahead=default")]
+    [InlineData("prio=0", "buffer=1000", "ahead=16")]
     [InlineData("ahead=8", "prio=2", "delay=1")]
     [InlineData("prio=001", "delay=001", "ahead=0008")]
     [InlineData("delay=default", "prio=default", "ahead=default")]

@@ -56,7 +56,7 @@ public class DebugFfmpegPlaytestTests
         try
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
-            Assert.True(DebugFfmpegPlaytest.TryParseTuning(threads, output10bit, rate, null, null, null, null, null, null, out var tuning, out var error));
+            Assert.True(DebugFfmpegPlaytest.TryParseTuning(threads, output10bit, rate, null, null, null, null, null, out var tuning, out var error));
             Assert.Equal(expectedThreads is { } count ? (uint?)count : null, tuning.Threads);
             Assert.Equal(expected10bit, tuning.Allow10bit);
             Assert.Equal(expectedRate, tuning.Rate);
@@ -85,26 +85,25 @@ public class DebugFfmpegPlaytestTests
     [InlineData(null, null, "", "rate")]
     public void RejectsInvalidTuningWithFixedNonReflectingErrors(string? threads, string? output10bit, string? rate, string field)
     {
-        Assert.False(DebugFfmpegPlaytest.TryParseTuning(threads, output10bit, rate, null, null, null, null, null, null, out var tuning, out var error));
+        Assert.False(DebugFfmpegPlaytest.TryParseTuning(threads, output10bit, rate, null, null, null, null, null, out var tuning, out var error));
         Assert.StartsWith(field + " must be", error);
         Assert.Equal(new DebugFfmpegTuning(), tuning);
     }
 
     [Theory]
-    [InlineData(null, null, null, null)]
-    [InlineData("0", "1", "0", "0")]
-    [InlineData("64", "16", "64", "2")]
-    [InlineData("0008", "04", "001", "001")]
-    public void ProbeForkOptionsAreOptionalBoundedInvariantDecimals(string? ahead, string? sws, string? delay, string? prio)
+    [InlineData(null, null, null)]
+    [InlineData("0", "0", "0")]
+    [InlineData("64", "64", "2")]
+    [InlineData("0008", "001", "001")]
+    public void ProbeForkOptionsAreOptionalBoundedInvariantDecimals(string? ahead, string? delay, string? prio)
     {
         var previous = CultureInfo.CurrentCulture;
         try
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
-            Assert.True(DebugFfmpegPlaytest.TryParseTuning("4", "off", "0.75", ahead, sws, delay, prio, null, null, out var tuning, out var error));
+            Assert.True(DebugFfmpegPlaytest.TryParseTuning("4", "off", "0.75", ahead, delay, prio, null, null, out var tuning, out var error));
             Assert.Equal(new DebugFfmpegTuning(4, false, 0.75,
                 ahead is null ? null : int.Parse(ahead, CultureInfo.InvariantCulture),
-                sws is null ? null : int.Parse(sws, CultureInfo.InvariantCulture),
                 delay is null ? null : int.Parse(delay, CultureInfo.InvariantCulture),
                 prio is null ? null : int.Parse(prio, CultureInfo.InvariantCulture)), tuning);
             Assert.Empty(error);
@@ -114,7 +113,6 @@ public class DebugFfmpegPlaytestTests
 
     [Theory]
     [InlineData("ahead", 0, 64)]
-    [InlineData("sws", 1, 16)]
     [InlineData("delay", 0, 64)]
     [InlineData("prio", 0, 2)]
     public void ProbeRejectsInvalidForkOptionsWithoutPublishingPartialTuning(string key, int minimum, int maximum)
@@ -123,7 +121,7 @@ public class DebugFfmpegPlaytestTests
             (minimum - 1).ToString(CultureInfo.InvariantCulture), (maximum + 1).ToString(CultureInfo.InvariantCulture) })
         {
             Assert.False(DebugFfmpegPlaytest.TryParseTuning("4", "off", "0.75", key == "ahead" ? value : "8",
-                key == "sws" ? value : "4", key == "delay" ? value : "1", key == "prio" ? value : "2", null, null, out var tuning, out var error));
+                key == "delay" ? value : "1", key == "prio" ? value : "2", null, null, out var tuning, out var error));
             Assert.StartsWith(key + " must be an integer from ", error);
             Assert.Equal(new DebugFfmpegTuning(), tuning);
         }
@@ -140,7 +138,7 @@ public class DebugFfmpegPlaytestTests
     [InlineData("1", "default", 1, null)]
     public void ProbeDecoderHintsAreOptInBoundedAndDoNotChangeOtherDefaults(string? maxres, string? dpb, int? expectedMaxres, int? expectedDpb)
     {
-        Assert.True(DebugFfmpegPlaytest.TryParseTuning(null, null, null, null, null, null, null, maxres, dpb, out var tuning, out var error));
+        Assert.True(DebugFfmpegPlaytest.TryParseTuning(null, null, null, null, null, null, maxres, dpb, out var tuning, out var error));
         Assert.Empty(error);
         Assert.Equal(new DebugFfmpegTuning(DecoderUseMaxResolution: expectedMaxres, DecoderMaxDpbCount: expectedDpb), tuning);
         Assert.Equal(SoftwareDecodeTuning.ForVideo(true), tuning.DecodeTuning("software"));
@@ -187,7 +185,6 @@ public class DebugFfmpegPlaytestTests
     [InlineData("default", null)]
     [InlineData("on", "Dav1d")]
     [InlineData("dav1d", "Dav1d")]
-    [InlineData("cpu", "Cpu")]
     [InlineData("gpu", "Gpu")]
     [InlineData("off", "Off")]
     public void GrainProbeOverrideIsOptIn(string? grain, string? expected)
@@ -202,10 +199,11 @@ public class DebugFfmpegPlaytestTests
     [InlineData("OFF")]
     [InlineData("0")]
     [InlineData("export")]
+    [InlineData("cpu")]
     public void InvalidGrainProbeOverrideIsRejected(string grain)
     {
         Assert.False(DebugFfmpegPlaytest.TryParseGrain(grain, out _, out var error));
-        Assert.Equal("grain must be dav1d, cpu, gpu, off, on or default", error);
+        Assert.Equal("grain must be dav1d, gpu, off, on or default", error);
     }
 
     [Fact]
@@ -220,12 +218,11 @@ public class DebugFfmpegPlaytestTests
     }
 
     [Theory]
-    [InlineData(null, null, null, "dav1d (probe default; CPU buffers; production default is GPU)")]
-    [InlineData("default", null, null, "dav1d (probe default; CPU buffers; production default is GPU)")]
+    [InlineData(null, null, null, "GPU (production default)")]
+    [InlineData("default", null, null, "GPU (production default)")]
     [InlineData("on", "bale_film_grain_mode", "0", "dav1d (override)")]
     [InlineData("dav1d", "bale_film_grain_mode", "0", "dav1d (override)")]
-    [InlineData("cpu", "bale_film_grain_mode", "1", "Rust CPU (override)")]
-    [InlineData("gpu", "bale_film_grain_mode", "2", "GPU (override; CPU fallback through 1080p, ungrained above 1080p)")]
+    [InlineData("gpu", "bale_film_grain_mode", "2", "GPU (override)")]
     [InlineData("off", "bale_dav1d_export_film_grain", "1", "exported, not applied (override; libdav1d only)")]
     public void GrainOptionEmissionAndReportPreserveExportOnlyAndDav1dDefaults(string? input, string? key, string? value, string description)
     {
@@ -235,7 +232,8 @@ public class DebugFfmpegPlaytestTests
         Assert.Equal(value, option?.Value);
         var report = DebugFfmpegPlaytest.Settings(0, true, 8, new(FilmGrain: grain), "software");
         Assert.Contains("Film grain requested: " + description + "\n", report);
-        Assert.Contains(input == "gpu" ? "1 (GPU grain; render target+shader resource)" : "0 (probe default; CPU buffers)", report);
+        Assert.Contains("D3D11 upload requested: 6 (production zero-copy direct write)\n", report);
+        Assert.Contains("D3D11 upload requested: 0 (not software mode)\n", DebugFfmpegPlaytest.Settings(0, true, 8, new(FilmGrain: grain), "system"));
     }
 
     [Theory]
@@ -246,7 +244,7 @@ public class DebugFfmpegPlaytestTests
         foreach (var value in new[] { "-1", "+1", " 1", "1 ", "1.0", "1,0", "1e0", "0x1", "", "DEFAULT", "2147483648",
             (maximum + 1).ToString(CultureInfo.InvariantCulture) })
         {
-            Assert.False(DebugFfmpegPlaytest.TryParseTuning("4", "off", "0.75", "8", "4", "1", "2",
+            Assert.False(DebugFfmpegPlaytest.TryParseTuning("4", "off", "0.75", "8", "1", "2",
                 key == "maxres" ? value : "1", key == "dpb" ? value : "3", out var tuning, out var error));
             Assert.StartsWith(key + " must be an integer from ", error);
             Assert.Equal(new DebugFfmpegTuning(), tuning);
@@ -259,40 +257,42 @@ public class DebugFfmpegPlaytestTests
         var source = Read("DebugFfmpegSource.cs.txt");
         Assert.StartsWith("#if DEBUG_SERVER", source);
         Assert.Contains("FfmpegSource.ApplyDecodeTuning(config, tuning.DecodeTuning(mode))", source);
-        Assert.Contains("if (tuning.FilmGrain is DebugFilmGrain.Gpu) config.FFmpegOptions[\"bale_d3d11_upload\"] = \"1\";", source);
-        Assert.Single(source.Split("bale_d3d11_upload").Skip(1));
+        // Software mode takes the production zero-copy settings; the probe sets no upload variant itself.
+        Assert.Contains("if (mode == \"software\") FfmpegSource.ApplySoftwareVideo(config);", source);
+        Assert.DoesNotContain("bale_d3d11_upload", source);
+        Assert.DoesNotContain("bale_zero_copy", source);
         Assert.DoesNotContain("SoftwareDecodeTuning.FilmGrainMode", source);
         Assert.DoesNotContain("DefaultFilmGrainMode", source);
         Assert.Null(DebugFfmpegPlaytest.GrainOption(new DebugFfmpegTuning().FilmGrain));
         Assert.Contains("if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions[\"bale_decode_thread_priority\"] = priority.ToString(CultureInfo.InvariantCulture)", source);
         Assert.Contains("if (tuning.DecoderUseMaxResolution is { } maxres) config.FFmpegOptions[\"bale_decoder_use_max_resolution\"] = maxres.ToString(CultureInfo.InvariantCulture)", source);
         Assert.Contains("if (tuning.DecoderMaxDpbCount is { } dpb) config.FFmpegOptions[\"bale_decoder_max_dpb_count\"] = dpb.ToString(CultureInfo.InvariantCulture)", source);
-        var report = DebugFfmpegPlaytest.Settings(4, false, 8, new(4, false, 0.75, 8, 4, 1, 2), "software");
+        var report = DebugFfmpegPlaytest.Settings(4, false, 8, new(4, false, 0.75, 8, 1, 2), "software");
         Assert.Contains("Decode ahead: 8 (0=off; override)\n", report);
-        Assert.Contains("SWS threads: 4 (1=upstream; override)\n", report);
+        Assert.DoesNotContain("SWS", report);
         Assert.Contains("dav1d max frame delay: 1 (0=dav1d default; override)\n", report);
         Assert.Contains("Decode thread priority: 2 (0=off, 1=above normal, 2=highest; override)\n", report);
         var server = Read("DebugServer.cs.txt");
-        foreach (var key in new[] { "ahead", "sws", "delay", "prio", "maxres", "dpb" }) Assert.Contains($"query.GetValueOrDefault(\"{key}\")", server);
+        foreach (var key in new[] { "ahead", "delay", "prio", "maxres", "dpb" }) Assert.Contains($"query.GetValueOrDefault(\"{key}\")", server);
+        Assert.DoesNotContain("query.GetValueOrDefault(\"sws\")", server);
         var duplicateGuard = server.Split('\n').Single(line => line.Contains("duplicateQueryKeys && path is", StringComparison.Ordinal));
         Assert.Contains("\"/playtest-ffmpeg\"", duplicateGuard);
         Assert.Contains("\"/ffmpeg-tune\"", duplicateGuard);
         Assert.Contains("if (values.ContainsKey(key)) duplicateKeys = true", server);
-        Assert.Contains("TryParseTuning(threads, output10bit, rate, ahead, sws, delay, prio, maxres, dpb", Read("DebugServer.Ffmpeg.cs.txt"));
+        Assert.Contains("TryParseTuning(threads, output10bit, rate, ahead, delay, prio, maxres, dpb", Read("DebugServer.Ffmpeg.cs.txt"));
         Assert.DoesNotContain("DebugFfmpegInputTuning.Current", source);
     }
 
     [Theory]
-    [InlineData("software", 16, 4)]
-    [InlineData("auto", null, null)]
-    [InlineData("system", null, null)]
-    public void ProbeUsesReleaseSoftwareDefaultsWithUnknownDimensions(string mode, int? ahead, int? sws)
+    [InlineData("software", 16)]
+    [InlineData("auto", null)]
+    [InlineData("system", null)]
+    public void ProbeUsesReleaseSoftwareDefaultsWithUnknownDimensions(string mode, int? ahead)
     {
         var tuning = new DebugFfmpegTuning();
-        Assert.Equal(new SoftwareDecodeTuning(ahead, sws), tuning.DecodeTuning(mode));
+        Assert.Equal(new SoftwareDecodeTuning(ahead), tuning.DecodeTuning(mode));
         var report = DebugFfmpegPlaytest.Settings(0, true, 8, tuning, mode);
         Assert.Contains($"Decode ahead: {ahead ?? 0} (0=off; default)\n", report);
-        Assert.Contains($"SWS threads: {sws ?? 1} (1=upstream; default)\n", report);
         Assert.Contains("dav1d max frame delay: 0 (0=dav1d default; default)\n", report);
         Assert.Null(tuning.DecodeThreadPriority);
         Assert.Contains("Decode thread priority: 0 (0=off, 1=above normal, 2=highest; default)\n", report);
@@ -303,13 +303,13 @@ public class DebugFfmpegPlaytestTests
     }
 
     [Theory]
-    [InlineData(0, 1, 0, 0)]
-    [InlineData(8, 2, 1, 1)]
-    [InlineData(64, 16, 64, 2)]
-    public void ExplicitProbeValuesWinOverReleaseDefaultsIncludingZero(int ahead, int sws, int delay, int prio)
+    [InlineData(0, 0, 0)]
+    [InlineData(8, 1, 1)]
+    [InlineData(64, 64, 2)]
+    public void ExplicitProbeValuesWinOverReleaseDefaultsIncludingZero(int ahead, int delay, int prio)
     {
-        var tuning = new DebugFfmpegTuning(DecodeAheadFrames: ahead, SwsThreads: sws, Dav1dMaxFrameDelay: delay, DecodeThreadPriority: prio);
-        Assert.Equal(new SoftwareDecodeTuning(ahead, sws, delay), tuning.DecodeTuning("software"));
+        var tuning = new DebugFfmpegTuning(DecodeAheadFrames: ahead, Dav1dMaxFrameDelay: delay, DecodeThreadPriority: prio);
+        Assert.Equal(new SoftwareDecodeTuning(ahead, delay), tuning.DecodeTuning("software"));
         Assert.Contains($"Decode thread priority: {prio} (0=off, 1=above normal, 2=highest; override)\n",
             DebugFfmpegPlaytest.Settings(0, true, 8, tuning, "software"));
     }
@@ -320,7 +320,7 @@ public class DebugFfmpegPlaytestTests
     [InlineData("2")]
     public void PriorityOnlyProbeOverridePreservesOtherReleaseDefaults(string prio)
     {
-        Assert.True(DebugFfmpegPlaytest.TryParseTuning(null, null, null, null, null, null, prio, null, null, out var tuning, out var error));
+        Assert.True(DebugFfmpegPlaytest.TryParseTuning(null, null, null, null, null, prio, null, null, out var tuning, out var error));
         Assert.Empty(error);
         Assert.Equal(int.Parse(prio, CultureInfo.InvariantCulture), tuning.DecodeThreadPriority);
         Assert.Equal(SoftwareDecodeTuning.ForVideo(true), tuning.DecodeTuning("software"));
@@ -331,14 +331,13 @@ public class DebugFfmpegPlaytestTests
     }
 
     [Theory]
-    [InlineData(0, null, null, 0, 4, null)]
-    [InlineData(null, 1, null, 16, 1, null)]
-    [InlineData(null, null, 8, 16, 4, 8)]
-    public void ProbeOverridesLeaveUnspecifiedReleaseDefaultsIntact(int? ahead, int? sws, int? delay,
-        int expectedAhead, int expectedSws, int? expectedDelay)
+    [InlineData(0, null, 0, null)]
+    [InlineData(null, null, 16, null)]
+    [InlineData(null, 8, 16, 8)]
+    public void ProbeOverridesLeaveUnspecifiedReleaseDefaultsIntact(int? ahead, int? delay, int expectedAhead, int? expectedDelay)
     {
-        var tuning = new DebugFfmpegTuning(DecodeAheadFrames: ahead, SwsThreads: sws, Dav1dMaxFrameDelay: delay);
-        Assert.Equal(new SoftwareDecodeTuning(expectedAhead, expectedSws, expectedDelay), tuning.DecodeTuning("software"));
+        var tuning = new DebugFfmpegTuning(DecodeAheadFrames: ahead, Dav1dMaxFrameDelay: delay);
+        Assert.Equal(new SoftwareDecodeTuning(expectedAhead, expectedDelay), tuning.DecodeTuning("software"));
     }
 
     [Theory]
@@ -367,11 +366,11 @@ public class DebugFfmpegPlaytestTests
         try
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
-            const string defaults = "Decode ahead: 0 (0=off; default)\nSWS threads: 1 (1=upstream; default)\ndav1d max frame delay: 0 (0=dav1d default; default)\nDecode thread priority: 0 (0=off, 1=above normal, 2=highest; default)\n"
+            const string defaults = "Decode ahead: 0 (0=off; default)\ndav1d max frame delay: 0 (0=dav1d default; default)\nDecode thread priority: 0 (0=off, 1=above normal, 2=highest; default)\n"
                 + "Decoder use max resolution: 0 (0=unset, 1=on; default; system video only)\nDecoder max DPB count: 0 (0=unset; default; system video only)\n"
                 + "HDR support: automatic (default)\n"
-                + "Film grain requested: dav1d (probe default; CPU buffers; production default is GPU)\n"
-                + "D3D11 upload requested: 0 (probe default; CPU buffers)\n"
+                + "Film grain requested: wrapper default (not software mode)\n"
+                + "D3D11 upload requested: 0 (not software mode)\n"
                 + "Effective grain mode/fallback: see Bale film grain native diagnostics\n";
             Assert.Equal("Threads: 0 (0=logical CPU count; default)\n10-bit output: on (default)\nLogical CPUs: 8\nRate requested: 1\n" + defaults,
                 DebugFfmpegPlaytest.Settings(0, true, 8, new(), "auto"));

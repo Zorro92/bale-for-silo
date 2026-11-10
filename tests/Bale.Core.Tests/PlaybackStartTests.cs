@@ -152,6 +152,7 @@ public class PlaybackStartTests
         var av1 = videoDecode[2];
         Assert.Equal("dav1d", av1.GetProperty("decoder_name").GetString());
         Assert.False(av1.GetProperty("hardware").GetBoolean());
+        Assert.Equal(new[] { "main" }, av1.GetProperty("profiles").EnumerateArray().Select(value => value.GetString()));
         Assert.Equal(new[] { 8, 10 }, av1.GetProperty("bit_depths").EnumerateArray().Select(value => value.GetInt32()));
         Assert.Equal(1920, av1.GetProperty("max_width").GetInt32());
         Assert.Equal(1080, av1.GetProperty("max_height").GetInt32());

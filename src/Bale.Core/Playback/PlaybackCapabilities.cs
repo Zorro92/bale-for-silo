@@ -59,7 +59,10 @@ public static class ConsoleEvidence
             new VideoDecodeCapability("hevc", "Media Foundation", [], [], [8, 10], 1920, 1080, 60, 25000, true),
             // 0.1.230 Fight Club test: dav1d, AV1 Main 10-bit 1080p23.976, real time (~1.3 cores).
             // 8-bit clips also verified. Bound the claim to 1080p30; 4K software AV1 is untested.
-            new VideoDecodeCapability("av1", "dav1d", [], [], [8, 10], av1MaxWidth, av1MaxHeight, 30, null, false),
+            // Zero-copy takes only Main (4:2:0, 8/10-bit); High (4:4:4) and Professional (4:2:2, 12-bit)
+            // transcode. The server lowercases ffprobe's "Main" and fails an empty or unknown profile,
+            // so such streams transcode too.
+            new VideoDecodeCapability("av1", "dav1d", ["main"], [], [8, 10], av1MaxWidth, av1MaxHeight, 30, null, false),
         });
     }
 }

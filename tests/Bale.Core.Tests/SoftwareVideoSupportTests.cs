@@ -43,4 +43,30 @@ public class SoftwareVideoSupportTests
         Assert.All(start.ClientPlaybackContext.Deliveries.Values, delivery => Assert.DoesNotContain("av1", delivery.VideoCodecs));
         Assert.DoesNotContain(PlaybackProtocol.SoftwareVideoDecodeFeature, start.ClientFeatures);
     }
+
+    [Fact]
+    public void SoftwareRouteWithNoVideoStreamFailsSoTheOpenReplansToATranscode()
+    {
+        Assert.False(SoftwareDecodePolicy.VideoDecodersAllowed(true, []));
+        // A system route keeps its old behavior: no video stream is not a decoder violation.
+        Assert.True(SoftwareDecodePolicy.VideoDecodersAllowed(false, []));
+    }
+
+    [Theory]
+    [InlineData(true, "av1", true, false, true)]
+    [InlineData(true, " AV1 ", true, false, true)]
+    [InlineData(true, "av1", false, true, false)] // Software route opened on the system decoder.
+    [InlineData(true, "av1", false, false, false)] // FFmpeg D3D11 or unknown engine.
+    [InlineData(true, "hevc", true, false, false)] // Only allowlisted codecs may software-decode.
+    [InlineData(true, null, true, false, false)]
+    [InlineData(false, "hevc", false, true, true)]
+    [InlineData(false, "hevc", true, false, false)] // ForceSystemDecoder fell back to FFmpeg.
+    [InlineData(false, "av1", true, false, false)]
+    public void EveryVideoStreamMustUseTheRouteDecoder(bool softwareVideo, string? codec, bool software, bool system, bool expected)
+    {
+        Assert.Equal(expected, SoftwareDecodePolicy.VideoDecodersAllowed(softwareVideo, [(codec, software, system)]));
+        // One bad stream among good ones still fails.
+        var good = softwareVideo ? ("av1", true, false) : ("hevc", false, true);
+        Assert.Equal(expected, SoftwareDecodePolicy.VideoDecodersAllowed(softwareVideo, [good, (codec, software, system)]));
+    }
 }

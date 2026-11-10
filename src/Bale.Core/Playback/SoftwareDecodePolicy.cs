@@ -46,6 +46,21 @@ public static class SoftwareDecodePolicy
         AudioDecodeCodecs = device.AudioDecodeCodecs.Where(codec => !AudioCodecs.Contains(codec)).ToArray(),
     };
 
+    /// <summary>
+    /// Checks the opened source's video streams against the route. Every stream must use the route's
+    /// decoder (system decoder, or FFmpeg software for an allowlisted codec), and a software-video route
+    /// must have at least one video stream: the server planned a software decode, so a source without
+    /// video is a failed open that must replan to a server transcode, never silent audio-only playback.
+    /// </summary>
+    public static bool VideoDecodersAllowed(bool softwareVideo,
+        IReadOnlyCollection<(string? Codec, bool SoftwareDecoder, bool SystemDecoder)> streams)
+    {
+        if (softwareVideo && streams.Count == 0) return false;
+        return streams.All(stream => softwareVideo
+            ? NormalizeCodec(stream.Codec) is { } codec && VideoCodecs.Contains(codec) && stream.SoftwareDecoder
+            : stream.SystemDecoder);
+    }
+
     internal static PlaybackStartRequestV3 WithoutFailedFallbacks(PlaybackStartRequestV3 start, PlaybackRouteDecision route)
     {
         bool KeepVideo(string codec) => !route.SoftwareVideo || !VideoCodecs.Contains(codec);
