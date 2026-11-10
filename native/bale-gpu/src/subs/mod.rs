@@ -1,11 +1,12 @@
 //! Subtitle overlay (subtitle ABI, `bale_sub_*` in `lib.rs`): a loaded ASS track is rendered by
 //! libass at the media clock and its images are drawn on the GPU into a transparent composition
 //! swap chain that a XAML `SwapChainPanel` shows above the video. This file holds the
-//! platform-independent parts (ABI types, clock, layout and atlas packing); `overlay` is the
-//! Direct3D 11 renderer and its thread.
+//! platform-independent parts (ABI types, clock, layout and atlas packing), `schedule` knows when
+//! a track's picture can change, and `overlay` is the Direct3D 11 renderer and its thread.
 
 #[cfg(windows)]
 pub mod overlay;
+pub mod schedule;
 
 use std::time::Duration;
 

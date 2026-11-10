@@ -32,6 +32,7 @@ use windows::Win32::Graphics::Dxgi::{
 use windows::Win32::System::Threading::WaitForSingleObject;
 use windows::core::{Error, IUnknown, Interface, PCSTR, Result};
 
+use super::schedule::{Next, Schedule};
 use super::{
     ATLAS_START, BaleSubStats, Clock, E_FAIL, E_INVALIDARG, Layout, S_OK, Shelves, atlas_size_for,
     premultiplied,
@@ -42,9 +43,15 @@ const VERTEX_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/sub_vs.cs
 const PIXEL_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/sub_ps.cso"));
 
 const BUFFER_COUNT: u32 = 2;
-/// While playing with nothing to present there is no frame-latency signal to wait for, so the
-/// thread asks libass again after this long (a cached, unchanged render is cheap).
-const POLL: Duration = Duration::from_millis(8);
+/// While an animated event is shown but the last render changed nothing, there is no
+/// frame-latency signal to wait for: the thread asks libass again one 60 Hz frame later.
+const FRAME: Duration = Duration::from_millis(16);
+/// Longest sleep towards an event boundary. The wake-up after it renders again and recomputes, so
+/// an error in the extrapolated clock or the schedule lasts a second at most.
+const MAX_SLEEP: Duration = Duration::from_secs(1);
+/// A boundary sleep ends this much early (and renders at the boundary's time), so the line's
+/// frame is ready for the vsync it belongs to rather than the one after.
+const LEAD: Duration = Duration::from_millis(1);
 /// Upper bound for one frame-latency wait, so a swap chain nobody composites cannot hang the thread.
 const LATENCY_TIMEOUT_MS: u32 = 1000;
 
@@ -394,6 +401,8 @@ struct Work {
     clock: Clock,
     clock_stamp: Instant,
     capture: bool,
+    /// An API call ended the wait (or there was none); false when a timed wait ran out.
+    signalled: bool,
 }
 
 /// How the render thread waits for its next iteration.
@@ -403,13 +412,19 @@ enum Pace {
     Idle,
     /// A frame was presented; the frame-latency wait already paced the loop.
     Presented,
-    /// Playing, nothing presented: ask libass again after [`POLL`].
-    Poll,
+    /// An animated event is shown but nothing was presented: ask libass again after [`FRAME`].
+    Frame,
+    /// Playing with nothing animated: sleep until `deadline`. `at_ms` is the event boundary due
+    /// then, or `None` when the sleep was capped at [`MAX_SLEEP`].
+    Boundary {
+        deadline: Instant,
+        at_ms: Option<i64>,
+    },
 }
 
 fn take_work(shared: &Shared, pace: Pace) -> Work {
     let mut state = shared.lock();
-    match pace {
+    let deadline = match pace {
         Pace::Idle => {
             while !state.signal {
                 state = shared
@@ -417,17 +432,27 @@ fn take_work(shared: &Shared, pace: Pace) -> Work {
                     .wait(state)
                     .unwrap_or_else(PoisonError::into_inner);
             }
+            None
         }
-        Pace::Poll if !state.signal => {
+        Pace::Presented => None,
+        Pace::Frame => Some(Instant::now() + FRAME),
+        Pace::Boundary { deadline, .. } => Some(deadline),
+    };
+    if let Some(deadline) = deadline {
+        // Any API call ends the sleep; a spurious wake-up goes back to it.
+        while !state.signal {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                break;
+            }
             state = shared
                 .wake
-                .wait_timeout(state, POLL)
+                .wait_timeout(state, left)
                 .unwrap_or_else(PoisonError::into_inner)
                 .0;
         }
-        Pace::Poll | Pace::Presented => {}
     }
-    state.signal = false;
+    let signalled = std::mem::take(&mut state.signal);
     Work {
         stop: state.stop,
         layout: state.layout.take(),
@@ -436,11 +461,14 @@ fn take_work(shared: &Shared, pace: Pace) -> Work {
         clock: state.clock,
         clock_stamp: state.clock_stamp,
         capture: std::mem::take(&mut state.capture),
+        signalled,
     }
 }
 
 /// The render thread: applies queued changes, renders the track at the media clock and presents
-/// only frames that differ from what is on screen.
+/// only frames that differ from what is on screen. While playing it renders every display frame
+/// only while an animated event is shown; otherwise it sleeps until the next event starts or ends
+/// (see [`Schedule`]). Every API call wakes it and renders at once.
 fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
     let apply_layout = |session: &Session, layout: &Layout| {
         session.set_layout(
@@ -456,6 +484,7 @@ fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
         apply_layout(session, &layout);
     }
     let mut track: Option<Track<'_>> = None;
+    let mut schedule = Schedule::default();
     let mut fonts: Vec<(String, Vec<u8>)> = Vec::new();
     let mut stats = BaleSubStats {
         width: layout.width,
@@ -496,6 +525,7 @@ fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
         for command in work.commands {
             // The old track goes first either way: stale subtitles are worse than none.
             track = None;
+            schedule = Schedule::default();
             stats.events = 0;
             force = true;
             let Command::Load(script) = command else {
@@ -510,6 +540,7 @@ fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
                     match session.track(&script) {
                         Some(parsed) => {
                             stats.events = parsed.events();
+                            schedule = parsed.schedule();
                             track = Some(parsed);
                             S_OK
                         }
@@ -524,10 +555,18 @@ fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
             shared.done.notify_all();
         }
 
+        let mut now = work.clock.at(work.clock_stamp.elapsed());
+        if let Pace::Boundary {
+            at_ms: Some(at_ms), ..
+        } = pace
+            && !work.signalled
+        {
+            // The sleep ended [`LEAD`] before the boundary: render the boundary's frame.
+            now = now.max(at_ms);
+        }
         let mut presented = false;
         let mut capture = None;
         if failure.is_none() {
-            let now = work.clock.at(work.clock_stamp.elapsed());
             let drawn = match (&session, &track) {
                 (Some(session), Some(track)) => {
                     session.ensure_fonts();
@@ -576,12 +615,31 @@ fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
             shared.done.notify_all();
         }
         drop(state);
-        pace = if failure.is_some() || track.is_none() || !work.clock.playing {
+        pace = if failure.is_some() || track.is_none() {
             Pace::Idle
-        } else if presented {
-            Pace::Presented
         } else {
-            Pace::Poll
+            match schedule.next(now, &work.clock) {
+                Next::Never => Pace::Idle,
+                Next::EveryFrame if presented => Pace::Presented,
+                Next::EveryFrame => Pace::Frame,
+                Next::Boundary { at_ms, wall } => {
+                    let cap = Instant::now() + MAX_SLEEP;
+                    let due = work
+                        .clock_stamp
+                        .checked_add(wall)
+                        .map(|due| due.checked_sub(LEAD).unwrap_or(due));
+                    match due {
+                        Some(deadline) if deadline <= cap => Pace::Boundary {
+                            deadline,
+                            at_ms: Some(at_ms),
+                        },
+                        _ => Pace::Boundary {
+                            deadline: cap,
+                            at_ms: None,
+                        },
+                    }
+                }
+            }
         };
     }
 }

@@ -5,7 +5,7 @@
 //! contains paths, URLs or system error text.
 
 use std::cell::Cell;
-use std::ffi::{CString, c_char, c_int, c_void};
+use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::fmt::Write as _;
 use std::marker::PhantomData;
 use std::ptr;
@@ -13,6 +13,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use crate::png;
+use crate::subs::schedule::{Event, Schedule, is_animated};
 
 #[repr(C)]
 struct Library {
@@ -24,13 +25,43 @@ struct Renderer {
     _opaque: [u8; 0],
 }
 
-/// The public head of `ASS_Track` (ass_types.h); the rest is never read here.
+/// The public head of `ASS_Track` (ass_types.h, libass 0.17.5); the rest is never read here.
 #[repr(C)]
 struct RawTrack {
     _n_styles: c_int,
     _max_styles: c_int,
     n_events: c_int,
+    _max_events: c_int,
+    _styles: *mut c_void,
+    events: *mut RawEvent,
 }
+
+/// `ASS_Event` (ass_types.h, libass 0.17.5).
+#[repr(C)]
+struct RawEvent {
+    /// `long long`, ms.
+    start: i64,
+    duration: i64,
+    _read_order: c_int,
+    _layer: c_int,
+    _style: c_int,
+    _name: *mut c_char,
+    _margin_l: c_int,
+    _margin_r: c_int,
+    _margin_v: c_int,
+    effect: *mut c_char,
+    text: *mut c_char,
+    _render_priv: *mut c_void,
+}
+
+// The x64 layout the statically linked libass was built with.
+#[cfg(target_pointer_width = "64")]
+const _: () = {
+    assert!(std::mem::offset_of!(RawTrack, events) == 24);
+    assert!(std::mem::offset_of!(RawEvent, effect) == 56);
+    assert!(std::mem::offset_of!(RawEvent, text) == 64);
+    assert!(size_of::<RawEvent>() == 80);
+};
 
 /// `ASS_Image` (ass.h). Bitmaps are 8-bit coverage; `color` is RGBA where A is transparency.
 #[repr(C)]
@@ -353,6 +384,32 @@ impl Track<'_> {
     pub(crate) fn events(&self) -> u32 {
         // SAFETY: a live `ASS_Track`, whose public head `RawTrack` mirrors.
         u32::try_from(unsafe { (*self.raw).n_events }).unwrap_or(0)
+    }
+
+    /// When the track's picture changes: every event's span and whether it is animated.
+    pub(crate) fn schedule(&self) -> Schedule {
+        // SAFETY: a live `ASS_Track`, whose public head `RawTrack` mirrors.
+        let (events, count) = unsafe { ((*self.raw).events, (*self.raw).n_events) };
+        let count = usize::try_from(count).unwrap_or(0);
+        if events.is_null() || count == 0 {
+            return Schedule::default();
+        }
+        // SAFETY: libass keeps `n_events` initialised events at `events`; nothing changes the
+        // track while it is borrowed here.
+        let events = unsafe { std::slice::from_raw_parts(events, count) };
+        let bytes = |string: *mut c_char| {
+            if string.is_null() {
+                &[][..]
+            } else {
+                // SAFETY: event strings are NUL-terminated and live as long as the track.
+                unsafe { CStr::from_ptr(string) }.to_bytes()
+            }
+        };
+        Schedule::new(events.iter().map(|event| Event {
+            start_ms: event.start,
+            duration_ms: event.duration,
+            animated: is_animated(bytes(event.text), bytes(event.effect)),
+        }))
     }
 }
 
