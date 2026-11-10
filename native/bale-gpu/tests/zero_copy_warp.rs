@@ -2,6 +2,8 @@
 //! no feature skips.
 #![cfg(windows)]
 
+mod common;
+
 use std::ffi::c_void;
 use std::ptr;
 
@@ -12,6 +14,8 @@ use bale_gpu::d3d12_repack::{
     diagnose_create,
 };
 use bale_gpu::grain::BaleGrainParams;
+use bale_gpu::grain::cpu::{self, PixelFormat};
+use bale_gpu::grain::params::PARAMS_SIZE;
 use bale_gpu::zc_frame::{BaleZcFrame, MAX_BYTES, fill_test_planes};
 use windows::Win32::Foundation::{E_INVALIDARG, E_OUTOFMEMORY, HMODULE};
 use windows::Win32::Graphics::Direct3D::{
@@ -268,12 +272,43 @@ impl ZeroCopy {
     /// its layout and source bytes.
     fn picture(&self, width: u32, height: u32, seed: u32) -> (Picture, BaleZcFrame, Vec<u8>) {
         let (frame, bytes) = BaleZcFrame::test_layout(width, height);
-        let picture = self.alloc(bytes).expect("alloc");
         let mut source = vec![0u8; bytes as usize];
         fill_test_planes(&frame, &mut source, seed);
-        // SAFETY: the buffer holds at least `bytes` and no repack reads it yet.
+        (self.upload(&source), frame, source)
+    }
+
+    /// Allocates a padded picture holding a fixture's planar 10-bit frame, with seeded garbage in
+    /// the padding and in the top 6 bits of every sample.
+    fn fixture_picture(&self, params: &BaleGrainParams, planar: &[u8]) -> (Picture, BaleZcFrame) {
+        let (frame, bytes) = BaleZcFrame::test_layout(params.width, params.height);
+        let mut source = vec![0u8; bytes as usize];
+        fill_test_planes(&frame, &mut source, params.seed);
+        let (w, h) = (params.width as usize, params.height as usize);
+        let (cw, ch) = (w / 2, h / 2);
+        let planes = [
+            (0, w, h, frame.luma_stride),
+            (w * h, cw, ch, frame.chroma_stride),
+            (w * h + cw * ch, cw, ch, frame.chroma_stride),
+        ];
+        for (offset, (start, pw, ph, stride)) in frame.offsets.into_iter().zip(planes) {
+            for row in 0..ph {
+                for x in 0..pw {
+                    let at = offset as usize + row * stride as usize + 2 * x;
+                    let garbage = u16::from_le_bytes([source[at], source[at + 1]]) & 0xfc00;
+                    let value = common::planar_sample(planar, start + row * pw + x, 10);
+                    source[at..at + 2].copy_from_slice(&(value | garbage).to_le_bytes());
+                }
+            }
+        }
+        assert_eq!(frame.reference_p010(&source), p010(planar, w, h));
+        (self.upload(&source), frame)
+    }
+
+    fn upload(&self, source: &[u8]) -> Picture {
+        let picture = self.alloc(source.len() as u64).expect("alloc");
+        // SAFETY: the buffer holds at least `source.len()` bytes and no repack reads it yet.
         unsafe { ptr::copy_nonoverlapping(source.as_ptr(), picture.data, source.len()) };
-        (picture, frame, source)
+        picture
     }
 
     fn repack(&self, id: *mut c_void, frame: &BaleZcFrame) -> (i32, *mut c_void) {
@@ -288,6 +323,19 @@ impl ZeroCopy {
         unsafe { bale_zc_repack_into(self.0, id, frame, ptr::null(), target.as_raw()) }
     }
 
+    /// A direct write with fused film grain.
+    fn repack_grain(
+        &self,
+        id: *mut c_void,
+        frame: &BaleZcFrame,
+        grain: &BaleGrainParams,
+        target: &ID3D11Texture2D,
+    ) -> i32 {
+        // SAFETY: live handle, readable frame and full grain record, live texture; one test
+        // thread per handle.
+        unsafe { bale_zc_repack_into(self.0, id, frame, grain, target.as_raw()) }
+    }
+
     fn stats(&self) -> BaleZcStats {
         let mut stats = BaleZcStats::default();
         // SAFETY: live handle; writable out slot.
@@ -299,6 +347,115 @@ impl ZeroCopy {
 fn release(id: *mut c_void) -> i32 {
     // SAFETY: the test no longer touches the picture's memory.
     unsafe { bale_zc_release(id) }
+}
+
+/// A planar 10-bit 4:2:0 frame (even size) as tight P010 bytes.
+fn p010(planar: &[u8], width: usize, height: usize) -> Vec<u8> {
+    let (cw, ch) = (width / 2, height / 2);
+    let at = |sample: usize| (common::planar_sample(planar, sample, 10) << 6).to_le_bytes();
+    let mut out = Vec::with_capacity(3 * width * height);
+    for sample in 0..width * height {
+        out.extend_from_slice(&at(sample));
+    }
+    for sample in 0..cw * ch {
+        out.extend_from_slice(&at(width * height + sample));
+        out.extend_from_slice(&at(width * height + cw * ch + sample));
+    }
+    out
+}
+
+/// The CPU oracle's film grain on a tight P010 frame.
+fn grained_p010(params: &BaleGrainParams, plain: &[u8]) -> Vec<u8> {
+    let valid = params.validate().expect("valid grain parameters");
+    let pitch = 2 * params.width as usize;
+    let (y, uv) = plain.split_at(pitch * params.height as usize);
+    let (mut y, mut uv) = (y.to_vec(), uv.to_vec());
+    let pitch = pitch as isize;
+    cpu::apply(&valid, PixelFormat::P010, &mut y, pitch, &mut uv, pitch, 1).expect("CPU grain");
+    y.extend(uv);
+    y
+}
+
+/// Equality of two P010 frames that reports the first difference, not the pixels.
+fn assert_frame(actual: &[u8], expected: &[u8], what: &str) {
+    assert_eq!(actual.len(), expected.len(), "{what}: frame size");
+    let mismatches = actual.iter().zip(expected).filter(|(a, e)| a != e).count();
+    let first = actual.iter().zip(expected).position(|(a, e)| a != e);
+    assert_eq!(
+        mismatches, 0,
+        "{what}: {mismatches} bytes differ, first at byte {first:?}"
+    );
+}
+
+/// The module's fused self-test parameter set (10-bit, overlap, restricted, both chroma planes
+/// with their own points and multipliers), at `seed`.
+fn grain_params(width: u32, height: u32, seed: u32) -> BaleGrainParams {
+    let mut p = BaleGrainParams {
+        struct_size: PARAMS_SIZE,
+        seed,
+        width,
+        height,
+        bit_depth: 10,
+        matrix_identity: 0,
+        num_y_points: 4,
+        chroma_scaling_from_luma: 0,
+        num_uv_points: [3; 2],
+        scaling_shift: 8,
+        ar_coeff_lag: 3,
+        ar_coeff_shift: 7,
+        grain_scale_shift: 0,
+        overlap_flag: 1,
+        clip_to_restricted_range: 1,
+        y_points: [[0; 2]; 14],
+        uv_points: [[[0; 2]; 10]; 2],
+        ar_coeffs_y: std::array::from_fn(|i| ((i * 7) % 17) as i8 - 8),
+        ar_coeffs_uv: std::array::from_fn(|plane| {
+            std::array::from_fn(|i| ((i * 11 + plane * 5) % 19) as i8 - 9)
+        }),
+        reserved0: [0; 2],
+        uv_mult: [-43, 31],
+        uv_luma_mult: [81, -27],
+        uv_offset: [-12, 117],
+    };
+    p.y_points[..4].copy_from_slice(&[[0, 47], [59, 173], [177, 91], [255, 211]]);
+    p.uv_points[0][..3].copy_from_slice(&[[0, 139], [103, 39], [255, 217]]);
+    p.uv_points[1][..3].copy_from_slice(&[[0, 73], [191, 229], [255, 119]]);
+    p
+}
+
+/// Shader branches the even 10-bit fixtures cover thinly or not at all, each a valid set.
+fn grain_variants(width: u32, height: u32, seed: u32) -> Vec<(&'static str, BaleGrainParams)> {
+    let base = grain_params(width, height, seed);
+    let mut out = vec![("overlap on", base)];
+    let mut p = base;
+    p.overlap_flag = 0;
+    out.push(("overlap off", p));
+    let mut p = base;
+    p.chroma_scaling_from_luma = 1;
+    p.num_uv_points = [0; 2];
+    out.push(("chroma scaling from luma", p));
+    let mut p = base;
+    p.num_y_points = 0;
+    p.ar_coeffs_y = [0; 24];
+    p.ar_coeffs_uv[0][24] = 0;
+    p.ar_coeffs_uv[1][24] = 0;
+    out.push(("luma inactive", p));
+    let mut p = base;
+    p.matrix_identity = 1;
+    out.push(("identity matrix, restricted", p));
+    let mut p = base;
+    p.clip_to_restricted_range = 0;
+    p.scaling_shift = 11;
+    out.push(("full range", p));
+    let mut p = base;
+    p.num_uv_points[1] = 0;
+    p.ar_coeffs_uv[1] = [0; 25];
+    out.push(("cr inactive", p));
+    let mut p = base;
+    p.num_uv_points = [0; 2];
+    p.ar_coeffs_uv = [[0; 25]; 2];
+    out.push(("chroma inactive", p));
+    out
 }
 
 #[test]
@@ -540,8 +697,8 @@ fn direct_writes_into_shared_uav_textures() {
     assert_eq!(stats.buffers_live, 0);
 }
 
-/// Textures the dispatch cannot write, grain, and foreign buffers are declined without GPU work
-/// and without refusing later direct writes; null inputs are rejected.
+/// Textures the dispatch cannot write, grain without a 184-byte record, and foreign buffers are
+/// declined without GPU work and without refusing later direct writes; null inputs are rejected.
 #[test]
 fn direct_declines_without_poisoning() {
     let warp = Warp::new();
@@ -578,7 +735,9 @@ fn direct_declines_without_poisoning() {
     for id in [ptr::null_mut(), 2 as *mut c_void] {
         assert_eq!(zero_copy.repack_into(id, &frame, &target), S_FALSE);
     }
-    // SAFETY: plain integer fields; all zeros is a valid value (never read: grain is declined).
+    // Zeroed parameters have struct_size 0, which is not 184: still declined, before anything
+    // past the size field is read.
+    // SAFETY: plain integer fields; all zeros is a valid value.
     let grain: BaleGrainParams = unsafe { std::mem::zeroed() };
     // SAFETY: live handle, readable frame and grain, live texture; null target is rejected.
     unsafe {
@@ -659,4 +818,210 @@ fn direct_targets_are_capped_and_closed_when_idle() {
         frame.reference_p010(&source)
     );
     assert_eq!(release(picture.id), S_OK);
+}
+
+/// Fused grain on every even 10-bit dav1d fixture, both frames each: the direct write of the
+/// plain picture with that frame's parameters is dav1d's grained picture.
+#[test]
+fn fused_grain_matches_dav1d_fixtures() {
+    let warp = Warp::new();
+    let zero_copy = warp.zero_copy();
+    let mut compared = 0;
+    for fixture in common::fixtures() {
+        let first = &fixture.frames[0].params;
+        let (w, h) = (first.width, first.height);
+        if first.bit_depth != 10 || w % 2 != 0 || h % 2 != 0 {
+            continue;
+        }
+        let target = warp.target(w, h);
+        for (index, frame) in fixture.frames.iter().enumerate() {
+            let what = format!("{} frame {index}", fixture.name);
+            let (picture, layout) = zero_copy.fixture_picture(&frame.params, &frame.plain);
+            let hr = zero_copy.repack_grain(picture.id, &layout, &frame.params, &target);
+            assert_eq!(hr, S_OK, "{what}: HRESULT=0x{:08x}", hr as u32);
+            assert_eq!(release(picture.id), S_OK);
+            let expected = p010(&frame.grained, w as usize, h as usize);
+            assert_frame(&warp.read(target.as_raw(), w, h), &expected, &what);
+            compared += 1;
+        }
+    }
+    // preset01-10..preset15-10 and restricted-10.
+    assert_eq!(compared, 32, "do not silently drop fixtures");
+    let stats = zero_copy.stats();
+    assert_eq!(stats.frames_repacked, 32);
+    assert_eq!(stats.buffers_live, 0);
+}
+
+/// Fused grain against the CPU oracle on synthetic parameters for the branches the fixtures
+/// lack, at sizes with partial 32x32 blocks, a chroma width that is not a multiple of the
+/// shader's chroma pairs, and frames smaller than one block.
+#[test]
+fn fused_grain_matches_cpu_oracle() {
+    let warp = Warp::new();
+    let zero_copy = warp.zero_copy();
+    let sizes = [(130, 40), (66, 18), (34, 66), (2, 2)];
+    let mut compared = 0;
+    for (index, (width, height)) in sizes.into_iter().enumerate() {
+        let target = warp.target(width, height);
+        for (variant, (name, params)) in grain_variants(width, height, 7 + index as u32)
+            .into_iter()
+            .enumerate()
+        {
+            let what = format!("{width}x{height} {name}");
+            let seed = (index * 16 + variant) as u32 + 71;
+            let (picture, frame, source) = zero_copy.picture(width, height, seed);
+            let expected = grained_p010(&params, &frame.reference_p010(&source));
+            let hr = zero_copy.repack_grain(picture.id, &frame, &params, &target);
+            assert_eq!(hr, S_OK, "{what}: HRESULT=0x{:08x}", hr as u32);
+            assert_eq!(release(picture.id), S_OK);
+            assert_frame(&warp.read(target.as_raw(), width, height), &expected, &what);
+            compared += 1;
+        }
+    }
+    assert_eq!(compared, sizes.len() * 8);
+    assert_eq!(zero_copy.stats().frames_repacked, compared as u64);
+}
+
+/// Grain the fused path does not handle is declined without GPU work and without refusing later
+/// direct writes, with or without grain.
+#[test]
+fn fused_grain_declines_without_poisoning() {
+    let warp = Warp::new();
+    let zero_copy = warp.zero_copy();
+    let (picture, frame, source) = zero_copy.picture(64, 16, 81);
+    let target = warp.target(64, 16);
+    let good = grain_params(64, 16, 9);
+    let mut eight_bit = good;
+    eight_bit.bit_depth = 8;
+    assert!(
+        eight_bit.validate().is_ok(),
+        "declined for its depth, not as invalid"
+    );
+    let declined = [
+        (
+            "wider than the frame",
+            BaleGrainParams { width: 66, ..good },
+        ),
+        (
+            "taller than the frame",
+            BaleGrainParams { height: 18, ..good },
+        ),
+        (
+            "narrower than the frame",
+            BaleGrainParams { width: 62, ..good },
+        ),
+        ("8-bit", eight_bit),
+        (
+            "short struct_size",
+            BaleGrainParams {
+                struct_size: PARAMS_SIZE - 4,
+                ..good
+            },
+        ),
+        (
+            "long struct_size",
+            BaleGrainParams {
+                struct_size: PARAMS_SIZE + 4,
+                ..good
+            },
+        ),
+        (
+            "invalid parameters",
+            BaleGrainParams {
+                scaling_shift: 7,
+                ..good
+            },
+        ),
+    ];
+    let plain = frame.reference_p010(&source);
+    for (written, (name, grain)) in declined.iter().enumerate() {
+        assert_eq!(
+            zero_copy.repack_grain(picture.id, &frame, grain, &target),
+            S_FALSE,
+            "{name}"
+        );
+        assert_eq!(zero_copy.stats().frames_repacked, written as u64, "{name}");
+        // The handle still writes plain pictures directly.
+        assert_eq!(
+            zero_copy.repack_into(picture.id, &frame, &target),
+            S_OK,
+            "{name}"
+        );
+        assert_frame(&warp.read(target.as_raw(), 64, 16), &plain, name);
+    }
+    // And still applies grain.
+    assert_eq!(
+        zero_copy.repack_grain(picture.id, &frame, &good, &target),
+        S_OK
+    );
+    assert_frame(
+        &warp.read(target.as_raw(), 64, 16),
+        &grained_p010(&good, &plain),
+        "after the declines",
+    );
+    assert_eq!(release(picture.id), S_OK);
+    assert_eq!(zero_copy.stats().frames_repacked, declined.len() as u64 + 1);
+}
+
+/// Grained, plain direct and landing frames interleaved on both slots and across two sizes: each
+/// frame is exactly what its own path produces, whatever ran on the slot before.
+#[test]
+fn fused_grain_mixes_with_plain_and_landing_frames() {
+    #[derive(Clone, Copy, Debug)]
+    enum Path {
+        Grain,
+        Direct,
+        Landing,
+    }
+    let warp = Warp::new();
+    let zero_copy = warp.zero_copy();
+    let large = [warp.target(128, 72), warp.target(128, 72)];
+    let small = warp.target(130, 40);
+    let plan = [
+        ((128, 72), Path::Grain),
+        ((128, 72), Path::Direct),
+        ((128, 72), Path::Grain),
+        ((128, 72), Path::Landing),
+        ((130, 40), Path::Grain),
+        ((130, 40), Path::Grain),
+        ((130, 40), Path::Landing),
+        ((130, 40), Path::Direct),
+        ((128, 72), Path::Grain),
+        ((128, 72), Path::Landing),
+        ((128, 72), Path::Direct),
+        ((130, 40), Path::Grain),
+    ];
+    for (step, ((width, height), path)) in plan.into_iter().enumerate() {
+        let what = format!("{step} {path:?} {width}x{height}");
+        let (picture, frame, source) = zero_copy.picture(width, height, step as u32 + 91);
+        let plain = frame.reference_p010(&source);
+        let target = match width {
+            128 => &large[step % 2],
+            _ => &small,
+        };
+        let (hr, written, expected) = match path {
+            Path::Grain => {
+                // Alternate parameter sets so consecutive grained frames differ in more than
+                // the seed.
+                let (_, params) = grain_variants(width, height, step as u32)[step % 8];
+                let hr = zero_copy.repack_grain(picture.id, &frame, &params, target);
+                (hr, target.as_raw(), grained_p010(&params, &plain))
+            }
+            Path::Direct => {
+                let hr = zero_copy.repack_into(picture.id, &frame, target);
+                (hr, target.as_raw(), plain)
+            }
+            Path::Landing => {
+                let (hr, texture) = zero_copy.repack(picture.id, &frame);
+                (hr, texture, plain)
+            }
+        };
+        assert_eq!(hr, S_OK, "{what}: HRESULT=0x{:08x}", hr as u32);
+        assert_eq!(release(picture.id), S_OK);
+        assert_frame(&warp.read(written, width, height), &expected, &what);
+    }
+    let stats = zero_copy.stats();
+    assert_eq!(stats.frames_repacked, plan.len() as u64);
+    assert_eq!(stats.landing_copies, 0, "{stats:?}");
+    assert_eq!(stats.buffers_live, 0);
 }

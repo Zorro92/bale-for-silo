@@ -12,6 +12,13 @@
 //! keeps while it is in use. A texture it cannot take is declined (S_FALSE) before any GPU work,
 //! and the caller lands the frame with [`bale_zc_repack`] instead.
 //!
+//! A direct write can also apply AV1 film grain in the same dispatch (10-bit only): a second
+//! pipeline (`repack_grain_zc_cs.hlsl`) reads the grain inputs from one small raw buffer per slot
+//! (root SRV t1, layout in `grain::fused`), persistently mapped like the decode buffers and
+//! rewritten only after the slot's idle wait. The result is bit-exact with `grain::cpu::apply` on
+//! the repacked frame; a create-time self-test checks that, and on a mismatch grain is declined for
+//! the handle's life. Landing repacks never apply grain.
+//!
 //! Two shared fences order the devices without CPU stalls:
 //! - `repacked`: the D3D12 queue signals n after frame n's dispatch; the D3D11 context waits for n
 //!   (GPU-side) before the caller's copy.
@@ -50,11 +57,15 @@ use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
 use windows::core::{Error, HRESULT, Interface, PCWSTR, Result, s};
 
 use crate::d3d12::{CreateDevice, resource};
-use crate::grain::BaleGrainParams;
+use crate::grain::cpu::{self, PixelFormat};
 use crate::grain::gpu::{readback_bytes, same_device, texture, texture_desc};
+use crate::grain::params::PARAMS_SIZE;
+use crate::grain::{BaleGrainParams, ValidGrainParams, fused};
 use crate::zc_frame::{BaleZcFrame, MAX_BYTES, fill_test_planes};
 
 const SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/repack_zc_cs.cso"));
+/// The repack with film grain, for direct writes.
+const GRAIN_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/repack_grain_zc_cs.cso"));
 
 pub const ZERO_COPY_ABI_VERSION: u32 = 1;
 pub const S_OK: i32 = 0;
@@ -415,6 +426,43 @@ struct Slot {
     /// `released` value after which the caller no longer reads this slot's landing texture.
     released: u64,
     landing: Option<Landing>,
+    /// Grain inputs of this slot's dispatch (root SRV t1, bound for every dispatch).
+    grain: GrainBuffer,
+}
+
+/// A persistently mapped buffer on the decode buffers' heap. Rewritten (or replaced by a larger
+/// one) only after the slot's idle wait, so no dispatch reads it meanwhile.
+struct GrainBuffer {
+    resource: ID3D12Resource,
+    data: usize,
+    bytes: usize,
+}
+
+impl GrainBuffer {
+    /// Room for at least `bytes`; one 64 KiB allocation covers frames up to 8K.
+    fn create(device: &ID3D12Device, bytes: usize) -> Result<Self> {
+        let bytes = bytes.next_multiple_of(ALIGNMENT as usize);
+        let desc = resource(
+            D3D12_RESOURCE_DIMENSION_BUFFER,
+            bytes as u64,
+            1,
+            DXGI_FORMAT_UNKNOWN,
+            D3D12_RESOURCE_FLAG_NONE,
+        );
+        let resource = committed(
+            device,
+            &write_back(),
+            D3D12_HEAP_FLAG_NONE,
+            &desc,
+            D3D12_RESOURCE_STATE_COMMON,
+        )?;
+        let data = map(&resource)?;
+        Ok(Self {
+            resource,
+            data,
+            bytes,
+        })
+    }
 }
 
 struct Inner {
@@ -422,6 +470,8 @@ struct Inner {
     queue: ID3D12CommandQueue,
     root: ID3D12RootSignature,
     pso: ID3D12PipelineState,
+    /// `pso` with film grain, for direct writes; `None` if it could not be created.
+    grain_pso: Option<ID3D12PipelineState>,
     heap: ID3D12DescriptorHeap,
     cpu_start: D3D12_CPU_DESCRIPTOR_HANDLE,
     gpu_start: D3D12_GPU_DESCRIPTOR_HANDLE,
@@ -445,6 +495,9 @@ struct Inner {
     /// D3D12 could not open a caller texture, or the self-test's direct write failed: every
     /// direct write is declined for the handle's life.
     targets_refused: bool,
+    /// No grain pipeline, or the self-test's direct write with grain failed or mismatched: grain
+    /// is declined for the handle's life.
+    grain_refused: bool,
     repacked_value: u64,
     released_value: u64,
     event: Handle,
@@ -482,6 +535,7 @@ impl Inner {
             &landing.texture,
             landing.copy.as_ref(),
             current.released,
+            false,
         )?;
         let texture11 = landing.texture11.clone();
         self.finish(slot, buffer, value)?;
@@ -489,19 +543,35 @@ impl Inner {
         Ok(texture11)
     }
 
-    /// Repacks `frame` from `buffer` straight into the caller's `target`. `Ok(false)` declines
-    /// before any GPU work: `target` is not a P010 texture of the frame's size on this device with
-    /// UAV access and an NT shared handle, D3D12 cannot open it, or too many are open.
+    /// Repacks `frame` from `buffer` straight into the caller's `target`, with film `grain` when
+    /// given. `Ok(false)` declines before any GPU work: `target` is not a P010 texture of the
+    /// frame's size on this device with UAV access and an NT shared handle, D3D12 cannot open it,
+    /// or too many are open; or `grain` is not 10-bit, is for another frame size, or grain is
+    /// refused for the handle.
     fn repack_into(
         &mut self,
         buffer: &Buffer,
         frame: &BaleZcFrame,
         target: &ID3D11Texture2D,
+        grain: Option<&ValidGrainParams>,
     ) -> Result<bool> {
         let memory = buffer.memory.as_ref().ok_or(E_FAIL)?;
         if self.targets_refused || !fits_target(target, frame) {
             return Ok(false);
         }
+        let grain = match grain {
+            None => None,
+            Some(params) => {
+                let size = (params.width(), params.height());
+                if self.grain_refused || size != (frame.width as usize, frame.height as usize) {
+                    return Ok(false);
+                }
+                let Some(bytes) = fused::build(params) else {
+                    return Ok(false);
+                };
+                Some(bytes)
+            }
+        };
         let _lock = Locked::enter(&self.multithread);
         // SAFETY: live fence.
         let completed = unsafe { self.repacked.GetCompletedValue() };
@@ -549,7 +619,18 @@ impl Inner {
         // The slot's allocator and descriptors are reused only after its last dispatch ran.
         self.wait(&self.repacked, self.slots[slot].submitted)
             .step("slot idle wait")?;
-        let value = self.dispatch(slot, memory, frame, &texture, None, self.released_value)?;
+        if let Some(bytes) = &grain {
+            self.write_grain(slot, bytes).step("grain buffer")?;
+        }
+        let value = self.dispatch(
+            slot,
+            memory,
+            frame,
+            &texture,
+            None,
+            self.released_value,
+            grain.is_some(),
+        )?;
         if let Some(cached) = self.targets.get_mut(&key) {
             cached.used = value;
         }
@@ -557,10 +638,28 @@ impl Inner {
         Ok(true)
     }
 
+    /// Writes the grain inputs of the idle `slot`'s next dispatch, first growing its buffer when
+    /// `bytes` does not fit. Caller waited for the slot's last dispatch.
+    fn write_grain(&mut self, slot: usize, bytes: &[u8]) -> Result<()> {
+        if self.slots[slot].grain.bytes < bytes.len() {
+            // The old buffer's last reader was the slot's last dispatch, which ran.
+            self.slots[slot].grain = GrainBuffer::create(&self.device, bytes.len())?;
+        }
+        let grain = &self.slots[slot].grain;
+        // SAFETY: a mapped buffer of at least `bytes.len()` bytes that no submitted dispatch
+        // reads (the caller waited for the slot's last one).
+        unsafe {
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), grain.data as *mut u8, bytes.len())
+        };
+        Ok(())
+    }
+
     /// Records and submits the repack of `frame` from `memory` into `texture` (P010 with UAV
-    /// access, in COMMON) on the idle `slot`, then a copy from it into `copy` when given. The
-    /// queue first waits for `released` to reach `wait` (0: no wait). Returns the `repacked`
-    /// value the dispatch signals. Caller holds the multithread lock.
+    /// access, in COMMON) on the idle `slot`, then a copy from it into `copy` when given; with
+    /// `grain`, through the grain pipeline and the slot's grain buffer. The queue first waits
+    /// for `released` to reach `wait` (0: no wait). Returns the `repacked` value the dispatch
+    /// signals. Caller holds the multithread lock.
+    #[allow(clippy::too_many_arguments)]
     fn dispatch(
         &self,
         slot: usize,
@@ -569,6 +668,7 @@ impl Inner {
         texture: &ID3D12Resource,
         copy: Option<&ID3D12Resource>,
         wait: u64,
+        grain: bool,
     ) -> Result<u64> {
         let base = 3 * slot as u32;
         let view = D3D12_SHADER_RESOURCE_VIEW_DESC {
@@ -614,12 +714,16 @@ impl Inner {
         let value = self.repacked_value + 1;
         // SAFETY: the slot's allocator and list are idle; every bound object lives until the
         // dispatch completes (buffers are reused only after `repacked` passes `value`, landing
-        // textures and descriptors only after an idle wait, caller textures only once `repacked`
-        // passed their last write). Every texture ends in COMMON, so D3D11 sees the shared one
-        // in the common state.
+        // textures, grain buffers and descriptors only after an idle wait, caller textures only
+        // once `repacked` passed their last write). Every texture ends in COMMON, so D3D11 sees the
+        // shared one in the common state.
         unsafe {
             current.allocator.Reset()?;
-            current.list.Reset(&current.allocator, &self.pso)?;
+            let pso = match grain {
+                true => self.grain_pso.as_ref().ok_or(E_FAIL)?,
+                false => &self.pso,
+            };
+            current.list.Reset(&current.allocator, pso)?;
             current.list.SetComputeRootSignature(&self.root);
             current.list.SetDescriptorHeaps(&[Some(self.heap.clone())]);
             current
@@ -628,6 +732,11 @@ impl Inner {
             current
                 .list
                 .SetComputeRootDescriptorTable(1, self.gpu(base));
+            // Bound for the plain pipeline too (which never reads it), so no root parameter is
+            // left unset.
+            current
+                .list
+                .SetComputeRootShaderResourceView(2, current.grain.resource.GetGPUVirtualAddress());
             current.list.ResourceBarrier(&[transition(
                 texture,
                 D3D12_RESOURCE_STATE_COMMON,
@@ -921,21 +1030,27 @@ impl BaleZeroCopy {
         let (released, released11) = shared_fence(&device, &device5).step("released fence")?;
         // SAFETY: the registered module stays loaded for the process.
         let root = unsafe { root_signature(module, &device) }.step("root signature")?;
-        // SAFETY: live device and root signature; the bytecode is a static compiled shader.
-        let pso: ID3D12PipelineState = unsafe {
-            device.CreateComputePipelineState(&D3D12_COMPUTE_PIPELINE_STATE_DESC {
-                pRootSignature: borrowed(&root),
-                CS: D3D12_SHADER_BYTECODE {
-                    pShaderBytecode: SHADER.as_ptr().cast(),
-                    BytecodeLength: SHADER.len(),
-                },
-                NodeMask: 0,
-                CachedPSO: D3D12_CACHED_PIPELINE_STATE::default(),
-                Flags: D3D12_PIPELINE_STATE_FLAG_NONE,
-            })
-        }
-        .step("compute pipeline")?;
+        let pipeline = |shader: &'static [u8]| -> Result<ID3D12PipelineState> {
+            // SAFETY: live device and root signature; the bytecode is a static compiled shader.
+            unsafe {
+                device.CreateComputePipelineState(&D3D12_COMPUTE_PIPELINE_STATE_DESC {
+                    pRootSignature: borrowed(&root),
+                    CS: D3D12_SHADER_BYTECODE {
+                        pShaderBytecode: shader.as_ptr().cast(),
+                        BytecodeLength: shader.len(),
+                    },
+                    NodeMask: 0,
+                    CachedPSO: D3D12_CACHED_PIPELINE_STATE::default(),
+                    Flags: D3D12_PIPELINE_STATE_FLAG_NONE,
+                })
+            }
+        };
+        let pso = pipeline(SHADER).step("compute pipeline")?;
+        // Without it grain is declined (`grain_refused`); plain repacks are unaffected.
+        let grain_pso = pipeline(GRAIN_SHADER).ok();
+        let grain_refused = grain_pso.is_none();
         let slot = || -> Result<Slot> {
+            let grain = GrainBuffer::create(&device, fused::bytes(3840, 2160))?;
             // SAFETY: live device and pipeline; the list is closed before its first Reset.
             unsafe {
                 let allocator: ID3D12CommandAllocator =
@@ -953,6 +1068,7 @@ impl BaleZeroCopy {
                     submitted: 0,
                     released: 0,
                     landing: None,
+                    grain,
                 })
             }
         };
@@ -982,6 +1098,7 @@ impl BaleZeroCopy {
                 queue,
                 root,
                 pso,
+                grain_pso,
                 heap,
                 cpu_start,
                 gpu_start,
@@ -1000,6 +1117,7 @@ impl BaleZeroCopy {
                 direct,
                 targets: BTreeMap::new(),
                 targets_refused: false,
+                grain_refused,
                 repacked_value: 0,
                 released_value: 0,
                 event,
@@ -1014,17 +1132,35 @@ impl BaleZeroCopy {
     /// and repack paths; padded layouts with garbage in the padding and in the top 6 bits. Then a
     /// direct write into a texture like MF's shared UAV pool textures, followed by a landing frame
     /// on the slot it used. A failed direct write only refuses direct writes for the handle.
+    /// Between them a direct write with film grain (overlap, restricted range, both chroma planes
+    /// with their own scaling) on a frame with partial blocks, checked against the CPU oracle; a
+    /// failure only refuses grain.
     fn self_test(&self) -> Result<()> {
         let mut inner = self.inner.lock().map_err(|_| E_UNEXPECTED)?;
         for (index, (width, height)) in [(64, 64), (64, 64), (66, 18)].into_iter().enumerate() {
-            self.test_frame(&mut inner, width, height, index as u32 + 1, None)?;
+            self.test_frame(&mut inner, width, height, index as u32 + 1, None, None)?;
         }
         let direct = test_target(&inner.device11, 66, 18)
-            .and_then(|target| self.test_frame(&mut inner, 66, 18, 4, Some(&target)));
+            .and_then(|target| self.test_frame(&mut inner, 66, 18, 4, Some(&target), None));
         if direct.is_err() {
             inner.targets_refused = true;
         }
-        self.test_frame(&mut inner, 66, 18, 5, None)?;
+        if !inner.grain_refused {
+            let (width, height) = (130, 40);
+            let params = fused::self_test_params(width, height).validate();
+            let grain = match (direct, params) {
+                (Ok(()), Ok(params)) => {
+                    test_target(&inner.device11, width, height).and_then(|target| {
+                        self.test_frame(&mut inner, width, height, 6, Some(&target), Some(&params))
+                    })
+                }
+                _ => Err(E_FAIL.into()),
+            };
+            if grain.is_err() {
+                inner.grain_refused = true;
+            }
+        }
+        self.test_frame(&mut inner, 66, 18, 5, None, None)?;
         let _lock = Locked::enter(&inner.multithread);
         if inner.wait(&inner.repacked, inner.repacked_value).is_ok() {
             inner.targets.clear();
@@ -1032,7 +1168,8 @@ impl BaleZeroCopy {
         Ok(())
     }
 
-    /// Repacks one test picture into the next landing texture, or into `target`, and checks it.
+    /// Repacks one test picture into the next landing texture, or into `target` (with `grain`),
+    /// and checks it. Never reports pixel data.
     fn test_frame(
         &self,
         inner: &mut Inner,
@@ -1040,6 +1177,7 @@ impl BaleZeroCopy {
         height: u32,
         seed: u32,
         target: Option<&ID3D11Texture2D>,
+        grain: Option<&ValidGrainParams>,
     ) -> Result<()> {
         let (frame, bytes) = BaleZcFrame::test_layout(width, height);
         let buffer = self.pool.alloc(bytes).step("self-test alloc")?;
@@ -1054,7 +1192,7 @@ impl BaleZeroCopy {
             None => inner.repack(&buffer, &frame).step("self-test repack")?,
             Some(target) => {
                 if !inner
-                    .repack_into(&buffer, &frame, target)
+                    .repack_into(&buffer, &frame, target, grain)
                     .step("self-test direct repack")?
                 {
                     return Err(E_FAIL.into()).step("self-test direct repack declined");
@@ -1076,7 +1214,25 @@ impl BaleZeroCopy {
             (height + height / 2) as usize,
         )
         .step("self-test readback")?;
-        if actual != frame.reference_p010(&source) {
+        let mut expected = frame.reference_p010(&source);
+        if let Some(params) = grain {
+            // The tight P010 frame: `height` luma rows, then `height / 2` chroma rows, all
+            // `2 * width` bytes (the width is even).
+            let pitch = 2 * width as usize;
+            let (y, uv) = expected.split_at_mut(pitch * height as usize);
+            cpu::apply(
+                params,
+                PixelFormat::P010,
+                y,
+                pitch as isize,
+                uv,
+                pitch as isize,
+                1,
+            )
+            .map_err(|_| Error::from(E_FAIL))
+            .step("self-test grain oracle")?;
+        }
+        if actual != expected {
             return Err(E_FAIL.into()).step(&format!("self-test mismatch at {width}x{height}"));
         }
         Ok(())
@@ -1183,7 +1339,8 @@ fn shared_fence(
     }
 }
 
-/// Root signature: 8 constants at b0 (param 0); a table of t0 then u0..u1 (param 1).
+/// Root signature of both pipelines: 8 constants at b0 (param 0); a table of t0 then u0..u1
+/// (param 1); the grain buffer as a raw root SRV at t1 (param 2, read only by the grain shader).
 ///
 /// # Safety
 /// `module` must be a loaded `d3d12.dll`.
@@ -1227,6 +1384,16 @@ unsafe fn root_signature(module: HMODULE, device: &ID3D12Device) -> Result<ID3D1
                 DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
                     NumDescriptorRanges: ranges.len() as u32,
                     pDescriptorRanges: ranges.as_ptr(),
+                },
+            },
+            ShaderVisibility: D3D12_SHADER_VISIBILITY_ALL,
+        },
+        D3D12_ROOT_PARAMETER {
+            ParameterType: D3D12_ROOT_PARAMETER_TYPE_SRV,
+            Anonymous: D3D12_ROOT_PARAMETER_0 {
+                Descriptor: D3D12_ROOT_DESCRIPTOR {
+                    ShaderRegister: 1,
+                    RegisterSpace: 0,
                 },
             },
             ShaderVisibility: D3D12_SHADER_VISIBILITY_ALL,
@@ -1540,16 +1707,21 @@ pub unsafe extern "C" fn bale_zc_repack(
 /// picture (and of any earlier landing texture) first, and must not use the texture until the
 /// call returns.
 ///
-/// `grain` must be null for now; non-null is declined. Returns S_OK when written, and S_FALSE
-/// when declined with no GPU work queued: `buffer` is not a live buffer of this handle, `grain`
-/// is non-null, `target` does not qualify, D3D12 cannot open it (then every later call is
-/// declined too), or too many textures are open. The caller then lands the frame with
-/// [`bale_zc_repack`]. E_INVALIDARG for null inputs or a layout that does not fit the buffer;
-/// otherwise a failure that poisons the handle as [`bale_zc_repack`] does.
+/// A non-null `grain` applies AV1 film grain in the same dispatch, bit-exact with
+/// `bale_grain`'s CPU path on the repacked frame; null writes the plain picture. Returns S_OK when
+/// written, and S_FALSE when declined with no GPU work queued: `buffer` is not a live buffer of
+/// this handle, `target` does not qualify, D3D12 cannot open it (then every later call is
+/// declined too), or too many textures are open; or `grain` is non-null and its `struct_size` is
+/// not 184, its parameters are invalid, it is not 10-bit, its width or height is not the frame's,
+/// or the handle's grain self-test failed (then every later call with grain is declined too). The
+/// caller then lands the frame with [`bale_zc_repack`] (applying grain its own way).
+/// E_INVALIDARG for null inputs or a layout that does not fit the buffer; otherwise a failure
+/// that poisons the handle as [`bale_zc_repack`] does.
 ///
 /// # Safety
-/// A non-null handle must be live; repack calls are serialized. Non-null `frame` and `grain` must
-/// be readable; a non-null `target` must be a live ID3D11Texture2D.
+/// A non-null handle must be live; repack calls are serialized. A non-null `frame` must be
+/// readable; a non-null `grain` must have a readable four-byte `struct_size`, and the whole
+/// record must be readable when that is 184; a non-null `target` must be a live ID3D11Texture2D.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bale_zc_repack_into(
     handle: *const BaleZeroCopy,
@@ -1572,10 +1744,24 @@ pub unsafe extern "C" fn bale_zc_repack_into(
             Ok(buffer) => buffer,
             Err(hr) => return hr,
         };
-        if !grain.is_null() {
-            return S_FALSE;
-        }
-        match run(zero_copy, |inner| inner.repack_into(&buffer, frame, target)) {
+        let grain = if grain.is_null() {
+            None
+        } else {
+            // SAFETY: a non-null `grain` has a readable four-byte header per the caller. Unaligned
+            // reads do not require the caller's pointer to be aligned.
+            if unsafe { grain.cast::<u32>().read_unaligned() } != PARAMS_SIZE {
+                return S_FALSE;
+            }
+            // SAFETY: once struct_size matches, the full record is readable per the caller. All
+            // bit patterns of its integer fields are valid Rust values.
+            match unsafe { grain.read_unaligned() }.validate() {
+                Ok(params) => Some(params),
+                Err(_) => return S_FALSE,
+            }
+        };
+        match run(zero_copy, |inner| {
+            inner.repack_into(&buffer, frame, target, grain.as_ref())
+        }) {
             Ok(true) => {
                 zero_copy.pool.frames.fetch_add(1, Ordering::Relaxed);
                 S_OK

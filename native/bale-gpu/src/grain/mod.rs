@@ -6,6 +6,9 @@
 pub mod cpu;
 #[allow(unsafe_code)]
 pub mod ffi;
+// Used by the Windows-only zero-copy repack; built and tested everywhere.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) mod fused;
 mod gaussian;
 #[cfg(windows)]
 #[allow(unsafe_code)]
