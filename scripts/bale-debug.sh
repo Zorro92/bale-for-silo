@@ -67,6 +67,7 @@
 #   timeout 900 scripts/bale-debug.sh playtest-ffmpeg suite 15 software  same Chromium samples; allow 30 s create + 15 s open per clip
 #   scripts/bale-debug.sh subtest <url> [native|ffmpeg] [seconds] [sidecar-url] [idx-url]  muted subtitle probe: lists
 #                                               timed-metadata tracks and the cues each raises (text/image, timing, styling)
+#                                               BALE_SUBTEST_SHOW=<track> plays full screen with Windows drawing that track
 #   scripts/bale-debug.sh goto "Unwatched#2"     setup only: focus the second matching control
 #   scripts/bale-debug.sh targets               list controls goto can reach
 #   scripts/bale-debug.sh tree                  the visible element tree with bounds
@@ -341,13 +342,15 @@ case "${1:-}" in
       --data-urlencode "seconds=$2" --data-urlencode "pause=$seek_pause"
     ;;
   subtest)
-    if [[ "$#" -lt 2 || "$#" -gt 6 || ! "${3:-native}" =~ ^(native|ffmpeg)$ || ! "${4:-31}" =~ ^([1-9]|[1-3][0-9]|40)$ ]]; then
-      echo 'usage: scripts/bale-debug.sh subtest <http(s)-url> [native|ffmpeg] [seconds 1–40, default 31] [sidecar-url] [vobsub-idx-url]' >&2
+    if [[ "$#" -lt 2 || "$#" -gt 6 || ! "${3:-native}" =~ ^(native|ffmpeg)$ || ! "${4:-31}" =~ ^([1-9]|[1-3][0-9]|40)$
+          || ! "${BALE_SUBTEST_SHOW:-0}" =~ ^([0-9]|[12][0-9]|3[01])$ ]]; then
+      echo 'usage: [BALE_SUBTEST_SHOW=<track 0–31>] scripts/bale-debug.sh subtest <http(s)-url> [native|ffmpeg] [seconds 1–40, default 31] [sidecar-url] [vobsub-idx-url]' >&2
       exit 2
     fi
     curl --fail-with-body -sS --max-time "$(( ${4:-31} + 60 ))" -G "$BASE/subtest" --data-urlencode "url=$2" \
       --data-urlencode "route=${3:-native}" --data-urlencode "seconds=${4:-31}" \
-      ${5:+--data-urlencode "sidecar=$5"} ${6:+--data-urlencode "index=$6"}
+      ${5:+--data-urlencode "sidecar=$5"} ${6:+--data-urlencode "index=$6"} \
+      ${BALE_SUBTEST_SHOW:+--data-urlencode "show=$BALE_SUBTEST_SHOW"}
     ;;
   playtest|playtest-ffmpeg|playtest-engine)
     playtest_route="$1"

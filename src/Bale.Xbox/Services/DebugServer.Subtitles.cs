@@ -6,23 +6,35 @@ using FFmpegInteropX;
 using Windows.Media.Core;
 using Windows.Media.Playback;
 using Windows.Storage.Streams;
+using Windows.UI.Xaml;
+using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Controls.Primitives;
 
 namespace Bale.Xbox.Services;
 
 /// <summary>
 /// Subtitle probe: plays a clip muted on Windows' own source (native) or FFmpegInteropX (ffmpeg),
 /// optionally with a sidecar file, and reports every timed-metadata track and the cues it raises.
-/// Tracks run ApplicationPresented, so cues are counted, not drawn. Production playback is unchanged.
+/// Tracks run ApplicationPresented, so cues are counted, not drawn. With show=N the clip plays full screen in a
+/// MediaPlayerElement over the app and track N is PlatformPresented, for checking Windows' own subtitle drawing by eye.
+/// Production playback is unchanged.
 /// </summary>
 internal sealed partial class DebugServer
 {
     private const int SubtitleProbeMaxSeconds = 40;
 
     private static async Task<(string Status, string Body)> SubtitleProbeAsync(string? url, string? route, string? seconds,
-        string? sidecar, string? index)
+        string? sidecar, string? index, string? show)
     {
         if (!DebugPlaytest.TryParse(url, seconds ?? "31", out var uri, out var duration, out var error, SubtitleProbeMaxSeconds))
             return ("400 Bad Request", error + "\n");
+        int? showTrack = null;
+        if (show is not null)
+        {
+            if (!int.TryParse(show, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) || parsed > 31)
+                return ("400 Bad Request", "show must be a track index 0–31\n");
+            showTrack = parsed;
+        }
         route ??= "native";
         if (route is not ("native" or "ffmpeg")) return ("400 Bad Request", "route must be native or ffmpeg\n");
         Uri? sidecarUri = null;
@@ -37,12 +49,15 @@ internal sealed partial class DebugServer
             return ("409 Conflict", "a playtest is already running\n");
 
         var report = new StringBuilder($"Route: {route}\n");
+        if (showTrack is not null) report.Append($"Showing track: {showTrack}\n");
         var failures = new ConcurrentQueue<string>();
         var notes = new ConcurrentQueue<string>();
         var tracks = new List<SubtitleProbeTrack>();
         var didOpen = false;
         var position = TimeSpan.Zero;
         var avCounts = "";
+        MediaPlayerElement? showElement = null;
+        Popup? showPopup = null;
         FFmpegMediaSource? ffmpeg = null;
         MediaSource? native = null;
         var releaseGate = true;
@@ -133,7 +148,9 @@ internal sealed partial class DebugServer
                     tracks.Add(probe);
                     track.CueEntered += probe.OnCue;
                     track.TrackFailed += probe.OnFailed;
-                    list.SetPresentationMode((uint)i, TimedMetadataTrackPresentationMode.ApplicationPresented);
+                    list.SetPresentationMode((uint)i, i == showTrack
+                        ? TimedMetadataTrackPresentationMode.PlatformPresented
+                        : TimedMetadataTrackPresentationMode.ApplicationPresented);
                 }
             }
 
@@ -141,7 +158,26 @@ internal sealed partial class DebugServer
             {
                 player.MediaOpened += OnOpened;
                 player.MediaFailed += OnFailed;
-                await OnFfmpegUiAsync(() => { renderTarget.Attach(player); return true; });
+                await OnFfmpegUiAsync(() =>
+                {
+                    if (showTrack is null)
+                    {
+                        renderTarget.Attach(player);
+                        return true;
+                    }
+                    // Windows draws PlatformPresented cues only inside a MediaPlayerElement, not on a composition surface.
+                    var bounds = Window.Current.Bounds;
+                    showElement = new MediaPlayerElement
+                    {
+                        AreTransportControlsEnabled = false,
+                        Width = bounds.Width,
+                        Height = bounds.Height,
+                        Stretch = Windows.UI.Xaml.Media.Stretch.Uniform,
+                    };
+                    showElement.SetMediaPlayer(player);
+                    showPopup = new Popup { Child = showElement, IsOpen = true };
+                    return true;
+                });
                 await OnFfmpegUiAsync(() => { player.Source = item; return true; });
                 if (await Task.WhenAny(opened.Task, Task.Delay(DebugFfmpegPlaytest.OpenTimeoutMs)) == opened.Task)
                     didOpen = await opened.Task;
@@ -169,7 +205,9 @@ internal sealed partial class DebugServer
                 {
                     Attempt("pause", () => player.Pause());
                     Attempt("detach source", () => player.Source = null);
-                    renderTarget.Close(Attempt);
+                    if (showTrack is null) renderTarget.Close(Attempt);
+                    Attempt("detach show element", () => showElement?.SetMediaPlayer(null));
+                    Attempt("close show popup", () => { if (showPopup is not null) showPopup.IsOpen = false; });
                     Attempt("dispose player", player.Dispose);
                     return true;
                 });

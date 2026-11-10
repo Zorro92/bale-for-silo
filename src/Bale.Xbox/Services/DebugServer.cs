@@ -276,7 +276,7 @@ internal sealed partial class DebugServer
 
             case ("GET", "/subtest"):
                 return await SubtitleProbeAsync(query.GetValueOrDefault("url"), query.GetValueOrDefault("route"), query.GetValueOrDefault("seconds"),
-                    query.GetValueOrDefault("sidecar"), query.GetValueOrDefault("index"));
+                    query.GetValueOrDefault("sidecar"), query.GetValueOrDefault("index"), query.GetValueOrDefault("show"));
 
             case ("POST", "/ffmpeg"):
                 var ffmpegMode = query.GetValueOrDefault("mode");

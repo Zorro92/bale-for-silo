@@ -8,7 +8,8 @@ public class DebugSubtitleProbeTests
         var source = Read("DebugServer.Subtitles.cs.txt");
         Assert.StartsWith("#if DEBUG_SERVER", source);
         Assert.Contains("TimedMetadataTrackPresentationMode.ApplicationPresented", source);
-        Assert.DoesNotContain("PlatformPresented", source);
+        // Only the opt-in show mode lets Windows draw a track.
+        Assert.Contains("i == showTrack\n                        ? TimedMetadataTrackPresentationMode.PlatformPresented", source.ReplaceLineEndings("\n"));
         // Shares the playtest gate so two isolated players never run at once.
         Assert.Contains("Interlocked.CompareExchange(ref _playtestBusy, 1, 0)", source);
         Assert.Contains("DisposeLateFfmpegSourceAsync(creation)", source);
