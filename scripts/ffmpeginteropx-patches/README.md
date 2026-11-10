@@ -174,6 +174,11 @@ The stats line adds `dropped=`. The `bale_sws_threads`, `bale_d3d11_upload_fault
 `bale_d3d11_repack` keys are now rejected. Other streams keep the upstream CPU output path. It ships
 in `2.1.0-bale.20`. `bale_gpu.dll` then dropped the exports only those paths used (main ABI 5,
 grain ABI 2 without `bale_grain_cpu_apply`).
+`0021` adds opt-in `bale_system_decoder_dolby` (0/1, default 0). When 1, AC-3 and E-AC-3 audio
+streams use `CompressedSampleProvider` (subtype `Ac3`/`Eac3`, sample rate, channel count and
+bitrate when known), like `SystemDecoderAAC`: packets go to the system Dolby decoder undecoded, so
+E-AC-3 JOC (Atmos) metadata survives. Default 0 keeps FFmpeg decoding them to PCM. It ships in
+`2.1.0-bale.21`; earlier releases reject the key as unknown.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.
