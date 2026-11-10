@@ -135,7 +135,7 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
 - FFmpegInteropX packages, native activation and license texts ship in **all** builds. Keep the CI
   package checker; CsWinRT's projection alone does not register the WinRT factories for Native AOT.
 - Native FFmpeg is **8.1.2-bale.dav1d.1.5.4.p1**, not public 8.1.2 (which embeds dav1d 1.0.0).
-  Keep wrapper `FFmpegInteropX.UWP.Lib` on the pinned **2.1.0-bale.N** fork (currently **2.1.0-bale.20**),
+  Keep wrapper `FFmpegInteropX.UWP.Lib` on the pinned **2.1.0-bale.N** fork (currently **2.1.0-bale.21**),
   built by `ffmpeginteropx-wrapper.yml`. `scripts/ffmpeg-native.json` and
   `scripts/ffmpeginteropx-wrapper.json` pin their release tags and SHA256s; run
   `scripts/restore-ffmpeg-native.ps1` before Windows restore/build. `NuGet.Config` maps both IDs only
@@ -164,8 +164,11 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   FFmpeg software or D3D11. Measured AV1 evidence is 0.1.230: 8/10-bit, **1080p30**, not 4K.
 - `PlaybackRoutePolicy` decides each mount. HLS always stays on AdaptiveMediaSource. Direct AV1
   forces FFmpeg software video; audio-only fallback forces the system video decoder and validates
-  reported engines before playback. AAC/MP3 use the pinned winmd's system audio switches; no
-  AC3/EAC3 or passthrough switches exist in 2.1.0. Passthrough remains unclaimed.
+  reported engines before playback. Direct MKV/WebM always uses the FFmpeg demuxer with system
+  video (Windows' MKV source over-reads ~2.2x and stalls on sparse subtitle tracks); MP4 stays on
+  Windows' source (measured equal on both). AAC/MP3 use the pinned winmd's system audio switches;
+  AC3/EAC3 reach the system Dolby decoder undecoded via patch 0021 (`bale_system_decoder_dolby`,
+  keeps E-AC-3 JOC/Atmos). Passthrough remains unclaimed.
 - FFmpeg audio selection must honor the server's ordinal, not FFmpeg's reordered default:
   map `AudioStreams[].StreamIndex` back to demux order, then set the item's AudioTracks.SelectedIndex
   before Play. Fail closed if the selected stream is missing.

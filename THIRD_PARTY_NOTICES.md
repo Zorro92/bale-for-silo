@@ -29,7 +29,7 @@ GNU Affero General Public License v3.0, as is Bale (see `LICENSE`).
 ## FFmpegInteropX
 
 All Bale builds bundle [FFmpegInteropX.UWP.Lib](https://github.com/ffmpeginteropx/FFmpegInteropX)
-**2.1.0-bale.20**, a Bale x64 native-wrapper fork of upstream 2.1.0, under the Apache License 2.0.
+**2.1.0-bale.21**, a Bale x64 native-wrapper fork of upstream 2.1.0, under the Apache License 2.0.
 Its full license text is packaged as `Licenses/FFmpegInteropX.txt`
 (source copy: `src/Bale.Xbox/Assets/FFmpegInteropX-LICENSE.txt`). The fork starts at upstream commit
 `88428c66e106852338b48554a4a00c9e48da588f` and applies
@@ -74,7 +74,9 @@ write such a pooled texture directly, skipping the landing copy, and
 that same direct write, and `scripts/ffmpeginteropx-patches/0019-zero-copy-eight-bit.patch` for
 taking 8-bit AV1 through that direct write as P010, and
 `scripts/ffmpeginteropx-patches/0020-zero-copy-only.patch` for making that software AV1 path
-zero-copy only, removing the staging, repack, threaded-swscale and CPU-grain paths. Grain only modifies Bale-owned output, never dav1d
+zero-copy only, removing the staging, repack, threaded-swscale and CPU-grain paths, and
+`scripts/ffmpeginteropx-patches/0021-system-decoder-dolby.patch` for opt-in passing of AC-3/E-AC-3
+packets undecoded to the system Dolby decoder (default off). Grain only modifies Bale-owned output, never dav1d
 reference frames.
 The original winmd and managed projection are retained; with the new `bale_*` keys unset, behavior
 equals upstream 2.1.0 plus that colour-attribute fix.
@@ -102,7 +104,7 @@ FFmpeg remains at `38b88335f99e76ed89ff3c93f877fdefce736c13`. The build baseline
 [FFmpegInteropX v2.1.0, commit 88428c66e106852338b48554a4a00c9e48da588f](https://github.com/ffmpeginteropx/FFmpegInteropX/tree/88428c66e106852338b48554a4a00c9e48da588f),
 with its other dependency revisions and FFmpeg configure flags unchanged. The x64-only NuGet
 omits unused architecture globs and adds provenance; the separately rebuilt interop wrapper is
-2.1.0-bale.20 as described above.
+2.1.0-bale.21 as described above.
 
 The [native release](https://github.com/Zorro92/bale-for-silo/releases/tag/native-ffmpeg-8.1.2-dav1d-1.5.4-p1)
 provides the package, SHA256, `SOURCES.txt` with every submodule revision and build parameters,

@@ -114,6 +114,34 @@ public class PlaybackRoutePolicyTests
         Assert.False(PlaybackRoutePolicy.Decide(Plan("server_transcode_hls", video, audio), false, forceFfmpeg: true).UseFfmpeg);
     }
 
+    [Theory]
+    [InlineData("original_http", "mkv", null, "h264", "ac3", true)]
+    [InlineData("original_http", null, "mkv", "hevc", "eac3", true)]
+    [InlineData("original_http", "webm", null, "hevc", "aac", true)]
+    [InlineData("original_http", "matroska,webm", null, "hevc", "aac", true)]
+    [InlineData("progressive", " MKV ", "mp4", "h264", "aac", true)]
+    [InlineData("server_remux_progressive", "mkv", "mkv", "hevc", "eac3", true)]
+    // The delivered stream's container wins over the source's.
+    [InlineData("server_remux_progressive", "mp4", "mkv", "hevc", "eac3", false)]
+    [InlineData("original_http", "mp4", null, "h264", "aac", false)]
+    [InlineData("original_http", null, "mp4", "hevc", "eac3", false)]
+    [InlineData("original_http", null, null, "h264", "ac3", false)]
+    [InlineData("server_transcode_hls", "mkv", "mkv", "hevc", "eac3", false)]
+    public void MatroskaDirectPlayUsesFfmpegDemuxWithSystemDecoders(string delivery, string? streamContainer, string? sourceContainer,
+        string video, string audio, bool ffmpeg)
+    {
+        var plan = Plan(delivery, video, audio);
+        plan.Source!.Container = sourceContainer;
+        if (streamContainer is not null) plan.Stream = new StreamV3 { Container = streamContainer };
+        var route = PlaybackRoutePolicy.Decide(plan, false);
+        Assert.Equal(ffmpeg, route.UseFfmpeg);
+        Assert.False(route.SoftwareVideo);
+        Assert.False(route.SoftwareAudio);
+        // HLS and the debug off switch still win.
+        Assert.False(PlaybackRoutePolicy.Decide(plan, true).UseFfmpeg);
+        Assert.False(PlaybackRoutePolicy.Decide(plan, false, ffmpegEnabled: false).UseFfmpeg);
+    }
+
     [Fact]
     public void OriginalUsesTheSelectedSourceCodecAndProgressiveUsesItsActualRecipe()
     {

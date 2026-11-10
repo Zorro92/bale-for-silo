@@ -132,6 +132,8 @@ public class DebugFfmpegPlaybackTests
         Assert.DoesNotContain("VideoDecoderMode.Automatic", source);
         Assert.Contains("config.Audio.SystemDecoderAAC = true", source);
         Assert.Contains("config.Audio.SystemDecoderMP3 = true", source);
+        // Patch 0021: AC3/EAC3 go undecoded to the system Dolby decoder on every FFmpeg mount.
+        Assert.Contains("config.FFmpegOptions[\"bale_system_decoder_dolby\"] = \"1\"", production);
         Assert.Contains("config.Subtitles.AutoSelectForcedSubtitles = false", source);
         // Every video stream goes to the shared policy (SoftwareVideoSupportTests cover it).
         Assert.Contains("var streams = source.VideoStreams.Select(video => (video.CodecName,", source);

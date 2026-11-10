@@ -134,11 +134,18 @@ measurements below that mention those paths are history.
 
 `Audio.SystemDecoderAAC` and `Audio.SystemDecoderMP3` are enabled. Upstream FFmpegInteropX
 **2.1.0 and master only have `SystemDecoderAAC` / `SystemDecoderMP3`**; there are no system
-AC3/EAC3/PCM or encoded-passthrough switches. **Dolby Atmos (E-AC3 JOC) stays on the
-direct/system-player path for now**; do not move it to FFmpeg merely for audio. Ordinary
-HEVC/H.264 + AC3/EAC3 remains native. When AV1 requires the FFmpeg route, FFmpeg decodes
-E-AC3 itself to PCM and **loses Atmos**. A later goal is to patch FFmpegInteropX so AC3/E-AC3
-can use the system audio decoder or passthrough, rather than lose the object metadata.
+AC3/EAC3/PCM or encoded-passthrough switches. Wrapper patch 0021 (`2.1.0-bale.21`) adds
+`bale_system_decoder_dolby`, which Bale sets on every FFmpeg mount: AC3/E-AC3 packets reach the
+system Dolby decoder undecoded (like AAC), so E-AC3 JOC (Atmos) is no longer decoded to PCM by
+FFmpeg. Atmos output itself is unverified (the developer has no Atmos receiver). TrueHD Atmos
+still decodes in FFmpeg and loses its objects.
+
+**Direct MKV/WebM always uses the FFmpeg demuxer** with system video and audio decoders. Windows'
+MKV source over-read the 1080p H.264 Shrek MKV (~385 MB burst at start, then ~2.2x the bitrate)
+and blocked on the network: 60 s A/B at the same point, native 211 waits / 33.7 s / 359 MB versus
+FFmpeg 5 waits / 1.15 s / 110 MB, and visibly smoother on the console. The likely trigger is sparse
+SRT subtitle tracks. MP4 (faststart, no subtitles) measured the same on both routes (10 vs 6
+startup-only waits, 80 vs 76 MB in 60 s), so MP4 stays on Windows' source.
 
 FFmpegInteropX moves its preferred audio
 stream first; Bale restores Silo's audio ordinal by sorting `AudioStreams[].StreamIndex` and sets

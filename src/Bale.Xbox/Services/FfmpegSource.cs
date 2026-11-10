@@ -18,10 +18,11 @@ internal static class FfmpegSource
         // Never Automatic: FFmpeg D3D11 and non-AV1 software video are forbidden by owner policy.
         config.Video.VideoDecoderMode = route.SoftwareVideo
             ? VideoDecoderMode.ForceFFmpegSoftwareDecoder : VideoDecoderMode.ForceSystemDecoder;
-        // These are the only system audio switches in the pinned 2.1.0 winmd. AC3/EAC3/PCM
-        // use FFmpeg audio on this path; keep their ordinary direct playback on Media Foundation.
+        // AAC/MP3 use the 2.1.0 winmd switches. Patch 0021 (2.1.0-bale.21) sends AC3/EAC3 to the
+        // system Dolby decoder undecoded, keeping E-AC-3 JOC (Atmos). PCM and the rest use FFmpeg audio.
         config.Audio.SystemDecoderAAC = true;
         config.Audio.SystemDecoderMP3 = true;
+        config.FFmpegOptions["bale_system_decoder_dolby"] = "1";
         config.Subtitles.AutoSelectForcedSubtitles = false;
         config.FFmpegOptions["rw_timeout"] = "10000000";
         ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight));

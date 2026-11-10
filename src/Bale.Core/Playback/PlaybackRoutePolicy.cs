@@ -31,9 +31,15 @@ public static class PlaybackRoutePolicy
         var softwareVideo = SoftwareDecodePolicy.VideoCodecs.Contains(video!);
         var softwareAudio = !SoftwareDecodePolicy.SystemAudioCodecs.Contains(audio!)
             && SoftwareDecodePolicy.AudioCodecs.Contains(audio!);
-        var ffmpeg = ffmpegEnabled && direct && !hls && (softwareVideo || softwareAudio || forceFfmpeg);
+        // Windows' MKV source over-reads (~2.2x the bitrate) and blocks on the network; FFmpeg's demuxer does not.
+        var matroska = IsMatroska(plan.Stream?.Container ?? plan.Source?.Container);
+        var ffmpeg = ffmpegEnabled && direct && !hls && (softwareVideo || softwareAudio || matroska || forceFfmpeg);
         return new(ffmpeg, ffmpeg && softwareVideo, video, audio, ordinal, width, height);
     }
+
+    /// <summary>MKV and WebM (Matroska-based); MP4 stays on Windows' own source.</summary>
+    public static bool IsMatroska(string? container) => container?.Trim().ToLowerInvariant() is { } name
+        && (name is "mkv" or "mka" or "webm" || name.Contains("matroska", StringComparison.Ordinal));
 
     /// <summary>FFmpegInteropX moves its best stream first; Silo indexes audio in demux order.</summary>
     public static int AudioTrackIndex(long? selectedOrdinal, IReadOnlyList<int> streamIndices, int? expectedAudioCount = null)
