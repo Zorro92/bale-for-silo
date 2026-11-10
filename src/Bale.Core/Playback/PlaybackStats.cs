@@ -90,7 +90,7 @@ public sealed record PlaybackStats
             not null when delivery.Contains("remux", StringComparison.OrdinalIgnoreCase) => "Remux",
             _ => delivery,
         };
-        if (decision is not null && MetadataId(plan.DecisionReason) is { } reason) decision += $" ({reason})";
+        if (decision is not null && DescribeDecisionReason(plan.DecisionReason) is { } reason) decision += $" ({reason})";
         var hls = isHls ?? (string.Equals(plan.Stream?.Protocol, "hls", StringComparison.OrdinalIgnoreCase)
             || string.Equals(delivery, "hls", StringComparison.OrdinalIgnoreCase)
             || delivery?.EndsWith("_hls", StringComparison.OrdinalIgnoreCase) == true);
@@ -149,6 +149,32 @@ public sealed record PlaybackStats
 
     // Plan fields are protocol ids/codecs, not free-form server diagnostics. Reject rather than
     // redact unexpected values so neither the screen nor debug 'where' can disclose request data.
+    /// <summary>
+    /// Readable text for silo-server's plan decision_reason (internal/playback/plan_v3.go). The
+    /// official clients never show it, so the wording is Bale's. Unknown codes still show, with
+    /// underscores as spaces; the ordinary direct-play reason adds nothing and is dropped.
+    /// </summary>
+    public static string? DescribeDecisionReason(string? code) => MetadataId(code)?.ToLowerInvariant() switch
+    {
+        null or "validated_original_playback" => null,
+        "client_managed_dynamic_range" => "player handles HDR",
+        "client_dv8_base_layer" => "Dolby Vision 8 as its base layer",
+        "client_dv7_to_dv81" => "Dolby Vision 7 converted to 8.1",
+        "client_dv7_to_hdr10" => "Dolby Vision 7 played as HDR10",
+        "container_normalization" => "container not supported",
+        "audio_adaptation" or "hls_audio_adaptation" => "audio converted",
+        "hls_packaging_required" => "repackaged for streaming",
+        "subtitle_burn_in_required" => "subtitles burned in",
+        "evidence_insufficient_for_direct" => "video support unconfirmed",
+        "quality_auto_source" => "video not supported",
+        "quality_original" => "original quality",
+        "quality_fixed_rung" => "quality setting",
+        "quality_device_limit" => "above max resolution",
+        "quality_bandwidth_limit" => "connection too slow",
+        "quality_bandwidth_cap" => "bandwidth cap",
+        { } other => other.Replace('_', ' '),
+    };
+
     private static string? MetadataId(string? value)
     {
         value = value?.Trim();

@@ -126,14 +126,48 @@ public class PlaybackStatsTests
     [InlineData(null, null, null)]
     public void BackendRouteIsSeparateFromDeliveryAndItsDecisionReason(string? delivery, string? decision, string? route)
     {
-        var plan = new PlaybackPlan { Delivery = delivery, DecisionReason = "source_compatible" };
+        var plan = new PlaybackPlan { Delivery = delivery, DecisionReason = "subtitle_burn_in_required" };
         var stats = PlaybackStats.FromPlan(plan);
         Assert.Equal(route, stats.BackendRoute);
-        Assert.Equal(decision is null ? null : decision + " (source_compatible)", stats.Delivery);
+        Assert.Equal(decision is null ? null : decision + " (subtitles burned in)", stats.Delivery);
         plan.DecisionReason = null;
         stats = PlaybackStats.FromPlan(plan);
         Assert.Equal(route, stats.BackendRoute);
         Assert.Equal(decision, stats.Delivery);
+    }
+
+    [Theory]
+    [InlineData("subtitle_burn_in_required", "subtitles burned in")]
+    [InlineData("hls_audio_adaptation", "audio converted")]
+    [InlineData("quality_bandwidth_limit", "connection too slow")]
+    [InlineData(" Quality_Device_Limit ", "above max resolution")]
+    [InlineData("some_future_reason", "some future reason")]
+    [InlineData("validated_original_playback", null)]
+    [InlineData("", null)]
+    [InlineData(null, null)]
+    public void DecisionReasonsReadAsText(string? code, string? expected) =>
+        Assert.Equal(expected, PlaybackStats.DescribeDecisionReason(code));
+
+    [Fact]
+    public void EveryServerDecisionReasonHasReadableText()
+    {
+        // Every decision_reason silo-server's plan_v3.go can set; none may fall back to the raw code.
+        string[] codes =
+        [
+            "client_managed_dynamic_range", "client_dv8_base_layer", "client_dv7_to_dv81", "client_dv7_to_hdr10",
+            "container_normalization", "audio_adaptation", "hls_audio_adaptation", "hls_packaging_required",
+            "subtitle_burn_in_required", "evidence_insufficient_for_direct", "quality_auto_source",
+            "quality_original", "quality_fixed_rung", "quality_device_limit", "quality_bandwidth_limit",
+            "quality_bandwidth_cap",
+        ];
+        foreach (var code in codes)
+        {
+            var text = PlaybackStats.DescribeDecisionReason(code);
+            Assert.False(string.IsNullOrEmpty(text), code);
+            Assert.NotEqual(code.Replace('_', ' '), text);
+        }
+        Assert.Equal("Direct play", PlaybackStats.FromPlan(new PlaybackPlan
+            { Delivery = "original_http", DecisionReason = "validated_original_playback" }).Delivery);
     }
 
     [Fact]
