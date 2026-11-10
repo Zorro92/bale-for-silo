@@ -7,7 +7,7 @@
 //   bale-cli home [--json] [--for-you]         print the home rows Bale would show
 //   bale-cli detail <content-id>   print a title's detail page as Bale shows it
 //   bale-cli search <query>        print search results and their artwork
-//   bale-cli play-plan <content-id> [Bale Test] [--file <fileId>] [--subtitle <index|-1>] [--av1-max-height <1080|2160>] [--av1-max-fps <30|60>] [--url-file <path>] [--save-head <path> <MiB>] [--save-range <path> <offset> <bytes>] [--hold <seconds>]
+//   bale-cli play-plan <content-id> [Bale Test] [--file <fileId>] [--subtitle <index|-1>] [--av1-max-height <1080|2160>] [--url-file <path>] [--save-head <path> <MiB>] [--save-range <path> <offset> <bytes>] [--hold <seconds>]
 //       Bale Test only; private original_http URL file, hold 0–3600 s then stop (also on Ctrl+C)
 //       Explicit file selection; AV1 defaults to 1080p, 2160p is an unmeasured debug claim
 //   bale-cli logout
@@ -261,7 +261,7 @@ catch (Bale.Core.Api.Models.Problem problem)
 
 static int Usage()
 {
-    Console.Error.WriteLine("usage: bale-cli <capability|pair-test|login> <server> | <profiles|home [--json] [--for-you]|detail <id>|search <query>|play-plan <id> [Bale Test] [--file <fileId>] [--subtitle <index|-1>] [--av1-max-height <1080|2160>] [--av1-max-fps <30|60>] [--url-file <path>] [--save-head <path> <MiB>] [--save-range <path> <offset> <bytes>] [--hold <seconds>]|logout>");
+    Console.Error.WriteLine("usage: bale-cli <capability|pair-test|login> <server> | <profiles|home [--json] [--for-you]|detail <id>|search <query>|play-plan <id> [Bale Test] [--file <fileId>] [--subtitle <index|-1>] [--av1-max-height <1080|2160>] [--url-file <path>] [--save-head <path> <MiB>] [--save-range <path> <offset> <bytes>] [--hold <seconds>]|logout>");
     return 2;
 }
 

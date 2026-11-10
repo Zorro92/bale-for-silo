@@ -58,26 +58,32 @@ public static class ConsoleEvidence
     };
 
     /// <summary>Measured decode claims; optional AV1 bounds let debug callers test unmeasured sizes.</summary>
-    public static IReadOnlyList<VideoDecodeCapability> BuildVideoDecode(int av1MaxWidth = 1920, int av1MaxHeight = 1080, int av1MaxFps = 30)
+    public static IReadOnlyList<VideoDecodeCapability> BuildVideoDecode(int av1MaxWidth = 1920, int av1MaxHeight = 1080)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(av1MaxWidth);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(av1MaxHeight);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(av1MaxFps);
         // Mirror silo-apple's iosApp/iosApp/Shared/AppleDecodeCapabilities.swift bounded attestation.
         // The measured display tops out at 1080p (docs/player-plan.md), so keep system claims there.
-        return Array.AsReadOnly(new[]
+        var claims = new List<VideoDecodeCapability>
         {
             // H.264/AAC MP4 playback is verified on the console (docs/player-plan.md).
-            new VideoDecodeCapability("h264", "Media Foundation", [], [], [8], 1920, 1080, 60, 25000, true),
+            new("h264", "Media Foundation", [], [], [8], 1920, 1080, 60, 25000, true),
             // HEVC MP4 playback, including Main10, is verified on the console (docs/player-plan.md).
-            new VideoDecodeCapability("hevc", "Media Foundation", [], [], [8, 10], 1920, 1080, 60, 25000, true),
-            // 0.1.230 Fight Club test: dav1d, AV1 Main 10-bit 1080p23.976, real time (~1.3 cores).
-            // 8-bit clips also verified. Bound the claim to 1080p30; 4K software AV1 is untested.
+            new("hevc", "Media Foundation", [], [], [8, 10], 1920, 1080, 60, 25000, true),
+            // dav1d zero-copy, measured in real time: 0.1.230 Fight Club 1080p23.976 10-bit (~1.3 cores)
+            // and 0.1.439 SmackDown 1080p59.94 10-bit (0 late frames, ~3 cores); 8-bit clips too.
             // Zero-copy takes only Main (4:2:0, 8/10-bit); High (4:4:4) and Professional (4:2:2, 12-bit)
             // transcode. The server lowercases ffprobe's "Main" and fails an empty or unknown profile,
             // so such streams transcode too.
-            new VideoDecodeCapability("av1", "dav1d", ["main"], [], [8, 10], av1MaxWidth, av1MaxHeight, av1MaxFps, null, false),
-        });
+            Av1(Math.Min(av1MaxWidth, 1920), Math.Min(av1MaxHeight, 1080), 60),
+        };
+        // A larger debug bound stays at 30 fps. Platform-attested rates are absolute (the server
+        // trades size for rate only on exact evidence), and it takes a source any entry admits.
+        if (av1MaxWidth > 1920 || av1MaxHeight > 1080) claims.Add(Av1(av1MaxWidth, av1MaxHeight, 30));
+        return claims.AsReadOnly();
+
+        static VideoDecodeCapability Av1(int width, int height, int fps) =>
+            new("av1", "dav1d", ["main"], [], [8, 10], width, height, fps, null, false);
     }
 }
 

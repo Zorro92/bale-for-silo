@@ -17,7 +17,7 @@ public class PlaybackRoutePolicyTests
         Assert.Equal(new[] { 8, 10 }, av1.BitDepths);
         Assert.Equal(1920, av1.MaxWidth);
         Assert.Equal(1080, av1.MaxHeight);
-        Assert.Equal(30, av1.MaxFrameRate);
+        Assert.Equal(60, av1.MaxFrameRate);
         Assert.Null(av1.MaxBitrateKbps);
         Assert.Equal(8, ConsoleEvidence.Default.MaxChannels);
         Assert.Empty(ConsoleEvidence.Default.AudioPassthroughCodecs);

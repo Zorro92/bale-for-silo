@@ -41,7 +41,6 @@
 #   scripts/bale-debug.sh frame-delivery [native|managed|off]  next playback attempt's observer; default native, on aliases native; memory only (restart resets); no args = status
 #   scripts/bale-debug.sh stream-adapter [pooled|builtin]  next FFmpeg playback attempt's stream adapter; default pooled, memory only (restart resets); no args = status
 #   scripts/bale-debug.sh av1-claim [1080|2160]   next playback attempt's AV1 software-decode claim at 30 fps; default 1080, memory only (restart resets); no args = status
-#   scripts/bale-debug.sh av1-fps [30|60]       next playback attempt's AV1 software-decode claim frame rate; default 30, memory only (restart resets); no args = status
 #   scripts/bale-debug.sh display-match [on|off|status]  match content HDMI resolution/refresh on the next playback; default off, memory only (restart resets); no args = status
 #   scripts/bale-debug.sh hdr pretend|off|status  next attempt: pretend HDR10, skip HDMI switching for console SDR tone mapping; default off, memory only
 #   scripts/bale-debug.sh idle-test [display-pulse|smtc-playing|smtc-stopped|status]  input-idle experiments: pulse a DisplayRequest or set the media session status (player's, else the view's); no args = status
@@ -301,17 +300,6 @@ case "${1:-}" in
       curl --fail-with-body -sS --max-time 5 "$BASE/av1-claim"
     else
       curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/av1-claim" --data-urlencode "height=$2"
-    fi
-    ;;
-  av1-fps)
-    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^(30|60)$ ) ]]; then
-      echo 'usage: scripts/bale-debug.sh av1-fps [30|60]' >&2
-      exit 2
-    fi
-    if [[ "$#" == 1 ]]; then
-      curl --fail-with-body -sS --max-time 5 "$BASE/av1-fps"
-    else
-      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/av1-fps" --data-urlencode "fps=$2"
     fi
     ;;
   display-match)

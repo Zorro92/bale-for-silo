@@ -115,7 +115,6 @@
     <None Include="../../src/Bale.Xbox/Services/DebugStreamAdapterSwitch.cs" Link="DebugStreamAdapterSwitch.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugAv1ClaimSwitch.cs" Link="DebugAv1ClaimSwitch.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugAv1ClaimSwitch.cs" Link="DebugAv1ClaimSwitch.cs.txt" CopyToOutputDirectory="PreserveNewest" />
-    <Compile Include="../../src/Bale.Xbox/Services/DebugAv1FpsSwitch.cs" Link="DebugAv1FpsSwitch.cs" />
     <None Include="../../src/Bale.Xbox/Services/RangeRandomAccessStream.cs" Link="RangeRandomAccessStream.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <!-- Test focus retry coordination against a minimal event/tree stand-in, not the UWP runtime. -->
     <Compile Include="../../src/Bale.Xbox/Services/FocusRetry.cs" Link="FocusRetry.cs" />

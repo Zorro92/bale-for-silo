@@ -162,7 +162,8 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   gets none of these keys. This tuning does not expand the measured software-video capability bounds.
 - `SoftwareDecodePolicy.VideoCodecs` is the project owner's explicit **AV1-only** software video
   allowlist. Add nothing without them. Other unsupported video goes to server transcode, never
-  FFmpeg software or D3D11. Measured AV1 evidence is 0.1.230: 8/10-bit, **1080p30**, not 4K.
+  FFmpeg software or D3D11. Measured AV1 evidence: 8/10-bit, **1080p60** (0.1.230 at 24 fps,
+  0.1.439 at 59.94 fps). Production claims no 4K; the debug 2160 bound adds a separate 4K **30** fps entry.
 - `PlaybackRoutePolicy` decides each mount. HLS always stays on AdaptiveMediaSource. Direct AV1
   forces FFmpeg software video; audio-only fallback forces the system video decoder and validates
   reported engines before playback. Direct MKV/WebM always uses the FFmpeg demuxer with system

@@ -71,7 +71,6 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public string FrameDeliveryMode { get; } = DebugFrameDeliverySwitch.Mode;
         public bool UsePooledStreamAdapter { get; } = DebugStreamAdapterSwitch.Pooled;
         public int Av1ClaimMaxHeight { get; } = DebugAv1ClaimSwitch.MaxHeight;
-        public int Av1ClaimMaxFps { get; } = DebugAv1FpsSwitch.MaxFps;
         public bool FfmpegEnabled => FfmpegMode != "off";
         public bool ForceFfmpeg => FfmpegMode == "direct";
 #else
@@ -186,10 +185,6 @@ public sealed partial class PlayerPage : Page, IBackHandler
 #if DEBUG_SERVER
                 if (attempt.Av1ClaimMaxHeight == 2160 && softwareVideo)
                     capabilities = capabilities with { VideoDecode = ConsoleEvidence.BuildVideoDecode(3840, 2160) };
-                // Debug-only 60 fps probe; production stays at the measured 30 fps bound.
-                if (attempt.Av1ClaimMaxFps == 60 && softwareVideo)
-                    capabilities = capabilities with { VideoDecode = attempt.Av1ClaimMaxHeight == 2160
-                        ? ConsoleEvidence.BuildVideoDecode(3840, 2160, 60) : ConsoleEvidence.BuildVideoDecode(av1MaxFps: 60) };
                 capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);
                 capabilities = DebugHdrPlayback.Capabilities(attempt.PretendHdr, capabilities);
 #endif
@@ -198,8 +193,6 @@ public sealed partial class PlayerPage : Page, IBackHandler
 #if DEBUG_SERVER
                 if (attempt.Av1ClaimMaxHeight == 2160 && attempt.FfmpegEnabled)
                     Log.Info("player: av1 claim=2160p (debug)");
-                if (attempt.Av1ClaimMaxFps == 60 && attempt.FfmpegEnabled)
-                    Log.Info("player: av1 claim=60fps (debug)");
 #endif
                 var decision = await client.Playback.StartAsync(start, services.Installation, ct);
                 var validation = PlaybackMessages.ValidatePlayable(decision);

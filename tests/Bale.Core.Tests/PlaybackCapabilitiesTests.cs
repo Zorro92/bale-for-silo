@@ -16,25 +16,26 @@ public class PlaybackCapabilitiesTests
             Assert.Equal(new[] { "main" }, av1.Profiles);
             Assert.Equal(1920, av1.MaxWidth);
             Assert.Equal(1080, av1.MaxHeight);
-            Assert.Equal(30, av1.MaxFrameRate);
+            Assert.Equal(60, av1.MaxFrameRate);
         }
     }
 
     [Fact]
-    public void RaisedBoundChangesOnlyAv1DimensionsAndNeverMutatesTheDefault()
+    public void RaisedBoundAddsA4K30Av1EntryBesideTheMeasured1080p60OneAndNeverMutatesTheDefault()
     {
         var claims = ConsoleEvidence.BuildVideoDecode(3840, 2160);
-        Assert.Equal(new[] { "h264", "hevc", "av1" }, claims.Select(decode => decode.Codec));
-        var av1 = Assert.Single(claims, decode => decode.Codec == "av1");
-        Assert.Equal("dav1d", av1.DecoderName);
-        Assert.Equal(new[] { "main" }, av1.Profiles);
-        Assert.Empty(av1.Levels);
-        Assert.Equal(new[] { 8, 10 }, av1.BitDepths);
-        Assert.Equal(3840, av1.MaxWidth);
-        Assert.Equal(2160, av1.MaxHeight);
-        Assert.Equal(30, av1.MaxFrameRate);
-        Assert.Null(av1.MaxBitrateKbps);
-        Assert.False(av1.Hardware);
+        Assert.Equal(new[] { "h264", "hevc", "av1", "av1" }, claims.Select(decode => decode.Codec));
+        Assert.Equal(new[] { (1920, 1080, 60.0), (3840, 2160, 30.0) },
+            claims.Where(decode => decode.Codec == "av1").Select(decode => (decode.MaxWidth ?? 0, decode.MaxHeight ?? 0, decode.MaxFrameRate ?? 0)));
+        Assert.All(claims.Where(decode => decode.Codec == "av1"), av1 =>
+        {
+            Assert.Equal("dav1d", av1.DecoderName);
+            Assert.Equal(new[] { "main" }, av1.Profiles);
+            Assert.Empty(av1.Levels);
+            Assert.Equal(new[] { 8, 10 }, av1.BitDepths);
+            Assert.Null(av1.MaxBitrateKbps);
+            Assert.False(av1.Hardware);
+        });
         Assert.All(claims.Where(decode => decode.Codec != "av1"), decode =>
         {
             Assert.Equal("Media Foundation", decode.DecoderName);
@@ -66,12 +67,12 @@ public class PlaybackCapabilitiesTests
         var start = PlaybackStartBuilder.Build("file", "profile", "attempt", null,
             PlaybackSelection.Auto, device, PlaybackTestSupport.Identity);
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(start, PlaybackJson.Default.PlaybackStartRequestV3));
-        var av1 = Assert.Single(json.RootElement.GetProperty("client_capabilities").GetProperty("video_decode").EnumerateArray(),
-            decode => decode.GetProperty("codec").GetString() == "av1");
-        Assert.Equal(width, av1.GetProperty("max_width").GetInt32());
-        Assert.Equal(height, av1.GetProperty("max_height").GetInt32());
-        Assert.Equal(30, av1.GetProperty("max_frame_rate").GetDouble());
-        Assert.False(av1.GetProperty("hardware").GetBoolean());
+        var av1 = json.RootElement.GetProperty("client_capabilities").GetProperty("video_decode").EnumerateArray()
+            .Where(decode => decode.GetProperty("codec").GetString() == "av1").ToArray();
+        Assert.Equal(width > 1920 ? [(1920, 1080, 60.0), (width, height, 30.0)] : new[] { (width, height, 60.0) },
+            av1.Select(decode => (decode.GetProperty("max_width").GetInt32(), decode.GetProperty("max_height").GetInt32(),
+                decode.GetProperty("max_frame_rate").GetDouble())));
+        Assert.All(av1, decode => Assert.False(decode.GetProperty("hardware").GetBoolean()));
         Assert.Same(device.VideoDecode, start.ClientCapabilities.VideoDecode);
         Assert.Contains(PlaybackProtocol.SoftwareVideoDecodeFeature, start.ClientFeatures);
         Assert.Contains("av1", start.ClientPlaybackContext.Deliveries["original_http"].VideoCodecs);
@@ -100,9 +101,8 @@ public class PlaybackCapabilitiesTests
         })
         {
             Assert.Same(start.ClientCapabilities.VideoDecode, request.ClientCapabilities.VideoDecode);
-            var av1 = Assert.Single(request.ClientCapabilities.VideoDecode, decode => decode.Codec == "av1");
-            Assert.Equal(3840, av1.MaxWidth);
-            Assert.Equal(2160, av1.MaxHeight);
+            Assert.Contains(request.ClientCapabilities.VideoDecode,
+                decode => decode is { Codec: "av1", MaxWidth: 3840, MaxHeight: 2160, MaxFrameRate: 30 });
         }
         var failed = PlaybackReplan.ForFailure(start, plan, "plan-attempt", [], 1, 42, new("decoder_failure"), route);
         Assert.DoesNotContain(failed.ClientCapabilities.VideoDecode, decode => decode.Codec == "av1");

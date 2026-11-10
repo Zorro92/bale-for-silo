@@ -78,16 +78,19 @@ guesses. `playtest` (debug only) checks actual playback, not just installed deco
 **Decision: ship FFmpegInteropX as the production fallback.** By the project owner's rule,
 software **video** decode is **AV1 only**. `SoftwareDecodePolicy.VideoCodecs` is an explicit,
 owner-maintained allowlist; nothing else may be added without them. Unsupported non-AV1 video
-goes to the server to transcode, never FFmpeg software or D3D11 video. The 0.1.230 Fight Club test
-is the measured AV1 evidence: 8/10-bit, max 1920×1080, max 30 fps. **4K software AV1 is untested
-and is not claimed.** Audio may use FFmpeg software whenever the system path cannot handle it.
+goes to the server to transcode, never FFmpeg software or D3D11 video. The measured AV1 evidence is
+8/10-bit, max 1920×1080, max 60 fps: 0.1.230 Fight Club (1080p23.976 10-bit, ~1.3 cores) and 0.1.439
+SmackDown (1080p59.94 10-bit, 6.4 Mbps, zero-copy, 0 late frames over ~4.5 min, ~3 of 8 cores).
+**4K software AV1 is not claimed in production.** The debug `av1-claim 2160` bound adds a separate
+3840×2160 entry capped at 30 fps; the server's platform-attested rates are absolute and it accepts a
+source that any one entry admits. Audio may use FFmpeg software whenever the system path cannot handle it.
 
 Current production capability claims (`ConsoleEvidence.Default` plus runtime display detection, max audio channels **8**):
 
 | Stream | Claims / engine | Bounds / limitations |
 |---|---|---|
 | H.264 / HEVC video | Media Foundation, hardware | 1920×1080, 60 fps, 25 Mbps; H.264 8-bit, HEVC 8/10-bit |
-| AV1 video | dav1d, **non-hardware**; `software_video_decode_v1` opt-in | 8/10-bit, **1920×1080, 30 fps**; no 4K claim |
+| AV1 video | dav1d, **non-hardware**; `software_video_decode_v1` opt-in | 8/10-bit, **1920×1080, 60 fps**; no 4K claim |
 | System audio | `aac`, `ac3`, `eac3`, `mp3`, `pcm` | Retains the native direct path unless AV1 needs FFmpeg |
 | FFmpeg fallback audio | `dts`, `dts_hd`, `truehd`, `flac`, `opus`, `vorbis`, `alac` | Decode to PCM, not passthrough; real-library console verification pending |
 | Audio passthrough | None | Receiver verification pending |

@@ -202,7 +202,7 @@ public class PlaybackStartTests
         Assert.Equal(new[] { 8, 10 }, av1.GetProperty("bit_depths").EnumerateArray().Select(value => value.GetInt32()));
         Assert.Equal(1920, av1.GetProperty("max_width").GetInt32());
         Assert.Equal(1080, av1.GetProperty("max_height").GetInt32());
-        Assert.Equal(30, av1.GetProperty("max_frame_rate").GetDouble());
+        Assert.Equal(60, av1.GetProperty("max_frame_rate").GetDouble());
         Assert.False(av1.TryGetProperty("max_bitrate_kbps", out _));
         var context = json.RootElement.GetProperty("client_playback_context");
         Assert.Equal("tv", context.GetProperty("form_factor").GetString());
