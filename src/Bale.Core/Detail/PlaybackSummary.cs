@@ -1,3 +1,5 @@
+using Bale.Core.Api.Models;
+
 namespace Bale.Core.Detail;
 
 /// <summary>The three values in TvDetailPlaybackSelectionSummary; null renders a skeleton, not an empty label.</summary>
@@ -20,20 +22,40 @@ public sealed record PlaybackSummaryValues(string? Version, string? Audio, strin
         // Do not replace it with the stale effective index that a pending pick/reset just overlaid.
         var audioValue = selectedAudioTrackIndex is null && !automaticAudioResolutionKnown ? "Auto"
             : PlaybackFormatting.AudioValueLabel(version, selectedAudioTrackIndex, automaticAudioTrackOrdinal).Replace("Auto: ", "Auto · ");
-        SubtitleAutoContext? context = null;
-        if (selectedAudioTrackIndex is not null || automaticAudioResolutionKnown)
-        {
-            context = new SubtitleAutoContext(
-                NonBlank(playbackDetail.EffectiveSubtitleLanguage) ?? subtitleAutoContext?.PreferredLanguage,
-                NonBlank(playbackDetail.EffectiveSubtitleMode) ?? subtitleAutoContext?.Mode,
-                playbackDetail.EffectiveShowForcedSubtitles ?? subtitleAutoContext?.ShowForced ?? false,
-                PlaybackFormatting.ResolvedAudioLanguage(version, selectedAudioTrackIndex, automaticAudioTrackOrdinal),
-                playbackDetail.EffectiveSubtitleTrackSignature ?? subtitleAutoContext?.TrackSignature);
-        }
-
+        var context = AutoContext(playbackDetail, version, selectedAudioTrackIndex, automaticAudioResolutionKnown,
+            automaticAudioTrackOrdinal, subtitleAutoContext);
         var subtitleValue = PlaybackFormatting.SubtitleValueLabel(version, selectedSubtitleTrackIndex, context).Replace("Auto - ", "Auto · ");
         return new PlaybackSummaryValues(versionValue, audioValue, subtitleValue);
     }
+
+    /// <summary>
+    /// TvItemDetailScreen.kt's subtitleLaunchSelection: exactly what the Subtitles value is showing, built
+    /// from the same version and Auto context, ready for the start request. A V3 start without a subtitle
+    /// index means Off, so Auto must send its own preview (or -1 for "Auto · None"). Null only when the
+    /// value cannot say yet (unknown audio resolution or no version).
+    /// </summary>
+    public static int? SubtitleLaunchIndex(ItemDetail? playbackDetail, string? selectedFileId = null,
+        int? selectedAudioTrackIndex = null, int? selectedSubtitleTrackIndex = null, string? preferredQuality = null,
+        bool automaticAudioResolutionKnown = false, int? automaticAudioTrackOrdinal = null,
+        SubtitleAutoContext? subtitleAutoContext = null)
+    {
+        if (selectedSubtitleTrackIndex is not null) return selectedSubtitleTrackIndex;
+        if (playbackDetail is null) return null;
+        selectedFileId = playbackDetail.Versions.Any(version => version.FileId == selectedFileId) ? selectedFileId : null;
+        var version = PlaybackFormatting.SelectDisplayVersion(playbackDetail.Versions, selectedFileId, playbackDetail.LastFileId, preferredQuality);
+        if (version is null) return null;
+        return PlaybackFormatting.SubtitleLaunchIndex(version, AutoContext(playbackDetail, version, selectedAudioTrackIndex,
+            automaticAudioResolutionKnown, automaticAudioTrackOrdinal, subtitleAutoContext));
+    }
+
+    private static SubtitleAutoContext? AutoContext(ItemDetail playbackDetail, FileVersion version, int? selectedAudioTrackIndex,
+        bool automaticAudioResolutionKnown, int? automaticAudioTrackOrdinal, SubtitleAutoContext? subtitleAutoContext) =>
+        selectedAudioTrackIndex is null && !automaticAudioResolutionKnown ? null : new SubtitleAutoContext(
+            NonBlank(playbackDetail.EffectiveSubtitleLanguage) ?? subtitleAutoContext?.PreferredLanguage,
+            NonBlank(playbackDetail.EffectiveSubtitleMode) ?? subtitleAutoContext?.Mode,
+            playbackDetail.EffectiveShowForcedSubtitles ?? subtitleAutoContext?.ShowForced ?? false,
+            PlaybackFormatting.ResolvedAudioLanguage(version, selectedAudioTrackIndex, automaticAudioTrackOrdinal),
+            playbackDetail.EffectiveSubtitleTrackSignature ?? subtitleAutoContext?.TrackSignature);
 
     private static string? NonBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 }

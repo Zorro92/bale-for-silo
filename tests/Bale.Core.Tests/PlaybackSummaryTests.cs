@@ -100,6 +100,29 @@ public class PlaybackSummaryTests
     }
 
     [Fact]
+    public void LaunchIndexSendsWhatTheSubtitlesValueShows()
+    {
+        // Auto preview "English · SRT" travels as its combined index: an absent V3 index would mean Off.
+        var movie = Item("m") with { EffectiveSubtitleLanguage = "en", EffectiveSubtitleMode = "always" };
+        Assert.Equal("Auto · English · SRT", PlaybackSummaryValues.For(movie, automaticAudioResolutionKnown: true,
+            automaticAudioTrackOrdinal: 0).Subtitles);
+        Assert.Equal(0, PlaybackSummaryValues.SubtitleLaunchIndex(movie, automaticAudioResolutionKnown: true, automaticAudioTrackOrdinal: 0));
+
+        // Combined space: externals first, so the embedded English track after one external is index 1.
+        var mixed = movie with { };
+        mixed.Versions[0].SubtitleTracks = [new() { Language = "spa", Codec = "subrip", External = true }, new() { Language = "eng", Codec = "ass" }];
+        Assert.Equal(1, PlaybackSummaryValues.SubtitleLaunchIndex(mixed, automaticAudioResolutionKnown: true, automaticAudioTrackOrdinal: 0));
+
+        // "Auto · None" is a decision too; an explicit pick passes through; unknown audio stays silent.
+        var off = Item("m") with { EffectiveSubtitleMode = "off" };
+        Assert.Equal(-1, PlaybackSummaryValues.SubtitleLaunchIndex(off, automaticAudioResolutionKnown: true));
+        Assert.Equal(-1, PlaybackSummaryValues.SubtitleLaunchIndex(off, selectedAudioTrackIndex: 0));
+        Assert.Equal(3, PlaybackSummaryValues.SubtitleLaunchIndex(off, selectedSubtitleTrackIndex: 3));
+        Assert.Null(PlaybackSummaryValues.SubtitleLaunchIndex(movie));
+        Assert.Null(PlaybackSummaryValues.SubtitleLaunchIndex(null, automaticAudioResolutionKnown: true));
+    }
+
+    [Fact]
     public void ProfileSubtitleFallbackIsUsedWhenTheServerDoesNotSupplyEffectiveFields()
     {
         var movie = Item("m");

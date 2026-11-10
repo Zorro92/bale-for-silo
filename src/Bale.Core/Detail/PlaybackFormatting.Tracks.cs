@@ -68,6 +68,18 @@ public static partial class PlaybackFormatting
         return selected < 0 ? "On" : SubtitleSummary(tracks[selected], selected);
     }
 
+    /// <summary>
+    /// The Auto half of TvPlaybackFormatting.subtitleLaunchSelection: the preview's combined index, -1 when
+    /// the preview is "None", null when there is no Auto context to preview with.
+    /// </summary>
+    public static int? SubtitleLaunchIndex(FileVersion? version, SubtitleAutoContext? autoContext)
+    {
+        if (autoContext is null) return null;
+        var tracks = version?.SubtitleTracks ?? [];
+        return AutoResolvedSubtitleOrdinal(tracks, autoContext) is { } ordinal
+            ? CombinedSubtitleSelectionIndexes(tracks)[ordinal] : -1;
+    }
+
     public static List<int> CombinedSubtitleSelectionIndexes(IReadOnlyList<VersionSubtitleTrack> tracks)
     {
         var externalCount = tracks.Count(track => track.External == true);

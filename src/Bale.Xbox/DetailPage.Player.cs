@@ -29,6 +29,17 @@ public sealed partial class DetailPage
                 || profile != client.ProfileId || (!fromEpisode && PlayTargetId != targetId)) return;
             if (playable.PlaysEpisodes) return;
             var selection = _playbackSelections.For(playable);
+            // TvItemDetailScreen.kt: start on exactly what the Subtitles value shows, Auto preview included.
+            // An absent V3 subtitle index means Off, so leaving Auto unresolved started without subtitles.
+            var version = PlaybackFormatting.SelectDisplayVersion(playable.Versions, selection.FileId, playable.LastFileId);
+            var automaticAudio = PlaybackAudioSelection.AutomaticAudioOrdinal(version, _preferredAudioLanguage,
+                _audioSelectionCapabilities, _playbackSelections.PendingAudioChoiceFor(playable));
+            selection = selection with
+            {
+                SubtitleIndex = PlaybackSummaryValues.SubtitleLaunchIndex(playable, selection.FileId, selection.AudioIndex,
+                    selection.SubtitleIndex, automaticAudioResolutionKnown: _audioSelectionCapabilities is not null,
+                    automaticAudioTrackOrdinal: automaticAudio, subtitleAutoContext: _subtitleAutoContext),
+            };
             _returnCastIndex = null;
             _returnSimilarId = null;
             _returnPlaybackFocus = new(targetId, fromEpisode ? targetId : null, overridePosition == 0.0);
