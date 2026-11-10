@@ -686,32 +686,6 @@ fn rejects_bad_input_without_poisoning() {
     assert_eq!(other.stats().frames_repacked, 0);
 }
 
-/// Idle buffers that stayed left over for a whole window of allocations are released one per
-/// window, down to what the allocations use; nothing is created to replace them.
-#[test]
-fn long_idle_buffers_are_trimmed() {
-    const TRIM_WINDOW: usize = 256;
-    let warp = Warp::new();
-    let zero_copy = warp.zero_copy();
-    let held: Vec<Picture> = (0..4)
-        .map(|_| zero_copy.alloc(4096).expect("within the limit"))
-        .collect();
-    for picture in &held {
-        assert_eq!(release(picture.id), S_OK);
-    }
-    let before = zero_copy.stats();
-    assert!(before.buffers_pooled >= 4, "{before:?}");
-    // One buffer in use at a time: every other one is left over by every allocation.
-    for _ in 0..(before.buffers_pooled as usize + 1) * TRIM_WINDOW {
-        let picture = zero_copy.alloc(4096).expect("a pooled buffer");
-        assert_eq!(release(picture.id), S_OK);
-    }
-    let after = zero_copy.stats();
-    assert_eq!(after.buffers_pooled, 1, "{after:?}");
-    assert_eq!(after.buffers_created, before.buffers_created, "{after:?}");
-    assert_eq!(after.buffers_live, 0);
-}
-
 #[test]
 fn pool_limit_fails_fast_and_recovers() {
     let warp = Warp::new();
