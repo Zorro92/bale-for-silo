@@ -587,9 +587,12 @@ public class DebugFfmpegPlaytestTests
         var target = project.Descendants("Target").Single(t => t.Attribute("Name")!.Value == "PrepareFFmpegManifest");
         Assert.Null(target.Attribute("Condition"));
         var licenses = project.Descendants("Content").Where(content => content.Attribute("Link")?.Value.StartsWith("Licenses") == true).ToArray();
-        Assert.Equal(4, licenses.Length);
+        Assert.Equal(6, licenses.Length);
         Assert.Contains(licenses, license => license.Attribute("Link")!.Value == @"Licenses\FFmpeg\SOURCES.txt");
         Assert.Contains(licenses, license => license.Attribute("Link")!.Value == @"Licenses\FFmpegInteropX\SOURCES.txt");
+        Assert.Contains(licenses, license => license.Attribute("Link")!.Value == @"Licenses\libass\SOURCES.txt");
+        Assert.Contains(licenses, license => license.Attribute("Include")!.Value == @"$(BaleLibassDir)\licenses\*.txt"
+            && license.Attribute("Link")!.Value == @"Licenses\libass\%(Filename)%(Extension)");
         Assert.All(licenses, license => Assert.DoesNotContain(license.AncestorsAndSelf(), element => element.Attribute("Condition") is not null));
     }
 
