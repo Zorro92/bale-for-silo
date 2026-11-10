@@ -356,7 +356,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         var failedRoute = attempt.Media?.Route;
         DisposeMount(attempt);
         // The failed pipeline's subtitles go with it; the replacement mount loads its own track.
-        DisposeSubtitles();
+        DisposeSubtitles(keepFetched: true);
         await _hdrOutput.RestoreAsync();
         attempt.Cancellation.Token.ThrowIfCancellationRequested();
         Log.Info("player: replan");

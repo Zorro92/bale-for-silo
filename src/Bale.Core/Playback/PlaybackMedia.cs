@@ -42,8 +42,11 @@ public sealed class PlaybackMedia
     public double? DurationSeconds { get; }
     public PlaybackTimeline Timeline { get; }
 
-    public async Task<HttpResponseMessage> SendAsync(Uri uri, long? offset, long? length,
-        HttpCompletionOption completion, CancellationToken ct)
+    public Task<HttpResponseMessage> SendAsync(Uri uri, long? offset, long? length,
+        HttpCompletionOption completion, CancellationToken ct) => SendAsync(uri, offset, length, completion, streamHeaders: true, ct);
+
+    private async Task<HttpResponseMessage> SendAsync(Uri uri, long? offset, long? length,
+        HttpCompletionOption completion, bool streamHeaders, CancellationToken ct)
     {
         if (uri != Uri && !PlaybackMediaUrl.IsAllowedChild(uri, _server))
             throw new InvalidOperationException("The media request is outside the playback server's media routes.");
@@ -51,7 +54,8 @@ public sealed class PlaybackMedia
         if (length is <= 0) throw new ArgumentOutOfRangeException(nameof(length));
 
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        foreach (var header in _headers) request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        if (streamHeaders)
+            foreach (var header in _headers) request.Headers.TryAddWithoutValidation(header.Key, header.Value);
         if (offset is { } start)
             request.Headers.Range = new RangeHeaderValue(start, length is { } count ? checked(start + (count - 1)) : null);
         // Kiota 2.1.2 HttpRequestMessageExtensions.GetRequestOption<T> uses the type's FullName.
@@ -65,6 +69,38 @@ public sealed class PlaybackMedia
         using var response = await SendAsync(uri, offset, length, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         RequireSuccess(response);
         return (await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false), response.Content.Headers.ContentType?.MediaType);
+    }
+
+    /// <summary>
+    /// The plan's subtitle sidecar as UTF-8 text bytes, fetched as this plan's credential owner. The
+    /// stream's own plan headers are for the media URL only and are not sent.
+    /// </summary>
+    public async Task<byte[]> GetSubtitleAsync(PlaybackSubtitleSource source, CancellationToken ct) =>
+        PlaybackSubtitleText.ToUtf8(await GetCappedAsync(source.Uri, PlaybackSubtitleText.MaxBytes, ct).ConfigureAwait(false));
+
+    /// <summary>The embedded fonts of the plan's ASS/SSA track; empty when the plan names no bundle.</summary>
+    public async Task<IReadOnlyList<SubtitleFont>> GetSubtitleFontsAsync(PlaybackSubtitleSource source, CancellationToken ct)
+    {
+        if (source.FontBundle is not { } bundle) return [];
+        return SubtitleFontBundle.Parse(await GetCappedAsync(bundle, SubtitleFontBundle.MaxResponseBytes, ct).ConfigureAwait(false));
+    }
+
+    private async Task<byte[]> GetCappedAsync(Uri uri, int maxBytes, CancellationToken ct)
+    {
+        using var response = await SendAsync(uri, null, null, HttpCompletionOption.ResponseHeadersRead, streamHeaders: false, ct)
+            .ConfigureAwait(false);
+        RequireSuccess(response);
+        if (response.Content.Headers.ContentLength > maxBytes) throw new InvalidDataException("The subtitle response is too large.");
+        await using var body = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while ((read = await body.ReadAsync(chunk, ct).ConfigureAwait(false)) > 0)
+        {
+            if (buffer.Length + read > maxBytes) throw new InvalidDataException("The subtitle response is too large.");
+            buffer.Write(chunk, 0, read);
+        }
+        return buffer.ToArray();
     }
 
     public Task<HttpRangeStream> OpenStreamAsync(CancellationToken ct, int prefetchBlocks = HttpRangeStream.DefaultPrefetchBlocks) =>

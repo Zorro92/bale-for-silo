@@ -9,6 +9,22 @@ public static class PlaybackProtocol
     public const string SequencedProgressFeature = "sequenced_progress_v1";
 
     public const string SoftwareVideoDecodeFeature = "software_video_decode_v1";
+    /// <summary>External SubRip arrives as the stored .srt instead of the server's WebVTT conversion.</summary>
+    public const string SubripSidecarFeature = "subrip_sidecar_v1";
+
+    /// <summary>
+    /// Start-time features that depend on what the server offers. silo-server protocol_v3.go makes
+    /// subrip_sidecar_v1 attempt-sticky and playback_service.go keeps it across replans from the
+    /// attempt record, so it is added to the start only, and only for a server that advertises it and
+    /// a client that claimed text sidecars.
+    /// </summary>
+    public static IReadOnlyList<string> NegotiatedStartFeatures(PlaybackStartRequestV3 request, IReadOnlyList<string>? serverFeatures)
+    {
+        if (serverFeatures?.Contains(SubripSidecarFeature) != true || request.ClientFeatures.Contains(SubripSidecarFeature)
+            || !request.ClientPlaybackContext.Deliveries.Values.Any(delivery => delivery.Subtitles.SidecarText))
+            return request.ClientFeatures;
+        return request.ClientFeatures.Append(SubripSidecarFeature).ToArray();
+    }
 
     public static IReadOnlyList<string> SoloClientFeatures(ClientPlaybackContext context,
         IReadOnlyList<VideoDecodeCapability>? videoDecode = null)

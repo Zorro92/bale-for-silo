@@ -50,6 +50,9 @@ public sealed class PlaybackClient
         return new(_http, Server, scope, plan, uri);
     }
 
+    /// <summary>The sidecar Bale's overlay should draw for this plan, or null (off, burned in, unusable).</summary>
+    public PlaybackSubtitleSource? ResolveSubtitles(PlaybackPlan plan) => PlaybackSubtitleResolver.Resolve(plan, Server);
+
     public Task<PlaybackCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default) =>
         GetCapabilitiesAsync(_captureScope(), cancellationToken);
 
@@ -76,7 +79,11 @@ public sealed class PlaybackClient
         if (capabilities.InstallationId != installationId)
             throw new InvalidOperationException("The playback installation does not match the server capabilities.");
 
-        return await PostAsync("/api/v2/playback/start", request with { InstallationId = installationId },
+        return await PostAsync("/api/v2/playback/start", request with
+            {
+                InstallationId = installationId,
+                ClientFeatures = PlaybackProtocol.NegotiatedStartFeatures(request, capabilities.Features),
+            },
             PlaybackJson.Default.PlaybackStartRequestV3, scope, cancellationToken).ConfigureAwait(false);
     }
 

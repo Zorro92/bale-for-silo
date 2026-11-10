@@ -70,7 +70,8 @@
 #                                               timed-metadata tracks and the cues each raises (text/image, timing, styling)
 #                                               BALE_SUBTEST_SHOW=<track> plays full screen with Windows drawing that track
 #   scripts/bale-debug.sh suboverlay [stats|load <url> [font-url...]|clear]  Bale's own subtitle renderer over the open player:
-#                                               load an ASS/SSA file (fonts are added first), clear it, or print its counters (default)
+#                                               load a subtitle file (.srt = SubRip, .vtt = WebVTT, else ASS/SSA; fonts are added first),
+#                                               clear it, or print its counters (default)
 #   scripts/bale-debug.sh goto "Unwatched#2"     setup only: focus the second matching control
 #   scripts/bale-debug.sh targets               list controls goto can reach
 #   scripts/bale-debug.sh tree                  the visible element tree with bounds

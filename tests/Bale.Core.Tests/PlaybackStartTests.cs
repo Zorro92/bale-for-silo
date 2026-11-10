@@ -47,6 +47,38 @@ public class PlaybackStartTests
     }
 
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task OriginalSubRipIsRequestedOnlyFromAServerThatOffersIt(bool offered)
+    {
+        var capabilities = offered
+            ? Capabilities.Replace("\"sequenced_progress_v1\"", "\"sequenced_progress_v1\",\"subrip_sidecar_v1\"")
+            : Capabilities;
+        var stub = new StubHandler().Enqueue(capabilities).Enqueue(HttpStatusCode.Created, Decision);
+        using var client = Create(stub);
+        var start = Start();
+
+        await client.Playback.StartAsync(start, new Installation());
+
+        using var json = JsonDocument.Parse(stub.RequestBodies[1]!);
+        var features = json.RootElement.GetProperty("client_features").EnumerateArray().Select(value => value.GetString()).ToArray();
+        Assert.Equal(offered, features.Contains("subrip_sidecar_v1"));
+        // In-playlist subtitle renditions are never requested: AdaptiveMediaSource would not draw them.
+        Assert.DoesNotContain(features, feature => feature!.StartsWith("hls_subtitle_renditions", StringComparison.Ordinal));
+        // The caller's request, which later replans reuse, is untouched: the server keeps the choice.
+        Assert.DoesNotContain("subrip_sidecar_v1", start.ClientFeatures);
+    }
+
+    [Fact]
+    public void OriginalSubRipNeedsATextSidecarClaim()
+    {
+        var start = PlaybackStartBuilder.Build("file", "profile", "attempt-id", 0, PlaybackSelection.Auto,
+            ConsoleEvidence.Default with { Subtitles = new() }, Identity);
+        Assert.Same(start.ClientFeatures, PlaybackProtocol.NegotiatedStartFeatures(start, ["subrip_sidecar_v1"]));
+        Assert.Same(start.ClientFeatures, PlaybackProtocol.NegotiatedStartFeatures(start, null));
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData(-1)]
     public async Task AutoAndDetailOffOmitTheServerTrackPair(int? subtitle)
@@ -182,6 +214,15 @@ public class PlaybackStartTests
             Assert.False(hdr.GetProperty("hlg").GetBoolean());
             Assert.Empty(hdr.GetProperty("dolby_vision_profiles").EnumerateArray());
             Assert.Empty(delivery.GetProperty("transformations").EnumerateArray());
+            // The overlay draws fetched text sidecars only: bitmap and in-container tracks stay burn-in.
+            var subtitles = delivery.GetProperty("subtitles");
+            Assert.True(subtitles.GetProperty("sidecar_text").GetBoolean());
+            Assert.True(subtitles.GetProperty("ass_styling").GetBoolean());
+            Assert.True(subtitles.GetProperty("font_attachments").GetBoolean());
+            Assert.False(subtitles.GetProperty("embedded_text").GetBoolean());
+            Assert.False(subtitles.GetProperty("embedded_bitmap").GetBoolean());
+            Assert.False(subtitles.GetProperty("sidecar_bitmap").GetBoolean());
+            Assert.Empty(subtitles.GetProperty("native_embedded").EnumerateArray());
         }
         Assert.False(deliveries.GetProperty("progressive").GetProperty("enabled").GetBoolean());
         Assert.Equal(new[] { "m3u8", "hls" }, Strings(deliveries.GetProperty("hls").GetProperty("containers")));

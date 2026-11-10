@@ -89,7 +89,8 @@ public sealed partial class PlayerPage
         else await _hdrOutput.RestoreAsync();
         // Back/suspend may arrive during the HDMI handshake. Do not open or start that mount.
         attempt.Cancellation.Token.ThrowIfCancellationRequested();
-        // A kept overlay (seek reanchor) must not show the previous mount's track over this one.
+        // A kept overlay (seek reanchor) must not show the previous mount's track over this one;
+        // StartSubtitles below reloads this plan's track for the new mount.
         ClearSubtitles();
         var transport = attempt.Client.Playback.OpenMedia(attempt.Plan!);
         var media = attempt.Media = new Mount(transport, attempt.Cancellation.Token)
@@ -100,6 +101,7 @@ public sealed partial class PlayerPage
         };
         _delivery = transport.Delivery;
         _duration = transport.DurationSeconds;
+        StartSubtitles(attempt, media);
 #if DEBUG_SERVER
         ResetStats(attempt.Plan);
 #endif

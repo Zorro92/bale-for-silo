@@ -8,7 +8,16 @@ namespace Bale.Core.Playback;
 /// </summary>
 public static class PlaybackMediaUrl
 {
-    public static Uri? Resolve(string? raw, Uri server)
+    public static Uri? Resolve(string? raw, Uri server) => Resolve(raw, server, subtitle: false);
+
+    /// <summary>
+    /// A plan's subtitle sidecar or font bundle: the same header-authenticated boundary, narrowed to
+    /// silo-server subtitle_inventory_v3.go's /stream/{session}/subtitles/{track}[.ext|/fonts] routes
+    /// and the query keys SubtitleStreamURLV3 / DownloadedSubtitleStreamURLV3 stamp on them.
+    /// </summary>
+    public static Uri? ResolveSubtitle(string? raw, Uri server) => Resolve(raw, server, subtitle: true);
+
+    private static Uri? Resolve(string? raw, Uri server, bool subtitle)
     {
         raw = raw?.Trim();
         if (string.IsNullOrEmpty(raw) || !IsServer(server) || !raw.StartsWith('/')
@@ -17,8 +26,12 @@ public static class PlaybackMediaUrl
 
         var queryStart = raw.IndexOf('?');
         var path = queryStart < 0 ? raw : raw[..queryStart];
-        if (!IsMediaPath(path, "") || !IsSafePath(path)
-            || (queryStart >= 0 && !IsPlanQuery(raw[(queryStart + 1)..]))) return null;
+        if (!IsMediaPath(path, "") || !IsSafePath(path)) return null;
+        if (subtitle)
+        {
+            if (!IsSubtitlePath(path) || (queryStart >= 0 && !IsSubtitleQuery(raw[(queryStart + 1)..]))) return null;
+        }
+        else if (queryStart >= 0 && !IsPlanQuery(raw[(queryStart + 1)..])) return null;
 
         return Uri.TryCreate(server.ToString().TrimEnd('/') + raw, UriKind.Absolute, out var uri)
             && IsAllowedChild(uri, server) ? uri : null;
@@ -41,6 +54,42 @@ public static class PlaybackMediaUrl
     private static bool IsMediaPath(string path, string prefix) =>
         path.StartsWith(prefix + "/api/v2/stream/", StringComparison.Ordinal)
         || path.StartsWith(prefix + "/api/v2/playback/transcode/", StringComparison.Ordinal);
+
+    // /api/v2/stream/{session}/subtitles/{track}[.ext] or .../{track}/fonts, nothing deeper.
+    private static bool IsSubtitlePath(string path)
+    {
+        const string prefix = "/api/v2/stream/";
+        if (!path.StartsWith(prefix, StringComparison.Ordinal)) return false;
+        var segments = path[prefix.Length..].Split('/');
+        return segments.Length is 3 or 4 && segments[0].Length > 0 && segments[1] == "subtitles"
+            && segments[2].Length > 0 && (segments.Length == 3 || segments[3] == "fonts");
+    }
+
+    // file_id and downloaded_subtitle_id are numeric row IDs, original=1 marks raw SubRip. Once each.
+    private static bool IsSubtitleQuery(string query)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var pair in query.Split('&'))
+        {
+            var equals = pair.IndexOf('=');
+            if (equals <= 0) return false;
+            var key = pair[..equals];
+            var value = pair[(equals + 1)..];
+            if (!seen.Add(key)) return false;
+            switch (key)
+            {
+                case "file_id" or "downloaded_subtitle_id":
+                    if (value.Length is 0 or > 18 || !value.All(char.IsAsciiDigit)) return false;
+                    break;
+                case "original":
+                    if (value != "1") return false;
+                    break;
+                default:
+                    return false;
+            }
+        }
+        return true;
+    }
 
     private static bool IsSafePath(string path)
     {

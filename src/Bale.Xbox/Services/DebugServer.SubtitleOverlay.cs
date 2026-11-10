@@ -5,10 +5,11 @@ using System.Text;
 namespace Bale.Xbox.Services;
 
 /// <summary>
-/// Drives the player's own subtitle renderer (Services/SubtitleOverlay.cs) by hand: load an ASS/SSA file,
-/// with optional fonts, over whatever is playing, clear it, and read the overlay's counters. The real
-/// player does not fetch or claim subtitles yet. URLs, response headers and exception messages are never
-/// echoed or logged: fixed messages, HTTP status codes and HRESULTs only.
+/// Drives the player's own subtitle renderer (Services/SubtitleOverlay.cs) by hand: load a subtitle file
+/// (.srt = SubRip, .vtt = WebVTT, anything else ASS/SSA), with optional fonts, over whatever is playing,
+/// clear it, and read the overlay's counters. The real player loads its plan's subtitles itself
+/// (PlayerPage.Subtitles.cs); a hand-loaded track lasts until the next mount. URLs, response headers and
+/// exception messages are never echoed or logged: fixed messages, HTTP status codes and HRESULTs only.
 /// </summary>
 internal sealed partial class DebugServer
 {
@@ -70,12 +71,14 @@ internal sealed partial class DebugServer
             fonts.Add((SubtitleOverlayFontName(fontUris[i]), font));
         }
 
-        string text;
+        // The URL's extension picks the overlay's parser; the path itself is never logged or echoed.
+        var format = SubtitleOverlayFormat(scriptUri);
+        byte[] text;
         try
         {
             // Honors and strips a UTF-8/UTF-16 byte-order mark; the overlay takes UTF-8.
             using var reader = new StreamReader(new MemoryStream(script), Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-            text = reader.ReadToEnd();
+            text = Encoding.UTF8.GetBytes(reader.ReadToEnd());
         }
         catch (Exception ex)
         {
@@ -83,9 +86,9 @@ internal sealed partial class DebugServer
         }
 
         var result = await OnSubtitleOverlayUiAsync(() => CurrentPage(out _) is PlayerPage player
-            ? player.DebugLoadSubtitles(text, fonts)
+            ? player.DebugLoadSubtitles(format, text, fonts)
             : ("409 Conflict", "no active player page\n"));
-        Log.Info($"Debug suboverlay: load bytes={script.Length} result={result.Status.Split(' ')[0]}");
+        Log.Info($"Debug suboverlay: load format={format} bytes={script.Length} result={result.Status.Split(' ')[0]}");
         return result;
     }
 
@@ -96,6 +99,15 @@ internal sealed partial class DebugServer
             || parsed.Scheme is not ("http" or "https") || parsed.UserInfo.Length != 0) return false;
         uri = parsed;
         return true;
+    }
+
+    /// <summary>bale_sub_overlay_load_text formats: 1 SubRip, 2 WebVTT, 0 ASS/SSA.</summary>
+    private static uint SubtitleOverlayFormat(Uri uri)
+    {
+        var path = uri.AbsolutePath;
+        if (path.EndsWith(".srt", StringComparison.OrdinalIgnoreCase)) return Bale.Core.Playback.PlaybackSubtitleSource.Srt;
+        if (path.EndsWith(".vtt", StringComparison.OrdinalIgnoreCase)) return Bale.Core.Playback.PlaybackSubtitleSource.WebVtt;
+        return Bale.Core.Playback.PlaybackSubtitleSource.Ass;
     }
 
     /// <summary>The file name is only libass's label for the font; it is never logged or echoed.</summary>

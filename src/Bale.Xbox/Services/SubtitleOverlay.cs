@@ -15,28 +15,35 @@ internal struct BaleSubStats
 
 /// <summary>
 /// Bale's own subtitle drawing: bale_gpu.dll (Rust) owns a D3D11 composition swap chain attached to a XAML
-/// SwapChainPanel and renders the loaded ASS track with libass on its own thread at the media clock. This
-/// wrapper only feeds it layout, track, fonts and clock. Create and Dispose run on the UI thread; the player
-/// calls everything else there too. No call throws into the player, and failures log a fixed message and an
-/// HRESULT only: never subtitle text, font names or URLs.
+/// SwapChainPanel and renders the loaded track (ASS/SSA, or SubRip/WebVTT converted to it) with libass on
+/// its own thread at the media clock. This wrapper only feeds it layout, track, fonts and clock. Create
+/// and Dispose run on the UI thread. AddFont and LoadText block for the copy/parse, so the player runs
+/// them on a worker; every call is counted in and out, and Dispose waits for the calls in flight before
+/// it destroys the native overlay, after which calls return RO_E_CLOSED without touching it. No call
+/// throws into the player, and failures log a fixed message and an HRESULT only: never subtitle text,
+/// font names or URLs.
 /// </summary>
 internal sealed unsafe class SubtitleOverlay : IDisposable
 {
-    private const uint ExpectedAbi = 1;
+    private const uint ExpectedAbi = 2;
     private const int InvalidArgument = unchecked((int)0x80070057);
     private const int Disposed = unchecked((int)0x80000013); // RO_E_CLOSED
 
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern uint bale_sub_abi_version();
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_create(nint panel, uint width, uint height, nint* overlay);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_set_layout(nint overlay, uint width, uint height, float scaleX, float scaleY, float videoX, float videoY, float videoW, float videoH);
-    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_load_ass(nint overlay, byte* data, nuint length);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_load_text(nint overlay, uint format, byte* data, nuint length);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_add_font(nint overlay, byte* name, nuint nameLength, byte* data, nuint length);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_clear(nint overlay);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_set_clock(nint overlay, long positionMs, double rate, uint playing);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_stats(nint overlay, BaleSubStats* stats);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern void bale_sub_overlay_destroy(nint overlay);
 
+    // Guards _overlay and _inFlight. Never held across a native call: a parse on a worker must not
+    // stall the UI thread's clock and layout pushes.
+    private readonly object _gate = new();
     private nint _overlay;
+    private int _inFlight;
 
     private SubtitleOverlay(nint overlay) => _overlay = overlay;
 
@@ -94,16 +101,17 @@ internal sealed unsafe class SubtitleOverlay : IDisposable
         Math.Max(layout.Width, 1), Math.Max(layout.Height, 1), layout.ScaleX, layout.ScaleY,
         layout.VideoX, layout.VideoY, layout.VideoWidth, layout.VideoHeight));
 
-    /// <summary>Replaces the track with ASS/SSA script text; returns the HRESULT (E_INVALIDARG = unparseable).</summary>
-    internal int LoadAss(string text)
+    /// <summary>
+    /// Replaces the track with UTF-8 subtitle text in a PlaybackSubtitleSource format (0 ASS/SSA, 1 SubRip,
+    /// 2 WebVTT); returns the HRESULT (E_INVALIDARG = unknown format or unparseable). Blocks for the
+    /// parse; any thread.
+    /// </summary>
+    internal int LoadText(uint format, byte[] utf8)
     {
-        if (string.IsNullOrEmpty(text)) return InvalidArgument;
-        byte[] utf8;
-        try { utf8 = Encoding.UTF8.GetBytes(text); }
-        catch (Exception ex) { return Failed("load", ex); }
+        if (utf8 is not { Length: > 0 }) return InvalidArgument;
         return Call("load", overlay =>
         {
-            fixed (byte* data = utf8) return bale_sub_overlay_load_ass(overlay, data, (nuint)utf8.Length);
+            fixed (byte* data = utf8) return bale_sub_overlay_load_text(overlay, format, data, (nuint)utf8.Length);
         });
     }
 
@@ -133,8 +141,7 @@ internal sealed unsafe class SubtitleOverlay : IDisposable
     internal bool TryGetStats(out BaleSubStats stats)
     {
         stats = default;
-        var overlay = _overlay;
-        if (overlay == 0) return false;
+        if (!Enter(out var overlay)) return false;
         try
         {
             // Not through Call: a lambda cannot take the address of a captured local.
@@ -153,14 +160,34 @@ internal sealed unsafe class SubtitleOverlay : IDisposable
             Failed("stats", ex);
             return false;
         }
+        finally { Exit(); }
+    }
+
+    /// <summary>Counts a native call in; false once Dispose has begun.</summary>
+    private bool Enter(out nint overlay)
+    {
+        lock (_gate)
+        {
+            overlay = _overlay;
+            if (overlay == 0) return false;
+            _inFlight++;
+            return true;
+        }
+    }
+
+    private void Exit()
+    {
+        lock (_gate)
+        {
+            if (--_inFlight == 0) Monitor.PulseAll(_gate);
+        }
     }
 
     private delegate int NativeCall(nint overlay);
 
     private int Call(string operation, NativeCall call)
     {
-        var overlay = _overlay;
-        if (overlay == 0) return Disposed;
+        if (!Enter(out var overlay)) return Disposed;
         try
         {
             var hr = call(overlay);
@@ -168,6 +195,7 @@ internal sealed unsafe class SubtitleOverlay : IDisposable
             return hr;
         }
         catch (Exception ex) { return Failed(operation, ex); }
+        finally { Exit(); }
     }
 
     private static int Failed(string operation, Exception ex)
@@ -176,11 +204,21 @@ internal sealed unsafe class SubtitleOverlay : IDisposable
         return ex.HResult < 0 ? ex.HResult : unchecked((int)0x80004005);
     }
 
-    /// <summary>UI thread: stops and joins the render thread and releases the device and swap chain.</summary>
+    /// <summary>
+    /// UI thread: stops and joins the render thread and releases the device and swap chain. New calls are
+    /// refused from here on, and a worker still inside AddFont/LoadText is waited for first: destroy must
+    /// never run under a native call. That wait is bounded by one parse.
+    /// </summary>
     public void Dispose()
     {
-        var overlay = Interlocked.Exchange(ref _overlay, 0);
-        if (overlay == 0) return;
+        nint overlay;
+        lock (_gate)
+        {
+            overlay = _overlay;
+            if (overlay == 0) return;
+            _overlay = 0;
+            while (_inFlight > 0) Monitor.Wait(_gate);
+        }
         try
         {
             bale_sub_overlay_destroy(overlay);

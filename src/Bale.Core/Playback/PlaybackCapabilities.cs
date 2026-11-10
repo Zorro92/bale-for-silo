@@ -38,7 +38,10 @@ public static class ConsoleEvidence
         AudioPassthroughCodecs: [],
         MaxChannels: 8,
         Hdr: new(), // Unknown until the player reads the connected display; installed HEVC is not HDR evidence.
-        Subtitles: new()) // No subtitle rendering has been measured yet; permit server burn-in instead.
+        // Bale's own overlay (bale_gpu.dll, libass) draws fetched text sidecars: ASS/SSA with their
+        // styling and the server's font bundle, SubRip and WebVTT. No bitmap or in-container claim,
+        // so PGS/DVD/DVB keep burning in.
+        Subtitles: new() { SidecarText = true, AssStyling = true, FontAttachments = true })
     {
         VideoDecode = BuildVideoDecode(),
         DisplayHdrEvidence = "unknown",
