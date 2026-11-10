@@ -72,7 +72,9 @@ variant whose pooled textures are also D3D12-shareable unordered-access views, a
 write such a pooled texture directly, skipping the landing copy, and
 `scripts/ffmpeginteropx-patches/0018-zero-copy-direct-grain.patch` for applying GPU film grain in
 that same direct write, and `scripts/ffmpeginteropx-patches/0019-zero-copy-eight-bit.patch` for
-taking 8-bit AV1 through that direct write as P010. Grain only modifies Bale-owned output, never dav1d
+taking 8-bit AV1 through that direct write as P010, and
+`scripts/ffmpeginteropx-patches/0020-zero-copy-only.patch` for making that software AV1 path
+zero-copy only, removing the staging, repack, threaded-swscale and CPU-grain paths. Grain only modifies Bale-owned output, never dav1d
 reference frames.
 The original winmd and managed projection are retained; with the new `bale_*` keys unset, behavior
 equals upstream 2.1.0 plus that colour-attribute fix.

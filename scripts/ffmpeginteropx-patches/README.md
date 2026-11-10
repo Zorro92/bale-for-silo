@@ -156,6 +156,23 @@ land (`bale_zc_repack` reads 10-bit samples): a declined write uses staging (sws
 logged once, and shows that frame ungrained, since staging grain only matches NV12/P010 by depth.
 YUVJ, frame grabbers and other upload variants keep NV12. The stats line adds `eight_bit=`; the
 active line reads `direct write, 8-bit`. It ships in `2.1.0-bale.19`.
+`0020` makes software libdav1d with zero-copy requested (`bale_d3d11_upload` and `bale_zero_copy`
+on, not a frame grabber) zero-copy only. It removes threaded swscale, the staging upload, upload
+variants 1-5, upload fault injection, the debug D3D11 repack (`BaleCopyPool.h` is deleted) and CPU
+film grain: any nonzero `bale_d3d11_upload` now means the D3D12-writable pool texture (former
+variant 6), and the grain loader no longer needs `bale_grain_cpu_apply` and accepts grain ABI 1 or 2
+(a requested CPU grain mode selects GPU grain). Streams zero-copy cannot take (no `bale_gpu.dll`
+zero-copy ABI, a pixel format other than 10-bit or 8-bit-as-P010 4:2:0, requested GPU grain
+unavailable) are refused at open; a refused default stream, or no video stream left, fails the open
+with `MF_E_UNSUPPORTED_FORMAT`. Runtime failures (upload device or zero-copy setup, a declined or
+refused write, GPU grain, device loss) latch a fatal HRESULT in the provider, and
+`FFmpegMediaSource` raises `MediaStreamSource.NotifyError` once; the app then replans to a server
+transcode. Pictures outside the zero-copy buffers are dropped without a sample (`BaleFrameDropped`);
+more than 8 in a row are fatal (`ZeroCopyMissed`). 8-bit frames never stage or land. The upload
+device is initialised for zero-copy streams even when another stream opened a hardware context.
+The stats line adds `dropped=`. The `bale_sws_threads`, `bale_d3d11_upload_fault_frames` and
+`bale_d3d11_repack` keys are now rejected. Other streams keep the upstream CPU output path. It ships
+in `2.1.0-bale.20`.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.
