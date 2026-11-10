@@ -76,7 +76,9 @@ taking 8-bit AV1 through that direct write as P010, and
 `scripts/ffmpeginteropx-patches/0020-zero-copy-only.patch` for making that software AV1 path
 zero-copy only, removing the staging, repack, threaded-swscale and CPU-grain paths, and
 `scripts/ffmpeginteropx-patches/0021-system-decoder-dolby.patch` for opt-in passing of AC-3/E-AC-3
-packets undecoded to the system Dolby decoder (default off). Grain only modifies Bale-owned output, never dav1d
+packets undecoded to the system Dolby decoder (default off), and
+`scripts/ffmpeginteropx-patches/0022-bitmap-subtitle-sink.patch` for opt-in handing of one decoded
+bitmap subtitle stream (PGS/DVD/DVB) to Bale's subtitle overlay instead of image cues. Grain only modifies Bale-owned output, never dav1d
 reference frames.
 The original winmd and managed projection are retained; with the new `bale_*` keys unset, behavior
 equals upstream 2.1.0 plus that colour-attribute fix.

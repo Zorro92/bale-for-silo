@@ -179,6 +179,16 @@ streams use `CompressedSampleProvider` (subtype `Ac3`/`Eac3`, sample rate, chann
 bitrate when known), like `SystemDecoderAAC`: packets go to the system Dolby decoder undecoded, so
 E-AC-3 JOC (Atmos) metadata survives. Default 0 keeps FFmpeg decoding them to PCM. It ships in
 `2.1.0-bale.21`; earlier releases reject the key as unknown.
+`0022` adds opt-in `bale_subtitle_stream` (AVStream index, 0–65535) and `bale_subtitle_sink`
+(token, 1–999999999); both unset keep the upstream ImageCue path. When both are set and
+`bale_gpu.dll` exports bitmap subtitle ABI 1 (`bale_sub_bitmap_abi_version`/`_push`/`_flush`,
+mirrored in `Source/BaleSubtitleSink.h`), that bitmap subtitle stream decodes every packet on the
+demux thread and pushes its PAL8 rects, display times (from the packet pts; PGS `UINT32_MAX` =
+open-ended, a zero-rect subtitle = a clear), subtitle canvas and video frame size to the overlay
+the app bound to that token, creating no cues. A buffer flush (seek) calls `bale_sub_bitmap_flush`.
+Without the exports the stream stays a cue track and FFmpeg logs a warning. Bale option values may
+now be up to 9 digits (ranges unchanged for the older keys). It ships in `2.1.0-bale.22`; earlier
+releases reject the keys as unknown.
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.

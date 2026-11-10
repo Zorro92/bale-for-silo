@@ -1,0 +1,259 @@
+diff --git a/Source/BaleSubtitleSink.h b/Source/BaleSubtitleSink.h
+new file mode 100644
+index 0000000..4a59662
+--- /dev/null
++++ b/Source/BaleSubtitleSink.h
+@@ -0,0 +1,59 @@
++#pragma once
++#include "pch.h"
++#include <cstddef>
++#include <cstdint>
++
++// Bitmap subtitle ABI 1, mirrored from bale-gpu/src/subs (bale_sub_bitmap_*). The app binds its
++// overlay to a token; this fork pushes decoded PAL8 rects for that token. No WinRT/public ABI changes.
++struct BaleSubBitmapRect
++{
++    int32_t x, y, w, h;
++    int32_t linesize;
++    int32_t nb_colors;
++    const uint8_t* indices;
++    const uint32_t* palette; // AV_PIX_FMT_PAL8 entries: native-endian 0xAARRGGBB, straight alpha
++};
++static_assert(sizeof(BaleSubBitmapRect) == 40);
++
++struct BaleSubBitmapEvent
++{
++    int64_t start_ms;
++    int64_t end_ms; // < 0 or <= start_ms: open-ended (until the next event)
++    int32_t canvas_w, canvas_h;
++    int32_t video_w, video_h;
++    const BaleSubBitmapRect* rects;
++    int32_t count; // 0 = a clear
++    int32_t reserved;
++};
++static_assert(sizeof(BaleSubBitmapEvent) == 48);
++
++struct BaleSubtitleSinkExports
++{
++    uint32_t (__cdecl* abiVersion)() = nullptr;
++    int32_t (__cdecl* push)(uint64_t, const BaleSubBitmapEvent*) = nullptr;
++    int32_t (__cdecl* flush)(uint64_t) = nullptr;
++
++    bool Available() const { return push && flush; }
++
++    static const BaleSubtitleSinkExports& Get()
++    {
++        // One load attempt per process; a successful module stays loaded for the process lifetime.
++        static const BaleSubtitleSinkExports exports = []
++        {
++            BaleSubtitleSinkExports api;
++            auto module = LoadPackagedLibrary(L"bale_gpu.dll", 0);
++            if (!module) return api;
++            api.abiVersion = reinterpret_cast<decltype(api.abiVersion)>(GetProcAddress(module, "bale_sub_bitmap_abi_version"));
++            api.push = reinterpret_cast<decltype(api.push)>(GetProcAddress(module, "bale_sub_bitmap_push"));
++            api.flush = reinterpret_cast<decltype(api.flush)>(GetProcAddress(module, "bale_sub_bitmap_flush"));
++            auto version = api.abiVersion ? api.abiVersion() : 0;
++            if (!api.push || !api.flush || version != 1)
++            {
++                FreeLibrary(module);
++                return BaleSubtitleSinkExports{};
++            }
++            return api;
++        }();
++        return exports;
++    }
++};
+diff --git a/Source/FFmpegMediaSource.cpp b/Source/FFmpegMediaSource.cpp
+index 7d8220e..5e2b7fd 100644
+--- a/Source/FFmpegMediaSource.cpp
++++ b/Source/FFmpegMediaSource.cpp
+@@ -955,7 +955,21 @@ namespace winrt::FFmpegInteropX::implementation
+                         }
+                         else if ((avSubsCodecCtx->codec_descriptor->props & AV_CODEC_PROP_BITMAP_SUB) == AV_CODEC_PROP_BITMAP_SUB)
+                         {
+-                            avSubsStream = std::shared_ptr<SubtitleProvider>(new SubtitleProviderBitmap(m_pReader, avFormatCtx, avSubsCodecCtx, config.as<winrt::FFmpegInteropX::MediaSourceConfig>(), index));
++                            // Bale: the chosen bitmap stream feeds bale_gpu's subtitle overlay instead of ImageCues.
++                            uint64_t sinkToken = 0;
++                            if (baleSubtitleSink > 0 && index == baleSubtitleStream && !config->IsExternalSubtitleParser)
++                            {
++                                if (BaleSubtitleSinkExports::Get().Available())
++                                {
++                                    sinkToken = (uint64_t)baleSubtitleSink;
++                                    av_log(nullptr, AV_LOG_INFO, "Bale subtitle sink: stream %d (%s)\n", index, avSubsCodec->name);
++                                }
++                                else
++                                {
++                                    av_log(nullptr, AV_LOG_WARNING, "Bale subtitle sink: bale_gpu.dll has no bitmap ABI 1; stream %d stays a cue track.\n", index);
++                                }
++                            }
++                            avSubsStream = std::shared_ptr<SubtitleProvider>(new SubtitleProviderBitmap(m_pReader, avFormatCtx, avSubsCodecCtx, config.as<winrt::FFmpegInteropX::MediaSourceConfig>(), index, sinkToken));
+                         }
+                         else
+                         {
+@@ -2502,6 +2516,8 @@ namespace winrt::FFmpegInteropX::implementation
+         else if (key == "bale_decoder_use_max_resolution") { target = &baleDecoderUseMaxResolution; minimum = 0; maximum = 1; }
+         else if (key == "bale_decoder_max_dpb_count") { target = &baleDecoderMaxDpbCount; minimum = 0; maximum = 16; }
+         else if (key == "bale_system_decoder_dolby") { target = &baleSystemDecoderDolby; minimum = 0; maximum = 1; }
++        else if (key == "bale_subtitle_stream") { target = &baleSubtitleStream; minimum = 0; maximum = 65535; }
++        else if (key == "bale_subtitle_sink") { target = &baleSubtitleSink; minimum = 1; maximum = 999999999; }
+         else
+         {
+             hr = E_INVALIDARG;
+@@ -2509,7 +2525,7 @@ namespace winrt::FFmpegInteropX::implementation
+         }
+ 
+         auto text = StringUtils::PlatformStringToUtf8String(value);
+-        if (text.empty() || text.size() > 3)
++        if (text.empty() || text.size() > 9)
+         {
+             hr = E_INVALIDARG;
+             return true;
+diff --git a/Source/FFmpegMediaSource.h b/Source/FFmpegMediaSource.h
+index b963bfd..08b44aa 100644
+--- a/Source/FFmpegMediaSource.h
++++ b/Source/FFmpegMediaSource.h
+@@ -355,6 +355,10 @@ namespace winrt::FFmpegInteropX::implementation
+         int baleDecoderMaxDpbCount = 0;
+         // 1 = AC-3/E-AC-3 packets go undecoded to the system Dolby decoder (keeps E-AC-3 JOC/Atmos).
+         int baleSystemDecoderDolby = 0;
++        // Bitmap subtitle stream (AVStream index) whose decoded rects go to bale_gpu's overlay
++        // bound to bale_subtitle_sink (a token); -1/0 = none, the upstream ImageCue path.
++        int baleSubtitleStream = -1;
++        int baleSubtitleSink = 0;
+         bool TryParseBaleOption(std::string const& key, hstring const& value, HRESULT& hr);
+         void SetBaleDecoderProperties(Windows::Media::MediaProperties::VideoEncodingProperties const& videoProperties);
+ 
+diff --git a/Source/SubtitleProviderBitmap.h b/Source/SubtitleProviderBitmap.h
+index 28d7326..1dd818d 100644
+--- a/Source/SubtitleProviderBitmap.h
++++ b/Source/SubtitleProviderBitmap.h
+@@ -1,6 +1,7 @@
+ #pragma once
+ 
+ #include "SubtitleProvider.h"
++#include "BaleSubtitleSink.h"
+ #include <winrt/FFmpegInteropX.h>
+ 
+ using namespace winrt::Windows::Graphics::Imaging;
+@@ -14,11 +15,33 @@ public:
+         AVFormatContext* avFormatCtx,
+         AVCodecContext* avCodecCtx,
+         MediaSourceConfig const& config,
+-        int index)
+-        : SubtitleProvider(reader, avFormatCtx, avCodecCtx, config, index, TimedMetadataKind::ImageSubtitle)
++        int index,
++        uint64_t sinkToken = 0)
++        : SubtitleProvider(reader, avFormatCtx, avCodecCtx, config, index, TimedMetadataKind::ImageSubtitle),
++        baleSinkToken(sinkToken)
+     {
+     }
+ 
++    // Bale: a sink stream decodes every packet and hands the rects to bale_gpu's overlay instead of
++    // creating ImageCues. Subtitle streams are never discarded, so this runs whatever the
++    // TimedMetadataTrack presentation mode is; the overlay owns timing (clears end the previous event).
++    virtual void QueuePacket(AVPacket* packet) override
++    {
++        if (!baleSinkToken)
++        {
++            SubtitleProvider::QueuePacket(packet);
++            return;
++        }
++        try
++        {
++            PushToBaleSink(packet);
++        }
++        catch (...)
++        {
++        }
++        av_packet_free(&packet);
++    }
++
+     virtual HRESULT Initialize() override
+     {
+         auto hr = SubtitleProvider::Initialize();
+@@ -109,6 +132,11 @@ public:
+     {
+         SubtitleProvider::Flush(flushBuffers);
+ 
++        if (baleSinkToken && flushBuffers)
++        {
++            BaleSubtitleSinkExports::Get().flush(baleSinkToken);
++        }
++
+         if (!m_config.as<implementation::MediaSourceConfig>()->IsExternalSubtitleParser && flushBuffers)
+         {
+             for (const auto& entry : map)
+@@ -123,6 +151,65 @@ public:
+ 
+ private:
+ 
++    void PushToBaleSink(AVPacket* packet)
++    {
++        if (packet->pts == AV_NOPTS_VALUE)
++        {
++            return;
++        }
++
++        AVSubtitle subtitle{};
++        int gotSubtitle = 0;
++        if (avcodec_decode_subtitle2(m_pAvCodecCtx, &subtitle, &gotSubtitle, packet) < 0 || !gotSubtitle)
++        {
++            avsubtitle_free(&subtitle);
++            return;
++        }
++
++        constexpr unsigned int MaxRects = 64;
++        BaleSubBitmapRect rects[MaxRects];
++        int32_t count = 0;
++        for (unsigned int i = 0; i < subtitle.num_rects && count < (int32_t)MaxRects; i++)
++        {
++            auto rect = subtitle.rects[i];
++            if (!rect || rect->type != SUBTITLE_BITMAP || rect->w <= 0 || rect->h <= 0 ||
++                !rect->data[0] || !rect->data[1] || rect->nb_colors <= 0 || rect->linesize[0] < rect->w)
++            {
++                continue;
++            }
++            rects[count++] = BaleSubBitmapRect{ rect->x, rect->y, rect->w, rect->h, rect->linesize[0],
++                rect->nb_colors > 256 ? 256 : rect->nb_colors, rect->data[0], reinterpret_cast<const uint32_t*>(rect->data[1]) };
++        }
++
++        // Display times are relative to the packet pts. PGS sends UINT32_MAX (shown until the next
++        // display set, which may be a clear); DVB sends its page timeout; 0 falls back to the packet.
++        auto positionMs = ConvertPosition(packet->pts).count() / 10000;
++        BaleSubBitmapEvent event{};
++        event.start_ms = positionMs + subtitle.start_display_time;
++        if (subtitle.end_display_time != UINT32_MAX && subtitle.end_display_time > subtitle.start_display_time)
++        {
++            event.end_ms = positionMs + subtitle.end_display_time;
++        }
++        else if (subtitle.end_display_time == 0 && packet->duration > 0)
++        {
++            event.end_ms = event.start_ms + ConvertDuration(packet->duration).count() / 10000;
++        }
++        else
++        {
++            event.end_ms = -1;
++        }
++        event.canvas_w = m_pAvCodecCtx->width;
++        event.canvas_h = m_pAvCodecCtx->height;
++        event.video_w = videoWidth;
++        event.video_h = videoHeight;
++        event.rects = count > 0 ? rects : nullptr;
++        event.count = count;
++
++        // Copies synchronously; a negative result only means the overlay is gone or not bound yet.
++        BaleSubtitleSinkExports::Get().push(baleSinkToken, &event);
++        avsubtitle_free(&subtitle);
++    }
++
+     void OnCueEntered(TimedMetadataTrack sender, MediaCueEventArgs args)
+     {
+         UNREFERENCED_PARAMETER(sender);
+@@ -319,6 +406,7 @@ private:
+     }
+ 
+ private:
++    uint64_t baleSinkToken = 0;
+     int videoWidth = 0;
+     int videoHeight = 0;
+     double videoAspectRatio = 0.0;
