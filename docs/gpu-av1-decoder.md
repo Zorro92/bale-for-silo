@@ -24,14 +24,14 @@ BSD-2-Clause plus the AOMedia Patent License 1.0, so porting is fine if both not
 
 ## Language
 The host layer is Rust: a new module or crate next to `bale_gpu`, with a C ABI like the grain and
-repack code. The heavy work runs in the HLSL compute shaders, reused from the reference. The CPU
+zero-copy repack code. The heavy work runs in the HLSL compute shaders, reused from the reference. The CPU
 entropy decoder starts as the reference's C, built by the Rust crate via `cc`. Replacing it with
 Rust (for example rav1d's parser feeding the same GPU buffers) is a later, optional phase, only
 worth doing once the GPU side is proven.
 
 ## Main questions (answered by phase 0)
 1. **D3D11 or D3D12.** D3D11 compute on Bale's shared device writes straight into the MF texture pool,
-   with no interop. But the GPU repack showed that work on the shared immediate context stalls the
+   with no interop. But the debug GPU repack (since removed) showed that work on the shared immediate context stalls the
    decode thread. A D3D12 compute queue runs independently of the renderer, but its frames must
    reach D3D11 (shared NT-handle textures plus a fence, or D3D11On12). The D3D12 video query also
    removed the device on this console, so D3D12 compute stability needs its own check.
@@ -50,13 +50,13 @@ worth doing once the GPU side is proven.
    Stop here if the GPU or entropy time can't fit 24 fps with headroom.
 1. **Rust host.** Port the D3D12 host code (resources, root bindings, dispatch order, barriers,
    fences) to Rust on whichever API phase 0 picks. md5-exact on the conformance vectors on WARP in CI,
-   in the style of the grain and repack WARP tests.
+   in the style of the grain and zero-copy WARP tests.
 2. **Console decode.** Debug-only path that decodes an AV1 file on the console and reports per-frame
    CPU/GPU time, with no playback yet.
 3. **Playback integration.** A wrapper patch that routes AV1 to the GPU decoder instead of dav1d and
    delivers textures into the existing D3D11 sample path. Seeking, flush, resolution changes, HDR10
    metadata and film grain (theirs or Bale's) all need handling. Debug opt-in first, measured with
-   the same 120 s Buffering run as the dav1d and repack results.
+   the same 120 s Buffering run as the dav1d and (removed) debug repack results.
 4. **Optional.** Rust entropy decoder, 10x3 packing for memory, production enablement.
 
 Each phase is gated on the previous one. Phase 0 is the cheap part that decides whether the rest is
@@ -98,4 +98,5 @@ rewrite for RDNA2 waves, not a port) could close a gap of that size.
 
 **Decision (2026-11-09): stopped after phase 0.** The owner chose not to run the timestamp spike. The
 test player was uninstalled from the console. Bale keeps dav1d for software AV1 with the 1080p claim,
-and the server transcodes 4K AV1.
+and the server transcodes 4K AV1. Since wrapper 0020 that software path is zero-copy direct write only
+(player-plan.md).

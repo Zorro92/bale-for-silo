@@ -11,7 +11,7 @@ public class NativeFrameDeliveryTests
         Assert.Contains("partial class NativeFrameDelivery : IDebugFrameDelivery", source);
         Assert.Contains("partial class DebugFrameDelivery : IDebugFrameDelivery", Read("DebugFrameDelivery.cs.txt"));
         Assert.StartsWith("#if DEBUG_SERVER", Read("IDebugFrameDelivery.cs.txt"));
-        Assert.Contains("private const uint ExpectedAbi = 4;", source);
+        Assert.Contains("private const uint ExpectedAbi = 5;", source);
         Assert.Contains("bale_gpu_abi_version() != ExpectedAbi", source);
         Assert.Contains("[StructLayout(LayoutKind.Sequential)]", source);
         foreach (var field in new[] { "uint Kind", "uint Flags", "double NowMilliseconds", "long Timestamp", "long Duration", "long Position" })

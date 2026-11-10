@@ -125,8 +125,8 @@ The full bundled notice and license are shipped as `Licenses/FFmpeg/dav1d.txt` i
 The CPU AV1 film-grain implementation in `native/bale-gpu/src/grain` and integer GPU grain shaders
 in `native/bale-gpu/shaders` also port this dav1d revision's `filmgrain_tmpl.c`, `fg_apply_tmpl.c` and
 Gaussian sequence in `tables.c`. Ported files retain the original copyright notices and full BSD
-2-Clause licence text; `native/bale-gpu/NOTICE` records their provenance. The wrapper's opt-in Rust
-grain modes use these implementations; dav1d remains the production grain default.
+2-Clause licence text; `native/bale-gpu/NOTICE` records their provenance. The wrapper applies grain
+only through the GPU shaders; the CPU port is kept as their test and self-check reference.
 
 ## QRCoder
 

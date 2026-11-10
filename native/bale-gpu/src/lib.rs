@@ -1,11 +1,10 @@
-//! Bale's native GPU/media layer, called from the C# Xbox app over a narrow C ABI.
-//!
-//! Step 1 is only a loader check: the DLL must load inside the Xbox UWP app container, Rust std
-//! (threads, synchronisation, clocks) must work there, and the `windows` crate's D3D11 bindings must
-//! reach the hardware device. Step 2 ports the debug IMFMediaEngine frame-server probe (`engine`).
+//! Bale's native GPU/media layer, called from the C# Xbox app and the FFmpegInteropX wrapper over a
+//! narrow C ABI: the zero-copy software AV1 repack (`d3d12_repack`, zero-copy ABI), GPU film
+//! grain ([`grain`], grain ABI), the debug frame observer (`frames`), and debug loader/engine
+//! probes (`bale_gpu_*`, this file and `engine`).
 
 #[cfg(windows)]
-pub mod d3d12;
+mod d3d12;
 #[cfg(windows)]
 pub mod d3d12_repack;
 #[cfg(windows)]
@@ -13,13 +12,7 @@ mod engine;
 #[cfg(windows)]
 mod frames;
 pub mod grain;
-#[cfg(windows)]
-pub mod repack;
-#[cfg(windows)]
-pub mod upload;
 pub mod zc_frame;
-#[cfg(windows)]
-pub mod zerocopy;
 
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -35,7 +28,7 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 /// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched DLL.
-pub const ABI_VERSION: u32 = 4;
+pub const ABI_VERSION: u32 = 5;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_gpu_abi_version() -> u32 {
@@ -155,90 +148,6 @@ pub unsafe extern "C" fn bale_gpu_engine_probe_source(
         return 0;
     };
     let text = engine::run(engine::Input::Source(object), seconds.clamp(1, 60));
-    // SAFETY: the caller guarantees `report_capacity` writable bytes.
-    unsafe { write_report(&text, report, report_capacity) }
-}
-
-/// Debug upload bandwidth probe ([`upload`]): writes a 4K 10-bit frame's worth of data into GPU
-/// upload memory several ways on its own hardware device and writes the plain-text report as UTF-8
-/// into `report`. Returns the bytes written (0 if the probe panicked). `iterations` is clamped to
-/// 1–120. Blocks the calling thread for a few seconds and uses ~150 MB while it runs.
-///
-/// # Safety
-/// `report` must point to `report_capacity` writable bytes.
-#[unsafe(no_mangle)]
-#[cfg(windows)]
-pub unsafe extern "C" fn bale_gpu_upload_probe(
-    iterations: u32,
-    report: *mut u8,
-    report_capacity: u32,
-) -> u32 {
-    if report.is_null() {
-        return 0;
-    }
-    let Ok(text) = std::panic::catch_unwind(|| upload::run_hardware(iterations.clamp(1, 120)))
-    else {
-        return 0;
-    };
-    // SAFETY: the caller guarantees `report_capacity` writable bytes.
-    unsafe { write_report(&text, report, report_capacity) }
-}
-
-/// Debug D3D12 availability probe ([`d3d12`]): hardware device, feature level, UMA, and whether CPU
-/// memory can be wrapped as a GPU heap. `d3d12_module` is a `d3d12.dll` handle the caller loaded
-/// (null if it would not load), so this DLL never imports D3D12. Writes the plain-text report as
-/// UTF-8 into `report` and returns the bytes written (0 if the probe panicked).
-///
-/// # Safety
-/// `d3d12_module` must be null or a loaded module handle; `report` must point to `report_capacity`
-/// writable bytes.
-#[unsafe(no_mangle)]
-#[cfg(windows)]
-pub unsafe extern "C" fn bale_gpu_d3d12_probe(
-    d3d12_module: *mut core::ffi::c_void,
-    report: *mut u8,
-    report_capacity: u32,
-) -> u32 {
-    if report.is_null() {
-        return 0;
-    }
-    let module = HMODULE(d3d12_module);
-    // SAFETY: the caller guarantees the module handle is null or loaded.
-    let Ok(text) = std::panic::catch_unwind(|| unsafe { d3d12::run(module) }) else {
-        return 0;
-    };
-    // SAFETY: the caller guarantees `report_capacity` writable bytes.
-    unsafe { write_report(&text, report, report_capacity) }
-}
-
-/// Debug zero-copy feasibility probe ([`zerocopy`]): CPU speed on a mapped D3D12 write-back custom
-/// heap versus ordinary RAM, GPU reads of it (timed, and checked for coherency without Unmap), and a
-/// D3D12 -> D3D11 shared P010 texture and fence. `d3d12_module` is a `d3d12.dll` handle the caller
-/// loaded (null if it would not load). `iterations` is clamped to 1–60. Writes the plain-text report
-/// as UTF-8 into `report` and returns the bytes written (0 if the probe panicked). Blocks the
-/// calling thread for a few seconds and uses ~150 MB while it runs.
-///
-/// # Safety
-/// `d3d12_module` must be null or a loaded module handle; `report` must point to `report_capacity`
-/// writable bytes.
-#[unsafe(no_mangle)]
-#[cfg(windows)]
-pub unsafe extern "C" fn bale_gpu_zero_copy_probe(
-    d3d12_module: *mut core::ffi::c_void,
-    iterations: u32,
-    report: *mut u8,
-    report_capacity: u32,
-) -> u32 {
-    if report.is_null() {
-        return 0;
-    }
-    let module = HMODULE(d3d12_module);
-    // SAFETY: the caller guarantees the module handle is null or loaded.
-    let Ok(text) =
-        std::panic::catch_unwind(|| unsafe { zerocopy::run(module, iterations.clamp(1, 60)) })
-    else {
-        return 0;
-    };
     // SAFETY: the caller guarantees `report_capacity` writable bytes.
     unsafe { write_report(&text, report, report_capacity) }
 }

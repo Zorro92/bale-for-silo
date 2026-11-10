@@ -68,7 +68,7 @@ MSIX (~2 min). Then, with `XBOX_HOST` set to the console's IP:
 ./scripts/bale-debug.sh playtest "https://example.org/public.mp4" 3  # muted built-in-player probe; 1–10 s (default 3)
 timeout 300 ./scripts/bale-debug.sh playtest suite 3  # Chromium codec samples, sequential; needs a larger outer timeout
 ./scripts/bale-debug.sh playtest-ffmpeg @/tmp/x 30 software  # debug FFmpegInteropX; URL, @file or suite; 1–60 s; auto|software|system
-./scripts/bale-debug.sh playtest-ffmpeg @/tmp/x 30 software threads=4 10bit=off rate=0.75 ahead=8 sws=4 delay=1 prio=1  # debug-only tuning, no rebuild
+./scripts/bale-debug.sh playtest-ffmpeg @/tmp/x 30 software threads=4 10bit=off rate=0.75 ahead=8 delay=1 prio=1  # debug-only tuning, no rebuild
 ./scripts/bale-debug.sh ffmpeg policy        # next real-player attempt; policy (default)|off; HLS unchanged
 ./scripts/bale-debug.sh goto "Unwatched#2"     # setup only: focus the second matching control
 ./scripts/bale-debug.sh targets               # controls goto can reach
@@ -148,7 +148,12 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   build script allows them to touch only `libavcodec/libdav1d.c`. Releases are immutable. See `docs/player-plan.md` for provenance and
   rebuild steps; do not overwrite assets or update a pinned hash without reviewing the new build.
 - The wrapper fork pipeline is `ffmpeginteropx-wrapper.yml`; its patches must not change the IDL.
-- All builds tune software AV1 with `bale_decode_ahead_frames=16`, `bale_sws_threads=4` and a 1000 ms
+- Software AV1 has one path: libdav1d decodes into `bale_gpu` zero-copy D3D12 buffers, then the D3D12
+  direct write (`bale_zc_*`, fused GPU grain) or the D3D11 landing fallback (`bale_zc_repack` +
+  `bale_grain_gpu_*`) fills the pooled texture. 8- and 10-bit 4:2:0 (Main profile) only; GPU grain only.
+  Anything zero-copy can't take, and any zero-copy failure, goes to server transcode. There is no CPU
+  grain, staging upload, swscale thread pool, upload variant choice, debug repack or upload/zero-copy probe.
+- All builds tune software AV1 with `bale_decode_ahead_frames=16` and a 1000 ms
   MSS BufferTime. Above 1080p `SoftwareDecodeTuning` trims decode-ahead to 8 and BufferTime to 500 ms
   (~460 MiB less at 4K, console-measured) and sets `bale_dav1d_max_frame_delay=8` (width > 1920 or
   height > 1080), using route dimensions from the source for original delivery or the effective
@@ -203,13 +208,14 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
 ## Player diagnostics
 
 - Debug probe syntax: `playtest-ffmpeg <url|@file|suite> [seconds] [auto|software|system]
-  [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N]`. Supply seconds and mode before
+  [threads=N] [10bit=on|off] [rate=R] [ahead=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default]
+  [hdr=on|off|default] [grain=dav1d|gpu|off|on|default]`. Supply seconds and mode before
   tuning; keys may be in any order, at most once each. Seconds are 1–60 (default 3), mode defaults
   to auto, threads are 0–16 (0 = logical CPU count), and rate is an invariant decimal 0.5–2.0
-  (default 1). `ahead` is 0–64 decoded frames (0 = off), `sws` is 1–16 scaler threads (1 = upstream),
+  (default 1). `ahead` is 0–64 decoded frames (0 = off),
   `delay` is 0–64 dav1d frames (0 = dav1d default), and `prio` is 0–2 (0 = off,
   1 = THREAD_PRIORITY_ABOVE_NORMAL, 2 = THREAD_PRIORITY_HIGHEST; default unset). Software-mode
-  probes use the release ahead=16/sws=4 defaults; URI probes have unknown dimensions before creation, so delay stays
+  probes use the release ahead=16 default and the production zero-copy path; URI probes have unknown dimensions before creation, so delay stays
   unset unless overridden (use delay=8 for a known above-1080p comparison). Auto/system probes
   retain the wrapper defaults unless overridden; threads/10bit defaults are 0/true. `10bit=off`
   requests 8-bit NV12 instead of 10-bit P010 for 10-bit AV1. The response reports applied values/defaults
@@ -224,14 +230,14 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   probe only; the regular player retains no per-frame history. System-video/audio-only/no-sample
   probes report unavailable, not zero. Neither late delivery nor delivered-ahead measures renderer
   drops/queue depth. The fork consumes decimal-string `FFmpegOptions` keys
-  `bale_decode_ahead_frames`, `bale_sws_threads`, `bale_dav1d_max_frame_delay` and
+  `bale_decode_ahead_frames`, `bale_dav1d_max_frame_delay` and
   `bale_decode_thread_priority` itself, never passing them to FFmpeg. Bale sets the software-video
   defaults listed above in every build; the priority key is debug-only and remains unset in production.
-- `ffmpeg-tune` also accepts `ahead=N|default`, `sws=N|default`, `delay=N|default` and `prio=N|default`
+- `ffmpeg-tune` also accepts `ahead=N|default`, `delay=N|default` and `prio=N|default`
   with the same ranges. These memory-only real-player overrides are captured per attempt; omitted keys
   keep their values, `default` clears only that override and restores the release setting (prio unset),
   and invalid updates change nothing. Explicit values win, including zero for ahead/delay/prio. These
-  four overrides apply only to software video; they do not affect an open player, native/HLS routes or
+  three overrides apply only to software video; they do not affect an open player, native/HLS routes or
   the standalone probe. Production uses the release defaults without debug overrides.
 
 - `scripts/bale-debug.sh stats` prints all current player rows as `Label: value`, marking overlay-hidden

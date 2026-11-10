@@ -5,12 +5,10 @@ use std::process::Command;
 
 /// (output name, source name, profile, preprocessor define). The zero-copy compute shaders are
 /// built a second time with `BALE_8BIT` for 8-bit pictures; their 10-bit builds take no define.
-const SHADERS: [(&str, &str, &str, Option<&str>); 9] = [
+const SHADERS: [(&str, &str, &str, Option<&str>); 7] = [
     ("fullscreen_vs", "fullscreen_vs", "vs_5_0", None),
     ("grain_luma_ps", "grain_luma_ps", "ps_5_0", None),
     ("grain_chroma_ps", "grain_chroma_ps", "ps_5_0", None),
-    ("repack_luma_ps", "repack_luma_ps", "ps_5_0", None),
-    ("repack_chroma_ps", "repack_chroma_ps", "ps_5_0", None),
     ("repack_zc_cs", "repack_zc_cs", "cs_5_0", None),
     (
         "repack_zc8_cs",
@@ -31,7 +29,6 @@ fn main() {
     println!("cargo::rustc-check-cfg=cfg(bale_grain_no_shaders)");
     println!("cargo:rerun-if-env-changed=FXC");
     println!("cargo:rerun-if-changed=shaders/grain_common.hlsli");
-    println!("cargo:rerun-if-changed=shaders/repack_common.hlsli");
     for (_, source, _, _) in SHADERS {
         println!("cargo:rerun-if-changed=shaders/{source}.hlsl");
     }

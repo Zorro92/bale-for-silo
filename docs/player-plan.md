@@ -103,7 +103,8 @@ progressive uses FFmpeg only for AV1 or the **selected** fallback audio codec. A
 also validates all reported video decoder engines before mounting/reading frames.
 
 All builds, including production (`BaleDebugServer=false`), apply the wrapper-fork defaults from
-`SoftwareDecodeTuning` to software AV1: `bale_decode_ahead_frames=16` and `bale_sws_threads=4`.
+`SoftwareDecodeTuning` to software AV1: `bale_decode_ahead_frames=16`, plus the fixed zero-copy keys
+(`bale_d3d11_upload=6`, `bale_zero_copy=1`, `bale_film_grain_mode=2`).
 Above 1080p, decode-ahead drops to 8 and BufferTime to 500 ms (see docs/gpu-film-grain.md section 8).
 `bale_dav1d_max_frame_delay=8` is set only above 1080p (width > 1920 or height > 1080). Route
 width/height follow the video codec's plan selection: original delivery uses `plan.Source`; other
@@ -118,6 +119,18 @@ of 1.415/1.434 cores within a 1.31–1.56 run-to-run spread, with zero late fram
 Delivered-ahead was ~1.3/~2.3 s, not a renderer queue-depth measurement; start/seek buffering
 was ~0.2–0.3/~0.5–0.7 s. The user prefers the 1 s default for less start/seek buffering;
 these results do not establish a CPU improvement.
+
+**Software AV1 path (wrapper 0020, `2.1.0-bale.20`; `bale_gpu` ABI 5, grain ABI 2, zero-copy ABI 1).**
+There is one path. libdav1d decodes into `bale_gpu` zero-copy D3D12 buffers; the D3D12 direct write
+(`bale_zc_repack_into` / `_into_bits`, fused GPU grain) fills the pooled MF texture, and a declined
+10-bit write lands (`bale_zc_repack`) and runs the D3D11 grain pass (`bale_grain_gpu_*`). Claimed:
+8- and 10-bit 4:2:0, Main profile, Series X|S only (`ZeroCopyRuntime.Register()` must succeed).
+Grain is GPU only. A stream zero-copy can't take is refused at open, and any runtime zero-copy or grain
+failure raises `NotifyError` once; either way the app replans to a server transcode. Removed: CPU grain
+(`bale_grain_cpu_apply`), the staging upload and threaded swscale (`bale_sws_threads`), upload variants
+1–5 and upload fault injection, the debug D3D11 repack (`bale_repack_*`), and the upload, D3D12 and
+zero-copy probes (`bale_gpu_upload_probe`, `bale_gpu_d3d12_probe`, `bale_gpu_zero_copy_probe`). Older
+measurements below that mention those paths are history.
 
 `Audio.SystemDecoderAAC` and `Audio.SystemDecoderMP3` are enabled. Upstream FFmpegInteropX
 **2.1.0 and master only have `SystemDecoderAAC` / `SystemDecoderMP3`**; there are no system
@@ -147,8 +160,8 @@ with or without `BaleDebugServer`; the CI package checker remains required.
 ```sh
 scripts/bale-debug.sh ffmpeg-tune
 scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default] [prefetch=N|default] \
-  [buffer=ms|default] [ahead=N|default] [sws=N|default] [delay=N|default] [prio=N|default] \
-  [maxres=0|1|default] [dpb=N|default] [grain=dav1d|cpu|gpu|off|on|default] [upload=on|off|default|1..5]
+  [buffer=ms|default] [ahead=N|default] [delay=N|default] [prio=N|default] \
+  [maxres=0|1|default] [dpb=N|default] [grain=dav1d|gpu|off|on|default]
 ```
 
 No arguments reads the current process-wide overrides (`GET /ffmpeg-tune`); arguments update them
@@ -159,34 +172,23 @@ creation, retained through recovery/remounts, and applied only to the next real 
 attempt, not an already open player, Native Direct, HLS or the standalone probe. `ffmpeg policy|off`
 remains independent.
 
-- `grain=dav1d|cpu|gpu` (software video only, wrapper `2.1.0-bale.9`+, patch 0009) sends
-  `bale_film_grain_mode=0|1|2`; `on` aliases dav1d, and `default` clears the override (no key, dav1d).
-  CPU grain works with or without upload; GPU requires upload variant 1, otherwise it selects CPU.
-  GPU create/apply failure permanently selects CPU for that stream; the failed GPU sample is replaced
-  with a clean, ungrained copy. All grain writes target Bale-owned staging, pooled textures or CPU
-  buffers, never dav1d's reference AVFrame. `grain=off` retains the independent
-  `bale_dav1d_export_film_grain=1` export-only measurement: no dav1d or Rust grain, even if both keys
-  are supplied. Production remains dav1d pending console playback verification. This A/B facility
-  works on authenticated library files, which the URL-only probe cannot open.
-- `upload=on|1..5` (software video only, wrapper `2.1.0-bale.8`+) sends `bale_d3d11_upload=N`;
-  `on` aliases **1**, `default` restores the release default of **6** (since 2026-11-09), and `off` explicitly sends **0**
-  to use CPU buffers. Status reports the effective number and its texture flags, e.g.
-  `upload=6 (shared render target+shader resource+UAV)`; off reports `upload=0`. The DEFAULT texture flags are
-  **1** = RENDER_TARGET | SHADER_RESOURCE (the software-video default, suitable for stage-2 grain
-  rendering), **2** = DECODER | SHADER_RESOURCE, **3** = DECODER,
-  **4** = SHADER_RESOURCE only (**known MF failure**),
-  **5** = SHADER_RESOURCE with RESOURCE_MISC_SHARED (**known MF failure**).
-  This swaps bale.7 variants 1 and 4; 2/3/5 keep their numbers. MiscFlags is 0 for variants 1–4;
-  any failed texture creation retains the same CPU fallback.
-  This switch is independent of the real-player `grain` setting; only the standalone probe's explicit
-  `grain=gpu` sets upload variant 1 there. Production sets upload only for software video.
-  To verify actual delivery (including the wrapper's silent CPU fallback), select
-  `scripts/bale-debug.sh frame-delivery managed` before opening the player, then read **Sample memory**
-  in the stats overlay, `where` or `scripts/bale-debug.sh stats`. It reports `GPU texture (42/42 checked)`,
-  `CPU buffer (42/42 checked)` or `mixed: texture 10 · buffer 32` from the first video sample and every
-  24th sample, resetting on each MSS Starting event (including seeks). Native/off observers and no
-  successful checks show `unavailable (use frame-delivery managed)`; these are checked samples, not
-  all delivered frames or proof of hardware decoding.
+- `grain=dav1d|gpu` (software video only) sends `bale_film_grain_mode=0|2`; `on` aliases dav1d, and
+  `default` clears the override, restoring production GPU grain. GPU grain is fused into the zero-copy
+  direct write (or runs as the D3D11 pass on a landed 10-bit frame) and only ever writes Bale-owned
+  textures, never dav1d's reference pictures. Unavailable or failed GPU grain fails the stream to a
+  server transcode. `grain=off` retains the independent `bale_dav1d_export_film_grain=1` export-only
+  measurement: no dav1d or Bale grain, even if both keys are supplied. This A/B facility works on
+  authenticated library files, which the URL-only probe cannot open. `grain=cpu` was removed with CPU
+  grain (wrapper 0020).
+- Software AV1 is fixed to the zero-copy direct write: production always sends `bale_d3d11_upload=6`
+  and `bale_zero_copy=1`. The former `upload=`, `uploadfault=`, `repack=` and `zerocopy=` knobs and
+  upload variants 1–5 were removed (app 3b19c01, wrapper 0020); the scripts and app reject them.
+  To verify delivery, select `scripts/bale-debug.sh frame-delivery managed` before opening the player,
+  then read **Sample memory** in the stats overlay, `where` or `scripts/bale-debug.sh stats`. It reports
+  `GPU texture (42/42 checked)`, `CPU buffer (42/42 checked)` or `mixed: texture 10 · buffer 32` from
+  the first video sample and every 24th sample, resetting on each MSS Starting event (including seeks).
+  Native/off observers and no successful checks show `unavailable (use frame-delivery managed)`; these
+  are checked samples, not all delivered frames or proof of hardware decoding.
 - `readahead=on` enables FFmpegInteropX's native demux/packet read-ahead queue with **64 MiB /
   30 s** caps, rather than its larger 100 MB / 60 s defaults, to bound the extra Xbox memory use.
   These are the wrapper's queue thresholds, not a total-process memory ceiling. `off` explicitly
@@ -203,21 +205,19 @@ remains independent.
   of demux read-ahead.
 - `ahead=N` writes decimal-string `FFmpegOptions["bale_decode_ahead_frames"]`, inclusively **0–64**
   decoded frames; **0 = off**. This is native decoded-frame lookahead, not the packet read-ahead queue.
-- `sws=N` writes `FFmpegOptions["bale_sws_threads"]`, inclusively **1–16** scaler threads;
-  **1 = upstream behavior**.
 - `delay=N` writes `FFmpegOptions["bale_dav1d_max_frame_delay"]`, inclusively **0–64** frames;
   **0 = dav1d default**. It applies only to the libdav1d decoder.
 - `prio=N` writes `FFmpegOptions["bale_decode_thread_priority"]`, inclusively **0–2**:
   **0 = off**, **1 = THREAD_PRIORITY_ABOVE_NORMAL**, **2 = THREAD_PRIORITY_HIGHEST**. It boosts
-  the decode-ahead worker and newly created libdav1d / threaded swscale workers. The release default
+  the decode-ahead worker and newly created libdav1d workers. The release default
   is **unset** (no key emitted, no boost); this is a debug-only experiment, not production tuning.
-- The fork consumes these four options itself, never forwarding them to FFmpeg. Numeric values use
+- The fork consumes these three options itself, never forwarding them to FFmpeg. Numeric values use
   strict invariant decimal parsing (no signs, spaces, fractions or exponents); invalid native values
   return `E_INVALIDARG`. On software video, explicit overrides win over release defaults, including
-  `ahead=0` / `delay=0` / `prio=0`. `default` removes only that override, restoring ahead=16, sws=4,
+  `ahead=0` / `delay=0` / `prio=0`. `default` removes only that override, restoring ahead=16,
   the size-dependent delay setting or an unset priority key. Description text appends
-  `ahead=N sws=N delay=N prio=N` only for explicit overrides. Hardware/system video ignores these
-  four overrides; the input/read-ahead options remain available on all real FFmpeg routes.
+  `ahead=N delay=N prio=N` only for explicit overrides. Hardware/system video ignores these
+  three overrides; the input/read-ahead options remain available on all real FFmpeg routes.
 - Production (`BaleDebugServer=false`) applies the release software-video defaults, never the
   memory-only debug overrides. The A/B facility does not change the production decoder allowlist
   or establish a verified performance improvement.
@@ -226,14 +226,13 @@ For an isolated comparison, close the current player, set the baseline, then ope
 
 ```sh
 scripts/bale-debug.sh ffmpeg-tune readahead=default readsize=default prefetch=default \
-  buffer=default ahead=default sws=default delay=default prio=default
+  buffer=default ahead=default delay=default prio=default
 # After closing the baseline player, change only native read-ahead and reopen:
 scripts/bale-debug.sh ffmpeg-tune readahead=on
 # Optional, separate experiments (close/reopen after each change):
 scripts/bale-debug.sh ffmpeg-tune readsize=65536
 scripts/bale-debug.sh ffmpeg-tune prefetch=8
 scripts/bale-debug.sh ffmpeg-tune ahead=8
-scripts/bale-debug.sh ffmpeg-tune sws=2
 scripts/bale-debug.sh ffmpeg-tune delay=1
 scripts/bale-debug.sh ffmpeg-tune prio=1
 ```
@@ -291,16 +290,16 @@ Standalone syntax (independent of process-wide `ffmpeg-tune`):
 
 ```sh
 scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [auto|software|system] \
-  [threads=N] [10bit=on|off] [rate=R] [ahead=N] [sws=N] [delay=N] [prio=N] \
-  [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|cpu|gpu|off|on|default]
+  [threads=N] [10bit=on|off] [rate=R] [ahead=N] [delay=N] [prio=N] \
+  [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|gpu|off|on|default]
 ```
 
 Supply seconds/mode before tuning, then keys in any order, at most once each. Seconds are 1–60
 (default 3), threads are 0–16 (0 = logical CPU count), 10bit is on/off, and rate is an invariant
 0.5–2.0 (default 1). The fork keys have the same ranges as above; software-mode probes use the release
-ahead=16 / sws=4 defaults when omitted. URI probes have no playback plan/dimensions before creation,
+ahead=16 default and the production zero-copy path (GPU grain) when omitted. URI probes have no playback plan/dimensions before creation,
 so delay remains unset unless explicitly overridden (use `delay=8` for a known above-1080p comparison).
-Priority remains unset unless `prio=0..2` is supplied, with the same levels as above. These four
+Priority remains unset unless `prio=0..2` is supplied, with the same levels as above. These three
 fork options affect only software video, including an auto-mode probe that selects software decoding;
 hardware/system video ignores them. Auto/system modes retain wrapper defaults for omitted keys.
 `hdr=on|off` forces the wrapper's `Video.HdrSupport` to Enabled/Disabled (omitted or `default` keeps
@@ -309,16 +308,15 @@ Automatic, which applies HDR colour info only when the HDMI mode is already BT.2
 `grain=off` sends `bale_dav1d_export_film_grain=1` (wrapper patch 0005, `2.1.0-bale.5`+; older wrappers
 reject the key and the open fails): libdav1d skips film-grain synthesis and exports the parameters as
 frame side data, so a grain-carrying AV1 clip can be timed with and without grain (`Film grain:` in the
-report). With wrapper `2.1.0-bale.9`+, `dav1d`/`on` explicitly send `bale_film_grain_mode=0`,
-`cpu` sends 1 and `gpu` sends 2; only `gpu` also opts the probe into `bale_d3d11_upload=1`.
-Other probe modes retain upload off. `default`/omitted send no grain key and keep dav1d synthesis,
-which is still the production default. CPU/GPU are debug experiments, not console-verified playback.
+report). `dav1d`/`on` explicitly send `bale_film_grain_mode=0` and `gpu` sends 2; `default`/omitted send no
+grain key, so a software-mode probe keeps production GPU grain. (Before wrapper 0020, `cpu` sent 1 and
+the probe kept dav1d and CPU buffers unless `grain=gpu` opted it into upload variant 1.)
 Console check on 0.1.291.0 (bale.5, 20 s `software`): the key is accepted and reported as exported.
 The public Jellyfin AV1 clips carry no grain (`film_grain_params_present = 0` in the 1080p and 4K
 sequence headers), so the 1080p 10 Mbps run is unchanged (ratio 0.992 / 1.87 cores with synthesis,
 0.998 / 1.90 exported).
 
-**GPU grain, stage 1 (wrapper patch 0006, `2.1.0-bale.6`).** D3D11 texture delivery supports software
+**GPU grain, stage 1 (wrapper patch 0006, `2.1.0-bale.6`; staging upload removed by 0020).** D3D11 texture delivery supports software
 NV12/P010 output on the real-player route. **Upload variant 1 was then the default for software video
 in all builds (variant 6 since 2026-11-09, see zero-copy direct write); `upload=off` is the debug escape hatch.** The existing
 copy/sws output step writes directly into a three-texture STAGING ring, then CopyResource + Flush
@@ -531,7 +529,7 @@ The corresponding-source archive SHA256 is
 The manual `ffmpeginteropx-wrapper.yml` workflow builds only the **Release_UWP x64** native wrapper;
 producing a new release does not automatically update Bale's app pin.
 
-**Step 4 (`2.1.0-bale.9`, patch 0009):** this release adds opt-in Rust CPU/GPU grain
+**Step 4 (`2.1.0-bale.9`, patch 0009; CPU grain removed by 0020):** this release adds opt-in Rust CPU/GPU grain
 without changing the default from dav1d. Selection precedes `avcodec_open2`; compatible software
 libdav1d NV12/P010 output and the complete grain ABI are required, and GPU additionally needs upload
 variant 1. The 0005 export-only switch retains precedence. Grain modifies only Bale-owned output,
@@ -556,9 +554,9 @@ IDL remain unchanged; the native FFmpeg package version is explicitly overridden
 The released fork includes `scripts/ffmpeginteropx-patches/0001-decode-ahead-threaded-sws.patch`:
 opt-in decoded-frame lookahead, threaded swscale and libdav1d max-frame-delay. It also includes
 `scripts/ffmpeginteropx-patches/0002-decode-thread-priority.patch`, adding optional priority boosts
-for the decode-ahead worker, libdav1d workers and threaded swscale workers. The four decimal-string
-`bale_*` keys are documented above; production sets the three `SoftwareDecodeTuning` defaults,
-never the priority key. Every `*.patch` is applied with `git apply --index` in ordinal filename order;
+for the decode-ahead worker, libdav1d workers and threaded swscale workers. Patch 0020 removed
+threaded swscale and now rejects `bale_sws_threads`; the three remaining decimal-string `bale_*` keys
+are documented above, and production never sets the priority key. Every `*.patch` is applied with `git apply --index` in ordinal filename order;
 any failure aborts. Only `Source/` `.cpp`/`.h`
 changes are accepted, **never IDL**, project files or dependency changes. The build compares the
 built winmd's public type-name set against the original; a difference aborts packaging. This is a
@@ -653,7 +651,7 @@ so the two runs aren't comparable. The earlier controlled A/B (gpu-film-grain.md
 repack stalls more. Freeing this ~0.6 core needs the repack's GPU work off the decode thread's
 immediate-context lock first.
 
-**Repack A/B, interleaved (0.1.354.0, 2026-11-09).** Start Over, 120 s, 3 runs each, alternating:
+**Repack A/B, interleaved (0.1.354.0, 2026-11-09; debug repack removed by 0020).** Start Over, 120 s, 3 runs each, alternating:
 
 | Path | Buffering at 120 s | Position reached | Process CPU (80–100 s) | dav1d + decode-ahead group |
 |---|---|---|---|---|
@@ -688,7 +686,7 @@ cost: writing ~24 MB per 4K frame into the staging texture runs at only ~2 GB/s 
 because staging memory is write-combined or because dav1d competes for memory bandwidth. Repack stays
 a debug knob.
 
-**Upload probe (`bale-debug.sh upload-probe`, 0.1.364.0, Series X ("arden" GPU), 4K R16 frame = 24.9 MB).**
+**Upload probe (`bale-debug.sh upload-probe`, since removed; 0.1.364.0, Series X ("arden" GPU), 4K R16 frame = 24.9 MB).**
 The memory type is not the problem; the console's state while the player is open is.
 
 | ms per 4K frame (4 threads unless noted) | Idle (detail page) | Player open: 1080p H.264 HW, playing or paused | 4K AV1 paused |
@@ -735,7 +733,7 @@ but `OpenExistingHeapFromAddress` on a 32 MB `VirtualAlloc` region fails with E_
 cache-coherent UMA `CUSTOM` heap (write-back CPU pages, L0) is the other zero-copy candidate: D3D12
 allows a resource to stay mapped while the GPU reads it, so dav1d could decode straight into it.
 
-**Zero-copy probe (`bale-debug.sh zero-copy-probe`, 0.1.372, 2026-11-09): every check passes.**
+**Zero-copy probe (`bale-debug.sh zero-copy-probe`, since removed; 0.1.372, 2026-11-09): every check passes.**
 - The CUSTOM write-back L0 buffer creates and stays mapped. The UPLOAD and READBACK heaps are also
   write-back L0 on this console.
 - CPU speed on it equals ordinary RAM, for both writes and reads, in both states. Per 24.9 MB frame,
@@ -772,7 +770,7 @@ swscale conversion (~0.6 core) and the staging fill disappear. dav1d's own cost 
    exported and applied; Jellyfin 4K, 1 thread): a valid custom buffer, a misaligned layout and a
    failing callback all give bit-identical frames to the default pool, every buffer is freed, and
    at most 10 pictures are alive at once (~250 MB at 4K, same as the internal pool).
-2. **`bale_gpu` zero-copy module** (Rust, separate zero-copy ABI 1; `ABI_VERSION` unchanged).
+2. **`bale_gpu` zero-copy module** (Rust, separate zero-copy ABI 1; `ABI_VERSION` unchanged then; now 5).
    Done: `native/bale-gpu/src/d3d12_repack.rs` (`bale_zc_*` exports), layout checks and CPU reference
    in `src/zc_frame.rs`, shader `shaders/repack_zc_cs.hlsl`, WARP tests `tests/zero_copy_*.rs`. One
    handle per uploader, created from the MF D3D11 device and immediate context after the caller
@@ -871,6 +869,9 @@ swscale conversion (~0.6 core) and the staging fill disappear. dav1d's own cost 
    keeps the swscale path for A/Bs. 12-bit pictures are still declined by the wrapper and take
    today's path until the old paths are removed; 8-bit (`AV_PIX_FMT_YUV420P`) frames go through
    `bale_zc_repack_into_bits` once the wrapper calls it (item 4).
+   **Zero-copy only (wrapper 0020, `2.1.0-bale.20`):** "today's path" is gone. `zerocopy=off` and the
+   swscale/staging fallback were removed; 12-bit and any other layout zero-copy refuses are server
+   transcoded, and every zero-copy failure fails the stream to a server transcode.
 A one-off picture freeze (~2 s at start) seen once by the owner during an earlier repack run did not
 reproduce in 5 further starts (2 resumes with screenshots, 3 Start Over).
 

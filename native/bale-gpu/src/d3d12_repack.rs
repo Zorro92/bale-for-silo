@@ -81,7 +81,8 @@ const GRAIN_SHADER_8: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/repack_g
 
 pub const ZERO_COPY_ABI_VERSION: u32 = 1;
 pub const S_OK: i32 = 0;
-/// `bale_zc_repack`: not a buffer of this handle; the caller takes its ordinary path.
+/// Declined with no GPU work (e.g. `bale_zc_repack`: not a buffer of this handle). Bale's wrapper
+/// lands a declined 10-bit direct write; any other decline fails the stream.
 pub const S_FALSE: i32 = 1;
 const WAIT_TIMEOUT: HRESULT = HRESULT(0x8007_0102_u32 as i32);
 const GENERIC_ALL: u32 = 0x1000_0000;
@@ -113,7 +114,7 @@ static LIVE: Mutex<BTreeMap<usize, Arc<Buffer>>> = Mutex::new(BTreeMap::new());
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
 /// An owned kernel handle (event or shared NT handle), closed on drop.
-pub(crate) struct Handle(pub(crate) HANDLE);
+struct Handle(HANDLE);
 
 // SAFETY: a kernel handle value is usable from any thread; this wrapper only closes it once.
 unsafe impl Send for Handle {}
@@ -129,7 +130,7 @@ impl Drop for Handle {
     }
 }
 
-pub(crate) fn heap(kind: D3D12_HEAP_TYPE) -> D3D12_HEAP_PROPERTIES {
+fn heap(kind: D3D12_HEAP_TYPE) -> D3D12_HEAP_PROPERTIES {
     D3D12_HEAP_PROPERTIES {
         Type: kind,
         CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
@@ -140,7 +141,7 @@ pub(crate) fn heap(kind: D3D12_HEAP_TYPE) -> D3D12_HEAP_PROPERTIES {
 }
 
 /// CPU-cached system memory the GPU reads directly: the decode target.
-pub(crate) fn write_back() -> D3D12_HEAP_PROPERTIES {
+fn write_back() -> D3D12_HEAP_PROPERTIES {
     D3D12_HEAP_PROPERTIES {
         Type: D3D12_HEAP_TYPE_CUSTOM,
         CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_WRITE_BACK,
@@ -150,7 +151,7 @@ pub(crate) fn write_back() -> D3D12_HEAP_PROPERTIES {
     }
 }
 
-pub(crate) fn committed(
+fn committed(
     device: &ID3D12Device,
     properties: &D3D12_HEAP_PROPERTIES,
     flags: D3D12_HEAP_FLAGS,
@@ -165,7 +166,7 @@ pub(crate) fn committed(
 
 /// Maps a buffer for CPU reads and writes and leaves it mapped; D3D12 allows releasing a mapped
 /// resource, which ends the mapping.
-pub(crate) fn map(resource: &ID3D12Resource) -> Result<usize> {
+fn map(resource: &ID3D12Resource) -> Result<usize> {
     let mut data = std::ptr::null_mut();
     // SAFETY: a CPU-visible buffer; `data` is our out-slot.
     unsafe { resource.Map(0, None, Some(&mut data))? };
@@ -177,14 +178,14 @@ pub(crate) fn map(resource: &ID3D12Resource) -> Result<usize> {
 
 /// A non-owning copy of a COM pointer for D3D12 structs that hold it in `ManuallyDrop` and so
 /// never release it.
-pub(crate) fn borrowed<T: Interface>(object: &T) -> ManuallyDrop<Option<T>> {
+fn borrowed<T: Interface>(object: &T) -> ManuallyDrop<Option<T>> {
     // SAFETY: `Option<T>` is one non-null COM pointer, the same layout as `T`; `ManuallyDrop`
     // skips the Release this copy did not AddRef. Callers keep `object` alive for every use of
     // the struct (each submission is waited for before the object is released).
     unsafe { std::mem::transmute_copy(object) }
 }
 
-pub(crate) fn transition(
+fn transition(
     resource: &ID3D12Resource,
     before: D3D12_RESOURCE_STATES,
     after: D3D12_RESOURCE_STATES,
@@ -1312,7 +1313,7 @@ impl BaleZeroCopy {
     }
 }
 
-/// Bind flags of MF's shareable pool textures (upload variant 6): render target, shader resource
+/// Bind flags of the wrapper's shareable pool textures: render target, shader resource
 /// and unordered access.
 const TARGET_BIND: u32 = (D3D11_BIND_RENDER_TARGET.0
     | D3D11_BIND_SHADER_RESOURCE.0
@@ -1714,8 +1715,8 @@ pub unsafe extern "C" fn bale_zc_release(buffer: *mut c_void) -> i32 {
 /// after this call see the picture. The caller must queue its last use of the texture before the
 /// next repack call and should flush the context once per frame.
 ///
-/// Returns S_FALSE with a null texture when `buffer` is not a live buffer of this handle (the
-/// caller then takes its ordinary path), E_INVALIDARG for a layout that does not fit the buffer,
+/// Returns S_FALSE with a null texture when `buffer` is not a live buffer of this handle (Bale's
+/// wrapper then fails the stream), E_INVALIDARG for a layout that does not fit the buffer,
 /// and otherwise a failure that poisons the handle: later repacks return it and allocs fail.
 ///
 /// # Safety

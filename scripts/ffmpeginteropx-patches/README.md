@@ -172,7 +172,8 @@ more than 8 in a row are fatal (`ZeroCopyMissed`). 8-bit frames never stage or l
 device is initialised for zero-copy streams even when another stream opened a hardware context.
 The stats line adds `dropped=`. The `bale_sws_threads`, `bale_d3d11_upload_fault_frames` and
 `bale_d3d11_repack` keys are now rejected. Other streams keep the upstream CPU output path. It ships
-in `2.1.0-bale.20`.
+in `2.1.0-bale.20`. `bale_gpu.dll` then dropped the exports only those paths used (main ABI 5,
+grain ABI 2 without `bale_grain_cpu_apply`).
 `ffmpeginteropx-wrapper.yml` applies every `*.patch` in ordinal
 filename order with `git apply --index`, failing on any rejected patch. Use numbered filenames
 (e.g. `0001-threaded-swscale.patch`); names and SHA256 hashes are recorded in `SOURCES.txt`.

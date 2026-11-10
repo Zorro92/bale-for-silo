@@ -64,25 +64,14 @@ impl std::fmt::Display for ApplyError {
 
 impl std::error::Error for ApplyError {}
 
-impl TryFrom<u32> for PixelFormat {
-    type Error = ApplyError;
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::Nv12),
-            2 => Ok(Self::P010),
-            _ => Err(ApplyError::InvalidFormat),
-        }
-    }
-}
-
-/// Checked byte-span geometry, also used before the FFI constructs any slices.
+/// Checked byte-span geometry.
 #[derive(Clone, Copy)]
-pub(super) struct PlaneLayout {
+struct PlaneLayout {
     pitch: usize,
     rows: usize,
     row_bytes: usize,
     reversed: bool,
-    pub(super) span: usize,
+    span: usize,
 }
 
 impl PlaneLayout {
@@ -107,10 +96,6 @@ impl PlaneLayout {
         })
     }
 
-    pub(super) fn first_offset(self) -> usize {
-        self.row_start(0)
-    }
-
     fn row_start(self, row: usize) -> usize {
         let physical_row = if self.reversed {
             self.rows - 1 - row
@@ -121,7 +106,7 @@ impl PlaneLayout {
     }
 }
 
-pub(super) fn layouts(
+fn layouts(
     params: &ValidGrainParams,
     format: PixelFormat,
     y_pitch: isize,

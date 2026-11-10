@@ -177,7 +177,7 @@ jobs:
           ./scripts/check-ffmpeg-package.ps1 -PackagePath $package.FullName
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $zip = [IO.Compression.ZipFile]::OpenRead($package.FullName)
-          $inspection = Join-Path $env:RUNNER_TEMP "bale-grain-exports-$([guid]::NewGuid())"
+          $inspection = Join-Path $env:RUNNER_TEMP "bale-gpu-exports-$([guid]::NewGuid())"
           New-Item -ItemType Directory $inspection | Out-Null
           $packagedDll = Join-Path $inspection 'bale_gpu.dll'
           try {
@@ -190,16 +190,33 @@ jobs:
             $vs = & $vswhere -latest -products * -property installationPath
             $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe |
               Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
-            if (-not $dumpbin) { throw 'dumpbin.exe is required to inspect the packaged grain DLL' }
+            if (-not $dumpbin) { throw 'dumpbin.exe is required to inspect the packaged bale_gpu.dll' }
             $exports = & $dumpbin.FullName /exports $packagedDll
             if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect packaged bale_gpu.dll exports' }
-            foreach ($symbol in @('bale_grain_abi_version', 'bale_grain_validate', 'bale_grain_cpu_apply',
-                'bale_grain_gpu_create', 'bale_grain_gpu_apply', 'bale_grain_gpu_destroy')) {
+            # Live exports: the wrapper's grain and zero-copy loaders (patch 0020), and the app's P/Invokes.
+            $required = @('bale_grain_abi_version', 'bale_grain_validate',
+              'bale_grain_gpu_create', 'bale_grain_gpu_apply', 'bale_grain_gpu_destroy', 'bale_grain_gpu_probe',
+              'bale_zc_abi_version', 'bale_zc_register_d3d12', 'bale_zc_create', 'bale_zc_alloc', 'bale_zc_release',
+              'bale_zc_repack', 'bale_zc_repack_into', 'bale_zc_repack_into_bits', 'bale_zc_stats', 'bale_zc_destroy',
+              'bale_gpu_abi_version', 'bale_gpu_std_probe', 'bale_gpu_d3d11_probe',
+              'bale_gpu_engine_probe', 'bale_gpu_engine_probe_source',
+              'bale_frame_observer_create', 'bale_frame_observer_mark', 'bale_frame_observer_drain',
+              'bale_frame_observer_status', 'bale_frame_observer_video_descriptor', 'bale_frame_observer_destroy')
+            # Removed with the staging upload, CPU grain, debug repack and upload/zero-copy probes.
+            $removed = @('bale_grain_cpu_apply', 'bale_repack_abi_version', 'bale_repack_gpu_create',
+              'bale_repack_gpu_apply', 'bale_repack_gpu_destroy',
+              'bale_gpu_upload_probe', 'bale_gpu_d3d12_probe', 'bale_gpu_zero_copy_probe')
+            foreach ($symbol in $required) {
               if (-not ($exports | Select-String -Pattern "\s$([regex]::Escape($symbol))\s*$" -Quiet)) {
                 throw "Packaged bale_gpu.dll is missing export $symbol"
               }
             }
-            Write-Output 'Packaged bale_gpu.dll: all six grain ABI exports verified'
+            foreach ($symbol in $removed) {
+              if ($exports | Select-String -Pattern "\s$([regex]::Escape($symbol))\s*$" -Quiet) {
+                throw "Packaged bale_gpu.dll still exports removed $symbol"
+              }
+            }
+            Write-Output "Packaged bale_gpu.dll: $($required.Count) live exports present, $($removed.Count) removed exports absent"
           } finally { Remove-Item $inspection -Recurse -Force }
 
       - uses: actions/upload-artifact@v7

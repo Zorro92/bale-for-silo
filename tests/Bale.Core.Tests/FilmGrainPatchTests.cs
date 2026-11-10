@@ -135,18 +135,26 @@ public class FilmGrainPatchTests
     }
 
     [Fact]
-    public void AppCiInspectsAllSixExportsFromTheActualPackagedDll()
+    public void AppCiInspectsTheLiveExportsOfTheActualPackagedDll()
     {
         var workflow = Read("ci.yml.txt");
         var start = workflow.IndexOf("$entry = $zip.GetEntry('bale_gpu.dll')", StringComparison.Ordinal);
-        var end = workflow.IndexOf("Packaged bale_gpu.dll: all six grain ABI exports verified", start, StringComparison.Ordinal);
+        var end = workflow.IndexOf("removed exports absent\"", start, StringComparison.Ordinal);
         Assert.True(start >= 0 && end > start);
         var inspection = workflow[start..end];
         Assert.Contains("ExtractToFile($entry, $packagedDll)", inspection);
         Assert.Contains("$exports = & $dumpbin.FullName /exports $packagedDll", inspection);
         Assert.Contains("if ($LASTEXITCODE -ne 0)", inspection);
-        foreach (var symbol in Exports) Assert.Contains($"'{symbol}'", inspection);
+        var required = inspection.IndexOf("$required = @(", StringComparison.Ordinal);
+        var removed = inspection.IndexOf("$removed = @(", StringComparison.Ordinal);
+        Assert.True(required >= 0 && removed > required);
+        // Grain ABI 2: the GPU exports the wrapper loads stay required; CPU grain must be gone.
+        foreach (var symbol in Exports.Where(symbol => symbol != "bale_grain_cpu_apply"))
+            Assert.Contains($"'{symbol}'", inspection[required..removed]);
+        Assert.Contains("'bale_grain_cpu_apply'", inspection[removed..]);
+        Assert.DoesNotContain("'bale_grain_cpu_apply'", inspection[required..removed]);
         Assert.Contains("throw \"Packaged bale_gpu.dll is missing export $symbol\"", inspection);
+        Assert.Contains("throw \"Packaged bale_gpu.dll still exports removed $symbol\"", inspection);
     }
 
     private static string Read(string name) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, name));

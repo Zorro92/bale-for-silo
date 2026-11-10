@@ -1,6 +1,16 @@
 # Bale stage 2: GPU AV1 film grain (design)
 
-Status: 2026-11-08. **Steps 1–6 done; GPU grain is the production default and above-1080p queues are
+**Current state (2026-11-09, wrapper 0020 / `2.1.0-bale.20`, `bale_gpu` ABI 5, grain ABI 2):** GPU grain
+is the only grain Bale applies in production. Zero-copy frames get it fused into the D3D12 direct write
+(`repack_grain_zc_cs.hlsl`, 8- and 10-bit); a declined 10-bit direct write lands the frame
+(`bale_zc_repack`) and runs the D3D11 grain pass (`bale_grain_gpu_*`). Requested GPU grain that is
+unavailable refuses the stream at open, and any runtime grain failure fails the stream, so the app
+replans to a server transcode. CPU grain (`bale_grain_cpu_apply`, mode 1), the staging upload, the
+CPU-buffer path and the size-dependent CPU/no-grain fallbacks are **removed**; `grain::cpu::apply` stays
+only as the bit-exact oracle for tests, create-time self-tests and the console probe. Debug
+`grain=dav1d|off` remain. Sections 2 and 6 below keep the earlier 0009–0010 design as history.
+
+Status (history): 2026-11-08. **Steps 1–6 done; GPU grain is the production default and above-1080p queues are
 capped (section 8).** Rust CPU oracles, dav1d fixtures and integer GPU passes are verified:
 [Windows CI run 42505455358](https://github.com/Zorro92/bale-for-silo/actions/runs/42505455358)
 passes real FXC compilation, strict Windows Clippy, all four create-time self-tests and all 44 WARP
@@ -24,11 +34,16 @@ against dav1d. The 4K decode/memory gate and HDR playback parity are still open.
 - MediaPlayer + FFmpegInteropX MSS stay (MediaEngine was not faster; frame-server copies cost more).
 - dav1d already exports grain instead of applying it when `AV_CODEC_EXPORT_DATA_FILM_GRAIN` is set
   (patch 0005); each grained frame then carries `AV_FRAME_DATA_FILM_GRAIN_PARAMS` (type AV1).
-- New wrapper patch 0009 applies it at upload time, inside `BaleD3D11Upload::CreateSample`, in place of
-  the plain `CopyResource(pooled, staging)`. Rust `bale_gpu.dll` does the work through a C ABI.
+- Wrapper patch 0009 first applied it at upload time, inside `BaleD3D11Upload::CreateSample`, in place
+  of the plain `CopyResource(pooled, staging)` (staging path removed by 0020). Now it runs in the zero-copy
+  direct write or, for a landed 10-bit frame, as the D3D11 pass below. Rust `bale_gpu.dll` does the
+  work through a C ABI.
 - The upload device is MF's own device; its immediate context is shared with the renderer.
 
 ## 2. Mode selection (decided at codec open, because dav1d reads apply_grain only at init)
+History: this table and the fallbacks below are the 0009–0010 policy. Since 0020, mode 1 (CPU) selects
+GPU, there is no staging/CPU-buffer path, and any GPU-grain failure fails the stream (see the top).
+
 | Condition at open | Export | Grain applied by |
 |-------------------|--------|------------------|
 | `grain=dav1d` / `grain=on` (`bale_film_grain_mode=0`), or probe default | off | dav1d |
@@ -62,9 +77,11 @@ against dav1d. The 4K decode/memory gate and HDR playback parity are still open.
   available, never grain parameters, URLs, paths or exception text. Scaled/unsupported output or invalid
   per-frame parameters is shown ungrained, not handed back to dav1d.
 
-## 3. C ABI (additive exports; bale_gpu ABI_VERSION stays 4; separate grain ABI = 1)
+## 3. C ABI (grain ABI 2, separate from the `bale_gpu` ABI, now 5)
+Grain ABI 1 also exported `bale_grain_cpu_apply`; ABI 2 removes it and keeps every other export unchanged.
+Wrapper 0020 accepts grain ABI 1 or 2.
 ```c
-#define BALE_GRAIN_ABI 1
+#define BALE_GRAIN_ABI 2
 typedef struct BaleGrainParams {         // 184 bytes, no implicit padding; static_assert both sides
     uint32_t struct_size;                // = sizeof(BaleGrainParams)
     uint32_t seed;                       // low 16 bits used
@@ -91,9 +108,6 @@ typedef struct BaleGrainParams {         // 184 bytes, no implicit padding; stat
 
 uint32_t bale_grain_abi_version(void);
 HRESULT  bale_grain_validate(const BaleGrainParams*);  // S_OK / E_INVALIDARG / E_UNEXPECTED
-HRESULT  bale_grain_cpu_apply(const BaleGrainParams*, uint32_t format /*1 NV12, 2 P010*/,
-                              uint8_t* y, intptr_t y_pitch, uint8_t* uv, intptr_t uv_pitch,
-                              uint32_t threads /*0 = auto, max 4*/);   // in place
 
 // Step 2 (Windows): opaque, serialized-owner GPU handle; create includes a self-test.
 HRESULT  bale_grain_gpu_create(ID3D11Device*, ID3D11DeviceContext*, BaleGrainGpu** out);
@@ -104,7 +118,7 @@ void     bale_grain_gpu_destroy(BaleGrainGpu*);
 // Step 3 (Windows): synthetic hardware diagnostics; bytes written, UTF-8, no trailing NUL.
 uint32_t bale_grain_gpu_probe(uint8_t* report, uint32_t capacity);
 ```
-- `HRESULT` is `i32` in Rust. The three step-1 exports each use `catch_unwind`; validation/layout
+- `HRESULT` is `i32` in Rust. The step-1 exports each use `catch_unwind`; validation/layout
   failures return E_INVALIDARG, and a panic returns E_UNEXPECTED. Release keeps `panic = "unwind"`.
   Neither raw nor validated parameter types implement Debug; the exports never log their contents.
 - FFmpeg's struct never crosses the boundary; patch 0009 maps `AVFilmGrainAOMParams` field by
@@ -116,14 +130,12 @@ uint32_t bale_grain_gpu_probe(uint8_t* report, uint32_t capacity);
   arrays have no explicit counts: callers zero unused tails after 2*lag*(lag+1) luma coefficients and
   2*lag*(lag+1)+(num_y_points != 0) chroma coefficients. Inactive planes have zero coefficients.
   Only the low 16 seed bits participate. The FFI checks struct_size before reading the full struct.
-- CPU pitches are signed, nonzero byte strides with magnitude at least the visible row size;
+- `grain::cpu::apply` (Rust only since grain ABI 2): pitches are signed, nonzero byte strides with magnitude at least the visible row size;
   pointers address the first logical row, even for negative pitches. P010 words are little-endian,
   with ten coded bits in bits 15..6. Plane spans must not overlap. Padding is never modified;
   odd-width chroma averages clamp the second luma sample instead of writing dav1d's padding pixel.
   Threads above 4 are rejected; 0 chooses the available parallelism capped at 4. All span and address
-  arithmetic is checked before constructing slices. The ABI has no buffer-length arguments: callers
-  must supply exclusive, live allocations covering the checked spans, including negative strides.
-  The safe Rust API additionally verifies slice lengths, with slices starting at each plane's lowest
+  arithmetic is checked before constructing slices. The safe Rust API verifies slice lengths, with slices starting at each plane's lowest
   addressed byte rather than its first logical row. Validation errors leave both planes unchanged;
   callers must not assume rollback if synthesis panics.
 - GPU handle contract (implemented): COM pointers are borrowed for the call; `create` AddRefs device
@@ -231,7 +243,7 @@ Order, all on MF's immediate context:
 - A thread-local cache holds one prepared entry (templates, three LUTs, offsets), keyed by an owned
   validated snapshot with full parameter equality. Changing seeds invalidate it; preparation is not
   claimed to meet the original unmeasured 0.1–0.3 ms estimate.
-- `cpu.rs` (oracle and runtime fallback): in place on NV12/P010 with arbitrary signed byte pitches,
+- `cpu.rs` (oracle; its runtime-fallback role ended with 0020): in place on NV12/P010 with arbitrary signed byte pitches,
   including unaligned P010 and odd strides. Chroma runs before luma within each independent 32-row
   block row, because it reads un-grained luma. `std::thread::scope` workers own disjoint block-row
   groups (at most four threads). Arithmetic shifts, rounding, overlap order and intermediate clips
@@ -242,7 +254,11 @@ Order, all on MF's immediate context:
   offsets and full application, not only preparation. It is a host CPU baseline, not an Xbox result
   or a dav1d comparison. The ignored test is `timing_1080p_10bit`.
 
-## 6. Wrapper patches 0009–0010 (C++, implemented)
+## 6. Wrapper patches 0009–0010 (C++, history)
+0020 removed the CPU mode, the `UploadFrame` staging ring, the CPU-buffer path and every fallback below;
+the loader now needs only the five GPU-side grain exports. The parameter mapping, DLL loading and
+handle serialization still apply.
+
 - **0010 fallback policy (`2.1.0-bale.10`):** step 5 measured ~1.1 cores with dav1d grain versus
   ~1.9 with Rust CPU grain in mapped upload staging at 1080p. At open, a GPU request without upload
   variant 1 now selects mode 0, leaves export off and keeps dav1d synthesis instead of choosing Rust
@@ -314,7 +330,8 @@ Order, all on MF's immediate context:
 - **Diagnostics / packaging:** each runtime fallback has its own per-stream once guard and fixed
   `Bale film grain:` message, with only an HRESULT when available, no parameters/media details or
   exception text. Debug's existing safe `Bale ` prefix filter captures these; production native
-  logging stays off. App CI extracts the actual MSIX's `bale_gpu.dll` and requires all six exports.
+  logging stays off. App CI extracts the actual MSIX's `bale_gpu.dll` and required all six exports
+  (now the live export set, with `bale_grain_cpu_apply` required absent).
   Core source-contract tests cover the loader, mapping, owned-output paths, fallbacks and export gate;
   the wrapper release workflow compiles the complete ten-patch series. Step 5 verified playback with
   0009; the 0010 fallback branches still need the owner's console gate, not established by compilation
@@ -398,7 +415,7 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
 
 ### Step 3: console probe
 - Debug-only `scripts/bale-debug.sh rust` / `GET /rust` calls the additive `bale_grain_gpu_probe`
-  export (grain ABI 1, crate ABI 4 unchanged), on the existing background task with a 64 KiB report
+  export (then grain ABI 1, crate ABI 4; now grain ABI 2, crate ABI 5), on the existing background task with a 64 KiB report
   buffer and a 120 s curl timeout. It creates a private hardware VIDEO_SUPPORT device, enables
   multithread protection, reports feature level and runs the existing NV12/P010 create-time tests.
   A failed create also reports Device1/Context1 casts, required format-support bits, context-state
@@ -461,7 +478,8 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
   rather than choosing the slower Rust CPU path whenever GPU is unavailable. Low-priority open item:
   faster CPU fallback, either grain in a cached heap buffer then copy, or SIMD.
 - **Next:** step 6 is done (section 8). The GPU planar repack that would replace the CPU sws repack was
-  built and measured (section 8, "GPU repack"). It stalls more than swscale at 4K, so it stays debug-only.
+  built and measured (section 8, "GPU repack"). It stalled more than swscale at 4K, stayed debug-only,
+  and was removed with the staging path (0020).
 
 ## 8. 4K memory cap
 - 4K P010 ≈ 24.9 MB per texture vs 6.2 MB at 1080p. ~55 in flight would be ~1.3 GB of the 3.25 GB budget.
@@ -486,6 +504,8 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
   steady state. Most of the remaining ~1.9 GiB is dav1d frame threads/pictures and the MF renderer.
 
 ### 4K upload loss and buffering (build 0.1.337.0, wrapper `2.1.0-bale.11`)
+History: the fault knob, the CPU-buffer fallback and the swscale repack measured here were removed by
+0020; upload loss now fails the stream to a server transcode.
 - Patch 0011's debug fault (`ffmpeg-tune uploadfault=240`) failed the upload ~9.5 s in. The wrapper
   logged upload disabled (`0x8007000E`) and ungrained output above 1080p, and video kept playing
   (advancing screenshots, zero late frames). MF accepts the mid-stream switch from surface to buffer
@@ -509,7 +529,7 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
   ~89% of real time here, and the earlier 40 Mbps 4K probe ran at 0.53–0.58. Moving the repack to the
   GPU would not make 4K viable; production keeps the 1080p AV1 claim.
 
-### GPU repack (debug only, build 0.1.343.0, wrapper `2.1.0-bale.12`)
+### GPU repack (debug only, build 0.1.343.0, wrapper `2.1.0-bale.12`; removed)
 - Built anyway as an experiment: patch 0012 plus `bale_gpu` repack ABI 1. The CPU copies dav1d's
   planes into the staging texture unchanged, and two GPU draws turn them into NV12/P010 (grain then
   runs on a scratch copy). Off by default; `ffmpeg-tune repack=on` enables it. It passes its self-test
@@ -525,7 +545,8 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
 - It saves the expected ~0.3–0.4 cores but stalls about twice as much in the heavy stretch (delivered
   ahead drops to ~0.45 s against ~0.7 s). Likely cause: the copy and draws run on the shared immediate
   context under the multithread lock, so every frame now waits on the GPU in the decode thread.
-  Not worth enabling; kept as a debug knob. 4K AV1 stays CPU-bound in dav1d.
+  Not worth enabling; kept as a debug knob until 0020 removed it with `bale_gpu`'s repack ABI
+  (`bale_repack_*`, `repack.rs`, `repack_{luma,chroma}_ps.hlsl`). 4K AV1 stays CPU-bound in dav1d.
 - Follow-up (2026-11-09, wrappers `bale.13`/`bale.14`): stage timing showed the GPU work at ~1 ms;
   the real cause was the single-threaded planar copy into staging (23–40 ms per 4K frame). Slicing it
   across the swscale threads (patch 0014) brings it to swscale's 11–16 ms and nearly closes the gap
@@ -553,3 +574,5 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
 6. **Done:** above-1080p cap (decode-ahead 8, BufferTime 500 ms), measured with a 4K grain title (section 8).
 7. **Done:** mid-stream upload-loss fallback verified with patch 0011's debug fault (section 8). 4K still
    rebuffers in heavy scenes on every path, bound by dav1d itself, not the repack (section 8).
+8. **Done (wrapper 0020, `bale_gpu` ABI 5, grain ABI 2):** GPU grain only; CPU grain, staging, the
+   debug repack and the CPU fallbacks removed; failures go to server transcode.

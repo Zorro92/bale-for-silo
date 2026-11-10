@@ -541,14 +541,14 @@ impl BaleGrainGpu {
 }
 
 /// Owns the lock and previous state, without borrowing the handle across mutable resource changes.
-pub(crate) struct ContextGuard {
+struct ContextGuard {
     context: ID3D11DeviceContext1,
     multithread: ID3D10Multithread,
     previous: Option<ID3DDeviceContextState>,
 }
 
 impl ContextGuard {
-    pub(crate) fn enter(
+    fn enter(
         context: &ID3D11DeviceContext1,
         multithread: &ID3D10Multithread,
         state: &ID3DDeviceContextState,
@@ -582,7 +582,7 @@ impl Drop for ContextGuard {
     }
 }
 
-pub(crate) fn unbind(context: &ID3D11DeviceContext) {
+fn unbind(context: &ID3D11DeviceContext) {
     // SAFETY: called only under ContextGuard, and only clears our isolated state's bindings.
     unsafe {
         context.PSSetShaderResources(0, Some(&[None, None, None, None, None, None]));
@@ -590,7 +590,7 @@ pub(crate) fn unbind(context: &ID3D11DeviceContext) {
     }
 }
 
-pub(crate) fn check_formats(device: &ID3D11Device) -> Result<()> {
+fn check_formats(device: &ID3D11Device) -> Result<()> {
     for (format, required) in required_formats() {
         // SAFETY: live device, format is a known DXGI enum value.
         if unsafe { device.CheckFormatSupport(format)? } & required != required {
@@ -772,7 +772,7 @@ fn validate_descs(
     Ok(())
 }
 
-pub(crate) fn is_device_loss(hr: HRESULT) -> bool {
+fn is_device_loss(hr: HRESULT) -> bool {
     matches!(
         hr,
         DXGI_ERROR_DEVICE_REMOVED
