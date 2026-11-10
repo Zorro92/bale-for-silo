@@ -130,6 +130,8 @@ public sealed partial class App : Application
     /// <summary>Routes system Back through the same policy as keyboard Escape and Backspace.</summary>
     private static void OnBackRequested(Frame frame, BackRequestedEventArgs args)
     {
+        // Names the source of an unexpected stop (a remote, HDMI-CEC or a controller).
+        Log.Info("back: system");
         args.Handled = GoBack(frame);
     }
 
@@ -150,6 +152,7 @@ public sealed partial class App : Application
                 return;
             }
 
+            Log.Info($"back: key={args.Key} original={args.OriginalKey}");
             args.Handled = GoBack(frame);
             if (args.Key == VirtualKey.Escape && !args.Handled)
             {

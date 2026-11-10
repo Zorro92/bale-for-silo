@@ -558,6 +558,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         var deferral = e.SuspendingOperation.GetDeferral();
         try
         {
+            Log.Info("player: suspending");
             _suspended = true;
             await ShutdownAsync();
         }
