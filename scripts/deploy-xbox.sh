@@ -26,9 +26,28 @@ if [[ -z "$DIR" ]]; then
       SHA="$(git -C "$ROOT" rev-parse origin/main)"
       echo "Warning: HEAD isn't pushed; deploying origin/main (${SHA:0:7}) instead." >&2
     fi
+    # CI skips documentation-only pushes (paths-ignore in ci.yml; keep DOCS_ONLY in step). Any run
+    # from HEAD back to the newest commit that touched anything else builds the same app, so take
+    # the newest of those commits that has a run.
+    DOCS_ONLY='\.md$|^docs/|^\.claude/'
+    CANDIDATES=("$SHA")
+    while (( ${#CANDIDATES[@]} < 50 )); do
+      LAST="${CANDIDATES[-1]}"
+      CHANGED="$(git -C "$ROOT" diff-tree --no-commit-id --name-only -r --root "$LAST")"
+      if [[ -z "$CHANGED" ]] || grep -qvE "$DOCS_ONLY" <<<"$CHANGED"; then break; fi
+      PARENT="$(git -C "$ROOT" rev-parse -q --verify "$LAST^" 2>/dev/null)" || break
+      CANDIDATES+=("$PARENT")
+    done
     for _ in $(seq 40); do
-      RUN_ID="$(gh run list --workflow ci.yml --commit "$SHA" --event push --limit 1 --json databaseId -q '.[0].databaseId')"
-      [[ -n "$RUN_ID" ]] && break
+      RUNS="$(gh run list --workflow ci.yml --event push --branch main --limit 100 --json databaseId,headSha)"
+      for CANDIDATE in "${CANDIDATES[@]}"; do
+        RUN_ID="$(jq -r --arg sha "$CANDIDATE" 'map(select(.headSha == $sha)) | first | .databaseId // empty' <<<"$RUNS")"
+        if [[ -n "$RUN_ID" ]]; then
+          [[ "$CANDIDATE" != "$SHA" ]] && echo "${SHA:0:7} changes only docs since ${CANDIDATE:0:7}; using that commit's build."
+          SHA="$CANDIDATE"
+          break 2
+        fi
+      done
       sleep 3
     done
     [[ -n "$RUN_ID" ]] || { echo "No CI run for ${SHA:0:7} after 2 minutes." >&2; exit 1; }

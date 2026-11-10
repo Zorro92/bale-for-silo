@@ -1,9 +1,13 @@
 name: CI
 
+# Documentation-only changes build nothing. scripts/deploy-xbox.sh mirrors these paths to find the
+# build of a docs-only HEAD.
 on:
   push:
     branches: [main]
+    paths-ignore: ['**.md', 'docs/**', '.claude/**']
   pull_request:
+    paths-ignore: ['**.md', 'docs/**', '.claude/**']
   workflow_dispatch:
     inputs:
       production:
@@ -51,6 +55,93 @@ jobs:
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo test --release --locked
 
+  rust-windows:
+    name: Rust GPU layer (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v7
+
+      # libass with FreeType, FriBidi and HarfBuzz: static, UWP app partition, linked into bale_gpu.dll.
+      # Rebuilt only when the pin or the build script changes.
+      - name: Restore libass build
+        id: libass
+        uses: actions/cache@v6
+        with:
+          path: ${{ github.workspace }}\.libass
+          key: libass-uwp-x64-${{ hashFiles('scripts/libass-native.json', 'scripts/build-libass-native.ps1') }}
+
+      - name: Build libass (static, UWP app partition)
+        if: steps.libass.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: ./scripts/build-libass-native.ps1 -OutDir '${{ github.workspace }}\.libass'
+
+      - name: Point the Rust layer at libass
+        shell: pwsh
+        run: |
+          "BALE_LIBASS_DIR=${{ github.workspace }}\.libass" >> $env:GITHUB_ENV
+
+      # Rust GPU/media layer: static CRT (native/bale-gpu/.cargo/config.toml), packaged by the csproj.
+      - name: Locate Windows shader compiler
+        shell: pwsh
+        run: |
+          $fxc = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\fxc.exe" |
+            Sort-Object { [version]$_.Directory.Parent.Name } -Descending | Select-Object -First 1
+          if (-not $fxc) { throw 'Windows SDK fxc.exe is required for real grain shaders' }
+          "FXC=$($fxc.FullName)" >> $env:GITHUB_ENV
+
+      # Compiled dependencies (windows-rs above all). The key changes only with the lockfile, manifest,
+      # cargo config or rustc, so it is saved once per combination; Bale's own crate is rebuilt every run.
+      - name: Rust cache key
+        id: rust
+        shell: pwsh
+        run: |
+          "key=cargo-windows-test-$((rustc -V) -replace '[^0-9A-Za-z.]', '-')-${{ hashFiles('native/bale-gpu/Cargo.lock', 'native/bale-gpu/Cargo.toml', 'native/bale-gpu/.cargo/config.toml') }}" >> $env:GITHUB_OUTPUT
+
+      - name: Restore Rust build cache
+        id: rust-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            native/bale-gpu/target
+          key: ${{ steps.rust.outputs.key }}
+
+      - name: Lint Rust GPU layer (Windows)
+        shell: pwsh
+        run: |
+          rustup component add clippy
+          rustup target add x86_64-pc-windows-msvc
+          Push-Location native/bale-gpu
+          cargo clippy --all-targets --locked --target x86_64-pc-windows-msvc -- -D warnings
+          $cargoExit = $LASTEXITCODE
+          Pop-Location
+          if ($cargoExit -ne 0) { throw 'cargo clippy failed' }
+
+      - name: Test Rust GPU layer
+        shell: pwsh
+        run: |
+          rustup target add x86_64-pc-windows-msvc
+          # Run inside the crate so cargo reads .cargo/config.toml, including the static CRT setting.
+          Push-Location native/bale-gpu
+          cargo test --release --locked --target x86_64-pc-windows-msvc -- --nocapture
+          $cargoExit = $LASTEXITCODE
+          Pop-Location
+          if ($cargoExit -ne 0) { throw 'cargo test failed' }
+
+      - name: Save Rust build cache
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            native/bale-gpu/target
+          key: ${{ steps.rust.outputs.key }}
+
   xbox:
     name: Xbox package (Windows, debug=${{ matrix.debug_server }})
     strategy:
@@ -63,6 +154,7 @@ jobs:
     timeout-minutes: 30
     env:
       NUGET_PACKAGES: ${{ github.workspace }}\.nuget\packages
+      CARGO_INCREMENTAL: 0
     steps:
       - uses: actions/checkout@v7
       # The runner image already ships a .NET 10 SDK; global.json picks it, so no setup-dotnet download.
@@ -112,27 +204,23 @@ jobs:
           if (-not $fxc) { throw 'Windows SDK fxc.exe is required for real grain shaders' }
           "FXC=$($fxc.FullName)" >> $env:GITHUB_ENV
 
-      - name: Lint Rust GPU layer (Windows)
+      # Compiled dependencies (windows-rs above all). The key changes only with the lockfile, manifest,
+      # cargo config or rustc, so it is saved once per combination; Bale's own crate is rebuilt every run.
+      - name: Rust cache key
+        id: rust
         shell: pwsh
         run: |
-          rustup component add clippy
-          rustup target add x86_64-pc-windows-msvc
-          Push-Location native/bale-gpu
-          cargo clippy --all-targets --locked --target x86_64-pc-windows-msvc -- -D warnings
-          $cargoExit = $LASTEXITCODE
-          Pop-Location
-          if ($cargoExit -ne 0) { throw 'cargo clippy failed' }
+          "key=cargo-windows-build-$((rustc -V) -replace '[^0-9A-Za-z.]', '-')-${{ hashFiles('native/bale-gpu/Cargo.lock', 'native/bale-gpu/Cargo.toml', 'native/bale-gpu/.cargo/config.toml') }}" >> $env:GITHUB_OUTPUT
 
-      - name: Test Rust GPU layer
-        shell: pwsh
-        run: |
-          rustup target add x86_64-pc-windows-msvc
-          # Run inside the crate so cargo reads .cargo/config.toml, including the static CRT setting.
-          Push-Location native/bale-gpu
-          cargo test --release --locked --target x86_64-pc-windows-msvc -- --nocapture
-          $cargoExit = $LASTEXITCODE
-          Pop-Location
-          if ($cargoExit -ne 0) { throw 'cargo test failed' }
+      - name: Restore Rust build cache
+        id: rust-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            native/bale-gpu/target
+          key: ${{ steps.rust.outputs.key }}
 
       - name: Build Rust GPU layer
         shell: pwsh
@@ -153,6 +241,16 @@ jobs:
           # Imported DLLs, for checking against what the Xbox app container provides.
           & $dumpbin.FullName /dependents $dll
           if ((& $dumpbin.FullName /dependents $dll) -match 'vcruntime140\.dll|msvcp140\.dll') { throw 'bale_gpu.dll must link the CRT statically' }
+
+      - name: Save Rust build cache
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            native/bale-gpu/target
+          key: ${{ steps.rust.outputs.key }}
 
       # Every build gets a higher version so the Xbox accepts it as an update.
       - name: Stamp version
