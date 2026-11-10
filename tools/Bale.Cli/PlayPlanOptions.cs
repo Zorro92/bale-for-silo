@@ -3,7 +3,7 @@ using Bale.Core.Playback;
 
 internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldSeconds, string? SaveHead = null, int HeadMegabytes = 0,
     string? SaveRange = null, long RangeOffset = 0, int RangeBytes = 0, string? FileId = null, int Av1MaxHeight = 1080,
-    int? SubtitleIndex = null)
+    int? SubtitleIndex = null, int Av1MaxFps = 30)
 {
     internal static bool TryParse(IEnumerable<string> arguments, out PlayPlanOptions options, out string error)
     {
@@ -13,6 +13,7 @@ internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldS
         var profile = new List<string>();
         var holdSeen = false;
         var av1HeightSeen = false;
+        var av1FpsSeen = false;
         for (var i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -27,6 +28,13 @@ internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldS
                     if (height == 0) return false;
                     av1HeightSeen = true;
                     options = options with { Av1MaxHeight = height };
+                    break;
+                case "--av1-max-fps" when !av1FpsSeen && i + 1 < args.Length:
+                    // Debug probe for sources above the measured 30 fps bound.
+                    var fps = args[++i] switch { "30" => 30, "60" => 60, _ => 0 };
+                    if (fps == 0) return false;
+                    av1FpsSeen = true;
+                    options = options with { Av1MaxFps = fps };
                     break;
                 case "--subtitle" when options.SubtitleIndex is null && i + 1 < args.Length:
                     // --subtitle <ordinal|-1>: the Detail picker's choice (-1 = Off); omitted = Auto.
@@ -82,7 +90,8 @@ internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldS
     }
 
     // --claim-av1 remains a compatibility no-op; only the explicit height probe expands AV1.
-    internal DeviceCapabilities Capabilities() => Av1MaxHeight == 2160
-        ? ConsoleEvidence.Default with { VideoDecode = ConsoleEvidence.BuildVideoDecode(3840, 2160) }
+    internal DeviceCapabilities Capabilities() => Av1MaxHeight == 2160 || Av1MaxFps != 30
+        ? ConsoleEvidence.Default with { VideoDecode = Av1MaxHeight == 2160
+            ? ConsoleEvidence.BuildVideoDecode(3840, 2160, Av1MaxFps) : ConsoleEvidence.BuildVideoDecode(av1MaxFps: Av1MaxFps) }
         : ConsoleEvidence.Default;
 }

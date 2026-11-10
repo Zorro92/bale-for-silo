@@ -58,10 +58,11 @@ public static class ConsoleEvidence
     };
 
     /// <summary>Measured decode claims; optional AV1 bounds let debug callers test unmeasured sizes.</summary>
-    public static IReadOnlyList<VideoDecodeCapability> BuildVideoDecode(int av1MaxWidth = 1920, int av1MaxHeight = 1080)
+    public static IReadOnlyList<VideoDecodeCapability> BuildVideoDecode(int av1MaxWidth = 1920, int av1MaxHeight = 1080, int av1MaxFps = 30)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(av1MaxWidth);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(av1MaxHeight);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(av1MaxFps);
         // Mirror silo-apple's iosApp/iosApp/Shared/AppleDecodeCapabilities.swift bounded attestation.
         // The measured display tops out at 1080p (docs/player-plan.md), so keep system claims there.
         return Array.AsReadOnly(new[]
@@ -75,7 +76,7 @@ public static class ConsoleEvidence
             // Zero-copy takes only Main (4:2:0, 8/10-bit); High (4:4:4) and Professional (4:2:2, 12-bit)
             // transcode. The server lowercases ffprobe's "Main" and fails an empty or unknown profile,
             // so such streams transcode too.
-            new VideoDecodeCapability("av1", "dav1d", ["main"], [], [8, 10], av1MaxWidth, av1MaxHeight, 30, null, false),
+            new VideoDecodeCapability("av1", "dav1d", ["main"], [], [8, 10], av1MaxWidth, av1MaxHeight, av1MaxFps, null, false),
         });
     }
 }

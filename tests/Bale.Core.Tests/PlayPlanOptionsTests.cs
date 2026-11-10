@@ -48,6 +48,34 @@ public class PlayPlanOptionsTests
     }
 
     [Theory]
+    [InlineData(new string[0], 1920, 1080, 30)]
+    [InlineData(new[] { "--av1-max-fps", "60" }, 1920, 1080, 60)]
+    [InlineData(new[] { "--av1-max-fps", "60", "--av1-max-height", "2160" }, 3840, 2160, 60)]
+    [InlineData(new[] { "--av1-max-height", "2160", "--av1-max-fps", "30" }, 3840, 2160, 30)]
+    public void ExplicitAv1FrameRateChangesOnlyTheAv1Claim(string[] args, int width, int height, int fps)
+    {
+        Assert.True(PlayPlanOptions.TryParse(args, out var options, out _));
+        Assert.Equal(fps, options.Av1MaxFps);
+        var av1 = Assert.Single(options.Capabilities().VideoDecode, codec => codec.Codec == "av1");
+        Assert.Equal((width, height, fps), (av1.MaxWidth, av1.MaxHeight, av1.MaxFrameRate));
+        Assert.All(options.Capabilities().VideoDecode.Where(codec => codec.Codec != "av1"),
+            codec => Assert.Equal(60, codec.MaxFrameRate));
+        Assert.Equal(30, Assert.Single(ConsoleEvidence.Default.VideoDecode, codec => codec.Codec == "av1").MaxFrameRate);
+    }
+
+    [Theory]
+    [InlineData("24")]
+    [InlineData("120")]
+    [InlineData("60.0")]
+    [InlineData("--hold")]
+    public void RejectsUnsupportedAv1FrameRates(string value)
+    {
+        Assert.False(PlayPlanOptions.TryParse(["--av1-max-fps", value], out _, out _));
+        Assert.False(PlayPlanOptions.TryParse(["--av1-max-fps", "60", "--av1-max-fps", "60"], out _, out _));
+        Assert.False(PlayPlanOptions.TryParse(["--av1-max-fps"], out _, out _));
+    }
+
+    [Theory]
     [InlineData("1080", 1920, 1080)]
     [InlineData("2160", 3840, 2160)]
     public void ExplicitAv1HeightChangesOnlyTheRequestedDecodeBounds(string value, int width, int height)
