@@ -93,6 +93,10 @@ const MAX_BUFFERS: usize = 16;
 const ALIGNMENT: u64 = 64 << 10;
 const WAIT_MS: u64 = 5000;
 const ALLOC_WAIT_MS: u64 = 100;
+/// Allocations per trim window (about ten seconds of video). A window in which some idle buffer
+/// was always left over releases one of them, so the pool follows the decoder's recent need down
+/// after a transient peak (start-up, a seek) without churning.
+const TRIM_WINDOW: u32 = 256;
 /// Caller textures opened at once. At the cap the least recently written one that the GPU is done
 /// with is closed to make room (a seek abandons the caller's in-flight textures, so new ones
 /// arrive while the old are still cached). MF's pool holds about ten.
@@ -259,6 +263,10 @@ struct PoolState {
     peak: u64,
     failures: u64,
     waits: u64,
+    /// Allocations in the current trim window.
+    window: u32,
+    /// Fewest idle buffers left over by an allocation in the current window.
+    spare: usize,
 }
 
 /// Decode buffers of one handle. Shared with every live buffer, so it outlives the handle.
@@ -299,10 +307,17 @@ impl Pool {
             if let Some(index) = ready {
                 let memory = state.free.swap_remove(index);
                 Self::lend(&mut state);
+                let trimmed = Self::trim(&mut state, size, completed);
+                drop(state);
+                // Released outside the lock.
+                drop(trimmed);
                 return Ok(self.wrap(memory));
             }
             if state.live + state.free.len() < MAX_BUFFERS {
                 Self::lend(&mut state);
+                // Nothing was left over: the window releases nothing.
+                state.spare = 0;
+                state.window += 1;
                 drop(state);
                 return match self.create(size) {
                     Ok(memory) => {
@@ -341,6 +356,28 @@ impl Pool {
     fn lend(state: &mut PoolState) {
         state.live += 1;
         state.peak = state.peak.max(state.live as u64);
+    }
+
+    /// Books an allocation served from the pool and, at the end of a window that always left an
+    /// idle buffer of `size` over, takes one out for the caller to release.
+    fn trim(state: &mut PoolState, size: u64, completed: u64) -> Option<Memory> {
+        let idle = |memory: &Memory| memory.bytes == size && memory.gpu_fence <= completed;
+        let spare = state.free.iter().filter(|memory| idle(memory)).count();
+        state.spare = if state.window == 0 {
+            spare
+        } else {
+            state.spare.min(spare)
+        };
+        state.window += 1;
+        if state.window < TRIM_WINDOW {
+            return None;
+        }
+        state.window = 0;
+        if state.spare == 0 {
+            return None;
+        }
+        let index = state.free.iter().position(idle)?;
+        Some(state.free.swap_remove(index))
     }
 
     fn create(&self, size: u64) -> Result<Memory> {
