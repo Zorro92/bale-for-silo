@@ -53,6 +53,9 @@ public sealed class PlaybackClient
     /// <summary>The sidecar Bale's overlay should draw for this plan, or null (off, burned in, unusable).</summary>
     public PlaybackSubtitleSource? ResolveSubtitles(PlaybackPlan plan) => PlaybackSubtitleResolver.Resolve(plan, Server);
 
+    /// <summary>The in-container image track Bale's overlay should draw for this plan, or null.</summary>
+    public PlaybackEmbeddedSubtitle? ResolveEmbeddedSubtitles(PlaybackPlan plan) => PlaybackSubtitleResolver.ResolveEmbedded(plan);
+
     public Task<PlaybackCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default) =>
         GetCapabilitiesAsync(_captureScope(), cancellationToken);
 

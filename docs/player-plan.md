@@ -93,7 +93,7 @@ Current production capability claims (`ConsoleEvidence.Default` plus runtime dis
 | Audio passthrough | None | Receiver verification pending |
 | Display HDR | Runtime HDMI detection, HDR10 only | Exact evidence after a successful read; unknown/empty HDR on failure |
 | HLS | System video/audio claims only | AdaptiveMediaSource cannot use FFmpeg fallbacks |
-| Subtitles | None locally | Server burn-in; **TODO:** add FFmpeg subtitle fallback when Bale renders subtitles |
+| Subtitles | Own overlay: text sidecars (ASS/SSA, SubRip, WebVTT); PGS/DVD/DVB images from a direct-played MKV | Image tracks are an `original_http` `native_embedded` claim only (`embedded_subtitles_v1`); HLS/transcodes burn them in. Console verification of image tracks pending |
 
 `PlaybackRoutePolicy.Decide` selects the pipeline separately for every mount. `original_http` /
 progressive uses FFmpeg only for AV1 or the **selected** fallback audio codec. AV1 sets

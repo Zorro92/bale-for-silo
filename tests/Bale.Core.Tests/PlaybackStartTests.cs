@@ -42,7 +42,7 @@ public class PlaybackStartTests
         Assert.False(body.GetProperty("metered").GetBoolean());
         Assert.False(body.TryGetProperty("allow_alternate_versions", out _));
         Assert.False(body.TryGetProperty("fileId", out _));
-        Assert.Equal(new[] { "playback_plan_v3", "client_video_transformations_v1", "device_quirks_v1", "seek_reanchor_v1", "direct_stream_resume_v1", "software_video_decode_v1" },
+        Assert.Equal(new[] { "playback_plan_v3", "client_video_transformations_v1", "device_quirks_v1", "seek_reanchor_v1", "direct_stream_resume_v1", "embedded_subtitles_v1", "software_video_decode_v1" },
             body.GetProperty("client_features").EnumerateArray().Select(value => value.GetString()));
     }
 
@@ -67,6 +67,20 @@ public class PlaybackStartTests
         Assert.DoesNotContain(features, feature => feature!.StartsWith("hls_subtitle_renditions", StringComparison.Ordinal));
         // The caller's request, which later replans reuse, is untouched: the server keeps the choice.
         Assert.DoesNotContain("subrip_sidecar_v1", start.ClientFeatures);
+    }
+
+    [Fact]
+    public void EmbeddedSubtitlesFeatureFollowsTheOriginalHttpClaim()
+    {
+        Assert.Contains("embedded_subtitles_v1", Start().ClientFeatures);
+        var none = PlaybackStartBuilder.Build("file", "profile", "attempt-id", 0, PlaybackSelection.Auto,
+            ConsoleEvidence.Default with { Subtitles = ConsoleEvidence.Default.Subtitles with { NativeEmbedded = [] } }, Identity);
+        Assert.DoesNotContain("embedded_subtitles_v1", none.ClientFeatures);
+        Assert.All(none.ClientPlaybackContext.Deliveries.Values, delivery => Assert.Empty(delivery.Subtitles.NativeEmbedded));
+        var deliveries = Start().ClientPlaybackContext.Deliveries;
+        Assert.Single(deliveries["original_http"].Subtitles.NativeEmbedded);
+        Assert.Empty(deliveries["progressive"].Subtitles.NativeEmbedded);
+        Assert.Empty(deliveries["hls"].Subtitles.NativeEmbedded);
     }
 
     [Fact]
@@ -214,7 +228,7 @@ public class PlaybackStartTests
             Assert.False(hdr.GetProperty("hlg").GetBoolean());
             Assert.Empty(hdr.GetProperty("dolby_vision_profiles").EnumerateArray());
             Assert.Empty(delivery.GetProperty("transformations").EnumerateArray());
-            // The overlay draws fetched text sidecars only: bitmap and in-container tracks stay burn-in.
+            // The overlay draws fetched text sidecars, and image tracks from a direct-played MKV only.
             var subtitles = delivery.GetProperty("subtitles");
             Assert.True(subtitles.GetProperty("sidecar_text").GetBoolean());
             Assert.True(subtitles.GetProperty("ass_styling").GetBoolean());
@@ -222,7 +236,18 @@ public class PlaybackStartTests
             Assert.False(subtitles.GetProperty("embedded_text").GetBoolean());
             Assert.False(subtitles.GetProperty("embedded_bitmap").GetBoolean());
             Assert.False(subtitles.GetProperty("sidecar_bitmap").GetBoolean());
-            Assert.Empty(subtitles.GetProperty("native_embedded").EnumerateArray());
+            var embedded = subtitles.GetProperty("native_embedded");
+            if (property.Name != "original_http")
+            {
+                Assert.Empty(embedded.EnumerateArray());
+                continue;
+            }
+            var entry = Assert.Single(embedded.EnumerateArray());
+            Assert.Equal("mkv", entry.GetProperty("container").GetString());
+            Assert.Equal(new[] { "hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle" }, Strings(entry.GetProperty("codecs")));
+            Assert.Equal("ffmpeg_stream_index", entry.GetProperty("track_identity").GetString());
+            Assert.False(entry.GetProperty("ass_styling").GetBoolean());
+            Assert.False(entry.GetProperty("font_attachments").GetBoolean());
         }
         Assert.False(deliveries.GetProperty("progressive").GetProperty("enabled").GetBoolean());
         Assert.Equal(new[] { "m3u8", "hls" }, Strings(deliveries.GetProperty("hls").GetProperty("containers")));

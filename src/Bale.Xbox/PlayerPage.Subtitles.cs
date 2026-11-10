@@ -9,7 +9,8 @@ namespace Bale.Xbox;
 
 /// <summary>
 /// Hosts Bale's own subtitle renderer (Services/SubtitleOverlay.cs, drawn by bale_gpu.dll into SubtitleLayer):
-/// loads the subtitle sidecar each playback plan asks the client to draw, feeds the overlay the video
+/// loads the subtitle sidecar each playback plan asks the client to draw, or binds the overlay to the
+/// image track the FFmpeg source decodes from the container, feeds the overlay the video
 /// rectangle and the SOURCE clock, and ties its D3D device to the player's media lifetime. Everything here
 /// runs on the UI thread except the two marked Task.Run bodies (HTTP fetch, native font copy and parse).
 /// Logs carry fixed words, counts and HRESULTs only: never URLs, subtitle text or font names.
@@ -19,6 +20,7 @@ public sealed partial class PlayerPage
     private const int SubtitlesNotReady = unchecked((int)0x8007139F); // ERROR_INVALID_STATE
     private const int SubtitlesUnavailable = unchecked((int)0x80004005); // E_FAIL
     private const int SubtitleFetchSeconds = 30;
+    private const uint MaxSubtitleSinkToken = 999999999;
 
     /// <summary>One fetched track, kept so a remount of the same plan subtitle does not download it again.</summary>
     private sealed record SubtitlePayload(string Key, byte[] Text, IReadOnlyList<SubtitleFont> Fonts);
@@ -33,6 +35,8 @@ public sealed partial class PlayerPage
     private int _subtitleGeneration;
     // SubtitleArtifactV3.timing_origin_seconds of the loaded track: cue time 0 sits at this source time.
     private double _subtitleTimingOrigin;
+    // Last bitmap sink token handed out: 1..MaxSubtitleSinkToken (the wrapper's range), never 0 (0 unbinds).
+    private uint _subtitleSinkToken;
 
     private void InitializeSubtitleLayer()
     {
@@ -143,15 +147,23 @@ public sealed partial class PlayerPage
     }
 
     /// <summary>
-    /// Called for every new mount, after ClearSubtitles: when the plan's subtitle decision is a text
-    /// sidecar for the client to draw (PlaybackSubtitleResolver), fetch and load it without holding up
-    /// the mount. A seek reanchor or recovery remount therefore gets its track back. Failures leave
-    /// playback running without subtitles.
+    /// Called for every new mount, after ClearSubtitles and before the FFmpeg source is created: when
+    /// the plan's subtitle decision is a text sidecar for the client to draw (PlaybackSubtitleResolver),
+    /// fetch and load it without holding up the mount. An in-container image track is bound here
+    /// instead, so the mount's FFmpeg source can be told its stream and sink. A seek reanchor or
+    /// recovery remount therefore gets its track back. Failures leave playback running without subtitles.
     /// </summary>
     private void StartSubtitles(Attempt attempt, Mount media)
     {
         try
         {
+            if (attempt.Client.Playback.ResolveEmbeddedSubtitles(attempt.Plan!) is { } embedded)
+            {
+                // No sidecar to fetch or reuse.
+                _subtitlePayload = null;
+                StartEmbeddedSubtitles(media, embedded);
+                return;
+            }
             if (attempt.Client.Playback.ResolveSubtitles(attempt.Plan!) is not { } source)
             {
                 // Off, burned in or unusable: nothing this plan could reuse.
@@ -161,6 +173,40 @@ public sealed partial class PlayerPage
             _ = LoadPlanSubtitlesAsync(attempt, media, source, _subtitleGeneration);
         }
         catch (Exception ex) { LogFailure("subtitle plan", ex); }
+    }
+
+    /// <summary>
+    /// Binds the overlay to a fresh sink token and records it on the mount; the FFmpeg source created
+    /// next pushes that stream's decoded bitmaps to it (FfmpegSource.ApplySubtitleSink).
+    /// </summary>
+    private void StartEmbeddedSubtitles(Mount media, PlaybackEmbeddedSubtitle embedded)
+    {
+        // Only the FFmpeg demuxer can hand over the stream; the server claim is direct MKV, which uses it.
+        if (!media.Route.UseFfmpeg)
+        {
+            Log.Info("player: subtitles failed stage=embedded route");
+            return;
+        }
+        var overlay = EnsureSubtitleOverlay();
+        if (overlay is null)
+        {
+            Log.Info($"player: subtitles failed stage=embedded hr=0x{unchecked((uint)SubtitlesUnavailable):X8}");
+            return;
+        }
+        var token = _subtitleSinkToken = _subtitleSinkToken >= MaxSubtitleSinkToken ? 1 : _subtitleSinkToken + 1;
+        var hr = overlay.BindBitmaps(token);
+        if (hr < 0)
+        {
+            Log.Info($"player: subtitles failed stage=embedded hr=0x{unchecked((uint)hr):X8}");
+            return;
+        }
+        media.SubtitleStreamIndex = embedded.StreamIndex;
+        media.SubtitleSinkToken = token;
+        // Bitmap times are plain source time.
+        _subtitleTimingOrigin = 0;
+        UpdateSubtitleLayout();
+        PushSubtitleClock(force: true);
+        Log.Info($"player: subtitles mode=render format=bitmap stream={embedded.StreamIndex.ToString(CultureInfo.InvariantCulture)}");
     }
 
     private async Task LoadPlanSubtitlesAsync(Attempt attempt, Mount media, PlaybackSubtitleSource source, int generation)
@@ -289,7 +335,10 @@ public sealed partial class PlayerPage
     {
         _subtitleGeneration++;
         _subtitleTimingOrigin = 0;
-        if (_subtitles is { } overlay) Cleanup("clear subtitles", () => overlay.Clear());
+        if (_subtitles is not { } overlay) return;
+        // Clear does not unbind: without this the old mount's image track would keep drawing.
+        Cleanup("unbind subtitles", () => overlay.BindBitmaps(0));
+        Cleanup("clear subtitles", () => overlay.Clear());
     }
 
     /// <summary>Releases the overlay's render thread, D3D device and swap chain with the player's media.</summary>
@@ -305,6 +354,7 @@ public sealed partial class PlayerPage
         if (_subtitles is not { } overlay) return;
         _subtitles = null;
         _subtitleClock.Reset();
+        Cleanup("unbind subtitles", () => overlay.BindBitmaps(0));
         Cleanup("dispose subtitles", overlay.Dispose);
     }
 

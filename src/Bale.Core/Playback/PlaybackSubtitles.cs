@@ -22,12 +22,27 @@ public sealed record PlaybackSubtitleSource(Uri Uri, uint Format, string Mode, d
 }
 
 /// <summary>
+/// An image track (PGS, DVD, DVB) the player draws from the container itself: the AVStream index the
+/// FFmpeg demuxer hands to the overlay. There is no sidecar to fetch.
+/// </summary>
+public sealed record PlaybackEmbeddedSubtitle(int StreamIndex)
+{
+    /// <summary>The wrapper's bale_subtitle_stream range.</summary>
+    public const int MaxStreamIndex = 65535;
+}
+
+/// <summary>
 /// silo-server SubtitleDecisionV3: "render" and "convert" both hand the client a text artifact to draw;
-/// "off" and "burn_in" need nothing. Bale claims no in-container subtitles, so an embedded decision is
-/// not something it can honor.
+/// "off" and "burn_in" need nothing. "render" with an embedded stream and no artifact is an image track
+/// in the direct-played container (the original_http native_embedded claim): see ResolveEmbedded.
 /// </summary>
 public static class PlaybackSubtitleResolver
 {
+    /// <summary>The in-container image track this plan asks the client to draw, or null.</summary>
+    public static PlaybackEmbeddedSubtitle? ResolveEmbedded(PlaybackPlan? plan) =>
+        plan?.Subtitle is { Mode: "render", Embedded.StreamIndex: >= 0 and <= PlaybackEmbeddedSubtitle.MaxStreamIndex and var index }
+            ? new((int)index) : null;
+
     public static PlaybackSubtitleSource? Resolve(PlaybackPlan? plan, Uri server)
     {
         if (plan?.Subtitle is not { Embedded: null, Artifact: { } artifact } subtitle) return null;

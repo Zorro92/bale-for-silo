@@ -44,6 +44,17 @@ internal static class FfmpegSource
         config.FFmpegOptions["bale_zero_copy"] = "1";
     }
 
+    /// <summary>
+    /// Wrapper patch 0022: decoded bitmaps of this one subtitle stream go to the overlay bound to the
+    /// token (SubtitleOverlay.BindBitmaps) instead of becoming cues. Both options or neither.
+    /// </summary>
+    internal static void ApplySubtitleSink(MediaSourceConfig config, int? streamIndex, ulong token)
+    {
+        if (streamIndex is not { } index || token == 0) return;
+        config.FFmpegOptions["bale_subtitle_stream"] = index.ToString(CultureInfo.InvariantCulture);
+        config.FFmpegOptions["bale_subtitle_sink"] = token.ToString(CultureInfo.InvariantCulture);
+    }
+
     internal static void ApplyDecodeTuning(MediaSourceConfig config, SoftwareDecodeTuning tuning)
     {
         if (tuning.DecodeAheadFrames is { } ahead) config.FFmpegOptions["bale_decode_ahead_frames"] = ahead.ToString(CultureInfo.InvariantCulture);

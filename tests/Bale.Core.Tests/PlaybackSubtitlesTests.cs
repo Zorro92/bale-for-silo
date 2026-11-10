@@ -66,6 +66,51 @@ public class PlaybackSubtitlesTests
         Assert.Null(PlaybackSubtitleResolver.Resolve(embedded, Server));
     }
 
+    private static PlaybackPlan EmbeddedPlan(string? mode, long? index)
+    {
+        var plan = PlaybackMediaTestSupport.Plan();
+        plan.Subtitle = new SubtitleDecisionV3
+        {
+            Mode = mode,
+            TrackId = "file:42:subtitle:1",
+            Embedded = new EmbeddedSubtitleV3 { StreamIndex = index, ContainerTrackId = "3" },
+        };
+        return plan;
+    }
+
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(3L)]
+    [InlineData(65535L)]
+    public void RenderedEmbeddedDecisionsResolveToTheirStreamIndex(long index)
+    {
+        var plan = EmbeddedPlan("render", index);
+        Assert.Equal(new PlaybackEmbeddedSubtitle((int)index), PlaybackSubtitleResolver.ResolveEmbedded(plan));
+        // No sidecar: the text path stays out of it.
+        Assert.Null(PlaybackSubtitleResolver.Resolve(plan, Server));
+    }
+
+    [Theory]
+    [InlineData("off", 3L)]
+    [InlineData("burn_in", 3L)]
+    [InlineData("convert", 3L)]
+    [InlineData(null, 3L)]
+    [InlineData("render", -1L)]
+    [InlineData("render", 65536L)]
+    [InlineData("render", 4294967299L)]
+    [InlineData("render", null)]
+    public void OtherEmbeddedDecisionsResolveToNothing(string? mode, long? index) =>
+        Assert.Null(PlaybackSubtitleResolver.ResolveEmbedded(EmbeddedPlan(mode, index)));
+
+    [Fact]
+    public void PlansWithoutAnEmbeddedStreamResolveToNoEmbeddedTrack()
+    {
+        Assert.Null(PlaybackSubtitleResolver.ResolveEmbedded(null));
+        Assert.Null(PlaybackSubtitleResolver.ResolveEmbedded(PlaybackMediaTestSupport.Plan()));
+        // A text sidecar decision carries no embedded stream.
+        Assert.Null(PlaybackSubtitleResolver.ResolveEmbedded(Plan()));
+    }
+
     [Theory]
     [InlineData("ass", null, 0u)]
     [InlineData("SSA", null, 0u)]

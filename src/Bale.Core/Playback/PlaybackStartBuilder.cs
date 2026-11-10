@@ -64,6 +64,8 @@ public static class PlaybackStartBuilder
             Enabled = device.ProgressiveSupported,
             SupportedOnDevice = device.ProgressiveSupported,
             FailureReason = device.ProgressiveSupported ? null : "disabled_pending_seekable_transport",
+            // In-container subtitles are an original_http claim only (the server reads it there).
+            Subtitles = device.Subtitles with { NativeEmbedded = [] },
         };
         var hls = original with
         {

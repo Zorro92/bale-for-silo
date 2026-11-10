@@ -29,6 +29,10 @@ public sealed record DeviceCapabilities(
 /// <summary>The measured baseline in docs/player-plan.md; installed converters are not playback proof.</summary>
 public static class ConsoleEvidence
 {
+    /// <summary>Image subtitle codecs (silo-server's names) the overlay draws from the container.</summary>
+    public static IReadOnlyList<string> EmbeddedBitmapSubtitleCodecs { get; } =
+        Array.AsReadOnly(new[] { "hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle" });
+
     public static DeviceCapabilities Default { get; } = new(
         Containers: Array.AsReadOnly(new[] { "mp4", "mkv" }), // Both verified; see docs/player-plan.md.
         VideoCodecs: Array.AsReadOnly(new[] { "h264", "hevc", "av1" }), // No VP9/WebM claim.
@@ -39,9 +43,15 @@ public static class ConsoleEvidence
         MaxChannels: 8,
         Hdr: new(), // Unknown until the player reads the connected display; installed HEVC is not HDR evidence.
         // Bale's own overlay (bale_gpu.dll, libass) draws fetched text sidecars: ASS/SSA with their
-        // styling and the server's font bundle, SubRip and WebVTT. No bitmap or in-container claim,
-        // so PGS/DVD/DVB keep burning in.
-        Subtitles: new() { SidecarText = true, AssStyling = true, FontAttachments = true })
+        // styling and the server's font bundle, SubRip and WebVTT. It also draws image tracks the
+        // FFmpeg demuxer decodes from a direct MKV (wrapper patch 0022), claimed per stream index.
+        // PlaybackStartBuilder keeps that entry on original_http only. No .sup sidecar claim
+        // (EmbeddedBitmap/SidecarBitmap), and text tracks keep their sidecar route.
+        Subtitles: new()
+        {
+            SidecarText = true, AssStyling = true, FontAttachments = true,
+            NativeEmbedded = Array.AsReadOnly(new[] { new NativeEmbeddedSubtitleCapability("mkv", EmbeddedBitmapSubtitleCodecs, "ffmpeg_stream_index") }),
+        })
     {
         VideoDecode = BuildVideoDecode(),
         DisplayHdrEvidence = "unknown",

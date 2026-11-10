@@ -16,7 +16,7 @@ internal struct BaleSubStats
 /// <summary>
 /// Bale's own subtitle drawing: bale_gpu.dll (Rust) owns a D3D11 composition swap chain attached to a XAML
 /// SwapChainPanel and renders the loaded track (ASS/SSA, or SubRip/WebVTT converted to it) with libass on
-/// its own thread at the media clock. This wrapper only feeds it layout, track, fonts and clock. Create
+/// its own thread at the media clock, or the decoded image subtitles (PGS, DVD, DVB) bound by token. This wrapper only feeds it layout, track, fonts and clock. Create
 /// and Dispose run on the UI thread. AddFont and LoadText block for the copy/parse, so the player runs
 /// them on a worker; every call is counted in and out, and Dispose waits for the calls in flight before
 /// it destroys the native overlay, after which calls return RO_E_CLOSED without touching it. No call
@@ -35,6 +35,7 @@ internal sealed unsafe class SubtitleOverlay : IDisposable
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_load_text(nint overlay, uint format, byte* data, nuint length);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_add_font(nint overlay, byte* name, nuint nameLength, byte* data, nuint length);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_clear(nint overlay);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_bind_bitmaps(nint overlay, ulong token);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_set_clock(nint overlay, long positionMs, double rate, uint playing);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_stats(nint overlay, BaleSubStats* stats);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern void bale_sub_overlay_destroy(nint overlay);
@@ -133,6 +134,13 @@ internal sealed unsafe class SubtitleOverlay : IDisposable
 
     /// <summary>Drops the track; the overlay presents a transparent frame.</summary>
     internal int Clear() => Call("clear", overlay => bale_sub_overlay_clear(overlay));
+
+    /// <summary>
+    /// Draws the image subtitles the FFmpeg demuxer pushes for this sink token (wrapper option
+    /// bale_subtitle_sink). Another token replaces the binding and drops its queue; 0 unbinds. Clear
+    /// does not unbind.
+    /// </summary>
+    internal int BindBitmaps(ulong token) => Call("bind bitmaps", overlay => bale_sub_overlay_bind_bitmaps(overlay, token));
 
     /// <summary>Source position in ms at the moment of the call; the render thread extrapolates while playing.</summary>
     internal int SetClock(long positionMs, double rate, bool playing) =>

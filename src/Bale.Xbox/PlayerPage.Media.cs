@@ -41,6 +41,9 @@ public sealed partial class PlayerPage
         public TypedEventHandler<AdaptiveMediaSource, AdaptiveMediaSourceDownloadRequestedEventArgs>? DownloadHandler { get; set; }
         public FFmpegMediaSource? FfmpegSource { get; set; }
         public PlaybackRouteDecision Route { get; set; } = null!;
+        // Set by StartSubtitles for an in-container image track: the FFmpeg source feeds the overlay.
+        public int? SubtitleStreamIndex { get; set; }
+        public ulong SubtitleSinkToken { get; set; }
         public MediaPlaybackItem? Item { get; set; }
 #if DEBUG_SERVER
         public string? FfmpegReadAhead { get; set; }
@@ -159,6 +162,7 @@ public sealed partial class PlayerPage
 #else
                 var config = FfmpegSource.Configuration(media.Route);
 #endif
+                FfmpegSource.ApplySubtitleSink(config, media.SubtitleStreamIndex, media.SubtitleSinkToken);
                 media.FfmpegSource = await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream, config).AsTask();
                 media.Token.ThrowIfCancellationRequested();
                 FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route);

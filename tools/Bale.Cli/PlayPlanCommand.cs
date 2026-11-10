@@ -53,7 +53,8 @@ internal static class PlayPlanCommand
             Console.WriteLine($"subtitle mode={subtitle?.Mode} track={subtitle?.TrackId} format={subtitle?.Artifact?.Format}" +
                 $" mime={subtitle?.Artifact?.MimeType} origin={subtitle?.Artifact?.TimingOriginSeconds}" +
                 $" artifact={(subtitle?.Artifact?.Url is { Length: > 0 } ? "yes" : "no")} embedded={(subtitle?.Embedded is null ? "no" : "yes")}" +
-                $" overlay={(client.Playback.ResolveSubtitles(plan) is { } overlay ? overlay.FormatName : "none")}");
+                $" overlay={(client.Playback.ResolveSubtitles(plan) is { } overlay ? overlay.FormatName
+                    : client.Playback.ResolveEmbeddedSubtitles(plan) is { } bitmap ? $"bitmap stream={bitmap.StreamIndex}" : "none")}");
             foreach (var row in subtitle?.Inventory ?? [])
                 Console.WriteLine($"  subtitle #{row.CombinedIndex} {row.TrackId} codec={row.Codec} lang={row.Language} source={row.Source}" +
                     $" delivery={row.Delivery} forced={row.Forced} default={row.Default}" +
