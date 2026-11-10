@@ -111,6 +111,12 @@ impl Schedule {
 
     /// What to do after rendering at `now_ms` with the player's `clock`.
     pub fn next(&self, now_ms: i64, clock: &Clock) -> Next {
+        self.next_with(now_ms, clock, None)
+    }
+
+    /// [`Schedule::next`] with one more boundary after `now_ms` that is not in the track: the
+    /// next change of the image subtitles drawn under it.
+    pub fn next_with(&self, now_ms: i64, clock: &Clock, other_ms: Option<i64>) -> Next {
         if !clock.playing || clock.rate == 0.0 {
             return Next::Never;
         }
@@ -118,8 +124,12 @@ impl Schedule {
         if clock.rate < 0.0 || self.animated_at(now_ms) {
             return Next::EveryFrame;
         }
-        let Some(at_ms) = self.next_boundary(now_ms) else {
-            return Next::Never;
+        let at_ms = match (self.next_boundary(now_ms), other_ms) {
+            (Some(own), Some(other)) => own.min(other),
+            (own, other) => match own.or(other) {
+                Some(at_ms) => at_ms,
+                None => return Next::Never,
+            },
         };
         let seconds = (at_ms as f64 - clock.position_ms as f64) / 1000.0 / clock.rate;
         let wall = Duration::try_from_secs_f64(seconds.max(0.0)).unwrap_or(Duration::MAX);
@@ -341,6 +351,31 @@ mod tests {
         assert_eq!(schedule.next(6000, &clock), Next::Never);
         // Backwards playback has no schedule.
         assert_eq!(schedule.next(2000, &playing(2000, -1.0)), Next::EveryFrame);
+    }
+
+    #[test]
+    fn next_with_takes_the_earlier_of_both_boundaries() {
+        let schedule = Schedule::new([event(5000, 1000, false)]);
+        let clock = playing(1000, 1.0);
+        let at = |other| match schedule.next_with(1000, &clock, other) {
+            Next::Boundary { at_ms, .. } => Some(at_ms),
+            _ => None,
+        };
+        assert_eq!(at(None), Some(5000));
+        assert_eq!(at(Some(3000)), Some(3000));
+        assert_eq!(at(Some(9000)), Some(5000));
+        // Without a track the other boundary alone paces the thread.
+        assert_eq!(
+            Schedule::default().next_with(1000, &clock, Some(1500)),
+            Next::Boundary {
+                at_ms: 1500,
+                wall: Duration::from_millis(500),
+            }
+        );
+        assert_eq!(
+            Schedule::default().next_with(1000, &clock, None),
+            Next::Never
+        );
     }
 
     #[test]

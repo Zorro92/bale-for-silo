@@ -2,9 +2,11 @@
 //! libass at the media clock and its images are drawn on the GPU into a transparent composition
 //! swap chain that a XAML `SwapChainPanel` shows above the video. This file holds the
 //! platform-independent parts (ABI types, clock, layout and atlas packing), `schedule` knows when
-//! a track's picture can change, `convert` turns SubRip and WebVTT into ASS scripts, and
-//! `overlay` is the Direct3D 11 renderer and its thread.
+//! a track's picture can change, `convert` turns SubRip and WebVTT into ASS scripts, `bitmap`
+//! queues and places image subtitles (PGS, DVD, DVB) pushed by the demuxer, and `overlay` is the
+//! Direct3D 11 renderer and its thread.
 
+pub mod bitmap;
 pub mod convert;
 #[cfg(windows)]
 pub mod overlay;
@@ -37,9 +39,11 @@ pub struct BaleSubStats {
     pub last_render_us: u32,
     /// Largest such time since the track loaded (shows font first-use hitches).
     pub max_render_us: u32,
-    /// `ASS_Image` count of the last changed frame.
+    /// `ASS_Image` count of the last changed frame; while image subtitles are bound, the
+    /// bitmap rectangles drawn instead.
     pub images: u32,
-    /// Events in the loaded track (0 = none loaded).
+    /// Events in the loaded track (0 = none loaded); while image subtitles are bound, the
+    /// queued bitmap events instead.
     pub events: u32,
     /// Swap chain size in physical pixels.
     pub width: u32,

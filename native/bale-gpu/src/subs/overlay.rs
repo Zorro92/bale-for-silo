@@ -5,6 +5,9 @@
 //! 15-65 ms on the console) never runs on the caller, which is the UI thread. The one exception is
 //! `load`, which waits for the parse result because the ABI reports unparsable scripts.
 //!
+//! Image subtitles (`bitmap`) arrive from the demux thread into a queue in [`State`]; the render
+//! thread uploads the event that is due as textures and draws it under the libass images.
+//!
 //! Subtitle text and URLs are never logged; nothing here logs at all.
 
 use std::collections::VecDeque;
@@ -22,7 +25,8 @@ use windows::Win32::Graphics::Direct3D::{
 use windows::Win32::Graphics::Direct3D11::*;
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8_UNORM,
-    DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_SAMPLE_DESC,
+    DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32G32B32A32_FLOAT,
+    DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
     DXGI_MATRIX_3X2_F, DXGI_PRESENT, DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1,
@@ -32,6 +36,7 @@ use windows::Win32::Graphics::Dxgi::{
 use windows::Win32::System::Threading::WaitForSingleObject;
 use windows::core::{Error, IUnknown, Interface, PCSTR, Result};
 
+use super::bitmap::{self, Event as BitmapEvent, Queue, Sink};
 use super::schedule::{Next, Schedule};
 use super::{
     ATLAS_START, BaleSubStats, Clock, E_FAIL, E_INVALIDARG, Layout, S_OK, Shelves, atlas_size_for,
@@ -41,6 +46,7 @@ use crate::ass::{Image, Session, Track};
 
 const VERTEX_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/sub_vs.cso"));
 const PIXEL_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/sub_ps.cso"));
+const RGBA_PIXEL_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/sub_rgba_ps.cso"));
 
 const BUFFER_COUNT: u32 = 2;
 /// While an animated event is shown but the last render changed nothing, there is no
@@ -76,7 +82,8 @@ struct Instance {
     rect: [f32; 4],
     /// Top-left texel of the bitmap in the atlas.
     atlas: [f32; 2],
-    /// Premultiplied RGBA.
+    /// Premultiplied RGBA. For an image subtitle quad (`shaders/sub_rgba_ps.hlsl`), 1 / width and
+    /// 1 / height of `rect` instead.
     color: [f32; 4],
 }
 
@@ -104,6 +111,10 @@ struct State {
     /// First Direct3D/DXGI failure of the render thread; drawing has stopped.
     failure: Option<i32>,
     stats: BaleSubStats,
+    /// The token image subtitles are pushed with; 0 when none is bound.
+    bitmap_token: u64,
+    /// Image subtitle events, filled by the demux thread through [`Sink`].
+    bitmaps: Queue,
 }
 
 struct Shared {
@@ -130,6 +141,44 @@ impl Shared {
         state.signal = true;
         self.wake.notify_one();
         S_OK
+    }
+}
+
+impl Sink for Shared {
+    fn push(&self, token: u64, event: BitmapEvent) -> i32 {
+        let mut state = self.lock();
+        if let Some(hr) = state.unusable() {
+            return hr;
+        }
+        // A push that raced a rebind belongs to the old stream.
+        if state.bitmap_token != token {
+            return bitmap::E_NOT_FOUND;
+        }
+        state.bitmaps.push(event);
+        state.signal = true;
+        self.wake.notify_one();
+        S_OK
+    }
+
+    fn flush(&self, token: u64) -> i32 {
+        let mut state = self.lock();
+        if state.bitmap_token != token {
+            return bitmap::E_NOT_FOUND;
+        }
+        state.bitmaps.flush();
+        state.signal = true;
+        self.wake.notify_one();
+        S_OK
+    }
+
+    fn unbound(&self, token: u64) {
+        let mut state = self.lock();
+        if state.bitmap_token == token {
+            state.bitmap_token = 0;
+            state.bitmaps.flush();
+            state.signal = true;
+            self.wake.notify_one();
+        }
     }
 }
 
@@ -221,6 +270,8 @@ impl Overlay {
                     height,
                     ..BaleSubStats::default()
                 },
+                bitmap_token: 0,
+                bitmaps: Queue::default(),
             }),
             wake: Condvar::new(),
             done: Condvar::new(),
@@ -333,6 +384,24 @@ impl Overlay {
         self.shared.lock().stats
     }
 
+    /// Draws the image subtitle events pushed with `token` from now on (see `bitmap`); 0 unbinds.
+    /// A change of token drops what was queued.
+    pub fn bind_bitmaps(&self, token: u64) -> i32 {
+        let sink: Arc<dyn Sink> = self.shared.clone();
+        // Out of the registry first, so no push for the old token arrives after its queue went.
+        bitmap::unbind(&sink);
+        let posted = self.shared.post(|state| {
+            if state.bitmap_token != token {
+                state.bitmap_token = token;
+                state.bitmaps.flush();
+            }
+        });
+        if posted == S_OK && token != 0 {
+            bitmap::bind(token, &sink);
+        }
+        posted
+    }
+
     /// Redraws the current frame, reads the back buffer and presents it (tests; not in the C ABI).
     /// `None` when the overlay cannot draw.
     pub fn capture(&self) -> Option<Capture> {
@@ -366,6 +435,9 @@ impl Overlay {
 
 impl Drop for Overlay {
     fn drop(&mut self) {
+        let sink: Arc<dyn Sink> = self.shared.clone();
+        bitmap::unbind(&sink);
+        drop(sink);
         {
             let mut state = self.shared.lock();
             state.stop = true;
@@ -468,7 +540,9 @@ fn take_work(shared: &Shared, pace: Pace) -> Work {
 /// The render thread: applies queued changes, renders the track at the media clock and presents
 /// only frames that differ from what is on screen. While playing it renders every display frame
 /// only while an animated event is shown; otherwise it sleeps until the next event starts or ends
-/// (see [`Schedule`]). Every API call wakes it and renders at once.
+/// (see [`Schedule`]). Every API call wakes it and renders at once. Image subtitles are drawn
+/// under the track and change only when an event starts or ends, which is one more boundary to
+/// sleep to; a push wakes the thread like an API call.
 fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
     let apply_layout = |session: &Session, layout: &Layout| {
         session.set_layout(
@@ -491,6 +565,12 @@ fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
         height: layout.height,
         ..BaleSubStats::default()
     };
+    // What `stats.events` and `stats.images` report while no image subtitles are bound.
+    let mut track_events = 0;
+    let mut track_images = 0;
+    // The image subtitle event whose textures the GPU holds, and how many of them were drawn.
+    let mut shown: Option<Arc<BitmapEvent>> = None;
+    let mut rects_drawn = 0;
     let mut failure: Option<i32> = None;
     let mut on_screen = false;
     // The waitable object starts signalled once; consuming that keeps later waits one per present.
@@ -508,6 +588,7 @@ fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
         fonts.append(&mut work.fonts);
         // Layout, track and capture changes redraw even when libass reports no change.
         let mut force = work.capture;
+        let moved = work.layout.is_some();
         if let Some(new) = work.layout {
             layout = new;
             if failure.is_none()
@@ -526,7 +607,7 @@ fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
             // The old track goes first either way: stale subtitles are worse than none.
             track = None;
             schedule = Schedule::default();
-            stats.events = 0;
+            track_events = 0;
             force = true;
             let Command::Load(script) = command else {
                 continue;
@@ -539,7 +620,7 @@ fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
                     }
                     match session.track(&script) {
                         Some(parsed) => {
-                            stats.events = parsed.events();
+                            track_events = parsed.events();
                             schedule = parsed.schedule();
                             track = Some(parsed);
                             S_OK
@@ -563,6 +644,34 @@ fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
         {
             // The sleep ended [`LEAD`] before the boundary: render the boundary's frame.
             now = now.max(at_ms);
+        }
+        let (visible, bound, queued, bitmap_boundary) = {
+            let mut state = shared.lock();
+            state.bitmaps.prune(now);
+            (
+                state.bitmaps.visible(now).cloned(),
+                state.bitmap_token != 0,
+                state.bitmaps.len() as u32,
+                state.bitmaps.next_boundary(now),
+            )
+        };
+        let replaced = match (&shown, &visible) {
+            (Some(old), Some(new)) => !Arc::ptr_eq(old, new),
+            (None, None) => false,
+            _ => true,
+        };
+        if replaced {
+            // The textures live exactly as long as their event is the visible one.
+            if failure.is_none()
+                && let Err(error) = gpu.upload_bitmaps(visible.as_deref())
+            {
+                failure = Some(error.code().0);
+            }
+            shown = visible;
+            force = true;
+        }
+        if let Some(event) = shown.as_deref().filter(|_| replaced || moved) {
+            gpu.place_bitmaps(event, &layout);
         }
         let mut presented = false;
         let mut capture = None;
@@ -591,12 +700,13 @@ fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
                     presented = true;
                     latency_owed = true;
                     on_screen = drawn.images > 0;
+                    rects_drawn = gpu.bitmaps_drawn();
                     stats.presents += 1;
                     if track.is_some() {
                         let micros = u32::try_from(drawn.elapsed.as_micros()).unwrap_or(u32::MAX);
                         stats.last_render_us = micros;
                         stats.max_render_us = stats.max_render_us.max(micros);
-                        stats.images = drawn.images;
+                        track_images = drawn.images;
                     }
                 }
                 Ok(None) => {}
@@ -607,6 +717,11 @@ fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
             }
         }
 
+        (stats.events, stats.images) = if bound {
+            (queued, rects_drawn)
+        } else {
+            (track_events, track_images)
+        };
         let mut state = shared.lock();
         state.stats = stats;
         state.failure = failure;
@@ -615,10 +730,10 @@ fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
             shared.done.notify_all();
         }
         drop(state);
-        pace = if failure.is_some() || track.is_none() {
+        pace = if failure.is_some() || (track.is_none() && bitmap_boundary.is_none()) {
             Pace::Idle
         } else {
-            match schedule.next(now, &work.clock) {
+            match schedule.next_with(now, &work.clock, bitmap_boundary) {
                 Next::Never => Pace::Idle,
                 Next::EveryFrame if presented => Pace::Presented,
                 Next::EveryFrame => Pace::Frame,
@@ -699,6 +814,21 @@ fn fail() -> Error {
     Error::from_hresult(windows::core::HRESULT(E_FAIL))
 }
 
+/// One rectangle of the visible image subtitle event.
+struct Bitmap {
+    view: ID3D11ShaderResourceView,
+    /// Position and size in canvas pixels.
+    source: (i32, i32, u32, u32),
+    /// Where it is drawn: x, y, width, height in frame pixels.
+    rect: [f32; 4],
+}
+
+impl Bitmap {
+    fn is_drawn(&self) -> bool {
+        self.rect[2] >= 1.0 && self.rect[3] >= 1.0
+    }
+}
+
 /// Device, swap chain and the quad pipeline. Lives on the render thread after `create`.
 struct Gpu {
     device: ID3D11Device,
@@ -709,6 +839,11 @@ struct Gpu {
     target: Option<ID3D11RenderTargetView>,
     vertex_shader: ID3D11VertexShader,
     pixel_shader: ID3D11PixelShader,
+    /// Image subtitle quads: samples an RGBA texture instead of the coverage atlas.
+    rgba_shader: ID3D11PixelShader,
+    sampler: ID3D11SamplerState,
+    /// The visible image subtitle event, drawn first in every frame.
+    bitmaps: Vec<Bitmap>,
     input_layout: ID3D11InputLayout,
     blend: ID3D11BlendState,
     rasterizer: ID3D11RasterizerState,
@@ -828,6 +963,8 @@ impl Gpu {
         };
         let mut vertex_shader = None;
         let mut pixel_shader = None;
+        let mut rgba_shader = None;
+        let mut sampler = None;
         let mut input_layout = None;
         let mut blend = None;
         let mut rasterizer = None;
@@ -836,6 +973,20 @@ impl Gpu {
         unsafe {
             device.CreateVertexShader(VERTEX_SHADER, None, Some(&mut vertex_shader))?;
             device.CreatePixelShader(PIXEL_SHADER, None, Some(&mut pixel_shader))?;
+            device.CreatePixelShader(RGBA_PIXEL_SHADER, None, Some(&mut rgba_shader))?;
+            // Image subtitles are scaled from their canvas to the video rectangle.
+            device.CreateSamplerState(
+                &D3D11_SAMPLER_DESC {
+                    Filter: D3D11_FILTER_MIN_MAG_MIP_LINEAR,
+                    AddressU: D3D11_TEXTURE_ADDRESS_CLAMP,
+                    AddressV: D3D11_TEXTURE_ADDRESS_CLAMP,
+                    AddressW: D3D11_TEXTURE_ADDRESS_CLAMP,
+                    ComparisonFunc: D3D11_COMPARISON_NEVER,
+                    MaxLOD: f32::MAX,
+                    ..Default::default()
+                },
+                Some(&mut sampler),
+            )?;
             device.CreateInputLayout(&elements, VERTEX_SHADER, Some(&mut input_layout))?;
             device.CreateBlendState(&blend_desc, Some(&mut blend))?;
             device.CreateRasterizerState(&rasterizer_desc, Some(&mut rasterizer))?;
@@ -859,6 +1010,9 @@ impl Gpu {
             target: None,
             vertex_shader: vertex_shader.ok_or_else(fail)?,
             pixel_shader: pixel_shader.ok_or_else(fail)?,
+            rgba_shader: rgba_shader.ok_or_else(fail)?,
+            sampler: sampler.ok_or_else(fail)?,
+            bitmaps: Vec::new(),
             input_layout: input_layout.ok_or_else(fail)?,
             blend: blend.ok_or_else(fail)?,
             rasterizer: rasterizer.ok_or_else(fail)?,
@@ -923,7 +1077,109 @@ impl Gpu {
         }
     }
 
-    /// Binds the pipeline and clears the back buffer to transparent.
+    /// Replaces the image subtitle textures with those of `event`: one immutable premultiplied
+    /// RGBA texture per rectangle. `None` only releases the old ones.
+    fn upload_bitmaps(&mut self, event: Option<&BitmapEvent>) -> Result<()> {
+        self.bitmaps.clear();
+        for rect in event.map_or(&[][..], |event| &event.rects) {
+            let rgba = rect.rgba();
+            let mut texture = None;
+            let mut view = None;
+            // SAFETY: valid descriptor and live output slots; `rgba` holds `h` rows of `w * 4`
+            // bytes and outlives the call, which copies it.
+            unsafe {
+                self.device.CreateTexture2D(
+                    &D3D11_TEXTURE2D_DESC {
+                        Width: rect.w,
+                        Height: rect.h,
+                        MipLevels: 1,
+                        ArraySize: 1,
+                        Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                        SampleDesc: DXGI_SAMPLE_DESC {
+                            Count: 1,
+                            Quality: 0,
+                        },
+                        Usage: D3D11_USAGE_IMMUTABLE,
+                        BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
+                        CPUAccessFlags: 0,
+                        MiscFlags: 0,
+                    },
+                    Some(&D3D11_SUBRESOURCE_DATA {
+                        pSysMem: rgba.as_ptr().cast(),
+                        SysMemPitch: rect.w * 4,
+                        SysMemSlicePitch: 0,
+                    }),
+                    Some(&mut texture),
+                )?;
+                let texture: ID3D11Texture2D = texture.ok_or_else(fail)?;
+                self.device
+                    .CreateShaderResourceView(&texture, None, Some(&mut view))?;
+            }
+            self.bitmaps.push(Bitmap {
+                view: view.ok_or_else(fail)?,
+                source: (rect.x, rect.y, rect.w, rect.h),
+                rect: [0.0; 4],
+            });
+        }
+        Ok(())
+    }
+
+    /// Positions the uploaded rectangles of `event` for `layout`.
+    fn place_bitmaps(&mut self, event: &BitmapEvent, layout: &Layout) {
+        let placement = event.placement(layout);
+        for bitmap in &mut self.bitmaps {
+            let (x, y, w, h) = bitmap.source;
+            bitmap.rect = placement.rect(x, y, w, h);
+        }
+    }
+
+    /// Image subtitle rectangles in a drawn frame.
+    fn bitmaps_drawn(&self) -> u32 {
+        self.bitmaps
+            .iter()
+            .filter(|bitmap| bitmap.is_drawn())
+            .count() as u32
+    }
+
+    /// Draws the image subtitle rectangles, one textured quad each, and leaves the pipeline set
+    /// for the libass quads that go on top.
+    fn draw_bitmaps(&mut self) -> Result<()> {
+        if self.bitmaps_drawn() == 0 {
+            return Ok(());
+        }
+        let instances: Vec<Instance> = self
+            .bitmaps
+            .iter()
+            .map(|bitmap| Instance {
+                rect: bitmap.rect,
+                atlas: [0.0; 2],
+                color: [
+                    1.0 / bitmap.rect[2].max(1.0),
+                    1.0 / bitmap.rect[3].max(1.0),
+                    0.0,
+                    0.0,
+                ],
+            })
+            .collect();
+        self.bind_instances(&instances)?;
+        // SAFETY: live interfaces on their owning thread; the binding arrays outlive the calls,
+        // and instance `at` is inside the buffer just bound.
+        unsafe {
+            let context = &self.context;
+            context.PSSetShader(&self.rgba_shader, None);
+            context.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
+            for (at, bitmap) in self.bitmaps.iter().enumerate() {
+                if bitmap.is_drawn() {
+                    context.PSSetShaderResources(0, Some(&[Some(bitmap.view.clone())]));
+                    context.DrawInstanced(4, 1, 0, at as u32);
+                }
+            }
+            context.PSSetShader(&self.pixel_shader, None);
+        }
+        Ok(())
+    }
+
+    /// Binds the pipeline, clears the back buffer to transparent and draws the image subtitles.
     fn begin_frame(&mut self) -> Result<()> {
         // SAFETY: live interfaces on their owning thread; slices and descriptors outlive the calls.
         unsafe {
@@ -960,7 +1216,7 @@ impl Gpu {
         }
         self.sizes.clear();
         self.batches = 0;
-        Ok(())
+        self.draw_bitmaps()
     }
 
     /// Copies one image's coverage into the atlas and queues its quad, drawing the open batch
@@ -1035,8 +1291,25 @@ impl Gpu {
         if self.pending.is_empty() {
             return Ok(());
         }
-        if self.instance_buffer.is_none() || self.instance_capacity < self.pending.len() {
-            let capacity = self.pending.len().next_power_of_two().max(256);
+        let pending = std::mem::take(&mut self.pending);
+        self.bind_instances(&pending)?;
+        // SAFETY: live interfaces on their owning thread; the bound buffer holds the instances.
+        unsafe {
+            self.context
+                .PSSetShaderResources(0, Some(&[Some(self.atlas.view.clone())]));
+            self.context.DrawInstanced(4, pending.len() as u32, 0, 0);
+        }
+        // Keeps the allocation for the next batch.
+        self.pending = pending;
+        self.pending.clear();
+        self.batches += 1;
+        Ok(())
+    }
+
+    /// Copies `instances` into the instance buffer (grown when too small) and binds it.
+    fn bind_instances(&mut self, instances: &[Instance]) -> Result<()> {
+        if self.instance_buffer.is_none() || self.instance_capacity < instances.len() {
+            let capacity = instances.len().next_power_of_two().max(256);
             let bytes = u32::try_from(capacity * size_of::<Instance>()).map_err(|_| fail())?;
             let mut buffer = None;
             // SAFETY: valid descriptor and live output slot; no initial data.
@@ -1057,15 +1330,18 @@ impl Gpu {
             self.instance_capacity = capacity;
         }
         let buffer = self.instance_buffer.clone().ok_or_else(fail)?;
-        let count = self.pending.len();
-        // SAFETY: live interfaces on their owning thread. The mapped buffer holds at least `count`
-        // instances; the binding arrays are locals that outlive the calls.
+        // SAFETY: live interfaces on their owning thread. The mapped buffer holds at least
+        // `instances.len()` instances; the binding arrays are locals that outlive the calls.
         unsafe {
             let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
             self.context
                 .Map(&buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, Some(&mut mapped))?;
             if !mapped.pData.is_null() {
-                std::ptr::copy_nonoverlapping(self.pending.as_ptr(), mapped.pData.cast(), count);
+                std::ptr::copy_nonoverlapping(
+                    instances.as_ptr(),
+                    mapped.pData.cast(),
+                    instances.len(),
+                );
             }
             self.context.Unmap(&buffer, 0);
             if mapped.pData.is_null() {
@@ -1076,12 +1352,7 @@ impl Gpu {
             let buffer = Some(buffer);
             self.context
                 .IASetVertexBuffers(0, 1, Some(&buffer), Some(&stride), Some(&offset));
-            self.context
-                .PSSetShaderResources(0, Some(&[Some(self.atlas.view.clone())]));
-            self.context.DrawInstanced(4, count as u32, 0, 0);
         }
-        self.pending.clear();
-        self.batches += 1;
         Ok(())
     }
 
@@ -1140,7 +1411,7 @@ impl Gpu {
         }))
     }
 
-    /// A fully transparent frame.
+    /// A frame without libass images: transparent but for the image subtitles.
     fn draw_empty(&mut self) -> Result<()> {
         self.begin_frame()
     }

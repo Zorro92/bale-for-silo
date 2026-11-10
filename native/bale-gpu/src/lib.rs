@@ -2,7 +2,8 @@
 //! narrow C ABI: the zero-copy software AV1 repack (`d3d12_repack`, zero-copy ABI), GPU film
 //! grain ([`grain`], grain ABI), the debug frame observer (`frames`), and debug loader/engine
 //! probes (`bale_gpu_*`, this file and `engine`), the subtitle overlay ([`subs`], subtitle ABI,
-//! `bale_sub_*` in this file) and the debug libass subtitle probes (`ass`).
+//! `bale_sub_*` in this file, with the bitmap ABI `bale_sub_bitmap_*` for image subtitles) and the
+//! debug libass subtitle probes (`ass`).
 
 #[cfg(windows)]
 mod ass;
@@ -456,6 +457,58 @@ pub unsafe extern "C" fn bale_sub_overlay_stats(
             subs::S_OK
         })
     }
+}
+
+/// Binds the overlay to `token`: image subtitle events pushed with that token
+/// ([`bale_sub_bitmap_push`]) are drawn by it, under a loaded text track. 0 unbinds; another token
+/// replaces the binding (and drops what was queued); a token bound elsewhere moves here.
+/// Destroying the overlay unbinds it.
+///
+/// # Safety
+/// `overlay` must be null or a live handle from [`bale_sub_overlay_create`].
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_sub_overlay_bind_bitmaps(
+    overlay: *mut subs::overlay::Overlay,
+    token: u64,
+) -> i32 {
+    // SAFETY: forwarded contract.
+    unsafe { with_overlay(overlay, |overlay| overlay.bind_bitmaps(token)) }
+}
+
+/// Version of the bitmap subtitle ABI (`bale_sub_bitmap_*`, `bale_sub_overlay_bind_bitmaps` and
+/// their structs); the FFmpegInteropX wrapper refuses a mismatch.
+#[unsafe(no_mangle)]
+pub extern "C" fn bale_sub_bitmap_abi_version() -> u32 {
+    subs::bitmap::BITMAP_ABI_VERSION
+}
+
+/// Queues one decoded image subtitle event for the overlay bound to `token`. Everything `event`
+/// points to is copied before this returns, and nothing is rendered here (the caller is the demux
+/// thread): the overlay's render thread is woken to show it. Returns 0, or a negative HRESULT when
+/// no overlay is bound to `token` (the event is dropped) or the event is invalid: more than 64
+/// rectangles, one over 4096×4096 pixels, more than 256 colours, a `linesize` below the width, a
+/// non-zero `reserved`, or a missing pointer.
+///
+/// # Safety
+/// `event` must be null or point to a readable [`subs::bitmap::BaleSubBitmapEvent`] whose `rects`
+/// point to `count` rectangles, each with `(h - 1) * linesize + w` readable index bytes and
+/// `nb_colors` readable palette entries.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_sub_bitmap_push(
+    token: u64,
+    event: *const subs::bitmap::BaleSubBitmapEvent,
+) -> i32 {
+    // SAFETY: forwarded contract.
+    std::panic::catch_unwind(|| unsafe { subs::bitmap::push(token, event) })
+        .unwrap_or(subs::E_UNEXPECTED)
+}
+
+/// Seek/flush: drops every event queued for `token`, so nothing is shown until the next push.
+/// Returns 0, or a negative HRESULT when no overlay is bound to `token`.
+#[unsafe(no_mangle)]
+pub extern "C" fn bale_sub_bitmap_flush(token: u64) -> i32 {
+    std::panic::catch_unwind(|| subs::bitmap::flush(token)).unwrap_or(subs::E_UNEXPECTED)
 }
 
 /// Stops and joins the render thread, detaches the swap chain from the panel and releases
