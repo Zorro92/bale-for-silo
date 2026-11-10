@@ -132,6 +132,20 @@ jobs:
           Pop-Location
           if ($cargoExit -ne 0) { throw 'cargo test failed' }
 
+      # WARP JIT-compiles for the host CPU, and runners vary. A crashed test process prints no test
+      # name, so on failure rerun the WARP suites one test at a time to name it.
+      - name: Diagnose WARP test failure
+        if: failure() && steps.rust.outcome == 'success'
+        shell: pwsh
+        run: |
+          Get-CimInstance Win32_Processor | Format-List Name, NumberOfCores, NumberOfLogicalProcessors
+          Push-Location native/bale-gpu
+          foreach ($suite in 'zero_copy_warp', 'grain_gpu_warp') {
+            cargo test --release --locked --target x86_64-pc-windows-msvc --test $suite -- --nocapture --test-threads=1
+            "$suite exit code: $LASTEXITCODE"
+          }
+          Pop-Location
+
       - name: Save Rust build cache
         if: steps.rust-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
