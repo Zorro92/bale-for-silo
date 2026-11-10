@@ -244,7 +244,7 @@ public class PlayPlanOptionsTests
     {
         var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "PlayPlanCommand.cs.txt"));
         Assert.Contains("p.Name == \"Bale Test\"", source);
-        Assert.Contains("PlaybackStartBuilder.Build(detail, new PlaybackSelection(options.FileId), profile.Id", source);
+        Assert.Contains("PlaybackStartBuilder.Build(detail, new PlaybackSelection(options.FileId, SubtitleIndex: options.SubtitleIndex), profile.Id", source);
         Assert.Contains("options.Capabilities()", source);
         Assert.Contains("reporter.RunAsync(sessionId, heartbeat.Token)", source);
         Assert.Contains("Task.Delay(TimeSpan.FromSeconds(options.HoldSeconds), cancellationToken)", source);

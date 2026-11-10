@@ -65,7 +65,8 @@ public static class PlaybackMediaUrl
             && segments[2].Length > 0 && (segments.Length == 3 || segments[3] == "fonts");
     }
 
-    // file_id and downloaded_subtitle_id are numeric row IDs, original=1 marks raw SubRip. Once each.
+    // file_id, downloaded_subtitle_id and embedded_stream_index are numeric IDs, original=1 marks raw
+    // SubRip. Once each.
     private static bool IsSubtitleQuery(string query)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -78,7 +79,7 @@ public static class PlaybackMediaUrl
             if (!seen.Add(key)) return false;
             switch (key)
             {
-                case "file_id" or "downloaded_subtitle_id":
+                case "file_id" or "downloaded_subtitle_id" or "embedded_stream_index":
                     if (value.Length is 0 or > 18 || !value.All(char.IsAsciiDigit)) return false;
                     break;
                 case "original":

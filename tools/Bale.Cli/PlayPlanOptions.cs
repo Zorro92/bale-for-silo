@@ -2,7 +2,8 @@ using System.Globalization;
 using Bale.Core.Playback;
 
 internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldSeconds, string? SaveHead = null, int HeadMegabytes = 0,
-    string? SaveRange = null, long RangeOffset = 0, int RangeBytes = 0, string? FileId = null, int Av1MaxHeight = 1080)
+    string? SaveRange = null, long RangeOffset = 0, int RangeBytes = 0, string? FileId = null, int Av1MaxHeight = 1080,
+    int? SubtitleIndex = null)
 {
     internal static bool TryParse(IEnumerable<string> arguments, out PlayPlanOptions options, out string error)
     {
@@ -26,6 +27,12 @@ internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldS
                     if (height == 0) return false;
                     av1HeightSeen = true;
                     options = options with { Av1MaxHeight = height };
+                    break;
+                case "--subtitle" when options.SubtitleIndex is null && i + 1 < args.Length:
+                    // --subtitle <ordinal|-1>: the Detail picker's choice (-1 = Off); omitted = Auto.
+                    if (!int.TryParse(args[++i], NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var subtitle)
+                        || subtitle < -1) return false;
+                    options = options with { SubtitleIndex = subtitle };
                     break;
                 case "--claim-av1" when !options.ClaimAv1:
                     options = options with { ClaimAv1 = true };

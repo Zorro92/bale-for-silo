@@ -90,6 +90,8 @@ public class PlaybackSubtitlesTests
     [Theory]
     [InlineData("/api/v2/stream/session/subtitles/3.srt?file_id=42&original=1")]
     [InlineData("/api/v2/stream/session/subtitles/3.vtt?file_id=42&downloaded_subtitle_id=7")]
+    [InlineData("/api/v2/stream/session/subtitles/0.vtt?file_id=407&embedded_stream_index=3")]
+    [InlineData("/api/v2/stream/session/subtitles/2/fonts?file_id=42&embedded_stream_index=5")]
     [InlineData("/api/v2/stream/session/subtitles/3")]
     public void ServerSubtitleUrlShapesAreAccepted(string url) =>
         Assert.Equal(new Uri("https://silo.example.com" + url), PlaybackMediaUrl.ResolveSubtitle(url, Server));

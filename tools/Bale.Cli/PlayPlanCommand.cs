@@ -16,7 +16,7 @@ internal static class PlayPlanCommand
         var capability = await client.Playback.GetCapabilitiesAsync(cancellationToken);
         var installation = new CliInstallation(capability.InstallationId!);
         var detail = await client.Detail.LoadAsync(contentId, cancellationToken);
-        var start = PlaybackStartBuilder.Build(detail, new PlaybackSelection(options.FileId), profile.Id,
+        var start = PlaybackStartBuilder.Build(detail, new PlaybackSelection(options.FileId, SubtitleIndex: options.SubtitleIndex), profile.Id,
             Guid.NewGuid().ToString(), null, options.Capabilities(), identity);
         var decision = await client.Playback.StartAsync(start, installation, cancellationToken);
         var sessionId = decision.SessionId;
@@ -48,6 +48,16 @@ internal static class PlayPlanCommand
                 $" seg={recipe?.SegmentContainer} kbps={recipe?.BitrateKbps} quality={plan.ActiveQuality}" +
                 $" corrections=[{string.Join(",", plan.RuntimeCorrections ?? [])}]");
             Console.WriteLine($"timeline source={plan.Timeline?.SourceStartSeconds} player={plan.Timeline?.PlayerStartSeconds} offset={plan.Timeline?.TimelineOffsetSeconds} duration={plan.Source?.DurationSeconds}");
+            // Shapes only: subtitle and font URLs carry the session, so print whether they exist, never them.
+            var subtitle = plan.Subtitle;
+            Console.WriteLine($"subtitle mode={subtitle?.Mode} track={subtitle?.TrackId} format={subtitle?.Artifact?.Format}" +
+                $" mime={subtitle?.Artifact?.MimeType} origin={subtitle?.Artifact?.TimingOriginSeconds}" +
+                $" artifact={(subtitle?.Artifact?.Url is { Length: > 0 } ? "yes" : "no")} embedded={(subtitle?.Embedded is null ? "no" : "yes")}" +
+                $" overlay={(client.Playback.ResolveSubtitles(plan) is { } overlay ? overlay.FormatName : "none")}");
+            foreach (var row in subtitle?.Inventory ?? [])
+                Console.WriteLine($"  subtitle #{row.CombinedIndex} {row.TrackId} codec={row.Codec} lang={row.Language} source={row.Source}" +
+                    $" delivery={row.Delivery} forced={row.Forced} default={row.Default}" +
+                    $" sidecar={(row.Url is { Length: > 0 } ? "yes" : "no")} fonts={(row.FontBundleUrl is { Length: > 0 } ? "yes" : "no")}");
 
             if (options.UrlFile is { } path)
             {
