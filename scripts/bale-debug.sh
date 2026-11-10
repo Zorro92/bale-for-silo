@@ -69,6 +69,8 @@
 #   scripts/bale-debug.sh subtest <url> [native|ffmpeg] [seconds] [sidecar-url] [idx-url]  muted subtitle probe: lists
 #                                               timed-metadata tracks and the cues each raises (text/image, timing, styling)
 #                                               BALE_SUBTEST_SHOW=<track> plays full screen with Windows drawing that track
+#   scripts/bale-debug.sh suboverlay [stats|load <url> [font-url...]|clear]  Bale's own subtitle renderer over the open player:
+#                                               load an ASS/SSA file (fonts are added first), clear it, or print its counters (default)
 #   scripts/bale-debug.sh goto "Unwatched#2"     setup only: focus the second matching control
 #   scripts/bale-debug.sh targets               list controls goto can reach
 #   scripts/bale-debug.sh tree                  the visible element tree with bounds
@@ -363,6 +365,40 @@ case "${1:-}" in
       --data-urlencode "route=${3:-native}" --data-urlencode "seconds=${4:-31}" \
       ${5:+--data-urlencode "sidecar=$5"} ${6:+--data-urlencode "index=$6"} \
       ${BALE_SUBTEST_SHOW:+--data-urlencode "show=$BALE_SUBTEST_SHOW"}
+    ;;
+  suboverlay)
+    case "${2:-stats}" in
+      stats)
+        if [[ "$#" -gt 2 ]]; then
+          echo 'usage: scripts/bale-debug.sh suboverlay [stats|load <http(s)-url> [font-url...]|clear]' >&2
+          exit 2
+        fi
+        curl --fail-with-body -sS --max-time 5 "$BASE/suboverlay"
+        ;;
+      load)
+        if [[ "$#" -lt 3 || "$#" -gt 19 ]]; then
+          echo 'usage: scripts/bale-debug.sh suboverlay load <http(s)-url> [font-url, up to 16...]' >&2
+          exit 2
+        fi
+        suboverlay_args=(--data-urlencode "action=load" --data-urlencode "url=$3")
+        for suboverlay_font in "${@:4}"; do
+          suboverlay_args+=(--data-urlencode "font=$suboverlay_font")
+        done
+        # The app allows 15 s for the headers and 15 s for the body of each download.
+        curl --fail-with-body -sS --max-time "$(( 40 + 30 * ($# - 3) ))" -X POST -G "$BASE/suboverlay" "${suboverlay_args[@]}"
+        ;;
+      clear)
+        if [[ "$#" -ne 2 ]]; then
+          echo 'usage: scripts/bale-debug.sh suboverlay clear' >&2
+          exit 2
+        fi
+        curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/suboverlay" --data-urlencode "action=clear"
+        ;;
+      *)
+        echo 'usage: scripts/bale-debug.sh suboverlay [stats|load <http(s)-url> [font-url...]|clear]' >&2
+        exit 2
+        ;;
+    esac
     ;;
   playtest|playtest-ffmpeg|playtest-engine)
     playtest_route="$1"

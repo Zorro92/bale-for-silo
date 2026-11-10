@@ -278,6 +278,14 @@ internal sealed partial class DebugServer
                 return await SubtitleProbeAsync(query.GetValueOrDefault("url"), query.GetValueOrDefault("route"), query.GetValueOrDefault("seconds"),
                     query.GetValueOrDefault("sidecar"), query.GetValueOrDefault("index"), query.GetValueOrDefault("show"));
 
+            case ("GET", "/suboverlay"):
+                if (query.Count != 0) return ("400 Bad Request", SubtitleOverlayUsage);
+                return await SubtitleOverlayStatsAsync();
+
+            case ("POST", "/suboverlay"):
+                // The raw query: font= may repeat, which the dictionary above cannot hold.
+                return await SubtitleOverlayAsync(target.Query);
+
             case ("POST", "/ffmpeg"):
                 var ffmpegMode = query.GetValueOrDefault("mode");
                 if (!DebugFfmpegPlayback.TrySet(ffmpegMode))

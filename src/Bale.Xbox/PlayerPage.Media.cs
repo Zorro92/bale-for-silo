@@ -89,6 +89,8 @@ public sealed partial class PlayerPage
         else await _hdrOutput.RestoreAsync();
         // Back/suspend may arrive during the HDMI handshake. Do not open or start that mount.
         attempt.Cancellation.Token.ThrowIfCancellationRequested();
+        // A kept overlay (seek reanchor) must not show the previous mount's track over this one.
+        ClearSubtitles();
         var transport = attempt.Client.Playback.OpenMedia(attempt.Plan!);
         var media = attempt.Media = new Mount(transport, attempt.Cancellation.Token)
         {
@@ -191,6 +193,7 @@ public sealed partial class PlayerPage
         player.MediaFailed += OnMediaFailed;
         player.MediaEnded += OnMediaEnded;
         player.PlaybackSession.PlaybackStateChanged += OnPlaybackStateChanged;
+        AttachSubtitleSession(player.PlaybackSession);
         Video.SetMediaPlayer(player);
         // Subscribe before Source: native opening/decoding can fail before MediaOpened is raised.
 #if DEBUG_SERVER
@@ -286,6 +289,8 @@ public sealed partial class PlayerPage
             sender.PlaybackSession.Position = TimeSpan.FromSeconds(media.StartPosition);
             media.Opened = true;
             Log.Info("player: opened");
+            // The natural video size is known from here; NaturalVideoSizeChanged covers later changes.
+            UpdateSubtitleLayout();
             if (media.StartPaused) media.Started = true;
             else sender.Play();
             UpdatePlaybackState(attempt, media);
@@ -345,6 +350,8 @@ public sealed partial class PlayerPage
         };
         SetLoading(_state is "loading" or "buffering");
         SetDisplayActive(_state != "paused");
+        // Playing vs paused/buffering changes how the subtitle overlay extrapolates its clock.
+        PushSubtitleClock();
     }
 
     private void OnMediaEnded(MediaPlayer sender, object args) => _ = DispatchAsync(() =>
@@ -371,6 +378,7 @@ public sealed partial class PlayerPage
                 player.MediaFailed -= OnMediaFailed;
                 player.MediaEnded -= OnMediaEnded;
                 player.PlaybackSession.PlaybackStateChanged -= OnPlaybackStateChanged;
+                DetachSubtitleSession(player.PlaybackSession);
 #if DEBUG_SERVER
                 player.PlaybackSession.BufferingStarted -= OnStatsBufferingStarted;
                 player.PlaybackSession.BufferingEnded -= OnStatsBufferingEnded;

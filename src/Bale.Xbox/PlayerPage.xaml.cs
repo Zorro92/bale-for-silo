@@ -89,6 +89,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         StatsPanel.Visibility = Visibility.Visible;
         ResetStats();
 #endif
+        InitializeSubtitleLayer();
         _timer.Tick += OnTick;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
@@ -268,6 +269,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
             && IsCurrent(current, first)) UpdatePlaybackState(current, first);
         UpdateSpinner();
         UpdateTransport();
+        // Drift correction about once per second while playing; SubtitleClockPush drops the other ticks.
+        PushSubtitleClock();
         if (_recording || _seeking) return;
         _recording = true;
         try
@@ -352,6 +355,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         SetLoading(true);
         var failedRoute = attempt.Media?.Route;
         DisposeMount(attempt);
+        // The failed pipeline's subtitles go with it; the replacement mount loads its own track.
+        DisposeSubtitles();
         await _hdrOutput.RestoreAsync();
         attempt.Cancellation.Token.ThrowIfCancellationRequested();
         Log.Info("player: replan");
@@ -482,6 +487,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
     private async Task StopAttemptAsync()
     {
         HideTransport();
+        // Stop, error, shutdown, navigation and suspend all end here: release the overlay's D3D device.
+        DisposeSubtitles();
         if (_attempt is not { } attempt)
         {
             await _hdrOutput.RestoreAsync();
@@ -538,6 +545,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         }
         _timer.Stop();
         HideTransport();
+        // Do not wait for the lifecycle lock: suspend and navigation release the overlay's device now.
+        DisposeSubtitles();
         SetLoading(false);
         return _shutdown = ShutdownCoreAsync();
     }

@@ -52,6 +52,8 @@
     <Compile Include="../../tools/Bale.Cli/PlayPlanUrlFile.cs" Link="PlayPlanUrlFile.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugServer.Ffmpeg.cs" Link="DebugServer.Ffmpeg.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugServer.Subtitles.cs" Link="DebugServer.Subtitles.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Services/DebugServer.SubtitleOverlay.cs" Link="DebugServer.SubtitleOverlay.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Services/SubtitleOverlay.cs" Link="SubtitleOverlay.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugProcessCpu.cs" Link="DebugProcessCpu.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugFrameDelivery.cs" Link="DebugFrameDelivery.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/NativeFrameDelivery.cs" Link="NativeFrameDelivery.cs.txt" CopyToOutputDirectory="PreserveNewest" />

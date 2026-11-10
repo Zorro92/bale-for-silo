@@ -70,6 +70,7 @@ timeout 300 ./scripts/bale-debug.sh playtest suite 3  # Chromium codec samples, 
 ./scripts/bale-debug.sh playtest-ffmpeg @/tmp/x 30 software  # debug FFmpegInteropX; URL, @file or suite; 1–60 s; auto|software|system
 ./scripts/bale-debug.sh playtest-ffmpeg @/tmp/x 30 software threads=4 10bit=off rate=0.75 ahead=8 delay=1 prio=1  # debug-only tuning, no rebuild
 ./scripts/bale-debug.sh ffmpeg policy        # next real-player attempt; policy (default)|off; HLS unchanged
+./scripts/bale-debug.sh suboverlay load "https://example.org/x.ass" [font-url...]  # own subtitle renderer over the open player; also clear, stats (default)
 ./scripts/bale-debug.sh goto "Unwatched#2"     # setup only: focus the second matching control
 ./scripts/bale-debug.sh targets               # controls goto can reach
 ./scripts/bale-debug.sh tree                  # visible element tree with bounds

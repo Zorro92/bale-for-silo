@@ -8,6 +8,9 @@
 
   <Grid Background="Black">
     <MediaPlayerElement x:Name="Video" AreTransportControlsEnabled="False" Stretch="Uniform" IsTabStop="False" />
+    <!-- Bale draws subtitles itself (Services/SubtitleOverlay.cs): above the video, below every player panel.
+         Empty and deviceless until a track loads. -->
+    <SwapChainPanel x:Name="SubtitleLayer" IsHitTestVisible="False" />
     <!-- TvSkipSeekIndicator.kt / TvPlayerScrubber.kt: passive feedback, never a focus surface.
          Keep the resting scrubber's geometry, reserving the official transport row below for later. -->
     <Grid x:Name="TransportFeedback" Visibility="Collapsed" IsHitTestVisible="False">

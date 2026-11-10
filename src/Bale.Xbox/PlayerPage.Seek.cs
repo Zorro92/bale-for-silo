@@ -141,6 +141,8 @@ public sealed partial class PlayerPage
             observed?.FrameDelivery?.SetSeeking(false);
 #endif
             _seeking = false;
+            // Every outcome, including a reanchor remount: the overlay's extrapolated clock is stale now.
+            PushSubtitleClock(force: true);
             _lifecycle.Release();
         }
     }
