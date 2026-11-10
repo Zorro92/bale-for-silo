@@ -1,6 +1,8 @@
-//! Grain inputs of the fused zero-copy repack (`shaders/repack_grain_zc_cs.hlsl`, 10-bit only):
-//! one raw buffer per frame, bound as root SRV t1, built from exactly the prepared inputs the CPU
-//! oracle consumes ([`cpu::with_prepared`]).
+//! Grain inputs of the fused zero-copy repack (`shaders/repack_grain_zc_cs.hlsl`, compiled once
+//! per bit depth, 8 and 10): one raw buffer per frame, bound as root SRV t1, built from exactly the
+//! prepared inputs the CPU oracle consumes ([`cpu::with_prepared`]). The layout is the same at
+//! both depths; everything depth-dependent (clip ranges, grain range, offsets, pixel_max) is in
+//! the header.
 //!
 //! Layout (little-endian; every section starts 4-byte aligned; the shader comment repeats it):
 //! - header, 32 words (128 bytes), i32 or u32:
@@ -13,7 +15,8 @@
 //! - template_y: 82x73 i16, row-major (entry y * 82 + x), two per word, low half first
 //! - template_uv: 44x38 words, row-major; cb i16 in the low half, cr in the high half (zeros for
 //!   an inactive plane)
-//! - scaling: three rows of 1024 u8 (Y, Cb, Cr), entry row * 1024 + value
+//! - scaling: three rows of 1024 u8 (Y, Cb, Cr), entry row * 1024 + value; an 8-bit row has 256
+//!   entries and is zero-padded to 1024
 //! - offsets: one u8 per 32x32 luma block, row-major, zero-padded to a whole word
 
 use super::cpu;
@@ -24,7 +27,7 @@ use super::template::{GRAIN_HEIGHT, GRAIN_WIDTH, SUB_GRAIN_HEIGHT, SUB_GRAIN_WID
 const HEADER_WORDS: usize = 32;
 const TEMPLATE_Y_AT: usize = HEADER_WORDS * 4;
 const TEMPLATE_UV_AT: usize = TEMPLATE_Y_AT + GRAIN_WIDTH * GRAIN_HEIGHT * 2;
-/// The 10-bit scaling LUT width.
+/// The scaling row width: the 10-bit LUT's (an 8-bit LUT is zero-padded to it).
 const SCALING_WIDTH: usize = 1024;
 const SCALING_AT: usize = TEMPLATE_UV_AT + SUB_GRAIN_WIDTH * SUB_GRAIN_HEIGHT * 4;
 const OFFSETS_AT: usize = SCALING_AT + 3 * SCALING_WIDTH;
@@ -35,9 +38,9 @@ pub(crate) fn bytes(width: usize, height: usize) -> usize {
         + (width.div_ceil(FG_BLOCK_SIZE) * height.div_ceil(FG_BLOCK_SIZE)).next_multiple_of(4)
 }
 
-/// The grain buffer for `params`; `None` unless 10-bit (the fused shader's only depth).
+/// The grain buffer for `params`; `None` unless 8- or 10-bit (the fused shader's depths).
 pub(crate) fn build(params: &ValidGrainParams) -> Option<Vec<u8>> {
-    if params.as_raw().bit_depth != 10 {
+    if !matches!(params.as_raw().bit_depth, 8 | 10) {
         return None;
     }
     let raw = params.as_raw();
@@ -93,8 +96,9 @@ pub(crate) fn build(params: &ValidGrainParams) -> Option<Vec<u8>> {
             }
         }
         for row in &prepared.scaling {
-            debug_assert_eq!(row.len(), SCALING_WIDTH);
+            debug_assert_eq!(row.len(), 1 << raw.bit_depth);
             out.extend_from_slice(row);
+            out.resize(out.len() + SCALING_WIDTH - row.len(), 0);
         }
         out.extend_from_slice(prepared.offsets.as_bytes());
     });
@@ -104,7 +108,7 @@ pub(crate) fn build(params: &ValidGrainParams) -> Option<Vec<u8>> {
 
 /// Deterministic 10-bit grain for a `width` x `height` frame: AR lag 3, overlap, restricted
 /// clipping, both chroma planes with their own points (no chroma-from-luma). For the zero-copy
-/// self-test and the layout tests.
+/// self-test and the layout tests; valid at bit depth 8 too.
 pub(crate) fn self_test_params(width: u32, height: u32) -> BaleGrainParams {
     let mut p = BaleGrainParams {
         struct_size: PARAMS_SIZE,
@@ -142,7 +146,7 @@ pub(crate) fn self_test_params(width: u32, height: u32) -> BaleGrainParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::grain::cpu::PixelFormat;
+    use crate::zc_frame::grain_p010;
 
     /// The buffer as the shader sees it: word loads only, at 4-byte aligned addresses, and every
     /// load must stay inside the buffer (root SRVs are not bounds-checked).
@@ -206,11 +210,13 @@ mod tests {
 
     /// A transliteration of `repack_grain_zc_cs.hlsl`, one pixel at a time. Like a shader whose
     /// branches are flattened, it also evaluates every overlap sample the pixel does not use, and
-    /// the buffer asserts that those loads stay inside it too.
+    /// the buffer asserts that those loads stay inside it too. `shift` is the shader's OUT_SHIFT:
+    /// 6 for the 10-bit build, 8 for the 8-bit one (`BALE_8BIT`).
     struct Model<'a> {
         b: Buffer<'a>,
         h: Header,
         width: i32,
+        shift: u32,
     }
 
     impl Model<'_> {
@@ -269,7 +275,7 @@ mod tests {
 
         fn luma(&self, pixel: (i32, i32), value: u32) -> u32 {
             if pixel.0 >= self.width || !self.h.luma_active {
-                return value << 6;
+                return value << self.shift;
             }
             let block = (pixel.0 >> 5, pixel.1 >> 5);
             let local = (pixel.0 & 31, pixel.1 & 31);
@@ -293,12 +299,12 @@ mod tests {
             let src = value as i32;
             let result = (src + round2(self.scale(0, src) * n, self.h.scaling_shift))
                 .clamp(self.h.luma.0, self.h.luma.1);
-            (result as u32) << 6
+            (result as u32) << self.shift
         }
 
         fn chroma_plane(&self, value: u32, avg: i32, n: i32, plane: [i32; 4], row: u32) -> u32 {
             if plane[3] == 0 {
-                return value << 6;
+                return value << self.shift;
             }
             let src = value as i32;
             let (row, index) = if self.h.csfl {
@@ -309,12 +315,12 @@ mod tests {
             };
             let result = (src + round2(self.scale(row, index) * n, self.h.scaling_shift))
                 .clamp(self.h.chroma.0, self.h.chroma.1);
-            (result as u32) << 6
+            (result as u32) << self.shift
         }
 
         fn chroma(&self, pixel: (i32, i32), value: (u32, u32), avg: i32) -> (u32, u32) {
             if pixel.0 >= self.width >> 1 || (self.h.cb[3] == 0 && self.h.cr[3] == 0) {
-                return (value.0 << 6, value.1 << 6);
+                return (value.0 << self.shift, value.1 << self.shift);
             }
             let block = (pixel.0 >> 4, pixel.1 >> 4);
             let local = (pixel.0 & 15, pixel.1 & 15);
@@ -347,27 +353,35 @@ mod tests {
         }
     }
 
-    /// The fused shader over a tight P010 frame (`y`: height rows of width samples, `uv`: height/2
-    /// rows of width interleaved samples), thread by thread like the dispatch.
-    fn model_frame(buffer: &[u8], width: usize, height: usize, y: &[u16], uv: &[u16]) -> Vec<u16> {
+    /// The fused shader for `bit_depth` over a tight P010 frame (`y`: height rows of width
+    /// samples, `uv`: height/2 rows of width interleaved samples, each sample in the high
+    /// `bit_depth` bits of its word), thread by thread like the dispatch.
+    fn model_frame(
+        buffer: &[u8],
+        (width, height, bit_depth): (usize, usize, u32),
+        y: &[u16],
+        uv: &[u16],
+    ) -> Vec<u16> {
         let b = Buffer(buffer);
         let h = header(&b);
+        let shift = 16 - bit_depth;
         let model = Model {
             b,
             h,
             width: width as i32,
+            shift,
         };
         let mut out_y = y.to_vec();
         let mut out_uv = uv.to_vec();
         let luma_at =
-            |x: usize, row: usize| u32::from(y.get(row * width + x).copied().unwrap_or(0) >> 6);
+            |x: usize, row: usize| u32::from(y.get(row * width + x).copied().unwrap_or(0) >> shift);
         for ty in 0..height / 2 {
             for tx in 0..width.div_ceil(4) {
                 for k in 0..2 {
                     let cx = 2 * tx + k;
                     let at = |plane: usize| {
                         if cx < width / 2 {
-                            u32::from(uv[ty * width + 2 * cx + plane] >> 6)
+                            u32::from(uv[ty * width + 2 * cx + plane] >> shift)
                         } else {
                             0
                         }
@@ -396,35 +410,35 @@ mod tests {
         out_y
     }
 
-    fn frame(width: usize, height: usize, seed: u32) -> Vec<u16> {
+    /// Random `bit_depth` samples in the high bits of P010 words.
+    fn frame(width: usize, height: usize, seed: u32, bit_depth: u32) -> Vec<u16> {
         let mut state = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
         (0..width * height * 3 / 2)
             .map(|_| {
                 state ^= state << 13;
                 state ^= state >> 17;
                 state ^= state << 5;
-                ((state >> 7) & 0x3ff) as u16 * 64
+                (((state >> 7) & ((1 << bit_depth) - 1)) as u16) << (16 - bit_depth)
             })
             .collect()
     }
 
+    /// The CPU oracle at `params`' depth over the same P010 form ([`grain_p010`]).
     fn oracle(params: &ValidGrainParams, plain: &[u16]) -> Vec<u16> {
-        let width = params.width();
-        let bytes: Vec<u8> = plain.iter().flat_map(|v| v.to_le_bytes()).collect();
-        let (y, uv) = bytes.split_at(2 * width * params.height());
-        let (mut y, mut uv) = (y.to_vec(), uv.to_vec());
-        let pitch = (2 * width) as isize;
-        cpu::apply(params, PixelFormat::P010, &mut y, pitch, &mut uv, pitch, 1).unwrap();
-        let (y, uv) = (y.as_chunks::<2>().0, uv.as_chunks::<2>().0);
-        y.iter()
-            .chain(uv)
+        let mut bytes: Vec<u8> = plain.iter().flat_map(|v| v.to_le_bytes()).collect();
+        grain_p010(params, &mut bytes).unwrap();
+        bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|&pair| u16::from_le_bytes(pair))
             .collect()
     }
 
-    /// Branch variants the even-size fixtures lack, each a valid parameter set.
-    fn variants(width: u32, height: u32) -> Vec<(&'static str, BaleGrainParams)> {
-        let base = self_test_params(width, height);
+    /// Branch variants the even-size fixtures lack, each a valid parameter set at `bit_depth`.
+    fn variants(width: u32, height: u32, bit_depth: u8) -> Vec<(&'static str, BaleGrainParams)> {
+        let mut base = self_test_params(width, height);
+        base.bit_depth = bit_depth;
         let mut out = vec![("self-test", base)];
         let mut p = base;
         p.overlap_flag = 0;
@@ -469,50 +483,87 @@ mod tests {
             assert_eq!(at % 4, 0);
         }
         assert_eq!(OFFSETS_AT, 21860);
-        for (width, height) in [(2, 2), (66, 18), (130, 40), (1920, 1080), (3840, 2160)] {
-            let p = self_test_params(width, height).validate().unwrap();
-            let buffer = build(&p).unwrap();
-            assert_eq!(buffer.len(), bytes(width as usize, height as usize));
-            assert_eq!(buffer.len() % 4, 0);
-            let b = Buffer(&buffer);
-            let h = header(&b);
-            assert_eq!((b.load(0), b.load(4)), (width, height));
-            assert_eq!(h.cols, width.div_ceil(32));
-            assert_eq!(h.grain, (-512, 511));
-            assert_eq!((h.luma, h.chroma), ((64, 940), (64, 960)));
-            assert_eq!(h.cb, [-43, 81, -48, 1]);
-            assert_eq!(h.cr, [31, -27, 468, 1]);
-            assert!((26..32).all(|i| b.load(4 * i) == 0));
+        // Per depth: grain range, luma and chroma clip ranges, cb and cr words, pixel_max.
+        let expected = [
+            (10, (-512, 511), ((64, 940), (64, 960)), [-48, 468], 1023),
+            (8, (-128, 127), ((16, 235), (16, 240)), [-12, 117], 255),
+        ];
+        let mut checked = 0;
+        for (depth, grain, clip, offsets, pixel_max) in expected {
+            for (width, height) in [(2, 2), (66, 18), (130, 40), (1920, 1080), (3840, 2160)] {
+                let mut p = self_test_params(width, height);
+                p.bit_depth = depth;
+                let p = p.validate().unwrap();
+                let buffer = build(&p).unwrap();
+                assert_eq!(buffer.len(), bytes(width as usize, height as usize));
+                assert_eq!(buffer.len() % 4, 0);
+                let b = Buffer(&buffer);
+                let h = header(&b);
+                assert_eq!((b.load(0), b.load(4)), (width, height));
+                assert_eq!(h.cols, width.div_ceil(32));
+                assert_eq!(h.grain, grain);
+                assert_eq!((h.luma, h.chroma), clip);
+                assert_eq!(h.cb, [-43, 81, offsets[0], 1]);
+                assert_eq!(h.cr, [31, -27, offsets[1], 1]);
+                assert_eq!(h.pixel_max, pixel_max);
+                assert_eq!(
+                    (h.template_y, h.template_uv, h.scaling, h.offsets),
+                    (
+                        TEMPLATE_Y_AT as u32,
+                        TEMPLATE_UV_AT as u32,
+                        SCALING_AT as u32,
+                        OFFSETS_AT as u32
+                    )
+                );
+                assert!((26..32).all(|i| b.load(4 * i) == 0));
+                // An 8-bit LUT fills the first 256 entries of each row; the rest stays zero.
+                let used = 1usize << depth;
+                for row in 0..3 {
+                    let at = SCALING_AT + row * SCALING_WIDTH;
+                    assert!(
+                        buffer[at + used..at + SCALING_WIDTH]
+                            .iter()
+                            .all(|&v| v == 0)
+                    );
+                    assert!(buffer[at..at + used].iter().any(|&v| v != 0));
+                }
+                checked += 1;
+            }
         }
+        assert_eq!(checked, 2 * 5);
         let mut p = self_test_params(64, 64);
-        p.bit_depth = 8;
-        assert!(build(&p.validate().unwrap()).is_none());
+        p.bit_depth = 12;
+        assert!(p.validate().is_err(), "12-bit params never reach build");
     }
 
     #[test]
     fn shader_model_matches_cpu_oracle() {
-        let mut compared = 0;
-        for (width, height) in [(130, 40), (66, 18), (128, 96), (130, 98), (34, 66), (2, 2)] {
-            for (name, params) in variants(width, height) {
-                for seed in [0, 7, 45231, 0xffff_fffe] {
-                    let mut params = params;
-                    params.seed = seed;
-                    let params = params.validate().unwrap();
-                    let plain = frame(width as usize, height as usize, seed ^ width);
-                    let buffer = build(&params).unwrap();
-                    let (y, uv) = plain.split_at((width * height) as usize);
-                    let actual = model_frame(&buffer, width as usize, height as usize, y, uv);
-                    assert!(
-                        actual == oracle(&params, &plain),
-                        "{name} at {width}x{height}, seed {seed}"
-                    );
-                    if name == "no grain" {
-                        assert_eq!(actual, plain);
+        let mut compared = [0; 2];
+        for (count, depth) in compared.iter_mut().zip([10u8, 8]) {
+            for (width, height) in [(130, 40), (66, 18), (128, 96), (130, 98), (34, 66), (2, 2)] {
+                for (name, params) in variants(width, height, depth) {
+                    for seed in [0, 7, 45231, 0xffff_fffe] {
+                        let mut params = params;
+                        params.seed = seed;
+                        let params = params.validate().unwrap();
+                        let plain =
+                            frame(width as usize, height as usize, seed ^ width, depth.into());
+                        let buffer = build(&params).unwrap();
+                        let (y, uv) = plain.split_at((width * height) as usize);
+                        let size = (width as usize, height as usize, u32::from(depth));
+                        let actual = model_frame(&buffer, size, y, uv);
+                        assert!(
+                            actual == oracle(&params, &plain),
+                            "{depth}-bit {name} at {width}x{height}, seed {seed}"
+                        );
+                        if name == "no grain" {
+                            assert_eq!(actual, plain);
+                        }
+                        *count += 1;
                     }
-                    compared += 1;
                 }
             }
         }
-        assert_eq!(compared, 6 * 9 * 4);
+        assert_eq!(compared, [6 * 9 * 4; 2]);
     }
 }

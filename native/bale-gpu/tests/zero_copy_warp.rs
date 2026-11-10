@@ -10,13 +10,12 @@ use std::ptr;
 use bale_gpu::d3d12_repack::{
     BaleZcStats, BaleZeroCopy, S_FALSE, S_OK, ZERO_COPY_ABI_VERSION, bale_zc_abi_version,
     bale_zc_alloc, bale_zc_create, bale_zc_destroy, bale_zc_register_d3d12, bale_zc_release,
-    bale_zc_repack, bale_zc_repack_into, bale_zc_stats, create_with_landing_copies,
-    diagnose_create,
+    bale_zc_repack, bale_zc_repack_into, bale_zc_repack_into_bits, bale_zc_stats,
+    create_with_landing_copies, diagnose_create,
 };
 use bale_gpu::grain::BaleGrainParams;
-use bale_gpu::grain::cpu::{self, PixelFormat};
 use bale_gpu::grain::params::PARAMS_SIZE;
-use bale_gpu::zc_frame::{BaleZcFrame, MAX_BYTES, fill_test_planes};
+use bale_gpu::zc_frame::{BaleZcFrame, MAX_BYTES, fill_test_planes_bits, grain_p010};
 use windows::Win32::Foundation::{E_INVALIDARG, E_OUTOFMEMORY, HMODULE};
 use windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE_UNKNOWN, D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL_11_0,
@@ -268,21 +267,45 @@ impl ZeroCopy {
         Ok(Picture { data, id })
     }
 
-    /// Allocates a padded `width` x `height` test picture filled with `seed` and returns it with
-    /// its layout and source bytes.
+    /// Allocates a padded `width` x `height` 10-bit test picture filled with `seed` and returns
+    /// it with its layout and source bytes.
     fn picture(&self, width: u32, height: u32, seed: u32) -> (Picture, BaleZcFrame, Vec<u8>) {
-        let (frame, bytes) = BaleZcFrame::test_layout(width, height);
+        self.picture_bits(width, height, seed, 10)
+    }
+
+    /// [`picture`](Self::picture) at `depth` (8 or 10).
+    fn picture_bits(
+        &self,
+        width: u32,
+        height: u32,
+        seed: u32,
+        depth: u32,
+    ) -> (Picture, BaleZcFrame, Vec<u8>) {
+        let (frame, bytes) = BaleZcFrame::test_layout_bits(width, height, depth);
+        self.picture_in(frame, bytes, seed, depth)
+    }
+
+    /// A test picture of `depth` in the given layout, filled with `seed` (garbage everywhere
+    /// outside the samples).
+    fn picture_in(
+        &self,
+        frame: BaleZcFrame,
+        bytes: u64,
+        seed: u32,
+        depth: u32,
+    ) -> (Picture, BaleZcFrame, Vec<u8>) {
         let mut source = vec![0u8; bytes as usize];
-        fill_test_planes(&frame, &mut source, seed);
+        fill_test_planes_bits(&frame, &mut source, seed, depth);
         (self.upload(&source), frame, source)
     }
 
-    /// Allocates a padded picture holding a fixture's planar 10-bit frame, with seeded garbage in
-    /// the padding and in the top 6 bits of every sample.
+    /// Allocates a padded picture holding a fixture's planar frame (8- or 10-bit), with seeded
+    /// garbage in the padding and, at 10 bits, in the top 6 bits of every sample.
     fn fixture_picture(&self, params: &BaleGrainParams, planar: &[u8]) -> (Picture, BaleZcFrame) {
-        let (frame, bytes) = BaleZcFrame::test_layout(params.width, params.height);
+        let depth = u32::from(params.bit_depth);
+        let (frame, bytes) = BaleZcFrame::test_layout_bits(params.width, params.height, depth);
         let mut source = vec![0u8; bytes as usize];
-        fill_test_planes(&frame, &mut source, params.seed);
+        fill_test_planes_bits(&frame, &mut source, params.seed, depth);
         let (w, h) = (params.width as usize, params.height as usize);
         let (cw, ch) = (w / 2, h / 2);
         let planes = [
@@ -293,14 +316,23 @@ impl ZeroCopy {
         for (offset, (start, pw, ph, stride)) in frame.offsets.into_iter().zip(planes) {
             for row in 0..ph {
                 for x in 0..pw {
-                    let at = offset as usize + row * stride as usize + 2 * x;
-                    let garbage = u16::from_le_bytes([source[at], source[at + 1]]) & 0xfc00;
-                    let value = common::planar_sample(planar, start + row * pw + x, 10);
-                    source[at..at + 2].copy_from_slice(&(value | garbage).to_le_bytes());
+                    let value =
+                        common::planar_sample(planar, start + row * pw + x, params.bit_depth);
+                    let row = offset as usize + row * stride as usize;
+                    if depth == 8 {
+                        source[row + x] = value as u8;
+                    } else {
+                        let at = row + 2 * x;
+                        let garbage = u16::from_le_bytes([source[at], source[at + 1]]) & 0xfc00;
+                        source[at..at + 2].copy_from_slice(&(value | garbage).to_le_bytes());
+                    }
                 }
             }
         }
-        assert_eq!(frame.reference_p010(&source), p010(planar, w, h));
+        assert_eq!(
+            frame.reference_p010_bits(&source, depth),
+            p010(planar, w, h, params.bit_depth)
+        );
         (self.upload(&source), frame)
     }
 
@@ -336,6 +368,38 @@ impl ZeroCopy {
         unsafe { bale_zc_repack_into(self.0, id, frame, grain, target.as_raw()) }
     }
 
+    /// `bale_zc_repack_into_bits` with optional grain.
+    fn repack_into_bits(
+        &self,
+        id: *mut c_void,
+        frame: &BaleZcFrame,
+        depth: u32,
+        grain: Option<&BaleGrainParams>,
+        target: &ID3D11Texture2D,
+    ) -> i32 {
+        let grain = grain.map_or(ptr::null(), ptr::from_ref);
+        // SAFETY: live handle, readable frame and full grain record or null, live texture; one
+        // test thread per handle.
+        unsafe { bale_zc_repack_into_bits(self.0, id, frame, depth, grain, target.as_raw()) }
+    }
+
+    /// A direct write at `depth`: through `bale_zc_repack_into` at 10 bits (the original export
+    /// stays covered), `bale_zc_repack_into_bits` at 8.
+    fn direct(
+        &self,
+        id: *mut c_void,
+        frame: &BaleZcFrame,
+        depth: u32,
+        grain: Option<&BaleGrainParams>,
+        target: &ID3D11Texture2D,
+    ) -> i32 {
+        match (depth, grain) {
+            (10, None) => self.repack_into(id, frame, target),
+            (10, Some(grain)) => self.repack_grain(id, frame, grain, target),
+            _ => self.repack_into_bits(id, frame, depth, grain, target),
+        }
+    }
+
     fn stats(&self) -> BaleZcStats {
         let mut stats = BaleZcStats::default();
         // SAFETY: live handle; writable out slot.
@@ -349,10 +413,12 @@ fn release(id: *mut c_void) -> i32 {
     unsafe { bale_zc_release(id) }
 }
 
-/// A planar 10-bit 4:2:0 frame (even size) as tight P010 bytes.
-fn p010(planar: &[u8], width: usize, height: usize) -> Vec<u8> {
+/// A planar 4:2:0 frame (even size) of `depth` (8 or 10) as tight P010 bytes.
+fn p010(planar: &[u8], width: usize, height: usize, depth: u8) -> Vec<u8> {
     let (cw, ch) = (width / 2, height / 2);
-    let at = |sample: usize| (common::planar_sample(planar, sample, 10) << 6).to_le_bytes();
+    let at = |sample: usize| {
+        (common::planar_sample(planar, sample, depth) << (16 - depth)).to_le_bytes()
+    };
     let mut out = Vec::with_capacity(3 * width * height);
     for sample in 0..width * height {
         out.extend_from_slice(&at(sample));
@@ -364,16 +430,13 @@ fn p010(planar: &[u8], width: usize, height: usize) -> Vec<u8> {
     out
 }
 
-/// The CPU oracle's film grain on a tight P010 frame.
+/// The CPU oracle's film grain on a tight P010 frame at the parameters' depth (8-bit samples in
+/// the high byte).
 fn grained_p010(params: &BaleGrainParams, plain: &[u8]) -> Vec<u8> {
     let valid = params.validate().expect("valid grain parameters");
-    let pitch = 2 * params.width as usize;
-    let (y, uv) = plain.split_at(pitch * params.height as usize);
-    let (mut y, mut uv) = (y.to_vec(), uv.to_vec());
-    let pitch = pitch as isize;
-    cpu::apply(&valid, PixelFormat::P010, &mut y, pitch, &mut uv, pitch, 1).expect("CPU grain");
-    y.extend(uv);
-    y
+    let mut out = plain.to_vec();
+    grain_p010(&valid, &mut out).expect("CPU grain");
+    out
 }
 
 /// Equality of two P010 frames that reports the first difference, not the pixels.
@@ -425,7 +488,18 @@ fn grain_params(width: u32, height: u32, seed: u32) -> BaleGrainParams {
 
 /// Shader branches the even 10-bit fixtures cover thinly or not at all, each a valid set.
 fn grain_variants(width: u32, height: u32, seed: u32) -> Vec<(&'static str, BaleGrainParams)> {
-    let base = grain_params(width, height, seed);
+    grain_variants_bits(width, height, seed, 10)
+}
+
+/// [`grain_variants`] at `depth` (8 or 10).
+fn grain_variants_bits(
+    width: u32,
+    height: u32,
+    seed: u32,
+    depth: u8,
+) -> Vec<(&'static str, BaleGrainParams)> {
+    let mut base = grain_params(width, height, seed);
+    base.bit_depth = depth;
     let mut out = vec![("overlap on", base)];
     let mut p = base;
     p.overlap_flag = 0;
@@ -820,35 +894,48 @@ fn direct_targets_are_capped_and_closed_when_idle() {
     assert_eq!(release(picture.id), S_OK);
 }
 
-/// Fused grain on every even 10-bit dav1d fixture, both frames each: the direct write of the
-/// plain picture with that frame's parameters is dav1d's grained picture.
+/// Fused grain on every even 8- and 10-bit dav1d fixture, both frames each, on one handle: the
+/// direct write of the plain picture with that frame's parameters is dav1d's grained picture
+/// (8-bit through `bale_zc_repack_into_bits`, 10-bit through `bale_zc_repack_into`).
 #[test]
 fn fused_grain_matches_dav1d_fixtures() {
     let warp = Warp::new();
     let zero_copy = warp.zero_copy();
-    let mut compared = 0;
+    // Frames compared at 8 and at 10 bits.
+    let mut compared = [0; 2];
     for fixture in common::fixtures() {
         let first = &fixture.frames[0].params;
-        let (w, h) = (first.width, first.height);
-        if first.bit_depth != 10 || w % 2 != 0 || h % 2 != 0 {
+        let (w, h, depth) = (first.width, first.height, first.bit_depth);
+        if w % 2 != 0 || h % 2 != 0 {
             continue;
         }
+        let count = match depth {
+            8 => &mut compared[0],
+            10 => &mut compared[1],
+            _ => panic!("{}: unexpected bit depth {depth}", fixture.name),
+        };
         let target = warp.target(w, h);
         for (index, frame) in fixture.frames.iter().enumerate() {
             let what = format!("{} frame {index}", fixture.name);
             let (picture, layout) = zero_copy.fixture_picture(&frame.params, &frame.plain);
-            let hr = zero_copy.repack_grain(picture.id, &layout, &frame.params, &target);
+            let hr = zero_copy.direct(
+                picture.id,
+                &layout,
+                depth.into(),
+                Some(&frame.params),
+                &target,
+            );
             assert_eq!(hr, S_OK, "{what}: HRESULT=0x{:08x}", hr as u32);
             assert_eq!(release(picture.id), S_OK);
-            let expected = p010(&frame.grained, w as usize, h as usize);
+            let expected = p010(&frame.grained, w as usize, h as usize, depth);
             assert_frame(&warp.read(target.as_raw(), w, h), &expected, &what);
-            compared += 1;
+            *count += 1;
         }
     }
-    // preset01-10..preset15-10 and restricted-10.
-    assert_eq!(compared, 32, "do not silently drop fixtures");
+    // preset01..preset15 and restricted, at -8 and at -10.
+    assert_eq!(compared, [32, 32], "do not silently drop fixtures");
     let stats = zero_copy.stats();
-    assert_eq!(stats.frames_repacked, 32);
+    assert_eq!(stats.frames_repacked, 64);
     assert_eq!(stats.buffers_live, 0);
 }
 
@@ -857,21 +944,33 @@ fn fused_grain_matches_dav1d_fixtures() {
 /// shader's chroma pairs, and frames smaller than one block.
 #[test]
 fn fused_grain_matches_cpu_oracle() {
+    grain_matches_cpu_oracle(10);
+}
+
+/// [`fused_grain_matches_cpu_oracle`] on 8-bit pictures (one byte per sample, padding garbage,
+/// a last chroma word half outside the picture at 66 and 130 wide).
+#[test]
+fn fused_grain_matches_cpu_oracle_8bit() {
+    grain_matches_cpu_oracle(8);
+}
+
+fn grain_matches_cpu_oracle(depth: u8) {
     let warp = Warp::new();
     let zero_copy = warp.zero_copy();
-    let sizes = [(130, 40), (66, 18), (34, 66), (2, 2)];
+    let sizes = [(130, 40), (66, 18), (34, 66), (6, 2), (2, 2)];
     let mut compared = 0;
     for (index, (width, height)) in sizes.into_iter().enumerate() {
         let target = warp.target(width, height);
-        for (variant, (name, params)) in grain_variants(width, height, 7 + index as u32)
+        for (variant, (name, params)) in grain_variants_bits(width, height, 7 + index as u32, depth)
             .into_iter()
             .enumerate()
         {
-            let what = format!("{width}x{height} {name}");
+            let what = format!("{depth}-bit {width}x{height} {name}");
             let seed = (index * 16 + variant) as u32 + 71;
-            let (picture, frame, source) = zero_copy.picture(width, height, seed);
-            let expected = grained_p010(&params, &frame.reference_p010(&source));
-            let hr = zero_copy.repack_grain(picture.id, &frame, &params, &target);
+            let (picture, frame, source) =
+                zero_copy.picture_bits(width, height, seed, depth.into());
+            let expected = grained_p010(&params, &frame.reference_p010_bits(&source, depth.into()));
+            let hr = zero_copy.direct(picture.id, &frame, depth.into(), Some(&params), &target);
             assert_eq!(hr, S_OK, "{what}: HRESULT=0x{:08x}", hr as u32);
             assert_eq!(release(picture.id), S_OK);
             assert_frame(&warp.read(target.as_raw(), width, height), &expected, &what);
@@ -1010,6 +1109,334 @@ fn fused_grain_mixes_with_plain_and_landing_frames() {
             Path::Direct => {
                 let hr = zero_copy.repack_into(picture.id, &frame, target);
                 (hr, target.as_raw(), plain)
+            }
+            Path::Landing => {
+                let (hr, texture) = zero_copy.repack(picture.id, &frame);
+                (hr, texture, plain)
+            }
+        };
+        assert_eq!(hr, S_OK, "{what}: HRESULT=0x{:08x}", hr as u32);
+        assert_eq!(release(picture.id), S_OK);
+        assert_frame(&warp.read(written, width, height), &expected, &what);
+    }
+    let stats = zero_copy.stats();
+    assert_eq!(stats.frames_repacked, plan.len() as u64);
+    assert_eq!(stats.landing_copies, 0, "{stats:?}");
+    assert_eq!(stats.buffers_live, 0);
+}
+
+/// The tightest layout `fits_bits` accepts at `depth`: strides rounded up to 4 bytes, planes back
+/// to back, so a last group's whole-word read reaches into the next row or plane.
+fn tight_layout(width: u32, height: u32, depth: u32) -> (BaleZcFrame, u64) {
+    let sample = depth.div_ceil(8);
+    let luma_stride = (sample * width).next_multiple_of(4);
+    let chroma_stride = (sample * width / 2).next_multiple_of(4);
+    let u = u64::from(luma_stride) * u64::from(height);
+    let v = u + u64::from(chroma_stride) * u64::from(height / 2);
+    let frame = BaleZcFrame {
+        width,
+        height,
+        luma_stride,
+        chroma_stride,
+        offsets: [0, u, v],
+    };
+    let mut bytes = v + u64::from(chroma_stride) * u64::from(height / 2);
+    // The last row's whole-word reads may pass the last plane's end: give them room after it.
+    while !frame.fits_bits(bytes, depth) {
+        bytes += 4;
+    }
+    (frame, bytes)
+}
+
+/// 8-bit pictures written directly: padded layouts with garbage in the padding and tight ones
+/// whose last words reach past the width, at sizes with odd chroma widths, a chroma width of one
+/// and thread groups cut by the edge; every target texture is the exact `v << 8` picture.
+#[test]
+fn eight_bit_direct_writes_padded_and_tight_layouts() {
+    let warp = Warp::new();
+    let zero_copy = warp.zero_copy();
+    let sizes = [
+        (64, 64),
+        (66, 18),
+        (130, 40),
+        (34, 66),
+        (128, 72),
+        (6, 2),
+        (2, 2),
+    ];
+    let mut written = 0;
+    for (index, (width, height)) in sizes.into_iter().enumerate() {
+        let targets = [warp.target(width, height), warp.target(width, height)];
+        let layouts = [
+            BaleZcFrame::test_layout_bits(width, height, 8),
+            tight_layout(width, height, 8),
+        ];
+        for (kind, (layout, bytes)) in layouts.into_iter().enumerate() {
+            let what = format!("{width}x{height} layout {kind}");
+            let seed = 201 + 2 * index as u32 + kind as u32;
+            let (picture, frame, source) = zero_copy.picture_in(layout, bytes, seed, 8);
+            let target = &targets[kind];
+            let hr = zero_copy.repack_into_bits(picture.id, &frame, 8, None, target);
+            assert_eq!(hr, S_OK, "{what}: HRESULT=0x{:08x}", hr as u32);
+            assert_eq!(release(picture.id), S_OK);
+            let expected = frame.reference_p010_bits(&source, 8);
+            assert!(
+                expected.as_chunks::<2>().0.iter().all(|pair| pair[0] == 0),
+                "{what}: 8-bit samples fill only the high byte"
+            );
+            assert_frame(&warp.read(target.as_raw(), width, height), &expected, &what);
+            written += 1;
+        }
+    }
+    assert_eq!(written, 2 * sizes.len());
+    let stats = zero_copy.stats();
+    assert_eq!(stats.frames_repacked, written as u64);
+    assert_eq!(stats.buffers_live, 0);
+}
+
+/// Bad bit depths and layouts are rejected, and grain of the other depth is declined, without GPU
+/// work and without refusing later 8- or 10-bit direct writes, with or without grain.
+#[test]
+fn eight_bit_declines_without_poisoning() {
+    let warp = Warp::new();
+    let zero_copy = warp.zero_copy();
+    let (width, height) = (64, 16);
+    let target = warp.target(width, height);
+    let (eight, frame8, source8) = zero_copy.picture_bits(width, height, 301, 8);
+    let (ten, frame10, source10) = zero_copy.picture_bits(width, height, 302, 10);
+    let grain10 = grain_params(width, height, 303);
+    let grain8 = BaleGrainParams {
+        bit_depth: 8,
+        ..grain10
+    };
+    assert!(
+        grain8.validate().is_ok(),
+        "declined for its depth, not as invalid"
+    );
+
+    for depth in [0, 1, 7, 9, 12, 16, u32::MAX] {
+        for grain in [None, Some(&grain8), Some(&grain10)] {
+            assert_eq!(
+                zero_copy.repack_into_bits(eight.id, &frame8, depth, grain, &target),
+                E_INVALIDARG.0,
+                "bit depth {depth}"
+            );
+        }
+    }
+    // Grain of the other depth: declined, through both exports at 10 bits.
+    let declined = [
+        ("8-bit frame, 10-bit grain", eight.id, &frame8, 8, &grain10),
+        ("10-bit frame, 8-bit grain", ten.id, &frame10, 10, &grain8),
+        (
+            "8-bit grain wider than the frame",
+            eight.id,
+            &frame8,
+            8,
+            &BaleGrainParams {
+                width: 66,
+                ..grain8
+            },
+        ),
+        (
+            "8-bit invalid parameters",
+            eight.id,
+            &frame8,
+            8,
+            &BaleGrainParams {
+                scaling_shift: 7,
+                ..grain8
+            },
+        ),
+    ];
+    for (name, id, frame, depth, grain) in declined {
+        assert_eq!(
+            zero_copy.repack_into_bits(id, frame, depth, Some(grain), &target),
+            S_FALSE,
+            "{name}"
+        );
+    }
+    assert_eq!(
+        zero_copy.repack_grain(ten.id, &frame10, &grain8, &target),
+        S_FALSE
+    );
+    // Layouts that do not fit at the given depth: an 8-bit layout read as 10-bit has strides
+    // shorter than a row of 16-bit samples.
+    let bad = [
+        (frame8, 10),
+        (
+            BaleZcFrame {
+                width: 63,
+                ..frame8
+            },
+            8,
+        ),
+        (
+            BaleZcFrame {
+                luma_stride: 60,
+                ..frame8
+            },
+            8,
+        ),
+        (
+            BaleZcFrame {
+                chroma_stride: 30,
+                ..frame8
+            },
+            8,
+        ),
+        (
+            BaleZcFrame {
+                offsets: [frame8.offsets[0], frame8.offsets[1] + 1, frame8.offsets[2]],
+                ..frame8
+            },
+            8,
+        ),
+    ];
+    for (layout, depth) in bad {
+        assert_eq!(
+            zero_copy.repack_into_bits(eight.id, &layout, depth, None, &target),
+            E_INVALIDARG.0,
+            "{layout:?} at {depth}"
+        );
+    }
+    // Not a buffer of this handle.
+    assert_eq!(
+        zero_copy.repack_into_bits(2 as *mut c_void, &frame8, 8, None, &target),
+        S_FALSE
+    );
+    // SAFETY: null pointers are the rejected inputs; the rest is live.
+    unsafe {
+        assert_eq!(
+            bale_zc_repack_into_bits(
+                zero_copy.0,
+                eight.id,
+                &frame8,
+                8,
+                ptr::null(),
+                ptr::null_mut()
+            ),
+            E_INVALIDARG.0
+        );
+        assert_eq!(
+            bale_zc_repack_into_bits(
+                zero_copy.0,
+                eight.id,
+                ptr::null(),
+                8,
+                ptr::null(),
+                target.as_raw()
+            ),
+            E_INVALIDARG.0
+        );
+        assert_eq!(
+            bale_zc_repack_into_bits(
+                ptr::null(),
+                eight.id,
+                &frame8,
+                8,
+                ptr::null(),
+                target.as_raw()
+            ),
+            E_INVALIDARG.0
+        );
+    }
+    assert_eq!(zero_copy.stats().frames_repacked, 0);
+
+    // Still healthy at both depths, with and without grain.
+    let plain8 = frame8.reference_p010_bits(&source8, 8);
+    let plain10 = frame10.reference_p010(&source10);
+    let checks = [
+        ("8-bit plain", eight.id, &frame8, 8, None, plain8.clone()),
+        (
+            "8-bit grain",
+            eight.id,
+            &frame8,
+            8,
+            Some(&grain8),
+            grained_p010(&grain8, &plain8),
+        ),
+        ("10-bit plain", ten.id, &frame10, 10, None, plain10.clone()),
+        (
+            "10-bit grain",
+            ten.id,
+            &frame10,
+            10,
+            Some(&grain10),
+            grained_p010(&grain10, &plain10),
+        ),
+    ];
+    for (name, id, frame, depth, grain, expected) in &checks {
+        assert_eq!(
+            zero_copy.repack_into_bits(*id, frame, *depth, *grain, &target),
+            S_OK,
+            "{name}"
+        );
+        assert_frame(&warp.read(target.as_raw(), width, height), expected, name);
+    }
+    assert_eq!(release(eight.id), S_OK);
+    assert_eq!(release(ten.id), S_OK);
+    assert_eq!(zero_copy.stats().frames_repacked, checks.len() as u64);
+}
+
+/// 8- and 10-bit frames, plain and grained, direct and landing, interleaved on one handle across
+/// both slots and two sizes; 10-bit through both exports. Each frame is exactly what its own path
+/// produces, whatever ran on the slot before.
+#[test]
+fn eight_and_ten_bit_frames_mix_on_one_handle() {
+    #[derive(Clone, Copy, Debug)]
+    enum Path {
+        /// `bale_zc_repack_into_bits` at this depth, with or without grain.
+        Bits(u32, bool),
+        /// `bale_zc_repack_into` (10-bit), with or without grain.
+        Into(bool),
+        Landing,
+    }
+    let warp = Warp::new();
+    let zero_copy = warp.zero_copy();
+    let large = [warp.target(128, 72), warp.target(128, 72)];
+    let small = warp.target(130, 40);
+    let plan = [
+        ((128, 72), Path::Bits(8, false)),
+        ((128, 72), Path::Bits(10, false)),
+        ((128, 72), Path::Bits(8, true)),
+        ((128, 72), Path::Into(true)),
+        ((128, 72), Path::Landing),
+        ((128, 72), Path::Bits(8, true)),
+        ((130, 40), Path::Bits(10, true)),
+        ((130, 40), Path::Bits(8, false)),
+        ((130, 40), Path::Landing),
+        ((130, 40), Path::Bits(8, true)),
+        ((130, 40), Path::Into(false)),
+        ((128, 72), Path::Bits(8, false)),
+        ((128, 72), Path::Bits(10, true)),
+        ((128, 72), Path::Bits(8, true)),
+    ];
+    for (step, ((width, height), path)) in plan.into_iter().enumerate() {
+        let what = format!("{step} {path:?} {width}x{height}");
+        let depth = match path {
+            Path::Bits(depth, _) => depth,
+            _ => 10,
+        };
+        let (picture, frame, source) =
+            zero_copy.picture_bits(width, height, step as u32 + 401, depth);
+        let plain = frame.reference_p010_bits(&source, depth);
+        let target = match width {
+            128 => &large[step % 2],
+            _ => &small,
+        };
+        let (_, params) = grain_variants_bits(width, height, step as u32, depth as u8)[step % 8];
+        let (hr, written, expected) = match path {
+            Path::Bits(_, grain) | Path::Into(grain) => {
+                let grain = grain.then_some(&params);
+                let hr = match path {
+                    Path::Into(_) => zero_copy.direct(picture.id, &frame, 10, grain, target),
+                    _ => zero_copy.repack_into_bits(picture.id, &frame, depth, grain, target),
+                };
+                let expected = match grain {
+                    Some(params) => grained_p010(params, &plain),
+                    None => plain,
+                };
+                (hr, target.as_raw(), expected)
             }
             Path::Landing => {
                 let (hr, texture) = zero_copy.repack(picture.id, &frame);

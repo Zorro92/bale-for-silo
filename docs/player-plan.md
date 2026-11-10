@@ -818,8 +818,13 @@ swscale conversion (~0.6 core) and the staging fill disappear. dav1d's own cost 
    D3D11-created SRV-only shared one, for its whole life; `landing_copies` in the stats counts
    those frames, so the console A/B shows which path the hardware takes. WARP tests cover both
    modes (the copy mode through a test-only constructor).
-4. **Not in scope yet:** 8-bit and 12-bit AV1 (keep today's path), grain fused into the repack
-   (later, saves one GPU pass), Xbox One (no D3D12 in app mode).
+4. **8-bit AV1:** `bale_zc_repack_into_bits(..., bit_depth, grain, texture)` (bit depth 8 or 10;
+   `bale_zc_repack_into` stays and is the 10-bit case) reads 8-bit planar yuv420p (strides and
+   offsets in bytes) and writes the same P010 texture as `v << 8`, plain or with fused grain, through
+   separate 8-bit PSOs (`/D BALE_8BIT=1` builds of the two zero-copy shaders). Create self-tests
+   them separately: an 8-bit failure only declines 8-bit frames (S_FALSE, today's path), never
+   10-bit. Grain parameters of the other depth are declined. **Not in scope yet:** 12-bit AV1 (keep
+   today's path), Xbox One (no D3D12 in app mode).
 5. **Test:** `ffmpeg-tune zerocopy=on`, then interleaved A/B against today's path on 4K AV1 in the
    input-idle state (CPU, stalls, late frames), plus a readback check of the first frame against
    swscale output.
@@ -863,8 +868,9 @@ swscale conversion (~0.6 core) and the staging fill disappear. dav1d's own cost 
    landing→pool copy (one 4K read + write per frame, like the grain copy above). Not built.
    **Production default (2026-11-09):** `SoftwareDecodeTuning.ZeroCopy` sets `bale_zero_copy=1` for
    every software video route after `ZeroCopyRuntime.Register()` succeeds; `ffmpeg-tune zerocopy=off`
-   keeps the swscale path for A/Bs. 8-bit and 12-bit pictures are still declined by the wrapper and
-   take today's path until the old paths are removed.
+   keeps the swscale path for A/Bs. 12-bit pictures are still declined by the wrapper and take
+   today's path until the old paths are removed; 8-bit (`AV_PIX_FMT_YUV420P`) frames go through
+   `bale_zc_repack_into_bits` once the wrapper calls it (item 4).
 A one-off picture freeze (~2 s at start) seen once by the owner during an earlier repack run did not
 reproduce in 5 further starts (2 resumes with screenshots, 3 Start Over).
 

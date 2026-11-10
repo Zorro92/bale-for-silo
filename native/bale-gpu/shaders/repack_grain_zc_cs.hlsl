@@ -27,20 +27,26 @@
  */
 
 // Zero-copy repack with AV1 film grain (D3D12, zero-copy ABI 1, direct writes): repack_zc_cs.hlsl
-// plus dav1d 1.5.4's 10-bit 4:2:0 fgy/fguv, the math of grain_luma_ps.hlsl and
-// grain_chroma_ps.hlsl. Same thread mapping, inputs and constants as repack_zc_cs.hlsl. Chroma
-// reads the un-grained luma from the source buffer. src/grain/fused.rs builds the grain buffer
-// (root SRV t1) and holds a line-by-line Rust model of this shader that is checked against the
-// CPU oracle. Layout (little-endian, every section 4-byte aligned):
+// plus dav1d 1.5.4's 4:2:0 fgy/fguv, the math of grain_luma_ps.hlsl and grain_chroma_ps.hlsl.
+// Same thread mapping, inputs and constants as repack_zc_cs.hlsl. Chroma reads the un-grained
+// luma from the source buffer. src/grain/fused.rs builds the grain buffer (root SRV t1) and holds
+// a line-by-line Rust model of this shader that is checked against the CPU oracle.
+//
+// Built twice (build.rs): repack_grain_zc_cs.cso for 10-bit pictures, and
+// repack_grain_zc8_cs.cso with BALE_8BIT for 8-bit ones (one byte per sample, read like
+// repack_zc_cs.hlsl's 8-bit build). The grain math is the same; its depth-dependent values all
+// come from the header, and only the source unpacking and OUT_SHIFT (the P010 shift) differ.
+//
+// Layout (little-endian, every section 4-byte aligned):
 //
 //   header, 32 words: 0 width, 1 height, 2 scaling_shift, 3 overlap, 4 csfl, 5 luma_active,
-//     6..9 cb: mult, luma_mult, offset << 2, active; 10..13 cr: the same; 14 luma_min,
+//     6..9 cb: mult, luma_mult, offset << (bit_depth - 8), active; 10..13 cr: the same; 14 luma_min,
 //     15 luma_max, 16 chroma_min, 17 chroma_max, 18 grain_min, 19 grain_max,
 //     20 offset row pitch in 32x32 blocks, 21..24 byte offsets of template_y, template_uv,
 //     scaling and offsets, 25 pixel_max, 26..31 zero
 //   template_y: 82x73 i16, row-major, two per word, low half first
 //   template_uv: 44x38 words, row-major, cb i16 in the low half, cr in the high half
-//   scaling: three rows (Y, Cb, Cr) of 1024 u8
+//   scaling: three rows (Y, Cb, Cr) of 1024 u8 (an 8-bit LUT uses the first 256)
 //   offsets: one u8 per 32x32 luma block, row-major
 //
 // Root SRVs are not bounds-checked. Grain data is read only for pixels inside the frame (frame
@@ -58,13 +64,19 @@ ByteAddressBuffer grain : register(t1);
 RWTexture2D<uint> luma : register(u0);    // P010 plane 0 as R16_UINT
 RWTexture2D<uint2> chroma : register(u1); // P010 plane 1 as R16G16_UINT
 
+#ifdef BALE_8BIT
+#define OUT_SHIFT 8 // an 8-bit sample's P010 word: v << 8
+#else
+#define OUT_SHIFT 6 // a 10-bit sample's P010 word: v << 6
+#endif
+
 struct Grain
 {
     int scaling_shift;
     uint overlap;
     uint csfl;
     uint luma_active;
-    int4 cb; // mult, luma_mult, offset (10-bit scaled), active
+    int4 cb; // mult, luma_mult, offset << (bit_depth - 8), active
     int4 cr;
     int luma_min;
     int luma_max;
@@ -169,11 +181,11 @@ int scale_at(Grain p, uint row, int index)
     return int(load_byte(p.scaling + row * 1024u + uint(index)));
 }
 
-// `value`: the 10-bit luma sample at `pixel`. Returns the P010 word.
+// `value`: the luma sample at `pixel`. Returns the P010 word.
 uint grain_luma(Grain p, int2 pixel, uint value)
 {
     if (pixel.x >= int(shape.z) || p.luma_active == 0)
-        return value << 6;
+        return value << OUT_SHIFT;
 
     int2 block = pixel >> 5;
     int2 local = pixel & 31;
@@ -201,13 +213,13 @@ uint grain_luma(Grain p, int2 pixel, uint value)
     int src = int(value);
     int result = clamp(src + round2(scale_at(p, 0u, src) * n, p.scaling_shift), p.luma_min,
                        p.luma_max);
-    return uint(result) << 6;
+    return uint(result) << OUT_SHIFT;
 }
 
 uint grain_plane(Grain p, uint value, int avg, int n, int4 plane, uint row)
 {
     if (plane.w == 0)
-        return value << 6;
+        return value << OUT_SHIFT;
     int src = int(value);
     int index = avg;
     if (p.csfl != 0)
@@ -216,15 +228,15 @@ uint grain_plane(Grain p, uint value, int avg, int n, int4 plane, uint row)
         index = clamp(((avg * plane.y + src * plane.x) >> 6) + plane.z, 0, p.pixel_max);
     int result = clamp(src + round2(scale_at(p, row, index) * n, p.scaling_shift), p.chroma_min,
                        p.chroma_max);
-    return uint(result) << 6;
+    return uint(result) << OUT_SHIFT;
 }
 
-// `value`: the 10-bit (cb, cr) pair at `pixel`; `avg`: dav1d's rounded mean of un-grained luma
+// `value`: the (cb, cr) pair at `pixel`; `avg`: dav1d's rounded mean of un-grained luma
 // (2x, 2y) and (min(2x + 1, width - 1), 2y). Returns the P010 pair.
 uint2 grain_chroma(Grain p, int2 pixel, uint2 value, int avg)
 {
     if (pixel.x >= int(shape.z >> 1) || (p.cb.w == 0 && p.cr.w == 0))
-        return value << 6;
+        return value << OUT_SHIFT;
 
     int2 block = pixel >> 4;
     int2 local = pixel & 15;
@@ -249,11 +261,18 @@ uint2 grain_chroma(Grain p, int2 pixel, uint2 value, int avg)
                  grain_plane(p, value.y, avg, n.y, p.cr, 2u));
 }
 
+#ifdef BALE_8BIT
+uint4 unpack(uint word)
+{
+    return uint4(word & 0xffu, (word >> 8u) & 0xffu, (word >> 16u) & 0xffu, word >> 24u);
+}
+#else
 uint4 unpack(uint2 words)
 {
     return uint4(words.x & 0x3ffu, (words.x >> 16) & 0x3ffu, words.y & 0x3ffu,
                  (words.y >> 16) & 0x3ffu);
 }
+#endif
 
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID)
@@ -263,19 +282,32 @@ void main(uint3 id : SV_DispatchThreadID)
         return;
     }
     Grain p = load_grain();
+#ifdef BALE_8BIT
+    // Chroma bytes 2x and 2x + 1: the low or high half of the word at byte 4 * (x / 2).
+    uint half_shift = (id.x & 1u) * 16u;
+    uint u = source.Load(planes.y + id.y * shape.y + (id.x >> 1u) * 4u) >> half_shift;
+    uint v = source.Load(planes.z + id.y * shape.y + (id.x >> 1u) * 4u) >> half_shift;
+    uint4 rows[2];
+    rows[0] = unpack(source.Load(planes.x + id.y * 2 * shape.x + id.x * 4));
+    rows[1] = unpack(source.Load(planes.x + (id.y * 2 + 1) * shape.x + id.x * 4));
+    uint2 first = uint2(u & 0xffu, v & 0xffu);
+    uint2 second = uint2((u >> 8u) & 0xffu, (v >> 8u) & 0xffu);
+#else
     uint u = source.Load(planes.y + id.y * shape.y + id.x * 4);
     uint v = source.Load(planes.z + id.y * shape.y + id.x * 4);
     uint4 rows[2];
     rows[0] = unpack(source.Load2(planes.x + id.y * 2 * shape.x + id.x * 8));
     rows[1] = unpack(source.Load2(planes.x + (id.y * 2 + 1) * shape.x + id.x * 8));
+    uint2 first = uint2(u & 0x3ffu, v & 0x3ffu);
+    uint2 second = uint2((u >> 16) & 0x3ffu, (v >> 16) & 0x3ffu);
+#endif
 
     // The width is even, so both luma samples of each chroma pixel are in this thread's top row.
     int2 pair = int2(int(id.x * 2), int(id.y));
     int avg0 = int((rows[0].x + rows[0].y + 1) >> 1);
     int avg1 = int((rows[0].z + rows[0].w + 1) >> 1);
-    chroma[uint2(pair)] = grain_chroma(p, pair, uint2(u & 0x3ffu, v & 0x3ffu), avg0);
-    chroma[uint2(pair) + uint2(1, 0)] = grain_chroma(p, pair + int2(1, 0),
-        uint2((u >> 16) & 0x3ffu, (v >> 16) & 0x3ffu), avg1);
+    chroma[uint2(pair)] = grain_chroma(p, pair, first, avg0);
+    chroma[uint2(pair) + uint2(1, 0)] = grain_chroma(p, pair + int2(1, 0), second, avg1);
 
     [unroll]
     for (uint r = 0; r < 2; r++)

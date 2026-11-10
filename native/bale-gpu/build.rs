@@ -3,14 +3,28 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const SHADERS: [(&str, &str); 7] = [
-    ("fullscreen_vs", "vs_5_0"),
-    ("grain_luma_ps", "ps_5_0"),
-    ("grain_chroma_ps", "ps_5_0"),
-    ("repack_luma_ps", "ps_5_0"),
-    ("repack_chroma_ps", "ps_5_0"),
-    ("repack_zc_cs", "cs_5_0"),
-    ("repack_grain_zc_cs", "cs_5_0"),
+/// (output name, source name, profile, preprocessor define). The zero-copy compute shaders are
+/// built a second time with `BALE_8BIT` for 8-bit pictures; their 10-bit builds take no define.
+const SHADERS: [(&str, &str, &str, Option<&str>); 9] = [
+    ("fullscreen_vs", "fullscreen_vs", "vs_5_0", None),
+    ("grain_luma_ps", "grain_luma_ps", "ps_5_0", None),
+    ("grain_chroma_ps", "grain_chroma_ps", "ps_5_0", None),
+    ("repack_luma_ps", "repack_luma_ps", "ps_5_0", None),
+    ("repack_chroma_ps", "repack_chroma_ps", "ps_5_0", None),
+    ("repack_zc_cs", "repack_zc_cs", "cs_5_0", None),
+    (
+        "repack_zc8_cs",
+        "repack_zc_cs",
+        "cs_5_0",
+        Some("BALE_8BIT=1"),
+    ),
+    ("repack_grain_zc_cs", "repack_grain_zc_cs", "cs_5_0", None),
+    (
+        "repack_grain_zc8_cs",
+        "repack_grain_zc_cs",
+        "cs_5_0",
+        Some("BALE_8BIT=1"),
+    ),
 ];
 
 fn main() {
@@ -18,8 +32,8 @@ fn main() {
     println!("cargo:rerun-if-env-changed=FXC");
     println!("cargo:rerun-if-changed=shaders/grain_common.hlsli");
     println!("cargo:rerun-if-changed=shaders/repack_common.hlsli");
-    for (name, _) in SHADERS {
-        println!("cargo:rerun-if-changed=shaders/{name}.hlsl");
+    for (_, source, _, _) in SHADERS {
+        println!("cargo:rerun-if-changed=shaders/{source}.hlsl");
     }
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
@@ -28,7 +42,7 @@ fn main() {
     if !cfg!(windows) {
         // Cross-check Rust types/lints only. A DLL built this way cannot create a grain handle.
         println!("cargo:rustc-cfg=bale_grain_no_shaders");
-        for (name, _) in SHADERS {
+        for (name, _, _, _) in SHADERS {
             fs::write(out.join(format!("{name}.cso")), []).expect("write shader placeholder");
         }
         return;
@@ -37,15 +51,17 @@ fn main() {
         .map(PathBuf::from)
         .unwrap_or_else(find_fxc);
     let shaders = Path::new("shaders");
-    for (name, profile) in SHADERS {
+    for (name, source, profile, define) in SHADERS {
         let blob = out.join(format!("{name}.cso"));
         let result = Command::new(&fxc)
             .args(["/nologo", "/O3", "/WX", "/Qstrip_debug", "/Qstrip_reflect"])
-            .args(["/T", profile, "/E", "main", "/I"])
+            .args(["/T", profile, "/E", "main"])
+            .args(define.into_iter().flat_map(|define| ["/D", define]))
+            .arg("/I")
             .arg(shaders)
             .arg("/Fo")
             .arg(&blob)
-            .arg(shaders.join(format!("{name}.hlsl")))
+            .arg(shaders.join(format!("{source}.hlsl")))
             .output()
             .expect("run fxc (install the Windows SDK or set FXC to fxc.exe)");
         assert!(

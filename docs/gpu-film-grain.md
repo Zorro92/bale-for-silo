@@ -46,7 +46,10 @@ against dav1d. The 4K decode/memory gate and HDR playback parity are still open.
 - GPU requires upload variant 1 (RENDER_TARGET | SHADER_RESOURCE) or 6 (variant 1 plus UAV and
   shared NT handle), Bale's production software-video upload default since 2026-11-09. With 6, 10-bit
   zero-copy frames get grain fused into the D3D12 direct write (wrapper 0018,
-  `repack_grain_zc_cs.hlsl`, bit-exact with the CPU oracle, self-tested at create); a decline lands
+  `repack_grain_zc_cs.hlsl`, bit-exact with the CPU oracle, self-tested at create); 8-bit frames do
+  too through `bale_zc_repack_into_bits` (the shader's `BALE_8BIT` build: 8-bit grain math with the
+  256-entry scaling LUT, bit-exact with the oracle at 8 bits, then `<< 8`; its own self-test, whose
+  failure declines only 8-bit grain); a decline lands
   the frame and runs the D3D11 grain pass as before. CPU mode does not require upload. An explicit `grain=gpu` URI probe
   also opts that probe into upload variant 1; other probe modes leave upload at the wrapper default off.
 - Runtime GPU create/self-test or apply failure, upload disable or missing upload permanently selects

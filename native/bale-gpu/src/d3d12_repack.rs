@@ -1,4 +1,5 @@
-//! Zero-copy 10-bit repack (zero-copy ABI 1, docs/player-plan.md "Zero-copy design").
+//! Zero-copy repack of 10-bit and (direct writes only) 8-bit AV1 pictures (zero-copy ABI 1,
+//! docs/player-plan.md "Zero-copy design").
 //!
 //! dav1d decodes straight into persistently mapped D3D12 buffers on a CPU-cached (write-back, L0)
 //! custom heap ([`bale_zc_alloc`]). A D3D12 compute shader reads the picture from that buffer and
@@ -12,12 +13,20 @@
 //! keeps while it is in use. A texture it cannot take is declined (S_FALSE) before any GPU work,
 //! and the caller lands the frame with [`bale_zc_repack`] instead.
 //!
-//! A direct write can also apply AV1 film grain in the same dispatch (10-bit only): a second
-//! pipeline (`repack_grain_zc_cs.hlsl`) reads the grain inputs from one small raw buffer per slot
-//! (root SRV t1, layout in `grain::fused`), persistently mapped like the decode buffers and
-//! rewritten only after the slot's idle wait. The result is bit-exact with `grain::cpu::apply` on
-//! the repacked frame; a create-time self-test checks that, and on a mismatch grain is declined for
-//! the handle's life. Landing repacks never apply grain.
+//! A direct write can also apply AV1 film grain in the same dispatch: a second pipeline
+//! (`repack_grain_zc_cs.hlsl`) reads the grain inputs from one small raw buffer per slot (root SRV
+//! t1, layout in `grain::fused`), persistently mapped like the decode buffers and rewritten only
+//! after the slot's idle wait. The result is bit-exact with `grain::cpu::apply` on the repacked
+//! frame; a create-time self-test checks that, and on a mismatch grain is declined for the
+//! handle's life. Landing repacks never apply grain.
+//!
+//! [`bale_zc_repack_into_bits`] also takes 8-bit pictures (one byte per sample) for direct
+//! writes, into the same P010 target (sample `v` stored as `v << 8`), with or without grain
+//! (bit-exact with `grain::cpu::apply` at 8 bits, then `<< 8`). Each shader is compiled a second
+//! time with `BALE_8BIT` (build.rs), so there are four pipelines on one root signature: plain and
+//! grain at 10 and at 8 bits; the 10-bit ones are the same shaders as before. The self-test checks
+//! the 8-bit pipelines separately: a failure declines only 8-bit frames (`eight_refused`) or 8-bit
+//! grain (`grain8_refused`), never 10-bit ones. Landing repacks ([`bale_zc_repack`]) stay 10-bit.
 //!
 //! Two shared fences order the devices without CPU stalls:
 //! - `repacked`: the D3D12 queue signals n after frame n's dispatch; the D3D11 context waits for n
@@ -57,15 +66,18 @@ use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
 use windows::core::{Error, HRESULT, Interface, PCWSTR, Result, s};
 
 use crate::d3d12::{CreateDevice, resource};
-use crate::grain::cpu::{self, PixelFormat};
 use crate::grain::gpu::{readback_bytes, same_device, texture, texture_desc};
 use crate::grain::params::PARAMS_SIZE;
 use crate::grain::{BaleGrainParams, ValidGrainParams, fused};
-use crate::zc_frame::{BaleZcFrame, MAX_BYTES, fill_test_planes};
+use crate::zc_frame::{BaleZcFrame, MAX_BYTES, fill_test_planes_bits, grain_p010};
 
 const SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/repack_zc_cs.cso"));
 /// The repack with film grain, for direct writes.
 const GRAIN_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/repack_grain_zc_cs.cso"));
+/// [`SHADER`] for 8-bit pictures (`BALE_8BIT`), for direct writes.
+const SHADER_8: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/repack_zc8_cs.cso"));
+/// [`GRAIN_SHADER`] for 8-bit pictures (`BALE_8BIT`).
+const GRAIN_SHADER_8: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/repack_grain_zc8_cs.cso"));
 
 pub const ZERO_COPY_ABI_VERSION: u32 = 1;
 pub const S_OK: i32 = 0;
@@ -472,6 +484,9 @@ struct Inner {
     pso: ID3D12PipelineState,
     /// `pso` with film grain, for direct writes; `None` if it could not be created.
     grain_pso: Option<ID3D12PipelineState>,
+    /// `pso` and `grain_pso` for 8-bit pictures (direct writes only); `None` if not created.
+    pso8: Option<ID3D12PipelineState>,
+    grain_pso8: Option<ID3D12PipelineState>,
     heap: ID3D12DescriptorHeap,
     cpu_start: D3D12_CPU_DESCRIPTOR_HANDLE,
     gpu_start: D3D12_GPU_DESCRIPTOR_HANDLE,
@@ -498,10 +513,35 @@ struct Inner {
     /// No grain pipeline, or the self-test's direct write with grain failed or mismatched: grain
     /// is declined for the handle's life.
     grain_refused: bool,
+    /// No 8-bit pipeline, or the self-test's 8-bit direct write failed or mismatched: 8-bit
+    /// frames (with or without grain) are declined for the handle's life. 10-bit is unaffected.
+    eight_refused: bool,
+    /// As `grain_refused`, for 8-bit grain only.
+    grain8_refused: bool,
     repacked_value: u64,
     released_value: u64,
     event: Handle,
     poison: Option<i32>,
+}
+
+/// The pipeline of a dispatch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kernel {
+    Plain,
+    Grain,
+    Plain8,
+    Grain8,
+}
+
+impl Kernel {
+    fn new(bit_depth: u32, grain: bool) -> Self {
+        match (bit_depth == 8, grain) {
+            (false, false) => Self::Plain,
+            (false, true) => Self::Grain,
+            (true, false) => Self::Plain8,
+            (true, true) => Self::Grain8,
+        }
+    }
 }
 
 impl Inner {
@@ -535,7 +575,7 @@ impl Inner {
             &landing.texture,
             landing.copy.as_ref(),
             current.released,
-            false,
+            Kernel::Plain,
         )?;
         let texture11 = landing.texture11.clone();
         self.finish(slot, buffer, value)?;
@@ -543,27 +583,38 @@ impl Inner {
         Ok(texture11)
     }
 
-    /// Repacks `frame` from `buffer` straight into the caller's `target`, with film `grain` when
-    /// given. `Ok(false)` declines before any GPU work: `target` is not a P010 texture of the
-    /// frame's size on this device with UAV access and an NT shared handle, D3D12 cannot open it,
-    /// or too many are open; or `grain` is not 10-bit, is for another frame size, or grain is
-    /// refused for the handle.
+    /// Repacks `frame` (`bit_depth` 8 or 10, checked by the caller) from `buffer` straight into
+    /// the caller's `target`, with film `grain` when given. `Ok(false)` declines before any GPU
+    /// work: `target` is not a P010 texture of the frame's size on this device with UAV access
+    /// and an NT shared handle, D3D12 cannot open it, or too many are open; or 8-bit frames are
+    /// refused for the handle; or `grain` is not of `bit_depth`, is for another frame size, or
+    /// grain at that depth is refused for the handle.
     fn repack_into(
         &mut self,
         buffer: &Buffer,
         frame: &BaleZcFrame,
+        bit_depth: u32,
         target: &ID3D11Texture2D,
         grain: Option<&ValidGrainParams>,
     ) -> Result<bool> {
         let memory = buffer.memory.as_ref().ok_or(E_FAIL)?;
-        if self.targets_refused || !fits_target(target, frame) {
+        let eight = bit_depth == 8;
+        if self.targets_refused || (eight && self.eight_refused) || !fits_target(target, frame) {
             return Ok(false);
         }
         let grain = match grain {
             None => None,
             Some(params) => {
                 let size = (params.width(), params.height());
-                if self.grain_refused || size != (frame.width as usize, frame.height as usize) {
+                let refused = if eight {
+                    self.grain8_refused
+                } else {
+                    self.grain_refused
+                };
+                if refused
+                    || u32::from(params.as_raw().bit_depth) != bit_depth
+                    || size != (frame.width as usize, frame.height as usize)
+                {
                     return Ok(false);
                 }
                 let Some(bytes) = fused::build(params) else {
@@ -629,7 +680,7 @@ impl Inner {
             &texture,
             None,
             self.released_value,
-            grain.is_some(),
+            Kernel::new(bit_depth, grain.is_some()),
         )?;
         if let Some(cached) = self.targets.get_mut(&key) {
             cached.used = value;
@@ -655,8 +706,8 @@ impl Inner {
     }
 
     /// Records and submits the repack of `frame` from `memory` into `texture` (P010 with UAV
-    /// access, in COMMON) on the idle `slot`, then a copy from it into `copy` when given; with
-    /// `grain`, through the grain pipeline and the slot's grain buffer. The queue first waits
+    /// access, in COMMON) on the idle `slot`, then a copy from it into `copy` when given, through
+    /// `kernel`'s pipeline (a grain kernel reads the slot's grain buffer). The queue first waits
     /// for `released` to reach `wait` (0: no wait). Returns the `repacked` value the dispatch
     /// signals. Caller holds the multithread lock.
     #[allow(clippy::too_many_arguments)]
@@ -668,8 +719,14 @@ impl Inner {
         texture: &ID3D12Resource,
         copy: Option<&ID3D12Resource>,
         wait: u64,
-        grain: bool,
+        kernel: Kernel,
     ) -> Result<u64> {
+        let pso = match kernel {
+            Kernel::Plain => &self.pso,
+            Kernel::Grain => self.grain_pso.as_ref().ok_or(E_FAIL)?,
+            Kernel::Plain8 => self.pso8.as_ref().ok_or(E_FAIL)?,
+            Kernel::Grain8 => self.grain_pso8.as_ref().ok_or(E_FAIL)?,
+        };
         let base = 3 * slot as u32;
         let view = D3D12_SHADER_RESOURCE_VIEW_DESC {
             Format: DXGI_FORMAT_R32_TYPELESS,
@@ -719,10 +776,6 @@ impl Inner {
         // shared one in the common state.
         unsafe {
             current.allocator.Reset()?;
-            let pso = match grain {
-                true => self.grain_pso.as_ref().ok_or(E_FAIL)?,
-                false => &self.pso,
-            };
             current.list.Reset(&current.allocator, pso)?;
             current.list.SetComputeRootSignature(&self.root);
             current.list.SetDescriptorHeaps(&[Some(self.heap.clone())]);
@@ -732,7 +785,7 @@ impl Inner {
             current
                 .list
                 .SetComputeRootDescriptorTable(1, self.gpu(base));
-            // Bound for the plain pipeline too (which never reads it), so no root parameter is
+            // Bound for the plain pipelines too (which never read it), so no root parameter is
             // left unset.
             current
                 .list
@@ -1049,6 +1102,10 @@ impl BaleZeroCopy {
         // Without it grain is declined (`grain_refused`); plain repacks are unaffected.
         let grain_pso = pipeline(GRAIN_SHADER).ok();
         let grain_refused = grain_pso.is_none();
+        // Without them 8-bit frames or 8-bit grain are declined; 10-bit is unaffected.
+        let pso8 = pipeline(SHADER_8).ok();
+        let grain_pso8 = pipeline(GRAIN_SHADER_8).ok();
+        let (eight_refused, grain8_refused) = (pso8.is_none(), grain_pso8.is_none());
         let slot = || -> Result<Slot> {
             let grain = GrainBuffer::create(&device, fused::bytes(3840, 2160))?;
             // SAFETY: live device and pipeline; the list is closed before its first Reset.
@@ -1099,6 +1156,8 @@ impl BaleZeroCopy {
                 root,
                 pso,
                 grain_pso,
+                pso8,
+                grain_pso8,
                 heap,
                 cpu_start,
                 gpu_start,
@@ -1118,6 +1177,8 @@ impl BaleZeroCopy {
                 targets: BTreeMap::new(),
                 targets_refused: false,
                 grain_refused,
+                eight_refused,
+                grain8_refused,
                 repacked_value: 0,
                 released_value: 0,
                 event,
@@ -1134,33 +1195,55 @@ impl BaleZeroCopy {
     /// on the slot it used. A failed direct write only refuses direct writes for the handle.
     /// Between them a direct write with film grain (overlap, restricted range, both chroma planes
     /// with their own scaling) on a frame with partial blocks, checked against the CPU oracle; a
-    /// failure only refuses grain.
+    /// failure only refuses grain. Then the same two direct writes from 8-bit pictures (padding
+    /// garbage, the last chroma word half outside the picture); a failure refuses only 8-bit
+    /// frames or only 8-bit grain, never 10-bit ones.
     fn self_test(&self) -> Result<()> {
         let mut inner = self.inner.lock().map_err(|_| E_UNEXPECTED)?;
         for (index, (width, height)) in [(64, 64), (64, 64), (66, 18)].into_iter().enumerate() {
-            self.test_frame(&mut inner, width, height, index as u32 + 1, None, None)?;
+            self.test_frame(&mut inner, width, height, 10, index as u32 + 1, None, None)?;
         }
-        let direct = test_target(&inner.device11, 66, 18)
-            .and_then(|target| self.test_frame(&mut inner, 66, 18, 4, Some(&target), None));
-        if direct.is_err() {
+        let direct = |inner: &mut Inner, (width, height): (u32, u32), depth: u32, seed: u32| {
+            test_target(&inner.device11, width, height)
+                .and_then(|target| {
+                    self.test_frame(inner, width, height, depth, seed, Some(&target), None)
+                })
+                .is_ok()
+        };
+        let grained = |inner: &mut Inner, (width, height): (u32, u32), depth: u32, seed: u32| {
+            let mut params = fused::self_test_params(width, height);
+            params.bit_depth = depth as u8;
+            let Ok(params) = params.validate() else {
+                return false;
+            };
+            test_target(&inner.device11, width, height)
+                .and_then(|target| {
+                    self.test_frame(
+                        inner,
+                        width,
+                        height,
+                        depth,
+                        seed,
+                        Some(&target),
+                        Some(&params),
+                    )
+                })
+                .is_ok()
+        };
+        let direct_ok = direct(&mut inner, (66, 18), 10, 4);
+        if !direct_ok {
             inner.targets_refused = true;
         }
-        if !inner.grain_refused {
-            let (width, height) = (130, 40);
-            let params = fused::self_test_params(width, height).validate();
-            let grain = match (direct, params) {
-                (Ok(()), Ok(params)) => {
-                    test_target(&inner.device11, width, height).and_then(|target| {
-                        self.test_frame(&mut inner, width, height, 6, Some(&target), Some(&params))
-                    })
-                }
-                _ => Err(E_FAIL.into()),
-            };
-            if grain.is_err() {
-                inner.grain_refused = true;
-            }
+        if !inner.grain_refused && !(direct_ok && grained(&mut inner, (130, 40), 10, 6)) {
+            inner.grain_refused = true;
         }
-        self.test_frame(&mut inner, 66, 18, 5, None, None)?;
+        // A refused handle declines every direct write, so these only run after a good one.
+        let eight_ok = !inner.eight_refused && direct_ok && direct(&mut inner, (66, 18), 8, 7);
+        inner.eight_refused = !eight_ok;
+        if !inner.grain8_refused && !(eight_ok && grained(&mut inner, (130, 40), 8, 8)) {
+            inner.grain8_refused = true;
+        }
+        self.test_frame(&mut inner, 66, 18, 10, 5, None, None)?;
         let _lock = Locked::enter(&inner.multithread);
         if inner.wait(&inner.repacked, inner.repacked_value).is_ok() {
             inner.targets.clear();
@@ -1168,22 +1251,24 @@ impl BaleZeroCopy {
         Ok(())
     }
 
-    /// Repacks one test picture into the next landing texture, or into `target` (with `grain`),
-    /// and checks it. Never reports pixel data.
+    /// Repacks one test picture of `bit_depth` into the next landing texture (10-bit only), or
+    /// into `target` (with `grain`), and checks it. Never reports pixel data.
+    #[allow(clippy::too_many_arguments)]
     fn test_frame(
         &self,
         inner: &mut Inner,
         width: u32,
         height: u32,
+        bit_depth: u32,
         seed: u32,
         target: Option<&ID3D11Texture2D>,
         grain: Option<&ValidGrainParams>,
     ) -> Result<()> {
-        let (frame, bytes) = BaleZcFrame::test_layout(width, height);
+        let (frame, bytes) = BaleZcFrame::test_layout_bits(width, height, bit_depth);
         let buffer = self.pool.alloc(bytes).step("self-test alloc")?;
         let memory = buffer.memory.as_ref().ok_or(E_FAIL)?;
         let mut source = vec![0u8; bytes as usize];
-        fill_test_planes(&frame, &mut source, seed);
+        fill_test_planes_bits(&frame, &mut source, seed, bit_depth);
         // SAFETY: a fresh mapped buffer of at least `bytes` that the GPU does not use yet.
         unsafe {
             std::ptr::copy_nonoverlapping(source.as_ptr(), memory.data as *mut u8, source.len())
@@ -1192,7 +1277,7 @@ impl BaleZeroCopy {
             None => inner.repack(&buffer, &frame).step("self-test repack")?,
             Some(target) => {
                 if !inner
-                    .repack_into(&buffer, &frame, target, grain)
+                    .repack_into(&buffer, &frame, bit_depth, target, grain)
                     .step("self-test direct repack")?
                 {
                     return Err(E_FAIL.into()).step("self-test direct repack declined");
@@ -1214,23 +1299,11 @@ impl BaleZeroCopy {
             (height + height / 2) as usize,
         )
         .step("self-test readback")?;
-        let mut expected = frame.reference_p010(&source);
+        let mut expected = frame.reference_p010_bits(&source, bit_depth);
         if let Some(params) = grain {
-            // The tight P010 frame: `height` luma rows, then `height / 2` chroma rows, all
-            // `2 * width` bytes (the width is even).
-            let pitch = 2 * width as usize;
-            let (y, uv) = expected.split_at_mut(pitch * height as usize);
-            cpu::apply(
-                params,
-                PixelFormat::P010,
-                y,
-                pitch as isize,
-                uv,
-                pitch as isize,
-                1,
-            )
-            .map_err(|_| Error::from(E_FAIL))
-            .step("self-test grain oracle")?;
+            grain_p010(params, &mut expected)
+                .map_err(|_| Error::from(E_FAIL))
+                .step("self-test grain oracle")?;
         }
         if actual != expected {
             return Err(E_FAIL.into()).step(&format!("self-test mismatch at {width}x{height}"));
@@ -1667,7 +1740,7 @@ pub unsafe extern "C" fn bale_zc_repack(
         else {
             return E_INVALIDARG.0;
         };
-        let buffer = match picture(zero_copy, buffer, frame) {
+        let buffer = match picture(zero_copy, buffer, frame, 10) {
             Ok(buffer) => buffer,
             Err(hr) => return hr,
         };
@@ -1718,6 +1791,8 @@ pub unsafe extern "C" fn bale_zc_repack(
 /// E_INVALIDARG for null inputs or a layout that does not fit the buffer; otherwise a failure
 /// that poisons the handle as [`bale_zc_repack`] does.
 ///
+/// The same as [`bale_zc_repack_into_bits`] with `bit_depth` 10.
+///
 /// # Safety
 /// A non-null handle must be live; repack calls are serialized. A non-null `frame` must be
 /// readable; a non-null `grain` must have a readable four-byte `struct_size`, and the whole
@@ -1727,6 +1802,47 @@ pub unsafe extern "C" fn bale_zc_repack_into(
     handle: *const BaleZeroCopy,
     buffer: *mut c_void,
     frame: *const BaleZcFrame,
+    grain: *const BaleGrainParams,
+    target: *mut c_void,
+) -> i32 {
+    // SAFETY: the caller's guarantees are this function's.
+    unsafe { repack_into(handle, buffer, frame, 10, grain, target) }
+}
+
+/// [`bale_zc_repack_into`] for a picture of `bit_depth` 10 (exactly the same call) or 8. An 8-bit
+/// `frame` holds one byte per sample (strides and offsets still in bytes; strides and offsets
+/// multiples of 4, as at 10 bits); the P010 `target` gets each sample `v` as `v << 8`. With a
+/// non-null `grain`, its `bit_depth` must equal `bit_depth`, or the call is declined (S_FALSE);
+/// grain at 8 bits is bit-exact with `bale_grain`'s CPU path on the 8-bit frame, then `<< 8`.
+/// 8-bit frames, and separately 8-bit grain, are also declined (S_FALSE) for the handle's life
+/// when its 8-bit self-test failed; 10-bit calls are unaffected. E_INVALIDARG for a `bit_depth`
+/// other than 8 or 10, null inputs, or a layout that does not fit the buffer at that depth; the
+/// other results as [`bale_zc_repack_into`].
+///
+/// # Safety
+/// As [`bale_zc_repack_into`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_zc_repack_into_bits(
+    handle: *const BaleZeroCopy,
+    buffer: *mut c_void,
+    frame: *const BaleZcFrame,
+    bit_depth: u32,
+    grain: *const BaleGrainParams,
+    target: *mut c_void,
+) -> i32 {
+    // SAFETY: the caller's guarantees are this function's.
+    unsafe { repack_into(handle, buffer, frame, bit_depth, grain, target) }
+}
+
+/// Both direct-write exports.
+///
+/// # Safety
+/// As [`bale_zc_repack_into`].
+unsafe fn repack_into(
+    handle: *const BaleZeroCopy,
+    buffer: *mut c_void,
+    frame: *const BaleZcFrame,
+    bit_depth: u32,
     grain: *const BaleGrainParams,
     target: *mut c_void,
 ) -> i32 {
@@ -1740,7 +1856,10 @@ pub unsafe extern "C" fn bale_zc_repack_into(
         ) else {
             return E_INVALIDARG.0;
         };
-        let buffer = match picture(zero_copy, buffer, frame) {
+        if !matches!(bit_depth, 8 | 10) {
+            return E_INVALIDARG.0;
+        }
+        let buffer = match picture(zero_copy, buffer, frame, bit_depth) {
             Ok(buffer) => buffer,
             Err(hr) => return hr,
         };
@@ -1760,7 +1879,7 @@ pub unsafe extern "C" fn bale_zc_repack_into(
             }
         };
         match run(zero_copy, |inner| {
-            inner.repack_into(&buffer, frame, target, grain.as_ref())
+            inner.repack_into(&buffer, frame, bit_depth, target, grain.as_ref())
         }) {
             Ok(true) => {
                 zero_copy.pool.frames.fetch_add(1, Ordering::Relaxed);
@@ -1772,12 +1891,13 @@ pub unsafe extern "C" fn bale_zc_repack_into(
     })
 }
 
-/// The live buffer `id` of this handle for `frame`: S_FALSE when it is not one, E_INVALIDARG when
-/// the layout does not fit it.
+/// The live buffer `id` of this handle for `frame` of `bit_depth` (8 or 10): S_FALSE when it is
+/// not one, E_INVALIDARG when the layout does not fit it.
 fn picture(
     zero_copy: &BaleZeroCopy,
     id: *mut c_void,
     frame: &BaleZcFrame,
+    bit_depth: u32,
 ) -> std::result::Result<Arc<Buffer>, i32> {
     let buffer = live()
         .map_err(|error| error.code().0)?
@@ -1787,7 +1907,7 @@ fn picture(
         .filter(|buffer| Arc::ptr_eq(&buffer.pool, &zero_copy.pool))
         .ok_or(S_FALSE)?;
     let bytes = buffer.memory.as_ref().ok_or(E_FAIL.0)?.bytes;
-    if !frame.fits(bytes) {
+    if !frame.fits_bits(bytes, bit_depth) {
         return Err(E_INVALIDARG.0);
     }
     Ok(buffer)
