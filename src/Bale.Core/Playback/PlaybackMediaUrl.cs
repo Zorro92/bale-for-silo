@@ -66,7 +66,8 @@ public static class PlaybackMediaUrl
     }
 
     // file_id, downloaded_subtitle_id and embedded_stream_index are numeric IDs, original=1 marks raw
-    // SubRip. Once each.
+    // SubRip, external_subtitle_key is a sidecar path's SHA-256 hex (silo-server subtitles.ExternalPathKey).
+    // Once each.
     private static bool IsSubtitleQuery(string query)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -84,6 +85,9 @@ public static class PlaybackMediaUrl
                     break;
                 case "original":
                     if (value != "1") return false;
+                    break;
+                case "external_subtitle_key":
+                    if (value.Length is 0 or > 128 || !value.All(char.IsAsciiHexDigit)) return false;
                     break;
                 default:
                     return false;

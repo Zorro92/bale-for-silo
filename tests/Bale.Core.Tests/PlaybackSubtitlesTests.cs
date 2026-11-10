@@ -91,6 +91,7 @@ public class PlaybackSubtitlesTests
     [InlineData("/api/v2/stream/session/subtitles/3.srt?file_id=42&original=1")]
     [InlineData("/api/v2/stream/session/subtitles/3.vtt?file_id=42&downloaded_subtitle_id=7")]
     [InlineData("/api/v2/stream/session/subtitles/0.vtt?file_id=407&embedded_stream_index=3")]
+    [InlineData("/api/v2/stream/session/subtitles/0.srt?file_id=42&original=1&external_subtitle_key=0123456789abcdefaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     [InlineData("/api/v2/stream/session/subtitles/2/fonts?file_id=42&embedded_stream_index=5")]
     [InlineData("/api/v2/stream/session/subtitles/3")]
     public void ServerSubtitleUrlShapesAreAccepted(string url) =>
@@ -105,6 +106,7 @@ public class PlaybackSubtitlesTests
     [InlineData("/api/v2/items/subtitles/3.ass")]
     [InlineData("/api/v2/stream/session/subtitles/3.ass?file_id=42&file_id=43")]
     [InlineData("/api/v2/stream/session/subtitles/3.ass?file_id=abc")]
+    [InlineData("/api/v2/stream/session/subtitles/0.srt?file_id=42&external_subtitle_key=../x")]
     [InlineData("/api/v2/stream/session/subtitles/3.ass?original=0")]
     [InlineData("/api/v2/stream/session/subtitles/3.ass?redirect=1")]
     [InlineData("/api/v2/stream/session/subtitles/3.ass#x")]
