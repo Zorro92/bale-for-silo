@@ -274,6 +274,10 @@ internal sealed partial class DebugServer
             case ("GET", "/playtest-engine"):
                 return await PlaytestEngineAsync(query.GetValueOrDefault("url"), query.GetValueOrDefault("seconds"), query.GetValueOrDefault("mode"));
 
+            case ("GET", "/subtest"):
+                return await SubtitleProbeAsync(query.GetValueOrDefault("url"), query.GetValueOrDefault("route"), query.GetValueOrDefault("seconds"),
+                    query.GetValueOrDefault("sidecar"), query.GetValueOrDefault("index"));
+
             case ("POST", "/ffmpeg"):
                 var ffmpegMode = query.GetValueOrDefault("mode");
                 if (!DebugFfmpegPlayback.TrySet(ffmpegMode))
