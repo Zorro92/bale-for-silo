@@ -56,8 +56,8 @@ namespace Bale.Xbox.Services;
 ///   POST /frame-delivery?mode=native  native|managed|off (on aliases native); next playback attempt
 ///   GET  /stream-adapter  memory-only FFmpeg stream adapter switch; default pooled
 ///   POST /stream-adapter?mode=pooled  pooled|builtin; applies to the next playback attempt
-///   GET  /av1-claim       memory-only AV1 software-decode claim; default 1080p30, restart resets
-///   POST /av1-claim?height=2160  1080|2160; next playback attempt, still capped at 30 fps
+///   GET  /av1-claim       memory-only AV1 software-decode claim; default 1080p60, restart resets
+///   POST /av1-claim?height=2160  1080|2160; next playback attempt; 2160 adds a 4K30 entry
 ///   GET  /display-match   memory-only content frame-rate matching; default off
 ///   POST /display-match?mode=on  on|off; applies to the next playback attempt
 ///   GET  /hdr             memory-only HDR comparison mode; default off
