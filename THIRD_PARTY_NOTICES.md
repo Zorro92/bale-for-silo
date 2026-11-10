@@ -69,7 +69,9 @@ staging copy (default off), and
 `scripts/ffmpeginteropx-patches/0016-upload-variant-shared-uav.patch` for a debug-only upload
 variant whose pooled textures are also D3D12-shareable unordered-access views, and
 `scripts/ffmpeginteropx-patches/0017-zero-copy-direct-write.patch` for letting that zero-copy path
-write such a pooled texture directly, skipping the landing copy. Grain only modifies Bale-owned output, never dav1d
+write such a pooled texture directly, skipping the landing copy, and
+`scripts/ffmpeginteropx-patches/0018-zero-copy-direct-grain.patch` for applying GPU film grain in
+that same direct write. Grain only modifies Bale-owned output, never dav1d
 reference frames.
 The original winmd and managed projection are retained; with the new `bale_*` keys unset, behavior
 equals upstream 2.1.0 plus that colour-attribute fix.
