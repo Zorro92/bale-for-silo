@@ -641,10 +641,19 @@ index 1fc5fc5..041ea0d 100644
      bool Invalid()
      {
 diff --git a/Source/FFmpegMediaSource.cpp b/Source/FFmpegMediaSource.cpp
-index f6e8a08..50da928 100644
+index f6e8a08..a4f209c 100644
 --- a/Source/FFmpegMediaSource.cpp
 +++ b/Source/FFmpegMediaSource.cpp
-@@ -615,6 +615,7 @@ namespace winrt::FFmpegInteropX::implementation
+@@ -16,6 +16,8 @@
+ #include "FFmpegReader.h"
+ #include "PlatformInfo.h"
+ #include "BaleThreadBoost.h"
++// Bale: Media Foundation error codes for streams zero-copy refuses at open.
++#include <mferror.h>
+ 
+ #ifdef Win32
+ #include <winrt/Microsoft.Graphics.Display.h>
+@@ -615,6 +617,7 @@ namespace winrt::FFmpegInteropX::implementation
              }
          }
  
@@ -652,7 +661,7 @@ index f6e8a08..50da928 100644
          for (int index = 0; index < (int)avFormatCtx->nb_streams; index++)
          {
              auto avStream = avFormatCtx->streams[index];
-@@ -648,6 +649,12 @@ namespace winrt::FFmpegInteropX::implementation
+@@ -648,6 +651,12 @@ namespace winrt::FFmpegInteropX::implementation
              else if (avStream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && !config->IsExternalSubtitleParser)
              {
                  stream = CreateVideoStream(avStream, index);
@@ -665,7 +674,7 @@ index f6e8a08..50da928 100644
                  if (stream)
                  {
                      if (index == videoStreamIndex)
-@@ -700,6 +707,11 @@ namespace winrt::FFmpegInteropX::implementation
+@@ -700,6 +709,11 @@ namespace winrt::FFmpegInteropX::implementation
          {
              currentVideoStream = videoStreams[0];
          }
@@ -677,7 +686,7 @@ index f6e8a08..50da928 100644
  
          if (currentVideoStream)
          {
-@@ -1061,6 +1073,8 @@ namespace winrt::FFmpegInteropX::implementation
+@@ -1061,6 +1075,8 @@ namespace winrt::FFmpegInteropX::implementation
  
          int filmGrainMode = 0;
          bool eightBitZeroCopy = false;
@@ -686,7 +695,7 @@ index f6e8a08..50da928 100644
          // Find the video stream and its decoder
          auto avVideoCodec = avcodec_find_decoder(avStream->codecpar->codec_id);
  
-@@ -1185,22 +1199,43 @@ namespace winrt::FFmpegInteropX::implementation
+@@ -1185,22 +1201,43 @@ namespace winrt::FFmpegInteropX::implementation
                  }
                  // Bale: select before open, since libdav1d reads apply_grain at initialization.
                  bool dav1d = std::string(avVideoCodec->name) == "libdav1d";
@@ -736,7 +745,7 @@ index f6e8a08..50da928 100644
                  {
                      // Bale: dav1d spawns its workers inside avcodec_open2.
                      BaleThreadBoost::Window boost(std::string(avVideoCodec->name) == "libdav1d" ? baleDecodeThreadPriority : 0);
-@@ -1212,7 +1247,7 @@ namespace winrt::FFmpegInteropX::implementation
+@@ -1212,7 +1249,7 @@ namespace winrt::FFmpegInteropX::implementation
              if (SUCCEEDED(hr))
              {
                  // Detect video format and create video stream descriptor accordingly
@@ -745,7 +754,7 @@ index f6e8a08..50da928 100644
              }
  
              // free codec context if failed
-@@ -2242,7 +2277,7 @@ namespace winrt::FFmpegInteropX::implementation
+@@ -2242,7 +2279,7 @@ namespace winrt::FFmpegInteropX::implementation
          return false;
      }
  
@@ -754,7 +763,7 @@ index f6e8a08..50da928 100644
      {
          UNREFERENCED_PARAMETER(avStream);
  
-@@ -2352,17 +2387,12 @@ namespace winrt::FFmpegInteropX::implementation
+@@ -2352,17 +2389,12 @@ namespace winrt::FFmpegInteropX::implementation
                  hardwareDecoderStatus = HardwareDecoderStatus::NotAvailable;
              }
              auto uncompressed = new UncompressedVideoSampleProvider(m_pReader, avFormatCtx, avVideoCodecCtx, config.as<winrt::FFmpegInteropX::MediaSourceConfig>(), index, hardwareDecoderStatus, useHdr);
@@ -776,7 +785,7 @@ index f6e8a08..50da928 100644
              videoSampleProvider = std::shared_ptr<MediaSampleProvider>(uncompressed);
          }
  
-@@ -2447,13 +2477,10 @@ namespace winrt::FFmpegInteropX::implementation
+@@ -2447,13 +2479,10 @@ namespace winrt::FFmpegInteropX::implementation
          int minimum = 0;
          int maximum = 0;
          if (key == "bale_decode_ahead_frames") { target = &baleDecodeAheadFrames; minimum = 0; maximum = 64; }
@@ -790,7 +799,7 @@ index f6e8a08..50da928 100644
          else if (key == "bale_zero_copy") { target = &baleZeroCopy; minimum = 0; maximum = 1; }
          else if (key == "bale_decode_thread_priority") { target = &baleDecodeThreadPriority; minimum = 0; maximum = 2; }
          else if (key == "bale_decoder_use_max_resolution") { target = &baleDecoderUseMaxResolution; minimum = 0; maximum = 1; }
-@@ -2688,6 +2715,45 @@ namespace winrt::FFmpegInteropX::implementation
+@@ -2688,6 +2717,45 @@ namespace winrt::FFmpegInteropX::implementation
          }
      }
  
@@ -836,7 +845,7 @@ index f6e8a08..50da928 100644
      void FFmpegMediaSource::InitializeUploadDevice(MediaStreamSource const& sender)
      {
          HRESULT hr = S_OK;
-@@ -2772,7 +2838,9 @@ namespace winrt::FFmpegInteropX::implementation
+@@ -2772,7 +2840,9 @@ namespace winrt::FFmpegInteropX::implementation
                  }
              }
  
@@ -847,7 +856,7 @@ index f6e8a08..50da928 100644
              {
                  InitializeUploadDevice(sender);
              }
-@@ -2809,7 +2877,6 @@ namespace winrt::FFmpegInteropX::implementation
+@@ -2809,7 +2879,6 @@ namespace winrt::FFmpegInteropX::implementation
  
      void FFmpegMediaSource::OnSampleRequested(winrt::Windows::Media::Core::MediaStreamSource const& sender, winrt::Windows::Media::Core::MediaStreamSourceSampleRequestedEventArgs const& args)
      {
@@ -855,7 +864,7 @@ index f6e8a08..50da928 100644
          std::lock_guard lock(mutex);
          if (isClosed)
          {
-@@ -2818,6 +2885,11 @@ namespace winrt::FFmpegInteropX::implementation
+@@ -2818,6 +2887,11 @@ namespace winrt::FFmpegInteropX::implementation
  
          try
          {
@@ -867,7 +876,7 @@ index f6e8a08..50da928 100644
              if (config->General().ReadAheadBufferEnabled())
              {
                  m_pReader->Start();
-@@ -2831,7 +2903,15 @@ namespace winrt::FFmpegInteropX::implementation
+@@ -2831,7 +2905,15 @@ namespace winrt::FFmpegInteropX::implementation
              else if (currentVideoStream && args.Request().StreamDescriptor() == currentVideoStream->StreamDescriptor())
              {
                  CheckVideoDeviceChanged(sender);
