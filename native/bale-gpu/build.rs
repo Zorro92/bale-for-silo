@@ -5,7 +5,7 @@ use std::process::Command;
 
 /// (output name, source name, profile, preprocessor define). The zero-copy compute shaders are
 /// built a second time with `BALE_8BIT` for 8-bit pictures; their 10-bit builds take no define.
-const SHADERS: [(&str, &str, &str, Option<&str>); 7] = [
+const SHADERS: [(&str, &str, &str, Option<&str>); 9] = [
     ("fullscreen_vs", "fullscreen_vs", "vs_5_0", None),
     ("grain_luma_ps", "grain_luma_ps", "ps_5_0", None),
     ("grain_chroma_ps", "grain_chroma_ps", "ps_5_0", None),
@@ -23,6 +23,9 @@ const SHADERS: [(&str, &str, &str, Option<&str>); 7] = [
         "cs_5_0",
         Some("BALE_8BIT=1"),
     ),
+    // Subtitle overlay (`subs::overlay`).
+    ("sub_vs", "sub_vs", "vs_5_0", None),
+    ("sub_ps", "sub_ps", "ps_5_0", None),
 ];
 
 fn main() {

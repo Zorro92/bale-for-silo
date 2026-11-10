@@ -1,8 +1,10 @@
 //! libass subtitle rendering, linked statically from `scripts/build-libass-native.ps1` (libass with
 //! FreeType, FriBidi and HarfBuzz, built for the UWP app partition so libass uses its WinRT
-//! DirectWrite font provider). For now only the debug probes use it: they check font discovery on the
-//! console and time rendering. Output never contains paths, URLs or system error text.
+//! DirectWrite font provider). [`Session`] is shared by the subtitle overlay (`subs::overlay`) and
+//! the debug probes, which check font discovery on the console and time rendering. Output never
+//! contains paths, URLs or system error text.
 
+use std::cell::Cell;
 use std::ffi::{CString, c_char, c_int, c_void};
 use std::fmt::Write as _;
 use std::marker::PhantomData;
@@ -22,23 +24,37 @@ struct Renderer {
     _opaque: [u8; 0],
 }
 
+/// The public head of `ASS_Track` (ass_types.h); the rest is never read here.
 #[repr(C)]
 struct RawTrack {
-    _opaque: [u8; 0],
+    _n_styles: c_int,
+    _max_styles: c_int,
+    n_events: c_int,
 }
 
 /// `ASS_Image` (ass.h). Bitmaps are 8-bit coverage; `color` is RGBA where A is transparency.
 #[repr(C)]
-struct Image {
-    w: c_int,
-    h: c_int,
-    stride: c_int,
-    bitmap: *const u8,
-    color: u32,
-    dst_x: c_int,
-    dst_y: c_int,
+pub(crate) struct Image {
+    pub(crate) w: c_int,
+    pub(crate) h: c_int,
+    pub(crate) stride: c_int,
+    pub(crate) bitmap: *const u8,
+    pub(crate) color: u32,
+    pub(crate) dst_x: c_int,
+    pub(crate) dst_y: c_int,
     next: *const Image,
     _kind: c_int,
+}
+
+impl Image {
+    /// Row `y` (`0..h`) of the coverage bitmap, `w` bytes.
+    pub(crate) fn row(&self, y: c_int) -> &[u8] {
+        debug_assert!(self.w > 0 && (0..self.h).contains(&y));
+        // SAFETY: libass guarantees `stride * (h - 1) + w` bytes, so every row has `w` bytes.
+        unsafe {
+            std::slice::from_raw_parts(self.bitmap.add((y * self.stride) as usize), self.w as usize)
+        }
+    }
 }
 
 type MessageCallback =
@@ -64,6 +80,15 @@ unsafe extern "C" {
     fn ass_renderer_init(library: *mut Library) -> *mut Renderer;
     fn ass_renderer_done(renderer: *mut Renderer);
     fn ass_set_frame_size(renderer: *mut Renderer, width: c_int, height: c_int);
+    fn ass_set_storage_size(renderer: *mut Renderer, width: c_int, height: c_int);
+    fn ass_set_margins(
+        renderer: *mut Renderer,
+        top: c_int,
+        bottom: c_int,
+        left: c_int,
+        right: c_int,
+    );
+    fn ass_set_use_margins(renderer: *mut Renderer, use_margins: c_int);
     fn ass_set_fonts(
         renderer: *mut Renderer,
         default_font: *const c_char,
@@ -136,23 +161,23 @@ unsafe extern "C" fn on_message(
 }
 
 /// A libass library and renderer with captured log messages. Not thread-safe (raw pointers keep it
-/// `!Send`/`!Sync`); everything happens on the calling thread.
-struct Session {
+/// `!Send`/`!Sync`); everything happens on the thread that created it.
+pub(crate) struct Session {
     library: *mut Library,
     renderer: *mut Renderer,
     log: Box<Mutex<Vec<Message>>>,
-    width: i32,
-    height: i32,
+    /// False until `ass_set_fonts` has run with every added font.
+    fonts_ready: Cell<bool>,
 }
 
 impl Session {
-    /// `embedded` fonts stand in for MKV attachments / Silo's font bundle; libass copies the bytes.
-    /// Returns the session and the time `ass_set_fonts` took (font provider start-up).
-    fn new(
+    /// `embedded` fonts are MKV attachments / Silo's font bundle; libass copies the bytes. The font
+    /// provider is not started here: [`Session::ensure_fonts`] does that (it can take a while).
+    pub(crate) fn new(
         width: i32,
         height: i32,
         embedded: &[(&str, &[u8])],
-    ) -> Result<(Self, Duration), &'static str> {
+    ) -> Result<Self, &'static str> {
         let log = Box::new(Mutex::new(Vec::new()));
         // SAFETY: plain constructor.
         let library = unsafe { ass_library_init() };
@@ -163,30 +188,50 @@ impl Session {
             library,
             renderer: ptr::null_mut(),
             log,
-            width,
-            height,
+            fonts_ready: Cell::new(false),
         };
         let data = ptr::from_ref(&*session.log).cast_mut().cast();
         // SAFETY: the boxed log stays at this address until after `ass_library_done` (see Drop).
         unsafe { ass_set_message_cb(library, Some(on_message), data) };
         for (name, bytes) in embedded {
-            let (Ok(name), Ok(size)) = (CString::new(*name), c_int::try_from(bytes.len())) else {
-                continue;
-            };
-            // SAFETY: valid C string and `size` readable bytes; libass copies both.
-            unsafe { ass_add_font(library, name.as_ptr(), bytes.as_ptr().cast(), size) };
+            session.add_font(name, bytes);
         }
         // SAFETY: valid library.
         session.renderer = unsafe { ass_renderer_init(library) };
         if session.renderer.is_null() {
             return Err("ass_renderer_init failed");
         }
+        // SAFETY: valid renderer.
+        unsafe { ass_set_frame_size(session.renderer, width, height) };
+        Ok(session)
+    }
+
+    /// Adds an embedded font (libass copies the bytes). It is picked up by the next
+    /// [`Session::ensure_fonts`]. A name libass cannot take (inner NUL) is replaced by an empty one.
+    pub(crate) fn add_font(&self, name: &str, bytes: &[u8]) {
+        let Ok(size) = c_int::try_from(bytes.len()) else {
+            return;
+        };
+        if size == 0 {
+            return;
+        }
+        let name = CString::new(name).unwrap_or_default();
+        // SAFETY: valid C string and `size` readable bytes; libass copies both.
+        unsafe { ass_add_font(self.library, name.as_ptr(), bytes.as_ptr().cast(), size) };
+        self.fonts_ready.set(false);
+    }
+
+    /// Starts (or restarts, after [`Session::add_font`]) the font provider; a no-op when it is
+    /// current. Returns the time `ass_set_fonts` took.
+    pub(crate) fn ensure_fonts(&self) -> Duration {
+        if self.fonts_ready.replace(true) {
+            return Duration::ZERO;
+        }
         let start = Instant::now();
         // SAFETY: valid renderer; null default font and config are allowed.
         unsafe {
-            ass_set_frame_size(session.renderer, width, height);
             ass_set_fonts(
-                session.renderer,
+                self.renderer,
                 ptr::null(),
                 c"Arial".as_ptr(),
                 FONTPROVIDER_AUTODETECT,
@@ -194,8 +239,27 @@ impl Session {
                 1,
             );
         }
-        let elapsed = start.elapsed();
-        Ok((session, elapsed))
+        start.elapsed()
+    }
+
+    /// Frame size in pixels, the video rectangle's distances to the frame edges
+    /// (`[top, bottom, left, right]`) and the video size. Margins are not used for dialogue
+    /// (`ass_set_use_margins(0)`), so positioned text stays inside the video area, as in mpv.
+    pub(crate) fn set_layout(
+        &self,
+        width: i32,
+        height: i32,
+        margins: [i32; 4],
+        storage: (i32, i32),
+    ) {
+        let [top, bottom, left, right] = margins;
+        // SAFETY: valid renderer; plain setters.
+        unsafe {
+            ass_set_frame_size(self.renderer, width, height);
+            ass_set_margins(self.renderer, top, bottom, left, right);
+            ass_set_use_margins(self.renderer, 0);
+            ass_set_storage_size(self.renderer, storage.0, storage.1);
+        }
     }
 
     fn drain_log(&self) -> Vec<Message> {
@@ -205,8 +269,9 @@ impl Session {
             .unwrap_or_default()
     }
 
-    fn track(&self, script: &str) -> Option<Track<'_>> {
-        let mut bytes = script.as_bytes().to_vec();
+    /// Parses UTF-8 ASS/SSA script text; `None` when libass does not recognise it.
+    pub(crate) fn track(&self, script: &[u8]) -> Option<Track<'_>> {
+        let mut bytes = script.to_vec();
         // SAFETY: valid library and a writable buffer of `len` bytes; libass parses a copy.
         let raw = unsafe {
             ass_read_memory(
@@ -222,14 +287,17 @@ impl Session {
         })
     }
 
-    /// Renders `track` at `now_ms`, optionally compositing the images onto `canvas`. The image list
-    /// is only valid until the next render, so it is consumed here.
-    fn render(
+    /// Renders `track` at `now_ms` and passes every non-empty image to `each`, in drawing order;
+    /// with `always` false only when libass reports a change from the previous render. The image
+    /// list is only valid until the next render, so it is consumed here.
+    pub(crate) fn render(
         &self,
         track: &Track<'_>,
         now_ms: i64,
-        mut canvas: Option<&mut Canvas>,
+        always: bool,
+        mut each: impl FnMut(&Image),
     ) -> RenderStats {
+        debug_assert!(self.fonts_ready.get(), "ensure_fonts before rendering");
         let mut changed: c_int = 0;
         let start = Instant::now();
         // SAFETY: renderer and track belong to this session.
@@ -240,6 +308,9 @@ impl Session {
             changed,
             ..RenderStats::default()
         };
+        if changed == 0 && !always {
+            return stats;
+        }
         while !image.is_null() {
             // SAFETY: libass returns a valid list until the next render call.
             let current = unsafe { &*image };
@@ -254,9 +325,7 @@ impl Session {
                 Some((a, b, c, d)) => (a.min(x0), b.min(y0), c.max(x1), d.max(y1)),
                 None => (x0, y0, x1, y1),
             });
-            if let Some(canvas) = canvas.as_deref_mut() {
-                canvas.blend(current);
-            }
+            each(current);
         }
         stats
     }
@@ -274,9 +343,17 @@ impl Drop for Session {
     }
 }
 
-struct Track<'a> {
+pub(crate) struct Track<'a> {
     raw: *mut RawTrack,
     _session: PhantomData<&'a Session>,
+}
+
+impl Track<'_> {
+    /// Number of events (dialogue lines) in the track.
+    pub(crate) fn events(&self) -> u32 {
+        // SAFETY: a live `ASS_Track`, whose public head `RawTrack` mirrors.
+        u32::try_from(unsafe { (*self.raw).n_events }).unwrap_or(0)
+    }
 }
 
 impl Drop for Track<'_> {
@@ -287,10 +364,13 @@ impl Drop for Track<'_> {
 }
 
 #[derive(Default)]
-struct RenderStats {
-    elapsed: Duration,
-    changed: c_int,
-    images: u32,
+pub(crate) struct RenderStats {
+    /// Time spent in `ass_render_frame`.
+    pub(crate) elapsed: Duration,
+    /// libass's `detect_change`: 0 when the images equal the previous render's.
+    pub(crate) changed: c_int,
+    /// Non-empty images passed to the callback.
+    pub(crate) images: u32,
     bounds: Option<(i32, i32, i32, i32)>,
 }
 
@@ -315,14 +395,7 @@ impl Canvas {
             if dy < 0 || dy >= self.height {
                 continue;
             }
-            // SAFETY: libass guarantees `stride * (h - 1) + w` bytes, so every row has `w` bytes.
-            let row = unsafe {
-                std::slice::from_raw_parts(
-                    image.bitmap.add((y * image.stride) as usize),
-                    image.w as usize,
-                )
-            };
-            for (x, &coverage) in row.iter().enumerate() {
+            for (x, &coverage) in image.row(y).iter().enumerate() {
                 let dx = image.dst_x + x as i32;
                 let alpha = u32::from(coverage) * opacity / 255;
                 if alpha == 0 || dx < 0 || dx >= self.width {
@@ -447,13 +520,14 @@ pub fn probe(font: &[u8]) -> String {
         vec![(EMBEDDED_NAME, font)]
     };
     let total = Instant::now();
-    let (session, fonts_init) = match Session::new(WIDTH, HEIGHT, &embedded) {
+    let session = match Session::new(WIDTH, HEIGHT, &embedded) {
         Ok(created) => created,
         Err(error) => {
             let _ = writeln!(report, "  {error}");
             return report;
         }
     };
+    let fonts_init = session.ensure_fonts();
     let _ = writeln!(
         report,
         "  ass_set_fonts (provider start-up): {:.1} ms; embedded fonts: {}",
@@ -467,11 +541,11 @@ pub fn probe(font: &[u8]) -> String {
     append_log(&mut report, &session, "    ", 12);
 
     report.push_str("Font cases (first render includes lookup and fallback):\n");
-    match session.track(&font_case_script()) {
+    match session.track(font_case_script().as_bytes()) {
         Some(track) => {
             append_log(&mut report, &session, "    ", 4);
             for (index, (label, _, _)) in FONT_CASES.iter().enumerate() {
-                let stats = session.render(&track, index as i64 * 1000 + 500, None);
+                let stats = session.render(&track, index as i64 * 1000 + 500, true, |_| {});
                 let _ = writeln!(report, "  {label:<16} {}", describe(&stats));
                 append_log(&mut report, &session, "      ", 8);
             }
@@ -482,14 +556,14 @@ pub fn probe(font: &[u8]) -> String {
     report.push_str(
         "Probe script 1920x1080 (cold = first render of each group, warm = 10 ms later):\n",
     );
-    let Some(track) = session.track(PROBE_SCRIPT) else {
+    let Some(track) = session.track(PROBE_SCRIPT.as_bytes()) else {
         report.push_str("  ass_read_memory failed\n");
         return report;
     };
     append_log(&mut report, &session, "    ", 4);
     for ms in [1500i64, 2500, 3500, 4000, 5000, 6500, 7500] {
-        let cold = session.render(&track, ms, None);
-        let warm = session.render(&track, ms + 10, None);
+        let cold = session.render(&track, ms, true, |_| {});
+        let warm = session.render(&track, ms + 10, true, |_| {});
         let _ = writeln!(
             report,
             "  t={:.1}s cold {} | warm {:>6} µs (changed {})",
@@ -505,7 +579,7 @@ pub fn probe(font: &[u8]) -> String {
     let frames = 120;
     let (mut sum, mut worst, mut changed) = (Duration::ZERO, Duration::ZERO, 0);
     for frame in 0..frames {
-        let stats = session.render(&track, 4000 + frame * 1000 / 60, None);
+        let stats = session.render(&track, 4000 + frame * 1000 / 60, true, |_| {});
         sum += stats.elapsed;
         worst = worst.max(stats.elapsed);
         changed += i32::from(stats.changed != 0);
@@ -534,10 +608,13 @@ pub fn probe_png(font: &[u8], time_ms: u32) -> Option<Vec<u8>> {
     } else {
         vec![(EMBEDDED_NAME, font)]
     };
-    let (session, _) = Session::new(WIDTH, HEIGHT, &embedded).ok()?;
-    let track = session.track(PROBE_SCRIPT)?;
-    let mut canvas = Canvas::new(session.width, session.height);
-    session.render(&track, i64::from(time_ms), Some(&mut canvas));
+    let session = Session::new(WIDTH, HEIGHT, &embedded).ok()?;
+    session.ensure_fonts();
+    let track = session.track(PROBE_SCRIPT.as_bytes())?;
+    let mut canvas = Canvas::new(WIDTH, HEIGHT);
+    session.render(&track, i64::from(time_ms), true, |image| {
+        canvas.blend(image)
+    });
     Some(png::encode_rgb(
         canvas.width as u32,
         canvas.height as u32,

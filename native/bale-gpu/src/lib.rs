@@ -1,7 +1,8 @@
 //! Bale's native GPU/media layer, called from the C# Xbox app and the FFmpegInteropX wrapper over a
 //! narrow C ABI: the zero-copy software AV1 repack (`d3d12_repack`, zero-copy ABI), GPU film
 //! grain ([`grain`], grain ABI), the debug frame observer (`frames`), and debug loader/engine
-//! probes (`bale_gpu_*`, this file and `engine`), and the debug libass subtitle probes (`ass`).
+//! probes (`bale_gpu_*`, this file and `engine`), the subtitle overlay ([`subs`], subtitle ABI,
+//! `bale_sub_*` in this file) and the debug libass subtitle probes (`ass`).
 
 #[cfg(windows)]
 mod ass;
@@ -15,6 +16,7 @@ mod engine;
 mod frames;
 pub mod grain;
 pub mod png;
+pub mod subs;
 pub mod zc_frame;
 
 use std::sync::{Arc, Mutex};
@@ -209,6 +211,231 @@ pub unsafe extern "C" fn bale_ass_probe_png(
     // SAFETY: `png.len()` <= `out_capacity`, which the caller guarantees is writable.
     unsafe { std::ptr::copy_nonoverlapping(png.as_ptr(), out, png.len()) };
     png.len() as u32
+}
+
+/// Version of the subtitle ABI (the `bale_sub_*` exports); C# refuses a mismatched DLL.
+#[unsafe(no_mangle)]
+pub extern "C" fn bale_sub_abi_version() -> u32 {
+    subs::SUB_ABI_VERSION
+}
+
+/// Runs `call` on the overlay behind `overlay`: `E_POINTER` for null, `E_UNEXPECTED` for a panic.
+///
+/// # Safety
+/// `overlay` must be null or a live handle from [`bale_sub_overlay_create`].
+#[cfg(windows)]
+unsafe fn with_overlay(
+    overlay: *mut subs::overlay::Overlay,
+    call: impl FnOnce(&subs::overlay::Overlay) -> i32,
+) -> i32 {
+    // SAFETY: the caller guarantees a live handle when non-null; only shared access is taken.
+    let Some(overlay) = (unsafe { overlay.as_ref() }) else {
+        return subs::E_POINTER;
+    };
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| call(overlay)))
+        .unwrap_or(subs::E_UNEXPECTED)
+}
+
+/// Creates a subtitle overlay: a D3D11 device, a transparent composition swap chain of
+/// `width`×`height` physical pixels (each >= 1) and its render thread. `panel` is the `IInspectable*`
+/// of a XAML `SwapChainPanel` (borrowed; the overlay takes its own reference and sets the swap chain
+/// on it), or null to render offscreen. Returns an HRESULT; on failure `*out` is null.
+///
+/// # Safety
+/// `panel` must be null or a live COM pointer, and then this must run on the UI thread. `out` must
+/// be null or writable for one pointer.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_sub_overlay_create(
+    panel: *mut core::ffi::c_void,
+    width: u32,
+    height: u32,
+    out: *mut *mut subs::overlay::Overlay,
+) -> i32 {
+    if out.is_null() {
+        return subs::E_POINTER;
+    }
+    // SAFETY: the caller guarantees writable output storage.
+    unsafe { *out = std::ptr::null_mut() };
+    // SAFETY: the caller guarantees `panel` is null or live.
+    let created = std::panic::catch_unwind(|| unsafe {
+        subs::overlay::Overlay::create(panel, width, height)
+    });
+    match created {
+        Ok(Ok(overlay)) => {
+            // SAFETY: as above.
+            unsafe { *out = Box::into_raw(overlay) };
+            subs::S_OK
+        }
+        Ok(Err(error)) => error.code().0,
+        Err(_) => subs::E_UNEXPECTED,
+    }
+}
+
+/// Sets the swap chain size in physical pixels, the panel's composition scale (the swap chain gets
+/// the inverse transform) and the displayed video rectangle inside the panel, in physical pixels.
+/// The render thread applies it. `E_INVALIDARG` for a zero or oversized frame, a non-positive scale
+/// or non-finite values.
+///
+/// # Safety
+/// `overlay` must be null or a live handle from [`bale_sub_overlay_create`].
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_sub_overlay_set_layout(
+    overlay: *mut subs::overlay::Overlay,
+    width: u32,
+    height: u32,
+    scale_x: f32,
+    scale_y: f32,
+    video_x: f32,
+    video_y: f32,
+    video_w: f32,
+    video_h: f32,
+) -> i32 {
+    let layout = subs::Layout {
+        width,
+        height,
+        scale_x,
+        scale_y,
+        video_x,
+        video_y,
+        video_w,
+        video_h,
+    };
+    // SAFETY: forwarded contract.
+    unsafe { with_overlay(overlay, |overlay| overlay.set_layout(layout)) }
+}
+
+/// Replaces the current track with UTF-8 ASS/SSA script text (copied). Waits for the render thread
+/// to parse it; `E_INVALIDARG` if libass cannot (no track is loaded then).
+///
+/// # Safety
+/// `overlay` as in [`bale_sub_overlay_set_layout`]; `data` must point to `len` readable bytes.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_sub_overlay_load_ass(
+    overlay: *mut subs::overlay::Overlay,
+    data: *const u8,
+    len: usize,
+) -> i32 {
+    if data.is_null() || len == 0 {
+        return if overlay.is_null() {
+            subs::E_POINTER
+        } else {
+            subs::E_INVALIDARG
+        };
+    }
+    // SAFETY: the caller guarantees `len` readable bytes.
+    let script = unsafe { std::slice::from_raw_parts(data, len) };
+    // SAFETY: forwarded contract.
+    unsafe { with_overlay(overlay, |overlay| overlay.load(script)) }
+}
+
+/// Adds an embedded font (MKV attachment / Silo font bundle; bytes copied). `name` is UTF-8 and may
+/// be empty. Takes effect for the next load.
+///
+/// # Safety
+/// `overlay` as in [`bale_sub_overlay_set_layout`]; `name` must point to `name_len` readable bytes
+/// (or be null with 0) and `data` to `len` readable bytes.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_sub_overlay_add_font(
+    overlay: *mut subs::overlay::Overlay,
+    name: *const u8,
+    name_len: usize,
+    data: *const u8,
+    len: usize,
+) -> i32 {
+    if overlay.is_null() {
+        return subs::E_POINTER;
+    }
+    if data.is_null() || len == 0 || (name.is_null() && name_len != 0) {
+        return subs::E_INVALIDARG;
+    }
+    // SAFETY: the caller guarantees the lengths; a null or empty name is an empty slice.
+    let (name, data) = unsafe {
+        let name: &[u8] = if name_len == 0 {
+            &[]
+        } else {
+            std::slice::from_raw_parts(name, name_len)
+        };
+        (name, std::slice::from_raw_parts(data, len))
+    };
+    // SAFETY: forwarded contract.
+    unsafe { with_overlay(overlay, |overlay| overlay.add_font(name, data)) }
+}
+
+/// Drops the track and presents an empty (transparent) frame.
+///
+/// # Safety
+/// `overlay` must be null or a live handle from [`bale_sub_overlay_create`].
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_sub_overlay_clear(overlay: *mut subs::overlay::Overlay) -> i32 {
+    // SAFETY: forwarded contract.
+    unsafe { with_overlay(overlay, subs::overlay::Overlay::clear) }
+}
+
+/// Media clock: the subtitle/source time in ms at the moment of the call, the playback rate and
+/// whether playback is running (non-zero). While playing the render thread extrapolates
+/// position + elapsed × rate. `E_INVALIDARG` for a non-finite rate.
+///
+/// # Safety
+/// `overlay` must be null or a live handle from [`bale_sub_overlay_create`].
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_sub_overlay_set_clock(
+    overlay: *mut subs::overlay::Overlay,
+    position_ms: i64,
+    rate: f64,
+    playing: u32,
+) -> i32 {
+    // SAFETY: forwarded contract.
+    unsafe {
+        with_overlay(overlay, |overlay| {
+            overlay.set_clock(position_ms, rate, playing != 0)
+        })
+    }
+}
+
+/// Copies the overlay's counters and timings to `out`.
+///
+/// # Safety
+/// `overlay` as in [`bale_sub_overlay_set_layout`]; `out` must be null or writable for one
+/// [`subs::BaleSubStats`].
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_sub_overlay_stats(
+    overlay: *mut subs::overlay::Overlay,
+    out: *mut subs::BaleSubStats,
+) -> i32 {
+    if out.is_null() {
+        return subs::E_POINTER;
+    }
+    // SAFETY: forwarded contract; `out` is writable (checked non-null above).
+    unsafe {
+        with_overlay(overlay, |overlay| {
+            out.write_unaligned(overlay.stats());
+            subs::S_OK
+        })
+    }
+}
+
+/// Stops and joins the render thread, detaches the swap chain from the panel and releases
+/// everything. Null is a no-op.
+///
+/// # Safety
+/// `overlay` must be null or a handle from [`bale_sub_overlay_create`] that is not used again; no
+/// other call on it may be running. Call on the UI thread.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_sub_overlay_destroy(overlay: *mut subs::overlay::Overlay) {
+    if overlay.is_null() {
+        return;
+    }
+    // SAFETY: the caller hands back sole ownership of a handle made by `Box::into_raw`.
+    let overlay = unsafe { Box::from_raw(overlay) };
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(overlay)));
 }
 
 #[cfg(windows)]
