@@ -331,6 +331,43 @@ pub unsafe extern "C" fn bale_sub_overlay_load_ass(
     unsafe { with_overlay(overlay, |overlay| overlay.load(script)) }
 }
 
+/// Replaces the current track with subtitle file text in `format`: 0 = ASS/SSA (the same as
+/// [`bale_sub_overlay_load_ass`]), 1 = SubRip, 2 = WebVTT. SubRip and WebVTT are converted to an
+/// ASS script first (`subs::convert`; bytes that are not UTF-8 are decoded lossily) and then
+/// loaded the same way, so this also waits for the render thread. `E_INVALIDARG` for any other
+/// format, for empty data, or if libass cannot parse the script.
+///
+/// # Safety
+/// `overlay` as in [`bale_sub_overlay_set_layout`]; `data` must point to `len` readable bytes.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_sub_overlay_load_text(
+    overlay: *mut subs::overlay::Overlay,
+    format: u32,
+    data: *const u8,
+    len: usize,
+) -> i32 {
+    if data.is_null() || len == 0 {
+        return if overlay.is_null() {
+            subs::E_POINTER
+        } else {
+            subs::E_INVALIDARG
+        };
+    }
+    // SAFETY: the caller guarantees `len` readable bytes.
+    let text = unsafe { std::slice::from_raw_parts(data, len) };
+    // SAFETY: forwarded contract.
+    unsafe {
+        with_overlay(overlay, |overlay| {
+            let options = subs::convert::ConvertOptions::default();
+            match subs::convert::to_ass_script(format, text, &options) {
+                Some(script) => overlay.load(&script),
+                None => subs::E_INVALIDARG,
+            }
+        })
+    }
+}
+
 /// Adds an embedded font (MKV attachment / Silo font bundle; bytes copied). `name` is UTF-8 and may
 /// be empty. Takes effect for the next load.
 ///

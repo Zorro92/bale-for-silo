@@ -2,8 +2,10 @@
 //! libass at the media clock and its images are drawn on the GPU into a transparent composition
 //! swap chain that a XAML `SwapChainPanel` shows above the video. This file holds the
 //! platform-independent parts (ABI types, clock, layout and atlas packing), `schedule` knows when
-//! a track's picture can change, and `overlay` is the Direct3D 11 renderer and its thread.
+//! a track's picture can change, `convert` turns SubRip and WebVTT into ASS scripts, and
+//! `overlay` is the Direct3D 11 renderer and its thread.
 
+pub mod convert;
 #[cfg(windows)]
 pub mod overlay;
 pub mod schedule;
@@ -11,7 +13,7 @@ pub mod schedule;
 use std::time::Duration;
 
 /// Returned by `bale_sub_abi_version`; bumped whenever a `bale_sub_*` export changes.
-pub const SUB_ABI_VERSION: u32 = 1;
+pub const SUB_ABI_VERSION: u32 = 2;
 
 pub const S_OK: i32 = 0;
 pub const E_NOTIMPL: i32 = 0x8000_4001u32 as i32;
