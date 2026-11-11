@@ -204,3 +204,44 @@ by the host check, since there is no 8-bit 4K clip on the console yet.
 - **Next CPU target:** entropy decoding. Options are frame-parallel decoding, multi-tile streams
   only, or a faster entropy decoder (dav1d/rav1d-derived) in the Rust phase. At 12.6 Mbps the SVT
   clip's entropy was 18 ms, so typical film bitrates are less CPU-bound than these 40 Mbps tests.
+
+## Step 1b: intra v2 (2026-11-11, negative)
+Patch `0004-intra-v2-shader.patch` (build run 43003822357, package 0.1.9.0) adds `-intrav2`. It is a
+new scheduler plus one 384-thread shader that runs several wavefront passes inside each thread
+group, so there are fewer dispatches and UAV barriers. The first two CI runs failed: FXC treats
+`pass` and `sample` as keywords, and the host check, which compiles the shader as C++, did not
+notice.
+
+The figures below are on the same console, both with `-cdefv2`, 300 frames of 4K 10-bit:
+
+| Stream | Intra path | Intra ms (p95) | Barriers per frame | Thread groups | Passes per group | GPU busy ms | Decode fps |
+|---|---|---|---|---|---|---|---|
+| SVT 40 Mbps | original | 13.1 (22.9) | 83 | 8,096 | 1.0 | 30.7 | 23.1 |
+| SVT 40 Mbps | v2 | 31.7 (77.1) | 57 | 1,415 | 3.1 | 50.1 | 16.4 |
+| Jellyfin 40 Mbps | original | 21.2 (37.7) | 188 | 7,821 | 1.0 | 50.3 | 16.5 |
+| Jellyfin 40 Mbps | v2 | 49.7 (91.5) | 73 | 1,566 | 6.1 | 78.6 | 12.1 |
+
+It is **bit-exact**: `-cdefv2 -intrav2 -md5_frame_check` reports `MD5 is OK` on both clips against
+the original shaders. But it is **2.3–2.4x slower.**
+
+**Reading:**
+- **Barrier overhead was not the main cost.** The original spends about 0.11–0.16 ms per wavefront
+  step, and real content cut steps only 1.5–2.6x. On the host check's random layouts the cut was
+  9.5x.
+- **Each v2 step is much heavier.** Passes inside a group run in series behind two group-wide
+  syncs each.
+- **Occupancy is poor.** At 61 temps (up to ~244 VGPRs) only one or two waves fit per SIMD, so
+  memory latency is not hidden.
+- **The GPU is less full.** There are 5x fewer thread groups.
+- **Conclusion:** the intra critical path is latency-bound. Fewer, fatter steps do not help unless
+  per-thread cost and register use fall sharply.
+
+**Untried and cheap:** upstream compiles `intra_main.hlsl` and `intra_main_hbd.hlsl` with
+optimization **disabled** (`DisableOptimizations` true for Release in `libav1.vcxproj`). They are
+the only shaders built that way. With FXC optimization on (an A/B build) the original wavefront
+might get much cheaper per step, with the same dispatch structure and the same bit-exact integer
+maths.
+
+**The CPU limits the SVT clip anyway.** With `-cdefv2` alone the GPU is busy 30.7 ms per frame
+but the wall is 44 ms. The decode thread (entropy 34–38 ms on one tile, plus setup) sets the
+pace.
