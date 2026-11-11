@@ -55,7 +55,7 @@ public static class PlaybackStartBuilder
             AudioPassthroughCodecs = device.AudioPassthroughCodecs,
             MaxChannels = device.MaxChannels,
             HdrDetails = device.Hdr,
-            Subtitles = device.Subtitles,
+            Subtitles = device.Subtitles with { EmbeddedBitmap = false },
             // PlaybackCapabilityDetector.kt: only the untouched original executor maps and verifies
             // the catalog audio ordinal. Packaged outputs contain the server-selected stream alone.
             ValidatedClaims = device.OriginalHttpSupported && device.OriginalAudioTrackSelectionSupported

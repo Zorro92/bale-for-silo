@@ -83,6 +83,13 @@ public static class PlaybackMediaUrl
                 case "file_id" or "downloaded_subtitle_id" or "embedded_stream_index":
                     if (value.Length is 0 or > 18 || !value.All(char.IsAsciiDigit)) return false;
                     break;
+                case "position" or "duration":
+                    if (value.Length is 0 or > 32
+                        || !double.TryParse(value, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var seconds)
+                        || !double.IsFinite(seconds) || seconds < 0
+                        || (key == "duration" && (seconds <= 0 || seconds > 3600))) return false;
+                    break;
+                case "windowed":
                 case "original":
                     if (value != "1") return false;
                     break;

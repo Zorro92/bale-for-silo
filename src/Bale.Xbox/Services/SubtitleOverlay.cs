@@ -25,7 +25,7 @@ internal struct BaleSubStats
 /// </summary>
 internal sealed unsafe class SubtitleOverlay : IDisposable
 {
-    private const uint ExpectedAbi = 2;
+    private const uint ExpectedAbi = 3;
     private const int InvalidArgument = unchecked((int)0x80070057);
     private const int Disposed = unchecked((int)0x80000013); // RO_E_CLOSED
 

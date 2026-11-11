@@ -6,16 +6,18 @@ namespace Bale.Core.Playback;
 
 /// <summary>
 /// What the player needs to draw a plan's subtitle track itself: the sidecar and its font bundle (both
-/// header-authenticated API URLs), the overlay's text format, and the key under which fetched bytes may
+/// header-authenticated API URLs), the overlay's format, and the key under which fetched bytes may
 /// be reused by a remount of the same track.
 /// </summary>
 public sealed record PlaybackSubtitleSource(Uri Uri, uint Format, string Mode, double TimingOriginSeconds, Uri? FontBundle)
 {
-    /// <summary>bale_sub_overlay_load_text format IDs.</summary>
-    public const uint Ass = 0, Srt = 1, WebVtt = 2;
+    /// <summary>Overlay formats: 0–2 load text; Pgs uses the separate binary-window decoder.</summary>
+    public const uint Ass = 0, Srt = 1, WebVtt = 2, Pgs = 3;
+
+    public bool IsBitmap => Format == Pgs;
 
     /// <summary>Fixed name for logs; never server text.</summary>
-    public string FormatName => Format switch { Ass => "ass", Srt => "srt", _ => "vtt" };
+    public string FormatName => Format switch { Ass => "ass", Srt => "srt", Pgs => "sup", _ => "vtt" };
 
     /// <summary>Session-scoped URLs: a seek reanchor or recovery mount of the same track keeps the key.</summary>
     public string CacheKey => Uri.AbsoluteUri + "\n" + FontBundle?.AbsoluteUri;
@@ -32,7 +34,7 @@ public sealed record PlaybackEmbeddedSubtitle(int StreamIndex)
 }
 
 /// <summary>
-/// silo-server SubtitleDecisionV3: "render" and "convert" both hand the client a text artifact to draw;
+/// silo-server SubtitleDecisionV3: "render" and "convert" hand the client an artifact to draw;
 /// "off" and "burn_in" need nothing. "render" with an embedded stream and no artifact is an image track
 /// in the direct-played container (the original_http native_embedded claim): see ResolveEmbedded.
 /// </summary>
@@ -72,6 +74,7 @@ public static class PlaybackSubtitleResolver
         "ass" or "ssa" or "text/x-ssa" or "text/x-ass" => PlaybackSubtitleSource.Ass,
         "srt" or "subrip" or "application/x-subrip" => PlaybackSubtitleSource.Srt,
         "vtt" or "webvtt" or "text/vtt" => PlaybackSubtitleSource.WebVtt,
+        "sup" or "pgs" or "hdmv_pgs_subtitle" or "application/pgs" or "application/x-pgs" => PlaybackSubtitleSource.Pgs,
         _ => null,
     };
 }

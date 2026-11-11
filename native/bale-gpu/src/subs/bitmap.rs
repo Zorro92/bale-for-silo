@@ -77,10 +77,13 @@ pub struct Rect {
     pub y: i32,
     pub w: u32,
     pub h: u32,
-    /// `w * h` palette indices, rows packed.
-    indices: Vec<u8>,
+    /// PGS composition forced flag (selection is track-based, so both kinds draw).
+    pub forced: bool,
+    /// `w * h` palette indices, rows packed. Shared so overlapping windows carry a held
+    /// composition without copying its pixels on the UI thread.
+    indices: Arc<Vec<u8>>,
     /// Premultiplied RGBA per palette entry.
-    palette: Vec<[u8; 4]>,
+    palette: Arc<Vec<[u8; 4]>>,
 }
 
 impl Rect {
@@ -91,18 +94,21 @@ impl Rect {
             y,
             w,
             h,
-            indices,
-            palette: palette
-                .iter()
-                .map(|&color| premultiplied_rgba(color))
-                .collect(),
+            indices: Arc::new(indices),
+            forced: false,
+            palette: Arc::new(
+                palette
+                    .iter()
+                    .map(|&color| premultiplied_rgba(color))
+                    .collect(),
+            ),
         }
     }
 
     /// The picture as premultiplied RGBA8 rows. An index past the palette is transparent.
     pub fn rgba(&self) -> Vec<u8> {
         let mut rgba = Vec::with_capacity(self.indices.len() * 4);
-        for &index in &self.indices {
+        for &index in self.indices.iter() {
             let color = self.palette.get(usize::from(index)).unwrap_or(&[0; 4]);
             rgba.extend_from_slice(color);
         }
@@ -249,6 +255,8 @@ unsafe fn copy_rect(rect: &BaleSubBitmapRect) -> Result<Option<Rect>, i32> {
 #[derive(Debug, Default)]
 pub struct Queue {
     events: VecDeque<Arc<Event>>,
+    /// Sidecar windows retain history for backward seeks; the PGS decoder bounds their memory.
+    retained: bool,
 }
 
 impl Queue {
@@ -268,7 +276,34 @@ impl Queue {
         }
     }
 
+    pub fn replace(&mut self, events: Vec<Event>) {
+        self.events = events.into_iter().map(Arc::new).collect();
+        self.retained = true;
+    }
+
+    /// A positioned extract can start inside a long-held composition. If it has no state yet at
+    /// the current clock, carry the old visible picture through the overlap until a known clear
+    /// or the first new event. Only one picture is copied, so retained memory stays bounded.
+    pub fn replace_window(&mut self, mut events: Vec<Event>, now: i64, end: i64) {
+        if self.retained
+            && events.first().is_none_or(|e| e.start_ms > now)
+            && let Some(at) = self.current(now)
+            && self.visible(now).is_some()
+        {
+            let mut carry = (*self.events[at]).clone();
+            // The old window cap is synthetic; a following display set is the authored end.
+            carry.end_ms = Some(
+                self.events
+                    .get(at + 1)
+                    .map_or(end, |next| end.min(next.start_ms)),
+            );
+            events.insert(0, carry);
+        }
+        self.replace(events);
+    }
+
     pub fn flush(&mut self) {
+        self.retained = false;
         self.events.clear();
     }
 
@@ -303,6 +338,9 @@ impl Queue {
     /// Drops the events that ended at or before `t_ms`. An open-ended last event (a clear too)
     /// stays: a late push with an earlier start still has to end at it.
     pub fn prune(&mut self, t_ms: i64) {
+        if self.retained {
+            return;
+        }
         while !self.events.is_empty() && self.effective_end(0).is_some_and(|end| end <= t_ms) {
             self.events.pop_front();
         }
@@ -392,6 +430,8 @@ pub fn place(
 pub trait Sink: Send + Sync {
     /// Queues `event` if the sink is (still) bound to `token`; an HRESULT.
     fn push(&self, token: u64, event: Event) -> i32;
+    /// Atomically installs a decoded sidecar window if the token still owns the sink.
+    fn replace(&self, token: u64, events: Vec<Event>, now: i64, end: i64) -> i32;
     /// Drops everything queued for `token`; an HRESULT.
     fn flush(&self, token: u64) -> i32;
     /// Another sink took `token` over.
@@ -439,6 +479,14 @@ pub unsafe fn push(token: u64, event: *const BaleSubBitmapEvent) -> i32 {
     match unsafe { Event::copy_from(event) } {
         Ok(event) => sink.push(token, event),
         Err(hr) => hr,
+    }
+}
+
+/// Commit a decoded sidecar; a retired mount cannot replace its successor's track.
+pub fn replace(token: u64, events: Vec<Event>, now: i64, end: i64) -> i32 {
+    match lookup(token) {
+        Some(sink) => sink.replace(token, events, now, end),
+        None => E_NOT_FOUND,
     }
 }
 
@@ -753,7 +801,7 @@ mod tests {
         assert_eq!(event.rects.len(), 1, "the empty rectangle is left out");
         let rect = &event.rects[0];
         assert_eq!((rect.x, rect.y, rect.w, rect.h), (10, 20, 2, 2));
-        assert_eq!(rect.indices, [0, 1, 1, 0]);
+        assert_eq!(**rect.indices, [0, 1, 1, 0]);
         assert_eq!(&rect.rgba()[..8], [0, 0, 255, 255, 255, 0, 0, 255]);
 
         let clear = BaleSubBitmapEvent {
@@ -895,6 +943,14 @@ mod tests {
                 return E_NOT_FOUND;
             }
             self.queue.lock().unwrap().push(event);
+            S_OK
+        }
+
+        fn replace(&self, token: u64, events: Vec<Event>, now: i64, end: i64) -> i32 {
+            if *self.token.lock().unwrap() != token {
+                return E_NOT_FOUND;
+            }
+            self.queue.lock().unwrap().replace_window(events, now, end);
             S_OK
         }
 

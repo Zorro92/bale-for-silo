@@ -329,6 +329,7 @@ jobs:
               'bale_zc_repack', 'bale_zc_repack_into', 'bale_zc_repack_into_bits', 'bale_zc_stats', 'bale_zc_destroy',
               'bale_gpu_abi_version', 'bale_gpu_std_probe', 'bale_gpu_d3d11_probe',
               'bale_gpu_engine_probe', 'bale_gpu_engine_probe_source', 'bale_ass_probe', 'bale_ass_probe_png',
+              'bale_sub_pgs_decode', 'bale_sub_pgs_bind', 'bale_sub_pgs_destroy',
               'bale_frame_observer_create', 'bale_frame_observer_mark', 'bale_frame_observer_drain',
               'bale_frame_observer_status', 'bale_frame_observer_video_descriptor', 'bale_frame_observer_destroy')
             # Removed with the staging upload, CPU grain, debug repack and upload/zero-copy probes.

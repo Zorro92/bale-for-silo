@@ -160,6 +160,20 @@ impl Sink for Shared {
         S_OK
     }
 
+    fn replace(&self, token: u64, events: Vec<BitmapEvent>, now: i64, end: i64) -> i32 {
+        let mut state = self.lock();
+        if let Some(hr) = state.unusable() {
+            return hr;
+        }
+        if state.bitmap_token != token {
+            return bitmap::E_NOT_FOUND;
+        }
+        state.bitmaps.replace_window(events, now, end);
+        state.signal = true;
+        self.wake.notify_one();
+        S_OK
+    }
+
     fn flush(&self, token: u64) -> i32 {
         let mut state = self.lock();
         if state.bitmap_token != token {

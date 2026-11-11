@@ -10,12 +10,13 @@ pub mod bitmap;
 pub mod convert;
 #[cfg(windows)]
 pub mod overlay;
+pub mod pgs;
 pub mod schedule;
 
 use std::time::Duration;
 
 /// Returned by `bale_sub_abi_version`; bumped whenever a `bale_sub_*` export changes.
-pub const SUB_ABI_VERSION: u32 = 2;
+pub const SUB_ABI_VERSION: u32 = 3;
 
 pub const S_OK: i32 = 0;
 pub const E_NOTIMPL: i32 = 0x8000_4001u32 as i32;

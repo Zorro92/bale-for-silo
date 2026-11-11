@@ -94,6 +94,7 @@ namespace Bale.Xbox
         private void Pause(Attempt attempt) => attempt.Media!.Player.Pause();
         private void DisposeMount(Attempt attempt)
         {
+            ClearPgsForTest();
             attempt.Media!.Cancellation.Cancel();
             attempt.Media.Cancellation.Dispose();
             attempt.Media = null;
@@ -105,6 +106,8 @@ namespace Bale.Xbox
             if (paused) session.PlaybackState = MediaPlaybackState.Paused;
             attempt.Media = new(transport, session);
             Mounts.Add((transport, start, paused));
+            if (attempt.Client.Playback.ResolveSubtitles(attempt.Plan) is { IsBitmap: true } source)
+                StartPgsSubtitles(attempt, attempt.Media, source);
             return Task.CompletedTask;
         }
         private void ShowSkipFeedback(int delta, double target) { }
@@ -112,7 +115,12 @@ namespace Bale.Xbox
         private void SetLoading(bool loading) { }
         private void UpdatePlaybackState(Attempt attempt, Mount media) { }
         private void RefreshStats(Attempt attempt) { }
-        private void PushSubtitleClock(bool force) { }
+        private void PushSubtitleClock(bool force)
+        {
+            var source = SourcePosition(_attempt);
+            RefreshPgsSubtitles(source);
+            SubtitleClocks.Add(SubtitleClockPush.Milliseconds(source - _subtitleTimingOrigin));
+        }
         private static void LogFailure(string operation, Exception error) => Log.Info($"{operation}: {error.GetType().Name}");
         public void Dispose()
         {

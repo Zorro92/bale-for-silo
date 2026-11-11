@@ -569,3 +569,82 @@ unsafe fn write_report(text: &str, report: *mut u8, report_capacity: u32) -> u32
     unsafe { std::ptr::copy_nonoverlapping(text.as_ptr(), report, length) };
     length as u32
 }
+
+/// An owned PGS window, decoded off the UI thread and committed only after the caller checks
+/// mount/request identity. A separate handle avoids publishing a stale decode after a seek.
+pub struct PgsWindow(Vec<subs::bitmap::Event>, i64);
+
+/// Decode a bounded .sup window (16 MiB input, 64 MiB decoded indices). Empty windows are valid.
+/// `end_ms` is the source-time coverage end, not the remux player's local clock.
+/// # Safety
+/// `data` points to `len` readable bytes (may be null for zero length); `out` is writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_sub_pgs_decode(
+    data: *const u8,
+    len: usize,
+    end_ms: i64,
+    video_w: u32,
+    video_h: u32,
+    out: *mut *mut PgsWindow,
+) -> i32 {
+    if out.is_null() {
+        return subs::E_POINTER;
+    }
+    // SAFETY: the caller provides a writable output slot.
+    unsafe {
+        *out = std::ptr::null_mut();
+    }
+    if len > subs::pgs::MAX_INPUT || (len > 0 && data.is_null()) {
+        return subs::E_INVALIDARG;
+    }
+    std::panic::catch_unwind(|| {
+        // SAFETY: validated null/length; the caller provides readable data.
+        let data = if len == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(data, len) }
+        };
+        let video = (video_w > 0 && video_h > 0).then_some((video_w, video_h));
+        match subs::pgs::decode(data, end_ms, video) {
+            Ok(events) => {
+                // SAFETY: the caller provides a writable output slot.
+                unsafe {
+                    *out = Box::into_raw(Box::new(PgsWindow(events, end_ms)));
+                }
+                subs::S_OK
+            }
+            Err(hr) => hr,
+        }
+    })
+    .unwrap_or(subs::E_UNEXPECTED)
+}
+
+/// Move the window into the bitmap sink atomically. Call at most once per decoded handle.
+/// # Safety
+/// `window` is a live handle from `bale_sub_pgs_decode`, exclusively used for this call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_sub_pgs_bind(token: u64, window: *mut PgsWindow, now_ms: i64) -> i32 {
+    if window.is_null() {
+        return subs::E_POINTER;
+    }
+    std::panic::catch_unwind(|| {
+        // SAFETY: the caller guarantees a live, exclusively borrowed handle.
+        let window = unsafe { &mut *window };
+        let events = std::mem::take(&mut window.0);
+        subs::bitmap::replace(token, events, now_ms, window.1)
+    })
+    .unwrap_or(subs::E_UNEXPECTED)
+}
+
+/// Release a PGS decode handle. Null is a no-op.
+/// # Safety
+/// `window` is null or an owned handle from `bale_sub_pgs_decode`, never used again.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_sub_pgs_destroy(window: *mut PgsWindow) {
+    if !window.is_null() {
+        // SAFETY: the caller relinquishes the owned handle.
+        unsafe {
+            drop(Box::from_raw(window));
+        }
+    }
+}

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using Bale.Core.Api.Models;
+using Bale.Core.Detail;
 using Bale.Core.Playback;
 using static Bale.Core.Tests.PlaybackTestSupport;
 
@@ -122,12 +123,17 @@ public class PlaybackSubtitlesTests
     [InlineData("webvtt", null, 2u)]
     [InlineData(null, "text/vtt; charset=utf-8", 2u)]
     [InlineData("mystery", "text/vtt", 2u)]
+    [InlineData("sup", "application/octet-stream", 3u)]
+    [InlineData("pgs", null, 3u)]
+    [InlineData(null, "application/pgs", 3u)]
     public void FormatAndMimeTypePickTheOverlayFormat(string? format, string? mime, uint expected) =>
         Assert.Equal(expected, PlaybackSubtitleResolver.Resolve(Plan(format: format, mime: mime), Server)!.Format);
 
     [Theory]
-    [InlineData("pgs", "application/octet-stream")]
-    [InlineData("sup", null)]
+    [InlineData("dvd_subtitle", "application/octet-stream")]
+    [InlineData("sub", null)]
+    [InlineData("idx", null)]
+    [InlineData("dvb_subtitle", null)]
     [InlineData(null, null)]
     public void UnknownFormatsAreNotLoaded(string? format, string? mime) =>
         Assert.Null(PlaybackSubtitleResolver.Resolve(Plan(format: format, mime: mime), Server));
@@ -139,6 +145,7 @@ public class PlaybackSubtitlesTests
     [InlineData("/api/v2/stream/session/subtitles/0.srt?file_id=42&original=1&external_subtitle_key=0123456789abcdefaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     [InlineData("/api/v2/stream/session/subtitles/2/fonts?file_id=42&embedded_stream_index=5")]
     [InlineData("/api/v2/stream/session/subtitles/3")]
+    [InlineData("/api/v2/stream/session/subtitles/0.sup?file_id=42&embedded_stream_index=3&windowed=1&position=120.5&duration=180")]
     public void ServerSubtitleUrlShapesAreAccepted(string url) =>
         Assert.Equal(new Uri("https://silo.example.com" + url), PlaybackMediaUrl.ResolveSubtitle(url, Server));
 
@@ -155,6 +162,13 @@ public class PlaybackSubtitlesTests
     [InlineData("/api/v2/stream/session/subtitles/3.ass?original=0")]
     [InlineData("/api/v2/stream/session/subtitles/3.ass?redirect=1")]
     [InlineData("/api/v2/stream/session/subtitles/3.ass#x")]
+    [InlineData("/api/v2/stream/session/subtitles/0.sup?windowed=2")]
+    [InlineData("/api/v2/stream/session/subtitles/0.sup?position=-1")]
+    [InlineData("/api/v2/stream/session/subtitles/0.sup?position=NaN")]
+    [InlineData("/api/v2/stream/session/subtitles/0.sup?position=Infinity")]
+    [InlineData("/api/v2/stream/session/subtitles/0.sup?duration=0")]
+    [InlineData("/api/v2/stream/session/subtitles/0.sup?duration=3601")]
+    [InlineData("/api/v2/stream/session/subtitles/0.sup?windowed=1&windowed=1")]
     public void OtherSubtitleUrlsAreRefused(string url)
     {
         Assert.Null(PlaybackMediaUrl.ResolveSubtitle(url, Server));
@@ -265,6 +279,32 @@ public class PlaybackSubtitlesTests
     }
 
     [Fact]
+    public async Task PgsWindowsAreBinaryAuthenticatedCappedAndReplaceExistingWindowQueries()
+    {
+        // UTF-16-looking bytes must remain binary. This used to be a text-only fetch path.
+        var bytes = new byte[] { 0xff, 0xfe, 0, 1, 0, 2 };
+        var stub = new PgsHandler(bytes);
+        using var client = Create(stub);
+        var plan = Plan(format: "sup", mime: "application/octet-stream",
+            url: "/api/v2/stream/session/subtitles/3.sup?file_id=42&windowed=1&position=0&duration=180");
+        plan.Stream!.Headers = new StreamV3_headers { AdditionalData = { ["X-Stream-Grant"] = "grant" } };
+        var media = client.Playback.OpenMedia(plan);
+        var source = client.Playback.ResolveSubtitles(plan)!;
+        Assert.True(source.IsBitmap);
+        Assert.Equal("sup", source.FormatName);
+        Assert.Null(source.FontBundle);
+        var range = PgsSubtitleRange.At(1500);
+        Assert.Equal(bytes, await media.GetPgsSubtitlesAsync(source, range, CancellationToken.None));
+        var request = Assert.Single(stub.Requests);
+        Assert.Equal("?file_id=42&windowed=1&position=1470&duration=180", request.RequestUri!.Query);
+        Assert.Equal("Bearer test-access", request.Headers.Authorization!.ToString());
+        Assert.Equal("profile", Assert.Single(request.Headers.GetValues("X-Profile-Id")));
+        Assert.False(request.Headers.Contains("X-Stream-Grant"));
+        Assert.Equal(request.RequestUri, PlaybackMediaUrl.ResolveSubtitle(request.RequestUri.PathAndQuery, Server));
+        await Assert.ThrowsAsync<ArgumentException>(() => media.GetSubtitleAsync(source, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task AFailedSubtitleFetchThrowsAndNoBundleMeansNoRequest()
     {
         var stub = new StubHandler().Enqueue(HttpStatusCode.NotFound, "{}");
@@ -277,4 +317,74 @@ public class PlaybackSubtitlesTests
         Assert.Empty(await media.GetSubtitleFontsAsync(source, CancellationToken.None));
         Assert.Single(stub.Requests);
     }
+    [Fact]
+    public void AutoKeepsRenderableEmbeddedPgsAndSelectsForcedPgsInTheAudioLanguage()
+    {
+        VersionSubtitleTrack[] tracks =
+        [
+            new() { Codec = "srt", Language = "en", External = true },
+            new() { Codec = "hdmv_pgs_subtitle", Language = "eng", External = false },
+            new() { Codec = "hdmv_pgs_subtitle", Language = "eng", Forced = true },
+        ];
+        Assert.Equal(1, PlaybackFormatting.AutoResolvedSubtitleOrdinal(tracks, new("en", "always")));
+        Assert.Equal(2, PlaybackFormatting.AutoResolvedSubtitleOrdinal(tracks, new("en", "auto", true, "en")));
+        Assert.Null(PlaybackFormatting.AutoResolvedSubtitleOrdinal(tracks, new("en", "auto", false, "en")));
+        Assert.Equal(2, PlaybackFormatting.AutoResolvedSubtitleOrdinal(tracks, new("en", "off", true, "en")));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task PgsFetchCapsKnownLengthAndChunkedResponses(bool contentLength)
+    {
+        using var body = new CountingSubtitleStream(PgsSubtitleRange.MaxBytes + 1);
+        var stub = new PgsHandler([]) { Content = contentLength
+            ? new ByteArrayContent(new byte[PgsSubtitleRange.MaxBytes + 1]) : new StreamContent(body) };
+        using var client = Create(stub);
+        var plan = Plan(format: "sup", mime: "application/octet-stream");
+        var media = client.Playback.OpenMedia(plan);
+        await Assert.ThrowsAsync<InvalidDataException>(() => media.GetPgsSubtitlesAsync(
+            client.Playback.ResolveSubtitles(plan)!, PgsSubtitleRange.At(1500), CancellationToken.None));
+        Assert.True(body.BytesRead <= PgsSubtitleRange.MaxBytes + 81920);
+    }
+
+    private sealed class CountingSubtitleStream(int length) : Stream
+    {
+        public int BytesRead { get; private set; }
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => BytesRead; set => throw new NotSupportedException(); }
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var read = Math.Min(count, length - BytesRead);
+            buffer.AsSpan(offset,read).Clear();
+            BytesRead += read;
+            return read;
+        }
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+        {
+            ct.ThrowIfCancellationRequested();
+            var read = Math.Min(buffer.Length, length - BytesRead);
+            buffer.Span[..read].Clear(); BytesRead += read;
+            return ValueTask.FromResult(read);
+        }
+        public override void Flush() => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer,int offset,int count) => throw new NotSupportedException();
+    }
+
+    private sealed class PgsHandler(byte[] bytes) : HttpMessageHandler
+    {
+        public List<HttpRequestMessage> Requests { get; } = [];
+        public HttpContent? Content { get; init; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = Content ?? new ByteArrayContent(bytes) });
+        }
+    }
+
 }

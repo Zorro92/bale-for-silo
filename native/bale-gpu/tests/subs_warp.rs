@@ -277,3 +277,61 @@ fn bitmap_events_draw_under_the_track_and_end_on_time() {
     drop(overlay);
     assert_eq!(bale_gpu::bale_sub_bitmap_flush(TOKEN), E_NOT_FOUND);
 }
+
+#[path = "common/pgs.rs"]
+mod pgs_fixture;
+
+#[test]
+fn pgs_sidecar_uses_the_bitmap_renderer_and_retains_backward_seek_history() {
+    const TOKEN: u64 = 0x5AB_0002;
+    // SAFETY: null panel creates an offscreen WARP overlay.
+    let overlay = unsafe {
+        Overlay::create_with_driver(std::ptr::null_mut(), 1920, 1080, D3D_DRIVER_TYPE_WARP)
+    }
+    .expect("create overlay on WARP");
+    assert_eq!(overlay.set_layout(Layout::full(1920, 1080)), S_OK);
+    assert_eq!(overlay.set_clock(1500, 1.0, false), S_OK);
+    assert_eq!(overlay.bind_bitmaps(TOKEN), S_OK);
+    let data = pgs_fixture::fixture();
+    let mut window = std::ptr::null_mut();
+    // SAFETY: readable fixture and writable handle; the handle is destroyed exactly once.
+    unsafe {
+        assert_eq!(
+            bale_gpu::bale_sub_pgs_decode(data.as_ptr(), data.len(), 6000, 1920, 1080, &mut window),
+            S_OK
+        );
+        assert_eq!(bale_gpu::bale_sub_pgs_bind(TOKEN, window, 1500), S_OK);
+        bale_gpu::bale_sub_pgs_destroy(window);
+    }
+    let shown = overlay.capture().expect("PGS capture");
+    assert_eq!(pixel(&shown, 10, 20), [255; 4]);
+    assert_eq!(pixel(&shown, 11, 20), [0, 0, 0, 128]);
+    assert_eq!(overlay.set_clock(4000, 1.0, false), S_OK);
+    assert_eq!(covered_rows(&overlay.capture().unwrap(), 0..1080), 0);
+    assert_eq!(overlay.set_clock(1500, 1.0, false), S_OK);
+    assert_eq!(pixel(&overlay.capture().unwrap(), 10, 20), [255; 4]);
+    // A remount always unbinds; a late decode for the retired token is rejected.
+    assert_eq!(overlay.bind_bitmaps(0), S_OK);
+    assert_eq!(covered_rows(&overlay.capture().unwrap(), 0..1080), 0);
+    unsafe {
+        assert_eq!(
+            bale_gpu::bale_sub_pgs_decode(data.as_ptr(), data.len(), 6000, 1920, 1080, &mut window),
+            S_OK
+        );
+        assert_eq!(
+            bale_gpu::bale_sub_pgs_bind(TOKEN, window, 1500),
+            E_NOT_FOUND
+        );
+        bale_gpu::bale_sub_pgs_destroy(window);
+    }
+    assert_eq!(overlay.bind_bitmaps(TOKEN + 1), S_OK);
+    unsafe {
+        assert_eq!(
+            bale_gpu::bale_sub_pgs_decode(data.as_ptr(), data.len(), 6000, 1920, 1080, &mut window),
+            S_OK
+        );
+        assert_eq!(bale_gpu::bale_sub_pgs_bind(TOKEN + 1, window, 1500), S_OK);
+        bale_gpu::bale_sub_pgs_destroy(window);
+    }
+    assert_eq!(pixel(&overlay.capture().unwrap(), 10, 20), [255; 4]);
+}

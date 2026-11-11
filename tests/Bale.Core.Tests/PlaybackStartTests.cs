@@ -84,6 +84,27 @@ public class PlaybackStartTests
     }
 
     [Fact]
+    public void PgsSidecarsFollowPackagedDeliveriesWithoutChangingNativeOriginalSubtitles()
+    {
+        var device = ConsoleEvidence.Default with { ProgressiveSupported = true };
+        var start = PlaybackStartBuilder.Build("file", "profile", "attempt", 0, PlaybackSelection.Auto, device, Identity);
+        var original = start.ClientPlaybackContext.Deliveries["original_http"].Subtitles;
+        Assert.False(original.EmbeddedBitmap);
+        Assert.Equal(ConsoleEvidence.Default.Subtitles.NativeEmbedded, original.NativeEmbedded);
+        foreach (var delivery in new[] { "progressive", "hls" })
+        {
+            var caps = start.ClientPlaybackContext.Deliveries[delivery].Subtitles;
+            Assert.True(caps.EmbeddedBitmap); // Server only serves embedded PGS (.sup) under this claim.
+            Assert.False(caps.SidecarBitmap); // No external bitmaps, VobSub .idx/.sub, or DVB sidecars.
+            Assert.Empty(caps.NativeEmbedded);
+            Assert.True(caps.SidecarText && caps.AssStyling && caps.FontAttachments);
+        }
+        var withdrawn = PlaybackStartBuilder.Build("file", "profile", "attempt", 0, PlaybackSelection.Auto,
+            device with { Subtitles = device.Subtitles with { EmbeddedBitmap = false } }, Identity);
+        Assert.All(withdrawn.ClientPlaybackContext.Deliveries.Values, d => Assert.False(d.Subtitles.EmbeddedBitmap));
+    }
+
+    [Fact]
     public void OriginalSubRipNeedsATextSidecarClaim()
     {
         var start = PlaybackStartBuilder.Build("file", "profile", "attempt-id", 0, PlaybackSelection.Auto,
@@ -230,13 +251,13 @@ public class PlaybackStartTests
             Assert.Empty(delivery.GetProperty("transformations").EnumerateArray());
             Assert.Equal(property.Name == "original_http" ? new[] { PlaybackProtocol.ClientSelectedAudioTrackClaim } : [],
                 Strings(delivery.GetProperty("validated_claims")));
-            // The overlay draws fetched text sidecars, and image tracks from a direct-played MKV only.
+            // The overlay draws text sidecars, native MKV bitmaps, and PGS sidecars on packaged routes.
             var subtitles = delivery.GetProperty("subtitles");
             Assert.True(subtitles.GetProperty("sidecar_text").GetBoolean());
             Assert.True(subtitles.GetProperty("ass_styling").GetBoolean());
             Assert.True(subtitles.GetProperty("font_attachments").GetBoolean());
             Assert.False(subtitles.GetProperty("embedded_text").GetBoolean());
-            Assert.False(subtitles.GetProperty("embedded_bitmap").GetBoolean());
+            Assert.Equal(property.Name != "original_http", subtitles.GetProperty("embedded_bitmap").GetBoolean());
             Assert.False(subtitles.GetProperty("sidecar_bitmap").GetBoolean());
             var embedded = subtitles.GetProperty("native_embedded");
             if (property.Name != "original_http")

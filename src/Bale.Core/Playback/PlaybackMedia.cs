@@ -75,8 +75,18 @@ public sealed class PlaybackMedia
     /// The plan's subtitle sidecar as UTF-8 text bytes, fetched as this plan's credential owner. The
     /// stream's own plan headers are for the media URL only and are not sent.
     /// </summary>
-    public async Task<byte[]> GetSubtitleAsync(PlaybackSubtitleSource source, CancellationToken ct) =>
-        PlaybackSubtitleText.ToUtf8(await GetCappedAsync(source.Uri, PlaybackSubtitleText.MaxBytes, ct).ConfigureAwait(false));
+    public async Task<byte[]> GetSubtitleAsync(PlaybackSubtitleSource source, CancellationToken ct)
+    {
+        if (source.IsBitmap) throw new ArgumentException("PGS requires a binary window fetch.", nameof(source));
+        return PlaybackSubtitleText.ToUtf8(await GetCappedAsync(source.Uri, PlaybackSubtitleText.MaxBytes, ct).ConfigureAwait(false));
+    }
+
+    /// <summary>A bounded PGS window. Bytes are binary: never run through subtitle text conversion.</summary>
+    public Task<byte[]> GetPgsSubtitlesAsync(PlaybackSubtitleSource source, PgsSubtitleRange range, CancellationToken ct)
+    {
+        if (!source.IsBitmap) throw new ArgumentException("A PGS source is required.", nameof(source));
+        return GetCappedAsync(range.RequestUri(source.Uri), PgsSubtitleRange.MaxBytes, ct);
+    }
 
     /// <summary>The embedded fonts of the plan's ASS/SSA track; empty when the plan names no bundle.</summary>
     public async Task<IReadOnlyList<SubtitleFont>> GetSubtitleFontsAsync(PlaybackSubtitleSource source, CancellationToken ct)

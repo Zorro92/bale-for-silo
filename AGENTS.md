@@ -191,8 +191,12 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   AC3/EAC3 reach the system Dolby decoder undecoded via patch 0021 (`bale_system_decoder_dolby`,
   keeps E-AC-3 JOC/Atmos). Passthrough remains unclaimed.
 - Subtitles are drawn by Bale's own overlay (`bale_gpu.dll`), never by FFmpegInteropX cues. Text
-  tracks are fetched sidecars (`PlaybackSubtitleResolver.Resolve`). Image tracks (PGS/DVD/DVB) come
-  from the container on direct MKV only: `ResolveEmbedded` gives the stream index, the player binds
+  tracks are fetched sidecars (`PlaybackSubtitleResolver.Resolve`). PGS on HLS/progressive uses
+  lossless `.sup` windows (`windowed=1`, source PTS), decoded in Rust into the same bitmap overlay.
+  Claim `embedded_bitmap` only on these packaged deliveries; the server gates it to embedded PGS.
+  Do not claim `sidecar_bitmap`: external bitmaps, DVD/DVB sidecars have no server representation.
+  Image tracks (PGS/DVD/DVB) on original_http still come from direct MKV: `ResolveEmbedded` gives
+  the stream index, the player binds
   the overlay to a sink token and passes `bale_subtitle_stream` / `bale_subtitle_sink` to the FFmpeg
   source (wrapper patch 0022). The claim is `native_embedded` on `original_http` alone; `Clear` does
   not unbind, so every new mount calls `BindBitmaps(0)` first.

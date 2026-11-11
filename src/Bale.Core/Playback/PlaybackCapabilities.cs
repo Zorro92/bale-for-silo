@@ -50,11 +50,11 @@ public static class ConsoleEvidence
         // Bale's own overlay (bale_gpu.dll, libass) draws fetched text sidecars: ASS/SSA with their
         // styling and the server's font bundle, SubRip and WebVTT. It also draws image tracks the
         // FFmpeg demuxer decodes from a direct MKV (wrapper patch 0022), claimed per stream index.
-        // PlaybackStartBuilder keeps that entry on original_http only. No .sup sidecar claim
-        // (EmbeddedBitmap/SidecarBitmap), and text tracks keep their sidecar route.
+        // PlaybackStartBuilder keeps native_embedded on original_http and opts packaged deliveries
+        // into PGS .sup windows. The server gates embedded_bitmap to embedded PGS alone.
         Subtitles: new()
         {
-            SidecarText = true, AssStyling = true, FontAttachments = true,
+            SidecarText = true, AssStyling = true, FontAttachments = true, EmbeddedBitmap = true,
             NativeEmbedded = Array.AsReadOnly(new[] { new NativeEmbeddedSubtitleCapability("mkv", EmbeddedBitmapSubtitleCodecs, "ffmpeg_stream_index") }),
         })
     {

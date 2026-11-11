@@ -100,7 +100,7 @@ Current production capability claims (`ConsoleEvidence.ForHardware` over the dec
 | Audio passthrough | None | Receiver verification pending |
 | Display HDR | Runtime HDMI detection, HDR10 only | Exact evidence after a successful read; unknown/empty HDR on failure |
 | HLS | System video/audio claims only, without VP9 | AdaptiveMediaSource cannot use FFmpeg fallbacks or its demuxer |
-| Subtitles | Own overlay: text sidecars (ASS/SSA, SubRip, WebVTT); PGS/DVD/DVB images from a direct-played MKV | Image tracks are an `original_http` `native_embedded` claim only (`embedded_subtitles_v1`); HLS/transcodes burn them in. Console verification of image tracks pending |
+| Subtitles | Own overlay: text sidecars (ASS/SSA, SubRip, WebVTT); PGS/DVD/DVB images from direct MKV; lossless PGS `.sup` windows on HLS/progressive | Original keeps `native_embedded` (`embedded_subtitles_v1`). Packaged deliveries claim `embedded_bitmap` for server-extracted PGS; DVD/DVB still require burn-in there. Console verification of image tracks pending |
 
 `PlaybackRoutePolicy.Decide` selects the pipeline separately for every mount. `original_http` /
 progressive uses FFmpeg only for AV1 or the **selected** fallback audio codec. AV1 sets
@@ -1379,3 +1379,52 @@ Things learned on the way:
 - Every server write (progress, watched, track picks) runs under the **Bale Test** profile.
 - Drive the player with `bale-debug.sh key/press` and check it with `where`, `wait` and
   screenshots.
+
+## PGS sidecars on packaged playback
+
+`PlaybackSubtitleResolver` accepts the server's `render`/`.sup` artifact. Original HTTP continues
+using the FFmpegInteropX stream-index sink (wrapper 0022, unchanged). HLS and progressive advertise
+`embedded_bitmap`; silo-server `subtitle_policy_v3.go` gates that boolean to embedded PGS. Neither
+external bitmap sidecars nor DVD/DVB extraction is claimed. `sidecar_bitmap` stays false. This
+removes a PGS-only burn-in requirement from an otherwise remuxable route; video or audio conversion
+required for other reasons is still the server's decision.
+
+`PgsSubtitleRange` requests `windowed=1&position=…&duration=180`, starting 30 source seconds before
+the current position, and refreshes 45 seconds before coverage ends. The server defaults to a full
+track without that opt-in. Its positioned extracts retain source PTS (`-copyts` with container-start
+correction); the client must fetch again outside coverage. The cache can warm a full extracted
+track in the background, then slice future windows from it. Bale limits each binary response to
+16 MiB and each decoded window to 64 MiB of indices/palettes and 4096 events, and serializes native
+decodes. An overlapping window may carry one still-visible picture if extraction starts inside
+a long display set; retained indices stay bounded by the new window plus that one picture.
+Parsing/fetching never runs on the UI thread. A failed window logs a fixed stage/HRESULT
+and retries after 10 seconds without changing the playback plan.
+
+Rust `subs/pgs.rs` handles PCS/WDS/PDS/fragmented ODS/END, PAL8 RLE, limited-range BT.709 (SD:
+BT.601), palette updates, forced flags, cropping and clears. Synthetic fixtures contain only small
+hand-authored segment structures. The bitmap ABI remains version 1; subtitle overlay ABI is 3.
+A decoded handle is committed atomically only after mount and request checks. Retained windows
+survive backward seeks; leaving coverage clears the previous picture while fetching. Source time
+comes from the mounted `PlaybackTimeline` via `SourcePosition`, so resume, Start over and reanchor
+origins are applied once. Paused seeks refresh too. Remounts cancel old requests, unbind with token
+0 and fetch/rebind under a fresh token. A window's final cue cannot outlive its coverage.
+
+Console validation (owner-run; implementation deliberately performs no console actions):
+
+1. Set `scripts/bale-debug.sh delivery hls`. Select an embedded English PGS track on a source whose
+   video/audio HLS route can remux. Expect `server_remux_hls`, subtitle `mode=render` with a `.sup`
+   artifact, and `player: subtitles mode=render format=sup windowed=1` in the log. No subtitle-only
+   video transcode. `scripts/bale-debug.sh suboverlay stats` should show queued events and images
+   during an authored cue.
+2. Watch past three minutes (a window rollover). Use `key l` / `key j` for forward/backward skips;
+   use `seek <source-seconds>` to cross both window edges and the HLS origin. Check cue starts,
+   clears, placement in letterbox bars, and no old picture after a seek. Pause and seek both ways;
+   cues should reflect the landed source time and remain still until playback resumes.
+3. Exit, Resume at a later source time, then exit and choose Start over. Confirm the opening cues
+   return at their original times. Reanchor before the remux origin and repeat backward/forward.
+4. Repeat with a route requiring video transcode for a separate codec/quality reason. It should
+   retain `.sup`/render instead of adding PGS burn-in. Repeat with forced PGS selected through Auto
+   (`show forced` and matching audio language), explicit PGS, and Off; check no stale overlay.
+5. Restore `scripts/bale-debug.sh delivery auto` and verify direct MKV still uses the native
+   embedded stream-index bitmap path. Progressive remains disabled by production transport policy;
+   its subtitle claim is ready when that transport is enabled, and is covered by unit/server tests.

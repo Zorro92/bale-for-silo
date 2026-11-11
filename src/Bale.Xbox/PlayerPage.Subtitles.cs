@@ -12,7 +12,7 @@ namespace Bale.Xbox;
 /// loads the subtitle sidecar each playback plan asks the client to draw, or binds the overlay to the
 /// image track the FFmpeg source decodes from the container, feeds the overlay the video
 /// rectangle and the SOURCE clock, and ties its D3D device to the player's media lifetime. Everything here
-/// runs on the UI thread except the two marked Task.Run bodies (HTTP fetch, native font copy and parse).
+/// runs on the UI thread except Task.Run bodies (HTTP fetch, native font copy and parsing).
 /// Logs carry fixed words, counts and HRESULTs only: never URLs, subtitle text or font names.
 /// </summary>
 public sealed partial class PlayerPage
@@ -130,8 +130,9 @@ public sealed partial class PlayerPage
                 playing = _state == "playing";
                 rate = SubtitleClockPush.Rate(player.PlaybackSession.PlaybackRate);
             }
-            if (!_subtitleClock.ShouldPush(playing, rate, Environment.TickCount64, force)) return;
             var position = current is null ? _sourcePosition : SourcePosition(current);
+            RefreshPgsSubtitles(position);
+            if (!_subtitleClock.ShouldPush(playing, rate, Environment.TickCount64, force)) return;
             overlay.SetClock(SubtitleClockPush.Milliseconds(position - _subtitleTimingOrigin), rate, playing);
         }
         catch (Exception ex) { LogFailure("subtitle clock", ex); }
@@ -148,7 +149,7 @@ public sealed partial class PlayerPage
 
     /// <summary>
     /// Called for every new mount, after ClearSubtitles and before the FFmpeg source is created: when
-    /// the plan's subtitle decision is a text sidecar for the client to draw (PlaybackSubtitleResolver),
+    /// the plan's subtitle decision is a sidecar for the client to draw (PlaybackSubtitleResolver),
     /// fetch and load it without holding up the mount. An in-container image track is bound here
     /// instead, so the mount's FFmpeg source can be told its stream and sink. A seek reanchor or
     /// recovery remount therefore gets its track back. Failures leave playback running without subtitles.
@@ -168,6 +169,12 @@ public sealed partial class PlayerPage
             {
                 // Off, burned in or unusable: nothing this plan could reuse.
                 _subtitlePayload = null;
+                return;
+            }
+            if (source.IsBitmap)
+            {
+                _subtitlePayload = null;
+                StartPgsSubtitles(attempt, media, source);
                 return;
             }
             _ = LoadPlanSubtitlesAsync(attempt, media, source, _subtitleGeneration);
@@ -334,6 +341,7 @@ public sealed partial class PlayerPage
     private void ClearSubtitles()
     {
         _subtitleGeneration++;
+        StopPgsSubtitles();
         _subtitleTimingOrigin = 0;
         if (_subtitles is not { } overlay) return;
         // Clear does not unbind: without this the old mount's image track would keep drawing.
@@ -349,6 +357,7 @@ public sealed partial class PlayerPage
     private void DisposeSubtitles(bool keepFetched = false)
     {
         _subtitleGeneration++;
+        StopPgsSubtitles();
         _subtitleTimingOrigin = 0;
         if (!keepFetched) _subtitlePayload = null;
         if (_subtitles is not { } overlay) return;
