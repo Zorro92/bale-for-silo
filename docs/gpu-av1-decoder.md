@@ -139,8 +139,15 @@ iterations per frame. Everything else (transforms, loop filter, LR, borders, cop
 - a fix for hidden frames: more output buffers, or none rented for hidden frames
 - multi-tile entropy decoding, or a faster entropy decoder
 
-That is a decoder project, not a port. Its payoff would be CPU, not playability: dav1d already plays
-4K30 on ~5.7 cores, while this design would use about one core for entropy decoding.
+That is a decoder project, not a port. Its payoff is playability *and* CPU. dav1d does not hold real
+time in heavy 4K scenes either: it stutters on the heaviest parts of a 4K film test, using ~6–7 cores. So a faster GPU
+decoder is the only remaining route to smooth heavy 4K AV1, and its entropy side would use about one core.
+
+**Decision (2026-11-11): the owner started a better-decoder project.** The first step is a shader
+rewrite inside the existing test player, CDEF first and then the intra wavefront. Each attempt is
+measured with `-gputime` and checked bit-exact against the original shaders with the player's
+`-save_md5` / `-md5_frame_check`. A Rust port in a new repo comes only after the shaders bring 4K
+GPU time well under 41.7 ms per frame.
 
 ### 1080p (2026-11-11, same build)
 Each task decoded 600 frames of 1080p 10-bit with the same settings.
