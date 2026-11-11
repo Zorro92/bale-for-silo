@@ -7,6 +7,55 @@ namespace Bale.Core.Tests;
 public class PlaybackCapabilitiesTests
 {
     [Fact]
+    public void OriginalAudioSelectionDoesNotAuthorizeAnUnclaimedCodecOrExceedTheChannelCeiling()
+    {
+        var device = ConsoleEvidence.Default with { AudioDecodeCodecs = ["aac"], MaxChannels = 2 };
+        var start = PlaybackStartBuilder.Build("file", "profile", "attempt", null,
+            new PlaybackSelection(AudioIndex: 1), device, PlaybackTestSupport.Identity);
+        Assert.Contains(PlaybackProtocol.ClientSelectedAudioTrackClaim, start.ClientPlaybackContext.Deliveries["original_http"].ValidatedClaims);
+        Assert.Equal(new[] { "aac" }, start.ClientCapabilities.CodecsAudio);
+        Assert.Empty(start.ClientCapabilities.AudioPassthrough.PassthroughCodecs);
+        Assert.All(start.ClientPlaybackContext.Deliveries.Values, delivery =>
+        {
+            Assert.Equal(new[] { "aac" }, delivery.AudioDecodeCodecs);
+            Assert.Empty(delivery.AudioPassthroughCodecs);
+            Assert.Equal(2, delivery.MaxChannels);
+        });
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public void OriginalAudioSelectionClaimRequiresAnEnabledExecutorAndNeverLeaksToPackagedDeliveries(bool original, bool selection)
+    {
+        var device = ConsoleEvidence.Default with
+        {
+            OriginalHttpSupported = original, OriginalAudioTrackSelectionSupported = selection,
+            ProgressiveSupported = true,
+        };
+        var start = PlaybackStartBuilder.Build("file", "profile", "attempt", null,
+            new PlaybackSelection(AudioIndex: 1), device, PlaybackTestSupport.Identity);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(start, PlaybackJson.Default.PlaybackStartRequestV3));
+        foreach (var delivery in json.RootElement.GetProperty("client_playback_context").GetProperty("deliveries").EnumerateObject())
+        {
+            Assert.Equal(delivery.Name == "original_http" && original && selection,
+                delivery.Value.GetProperty("validated_claims").EnumerateArray()
+                    .Any(claim => claim.GetString() == PlaybackProtocol.ClientSelectedAudioTrackClaim));
+            // Selecting a source track grants no new codec, channel, or sink capability.
+            Assert.Equal(device.MaxChannels, delivery.Value.GetProperty("max_channels").GetInt32());
+            Assert.Empty(delivery.Value.GetProperty("audio_passthrough_codecs").EnumerateArray());
+        }
+        Assert.Same(device.AudioDecodeCodecs, start.ClientCapabilities.CodecsAudio);
+        Assert.Same(device.AudioPassthroughCodecs, start.ClientCapabilities.AudioPassthrough.PassthroughCodecs);
+        Assert.Empty(start.ClientCapabilities.AudioPassthrough.Entries);
+        Assert.Equal(device.AudioDecodeCodecs, start.ClientPlaybackContext.Deliveries["original_http"].AudioDecodeCodecs);
+        Assert.Equal(1, start.AudioTrackIndex);
+        Assert.Equal("file:file:audio:1", start.AudioTrackId);
+    }
+
+    [Fact]
     public void DefaultAndParameterlessBuilderKeepTheMeasuredAv1Bound()
     {
         foreach (var claims in new[] { ConsoleEvidence.Default.VideoDecode, ConsoleEvidence.BuildVideoDecode() })

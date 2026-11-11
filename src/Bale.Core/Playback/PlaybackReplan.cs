@@ -9,7 +9,49 @@ public static class PlaybackReplan
         IReadOnlyList<string> priorAttemptedKeys, int attemptCount, double sourcePositionSeconds, PlaybackFailureV3 failure,
         PlaybackRouteDecision? failedRoute = null)
     {
-        if (failedRoute is { UseFfmpeg: true })
+        if (failure.Classification == PlaybackAudioSelectionException.Classification)
+        {
+            if (failure.AudioDecoderUnsupported)
+            {
+                // The mounted track exists but its decoder cannot take it. Packaging alone cannot
+                // repair that: withdraw this audio decode codec so the server converts it (AAC).
+                var codec = SoftwareDecodePolicy.NormalizeCodec(failedRoute?.AudioCodec ?? plan.Source?.AudioCodec);
+                start = start with
+                {
+                    ClientCapabilities = start.ClientCapabilities with
+                    {
+                        CodecsAudio = start.ClientCapabilities.CodecsAudio.Where(value => SoftwareDecodePolicy.NormalizeCodec(value) != codec).ToArray(),
+                    },
+                    ClientPlaybackContext = start.ClientPlaybackContext with
+                    {
+                        Deliveries = start.ClientPlaybackContext.Deliveries.ToDictionary(pair => pair.Key, pair => pair.Value with
+                        {
+                            AudioDecodeCodecs = pair.Value.AudioDecodeCodecs.Where(value => SoftwareDecodePolicy.NormalizeCodec(value) != codec).ToArray(),
+                        }),
+                    },
+                };
+            }
+            // A source-inventory/selection failure is not proof that the video decoder failed.
+            // Ask the server to package the SAME chosen audio instead of retrying an original
+            // we could not map. Mapping failures keep decode evidence; decoder failures above
+            // narrow only audio. Both keep passthrough evidence and the selected track identity.
+            var context = start.ClientPlaybackContext;
+            start = start with
+            {
+                ClientPlaybackContext = context with
+                {
+                    Deliveries = context.Deliveries.ToDictionary(pair => pair.Key, pair => pair.Key == "original_http"
+                        ? pair.Value with
+                        {
+                            Enabled = false,
+                            SupportedOnDevice = false,
+                            FailureReason = PlaybackAudioSelectionException.Classification,
+                            ValidatedClaims = pair.Value.ValidatedClaims.Where(claim => claim != PlaybackProtocol.ClientSelectedAudioTrackClaim).ToArray(),
+                        } : pair.Value),
+                },
+            };
+        }
+        else if (failedRoute is { UseFfmpeg: true })
         {
             // Do not offer the failing local decoder again: make the server adapt the affected streams.
             start = SoftwareDecodePolicy.WithoutFailedFallbacks(start, failedRoute);

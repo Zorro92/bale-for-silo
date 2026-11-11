@@ -163,11 +163,25 @@ a VP9 clip through the system decoder. Direct play of a real VP9 library file on
 still to be verified on the console. A failed open or decode replans to a server transcode with
 the VP9 claim withdrawn.
 
-FFmpegInteropX moves its preferred audio
-stream first; Bale restores Silo's audio ordinal by sorting `AudioStreams[].StreamIndex` and sets
-`MediaPlaybackItem.AudioTracks.SelectedIndex` after MediaOpened, **before Play**. A missing or
-unmappable planned track fails rather than silently playing FFmpeg's default. A server progressive
-remux has only its selected audio stream, so its local ordinal is zero.
+**Original-file audio selection:** only `original_http` advertises
+`client_selected_audio_track_v1`, matching Android's `PlaybackCapabilityDetector.kt` and Apple's
+`ApplePlaybackV3Capabilities.swift`. `selected_tracks.audio.index` is an ordinal in the selected
+file's catalog audio list, not a global stream index. FFmpegInteropX moves its preferred audio
+stream first; Bale restores catalog order by sorting `AudioStreams[].StreamIndex`, requiring the
+complete catalog and mounted inventories to agree. The native MP4 path requires a unique match
+by language, codec, channels and embedded name; Windows track IDs are opaque. Ambiguous native
+identities are refused rather than selected by a guessed position.
+
+`SelectOriginalAudioTrack` uses the shared Core selector to set and read back
+`MediaPlaybackItem.AudioTracks.SelectedIndex` after MediaOpened, **before Play** (AutoPlay stays
+off). Missing, ambiguous, unsupported or unconfirmed audio uses the existing single
+`failure_recovery` replan with `audio_track_selection_failed`, the source position and the same
+selected track identity. Recovery disables original delivery for this attempt; an unsupported
+decoder also withdraws that audio decode codec so the server can convert it. A second failure
+shows the normal playback error. Selected-track `OpenFailed` is handled the same way. The claim
+does not expand decode, channel or passthrough capabilities. A server progressive remux has only
+its selected audio stream, so its local ordinal is zero. There is no in-player audio picker yet;
+the selector can be reused when the planned transport overlay adds one.
 
 **Debug override:** `bale-debug.sh ffmpeg policy` is the default production rule.
 `bale-debug.sh ffmpeg off` never uses FFmpeg and withdraws AV1 software/audio fallback claims

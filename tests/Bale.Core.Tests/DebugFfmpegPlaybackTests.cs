@@ -105,10 +105,17 @@ public class DebugFfmpegPlaybackTests
         Assert.Contains("media.Item ??= new MediaPlaybackItem(media.Source)", source);
         Assert.Contains("player.Source = media.Item", source);
         Assert.Contains("ffmpeg.PlaybackSession = sender.PlaybackSession", source);
-        Assert.Contains("ffmpeg.AudioStreams.Select(stream => stream.StreamIndex)", source);
+        Assert.Contains("packaged.AudioStreams.Select(stream => stream.StreamIndex)", source);
         Assert.Contains("PlaybackRoutePolicy.AudioTrackIndex(media.Route.AudioOrdinal, streams, expectedCount", source);
         Assert.Contains("media.Item.AudioTracks.SelectedIndex = index", source);
         Assert.True(source.IndexOf("AudioTracks.SelectedIndex = index", StringComparison.Ordinal) < source.IndexOf("sender.Play()", StringComparison.Ordinal));
+        Assert.True(source.IndexOf("SelectOriginalAudioTrack(attempt, media, attempt.Plan.SelectedTracks?.Audio?.Index)", StringComparison.Ordinal)
+            < source.IndexOf("sender.Play()", StringComparison.Ordinal));
+        Assert.Contains("PlaybackOriginalAudioSelection.Select(planIndex, catalog, mounted", source);
+        Assert.Contains("() => item.AudioTracks.SelectedIndex", source);
+        Assert.Contains("MediaDecoderStatus.FullySupported or MediaDecoderStatus.Degraded", source);
+        Assert.Contains("media.SelectedAudioTrack.OpenFailed += OnAudioTrackOpenFailed", source);
+        Assert.Contains("audio.OpenFailed -= OnAudioTrackOpenFailed", source);
         Assert.DoesNotContain("CreateFromUriAsync", source);
         Assert.DoesNotContain("ex.Message", source);
         var hls = source[source.IndexOf("if (transport.IsHls)", StringComparison.Ordinal)

@@ -56,7 +56,10 @@ public static class PlaybackStartBuilder
             MaxChannels = device.MaxChannels,
             HdrDetails = device.Hdr,
             Subtitles = device.Subtitles,
-            // No Android track-switch, Dolby Vision transform, or auth-refresh promise for Windows yet.
+            // PlaybackCapabilityDetector.kt: only the untouched original executor maps and verifies
+            // the catalog audio ordinal. Packaged outputs contain the server-selected stream alone.
+            ValidatedClaims = device.OriginalHttpSupported && device.OriginalAudioTrackSelectionSupported
+                ? [PlaybackProtocol.ClientSelectedAudioTrackClaim] : [],
         };
         // PlaybackCapabilityDetector.kt disables progressive until its seekable transport is proven.
         var progressive = original with
@@ -66,6 +69,7 @@ public static class PlaybackStartBuilder
             FailureReason = device.ProgressiveSupported ? null : "disabled_pending_seekable_transport",
             // In-container subtitles are an original_http claim only (the server reads it there).
             Subtitles = device.Subtitles with { NativeEmbedded = [] },
+            ValidatedClaims = [],
         };
         var hls = original with
         {
@@ -77,6 +81,7 @@ public static class PlaybackStartBuilder
                 && !SoftwareDecodePolicy.DemuxedVideoCodecs.Contains(codec)).ToArray(),
             AudioDecodeCodecs = original.AudioDecodeCodecs.Where(codec => !SoftwareDecodePolicy.AudioCodecs.Contains(codec)).ToArray(),
             Subtitles = device.Subtitles with { NativeEmbedded = [] },
+            ValidatedClaims = [],
         };
         var context = new ClientPlaybackContext("tv", identity.ClientVersion ?? "unknown",
             new PlaybackDeviceContext(identity.Platform), output,

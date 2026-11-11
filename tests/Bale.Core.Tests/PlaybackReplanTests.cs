@@ -8,6 +8,64 @@ namespace Bale.Core.Tests;
 
 public class PlaybackReplanTests
 {
+    [Theory]
+    [InlineData("truehd")]
+    [InlineData("eac3")]
+    public void UnsupportedMountedAudioWithdrawsItsDecodeClaimsSoPackagingMustConvertIt(string audio)
+    {
+        var start = Start(new PlaybackSelection(AudioIndex: 1));
+        var plan = PlaybackRoutePolicyTests.Plan("original_http", "hevc", audio);
+        var failure = new PlaybackAudioSelectionException(decoderUnsupported: true).Failure;
+        var request = PlaybackReplan.ForFailure(start, plan, "plan-attempt", [], 1, 42, failure,
+            PlaybackRoutePolicy.Decide(plan, false));
+        Assert.DoesNotContain(audio, request.ClientCapabilities.CodecsAudio);
+        Assert.All(request.ClientPlaybackContext.Deliveries.Values, delivery => Assert.DoesNotContain(audio, delivery.AudioDecodeCodecs));
+        Assert.Contains("aac", request.ClientCapabilities.CodecsAudio);
+        Assert.Contains("hevc", request.ClientCapabilities.CodecsVideo);
+        Assert.Same(start.ClientCapabilities.VideoDecode, request.ClientCapabilities.VideoDecode);
+        Assert.Same(start.ClientCapabilities.AudioPassthrough, request.ClientCapabilities.AudioPassthrough);
+        Assert.Contains(audio, start.ClientCapabilities.CodecsAudio);
+        Assert.Equal(PlaybackAudioSelectionException.Classification, request.Failure!.Classification);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(request, PlaybackJson.Default.PlaybackReplanRequestV3));
+        Assert.False(json.RootElement.GetProperty("failure").TryGetProperty("audio_decoder_unsupported", out _));
+    }
+
+    [Theory]
+    [InlineData("av1", "truehd", "mkv")]
+    [InlineData("hevc", "eac3", "mp4")]
+    public void AudioSelectionFailureRequestsPackagedAudioWithoutBlamingOrExpandingDecoderCapabilities(string video, string audio, string container)
+    {
+        var start = Start(new PlaybackSelection(AudioIndex: 1, SubtitleIndex: 2));
+        var plan = PlaybackRoutePolicyTests.Plan("original_http", video, audio);
+        plan.Source!.Container = container;
+        plan.SelectedTracks!.Subtitle = new TrackIdentityV3 { Id = "subtitle", Index = 2 };
+        var request = PlaybackReplan.ForFailure(start, plan, "plan-attempt", ["prior"], 1, 42,
+            new(PlaybackAudioSelectionException.Classification), PlaybackRoutePolicy.Decide(plan, false));
+        Assert.Equal("failure_recovery", request.Operation);
+        Assert.Equal(PlaybackAudioSelectionException.Classification, request.Failure!.Classification);
+        Assert.Equal(new[] { "prior", "attempt-key" }, request.AttemptedPlanKeys);
+        Assert.Equal("plan", request.FailedPlanId);
+        Assert.Equal("plan-attempt", request.PlanAttemptId);
+        Assert.Equal(1, request.AttemptCount);
+        Assert.Equal(42, request.PositionSeconds);
+        Assert.Equal(new PlaybackTrackIdentityV3("audio-3", 3), request.SelectedTracks.Audio);
+        Assert.Equal(new PlaybackTrackIdentityV3("subtitle", 2), request.SelectedTracks.Subtitle);
+        Assert.Same(start.ClientCapabilities, request.ClientCapabilities);
+        Assert.Same(start.ClientFeatures, request.ClientFeatures);
+        var original = request.ClientPlaybackContext.Deliveries["original_http"];
+        Assert.False(original.Enabled);
+        Assert.False(original.SupportedOnDevice);
+        Assert.Equal(PlaybackAudioSelectionException.Classification, original.FailureReason);
+        Assert.DoesNotContain(PlaybackProtocol.ClientSelectedAudioTrackClaim, original.ValidatedClaims);
+        Assert.Same(start.ClientPlaybackContext.Deliveries["hls"], request.ClientPlaybackContext.Deliveries["hls"]);
+        Assert.Same(start.ClientPlaybackContext.Deliveries["progressive"], request.ClientPlaybackContext.Deliveries["progressive"]);
+        Assert.True(start.ClientPlaybackContext.Deliveries["original_http"].Enabled);
+        Assert.Contains(PlaybackProtocol.ClientSelectedAudioTrackClaim, start.ClientPlaybackContext.Deliveries["original_http"].ValidatedClaims);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(request, PlaybackJson.Default.PlaybackReplanRequestV3));
+        Assert.Equal("audio_track_selection_failed", json.RootElement.GetProperty("failure").GetProperty("classification").GetString());
+        Assert.False(json.RootElement.GetProperty("client_playback_context").GetProperty("deliveries").GetProperty("original_http").GetProperty("enabled").GetBoolean());
+    }
+
     private static PlaybackPlan Plan() => new()
     {
         PlanId = "failed-plan", PlanAttemptKey = "opaque-key",

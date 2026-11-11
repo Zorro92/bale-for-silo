@@ -311,20 +311,22 @@ public sealed partial class PlayerPage : Page, IBackHandler
         && ReferenceEquals(_attempt, attempt) && ReferenceEquals(attempt.Media, media)
         && !attempt.Cancellation.IsCancellationRequested;
 
-    private void QueueFailure(Attempt attempt, Mount media, int hresult, bool isDecoder, bool isNetwork)
+    private void QueueFailure(Attempt attempt, Mount media, int hresult, bool isDecoder, bool isNetwork,
+        PlaybackFailureV3? failure = null)
     {
         if (!IsCurrent(attempt, media) || media.FailureQueued) return;
         media.FailureQueued = true;
         media.Opening.TrySetResult(false);
-        _ = RecoverAsync(attempt, media, hresult, isDecoder, isNetwork);
+        Pause(attempt);
+        _ = RecoverAsync(attempt, media, hresult, isDecoder, isNetwork, failure);
     }
 
-    private async Task RecoverAsync(Attempt attempt, Mount media, int hresult, bool isDecoder, bool isNetwork)
+    private async Task RecoverAsync(Attempt attempt, Mount media, int hresult, bool isDecoder, bool isNetwork, PlaybackFailureV3? failure)
     {
         await _lifecycle.WaitAsync();
         try
         {
-            if (IsCurrent(attempt, media)) await RecoverCoreAsync(attempt, hresult, isDecoder, isNetwork);
+            if (IsCurrent(attempt, media)) await RecoverCoreAsync(attempt, hresult, isDecoder, isNetwork, failure: failure);
         }
         catch (OperationCanceledException) when (attempt.Cancellation.IsCancellationRequested) { }
         catch (Exception ex)
@@ -335,7 +337,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         finally { _lifecycle.Release(); }
     }
 
-    private async Task RecoverCoreAsync(Attempt attempt, int hresult, bool isDecoder, bool isNetwork, bool hdrOutputFailed = false)
+    private async Task RecoverCoreAsync(Attempt attempt, int hresult, bool isDecoder, bool isNetwork, bool hdrOutputFailed = false,
+        PlaybackFailureV3? failure = null)
     {
         if (!_active || _leaving || _suspended || attempt.Cancellation.IsCancellationRequested) return;
         Log.Info($"player: failed hr=0x{unchecked((uint)hresult):X8}");
@@ -363,7 +366,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
             // PlaybackSessionManager.kt prepareActiveVideoSessionReplan: one failure-recovery
             // fallback, carrying the failed plan's identity and the SOURCE clock, not player time.
             var services = attempt.Services!;
-            var failure = PlaybackReplan.Classify(hresult, isDecoder, isNetwork);
+            failure ??= PlaybackReplan.Classify(hresult, isDecoder, isNetwork);
             var request = hdrOutputFailed
                 ? PlaybackReplan.ForHdrOutputFailure(attempt.Start!, attempt.Plan!, attempt.PlanAttemptId, [], 1, position)
                 : PlaybackReplan.ForFailure(attempt.Start!, attempt.Plan!, attempt.PlanAttemptId,

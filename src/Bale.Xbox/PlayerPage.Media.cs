@@ -45,6 +45,7 @@ public sealed partial class PlayerPage
         public int? SubtitleStreamIndex { get; set; }
         public ulong SubtitleSinkToken { get; set; }
         public MediaPlaybackItem? Item { get; set; }
+        public AudioTrack? SelectedAudioTrack { get; set; }
 #if DEBUG_SERVER
         public string? FfmpegReadAhead { get; set; }
         public string? FfmpegStreamReads { get; set; }
@@ -281,9 +282,13 @@ public sealed partial class PlayerPage
             if (media.FfmpegSource is { } ffmpeg)
             {
                 ffmpeg.PlaybackSession = sender.PlaybackSession;
-                // AudioStreams and AudioTracks have the same (best-stream-first) order in 2.1.0.
-                // Wait until MediaOpened populates native tracks, then select before the first Play.
-                var streams = ffmpeg.AudioStreams.Select(stream => stream.StreamIndex).ToArray();
+            }
+            if (attempt.Plan?.Delivery == "original_http")
+                SelectOriginalAudioTrack(attempt, media, attempt.Plan.SelectedTracks?.Audio?.Index);
+            else if (media.FfmpegSource is { } packaged)
+            {
+                // A server remux carries only its chosen stream; catalog ordinals do not index it.
+                var streams = packaged.AudioStreams.Select(stream => stream.StreamIndex).ToArray();
                 if (media.Item!.AudioTracks.Count != streams.Length)
                     throw new InvalidDataException("The planned audio tracks could not be mapped.");
                 var fileId = attempt.Plan?.Source?.MediaFileId ?? attempt.Start?.FileId;
@@ -308,8 +313,53 @@ public sealed partial class PlayerPage
         catch (Exception ex)
         {
             LogFailure("opened", ex);
-            QueueFailure(attempt, media, ex.HResult, isDecoder: false, IsNetworkFailure(ex));
+            QueueFailure(attempt, media, ex.HResult, isDecoder: false, IsNetworkFailure(ex),
+                ex is PlaybackAudioSelectionException audio ? audio.Failure : null);
         }
+    });
+
+    // Reusable by a future audio picker: planIndex always addresses this original's catalog,
+    // even when Media Foundation or FFmpeg expose tracks in a different order. Call on the UI thread.
+    private void SelectOriginalAudioTrack(Attempt attempt, Mount media, long? planIndex)
+    {
+        try
+        {
+            if (attempt.Plan?.Delivery != "original_http" || media.Item is not { } item)
+                throw new PlaybackAudioSelectionException();
+            var fileId = attempt.Plan.Source?.MediaFileId ?? attempt.Plan.EffectiveMediaFileId;
+            var catalog = attempt.Request.Detail.Versions.FirstOrDefault(version => version.FileId == fileId)?.AudioTracks;
+            var ffmpeg = media.FfmpegSource;
+            if (ffmpeg is not null && ffmpeg.AudioStreams.Count != item.AudioTracks.Count)
+                throw new PlaybackAudioSelectionException();
+            var mounted = item.AudioTracks.Select((track, index) =>
+            {
+                var format = track.GetEncodingProperties();
+                var stream = ffmpeg?.AudioStreams[index];
+                // AudioStreamInfo.Language is a localized DISPLAY name in FFmpegInteropX;
+                // the Media Foundation descriptor keeps its BCP 47 tag. Prefer that tag.
+                var language = string.IsNullOrWhiteSpace(track.Language) ? stream?.Language : track.Language;
+                return new MountedPlaybackAudioTrack(stream?.StreamIndex, language,
+                    stream?.CodecName ?? format.Subtype, stream?.Channels ?? (long)format.ChannelCount,
+                    // Windows' Label may be a generated language name, not an embedded title.
+                    stream?.Name ?? track.Name, track.SupportInfo.DecoderStatus is MediaDecoderStatus.FullySupported or MediaDecoderStatus.Degraded);
+            }).ToArray();
+            PlaybackOriginalAudioSelection.Select(planIndex, catalog, mounted, ffmpeg is not null, index =>
+            {
+                if (media.SelectedAudioTrack is { } prior) prior.OpenFailed -= OnAudioTrackOpenFailed;
+                media.SelectedAudioTrack = item.AudioTracks[index];
+                media.SelectedAudioTrack.OpenFailed += OnAudioTrackOpenFailed;
+                item.AudioTracks.SelectedIndex = index;
+            }, () => item.AudioTracks.SelectedIndex);
+        }
+        catch (PlaybackAudioSelectionException) { throw; }
+        catch (Exception) { throw new PlaybackAudioSelectionException(); }
+    }
+
+    private void OnAudioTrackOpenFailed(AudioTrack sender, AudioTrackOpenFailedEventArgs args) => _ = DispatchAsync(() =>
+    {
+        if (_attempt is { Media: { } media } attempt && ReferenceEquals(media.SelectedAudioTrack, sender))
+            QueueFailure(attempt, media, 0, isDecoder: false, isNetwork: false,
+                new PlaybackAudioSelectionException(decoderUnsupported: true).Failure);
     });
 
     private void OnMediaFailed(MediaPlayer sender, MediaPlayerFailedEventArgs args)
@@ -375,6 +425,8 @@ public sealed partial class PlayerPage
         attempt.Media = null;
         media.Cancellation.Cancel();
         media.Opening.TrySetCanceled(media.Token);
+        if (media.SelectedAudioTrack is { } audio)
+            Cleanup("detach audio failure", () => audio.OpenFailed -= OnAudioTrackOpenFailed);
 #if DEBUG_SERVER
         Cleanup("detach frame delivery", () => media.FrameDelivery?.Dispose());
 #endif

@@ -22,6 +22,8 @@ public sealed record DeviceCapabilities(
     public IReadOnlyList<AudioPassthroughEntry> PassthroughEntries { get; init; } = [];
     public string DisplayHdrEvidence { get; init; } = "unknown";
     public bool OriginalHttpSupported { get; init; } = true;
+    /// <summary>The original-file executor maps, selects and verifies catalog audio before Play.</summary>
+    public bool OriginalAudioTrackSelectionSupported { get; init; }
     public bool ProgressiveSupported { get; init; }
     public bool HlsSupported { get; init; } = true;
 }
@@ -58,6 +60,7 @@ public static class ConsoleEvidence
     {
         VideoDecode = BuildVideoDecode(),
         DisplayHdrEvidence = "unknown",
+        OriginalAudioTrackSelectionSupported = true,
     };
 
     /// <summary>

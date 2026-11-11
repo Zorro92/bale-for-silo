@@ -9,6 +9,7 @@ public static class PlaybackProtocol
     public const string SequencedProgressFeature = "sequenced_progress_v1";
 
     public const string SoftwareVideoDecodeFeature = "software_video_decode_v1";
+    public const string ClientSelectedAudioTrackClaim = "client_selected_audio_track_v1";
     /// <summary>External SubRip arrives as the stored .srt instead of the server's WebVTT conversion.</summary>
     public const string SubripSidecarFeature = "subrip_sidecar_v1";
 
@@ -75,7 +76,12 @@ public sealed record PlaybackStartRequestV3(
 
 public sealed record PlaybackTrackIdentityV3(string Id, int? Index = null);
 public sealed record SelectedPlaybackTracksV3(PlaybackTrackIdentityV3? Audio = null, PlaybackTrackIdentityV3? Subtitle = null);
-public sealed record PlaybackFailureV3(string Classification, string? Message = null, string? DecoderName = null);
+public sealed record PlaybackFailureV3(string Classification, string? Message = null, string? DecoderName = null)
+{
+    // Local evidence used to narrow the replan's decode claims, not a protocol field.
+    [JsonIgnore]
+    public bool AudioDecoderUnsupported { get; init; }
+}
 
 /// <summary>PlaybackProtocolV3.kt: the caller retains replan IDs and server-minted attempt keys across retries.</summary>
 public sealed record PlaybackReplanRequestV3(
