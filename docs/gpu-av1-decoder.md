@@ -141,3 +141,24 @@ iterations per frame. Everything else (transforms, loop filter, LR, borders, cop
 
 That is a decoder project, not a port. Its payoff would be CPU, not playability: dav1d already plays
 4K30 on ~5.7 cores, while this design would use about one core for entropy decoding.
+
+### 1080p (2026-11-11, same build)
+Each task decoded 600 frames of 1080p 10-bit with the same settings.
+
+| Stream | Present | Output fps | Wall ms (p95) | GPU busy ms | CDEF ms | CPU entropy ms |
+|---|---|---|---|---|---|---|
+| Jellyfin 10 Mbps, no hidden frames | no | 43.6 | 22.9 (36.2) | 21.6 | 12.4 | 12.0 |
+| Jellyfin 10 Mbps, no hidden frames | yes | 40.7 | 24.5 (37.5) | 22.3 | 12.6 | 13.4 |
+| Netflix Sparks 2.2 Mbps 59.94 fps, 207 of 639 frames hidden | no | 81.6 | 12.3 (58.3) | 11.4 | 3.8 avg | 1.2 |
+
+**1080p24/30 is real time on both clips, with headroom.** On Sparks 1080p60 is real time on
+average, but the p95 per output frame is 58 ms and the maximum 235 ms. Playback would need a deep
+queue to absorb those spikes, and Jellyfin at 10 Mbps cannot do 60 fps.
+
+**Sparks did not hang** despite its hidden frames. The decoder hit the output-pool limit 23 times
+(`held by decoder 4`), but each wait cleared within 25 ms. So the hang depends on the encode's
+reference structure; the SVT random-access clip deadlocks, Sparks does not.
+
+**CPU:** entropy decoding costs about 0.3 core at 1080p24 for 10 Mbps and under 0.1 core for Sparks
+at 60 fps. dav1d needs under 1 core for 1080p24 and ~3 cores for 1080p60. The GPU is busy for about
+half of every 41.7 ms frame at 24 fps.
