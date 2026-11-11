@@ -1037,7 +1037,26 @@ hide HDR:
   frame-server route cannot feed a tone-map pass in that format.
 - `hdr-range=unknown`: the probe stopped before any readback; the step and HRESULT are above it.
 
-Results:
+Results (0.1.446, Xbox Series X, 1080p SDR display, Jellyfin 4K HEVC HDR10 40 Mbps clip, 2026-11-10):
+
+- `fp16`: refused. The format is supported for textures, render targets and video processor output,
+  and the engine is created, but the open fails after about 0.9 s with `MF_E_UNSUPPORTED_BYTESTREAM_TYPE`
+  (`0xC00D36B4`). The same clip opens in `bgra` and `rgb10`, so it is the output format that's refused.
+- `rgb10`: plays (865 frames over 15 s, none dropped; `TransferVideoFrame` mean 1.8 ms, max 33 ms;
+  0.32 cores, against 2.3 ms and 0.25 cores for `bgra`), but the values are SDR. All 16 samples
+  together: max(R,G,B) p50 = p99 = max = code 940, 77 % of pixels at 940, channel max R 940 G 819 B 940.
+  The same crop decoded from the source with FFmpeg (limited-range PQ RGB) has max(R,G,B) p50 585
+  (about 230 nits), p99 592, max 642 (about 430 nits), and no pixel at 940. So the engine converts
+  PQ to SDR and clips everything above SDR white to 940 (limited-range white) before the copy.
+  Verdict `hdr-range=clipped/sdr` is right.
+
+Conclusion: the IMFMediaEngine frame server can't feed a Bale tone-map pass. The documented controls
+(output format and texture) give no way to get PQ or linear values out. The route that could:
+the console exposes D3D11 and D3D12 hardware decode profiles `HEVC_VLD_MAIN10` (P010, up to 8K)
+and `VP9_VLD_10BIT_PROFILE2` (P010, 4K) in app mode (`caps gpu`). An FFmpeg hwaccel decode
+(d3d11va/d3d12va) into P010 textures Bale owns would keep the PQ values untouched, like the zero-copy
+AV1 path. Bale's FFmpeg build has no hwaccel today, so that would be a new native build, not a
+probe. Parked.
 
 ## Display HDR
 
