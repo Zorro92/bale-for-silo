@@ -100,3 +100,44 @@ rewrite for RDNA2 waves, not a port) could close a gap of that size.
 test player was uninstalled from the console. Bale keeps dav1d for software AV1 with the 1080p claim,
 and the server transcodes 4K AV1. Since wrapper 0020 that software path is zero-copy direct write only
 (player-plan.md).
+
+## Timing spike (2026-11-11)
+The owner revived phase 0's GPU-timestamp spike. Test player patch
+`scripts/av1-gpu-testplayer/0002-gpu-stage-timing-and-nopresent.patch` (`-gputime`, `-nopresent`,
+build run 42970282066) was run on the Series console in app mode. Each task decoded 300 frames of 4K
+10-bit at unlimited rate with `-t 6 -queue_size 4`. The figures are per frame over 290 measured frames.
+
+| Stream (1 tile) | Present | fps | Wall ms | GPU busy ms (% of wall) | CDEF ms | Intra ms | Inter ms | CPU entropy ms |
+|---|---|---|---|---|---|---|---|---|
+| SVT low-delay 40 Mbps | no | 13.1 | 76.2 | 66.7 (88%) | 40.6 | 13.4 | 7.1 | 33.7 |
+| SVT low-delay 40 Mbps | yes | 12.9 | 77.8 | 67.3 (87%) | 40.8 | 13.6 | 7.3 | 34.5 |
+| SVT low-delay 12.6 Mbps | no | 15.3 | 65.2 | 60.5 (93%) | 34.3 | 13.7 | 7.3 | 17.9 |
+| Jellyfin 40 Mbps | no | 10.4 | 96.4 | 95.2 (99%) | 50.6 | 21.0 | 18.8 | 44.8 |
+
+CDEF is averaged over all frames. On the frames that run it, it takes 44–54 ms on its own and accounts
+for 53–61% of all GPU time. Intra is the wavefront: one dispatch plus a barrier per iteration, 80–190
+iterations per frame. Everything else (transforms, loop filter, LR, borders, copies) totals a few ms.
+
+**Reading:**
+- **The ~57 ms floor is shader time, not host overhead.** The GPU is busy 87–99% of wall time.
+  Command recording takes ~1.6 ms, submission ~0.2 ms and memsets ~4 ms per frame. The idle gaps are
+  small.
+- **Presentation is not a factor:** 13.1 fps without presenting against 12.9 fps with it.
+- **CDEF alone exceeds the 24 fps budget** (41.7 ms) on most frames. Without it the GPU would still need
+  ~26 ms for the SVT clips and ~45 ms for the Jellyfin clip, mostly intra and inter.
+- **Entropy decoding, in libaom on one core with 1-tile streams, takes 18–45 ms per frame.** It overlaps
+  the GPU, but at 40 Mbps it is close to or over the budget unless the stream has several tiles.
+- **The hidden-frame hang is output-buffer starvation, as suspected.** On the SVT random-access clip
+  the decoder blocks on the first wait with `pool 4, free 0, held by decoder 4`: hidden frames hold
+  every output buffer and nothing can free one.
+- In app mode the GPU is time-sliced with the system, so these figures include any slice the shell
+  takes. A port cannot change that.
+
+**Verdict:** a port as is cannot reach 24 fps at 4K. Getting there would need:
+- a new CDEF shader
+- a restructured intra wavefront
+- a fix for hidden frames: more output buffers, or none rented for hidden frames
+- multi-tile entropy decoding, or a faster entropy decoder
+
+That is a decoder project, not a port. Its payoff would be CPU, not playability: dav1d already plays
+4K30 on ~5.7 cores, while this design would use about one core for entropy decoding.
