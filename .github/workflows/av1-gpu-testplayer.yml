@@ -66,57 +66,132 @@ jobs:
             Copy-Item (Join-Path upstream $license) $destination
           }
 
-      # Codegen evidence for patch 0003, which cannot be measured without a console: both CDEF
-      # shaders through the FXC, profile and flags of the Release x64 project (cs_5_0, entry
-      # main, default optimization). A shader that does not compile stops the run here.
-      - name: Disassemble the original and the v2 CDEF shader
+      # Codegen evidence for patches 0003 and 0004, which cannot be measured without a console:
+      # every shader of the project through the FXC, profile and flags of the Release x64 project
+      # (cs_5_0, entry main, default optimization, /Od where the project disables it). The CDEF and
+      # intra listings get a side-by-side count, all shaders a one-line survey. A shader that
+      # does not compile stops the run here.
+      - name: Disassemble the shaders (CDEF and intra listings, survey of all)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $fxc = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin\$env:WINDOWS_SDK\x64\fxc.exe"
           if (-not (Test-Path $fxc)) { throw "fxc.exe of Windows SDK $env:WINDOWS_SDK not found" }
-          $directory = (New-Item -ItemType Directory -Force out/cdef-shaders).FullName
-          $stats = @("FXC of Windows SDK $($env:WINDOWS_SDK): /T cs_5_0 /E main, default optimization (the Release x64 project settings).",
-            'Counts are static: instructions in the listing, not instructions executed.')
-          foreach ($name in @('cdef_filter', 'cdef_filter_v2')) {
-            $listing = Join-Path $directory "$name.asm"
+          # The shader list, and the only per-shader setting of Release x64: DisableOptimizations.
+          [xml]$project = Get-Content upstream/libav1/build/libav1.vcxproj -Raw
+          $names = @()
+          $unoptimized = @{}
+          foreach ($item in @($project.Project.ItemGroup.FxCompile)) {
+            if (-not $item.Include) { continue }
+            $name = ($item.Include -replace '^.*[\\/]', '') -replace '\.hlsl$', ''
+            $names += $name
+            foreach ($node in @($item.ChildNodes)) {
+              if ($node.Name -eq 'DisableOptimizations' -and $node.Condition -match 'Release\|x64' -and
+                  $node.InnerText -eq 'true') { $unoptimized[$name] = $true }
+            }
+          }
+          $names = @($names | Sort-Object -Unique)
+          if ($names.Count -lt 80) { throw "Only $($names.Count) shaders found in the project" }
+          $asm = (New-Item -ItemType Directory -Force out/shader-survey/asm).FullName
+          $headers = (New-Item -ItemType Directory -Force out/shader-survey/h).FullName
+          $rows = @{}
+          foreach ($name in $names) {
+            $listing = Join-Path $asm "$name.asm"
+            $flags = @('/nologo', '/T', 'cs_5_0', '/E', 'main', '/Vn', $name)
+            if ($unoptimized[$name]) { $flags += '/Od' }
+            $clock = [Diagnostics.Stopwatch]::StartNew()
             $ErrorActionPreference = 'Continue'
-            $output = & $fxc /nologo /T cs_5_0 /E main /Vn $name /Fc $listing /Fh (Join-Path $directory "$name.h") `
+            $output = & $fxc @flags /Fc $listing /Fh (Join-Path $headers "$name.h") `
               "upstream/libav1/dx/shaders/$name.hlsl" 2>&1 | ForEach-Object { "$_" }
             $exit = $LASTEXITCODE
             $ErrorActionPreference = 'Stop'
-            $output | Write-Host
+            $seconds = [math]::Round($clock.Elapsed.TotalSeconds, 1)
+            if ($exit -ne 0 -or $name -match '^(cdef_filter|intra_)') { $output | Write-Host }
             if ($exit -ne 0) { throw "FXC failed for $name.hlsl" }
             $text = @(Get-Content $listing)
             $code = @($text | Where-Object { $_ -notmatch '^\s*(//|$)' })
             $indexable = @($code | Where-Object { $_ -match '^\s*dcl_indexableTemp' } | ForEach-Object { $_.Trim() })
+            $indexableValues = 0
+            foreach ($declaration in $indexable) {
+              if ($declaration -match '\[(\d+)\],\s*(\d+)') { $indexableValues += [int]$Matches[1] * [int]$Matches[2] }
+            }
             $shared = @($code | Where-Object { $_ -match '^\s*dcl_tgsm_' } | ForEach-Object { $_.Trim() })
             $sharedBytes = 0
             foreach ($declaration in $shared) {
               $numbers = @([regex]::Matches(($declaration -replace '^\S+\s+g\d+', ''), '\d+') | ForEach-Object { [int]$_.Value })
               $sharedBytes += if ($declaration -match 'structured') { $numbers[0] * $numbers[1] } else { $numbers[0] }
             }
+            # Entries of the immediate constant buffer: one per line of its declaration.
+            $icbEntries = 0
+            for ($i = 0; $i -lt $code.Count; ++$i) {
+              if ($code[$i] -notmatch 'dcl_immediateConstantBuffer') { continue }
+              for ($j = $i; $j -lt $code.Count; ++$j) {
+                ++$icbEntries
+                if ($code[$j] -match '\}\s*\}') { break }
+              }
+              break
+            }
+            $group = ((@($code -match '^\s*dcl_thread_group') -join '').Trim()) -replace '^dcl_thread_group\s*', ''
+            $threads = 1
+            foreach ($n in @($group -split ',')) { if ($n.Trim()) { $threads *= [int]$n.Trim() } }
             $slots = ($text | Select-String -Pattern 'Approximately (\d+) instruction slots used' | Select-Object -First 1).Matches.Groups[1].Value
-            $stats += @('', "== $name.hlsl ==",
-              "thread group:                           $((@($code -match '^\s*dcl_thread_group') -join '').Trim())",
+            $temps = ((@($code -match '^\s*dcl_temps') -join '').Trim()) -replace '^dcl_temps\s*', ''
+            $sync = @($code -match '^\s*sync').Count
+            $syncThreads = @($code -match '^\s*sync\S*_t\b').Count
+            $block = @('', "== $name.hlsl$(if ($unoptimized[$name]) { ' (/Od: the project disables optimization for this shader)' }) ==",
+              "thread group:                           dcl_thread_group $group",
               "instruction slots:                      $slots",
-              "temp registers:                         $((@($code -match '^\s*dcl_temps') -join '').Trim())",
+              "temp registers:                         dcl_temps $temps",
               "indexable temps:                        $($indexable.Count)")
-            $stats += @($indexable | ForEach-Object { "    $_" })
-            $stats += @(
+            $block += @($indexable | ForEach-Object { "    $_" })
+            $block += @(
               "instructions using an indexable temp:   $(@($code -match '\bx\d+\[').Count)",
-              "immediate constant buffer:              $(if (@($code -match 'dcl_immediateConstantBuffer').Count) { 'yes' } else { 'no' })",
+              "immediate constant buffer:              $(if ($icbEntries) { "yes, $icbEntries entries" } else { 'no' })",
               "instructions reading it (icb):          $(@($code -match '\bicb\[').Count)",
               "groupshared declarations:               $($shared.Count), $sharedBytes bytes")
-            $stats += @($shared | ForEach-Object { "    $_" })
-            $stats += @(
-              "group barriers (sync):                  $(@($code -match '^\s*sync').Count)",
+            $block += @($shared | ForEach-Object { "    $_" })
+            $block += @(
+              "group barriers (sync):                  $sync, $syncThreads of them wait for the whole thread group",
               "groupshared loads / stores:             $(@($code -match '^\s*ld_(raw|structured)\S*\s.*\bg\d').Count) / $(@($code -match '^\s*store_(raw|structured)\S*\s+g\d').Count)",
               "buffer loads / stores:                  $(@($code -match '^\s*ld_(raw|structured)\S*\s.*\b[tu]\d').Count) / $(@($code -match '^\s*store_(raw|structured)\S*\s+u\d').Count)",
-              "loops:                                  $(@($code -match '^\s*loop\b').Count)")
+              "loops:                                  $(@($code -match '^\s*loop\b').Count)",
+              "FXC compile time:                       $seconds s")
+            $rows[$name] = [ordered]@{
+              block = $block
+              line = "| $name | $(if ($unoptimized[$name]) { '/Od' } else { '' }) | $group | $threads | $slots | $temps | " +
+                "$($indexable.Count) / $indexableValues | $(@($code -match '\bx\d+\[').Count) | $icbEntries | " +
+                "$(@($code -match '\bicb\[').Count) | $sharedBytes | $sync / $syncThreads | $(@($code -match '^\s*loop\b').Count) | $seconds |"
+              csv = "$name,$(if ($unoptimized[$name]) { 1 } else { 0 }),$($group -replace '[,\s]+', 'x'),$threads,$slots,$temps,$($indexable.Count)," +
+                "$indexableValues,$(@($code -match '\bx\d+\[').Count),$icbEntries,$(@($code -match '\bicb\[').Count),$sharedBytes,$sync,$syncThreads," +
+                "$(@($code -match '^\s*loop\b').Count),$seconds"
+            }
           }
-          $stats | Set-Content (Join-Path $directory 'stats.txt') -Encoding utf8
-          @('## CDEF shader listings', '```') + $stats + @('```') >> $env:GITHUB_STEP_SUMMARY
+          $intro = @("FXC of Windows SDK $($env:WINDOWS_SDK): /T cs_5_0 /E main with the Release x64 project settings (default optimization; /Od where marked).",
+            'Counts are static: instructions in the listing, not instructions executed.')
+          $sets = @(
+            @{ directory = 'cdef-shaders'; title = 'CDEF shader listings'; names = @('cdef_filter', 'cdef_filter_v2') },
+            @{ directory = 'intra-shaders'; title = 'Intra shader listings';
+               names = @('intra_main', 'intra_main_hbd', 'intra_filter', 'intra_filter_hbd', 'intra_v2', 'intra_v2_hbd') })
+          foreach ($set in $sets) {
+            $directory = (New-Item -ItemType Directory -Force "out/$($set.directory)").FullName
+            $stats = @($intro)
+            foreach ($name in $set.names) {
+              Copy-Item (Join-Path $asm "$name.asm") $directory
+              $stats += $rows[$name].block
+            }
+            $stats | Set-Content (Join-Path $directory 'stats.txt') -Encoding utf8
+            @("## $($set.title)", '```') + $stats + @('```') >> $env:GITHUB_STEP_SUMMARY
+          }
+          $survey = @('# Shader survey', '') + $intro + @('',
+            'Indexable temps: arrays the compiler keeps in addressable scratch memory, as count / total 32-bit components.',
+            'Barriers: all sync instructions / those that wait for the whole thread group.', '',
+            '| shader | opt | thread group | threads | instruction slots | temps | indexable temps | instructions on them | ICB entries | ICB reads | groupshared bytes | barriers | loops | FXC s |',
+            '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+          $survey += @($names | ForEach-Object { $rows[$_].line })
+          $survey | Set-Content out/shader-survey/survey.md -Encoding utf8
+          @('shader,od,thread_group,threads,instruction_slots,temps,indexable_temps,indexable_components,indexable_instructions,icb_entries,icb_reads,groupshared_bytes,barriers,barriers_thread_sync,loops,fxc_seconds') +
+            @($names | ForEach-Object { $rows[$_].csv }) | Set-Content out/shader-survey/survey.csv -Encoding utf8
+          @('## Shader survey', '') + $survey[2..($survey.Count - 1)] >> $env:GITHUB_STEP_SUMMARY
 
       # Match the wrapper workflow's MSBuild selection, toolset and SDK (not upstream v141/17763).
       - uses: microsoft/setup-msbuild@v3
@@ -171,24 +246,38 @@ jobs:
           })
           if (-not $packages.Count) { throw 'No application sideload package was produced' }
           # The listings describe the shipped shaders only if the build compiled the same bytecode.
-          foreach ($name in @('cdef_filter', 'cdef_filter_v2')) {
-            $listed = Join-Path out/cdef-shaders "$name.h"
-            $bytecode = @($listed, "upstream/libav1/dx/shaders/h/$name.h") | ForEach-Object {
+          # The CDEF and intra listings must match; for the rest of the survey a difference is noted.
+          $checked = @{ 'cdef-shaders' = @('cdef_filter', 'cdef_filter_v2')
+            'intra-shaders' = @('intra_main', 'intra_main_hbd', 'intra_filter', 'intra_filter_hbd', 'intra_v2', 'intra_v2_hbd') }
+          $different = @()
+          $listed = @(Get-ChildItem out/shader-survey/h -Filter *.h)
+          foreach ($header in $listed) {
+            $name = $header.BaseName
+            $bytecode = @($header.FullName, "upstream/libav1/dx/shaders/h/$name.h") | ForEach-Object {
               $text = Get-Content $_ -Raw
               $start = $text.IndexOf('const BYTE')
               if ($start -lt 0) { throw "No bytecode array in $_" }
               $text.Substring($start) -replace '\s+', ' '
             }
-            if ($bytecode[0] -cne $bytecode[1]) { throw "$name.asm does not match the shader in the build" }
-            Remove-Item $listed
-            "$name.asm: same bytecode header as the one compiled into the package" | Add-Content out/cdef-shaders/stats.txt -Encoding utf8
+            $same = $bytecode[0] -ceq $bytecode[1]
+            if (-not $same) { $different += $name }
+            foreach ($directory in $checked.Keys) {
+              if ($checked[$directory] -notcontains $name) { continue }
+              if (-not $same) { throw "$name.asm does not match the shader in the build" }
+              "$name.asm: same bytecode header as the one compiled into the package" | Add-Content "out/$directory/stats.txt" -Encoding utf8
+            }
           }
+          Remove-Item out/shader-survey/h -Recurse
+          $note = "All $($listed.Count) listings have the same bytecode as the headers compiled into the package."
+          if ($different.Count) { $note = "Listings that differ from the bytecode compiled into the package: $($different -join ', ')" }
+          @('', $note) | Add-Content out/shader-survey/survey.md -Encoding utf8
+          @('', $note) >> $env:GITHUB_STEP_SUMMARY
           @('## AV1 GPU test player', '', 'Experimental upstream build only; no console performance claim.', '',
             '### Artifact files', '```') +
             @(Get-ChildItem out -Recurse -File | ForEach-Object { [IO.Path]::GetRelativePath((Resolve-Path out), $_.FullName) }) +
             @('```') >> $env:GITHUB_STEP_SUMMARY
 
-      - name: Preserve package, certificate, dependencies, licenses, shader listings and build log
+      - name: Preserve package, certificate, dependencies, licenses, shader listings, survey and build log
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -224,3 +313,48 @@ jobs:
           set -euo pipefail
           sh upstream/testing/cdef_check/run.sh --mutate | tee cdef-check.log
           { echo '## CDEF bit-exactness check'; echo '```'; tail -n 4 cdef-check.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  # Host proof for patch 0004: the original intra shaders (intra_main + intra_filter, with the
+  # wavefront iterations of the original host code) and intra_v2 with its scheduler, compiled as
+  # C++, must write byte-identical frames on generated block layouts, 8-bit and 10-bit.
+  intra-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: bale
+          persist-credentials: false
+
+      - name: Fetch pinned upstream and apply patches
+        run: |
+          set -euo pipefail
+          git init -q upstream
+          git -C upstream remote add origin "$UPSTREAM_URL"
+          git -C upstream fetch -q --depth 1 origin "$UPSTREAM_COMMIT"
+          git -C upstream checkout -q --detach FETCH_HEAD
+          test "$(git -C upstream rev-parse HEAD)" = "$UPSTREAM_COMMIT"
+          for patch in bale/scripts/av1-gpu-testplayer/*.patch; do
+            git -C upstream apply "$GITHUB_WORKSPACE/$patch"
+          done
+
+      - name: Compare intra_v2.hlsl with intra_main.hlsl and intra_filter.hlsl
+        run: |
+          set -euo pipefail
+          sh upstream/testing/intra_check/run.sh --mutate --layouts 400 | tee intra-check.log
+          { echo '## Intra bit-exactness check'; echo '```'; cat intra-check.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Timing summary self-test
+        run: |
+          set -euo pipefail
+          cd upstream
+          g++ -std=c++14 -Wall -Wextra -I libav1 -o perf_stats_test testing/player_common/perf_stats_test.cpp
+          ./perf_stats_test
+
+      - name: Preserve the check log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: av1-gpu-intra-check-${{ github.run_id }}
+          path: intra-check.log
+          if-no-files-found: warn

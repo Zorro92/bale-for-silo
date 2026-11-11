@@ -1,0 +1,3085 @@
+diff --git a/libav1/build/libav1.vcxproj b/libav1/build/libav1.vcxproj
+index 3fc6500..c43c404 100644
+--- a/libav1/build/libav1.vcxproj
++++ b/libav1/build/libav1.vcxproj
+@@ -986,6 +986,12 @@
+     <FxCompile Include="..\dx\shaders\cdef_filter_v2.hlsl">
+       <FileType>Document</FileType>
+     </FxCompile>
++    <FxCompile Include="..\dx\shaders\intra_v2.hlsl">
++      <FileType>Document</FileType>
++    </FxCompile>
++    <FxCompile Include="..\dx\shaders\intra_v2_hbd.hlsl">
++      <FileType>Document</FileType>
++    </FxCompile>
+   </ItemGroup>
+   <ItemGroup>
+     <FxCompile Include="..\dx\shaders\loop_restoration.hlsl">
+diff --git a/libav1/build/libav1.vcxproj.filters b/libav1/build/libav1.vcxproj.filters
+index 8944495..811a883 100644
+--- a/libav1/build/libav1.vcxproj.filters
++++ b/libav1/build/libav1.vcxproj.filters
+@@ -754,6 +754,12 @@
+     <FxCompile Include="..\dx\shaders\cdef_filter_v2.hlsl">
+       <Filter>dx\shaders</Filter>
+     </FxCompile>
++    <FxCompile Include="..\dx\shaders\intra_v2.hlsl">
++      <Filter>dx\shaders</Filter>
++    </FxCompile>
++    <FxCompile Include="..\dx\shaders\intra_v2_hbd.hlsl">
++      <Filter>dx\shaders</Filter>
++    </FxCompile>
+     <FxCompile Include="..\dx\shaders\loop_restoration.hlsl">
+       <Filter>dx\shaders</Filter>
+     </FxCompile>
+diff --git a/libav1/dx/av1_compute.cpp b/libav1/dx/av1_compute.cpp
+index dde5ac3..1056eaf 100644
+--- a/libav1/dx/av1_compute.cpp
++++ b/libav1/dx/av1_compute.cpp
+@@ -85,6 +85,8 @@ extern "C" {
+ #include "dx/shaders/h/intra_filter_hbd.h"
+ #include "dx/shaders/h/intra_main.h"
+ #include "dx/shaders/h/intra_main_hbd.h"
++#include "dx/shaders/h/intra_v2.h"
++#include "dx/shaders/h/intra_v2_hbd.h"
+ 
+ #include "dx/shaders/h/inter_scale.h"
+ #include "dx/shaders/h/inter_scale_compound.h"
+@@ -202,6 +204,8 @@ void* av1_create_pipeline_cache_handle(void* d3d12device, int threads) {
+   err |= (shader_lib->sig_copy_plane = create_root_sig(_device, 0, 1, 0, 6)) == NULL;
+   err |= (shader_lib->sig_pred_blocks = create_root_sig(_device, 5, 2, 1, 7)) == NULL;
+   err |= (shader_lib->sig_intra_pred = create_root_sig(_device, 3, 1, 1, 10)) == NULL;
++  // intra_v2.hlsl: t0..t4, u0, b0 and 8 root constants in b1.
++  err |= (shader_lib->sig_intra_v2 = create_root_sig(_device, 5, 1, 1, 8)) == NULL;
+   err |= (shader_lib->sig_inter_pred = create_root_sig(_device, 5, 1, 1, 4)) == NULL;
+   err |= (shader_lib->sig_loop_rest = create_root_sig(_device, 3, 1, 2, 2)) == NULL;
+   err |= (shader_lib->sig_cdef_filter = create_root_sig(_device, 2, 1, 1, 0)) == NULL;
+@@ -250,6 +254,8 @@ void* av1_create_pipeline_cache_handle(void* d3d12device, int threads) {
+       {_device, cdef_filter, sizeof(cdef_filter), shader_lib->sig_cdef_filter.Get(), &shader_lib->shader_cdef_filter},
+       {_device, cdef_filter_v2, sizeof(cdef_filter_v2), shader_lib->sig_cdef_filter.Get(),
+        &shader_lib->shader_cdef_filter_v2},
++      {_device, intra_v2, sizeof(intra_v2), shader_lib->sig_intra_v2.Get(), &shader_lib->shader_intra_v2},
++      {_device, intra_v2_hbd, sizeof(intra_v2_hbd), shader_lib->sig_intra_v2.Get(), &shader_lib->shader_intra_v2_hbd},
+ 
+       {_device, gen_pred_blocks, sizeof(gen_pred_blocks), shader_lib->sig_pred_blocks.Get(),
+        &shader_lib->shader_gen_pred_blocks},
+diff --git a/libav1/dx/av1_compute.h b/libav1/dx/av1_compute.h
+index cbfb1bd..b0210a0 100644
+--- a/libav1/dx/av1_compute.h
++++ b/libav1/dx/av1_compute.h
+@@ -73,6 +73,8 @@ typedef struct {
+   ComputeShader shader_loop_rest;
+   ComputeShader shader_cdef_filter;
+   ComputeShader shader_cdef_filter_v2;  // test player flag -cdefv2
++  ComputeShader shader_intra_v2;        // test player flag -intrav2
++  ComputeShader shader_intra_v2_hbd;
+   ComputeShader shader_filmgrain_luma_gen;
+   ComputeShader shader_filmgrain_chroma_gen;
+   ComputeShader shader_filmgrain_filter;
+@@ -93,6 +95,7 @@ typedef struct {
+   Microsoft::WRL::ComPtr<ID3D12RootSignature> sig_common0110;
+   Microsoft::WRL::ComPtr<ID3D12RootSignature> sig_pred_blocks;
+   Microsoft::WRL::ComPtr<ID3D12RootSignature> sig_intra_pred;
++  Microsoft::WRL::ComPtr<ID3D12RootSignature> sig_intra_v2;
+   Microsoft::WRL::ComPtr<ID3D12RootSignature> sig_inter_pred;
+ 
+   Microsoft::WRL::ComPtr<ID3D12RootSignature> sig_lf;
+diff --git a/libav1/dx/av1_core.cpp b/libav1/dx/av1_core.cpp
+index f3c812f..7993782 100644
+--- a/libav1/dx/av1_core.cpp
++++ b/libav1/dx/av1_core.cpp
+@@ -179,6 +179,11 @@ static void perf_collect(Av1Core *dec, av1_frame_thread_data *td, int64_t wait_s
+   rec->intra_frame = p->acc.intra_frame;
+   rec->used_sec_slot = p->acc.used_sec_slot;
+   rec->intra_iters = p->acc.intra_iters;
++  rec->intra_v2 = p->acc.intra_v2;
++  rec->intra_dispatches = p->acc.intra_stats[0];
++  rec->intra_barriers = p->acc.intra_stats[1];
++  rec->intra_groups = p->acc.intra_stats[2];
++  rec->intra_passes = p->acc.intra_stats[3];
+   rec->tile_count = p->acc.tile_count;
+   for (int i = 0; i < AV1_PERF_CPU_COUNT; ++i) rec->cpu_ms[i] = (double)p->acc.ticks[i] * to_ms;
+   rec->cpu_ms[AV1_PERF_CPU_FENCE_WAIT] = (double)(now - wait_start) * to_ms;
+@@ -346,6 +351,16 @@ int av1_allocate_buffers(Av1Core *dec, av1_memory_manager_base *mem, const resou
+     CHECK_RESULT(td->gen_intra_inter_grid, mem->create_buffer(grid_w * grid_h * 6, MemoryType::HostRW), do_assign);
+     CHECK_RESULT(td->gen_block_map, mem->create_buffer(dec->pred_map_size * sizeof(int), MemoryType::HostRW),
+                  do_assign);
++    // Test player flag -intrav2 (intra_v2_sched.h): 8 bytes per 4x4 cell of luma and chroma, then the region
++    // list, which cannot have more entries than there are cells; two words per 64x64 region on the host.
++    td->intra_v2_cells = mi_size + (mi_size >> 2);
++    CHECK_RESULT(td->intra_v2_buffer, mem->create_buffer((size_t)td->intra_v2_cells * 16, MemoryType::HostRW),
++                 do_assign);
++    CHECK_RESULT(td->intra_v2_regions, (unsigned int *)mem->host_allocate(sizeof(int) * 2 * (mi_size >> 8)),
++                 do_assign);
++    td->intra_v2_sched.stamp = 0;
++    td->intra_v2_cols = 0;
++    td->intra_v2_rows = 0;
+     CHECK_RESULT(td->mode_info_grid, mem->create_buffer(sizeof(MB_MODE_INFO *) * mi_size, MemoryType::HostRW),
+                  do_assign);
+     CHECK_RESULT(td->idct_blocks_unordered,
+@@ -935,6 +950,51 @@ void get_sec_data(Av1Core *dec, av1_frame_thread_data *td) {
+   pthread_mutex_unlock(&td->sec_data_mutex);
+ }
+ 
++// Test player switch (-intrav2): intra prediction through intra_v2.hlsl, which writes the same bytes with one
++// thread group per 64x64 region and far fewer dispatches. Off unless av1_set_intra_v2(1) was called.
++static int g_intra_v2 = 0;
++
++extern "C" void av1_set_intra_v2(int enable) { g_intra_v2 = enable; }
++
++// Decides whether the frame takes the -intrav2 path and gets its schedule ready. Returns 0 when the frame
++// stays on the original shaders: flag off, intra block copy (not ported), or a frame the buffers were not
++// sized for.
++static int intra_v2_setup_frame(Av1Core *dec, AV1_COMMON *cm, av1_frame_thread_data *td) {
++  if (!g_intra_v2 || cm->allow_intrabc) return 0;
++  const int cols = (cm->mi_cols + 31) & ~31;  // 4x4 cells, padded to 128 pixels: blocks may reach that far
++  const int rows = (cm->mi_rows + 31) & ~31;
++  const int cells = cols * rows;
++  if (cells + (cells >> 2) > td->intra_v2_cells || (cols >> 4) > IntraV2MaxRegions ||
++      (rows >> 4) > IntraV2MaxRegions)
++    return 0;
++  IntraV2Sched *s = &td->intra_v2_sched;
++  s->cells = (uint32_t *)td->intra_v2_buffer->host_ptr;
++  s->regions = td->intra_v2_regions;
++  s->list = (uint64_t *)(s->cells + 2 * (size_t)(cells + (cells >> 2)));
++  s->list_count = &td->intra_v2_list_count;
++  s->map_stride = cols;
++  s->map_uv_offset = cells;
++  s->regions_stride = cols >> 4;
++  // Entries of earlier frames stay in the cell map and are told apart by the stamp, so the map is only
++  // cleared when the 8-bit stamp starts over (every 255 frames of this slot) or the layout changes.
++  int clear = intra_v2_next_stamp(&s->stamp);
++  if (cols != td->intra_v2_cols || rows != td->intra_v2_rows) {
++    td->intra_v2_cols = cols;
++    td->intra_v2_rows = rows;
++    s->stamp = 1;
++    clear = 1;
++  }
++  if (clear) {
++    const int64_t perf_t = av1_perf_ticks();
++    const size_t bytes = (size_t)(cells + (cells >> 2)) * 8;
++    memset(s->cells, 0, bytes);
++    memset(s->regions, 0, sizeof(int) * 2 * (size_t)(cells >> 8));
++    perf_add_memset(dec, AV1_PERF_CPU_MEMSET, perf_t, bytes + sizeof(int) * 2 * (size_t)(cells >> 8));
++  }
++  td->intra_v2_list_count = 0;
++  return 1;
++}
++
+ extern "C" void av1_setup_frame(AV1Decoder *pbi, AV1_COMMON *cm) {
+   Av1Core *dec = pbi->gpu_decoder;
+   const int64_t perf_setup_start = av1_perf_ticks();
+@@ -991,10 +1051,16 @@ extern "C" void av1_setup_frame(AV1Decoder *pbi, AV1_COMMON *cm) {
+   td->gen_intra_iter_y = (int *)td->gen_intra_inter_grid->host_ptr;
+   td->iter_grid_offset_uv = grid_w * grid_h;
+   td->gen_intra_iter_uv = td->gen_intra_iter_y + td->iter_grid_offset_uv;
+-  perf_t = av1_perf_ticks();
+-  memset(td->gen_intra_iter_y, -1, td->iter_grid_offset_uv * 4);
+-  memset(td->gen_intra_iter_uv, -1, td->iter_grid_offset_uv);
+-  perf_add_memset(dec, AV1_PERF_CPU_MEMSET, perf_t, (size_t)td->iter_grid_offset_uv * 5);
++  memset(td->intra_stats, 0, sizeof(td->intra_stats));
++  td->intra_v2 = intra_v2_setup_frame(dec, cm, td);
++  if (!td->intra_v2) {
++    // With -intrav2 nothing scans the iteration grid; av1_mi_push_block() writes the one entry per block
++    // that gen_pred_blocks.hlsl reads.
++    perf_t = av1_perf_ticks();
++    memset(td->gen_intra_iter_y, -1, td->iter_grid_offset_uv * 4);
++    memset(td->gen_intra_iter_uv, -1, td->iter_grid_offset_uv);
++    perf_add_memset(dec, AV1_PERF_CPU_MEMSET, perf_t, (size_t)td->iter_grid_offset_uv * 5);
++  }
+ 
+   td->is_hbd = buf->bit_depth > 8;
+   td->shaders = td->is_hbd ? &dec->shader_lib->shaders_hbd : &dec->shader_lib->shaders_8bit;
+@@ -1300,6 +1366,8 @@ extern "C" int av1_decode_frame_gpu(AV1Decoder *pbi) {
+     acc->showable_frame = cm->showable_frame;
+     acc->intra_frame = frame_is_intra_only(cm);
+     acc->intra_iters = td->intra_iters;
++    acc->intra_v2 = td->intra_v2;
++    memcpy(acc->intra_stats, td->intra_stats, sizeof(acc->intra_stats));
+     acc->tile_count = td->tile_count;
+   }
+   av1_commit_command_buffer(dec);
+diff --git a/libav1/dx/av1_perf.h b/libav1/dx/av1_perf.h
+index 645250e..27744f9 100644
+--- a/libav1/dx/av1_perf.h
++++ b/libav1/dx/av1_perf.h
+@@ -81,7 +81,12 @@ typedef struct av1_perf_frame {
+   int is_sef;         /* show-existing-frame that needed an output copy */
+   int intra_frame;    /* key or intra-only frame */
+   int used_sec_slot;  /* frame also took the second pipeline slot */
+-  int intra_iters;    /* intra wavefront iterations dispatched (-1: none) */
++  int intra_iters;    /* last intra wavefront iteration dispatched (-1: none); with -intrav2 the last step */
++  int intra_v2;       /* intra went through intra_v2.hlsl (-intrav2) */
++  int intra_dispatches; /* Dispatch calls of the intra stage */
++  int intra_barriers;   /* UAV barriers of the intra stage */
++  int intra_groups;     /* thread groups of the intra stage */
++  int intra_passes;     /* thread groups times their passes; a group of the original shaders has one */
+   int tile_count;
+ 
+   int gpu_valid;      /* GPU timestamps were read back for this frame */
+@@ -110,6 +115,12 @@ void av1_set_perf_callback(av1_perf_frame_cb_fn_t cb, void *priv);
+  * only while no frame is in flight, like the callback above. */
+ void av1_set_cdef_v2(int enable);
+ 
++/* Process-wide. Non-zero runs intra prediction through intra_v2.hlsl instead
++ * of intra_main.hlsl + intra_filter.hlsl; the decoded output is the same.
++ * Frames that allow intra block copy keep the original shaders. Off by
++ * default. Change it only while no frame is in flight. */
++void av1_set_intra_v2(int enable);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/libav1/dx/intra_v2_sched.h b/libav1/dx/intra_v2_sched.h
+new file mode 100644
+index 0000000..6dbea73
+--- /dev/null
++++ b/libav1/dx/intra_v2_sched.h
+@@ -0,0 +1,215 @@
++/*
++ * Copyright 2020 Google LLC
++ *
++ */
++
++/*
++ * Copyright (c) 2020, Alliance for Open Media. All rights reserved
++ *
++ * This source code is subject to the terms of the BSD 2 Clause License and
++ * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
++ * was not distributed with this source code in the LICENSE file, you can
++ * obtain it at www.aomedia.org/license/software. If the Alliance for Open
++ * Media Patent License 1.0 was not distributed with this source code in the
++ * PATENTS file, you can obtain it at www.aomedia.org/license/patent.
++ */
++
++// Scheduling for intra_v2.hlsl (test player flag -intrav2). Shared by the
++// decoder (prediction.cpp) and the host check (testing/intra_check).
++//
++// The original path gives every intra block a wavefront iteration of the
++// whole frame and runs one dispatch pair per iteration. Here the frame is cut
++// into 64x64 luma regions (16x16 cells of 4x4 pixels, plus the 8x8 chroma
++// cells below them). A block gets
++//   - a step: the dispatch round. All blocks of a region with the same step
++//     are handled by one thread group. A block's step is higher than the step
++//     of every block it reads from another region, so the host needs one UAV
++//     barrier per step and groups never wait for each other;
++//   - a pass: the round inside the thread group, higher than the pass of every
++//     block it reads in its own group. A filter intra block takes one pass per
++//     anti-diagonal of its cells.
++// Blocks are placed in decode order, like the iteration grid of the original.
++
++#ifndef AV1_DX_INTRA_V2_SCHED_H_
++#define AV1_DX_INTRA_V2_SCHED_H_
++
++#include <stdint.h>
++
++#include <algorithm>
++
++#if defined(_MSC_VER)
++#include <intrin.h>
++#define INTRA_V2_NEXT_ENTRY(counter) ((uint32_t)_InterlockedIncrement(counter) - 1)
++#else
++#define INTRA_V2_NEXT_ENTRY(counter) ((uint32_t)__sync_fetch_and_add(counter, 1))
++#endif
++
++// Passes of one thread group; a region with a longer chain of blocks goes on
++// in a later step. The last pass of a block is stored in 8 bits.
++#ifndef INTRA_V2_MAX_PASSES
++#define INTRA_V2_MAX_PASSES 250
++#endif
++
++enum {
++  IntraV2FilterBucket = 9,  // block type of filter intra blocks (0..8: 64x64 .. 4x4 by area)
++  IntraV2MaxPasses = INTRA_V2_MAX_PASSES,
++  IntraV2MaxRegions = 256,  // regions per row or column (8 bits each in a region entry)
++};
++
++// Not std::max: <windows.h> may define a max() macro.
++static inline uint32_t intra_v2_max(uint32_t a, uint32_t b) { return a > b ? a : b; }
++
++// One frame's schedule. Tiles are decoded on several threads: cells and
++// regions of different tiles are disjoint, the region list is appended to
++// through an interlocked counter.
++typedef struct IntraV2Sched {
++  // GPU, 2 words per 4x4 cell, luma cells first, then the chroma cells
++  // (shared by U and V):
++  //   [0] block index in its type (24 bits) | block type << 24
++  //   [1] step (16 bits) | last pass of the block << 16 | stamp << 24
++  uint32_t *cells;
++  // CPU, 2 words per region: [0] index of its current list entry,
++  // [1] step of that entry | stamp << 24.
++  uint32_t *regions;
++  // GPU, one entry per thread group:
++  //   low word:  first intra block type of the tile in the block map (24 bits) | region column << 24
++  //   high word: region row | last pass << 8 | step << 16
++  uint64_t *list;
++  volatile long *list_count;
++  int map_stride;      // luma cells per row
++  int map_uv_offset;   // index of the first chroma cell
++  int regions_stride;  // regions per row
++  uint32_t stamp;      // 1..255: marks the cells and regions written for this frame
++} IntraV2Sched;
++
++// Moves on to the stamp of the next frame. Returns nonzero when the cell map
++// and the regions have to be cleared first: for the first frame of a buffer
++// (stamp 0) and whenever the 8-bit stamp starts over.
++static inline int intra_v2_next_stamp(uint32_t *stamp) {
++  *stamp = (*stamp % 255) + 1;
++  return *stamp == 1;
++}
++
++// Places one transform block. (cx, cy) and the sizes are in 4x4 cells of the
++// block's plane. The dependencies are the cells the original scans in its
++// iteration grid: above_count cells of the row above (one more to the left
++// with above_left), left_count cells of the column to the left, and for CFL
++// the luma cells under the block. `index` is the block's index in its type
++// (and tile); U and V blocks are placed once, with the index of U.
++static inline void intra_v2_place(const IntraV2Sched *s, uint32_t tile_base, int is_uv, int cx, int cy, int w_log,
++                                  int h_log, int above_left, int above_count, int left_count, int cfl,
++                                  uint32_t bucket, uint32_t index) {
++  const int shift = 4 - is_uv;  // log2 of the cells per region row
++  const int stride = s->map_stride >> is_uv;
++  uint32_t *const map = s->cells + (is_uv ? 2 * (size_t)s->map_uv_offset : 0);
++  const int rx = cx >> shift;
++  const int ry = cy >> shift;
++  uint32_t *const region = s->regions + 2 * (rx + ry * s->regions_stride);
++  const uint32_t stamp = s->stamp << 24;
++  const int open = (region[1] & 0xff000000) == stamp;
++  const uint32_t cur = region[1] & 0xffff;
++  uint32_t need_step = 0;
++  uint32_t need_pass = 0;
++
++  if (above_count + above_left > 0) {
++    const uint32_t *row = map + 2 * ((size_t)(cy - 1) * stride) + 1;
++    const int same_row = ((cy - 1) >> shift) == ry;
++    for (int x = cx - above_left; x < cx + above_count; ++x) {
++      const uint32_t d = row[2 * x];
++      if ((d & 0xff000000) != stamp) continue;
++      const uint32_t step = d & 0xffff;
++      if (same_row && (x >> shift) == rx) {
++        if (step == cur) need_pass = intra_v2_max(need_pass, ((d >> 16) & 255) + 1);
++      } else {
++        need_step = intra_v2_max(need_step, step + 1);
++      }
++    }
++  }
++  if (left_count > 0) {
++    const int same_col = ((cx - 1) >> shift) == rx;
++    for (int y = cy; y < cy + left_count; ++y) {
++      const uint32_t d = map[2 * ((size_t)y * stride + cx - 1) + 1];
++      if ((d & 0xff000000) != stamp) continue;
++      const uint32_t step = d & 0xffff;
++      if (same_col && (y >> shift) == ry) {
++        if (step == cur) need_pass = intra_v2_max(need_pass, ((d >> 16) & 255) + 1);
++      } else {
++        need_step = intra_v2_max(need_step, step + 1);
++      }
++    }
++  }
++  if (cfl) {
++    // The luma cells under a chroma block are in the same region.
++    for (int y = cy << 1; y < ((cy << 1) + (2 << h_log)); ++y) {
++      const uint32_t *row = s->cells + 2 * ((size_t)y * s->map_stride + (cx << 1)) + 1;
++      for (int x = 0; x < (2 << w_log); ++x) {
++        const uint32_t d = row[2 * x];
++        if ((d & 0xff000000) == stamp && (d & 0xffff) == cur) need_pass = intra_v2_max(need_pass, ((d >> 16) & 255) + 1);
++      }
++    }
++  }
++
++  const uint32_t duration = (bucket == IntraV2FilterBucket) ? (uint32_t)((1 << w_log) + (1 << h_log) - 2) : 0;
++  uint32_t step = cur;
++  uint32_t pass = need_pass;
++  int new_entry = 0;
++  if (!open || need_step > cur) {
++    step = need_step;
++    pass = 0;
++    new_entry = 1;
++  } else if (pass > 0 && pass + duration >= IntraV2MaxPasses) {
++    step = cur + 1;
++    pass = 0;
++    new_entry = 1;
++  }
++  if (step > 0xffff) step = 0xffff;  // more steps than list entries of any real frame
++  if (new_entry) {
++    region[0] = INTRA_V2_NEXT_ENTRY(s->list_count);
++    region[1] = step | stamp;
++    s->list[region[0]] = (uint64_t)(tile_base | ((uint32_t)rx << 24)) | ((uint64_t)((uint32_t)ry | (step << 16)) << 32);
++  }
++  const uint32_t last_pass = pass + duration;
++  uint64_t *const entry = s->list + region[0];
++  if (last_pass > ((*entry >> 40) & 255)) *entry = (*entry & ~((uint64_t)0xff << 40)) | ((uint64_t)last_pass << 40);
++
++  const uint32_t word0 = index | (bucket << 24);
++  const uint32_t word1 = step | (last_pass << 16) | stamp;
++  for (int y = cy; y < cy + (1 << h_log); ++y) {
++    uint32_t *cell = map + 2 * ((size_t)y * stride + cx);
++    for (int x = 0; x < (1 << w_log); ++x) {
++      cell[2 * x] = word0;
++      cell[2 * x + 1] = word1;
++    }
++  }
++}
++
++// Orders the region list by step, then by number of passes, for
++// intra_v2_next_dispatch().
++static inline void intra_v2_sort(uint64_t *list, int count) { std::sort(list, list + count); }
++
++typedef struct IntraV2Dispatch {
++  int first;       // first region entry
++  int count;       // thread groups
++  uint32_t step;
++  uint32_t passes;
++  int last_of_step;  // a UAV barrier has to follow
++} IntraV2Dispatch;
++
++// Cuts the sorted list into dispatches: all thread groups of a dispatch run
++// the pass count of its busiest region, so regions of one step with very
++// different pass counts are dispatched separately. Returns 0 at the end.
++static inline int intra_v2_next_dispatch(const uint64_t *list, int count, int first, IntraV2Dispatch *d) {
++  if (first >= count) return 0;
++  const uint32_t step = (uint32_t)(list[first] >> 48);
++  const uint32_t limit = 2 * ((uint32_t)(list[first] >> 40) & 255) + 6;
++  int end = first + 1;
++  while (end < count && (uint32_t)(list[end] >> 48) == step && ((uint32_t)(list[end] >> 40) & 255) + 1 <= limit) ++end;
++  d->first = first;
++  d->count = end - first;
++  d->step = step;
++  d->passes = ((uint32_t)(list[end - 1] >> 40) & 255) + 1;
++  d->last_of_step = end >= count || (uint32_t)(list[end] >> 48) != step;
++  return 1;
++}
++
++#endif  // AV1_DX_INTRA_V2_SCHED_H_
+diff --git a/libav1/dx/prediction.cpp b/libav1/dx/prediction.cpp
+index 3da62b1..3ce90c9 100644
+--- a/libav1/dx/prediction.cpp
++++ b/libav1/dx/prediction.cpp
+@@ -318,21 +318,33 @@ void av1_mi_push_block(AV1Decoder *pbi, AV1_COMMON *cm, MACROBLOCKD *xd) {
+               int iter = -1;
+               int *iter_grid_blk = iter_grid + subblk_w * x + subblk_h * y * iter_grid_stride;
+               const int above_left = have_top && have_left && need_aboveleft;
+-              for (int it = 1 - above_left; it <= above_available; ++it) {
+-                iter = AOMMAX(iter, iter_grid_blk[it]);
+-              }
+-              for (int it = 1; it <= left_available; ++it) {
+-                iter = AOMMAX(iter, iter_grid_blk[it * iter_grid_stride]);
+-              }
+-              ++iter;
+-              if (is_intrabc) iter = tile->gen_intra_iter_y + 1;
+-              iter = AOMMIN(iter, tile->gen_intra_max_iter);
+-              tile->gen_intra_iter_y = AOMMAX(iter, tile->gen_intra_iter_y);
+-              for (int it = 1; it <= subblk_h; ++it) {
+-                iter_grid_blk[it * iter_grid_stride + subblk_w] = iter;
+-              }
+-              for (int it = 1; it <= subblk_w; ++it) {
+-                iter_grid_blk[it + subblk_h * iter_grid_stride] = iter;
++              if (td->intra_v2) {
++                // -intrav2: no wavefront iteration. The block gets a step and a pass from the same neighbours
++                // (intra_v2_sched.h) and counts as iteration 0; gen_pred_blocks.hlsl reads that from this entry.
++                intra_v2_place(&td->intra_v2_sched, tile->gen_block_map_offset + IntraBlockOffset - IntraSizes, 0,
++                               mi_col + col_off, mi_row + row_off, txw, txh, above_left, above_available,
++                               left_available, 0, type_idx_base - (IntraBlockOffset - IntraSizes),
++                               tile->gen_block_map[type_idx_base]);
++                iter = 0;
++                tile->gen_intra_iter_y = AOMMAX(iter, tile->gen_intra_iter_y);
++                iter_grid_blk[iter_grid_stride + subblk_w] = iter;
++              } else {
++                for (int it = 1 - above_left; it <= above_available; ++it) {
++                  iter = AOMMAX(iter, iter_grid_blk[it]);
++                }
++                for (int it = 1; it <= left_available; ++it) {
++                  iter = AOMMAX(iter, iter_grid_blk[it * iter_grid_stride]);
++                }
++                ++iter;
++                if (is_intrabc) iter = tile->gen_intra_iter_y + 1;
++                iter = AOMMIN(iter, tile->gen_intra_max_iter);
++                tile->gen_intra_iter_y = AOMMAX(iter, tile->gen_intra_iter_y);
++                for (int it = 1; it <= subblk_h; ++it) {
++                  iter_grid_blk[it * iter_grid_stride + subblk_w] = iter;
++                }
++                for (int it = 1; it <= subblk_w; ++it) {
++                  iter_grid_blk[it + subblk_h * iter_grid_stride] = iter;
++                }
+               }
+ 
+               if (iter > tile->gen_intra_iter_set) {
+@@ -420,32 +432,43 @@ void av1_mi_push_block(AV1Decoder *pbi, AV1_COMMON *cm, MACROBLOCKD *xd) {
+               int iter = -1;
+               int *iter_grid_blk = iter_grid + subblk_w * x + subblk_h * y * iter_grid_stride_uv;
+               const int above_left = need_aboveleft && have_top && have_left;
+-              for (int it = 1 - above_left; it <= above_available; ++it) {
+-                iter = AOMMAX(iter, iter_grid_blk[it]);
+-              }
+-              for (int it = 1; it <= left_available; ++it) {
+-                iter = AOMMAX(iter, iter_grid_blk[it * iter_grid_stride_uv]);
+-              }
+-              if (mode == UV_CFL_PRED) {
+-                int iter_grid_stride = td->iter_grid_stride;
+-                int *y_grid = td->gen_intra_iter_y + ((mi_col_uv + col_off) << 1) +
+-                              ((mi_row_uv + row_off) << 1) * iter_grid_stride;
+-                for (int yit = 1; yit <= (subblk_h << 1); ++yit) {
+-                  for (int xit = 1; xit <= (subblk_w << 1); ++xit) {
+-                    iter = AOMMAX(iter, y_grid[xit + yit * iter_grid_stride]);
++              if (td->intra_v2) {
++                // -intrav2, as for luma. U and V share the place; CFL also waits for the luma under the block.
++                intra_v2_place(&td->intra_v2_sched, tile->gen_block_map_offset + IntraBlockOffset - IntraSizes, 1,
++                               mi_col_uv + col_off, mi_row_uv + row_off, txw, txh, above_left, above_available,
++                               left_available, mode == UV_CFL_PRED, IntraSizes - 1 - type_size,
++                               tile->gen_block_map[IntraBlockOffset - 1 - type_size]);
++                iter = 0;
++                tile->gen_intra_iter_uv = AOMMAX(iter, tile->gen_intra_iter_uv);
++                iter_grid_blk[iter_grid_stride_uv + subblk_w] = iter;
++              } else {
++                for (int it = 1 - above_left; it <= above_available; ++it) {
++                  iter = AOMMAX(iter, iter_grid_blk[it]);
++                }
++                for (int it = 1; it <= left_available; ++it) {
++                  iter = AOMMAX(iter, iter_grid_blk[it * iter_grid_stride_uv]);
++                }
++                if (mode == UV_CFL_PRED) {
++                  int iter_grid_stride = td->iter_grid_stride;
++                  int *y_grid = td->gen_intra_iter_y + ((mi_col_uv + col_off) << 1) +
++                                ((mi_row_uv + row_off) << 1) * iter_grid_stride;
++                  for (int yit = 1; yit <= (subblk_h << 1); ++yit) {
++                    for (int xit = 1; xit <= (subblk_w << 1); ++xit) {
++                      iter = AOMMAX(iter, y_grid[xit + yit * iter_grid_stride]);
++                    }
+                   }
+                 }
+-              }
+ 
+-              ++iter;
+-              if (is_intrabc) iter = tile->gen_intra_iter_uv + 1;
+-              iter = AOMMIN(iter, tile->gen_intra_max_iter);
+-              tile->gen_intra_iter_uv = AOMMAX(iter, tile->gen_intra_iter_uv);
+-              for (int it = 1; it <= subblk_h; ++it) {
+-                iter_grid_blk[it * iter_grid_stride_uv + subblk_w] = iter;
+-              }
+-              for (int it = 1; it <= subblk_w; ++it) {
+-                iter_grid_blk[it + subblk_h * iter_grid_stride_uv] = iter;
++                ++iter;
++                if (is_intrabc) iter = tile->gen_intra_iter_uv + 1;
++                iter = AOMMIN(iter, tile->gen_intra_max_iter);
++                tile->gen_intra_iter_uv = AOMMAX(iter, tile->gen_intra_iter_uv);
++                for (int it = 1; it <= subblk_h; ++it) {
++                  iter_grid_blk[it * iter_grid_stride_uv + subblk_w] = iter;
++                }
++                for (int it = 1; it <= subblk_w; ++it) {
++                  iter_grid_blk[it + subblk_h * iter_grid_stride_uv] = iter;
++                }
+               }
+ 
+               if (iter > tile->gen_intra_iter_set) {
+@@ -1005,7 +1028,49 @@ void av1_prediction_run_all(Av1Core *dec, AV1_COMMON *cm, TileInfo *tile) {
+       av1_perf_gpu_mark(dec, AV1_PERF_GPU_RECON);
+     }
+ 
+-    if (td->intra_iters >= 0) {
++    if (td->intra_iters >= 0 && td->intra_v2) {
++      // -intrav2: one thread group per region entry (a 64x64 region in one step), the wavefront inside a region
++      // runs in the group. A UAV barrier is only needed between steps: groups of one step never read each
++      // other's pixels.
++      IntraV2Sched *sched = &td->intra_v2_sched;
++      const int entries = (int)td->intra_v2_list_count;
++      intra_v2_sort(sched->list, entries);
++      ComputeShader *v2_shader =
++          td->is_hbd ? &dec->shader_lib->shader_intra_v2_hbd : &dec->shader_lib->shader_intra_v2;
++      command_list->SetPipelineState(v2_shader->pso.Get());
++      command_list->SetComputeRootSignature(v2_shader->signaturePtr.Get());
++      command_list->SetComputeRootShaderResourceView(0, dec->prediction_blocks->dev->GetGPUVirtualAddress());
++      command_list->SetComputeRootShaderResourceView(1, dec->idct_residuals->dev->GetGPUVirtualAddress());
++      command_list->SetComputeRootShaderResourceView(2, dec->inter_mask_lut->dev->GetGPUVirtualAddress());
++      command_list->SetComputeRootShaderResourceView(3, td->intra_v2_buffer->dev->GetGPUVirtualAddress());
++      command_list->SetComputeRootShaderResourceView(4, td->gen_block_map->dev->GetGPUVirtualAddress());
++      command_list->SetComputeRootUnorderedAccessView(5, dec->frame_buffer_pool->dev->GetGPUVirtualAddress());
++      command_list->SetComputeRootConstantBufferView(6, cbo.dev_address);
++      const unsigned int list_offset = (unsigned int)((const char *)sched->list - (const char *)sched->cells);
++      int steps = 0;
++      IntraV2Dispatch d;
++      for (int first = 0; intra_v2_next_dispatch(sched->list, entries, first, &d); first += d.count) {
++        unsigned int v2_srt[8] = {0, d.step, d.passes, sched->stamp, (unsigned int)sched->map_stride,
++                                  (unsigned int)sched->map_uv_offset, 0, 0};
++        // A dispatch takes at most 65535 groups per dimension.
++        for (int done = 0; done < d.count; done += 65535) {
++          const int groups = AOMMIN(d.count - done, 65535);
++          v2_srt[0] = list_offset + 8 * (unsigned int)(d.first + done);
++          command_list->SetComputeRoot32BitConstants(7, 8, v2_srt, 0);
++          command_list->Dispatch(groups, 1, 1);
++          ++td->intra_stats[0];
++        }
++        td->intra_stats[2] += d.count;
++        td->intra_stats[3] += d.count * (int)d.passes;
++        if (d.last_of_step) {
++          command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(dec->frame_buffer_pool->dev));
++          ++td->intra_stats[1];
++          ++steps;
++        }
++      }
++      td->intra_iters = steps - 1;  // for the timing record: the last step, like the last iteration
++      av1_perf_gpu_mark(dec, AV1_PERF_GPU_INTRA);
++    } else if (td->intra_iters >= 0) {
+       PSSLIntraSRT srt;
+       command_list->SetComputeRootShaderResourceView(2, dec->inter_mask_lut->dev->GetGPUVirtualAddress());
+       const int *offsets = tiles->gen_block_map + InterTypes::InterCountsAll + ReconstructBlockSizes;
+@@ -1033,6 +1098,8 @@ void av1_prediction_run_all(Av1Core *dec, AV1_COMMON *cm, TileInfo *tile) {
+           }
+           command_list->SetComputeRoot32BitConstants(5, 10, &srt, 0);
+           command_list->Dispatch((srt.wi_count + 255) >> 8, 1, 1);
++          ++td->intra_stats[0];
++          td->intra_stats[2] += (srt.wi_count + 255) >> 8;
+         }
+ 
+         offset = offsets[base + IntraSizes - 1];
+@@ -1047,14 +1114,18 @@ void av1_prediction_run_all(Av1Core *dec, AV1_COMMON *cm, TileInfo *tile) {
+           }
+           command_list->SetComputeRoot32BitConstants(5, 2, filt_srt, 0);
+           command_list->Dispatch(count, 1, 1);
++          ++td->intra_stats[0];
++          td->intra_stats[2] += count;
+         }
+ 
+         if (count || srt.wi_count) {
+           command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(dec->frame_buffer_pool->dev));
++          ++td->intra_stats[1];
+         } else {
+           assert(0);
+         }
+       }
++      td->intra_stats[3] = td->intra_stats[2];  // one pass per thread group
+       av1_perf_gpu_mark(dec, AV1_PERF_GPU_INTRA);
+     }
+   }
+diff --git a/libav1/dx/shaders/intra_v2.hlsl b/libav1/dx/shaders/intra_v2.hlsl
+new file mode 100644
+index 0000000..f89dc2f
+--- /dev/null
++++ b/libav1/dx/shaders/intra_v2.hlsl
+@@ -0,0 +1,582 @@
++/*
++ * Copyright 2020 Google LLC
++ *
++ */
++
++/*
++ * Copyright (c) 2020, Alliance for Open Media. All rights reserved
++ *
++ * This source code is subject to the terms of the BSD 2 Clause License and
++ * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
++ * was not distributed with this source code in the LICENSE file, you can
++ * obtain it at www.aomedia.org/license/software. If the Alliance for Open
++ * Media Patent License 1.0 was not distributed with this source code in the
++ * PATENTS file, you can obtain it at www.aomedia.org/license/patent.
++ */
++
++// Intra prediction, second version (test player flag -intrav2). Same output
++// as intra_main.hlsl + intra_filter.hlsl, different schedule.
++//
++// The originals run one dispatch pair and one UAV barrier per wavefront
++// iteration of the whole frame. Here one thread group owns one 64x64 luma
++// region (and its two 32x32 chroma regions), one thread owns one 4x4 cell,
++// and the wavefront inside a region runs as passes of a loop inside the
++// group: the dependencies between blocks of a region are resolved by group
++// syncs, so the host only needs a new dispatch (and a UAV barrier) when a
++// block depends on another region. Groups never wait for other groups.
++//
++// The host (libav1/dx/intra_v2_sched.h) gives every block a step (dispatch)
++// and a pass, and stores them per 4x4 cell in `sched`. Blocks are still the
++// records written by gen_pred_blocks.hlsl.
++//
++// Edges are not staged through group memory: each pixel evaluates the edge
++// samples it needs as a function of the frame (raw edge, corner filter,
++// 5-tap edge filter, 2x upsampling), which leaves two syncs per pass.
++//
++// intra_v2_hbd.hlsl is this file with HBD defined.
++
++cbuffer IntraDataCommon : register(b0) {
++  int4 cb_planes[3];
++  int4 cb_flags;
++  int4 cb_filter[5][8][2];
++  int4 cb_mode_params_lut[16][7];
++  int4 cb_sm_weight_arrays[128];
++};
++
++cbuffer IntraV2SRT : register(b1) {
++  uint cb_list_offset;    // byte offset in `sched` of this step's first region entry
++  uint cb_step;           // step handled by this dispatch
++  uint cb_passes;         // passes of the busiest region of this step
++  uint cb_stamp;          // stamp of this frame's cell entries
++  uint cb_map_stride;     // luma cell map stride, in cells
++  uint cb_map_uv_offset;  // index of the first chroma cell
++  uint cb_reserved0;
++  uint cb_reserved1;
++};
++
++ByteAddressBuffer pred_blocks : register(t0);
++ByteAddressBuffer residuals : register(t1);
++ByteAddressBuffer wedge_mask : register(t2);
++ByteAddressBuffer sched : register(t3);      // cell map and region list
++ByteAddressBuffer block_map : register(t4);  // first record of each block type, per tile
++RWByteAddressBuffer dst_frame : register(u0);
++
++#define Dir1 1
++#define Dir2 2
++#define Dir3 3
++#define SmoothV 4
++#define SmoothH 8
++
++#define MODE_PAETH 11
++#define MODE_INTRA_BC 12
++#define MODE_DC 14
++#define MODE_CFL 15
++
++#define NeedAboveShift 4
++#define NeedRightShift 5
++#define NeedLeftShift 6
++#define NeedBotShift 7
++#define NeedAboveLeftShift 8
++#define FilterAboveLeftFlag 0x200
++
++#define FilterBucket 9
++
++#ifdef HBD
++#define PIXEL_MAX 1023
++#define PIXEL_BASE 512
++#define PX_SHIFT 1
++#else
++#define PIXEL_MAX 255
++#define PIXEL_BASE 128
++#define PX_SHIFT 0
++#endif
++
++// 256 luma cells (16x16), then 64 U cells and 64 V cells (8x8 each).
++#define REGION_THREADS 384
++
++groupshared int gs_sum_above[REGION_THREADS];      // DC: sum of the 4 above samples of a top-row cell
++groupshared int gs_sum_left[REGION_THREADS];       // DC: sum of the 4 left samples of a left-column cell
++groupshared int gs_sum_luma[REGION_THREADS];       // CFL: sum of the cell's 16 subsampled luma values
++groupshared int gs_fi_bottom[REGION_THREADS * 4];  // filter intra: predicted bottom row of a cell
++groupshared int gs_fi_right[REGION_THREADS * 4];   // filter intra: predicted right column of a cell
++
++struct Blk {
++  int base;    // address of the block's top-left pixel
++  int stride;
++  int aa;      // available above pixels
++  int la;      // available left pixels
++  int bw;
++  int bh;
++  int flags;   // cb_mode_params_lut[..].z
++  int need_al;
++  int tl;      // top-left sample
++  int filt_a;  // edge filter strength
++  int filt_l;
++  int fc_a;    // number of filtered samples
++  int fc_l;
++  int last_a;  // last index a filter tap may reach
++  int last_l;
++  int up_a;    // edge upsampling
++  int up_l;
++  int cnt_a;   // edge length before upsampling
++  int cnt_l;
++};
++
++// Pixel (x, y) relative to the block's top-left pixel; x and y may be -1.
++int load_px(int base, int stride, int x, int y) {
++#ifdef HBD
++  const uint word = dst_frame.Load(base + (x >> 1) * 4 + y * stride);
++  return (word >> ((x & 1) << 4)) & 0xffff;
++#else
++  const uint word = dst_frame.Load(base + (x & ~3) + y * stride);
++  return (word >> ((x & 3) << 3)) & 255;
++#endif
++}
++
++// Edge sample k >= 0 as the originals first load it: the row above (left = 0)
++// or the column to the left (left = 1), the last available pixel repeated,
++// the other edge or a constant when the edge does not exist.
++int raw_edge(Blk b, int left, int k) {
++  int x = b.aa ? min(k, b.aa - 1) : -1;
++  int y = b.aa ? -1 : 0;
++  int value = left ? (PIXEL_BASE + 1) : (PIXEL_BASE - 1);
++  if (left) {
++    x = b.la ? -1 : 0;
++    y = b.la ? min(k, b.la - 1) : -1;
++  }
++  if (b.aa | b.la) {
++    value = load_px(b.base, b.stride, x, y);
++    if (!(left && b.la)) value &= PIXEL_MAX;
++  }
++  return value;
++}
++
++int top_left(Blk b) {
++  const int t = raw_edge(b, 0, 0);
++  const int l = raw_edge(b, 1, 0);
++  int tl = (b.la && b.aa) ? load_px(b.base, b.stride, -1, -1) : b.la ? l : b.aa ? t : PIXEL_BASE;
++  if ((b.flags & FilterAboveLeftFlag) && (b.bw + b.bh >= 24) && cb_flags.x) tl = ((l + t) * 5 + tl * 6 + 8) >> 4;
++  return tl;
++}
++
++// Edge sample k >= -1 after the edge filter. Kernels by strength:
++// { 0, 4, 8, 4, 0 }, { 0, 5, 6, 5, 0 }, { 2, 4, 4, 4, 2 }.
++int filt_edge(Blk b, int left, int k) {
++  const int strength = left ? b.filt_l : b.filt_a;
++  const int count = left ? b.fc_l : b.fc_a;
++  const int last = left ? b.last_l : b.last_a;
++  int result = b.tl;
++  if (k >= 0) {
++    if (strength == 0 || k >= count) {
++      result = raw_edge(b, left, k);
++    } else {
++      const int ef = strength << 2;
++      int sum = 8;
++      [loop] for (int j = 0; j < 5; ++j) {
++        const int weight = ((j == 2 ? 0x4680 : (j == 1 || j == 3) ? 0x4540 : 0x2000) >> ef) & 15;
++        int index = (j == 0) ? max(k - 1, 0) : (j < 3) ? (k + j - 1) : min(k + j - 1, last);
++        index -= b.need_al;
++        if (weight) sum += weight * (index < 0 ? b.tl : raw_edge(b, left, index));
++      }
++      result = sum >> 4;
++    }
++  }
++  return result;
++}
++
++// Edge sample i >= -2 as the prediction reads it, after the optional 2x
++// upsampling: even samples are edge samples, odd ones a 4-tap interpolation.
++int final_edge(Blk b, int left, int i) {
++  const int up = left ? b.up_l : b.up_a;
++  const int count = left ? b.cnt_l : b.cnt_a;
++  const int interpolate = up && (i & 1) && i > 0 - 2;
++  const int k = up ? ((i + 1) >> 1) : i;
++  int result = 0;
++  if (interpolate) {
++    int sum = 8;
++    [loop] for (int j = 0; j < 4; ++j) {
++      const int index = (j == 3) ? min(k + 1, count - 1) : (k + j - 2);
++      const int sample = filt_edge(b, left, max(index, -1));
++      sum += (j == 1 || j == 2) ? 9 * sample : -sample;
++    }
++    result = clamp(sum >> 4, 0, PIXEL_MAX);
++  } else {
++    result = filt_edge(b, left, max(up ? (i >> 1) : i, -1));
++  }
++  return result;
++}
++
++int compute_cfl_pixel(int dc, int value) {
++  value = (value < 0) ? -((-value + (1 << 5)) >> 6) : ((value + (1 << 5)) >> 6);
++  return clamp(dc + value, 0, PIXEL_MAX);
++}
++
++int intra_inter_blend(int mask, int intra, int inter) {
++  return clamp((intra * mask + inter * (64 - mask) + 32) >> 6, 0, PIXEL_MAX);
++}
++
++// The 4 subsampled luma values (times 2) under chroma pixels x0..x0+3 of row y.
++int4 cfl_luma_row(uint limits, int bx, int by, int x0, int y) {
++  const int max_y = (int)(limits >> 16) - 2;
++  const int y_stride = cb_planes[0].x;
++  const int luma_y = min((by + y) << 1, max_y);
++  int4 luma;
++#ifdef HBD
++  const int max_x = (int)((limits & 0xffff) << 1) - 8;
++  const int luma_x = (bx + x0) << 2;
++  const int y_offset = cb_planes[0].y + min(luma_x, max_x) + luma_y * y_stride;
++  uint4 luma0 = dst_frame.Load4(y_offset);
++  uint4 luma1 = dst_frame.Load4(y_offset + y_stride);
++  if (luma_x >= max_x) {
++    luma0.z = luma0.y;
++    luma0.w = luma0.y;
++    luma1.z = luma1.y;
++    luma1.w = luma1.y;
++    if (luma_x > max_x) {
++      luma0.x = luma0.y;
++      luma1.x = luma1.y;
++    }
++  }
++  luma.x = ((luma0.x >> 0) & 1023) + ((luma0.x >> 16) & 1023) + ((luma1.x >> 0) & 1023) + ((luma1.x >> 16) & 1023);
++  luma.y = ((luma0.y >> 0) & 1023) + ((luma0.y >> 16) & 1023) + ((luma1.y >> 0) & 1023) + ((luma1.y >> 16) & 1023);
++  luma.z = ((luma0.z >> 0) & 1023) + ((luma0.z >> 16) & 1023) + ((luma1.z >> 0) & 1023) + ((luma1.z >> 16) & 1023);
++  luma.w = ((luma0.w >> 0) & 1023) + ((luma0.w >> 16) & 1023) + ((luma1.w >> 0) & 1023) + ((luma1.w >> 16) & 1023);
++#else
++  const int max_x = (int)(limits & 0xffff) - 4;
++  const int luma_x = (bx + x0) << 1;
++  const int y_offset = cb_planes[0].y + min(luma_x, max_x) + luma_y * y_stride;
++  uint2 luma0 = dst_frame.Load2(y_offset);
++  uint2 luma1 = dst_frame.Load2(y_offset + y_stride);
++  if (luma_x >= max_x) {
++    luma0.y = (luma0.x >> 16) | (luma0.x & 0xffff0000);
++    luma1.y = (luma1.x >> 16) | (luma1.x & 0xffff0000);
++    if (luma_x > max_x) {
++      luma0.x = luma0.y;
++      luma1.x = luma1.y;
++    }
++  }
++  luma.x = ((luma0.x >> 0) & 255) + ((luma0.x >> 8) & 255) + ((luma1.x >> 0) & 255) + ((luma1.x >> 8) & 255);
++  luma.y = ((luma0.x >> 16) & 255) + ((luma0.x >> 24) & 255) + ((luma1.x >> 16) & 255) + ((luma1.x >> 24) & 255);
++  luma.z = ((luma0.y >> 0) & 255) + ((luma0.y >> 8) & 255) + ((luma1.y >> 0) & 255) + ((luma1.y >> 8) & 255);
++  luma.w = ((luma0.y >> 16) & 255) + ((luma0.y >> 24) & 255) + ((luma1.y >> 16) & 255) + ((luma1.y >> 24) & 255);
++#endif
++  luma.x <<= 1;
++  luma.y <<= 1;
++  luma.z <<= 1;
++  luma.w <<= 1;
++  return luma;
++}
++
++// One row of the 4x2 filter intra unit: taps row .. row + 3 (0 = top row,
++// 4 = bottom row) on the corner p0, the 4 pixels above and 2 pixels left.
++int4 filter_intra_row(int mode, int row, int p0, int4 above, int p5, int p6) {
++  int4 result;
++  int4 f0 = cb_filter[mode][row][0];
++  int4 f1 = cb_filter[mode][row][1];
++  result.x = clamp((p0 * f0.x + above.x * f0.y + above.y * f0.z + above.z * f0.w + above.w * f1.x + p5 * f1.y +
++                    p6 * f1.z + 8) >> 4, 0, PIXEL_MAX);
++  f0 = cb_filter[mode][row + 1][0];
++  f1 = cb_filter[mode][row + 1][1];
++  result.y = clamp((p0 * f0.x + above.x * f0.y + above.y * f0.z + above.z * f0.w + above.w * f1.x + p5 * f1.y +
++                    p6 * f1.z + 8) >> 4, 0, PIXEL_MAX);
++  f0 = cb_filter[mode][row + 2][0];
++  f1 = cb_filter[mode][row + 2][1];
++  result.z = clamp((p0 * f0.x + above.x * f0.y + above.y * f0.z + above.z * f0.w + above.w * f1.x + p5 * f1.y +
++                    p6 * f1.z + 8) >> 4, 0, PIXEL_MAX);
++  f0 = cb_filter[mode][row + 3][0];
++  f1 = cb_filter[mode][row + 3][1];
++  result.w = clamp((p0 * f0.x + above.x * f0.y + above.y * f0.z + above.z * f0.w + above.w * f1.x + p5 * f1.y +
++                    p6 * f1.z + 8) >> 4, 0, PIXEL_MAX);
++  return result;
++}
++
++// Blends with the inter prediction, adds the residual and stores the 4
++// pixels of one row. addr is the row's address, (px, py) its plane position.
++void finish_row(uint3 block, int plane, int addr, int px, int py, int4 value, int wedge_addr) {
++  if (block.y & 0x80000000) {
++    const uint wedge = wedge_mask.Load(wedge_addr);
++#ifdef HBD
++    const uint2 inter = dst_frame.Load2(addr);
++    value.x = intra_inter_blend((wedge >> 0) & 255, value.x, (inter.x >> 0) & 1023);
++    value.y = intra_inter_blend((wedge >> 8) & 255, value.y, (inter.x >> 16) & 1023);
++    value.z = intra_inter_blend((wedge >> 16) & 255, value.z, (inter.y >> 0) & 1023);
++    value.w = intra_inter_blend((wedge >> 24) & 255, value.w, (inter.y >> 16) & 1023);
++#else
++    const uint inter = dst_frame.Load(addr);
++    value.x = intra_inter_blend((wedge >> 0) & 255, value.x, (inter >> 0) & 255);
++    value.y = intra_inter_blend((wedge >> 8) & 255, value.y, (inter >> 8) & 255);
++    value.z = intra_inter_blend((wedge >> 16) & 255, value.z, (inter >> 16) & 255);
++    value.w = intra_inter_blend((wedge >> 24) & 255, value.w, (inter >> 24) & 255);
++#endif
++  }
++  if (block.y & (1 << 5)) {
++    const uint2 res = residuals.Load2(cb_planes[plane].w + 2 * px + py * cb_planes[plane].z);
++    const int res0 = res.x;
++    const int res1 = res.y;
++    value.x = clamp(value.x + ((res0 << 16) >> 16), 0, PIXEL_MAX);
++    value.y = clamp(value.y + (res0 >> 16), 0, PIXEL_MAX);
++    value.z = clamp(value.z + ((res1 << 16) >> 16), 0, PIXEL_MAX);
++    value.w = clamp(value.w + (res1 >> 16), 0, PIXEL_MAX);
++  }
++#ifdef HBD
++  dst_frame.Store2(addr, uint2(value.x | (value.y << 16), value.z | (value.w << 16)));
++#else
++  dst_frame.Store(addr, value.x | (value.y << 8) | (value.z << 16) | (value.w << 24));
++#endif
++}
++
++[numthreads(REGION_THREADS, 1, 1)] void main(uint3 gid : SV_GroupID, uint3 tid : SV_GroupThreadID) {
++  const int t = tid.x;
++  // Region entry: x = first intra block type of the tile in block_map (24
++  // bits) | region column << 24, y = region row | last pass << 8 | step << 16.
++  const uint2 entry = sched.Load2(cb_list_offset + gid.x * 8);
++  const int is_uv = t >= 256;
++  const int cs = is_uv ? 3 : 4;  // log2 of the cells per region row
++  const int tc = is_uv ? ((t - 256) & 63) : t;
++  const int plane = is_uv ? (1 + ((t - 256) >> 6)) : 0;
++  const int cx = ((entry.x >> 24) << cs) + (tc & ((1 << cs) - 1));
++  const int cy = ((entry.y & 255) << cs) + (tc >> cs);
++  const uint cell_index = is_uv ? (cb_map_uv_offset + cx + cy * (cb_map_stride >> 1)) : (cx + cy * cb_map_stride);
++  // Cell entry: x = block index in its type (24 bits) | type << 24,
++  // y = step | last pass of the block << 16 | stamp << 24.
++  const uint2 cell = sched.Load2(cell_index << 3);
++  const int mine = ((cell.y >> 24) == cb_stamp) && ((cell.y & 0xffff) == cb_step);
++  const int bucket = mine ? ((cell.x >> 24) & 15) : 8;
++  const int is_filter = bucket == FilterBucket;
++
++  uint3 block = uint3(0, 0, 0);
++  if (mine) {
++    const uint record = block_map.Load(((entry.x & 0xffffff) + bucket) << 2) + (cell.x & 0xffffff) + (plane >> 1);
++    block = pred_blocks.Load3(record << 4);
++  }
++
++  // block.x: column | row << 16, in 4-pixel units.
++  // block.y: see intra_main.hlsl. block.z: mode data.
++  const int bw_log = block.y & 7;
++  const int bh_log = is_filter ? (block.z & 3) : (8 - bucket - bw_log);
++  const int ox = cx - (int)(block.x & 0xffff);  // this cell inside its block
++  const int oy = cy - (int)(block.x >> 16);
++  const int x0 = ox << 2;
++  const int y0 = oy << 2;
++  const int bx = (block.x & 0xffff) << 2;
++  const int by = (block.x >> 16) << 2;
++  const int aa_cells = (block.y >> 10) & 63;
++  const int mode = (block.y >> 6) & 15;
++  const int4 params = cb_mode_params_lut[mode][(block.y >> 28) & 7];
++  const int need_above = (params.z >> NeedAboveShift) & 1;
++  const int need_right = (params.z >> NeedRightShift) & 1;
++  const int need_left = (params.z >> NeedLeftShift) & 1;
++  const int need_bot = (params.z >> NeedBotShift) & 1;
++  const int dir_mode = mode < MODE_DC;
++
++  Blk b;
++  b.stride = cb_planes[plane].x;
++  b.base = cb_planes[plane].y + (bx << PX_SHIFT) + by * b.stride;
++  b.aa = aa_cells << 2;
++  b.la = ((block.y >> 16) & 63) << 2;
++  b.bw = 4 << bw_log;
++  b.bh = 4 << bh_log;
++  b.flags = params.z;
++  b.need_al = (params.z >> NeedAboveLeftShift) & 1;
++  b.tl = 0;
++  b.cnt_a = need_above * b.bw + need_right * b.bh;
++  b.cnt_l = need_left * b.bh + need_bot * b.bw;
++  b.up_a = (block.y >> 22) & dir_mode;
++  b.up_l = (block.y >> 23) & dir_mode;
++  b.filt_a = dir_mode ? ((block.y >> 24) & 3) : 0;
++  b.filt_l = dir_mode ? ((block.y >> 26) & 3) : 0;
++  b.fc_a = 0;
++  if (aa_cells && need_above) b.fc_a = min(aa_cells << (2 + PX_SHIFT), b.bw) + need_right * b.bh + b.need_al - 1;
++  b.fc_l = b.fc_a;
++  if (b.la && need_left) b.fc_l = min(b.la, b.bh) + need_bot * b.bw + b.need_al - 1;
++#ifdef HBD
++  b.last_a = b.fc_a;
++#else
++  b.last_a = b.cnt_a;
++#endif
++  b.last_l = b.fc_l;
++
++  // A filter intra block takes one pass per anti-diagonal of its cells, the
++  // last one for its bottom-right cell.
++  const int my_pass = (int)((cell.y >> 16) & 255) - (is_filter ? ((1 << bw_log) - 1 - ox) + ((1 << bh_log) - 1 - oy) : 0);
++  const int origin = t - ox - (oy << cs);  // thread of the block's first cell
++  const int row_addr = b.base + (x0 << PX_SHIFT) + y0 * b.stride;
++
++  int4 luma0 = int4(0, 0, 0, 0);
++  int4 luma1 = int4(0, 0, 0, 0);
++  int4 luma2 = int4(0, 0, 0, 0);
++  int4 luma3 = int4(0, 0, 0, 0);
++
++  [loop] for (uint pass = 0; pass < cb_passes; ++pass) {
++    const int active = mine && (my_pass == (int)pass);
++
++    // Phase 1: the sums DC and CFL need from the whole block.
++    if (active && !is_filter && mode >= MODE_DC) {
++      if (oy == 0 && b.aa) {
++        gs_sum_above[t] =
++            raw_edge(b, 0, x0) + raw_edge(b, 0, x0 + 1) + raw_edge(b, 0, x0 + 2) + raw_edge(b, 0, x0 + 3);
++      }
++      if (ox == 0 && b.la) {
++        gs_sum_left[t] = raw_edge(b, 1, y0) + raw_edge(b, 1, y0 + 1) + raw_edge(b, 1, y0 + 2) + raw_edge(b, 1, y0 + 3);
++      }
++      if (mode == MODE_CFL) {
++        luma0 = cfl_luma_row(block.z, bx, by, x0, y0);
++        luma1 = cfl_luma_row(block.z, bx, by, x0, y0 + 1);
++        luma2 = cfl_luma_row(block.z, bx, by, x0, y0 + 2);
++        luma3 = cfl_luma_row(block.z, bx, by, x0, y0 + 3);
++        gs_sum_luma[t] = luma0.x + luma0.y + luma0.z + luma0.w + luma1.x + luma1.y + luma1.z + luma1.w + luma2.x +
++                         luma2.y + luma2.z + luma2.w + luma3.x + luma3.y + luma3.z + luma3.w;
++      }
++    }
++
++    GroupMemoryBarrierWithGroupSync();
++
++    // Phase 2: predict and store this cell.
++    if (active && is_filter) {
++      const int fmode = (block.z >> 4) & 7;
++      int4 above;
++      int4 lf;
++      int p0;
++      if (oy == 0) {
++        above = int4(raw_edge(b, 0, x0), raw_edge(b, 0, x0 + 1), raw_edge(b, 0, x0 + 2), raw_edge(b, 0, x0 + 3));
++        if (ox)
++          p0 = raw_edge(b, 0, x0 - 1);
++        else
++          p0 = (b.la && b.aa) ? load_px(b.base, b.stride, -1, -1) : (b.la || b.aa) ? raw_edge(b, 0, 0) : PIXEL_BASE;
++      } else {
++        const int up = (t - (1 << cs)) * 4;
++        above = int4(gs_fi_bottom[up], gs_fi_bottom[up + 1], gs_fi_bottom[up + 2], gs_fi_bottom[up + 3]);
++        if (ox)
++          p0 = gs_fi_bottom[up - 1];
++        else
++          p0 = raw_edge(b, 1, y0 - 1);
++      }
++      if (ox == 0) {
++        lf = int4(raw_edge(b, 1, y0), raw_edge(b, 1, y0 + 1), raw_edge(b, 1, y0 + 2), raw_edge(b, 1, y0 + 3));
++      } else {
++        const int prev = (t - 1) * 4;
++        lf = int4(gs_fi_right[prev], gs_fi_right[prev + 1], gs_fi_right[prev + 2], gs_fi_right[prev + 3]);
++      }
++      const int4 row0 = filter_intra_row(fmode, 0, p0, above, lf.x, lf.y);
++      const int4 row1 = filter_intra_row(fmode, 4, p0, above, lf.x, lf.y);
++      const int4 row2 = filter_intra_row(fmode, 0, lf.y, row1, lf.z, lf.w);
++      const int4 row3 = filter_intra_row(fmode, 4, lf.y, row1, lf.z, lf.w);
++      gs_fi_bottom[t * 4] = row3.x;
++      gs_fi_bottom[t * 4 + 1] = row3.y;
++      gs_fi_bottom[t * 4 + 2] = row3.z;
++      gs_fi_bottom[t * 4 + 3] = row3.w;
++      gs_fi_right[t * 4] = row0.w;
++      gs_fi_right[t * 4 + 1] = row1.w;
++      gs_fi_right[t * 4 + 2] = row2.w;
++      gs_fi_right[t * 4 + 3] = row3.w;
++      finish_row(block, plane, row_addr, bx + x0, by + y0, row0, 0);
++      finish_row(block, plane, row_addr + b.stride, bx + x0, by + y0 + 1, row1, 0);
++      finish_row(block, plane, row_addr + 2 * b.stride, bx + x0, by + y0 + 2, row2, 0);
++      finish_row(block, plane, row_addr + 3 * b.stride, bx + x0, by + y0 + 3, row3, 0);
++    }
++
++    if (active && !is_filter) {
++      int dc = 0;
++      int avrg = 0;
++      int alpha = 0;
++      int top_right = 0;
++      int bottom_left = 0;
++      if (b.need_al) b.tl = top_left(b);
++      if (mode >= MODE_DC) {
++        int count = 0;
++        if (b.aa) {
++          [loop] for (int i = 0; i < (b.bw >> 2); ++i) dc += gs_sum_above[origin + i];
++          count += b.bw;
++        }
++        if (b.la) {
++          [loop] for (int i = 0; i < (b.bh >> 2); ++i) dc += gs_sum_left[origin + (i << cs)];
++          count += b.bh;
++        }
++        dc += count >> 1;
++        dc = count ? (int)((uint)dc / (uint)count) : PIXEL_BASE;
++        if (mode == MODE_CFL) {
++          const int bsize_log = bw_log + bh_log + 2;
++          int total = 0;
++          [loop] for (int j = 0; j < (b.bh >> 2); ++j) {
++            [loop] for (int i = 0; i < (b.bw >> 2); ++i) total += gs_sum_luma[origin + i + (j << cs)];
++          }
++          avrg = (total + (2 << bsize_log)) >> (bsize_log + 2);
++          alpha = (int)((block.y >> 22) & 63) - 16;
++        }
++      } else {
++        if (b.flags & SmoothH) top_right = final_edge(b, 0, b.bw - 1);
++        if (b.flags & SmoothV) bottom_left = final_edge(b, 1, b.bh - 1);
++      }
++      const int count_a = b.cnt_a << b.up_a;
++      const int count_l = b.cnt_l << b.up_l;
++
++      [loop] for (int r = 0; r < 4; ++r) {
++        const int y = y0 + r;
++        const int4 luma = (r == 0) ? luma0 : (r == 1) ? luma1 : (r == 2) ? luma2 : luma3;
++        int4 value = int4(dc, dc, dc, dc);
++        if (mode == MODE_CFL) {
++          value.x = compute_cfl_pixel(dc, (luma.x - avrg) * alpha);
++          value.y = compute_cfl_pixel(dc, (luma.y - avrg) * alpha);
++          value.z = compute_cfl_pixel(dc, (luma.z - avrg) * alpha);
++          value.w = compute_cfl_pixel(dc, (luma.w - avrg) * alpha);
++        }
++        if (mode < MODE_INTRA_BC) {
++          [loop] for (int i = 0; i < 4; ++i) {
++            const int x = x0 + i;
++            const int offset_x = (x << 6) + (y + 1) * params.x;
++            const int offset_y = (y << 6) + (x + 1) * params.y;
++            const int shift_x = ((offset_x << b.up_a) & 0x3F) >> 1;
++            const int shift_y = ((offset_y << b.up_l) & 0x3F) >> 1;
++            const int base_x = offset_x >> (6 - b.up_a);
++            const int base_y = offset_y >> (6 - b.up_l);
++
++            int mode_info = params.z & 15;
++            if (mode_info == Dir2) mode_info = (base_x >= 0 - (1 << b.up_a)) ? Dir1 : Dir3;
++            const int paeth = mode == MODE_PAETH;
++
++            // Only the samples with a weight are read.
++            int t0 = 0;
++            int t1 = 0;
++            int l0 = 0;
++            int l1 = 0;
++            if ((mode_info & SmoothV) || mode_info == Dir1 || paeth)
++              t0 = final_edge(b, 0, clamp(base_x, -2, count_a - 1));
++            if (mode_info == Dir1 && shift_x) t1 = final_edge(b, 0, clamp(base_x + 1, -2, count_a - 1));
++            if ((mode_info & SmoothH) || mode_info == Dir3 || paeth)
++              l0 = final_edge(b, 1, clamp(base_y, -2, count_l - 1));
++            if (mode_info == Dir3 && shift_y) l1 = final_edge(b, 1, clamp(base_y + 1, -2, count_l - 1));
++
++            int w_t0 = (mode_info & SmoothV) ? cb_sm_weight_arrays[b.bh + y].x : (mode_info == Dir1) ? (32 - shift_x) : 0;
++            int w_l0 = (mode_info & SmoothH) ? cb_sm_weight_arrays[b.bw + x].x : (mode_info == Dir3) ? (32 - shift_y) : 0;
++            if (paeth) {
++              int diff_t = b.tl - l0;
++              int diff_l = b.tl - t0;
++              const int diff_tl = abs(diff_t + diff_l);
++              diff_t = abs(diff_t);
++              diff_l = abs(diff_l);
++              w_l0 = (diff_l <= diff_t && diff_l <= diff_tl) ? 32 : 0;
++              w_t0 = (diff_t < diff_l && diff_t <= diff_tl) ? 32 : 0;
++            }
++            const int w_tl = paeth ? (32 - w_t0 - w_l0) : 0;
++            const int w_l1 = (mode_info == Dir3) ? shift_y : 0;
++            const int w_t1 = (mode_info == Dir1) ? shift_x : 0;
++            const int w_b = (mode_info & SmoothV) ? (0x100 - w_t0) : 0;
++            const int w_r = (mode_info & SmoothH) ? (0x100 - w_l0) : 0;
++
++            int sum = w_tl * b.tl + w_b * bottom_left + w_r * top_right + w_l0 * l0 + w_t0 * t0 + w_l1 * l1 + w_t1 * t1;
++            sum += 1 << (params.w - 1);
++            sum >>= params.w;
++            sum = clamp(sum, 0, PIXEL_MAX);
++            if (i == 0) value.x = sum;
++            if (i == 1) value.y = sum;
++            if (i == 2) value.z = sum;
++            if (i == 3) value.w = sum;
++          }
++        }
++        finish_row(block, plane, row_addr + r * b.stride, bx + x0, by + y, value, (block.z << 6) + x0 + y * b.bw);
++      }
++    }
++
++    AllMemoryBarrierWithGroupSync();
++  }
++}
+diff --git a/libav1/dx/shaders/intra_v2_hbd.hlsl b/libav1/dx/shaders/intra_v2_hbd.hlsl
+new file mode 100644
+index 0000000..5205d4d
+--- /dev/null
++++ b/libav1/dx/shaders/intra_v2_hbd.hlsl
+@@ -0,0 +1,19 @@
++/*
++ * Copyright 2020 Google LLC
++ *
++ */
++
++/*
++ * Copyright (c) 2020, Alliance for Open Media. All rights reserved
++ *
++ * This source code is subject to the terms of the BSD 2 Clause License and
++ * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
++ * was not distributed with this source code in the LICENSE file, you can
++ * obtain it at www.aomedia.org/license/software. If the Alliance for Open
++ * Media Patent License 1.0 was not distributed with this source code in the
++ * PATENTS file, you can obtain it at www.aomedia.org/license/patent.
++ */
++
++// High bit depth build of intra_v2.hlsl (test player flag -intrav2).
++#define HBD 1
++#include "intra_v2.hlsl"
+diff --git a/libav1/dx/types.h b/libav1/dx/types.h
+index 19e2721..1f048d0 100644
+--- a/libav1/dx/types.h
++++ b/libav1/dx/types.h
+@@ -21,6 +21,7 @@
+ #include "dx/av1_thread.h"
+ #include "av1/common/onyxc_int.h"
+ #include "dx/av1_perf.h"
++#include "dx/intra_v2_sched.h"
+ 
+ enum {
+   UsePipeline = 0,
+@@ -136,6 +137,8 @@ struct av1_perf_accum {
+   int intra_frame;
+   int used_sec_slot;
+   int intra_iters;
++  int intra_v2;
++  int intra_stats[4];
+   int tile_count;
+ };
+ 
+@@ -171,6 +174,17 @@ struct av1_frame_thread_data {
+ 
+   GpuBufferObject* palette_buffer;
+ 
++  // Test player flag -intrav2: the schedule of the frame for intra_v2.hlsl (intra_v2_sched.h).
++  GpuBufferObject* intra_v2_buffer;  // cell map, then region list
++  unsigned int* intra_v2_regions;    // host only: current list entry and step of each region
++  IntraV2Sched intra_v2_sched;
++  volatile long intra_v2_list_count;
++  int intra_v2;        // this frame takes the new path
++  int intra_v2_cells;  // cells the buffer was sized for
++  int intra_v2_cols;   // cell map layout of the frame before, in cells
++  int intra_v2_rows;
++  int intra_stats[4];  // intra stage: dispatches, UAV barriers, thread groups, groups times passes
++
+   int* gen_intra_iter_y;
+   int* gen_intra_iter_uv;
+   int intra_iters;
+diff --git a/testing/intra_check/hlsl_shim.h b/testing/intra_check/hlsl_shim.h
+new file mode 100644
+index 0000000..a35b1a9
+--- /dev/null
++++ b/testing/intra_check/hlsl_shim.h
+@@ -0,0 +1,163 @@
++/*
++ * Just enough HLSL for the intra prediction shaders (intra_main, intra_filter,
++ * intra_v2 and their _hbd builds) to compile as C++ after run.sh has stripped
++ * attributes, semantics and register bindings. Integer maths wraps like on
++ * the GPU: build with -fwrapv.
++ */
++#ifndef INTRA_CHECK_HLSL_SHIM_H_
++#define INTRA_CHECK_HLSL_SHIM_H_
++
++#include <stdint.h>
++#include <stdlib.h>
++#include <string.h>
++
++typedef unsigned int uint;
++
++struct uint2 {
++  uint x, y;
++  uint2() : x(0), y(0) {}
++  uint2(uint v) : x(v), y(v) {}
++  uint2(uint a, uint b) : x(a), y(b) {}
++};
++struct int2 {
++  int x, y;
++  int2() : x(0), y(0) {}
++  int2(int v) : x(v), y(v) {}
++  int2(int a, int b) : x(a), y(b) {}
++  int2(const uint2 &v) : x((int)v.x), y((int)v.y) {}
++};
++struct uint3 {
++  uint x, y, z;
++  uint3() : x(0), y(0), z(0) {}
++  uint3(uint v) : x(v), y(v), z(v) {}
++  uint3(uint a, uint b, uint c) : x(a), y(b), z(c) {}
++};
++struct int3 {
++  int x, y, z;
++  int3() : x(0), y(0), z(0) {}
++  int3(int a, int b, int c) : x(a), y(b), z(c) {}
++};
++struct uint4 {
++  uint x, y, z, w;
++  uint4() : x(0), y(0), z(0), w(0) {}
++  uint4(uint a, uint b, uint c, uint d) : x(a), y(b), z(c), w(d) {}
++};
++struct int4 {
++  int x, y, z, w;
++  int4() : x(0), y(0), z(0), w(0) {}
++  int4(int v) : x(v), y(v), z(v), w(v) {}
++  int4(int a, int b, int c, int d) : x(a), y(b), z(c), w(d) {}
++  int3 xyz() const { return int3(x, y, z); }
++  int4 &operator<<=(int s) {
++    x <<= s;
++    y <<= s;
++    z <<= s;
++    w <<= s;
++    return *this;
++  }
++};
++
++static inline int min(int a, int b) { return a < b ? a : b; }
++static inline int max(int a, int b) { return a > b ? a : b; }
++static inline int clamp(int v, int lo, int hi) { return min(max(v, lo), hi); }
++
++/* Counts accesses outside the bound buffer. */
++extern long g_out_of_bounds;
++
++/*
++ * Watches the frame buffer for reads that depend on the order in which the
++ * GPU runs things:
++ *   - a word read by one thread group that another group wrote since the last
++ *     UAV barrier ("unit");
++ *   - a word read by one thread that another thread of its group wrote since
++ *     the last group sync ("phase"), where the shader relies on syncs.
++ * The tags are one per 32-bit word of the buffer.
++ */
++struct AccessTracker {
++  uint32_t *w_unit = nullptr;
++  uint32_t *w_group = nullptr;
++  uint32_t *w_phase = nullptr;
++  uint32_t *w_thread = nullptr;
++  uint32_t unit = 1, group = 0, phase = 1, thread = 0;
++  int track_phase = 0;
++  long races_group = 0, races_thread = 0;
++};
++extern AccessTracker g_tracker;
++
++struct ByteAddressBuffer {
++  const uint8_t *ptr = nullptr;
++  size_t size = 0;
++  uint Load(uint address) const {
++    uint v = 0;
++    if ((size_t)address + 4 > size) {
++      g_out_of_bounds++;
++      return 0;
++    }
++    memcpy(&v, ptr + address, 4);
++    return v;
++  }
++  uint2 Load2(uint address) const { return uint2(Load(address), Load(address + 4)); }
++  uint3 Load3(uint address) const { return uint3(Load(address), Load(address + 4), Load(address + 8)); }
++};
++
++struct RWByteAddressBuffer {
++  uint8_t *ptr = nullptr;
++  size_t size = 0;
++  uint Load(uint address) const {
++    uint v = 0;
++    if ((size_t)address + 4 > size) {
++      g_out_of_bounds++;
++      return 0;
++    }
++    if (g_tracker.w_unit) {
++      const size_t word = address >> 2;
++      if (g_tracker.w_unit[word] == g_tracker.unit && g_tracker.w_group[word] != g_tracker.group)
++        g_tracker.races_group++;
++      else if (g_tracker.track_phase && g_tracker.w_phase[word] == g_tracker.phase &&
++               g_tracker.w_thread[word] != g_tracker.thread)
++        g_tracker.races_thread++;
++    }
++    memcpy(&v, ptr + address, 4);
++    return v;
++  }
++  uint2 Load2(uint address) const { return uint2(Load(address), Load(address + 4)); }
++  uint3 Load3(uint address) const { return uint3(Load(address), Load(address + 4), Load(address + 8)); }
++  uint4 Load4(uint address) const {
++    return uint4(Load(address), Load(address + 4), Load(address + 8), Load(address + 12));
++  }
++  void Store(uint address, uint v) {
++    if ((size_t)address + 4 > size) {
++      g_out_of_bounds++;
++      return;
++    }
++    if (g_tracker.w_unit) {
++      const size_t word = address >> 2;
++      g_tracker.w_unit[word] = g_tracker.unit;
++      g_tracker.w_group[word] = g_tracker.group;
++      g_tracker.w_phase[word] = g_tracker.phase;
++      g_tracker.w_thread[word] = g_tracker.thread;
++    }
++    memcpy(ptr + address, &v, 4);
++  }
++  void Store2(uint address, uint2 v) {
++    Store(address, v.x);
++    Store(address + 4, v.y);
++  }
++};
++
++/*
++ * Scheduling points of the emulated thread group, see intra_check.cpp.
++ * GroupMemoryBarrier() has no ordering effect on a GPU; the original shaders
++ * use it where they rely on the threads of a wave running in lockstep, so
++ * here it lets every other runnable thread reach its next barrier. WaveJoin()
++ * is inserted by run.sh where lockstep execution makes all threads meet (the
++ * end of a loop some threads leave early).
++ */
++void GroupMemoryBarrier();
++void GroupMemoryBarrierWithGroupSync();
++void AllMemoryBarrierWithGroupSync();
++void WaveJoin(int level);
++
++#define groupshared static
++
++#endif /* INTRA_CHECK_HLSL_SHIM_H_ */
+diff --git a/testing/intra_check/intra_check.cpp b/testing/intra_check/intra_check.cpp
+new file mode 100644
+index 0000000..45c74af
+--- /dev/null
++++ b/testing/intra_check/intra_check.cpp
+@@ -0,0 +1,1129 @@
++/*
++ * Host check for the test player flag -intrav2: runs the original intra
++ * prediction shaders (intra_main + intra_filter, one dispatch pair per
++ * wavefront iteration) and the new one (intra_v2, scheduled by
++ * libav1/dx/intra_v2_sched.h) as C++ on generated frames and compares the
++ * whole frame buffer byte for byte. 8-bit and 10-bit.
++ *
++ * What is real: the shader code (converted by run.sh), the scheduler header
++ * the decoder uses, the lookup tables (pulled from the decoder sources by
++ * run.sh). What is modelled here: the block records (a port of the intra
++ * part of gen_pred_blocks.hlsl), the iteration grid of av1_mi_push_block,
++ * the dispatch loops of av1_prediction_run_all, and the GPU itself.
++ *
++ * A thread group is emulated with one fiber per thread:
++ *   - a group sync blocks a thread until all threads of the group are there;
++ *   - a plain GroupMemoryBarrier() lets all other runnable threads reach their
++ *     next barrier first. The original shaders use it where they rely on the
++ *     threads of a wave running in lockstep, and that is what this gives;
++ *   - the group memory starts as garbage, different in every run.
++ * Thread groups run one after the other, so the frame buffer is watched for
++ * reads that would depend on the order of groups or threads on a GPU (see
++ * AccessTracker in hlsl_shim.h).
++ */
++#include <limits.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#include <algorithm>
++#include <vector>
++
++#include "hlsl_shim.h"
++#include "intra_v2_sched.h"
++#include "shader_api.h"
++#include "tables.gen.h"
++
++long g_out_of_bounds = 0;
++AccessTracker g_tracker;
++
++// ---------------------------------------------------------------------------
++// Fibers
++// ---------------------------------------------------------------------------
++
++enum { kMaxThreads = 384, kStackSize = 256 * 1024 };
++enum { StRun, StBlocked, StDone };
++enum { TagWave1 = 1, TagWave2 = 2, TagGroupSync = 3 };
++
++static void fiber_entry();
++
++#if defined(__x86_64__) && !defined(INTRA_CHECK_UCONTEXT)
++// Saves the callee-saved registers on the current stack and continues on
++// another one. swapcontext() does the same with two system calls per switch,
++// which is most of the run time of this check.
++extern "C" void intra_check_switch(void **save_sp, void *load_sp);
++__asm__(".text\n"
++        ".globl intra_check_switch\n"
++        ".type intra_check_switch,@function\n"
++        "intra_check_switch:\n"
++        "  pushq %rbp\n"
++        "  pushq %rbx\n"
++        "  pushq %r12\n"
++        "  pushq %r13\n"
++        "  pushq %r14\n"
++        "  pushq %r15\n"
++        "  movq %rsp, (%rdi)\n"
++        "  movq %rsi, %rsp\n"
++        "  popq %r15\n"
++        "  popq %r14\n"
++        "  popq %r13\n"
++        "  popq %r12\n"
++        "  popq %rbx\n"
++        "  popq %rbp\n"
++        "  ret\n"
++        ".size intra_check_switch,.-intra_check_switch\n");
++
++struct Fiber {
++  void *sp;
++  int state;
++  int tag;
++};
++static Fiber g_fibers[kMaxThreads];
++static char *g_stacks;
++static void *g_scheduler_sp;
++static int g_current;
++
++static void fiber_prepare(int t) {
++  uintptr_t *top = (uintptr_t *)(((uintptr_t)(g_stacks + (size_t)(t + 1) * kStackSize)) & ~(uintptr_t)15);
++  *--top = 0;                        // keeps the stack of fiber_entry() aligned
++  *--top = (uintptr_t)&fiber_entry;  // where the first switch returns to
++  for (int i = 0; i < 6; ++i) *--top = 0;
++  g_fibers[t].sp = top;
++  g_fibers[t].state = StRun;
++  g_fibers[t].tag = 0;
++}
++static void fiber_resume(int t) {
++  g_current = t;
++  intra_check_switch(&g_scheduler_sp, g_fibers[t].sp);
++}
++static void fiber_suspend() { intra_check_switch(&g_fibers[g_current].sp, g_scheduler_sp); }
++#else
++#include <ucontext.h>
++struct Fiber {
++  ucontext_t context;
++  int state;
++  int tag;
++};
++static Fiber g_fibers[kMaxThreads];
++static char *g_stacks;
++static ucontext_t g_scheduler_context;
++static int g_current;
++
++static void fiber_prepare(int t) {
++  getcontext(&g_fibers[t].context);
++  g_fibers[t].context.uc_stack.ss_sp = g_stacks + (size_t)t * kStackSize;
++  g_fibers[t].context.uc_stack.ss_size = kStackSize;
++  g_fibers[t].context.uc_link = nullptr;
++  makecontext(&g_fibers[t].context, fiber_entry, 0);
++  g_fibers[t].state = StRun;
++  g_fibers[t].tag = 0;
++}
++static void fiber_resume(int t) {
++  g_current = t;
++  swapcontext(&g_scheduler_context, &g_fibers[t].context);
++}
++static void fiber_suspend() { swapcontext(&g_fibers[g_current].context, &g_scheduler_context); }
++#endif
++
++static const ShaderApi *g_api;
++static uint32_t g_group;
++static long g_sync_errors;
++
++__attribute__((noinline, used)) static void fiber_entry() {
++  g_api->run(g_group, (uint32_t)g_current);
++  g_fibers[g_current].state = StDone;
++  fiber_suspend();
++  abort();
++}
++
++static void fiber_wait(int state, int tag) {
++  g_fibers[g_current].state = state;
++  g_fibers[g_current].tag = tag;
++  fiber_suspend();
++}
++
++void GroupMemoryBarrier() { fiber_wait(StRun, 0); }
++void WaveJoin(int level) { fiber_wait(StBlocked, level); }
++void GroupMemoryBarrierWithGroupSync() { fiber_wait(StBlocked, TagGroupSync); }
++void AllMemoryBarrierWithGroupSync() { fiber_wait(StBlocked, TagGroupSync); }
++
++// Runs threads 0 .. threads - 1 of one thread group to the end.
++static void run_group(const ShaderApi *api, uint32_t group, int threads, uint64_t *garbage) {
++  api->scramble(garbage);
++  g_api = api;
++  g_group = group;
++  g_tracker.group++;
++  g_tracker.phase++;
++  for (int t = 0; t < threads; ++t) fiber_prepare(t);
++  for (;;) {
++    int ran = 0;
++    for (int t = 0; t < threads; ++t) {
++      if (g_fibers[t].state != StRun) continue;
++      g_tracker.thread = (uint32_t)t + 1;
++      fiber_resume(t);
++      ran = 1;
++    }
++    if (ran) continue;
++    // Nobody can run: release the threads waiting at the innermost point.
++    int tag = INT_MAX;
++    for (int t = 0; t < threads; ++t) {
++      if (g_fibers[t].state == StBlocked) tag = std::min(tag, g_fibers[t].tag);
++    }
++    if (tag == INT_MAX) break;
++    for (int t = 0; t < threads; ++t) {
++      if (g_fibers[t].state == StBlocked && g_fibers[t].tag == tag) {
++        g_fibers[t].state = StRun;
++      } else if (tag == TagGroupSync) {
++        g_sync_errors++;  // a group sync that not all threads of the group reach
++      }
++    }
++    if (tag == TagGroupSync) g_tracker.phase++;
++  }
++}
++
++// ---------------------------------------------------------------------------
++// Frames
++// ---------------------------------------------------------------------------
++
++struct Rng {
++  uint64_t state;
++  uint32_t u32() {
++    state += 0x9e3779b97f4a7c15ull;
++    uint64_t z = state;
++    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ull;
++    z = (z ^ (z >> 27)) * 0x94d049bb133111ebull;
++    return (uint32_t)((z ^ (z >> 31)) >> 16);
++  }
++  int below(int n) { return (int)(u32() % (uint32_t)n); }
++  int chance(int percent) { return below(100) < percent; }
++};
++
++enum {
++  DC_PRED,
++  V_PRED,
++  H_PRED,
++  D45_PRED,
++  D135_PRED,
++  D113_PRED,
++  D157_PRED,
++  D203_PRED,
++  D67_PRED,
++  SMOOTH_PRED,
++  SMOOTH_V_PRED,
++  SMOOTH_H_PRED,
++  PAETH_PRED,
++  UV_CFL_PRED,
++};
++
++enum { IntraTypeCount = 10 };  // block types per iteration: 9 sizes and filter intra
++
++struct Block {
++  uint32_t x, y, y2, z;  // the record; y2 is the second word of the V record of a chroma block
++  int is_uv;
++  int bucket;  // block type: 8 - log2(width / 4) - log2(height / 4), or 9 for filter intra
++  int tile;
++  int iter;  // wavefront iteration of the original path
++};
++
++struct Tile {
++  int c0, c1, r0, r1;  // in 4x4 units
++};
++
++struct Coverage {
++  long frames, blocks, luma_mode[16], chroma_mode[16], sizes[10];
++  long inter_intra, top_right, bottom_left, upsample, edge_filter, corner_filter, residual, clipped, multi_tile;
++  long v1_iterations, v1_dispatches, v1_groups;
++  long v2_steps, v2_dispatches, v2_groups, v2_group_passes, v2_max_passes;
++};
++
++// The sizes of everything that depends on the frame size only.
++struct Geometry {
++  int hbd;
++  int mi_cols, mi_rows;    // frame size in 4x4 units, even
++  int pad_cols, pad_rows;  // padded to 128 pixels
++  int sb_log;              // log2 of the superblock size in 4x4 units: 4 or 5
++  std::vector<Tile> tiles;
++  int stride[3], offset[3], height[3];
++  int res_stride[3], res_offset[3];
++  size_t pool_size, res_size;
++  int cells_y, cells_uv, regions;
++};
++
++struct Frame {
++  IntraConsts consts;
++  std::vector<uint8_t> pixels;  // the frame buffer before intra prediction
++  std::vector<uint8_t> residuals;
++  std::vector<uint8_t> wedge;
++  std::vector<Block> blocks;       // in decode order
++  std::vector<uint32_t> records1;  // records in the order of the original path
++  std::vector<uint32_t> counts1;   // records per (iteration, type)
++  int iterations;
++  std::vector<uint32_t> records2;    // records in the order of the new path
++  std::vector<uint32_t> block_map2;  // first record per (tile, type)
++  int edge_filter;
++};
++
++enum { kWedgeEntries = 64 };
++
++class Generator {
++ public:
++  Generator(const Geometry &geo, Rng *rng, IntraV2Sched *sched, Coverage *cov, Frame *frame)
++      : geo_(geo), rng_(*rng), sched_(sched), cov_(cov), frame_(frame) {
++    stride_y_ = geo.pad_cols + 2;
++    stride_uv_ = (geo.pad_cols >> 1) + 2;
++    grid_y_.assign((size_t)stride_y_ * (geo.pad_rows + 2), -1);
++    grid_uv_.assign((size_t)stride_uv_ * ((geo.pad_rows >> 1) + 2), -1);
++    done_y_.assign((size_t)geo.pad_cols * geo.pad_rows, 0);
++    done_uv_.assign((size_t)(geo.pad_cols >> 1) * (geo.pad_rows >> 1), 0);
++  }
++
++  void run(int p_intra, int p_inter_intra, int p_split) {
++    p_intra_ = p_intra;
++    p_inter_intra_ = p_inter_intra;
++    p_split_ = p_split;
++    for (size_t t = 0; t < geo_.tiles.size(); ++t) {
++      tile_ = geo_.tiles[t];
++      tile_index_ = (int)t;
++      memset(counters_, 0, sizeof(counters_));
++      const int sb = 1 << geo_.sb_log;
++      for (int row = tile_.r0; row < tile_.r1; row += sb) {
++        for (int col = tile_.c0; col < tile_.c1; col += sb) partition(row, col, geo_.sb_log);
++      }
++    }
++  }
++
++ private:
++  const Geometry &geo_;
++  Rng &rng_;
++  IntraV2Sched *sched_;
++  Coverage *cov_;
++  Frame *frame_;
++  int p_intra_ = 100, p_inter_intra_ = 0, p_split_ = 50;
++  Tile tile_ = {};
++  int tile_index_ = 0;
++  uint32_t counters_[IntraTypeCount] = {};
++  int stride_y_, stride_uv_;
++  std::vector<int> grid_y_, grid_uv_;       // the iteration grids of the original path
++  std::vector<uint8_t> done_y_, done_uv_;  // cells decoded so far
++
++  int done(int is_uv, int col, int row) const {
++    return is_uv ? done_uv_[(size_t)col + (size_t)row * (geo_.pad_cols >> 1)]
++                 : done_y_[(size_t)col + (size_t)row * geo_.pad_cols];
++  }
++  void mark(int is_uv, int col, int row, int w, int h) {
++    const int cols = geo_.pad_cols >> is_uv;
++    const int rows = geo_.pad_rows >> is_uv;
++    std::vector<uint8_t> &map = is_uv ? done_uv_ : done_y_;
++    for (int y = row; y < std::min(row + h, rows); ++y) {
++      for (int x = col; x < std::min(col + w, cols); ++x) map[(size_t)x + (size_t)y * cols] = 1;
++    }
++  }
++
++  // One transform block: its iteration in the original path (as
++  // av1_mi_push_block finds it), its place in the new schedule, its record.
++  void push(int is_uv, int col, int row, int txw, int txh, int above_left, int above_count, int left_count, int cfl,
++            int bucket, uint32_t y, uint32_t y2, uint32_t z) {
++    const int w = 1 << txw;
++    const int h = 1 << txh;
++    const int stride = is_uv ? stride_uv_ : stride_y_;
++    int *blk = (is_uv ? grid_uv_.data() : grid_y_.data()) + col + row * stride;
++    int iter = -1;
++    for (int it = 1 - above_left; it <= above_count; ++it) iter = std::max(iter, blk[it]);
++    for (int it = 1; it <= left_count; ++it) iter = std::max(iter, blk[it * stride]);
++    if (cfl) {
++      const int *y_grid = grid_y_.data() + (col << 1) + (row << 1) * stride_y_;
++      for (int yit = 1; yit <= (h << 1); ++yit) {
++        for (int xit = 1; xit <= (w << 1); ++xit) iter = std::max(iter, y_grid[xit + yit * stride_y_]);
++      }
++    }
++    ++iter;
++    for (int it = 1; it <= h; ++it) blk[it * stride + w] = iter;
++    for (int it = 1; it <= w; ++it) blk[it + h * stride] = iter;
++
++    intra_v2_place(sched_, (uint32_t)tile_index_ * IntraTypeCount, is_uv, col, row, txw, txh, above_left, above_count,
++                   left_count, cfl, (uint32_t)bucket, counters_[bucket]);
++    counters_[bucket] += 1 + is_uv;
++
++    Block b;
++    b.x = (uint32_t)col | ((uint32_t)row << 16);
++    b.y = y;
++    b.y2 = y2;
++    b.z = z;
++    b.is_uv = is_uv;
++    b.bucket = bucket;
++    b.tile = tile_index_;
++    b.iter = iter;
++    frame_->blocks.push_back(b);
++    mark(is_uv, col, row, w, h);
++
++    cov_->blocks++;
++    cov_->sizes[bucket]++;
++    (is_uv ? cov_->chroma_mode : cov_->luma_mode)[(y >> 6) & 15]++;
++    if ((int)y < 0) cov_->inter_intra++;
++    if (y & (1 << 5)) cov_->residual++;
++    if (((y >> 6) & 15) < 14) {
++      if (y & (3 << 22)) cov_->upsample++;
++      if (y & (15 << 24)) cov_->edge_filter++;
++    }
++  }
++
++  // The edge bits of a directional mode, as gen_pred_blocks.hlsl sets them.
++  uint32_t direction_flags(int mode, int delta, int txw, int txh, int *filter_above, int *filter_left) {
++    static const int mode_to_angle_map[] = { 0, 90, 180, 45, 135, 113, 157, 203, 67 };
++    int upsample_above = 0;
++    int upsample_left = 0;
++    const int angle = mode_to_angle_map[mode] + delta * 3;
++    if (frame_->edge_filter) {
++      const int filt_type = rng_.below(2);  // whether a neighbour block is smooth
++      const int d90 = abs(angle - 90);
++      const int d180 = abs(angle - 180);
++      const int blk_wh = (4 << txw) + (4 << txh);
++      upsample_above = d90 != 0 && d90 < 40 && blk_wh <= (16 >> filt_type);
++      upsample_left = d180 != 0 && d180 < 40 && blk_wh <= (16 >> filt_type);
++      *filter_above = intra_edge_filter_strength(blk_wh, d90, filt_type);
++      *filter_left = intra_edge_filter_strength(blk_wh, d180, filt_type);
++    }
++    return ((uint32_t)upsample_above << 22) | ((uint32_t)upsample_left << 23) | ((uint32_t)(delta + 3) << 28);
++  }
++
++  void luma(int mi_row, int mi_col, int bwl, int bhl, int txw, int txh, int mode, int delta, int use_filter,
++            int inter_intra, int nonskip) {
++    int need_above = (NeedAboveLut >> mode) & 1;
++    int need_left = (NeedLeftLut >> mode) & 1;
++    const int need_right = (NeedRightLut >> mode) & 1;
++    const int need_bot = (NeedBotLut >> mode) & 1;
++    const int need_aboveleft = (NeedAboveLeftLut >> mode) & 1;
++    const int max_cnt_x = (geo_.mi_cols - mi_col + (1 << txw) - 1) >> txw;
++    const int max_cnt_y = (geo_.mi_rows - mi_row + (1 << txh) - 1) >> txh;
++    const int unit_x_log = bwl == 5;
++    const int unit_y_log = bhl == 5;
++    int cnt_y = 1 << (bhl - txh);
++    int cnt_x = 1 << (bwl - txw);
++    if (cnt_x > max_cnt_x || cnt_y > max_cnt_y) cov_->clipped++;
++
++    const int mode_gpu = use_filter ? 13 : mode ? (mode - 1) : 14;
++    uint32_t flags = (uint32_t)txw | ((uint32_t)nonskip << 5) | ((uint32_t)mode_gpu << 6);
++    int filter_above = 0;
++    int filter_left = 0;
++    if (mode >= V_PRED && mode <= D67_PRED) flags |= direction_flags(mode, delta, txw, txh, &filter_above, &filter_left);
++    flags |= (uint32_t)inter_intra << 31;
++    uint32_t z = 0;
++    if (inter_intra)
++      z = (uint32_t)rng_.below(kWedgeEntries);
++    else if (use_filter)
++      z = (uint32_t)txh | ((uint32_t)rng_.below(5) << 4);
++    const int bucket = use_filter ? 9 : (8 - txw - txh);
++
++    cnt_x >>= unit_x_log;
++    cnt_y >>= unit_y_log;
++    for (int unit_y = 0; unit_y <= unit_y_log; ++unit_y) {
++      for (int unit_x = 0; unit_x <= unit_x_log; ++unit_x) {
++        const int x_start = unit_x * cnt_x;
++        const int x_end = std::min(x_start + cnt_x, max_cnt_x);
++        const int y_start = unit_y * cnt_y;
++        const int y_end = std::min(y_start + cnt_y, max_cnt_y);
++        for (int y = y_start; y < y_end; ++y) {
++          for (int x = x_start; x < x_end; ++x) {
++            const int col = mi_col + (x << txw);
++            const int row = mi_row + (y << txh);
++            const int subblk_w = 1 << txw;
++            const int subblk_h = 1 << txh;
++            const int have_top = y || (mi_row > tile_.r0);
++            const int have_left = x || (mi_col > tile_.c0);
++            int above_available = have_top;
++            if (need_above) {
++              const int xr = geo_.mi_cols - col - subblk_w;
++              int have_top_right = 0;
++              if (need_right && have_top && col + subblk_w < tile_.c1) {
++                have_top_right = 1;
++                for (int i = 0; i < std::min(subblk_w, xr); ++i) have_top_right &= done(0, col + subblk_w + i, row - 1);
++                cov_->top_right += have_top_right;
++              }
++              above_available =
++                  (have_top ? std::min(subblk_w, subblk_w + xr) : 0) + (have_top_right ? std::min(subblk_w, xr) : 0);
++            }
++            int left_available = have_left;
++            if (need_left) {
++              const int yd = geo_.mi_rows - row - subblk_h;
++              int have_bottom_left = 0;
++              if (need_bot && have_left && yd > 0 && row + subblk_h < tile_.r1) {
++                have_bottom_left = 1;
++                for (int i = 0; i < std::min(subblk_h, yd); ++i)
++                  have_bottom_left &= done(0, col - 1, row + subblk_h + i);
++                cov_->bottom_left += have_bottom_left;
++              }
++              left_available =
++                  (have_left ? std::min(subblk_h, subblk_h + yd) : 0) + (have_bottom_left ? std::min(subblk_h, yd) : 0);
++            }
++            const uint32_t word = flags | ((uint32_t)above_available << 10) | ((uint32_t)left_available << 16) |
++                                  (above_available ? ((uint32_t)filter_above << 24) : 0) |
++                                  (left_available ? ((uint32_t)filter_left << 26) : 0);
++            push(0, col, row, txw, txh, have_top && have_left && need_aboveleft, above_available, left_available, 0,
++                 bucket, word, 0, z);
++          }
++        }
++      }
++    }
++  }
++
++  void chroma(int mi_row, int mi_col, int bwl, int bhl, int mode, int delta, int inter_intra, int nonskip,
++              uint32_t cfl_limits) {
++    const int bw = 1 << bwl;
++    const int bh = 1 << bhl;
++    const int bwl_uv = std::max(0, bwl - 1);
++    const int bhl_uv = std::max(0, bhl - 1);
++    const int mi_col_uv = mi_col >> 1;
++    const int mi_row_uv = mi_row >> 1;
++    const int mi_col1 = mi_col & ~1;
++    const int mi_row1 = mi_row & ~1;
++    const int need_above = (NeedAboveLut >> mode) & 1;
++    const int need_left = (NeedLeftLut >> mode) & 1;
++    const int need_right = (NeedRightLut >> mode) & 1;
++    const int need_bot = (NeedBotLut >> mode) & 1;
++    const int need_aboveleft = (NeedAboveLeftLut >> mode) & 1;
++    const int txw = std::min(bwl_uv, 3);
++    const int txh = std::min(bhl_uv, 3);
++    const int unit_x_log = bwl == 5;
++    const int unit_y_log = bhl == 5;
++    const int cnt_y = 1 << (bhl_uv - txh - unit_y_log);
++    const int cnt_x = 1 << (bwl_uv - txw - unit_x_log);
++
++    const int mode_gpu = mode == UV_CFL_PRED ? 15 : mode ? (mode - 1) : 14;
++    uint32_t flags = (uint32_t)txw | ((uint32_t)nonskip << 5) | ((uint32_t)mode_gpu << 6);
++    int filter_above = 0;
++    int filter_left = 0;
++    if (mode >= V_PRED && mode <= D67_PRED) flags |= direction_flags(mode, delta, txw, txh, &filter_above, &filter_left);
++    flags |= (uint32_t)inter_intra << 31;
++    uint32_t mode_u = 1 << 3;
++    uint32_t mode_v = 2 << 3;
++    uint32_t z = 0;
++    if (mode == UV_CFL_PRED) {
++      mode_u |= (uint32_t)(rng_.below(33)) << 22;  // alpha index + 16
++      mode_v |= (uint32_t)(rng_.below(33)) << 22;
++      z = cfl_limits;
++    }
++    if (inter_intra) z = (uint32_t)rng_.below(kWedgeEntries);
++    const int bucket = 8 - txw - txh;
++
++    for (int unit_y = 0; unit_y <= unit_y_log; ++unit_y) {
++      for (int unit_x = 0; unit_x <= unit_x_log; ++unit_x) {
++        for (int suby = 0; suby < cnt_y; ++suby) {
++          for (int subx = 0; subx < cnt_x; ++subx) {
++            const int x = subx + unit_x * cnt_x;
++            const int y = suby + unit_y * cnt_y;
++            const int col = mi_col_uv + (x << txw);
++            const int row = mi_row_uv + (y << txh);
++            const int subblk_w = 1 << txw;
++            const int subblk_h = 1 << txh;
++            const int have_top = y || (mi_row1 > tile_.r0);
++            const int have_left = x || (mi_col1 > tile_.c0);
++            int above_available = have_top;
++            if (need_above) {
++              const int xr = ((geo_.mi_cols - mi_col - bw) + (2 << bwl_uv) - ((x + 1) << (txw + 1))) >> 1;
++              int have_top_right = 0;
++              if (need_right && have_top && xr > 0 && mi_col + (((x << txw) + subblk_w) << 1) < tile_.c1) {
++                have_top_right = 1;
++                for (int i = 0; i < std::min(subblk_w, xr); ++i) have_top_right &= done(1, col + subblk_w + i, row - 1);
++                cov_->top_right += have_top_right;
++              }
++              above_available =
++                  (have_top ? std::min(subblk_w, subblk_w + xr) : 0) + (have_top_right ? std::min(subblk_w, xr) : 0);
++            }
++            int left_available = have_left;
++            if (need_left) {
++              const int yd = ((geo_.mi_rows - mi_row - bh) + (2 << bhl_uv) - ((y + 1) << (txh + 1))) >> 1;
++              int have_bottom_left = 0;
++              if (need_bot && have_left && yd > 0 && mi_row + (((y << txh) + subblk_h) << 1) < tile_.r1) {
++                have_bottom_left = 1;
++                for (int i = 0; i < std::min(subblk_h, yd); ++i)
++                  have_bottom_left &= done(1, col - 1, row + subblk_h + i);
++                cov_->bottom_left += have_bottom_left;
++              }
++              left_available =
++                  (have_left ? std::min(subblk_h, subblk_h + yd) : 0) + (have_bottom_left ? std::min(subblk_h, yd) : 0);
++            }
++            const uint32_t word = flags | ((uint32_t)above_available << 10) | ((uint32_t)left_available << 16) |
++                                  (above_available ? ((uint32_t)filter_above << 24) : 0) |
++                                  (left_available ? ((uint32_t)filter_left << 26) : 0);
++            push(1, col, row, txw, txh, need_aboveleft && have_top && have_left, above_available, left_available,
++                 mode == UV_CFL_PRED, bucket, word | mode_u, word | mode_v, z);
++          }
++        }
++      }
++    }
++  }
++
++  // One coding block of 4 << bwl by 4 << bhl pixels.
++  void block(int mi_row, int mi_col, int bwl, int bhl) {
++    static const int interintra_to_intra_mode[4] = { DC_PRED, V_PRED, H_PRED, SMOOTH_PRED };
++    const int bw = 1 << bwl;
++    const int bh = 1 << bhl;
++    const int is_intra = rng_.chance(p_intra_);
++    const int inter_intra =
++        !is_intra && bwl >= 1 && bwl <= 3 && bhl >= 1 && bhl <= 3 && abs(bwl - bhl) <= 1 && rng_.chance(p_inter_intra_);
++    const int interintra_mode = rng_.below(4);
++    const int nonskip = rng_.chance(70);
++    const int palette_allowed = is_intra && bwl >= 1 && bhl >= 1 && bwl <= 4 && bhl <= 4;
++    const int y_use_palette = palette_allowed && rng_.chance(4);
++    const int uv_use_palette = palette_allowed && rng_.chance(4);
++    const int angles = bwl >= 1 && bhl >= 1;  // angle deltas from 8x8
++
++    // Luma transform size: the largest of the block, split up to twice.
++    int txw = std::min(bwl, 4);
++    int txh = std::min(bhl, 4);
++    if (!inter_intra) {
++      for (int depth = rng_.below(3); depth > 0; --depth) {
++        if (txw > txh) {
++          --txw;
++        } else if (txh > txw) {
++          --txh;
++        } else if (txw > 0) {
++          --txw;
++          --txh;
++        }
++      }
++    }
++    const int max_cnt_x = (geo_.mi_cols - mi_col + (1 << txw) - 1) >> txw;
++    const int max_cnt_y = (geo_.mi_rows - mi_row + (1 << txh) - 1) >> txh;
++    const uint32_t cfl_max_x = (uint32_t)(mi_col + (std::min(1 << (bwl - txw), max_cnt_x) << txw)) << 2;
++    const uint32_t cfl_max_y = (uint32_t)(mi_row + (std::min(1 << (bhl - txh), max_cnt_y) << txh)) << 2;
++
++    if ((is_intra || inter_intra) && !y_use_palette) {
++      const int mode = inter_intra ? interintra_to_intra_mode[interintra_mode] : rng_.below(13);
++      const int use_filter = is_intra && mode == DC_PRED && bwl <= 3 && bhl <= 3 && rng_.chance(35);
++      const int delta = (is_intra && angles) ? rng_.below(7) - 3 : 0;
++      luma(mi_row, mi_col, bwl, bhl, txw, txh, mode, delta, use_filter, inter_intra, nonskip);
++    }
++    mark(0, mi_col, mi_row, bw, bh);
++
++    // A block narrower or lower than 8 pixels carries the chroma of its 8x8
++    // only when it is the last one there.
++    const int no_chroma = ((mi_row & 1) == 0 && (bh & 1) == 1) || ((mi_col & 1) == 0 && (bw & 1) == 1);
++    if (no_chroma) return;
++    if ((is_intra || inter_intra) && !uv_use_palette) {
++      const int cfl_allowed = is_intra && bwl <= 3 && bhl <= 3;
++      int mode = inter_intra ? interintra_to_intra_mode[interintra_mode] : rng_.below(13);
++      if (cfl_allowed && rng_.chance(25)) mode = UV_CFL_PRED;
++      const int delta = (is_intra && angles) ? rng_.below(7) - 3 : 0;
++      chroma(mi_row, mi_col, bwl, bhl, mode, delta, inter_intra, nonskip, cfl_max_x | (cfl_max_y << 16));
++    }
++    mark(1, mi_col >> 1, mi_row >> 1, 1 << std::max(0, bwl - 1), 1 << std::max(0, bhl - 1));
++  }
++
++  // The partition tree of AV1, with its forced splits at the frame edges.
++  void partition(int mi_row, int mi_col, int bsl) {
++    if (mi_row >= geo_.mi_rows || mi_col >= geo_.mi_cols) return;
++    enum { None, Horz, Vert, Split, Horz4, Vert4 };
++    const int hbs = (1 << bsl) >> 1;
++    const int qbs = (1 << bsl) >> 2;
++    const int has_rows = mi_row + hbs < geo_.mi_rows;
++    const int has_cols = mi_col + hbs < geo_.mi_cols;
++    int type = Split;
++    if (has_rows && has_cols) {
++      if (!rng_.chance(std::min(95, p_split_ + 8 * (bsl - 1)))) {
++        const int r = rng_.below(10);
++        type = r < 5 ? None : r < 7 ? Horz : r < 9 ? Vert : (bsl >= 2 && bsl <= 4) ? (rng_.below(2) ? Horz4 : Vert4) : None;
++      }
++    } else if (has_cols) {
++      type = rng_.below(2) ? Horz : Split;
++    } else if (has_rows) {
++      type = rng_.below(2) ? Vert : Split;
++    }
++    switch (type) {
++      case None: block(mi_row, mi_col, bsl, bsl); break;
++      case Horz:
++        block(mi_row, mi_col, bsl, bsl - 1);
++        if (has_rows) block(mi_row + hbs, mi_col, bsl, bsl - 1);
++        break;
++      case Vert:
++        block(mi_row, mi_col, bsl - 1, bsl);
++        if (has_cols) block(mi_row, mi_col + hbs, bsl - 1, bsl);
++        break;
++      case Horz4:
++        for (int i = 0; i < 4; ++i) {
++          if (i > 0 && mi_row + i * qbs >= geo_.mi_rows) break;
++          block(mi_row + i * qbs, mi_col, bsl, bsl - 2);
++        }
++        break;
++      case Vert4:
++        for (int i = 0; i < 4; ++i) {
++          if (i > 0 && mi_col + i * qbs >= geo_.mi_cols) break;
++          block(mi_row, mi_col + i * qbs, bsl - 2, bsl);
++        }
++        break;
++      default:
++        if (bsl == 1) {
++          block(mi_row, mi_col, 0, 0);
++          block(mi_row, mi_col + 1, 0, 0);
++          block(mi_row + 1, mi_col, 0, 0);
++          block(mi_row + 1, mi_col + 1, 0, 0);
++        } else {
++          partition(mi_row, mi_col, bsl - 1);
++          partition(mi_row, mi_col + hbs, bsl - 1);
++          partition(mi_row + hbs, mi_col, bsl - 1);
++          partition(mi_row + hbs, mi_col + hbs, bsl - 1);
++        }
++        break;
++    }
++  }
++};
++
++static Geometry make_geometry(Rng *rng, int hbd) {
++  Geometry g;
++  g.hbd = hbd;
++  g.sb_log = 4 + rng->below(2);
++  const int max_cells = rng->chance(25) ? 96 : 48;
++  g.mi_cols = 2 * (1 + rng->below(max_cells / 2));
++  g.mi_rows = 2 * (1 + rng->below(max_cells / 2));
++  g.pad_cols = (g.mi_cols + 31) & ~31;
++  g.pad_rows = (g.mi_rows + 31) & ~31;
++
++  // Up to 2 x 2 tiles, cut at superblock boundaries.
++  const int sb = 1 << g.sb_log;
++  int col_cut = 0;
++  int row_cut = 0;
++  if (g.mi_cols > sb && rng->chance(50)) col_cut = sb * (1 + rng->below((g.mi_cols - 1) / sb));
++  if (g.mi_rows > sb && rng->chance(50)) row_cut = sb * (1 + rng->below((g.mi_rows - 1) / sb));
++  for (int r = 0; r <= (row_cut != 0); ++r) {
++    for (int c = 0; c <= (col_cut != 0); ++c) {
++      Tile t;
++      t.c0 = c ? col_cut : 0;
++      t.c1 = (col_cut && !c) ? col_cut : g.mi_cols;
++      t.r0 = r ? row_cut : 0;
++      t.r1 = (row_cut && !r) ? row_cut : g.mi_rows;
++      g.tiles.push_back(t);
++    }
++  }
++
++  // Planes with some room around them. 8-bit: one byte per pixel, 10-bit: two.
++  const int bytes = 1 + hbd;
++  size_t at = 256;
++  size_t res_at = 256;
++  for (int p = 0; p < 3; ++p) {
++    const int w = (g.pad_cols * 4) >> (p > 0);
++    const int h = (g.pad_rows * 4) >> (p > 0);
++    g.stride[p] = w * bytes;
++    g.height[p] = h;
++    g.offset[p] = (int)at;
++    at += (size_t)g.stride[p] * h + 256;
++    g.res_stride[p] = w * 2;
++    g.res_offset[p] = (int)res_at;
++    res_at += (size_t)g.res_stride[p] * h + 256;
++  }
++  g.pool_size = at;
++  g.res_size = res_at;
++  g.cells_y = g.pad_cols * g.pad_rows;
++  g.cells_uv = (g.pad_cols >> 1) * (g.pad_rows >> 1);
++  g.regions = (g.pad_cols >> 4) * (g.pad_rows >> 4);
++  return g;
++}
++
++static void make_frame_data(const Geometry &g, Rng *rng, Frame *f) {
++  const int pixel_max = g.hbd ? 1023 : 255;
++  memset(&f->consts, 0, sizeof(f->consts));
++  f->edge_filter = rng->chance(80);
++  f->consts.flags[0] = f->edge_filter;
++  for (int p = 0; p < 3; ++p) {
++    f->consts.planes[p][0] = g.stride[p];
++    f->consts.planes[p][1] = g.offset[p];
++    f->consts.planes[p][2] = g.res_stride[p];
++    f->consts.planes[p][3] = g.res_offset[p];
++  }
++  for (int m = 0; m < 5; ++m) {
++    for (int k = 0; k < 8; ++k) {
++      for (int i = 0; i < 8; ++i) f->consts.filter[m][k][i] = av1_filter_intra_taps[m][k][i];
++    }
++  }
++  static_assert(sizeof(f->consts.mode_params_lut) == sizeof(intra_mode_shader_params), "mode table");
++  memcpy(f->consts.mode_params_lut, intra_mode_shader_params, sizeof(intra_mode_shader_params));
++  for (int i = 0; i < 128; ++i) f->consts.sm_weight_arrays[i][0] = sm_weight_arrays[i];
++
++  // Flat areas, gradients and noise: all give different edge cases.
++  f->pixels.assign(g.pool_size, 0);
++  f->residuals.assign(g.res_size, 0);
++  const int flat = rng->chance(15);
++  const int base = rng->below(pixel_max + 1);
++  const int extreme = rng->chance(20);
++  for (int p = 0; p < 3; ++p) {
++    for (int y = 0; y < g.height[p]; ++y) {
++      for (int x = 0; x < (g.stride[p] >> g.hbd); ++x) {
++        int v = flat ? base + rng->below(5) - 2 : rng->below(pixel_max + 1);
++        if (extreme && rng->chance(30)) v = rng->below(2) ? 0 : pixel_max;
++        v = std::min(std::max(v, 0), pixel_max);
++        const size_t at = (size_t)g.offset[p] + (size_t)y * g.stride[p] + ((size_t)x << g.hbd);
++        f->pixels[at] = (uint8_t)v;
++        if (g.hbd) f->pixels[at + 1] = (uint8_t)(v >> 8);
++        int r = rng->below(pixel_max + 1) - (pixel_max >> 1);
++        if (rng->chance(60)) r = rng->below(33) - 16;
++        if (rng->chance(2)) r = rng->below(2) ? 32767 : -32768;
++        const size_t res_at = (size_t)g.res_offset[p] + (size_t)y * g.res_stride[p] + (size_t)x * 2;
++        f->residuals[res_at] = (uint8_t)r;
++        f->residuals[res_at + 1] = (uint8_t)(r >> 8);
++      }
++    }
++  }
++  f->wedge.resize((kWedgeEntries << 6) + 32 * 32 + 4);
++  for (size_t i = 0; i < f->wedge.size(); ++i) f->wedge[i] = (uint8_t)rng->below(65);
++}
++
++// Puts the records in the order of the two paths: the original one sorts by
++// iteration first, the new one has all blocks in "iteration 0".
++static void order_records(const Geometry &g, Frame *f) {
++  const int tiles = (int)g.tiles.size();
++  f->iterations = 0;
++  for (const Block &b : f->blocks) f->iterations = std::max(f->iterations, b.iter + 1);
++  f->counts1.assign((size_t)f->iterations * IntraTypeCount, 0);
++  f->block_map2.assign((size_t)tiles * IntraTypeCount, 0);
++  std::vector<uint32_t> start1((size_t)f->iterations * IntraTypeCount * tiles, 0);
++  for (const Block &b : f->blocks) {
++    f->counts1[(size_t)b.iter * IntraTypeCount + b.bucket] += 1 + b.is_uv;
++    start1[((size_t)b.iter * IntraTypeCount + b.bucket) * tiles + b.tile] += 1 + b.is_uv;
++    f->block_map2[(size_t)b.tile * IntraTypeCount + b.bucket] += 1 + b.is_uv;
++  }
++  uint32_t total = 0;
++  for (uint32_t &v : start1) {
++    const uint32_t count = v;
++    v = total;
++    total += count;
++  }
++  const uint32_t records = total;
++  total = 0;
++  for (uint32_t &v : f->block_map2) {
++    const uint32_t count = v;
++    v = total;
++    total += count;
++  }
++  f->records1.assign((size_t)records * 4 + 4, 0);
++  f->records2.assign((size_t)records * 4 + 4, 0);
++  std::vector<uint32_t> next2 = f->block_map2;
++  for (const Block &b : f->blocks) {
++    uint32_t *at1 = &f->records1[4 * (size_t)start1[((size_t)b.iter * IntraTypeCount + b.bucket) * tiles + b.tile]];
++    uint32_t *at2 = &f->records2[4 * (size_t)next2[(size_t)b.tile * IntraTypeCount + b.bucket]];
++    start1[((size_t)b.iter * IntraTypeCount + b.bucket) * tiles + b.tile] += 1 + b.is_uv;
++    next2[(size_t)b.tile * IntraTypeCount + b.bucket] += 1 + b.is_uv;
++    for (int k = 0; k <= b.is_uv; ++k) {
++      at1[4 * k] = at2[4 * k] = b.x;
++      at1[4 * k + 1] = at2[4 * k + 1] = k ? b.y2 : b.y;
++      at1[4 * k + 2] = at2[4 * k + 2] = b.z;
++    }
++  }
++}
++
++// ---------------------------------------------------------------------------
++// The two paths
++// ---------------------------------------------------------------------------
++
++struct RunResult {
++  long out_of_bounds, races_group, races_thread, sync_errors;
++};
++
++static std::vector<uint32_t> g_tags[4];
++
++static void begin_run(const Geometry &g, int track_phase) {
++  for (std::vector<uint32_t> &tags : g_tags) tags.assign(g.pool_size / 4 + 1, 0);
++  g_tracker = AccessTracker();
++  g_tracker.w_unit = g_tags[0].data();
++  g_tracker.w_group = g_tags[1].data();
++  g_tracker.w_phase = g_tags[2].data();
++  g_tracker.w_thread = g_tags[3].data();
++  g_tracker.track_phase = track_phase;
++  g_out_of_bounds = 0;
++  g_sync_errors = 0;
++}
++
++static RunResult end_run() {
++  RunResult r;
++  r.out_of_bounds = g_out_of_bounds;
++  r.races_group = g_tracker.races_group;
++  r.races_thread = g_tracker.races_thread;
++  r.sync_errors = g_sync_errors;
++  g_tracker.w_unit = nullptr;
++  return r;
++}
++
++// The intra loop of av1_prediction_run_all().
++static RunResult run_original(const Geometry &g, const Frame &f, std::vector<uint8_t> *pool, uint64_t garbage,
++                              Coverage *cov) {
++  const ShaderApi *main_api = g.hbd ? &intra_main_hbd_api : &intra_main_api;
++  const ShaderApi *filter_api = g.hbd ? &intra_filter_hbd_api : &intra_filter_api;
++  ShaderBuffers buffers = {};
++  buffers.pred_blocks = (const uint8_t *)f.records1.data();
++  buffers.pred_blocks_size = f.records1.size() * 4;
++  buffers.residuals = f.residuals.data();
++  buffers.residuals_size = f.residuals.size();
++  buffers.wedge = f.wedge.data();
++  buffers.wedge_size = f.wedge.size();
++  buffers.frame = pool->data();
++  buffers.frame_size = pool->size();
++  main_api->bind(&buffers);
++  main_api->set_common(&f.consts);
++  filter_api->bind(&buffers);
++  filter_api->set_common(&f.consts);
++
++  begin_run(g, 0);
++  uint32_t offset = 0;
++  for (int it = 0; it < f.iterations; ++it) {
++    const uint32_t *counts = &f.counts1[(size_t)it * IntraTypeCount];
++    uint32_t srt[10];
++    uint32_t wi_count = counts[8] << 2;
++    for (int k = 0; k < 8; ++k) {
++      srt[k] = counts[k];
++      wi_count += counts[k] << (10 - k);
++    }
++    srt[8] = wi_count;
++    srt[9] = offset;
++    if (wi_count) {
++      main_api->set_srt(srt);
++      const uint32_t groups = (wi_count + 255) >> 8;
++      for (uint32_t group = 0; group < groups; ++group)
++        run_group(main_api, group, (int)std::min<uint32_t>(256, wi_count - group * 256), &garbage);
++      if (cov) {
++        cov->v1_dispatches++;
++        cov->v1_groups += groups;
++      }
++    }
++    for (int k = 0; k < 9; ++k) offset += counts[k];
++    if (counts[9]) {
++      const uint32_t filter_srt[2] = { counts[9] << 3, offset };
++      filter_api->set_srt(filter_srt);
++      for (uint32_t group = 0; group < counts[9]; ++group) run_group(filter_api, group, 64, &garbage);
++      if (cov) {
++        cov->v1_dispatches++;
++        cov->v1_groups += counts[9];
++      }
++    }
++    offset += counts[9];
++    g_tracker.unit++;  // the UAV barrier
++  }
++  if (cov) cov->v1_iterations += f.iterations;
++  return end_run();
++}
++
++struct Schedule {
++  std::vector<uint32_t> gpu;  // cell map, then region list
++  std::vector<uint32_t> regions;
++  volatile long list_count;
++  IntraV2Sched sched;
++};
++
++static void make_schedule(const Geometry &g, Schedule *s) {
++  const size_t cells = (size_t)g.cells_y + g.cells_uv;
++  s->gpu.assign(4 * cells, 0);
++  s->regions.assign(2 * (size_t)g.regions, 0);
++  s->list_count = 0;
++  s->sched.cells = s->gpu.data();
++  s->sched.regions = s->regions.data();
++  s->sched.list = (uint64_t *)(s->gpu.data() + 2 * cells);
++  s->sched.list_count = &s->list_count;
++  s->sched.map_stride = g.pad_cols;
++  s->sched.map_uv_offset = g.cells_y;
++  s->sched.regions_stride = g.pad_cols >> 4;
++  s->sched.stamp = 0;
++}
++
++// The intra loop of av1_prediction_run_all() with -intrav2.
++static RunResult run_v2(const Geometry &g, const Frame &f, Schedule *s, std::vector<uint8_t> *pool, uint64_t garbage,
++                        Coverage *cov) {
++  const ShaderApi *api = g.hbd ? &intra_v2_hbd_api : &intra_v2_api;
++  const size_t cells = (size_t)g.cells_y + g.cells_uv;
++  ShaderBuffers buffers = {};
++  buffers.pred_blocks = (const uint8_t *)f.records2.data();
++  buffers.pred_blocks_size = f.records2.size() * 4;
++  buffers.residuals = f.residuals.data();
++  buffers.residuals_size = f.residuals.size();
++  buffers.wedge = f.wedge.data();
++  buffers.wedge_size = f.wedge.size();
++  buffers.sched = (const uint8_t *)s->gpu.data();
++  buffers.sched_size = s->gpu.size() * 4;
++  buffers.block_map = (const uint8_t *)f.block_map2.data();
++  buffers.block_map_size = f.block_map2.size() * 4;
++  buffers.frame = pool->data();
++  buffers.frame_size = pool->size();
++  api->bind(&buffers);
++  api->set_common(&f.consts);
++
++  begin_run(g, 1);
++  const int count = (int)s->list_count;
++  intra_v2_sort(s->sched.list, count);
++  IntraV2Dispatch d;
++  for (int first = 0; intra_v2_next_dispatch(s->sched.list, count, first, &d); first += d.count) {
++    const uint32_t srt[8] = { (uint32_t)(8 * (cells + d.first)), d.step, d.passes, s->sched.stamp,
++                              (uint32_t)s->sched.map_stride, (uint32_t)s->sched.map_uv_offset, 0, 0 };
++    api->set_srt(srt);
++    for (int group = 0; group < d.count; ++group) run_group(api, (uint32_t)group, 384, &garbage);
++    if (cov) {
++      cov->v2_dispatches++;
++      cov->v2_groups += d.count;
++      cov->v2_group_passes += (long)d.count * d.passes;
++      cov->v2_max_passes = std::max(cov->v2_max_passes, (long)d.passes);
++      cov->v2_steps += d.last_of_step;
++    }
++    if (d.last_of_step) g_tracker.unit++;  // the UAV barrier
++  }
++  return end_run();
++}
++
++// ---------------------------------------------------------------------------
++
++static void describe(const Geometry &g, const Frame &f, const Schedule &s, size_t byte) {
++  for (int p = 0; p < 3; ++p) {
++    const size_t begin = (size_t)g.offset[p];
++    const size_t end = begin + (size_t)g.stride[p] * g.height[p];
++    if (byte < begin || byte >= end) continue;
++    const int x = (int)((byte - begin) % g.stride[p]) >> g.hbd;
++    const int y = (int)((byte - begin) / g.stride[p]);
++    printf("    plane %d, pixel (%d, %d)\n", p, x, y);
++    for (const Block &b : f.blocks) {
++      if (b.is_uv != (p > 0)) continue;
++      const int bx = b.x & 0xffff;
++      const int by = b.x >> 16;
++      const int wl = b.y & 7;
++      const int hl = b.bucket == 9 ? (int)(b.z & 3) : 8 - b.bucket - wl;
++      if ((x >> 2) < bx || (x >> 2) >= bx + (1 << wl) || (y >> 2) < by || (y >> 2) >= by + (1 << hl)) continue;
++      const uint32_t word = p == 2 ? b.y2 : b.y;
++      const size_t cell = b.is_uv ? (size_t)g.cells_y + bx + (size_t)by * (g.pad_cols >> 1) : bx + (size_t)by * g.pad_cols;
++      printf("    block at cell (%d, %d), %dx%d, mode %u angle %u, above %u left %u, up %u filt %u/%u, type %d,\n"
++             "    record %08x %08x %08x, iteration %d, step %u pass %u, tile %d\n",
++             bx, by, 4 << wl, 4 << hl, (word >> 6) & 15, (word >> 28) & 7, (word >> 10) & 63, (word >> 16) & 63,
++             (word >> 22) & 3, (word >> 24) & 3, (word >> 26) & 3, b.bucket, b.x, word, b.z, b.iter,
++             s.gpu[2 * cell + 1] & 0xffff, (s.gpu[2 * cell + 1] >> 16) & 255, b.tile);
++      return;
++    }
++    printf("    (no intra block there)\n");
++    return;
++  }
++  printf("    byte %zu is outside the planes\n", byte);
++}
++
++static size_t first_difference(const std::vector<uint8_t> &a, const std::vector<uint8_t> &b) {
++  for (size_t i = 0; i < a.size(); ++i) {
++    if (a[i] != b[i]) return i;
++  }
++  return a.size();
++}
++
++int main(int argc, char **argv) {
++  int layouts = 120;
++  uint64_t seed = 20261111;
++  int verbose = 0;
++  for (int i = 1; i < argc; ++i) {
++    if (!strcmp(argv[i], "--layouts") && i + 1 < argc) {
++      layouts = atoi(argv[++i]);
++    } else if (!strcmp(argv[i], "--seed") && i + 1 < argc) {
++      seed = strtoull(argv[++i], nullptr, 10);
++    } else if (!strcmp(argv[i], "-v")) {
++      verbose = 1;
++    } else {
++      fprintf(stderr, "usage: intra_check [--layouts N] [--seed S] [-v]\n");
++      return 2;
++    }
++  }
++  g_stacks = (char *)malloc((size_t)kMaxThreads * kStackSize);
++  if (!g_stacks) return 2;
++
++  int failures = 0;
++  long garbage_dependent = 0;
++  long original_races = 0;
++  for (int hbd = 0; hbd < 2; ++hbd) {
++    Coverage cov = {};
++    Rng rng = { seed + (uint64_t)hbd * 7919 };
++    for (int layout = 0; layout < layouts && failures < 5; ++layout) {
++      const Geometry g = make_geometry(&rng, hbd);
++      Schedule schedule;
++      make_schedule(g, &schedule);
++      // Three frames share the schedule buffers, like the frames of a
++      // decoder: the entries of earlier frames stay behind with an old stamp.
++      if (layout % 4 == 0) schedule.sched.stamp = 253;
++      for (int n = 0; n < 3 && failures < 5; ++n) {
++        if (intra_v2_next_stamp(&schedule.sched.stamp)) {
++          std::fill(schedule.gpu.begin(), schedule.gpu.end(), 0);
++          std::fill(schedule.regions.begin(), schedule.regions.end(), 0);
++        }
++        schedule.list_count = 0;
++        Frame f;
++        make_frame_data(g, &rng, &f);
++        Generator gen(g, &rng, &schedule.sched, &cov, &f);
++        // A key frame, then frames with less and less intra.
++        static const int intra_percent[3] = { 100, 45, 12 };
++        gen.run(intra_percent[n], rng.below(3) * 20, 15 + rng.below(4) * 20);
++        order_records(g, &f);
++        cov.frames++;
++        if (g.tiles.size() > 1) cov.multi_tile++;
++
++        std::vector<uint8_t> original = f.pixels;
++        std::vector<uint8_t> original_again = f.pixels;
++        std::vector<uint8_t> v2 = f.pixels;
++        const RunResult r1 = run_original(g, f, &original, rng.u32(), &cov);
++        const RunResult r1b = run_original(g, f, &original_again, rng.u32(), nullptr);
++        const RunResult r2 = run_v2(g, f, &schedule, &v2, rng.u32(), &cov);
++        original_races += r1.races_group;
++
++        const char *problem = nullptr;
++        size_t at = 0;
++        if (original != original_again) {
++          // Not a property of the new path, but then there is no single
++          // right answer to compare with.
++          garbage_dependent++;
++          problem = "the original path depends on uninitialised group memory";
++          at = first_difference(original, original_again);
++        } else if (original != v2) {
++          problem = "MISMATCH between the original path and intra_v2";
++          at = first_difference(original, v2);
++        } else if (r1.sync_errors || r1b.sync_errors || r2.sync_errors) {
++          problem = "a group sync was not reached by all threads of a group";
++        } else if (r2.out_of_bounds) {
++          problem = "intra_v2 reads or writes outside its buffers";
++        } else if (r2.races_group) {
++          problem = "intra_v2 reads what another thread group of the same step wrote";
++        } else if (r2.races_thread) {
++          problem = "intra_v2 reads what another thread wrote in the same pass";
++        }
++        if (verbose || problem) {
++          printf("%s layout %d frame %d: %dx%d, %zu tile(s), sb %d, %zu blocks, %d iterations -> %ld region entries\n",
++                 hbd ? "10-bit" : "8-bit", layout, n, g.mi_cols * 4, g.mi_rows * 4, g.tiles.size(), 4 << g.sb_log,
++                 f.blocks.size(), f.iterations, (long)schedule.list_count);
++        }
++        if (problem) {
++          ++failures;
++          printf("  %s\n", problem);
++          if (at < original.size()) describe(g, f, schedule, at);
++          printf("  out of bounds %ld/%ld, group races %ld/%ld, thread races %ld, sync errors %ld/%ld\n",
++                 r1.out_of_bounds, r2.out_of_bounds, r1.races_group, r2.races_group, r2.races_thread, r1.sync_errors,
++                 r2.sync_errors);
++        }
++      }
++    }
++
++    printf("%s: %ld frames (%ld with several tiles), %ld transform blocks\n", hbd ? "10-bit" : "8-bit", cov.frames,
++           cov.multi_tile, cov.blocks);
++    static const char *const names[16] = { "V",      "H",        "D45",      "D135",  "D113", "D157", "D203", "D67",
++                                           "SMOOTH", "SMOOTH_V", "SMOOTH_H", "PAETH", "-",    "FILTER", "DC",  "CFL" };
++    printf("  luma modes:  ");
++    for (int m = 0; m < 16; ++m) {
++      if (cov.luma_mode[m]) printf(" %s %ld", names[m], cov.luma_mode[m]);
++    }
++    printf("\n  chroma modes:");
++    for (int m = 0; m < 16; ++m) {
++      if (cov.chroma_mode[m]) printf(" %s %ld", names[m], cov.chroma_mode[m]);
++    }
++    printf("\n  by size (4096 pixels down to 16, then filter intra):");
++    for (int k = 0; k < 10; ++k) printf(" %ld", cov.sizes[k]);
++    printf("\n  inter-intra %ld, with residual %ld, top-right %ld, bottom-left %ld, edge filter %ld, upsampling %ld,\n"
++           "  blocks cut by the frame edge %ld\n",
++           cov.inter_intra, cov.residual, cov.top_right, cov.bottom_left, cov.edge_filter, cov.upsample, cov.clipped);
++    printf("  original: %ld iterations (UAV barriers), %ld dispatches, %ld thread groups\n", cov.v1_iterations,
++           cov.v1_dispatches, cov.v1_groups);
++    printf("  intra_v2: %ld steps (UAV barriers), %ld dispatches, %ld thread groups, %.1f passes per group, at most %ld\n",
++           cov.v2_steps, cov.v2_dispatches, cov.v2_groups,
++           cov.v2_groups ? (double)cov.v2_group_passes / (double)cov.v2_groups : 0.0, cov.v2_max_passes);
++  }
++  if (original_races) printf("note: %ld order-dependent reads between thread groups in the original path\n", original_races);
++  if (garbage_dependent) printf("note: %ld frames where the original path depends on uninitialised memory\n", garbage_dependent);
++  if (failures) {
++    printf("intra_check: FAILED\n");
++    return 1;
++  }
++  printf("intra_check: intra_v2 output is identical to the original path on every frame\n");
++  return 0;
++}
+diff --git a/testing/intra_check/run.sh b/testing/intra_check/run.sh
+new file mode 100644
+index 0000000..95009a7
+--- /dev/null
++++ b/testing/intra_check/run.sh
+@@ -0,0 +1,157 @@
++#!/bin/sh
++# Builds and runs the intra prediction bit-exactness check on a Linux host
++# (g++, no GPU): the original shaders against intra_v2 (-intrav2).
++#
++#   sh testing/intra_check/run.sh            the check; exit code 0 = identical
++#   sh testing/intra_check/run.sh --mutate   also proves the check can fail:
++#                                            copies of the new shader and of
++#                                            its scheduler with one detail
++#                                            changed must all be rejected
++# Further arguments go to the check (--layouts N, --seed S, -v).
++set -eu
++
++here=$(cd "$(dirname "$0")" && pwd)
++src="$here/../.."
++shaders="$src/libav1/dx/shaders"
++work=$(mktemp -d)
++trap 'rm -rf "$work"' EXIT
++
++mutate=0
++if [ "${1:-}" = "--mutate" ]; then
++  mutate=1
++  shift
++fi
++
++# HLSL to C++: drop attributes, semantics and register bindings, turn the
++# constant buffers into globals, rename the entry point, spell out the two
++# swizzles C++ has no syntax for. The shader code itself is untouched.
++to_cpp() {
++  sed -E \
++    -e 's/\[numthreads\([^]]*\)\]//' \
++    -e 's/\[(unroll|loop)\]//g' \
++    -e 's/: *SV_[A-Za-z]+//g' \
++    -e 's/: *register\([a-z0-9]+\)//g' \
++    -e 's/^cbuffer +[A-Za-z_0-9]+ *\{/namespace {/' \
++    -e 's/void main\(/void shader_main(/' \
++    -e 's/\.xyz;/.xyz();/' \
++    -e 's/([a-z0-9_]+)\.zw = ([a-z0-9_]+)\.yy;/\1.z = \2.y; \1.w = \2.y;/' \
++    -e 's/#include "intra_v2\.hlsl"/#include "intra_v2.gen.h"/' \
++    "$1"
++}
++
++# intra_filter relies on its 64 threads running in lockstep (one wave) and
++# only has GroupMemoryBarrier() calls, which order nothing. The emulation
++# switches threads at barriers, so say where lockstep makes the threads meet:
++#   - a thread that skips a column still takes the time of that column;
++#   - all threads leave the column loop and the row loop together;
++#   - in the residual pass all threads load before any of them stores.
++lockstep() {
++  sed -E \
++    -e 's/^( *)continue;/\1{ GroupMemoryBarrier(); GroupMemoryBarrier(); continue; }/' \
++    -e 's/row \+= ROWS\)/row += ROWS, WaveJoin(1))/' \
++    -e 's/^  if \(block\.y & \(1 << 5\)\) \{/  WaveJoin(2);\n&/' \
++    -e 's/dst_frame\.Store\(addr, result\);/GroupMemoryBarrier(); &/'
++}
++
++to_cpp "$shaders/intra_main.hlsl" > "$work/intra_main.gen.h"
++to_cpp "$shaders/intra_main_hbd.hlsl" > "$work/intra_main_hbd.gen.h"
++to_cpp "$shaders/intra_filter.hlsl" | lockstep > "$work/intra_filter.gen.h"
++# The 10-bit residual is declared int and read as r.x.
++to_cpp "$shaders/intra_filter_hbd.hlsl" | lockstep | sed -E 's/\br\.x\b/r/g' > "$work/intra_filter_hbd.gen.h"
++to_cpp "$shaders/intra_v2.hlsl" > "$work/intra_v2.gen.h"
++to_cpp "$shaders/intra_v2_hbd.hlsl" > "$work/intra_v2_hbd.gen.h"
++for f in intra_filter intra_filter_hbd; do
++  for marker in 'GroupMemoryBarrier(); continue;' 'WaveJoin(1)' 'WaveJoin(2)' 'GroupMemoryBarrier(); dst_frame.Store'; do
++    if [ "$(grep -cF "$marker" "$work/$f.gen.h")" != 1 ]; then
++      echo "intra_check: lockstep marker '$marker' not placed once in $f" >&2
++      exit 1
++    fi
++  done
++done
++
++# The lookup tables of the decoder, from its sources.
++{
++  echo '// Generated by run.sh from the decoder sources.'
++  sed -n '/^const int intra_mode_shader_params/,/^};/p' "$src/libav1/dx/av1_compute.h"
++  echo 'static const signed char av1_filter_intra_taps[5][8][8] = {'
++  sed -n '/av1_filter_intra_taps\[FILTER_INTRA_MODES\]\[8\]\[8\]) = {/,/^};/p' "$src/libav1/av1/common/reconintra.c" |
++    sed 1d
++  grep '^#define MAX_BLOCK_DIM' "$src/libav1/aom_dsp/intrapred_common.h"
++  sed -n '/^static const uint8_t sm_weight_arrays\[/,/^};/p' "$src/libav1/aom_dsp/intrapred_common.h"
++  sed -n '/^int intra_edge_filter_strength(/,/^}/p' "$shaders/gen_pred_blocks.hlsl"
++  echo 'enum {'
++  sed -n '/^  NeedAboveLut = /,/^  NeedAboveLeftLut = /p' "$src/libav1/dx/prediction.cpp"
++  echo '};'
++} > "$work/tables.gen.h"
++for name in 'intra_mode_shader_params\[' '{ -6, 10, 0, 0, 0, 12, 0, 0 }' 'sm_weight_arrays\[' \
++  'int intra_edge_filter_strength(' 'NeedAboveLut = ' 'NeedAboveLeftLut = '; do
++  if ! grep -q "$name" "$work/tables.gen.h"; then
++    echo "intra_check: table '$name' not found in the decoder sources" >&2
++    exit 1
++  fi
++done
++
++# $1: directory with the generated files, also takes the objects and the binary.
++# $2: more compiler flags.
++build() {
++  flags="-std=c++17 -O2 -fwrapv -Wall -Wno-unknown-pragmas -Wno-unused -Wno-parentheses -Wno-sign-compare"
++  flags="$flags -I $1 -I $here -I $src/libav1/dx ${2:-}"
++  rm -f "$1"/*.o
++  for shader in intra_main:0 intra_main_hbd:0 intra_filter:1 intra_filter_hbd:1 intra_v2:2 intra_v2_hbd:2; do
++    name=${shader%:*}
++    # shellcheck disable=SC2086
++    g++ $flags -DSHADER_FILE="\"$name.gen.h\"" -DSHADER_NS="ns_$name" -DSHADER_API="${name}_api" \
++      -DSHADER_KIND="${shader#*:}" -c -o "$1/$name.o" "$here/shader_tu.cpp" &
++  done
++  # shellcheck disable=SC2086
++  g++ $flags -c -o "$1/intra_check.o" "$here/intra_check.cpp" &
++  wait
++  g++ -o "$1/intra_check" "$1"/*.o
++}
++
++build "$work"
++"$work/intra_check" "$@"
++
++# Again with a limit of 6 passes per thread group instead of 250, which no
++# real region comes close to: regions then overflow into further steps all
++# the time, and that path gets checked too.
++build "$work" -DINTRA_V2_MAX_PASSES=6
++echo "With at most 6 passes per thread group:"
++"$work/intra_check" "$@" | grep -E 'intra_v2:|MISMATCH|FAILED|identical|reads|sync'
++build "$work"
++
++if [ "$mutate" = 1 ]; then
++  # file @ sed expression @ what it breaks
++  mutants='intra_v2.gen.h@s/tl = ((l + t) \* 5 + tl \* 6 + 8) >> 4;/tl = ((l + t) * 5 + tl * 6 + 7) >> 4;/@corner filter rounding
++intra_v2.gen.h@s/sum += (j == 1 || j == 2) ? 9 \* sample : -sample;/sum += (j == 1 || j == 2) ? 8 * sample : -sample;/@edge upsampling tap
++intra_v2.gen.h@s/const int ef = strength << 2;/const int ef = (strength \& 1) << 2;/@edge filter strength
++intra_v2.gen.h@s/gs_fi_right\[t \* 4 + 1\] = row1.w;/gs_fi_right[t * 4 + 1] = row0.w;/@filter intra left neighbours
++intra_v2.gen.h@s/avrg = (total + (2 << bsize_log)) >> (bsize_log + 2);/avrg = (total + (1 << bsize_log)) >> (bsize_log + 2);/@CFL average rounding
++intra_v2.gen.h@s/w_l0 = (diff_l <= diff_t \&\& diff_l <= diff_tl) ? 32 : 0;/w_l0 = (diff_l < diff_t \&\& diff_l <= diff_tl) ? 32 : 0;/@Paeth tie
++intra_v2.gen.h@s/return clamp((intra \* mask + inter \* (64 - mask) + 32) >> 6, 0, PIXEL_MAX);/return clamp((intra * mask + inter * (64 - mask) + 31) >> 6, 0, PIXEL_MAX);/@inter-intra blend rounding
++intra_v2.gen.h@s/const int active = mine \&\& (my_pass == (int)pass);/const int active = mine \&\& (my_pass == 0 || my_pass == (int)pass);/@pass order inside a region
++intra_v2_sched.h@s/need_step = intra_v2_max(need_step, step + 1);/need_step = intra_v2_max(need_step, step);/@step order between regions
++intra_v2_sched.h@s/if (step == cur) need_pass = intra_v2_max(need_pass, ((d >> 16) \& 255) + 1);/if (step == cur) need_pass = intra_v2_max(need_pass, (d >> 16) \& 255);/@pass order inside a region (host)'
++  mkdir "$work/mutant"
++  echo "$mutants" | while IFS='@' read -r file expr what; do
++    cp "$work"/*.gen.h "$work/mutant/"
++    rm -f "$work/mutant/intra_v2_sched.h"
++    if [ "$file" = intra_v2_sched.h ]; then
++      sed -e "$expr" "$src/libav1/dx/intra_v2_sched.h" > "$work/mutant/intra_v2_sched.h"
++      original="$src/libav1/dx/intra_v2_sched.h"
++    else
++      sed -e "$expr" "$work/$file" > "$work/mutant/$file"
++      original="$work/$file"
++    fi
++    if cmp -s "$original" "$work/mutant/$file"; then
++      echo "intra_check: mutation '$what' did not apply" >&2
++      exit 1
++    fi
++    build "$work/mutant"
++    if "$work/mutant/intra_check" "$@" > "$work/mutant/log" 2>&1; then
++      echo "intra_check: the mutant '$what' passed, the check is not sensitive to it" >&2
++      exit 1
++    fi
++    echo "intra_check: mutant rejected as expected: $what"
++  done
++fi
+diff --git a/testing/intra_check/shader_api.h b/testing/intra_check/shader_api.h
+new file mode 100644
+index 0000000..98d1584
+--- /dev/null
++++ b/testing/intra_check/shader_api.h
+@@ -0,0 +1,51 @@
++/*
++ * What intra_check.cpp sees of one shader. Every shader is compiled as its
++ * own translation unit (shader_tu.cpp), in its own namespace.
++ */
++#ifndef INTRA_CHECK_SHADER_API_H_
++#define INTRA_CHECK_SHADER_API_H_
++
++#include <stddef.h>
++#include <stdint.h>
++
++/* The constant buffer IntraDataCommon, laid out like PSSLIntraData in prediction.cpp. */
++struct IntraConsts {
++  int planes[3][4]; /* stride, offset, residual stride, residual offset */
++  int flags[4];
++  int filter[5][8][8];
++  int mode_params_lut[16][7][4];
++  int sm_weight_arrays[128][4];
++};
++
++struct ShaderBuffers {
++  const uint8_t *pred_blocks;
++  size_t pred_blocks_size;
++  const uint8_t *residuals;
++  size_t residuals_size;
++  const uint8_t *wedge;
++  size_t wedge_size;
++  const uint8_t *sched; /* intra_v2 only */
++  size_t sched_size;
++  const uint8_t *block_map; /* intra_v2 only */
++  size_t block_map_size;
++  uint8_t *frame;
++  size_t frame_size;
++};
++
++struct ShaderApi {
++  int threads; /* threads per group */
++  void (*bind)(const ShaderBuffers *buffers);
++  void (*set_common)(const IntraConsts *consts);
++  void (*set_srt)(const uint32_t *words); /* the root constants, as the host sets them */
++  void (*scramble)(uint64_t *state);      /* fills the group memory with garbage */
++  void (*run)(uint32_t group, uint32_t thread);
++};
++
++extern const ShaderApi intra_main_api;
++extern const ShaderApi intra_main_hbd_api;
++extern const ShaderApi intra_filter_api;
++extern const ShaderApi intra_filter_hbd_api;
++extern const ShaderApi intra_v2_api;
++extern const ShaderApi intra_v2_hbd_api;
++
++#endif /* INTRA_CHECK_SHADER_API_H_ */
+diff --git a/testing/intra_check/shader_tu.cpp b/testing/intra_check/shader_tu.cpp
+new file mode 100644
+index 0000000..2094fd7
+--- /dev/null
++++ b/testing/intra_check/shader_tu.cpp
+@@ -0,0 +1,116 @@
++/*
++ * One shader as a translation unit. run.sh builds this file once per shader:
++ *   SHADER_FILE  the generated C++ of the shader
++ *   SHADER_NS    namespace for its globals
++ *   SHADER_API   name of the exported ShaderApi
++ *   SHADER_KIND  0 = intra_main, 1 = intra_filter, 2 = intra_v2
++ */
++#include "hlsl_shim.h"
++#include "shader_api.h"
++
++namespace SHADER_NS {
++
++#include SHADER_FILE
++
++static void bind(const ShaderBuffers *b) {
++  pred_blocks.ptr = b->pred_blocks;
++  pred_blocks.size = b->pred_blocks_size;
++  residuals.ptr = b->residuals;
++  residuals.size = b->residuals_size;
++  wedge_mask.ptr = b->wedge;
++  wedge_mask.size = b->wedge_size;
++  dst_frame.ptr = b->frame;
++  dst_frame.size = b->frame_size;
++#if SHADER_KIND == 2
++  sched.ptr = b->sched;
++  sched.size = b->sched_size;
++  block_map.ptr = b->block_map;
++  block_map.size = b->block_map_size;
++#endif
++}
++
++static void set_common(const IntraConsts *c) {
++  static_assert(sizeof(cb_planes) == sizeof(c->planes), "planes");
++  static_assert(sizeof(cb_flags) == sizeof(c->flags), "flags");
++  static_assert(sizeof(cb_filter) == sizeof(c->filter), "filter");
++  static_assert(sizeof(cb_mode_params_lut) == sizeof(c->mode_params_lut), "mode params");
++  static_assert(sizeof(cb_sm_weight_arrays) == sizeof(c->sm_weight_arrays), "smooth weights");
++  memcpy((void *)cb_planes, c->planes, sizeof(cb_planes));
++  memcpy((void *)&cb_flags, c->flags, sizeof(cb_flags));
++  memcpy((void *)cb_filter, c->filter, sizeof(cb_filter));
++  memcpy((void *)cb_mode_params_lut, c->mode_params_lut, sizeof(cb_mode_params_lut));
++  memcpy((void *)cb_sm_weight_arrays, c->sm_weight_arrays, sizeof(cb_sm_weight_arrays));
++}
++
++static void set_srt(const uint32_t *w) {
++#if SHADER_KIND == 0
++  /* PSSLIntraSRT of prediction.cpp: counts0[8], wi_count, pass_offset. */
++  memcpy((void *)&cb_counts0, w, 16);
++  memcpy((void *)&cb_counts1, w + 4, 16);
++  cb_wi_count = w[8];
++  cb_pass_offset = (int)w[9];
++#elif SHADER_KIND == 1
++  cb_wi_count = w[0];
++  cb_pass_offset = (int)w[1];
++#else
++  cb_list_offset = w[0];
++  cb_step = w[1];
++  cb_passes = w[2];
++  cb_stamp = w[3];
++  cb_map_stride = w[4];
++  cb_map_uv_offset = w[5];
++  cb_reserved0 = w[6];
++  cb_reserved1 = w[7];
++#endif
++}
++
++static void garbage(void *p, size_t size, uint64_t *state) {
++  uint8_t *bytes = (uint8_t *)p;
++  for (size_t i = 0; i + 4 <= size; i += 4) {
++    *state = *state * 6364136223846793005ull + 1442695040888963407ull;
++    const uint32_t v = (uint32_t)(*state >> 32);
++    memcpy(bytes + i, &v, 4);
++  }
++}
++
++static void scramble(uint64_t *state) {
++#if SHADER_KIND == 0
++  garbage(above, sizeof(above), state);
++  garbage(left, sizeof(left), state);
++#elif SHADER_KIND == 1
++  garbage(mem, sizeof(mem), state);
++  garbage(loc_above, sizeof(loc_above), state);
++  garbage(loc_left, sizeof(loc_left), state);
++  garbage(loc_corner, sizeof(loc_corner), state);
++#else
++  garbage(gs_sum_above, sizeof(gs_sum_above), state);
++  garbage(gs_sum_left, sizeof(gs_sum_left), state);
++  garbage(gs_sum_luma, sizeof(gs_sum_luma), state);
++  garbage(gs_fi_bottom, sizeof(gs_fi_bottom), state);
++  garbage(gs_fi_right, sizeof(gs_fi_right), state);
++#endif
++}
++
++static void run(uint32_t group, uint32_t thread) {
++#if SHADER_KIND == 0
++  shader_main(uint3(group * 256 + thread, 0, 0)); /* numthreads(256, 1, 1), SV_DispatchThreadID */
++#elif SHADER_KIND == 1
++  shader_main(uint3(group * 8 + (thread & 7), thread >> 3, 0)); /* numthreads(8, 8, 1), SV_DispatchThreadID */
++#else
++  shader_main(uint3(group, 0, 0), uint3(thread, 0, 0)); /* SV_GroupID, SV_GroupThreadID */
++#endif
++}
++
++}  // namespace SHADER_NS
++
++#if SHADER_KIND == 0
++#define SHADER_THREADS 256
++#elif SHADER_KIND == 1
++#define SHADER_THREADS 64
++#else
++#define SHADER_THREADS 384
++#endif
++
++extern const ShaderApi SHADER_API = {
++  SHADER_THREADS, SHADER_NS::bind, SHADER_NS::set_common, SHADER_NS::set_srt, SHADER_NS::scramble, SHADER_NS::run,
++};
+diff --git a/testing/player_common/cmd_parser.cpp b/testing/player_common/cmd_parser.cpp
+index 52025bf..8d86c19 100644
+--- a/testing/player_common/cmd_parser.cpp
++++ b/testing/player_common/cmd_parser.cpp
+@@ -42,7 +42,9 @@ int CParameters::Parse(one_task& args, std::string& Err) {
+       {"gputime", atSingle, anOptional, "per-stage GPU/CPU timing, summary in the log", "", &params_.gputime_},
+       {"nopresent", atSingle, anOptional, "release decoded frames without presenting them", "",
+        &params_.nopresent_},
+-      {"cdefv2", atSingle, anOptional, "CDEF through cdef_filter_v2.hlsl (same output)", "", &params_.cdefv2_}};
++      {"cdefv2", atSingle, anOptional, "CDEF through cdef_filter_v2.hlsl (same output)", "", &params_.cdefv2_},
++      {"intrav2", atSingle, anOptional, "intra prediction through intra_v2.hlsl (same output)", "",
++       &params_.intrav2_}};
+   params_.command_line_ = args.command_line_;
+   const int list_length = sizeof(avaiting) / sizeof(ParamStruct);
+   bool has_value[list_length] = {false};
+@@ -170,6 +172,7 @@ void CParameters::Reset() {
+   params_.gputime_ = false;
+   params_.nopresent_ = false;
+   params_.cdefv2_ = false;
++  params_.intrav2_ = false;
+ }
+ 
+ void CParameters::GetHelp(int pos, const char* arg, std::string& errMsg, const ParamStruct* arr, int size) {
+diff --git a/testing/player_common/cmd_parser.h b/testing/player_common/cmd_parser.h
+index 26c1bb8..8a430ad 100644
+--- a/testing/player_common/cmd_parser.h
++++ b/testing/player_common/cmd_parser.h
+@@ -70,6 +70,7 @@ class CParameters {
+     bool gputime_;
+     bool nopresent_;
+     bool cdefv2_;
++    bool intrav2_;
+   };
+   enum arg_type { atSingle, atInt, atString };
+   enum arg_need { anOptional, anMandatory, anAtLeastOne };
+diff --git a/testing/player_common/decoder.cpp b/testing/player_common/decoder.cpp
+index 01e68df..ec66aa2 100644
+--- a/testing/player_common/decoder.cpp
++++ b/testing/player_common/decoder.cpp
+@@ -205,6 +205,11 @@ int AV1Decoder::DecodeOne() {
+   // -cdefv2: also set at a point where no frame is in flight; off again for a task without the flag.
+   av1_set_cdef_v2(params_.cdefv2_ ? 1 : 0);
+   XB_LOGI << "CDEF shader: " << (params_.cdefv2_ ? "cdef_filter_v2 (-cdefv2)" : "cdef_filter (original)");
++  // -intrav2: the same rules, independent of -cdefv2.
++  av1_set_intra_v2(params_.intrav2_ ? 1 : 0);
++  XB_LOGI << "Intra shaders: "
++          << (params_.intrav2_ ? "intra_v2 (-intrav2; frames with intra block copy keep the original shaders)"
++                               : "intra_main + intra_filter (original)");
+ 
+   output_queue_ = std::unique_ptr<BufferLocker>(new BufferLocker(&params_, cur_frame, storage_));
+   if (display_) display_->AddSource(this);
+diff --git a/testing/player_common/perf_stats.h b/testing/player_common/perf_stats.h
+index e340800..90a5ff7 100644
+--- a/testing/player_common/perf_stats.h
++++ b/testing/player_common/perf_stats.h
+@@ -119,6 +119,8 @@ class PerfStats {
+ 
+     size_t shown = 0, hidden = 0, sef = 0, intra = 0, gpu_ok = 0, sec_slot = 0;
+     Series wall, busy, sum, gap, blocked, iters, mbytes, wall_out, calls;
++    Series intra_dispatches, intra_barriers, intra_groups, intra_passes;
++    size_t intra_v2 = 0;
+     Series gpu_stage[AV1_PERF_GPU_STAGE_COUNT];
+     Series cpu[AV1_PERF_CPU_COUNT];
+     double stage_total[AV1_PERF_GPU_STAGE_COUNT] = {0.0};
+@@ -147,7 +149,14 @@ class PerfStats {
+       }
+       for (int c = 0; c < AV1_PERF_CPU_COUNT; ++c) cpu[c].Add(f.cpu_ms[c]);
+       blocked.Add(Blocked(f));
+-      if (f.intra_iters >= 0) iters.Add((double)f.intra_iters);
++      if (f.intra_iters >= 0) {
++        iters.Add((double)f.intra_iters);
++        intra_dispatches.Add((double)f.intra_dispatches);
++        intra_barriers.Add((double)f.intra_barriers);
++        intra_groups.Add((double)f.intra_groups);
++        intra_passes.Add((double)f.intra_passes);
++        if (f.intra_v2) ++intra_v2;
++      }
+       mbytes.Add((double)f.memset_bytes / (1024.0 * 1024.0));
+     }
+     for (size_t i = (ow > 0 ? ow : 1); i < outputs_.size(); ++i) wall_out.Add(outputs_[i] - outputs_[i - 1]);
+@@ -227,6 +236,15 @@ class PerfStats {
+     snprintf(b, sizeof(b), "intra wavefront iterations per frame: mean %.1f, max %.0f (%u frames with intra)",
+              iters.Mean(), iters.Max(), (unsigned)iters.Count());
+     out.push_back(b);
++    // The cost drivers of the intra stage. With -intrav2 an "iteration" above is a step of the new schedule.
++    snprintf(b, sizeof(b),
++             "intra stage per frame with intra: dispatches mean %.1f max %.0f, UAV barriers mean %.1f max %.0f, "
++             "thread groups mean %.0f max %.0f, passes per group %.1f (intra_v2 on %u of %u frames)",
++             intra_dispatches.Mean(), intra_dispatches.Max(), intra_barriers.Mean(), intra_barriers.Max(),
++             intra_groups.Mean(), intra_groups.Max(),
++             intra_groups.Sum() > 0.0 ? intra_passes.Sum() / intra_groups.Sum() : 0.0, (unsigned)intra_v2,
++             (unsigned)iters.Count());
++    out.push_back(b);
+     snprintf(b, sizeof(b), "frames that also took the second pipeline slot: %u of %u", (unsigned)sec_slot,
+              (unsigned)measured);
+     out.push_back(b);
+@@ -244,8 +262,10 @@ class PerfStats {
+     for (size_t i = 0; i < frames_.size(); ++i) {
+       const av1_perf_frame& f = frames_[i];
+       int len = snprintf(b, sizeof(b),
+-                         "frame %u no=%d show=%d sef=%d intra=%d iters=%d tiles=%d sec=%d wall=%.2f busy=%.2f gap=%.2f |",
++                         "frame %u no=%d show=%d sef=%d intra=%d iters=%d iv2=%d idisp=%d ibarr=%d igroups=%d "
++                         "ipasses=%d tiles=%d sec=%d wall=%.2f busy=%.2f gap=%.2f |",
+                          (unsigned)i, f.frame_number, f.show_frame, f.is_sef, f.intra_frame, f.intra_iters,
++                         f.intra_v2, f.intra_dispatches, f.intra_barriers, f.intra_groups, f.intra_passes,
+                          f.tile_count, f.used_sec_slot, i > 0 ? f.complete_ms - frames_[i - 1].complete_ms : 0.0,
+                          f.gpu_span_ms, f.gpu_gap_ms);
+       for (int s = 0; s < AV1_PERF_GPU_STAGE_COUNT; ++s) {
+diff --git a/testing/player_common/perf_stats_test.cpp b/testing/player_common/perf_stats_test.cpp
+index e6216ce..f721ade 100644
+--- a/testing/player_common/perf_stats_test.cpp
++++ b/testing/player_common/perf_stats_test.cpp
+@@ -36,6 +36,11 @@ static av1_perf_frame MakeFrame(int n, double complete_ms, int show) {
+   f.frame_number = n;
+   f.show_frame = show;
+   f.intra_iters = 40;
++  f.intra_v2 = 1;
++  f.intra_dispatches = 12;
++  f.intra_barriers = 9;
++  f.intra_groups = 300;
++  f.intra_passes = 2400;
+   f.tile_count = 4;
+   f.gpu_valid = 1;
+   f.gpu_marks = 4;
+@@ -144,7 +149,10 @@ int main() {
+     CHECK(Has(lines, "(not dispatched)"));
+     CHECK(Has(lines, "output-buffer waits: 3, total 120.0 ms, longest 60.0 ms"));
+     CHECK(Has(lines, "1.25 decoded frames each"));
++    CHECK(Has(lines, "dispatches mean 12.0 max 12, UAV barriers mean 9.0 max 9, thread groups mean 300 max 300, "
++                     "passes per group 8.0 (intra_v2 on 90 of 90 frames)"));
+     CHECK(st.FrameLines().size() == 100);
++    CHECK(Has(st.FrameLines(), "iters=40 iv2=1 idisp=12 ibarr=9 igroups=300 ipasses=2400 tiles=4"));
+     for (size_t i = 0; i < lines.size(); ++i) {
+       CHECK(lines[i].find("nan") == std::string::npos);
+       CHECK(lines[i].find("inf") == std::string::npos);

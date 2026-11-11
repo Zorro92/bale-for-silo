@@ -32,6 +32,13 @@ performance. Nothing in Bale's app, normal CI workflow, dependency pins or packa
   bytes as the upstream one, including where upstream differs from the AV1
   specification. The patch also adds a host-side comparison of the two shaders
   (`testing/cdef_check`), which is not part of the player build.
+- `0004-intra-v2-shader.patch` adds a second intra prediction path: the shader
+  `libav1/dx/shaders/intra_v2.hlsl` (with `intra_v2_hbd.hlsl` for high bit depth), its
+  scheduler `libav1/dx/intra_v2_sched.h`, and the player flag `-intrav2` that selects
+  it; see [Intra v2 run](#intra-v2-run--intrav2). The upstream shaders `intra_main.hlsl`
+  and `intra_filter.hlsl` are not modified and stay the default. The patch also adds
+  intra dispatch counters to the `-gputime` output and a host-side comparison of the
+  two paths (`testing/intra_check`), which is not part of the player build.
 
 The workflow fetches the pinned commit directly from Googlesource, checks its hash,
 and applies the patches with `git apply`. It builds `av1xbox.sln` (the player and its
@@ -39,7 +46,7 @@ and applies the patches with `git apply`. It builds `av1xbox.sln` (the player an
 `v145` toolset and `10.0.26100.0` Windows SDK used by the wrapper build. The minimum
 Windows version is overridden to `10.0.17763.0`. Upstream FXC/Shader Model 5.0 compute
 shader settings remain unchanged, every upstream shader is built unmodified, and
-without `-cdefv2` the decoder runs exactly the upstream shaders. An appended compiler option
+without `-cdefv2` and `-intrav2` the decoder runs exactly the upstream shaders. An appended compiler option
 `/wd4996` suppresses the newer SDK's deprecated `GetDesktopDpi` diagnostic (promoted
 to an error by upstream's `/sdl`), without changing the upstream player source.
 
@@ -69,13 +76,21 @@ The artifact `av1-gpu-testplayer-x64-<run-id>` contains:
 - `cdef-shaders/`: FXC listings of both CDEF shaders (`cdef_filter.asm`,
   `cdef_filter_v2.asm`) and `stats.txt`, a side-by-side count of what the listings
   declare; see [CDEF v2 run](#cdef-v2-run--cdefv2).
+- `intra-shaders/`: the same for the intra shaders: the four upstream ones
+  (`intra_main`, `intra_filter` and their `_hbd` builds) and `intra_v2`, `intra_v2_hbd`;
+  see [Intra v2 run](#intra-v2-run--intrav2).
+- `shader-survey/`: `survey.md` (and `survey.csv`), one line per shader of the project
+  with the same counts, and `asm/` with the FXC listing of every shader; see
+  [Shader survey](#shader-survey).
 - `SOURCES.txt`: upstream/build recipe commits, run URL, toolset/SDK and patch hashes.
 - `licenses/`: the upstream license and patent notices.
 
 A failed run can still upload diagnostics; only use a package from a successful run.
 
-The run has a second job, `cdef-check`, on Linux. It applies the same patches and runs
-the host-side comparison of the two CDEF shaders. The run is green only if both jobs pass.
+The run has two more jobs on Linux, `cdef-check` and `intra-check`. They apply the same
+patches and run the host-side comparisons of the CDEF shaders and of the intra paths;
+`intra-check` also runs the self-test of the timing summary and uploads its log as
+`av1-gpu-intra-check-<run-id>`. The run is green only if all three jobs pass.
 
 ## Install with Xbox Device Portal
 
@@ -254,13 +269,15 @@ kept in memory during the run and written at the end, so they add no log I/O to 
 decode loop:
 
 ```text
-GPUTIME frame 57 no=57 show=1 sef=0 intra=0 iters=62 tiles=4 sec=0 wall=61.20 busy=38.10 gap=22.40 | gen_blocks=0.31 ... | entropy_wall=18.20 ...
+GPUTIME frame 57 no=57 show=1 sef=0 intra=0 iters=62 iv2=0 idisp=71 ibarr=63 igroups=412 ipasses=412 tiles=4 sec=0 wall=61.20 busy=38.10 gap=22.40 | gen_blocks=0.31 ... | entropy_wall=18.20 ...
 ```
 
 `wall` is the time since the previous frame completed, `busy` the first-to-last GPU
-span, `gap` the time the decoder's queue sat idle before this frame, `iters` the intra
-wavefront iterations, `sec` whether the frame also took the second pipeline slot.
-Timers at zero are left out.
+span, `gap` the time the decoder's queue sat idle before this frame, `iters` the last
+intra wavefront iteration (so the frame ran `iters + 1` of them; -1 without intra),
+`sec` whether the frame also took the second pipeline slot. `iv2`, `idisp`, `ibarr`,
+`igroups` and `ipasses` describe the intra stage, see
+[Intra timing fields](#intra-timing-fields). Timers at zero are left out.
 
 `-nopresent` adds one line of its own: frames released and the fps between the first
 and the last. If the queue refuses timestamp queries the summary says
@@ -420,3 +437,191 @@ The new shader is longer because its direction search and its four-sample filter
 unrolled; what a thread executes is shorter. In the upstream listing the direction
 search loop reads and writes the indexable temp 16 times per sample with a computed
 index, 64 samples per block.
+
+## Intra v2 run (`-intrav2`)
+
+In the timing runs with `-cdefv2`, intra prediction took 14 to 21 ms per frame on average
+on 4K 10-bit streams and 59 ms on a key frame, while the per-frame lines showed 80 to
+190 wavefront iterations on inter frames and 863 on the key frame. Patch 0004 adds a
+replacement to measure against it.
+
+| Flag | Effect |
+| --- | --- |
+| `-intrav2` | Intra prediction runs through `intra_v2.hlsl` (`intra_v2_hbd.hlsl` for high bit depth) instead of `intra_main.hlsl` + `intra_filter.hlsl`. Decoded output is meant to be identical. |
+
+Off by default: without the flag the decoder takes the upstream code path, shaders and
+dispatches. The flag is independent of `-cdefv2`; the two can be combined freely. A
+frame that allows intra block copy (screen content) keeps the upstream shaders even
+with the flag; `iv2` in the per-frame line says which path a frame took. The task's log
+says which path is selected:
+
+```text
+Intra shaders: intra_main + intra_filter (original)
+Intra shaders: intra_v2 (-intrav2; frames with intra block copy keep the original shaders)
+```
+
+### What changed
+
+Upstream gives every intra transform block a wavefront iteration of the **whole frame**
+(one more than the highest iteration among the neighbours it reads) and runs, per
+iteration, one dispatch of `intra_main`, one of `intra_filter` if the iteration has
+filter-intra blocks, and a UAV barrier. A key frame of small blocks needs hundreds of
+such rounds, each of them a few small dispatches that the GPU has to finish before the
+next one may start.
+
+| | upstream (`intra_main` + `intra_filter`) | `intra_v2` |
+| --- | --- | --- |
+| Schedule | one wavefront iteration of the frame per round | a block gets a **step** (round of dispatches) and a **pass** (round inside a thread group). The step only rises where a block reads from another 64x64 region; neighbours inside a region are ordered by passes |
+| Per round | 1 or 2 dispatches (two pipeline states) and a UAV barrier | 1 dispatch (more only when the regions of a step differ a lot in pass count) and a UAV barrier |
+| Thread group | `intra_main`: 256 threads, a thread is one row of 4 pixels, blocks packed by size. `intra_filter`: 64 threads per block | 384 threads: one 64x64 luma region and its two chroma regions, a thread is one 4x4 cell (16 pixels) |
+| Waiting | 12 group syncs per group in `intra_main`; none across groups | 2 group syncs per pass; none across groups. No thread ever waits for another group |
+| Edge pixels | loaded, corner-filtered, edge-filtered and upsampled in stages through group memory, a sync after each stage | each pixel evaluates the edge samples it needs as a function of the frame buffer |
+| DC and CFL sums | every thread sums the whole edge; CFL average by a tree reduction that relies on the threads of a wave running in lockstep | one partial sum per cell in group memory, added up after a sync |
+| Filter intra | separate shader, relies on 64 threads running in lockstep | cells of the same group, one anti-diagonal of cells per pass |
+| FXC | the project compiles `intra_main` with optimization disabled (`/Od`) | default optimization |
+| Host, per frame | clears the iteration grid (5 bytes per 4x4 of the frame) and scans it for every block | scans a cell map for the same neighbours; the map is not cleared per frame (entries carry a frame stamp); one sort of the region list |
+
+The block records are the ones `gen_pred_blocks.hlsl` writes; that shader is unchanged
+(with `-intrav2` every block is "iteration 0" for it). The new path binds two more
+buffers: the cell map with the region list, and the block map. The scheduler is a
+header (`libav1/dx/intra_v2_sched.h`) shared by the decoder and the host check.
+
+Group syncs inside a loop are only legal when the loop count is the same for all
+threads, so all groups of a dispatch run the pass count of the busiest region; regions
+with far fewer passes are dispatched separately within the step.
+
+### Intra timing fields
+
+`-gputime` reports what drives the cost of the intra stage, for both paths. In the
+per-frame lines (with `-progress`):
+
+| Field | Meaning |
+| --- | --- |
+| `iters` | last wavefront iteration (upstream) or last step (`-intrav2`); the count is `iters + 1`, -1 means no intra block |
+| `iv2` | 1 if the frame went through `intra_v2` |
+| `idisp` | `Dispatch` calls of the intra stage |
+| `ibarr` | UAV barriers of the intra stage (one per iteration or step) |
+| `igroups` | thread groups dispatched |
+| `ipasses` | thread groups times the passes they run. `ipasses / igroups` is the average pass count; a pass costs two group syncs. For the upstream path it equals `igroups` |
+
+and one line in the summary, over the measured frames that have intra blocks:
+
+```text
+GPUTIME intra stage per frame with intra: dispatches mean 14.2 max 131, UAV barriers mean 12.8 max 127, thread groups mean 310 max 6120, passes per group 9.4 (intra_v2 on 288 of 288 frames)
+```
+
+The counters are plain integers kept by the host; without `-gputime` nothing is reported.
+
+### Timing: old against new
+
+All tasks in one `args_av1.txt`, same clip and settings, only the shader flags differ:
+
+```text
+-i /streams/<clip>.ivf -t 6 -frate -1 -limit 300 -queue_size 4 -progress -gputime -nopresent
+-i /streams/<clip>.ivf -t 6 -frate -1 -limit 300 -queue_size 4 -progress -gputime -nopresent -intrav2
+-i /streams/<clip>.ivf -t 6 -frate -1 -limit 300 -queue_size 4 -progress -gputime -nopresent -cdefv2
+-i /streams/<clip>.ivf -t 6 -frate -1 -limit 300 -queue_size 4 -progress -gputime -nopresent -cdefv2 -intrav2
+```
+
+Compare the `gpu intra` row of the stage tables, the "intra stage per frame" line, then
+`gpu busy` and the "per OUTPUT frame" line. The first two tasks isolate the intra change,
+the last two show it on top of the CDEF change. Check `cpu setup`, `cpu entropy_wall` and
+`cpu memsets` too: the new path moves a little work on the decode threads (it writes
+8 bytes per 4x4 cell of every intra block, and no longer clears the iteration grid).
+
+### Same output: md5 of every frame
+
+As for [CDEF](#same-output-md5-of-every-frame): the original shaders write the
+reference, the new path is checked against it, **in separate launches**.
+
+First launch, reference from the upstream shaders (no `-intrav2`, no `-cdefv2`):
+
+```text
+-i /streams/<clip>.ivf -t 6 -frate -1 -limit 300 -queue_size 4 -progress -nopresent -save_md5 /streams/<clip>.ivf.md5
+```
+
+Let the app exit, then a second launch with only check tasks (they only read the file,
+so both can be in the same `args_av1.txt`):
+
+```text
+-i /streams/<clip>.ivf -t 6 -frate -1 -limit 300 -queue_size 4 -progress -nopresent -intrav2 -md5_frame_check
+-i /streams/<clip>.ivf -t 6 -frate -1 -limit 300 -queue_size 4 -progress -nopresent -cdefv2 -intrav2 -md5_frame_check
+```
+
+The rules of the CDEF section apply unchanged (same `-limit`, the `.md5` file next to
+the stream, no `-gputime`, no `-try10x3`). A reference file saved for the CDEF check of
+the same clip and `-limit` can be reused. Each task ends with `MD5 is OK` or a list of
+bad frames. Run it on at least one 8-bit and one 10-bit clip, and include a clip with a
+key frame of small blocks. Every later frame is predicted from earlier ones, so one
+wrong intra block shows up as errors from that frame on.
+
+### Host-side comparison of the two paths
+
+`testing/intra_check` compiles the four upstream intra shaders and the two `intra_v2`
+builds as C++ (attributes, semantics and register bindings stripped by `sed`) and runs
+both paths on generated frames:
+
+- frames are built from random AV1 partition trees (64 and 128 superblocks, all
+  partition types the generator knows: none, split, horizontal, vertical and the two
+  4-way ones; forced splits at the frame edge), up to 2 x 2 tiles, frame sizes that are
+  not multiples of 64, with intra, inter and inter-intra blocks mixed;
+- every luma and chroma mode: DC, the eight directional modes with all angle deltas,
+  the smooth modes, Paeth, CFL with all alpha values, filter intra with all five filters,
+  palette blocks (which are skipped), with and without residual, edge filter strengths,
+  edge upsampling, top-right and bottom-left availability, transform splits;
+- the records are a port of the intra part of `gen_pred_blocks.hlsl`; the iterations of
+  the original path come from a port of the grid code in `av1_mi_push_block`; the new
+  path uses the decoder's own `intra_v2_sched.h`; the lookup tables are pulled from the
+  decoder sources by the script;
+- a thread group is emulated with one fiber per thread. Group syncs block until all
+  threads arrive. A plain `GroupMemoryBarrier()`, which the upstream shaders use where
+  they rely on a wave running in lockstep, lets all other threads reach their next
+  barrier first. Group memory starts as garbage, different in every run;
+- the **whole frame buffer** is compared, 8-bit and 10-bit. The original path is run
+  twice to show its result does not depend on the garbage;
+- the frame buffer is watched for reads that depend on GPU scheduling: a word read by
+  one thread group that another group wrote since the last UAV barrier, or (new path)
+  read by one thread that another thread wrote since the last group sync. Any such read,
+  an access outside a buffer or a group sync not reached by all threads fails the check;
+- the frames of a layout share the cell map like consecutive frames of the decoder, so
+  entries of earlier frames with an older stamp are present;
+- a second run limits a thread group to 6 passes instead of 250, which forces regions
+  to continue in later steps all the time;
+- `--mutate` then breaks one detail at a time in a copy (rounding of the corner filter,
+  an upsampling tap, the edge filter strength, a filter-intra neighbour, the CFL average,
+  the Paeth tie, the inter-intra blend, the pass order in the shader, the step and pass
+  order in the scheduler) and requires every such copy to be rejected.
+
+In a tree with the patches applied (needs `g++`, no GPU):
+
+```sh
+sh testing/intra_check/run.sh --mutate
+```
+
+It ends with `intra_check: intra_v2 output is identical to the original path on every
+frame` and one `mutant rejected as expected` line per mutation.
+
+Not covered by this check: the compiled shaders and the real GPU (that is the md5 run);
+`gen_pred_blocks.hlsl` itself and the decoder's `has_top_right`/`has_bottom_left` tables
+(the generator treats a neighbour as available whenever it was decoded earlier, which
+includes every case of the tables); intra block copy (those frames keep the upstream
+shaders); frames larger than about 380 pixels a side.
+
+### Shader listings in the artifact
+
+`intra-shaders/` holds the FXC listings of the four upstream intra shaders and of
+`intra_v2`, `intra_v2_hbd`, compiled with the flags the Release build uses for each
+(`intra_main` and `intra_main_hbd` with `/Od`, as the project asks), and `stats.txt`
+with the same counts as for CDEF. After the build the workflow checks that each listing's
+bytecode is the one compiled into the package.
+
+## Shader survey
+
+To pick the next shader to look at, the workflow compiles every shader of the project
+once more with its Release x64 flags and writes `shader-survey/survey.md` (also shown in
+the run summary) and `survey.csv`: thread group, instruction slots, temp registers,
+indexable temps (count and total size), instructions that touch them, immediate constant
+buffer entries and reads, group shared bytes, barriers (all, and those that wait for the
+whole group), loops and FXC compile time. `shader-survey/asm/` has all listings. The
+last line of `survey.md` says whether every listing matches the bytecode compiled into
+the package. The counts are static and are not a timing.
