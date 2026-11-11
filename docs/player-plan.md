@@ -730,6 +730,16 @@ The memory type is not the problem; the console's state while the player is open
 
   So with fresh input, 4K AV1 plays smoothly on about two cores. Every earlier 4K CPU and stall
   figure in this document was measured in the idle state.
+- Same result on Brawl 4K AV1 (0.1.441, zero-copy, from 55 s, 12 s window, interleaved runs,
+  2026-11-10). Prefetch 8 stops new stream waits but not the stalls, so they are decode-bound, not
+  I/O-bound; dav1d's default frame delay (instead of 6) is far worse.
+
+  | | Buffering in window | CPU | Late frames |
+  | --- | --- | --- | --- |
+  | no input, defaults (2 runs) | +14, +11 | 4.6–5.9 cores | 0 |
+  | no input, prefetch 8 (2 runs) | +15, +17 | 4.6–6.0 cores | 0 |
+  | no input, frame delay default (2 runs) | +59, +69 | 4.0–4.6 cores | 0 |
+  | Shift every 5 s | +0 | 1.2–1.7 cores | 0 |
 - Open: whether an app-level API holds the fast state. Ruled out with `bale-debug.sh idle-test` (0.1.368):
   - The player's held `DisplayRequest` does not.
   - A Kodi-style `DisplayRequest` `RequestActive` + `RequestRelease` pulse does not wake the console or reset the timer.
