@@ -652,7 +652,7 @@ index 3da62b1..3ce90c9 100644
    }
 diff --git a/libav1/dx/shaders/intra_v2.hlsl b/libav1/dx/shaders/intra_v2.hlsl
 new file mode 100644
-index 0000000..f89dc2f
+index 0000000..0365a77
 --- /dev/null
 +++ b/libav1/dx/shaders/intra_v2.hlsl
 @@ -0,0 +1,582 @@
@@ -1066,10 +1066,10 @@ index 0000000..f89dc2f
 +  int4 luma3 = int4(0, 0, 0, 0);
 +
 +  [loop] for (uint pass = 0; pass < cb_passes; ++pass) {
-+    const int active = mine && (my_pass == (int)pass);
++    const int cell_active = mine && (my_pass == (int)pass);
 +
 +    // Phase 1: the sums DC and CFL need from the whole block.
-+    if (active && !is_filter && mode >= MODE_DC) {
++    if (cell_active && !is_filter && mode >= MODE_DC) {
 +      if (oy == 0 && b.aa) {
 +        gs_sum_above[t] =
 +            raw_edge(b, 0, x0) + raw_edge(b, 0, x0 + 1) + raw_edge(b, 0, x0 + 2) + raw_edge(b, 0, x0 + 3);
@@ -1090,7 +1090,7 @@ index 0000000..f89dc2f
 +    GroupMemoryBarrierWithGroupSync();
 +
 +    // Phase 2: predict and store this cell.
-+    if (active && is_filter) {
++    if (cell_active && is_filter) {
 +      const int fmode = (block.z >> 4) & 7;
 +      int4 above;
 +      int4 lf;
@@ -1133,7 +1133,7 @@ index 0000000..f89dc2f
 +      finish_row(block, plane, row_addr + 3 * b.stride, bx + x0, by + y0 + 3, row3, 0);
 +    }
 +
-+    if (active && !is_filter) {
++    if (cell_active && !is_filter) {
 +      int dc = 0;
 +      int avrg = 0;
 +      int alpha = 0;
