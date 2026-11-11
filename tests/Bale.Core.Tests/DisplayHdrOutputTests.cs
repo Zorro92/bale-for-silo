@@ -1,4 +1,5 @@
 using Bale.Core.Api.Models;
+using Bale.Core.Playback;
 using Bale.Xbox.Services;
 using Windows.Graphics.Display;
 using Windows.Graphics.Display.Core;
@@ -55,6 +56,62 @@ public class DisplayHdrOutputTests : IDisposable
         Assert.False(capabilities.Hdr.Hdr10);
         Assert.Equal("unknown", capabilities.DisplayHdrEvidence);
         Assert.DoesNotContain(Log.Messages, message => message.Contains("private diagnostic", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void VersionMatchReadsTheLargestSupportedModeWithoutChangingTheDisplay()
+    {
+        var claims = ConsoleEvidence.Default.VideoDecode;
+        Assert.Equal(1080, DisplayHdrOutput.DetectVersionMatch(claims)?.DisplayMaxHeight);
+        _hdmi.ReadModes = () => [new(), new() { ResolutionWidthInRawPixels = 3840, ResolutionHeightInRawPixels = 2160 },
+            new() { ResolutionWidthInRawPixels = 1280, ResolutionHeightInRawPixels = 720 }];
+        var match = DisplayHdrOutput.DetectVersionMatch(claims);
+        Assert.Equal(2160, match?.DisplayMaxHeight);
+        Assert.Same(claims, match?.VideoDecode);
+        Assert.Equal(0, _hdmi.Switches);
+        Assert.Equal(0, _hdmi.Restores);
+        Assert.Empty(Log.Messages);
+    }
+
+    [Theory]
+    [InlineData("unavailable")]
+    [InlineData("throws")]
+    [InlineData("enumeration")]
+    [InlineData("empty")]
+    public void UnreadableOrMissingModesGiveNoVersionMatch(string failure)
+    {
+        if (failure == "unavailable") HdmiDisplayInformation.ForCurrentView = () => null;
+        if (failure == "throws") HdmiDisplayInformation.ForCurrentView = () => throw new InvalidOperationException("private diagnostic");
+        if (failure == "enumeration") _hdmi.ReadModes = () => throw new InvalidOperationException("private diagnostic");
+        if (failure == "empty") _hdmi.ReadModes = () => [];
+        Assert.Null(DisplayHdrOutput.DetectVersionMatch(ConsoleEvidence.Default.VideoDecode));
+        Assert.Empty(Log.Messages);
+    }
+
+    [Fact]
+    public void ThePlayerAndDisplayMatchingShareTheProductionClaims()
+    {
+        static string Read(string name) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, name));
+        var claims = Read("PlaybackClaims.cs.txt");
+        // Debug claim overrides stay in the player; the readout matches against production claims.
+        Assert.DoesNotContain("DEBUG_SERVER", claims);
+        Assert.Equal(2, claims.Split("SoftwareDecodePolicy.WithoutSoftwareVideo(").Length - 1);
+        Assert.Contains("DeviceIdentity.SoftwareVideoSupported && ZeroCopyRuntime.Register()", claims);
+        Assert.Contains("DisplayVersionMatch.Current = match;", claims);
+        Assert.DoesNotContain("ex.Message", claims);
+        var player = Read("PlayerPage.cs.txt");
+        Assert.Contains("var (capabilities, softwareVideo) = PlaybackClaims.Detect();", player);
+        Assert.DoesNotContain("ZeroCopyRuntime.Register()", player);
+        Assert.DoesNotContain("DisplayVersionMatch", player);
+        // Set once the window is active, then again before a detail page builds any readout.
+        var app = Read("App.cs.txt");
+        Assert.True(app.IndexOf("Window.Current.Activate();", StringComparison.Ordinal)
+            < app.IndexOf("PlaybackClaims.RefreshVersionMatch();", StringComparison.Ordinal));
+        var detail = Read("DetailPage.cs.txt");
+        var navigated = detail[detail.IndexOf("protected override async void OnNavigatedTo", StringComparison.Ordinal)..];
+        var refresh = navigated.IndexOf("PlaybackClaims.RefreshVersionMatch();", StringComparison.Ordinal);
+        Assert.True(refresh >= 0 && refresh < navigated.IndexOf("RestoreEntry(saved)", StringComparison.Ordinal));
+        Assert.True(refresh < navigated.IndexOf("await LoadAsync()", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -21,6 +21,18 @@ Where to look:
 
 Read the Kotlin with `gh api repos/Silo-Server/silo-android/contents/<path> --jq .content | base64 -d`.
 
+**Deliberate deviations.** These differ from the official apps on purpose. Keep them; don't
+"fix" them back.
+
+- **Calendar focus** follows the selection: the selected pill/day, then the first card, with
+  per-row memory.
+- **Display resolution matching.** Auto version choice picks the file that best matches the
+  connected display, not always the highest resolution (bandwidth and resources on 1080p TVs). An
+  explicit pick and the last played file still win; unreadable display modes give the official
+  highest-first. On by default; the toggle comes with the 0.2.x Settings menu. Decode claims stay
+  decoder-based: the display only affects version choice. See `docs/player-plan.md`, "Display
+  resolution matching".
+
 **Unit mapping.** Xbox lays out at 960×540 effective pixels, the same canvas as Android TV's dp, so
 Android geometry maps 1:1 (`88.dp` → `88`). Android text is `sp × 0.86` (the TV app's
 `TvUiFontScale`), so `15.5.sp` → `13.3`. The tvOS/mockup values in the Skyline guide are 1920×1080

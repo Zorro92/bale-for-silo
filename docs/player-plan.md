@@ -1068,6 +1068,48 @@ References supplied by the owner:
 withdrawal have Core tests, plus output failure/restore tests using an HDMI stand-in; Windows CI
 builds both debug and production Native AOT packages.
 
+## Display resolution matching
+
+A title can have several file versions (say a 4K remux and a 1080p encode). With the version
+selector on Auto, the official apps pick the highest resolution whatever the TV
+(`PlaybackVersionSelector.kt`, `DetailVersionSelection.swift`). **Bale deviates on purpose:** Auto
+picks the version that best matches the connected display.
+
+The rule, in `PlaybackFormatting.SelectVersion` / `MatchDisplay` (Core):
+
+1. An explicit version pick wins, then the last played file, as in the official apps.
+2. Otherwise, on Auto, the display's height is the height of its largest supported HDMI mode:
+   - the best version at or below that height that a decode claim admits (so it plays as it is);
+   - else the best version at or below that height (the server transcodes it);
+   - else the smallest version above it, preferring one a decode claim admits.
+   "Best" keeps the official order: resolution, then bitrate, then file size.
+3. A 4K file is still picked when the display is 4K and the decode claims admit it, and when it
+   is the title's only version.
+4. Quality "original" / "source" / "max" and the resolution caps ("720p", ...) are untouched.
+5. If the display modes can't be read, Auto is the official highest-first.
+
+Why: on a 1080p TV the 4K version costs several times the bandwidth, and on this console often a
+server transcode as well, for a picture the TV can't show. The 1080p version of the same title
+plays directly. It is on by default with no switch yet; the toggle arrives with the 0.2.x Settings
+menu, so a cinephile who wants the highest-quality file every time can turn it off. Off leaves
+`DisplayVersionMatch.Current` null, which is exactly the official behaviour.
+
+**Codec claims stay decoder-based.** The capabilities sent to the server say what the console can
+decode and never shrink to the display; the display's size lives only in this version choice. The
+choice reads the same production decode claims the player sends (`PlaybackClaims`), so the Detail
+readout names the file the player will ask for. Today those claims stop at 1920×1080, so even on a
+4K TV a title with both versions plays its 1080p one; that follows the claims and changes when
+they do. The debug-only claim overrides stay in `PlayerPage` and are not seen by the matching.
+
+`PlaybackClaims.RefreshVersionMatch` sets the match on the UI thread at launch, once the window
+is active, and again each time a Detail page opens, since the TV can change. The safe log is
+`version match: display=<height>p claims=<count>` or `version match: off (no display modes)`,
+written when it changes. This is separate from phase 6's display *mode* matching below, which
+switches the HDMI mode to fit the content and logs `display match:`.
+
+Core tests cover the rule and the claim bounds; the Xbox read has tests with an HDMI stand-in.
+**Not yet verified on the console.**
+
 ## Phases
 
 Each phase ships on its own, is verified on the console and is ticked here.

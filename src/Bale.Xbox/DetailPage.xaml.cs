@@ -187,6 +187,8 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
     {
         base.OnNavigatedTo(e);
         _active = true;
+        // The TV may have changed since launch: refresh before any selector or readout picks a version.
+        PlaybackClaims.RefreshVersionMatch();
         if (Session.Client is { } client) _ = LoadAutomaticAudioPolicyAsync(client);
         if (e.Parameter is DetailReturnEntry saved)
         {

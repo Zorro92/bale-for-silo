@@ -1,3 +1,4 @@
+using Bale.Core.Detail;
 using Bale.Core.Playback;
 using Windows.Graphics.Display.Core;
 
@@ -11,26 +12,35 @@ internal sealed partial class DisplayHdrOutput
 
     internal static DeviceCapabilities DetectCapabilities()
     {
-        var succeeded = false;
-        DisplayModeFacts[] modes = [];
-        try
-        {
-            var hdmi = HdmiDisplayInformation.GetForCurrentView();
-            if (hdmi is not null)
-            {
-                modes = hdmi.GetSupportedDisplayModes().Select(Facts).ToArray();
-                succeeded = true;
-            }
-        }
-        catch
-        {
-            // Fail closed even if enumeration/property access stopped after some modes.
-            modes = [];
-        }
+        var read = ReadSupportedModes();
+        var succeeded = read is not null;
+        var modes = read ?? [];
         var (hdr, evidence) = DisplayHdrPolicy.FromModes(succeeded, modes);
         Log.Info($"display HDR: read={succeeded} modes={modes.Length} pq={modes.Count(mode => mode.Smpte2084)}"
             + $" metadata={modes.Count(mode => mode.Metadata2086)} stereo={modes.Count(mode => mode.Stereo)} hdr10={hdr.Hdr10}");
         return ConsoleEvidence.Default with { Hdr = hdr, DisplayHdrEvidence = evidence };
+    }
+
+    /// <summary>
+    /// Auto's display resolution matching for the connected display's largest HDMI mode and these
+    /// decode claims. Null, the official highest-first Auto, when the modes can't be read or there
+    /// are none. Reads only; never changes the display.
+    /// </summary>
+    internal static DisplayVersionMatch? DetectVersionMatch(IReadOnlyList<VideoDecodeCapability> videoDecode) =>
+        ReadSupportedModes() is { } modes ? DisplayVersionMatch.FromModes(modes, videoDecode) : null;
+
+    /// <summary>The display's supported HDMI modes; null when there is no HDMI view or the read fails.</summary>
+    private static DisplayModeFacts[]? ReadSupportedModes()
+    {
+        try
+        {
+            return HdmiDisplayInformation.GetForCurrentView()?.GetSupportedDisplayModes().Select(Facts).ToArray();
+        }
+        catch
+        {
+            // Fail closed even if enumeration/property access stopped after some modes.
+            return null;
+        }
     }
 
     internal async Task<bool> TryEnableHdr10Async()

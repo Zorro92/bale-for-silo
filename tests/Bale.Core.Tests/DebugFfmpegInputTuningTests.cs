@@ -405,12 +405,15 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     [Fact]
     public void PlayerClaimsSoftwareVideoOnlyWhenZeroCopyRegisters()
     {
+        // The gate lives in the claims helper the player shares with Auto's display matching.
+        var claims = Read("PlaybackClaims.cs.txt");
+        Assert.Contains("private static bool SoftwareVideo() => DeviceIdentity.SoftwareVideoSupported && ZeroCopyRuntime.Register();", claims);
+        Assert.Contains("softwareVideo ? capabilities : SoftwareDecodePolicy.WithoutSoftwareVideo(capabilities)", claims);
+        Assert.DoesNotContain("#if", claims);
         var player = Read("PlayerPage.cs.txt");
-        var gate = player.IndexOf("var softwareVideo = DeviceIdentity.SoftwareVideoSupported && ZeroCopyRuntime.Register();", StringComparison.Ordinal);
-        var drop = player.IndexOf("if (!softwareVideo)\n                    capabilities = SoftwareDecodePolicy.WithoutSoftwareVideo(capabilities);", StringComparison.Ordinal);
+        var detect = player.IndexOf("var (capabilities, softwareVideo) = PlaybackClaims.Detect();", StringComparison.Ordinal);
         var build = player.IndexOf("PlaybackStartBuilder.Build(request.Detail", StringComparison.Ordinal);
-        Assert.True(gate >= 0 && drop > gate && build > drop);
-        Assert.DoesNotContain("#if", player[gate..drop]);
+        Assert.True(detect >= 0 && build > detect);
     }
 
     [Fact]

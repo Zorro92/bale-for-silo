@@ -74,7 +74,8 @@ public class DebugFfmpegPlaybackTests
     {
         var source = Read("PlayerPage.cs.txt");
         Assert.Contains("public string FfmpegMode { get; } = DebugFfmpegPlayback.Mode", source);
-        Assert.Contains("var capabilities = DisplayHdrOutput.DetectCapabilities()", source);
+        Assert.Contains("var (capabilities, softwareVideo) = PlaybackClaims.Detect()", source);
+        Assert.Contains("var capabilities = DisplayHdrOutput.DetectCapabilities()", Read("PlaybackClaims.cs.txt"));
         Assert.Contains("capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities)", source);
         Assert.Contains("public bool FfmpegEnabled => true", source);
         Assert.Contains("public bool FfmpegEnabled => FfmpegMode != \"off\"", source);

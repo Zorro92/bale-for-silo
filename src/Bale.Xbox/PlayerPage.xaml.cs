@@ -176,12 +176,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 var startPosition = PlaybackStartPosition.ForStartRequest(request.OverridePosition,
                     request.Detail.PlaybackPositionSeconds,
                     request.SuppressResumeRewind ? 0 : PlaybackStartPosition.DefaultResumeRewindSeconds);
-                var capabilities = DisplayHdrOutput.DetectCapabilities();
-                // Software AV1 has one path (zero-copy D3D12). Xbox One (no AVX2), or a console where
-                // bale_gpu.dll can't register d3d12.dll, claims no software AV1, so the server transcodes it.
-                var softwareVideo = DeviceIdentity.SoftwareVideoSupported && ZeroCopyRuntime.Register();
-                if (!softwareVideo)
-                    capabilities = SoftwareDecodePolicy.WithoutSoftwareVideo(capabilities);
+                // The production claims, shared with Auto's display matching on the detail page.
+                var (capabilities, softwareVideo) = PlaybackClaims.Detect();
 #if DEBUG_SERVER
                 if (attempt.Av1ClaimMaxHeight == 2160 && softwareVideo)
                     capabilities = capabilities with { VideoDecode = ConsoleEvidence.BuildVideoDecode(3840, 2160) };

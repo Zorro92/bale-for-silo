@@ -72,6 +72,8 @@ public sealed partial class App : Application
 
         Window.Current.Activate();
         Session.SetForeground(Window.Current.Visible);
+        // The HDMI modes belong to the view, so read them once the window is active.
+        PlaybackClaims.RefreshVersionMatch();
     }
 
 #if DEBUG_SERVER
