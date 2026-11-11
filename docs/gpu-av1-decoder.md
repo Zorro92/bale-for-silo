@@ -169,3 +169,38 @@ reference structure; the SVT random-access clip deadlocks, Sparks does not.
 **CPU:** entropy decoding costs about 0.3 core at 1080p24 for 10 Mbps and under 0.1 core for Sparks
 at 60 fps. dav1d needs under 1 core for 1080p24 and ~3 cores for 1080p60. The GPU is busy for about
 half of every 41.7 ms frame at 24 fps.
+
+## Step 1a: CDEF v2 (2026-11-11)
+Patch `0003-cdef-v2-shader.patch` (build run 42978871382, package 0.1.6.0) adds a rewritten CDEF
+shader behind `-cdefv2`:
+- One 64x64 group per CDEF block.
+- The direction search runs on every thread, unrolled, so it uses no indexable temp; the original
+  ran it on 16 of 128 threads through a 120-entry scratch array.
+- 16-bit shared memory and a single barrier.
+- An early-out for zero-strength blocks.
+
+Same console, same settings as the timing spike, 300 frames of 4K 10-bit:
+
+| Stream (1 tile) | CDEF original ms | CDEF v2 ms | GPU busy ms | Decode fps | Wall ms |
+|---|---|---|---|---|---|
+| SVT low-delay 40 Mbps | 53.4 | **7.2** | 66.5 → 32.2 | 13.4 → 21.3 | 75.8 → 47.5 |
+| Jellyfin 40 Mbps | 51.7 | **5.5** | 95.4 → 50.2 | 10.5 → 16.8 | 96.8 → 59.9 |
+
+**Bit-exact on the console:** `-cdefv2 -md5_frame_check` against `-save_md5` from the original
+shader gives `MD5 is OK` on all 300 frames of both clips. A host emulation of both shaders over
+1,176 random and edge-case frames also matches (CI job `cdef-check`). The 8-bit path is only covered
+by the host check, since there is no 8-bit 4K clip on the console yet.
+
+**Reading:**
+- CDEF is solved: 7–9x faster and now 11–17% of GPU time.
+- **The GPU is now under budget on the SVT clip.** It is busy 32 ms of a 41.7 ms frame, but the frame
+  still takes 47.5 ms, because **the CPU decode thread is now the limit**. It is busy 97% of wall time:
+  - entropy decoding: 34 ms (SVT) and 43 ms (Jellyfin), single-threaded on these 1-tile streams
+  - setup: 10–12 ms, of which 4 ms is memsets
+- **On Jellyfin the GPU is still over budget.** The remaining GPU time is mostly intra (21.2 ms,
+  42%) and inter (18.8 ms, 38%).
+- **Next GPU target:** the intra wavefront (13.7–21 ms; one dispatch and barrier per step), then
+  inter.
+- **Next CPU target:** entropy decoding. Options are frame-parallel decoding, multi-tile streams
+  only, or a faster entropy decoder (dav1d/rav1d-derived) in the Rust phase. At 12.6 Mbps the SVT
+  clip's entropy was 18 ms, so typical film bitrates are less CPU-bound than these 40 Mbps tests.

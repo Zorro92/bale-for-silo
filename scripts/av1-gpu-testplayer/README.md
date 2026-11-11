@@ -356,6 +356,11 @@ shader is checked against it.
   stream's name plus `.md5`, next to the stream.
 - Use the same `-limit` in both tasks. The checker does not guard against a reference
   file with fewer frames than it decodes.
+- **Save and check in separate launches.** The saver's file is not flushed when its
+  task ends, so a check task in the same `args_av1.txt` reads only the first ~8 KB
+  (about 210 frames). Past that point the checker either reports errors with an empty
+  expected value (`Avaiting  In real ...`) or crashes without a log line. Run the save
+  task, let the app exit, then launch again with only the check task.
 - The result is in the log when the second task ends: `MD5 is OK`, or
   `MD5 checksum errors in N frames` with one `MD5 checksum error in <n> frame` line
   per bad frame. Later frames are predicted from earlier ones, so one wrong CDEF
