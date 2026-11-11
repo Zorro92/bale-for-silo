@@ -10,9 +10,15 @@ public static partial class PlaybackFormatting
     /// <summary>
     /// TvDetailVersionSelection.kt / PlaybackVersionSelector.kt: explicit file, last played,
     /// then the best resolution at or below the quality cap; bitrate and size break ties.
-    /// File IDs remain strings, as supplied by Bale's generated API contract.
+    /// File IDs remain strings, as supplied by Bale's generated API contract. Auto applies
+    /// <see cref="DisplayVersionMatch.Current"/> (Bale's display resolution matching).
     /// </summary>
     public static FileVersion? SelectDisplayVersion(IReadOnlyList<FileVersion> versions,
+        string? selectedFileId = null, string? lastFileId = null, string? preferredQuality = null) =>
+        SelectVersion(versions, DisplayVersionMatch.Current, selectedFileId, lastFileId, preferredQuality);
+
+    /// <summary><see cref="SelectDisplayVersion"/> with an explicit match; null is the official Auto.</summary>
+    public static FileVersion? SelectVersion(IReadOnlyList<FileVersion> versions, DisplayVersionMatch? match,
         string? selectedFileId = null, string? lastFileId = null, string? preferredQuality = null)
     {
         if (selectedFileId is not null && versions.FirstOrDefault(version => version.FileId == selectedFileId) is { } selected)
@@ -29,6 +35,8 @@ public static partial class PlaybackFormatting
             .ThenByDescending(version => version.Bitrate ?? 0)
             .ThenByDescending(version => version.FileSize ?? 0).ToList();
         var quality = NonEmpty(preferredQuality)?.ToLowerInvariant();
+        // Only plain Auto matches the display; an "original"-style choice asks for the best.
+        if (quality is null or "auto" && match is not null) return MatchDisplay(ranked, match);
         return quality is null or "auto" or "original" or "source" or "max"
             ? ranked.FirstOrDefault()
             : ranked.FirstOrDefault(version => ResolutionRank(version.Resolution) <= ResolutionRank(quality))
