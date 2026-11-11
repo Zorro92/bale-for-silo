@@ -25,11 +25,11 @@ The first review (2026-11-10) started from the commit each local clone was made 
 
 ## Open items
 
-Grouped by area, newest review first. Strike an item when it ships or is decided against.
+Deferred for now: playback comes first (2026-11-10). Grouped by area, newest review first. Strike an item when it ships or is decided against.
 
 - **API contract:** bump `SILO_REF` in `scripts/generate-api.sh`, regenerate and check the build
   (server 2026-11-10: `max_profiles`, `binding`, `stored_subtitle_id`, catalog IDs, nullable enums,
-  device headers; Android/Apple: box sets, remove-failed requests). The pin is older than the
+  device headers; Android/Apple: remove-failed requests). The pin is older than the
   server clone, so the bump also brings in changes from before this log started.
 - **Profiles:** the primary profile can't have a library limit any more (server `df9f5501`);
   hide Add at `max_profiles` (server `451cba6c`).
@@ -45,6 +45,9 @@ Grouped by area, newest review first. Strike an item when it ships or is decided
 - **Several accounts per server / Change Account:** large; plan as its own task (Android
   `623bb3513`, Apple `54cf0f34`).
 - **Remove failed requests:** needs the contract bump (Android `4600d910c`, Apple `df891d2e`).
+- **Not doing: box sets.** The Silo developer said box sets reached the server by mistake and
+  reversed the decision (2026-11-10), so Bale doesn't build them even though the clients shipped
+  them (Android `67e6e224a`, Apple `08c28c8e`). Ignore later box-set commits unless that changes.
 - **Smaller:** device name in sign-in (`bd6ade492`), hero logo grace 700 ms (`e57fbf3f6`),
   Calendar DIGITAL/PHYSICAL badges (`64ae5f08c`), Search clear button (`548e3cb77`), remote Stop
   key (`969c0a812`), unplayable subtitle rows (`461240c6d`), return-from-player episode
@@ -86,8 +89,9 @@ counted, not listed. Each **act** was checked against Bale's source.
   `VirtualKey.Stop`.
 - `4600d910c` act: remove failed requests (`DELETE /api/v2/requests/{id}`,
   `remove_failed_supported`). Needs the contract bump.
-- `67e6e224a` act: box sets (page, search results, row on movie pages); `6f3e36820`: library
-  grids now refuse `group=box_set` with 422 (Bale never sends it). Needs the contract bump.
+- `67e6e224a` not doing: box sets (page, search results, row on movie pages). The developer
+  called them a mistake and reversed the decision. `6f3e36820`: library grids refuse
+  `group=box_set` with 422 (Bale never sends it).
 - `461240c6d` act: subtitle rows flagged `unplayable` (or embedded with no codec) are neither
   offered nor auto-picked (PlaybackTrackChoices, track Auto).
 - `e727c9af5` act/later: back from the player, the series page selects the episode that was on
@@ -148,7 +152,7 @@ matches.
 - Already matched: `88498ec7` fixed top bar and Requests in the profile menu (drop the
   "top-menu controls" entry from the deferred Settings list), `9723df00` `group=box_set` 422,
   `55841508` Requests keeps the top bar.
-- later: `08c28c8e` box sets; `cc87791c` embedded text subtitles from the stream instead of a
+- not doing: `08c28c8e` box sets (see Open items). later: `cc87791c` embedded text subtitles from the stream instead of a
   whole-file extract, with `hls_remux_subtitle_renditions_v1`, `hls_subtitle_renditions_all_v1`,
   `hls_rendition`, `subtitle_track_changed` replans and stream indices (HUD phase 4);
   `3bd75734` Up Next autoplays only the next episode or a shuffle pick (phase 5); `1a7cceea`
