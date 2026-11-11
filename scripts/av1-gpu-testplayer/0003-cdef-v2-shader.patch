@@ -1,0 +1,1119 @@
+diff --git a/libav1/build/libav1.vcxproj b/libav1/build/libav1.vcxproj
+index 05d80f0..3fc6500 100644
+--- a/libav1/build/libav1.vcxproj
++++ b/libav1/build/libav1.vcxproj
+@@ -983,6 +983,9 @@
+     <FxCompile Include="..\dx\shaders\cdef_filter.hlsl">
+       <FileType>Document</FileType>
+     </FxCompile>
++    <FxCompile Include="..\dx\shaders\cdef_filter_v2.hlsl">
++      <FileType>Document</FileType>
++    </FxCompile>
+   </ItemGroup>
+   <ItemGroup>
+     <FxCompile Include="..\dx\shaders\loop_restoration.hlsl">
+diff --git a/libav1/build/libav1.vcxproj.filters b/libav1/build/libav1.vcxproj.filters
+index 3240c79..8944495 100644
+--- a/libav1/build/libav1.vcxproj.filters
++++ b/libav1/build/libav1.vcxproj.filters
+@@ -751,6 +751,9 @@
+     <FxCompile Include="..\dx\shaders\cdef_filter.hlsl">
+       <Filter>dx\shaders</Filter>
+     </FxCompile>
++    <FxCompile Include="..\dx\shaders\cdef_filter_v2.hlsl">
++      <Filter>dx\shaders</Filter>
++    </FxCompile>
+     <FxCompile Include="..\dx\shaders\loop_restoration.hlsl">
+       <Filter>dx\shaders</Filter>
+     </FxCompile>
+diff --git a/libav1/dx/av1_compute.cpp b/libav1/dx/av1_compute.cpp
+index 03fccbc..dde5ac3 100644
+--- a/libav1/dx/av1_compute.cpp
++++ b/libav1/dx/av1_compute.cpp
+@@ -49,6 +49,7 @@ extern "C" {
+ #include "dx/shaders/h/gen_pred_blocks.h"
+ #include "dx/shaders/h/loop_restoration.h"
+ #include "dx/shaders/h/cdef_filter.h"
++#include "dx/shaders/h/cdef_filter_v2.h"
+ #include "dx/shaders/h/film_grain_filter.h"
+ #include "dx/shaders/h/film_grain_gen_luma.h"
+ #include "dx/shaders/h/film_grain_gen_chroma.h"
+@@ -247,6 +248,8 @@ void* av1_create_pipeline_cache_handle(void* d3d12device, int threads) {
+       {_device, film_grain_gen_chroma, sizeof(film_grain_gen_chroma), shader_lib->sig_film_grain.Get(),
+        &shader_lib->shader_filmgrain_chroma_gen},
+       {_device, cdef_filter, sizeof(cdef_filter), shader_lib->sig_cdef_filter.Get(), &shader_lib->shader_cdef_filter},
++      {_device, cdef_filter_v2, sizeof(cdef_filter_v2), shader_lib->sig_cdef_filter.Get(),
++       &shader_lib->shader_cdef_filter_v2},
+ 
+       {_device, gen_pred_blocks, sizeof(gen_pred_blocks), shader_lib->sig_pred_blocks.Get(),
+        &shader_lib->shader_gen_pred_blocks},
+diff --git a/libav1/dx/av1_compute.h b/libav1/dx/av1_compute.h
+index 703f6fd..cbfb1bd 100644
+--- a/libav1/dx/av1_compute.h
++++ b/libav1/dx/av1_compute.h
+@@ -72,6 +72,7 @@ typedef struct {
+   ComputeShader shader_idct_sort;
+   ComputeShader shader_loop_rest;
+   ComputeShader shader_cdef_filter;
++  ComputeShader shader_cdef_filter_v2;  // test player flag -cdefv2
+   ComputeShader shader_filmgrain_luma_gen;
+   ComputeShader shader_filmgrain_chroma_gen;
+   ComputeShader shader_filmgrain_filter;
+diff --git a/libav1/dx/av1_perf.h b/libav1/dx/av1_perf.h
+index 16db2f6..645250e 100644
+--- a/libav1/dx/av1_perf.h
++++ b/libav1/dx/av1_perf.h
+@@ -105,6 +105,11 @@ typedef void (*av1_perf_frame_cb_fn_t)(void *priv, const av1_perf_frame *frame);
+  * is in flight (before the first decode call or after a drain). */
+ void av1_set_perf_callback(av1_perf_frame_cb_fn_t cb, void *priv);
+ 
++/* Process-wide. Non-zero runs CDEF through cdef_filter_v2.hlsl instead of
++ * cdef_filter.hlsl; the decoded output is the same. Off by default. Change it
++ * only while no frame is in flight, like the callback above. */
++void av1_set_cdef_v2(int enable);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/libav1/dx/loopfilters.cpp b/libav1/dx/loopfilters.cpp
+index 6ff008b..108a912 100644
+--- a/libav1/dx/loopfilters.cpp
++++ b/libav1/dx/loopfilters.cpp
+@@ -329,6 +329,12 @@ struct CDefData {
+   int cdef_uv_strength[16][4];
+ };
+ 
++// Test player switch (-cdefv2): run CDEF through cdef_filter_v2.hlsl, which writes the same bytes with a
++// different work split (one group per 64x64 luma block). Off unless av1_set_cdef_v2(1) was called.
++static int g_cdef_v2 = 0;
++
++extern "C" void av1_set_cdef_v2(int enable) { g_cdef_v2 = enable; }
++
+ void av1_cdef_filter_run(Av1Core *dec, AV1_COMMON *cm, HwFrameBuffer *src, HwFrameBuffer *dst) {
+   av1_frame_thread_data *td = dec->curr_frame_data;
+   if (!td->do_cdef) {
+@@ -403,14 +409,18 @@ void av1_cdef_filter_run(Av1Core *dec, AV1_COMMON *cm, HwFrameBuffer *src, HwFra
+   data->dst_offset[2] = dst->planes[2].offset;
+ 
+   Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> command_list = dec->compute.command_list;
+-  ComputeShader *shader = &dec->shader_lib->shader_cdef_filter;
++  const int cdef_v2 = g_cdef_v2;
++  ComputeShader *shader = cdef_v2 ? &dec->shader_lib->shader_cdef_filter_v2 : &dec->shader_lib->shader_cdef_filter;
+   command_list->SetPipelineState(shader->pso.Get());
+   command_list->SetComputeRootSignature(shader->signaturePtr.Get());
+   command_list->SetComputeRootShaderResourceView(0, td->cdef_indexes->dev->GetGPUVirtualAddress());
+   command_list->SetComputeRootShaderResourceView(1, td->cdef_skips->dev->GetGPUVirtualAddress());
+   command_list->SetComputeRootUnorderedAccessView(2, dec->frame_buffer_pool->dev->GetGPUVirtualAddress());
+   command_list->SetComputeRootConstantBufferView(3, cbo.dev_address);
+-  command_list->Dispatch((w + 31) >> 5, (h + 31) >> 5, 1);
++  if (cdef_v2)
++    command_list->Dispatch((w + 63) >> 6, (h + 63) >> 6, 1);  // same bindings, 64x64 luma per group
++  else
++    command_list->Dispatch((w + 31) >> 5, (h + 31) >> 5, 1);
+   command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(dec->frame_buffer_pool->dev));
+   PutPerfMarker(td, &td->perf_markers[4]);
+   av1_perf_gpu_mark(dec, AV1_PERF_GPU_CDEF);
+diff --git a/libav1/dx/shaders/cdef_filter_v2.hlsl b/libav1/dx/shaders/cdef_filter_v2.hlsl
+new file mode 100644
+index 0000000..82c373d
+--- /dev/null
++++ b/libav1/dx/shaders/cdef_filter_v2.hlsl
+@@ -0,0 +1,418 @@
++/*
++ * Copyright 2020 Google LLC
++ *
++ */
++
++/*
++ * Copyright (c) 2020, Alliance for Open Media. All rights reserved
++ *
++ * This source code is subject to the terms of the BSD 2 Clause License and
++ * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
++ * was not distributed with this source code in the LICENSE file, you can
++ * obtain it at www.aomedia.org/license/software. If the Alliance for Open
++ * Media Patent License 1.0 was not distributed with this source code in the
++ * PATENTS file, you can obtain it at www.aomedia.org/license/patent.
++ */
++
++// CDEF, second version (test player flag -cdefv2). Same resources, constant
++// buffer and output bits as cdef_filter.hlsl, different work split:
++//
++//  * one group per 64x64 luma block (one cdef_index entry), 64 threads, one
++//    thread per 8x8 luma block and its two 4x4 chroma blocks;
++//  * a 64x64 block whose luma and chroma strengths are both zero (or whose
++//    index is outside 0..15) is copied straight from source to destination;
++//  * otherwise the group loads the luma window and both chroma windows once
++//    into group shared memory, two 16-bit samples per word, and syncs once;
++//  * the direction search runs on every thread for its own block, fully
++//    unrolled with constant array indices, so it stays in registers;
++//  * each thread filters its block and stores the result itself, there is no
++//    shared output buffer.
++//
++// All sample maths is the 32-bit integer maths of cdef_filter.hlsl, including
++// what that shader does outside the frame, so the stored bytes are identical.
++// This file is also compiled as C++ by testing/cdef_check, so it sticks to
++// syntax both languages accept (the check strips attributes and semantics).
++
++#pragma warning(disable : 4714)
++ByteAddressBuffer cdef_index : register(t0);
++ByteAddressBuffer skips : register(t1);
++RWByteAddressBuffer dst : register(u0);
++
++struct CDefData {
++  int4 pl;
++
++  int uv_stride;
++  int dst_offset_y;
++  int dst_offset_u;
++  int dst_offset_v;
++
++  int uv_offset_u;
++  int uv_offset_v;
++  int index_stride;
++  int skips_stride;
++
++  int pri_damping;
++  int sec_damping;
++  int pli;
++  int hbd;
++
++  int bit_depth;
++  int3 _dummie;
++
++  int4 cdef_directions[16][2];
++  int4 cdef_strength[16];
++  int4 cdef_uv_strength[16];
++};
++
++cbuffer cb_cdef_data : register(b0) { CDefData data; }
++
++#define CDEF_VERY_LARGE (30000)
++// Two CDEF_VERY_LARGE samples in one word.
++#define CDEF_VERY_LARGE_X2 (0x75307530u)
++
++// Window of one group, in samples. Luma: 64x64 plus 2 rows above and below and
++// 4 columns left and right (loads are 4 samples wide). Chroma: 32x32 plus the
++// same borders, once per chroma plane.
++#define LUMA_STRIDE 72
++#define LUMA_ROWS 68
++#define CHROMA_STRIDE 40
++#define CHROMA_ROWS 36
++#define LUMA_WORDS (LUMA_ROWS * LUMA_STRIDE / 2)
++#define CHROMA_WORDS (CHROMA_ROWS * CHROMA_STRIDE / 2)
++
++groupshared uint window[LUMA_WORDS + 2 * CHROMA_WORDS];
++
++// One 4-sample unit of a source plane, two samples per word. Same in-frame
++// test and same masks as the loaders of cdef_filter.hlsl.
++uint2 load_unit(int stride, int offset, int w4, int h, int x4, int y) {
++  uint2 v = uint2(CDEF_VERY_LARGE_X2, CDEF_VERY_LARGE_X2);
++  if (x4 >= 0 && y >= 0 && x4 < w4 && y < h) {
++    if (data.hbd) {
++      v = dst.Load2(offset + y * stride + (x4 << 3));
++      v.x &= 0x03ff03ffu;
++      v.y &= 0x03ff03ffu;
++    } else {
++      const uint c = dst.Load(offset + y * stride + x4 * 4);
++      v.x = (c & 0xffu) | ((c & 0xff00u) << 8);
++      v.y = ((c >> 16) & 0xffu) | ((c >> 24) << 16);
++    }
++  }
++  return v;
++}
++
++// Stores one 4-sample unit at sample position (x, y) of a destination plane.
++void store_unit(int offset, int stride, int x, int y, uint2 v) {
++  if (data.hbd) {
++    dst.Store2(offset + y * stride + (x << 1), v);
++  } else {
++    // Samples of blocks outside the frame can be wider than 8 bits; the
++    // original ORs them together shifted, so this does too.
++    dst.Store(offset + y * stride + x, (v.x & 0xffffu) | ((v.x >> 16) << 8) | ((v.y & 0xffffu) << 16) | ((v.y >> 16) << 24));
++  }
++}
++
++// Sample s of the window (s counts samples, two per word).
++int window_sample(int s) { return (int)((window[s >> 1] >> ((s & 1) << 4)) & 0xffffu); }
++
++// get_block_dir_old() of cdef_filter.hlsl for the 8x8 block whose first word is
++// w0. Every array index is a compile time constant once the loops are unrolled.
++int2 block_dir(int w0, int coeff_shift) {
++  int i;
++  int j;
++  int k;
++  int n;
++  int cost[8] = {0, 0, 0, 0, 0, 0, 0, 0};
++  int partial[8][15] = {{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
++                        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
++                        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
++                        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
++  const int div_table[9] = {0, 840, 420, 280, 210, 168, 140, 120, 105};
++
++  int best_cost = 0;
++  int best_cost_2 = 0;
++  int2 best_dir = {0, 0};
++  [unroll] for (i = 0; i < 8; i++) {
++    [unroll] for (n = 0; n < 4; n++) {
++      const uint pair = window[w0 + i * (LUMA_STRIDE / 2) + n];
++      [unroll] for (k = 0; k < 2; k++) {
++        j = 2 * n + k;
++        int x = (int)(k ? (pair >> 16) : (pair & 0xffffu));
++        x = (x >> coeff_shift) - 128;
++        partial[0][i + j] += x;
++        partial[1][i + (j >> 1)] += x;
++        partial[2][i] += x;
++        partial[3][3 + i - (j >> 1)] += x;
++        partial[4][7 + i - j] += x;
++        partial[5][3 - (i >> 1) + j] += x;
++        partial[6][j] += x;
++        partial[7][(i >> 1) + j] += x;
++      }
++    }
++  }
++  [unroll] for (i = 0; i < 8; i++) {
++    cost[2] += partial[2][i] * partial[2][i];
++    cost[6] += partial[6][i] * partial[6][i];
++  }
++  cost[2] *= div_table[8];
++  cost[6] *= div_table[8];
++  [unroll] for (i = 0; i < 7; i++) {
++    cost[0] += (partial[0][i] * partial[0][i] + partial[0][14 - i] * partial[0][14 - i]) * div_table[i + 1];
++    cost[4] += (partial[4][i] * partial[4][i] + partial[4][14 - i] * partial[4][14 - i]) * div_table[i + 1];
++  }
++  cost[0] += partial[0][7] * partial[0][7] * div_table[8];
++  cost[4] += partial[4][7] * partial[4][7] * div_table[8];
++  [unroll] for (i = 1; i < 8; i += 2) {
++    [unroll] for (j = 0; j < 4 + 1; j++) { cost[i] += partial[i][3 + j] * partial[i][3 + j]; }
++    cost[i] *= div_table[8];
++    [unroll] for (j = 0; j < 4 - 1; j++) {
++      cost[i] += (partial[i][j] * partial[i][j] + partial[i][10 - j] * partial[i][10 - j]) * div_table[2 * j + 2];
++    }
++  }
++  [unroll] for (i = 0; i < 8; i++) {
++    if (cost[i] > best_cost) {
++      best_cost = cost[i];
++      best_cost_2 = cost[(i + 4) & 7];
++      best_dir.x = i;
++    }
++  }
++  best_dir.y = best_cost - best_cost_2;
++  best_dir.y >>= 10;
++  return best_dir;
++}
++
++int get_msb(unsigned int n) {
++  int log = 0;
++  unsigned int value = n;
++  int i;
++
++  [unroll] for (i = 4; i >= 0; --i) {
++    const int shift = (1 << i);
++    const unsigned int x = value >> shift;
++    if (x != 0) {
++      value = x;
++      log += shift;
++    }
++  }
++  return log;
++}
++
++// sign(diff) * min(abs(diff), max(0, threshold - (abs(diff) >> shift)))
++int constrain(int diff, int threshold, int shift) {
++  const int a = abs(diff);
++  const int m = min(a, max(0, threshold - (a >> shift)));
++  return diff < 0 ? -m : m;
++}
++
++int adjust_strength(int strength, int var) {
++  const int i = var >> 6 ? min(get_msb(var >> 6), 12) : 0;
++  return var ? (strength * (4 + i) + 8) >> 4 : 0;
++}
++
++// What one block needs to filter one plane. Tap offsets are in window samples.
++struct BlockFilter {
++  int pri_strength;
++  int sec_strength;
++  int pri_shift;
++  int sec_shift;
++  int pri_tap0;  // pri_taps[p_t][0]: 4 or 3
++  int pri_tap1;  // pri_taps[p_t][1]: 2 or 3
++  int pri_off0;
++  int pri_off1;
++  int sec_off0;
++  int sec_off1;
++  int sec_off2;
++  int sec_off3;
++};
++
++BlockFilter block_filter(int pri_strength, int sec_strength, int dir, int damping, int coeff_shift, int stride) {
++  BlockFilter f;
++  const int p_t = (pri_strength >> coeff_shift) & 1;
++  f.pri_strength = pri_strength;
++  f.sec_strength = sec_strength;
++  f.pri_shift = max(0, damping - get_msb(pri_strength));
++  f.sec_shift = max(0, damping - get_msb(sec_strength));
++  f.pri_tap0 = 4 - p_t;
++  f.pri_tap1 = 2 + p_t;
++  f.pri_off0 = data.cdef_directions[dir][0].y * stride + data.cdef_directions[dir][0].x;
++  f.pri_off1 = data.cdef_directions[dir][1].y * stride + data.cdef_directions[dir][1].x;
++  f.sec_off0 = data.cdef_directions[dir + 2][0].y * stride + data.cdef_directions[dir + 2][0].x;
++  f.sec_off1 = data.cdef_directions[dir + 2][1].y * stride + data.cdef_directions[dir + 2][1].x;
++  f.sec_off2 = data.cdef_directions[dir + 6][0].y * stride + data.cdef_directions[dir + 6][0].x;
++  f.sec_off3 = data.cdef_directions[dir + 6][1].y * stride + data.cdef_directions[dir + 6][1].x;
++  return f;
++}
++
++// The two taps at +offset and -offset around sample s.
++#define CDEF_TAP_PAIR(offset, weight, strength, shift)                                             \
++  {                                                                                                \
++    const int q0 = window_sample(s + (offset));                                                    \
++    const int q1 = window_sample(s - (offset));                                                    \
++    sum += (weight) * (constrain(q0 - x, strength, shift) + constrain(q1 - x, strength, shift));  \
++    if (q0 != CDEF_VERY_LARGE) mmax = max(q0, mmax);                                               \
++    if (q1 != CDEF_VERY_LARGE) mmax = max(q1, mmax);                                               \
++    mmin = min(mmin, min(q0, q1));                                                                 \
++  }
++
++// Filters the 4 samples that start at window sample s0 (always even) and
++// returns them two per word.
++uint2 filter_unit(int s0, BlockFilter f) {
++  const uint2 centre = uint2(window[s0 >> 1], window[(s0 >> 1) + 1]);
++  uint2 result = uint2(0u, 0u);
++  int j;
++  [unroll] for (j = 0; j < 4; j++) {
++    const int s = s0 + j;
++    const uint pair = j < 2 ? centre.x : centre.y;
++    const int x = (int)((j & 1) ? (pair >> 16) : (pair & 0xffffu));
++    int sum = 0;
++    int mmax = x;
++    int mmin = x;
++    if (f.pri_strength) {
++      CDEF_TAP_PAIR(f.pri_off0, f.pri_tap0, f.pri_strength, f.pri_shift)
++      CDEF_TAP_PAIR(f.pri_off1, f.pri_tap1, f.pri_strength, f.pri_shift)
++    }
++    if (f.sec_strength) {
++      CDEF_TAP_PAIR(f.sec_off0, 2, f.sec_strength, f.sec_shift)
++      CDEF_TAP_PAIR(f.sec_off2, 2, f.sec_strength, f.sec_shift)
++      CDEF_TAP_PAIR(f.sec_off1, 1, f.sec_strength, f.sec_shift)
++      CDEF_TAP_PAIR(f.sec_off3, 1, f.sec_strength, f.sec_shift)
++    }
++    const uint y = (uint)clamp(x + ((8 + sum - (sum < 0)) >> 4), mmin, mmax);
++    if (j < 2) {
++      result.x |= y << ((j & 1) << 4);
++    } else {
++      result.y |= y << ((j & 1) << 4);
++    }
++  }
++  return result;
++}
++
++[numthreads(8, 8, 1)] void main(uint3 Gid : SV_GroupID, uint3 GTid : SV_GroupThreadID) {
++  const int lx = GTid.x;
++  const int ly = GTid.y;
++  // Luma and chroma position of the group and of this thread's block.
++  const int gx = Gid.x * 64;
++  const int gy = Gid.y * 64;
++  const int guvx = Gid.x * 32;
++  const int guvy = Gid.y * 32;
++  const int x0 = gx + lx * 8;
++  const int y0 = gy + ly * 8;
++  const int uvx0 = guvx + lx * 4;
++  const int uvy0 = guvy + ly * 4;
++  const int coeff_shift = data.bit_depth - 8;
++  const int damping = data.pri_damping + coeff_shift;
++  // Source planes: width in 4-sample units and height, as the original tests them.
++  const int w4_y = data.pl.z >> 2;
++  const int h_y = data.pl.w;
++  const int w4_uv = (data.pl.z >> 1) >> 2;
++  const int h_uv = data.pl.w >> 1;
++  // The original dispatches whole 32x32 luma groups; blocks past the last of
++  // them are never written.
++  const int in_extent = (x0 < (((data.pl.z + 31) >> 5) << 5)) && (y0 < (((data.pl.w + 31) >> 5) << 5));
++  int r;
++  int c;
++  int u;
++  int pid;
++
++  const int index = cdef_index.Load((Gid.y * data.index_stride + Gid.x) * 4);
++  uint strength_y = 0;
++  uint strength_uv = 0;
++  if (index >= 0 && index < 16) {
++    strength_y = data.cdef_strength[index].x;
++    strength_uv = data.cdef_uv_strength[index].x;
++  }
++  const int group_filters = (strength_y | strength_uv) != 0;
++
++  if (!group_filters) {
++    // Nothing to filter in this 64x64 block: copy, no shared memory.
++    if (in_extent) {
++      [loop] for (u = 0; u < 16; u++) {
++        const int x = x0 + (u & 1) * 4;
++        const int y = y0 + (u >> 1);
++        store_unit(data.dst_offset_y, data.pl.x, x, y, load_unit(data.pl.x, data.pl.y, w4_y, h_y, x >> 2, y));
++      }
++      [loop] for (u = 0; u < 8; u++) {
++        const int y = uvy0 + (u & 3);
++        store_unit(u < 4 ? data.dst_offset_u : data.dst_offset_v, data.uv_stride, uvx0, y,
++                   load_unit(data.uv_stride, u < 4 ? data.uv_offset_u : data.uv_offset_v, w4_uv, h_uv, uvx0 >> 2, y));
++      }
++    }
++  } else {
++    // Every unit of the three windows is loaded by exactly one thread.
++    [loop] for (r = ly; r < LUMA_ROWS; r += 8) {
++      [loop] for (c = lx; c < LUMA_STRIDE / 4; c += 8) {
++        const uint2 v = load_unit(data.pl.x, data.pl.y, w4_y, h_y, (gx >> 2) - 1 + c, gy - 2 + r);
++        window[r * (LUMA_STRIDE / 2) + c * 2] = v.x;
++        window[r * (LUMA_STRIDE / 2) + c * 2 + 1] = v.y;
++      }
++    }
++    [loop] for (pid = 0; pid < 2; pid++) {
++      [loop] for (r = ly; r < CHROMA_ROWS; r += 8) {
++        [loop] for (c = lx; c < CHROMA_STRIDE / 4; c += 8) {
++          const uint2 v = load_unit(data.uv_stride, pid ? data.uv_offset_v : data.uv_offset_u, w4_uv, h_uv,
++                                    (guvx >> 2) - 1 + c, guvy - 2 + r);
++          window[LUMA_WORDS + pid * CHROMA_WORDS + r * (CHROMA_STRIDE / 2) + c * 2] = v.x;
++          window[LUMA_WORDS + pid * CHROMA_WORDS + r * (CHROMA_STRIDE / 2) + c * 2 + 1] = v.y;
++        }
++      }
++    }
++  }
++  GroupMemoryBarrierWithGroupSync();
++
++  if (group_filters && in_extent) {
++    const int skip = skips.Load(((y0 >> 3) * data.skips_stride + (x0 >> 3)) * 4);
++    const int t_y = skip ? 0 : (int)(strength_y / 4);
++    int s_y = skip ? 0 : (int)(strength_y % 4);
++    const int t_uv = skip ? 0 : (int)(strength_uv / 4);
++    int s_uv = skip ? 0 : (int)(strength_uv % 4);
++    s_y += s_y == 3;
++    s_uv += s_uv == 3;
++
++    // First window sample of this thread's luma block and of its chroma block
++    // in the U window.
++    const int luma_s0 = (2 + ly * 8) * LUMA_STRIDE + 4 + lx * 8;
++    const int chroma_s0 = LUMA_WORDS * 2 + (2 + ly * 4) * CHROMA_STRIDE + 4 + lx * 4;
++
++    int2 dir_var = {0, 0};
++    if (!skip && (t_y | t_uv) != 0) {
++      dir_var = block_dir(luma_s0 >> 1, coeff_shift);
++    }
++
++    // Luma
++    {
++      const int pri_strength = adjust_strength(t_y << coeff_shift, dir_var.y);
++      const int sec_strength = s_y << coeff_shift;
++      const BlockFilter f =
++          block_filter(pri_strength, sec_strength, t_y ? dir_var.x : 0, damping, coeff_shift, LUMA_STRIDE);
++      // A skipped block and a block with no strength left are both a copy.
++      const int filters = !skip && (pri_strength | sec_strength) != 0;
++      [loop] for (u = 0; u < 16; u++) {
++        const int s = luma_s0 + (u >> 1) * LUMA_STRIDE + (u & 1) * 4;
++        uint2 v;
++        if (filters) {
++          v = filter_unit(s, f);
++        } else {
++          v = uint2(window[s >> 1], window[(s >> 1) + 1]);
++        }
++        store_unit(data.dst_offset_y, data.pl.x, x0 + (u & 1) * 4, y0 + (u >> 1), v);
++      }
++    }
++    // Chroma
++    {
++      const int pri_strength = t_uv << coeff_shift;
++      const int sec_strength = s_uv << coeff_shift;
++      const BlockFilter f = block_filter(pri_strength, sec_strength, pri_strength ? dir_var.x : 0, damping - 1,
++                                         coeff_shift, CHROMA_STRIDE);
++      const int filters = !skip && (pri_strength | sec_strength) != 0;
++      [loop] for (u = 0; u < 8; u++) {
++        const int s = chroma_s0 + (u >> 2) * (CHROMA_WORDS * 2) + (u & 3) * CHROMA_STRIDE;
++        uint2 v;
++        if (filters) {
++          v = filter_unit(s, f);
++        } else {
++          v = uint2(window[s >> 1], window[(s >> 1) + 1]);
++        }
++        store_unit(u < 4 ? data.dst_offset_u : data.dst_offset_v, data.uv_stride, uvx0, uvy0 + (u & 3), v);
++      }
++    }
++  }
++}
+diff --git a/testing/cdef_check/cdef_check.cpp b/testing/cdef_check/cdef_check.cpp
+new file mode 100644
+index 0000000..b75fe68
+--- /dev/null
++++ b/testing/cdef_check/cdef_check.cpp
+@@ -0,0 +1,372 @@
++/*
++ * Bit-exactness check of cdef_filter_v2.hlsl against cdef_filter.hlsl.
++ *
++ * Both shaders are compiled as C++ (see run.sh and hlsl_shim.h) and run over
++ * the same random frames, one dispatch each, with the group threads emulated
++ * as fibers that switch at GroupMemoryBarrierWithGroupSync(). The whole frame
++ * pool, padding included, must be byte-identical afterwards.
++ *
++ * Runs on a Linux host, no GPU:  sh testing/cdef_check/run.sh
++ */
++#include <ucontext.h>
++
++#include <random>
++#include <vector>
++
++#include "hlsl_shim.h"
++
++long g_out_of_bounds = 0;
++
++namespace v1 {
++#include "cdef_filter.gen.h"
++}
++namespace v2 {
++#include "cdef_filter_v2.gen.h"
++}
++
++// ---------------------------------------------------------------------------
++// Group threads as fibers.
++// ---------------------------------------------------------------------------
++enum { kMaxThreads = 128, kStackSize = 256 * 1024 };
++
++static ucontext_t g_scheduler;
++static ucontext_t g_fiber[kMaxThreads];
++static bool g_done[kMaxThreads];
++static int g_current = 0;
++static void (*g_body)(int thread) = nullptr;
++static std::vector<char> g_stacks(static_cast<size_t>(kMaxThreads) * kStackSize);
++static long g_uneven_barriers = 0;
++
++void GroupMemoryBarrierWithGroupSync() { swapcontext(&g_fiber[g_current], &g_scheduler); }
++
++static void fiber_entry() {
++  g_body(g_current);
++  g_done[g_current] = true;
++  swapcontext(&g_fiber[g_current], &g_scheduler);
++}
++
++// Runs body(thread) for every thread of one group, one barrier phase at a time.
++static void run_group(int threads, void (*body)(int thread)) {
++  g_body = body;
++  for (int t = 0; t < threads; t++) {
++    getcontext(&g_fiber[t]);
++    g_fiber[t].uc_stack.ss_sp = &g_stacks[static_cast<size_t>(t) * kStackSize];
++    g_fiber[t].uc_stack.ss_size = kStackSize;
++    g_fiber[t].uc_link = nullptr;
++    makecontext(&g_fiber[t], fiber_entry, 0);
++    g_done[t] = false;
++  }
++  for (;;) {
++    int finished = 0;
++    for (int t = 0; t < threads; t++) {
++      g_current = t;
++      swapcontext(&g_scheduler, &g_fiber[t]);
++      finished += g_done[t];
++    }
++    if (finished == threads) break;
++    // A sync that only some threads reach is not valid in a real group.
++    if (finished != 0) {
++      g_uneven_barriers++;
++      break;
++    }
++  }
++}
++
++// ---------------------------------------------------------------------------
++// One test frame, laid out like the decoder's frame pool.
++// ---------------------------------------------------------------------------
++struct HostCDefData {  // CDefData of libav1/dx/loopfilters.cpp
++  int plane[4];
++  int uv_stride;
++  int dst_offset[3];
++  int uv_offset[2];
++  int index_stride;
++  int skips_stride;
++  int pri_damping;
++  int sec_damping;
++  int pli;
++  int hbd;
++  int bit_depth;
++  int _dummie[3];
++  int cdef_directions[16][2][4];
++  int cdef_strength[16][4];
++  int cdef_uv_strength[16][4];
++};
++static_assert(sizeof(HostCDefData) == sizeof(v1::CDefData), "constant buffer layout");
++static_assert(sizeof(HostCDefData) == sizeof(v2::CDefData), "constant buffer layout");
++
++struct Case {
++  int w, h;        // what the host passes as plane[2], plane[3]
++  int hbd;         // 16-bit samples
++  int bit_depth;
++  int content;     // 0 noise, 1 gradient + noise, 2 flat, 3 edges, 4 extremes
++  int strengths;   // 0 random, 1 luma only, 2 chroma only, 3 none, 4 primary only, 5 secondary only
++  int skip_mode;   // 0 half, 1 none, 2 all, 3 rare, 4 any integer
++  int index_mode;  // 0 random incl. -1, 1 all valid, 2 all -1, 3 with out of range values
++  int damping;
++};
++
++struct Frame {
++  std::vector<uint8_t> pool;
++  std::vector<int> indexes;
++  std::vector<int> skips;
++  HostCDefData cb;
++};
++
++static std::mt19937 g_rng(20261111);
++static int rnd(int n) { return static_cast<int>(g_rng() % static_cast<uint32_t>(n)); }
++
++static void put_sample(Frame &f, int offset, int stride, int bpp, int x, int y, int v) {
++  uint8_t *p = &f.pool[static_cast<size_t>(offset) + static_cast<size_t>(y) * stride + static_cast<size_t>(x) * bpp];
++  p[0] = static_cast<uint8_t>(v);
++  if (bpp == 2) p[1] = static_cast<uint8_t>(v >> 8);
++}
++
++static int content_sample(const Case &c, int plane, int x, int y, int maxv) {
++  switch (c.content) {
++    case 0: return rnd(maxv + 1);
++    case 1: {
++      const int v = (x * (3 + plane) + y * (5 - plane)) * (maxv + 1) / 512 + rnd(1 + (maxv >> 4)) + (maxv >> 3);
++      return v > maxv ? maxv : v;
++    }
++    case 2: return (maxv >> 1) + plane;
++    case 3: {
++      // Straight edges in several directions, a little noise on top.
++      const int a = ((x + 2 * y) / 9) & 1;
++      const int b = ((3 * x - y + 4096) / 14) & 1;
++      const int v = (a ? maxv - (maxv >> 2) : maxv >> 3) + (b ? maxv >> 4 : 0) + rnd(1 + (maxv >> 6));
++      return v > maxv ? maxv : v;
++    }
++    default: return rnd(4) == 0 ? rnd(maxv + 1) : (rnd(2) ? maxv : 0);
++  }
++}
++
++static void make_frame(const Case &c, Frame &f) {
++  const int bpp = c.hbd ? 2 : 1;
++  // Frame buffer geometry of av1_reallocate_frame_buffer().
++  const int aligned_w = (c.w + 127) & ~127;
++  const int aligned_h = (c.h + 127) & ~127;
++  const int y_stride = (aligned_w + 32) * bpp;
++  const int uv_stride = ((aligned_w >> 1) + 32) * bpp;
++  const int y_size = y_stride * aligned_h;
++  const int uv_size = uv_stride * (aligned_h >> 1);
++  const int frame_size = y_size + 2 * uv_size;
++  const int base[2] = {64, 64 + frame_size + 192};  // source frame, destination frame
++  f.pool.resize(static_cast<size_t>(base[1]) + frame_size + 64);
++  for (uint8_t &b : f.pool) b = static_cast<uint8_t>(g_rng());
++
++  int offsets[2][3];
++  for (int i = 0; i < 2; i++) {
++    offsets[i][0] = base[i] + 16 * bpp;
++    offsets[i][1] = base[i] + y_size + 16 * bpp;
++    offsets[i][2] = offsets[i][1] + uv_size;
++  }
++  // 16-bit frames keep random bits above the sample: the shaders mask them.
++  const int maxv = (1 << (c.hbd ? (c.bit_depth > 10 ? 10 : c.bit_depth) : 8)) - 1;
++  const int high = c.hbd ? 0xffff & ~((1 << 10) - 1) : 0;
++  for (int y = 0; y < c.h; y++)
++    for (int x = 0; x < c.w; x++)
++      put_sample(f, offsets[0][0], y_stride, bpp, x, y, content_sample(c, 0, x, y, maxv) | (rnd(8) ? 0 : high));
++  for (int p = 1; p < 3; p++)
++    for (int y = 0; y < (c.h >> 1); y++)
++      for (int x = 0; x < (c.w >> 1); x++)
++        put_sample(f, offsets[0][p], uv_stride, bpp, x, y, content_sample(c, p, x, y, maxv) | (rnd(8) ? 0 : high));
++
++  const int nhfb = (c.w + 63) >> 6;
++  const int nvfb = (c.h + 63) >> 6;
++  f.indexes.resize(static_cast<size_t>(nhfb) * nvfb);
++  for (int &v : f.indexes) {
++    switch (c.index_mode) {
++      case 0: v = rnd(5) == 0 ? -1 : rnd(16); break;
++      case 1: v = rnd(16); break;
++      case 2: v = -1; break;
++      default: v = rnd(4) == 0 ? rnd(40) - 12 : rnd(16); break;
++    }
++  }
++  // The host only fills the rows and columns inside the frame; the rest keeps
++  // whatever was there, so every entry is random here.
++  f.skips.resize(static_cast<size_t>(nhfb) * 16 * nvfb * 16);
++  for (int &v : f.skips) {
++    switch (c.skip_mode) {
++      case 0: v = rnd(2); break;
++      case 1: v = 0; break;
++      case 2: v = 1; break;
++      case 3: v = rnd(12) == 0; break;
++      default: v = rnd(3) ? 0 : static_cast<int>(g_rng()); break;
++    }
++  }
++
++  HostCDefData &cb = f.cb;
++  for (size_t i = 0; i < sizeof(cb) / sizeof(int); i++) reinterpret_cast<int *>(&cb)[i] = static_cast<int>(g_rng());
++  const int cdef_directions_new[8][4] = {{-1, +1, -2, +2}, {0, +1, -1, +2}, {0, +1, 0, +2}, {0, +1, 1, +2},
++                                         {1, +1, 2, +2},   {1, +0, 2, +1},  {1, +0, 2, +0}, {1, +0, 2, -1}};
++  for (int i = 0; i < 8; i++) {
++    cb.cdef_directions[i][0][1] = cdef_directions_new[i][0];
++    cb.cdef_directions[i][0][0] = cdef_directions_new[i][1];
++    cb.cdef_directions[i][1][1] = cdef_directions_new[i][2];
++    cb.cdef_directions[i][1][0] = cdef_directions_new[i][3];
++    cb.cdef_directions[8 + i][0][1] = cdef_directions_new[i][0];
++    cb.cdef_directions[8 + i][0][0] = cdef_directions_new[i][1];
++    cb.cdef_directions[8 + i][1][1] = cdef_directions_new[i][2];
++    cb.cdef_directions[8 + i][1][0] = cdef_directions_new[i][3];
++  }
++  for (int i = 0; i < 16; i++) {
++    int y = rnd(64);
++    int uv = rnd(64);
++    switch (c.strengths) {
++      case 1: uv = 0; break;
++      case 2: y = 0; break;
++      case 3: y = uv = 0; break;
++      case 4: y &= ~3; uv &= ~3; break;
++      case 5: y &= 3; uv &= 3; break;
++      default:
++        if (rnd(4) == 0) y = 0;
++        if (rnd(4) == 0) uv = 0;
++        break;
++    }
++    cb.cdef_strength[i][0] = y;
++    cb.cdef_uv_strength[i][0] = uv;
++  }
++  cb.index_stride = nhfb;
++  cb.skips_stride = nhfb * 16;
++  cb.hbd = c.hbd;
++  cb.bit_depth = c.bit_depth;
++  cb.pri_damping = c.damping;
++  cb.plane[0] = y_stride;
++  cb.plane[1] = offsets[0][0];
++  cb.plane[2] = c.w;
++  cb.plane[3] = c.h;
++  cb.uv_stride = uv_stride;
++  cb.uv_offset[0] = offsets[0][1];
++  cb.uv_offset[1] = offsets[0][2];
++  cb.dst_offset[0] = offsets[1][0];
++  cb.dst_offset[1] = offsets[1][1];
++  cb.dst_offset[2] = offsets[1][2];
++}
++
++// ---------------------------------------------------------------------------
++// The two dispatches.
++// ---------------------------------------------------------------------------
++static uint3 g_group;
++
++template <typename T>
++static void scramble(T &shared) {
++  // Group shared memory starts undefined.
++  uint32_t *p = reinterpret_cast<uint32_t *>(&shared);
++  for (size_t i = 0; i < sizeof(T) / 4; i++) p[i] = g_rng();
++}
++
++static void v1_thread(int t) {
++  const uint3 gtid = {static_cast<uint>(t & 3), static_cast<uint>((t >> 2) & 3), static_cast<uint>(t >> 4)};
++  const uint3 dtid = {g_group.x * 4 + gtid.x, g_group.y * 4 + gtid.y, gtid.z};
++  v1::shader_main(g_group, dtid, gtid, static_cast<uint>(t));
++}
++
++static void v2_thread(int t) {
++  const uint3 gtid = {static_cast<uint>(t & 7), static_cast<uint>(t >> 3), 0};
++  v2::shader_main(g_group, gtid);
++}
++
++static void run_v1(Frame &f) {
++  v1::cdef_index.ptr = reinterpret_cast<const uint8_t *>(f.indexes.data());
++  v1::cdef_index.size = f.indexes.size() * 4;
++  v1::skips.ptr = reinterpret_cast<const uint8_t *>(f.skips.data());
++  v1::skips.size = f.skips.size() * 4;
++  v1::dst.ptr = f.pool.data();
++  v1::dst.size = f.pool.size();
++  memcpy(&v1::data, &f.cb, sizeof(f.cb));
++  // Dispatch((w + 31) >> 5, (h + 31) >> 5, 1), numthreads(4, 4, 8)
++  for (uint gy = 0; gy < static_cast<uint>((f.cb.plane[3] + 31) >> 5); gy++) {
++    for (uint gx = 0; gx < static_cast<uint>((f.cb.plane[2] + 31) >> 5); gx++) {
++      g_group = uint3{gx, gy, 0};
++      scramble(v1::input);
++      scramble(v1::output);
++      scramble(v1::costs);
++      scramble(v1::temp);
++      run_group(128, v1_thread);
++    }
++  }
++}
++
++static void run_v2(Frame &f) {
++  v2::cdef_index.ptr = reinterpret_cast<const uint8_t *>(f.indexes.data());
++  v2::cdef_index.size = f.indexes.size() * 4;
++  v2::skips.ptr = reinterpret_cast<const uint8_t *>(f.skips.data());
++  v2::skips.size = f.skips.size() * 4;
++  v2::dst.ptr = f.pool.data();
++  v2::dst.size = f.pool.size();
++  memcpy(&v2::data, &f.cb, sizeof(f.cb));
++  // Dispatch((w + 63) >> 6, (h + 63) >> 6, 1), numthreads(8, 8, 1)
++  for (uint gy = 0; gy < static_cast<uint>((f.cb.plane[3] + 63) >> 6); gy++) {
++    for (uint gx = 0; gx < static_cast<uint>((f.cb.plane[2] + 63) >> 6); gx++) {
++      g_group = uint3{gx, gy, 0};
++      scramble(v2::window);
++      run_group(64, v2_thread);
++    }
++  }
++}
++
++int main() {
++  // Width and height as the decoder passes them (multiples of 8), then a few
++  // sizes it never produces, which both shaders must still treat alike.
++  static const int sizes[][2] = {{8, 8},    {16, 8},   {8, 24},    {32, 32},  {40, 32},  {32, 40},   {64, 64},
++                                 {72, 64},  {64, 72},  {96, 96},   {104, 56}, {56, 104}, {128, 128}, {136, 72},
++                                 {160, 96}, {200, 88}, {88, 200},  {192, 136}, {30, 20}, {67, 45},   {100, 70}};
++  static const int depths[][2] = {{0, 8}, {1, 10}, {1, 8}, {1, 12}};  // hbd, bit depth
++  long cases = 0, failed = 0, bytes = 0, changed = 0;
++
++  for (const auto &size : sizes) {
++    for (const auto &depth : depths) {
++      for (int round = 0; round < 14; round++) {
++        Case c;
++        c.w = size[0];
++        c.h = size[1];
++        c.hbd = depth[0];
++        c.bit_depth = depth[1];
++        c.content = round < 5 ? round : rnd(5);
++        c.strengths = round < 6 ? round : (rnd(3) ? 0 : rnd(6));
++        c.skip_mode = round < 5 ? round : rnd(5);
++        c.index_mode = round < 4 ? (round == 2 ? 1 : round) : (rnd(3) ? 1 : rnd(4));
++        c.damping = 3 + rnd(4);
++
++        Frame a;
++        make_frame(c, a);
++        Frame b = a;
++        const std::vector<uint8_t> before = a.pool;
++        run_v1(a);
++        run_v2(b);
++
++        cases++;
++        bytes += static_cast<long>(a.pool.size());
++        for (size_t i = 0; i < a.pool.size(); i++) changed += a.pool[i] != before[i];
++        size_t first = a.pool.size();
++        long diffs = 0;
++        for (size_t i = 0; i < a.pool.size(); i++) {
++          if (a.pool[i] != b.pool[i]) {
++            if (!diffs) first = i;
++            diffs++;
++          }
++        }
++        if (diffs) {
++          failed++;
++          if (failed <= 20)
++            printf("MISMATCH %dx%d hbd=%d depth=%d content=%d strengths=%d skips=%d indexes=%d damping=%d: "
++                   "%ld bytes differ, first at %zu (dst luma starts at %d)\n",
++                   c.w, c.h, c.hbd, c.bit_depth, c.content, c.strengths, c.skip_mode, c.index_mode, c.damping, diffs,
++                   first, a.cb.dst_offset[0]);
++        }
++      }
++    }
++  }
++
++  printf("cdef_check: %ld frames, %ld bytes compared, %ld bytes written differently from the pool's initial content\n",
++         cases, bytes, changed);
++  printf("cdef_check: out-of-bounds buffer accesses %ld, uneven barriers %ld, mismatching frames %ld\n",
++         g_out_of_bounds, g_uneven_barriers, failed);
++  if (failed || g_out_of_bounds || g_uneven_barriers || !changed) {
++    printf("cdef_check: FAILED\n");
++    return 1;
++  }
++  printf("cdef_check: OK, cdef_filter_v2.hlsl output is byte-identical to cdef_filter.hlsl\n");
++  return 0;
++}
+diff --git a/testing/cdef_check/hlsl_shim.h b/testing/cdef_check/hlsl_shim.h
+new file mode 100644
+index 0000000..740430f
+--- /dev/null
++++ b/testing/cdef_check/hlsl_shim.h
+@@ -0,0 +1,91 @@
++/*
++ * Just enough HLSL for cdef_filter.hlsl and cdef_filter_v2.hlsl to compile as
++ * C++ (after run.sh has stripped attributes, semantics and register
++ * bindings). Integer maths wraps like on the GPU: build with -fwrapv.
++ */
++#ifndef CDEF_CHECK_HLSL_SHIM_H_
++#define CDEF_CHECK_HLSL_SHIM_H_
++
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++typedef unsigned int uint;
++
++struct int2 {
++  int x, y;
++};
++struct uint2 {
++  uint x, y;
++};
++struct int3 {
++  int x, y, z;
++};
++struct uint3 {
++  uint x, y, z;
++};
++union int4 {
++  struct {
++    int x, y, z, w;
++  };
++  struct {
++    int2 xy;
++    int2 zw;
++  };
++};
++
++static inline int min(int a, int b) { return a < b ? a : b; }
++static inline int max(int a, int b) { return a > b ? a : b; }
++static inline int sign(int a) { return (a > 0) - (a < 0); }
++static inline int clamp(int v, int lo, int hi) { return min(max(v, lo), hi); }
++
++/* Counts accesses outside the bound buffer; any is a failure of the check. */
++extern long g_out_of_bounds;
++
++struct ByteAddressBuffer {
++  const uint8_t *ptr = nullptr;
++  size_t size = 0;
++  uint Load(uint address) const {
++    uint v = 0;
++    if ((size_t)address + 4 > size) {
++      g_out_of_bounds++;
++      return 0;
++    }
++    memcpy(&v, ptr + address, 4);
++    return v;
++  }
++};
++
++struct RWByteAddressBuffer {
++  uint8_t *ptr = nullptr;
++  size_t size = 0;
++  uint Load(uint address) const {
++    uint v = 0;
++    if ((size_t)address + 4 > size) {
++      g_out_of_bounds++;
++      return 0;
++    }
++    memcpy(&v, ptr + address, 4);
++    return v;
++  }
++  uint2 Load2(uint address) const { return uint2{Load(address), Load(address + 4)}; }
++  void Store(uint address, uint v) {
++    if ((size_t)address + 4 > size) {
++      g_out_of_bounds++;
++      return;
++    }
++    memcpy(ptr + address, &v, 4);
++  }
++  void Store2(uint address, uint2 v) {
++    Store(address, v.x);
++    Store(address + 4, v.y);
++  }
++};
++
++/* Yields to the next thread of the group; see cdef_check.cpp. */
++void GroupMemoryBarrierWithGroupSync();
++
++#define groupshared static
++
++#endif /* CDEF_CHECK_HLSL_SHIM_H_ */
+diff --git a/testing/cdef_check/run.sh b/testing/cdef_check/run.sh
+new file mode 100644
+index 0000000..7268829
+--- /dev/null
++++ b/testing/cdef_check/run.sh
+@@ -0,0 +1,51 @@
++#!/bin/sh
++# Builds and runs the CDEF bit-exactness check on a Linux host (g++, no GPU).
++#
++#   sh testing/cdef_check/run.sh            the check; exit code 0 = identical
++#   sh testing/cdef_check/run.sh --mutate   also proves the check can fail: a
++#                                           copy of the new shader with one tap
++#                                           weight changed must be rejected
++set -eu
++
++here=$(cd "$(dirname "$0")" && pwd)
++shaders="$here/../../libav1/dx/shaders"
++work=$(mktemp -d)
++trap 'rm -rf "$work"' EXIT
++
++# HLSL to C++: drop attributes, semantics and register bindings, unwrap the
++# constant buffer, rename the entry point. The shader code itself is untouched.
++to_cpp() {
++  sed -E \
++    -e 's/\[numthreads\([^]]*\)\]//' \
++    -e 's/\[(unroll|loop)\]//g' \
++    -e 's/: *SV_[A-Za-z]+//g' \
++    -e 's/: *register\([a-z0-9]+\)//g' \
++    -e 's/^cbuffer +[A-Za-z_]+ *\{(.*)\}/\1/' \
++    -e 's/void main\(/void shader_main(/' \
++    "$1"
++}
++
++build() {
++  g++ -std=c++20 -O2 -fwrapv -Wno-unknown-pragmas -I "$1" -I "$here" -o "$1/cdef_check" "$here/cdef_check.cpp"
++}
++
++to_cpp "$shaders/cdef_filter.hlsl" > "$work/cdef_filter.gen.h"
++to_cpp "$shaders/cdef_filter_v2.hlsl" > "$work/cdef_filter_v2.gen.h"
++build "$work"
++"$work/cdef_check"
++
++if [ "${1:-}" = "--mutate" ]; then
++  mkdir "$work/mutant"
++  cp "$work/cdef_filter.gen.h" "$work/mutant/"
++  sed -e 's/f.pri_tap0 = 4 - p_t;/f.pri_tap0 = 3 - p_t;/' "$work/cdef_filter_v2.gen.h" > "$work/mutant/cdef_filter_v2.gen.h"
++  if cmp -s "$work/cdef_filter_v2.gen.h" "$work/mutant/cdef_filter_v2.gen.h"; then
++    echo "cdef_check: mutation did not apply" >&2
++    exit 1
++  fi
++  build "$work/mutant"
++  if "$work/mutant/cdef_check" > "$work/mutant/log" 2>&1; then
++    echo "cdef_check: the mutated shader passed, the check is not sensitive" >&2
++    exit 1
++  fi
++  echo "cdef_check: mutated shader rejected as expected ($(grep -c MISMATCH "$work/mutant/log") mismatches shown)"
++fi
+diff --git a/testing/player_common/cmd_parser.cpp b/testing/player_common/cmd_parser.cpp
+index 70d372e..52025bf 100644
+--- a/testing/player_common/cmd_parser.cpp
++++ b/testing/player_common/cmd_parser.cpp
+@@ -41,7 +41,8 @@ int CParameters::Parse(one_task& args, std::string& Err) {
+       {"r", atSingle, anOptional, "Recreate decoder for every file", "", &params_.recreate_},
+       {"gputime", atSingle, anOptional, "per-stage GPU/CPU timing, summary in the log", "", &params_.gputime_},
+       {"nopresent", atSingle, anOptional, "release decoded frames without presenting them", "",
+-       &params_.nopresent_}};
++       &params_.nopresent_},
++      {"cdefv2", atSingle, anOptional, "CDEF through cdef_filter_v2.hlsl (same output)", "", &params_.cdefv2_}};
+   params_.command_line_ = args.command_line_;
+   const int list_length = sizeof(avaiting) / sizeof(ParamStruct);
+   bool has_value[list_length] = {false};
+@@ -168,6 +169,7 @@ void CParameters::Reset() {
+   params_.recreate_ = false;
+   params_.gputime_ = false;
+   params_.nopresent_ = false;
++  params_.cdefv2_ = false;
+ }
+ 
+ void CParameters::GetHelp(int pos, const char* arg, std::string& errMsg, const ParamStruct* arr, int size) {
+diff --git a/testing/player_common/cmd_parser.h b/testing/player_common/cmd_parser.h
+index 6ebf466..26c1bb8 100644
+--- a/testing/player_common/cmd_parser.h
++++ b/testing/player_common/cmd_parser.h
+@@ -69,6 +69,7 @@ class CParameters {
+     bool recreate_;
+     bool gputime_;
+     bool nopresent_;
++    bool cdefv2_;
+   };
+   enum arg_type { atSingle, atInt, atString };
+   enum arg_need { anOptional, anMandatory, anAtLeastOne };
+diff --git a/testing/player_common/decoder.cpp b/testing/player_common/decoder.cpp
+index 6267ac1..01e68df 100644
+--- a/testing/player_common/decoder.cpp
++++ b/testing/player_common/decoder.cpp
+@@ -202,6 +202,9 @@ int AV1Decoder::DecodeOne() {
+     XB_LOGI << "GPUTIME timing run: per-stage GPU timestamps and CPU timers on, summary follows the last frame";
+   if (params_.nopresent_)
+     XB_LOGI << "GPUTIME -nopresent: decoded frames go straight back to the pool, nothing is presented";
++  // -cdefv2: also set at a point where no frame is in flight; off again for a task without the flag.
++  av1_set_cdef_v2(params_.cdefv2_ ? 1 : 0);
++  XB_LOGI << "CDEF shader: " << (params_.cdefv2_ ? "cdef_filter_v2 (-cdefv2)" : "cdef_filter (original)");
+ 
+   output_queue_ = std::unique_ptr<BufferLocker>(new BufferLocker(&params_, cur_frame, storage_));
+   if (display_) display_->AddSource(this);

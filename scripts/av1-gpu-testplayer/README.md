@@ -25,13 +25,21 @@ performance. Nothing in Bale's app, normal CI workflow, dependency pins or packa
   (`testing/common`, `testing/player_common`) and the libav1 D3D12 host (`libav1/dx`,
   plus two timers in `libav1/av1/decoder/decodeframe.c`). No shader, no shader maths
   and no decoded output changes; without the flags the decoder runs as before.
+- `0003-cdef-v2-shader.patch` adds a second CDEF compute shader,
+  `libav1/dx/shaders/cdef_filter_v2.hlsl`, and the player flag `-cdefv2` that selects
+  it; see [CDEF v2 run](#cdef-v2-run--cdefv2). The upstream shader `cdef_filter.hlsl`
+  is not modified and stays the default. The new shader is written to produce the same
+  bytes as the upstream one, including where upstream differs from the AV1
+  specification. The patch also adds a host-side comparison of the two shaders
+  (`testing/cdef_check`), which is not part of the player build.
 
 The workflow fetches the pinned commit directly from Googlesource, checks its hash,
 and applies the patches with `git apply`. It builds `av1xbox.sln` (the player and its
 `uwp_common`/`libav1` dependencies) as Release x64 with the same MSBuild action,
 `v145` toolset and `10.0.26100.0` Windows SDK used by the wrapper build. The minimum
 Windows version is overridden to `10.0.17763.0`. Upstream FXC/Shader Model 5.0 compute
-shader settings and decoder behavior remain unchanged. An appended compiler option
+shader settings remain unchanged, every upstream shader is built unmodified, and
+without `-cdefv2` the decoder runs exactly the upstream shaders. An appended compiler option
 `/wd4996` suppresses the newer SDK's deprecated `GetDesktopDpi` diagnostic (promoted
 to an error by upstream's `/sdl`), without changing the upstream player source.
 
@@ -58,10 +66,16 @@ The artifact `av1-gpu-testplayer-x64-<run-id>` contains:
   emit APPX), any emitted `Dependencies/x64/` framework packages and sideload helpers.
 - `Av1GpuTestPlayer.cer`: this run's public signing certificate.
 - `msbuild.log`: normal-verbosity build/package diagnostics, also uploaded on failure.
+- `cdef-shaders/`: FXC listings of both CDEF shaders (`cdef_filter.asm`,
+  `cdef_filter_v2.asm`) and `stats.txt`, a side-by-side count of what the listings
+  declare; see [CDEF v2 run](#cdef-v2-run--cdefv2).
 - `SOURCES.txt`: upstream/build recipe commits, run URL, toolset/SDK and patch hashes.
 - `licenses/`: the upstream license and patent notices.
 
 A failed run can still upload diagnostics; only use a package from a successful run.
+
+The run has a second job, `cdef-check`, on Linux. It applies the same patches and runs
+the host-side comparison of the two CDEF shaders. The run is green only if both jobs pass.
 
 ## Install with Xbox Device Portal
 
@@ -279,3 +293,107 @@ patches applied:
 g++ -std=c++14 -Wall -Wextra -I libav1 -o perf_stats_test testing/player_common/perf_stats_test.cpp
 ./perf_stats_test
 ```
+
+## CDEF v2 run (`-cdefv2`)
+
+In the first timing run, upstream's CDEF shader was the largest GPU stage on 4K
+10-bit streams. Patch 0003 adds a replacement to measure against it.
+
+| Flag | Effect |
+| --- | --- |
+| `-cdefv2` | CDEF runs through `cdef_filter_v2.hlsl` instead of `cdef_filter.hlsl`. Decoded output is meant to be identical. |
+
+Off by default: without the flag the decoder creates the same pipeline state and
+issues the same dispatch as before. The task's log says which shader is in use:
+
+```text
+CDEF shader: cdef_filter (original)
+CDEF shader: cdef_filter_v2 (-cdefv2)
+```
+
+### What changed in the shader
+
+| | `cdef_filter.hlsl` (upstream) | `cdef_filter_v2.hlsl` |
+| --- | --- | --- |
+| Thread group | 4 x 4 x 8, one group per 32x32 luma | 8 x 8 x 1, one group per 64x64 luma (one CDEF strength index) |
+| A thread's work | one 8-sample row of an 8x8 luma block, then one 4-sample row of a 4x4 chroma block (U or V) | one 8x8 luma block and its two 4x4 chroma blocks |
+| 64x64 with zero strengths or no index | full load, direction search, filter with zero strengths (a copy) and store | the group copies its samples and does nothing else |
+| 8x8 block with zero primary strengths | direction search still runs | no direction search |
+| Direction search | on 16 of the 128 threads, a loop over 64 samples into an indexed array, while the other threads wait at a barrier | on every thread for its own block, fully unrolled |
+| Group shared memory | 32-bit per sample, an input window and an output array; results are written to shared memory, read back and then stored | two 16-bit samples per word, input window only; each thread stores its own result |
+| Barriers per group | six | one |
+| Tap weights | constant tables | computed |
+
+Bindings, the constant buffer and the frame buffers are the same, so the host change
+is the choice of pipeline state and the dispatch size (`(w + 63) >> 6` by
+`(h + 63) >> 6` groups instead of `(w + 31) >> 5` by `(h + 31) >> 5`).
+
+### Timing: old against new
+
+Both lines in `args_av1.txt`, same clip, same settings; the only difference is the flag:
+
+```text
+-i /streams/<clip>.ivf -t 6 -frate -1 -limit 300 -queue_size 4 -progress -gputime -nopresent
+-i /streams/<clip>.ivf -t 6 -frate -1 -limit 300 -queue_size 4 -progress -gputime -nopresent -cdefv2
+```
+
+Compare the `gpu cdef` row of the two summaries' stage tables, then `gpu busy` and the
+"per OUTPUT frame" line. Every other GPU stage should be unchanged between the two tasks.
+
+### Same output: md5 of every frame
+
+Upstream's player can write one md5 per decoded frame and check a later run against
+that file. First task: the original shader writes the reference. Second task: the new
+shader is checked against it.
+
+```text
+-i /streams/<clip>.ivf -t 6 -frate -1 -limit 300 -queue_size 4 -progress -nopresent -save_md5 /streams/<clip>.ivf.md5
+-i /streams/<clip>.ivf -t 6 -frate -1 -limit 300 -queue_size 4 -progress -nopresent -cdefv2 -md5_frame_check
+```
+
+- `-save_md5` takes a path below LocalState, like `-i`. `-md5_frame_check` takes no
+  value and always reads `<stream path>.md5`, so the saved file must have exactly the
+  stream's name plus `.md5`, next to the stream.
+- Use the same `-limit` in both tasks. The checker does not guard against a reference
+  file with fewer frames than it decodes.
+- The result is in the log when the second task ends: `MD5 is OK`, or
+  `MD5 checksum errors in N frames` with one `MD5 checksum error in <n> frame` line
+  per bad frame. Later frames are predicted from earlier ones, so one wrong CDEF
+  output shows up as errors from that frame on.
+- Both flags read every frame back from the GPU. Do not combine them with `-gputime`
+  for timing numbers.
+- Do not add `-try10x3`: the saver and the checker hash that output format differently.
+
+The md5 covers the visible picture after all later stages (loop restoration, film
+grain). Run it on at least one 8-bit and one 10-bit clip.
+
+### Host-side comparison of the two shaders
+
+`testing/cdef_check` compiles both `.hlsl` files as C++ (attributes and semantics
+stripped by `sed`, nothing else changed) and runs them the way a dispatch does, with
+all threads of a group stopping at each barrier. It builds frame buffers with the
+decoder's layout, fills them and every input with random and edge-case data, runs both
+shaders and compares the **whole buffer**, padding included. It covers 8-bit and high
+bit depth, frame sizes that are not multiples of 8 or 64, missing strength indices,
+skipped blocks and all strength and damping values. A second pass changes one tap
+weight in a copy of the new shader and requires the comparison to fail.
+
+In a tree with the patches applied (needs `g++`, no GPU):
+
+```sh
+sh testing/cdef_check/run.sh --mutate
+```
+
+It ends with `cdef_check: OK, cdef_filter_v2.hlsl output is byte-identical to
+cdef_filter.hlsl`. This proves the HLSL logic; the md5 run above is the proof for the
+compiled shader on the console.
+
+### Shader listings in the artifact
+
+The workflow runs both shaders through the same FXC, profile and flags as the Release
+build (`/T cs_5_0 /E main`) and stores the listings under `cdef-shaders/`. After the
+build it checks that each listing's bytecode is the one compiled into the package.
+`stats.txt` gives, for each shader: instruction slots, temp registers, indexable
+temps (arrays the compiler could not keep in registers), immediate constant buffer
+use, group shared memory size, barriers, and load/store counts. The counts are static
+(instructions in the listing), not instructions executed, and are not a timing.
