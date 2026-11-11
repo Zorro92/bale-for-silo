@@ -33,21 +33,24 @@ public class PlaybackSeekTests
     public void NativeAndSoftwareVideoUseTheSameAbsoluteSourceMapping()
     {
         var plan = Plan();
-        Assert.True(new PlaybackSeek(80).CanSeekInMount(plan, false, true, []));
-        Assert.False(new PlaybackSeek(80).CanSeekInMount(plan, false, false, []));
+        Assert.True(new PlaybackSeek(80).CanSeekInMount(plan, false, true));
+        Assert.False(new PlaybackSeek(80).CanSeekInMount(plan, false, false));
         Assert.Null(new PlaybackSeek(double.NaN).PlayerPosition(new(0, 0, 0), 100));
         Assert.Null(new PlaybackSeek(-1).PlayerPosition(new(0, 0, 0), 100));
     }
 
     [Fact]
-    public void HlsNeedsReanchorBeforeItsOriginOrBeyondItsProducedWindow()
+    public void GrowingHlsAlwaysReanchorsUnlessTheServerProvesACompleteWindow()
     {
         var plan = Plan();
         plan.Timeline = new TimelineV3 { TimelineOffsetSeconds = 120, SourceStartSeconds = 120, PlayerStartSeconds = 0 };
-        Assert.False(new PlaybackSeek(110).CanSeekInMount(plan, true, true, [(0, 40)]));
-        Assert.True(new PlaybackSeek(150).CanSeekInMount(plan, true, true, [(0, 40)]));
-        Assert.False(new PlaybackSeek(180).CanSeekInMount(plan, true, true, [(0, 40)]));
-        Assert.False(new PlaybackSeek(150).CanSeekInMount(plan, true, true, []));
+        Assert.False(new PlaybackSeek(110).CanSeekInMount(plan, true, true));
+        Assert.False(new PlaybackSeek(150).CanSeekInMount(plan, true, true));
+        Assert.False(new PlaybackSeek(180).CanSeekInMount(plan, true, true));
+        plan.Timeline.SeekWindowStartSeconds = 120;
+        plan.Timeline.SeekWindowEndSeconds = 160;
+        Assert.True(new PlaybackSeek(150).CanSeekInMount(plan, true, true));
+        Assert.False(new PlaybackSeek(180).CanSeekInMount(plan, true, true));
         plan.Timeline.TimelineOffsetSeconds = 100; // The reanchored plan maps the requested target.
         Assert.Equal(10, new PlaybackSeek(110).PlayerPosition(PlaybackTimeline.From(plan.Timeline), 1000));
     }
@@ -62,7 +65,7 @@ public class PlaybackSeekTests
     {
         var plan = Plan();
         plan.Timeline = new TimelineV3 { CanSeekAnywhere = true, SeekWindowStartSeconds = start, SeekWindowEndSeconds = end };
-        Assert.Equal(allowed, new PlaybackSeek(target).CanSeekInMount(plan, true, true, [(0, 1000)]));
+        Assert.Equal(allowed, new PlaybackSeek(target).CanSeekInMount(plan, true, true));
     }
 
     [Fact]
@@ -82,7 +85,7 @@ public class PlaybackSeekTests
         Assert.Equal("1080p", request.QualityPreference);
         Assert.True(request.Metered);
         Assert.Equal(5000, request.BandwidthCapKbps);
-        Assert.Throws<ArgumentOutOfRangeException>(() => PlaybackReplan.ForSeek(start, Plan(), "mount", [], 0, double.NaN));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PlaybackReplan.ForSeek(start, Plan(), "mount", [], 1, double.NaN));
     }
 
     [Fact]

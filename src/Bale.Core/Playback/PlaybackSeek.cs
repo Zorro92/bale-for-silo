@@ -21,13 +21,14 @@ public sealed record PlaybackSeek(double Seconds, bool Pause = false)
     }
 
     /// <summary>
-    /// PlaybackTimelineSeekPolicy.kt: use a native seek only where the mounted transport can serve
-    /// it. Native HLS seekability/ranges prove the produced window, not the whole movie duration.
+    /// PlaybackTimelineSeekPolicy.kt without a player-supplied window override: only the server
+    /// may prove an HLS extent. Windows reports a growing EVENT's produced window as seekable,
+    /// but seeking even within it can jump to the moving production edge. Reopen that route at
+    /// the requested source time; complete VOD plans still use native seeks.
     /// </summary>
-    public bool CanSeekInMount(PlaybackPlan plan, bool isHls, bool canSeek,
-        IReadOnlyList<(double Start, double End)> playerRanges)
+    public bool CanSeekInMount(PlaybackPlan plan, bool isHls, bool canSeek)
     {
-        if (!canSeek || PlayerPosition(PlaybackTimeline.From(plan.Timeline), plan.Source?.DurationSeconds) is not { } player)
+        if (!canSeek || PlayerPosition(PlaybackTimeline.From(plan.Timeline), plan.Source?.DurationSeconds) is null)
             return false;
         var start = plan.Timeline?.SeekWindowStartSeconds;
         var end = plan.Timeline?.SeekWindowEndSeconds;
@@ -35,8 +36,6 @@ public sealed record PlaybackSeek(double Seconds, bool Pause = false)
             || end is { } to && (!double.IsFinite(to) || to < 0 || Seconds > to)
             || start is { } a && end is { } b && a > b) return false;
         if (!isHls) return true;
-        if (start is not null && end is not null || plan.Timeline?.CanSeekAnywhere == true) return true;
-        return playerRanges.Any(range => double.IsFinite(range.Start) && double.IsFinite(range.End)
-            && range.Start >= 0 && range.Start <= player && player <= range.End);
+        return start is not null && end is not null || plan.Timeline?.CanSeekAnywhere == true;
     }
 }

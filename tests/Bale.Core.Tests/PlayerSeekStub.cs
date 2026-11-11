@@ -27,7 +27,7 @@ namespace Bale.Xbox
             public required PlaybackPlan Plan { get; set; }
             public IReadOnlyList<string> ServerFeatures { get; set; } = [PlaybackSeekReanchor.Feature];
             public IReadOnlyList<string> AttemptedPlanKeys { get; } = [];
-            public string PlanAttemptId { get; } = "mount";
+            public string PlanAttemptId { get; } = "mount-0123456789";
             public string SessionId { get; } = "session";
             public bool Attached { get; } = true;
             public bool Replanned { get; } = false;
@@ -77,6 +77,11 @@ namespace Bale.Xbox
         internal bool IsPaused => Session.PlaybackState == MediaPlaybackState.Paused;
         internal string State => _state;
         internal bool IsSeeking => _seeking;
+        internal async Task<string> SeekSourceAsync(double target)
+        {
+            var result = await SeekAsync(new(target));
+            return result.Outcome.ToString();
+        }
 
         internal async Task SkipAsync(bool forward)
         {
@@ -140,6 +145,9 @@ namespace Windows.Media.Playback
         // A complete VOD plan can authorize seeks without native ranges; growing HLS cannot.
         internal bool CompleteVod { get; init; }
         internal int UnprovenSeeks { get; private set; }
+        internal int NativeSeeks { get; private set; }
+        // Reproduce the console: a nominally in-range EVENT seek lands at the produced edge.
+        internal double? LiveEdge { get; init; }
         public MediaPlaybackState PlaybackState { get; set; } = MediaPlaybackState.Playing;
         public event Action<MediaPlaybackSession, object>? SeekCompleted;
         public TimeSpan Position
@@ -147,12 +155,13 @@ namespace Windows.Media.Playback
             get => _position;
             set
             {
+                NativeSeeks++;
                 if (!CanSeek || !CompleteVod && !Ranges.Any(range => range.Start <= value.TotalSeconds && value.TotalSeconds <= range.End))
                 {
                     UnprovenSeeks++;
                     throw new InvalidOperationException("Native seek outside the proven window.");
                 }
-                _position = value;
+                _position = LiveEdge is { } edge ? TimeSpan.FromSeconds(edge) : value;
                 SeekCompleted?.Invoke(this, new object());
             }
         }

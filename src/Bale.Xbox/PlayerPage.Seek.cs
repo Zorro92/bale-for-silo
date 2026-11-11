@@ -96,10 +96,9 @@ public sealed partial class PlayerPage
             var paused = request.Pause || player.PlaybackSession.PlaybackState == MediaPlaybackState.Paused;
             var session = player.PlaybackSession;
             var ranges = session.GetSeekableRanges().Select(range => (range.Start.TotalSeconds, range.End.TotalSeconds)).ToArray();
-            // PlaybackTimelineSeekPolicy.kt: only a proven mounted extent may fill an open HLS
-            // window. NaturalDuration is not a seekable range; guessing [0, duration] can send a
-            // native seek outside produced media. An unknown window needs a server reanchor.
-            var local = request.CanSeekInMount(attempt.Plan!, media.Transport.IsHls, session.CanSeek, ranges);
+            // Windows' growing-HLS ranges describe production, not reliable seek landings.
+            // Keep them for diagnostics; only a complete server window authorizes native HLS.
+            var local = request.CanSeekInMount(attempt.Plan!, media.Transport.IsHls, session.CanSeek);
 #if DEBUG_SERVER
             Log.Info($"player: seek target={request.Seconds:0.###} player={session.Position.TotalSeconds:0.###} offset={media.Transport.Timeline.TimelineOffsetSeconds:0.###} ranges={ranges.Length} action={(local ? "native" : "reanchor")}");
 #endif
@@ -124,7 +123,9 @@ public sealed partial class PlayerPage
             try
             {
                 if (paused) player.Pause();
-                if (Math.Abs(session.Position.TotalSeconds - target) > 0.000001)
+                // The replacement already mounted at its player_start_seconds. A second native
+                // seek after opening would reintroduce EVENT/live-edge jumps as its clock advances.
+                if (local && Math.Abs(session.Position.TotalSeconds - target) > 0.000001)
                 {
                     session.Position = TimeSpan.FromSeconds(target);
                     var winner = await Task.WhenAny(completed.Task, Task.Delay(10000, media.Token));
@@ -167,10 +168,10 @@ public sealed partial class PlayerPage
 
     private async Task<Mount?> ReanchorSeekAsync(Attempt attempt, Mount media, double source, bool paused)
     {
-        // PlaybackSessionManager.kt reanchorActiveVideoSession: outside a produced HLS window,
+        // PlaybackSessionManager.kt reanchorActiveVideoSession: without a reliable local window,
         // refresh the SAME route/session at source time instead of clamping to the manifest's head.
         var request = PlaybackReplan.ForSeek(attempt.Start!, attempt.Plan!, attempt.PlanAttemptId,
-            attempt.AttemptedPlanKeys, attempt.Replanned ? 1 : 0, source);
+            attempt.AttemptedPlanKeys, attempt.Replanned ? 2 : 1, source);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(attempt.Cancellation.Token);
         deadline.CancelAfter(TimeSpan.FromSeconds(10));
         var decision = await attempt.Client.Playback.ReplanAsync(attempt.SessionId!, request, attempt.Services!.Installation, deadline.Token);

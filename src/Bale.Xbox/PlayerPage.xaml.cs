@@ -622,7 +622,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         || ex is ApiException { ResponseStatusCode: 0 };
 
     private static void LogFailure(string operation, Exception ex) =>
-        Log.Info($"player: {operation} type={ex.GetType().Name} hr=0x{unchecked((uint)ex.HResult):X8}");
+        Log.Info($"player: {operation} type={ex.GetType().Name} hr=0x{unchecked((uint)ex.HResult):X8}"
+            + (ex is Bale.Core.Api.Models.Problem problem ? " " + PlaybackProblemLog.Describe(problem) : ""));
 
 #if DEBUG_SERVER
     internal string DebugPlayback => string.Create(CultureInfo.InvariantCulture,

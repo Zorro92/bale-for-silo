@@ -64,7 +64,10 @@ public static class PlaybackReplan
     public static PlaybackReplanRequestV3 ForSeek(PlaybackStartRequestV3 start, PlaybackPlan plan, string planAttemptId,
         IReadOnlyList<string> priorAttemptedKeys, int attemptCount, double sourcePositionSeconds)
     {
-        if (!double.IsFinite(sourcePositionSeconds) || sourcePositionSeconds < 0)
+        // apiv2.PlaybackReplanBody and ReplanRequestV3.Validate: this counts mounted plans,
+        // starting at one (PlaybackSessionManager.kt newActiveAttempt), not failed recoveries.
+        if (attemptCount is < 1 or > 8) throw new ArgumentOutOfRangeException(nameof(attemptCount));
+        if (!double.IsFinite(sourcePositionSeconds) || sourcePositionSeconds < 0 || sourcePositionSeconds > 31_536_000)
             throw new ArgumentOutOfRangeException(nameof(sourcePositionSeconds));
         // reanchorActiveVideoSession: a seek must not spend failure-recovery budget or blacklist
         // the working route. Retain its identity, tracks, capabilities and quality preferences.

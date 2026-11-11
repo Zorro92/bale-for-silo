@@ -1132,12 +1132,35 @@ Copy-remux plans use the preceding keyframe as `timeline_offset_seconds`, a play
 `source_start_seconds - offset`, and an open source-time seek window beginning at that origin
 (`configureCopyRemuxTimelineV3` in silo-server). Growing encoded HLS uses an aligned segment
 origin; complete synthetic VOD uses offset zero and `can_seek_anywhere=true`.
-`NaturalDuration` cannot replace missing native seekable ranges for an open window. The player
-must reanchor unknown/out-of-window targets, matching Android's `PlaybackTimelineSeekPolicy.kt`.
+Windows' native HLS seeks can jump to the production edge of a growing EVENT playlist even
+inside its advertised seekable range. Neither `NaturalDuration`, played/buffered time nor that
+range proves reliable seek landings. Bale therefore reanchors every open-window HLS seek;
+only a complete server-published window or `can_seek_anywhere=true` authorizes native HLS seeks.
+This uses Android's `PlaybackTimelineSeekPolicy.kt` without its optional mounted-range override;
+Apple's `PlaybackTimelineMapper.swift` likewise replans when `can_seek_anywhere=false`.
+The replacement mounts once at its returned player start; it must not issue another native
+seek after opening, when playback may already have advanced.
 Debug seek logs show target, player clock, offset, range count, native/reanchor choice and landed
 source/player clocks. The Linux regression harness runs the actual `PlayerPage.Seek.cs`, source
 mapping, authenticated start/replan, media transport and progress reporter, with a native-session
 stand-in; it does not emulate AdaptiveMediaSource's parsing or Xbox's native HLS landing.
+
+Reanchor requests count mounted plans starting at **1**, as Android's `newActiveAttempt` does;
+they retain that count across seeks (2 after Bale's one failure recovery). Zero counts failed
+v2's `PlaybackReplanBody` validation before reaching the handler. Seeks keep the same plan,
+session, selected tracks and recipe, and do not consume the failure-recovery budget.
+`PlaybackProblemLog` emits HTTP status, the recognized problem type's code/title and owning
+validation field names/codes. Detail, instance, unknown metadata and dynamic field keys are
+never printed.
+
+The CLI can exercise the server contract without a console:
+`dotnet run --project tools/Bale.Cli -- play-plan <content-id> --delivery hls --start 0 --reanchor 900 --reanchor 890 --inspect-hls`.
+It uses only the test profile and stops the session on exit. Repeat with a nonzero `--start` to
+check resume timelines. Inspection prints playlist shape and produced duration, never manifest
+URIs. The server normally serves copied video as real variable-duration fMP4 EVENT segments
+with a positive `EXT-X-START`, adding `ENDLIST` on completion; encoded video can use full synthetic
+VOD. The server's optional keyframe-playlist setting can provide copy VOD from a verified index
+when starting at zero, but it is not a client capability and cannot fix resumed growing remuxes.
 
 **Decision: keep server tone mapping.** The owner's console comparison on **0.1.237** used
 *Avatar Aang* (1080p HEVC Main10 HDR10+) at **600 / 1800 / 3000 / 4500 seconds**. The media

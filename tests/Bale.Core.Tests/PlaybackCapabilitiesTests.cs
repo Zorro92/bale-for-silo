@@ -144,7 +144,7 @@ public class PlaybackCapabilitiesTests
         Assert.Equal(2160, route.VideoHeight);
         foreach (var request in new[]
         {
-            PlaybackReplan.ForSeek(start, plan, "plan-attempt", [], 0, 42),
+            PlaybackReplan.ForSeek(start, plan, "plan-attempt", [], 1, 42),
             PlaybackReplan.ForFailure(start, plan, "plan-attempt", [], 1, 42, new("http_failure")),
             PlaybackReplan.ForHdrOutputFailure(start, plan, "plan-attempt", [], 1, 42),
         })

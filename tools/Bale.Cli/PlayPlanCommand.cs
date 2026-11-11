@@ -16,8 +16,8 @@ internal static class PlayPlanCommand
         var capability = await client.Playback.GetCapabilitiesAsync(cancellationToken);
         var installation = new CliInstallation(capability.InstallationId!);
         var detail = await client.Detail.LoadAsync(contentId, cancellationToken);
-        var start = PlaybackStartBuilder.Build(detail, new PlaybackSelection(options.FileId, SubtitleIndex: options.SubtitleIndex), profile.Id,
-            Guid.NewGuid().ToString(), null, options.Capabilities(), identity);
+        var start = options.Apply(PlaybackStartBuilder.Build(detail, new PlaybackSelection(options.FileId, SubtitleIndex: options.SubtitleIndex), profile.Id,
+            Guid.NewGuid().ToString(), options.StartSeconds, options.Capabilities(), identity));
         var decision = await client.Playback.StartAsync(start, installation, cancellationToken);
         var sessionId = decision.SessionId;
         // Process-local probe: no shared temporary journal to collide with another held CLI session.
@@ -60,10 +60,30 @@ internal static class PlayPlanCommand
                     $" delivery={row.Delivery} forced={row.Forced} default={row.Default}" +
                     $" sidecar={(row.Url is { Length: > 0 } ? "yes" : "no")} fonts={(row.FontBundleUrl is { Length: > 0 } ? "yes" : "no")}");
 
+            if (options.InspectHls) await InspectHlsAsync(client, plan, cancellationToken);
+            var planAttemptId = Guid.NewGuid().ToString();
+            foreach (var target in options.ReanchorSeconds ?? [])
+            {
+                if (sessionId is not { Length: > 0 } || decision.ServerFeatures?.Contains(PlaybackSeekReanchor.Feature) != true) return 1;
+                // Like the player, seeks keep the current plan, tracks and recovery count (one
+                // on a fresh session). This command never mounts media or exercises Xbox APIs.
+                var replan = PlaybackReplan.ForSeek(start, plan, planAttemptId, [], 1, target);
+                decision = await client.Playback.ReplanAsync(sessionId, replan, installation, cancellationToken);
+                if (!PlaybackSeekReanchor.Matches(plan, decision, sessionId, start.FileId))
+                {
+                    Console.Error.WriteLine("reanchor rejected: response changed route identity or was not playable");
+                    return 1;
+                }
+                plan = decision.PlaybackPlan!;
+                Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"reanchor target={target:0.###} same_route=yes attempt_count={replan.AttemptCount}"
+                    + $" source={plan.Timeline?.SourceStartSeconds:0.###} player={plan.Timeline?.PlayerStartSeconds:0.###} offset={plan.Timeline?.TimelineOffsetSeconds:0.###}"));
+                if (options.InspectHls) await InspectHlsAsync(client, plan, cancellationToken);
+            }
+
             if (options.UrlFile is { } path)
             {
                 if (sessionId is not { Length: > 0 } || plan.Delivery != "original_http"
-                    || PlaybackMediaUrl.Resolve(stream.Url, client.Server) is not { } url)
+                    || PlaybackMediaUrl.Resolve(plan.Stream?.Url, client.Server) is not { } url)
                 {
                     Console.Error.WriteLine("url not written: no playable original_http session");
                     return 1;
@@ -125,6 +145,34 @@ internal static class PlayPlanCommand
         }
     }
 
+    private static async Task InspectHlsAsync(SiloClient client, Bale.Core.Api.Models.PlaybackPlan plan, CancellationToken ct)
+    {
+        var media = client.Playback.OpenMedia(plan);
+        if (!media.IsHls) throw new InvalidOperationException("HLS inspection requires an HLS plan.");
+        var uri = media.Uri;
+        for (var depth = 0; depth < 2; depth++)
+        {
+            var (data, _) = await media.GetBytesAsync(uri, null, null, ct);
+            var lines = System.Text.Encoding.UTF8.GetString(data).Split('\n').Select(line => line.Trim()).ToArray();
+            if (lines.Any(line => line.StartsWith("#EXT-X-STREAM-INF:", StringComparison.Ordinal)))
+            {
+                uri = new Uri(uri, lines.First(line => line.Length > 0 && !line.StartsWith('#')));
+                continue;
+            }
+            // Shape and finite numbers only; manifests contain signed segment/key URIs.
+            var type = lines.Contains("#EXT-X-PLAYLIST-TYPE:EVENT") ? "EVENT" : lines.Contains("#EXT-X-PLAYLIST-TYPE:VOD") ? "VOD" : "unspecified";
+            var durations = lines.Where(line => line.StartsWith("#EXTINF:", StringComparison.Ordinal))
+                .Select(line => double.TryParse(line[8..].Split(',')[0], CultureInfo.InvariantCulture, out var seconds)
+                    && double.IsFinite(seconds) && seconds > 0 ? seconds : 0).ToArray();
+            Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                $"hls type={type} endlist={lines.Contains("#EXT-X-ENDLIST")} start_tag={lines.Any(line => line.StartsWith("#EXT-X-START:", StringComparison.Ordinal))}"
+                + $" init_map={lines.Any(line => line.StartsWith("#EXT-X-MAP:", StringComparison.Ordinal))} segments={durations.Length} produced_seconds={durations.Sum():0.###}"));
+            return;
+        }
+        throw new InvalidDataException("HLS media playlist unavailable.");
+    }
+
     internal static void PrintFailure(string step, Exception ex) => Console.Error.WriteLine(
-        $"{step} failed hresult=0x{unchecked((uint)ex.HResult):X8} status={(ex as Microsoft.Kiota.Abstractions.ApiException)?.ResponseStatusCode}");
+        $"{step} failed hresult=0x{unchecked((uint)ex.HResult):X8} status={(ex as Microsoft.Kiota.Abstractions.ApiException)?.ResponseStatusCode}"
+        + (ex is Bale.Core.Api.Models.Problem problem ? " " + PlaybackProblemLog.Describe(problem) : ""));
 }

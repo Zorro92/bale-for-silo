@@ -3,7 +3,8 @@ using Bale.Core.Playback;
 
 internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldSeconds, string? SaveHead = null, int HeadMegabytes = 0,
     string? SaveRange = null, long RangeOffset = 0, int RangeBytes = 0, string? FileId = null, int Av1MaxHeight = 1080,
-    int? SubtitleIndex = null)
+    int? SubtitleIndex = null, string Delivery = "auto", double? StartSeconds = null,
+    IReadOnlyList<double>? ReanchorSeconds = null, bool InspectHls = false)
 {
     internal static bool TryParse(IEnumerable<string> arguments, out PlayPlanOptions options, out string error)
     {
@@ -13,10 +14,28 @@ internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldS
         var profile = new List<string>();
         var holdSeen = false;
         var av1HeightSeen = false;
+        var deliverySeen = false;
         for (var i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
+                case "--delivery" when !deliverySeen && i + 1 < args.Length:
+                    var delivery = args[++i];
+                    if (delivery is not ("auto" or "hls")) return false;
+                    deliverySeen = true;
+                    options = options with { Delivery = delivery };
+                    break;
+                case "--start" when options.StartSeconds is null && i + 1 < args.Length:
+                    if (!Position(args[++i], out var start)) return false;
+                    options = options with { StartSeconds = start };
+                    break;
+                case "--reanchor" when i + 1 < args.Length:
+                    if (!Position(args[++i], out var target) || options.ReanchorSeconds?.Count >= 16) return false;
+                    options = options with { ReanchorSeconds = [..options.ReanchorSeconds ?? [], target] };
+                    break;
+                case "--inspect-hls" when !options.InspectHls:
+                    options = options with { InspectHls = true };
+                    break;
                 case "--file" when options.FileId is null && i + 1 < args.Length:
                     var fileId = args[++i];
                     if (string.IsNullOrWhiteSpace(fileId) || fileId.StartsWith("--", StringComparison.Ordinal)) return false;
@@ -80,6 +99,20 @@ internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldS
         error = string.Empty;
         return true;
     }
+
+    private static bool Position(string value, out double position) =>
+        double.TryParse(value, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out position)
+        && double.IsFinite(position) && position is >= 0 and <= 31_536_000;
+
+    internal PlaybackStartRequestV3 Apply(PlaybackStartRequestV3 start) => Delivery != "hls" ? start : start with
+    {
+        // Same as the app's DebugPlaybackDelivery.Apply: package HLS without changing decode claims.
+        ClientPlaybackContext = start.ClientPlaybackContext with
+        {
+            Deliveries = start.ClientPlaybackContext.Deliveries.ToDictionary(pair => pair.Key, pair => pair.Key == "hls"
+                ? pair.Value : pair.Value with { Enabled = false, SupportedOnDevice = false }),
+        },
+    };
 
     // --claim-av1 remains a compatibility no-op; only the explicit height probe expands AV1.
     internal DeviceCapabilities Capabilities() => Av1MaxHeight == 2160

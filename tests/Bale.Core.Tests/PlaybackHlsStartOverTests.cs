@@ -71,7 +71,7 @@ public class PlaybackHlsStartOverTests
     [InlineData("server_remux_hls", false)]
     [InlineData("server_transcode_hls", false)]
     [InlineData("server_transcode_hls", true)]
-    public async Task StartOverSkipsUseTheCurrentClockInsideAProvenWindow(string delivery, bool completeVod)
+    public async Task StartOverSkipsUseNativeVodOrReanchorGrowingHlsDespiteSeekableRanges(string delivery, bool completeVod)
     {
         using var handler = new HlsHandler(delivery, completeVod);
         using var client = Create(handler);
@@ -92,8 +92,8 @@ public class PlaybackHlsStartOverTests
             await player.SkipAsync(forward[i]);
             Assert.Equal(expected[i], player.Source, 6);
         }
-        Assert.Empty(handler.Reanchors);
-        Assert.Empty(player.Mounts);
+        Assert.Equal(completeVod ? 0 : expected.Length, handler.Reanchors.Count);
+        Assert.Equal(completeVod ? 0 : expected.Length, player.Mounts.Count);
         Assert.Equal(expected.Length, handler.Progress.Count);
         for (var i = 0; i < expected.Length; i++) Assert.Equal(expected[i], handler.Progress[i], 6);
     }
@@ -121,7 +121,42 @@ public class PlaybackHlsStartOverTests
         Assert.Equal(1531.9, player.Source, 6);
         await player.SkipAsync(forward: false);
         Assert.Equal(1521.9, player.Source, 6);
-        Assert.Empty(handler.Reanchors);
+        Assert.Collection(handler.Reanchors, value => Assert.Equal(1531.9, value, 6), value => Assert.Equal(1521.9, value, 6));
+    }
+
+    [Theory]
+    [InlineData(18.596, 0, 48.596, 874.07, false)]
+    [InlineData(913.77, 0, 903.77, 1519.82, false)]
+    [InlineData(1529.774, 0, 1519.774, 2281.81, true)]
+    [InlineData(18.06, 1710.5, 900, 2800, false)]
+    public async Task GrowingHlsDoesNotTrustInRangeSeeksThatJumpToTheProductionEdge(
+        double position, double offset, double target, double edge, bool paused)
+    {
+        using var handler = new HlsHandler("server_remux_hls");
+        using var client = Create(handler);
+        var installation = new Installation();
+        var start = Start(new(AudioIndex: 1), 0);
+        var plan = (await client.Playback.StartAsync(start, installation)).PlaybackPlan!;
+        plan.Timeline!.TimelineOffsetSeconds = offset;
+        plan.Timeline.SourceStartSeconds = offset;
+        plan.Timeline.SeekWindowStartSeconds = offset;
+        var reporter = client.Playback.CreateProgressReporter(installation, new InMemoryPlaybackJournal(), "login");
+        await reporter.AttachSessionAsync("session", offset);
+        var original = new MediaPlaybackSession(position)
+        {
+            CanSeek = true, Ranges = [(0, edge)], LiveEdge = edge,
+            PlaybackState = paused ? MediaPlaybackState.Paused : MediaPlaybackState.Playing,
+        };
+        using var player = new PlayerPage(client, start, plan, installation, reporter, original);
+        // Opening can advance before the continuation resumes. It must not native-seek again.
+        player.OpenSession = (_, begin) => new(begin + 0.2) { CanSeek = true, Ranges = [(0, edge)], LiveEdge = edge };
+        Assert.Equal("Completed", await player.SeekSourceAsync(target));
+        Assert.Equal(target, Assert.Single(handler.Reanchors), 6);
+        Assert.Equal(0, original.NativeSeeks);
+        Assert.Equal(0, player.Session.NativeSeeks);
+        Assert.Equal(target + 0.2, player.Source, 6);
+        Assert.Equal(paused, player.IsPaused);
+        Assert.Equal(player.Source, Assert.Single(handler.Progress), 6);
     }
 
     // Minimal V3 wire plans follow cmd/playbackfixtures' decision shape and the server's
@@ -149,11 +184,13 @@ public class PlaybackHlsStartOverTests
             if (path.EndsWith("/replan", StringComparison.Ordinal))
             {
                 Assert.Equal("seek_reanchor", root.GetProperty("operation").GetString());
-                Assert.Equal(0, root.GetProperty("attempt_count").GetInt32());
+                // The real v2 endpoint rejects zero before it even reaches the replan handler.
+                Assert.Empty(PlaybackReplanContractTests.EnvelopeErrors(root));
+                Assert.Equal(1, root.GetProperty("attempt_count").GetInt32());
                 Assert.Empty(root.GetProperty("attempted_plan_keys").EnumerateArray());
                 Assert.False(root.TryGetProperty("failure", out _));
-                Assert.Equal("plan", root.GetProperty("failed_plan_id").GetString());
-                Assert.Equal("route", root.GetProperty("plan_attempt_key").GetString());
+                Assert.Equal("plan-0123456789", root.GetProperty("failed_plan_id").GetString());
+                Assert.Equal("v3:0123456789abcdef", root.GetProperty("plan_attempt_key").GetString());
                 Assert.Equal(1, root.GetProperty("selected_tracks").GetProperty("audio").GetProperty("index").GetInt32());
                 var source = root.GetProperty("position_seconds").GetDouble();
                 Reanchors.Add(source);
@@ -175,7 +212,7 @@ public class PlaybackHlsStartOverTests
                 * (delivery == "server_remux_hls" ? 8 : 2);
             var plan = new PlaybackPlan
             {
-                ProtocolVersion = 3, PlanId = "plan", PlanAttemptKey = "route", SessionId = "session", Delivery = delivery,
+                ProtocolVersion = 3, PlanId = "plan-0123456789", PlanAttemptKey = "v3:0123456789abcdef", SessionId = "session", Delivery = delivery,
                 RequestedMediaFileId = "file", EffectiveMediaFileId = "file",
                 Stream = new() { Url = $"/api/v2/playback/transcode/session-{Reanchors.Count}/master.m3u8",
                     Protocol = "hls", MimeType = "application/vnd.apple.mpegurl", Container = "hls", HeaderRefresh = "none" },

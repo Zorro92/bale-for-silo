@@ -6,6 +6,36 @@ namespace Bale.Core.Tests;
 public class PlayPlanOptionsTests
 {
     [Fact]
+    public void HlsReanchorProbeKeepsTracksDecodeClaimsAndExplicitStartOver()
+    {
+        Assert.True(PlayPlanOptions.TryParse(["--delivery", "hls", "--start", "0", "--reanchor", "900.5",
+            "--reanchor", "890.5", "--inspect-hls"], out var options, out _));
+        Assert.Equal(0, options.StartSeconds);
+        Assert.Equal(new[] { 900.5, 890.5 }, options.ReanchorSeconds);
+        Assert.True(options.InspectHls);
+        var original = PlaybackTestSupport.Start(new(AudioIndex: 1));
+        var forced = options.Apply(original);
+        Assert.Same(original.ClientCapabilities, forced.ClientCapabilities);
+        Assert.Equal(original.AudioTrackIndex, forced.AudioTrackIndex);
+        Assert.Same(original.ClientPlaybackContext.Deliveries["hls"], forced.ClientPlaybackContext.Deliveries["hls"]);
+        Assert.All(forced.ClientPlaybackContext.Deliveries.Where(pair => pair.Key != "hls"), pair =>
+        {
+            Assert.False(pair.Value.Enabled);
+            Assert.False(pair.Value.SupportedOnDevice);
+        });
+    }
+
+    [Theory]
+    [InlineData("--delivery", "direct")]
+    [InlineData("--start", "-1")]
+    [InlineData("--start", "NaN")]
+    [InlineData("--reanchor", "Infinity")]
+    [InlineData("--reanchor", "31536001")]
+    [InlineData("--reanchor", "12,5")]
+    public void HlsProbeRejectsUnknownDeliveryAndInvalidSourcePositions(string flag, string value) =>
+        Assert.False(PlayPlanOptions.TryParse([flag, value], out _, out _));
+
+    [Fact]
     public void DefaultsUseMeasuredCapabilitiesAndAnImmediateStop()
     {
         Assert.True(PlayPlanOptions.TryParse([], out var options, out var error));

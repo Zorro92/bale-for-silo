@@ -1,0 +1,120 @@
+{
+  "$comment": "Top-level PlaybackReplanBody constraints from Silo-Server/silo-server@75e10d327adf3e05b2263f4740904705dca301d2 contracts/api/v2/openapi.json. Nested client evidence and track schemas are covered separately.",
+  "additionalProperties": false,
+  "required": [
+    "installation_id",
+    "protocol_version",
+    "playback_attempt_id",
+    "replan_request_id",
+    "failed_plan_id",
+    "plan_attempt_id",
+    "plan_attempt_key",
+    "attempted_plan_keys",
+    "attempt_count",
+    "quality_preference",
+    "position_seconds",
+    "selected_tracks",
+    "client_capabilities",
+    "client_playback_context"
+  ],
+  "properties": {
+    "attempt_count": {
+      "maximum": 8,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "attempted_plan_keys": {
+      "maxItems": 16,
+      "type": "array"
+    },
+    "bandwidth_cap_kbps": {
+      "type": "integer"
+    },
+    "bandwidth_estimate_kbps": {
+      "type": "integer"
+    },
+    "bandwidth_estimate_source": {
+      "enum": [
+        "probe",
+        "observed_rebuffer"
+      ],
+      "type": "string"
+    },
+    "client_capabilities": {},
+    "client_features": {
+      "type": "array"
+    },
+    "client_playback_context": {},
+    "failed_plan_id": {
+      "maxLength": 128,
+      "minLength": 8,
+      "type": "string"
+    },
+    "failure": {},
+    "installation_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "learned_limit": {
+      "enum": [
+        "ignore",
+        "clear"
+      ],
+      "type": "string"
+    },
+    "local_mutations": {
+      "maxItems": 8,
+      "type": "array"
+    },
+    "metered": {
+      "type": "boolean"
+    },
+    "observed_throughput_kbps": {
+      "maximum": 1000000,
+      "minimum": 100,
+      "type": "integer"
+    },
+    "operation": {
+      "enum": [
+        "failure_recovery",
+        "seek_reanchor",
+        "seek_failure_recovery",
+        "track_change",
+        "quality_change",
+        "output_change"
+      ],
+      "type": "string"
+    },
+    "plan_attempt_id": {
+      "maxLength": 128,
+      "minLength": 8,
+      "type": "string"
+    },
+    "plan_attempt_key": {
+      "maxLength": 128,
+      "minLength": 8,
+      "type": "string"
+    },
+    "playback_attempt_id": {
+      "maxLength": 128,
+      "minLength": 8,
+      "type": "string"
+    },
+    "position_seconds": {
+      "minimum": 0,
+      "type": "number"
+    },
+    "protocol_version": {
+      "type": "integer"
+    },
+    "quality_preference": {
+      "type": "string"
+    },
+    "replan_request_id": {
+      "maxLength": 128,
+      "minLength": 8,
+      "type": "string"
+    },
+    "selected_tracks": {}
+  }
+}
