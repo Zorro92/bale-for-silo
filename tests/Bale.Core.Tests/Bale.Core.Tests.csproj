@@ -37,6 +37,10 @@
     <Compile Include="../../src/Bale.Xbox/Services/DebugPlaytest.cs" Link="DebugPlaytest.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugFfmpegPlaytest.cs" Link="DebugFfmpegPlaytest.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugFfmpegPlayback.cs" Link="DebugFfmpegPlayback.cs" />
+    <Compile Include="../../src/Bale.Xbox/Services/DebugPlaybackDelivery.cs" Link="DebugPlaybackDelivery.cs" />
+    <None Include="../../src/Bale.Xbox/Services/DebugPlaybackDelivery.cs" Link="DebugPlaybackDelivery.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Execute the actual Xbox seek/reanchor orchestration with a minimal media-session stand-in. -->
+    <Compile Include="../../src/Bale.Xbox/PlayerPage.Seek.cs" Link="PlayerPage.Seek.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugFfmpegInputTuning.cs" Link="DebugFfmpegInputTuning.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugFfmpegInputTuning.cs" Link="DebugFfmpegInputTuning.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugHdrPlayback.cs" Link="DebugHdrPlayback.cs" />

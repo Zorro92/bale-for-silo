@@ -23,6 +23,7 @@
 #   scripts/bale-debug.sh wait --timeout 12000 loaded  default 8000 ms; 0–15000; timeout prints where and fails
 #   scripts/bale-debug.sh ffmpeg <mode>         next real-player attempt: policy (default)|direct|off; memory only, HLS unchanged
 #                                               direct: every direct mount demuxes with FFmpeg, video still system (hardware) decoded
+#   scripts/bale-debug.sh delivery [hls|auto]   next playback attempts: force HLS or restore auto (default); memory only until reset/restart; no args = status
 #   scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default] [prefetch=N|default] [buffer=ms|default] [ahead=N|default] [delay=N|default] [prio=N|default] [maxres=0|1|default] [dpb=N|default] [grain=dav1d|gpu|off|on|default]
 #                                               no args = current overrides; omitted keys unchanged; default restores that key's release setting
 #                                               next FFmpeg player attempt only; on = 64 MiB / 30 s, readsize 16384–1048576 bytes, prefetch 2–16 blocks, buffer = MediaStreamSource.BufferTime 0–5000 ms (FFmpegInteropX sets 0)
@@ -189,6 +190,17 @@ case "${1:-}" in
       exit 2
     fi
     curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/ffmpeg" --data-urlencode "mode=$2"
+    ;;
+  delivery)
+    if [[ "$#" -gt 2 || ! "${2-auto}" =~ ^(hls|auto)$ ]]; then
+      echo 'usage: scripts/bale-debug.sh delivery [hls|auto]' >&2
+      exit 2
+    fi
+    if [[ "$#" == 1 ]]; then
+      curl --fail-with-body -sS --max-time 5 "$BASE/delivery"
+    else
+      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/delivery" --data-urlencode "mode=$2"
+    fi
     ;;
   ffmpeg-tune)
     shift

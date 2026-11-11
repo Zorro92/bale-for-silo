@@ -64,6 +64,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
 #if DEBUG_SERVER
         // Match the capability claim and backend even if the debug toggle changes during a request/replan.
         public string FfmpegMode { get; } = DebugFfmpegPlayback.Mode;
+        public string DeliveryMode { get; } = DebugPlaybackDelivery.Mode;
         public DebugFfmpegInputTuning FfmpegTuning { get; } = DebugFfmpegInputTuning.Current;
         public bool FfmpegTuningLogged { get; set; }
         public bool PretendHdr { get; } = DebugHdrPlayback.Pretend;
@@ -186,12 +187,15 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);
                 capabilities = DebugHdrPlayback.Capabilities(attempt.PretendHdr, capabilities);
 #endif
-                var start = attempt.Start = PlaybackStartBuilder.Build(request.Detail, request.Selection,
+                var start = PlaybackStartBuilder.Build(request.Detail, request.Selection,
                     services.ProfileId, Guid.NewGuid().ToString(), startPosition, capabilities, DeviceIdentity.Current());
 #if DEBUG_SERVER
+                start = DebugPlaybackDelivery.Apply(attempt.DeliveryMode, start);
+                if (attempt.DeliveryMode == "hls") Log.Info("player: delivery forced=hls");
                 if (attempt.Av1ClaimMaxHeight == 2160 && attempt.FfmpegEnabled)
                     Log.Info("player: av1 claim=2160p (debug)");
 #endif
+                attempt.Start = start;
                 var decision = await client.Playback.StartAsync(start, services.Installation, ct);
                 var validation = PlaybackMessages.ValidatePlayable(decision);
                 if (!validation.IsPlayable)
@@ -206,6 +210,9 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 attempt.PlanAttemptId = Guid.NewGuid().ToString();
                 var timeline = PlaybackTimeline.From(attempt.Plan.Timeline);
                 attempt.Position = _sourcePosition = timeline.SourceStart(startPosition, request.OverridePosition);
+#if DEBUG_SERVER
+                Log.Info($"player: start timeline request={startPosition:0.###} source={timeline.SourceStartSeconds:0.###} player={timeline.PlayerStartSeconds:0.###} offset={timeline.TimelineOffsetSeconds:0.###}");
+#endif
                 // Journal an admitted session even if Back arrived with the reply or opening fails.
                 // Otherwise a failed mount could leave a server session with no final stop authority.
                 await AttachSessionAsync(attempt);
@@ -293,18 +300,6 @@ public sealed partial class PlayerPage : Page, IBackHandler
         catch (OperationCanceledException) { }
         catch (Exception ex) { LogFailure("position", ex); }
         finally { _recording = false; }
-    }
-
-    private double SourcePosition(Attempt attempt)
-    {
-        try
-        {
-            if (attempt.Media is { Opened: true, Player: { } player } media
-                && media.Transport.Timeline.SourceForPlayer(player.PlaybackSession.Position.TotalSeconds) is { } source)
-                attempt.Position = source;
-        }
-        catch (Exception ex) { LogFailure("position snapshot", ex); }
-        return _sourcePosition = attempt.Position;
     }
 
     private bool IsCurrent(Attempt attempt, Mount media) => _active && !_leaving && !_suspended

@@ -5,6 +5,42 @@ namespace Bale.Core.Tests;
 public class DebugPlaytestScriptTests
 {
     [Theory]
+    [InlineData(null)]
+    [InlineData("hls")]
+    [InlineData("auto")]
+    public async Task DeliverySwitchUsesStatusOrAnEncodedPost(string? mode)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(mode is null ? ["delivery"] : ["delivery", mode]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/delivery\n", result.Arguments);
+        Assert.Contains("--max-time\n5\n", result.Arguments);
+        if (mode is null)
+        {
+            Assert.DoesNotContain("POST", result.Arguments);
+            Assert.DoesNotContain("--data-urlencode", result.Arguments);
+        }
+        else
+        {
+            Assert.Contains("-X\nPOST\n", result.Arguments);
+            Assert.Contains("--data-urlencode\nmode=" + mode + "\n", result.Arguments);
+        }
+    }
+
+    [Fact]
+    public async Task InvalidDeliveryModesAndExtraArgumentsNeverInvokeCurl()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[] { new[] { "delivery", "" }, ["delivery", "HLS"], ["delivery", "hls "],
+            ["delivery", "status"], ["delivery", "off"], ["delivery", "hls", "auto"] })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
+    [Theory]
     [InlineData("video")]
     [InlineData("gpu")]
     [InlineData("audio")]

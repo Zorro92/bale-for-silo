@@ -45,6 +45,8 @@ namespace Bale.Xbox.Services;
 ///   GET  /playtest-engine?url=...  muted IMFMediaEngine frame-server probe; seconds=3 (1–60), mode=cs|rust|rust-ffmpeg (Rust port in bale_gpu.dll; rust-ffmpeg = FFmpeg software source via engine extension),
 ///                                  target=bgra|fp16|rgb10 (mode=rust only, default bgra: engine output format and texture; fp16/rgb10 add the HDR readback and an hdr-range= verdict)
 ///   POST /ffmpeg?mode=...  next real-player attempt: policy (default)|direct (FFmpeg demux, system video, every direct mount)|off; memory only
+///   GET  /delivery        current memory-only delivery override; default auto
+///   POST /delivery?mode=hls  hls|auto; next attempts disable non-HLS deliveries; restart resets
 ///   GET  /ffmpeg-tune     current memory-only FFmpeg overrides
 ///   POST /ffmpeg-tune?readahead=on&readsize=65536&prefetch=8  next FFmpeg player attempt; each key accepts default
 ///                         optional buffer=0–5000, ahead=0–64, delay=0–64, prio=0–2, maxres=0|1|default, dpb=0–16|default (system video only)
@@ -208,7 +210,7 @@ internal sealed partial class DebugServer
         var target = new Uri("http://bale" + parts[1]);
         var path = target.AbsolutePath.TrimEnd('/');
         var query = ParseQuery(target.Query, out var duplicateQueryKeys);
-        if (duplicateQueryKeys && path is ("/playtest-ffmpeg" or "/ffmpeg-tune" or "/stats-rows" or "/frame-trace" or "/display-match" or "/gc" or "/frame-delivery" or "/stream-adapter" or "/av1-claim" or "/idle-test" or "/webview-test"))
+        if (duplicateQueryKeys && path is ("/playtest-ffmpeg" or "/ffmpeg-tune" or "/delivery" or "/stats-rows" or "/frame-trace" or "/display-match" or "/gc" or "/frame-delivery" or "/stream-adapter" or "/av1-claim" or "/idle-test" or "/webview-test"))
             return ("400 Bad Request", "query keys must appear at most once\n");
 
         switch (method, path)
@@ -294,6 +296,17 @@ internal sealed partial class DebugServer
                     return ("400 Bad Request", "mode must be policy, direct or off\n");
                 Log.Info($"Debug FFmpeg mode: {ffmpegMode}; applies to the next playback attempt");
                 return ("200 OK", $"FFmpeg mode: {ffmpegMode}; applies to the next playback attempt\n");
+
+            case ("GET", "/delivery"):
+                if (query.Count != 0) return ("400 Bad Request", "delivery status takes no query keys\n");
+                return ("200 OK", $"Delivery mode: {DebugPlaybackDelivery.Mode}; applies to the next playback attempt\n");
+
+            case ("POST", "/delivery"):
+                var deliveryMode = query.GetValueOrDefault("mode");
+                if (query.Count != 1 || !DebugPlaybackDelivery.TrySet(deliveryMode))
+                    return ("400 Bad Request", "mode must be hls or auto\n");
+                Log.Info($"Debug delivery mode: {deliveryMode}; applies to the next playback attempt");
+                return ("200 OK", $"Delivery mode: {deliveryMode}; applies to the next playback attempt\n");
 
             case ("GET", "/ffmpeg-tune"):
                 return ("200 OK", $"FFmpeg tuning: {DebugFfmpegInputTuning.Current.Description}; applies to the next FFmpeg player attempt\n");

@@ -15,6 +15,18 @@ public sealed partial class PlayerPage
     private double? _skipTarget;
     private double? _pendingSkipTarget;
 
+    private double SourcePosition(Attempt attempt)
+    {
+        try
+        {
+            if (attempt.Media is { Opened: true, Player: { } player } media
+                && media.Transport.Timeline.SourceForPlayer(player.PlaybackSession.Position.TotalSeconds) is { } source)
+                attempt.Position = source;
+        }
+        catch (Exception ex) { LogFailure("position snapshot", ex); }
+        return _sourcePosition = attempt.Position;
+    }
+
     internal bool HandleSkipKey(VirtualKey key, bool firstDown)
     {
         var direction = key switch
@@ -84,9 +96,14 @@ public sealed partial class PlayerPage
             var paused = request.Pause || player.PlaybackSession.PlaybackState == MediaPlaybackState.Paused;
             var session = player.PlaybackSession;
             var ranges = session.GetSeekableRanges().Select(range => (range.Start.TotalSeconds, range.End.TotalSeconds)).ToArray();
-            if (ranges.Length == 0 && session.CanSeek && session.NaturalDuration > TimeSpan.Zero)
-                ranges = [(0, session.NaturalDuration.TotalSeconds)];
-            if (!request.CanSeekInMount(attempt.Plan!, media.Transport.IsHls, session.CanSeek, ranges))
+            // PlaybackTimelineSeekPolicy.kt: only a proven mounted extent may fill an open HLS
+            // window. NaturalDuration is not a seekable range; guessing [0, duration] can send a
+            // native seek outside produced media. An unknown window needs a server reanchor.
+            var local = request.CanSeekInMount(attempt.Plan!, media.Transport.IsHls, session.CanSeek, ranges);
+#if DEBUG_SERVER
+            Log.Info($"player: seek target={request.Seconds:0.###} player={session.Position.TotalSeconds:0.###} offset={media.Transport.Timeline.TimelineOffsetSeconds:0.###} ranges={ranges.Length} action={(local ? "native" : "reanchor")}");
+#endif
+            if (!local)
             {
                 if (!attempt.ServerFeatures.Contains(PlaybackSeekReanchor.Feature)) return new(SeekOutcome.Unavailable);
                 media = await ReanchorSeekAsync(attempt, media, request.Seconds, paused);
@@ -121,6 +138,7 @@ public sealed partial class PlayerPage
 #if DEBUG_SERVER
                 media.FrameDelivery?.SetSeeking(false);
                 RefreshStats(attempt);
+                Log.Info($"player: seek completed source={source:0.###} player={session.Position.TotalSeconds:0.###}");
 #endif
                 // Flush the actual landed SOURCE position, even for a clamped skip smaller than
                 // the journal's normal 10-content-second threshold. A failed HTTP flush stays durable.

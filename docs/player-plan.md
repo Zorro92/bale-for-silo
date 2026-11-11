@@ -1109,6 +1109,36 @@ outside the current timeline/duration and seeks that do not complete within 10 s
 explicitly. These endpoints and the player hooks compile only under `DEBUG_SERVER`; production
 builds cannot use either override.
 
+**Debug HLS reproduction:** `scripts/bale-debug.sh delivery hls` disables non-HLS deliveries on
+subsequent attempts without changing start time, selected tracks, codec/HDR evidence or the HLS
+claims. `delivery auto` restores normal planning; no argument reads the mode. The switch is
+memory-only, captured per attempt, and disappears with `BaleDebugServer=false`. CI's development
+MSIX uses `Configuration=Release` **with** `DEBUG_SERVER`; the shipping configuration omits it.
+The forced attempt logs `player: delivery forced=hls`; the accepted plan still logs the actual
+`delivery=server_remux_hls` or `delivery=server_transcode_hls`. Copyable H.264/HEVC SDR with
+supported audio and subtitles Off is a useful remux candidate. Unsupported video/HDR, burn-in
+subtitles or quality/bandwidth limits may require video transcoding instead; audio-only
+conversion can still use `server_remux_hls`.
+
+To check skips: enable the switch, open Detail for an item with saved progress, choose **Start
+over**, let it play about 14 seconds, then RT twice and LT three times (or keyboard L, L, J, J, J).
+Expect roughly 14 → 44 → 74 → 64 → 54 → 44 seconds, allowing playback between presses. Repeat
+with Resume, then leave playback and reset `delivery auto`. No special media or server setting
+is required to force HLS; the server still needs an executable HLS route.
+
+The start log records request/source/player/offset seconds; Start over must send explicit zero
+regardless of delivery. An omitted start position asks the server to restore saved progress.
+Copy-remux plans use the preceding keyframe as `timeline_offset_seconds`, a player start of
+`source_start_seconds - offset`, and an open source-time seek window beginning at that origin
+(`configureCopyRemuxTimelineV3` in silo-server). Growing encoded HLS uses an aligned segment
+origin; complete synthetic VOD uses offset zero and `can_seek_anywhere=true`.
+`NaturalDuration` cannot replace missing native seekable ranges for an open window. The player
+must reanchor unknown/out-of-window targets, matching Android's `PlaybackTimelineSeekPolicy.kt`.
+Debug seek logs show target, player clock, offset, range count, native/reanchor choice and landed
+source/player clocks. The Linux regression harness runs the actual `PlayerPage.Seek.cs`, source
+mapping, authenticated start/replan, media transport and progress reporter, with a native-session
+stand-in; it does not emulate AdaptiveMediaSource's parsing or Xbox's native HLS landing.
+
 **Decision: keep server tone mapping.** The owner's console comparison on **0.1.237** used
 *Avatar Aang* (1080p HEVC Main10 HDR10+) at **600 / 1800 / 3000 / 4500 seconds**. The media
 pipeline's automatic HDR-to-SDR conversion (`hdr pretend`) looked washed out and desaturated,
