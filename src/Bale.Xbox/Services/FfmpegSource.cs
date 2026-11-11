@@ -12,7 +12,7 @@ internal static class FfmpegSource
         FfmpegLogging.Configure();
         if (!route.UseFfmpeg || (route.SoftwareVideo
             ? !SoftwareDecodePolicy.VideoCodecs.Contains(route.VideoCodec!)
-            : route.VideoCodec is not null && !ConsoleEvidence.Default.VideoDecode.Any(decode => decode.Hardware && decode.Codec == route.VideoCodec)))
+            : route.VideoCodec is not null && !SoftwareDecodePolicy.SystemVideoCodecs.Contains(route.VideoCodec)))
             throw new InvalidDataException("The video codec cannot use the local fallback.");
         var config = new MediaSourceConfig();
         // Never Automatic: FFmpeg D3D11 and non-AV1 software video are forbidden by owner policy.

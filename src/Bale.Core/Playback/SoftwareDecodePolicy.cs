@@ -6,6 +6,16 @@ public static class SoftwareDecodePolicy
     // The project owner maintains this allowlist. Add no other software video codec without them.
     public static IReadOnlyList<string> VideoCodecs { get; } = Array.AsReadOnly(new[] { "av1" });
 
+    // Codecs the system (hardware) decoders may take. A claim for one still needs the fixed
+    // baseline or the console's decoder probe (ConsoleEvidence.ForHardware).
+    public static IReadOnlyList<string> SystemVideoCodecs { get; } = Array.AsReadOnly(new[] { "h264", "hevc", "vp9" });
+
+    // Hardware codecs that play only through FFmpeg's demuxer feeding the system decoder.
+    // Windows' own WebM source opened VP9 but never left Paused at 0 s, and its MP4 source and
+    // AdaptiveMediaSource are untested for VP9 (docs/player-plan.md). So every direct VP9 file
+    // takes the FFmpeg demuxer, HLS never carries VP9, and "ffmpeg off" withdraws the claim.
+    public static IReadOnlyList<string> DemuxedVideoCodecs { get; } = Array.AsReadOnly(new[] { "vp9" });
+
     // Measured Media Foundation playback, not merely installed decoder registrations.
     public static IReadOnlyList<string> SystemAudioCodecs { get; } = Array.AsReadOnly(new[] { "aac", "ac3", "eac3", "mp3", "pcm" });
 
@@ -17,6 +27,7 @@ public static class SoftwareDecodePolicy
         null or "" => null,
         "h265" or "h.265" or "x265" => "hevc",
         "h.264" or "avc" or "x264" => "h264",
+        "vp09" => "vp9",
         "e-ac-3" or "ec-3" => "eac3",
         "mlp fba" => "truehd",
         { } value when value.StartsWith("pcm_", StringComparison.Ordinal) => "pcm",
@@ -39,10 +50,11 @@ public static class SoftwareDecodePolicy
         VideoDecode = device.VideoDecode.Where(decode => decode.Hardware).ToArray(),
     };
 
+    /// <summary>Drops every claim that needs FFmpeg: software video, demuxer-only video and fallback audio.</summary>
     public static DeviceCapabilities WithoutFallbacks(DeviceCapabilities device) => device with
     {
-        VideoCodecs = device.VideoCodecs.Where(codec => !VideoCodecs.Contains(codec)).ToArray(),
-        VideoDecode = device.VideoDecode.Where(decode => decode.Hardware).ToArray(),
+        VideoCodecs = device.VideoCodecs.Where(codec => !VideoCodecs.Contains(codec) && !DemuxedVideoCodecs.Contains(codec)).ToArray(),
+        VideoDecode = device.VideoDecode.Where(decode => decode.Hardware && !DemuxedVideoCodecs.Contains(decode.Codec)).ToArray(),
         AudioDecodeCodecs = device.AudioDecodeCodecs.Where(codec => !AudioCodecs.Contains(codec)).ToArray(),
     };
 
@@ -63,7 +75,10 @@ public static class SoftwareDecodePolicy
 
     internal static PlaybackStartRequestV3 WithoutFailedFallbacks(PlaybackStartRequestV3 start, PlaybackRouteDecision route)
     {
-        bool KeepVideo(string codec) => !route.SoftwareVideo || !VideoCodecs.Contains(codec);
+        // A software route withdraws the software video codecs. A system-decoder route withdraws its
+        // own codec only when that codec exists here solely through this FFmpeg route (VP9).
+        bool KeepVideo(string codec) => route.SoftwareVideo ? !VideoCodecs.Contains(codec)
+            : codec != route.VideoCodec || !DemuxedVideoCodecs.Contains(codec);
         bool KeepAudio(string codec) => !route.SoftwareAudio || codec != route.AudioCodec;
         var capabilities = start.ClientCapabilities with
         {

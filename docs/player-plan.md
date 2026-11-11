@@ -36,7 +36,7 @@ Evidence so far (console, `bale-debug.sh caps`, build 0.1.200):
 | MP4 H.264 + AAC, MP4 HEVC (2 clips), MP4 AC3, MP4 EAC3 | **plays** |
 | MP4 HEVC Main10 1280x720 (SDR and HDR10-tagged), MP4 HEVC 3840x2160 8-bit | **plays** (0.1.215). Bale claims HEVC 8 and 10-bit. |
 | MP4 / WebM AV1 (8-bit and 10-bit) | **fails**: `UnsupportedSubtype`, MediaFailed 0xC00D5212 (no decoder). Definitive: MediaPlayer can't play AV1 here. |
-| WebM VP8+Vorbis, VP9, VP9+Opus | opens, decoders report FullySupported, but never leaves Paused at 0 s. Unexplained; WebM is rare in libraries, so don't claim it. |
+| WebM VP8+Vorbis, VP9, VP9+Opus | opens, decoders report FullySupported, but never leaves Paused at 0 s. Unexplained. This is Windows' own WebM source, so Bale never uses it: VP9 goes through the FFmpeg demuxer (see the claims below). |
 | MP4 FLAC, MP4 Opus | `UnsupportedSubtype`: MP4's `fLaC`/`Opus` sample entries aren't mapped, though the FLAC/Opus decoders exist. Retest inside MKV with real files. |
 
 ### GPU decode (`caps gpu`, D3D11 video device, build 0.1.223)
@@ -73,7 +73,11 @@ conclusion, which rests on the profile list.
 Still to test with real library files: TrueHD/DTS passthrough to a receiver.
 
 The capability claims Bale sends the server must come from this kind of evidence, never from
-guesses. `playtest` (debug only) checks actual playback, not just installed decoders.
+guesses. For hardware video, the hardware decoder's own report is that evidence: at launch Bale
+asks the D3D11 video device (`HardwareDecodeProbe`, the same walk `caps gpu` prints) for the
+largest of 1080p, 4K and 8K each decoder profile accepts, and claims exactly that. Software
+decode and audio still need measured playback. `playtest` (debug only) checks actual playback,
+not just installed decoders.
 
 **Decision: ship FFmpegInteropX as the production fallback.** By the project owner's rule,
 software **video** decode is **AV1 only**. `SoftwareDecodePolicy.VideoCodecs` is an explicit,
@@ -85,17 +89,17 @@ SmackDown (1080p59.94 10-bit, 6.4 Mbps, zero-copy, 0 late frames over ~4.5 min, 
 3840×2160 entry capped at 30 fps; the server's platform-attested rates are absolute and it accepts a
 source that any one entry admits. Audio may use FFmpeg software whenever the system path cannot handle it.
 
-Current production capability claims (`ConsoleEvidence.Default` plus runtime display detection, max audio channels **8**):
+Current production capability claims (`ConsoleEvidence.ForHardware` over the decoder probe, plus runtime display detection, max audio channels **8**):
 
 | Stream | Claims / engine | Bounds / limitations |
 |---|---|---|
-| H.264 / HEVC video | Media Foundation, hardware | 1920×1080, 60 fps, 25 Mbps; H.264 8-bit, HEVC 8/10-bit |
+| H.264 / HEVC / VP9 video | Media Foundation, hardware | The largest size the console's decoder reports per codec, 60 fps, no bitrate limit. H.264 is 8-bit; HEVC is 8-bit if Main is present and 10-bit if Main10 is; VP9 is 8-bit for profile 0 and 10-bit for profile 2. Series X: H.264 1920×1080, HEVC 7680×4320 8/10-bit, VP9 3840×2160 8/10-bit. VP9 is claimed only when the decoder reports it. If the probe fails or finds nothing: H.264 and HEVC at 1920×1080, 60 fps, 25 Mbps, no VP9 |
 | AV1 video | dav1d, **non-hardware**; `software_video_decode_v1` opt-in | 8/10-bit, **1920×1080, 60 fps**; no 4K claim |
 | System audio | `aac`, `ac3`, `eac3`, `mp3`, `pcm` | Retains the native direct path unless AV1 needs FFmpeg |
 | FFmpeg fallback audio | `dts`, `dts_hd`, `truehd`, `flac`, `opus`, `vorbis`, `alac` | Decode to PCM, not passthrough; real-library console verification pending |
 | Audio passthrough | None | Receiver verification pending |
 | Display HDR | Runtime HDMI detection, HDR10 only | Exact evidence after a successful read; unknown/empty HDR on failure |
-| HLS | System video/audio claims only | AdaptiveMediaSource cannot use FFmpeg fallbacks |
+| HLS | System video/audio claims only, without VP9 | AdaptiveMediaSource cannot use FFmpeg fallbacks or its demuxer |
 | Subtitles | Own overlay: text sidecars (ASS/SSA, SubRip, WebVTT); PGS/DVD/DVB images from a direct-played MKV | Image tracks are an `original_http` `native_embedded` claim only (`embedded_subtitles_v1`); HLS/transcodes burn them in. Console verification of image tracks pending |
 
 `PlaybackRoutePolicy.Decide` selects the pipeline separately for every mount. `original_http` /
@@ -149,6 +153,15 @@ and blocked on the network: 60 s A/B at the same point, native 211 waits / 33.7 
 FFmpeg 5 waits / 1.15 s / 110 MB, and visibly smoother on the console. The likely trigger is sparse
 SRT subtitle tracks. MP4 (faststart, no subtitles) measured the same on both routes (10 vs 6
 startup-only waits, 80 vs 76 MB in 60 s), so MP4 stays on Windows' source.
+
+**VP9 always uses the FFmpeg demuxer**, in any container, with the system (hardware) VP9 decoder.
+FFmpegInteropX hands VP9 packets to Media Foundation undecoded, as it does H.264 and HEVC
+(`ForceSystemDecoder`; never FFmpeg's D3D11 or software VP9). The server files `.webm` as `mkv`,
+so there is no separate WebM container claim, and VP9 is never offered over HLS. Evidence so far:
+the decoder probe lists VP9 profile 0 and profile 2 up to 4K, and the IMFMediaEngine suite played
+a VP9 clip through the system decoder. Direct play of a real VP9 library file on this route is
+still to be verified on the console. A failed open or decode replans to a server transcode with
+the VP9 claim withdrawn.
 
 FFmpegInteropX moves its preferred audio
 stream first; Bale restores Silo's audio ordinal by sorting `AudioStreams[].StreamIndex` and sets
@@ -1097,12 +1110,13 @@ menu, so a cinephile who wants the highest-quality file every time can turn it o
 **Codec claims stay decoder-based.** The capabilities sent to the server say what the console can
 decode and never shrink to the display; the display's size lives only in this version choice. The
 choice reads the same production decode claims the player sends (`PlaybackClaims`), so the Detail
-readout names the file the player will ask for. Today those claims stop at 1920×1080, so even on a
-4K TV a title with both versions plays its 1080p one; that follows the claims and changes when
-they do. The debug-only claim overrides stay in `PlayerPage` and are not seen by the matching.
+readout names the file the player will ask for. The hardware claims follow the decoder probe, so
+on a Series console a 4K TV gets a title's 4K HEVC version and a 1080p TV its 1080p one. The
+debug-only claim overrides stay in `PlayerPage` and are not seen by the matching.
 
 `PlaybackClaims.RefreshVersionMatch` sets the match on the UI thread at launch, once the window
-is active, and again each time a Detail page opens, since the TV can change. The safe log is
+is active, and again each time a Detail page opens, since the TV can change. The launch call also
+starts the decoder probe on a pool thread; the match is set when it finishes. The safe log is
 `version match: display=<height>p claims=<count>` or `version match: off (no display modes)`,
 written when it changes. This is separate from phase 6's display *mode* matching below, which
 switches the HDMI mode to fit the content and logs `display match:`.

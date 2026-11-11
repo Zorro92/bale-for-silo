@@ -8,8 +8,9 @@ public class DebugGpuCapabilitiesTests
     {
         var source = Read();
         Assert.StartsWith("#if DEBUG_SERVER", source);
-        Assert.True(source.IndexOf("AppendD3D12GpuCapabilities(builder);", StringComparison.Ordinal)
-            > source.IndexOf("ReleaseGpuCom(videoDevice);", StringComparison.Ordinal));
+        // The shared D3D11 walk releases its own device before it returns.
+        var d3d11 = source.IndexOf("var report = HardwareDecodeProbe.Enumerate(", StringComparison.Ordinal);
+        Assert.True(d3d11 >= 0 && source.IndexOf("AppendD3D12GpuCapabilities(builder);", StringComparison.Ordinal) > d3d11);
         var probe = D3D12Probe(source);
         Assert.Contains("AppendGpuGameMode(builder);", probe);
         Assert.Contains("AppendGpuConsoleModel(builder);", probe);

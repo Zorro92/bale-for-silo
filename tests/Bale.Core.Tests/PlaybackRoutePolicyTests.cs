@@ -44,7 +44,10 @@ public class PlaybackRoutePolicyTests
     [InlineData("original_http", "h264", "truehd", true, false)]
     [InlineData("original_http", "hevc", "eac3", false, false)]
     [InlineData("progressive", "h264", "aac", false, false)]
-    [InlineData("original_http", "vp9", "aac", false, false)]
+    // VP9 has no Windows container source that plays here: FFmpeg demuxes it for the system decoder.
+    [InlineData("original_http", "vp9", "aac", true, false)]
+    [InlineData("original_http", "vp09", "aac", true, false)]
+    [InlineData("hls", "vp9", "aac", false, false)]
     [InlineData("original_http", "mpeg2video", "aac", false, false)]
     [InlineData("original_http", "unknown", "unknown", false, false)]
     [InlineData("unknown", "av1", "dts", false, false)]

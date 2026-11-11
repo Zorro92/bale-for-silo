@@ -55,7 +55,8 @@ public class DebugAv1ClaimSwitchTests
         var off = player.IndexOf("capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);", StringComparison.Ordinal);
         AssertDebugGuard(player, raised);
         Assert.True(raised < off);
-        Assert.Contains("capabilities = capabilities with { VideoDecode = ConsoleEvidence.BuildVideoDecode(3840, 2160) };", player[raised..off]);
+        // The raised AV1 bound keeps the probed hardware claims.
+        Assert.Contains("capabilities = capabilities with { VideoDecode = ConsoleEvidence.BuildVideoDecode(await HardwareDecodeProbe.Limits, 3840, 2160) };", player[raised..off]);
         var log = player.IndexOf("Log.Info(\"player: av1 claim=2160p (debug)\");", StringComparison.Ordinal);
         AssertDebugGuard(player, log);
         Assert.Contains("if (attempt.Av1ClaimMaxHeight == 2160 && attempt.FfmpegEnabled)", player[off..log]);

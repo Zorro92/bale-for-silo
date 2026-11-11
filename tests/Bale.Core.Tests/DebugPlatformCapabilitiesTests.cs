@@ -112,5 +112,5 @@ public class DebugPlatformCapabilitiesTests
 
     private static string PlatformProbe(string source) => source[
         source.IndexOf("    // Windows SDK winnt.h", StringComparison.Ordinal)..
-        source.IndexOf("    // GUIDs, descriptor layout and ID3D11VideoDevice", StringComparison.Ordinal)];
+        source.IndexOf("    // Decoder profile GUIDs match the Windows SDK's d3d11.h", StringComparison.Ordinal)];
 }

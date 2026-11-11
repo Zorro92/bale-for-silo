@@ -110,6 +110,7 @@
     <Compile Include="../../src/Bale.Xbox/Services/DebugDisplayMatch.cs" Link="DebugDisplayMatch.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugDisplayMatch.cs" Link="DebugDisplayMatch.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/PlaybackClaims.cs" Link="PlaybackClaims.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Services/HardwareDecodeProbe.cs" Link="HardwareDecodeProbe.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/DetailPage.xaml.cs" Link="DetailPage.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugFrameDeliverySwitch.cs" Link="DebugFrameDeliverySwitch.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugFrameDeliverySwitch.cs" Link="DebugFrameDeliverySwitch.cs.txt" CopyToOutputDirectory="PreserveNewest" />

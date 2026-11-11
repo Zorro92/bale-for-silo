@@ -72,8 +72,9 @@ public static class PlaybackStartBuilder
             Enabled = device.HlsSupported,
             SupportedOnDevice = device.HlsSupported,
             Containers = ["m3u8", "hls"],
-            // AdaptiveMediaSource cannot use the bundled FFmpeg fallbacks.
-            VideoCodecs = original.VideoCodecs.Where(codec => !SoftwareDecodePolicy.VideoCodecs.Contains(codec)).ToArray(),
+            // AdaptiveMediaSource cannot use the bundled FFmpeg fallbacks or its demuxer.
+            VideoCodecs = original.VideoCodecs.Where(codec => !SoftwareDecodePolicy.VideoCodecs.Contains(codec)
+                && !SoftwareDecodePolicy.DemuxedVideoCodecs.Contains(codec)).ToArray(),
             AudioDecodeCodecs = original.AudioDecodeCodecs.Where(codec => !SoftwareDecodePolicy.AudioCodecs.Contains(codec)).ToArray(),
             Subtitles = device.Subtitles with { NativeEmbedded = [] },
         };

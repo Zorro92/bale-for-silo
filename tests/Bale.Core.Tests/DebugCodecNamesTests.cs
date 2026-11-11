@@ -153,7 +153,9 @@ public class DebugCodecNamesTests
         Assert.Contains("CodecKind.Audio", source);
         Assert.Contains("if (Run(\"gpu\")) AppendGpuCapabilities(builder);", source);
         Assert.Contains("if (Run(\"platform\")) await AppendPlatformCapabilitiesAsync(builder);", source);
-        Assert.Contains("IntPtr* device, int* featureLevel, IntPtr* immediateContext", source);
+        // The D3D11 decoder walk is shared with production claims and lives outside the debug guard.
+        Assert.Contains("var report = HardwareDecodeProbe.Enumerate(", source);
+        Assert.DoesNotContain("D3D11CreateDevice", source);
         Assert.Contains("observed.Add((codec.DisplayName, supported));", source);
         Assert.Contains("names.Summary(observed, codecNames)", source);
         Assert.Contains("await OnUiAsync(DescribeDisplayCapabilities)", source);

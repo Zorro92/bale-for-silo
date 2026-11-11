@@ -10,7 +10,8 @@ internal sealed partial class DisplayHdrOutput
     private HdmiDisplayInformation? _hdmi;
     private bool _restoreRequired;
 
-    internal static DeviceCapabilities DetectCapabilities()
+    /// <summary>The given claims (default: the fixed baseline) with the connected display's HDR evidence.</summary>
+    internal static DeviceCapabilities DetectCapabilities(DeviceCapabilities? claims = null)
     {
         var read = ReadSupportedModes();
         var succeeded = read is not null;
@@ -18,7 +19,7 @@ internal sealed partial class DisplayHdrOutput
         var (hdr, evidence) = DisplayHdrPolicy.FromModes(succeeded, modes);
         Log.Info($"display HDR: read={succeeded} modes={modes.Length} pq={modes.Count(mode => mode.Smpte2084)}"
             + $" metadata={modes.Count(mode => mode.Metadata2086)} stereo={modes.Count(mode => mode.Stereo)} hdr10={hdr.Hdr10}");
-        return ConsoleEvidence.Default with { Hdr = hdr, DisplayHdrEvidence = evidence };
+        return (claims ?? ConsoleEvidence.Default) with { Hdr = hdr, DisplayHdrEvidence = evidence };
     }
 
     /// <summary>

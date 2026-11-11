@@ -239,11 +239,13 @@ public class DisplayVersionMatchTests
     }
 
     [Fact]
-    public void TheProductionClaimsWorkAsTheClaimList()
+    public void TheBaselineClaimsWorkAsTheClaimList()
     {
+        // The claims a console sends when its decoder probe fails; probed claims are covered in
+        // HardwareDecodeClaimsTests.
         var claims = ConsoleEvidence.Default.VideoDecode;
         var hevc = new[] { Hevc("4k", 3840, 2160, bitDepth: 10), Hevc("1080", 1920, 1080, bitDepth: 10) };
-        // Production claims stop at 1080p, so even a 4K display plays the 1080p file as it is
+        // The baseline stops at 1080p, so even a 4K display plays the 1080p file as it is
         // rather than a transcoded 4K one; a title with only a 4K file still gets that file.
         Assert.Same(hevc[1], PlaybackFormatting.SelectVersion(hevc, new DisplayVersionMatch(1080, claims)));
         Assert.Same(hevc[1], PlaybackFormatting.SelectVersion(hevc, new DisplayVersionMatch(2160, claims)));

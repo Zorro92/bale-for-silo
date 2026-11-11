@@ -411,7 +411,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("softwareVideo ? capabilities : SoftwareDecodePolicy.WithoutSoftwareVideo(capabilities)", claims);
         Assert.DoesNotContain("#if", claims);
         var player = Read("PlayerPage.cs.txt");
-        var detect = player.IndexOf("var (capabilities, softwareVideo) = PlaybackClaims.Detect();", StringComparison.Ordinal);
+        var detect = player.IndexOf("var (capabilities, softwareVideo) = await PlaybackClaims.DetectAsync();", StringComparison.Ordinal);
         var build = player.IndexOf("PlaybackStartBuilder.Build(request.Detail", StringComparison.Ordinal);
         Assert.True(detect >= 0 && build > detect);
     }

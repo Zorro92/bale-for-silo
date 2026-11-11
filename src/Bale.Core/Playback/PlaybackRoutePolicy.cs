@@ -33,7 +33,9 @@ public static class PlaybackRoutePolicy
             && SoftwareDecodePolicy.AudioCodecs.Contains(audio!);
         // Windows' MKV source over-reads (~2.2x the bitrate) and blocks on the network; FFmpeg's demuxer does not.
         var matroska = IsMatroska(plan.Stream?.Container ?? plan.Source?.Container);
-        var ffmpeg = ffmpegEnabled && direct && !hls && (softwareVideo || softwareAudio || matroska || forceFfmpeg);
+        // VP9 has no working Windows container source here; FFmpeg demuxes it for the system decoder.
+        var demuxedVideo = SoftwareDecodePolicy.DemuxedVideoCodecs.Contains(video!);
+        var ffmpeg = ffmpegEnabled && direct && !hls && (softwareVideo || softwareAudio || matroska || demuxedVideo || forceFfmpeg);
         return new(ffmpeg, ffmpeg && softwareVideo, video, audio, ordinal, width, height);
     }
 

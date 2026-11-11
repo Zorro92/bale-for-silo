@@ -100,7 +100,7 @@ public class DisplayHdrOutputTests : IDisposable
         Assert.Contains("DisplayVersionMatch.Current = match;", claims);
         Assert.DoesNotContain("ex.Message", claims);
         var player = Read("PlayerPage.cs.txt");
-        Assert.Contains("var (capabilities, softwareVideo) = PlaybackClaims.Detect();", player);
+        Assert.Contains("var (capabilities, softwareVideo) = await PlaybackClaims.DetectAsync();", player);
         Assert.DoesNotContain("ZeroCopyRuntime.Register()", player);
         Assert.DoesNotContain("DisplayVersionMatch", player);
         // Set once the window is active, then again before a detail page builds any readout.

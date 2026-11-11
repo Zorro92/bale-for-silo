@@ -177,10 +177,12 @@ public sealed partial class PlayerPage : Page, IBackHandler
                     request.Detail.PlaybackPositionSeconds,
                     request.SuppressResumeRewind ? 0 : PlaybackStartPosition.DefaultResumeRewindSeconds);
                 // The production claims, shared with Auto's display matching on the detail page.
-                var (capabilities, softwareVideo) = PlaybackClaims.Detect();
+                var (capabilities, softwareVideo) = await PlaybackClaims.DetectAsync();
+                ct.ThrowIfCancellationRequested();
 #if DEBUG_SERVER
+                // Keep the probed hardware claims; only the software AV1 bound is raised.
                 if (attempt.Av1ClaimMaxHeight == 2160 && softwareVideo)
-                    capabilities = capabilities with { VideoDecode = ConsoleEvidence.BuildVideoDecode(3840, 2160) };
+                    capabilities = capabilities with { VideoDecode = ConsoleEvidence.BuildVideoDecode(await HardwareDecodeProbe.Limits, 3840, 2160) };
                 capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);
                 capabilities = DebugHdrPlayback.Capabilities(attempt.PretendHdr, capabilities);
 #endif
