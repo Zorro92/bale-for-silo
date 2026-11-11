@@ -40,7 +40,7 @@ public class PlaybackHlsStartOverTests
         // Duration is not evidence that this growing HLS response can serve a native seek.
         var session = new MediaPlaybackSession(13.9)
         {
-            CanSeek = true, NaturalDuration = TimeSpan.FromSeconds(10800),
+            CanSeek = true, NaturalDuration = TimeSpan.FromSeconds(plan.Source!.DurationSeconds!.Value),
             PlaybackState = paused ? MediaPlaybackState.Paused : MediaPlaybackState.Playing,
         };
         using var player = new PlayerPage(client, start, plan, installation, reporter, session);
@@ -82,7 +82,7 @@ public class PlaybackHlsStartOverTests
         await reporter.AttachSessionAsync("session", 0);
         using var player = new PlayerPage(client, start, plan, installation, reporter, new(13.9)
         {
-            CanSeek = true, NaturalDuration = TimeSpan.FromSeconds(10800), CompleteVod = completeVod,
+            CanSeek = true, NaturalDuration = TimeSpan.FromSeconds(plan.Source!.DurationSeconds!.Value), CompleteVod = completeVod,
             Ranges = completeVod ? [] : [(0, 180)],
         });
         bool[] forward = [true, true, false, false, false];
@@ -186,7 +186,9 @@ public class PlaybackHlsStartOverTests
                     SeekWindowStartSeconds = completeVod ? null : origin,
                     SeekRestoration = completeVod ? "player_position" : "source_position",
                 },
-                Source = new() { MediaFileId = "file", DurationSeconds = 10800 },
+                // Encoded HLS grows only for unknown/oversized media. Exceed the server's
+                // 50,000 two-second segment bound; ordinary known durations use full VOD.
+                Source = new() { MediaFileId = "file", DurationSeconds = delivery == "server_transcode_hls" && !completeVod ? 108000 : 10800 },
                 EffectiveRecipe = new() { VideoCodec = "h264", AudioCodec = "aac", DynamicRange = "sdr", Height = 1080 },
                 SelectedTracks = new() { Audio = new() { Id = "file:file:audio:1", Index = 1 } },
             };
