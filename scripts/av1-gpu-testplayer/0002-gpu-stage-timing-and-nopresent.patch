@@ -1,0 +1,1630 @@
+diff --git a/libav1/av1/decoder/decodeframe.c b/libav1/av1/decoder/decodeframe.c
+--- a/libav1/av1/decoder/decodeframe.c
++++ b/libav1/av1/decoder/decodeframe.c
+@@ -2526,6 +2526,8 @@ static int tile_worker_hook(void *arg1, void *arg2) {
+   AV1_COMMON *cm = &pbi->common;
+   ThreadData *const td = thread_data->td;
+   uint8_t allow_update_cdf;
++  // Timing only: tile decode time of this worker (0 while timing is off).
++  const int64_t perf_t0 = av1_perf_ticks();
+ 
+   // The jmp_buf is valid only for the duration of the function that calls
+   // setjmp(). Therefore, this function must reset the 'setjmp' field to 0
+@@ -2533,6 +2535,7 @@ static int tile_worker_hook(void *arg1, void *arg2) {
+   if (setjmp(thread_data->error_info.jmp)) {
+     thread_data->error_info.setjmp = 0;
+     thread_data->td->xd.corrupted = 1;
++    av1_perf_cpu_add(pbi, AV1_PERF_CPU_ENTROPY_SUM, perf_t0);
+     return 0;
+   }
+   thread_data->error_info.setjmp = 1;
+@@ -2559,6 +2562,7 @@ static int tile_worker_hook(void *arg1, void *arg2) {
+     }
+   }
+   thread_data->error_info.setjmp = 0;
++  av1_perf_cpu_add(pbi, AV1_PERF_CPU_ENTROPY_SUM, perf_t0);
+   return !td->xd.corrupted;
+ }
+ 
+@@ -4203,7 +4207,11 @@ void av1_decode_tg_tiles_and_wrapup(AV1Decoder *pbi, const uint8_t *data,
+     setup_frame_info(pbi);
+     av1_setup_frame(pbi, cm);
+   }
+-  *p_data_end = decode_tiles_mt(pbi, data, data_end, start_tile, end_tile);
++  {
++    const int64_t perf_t0 = av1_perf_ticks();
++    *p_data_end = decode_tiles_mt(pbi, data, data_end, start_tile, end_tile);
++    av1_perf_cpu_add(pbi, AV1_PERF_CPU_ENTROPY_WALL, perf_t0);
++  }
+ 
+   if (end_tile != cm->tile_rows * cm->tile_cols - 1) {
+     return;
+diff --git a/libav1/dx/av1_core.cpp b/libav1/dx/av1_core.cpp
+--- a/libav1/dx/av1_core.cpp
++++ b/libav1/dx/av1_core.cpp
+@@ -50,6 +50,172 @@ void av1_prediction_gen_blocks(AV1Decoder *pbi, Av1Core *dec);
+ 
+ static THREADFN gpu_thread_hook(void *pdata);
+ 
++// ---------------------------------------------------------------------------
++// Timing instrumentation for the test player. Everything below is inert until
++// av1_set_perf_callback() installs a callback; it never changes decode output.
++// ---------------------------------------------------------------------------
++static av1_perf_frame_cb_fn_t g_perf_cb = NULL;
++static void *g_perf_priv = NULL;
++
++extern "C" void av1_set_perf_callback(av1_perf_frame_cb_fn_t cb, void *priv) {
++  g_perf_priv = priv;
++  g_perf_cb = cb;
++}
++
++static inline int perf_enabled() { return g_perf_cb != NULL; }
++
++static inline int64_t perf_now() {
++  LARGE_INTEGER t;
++  QueryPerformanceCounter(&t);
++  return t.QuadPart;
++}
++
++extern "C" int64_t av1_perf_ticks(void) { return perf_enabled() ? perf_now() : 0; }
++
++void av1_perf_add(Av1Core *dec, int id, int64_t start_ticks) {
++  if (!start_ticks) return;
++  InterlockedExchangeAdd64(&dec->perf_cur.ticks[id], perf_now() - start_ticks);
++}
++
++extern "C" void av1_perf_cpu_add(AV1Decoder *pbi, int id, int64_t start_ticks) {
++  if (!start_ticks || !pbi || !pbi->gpu_decoder) return;
++  av1_perf_add(pbi->gpu_decoder, id, start_ticks);
++}
++
++// Adds the time since |start| to |id| and returns the new lap start.
++static int64_t perf_lap(Av1Core *dec, int id, int64_t start_ticks) {
++  if (!start_ticks) return 0;
++  const int64_t now = perf_now();
++  InterlockedExchangeAdd64(&dec->perf_cur.ticks[id], now - start_ticks);
++  return now;
++}
++
++static void perf_add_memset(Av1Core *dec, int id, int64_t start_ticks, size_t bytes) {
++  if (!start_ticks) return;
++  InterlockedExchangeAdd64(&dec->perf_cur.ticks[id], perf_now() - start_ticks);
++  InterlockedExchangeAdd64(&dec->perf_cur.memset_bytes, (LONG64)bytes);
++}
++
++// Records a GPU timestamp at the current position of the frame's command list
++// and remembers which stage it closes.
++void av1_perf_gpu_mark(Av1Core *dec, int stage) {
++  av1_frame_thread_data *td = dec->curr_frame_data;
++  if (!td) return;
++  av1_perf_td *p = &td->perf;
++  if (!p->gpu_active || p->mark_count >= Av1PerfMaxMarks) return;
++  dec->compute.command_list->EndQuery(p->query_heap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, p->mark_count);
++  p->mark_stage[p->mark_count++] = (uint8_t)stage;
++}
++
++// Start of a frame's command list: decide whether this frame is timed and
++// create the slot's query heap and readback buffer on first use.
++static void perf_begin_command_buffer(Av1Core *dec, av1_frame_thread_data *td) {
++  av1_perf_td *p = &td->perf;
++  p->gpu_active = 0;
++  p->mark_count = 0;
++  p->collect = perf_enabled();
++  if (!p->collect) return;
++  dec->perf_cur.t_record_start = perf_now();
++  if (!dec->perf_cur.t_frame_start) dec->perf_cur.t_frame_start = dec->perf_cur.t_record_start;
++
++  if (!p->query_heap && !p->gpu_failed) {
++    dx_compute_context *compute = &dec->compute;
++    // Timestamp queries need a direct or compute queue; the frequency must
++    // come from the queue the decoder's lists execute on.
++    const D3D12_COMMAND_LIST_TYPE queue_type = compute->queue->GetDesc().Type;
++    UINT64 freq = 0;
++    int ok = (queue_type == D3D12_COMMAND_LIST_TYPE_DIRECT || queue_type == D3D12_COMMAND_LIST_TYPE_COMPUTE) &&
++             SUCCEEDED(compute->queue->GetTimestampFrequency(&freq)) && freq != 0;
++    if (ok) {
++      D3D12_QUERY_HEAP_DESC heap_desc = {};
++      heap_desc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
++      heap_desc.Count = Av1PerfMaxMarks;
++      ok = SUCCEEDED(compute->device->CreateQueryHeap(&heap_desc, IID_PPV_ARGS(&p->query_heap)));
++    }
++    if (ok) {
++      D3D12_HEAP_PROPERTIES heap_props = {};
++      heap_props.Type = D3D12_HEAP_TYPE_READBACK;
++      D3D12_RESOURCE_DESC buf_desc = {};
++      buf_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
++      buf_desc.Width = sizeof(UINT64) * Av1PerfMaxMarks;
++      buf_desc.Height = 1;
++      buf_desc.DepthOrArraySize = 1;
++      buf_desc.MipLevels = 1;
++      buf_desc.Format = DXGI_FORMAT_UNKNOWN;
++      buf_desc.SampleDesc.Count = 1;
++      buf_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
++      ok = SUCCEEDED(compute->device->CreateCommittedResource(&heap_props, D3D12_HEAP_FLAG_NONE, &buf_desc,
++                                                              D3D12_RESOURCE_STATE_COPY_DEST, NULL,
++                                                              IID_PPV_ARGS(&p->readback)));
++    }
++    if (ok) {
++      dec->perf_gpu_freq = freq;
++    } else {
++      p->query_heap.Reset();
++      p->readback.Reset();
++      p->gpu_failed = 1;
++    }
++  }
++  if (p->query_heap) {
++    p->gpu_active = 1;
++    av1_perf_gpu_mark(dec, AV1_PERF_GPU_BEGIN);
++  }
++}
++
++// GPU completion thread, after the frame's fence: build the record from the
++// CPU snapshot taken at submit and the resolved GPU timestamps.
++static void perf_collect(Av1Core *dec, av1_frame_thread_data *td, int64_t wait_start, av1_perf_frame *rec) {
++  av1_perf_td *p = &td->perf;
++  const int64_t now = perf_now();
++  LARGE_INTEGER qpf;
++  QueryPerformanceFrequency(&qpf);
++  const double to_ms = 1000.0 / (double)qpf.QuadPart;
++
++  memset(rec, 0, sizeof(*rec));
++  rec->frame_number = p->acc.frame_number;
++  rec->show_frame = p->acc.show_frame;
++  rec->showable_frame = p->acc.showable_frame;
++  rec->is_sef = p->acc.is_sef;
++  rec->intra_frame = p->acc.intra_frame;
++  rec->used_sec_slot = p->acc.used_sec_slot;
++  rec->intra_iters = p->acc.intra_iters;
++  rec->tile_count = p->acc.tile_count;
++  for (int i = 0; i < AV1_PERF_CPU_COUNT; ++i) rec->cpu_ms[i] = (double)p->acc.ticks[i] * to_ms;
++  rec->cpu_ms[AV1_PERF_CPU_FENCE_WAIT] = (double)(now - wait_start) * to_ms;
++  rec->cpu_ms[AV1_PERF_CPU_GPU_LATENCY] = (double)(now - p->t_submit) * to_ms;
++  rec->memset_bytes = p->acc.memset_bytes;
++  rec->complete_ms = (double)now * to_ms;
++  rec->gpu_gap_ms = -1.0;
++
++  if (!p->gpu_active || p->mark_count <= 0 || !dec->perf_gpu_freq) return;
++  UINT64 ts[Av1PerfMaxMarks];
++  D3D12_RANGE read_range = {0, sizeof(UINT64) * (size_t)p->mark_count};
++  void *ptr = NULL;
++  if (FAILED(p->readback->Map(0, &read_range, &ptr)) || !ptr) return;
++  memcpy(ts, ptr, read_range.End);
++  D3D12_RANGE written = {0, 0};
++  p->readback->Unmap(0, &written);
++
++  const double gpu_to_ms = 1000.0 / (double)dec->perf_gpu_freq;
++  for (int i = 1; i < p->mark_count; ++i) {
++    const int stage = p->mark_stage[i];
++    const double ms = ts[i] > ts[i - 1] ? (double)(ts[i] - ts[i - 1]) * gpu_to_ms : 0.0;
++    if (stage < AV1_PERF_GPU_STAGE_COUNT) {
++      rec->gpu_stage_ms[stage] += ms;
++      ++rec->gpu_stage_hits[stage];
++    }
++    rec->gpu_sum_ms += ms;
++  }
++  const UINT64 first = ts[0];
++  const UINT64 last = ts[p->mark_count - 1];
++  rec->gpu_span_ms = last > first ? (double)(last - first) * gpu_to_ms : 0.0;
++  if (dec->perf_gpu_last_end)
++    rec->gpu_gap_ms = first > dec->perf_gpu_last_end ? (double)(first - dec->perf_gpu_last_end) * gpu_to_ms : 0.0;
++  dec->perf_gpu_last_end = last;
++  rec->gpu_marks = p->mark_count;
++  rec->gpu_valid = 1;
++}
++
+ static int get_random_number_test(int val) {
+   unsigned int bit;
+   bit = ((val >> 0) ^ (val >> 1) ^ (val >> 3) ^ (val >> 12)) & 1;
+@@ -456,6 +622,7 @@ void av1_prepare_command_buffer(Av1Core *dec) {
+   td->command_buffer.Reset();
+ 
+   PutPerfMarker(td, &td->perf_markers[0]);
++  perf_begin_command_buffer(dec, td);
+ }
+ 
+ void av1_commit_command_buffer(Av1Core *dec) {
+@@ -465,6 +632,17 @@ void av1_commit_command_buffer(Av1Core *dec) {
+   dx_compute_context *compute = &dec->compute;
+   ComputeCommandBuffer *cb = &td->command_buffer;
+ 
++  av1_perf_td *perf = &td->perf;
++  int64_t perf_submit_start = 0;
++  if (perf->collect) {
++    // Resolve this frame's timestamps as the last command of its list; they
++    // are read back only after the frame's fence has completed.
++    if (perf->gpu_active && perf->mark_count > 0)
++      compute->command_list->ResolveQueryData(perf->query_heap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0,
++                                              perf->mark_count, perf->readback.Get(), 0);
++    perf_submit_start = perf_now();
++  }
++
+   compute->command_list->Close();
+   ID3D12CommandList *list[] = {compute->command_list.Get()};
+ 
+@@ -472,6 +650,21 @@ void av1_commit_command_buffer(Av1Core *dec) {
+   compute->queue->ExecuteCommandLists(1, list);
+   compute->queue->Signal(cb->fence.Get(), cb->fence_value);
+   cb->fence->SetEventOnCompletion(cb->fence_value, cb->event);
++
++  if (perf->collect) {
++    // Snapshot the CPU side of this frame. The GPU thread cannot see this slot
++    // until the caller queues its work item, so plain writes are safe here.
++    av1_perf_accum *acc = &dec->perf_cur;
++    const int64_t now = perf_now();
++    const int64_t waits = acc->ticks[AV1_PERF_CPU_WAIT_OUTPUT] + acc->ticks[AV1_PERF_CPU_WAIT_IMAGE];
++    const int64_t record = perf_submit_start - acc->t_record_start - waits;
++    acc->ticks[AV1_PERF_CPU_RECORD] = record > 0 ? record : 0;
++    acc->ticks[AV1_PERF_CPU_SUBMIT] = now - perf_submit_start;
++    acc->ticks[AV1_PERF_CPU_FRAME] = now - acc->t_frame_start;
++    memcpy(&perf->acc, acc, sizeof(*acc));
++    perf->t_submit = now;
++    memset(acc, 0, sizeof(*acc));
++  }
+ }
+ 
+ void PutPerfMarker(av1_frame_thread_data *td, volatile int64_t *marker) {}
+@@ -562,9 +755,18 @@ THREADFN gpu_thread_hook(void *data) {
+     }
+ 
+     av1_frame_thread_data *td = item->data;
++    av1_perf_frame perf_rec = {};
++    int perf_have_rec = 0;
+     if (td) {
+       // sync gpu
++      const int64_t perf_wait_start = td->perf.collect ? perf_now() : 0;
+       av1_sync_gpu(td);
++      if (perf_wait_start) {
++        // Read the frame's timestamps now: its fence is done and the slot has
++        // not gone back to the pool yet.
++        perf_collect(dec, td, perf_wait_start, &perf_rec);
++        perf_have_rec = 1;
++      }
+       pthread_mutex_lock(&dec->fb_pool_mutex);
+       int signal = 0;
+       if (td->back_buffer0) signal |= release_fb(dec, td->back_buffer0);
+@@ -593,11 +795,21 @@ THREADFN gpu_thread_hook(void *data) {
+         aom_image_t *dst = &img;
+         copy_to_img(dec, hw_img, dst);
+         MTQueuePush(&dec->image_pool, hw_img);
++        const int64_t perf_notify_start = perf_have_rec ? perf_now() : 0;
+         dec->cb_notify_frame_ready(dec->image_alloc_priv, dst);
++        if (perf_notify_start) {
++          LARGE_INTEGER qpf;
++          QueryPerformanceFrequency(&qpf);
++          perf_rec.cpu_ms[AV1_PERF_CPU_NOTIFY] = (double)(perf_now() - perf_notify_start) * 1000.0 / (double)qpf.QuadPart;
++        }
+       } else {
+         MTQueuePush(&dec->output_queue, hw_img);
+       }
+     }
++    if (perf_have_rec) {
++      const av1_perf_frame_cb_fn_t perf_cb = g_perf_cb;
++      if (perf_cb) perf_cb(g_perf_priv, &perf_rec);
++    }
+     MTQueuePush(&dec->gpu_item_pool, item);
+   }
+ 
+@@ -713,7 +925,10 @@ void av1_drain_gpu_decoder(Av1Core *dec) {
+ void get_sec_data(Av1Core *dec, av1_frame_thread_data *td) {
+   pthread_mutex_lock(&td->sec_data_mutex);
+   if (td->sec_thread_data == NULL) {
++    const int64_t perf_t = av1_perf_ticks();
+     td->sec_thread_data = (av1_frame_thread_data *)MTQueueGet(&dec->frame_data_pool);
++    av1_perf_add(dec, AV1_PERF_CPU_WAIT_SEC_SLOT, perf_t);
++    if (perf_t) dec->perf_cur.used_sec_slot = 1;
+     av1_frame_thread_data *sec = td->sec_thread_data;
+     for (int i = 0; i < td->tile_count; ++i) sec->tile_data[i].mi_count = 0;
+   }
+@@ -722,6 +937,9 @@ void get_sec_data(Av1Core *dec, av1_frame_thread_data *td) {
+ 
+ extern "C" void av1_setup_frame(AV1Decoder *pbi, AV1_COMMON *cm) {
+   Av1Core *dec = pbi->gpu_decoder;
++  const int64_t perf_setup_start = av1_perf_ticks();
++  if (perf_setup_start) dec->perf_cur.t_frame_start = perf_setup_start;
++  int64_t perf_t = 0;
+ 
+   av1_frame_thread_data *td = dec->curr_frame_data;
+   if (td) {
+@@ -744,7 +962,9 @@ extern "C" void av1_setup_frame(AV1Decoder *pbi, AV1_COMMON *cm) {
+     dec->curr_frame_data = NULL;
+   }
+ 
++  perf_t = av1_perf_ticks();
+   td = (av1_frame_thread_data *)MTQueueGet(&dec->frame_data_pool);
++  av1_perf_add(dec, AV1_PERF_CPU_WAIT_SLOT, perf_t);
+   td->sec_thread_data = NULL;
+   dec->curr_frame_data = td;
+   td->frame_number = dec->frame_number;
+@@ -755,7 +975,9 @@ extern "C" void av1_setup_frame(AV1Decoder *pbi, AV1_COMMON *cm) {
+   cm->mi_grid_base = (MB_MODE_INFO **)td->mode_info_grid->host_ptr;
+   cm->mi_grid_visible = cm->mi_grid_base;
+   cm->mi_alloc_size = cm->mi_stride * ((cm->mi_rows + 31) & ~31);
++  perf_t = av1_perf_ticks();
+   memset(cm->mi_grid_base, 0, sizeof(MB_MODE_INFO **) * cm->mi_alloc_size);
++  perf_add_memset(dec, AV1_PERF_CPU_MEMSET, perf_t, sizeof(MB_MODE_INFO **) * cm->mi_alloc_size);
+ 
+   const int grid_w = (((buf->y_width + 63) & (~63)) >> 2) + 2 + 128;
+   const int grid_h = (((buf->y_height + 63) & (~63)) >> 2) + 2 + 128;
+@@ -769,8 +991,10 @@ extern "C" void av1_setup_frame(AV1Decoder *pbi, AV1_COMMON *cm) {
+   td->gen_intra_iter_y = (int *)td->gen_intra_inter_grid->host_ptr;
+   td->iter_grid_offset_uv = grid_w * grid_h;
+   td->gen_intra_iter_uv = td->gen_intra_iter_y + td->iter_grid_offset_uv;
++  perf_t = av1_perf_ticks();
+   memset(td->gen_intra_iter_y, -1, td->iter_grid_offset_uv * 4);
+   memset(td->gen_intra_iter_uv, -1, td->iter_grid_offset_uv);
++  perf_add_memset(dec, AV1_PERF_CPU_MEMSET, perf_t, (size_t)td->iter_grid_offset_uv * 5);
+ 
+   td->is_hbd = buf->bit_depth > 8;
+   td->shaders = td->is_hbd ? &dec->shader_lib->shaders_hbd : &dec->shader_lib->shaders_8bit;
+@@ -791,7 +1015,9 @@ extern "C" void av1_setup_frame(AV1Decoder *pbi, AV1_COMMON *cm) {
+   td->dst_frame_buffer = fb;
+   td->back_buffer0 = NULL;
+   if (td->do_loop_rest || td->do_cdef || td->do_superres) {
++    perf_t = av1_perf_ticks();
+     HwFrameBuffer *new_buf = get_frame_buffer(dec);
++    av1_perf_add(dec, AV1_PERF_CPU_WAIT_FB, perf_t);
+     td->back_buffer0 = new_buf;
+     new_buf->width = fb->width;
+     new_buf->height = fb->height;
+@@ -858,6 +1084,7 @@ extern "C" void av1_setup_frame(AV1Decoder *pbi, AV1_COMMON *cm) {
+       td->scale_enable |= av1_is_scaled(sf);
+     }
+   }
++  av1_perf_add(dec, AV1_PERF_CPU_SETUP, perf_setup_start);
+ }
+ 
+ extern "C" void av1_setup_ext_coef_buffer(AV1Decoder *pbi, AV1_COMMON *cm, ThreadData *thread_data) {
+@@ -892,7 +1119,9 @@ extern "C" void av1_setup_macroblockd(AV1Decoder *pbi, AV1_COMMON *cm, ThreadDat
+   const int tile_id = tile->tile_col + tile->tile_row * cm->tile_cols;
+   av1_frame_thread_data *td = dec->curr_frame_data;
+   av1_tile_data *t = &td->tile_data[tile_id];
++  int64_t perf_t = av1_perf_ticks();
+   memset(t, 0, sizeof(*t));
++  perf_add_memset(dec, AV1_PERF_CPU_MEMSET_TILE, perf_t, sizeof(*t));
+   thread_data->tile_data = t;
+   xd->tile_data = t;
+   const int mi_offset = tile->mi_row_start * ((cm->mi_cols + 15) & ~15) +
+@@ -949,7 +1178,9 @@ extern "C" void av1_setup_macroblockd(AV1Decoder *pbi, AV1_COMMON *cm, ThreadDat
+   t->gen_intra_iter_set = AOMMIN(t->gen_intra_max_iter - 16, 256);
+   t->gen_iter_clear_offset = (t->gen_intra_iter_set + 16) * 10 + 256;
+   t->gen_iter_clear_size = sizeof(int) * (256 + t->gen_intra_max_iter * 10 - t->gen_iter_clear_offset);
++  perf_t = av1_perf_ticks();
+   memset(t->gen_block_map_wrp, 0, sizeof(int) * (32 + 16 + t->gen_iter_clear_offset));
++  perf_add_memset(dec, AV1_PERF_CPU_MEMSET_TILE, perf_t, sizeof(int) * (32 + 16 + t->gen_iter_clear_offset));
+ }
+ 
+ extern "C" void av1_intra_palette(AV1Decoder *pbi, MB_MODE_INFO *mi, Av1ColorMapParam *params, int plane) {
+@@ -1005,12 +1236,23 @@ extern "C" void av1_decode_sef(AV1Decoder *pbi) {
+   Av1Core *dec = pbi->gpu_decoder;
+   AV1_COMMON *cm = &pbi->common;
+   YV12_BUFFER_CONFIG *buf = &cm->cur_frame->buf;
++  int64_t perf_t = av1_perf_ticks();
+   GpuWorkItem *item = (GpuWorkItem *)MTQueueGet(&dec->gpu_item_pool);
++  av1_perf_add(dec, AV1_PERF_CPU_WAIT_ITEM, perf_t);
+   item->data = NULL;
+   item->image = buf->hw_show_image;
+ 
+   if (item->image == NULL && buf->hw_buffer) {
++    perf_t = av1_perf_ticks();
++    if (perf_t) {
++      dec->perf_cur.t_frame_start = perf_t;
++      dec->perf_cur.is_sef = 1;
++      dec->perf_cur.show_frame = 1;
++      dec->perf_cur.intra_iters = -1;
++      dec->perf_cur.frame_number = buf->hw_buffer->frame_number;
++    }
+     av1_frame_thread_data *td = (av1_frame_thread_data *)MTQueueGet(&dec->frame_data_pool);
++    av1_perf_add(dec, AV1_PERF_CPU_WAIT_SLOT, perf_t);
+     td->dst_frame_buffer = buf->hw_buffer;
+     td->is_hbd = buf->bit_depth > 8;
+     td->shaders = td->is_hbd ? &dec->shader_lib->shaders_hbd : &dec->shader_lib->shaders_8bit;
+@@ -1034,16 +1276,36 @@ extern "C" void av1_decode_sef(AV1Decoder *pbi) {
+ extern "C" int av1_decode_frame_gpu(AV1Decoder *pbi) {
+   Av1Core *dec = pbi->gpu_decoder;
+   AV1_COMMON *cm = &pbi->common;
++  int64_t perf_t = av1_perf_ticks();
+   av1_prepare_command_buffer(dec);
+   av1_prediction_gen_blocks(pbi, dec);
++  perf_t = perf_lap(dec, AV1_PERF_CPU_REC_GEN_BLOCKS, perf_t);
+   av1_idct_run(dec);
++  perf_t = perf_lap(dec, AV1_PERF_CPU_REC_IDCT, perf_t);
+   av1_prediction_run_all(dec, cm, NULL);
++  perf_t = perf_lap(dec, AV1_PERF_CPU_REC_PRED, perf_t);
+   av1_loopfilter_gpu(dec, cm, &pbi->mb);
++  perf_t = perf_lap(dec, AV1_PERF_CPU_REC_LOOPFILTER, perf_t);
+   av1_cdef_looprestoration(dec, cm, &pbi->lr_ctxt);
++  perf_t = perf_lap(dec, AV1_PERF_CPU_REC_CDEF_LR, perf_t);
+   av1_inter_ext_borders(dec, cm);
++  perf_t = perf_lap(dec, AV1_PERF_CPU_REC_BORDERS, perf_t);
+   av1_postprocess_copy_output(dec, cm);
++  perf_t = perf_lap(dec, AV1_PERF_CPU_REC_COPY, perf_t);
++  if (perf_t) {
++    const av1_frame_thread_data *td = dec->curr_frame_data;
++    av1_perf_accum *acc = &dec->perf_cur;
++    acc->frame_number = td->frame_number;
++    acc->show_frame = cm->show_frame;
++    acc->showable_frame = cm->showable_frame;
++    acc->intra_frame = frame_is_intra_only(cm);
++    acc->intra_iters = td->intra_iters;
++    acc->tile_count = td->tile_count;
++  }
+   av1_commit_command_buffer(dec);
++  perf_t = av1_perf_ticks();
+   GpuWorkItem *item = (GpuWorkItem *)MTQueueGet(&dec->gpu_item_pool);
++  av1_perf_add(dec, AV1_PERF_CPU_WAIT_ITEM, perf_t);
+   item->data = dec->curr_frame_data;
+   item->image = NULL;
+   dec->curr_frame_data = NULL;
+diff --git a/libav1/dx/av1_core.h b/libav1/dx/av1_core.h
+--- a/libav1/dx/av1_core.h
++++ b/libav1/dx/av1_core.h
+@@ -21,6 +21,7 @@
+ #include "aom/aom_frame_buffer.h"
+ #include "av1\common\blockd.h"
+ #include "av1\common\onyxc_int.h"
++#include "dx/av1_perf.h"
+ 
+ #ifdef __cplusplus
+ extern "C" {
+@@ -49,6 +50,11 @@ void av1_show_frame(AV1Decoder *pbi, YV12_BUFFER_CONFIG *buf, int is_visible);
+ void av1_decode_sef(AV1Decoder *pbi);
+ int get_output_frame(AV1Decoder *pbi, aom_image_t *dst);
+ void av1_setup_context_buffers(AV1Decoder *pbi);
++
++// Timing instrumentation. av1_perf_ticks() returns 0 while timing is off, and
++// av1_perf_cpu_add() ignores a zero start, so call sites need no checks.
++int64_t av1_perf_ticks(void);
++void av1_perf_cpu_add(AV1Decoder *pbi, int id, int64_t start_ticks);
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/libav1/dx/av1_perf.h b/libav1/dx/av1_perf.h
+new file mode 100644
+--- /dev/null
++++ b/libav1/dx/av1_perf.h
+@@ -0,0 +1,112 @@
++/*
++ * Per-frame timing records for the D3D12 decoder host.
++ *
++ * Test instrumentation: nothing here changes what is decoded. Timing is off
++ * until a callback is installed with av1_set_perf_callback().
++ *
++ * This header is plain C and has no dependencies, so the record layout can be
++ * shared with the player (and compiled on any host for the summary maths).
++ */
++
++#ifndef AV1_PERF_H_
++#define AV1_PERF_H_
++
++#include <stdint.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++/* GPU stages, in the order the host records them into the frame's command
++ * list. A stage's time is the GPU timestamp taken after it minus the
++ * timestamp taken before it. */
++enum {
++  AV1_PERF_GPU_GEN_BLOCKS = 0, /* prediction block generation */
++  AV1_PERF_GPU_RESIDUAL_CLEAR, /* residual buffer fill */
++  AV1_PERF_GPU_IDCT_SORT,      /* transform block sort */
++  AV1_PERF_GPU_IDCT,           /* inverse transform, all types */
++  AV1_PERF_GPU_INTER,          /* inter prediction, all passes */
++  AV1_PERF_GPU_RECON,          /* inter residual reconstruction */
++  AV1_PERF_GPU_INTRA,          /* intra prediction, whole wavefront */
++  AV1_PERF_GPU_LF_GEN,         /* loop filter block generation */
++  AV1_PERF_GPU_LF_VERT,        /* loop filter, vertical edges (two passes) */
++  AV1_PERF_GPU_LF_HORZ,        /* loop filter, horizontal edges */
++  AV1_PERF_GPU_CDEF,
++  AV1_PERF_GPU_SUPERRES,
++  AV1_PERF_GPU_LOOP_REST,
++  AV1_PERF_GPU_EXT_BORDERS,    /* reference border extension */
++  AV1_PERF_GPU_FILM_GRAIN,
++  AV1_PERF_GPU_COPY_PLANE,     /* copy_plane shader into the staging area */
++  AV1_PERF_GPU_OUTPUT_COPY,    /* CopyBufferRegion / CopyTextureRegion */
++  AV1_PERF_GPU_STAGE_COUNT,
++  AV1_PERF_GPU_BEGIN = 255     /* first timestamp of a command list */
++};
++
++/* CPU timers. All values are milliseconds in the record. */
++enum {
++  /* decode thread, blocked */
++  AV1_PERF_CPU_WAIT_SLOT = 0, /* waiting for a free pipeline slot (frame data) */
++  AV1_PERF_CPU_WAIT_SEC_SLOT, /* waiting for the second slot (extra coef buffer) */
++  AV1_PERF_CPU_WAIT_FB,       /* waiting for a free reference frame buffer */
++  AV1_PERF_CPU_WAIT_OUTPUT,   /* waiting in the player's output buffer callback */
++  AV1_PERF_CPU_WAIT_IMAGE,    /* waiting for a free output image descriptor */
++  AV1_PERF_CPU_WAIT_ITEM,     /* waiting for a free GPU work item */
++  /* decode thread, working */
++  AV1_PERF_CPU_SETUP,         /* av1_setup_frame, including its waits and memsets */
++  AV1_PERF_CPU_MEMSET,        /* per-frame memsets in av1_setup_frame */
++  AV1_PERF_CPU_MEMSET_TILE,   /* per-tile memsets, summed across tile threads */
++  AV1_PERF_CPU_ENTROPY_WALL,  /* tile decode, wall time on the decode thread */
++  AV1_PERF_CPU_ENTROPY_SUM,   /* tile decode, summed across tile threads */
++  AV1_PERF_CPU_RECORD,        /* command list recording, waits excluded */
++  AV1_PERF_CPU_REC_GEN_BLOCKS,
++  AV1_PERF_CPU_REC_IDCT,
++  AV1_PERF_CPU_REC_PRED,
++  AV1_PERF_CPU_REC_LOOPFILTER,
++  AV1_PERF_CPU_REC_CDEF_LR,
++  AV1_PERF_CPU_REC_BORDERS,
++  AV1_PERF_CPU_REC_COPY,      /* includes WAIT_OUTPUT and WAIT_IMAGE */
++  AV1_PERF_CPU_SUBMIT,        /* Close + ExecuteCommandLists + Signal */
++  AV1_PERF_CPU_FRAME,         /* decode thread: frame setup start to submit done */
++  /* GPU completion thread */
++  AV1_PERF_CPU_FENCE_WAIT,    /* blocked on the frame's fence event */
++  AV1_PERF_CPU_GPU_LATENCY,   /* submit done to fence seen */
++  AV1_PERF_CPU_NOTIFY,        /* time inside the frame-ready callback */
++  AV1_PERF_CPU_COUNT
++};
++
++typedef struct av1_perf_frame {
++  int frame_number;   /* decoder frame counter */
++  int show_frame;     /* frame is output now */
++  int showable_frame; /* hidden frame that may be shown later */
++  int is_sef;         /* show-existing-frame that needed an output copy */
++  int intra_frame;    /* key or intra-only frame */
++  int used_sec_slot;  /* frame also took the second pipeline slot */
++  int intra_iters;    /* intra wavefront iterations dispatched (-1: none) */
++  int tile_count;
++
++  int gpu_valid;      /* GPU timestamps were read back for this frame */
++  int gpu_marks;      /* number of timestamps in the command list */
++  double gpu_stage_ms[AV1_PERF_GPU_STAGE_COUNT];
++  int gpu_stage_hits[AV1_PERF_GPU_STAGE_COUNT];
++  double gpu_span_ms; /* first to last timestamp */
++  double gpu_sum_ms;  /* sum of the stage times */
++  double gpu_gap_ms;  /* previous frame's last timestamp to this frame's first; -1 unknown */
++
++  double cpu_ms[AV1_PERF_CPU_COUNT];
++  int64_t memset_bytes; /* bytes cleared by the timed memsets */
++  double complete_ms;   /* host clock when the frame's fence was seen */
++} av1_perf_frame;
++
++/* Called on the GPU completion thread, once per decoded frame, after the
++ * frame's fence has completed and its results were read back. */
++typedef void (*av1_perf_frame_cb_fn_t)(void *priv, const av1_perf_frame *frame);
++
++/* Process-wide. Pass NULL to switch timing off. Change it only while no frame
++ * is in flight (before the first decode call or after a drain). */
++void av1_set_perf_callback(av1_perf_frame_cb_fn_t cb, void *priv);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif /* AV1_PERF_H_ */
+diff --git a/libav1/dx/loopfilters.cpp b/libav1/dx/loopfilters.cpp
+--- a/libav1/dx/loopfilters.cpp
++++ b/libav1/dx/loopfilters.cpp
+@@ -164,6 +164,7 @@ void av1_loopfilter_gpu(Av1Core *dec, AV1_COMMON *cm, MACROBLOCKD *xd) {
+     command_list->Dispatch((gen_srt.wicount + 63) >> 6, 1, 1);
+   }
+   command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(dec->loopfilter_blocks->dev));
++  av1_perf_gpu_mark(dec, AV1_PERF_GPU_LF_GEN);
+ 
+   cbo = cb->Alloc(sizeof(LoopfilterData));
+   LoopfilterData *data = (LoopfilterData *)cbo.host_ptr;
+@@ -207,6 +208,7 @@ void av1_loopfilter_gpu(Av1Core *dec, AV1_COMMON *cm, MACROBLOCKD *xd) {
+   }
+ 
+   command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(dec->frame_buffer_pool->dev));
++  av1_perf_gpu_mark(dec, AV1_PERF_GPU_LF_VERT);
+ 
+   shader = &td->shaders->loopfilter_h;
+   command_list->SetPipelineState(shader->pso.Get());
+@@ -222,6 +224,7 @@ void av1_loopfilter_gpu(Av1Core *dec, AV1_COMMON *cm, MACROBLOCKD *xd) {
+     command_list->Dispatch((srt.wicount + 63) >> 6, 1, 1);
+   }
+   command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(dec->frame_buffer_pool->dev));
++  av1_perf_gpu_mark(dec, AV1_PERF_GPU_LF_HORZ);
+ }
+ 
+ struct UpscaleData {
+@@ -270,6 +273,7 @@ void av1_superres(Av1Core *dec, HwFrameBuffer *src, HwFrameBuffer *dst, int iter
+   }
+ 
+   command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(dec->frame_buffer_pool->dev));
++  av1_perf_gpu_mark(dec, AV1_PERF_GPU_SUPERRES);
+ }
+ 
+ struct PlaneInfo1 {
+@@ -409,6 +413,7 @@ void av1_cdef_filter_run(Av1Core *dec, AV1_COMMON *cm, HwFrameBuffer *src, HwFra
+   command_list->Dispatch((w + 31) >> 5, (h + 31) >> 5, 1);
+   command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(dec->frame_buffer_pool->dev));
+   PutPerfMarker(td, &td->perf_markers[4]);
++  av1_perf_gpu_mark(dec, AV1_PERF_GPU_CDEF);
+ }
+ 
+ void av1_looprestoration(Av1Core *dec, AV1_COMMON *cm, void *lr_ctxt) {
+@@ -511,6 +516,7 @@ void av1_looprestoration(Av1Core *dec, AV1_COMMON *cm, void *lr_ctxt) {
+     command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(dec->frame_buffer_pool->dev));
+   }
+   PutPerfMarker(td, &td->perf_markers[5]);
++  av1_perf_gpu_mark(dec, AV1_PERF_GPU_LOOP_REST);
+ }
+ 
+ void av1_cdef_looprestoration(Av1Core *dec, AV1_COMMON *cm, void *lr_ctxt) {
+@@ -916,6 +922,7 @@ void av1_filmgrain_run(Av1Core *dec, AV1_COMMON *cm, int enable_chorma) {
+   command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(dec->frame_buffer_pool->dev));
+ 
+   PutPerfMarker(td, &td->perf_markers[7]);
++  av1_perf_gpu_mark(dec, AV1_PERF_GPU_FILM_GRAIN);
+ }
+ 
+ struct CopyPlaneData {
+@@ -957,13 +964,17 @@ int av1_postprocess_copy_output(Av1Core *dec, AV1_COMMON *cm) {
+ 
+   int err = 1;
+   frame_buffer_type fb_type = td->is_hbd ? (is_10x3 ? fbt10x3 : fbt10bit) : fbt8bit;
++  int64_t perf_t = av1_perf_ticks();
+   if (dec->cb_get_output_image)
+     err = dec->cb_get_output_image(dec->image_alloc_priv, size, src->y_crop_width, src->y_crop_height, fb_type, &fb);
++  av1_perf_add(dec, AV1_PERF_CPU_WAIT_OUTPUT, perf_t);
+   if (err || (fb.dx12_buffer == 0 && fb.dx12_texture[0] == 0)) {
+     aom_internal_error(&cm->error, AOM_CODEC_MEM_ERROR, "Failed to allocate output frame.");
+   }
+ 
++  perf_t = av1_perf_ticks();
+   HwOutputImage *img = (HwOutputImage *)MTQueueGet(&dec->image_pool);
++  av1_perf_add(dec, AV1_PERF_CPU_WAIT_IMAGE, perf_t);
+   img->fb_ptr = (uint8_t *)fb.buffer_host_ptr;
+   img->alloc_priv = fb.priv;
+   img->is_valid = 1;
+@@ -1029,6 +1040,7 @@ int av1_postprocess_copy_output(Av1Core *dec, AV1_COMMON *cm) {
+     command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(dec->frame_buffer_pool->dev));
+     PutPerfMarker(td, &td->perf_markers[6]);
+     PutPerfMarker(td, &td->perf_markers[7]);
++    av1_perf_gpu_mark(dec, AV1_PERF_GPU_COPY_PLANE);
+   }
+ 
+   command_list->ResourceBarrier(
+@@ -1061,5 +1073,6 @@ int av1_postprocess_copy_output(Av1Core *dec, AV1_COMMON *cm) {
+   command_list->ResourceBarrier(
+       1, &CD3DX12_RESOURCE_BARRIER::Transition(dec->frame_buffer_pool->dev, D3D12_RESOURCE_STATE_COPY_SOURCE,
+                                                D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
++  av1_perf_gpu_mark(dec, AV1_PERF_GPU_OUTPUT_COPY);
+   return 0;
+ }
+diff --git a/libav1/dx/prediction.cpp b/libav1/dx/prediction.cpp
+--- a/libav1/dx/prediction.cpp
++++ b/libav1/dx/prediction.cpp
+@@ -664,6 +664,7 @@ void av1_prediction_gen_blocks(AV1Decoder *pbi, Av1Core *dec) {
+                                        CD3DX12_RESOURCE_BARRIER::UAV(dec->prediction_blocks_warp->dev)};
+   command_list->ResourceBarrier(2, barriers);
+   PutPerfMarker(td, &td->perf_markers[1]);
++  av1_perf_gpu_mark(dec, AV1_PERF_GPU_GEN_BLOCKS);
+ }
+ 
+ struct GlobalMotionWarp {
+@@ -957,6 +958,7 @@ void av1_prediction_run_all(Av1Core *dec, AV1_COMMON *cm, TileInfo *tile) {
+     }
+ 
+     command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(dec->frame_buffer_pool->dev));
++    av1_perf_gpu_mark(dec, AV1_PERF_GPU_INTER);
+   }
+ 
+   const int recon_blocks =
+@@ -1000,6 +1002,7 @@ void av1_prediction_run_all(Av1Core *dec, AV1_COMMON *cm, TileInfo *tile) {
+       }
+ 
+       command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(dec->frame_buffer_pool->dev));
++      av1_perf_gpu_mark(dec, AV1_PERF_GPU_RECON);
+     }
+ 
+     if (td->intra_iters >= 0) {
+@@ -1052,6 +1055,7 @@ void av1_prediction_run_all(Av1Core *dec, AV1_COMMON *cm, TileInfo *tile) {
+           assert(0);
+         }
+       }
++      av1_perf_gpu_mark(dec, AV1_PERF_GPU_INTRA);
+     }
+   }
+   PutPerfMarker(td, &td->perf_markers[3]);
+@@ -1085,4 +1089,5 @@ void av1_inter_ext_borders(Av1Core *dec, AV1_COMMON *cm) {
+   command_list->SetComputeRootConstantBufferView(1, cbo.dev_address);
+   command_list->Dispatch((wi_count + 63) / 64, 1, 1);
+   command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(dec->frame_buffer_pool->dev));
++  av1_perf_gpu_mark(dec, AV1_PERF_GPU_EXT_BORDERS);
+ }
+diff --git a/libav1/dx/transform.cpp b/libav1/dx/transform.cpp
+--- a/libav1/dx/transform.cpp
++++ b/libav1/dx/transform.cpp
+@@ -58,6 +58,7 @@ void av1_idct_run(Av1Core *dec) {
+   value[1] = 0;
+   command_list->SetComputeRoot32BitConstants(1, 2, value, 0);
+   command_list->Dispatch((value[0] + 63) / 64, 1, 1);
++  av1_perf_gpu_mark(dec, AV1_PERF_GPU_RESIDUAL_CLEAR);
+ 
+   shader = &dec->shader_lib->shader_idct_sort;
+   command_list->SetComputeRootSignature(shader->signaturePtr.Get());
+@@ -84,6 +85,7 @@ void av1_idct_run(Av1Core *dec) {
+   D3D12_RESOURCE_BARRIER barriers[] = {CD3DX12_RESOURCE_BARRIER::UAV(dec->idct_blocks->dev),
+                                        CD3DX12_RESOURCE_BARRIER::UAV(dec->idct_residuals->dev)};
+   command_list->ResourceBarrier(2, barriers);
++  av1_perf_gpu_mark(dec, AV1_PERF_GPU_IDCT_SORT);
+   ConstantBufferObject cbo = cb->Alloc(sizeof(idct_frame_data));
+   idct_frame_data *data = reinterpret_cast<idct_frame_data *>(cbo.host_ptr);
+   data->planes[0][0] = td->frame_buffer->planes[0].res_stride;
+@@ -134,4 +136,5 @@ void av1_idct_run(Av1Core *dec) {
+     command_list->Dispatch((const_inline[1] + 63) / 64, 1, 1);
+   }
+   command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(dec->idct_residuals->dev));
++  av1_perf_gpu_mark(dec, AV1_PERF_GPU_IDCT);
+ }
+diff --git a/libav1/dx/types.h b/libav1/dx/types.h
+--- a/libav1/dx/types.h
++++ b/libav1/dx/types.h
+@@ -20,6 +20,7 @@
+ #include "dx/av1_memory.h"
+ #include "dx/av1_thread.h"
+ #include "av1/common/onyxc_int.h"
++#include "dx/av1_perf.h"
+ 
+ enum {
+   UsePipeline = 0,
+@@ -120,6 +121,38 @@ struct ComputeCommandBuffer {
+   void Reset() { cb_ptr = 0; }
+ };
+ 
++enum { Av1PerfMaxMarks = 32 };
++
++// CPU-side timing of the frame currently being built (QPC ticks).
++struct av1_perf_accum {
++  volatile LONG64 ticks[AV1_PERF_CPU_COUNT];
++  volatile LONG64 memset_bytes;
++  int64_t t_frame_start;
++  int64_t t_record_start;
++  int frame_number;
++  int show_frame;
++  int showable_frame;
++  int is_sef;
++  int intra_frame;
++  int used_sec_slot;
++  int intra_iters;
++  int tile_count;
++};
++
++// Per pipeline slot: GPU timestamp queries for the slot's command list and the
++// CPU-side snapshot taken at submit.
++struct av1_perf_td {
++  Microsoft::WRL::ComPtr<ID3D12QueryHeap> query_heap;
++  Microsoft::WRL::ComPtr<ID3D12Resource> readback;
++  int gpu_failed;
++  int gpu_active;
++  int collect;
++  int mark_count;
++  uint8_t mark_stage[Av1PerfMaxMarks];
++  int64_t t_submit;
++  av1_perf_accum acc;
++};
++
+ struct av1_frame_thread_data {
+   ComputeCommandBuffer command_buffer;
+   bitdepth_dependent_shaders* shaders;
+@@ -170,6 +203,7 @@ struct av1_frame_thread_data {
+   int scale_enable;
+   ScaleFactor scale_factors[8];
+   volatile int64_t perf_markers[16];
++  av1_perf_td perf;
+ };
+ 
+ typedef struct {
+@@ -240,6 +274,12 @@ typedef struct Av1Core {
+   DataPtrQueueMT gpu_waiting_queue;
+   pthread_t gpu_thread;
+   int tryhdr10x3;
++  av1_perf_accum perf_cur;
++  uint64_t perf_gpu_freq;
++  uint64_t perf_gpu_last_end;
+ } Av1Core;
+ 
+ void PutPerfMarker(av1_frame_thread_data* td, volatile int64_t* marker);
++// Timing instrumentation (no-ops unless a perf callback is installed).
++void av1_perf_gpu_mark(Av1Core* dec, int stage);
++void av1_perf_add(Av1Core* dec, int id, int64_t start_ticks);
+diff --git a/testing/common/frame_outs.cpp b/testing/common/frame_outs.cpp
+--- a/testing/common/frame_outs.cpp
++++ b/testing/common/frame_outs.cpp
+@@ -16,6 +16,7 @@
+ 
+ #include "frame_outs.h"
+ #include <assert.h>
++#include <chrono>
+ #include "d3dx12.h"
+ 
+ #if defined(_DEBUG)
+@@ -63,6 +64,22 @@ std::shared_ptr<OutBufferWrapper> OutBufferStorage::GetFreeBuffer(uint32_t width
+                                                                   uint32_t flags) {
+   HRESULT hr;
+   int has_errors = 0;
++  int wait_no = 0;
++  std::chrono::steady_clock::time_point wait_start;
++  if (wait_logging_ && queue_free_.IsEmpty()) {
++    size_t rented = 0;
++    {
++      std::unique_lock<std::mutex> lock(cs_);
++      wait_no = ++wait_count_;
++      rented = rented_.size();
++    }
++    wait_start = std::chrono::steady_clock::now();
++    // "held by decoder" buffers are rented and not yet handed back as a ready frame
++    // (frames in flight and hidden frames); the rest sit in the player's display queue.
++    XB_LOGI << "GPUTIME output-buffer wait #" << wait_no << " BLOCKED: pool " << queue_size_
++            << ", free 0, held by decoder " << rented << ", queued or on display "
++            << (queue_size_ - (int)rented);
++  }
+   queue_free_.DoForAll(1, [&](OutBuffer* buffer) {
+     if (flags & CBUFTEXTURE) {
+       if (buffer->renderWidth != width || buffer->renderHeight != height || buffer->fb_type != fb_type) {
+@@ -140,6 +157,16 @@ std::shared_ptr<OutBufferWrapper> OutBufferStorage::GetFreeBuffer(uint32_t width
+     return 0;
+   }
+   OutBuffer* buffer = queue_free_.Pull();
++  if (wait_no) {
++    const double waited_ms =
++        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - wait_start).count();
++    {
++      std::unique_lock<std::mutex> lock(cs_);
++      wait_total_ms_ += waited_ms;
++      if (waited_ms > wait_max_ms_) wait_max_ms_ = waited_ms;
++    }
++    XB_LOGI << "GPUTIME output-buffer wait #" << wait_no << " resumed after " << waited_ms << " ms";
++  }
+   if (!(flags & CBUFREADBACK)) {
+     buffer->d3d12buffer.Reset();
+     buffer->pMem = 0;
+diff --git a/testing/common/frame_outs.h b/testing/common/frame_outs.h
+--- a/testing/common/frame_outs.h
++++ b/testing/common/frame_outs.h
+@@ -109,6 +109,21 @@ class OutBufferStorage {
+   std::shared_ptr<OutBufferWrapper> ReleaseRentedBuffer(void* ptr);
+   std::shared_ptr<OutBufferWrapper> FindRentedBuffer(void* ptr);
+ 
++  // Timing runs: log and count every time GetFreeBuffer finds the pool empty.
++  void SetWaitLogging(bool on) { wait_logging_ = on; }
++  void ResetWaitStats() {
++    std::unique_lock<std::mutex> lock(cs_);
++    wait_count_ = 0;
++    wait_total_ms_ = 0.0;
++    wait_max_ms_ = 0.0;
++  }
++  void GetWaitStats(int* count, double* total_ms, double* max_ms) {
++    std::unique_lock<std::mutex> lock(cs_);
++    *count = wait_count_;
++    *total_ms = wait_total_ms_;
++    *max_ms = wait_max_ms_;
++  }
++
+  private:
+   void Push(OutBuffer* frame);
+   friend class OutBufferWrapper;
+@@ -120,4 +135,8 @@ class OutBufferStorage {
+   int queue_size_;
+   std::mutex cs_;
+   ComPtr<ID3D12Device> dx12_device_;
++  bool wait_logging_ = false;
++  int wait_count_ = 0;
++  double wait_total_ms_ = 0.0;
++  double wait_max_ms_ = 0.0;
+ };
+diff --git a/testing/player_common/cmd_parser.cpp b/testing/player_common/cmd_parser.cpp
+--- a/testing/player_common/cmd_parser.cpp
++++ b/testing/player_common/cmd_parser.cpp
+@@ -38,7 +38,10 @@ int CParameters::Parse(one_task& args, std::string& Err) {
+       {"queue_size", atInt, anOptional, "Player frame queue size. Default 16", "", &params_.player_queue_size_},
+       {"conformance", atSingle, anOptional, "Do conformance test for directory", "", &params_.conformance_},
+       {"try10x3", atSingle, anOptional, "Use 10_10_10_2 display mode. Default false", "", &params_.hdr10x3_},
+-      {"r", atSingle, anOptional, "Recreate decoder for every file", "", &params_.recreate_}};
++      {"r", atSingle, anOptional, "Recreate decoder for every file", "", &params_.recreate_},
++      {"gputime", atSingle, anOptional, "per-stage GPU/CPU timing, summary in the log", "", &params_.gputime_},
++      {"nopresent", atSingle, anOptional, "release decoded frames without presenting them", "",
++       &params_.nopresent_}};
+   params_.command_line_ = args.command_line_;
+   const int list_length = sizeof(avaiting) / sizeof(ParamStruct);
+   bool has_value[list_length] = {false};
+@@ -163,6 +166,8 @@ void CParameters::Reset() {
+   params_.conformance_ = false;
+   params_.noninterop_ = false;
+   params_.recreate_ = false;
++  params_.gputime_ = false;
++  params_.nopresent_ = false;
+ }
+ 
+ void CParameters::GetHelp(int pos, const char* arg, std::string& errMsg, const ParamStruct* arr, int size) {
+diff --git a/testing/player_common/cmd_parser.h b/testing/player_common/cmd_parser.h
+--- a/testing/player_common/cmd_parser.h
++++ b/testing/player_common/cmd_parser.h
+@@ -67,6 +67,8 @@ class CParameters {
+     bool conformance_;
+     bool noninterop_;
+     bool recreate_;
++    bool gputime_;
++    bool nopresent_;
+   };
+   enum arg_type { atSingle, atInt, atString };
+   enum arg_need { anOptional, anMandatory, anAtLeastOne };
+diff --git a/testing/player_common/decoder.cpp b/testing/player_common/decoder.cpp
+--- a/testing/player_common/decoder.cpp
++++ b/testing/player_common/decoder.cpp
+@@ -189,6 +189,20 @@ int AV1Decoder::DecodeOne() {
+   need_preload_ = params_.frate_ >= 0;
+   preload_num_ = params_.player_queue_size_ < PRELOAD_SIZE ? params_.player_queue_size_ : PRELOAD_SIZE;
+ 
++  // Timing run (-gputime): the previous task has drained, so no frame is in flight here.
++  {
++    std::lock_guard<std::mutex> lock(perf_cs_);
++    perf_stats_.Reset();
++  }
++  av1_set_perf_callback(params_.gputime_ ? PerfFrame : NULL, this);
++  perf_installed_ = params_.gputime_ ? 1 : 0;
++  storage_->SetWaitLogging(params_.gputime_);
++  storage_->ResetWaitStats();
++  if (params_.gputime_)
++    XB_LOGI << "GPUTIME timing run: per-stage GPU timestamps and CPU timers on, summary follows the last frame";
++  if (params_.nopresent_)
++    XB_LOGI << "GPUTIME -nopresent: decoded frames go straight back to the pool, nothing is presented";
++
+   output_queue_ = std::unique_ptr<BufferLocker>(new BufferLocker(&params_, cur_frame, storage_));
+   if (display_) display_->AddSource(this);
+ 
+@@ -207,12 +221,19 @@ int AV1Decoder::DecodeOne() {
+   while (buffer && limit-- && !(*stop_) && !output_queue_->hasFatalError_) {
+     XB_LOGD << cnt++ << " - " << buffer->Size();
+     uint64_t user_priv = static_cast<uint64_t>(frame_in++ * framedur);
++    const std::chrono::steady_clock::time_point perf_call_start = std::chrono::steady_clock::now();
+     if (aom_codec_decode(&decctx_, buffer->Data(), buffer->Size(), (void*)user_priv)) {
+       XB_LOGE << "aom_codec_decode error " << aom_codec_error(&decctx_);
+       has_error = 1;
+       output_queue_->hasFatalError_ = 1;
+       break;
+     }
++    if (params_.gputime_) {
++      const double call_ms =
++          std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - perf_call_start).count();
++      std::lock_guard<std::mutex> lock(perf_cs_);
++      perf_stats_.AddDecodeCall(call_ms);
++    }
+     at_least_one = 1;
+ #if (!ASYNC_OUTPUT && !CB_OUTPUT)
+     aom_codec_iter_t iter = NULL;
+@@ -228,6 +249,8 @@ int AV1Decoder::DecodeOne() {
+   }
+   // drain
+   aom_codec_decode(&decctx_, 0, 0, 0);
++  // The drain joins the decoder's GPU completion thread, so every frame record is in.
++  if (params_.gputime_ || params_.nopresent_) PerfReport();
+ #if (!ASYNC_OUTPUT && !CB_OUTPUT)
+   if (!output_queue_->hasFatalError_) {
+     aom_codec_iter_t iter = NULL;
+@@ -273,6 +296,32 @@ int AV1Decoder::DecodeOne() {
+   return 0;
+ }
+ 
++void AV1Decoder::PerfReport() {
++  if (params_.nopresent_ && output_queue_) {
++    const int released = output_queue_->released_;
++    const double span_ms = std::chrono::duration<double, std::milli>(output_queue_->released_last_ -
++                                                                     output_queue_->released_first_)
++                               .count();
++    XB_LOGI << "GPUTIME -nopresent: " << released << " frames released without presenting, "
++            << ((released > 1 && span_ms > 0.0) ? (double)(released - 1) * 1000.0 / span_ms : 0.0)
++            << " fps between the first and the last";
++  }
++  if (!params_.gputime_) return;
++  perfstats::OutputWaits waits = {0, 0.0, 0.0};
++  if (storage_) storage_->GetWaitStats(&waits.count, &waits.total_ms, &waits.max_ms);
++  std::vector<std::string> summary;
++  std::vector<std::string> frames;
++  {
++    std::lock_guard<std::mutex> lock(perf_cs_);
++    summary = perf_stats_.Summary(waits);
++    // Per-frame lines are kept in memory during the run and written only now,
++    // so the timing run adds no log I/O to the decode loop.
++    if (params_.progress_) frames = perf_stats_.FrameLines();
++  }
++  for (size_t i = 0; i < summary.size(); ++i) XB_LOGI << "GPUTIME " << summary[i];
++  for (size_t i = 0; i < frames.size(); ++i) XB_LOGI << "GPUTIME " << frames[i];
++}
++
+ int AV1Decoder::FetchLoop() {
+   aom_image_t* img;
+   aom_codec_iter_t iter = NULL;
+@@ -296,6 +345,11 @@ void AV1Decoder::FlushOutput() {
+ 
+ std::shared_ptr<OutBufferWrapper> AV1Decoder::GetFrame(StreamStats* stats) {
+   if (!output_queue_.get()) return 0;
++  if (params_.nopresent_) {
++    // Nothing to show. Sleep so the render loop does not spin a core next to the tile threads.
++    std::this_thread::sleep_for(std::chrono::milliseconds(10));
++    return 0;
++  }
+   if (need_preload_) {
+     if (output_queue_->Size() < preload_num_ && output_queue_->hasFreeBuffers())
+       return 0;
+@@ -320,6 +374,12 @@ void BufferLocker::Flush() {
+ int BufferLocker::Push(aom_image_t* img) {
+   if (!img) {
+     std::lock_guard<std::mutex> lock(cs_);
++    if (params_->nopresent_) {
++      // Nothing is popped in this mode, so the end of the stream is seen here.
++      got_last_frame_ = 1;
++      cv_.notify_one();
++      return 0;
++    }
+     queue_.push(0);
+     return 0;
+   }
+@@ -356,6 +416,14 @@ int BufferLocker::Push(aom_image_t* img) {
+     frame_counter_++;
+     if (params_->rawDecode_) return 0;
+   }
++  if (params_->nopresent_) {
++    // Hand the buffer straight back to the pool: no display queue, no Present.
++    buffers_pool_->ReleaseRentedBuffer(img->fb2_priv);
++    released_last_ = std::chrono::steady_clock::now();
++    if (!released_++) released_first_ = released_last_;
++    frame_no_++;
++    return 0;
++  }
+   std::shared_ptr<OutBufferWrapper> buffer = buffers_pool_->ReleaseRentedBuffer(img->fb2_priv);  //!!!!
+   assert(buffer);
+   OutBuffer* buf = buffer->Buffer();
+diff --git a/testing/player_common/decoder.h b/testing/player_common/decoder.h
+--- a/testing/player_common/decoder.h
++++ b/testing/player_common/decoder.h
+@@ -24,6 +24,8 @@
+ #include <queue>
+ #include <assert.h>
+ #include <fstream>
++#include <chrono>
++#include <condition_variable>
+ 
+ #include <wrl.h>
+ #include <wrl/client.h>
+@@ -39,6 +41,8 @@
+ #include "common/frame_outs.h"
+ 
+ #include "common/md5_utils.h"
++#include "dx/av1_perf.h"
++#include "perf_stats.h"
+ 
+ #define DROP_TIME 8000
+ #define DISPLAY_MIN_TIME (-10000)
+@@ -191,6 +195,10 @@ class BufferLocker {
+   int frame_no_ = 0;
+   int frame_counter_ = 0;
+   int got_last_frame_ = 0;
++  // -nopresent: frames handed straight back to the pool
++  int released_ = 0;
++  std::chrono::steady_clock::time_point released_first_;
++  std::chrono::steady_clock::time_point released_last_;
+   const CParameters::Parameters* params_;
+   uint32_t hasFatalError_ = 0;
+   uint32_t width_ = 0;
+@@ -212,6 +220,7 @@ class AV1Decoder {
+     if (initialized_) {
+       aom_codec_destroy(&decctx_);
+     }
++    if (perf_installed_) av1_set_perf_callback(NULL, NULL);
+   }
+   void Start(CParameters* params) {
+     need_reinit_ = params && (params->GetParams().threads_ != params_.threads_ ||
+@@ -247,14 +256,29 @@ class AV1Decoder {
+   static int NotifyFrameReady(void* priv, void* img) {
+     if (!priv) return -1;
+     AV1Decoder* This = static_cast<AV1Decoder*>(priv);
++    if (img && This->params_.gputime_) This->PerfOutput();
+     return This->output_queue_->Push((aom_image_t*)img);
+   }
++  // -gputime: one record per decoded frame, from the decoder's GPU completion thread.
++  static void PerfFrame(void* priv, const av1_perf_frame* frame) {
++    if (!priv || !frame) return;
++    AV1Decoder* This = static_cast<AV1Decoder*>(priv);
++    std::lock_guard<std::mutex> lock(This->perf_cs_);
++    This->perf_stats_.AddFrame(*frame);
++  }
+ 
+  protected:
+   static void RunDecoderLoop(AV1Decoder* ptr) { ptr->DecodeLoop(); }
+   static void RunFetchLoop(AV1Decoder* ptr) { ptr->FetchLoop(); }
+   int DecodeLoop();
+   int DecodeOne();
++  void PerfOutput() {
++    const double now_ms =
++        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
++    std::lock_guard<std::mutex> lock(perf_cs_);
++    perf_stats_.AddOutput(now_ms);
++  }
++  void PerfReport();
+   int FetchLoop();
+   void StartFetch() {
+     stop_fetch_ = 0;
+@@ -283,4 +307,7 @@ class AV1Decoder {
+   std::shared_ptr<OutBufferStorage> storage_;
+   int initialized_ = 0;
+   int need_reinit_ = 0;
++  perfstats::PerfStats perf_stats_;
++  std::mutex perf_cs_;
++  int perf_installed_ = 0;
+ };
+\ No newline at end of file
+diff --git a/testing/player_common/perf_stats.h b/testing/player_common/perf_stats.h
+new file mode 100644
+--- /dev/null
++++ b/testing/player_common/perf_stats.h
+@@ -0,0 +1,297 @@
++/*
++ * Summary maths for the -gputime timing run of the test player.
++ *
++ * Header only and free of platform dependencies (needs just dx/av1_perf.h),
++ * so it can be compiled and checked on any host.
++ */
++
++#pragma once
++
++#include <stdarg.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <algorithm>
++#include <string>
++#include <vector>
++
++#include "dx/av1_perf.h"
++
++namespace perfstats {
++
++static const char* const kGpuStageNames[] = {
++    "gen_blocks",   "residual_clear", "idct_sort",  "idct",        "inter",      "recon",
++    "intra",        "lf_gen",         "lf_vert",    "lf_horz",     "cdef",       "superres",
++    "loop_rest",    "ext_borders",    "film_grain", "copy_plane",  "output_copy"};
++static_assert(sizeof(kGpuStageNames) / sizeof(kGpuStageNames[0]) == AV1_PERF_GPU_STAGE_COUNT,
++              "GPU stage names out of step with av1_perf.h");
++
++static const char* const kCpuNames[] = {
++    "wait_slot",     "wait_sec_slot", "wait_fb",        "wait_output",    "wait_image",  "wait_item",
++    "setup",         "memset",        "memset_tile",    "entropy_wall",   "entropy_sum", "record",
++    "rec_gen_blocks", "rec_idct",     "rec_pred",       "rec_loopfilter", "rec_cdef_lr", "rec_borders",
++    "rec_copy",      "submit",        "frame",          "fence_wait",     "gpu_latency", "notify"};
++static_assert(sizeof(kCpuNames) / sizeof(kCpuNames[0]) == AV1_PERF_CPU_COUNT,
++              "CPU timer names out of step with av1_perf.h");
++
++// The waits that stall the decode thread (pool starvation), as opposed to work.
++static const int kBlockedIds[] = {AV1_PERF_CPU_WAIT_SLOT,   AV1_PERF_CPU_WAIT_SEC_SLOT, AV1_PERF_CPU_WAIT_FB,
++                                  AV1_PERF_CPU_WAIT_OUTPUT, AV1_PERF_CPU_WAIT_IMAGE,    AV1_PERF_CPU_WAIT_ITEM};
++
++enum { kWarmupFrames = 10, kMaxFrames = 20000 };
++static const double kTargetMs = 1000.0 / 24.0;
++
++class Series {
++ public:
++  void Add(double v) { v_.push_back(v); }
++  size_t Count() const { return v_.size(); }
++  double Sum() const {
++    double s = 0.0;
++    for (size_t i = 0; i < v_.size(); ++i) s += v_[i];
++    return s;
++  }
++  double Mean() const { return v_.empty() ? 0.0 : Sum() / (double)v_.size(); }
++  double Max() const { return v_.empty() ? 0.0 : *std::max_element(v_.begin(), v_.end()); }
++  // Nearest-rank percentile, p in [0, 100]. 0 for an empty series.
++  double Percentile(double p) const {
++    if (v_.empty()) return 0.0;
++    std::vector<double> s(v_);
++    std::sort(s.begin(), s.end());
++    double rank = p / 100.0 * (double)s.size();
++    size_t idx = (size_t)rank;
++    if ((double)idx < rank) ++idx;  // ceil
++    if (idx < 1) idx = 1;
++    if (idx > s.size()) idx = s.size();
++    return s[idx - 1];
++  }
++
++ private:
++  std::vector<double> v_;
++};
++
++struct OutputWaits {
++  int count;
++  double total_ms;
++  double max_ms;
++};
++
++class PerfStats {
++ public:
++  void Reset() {
++    frames_.clear();
++    outputs_.clear();
++    decode_calls_.clear();
++    dropped_ = 0;
++  }
++  // One record per decoded frame, in completion order.
++  void AddFrame(const av1_perf_frame& f) {
++    if (frames_.size() >= kMaxFrames) {
++      ++dropped_;
++      return;
++    }
++    frames_.push_back(f);
++  }
++  // Player clock (ms) at which a frame was handed to the player for output.
++  void AddOutput(double t_ms) {
++    if (outputs_.size() < kMaxFrames) outputs_.push_back(t_ms);
++  }
++  // Duration of one aom_codec_decode call.
++  void AddDecodeCall(double ms) {
++    if (decode_calls_.size() < kMaxFrames) decode_calls_.push_back(ms);
++  }
++  size_t Frames() const { return frames_.size(); }
++  size_t Outputs() const { return outputs_.size(); }
++
++  // Number of leading samples left out of the statistics.
++  static size_t Warmup(size_t n) { return n > 2 * (size_t)kWarmupFrames ? (size_t)kWarmupFrames : 0; }
++
++  static double Blocked(const av1_perf_frame& f) {
++    double s = 0.0;
++    for (size_t i = 0; i < sizeof(kBlockedIds) / sizeof(kBlockedIds[0]); ++i) s += f.cpu_ms[kBlockedIds[i]];
++    return s;
++  }
++
++  std::vector<std::string> Summary(const OutputWaits& waits) const {
++    std::vector<std::string> out;
++    char b[512];
++    const size_t n = frames_.size();
++    const size_t w = Warmup(n);
++    const size_t ow = Warmup(outputs_.size());
++
++    size_t shown = 0, hidden = 0, sef = 0, intra = 0, gpu_ok = 0, sec_slot = 0;
++    Series wall, busy, sum, gap, blocked, iters, mbytes, wall_out, calls;
++    Series gpu_stage[AV1_PERF_GPU_STAGE_COUNT];
++    Series cpu[AV1_PERF_CPU_COUNT];
++    double stage_total[AV1_PERF_GPU_STAGE_COUNT] = {0.0};
++    for (size_t i = w; i < n; ++i) {
++      const av1_perf_frame& f = frames_[i];
++      if (f.is_sef)
++        ++sef;
++      else if (f.show_frame)
++        ++shown;
++      else
++        ++hidden;
++      if (f.intra_frame) ++intra;
++      if (f.used_sec_slot) ++sec_slot;
++      if (i > 0) wall.Add(f.complete_ms - frames_[i - 1].complete_ms);
++      if (f.gpu_valid) {
++        ++gpu_ok;
++        busy.Add(f.gpu_span_ms);
++        sum.Add(f.gpu_sum_ms);
++        if (f.gpu_gap_ms >= 0.0 && i > 0) gap.Add(f.gpu_gap_ms);
++        for (int s = 0; s < AV1_PERF_GPU_STAGE_COUNT; ++s) {
++          if (f.gpu_stage_hits[s] > 0) {
++            gpu_stage[s].Add(f.gpu_stage_ms[s]);
++            stage_total[s] += f.gpu_stage_ms[s];
++          }
++        }
++      }
++      for (int c = 0; c < AV1_PERF_CPU_COUNT; ++c) cpu[c].Add(f.cpu_ms[c]);
++      blocked.Add(Blocked(f));
++      if (f.intra_iters >= 0) iters.Add((double)f.intra_iters);
++      mbytes.Add((double)f.memset_bytes / (1024.0 * 1024.0));
++    }
++    for (size_t i = (ow > 0 ? ow : 1); i < outputs_.size(); ++i) wall_out.Add(outputs_[i] - outputs_[i - 1]);
++    for (size_t i = Warmup(decode_calls_.size()); i < decode_calls_.size(); ++i) calls.Add(decode_calls_[i]);
++
++    const size_t measured = n - w;
++    snprintf(b, sizeof(b),
++             "==== summary: %u frames decoded, %u output; warm-up %u skipped, %u measured "
++             "(%u shown, %u hidden, %u show-existing copies, %u intra), GPU timestamps on %u ====",
++             (unsigned)n, (unsigned)outputs_.size(), (unsigned)w, (unsigned)measured, (unsigned)shown,
++             (unsigned)hidden, (unsigned)sef, (unsigned)intra, (unsigned)gpu_ok);
++    out.push_back(b);
++    if (n == 0) {
++      out.push_back("no frame records: nothing was decoded, or the decoder never reached a GPU submit");
++      return out;
++    }
++    if (w == 0) out.push_back("too few frames for a warm-up, all frames are in the statistics");
++    if (dropped_) {
++      snprintf(b, sizeof(b), "%u later frames not recorded (record limit %d)", (unsigned)dropped_, (int)kMaxFrames);
++      out.push_back(b);
++    }
++    if (gpu_ok == 0)
++      out.push_back("NO GPU TIMESTAMPS: the decoder queue refused timestamp queries, gpu lines below are empty");
++
++    snprintf(b, sizeof(b), "target: 24 fps needs <= %.2f ms per output frame", kTargetMs);
++    out.push_back(b);
++    out.push_back("-- per frame, ms --                          n     mean      p50      p95      max");
++    Line(&out, "wall between output frames", wall_out, Fps(wall_out.Mean()), "fps output");
++    Line(&out, "wall between decoded frames", wall, Fps(wall.Mean()), "fps decoded");
++    Line(&out, "gpu busy (first to last timestamp)", busy, Pct(busy.Sum(), wall.Sum()), "% of wall");
++    Line(&out, "gpu stage sum", sum, 0.0, 0);
++    Line(&out, "gpu idle gap before the frame", gap, 0.0, 0);
++    Line(&out, "cpu decode thread, setup to submit", cpu[AV1_PERF_CPU_FRAME], Pct(cpu[AV1_PERF_CPU_FRAME].Sum(), wall.Sum()),
++         "% of wall");
++    Line(&out, "cpu entropy/tile decode, wall", cpu[AV1_PERF_CPU_ENTROPY_WALL], 0.0, 0);
++    Line(&out, "cpu entropy/tile decode, thread sum", cpu[AV1_PERF_CPU_ENTROPY_SUM], 0.0, 0);
++    Line(&out, "cpu command list record", cpu[AV1_PERF_CPU_RECORD], 0.0, 0);
++    Line(&out, "cpu submit", cpu[AV1_PERF_CPU_SUBMIT], 0.0, 0);
++    Line(&out, "cpu memsets (frame + tile)", SumOf(w, AV1_PERF_CPU_MEMSET, AV1_PERF_CPU_MEMSET_TILE), mbytes.Mean(),
++         "MB cleared per frame");
++    Line(&out, "blocked, decode thread, all waits", blocked, Pct(blocked.Sum(), wall.Sum()), "% of wall");
++    Line(&out, "blocked on fence, completion thread", cpu[AV1_PERF_CPU_FENCE_WAIT], 0.0, 0);
++    Line(&out, "decode call (aom_codec_decode)", calls, 0.0, 0);
++
++    // What an output frame costs: hidden frames are paid for by the shown ones.
++    if (!outputs_.empty()) {
++      const double ratio = (double)n / (double)outputs_.size();
++      snprintf(b, sizeof(b),
++               "per OUTPUT frame (%.2f decoded frames each): wall %.2f ms, gpu busy %.2f ms, cpu decode thread %.2f ms, "
++               "entropy wall %.2f ms, blocked %.2f ms (target %.2f)",
++               ratio, wall_out.Mean(), busy.Mean() * ratio, cpu[AV1_PERF_CPU_FRAME].Mean() * ratio,
++               cpu[AV1_PERF_CPU_ENTROPY_WALL].Mean() * ratio, blocked.Mean() * ratio, kTargetMs);
++      out.push_back(b);
++    }
++
++    out.push_back("-- gpu stages, ms (frames = frames that ran the stage; avg = spread over all measured frames) --");
++    out.push_back("stage                    frames     mean      p50      p95      max      avg   share");
++    for (int s = 0; s < AV1_PERF_GPU_STAGE_COUNT; ++s) {
++      const Series& g = gpu_stage[s];
++      if (g.Count() == 0) {
++        snprintf(b, sizeof(b), "gpu %-18s %8u  (not dispatched)", kGpuStageNames[s], 0u);
++      } else {
++        snprintf(b, sizeof(b), "gpu %-18s %8u %8.3f %8.3f %8.3f %8.3f %8.3f %6.1f%%", kGpuStageNames[s],
++                 (unsigned)g.Count(), g.Mean(), g.Percentile(50), g.Percentile(95), g.Max(),
++                 gpu_ok ? stage_total[s] / (double)gpu_ok : 0.0, Pct(stage_total[s], sum.Sum()));
++      }
++      out.push_back(b);
++    }
++
++    out.push_back("-- cpu timers, ms per frame --                n     mean      p50      p95      max");
++    for (int c = 0; c < AV1_PERF_CPU_COUNT; ++c) {
++      char name[64];
++      snprintf(name, sizeof(name), "cpu %s", kCpuNames[c]);
++      Line(&out, name, cpu[c], 0.0, 0);
++    }
++
++    snprintf(b, sizeof(b), "intra wavefront iterations per frame: mean %.1f, max %.0f (%u frames with intra)",
++             iters.Mean(), iters.Max(), (unsigned)iters.Count());
++    out.push_back(b);
++    snprintf(b, sizeof(b), "frames that also took the second pipeline slot: %u of %u", (unsigned)sec_slot,
++             (unsigned)measured);
++    out.push_back(b);
++    snprintf(b, sizeof(b), "output-buffer waits: %d, total %.1f ms, longest %.1f ms (whole run, warm-up included)",
++             waits.count, waits.total_ms, waits.max_ms);
++    out.push_back(b);
++    out.push_back("==== end of summary ====");
++    return out;
++  }
++
++  // One line per decoded frame, for the -progress dump after the summary.
++  std::vector<std::string> FrameLines() const {
++    std::vector<std::string> out;
++    char b[1536];
++    for (size_t i = 0; i < frames_.size(); ++i) {
++      const av1_perf_frame& f = frames_[i];
++      int len = snprintf(b, sizeof(b),
++                         "frame %u no=%d show=%d sef=%d intra=%d iters=%d tiles=%d sec=%d wall=%.2f busy=%.2f gap=%.2f |",
++                         (unsigned)i, f.frame_number, f.show_frame, f.is_sef, f.intra_frame, f.intra_iters,
++                         f.tile_count, f.used_sec_slot, i > 0 ? f.complete_ms - frames_[i - 1].complete_ms : 0.0,
++                         f.gpu_span_ms, f.gpu_gap_ms);
++      for (int s = 0; s < AV1_PERF_GPU_STAGE_COUNT; ++s) {
++        if (f.gpu_stage_hits[s] > 0) Append(b, sizeof(b), &len, " %s=%.2f", kGpuStageNames[s], f.gpu_stage_ms[s]);
++      }
++      Append(b, sizeof(b), &len, " |");
++      for (int c = 0; c < AV1_PERF_CPU_COUNT; ++c) {
++        if (f.cpu_ms[c] >= 0.005) Append(b, sizeof(b), &len, " %s=%.2f", kCpuNames[c], f.cpu_ms[c]);
++      }
++      out.push_back(b);
++    }
++    return out;
++  }
++
++ private:
++  static double Fps(double ms) { return ms > 0.0 ? 1000.0 / ms : 0.0; }
++  static double Pct(double part, double whole) { return whole > 0.0 ? 100.0 * part / whole : 0.0; }
++
++  Series SumOf(size_t from, int id_a, int id_b) const {
++    Series s;
++    for (size_t i = from; i < frames_.size(); ++i) s.Add(frames_[i].cpu_ms[id_a] + frames_[i].cpu_ms[id_b]);
++    return s;
++  }
++
++  static void Line(std::vector<std::string>* out, const char* name, const Series& s, double extra,
++                   const char* extra_name) {
++    char b[512];
++    int len = snprintf(b, sizeof(b), "%-38s %6u %8.3f %8.3f %8.3f %8.3f", name, (unsigned)s.Count(), s.Mean(),
++                       s.Percentile(50), s.Percentile(95), s.Max());
++    if (extra_name) Append(b, sizeof(b), &len, "   %.1f %s", extra, extra_name);
++    out->push_back(b);
++  }
++
++  static void Append(char* b, size_t cap, int* len, const char* fmt, ...) {
++    if (*len < 0 || (size_t)*len >= cap) return;
++    va_list ap;
++    va_start(ap, fmt);
++    const int r = vsnprintf(b + *len, cap - (size_t)*len, fmt, ap);
++    va_end(ap);
++    if (r > 0) *len += r;
++  }
++
++  std::vector<av1_perf_frame> frames_;
++  std::vector<double> outputs_;
++  std::vector<double> decode_calls_;
++  size_t dropped_ = 0;
++};
++
++}  // namespace perfstats
+diff --git a/testing/player_common/perf_stats_test.cpp b/testing/player_common/perf_stats_test.cpp
+new file mode 100644
+--- /dev/null
++++ b/testing/player_common/perf_stats_test.cpp
+@@ -0,0 +1,171 @@
++/*
++ * Host-side sanity check for the -gputime summary maths. Not part of the
++ * player build. From the repository root:
++ *
++ *   g++ -std=c++14 -Wall -Wextra -I libav1 -o perf_stats_test testing/player_common/perf_stats_test.cpp
++ *   ./perf_stats_test
++ */
++
++#include <math.h>
++#include <stdio.h>
++#include <string.h>
++
++#include "perf_stats.h"
++
++static int g_failed = 0;
++
++#define CHECK(cond)                                           \
++  do {                                                        \
++    if (!(cond)) {                                            \
++      printf("FAILED %s:%d: %s\n", __FILE__, __LINE__, #cond); \
++      ++g_failed;                                             \
++    }                                                         \
++  } while (0)
++
++static bool Near(double a, double b) { return fabs(a - b) < 1e-9; }
++
++static bool Has(const std::vector<std::string>& lines, const char* text) {
++  for (size_t i = 0; i < lines.size(); ++i)
++    if (lines[i].find(text) != std::string::npos) return true;
++  return false;
++}
++
++static av1_perf_frame MakeFrame(int n, double complete_ms, int show) {
++  av1_perf_frame f;
++  memset(&f, 0, sizeof(f));
++  f.frame_number = n;
++  f.show_frame = show;
++  f.intra_iters = 40;
++  f.tile_count = 4;
++  f.gpu_valid = 1;
++  f.gpu_marks = 4;
++  f.gpu_stage_ms[AV1_PERF_GPU_IDCT] = 4.0;
++  f.gpu_stage_hits[AV1_PERF_GPU_IDCT] = 1;
++  f.gpu_stage_ms[AV1_PERF_GPU_INTRA] = 10.0;
++  f.gpu_stage_hits[AV1_PERF_GPU_INTRA] = 1;
++  f.gpu_stage_ms[AV1_PERF_GPU_CDEF] = 6.0;
++  f.gpu_stage_hits[AV1_PERF_GPU_CDEF] = 1;
++  f.gpu_sum_ms = 20.0;
++  f.gpu_span_ms = 20.0;
++  f.gpu_gap_ms = n ? 30.0 : -1.0;
++  f.cpu_ms[AV1_PERF_CPU_ENTROPY_WALL] = 12.0;
++  f.cpu_ms[AV1_PERF_CPU_ENTROPY_SUM] = 48.0;
++  f.cpu_ms[AV1_PERF_CPU_FRAME] = 25.0;
++  f.cpu_ms[AV1_PERF_CPU_WAIT_OUTPUT] = 3.0;
++  f.cpu_ms[AV1_PERF_CPU_WAIT_SLOT] = 2.0;
++  f.memset_bytes = 8 * 1024 * 1024;
++  f.complete_ms = complete_ms;
++  return f;
++}
++
++int main() {
++  using namespace perfstats;
++  const OutputWaits no_waits = {0, 0.0, 0.0};
++
++  // Series: empty and small inputs.
++  {
++    Series s;
++    CHECK(s.Count() == 0);
++    CHECK(Near(s.Mean(), 0.0));
++    CHECK(Near(s.Percentile(50), 0.0));
++    CHECK(Near(s.Percentile(95), 0.0));
++    CHECK(Near(s.Max(), 0.0));
++    s.Add(7.0);
++    CHECK(Near(s.Mean(), 7.0));
++    CHECK(Near(s.Percentile(50), 7.0));
++    CHECK(Near(s.Percentile(95), 7.0));
++    Series t;
++    for (int i = 1; i <= 100; ++i) t.Add((double)(101 - i));  // 100..1, unsorted
++    CHECK(Near(t.Mean(), 50.5));
++    CHECK(Near(t.Percentile(50), 50.0));
++    CHECK(Near(t.Percentile(95), 95.0));
++    CHECK(Near(t.Percentile(100), 100.0));
++    CHECK(Near(t.Percentile(0), 1.0));
++    CHECK(Near(t.Max(), 100.0));
++  }
++
++  // Zero frames: a summary, no crash, no division by zero.
++  {
++    PerfStats st;
++    std::vector<std::string> lines = st.Summary(no_waits);
++    CHECK(!lines.empty());
++    CHECK(Has(lines, "0 frames decoded"));
++    CHECK(Has(lines, "no frame records"));
++    CHECK(st.FrameLines().empty());
++  }
++
++  // One frame: no wall interval yet, no warm-up.
++  {
++    PerfStats st;
++    st.AddFrame(MakeFrame(0, 1000.0, 1));
++    st.AddOutput(1000.0);
++    std::vector<std::string> lines = st.Summary(no_waits);
++    CHECK(Has(lines, "1 frames decoded"));
++    CHECK(Has(lines, "too few frames for a warm-up"));
++    CHECK(st.FrameLines().size() == 1);
++    for (size_t i = 0; i < lines.size(); ++i) {
++      CHECK(lines[i].find("nan") == std::string::npos);
++      CHECK(lines[i].find("inf") == std::string::npos);
++    }
++  }
++
++  // A frame without GPU timestamps.
++  {
++    PerfStats st;
++    av1_perf_frame f = MakeFrame(0, 10.0, 1);
++    f.gpu_valid = 0;
++    st.AddFrame(f);
++    CHECK(Has(st.Summary(no_waits), "NO GPU TIMESTAMPS"));
++  }
++
++  // A steady run: 100 decoded frames 50 ms apart, every fifth one hidden.
++  {
++    PerfStats st;
++    CHECK(PerfStats::Warmup(100) == (size_t)kWarmupFrames);
++    CHECK(PerfStats::Warmup(20) == 0);
++    for (int i = 0; i < 100; ++i) {
++      const int show = (i % 5) != 4;
++      st.AddFrame(MakeFrame(i, 1000.0 + 50.0 * i, show));
++      if (show) st.AddOutput(1000.0 + 50.0 * i);
++      st.AddDecodeCall(30.0);
++    }
++    CHECK(st.Frames() == 100);
++    CHECK(st.Outputs() == 80);
++    CHECK(Near(PerfStats::Blocked(MakeFrame(1, 0.0, 1)), 5.0));
++    const OutputWaits waits = {3, 120.0, 60.0};
++    std::vector<std::string> lines = st.Summary(waits);
++    CHECK(Has(lines, "100 frames decoded, 80 output; warm-up 10 skipped, 90 measured"));
++    CHECK(Has(lines, "72 shown, 18 hidden"));
++    CHECK(Has(lines, "20.0 fps decoded"));
++    CHECK(Has(lines, "16.1 fps output"));  // 62.14 ms between the 70 measured output frames
++    CHECK(Has(lines, "40.0 % of wall"));   // 20 ms GPU busy of 50 ms wall
++    CHECK(Has(lines, "gpu intra"));
++    CHECK(Has(lines, "50.0%"));  // intra is 10 of the 20 ms stage sum
++    CHECK(Has(lines, "(not dispatched)"));
++    CHECK(Has(lines, "output-buffer waits: 3, total 120.0 ms, longest 60.0 ms"));
++    CHECK(Has(lines, "1.25 decoded frames each"));
++    CHECK(st.FrameLines().size() == 100);
++    for (size_t i = 0; i < lines.size(); ++i) {
++      CHECK(lines[i].find("nan") == std::string::npos);
++      CHECK(lines[i].find("inf") == std::string::npos);
++      CHECK(lines[i].size() < 300);
++    }
++    st.Reset();
++    CHECK(st.Frames() == 0 && st.Outputs() == 0);
++  }
++
++  // The record limit holds.
++  {
++    PerfStats st;
++    for (int i = 0; i < kMaxFrames + 5; ++i) st.AddFrame(MakeFrame(i, (double)i, 1));
++    CHECK(st.Frames() == (size_t)kMaxFrames);
++    CHECK(Has(st.Summary(no_waits), "5 later frames not recorded"));
++  }
++
++  if (g_failed) {
++    printf("%d check(s) failed\n", g_failed);
++    return 1;
++  }
++  printf("perf_stats: all checks passed\n");
++  return 0;
++}

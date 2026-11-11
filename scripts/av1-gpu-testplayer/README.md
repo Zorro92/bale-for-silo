@@ -19,6 +19,12 @@ performance. Nothing in Bale's app, normal CI workflow, dependency pins or packa
   `Windows::Storage::ApplicationData::Current->LocalFolder->Path`, converted with
   upstream's existing `pstos()` narrow-string helper. The x64 `uwp_common` project
   already compiles this file with `/ZW`, so no entry-point shim is needed.
+- `0002-gpu-stage-timing-and-nopresent.patch` adds two player flags, `-gputime` and
+  `-nopresent`, for the timing run described under
+  [Timing run](#timing-run--gputime-and--nopresent). It touches the test player
+  (`testing/common`, `testing/player_common`) and the libav1 D3D12 host (`libav1/dx`,
+  plus two timers in `libav1/av1/decoder/decodeframe.c`). No shader, no shader maths
+  and no decoded output changes; without the flags the decoder runs as before.
 
 The workflow fetches the pinned commit directly from Googlesource, checks its hash,
 and applies the patches with `git apply`. It builds `av1xbox.sln` (the player and its
@@ -119,3 +125,157 @@ or invalid args file produces diagnostics there, not a file-picker UI. App-mode 
 availability and performance remain to be measured; upstream's old error text about
 Game mode is not evidence that app mode was tested or a reason to change the app type
 for this experiment.
+
+## Timing run (`-gputime` and `-nopresent`)
+
+The question for this run: **where does the time per 4K frame go**, and can the GPU
+side alone ever fit in 41.67 ms (24 fps)?
+
+| Flag | Effect |
+| --- | --- |
+| `-gputime` | Per-stage GPU timestamps and CPU timers for every decoded frame, a summary at the end of the task, and a live log line each time the decoder blocks on the player's output buffers. |
+| `-nopresent` | Decoded frames go straight back to the buffer pool. Nothing is queued for display and nothing is presented, so the picture stays blank. The render loop sleeps 10 ms per pass instead of spinning. |
+
+Both are off by default, and the player then behaves as before. `-progress` keeps its
+existing per-frame lines.
+
+Put both lines in `args_av1.txt`, the `-nopresent` one first (it cannot stall on the
+display, so its summary is written even if the second task hangs):
+
+```text
+-i /streams/<clip>.ivf -t 6 -frate -1 -limit 300 -queue_size 4 -progress -gputime -nopresent
+-i /streams/<clip>.ivf -t 6 -frate -1 -limit 300 -queue_size 4 -progress -gputime
+```
+
+For a single timing run with presentation, use the second line alone.
+
+### What is measured
+
+GPU: a D3D12 timestamp query after every stage of the frame's command list, on the
+queue the decoder submits to (the player passes no queue, so the decoder creates its
+own direct queue; the frequency comes from that queue). The queries are resolved into
+a readback buffer as the last command of the list and read only after the frame's
+existing fence has completed, so the run adds no wait. A stage's time is its timestamp
+minus the previous one, which means **the stage times add up to the first-to-last
+span exactly**, and any gap between two stages is counted in the later one.
+
+| GPU stage | What it covers |
+| --- | --- |
+| `gen_blocks` | prediction block generation |
+| `residual_clear` | residual buffer fill (the whole buffer, every frame) |
+| `idct_sort`, `idct` | transform block sort, inverse transform (all types) |
+| `inter`, `recon` | inter prediction (all passes), inter residual reconstruction |
+| `intra` | intra prediction, the whole wavefront loop |
+| `lf_gen`, `lf_vert`, `lf_horz` | loop filter: block generation, vertical edges (two passes), horizontal edges |
+| `cdef`, `superres`, `loop_rest` | CDEF, super-resolution, loop restoration |
+| `ext_borders` | reference border extension |
+| `film_grain` | film grain |
+| `copy_plane`, `output_copy` | copy shader into the staging area, then the copy into the output buffer or textures |
+
+A timestamp records when the GPU reaches that point of the list. Stages that end in a
+UAV barrier are cleanly separated. `residual_clear` has no barrier before `idct_sort`,
+so read those two together. Stages a clip never uses are shown as `(not dispatched)`.
+
+CPU timers (QueryPerformanceCounter, all in ms per frame):
+
+| Timer | Meaning |
+| --- | --- |
+| `entropy_wall`, `entropy_sum` | tile (entropy) decode: wall time on the decode thread, and the sum over the tile threads. `sum / wall` is the parallelism actually reached. |
+| `record` | recording the frame's command list, waits excluded. `rec_gen_blocks`, `rec_idct`, `rec_pred`, `rec_loopfilter`, `rec_cdef_lr`, `rec_borders`, `rec_copy` split it by host function (`rec_copy` still contains `wait_output` and `wait_image`). |
+| `submit` | `Close`, `ExecuteCommandLists`, `Signal` |
+| `memset`, `memset_tile` | the per-frame and per-tile memsets; the summary also gives the MB cleared per frame |
+| `setup` | `av1_setup_frame`, including its waits and memsets |
+| `frame` | decode thread, frame setup to submit done |
+| `wait_slot`, `wait_sec_slot` | blocked waiting for one of the two pipeline slots. High values mean the GPU is behind the CPU. |
+| `wait_output` | blocked in the player's output buffer callback (pool of `-queue_size`) |
+| `wait_fb`, `wait_image`, `wait_item` | blocked on the reference frame pool, the output image pool, the GPU work item pool |
+| `fence_wait`, `gpu_latency` | completion thread: time blocked on the frame's fence, and submit-to-fence time |
+| `notify` | time inside the frame-ready callback. With `-progress` this includes its two log writes per frame. |
+
+### Log lines
+
+All new lines start with `GPUTIME`, in the usual `LocalState\logs` file.
+
+Live, during decoding:
+
+```text
+GPUTIME output-buffer wait #3 BLOCKED: pool 4, free 0, held by decoder 3, queued or on display 1
+GPUTIME output-buffer wait #3 resumed after 41.7 ms
+```
+
+The number is a running count. "Held by decoder" are buffers rented for frames in
+flight and hidden frames not shown yet. A `BLOCKED` line with no `resumed` line at
+the end of a log means the task hung right there; if "held by decoder" equals the
+pool size, nothing outside the decoder could free a buffer.
+
+After the last frame, the summary (first 10 decoded frames and first 10 output frames
+are left out as warm-up when the task has more than 20):
+
+```text
+GPUTIME ==== summary: 300 frames decoded, 240 output; warm-up 10 skipped, 290 measured (...), GPU timestamps on 290 ====
+GPUTIME target: 24 fps needs <= 41.67 ms per output frame
+GPUTIME -- per frame, ms --                          n     mean      p50      p95      max
+GPUTIME wall between output frames                ...                                        NN.N fps output
+GPUTIME wall between decoded frames               ...                                        NN.N fps decoded
+GPUTIME gpu busy (first to last timestamp)        ...                                        NN.N % of wall
+GPUTIME gpu stage sum                             ...
+GPUTIME gpu idle gap before the frame             ...
+GPUTIME cpu decode thread, setup to submit        ...                                        NN.N % of wall
+GPUTIME cpu entropy/tile decode, wall             ...
+GPUTIME blocked, decode thread, all waits         ...                                        NN.N % of wall
+GPUTIME per OUTPUT frame (1.25 decoded frames each): wall .. ms, gpu busy .. ms, cpu decode thread .. ms, ...
+GPUTIME stage                    frames     mean      p50      p95      max      avg   share
+GPUTIME gpu intra                   290    ...
+GPUTIME cpu wait_output             290    ...
+GPUTIME output-buffer waits: 3, total 120.0 ms, longest 60.0 ms (whole run, warm-up included)
+GPUTIME ==== end of summary ====
+```
+
+In the stage table, `mean`/`p50`/`p95`/`max` are over the frames that ran the stage,
+`avg` spreads the stage over all measured frames (the `avg` column adds up to the
+"gpu busy" mean), and `share` is the stage's part of all GPU time.
+
+With `-progress` as well, one line per decoded frame follows the summary. They are
+kept in memory during the run and written at the end, so they add no log I/O to the
+decode loop:
+
+```text
+GPUTIME frame 57 no=57 show=1 sef=0 intra=0 iters=62 tiles=4 sec=0 wall=61.20 busy=38.10 gap=22.40 | gen_blocks=0.31 ... | entropy_wall=18.20 ...
+```
+
+`wall` is the time since the previous frame completed, `busy` the first-to-last GPU
+span, `gap` the time the decoder's queue sat idle before this frame, `iters` the intra
+wavefront iterations, `sec` whether the frame also took the second pipeline slot.
+Timers at zero are left out.
+
+`-nopresent` adds one line of its own: frames released and the fps between the first
+and the last. If the queue refuses timestamp queries the summary says
+`NO GPU TIMESTAMPS` and the CPU timers are still valid.
+
+### How to read it
+
+- **"per OUTPUT frame" is the line to compare with 41.67 ms.** Hidden frames are
+  decoded but not output, so an output frame costs more than a decoded one.
+- **GPU busy per output frame near or above 41.67 ms**: the shaders themselves are too
+  slow; the stage table says which. No host change gets a port to 24 fps.
+- **GPU busy well under the wall time, large idle gap, `wait_slot` near zero**: the GPU
+  is waiting for the CPU. Look at `entropy_wall`, `record`, `memset` and the blocked
+  waits.
+- **`wait_slot` high**: the CPU is waiting for the GPU (only two frames can be in the
+  pipeline).
+- **`wait_output` high, or output-buffer wait lines**: the player's output pool is the
+  limit, which is what `-queue_size 4` in app mode makes likely.
+- **`-nopresent` faster than the presenting task**: the difference is presentation
+  coupling (buffers held by the display queue, GPU time taken by the swap chain), since
+  the decoder does not share a command queue with the swap chain in this player.
+
+### Host-side check of the summary maths
+
+The summary code is a plain header (`testing/player_common/perf_stats.h`). The patch
+also adds a small test that is not part of the player build. In a tree with the
+patches applied:
+
+```sh
+g++ -std=c++14 -Wall -Wextra -I libav1 -o perf_stats_test testing/player_common/perf_stats_test.cpp
+./perf_stats_test
+```
