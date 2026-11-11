@@ -1,5 +1,6 @@
 using System.Globalization;
 using Bale.Core.Api.Models;
+using Bale.Core.Detail;
 
 namespace Bale.Core.Playback;
 
@@ -79,8 +80,11 @@ public sealed record PlaybackStats
         _ => bps.ToString(CultureInfo.InvariantCulture) + " bps",
     };
 
-    /// <summary>Copy only diagnostic metadata, never the plan's stream URL, headers or credentials.</summary>
-    public static PlaybackStats FromPlan(PlaybackPlan plan, bool? isHls = null)
+    /// <summary>
+    /// Copy only diagnostic metadata, never the plan's stream URL, headers or credentials.
+    /// <paramref name="versions"/> are the title's file versions, to name a version swap.
+    /// </summary>
+    public static PlaybackStats FromPlan(PlaybackPlan plan, bool? isHls = null, IReadOnlyList<FileVersion>? versions = null)
     {
         var delivery = MetadataId(plan.Delivery);
         var decision = delivery switch
@@ -91,6 +95,7 @@ public sealed record PlaybackStats
             _ => delivery,
         };
         if (decision is not null && DescribeDecisionReason(plan.DecisionReason) is { } reason) decision += $" ({reason})";
+        if (DescribeVersionSwap(plan, versions) is { } swap) decision = decision is null ? swap : $"{decision} · {swap}";
         var hls = isHls ?? (string.Equals(plan.Stream?.Protocol, "hls", StringComparison.OrdinalIgnoreCase)
             || string.Equals(delivery, "hls", StringComparison.OrdinalIgnoreCase)
             || delivery?.EndsWith("_hls", StringComparison.OrdinalIgnoreCase) == true);
@@ -147,8 +152,6 @@ public sealed record PlaybackStats
         }
     }
 
-    // Plan fields are protocol ids/codecs, not free-form server diagnostics. Reject rather than
-    // redact unexpected values so neither the screen nor debug 'where' can disclose request data.
     /// <summary>
     /// Readable text for silo-server's plan decision_reason (internal/playback/plan_v3.go). The
     /// official clients never show it, so the wording is Bale's. Unknown codes still show, with
@@ -175,7 +178,36 @@ public sealed record PlaybackStats
         { } other => other.Replace('_', ' '),
     };
 
-    private static string? MetadataId(string? value)
+    /// <summary>
+    /// The server may play another file than the one asked for (silo-server's alternate-version
+    /// fallback, "prefer lower version transcode": a version that plays as it is instead of a
+    /// transcode of the requested one). Names both with the Detail readout's labels, e.g.
+    /// "1080P version instead of 4K · DV"; null when the plan played the requested file or names none.
+    /// </summary>
+    public static string? DescribeVersionSwap(PlaybackPlan plan, IReadOnlyList<FileVersion>? versions)
+    {
+        var requested = plan.RequestedMediaFileId?.Trim();
+        var effective = plan.EffectiveMediaFileId?.Trim();
+        if (string.IsNullOrEmpty(requested) || string.IsNullOrEmpty(effective)
+            || string.Equals(requested, effective, StringComparison.Ordinal)) return null;
+        if (Label(effective) is not { } played || Label(requested) is not { } asked) return "other version played";
+        // Two versions can share a readout label (same resolution and range, another codec or cut).
+        return played == asked ? $"other {played} version played" : $"{played} version instead of {asked}";
+
+        string? Label(string fileId)
+        {
+            if (versions?.FirstOrDefault(version => version.FileId == fileId) is not { } version) return null;
+            var label = PlaybackFormatting.VersionCompactLabel(version);
+            // "Auto" is the label's empty value. A version's resolution is server text, so hold
+            // it to the same characters as a plan id, plus the label's own separator.
+            return label != "Auto" && label.Length <= 40 && MetadataId(label.Replace(" · ", " ")) is not null ? label : null;
+        }
+    }
+
+    // Plan fields are protocol ids/codecs, not free-form server diagnostics. Reject rather than
+    // redact unexpected values so neither the screen, debug 'where' nor the log can disclose
+    // request data.
+    internal static string? MetadataId(string? value)
     {
         value = value?.Trim();
         return value is { Length: > 0 and <= 160 }

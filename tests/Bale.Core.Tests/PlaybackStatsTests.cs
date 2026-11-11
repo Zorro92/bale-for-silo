@@ -277,4 +277,68 @@ public class PlaybackStatsTests
         Assert.Equal("mkv · hevc", stats.Source);
         Assert.DoesNotContain(stats.HudRows(), row => row.Value.Contains("secret", StringComparison.Ordinal));
     }
+
+    private static readonly FileVersion[] SwapVersions =
+    [
+        new() { FileId = "202779", Resolution = "4K", CodecVideo = "dvhe.05.06" },
+        new() { FileId = "24796", Resolution = "1080p", CodecVideo = "h264" },
+        new() { FileId = "24797", Resolution = "1080p", CodecVideo = "hevc" },
+        new() { FileId = "unlabelled" },
+        new() { FileId = "odd", Resolution = "see https://example.invalid/?st=secret" },
+    ];
+
+    [Fact]
+    public void DeliveryNamesTheVersionTheServerPlayedInstead()
+    {
+        // The real case: a 4K Dolby Vision pick on an SDR display, played from the 1080p version.
+        var plan = new PlaybackPlan { Delivery = "original_http", RequestedMediaFileId = "202779", EffectiveMediaFileId = "24796" };
+        Assert.Equal("Direct play · 1080P version instead of 4K · DV", PlaybackStats.FromPlan(plan, versions: SwapVersions).Delivery);
+        Assert.Contains(("Delivery", "Direct play · 1080P version instead of 4K · DV"), PlaybackStats.FromPlan(plan, versions: SwapVersions).HudRows());
+        // The decision reason keeps its place.
+        plan.DecisionReason = "quality_device_limit";
+        Assert.Equal("Direct play (above max resolution) · 1080P version instead of 4K · DV",
+            PlaybackStats.FromPlan(plan, isHls: false, SwapVersions).Delivery);
+        // Same readout label on both sides.
+        plan = new PlaybackPlan { Delivery = "server_transcode_hls", RequestedMediaFileId = "24797", EffectiveMediaFileId = "24796" };
+        Assert.Equal("Transcode · other 1080P version played", PlaybackStats.FromPlan(plan, versions: SwapVersions).Delivery);
+    }
+
+    [Theory]
+    [InlineData("202779", "missing")]
+    [InlineData("missing", "24796")]
+    [InlineData("202779", "unlabelled")]
+    [InlineData("202779", "odd")]
+    public void SwapToOrFromAnUnknownVersionSaysOnlyThatAnotherPlayed(string requested, string effective)
+    {
+        var plan = new PlaybackPlan { Delivery = "original_http", RequestedMediaFileId = requested, EffectiveMediaFileId = effective };
+        Assert.Equal("Direct play · other version played", PlaybackStats.FromPlan(plan, versions: SwapVersions).Delivery);
+        Assert.Equal("Direct play · other version played", PlaybackStats.FromPlan(plan, versions: []).Delivery);
+        Assert.Equal("Direct play · other version played", PlaybackStats.FromPlan(plan).Delivery);
+    }
+
+    [Theory]
+    [InlineData("24796", "24796")]   // No swap.
+    [InlineData(" 24796", "24796 ")]
+    [InlineData(null, "24796")]      // Requested missing: nothing to compare with.
+    [InlineData("", "24796")]
+    [InlineData("202779", null)]     // Effective missing.
+    [InlineData("202779", " ")]
+    [InlineData(null, null)]
+    public void DeliveryHasNoNoteWithoutASwap(string? requested, string? effective)
+    {
+        var plan = new PlaybackPlan
+        {
+            Delivery = "original_http", DecisionReason = "quality_device_limit",
+            RequestedMediaFileId = requested, EffectiveMediaFileId = effective,
+        };
+        Assert.Null(PlaybackStats.DescribeVersionSwap(plan, SwapVersions));
+        Assert.Equal("Direct play (above max resolution)", PlaybackStats.FromPlan(plan, versions: SwapVersions).Delivery);
+    }
+
+    [Fact]
+    public void ASwapShowsEvenWithoutAReadableDelivery()
+    {
+        var plan = new PlaybackPlan { RequestedMediaFileId = "202779", EffectiveMediaFileId = "24796" };
+        Assert.Equal("1080P version instead of 4K · DV", PlaybackStats.FromPlan(plan, versions: SwapVersions).Delivery);
+    }
 }

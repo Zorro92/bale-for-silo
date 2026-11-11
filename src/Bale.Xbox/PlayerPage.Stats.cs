@@ -37,16 +37,19 @@ public sealed partial class PlayerPage
         if (DebugStatsVisible) RenderStatsRows();
     }
 
-    private static PlaybackStats PlanStats(PlaybackPlan? plan, bool? isHls = null) => (plan is null ? new PlaybackStats() : PlaybackStats.FromPlan(plan, isHls)) with
+    private static PlaybackStats PlanStats(Attempt? attempt, bool? isHls = null) => (attempt is { Plan: { } plan }
+        // The title's versions name a version swap in the Delivery row.
+        ? PlaybackStats.FromPlan(plan, isHls, attempt.Request.Detail.Versions)
+        : new PlaybackStats()) with
     {
         BackendDisplayName = "Windows MediaPlayer",
         // VideoBackendCapabilities.kt reports backend support, not a claimed container list.
         HardContainers = "No",
     };
 
-    private void ResetStats(PlaybackPlan? plan = null)
+    private void ResetStats(Attempt? attempt = null)
     {
-        try { SetStats(PlanStats(plan)); }
+        try { SetStats(PlanStats(attempt)); }
         catch (Exception ex) { LogFailure("stats reset", ex); }
     }
 
@@ -54,7 +57,7 @@ public sealed partial class PlayerPage
     {
         try
         {
-            var stats = PlanStats(attempt.Plan, attempt.Media?.Transport.IsHls);
+            var stats = PlanStats(attempt, attempt.Media?.Transport.IsHls);
             string? processCpu = null;
             PlaybackFrameDeliverySnapshot? frames = null;
             if (attempt.Media is { } media)

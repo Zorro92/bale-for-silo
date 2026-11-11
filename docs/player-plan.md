@@ -1124,6 +1124,31 @@ switches the HDMI mode to fit the content and logs `display match:`.
 Core tests cover the rule and the claim bounds; the Xbox read has tests with an HDMI stand-in.
 **Not yet verified on the console.**
 
+### What the server decided
+
+Bale's choice is only the file it asks for. The server can answer with another version of the same
+edition: when the requested 4K file would need a transcode, its media-version fallback
+(`playback.prefer_lower_version_transcode`, on by default; silo-server
+`docs/architecture/playback-protocol-v3.md`) serves the lower qualities from a lower-resolution
+version. A 4K Dolby Vision pick on an SDR display then plays the title's 1080p H.264 file as it
+is. The plan says so in `requested_media_file_id` / `effective_media_file_id`, and two diagnostics
+show it:
+
+- **Log**, one line for every plan the player mounts (the start, the failure replan and each seek
+  reanchor), from `PlaybackPlanLog.Describe` in Core:
+  `player: plan delivery=original_http reason=quality_device_limit requested=<id> effective=<id>
+  quality=1080p warnings=<code>,<code> transformations=<name>,<name>`.
+  Empty fields are left out. Every value is a protocol id held to `PlaybackStats.MetadataId`
+  (ASCII letters, digits and `_-.+ `, at most 160 characters); anything else is written as `?`.
+  Warnings give their code, never the message; transformations their name. A list shows eight
+  entries, then `+N`. The stream URL, grants, headers and source details are never written.
+- **Stats**, in the **Delivery** row after the delivery and its `decision_reason` text
+  (`PlaybackStats.DescribeDecisionReason`): `Direct play · 1080P version instead of 4K · DV`.
+  The names are the Detail readout's (`PlaybackFormatting.VersionCompactLabel`) for the two
+  files in the title's versions. Two versions with the same label read `other 1080P version
+  played`; a file that isn't in the versions, or has no usable label, reads `other version
+  played`. No note when the two ids match or the plan names no requested file.
+
 ## Phases
 
 Each phase ships on its own, is verified on the console and is ticked here.

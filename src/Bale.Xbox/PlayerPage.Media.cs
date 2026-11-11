@@ -61,6 +61,9 @@ public sealed partial class PlayerPage
 
     private async Task MountPlanAsync(Attempt attempt, double playerStart, bool paused = false)
     {
+        // Every accepted plan mounts here: the start, the failure replan and each seek reanchor.
+        // The line carries protocol ids only (PlaybackPlanLog), never the URL or warning text.
+        Log.Info("player: " + PlaybackPlanLog.Describe(attempt.Plan));
 #if DEBUG_SERVER
         if (attempt.PretendHdr)
         {
@@ -106,7 +109,7 @@ public sealed partial class PlayerPage
         _duration = transport.DurationSeconds;
         StartSubtitles(attempt, media);
 #if DEBUG_SERVER
-        ResetStats(attempt.Plan);
+        ResetStats(attempt);
 #endif
         // Delivery is a protocol identifier, never a URL or server-supplied diagnostic string.
         var delivery = _delivery is { Length: > 0 and < 80 } value
