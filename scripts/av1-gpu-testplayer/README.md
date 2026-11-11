@@ -321,8 +321,8 @@ CDEF shader: cdef_filter_v2 (-cdefv2)
 | 8x8 block with zero primary strengths | direction search still runs | no direction search |
 | Direction search | on 16 of the 128 threads, a loop over 64 samples into an indexed array, while the other threads wait at a barrier | on every thread for its own block, fully unrolled |
 | Group shared memory | 32-bit per sample, an input window and an output array; results are written to shared memory, read back and then stored | two 16-bit samples per word, input window only; each thread stores its own result |
-| Barriers per group | six | one |
-| Tap weights | constant tables | computed |
+| Barriers per group | six in the source, five after FXC | one |
+| Primary tap weights | constant table (immediate constant buffer) | computed |
 
 Bindings, the constant buffer and the frame buffers are the same, so the host change
 is the choice of pipeline state and the dispatch size (`(w + 63) >> 6` by
@@ -397,3 +397,21 @@ build it checks that each listing's bytecode is the one compiled into the packag
 temps (arrays the compiler could not keep in registers), immediate constant buffer
 use, group shared memory size, barriers, and load/store counts. The counts are static
 (instructions in the listing), not instructions executed, and are not a timing.
+
+With the pinned upstream and FXC from Windows SDK `10.0.26100.0`:
+
+| | `cdef_filter.hlsl` | `cdef_filter_v2.hlsl` |
+| --- | --- | --- |
+| Thread group | 4, 4, 8 | 8, 8, 1 |
+| Instruction slots | 1160 | 3223 |
+| Temp registers | 10 | 29 |
+| Indexable temps | 1: `x0[120]` (`partial[8][15]` of the direction search), 227 instructions use it | none |
+| Immediate constant buffer | yes, read at 4 places | no |
+| Group shared memory | 12,224 bytes per 32x32 | 15,552 bytes per 64x64 |
+| Barriers | 5 | 1 |
+| Loops | 22 | 9 |
+
+The new shader is longer because its direction search and its four-sample filter are
+unrolled; what a thread executes is shorter. In the upstream listing the direction
+search loop reads and writes the indexable temp 16 times per sample with a computed
+index, 64 samples per block.

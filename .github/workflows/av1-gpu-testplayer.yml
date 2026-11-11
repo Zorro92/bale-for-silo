@@ -76,7 +76,7 @@ jobs:
           $fxc = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin\$env:WINDOWS_SDK\x64\fxc.exe"
           if (-not (Test-Path $fxc)) { throw "fxc.exe of Windows SDK $env:WINDOWS_SDK not found" }
           $directory = (New-Item -ItemType Directory -Force out/cdef-shaders).FullName
-          $stats = @("FXC of Windows SDK $env:WINDOWS_SDK: /T cs_5_0 /E main, default optimization (the Release x64 project settings).",
+          $stats = @("FXC of Windows SDK $($env:WINDOWS_SDK): /T cs_5_0 /E main, default optimization (the Release x64 project settings).",
             'Counts are static: instructions in the listing, not instructions executed.')
           foreach ($name in @('cdef_filter', 'cdef_filter_v2')) {
             $listing = Join-Path $directory "$name.asm"
