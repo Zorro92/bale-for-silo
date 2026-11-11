@@ -54,7 +54,9 @@
 #   scripts/bale-debug.sh playtest <url> [seconds]  muted public http(s) stream probe (1–10 s, default 3)
 #   timeout 300 scripts/bale-debug.sh playtest suite [seconds]  Chromium samples, one at a time
 #                                               (the whole suite needs more than the usual timeout 20)
-#   scripts/bale-debug.sh playtest-engine <url|@file|suite> [seconds] [cs|rust|rust-ffmpeg]  debug IMFMediaEngine frame-server probe (1–60 s, default 3; rust = bale_gpu.dll port; rust-ffmpeg = FFmpeg software source)
+#   scripts/bale-debug.sh playtest-engine <url|@file|suite> [seconds] [cs|rust|rust-ffmpeg] [target=bgra|fp16|rgb10]  debug IMFMediaEngine frame-server probe (1–60 s, default 3; rust = bale_gpu.dll port; rust-ffmpeg = FFmpeg software source)
+#                                               target= (rust only, after seconds and mode; default bgra) sets the engine output format and texture; fp16/rgb10 read a centred crop back
+#                                               about once a second and print HDR statistics with an hdr-range=preserved|clipped/sdr verdict (phase 0 of GPU tone mapping)
 #   scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [mode] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|gpu|off|on|default]
 #                                               hdr=on|off forces the wrapper's HdrSupport Enabled/Disabled (default omitted = Automatic: HDR colour info only if HDMI is already BT.2020)
 #                                               software mode uses the production path (zero-copy, upload variant 6, GPU grain); grain=on/dav1d: dav1d; gpu: GPU; off exports only (wrapper 2.1.0-bale.10+)
@@ -410,11 +412,13 @@ case "${1:-}" in
     playtest_mode_args=()
     if [[ "$playtest_route" == playtest-engine ]]; then
       playtest_max_seconds=60
-      playtest_max_args=4
+      playtest_max_args=5
       # 20 s engine open budget plus teardown (rust-ffmpeg adds up to 30 s FFmpeg create).
       playtest_open_margin=30
       [[ "${4:-cs}" == rust-ffmpeg ]] && playtest_open_margin=60
       playtest_mode_args=(--data-urlencode "mode=${4:-cs}")
+      # Output format of the Rust probe only; the other modes have no such option.
+      [[ "$#" -ge 5 ]] && playtest_mode_args+=(--data-urlencode "$5")
     fi
     if [[ "$playtest_route" == playtest-ffmpeg ]]; then
       playtest_max_seconds=60
@@ -426,9 +430,10 @@ case "${1:-}" in
     if [[ "$#" -lt 2 || "$#" -gt "$playtest_max_args" || ! "$playtest_seconds" =~ ^([1-9]|[1-5][0-9]|60)$ ]] \
       || (( playtest_seconds > playtest_max_seconds )) \
       || [[ "$playtest_route" == playtest-ffmpeg && ! "${4:-auto}" =~ ^(auto|software|system)$ ]] \
-      || [[ "$playtest_route" == playtest-engine && ! "${4:-cs}" =~ ^(cs|rust|rust-ffmpeg)$ ]]; then
+      || [[ "$playtest_route" == playtest-engine && ! "${4:-cs}" =~ ^(cs|rust|rust-ffmpeg)$ ]] \
+      || [[ "$playtest_route" == playtest-engine && "$#" -ge 5 && ( "$4" != rust || ! "$5" =~ ^target=(bgra|fp16|rgb10)$ ) ]]; then
       echo 'usage: scripts/bale-debug.sh playtest <http(s)-url|suite> [seconds] (1–10, default 3; suite needs timeout 300)' >&2
-      echo '       scripts/bale-debug.sh playtest-engine <http(s)-url|@file|suite> [seconds] [cs|rust|rust-ffmpeg] (1–60 s, default 3; default cs)' >&2
+      echo '       scripts/bale-debug.sh playtest-engine <http(s)-url|@file|suite> [seconds] [cs|rust|rust-ffmpeg] [target=bgra|fp16|rgb10] (1–60 s, default 3; default cs; target needs seconds and rust, default bgra)' >&2
       echo '       scripts/bale-debug.sh playtest-ffmpeg <http(s)-url|@file|suite> [seconds] [auto|software|system] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|gpu|off|on|default] (1–60 s, default 3; tuning requires seconds/mode)' >&2
       exit 2
     fi

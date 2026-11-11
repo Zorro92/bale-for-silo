@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn versions_and_panic_containment() {
-        assert_eq!(crate::ABI_VERSION, 5);
+        assert_eq!(crate::ABI_VERSION, 6);
         assert_eq!(bale_grain_abi_version(), 2);
         assert_eq!(boundary(|| panic!("test boundary")), E_UNEXPECTED);
     }

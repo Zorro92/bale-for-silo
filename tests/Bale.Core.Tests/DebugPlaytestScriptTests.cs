@@ -237,6 +237,49 @@ public class DebugPlaytestScriptTests
     }
 
     [Theory]
+    [InlineData("bgra")]
+    [InlineData("fp16")]
+    [InlineData("rgb10")]
+    public async Task EngineTargetIsSentOnlyForTheRustProbeAndForEverySuiteSample(string target)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["playtest-engine", "@fixture", "10", "rust", "target=" + target]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/playtest-engine\n", result.Arguments);
+        Assert.Contains("--data-urlencode\nmode=rust\n", result.Arguments);
+        Assert.Contains("--data-urlencode\ntarget=" + target + "\n", result.Arguments);
+        Assert.Contains("--max-time\n40\n", result.Arguments);
+        Assert.DoesNotContain("not-a-real-grant", result.Output + result.Arguments);
+        var suite = await RunAsync(["playtest-engine", "suite", "3", "rust", "target=" + target]);
+        Assert.Equal(0, suite.ExitCode);
+        Assert.Equal(11, suite.Arguments.Split('\n').Count(line => line == "target=" + target));
+        var omitted = await RunAsync(["playtest-engine", "@fixture", "10", "rust"]);
+        Assert.Equal(0, omitted.ExitCode);
+        Assert.DoesNotContain("target=", omitted.Arguments);
+    }
+
+    [Theory]
+    [InlineData("cs", "target=fp16")]
+    [InlineData("rust-ffmpeg", "target=rgb10")]
+    [InlineData("rust", "target=FP16")]
+    [InlineData("rust", "target=p010")]
+    [InlineData("rust", "target=")]
+    [InlineData("rust", "fp16")]
+    [InlineData("rust", "format=fp16")]
+    [InlineData("rust", "target=fp16 target=rgb10")]
+    [InlineData("target=fp16", null)]
+    public async Task InvalidEngineTargetNeverInvokesCurl(string mode, string? option)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        string[] args = option is null ? ["playtest-engine", "@fixture", "3", mode]
+            : ["playtest-engine", "@fixture", "3", mode, .. option.Split(' ')];
+        var result = await RunAsync(args);
+        Assert.Equal(2, result.ExitCode);
+        Assert.Empty(result.Arguments);
+        Assert.Contains("[target=bgra|fp16|rgb10]", result.Output);
+    }
+
+    [Theory]
     [InlineData("hdr=")]
     [InlineData("hdr=ON")]
     [InlineData("hdr=1")]

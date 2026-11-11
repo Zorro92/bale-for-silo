@@ -1,6 +1,6 @@
 # Bale stage 2: GPU AV1 film grain (design)
 
-**Current state (2026-11-09, wrapper 0020 / `2.1.0-bale.20`, `bale_gpu` ABI 5, grain ABI 2):** GPU grain
+**Current state (2026-11-09, wrapper 0020 / `2.1.0-bale.20`, `bale_gpu` ABI 6, grain ABI 2):** GPU grain
 is the only grain Bale applies in production. Zero-copy frames get it fused into the D3D12 direct write
 (`repack_grain_zc_cs.hlsl`, 8- and 10-bit); a declined 10-bit direct write lands the frame
 (`bale_zc_repack`) and runs the D3D11 grain pass (`bale_grain_gpu_*`). Requested GPU grain that is
@@ -415,7 +415,7 @@ All named cases below exist with both `-8` and `-10` suffixes unless noted.
 
 ### Step 3: console probe
 - Debug-only `scripts/bale-debug.sh rust` / `GET /rust` calls the additive `bale_grain_gpu_probe`
-  export (then grain ABI 1, crate ABI 4; now grain ABI 2, crate ABI 5), on the existing background task with a 64 KiB report
+  export (then grain ABI 1, crate ABI 4; now grain ABI 2, crate ABI 6), on the existing background task with a 64 KiB report
   buffer and a 120 s curl timeout. It creates a private hardware VIDEO_SUPPORT device, enables
   multithread protection, reports feature level and runs the existing NV12/P010 create-time tests.
   A failed create also reports Device1/Context1 casts, required format-support bits, context-state

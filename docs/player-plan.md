@@ -127,7 +127,7 @@ Delivered-ahead was ~1.3/~2.3 s, not a renderer queue-depth measurement; start/s
 was ~0.2–0.3/~0.5–0.7 s. The user prefers the 1 s default for less start/seek buffering;
 these results do not establish a CPU improvement.
 
-**Software AV1 path (wrapper 0020, `2.1.0-bale.20`; `bale_gpu` ABI 5, grain ABI 2, zero-copy ABI 1).**
+**Software AV1 path (wrapper 0020, `2.1.0-bale.20`; `bale_gpu` ABI 6, grain ABI 2, zero-copy ABI 1).**
 There is one path. libdav1d decodes into `bale_gpu` zero-copy D3D12 buffers; the D3D12 direct write
 (`bale_zc_repack_into` / `_into_bits`, fused GPU grain) fills the pooled MF texture, and a declined
 10-bit write lands (`bale_zc_repack`) and runs the D3D11 grain pass (`bale_grain_gpu_*`). Claimed:
@@ -803,7 +803,7 @@ swscale conversion (~0.6 core) and the staging fill disappear. dav1d's own cost 
    exported and applied; Jellyfin 4K, 1 thread): a valid custom buffer, a misaligned layout and a
    failing callback all give bit-identical frames to the default pool, every buffer is freed, and
    at most 10 pictures are alive at once (~250 MB at 4K, same as the internal pool).
-2. **`bale_gpu` zero-copy module** (Rust, separate zero-copy ABI 1; `ABI_VERSION` unchanged then; now 5).
+2. **`bale_gpu` zero-copy module** (Rust, separate zero-copy ABI 1; `ABI_VERSION` unchanged then; now 6).
    Done: `native/bale-gpu/src/d3d12_repack.rs` (`bale_zc_*` exports), layout checks and CPU reference
    in `src/zc_frame.rs`, shader `shaders/repack_zc_cs.hlsl`, WARP tests `tests/zero_copy_*.rs`. One
    handle per uploader, created from the MF D3D11 device and immediate context after the caller
@@ -993,6 +993,51 @@ frame-server copies cost ~0.4–0.9 core more. Its value is control (our own D3D
 for GPU passes, engine drop statistics), not speed. Only GPU-side AV1 decode (no D3D11 AV1 profile on
 Xbox; a D3D12 compute decoder is the remaining option) or a cheaper decode (grain export via patch 0005,
 `grain=off`) can move 4K AV1.
+
+#### HDR frame-server probe (phase 0 of GPU tone mapping)
+
+Production HDR on an SDR display stays server tone-mapped (see "Decision: keep server tone mapping"
+below). This debug-only probe asks whether a Bale GPU tone-map pass (PQ → linear, BT.2020 → BT.709,
+BT.2390 curve) is feasible at all: can the frame server hand Bale hardware-decoded HEVC HDR10 frames
+with the HDR values intact, and what does the copy cost at 4K? If it can, Bale could send the server's
+`client_managed_dynamic_range_v1` original_http claim, which Apple's clients already send, and map the
+picture itself. The probe only measures. It renders nothing and changes no production behaviour.
+
+```
+scripts/bale-debug.sh playtest-engine <url|@file|suite> <seconds> rust target=bgra|fp16|rgb10
+```
+
+`target` is only for `rust` mode and needs the seconds and the mode before it; `cs` and `rust-ffmpeg`
+reject it. `bgra` (the default) is the old behaviour. `fp16` is `DXGI_FORMAT_R16G16B16A16_FLOAT` and
+`rgb10` is `DXGI_FORMAT_R10G10B10A2_UNORM`. The format is requested in the two documented places only:
+`MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT` on the engine attributes and the format of the destination
+texture given to `TransferVideoFrame`. The report prints `Format support` (`CheckFormatSupport`), the
+`Format used` read back from the texture and the attribute, and, when a step refuses the format, the
+step name and its HRESULT (`SetUINT32 output format`, engine creation, `CreateTexture2D`, or the
+count and first HRESULT of failed `TransferVideoFrame` calls).
+
+For `fp16` and `rgb10`, the first frame, then about one frame a second, and the last frame are read
+back: a centred crop (1024x1024, or the frame size on an axis where the frame is smaller) is copied to a
+staging texture and scanned. The `Readback:` line times that separately (copy+map, which also waits for
+the GPU to finish the frame transfer, and the scan); none of it is inside the `TransferVideoFrame`
+timing. Compare the transfer times and `cores` of a `target=fp16` run with a `target=bgra` run of the
+same clip for the cost of the wider format.
+
+The last line of the readback block is the verdict, taken over all samples so a black last frame cannot
+hide HDR:
+
+- `hdr-range=preserved`: the values above SDR white survived. For `fp16` the texture is read as scRGB
+  (1.0 = 80 nits) and the peak is above 1.5 (120 nits). For `rgb10` the code values look like PQ: the
+  median of max(R,G,B) is below code 520 (about 100 nits in PQ), the 99th percentile is above it, and
+  under 0.1 % of pixels sit at or above code 940. This is a heuristic. SDR video puts its median well
+  above 520 or piles pixels up at white (940 limited range, 1023 full range), while PQ keeps most of
+  the picture low and only highlights high. A very dark SDR clip or a very bright HDR clip can fool
+  it, so read the percentiles on the same line.
+- `hdr-range=clipped/sdr`: Media Foundation tone-mapped or clipped to SDR before the copy. The
+  frame-server route cannot feed a tone-map pass in that format.
+- `hdr-range=unknown`: the probe stopped before any readback; the step and HRESULT are above it.
+
+Results:
 
 ## Display HDR
 

@@ -8,6 +8,10 @@
 //! `Input::Source` plays a caller-supplied COM object instead (FFmpegInteropX's MediaStreamSource):
 //! it must expose `IMFMediaSource`, which an `IMFMediaEngineExtension` hands to the engine for a
 //! private URL, as Chromium's MediaFoundationRenderer does (media/renderers/win/media_engine_extension.cc).
+//!
+//! `Target` picks the output format (`MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT` and the destination
+//! texture alike, the only documented lever). For fp16 and rgb10 a centred crop is read back about
+//! once a second to see whether HDR10 range survives `TransferVideoFrame`: phase 0 of GPU tone mapping.
 
 use std::fmt::Write as _;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,11 +22,14 @@ use windows::Win32::Foundation::{FILETIME, HANDLE, HMODULE, RECT};
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL};
 use windows::Win32::Graphics::Direct3D10::ID3D10Multithread;
 use windows::Win32::Graphics::Direct3D11::{
-    D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-    D3D11_CREATE_DEVICE_VIDEO_SUPPORT, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
-    D3D11_USAGE_DEFAULT, D3D11CreateDevice, ID3D11Device, ID3D11Texture2D,
+    D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_BOX, D3D11_CPU_ACCESS_READ,
+    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+    D3D11_FORMAT_SUPPORT_RENDER_TARGET, D3D11_FORMAT_SUPPORT_TEXTURE2D,
+    D3D11_FORMAT_SUPPORT_VIDEO_PROCESSOR_OUTPUT, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE,
+    D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
+    D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
 };
-use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
+use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT, DXGI_SAMPLE_DESC};
 use windows::Win32::Media::MediaFoundation::{
     CLSID_MFMediaEngineClassFactory, IMFAsyncCallback, IMFAsyncResult, IMFAttributes,
     IMFByteStream, IMFDXGIDeviceManager, IMFGetService, IMFMediaEngine, IMFMediaEngineClassFactory,
@@ -37,8 +44,12 @@ use windows::Win32::Media::MediaFoundation::{
 use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes, SetEvent};
 use windows::core::{BOOL, BSTR, GUID, HRESULT, IUnknown, Interface, OutRef, Ref, implement};
 
+use crate::engine_target::{Sampler, Target, centred_crop, format_name};
+
 const MF_VERSION: u32 = 0x0002_0070; // MF_SDK_VERSION 2 << 16 | MF_API_VERSION 0x70
 const OPEN_TIMEOUT: Duration = Duration::from_secs(20);
+/// Gap between HDR readbacks: often enough to catch a highlight, rare enough not to disturb playback.
+const READBACK_INTERVAL: Duration = Duration::from_secs(1);
 
 const STATISTICS: [(i32, &str); 7] = [
     (0, "frames rendered"),
@@ -176,8 +187,179 @@ impl<T> StepResult<T> for windows::core::Result<T> {
     }
 }
 
+/// Reads a centred crop of the frame texture back through a staging texture and gathers its
+/// statistics (fp16 and rgb10 only). Timed apart from `TransferVideoFrame`.
+struct Readback {
+    context: ID3D11DeviceContext,
+    staging: ID3D11Texture2D,
+    region: D3D11_BOX,
+    frame: (u32, u32),
+    row_bytes: usize,
+    sampler: Sampler,
+    copy_total: Duration,
+    copy_max: Duration,
+    scan_total: Duration,
+    scan_max: Duration,
+    failures: u32,
+    first_failure: Step,
+}
+
+impl Readback {
+    unsafe fn new(
+        device: &ID3D11Device,
+        sampler: Sampler,
+        target: Target,
+        width: u32,
+        height: u32,
+    ) -> Result<Self, Step> {
+        let (left, top, crop_width, crop_height) = centred_crop(width, height);
+        let desc = D3D11_TEXTURE2D_DESC {
+            Width: crop_width,
+            Height: crop_height,
+            MipLevels: 1,
+            ArraySize: 1,
+            Format: DXGI_FORMAT(target.dxgi_format() as i32),
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
+            Usage: D3D11_USAGE_STAGING,
+            BindFlags: 0,
+            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+            MiscFlags: 0,
+        };
+        let mut staging: Option<ID3D11Texture2D> = None;
+        // SAFETY: `desc` and the out-pointer are valid locals.
+        unsafe { device.CreateTexture2D(&desc, None, Some(&mut staging)) }
+            .step("CreateTexture2D staging")?;
+        let staging = staging.ok_or(Step(
+            "CreateTexture2D staging",
+            HRESULT(0x8000_4003u32 as i32),
+        ))?;
+        // SAFETY: the device is alive.
+        let context = unsafe { device.GetImmediateContext() }.step("GetImmediateContext")?;
+        Ok(Self {
+            context,
+            staging,
+            region: D3D11_BOX {
+                left,
+                top,
+                front: 0,
+                right: left + crop_width,
+                bottom: top + crop_height,
+                back: 1,
+            },
+            frame: (width, height),
+            row_bytes: crop_width as usize * target.bytes_per_pixel(),
+            sampler,
+            copy_total: Duration::ZERO,
+            copy_max: Duration::ZERO,
+            scan_total: Duration::ZERO,
+            scan_max: Duration::ZERO,
+            failures: 0,
+            first_failure: Step("", HRESULT(0)),
+        })
+    }
+
+    fn fail(&mut self, step: Step) {
+        if self.failures == 0 {
+            self.first_failure = step;
+        }
+        self.failures += 1;
+    }
+
+    /// Copies the crop of `texture` (the frame just transferred) and scans it.
+    unsafe fn sample(&mut self, texture: &ID3D11Texture2D) {
+        let started = Instant::now();
+        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+        // SAFETY: both textures belong to this context's device; the box lies inside the frame.
+        // Map blocks until the GPU has finished the copy, and the frame transfer before it.
+        let map = unsafe {
+            self.context.CopySubresourceRegion(
+                &self.staging,
+                0,
+                0,
+                0,
+                0,
+                texture,
+                0,
+                Some(&self.region),
+            );
+            self.context
+                .Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
+        };
+        if let Err(error) = map {
+            self.fail(Step("Map staging", error.code()));
+            return;
+        }
+        let copied = started.elapsed();
+        let rows = (self.region.bottom - self.region.top) as usize;
+        let pitch = mapped.RowPitch as usize;
+        if mapped.pData.is_null() || pitch < self.row_bytes {
+            self.fail(Step("Map staging layout", HRESULT(0x8000_FFFFu32 as i32)));
+        } else {
+            self.sampler.begin_sample();
+            for row in 0..rows {
+                // SAFETY: a mapped staging texture has `rows` rows of `pitch` bytes, each holding
+                // at least `row_bytes` of pixels, readable until Unmap.
+                let bytes = unsafe {
+                    std::slice::from_raw_parts(
+                        mapped.pData.cast::<u8>().add(row * pitch),
+                        self.row_bytes,
+                    )
+                };
+                self.sampler.add_row(bytes);
+            }
+            self.sampler.end_sample();
+        }
+        // SAFETY: the staging texture is mapped by the call above.
+        unsafe { self.context.Unmap(&self.staging, 0) };
+        let scanned = started.elapsed() - copied;
+        self.copy_total += copied;
+        self.copy_max = self.copy_max.max(copied);
+        self.scan_total += scanned;
+        self.scan_max = self.scan_max.max(scanned);
+    }
+
+    fn append(&self, report: &mut String) {
+        let samples = self.sampler.samples();
+        let _ = write!(
+            report,
+            "Readback: {samples} samples, crop {}x{} at ({},{}) of {}x{}",
+            self.region.right - self.region.left,
+            self.region.bottom - self.region.top,
+            self.region.left,
+            self.region.top,
+            self.frame.0,
+            self.frame.1
+        );
+        if samples > 0 {
+            let mean = |total: Duration| total.as_secs_f64() * 1000.0 / f64::from(samples);
+            let _ = write!(
+                report,
+                "; copy+map mean {:.3} ms, max {:.3} ms; scan mean {:.3} ms, max {:.3} ms",
+                mean(self.copy_total),
+                self.copy_max.as_secs_f64() * 1000.0,
+                mean(self.scan_total),
+                self.scan_max.as_secs_f64() * 1000.0
+            );
+        }
+        if self.failures > 0 {
+            let _ = write!(
+                report,
+                "; failures: {} (first 0x{:08X} at {})",
+                self.failures, self.first_failure.1.0 as u32, self.first_failure.0
+            );
+        }
+        report.push_str(
+            " (not part of the TransferVideoFrame timing; copy+map waits for the GPU to finish the frame transfer)\n",
+        );
+        report.push_str(&self.sampler.report());
+    }
+}
+
 /// Runs the probe and returns the plain-text report.
-pub fn run(input: Input, seconds: u32) -> String {
+pub fn run(input: Input, seconds: u32, target: Target) -> String {
     let mut report = String::from(match input {
         Input::Url(_) => {
             "Media engine probe (Rust bale_gpu.dll; frame-server mode, muted, own D3D11 device)\n"
@@ -186,6 +368,13 @@ pub fn run(input: Input, seconds: u32) -> String {
             "Media engine probe (Rust bale_gpu.dll; caller media source via engine extension; frame-server mode, muted)\n"
         }
     });
+    let _ = writeln!(
+        report,
+        "Target: {} (DXGI_FORMAT_{} = {}) requested as MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT and as the destination texture format",
+        target.name(),
+        target.format_name(),
+        target.dxgi_format()
+    );
     let shared = Arc::new(Shared {
         clock: Instant::now(),
         can_play: AtomicBool::new(false),
@@ -206,9 +395,26 @@ pub fn run(input: Input, seconds: u32) -> String {
     }
     let mut engine: Option<IMFMediaEngine> = None;
     // SAFETY: every COM object is created and used on this thread inside `play`.
-    let outcome = unsafe { play(&input, seconds, &shared, &mut engine, &mut report) };
+    let outcome = unsafe { play(&input, seconds, target, &shared, &mut engine, &mut report) };
     if let Err(Step(name, hr)) = outcome {
         let _ = writeln!(report, "Error: 0x{:08X} at {name}", hr.0 as u32);
+        if target != Target::Bgra {
+            let _ = writeln!(
+                report,
+                "Target {}: stopped at {name} (0x{:08X}); no frame reached the {} texture",
+                target.name(),
+                hr.0 as u32,
+                target.format_name()
+            );
+        }
+    }
+    if target != Target::Bgra && !report.contains("hdr-range=") {
+        // Open failure, no video, or a refused step: nothing was read back.
+        let _ = writeln!(
+            report,
+            "hdr-range=unknown ({} target, the probe stopped before any readback)",
+            target.name()
+        );
     }
     if let Some(engine) = engine.take() {
         // SAFETY: the engine is still alive; Shutdown precedes its final release.
@@ -229,6 +435,7 @@ pub fn run(input: Input, seconds: u32) -> String {
 unsafe fn play(
     input: &Input,
     seconds: u32,
+    target: Target,
     shared: &Arc<Shared>,
     engine_slot: &mut Option<IMFMediaEngine>,
     report: &mut String,
@@ -251,6 +458,28 @@ unsafe fn play(
         .step("D3D11CreateDevice")?;
         let device = device.ok_or(Step("D3D11CreateDevice", HRESULT(0x8000_4003u32 as i32)))?;
         let _ = writeln!(report, "D3D11 feature level: 0x{:04X}", level.0);
+        let format = DXGI_FORMAT(target.dxgi_format() as i32);
+        match device.CheckFormatSupport(format) {
+            Ok(support) => {
+                let has = |flag: i32| support & flag as u32 != 0;
+                let _ = writeln!(
+                    report,
+                    "Format support ({}): 0x{support:08X} texture2d={} render target={} video processor output={}",
+                    target.format_name(),
+                    has(D3D11_FORMAT_SUPPORT_TEXTURE2D.0),
+                    has(D3D11_FORMAT_SUPPORT_RENDER_TARGET.0),
+                    has(D3D11_FORMAT_SUPPORT_VIDEO_PROCESSOR_OUTPUT.0)
+                );
+            }
+            Err(error) => {
+                let _ = writeln!(
+                    report,
+                    "Format support ({}): CheckFormatSupport 0x{:08X}",
+                    target.format_name(),
+                    error.code().0 as u32
+                );
+            }
+        }
         let multithread: ID3D10Multithread = device.cast().step("QI ID3D10Multithread")?;
         let _ = multithread.SetMultithreadProtected(true);
 
@@ -313,10 +542,7 @@ unsafe fn play(
             .SetUnknown(&MF_MEDIA_ENGINE_CALLBACK, &notify)
             .step("SetUnknown callback")?;
         attributes
-            .SetUINT32(
-                &MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT,
-                DXGI_FORMAT_B8G8R8A8_UNORM.0 as u32,
-            )
+            .SetUINT32(&MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT, target.dxgi_format())
             .step("SetUINT32 output format")?;
 
         let mut raw = core::ptr::null_mut();
@@ -385,7 +611,7 @@ unsafe fn play(
             Height: height,
             MipLevels: 1,
             ArraySize: 1,
-            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+            Format: format,
             SampleDesc: DXGI_SAMPLE_DESC {
                 Count: 1,
                 Quality: 0,
@@ -400,6 +626,47 @@ unsafe fn play(
             .CreateTexture2D(&desc, None, Some(&mut texture))
             .step("CreateTexture2D")?;
         let texture = texture.ok_or(Step("CreateTexture2D", HRESULT(0x8000_4003u32 as i32)))?;
+        // What is really in use, read back rather than assumed.
+        let mut created = D3D11_TEXTURE2D_DESC::default();
+        texture.GetDesc(&mut created);
+        let _ = write!(
+            report,
+            "Format used: texture {}x{} {} ({})",
+            created.Width,
+            created.Height,
+            format_name(created.Format.0 as u32),
+            created.Format.0
+        );
+        match attributes.GetUINT32(&MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT) {
+            Ok(value) => {
+                let _ = writeln!(
+                    report,
+                    "; engine output format attribute {} ({value})",
+                    format_name(value)
+                );
+            }
+            Err(error) => {
+                let _ = writeln!(
+                    report,
+                    "; engine output format attribute unreadable 0x{:08X}",
+                    error.code().0 as u32
+                );
+            }
+        }
+        let mut readback = match Sampler::new(target) {
+            None => None,
+            Some(sampler) => match Readback::new(&device, sampler, target, width, height) {
+                Ok(readback) => Some(readback),
+                Err(Step(name, hr)) => {
+                    let _ = writeln!(
+                        report,
+                        "Readback: unavailable, 0x{:08X} at {name}",
+                        hr.0 as u32
+                    );
+                    None
+                }
+            },
+        };
 
         let cpu_before = process_cpu();
         let start_position = engine.GetCurrentTime();
@@ -409,7 +676,10 @@ unsafe fn play(
         let (mut polls, mut ticks, mut frames, mut failures) = (0u64, 0u64, 0u64, 0u64);
         let mut first_failure = HRESULT(0);
         let (mut transfer_total, mut transfer_max) = (Duration::ZERO, Duration::ZERO);
-        let target = RECT {
+        // The first frame is sampled at once, then one about every second, then the last frame.
+        let mut next_readback = wall;
+        let mut sampled_frame = 0u64;
+        let destination = RECT {
             left: 0,
             top: 0,
             right: width as i32,
@@ -427,12 +697,22 @@ unsafe fn play(
             if tick(engine.as_raw(), &mut pts) == HRESULT(0) {
                 ticks += 1;
                 let started = Instant::now();
-                let result = engine.TransferVideoFrame(&texture, None, &target, Some(&border));
+                let result = engine.TransferVideoFrame(&texture, None, &destination, Some(&border));
                 let elapsed = started.elapsed();
                 transfer_total += elapsed;
                 transfer_max = transfer_max.max(elapsed);
                 match result {
-                    Ok(()) => frames += 1,
+                    Ok(()) => {
+                        frames += 1;
+                        // After the transfer timing above, so the readback never counts towards it.
+                        if let Some(readback) = &mut readback
+                            && Instant::now() >= next_readback
+                        {
+                            readback.sample(&texture);
+                            sampled_frame = frames;
+                            next_readback = Instant::now() + READBACK_INTERVAL;
+                        }
+                    }
                     Err(error) => {
                         if failures == 0 {
                             first_failure = error.code();
@@ -446,6 +726,12 @@ unsafe fn play(
         let wall_seconds = wall.elapsed().as_secs_f64();
         let end_position = engine.GetCurrentTime();
         let cpu_after = process_cpu();
+        // The last frame, after the CPU and position readings so it does not skew them.
+        if let Some(readback) = &mut readback
+            && frames > sampled_frame
+        {
+            readback.sample(&texture);
+        }
 
         let _ = writeln!(
             report,
@@ -460,6 +746,14 @@ unsafe fn play(
             let _ = write!(report, " (first 0x{:08X})", first_failure.0 as u32);
         }
         report.push('\n');
+        if failures > 0 && target != Target::Bgra {
+            let _ = writeln!(
+                report,
+                "Target {}: TransferVideoFrame failed {failures} of {ticks} times (first 0x{:08X})",
+                target.name(),
+                first_failure.0 as u32
+            );
+        }
         if ticks > 0 {
             let _ = writeln!(
                 report,
@@ -484,6 +778,9 @@ unsafe fn play(
             );
         }
         append_statistics(report, &engine_ex);
+        if let Some(readback) = &readback {
+            readback.append(report);
+        }
         report.push_str(if shared.error.load(Ordering::Acquire) {
             "Verdict: FAILS - engine error\n"
         } else if advanced <= 0.0 {

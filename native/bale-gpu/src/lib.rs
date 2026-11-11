@@ -13,6 +13,7 @@ mod d3d12;
 pub mod d3d12_repack;
 #[cfg(windows)]
 mod engine;
+pub mod engine_target;
 #[cfg(windows)]
 mod frames;
 pub mod grain;
@@ -34,7 +35,7 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 /// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched DLL.
-pub const ABI_VERSION: u32 = 5;
+pub const ABI_VERSION: u32 = 6;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_gpu_abi_version() -> u32 {
@@ -108,14 +109,20 @@ pub unsafe extern "C" fn bale_gpu_d3d11_probe(feature_level: *mut u32) -> i32 {
 /// bytes written; a report longer than `report_capacity` is cut at a character boundary. The report
 /// never contains the URL or system error text. Blocks the calling thread (an MTA thread) for the run.
 ///
+/// `target` (UTF-16, `target_len` code units) names the output format: `bgra` (also null or empty),
+/// `fp16` or `rgb10`; see [`engine_target::Target`]. An unknown name is reported, not played.
+///
 /// # Safety
-/// `url` must point to `url_len` readable `u16`s; `report` must point to `report_capacity` writable bytes.
+/// `url` must point to `url_len` readable `u16`s and `target` to `target_len` (or be null with 0);
+/// `report` must point to `report_capacity` writable bytes.
 #[unsafe(no_mangle)]
 #[cfg(windows)]
 pub unsafe extern "C" fn bale_gpu_engine_probe(
     url: *const u16,
     url_len: u32,
     seconds: u32,
+    target: *const u16,
+    target_len: u32,
     report: *mut u8,
     report_capacity: u32,
 ) -> u32 {
@@ -124,7 +131,18 @@ pub unsafe extern "C" fn bale_gpu_engine_probe(
     }
     // SAFETY: the caller guarantees `url_len` readable code units.
     let url = unsafe { std::slice::from_raw_parts(url, url_len as usize) };
-    let text = engine::run(engine::Input::Url(url), seconds.clamp(1, 60));
+    let target = if target.is_null() || target_len == 0 {
+        Some(engine_target::Target::Bgra)
+    } else {
+        // SAFETY: the caller guarantees `target_len` readable code units.
+        engine_target::Target::parse_utf16(unsafe {
+            std::slice::from_raw_parts(target, target_len as usize)
+        })
+    };
+    let text = match target {
+        Some(target) => engine::run(engine::Input::Url(url), seconds.clamp(1, 60), target),
+        None => "Error: target must be bgra, fp16 or rgb10\n".to_owned(),
+    };
     // SAFETY: the caller guarantees `report_capacity` writable bytes.
     unsafe { write_report(&text, report, report_capacity) }
 }
@@ -153,7 +171,11 @@ pub unsafe extern "C" fn bale_gpu_engine_probe_source(
     .cloned() else {
         return 0;
     };
-    let text = engine::run(engine::Input::Source(object), seconds.clamp(1, 60));
+    let text = engine::run(
+        engine::Input::Source(object),
+        seconds.clamp(1, 60),
+        engine_target::Target::Bgra,
+    );
     // SAFETY: the caller guarantees `report_capacity` writable bytes.
     unsafe { write_report(&text, report, report_capacity) }
 }

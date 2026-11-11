@@ -11,7 +11,7 @@ namespace Bale.Xbox.Services;
 /// </summary>
 internal static unsafe class DebugRustProbe
 {
-    private const uint ExpectedAbi = 5;
+    private const uint ExpectedAbi = 6;
     private const uint ExpectedGrainAbi = 2;
     private const int EngineReportCapacity = 16 * 1024;
     private const int GrainReportCapacity = 64 * 1024;
@@ -22,7 +22,8 @@ internal static unsafe class DebugRustProbe
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern uint bale_grain_abi_version();
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern uint bale_grain_gpu_probe(byte* report, uint capacity);
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
-    private static extern uint bale_gpu_engine_probe(char* url, uint urlLength, uint seconds, byte* report, uint reportCapacity);
+    private static extern uint bale_gpu_engine_probe(char* url, uint urlLength, uint seconds, char* target, uint targetLength,
+        byte* report, uint reportCapacity);
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern uint bale_gpu_engine_probe_source(nint source, uint seconds, byte* report, uint reportCapacity);
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
@@ -107,19 +108,24 @@ internal static unsafe class DebugRustProbe
         }
     }
 
-    /// <summary>The Rust port of <see cref="DebugMediaEngine.Run"/>; same report shape, URL never echoed.</summary>
-    internal static string RunEngine(Uri uri, int seconds)
+    /// <summary>
+    /// The Rust port of <see cref="DebugMediaEngine.Run"/>; same report shape, URL never echoed.
+    /// <paramref name="target"/> is the output format (bgra, fp16 or rgb10; null = bgra), parsed in Rust.
+    /// </summary>
+    internal static string RunEngine(Uri uri, int seconds, string? target = null)
     {
         try
         {
             var abi = bale_gpu_abi_version();
             if (abi != ExpectedAbi) return $"Rust GPU layer ABI {abi} (expected {ExpectedAbi}) MISMATCH\n";
             var url = uri.AbsoluteUri;
+            var format = target ?? string.Empty;
             var buffer = new byte[EngineReportCapacity];
             uint written;
             fixed (char* text = url)
+            fixed (char* targetText = format)
             fixed (byte* report = buffer)
-                written = bale_gpu_engine_probe(text, (uint)url.Length, (uint)seconds, report, (uint)buffer.Length);
+                written = bale_gpu_engine_probe(text, (uint)url.Length, (uint)seconds, targetText, (uint)format.Length, report, (uint)buffer.Length);
             return Encoding.UTF8.GetString(buffer, 0, (int)Math.Min(written, (uint)buffer.Length));
         }
         catch (Exception ex)
