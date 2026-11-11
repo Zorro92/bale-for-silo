@@ -1,16 +1,21 @@
 name: dav1d compiler benchmark
 
-# Pre-screen for compiler flags on dav1d's C code (its SIMD is hand-written asm and unaffected).
-# Builds the dav1d CLI once per variant on ONE runner and benchmarks them interleaved on the same
-# machine, with asm capped at AVX2 like the Xbox Series (Zen 2). Desktop Win32 build, not UWP:
-# WINAPI_FAMILY only changes API availability, not code generation. Nothing is published.
+# Pre-screen for compiler flags and PGO on dav1d's C code (its SIMD is hand-written asm and
+# unaffected). Builds the dav1d CLI once per variant on ONE runner and benchmarks them interleaved
+# on the same machine, with asm capped at AVX2 like the Xbox Series (Zen 2). Desktop Win32 build,
+# not UWP: WINAPI_FAMILY only changes API availability, not code generation. Nothing is published.
+#
+# Clips are the Jellyfin test videos (CC BY-SA, courtesy of Gnattu), downloaded on the runner only.
+# They are all the same 30 s animation at different sizes and bitrates, so the PGO variants train
+# on other encodes AND on another part of the film: training starts at the keyframe at 16.05 s
+# (frame 963), benchmarks stay inside the first 900 frames.
 on:
   workflow_dispatch:
     inputs:
       rounds:
         description: Interleaved benchmark rounds
         type: string
-        default: '3'
+        default: '5'
 
 permissions:
   contents: read
@@ -21,8 +26,7 @@ jobs:
     timeout-minutes: 90
     env:
       DAV1D_COMMIT: 54706fc6bc0cdecab7e9593974a4039cc038fca7 # 1.5.4, same as the shipped native package
-      CLIP_URL: https://repo.jellyfin.org/test-videos/SDR/AV1/Test%20Jellyfin%204K%20AV1%2010bit%2040M.mp4
-      CLIP_SHA256: fb983a54771f79e2011743a5baf1e89d3db177655801218de1c339e71fa27765
+      CLIP_BASE: https://repo.jellyfin.org/test-videos
     steps:
       - uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -37,82 +41,229 @@ jobs:
           "C:\Program Files\NASM" | Out-File -Append $env:GITHUB_PATH
           "C:\Program Files\LLVM\bin" | Out-File -Append $env:GITHUB_PATH
 
-      - name: Source and clip
+      - name: Source and clips
         shell: pwsh
         run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+          $cpuLine = "$($cpu.Name.Trim()), $($cpu.NumberOfCores) cores / $($cpu.NumberOfLogicalProcessors) threads"
+          $cpuLine
+          clang-cl --version | Select-Object -First 1
+          cl 2>&1 | Select-Object -First 1
+          "Runner CPU: $cpuLine`n" | Out-File -Append $env:GITHUB_STEP_SUMMARY
+
+          # PGO needs llvm-profdata and clang's profile runtime; find them before spending build time.
+          $llvm = Split-Path (Split-Path (Get-Command clang-cl).Source)
+          if (-not (Get-Command llvm-profdata -ErrorAction SilentlyContinue)) { throw 'llvm-profdata not found' }
+          $rt = Get-ChildItem (Join-Path $llvm 'lib\clang') -Recurse -Filter 'clang_rt.profile*.lib' |
+            Where-Object { $_.FullName -match 'x86_64' } | Select-Object -First 1
+          if (-not $rt) { throw 'clang profile runtime (clang_rt.profile) not found' }
+          Write-Output "profile runtime: $($rt.FullName)"
+          "PROFILE_RT=$($rt.FullName)" | Out-File -Append $env:GITHUB_ENV
+
           git init -q dav1d
           git -C dav1d fetch -q --depth 1 https://github.com/videolan/dav1d.git $env:DAV1D_COMMIT
           git -C dav1d checkout -q FETCH_HEAD
-          Invoke-WebRequest -Uri $env:CLIP_URL -OutFile clip.mp4
-          if ((Get-FileHash clip.mp4 -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:CLIP_SHA256) { throw 'clip hash mismatch' }
-          ffmpeg -hide_banner -loglevel error -i clip.mp4 -map 0:v:0 -c copy -f ivf clip.ivf
-          if ($LASTEXITCODE -ne 0) { throw 'ivf remux failed' }
-          (Get-CimInstance Win32_Processor | Select-Object -First 1).Name
-          clang-cl --version | Select-Object -First 1
-          cl 2>&1 | Select-Object -First 1
+
+          # use: head = whole clip remuxed (benchmarks read only its first frames); tail = from the
+          # keyframe at 16.05 s, for training; encode8 = 8-bit source for the 8-bit training clip.
+          $clips = @(
+            @{ id = 'bench-4k';       use = 'head';    path = 'SDR/AV1/Test%20Jellyfin%204K%20AV1%2010bit%2040M.mp4';    sha = 'fb983a54771f79e2011743a5baf1e89d3db177655801218de1c339e71fa27765' }
+            @{ id = 'bench-1080';     use = 'head';    path = 'SDR/AV1/Test%20Jellyfin%201080p%20AV1%2010bit%2010M.mp4'; sha = 'f4acf3bea9ca6804754dab6d17a15b4bac449e10dc17d67d9a51f249ac612cf3' }
+            @{ id = 'train-1080-5m';  use = 'tail';    path = 'SDR/AV1/Test%20Jellyfin%201080p%20AV1%2010bit%205M.mp4';  sha = 'f4b3866f43b414014350c184d2ce34b6d1e6585ae1960a0d7e88b21d0136e100' }
+            @{ id = 'train-1080-20m'; use = 'tail';    path = 'SDR/AV1/Test%20Jellyfin%201080p%20AV1%2010bit%2020M.mp4'; sha = '24acc3a7fcb59b61782aa86f09348993d702524a1c27cee31586c567da6b6de7' }
+            @{ id = 'train-4k-60m';   use = 'tail';    path = 'SDR/AV1/Test%20Jellyfin%204K%20AV1%2010bit%2060M.mp4';    sha = '94b4288a88f6e19081182aae935354ed5f02a26d16f856a3debe6000bc3e62a4' }
+            @{ id = 'train-8bit';     use = 'encode8'; path = 'SDR/AVC/Test%20Jellyfin%201080p%20AVC%2020M.mp4';         sha = 'e819c38aa63be6fabc5d8f6f824ec620f1b1c08f9ac79d421c73d37502db8a2c' }
+          )
+          # Jellyfin publishes no 8-bit AV1, and dav1d compiles its 8- and 16-bit code separately, so
+          # a 10-bit-only profile would leave every 8-bit function unprofiled. Encode one here from
+          # the pinned 8-bit AVC clip with libaom, the only AV1 encoder in Chocolatey's ffmpeg (the
+          # encoder build is not pinned, so the result's hash is printed, not checked).
+          if ((ffmpeg -hide_banner -encoders 2>&1 | Out-String) -notmatch 'libaom-av1') { throw 'ffmpeg has no libaom-av1 encoder for the 8-bit training clip' }
+          $enc8 = @('-c:v', 'libaom-av1', '-cpu-used', '6', '-crf', '28', '-b:v', '0', '-row-mt', '1', '-g', '120')
+
+          foreach ($c in $clips) {
+            $mp4 = "$($c.id).mp4"
+            $ivf = "$($c.id).ivf"
+            Invoke-WebRequest -Uri "$env:CLIP_BASE/$($c.path)" -OutFile $mp4
+            if ((Get-FileHash $mp4 -Algorithm SHA256).Hash.ToLowerInvariant() -ne $c.sha) { throw "$($c.id): clip hash mismatch" }
+            switch ($c.use) {
+              'head'    { ffmpeg -hide_banner -loglevel error -i $mp4 -map 0:v:0 -c copy -f ivf $ivf }
+              'tail'    { ffmpeg -hide_banner -loglevel error -ss 16.1 -i $mp4 -map 0:v:0 -c copy -f ivf $ivf }
+              'encode8' { ffmpeg -hide_banner -loglevel error -ss 16.1 -i $mp4 -map 0:v:0 -frames:v 360 -pix_fmt yuv420p @enc8 -f ivf $ivf }
+            }
+            if ($LASTEXITCODE -ne 0) { throw "$($c.id): ffmpeg failed" }
+            Remove-Item $mp4
+            $info = (ffprobe -v error -count_packets -select_streams v:0 -show_entries stream=width,height,pix_fmt,nb_read_packets -of csv=p=0 $ivf | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0) { throw "$($c.id): ffprobe failed" }
+            Write-Output "$ivf  $info  sha256 $((Get-FileHash $ivf -Algorithm SHA256).Hash.ToLowerInvariant())"
+            $w, $h, $fmt, $frames = $info.Split(',')
+            # A training cut that started at an earlier keyframe would overlap the benchmark frames.
+            if ($c.use -eq 'tail' -and ([int]$frames -lt 300 -or [int]$frames -gt 897)) { throw "$($c.id): unexpected training cut of $frames frames" }
+            if ($c.use -eq 'encode8' -and ($fmt -ne 'yuv420p' -or [int]$frames -ne 360)) { throw "$($c.id): expected 360 8-bit frames, got $info" }
+            if ($c.use -ne 'encode8' -and $fmt -ne 'yuv420p10le') { throw "$($c.id): expected 10-bit, got $fmt" }
+          }
 
       - name: Build variants
         shell: pwsh
         run: |
-          # msvc = the shipped recipe (FFmpegInteropX build-dav1d.sh: cl, buildtype=release).
-          $variants = [ordered]@{
-            'msvc'           = @{ cc = 'cl';       bt = 'release'; args = @() }
-            'clang-O2'       = @{ cc = 'clang-cl'; bt = 'release'; args = @() }
-            'clang-O3-v2'    = @{ cc = 'clang-cl'; bt = 'plain';   args = @('/clang:-O3', '/clang:-march=x86-64-v2', '/clang:-mtune=znver2') }
-            'clang-O3-znver2'= @{ cc = 'clang-cl'; bt = 'plain';   args = @('/clang:-O3', '/clang:-march=znver2') }
-          }
-          foreach ($name in $variants.Keys) {
-            $v = $variants[$name]
-            $list = (@('-MD') + $v.args | ForEach-Object { "'$_'" }) -join ', '
-            "[built-in options]`nc_args = [$list]" | Set-Content "native-$name.ini"
-            $env:CC = $v.cc
-            meson setup "build-$name" dav1d --native-file "native-$name.ini" --buildtype $v.bt -Db_ndebug=true `
+          function Build-Variant([string]$dir, [string]$cc, [string]$bt, [string[]]$cargs, [string[]]$largs) {
+            $list = (@('-MD') + $cargs | ForEach-Object { "'$_'" }) -join ', '
+            $ini = "[built-in options]`nc_args = [$list]`n"
+            if ($largs.Count -gt 0) { $ini += "c_link_args = [$(($largs | ForEach-Object { "'$_'" }) -join ', ')]`n" }
+            $ini | Set-Content "native-$dir.ini"
+            $env:CC = $cc
+            meson setup "build-$dir" dav1d --native-file "native-$dir.ini" --buildtype $bt -Db_ndebug=true `
               -Ddefault_library=static -Denable_tests=false -Denable_tools=true -Denable_asm=true
-            if ($LASTEXITCODE -ne 0) { throw "setup $name failed" }
-            ninja -C "build-$name" tools/dav1d.exe
-            if ($LASTEXITCODE -ne 0) { throw "build $name failed" }
-            Write-Output "== ${name}: compile command for src/decode.c"
-            (Get-Content "build-$name/compile_commands.json" -Raw | ConvertFrom-Json |
+            if ($LASTEXITCODE -ne 0) { throw "setup $dir failed" }
+            ninja -C "build-$dir" tools/dav1d.exe 2>&1 | Tee-Object "build-$dir.log"
+            if ($LASTEXITCODE -ne 0) { throw "build $dir failed" }
+            Write-Output "== ${dir}: compile command for src/decode.c"
+            (Get-Content "build-$dir/compile_commands.json" -Raw | ConvertFrom-Json |
               Where-Object { $_.file -like '*src*decode.c' } | Select-Object -First 1).command
           }
+
+          # msvc = the shipped recipe (FFmpegInteropX build-dav1d.sh: cl, buildtype=release).
+          # The -pgo variants are their non-PGO neighbours plus a profile; see below.
+          $variants = [ordered]@{
+            'msvc'                = @{ cc = 'cl';       bt = 'release'; args = @() }
+            'clang-O2'            = @{ cc = 'clang-cl'; bt = 'release'; args = @() }
+            'clang-O3-v2'         = @{ cc = 'clang-cl'; bt = 'plain';   args = @('/clang:-O3', '/clang:-march=x86-64-v2', '/clang:-mtune=znver2') }
+            'clang-O3-znver2'     = @{ cc = 'clang-cl'; bt = 'plain';   args = @('/clang:-O3', '/clang:-march=znver2') }
+            'clang-pgo'           = @{ cc = 'clang-cl'; bt = 'release'; args = @(); pgo = $true }
+            'clang-O3-znver2-pgo' = @{ cc = 'clang-cl'; bt = 'plain';   args = @('/clang:-O3', '/clang:-march=znver2'); pgo = $true }
+          }
+          # Training set: never a benchmark clip, 1 and 4 threads each (4 also covers frame threading).
+          # 240 4K frames weigh about as much as the 10-bit 1080p frames; the 8-bit clip is shorter
+          # because libaom is slow, which matters little: the 8-bit code has its own counters.
+          $training = @(
+            @{ id = 'train-1080-5m';  n = 800 }
+            @{ id = 'train-1080-20m'; n = 800 }
+            @{ id = 'train-4k-60m';   n = 240 }
+            @{ id = 'train-8bit';     n = 360 }
+          )
+          # Meson's b_pgo only knows GCC-style drivers, so the flags go through the native file. Meson
+          # links with lld-link directly, which doesn't know clang's runtime dir: name the profile
+          # runtime outright and add its dir for the /DEFAULTLIB the instrumented objects carry.
+          # Forward slashes because Meson reads backslashes in these strings as escapes.
+          $rtLib = $env:PROFILE_RT.Replace('\', '/')
+          $rtDir = (Split-Path $env:PROFILE_RT).Replace('\', '/')
+
+          foreach ($name in $variants.Keys) {
+            $v = $variants[$name]
+            if (-not $v.pgo) { Build-Variant $name $v.cc $v.bt $v.args @(); continue }
+
+            # 1. Instrumented build with the variant's own flags. IR-level profiles depend on the
+            #    optimiser's early inlining, so each PGO variant trains its own binary.
+            Build-Variant "$name-gen" $v.cc $v.bt ($v.args + '/clang:-fprofile-generate') @("/LIBPATH:$rtDir", $rtLib)
+
+            # 2. Train.
+            $rawDir = Join-Path $PWD "prof-$name"
+            New-Item -ItemType Directory $rawDir | Out-Null
+            $runs = 0
+            foreach ($t in $training) {
+              foreach ($threads in 1, 4) {
+                $runs++
+                $env:LLVM_PROFILE_FILE = Join-Path $rawDir "run$runs.profraw"
+                $sw = [Diagnostics.Stopwatch]::StartNew()
+                & "build-$name-gen/tools/dav1d.exe" -q -i "$($t.id).ivf" --limit $t.n --cpumask avx2 --threads $threads --muxer null -o nul
+                if ($LASTEXITCODE -ne 0) { throw "$name training on $($t.id) failed" }
+                Write-Output ("train {0} {1} threads={2}: {3} frames in {4:0.0} s" -f $name, $t.id, $threads, $t.n, $sw.Elapsed.TotalSeconds)
+              }
+            }
+            Remove-Item Env:LLVM_PROFILE_FILE
+
+            # 3. Merge, and refuse an empty profile.
+            $raws = @(Get-ChildItem $rawDir -Filter *.profraw | Where-Object Length -gt 0)
+            if ($raws.Count -ne $runs) { throw "${name}: expected $runs raw profiles, found $($raws.Count)" }
+            llvm-profdata merge -o "$name.profdata" @($raws.FullName)
+            if ($LASTEXITCODE -ne 0) { throw "${name}: llvm-profdata merge failed" }
+            $show = llvm-profdata show --topn=15 "$name.profdata" | Out-String
+            if ($LASTEXITCODE -ne 0) { throw "${name}: llvm-profdata show failed" }
+            Write-Output "== ${name}: profile"
+            $show
+            foreach ($field in 'Total functions', 'Maximum function count', 'Maximum internal block count') {
+              if ($show -notmatch "${field}:\s*[1-9]") { throw "${name}: empty profile ($field is zero or missing)" }
+            }
+
+            # 4. Rebuild with the profile. A profile that doesn't match the code is only a warning
+            #    to clang (the stale counts are dropped silently otherwise), so fail on it here.
+            $prof = (Join-Path $PWD "$name.profdata").Replace('\', '/')
+            Build-Variant $name $v.cc $v.bt ($v.args + "/clang:-fprofile-use=$prof") @()
+            $stale = Select-String -Path "build-$name.log" -Pattern 'hash mismatch|out of date|mismatched data|no profile data|Wprofile-instr|Wbackend-plugin'
+            if ($stale) {
+              $stale | Select-Object -First 20 | ForEach-Object { $_.Line }
+              throw "${name}: the profile does not match the build"
+            }
+          }
           $variants.Keys | Set-Content variants.txt
+          "Training (1 and 4 threads each, frames from 16.05 s on): " + (($training | ForEach-Object { "$($_.id) x$($_.n)" }) -join ', ') + "`n" |
+            Out-File -Append $env:GITHUB_STEP_SUMMARY
 
       - name: Correctness (md5 of the first 60 frames must match across variants)
         shell: pwsh
         run: |
-          $sums = @{}
-          foreach ($name in Get-Content variants.txt) {
-            & "build-$name/tools/dav1d.exe" -q -i clip.ivf --limit 60 --cpumask avx2 --muxer md5 -o "md5-$name.txt"
-            if ($LASTEXITCODE -ne 0) { throw "$name decode failed" }
-            $sums[$name] = (Get-Content "md5-$name.txt" -Raw).Trim()
-            Write-Output "$name $($sums[$name])"
+          # Both benchmark clips, plus the 8-bit clip: nothing else runs the PGO builds' 8-bit code.
+          foreach ($clip in 'bench-4k', 'bench-1080', 'train-8bit') {
+            $sums = @{}
+            foreach ($name in Get-Content variants.txt) {
+              & "build-$name/tools/dav1d.exe" -q -i "$clip.ivf" --limit 60 --cpumask avx2 --muxer md5 -o "md5-$clip-$name.txt"
+              if ($LASTEXITCODE -ne 0) { throw "$name decode of $clip failed" }
+              $sums[$name] = (Get-Content "md5-$clip-$name.txt" -Raw).Trim()
+              Write-Output "$clip $name $($sums[$name])"
+            }
+            $unique = @($sums.Values | Sort-Object -Unique)
+            if ($unique.Count -ne 1) { throw "variants decode $clip differently" }
+            "md5 ${clip}: $($sums.Count) variants identical ($($unique[0]))`n" | Out-File -Append $env:GITHUB_STEP_SUMMARY
           }
-          if (@($sums.Values | Sort-Object -Unique).Count -ne 1) { throw 'variants decode differently' }
 
       - name: Benchmark (interleaved)
         shell: pwsh
         env:
           ROUNDS: ${{ inputs.rounds }}
         run: |
-          $names = Get-Content variants.txt
+          $names = @(Get-Content variants.txt)
+          # Frame counts stay below 900: training starts at frame 963 of the same film.
+          $bench = @(
+            @{ clip = '4K 10-bit 40M';    file = 'bench-4k.ivf';   cfgs = @(@{ t = 1; n = 240 }, @{ t = 4; n = 600 }) }
+            @{ clip = '1080p 10-bit 10M'; file = 'bench-1080.ivf'; cfgs = @(@{ t = 1; n = 600 }, @{ t = 4; n = 900 }) }
+          )
           $rows = @()
-          foreach ($cfg in @(@{ t = 1; n = 240 }, @{ t = 4; n = 600 })) {
-            for ($r = 1; $r -le [int]$env:ROUNDS; $r++) {
-              foreach ($name in $names) {
-                $sw = [Diagnostics.Stopwatch]::StartNew()
-                & "build-$name/tools/dav1d.exe" -q -i clip.ivf --limit $cfg.n --cpumask avx2 --threads $cfg.t --muxer null -o nul
-                $sw.Stop()
-                if ($LASTEXITCODE -ne 0) { throw "$name failed" }
-                $rows += [pscustomobject]@{ variant = $name; threads = $cfg.t; round = $r; fps = [math]::Round($cfg.n / $sw.Elapsed.TotalSeconds, 2) }
+          foreach ($b in $bench) {
+            $null = [IO.File]::ReadAllBytes((Join-Path $PWD $b.file)) # warm the file cache for the first run
+            foreach ($cfg in $b.cfgs) {
+              for ($r = 1; $r -le [int]$env:ROUNDS; $r++) {
+                # Start each round one variant later, so no variant always runs first or after the same one.
+                $k = ($r - 1) % $names.Count
+                $order = @($names | Select-Object -Skip $k) + @($names | Select-Object -First $k)
+                foreach ($name in $order) {
+                  $sw = [Diagnostics.Stopwatch]::StartNew()
+                  & "build-$name/tools/dav1d.exe" -q -i $b.file --limit $cfg.n --cpumask avx2 --threads $cfg.t --muxer null -o nul
+                  $sw.Stop()
+                  if ($LASTEXITCODE -ne 0) { throw "$name failed" }
+                  $rows += [pscustomobject]@{ clip = $b.clip; threads = $cfg.t; round = $r; variant = $name; fps = [math]::Round($cfg.n / $sw.Elapsed.TotalSeconds, 2) }
+                }
               }
             }
           }
           $rows | Format-Table -AutoSize | Out-String -Width 200
-          $summary = $rows | Group-Object threads, variant | ForEach-Object {
-            $f = $_.Group.fps | Sort-Object
-            [pscustomobject]@{ threads = $_.Group[0].threads; variant = $_.Group[0].variant; median_fps = $f[[int][math]::Floor($f.Count / 2)]; min = $f[0]; max = $f[-1] }
+          $summary = foreach ($b in $bench) {
+            foreach ($cfg in $b.cfgs) {
+              $base = 0
+              foreach ($name in $names) { # msvc is first, so the baseline is set before it is used
+                $f = @($rows | Where-Object { $_.clip -eq $b.clip -and $_.threads -eq $cfg.t -and $_.variant -eq $name } | ForEach-Object { $_.fps } | Sort-Object)
+                $mid = [int][math]::Floor($f.Count / 2)
+                $median = if ($f.Count % 2) { $f[$mid] } else { ($f[$mid - 1] + $f[$mid]) / 2 }
+                if ($name -eq 'msvc') { $base = $median }
+                [pscustomobject]@{
+                  clip = $b.clip; threads = $cfg.t; frames = $cfg.n; variant = $name
+                  median_fps = [math]::Round($median, 2); min = $f[0]; max = $f[-1]
+                  vs_msvc = '{0:+0.0;-0.0;0.0}%' -f (($median / $base - 1) * 100)
+                }
+              }
+            }
           }
           $summary | Format-Table -AutoSize | Out-String -Width 200
-          $md = "| threads | variant | median fps | min | max |`n|---|---|---|---|---|`n"
-          $summary | ForEach-Object { $md += "| $($_.threads) | $($_.variant) | $($_.median_fps) | $($_.min) | $($_.max) |`n" }
+          $md = "| clip | threads | variant | median fps | min | max | vs msvc |`n|---|---|---|---|---|---|---|`n"
+          $summary | ForEach-Object { $md += "| $($_.clip) | $($_.threads) | $($_.variant) | $($_.median_fps) | $($_.min) | $($_.max) | $($_.vs_msvc) |`n" }
           $md | Out-File -Append $env:GITHUB_STEP_SUMMARY
