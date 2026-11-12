@@ -8,13 +8,15 @@ public static class SoftwareDecodePolicy
 
     // Codecs the system (hardware) decoders may take. A claim for one still needs the fixed
     // baseline or the console's decoder probe (ConsoleEvidence.ForHardware).
-    public static IReadOnlyList<string> SystemVideoCodecs { get; } = Array.AsReadOnly(new[] { "h264", "hevc", "vp9" });
+    public static IReadOnlyList<string> SystemVideoCodecs { get; } = Array.AsReadOnly(new[] { "h264", "hevc", "vp9", "vc1", "mpeg2video" });
 
     // Hardware codecs that play only through FFmpeg's demuxer feeding the system decoder.
     // Windows' own WebM source opened VP9 but never left Paused at 0 s, and its MP4 source and
     // AdaptiveMediaSource are untested for VP9 (docs/player-plan.md). So every direct VP9 file
     // takes the FFmpeg demuxer, HLS never carries VP9, and "ffmpeg off" withdraws the claim.
-    public static IReadOnlyList<string> DemuxedVideoCodecs { get; } = Array.AsReadOnly(new[] { "vp9" });
+    // VC-1/MPEG-2 use the same original-file boundary: only their compressed FFmpeg providers
+    // feeding system decoders are verified; no Windows container-source or HLS claim follows.
+    public static IReadOnlyList<string> DemuxedVideoCodecs { get; } = Array.AsReadOnly(new[] { "vp9", "vc1", "mpeg2video" });
 
     // Measured Media Foundation playback, not merely installed decoder registrations.
     public static IReadOnlyList<string> SystemAudioCodecs { get; } = Array.AsReadOnly(new[] { "aac", "ac3", "eac3", "mp3", "pcm" });

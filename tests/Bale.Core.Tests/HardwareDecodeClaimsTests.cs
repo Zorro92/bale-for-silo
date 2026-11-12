@@ -133,6 +133,62 @@ public class HardwareDecodeClaimsTests
     }
 
     [Fact]
+    public void LegacyHardwareVideoNeedsItsOwnVldProfileAndNv12Output()
+    {
+        var limits = HardwareDecodeLimits.FromAcceptedSizes(
+        [
+            (HardwareDecodeLimits.Vc1Profile, HardwareDecodeLimits.Nv12, 1920, 1080),
+            (HardwareDecodeLimits.Mpeg2Profile, HardwareDecodeLimits.Nv12, 720, 480),
+            (HardwareDecodeLimits.Mpeg2Profile, HardwareDecodeLimits.Nv12, 1920, 1080),
+            // Neither P010 nor the older partial-acceleration IDCT profile admits this path.
+            (HardwareDecodeLimits.Vc1Profile, HardwareDecodeLimits.P010, 3840, 2160),
+            (HardwareDecodeLimits.Mpeg2Profile, HardwareDecodeLimits.P010, 3840, 2160),
+            (new Guid("1b81bea2-a0c7-11d3-b984-00c04f2e73c5"), HardwareDecodeLimits.Nv12, 3840, 2160),
+            (new Guid("bf22ad00-03ea-4690-8077-473346209b7e"), HardwareDecodeLimits.Nv12, 3840, 2160),
+        ]);
+        Assert.False(limits.IsEmpty);
+        Assert.Equal(new HardwareDecodeLimits(Vc1: new(1920, 1080), Mpeg2: new(1920, 1080)), limits);
+        var claims = ConsoleEvidence.ForHardware(limits);
+        Assert.Equal(new[] { "vc1", "mpeg2video", "av1" }, claims.VideoCodecs);
+        Assert.Equal(new[] { ("vc1", "8", 1920, 1080), ("mpeg2video", "8", 1920, 1080) },
+            claims.VideoDecode.Where(decode => decode.Hardware).Select(Shape));
+        Assert.DoesNotContain(ConsoleEvidence.Default.VideoCodecs, codec => codec is "vc1" or "mpeg2video");
+        var wrongFormat = HardwareDecodeLimits.FromAcceptedSizes(
+        [
+            (HardwareDecodeLimits.Vc1Profile, HardwareDecodeLimits.P010, 1920, 1080),
+            (HardwareDecodeLimits.Mpeg2Profile, HardwareDecodeLimits.P010, 1920, 1080),
+        ]);
+        Assert.True(wrongFormat.IsEmpty);
+    }
+
+    [Theory]
+    [InlineData("vc1")]
+    [InlineData("mpeg2video")]
+    public void LegacyHardwareVideoIsScopedToTheDemuxedDirectRouteAndWithdrawnOnFailure(string codec)
+    {
+        var limits = codec == "vc1" ? Series with { Vc1 = new(1920, 1080) } : Series with { Mpeg2 = new(1920, 1080) };
+        var claims = ConsoleEvidence.ForHardware(limits);
+        var decode = Assert.Single(claims.VideoDecode, entry => entry.Codec == codec);
+        Assert.True(decode.Hardware);
+        Assert.Equal(new[] { 8 }, decode.BitDepths);
+        Assert.Equal((1920, 1080), (decode.MaxWidth, decode.MaxHeight));
+        var start = PlaybackStartBuilder.Build("file", "profile", "attempt", null, PlaybackSelection.Auto, claims, PlaybackTestSupport.Identity);
+        Assert.Contains(codec, start.ClientPlaybackContext.Deliveries["original_http"].VideoCodecs);
+        Assert.DoesNotContain(codec, start.ClientPlaybackContext.Deliveries["hls"].VideoCodecs);
+        Assert.DoesNotContain(codec, SoftwareDecodePolicy.WithoutFallbacks(claims).VideoCodecs);
+        Assert.Contains(codec, SoftwareDecodePolicy.WithoutSoftwareVideo(claims).VideoCodecs);
+
+        var plan = PlaybackRoutePolicyTests.Plan("original_http", codec, "aac");
+        var failure = new PlaybackFailureV3("decoder_failure", "open failed", "MediaPlayer");
+        var replan = PlaybackReplan.ForFailure(start, plan, "attempt", [], 1, 0, failure, PlaybackRoutePolicy.Decide(plan, false));
+        Assert.DoesNotContain(codec, replan.ClientCapabilities.CodecsVideo);
+        Assert.DoesNotContain(replan.ClientCapabilities.VideoDecode, entry => entry.Codec == codec);
+        Assert.All(replan.ClientPlaybackContext.Deliveries.Values, delivery => Assert.DoesNotContain(codec, delivery.VideoCodecs));
+        Assert.Contains("hevc", replan.ClientCapabilities.CodecsVideo);
+        Assert.Contains(codec, start.ClientCapabilities.CodecsVideo);
+    }
+
+    [Fact]
     public void ASeriesConsolePicksThe4KHevcVersionOnA4KDisplayAndThe1080pOneOnA1080pDisplay()
     {
         var claims = ConsoleEvidence.ForHardware(Series).VideoDecode;
@@ -170,21 +226,26 @@ public class HardwareDecodeClaimsTests
     }
 
     [Theory]
-    [InlineData("mkv")]
-    [InlineData("webm")]
-    [InlineData("mp4")]
-    public void DirectVp9AlwaysUsesTheFfmpegDemuxerWithTheSystemDecoder(string container)
+    [InlineData("vp9", "mkv")]
+    [InlineData("vp9", "webm")]
+    [InlineData("vp9", "mp4")]
+    [InlineData("vc1", "mkv")]
+    [InlineData("vc1", "mp4")]
+    [InlineData("mpeg2video", "mkv")]
+    [InlineData("mpeg2video", "mp4")]
+    public void DemuxedHardwareVideoAlwaysUsesTheFfmpegDemuxerWithTheSystemDecoder(string codec, string container)
     {
-        var plan = PlaybackRoutePolicyTests.Plan("original_http", "vp9", "aac");
+        var plan = PlaybackRoutePolicyTests.Plan("original_http", codec, "aac");
         plan.Source!.Container = container;
         var route = PlaybackRoutePolicy.Decide(plan, false);
         Assert.True(route.UseFfmpeg);
         Assert.False(route.SoftwareVideo);
-        Assert.Equal("vp9", route.VideoCodec);
-        // The opened stream must be on the system decoder; an FFmpeg software VP9 decoder is refused.
-        Assert.True(SoftwareDecodePolicy.VideoDecodersAllowed(route.SoftwareVideo, [("vp9", false, true)]));
-        Assert.False(SoftwareDecodePolicy.VideoDecodersAllowed(route.SoftwareVideo, [("vp9", true, false)]));
-        Assert.DoesNotContain("vp9", SoftwareDecodePolicy.VideoCodecs);
+        Assert.Equal(codec, route.VideoCodec);
+        // These codecs must use the system decoder; software and FFmpeg D3D11 are refused.
+        Assert.True(SoftwareDecodePolicy.VideoDecodersAllowed(route.SoftwareVideo, [(codec, false, true)]));
+        Assert.False(SoftwareDecodePolicy.VideoDecodersAllowed(route.SoftwareVideo, [(codec, true, false)]));
+        Assert.False(SoftwareDecodePolicy.VideoDecodersAllowed(route.SoftwareVideo, [(codec, false, false)]));
+        Assert.DoesNotContain(codec, SoftwareDecodePolicy.VideoCodecs);
         // With FFmpeg off the route is Windows' own source, which is why "off" withdraws the claim.
         Assert.False(PlaybackRoutePolicy.Decide(plan, false, ffmpegEnabled: false).UseFfmpeg);
     }
@@ -214,10 +275,10 @@ public class HardwareDecodeClaimsTests
     }
 
     [Fact]
-    public void TheSystemDecoderListNamesVp9ButTheSoftwareAllowlistStaysAv1Only()
+    public void DemuxedSystemCodecsDoNotExpandTheSoftwareAllowlist()
     {
-        Assert.Equal(new[] { "h264", "hevc", "vp9" }, SoftwareDecodePolicy.SystemVideoCodecs);
-        Assert.Equal(new[] { "vp9" }, SoftwareDecodePolicy.DemuxedVideoCodecs);
+        Assert.Equal(new[] { "h264", "hevc", "vp9", "vc1", "mpeg2video" }, SoftwareDecodePolicy.SystemVideoCodecs);
+        Assert.Equal(new[] { "vp9", "vc1", "mpeg2video" }, SoftwareDecodePolicy.DemuxedVideoCodecs);
         Assert.Equal(new[] { "av1" }, SoftwareDecodePolicy.VideoCodecs);
         Assert.Equal("vp9", SoftwareDecodePolicy.NormalizeCodec("VP09"));
         Assert.Equal("vp9", SoftwareDecodePolicy.NormalizeCodec(" vp9 "));

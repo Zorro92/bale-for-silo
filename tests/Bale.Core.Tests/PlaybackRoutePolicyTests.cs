@@ -28,6 +28,7 @@ public class PlaybackRoutePolicyTests
     [InlineData("h264")]
     [InlineData("hevc")]
     [InlineData("vp9")]
+    [InlineData("vc1")]
     [InlineData("mpeg2video")]
     public void BuilderRejectsAnyOtherSoftwareVideoClaim(string codec)
     {
@@ -48,7 +49,10 @@ public class PlaybackRoutePolicyTests
     [InlineData("original_http", "vp9", "aac", true, false)]
     [InlineData("original_http", "vp09", "aac", true, false)]
     [InlineData("hls", "vp9", "aac", false, false)]
-    [InlineData("original_http", "mpeg2video", "aac", false, false)]
+    [InlineData("original_http", "vc1", "aac", true, false)]
+    [InlineData("original_http", "mpeg2video", "aac", true, false)]
+    [InlineData("hls", "vc1", "aac", false, false)]
+    [InlineData("hls", "mpeg2video", "aac", false, false)]
     [InlineData("original_http", "unknown", "unknown", false, false)]
     [InlineData("unknown", "av1", "dts", false, false)]
     [InlineData("hls", "av1", "dts", false, false)]

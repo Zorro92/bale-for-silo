@@ -94,20 +94,32 @@ Current production capability claims (`ConsoleEvidence.ForHardware` over the dec
 | Stream | Claims / engine | Bounds / limitations |
 |---|---|---|
 | H.264 / HEVC / VP9 video | Media Foundation, hardware | The largest size the console's decoder reports per codec, 60 fps, no bitrate limit. H.264 is 8-bit; HEVC is 8-bit if Main is present and 10-bit if Main10 is; VP9 is 8-bit for profile 0 and 10-bit for profile 2. Series X: H.264 1920×1080, HEVC 7680×4320 8/10-bit, VP9 3840×2160 8/10-bit. VP9 is claimed only when the decoder reports it. If the probe fails or finds nothing: H.264 and HEVC at 1920×1080, 60 fps, 25 Mbps, no VP9 |
+| VC-1 / MPEG-2 video | FFmpeg demuxer, Media Foundation system decoder | Only when the matching NV12 VLD profile reports a supported size; 8-bit, probed bounds. Series X: both report 1920×1080. Original files only; HLS and `ffmpeg off` withdraw these codecs. Software video decoding remains forbidden |
 | AV1 video | dav1d, **non-hardware**; `software_video_decode_v1` opt-in | 8/10-bit, **1920×1080, 60 fps**; no 4K claim |
 | System audio | `aac`, `ac3`, `eac3`, `mp3`, `pcm` | Retains the native direct path unless AV1 needs FFmpeg |
 | FFmpeg fallback audio | `dts`, `dts_hd`, `truehd`, `flac`, `opus`, `vorbis`, `alac` | Decode to PCM, not passthrough; real-library console verification pending |
 | Audio passthrough | None | Receiver verification pending |
 | Display HDR | Runtime HDMI detection, HDR10 only | Exact evidence after a successful read; unknown/empty HDR on failure |
-| HLS | System video/audio claims only, without VP9 | AdaptiveMediaSource cannot use FFmpeg fallbacks or its demuxer |
+| HLS | System video/audio claims only, without VP9, VC-1 or MPEG-2 | AdaptiveMediaSource cannot use FFmpeg fallbacks or its demuxer |
 | Subtitles | Own overlay: text sidecars (ASS/SSA, SubRip, WebVTT); PGS/DVD/DVB images from direct MKV; lossless PGS `.sup` windows on HLS/progressive | Original keeps `native_embedded` (`embedded_subtitles_v1`). Packaged deliveries claim `embedded_bitmap` for server-extracted PGS; DVD/DVB still require burn-in there. Console verification of image tracks pending |
 
 `PlaybackRoutePolicy.Decide` selects the pipeline separately for every mount. `original_http` /
-progressive uses FFmpeg only for AV1 or the **selected** fallback audio codec. AV1 sets
-`Video.VideoDecoderMode = ForceFFmpegSoftwareDecoder`; audio-only fallback sets
+progressive uses FFmpeg for Matroska, AV1, VP9/VC-1/MPEG-2, or the **selected** fallback audio codec. AV1 sets
+`Video.VideoDecoderMode = ForceFFmpegSoftwareDecoder`; the other FFmpeg routes set
 `ForceSystemDecoder`. Never use automatic or FFmpeg D3D11 video in real playback. The pinned
 2.1.0 implementation can fall back even in ForceSystemDecoder for unsupported formats, so Bale
 also validates all reported video decoder engines before mounting/reading frames.
+
+**VC-1 / MPEG-2 verification (2026-11-11).** The Series X reports NV12 1080p for
+`D3D11_DECODER_PROFILE_VC1_VLD` and `D3D11_DECODER_PROFILE_MPEG2_VLD`. Before enabling
+the normal-player claims, three original MKVs were tested through FFmpegInteropX's forced system
+decoder for 30 seconds each: A Charlie Brown Christmas (1080p23.976 VC-1 Advanced),
+It's Christmastime Again, Charlie Brown (1080p23.976 VC-1 Advanced), and Bratz: Genie Magic
+(720×480 MPEG-2 Main, catalog frame rate 30.303). Every probe reported `DecoderEngine=system`,
+Playing, no buffering or decoder failures, and a media/wall-clock ratio of 0.997–0.998.
+These probes validate the compressed WVC1/MPEG2 providers; they do not validate Windows' own
+container sources or HLS. The installed build previously transcoded all three as unsupported
+video. Full-player, seeking and DVD-subtitle verification follows the capability change.
 
 All builds, including production (`BaleDebugServer=false`), apply the wrapper-fork defaults from
 `SoftwareDecodeTuning` to software AV1: `bale_decode_ahead_frames=16`, plus the fixed zero-copy keys

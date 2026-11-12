@@ -108,6 +108,10 @@ public static class ConsoleEvidence
             AddHardware("h264", hardware.H264, null);
             AddHardware("hevc", hardware.HevcMain, hardware.HevcMain10);
             AddHardware("vp9", hardware.Vp9Profile0, hardware.Vp9Profile2);
+            // FFmpegInteropX's compressed providers feed WVC1/MPEG2 to Media Foundation, like
+            // VP9. Only the console's matching NV12 VLD profile admits these original-file paths.
+            AddHardware("vc1", hardware.Vc1, null);
+            AddHardware("mpeg2video", hardware.Mpeg2, null);
         }
         // dav1d zero-copy, measured in real time: 0.1.230 Fight Club 1080p23.976 10-bit (~1.3 cores)
         // and 0.1.439 SmackDown 1080p59.94 10-bit (0 late frames, ~3 cores); 8-bit clips too.

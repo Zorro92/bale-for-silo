@@ -176,12 +176,12 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   allowlist. Add nothing without them. Other unsupported video goes to server transcode, never
   FFmpeg software or D3D11. Measured AV1 evidence: 8/10-bit, **1080p60** (0.1.230 at 24 fps,
   0.1.439 at 59.94 fps). Production claims no 4K; the debug 2160 bound adds a separate 4K **30** fps entry.
-- Hardware video claims (H.264, HEVC, VP9) follow the console's own decoder report, not hand-set
+- Hardware video claims (H.264, HEVC, VP9, VC-1, MPEG-2) follow the console's own decoder report, not hand-set
   bounds. `HardwareDecodeProbe` asks the D3D11 video device once per process, off the UI thread,
   and `ConsoleEvidence.ForHardware` claims the largest of 1080p/4K/8K each profile accepts at
   60 fps with no bitrate bound. A failed or empty probe keeps the fixed H.264/HEVC 1080p baseline
   with no VP9. Never run D3D12 video queries in production: they removed the device. Display fit
-  belongs to Auto's version choice, never to a smaller claim. VP9 direct play always takes the
+  belongs to Auto's version choice, never to a smaller claim. VP9/VC-1/MPEG-2 direct play always takes the
   FFmpeg demuxer with the system decoder and is never offered over HLS.
 - `PlaybackRoutePolicy` decides each mount. HLS always stays on AdaptiveMediaSource. Direct AV1
   forces FFmpeg software video; audio-only fallback forces the system video decoder and validates

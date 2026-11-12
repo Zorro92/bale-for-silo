@@ -60,7 +60,8 @@ internal static class HardwareDecodeProbe
                 return null;
             }
             Log.Info($"decode probe: h264={Height(limits.H264)} hevc={Height(limits.HevcMain)}/{Height(limits.HevcMain10)}"
-                + $" vp9={Height(limits.Vp9Profile0)}/{Height(limits.Vp9Profile2)}");
+                + $" vp9={Height(limits.Vp9Profile0)}/{Height(limits.Vp9Profile2)}"
+                + $" vc1={Height(limits.Vc1)} mpeg2={Height(limits.Mpeg2)}");
             return limits;
         }
         catch
