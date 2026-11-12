@@ -119,7 +119,20 @@ It's Christmastime Again, Charlie Brown (1080p23.976 VC-1 Advanced), and Bratz: 
 Playing, no buffering or decoder failures, and a media/wall-clock ratio of 0.997–0.998.
 These probes validate the compressed WVC1/MPEG2 providers; they do not validate Windows' own
 container sources or HLS. The installed build previously transcoded all three as unsupported
-video. Full-player, seeking and DVD-subtitle verification follows the capability change.
+video.
+
+On **0.1.462**, full-player playback of A Charlie Brown Christmas is `original_http`, VC-1 system
+video and MP3 system audio; forward/back skips and a five-minute seek retain direct play. Bratz is
+also `original_http`, MPEG-2 system video and AC3 system audio. Its English DVD subtitles reach
+Bale's bitmap overlay at source stream 2, with a visible cue confirmed on the console and no
+burn-in. Seeks to 240/300 seconds and back/forward skips retain this route; a paused seek to 60
+seconds clears the old cue and leaves no stale image. The standalone probe's software MP3/AC3
+audio choices therefore do not describe the production player, which enables the system switches.
+It's Christmastime Again, Charlie Brown also direct plays its VC-1 through the system decoder,
+with local FFmpeg FLAC audio decode. Forward/back skips and a five-minute seek retain direct play;
+both VC-1 five-minute seeks landed within half a second of the target. All three films were
+visually checked on the console, with no playback failures or recovery replans. These are bounded
+playback/seek checks, not whole-film runs; system-decoder renderer-drop counts remain unavailable.
 
 All builds, including production (`BaleDebugServer=false`), apply the wrapper-fork defaults from
 `SoftwareDecodeTuning` to software AV1: `bale_decode_ahead_frames=16`, plus the fixed zero-copy keys
