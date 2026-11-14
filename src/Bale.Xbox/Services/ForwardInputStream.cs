@@ -32,9 +32,15 @@ internal sealed partial class ForwardInputStream : IInputStream
             byte[]? array = null;
             try
             {
-                buffer.Length = 0;
+                // Read Capacity before touching Length: the wrapper's NativeBuffer (NativeBuffer.h)
+                // reports Capacity as its current Length, so zeroing Length first would shrink every
+                // read to 0 bytes and FFmpeg would see end of data on its first probe.
                 var length = (int)Math.Min(count, buffer.Capacity);
-                if (_disposed || length == 0) return buffer;
+                if (_disposed || length == 0)
+                {
+                    buffer.Length = 0;
+                    return buffer;
+                }
                 array = ArrayPool<byte>.Shared.Rent(length);
                 var read = await StreamFill.ReadAsync(_stream, array.AsMemory(0, length), (uint)length,
                     options == InputStreamOptions.Partial, ct).ConfigureAwait(false);
@@ -44,6 +50,7 @@ internal sealed partial class ForwardInputStream : IInputStream
                     buffer.Length = (uint)read;
                     progress.Report((uint)read);
                 }
+                else buffer.Length = 0;
                 return buffer;
             }
             catch (Exception)
