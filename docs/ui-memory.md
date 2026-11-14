@@ -125,3 +125,15 @@ suspend-deadline budgeting and
 cleanup failures. The changed services can also be C#-compiled on Linux against the real UWP
 projections; full XAML/Native AOT packaging is covered by push CI. No console verification is
 performed by the implementation agent.
+
+### Console check (0.1.491, 2026-11-14)
+
+- Playback start released 270 images, 2 surfaces and 2 shadows. A 4K HEVC system-decoder playback
+  then ran at 790 MiB app memory.
+- Back on Detail: 247 MiB, art restored lazily (30 images within seconds), focus on Resume, backdrop,
+  logo and cast photos visible.
+- Browse → card in a lower rail → Detail → play → Back → Back: focus returned to the same card
+  (same rail and index), hero and posters restored.
+- Not yet checked on console: art restore after a real suspend/resume.
+- The suspended-Bale GPU slowdown of another app is not caused by this memory (it persists after
+  the release; the owner accepted it, see the bale-projects console rule).

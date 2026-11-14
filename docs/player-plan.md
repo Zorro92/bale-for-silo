@@ -1311,6 +1311,10 @@ unverified without an HDR display. The fix belongs in the fork: tag compressed v
 from the container. `decoder=auto tonemap=bt2390`: vp9_d3d11va decodes it, the pass runs at
 3840x2160 in real time (0.28 cores, 3D engine 31.7 %), and the picture is clean with full contrast.
 App memory for this file is 1.2–1.3 GiB (vs 0.6–0.7 GiB for 1080p HEVC).
+A 4K HEVC Main10 MKV that looked like HLG reports transfer 14 (BT.2020 10-bit, the SDR curve) and
+primaries/matrix 9 in its container (`ffmpeg-tune colorinfo=on` log): wide-gamut SDR, which silo-server
+correctly calls `sdr`. Neither the server nor Bale converts BT.2020 SDR to BT.709 on direct play, so on
+a BT.709 display its colours are slightly undersaturated (minor, later).
 
 Microsoft's media pipeline exposes no tone-mapping algorithm or parameter controls.
 FFmpegInteropX's `SetFFmpegVideoFilters` is not a practical alternative: filters run on the CPU,
