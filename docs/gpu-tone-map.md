@@ -3,7 +3,8 @@
 `bale_gpu.dll` exposes independent tone-map **ABI 1** through
 `native/bale-gpu/include/bale_tonemap.h`. It accepts PQ P010 and produces limited BT.709 NV12.
 Production continues to request server tone mapping. The wrapper stage requires
-FFmpegInteropX 2.1.0-bale.25 or later; the debug switch is gated on the packaged wrapper version.
+FFmpegInteropX 2.1.0-bale.25 or later; Bale now pins .25 and enables the debug switch. The
+package version gate protects older builds.
 
 ## Ownership and GPU work
 
@@ -77,7 +78,7 @@ explains the default display-referred BT.709 interpretation.
 
 ## Debug switch
 
-For the next FFmpeg player attempt (with the .25+ wrapper), use one of:
+For the next FFmpeg player attempt, use one of:
 
 ```sh
 scripts/bale-debug.sh ffmpeg-tune decoder=auto tonemap=bt2390
@@ -90,8 +91,8 @@ The options map to `bale_tonemap=1`, `2`, `0`, or no key. Omitted keys retain th
 values. Any explicit mode, including off, requires decoder=auto in the resulting tuning;
 changing away from auto requires clearing tone mapping in the same update. Invalid updates
 change nothing. The current package pin is read during compilation, so .25+ enables the switch
-automatically when the wrapper is upgraded. Earlier packages reject explicit modes with a clear
-HTTP 400; default remains available. The current wrapper's
+automatically for the pinned .25 wrapper. Earlier packages reject explicit modes with a clear
+HTTP 400; default remains available. The pre-.25 wrapper's
 [TryParseBaleOption](https://github.com/Zorro92/bale-ffmpeginteropx/blob/c3a9adbf2d81024a54063e7570ed9883afd5403c/Source/FFmpegMediaSource.cpp)
 rejects unknown Bale keys with E_INVALIDARG rather than forwarding them to FFmpeg.
 The tuning log and `FFmpeg tone map override` stats/where row report the captured mode.

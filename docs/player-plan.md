@@ -563,12 +563,17 @@ and its native activation registration are unchanged.
 
 ### Native FFmpegInteropX wrapper fork
 
-Bale requires exactly `[2.1.0-bale.24]` of `FFmpegInteropX.UWP.Lib`, from the fork's immutable
-release [`wrapper-ffmpeginteropx-2.1.0-bale.24`](https://github.com/Zorro92/bale-ffmpeginteropx/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.24),
-built from fork commit `c3a9adbf2d81024a54063e7570ed9883afd5403c`. Its nupkg SHA256 is
-`086b5893d1ab81bfa1643675d974dae321d6919dc6d0dab46697c049f28a2530`. The only playback change
-from bale.23 fixes content-light-level, mastering-display and display-matrix reads to use the
-side-data payload after checking its size, instead of interpreting the side-data entry as metadata.
+Bale requires exactly `[2.1.0-bale.25]` of `FFmpegInteropX.UWP.Lib`, from the fork's immutable
+release [`wrapper-ffmpeginteropx-2.1.0-bale.25`](https://github.com/Zorro92/bale-ffmpeginteropx/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.25),
+built from fork commit `f07840f4728fa5552b593ebdeb3f7060b5578f63`. Its nupkg SHA256 is
+`da366a3e7e03d3e57de5caf26999cce750e6b3bd9d16b33bf8874fdc19748ad9`; its NuGet content hash is
+`8jJxWq56HCZIXCywpc1bXfea1U/p1gh2fUm8Gyz3hJKTBy7k3SrEZOsTWQL3W6G71Xyfh+dLo0nUDeCAQM9GgA==`.
+Both were verified against the downloaded package, including NuGet PackageArchiveReader's content
+hash. The fork's `Source/bale_tonemap.h` is byte-for-byte identical to Bale's ABI 1 header.
+Version .25 adds the opt-in GPU tone-map stage for d3d11va 10-bit PQ streams (`bale_tonemap=0/1/2`),
+retaining .24's HDR side-data fixes. Self-test mismatch stops the stream with `0x8004BA01`.
+The debug `tonemap=` switch is now available; production leaves the key absent and keeps its
+server tone-mapping policy.
 Bale no longer carries or applies wrapper patches or builds/releases wrapper packages. Changes go
 as commits to [Zorro92/bale-ffmpeginteropx](https://github.com/Zorro92/bale-ffmpeginteropx); its
 [`bale/README.md`](https://github.com/Zorro92/bale-ffmpeginteropx/blob/main/bale/README.md) is the
@@ -1106,7 +1111,7 @@ probe. Parked.
 BT.709 NV12), with BT.2390/Hable and defaults matching the server's peak/white/desat conventions.
 Create runs a fixed-pattern CPU/GPU self-test; mismatch returns `0x8004BA01`. The debug switch
 `ffmpeg-tune decoder=auto tonemap=off|bt2390|hable|default` requires wrapper 2.1.0-bale.25+;
-older packages reject unknown `bale_*` keys, so the switch is gated until that version ships.
+the pinned .25 wrapper enables it. Older packages reject unknown `bale_*` keys and remain gated.
 Production HDR policy remains server tone mapping. See [GPU tone-map ABI and colour details](gpu-tone-map.md),
 including the reusable, binding-free `shaders/tonemap_math.hlsli`, 203-nit internal reference,
 Hable's explicit desat=0, and documented resampling/quantization differences.
@@ -1249,7 +1254,7 @@ Wrapper bug found (also upstream): the HDR side-data reads cast the `AVPacketSid
 using its `data`, so `hdr=on` reported MaxCLL 488887616 / MaxFALL 553 (pointer bits; the native
 route reads 4057 / 321) and no mastering luminance. The display-matrix rotation read has the same
 pattern. The fork fixes all three reads in commit `c3a9adbf2d81024a54063e7570ed9883afd5403c`,
-consumed by Bale as wrapper `2.1.0-bale.24`; console verification of that fix remains pending.
+first consumed by Bale as wrapper `2.1.0-bale.24` and retained in `.25`; console verification of that fix remains pending.
 Automatic stays banned in production.
 
 Microsoft's media pipeline exposes no tone-mapping algorithm or parameter controls.
