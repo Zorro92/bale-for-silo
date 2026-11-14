@@ -36,6 +36,19 @@ public class PlayPlanOptionsTests
         Assert.False(PlayPlanOptions.TryParse([flag, value], out _, out _));
 
     [Fact]
+    public void Hdr10PlansLikeHdrPretendOnASeriesConsole()
+    {
+        Assert.True(PlayPlanOptions.TryParse(["--hdr10"], out var options, out _));
+        Assert.True(options.Hdr10);
+        var device = options.Capabilities();
+        Assert.True(device.Hdr.Hdr10);
+        Assert.Equal("exact", device.DisplayHdrEvidence);
+        Assert.Contains(device.VideoDecode, decode => decode.Codec == "hevc" && decode.MaxWidth >= 3840 && decode.BitDepths.Contains(10));
+        Assert.True(device.OriginalDolbyVision8BaseLayerSupported);
+        Assert.False(PlayPlanOptions.TryParse(["--hdr10", "--hdr10"], out _, out _));
+    }
+
+    [Fact]
     public void DefaultsUseMeasuredCapabilitiesAndAnImmediateStop()
     {
         Assert.True(PlayPlanOptions.TryParse([], out var options, out var error));

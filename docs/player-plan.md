@@ -1126,6 +1126,21 @@ and the debug FFmpeg `policy|off` paths use the detected display. `caps` shows t
 HDR10+, HLG and Dolby Vision remain unclaimed/unverified; Xbox Dolby Vision is low-latency DV
 (profile 5) only, to revisit later.
 
+**Dolby Vision profile 8 base layer (`client_dv8_base_layer_fallback_v1`, 2026-11-14).** Bale's
+original_http delivery carries this claim (as silo-android does). silo-server (protocol_v3.go,
+capabilities_v3.go `clientDV8BaseLayerFallbackV3`, candidate_routes_v3.go) then plays a single-layer
+DV profile 8 file unchanged through the ordinary HEVC decoder as its base layer, but only with a
+proven base layer whose `dv_bl_compat_id` maps to HDR10 (1), SDR (2) or HLG (4), that range on the
+active output, and an HEVC decode entry that fits. The plan has decision reason
+`client_dv8_base_layer`, recipe range = the base range, warning `dolby_vision_base_layer_only`, and
+never claims Dolby Vision output. Bale routes such plans through the FFmpeg demuxer (MP4 too, so
+Windows' MP4 source never sees dvh1/dvhe entries) to the system HEVC decoder, which skips the RPU NAL
+units (type 62, unspecified in HEVC). An 8.1 plan switches HDMI to HDR10 like plain HDR10; Bale
+claims no HLG, so 8.4 stays with the server. Debug `ffmpeg off` withdraws the claim, and a failed
+mount withdraws it on replan. `bale-cli play-plan --hdr10` plans like `hdr pretend` on a Series X:
+a 4K DV profile 8 MKV now returns original_http instead of an HLS remux; without HDR10 the server
+still picks the SDR version.
+
 **HDR sources on a non-HDR display go to the server for transcode and tone mapping, never console
 tone mapping.** The server's `outputRangeEligibleV3` / `nativeOutputHDRV3` gates direct HDR on
 exact display evidence and supported HDR types. Microsoft documents automatic media-pipeline

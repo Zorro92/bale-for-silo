@@ -58,8 +58,7 @@ public static class PlaybackStartBuilder
             Subtitles = device.Subtitles with { EmbeddedBitmap = false },
             // PlaybackCapabilityDetector.kt: only the untouched original executor maps and verifies
             // the catalog audio ordinal. Packaged outputs contain the server-selected stream alone.
-            ValidatedClaims = device.OriginalHttpSupported && device.OriginalAudioTrackSelectionSupported
-                ? [PlaybackProtocol.ClientSelectedAudioTrackClaim] : [],
+            ValidatedClaims = OriginalClaims(device),
         };
         // PlaybackCapabilityDetector.kt disables progressive until its seekable transport is proven.
         var progressive = original with
@@ -108,5 +107,15 @@ public static class PlaybackStartBuilder
             SubtitleTrackIndex = subtitle,
             SubtitleTrackId = subtitle is { } index ? $"file:{fileId}:subtitle:{index}" : null,
         };
+    }
+
+    /// <summary>Claims only the untouched original executor can honour (PlaybackCapabilityDetector.kt).</summary>
+    internal static IReadOnlyList<string> OriginalClaims(DeviceCapabilities device)
+    {
+        if (!device.OriginalHttpSupported) return [];
+        var claims = new List<string>();
+        if (device.OriginalAudioTrackSelectionSupported) claims.Add(PlaybackProtocol.ClientSelectedAudioTrackClaim);
+        if (device.OriginalDolbyVision8BaseLayerSupported) claims.Add(PlaybackProtocol.ClientDolbyVision8BaseLayerClaim);
+        return claims.AsReadOnly();
     }
 }

@@ -58,6 +58,8 @@ public static class SoftwareDecodePolicy
         VideoCodecs = device.VideoCodecs.Where(codec => !VideoCodecs.Contains(codec) && !DemuxedVideoCodecs.Contains(codec)).ToArray(),
         VideoDecode = device.VideoDecode.Where(decode => decode.Hardware && !DemuxedVideoCodecs.Contains(decode.Codec)).ToArray(),
         AudioDecodeCodecs = device.AudioDecodeCodecs.Where(codec => !AudioCodecs.Contains(codec)).ToArray(),
+        // The base-layer claim relies on the FFmpeg demuxer for DV-tagged MP4.
+        OriginalDolbyVision8BaseLayerSupported = false,
     };
 
     /// <summary>
@@ -95,6 +97,10 @@ public static class SoftwareDecodePolicy
             {
                 VideoCodecs = pair.Value.VideoCodecs.Where(KeepVideo).ToArray(),
                 AudioDecodeCodecs = pair.Value.AudioDecodeCodecs.Where(KeepAudio).ToArray(),
+                // A failed base-layer mount must not be offered again: the server then remuxes or transcodes.
+                ValidatedClaims = route.DolbyVisionBaseLayer
+                    ? pair.Value.ValidatedClaims.Where(claim => claim != PlaybackProtocol.ClientDolbyVision8BaseLayerClaim).ToArray()
+                    : pair.Value.ValidatedClaims,
             }),
         };
         return start with

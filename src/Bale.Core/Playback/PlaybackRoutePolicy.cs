@@ -3,7 +3,7 @@ using Bale.Core.Api.Models;
 namespace Bale.Core.Playback;
 
 public sealed record PlaybackRouteDecision(bool UseFfmpeg, bool SoftwareVideo, string? VideoCodec, string? AudioCodec, long? AudioOrdinal,
-    long? VideoWidth, long? VideoHeight)
+    long? VideoWidth, long? VideoHeight, bool DolbyVisionBaseLayer = false)
 {
     public bool SoftwareAudio => UseFfmpeg && SoftwareDecodePolicy.AudioCodecs.Contains(AudioCodec!);
 }
@@ -36,8 +36,13 @@ public static class PlaybackRoutePolicy
         // VP9/VC-1/MPEG-2 use verified compressed providers feeding the system decoder, regardless
         // of the container. Their claims do not imply Windows' own container source works.
         var demuxedVideo = SoftwareDecodePolicy.DemuxedVideoCodecs.Contains(video!);
-        var ffmpeg = ffmpegEnabled && direct && !hls && (softwareVideo || softwareAudio || matroska || demuxedVideo || forceFfmpeg);
-        return new(ffmpeg, ffmpeg && softwareVideo, video, audio, ordinal, width, height);
+        // A Dolby Vision profile 8 base-layer plan keeps the file's DV sample entries (dvh1/dvhe in MP4),
+        // which Windows' own MP4 source is not trusted with; the FFmpeg demuxer hands plain HEVC on.
+        var dolbyVisionBaseLayer = original && string.Equals(plan.DecisionReason,
+            PlaybackProtocol.ClientDolbyVision8BaseLayerReason, StringComparison.OrdinalIgnoreCase);
+        var ffmpeg = ffmpegEnabled && direct && !hls
+            && (softwareVideo || softwareAudio || matroska || demuxedVideo || dolbyVisionBaseLayer || forceFfmpeg);
+        return new(ffmpeg, ffmpeg && softwareVideo, video, audio, ordinal, width, height, ffmpeg && dolbyVisionBaseLayer);
     }
 
     /// <summary>MKV and WebM (Matroska-based); MP4 stays on Windows' own source.</summary>

@@ -249,7 +249,8 @@ public class PlaybackStartTests
             Assert.False(hdr.GetProperty("hlg").GetBoolean());
             Assert.Empty(hdr.GetProperty("dolby_vision_profiles").EnumerateArray());
             Assert.Empty(delivery.GetProperty("transformations").EnumerateArray());
-            Assert.Equal(property.Name == "original_http" ? new[] { PlaybackProtocol.ClientSelectedAudioTrackClaim } : [],
+            Assert.Equal(property.Name == "original_http"
+                    ? new[] { PlaybackProtocol.ClientSelectedAudioTrackClaim, PlaybackProtocol.ClientDolbyVision8BaseLayerClaim } : [],
                 Strings(delivery.GetProperty("validated_claims")));
             // The overlay draws text sidecars, native MKV bitmaps, and PGS sidecars on packaged routes.
             var subtitles = delivery.GetProperty("subtitles");

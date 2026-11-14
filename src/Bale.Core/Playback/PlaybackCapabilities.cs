@@ -24,6 +24,11 @@ public sealed record DeviceCapabilities(
     public bool OriginalHttpSupported { get; init; } = true;
     /// <summary>The original-file executor maps, selects and verifies catalog audio before Play.</summary>
     public bool OriginalAudioTrackSelectionSupported { get; init; }
+    /// <summary>
+    /// The original-file executor plays a Dolby Vision profile 8 file's base layer: the FFmpeg demuxer
+    /// feeds the system HEVC decoder, which ignores the RPU NAL units (type 62, unspecified in HEVC).
+    /// </summary>
+    public bool OriginalDolbyVision8BaseLayerSupported { get; init; }
     public bool ProgressiveSupported { get; init; }
     public bool HlsSupported { get; init; } = true;
 }
@@ -61,6 +66,7 @@ public static class ConsoleEvidence
         VideoDecode = BuildVideoDecode(),
         DisplayHdrEvidence = "unknown",
         OriginalAudioTrackSelectionSupported = true,
+        OriginalDolbyVision8BaseLayerSupported = true,
     };
 
     /// <summary>

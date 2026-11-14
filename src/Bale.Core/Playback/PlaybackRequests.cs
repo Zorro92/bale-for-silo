@@ -10,6 +10,16 @@ public static class PlaybackProtocol
 
     public const string SoftwareVideoDecodeFeature = "software_video_decode_v1";
     public const string ClientSelectedAudioTrackClaim = "client_selected_audio_track_v1";
+    /// <summary>
+    /// silo-server protocol_v3.go ClaimClientDV8BaseLayerFallbackV3, original_http only: a single-layer
+    /// Dolby Vision profile 8 file plays unchanged through an ordinary HEVC decoder as its base layer.
+    /// The server keeps every other gate (capabilities_v3.go clientDV8BaseLayerFallbackV3): profile 8,
+    /// no enhancement layer, a proven base layer whose dv_bl_compat_id maps to HDR10 (1), SDR (2) or
+    /// HLG (4), that range on the active output, and an HEVC decode entry that fits.
+    /// </summary>
+    public const string ClientDolbyVision8BaseLayerClaim = "client_dv8_base_layer_fallback_v1";
+    /// <summary>The decision reason (plan_v3.go decisionReasonClientDV8BaseLayerV3) of such a plan.</summary>
+    public const string ClientDolbyVision8BaseLayerReason = "client_dv8_base_layer";
     /// <summary>External SubRip arrives as the stored .srt instead of the server's WebVTT conversion.</summary>
     public const string SubripSidecarFeature = "subrip_sidecar_v1";
 

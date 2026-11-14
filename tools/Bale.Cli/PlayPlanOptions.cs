@@ -4,7 +4,7 @@ using Bale.Core.Playback;
 internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldSeconds, string? SaveHead = null, int HeadMegabytes = 0,
     string? SaveRange = null, long RangeOffset = 0, int RangeBytes = 0, string? FileId = null, int Av1MaxHeight = 1080,
     int? SubtitleIndex = null, string Delivery = "auto", double? StartSeconds = null,
-    IReadOnlyList<double>? ReanchorSeconds = null, bool InspectHls = false)
+    IReadOnlyList<double>? ReanchorSeconds = null, bool InspectHls = false, bool Hdr10 = false)
 {
     internal static bool TryParse(IEnumerable<string> arguments, out PlayPlanOptions options, out string error)
     {
@@ -52,6 +52,9 @@ internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldS
                     if (!int.TryParse(args[++i], NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var subtitle)
                         || subtitle < -1) return false;
                     options = options with { SubtitleIndex = subtitle };
+                    break;
+                case "--hdr10" when !options.Hdr10:
+                    options = options with { Hdr10 = true };
                     break;
                 case "--claim-av1" when !options.ClaimAv1:
                     options = options with { ClaimAv1 = true };
@@ -115,7 +118,20 @@ internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldS
     };
 
     // --claim-av1 remains a compatibility no-op; only the explicit height probe expands AV1.
-    internal DeviceCapabilities Capabilities() => Av1MaxHeight == 2160
-        ? ConsoleEvidence.Default with { VideoDecode = ConsoleEvidence.BuildVideoDecode(3840, 2160) }
-        : ConsoleEvidence.Default;
+    internal DeviceCapabilities Capabilities()
+    {
+        // --hdr10 plans like the app's `hdr pretend` on a Series X: an exact HDR10 display and the
+        // console's decoder report (h264=1080p hevc=4320p vp9=2160p), so 4K HDR originals can be checked.
+        var device = Hdr10
+            ? ConsoleEvidence.ForHardware(new(H264: new(1920, 1080), HevcMain: new(7680, 4320), HevcMain10: new(7680, 4320),
+                Vp9Profile0: new(3840, 2160), Vp9Profile2: new(3840, 2160))) with
+            {
+                Hdr = new() { Hdr10 = true },
+                DisplayHdrEvidence = "exact",
+            }
+            : ConsoleEvidence.Default;
+        if (Av1MaxHeight != 2160) return device;
+        var av1 = ConsoleEvidence.BuildVideoDecode(3840, 2160).Where(decode => decode.Codec == "av1");
+        return device with { VideoDecode = device.VideoDecode.Where(decode => decode.Codec != "av1").Concat(av1).ToArray() };
+    }
 }
