@@ -218,6 +218,9 @@ switch (command)
                     PlaybackFormatting.VersionCompactLabel(version), PlaybackFormatting.VersionDetailLabel(version),
                 }.Where(label => !string.IsNullOrWhiteSpace(label)));
                 Console.WriteLine($"  version file={version.FileId} {summary}");
+                // Silo's alternate-version fallback only moves between files with matching keys.
+                if (!string.IsNullOrEmpty(version.EditionKey) || !string.IsNullOrEmpty(version.PresentationGroupKey) || !string.IsNullOrEmpty(version.PresentationKind))
+                    Console.WriteLine($"    edition={version.EditionKey} group={version.PresentationGroupKey} kind={version.PresentationKind} part={version.PresentationPartIndex}");
                 var subtitles = version.SubtitleTracks ?? [];
                 for (var i = 0; i < subtitles.Count; i++)
                 {
