@@ -1544,6 +1544,27 @@ show it:
   played`; a file that isn't in the versions, or has no usable label, reads `other version
   played`. No note when the two ids match or the plan names no requested file.
 
+An **explicit** Detail version pick now also gets a five-second, non-blocking player notice when
+the effective file differs. Auto stays quiet even though Start resolves its file id. The timer
+starts when the mounted picture is ready, never during loading; seeks/recovery of the same file
+do not repeat it. This uses Android TV's `TvPlayerNoticeOverlay.kt` informational surface
+(top/start 32dp, blue 92% background, 16dp corners, 480dp maximum, info icon and TV-scaled 18sp
+text), with no focus or dismissal action. Android currently identifies alternate versions in
+`TvPlayerHud.kt`; Apple's `PlayerSettingsSheet.swift` shows plan reasons/warnings in diagnostics.
+Neither has a dedicated automatic version-substitution notice to copy.
+
+`PlaybackVersionNotice` compares the explicit selection with `effective_media_file_id` (older
+plans can use `source.media_file_id`), and uses only numeric resolution facts in its message.
+For example, a 4K AV1 pick above the captured decode claims reads “Playing 1080p — this console
+can't play the selected 4K version directly.” A known bandwidth cap, connection limit, device
+limit or chosen quality gets corresponding wording. Otherwise it says “Playing 1080p instead of
+the selected 4K version.” The server's `planAlternateVersionV3` returns the successful version's
+decision reason, not the discarded refusal about 4K transcoding being disabled or another
+version serving this quality. Bale therefore cannot attribute every substitution to that server
+policy and uses neutral wording when the cause is absent. Warning messages and arbitrary labels
+are never echoed. Playback continues without waiting for the notice. Console verification is
+left to the lead; Core tests cover detection, wording, expiry and duplicate suppression.
+
 ## Phases
 
 Each phase ships on its own, is verified on the console and is ticked here.

@@ -49,6 +49,24 @@
         </Grid>
       </Grid>
     </Grid>
+    <!-- TvPlayerNoticeOverlay.kt: top-start, passive informational pill; never takes focus. -->
+    <Border x:Name="VersionNotice" Style="{StaticResource SkylinePlayerNoticeStyle}"
+            Visibility="Collapsed" IsHitTestVisible="False">
+      <Border.RenderTransform>
+        <TranslateTransform x:Name="VersionNoticeSlide" />
+      </Border.RenderTransform>
+      <Grid ColumnSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="18" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Viewbox Width="18" Height="18" VerticalAlignment="Center">
+          <Path Fill="White" Width="24" Height="24"
+                Data="M11,17 L13,17 L13,11 L11,11 Z M12,2 C6.48,2 2,6.48 2,12 C2,17.52 6.48,22 12,22 C17.52,22 22,17.52 22,12 C22,6.48 17.52,2 12,2 Z M12,20 C7.59,20 4,16.41 4,12 C4,7.59 7.59,4 12,4 C16.41,4 20,7.59 20,12 C20,16.41 16.41,20 12,20 Z M11,9 L13,9 L13,7 L11,7 Z" />
+        </Viewbox>
+        <TextBlock x:Name="VersionNoticeText" Grid.Column="1" Style="{StaticResource SkylinePlayerNoticeTextStyle}" />
+      </Grid>
+    </Border>
     <!-- Only DEBUG_SERVER code makes this visible. Read-only: it must never take player focus. -->
     <Border x:Name="StatsPanel" Style="{StaticResource SkylinePlayerStatsPanelStyle}"
             Visibility="Collapsed" IsHitTestVisible="False">

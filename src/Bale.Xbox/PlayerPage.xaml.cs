@@ -62,6 +62,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public double Position { get; set; }
         public Mount? Media { get; set; }
         public bool StreamAdapterLogged { get; set; }
+        public PlaybackVersionNotice VersionNotice { get; } = new();
 #if DEBUG_SERVER
         // Match the capability claim and backend even if the debug toggle changes during a request/replan.
         public string FfmpegMode { get; } = DebugFfmpegPlayback.Mode;
@@ -291,6 +292,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
             && IsCurrent(current, first)) UpdatePlaybackState(current, first);
         UpdateSpinner();
         UpdateTransport();
+        UpdateVersionNotice();
         // Drift correction about once per second while playing; SubtitleClockPush drops the other ticks.
         PushSubtitleClock();
         if (_recording || _seeking) return;

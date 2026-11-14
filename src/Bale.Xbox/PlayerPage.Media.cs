@@ -499,6 +499,7 @@ public sealed partial class PlayerPage
 
     private void DisposeMount(Attempt attempt)
     {
+        VersionNotice.Visibility = Visibility.Collapsed;
         if (attempt.Media is not { } media) return;
         attempt.Media = null;
         // MSS exposes MF's renderer device even for ForceSystemDecoder. Hold it across Close so
