@@ -252,7 +252,7 @@ fn invalid_arguments_leave_output_and_context_state_unchanged() {
     assert_eq!(handle.apply(&warp, &input, 0, &output, &f), S_OK);
     let before = warp.readback(&output);
     for bad in [
-        BaleToneMapFrameInfo { transfer: 18, ..f },
+        BaleToneMapFrameInfo { transfer: 17, ..f },
         BaleToneMapFrameInfo { primaries: 1, ..f },
         BaleToneMapFrameInfo { full_range: 2, ..f },
     ] {
