@@ -1491,12 +1491,12 @@
        TvPlayerChrome.kt supplies Smoke, Paper/Graphite and Row/Value type at the TV 0.86 scale. -->
   <x:Double x:Key="SkylinePlayerStatsColumnGap">26</x:Double>
   <Style x:Key="SkylinePlayerStatsPanelStyle" TargetType="Border">
-    <Setter Property="Width" Value="864" />
+    <Setter Property="Width" Value="760" />
     <Setter Property="HorizontalAlignment" Value="Left" />
     <Setter Property="VerticalAlignment" Value="Top" />
     <Setter Property="Margin" Value="48,26,0,0" />
-    <!-- 540 logical px tall screen: keep the bottom margin; longer content scrolls. -->
-    <Setter Property="MaxHeight" Value="488" />
+    <!-- About half of the 540 logical px screen so the picture stays visible; the rest scrolls. -->
+    <Setter Property="MaxHeight" Value="280" />
     <Setter Property="Padding" Value="12" />
     <Setter Property="Background" Value="#F4131417" />
     <Setter Property="BorderBrush" Value="#1AFFFFFF" />
