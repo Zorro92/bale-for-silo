@@ -36,10 +36,14 @@ impl BaleToneMapConfig {
 impl BaleToneMapFrameInfo {
     pub fn validate(&self) -> Result<(), i32> {
         // Metadata is intentionally ignored, including reserved fields, in ABI 1.
-        if self.transfer != 16
-            || !matches!((self.primaries, self.matrix), (9, 9) | (1, 1))
-            || self.full_range > 1
-        {
+        // PQ (16) is tone mapped from BT.2020 or BT.709. SDR on the BT.709/BT.1886 curve
+        // (H.273 1, 6, 14, 15) with BT.2020 primaries only needs the gamut conversion.
+        let supported = match self.transfer {
+            16 => matches!((self.primaries, self.matrix), (9, 9) | (1, 1)),
+            1 | 6 | 14 | 15 => (self.primaries, self.matrix) == (9, 9),
+            _ => false,
+        };
+        if !supported || self.full_range > 1 {
             return Err(E_INVALIDARG);
         }
         Ok(())
@@ -112,7 +116,11 @@ pub fn luma_weights(bt2020: bool) -> [f32; 3] {
 fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
-pub fn source_decode(y: f32, uv: [f32; 2], bt2020: bool, full_range: bool) -> [f32; 3] {
+/// SDR sources are display-referred: decode with the BT.1886 EOTF (power 2.4) to linear 0..1.
+pub fn sdr_decode(signal: f32) -> f32 {
+    signal.clamp(0.0, 1.0).powf(2.4)
+}
+pub fn source_decode(y: f32, uv: [f32; 2], bt2020: bool, full_range: bool, sdr: bool) -> [f32; 3] {
     let [kr, kg, kb] = luma_weights(bt2020);
     let y = if full_range {
         y / 1023.0
@@ -123,7 +131,7 @@ pub fn source_decode(y: f32, uv: [f32; 2], bt2020: bool, full_range: bool) -> [f
     let r = y + 2.0 * (1.0 - kr) * uv[1];
     let b = y + 2.0 * (1.0 - kb) * uv[0];
     let g = (y - kr * r - kb * b) / kg;
-    [r, g, b].map(pq_eotf)
+    [r, g, b].map(if sdr { sdr_decode } else { pq_eotf })
 }
 pub fn rgb2020_to_709(rgb: [f32; 3]) -> [f32; 3] {
     [
@@ -174,8 +182,15 @@ pub fn tone_map_pixel(
     curve: u32,
     bt2020: bool,
     full_range: bool,
+    sdr: bool,
 ) -> [f32; 3] {
-    let mut rgb = source_decode(y, uv, bt2020, full_range);
+    if sdr {
+        // BT.2020 SDR: no tone curve, only BT.2020 -> BT.709 in linear light, clip, re-encode.
+        let rgb = source_decode(y, uv, bt2020, full_range, true);
+        let rgb = gamut_to_709(rgb, bt2020).map(sdr_encode);
+        return rgb709_to_ycbcr(rgb);
+    }
+    let mut rgb = source_decode(y, uv, bt2020, full_range, false);
     let original = rgb.into_iter().fold(0.0f32, f32::max);
     // Match tonemapx's order for nonzero desat: convert primaries before desaturating,
     // but derive the scale from the original RGB. The scalar scale commutes with the matrix.
@@ -214,6 +229,7 @@ pub fn pixel(
         config.curve,
         frame.matrix == 9,
         frame.full_range == 1,
+        frame.transfer != 16,
     )
 }
 pub fn quantize_luma(y: f32) -> f32 {
@@ -433,6 +449,53 @@ mod tests {
                 }
             }
         }
+    }
+    #[test]
+    fn bt2020_sdr_is_gamut_converted_without_a_tone_curve() {
+        let c = config(1);
+        let sdr = BaleToneMapFrameInfo {
+            transfer: 14,
+            primaries: 9,
+            matrix: 9,
+            ..frame()
+        };
+        assert!(sdr.validate().is_ok());
+        assert!(
+            BaleToneMapFrameInfo { transfer: 1, ..sdr }
+                .validate()
+                .is_ok()
+        );
+        // SDR from BT.709 primaries needs nothing: not accepted.
+        assert!(
+            BaleToneMapFrameInfo {
+                primaries: 1,
+                matrix: 1,
+                ..sdr
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            BaleToneMapFrameInfo {
+                transfer: 18,
+                ..sdr
+            }
+            .validate()
+            .is_err()
+        );
+        // Neutral grey keeps its level: the matrix rows sum to 1 and no curve applies.
+        for level in [64.0, 300.0, 600.0, 940.0] {
+            let out = pixel(&c, &sdr, level, [512.0, 512.0]);
+            assert!(
+                (out[0] - (level - 64.0) / 876.0).abs() < 0.002,
+                "level {level}: {out:?}"
+            );
+            assert!(out[1].abs() < 0.002 && out[2].abs() < 0.002);
+        }
+        // A BT.2020 colour shown unconverted reads less saturated than its BT.709 conversion.
+        let converted = pixel(&c, &sdr, 400.0, [470.0, 650.0]);
+        let naive_v: f32 = (650.0 - 512.0) / 896.0;
+        assert!(converted[2].abs() > naive_v.abs(), "{converted:?}");
     }
     #[test]
     fn default_hable_desat_is_explicitly_zero_and_positive_desat_neutralizes_highlights() {

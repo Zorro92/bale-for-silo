@@ -186,7 +186,7 @@ impl ToneMapGpu {
                 config.curve,
                 u32::from(frame.matrix == 9),
                 u32::from(frame.full_range),
-                0,
+                u32::from(frame.transfer != 16),
             ],
             params: [
                 config.source_peak_nits,

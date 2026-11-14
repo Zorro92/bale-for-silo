@@ -182,10 +182,11 @@ fn pq_to_nv12_matches_reference_for_both_curves_ranges_matrices_and_input_paths(
                 ..config(curve)
             };
             let handle = warp.create(&c);
-            for matrix in [1, 9] {
+            // PQ from BT.709 and BT.2020, and BT.2020 SDR (transfer 14: gamut conversion only).
+            for (transfer, matrix) in [(16, 1), (16, 9), (14, 9)] {
                 for full_range in [0, 1] {
                     let f = BaleToneMapFrameInfo {
-                        transfer: 16,
+                        transfer,
                         primaries: matrix,
                         matrix,
                         full_range,
@@ -212,7 +213,7 @@ fn pq_to_nv12_matches_reference_for_both_curves_ranges_matrices_and_input_paths(
                             for (i, (&a, &b)) in actual.iter().zip(&expected).enumerate() {
                                 assert!(
                                     a.abs_diff(b) <= 3,
-                                    "curve={curve} desat={desat} matrix={matrix} full={full_range} bind={bind} code={i}: GPU {a}, CPU {b}"
+                                    "curve={curve} desat={desat} transfer={transfer} matrix={matrix} full={full_range} bind={bind} code={i}: GPU {a}, CPU {b}"
                                 );
                             }
                         }
