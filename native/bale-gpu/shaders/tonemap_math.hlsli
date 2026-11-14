@@ -92,21 +92,21 @@ float3 desaturate(float3 rgb, bool bt2020, float threshold_nits) {
 }
 float3 tone_map_pixel(float y, float2 uv, float source_peak_nits, float target_white_nits,
                       float desat, uint curve, bool bt2020, bool full_range, bool sdr) {
+    float3 rgb = source_decode(y, uv, bt2020, full_range, sdr);
     if (sdr) {
         // BT.2020 SDR: no tone curve, only BT.2020 -> BT.709 in linear light, clip, re-encode.
-        float3 lin = gamut_to_709(source_decode(y, uv, bt2020, full_range, true), bt2020);
-        return rgb709_to_ycbcr(float3(sdr_encode(lin.r), sdr_encode(lin.g), sdr_encode(lin.b)));
+        rgb = gamut_to_709(rgb, bt2020);
+    } else {
+        float original = max(rgb.r, max(rgb.g, rgb.b));
+        if (curve == 1 && bt2020) rgb = rgb2020_to_709(rgb);
+        if (desat > 0.0) {
+            float white = curve == 1 ? target_white_nits * 2.03 : target_white_nits;
+            rgb = desaturate(rgb, bt2020, desat * white);
+        }
+        float sig = curve == 1 ? original : max(rgb.r, max(rgb.g, rgb.b));
+        rgb *= tone_curve(sig, source_peak_nits, target_white_nits, curve) / max(sig, 1e-6);
+        rgb = gamut_to_709(rgb, bt2020 && curve == 2);
     }
-    float3 rgb = source_decode(y, uv, bt2020, full_range, false);
-    float original = max(rgb.r, max(rgb.g, rgb.b));
-    if (curve == 1 && bt2020) rgb = rgb2020_to_709(rgb);
-    if (desat > 0.0) {
-        float white = curve == 1 ? target_white_nits * 2.03 : target_white_nits;
-        rgb = desaturate(rgb, bt2020, desat * white);
-    }
-    float sig = curve == 1 ? original : max(rgb.r, max(rgb.g, rgb.b));
-    rgb *= tone_curve(sig, source_peak_nits, target_white_nits, curve) / max(sig, 1e-6);
-    rgb = gamut_to_709(rgb, bt2020 && curve == 2);
     return rgb709_to_ycbcr(float3(sdr_encode(rgb.r), sdr_encode(rgb.g), sdr_encode(rgb.b)));
 }
 // Return integer-valued codes as floats. The binding layer divides by 255 for UNORM RTVs.
