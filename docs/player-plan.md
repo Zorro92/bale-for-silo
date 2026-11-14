@@ -563,17 +563,19 @@ and its native activation registration are unchanged.
 
 ### Native FFmpegInteropX wrapper fork
 
-Bale requires exactly `[2.1.0-bale.25]` of `FFmpegInteropX.UWP.Lib`, from the fork's immutable
-release [`wrapper-ffmpeginteropx-2.1.0-bale.25`](https://github.com/Zorro92/bale-ffmpeginteropx/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.25),
-built from fork commit `f07840f4728fa5552b593ebdeb3f7060b5578f63`. Its nupkg SHA256 is
-`da366a3e7e03d3e57de5caf26999cce750e6b3bd9d16b33bf8874fdc19748ad9`; its NuGet content hash is
-`8jJxWq56HCZIXCywpc1bXfea1U/p1gh2fUm8Gyz3hJKTBy7k3SrEZOsTWQL3W6G71Xyfh+dLo0nUDeCAQM9GgA==`.
+Bale requires exactly `[2.1.0-bale.26]` of `FFmpegInteropX.UWP.Lib`, from the fork's immutable
+release [`wrapper-ffmpeginteropx-2.1.0-bale.26`](https://github.com/Zorro92/bale-ffmpeginteropx/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.26),
+built from fork commit `d3956a2998f120d6817e7a996dbf2c807887c68f`. Its nupkg SHA256 is
+`58e52126a3c552433ce5280b2cef8b42f8e48c51bf27a0cf53a7f96e61a93c7c`; its NuGet content hash is
+`Hh4+z7bSRtEVf3rFyuUTxOpsk+Z4RoDQbIsKOQidAdo/BeBl8e/A5x2LmxiMBHE88An0Hk/YIdJSYpjMGtM/VA==`.
 Both were verified against the downloaded package, including NuGet PackageArchiveReader's content
-hash. The fork's `Source/bale_tonemap.h` is byte-for-byte identical to Bale's ABI 1 header.
+hash. The release archive's `Source/bale_tonemap.h` matches Bale's ABI 1 header apart from line endings.
 Version .25 adds the opt-in GPU tone-map stage for d3d11va 10-bit PQ streams (`bale_tonemap=0/1/2`),
 retaining .24's HDR side-data fixes. Self-test mismatch stops the stream with `0x8004BA01`.
 The debug `tonemap=` switch is now available; production leaves the key absent and keeps its
 server tone-mapping policy.
+Version .26 adds opt-in compressed system-decoder colour and HDR metadata propagation
+(`bale_compressed_color_info=0/1`); unset/zero preserves the existing compressed media types.
 Bale no longer carries or applies wrapper patches or builds/releases wrapper packages. Changes go
 as commits to [Zorro92/bale-ffmpeginteropx](https://github.com/Zorro92/bale-ffmpeginteropx); its
 [`bale/README.md`](https://github.com/Zorro92/bale-ffmpeginteropx/blob/main/bale/README.md) is the
@@ -1111,7 +1113,7 @@ probe. Parked.
 BT.709 NV12), with BT.2390/Hable and defaults matching the server's peak/white/desat conventions.
 Create runs a fixed-pattern CPU/GPU self-test; mismatch returns `0x8004BA01`. The debug switch
 `ffmpeg-tune decoder=auto tonemap=off|bt2390|hable|default` requires wrapper 2.1.0-bale.25+;
-the pinned .25 wrapper enables it. Older packages reject unknown `bale_*` keys and remain gated.
+the pinned .26 wrapper enables it. Older packages reject unknown `bale_*` keys and remain gated.
 Production HDR policy remains server tone mapping. See [GPU tone-map ABI and colour details](gpu-tone-map.md),
 including the reusable, binding-free `shaders/tonemap_math.hlsli`, 203-nit internal reference,
 Hable's explicit desat=0, and documented resampling/quantization differences.
