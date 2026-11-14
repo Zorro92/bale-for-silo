@@ -1523,8 +1523,8 @@
     <Setter Property="Foreground" Value="#99EDEDED" />
     <Setter Property="Margin" Value="12,0,0,0" />
     <Setter Property="TextAlignment" Value="Right" />
-    <!-- Debug values can be long (media types, plans): wrap instead of cutting them off. -->
-    <Setter Property="TextWrapping" Value="Wrap" />
+    <!-- Debug values can be long (media types, plans): wrap at spaces instead of cutting them off. -->
+    <Setter Property="TextWrapping" Value="WrapWholeWords" />
     <Setter Property="TextTrimming" Value="None" />
     <Setter Property="MaxLines" Value="0" />
   </Style>
