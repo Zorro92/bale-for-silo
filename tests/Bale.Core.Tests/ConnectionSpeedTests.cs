@@ -74,6 +74,7 @@ public class ConnectionSpeedTests
     {
         var stub = new StubHandler().Enqueue(SpeedCapabilities).Enqueue(HttpStatusCode.Created, Decision);
         using var client = Create(stub);
+        client.Playback.Speed.EstimatesEnabled = true;
         client.Playback.Speed.Update(null, new() { Probe = new(48_000, false, DateTimeOffset.UtcNow.AddHours(-1), "wifi") });
 
         await client.Playback.StartAsync(Start(), new Installation());
@@ -94,6 +95,7 @@ public class ConnectionSpeedTests
         var stub = new StubHandler().Enqueue(offered ? SpeedCapabilities : Capabilities).Enqueue(HttpStatusCode.Created, Decision);
         using var client = Create(stub);
         client.Playback.Speed.Metered = metered;
+        client.Playback.Speed.EstimatesEnabled = true;
         client.Playback.Speed.Update(null, new() { Probe = new(48_000, false, DateTimeOffset.UtcNow.AddHours(-1), "wifi") });
 
         await client.Playback.StartAsync(Start(), new Installation());
@@ -114,5 +116,25 @@ public class ConnectionSpeedTests
         Assert.Null(client.Playback.Schedule(caps));
         caps.BandwidthProbeUrl = "/api/v2/playback/bandwidth-probe";
         Assert.NotNull(client.Playback.Schedule(caps));
+    }
+}
+
+public class ConnectionSpeedGateTests
+{
+    [Fact]
+    public async Task EstimatesStayOffUntilEnabled()
+    {
+        var caps = """
+            {"installation_id":"installation","state":"available","allowed":true,"protocol_versions":[3],
+             "features":["sequenced_progress_v1","buffering_quality_v1","connection_speed_v1"],"deliveries":["original_http","hls"],"revision":"1",
+             "bandwidth_probe_url":"/api/v2/playback/bandwidth-probe","bandwidth_probe_max_age_seconds":604800}
+            """;
+        var stub = new StubHandler().Enqueue(caps).Enqueue(System.Net.HttpStatusCode.Created, Decision);
+        using var client = Create(stub);
+        client.Playback.Speed.Update(null, new() { Probe = new(48_000, false, DateTimeOffset.UtcNow.AddHours(-1), "wifi") });
+        await client.Playback.StartAsync(Start(), new Installation());
+        using var json = JsonDocument.Parse(stub.RequestBodies[1]!);
+        Assert.False(json.RootElement.TryGetProperty("bandwidth_estimate_kbps", out _));
+        Assert.DoesNotContain("buffering_quality_v1", json.RootElement.GetProperty("client_features").EnumerateArray().Select(value => value.GetString()));
     }
 }

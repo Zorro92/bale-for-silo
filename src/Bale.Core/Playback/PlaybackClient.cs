@@ -86,7 +86,7 @@ public sealed partial class PlaybackClient
         // sends the highest current reading as a probe estimate. Without one the server fills in its reading.
         var features = PlaybackProtocol.NegotiatedStartFeatures(request, capabilities.Features);
         int? estimate = null;
-        if (ConnectionSpeed.Offered(capabilities.Features) && !Speed.Metered)
+        if (Speed.EstimatesEnabled && ConnectionSpeed.Offered(capabilities.Features) && !Speed.Metered)
         {
             if (!features.Contains(ConnectionSpeed.BufferingQualityFeature)) features = features.Append(ConnectionSpeed.BufferingQualityFeature).ToArray();
             Speed.Update(Schedule(capabilities), null);
