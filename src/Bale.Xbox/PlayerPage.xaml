@@ -49,9 +49,10 @@
         </Grid>
       </Grid>
     </Grid>
-    <!-- TvPlayerNoticeOverlay.kt: top-start, passive informational pill; never takes focus. -->
+    <!-- TvPlayerNoticeOverlay.kt: top-start, passive informational pill; never takes focus.
+         Keep it above the default-on development stats panel so the notice is still readable. -->
     <Border x:Name="VersionNotice" Style="{StaticResource SkylinePlayerNoticeStyle}"
-            Visibility="Collapsed" IsHitTestVisible="False">
+            Visibility="Collapsed" IsHitTestVisible="False" Canvas.ZIndex="1">
       <Border.RenderTransform>
         <TranslateTransform x:Name="VersionNoticeSlide" />
       </Border.RenderTransform>
