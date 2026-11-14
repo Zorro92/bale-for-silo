@@ -9,6 +9,14 @@ public static class PlaybackReplan
         IReadOnlyList<string> priorAttemptedKeys, int attemptCount, double sourcePositionSeconds, PlaybackFailureV3 failure,
         PlaybackRouteDecision? failedRoute = null)
     {
+        if (DolbyVision7Policy.RequiresBaseLayer(plan))
+        {
+            start = WithoutDolbyVision7(start);
+            if (failure.Classification != PlaybackAudioSelectionException.Classification)
+                return Build(start, plan, planAttemptId, priorAttemptedKeys.Append(plan.PlanAttemptKey!).ToArray(),
+                    attemptCount, sourcePositionSeconds, "failure_recovery",
+                    new("player_failure", "DV7 base-layer playback failed; server conversion required."));
+        }
         // A tone-map create/open/MediaFailed failure is not evidence that HEVC/VP9 or the
         // selected audio codec failed. Withdraw the range promise, keeping decode capabilities.
         if (failedRoute?.ConsoleToneMap == true && failure.Classification != PlaybackAudioSelectionException.Classification)
@@ -104,7 +112,7 @@ public static class PlaybackReplan
     {
         // An enumerated HDR mode is not usable if the output switch fails. Withdraw every copy
         // of the claim so the server tone-maps instead of retrying HDR on an SDR HDMI signal.
-        start = WithoutDynamicRangeClaim(start);
+        start = WithoutDolbyVision7(start);
         var hdr = new HdrCapabilities();
         var context = start.ClientPlaybackContext;
         start = start with
@@ -116,7 +124,8 @@ public static class PlaybackReplan
                 Deliveries = context.Deliveries.ToDictionary(pair => pair.Key, pair => pair.Value with { HdrDetails = hdr }),
             },
         };
-        return ForFailure(start, plan, planAttemptId, priorAttemptedKeys, attemptCount, sourcePositionSeconds,
+        return Build(start, plan, planAttemptId, priorAttemptedKeys.Append(plan.PlanAttemptKey!).ToArray(),
+            attemptCount, sourcePositionSeconds, "failure_recovery",
             new("player_failure", "HDR output switch failed; server tone mapping required."));
     }
 
@@ -131,9 +140,24 @@ public static class PlaybackReplan
         },
     };
 
+    private static PlaybackStartRequestV3 WithoutDolbyVision7(PlaybackStartRequestV3 start)
+    {
+        start = WithoutDynamicRangeClaim(start);
+        return start with
+        {
+            ClientPlaybackContext = start.ClientPlaybackContext with
+            {
+                Deliveries = start.ClientPlaybackContext.Deliveries.ToDictionary(pair => pair.Key, pair => pair.Value with
+                {
+                    Transformations = pair.Value.Transformations.Where(transform => transform.Name != PlaybackProtocol.ClientDolbyVision7ToHdr10).ToArray(),
+                }),
+            },
+        };
+    }
+
     public static PlaybackReplanRequestV3 ForToneMapFailure(PlaybackStartRequestV3 start, PlaybackPlan plan, string planAttemptId,
         IReadOnlyList<string> priorAttemptedKeys, int attemptCount, double sourcePositionSeconds) =>
-        Build(WithoutDynamicRangeClaim(start), plan, planAttemptId, priorAttemptedKeys.Append(plan.PlanAttemptKey!).ToArray(),
+        Build(WithoutDolbyVision7(start), plan, planAttemptId, priorAttemptedKeys.Append(plan.PlanAttemptKey!).ToArray(),
             attemptCount, sourcePositionSeconds, "failure_recovery",
             new("player_failure", "Console tone mapping failed; server tone mapping required."));
 

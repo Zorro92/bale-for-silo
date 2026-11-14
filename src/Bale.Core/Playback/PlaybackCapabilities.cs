@@ -29,6 +29,8 @@ public sealed record DeviceCapabilities(
     /// feeds the system HEVC decoder, which ignores the RPU NAL units (type 62, unspecified in HEVC).
     /// </summary>
     public bool OriginalDolbyVision8BaseLayerSupported { get; init; }
+    /// <summary>FFmpeg HEVC/d3d11va presents only DV7's HDR10 base layer, ignoring RPU and EL pixels.</summary>
+    public bool OriginalDolbyVision7BaseLayerSupported { get; init; }
     /// <summary>The pinned wrapper and bale_gpu tone-map ABI are available; eligibility is still per selected version.</summary>
     public bool OriginalDynamicRangeMappingSupported { get; init; }
     public bool ProgressiveSupported { get; init; }
@@ -69,6 +71,7 @@ public static class ConsoleEvidence
         DisplayHdrEvidence = "unknown",
         OriginalAudioTrackSelectionSupported = true,
         OriginalDolbyVision8BaseLayerSupported = true,
+        OriginalDolbyVision7BaseLayerSupported = true,
     };
 
     /// <summary>

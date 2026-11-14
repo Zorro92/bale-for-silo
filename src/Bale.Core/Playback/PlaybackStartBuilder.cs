@@ -67,6 +67,10 @@ public static class PlaybackStartBuilder
             // PlaybackCapabilityDetector.kt: only the untouched original executor maps and verifies
             // the catalog audio ordinal. Packaged outputs contain the server-selected stream alone.
             ValidatedClaims = OriginalClaims(device, managesDynamicRange),
+            // ApplePlaybackV3Capabilities.swift: original-file client recipes never apply to
+            // packaged bytes. The server separately gates this one on the live HDR10 output.
+            Transformations = device.OriginalHttpSupported && device.OriginalDolbyVision7BaseLayerSupported
+                ? [DolbyVision7Policy.Transformation] : [],
         };
         // PlaybackCapabilityDetector.kt disables progressive until its seekable transport is proven.
         var progressive = original with
@@ -77,6 +81,7 @@ public static class PlaybackStartBuilder
             // In-container subtitles are an original_http claim only (the server reads it there).
             Subtitles = device.Subtitles with { NativeEmbedded = [] },
             ValidatedClaims = [],
+            Transformations = [],
         };
         var hls = original with
         {
@@ -89,6 +94,7 @@ public static class PlaybackStartBuilder
             AudioDecodeCodecs = original.AudioDecodeCodecs.Where(codec => !SoftwareDecodePolicy.AudioCodecs.Contains(codec)).ToArray(),
             Subtitles = device.Subtitles with { NativeEmbedded = [] },
             ValidatedClaims = [],
+            Transformations = [],
         };
         var context = new ClientPlaybackContext("tv", identity.ClientVersion ?? "unknown",
             new PlaybackDeviceContext(identity.Platform), output,

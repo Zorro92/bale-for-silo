@@ -94,7 +94,10 @@ public sealed record PlaybackStats
             not null when delivery.Contains("remux", StringComparison.OrdinalIgnoreCase) => "Remux",
             _ => delivery,
         };
-        if (decision is not null && DescribeDecisionReason(plan.DecisionReason) is { } reason) decision += $" ({reason})";
+        var reason = DolbyVision7Policy.RequiresBaseLayer(plan)
+            && string.Equals(plan.DecisionReason, PlaybackProtocol.ClientManagedDynamicRangeReason, StringComparison.OrdinalIgnoreCase)
+            ? "Dolby Vision 7 → HDR10 base layer → SDR" : DescribeDecisionReason(plan.DecisionReason);
+        if (decision is not null && reason is not null) decision += $" ({reason})";
         if (DescribeVersionSwap(plan, versions) is { } swap) decision = decision is null ? swap : $"{decision} · {swap}";
         var hls = isHls ?? (string.Equals(plan.Stream?.Protocol, "hls", StringComparison.OrdinalIgnoreCase)
             || string.Equals(delivery, "hls", StringComparison.OrdinalIgnoreCase)
@@ -163,7 +166,7 @@ public sealed record PlaybackStats
         "client_managed_dynamic_range" => "player handles HDR",
         "client_dv8_base_layer" => "Dolby Vision 8 as its base layer",
         "client_dv7_to_dv81" => "Dolby Vision 7 converted to 8.1",
-        "client_dv7_to_hdr10" => "Dolby Vision 7 played as HDR10",
+        "client_dv7_to_hdr10" => "Dolby Vision 7 → HDR10 base layer",
         "container_normalization" => "container not supported",
         "audio_adaptation" or "hls_audio_adaptation" => "audio converted",
         "hls_packaging_required" => "repackaged for streaming",

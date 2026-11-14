@@ -34,9 +34,14 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
     };
 
     // Explicit unsafe comparison modes must not promise local mapping to the server.
-    internal DeviceCapabilities ToneMapCapabilities(DeviceCapabilities device) =>
-        Decoder is DebugFfmpegDecoder.System or DebugFfmpegDecoder.Software || ToneMap == DebugToneMap.Off
-            ? device with { OriginalDynamicRangeMappingSupported = false } : device;
+    internal DeviceCapabilities ToneMapCapabilities(DeviceCapabilities device) => device with
+    {
+        OriginalDynamicRangeMappingSupported = device.OriginalDynamicRangeMappingSupported
+            && Decoder is not (DebugFfmpegDecoder.System or DebugFfmpegDecoder.Software) && ToneMap != DebugToneMap.Off,
+        OriginalDolbyVision7BaseLayerSupported = device.OriginalDolbyVision7BaseLayerSupported
+            && Decoder is not (DebugFfmpegDecoder.System or DebugFfmpegDecoder.Software) && HdrSupport != false
+            && ToneMap is not (DebugToneMap.Bt2390 or DebugToneMap.Hable),
+    };
 
     internal bool RequiresToneMapGuard(PlaybackRouteDecision route) => route.ConsoleToneMap
         && ToneMap != DebugToneMap.Off && Decoder is not (DebugFfmpegDecoder.System or DebugFfmpegDecoder.Software);

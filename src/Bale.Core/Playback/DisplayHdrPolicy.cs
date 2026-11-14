@@ -48,6 +48,7 @@ public static class DisplayHdrPolicy
         var range = string.IsNullOrWhiteSpace(plan.EffectiveRecipe?.DynamicRange)
             ? plan.Source?.DynamicRange : plan.EffectiveRecipe.DynamicRange;
         // The server can also validate HDR10 base-layer playback of HDR10+ / legacy hdr_unknown.
-        return string.Equals(range?.Trim(), "hdr10", StringComparison.OrdinalIgnoreCase) || plan.Claims?.Video?.Hdr10 == true;
+        return string.Equals(range?.Trim(), "hdr10", StringComparison.OrdinalIgnoreCase) || plan.Claims?.Video?.Hdr10 == true
+            || DolbyVision7Policy.RequiresBaseLayer(plan);
     }
 }

@@ -9,6 +9,8 @@ public static class PlaybackProtocol
     public const string SequencedProgressFeature = "sequenced_progress_v1";
 
     public const string SoftwareVideoDecodeFeature = "software_video_decode_v1";
+    public const string ClientVideoTransformationsFeature = "client_video_transformations_v1";
+    public const string ClientDolbyVision7ToHdr10 = "client_dv7_to_hdr10";
     /// <summary>silo-server ClaimClientManagedDynamicRangeV3: only original_http maps source range onto the active output.</summary>
     public const string ClientManagedDynamicRangeClaim = "client_managed_dynamic_range_v1";
     public const string ClientManagedDynamicRangeReason = "client_managed_dynamic_range";
@@ -46,7 +48,7 @@ public static class PlaybackProtocol
         // playbackClientFeaturesV3: these describe the protocol, not Android-only engine abilities.
         var features = new List<string>
         {
-            "playback_plan_v3", "client_video_transformations_v1", "device_quirks_v1",
+            "playback_plan_v3", ClientVideoTransformationsFeature, "device_quirks_v1",
             "seek_reanchor_v1", "direct_stream_resume_v1",
         };
         if (context.Deliveries.TryGetValue("original_http", out var original) && original.Subtitles.NativeEmbedded.Count > 0)

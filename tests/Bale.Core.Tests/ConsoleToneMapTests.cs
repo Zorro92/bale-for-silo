@@ -358,7 +358,7 @@ public sealed class ConsoleToneMapTests
         var source = new FFmpegMediaSource();
         source.VideoStreams.Add(new() { DecoderEngine = DecoderEngine.FFmpegD3D11HardwareDecoder });
         var failures = 0;
-        using var guard = new FfmpegToneMapGuard(source, () => failures++);
+        using var guard = new FfmpegVideoOutputGuard(source, () => failures++);
         source.Source.Request(new object()); // Audio descriptor is not a video failure.
         var format = SdrFormat();
         Assert.NotNull(source.Source.Request(new VideoStreamDescriptor { EncodingProperties = format }).Sample);
@@ -378,18 +378,18 @@ public sealed class ConsoleToneMapTests
     public void GuardRequiresAllColourAttributesAndKeepsCheckingTheLiveDecoder()
     {
         var format = SdrFormat();
-        Assert.True(FfmpegToneMapGuard.IsSdrOutput(format));
+        Assert.True(FfmpegVideoOutputGuard.IsSdrOutput(format));
         foreach (var key in format.Properties.Keys.ToArray())
         {
             var value = format.Properties[key];
             format.Properties.Remove(key);
-            Assert.False(FfmpegToneMapGuard.IsSdrOutput(format));
+            Assert.False(FfmpegVideoOutputGuard.IsSdrOutput(format));
             format.Properties[key] = value;
         }
         var source = new FFmpegMediaSource();
         source.VideoStreams.Add(new() { DecoderEngine = DecoderEngine.FFmpegSoftwareDecoder });
         var failures = 0;
-        using var guard = new FfmpegToneMapGuard(source, () => failures++);
+        using var guard = new FfmpegVideoOutputGuard(source, () => failures++);
         Assert.Null(source.Source.Request(new VideoStreamDescriptor { EncodingProperties = format }).Sample);
         Assert.Equal(1, failures);
     }

@@ -23,11 +23,14 @@ internal static class DebugHdrPlayback
         ? capabilities
         : capabilities with { Hdr = new() { Hdr10 = true }, DisplayHdrEvidence = "exact" };
 
-    internal static string Output(bool pretend, PlaybackPlan? plan, bool consoleToneMap = false) => plan is null
-        ? pretend ? "console tone map (debug; awaiting plan)" : "detected (awaiting plan)"
-        : consoleToneMap ? "SDR / console tone map"
+    internal static string Output(bool pretend, PlaybackPlan? plan, bool consoleToneMap = false)
+    {
+        if (plan is null) return pretend ? "console tone map (debug; awaiting plan)" : "detected (awaiting plan)";
+        var output = consoleToneMap ? "SDR / console tone map"
         : DisplayHdrPolicy.RequiresHdr10(plan)
             ? pretend ? "console tone map (debug)" : "HDR10 HDMI"
             : pretend ? "SDR (HDR pretend debug armed)" : "SDR / server tone map";
+        return DolbyVision7Policy.RequiresBaseLayer(plan) ? output + " · Dolby Vision 7 → HDR10 base layer" : output;
+    }
 }
 #endif

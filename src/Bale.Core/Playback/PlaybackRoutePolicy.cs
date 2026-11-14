@@ -3,9 +3,11 @@ using Bale.Core.Api.Models;
 namespace Bale.Core.Playback;
 
 public sealed record PlaybackRouteDecision(bool UseFfmpeg, bool SoftwareVideo, string? VideoCodec, string? AudioCodec, long? AudioOrdinal,
-    long? VideoWidth, long? VideoHeight, bool DolbyVisionBaseLayer = false, bool ConsoleToneMap = false)
+    long? VideoWidth, long? VideoHeight, bool DolbyVisionBaseLayer = false, bool ConsoleToneMap = false,
+    bool DolbyVision7BaseLayer = false)
 {
     public bool SoftwareAudio => UseFfmpeg && SoftwareDecodePolicy.AudioCodecs.Contains(AudioCodec!);
+    public bool RequiresD3D11 => ConsoleToneMap || DolbyVision7BaseLayer;
 }
 
 /// <summary>Pure per-mount policy. HLS never leaves AdaptiveMediaSource.</summary>
@@ -38,12 +40,13 @@ public static class PlaybackRoutePolicy
         var demuxedVideo = SoftwareDecodePolicy.DemuxedVideoCodecs.Contains(video!);
         // A Dolby Vision profile 8 base-layer plan keeps the file's DV sample entries (dvh1/dvhe in MP4),
         // which Windows' own MP4 source is not trusted with; the FFmpeg demuxer hands plain HEVC on.
-        var dolbyVisionBaseLayer = original && string.Equals(plan.DecisionReason,
+        var dv7 = DolbyVision7Policy.RequiresBaseLayer(plan);
+        var dolbyVisionBaseLayer = dv7 || original && string.Equals(plan.DecisionReason,
             PlaybackProtocol.ClientDolbyVision8BaseLayerReason, StringComparison.OrdinalIgnoreCase);
         var toneMap = ConsoleToneMapPolicy.RequiresToneMap(plan, sdrOutput);
         var ffmpeg = ffmpegEnabled && direct && !hls
             && (softwareVideo || softwareAudio || matroska || demuxedVideo || dolbyVisionBaseLayer || forceFfmpeg || toneMap);
-        return new(ffmpeg, ffmpeg && softwareVideo, video, audio, ordinal, width, height, ffmpeg && dolbyVisionBaseLayer, toneMap);
+        return new(ffmpeg, ffmpeg && softwareVideo, video, audio, ordinal, width, height, ffmpeg && dolbyVisionBaseLayer, toneMap, dv7);
     }
 
     /// <summary>MKV and WebM (Matroska-based); MP4 stays on Windows' own source.</summary>

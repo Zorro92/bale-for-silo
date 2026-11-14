@@ -24,10 +24,11 @@ public static class ConsoleToneMapPolicy
     {
         if (!device.OriginalHttpSupported || !device.OriginalDynamicRangeMappingSupported
             || device.DisplayHdrEvidence != "exact" || HasHdrOutput(device.Hdr)
-            // The server describes the first video stream. With an ambiguous inventory we cannot
-            // promise that every stream the original-file executor might select can be mapped.
-            || version.VideoTracks is not { Count: 1 } tracks) return false;
+            || version.VideoTracks is not { Count: > 0 } tracks) return false;
         var track = tracks[0];
+        // DV7 explicitly selects the first video in demux order, including dual-track BL+EL.
+        // Other range-management routes still require an unambiguous single video stream.
+        if (track.DvProfile == 7 ? !device.OriginalDolbyVision7BaseLayerSupported : tracks.Count != 1) return false;
         var codec = SoftwareDecodePolicy.NormalizeCodec(string.IsNullOrWhiteSpace(track.Codec) ? version.CodecVideo : track.Codec);
         if (codec is not ("hevc" or "vp9") || track.BitDepth != 10
             || !device.VideoCodecs.Contains(codec)
@@ -52,7 +53,7 @@ public static class ConsoleToneMapPolicy
         // Profile 8 needs its explicit compatibility id: 8.1 = HDR10, 8.4 = HLG, 8.2 = SDR.
         return track.DvProfile switch
         {
-            7 => pq && (track.DvBlCompatId is null or 0 or 1),
+            7 => pq && bt2020 && (track.DvBlCompatId is null or 0 or 1),
             8 => track.DvElPresent != true && track.DvBlCompatIdPresent == true && (pq && track.DvBlCompatId == 1 || hlg && track.DvBlCompatId == 4),
             _ => false,
         };

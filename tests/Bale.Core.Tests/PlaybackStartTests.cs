@@ -250,7 +250,8 @@ public class PlaybackStartTests
             Assert.False(hdr.GetProperty("hdr10_plus").GetBoolean());
             Assert.False(hdr.GetProperty("hlg").GetBoolean());
             Assert.Empty(hdr.GetProperty("dolby_vision_profiles").EnumerateArray());
-            Assert.Empty(delivery.GetProperty("transformations").EnumerateArray());
+            Assert.Equal(property.Name == "original_http" ? new[] { "client_dv7_to_hdr10" } : [],
+                delivery.GetProperty("transformations").EnumerateArray().Select(recipe => recipe.GetProperty("name").GetString()));
             Assert.Equal(property.Name == "original_http"
                     ? new[] { PlaybackProtocol.ClientSelectedAudioTrackClaim, PlaybackProtocol.ClientDolbyVision8BaseLayerClaim } : [],
                 Strings(delivery.GetProperty("validated_claims")));

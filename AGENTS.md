@@ -243,6 +243,13 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   and app/game concurrency implications). Never select 120 Hz for media; use at most 60 Hz.
 - An FFmpeg create/open/MediaFailed failure gets the existing single replan with its triggering
   codec claims removed and an explicit server-transcode reason; never retry the same capability.
+- DV7 originals declare only `client_dv7_to_hdr10` on `original_http`, with
+  `client_video_transformations_v1`. They require FFmpeg HEVC/d3d11va BL-only decoding, never
+  the native container source or system decoder. Select the first playable video in demux order;
+  reject an incomplete inventory or an EL default before mounting. The live output guard must
+  verify that BL stream plus P010 PQ BT.2020 on HDR, or tone-mapped NV12 BT.709 on SDR. A failure
+  withdraws the recipe and client-managed range claim on the existing single replan, keeping
+  codec evidence. Never declare DV7→DV8.1 or Dolby Vision output. See docs/player-plan.md.
 - Debug real-player override is **policy** (default) or **off** only; off also withdraws fallback
   claims. The standalone `playtest-ffmpeg` probe retains its experimental modes. See docs/player-plan.md.
 - Never print media URLs, stream grants, headers or media/session exception messages. Log only safe

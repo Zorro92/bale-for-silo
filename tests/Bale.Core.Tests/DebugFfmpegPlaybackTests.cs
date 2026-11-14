@@ -128,7 +128,7 @@ public class DebugFfmpegPlaybackTests
     }
 
     [Fact]
-    public void ProductionConfigurationLimitsAutomaticToToneMappingAndUsesSupportedSystemAudioSwitches()
+    public void ProductionConfigurationLimitsAutomaticToD3D11RoutesAndUsesSupportedSystemAudioSwitches()
     {
         var source = Read("FfmpegSource.cs.txt");
         // Production tunes software video only; input experiments stay in the debug-only overload.
@@ -137,7 +137,7 @@ public class DebugFfmpegPlaybackTests
         Assert.Contains("ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(softwareVideo, route.VideoWidth, route.VideoHeight))", production);
         Assert.Contains("FfmpegLogging.Configure()", production);
         Assert.Contains("VideoDecoderMode.ForceFFmpegSoftwareDecoder : VideoDecoderMode.ForceSystemDecoder", source);
-        Assert.Contains("route.ConsoleToneMap ? VideoDecoderMode.Automatic", production);
+        Assert.Contains("route.RequiresD3D11 ? VideoDecoderMode.Automatic", production);
         Assert.Contains("config.Audio.SystemDecoderAAC = true", source);
         Assert.Contains("config.Audio.SystemDecoderMP3 = true", source);
         // Patch 0021: AC3/EAC3 go undecoded to the system Dolby decoder on every FFmpeg mount.

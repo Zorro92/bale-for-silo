@@ -367,6 +367,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         _state = "loading";
         SetLoading(true);
         var failedRoute = attempt.Media?.Route;
+        var failedDolbyVision7 = DolbyVision7Policy.RequiresBaseLayer(attempt.Plan!);
         DisposeMount(attempt);
         // The failed pipeline's subtitles go with it; the replacement mount loads its own track.
         DisposeSubtitles(keepFetched: true);
@@ -418,6 +419,12 @@ public sealed partial class PlayerPage : Page, IBackHandler
             if (hdrOutputFailed && DisplayHdrPolicy.RequiresHdr10(attempt.Plan))
             {
                 // Fail closed if the replacement ignores the withdrawn HDR output claim.
+                await ShowErrorAsync(PlaybackMessages.PlaybackFailed);
+                return;
+            }
+            if (failedDolbyVision7 && DolbyVision7Policy.RequiresBaseLayer(attempt.Plan))
+            {
+                // The recovery withdrew both DV7 promises. Never mount the same local conversion again.
                 await ShowErrorAsync(PlaybackMessages.PlaybackFailed);
                 return;
             }

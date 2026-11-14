@@ -19,13 +19,16 @@ internal static class FfmpegSource
             ? !SoftwareDecodePolicy.VideoCodecs.Contains(route.VideoCodec!)
             : route.VideoCodec is not null && !SoftwareDecodePolicy.SystemVideoCodecs.Contains(route.VideoCodec)))
             throw new InvalidDataException("The video codec cannot use the local fallback.");
+        if (route.DolbyVision7BaseLayer && route.VideoCodec != "hevc")
+            throw new InvalidDataException("DV7 base-layer playback requires HEVC.");
         var config = new MediaSourceConfig();
         if (route.ConsoleToneMap && (route.VideoCodec is not ("hevc" or "vp9") || !ConsoleToneMapRuntime.IsAvailable))
             throw new InvalidDataException("Console tone mapping is unavailable for this source.");
-        // Automatic selects d3d11va for the local tone-map stage. Every other hardware route
-        // retains its system decoder; software AV1 remains dav1d without a tone-map stage.
-        config.Video.VideoDecoderMode = route.ConsoleToneMap ? VideoDecoderMode.Automatic : route.SoftwareVideo
+        // FFmpeg's HEVC decoder handles only nuh_layer_id 0 and does not apply the RPU.
+        // d3d11va gets that base picture, never an opaque DV7 system-decoder bitstream.
+        config.Video.VideoDecoderMode = route.RequiresD3D11 ? VideoDecoderMode.Automatic : route.SoftwareVideo
             ? VideoDecoderMode.ForceFFmpegSoftwareDecoder : VideoDecoderMode.ForceSystemDecoder;
+        if (route.DolbyVision7BaseLayer && !route.ConsoleToneMap) config.Video.HdrSupport = HdrSupport.Enabled;
         if (route.ConsoleToneMap) config.FFmpegOptions["bale_tonemap"] = "1"; // BT.2390, same defaults as the server.
         var softwareVideo = route.SoftwareVideo;
 #if DEBUG_SERVER
@@ -124,7 +127,7 @@ internal static class FfmpegSource
 
     internal static void ValidateVideoDecoders(FFmpegMediaSource source, PlaybackRouteDecision route, DebugFfmpegInputTuning tuning)
     {
-        if (tuning.Decoder is null || tuning.RequiresToneMapGuard(route))
+        if (tuning.Decoder is null || tuning.RequiresToneMapGuard(route) || route.DolbyVision7BaseLayer)
         {
             ValidateVideoDecoders(source, route);
             return;
@@ -145,6 +148,19 @@ internal static class FfmpegSource
 
     internal static void ValidateVideoDecoders(FFmpegMediaSource source, PlaybackRouteDecision route)
     {
+        if (route.DolbyVision7BaseLayer)
+        {
+            var index = DolbyVision7Policy.BaseLayerTrackIndex(source.VideoStreams.Select(video => video.StreamIndex).ToArray(),
+                source.VideoStreams.Count);
+            var video = source.VideoStreams[index];
+            // Fail before creating the item if FFmpeg preferred a separate EL or lost the BL.
+            // Only this base stream is ever enabled; unused EL decoders may be unsupported.
+            if (SoftwareDecodePolicy.NormalizeCodec(video.CodecName) != "hevc"
+                || video.DecoderEngine != DecoderEngine.FFmpegD3D11HardwareDecoder
+                || source.CurrentVideoStream?.StreamIndex != video.StreamIndex)
+                throw new InvalidDataException("DV7 requires its HDR10 base layer through d3d11va.");
+            return;
+        }
         // ForceSystemDecoder falls back to FFmpeg for codecs with no compressed provider in 2.1.0.
         // Check every stream before mounting/reading frames, including unexpected extra video tracks.
         // A software route with no video stream also fails, so the open failure replans to a transcode.

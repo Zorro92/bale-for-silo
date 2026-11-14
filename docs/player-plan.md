@@ -106,7 +106,8 @@ Current production capability claims (`ConsoleEvidence.ForHardware` over the dec
 `PlaybackRoutePolicy.Decide` selects the pipeline separately for every mount. `original_http` /
 progressive uses FFmpeg for Matroska, AV1, VP9/VC-1/MPEG-2, or the **selected** fallback audio codec. AV1 sets
 `Video.VideoDecoderMode = ForceFFmpegSoftwareDecoder`; the other FFmpeg routes set
-`ForceSystemDecoder`. Never use automatic or FFmpeg D3D11 video in real playback. The pinned
+`ForceSystemDecoder`, except eligible HDR-to-SDR originals and DV7 base-layer playback: those
+require `Automatic` and verify d3d11va, never a software fallback. The pinned
 2.1.0 implementation can fall back even in ForceSystemDecoder for unsupported formats, so Bale
 also validates all reported video decoder engines before mounting/reading frames.
 
@@ -1146,6 +1147,52 @@ mount withdraws it on replan. `bale-cli play-plan --hdr10` plans like `hdr prete
 a 4K DV profile 8 MKV now returns original_http instead of an HLS remux; without HDR10 the server
 still picks the SDR version.
 
+### Dolby Vision profile 7 as its HDR10 base layer
+
+**Done (implementation, 2026-11-14); console verification pending with the lead.** The DV7→HDR10
+gap no longer requires a server remux solely to strip Dolby Vision. Like silo-apple's
+`ApplePlaybackV3Capabilities.swift`, Bale sends `client_video_transformations_v1` and the
+`original_http.transformations` entry `client_dv7_to_hdr10`, executor `client`, recipe version
+`1`, with exactly `dolby_vision_metadata_removed`, `hdr10_base_layer_preserved`, and
+`enhancement_layer_discarded`. Progressive/HLS carry no client recipes. Bale does not declare
+DV7→DV8.1 or native Dolby Vision output. Disabling FFmpeg or a conflicting debug decoder/output
+override withdraws the recipe.
+
+The server's `client_dv7_to_hdr10` plan (HDR10 output), or `client_managed_dynamic_range` with a
+DV7 source (eligible SDR output), plays the original through FFmpeg's HEVC decoder and d3d11va.
+FFmpeg decodes only `nuh_layer_id == 0`, ignores the RPU for presentation and drops enhancement
+pixels, for both MEL and FEL. No bitstream rewrite or server-produced file is needed. Native
+container sources and system HEVC decoding never receive an original DV7 plan. This adds no
+software HEVC claim and changes no codec bounds.
+
+Silo describes the first playable video in demux order (`SourceDescriptorFromFileV3`). Bale maps
+that stream explicitly instead of trusting FFmpeg's reordered best/default stream, and checks
+the catalog video count against the mounted inventory. A separate EL video stream is never
+selected. If the inventory is incomplete or FFmpeg initially chose a later video stream, Bale
+declines the mount before presentation and asks the server to handle it. On MediaOpened it
+explicitly selects and verifies the BL track before Play. The decoded-output guard also checks
+the live stream index and d3d11va engine on every video sample, so an EL switch or software/system
+fallback is rejected before reaching the presenter.
+
+HDR10 displays use the existing PQ HDMI switch/restore lifecycle. The wrapper explicitly retains
+HDR colour attributes; its output must be P010, PQ, limited-range BT.2020. Known SDR displays use
+the a6fe7d6 BT.2390 path below; DV7's selected BL must be 10-bit PQ BT.2020 and the stage available.
+Dual-track inventories are eligible here because the BL is explicitly selected; other tone-map
+sources still require one video track. The SDR output guard requires limited-range NV12 BT.709.
+FEL enhancement and RPU trims are intentionally absent from both outputs.
+
+Create/open/MediaFailed, unsupported recipes, missing BL, invalid decoded output, or an HDR HDMI
+switch failure spends the existing single recovery replan at the source position with selected
+audio/subtitles intact. It removes both `client_dv7_to_hdr10` and
+`client_managed_dynamic_range_v1`, retaining working codec claims so the server can remux the
+base layer for HDR or tone-map for SDR. HDMI failure also removes HDR output claims. A replacement
+that repeats original DV7, or fails itself, ends playback; it never loops. Seek reanchors retain
+the working recipe/claim. Stats name “Dolby Vision 7 → HDR10 base layer” and SDR mapping explicitly.
+
+Core tests cover the actual start/replan JSON, recipe scoping, HDR/SDR routing, single/dual-track
+eligibility, missing/reordered tracks, decoder/output guard failures and capability withdrawal.
+Windows CI builds the UWP integration; no console verification is claimed by this implementation.
+
 ### Console tone mapping by default
 
 On a known SDR display, the selected version's HEVC or VP9 10-bit PQ (HDR10/HDR10+ as HDR10)
@@ -1156,8 +1203,8 @@ sent for them. This is Bale's GPU conversion, independent of Windows' automatic 
 
 `ConsoleToneMapPolicy` checks the resolved Auto/last-played/explicit version before Start. It
 requires exact SDR display evidence, the wrapper revision with HLG support (.29+), tone-map ABI 1
-and all four exports at runtime, one unambiguous video track (known pixel formats must fit 4:2:0
-P010), a hardware decode claim that fits,
+and all four exports at runtime, one unambiguous video track (or a DV7 inventory with explicit
+base-layer selection; known pixel formats must fit 4:2:0 P010), a hardware decode claim that fits,
 explicit 10-bit PQ/HLG transfer, and BT.2020 primaries with a BT.2020 non-constant-luminance matrix
 (or BT.709 primaries/matrix for PQ).
 DV profile 8.1/8.4 requires explicit DV configuration/presence and a compatible HDR10/HLG base

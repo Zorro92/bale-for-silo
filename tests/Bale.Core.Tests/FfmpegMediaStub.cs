@@ -43,6 +43,7 @@ namespace FFmpegInteropX
 
     internal sealed class VideoStreamInfo
     {
+        public int StreamIndex { get; set; }
         public string? CodecName { get; set; }
         public DecoderEngine DecoderEngine { get; set; }
         public HardwareDecoderStatus HardwareDecoderStatus { get; set; }

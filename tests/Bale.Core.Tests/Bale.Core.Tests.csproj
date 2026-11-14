@@ -61,7 +61,7 @@
     <None Include="../../src/Bale.Xbox/Services/DebugFfmpegColorInfo.cs" Link="DebugFfmpegColorInfo.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugFfmpegToneMap.cs" Link="DebugFfmpegToneMap.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugFfmpegInputTuning.cs" Link="DebugFfmpegInputTuning.cs" />
-    <Compile Include="../../src/Bale.Xbox/Services/FfmpegToneMapGuard.cs" Link="FfmpegToneMapGuard.cs" />
+    <Compile Include="../../src/Bale.Xbox/Services/FfmpegVideoOutputGuard.cs" Link="FfmpegVideoOutputGuard.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/FfmpegSource.cs" Link="FfmpegSource.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugVideoMediaType.cs" Link="DebugVideoMediaType.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugVideoColour.cs" Link="DebugVideoColour.cs" />

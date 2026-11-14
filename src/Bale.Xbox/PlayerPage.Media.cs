@@ -44,7 +44,8 @@ public sealed partial class PlayerPage
         public TypedEventHandler<AdaptiveMediaSource, AdaptiveMediaSourceDownloadRequestedEventArgs>? DownloadHandler { get; set; }
         public FFmpegMediaSource? FfmpegSource { get; set; }
         public PlaybackResources.MediaDevice? RendererDevice { get; set; }
-        public FfmpegToneMapGuard? ToneMapGuard { get; set; }
+        public FfmpegVideoOutputGuard? VideoOutputGuard { get; set; }
+        public int? BaseLayerStreamIndex { get; set; }
         public PlaybackRouteDecision Route { get; set; } = null!;
         // Set by StartSubtitles for an in-container image track: the FFmpeg source feeds the overlay.
         public int? SubtitleStreamIndex { get; set; }
@@ -124,6 +125,11 @@ public sealed partial class PlayerPage
         };
         if (media.Route.ConsoleToneMap && !media.Route.UseFfmpeg)
             throw new InvalidDataException("An HDR original on SDR requires the FFmpeg tone-map route.");
+        if (media.Route.DolbyVision7BaseLayer)
+        {
+            if (!media.Route.UseFfmpeg) throw new InvalidDataException("DV7 requires FFmpeg base-layer decoding.");
+            DolbyVision7Policy.ValidatePlan(attempt.Plan!);
+        }
         _delivery = transport.Delivery;
         _duration = transport.DurationSeconds;
         StartSubtitles(attempt, media);
@@ -192,6 +198,14 @@ public sealed partial class PlayerPage
                 FfmpegSource.ApplySubtitleSink(config, media.SubtitleStreamIndex, media.SubtitleSinkToken);
                 media.FfmpegSource = await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream, config).AsTask();
                 media.Token.ThrowIfCancellationRequested();
+                if (media.Route.DolbyVision7BaseLayer)
+                {
+                    var fileId = attempt.Plan!.Source?.MediaFileId ?? attempt.Plan.EffectiveMediaFileId;
+                    var expectedCount = attempt.Request.Detail.Versions.FirstOrDefault(version => version.FileId == fileId)?.VideoTracks?.Count;
+                    var streams = media.FfmpegSource.VideoStreams.Select(video => video.StreamIndex).ToArray();
+                    var index = DolbyVision7Policy.BaseLayerTrackIndex(streams, expectedCount);
+                    media.BaseLayerStreamIndex = streams[index];
+                }
 #if DEBUG_SERVER
                 FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route, attempt.FfmpegTuning);
 #else
@@ -201,11 +215,13 @@ public sealed partial class PlayerPage
                 media.Item = media.FfmpegSource.CreateMediaPlaybackItem();
                 var guardToneMap = media.Route.ConsoleToneMap;
 #if DEBUG_SERVER
-                guardToneMap = attempt.FfmpegTuning.RequiresToneMapGuard(media.Route);
+                if (!media.Route.DolbyVision7BaseLayer)
+                    guardToneMap = attempt.FfmpegTuning.RequiresToneMapGuard(media.Route);
 #endif
-                if (guardToneMap)
-                    media.ToneMapGuard = new FfmpegToneMapGuard(media.FfmpegSource, () =>
-                        _ = DispatchAsync(() => QueueFailure(attempt, media, 0, isDecoder: false, isNetwork: false)));
+                if (guardToneMap || media.Route.DolbyVision7BaseLayer)
+                    media.VideoOutputGuard = new FfmpegVideoOutputGuard(media.FfmpegSource, () =>
+                        _ = DispatchAsync(() => QueueFailure(attempt, media, 0, isDecoder: false, isNetwork: false)),
+                        toneMap: guardToneMap, baseLayerStreamIndex: media.BaseLayerStreamIndex);
 
                 // Low-frequency Starting only, no sample observer or rendering state changes.
                 media.RendererDevice = new PlaybackResources.MediaDevice(media.FfmpegSource);
@@ -327,6 +343,19 @@ public sealed partial class PlayerPage
             if (media.FfmpegSource is { } ffmpeg)
             {
                 ffmpeg.PlaybackSession = sender.PlaybackSession;
+                if (media.BaseLayerStreamIndex is { } baseStream)
+                {
+                    var streams = ffmpeg.VideoStreams.Select(video => video.StreamIndex).ToArray();
+                    if (media.Item!.VideoTracks.Count != streams.Length)
+                        throw new InvalidDataException("The DV7 video tracks could not be mapped.");
+                    var index = Array.IndexOf(streams, baseStream);
+                    if (index < 0) throw new InvalidDataException("The DV7 base layer is unavailable.");
+                    // Never accept FFmpeg's reordered default as the catalog video ordinal.
+                    // AutoPlay is off and the output guard also checks the live stream before presentation.
+                    media.Item.VideoTracks.SelectedIndex = index;
+                    if (media.Item.VideoTracks.SelectedIndex != index)
+                        throw new InvalidDataException("The DV7 base layer could not be selected.");
+                }
             }
             if (attempt.Plan?.Delivery == "original_http")
                 SelectOriginalAudioTrack(attempt, media, attempt.Plan.SelectedTracks?.Audio?.Index);
@@ -477,8 +506,8 @@ public sealed partial class PlayerPage
         var rendererDevice = media.RendererDevice?.TakeForClose() ?? 0;
         media.RendererDevice = null;
         Cleanup("cancel mount", media.Cancellation.Cancel);
-        Cleanup("detach tone-map guard", () => media.ToneMapGuard?.Dispose());
-        media.ToneMapGuard = null;
+        Cleanup("detach video output guard", () => media.VideoOutputGuard?.Dispose());
+        media.VideoOutputGuard = null;
         media.Opening.TrySetCanceled(media.Token);
         if (media.SelectedAudioTrack is { } audio)
             Cleanup("detach audio failure", () => audio.OpenFailed -= OnAudioTrackOpenFailed);
