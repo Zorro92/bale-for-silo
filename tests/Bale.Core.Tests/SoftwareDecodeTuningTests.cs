@@ -6,6 +6,7 @@ public class SoftwareDecodeTuningTests
 {
     [Theory]
     [InlineData("original_http", "av1", "aac", false, true, true)]
+    [InlineData("original_http", "mpeg4", "mp3", false, true, true)]
     [InlineData("progressive", "av1", "opus", false, true, true)]
     [InlineData("server_remux_progressive", "av1", "dts", false, true, true)]
     [InlineData("original_http", "hevc", "dts", false, true, false)]
@@ -13,12 +14,12 @@ public class SoftwareDecodeTuningTests
     [InlineData("original_http", "hevc", "aac", false, true, false)]
     [InlineData("original_http", "av1", "aac", true, true, false)]
     [InlineData("original_http", "av1", "aac", false, false, false)]
-    public void OnlyAv1SoftwareRoutesTakeTheFixedZeroCopyPath(string delivery, string video, string audio,
+    public void SoftwareVideoRoutesShareBufferDefaultsAndAv1KeepsItsFixedZeroCopyConstants(string delivery, string video, string audio,
         bool isHls, bool ffmpegEnabled, bool expected)
     {
         var route = PlaybackRoutePolicy.Decide(PlaybackRoutePolicyTests.Plan(delivery, video, audio), isHls, ffmpegEnabled);
         Assert.Equal(expected, route.SoftwareVideo);
-        // One path, no per-route variation: zero-copy direct write into upload variant 6, GPU grain.
+        // AV1 alone uses these constants; MPEG-4 output stays on the ordinary software provider.
         Assert.Equal(6, SoftwareDecodeTuning.DefaultD3d11Upload);
         Assert.Equal(2, SoftwareDecodeTuning.FilmGrainMode);
     }

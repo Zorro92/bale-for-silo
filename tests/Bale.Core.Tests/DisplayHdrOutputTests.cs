@@ -104,7 +104,7 @@ public class DisplayHdrOutputTests : IDisposable
         var claims = Read("PlaybackClaims.cs.txt");
         // Debug claim overrides stay in the player; the readout matches against production claims.
         Assert.DoesNotContain("DEBUG_SERVER", claims);
-        Assert.Equal(2, claims.Split("SoftwareDecodePolicy.WithoutSoftwareVideo(").Length - 1);
+        Assert.Equal(2, claims.Split("SoftwareDecodePolicy.ForSoftwareVideo(").Length - 1);
         Assert.Contains("DeviceIdentity.SoftwareVideoSupported && ZeroCopyRuntime.Register()", claims);
         Assert.Contains("DisplayVersionMatch.Current = match;", claims);
         Assert.DoesNotContain("ex.Message", claims);

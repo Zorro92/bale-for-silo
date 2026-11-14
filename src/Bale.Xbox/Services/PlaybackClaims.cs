@@ -24,7 +24,7 @@ internal static class PlaybackClaims
         var capabilities = DisplayHdrOutput.DetectCapabilities(ConsoleEvidence.ForHardware(hardware));
         capabilities = capabilities with { OriginalDynamicRangeMappingSupported = ConsoleToneMapRuntime.IsAvailable };
         var softwareVideo = SoftwareVideo();
-        return (softwareVideo ? capabilities : SoftwareDecodePolicy.WithoutSoftwareVideo(capabilities), softwareVideo);
+        return (SoftwareDecodePolicy.ForSoftwareVideo(capabilities, DeviceIdentity.SoftwareVideoSupported, softwareVideo), softwareVideo);
     }
 
     /// <summary>
@@ -52,7 +52,7 @@ internal static class PlaybackClaims
         {
             // The decode claims don't depend on the display, so this skips the HDR detection.
             var claims = ConsoleEvidence.ForHardware(hardware);
-            if (!SoftwareVideo()) claims = SoftwareDecodePolicy.WithoutSoftwareVideo(claims);
+            claims = SoftwareDecodePolicy.ForSoftwareVideo(claims, DeviceIdentity.SoftwareVideoSupported, SoftwareVideo());
             match = DisplayHdrOutput.DetectVersionMatch(claims.VideoDecode);
         }
         catch
@@ -72,6 +72,7 @@ internal static class PlaybackClaims
     /// <summary>
     /// Software AV1 has one path (zero-copy D3D12). Xbox One (no AVX2), or a console where
     /// bale_gpu.dll can't register d3d12.dll, claims no software AV1, so the server transcodes it.
+    /// MPEG-4 Part 2 uses ordinary software output and is independent of zero-copy registration.
     /// </summary>
     private static bool SoftwareVideo() => DeviceIdentity.SoftwareVideoSupported && ZeroCopyRuntime.Register();
 }

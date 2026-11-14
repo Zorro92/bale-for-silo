@@ -12,7 +12,7 @@ internal static partial class DeviceIdentity
 {
     public static bool IsXbox => AnalyticsInfo.VersionInfo.DeviceFamily == "Windows.Xbox";
 
-    /// <summary>Whether this console may claim bundled software video (AV1); decided once per launch.</summary>
+    /// <summary>Whether this console may claim bundled AV1/MPEG-4 software video; decided once per launch.</summary>
     public static bool SoftwareVideoSupported => SoftwareVideo.Value;
 
     private static readonly Lazy<bool> SoftwareVideo = new(() =>

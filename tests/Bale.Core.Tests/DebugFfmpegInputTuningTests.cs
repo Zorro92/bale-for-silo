@@ -368,13 +368,13 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     }
 
     [Fact]
-    public void SoftwareVideoAlwaysTakesTheFixedZeroCopyPathWithNoDebugOverride()
+    public void SoftwareAv1AlwaysTakesTheFixedZeroCopyPathWithNoDebugOverride()
     {
         var configuration = Read("FfmpegSource.cs.txt");
         var start = configuration.IndexOf("    private static void ApplyInputTuning", StringComparison.Ordinal);
         var end = configuration.IndexOf("#endif", start, StringComparison.Ordinal);
         var production = DebugFfmpegDecoderTests.ProductionSource();
-        Assert.Contains("if (softwareVideo && SoftwareDecodePolicy.VideoCodecs.Contains(route.VideoCodec!)) ApplySoftwareVideo(config);", production);
+        Assert.Contains("if (softwareVideo && route.VideoCodec == \"av1\") ApplySoftwareVideo(config);", production);
         var apply = production[production.IndexOf("internal static void ApplySoftwareVideo(MediaSourceConfig config)", StringComparison.Ordinal)..];
         var register = apply.IndexOf("if (!ZeroCopyRuntime.Register()) throw new InvalidDataException(", StringComparison.Ordinal);
         Assert.True(register >= 0);
@@ -423,12 +423,13 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     }
 
     [Fact]
-    public void PlayerClaimsSoftwareVideoOnlyWhenZeroCopyRegisters()
+    public void PlayerRequiresZeroCopyOnlyForAv1AndSharesTheDeviceGateWithDisplayMatching()
     {
         // The gate lives in the claims helper the player shares with Auto's display matching.
         var claims = Read("PlaybackClaims.cs.txt");
         Assert.Contains("private static bool SoftwareVideo() => DeviceIdentity.SoftwareVideoSupported && ZeroCopyRuntime.Register();", claims);
-        Assert.Contains("softwareVideo ? capabilities : SoftwareDecodePolicy.WithoutSoftwareVideo(capabilities)", claims);
+        Assert.Contains("SoftwareDecodePolicy.ForSoftwareVideo(capabilities, DeviceIdentity.SoftwareVideoSupported, softwareVideo)", claims);
+        Assert.Contains("SoftwareDecodePolicy.ForSoftwareVideo(claims, DeviceIdentity.SoftwareVideoSupported, SoftwareVideo())", claims);
         Assert.DoesNotContain("#if", claims);
         var player = Read("PlayerPage.cs.txt");
         var detect = player.IndexOf("var (capabilities, softwareVideo) = await PlaybackClaims.DetectAsync();", StringComparison.Ordinal);

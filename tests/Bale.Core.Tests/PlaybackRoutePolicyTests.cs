@@ -7,12 +7,12 @@ namespace Bale.Core.Tests;
 public class PlaybackRoutePolicyTests
 {
     [Fact]
-    public void OwnerAllowlistContainsOnlyAv1AndAllSoftwareClaimsObeyIt()
+    public void OwnerAllowlistContainsAv1AndMpeg4AndAllSoftwareClaimsObeyIt()
     {
-        Assert.Equal(new[] { "av1" }, SoftwareDecodePolicy.VideoCodecs);
+        Assert.Equal(new[] { "av1", "mpeg4" }, SoftwareDecodePolicy.VideoCodecs);
         Assert.All(ConsoleEvidence.Default.VideoDecode.Where(decode => !decode.Hardware),
             decode => Assert.Contains(decode.Codec, SoftwareDecodePolicy.VideoCodecs));
-        var av1 = Assert.Single(ConsoleEvidence.Default.VideoDecode, decode => !decode.Hardware);
+        var av1 = Assert.Single(ConsoleEvidence.Default.VideoDecode, decode => decode.Codec == "av1");
         Assert.Equal("dav1d", av1.DecoderName);
         Assert.Equal(new[] { 8, 10 }, av1.BitDepths);
         Assert.Equal(1920, av1.MaxWidth);
@@ -39,6 +39,10 @@ public class PlaybackRoutePolicyTests
 
     [Theory]
     [InlineData("original_http", "av1", "eac3", true, true)]
+    [InlineData("original_http", "mpeg4", "mp3", true, true)]
+    [InlineData("progressive", "mpeg4", "mp3", false, false)]
+    [InlineData("server_remux_progressive", "mpeg4", "mp3", true, false)]
+    [InlineData("hls", "mpeg4", "mp3", false, false)]
     [InlineData("progressive", "av1", "aac", true, true)]
     [InlineData("original_http", "hevc", "dts", true, false)]
     [InlineData("original_http", "", "flac", true, false)]
@@ -62,7 +66,7 @@ public class PlaybackRoutePolicyTests
         var route = PlaybackRoutePolicy.Decide(Plan(delivery, video, audio), false);
         Assert.Equal(ffmpeg, route.UseFfmpeg);
         Assert.Equal(softwareVideo, route.SoftwareVideo);
-        Assert.Equal(3, route.AudioOrdinal);
+        Assert.Equal(delivery == "server_remux_progressive" ? 0 : 3, route.AudioOrdinal);
     }
 
     [Theory]

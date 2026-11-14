@@ -44,9 +44,9 @@ internal static class FfmpegSource
         config.Subtitles.AutoSelectForcedSubtitles = false;
         config.FFmpegOptions["rw_timeout"] = "10000000";
         ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(softwareVideo, route.VideoWidth, route.VideoHeight));
-        // The zero-copy/GPU-grain integration is AV1-specific; an explicit HEVC software experiment
-        // uses FFmpegInteropX's normal software provider instead.
-        if (softwareVideo && SoftwareDecodePolicy.VideoCodecs.Contains(route.VideoCodec!)) ApplySoftwareVideo(config);
+        // Only AV1 uses zero-copy/GPU grain. MPEG-4 Part 2 uses FFmpegInteropX's ordinary
+        // software provider; it has neither a D3D11VA decoder nor an AV1 zero-copy output path.
+        if (softwareVideo && route.VideoCodec == "av1") ApplySoftwareVideo(config);
 #if DEBUG_SERVER
         if (tuning.Decoder is DebugFfmpegDecoder.System or DebugFfmpegDecoder.Software)
             config.FFmpegOptions.Remove("bale_tonemap");
@@ -115,7 +115,7 @@ internal static class FfmpegSource
             ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.Dav1dMaxFrameDelay));
             if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions["bale_decode_thread_priority"] = priority.ToString(CultureInfo.InvariantCulture);
             // Patch 0009: dav1d/gpu modes; off retains the independent export-only override.
-            if (SoftwareDecodePolicy.VideoCodecs.Contains(codec!) && DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain) is { } grain)
+            if (codec == "av1" && DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain) is { } grain)
                 config.FFmpegOptions[grain.Key] = grain.Value;
         }
         else if (config.Video.VideoDecoderMode == VideoDecoderMode.ForceSystemDecoder)
@@ -173,7 +173,7 @@ internal static class FfmpegSource
         }
         var streams = source.VideoStreams.Select(video => (video.CodecName,
             video.DecoderEngine == DecoderEngine.FFmpegSoftwareDecoder, video.DecoderEngine == DecoderEngine.SystemDecoder)).ToArray();
-        if (!SoftwareDecodePolicy.VideoDecodersAllowed(route.SoftwareVideo, streams))
+        if (!SoftwareDecodePolicy.VideoDecodersAllowed(route.SoftwareVideo, streams, route.VideoCodec))
             throw new InvalidDataException("The video decoder violates the local fallback policy.");
     }
 

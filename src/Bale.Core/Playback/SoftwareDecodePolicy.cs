@@ -4,7 +4,12 @@ namespace Bale.Core.Playback;
 public static class SoftwareDecodePolicy
 {
     // The project owner maintains this allowlist. Add no other software video codec without them.
-    public static IReadOnlyList<string> VideoCodecs { get; } = Array.AsReadOnly(new[] { "av1" });
+    public static IReadOnlyList<string> VideoCodecs { get; } = Array.AsReadOnly(new[] { "av1", "mpeg4" });
+
+    // MPEG-4 Part 2 was measured through FFmpeg's ordinary software output on original files,
+    // not fragmented MP4 or AdaptiveMediaSource. Keep it off both packaged deliveries.
+    public static IReadOnlyList<string> OriginalOnlyVideoCodecs { get; } = Array.AsReadOnly(new[] { "mpeg4" });
+    public static IReadOnlyList<string> FfmpegOnlyContainers { get; } = Array.AsReadOnly(new[] { "avi" });
 
     // Codecs the system (hardware) decoders may take. A claim for one still needs the fixed
     // baseline or the console's decoder probe (ConsoleEvidence.ForHardware).
@@ -46,9 +51,10 @@ public static class SoftwareDecodePolicy
     };
 
     /// <summary>
-    /// Software video (dav1d AV1) is measured only on Xbox Series (Zen 2 with AVX2). Xbox One, One S and
-    /// One X have 1.75–2.3 GHz Jaguar cores without AVX2, where dav1d drops to its SSSE3 paths, so they
-    /// claim no software video and the server transcodes AV1. A missing AVX2 alone also excludes it;
+    /// Software video (dav1d AV1 and FFmpeg MPEG-4 Part 2) is measured only on Xbox Series
+    /// (Zen 2 with AVX2). Xbox One, One S and One X have 1.75–2.3 GHz Jaguar cores without AVX2,
+    /// where dav1d drops to its SSSE3 paths, so they
+    /// claim no software video and the server transcodes it. A missing AVX2 alone also excludes it;
     /// an unknown device form keeps the claim.
     /// </summary>
     public static bool SoftwareVideoSupported(bool avx2, string? deviceForm) =>
@@ -61,12 +67,21 @@ public static class SoftwareDecodePolicy
         VideoDecode = device.VideoDecode.Where(decode => decode.Hardware).ToArray(),
     };
 
+    /// <summary>AV1 alone needs the zero-copy runtime; ordinary MPEG-4 software output does not.</summary>
+    public static DeviceCapabilities ForSoftwareVideo(DeviceCapabilities device, bool supported, bool av1ZeroCopy)
+        => !supported ? WithoutSoftwareVideo(device) : av1ZeroCopy ? device : device with
+        {
+            VideoCodecs = device.VideoCodecs.Where(codec => codec != "av1").ToArray(),
+            VideoDecode = device.VideoDecode.Where(decode => decode.Codec != "av1").ToArray(),
+        };
+
     /// <summary>Drops every claim that needs FFmpeg: software video, demuxer-only video and fallback audio.</summary>
     public static DeviceCapabilities WithoutFallbacks(DeviceCapabilities device) => device with
     {
         VideoCodecs = device.VideoCodecs.Where(codec => !VideoCodecs.Contains(codec) && !DemuxedVideoCodecs.Contains(codec)).ToArray(),
         VideoDecode = device.VideoDecode.Where(decode => decode.Hardware && !DemuxedVideoCodecs.Contains(decode.Codec)).ToArray(),
         AudioDecodeCodecs = device.AudioDecodeCodecs.Where(codec => !AudioCodecs.Contains(codec)).ToArray(),
+        Containers = device.Containers.Where(container => !FfmpegOnlyContainers.Contains(container)).ToArray(),
         // The base-layer claim relies on the FFmpeg demuxer for DV-tagged MP4.
         OriginalDolbyVision8BaseLayerSupported = false,
         OriginalDolbyVision7BaseLayerSupported = false,
@@ -80,13 +95,15 @@ public static class SoftwareDecodePolicy
     /// decoder (system decoder, or FFmpeg software for an allowlisted codec), and a software-video route
     /// must have at least one video stream: the server planned a software decode, so a source without
     /// video is a failed open that must replan to a server transcode, never silent audio-only playback.
+    /// When supplied, softwareCodec also keeps AV1 zero-copy and ordinary MPEG-4 output separate.
     /// </summary>
     public static bool VideoDecodersAllowed(bool softwareVideo,
-        IReadOnlyCollection<(string? Codec, bool SoftwareDecoder, bool SystemDecoder)> streams)
+        IReadOnlyCollection<(string? Codec, bool SoftwareDecoder, bool SystemDecoder)> streams, string? softwareCodec = null)
     {
         if (softwareVideo && streams.Count == 0) return false;
         return streams.All(stream => softwareVideo
             ? NormalizeCodec(stream.Codec) is { } codec && VideoCodecs.Contains(codec) && stream.SoftwareDecoder
+                && (softwareCodec is null || codec == softwareCodec)
             : stream.SystemDecoder);
     }
 
@@ -104,6 +121,7 @@ public static class SoftwareDecodePolicy
             CodecsVideoHardware = start.ClientCapabilities.CodecsVideoHardware.Where(KeepVideo).ToArray(),
             VideoDecode = start.ClientCapabilities.VideoDecode.Where(decode => KeepVideo(decode.Codec)).ToArray(),
             CodecsAudio = start.ClientCapabilities.CodecsAudio.Where(KeepAudio).ToArray(),
+            Containers = start.ClientCapabilities.Containers.Where(container => !FfmpegOnlyContainers.Contains(container)).ToArray(),
         };
         var context = start.ClientPlaybackContext with
         {
@@ -111,6 +129,7 @@ public static class SoftwareDecodePolicy
             {
                 VideoCodecs = pair.Value.VideoCodecs.Where(KeepVideo).ToArray(),
                 AudioDecodeCodecs = pair.Value.AudioDecodeCodecs.Where(KeepAudio).ToArray(),
+                Containers = pair.Value.Containers.Where(container => !FfmpegOnlyContainers.Contains(container)).ToArray(),
                 // A failed base-layer mount must not be offered again: the server then remuxes or transcodes.
                 ValidatedClaims = route.DolbyVisionBaseLayer
                     ? pair.Value.ValidatedClaims.Where(claim => claim != PlaybackProtocol.ClientDolbyVision8BaseLayerClaim).ToArray()

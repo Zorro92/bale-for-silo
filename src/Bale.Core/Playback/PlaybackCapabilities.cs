@@ -45,11 +45,11 @@ public static class ConsoleEvidence
         Array.AsReadOnly(new[] { "hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle" });
 
     public static DeviceCapabilities Default { get; } = new(
-        Containers: Array.AsReadOnly(new[] { "mp4", "mkv" }), // Both verified; see docs/player-plan.md.
+        Containers: Array.AsReadOnly(new[] { "mp4", "mkv", "avi" }), // AVI needs FFmpeg; see docs/player-plan.md.
         // VP9 joins only when the console's decoder probe reports it (ForHardware). A .webm file
         // needs no container claim: silo-server's detectContainer (internal/scanner/probe.go)
         // names Matroska and WebM both "mkv".
-        VideoCodecs: Array.AsReadOnly(new[] { "h264", "hevc", "av1" }),
+        VideoCodecs: Array.AsReadOnly(new[] { "h264", "hevc", "av1", "mpeg4" }),
         // The system baseline plus bundled FFmpeg audio decode; no encoded output/passthrough promise.
         AudioDecodeCodecs: Array.AsReadOnly(SoftwareDecodePolicy.SystemAudioCodecs.Concat(SoftwareDecodePolicy.AudioCodecs).ToArray()),
         // TrueHD/DTS converters exist, but no receiver has verified passthrough yet.
@@ -97,7 +97,7 @@ public static class ConsoleEvidence
         BuildVideoDecode(null, av1MaxWidth, av1MaxHeight);
 
     /// <summary>
-    /// Hardware claims from the decoder probe plus the measured software AV1 claim. Null or empty
+    /// Hardware claims from the decoder probe plus measured AV1 and MPEG-4 software claims. Null or empty
     /// limits keep the fixed H.264/HEVC 1080p baseline with no VP9.
     /// </summary>
     public static IReadOnlyList<VideoDecodeCapability> BuildVideoDecode(HardwareDecodeLimits? hardware,
@@ -145,6 +145,12 @@ public static class ConsoleEvidence
         // A larger debug bound stays at 30 fps. Platform-attested rates are absolute (the server
         // trades size for rate only on exact evidence), and it takes a source any entry admits.
         if (av1MaxWidth > 1920 || av1MaxHeight > 1080) claims.Add(Av1(av1MaxWidth, av1MaxHeight, 30));
+        // Owner's Series X software probes: 30 s each, 0 late frames at 512x384 (0.06 cores),
+        // 720x480 (0.08) and 1920x1080 (0.30). No 60 fps evidence: cap at 30 fps. Ordinary
+        // FFmpeg output, not AV1 zero-copy. silo-server capabilities_v3.go compares software
+        // profiles literally to lowercased ffprobe names, even under platform_attested evidence.
+        claims.Add(new("mpeg4", "FFmpeg", ["simple profile", "advanced simple profile"], [], [8],
+            1920, 1080, 30, null, false));
         return claims.AsReadOnly();
 
         // One entry per codec at the probed size. If the 8-bit and 10-bit profiles report different

@@ -22,7 +22,7 @@ public class SoftwareVideoSupportTests
         Assert.Equal(expected, SoftwareDecodePolicy.SoftwareVideoSupported(avx2, form));
 
     [Fact]
-    public void WithoutSoftwareVideoDropsAv1ButKeepsHardwareVideoAndAudioFallbacks()
+    public void WithoutSoftwareVideoDropsAv1AndMpeg4ButKeepsHardwareVideoAndAudioFallbacks()
     {
         var device = SoftwareDecodePolicy.WithoutSoftwareVideo(ConsoleEvidence.Default);
         Assert.Equal(new[] { "h264", "hevc" }, device.VideoCodecs);
@@ -54,6 +54,9 @@ public class SoftwareVideoSupportTests
 
     [Theory]
     [InlineData(true, "av1", true, false, true)]
+    [InlineData(true, "mpeg4", true, false, true)]
+    [InlineData(true, "mpeg4", false, true, false)]
+    [InlineData(true, "mpeg4", false, false, false)]
     [InlineData(true, " AV1 ", true, false, true)]
     [InlineData(true, "av1", false, true, false)] // Software route opened on the system decoder.
     [InlineData(true, "av1", false, false, false)] // FFmpeg D3D11 or unknown engine.

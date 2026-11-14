@@ -81,8 +81,9 @@ public static class PlaybackStartBuilder
             FailureReason = device.ProgressiveSupported ? null : "progressive_executor_unavailable",
             // candidate_routes_v3.go progressiveCandidate always writes fragmented MP4.
             Containers = ["mp4"],
-            // Only the original-file demuxer path is verified for VP9/VC-1/MPEG-2 (as for HLS).
-            VideoCodecs = original.VideoCodecs.Where(codec => !SoftwareDecodePolicy.DemuxedVideoCodecs.Contains(codec)).ToArray(),
+            // MPEG-4 software output and VP9/VC-1/MPEG-2 system decode are original-file claims.
+            VideoCodecs = original.VideoCodecs.Where(codec => !SoftwareDecodePolicy.DemuxedVideoCodecs.Contains(codec)
+                && !SoftwareDecodePolicy.OriginalOnlyVideoCodecs.Contains(codec)).ToArray(),
             AudioDecodeCodecs = original.AudioDecodeCodecs.Where(PlaybackProgressive.AudioCodecs.Contains).ToArray(),
             // In-container subtitles are an original_http claim only (the server reads it there).
             Subtitles = device.Subtitles with { NativeEmbedded = [] },

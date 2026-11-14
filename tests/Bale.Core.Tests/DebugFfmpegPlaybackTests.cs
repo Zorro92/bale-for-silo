@@ -149,7 +149,7 @@ public class DebugFfmpegPlaybackTests
         // Every video stream goes to the shared policy (SoftwareVideoSupportTests cover it).
         Assert.Contains("var streams = source.VideoStreams.Select(video => (video.CodecName,", source);
         Assert.Contains("video.DecoderEngine == DecoderEngine.FFmpegSoftwareDecoder, video.DecoderEngine == DecoderEngine.SystemDecoder", source);
-        Assert.Contains("if (!SoftwareDecodePolicy.VideoDecodersAllowed(route.SoftwareVideo, streams))", source);
+        Assert.Contains("if (!SoftwareDecodePolicy.VideoDecodersAllowed(route.SoftwareVideo, streams, route.VideoCodec))", source);
         Assert.DoesNotContain("ex.Message", source);
     }
 

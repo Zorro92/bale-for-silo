@@ -194,8 +194,8 @@ public class PlaybackStartTests
         await client.Playback.StartAsync(Start(), new Installation());
         using var json = JsonDocument.Parse(stub.RequestBodies[1]!);
         var caps = json.RootElement.GetProperty("client_capabilities");
-        Assert.Equal(new[] { "mp4", "mkv" }, Strings(caps.GetProperty("containers")));
-        Assert.Equal(new[] { "h264", "hevc", "av1" }, Strings(caps.GetProperty("codecs_video")));
+        Assert.Equal(new[] { "mp4", "mkv", "avi" }, Strings(caps.GetProperty("containers")));
+        Assert.Equal(new[] { "h264", "hevc", "av1", "mpeg4" }, Strings(caps.GetProperty("codecs_video")));
         Assert.Equal(SoftwareDecodePolicy.SystemAudioCodecs.Concat(SoftwareDecodePolicy.AudioCodecs), Strings(caps.GetProperty("codecs_audio")));
         Assert.Contains("pcm_s24le", Strings(caps.GetProperty("codecs_audio")));
         Assert.Contains("mp2", Strings(caps.GetProperty("codecs_audio")));
@@ -204,7 +204,7 @@ public class PlaybackStartTests
         Assert.Equal("platform_attested", caps.GetProperty("video_evidence").GetString());
         Assert.Empty(caps.GetProperty("codecs_video_hardware").EnumerateArray());
         var videoDecode = caps.GetProperty("video_decode").EnumerateArray().ToArray();
-        Assert.Equal(new[] { "h264", "hevc", "av1" }, videoDecode.Select(entry => entry.GetProperty("codec").GetString()));
+        Assert.Equal(new[] { "h264", "hevc", "av1", "mpeg4" }, videoDecode.Select(entry => entry.GetProperty("codec").GetString()));
         Assert.Equal(new[] { 8 }, videoDecode[0].GetProperty("bit_depths").EnumerateArray().Select(value => value.GetInt32()));
         Assert.Equal(new[] { 8, 10 }, videoDecode[1].GetProperty("bit_depths").EnumerateArray().Select(value => value.GetInt32()));
         Assert.All(videoDecode.Take(2), entry =>
@@ -239,7 +239,12 @@ public class PlaybackStartTests
         foreach (var property in deliveries.EnumerateObject())
         {
             var delivery = property.Value;
-            Assert.Equal(property.Name == "hls" ? new[] { "h264", "hevc" } : new[] { "h264", "hevc", "av1" },
+            Assert.Equal(property.Name switch
+                {
+                    "hls" => new[] { "h264", "hevc" },
+                    "progressive" => new[] { "h264", "hevc", "av1" },
+                    _ => new[] { "h264", "hevc", "av1", "mpeg4" },
+                },
                 Strings(delivery.GetProperty("video_codecs")));
             Assert.Equal(property.Name switch
                 {

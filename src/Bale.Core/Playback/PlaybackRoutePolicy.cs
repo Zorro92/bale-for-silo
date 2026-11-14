@@ -31,11 +31,14 @@ public static class PlaybackRoutePolicy
         var direct = delivery is "original_http" or "progressive" or "server_remux_progressive";
         var hls = isHls || string.Equals(plan.Stream?.Protocol, "hls", StringComparison.OrdinalIgnoreCase)
             || delivery == "hls" || delivery?.EndsWith("_hls", StringComparison.Ordinal) == true;
-        var softwareVideo = SoftwareDecodePolicy.VideoCodecs.Contains(video!);
+        var softwareVideo = SoftwareDecodePolicy.VideoCodecs.Contains(video!)
+            && (original || !SoftwareDecodePolicy.OriginalOnlyVideoCodecs.Contains(video!));
         var softwareAudio = !SoftwareDecodePolicy.SystemAudioCodecs.Contains(audio!)
             && SoftwareDecodePolicy.AudioCodecs.Contains(audio!);
         // Windows' MKV source over-reads (~2.2x the bitrate) and blocks on the network; FFmpeg's demuxer does not.
         var matroska = IsMatroska(plan.Stream?.Container ?? plan.Source?.Container);
+        var ffmpegContainer = SoftwareDecodePolicy.FfmpegOnlyContainers.Contains(
+            (plan.Stream?.Container ?? plan.Source?.Container)?.Trim().ToLowerInvariant()!);
         // VP9/VC-1/MPEG-2 use verified compressed providers feeding the system decoder, regardless
         // of the container. Their claims do not imply Windows' own container source works.
         var demuxedVideo = SoftwareDecodePolicy.DemuxedVideoCodecs.Contains(video!);
@@ -49,7 +52,7 @@ public static class PlaybackRoutePolicy
         // always takes FFmpeg's non-seekable input (PlaybackProgressive), with the system decoder.
         var progressive = delivery == PlaybackProgressive.Delivery;
         var ffmpeg = ffmpegEnabled && direct && !hls
-            && (progressive || softwareVideo || softwareAudio || matroska || demuxedVideo || dolbyVisionBaseLayer || forceFfmpeg || toneMap);
+            && (progressive || softwareVideo || softwareAudio || matroska || ffmpegContainer || demuxedVideo || dolbyVisionBaseLayer || forceFfmpeg || toneMap);
         return new(ffmpeg, ffmpeg && softwareVideo, video, audio, ordinal, width, height, ffmpeg && dolbyVisionBaseLayer, toneMap, dv7);
     }
 

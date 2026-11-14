@@ -80,8 +80,8 @@ decode and audio still need measured playback. `playtest` (debug only) checks ac
 not just installed decoders.
 
 **Decision: ship FFmpegInteropX as the production fallback.** By the project owner's rule,
-software **video** decode is **AV1 only**. `SoftwareDecodePolicy.VideoCodecs` is an explicit,
-owner-maintained allowlist; nothing else may be added without them. Unsupported non-AV1 video
+software **video** decode is **AV1 and MPEG-4 Part 2**. `SoftwareDecodePolicy.VideoCodecs` is an explicit,
+owner-maintained allowlist; nothing else may be added without them. Other unsupported video
 goes to the server to transcode, never FFmpeg software or D3D11 video. The measured AV1 evidence is
 8/10-bit, max 1920×1080, max 60 fps: 0.1.230 Fight Club (1080p23.976 10-bit, ~1.3 cores) and 0.1.439
 SmackDown (1080p59.94 10-bit, 6.4 Mbps, zero-copy, 0 late frames over ~4.5 min, ~3 of 8 cores).
@@ -96,7 +96,9 @@ Current production capability claims (`ConsoleEvidence.ForHardware` over the dec
 | H.264 / HEVC / VP9 video | Media Foundation, hardware | The largest size the console's decoder reports per codec, 60 fps, no bitrate limit. H.264 is 8-bit; HEVC is 8-bit if Main is present and 10-bit if Main10 is; VP9 is 8-bit for profile 0 and 10-bit for profile 2. Series X: H.264 1920×1080, HEVC 7680×4320 8/10-bit, VP9 3840×2160 8/10-bit. VP9 is claimed only when the decoder reports it. If the probe fails or finds nothing: H.264 and HEVC at 1920×1080, 60 fps, no bitrate limit, no VP9; a partial probe keeps its measured profiles and gives only the unmeasured H.264/HEVC depths that baseline |
 | VC-1 / MPEG-2 video | FFmpeg demuxer, Media Foundation system decoder | Only when the matching NV12 VLD profile reports a supported size; 8-bit, probed bounds. Series X: both report 1920×1080. Original files only; HLS and `ffmpeg off` withdraw these codecs. Software video decoding remains forbidden |
 | AV1 video | dav1d, **non-hardware**; `software_video_decode_v1` opt-in | 8/10-bit, **1920×1080, 60 fps**; no 4K claim |
-| System audio | `aac`, `ac3`, `eac3`, `mp3` | Retains the native direct path unless AV1 needs FFmpeg |
+| MPEG-4 Part 2 video | FFmpeg ordinary software output, **non-hardware**; `software_video_decode_v1` opt-in | Simple / Advanced Simple Profile, 8-bit, **1920×1080, 30 fps**, original_http only; no AV1 zero-copy/GPU-grain options |
+| AVI container | FFmpeg demuxer on original_http | Never progressive/HLS; system video for hardware codecs, software for MPEG-4 Part 2 |
+| System audio | `aac`, `ac3`, `eac3`, `mp3` | Uses system audio decoders, including on FFmpeg demux/software-video routes |
 | FFmpeg fallback audio | `dts`, `dts_hd`, `truehd`, `flac`, `opus`, `vorbis`, `alac`, `mp2`, LPCM (`pcm` and each ffprobe spelling: `pcm_s16le/be`, `pcm_s24le/be`, `pcm_s32le/be`, `pcm_f32le/be`, `pcm_f64le/be`, `pcm_u8`, `pcm_bluray`, `pcm_dvd`) | Decode to PCM, not passthrough. silo-server matches audio claims to the stored ffprobe name exactly, so LPCM needs each spelling. LPCM/MP2 in MP4 take the FFmpeg route too (Windows' MP4 source is unverified with them); HLS never claims them (the server converts HLS audio outside AAC/AC-3/E-AC-3/MP3). Real-library console verification pending |
 | Audio passthrough | None | Receiver verification pending |
 | Display HDR | Runtime HDMI detection, HDR10 only | Exact evidence after a successful read; unknown/empty HDR on failure |
@@ -105,13 +107,34 @@ Current production capability claims (`ConsoleEvidence.ForHardware` over the dec
 | Subtitles | Own overlay: text sidecars (ASS/SSA, SubRip, WebVTT); PGS/DVD/DVB images from direct MKV; lossless PGS `.sup` windows on HLS/progressive | Original keeps `native_embedded` (`embedded_subtitles_v1`). Packaged deliveries claim `embedded_bitmap` for server-extracted PGS; DVD/DVB still require burn-in there. Console verification of image tracks pending |
 
 `PlaybackRoutePolicy.Decide` selects the pipeline separately for every mount. `original_http`
-uses FFmpeg for Matroska, AV1, VP9/VC-1/MPEG-2, or the **selected** fallback audio codec;
-`server_remux_progressive` always uses FFmpeg's non-seekable input (see "Progressive remux"). AV1 sets
+uses FFmpeg for Matroska/AVI, AV1, MPEG-4 Part 2, VP9/VC-1/MPEG-2, or the **selected** fallback audio codec;
+`server_remux_progressive` always uses FFmpeg's non-seekable input (see "Progressive remux"). AV1 and MPEG-4 set
 `Video.VideoDecoderMode = ForceFFmpegSoftwareDecoder`; the other FFmpeg routes set
 `ForceSystemDecoder`, except eligible HDR-to-SDR originals and DV7 base-layer playback: those
 require `Automatic` and verify d3d11va, never a software fallback. The pinned
 2.1.0 implementation can fall back even in ForceSystemDecoder for unsupported formats, so Bale
 also validates all reported video decoder engines before mounting/reading frames.
+
+**MPEG-4 Part 2 / AVI.** Enabled in production by owner approval. Series X FFmpeg software
+measurements were 30 seconds each with 0 late frames: 512×384 at 0.06 cores, 720×480 at 0.08,
+and 1920×1080 at 0.30. The claim stays at 30 fps because these measurements do not establish
+60 fps playback. The measured Series/AVX2 software-device gate remains; AV1 zero-copy registration
+is required only for AV1. MPEG-4 uses FFmpegInteropX's ordinary software output, with no
+`bale_zero_copy`, `bale_d3d11_upload` or AV1 grain keys. The Video decoder stats row reports
+`FFmpeg software`. MP3 keeps the system audio switch and the same catalog-ordinal selection
+and verification as MKV. This is client decoding of the unchanged original, so Silo calls it
+direct play; it requires no server transcode. No debug switch is needed.
+
+The server's `capabilities_v3.go` retains full profile matching on software decode entries even
+with `platform_attested` evidence: claim `simple profile` and `advanced simple profile`, matching
+lowercased ffprobe names, not `asp`/`xvid`/`divx`. Its scanner preserves `avi` as the container.
+`candidate_video_v3.go` prefers an original with eligible video/audio, selected-audio support and
+both global/delivery container claims; AVI + MPEG-4 ASP + MP3 fits those gates. Missing or other
+profiles, incomplete probe metadata, dimensions/bit depth/frame rate outside the claim, a quality
+or bitrate cap requiring adaptation, or subtitles requiring burn-in can still prevent direct play.
+Neither MPEG-4 nor AVI is claimed on progressive or HLS. `ffmpeg off` withdraws both; an FFmpeg
+software failure withdraws the software codec claims and AVI on the existing single recovery
+replan, requesting server transcode. Seeks retain the original claims.
 
 **VC-1 / MPEG-2 verification (2026-11-11).** The Series X reports NV12 1080p for
 `D3D11_DECODER_PROFILE_VC1_VLD` and `D3D11_DECODER_PROFILE_MPEG2_VLD`. Before enabling
@@ -510,7 +533,7 @@ library. This rebuild is an A/B candidate for occasional AV1 stutter/2–4-core 
 confirmed stutter fix**. The reported stutter has no supplied title or timestamp; the earlier
 Fight Club validation above must not be mistaken for that scene. HUD CPU measures the whole
 process, not dav1d alone. `Video.MaxDecoderThreads` remains upstream's default zero (available
-logical CPUs); this change does not tune threads, broaden the AV1-only allowlist or raise bounds.
+logical CPUs); this change does not tune threads, broaden the software-video allowlist or raise bounds.
 Console performance verification remains the owner's task.
 
 [Native build 42001326165](https://github.com/Zorro92/bale-for-silo/actions/runs/42001326165)
