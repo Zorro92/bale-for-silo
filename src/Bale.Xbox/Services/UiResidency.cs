@@ -21,6 +21,7 @@ internal static class UiResidency
         Log.Info($"ui resources: cleanup hr=0x{unchecked((uint)ex.HResult):X8}"));
     private static readonly ConditionalWeakTable<FrameworkElement, List<IUiResource>> Hosts = new();
     private static readonly ConditionalWeakTable<FrameworkElement, List<IUiResource>> SourceOwners = new();
+    private static readonly ConditionalWeakTable<ScrollViewer, object> ScrollViewers = new();
     private static readonly List<WeakReference<FrameworkElement>> Pages = new();
     private static FrameworkElement? _root;
     private static bool _queued;
@@ -103,6 +104,7 @@ internal static class UiResidency
     }
 
     private static void OnLayoutUpdated(object? sender, object args) => QueueVisible();
+    private static void OnViewChanged(object sender, ScrollViewerViewChangedEventArgs args) => QueueVisible();
 
     private static void QueueVisible()
     {
@@ -152,10 +154,20 @@ internal static class UiResidency
         if (visibleOnly && node is FrameworkElement element
             && (!element.IsLoaded || element.Visibility != Visibility.Visible)) return;
         var bounds = viewport ?? Window.Current.Bounds;
-        if (visibleOnly && node is ScrollViewer scroller && scroller.ActualWidth > 0 && scroller.ActualHeight > 0)
+        if (node is ScrollViewer scroller)
         {
-            bounds.Intersect(Bounds(scroller));
-            if (bounds.Width <= 0 || bounds.Height <= 0) return;
+            // Independent/composited scrolling need not produce LayoutUpdated. Observe the
+            // offset as well, so already-realized rail/grid containers reload when revealed.
+            if (!ScrollViewers.TryGetValue(scroller, out _))
+            {
+                ScrollViewers.Add(scroller, new object());
+                scroller.ViewChanged += OnViewChanged;
+            }
+            if (visibleOnly && scroller.ActualWidth > 0 && scroller.ActualHeight > 0)
+            {
+                bounds.Intersect(Bounds(scroller));
+                if (bounds.Width <= 0 || bounds.Height <= 0) return;
+            }
         }
         // Only transform actual image/shadow hosts, not every text/template node. Carry the
         // intersected scroll viewport down the tree rather than rewalking every ancestor per card.

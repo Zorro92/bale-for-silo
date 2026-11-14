@@ -34,8 +34,8 @@ The audit found both decoded model bitmaps and explicit surfaces/shadows with lo
 ## Ownership and release/restore
 
 `Services/UiResidency.cs` coordinates a weak resource registry (`UiResidencyState`), weak page
-tracking from **every** PageFrame (including the nested shell frame), and per-host recipes. It
-preserves Frame caches, journal parameters/Detail return entries, view/model/container identity,
+tracking from **every** PageFrame (including the nested shell frame), and per-host recipes. Lazy restore observes both layout and ScrollViewer.ViewChanged, since
+composited scrolling can reveal already-realized cards without a layout pass. It preserves Frame caches, journal parameters/Detail return entries, view/model/container identity,
 selected tabs, FocusRetry and RailScrollState. The registry cannot root a page by itself.
 
 | Owner | Release | Restore |
