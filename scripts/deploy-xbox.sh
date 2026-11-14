@@ -29,6 +29,8 @@ if [[ -z "$DIR" ]]; then
     # CI skips documentation-only pushes (paths-ignore in ci.yml; keep DOCS_ONLY in step). Any run
     # from HEAD back to the newest commit that touched anything else builds the same app, so take
     # the newest of those commits that has a run.
+    # Rust job skips/DLL cache hits still produce a new MSIX for that commit; only the docs-only
+    # workflow exclusion permits looking back to an older commit's package.
     DOCS_ONLY='\.md$|^docs/|^\.claude/'
     CANDIDATES=("$SHA")
     while (( ${#CANDIDATES[@]} < 50 )); do
