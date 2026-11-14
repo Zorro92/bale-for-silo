@@ -21,7 +21,7 @@ internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldS
             {
                 case "--delivery" when !deliverySeen && i + 1 < args.Length:
                     var delivery = args[++i];
-                    if (delivery is not ("auto" or "hls")) return false;
+                    if (delivery is not ("auto" or "hls" or "remux")) return false;
                     deliverySeen = true;
                     options = options with { Delivery = delivery };
                     break;
@@ -107,13 +107,16 @@ internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldS
         double.TryParse(value, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out position)
         && double.IsFinite(position) && position is >= 0 and <= 31_536_000;
 
-    internal PlaybackStartRequestV3 Apply(PlaybackStartRequestV3 start) => Delivery != "hls" ? start : start with
+    // hls: same as the app's DebugPlaybackDelivery.Apply, package HLS without changing decode claims.
+    // remux: only the original is withdrawn, as the app's audio-mapping failure replan does, so the
+    // server itself chooses between its progressive and HLS packagers.
+    internal PlaybackStartRequestV3 Apply(PlaybackStartRequestV3 start) => Delivery is not ("hls" or "remux") ? start : start with
     {
-        // Same as the app's DebugPlaybackDelivery.Apply: package HLS without changing decode claims.
         ClientPlaybackContext = start.ClientPlaybackContext with
         {
-            Deliveries = start.ClientPlaybackContext.Deliveries.ToDictionary(pair => pair.Key, pair => pair.Key == "hls"
-                ? pair.Value : pair.Value with { Enabled = false, SupportedOnDevice = false }),
+            Deliveries = start.ClientPlaybackContext.Deliveries.ToDictionary(pair => pair.Key,
+                pair => (Delivery == "hls" ? pair.Key == "hls" : pair.Key != "original_http")
+                    ? pair.Value : pair.Value with { Enabled = false, SupportedOnDevice = false }),
         },
     };
 

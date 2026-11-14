@@ -285,7 +285,7 @@ catch (Bale.Core.Api.Models.Problem problem)
 
 static int Usage()
 {
-    Console.Error.WriteLine("usage: bale-cli <capability|pair-test|login> <server> | <profiles|home [--json] [--for-you]|detail <id>|search <query>|play-plan <id> [Bale Test] [--file <fileId>] [--subtitle <index|-1>] [--av1-max-height <1080|2160>] [--hdr10] [--delivery auto|hls] [--start <seconds>] [--reanchor <seconds>] [--inspect-hls] [--url-file <path>] [--save-head <path> <MiB>] [--save-range <path> <offset> <bytes>] [--hold <seconds>]|logout>");
+    Console.Error.WriteLine("usage: bale-cli <capability|pair-test|login> <server> | <profiles|home [--json] [--for-you]|detail <id>|search <query>|play-plan <id> [Bale Test] [--file <fileId>] [--subtitle <index|-1>] [--av1-max-height <1080|2160>] [--hdr10] [--delivery auto|hls|remux] [--start <seconds>] [--reanchor <seconds>] [--inspect-hls] [--url-file <path>] [--save-head <path> <MiB>] [--save-range <path> <offset> <bytes>] [--hold <seconds>]|logout>");
     return 2;
 }
 
