@@ -124,6 +124,10 @@ is required only for AV1. MPEG-4 uses FFmpegInteropX's ordinary software output,
 `FFmpeg software`. MP3 keeps the system audio switch and the same catalog-ordinal selection
 and verification as MKV. This is client decoding of the unchanged original, so Silo calls it
 direct play; it requires no server transcode. No debug switch is needed.
+Console check (0.1.521, 2026-11-14): a library Xvid episode (AVI, 512×384 Advanced Simple
+Profile, MP3 stereo) plays `original_http` on `FFmpeg Direct` with `FFmpeg software` video,
+0 late frames and 0.06–0.08 cores. Seeks to 900, 100 and 1100 s landed within a second, as did
+±skips, with no late frames and nothing in the error log; the picture is clean at 4:3.
 
 The server's `capabilities_v3.go` retains full profile matching on software decode entries even
 with `platform_attested` evidence: claim `simple profile` and `advanced simple profile`, matching
