@@ -1,8 +1,8 @@
 {
-  "version": "2.1.0-bale.26",
+  "version": "2.1.0-bale.27",
   "release_repository": "Zorro92/bale-ffmpeginteropx",
-  "release_tag": "wrapper-ffmpeginteropx-2.1.0-bale.26",
-  "source_commit": "d3956a2998f120d6817e7a996dbf2c807887c68f",
-  "sha256": "58e52126a3c552433ce5280b2cef8b42f8e48c51bf27a0cf53a7f96e61a93c7c",
-  "nuget_content_hash": "Hh4+z7bSRtEVf3rFyuUTxOpsk+Z4RoDQbIsKOQidAdo/BeBl8e/A5x2LmxiMBHE88An0Hk/YIdJSYpjMGtM/VA=="
+  "release_tag": "wrapper-ffmpeginteropx-2.1.0-bale.27",
+  "source_commit": "f2d2051a718906206e8e052e68dedc314c24d97f",
+  "sha256": "404690fa874a86e12f8a5063f63f96ce8b81564cff52d6d52620370a9e234e43",
+  "nuget_content_hash": "gcUBLyxX9a08VlGOIP+fTpbfvbhKWUJiMTCFCvIfmmdHTuEgdEo462Sna2CXXQGE2j7fGlHIZ08xpZbuSxXZJw=="
 }

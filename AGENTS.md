@@ -166,7 +166,7 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
 - FFmpegInteropX packages, native activation and license texts ship in **all** builds. Keep the CI
   package checker; CsWinRT's projection alone does not register the WinRT factories for Native AOT.
 - Native FFmpeg is **8.1.2-bale.dav1d.1.5.4.p1**, not public 8.1.2 (which embeds dav1d 1.0.0).
-  Keep wrapper `FFmpegInteropX.UWP.Lib` on the pinned **2.1.0-bale.N** fork (currently **2.1.0-bale.26**),
+  Keep wrapper `FFmpegInteropX.UWP.Lib` on the pinned **2.1.0-bale.N** fork (currently **2.1.0-bale.27**),
   consumed from [Zorro92/bale-ffmpeginteropx releases](https://github.com/Zorro92/bale-ffmpeginteropx/releases).
   `scripts/ffmpeg-native.json` and `scripts/ffmpeginteropx-wrapper.json` pin their release tags
   and SHA256s; run
