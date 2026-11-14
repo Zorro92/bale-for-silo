@@ -36,7 +36,8 @@ public sealed class ConnectionSpeedState
         }
     }
 
-    internal void Hold(DateTimeOffset until)
+    /// <summary>A 429 holds automatic tests against this server until Retry-After.</summary>
+    public void Hold(DateTimeOffset until)
     {
         lock (_gate) _heldUntil = _heldUntil is { } held && held > until ? held : until;
     }
