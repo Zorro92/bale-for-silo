@@ -1772,6 +1772,15 @@ Console validation (owner-run; implementation deliberately performs no console a
 
 ## Progressive remux (`server_remux_progressive`), 2026-11-14
 
+**Console check (0.1.518, forced with `delivery progressive` on a 1080p H.264 MKV):** plays on
+`FFmpeg Progressive` after two fixes found on the console: a client transformation on a disabled
+delivery made every forced start 422 (`2734a6d`), and `ForwardInputStream` zeroed the wrapper
+buffer's Length before reading its Capacity, which NativeBuffer ties to Length, so FFmpeg read 0 bytes
+(`0.1.518`). Seeks (1800 → 1796.8, 300 → 299.0) and ±skips land within a GOP through seek_reanchor.
+A 200 s pause resumed and kept playing on the same response (the server did not reap it). Not seen:
+the `progressive reconnect reason=idle` log after a ≥60 s pause; the reopen did not fire, harmless
+here but worth a look. Subtitles on progressive and the unforced (`delivery auto`) route are untested.
+
 Silo's planner ranks a copy remux's progressive delivery **ahead of HLS**
 (`candidate_planner_v3.go` "Progressive before HLS"); until now Bale (like Android's
 `PlaybackCapabilityDetector.kt`) declared it off, so every copy remux became `server_remux_hls`.
