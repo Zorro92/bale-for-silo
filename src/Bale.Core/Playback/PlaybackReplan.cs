@@ -9,6 +9,10 @@ public static class PlaybackReplan
         IReadOnlyList<string> priorAttemptedKeys, int attemptCount, double sourcePositionSeconds, PlaybackFailureV3 failure,
         PlaybackRouteDecision? failedRoute = null)
     {
+        // A tone-map create/open/MediaFailed failure is not evidence that HEVC/VP9 or the
+        // selected audio codec failed. Withdraw the range promise, keeping decode capabilities.
+        if (failedRoute?.ConsoleToneMap == true && failure.Classification != PlaybackAudioSelectionException.Classification)
+            return ForToneMapFailure(start, plan, planAttemptId, priorAttemptedKeys, attemptCount, sourcePositionSeconds);
         if (failure.Classification == PlaybackAudioSelectionException.Classification)
         {
             if (failure.AudioDecoderUnsupported)
@@ -100,6 +104,7 @@ public static class PlaybackReplan
     {
         // An enumerated HDR mode is not usable if the output switch fails. Withdraw every copy
         // of the claim so the server tone-maps instead of retrying HDR on an SDR HDMI signal.
+        start = WithoutDynamicRangeClaim(start);
         var hdr = new HdrCapabilities();
         var context = start.ClientPlaybackContext;
         start = start with
@@ -114,6 +119,23 @@ public static class PlaybackReplan
         return ForFailure(start, plan, planAttemptId, priorAttemptedKeys, attemptCount, sourcePositionSeconds,
             new("player_failure", "HDR output switch failed; server tone mapping required."));
     }
+
+    private static PlaybackStartRequestV3 WithoutDynamicRangeClaim(PlaybackStartRequestV3 start) => start with
+    {
+        ClientPlaybackContext = start.ClientPlaybackContext with
+        {
+            Deliveries = start.ClientPlaybackContext.Deliveries.ToDictionary(pair => pair.Key, pair => pair.Value with
+            {
+                ValidatedClaims = pair.Value.ValidatedClaims.Where(claim => claim != PlaybackProtocol.ClientManagedDynamicRangeClaim).ToArray(),
+            }),
+        },
+    };
+
+    public static PlaybackReplanRequestV3 ForToneMapFailure(PlaybackStartRequestV3 start, PlaybackPlan plan, string planAttemptId,
+        IReadOnlyList<string> priorAttemptedKeys, int attemptCount, double sourcePositionSeconds) =>
+        Build(WithoutDynamicRangeClaim(start), plan, planAttemptId, priorAttemptedKeys.Append(plan.PlanAttemptKey!).ToArray(),
+            attemptCount, sourcePositionSeconds, "failure_recovery",
+            new("player_failure", "Console tone mapping failed; server tone mapping required."));
 
     public static PlaybackFailureV3 Classify(int? hresult, bool isDecoderError, bool isNetworkError) => new(
         isDecoderError ? "decoder_failure" : isNetworkError ? "http_failure" : "player_failure",

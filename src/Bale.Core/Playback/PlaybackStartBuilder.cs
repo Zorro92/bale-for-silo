@@ -16,12 +16,20 @@ public static class PlaybackStartBuilder
             throw new ArgumentException("The selected version is no longer available.", nameof(selection));
         var version = PlaybackFormatting.SelectDisplayVersion(detail.Versions, selection.FileId, detail.LastFileId)
             ?? throw new InvalidOperationException("This item has no playable version.");
-        return Build(version.FileId!, profileId, attemptId, startPosition, selection, device, identity);
+        return BuildCore(version.FileId!, profileId, attemptId, startPosition, selection, device, identity,
+            ConsoleToneMapPolicy.CanManage(version, device));
     }
 
     /// <summary>fileId is the resolved Auto version; an explicit Detail version pick takes precedence.</summary>
     public static PlaybackStartRequestV3 Build(string fileId, string profileId, string attemptId, double? startPosition,
         PlaybackSelection selection, DeviceCapabilities device, ClientIdentity identity)
+    {
+        // No selected-version facts in this overload: never make an attempt-wide range promise.
+        return BuildCore(fileId, profileId, attemptId, startPosition, selection, device, identity, false);
+    }
+
+    private static PlaybackStartRequestV3 BuildCore(string fileId, string profileId, string attemptId, double? startPosition,
+        PlaybackSelection selection, DeviceCapabilities device, ClientIdentity identity, bool managesDynamicRange)
     {
         fileId = selection.FileId ?? fileId;
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
@@ -58,7 +66,7 @@ public static class PlaybackStartBuilder
             Subtitles = device.Subtitles with { EmbeddedBitmap = false },
             // PlaybackCapabilityDetector.kt: only the untouched original executor maps and verifies
             // the catalog audio ordinal. Packaged outputs contain the server-selected stream alone.
-            ValidatedClaims = OriginalClaims(device),
+            ValidatedClaims = OriginalClaims(device, managesDynamicRange),
         };
         // PlaybackCapabilityDetector.kt disables progressive until its seekable transport is proven.
         var progressive = original with
@@ -101,6 +109,8 @@ public static class PlaybackStartBuilder
         var subtitle = selection.SubtitleIndex is >= 0 ? selection.SubtitleIndex : null;
         return new(fileId, profileId, attemptId, PlaybackProtocol.SoloClientFeatures(context, caps.VideoDecode), caps, context)
         {
+            // This claim was checked against this version only; do not reuse it for alternate files.
+            AllowAlternateVersions = managesDynamicRange ? false : null,
             StartPosition = startPosition,
             AudioTrackIndex = selection.AudioIndex,
             AudioTrackId = selection.AudioIndex is { } audio ? $"file:{fileId}:audio:{audio}" : null,
@@ -110,12 +120,13 @@ public static class PlaybackStartBuilder
     }
 
     /// <summary>Claims only the untouched original executor can honour (PlaybackCapabilityDetector.kt).</summary>
-    internal static IReadOnlyList<string> OriginalClaims(DeviceCapabilities device)
+    internal static IReadOnlyList<string> OriginalClaims(DeviceCapabilities device, bool managesDynamicRange = false)
     {
         if (!device.OriginalHttpSupported) return [];
         var claims = new List<string>();
         if (device.OriginalAudioTrackSelectionSupported) claims.Add(PlaybackProtocol.ClientSelectedAudioTrackClaim);
         if (device.OriginalDolbyVision8BaseLayerSupported) claims.Add(PlaybackProtocol.ClientDolbyVision8BaseLayerClaim);
+        if (managesDynamicRange) claims.Add(PlaybackProtocol.ClientManagedDynamicRangeClaim);
         return claims.AsReadOnly();
     }
 }

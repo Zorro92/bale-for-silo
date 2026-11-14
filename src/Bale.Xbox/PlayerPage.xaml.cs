@@ -199,6 +199,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
                     capabilities = capabilities with { VideoDecode = ConsoleEvidence.BuildVideoDecode(await HardwareDecodeProbe.Limits, 3840, 2160) };
                 capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);
                 capabilities = DebugHdrPlayback.Capabilities(attempt.PretendHdr, capabilities);
+                capabilities = attempt.FfmpegTuning.ToneMapCapabilities(capabilities);
 #endif
                 var start = PlaybackStartBuilder.Build(request.Detail, request.Selection,
                     services.ProfileId, Guid.NewGuid().ToString(), startPosition, capabilities, DeviceIdentity.Current());
@@ -417,6 +418,13 @@ public sealed partial class PlayerPage : Page, IBackHandler
             if (hdrOutputFailed && DisplayHdrPolicy.RequiresHdr10(attempt.Plan))
             {
                 // Fail closed if the replacement ignores the withdrawn HDR output claim.
+                await ShowErrorAsync(PlaybackMessages.PlaybackFailed);
+                return;
+            }
+            if (failedRoute?.ConsoleToneMap == true && ConsoleToneMapPolicy.RequiresToneMap(attempt.Plan,
+                !ConsoleToneMapPolicy.HasHdrOutput(attempt.Start.ClientPlaybackContext.Output.HdrDetails)))
+            {
+                // Do not retry a failed local stage if the server ignored claim withdrawal.
                 await ShowErrorAsync(PlaybackMessages.PlaybackFailed);
                 return;
             }

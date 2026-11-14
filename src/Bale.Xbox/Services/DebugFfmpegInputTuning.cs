@@ -33,6 +33,14 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
         _ => "default",
     };
 
+    // Explicit unsafe comparison modes must not promise local mapping to the server.
+    internal DeviceCapabilities ToneMapCapabilities(DeviceCapabilities device) =>
+        Decoder is DebugFfmpegDecoder.System or DebugFfmpegDecoder.Software || ToneMap == DebugToneMap.Off
+            ? device with { OriginalDynamicRangeMappingSupported = false } : device;
+
+    internal bool RequiresToneMapGuard(PlaybackRouteDecision route) => route.ConsoleToneMap
+        && ToneMap != DebugToneMap.Off && Decoder is not (DebugFfmpegDecoder.System or DebugFfmpegDecoder.Software);
+
     internal string ToneMapOverride => DebugFfmpegToneMap.Name(ToneMap);
 
     internal string ColorInfoOverride => DebugFfmpegColorInfo.Name(ColorInfo);
@@ -69,7 +77,7 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
         lock (Gate)
         {
             tuning = _current;
-            if (!TryUpdate(tuning, options, DebugFfmpegWrapperVersion.Value, out var next, out error)) return false;
+            if (!TryUpdate(tuning, options, FfmpegWrapperVersion.Value, out var next, out error)) return false;
             Volatile.Write(ref _current, next);
             tuning = next;
             return true;

@@ -61,6 +61,7 @@
     <None Include="../../src/Bale.Xbox/Services/DebugFfmpegColorInfo.cs" Link="DebugFfmpegColorInfo.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugFfmpegToneMap.cs" Link="DebugFfmpegToneMap.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugFfmpegInputTuning.cs" Link="DebugFfmpegInputTuning.cs" />
+    <Compile Include="../../src/Bale.Xbox/Services/FfmpegToneMapGuard.cs" Link="FfmpegToneMapGuard.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/FfmpegSource.cs" Link="FfmpegSource.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugVideoMediaType.cs" Link="DebugVideoMediaType.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugVideoColour.cs" Link="DebugVideoColour.cs" />
@@ -146,6 +147,6 @@
     <None Include="../../src/Bale.Xbox/Controls/SavedServerRow.xaml" Link="SavedServerRow.xaml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <Import Project="../../src/Bale.Xbox/Build/DebugFfmpegWrapperVersion.targets" />
+  <Import Project="../../src/Bale.Xbox/Build/FfmpegWrapperVersion.targets" />
 
 </Project>

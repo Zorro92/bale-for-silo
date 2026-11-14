@@ -563,19 +563,17 @@ and its native activation registration are unchanged.
 
 ### Native FFmpegInteropX wrapper fork
 
-Bale requires exactly `[2.1.0-bale.26]` of `FFmpegInteropX.UWP.Lib`, from the fork's immutable
-release [`wrapper-ffmpeginteropx-2.1.0-bale.26`](https://github.com/Zorro92/bale-ffmpeginteropx/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.26),
-built from fork commit `d3956a2998f120d6817e7a996dbf2c807887c68f`. Its nupkg SHA256 is
-`58e52126a3c552433ce5280b2cef8b42f8e48c51bf27a0cf53a7f96e61a93c7c`; its NuGet content hash is
-`Hh4+z7bSRtEVf3rFyuUTxOpsk+Z4RoDQbIsKOQidAdo/BeBl8e/A5x2LmxiMBHE88An0Hk/YIdJSYpjMGtM/VA==`.
-Both were verified against the downloaded package, including NuGet PackageArchiveReader's content
-hash. The release archive's `Source/bale_tonemap.h` matches Bale's ABI 1 header apart from line endings.
-Version .25 adds the opt-in GPU tone-map stage for d3d11va 10-bit PQ streams (`bale_tonemap=0/1/2`),
+Bale requires exactly `[2.1.0-bale.29]` of `FFmpegInteropX.UWP.Lib`, from the fork's immutable
+release [`wrapper-ffmpeginteropx-2.1.0-bale.29`](https://github.com/Zorro92/bale-ffmpeginteropx/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.29).
+The reviewed source commit, package SHA256 and NuGet content hash are in
+`scripts/ffmpeginteropx-wrapper.json`; the package and lock file already pin this release.
+The release archive's `Source/bale_tonemap.h` matches Bale's ABI 1 header apart from line endings.
+Version .25 adds the GPU tone-map stage for d3d11va 10-bit PQ streams (`bale_tonemap=0/1/2`),
 retaining .24's HDR side-data fixes. Self-test mismatch stops the stream with `0x8004BA01`.
-The debug `tonemap=` switch is now available; production leaves the key absent and keeps its
-server tone-mapping policy.
-Version .26 adds opt-in compressed system-decoder colour and HDR metadata propagation
-(`bale_compressed_color_info=0/1`); unset/zero preserves the existing compressed media types.
+Version .26 adds opt-in compressed system-decoder colour/HDR metadata propagation
+(`bale_compressed_color_info=0/1`); .28/.29 extend tone-map eligibility to BT.2020 SDR and HLG.
+Production now sets `bale_tonemap=1` for eligible HDR originals on SDR; see "Console tone mapping
+by default" below. Debug `tonemap=off|hable` and decoder overrides still win.
 Bale no longer carries or applies wrapper patches or builds/releases wrapper packages. Changes go
 as commits to [Zorro92/bale-ffmpeginteropx](https://github.com/Zorro92/bale-ffmpeginteropx); its
 [`bale/README.md`](https://github.com/Zorro92/bale-ffmpeginteropx/blob/main/bale/README.md) is the
@@ -1045,8 +1043,8 @@ Xbox; a D3D12 compute decoder is the remaining option) or a cheaper decode (grai
 
 #### HDR frame-server probe (phase 0 of GPU tone mapping)
 
-Production HDR on an SDR display stays server tone-mapped (see "Decision: keep server tone mapping"
-below). This debug-only probe asks whether a Bale GPU tone-map pass (PQ → linear, BT.2020 → BT.709,
+Production HDR on an SDR display uses the wrapper GPU pass when eligible (see "Console tone mapping
+by default" below). This debug-only probe asks whether a Bale GPU tone-map pass (PQ → linear, BT.2020 → BT.709,
 BT.2390 curve) is feasible at all: can the frame server hand Bale hardware-decoded HEVC HDR10 frames
 with the HDR values intact, and what does the copy cost at 4K? If it can, Bale could send the server's
 `client_managed_dynamic_range_v1` original_http claim, which Apple's clients already send, and map the
@@ -1109,12 +1107,12 @@ probe. Parked.
 
 ## Display HDR
 
-**Debug GPU tone-map pass:** `bale_gpu.dll` now provides tone-map ABI 1 (PQ P010 → limited
+**GPU tone-map pass:** `bale_gpu.dll` now provides tone-map ABI 1 (PQ P010 → limited
 BT.709 NV12), with BT.2390/Hable and defaults matching the server's peak/white/desat conventions.
 Create runs a fixed-pattern CPU/GPU self-test; mismatch returns `0x8004BA01`. The debug switch
 `ffmpeg-tune decoder=auto tonemap=off|bt2390|hable|default` requires wrapper 2.1.0-bale.25+;
-the pinned .26 wrapper enables it. Older packages reject unknown `bale_*` keys and remain gated.
-Production HDR policy remains server tone mapping. See [GPU tone-map ABI and colour details](gpu-tone-map.md),
+the pinned .29 wrapper supports PQ and HLG. Older packages reject unknown `bale_*` keys and remain gated.
+Production uses BT.2390 on eligible SDR-output starts. See [GPU tone-map ABI and colour details](gpu-tone-map.md),
 including the reusable, binding-free `shaders/tonemap_math.hlsli`, 203-nit internal reference,
 Hable's explicit desat=0, and documented resampling/quantization differences.
 
@@ -1127,7 +1125,7 @@ developer's SDR display or installed codecs. `DisplayHdrOutput` reads the suppor
 `DisplayHdrPolicy` claims HDR10 if any non-stereo mode supports SMPTE ST 2084 (PQ). ST 2086
 metadata support is recorded but is not required for that claim. A successful read reports
 `output.display.hdr_evidence = "exact"`, including an empty claim for a non-HDR display. A failed
-or unavailable read reports `"unknown"` with empty HDR, so the server fails closed. Both production
+or unavailable/empty read reports `"unknown"` with empty HDR, so the server fails closed. Both production
 and the debug FFmpeg `policy|off` paths use the detected display. `caps` shows the claim/evidence.
 HDR10+, HLG and Dolby Vision remain unclaimed/unverified; Xbox Dolby Vision is low-latency DV
 (profile 5) only, to revisit later.
@@ -1142,17 +1140,57 @@ active output, and an HEVC decode entry that fits. The plan has decision reason
 never claims Dolby Vision output. Bale routes such plans through the FFmpeg demuxer (MP4 too, so
 Windows' MP4 source never sees dvh1/dvhe entries) to the system HEVC decoder, which skips the RPU NAL
 units (type 62, unspecified in HEVC). An 8.1 plan switches HDMI to HDR10 like plain HDR10; Bale
-claims no HLG, so 8.4 stays with the server. Debug `ffmpeg off` withdraws the claim, and a failed
+claims no native HLG, so 8.4 stays with the server on HDR displays; eligible SDR starts use the
+client-managed dynamic-range path below. Debug `ffmpeg off` withdraws the claim, and a failed
 mount withdraws it on replan. `bale-cli play-plan --hdr10` plans like `hdr pretend` on a Series X:
 a 4K DV profile 8 MKV now returns original_http instead of an HLS remux; without HDR10 the server
 still picks the SDR version.
 
-**HDR sources on a non-HDR display go to the server for transcode and tone mapping, never console
-tone mapping.** The server's `outputRangeEligibleV3` / `nativeOutputHDRV3` gates direct HDR on
-exact display evidence and supported HDR types. Microsoft documents automatic media-pipeline
-HDR-to-SDR tone mapping, but Bale deliberately does not rely on it: the product policy remains
-server tone mapping. The bare `ConsoleEvidence.Default` is unknown until augmented by display
-detection; CLI planning without HDMI evidence stays conservative.
+### Console tone mapping by default
+
+On a known SDR display, the selected version's HEVC or VP9 10-bit PQ (HDR10/HDR10+ as HDR10)
+or HLG picture now plays from the HDR original using FFmpeg d3d11va plus bale_gpu BT.2390.
+This replaces the old server-tone-mapping default after the console comparisons below. HDR
+displays keep their existing native HDR output and HDMI switching; no range-management claim is
+sent for them. This is Bale's GPU conversion, independent of Windows' automatic HDR conversion.
+
+`ConsoleToneMapPolicy` checks the resolved Auto/last-played/explicit version before Start. It
+requires exact SDR display evidence, the wrapper revision with HLG support (.29+), tone-map ABI 1
+and all four exports at runtime, one unambiguous video track (known pixel formats must fit 4:2:0
+P010), a hardware decode claim that fits,
+explicit 10-bit PQ/HLG transfer, and BT.2020 primaries with a BT.2020 non-constant-luminance matrix
+(or BT.709 primaries/matrix for PQ).
+DV profile 8.1/8.4 requires explicit DV configuration/presence and a compatible HDR10/HLG base
+layer; profile 7 requires its HDR10 base layer. RPU and profile 7 enhancement pixels are ignored. DV profile 5, AV1/dav1d
+(no tone-map stage), SDR including BT.2020 SDR, missing/ambiguous facts, unavailable stages and
+unknown display evidence keep server planning. The stage itself also supports BT.2020 SDR;
+this production HDR claim deliberately does not expand to it yet.
+
+Bale sends `client_managed_dynamic_range_v1` only in `original_http.validated_claims`, as
+silo-apple does. silo-server can then return the untouched original with decision reason
+`client_managed_dynamic_range`, bypassing native sink-HDR gates while retaining codec and other
+eligibility checks. Because the claim covers the whole start, alternate versions are disabled for
+that start. Progressive/HLS never inherit it and remain output-gated. File-id-only callers without
+selected-version facts (including CLI planning) do not make the claim.
+
+The executor forces the FFmpeg route for that decision and for any HDR original unexpectedly
+returned to an SDR output, including MP4. It requests `VideoDecoderMode.Automatic` (d3d11va) and
+`bale_tonemap=1` (BT.2390 with the server's peak/white/desaturation defaults). A production guard
+checks the wrapper's MSS video descriptor and live decoder: only d3d11va NV12 limited-range
+BT.709 reaches the presenter. A declined stage, system/software decoder fallback, unavailable ABI,
+self-test failure or apply/MediaFailed error spends the existing single failure-recovery replan,
+withdraws the dynamic-range claim, and asks for server tone mapping at the current source position.
+Working codec claims, track selections and attempt identity survive. A second failure ends playback;
+there is no retry loop. Container/bitstream colour disagreement may trigger this fallback even when
+the selected version's catalog metadata looked eligible. Native MediaPlayer's container source
+never presents an HDR original on SDR.
+
+Stats show `HDR output: SDR / console tone map` for this route and the existing plan reason reads
+`player handles HDR`. Debug tuning is still captured per attempt: `tonemap=off|hable` and
+`decoder=system|software` override defaults. Off/system/software withdraw the production range
+claim before Start; explicit debug HDR-pretend experiments can still bypass that production guard.
+Clearing overrides restores the defaults. No console verification of this production integration
+was performed during implementation; the console-verified shader/wrapper evidence is below.
 
 **Debug-only tone-mapping comparison:** `scripts/bale-debug.sh hdr pretend|off|status` defaults to
 `off` and is memory-only (restart resets it). `pretend` affects later playback attempts: it claims
@@ -1161,8 +1199,8 @@ and skips the HDMI switch entirely. The current SDR output is left alone so Micr
 pipeline can tone-map a direct HDR10 picture (including the server's validated HDR10 base-layer
 fallback for HDR10+). This is an explicit experiment, not a production-policy change or proof of
 picture quality. Stats and `where` show `HDR output: console tone map (debug)` for that plan;
-turning the toggle off mid-play does not change the captured attempt. Restart playback after
-`hdr off` to compare with the normal server tone-mapped transcode.
+turning the toggle off mid-play does not change the captured attempt. `hdr off` restores normal
+planning, which now prefers console tone mapping when eligible.
 `ffmpeg-tune hdr=on|off|default` sets FFmpegInteropX HDR support for the next real FFmpeg attempt;
 `default` restores Automatic, and omitted keys keep their current overrides. Stats and `where` show
 `Video media type (track)` on native, FFmpeg and HLS, plus `(mss)` with decoder mode and compressed
@@ -1170,7 +1208,8 @@ status on FFmpeg; both log the MF colour/HDR attributes, with absent attributes 
 `ffmpeg-tune decoder=auto|system|software|default` is debug-only, for the next real FFmpeg route;
 use `ffmpeg direct` to force that route for other containers (HLS stays native).
 Auto tries FFmpeg d3d11va, reports a software fallback explicitly, and refreshes the MSS decoder/subtype after start.
-Production keeps ForceSystemDecoder/ForceFFmpegSoftwareDecoder; `decoder=default` restores that route choice.
+Production uses Automatic for the guarded console-tone-map route and otherwise keeps
+ForceSystemDecoder/ForceFFmpegSoftwareDecoder; `decoder=default` restores that route choice.
 
 For the same-frame comparison, `scripts/bale-debug.sh seek <seconds> [pause]` seeks the active
 native, FFmpeg or HLS player to absolute **source/movie** time, optionally pauses, waits for seek
@@ -1236,11 +1275,11 @@ with a positive `EXT-X-START`, adding `ENDLIST` on completion; encoded video can
 VOD. The server's optional keyframe-playlist setting can provide copy VOD from a verified index
 when starting at zero, but it is not a client capability and cannot fix resumed growing remuxes.
 
-**Decision: keep server tone mapping.** The owner's console comparison on **0.1.237** used
-*Avatar Aang* (1080p HEVC Main10 HDR10+) at **600 / 1800 / 3000 / 4500 seconds**. The media
-pipeline's automatic HDR-to-SDR conversion (`hdr pretend`) looked washed out and desaturated,
-with lifted blacks; the server's BT.2390/Hable transcode retained color and contrast. Keep
-`hdr pretend` as a debug comparison tool, not the normal SDR playback path.
+**Superseded decision: keep server tone mapping.** The 0.1.237 comparison found Windows'
+automatic HDR-to-SDR conversion washed out and desaturated, with lifted blacks; the server's
+BT.2390/Hable transcode retained colour and contrast. That justified the former server default.
+The verified d3d11va + bale_gpu pass below supersedes it; see "Console tone mapping by default".
+`hdr pretend` remains a debug comparison, not the production conversion mechanism.
 
 **Why it looked washed out (0.1.463, 2026-11-13).** It is not missing colour info from Bale. Same
 paused frame of a plain HDR10 1080p HEVC MKV, SDR display, Device Portal screenshots, luma on 0–255
@@ -1259,8 +1298,8 @@ BT.709, so highlights never pass ~60 % white, mid-tones sit high and colour is f
 on the native route change nothing. `HdrSupport` cannot help either: FFmpegInteropX sets colour
 attributes only for video it decodes itself, never for compressed HEVC/VP9/VC-1/MPEG-2 sent to the
 system decoder. The 0.1.237 comparison used the native route (HEVC + E-AC-3 had no FFmpeg reason then).
-The decoder's output type is not observable from the app. Server tone mapping stays; an on-console
-tone map needs Bale's own GPU pass (e.g. d3d11va P010 frames), not a pipeline setting.
+The system decoder's output type is not observable from the app. This ruled out a pipeline
+setting; the production path now uses Bale's GPU pass on d3d11va P010 frames.
 
 **FFmpeg d3d11va on the console (0.1.465, 2026-11-14, debug `ffmpeg-tune decoder=auto`).** With the
 fork's wrapper 2.1.0-bale.23 and the existing native FFmpeg (d3d11va already compiled in), the plain
@@ -1279,7 +1318,7 @@ using its `data`, so `hdr=on` reported MaxCLL 488887616 / MaxFALL 553 (pointer b
 route reads 4057 / 321) and no mastering luminance. The display-matrix rotation read has the same
 pattern. The fork fixes all three reads in commit `c3a9adbf2d81024a54063e7570ed9883afd5403c`,
 first consumed by Bale as wrapper `2.1.0-bale.24` and retained in `.25`; console verification of that fix remains pending.
-Automatic stays banned in production.
+Automatic is now used in production only for the guarded console tone-map route.
 
 **GPU tone map on the console (0.1.475, wrapper 2.1.0-bale.25, 2026-11-14, debug
 `ffmpeg-tune decoder=auto tonemap=bt2390`).** Same plain-HDR10 1080p24 HEVC MKV, `hdr pretend`, SDR
@@ -1296,7 +1335,7 @@ server, so BT.2390 stays the default). An HDR10+ 1080p HEVC title (base layer, d
 ignored) with BT.2390: 0/9/32/147/164 sat 0.62 vs the server's 0/9/32/149/166 sat 0.61. An SDR 10-bit
 HEVC MKV with the switch on logs `Bale tonemap: request ignored; not a D3D11 10-bit PQ stream.` and
 plays unchanged. 4K is untested: no 4K HDR10 HEVC file in the library takes the FFmpeg route.
-Production stays on server tone mapping until the owner decides.
+This evidence informed the console-tone-mapping default described above.
 4K (0.1.481, 2026-11-14): a Dolby Vision profile 8.1 HEVC MKV, 3840x2160@24, via the new base-layer
 claim with `hdr pretend`. System decoder: decodes cleanly with the RPU NAL units left in, real time,
 0.155 cores. `decoder=auto tonemap=bt2390`: active at 3840x2160, real time, 0.13 cores, clean
@@ -1338,9 +1377,8 @@ Microsoft's media pipeline exposes no tone-mapping algorithm or parameter contro
 FFmpegInteropX's `SetFFmpegVideoFilters` is not a practical alternative: filters run on the CPU,
 this build has no zimg/zscale or libplacebo, and Xbox offers no usable OpenCL/Vulkan path for
 `tonemap_opencl` or libplacebo. The configure log's `vulkan=yes` is not Xbox runtime evidence.
-HEVC on the FFmpeg route is hardware-decoded by the system, so its decoded frames never reach
-FFmpeg's filters. A Bale GPU tone-mapping shader remains a possible future option
-**only if server transcoding becomes a bottleneck**.
+The normal system-decoder HEVC route never exposes decoded frames to FFmpeg filters. The
+production console-tone-map route instead uses d3d11va textures directly in Bale's GPU shader.
 
 Before an HDR10 direct-play mount (including progressive remux with an unchanged HDR picture),
 Bale requests a non-stereo PQ HDMI mode with `HdmiDisplayHdrOption.Eotf2084`. It keeps the current

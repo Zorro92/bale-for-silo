@@ -96,7 +96,7 @@ public class DebugFfmpegPlaybackTests
         Assert.DoesNotContain("#if DEBUG_SERVER\nusing FFmpegInteropX", source);
         Assert.Contains("media.Stream = await transport.OpenStreamAsync(media.Token)", source);
         Assert.Contains("media.RandomStream = media.Stream.AsRandomAccessStream()", source);
-        Assert.Contains("Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled, attempt.ForceFfmpeg)", source);
+        Assert.Contains("Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled, attempt.ForceFfmpeg,", source);
         Assert.Contains("if (media.Route.UseFfmpeg)", source);
         Assert.Contains("FfmpegSource.Configuration(media.Route)", source);
         Assert.Contains("media.FfmpegSource = await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream, config).AsTask()", source);
@@ -128,7 +128,7 @@ public class DebugFfmpegPlaybackTests
     }
 
     [Fact]
-    public void ProductionConfigurationHasNoAutomaticOrD3D11VideoModeAndUsesOnlySupportedSystemAudioSwitches()
+    public void ProductionConfigurationLimitsAutomaticToToneMappingAndUsesSupportedSystemAudioSwitches()
     {
         var source = Read("FfmpegSource.cs.txt");
         // Production tunes software video only; input experiments stay in the debug-only overload.
@@ -137,7 +137,7 @@ public class DebugFfmpegPlaybackTests
         Assert.Contains("ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(softwareVideo, route.VideoWidth, route.VideoHeight))", production);
         Assert.Contains("FfmpegLogging.Configure()", production);
         Assert.Contains("VideoDecoderMode.ForceFFmpegSoftwareDecoder : VideoDecoderMode.ForceSystemDecoder", source);
-        Assert.DoesNotContain("VideoDecoderMode.Automatic", production);
+        Assert.Contains("route.ConsoleToneMap ? VideoDecoderMode.Automatic", production);
         Assert.Contains("config.Audio.SystemDecoderAAC = true", source);
         Assert.Contains("config.Audio.SystemDecoderMP3 = true", source);
         // Patch 0021: AC3/EAC3 go undecoded to the system Dolby decoder on every FFmpeg mount.

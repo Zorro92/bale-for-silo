@@ -34,7 +34,7 @@ public sealed class DebugFfmpegToneMapTests
         Assert.Null(cleared.ToneMap);
         Assert.DoesNotContain("tonemap=", cleared.Description);
         DebugFfmpegToneMap.Apply(config, cleared, "2.1.0-bale.25");
-        Assert.DoesNotContain("bale_tonemap", config.FFmpegOptions.Keys);
+        Assert.Equal(code, config.FFmpegOptions["bale_tonemap"]); // Unset tuning preserves the route's existing choice.
     }
 
     [Theory]
@@ -104,22 +104,22 @@ public sealed class DebugFfmpegToneMapTests
     }
 
     [Fact]
-    public void BuiltGateUsesTheActualPackagePinAndProductionCannotSetToneMap()
+    public void BuiltGateUsesTheActualPackagePinAndDefaultNonToneMapRoutesLeaveItUnset()
     {
         var package = XDocument.Parse(Read("Bale.Xbox.csproj.txt")).Descendants("PackageReference")
             .Single(p => p.Attribute("Include")!.Value == "FFmpegInteropX.UWP.Lib").Attribute("Version")!.Value.Trim('[', ']');
         using var pin = JsonDocument.Parse(Read("ffmpeginteropx-wrapper.json"));
-        Assert.Equal(DebugFfmpegWrapperVersion.Value, pin.RootElement.GetProperty("version").GetString());
-        Assert.Equal(DebugFfmpegWrapperVersion.Value, package);
+        Assert.Equal(FfmpegWrapperVersion.Value, pin.RootElement.GetProperty("version").GetString());
+        Assert.Equal(FfmpegWrapperVersion.Value, package);
         var tuning = new DebugFfmpegInputTuning(Decoder: DebugFfmpegDecoder.Auto, ToneMap: DebugToneMap.Bt2390);
-        if (DebugFfmpegToneMap.Supported(DebugFfmpegWrapperVersion.Value))
+        if (DebugFfmpegToneMap.Supported(FfmpegWrapperVersion.Value))
             Assert.Equal("1", FfmpegSource.Configuration(new(true, false, "hevc", "aac", 0, 1920, 1080), tuning).FFmpegOptions["bale_tonemap"]);
         else
             Assert.Throws<InvalidDataException>(() => FfmpegSource.Configuration(new(true, false, "hevc", "aac", 0, 1920, 1080), tuning));
         Assert.DoesNotContain("bale_tonemap", FfmpegSource.Configuration(new(true, false, "hevc", "aac", 0, 1920, 1080)).FFmpegOptions.Keys);
-        Assert.DoesNotContain("ToneMap", DebugFfmpegDecoderTests.ProductionSource());
+        Assert.Contains("if (route.ConsoleToneMap)", DebugFfmpegDecoderTests.ProductionSource());
         var source = Read("FfmpegSource.cs.txt");
-        Assert.Contains("DebugFfmpegToneMap.Apply(config, tuning, DebugFfmpegWrapperVersion.Value)", source);
+        Assert.Contains("DebugFfmpegToneMap.Apply(config, tuning, FfmpegWrapperVersion.Value)", source);
         Assert.Contains("FFmpeg tone map override", Read("PlayerPage.Stats.cs.txt"));
         Assert.Contains("media.FfmpegToneMapOverride = attempt.FfmpegTuning.ToneMapOverride;", Read("PlayerPage.Media.cs.txt"));
         Assert.Contains("tonemap={media.FfmpegToneMapOverride}", Read("PlayerPage.Media.cs.txt"));

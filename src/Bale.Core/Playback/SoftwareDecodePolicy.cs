@@ -69,6 +69,7 @@ public static class SoftwareDecodePolicy
         AudioDecodeCodecs = device.AudioDecodeCodecs.Where(codec => !AudioCodecs.Contains(codec)).ToArray(),
         // The base-layer claim relies on the FFmpeg demuxer for DV-tagged MP4.
         OriginalDolbyVision8BaseLayerSupported = false,
+        OriginalDynamicRangeMappingSupported = false,
     };
 
     /// <summary>

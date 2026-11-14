@@ -14,7 +14,7 @@ internal sealed partial class DisplayHdrOutput
     internal static DeviceCapabilities DetectCapabilities(DeviceCapabilities? claims = null)
     {
         var read = ReadSupportedModes();
-        var succeeded = read is not null;
+        var succeeded = read is { Length: > 0 };
         var modes = read ?? [];
         var (hdr, evidence) = DisplayHdrPolicy.FromModes(succeeded, modes);
         Log.Info($"display HDR: read={succeeded} modes={modes.Length} pq={modes.Count(mode => mode.Smpte2084)}"

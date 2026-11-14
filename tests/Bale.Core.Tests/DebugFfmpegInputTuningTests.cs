@@ -480,7 +480,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     {
         Set(new(ReadAhead: true));
         var before = DebugFfmpegInputTuning.Current;
-        var supported = DebugFfmpegToneMap.Supported(DebugFfmpegWrapperVersion.Value);
+        var supported = DebugFfmpegToneMap.Supported(FfmpegWrapperVersion.Value);
         var request = new Dictionary<string, string> { ["tonemap"] = "bt2390", ["decoder"] = "auto", ["buffer"] = "1500" };
         Assert.Equal(supported, DebugFfmpegInputTuning.TrySet(request, out var next, out var error));
         if (supported)

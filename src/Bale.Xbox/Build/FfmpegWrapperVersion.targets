@@ -2,14 +2,14 @@
   <!-- Read the actual PackageReference pin at build time: no runtime package discovery or
        separate version constant to forget when the wrapper is upgraded. Also imported by tests. -->
   <PropertyGroup>
-    <_BaleWrapperSource>$(BaseIntermediateOutputPath)DebugFfmpegWrapperVersion.g.cs</_BaleWrapperSource>
+    <_BaleWrapperSource>$(BaseIntermediateOutputPath)FfmpegWrapperVersion.g.cs</_BaleWrapperSource>
   </PropertyGroup>
   <!-- UWP's XAML precompile collects Compile items before CoreCompile. Declare the item
        during evaluation and materialize it before PrepareForBuild, like other generated inputs. -->
-  <ItemGroup Condition="'$(BaleDebugServer)' != 'false'">
+  <ItemGroup>
     <Compile Include="$(_BaleWrapperSource)" />
   </ItemGroup>
-  <Target Name="GenerateDebugFfmpegWrapperVersion" BeforeTargets="PrepareForBuild" Condition="'$(BaleDebugServer)' != 'false'">
+  <Target Name="GenerateFfmpegWrapperVersion" BeforeTargets="PrepareForBuild">
     <XmlPeek XmlInputPath="$(MSBuildThisFileDirectory)..\Bale.Xbox.csproj"
              Query="/Project/ItemGroup/PackageReference[@Include='FFmpegInteropX.UWP.Lib']/@Version">
       <Output TaskParameter="Result" PropertyName="_BaleWrapperPin" />
@@ -20,7 +20,7 @@
     </PropertyGroup>
     <MakeDir Directories="$(BaseIntermediateOutputPath)" />
     <WriteLinesToFile File="$(_BaleWrapperSource)" Overwrite="true" WriteOnlyWhenDifferent="true"
-      Lines="#if DEBUG_SERVER%0Anamespace Bale.Xbox.Services%3B%0Ainternal static class DebugFfmpegWrapperVersion { internal const string Value = &quot;$(_BaleWrapperVersion)&quot;%3B }%0A#endif" />
+      Lines="namespace Bale.Xbox.Services%3B%0Ainternal static class FfmpegWrapperVersion { internal const string Value = &quot;$(_BaleWrapperVersion)&quot;%3B }" />
     <ItemGroup>
       <FileWrites Include="$(_BaleWrapperSource)" />
     </ItemGroup>

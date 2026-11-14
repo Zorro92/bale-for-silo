@@ -9,6 +9,9 @@ public static class PlaybackProtocol
     public const string SequencedProgressFeature = "sequenced_progress_v1";
 
     public const string SoftwareVideoDecodeFeature = "software_video_decode_v1";
+    /// <summary>silo-server ClaimClientManagedDynamicRangeV3: only original_http maps source range onto the active output.</summary>
+    public const string ClientManagedDynamicRangeClaim = "client_managed_dynamic_range_v1";
+    public const string ClientManagedDynamicRangeReason = "client_managed_dynamic_range";
     public const string ClientSelectedAudioTrackClaim = "client_selected_audio_track_v1";
     /// <summary>
     /// silo-server protocol_v3.go ClaimClientDV8BaseLayerFallbackV3, original_http only: a single-layer

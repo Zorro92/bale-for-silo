@@ -228,9 +228,16 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   before Play. Fail closed if the selected stream is missing.
 - Display HDR is detected from HDMI modes on the UI thread at player start, including debug
   FFmpeg overrides. The bare baseline is unknown, not a hardcoded SDR display. Claim only HDR10
-  from non-stereo PQ modes; HDR10+/HLG/DV remain unverified. HDR on a non-HDR display must be
-  server-transcoded/tone-mapped, never console tone-mapped. Direct HDR10 switches HDMI to PQ
-  before mounting; restore the default on stop/error, recovery, unload/navigation and suspend.
+  from non-stereo PQ modes; native HDR10+/HLG/DV output remains unverified. On a known SDR
+  display, eligible selected HEVC/VP9 10-bit PQ/HLG originals use the wrapper's d3d11va + bale_gpu
+  BT.2390 stage by default (`client_managed_dynamic_range_v1` on original_http only). Require
+  runtime ABI availability and explicit supported colour facts (BT.2020 NCL, or BT.709 for PQ);
+  DV 8.1/8.4 and profile 7 use their compatible base layer. DV5, AV1 and unknown facts/displays
+  stay server tone-mapped. Never send the claim without selected-version facts or allow alternate
+  versions under it. A declined stage, decoder fallback or apply failure uses the single recovery
+  replan with the range claim withdrawn, keeping working codecs. Native container sources must
+  never present an HDR original on SDR. HDR displays keep native output: direct HDR10 switches
+  HDMI to PQ before mounting; restore the default on stop/error, recovery, unload/navigation and suspend.
   A failed switch uses the single replan with all HDR claims withdrawn, not a codec withdrawal.
   Keep the manifest's `hevcPlayback` capability (required for Xbox HDR10/4K, with media memory
   and app/game concurrency implications). Never select 120 Hz for media; use at most 60 Hz.

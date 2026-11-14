@@ -84,6 +84,6 @@
     </ItemGroup>
   </Target>
 
-  <Import Project="Build\DebugFfmpegWrapperVersion.targets" />
+  <Import Project="Build\FfmpegWrapperVersion.targets" />
 
 </Project>

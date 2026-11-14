@@ -23,8 +23,9 @@ internal static class DebugHdrPlayback
         ? capabilities
         : capabilities with { Hdr = new() { Hdr10 = true }, DisplayHdrEvidence = "exact" };
 
-    internal static string Output(bool pretend, PlaybackPlan? plan) => plan is null
+    internal static string Output(bool pretend, PlaybackPlan? plan, bool consoleToneMap = false) => plan is null
         ? pretend ? "console tone map (debug; awaiting plan)" : "detected (awaiting plan)"
+        : consoleToneMap ? "SDR / console tone map"
         : DisplayHdrPolicy.RequiresHdr10(plan)
             ? pretend ? "console tone map (debug)" : "HDR10 HDMI"
             : pretend ? "SDR (HDR pretend debug armed)" : "SDR / server tone map";

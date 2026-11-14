@@ -43,7 +43,7 @@ internal static class DebugFfmpegToneMap
         if (ValidationError(tuning, version) is { } error) throw new InvalidDataException(error);
         if (tuning.ToneMap is { } toneMap)
             config.FFmpegOptions["bale_tonemap"] = ((int)toneMap).ToString(CultureInfo.InvariantCulture);
-        else config.FFmpegOptions.Remove("bale_tonemap");
+        // No override retains the production route's choice (or leaves the key absent).
     }
 }
 #endif

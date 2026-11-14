@@ -22,6 +22,7 @@ internal static class PlaybackClaims
     {
         var hardware = await HardwareDecodeProbe.Limits;
         var capabilities = DisplayHdrOutput.DetectCapabilities(ConsoleEvidence.ForHardware(hardware));
+        capabilities = capabilities with { OriginalDynamicRangeMappingSupported = ConsoleToneMapRuntime.IsAvailable };
         var softwareVideo = SoftwareVideo();
         return (softwareVideo ? capabilities : SoftwareDecodePolicy.WithoutSoftwareVideo(capabilities), softwareVideo);
     }

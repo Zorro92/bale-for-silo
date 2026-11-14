@@ -35,7 +35,7 @@ public sealed class DebugFfmpegDecoderTests
         var route = Route(codec);
         Assert.Equal(expected, FfmpegSource.Configuration(route).Video.VideoDecoderMode.ToString());
         Assert.Equal(expected, FfmpegSource.Configuration(route, new()).Video.VideoDecoderMode.ToString());
-        Assert.DoesNotContain("VideoDecoderMode.Automatic", ProductionSource());
+        Assert.Contains("route.ConsoleToneMap ? VideoDecoderMode.Automatic", ProductionSource());
     }
 
     [Theory]

@@ -25,7 +25,8 @@ public sealed partial class PlayerPage
         }
     }
     internal bool DebugStatsVisible => StatsPanel.Visibility == Visibility.Visible;
-    internal string DebugHdrOutput => DebugHdrPlayback.Output(_attempt?.PretendHdr == true, _attempt?.Plan);
+    internal string DebugHdrOutput => DebugHdrPlayback.Output(_attempt?.PretendHdr == true, _attempt?.Plan,
+        _attempt is { Media: { } media } attempt && attempt.FfmpegTuning.RequiresToneMapGuard(media.Route));
     internal string DebugLateFrameTrace => _attempt?.Media?.FrameDelivery?.DescribeLateFrameTrace()
         ?? "frame trace unavailable (no software video observer)\n";
 

@@ -89,13 +89,13 @@ public class DebugHdrPlaybackTests
             < player.IndexOf("DebugHdrPlayback.Capabilities(attempt.PretendHdr", StringComparison.Ordinal));
         var media = Read("PlayerPage.Media.cs.txt");
         Assert.Contains("#if DEBUG_SERVER\n        if (attempt.PretendHdr)", media);
-        Assert.Contains("else\n#endif\n        if (DisplayHdrPolicy.RequiresHdr10", media);
+        Assert.Contains("else\n#endif\n        if (!consoleToneMap && DisplayHdrPolicy.RequiresHdr10", media);
         var bypass = media[media.IndexOf("if (attempt.PretendHdr)", StringComparison.Ordinal)
             ..media.IndexOf("else\n#endif", StringComparison.Ordinal)];
         Assert.DoesNotContain("_hdrOutput", bypass);
         Assert.DoesNotContain("Recover", bypass);
         var stats = Read("PlayerPage.Stats.cs.txt");
-        Assert.Contains("DebugHdrPlayback.Output(_attempt?.PretendHdr == true, _attempt?.Plan)", stats);
+        Assert.Contains("DebugHdrPlayback.Output(_attempt?.PretendHdr == true, _attempt?.Plan,", stats);
         Assert.Contains("(\"HDR output\", DebugHdrOutput)", stats);
         var server = Read("DebugServer.cs.txt");
         Assert.Contains("case (\"GET\", \"/hdr\")", server);

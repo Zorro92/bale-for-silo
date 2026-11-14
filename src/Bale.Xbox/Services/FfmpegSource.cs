@@ -20,9 +20,13 @@ internal static class FfmpegSource
             : route.VideoCodec is not null && !SoftwareDecodePolicy.SystemVideoCodecs.Contains(route.VideoCodec)))
             throw new InvalidDataException("The video codec cannot use the local fallback.");
         var config = new MediaSourceConfig();
-        // Production never uses Automatic: FFmpeg D3D11 and non-AV1 software video are debug-only.
-        config.Video.VideoDecoderMode = route.SoftwareVideo
+        if (route.ConsoleToneMap && (route.VideoCodec is not ("hevc" or "vp9") || !ConsoleToneMapRuntime.IsAvailable))
+            throw new InvalidDataException("Console tone mapping is unavailable for this source.");
+        // Automatic selects d3d11va for the local tone-map stage. Every other hardware route
+        // retains its system decoder; software AV1 remains dav1d without a tone-map stage.
+        config.Video.VideoDecoderMode = route.ConsoleToneMap ? VideoDecoderMode.Automatic : route.SoftwareVideo
             ? VideoDecoderMode.ForceFFmpegSoftwareDecoder : VideoDecoderMode.ForceSystemDecoder;
+        if (route.ConsoleToneMap) config.FFmpegOptions["bale_tonemap"] = "1"; // BT.2390, same defaults as the server.
         var softwareVideo = route.SoftwareVideo;
 #if DEBUG_SERVER
         // Choose the production mode first; default leaves it intact on every route.
@@ -41,8 +45,10 @@ internal static class FfmpegSource
         // uses FFmpegInteropX's normal software provider instead.
         if (softwareVideo && SoftwareDecodePolicy.VideoCodecs.Contains(route.VideoCodec!)) ApplySoftwareVideo(config);
 #if DEBUG_SERVER
-        DebugFfmpegToneMap.Apply(config, tuning, DebugFfmpegWrapperVersion.Value);
-        DebugFfmpegColorInfo.Apply(config, tuning, DebugFfmpegWrapperVersion.Value);
+        if (tuning.Decoder is DebugFfmpegDecoder.System or DebugFfmpegDecoder.Software)
+            config.FFmpegOptions.Remove("bale_tonemap");
+        DebugFfmpegToneMap.Apply(config, tuning, FfmpegWrapperVersion.Value);
+        DebugFfmpegColorInfo.Apply(config, tuning, FfmpegWrapperVersion.Value);
         ApplyInputTuning(config, tuning, softwareVideo, route.VideoCodec);
 #endif
         return config;
@@ -118,7 +124,7 @@ internal static class FfmpegSource
 
     internal static void ValidateVideoDecoders(FFmpegMediaSource source, PlaybackRouteDecision route, DebugFfmpegInputTuning tuning)
     {
-        if (tuning.Decoder is null)
+        if (tuning.Decoder is null || tuning.RequiresToneMapGuard(route))
         {
             ValidateVideoDecoders(source, route);
             return;
@@ -142,6 +148,13 @@ internal static class FfmpegSource
         // ForceSystemDecoder falls back to FFmpeg for codecs with no compressed provider in 2.1.0.
         // Check every stream before mounting/reading frames, including unexpected extra video tracks.
         // A software route with no video stream also fails, so the open failure replans to a transcode.
+        if (route.ConsoleToneMap)
+        {
+            if (source.VideoStreams.Count == 0 || source.VideoStreams.Any(video =>
+                video.DecoderEngine != DecoderEngine.FFmpegD3D11HardwareDecoder))
+                throw new InvalidDataException("Console tone mapping requires d3d11va decoding.");
+            return;
+        }
         var streams = source.VideoStreams.Select(video => (video.CodecName,
             video.DecoderEngine == DecoderEngine.FFmpegSoftwareDecoder, video.DecoderEngine == DecoderEngine.SystemDecoder)).ToArray();
         if (!SoftwareDecodePolicy.VideoDecodersAllowed(route.SoftwareVideo, streams))

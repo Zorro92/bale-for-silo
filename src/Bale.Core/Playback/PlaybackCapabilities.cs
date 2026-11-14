@@ -29,6 +29,8 @@ public sealed record DeviceCapabilities(
     /// feeds the system HEVC decoder, which ignores the RPU NAL units (type 62, unspecified in HEVC).
     /// </summary>
     public bool OriginalDolbyVision8BaseLayerSupported { get; init; }
+    /// <summary>The pinned wrapper and bale_gpu tone-map ABI are available; eligibility is still per selected version.</summary>
+    public bool OriginalDynamicRangeMappingSupported { get; init; }
     public bool ProgressiveSupported { get; init; }
     public bool HlsSupported { get; init; } = true;
 }

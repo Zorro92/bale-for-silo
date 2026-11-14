@@ -44,6 +44,7 @@ public sealed partial class PlayerPage
         public TypedEventHandler<AdaptiveMediaSource, AdaptiveMediaSourceDownloadRequestedEventArgs>? DownloadHandler { get; set; }
         public FFmpegMediaSource? FfmpegSource { get; set; }
         public PlaybackResources.MediaDevice? RendererDevice { get; set; }
+        public FfmpegToneMapGuard? ToneMapGuard { get; set; }
         public PlaybackRouteDecision Route { get; set; } = null!;
         // Set by StartSubtitles for an in-container image track: the FFmpeg source feeds the overlay.
         public int? SubtitleStreamIndex { get; set; }
@@ -76,6 +77,9 @@ public sealed partial class PlayerPage
         // Every accepted plan mounts here: the start, the failure replan and each seek reanchor.
         // The line carries protocol ids only (PlaybackPlanLog), never the URL or warning text.
         Log.Info("player: " + PlaybackPlanLog.Describe(attempt.Plan));
+        // Client-managed originals keep SDR HDMI; all other mounts retain native HDR policy.
+        var sdrOutput = !ConsoleToneMapPolicy.HasHdrOutput(attempt.Start!.ClientPlaybackContext.Output.HdrDetails);
+        var consoleToneMap = ConsoleToneMapPolicy.RequiresToneMap(attempt.Plan!, sdrOutput);
 #if DEBUG_SERVER
         if (attempt.PretendHdr)
         {
@@ -85,7 +89,7 @@ public sealed partial class PlayerPage
         }
         else
 #endif
-        if (DisplayHdrPolicy.RequiresHdr10(attempt.Plan!))
+        if (!consoleToneMap && DisplayHdrPolicy.RequiresHdr10(attempt.Plan!))
         {
 #if DEBUG_SERVER
             var hdrEnabled = attempt.MatchContentFrameRate
@@ -115,8 +119,11 @@ public sealed partial class PlayerPage
         {
             StartPosition = playerStart,
             StartPaused = paused,
-            Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled, attempt.ForceFfmpeg),
+            Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled, attempt.ForceFfmpeg,
+                sdrOutput: sdrOutput),
         };
+        if (media.Route.ConsoleToneMap && !media.Route.UseFfmpeg)
+            throw new InvalidDataException("An HDR original on SDR requires the FFmpeg tone-map route.");
         _delivery = transport.Delivery;
         _duration = transport.DurationSeconds;
         StartSubtitles(attempt, media);
@@ -192,6 +199,14 @@ public sealed partial class PlayerPage
 #endif
                 Log.Info("player: FFmpeg stream created; before item");
                 media.Item = media.FfmpegSource.CreateMediaPlaybackItem();
+                var guardToneMap = media.Route.ConsoleToneMap;
+#if DEBUG_SERVER
+                guardToneMap = attempt.FfmpegTuning.RequiresToneMapGuard(media.Route);
+#endif
+                if (guardToneMap)
+                    media.ToneMapGuard = new FfmpegToneMapGuard(media.FfmpegSource, () =>
+                        _ = DispatchAsync(() => QueueFailure(attempt, media, 0, isDecoder: false, isNetwork: false)));
+
                 // Low-frequency Starting only, no sample observer or rendering state changes.
                 media.RendererDevice = new PlaybackResources.MediaDevice(media.FfmpegSource);
 #if DEBUG_SERVER
@@ -462,6 +477,8 @@ public sealed partial class PlayerPage
         var rendererDevice = media.RendererDevice?.TakeForClose() ?? 0;
         media.RendererDevice = null;
         Cleanup("cancel mount", media.Cancellation.Cancel);
+        Cleanup("detach tone-map guard", () => media.ToneMapGuard?.Dispose());
+        media.ToneMapGuard = null;
         media.Opening.TrySetCanceled(media.Token);
         if (media.SelectedAudioTrack is { } audio)
             Cleanup("detach audio failure", () => audio.OpenFailed -= OnAudioTrackOpenFailed);

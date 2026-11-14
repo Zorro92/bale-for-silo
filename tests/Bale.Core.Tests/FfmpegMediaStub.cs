@@ -59,11 +59,20 @@ namespace FFmpegInteropX
 
 namespace Windows.Media.Core
 {
+    internal enum MediaStreamSourceErrorStatus { Other }
+
     internal sealed class MediaStreamSource
     {
         internal event Action<MediaStreamSource, MediaStreamSourceSampleRequestedEventArgs>? SampleRequested;
         internal int Observers => SampleRequested?.GetInvocationList().Length ?? 0;
-        internal void Request(object descriptor) => SampleRequested?.Invoke(this, new() { Request = new() { StreamDescriptor = descriptor } });
+        internal int Errors { get; private set; }
+        public void NotifyError(MediaStreamSourceErrorStatus status) => Errors++;
+        internal MediaStreamSourceSampleRequest Request(object descriptor)
+        {
+            var request = new MediaStreamSourceSampleRequest { StreamDescriptor = descriptor, Sample = new object() };
+            SampleRequested?.Invoke(this, new() { Request = request });
+            return request;
+        }
     }
 
     internal sealed class MediaStreamSourceSampleRequestedEventArgs
@@ -74,6 +83,7 @@ namespace Windows.Media.Core
     internal sealed class MediaStreamSourceSampleRequest
     {
         public object? StreamDescriptor { get; init; }
+        public object? Sample { get; set; }
     }
 
     internal sealed class VideoStreamDescriptor
@@ -106,6 +116,11 @@ namespace Bale.Xbox.Services
     internal static class FfmpegLogging
     {
         internal static void Configure() { }
+    }
+
+    internal static class ConsoleToneMapRuntime
+    {
+        internal static bool IsAvailable => true;
     }
 
     internal static class ZeroCopyRuntime

@@ -49,6 +49,15 @@ public class DisplayHdrOutputTests : IDisposable
     }
 
     [Fact]
+    public void EmptyModesDoNotEstablishAnSdrDisplayForToneMapping()
+    {
+        _hdmi.ReadModes = () => [];
+        var capabilities = DisplayHdrOutput.DetectCapabilities();
+        Assert.False(capabilities.Hdr.Hdr10);
+        Assert.Equal("unknown", capabilities.DisplayHdrEvidence);
+    }
+
+    [Fact]
     public void EnumerationFailureDiscardsTheDisplayClaim()
     {
         _hdmi.ReadModes = () => throw new InvalidOperationException("private diagnostic");

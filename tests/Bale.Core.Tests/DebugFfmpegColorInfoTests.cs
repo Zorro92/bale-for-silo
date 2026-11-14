@@ -94,13 +94,13 @@ public sealed class DebugFfmpegColorInfoTests
     {
         var options = new Dictionary<string, string> { ["colorinfo"] = "on", ["hdr"] = "off" };
         if (decoder is not null) options["decoder"] = decoder;
-        Assert.True(DebugFfmpegInputTuning.TryUpdate(new(), options, DebugFfmpegWrapperVersion.Value, out var tuning, out _));
+        Assert.True(DebugFfmpegInputTuning.TryUpdate(new(), options, FfmpegWrapperVersion.Value, out var tuning, out _));
         var config = FfmpegSource.Configuration(new(true, false, "vp9", "aac", 0, 1920, 1080), tuning);
         Assert.Equal("1", config.FFmpegOptions["bale_compressed_color_info"]);
         Assert.Equal(mode, config.Video.VideoDecoderMode.ToString());
         Assert.Equal(HdrSupport.Disabled, config.Video.HdrSupport);
         Assert.True(DebugFfmpegInputTuning.TryUpdate(tuning, new Dictionary<string, string> { ["decoder"] = "system" },
-            DebugFfmpegWrapperVersion.Value, out var next, out _));
+            FfmpegWrapperVersion.Value, out var next, out _));
         Assert.True(next.ColorInfo);
     }
 
@@ -110,9 +110,9 @@ public sealed class DebugFfmpegColorInfoTests
         var package = XDocument.Parse(Read("Bale.Xbox.csproj.txt")).Descendants("PackageReference")
             .Single(p => p.Attribute("Include")!.Value == "FFmpegInteropX.UWP.Lib").Attribute("Version")!.Value.Trim('[', ']');
         using var pin = JsonDocument.Parse(Read("ffmpeginteropx-wrapper.json"));
-        Assert.Equal(DebugFfmpegWrapperVersion.Value, pin.RootElement.GetProperty("version").GetString());
-        Assert.Equal(DebugFfmpegWrapperVersion.Value, package);
-        Assert.True(DebugFfmpegColorInfo.Supported(DebugFfmpegWrapperVersion.Value));
+        Assert.Equal(FfmpegWrapperVersion.Value, pin.RootElement.GetProperty("version").GetString());
+        Assert.Equal(FfmpegWrapperVersion.Value, package);
+        Assert.True(DebugFfmpegColorInfo.Supported(FfmpegWrapperVersion.Value));
         Assert.DoesNotContain("bale_compressed_color_info", FfmpegSource.Configuration(new(true, false, "vp9", "aac", 0, 1920, 1080)).FFmpegOptions.Keys);
         var production = DebugFfmpegDecoderTests.ProductionSource();
         Assert.DoesNotContain("ColorInfo", production);
@@ -120,7 +120,7 @@ public sealed class DebugFfmpegColorInfoTests
         var helper = Read("DebugFfmpegColorInfo.cs.txt");
         Assert.StartsWith("#if DEBUG_SERVER\n", helper);
         Assert.EndsWith("#endif\n", helper);
-        Assert.Contains("DebugFfmpegColorInfo.Apply(config, tuning, DebugFfmpegWrapperVersion.Value)", Read("FfmpegSource.cs.txt"));
+        Assert.Contains("DebugFfmpegColorInfo.Apply(config, tuning, FfmpegWrapperVersion.Value)", Read("FfmpegSource.cs.txt"));
         Assert.Contains("(\"FFmpeg colour info override\", media?.FfmpegColorInfoOverride ?? \"unavailable\")", Read("PlayerPage.Stats.cs.txt"));
         var media = Read("PlayerPage.Media.cs.txt");
         Assert.Contains("media.FfmpegColorInfoOverride = attempt.FfmpegTuning.ColorInfoOverride;", media);
