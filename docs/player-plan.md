@@ -1118,6 +1118,10 @@ Production HDR policy remains server tone mapping. See [GPU tone-map ABI and col
 including the reusable, binding-free `shaders/tonemap_math.hlsli`, 203-nit internal reference,
 Hable's explicit desat=0, and documented resampling/quantization differences.
 
+**Debug compressed colour info:** `ffmpeg-tune colorinfo=on|off|default` (wrapper .26+) maps container colour/HDR metadata to system-decoder video using the existing `HdrSupport`/`useHdr` rule; no `decoder=auto` requirement.
+It stays off in production until the owner verifies on an HDR TV. VP9 HDR motivates this: VP9 has no in-band colour/HDR info.
+`default` removes the key; the debug wrapper logs `Bale compressed colour info: transfer=.. primaries=.. matrix=.. range=.. hdr=..` (source policy, not proof of display HDR).
+
 Display HDR is detected at runtime on the UI thread at each player start, not inferred from the
 developer's SDR display or installed codecs. `DisplayHdrOutput` reads the supported HDMI modes;
 `DisplayHdrPolicy` claims HDR10 if any non-stereo mode supports SMPTE ST 2084 (PQ). ST 2086

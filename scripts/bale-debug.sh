@@ -31,7 +31,8 @@
 #   scripts/bale-debug.sh ffmpeg <mode>         next real-player attempt: policy (default)|direct|off; memory only, HLS unchanged
 #                                               direct: every direct mount demuxes with FFmpeg, video still system (hardware) decoded
 #   scripts/bale-debug.sh delivery [hls|auto]   next playback attempts: force HLS or restore auto (default); memory only until reset/restart; no args = status
-#   scripts/bale-debug.sh ffmpeg-tune [decoder=auto|system|software|default] [tonemap=off|bt2390|hable|default] [readahead=on|off|default] [readsize=N|default] [prefetch=N|default] [buffer=ms|default] [ahead=N|default] [delay=N|default] [prio=N|default] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|gpu|off|on|default]
+#   scripts/bale-debug.sh ffmpeg-tune [decoder=auto|system|software|default] [tonemap=off|bt2390|hable|default] [colorinfo=on|off|default] [readahead=on|off|default] [readsize=N|default] [prefetch=N|default] [buffer=ms|default] [ahead=N|default] [delay=N|default] [prio=N|default] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|gpu|off|on|default]
+#                                               colorinfo on/off = compressed system-video colour/HDR metadata, wrapper 2.1.0-bale.26+; default removes the key; no decoder override required
 #                                               hdr on/off = FFmpegInteropX HdrSupport Enabled/Disabled; hdr default = Automatic
 #                                               no args = current overrides; omitted keys unchanged; default restores that key's release setting
 #                                               next FFmpeg player attempt only; on = 64 MiB / 30 s, readsize 16384–1048576 bytes, prefetch 2–16 blocks, buffer = MediaStreamSource.BufferTime 0–5000 ms (FFmpegInteropX sets 0)
@@ -326,7 +327,7 @@ case "${1:-}" in
       case "$option" in
         tonemap=*) [[ "$value" =~ ^(off|bt2390|hable|default)$ ]] && valid_tuning=true ;;
         decoder=*) [[ "$value" =~ ^(auto|system|software|default)$ ]] && valid_tuning=true ;;
-        readahead=*|hdr=*) [[ "$value" =~ ^(on|off|default)$ ]] && valid_tuning=true ;;
+        readahead=*|hdr=*|colorinfo=*) [[ "$value" =~ ^(on|off|default)$ ]] && valid_tuning=true ;;
         readsize=*)
           if [[ "$value" == default ]] || { [[ "$value" =~ ^[0-9]{1,7}$ ]] && (( 10#$value >= 16384 && 10#$value <= 1048576 )); }; then valid_tuning=true; fi
           ;;
@@ -343,7 +344,8 @@ case "${1:-}" in
         grain=*) [[ "$value" =~ ^(dav1d|gpu|off|on|default)$ ]] && valid_tuning=true ;;
       esac
       if [[ "$valid_tuning" != true ]] || [[ -n "${ffmpeg_tune_seen[$name]:-}" ]]; then
-        echo 'usage: scripts/bale-debug.sh ffmpeg-tune [decoder=auto|system|software|default] [tonemap=off|bt2390|hable|default] [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] [ahead=0..64|default] [delay=0..64|default] [prio=0..2|default] [maxres=0|1|default] [dpb=0..16|default] (system video only, 0=unset) [hdr=on|off|default] (default=Automatic) [grain=dav1d|gpu|off|on|default] (software video only); any order, no duplicates; no args = status; default restores release settings' >&2
+        echo 'usage: scripts/bale-debug.sh ffmpeg-tune [decoder=auto|system|software|default] [tonemap=off|bt2390|hable|default] [colorinfo=on|off|default] [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] [ahead=0..64|default] [delay=0..64|default] [prio=0..2|default] [maxres=0|1|default] [dpb=0..16|default] (system video only, 0=unset) [hdr=on|off|default] (default=Automatic) [grain=dav1d|gpu|off|on|default] (software video only); any order, no duplicates; no args = status; default restores release settings' >&2
+        echo 'colour info override: compressed system-video colour/HDR metadata, wrapper 2.1.0-bale.26+; no decoder override required; default removes the key' >&2
         echo 'tone map override: requires decoder=auto in the same tuning and wrapper 2.1.0-bale.25+; older packages reject it without changing tuning; default removes the key' >&2
         echo 'decoder override: debug-only, next FFmpeg route only (ffmpeg direct forces it outside HLS); auto=FFmpeg d3d11va or software fallback, system=system decoder, software=FFmpeg software, default=production choice; auto keeps upstream software/decode-ahead defaults' >&2
         echo 'software video defaults: ahead=16, buffer=1000 ms, delay unset; above 1080p (width >1920 or height >1080) ahead=8, buffer=500 ms, delay=6; prio unset (0=off, 1=above normal, 2=highest); system video defaults: maxres/dpb unset' >&2

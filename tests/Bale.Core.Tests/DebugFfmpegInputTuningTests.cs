@@ -500,6 +500,29 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["tonemap"] = "default", ["decoder"] = "default" }, out _));
     }
 
+    [Fact]
+    public void ColorInfoEndpointPublishesCapturedTuningAndRejectsInvalidUpdatesAtomically()
+    {
+        Set(new(ReadAhead: true));
+        var before = DebugFfmpegInputTuning.Current;
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["colorinfo"] = "on" }, out var captured, out var error));
+        Assert.Null(error);
+        Assert.Null(before.ColorInfo);
+        Assert.True(captured.ColorInfo);
+        Assert.Same(captured, DebugFfmpegInputTuning.Current);
+        Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "1500", ["colorinfo"] = "invalid" }, out var rejected, out error));
+        Assert.Same(captured, rejected);
+        Assert.Same(captured, DebugFfmpegInputTuning.Current);
+        Assert.Contains("colorinfo=on|off|default", error);
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["decoder"] = "system", ["colorinfo"] = "off" }, out var next));
+        Assert.False(next.ColorInfo);
+        Assert.True(captured.ColorInfo);
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["colorinfo"] = "default" }, out var cleared));
+        Assert.Null(cleared.ColorInfo);
+        Assert.Equal(DebugFfmpegDecoder.System, cleared.Decoder);
+        Assert.True(cleared.ReadAhead);
+    }
+
     private static void Set(DebugFfmpegInputTuning tuning) => Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string>
     {
         ["readahead"] = tuning.ReadAhead is { } enabled ? enabled ? "on" : "off" : "default",
@@ -515,6 +538,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         ["hdr"] = tuning.HdrSupport is { } hdr ? hdr ? "on" : "off" : "default",
         ["decoder"] = tuning.DecoderOverride,
         ["tonemap"] = tuning.ToneMapOverride,
+        ["colorinfo"] = tuning.ColorInfoOverride,
     }, out _));
 
     [Fact]

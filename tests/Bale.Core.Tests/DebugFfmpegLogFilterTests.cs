@@ -25,6 +25,7 @@ public class DebugFfmpegLogFilterTests
     [InlineData("Bale D3D11 upload active.", "ffmpeg: Bale D3D11 upload active.")]
     [InlineData("Bale D3D11 upload Map failed (hr=0x80070057).\n", "ffmpeg: Bale D3D11 upload Map failed (hr=0x80070057).")]
     [InlineData("Bale D3D11 upload Processed index=1.\r\n\r\n", "ffmpeg: Bale D3D11 upload Processed index=1.")]
+    [InlineData("Bale compressed colour info: transfer=16 primaries=9 matrix=9 range=1 hdr=1\n", "ffmpeg: Bale compressed colour info: transfer=16 primaries=9 matrix=9 range=1 hdr=1")]
     [InlineData("Bale diagnostic \n", "ffmpeg: Bale diagnostic ")]
     public void ForwardsBaleDiagnosticsWithATagAndOnlyTrimsTrailingNewlines(string message, string expected)
     {

@@ -10,7 +10,7 @@ internal enum DebugFfmpegDecoder { Auto, System, Software }
 internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadSize = null, int? Prefetch = null, int? BufferMs = null,
     int? DecodeAheadFrames = null, int? Dav1dMaxFrameDelay = null, int? DecodeThreadPriority = null,
     int? DecoderUseMaxResolution = null, int? DecoderMaxDpbCount = null, DebugFilmGrain? FilmGrain = null, bool? HdrSupport = null,
-    DebugFfmpegDecoder? Decoder = null, DebugToneMap? ToneMap = null)
+    DebugFfmpegDecoder? Decoder = null, DebugToneMap? ToneMap = null, bool? ColorInfo = null)
 {
     internal const int MinimumReadSize = 16 * 1024;
     internal const int MaximumReadSize = 1024 * 1024;
@@ -19,7 +19,7 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
     // Keep the extra native packet queue below its 100 MB / 60 s defaults on Xbox.
     internal const long ReadAheadCapBytes = 64L * 1024 * 1024;
     internal static readonly TimeSpan ReadAheadCapDuration = TimeSpan.FromSeconds(30);
-    internal const string Usage = "expected [decoder=auto|system|software|default] (debug-only FFmpeg route; auto=FFmpeg D3D11 or software fallback; default=production decoder) [tonemap=off|bt2390|hable|default] (requires decoder=auto in the same tuning and wrapper 2.1.0-bale.25+) [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [delay=0..64|default] [prio=0..2|default] (0=off, 1=above normal, 2=highest) [maxres=0|1|default] [dpb=0..16|default] (system video only; 0=unset) [hdr=on|off|default] (default=Automatic) [grain=dav1d|gpu|off|on|default] (software video only; default=gpu (production), on/dav1d=dav1d, gpu=GPU, off=export-only; wrapper 2.1.0-bale.10+); software AV1 is fixed to zero-copy direct write (upload variant 6, wrapper 2.1.0-bale.17+); omitted keys keep their overrides; default restores the release setting (buffer=1000 for software video; software video: ahead=16, buffer=1000 ms, delay unset; above 1080p ahead=8, buffer=500 ms, delay=6; prio unset; system video: maxres/dpb unset)";
+    internal const string Usage = "expected [decoder=auto|system|software|default] (debug-only FFmpeg route; auto=FFmpeg D3D11 or software fallback; default=production decoder) [tonemap=off|bt2390|hable|default] (requires decoder=auto in the same tuning and wrapper 2.1.0-bale.25+) [colorinfo=on|off|default] (compressed system-video colour/HDR metadata; wrapper 2.1.0-bale.26+) [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [delay=0..64|default] [prio=0..2|default] (0=off, 1=above normal, 2=highest) [maxres=0|1|default] [dpb=0..16|default] (system video only; 0=unset) [hdr=on|off|default] (default=Automatic) [grain=dav1d|gpu|off|on|default] (software video only; default=gpu (production), on/dav1d=dav1d, gpu=GPU, off=export-only; wrapper 2.1.0-bale.10+); software AV1 is fixed to zero-copy direct write (upload variant 6, wrapper 2.1.0-bale.17+); omitted keys keep their overrides; default restores the release setting (buffer=1000 for software video; software video: ahead=16, buffer=1000 ms, delay unset; above 1080p ahead=8, buffer=500 ms, delay=6; prio unset; system video: maxres/dpb unset)";
     private static readonly object Gate = new();
     private static DebugFfmpegInputTuning _current = new();
 
@@ -34,6 +34,8 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
     };
 
     internal string ToneMapOverride => DebugFfmpegToneMap.Name(ToneMap);
+
+    internal string ColorInfoOverride => DebugFfmpegColorInfo.Name(ColorInfo);
 
     // Auto can fall back after starting; it must retain upstream defaults rather than pre-enable
     // AV1's zero-copy path, decode-ahead or delivery observer on a potential D3D11 provider.
@@ -56,7 +58,8 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
         + (HdrSupport is { } hdr ? $" hdr={(hdr ? "on" : "off")}" : "")
         + (FilmGrain is { } grain ? " grain=" + DebugFfmpegPlaytest.GrainName(grain) : "")
         + (Decoder is not null ? $" decoder={DecoderOverride}" : "")
-        + (ToneMap is not null ? $" tonemap={ToneMapOverride}" : "");
+        + (ToneMap is not null ? $" tonemap={ToneMapOverride}" : "")
+        + (ColorInfo is not null ? $" colorinfo={ColorInfoOverride}" : "");
 
     internal static bool TrySet(IReadOnlyDictionary<string, string> options, out DebugFfmpegInputTuning tuning)
         => TrySet(options, out tuning, out _);
@@ -78,7 +81,8 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
         string wrapperVersion, out DebugFfmpegInputTuning next, out string? error)
     {
         var valid = ParseUpdate(current, options, out next);
-        error = valid ? DebugFfmpegToneMap.ValidationError(next, wrapperVersion) : Usage;
+        error = valid ? DebugFfmpegToneMap.ValidationError(next, wrapperVersion)
+            ?? DebugFfmpegColorInfo.ValidationError(next, wrapperVersion) : Usage;
         if (!valid || error is not null) { next = current; return false; }
         return true;
     }
@@ -91,6 +95,10 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
         {
             switch (key)
             {
+                case "colorinfo":
+                    if (value is not ("on" or "off" or "default")) return false;
+                    next = next with { ColorInfo = value == "default" ? null : value == "on" };
+                    break;
                 case "tonemap":
                     if (value is not ("off" or "bt2390" or "hable" or "default")) return false;
                     next = next with { ToneMap = value switch

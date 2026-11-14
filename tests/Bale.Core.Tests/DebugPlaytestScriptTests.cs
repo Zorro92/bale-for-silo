@@ -1119,6 +1119,47 @@ public class DebugPlaytestScriptTests
     }
 
     [Theory]
+    [InlineData("on")]
+    [InlineData("off")]
+    [InlineData("default")]
+    public async Task ColorInfoTuningPostsWithoutADecoderOverrideAndIsNotAProbeOption(string value)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["ffmpeg-tune", "colorinfo=" + value]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("-X\nPOST\n", result.Arguments);
+        Assert.Contains("/ffmpeg-tune\n", result.Arguments);
+        Assert.Contains("--data-urlencode\ncolorinfo=" + value + "\n", result.Arguments);
+        Assert.DoesNotContain("decoder=", result.Arguments);
+        var probe = await RunAsync(["playtest-ffmpeg", "https://example.org/clip", "3", "system", "colorinfo=" + value]);
+        Assert.Equal(2, probe.ExitCode);
+        Assert.Empty(probe.Arguments);
+    }
+
+    [Theory]
+    [InlineData("ON")]
+    [InlineData("1")]
+    [InlineData("true")]
+    [InlineData("")]
+    [InlineData("off ")]
+    public async Task InvalidOrDuplicateColorInfoTuningNeverInvokesCurl(string value)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[] {
+            new[] { "ffmpeg-tune", "colorinfo=" + value },
+            new[] { "ffmpeg-tune", "colorinfo=on", "colorinfo=default" },
+        })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+            Assert.Contains("colorinfo=on|off|default", result.Output);
+            Assert.Contains("2.1.0-bale.26+", result.Output);
+            Assert.Contains("no decoder override required", result.Output);
+        }
+    }
+
+    [Theory]
     [InlineData("open", false)]
     [InlineData("play", true)]
     public async Task DirectNavigationEncodesTheIdentityFileAndSourceStart(string command, bool play)
