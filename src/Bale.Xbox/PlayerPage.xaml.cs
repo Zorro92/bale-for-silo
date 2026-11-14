@@ -429,7 +429,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 return;
             }
             if (failedRoute?.ConsoleToneMap == true && ConsoleToneMapPolicy.RequiresToneMap(attempt.Plan,
-                !ConsoleToneMapPolicy.HasHdrOutput(attempt.Start.ClientPlaybackContext.Output.HdrDetails)))
+                !ConsoleToneMapPolicy.HasHdrOutput(attempt.Start.ClientPlaybackContext.Output.HdrDetails), attempt.Request.Detail.Versions))
             {
                 // Do not retry a failed local stage if the server ignored claim withdrawal.
                 await ShowErrorAsync(PlaybackMessages.PlaybackFailed);

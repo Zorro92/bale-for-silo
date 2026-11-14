@@ -14,7 +14,8 @@ public sealed record PlaybackRouteDecision(bool UseFfmpeg, bool SoftwareVideo, s
 public static class PlaybackRoutePolicy
 {
     /// <param name="forceFfmpeg">Debug A/B only: demux every direct mount with FFmpeg, keeping system video decode.</param>
-    public static PlaybackRouteDecision Decide(PlaybackPlan plan, bool isHls, bool ffmpegEnabled = true, bool forceFfmpeg = false, bool sdrOutput = false)
+    public static PlaybackRouteDecision Decide(PlaybackPlan plan, bool isHls, bool ffmpegEnabled = true, bool forceFfmpeg = false,
+        bool sdrOutput = false, IReadOnlyList<FileVersion>? versions = null)
     {
         var delivery = plan.Delivery?.ToLowerInvariant();
         var original = delivery == "original_http";
@@ -43,7 +44,7 @@ public static class PlaybackRoutePolicy
         var dv7 = DolbyVision7Policy.RequiresBaseLayer(plan);
         var dolbyVisionBaseLayer = dv7 || original && string.Equals(plan.DecisionReason,
             PlaybackProtocol.ClientDolbyVision8BaseLayerReason, StringComparison.OrdinalIgnoreCase);
-        var toneMap = ConsoleToneMapPolicy.RequiresToneMap(plan, sdrOutput);
+        var toneMap = ConsoleToneMapPolicy.RequiresToneMap(plan, sdrOutput, versions);
         var ffmpeg = ffmpegEnabled && direct && !hls
             && (softwareVideo || softwareAudio || matroska || demuxedVideo || dolbyVisionBaseLayer || forceFfmpeg || toneMap);
         return new(ffmpeg, ffmpeg && softwareVideo, video, audio, ordinal, width, height, ffmpeg && dolbyVisionBaseLayer, toneMap, dv7);

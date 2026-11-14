@@ -60,7 +60,7 @@ public static class ConsoleToneMapPolicy
     }
 
     /// <summary>Protect even unexpected HDR originals; never let the native container source present them on SDR.</summary>
-    public static bool RequiresToneMap(PlaybackPlan plan, bool sdrOutput)
+    public static bool RequiresToneMap(PlaybackPlan plan, bool sdrOutput, IReadOnlyList<FileVersion>? versions = null)
     {
         if (!sdrOutput || !string.Equals(plan.Delivery, "original_http", StringComparison.OrdinalIgnoreCase)) return false;
         // The existing DV 8.2 fallback explicitly promises an SDR base layer, not HDR pixels.
@@ -70,6 +70,31 @@ public static class ConsoleToneMapPolicy
         return string.Equals(plan.DecisionReason, PlaybackProtocol.ClientManagedDynamicRangeReason, StringComparison.OrdinalIgnoreCase)
             || plan.Source?.DynamicRange?.Trim().ToLowerInvariant() is not (null or "" or "sdr")
             || plan.Source?.DolbyVisionProfile is > 0 || plan.Source?.Hdr10Plus == true
-            || plan.Claims?.Video is { } video && (video.Hdr10 == true || video.Hdr10Plus == true || video.Hlg == true || video.DolbyVision == true);
+            || plan.Claims?.Video is { } video && (video.Hdr10 == true || video.Hdr10Plus == true || video.Hlg == true || video.DolbyVision == true)
+            || IsWideGamutSdrOriginal(plan, versions);
+    }
+
+    private static bool IsWideGamutSdrOriginal(PlaybackPlan plan, IReadOnlyList<FileVersion>? versions)
+    {
+        var source = plan.Source;
+        if (source is null || !string.Equals(source.DynamicRange?.Trim(), "sdr", StringComparison.OrdinalIgnoreCase)) return false;
+        // The plan has codec/depth but no primaries/matrix. Join catalog colour facts to the
+        // file actually delivered, never the requested version when the planner substituted one.
+        var fileId = plan.EffectiveMediaFileId ?? source.MediaFileId;
+        var version = fileId is null ? null : versions?.FirstOrDefault(version => version.FileId == fileId);
+        if (version?.VideoTracks is not { Count: 1 } tracks) return false;
+        var track = tracks[0];
+        var codec = SoftwareDecodePolicy.NormalizeCodec(source.VideoCodec ?? track.Codec ?? version.CodecVideo);
+        if (codec is not ("hevc" or "vp9") || (source.BitDepth ?? track.BitDepth) != 10
+            || track.BitDepth is not (null or 10)) return false;
+        if (!string.IsNullOrWhiteSpace(track.PixelFormat)
+            && track.PixelFormat.Trim().ToLowerInvariant() is not ("yuv420p10le" or "p010le")) return false;
+        var primaries = track.ColorPrimaries?.Trim().ToLowerInvariant();
+        var matrix = track.ColorSpace?.Trim().ToLowerInvariant();
+        // bale.29 chooses PQ/HLG tone mapping or true SDR gamut conversion from each frame.
+        // Either explicit BT.2020 primaries or an uncontradicted NCL matrix arms that stage;
+        // the existing live output guard rejects any format the wrapper cannot convert.
+        return (primaries is "bt2020" or "9") && (matrix is null or "" or "bt2020nc" or "9")
+            || (primaries is null or "") && (matrix is "bt2020nc" or "9");
     }
 }

@@ -1209,9 +1209,8 @@ explicit 10-bit PQ/HLG transfer, and BT.2020 primaries with a BT.2020 non-consta
 (or BT.709 primaries/matrix for PQ).
 DV profile 8.1/8.4 requires explicit DV configuration/presence and a compatible HDR10/HLG base
 layer; profile 7 requires its HDR10 base layer. RPU and profile 7 enhancement pixels are ignored. DV profile 5, AV1/dav1d
-(no tone-map stage), SDR including BT.2020 SDR, missing/ambiguous facts, unavailable stages and
-unknown display evidence keep server planning. The stage itself also supports BT.2020 SDR;
-this production HDR claim deliberately does not expand to it yet.
+(no tone-map stage), SDR, missing/ambiguous facts, unavailable stages and
+unknown display evidence keep server planning. The production HDR claim does not expand to SDR.
 
 Bale sends `client_managed_dynamic_range_v1` only in `original_http.validated_claims`, as
 silo-apple does. silo-server can then return the untouched original with decision reason
@@ -1231,6 +1230,16 @@ Working codec claims, track selections and attempt identity survive. A second fa
 there is no retry loop. Container/bitstream colour disagreement may trigger this fallback even when
 the selected version's catalog metadata looked eligible. Native MediaPlayer's container source
 never presents an HDR original on SDR.
+
+An SDR-labelled original also arms this executor when the played file is HEVC/VP9 10-bit with
+BT.2020 primaries (or an uncontradicted BT.2020 NCL matrix). The plan supplies codec/depth and the
+effective file id; that id joins the selected video track's catalog colour facts, never another
+version's facts. Known pixel formats must fit 4:2:0 P010 and the video inventory must be unambiguous.
+No extra server claim is needed because the original bytes are already delivered. Wrapper bale.29
+decides per frame: PQ/HLG gets BT.2390 tone mapping; true BT.2020 SDR gets BT.2020→BT.709 gamut
+conversion. BT.709 SDR, 8-bit sources and HDR displays keep their existing routes. The same decoder
+and NV12 BT.709 output guards, single recovery replan and debug overrides apply; a replacement
+that still needs the failed stage is rejected rather than retried.
 
 Stats show `HDR output: SDR / console tone map` for this route and the existing plan reason reads
 `player handles HDR`. Debug tuning is still captured per attempt: `tonemap=off|hable` and
@@ -1419,6 +1428,10 @@ Done (0.1.509, wrapper bale.29): bale_gpu decodes HLG through the BT.2100 invers
 container signals BT.2020. On the console (decoder=auto, tonemap=bt2390) the HLG frame plays direct and
 looks correct: median luma 100 vs 65 and saturation 0.27 vs 0.17 against the untone-mapped default, with
 highlight detail kept. A container that tags BT.709 over an HLG stream stays ineligible (not seen yet).
+
+The default executor now arms that same stage for SDR-labelled 10-bit BT.2020 HEVC/VP9 originals
+on SDR output, covering this container/bitstream mismatch without changing Silo's range claim.
+The per-frame transfer chooses the HLG/PQ or true SDR branch; stats say console tone map.
 
 Microsoft's media pipeline exposes no tone-mapping algorithm or parameter controls.
 FFmpegInteropX's `SetFFmpegVideoFilters` is not a practical alternative: filters run on the CPU,

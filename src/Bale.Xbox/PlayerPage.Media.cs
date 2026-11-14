@@ -80,7 +80,7 @@ public sealed partial class PlayerPage
         Log.Info("player: " + PlaybackPlanLog.Describe(attempt.Plan));
         // Client-managed originals keep SDR HDMI; all other mounts retain native HDR policy.
         var sdrOutput = !ConsoleToneMapPolicy.HasHdrOutput(attempt.Start!.ClientPlaybackContext.Output.HdrDetails);
-        var consoleToneMap = ConsoleToneMapPolicy.RequiresToneMap(attempt.Plan!, sdrOutput);
+        var consoleToneMap = ConsoleToneMapPolicy.RequiresToneMap(attempt.Plan!, sdrOutput, attempt.Request.Detail.Versions);
 #if DEBUG_SERVER
         if (attempt.PretendHdr)
         {
@@ -121,7 +121,7 @@ public sealed partial class PlayerPage
             StartPosition = playerStart,
             StartPaused = paused,
             Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled, attempt.ForceFfmpeg,
-                sdrOutput: sdrOutput),
+                sdrOutput: sdrOutput, versions: attempt.Request.Detail.Versions),
         };
         if (media.Route.ConsoleToneMap && !media.Route.UseFfmpeg)
             throw new InvalidDataException("An HDR original on SDR requires the FFmpeg tone-map route.");
