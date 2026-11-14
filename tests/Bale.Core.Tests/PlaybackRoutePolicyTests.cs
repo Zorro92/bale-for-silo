@@ -87,11 +87,23 @@ public class PlaybackRoutePolicyTests
     [InlineData("ac3")]
     [InlineData("eac3")]
     [InlineData("mp3")]
-    [InlineData("pcm")]
-    [InlineData("pcm_s24le")]
     [InlineData("EC-3")]
     public void SystemAudioNeverMovesOrdinaryHevcOntoFfmpeg(string audio) =>
         Assert.False(PlaybackRoutePolicy.Decide(Plan("original_http", "hevc", audio), false).UseFfmpeg);
+
+    // LPCM and MP2 were never verified in Windows' own MP4 source: FFmpeg decodes them.
+    [Theory]
+    [InlineData("pcm")]
+    [InlineData("pcm_s24le")]
+    [InlineData("pcm_bluray")]
+    [InlineData("mp2")]
+    public void PcmAndMp2DecodeInFfmpeg(string audio)
+    {
+        var route = PlaybackRoutePolicy.Decide(Plan("original_http", "hevc", audio), false);
+        Assert.True(route.UseFfmpeg);
+        Assert.True(route.SoftwareAudio);
+        Assert.False(route.SoftwareVideo);
+    }
 
     [Fact]
     public void HlsDetectionAndDebugOffAlwaysOverrideCodecPolicy()

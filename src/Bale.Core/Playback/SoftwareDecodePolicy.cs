@@ -19,10 +19,19 @@ public static class SoftwareDecodePolicy
     public static IReadOnlyList<string> DemuxedVideoCodecs { get; } = Array.AsReadOnly(new[] { "vp9", "vc1", "mpeg2video" });
 
     // Measured Media Foundation playback, not merely installed decoder registrations.
-    public static IReadOnlyList<string> SystemAudioCodecs { get; } = Array.AsReadOnly(new[] { "aac", "ac3", "eac3", "mp3", "pcm" });
+    public static IReadOnlyList<string> SystemAudioCodecs { get; } = Array.AsReadOnly(new[] { "aac", "ac3", "eac3", "mp3" });
 
     // silo-server capabilities_v3.go normalizeCodecV3 / protocol_v3.go spellings. Decode, not passthrough.
-    public static IReadOnlyList<string> AudioCodecs { get; } = Array.AsReadOnly(new[] { "dts", "dts_hd", "truehd", "flac", "opus", "vorbis", "alac" });
+    // The server compares audio claims to the stored ffprobe codec name exactly (after lowercasing),
+    // so LPCM needs each pcm_* spelling. PCM and MPEG-1 Layer II decode in FFmpeg: Windows' own MP4
+    // source was never verified with LPCM or MP2, so those files take the FFmpeg route like DTS.
+    // "pcm" is the route's normalized name for every pcm_* (NormalizeCodec).
+    public static IReadOnlyList<string> AudioCodecs { get; } = Array.AsReadOnly(new[]
+    {
+        "dts", "dts_hd", "truehd", "flac", "opus", "vorbis", "alac", "mp2",
+        "pcm", "pcm_s16le", "pcm_s16be", "pcm_s24le", "pcm_s24be", "pcm_s32le", "pcm_s32be",
+        "pcm_f32le", "pcm_f32be", "pcm_f64le", "pcm_f64be", "pcm_u8", "pcm_bluray", "pcm_dvd",
+    });
 
     public static string? NormalizeCodec(string? codec) => codec?.Trim().ToLowerInvariant() switch
     {
@@ -83,7 +92,8 @@ public static class SoftwareDecodePolicy
         // own codec only when that codec exists here solely through this FFmpeg route (VP9).
         bool KeepVideo(string codec) => route.SoftwareVideo ? !VideoCodecs.Contains(codec)
             : codec != route.VideoCodec || !DemuxedVideoCodecs.Contains(codec);
-        bool KeepAudio(string codec) => !route.SoftwareAudio || codec != route.AudioCodec;
+        // Claims carry exact spellings (pcm_s24le); the route carries the normalized one (pcm).
+        bool KeepAudio(string codec) => !route.SoftwareAudio || NormalizeCodec(codec) != route.AudioCodec;
         var capabilities = start.ClientCapabilities with
         {
             CodecsVideo = start.ClientCapabilities.CodecsVideo.Where(KeepVideo).ToArray(),

@@ -91,7 +91,7 @@ public class PlaybackCapabilitiesTests
             Assert.Equal(1920, decode.MaxWidth);
             Assert.Equal(1080, decode.MaxHeight);
             Assert.Equal(60, decode.MaxFrameRate);
-            Assert.Equal(25000, decode.MaxBitrateKbps);
+            Assert.Null(decode.MaxBitrateKbps);
             Assert.True(decode.Hardware);
         });
         var baseline = Assert.Single(ConsoleEvidence.Default.VideoDecode, decode => decode.Codec == "av1");

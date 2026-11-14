@@ -104,8 +104,8 @@ public static class ConsoleEvidence
         {
             // No decoder report to go on: the sizes MP4 playback was verified at on the console
             // (docs/player-plan.md), H.264 8-bit and HEVC 8/10-bit.
-            claims.Add(new("h264", "Media Foundation", [], [], [8], 1920, 1080, 60, 25000, true));
-            claims.Add(new("hevc", "Media Foundation", [], [], [8, 10], 1920, 1080, 60, 25000, true));
+            claims.Add(new("h264", "Media Foundation", [], [], [8], 1920, 1080, 60, null, true));
+            claims.Add(new("hevc", "Media Foundation", [], [], [8, 10], 1920, 1080, 60, null, true));
         }
         else
         {
@@ -113,6 +113,16 @@ public static class ConsoleEvidence
             // Auto's version choice (DisplayVersionMatch), never a smaller claim.
             AddHardware("h264", hardware.H264, null);
             AddHardware("hevc", hardware.HevcMain, hardware.HevcMain10);
+            // A partial probe keeps what it measured and gives the H.264/HEVC depths it did not measure
+            // the same fixed 1080p baseline entries as a failed probe; a complete probe that found no
+            // decoder is trusted as it is.
+            if (hardware.Partial)
+            {
+                var hevcDepths = new[] { (8, hardware.HevcMain), (10, hardware.HevcMain10) }
+                    .Where(pair => pair.Item2 is null).Select(pair => pair.Item1).ToArray();
+                if (hardware.H264 is null) claims.Add(new("h264", "Media Foundation", [], [], [8], 1920, 1080, 60, null, true));
+                if (hevcDepths.Length > 0) claims.Add(new("hevc", "Media Foundation", [], [], hevcDepths, 1920, 1080, 60, null, true));
+            }
             AddHardware("vp9", hardware.Vp9Profile0, hardware.Vp9Profile2);
             // FFmpegInteropX's compressed providers feed WVC1/MPEG2 to Media Foundation, like
             // VP9. Only the console's matching NV12 VLD profile admits these original-file paths.

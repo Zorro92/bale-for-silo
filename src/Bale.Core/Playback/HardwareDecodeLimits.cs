@@ -26,6 +26,19 @@ public sealed record HardwareDecodeLimits(DecodeSize? H264 = null, DecodeSize? H
     public const int Nv12 = 103;
     public const int P010 = 104;
 
+    /// <summary>
+    /// The probe walk failed part-way (one profile or the rest of the walk). Its measured profiles are
+    /// kept; H.264/HEVC that it did not measure fall back to the fixed 1080p baseline instead of being
+    /// treated as absent (ConsoleEvidence.BuildVideoDecode).
+    /// </summary>
+    public bool Partial { get; init; }
+
+    /// <summary>A short log name for a claimable decoder profile, or "other".</summary>
+    public static string ProfileName(Guid profile) =>
+        profile == H264Profile ? "h264" : profile == HevcMainProfile ? "hevc-main" : profile == HevcMain10Profile ? "hevc-main10"
+        : profile == Vp9Profile0Profile ? "vp9-profile0" : profile == Vp9Profile2Profile ? "vp9-profile2"
+        : profile == Vc1Profile ? "vc1" : profile == Mpeg2Profile ? "mpeg2" : "other";
+
     /// <summary>True when no claimable profile reported a size.</summary>
     public bool IsEmpty => H264 is null && HevcMain is null && HevcMain10 is null && Vp9Profile0 is null && Vp9Profile2 is null
         && Vc1 is null && Mpeg2 is null;

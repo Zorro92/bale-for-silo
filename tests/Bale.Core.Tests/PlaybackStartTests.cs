@@ -196,7 +196,9 @@ public class PlaybackStartTests
         var caps = json.RootElement.GetProperty("client_capabilities");
         Assert.Equal(new[] { "mp4", "mkv" }, Strings(caps.GetProperty("containers")));
         Assert.Equal(new[] { "h264", "hevc", "av1" }, Strings(caps.GetProperty("codecs_video")));
-        Assert.Equal(new[] { "aac", "ac3", "eac3", "mp3", "pcm", "dts", "dts_hd", "truehd", "flac", "opus", "vorbis", "alac" }, Strings(caps.GetProperty("codecs_audio")));
+        Assert.Equal(SoftwareDecodePolicy.SystemAudioCodecs.Concat(SoftwareDecodePolicy.AudioCodecs), Strings(caps.GetProperty("codecs_audio")));
+        Assert.Contains("pcm_s24le", Strings(caps.GetProperty("codecs_audio")));
+        Assert.Contains("mp2", Strings(caps.GetProperty("codecs_audio")));
         Assert.False(caps.GetProperty("hdr").GetBoolean());
         Assert.Empty(caps.GetProperty("audio_passthrough").GetProperty("passthrough_codecs").EnumerateArray());
         Assert.Equal("platform_attested", caps.GetProperty("video_evidence").GetString());
@@ -213,7 +215,7 @@ public class PlaybackStartTests
             Assert.Equal(1920, entry.GetProperty("max_width").GetInt32());
             Assert.Equal(1080, entry.GetProperty("max_height").GetInt32());
             Assert.Equal(60, entry.GetProperty("max_frame_rate").GetDouble());
-            Assert.Equal(25000, entry.GetProperty("max_bitrate_kbps").GetInt32());
+            Assert.True(!entry.TryGetProperty("max_bitrate_kbps", out var bitrate) || bitrate.ValueKind == JsonValueKind.Null);
             Assert.True(entry.GetProperty("hardware").GetBoolean());
         });
         var av1 = videoDecode[2];

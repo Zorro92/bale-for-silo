@@ -15,8 +15,13 @@ internal static class HardwareDecodeProbe
 
     internal sealed record ProfileFormats(Guid Profile, IReadOnlyList<FormatSizes> Formats);
 
-    /// <summary>What the walk got through. Error is the failing HRESULT; the earlier parts stay filled in.</summary>
-    internal sealed record Report(int? FeatureLevel, uint? ProfileCount, IReadOnlyList<ProfileFormats> Profiles, int? Error);
+    /// <summary>
+    /// What the walk got through. Error is a HRESULT that stopped the whole walk (device, video device
+    /// or profile count); the earlier parts stay filled in. ProfileErrors are single profiles whose
+    /// query failed: the walk skips them and carries on.
+    /// </summary>
+    internal sealed record Report(int? FeatureLevel, uint? ProfileCount, IReadOnlyList<ProfileFormats> Profiles, int? Error,
+        IReadOnlyList<(uint Index, Guid? Profile, int HResult)>? ProfileErrors = null);
 
     // DXGI_FORMAT_NV12 and DXGI_FORMAT_P010: 8-bit and 10-bit 4:2:0 decoder output.
     internal static readonly (string Name, int Format)[] OutputFormats =
@@ -46,19 +51,23 @@ internal static class HardwareDecodeProbe
         try
         {
             var report = Enumerate();
+            // HRESULTs only, never exception text.
+            foreach (var (index, profile, hr) in report.ProfileErrors ?? [])
+                Log.Info($"decode probe: profile {index} {(profile is { } guid ? HardwareDecodeLimits.ProfileName(guid) : "unknown")} failed hr=0x{unchecked((uint)hr):X8}; skipped");
             if (report.Error is { } error)
-            {
-                // The HRESULT only, never the exception text.
-                Log.Info($"decode probe: failed hr=0x{unchecked((uint)error):X8}; using the 1080p baseline claims");
-                return null;
-            }
+                Log.Info($"decode probe: walk stopped hr=0x{unchecked((uint)error):X8} after {report.Profiles.Count} profiles");
+            var partial = report.Error is not null || report.ProfileErrors is { Count: > 0 };
             var limits = HardwareDecodeLimits.FromAcceptedSizes(report.Profiles.SelectMany(profile =>
-                profile.Formats.SelectMany(format => format.Sizes.Select(size => (profile.Profile, format.Format, size.Width, size.Height)))));
+                profile.Formats.SelectMany(format => format.Sizes.Select(size => (profile.Profile, format.Format, size.Width, size.Height)))))
+                with { Partial = partial };
             if (limits.IsEmpty)
             {
                 Log.Info("decode probe: no decoder sizes; using the 1080p baseline claims");
                 return null;
             }
+            // A partial walk keeps what it measured; missing H.264/HEVC fall back to the 1080p baseline
+            // (ConsoleEvidence.BuildVideoDecode) and missing VP9/VC-1/MPEG-2 stay unclaimed.
+            if (partial) Log.Info("decode probe: partial; keeping the measured profiles");
             Log.Info($"decode probe: h264={Height(limits.H264)} hevc={Height(limits.HevcMain)}/{Height(limits.HevcMain10)}"
                 + $" vp9={Height(limits.Vp9Profile0)}/{Height(limits.Vp9Profile2)}"
                 + $" vc1={Height(limits.Vc1)} mpeg2={Height(limits.Mpeg2)}");
@@ -104,6 +113,7 @@ internal static class HardwareDecodeProbe
         int? level = null;
         uint? profileCount = null;
         var profiles = new List<ProfileFormats>();
+        var profileErrors = new List<(uint Index, Guid? Profile, int HResult)>();
         int? error = null;
         try
         {
@@ -130,29 +140,38 @@ internal static class HardwareDecodeProbe
             for (uint index = 0; index < count; index++)
             {
                 var profile = Guid.Empty;
-                Marshal.ThrowExceptionForHR(getProfile(videoDevice, index, &profile));
                 var formats = new List<FormatSizes>();
-                foreach (var (formatName, format) in OutputFormats)
+                try
                 {
-                    var supported = 0;
-                    Marshal.ThrowExceptionForHR(checkFormat(videoDevice, &profile, format, &supported));
-                    if (supported == 0) continue;
-                    var sizes = new List<(string Name, int Width, int Height)>();
-                    foreach (var (sizeName, width, height) in Sizes)
+                    Marshal.ThrowExceptionForHR(getProfile(videoDevice, index, &profile));
+                    foreach (var (formatName, format) in OutputFormats)
                     {
-                        var desc = new D3D11VideoDecoderDesc
+                        var supported = 0;
+                        Marshal.ThrowExceptionForHR(checkFormat(videoDevice, &profile, format, &supported));
+                        if (supported == 0) continue;
+                        var sizes = new List<(string Name, int Width, int Height)>();
+                        foreach (var (sizeName, width, height) in Sizes)
                         {
-                            Guid = profile,
-                            SampleWidth = width,
-                            SampleHeight = height,
-                            OutputFormat = format,
-                        };
-                        uint configs = 0;
-                        // A format can be supported while a particular size has no valid configuration.
-                        if (getConfigCount(videoDevice, &desc, &configs) >= 0 && configs > 0)
-                            sizes.Add((sizeName, (int)width, (int)height));
+                            var desc = new D3D11VideoDecoderDesc
+                            {
+                                Guid = profile,
+                                SampleWidth = width,
+                                SampleHeight = height,
+                                OutputFormat = format,
+                            };
+                            uint configs = 0;
+                            // A format can be supported while a particular size has no valid configuration.
+                            if (getConfigCount(videoDevice, &desc, &configs) >= 0 && configs > 0)
+                                sizes.Add((sizeName, (int)width, (int)height));
+                        }
+                        formats.Add(new(formatName, format, sizes));
                     }
-                    formats.Add(new(formatName, format, sizes));
+                }
+                catch (Exception ex)
+                {
+                    // One failing profile must not cost the others their measured limits.
+                    profileErrors.Add((index, profile == Guid.Empty ? null : profile, ex.HResult));
+                    continue;
                 }
                 profiles.Add(new(profile, formats));
             }
@@ -167,7 +186,7 @@ internal static class HardwareDecodeProbe
             Release(context, trace);
             Release(device, trace);
         }
-        return new(level, profileCount, profiles, error);
+        return new(level, profileCount, profiles, error, profileErrors);
     }
 
     private static unsafe void Release(IntPtr instance, Action<string>? trace)

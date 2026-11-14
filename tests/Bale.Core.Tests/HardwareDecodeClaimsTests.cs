@@ -93,6 +93,40 @@ public class HardwareDecodeClaimsTests
     }
 
     [Fact]
+    public void APartialProbeKeepsWhatItMeasuredAndBaselinesOnlyTheMissingH264AndHevcDepths()
+    {
+        // HEVC Main10 and VP9 profile 2 measured; H.264, HEVC Main and VP9 profile 0 failed.
+        var partial = new HardwareDecodeLimits(HevcMain10: new(7680, 4320), Vp9Profile2: new(3840, 2160)) { Partial = true };
+        var claims = ConsoleEvidence.BuildVideoDecode(partial).Where(decode => decode.Hardware).ToArray();
+        Assert.Contains(("hevc", "10", 7680, 4320), claims.Select(Shape));
+        Assert.Contains(("vp9", "10", 3840, 2160), claims.Select(Shape));
+        Assert.Contains(("h264", "8", 1920, 1080), claims.Select(Shape));
+        Assert.Contains(("hevc", "8", 1920, 1080), claims.Select(Shape));
+        Assert.DoesNotContain(claims, decode => decode.Codec == "vp9" && decode.BitDepths.Contains(8));
+        Assert.DoesNotContain(claims, decode => decode.Codec is "vc1" or "mpeg2video");
+        Assert.All(claims, decode => Assert.Null(decode.MaxBitrateKbps));
+
+        // A complete probe that found no H.264 or HEVC Main is trusted as it is.
+        var complete = ConsoleEvidence.BuildVideoDecode(partial with { Partial = false }).Where(decode => decode.Hardware).ToArray();
+        Assert.DoesNotContain(complete, decode => decode.Codec == "h264");
+        Assert.DoesNotContain(complete, decode => decode.Codec == "hevc" && decode.BitDepths.Contains(8));
+    }
+
+    [Fact]
+    public void AFailedPcmMountWithdrawsEveryPcmSpellingOnReplan()
+    {
+        var start = PlaybackStartBuilder.Build("file", "profile", "attempt", null, PlaybackSelection.Auto,
+            ConsoleEvidence.Default, PlaybackTestSupport.Identity);
+        var plan = PlaybackRoutePolicyTests.Plan("original_http", "hevc", "pcm_s24le");
+        var failure = new PlaybackFailureV3("decoder_failure", "open failed", "MediaPlayer");
+        var replan = PlaybackReplan.ForFailure(start, plan, "attempt", [], 1, 0, failure, PlaybackRoutePolicy.Decide(plan, false));
+        Assert.DoesNotContain(replan.ClientCapabilities.CodecsAudio, codec => SoftwareDecodePolicy.NormalizeCodec(codec) == "pcm");
+        Assert.All(replan.ClientPlaybackContext.Deliveries.Values,
+            delivery => Assert.DoesNotContain(delivery.AudioDecodeCodecs, codec => SoftwareDecodePolicy.NormalizeCodec(codec) == "pcm"));
+        Assert.Contains("mp2", replan.ClientCapabilities.CodecsAudio);
+    }
+
+    [Fact]
     public void AFailedOrEmptyProbeFallsBackToTheFixed1080pBaseline()
     {
         Assert.Same(ConsoleEvidence.Default, ConsoleEvidence.ForHardware(null));
@@ -100,7 +134,8 @@ public class HardwareDecodeClaimsTests
         foreach (var claims in new[] { ConsoleEvidence.BuildVideoDecode(null), ConsoleEvidence.BuildVideoDecode(new HardwareDecodeLimits()) })
         {
             Assert.Equal(new[] { ("h264", "8", 1920, 1080), ("hevc", "8,10", 1920, 1080) }, claims.Where(decode => decode.Hardware).Select(Shape));
-            Assert.All(claims.Where(decode => decode.Hardware), decode => Assert.Equal(25000, decode.MaxBitrateKbps));
+            // No bitrate limit: a failed probe is no evidence of a lower one (owner decision 2026-11-10).
+            Assert.All(claims.Where(decode => decode.Hardware), decode => Assert.Null(decode.MaxBitrateKbps));
         }
         Assert.Equal(new[] { "h264", "hevc", "av1" }, ConsoleEvidence.Default.VideoCodecs);
         Assert.DoesNotContain(ConsoleEvidence.Default.VideoDecode, decode => decode.Codec == "vp9");
@@ -300,8 +335,11 @@ public class HardwareDecodeClaimsTests
         Assert.DoesNotContain(".Message", probe);
         Assert.DoesNotContain("ToString()", probe);
         Assert.Contains("error = ex.HResult;", probe);
-        Assert.Equal(3, probe.Split("using the 1080p baseline claims").Length - 1);
-        Assert.Equal(3, probe.Split("return null;").Length - 1);
+        Assert.Equal(2, probe.Split("using the 1080p baseline claims").Length - 1);
+        Assert.Equal(2, probe.Split("return null;").Length - 1);
+        // One failing profile is skipped; the walk and the measured profiles carry on.
+        Assert.Contains("profileErrors.Add((index, profile == Guid.Empty ? null : profile, ex.HResult));", probe);
+        Assert.Contains("with { Partial = partial }", probe);
         // The device and its interfaces are released on every path.
         var cleanup = probe[probe.IndexOf("finally", StringComparison.Ordinal)..];
         Assert.Contains("Release(videoDevice, trace);", cleanup);
