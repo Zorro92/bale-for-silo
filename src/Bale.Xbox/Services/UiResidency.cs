@@ -104,7 +104,7 @@ internal static class UiResidency
     }
 
     private static void OnLayoutUpdated(object? sender, object args) => QueueVisible();
-    private static void OnViewChanged(object sender, ScrollViewerViewChangedEventArgs args) => QueueVisible();
+    private static void OnViewChanged(object? sender, ScrollViewerViewChangedEventArgs args) => QueueVisible();
 
     private static void QueueVisible()
     {

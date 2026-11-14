@@ -73,12 +73,12 @@ public sealed partial class App : Application
         var deferral = e.SuspendingOperation.GetDeferral();
         _inBackground = true;
         Session.SetForeground(false);
-        try { await ReleaseBackgroundResourcesAsync("suspend"); }
+        try { await ReleaseBackgroundResourcesAsync("suspend", e.SuspendingOperation.Deadline); }
         catch (Exception ex) { Log.Info($"suspend cleanup hr=0x{unchecked((uint)ex.HResult):X8}"); }
         finally { deferral.Complete(); }
     }
 
-    private async Task ReleaseBackgroundResourcesAsync(string reason)
+    private async Task ReleaseBackgroundResourcesAsync(string reason, DateTimeOffset? deadline = null)
     {
         // Close the UI gate synchronously, before player shutdown can yield. Downloads/decode
         // callbacks must not refill a cached page while the app is waiting for media Close.
@@ -89,7 +89,8 @@ public sealed partial class App : Application
         // A quick return can race asynchronous shutdown. Never trim the resumed foreground UI.
         if (!_inBackground || generation != UiResidency.Generation) return;
         _ = PlaybackMemoryRelease.Shared.Schedule();
-        await PlaybackMemoryRelease.Shared.WaitAsync(PlaybackMemoryRelease.StartWaitLimit);
+        var wait = UiResidencyState.CollectionWait(deadline, DateTimeOffset.UtcNow, PlaybackMemoryRelease.StartWaitLimit);
+        await PlaybackMemoryRelease.Shared.WaitAsync(wait);
         if (_inBackground && generation == UiResidency.Generation) PlaybackResources.ReleaseIdle(reason);
     }
 

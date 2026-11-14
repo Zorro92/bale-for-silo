@@ -56,7 +56,8 @@ Calendar continues to take its poster decode width from the measured themed layo
 bounded backdrop decode also reduces foreground memory.
 
 `App` closes the UI residency gate synchronously before awaiting the existing idempotent player
-suspend shutdown. Then the existing off-thread WinRT-finalizer backstop runs (bounded wait), and
+suspend shutdown. Then the existing off-thread WinRT-finalizer backstop runs (bounded wait, capped by the remaining
+OS suspend deadline with time reserved for Trim/Complete), and
 `PlaybackResources.ReleaseIdle` invokes the existing Bale-owned-device IDXGIDevice3::Trim path
 **after** UI release. No compositor device is borrowed or trimmed. A generation check prevents
 late shutdown/trim from affecting a quickly resumed foreground app. Resuming dispatches to the
@@ -119,7 +120,8 @@ Safe lifecycle logs are `ui resources: suspend released images=N surfaces=M shad
    player. Verify debug server `where`, `navlog`, `mem`, and the existing player counters still work.
 
 Local validation: the platform-independent registry tests cover idempotence, weak ownership,
-late registration, both orders of background/player gating, lazy restore, stale generations and
+late registration, both orders of background/player gating, lazy restore, stale generations,
+suspend-deadline budgeting and
 cleanup failures. The changed services can also be C#-compiled on Linux against the real UWP
 projections; full XAML/Native AOT packaging is covered by push CI. No console verification is
 performed by the implementation agent.

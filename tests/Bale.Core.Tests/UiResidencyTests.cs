@@ -5,6 +5,23 @@ namespace Bale.Core.Tests;
 
 public class UiResidencyTests
 {
+    [Theory]
+    [InlineData(-1000, 0)]
+    [InlineData(100, 0)]
+    [InlineData(750, 500)]
+    [InlineData(10000, 3000)]
+    public void CollectionWaitRespectsTheRemainingSuspendDeadline(int deadlineMs, int expectedMs)
+    {
+        var now = DateTimeOffset.UnixEpoch;
+        Assert.Equal(TimeSpan.FromMilliseconds(expectedMs), UiResidencyState.CollectionWait(
+            now.AddMilliseconds(deadlineMs), now, TimeSpan.FromSeconds(3)));
+    }
+
+    [Fact]
+    public void EnteredBackgroundWithoutAnOsDeadlineKeepsTheExistingBound()
+        => Assert.Equal(TimeSpan.FromSeconds(3), UiResidencyState.CollectionWait(null,
+            DateTimeOffset.UnixEpoch, TimeSpan.FromSeconds(3)));
+
     private sealed class Resource(UiResourceCounts counts) : IUiResource
     {
         private readonly UiResourceCounts _counts = counts;

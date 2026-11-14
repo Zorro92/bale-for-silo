@@ -36,6 +36,15 @@ internal sealed class UiResidencyState(Action<Exception>? failure = null)
     public UiResourceCounts LastReleased { get; private set; }
     public UiResourceCounts Restored { get; private set; }
 
+    internal static TimeSpan CollectionWait(DateTimeOffset? deadline, DateTimeOffset now, TimeSpan maximum)
+    {
+        if (deadline is null) return maximum;
+        // Media Close/reporting may already have consumed most of the OS suspend deferral.
+        // Leave time for Trim and Complete rather than extending that deadline with a new wait.
+        var remaining = deadline.Value - now - TimeSpan.FromMilliseconds(250);
+        return TimeSpan.FromTicks(Math.Clamp(remaining.Ticks, 0, maximum.Ticks));
+    }
+
     public void Register(IUiResource resource)
     {
         _resources.Add(new(resource));
