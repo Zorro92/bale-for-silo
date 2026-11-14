@@ -1629,3 +1629,34 @@ Console validation (owner-run; implementation deliberately performs no console a
 5. Restore `scripts/bale-debug.sh delivery auto` and verify direct MKV still uses the native
    embedded stream-index bitmap path. Progressive remains disabled by production transport policy;
    its subtitle claim is ready when that transport is enabled, and is covered by unit/server tests.
+
+## Connection speed test (Silo connection_speed_v1), 2026-11-14
+
+Bale runs silo-server's connection speed test (design: buffering-quality, "Connection speed test").
+- **Core:** `ConnectionSpeedMeter` implements the window arithmetic and passes every server probe
+  vector (fixture copied from silo-server, AGPL-3.0). `ConnectionSpeedPolicy` holds the reading rules.
+  `PlaybackClient` reads `GET /playback/connection`, posts results, resets the learned limit and streams
+  the probe (on this server's origin only).
+- **Console:** `ConnectionSpeedService` checks on sign-in, on return to the foreground and on a network
+  change. An automatic quick test runs only when due, with no media active, in the foreground and on an
+  unmetered link, and a 429 holds tests. Starts on an unmetered link declare `buffering_quality_v1` and
+  send the highest current reading as a `probe` estimate. Replans never send it.
+- **Debug:** `bale-debug.sh speed [check|test]`, `net [rcvbuf=…]`, and `bale-cli speed-test
+  [quick|accurate]`, which prints per-window rates.
+
+Console measurement against the owner's remote server, one connection:
+
+| HTTP stack | Accurate test |
+|---|---|
+| `HttpClientHandler` (old) | 17 Mbps |
+| `SocketsHttpHandler`, OS default receive buffer | 188–201 Mbps |
+| `SocketsHttpHandler`, 4 MB receive buffer | 249 Mbps |
+| Desktop on the same path | 201–248 Mbps |
+
+On UWP, `HttpClientHandler` is a much slower stack for a single connection. Bale's main connection now
+uses `SocketsHttpHandler` (`NetworkTuning`) with the OS default buffer. The remote route ramps over
+about 2.5 s (1 → 4 → 10 → 24 → 51 → 186 Mbps per 500 ms window), so a quick test can read low on a
+cold connection. It reports a lower bound when it reaches the target.
+
+Not yet done: the Settings Connection speed row with Test speed, budget line and learned-limit
+Reset; `plan_summary` route events with `throughput_kbps`.
