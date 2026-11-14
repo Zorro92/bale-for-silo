@@ -1321,6 +1321,12 @@ type carries matrix BT2020_10, transfer 2020 and primaries BT2020, and the pictu
 (saturation 0.166 in both). Windows' pipeline doesn't gamut-convert BT.2020 SDR to BT.709 here, so the fix
 would be an "SDR BT.2020" branch in Bale's GPU pass (linearise, BT.2020→BT.709 matrix, gamut clip,
 re-encode), on the d3d11va route like the tone map.
+Correction (0.1.506, wrapper bale.28): that title is actually HLG. Its HEVC stream signals transfer 18
+(ARIB STD-B67) with BT.2020 primaries/matrix, while the MKV container tags transfer 14, which is what
+silo-server reads (`range=sdr`). The tone-map stage logged `apply frame transfer=18 primaries=9 matrix=9
+full_range=0` and bale_gpu refused it (HLG not in ABI 1's v1 set), so playback fell back to the server's
+HLS remux. Next: an HLG branch in bale_gpu (transfer 18 is already in the ABI) and HLG in the fork's
+eligibility. The BT.2020 SDR branch stays for genuinely SDR BT.2020 sources.
 
 Microsoft's media pipeline exposes no tone-mapping algorithm or parameter controls.
 FFmpegInteropX's `SetFFmpegVideoFilters` is not a practical alternative: filters run on the CPU,
