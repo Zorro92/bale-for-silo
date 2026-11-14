@@ -50,7 +50,7 @@ namespace Bale.Xbox.Services;
 ///                                  target=bgra|fp16|rgb10 (mode=rust only, default bgra: engine output format and texture; fp16/rgb10 add the HDR readback and an hdr-range= verdict)
 ///   POST /ffmpeg?mode=...  next real-player attempt: policy (default)|direct (FFmpeg demux, system video, every direct mount)|off; memory only
 ///   GET  /delivery        current memory-only delivery override; default auto
-///   POST /delivery?mode=hls  hls|auto; next attempts disable non-HLS deliveries; restart resets
+///   POST /delivery?mode=hls  hls|progressive|auto; next attempts keep only that delivery class; restart resets
 ///   GET  /ffmpeg-tune     current memory-only FFmpeg overrides
 ///   POST /ffmpeg-tune?decoder=auto&readahead=on&readsize=65536&prefetch=8  next FFmpeg player attempt; each key accepts default
 ///                         optional buffer=0–5000, ahead=0–64, delay=0–64, prio=0–2, maxres=0|1|default, dpb=0–16|default (system video only)

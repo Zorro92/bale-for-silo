@@ -72,14 +72,21 @@ public static class PlaybackStartBuilder
             Transformations = device.OriginalHttpSupported && device.OriginalDolbyVision7BaseLayerSupported
                 ? [DolbyVision7Policy.Transformation] : [],
         };
-        // PlaybackCapabilityDetector.kt disables progressive until its seekable transport is proven.
+        // PlaybackCapabilityDetector.kt keeps progressive off until a seekable transport exists. Bale's
+        // is FFmpeg's non-seekable input plus seek_reanchor for every seek (PlaybackProgressive).
         var progressive = original with
         {
             Enabled = device.ProgressiveSupported,
             SupportedOnDevice = device.ProgressiveSupported,
-            FailureReason = device.ProgressiveSupported ? null : "disabled_pending_seekable_transport",
+            FailureReason = device.ProgressiveSupported ? null : "progressive_executor_unavailable",
+            // candidate_routes_v3.go progressiveCandidate always writes fragmented MP4.
+            Containers = ["mp4"],
+            // Only the original-file demuxer path is verified for VP9/VC-1/MPEG-2 (as for HLS).
+            VideoCodecs = original.VideoCodecs.Where(codec => !SoftwareDecodePolicy.DemuxedVideoCodecs.Contains(codec)).ToArray(),
+            AudioDecodeCodecs = original.AudioDecodeCodecs.Where(PlaybackProgressive.AudioCodecs.Contains).ToArray(),
             // In-container subtitles are an original_http claim only (the server reads it there).
             Subtitles = device.Subtitles with { NativeEmbedded = [] },
+            Features = device.ProgressiveSupported ? [PlaybackProgressive.RangeRefusalFeature] : [],
             ValidatedClaims = [],
             Transformations = [],
         };

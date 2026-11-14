@@ -43,14 +43,14 @@ public class DebugStreamAdapterSwitchTests
         Assert.Contains("public bool StreamAdapterLogged { get; set; }", player);
         var media = Read("PlayerPage.Media.cs.txt");
         var branch = media.IndexOf("if (media.Route.UseFfmpeg)", StringComparison.Ordinal);
-        var pooled = media.IndexOf("new RangeRandomAccessStream(media.Stream)", StringComparison.Ordinal);
+        var pooled = media.IndexOf("new RangeRandomAccessStream(range)", StringComparison.Ordinal);
         var create = media.IndexOf("FFmpegMediaSource.CreateFromStreamAsync", StringComparison.Ordinal);
         Assert.True(branch >= 0 && branch < pooled && pooled < create);
         Assert.Contains("media.RandomStream = attempt.UsePooledStreamAdapter", media[branch..create]);
         Assert.Contains("if (!attempt.StreamAdapterLogged)", media[branch..create]);
         Assert.Contains("player: stream adapter={(attempt.UsePooledStreamAdapter ? \"pooled\" : \"builtin\")}", media[branch..create]);
         Assert.Contains("attempt.StreamAdapterLogged = true;", media[branch..create]);
-        Assert.Contains("media.RandomStream = media.Stream.AsRandomAccessStream();\n                media.Source = MediaSource.CreateFromStream", media);
+        Assert.Contains("media.RandomStream = media.Stream!.AsRandomAccessStream();\n                media.Source = MediaSource.CreateFromStream", media);
         Assert.DoesNotContain("DebugStreamAdapterSwitch", media);
         Assert.DoesNotContain("RangeRandomAccessStream", Read("DebugServer.Ffmpeg.cs.txt"));
     }

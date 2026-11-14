@@ -28,6 +28,9 @@ public sealed record PlaybackSeek(double Seconds, bool Pause = false)
     /// </summary>
     public bool CanSeekInMount(PlaybackPlan plan, bool isHls, bool canSeek)
     {
+        // A progressive remux is forward-only and FFmpeg reads it through a non-seekable input:
+        // protocol §5 routes every seek through the server, whatever the plan's window says.
+        if (PlaybackProgressive.IsProgressive(plan)) return false;
         if (!canSeek || PlayerPosition(PlaybackTimeline.From(plan.Timeline), plan.Source?.DurationSeconds) is null)
             return false;
         var start = plan.Timeline?.SeekWindowStartSeconds;

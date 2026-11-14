@@ -141,7 +141,9 @@ public class PlaybackRoutePolicyTests
     [InlineData("progressive", " MKV ", "mp4", "h264", "aac", true)]
     [InlineData("server_remux_progressive", "mkv", "mkv", "hevc", "eac3", true)]
     // The delivered stream's container wins over the source's.
-    [InlineData("server_remux_progressive", "mp4", "mkv", "hevc", "eac3", false)]
+    [InlineData("progressive", "mp4", "mkv", "hevc", "eac3", false)]
+    // A forward-only remux has no length or ranges for Windows' own MP4 source.
+    [InlineData("server_remux_progressive", "mp4", "mkv", "hevc", "eac3", true)]
     [InlineData("original_http", "mp4", null, "h264", "aac", false)]
     [InlineData("original_http", null, "mp4", "hevc", "eac3", false)]
     [InlineData("original_http", null, null, "h264", "ac3", false)]

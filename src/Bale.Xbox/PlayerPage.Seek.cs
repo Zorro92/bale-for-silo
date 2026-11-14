@@ -1,3 +1,4 @@
+using Bale.Core.Api.Models;
 using Bale.Core.Playback;
 using Bale.Xbox.Services;
 using Windows.Media.Playback;
@@ -170,12 +171,9 @@ public sealed partial class PlayerPage
     {
         // PlaybackSessionManager.kt reanchorActiveVideoSession: without a reliable local window,
         // refresh the SAME route/session at source time instead of clamping to the manifest's head.
-        var request = PlaybackReplan.ForSeek(attempt.Start!, attempt.Plan!, attempt.PlanAttemptId,
-            attempt.AttemptedPlanKeys, attempt.Replanned ? 2 : 1, source);
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(attempt.Cancellation.Token);
-        deadline.CancelAfter(TimeSpan.FromSeconds(10));
-        var decision = await attempt.Client.Playback.ReplanAsync(attempt.SessionId!, request, attempt.Services!.Installation, deadline.Token);
-        if (!IsCurrent(attempt, media) || !PlaybackSeekReanchor.Matches(attempt.Plan!, decision, attempt.SessionId!, attempt.Start!.FileId))
+        // A progressive remux seeks and reconnects this way too (protocol §6.2): a new URL at source.
+        var decision = await RequestReanchorAsync(attempt, source);
+        if (!IsCurrent(attempt, media) || decision is null)
         {
             Log.Info("player: seek reanchor rejected");
             return null;
@@ -184,16 +182,28 @@ public sealed partial class PlayerPage
         DisposeMount(attempt);
         attempt.Plan = decision.PlaybackPlan!;
         attempt.ServerFeatures = decision.ServerFeatures ?? [];
-        attempt.Position = _sourcePosition = source;
+        // A forward-only remux opens at its keyframe origin, at most one GOP before the target.
+        attempt.Position = _sourcePosition = PlaybackProgressive.MountSourceStart(attempt.Plan, source);
         _state = "loading";
         SetLoading(true);
         var timeline = PlaybackTimeline.From(attempt.Plan.Timeline);
-        await MountPlanAsync(attempt, timeline.PlayerStartSeconds, paused);
+        await MountPlanAsync(attempt, PlaybackProgressive.MountPlayerStart(attempt.Plan, timeline.PlayerStartSeconds), paused);
         if (attempt.Media is not { } replacement) return null;
         var ready = await Task.WhenAny(replacement.Opening.Task, Task.Delay(15000, replacement.Token));
         replacement.Token.ThrowIfCancellationRequested();
         return ready == replacement.Opening.Task && await replacement.Opening.Task && IsCurrent(attempt, replacement)
             && !replacement.FailureQueued ? replacement : null;
+    }
+
+    /// <summary>A same-route seek_reanchor decision at <paramref name="source"/>, or null when the server changed the route.</summary>
+    private static async Task<PlaybackDecision?> RequestReanchorAsync(Attempt attempt, double source)
+    {
+        var request = PlaybackReplan.ForSeek(attempt.Start!, attempt.Plan!, attempt.PlanAttemptId,
+            attempt.AttemptedPlanKeys, attempt.Replanned ? 2 : 1, source);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(attempt.Cancellation.Token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(10));
+        var decision = await attempt.Client.Playback.ReplanAsync(attempt.SessionId!, request, attempt.Services!.Installation, deadline.Token);
+        return PlaybackSeekReanchor.Matches(attempt.Plan!, decision, attempt.SessionId!, attempt.Start!.FileId) ? decision : null;
     }
 
     private static async Task ReportPositionAsync(Attempt attempt, double source, bool paused)

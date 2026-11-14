@@ -93,6 +93,8 @@ public sealed partial class PlayerPage
                 {
                     if (media.Stream is { } stream)
                         bandwidth = media.Throughput.Sample(stream.DownloadedBytes, stream.DownloadTime);
+                    else if (media.Progressive is { } progressive)
+                        bandwidth = media.Throughput.Sample(progressive.DownloadedBytes, progressive.DownloadTime);
                     else if (media.Adaptive is { } adaptive && adaptive.InboundBitsPerSecond is > 0 and <= long.MaxValue and var inbound)
                         bandwidth = (long)inbound;
                 }
@@ -114,7 +116,11 @@ public sealed partial class PlayerPage
 
     private static PlaybackStats ReadFfmpegStats(PlaybackStats stats, Mount media)
     {
-        stats = stats with { BackendDisplayName = "FFmpegInteropX", BackendRoute = "FFmpeg Direct" };
+        stats = stats with
+        {
+            BackendDisplayName = "FFmpegInteropX",
+            BackendRoute = media.Progressive is null ? "FFmpeg Direct" : "FFmpeg Progressive",
+        };
         try
         {
             if (media.FfmpegSource!.CurrentVideoStream is { } video)

@@ -124,10 +124,12 @@ public static class PlaybackMediaUrl
 
     // StreamRequest.swift allowed only seek=. The server now also stamps a session-scoped stream token
     // (st=) on transcode URLs (CastPlaybackPreparer.kt relies on it; the Android player passes the URL
-    // through unchanged). Accept at most one of each, nothing else. The token is a credential: never log it.
+    // through unchanged), and remux_range=refuse on a progressive remux whose attempt listed
+    // progressive_range_refusal_v1 (silo-server internal/playback/remux_range.go). Accept at most one
+    // of each, nothing else. The token is a credential: never log it.
     private static bool IsPlanQuery(string query)
     {
-        bool seenSeek = false, seenToken = false;
+        bool seenSeek = false, seenToken = false, seenRemuxRange = false;
         foreach (var pair in query.Split('&'))
         {
             var equals = pair.IndexOf('=');
@@ -144,6 +146,11 @@ public static class PlaybackMediaUrl
             {
                 if (string.IsNullOrWhiteSpace(value)) return false;
                 seenToken = true;
+            }
+            else if (key == "remux_range" && !seenRemuxRange)
+            {
+                if (value != "refuse") return false;
+                seenRemuxRange = true;
             }
             else return false;
         }

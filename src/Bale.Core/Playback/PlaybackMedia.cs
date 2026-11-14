@@ -30,6 +30,7 @@ public sealed class PlaybackMedia
         IsHls = string.Equals(plan.Stream?.Protocol, "hls", StringComparison.OrdinalIgnoreCase)
             || Delivery?.EndsWith("_hls", StringComparison.OrdinalIgnoreCase) == true
             || uri.AbsolutePath.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase);
+        IsProgressive = !IsHls && PlaybackProgressive.IsProgressive(plan);
         DurationSeconds = plan.Source?.DurationSeconds;
         Timeline = PlaybackTimeline.From(plan.Timeline);
     }
@@ -39,6 +40,8 @@ public sealed class PlaybackMedia
     public string? Container { get; }
     public string? Delivery { get; }
     public bool IsHls { get; }
+    /// <summary>A forward-only server_remux_progressive response: open it with <see cref="OpenProgressiveAsync"/>.</summary>
+    public bool IsProgressive { get; }
     public double? DurationSeconds { get; }
     public PlaybackTimeline Timeline { get; }
 
@@ -115,6 +118,13 @@ public sealed class PlaybackMedia
 
     public Task<HttpRangeStream> OpenStreamAsync(CancellationToken ct, int prefetchBlocks = HttpRangeStream.DefaultPrefetchBlocks) =>
         HttpRangeStream.OpenAsync(this, ct, prefetchBlocks);
+
+    /// <summary>The forward-only remux from its origin; <paramref name="mountToken"/> also ends its read-ahead.</summary>
+    public Task<ProgressiveHttpStream> OpenProgressiveAsync(CancellationToken mountToken)
+    {
+        if (!IsProgressive) throw new InvalidOperationException("The plan is not a progressive remux.");
+        return ProgressiveHttpStream.OpenAsync(this, mountToken);
+    }
 
     internal static void RequireSuccess(HttpResponseMessage response)
     {

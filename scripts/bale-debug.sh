@@ -30,7 +30,7 @@
 #   scripts/bale-debug.sh wait --timeout 12000 loaded  default 8000 ms; 0–15000; timeout prints where and fails
 #   scripts/bale-debug.sh ffmpeg <mode>         next real-player attempt: policy (default)|direct|off; memory only, HLS unchanged
 #                                               direct: every direct mount demuxes with FFmpeg, video still system (hardware) decoded
-#   scripts/bale-debug.sh delivery [hls|auto]   next playback attempts: force HLS or restore auto (default); memory only until reset/restart; no args = status
+#   scripts/bale-debug.sh delivery [hls|progressive|auto]   next playback attempts: force HLS or the progressive remux, or restore auto (default); memory only until reset/restart; no args = status
 #   scripts/bale-debug.sh ffmpeg-tune [decoder=auto|system|software|default] [tonemap=off|bt2390|hable|default] [colorinfo=on|off|default] [readahead=on|off|default] [readsize=N|default] [prefetch=N|default] [buffer=ms|default] [ahead=N|default] [delay=N|default] [prio=N|default] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|gpu|off|on|default]
 #                                               colorinfo on/off = compressed system-video colour/HDR metadata, wrapper 2.1.0-bale.26+; default removes the key; no decoder override required
 #                                               hdr on/off = FFmpegInteropX HdrSupport Enabled/Disabled; hdr default = Automatic
@@ -308,8 +308,8 @@ case "${1:-}" in
     curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/ffmpeg" --data-urlencode "mode=$2"
     ;;
   delivery)
-    if [[ "$#" -gt 2 || ! "${2-auto}" =~ ^(hls|auto)$ ]]; then
-      echo 'usage: scripts/bale-debug.sh delivery [hls|auto]' >&2
+    if [[ "$#" -gt 2 || ! "${2-auto}" =~ ^(hls|progressive|auto)$ ]]; then
+      echo 'usage: scripts/bale-debug.sh delivery [hls|progressive|auto]' >&2
       exit 2
     fi
     if [[ "$#" == 1 ]]; then

@@ -3,7 +3,7 @@ using Bale.Core.Playback;
 
 namespace Bale.Xbox.Services;
 
-/// <summary>Memory-only HLS reproduction switch; captured once per attempt, absent in production.</summary>
+/// <summary>Memory-only HLS/progressive reproduction switch; captured once per attempt, absent in production.</summary>
 internal static class DebugPlaybackDelivery
 {
     private static string _mode = "auto";
@@ -12,20 +12,23 @@ internal static class DebugPlaybackDelivery
 
     internal static bool TrySet(string? mode)
     {
-        if (mode is not ("auto" or "hls")) return false;
+        if (mode is not ("auto" or "hls" or "progressive")) return false;
         Interlocked.Exchange(ref _mode, mode);
         return true;
     }
 
-    internal static PlaybackStartRequestV3 Apply(string mode, PlaybackStartRequestV3 start) => mode != "hls"
+    /// <summary>
+    /// hls or progressive keeps only that delivery class enabled. Tracks, start position, decode
+    /// evidence and that class's claims stay intact; a file the forced class cannot carry gets the
+    /// server's terminal answer instead of quietly using another delivery.
+    /// </summary>
+    internal static PlaybackStartRequestV3 Apply(string mode, PlaybackStartRequestV3 start) => mode is not ("hls" or "progressive")
         ? start
         : start with
         {
             ClientPlaybackContext = start.ClientPlaybackContext with
             {
-                // Keep tracks, start position, decode evidence and the HLS recipe claims intact.
-                // Disable every non-HLS delivery, including progressive if it is enabled later.
-                Deliveries = start.ClientPlaybackContext.Deliveries.ToDictionary(pair => pair.Key, pair => pair.Key == "hls"
+                Deliveries = start.ClientPlaybackContext.Deliveries.ToDictionary(pair => pair.Key, pair => pair.Key == mode
                     ? pair.Value
                     : pair.Value with { Enabled = false, SupportedOnDevice = false }),
             },

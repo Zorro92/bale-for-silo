@@ -38,6 +38,11 @@ public sealed partial class PlayerPage
         public MediaSource? Source { get; set; }
         public HttpRangeStream? Stream { get; set; }
         public IRandomAccessStream? RandomStream { get; set; }
+        // server_remux_progressive: one forward-only response through FFmpeg's non-seekable input.
+        public ProgressiveHttpStream? Progressive { get; set; }
+        public ForwardInputStream? ForwardInput { get; set; }
+        public bool Reconnecting { get; set; }
+        public long? PausedAt { get; set; }
         public MemoryStream? Playlist { get; set; }
         public IInputStream? PlaylistInput { get; set; }
         public AdaptiveMediaSource? Adaptive { get; set; }
@@ -73,7 +78,7 @@ public sealed partial class PlayerPage
 #endif
     }
 
-    private async Task MountPlanAsync(Attempt attempt, double playerStart, bool paused = false)
+    private async Task MountPlanAsync(Attempt attempt, double playerStart, bool paused = false, bool rangeRefused = false)
     {
         // Every accepted plan mounts here: the start, the failure replan and each seek reanchor.
         // The line carries protocol ids only (PlaybackPlanLog), never the URL or warning text.
@@ -157,23 +162,55 @@ public sealed partial class PlayerPage
         }
         else
         {
+            if (transport.IsProgressive)
+            {
+                // PlaybackProgressive: no length, no ranges. Windows' sources need both; FFmpeg's
+                // non-seekable input does not. Every seek is a server reanchor (PlayerPage.Seek.cs).
+                if (!media.Route.UseFfmpeg) throw new InvalidDataException("A progressive remux requires the FFmpeg route.");
+                try
+                {
+                    media.Progressive = await transport.OpenProgressiveAsync(media.Token);
+                }
+                catch (ProgressiveRangeRefusedException) when (!rangeRefused
+                    && attempt.ServerFeatures.Contains(PlaybackSeekReanchor.Feature))
+                {
+                    // docs/playback-api.md: a 409 means "reopen the stream at its current position".
+                    // Nothing has played from this mount, so that is the plan's own source start.
+                    Log.Info("player: progressive range refused; reanchoring");
+                    var decision = await RequestReanchorAsync(attempt, PlaybackTimeline.From(attempt.Plan!.Timeline).SourceStartSeconds);
+                    if (decision is null || !ReferenceEquals(attempt.Media, media)) throw;
+                    DisposeMount(attempt);
+                    attempt.Plan = decision.PlaybackPlan!;
+                    attempt.ServerFeatures = decision.ServerFeatures ?? [];
+                    await MountPlanAsync(attempt, 0, paused, rangeRefused: true);
+                    return;
+                }
+                media.ForwardInput = new ForwardInputStream(media.Progressive);
+            }
+            else
+            {
 #if DEBUG_SERVER
-            var prefetch = media.Route.UseFfmpeg ? attempt.FfmpegTuning.Prefetch ?? HttpRangeStream.DefaultPrefetchBlocks
-                : HttpRangeStream.DefaultPrefetchBlocks;
-            media.Stream = await transport.OpenStreamAsync(media.Token, prefetch);
+                var prefetch = media.Route.UseFfmpeg ? attempt.FfmpegTuning.Prefetch ?? HttpRangeStream.DefaultPrefetchBlocks
+                    : HttpRangeStream.DefaultPrefetchBlocks;
+                media.Stream = await transport.OpenStreamAsync(media.Token, prefetch);
 #else
-            media.Stream = await transport.OpenStreamAsync(media.Token);
+                media.Stream = await transport.OpenStreamAsync(media.Token);
 #endif
+            }
             media.Token.ThrowIfCancellationRequested();
             if (media.Route.UseFfmpeg)
             {
-                media.RandomStream = attempt.UsePooledStreamAdapter
-                    ? new RangeRandomAccessStream(media.Stream) : media.Stream.AsRandomAccessStream();
-                if (!attempt.StreamAdapterLogged)
+                if (media.Stream is { } range)
                 {
-                    Log.Info($"player: stream adapter={(attempt.UsePooledStreamAdapter ? "pooled" : "builtin")}");
-                    attempt.StreamAdapterLogged = true;
+                    media.RandomStream = attempt.UsePooledStreamAdapter
+                        ? new RangeRandomAccessStream(range) : range.AsRandomAccessStream();
+                    if (!attempt.StreamAdapterLogged)
+                    {
+                        Log.Info($"player: stream adapter={(attempt.UsePooledStreamAdapter ? "pooled" : "builtin")}");
+                        attempt.StreamAdapterLogged = true;
+                    }
                 }
+                else Log.Info("player: stream adapter=forward");
                 // Keep auth, profile ownership and range cancellation in Core; FFmpeg receives bytes, not a bare URI.
                 Log.Info("player: FFmpeg before create stream");
 #if DEBUG_SERVER
@@ -185,7 +222,9 @@ public sealed partial class PlayerPage
                 // Read actual native properties, not the current override (which may have changed since this attempt began).
                 media.FfmpegReadAhead = DebugFfmpegInputTuning.ReadAheadText(config.General.ReadAheadBufferEnabled,
                     config.General.ReadAheadBufferSize, config.General.ReadAheadBufferDuration);
-                media.FfmpegStreamReads = DebugFfmpegInputTuning.StreamReadsText(config.General.FileStreamReadSize, media.Stream.PrefetchBlocks);
+                media.FfmpegStreamReads = media.Stream is { } prefetched
+                    ? DebugFfmpegInputTuning.StreamReadsText(config.General.FileStreamReadSize, prefetched.PrefetchBlocks)
+                    : $"{config.General.FileStreamReadSize} B · forward";
                 media.FfmpegHdrSupport = config.Video.HdrSupport.ToString();
                 if (!attempt.FfmpegTuningLogged)
                 {
@@ -196,7 +235,9 @@ public sealed partial class PlayerPage
                 var config = FfmpegSource.Configuration(media.Route);
 #endif
                 FfmpegSource.ApplySubtitleSink(config, media.SubtitleStreamIndex, media.SubtitleSinkToken);
-                media.FfmpegSource = await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream, config).AsTask();
+                media.FfmpegSource = media.ForwardInput is { } forward
+                    ? await FFmpegMediaSource.CreateFromInputStreamAsync(forward, config).AsTask()
+                    : await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream!, config).AsTask();
                 media.Token.ThrowIfCancellationRequested();
                 if (media.Route.DolbyVision7BaseLayer)
                 {
@@ -251,7 +292,7 @@ public sealed partial class PlayerPage
             }
             else
             {
-                media.RandomStream = media.Stream.AsRandomAccessStream();
+                media.RandomStream = media.Stream!.AsRandomAccessStream();
                 media.Source = MediaSource.CreateFromStream(media.RandomStream, transport.MimeType ?? "video/mp4");
             }
         }
@@ -374,7 +415,8 @@ public sealed partial class PlayerPage
             }
             // TvVideoPlaybackStarter.kt's player coordinate may be zero on reanchored HLS even
             // when the source is minutes into the title. Set it once, only after native opening.
-            sender.PlaybackSession.Position = TimeSpan.FromSeconds(media.StartPosition);
+            // A forward-only progressive input cannot seek: it plays from its origin (player 0).
+            if (!media.Transport.IsProgressive) sender.PlaybackSession.Position = TimeSpan.FromSeconds(media.StartPosition);
             media.Opened = true;
             Log.Info("player: opened");
 #if DEBUG_SERVER
@@ -449,8 +491,10 @@ public sealed partial class PlayerPage
             var network = args.Error == MediaPlayerError.NetworkError;
             _ = DispatchAsync(() =>
             {
-                if (_attempt is { Media: { } media } attempt && ReferenceEquals(media.Player, sender))
-                    QueueFailure(attempt, media, hresult, decoder, network);
+                if (_attempt is not { Media: { } media } attempt || !ReferenceEquals(media.Player, sender)) return;
+                // An interrupted forward-only response is a lost connection, not a failed route.
+                if (media.Progressive is { Faulted: true }) QueueProgressiveReconnect(attempt, media, "transport");
+                else QueueFailure(attempt, media, hresult, decoder, network);
             });
         }
         catch (Exception ex) { LogFailure("failed callback", ex); }
@@ -478,6 +522,7 @@ public sealed partial class PlayerPage
             media.PlayingFrom ??= position;
             if (position > media.PlayingFrom.Value + 0.05) media.Started = true;
         }
+        if (media.Started && media.Progressive is not null) TrackProgressiveIdle(attempt, media, state);
         _state = !media.Opened || !media.Started ? "loading" : state switch
         {
             MediaPlaybackState.Playing => "playing",
@@ -493,9 +538,86 @@ public sealed partial class PlayerPage
 
     private void OnMediaEnded(MediaPlayer sender, object args) => _ = DispatchAsync(() =>
     {
-        if (_attempt is { Media: { } media } attempt && ReferenceEquals(media.Player, sender)
-            && IsCurrent(attempt, media)) _ = StopAndGoBackAsync();
+        if (_attempt is not { Media: { } media } attempt || !ReferenceEquals(media.Player, sender)
+            || !IsCurrent(attempt, media)) return;
+        // Protocol §4: a progressive response that did not end cleanly is a transport failure,
+        // never the end of the title. Reopen it where it stopped (§6.2) instead of leaving.
+        if (media.Progressive is { Completed: false }) QueueProgressiveReconnect(attempt, media, "incomplete");
+        else _ = StopAndGoBackAsync();
     });
+
+    private void TrackProgressiveIdle(Attempt attempt, Mount media, MediaPlaybackState state)
+    {
+        var now = Environment.TickCount64;
+        if (state == MediaPlaybackState.Paused)
+        {
+            media.PausedAt ??= now;
+            return;
+        }
+        if (state != MediaPlaybackState.Playing) return;
+        var pausedAt = media.PausedAt;
+        media.PausedAt = null;
+        // VideoPlayer.tsx PROGRESSIVE_REMUX_IDLE_REOPEN_MS: the server may have reaped the paused
+        // response; playing again after a minute reopens it at the paused position.
+        if (PlaybackProgressive.ShouldReopenAfterIdle(attempt.Plan, pausedAt, now))
+            QueueProgressiveReconnect(attempt, media, "idle");
+    }
+
+    private void QueueProgressiveReconnect(Attempt attempt, Mount media, string reason)
+    {
+        if (!IsCurrent(attempt, media) || media.FailureQueued || media.Reconnecting) return;
+        // A connection that recovered and played for a while starts a fresh reconnect budget.
+        var now = Environment.TickCount64;
+        if (now - attempt.ProgressiveReconnectAt > ProgressiveReconnectWindowMs) attempt.ProgressiveReconnects = 0;
+        // Protocol §6.2: a transport that never showed a frame stays on the ordinary failure path.
+        if (!media.Started || !attempt.ServerFeatures.Contains(PlaybackSeekReanchor.Feature)
+            || attempt.ProgressiveReconnects >= MaxProgressiveReconnects)
+        {
+            QueueFailure(attempt, media, 0, isDecoder: false, isNetwork: true);
+            return;
+        }
+        attempt.ProgressiveReconnects++;
+        attempt.ProgressiveReconnectAt = now;
+        media.Reconnecting = true;
+        _ = ReconnectProgressiveAsync(attempt, media, reason);
+    }
+
+    private const int MaxProgressiveReconnects = 3;
+    private const long ProgressiveReconnectWindowMs = 120_000;
+
+    private async Task ReconnectProgressiveAsync(Attempt attempt, Mount media, string reason)
+    {
+        await _lifecycle.WaitAsync();
+        var fallBack = false;
+        try
+        {
+            if (!IsCurrent(attempt, media) || media.FailureQueued) return;
+            // Each reason is a stream that ran dry while the viewer was playing, or an idle
+            // reopen requested by Play: the replacement plays (protocol §6.2 step 4).
+            var source = SourcePosition(attempt);
+            Log.Info($"player: progressive reconnect reason={reason} count={attempt.ProgressiveReconnects}");
+            // The same seek_reanchor the seek path uses: same route, session and tracks, no failure budget.
+            var replacement = await ReanchorSeekAsync(attempt, media, source, paused: false);
+            fallBack = replacement is null;
+            if (replacement is not null) await ReportPositionAsync(attempt, SourcePosition(attempt), false);
+        }
+        catch (OperationCanceledException) when (attempt.Cancellation.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            LogFailure("progressive reconnect", ex);
+            fallBack = true;
+        }
+        finally
+        {
+            media.Reconnecting = false;
+            _lifecycle.Release();
+            PushSubtitleClock(force: true);
+        }
+        // Refused, unreachable or a replacement that did not open: the ordinary failure path
+        // decides for whichever mount is current (one replan without progressive, then the error).
+        if (fallBack && attempt.Media is { } current && IsCurrent(attempt, current))
+            QueueFailure(attempt, current, 0, isDecoder: false, isNetwork: true);
+    }
 
     private void DisposeMount(Attempt attempt)
     {
@@ -548,7 +670,9 @@ public sealed partial class PlayerPage
         Cleanup("dispose FFmpeg source", () => media.FfmpegSource?.Dispose());
         Cleanup("dispose adaptive", () => media.Adaptive?.Dispose());
         Cleanup("dispose random stream", () => media.RandomStream?.Dispose());
+        Cleanup("dispose forward input", () => media.ForwardInput?.Dispose());
         Cleanup("dispose stream", () => media.Stream?.Dispose());
+        Cleanup("dispose progressive stream", () => media.Progressive?.Dispose());
         Cleanup("dispose playlist input", () => media.PlaylistInput?.Dispose());
         Cleanup("dispose playlist", () => media.Playlist?.Dispose());
         media.Player = null;
@@ -560,6 +684,8 @@ public sealed partial class PlayerPage
         media.DownloadHandler = null;
         media.RandomStream = null;
         media.Stream = null;
+        media.ForwardInput = null;
+        media.Progressive = null;
         media.PlaylistInput = null;
         media.Playlist = null;
         PlaybackResources.ReleaseMediaDevice(rendererDevice);

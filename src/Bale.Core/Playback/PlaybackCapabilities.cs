@@ -72,6 +72,8 @@ public static class ConsoleEvidence
         OriginalAudioTrackSelectionSupported = true,
         OriginalDolbyVision8BaseLayerSupported = true,
         OriginalDolbyVision7BaseLayerSupported = true,
+        // Forward-only remuxes play through FFmpeg's non-seekable input; seeks reanchor (PlaybackProgressive).
+        ProgressiveSupported = true,
     };
 
     /// <summary>

@@ -62,6 +62,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public double Position { get; set; }
         public Mount? Media { get; set; }
         public bool StreamAdapterLogged { get; set; }
+        public int ProgressiveReconnects { get; set; }
+        public long ProgressiveReconnectAt { get; set; }
         public PlaybackVersionNotice VersionNotice { get; } = new();
 #if DEBUG_SERVER
         // Match the capability claim and backend even if the debug toggle changes during a request/replan.
@@ -206,7 +208,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
                     services.ProfileId, Guid.NewGuid().ToString(), startPosition, capabilities, DeviceIdentity.Current());
 #if DEBUG_SERVER
                 start = DebugPlaybackDelivery.Apply(attempt.DeliveryMode, start);
-                if (attempt.DeliveryMode == "hls") Log.Info("player: delivery forced=hls");
+                if (attempt.DeliveryMode != "auto") Log.Info("player: delivery forced=" + attempt.DeliveryMode);
                 if (attempt.Av1ClaimMaxHeight == 2160 && attempt.FfmpegEnabled)
                     Log.Info("player: av1 claim=2160p (debug)");
 #endif
@@ -227,7 +229,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 attempt.ServerFeatures = decision.ServerFeatures ?? [];
                 attempt.PlanAttemptId = Guid.NewGuid().ToString();
                 var timeline = PlaybackTimeline.From(attempt.Plan.Timeline);
-                attempt.Position = _sourcePosition = timeline.SourceStart(startPosition, request.OverridePosition);
+                attempt.Position = _sourcePosition = PlaybackProgressive.MountSourceStart(attempt.Plan,
+                    timeline.SourceStart(startPosition, request.OverridePosition));
 #if DEBUG_SERVER
                 Log.Info($"player: start timeline request={startPosition:0.###} source={timeline.SourceStartSeconds:0.###} player={timeline.PlayerStartSeconds:0.###} offset={timeline.TimelineOffsetSeconds:0.###}");
 #endif
@@ -237,7 +240,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 ct.ThrowIfCancellationRequested();
                 try
                 {
-                    await MountPlanAsync(attempt, timeline.PlayerStart(request.OverridePosition));
+                    await MountPlanAsync(attempt, PlaybackProgressive.MountPlayerStart(attempt.Plan, timeline.PlayerStart(request.OverridePosition)));
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
                 catch (Exception ex)
@@ -438,7 +441,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 return;
             }
             var timeline = PlaybackTimeline.From(attempt.Plan.Timeline);
-            await MountPlanAsync(attempt, timeline.PlayerForSource(position) ?? timeline.PlayerStartSeconds);
+            await MountPlanAsync(attempt, PlaybackProgressive.MountPlayerStart(attempt.Plan,
+                timeline.PlayerForSource(position) ?? timeline.PlayerStartSeconds));
         }
         catch (OperationCanceledException) when (attempt.Cancellation.IsCancellationRequested) { }
         catch (Exception ex)

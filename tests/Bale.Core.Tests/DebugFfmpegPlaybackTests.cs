@@ -95,11 +95,14 @@ public class DebugFfmpegPlaybackTests
         Assert.Contains("using FFmpegInteropX;", source);
         Assert.DoesNotContain("#if DEBUG_SERVER\nusing FFmpegInteropX", source);
         Assert.Contains("media.Stream = await transport.OpenStreamAsync(media.Token)", source);
-        Assert.Contains("media.RandomStream = media.Stream.AsRandomAccessStream()", source);
+        Assert.Contains("media.RandomStream = media.Stream!.AsRandomAccessStream()", source);
         Assert.Contains("Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled, attempt.ForceFfmpeg,", source);
         Assert.Contains("if (media.Route.UseFfmpeg)", source);
         Assert.Contains("FfmpegSource.Configuration(media.Route)", source);
-        Assert.Contains("media.FfmpegSource = await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream, config).AsTask()", source);
+        Assert.Contains(": await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream!, config).AsTask()", source);
+        // A progressive remux reaches FFmpeg through its non-seekable input, still as authenticated bytes.
+        Assert.Contains("? await FFmpegMediaSource.CreateFromInputStreamAsync(forward, config).AsTask()", source);
+        Assert.Contains("media.Progressive = await transport.OpenProgressiveAsync(media.Token)", source);
         Assert.Contains("FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route)", source);
         Assert.Contains("media.Item = media.FfmpegSource.CreateMediaPlaybackItem()", source);
         Assert.Contains("media.Item ??= new MediaPlaybackItem(media.Source)", source);
@@ -119,7 +122,7 @@ public class DebugFfmpegPlaybackTests
         Assert.DoesNotContain("CreateFromUriAsync", source);
         Assert.DoesNotContain("ex.Message", source);
         var hls = source[source.IndexOf("if (transport.IsHls)", StringComparison.Ordinal)
-            ..source.IndexOf("media.Stream = await transport.OpenStreamAsync", StringComparison.Ordinal)];
+            ..source.IndexOf("if (transport.IsProgressive)", StringComparison.Ordinal)];
         Assert.Contains("AdaptiveMediaSource.CreateFromStreamAsync", hls);
         Assert.DoesNotContain("FFmpeg", hls);
         var nativeDisposal = source.IndexOf("Cleanup(\"dispose FFmpeg source\"", StringComparison.Ordinal);
@@ -159,7 +162,7 @@ public class DebugFfmpegPlaybackTests
         [
             "if (media.FfmpegSource is not null)", "stats = ReadFfmpegStats(stats, media)",
             "else if (media is { Opened: true, Item: { } item })", "BackendDisplayName = \"FFmpegInteropX\"",
-            "BackendRoute = \"FFmpeg Direct\"", "CurrentVideoStream", "CurrentAudioStream",
+            "BackendRoute = media.Progressive is null ? \"FFmpeg Direct\" : \"FFmpeg Progressive\"", "CurrentVideoStream", "CurrentAudioStream",
             "VideoDecoderName = FfmpegSource.DecoderName(video.DecoderEngine)",
             "AudioDecoderName = FfmpegSource.DecoderName(audio.DecoderEngine)",
             "DebugProcessCpu.Read(out var failure)", "Stopwatch.GetElapsedTime(previous, now)",

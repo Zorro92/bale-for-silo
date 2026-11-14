@@ -241,7 +241,13 @@ public class PlaybackStartTests
             var delivery = property.Value;
             Assert.Equal(property.Name == "hls" ? new[] { "h264", "hevc" } : new[] { "h264", "hevc", "av1" },
                 Strings(delivery.GetProperty("video_codecs")));
-            Assert.Equal(property.Name == "hls" ? SoftwareDecodePolicy.SystemAudioCodecs : ConsoleEvidence.Default.AudioDecodeCodecs,
+            Assert.Equal(property.Name switch
+                {
+                    "hls" => SoftwareDecodePolicy.SystemAudioCodecs,
+                    // Only MP4-muxable audio is copied into the progressive remux; the rest converts.
+                    "progressive" => ConsoleEvidence.Default.AudioDecodeCodecs.Where(PlaybackProgressive.AudioCodecs.Contains).ToArray(),
+                    _ => ConsoleEvidence.Default.AudioDecodeCodecs,
+                },
                 Strings(delivery.GetProperty("audio_decode_codecs")));
             Assert.Empty(delivery.GetProperty("audio_passthrough_codecs").EnumerateArray());
             Assert.Equal(8, delivery.GetProperty("max_channels").GetInt32());
@@ -276,7 +282,13 @@ public class PlaybackStartTests
             Assert.False(entry.GetProperty("ass_styling").GetBoolean());
             Assert.False(entry.GetProperty("font_attachments").GetBoolean());
         }
-        Assert.False(deliveries.GetProperty("progressive").GetProperty("enabled").GetBoolean());
+        var progressive = deliveries.GetProperty("progressive");
+        Assert.True(progressive.GetProperty("enabled").GetBoolean());
+        Assert.True(progressive.GetProperty("supported_on_device").GetBoolean());
+        Assert.Equal(new[] { "mp4" }, Strings(progressive.GetProperty("containers")));
+        Assert.Equal(new[] { PlaybackProgressive.RangeRefusalFeature }, Strings(progressive.GetProperty("features")));
+        Assert.Empty(Strings(deliveries.GetProperty("original_http").GetProperty("features")));
+        Assert.Empty(Strings(deliveries.GetProperty("hls").GetProperty("features")));
         Assert.Equal(new[] { "m3u8", "hls" }, Strings(deliveries.GetProperty("hls").GetProperty("containers")));
     }
 

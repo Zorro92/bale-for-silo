@@ -101,10 +101,12 @@ Current production capability claims (`ConsoleEvidence.ForHardware` over the dec
 | Audio passthrough | None | Receiver verification pending |
 | Display HDR | Runtime HDMI detection, HDR10 only | Exact evidence after a successful read; unknown/empty HDR on failure |
 | HLS | System video/audio claims only, without VP9, VC-1 or MPEG-2 | AdaptiveMediaSource cannot use FFmpeg fallbacks or its demuxer |
+| Progressive remux | `mp4` only; H.264, HEVC, AV1; AAC, AC-3, E-AC-3, MP3, FLAC, Opus, ALAC; `progressive_range_refusal_v1` | Forward-only fMP4 through FFmpeg's non-seekable input; every seek reanchors. TrueHD/DTS/PCM are converted to AAC by the server. Console verification pending |
 | Subtitles | Own overlay: text sidecars (ASS/SSA, SubRip, WebVTT); PGS/DVD/DVB images from direct MKV; lossless PGS `.sup` windows on HLS/progressive | Original keeps `native_embedded` (`embedded_subtitles_v1`). Packaged deliveries claim `embedded_bitmap` for server-extracted PGS; DVD/DVB still require burn-in there. Console verification of image tracks pending |
 
-`PlaybackRoutePolicy.Decide` selects the pipeline separately for every mount. `original_http` /
-progressive uses FFmpeg for Matroska, AV1, VP9/VC-1/MPEG-2, or the **selected** fallback audio codec. AV1 sets
+`PlaybackRoutePolicy.Decide` selects the pipeline separately for every mount. `original_http`
+uses FFmpeg for Matroska, AV1, VP9/VC-1/MPEG-2, or the **selected** fallback audio codec;
+`server_remux_progressive` always uses FFmpeg's non-seekable input (see "Progressive remux"). AV1 sets
 `Video.VideoDecoderMode = ForceFFmpegSoftwareDecoder`; the other FFmpeg routes set
 `ForceSystemDecoder`, except eligible HDR-to-SDR originals and DV7 base-layer playback: those
 require `Automatic` and verify d3d11va, never a software fallback. The pinned
@@ -1280,10 +1282,11 @@ builds cannot use these controls or overrides.
 
 **Debug HLS reproduction:** `scripts/bale-debug.sh delivery hls` disables non-HLS deliveries on
 subsequent attempts without changing start time, selected tracks, codec/HDR evidence or the HLS
-claims. `delivery auto` restores normal planning; no argument reads the mode. The switch is
+claims. `delivery progressive` does the same for the progressive remux (a file it cannot carry
+gets the server's terminal answer). `delivery auto` restores normal planning; no argument reads the mode. The switch is
 memory-only, captured per attempt, and disappears with `BaleDebugServer=false`. CI's development
 MSIX uses `Configuration=Release` **with** `DEBUG_SERVER`; the shipping configuration omits it.
-The forced attempt logs `player: delivery forced=hls`; the accepted plan still logs the actual
+The forced attempt logs `player: delivery forced=hls` (or `=progressive`); the accepted plan still logs the actual
 `delivery=server_remux_hls` or `delivery=server_transcode_hls`. Copyable H.264/HEVC SDR with
 supported audio and subtitles Off is a useful remux candidate. Unsupported video/HDR, burn-in
 subtitles or quality/bandwidth limits may require video transcoding instead; audio-only
@@ -1764,8 +1767,87 @@ Console validation (owner-run; implementation deliberately performs no console a
    retain `.sup`/render instead of adding PGS burn-in. Repeat with forced PGS selected through Auto
    (`show forced` and matching audio language), explicit PGS, and Off; check no stale overlay.
 5. Restore `scripts/bale-debug.sh delivery auto` and verify direct MKV still uses the native
-   embedded stream-index bitmap path. Progressive remains disabled by production transport policy;
-   its subtitle claim is ready when that transport is enabled, and is covered by unit/server tests.
+   embedded stream-index bitmap path. Repeat steps 1–3 with `delivery progressive` on a source the
+   server remuxes (see "Progressive remux"); the same `.sup` windows follow its source clock.
+
+## Progressive remux (`server_remux_progressive`), 2026-11-14
+
+Silo's planner ranks a copy remux's progressive delivery **ahead of HLS**
+(`candidate_planner_v3.go` "Progressive before HLS"); until now Bale (like Android's
+`PlaybackCapabilityDetector.kt`) declared it off, so every copy remux became `server_remux_hls`.
+Bale now enables it. The server writes one fragmented MP4 (`frag_keyframe+delay_moov+default_base_moof`,
+`-avoid_negative_ts make_zero`) from its `seek` origin and streams it as a single chunked 200
+response with no byte ranges (`docs/playback-api.md` "Delivery", protocol v3 §4).
+
+**What moves from HLS.** Every copy remux of H.264/HEVC/AV1 video that used to be
+`server_remux_hls`: chiefly a container the original route doesn't claim (MPEG-TS/M2TS, AVI, …),
+including when its audio is converted to AAC on the way (TrueHD/DTS/PCM, or more channels than
+claimed), and the replan after an original whose selected audio track could not be mapped
+(`audio_track_selection_failed` withdraws `original_http`). MKV/MP4 originals keep direct play.
+HLS keeps everything progressive can't do: video transcodes
+(codec, HDR tone mapping, bitrate or quality caps), the server's DV7→DV8.1 conversion (HLS only),
+burn-in subtitles, `remux_execution=worker_only` servers, and every replan after a progressive
+mount failed. VP9/VC-1/MPEG-2 stay original-only (their FFmpeg demuxer path is verified only on
+the original files), as for HLS.
+
+**Claims.** `deliveries.progressive`: containers `mp4`; the original's video codecs without
+VP9/VC-1/MPEG-2; audio `aac`, `ac3`, `eac3`, `mp3`, `flac`, `opus`, `alac` (the planner copies any
+claimed codec into MP4 with no muxability check, and FFmpeg's MP4 muxer takes TrueHD/DTS/PCM only as
+experimental, so those convert to AAC); the same HDR details and subtitle claims as HLS (sidecars
+plus `embedded_bitmap` for `.sup` windows, no `native_embedded`); no validated claims or client
+recipes; `features: ["progressive_range_refusal_v1"]`. `ffmpeg off` (`WithoutFallbacks`) withdraws
+the delivery, because only FFmpeg can play it.
+
+**Executor.** `ProgressiveHttpStream` (Core) sends one GET **without any Range** and accepts only
+a 200. A bounded pump (256 × 64 KiB = 16 MiB) reads ahead of the demuxer; when the demuxer stops
+(pause) the pump stops too, which is what lets the server's stall window reap a long pause.
+`ForwardInputStream` hands it to `FFmpegMediaSource.CreateFromInputStreamAsync`, FFmpeg's
+non-seekable AVIO (no seek callback, no size). Reads **never throw**: the wrapper's
+`InputStreamRead` calls `ReadAsync(...).get()` inside FFmpeg's C read callback with no exception
+handling. A transport failure, cancellation or disposal ends the data cleanly and sets `Faulted`;
+only a clean end of the chunked body sets `Completed`. The route is always FFmpeg with the system
+decoder (dav1d zero-copy for AV1); Windows' own MP4 source needs a length and ranges. The remux
+carries one audio stream, so the local audio ordinal is 0. MSS duration is unknown; the UI and
+reporting use the plan's `source.duration_seconds`.
+
+**Timeline and seek model.** The server resolves the keyframe before the request:
+`stream_origin = timeline_offset = origin`, `player_start = requested − origin`, an open window
+from the origin, `can_seek_anywhere=false` (`configureCopyRemuxTimelineV3`). FFmpeg cannot seek a
+non-seekable input, so a progressive mount opens at **player 0** (the origin) instead of
+`player_start` (`PlaybackProgressive.MountPlayerStart`); it starts at most one GOP before the
+request, and its source clock is exact through the offset. `PlaybackSeek.CanSeekInMount` is false
+for every progressive seek, so skips, `bale-debug.sh seek` and reconnects all use the existing
+HLS `seek_reanchor` machinery in `PlayerPage.Seek.cs` (same plan id, route, session and tracks;
+no failure budget). Progress, journal, transport chip, PGS windows and the subtitle overlay all read
+`SourcePosition`, i.e. `origin + player clock`. Resume opens at the keyframe before the rewound
+resume point; Start over sends explicit zero, so origin and offset are zero.
+
+**Range refusal (409).** With the feature listed the URL carries `remux_range=refuse` (now allowed
+by `PlaybackMediaUrl`), and a GET whose range starts past byte 0 is 409 before the remux starts.
+Bale never sends such a range. If a 409 arrives anyway, `ProgressiveRangeRefusedException` makes
+the mount reanchor once at the plan's source start ("reopen at the current position") and remount;
+a second refusal takes the ordinary failure path.
+
+**Lost connection (protocol §6.2).** An incomplete response is a transport failure, never the end
+of the title. `MediaEnded` with the stream not `Completed`, or `MediaFailed` with it `Faulted`, on a
+mount that showed frames reanchors at the current source position on the same route and plays on
+(at most 3 times within two minutes). A mount that never showed a frame, a refused reanchor or a
+replacement that does not open uses the ordinary single `failure_recovery` replan, which withdraws
+progressive (`PlaybackProgressive.WithoutProgressive`) so the next plan is HLS. As on the web
+player (`PROGRESSIVE_REMUX_IDLE_REOPEN_MS`), Play after a pause of 60 s or more reopens the stream at
+the paused position instead of trusting a response the server may have reaped (stall window 180 s).
+
+**Debug and stats.** `scripts/bale-debug.sh delivery progressive` forces it (see "Debug HLS
+reproduction"). Stats show `Remux (…)` as delivery, `FFmpeg Progressive` as backend route, stream
+bandwidth from the forward stream, `Stream reads: N B · forward`, and no `Stream waits`.
+
+**Console test (lead).** Pick a title the server remuxes (an `.m2ts`/`.ts` H.264/HEVC file; an
+MKV/MP4 original direct-plays, so forcing progressive there only tests the transport), `delivery
+progressive`, then `play <id>`: the log shows
+`delivery=server_remux_progressive` and `stream adapter=forward`. Check RT/LT and `seek` land on
+the reported source time (≤ one GOP early), Resume and Start over, a selected `.sup`/text subtitle
+after each seek, a 70 s `pause` then `play` (idle reopen), and `delivery auto` (the same title
+should now plan progressive without forcing).
 
 ## Connection speed test (Silo connection_speed_v1), 2026-11-14
 

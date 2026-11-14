@@ -93,7 +93,7 @@ public class DebugPlaybackDeliveryTests
         {
             "public string DeliveryMode { get; } = DebugPlaybackDelivery.Mode;",
             "start = DebugPlaybackDelivery.Apply(attempt.DeliveryMode, start);",
-            "Log.Info(\"player: delivery forced=hls\")",
+            "Log.Info(\"player: delivery forced=\" + attempt.DeliveryMode)",
         })
         {
             var index = player.IndexOf(marker, StringComparison.Ordinal);
@@ -110,7 +110,7 @@ public class DebugPlaybackDeliveryTests
         var duplicateGuard = server.Split('\n').Single(line => line.Contains("duplicateQueryKeys && path is", StringComparison.Ordinal));
         Assert.Contains("\"/delivery\"", duplicateGuard);
         var script = Read("bale-debug.sh");
-        Assert.Contains("scripts/bale-debug.sh delivery [hls|auto]", script);
+        Assert.Contains("scripts/bale-debug.sh delivery [hls|progressive|auto]", script);
         Assert.Contains("\"$BASE/delivery\" --data-urlencode \"mode=$2\"", script);
         // The shipping configuration removes DEBUG_SERVER, even though CI's development MSIX
         // uses Configuration=Release with BaleDebugServer=true like the other diagnostic switches.

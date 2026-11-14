@@ -45,8 +45,11 @@ public static class PlaybackRoutePolicy
         var dolbyVisionBaseLayer = dv7 || original && string.Equals(plan.DecisionReason,
             PlaybackProtocol.ClientDolbyVision8BaseLayerReason, StringComparison.OrdinalIgnoreCase);
         var toneMap = ConsoleToneMapPolicy.RequiresToneMap(plan, sdrOutput, versions);
+        // A forward-only progressive remux has no length or ranges for Windows' own sources: it
+        // always takes FFmpeg's non-seekable input (PlaybackProgressive), with the system decoder.
+        var progressive = delivery == PlaybackProgressive.Delivery;
         var ffmpeg = ffmpegEnabled && direct && !hls
-            && (softwareVideo || softwareAudio || matroska || demuxedVideo || dolbyVisionBaseLayer || forceFfmpeg || toneMap);
+            && (progressive || softwareVideo || softwareAudio || matroska || demuxedVideo || dolbyVisionBaseLayer || forceFfmpeg || toneMap);
         return new(ffmpeg, ffmpeg && softwareVideo, video, audio, ordinal, width, height, ffmpeg && dolbyVisionBaseLayer, toneMap, dv7);
     }
 

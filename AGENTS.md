@@ -213,6 +213,14 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   Windows' source (measured equal on both). AAC/MP3 use the pinned winmd's system audio switches;
   AC3/EAC3 reach the system Dolby decoder undecoded via patch 0021 (`bale_system_decoder_dolby`,
   keeps E-AC-3 JOC/Atmos). Passthrough remains unclaimed.
+- `server_remux_progressive` (enabled since 2026-11-14) is one forward-only fMP4 response: always
+  FFmpeg's non-seekable input (`ProgressiveHttpStream` → `ForwardInputStream` →
+  `CreateFromInputStreamAsync`), never Windows' sources, which need a length and ranges. Never send a
+  Range on it. Its reads must never throw (the wrapper's `InputStreamRead` has no exception
+  handling): failures end the data and set `Faulted`. It mounts at player 0 (its keyframe origin),
+  and every seek, reconnect and 60 s idle resume is a `seek_reanchor`; a progressive mount failure
+  replans without progressive. Claims: `mp4`, no VP9/VC-1/MPEG-2, MP4-muxable audio only,
+  `progressive_range_refusal_v1`. See docs/player-plan.md, "Progressive remux".
 - Subtitles are drawn by Bale's own overlay (`bale_gpu.dll`), never by FFmpegInteropX cues. Text
   tracks are fetched sidecars (`PlaybackSubtitleResolver.Resolve`). PGS on HLS/progressive uses
   lossless `.sup` windows (`windowed=1`, source PTS), decoded in Rust into the same bitmap overlay.
@@ -265,8 +273,8 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   `shared/.../model/settings/SeekIntervals.kt`: 10 back / 30 forward. Clamp to 0 / known movie
   duration. Rapid presses accumulate from the last requested source target, not a stale player clock.
 - Skips and `bale-debug.sh seek` share `PlayerPage.Seek.cs`'s absolute-source path. A local seek waits
-  for `SeekCompleted`; a target outside a produced/reanchored HLS window uses negotiated protocol-v3
-  `seek_reanchor`, retaining the same route, plan, session and tracks. This does not spend failure
+  for `SeekCompleted`; a target outside a produced/reanchored HLS window, and every progressive-remux
+  seek, uses negotiated protocol-v3 `seek_reanchor`, retaining the same route, plan, session and tracks. This does not spend failure
   recovery budget. Seek completion flushes the actual landed source position through the sequenced
   progress reporter/journal, including short clamped seeks; pause state is preserved.
 - Passive feedback copies `TvSkipSeekIndicator.kt`, `TvPlayerScrubber.kt` and `TvPlayerChrome.kt`:

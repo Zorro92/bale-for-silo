@@ -302,7 +302,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         var player = Read("PlayerPage.Media.cs.txt");
         Assert.Contains("media.Route.UseFfmpeg ? attempt.FfmpegTuning.Prefetch ?? HttpRangeStream.DefaultPrefetchBlocks", player);
         Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning)", player);
-        Assert.Contains("media.Stream.PrefetchBlocks", player);
+        Assert.Contains("prefetched.PrefetchBlocks", player);
         Assert.Contains("if (!attempt.FfmpegTuningLogged)", player);
         Assert.Contains("attempt.FfmpegTuningLogged = true", player);
         Assert.DoesNotContain("DebugFfmpegInputTuning.Current", player);

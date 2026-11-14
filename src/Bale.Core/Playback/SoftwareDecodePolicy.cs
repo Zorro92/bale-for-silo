@@ -71,6 +71,8 @@ public static class SoftwareDecodePolicy
         OriginalDolbyVision8BaseLayerSupported = false,
         OriginalDolbyVision7BaseLayerSupported = false,
         OriginalDynamicRangeMappingSupported = false,
+        // The progressive executor is FFmpeg's non-seekable input; Windows' sources need a length.
+        ProgressiveSupported = false,
     };
 
     /// <summary>

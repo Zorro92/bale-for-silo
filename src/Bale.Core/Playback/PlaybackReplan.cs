@@ -9,6 +9,9 @@ public static class PlaybackReplan
         IReadOnlyList<string> priorAttemptedKeys, int attemptCount, double sourcePositionSeconds, PlaybackFailureV3 failure,
         PlaybackRouteDecision? failedRoute = null)
     {
+        // A progressive mount that failed is not offered again: the next plan uses HLS (or the
+        // original) as before progressive existed. Seeks and reconnects never come through here.
+        if (PlaybackProgressive.IsProgressive(plan)) start = PlaybackProgressive.WithoutProgressive(start);
         if (DolbyVision7Policy.RequiresBaseLayer(plan))
         {
             start = WithoutDolbyVision7(start);
