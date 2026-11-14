@@ -59,10 +59,6 @@ impl Warp {
     }
 
     fn with(kind: Kind) -> windows::core::Result<Self> {
-        Self::with_flags(kind, D3D11_CREATE_DEVICE_FLAG(0))
-    }
-
-    fn with_flags(kind: Kind, flags: D3D11_CREATE_DEVICE_FLAG) -> windows::core::Result<Self> {
         // SAFETY: loads a system DLL by name; it stays loaded for the test process.
         let module =
             unsafe { LoadLibraryW(w!("d3d12.dll")) }.expect("d3d12.dll ships with Windows");
@@ -87,7 +83,7 @@ impl Warp {
                 adapter.as_ref(),
                 driver,
                 HMODULE::default(),
-                flags,
+                D3D11_CREATE_DEVICE_FLAG(0),
                 Some(&[D3D_FEATURE_LEVEL_11_0]),
                 D3D11_SDK_VERSION,
                 Some(&mut device),
@@ -278,8 +274,9 @@ impl IMFDXGIDeviceManagerSource_Impl for ManagerSource_Impl {
 
 #[test]
 fn renderer_device_lease_survives_manager_close_and_trims_on_release() {
-    let warp = Warp::with_flags(Kind::DriverType, D3D11_CREATE_DEVICE_VIDEO_SUPPORT)
-        .expect("video-capable WARP device");
+    // This exercises manager/device ownership, not video decoding. Hosted runners' WARP
+    // refuses VIDEO_SUPPORT at FL11_0; the ordinary raster device is sufficient for GetVideoService.
+    let warp = Warp::new();
     let mut token = 0;
     let mut manager = None;
     // SAFETY: writable locals, then live device and manager. No media has been opened.
