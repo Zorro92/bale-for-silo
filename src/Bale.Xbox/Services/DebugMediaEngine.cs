@@ -206,7 +206,9 @@ internal static unsafe class DebugMediaEngine
             }
             if (source != 0) SysFreeString(source);
             Release(texture); Release(engineEx); Release(engine); Release(factory); Release(attributes);
-            Release(manager); Release(multithread); Release(context); Release(device); Release(notify);
+            Release(manager); Release(multithread); Release(context);
+            PlaybackResources.TrimDevice(device);
+            Release(device); Release(notify);
             if (started) MFShutdown();
         }
     }

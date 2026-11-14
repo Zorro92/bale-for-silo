@@ -3,9 +3,9 @@ using System.Runtime;
 namespace Bale.Core.Playback;
 
 /// <summary>
-/// Collects the WinRT/COM wrappers a torn-down player leaves behind. Their native decoder, frame-pool and
-/// Media Foundation memory (hundreds of MiB at 4K) is only released by finalization, and the small managed
-/// heap would otherwise not trigger a collection for minutes, so a new start could overlap the old one.
+/// Collects unreachable WinRT/COM wrappers after explicit player/source/device cleanup. The small
+/// managed heap may otherwise keep wrapper finalizers from running for minutes. This is a backstop:
+/// native owners must be closed and driver caches trimmed explicitly; GC cannot release live devices.
 /// </summary>
 public sealed class PlaybackMemoryRelease
 {

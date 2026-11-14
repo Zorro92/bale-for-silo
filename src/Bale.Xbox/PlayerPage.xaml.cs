@@ -28,6 +28,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
     private Attempt? _attempt;
     private Task? _shutdown;
     private IDisposable? _gcLatencyLease;
+    private IDisposable? _resourceLease;
     private bool _active;
     private bool _leaving;
     private bool _suspended;
@@ -142,6 +143,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         try
         {
             if (!_active || _leaving || _suspended) return;
+            _resourceLease ??= PlaybackResources.Lifetime.EnterPlayer();
             _gcLatencyLease ??= PlaybackGcLatency.Shared.Acquire();
             await StopAttemptAsync();
             // A previous attempt or page may still hold its decoder memory; 4K starts on top of it can OOM.
@@ -506,7 +508,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
             DisposeMount(attempt);
             attempt.Cancellation.Dispose();
             if (ReferenceEquals(_attempt, attempt)) _attempt = null;
-            // The torn-down pipeline's native memory is only freed when its WinRT wrappers finalize.
+            // Explicit Close/Trim has released native owners; collect leftover unreachable wrappers.
             _ = PlaybackMemoryRelease.Shared.Schedule();
         }
     }
@@ -558,6 +560,10 @@ public sealed partial class PlayerPage : Page, IBackHandler
             SetDisplayActive(false);
             _gcLatencyLease?.Dispose();
             _gcLatencyLease = null;
+            Cleanup("release video presenter", ReleaseVideoPresenter);
+            _resourceLease?.Dispose();
+            _resourceLease = null;
+            Cleanup("release idle resources", () => PlaybackResources.ReleaseIdle("teardown"));
             _lifecycle.Release();
         }
     }
@@ -568,20 +574,30 @@ public sealed partial class PlayerPage : Page, IBackHandler
         try
         {
             Log.Info("player: suspending");
-            _suspended = true;
-            await ShutdownAsync();
+            await SuspendPlaybackAsync();
         }
         catch (Exception ex) { LogFailure("suspend", ex); }
         finally { deferral.Complete(); }
     }
 
+    // EnteredBackground and Suspending share the same idempotent shutdown. No resume auto-play.
+    internal Task SuspendPlaybackAsync()
+    {
+        _suspended = true;
+        return ShutdownAsync();
+    }
+
     private async void OnResuming(object sender, object e)
+        => await RestoreAfterBackgroundAsync();
+
+    internal async Task RestoreAfterBackgroundAsync()
     {
         try
         {
             if (!_suspended) return;
             if (_shutdown is { } shutdown) await shutdown;
-            if (_leaving || !ReferenceEquals(Frame?.Content, this)) return;
+            if (!_suspended || _leaving || Application.Current is App { IsInBackground: true }
+                || !ReferenceEquals(Frame?.Content, this)) return;
             _suspended = false;
             _active = true;
             _shutdown = null;

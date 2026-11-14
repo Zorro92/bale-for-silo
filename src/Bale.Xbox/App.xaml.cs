@@ -1,4 +1,5 @@
 using Bale.Xbox.Services;
+using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 using Windows.System;
 using Windows.UI.Core;
@@ -26,8 +27,46 @@ public sealed partial class App : Application
 #endif
         };
         DebugSettings.BindingFailed += (_, e) => Log.Info($"XAML binding failed: {e.Message}");
-        Suspending += (_, _) => Session.SetForeground(false);
+        Suspending += OnSuspending;
         Resuming += (_, _) => Session.SetForeground(Window.Current?.Visible == true);
+        EnteredBackground += OnEnteredBackground;
+        LeavingBackground += async (_, _) =>
+        {
+            _inBackground = false;
+            if (Window.Current?.Content is Frame { Content: PlayerPage player })
+                await player.RestoreAfterBackgroundAsync();
+        };
+    }
+
+    private bool _inBackground;
+    internal bool IsInBackground => _inBackground;
+
+    private async void OnEnteredBackground(object sender, EnteredBackgroundEventArgs e)
+    {
+        var deferral = e.GetDeferral();
+        _inBackground = true;
+        Session.SetForeground(false);
+        try { await ReleaseBackgroundResourcesAsync("background"); }
+        catch (Exception ex) { Log.Info($"background cleanup hr=0x{unchecked((uint)ex.HResult):X8}"); }
+        finally { deferral.Complete(); }
+    }
+
+    private async void OnSuspending(object sender, SuspendingEventArgs e)
+    {
+        var deferral = e.SuspendingOperation.GetDeferral();
+        _inBackground = true;
+        Session.SetForeground(false);
+        try { await ReleaseBackgroundResourcesAsync("suspend"); }
+        catch (Exception ex) { Log.Info($"suspend cleanup hr=0x{unchecked((uint)ex.HResult):X8}"); }
+        finally { deferral.Complete(); }
+    }
+
+    private async Task ReleaseBackgroundResourcesAsync(string reason)
+    {
+        if (Window.Current?.Content is Frame { Content: PlayerPage player })
+            await player.SuspendPlaybackAsync();
+        // A quick return can race asynchronous shutdown. Never trim the resumed foreground UI.
+        if (_inBackground) PlaybackResources.ReleaseIdle(reason, background: true);
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs e)

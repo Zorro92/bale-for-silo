@@ -222,6 +222,8 @@ pub struct Overlay {
     /// One load (and one capture) waits for its result at a time.
     load_lock: Mutex<()>,
     capture_lock: Mutex<()>,
+    // Keep the final trim behind panel detachment AND worker exit, even if the worker failed early.
+    _device_lifetime: Arc<crate::lifecycle::Device>,
 }
 
 impl Overlay {
@@ -251,6 +253,7 @@ impl Overlay {
             return Err(Error::from_hresult(windows::core::HRESULT(E_INVALIDARG)));
         }
         let gpu = Gpu::new(driver, width, height)?;
+        let device_lifetime = Arc::clone(&gpu._device_lifetime);
         // SAFETY: the caller guarantees a live COM pointer when non-null.
         let panel = match unsafe { IUnknown::from_raw_borrowed(&panel) } {
             Some(panel) => {
@@ -319,6 +322,7 @@ impl Overlay {
             panel,
             load_lock: Mutex::new(()),
             capture_lock: Mutex::new(()),
+            _device_lifetime: device_lifetime,
         }))
     }
 
@@ -458,12 +462,14 @@ impl Drop for Overlay {
             state.signal = true;
             self.shared.wake.notify_one();
         }
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
         if let Some(panel) = self.panel.take() {
             // SAFETY: live interface, on the UI thread (destroy's contract); null detaches.
             let _ = unsafe { panel.SetSwapChain(std::ptr::null_mut()) };
+        }
+        // Detach first: the panel must release its swap-chain reference before the worker's
+        // GPU fields drop and its final device lease calls Trim.
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
         }
     }
 }
@@ -875,6 +881,7 @@ struct Gpu {
     /// Sizes of this frame's images, to size the atlas for the next frame when one batch was not enough.
     sizes: Vec<(u32, u32)>,
     batches: u32,
+    _device_lifetime: Arc<crate::lifecycle::Device>,
 }
 
 // SAFETY: `create` builds the value and hands it to the render thread, which is its only user from
@@ -884,6 +891,11 @@ unsafe impl Send for Gpu {}
 
 impl Drop for Gpu {
     fn drop(&mut self) {
+        // Private context: unbind back buffer, atlas and bitmap views before releasing them.
+        unsafe {
+            self.context.ClearState();
+            self.context.Flush();
+        }
         if !self.latency.is_invalid() {
             // SAFETY: the handle came from GetFrameLatencyWaitableObject and is closed once.
             let _ = unsafe { CloseHandle(self.latency) };
@@ -1016,6 +1028,7 @@ impl Gpu {
             )?;
         }
         let gpu = Gpu {
+            _device_lifetime: crate::lifecycle::Device::track(&device),
             atlas: Atlas::new(&device, ATLAS_START)?,
             device,
             context,

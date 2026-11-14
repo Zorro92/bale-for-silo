@@ -17,6 +17,8 @@ pub mod engine_target;
 #[cfg(windows)]
 mod frames;
 pub mod grain;
+#[cfg(windows)]
+pub mod lifecycle;
 pub mod png;
 pub mod subs;
 pub mod tonemap;
@@ -98,6 +100,10 @@ pub unsafe extern "C" fn bale_gpu_d3d11_probe(feature_level: *mut u32) -> i32 {
     };
     match result {
         Ok(()) => {
+            // Probe owns no work after returning; release the driver's temporary allocations too.
+            if let Some(device) = device.as_ref() {
+                drop(lifecycle::Device(device.clone()));
+            }
             if !feature_level.is_null() {
                 // SAFETY: the caller guarantees a non-null pointer is writable.
                 unsafe { *feature_level = level.0 as u32 };

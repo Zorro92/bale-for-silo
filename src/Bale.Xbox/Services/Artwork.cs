@@ -63,6 +63,15 @@ internal static class Artwork
     private const int KeptLimit = 48;
     private static readonly Dictionary<string, BitmapImage> Kept = new();
     private static readonly Queue<string> KeptOrder = new();
+    private static int _memoryGeneration;
+
+    /// <summary>UI thread, on background/suspend only; no disk IO or visible source changes.</summary>
+    internal static void ReleaseMemoryCache()
+    {
+        _memoryGeneration++;
+        Kept.Clear();
+        KeptOrder.Clear();
+    }
 
     /// <summary>
     /// A logo that stays decoded in memory once shown, like the official image loader's memory
@@ -79,10 +88,11 @@ internal static class Artwork
         }
 
         ready = false;
+        var generation = _memoryGeneration;
         var image = Load(uri, height: height, priority: true);
         image.ImageOpened += (_, _) =>
         {
-            if (Kept.ContainsKey(key))
+            if (generation != _memoryGeneration || Kept.ContainsKey(key))
             {
                 return;
             }

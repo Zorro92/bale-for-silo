@@ -7,11 +7,14 @@ using Windows.Media.Core;
 using Windows.Media.Playback;
 using Windows.Media.Streaming.Adaptive;
 using Windows.Storage.Streams;
+using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Media;
 
 namespace Bale.Xbox;
 
 public sealed partial class PlayerPage
 {
+    private MediaPlayerElement? _video;
     private sealed class Mount
     {
         public Mount(PlaybackMedia transport, CancellationToken cancellation)
@@ -40,6 +43,7 @@ public sealed partial class PlayerPage
         public AdaptiveMediaSource? Adaptive { get; set; }
         public TypedEventHandler<AdaptiveMediaSource, AdaptiveMediaSourceDownloadRequestedEventArgs>? DownloadHandler { get; set; }
         public FFmpegMediaSource? FfmpegSource { get; set; }
+        public PlaybackResources.MediaDevice? RendererDevice { get; set; }
         public PlaybackRouteDecision Route { get; set; } = null!;
         // Set by StartSubtitles for an in-container image track: the FFmpeg source feeds the overlay.
         public int? SubtitleStreamIndex { get; set; }
@@ -186,6 +190,8 @@ public sealed partial class PlayerPage
 #endif
                 Log.Info("player: FFmpeg stream created; before item");
                 media.Item = media.FfmpegSource.CreateMediaPlaybackItem();
+                // Low-frequency Starting only, no sample observer or rendering state changes.
+                media.RendererDevice = new PlaybackResources.MediaDevice(media.FfmpegSource);
 #if DEBUG_SERVER
                 try { media.MssVideoMediaType = new DebugVideoMediaType(media.FfmpegSource, config.Video.VideoDecoderMode); }
                 catch (Exception ex) { Log.Info($"player: video media type route=ffmpeg source=mss unavailable ({ex.GetType().Name})"); }
@@ -224,7 +230,9 @@ public sealed partial class PlayerPage
         player.MediaEnded += OnMediaEnded;
         player.PlaybackSession.PlaybackStateChanged += OnPlaybackStateChanged;
         AttachSubtitleSession(player.PlaybackSession);
-        Video.SetMediaPlayer(player);
+        _video ??= new MediaPlayerElement { AreTransportControlsEnabled = false, Stretch = Stretch.Uniform, IsTabStop = false };
+        VideoHost.Child = _video;
+        _video.SetMediaPlayer(player);
         // Subscribe before Source: native opening/decoding can fail before MediaOpened is raised.
 #if DEBUG_SERVER
         player.PlaybackSession.BufferingStarted += OnStatsBufferingStarted;
@@ -447,17 +455,22 @@ public sealed partial class PlayerPage
     {
         if (attempt.Media is not { } media) return;
         attempt.Media = null;
-        media.Cancellation.Cancel();
+        // MSS exposes MF's renderer device even for ForceSystemDecoder. Hold it across Close so
+        // Trim happens after MF/FFmpeg have released their decoder surfaces and texture pools.
+        var rendererDevice = media.RendererDevice?.TakeForClose() ?? 0;
+        media.RendererDevice = null;
+        Cleanup("cancel mount", media.Cancellation.Cancel);
         media.Opening.TrySetCanceled(media.Token);
         if (media.SelectedAudioTrack is { } audio)
             Cleanup("detach audio failure", () => audio.OpenFailed -= OnAudioTrackOpenFailed);
 #if DEBUG_SERVER
         Cleanup("detach video media type", () => media.MssVideoMediaType?.Dispose());
         Cleanup("detach frame delivery", () => media.FrameDelivery?.Dispose());
+        media.MssVideoMediaType = null;
+        media.FrameDelivery = null;
 #endif
         if (media.Player is { } player)
         {
-            Cleanup("detach element", () => Video.SetMediaPlayer(null));
             Cleanup("detach callbacks", () =>
             {
                 player.MediaOpened -= OnMediaOpened;
@@ -472,10 +485,15 @@ public sealed partial class PlayerPage
             });
             Cleanup("pause pipeline", player.Pause);
             Cleanup("detach source", () => player.Source = null);
+            Cleanup("detach element", () => _video?.SetMediaPlayer(null));
             Cleanup("dispose player", player.Dispose);
         }
+        Cleanup("release video presenter", ReleaseVideoPresenter);
         if (media.Adaptive is { } adaptive && media.DownloadHandler is { } handler)
             Cleanup("detach downloads", () => adaptive.DownloadRequested -= handler);
+        // FFmpeg owns an MSS, but CreateMediaPlaybackItem also creates a MediaSource. Closing
+        // only FFmpeg does not close that source's MF pipeline (including system HEVC surfaces).
+        Cleanup("dispose item source", () => media.Item?.Source?.Dispose());
         Cleanup("dispose source", () => media.Source?.Dispose());
         // The native source owns its MSS/item and must outlive the player, but not the authenticated stream.
         Cleanup("dispose FFmpeg source", () => media.FfmpegSource?.Dispose());
@@ -484,7 +502,30 @@ public sealed partial class PlayerPage
         Cleanup("dispose stream", () => media.Stream?.Dispose());
         Cleanup("dispose playlist input", () => media.PlaylistInput?.Dispose());
         Cleanup("dispose playlist", () => media.Playlist?.Dispose());
+        media.Player = null;
+        media.Item = null;
+        media.Source = null;
+        media.SelectedAudioTrack = null;
+        media.FfmpegSource = null;
+        media.Adaptive = null;
+        media.DownloadHandler = null;
+        media.RandomStream = null;
+        media.Stream = null;
+        media.PlaylistInput = null;
+        media.Playlist = null;
+        PlaybackResources.ReleaseMediaDevice(rendererDevice);
         media.Cancellation.Dispose();
+#if DEBUG_SERVER
+        Log.Info("player resources: mount released=player,item-source,ffmpeg,streams,observer,video-presenter renderer_device=" + (rendererDevice != 0 ? "released" : "unavailable"));
+#endif
+    }
+
+    private void ReleaseVideoPresenter()
+    {
+        var video = _video;
+        _video = null;
+        VideoHost.Child = null;
+        video?.SetMediaPlayer(null);
     }
 
     private static void Cleanup(string operation, Action action)

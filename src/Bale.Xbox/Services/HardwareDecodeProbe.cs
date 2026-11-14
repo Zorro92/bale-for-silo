@@ -184,6 +184,7 @@ internal static class HardwareDecodeProbe
         {
             Release(videoDevice, trace);
             Release(context, trace);
+            PlaybackResources.TrimDevice(device);
             Release(device, trace);
         }
         return new(level, profileCount, profiles, error, profileErrors);

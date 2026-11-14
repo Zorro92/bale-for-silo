@@ -1513,6 +1513,59 @@ Things learned on the way:
 - Watch Party.
 - Audiobooks.
 
+## Playback resource lifetime
+
+Production rule: **player off-screen → release; background/suspend → trim**. A new mount lazily
+creates its video presenter, MediaPlayer, subtitle device/swap chain and zero-copy runtime. There
+is no periodic trim, collection or cache purge during playback or foreground browsing. The Core
+`PlaybackResourceLifetime` lease prevents a late shutdown from trimming a newer player.
+
+The lifecycle audit found these ownership paths (code evidence, not a console heap capture):
+
+| Owner | After the old teardown | Release rule |
+|---|---|---|
+| `Mount.Item.Source` | FFmpeg `CreateMediaPlaybackItem` creates a MediaSource; Bale closed the FFmpeg wrapper but never explicitly closed this source. Native/HLS mounts also retained their disposed wrappers in mount fields. | Close the item source as well as the wrapper and clear every mount reference, including tracks, observers and streams. |
+| XAML video presenter | `SetMediaPlayer(null)` detached the explicit player, but its MediaPlayerElement remained in the page. PageFrame keeps an outgoing page during its 500 ms fade. | Remove the presenter on teardown; recreate on mount. Player navigation cache is explicitly disabled. |
+| FFmpeg / MF | Wrapper Close stops decode-ahead, clears sample providers/upload pools and drops its device-manager references. Driver allocations had no Trim call. | Borrow the MSS renderer device at Starting (also for system-decoder HEVC, before end-of-media can close the source); detach that observer, then ClearState / Flush / IDXGIDevice3::Trim after middleware Close, and release the borrowed device. Native/HLS renderer devices are OS-owned and not exposed by MediaPlayer; their source, player and XAML presenter are closed/detached. |
+| SubtitleOverlay / PGS | Overlay destruction already joined its worker and detached the swap chain. PGS windows are scoped CPU data; the overlay owns bitmap textures/queues. | Keep that destruction, detach the panel before worker GPU teardown, unbind resources and trim the private D3D11 device after its textures/views drop. |
+| NativeFrameDelivery | Debug-only: Dispose requests stop and joins up to 1 s; the worker destroys the native observer even if the join times out. No sample survives its callback. | Unsubscribe/dispose before source Close and clear the mount's observer fields; a late worker owns its remaining cleanup. |
+| Zero-copy / grain | Each wrapper provider owns its zero-copy handle and texture/grain pools. Rust's LIVE map owns decoder-lent buffers until unref. `ZeroCopyRuntime` only retains the loaded d3d12.dll module and a registration flag, not a device. | Normal wrapper Close destroys handles. Idle cleanup can also retire a still-live handle, wait for GPU fences and drop queues/heaps/landing/cached target textures; no new work is accepted. Decoder-lent memory stays valid until unref, then releases instead of re-pooling. Registries hold only Weak references. |
+| Other caches/devices | PlaybackSessions caches client/reporting services, not GPU objects. HardwareDecodeProbe caches only its report. Rust engine devices exist only during debug probes. Artwork keeps up to 48 decoded logos. | Trim short-lived probe devices before final release; drop the logo cache only on background/suspend, including ignoring late cache insertions. Keep disk artwork, visible image sources and the OS-owned XAML compositor. Release DisplayRequest and restore HDMI as before. |
+
+`App.EnteredBackground` and `App.Suspending` take deferrals, shut down an on-screen player using
+the same idempotent path as `PlayerPage.OnSuspending`, then retire idle native resources and drop
+the bitmap cache. A quick foreground return suppresses stale app-wide cleanup. Return to a stopped
+player shows Retry, as suspend already did; Retry reopens from the final source position. The
+existing post-close GC pass remains a backstop for unreachable WinRT wrappers, not a substitute
+for native Close/Trim. See Microsoft's [suspend guidance](https://learn.microsoft.com/en-us/windows/uwp/gaming/how-to-suspend-an-app-directx-and-cpp)
+and [Trim ordering](https://learn.microsoft.com/en-us/windows/win32/api/dxgi1_3/nf-dxgi1_3-idxgidevice3-trim).
+Lifecycle ABI 1 is additive: existing GPU/frame, subtitle, grain and zero-copy ABIs are unchanged.
+
+Under DEBUG_SERVER, `scripts/bale-debug.sh mem` still prints the actual App memory and Xbox
+general-heap/graphics accounting, plus `Playback resources: idle releases=… trimmed=… owned D3D11=…`.
+`trimmed` counts completed DXGI Trim calls, not freed bytes; `owned D3D11` counts registered native
+device owners (not OS compositor devices). Teardown logs distinguish renderer device availability;
+missing device access is reported, not silently presented as a successful renderer trim.
+
+Console verification (parent; no console test performed by the implementation agent):
+
+1. Install the normal push-CI build. Fresh launch, navigate to Detail without playing, wait at least
+   20 s after the last real input, run `scripts/bale-debug.sh mem`, and record the baseline. Suspend
+   Bale by opening the other app and record its GPU timings at the same idle/input offset.
+2. Return to Bale, play a 4K system-decoded HEVC item for 30 s, press Back, run
+   `scripts/bale-debug.sh wait page Detail`, wait the same 20 s, then `scripts/bale-debug.sh mem`.
+   Expect App memory to fall toward the fresh ~70–100 MiB, `owned D3D11=0`, increased `trimmed`, and
+   a mount release log with `renderer_device=released` for an FFmpeg/MSS route. Do not use `mem gc` as the
+   acceptance condition. It is a diagnostic only if memory remains high.
+3. Open the other app to background/suspend Bale. Its GPU timings must match the fresh-Bale
+   baseline (previously ~18.8 ms busy / ~1.4 ms inter-prediction, rather than ~50.6 / ~19 ms).
+   Repeat several playback/Back cycles: Detail memory must not accumulate.
+4. Repeat with native MP4/HLS, zero-copy AV1 8-bit and 10-bit (HDR where available), text subtitles,
+   embedded bitmap subtitles and windowed PGS. Check seek/reanchor, Back, replay and background
+   while playing; foreground Retry must recreate playback/subtitles correctly. During 30 s of
+   uninterrupted visible playback the idle-release/trim counters must not advance. Foreground
+   browsing and artwork/focus navigation should retain their usual responsiveness.
+
 ## Testing rules
 - Every server write (progress, watched, track picks) runs under the **Bale Test** profile.
 - Drive the player with `bale-debug.sh key/press` and check it with `where`, `wait` and

@@ -86,6 +86,7 @@ struct ProbeDevice {
     device: ID3D11Device,
     context: ID3D11DeviceContext,
     multithread: ID3D10Multithread,
+    _device_lifetime: std::sync::Arc<crate::lifecycle::Device>,
 }
 
 impl ProbeDevice {
@@ -126,6 +127,7 @@ impl ProbeDevice {
         let _ = unsafe { multithread.SetMultithreadProtected(true) };
         report.push_str("  Multithread protection: on\n");
         Ok(Self {
+            _device_lifetime: crate::lifecycle::Device::track(&device),
             device,
             context,
             multithread,
@@ -701,6 +703,7 @@ mod tests {
         // SAFETY: configure this private context before use.
         let _ = unsafe { multithread.SetMultithreadProtected(true) };
         let device = ProbeDevice {
+            _device_lifetime: crate::lifecycle::Device::track(&device),
             device,
             context,
             multithread,

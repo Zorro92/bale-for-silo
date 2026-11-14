@@ -45,7 +45,7 @@ use std::ffi::c_void;
 use std::mem::ManuallyDrop;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{
@@ -113,6 +113,7 @@ static D3D12: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
 /// Every buffer handed out by any handle, by odd id. Ids are never dereferenced, so a stale or
 /// foreign id is harmless.
 static LIVE: Mutex<BTreeMap<usize, Arc<Buffer>>> = Mutex::new(BTreeMap::new());
+static RUNTIMES: Mutex<Vec<Weak<Runtime>>> = Mutex::new(Vec::new());
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
 /// An owned kernel handle (event or shared NT handle), closed on drop.
@@ -262,9 +263,14 @@ struct PoolState {
 }
 
 /// Decode buffers of one handle. Shared with every live buffer, so it outlives the handle.
-struct Pool {
+#[derive(Clone)]
+struct PoolGpu {
     device: ID3D12Device,
     repacked: ID3D12Fence,
+}
+
+struct Pool {
+    gpu: Mutex<Option<PoolGpu>>,
     state: Mutex<PoolState>,
     /// A repack failed: no new buffers, so the decoder falls back to its own pool.
     poisoned: AtomicBool,
@@ -276,17 +282,26 @@ struct Pool {
 }
 
 impl Pool {
+    fn gpu(&self) -> Result<PoolGpu> {
+        self.gpu
+            .lock()
+            .map_err(|_| E_UNEXPECTED)?
+            .clone()
+            .ok_or_else(|| E_FAIL.into())
+    }
+
     fn alloc(self: &Arc<Self>, bytes: u64) -> Result<Arc<Buffer>> {
         if bytes == 0 || bytes > MAX_BYTES {
             return Err(E_INVALIDARG.into());
         }
-        if self.poisoned.load(Ordering::Acquire) {
+        if self.closed.load(Ordering::Acquire) || self.poisoned.load(Ordering::Acquire) {
             return Err(E_FAIL.into());
         }
+        let gpu = self.gpu()?;
         let size = bytes.next_multiple_of(ALIGNMENT);
         for attempt in 0..2 {
             // SAFETY: live fence.
-            let completed = unsafe { self.repacked.GetCompletedValue() };
+            let completed = unsafe { gpu.repacked.GetCompletedValue() };
             let mut state = self.state.lock().map_err(|_| E_UNEXPECTED)?;
             // Idle memory of another size is released; memory the GPU may still read never is.
             state
@@ -327,7 +342,7 @@ impl Pool {
             // SAFETY: default security, auto-reset, unnamed.
             let event = Handle(unsafe { CreateEventW(None, false, false, PCWSTR::null())? });
             let _ = wait_fence(
-                &self.repacked,
+                &gpu.repacked,
                 oldest,
                 event.0,
                 Duration::from_millis(ALLOC_WAIT_MS),
@@ -352,7 +367,7 @@ impl Pool {
             D3D12_RESOURCE_FLAG_NONE,
         );
         let resource = committed(
-            &self.device,
+            &self.gpu()?.device,
             &write_back(),
             D3D12_HEAP_FLAG_NONE,
             &desc,
@@ -387,10 +402,19 @@ impl Pool {
             return;
         }
         drop(state);
-        // SAFETY: live fence.
-        if memory.gpu_fence > unsafe { self.repacked.GetCompletedValue() } {
+        // SAFETY: gpu() clones a live fence while outstanding decoder buffers exist.
+        let completed = self
+            .gpu()
+            .map(|gpu| unsafe { gpu.repacked.GetCompletedValue() })
+            .unwrap_or(0);
+        if memory.gpu_fence > completed {
             // Only after a failed idle wait at destroy: never release memory the GPU may read.
             std::mem::forget(memory);
+        }
+        // A closed pool retains the allocator only while the decoder still owns buffers.
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if state.live == 0 {
+            self.gpu.lock().unwrap_or_else(|e| e.into_inner()).take();
         }
     }
 }
@@ -527,6 +551,7 @@ struct Inner {
     landed: u64,
     event: Handle,
     poison: Option<i32>,
+    _device_lifetime: Arc<crate::lifecycle::Device>,
 }
 
 /// The pipeline of a dispatch.
@@ -1058,8 +1083,78 @@ impl Drop for Inner {
 /// `bale_zc_repack` and `bale_zc_repack_into` calls are serialized by the caller; destroy runs after
 /// every other call.
 pub struct BaleZeroCopy {
+    runtime: Arc<Runtime>,
+}
+
+// Deref only shares synchronized state; the C ABI's handle ownership remains unchanged.
+impl std::ops::Deref for BaleZeroCopy {
+    type Target = Runtime;
+    fn deref(&self) -> &Runtime {
+        &self.runtime
+    }
+}
+
+#[doc(hidden)]
+pub struct Runtime {
     pool: Arc<Pool>,
-    inner: Mutex<Inner>,
+    inner: Mutex<Option<Inner>>,
+}
+
+impl Runtime {
+    fn release(&self) {
+        // Keep the fence alive across a final decoder unref racing retirement.
+        let gpu = self.pool.gpu().ok();
+        self.pool.closed.store(true, Ordering::Release);
+        // Drop waits for BOTH devices before releasing queues, descriptors, landing textures,
+        // shared target references and grain heaps. Live decoder buffers remain valid until unref.
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner()).take();
+        drop(inner);
+        let free = std::mem::take(
+            &mut self
+                .pool
+                .state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .free,
+        );
+        // SAFETY: pool owns the fence, including after its runtime was retired.
+        let completed = gpu
+            .map(|gpu| unsafe { gpu.repacked.GetCompletedValue() })
+            .unwrap_or(0);
+        for memory in free {
+            if memory.gpu_fence > completed {
+                std::mem::forget(memory);
+            }
+        }
+        let state = self.pool.state.lock().unwrap_or_else(|e| e.into_inner());
+        if state.live == 0 {
+            self.pool
+                .gpu
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take();
+        }
+    }
+}
+
+impl Drop for Runtime {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+/// Only after middleware has stopped; retained handles fail closed and may still be destroyed.
+/// Weak registration cannot retain a handle, device or heap after normal wrapper teardown.
+pub(crate) fn release_idle() {
+    let runtimes: Vec<_> = RUNTIMES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .filter_map(Weak::upgrade)
+        .collect();
+    for runtime in runtimes {
+        runtime.release();
+    }
 }
 
 impl BaleZeroCopy {
@@ -1176,17 +1271,19 @@ impl BaleZeroCopy {
             )
         };
         let pool = Arc::new(Pool {
-            device: device.clone(),
-            repacked: repacked.clone(),
+            gpu: Mutex::new(Some(PoolGpu {
+                device: device.clone(),
+                repacked: repacked.clone(),
+            })),
             state: Mutex::new(PoolState::default()),
             poisoned: AtomicBool::new(false),
             closed: AtomicBool::new(false),
             frames: AtomicU64::new(0),
             copies: AtomicU64::new(0),
         });
-        let zero_copy = Box::new(Self {
+        let runtime = Arc::new(Runtime {
             pool,
-            inner: Mutex::new(Inner {
+            inner: Mutex::new(Some(Inner {
                 device,
                 queue,
                 root,
@@ -1202,6 +1299,7 @@ impl BaleZeroCopy {
                 released,
                 repacked11,
                 released11,
+                _device_lifetime: crate::lifecycle::Device::track(device11),
                 device11: device1,
                 context: context4,
                 multithread,
@@ -1220,9 +1318,13 @@ impl BaleZeroCopy {
                 landed: 0,
                 event,
                 poison: None,
-            }),
+            })),
         });
+        let zero_copy = Box::new(Self { runtime });
         zero_copy.self_test()?;
+        let mut runtimes = RUNTIMES.lock().unwrap_or_else(|e| e.into_inner());
+        runtimes.retain(|entry| entry.strong_count() != 0);
+        runtimes.push(Arc::downgrade(&zero_copy.runtime));
         Ok(zero_copy)
     }
 
@@ -1236,9 +1338,10 @@ impl BaleZeroCopy {
     /// garbage, the last chroma word half outside the picture); a failure refuses only 8-bit
     /// frames or only 8-bit grain, never 10-bit ones.
     fn self_test(&self) -> Result<()> {
-        let mut inner = self.inner.lock().map_err(|_| E_UNEXPECTED)?;
+        let mut guard = self.inner.lock().map_err(|_| E_UNEXPECTED)?;
+        let inner = guard.as_mut().ok_or(E_FAIL)?;
         for (index, (width, height)) in [(64, 64), (64, 64), (66, 18)].into_iter().enumerate() {
-            self.test_frame(&mut inner, width, height, 10, index as u32 + 1, None, None)?;
+            self.test_frame(inner, width, height, 10, index as u32 + 1, None, None)?;
         }
         let direct = |inner: &mut Inner, (width, height): (u32, u32), depth: u32, seed: u32| {
             test_target(&inner.device11, width, height)
@@ -1267,20 +1370,20 @@ impl BaleZeroCopy {
                 })
                 .is_ok()
         };
-        let direct_ok = direct(&mut inner, (66, 18), 10, 4);
+        let direct_ok = direct(inner, (66, 18), 10, 4);
         if !direct_ok {
             inner.targets_refused = true;
         }
-        if !inner.grain_refused && !(direct_ok && grained(&mut inner, (130, 40), 10, 6)) {
+        if !inner.grain_refused && !(direct_ok && grained(inner, (130, 40), 10, 6)) {
             inner.grain_refused = true;
         }
         // A refused handle declines every direct write, so these only run after a good one.
-        let eight_ok = !inner.eight_refused && direct_ok && direct(&mut inner, (66, 18), 8, 7);
+        let eight_ok = !inner.eight_refused && direct_ok && direct(inner, (66, 18), 8, 7);
         inner.eight_refused = !eight_ok;
-        if !inner.grain8_refused && !(eight_ok && grained(&mut inner, (130, 40), 8, 8)) {
+        if !inner.grain8_refused && !(eight_ok && grained(inner, (130, 40), 8, 8)) {
             inner.grain8_refused = true;
         }
-        self.test_frame(&mut inner, 66, 18, 10, 5, None, None)?;
+        self.test_frame(inner, 66, 18, 10, 5, None, None)?;
         let _lock = Locked::enter(&inner.multithread);
         if inner.wait(&inner.repacked, inner.repacked_value).is_ok() {
             inner.targets.clear();
@@ -1960,10 +2063,13 @@ fn run<T>(
         zero_copy.pool.poisoned.store(true, Ordering::Release);
         return Err(E_UNEXPECTED.0);
     };
+    let Some(inner) = inner.as_mut() else {
+        return Err(E_FAIL.0);
+    };
     if let Some(hr) = inner.poison {
         return Err(hr);
     }
-    repack(&mut inner).map_err(|error| {
+    repack(inner).map_err(|error| {
         let hr = error.code().0;
         inner.poison = Some(hr);
         zero_copy.pool.poisoned.store(true, Ordering::Release);
@@ -2027,22 +2133,7 @@ pub unsafe extern "C" fn bale_zc_destroy(handle: *mut BaleZeroCopy) {
             return S_OK;
         }
         // SAFETY: ownership of this once-created Box returns exclusively to this call.
-        let BaleZeroCopy { pool, inner } = *unsafe { Box::from_raw(handle) };
-        pool.closed.store(true, Ordering::Release);
-        drop(inner);
-        let free = pool
-            .state
-            .lock()
-            .map(|mut state| std::mem::take(&mut state.free));
-        if let Ok(free) = free {
-            // SAFETY: live fence.
-            let completed = unsafe { pool.repacked.GetCompletedValue() };
-            for memory in free {
-                if memory.gpu_fence > completed {
-                    std::mem::forget(memory);
-                }
-            }
-        }
+        drop(unsafe { Box::from_raw(handle) });
         S_OK
     });
 }

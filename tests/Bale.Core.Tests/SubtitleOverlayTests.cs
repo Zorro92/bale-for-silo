@@ -132,7 +132,7 @@ public class SubtitleOverlayTests
     public void ThePanelSitsDirectlyAboveTheVideoAndNeverTakesInput()
     {
         var xaml = Read("PlayerPage.xaml").ReplaceLineEndings("\n");
-        var video = xaml.IndexOf("<MediaPlayerElement x:Name=\"Video\"", StringComparison.Ordinal);
+        var video = xaml.IndexOf("<Border x:Name=\"VideoHost\"", StringComparison.Ordinal);
         var layer = xaml.IndexOf("<SwapChainPanel x:Name=\"SubtitleLayer\" IsHitTestVisible=\"False\" />", StringComparison.Ordinal);
         var feedback = xaml.IndexOf("x:Name=\"TransportFeedback\"", StringComparison.Ordinal);
         Assert.True(video >= 0 && layer > video && feedback > layer);

@@ -48,6 +48,7 @@ internal sealed partial class DebugServer
         }
         // Xbox-only budget split (hevc-xbox GetExtendedMemoryInfo): general heap vs graphics partition.
         builder.Append("Xbox memory: ").Append(DebugXboxMemory.Describe()).Append('\n');
+        builder.Append("Playback resources: ").Append(PlaybackResources.Describe()).Append('\n');
         return ("200 OK", builder.ToString());
     }
 }

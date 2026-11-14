@@ -15,6 +15,10 @@ use bale_gpu::d3d12_repack::{
 };
 use bale_gpu::grain::BaleGrainParams;
 use bale_gpu::grain::params::PARAMS_SIZE;
+use bale_gpu::lifecycle::{
+    bale_gpu_device_count, bale_gpu_media_device_hold, bale_gpu_media_device_release,
+    bale_gpu_trim, bale_gpu_trim_device, bale_gpu_trimmed_count,
+};
 use bale_gpu::zc_frame::{BaleZcFrame, MAX_BYTES, fill_test_planes_bits, grain_p010};
 use windows::Win32::Foundation::{E_INVALIDARG, E_OUTOFMEMORY, HMODULE};
 use windows::Win32::Graphics::Direct3D::{
@@ -24,8 +28,12 @@ use windows::Win32::Graphics::Direct3D10::ID3D10Multithread;
 use windows::Win32::Graphics::Direct3D11::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIAdapter, IDXGIFactory4};
+use windows::Win32::Media::MediaFoundation::{
+    IMFDXGIDeviceManager, IMFDXGIDeviceManagerSource, IMFDXGIDeviceManagerSource_Impl,
+    MFCreateDXGIDeviceManager,
+};
 use windows::Win32::System::LibraryLoader::LoadLibraryW;
-use windows::core::{Interface, w};
+use windows::core::{Interface, implement, w};
 
 /// Buffers per handle (`MAX_BUFFERS` in the module).
 const MAX_BUFFERS: usize = 16;
@@ -51,6 +59,10 @@ impl Warp {
     }
 
     fn with(kind: Kind) -> windows::core::Result<Self> {
+        Self::with_flags(kind, D3D11_CREATE_DEVICE_FLAG(0))
+    }
+
+    fn with_flags(kind: Kind, flags: D3D11_CREATE_DEVICE_FLAG) -> windows::core::Result<Self> {
         // SAFETY: loads a system DLL by name; it stays loaded for the test process.
         let module =
             unsafe { LoadLibraryW(w!("d3d12.dll")) }.expect("d3d12.dll ships with Windows");
@@ -75,7 +87,7 @@ impl Warp {
                 adapter.as_ref(),
                 driver,
                 HMODULE::default(),
-                D3D11_CREATE_DEVICE_FLAG(0),
+                flags,
                 Some(&[D3D_FEATURE_LEVEL_11_0]),
                 D3D11_SDK_VERSION,
                 Some(&mut device),
@@ -252,6 +264,88 @@ impl Drop for ZeroCopy {
 struct Picture {
     data: *mut u8,
     id: *mut c_void,
+}
+
+// Same manager-source QI contract MSS exposes, without opening real media in the test.
+#[implement(IMFDXGIDeviceManagerSource)]
+struct ManagerSource(IMFDXGIDeviceManager);
+
+impl IMFDXGIDeviceManagerSource_Impl for ManagerSource_Impl {
+    fn GetManager(&self) -> windows::core::Result<IMFDXGIDeviceManager> {
+        Ok(self.0.clone())
+    }
+}
+
+#[test]
+fn renderer_device_lease_survives_manager_close_and_trims_on_release() {
+    let warp = Warp::with_flags(Kind::DriverType, D3D11_CREATE_DEVICE_VIDEO_SUPPORT)
+        .expect("video-capable WARP device");
+    let mut token = 0;
+    let mut manager = None;
+    // SAFETY: writable locals, then live device and manager. No media has been opened.
+    unsafe { MFCreateDXGIDeviceManager(&mut token, &mut manager) }.expect("device manager");
+    let manager = manager.expect("manager");
+    unsafe { manager.ResetDevice(&warp.device, token) }.expect("set renderer device");
+    let source: IMFDXGIDeviceManagerSource = ManagerSource(manager.clone()).into();
+    let before = bale_gpu_trimmed_count();
+    let mut held = ptr::null_mut();
+    // SAFETY: live COM source, writable output pointer.
+    assert_eq!(
+        unsafe { bale_gpu_media_device_hold(source.as_raw(), &mut held) },
+        S_OK
+    );
+    assert!(!held.is_null());
+    assert_eq!(bale_gpu_trimmed_count(), before); // Merely holding must never trim playback.
+    drop(source);
+    drop(manager);
+    // SAFETY: lease is still live and consumed exactly once after middleware Close.
+    unsafe { bale_gpu_media_device_release(held) };
+    assert_eq!(bale_gpu_trimmed_count(), before + 1);
+    assert_eq!(unsafe { bale_gpu_trim_device(warp.device.as_raw()) }, S_OK);
+    assert_eq!(bale_gpu_trimmed_count(), before + 2);
+}
+
+#[test]
+fn idle_trim_retires_heaps_preserves_borrowed_buffers_and_allows_a_new_player() {
+    let warp = Warp::new();
+    let devices_before = bale_gpu_device_count();
+    let trims_before = bale_gpu_trimmed_count();
+    let old = warp.zero_copy();
+    assert_eq!(bale_gpu_device_count(), devices_before + 1);
+    let (picture, frame, bytes) = old.picture(128, 72, 7);
+    let (hr, landing) = old.repack(picture.id, &frame);
+    assert_eq!(hr, S_OK);
+    assert!(!landing.is_null());
+
+    // No more decode/render work. Retain the opaque wrapper handle and one decoder buffer,
+    // as a delayed FFmpeg close/unref could, while the app backgrounds.
+    assert_eq!(bale_gpu_trim(), S_OK);
+    assert_eq!(bale_gpu_device_count(), devices_before);
+    assert!(bale_gpu_trimmed_count() > trims_before);
+    assert_eq!(old.stats().buffers_pooled, 0);
+    assert_eq!(old.stats().buffers_live, 1);
+    assert!(old.alloc(4096).is_err());
+    let (hr, texture) = old.repack(picture.id, &frame);
+    assert!(hr < 0);
+    assert!(texture.is_null());
+    // SAFETY: trim never invalidates a buffer still lent to the decoder.
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(picture.data, bytes.len()) },
+        bytes
+    );
+    assert_eq!(release(picture.id), S_OK);
+    assert_eq!(old.stats().buffers_live, 0);
+    assert_eq!(bale_gpu_trim(), S_OK); // Idempotent, including after the final decoder unref.
+    drop(old); // A retired handle can still be destroyed through the unchanged ABI.
+
+    let next = warp.zero_copy();
+    let (picture, frame, bytes) = next.picture(128, 72, 9);
+    let (hr, landing) = next.repack(picture.id, &frame);
+    assert_eq!(hr, S_OK);
+    assert_eq!(warp.read(landing, 128, 72), frame.reference_p010(&bytes));
+    assert_eq!(release(picture.id), S_OK);
+    drop(next);
+    assert_eq!(bale_gpu_device_count(), devices_before);
 }
 
 impl ZeroCopy {

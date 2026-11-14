@@ -394,8 +394,19 @@ pub fn run(input: Input, seconds: u32, target: Target) -> String {
         return report;
     }
     let mut engine: Option<IMFMediaEngine> = None;
+    let mut device_lifetime = None;
     // SAFETY: every COM object is created and used on this thread inside `play`.
-    let outcome = unsafe { play(&input, seconds, target, &shared, &mut engine, &mut report) };
+    let outcome = unsafe {
+        play(
+            &input,
+            seconds,
+            target,
+            &shared,
+            &mut engine,
+            &mut device_lifetime,
+            &mut report,
+        )
+    };
     if let Err(Step(name, hr)) = outcome {
         let _ = writeln!(report, "Error: 0x{:08X} at {name}", hr.0 as u32);
         if target != Target::Bgra {
@@ -423,6 +434,7 @@ pub fn run(input: Input, seconds: u32, target: Target) -> String {
             let _ = engine.Shutdown();
         }
     }
+    drop(device_lifetime);
     append_events(&mut report, &shared);
     drop(input);
     // SAFETY: all MF objects created after MFStartup have been released above.
@@ -438,6 +450,7 @@ unsafe fn play(
     target: Target,
     shared: &Arc<Shared>,
     engine_slot: &mut Option<IMFMediaEngine>,
+    device_lifetime: &mut Option<Arc<crate::lifecycle::Device>>,
     report: &mut String,
 ) -> Result<(), Step> {
     unsafe {
@@ -457,6 +470,7 @@ unsafe fn play(
         )
         .step("D3D11CreateDevice")?;
         let device = device.ok_or(Step("D3D11CreateDevice", HRESULT(0x8000_4003u32 as i32)))?;
+        *device_lifetime = Some(crate::lifecycle::Device::track(&device));
         let _ = writeln!(report, "D3D11 feature level: 0x{:04X}", level.0);
         let format = DXGI_FORMAT(target.dxgi_format() as i32);
         match device.CheckFormatSupport(format) {
