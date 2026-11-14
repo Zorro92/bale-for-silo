@@ -1270,8 +1270,12 @@ GPU tone map 0/4/62/169/218 sat 0.62; server transcode 0/4/61/177/223 sat 0.60; 
 GPU cost (Device Portal engine utilisation, 20 samples while playing): 3D engine 12.5 % mean with the
 pass vs 6.2 % without, i.e. about 2.6 ms of GPU per 1080p frame including the slice copy; process
 CPU about 0.19 cores either way. Memory over 5 minutes showed no growth on bale.24 or bale.25.
-Still to test: Hable, 4K HEVC, HDR10+, and a non-PQ source with the switch on. Production stays on
-server tone mapping until those pass and the owner decides.
+Follow-up (0.1.480): Hable on the same frame 0/3/56/149/198 sat 0.62 (darker than BT.2390 and the
+server, so BT.2390 stays the default). An HDR10+ 1080p HEVC title (base layer, dynamic metadata
+ignored) with BT.2390: 0/9/32/147/164 sat 0.62 vs the server's 0/9/32/149/166 sat 0.61. An SDR 10-bit
+HEVC MKV with the switch on logs `Bale tonemap: request ignored; not a D3D11 10-bit PQ stream.` and
+plays unchanged. 4K is untested: no 4K HDR10 HEVC file in the library takes the FFmpeg route.
+Production stays on server tone mapping until the owner decides.
 
 Microsoft's media pipeline exposes no tone-mapping algorithm or parameter controls.
 FFmpegInteropX's `SetFFmpegVideoFilters` is not a practical alternative: filters run on the CPU,
