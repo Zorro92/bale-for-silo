@@ -1328,6 +1328,12 @@ full_range=0` and bale_gpu refused it (HLG not in ABI 1's v1 set), so playback f
 HLS remux. Next: an HLG branch in bale_gpu (transfer 18 is already in the ABI) and HLG in the fork's
 eligibility. The BT.2020 SDR branch stays for genuinely SDR BT.2020 sources.
 
+Done (0.1.509, wrapper bale.29): bale_gpu decodes HLG through the BT.2100 inverse OETF and OOTF at the
+1000-nit nominal peak (75% HLG = 203 nits), then the PQ path; the fork lets transfer 18 through when the
+container signals BT.2020. On the console (decoder=auto, tonemap=bt2390) the HLG frame plays direct and
+looks correct: median luma 100 vs 65 and saturation 0.27 vs 0.17 against the untone-mapped default, with
+highlight detail kept. A container that tags BT.709 over an HLG stream stays ineligible (not seen yet).
+
 Microsoft's media pipeline exposes no tone-mapping algorithm or parameter controls.
 FFmpegInteropX's `SetFFmpegVideoFilters` is not a practical alternative: filters run on the CPU,
 this build has no zimg/zscale or libplacebo, and Xbox offers no usable OpenCL/Vulkan path for
