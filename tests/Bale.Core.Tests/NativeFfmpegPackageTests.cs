@@ -7,7 +7,7 @@ public class NativeFfmpegPackageTests
 {
     [Theory]
     [InlineData("ffmpeg-native.json", "FFmpegInteropX.UWP.FFmpeg", "8.1.2-bale.dav1d.1.5.4.p1")]
-    [InlineData("ffmpeginteropx-wrapper.json", "FFmpegInteropX.UWP.Lib", "2.1.0-bale.22")]
+    [InlineData("ffmpeginteropx-wrapper.json", "FFmpegInteropX.UWP.Lib", "2.1.0-bale.23")]
     public void ExactReferenceAndBothLockEntriesMatchTheReviewedAsset(string pinFile, string packageId, string expectedVersion)
     {
         using var pin = JsonDocument.Parse(Read(pinFile));
@@ -37,10 +37,11 @@ public class NativeFfmpegPackageTests
         Assert.Equal("1.5.4", native.RootElement.GetProperty("dav1d_version").GetString());
         Assert.Equal("54706fc6bc0cdecab7e9593974a4039cc038fca7", native.RootElement.GetProperty("dav1d_commit").GetString());
         using var wrapper = JsonDocument.Parse(Read("ffmpeginteropx-wrapper.json"));
-        Assert.Equal("wrapper-ffmpeginteropx-2.1.0-bale.22", wrapper.RootElement.GetProperty("release_tag").GetString());
-        Assert.Equal("62cb83af167650d260a044ba30c3dc280de029f559fcccaf75efbf9a7d41f636", wrapper.RootElement.GetProperty("sha256").GetString());
-        Assert.Equal("SzF+jR9H9JAV2ciMxVZifeZPqXjLqWX7zqUeaARfHLewjXVqTgXvxwvPhu5Psc4rDPzC131BnB5dxXlRnaQEZQ==", wrapper.RootElement.GetProperty("nuget_content_hash").GetString());
-        Assert.Equal(native.RootElement.GetProperty("upstream_commit").GetString(), wrapper.RootElement.GetProperty("upstream_commit").GetString());
+        Assert.Equal("wrapper-ffmpeginteropx-2.1.0-bale.23", wrapper.RootElement.GetProperty("release_tag").GetString());
+        Assert.Equal("36e2472ffc46ec5aca77446fbbeacfb63cc345bbdaab132ae540b9ddd3324d2f", wrapper.RootElement.GetProperty("sha256").GetString());
+        Assert.Equal("pcF0Y/O3RqSftT5Dmz4YrUI49aI+lyRP1BGPqUtksOFDNihfwQHLPtGgbNU5dNDqoa18KPTz6m3LA+n11j65oA==", wrapper.RootElement.GetProperty("nuget_content_hash").GetString());
+        Assert.Equal("Zorro92/bale-ffmpeginteropx", wrapper.RootElement.GetProperty("release_repository").GetString());
+        Assert.Equal("86bb6c916f06d1e5f89708e1bf8b3feb256cc049", wrapper.RootElement.GetProperty("source_commit").GetString());
     }
 
     [Fact]
@@ -75,7 +76,11 @@ public class NativeFfmpegPackageTests
         Assert.Contains("$($package.Id.ToLowerInvariant())/$($pin.version)", download);
         Assert.Contains("Remove-Item $cached -Recurse -Force", download);
         Assert.Contains("if (-not $NativeOnly)", download);
-        Assert.Contains("restore-ffmpeg-native.ps1\" -NativeOnly", Read("build-ffmpeginteropx-wrapper.ps1.txt"));
+        Assert.Contains("Repository = 'Zorro92/bale-for-silo'", download);
+        Assert.Contains("Repository = $wrapperPin.release_repository", download);
+        Assert.Contains("https://github.com/$($package.Repository)/releases/download/", download);
+        Assert.Contains("Get-WrapperPin", download);
+        Assert.Contains("./scripts/test-ffmpeginteropx-wrapper.ps1", workflow);
     }
 
     [Fact]
@@ -89,6 +94,30 @@ public class NativeFfmpegPackageTests
         Assert.Contains("if ($shippedHash -ne $expectedHash)", check);
         Assert.Contains("check-dav1d-version.ps1", check);
         Assert.Contains("ActivatableClass", check);
+    }
+
+    [Fact]
+    public void AppCiInspectsTheLiveExportsOfTheActualPackagedDll()
+    {
+        var workflow = Read("ci.yml.txt");
+        var start = workflow.IndexOf("$entry = $zip.GetEntry('bale_gpu.dll')", StringComparison.Ordinal);
+        var end = workflow.IndexOf("removed exports absent\"", start, StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start);
+        var inspection = workflow[start..end];
+        Assert.Contains("ExtractToFile($entry, $packagedDll)", inspection);
+        Assert.Contains("$exports = & $dumpbin.FullName /exports $packagedDll", inspection);
+        Assert.Contains("if ($LASTEXITCODE -ne 0)", inspection);
+        var required = inspection.IndexOf("$required = @(", StringComparison.Ordinal);
+        var removed = inspection.IndexOf("$removed = @(", StringComparison.Ordinal);
+        Assert.True(required >= 0 && removed > required);
+        // Grain ABI 2: the GPU exports the wrapper loads stay required; CPU grain must be gone.
+        foreach (var symbol in new[] { "bale_grain_abi_version", "bale_grain_validate", "bale_grain_gpu_create",
+            "bale_grain_gpu_apply", "bale_grain_gpu_destroy" })
+            Assert.Contains($"'{symbol}'", inspection[required..removed]);
+        Assert.Contains("'bale_grain_cpu_apply'", inspection[removed..]);
+        Assert.DoesNotContain("'bale_grain_cpu_apply'", inspection[required..removed]);
+        Assert.Contains("throw \"Packaged bale_gpu.dll is missing export $symbol\"", inspection);
+        Assert.Contains("throw \"Packaged bale_gpu.dll still exports removed $symbol\"", inspection);
     }
 
     private static string Read(string file) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, file));

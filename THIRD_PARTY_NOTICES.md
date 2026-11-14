@@ -28,67 +28,25 @@ GNU Affero General Public License v3.0, as is Bale (see `LICENSE`).
 
 ## FFmpegInteropX
 
-All Bale builds bundle [FFmpegInteropX.UWP.Lib](https://github.com/ffmpeginteropx/FFmpegInteropX)
-**2.1.0-bale.22**, a Bale x64 native-wrapper fork of upstream 2.1.0, under the Apache License 2.0.
+All Bale builds bundle modified [FFmpegInteropX.UWP.Lib](https://github.com/Zorro92/bale-ffmpeginteropx)
+**2.1.0-bale.23**, a Bale x64 native-wrapper fork of upstream 2.1.0, under **Apache-2.0**.
 Its full license text is packaged as `Licenses/FFmpegInteropX.txt`
-(source copy: `src/Bale.Xbox/Assets/FFmpegInteropX-LICENSE.txt`). The fork starts at upstream commit
-`88428c66e106852338b48554a4a00c9e48da588f` and applies
-`scripts/ffmpeginteropx-patches/0001-decode-ahead-threaded-sws.patch` for opt-in decode-ahead,
-threaded scaling and dav1d frame-delay tuning, followed by
-`scripts/ffmpeginteropx-patches/0002-decode-thread-priority.patch` for opt-in worker priority boosts
-and `scripts/ffmpeginteropx-patches/0003-decoder-max-resolution.patch` for opt-in system-decoder
-resolution/DPB hints, then
-`scripts/ffmpeginteropx-patches/0004-mf-video-color-attributes.patch`, an unchanged backport of
-upstream FFmpegInteropX PR #482 (Apache License 2.0) that corrects the colour attributes of
-FFmpeg-decoded video and is always on, and
-`scripts/ffmpeginteropx-patches/0005-dav1d-export-film-grain.patch` for an opt-in, debug-only
-export of AV1 film-grain parameters instead of synthesizing grain, followed by
-`scripts/ffmpeginteropx-patches/0006-d3d11-software-upload.patch` for opt-in D3D11 surface delivery
-of software-decoded NV12/P010 frames (default off; no grain shader or decoder change), then
-`scripts/ffmpeginteropx-patches/0007-d3d11-upload-variants-diagnostics.patch` for five opt-in
-DEFAULT texture flag variants and URL/path-free upload diagnostics, followed by
-`scripts/ffmpeginteropx-patches/0008-d3d11-upload-processed-lifetime.patch` to recycle tracked textures
-without reopening MF-closed surfaces, keep callback cleanup errors nonfatal, make variant 1 render-target
-plus shader-resource, and add a one-shot steady pool diagnostic, followed by
-`scripts/ffmpeginteropx-patches/0009-rust-film-grain.patch` for opt-in Rust CPU/GPU AV1 grain via the
-packaged `bale_gpu.dll` grain ABI, with permanent per-stream CPU fallback after GPU failure, then
-`scripts/ffmpeginteropx-patches/0010-film-grain-fallback-policy.patch` for the measured-cost GPU grain
-fallback policy (keep dav1d at open without render-target upload; after runtime GPU loss, CPU grain
-through 1080p or no grain above 1080p),
-`scripts/ffmpeginteropx-patches/0011-d3d11-upload-fault-injection.patch` for an opt-in, debug-only
-GPU upload failure after N frames (default off),
-`scripts/ffmpeginteropx-patches/0012-d3d11-gpu-repack.patch` for an opt-in, debug-only GPU NV12/P010
-repack of planar decoder output in place of swscale (default off), and
-`scripts/ffmpeginteropx-patches/0013-d3d11-upload-stage-timing.patch` for numeric per-stage timing
-log lines in the D3D11 upload and decode-ahead paths (no behavior change), and
-`scripts/ffmpeginteropx-patches/0014-repack-sliced-fill.patch` to split that debug repack's planar
-staging copy across the configured swscale thread count, and
-`scripts/ffmpeginteropx-patches/0015-zero-copy-landing.patch` for an opt-in, debug-only path where
-dav1d decodes into GPU-visible buffers from Bale's `bale_gpu.dll` and a GPU repack replaces the
-staging copy (default off), and
-`scripts/ffmpeginteropx-patches/0016-upload-variant-shared-uav.patch` for a debug-only upload
-variant whose pooled textures are also D3D12-shareable unordered-access views, and
-`scripts/ffmpeginteropx-patches/0017-zero-copy-direct-write.patch` for letting that zero-copy path
-write such a pooled texture directly, skipping the landing copy, and
-`scripts/ffmpeginteropx-patches/0018-zero-copy-direct-grain.patch` for applying GPU film grain in
-that same direct write, and `scripts/ffmpeginteropx-patches/0019-zero-copy-eight-bit.patch` for
-taking 8-bit AV1 through that direct write as P010, and
-`scripts/ffmpeginteropx-patches/0020-zero-copy-only.patch` for making that software AV1 path
-zero-copy only, removing the staging, repack, threaded-swscale and CPU-grain paths, and
-`scripts/ffmpeginteropx-patches/0021-system-decoder-dolby.patch` for opt-in passing of AC-3/E-AC-3
-packets undecoded to the system Dolby decoder (default off), and
-`scripts/ffmpeginteropx-patches/0022-bitmap-subtitle-sink.patch` for opt-in handing of one decoded
-bitmap subtitle stream (PGS/DVD/DVB) to Bale's subtitle overlay instead of image cues. Grain only modifies Bale-owned output, never dav1d
-reference frames.
-The original winmd and managed projection are retained; with the new `bale_*` keys unset, behavior
-equals upstream 2.1.0 plus that colour-attribute fix.
+(source copy: `src/Bale.Xbox/Assets/FFmpegInteropX-LICENSE.txt`). Corresponding source is at
+[Zorro92/bale-ffmpeginteropx](https://github.com/Zorro92/bale-ffmpeginteropx), pinned to commit
+`86bb6c916f06d1e5f89708e1bf8b3feb256cc049`. The former 22-patch Bale series is preserved there
+as commits, including upstream PR #482's colour-attribute fix, decode-ahead tuning, GPU grain and
+zero-copy AV1 delivery, system Dolby decoding and bitmap subtitle delivery to Bale's overlay.
+Grain only modifies Bale-owned output, never dav1d reference frames. The original winmd, managed
+projection and x86/ARM64 payloads are retained; only x64 is built from the modified source.
+With the `bale_*` keys unset, behavior equals upstream 2.1.0 plus the colour-attribute fix.
 
-The [wrapper release](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.15)
-provides the nupkg, SHA256, `SOURCES.txt`, metadata comparison and corresponding patched source in
-`ffmpeginteropx-wrapper-sources.tar.gz`. Provenance records the upstream/build commits, ordered patch hashes,
-native dependency and build tools; it ships in all MSIX builds as
-`Licenses/FFmpegInteropX/SOURCES.txt`. The release tag and expected package SHA256 are pinned in
-`scripts/ffmpeginteropx-wrapper.json`; build/integration details are in `docs/player-plan.md`.
+The [wrapper release](https://github.com/Zorro92/bale-ffmpeginteropx/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.23)
+provides the nupkg, SHA256, `SOURCES.txt`, metadata comparison, build log and corresponding source
+archive. Provenance records the fork/source commit, native dependency and build tools; it ships
+in all MSIX builds as `Licenses/FFmpegInteropX/SOURCES.txt`. The release repository, tag, source
+commit and expected package hashes are pinned in `scripts/ffmpeginteropx-wrapper.json`;
+build/integration details are in `docs/player-plan.md` and the fork's
+[`bale/README.md`](https://github.com/Zorro92/bale-ffmpeginteropx/blob/main/bale/README.md).
 Bale remains AGPL-3.0-or-later; third-party components retain their own licenses.
 
 ## FFmpeg
@@ -106,7 +64,7 @@ FFmpeg remains at `38b88335f99e76ed89ff3c93f877fdefce736c13`. The build baseline
 [FFmpegInteropX v2.1.0, commit 88428c66e106852338b48554a4a00c9e48da588f](https://github.com/ffmpeginteropx/FFmpegInteropX/tree/88428c66e106852338b48554a4a00c9e48da588f),
 with its other dependency revisions and FFmpeg configure flags unchanged. The x64-only NuGet
 omits unused architecture globs and adds provenance; the separately rebuilt interop wrapper is
-2.1.0-bale.22 as described above.
+2.1.0-bale.23 as described above.
 
 The [native release](https://github.com/Zorro92/bale-for-silo/releases/tag/native-ffmpeg-8.1.2-dav1d-1.5.4-p1)
 provides the package, SHA256, `SOURCES.txt` with every submodule revision and build parameters,

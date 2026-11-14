@@ -148,9 +148,10 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
 - FFmpegInteropX packages, native activation and license texts ship in **all** builds. Keep the CI
   package checker; CsWinRT's projection alone does not register the WinRT factories for Native AOT.
 - Native FFmpeg is **8.1.2-bale.dav1d.1.5.4.p1**, not public 8.1.2 (which embeds dav1d 1.0.0).
-  Keep wrapper `FFmpegInteropX.UWP.Lib` on the pinned **2.1.0-bale.N** fork (currently **2.1.0-bale.22**),
-  built by `ffmpeginteropx-wrapper.yml`. `scripts/ffmpeg-native.json` and
-  `scripts/ffmpeginteropx-wrapper.json` pin their release tags and SHA256s; run
+  Keep wrapper `FFmpegInteropX.UWP.Lib` on the pinned **2.1.0-bale.N** fork (currently **2.1.0-bale.23**),
+  consumed from [Zorro92/bale-ffmpeginteropx releases](https://github.com/Zorro92/bale-ffmpeginteropx/releases).
+  `scripts/ffmpeg-native.json` and `scripts/ffmpeginteropx-wrapper.json` pin their release tags
+  and SHA256s; run
   `scripts/restore-ffmpeg-native.ps1` before Windows restore/build. `NuGet.Config` maps both IDs only
   to the verified local feed. CI checks the actual MSIX's dav1d version and compares the wrapper DLL
   and provenance hashes with the pinned wrapper package.
@@ -160,7 +161,11 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   `scripts/ffmpeg-native-patches/` (named by the `patch_revision` input/pin, e.g. `p1`); the
   build script allows them to touch only `libavcodec/libdav1d.c`. Releases are immutable. See `docs/player-plan.md` for provenance and
   rebuild steps; do not overwrite assets or update a pinned hash without reviewing the new build.
-- The wrapper fork pipeline is `ffmpeginteropx-wrapper.yml`; its patches must not change the IDL.
+- Wrapper changes go to [Zorro92/bale-ffmpeginteropx](https://github.com/Zorro92/bale-ffmpeginteropx)
+  as commits; see its [`bale/README.md`](https://github.com/Zorro92/bale-ffmpeginteropx/blob/main/bale/README.md)
+  for build/release steps. The fork's CI forbids IDL/project changes and checks the built winmd's public
+  type names against the retained upstream package. Bale no longer carries the wrapper patch series
+  or builds wrapper packages; native FFmpeg builds remain here.
 - Software AV1 has one path: libdav1d decodes into `bale_gpu` zero-copy D3D12 buffers, then the D3D12
   direct write (`bale_zc_*`, fused GPU grain) or the D3D11 landing fallback (`bale_zc_repack` +
   `bale_grain_gpu_*`) fills the pooled texture. 8- and 10-bit 4:2:0 (Main profile) only; GPU grain only.

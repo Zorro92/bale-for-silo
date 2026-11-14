@@ -563,12 +563,19 @@ and its native activation registration are unchanged.
 
 ### Native FFmpegInteropX wrapper fork
 
-Bale now requires exactly `[2.1.0-bale.9]` of `FFmpegInteropX.UWP.Lib`, from immutable release
-[`wrapper-ffmpeginteropx-2.1.0-bale.9`](https://github.com/Zorro92/bale-for-silo/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.9).
-The independently verified nupkg SHA256 is
-`73d879b31a936d5bf7d3cbf653a9fe02cd87e07800dbc40895f08838067cdaf3`. The release tag, SHA256 and
-NuGet content hash are pinned in `scripts/ffmpeginteropx-wrapper.json`; both framework/RID lock
-entries agree. `restore-ffmpeg-native.ps1` downloads it into isolated staging, verifies before moving
+Bale requires exactly `[2.1.0-bale.23]` of `FFmpegInteropX.UWP.Lib`, from the fork's immutable
+release [`wrapper-ffmpeginteropx-2.1.0-bale.23`](https://github.com/Zorro92/bale-ffmpeginteropx/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.23),
+built from fork commit `86bb6c916f06d1e5f89708e1bf8b3feb256cc049`. Its nupkg SHA256 is
+`36e2472ffc46ec5aca77446fbbeacfb63cc345bbdaab132ae540b9ddd3324d2f`. The `Source/` code is identical
+to the former 22-patch build; moving the build/release owner does not change app behavior.
+Bale no longer carries or applies wrapper patches or builds/releases wrapper packages. Changes go
+as commits to [Zorro92/bale-ffmpeginteropx](https://github.com/Zorro92/bale-ffmpeginteropx); its
+[`bale/README.md`](https://github.com/Zorro92/bale-ffmpeginteropx/blob/main/bale/README.md) is the
+build/release procedure. The fork's CI forbids IDL/project changes and compares built/original winmd
+public type names. Native FFmpeg and its build/release workflow remain in Bale unchanged.
+
+The release repository, source commit, tag, SHA256 and NuGet content hash are pinned in
+`scripts/ffmpeginteropx-wrapper.json`; both framework/RID lock entries agree. `restore-ffmpeg-native.ps1` downloads it into isolated staging, verifies before moving
 it to `.cache/ffmpeg-native`, and clears its cached extraction. Source mapping allows the wrapper
 only from that verified feed, never nuget.org. `Licenses/FFmpegInteropX/SOURCES.txt` ships in debug
 and production MSIX files next to the license texts. The package checker compares the actual MSIX
@@ -576,7 +583,9 @@ and production MSIX files next to the license texts. The package checker compare
 checks that the shipped wrapper provenance is identical too. Activation/factory and dav1d/license
 checks remain enabled in both configurations.
 
-Release `2.1.0-bale.9` was built from Bale commit `0b9a460220dfc35c7097f5c632b5cd97b51532b0`
+**Historical patch-series era (through `2.1.0-bale.22`).** The following build and playback
+notes describe the former Bale-owned wrapper pipeline; the patch numbers now refer to commits
+in the fork. Release `2.1.0-bale.9` was built from Bale commit `0b9a460220dfc35c7097f5c632b5cd97b51532b0`
 by successful [wrapper run 42513374008](https://github.com/Zorro92/bale-for-silo/actions/runs/42513374008).
 Independent verification matched all six release assets' GitHub SHA256 digests, all nine ordered patch
 hashes in `SOURCES.txt`, the original/native package pins, all 130 tracked `Source/` and `Build/` files
@@ -588,8 +597,9 @@ reports 29 identical types. The NuGet content hash in the pin/lock entries was o
 The corresponding-source archive SHA256 is
 `9b4682596c14c33bdcee78b6ded2a0ebb2283581f898f4f7622ea80ab4a06cf0`.
 
-The manual `ffmpeginteropx-wrapper.yml` workflow builds only the **Release_UWP x64** native wrapper;
-producing a new release does not automatically update Bale's app pin.
+The former manual `ffmpeginteropx-wrapper.yml` workflow built only the **Release_UWP x64** native
+wrapper. That workflow and its patch series have been removed from Bale. The fork now owns the
+build; producing a release there does not automatically update Bale's app pin.
 
 **Step 4 (`2.1.0-bale.9`, patch 0009; CPU grain removed by 0020):** this release adds opt-in Rust CPU/GPU grain
 without changing the default from dav1d. Selection precedes `avcodec_open2`; compatible software
@@ -601,28 +611,25 @@ section 6, for the mapper, output paths, failure handling and serialized-owner t
 Console playback parity, CPU/late-frame A/B and memory checks remain pending; include CPU mode with
 upload on, whose grain reads mapped CPU_ACCESS_WRITE staging that may be write-combined.
 
-`scripts/ffmpeginteropx-wrapper.json` pins upstream commit
+The former build pin in `scripts/ffmpeginteropx-wrapper.json` recorded upstream commit
 `88428c66e106852338b48554a4a00c9e48da588f` and the original nuget.org 2.1.0 package SHA256
-`927f23e66688b6c86659121fd20c12c44507581b3b00de5437274741bb506881`. The source checkout omits
-submodules. Native FFmpeg comes only from `restore-ffmpeg-native.ps1 -NativeOnly` and its hash pin
-(the wrapper build must not require an already-published wrapper);
-upstream's `8.1.2-pre01` FFmpeg packages are never restored. Only the vcxproj's three pinned
-build-tool packages are restored from nuget.org. The native MSBuild settings follow upstream:
-`Release_UWP`, `x64`, toolset `v145`, SDK `10.0.26100.0`, minimum `10.0.17763.0` and
-`LibraryVersionNumber=2.1.0.0`. The workflow bypasses upstream's full build/restore entrypoint so
-it neither rebuilds the managed projection nor downloads a different FFmpeg. Compiler flags and
-IDL remain unchanged; the native FFmpeg package version is explicitly overridden.
+`927f23e66688b6c86659121fd20c12c44507581b3b00de5437274741bb506881`. The source checkout omitted
+submodules. Native FFmpeg came only from the hash-pinned `restore-ffmpeg-native.ps1 -NativeOnly`;
+upstream's `8.1.2-pre01` packages were never restored. Only the vcxproj's three build-tool packages
+were restored from nuget.org. Native MSBuild used `Release_UWP`, `x64`, toolset `v145`, SDK
+`10.0.26100.0`, minimum `10.0.17763.0` and `LibraryVersionNumber=2.1.0.0`. The pipeline bypassed
+upstream's full build/restore entrypoint, retaining the managed projection and overriding the
+native FFmpeg package version. These build pins and responsibilities now live in the fork.
 
-The released fork includes `scripts/ffmpeginteropx-patches/0001-decode-ahead-threaded-sws.patch`:
-opt-in decoded-frame lookahead, threaded swscale and libdav1d max-frame-delay. It also includes
-`scripts/ffmpeginteropx-patches/0002-decode-thread-priority.patch`, adding optional priority boosts
-for the decode-ahead worker, libdav1d workers and threaded swscale workers. Patch 0020 removed
-threaded swscale and now rejects `bale_sws_threads`; the three remaining decimal-string `bale_*` keys
-are documented above, and production never sets the priority key. Every `*.patch` is applied with `git apply --index` in ordinal filename order;
-any failure aborts. Only `Source/` `.cpp`/`.h`
-changes are accepted, **never IDL**, project files or dependency changes. The build compares the
-built winmd's public type-name set against the original; a difference aborts packaging. This is a
-minimum metadata guard, not a complete member/ABI comparison. Patches must preserve that ABI.
+The former `0001-decode-ahead-threaded-sws.patch` introduced opt-in decoded-frame lookahead,
+threaded swscale and libdav1d max-frame-delay. `0002-decode-thread-priority.patch` added optional
+priority boosts for decode-ahead, libdav1d and swscale workers. Patch 0020 removed threaded swscale
+and now rejects `bale_sws_threads`; the three remaining decimal-string `bale_*` keys are documented
+above, and production never sets the priority key. The old pipeline applied patches with
+`git apply --index` in ordinal order, allowing only `Source/` `.cpp`/`.h` changes. The fork builds
+those changes directly as commits, with its source guard protecting IDL/project files. The built
+winmd's public type-name set must still match the original. This is a minimum metadata guard,
+not a complete member/ABI comparison.
 
 `0003-decoder-max-resolution.patch` prepares opt-in system/passthrough-video hints
 `bale_decoder_use_max_resolution` (0/1) and `bale_decoder_max_dpb_count` (0–16; 0 leaves attributes
@@ -871,7 +878,7 @@ swscale conversion (~0.6 core) and the staging fill disappear. dav1d's own cost 
    deadlock. A buffer not from the pool (`S_FALSE`) takes today's path for that frame; any repack
    failure poisons the handle (later allocs fail, so dav1d returns to its own pool) and the wrapper
    takes today's path from then on.
-   Built in wrapper 2.1.0-bale.15 (native `p1`): `scripts/ffmpeginteropx-patches/0015-zero-copy-landing.patch`,
+   Built in wrapper 2.1.0-bale.15 (native `p1`): former patch `0015-zero-copy-landing.patch`,
    option `bale_zero_copy` (only with `bale_d3d11_upload`). The hook is installed in
    `SelectOutputFormat` (dav1d asks per picture, so before the first decode is enough) and declines
    until `SetUploadDevice` has created the handle. The repack size is the 4-aligned output texture
@@ -960,40 +967,35 @@ OPC core-properties versions/content types are updated. The original NuGet repos
 is removed because modification invalidates it. The fork is unsigned and intended for **x64 only**;
 retained other-architecture binaries are not fork builds.
 
-**Manual wrapper release / integrate (next unused version after step 4: `2.1.0-bale.10`):**
+**Release in the fork / integrate in Bale:**
 
-1. Commit/push the reviewed changes to `main`, then run
-   `gh workflow run ffmpeginteropx-wrapper.yml --ref main -f version=2.1.0-bale.10` and
-   `gh run watch <run-id> --exit-status` (run the watch in the background, or poll at sensible intervals).
-   Choose a fresh number if that tag already exists; step 4's `.9` release is now immutable. The
-   workflow applies every `*.patch` in ordinal order: `.9` records **nine** patches through
-   `0009-rust-film-grain.patch`; verify the actual series at the rebuilt ref for later releases.
-2. The release contains the nupkg, `.sha256`, `SOURCES.txt`, `winmd-public-types.txt`, build log and
-   corresponding patched wrapper source archive. Provenance records the upstream/Bale commits,
-   ordered patch names/hashes, original/native package hashes, native FFmpeg version, tool packages,
-   SDK/toolset and runner image. Independently verify asset SHA256 digests, the package's embedded
-   provenance, ordered patch hashes and corresponding sources; confirm retained original-package
-   entries and the built/original public type-name check. Obtain the NuGet content hash with
-   `PackageArchiveReader.GetContentHash`, not an assumed archive SHA512.
-3. Update `scripts/ffmpeginteropx-wrapper.json` (`version`, `release_tag`, `sha256`,
-   `nuget_content_hash`), the exact `FFmpegInteropX.UWP.Lib` reference in `src/Bale.Xbox/Bale.Xbox.csproj`
-   and **both** wrapper entries in `src/Bale.Xbox/packages.lock.json` together. Update the reviewed
-   version/hash assertions in `NativeFfmpegPackageTests.cs` and `DebugFfmpegPlaytestTests.cs`, the
-   release/provenance paragraph above and `THIRD_PARTY_NOTICES.md`. Keep upstream/native/build-tool
-   pins unchanged unless deliberately rebuilding those too.
-4. Run Core tests, commit/push the verified pins and watch app CI to green. Also run CI manually with
-   `production=true` to check debug and production packages, including the actual packaged grain-DLL
-   exports. Build/package success is not console verification; retain dav1d as the grain default
-   until the step-5 playback gates pass.
+1. Commit wrapper source changes to `Zorro92/bale-ffmpeginteropx` and follow its
+   [`bale/README.md`](https://github.com/Zorro92/bale-ffmpeginteropx/blob/main/bale/README.md)
+   for the `bale-wrapper.yml` build/release procedure. Choose a fresh `2.1.0-bale.N` version.
+   The fork builds the checked-out source directly, with no patch application. Its publish guard
+   rejects tags already in either repository; never replace an asset or reuse a version.
+2. Review the release nupkg, SHA256, `SOURCES.txt`, `winmd-public-types.txt`, build log and corresponding
+   source archive. Verify asset hashes, embedded provenance and the source commit, retained original
+   package entries, and the built/original public type-name comparison. Obtain the NuGet content hash
+   with `PackageArchiveReader.GetContentHash`; do not infer it from the archive SHA512.
+3. Update `scripts/ffmpeginteropx-wrapper.json` (`release_repository`, `source_commit`, `version`,
+   `release_tag`, `sha256`, `nuget_content_hash`), the exact `FFmpegInteropX.UWP.Lib` reference in
+   `src/Bale.Xbox/Bale.Xbox.csproj` and **both** wrapper entries in `src/Bale.Xbox/packages.lock.json`
+   together. Update the reviewed assertions in `NativeFfmpegPackageTests.cs` and
+   `DebugFfmpegPlaytestTests.cs`, the current release paragraph above, `AGENTS.md` and
+   `THIRD_PARTY_NOTICES.md`. Native FFmpeg pins and its build pipeline remain independent in Bale.
+4. Run Core tests and the PowerShell fixtures, then commit/push the verified pins and wait for app CI
+   to pass, including the Windows MSIX's wrapper/provenance comparisons, activation, dav1d, licenses
+   and GPU export checks. The same checks run for production packages when that configuration is
+   built. A build alone does not verify console playback behavior.
 
-Existing release **tags** are rejected before building and again before publishing; choose a new
-`2.1.0-bale.N` version rather than overwriting. Never replace assets or silently repin a published
-version. This is a pinned, repeatable build recipe, not a claim of bit-identical compiler output
-across hosted runner revisions.
-
-`test-ffmpeginteropx-wrapper.ps1` exercises empty/ordered/rejected patches, the IDL restriction,
-WinMD type mismatch, SHA256 failure and byte-preserving repack with small offline fixtures. Both
-Windows CI configurations and the manual wrapper workflow run it alongside the native checks.
+This is a pinned, repeatable build recipe, not a claim of bit-identical compiler output across
+hosted runner revisions. Wrapper patch-application, source-guard, WinMD and repack fixtures belong
+to the fork now. Bale's `test-ffmpeginteropx-wrapper.ps1` validates consumer pins and tests release
+repository selection, SHA256 rejection, verified-feed population and extraction-cache eviction
+with offline restore fixtures. `test-ffmpeg-checks.ps1` retains PowerShell syntax, dav1d binary-version
+and MSIX fixture checks, including mismatched wrapper DLL/provenance and unreviewed-package rejection.
+Windows CI runs both before downloading the packages; `check-ffmpeg-package.ps1` checks the actual MSIX.
 
 ### IMFMediaEngine spike and the Rust GPU layer (debug only)
 

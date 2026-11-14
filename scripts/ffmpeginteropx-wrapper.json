@@ -1,15 +1,8 @@
 {
-  "version": "2.1.0-bale.22",
-  "release_tag": "wrapper-ffmpeginteropx-2.1.0-bale.22",
-  "sha256": "62cb83af167650d260a044ba30c3dc280de029f559fcccaf75efbf9a7d41f636",
-  "nuget_content_hash": "SzF+jR9H9JAV2ciMxVZifeZPqXjLqWX7zqUeaARfHLewjXVqTgXvxwvPhu5Psc4rDPzC131BnB5dxXlRnaQEZQ==",
-  "upstream_repository": "ffmpeginteropx/FFmpegInteropX",
-  "upstream_commit": "88428c66e106852338b48554a4a00c9e48da588f",
-  "original_package_id": "FFmpegInteropX.UWP.Lib",
-  "original_package_version": "2.1.0",
-  "original_package_sha256": "927f23e66688b6c86659121fd20c12c44507581b3b00de5437274741bb506881",
-  "windows_sdk": "10.0.26100.0",
-  "windows_min_version": "10.0.17763.0",
-  "platform_toolset": "v145",
-  "library_version": "2.1.0.0"
+  "version": "2.1.0-bale.23",
+  "release_repository": "Zorro92/bale-ffmpeginteropx",
+  "release_tag": "wrapper-ffmpeginteropx-2.1.0-bale.23",
+  "source_commit": "86bb6c916f06d1e5f89708e1bf8b3feb256cc049",
+  "sha256": "36e2472ffc46ec5aca77446fbbeacfb63cc345bbdaab132ae540b9ddd3324d2f",
+  "nuget_content_hash": "pcF0Y/O3RqSftT5Dmz4YrUI49aI+lyRP1BGPqUtksOFDNihfwQHLPtGgbNU5dNDqoa18KPTz6m3LA+n11j65oA=="
 }

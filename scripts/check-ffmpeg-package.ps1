@@ -5,6 +5,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot/ffmpeginteropx-wrapper-common.ps1"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $PackagePath))
 try {
@@ -43,7 +44,7 @@ try {
     }
     # Compare the shipped wrapper and provenance with the independently hash-pinned nupkg,
     # not the extracted NuGet cache that packaging could accidentally have reused.
-    $pin = Get-Content (Join-Path $PSScriptRoot 'ffmpeginteropx-wrapper.json') -Raw | ConvertFrom-Json
+    $pin = Get-WrapperPin
     if (-not $WrapperPackagePath) {
         $WrapperPackagePath = Join-Path $PSScriptRoot "../.cache/ffmpeg-native/FFmpegInteropX.UWP.Lib.$($pin.version).nupkg"
     }

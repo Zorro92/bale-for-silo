@@ -1,12 +1,6 @@
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/ffmpeginteropx-wrapper-common.ps1"
-$null = Get-WrapperPin
-foreach ($file in (Get-ChildItem $PSScriptRoot -Filter '*.ps1')) {
-    $tokens = $null
-    $parseErrors = $null
-    [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$parseErrors)
-    if ($parseErrors) { throw "PowerShell syntax error in $($file.Name): $parseErrors" }
-}
+$pin = Get-WrapperPin
 
 function Assert-WrapperReject {
     param([scriptblock]$Action, [string]$Message)
@@ -19,138 +13,105 @@ function Assert-WrapperReject {
     if (-not $rejected) { throw "Expected wrapper rejection: $Message" }
 }
 
-Add-Type -AssemblyName System.IO.Compression.FileSystem
 $fixture = Join-Path ([System.IO.Path]::GetTempPath()) "bale-wrapper-check-$([guid]::NewGuid())"
 New-Item -ItemType Directory $fixture | Out-Null
+$previousCache = $env:NUGET_PACKAGES
 try {
-    $repo = Join-Path $fixture 'repo'
-    $patches = Join-Path $fixture 'patches'
-    $native = Join-Path $fixture 'native'
-    New-Item -ItemType Directory $repo, $patches, $native, (Join-Path $repo 'Source') | Out-Null
-    Invoke-WrapperGit $repo @('init', '--quiet')
-    # Runner images may set core.autocrlf globally; LF patches must apply to this LF fixture.
-    Invoke-WrapperGit $repo @('config', 'core.autocrlf', 'false')
-    "one`n" | Set-Content (Join-Path $repo 'Source/test.cpp') -NoNewline
-    Invoke-WrapperGit $repo @('add', '.')
-    Invoke-WrapperGit $repo @('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'Fixture baseline')
-    if (@(Add-WrapperPatches $repo $patches).Count) { throw 'Empty patch series did not work' }
-    $patchTemplate = @'
-diff --git a/Source/test.cpp b/Source/test.cpp
---- a/Source/test.cpp
-+++ b/Source/test.cpp
-@@ -1 +1 @@
--{0}
-+{1}
-'@
-    $patchTemplate = $patchTemplate.Replace("`r`n", "`n") + "`n"
-    ($patchTemplate -f 'two', 'three') | Set-Content (Join-Path $patches '0002-second.patch') -NoNewline
-    ($patchTemplate -f 'one', 'two') | Set-Content (Join-Path $patches '0001-first.patch') -NoNewline
-    $applied = @(Add-WrapperPatches $repo $patches)
-    if (($applied.Name -join ',') -ne '0001-first.patch,0002-second.patch' -or
-        (Get-Content (Join-Path $repo 'Source/test.cpp') -Raw).Trim() -ne 'three') {
-        throw 'Patch series was not applied in ordinal order'
+    $pinPath = Join-Path $fixture 'pin.json'
+    $valid = $pin | ConvertTo-Json | ConvertFrom-Json -AsHashtable
+    foreach ($field in $valid.Keys) {
+        $invalid = @{} + $valid
+        $invalid.Remove($field)
+        $invalid | ConvertTo-Json | Set-Content $pinPath
+        Assert-WrapperReject { Get-WrapperPin $pinPath } 'Invalid or inconsistent FFmpegInteropX wrapper package pin'
     }
-    foreach ($record in $applied) {
-        if ($record.Sha256 -ne (Get-FileHash (Join-Path $patches $record.Name) -Algorithm SHA256).Hash.ToLowerInvariant()) {
-            throw 'Patch provenance hash differs from the applied patch'
-        }
+    foreach ($case in @(
+        @{ version = '2.1.0-bale.023' },
+        @{ version = '2.1.0-bale.24' }, # Tag must agree too.
+        @{ version = "2.1.0-bale.23`n" },
+        @{ release_tag = 'wrapper-ffmpeginteropx-2.1.0-bale.0' },
+        @{ source_commit = 'main' },
+        @{ sha256 = 'not-a-sha256' },
+        @{ nuget_content_hash = 'not-a-content-hash' },
+        @{ nuget_content_hash = ('a' * 85) + '==' }
+    )) {
+        $invalid = @{} + $valid
+        foreach ($field in $case.Keys) { $invalid[$field] = $case[$field] }
+        $invalid | ConvertTo-Json | Set-Content $pinPath
+        Assert-WrapperReject { Get-WrapperPin $pinPath } 'Invalid or inconsistent FFmpegInteropX wrapper package pin'
     }
-    Invoke-WrapperGit $repo @('reset', '--hard', '--quiet', 'HEAD')
-    Remove-Item (Join-Path $patches '*.patch')
-    $badPatch = ($patchTemplate -f 'one', 'two').Replace('test.cpp', 'FFmpegInteropX.idl')
-    $badPatch | Set-Content (Join-Path $patches '0001-idl.patch') -NoNewline
-    Assert-WrapperReject { Add-WrapperPatches $repo $patches } 'Wrapper patches may only change Source/'
-    Remove-Item (Join-Path $patches '*.patch')
-    ($patchTemplate -f 'does-not-match', 'two') | Set-Content (Join-Path $patches '0001-rejected.patch') -NoNewline
-    Assert-WrapperReject { Add-WrapperPatches $repo $patches } 'git failed: apply'
-    # Confirm rejection left no changes, and clear the expected native failure exit code for CI.
-    Invoke-WrapperGit $repo @('diff', '--exit-code', 'HEAD')
+    foreach ($repository in @('', 'owner', 'owner/name/extra', '../name', 'owner/../name',
+        'https://github.com/owner/name', 'owner/name?query', 'owner/name#fragment', 'owner\name', "owner/name`n")) {
+        $invalid = @{} + $valid
+        $invalid.release_repository = $repository
+        $invalid | ConvertTo-Json | Set-Content $pinPath
+        Assert-WrapperReject { Get-WrapperPin $pinPath } 'Invalid or inconsistent FFmpegInteropX wrapper package pin'
+    }
 
-    # Metadata fixtures need no Windows SDK or managed-projection dependencies.
-    $winmd = Join-Path $native 'FFmpegInteropX.winmd'
-    $differentWinmd = Join-Path $fixture 'different.winmd'
-    Add-Type -TypeDefinition 'namespace WrapperFixture { public class MediaSource {} internal class Hidden {} }' -OutputAssembly $winmd
-    Add-Type -TypeDefinition 'namespace WrapperFixture { public class ChangedMediaSource {} }' -OutputAssembly $differentWinmd
-    $null = Compare-WrapperWinmd $winmd $winmd
-    Assert-WrapperReject { Compare-WrapperWinmd $winmd $differentWinmd } 'WinMD public type mismatch'
-    'built x64 DLL' | Set-Content (Join-Path $native 'FFmpegInteropX.dll')
-    'built x64 PDB' | Set-Content (Join-Path $native 'FFmpegInteropX.pdb')
-    $sources = Join-Path $fixture 'SOURCES.txt'
-    'fixture provenance' | Set-Content $sources
-    $package = Join-Path $fixture 'original.nupkg'
-    $files = @{
-        'FFmpegInteropX.UWP.Lib.nuspec' = '<package><metadata><id>FFmpegInteropX.UWP.Lib</id><version>2.1.0</version></metadata></package>'
-        '[Content_Types].xml' = '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="dll" ContentType="application/octet" /></Types>'
-        'package/services/metadata/core-properties/fixture.psmdcp' = '<coreProperties><version>2.1.0</version></coreProperties>'
-        '.signature.p7s' = 'invalidated fixture signature'
-        'lib/net6.0-windows10.0.17763.0/FFmpegInteropX.DotNet.dll' = 'managed projection must not change'
-        'lib/uap10/FFmpegInteropX.xml' = 'documentation must not change'
-        'build/native/FFmpegInteropX.UWP.Lib.targets' = 'targets must not change'
-        'runtimes/win-x86/native/FFmpegInteropX.dll' = 'x86 must not change'
-        'runtimes/win-x64/native/FFmpegInteropX.dll' = 'original x64 DLL'
-        'runtimes/win-arm64/native/FFmpegInteropX.dll' = 'ARM64 must not change'
+    # Exercise the real restore script with offline downloads and isolated feed/extraction caches.
+    # Changing only the wrapper repository must leave native downloads in Bale's releases.
+    $scripts = Join-Path $fixture 'scripts'
+    New-Item -ItemType Directory $scripts | Out-Null
+    foreach ($name in @('restore-ffmpeg-native.ps1', 'ffmpeginteropx-wrapper-common.ps1', 'ffmpeg-native.json')) {
+        Copy-Item (Join-Path $PSScriptRoot $name) $scripts
     }
-    $zip = [System.IO.Compression.ZipFile]::Open($package, [System.IO.Compression.ZipArchiveMode]::Create)
-    try {
-        foreach ($name in $files.Keys) {
-            $stream = $zip.CreateEntry($name).Open()
-            $bytes = [System.Text.Encoding]::UTF8.GetBytes($files[$name])
-            try { $stream.Write($bytes, 0, $bytes.Length) }
-            finally { $stream.Dispose() }
-        }
-        [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $winmd, 'lib/uap10/FFmpegInteropX.winmd')
+    $payload = Join-Path $fixture 'download.nupkg'
+    [IO.File]::WriteAllText($payload, 'fixture package bytes')
+    $hash = (Get-FileHash $payload -Algorithm SHA256).Hash.ToLowerInvariant()
+    $nativePinPath = Join-Path $scripts 'ffmpeg-native.json'
+    $nativePin = Get-Content $nativePinPath -Raw | ConvertFrom-Json
+    $nativePin.sha256 = $hash
+    $nativePin | ConvertTo-Json | Set-Content $nativePinPath
+    $wrapperPinPath = Join-Path $scripts 'ffmpeginteropx-wrapper.json'
+    $valid.sha256 = $hash
+    $valid.release_repository = 'Fixture-Owner/wrapper.repo'
+    $valid | ConvertTo-Json | Set-Content $wrapperPinPath
+    $env:NUGET_PACKAGES = Join-Path $fixture 'nuget-cache'
+    $cachedWrapper = Join-Path $env:NUGET_PACKAGES "ffmpeginteropx.uwp.lib/$($pin.version)"
+    $cachedNative = Join-Path $env:NUGET_PACKAGES "ffmpeginteropx.uwp.ffmpeg/$($nativePin.version)"
+    New-Item -ItemType Directory $cachedWrapper, $cachedNative | Out-Null
+    $downloads = [System.Collections.Generic.List[string]]::new()
+    function Invoke-WebRequest {
+        param([string]$Uri, [string]$OutFile)
+        $downloads.Add($Uri)
+        Copy-Item $payload $OutFile
     }
-    finally { $zip.Dispose() }
-    $arguments = @{
-        OriginalPackagePath = $package
-        OriginalSha256 = (Get-FileHash $package -Algorithm SHA256).Hash.ToLowerInvariant()
-        NativeOutputPath = $native
-        Version = '2.1.0-bale.0'
-        SourcesPath = $sources
-        OutputPath = Join-Path $fixture 'output'
+    $restore = Join-Path $scripts 'restore-ffmpeg-native.ps1'
+    & $restore | Out-Null
+    $nativeUrl = "https://github.com/Zorro92/bale-for-silo/releases/download/$($nativePin.release_tag)/FFmpegInteropX.UWP.FFmpeg.$($nativePin.version).nupkg"
+    $wrapperUrl = "https://github.com/$($valid.release_repository)/releases/download/$($valid.release_tag)/FFmpegInteropX.UWP.Lib.$($pin.version).nupkg"
+    if ($downloads.Count -ne 2 -or $downloads[0] -cne $nativeUrl -or $downloads[1] -cne $wrapperUrl) {
+        throw 'Restore did not select the native and wrapper release repositories independently'
     }
-    $hash = New-WrapperPackage @arguments
-    $resultPath = Join-Path $arguments.OutputPath 'FFmpegInteropX.UWP.Lib.2.1.0-bale.0.nupkg'
-    if ($hash -ne (Get-FileHash $resultPath -Algorithm SHA256).Hash.ToLowerInvariant()) { throw 'Incorrect package SHA256' }
-    $result = [System.IO.Compression.ZipFile]::OpenRead($resultPath)
-    try {
-        if ($result.GetEntry('.signature.p7s')) { throw 'Repack retained the invalid NuGet signature' }
-        foreach ($name in @('lib/uap10/FFmpegInteropX.winmd', 'runtimes/win-x64/native/FFmpegInteropX.dll',
-            'runtimes/win-x64/native/FFmpegInteropX.pdb', 'SOURCES.txt')) {
-            $extracted = Join-Path $fixture 'extracted'
-            Export-WrapperZipEntry $result $name $extracted
-            $expected = switch ($name) {
-                'SOURCES.txt' { $sources }
-                'lib/uap10/FFmpegInteropX.winmd' { $winmd }
-                default { Join-Path $native ([System.IO.Path]::GetFileName($name)) }
-            }
-            if ((Get-FileHash $extracted).Hash -ne (Get-FileHash $expected).Hash) { throw "Repack payload differs: $name" }
-        }
-        foreach ($name in $files.Keys) {
-            if ($name -eq '.signature.p7s' -or $name -eq '[Content_Types].xml' -or $name.EndsWith('.nuspec') -or
-                $name.EndsWith('.psmdcp') -or $name -eq 'runtimes/win-x64/native/FFmpegInteropX.dll') { continue }
-            $reader = [System.IO.StreamReader]::new($result.GetEntry($name).Open())
-            try { if ($reader.ReadToEnd() -cne $files[$name]) { throw "Original payload changed: $name" } }
-            finally { $reader.Dispose() }
-        }
-        $extracted = Join-Path $fixture 'spec.xml'
-        Export-WrapperZipEntry $result 'FFmpegInteropX.UWP.Lib.nuspec' $extracted
-        [xml]$spec = Get-Content $extracted -Raw
-        if ($spec.package.metadata.id -ne 'FFmpegInteropX.UWP.Lib' -or $spec.package.metadata.version -ne '2.1.0-bale.0') {
-            throw 'Incorrect repack identity'
-        }
-        Export-WrapperZipEntry $result '[Content_Types].xml' $extracted
-        [xml]$content = Get-Content $extracted -Raw
-        if ('pdb' -notin $content.Types.Default.Extension -or 'txt' -notin $content.Types.Default.Extension) {
-            throw 'Repack content types omit new files'
+    if ((Test-Path $cachedWrapper) -or (Test-Path $cachedNative)) { throw 'Restore trusted an extracted package cache' }
+    $feed = Join-Path $fixture '.cache/ffmpeg-native'
+    foreach ($package in (Get-ChildItem $feed -Filter '*.nupkg')) {
+        if ((Get-FileHash $package.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $hash) {
+            throw 'Verified feed differs from the downloaded package'
         }
     }
-    finally { $result.Dispose() }
-    $arguments.OriginalSha256 = '0' * 64
-    Assert-WrapperReject { New-WrapperPackage @arguments } 'Original wrapper SHA256 mismatch'
-    $arguments.OriginalSha256 = (Get-FileHash $package -Algorithm SHA256).Hash.ToLowerInvariant()
-    Copy-Item $differentWinmd $winmd -Force
-    Assert-WrapperReject { New-WrapperPackage @arguments } 'WinMD public type mismatch'
+    if (@(Get-ChildItem $feed -Filter '*.nupkg').Count -ne 2) { throw 'Restore did not populate both feed packages' }
+
+    $downloads.Clear()
+    # An unreviewed wrapper must not overwrite the verified feed or clear its extracted cache.
+    $valid.sha256 = '0' * 64
+    $valid | ConvertTo-Json | Set-Content $wrapperPinPath
+    New-Item -ItemType Directory $cachedWrapper | Out-Null
+    Assert-WrapperReject { & $restore } 'FFmpegInteropX.UWP.Lib SHA256 mismatch'
+    $restoredWrapper = Join-Path $feed "FFmpegInteropX.UWP.Lib.$($pin.version).nupkg"
+    if ((Get-FileHash $restoredWrapper -Algorithm SHA256).Hash.ToLowerInvariant() -ne $hash -or
+        -not (Test-Path $cachedWrapper)) { throw 'Failed wrapper verification mutated the feed or extracted cache' }
+
+    $downloads.Clear()
+    $valid.release_repository = 'owner/name/extra'
+    $valid | ConvertTo-Json | Set-Content $wrapperPinPath
+    Assert-WrapperReject { & $restore } 'Invalid or inconsistent FFmpegInteropX wrapper package pin'
+    if ($downloads.Count) { throw 'Restore downloaded before validating the wrapper pin' }
+    & $restore -NativeOnly | Out-Null
+    if ($downloads.Count -ne 1 -or $downloads[0] -cne $nativeUrl) { throw 'NativeOnly restored a wrapper' }
 }
-finally { Remove-Item $fixture -Recurse -Force }
-Write-Output 'Wrapper pins, empty/ordered/rejected patches, IDL guard, WinMD, hash and repack fixture checks: PASS'
+finally {
+    $env:NUGET_PACKAGES = $previousCache
+    Remove-Item $fixture -Recurse -Force
+}
+Write-Output 'Wrapper release pins, repository selection, SHA256 rejection and verified-feed restore fixtures: PASS'
