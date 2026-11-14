@@ -1197,6 +1197,26 @@ pipeline's automatic HDR-to-SDR conversion (`hdr pretend`) looked washed out and
 with lifted blacks; the server's BT.2390/Hable transcode retained color and contrast. Keep
 `hdr pretend` as a debug comparison tool, not the normal SDR playback path.
 
+**Why it looked washed out (0.1.463, 2026-11-13).** It is not missing colour info from Bale. Same
+paused frame of a plain HDR10 1080p HEVC MKV, SDR display, Device Portal screenshots, luma on 0–255
+(active picture), mean HSV saturation:
+
+| Case | Media type MF received | min/p1/p50/p99/max | sat |
+|---|---|---|---|
+| `hdr pretend`, FFmpeg route, HdrSupport Automatic | no colour attributes (compressed to system decoder) | 0/6/69/128/154 | 0.40 |
+| `hdr pretend`, FFmpeg route, `ffmpeg-tune hdr=on` | same, no colour attributes | identical (0 pixels differ) | 0.40 |
+| `hdr pretend`, native route (`ffmpeg off`) | PQ, BT.2020, limited, MaxCLL/MaxFALL, mastering, custom primaries | identical (0 pixels differ) | 0.40 |
+| server tone-mapped transcode (`hdr off`) | BT.709 SDR | 0/4/61/177/223 | 0.60 |
+
+An HDR10+ HEVC clip on the FFmpeg route repeats it (0/13/43/115/123, sat 0.44 vs server 0/9/32/149/166, 0.61).
+All console cases match "no conversion": PQ code values shown as SDR gamma and BT.2020 not mapped to
+BT.709, so highlights never pass ~60 % white, mid-tones sit high and colour is flat. Full HDR attributes
+on the native route change nothing. `HdrSupport` cannot help either: FFmpegInteropX sets colour
+attributes only for video it decodes itself, never for compressed HEVC/VP9/VC-1/MPEG-2 sent to the
+system decoder. The 0.1.237 comparison used the native route (HEVC + E-AC-3 had no FFmpeg reason then).
+The decoder's output type is not observable from the app. Server tone mapping stays; an on-console
+tone map needs Bale's own GPU pass (e.g. d3d11va P010 frames), not a pipeline setting.
+
 Microsoft's media pipeline exposes no tone-mapping algorithm or parameter controls.
 FFmpegInteropX's `SetFFmpegVideoFilters` is not a practical alternative: filters run on the CPU,
 this build has no zimg/zscale or libplacebo, and Xbox offers no usable OpenCL/Vulkan path for
