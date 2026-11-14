@@ -24,6 +24,64 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Rust input changes
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      rust_changed: ${{ steps.inputs.outputs.changed }}
+      rust_inputs_hash: ${{ steps.inputs.outputs.hash }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Compare Rust inputs with the last successful push
+        id: inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          # One list for both the test gate and the DLL cache. Hash the tracked tree, not a
+          # filesystem glob that could accidentally include restored target/ artifacts.
+          inputs=(
+            native/bale-gpu
+            scripts/libass-native.json
+            scripts/build-libass-native.ps1
+            scripts/test-tonemap-shaders.ps1
+            rust-toolchain rust-toolchain.toml
+            native/rust-toolchain native/rust-toolchain.toml
+            .cargo/config .cargo/config.toml
+            native/.cargo/config native/.cargo/config.toml
+            .github/workflows/ci.yml
+          )
+          hash=$(git ls-tree -r HEAD -- "${inputs[@]}" | sha256sum | cut -d ' ' -f 1)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+
+          # PRs/manual runs, missing history and API failures all run the Rust checks.
+          # Do not use github.event.before: a cancelled/failed push may contain untested Rust.
+          changed=true
+          base=''
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            if candidates=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+              -f event=push -f branch="$GITHUB_REF_NAME" -f status=success -f per_page=100 \
+              --jq '.workflow_runs[].head_sha'); then
+              while IFS= read -r candidate; do
+                if [[ "$candidate" != "$GITHUB_SHA" ]] && git merge-base --is-ancestor "$candidate" HEAD; then
+                  base=$candidate
+                  break
+                fi
+              done <<< "$candidates"
+            fi
+            if [[ -n "$base" ]] && git diff --quiet --no-renames "$base" HEAD -- "${inputs[@]}"; then
+              changed=false
+            fi
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "Rust inputs changed: $changed; successful base: ${base:-unknown}; inputs hash: $hash"
+
   core:
     name: Core (Linux)
     runs-on: ubuntu-26.04
@@ -42,6 +100,9 @@ jobs:
 
   grain:
     name: Rust grain (Linux)
+    needs: changes
+    # Job-level skips still report the existing required check names as successful skips.
+    if: needs.changes.outputs.rust_changed == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     defaults:
@@ -57,6 +118,8 @@ jobs:
 
   rust-windows:
     name: Rust GPU layer (Windows)
+    needs: changes
+    if: needs.changes.outputs.rust_changed == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     env:
@@ -101,6 +164,7 @@ jobs:
       - name: Rust cache key
         id: rust
         shell: pwsh
+        working-directory: native/bale-gpu
         run: |
           "key=cargo-windows-test-$((rustc -V) -replace '[^0-9A-Za-z.]', '-')-${{ hashFiles('native/bale-gpu/Cargo.lock', 'native/bale-gpu/Cargo.toml', 'native/bale-gpu/.cargo/config.toml') }}" >> $env:GITHUB_OUTPUT
 
@@ -157,6 +221,8 @@ jobs:
 
   xbox:
     name: Xbox package (Windows, debug=${{ matrix.debug_server }})
+    # Do not depend on the Rust jobs: their expected skips must not skip packaging.
+    needs: changes
     strategy:
       fail-fast: false
       matrix:
@@ -170,6 +236,27 @@ jobs:
       CARGO_INCREMENTAL: 0
     steps:
       - uses: actions/checkout@v7
+      - name: Rust cache keys
+        id: rust
+        shell: pwsh
+        working-directory: native/bale-gpu
+        run: |
+          $rustc = (rustc -V) -replace '[^0-9A-Za-z.]', '-'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot determine rustc version' }
+          "key=cargo-windows-build-$rustc-${{ hashFiles('native/bale-gpu/Cargo.lock', 'native/bale-gpu/Cargo.toml', 'native/bale-gpu/.cargo/config.toml') }}" >> $env:GITHUB_OUTPUT
+          "dll-key=bale-gpu-dll-x86_64-pc-windows-msvc-$rustc-${{ needs.changes.outputs.rust_inputs_hash }}" >> $env:GITHUB_OUTPUT
+
+      # Exact hits only: the DLL and its packaged libass notices must come from these inputs.
+      - name: Restore Rust GPU package files
+        id: gpu-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            native/bale-gpu/target/x86_64-pc-windows-msvc/release/bale_gpu.dll
+            .libass/licenses
+            .libass/SOURCES.txt
+          key: ${{ steps.rust.outputs.dll-key }}
+
       # The runner image already ships a .NET 10 SDK; global.json picks it, so no setup-dotnet download.
       - uses: microsoft/setup-msbuild@v3
 
@@ -190,8 +277,9 @@ jobs:
         run: ./scripts/restore-ffmpeg-native.ps1
 
       # libass with FreeType, FriBidi and HarfBuzz: static, UWP app partition, linked into bale_gpu.dll.
-      # Rebuilt only when the pin or the build script changes.
+      # A DLL cache hit already includes the notices; no other package input needs the libraries.
       - name: Restore libass build
+        if: steps.gpu-cache.outputs.cache-hit != 'true'
         id: libass
         uses: actions/cache@v6
         with:
@@ -199,7 +287,7 @@ jobs:
           key: libass-uwp-x64-${{ hashFiles('scripts/libass-native.json', 'scripts/build-libass-native.ps1') }}
 
       - name: Build libass (static, UWP app partition)
-        if: steps.libass.outputs.cache-hit != 'true'
+        if: steps.gpu-cache.outputs.cache-hit != 'true' && steps.libass.outputs.cache-hit != 'true'
         shell: pwsh
         run: ./scripts/build-libass-native.ps1 -OutDir '${{ github.workspace }}\.libass'
 
@@ -210,6 +298,7 @@ jobs:
 
       # Rust GPU/media layer: static CRT (native/bale-gpu/.cargo/config.toml), packaged by the csproj.
       - name: Locate Windows shader compiler
+        if: steps.gpu-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $fxc = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\fxc.exe" |
@@ -217,15 +306,10 @@ jobs:
           if (-not $fxc) { throw 'Windows SDK fxc.exe is required for real grain shaders' }
           "FXC=$($fxc.FullName)" >> $env:GITHUB_ENV
 
-      # Compiled dependencies (windows-rs above all). The key changes only with the lockfile, manifest,
-      # cargo config or rustc, so it is saved once per combination; Bale's own crate is rebuilt every run.
-      - name: Rust cache key
-        id: rust
-        shell: pwsh
-        run: |
-          "key=cargo-windows-build-$((rustc -V) -replace '[^0-9A-Za-z.]', '-')-${{ hashFiles('native/bale-gpu/Cargo.lock', 'native/bale-gpu/Cargo.toml', 'native/bale-gpu/.cargo/config.toml') }}" >> $env:GITHUB_OUTPUT
-
+      # Keep the dependency/target cache for DLL misses. Never restore it over an exact DLL hit,
+      # and save it only when it was actually restored and its immutable key was missing.
       - name: Restore Rust build cache
+        if: steps.gpu-cache.outputs.cache-hit != 'true'
         id: rust-cache
         uses: actions/cache/restore@v6
         with:
@@ -236,27 +320,41 @@ jobs:
           key: ${{ steps.rust.outputs.key }}
 
       - name: Build Rust GPU layer
+        if: steps.gpu-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          rustup target add x86_64-pc-windows-msvc
+          # A target cache can contain an old final DLL; require cargo to emit this one again.
+          $dll = 'native/bale-gpu/target/x86_64-pc-windows-msvc/release/bale_gpu.dll'
+          if (Test-Path $dll) { Remove-Item $dll }
           # Run inside the crate: cargo reads .cargo/config.toml (static CRT) from the working directory,
           # not from --manifest-path.
           Push-Location native/bale-gpu
+          rustup target add x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw 'rustup target add failed' }
           cargo build --release --locked --target x86_64-pc-windows-msvc
           $cargoExit = $LASTEXITCODE
           Pop-Location
           if ($cargoExit -ne 0) { throw 'cargo build failed' }
+
+      # Validate cached DLLs too: skipping cargo must never skip the Xbox CRT/dependency check.
+      - name: Check Rust GPU DLL dependents and static CRT
+        shell: pwsh
+        run: |
           $dll = 'native/bale-gpu/target/x86_64-pc-windows-msvc/release/bale_gpu.dll'
+          if (-not (Test-Path $dll)) { throw 'bale_gpu.dll is missing' }
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vs = & $vswhere -latest -products * -property installationPath
           $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe |
             Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+          if (-not $dumpbin) { throw 'dumpbin.exe is required to inspect bale_gpu.dll' }
           # Imported DLLs, for checking against what the Xbox app container provides.
-          & $dumpbin.FullName /dependents $dll
-          if ((& $dumpbin.FullName /dependents $dll) -match 'vcruntime140\.dll|msvcp140\.dll') { throw 'bale_gpu.dll must link the CRT statically' }
+          $dependents = & $dumpbin.FullName /dependents $dll
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect bale_gpu.dll dependents' }
+          $dependents
+          if ($dependents -match '(?i)vcruntime140(?:_\d+)?d?\.dll|msvcp140(?:_\d+)?d?\.dll|ucrtbased?\.dll') { throw 'bale_gpu.dll must link the CRT statically' }
 
       - name: Save Rust build cache
-        if: steps.rust-cache.outputs.cache-hit != 'true'
+        if: steps.gpu-cache.outputs.cache-hit != 'true' && steps.rust-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: |
@@ -319,6 +417,10 @@ jobs:
               }
               [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $packagedDll)
             } finally { $zip.Dispose() }
+            $builtDll = 'native/bale-gpu/target/x86_64-pc-windows-msvc/release/bale_gpu.dll'
+            if ((Get-FileHash $packagedDll).Hash -ne (Get-FileHash $builtDll).Hash) {
+              throw 'The MSIX must contain the built or cached bale_gpu.dll unchanged'
+            }
             $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
             $vs = & $vswhere -latest -products * -property installationPath
             $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe |
@@ -353,6 +455,16 @@ jobs:
             }
             Write-Output "Packaged bale_gpu.dll: $($required.Count) live exports present, $($removed.Count) removed exports absent"
           } finally { Remove-Item $inspection -Recurse -Force }
+
+      - name: Save Rust GPU package files
+        if: steps.gpu-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            native/bale-gpu/target/x86_64-pc-windows-msvc/release/bale_gpu.dll
+            .libass/licenses
+            .libass/SOURCES.txt
+          key: ${{ steps.rust.outputs.dll-key }}
 
       - uses: actions/upload-artifact@v7
         with:

@@ -64,6 +64,7 @@ dotnet run --project tools/Bale.Cli -- home   # real home rows (after `bale-cli 
 
 The Xbox app only compiles on Windows: push to `main` and GitHub Actions builds a signed sideload
 MSIX (~2 min).
+CI skips Rust tests when GPU/libass/toolchain/CI inputs match the last successful push and reuses the input/rustc/target-keyed DLL plus libass notices; PRs and manual runs always test Rust.
 Bale is still in its build/debug phase, so pushes build only the debug-server package. Don't
 dispatch CI with `production=true` (the production package) unless the owner asks for it; debug-only
 changes are covered by the debug build and the tests. Then, with `XBOX_HOST` set to the console's IP:
