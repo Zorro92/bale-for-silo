@@ -48,6 +48,9 @@
 #   scripts/bale-debug.sh idle-test [display-pulse|smtc-playing|smtc-stopped|status]  input-idle experiments: pulse a DisplayRequest or set the media session status (player's, else the view's); no args = status
 #   scripts/bale-debug.sh webview-test [open-video|open-blank|close|status]  input-idle comparison: small WebView2 popup looping a muted sample or a blank page; no args = status
 #   scripts/bale-debug.sh seek <seconds> [pause]  shared absolute-source seek (native/FFmpeg/HLS, reanchors outside the mounted window); optional pause
+#   scripts/bale-debug.sh play                  resume the active native/FFmpeg/HLS player, including after seek <seconds> pause
+#   scripts/bale-debug.sh pause                 pause the active player; play/pause/toggle print source/player positions and resulting state
+#   scripts/bale-debug.sh toggle                toggle play/pause; fails if no player is mounted or it is still opening
 #   scripts/bale-debug.sh key j                 player: skip back 10s (same as press lt); one skip per press, ignores repeats
 #   scripts/bale-debug.sh key l                 player: skip forward 30s (same as press rt); passive bar/chip hides after 1200ms
 #   scripts/bale-debug.sh key i                 player: toggle stats (same as press view); where includes counters even when hidden
@@ -364,6 +367,13 @@ case "${1:-}" in
     else
       curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/hdr" --data-urlencode "mode=$2"
     fi
+    ;;
+  play|pause|toggle)
+    if [[ "$#" != 1 ]]; then
+      echo 'usage: scripts/bale-debug.sh {play|pause|toggle}' >&2
+      exit 2
+    fi
+    curl --fail-with-body -sS --max-time 15 -X POST -G "$BASE/playback" --data-urlencode "state=$1"
     ;;
   seek)
     if [[ "$#" -lt 2 || "$#" -gt 3 || ! "${2:-}" =~ ^[0-9]+([.][0-9]+)?$ || ( "$#" == 3 && "$3" != pause ) ]]; then

@@ -143,7 +143,7 @@ public sealed partial class PlayerPage
 #endif
                 // Flush the actual landed SOURCE position, even for a clamped skip smaller than
                 // the journal's normal 10-content-second threshold. A failed HTTP flush stays durable.
-                await ReportSeekPositionAsync(attempt, source, paused);
+                await ReportPositionAsync(attempt, source, paused);
                 return new(SeekOutcome.Completed, source, session.Position.TotalSeconds, session.PlaybackState);
             }
             finally { session.SeekCompleted -= OnSeekCompleted; }
@@ -196,7 +196,7 @@ public sealed partial class PlayerPage
             && !replacement.FailureQueued ? replacement : null;
     }
 
-    private static async Task ReportSeekPositionAsync(Attempt attempt, double source, bool paused)
+    private static async Task ReportPositionAsync(Attempt attempt, double source, bool paused)
     {
         try
         {
@@ -205,6 +205,6 @@ public sealed partial class PlayerPage
             await attempt.Services!.Reporter.ReportProgressAsync(attempt.SessionId!, source, paused, deadline.Token);
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { LogFailure("seek progress", ex); }
+        catch (Exception ex) { LogFailure("progress flush", ex); }
     }
 }

@@ -1154,10 +1154,13 @@ Production keeps ForceSystemDecoder/ForceFFmpegSoftwareDecoder; `decoder=default
 For the same-frame comparison, `scripts/bale-debug.sh seek <seconds> [pause]` seeks the active
 native, FFmpeg or HLS player to absolute **source/movie** time, optionally pauses, waits for seek
 completion and prints actual source/player positions. HLS timeline offsets are mapped rather
-than treating a reanchored player clock as movie time. Non-seekable/loading players, positions
-outside the current timeline/duration and seeks that do not complete within 10 seconds fail
+than treating a reanchored player clock as movie time. `scripts/bale-debug.sh play`, `pause` and
+`toggle` control that same mounted native/FFmpeg/HLS player and print its source/player positions
+and resulting state; use `play` to resume after `seek <seconds> pause`. They reject unmounted or
+still-opening players and share display/subtitle state updates and sequenced progress reporting.
+Non-seekable/loading players, positions outside the current timeline/duration and seeks that do not complete within 10 seconds fail
 explicitly. These endpoints and the player hooks compile only under `DEBUG_SERVER`; production
-builds cannot use either override.
+builds cannot use these controls or overrides.
 
 **Debug HLS reproduction:** `scripts/bale-debug.sh delivery hls` disables non-HLS deliveries on
 subsequent attempts without changing start time, selected tracks, codec/HDR evidence or the HLS

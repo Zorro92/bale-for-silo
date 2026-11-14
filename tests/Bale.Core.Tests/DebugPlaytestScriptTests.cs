@@ -900,6 +900,44 @@ public class DebugPlaytestScriptTests
     }
 
     [Theory]
+    [InlineData("play", "Playing")]
+    [InlineData("pause", "Paused")]
+    [InlineData("toggle", "Playing")]
+    public async Task PlaybackControlPostsStateAndPrintsThePosition(string command, string state)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var readout = $"Position: source=123.5s player=3.5s state={state}\n";
+        var result = await RunAsync([command], readout);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(readout, result.Output);
+        Assert.Contains("/playback\n", result.Arguments);
+        Assert.Contains("-X\nPOST\n", result.Arguments);
+        Assert.Contains("--max-time\n15\n", result.Arguments);
+        Assert.Contains("--data-urlencode\nstate=" + command + "\n", result.Arguments);
+    }
+
+    [Theory]
+    [InlineData("play")]
+    [InlineData("pause")]
+    [InlineData("toggle")]
+    public async Task PlaybackControlRejectsExtraArgumentsAndPreservesHttpFailures(string command)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var extra in new[] { "", "extra" })
+        {
+            var invalid = await RunAsync([command, extra]);
+            Assert.Equal(2, invalid.ExitCode);
+            Assert.Equal("usage: scripts/bale-debug.sh {play|pause|toggle}\n", invalid.Output);
+            Assert.Empty(invalid.Arguments);
+        }
+        const string failure = "player is still loading or buffering from open\n";
+        var result = await RunAsync([command], failure, 22);
+        Assert.Equal(22, result.ExitCode);
+        Assert.Equal(failure, result.Output);
+        Assert.Contains("--fail-with-body", result.Arguments);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task FrameTraceReadsOrResetsAndPreservesTheTraceOutput(bool reset)

@@ -77,6 +77,8 @@ go compressed to the system decoder and FFmpegInteropX attaches **no** colour at
   different shot at a cut. Step `seek <t> pause` in small increments (0.1–0.5 s) and pick the
   closest by RMSE: `magick compare -metric RMSE ref.png cand.png null:`.
 - Paused seeks do redraw on every route. If the frame looks wrong, it's the timeline, not a stale frame.
+- Use `scripts/bale-debug.sh play` to resume after `seek <t> pause`; `pause` pauses again and
+  `toggle` switches between them. No playback restart or controller input is needed.
 - Pick a frame with what the test needs (skin + a highlight for tone mapping). Contact sheets help:
   `magick a.png b.png c.png -resize 640x360 +append sheet.png`.
 

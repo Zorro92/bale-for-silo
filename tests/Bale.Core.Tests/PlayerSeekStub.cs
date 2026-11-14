@@ -5,7 +5,7 @@ using Bale.Xbox.Services;
 using Windows.Media.Playback;
 using Windows.System;
 
-// Exercise PlayerPage.Seek.cs itself on Linux. This models mount/session callbacks, not UWP's
+// Exercise PlayerPage.Seek.cs and PlayerPage.Debug.cs themselves on Linux. This models mount/session callbacks, not UWP's
 // HLS parser, decoder, or live-edge behavior. An unproven native seek fails instead of inventing
 // a successful landing; only the server reanchor can make such a target available.
 namespace Bale.Xbox
@@ -38,15 +38,21 @@ namespace Bale.Xbox
         }
 
         private sealed record SeekServices(IPlaybackInstallationId Installation, PlaybackProgressReporter Reporter);
-        private sealed class Mount(PlaybackMedia transport, MediaPlaybackSession session)
+        private sealed class Mount
         {
-            public PlaybackMedia Transport { get; } = transport;
-            public MediaPlayer Player { get; } = new(session);
-            public bool Opened { get; } = true;
-            public bool Started { get; } = true;
+            public Mount(PlaybackMedia transport, MediaPlaybackSession session)
+            {
+                Transport = transport;
+                Player = new(session);
+                Token = Cancellation.Token;
+            }
+            public PlaybackMedia Transport { get; }
+            public MediaPlayer Player { get; }
+            public bool Opened { get; set; } = true;
+            public bool Started { get; set; } = true;
             public bool FailureQueued { get; } = false;
             public CancellationTokenSource Cancellation { get; } = new();
-            public CancellationToken Token => Cancellation.Token;
+            public CancellationToken Token { get; }
             public TaskCompletionSource<bool> Opening { get; } = Ready();
             public SeekFrameDelivery? FrameDelivery => null;
             private static TaskCompletionSource<bool> Ready()
@@ -77,6 +83,14 @@ namespace Bale.Xbox
         internal bool IsPaused => Session.PlaybackState == MediaPlaybackState.Paused;
         internal string State => _state;
         internal bool IsSeeking => _seeking;
+        internal SemaphoreSlim Lifecycle => _lifecycle;
+        internal int StateUpdates { get; private set; }
+        internal void SetMountReadiness(bool opened, bool started)
+        {
+            _attempt.Media!.Opened = opened;
+            _attempt.Media.Started = started;
+        }
+        internal void Unmount() => DisposeMount(_attempt);
         internal async Task<string> SeekSourceAsync(double target)
         {
             var result = await SeekAsync(new(target));
@@ -113,7 +127,11 @@ namespace Bale.Xbox
         private void ShowSkipFeedback(int delta, double target) { }
         private void HideTransport() { }
         private void SetLoading(bool loading) { }
-        private void UpdatePlaybackState(Attempt attempt, Mount media) { }
+        private void UpdatePlaybackState(Attempt attempt, Mount media)
+        {
+            StateUpdates++;
+            _state = media.Player.PlaybackSession.PlaybackState.ToString().ToLowerInvariant();
+        }
         private void RefreshStats(Attempt attempt) { }
         private void PushSubtitleClock(bool force)
         {
@@ -138,11 +156,12 @@ namespace Windows.System
 
 namespace Windows.Media.Playback
 {
-    internal enum MediaPlaybackState { None, Playing, Paused }
+    internal enum MediaPlaybackState { None, Opening, Buffering, Playing, Paused }
     internal sealed class MediaPlayer(MediaPlaybackSession session)
     {
         public MediaPlaybackSession PlaybackSession { get; } = session;
-        public void Pause() => PlaybackSession.PlaybackState = MediaPlaybackState.Paused;
+        public void Pause() => PlaybackSession.RequestState(MediaPlaybackState.Paused);
+        public void Play() => PlaybackSession.RequestState(MediaPlaybackState.Playing);
     }
     internal sealed class MediaPlaybackSession(double position)
     {
@@ -156,7 +175,22 @@ namespace Windows.Media.Playback
         internal int NativeSeeks { get; private set; }
         // Reproduce the console: a nominally in-range EVENT seek lands at the produced edge.
         internal double? LiveEdge { get; init; }
-        public MediaPlaybackState PlaybackState { get; set; } = MediaPlaybackState.Playing;
+        private MediaPlaybackState _state = MediaPlaybackState.Playing;
+        public MediaPlaybackState PlaybackState
+        {
+            get => _state;
+            set { _state = value; PlaybackStateChanged?.Invoke(this, new object()); }
+        }
+        public event Action<MediaPlaybackSession, object>? PlaybackStateChanged;
+        internal int StateSubscribers => PlaybackStateChanged?.GetInvocationList().Length ?? 0;
+        internal Action<MediaPlaybackState>? OnStateRequested { get; set; }
+        internal int StateRequests { get; private set; }
+        internal void RequestState(MediaPlaybackState state)
+        {
+            StateRequests++;
+            if (OnStateRequested is { } handler) handler(state);
+            else PlaybackState = state;
+        }
         public event Action<MediaPlaybackSession, object>? SeekCompleted;
         public TimeSpan Position
         {
