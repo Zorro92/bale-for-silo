@@ -69,6 +69,8 @@ if [[ -z "$DIR" ]]; then
     echo "Downloading CI build $RUN_ID..."
     gh run download "$RUN_ID" --name bale-xbox-x64 --dir "$DIR"
   fi
+  # Each build is ~100 MB and re-downloadable from CI: keep only the newest few.
+  ls -dt "$ROOT/.cache"/build-* 2>/dev/null | tail -n +"$(( ${BALE_KEEP_BUILDS:-3} + 1 ))" | xargs -r rm -rf
 fi
 
 MSIX="$(find "$DIR" -name '*.msix' -not -path '*/Dependencies/*' | head -n1)"
