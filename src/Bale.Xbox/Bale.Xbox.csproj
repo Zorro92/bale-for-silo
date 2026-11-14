@@ -56,7 +56,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="FFmpegInteropX.UWP.Lib" Version="[2.1.0-bale.23]" GeneratePathProperty="true" />
+    <PackageReference Include="FFmpegInteropX.UWP.Lib" Version="[2.1.0-bale.24]" GeneratePathProperty="true" />
     <PackageReference Include="FFmpegInteropX.UWP.FFmpeg" Version="[8.1.2-bale.dav1d.1.5.4.p1]" GeneratePathProperty="true" />
     <Content Include="$(PkgFFmpegInteropX_UWP_FFmpeg)\licenses\*.txt" Link="Licenses\FFmpeg\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="$(PkgFFmpegInteropX_UWP_FFmpeg)\SOURCES.txt" Link="Licenses\FFmpeg\SOURCES.txt" CopyToOutputDirectory="PreserveNewest" />

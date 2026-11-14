@@ -27,8 +27,8 @@ try {
     }
     foreach ($case in @(
         @{ version = '2.1.0-bale.023' },
-        @{ version = '2.1.0-bale.24' }, # Tag must agree too.
-        @{ version = "2.1.0-bale.23`n" },
+        @{ version = "$($pin.version)0" }, # Tag must agree too.
+        @{ version = "$($pin.version)`n" },
         @{ release_tag = 'wrapper-ffmpeginteropx-2.1.0-bale.0' },
         @{ source_commit = 'main' },
         @{ sha256 = 'not-a-sha256' },

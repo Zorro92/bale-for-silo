@@ -563,11 +563,12 @@ and its native activation registration are unchanged.
 
 ### Native FFmpegInteropX wrapper fork
 
-Bale requires exactly `[2.1.0-bale.23]` of `FFmpegInteropX.UWP.Lib`, from the fork's immutable
-release [`wrapper-ffmpeginteropx-2.1.0-bale.23`](https://github.com/Zorro92/bale-ffmpeginteropx/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.23),
-built from fork commit `86bb6c916f06d1e5f89708e1bf8b3feb256cc049`. Its nupkg SHA256 is
-`36e2472ffc46ec5aca77446fbbeacfb63cc345bbdaab132ae540b9ddd3324d2f`. The `Source/` code is identical
-to the former 22-patch build; moving the build/release owner does not change app behavior.
+Bale requires exactly `[2.1.0-bale.24]` of `FFmpegInteropX.UWP.Lib`, from the fork's immutable
+release [`wrapper-ffmpeginteropx-2.1.0-bale.24`](https://github.com/Zorro92/bale-ffmpeginteropx/releases/tag/wrapper-ffmpeginteropx-2.1.0-bale.24),
+built from fork commit `c3a9adbf2d81024a54063e7570ed9883afd5403c`. Its nupkg SHA256 is
+`086b5893d1ab81bfa1643675d974dae321d6919dc6d0dab46697c049f28a2530`. The only playback change
+from bale.23 fixes content-light-level, mastering-display and display-matrix reads to use the
+side-data payload after checking its size, instead of interpreting the side-data entry as metadata.
 Bale no longer carries or applies wrapper patches or builds/releases wrapper packages. Changes go
 as commits to [Zorro92/bale-ffmpeginteropx](https://github.com/Zorro92/bale-ffmpeginteropx); its
 [`bale/README.md`](https://github.com/Zorro92/bale-ffmpeginteropx/blob/main/bale/README.md) is the
@@ -1238,7 +1239,9 @@ Wrapper bug found (also upstream): the HDR side-data reads cast the `AVPacketSid
 `av_packet_side_data_get` to `AVContentLightMetadata*` / `AVMasteringDisplayMetadata*` instead of
 using its `data`, so `hdr=on` reported MaxCLL 488887616 / MaxFALL 553 (pointer bits; the native
 route reads 4057 / 321) and no mastering luminance. The display-matrix rotation read has the same
-pattern. Fix belongs in the fork. Automatic stays banned in production.
+pattern. The fork fixes all three reads in commit `c3a9adbf2d81024a54063e7570ed9883afd5403c`,
+consumed by Bale as wrapper `2.1.0-bale.24`; console verification of that fix remains pending.
+Automatic stays banned in production.
 
 Microsoft's media pipeline exposes no tone-mapping algorithm or parameter controls.
 FFmpegInteropX's `SetFFmpegVideoFilters` is not a practical alternative: filters run on the CPU,
