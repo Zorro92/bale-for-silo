@@ -19,6 +19,7 @@ mod frames;
 pub mod grain;
 pub mod png;
 pub mod subs;
+pub mod tonemap;
 pub mod zc_frame;
 
 use std::sync::{Arc, Mutex};
