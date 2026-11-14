@@ -15,6 +15,7 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <None Include="Fixtures/PlaybackReplanEnvelope.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Fixtures/buffering-quality-v1-probe-vectors.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

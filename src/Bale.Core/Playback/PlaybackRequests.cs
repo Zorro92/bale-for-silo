@@ -81,6 +81,9 @@ public sealed record PlaybackStartRequestV3(
     public int? SubtitleTrackIndex { get; init; }
     public bool Metered { get; init; }
     public int? BandwidthCapKbps { get; init; }
+    /// <summary>The highest current speed reading (buffering_quality_v1); starts only, never replans.</summary>
+    public int? BandwidthEstimateKbps { get; init; }
+    public string? BandwidthEstimateSource { get; init; }
     public bool? AllowAlternateVersions { get; init; }
 }
 

@@ -24,7 +24,7 @@ internal sealed record PlaybackRequestScope(string? AccountId, string ProfileId,
 /// Solo v2 video exchanges, following shared/src/commonMain/kotlin/org/siloserver/silo/network/apiv2/PlaybackV2Api.kt.
 /// Uses the same authenticated adapter, profile proofs and bearer refresh path as the other Core feeds.
 /// </summary>
-public sealed class PlaybackClient
+public sealed partial class PlaybackClient
 {
     private readonly SiloApiClient _api;
     private readonly IRequestAdapter _adapter;
@@ -82,10 +82,22 @@ public sealed class PlaybackClient
         if (capabilities.InstallationId != installationId)
             throw new InvalidOperationException("The playback installation does not match the server capabilities.");
 
+        // Speed test (connection_speed_v1): a start on an unmetered link declares buffering_quality_v1 and
+        // sends the highest current reading as a probe estimate. Without one the server fills in its reading.
+        var features = PlaybackProtocol.NegotiatedStartFeatures(request, capabilities.Features);
+        int? estimate = null;
+        if (ConnectionSpeed.Offered(capabilities.Features) && !Speed.Metered)
+        {
+            if (!features.Contains(ConnectionSpeed.BufferingQualityFeature)) features = features.Append(ConnectionSpeed.BufferingQualityFeature).ToArray();
+            Speed.Update(Schedule(capabilities), null);
+            estimate = Speed.StartEstimate(DateTimeOffset.UtcNow);
+        }
         return await PostAsync("/api/v2/playback/start", request with
             {
                 InstallationId = installationId,
-                ClientFeatures = PlaybackProtocol.NegotiatedStartFeatures(request, capabilities.Features),
+                ClientFeatures = features,
+                BandwidthEstimateKbps = estimate,
+                BandwidthEstimateSource = estimate is null ? null : ConnectionSpeed.ProbeSource,
             },
             PlaybackJson.Default.PlaybackStartRequestV3, scope, cancellationToken).ConfigureAwait(false);
     }
