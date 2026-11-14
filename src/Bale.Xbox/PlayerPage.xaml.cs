@@ -167,6 +167,11 @@ public sealed partial class PlayerPage : Page, IBackHandler
 #endif
             SetLoading(true);
             SetDisplayActive(true);
+            if (!_speedMediaActive)
+            {
+                _speedMediaActive = true;
+                ConnectionSpeedService.MediaStarting();
+            }
             if (_request is not { } request || Session.Client is not { } client)
             {
                 await ShowErrorAsync(PlaybackMessages.StartFailed("No active playback viewer."));
@@ -543,10 +548,18 @@ public sealed partial class PlayerPage : Page, IBackHandler
         }
     }
 
+    // Speed tests never run while this page loads or plays media (ConnectionSpeedService).
+    private bool _speedMediaActive;
+
     private Task ShutdownAsync()
     {
         if (_shutdown is not null) return _shutdown;
         _active = false;
+        if (_speedMediaActive)
+        {
+            _speedMediaActive = false;
+            ConnectionSpeedService.MediaEnded();
+        }
         _attempt?.Cancellation.Cancel();
         if (_attempt is { } attempt)
         {

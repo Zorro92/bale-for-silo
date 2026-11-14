@@ -170,6 +170,9 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         _signingOut = false;
         // Recovery runs after the saved login and acting profile have both been restored.
         _ = PlaybackSessions.ReplayAsync();
+        // A sign-in (the shell opening for a profile) reads the connection speed; a due test follows.
+        ConnectionSpeedService.Start();
+        ConnectionSpeedService.Check("sign-in");
         // Capability probing must not depend on a successful library-list load.
         _ = RefreshRequestsCapabilityAsync();
 

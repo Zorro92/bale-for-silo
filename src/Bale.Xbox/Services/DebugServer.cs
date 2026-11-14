@@ -377,6 +377,10 @@ internal sealed partial class DebugServer
                     return ("400 Bad Request", DebugThreadCpu.Usage);
                 return await DebugThreadCpu.MeasureAsync(query.GetValueOrDefault("seconds"));
 
+            case ("GET", "/speed"):
+                return ("200 OK", DebugConnectionSpeed.Describe());
+            case ("POST", "/speed"):
+                return ("200 OK", await DebugConnectionSpeed.TestAsync(query.GetValueOrDefault("mode")));
             case ("GET", "/gc"):
                 if (query.Count != 0)
                     return ("400 Bad Request", GcUsage);

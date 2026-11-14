@@ -46,6 +46,7 @@
 #   scripts/bale-debug.sh asstest [ms out.png]   libass in bale_gpu.dll: version, DirectWrite font lookups/fallback, render timings; with ms, saves the probe script frame as PNG
 #   scripts/bale-debug.sh rust                   Rust loader + GPU film grain: hardware/self-tests, 1080p correctness, 1080p/4K GPU and CPU timings (120 s timeout)
 #   scripts/bale-debug.sh mem [gc]               GC/app/Xbox memory + player trim/UI residency counters; gc forces full collection + finalizers
+#   scripts/bale-debug.sh speed [check|test]     connection speed test state; check = read + due quick test; test = Test speed (accurate, manual)
 #   scripts/bale-debug.sh gc                     GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
 #   scripts/bale-debug.sh gc latency <batch|interactive|sustained|default>  change latency app-wide now; default restores the saved pre-playback mode; playback acquires sustained automatically
 #   scripts/bale-debug.sh frame-delivery [native|managed|off]  next playback attempt's observer; default native, on aliases native; memory only (restart resets); no args = status
@@ -389,6 +390,15 @@ case "${1:-}" in
     else
       curl --fail-with-body -sS --max-time 5 "$BASE/mem"
     fi
+    ;;
+  speed)
+    # Connection speed test (silo connection_speed_v1): no args = state; check = read + due quick test;
+    # test = Test speed (accurate, ~10 s, manual result).
+    case "${2-}" in
+      "") curl --fail-with-body -sS --max-time 10 "$BASE/speed" ;;
+      check|test) curl --fail-with-body -sS --max-time 40 -X POST "$BASE/speed?mode=$2" ;;
+      *) echo 'usage: scripts/bale-debug.sh speed [check|test]' >&2; exit 2 ;;
+    esac
     ;;
   gc)
     value="${3-}"

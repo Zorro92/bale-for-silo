@@ -49,6 +49,7 @@ public sealed partial class App : Application
         {
             _inBackground = false;
             UiResidency.Resume();
+            ConnectionSpeedService.Check("foreground");
             if (Window.Current?.Content is Frame { Content: PlayerPage player })
                 await player.RestoreAfterBackgroundAsync();
         };
@@ -60,6 +61,8 @@ public sealed partial class App : Application
 
     private async void OnEnteredBackground(object sender, EnteredBackgroundEventArgs e)
     {
+        // No speed test runs in the background; a running one measured nothing.
+        ConnectionSpeedService.CancelTest();
         var deferral = e.GetDeferral();
         _inBackground = true;
         Session.SetForeground(false);
