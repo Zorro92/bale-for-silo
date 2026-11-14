@@ -55,15 +55,27 @@ float3 luma_weights(bool bt2020) {
 }
 // SDR sources are display-referred: decode with the BT.1886 EOTF (power 2.4) to linear 0..1.
 float sdr_decode(float signal) { return pow(clamp(signal, 0.0, 1.0), 2.4); }
-float3 source_decode(float y, float2 uv, bool bt2020, bool full_range, bool sdr) {
+// Source modes (flags.w): 0 PQ, 1 SDR (BT.1886), 2 HLG (BT.2100, 1000-nit nominal peak).
+float hlg_inverse_oetf(float signal) {
+    float e = clamp(signal, 0.0, 1.0);
+    return e <= 0.5 ? e * e / 3.0 : (exp((e - 0.55991073) / 0.17883277) + 0.28466892) / 12.0;
+}
+float3 hlg_ootf(float3 scene) {
+    float ys = max(dot(float3(0.2627, 0.6780, 0.0593), scene), 0.0);
+    return scene * (1000.0 * pow(ys, 0.2));
+}
+float3 source_decode(float y, float2 uv, bool bt2020, bool full_range, uint mode) {
     float3 weights = luma_weights(bt2020);
     y = full_range ? y / 1023.0 : (y - 64.0) / 876.0;
     uv = (uv - 512.0) / (full_range ? 1023.0 : 896.0);
     float r = y + 2.0 * (1.0 - weights.r) * uv.y;
     float b = y + 2.0 * (1.0 - weights.b) * uv.x;
     float g = (y - weights.r * r - weights.b * b) / weights.g;
-    return sdr ? float3(sdr_decode(r), sdr_decode(g), sdr_decode(b))
-               : float3(pq_eotf(r), pq_eotf(g), pq_eotf(b));
+    // One return: FXC rejects early returns here (X4000).
+    float3 decoded = float3(pq_eotf(r), pq_eotf(g), pq_eotf(b));
+    if (mode == 1) decoded = float3(sdr_decode(r), sdr_decode(g), sdr_decode(b));
+    if (mode == 2) decoded = hlg_ootf(float3(hlg_inverse_oetf(r), hlg_inverse_oetf(g), hlg_inverse_oetf(b)));
+    return decoded;
 }
 float3 rgb2020_to_709(float3 rgb) {
     return float3(dot(float3(1.660491, -0.5876411, -0.07284986), rgb),
@@ -91,9 +103,9 @@ float3 desaturate(float3 rgb, bool bt2020, float threshold_nits) {
     return rgb * (1.0 - over) + luma * over;
 }
 float3 tone_map_pixel(float y, float2 uv, float source_peak_nits, float target_white_nits,
-                      float desat, uint curve, bool bt2020, bool full_range, bool sdr) {
-    float3 rgb = source_decode(y, uv, bt2020, full_range, sdr);
-    if (sdr) {
+                      float desat, uint curve, bool bt2020, bool full_range, uint mode) {
+    float3 rgb = source_decode(y, uv, bt2020, full_range, mode);
+    if (mode == 1) {
         // BT.2020 SDR: no tone curve, only BT.2020 -> BT.709 in linear light, clip, re-encode.
         rgb = gamut_to_709(rgb, bt2020);
     } else {

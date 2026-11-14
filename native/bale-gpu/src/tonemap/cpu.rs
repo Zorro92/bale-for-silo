@@ -36,11 +36,13 @@ impl BaleToneMapConfig {
 impl BaleToneMapFrameInfo {
     pub fn validate(&self) -> Result<(), i32> {
         // Metadata is intentionally ignored, including reserved fields, in ABI 1.
-        // PQ (16) is tone mapped from BT.2020 or BT.709. SDR on the BT.709/BT.1886 curve
-        // (H.273 1, 6, 14, 15) with BT.2020 primaries only needs the gamut conversion.
+        // PQ (16) is tone mapped from BT.2020 or BT.709. HLG (18, BT.2020) goes through the
+        // BT.2100 OOTF at the 1000-nit nominal peak, then the same curve. SDR on the
+        // BT.709/BT.1886 curve (H.273 1, 6, 14, 15) with BT.2020 primaries only needs the
+        // gamut conversion.
         let supported = match self.transfer {
             16 => matches!((self.primaries, self.matrix), (9, 9) | (1, 1)),
-            1 | 6 | 14 | 15 => (self.primaries, self.matrix) == (9, 9),
+            18 | 1 | 6 | 14 | 15 => (self.primaries, self.matrix) == (9, 9),
             _ => false,
         };
         if !supported || self.full_range > 1 {
@@ -120,7 +122,36 @@ fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
 pub fn sdr_decode(signal: f32) -> f32 {
     signal.clamp(0.0, 1.0).powf(2.4)
 }
-pub fn source_decode(y: f32, uv: [f32; 2], bt2020: bool, full_range: bool, sdr: bool) -> [f32; 3] {
+/// Source transfer modes, matching the shader's flags.w.
+pub const MODE_PQ: u32 = 0;
+pub const MODE_SDR: u32 = 1;
+pub const MODE_HLG: u32 = 2;
+pub fn mode(transfer: u8) -> u32 {
+    match transfer {
+        16 => MODE_PQ,
+        18 => MODE_HLG,
+        _ => MODE_SDR,
+    }
+}
+/// HLG nominal display peak (BT.2100): the OOTF's system gamma is 1.2 at 1000 nits.
+pub const HLG_PEAK_NITS: f32 = 1000.0;
+/// BT.2100 HLG inverse OETF: non-linear signal to normalized scene light 0..1.
+pub fn hlg_inverse_oetf(signal: f32) -> f32 {
+    let (a, b, c) = (0.178_832_77, 0.284_668_92, 0.559_910_7);
+    let e = signal.clamp(0.0, 1.0);
+    if e <= 0.5 {
+        e * e / 3.0
+    } else {
+        (((e - c) / a).exp() + b) / 12.0
+    }
+}
+/// BT.2100 HLG OOTF at the nominal peak: display nits = Lw * Ys^(gamma-1) * E per channel.
+pub fn hlg_ootf(scene: [f32; 3]) -> [f32; 3] {
+    let ys = dot(luma_weights(true), scene).max(0.0);
+    let gain = HLG_PEAK_NITS * ys.powf(0.2);
+    scene.map(|v| v * gain)
+}
+pub fn source_decode(y: f32, uv: [f32; 2], bt2020: bool, full_range: bool, mode: u32) -> [f32; 3] {
     let [kr, kg, kb] = luma_weights(bt2020);
     let y = if full_range {
         y / 1023.0
@@ -131,7 +162,11 @@ pub fn source_decode(y: f32, uv: [f32; 2], bt2020: bool, full_range: bool, sdr: 
     let r = y + 2.0 * (1.0 - kr) * uv[1];
     let b = y + 2.0 * (1.0 - kb) * uv[0];
     let g = (y - kr * r - kb * b) / kg;
-    [r, g, b].map(if sdr { sdr_decode } else { pq_eotf })
+    match mode {
+        MODE_SDR => [r, g, b].map(sdr_decode),
+        MODE_HLG => hlg_ootf([r, g, b].map(hlg_inverse_oetf)),
+        _ => [r, g, b].map(pq_eotf),
+    }
 }
 pub fn rgb2020_to_709(rgb: [f32; 3]) -> [f32; 3] {
     [
@@ -182,15 +217,16 @@ pub fn tone_map_pixel(
     curve: u32,
     bt2020: bool,
     full_range: bool,
-    sdr: bool,
+    mode: u32,
 ) -> [f32; 3] {
-    if sdr {
+    if mode == MODE_SDR {
         // BT.2020 SDR: no tone curve, only BT.2020 -> BT.709 in linear light, clip, re-encode.
-        let rgb = source_decode(y, uv, bt2020, full_range, true);
+        let rgb = source_decode(y, uv, bt2020, full_range, MODE_SDR);
         let rgb = gamut_to_709(rgb, bt2020).map(sdr_encode);
         return rgb709_to_ycbcr(rgb);
     }
-    let mut rgb = source_decode(y, uv, bt2020, full_range, false);
+    // PQ and HLG both arrive here as display light in nits.
+    let mut rgb = source_decode(y, uv, bt2020, full_range, mode);
     let original = rgb.into_iter().fold(0.0f32, f32::max);
     // Match tonemapx's order for nonzero desat: convert primaries before desaturating,
     // but derive the scale from the original RGB. The scalar scale commutes with the matrix.
@@ -229,7 +265,7 @@ pub fn pixel(
         config.curve,
         frame.matrix == 9,
         frame.full_range == 1,
-        frame.transfer != 16,
+        mode(frame.transfer),
     )
 }
 pub fn quantize_luma(y: f32) -> f32 {
@@ -477,7 +513,7 @@ mod tests {
         );
         assert!(
             BaleToneMapFrameInfo {
-                transfer: 18,
+                transfer: 17,
                 ..sdr
             }
             .validate()
@@ -496,6 +532,46 @@ mod tests {
         let converted = pixel(&c, &sdr, 400.0, [470.0, 650.0]);
         let naive_v: f32 = (650.0 - 512.0) / 896.0;
         assert!(converted[2].abs() > naive_v.abs(), "{converted:?}");
+    }
+    #[test]
+    fn hlg_reference_white_lands_where_pq_203_nits_does() {
+        let c = config(1);
+        let hlg = BaleToneMapFrameInfo {
+            transfer: 18,
+            primaries: 9,
+            matrix: 9,
+            ..frame()
+        };
+        assert!(hlg.validate().is_ok());
+        assert!(
+            BaleToneMapFrameInfo {
+                primaries: 1,
+                matrix: 1,
+                ..hlg
+            }
+            .validate()
+            .is_err()
+        );
+        // BT.2408: HLG 75% signal is 203-nit reference white on a 1000-nit display.
+        let scene = hlg_inverse_oetf(0.75);
+        let nits = hlg_ootf([scene; 3]);
+        assert!((nits[0] - 203.0).abs() < 1.5, "{nits:?}");
+        // So a neutral HLG 75% grey maps like a neutral PQ grey at the same nits.
+        let code = 64.0 + 876.0 * 0.75;
+        let out_hlg = pixel(&c, &hlg, code, [512.0, 512.0]);
+        let pq_code = 64.0 + 876.0 * pq_encode(nits[0]);
+        let pq = BaleToneMapFrameInfo {
+            transfer: 16,
+            ..hlg
+        };
+        let out_pq = pixel(&c, &pq, pq_code, [512.0, 512.0]);
+        assert!(
+            (out_hlg[0] - out_pq[0]).abs() < 0.002,
+            "{out_hlg:?} vs {out_pq:?}"
+        );
+        // Black stays black, and brighter signals stay brighter.
+        assert!(pixel(&c, &hlg, 64.0, [512.0, 512.0])[0] < 0.01);
+        assert!(pixel(&c, &hlg, 900.0, [512.0, 512.0])[0] > out_hlg[0]);
     }
     #[test]
     fn default_hable_desat_is_explicitly_zero_and_positive_desat_neutralizes_highlights() {
@@ -597,7 +673,7 @@ mod tests {
         }
         let f = frame();
         for bad in [
-            BaleToneMapFrameInfo { transfer: 18, ..f },
+            BaleToneMapFrameInfo { transfer: 17, ..f },
             BaleToneMapFrameInfo { primaries: 1, ..f },
             BaleToneMapFrameInfo { matrix: 1, ..f },
             BaleToneMapFrameInfo { full_range: 2, ..f },

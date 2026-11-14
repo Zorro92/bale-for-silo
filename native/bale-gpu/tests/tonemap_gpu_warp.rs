@@ -183,7 +183,7 @@ fn pq_to_nv12_matches_reference_for_both_curves_ranges_matrices_and_input_paths(
             };
             let handle = warp.create(&c);
             // PQ from BT.709 and BT.2020, and BT.2020 SDR (transfer 14: gamut conversion only).
-            for (transfer, matrix) in [(16, 1), (16, 9), (14, 9)] {
+            for (transfer, matrix) in [(16, 1), (16, 9), (14, 9), (18, 9)] {
                 for full_range in [0, 1] {
                     let f = BaleToneMapFrameInfo {
                         transfer,
