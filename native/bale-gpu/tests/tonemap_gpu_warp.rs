@@ -63,7 +63,12 @@ impl Warp {
         unsafe {
             self.device
                 .CreateTexture2D(desc, initial.as_ref().map(ptr::from_ref), Some(&mut out))
-                .unwrap();
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "WARP texture descriptor {desc:?}: HRESULT=0x{:08x}",
+                        e.code().0 as u32
+                    )
+                });
         }
         out.unwrap()
     }
@@ -202,6 +207,11 @@ fn pq_to_nv12_matches_reference_for_both_curves_ranges_matrices_and_array_slices
                             for array in [false, true] {
                                 let mut d = desc(width, height, DXGI_FORMAT_P010, bind);
                                 d.ArraySize = if array { 3 } else { 1 };
+                                // Planar video arrays require a decoder bind on D3D11.1/WARP;
+                                // they cannot also expose SRVs. Exercise the real decoder copy path.
+                                if array {
+                                    d.BindFlags = D3D11_BIND_DECODER.0 as u32;
+                                }
                                 let input = warp.texture(&d, None);
                                 let slice = if array { 2 } else { 0 };
                                 // SAFETY: same-sized same-device P010 slice; all test resources are unmapped.

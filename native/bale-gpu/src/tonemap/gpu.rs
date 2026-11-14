@@ -169,7 +169,9 @@ impl ToneMapGpu {
             render_view(&self.device, output, DXGI_FORMAT_R8_UNORM)?,
             render_view(&self.device, output, DXGI_FORMAT_R8G8_UNORM)?,
         ];
-        let direct = src.BindFlags & D3D11_BIND_SHADER_RESOURCE.0 as u32 != 0;
+        // D3D11 forbids SRVs on decoder/encoder arrays even with an SRV bind present.
+        let direct = src.BindFlags & D3D11_BIND_SHADER_RESOURCE.0 as u32 != 0
+            && src.BindFlags & (D3D11_BIND_DECODER | D3D11_BIND_VIDEO_ENCODER).0 as u32 == 0;
         let views = if direct {
             source_views(&self.device, input, subresource)?
         } else {
