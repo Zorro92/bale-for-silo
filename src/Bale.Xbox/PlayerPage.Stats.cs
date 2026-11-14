@@ -250,6 +250,7 @@ public sealed partial class PlayerPage
             ("Video media type (track)", media?.TrackVideoMediaType ?? "unavailable"),
             ("Video media type (mss)", media?.MssVideoMediaType?.Description ?? "unavailable"),
             ("Sample memory", media?.FrameDelivery?.SampleMemory ?? DebugSampleMemory.Unavailable),
+            ("Xbox memory", DebugXboxMemory.Describe()),
             ("Delivered ahead", frames?.DeliveredAheadSeconds is { } ahead
                 ? ahead.ToString("0.000", CultureInfo.InvariantCulture) + " s" : "unavailable"),
             // Neither MediaPlayer's WinRT API nor the pinned FFmpeg wrapper exposes render drops.
