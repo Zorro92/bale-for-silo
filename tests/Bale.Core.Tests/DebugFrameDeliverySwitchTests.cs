@@ -45,7 +45,7 @@ public class DebugFrameDeliverySwitchTests
         Assert.True(media.LastIndexOf("#if DEBUG_SERVER", guard, StringComparison.Ordinal)
             > media.LastIndexOf("#endif", guard, StringComparison.Ordinal));
         Assert.Contains("Log.Info($\"player: frame delivery observer={attempt.FrameDeliveryMode}\");", media);
-        Assert.Contains("if (media.Route.SoftwareVideo && media.FfmpegSource is { } softwareSource)", media[guard..observer]);
+        Assert.Contains("if (media.SoftwareVideo && media.FfmpegSource is { } softwareSource)", media[guard..observer]);
         Assert.Contains("? new DebugFrameDelivery(softwareSource,", media[observer..]);
         Assert.Contains(": new NativeFrameDelivery(softwareSource,", media[observer..]);
         Assert.Contains("public IDebugFrameDelivery? FrameDelivery", media);

@@ -7,6 +7,11 @@ namespace Bale.Xbox.Services;
 internal static class FfmpegSource
 {
     internal static MediaSourceConfig Configuration(PlaybackRouteDecision route)
+#if DEBUG_SERVER
+        => Configuration(route, new DebugFfmpegInputTuning());
+
+    internal static MediaSourceConfig Configuration(PlaybackRouteDecision route, DebugFfmpegInputTuning tuning)
+#endif
     {
         // Debug captures only our safe Bale diagnostics; production keeps the native logger off.
         FfmpegLogging.Configure();
@@ -15,9 +20,15 @@ internal static class FfmpegSource
             : route.VideoCodec is not null && !SoftwareDecodePolicy.SystemVideoCodecs.Contains(route.VideoCodec)))
             throw new InvalidDataException("The video codec cannot use the local fallback.");
         var config = new MediaSourceConfig();
-        // Never Automatic: FFmpeg D3D11 and non-AV1 software video are forbidden by owner policy.
+        // Production never uses Automatic: FFmpeg D3D11 and non-AV1 software video are debug-only.
         config.Video.VideoDecoderMode = route.SoftwareVideo
             ? VideoDecoderMode.ForceFFmpegSoftwareDecoder : VideoDecoderMode.ForceSystemDecoder;
+        var softwareVideo = route.SoftwareVideo;
+#if DEBUG_SERVER
+        // Choose the production mode first; default leaves it intact on every route.
+        config.Video.VideoDecoderMode = DecoderMode(config.Video.VideoDecoderMode, tuning);
+        softwareVideo = tuning.SoftwareVideo(softwareVideo);
+#endif
         // AAC/MP3 use the 2.1.0 winmd switches. Patch 0021 (2.1.0-bale.21) sends AC3/EAC3 to the
         // system Dolby decoder undecoded, keeping E-AC-3 JOC (Atmos). PCM and the rest use FFmpeg audio.
         config.Audio.SystemDecoderAAC = true;
@@ -25,8 +36,13 @@ internal static class FfmpegSource
         config.FFmpegOptions["bale_system_decoder_dolby"] = "1";
         config.Subtitles.AutoSelectForcedSubtitles = false;
         config.FFmpegOptions["rw_timeout"] = "10000000";
-        ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight));
-        if (route.SoftwareVideo) ApplySoftwareVideo(config);
+        ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(softwareVideo, route.VideoWidth, route.VideoHeight));
+        // The zero-copy/GPU-grain integration is AV1-specific; an explicit HEVC software experiment
+        // uses FFmpegInteropX's normal software provider instead.
+        if (softwareVideo && SoftwareDecodePolicy.VideoCodecs.Contains(route.VideoCodec!)) ApplySoftwareVideo(config);
+#if DEBUG_SERVER
+        ApplyInputTuning(config, tuning, softwareVideo, route.VideoCodec);
+#endif
         return config;
     }
 
@@ -62,9 +78,16 @@ internal static class FfmpegSource
     }
 
 #if DEBUG_SERVER
-    internal static MediaSourceConfig Configuration(PlaybackRouteDecision route, DebugFfmpegInputTuning tuning)
+    internal static VideoDecoderMode DecoderMode(VideoDecoderMode production, DebugFfmpegInputTuning tuning) => tuning.Decoder switch
     {
-        var config = Configuration(route);
+        DebugFfmpegDecoder.Auto => VideoDecoderMode.Automatic,
+        DebugFfmpegDecoder.System => VideoDecoderMode.ForceSystemDecoder,
+        DebugFfmpegDecoder.Software => VideoDecoderMode.ForceFFmpegSoftwareDecoder,
+        _ => production,
+    };
+
+    private static void ApplyInputTuning(MediaSourceConfig config, DebugFfmpegInputTuning tuning, bool softwareVideo, string? codec)
+    {
         if (tuning.ReadAhead is { } enabled)
         {
             config.General.ReadAheadBufferEnabled = enabled;
@@ -76,19 +99,39 @@ internal static class FfmpegSource
         }
         if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = checked((uint)readSize);
         if (tuning.HdrSupport is { } hdr) config.Video.HdrSupport = hdr ? HdrSupport.Enabled : HdrSupport.Disabled;
-        if (route.SoftwareVideo)
+        if (softwareVideo)
         {
             ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.Dav1dMaxFrameDelay));
             if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions["bale_decode_thread_priority"] = priority.ToString(CultureInfo.InvariantCulture);
             // Patch 0009: dav1d/gpu modes; off retains the independent export-only override.
-            if (DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain) is { } grain) config.FFmpegOptions[grain.Key] = grain.Value;
+            if (SoftwareDecodePolicy.VideoCodecs.Contains(codec!) && DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain) is { } grain)
+                config.FFmpegOptions[grain.Key] = grain.Value;
         }
-        else
+        else if (config.Video.VideoDecoderMode == VideoDecoderMode.ForceSystemDecoder)
         {
             if (tuning.DecoderUseMaxResolution is { } maxres) config.FFmpegOptions["bale_decoder_use_max_resolution"] = maxres.ToString(CultureInfo.InvariantCulture);
             if (tuning.DecoderMaxDpbCount is { } dpb) config.FFmpegOptions["bale_decoder_max_dpb_count"] = dpb.ToString(CultureInfo.InvariantCulture);
         }
-        return config;
+    }
+
+    internal static void ValidateVideoDecoders(FFmpegMediaSource source, PlaybackRouteDecision route, DebugFfmpegInputTuning tuning)
+    {
+        if (tuning.Decoder is null)
+        {
+            ValidateVideoDecoders(source, route);
+            return;
+        }
+        // Automatic's engine is provisional here (upstream VideoDecoderMode IDL). Permit D3D11
+        // and its software fallback only for this captured debug request; stats refresh after start.
+        var streams = source.VideoStreams;
+        if ((route.VideoCodec is not null && streams.Count == 0) || streams.Any(video => tuning.Decoder switch
+        {
+            DebugFfmpegDecoder.Auto => video.DecoderEngine is not (DecoderEngine.FFmpegD3D11HardwareDecoder or DecoderEngine.FFmpegSoftwareDecoder),
+            DebugFfmpegDecoder.System => video.DecoderEngine != DecoderEngine.SystemDecoder,
+            DebugFfmpegDecoder.Software => video.DecoderEngine != DecoderEngine.FFmpegSoftwareDecoder,
+            _ => true,
+        }))
+            throw new InvalidDataException("The video decoder violates the debug decoder override.");
     }
 #endif
 

@@ -479,6 +479,10 @@ public class DebugPlaytestScriptTests
     [InlineData("hdr=on", "maxres=1", "dpb=3")]
     [InlineData("ahead=8", "hdr=off", "prio=2")]
     [InlineData("hdr=default", "readahead=default", "buffer=default")]
+    [InlineData("decoder=auto", "hdr=on", "ahead=default")]
+    [InlineData("hdr=default", "decoder=system", "buffer=default")]
+    [InlineData("prio=2", "buffer=1000", "decoder=software")]
+    [InlineData("decoder=default", "readahead=default", "buffer=default")]
     public async Task FfmpegInputTuningPostsValidatedOptionsInAnyOrder(string first, string second, string third)
     {
         if (!OperatingSystem.IsLinux()) return;
@@ -498,7 +502,7 @@ public class DebugPlaytestScriptTests
         Assert.Contains("readahead=on", result.Arguments);
         Assert.DoesNotContain("readsize=", result.Arguments);
         Assert.DoesNotContain("prefetch=", result.Arguments);
-        foreach (var key in new[] { "ahead", "sws", "delay", "prio", "maxres", "dpb", "hdr", "upload" }) Assert.DoesNotContain("\n" + key + "=", result.Arguments);
+        foreach (var key in new[] { "ahead", "sws", "delay", "prio", "maxres", "dpb", "hdr", "upload", "decoder" }) Assert.DoesNotContain("\n" + key + "=", result.Arguments);
     }
 
     [Theory]
@@ -519,6 +523,12 @@ public class DebugPlaytestScriptTests
     [InlineData("unknown=1")]
     [InlineData("=on")]
     [InlineData("")]
+    [InlineData("decoder=AUTO")]
+    [InlineData("decoder=Automatic")]
+    [InlineData("decoder=d3d11")]
+    [InlineData("decoder=1")]
+    [InlineData("decoder=")]
+    [InlineData("decoder= auto")]
     public async Task InvalidFfmpegInputTuningNeverReachesCurl(string option)
     {
         if (!OperatingSystem.IsLinux()) return;
@@ -531,6 +541,7 @@ public class DebugPlaytestScriptTests
     [InlineData("readahead=on", "readahead=off")]
     [InlineData("readsize=16384", "readsize=65536")]
     [InlineData("prefetch=2", "prefetch=8")]
+    [InlineData("decoder=auto", "decoder=system")]
     public async Task DuplicateFfmpegInputTuningNeverReachesCurl(string first, string second)
     {
         if (!OperatingSystem.IsLinux()) return;

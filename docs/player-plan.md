@@ -1131,6 +1131,10 @@ turning the toggle off mid-play does not change the captured attempt. Restart pl
 `default` restores Automatic, and omitted keys keep their current overrides. Stats and `where` show
 `Video media type (track)` on native, FFmpeg and HLS, plus `(mss)` with decoder mode and compressed
 status on FFmpeg; both log the MF colour/HDR attributes, with absent attributes shown as `unset`.
+`ffmpeg-tune decoder=auto|system|software|default` is debug-only, for the next real FFmpeg route;
+use `ffmpeg direct` to force that route for other containers (HLS stays native).
+Auto tries FFmpeg d3d11va, reports a software fallback explicitly, and refreshes the MSS decoder/subtype after start.
+Production keeps ForceSystemDecoder/ForceFFmpegSoftwareDecoder; `decoder=default` restores that route choice.
 
 For the same-frame comparison, `scripts/bale-debug.sh seek <seconds> [pause]` seeks the active
 native, FFmpeg or HLS player to absolute **source/movie** time, optionally pauses, waits for seek

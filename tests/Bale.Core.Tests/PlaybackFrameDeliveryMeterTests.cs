@@ -197,7 +197,7 @@ public class PlaybackFrameDeliveryMeterTests
         Assert.DoesNotContain("sample.Buffer", observer);
         Assert.DoesNotContain("ex.Message", observer);
         var media = Read("PlayerPage.Media.cs.txt");
-        Assert.Contains("if (media.Route.SoftwareVideo && media.FfmpegSource is { } softwareSource)", media);
+        Assert.Contains("if (media.SoftwareVideo && media.FfmpegSource is { } softwareSource)", media);
         Assert.True(media.IndexOf("media.FrameDelivery?.Dispose()", StringComparison.Ordinal)
             < media.IndexOf("player.Dispose", StringComparison.Ordinal));
         var stats = Read("PlayerPage.Stats.cs.txt");

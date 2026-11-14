@@ -177,7 +177,7 @@ public class DebugStatsRowFilterTests
     {
         var source = Read("PlayerPage.Stats.cs.txt");
         Assert.StartsWith("#if DEBUG_SERVER", source);
-        Assert.Contains("DebugStatsRows => _statsRows", source);
+        Assert.Contains("return _statsRows;", source);
         var render = source.IndexOf("private void RenderStatsRows()", StringComparison.Ordinal);
         Assert.DoesNotContain("StatsRowFilter.IsHidden", source[..render]);
         Assert.Contains("_statsRows.Where(row => !DebugServer.StatsRowFilter.IsHidden(row.Label)).ToArray()", source[render..]);

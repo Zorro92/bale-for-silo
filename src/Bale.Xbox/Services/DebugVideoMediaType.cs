@@ -6,7 +6,7 @@ using Windows.Media.MediaProperties;
 
 namespace Bale.Xbox.Services;
 
-/// <summary>One-time, passive capture of the video descriptor FFmpegInteropX hands to MF.</summary>
+/// <summary>Passive MSS descriptor capture with post-start decoder/format refresh for stats.</summary>
 internal sealed class DebugVideoMediaType : IDisposable
 {
     private readonly FFmpegMediaSource _ffmpeg;
@@ -15,6 +15,9 @@ internal sealed class DebugVideoMediaType : IDisposable
     private readonly object _gate = new();
     private readonly HashSet<object> _nonVideo = new(ReferenceEqualityComparer.Instance);
     private bool _finished;
+    private bool _disposed;
+    private bool _playbackStarted;
+    private VideoEncodingProperties? _format;
     private string? _description;
 
     internal DebugVideoMediaType(FFmpegMediaSource source, VideoDecoderMode decoderMode)
@@ -30,11 +33,27 @@ internal sealed class DebugVideoMediaType : IDisposable
 
     internal string? Description => Volatile.Read(ref _description);
 
+    internal void Refresh(bool playbackStarted)
+    {
+        lock (_gate)
+        {
+            if (_disposed) return;
+            _playbackStarted |= playbackStarted;
+            if (_format is not null) UpdateDescription();
+        }
+    }
+
     internal static string Describe(string route, string source, VideoEncodingProperties format)
     {
         // A subtype should be a short MF name/FourCC or GUID. Never echo arbitrary media text.
         var subtype = format.Subtype;
         if (string.IsNullOrEmpty(subtype)) subtype = "unset";
+        else if (Guid.TryParse(subtype, out var id))
+        {
+            // Windows SDK mfapi.h: FFmpegInteropX also supplies the P010 GUID as a string.
+            subtype = id == new Guid("30313050-0000-0010-8000-00aa00389b71") ? "P010"
+                : id == new Guid("3231564e-0000-0010-8000-00aa00389b71") ? "NV12" : id.ToString("D");
+        }
         else if (subtype.Length > 80 || !subtype.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-')) subtype = "unknown";
         return string.Create(CultureInfo.InvariantCulture,
             $"route={route} source={source} subtype={subtype} width={format.Width} height={format.Height} ")
@@ -59,19 +78,44 @@ internal sealed class DebugVideoMediaType : IDisposable
                     if (_nonVideo.Count < 16) _nonVideo.Add(descriptor);
                     return;
                 }
-                var description = Describe("ffmpeg", "mss", video.EncodingProperties)
-                    + $" decoderMode={_decoderMode}" + DecoderDetails(_ffmpeg.CurrentVideoStream?.DecoderEngine);
-                Volatile.Write(ref _description, description);
-                Log.Info("player: video media type " + description);
+                // Keep encoding properties, never a sample/request. D3D11 may update this descriptor
+                // on first decoded frames (e.g. P010); the engine can also fall back after OnStarting.
+                _format = video.EncodingProperties;
+                UpdateDescription();
             }
             catch (Exception ex)
             {
                 var description = $"route=ffmpeg source=mss unavailable ({ex.GetType().Name})";
-                Volatile.Write(ref _description, description);
-                Log.Info("player: video media type " + description);
+                Publish(description);
             }
             Detach();
         }
+    }
+
+    private void UpdateDescription()
+    {
+        try
+        {
+            var video = _ffmpeg.CurrentVideoStream;
+            var engine = video?.DecoderEngine;
+            var description = Describe("ffmpeg", "mss", _format!)
+                + $" decoderMode={_decoderMode}" + DecoderDetails(engine)
+                + $" hardwareStatus={video?.HardwareDecoderStatus.ToString() ?? "unknown"}"
+                + (_playbackStarted ? " decoderStatus=observed" : " decoderStatus=pending");
+            // HardwareDecoderStatus can remain Available after a D3D11 provider falls back.
+            // The live DecoderEngine is authoritative; never describe software as d3d11va.
+            if (_playbackStarted && _decoderMode == VideoDecoderMode.Automatic && engine == DecoderEngine.FFmpegSoftwareDecoder)
+                description += " fallback=software";
+            Publish(description);
+        }
+        catch (Exception ex) { Publish($"route=ffmpeg source=mss unavailable ({ex.GetType().Name})"); }
+    }
+
+    private void Publish(string description)
+    {
+        if (description == _description) return;
+        Volatile.Write(ref _description, description);
+        Log.Info("player: video media type " + description);
     }
 
     private static string DecoderDetails(DecoderEngine? engine) => engine switch
@@ -95,7 +139,12 @@ internal sealed class DebugVideoMediaType : IDisposable
 
     public void Dispose()
     {
-        lock (_gate) Detach();
+        lock (_gate)
+        {
+            _disposed = true;
+            _format = null;
+            Detach();
+        }
     }
 }
 #endif

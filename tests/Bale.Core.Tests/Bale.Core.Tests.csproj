@@ -44,6 +44,8 @@
     <Compile Include="../../src/Bale.Xbox/PlayerPage.Seek.cs" Link="PlayerPage.Seek.cs" />
     <Compile Include="../../src/Bale.Xbox/PlayerPage.PgsSubtitles.cs" Link="PlayerPage.PgsSubtitles.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugFfmpegInputTuning.cs" Link="DebugFfmpegInputTuning.cs" />
+    <Compile Include="../../src/Bale.Xbox/Services/FfmpegSource.cs" Link="FfmpegSource.cs" />
+    <Compile Include="../../src/Bale.Xbox/Services/DebugVideoMediaType.cs" Link="DebugVideoMediaType.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugVideoColour.cs" Link="DebugVideoColour.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugFfmpegInputTuning.cs" Link="DebugFfmpegInputTuning.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugHdrPlayback.cs" Link="DebugHdrPlayback.cs" />

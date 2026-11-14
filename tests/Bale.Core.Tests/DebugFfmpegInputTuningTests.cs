@@ -1,6 +1,7 @@
 using System.Globalization;
 using Bale.Core.Playback;
 using Bale.Xbox.Services;
+using FFmpegInteropX;
 
 namespace Bale.Core.Tests;
 
@@ -40,7 +41,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     public void BufferTimeIsAppliedAfterItemCreationWithOnlyTheOverrideDebugGuarded()
     {
         var player = Read("PlayerPage.Media.cs.txt");
-        Assert.Contains("int? bufferOverrideMs = null;\n#if DEBUG_SERVER\n                bufferOverrideMs = attempt.FfmpegTuning.BufferMs;\n#endif\n                if (SoftwareDecodeTuning.BufferTimeMs(media.Route.SoftwareVideo, bufferOverrideMs,\n                        media.Route.VideoWidth, media.Route.VideoHeight) is { } bufferMs)", player);
+        Assert.Contains("int? bufferOverrideMs = null;\n                var softwareVideo = media.Route.SoftwareVideo;\n#if DEBUG_SERVER\n                bufferOverrideMs = attempt.FfmpegTuning.BufferMs;\n                softwareVideo = media.SoftwareVideo;\n#endif\n                if (SoftwareDecodeTuning.BufferTimeMs(softwareVideo, bufferOverrideMs,\n                        media.Route.VideoWidth, media.Route.VideoHeight) is { } bufferMs)", player);
         var item = player.IndexOf("media.Item = media.FfmpegSource.CreateMediaPlaybackItem();", StringComparison.Ordinal);
         var buffering = player.IndexOf("if (SoftwareDecodeTuning.BufferTimeMs(", StringComparison.Ordinal);
         Assert.True(item >= 0 && buffering > item);
@@ -107,6 +108,13 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     [InlineData("hdr", "true")]
     [InlineData("hdr", "1")]
     [InlineData("hdr", "pretend")]
+    [InlineData("decoder", "AUTO")]
+    [InlineData("decoder", "Automatic")]
+    [InlineData("decoder", "d3d11")]
+    [InlineData("decoder", "1")]
+    [InlineData("decoder", "")]
+    [InlineData("decoder", " auto")]
+    [InlineData("decoder", "system ")]
     [InlineData("unknown", "1")]
     public void InvalidUpdatesAreAtomicAndNeverChangeTheCurrentOverride(string key, string value)
     {
@@ -275,37 +283,21 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.StartsWith("#if DEBUG_SERVER", tuning);
         Assert.DoesNotContain("Settings", tuning);
         Assert.DoesNotContain("Storage", tuning);
-        var configuration = Read("FfmpegSource.cs.txt");
-        var start = configuration.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal);
-        var end = configuration.IndexOf("#endif", start, StringComparison.Ordinal);
-        Assert.DoesNotContain("config.General.", configuration[..start]);
-        var experiment = configuration[start..end];
-        Assert.Contains("Configuration(PlaybackRouteDecision route, DebugFfmpegInputTuning tuning)", experiment);
-        Assert.Contains("if (tuning.ReadAhead is { } enabled)", experiment);
-        Assert.Contains("config.General.ReadAheadBufferEnabled = enabled", experiment);
-        Assert.Contains("if (enabled)", experiment);
-        Assert.Contains("config.General.ReadAheadBufferSize = DebugFfmpegInputTuning.ReadAheadCapBytes", experiment);
-        Assert.Contains("config.General.ReadAheadBufferDuration = DebugFfmpegInputTuning.ReadAheadCapDuration", experiment);
-        Assert.Contains("if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = checked((uint)readSize)", experiment);
-        Assert.Contains("var config = Configuration(route)", experiment);
-        Assert.Contains("if (tuning.HdrSupport is { } hdr) config.Video.HdrSupport = hdr ? HdrSupport.Enabled : HdrSupport.Disabled;", experiment);
-        Assert.DoesNotContain("config.Video.HdrSupport", configuration[..start]);
-        Assert.DoesNotContain("bale_decode_thread_priority", configuration[..start]);
-        Assert.Contains("if (route.SoftwareVideo)\n        {\n            ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.Dav1dMaxFrameDelay));", experiment);
-        Assert.Contains("if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions[\"bale_decode_thread_priority\"] = priority.ToString(CultureInfo.InvariantCulture);", experiment);
-        Assert.Contains("if (DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain) is { } grain) config.FFmpegOptions[grain.Key] = grain.Value;", experiment);
-        Assert.True(experiment.IndexOf("var config = Configuration(route)", StringComparison.Ordinal)
-            < experiment.IndexOf("if (route.SoftwareVideo)", StringComparison.Ordinal));
-        Assert.Contains("ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight))", configuration[..start]);
-        foreach (var (property, variable, option) in new[]
-        {
-            ("DecodeAheadFrames", "ahead", "bale_decode_ahead_frames"),
-            ("Dav1dMaxFrameDelay", "delay", "bale_dav1d_max_frame_delay"),
-        })
-        {
-            Assert.Contains($"if (tuning.{property} is {{ }} {variable}) config.FFmpegOptions[\"{option}\"] = {variable}.ToString(CultureInfo.InvariantCulture)", configuration[..start]);
-            Assert.DoesNotContain(option, experiment);
-        }
+        var production = DebugFfmpegDecoderTests.ProductionSource();
+        Assert.DoesNotContain("config.General.", production);
+        Assert.DoesNotContain("config.Video.HdrSupport", production);
+        Assert.DoesNotContain("bale_decode_thread_priority", production);
+        var settings = new DebugFfmpegInputTuning(true, 65536, 8, DecodeAheadFrames: 12,
+            Dav1dMaxFrameDelay: 3, DecodeThreadPriority: 1, HdrSupport: true);
+        var config = FfmpegSource.Configuration(new(true, true, "av1", "aac", 0, 1920, 1080), settings);
+        Assert.True(config.General.ReadAheadBufferEnabled);
+        Assert.Equal(DebugFfmpegInputTuning.ReadAheadCapBytes, config.General.ReadAheadBufferSize);
+        Assert.Equal(DebugFfmpegInputTuning.ReadAheadCapDuration, config.General.ReadAheadBufferDuration);
+        Assert.Equal(65536u, config.General.FileStreamReadSize);
+        Assert.Equal(HdrSupport.Enabled, config.Video.HdrSupport);
+        Assert.Equal("12", config.FFmpegOptions["bale_decode_ahead_frames"]);
+        Assert.Equal("3", config.FFmpegOptions["bale_dav1d_max_frame_delay"]);
+        Assert.Equal("1", config.FFmpegOptions["bale_decode_thread_priority"]);
         Assert.Contains("public DebugFfmpegInputTuning FfmpegTuning { get; } = DebugFfmpegInputTuning.Current", Read("PlayerPage.cs.txt"));
         var player = Read("PlayerPage.Media.cs.txt");
         Assert.Contains("media.Route.UseFfmpeg ? attempt.FfmpegTuning.Prefetch ?? HttpRangeStream.DefaultPrefetchBlocks", player);
@@ -320,13 +312,16 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     [Fact]
     public void DecoderHintsAreDebugOnlyAndAppliedOnlyToTheSystemVideoRoute()
     {
-        var configuration = Read("FfmpegSource.cs.txt");
-        var start = configuration.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal);
-        var end = configuration.IndexOf("#endif", start, StringComparison.Ordinal);
-        var experiment = configuration[start..end];
+        var production = DebugFfmpegDecoderTests.ProductionSource();
         foreach (var option in new[] { "bale_decoder_use_max_resolution", "bale_decoder_max_dpb_count" })
-            Assert.DoesNotContain(option, configuration[..start]);
-        Assert.Contains("else\n        {\n            if (tuning.DecoderUseMaxResolution is { } maxres) config.FFmpegOptions[\"bale_decoder_use_max_resolution\"] = maxres.ToString(CultureInfo.InvariantCulture);\n            if (tuning.DecoderMaxDpbCount is { } dpb) config.FFmpegOptions[\"bale_decoder_max_dpb_count\"] = dpb.ToString(CultureInfo.InvariantCulture);\n        }", experiment);
+            Assert.DoesNotContain(option, production);
+        var tuning = new DebugFfmpegInputTuning(DecoderUseMaxResolution: 1, DecoderMaxDpbCount: 3);
+        var config = FfmpegSource.Configuration(new(true, false, "hevc", "aac", 0, 1920, 1080), tuning);
+        Assert.Equal("1", config.FFmpegOptions["bale_decoder_use_max_resolution"]);
+        Assert.Equal("3", config.FFmpegOptions["bale_decoder_max_dpb_count"]);
+        var software = FfmpegSource.Configuration(new(true, true, "av1", "aac", 0, 1920, 1080), tuning);
+        Assert.DoesNotContain("bale_decoder_use_max_resolution", software.FFmpegOptions.Keys);
+        Assert.DoesNotContain("bale_decoder_max_dpb_count", software.FFmpegOptions.Keys);
         Assert.Contains("maxres=0|1|default", DebugFfmpegInputTuning.Usage);
         Assert.Contains("dpb=0..16|default", DebugFfmpegInputTuning.Usage);
     }
@@ -356,17 +351,15 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     [Fact]
     public void FilmGrainExportIsDebugOnlyAndAppliedOnlyToSoftwareVideo()
     {
-        var configuration = Read("FfmpegSource.cs.txt");
-        var start = configuration.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal);
-        var end = configuration.IndexOf("#endif", start, StringComparison.Ordinal);
-        Assert.DoesNotContain("bale_dav1d_export_film_grain", configuration[..start]);
-        var experiment = configuration[start..end];
-        var software = experiment.IndexOf("if (route.SoftwareVideo)", StringComparison.Ordinal);
-        var system = experiment.IndexOf("else\n", software, StringComparison.Ordinal);
-        var key = experiment.IndexOf("if (DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain) is { } grain) config.FFmpegOptions[grain.Key] = grain.Value;", StringComparison.Ordinal);
-        Assert.True(software >= 0 && key > software && key < system);
+        var production = DebugFfmpegDecoderTests.ProductionSource();
+        Assert.DoesNotContain("bale_dav1d_export_film_grain", production);
+        var tuning = new DebugFfmpegInputTuning(FilmGrain: DebugFilmGrain.Off);
+        var system = FfmpegSource.Configuration(new(true, false, "hevc", "aac", 0, 1920, 1080), tuning);
+        Assert.DoesNotContain("bale_dav1d_export_film_grain", system.FFmpegOptions.Keys);
+        var software = FfmpegSource.Configuration(new(true, true, "av1", "aac", 0, 1920, 1080), tuning);
+        Assert.Equal("1", software.FFmpegOptions["bale_dav1d_export_film_grain"]);
         Assert.Contains("grain=dav1d|gpu|off|on|default", DebugFfmpegInputTuning.Usage);
-        Assert.Contains("config.FFmpegOptions[\"bale_film_grain_mode\"] = SoftwareDecodeTuning.FilmGrainMode.ToString(CultureInfo.InvariantCulture);", configuration[..start]);
+        Assert.Contains("config.FFmpegOptions[\"bale_film_grain_mode\"] = SoftwareDecodeTuning.FilmGrainMode.ToString(CultureInfo.InvariantCulture);", production);
         Assert.Equal(("bale_film_grain_mode", "0"), DebugFfmpegPlaytest.GrainOption(DebugFilmGrain.Dav1d));
         Assert.Contains("default=gpu (production), on/dav1d=dav1d", DebugFfmpegInputTuning.Usage);
         Assert.Contains("production default=gpu, on/dav1d=dav1d", Read("DebugServer.cs.txt"));
@@ -378,10 +371,10 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     public void SoftwareVideoAlwaysTakesTheFixedZeroCopyPathWithNoDebugOverride()
     {
         var configuration = Read("FfmpegSource.cs.txt");
-        var start = configuration.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal);
+        var start = configuration.IndexOf("    private static void ApplyInputTuning", StringComparison.Ordinal);
         var end = configuration.IndexOf("#endif", start, StringComparison.Ordinal);
-        var production = configuration[..start];
-        Assert.Contains("if (route.SoftwareVideo) ApplySoftwareVideo(config);", production);
+        var production = DebugFfmpegDecoderTests.ProductionSource();
+        Assert.Contains("if (softwareVideo && SoftwareDecodePolicy.VideoCodecs.Contains(route.VideoCodec!)) ApplySoftwareVideo(config);", production);
         var apply = production[production.IndexOf("internal static void ApplySoftwareVideo(MediaSourceConfig config)", StringComparison.Ordinal)..];
         var register = apply.IndexOf("if (!ZeroCopyRuntime.Register()) throw new InvalidDataException(", StringComparison.Ordinal);
         Assert.True(register >= 0);
@@ -459,6 +452,29 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("foreach (var (label, value) in player.DebugStatsRows)", server);
     }
 
+    [Theory]
+    [InlineData("auto", "Auto")]
+    [InlineData("system", "System")]
+    [InlineData("software", "Software")]
+    public void DecoderOverrideIsCapturedPreservedAndClearedIndependently(string value, string expected)
+    {
+        Set(new(ReadAhead: true, DecodeAheadFrames: 8));
+        var before = DebugFfmpegInputTuning.Current;
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["decoder"] = value }, out var captured));
+        Assert.Equal(expected, captured.Decoder?.ToString());
+        Assert.Equal(value, captured.DecoderOverride);
+        Assert.Contains(" decoder=" + value, captured.Description);
+        Assert.Null(before.Decoder);
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["hdr"] = "on" }, out var next));
+        Assert.Equal(captured.Decoder, next.Decoder);
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["decoder"] = "default" }, out var cleared));
+        Assert.Equal(before with { HdrSupport = true }, cleared);
+        Assert.Equal("default", cleared.DecoderOverride);
+        Assert.Null(cleared.Decoder);
+        Assert.Equal(expected, captured.Decoder?.ToString());
+        Assert.Contains("decoder=auto|system|software|default", DebugFfmpegInputTuning.Usage);
+    }
+
     private static void Set(DebugFfmpegInputTuning tuning) => Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string>
     {
         ["readahead"] = tuning.ReadAhead is { } enabled ? enabled ? "on" : "off" : "default",
@@ -472,6 +488,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         ["dpb"] = tuning.DecoderMaxDpbCount?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["grain"] = DebugFfmpegPlaytest.GrainName(tuning.FilmGrain),
         ["hdr"] = tuning.HdrSupport is { } hdr ? hdr ? "on" : "off" : "default",
+        ["decoder"] = tuning.DecoderOverride,
     }, out _));
 
     [Fact]

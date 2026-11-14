@@ -14,7 +14,15 @@ public sealed partial class PlayerPage
 {
     private IReadOnlyList<(string Label, string Value)> _statsRows = [];
 
-    internal IReadOnlyList<(string Label, string Value)> DebugStatsRows => _statsRows;
+    internal IReadOnlyList<(string Label, string Value)> DebugStatsRows
+    {
+        get
+        {
+            // stats and where must see the post-start engine, even between timer ticks.
+            if (_attempt is { } attempt) RefreshStats(attempt);
+            return _statsRows;
+        }
+    }
     internal bool DebugStatsVisible => StatsPanel.Visibility == Visibility.Visible;
     internal string DebugHdrOutput => DebugHdrPlayback.Output(_attempt?.PretendHdr == true, _attempt?.Plan);
     internal string DebugLateFrameTrace => _attempt?.Media?.FrameDelivery?.DescribeLateFrameTrace()
@@ -66,6 +74,7 @@ public sealed partial class PlayerPage
                 frames = media.FrameDelivery?.Read();
                 if (media.FfmpegSource is not null)
                 {
+                    media.MssVideoMediaType?.Refresh(media.Started);
                     stats = ReadFfmpegStats(stats, media);
                 }
                 else if (media is { Opened: true, Item: { } item })
@@ -236,6 +245,7 @@ public sealed partial class PlayerPage
             ("Read-ahead", media?.FfmpegReadAhead ?? "unavailable"),
             ("Stream reads", media?.FfmpegStreamReads ?? "unavailable"),
             ("FFmpeg HDR", media?.FfmpegHdrSupport ?? "unavailable"),
+            ("FFmpeg decoder override", media?.FfmpegDecoderOverride ?? "unavailable"),
             ("Video media type (track)", media?.TrackVideoMediaType ?? "unavailable"),
             ("Video media type (mss)", media?.MssVideoMediaType?.Description ?? "unavailable"),
             ("Sample memory", media?.FrameDelivery?.SampleMemory ?? DebugSampleMemory.Unavailable),

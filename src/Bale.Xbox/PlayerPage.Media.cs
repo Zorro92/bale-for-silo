@@ -50,6 +50,8 @@ public sealed partial class PlayerPage
         public string? FfmpegReadAhead { get; set; }
         public string? FfmpegStreamReads { get; set; }
         public string? FfmpegHdrSupport { get; set; }
+        public string? FfmpegDecoderOverride { get; set; }
+        public bool SoftwareVideo { get; set; }
         public string? TrackVideoMediaType { get; set; }
         public DebugVideoMediaType? MssVideoMediaType { get; set; }
         public IDebugFrameDelivery? FrameDelivery { get; set; }
@@ -157,6 +159,8 @@ public sealed partial class PlayerPage
                 Log.Info("player: FFmpeg before create stream");
 #if DEBUG_SERVER
                 var config = FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning);
+                media.SoftwareVideo = attempt.FfmpegTuning.SoftwareVideo(media.Route.SoftwareVideo);
+                media.FfmpegDecoderOverride = attempt.FfmpegTuning.DecoderOverride;
                 // Read actual native properties, not the current override (which may have changed since this attempt began).
                 media.FfmpegReadAhead = DebugFfmpegInputTuning.ReadAheadText(config.General.ReadAheadBufferEnabled,
                     config.General.ReadAheadBufferSize, config.General.ReadAheadBufferDuration);
@@ -164,7 +168,7 @@ public sealed partial class PlayerPage
                 media.FfmpegHdrSupport = config.Video.HdrSupport.ToString();
                 if (!attempt.FfmpegTuningLogged)
                 {
-                    Log.Info($"player: FFmpeg input read-ahead={media.FfmpegReadAhead} · readsize={media.FfmpegStreamReads} · hdr={media.FfmpegHdrSupport}");
+                    Log.Info($"player: FFmpeg input read-ahead={media.FfmpegReadAhead} · readsize={media.FfmpegStreamReads} · hdr={media.FfmpegHdrSupport} · decoder={media.FfmpegDecoderOverride} decoderMode={config.Video.VideoDecoderMode}");
                     attempt.FfmpegTuningLogged = true;
                 }
 #else
@@ -173,7 +177,11 @@ public sealed partial class PlayerPage
                 FfmpegSource.ApplySubtitleSink(config, media.SubtitleStreamIndex, media.SubtitleSinkToken);
                 media.FfmpegSource = await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream, config).AsTask();
                 media.Token.ThrowIfCancellationRequested();
+#if DEBUG_SERVER
+                FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route, attempt.FfmpegTuning);
+#else
                 FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route);
+#endif
                 Log.Info("player: FFmpeg stream created; before item");
                 media.Item = media.FfmpegSource.CreateMediaPlaybackItem();
 #if DEBUG_SERVER
@@ -183,10 +191,12 @@ public sealed partial class PlayerPage
                 // The MSS only exists after CreateMediaPlaybackItem and is kept alive by the item.
                 // FFmpegInteropX sets BufferTime 0, so the renderer pulls decoded frames only ~0.3 s ahead.
                 int? bufferOverrideMs = null;
+                var softwareVideo = media.Route.SoftwareVideo;
 #if DEBUG_SERVER
                 bufferOverrideMs = attempt.FfmpegTuning.BufferMs;
+                softwareVideo = media.SoftwareVideo;
 #endif
-                if (SoftwareDecodeTuning.BufferTimeMs(media.Route.SoftwareVideo, bufferOverrideMs,
+                if (SoftwareDecodeTuning.BufferTimeMs(softwareVideo, bufferOverrideMs,
                         media.Route.VideoWidth, media.Route.VideoHeight) is { } bufferMs)
                 {
                     var mss = media.FfmpegSource.GetMediaStreamSource();
@@ -220,7 +230,7 @@ public sealed partial class PlayerPage
         Log.Info($"player: frame delivery observer={attempt.FrameDeliveryMode}");
         if (attempt.FrameDeliveryMode != "off")
         {
-            if (media.Route.SoftwareVideo && media.FfmpegSource is { } softwareSource)
+            if (media.SoftwareVideo && media.FfmpegSource is { } softwareSource)
             {
                 try
                 {
@@ -230,7 +240,7 @@ public sealed partial class PlayerPage
                 }
                 catch (Exception ex) { LogFailure("frame delivery observer", ex); }
             }
-            else Log.Info($"player: frame delivery not attached softwareVideo={media.Route.SoftwareVideo} ffmpeg={media.FfmpegSource is not null}");
+            else Log.Info($"player: frame delivery not attached softwareVideo={media.SoftwareVideo} ffmpeg={media.FfmpegSource is not null}");
         }
 #endif
         // The item exposes native track selection in production as well as debug stats.

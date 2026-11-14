@@ -132,12 +132,12 @@ public class DebugFfmpegPlaybackTests
     {
         var source = Read("FfmpegSource.cs.txt");
         // Production tunes software video only; input experiments stay in the debug-only overload.
-        var production = source[..source.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal)];
+        var production = DebugFfmpegDecoderTests.ProductionSource();
         Assert.DoesNotContain("config.General.", production);
-        Assert.Contains("ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(route.SoftwareVideo, route.VideoWidth, route.VideoHeight))", production);
+        Assert.Contains("ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(softwareVideo, route.VideoWidth, route.VideoHeight))", production);
         Assert.Contains("FfmpegLogging.Configure()", production);
         Assert.Contains("VideoDecoderMode.ForceFFmpegSoftwareDecoder : VideoDecoderMode.ForceSystemDecoder", source);
-        Assert.DoesNotContain("VideoDecoderMode.Automatic", source);
+        Assert.DoesNotContain("VideoDecoderMode.Automatic", production);
         Assert.Contains("config.Audio.SystemDecoderAAC = true", source);
         Assert.Contains("config.Audio.SystemDecoderMP3 = true", source);
         // Patch 0021: AC3/EAC3 go undecoded to the system Dolby decoder on every FFmpeg mount.
