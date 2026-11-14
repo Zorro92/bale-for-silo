@@ -37,6 +37,8 @@
     <Compile Include="../../src/Bale.Xbox/Services/DebugWaitCondition.cs" Link="DebugWaitCondition.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugNavigationRequest.cs" Link="DebugNavigationRequest.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugNavigationHistory.cs" Link="DebugNavigationHistory.cs" />
+    <!-- Execute debug file refresh/selection with a minimal page/session stand-in, without UWP. -->
+    <Compile Include="../../src/Bale.Xbox/DetailPage.DebugNavigation.cs" Link="DetailPage.DebugNavigation.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugServer.Navigation.cs" Link="DebugServer.Navigation.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/DetailPage.DebugNavigation.cs" Link="DetailPage.DebugNavigation.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/DetailPage.Player.cs" Link="DetailPage.Player.cs.txt" CopyToOutputDirectory="PreserveNewest" />

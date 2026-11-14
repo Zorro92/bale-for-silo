@@ -161,6 +161,13 @@ public class DebugNavigationTests
         Assert.Contains("DebugStopForNavigationAsync().WaitAsync(cancellation)", server);
         Assert.Contains("DebugStopForNavigationAsync() => ShutdownAsync()", player);
         Assert.Contains("detail.DebugOpenPlayerAsync(request)", server);
+        Assert.Contains("await detail.DebugSelectPlaybackAsync(request, cancellation)", server);
+        Assert.Contains("var failure = player.DebugNavigationFailure", server);
+        Assert.Contains("return (failure.Status, failure.Body + NavigationSummary())", server);
+        var lifecycle = Read("PlayerPage.cs.txt");
+        Assert.Equal(2, lifecycle.Split("DebugRecordPlaybackDecision(decision);").Length - 1); // Start and recovery.
+        Assert.Contains("_debugNavigationFailure = null", lifecycle); // Retry cannot retain a prior refusal.
+        Assert.Contains("DebugNavigationRequest.PlaybackFailure(decision)", player);
         Assert.Contains("OpenPlayerAsync(target, request.StartSeconds, fromEpisode: false)", page);
         Assert.Contains("SuppressResumeRewind = true", Read("DetailPage.Player.cs.txt"));
         Assert.Contains("DebugServer.RecordNavigation(e)", Read("PageFrame.cs.txt"));

@@ -1,5 +1,6 @@
 #if DEBUG_SERVER
 using System.Globalization;
+using Bale.Core.Api.Models;
 using Bale.Core.Detail;
 
 namespace Bale.Xbox.Services;
@@ -40,6 +41,12 @@ internal sealed record DebugNavigationRequest(string ContentId, string? FileId, 
         selections.Select(playable, PlaybackSelectorKind.Version, new("", "", false, FileId: FileId));
         return selections.For(playable).FileId == FileId;
     }
+
+    // Only the server planner can reject playability: missing direct-decode/HDR claims may still
+    // allow server transcoding. Do not expose its arbitrary terminal message in debug responses/logs.
+    internal static (string Status, string Body)? PlaybackFailure(PlaybackDecision decision) => decision.Outcome == "adaptation_unavailable"
+        ? ("409 Conflict", "file is not playable with the current client claims; no compatible server adaptation is available\n")
+        : null;
 
     internal static bool TryCount(string? input, out int count)
     {

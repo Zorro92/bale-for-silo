@@ -127,7 +127,10 @@ internal sealed partial class DebugServer
             if (detail.DebugNavigationState == "failed") return ("500 Internal Server Error", "Detail load failed\n");
             if (detail.DebugNavigationState == "loaded" && detail.IsLoaded && !PageFrame.IsTransitioning)
             {
-                var selection = detail.DebugSelectPlayback(request);
+                var selection = await detail.DebugSelectPlaybackAsync(request, cancellation);
+                cancellation.ThrowIfCancellationRequested();
+                if (!SameProfile() || !ReferenceEquals(frame.Content, detail))
+                    return ("409 Conflict", "navigation or profile changed during file selection\n");
                 if (selection.Status != "200 OK") return selection;
                 if (!play) return ("200 OK", NavigationSummary() + "Status: loaded\n" + detail.DebugSelection);
                 if (OpenPopups().Count > 0) return ("409 Conflict", "dismiss the open overlay before playback\n");
@@ -138,7 +141,11 @@ internal sealed partial class DebugServer
                 while (SameProfile() && ReferenceEquals(frame.Content, player))
                 {
                     cancellation.ThrowIfCancellationRequested();
-                    if (player.DebugNavigationFailed) return ("500 Internal Server Error", NavigationSummary() + "Playback failed\n");
+                    if (player.DebugNavigationFailed)
+                    {
+                        var failure = player.DebugNavigationFailure;
+                        return (failure.Status, failure.Body + NavigationSummary());
+                    }
                     if (player.IsLoaded && player.DebugNavigationReady && !PageFrame.IsTransitioning)
                         return ("200 OK", NavigationSummary());
                     await Task.Delay(50, cancellation);

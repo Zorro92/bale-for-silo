@@ -56,13 +56,19 @@ scripts/bale-debug.sh navlog [N]             # last 1–200 navigation/input/pla
 
 `home` opens Browse/Home for the current profile and clears Back/Forward history. It fails if no
 profile is selected; select **Bale Test** deliberately, never let a test pick a household profile.
-`open` waits for Detail to load, selects the exact file using Version-picker state, and focuses Play.
+`open` waits for Detail to load and focuses Play. With `file=`, both `open` and `play` fetch fresh
+server detail for the exact Play target (bypassing the five-minute Detail cache), select any listed
+file using Version-picker state, and retain that inventory through the normal Play handoff. Display
+matching and `hdr pretend` do not filter this inventory. `open` selects only; `play` asks the normal
+planner, including server transcoding, whether the current claims can play that file. A server
+`adaptation_unavailable` decision returns HTTP 409 with a playability diagnostic, not an unknown-file 404.
 `play <id>` uses that Detail's normal Play path (claims/planning/debug switches included), then waits
 for a ready player or error and prints the player state and plan delivery. `start=` is an exact
 non-negative source time without the normal resume rewind; omitted uses normal Play/resume behavior.
 `play` with no id still resumes the mounted player after a paused seek.
 Open/Home allow 30 seconds and Play allows 90 seconds; allow a larger outer tool timeout too.
-HTTP 404 (unknown content/file), 408 (timeout) and 409 (no profile/conflict) fail non-zero.
+HTTP 404 (unknown content/file after a fresh read), 408 (timeout) and 409 (no profile/conflict or
+file not playable with current claims and available server adaptations) fail non-zero.
 
 Prefer `home` + `open`/`play` over Search/`goto` for playback setup. Use real `key`/`press` only for
 behavior being tested. If keyboard navigation is itself under test, remember:

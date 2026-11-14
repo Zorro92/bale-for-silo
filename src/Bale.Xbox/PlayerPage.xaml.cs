@@ -162,6 +162,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
             _sourcePosition = 0;
             _state = "loading";
 #if DEBUG_SERVER
+            _debugNavigationFailure = null;
             ResetStats();
 #endif
             SetLoading(true);
@@ -204,6 +205,9 @@ public sealed partial class PlayerPage : Page, IBackHandler
 #endif
                 attempt.Start = start;
                 var decision = await client.Playback.StartAsync(start, services.Installation, ct);
+#if DEBUG_SERVER
+                DebugRecordPlaybackDecision(decision);
+#endif
                 var validation = PlaybackMessages.ValidatePlayable(decision);
                 if (!validation.IsPlayable)
                 {
@@ -377,6 +381,9 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 services.Installation, attempt.Cancellation.Token);
             // Outcome and reason are server enum codes; never log the plan, its URL or message.
             Log.Info($"player: replan outcome={decision.Outcome} reason={decision.Terminal?.Reason}");
+#if DEBUG_SERVER
+            DebugRecordPlaybackDecision(decision);
+#endif
             if (!PlaybackMessages.ValidatePlayable(decision).IsPlayable)
             {
                 await ShowErrorAsync(PlaybackMessages.PlaybackFailed);
