@@ -31,11 +31,11 @@ public sealed class ConnectionSpeedState
     /// <summary>Set by the platform: on a metered link no estimate is sent and no automatic test runs.</summary>
     public bool Metered { get; set; }
     /// <summary>
-    /// Off until the console measurement is verified: the first console tests read 1.7–17 Mbps on a link
-    /// that streams 28.7 Mbps 4K in real time, and a low estimate makes Auto transcode. While off, starts
-    /// neither declare buffering_quality_v1 nor send an estimate; checks and tests still run for diagnosis.
+    /// Whether starts declare buffering_quality_v1 and send the estimate. On by default since the console
+    /// measures through SocketsHttpHandler (188–249 Mbps on a remote route where HttpClientHandler read
+    /// 17 Mbps); a switch so a bad measurement can be kept off playback.
     /// </summary>
-    public bool EstimatesEnabled { get; set; }
+    public bool EstimatesEnabled { get; set; } = true;
 
     internal void Update(ConnectionSpeedSchedule? schedule, ConnectionStateV2? connection)
     {

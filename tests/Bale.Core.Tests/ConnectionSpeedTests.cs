@@ -122,7 +122,7 @@ public class ConnectionSpeedTests
 public class ConnectionSpeedGateTests
 {
     [Fact]
-    public async Task EstimatesStayOffUntilEnabled()
+    public async Task TheSwitchKeepsEstimatesOffPlayback()
     {
         var caps = """
             {"installation_id":"installation","state":"available","allowed":true,"protocol_versions":[3],
@@ -131,6 +131,8 @@ public class ConnectionSpeedGateTests
             """;
         var stub = new StubHandler().Enqueue(caps).Enqueue(System.Net.HttpStatusCode.Created, Decision);
         using var client = Create(stub);
+        Assert.True(client.Playback.Speed.EstimatesEnabled);
+        client.Playback.Speed.EstimatesEnabled = false;
         client.Playback.Speed.Update(null, new() { Probe = new(48_000, false, DateTimeOffset.UtcNow.AddHours(-1), "wifi") });
         await client.Playback.StartAsync(Start(), new Installation());
         using var json = JsonDocument.Parse(stub.RequestBodies[1]!);
