@@ -51,6 +51,7 @@ public sealed partial class PlayerPage
         public string? FfmpegStreamReads { get; set; }
         public string? FfmpegHdrSupport { get; set; }
         public string? FfmpegDecoderOverride { get; set; }
+        public string? FfmpegToneMapOverride { get; set; }
         public bool SoftwareVideo { get; set; }
         public string? TrackVideoMediaType { get; set; }
         public DebugVideoMediaType? MssVideoMediaType { get; set; }
@@ -161,6 +162,7 @@ public sealed partial class PlayerPage
                 var config = FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning);
                 media.SoftwareVideo = attempt.FfmpegTuning.SoftwareVideo(media.Route.SoftwareVideo);
                 media.FfmpegDecoderOverride = attempt.FfmpegTuning.DecoderOverride;
+                media.FfmpegToneMapOverride = attempt.FfmpegTuning.ToneMapOverride;
                 // Read actual native properties, not the current override (which may have changed since this attempt began).
                 media.FfmpegReadAhead = DebugFfmpegInputTuning.ReadAheadText(config.General.ReadAheadBufferEnabled,
                     config.General.ReadAheadBufferSize, config.General.ReadAheadBufferDuration);
@@ -168,7 +170,7 @@ public sealed partial class PlayerPage
                 media.FfmpegHdrSupport = config.Video.HdrSupport.ToString();
                 if (!attempt.FfmpegTuningLogged)
                 {
-                    Log.Info($"player: FFmpeg input read-ahead={media.FfmpegReadAhead} · readsize={media.FfmpegStreamReads} · hdr={media.FfmpegHdrSupport} · decoder={media.FfmpegDecoderOverride} decoderMode={config.Video.VideoDecoderMode}");
+                    Log.Info($"player: FFmpeg input read-ahead={media.FfmpegReadAhead} · readsize={media.FfmpegStreamReads} · hdr={media.FfmpegHdrSupport} · decoder={media.FfmpegDecoderOverride} decoderMode={config.Video.VideoDecoderMode} · tonemap={media.FfmpegToneMapOverride}");
                     attempt.FfmpegTuningLogged = true;
                 }
 #else

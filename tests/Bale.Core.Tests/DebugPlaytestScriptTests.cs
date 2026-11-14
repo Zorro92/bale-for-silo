@@ -1042,6 +1042,45 @@ public class DebugPlaytestScriptTests
         Assert.Contains("--fail-with-body", result.Arguments);
     }
 
+    [Theory]
+    [InlineData("off")]
+    [InlineData("bt2390")]
+    [InlineData("hable")]
+    [InlineData("default")]
+    public async Task ToneMapTuningIsEncodedForTheRealPlayerOnly(string value)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["ffmpeg-tune", "tonemap=" + value, "decoder=auto"]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/ffmpeg-tune\n", result.Arguments);
+        Assert.Contains("--data-urlencode\ntonemap=" + value + "\n", result.Arguments);
+        Assert.Contains("--data-urlencode\ndecoder=auto\n", result.Arguments);
+        var probe = await RunAsync(["playtest-ffmpeg", "https://example.org/clip", "3", "auto", "tonemap=" + value]);
+        Assert.Equal(2, probe.ExitCode);
+        Assert.Empty(probe.Arguments);
+    }
+
+    [Theory]
+    [InlineData("BT2390")]
+    [InlineData("1")]
+    [InlineData("on")]
+    [InlineData("")]
+    public async Task InvalidOrDuplicateToneMapTuningNeverInvokesCurl(string value)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[] {
+            new[] { "ffmpeg-tune", "decoder=auto", "tonemap=" + value },
+            new[] { "ffmpeg-tune", "tonemap=off", "tonemap=default" },
+        })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+            Assert.Contains("requires decoder=auto", result.Output);
+            Assert.Contains("2.1.0-bale.25", result.Output);
+        }
+    }
+
     private static async Task<(int ExitCode, string Output, string Arguments)> RunAsync(string[] arguments,
         string output = "probe result\n", int exitCode = 0)
     {

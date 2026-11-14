@@ -10,7 +10,7 @@ internal enum DebugFfmpegDecoder { Auto, System, Software }
 internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadSize = null, int? Prefetch = null, int? BufferMs = null,
     int? DecodeAheadFrames = null, int? Dav1dMaxFrameDelay = null, int? DecodeThreadPriority = null,
     int? DecoderUseMaxResolution = null, int? DecoderMaxDpbCount = null, DebugFilmGrain? FilmGrain = null, bool? HdrSupport = null,
-    DebugFfmpegDecoder? Decoder = null)
+    DebugFfmpegDecoder? Decoder = null, DebugToneMap? ToneMap = null)
 {
     internal const int MinimumReadSize = 16 * 1024;
     internal const int MaximumReadSize = 1024 * 1024;
@@ -19,7 +19,7 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
     // Keep the extra native packet queue below its 100 MB / 60 s defaults on Xbox.
     internal const long ReadAheadCapBytes = 64L * 1024 * 1024;
     internal static readonly TimeSpan ReadAheadCapDuration = TimeSpan.FromSeconds(30);
-    internal const string Usage = "expected [decoder=auto|system|software|default] (debug-only FFmpeg route; auto=FFmpeg D3D11 or software fallback; default=production decoder) [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [delay=0..64|default] [prio=0..2|default] (0=off, 1=above normal, 2=highest) [maxres=0|1|default] [dpb=0..16|default] (system video only; 0=unset) [hdr=on|off|default] (default=Automatic) [grain=dav1d|gpu|off|on|default] (software video only; default=gpu (production), on/dav1d=dav1d, gpu=GPU, off=export-only; wrapper 2.1.0-bale.10+); software AV1 is fixed to zero-copy direct write (upload variant 6, wrapper 2.1.0-bale.17+); omitted keys keep their overrides; default restores the release setting (buffer=1000 for software video; software video: ahead=16, buffer=1000 ms, delay unset; above 1080p ahead=8, buffer=500 ms, delay=6; prio unset; system video: maxres/dpb unset)";
+    internal const string Usage = "expected [decoder=auto|system|software|default] (debug-only FFmpeg route; auto=FFmpeg D3D11 or software fallback; default=production decoder) [tonemap=off|bt2390|hable|default] (requires decoder=auto in the same tuning and wrapper 2.1.0-bale.25+) [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [delay=0..64|default] [prio=0..2|default] (0=off, 1=above normal, 2=highest) [maxres=0|1|default] [dpb=0..16|default] (system video only; 0=unset) [hdr=on|off|default] (default=Automatic) [grain=dav1d|gpu|off|on|default] (software video only; default=gpu (production), on/dav1d=dav1d, gpu=GPU, off=export-only; wrapper 2.1.0-bale.10+); software AV1 is fixed to zero-copy direct write (upload variant 6, wrapper 2.1.0-bale.17+); omitted keys keep their overrides; default restores the release setting (buffer=1000 for software video; software video: ahead=16, buffer=1000 ms, delay unset; above 1080p ahead=8, buffer=500 ms, delay=6; prio unset; system video: maxres/dpb unset)";
     private static readonly object Gate = new();
     private static DebugFfmpegInputTuning _current = new();
 
@@ -32,6 +32,8 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
         DebugFfmpegDecoder.Software => "software",
         _ => "default",
     };
+
+    internal string ToneMapOverride => DebugFfmpegToneMap.Name(ToneMap);
 
     // Auto can fall back after starting; it must retain upstream defaults rather than pre-enable
     // AV1's zero-copy path, decode-ahead or delivery observer on a potential D3D11 provider.
@@ -53,81 +55,111 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
         + (DecoderMaxDpbCount is { } dpb ? $" dpb={dpb.ToString(CultureInfo.InvariantCulture)}" : "")
         + (HdrSupport is { } hdr ? $" hdr={(hdr ? "on" : "off")}" : "")
         + (FilmGrain is { } grain ? " grain=" + DebugFfmpegPlaytest.GrainName(grain) : "")
-        + (Decoder is not null ? $" decoder={DecoderOverride}" : "");
+        + (Decoder is not null ? $" decoder={DecoderOverride}" : "")
+        + (ToneMap is not null ? $" tonemap={ToneMapOverride}" : "");
 
     internal static bool TrySet(IReadOnlyDictionary<string, string> options, out DebugFfmpegInputTuning tuning)
+        => TrySet(options, out tuning, out _);
+
+    internal static bool TrySet(IReadOnlyDictionary<string, string> options, out DebugFfmpegInputTuning tuning, out string? error)
     {
         lock (Gate)
         {
             tuning = _current;
-            var next = tuning;
-            foreach (var (key, value) in options)
-            {
-                switch (key)
-                {
-                    case "decoder":
-                        if (value is not ("auto" or "system" or "software" or "default")) return false;
-                        next = next with { Decoder = value switch
-                        {
-                            "auto" => DebugFfmpegDecoder.Auto,
-                            "system" => DebugFfmpegDecoder.System,
-                            "software" => DebugFfmpegDecoder.Software,
-                            _ => null,
-                        } };
-                        break;
-                    case "readahead":
-                        if (value is not ("on" or "off" or "default")) return false;
-                        next = next with { ReadAhead = value == "default" ? null : value == "on" };
-                        break;
-                    case "readsize":
-                        if (!TryNumber(value, MinimumReadSize, MaximumReadSize, out var readSize)) return false;
-                        next = next with { ReadSize = readSize };
-                        break;
-                    case "prefetch":
-                        if (!TryNumber(value, HttpRangeStream.DefaultPrefetchBlocks, HttpRangeStream.MaximumPrefetchBlocks, out var prefetch)) return false;
-                        next = next with { Prefetch = prefetch };
-                        break;
-                    case "buffer":
-                        if (!TryNumber(value, 0, MaximumBufferMs, out var bufferMs)) return false;
-                        next = next with { BufferMs = bufferMs };
-                        break;
-                    case "ahead":
-                        if (!TryNumber(value, 0, 64, out var ahead)) return false;
-                        next = next with { DecodeAheadFrames = ahead };
-                        break;
-                    case "delay":
-                        if (!TryNumber(value, 0, 64, out var delay)) return false;
-                        next = next with { Dav1dMaxFrameDelay = delay };
-                        break;
-                    case "prio":
-                        if (!TryNumber(value, 0, 2, out var priority)) return false;
-                        next = next with { DecodeThreadPriority = priority };
-                        break;
-                    case "maxres":
-                        if (!TryNumber(value, 0, 1, out var maxres)) return false;
-                        next = next with { DecoderUseMaxResolution = maxres };
-                        break;
-                    case "dpb":
-                        if (!TryNumber(value, 0, 16, out var dpb)) return false;
-                        next = next with { DecoderMaxDpbCount = dpb };
-                        break;
-                    case "grain":
-                        if (!DebugFfmpegPlaytest.TryParseGrain(value, out var grain, out _)) return false;
-                        next = next with { FilmGrain = grain };
-                        break;
-                    case "hdr":
-                        if (!DebugFfmpegPlaytest.TryParseHdr(value, out var hdr, out _)) return false;
-                        next = next with { HdrSupport = hdr };
-                        break;
-                    default:
-                        return false;
-                }
-            }
-            // Publish a whole immutable snapshot only after every option passed validation.
+            if (!TryUpdate(tuning, options, DebugFfmpegWrapperVersion.Value, out var next, out error)) return false;
             Volatile.Write(ref _current, next);
             tuning = next;
             return true;
         }
+    }
+
+    // Pure update validation also exercises future supported wrapper versions in Linux tests.
+    internal static bool TryUpdate(DebugFfmpegInputTuning current, IReadOnlyDictionary<string, string> options,
+        string wrapperVersion, out DebugFfmpegInputTuning next, out string? error)
+    {
+        var valid = ParseUpdate(current, options, out next);
+        error = valid ? DebugFfmpegToneMap.ValidationError(next, wrapperVersion) : Usage;
+        if (!valid || error is not null) { next = current; return false; }
+        return true;
+    }
+
+    private static bool ParseUpdate(DebugFfmpegInputTuning current, IReadOnlyDictionary<string, string> options,
+        out DebugFfmpegInputTuning next)
+    {
+        next = current;
+        foreach (var (key, value) in options)
+        {
+            switch (key)
+            {
+                case "tonemap":
+                    if (value is not ("off" or "bt2390" or "hable" or "default")) return false;
+                    next = next with { ToneMap = value switch
+                    {
+                        "off" => DebugToneMap.Off,
+                        "bt2390" => DebugToneMap.Bt2390,
+                        "hable" => DebugToneMap.Hable,
+                        _ => null,
+                    } };
+                    break;
+                case "decoder":
+                    if (value is not ("auto" or "system" or "software" or "default")) return false;
+                    next = next with { Decoder = value switch
+                    {
+                        "auto" => DebugFfmpegDecoder.Auto,
+                        "system" => DebugFfmpegDecoder.System,
+                        "software" => DebugFfmpegDecoder.Software,
+                        _ => null,
+                    } };
+                    break;
+                case "readahead":
+                    if (value is not ("on" or "off" or "default")) return false;
+                    next = next with { ReadAhead = value == "default" ? null : value == "on" };
+                    break;
+                case "readsize":
+                    if (!TryNumber(value, MinimumReadSize, MaximumReadSize, out var readSize)) return false;
+                    next = next with { ReadSize = readSize };
+                    break;
+                case "prefetch":
+                    if (!TryNumber(value, HttpRangeStream.DefaultPrefetchBlocks, HttpRangeStream.MaximumPrefetchBlocks, out var prefetch)) return false;
+                    next = next with { Prefetch = prefetch };
+                    break;
+                case "buffer":
+                    if (!TryNumber(value, 0, MaximumBufferMs, out var bufferMs)) return false;
+                    next = next with { BufferMs = bufferMs };
+                    break;
+                case "ahead":
+                    if (!TryNumber(value, 0, 64, out var ahead)) return false;
+                    next = next with { DecodeAheadFrames = ahead };
+                    break;
+                case "delay":
+                    if (!TryNumber(value, 0, 64, out var delay)) return false;
+                    next = next with { Dav1dMaxFrameDelay = delay };
+                    break;
+                case "prio":
+                    if (!TryNumber(value, 0, 2, out var priority)) return false;
+                    next = next with { DecodeThreadPriority = priority };
+                    break;
+                case "maxres":
+                    if (!TryNumber(value, 0, 1, out var maxres)) return false;
+                    next = next with { DecoderUseMaxResolution = maxres };
+                    break;
+                case "dpb":
+                    if (!TryNumber(value, 0, 16, out var dpb)) return false;
+                    next = next with { DecoderMaxDpbCount = dpb };
+                    break;
+                case "grain":
+                    if (!DebugFfmpegPlaytest.TryParseGrain(value, out var grain, out _)) return false;
+                    next = next with { FilmGrain = grain };
+                    break;
+                case "hdr":
+                    if (!DebugFfmpegPlaytest.TryParseHdr(value, out var hdr, out _)) return false;
+                    next = next with { HdrSupport = hdr };
+                    break;
+                default:
+                    return false;
+            }
+        }
+        return true;
     }
 
     internal static string ReadAheadText(bool enabled, long bytes, TimeSpan duration) => string.Create(CultureInfo.InvariantCulture,

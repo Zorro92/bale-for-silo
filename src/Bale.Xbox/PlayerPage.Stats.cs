@@ -246,6 +246,7 @@ public sealed partial class PlayerPage
             ("Stream reads", media?.FfmpegStreamReads ?? "unavailable"),
             ("FFmpeg HDR", media?.FfmpegHdrSupport ?? "unavailable"),
             ("FFmpeg decoder override", media?.FfmpegDecoderOverride ?? "unavailable"),
+            ("FFmpeg tone map override", media?.FfmpegToneMapOverride ?? "unavailable"),
             ("Video media type (track)", media?.TrackVideoMediaType ?? "unavailable"),
             ("Video media type (mss)", media?.MssVideoMediaType?.Description ?? "unavailable"),
             ("Sample memory", media?.FrameDelivery?.SampleMemory ?? DebugSampleMemory.Unavailable),

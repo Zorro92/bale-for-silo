@@ -448,7 +448,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.StartsWith("#if DEBUG_SERVER", server);
         Assert.Contains("case (\"GET\", \"/ffmpeg-tune\"):", server);
         Assert.Contains("case (\"POST\", \"/ffmpeg-tune\"):", server);
-        Assert.Contains("DebugFfmpegInputTuning.TrySet(query, out var tuning)", server);
+        Assert.Contains("DebugFfmpegInputTuning.TrySet(query, out var tuning, out var tuningError)", server);
         Assert.Contains("foreach (var (label, value) in player.DebugStatsRows)", server);
     }
 
@@ -475,6 +475,31 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("decoder=auto|system|software|default", DebugFfmpegInputTuning.Usage);
     }
 
+    [Fact]
+    public void ToneMapEndpointGateIsAtomicAndReturnsAClearError()
+    {
+        Set(new(ReadAhead: true));
+        var before = DebugFfmpegInputTuning.Current;
+        var supported = DebugFfmpegToneMap.Supported(DebugFfmpegWrapperVersion.Value);
+        var request = new Dictionary<string, string> { ["tonemap"] = "bt2390", ["decoder"] = "auto", ["buffer"] = "1500" };
+        Assert.Equal(supported, DebugFfmpegInputTuning.TrySet(request, out var next, out var error));
+        if (supported)
+        {
+            Assert.Null(error);
+            Assert.Equal(DebugToneMap.Bt2390, next.ToneMap);
+            Assert.Same(next, DebugFfmpegInputTuning.Current);
+            Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["decoder"] = "software" }, out _, out error));
+            Assert.Contains("requires decoder=auto", error);
+        }
+        else
+        {
+            Assert.Contains("2.1.0-bale.25", error);
+            Assert.Same(before, next);
+            Assert.Same(before, DebugFfmpegInputTuning.Current);
+        }
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["tonemap"] = "default", ["decoder"] = "default" }, out _));
+    }
+
     private static void Set(DebugFfmpegInputTuning tuning) => Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string>
     {
         ["readahead"] = tuning.ReadAhead is { } enabled ? enabled ? "on" : "off" : "default",
@@ -489,6 +514,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         ["grain"] = DebugFfmpegPlaytest.GrainName(tuning.FilmGrain),
         ["hdr"] = tuning.HdrSupport is { } hdr ? hdr ? "on" : "off" : "default",
         ["decoder"] = tuning.DecoderOverride,
+        ["tonemap"] = tuning.ToneMapOverride,
     }, out _));
 
     [Fact]

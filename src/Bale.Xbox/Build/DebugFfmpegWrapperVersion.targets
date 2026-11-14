@@ -1,0 +1,21 @@
+<Project>
+  <!-- Read the actual PackageReference pin at build time: no runtime package discovery or
+       separate version constant to forget when the wrapper is upgraded. Also imported by tests. -->
+  <Target Name="GenerateDebugFfmpegWrapperVersion" BeforeTargets="CoreCompile" Condition="'$(BaleDebugServer)' != 'false'">
+    <XmlPeek XmlInputPath="$(MSBuildThisFileDirectory)..\Bale.Xbox.csproj"
+             Query="/Project/ItemGroup/PackageReference[@Include='FFmpegInteropX.UWP.Lib']/@Version">
+      <Output TaskParameter="Result" PropertyName="_BaleWrapperPin" />
+    </XmlPeek>
+    <Error Condition="'$(_BaleWrapperPin)' == ''" Text="Missing FFmpegInteropX wrapper package pin" />
+    <PropertyGroup>
+      <_BaleWrapperVersion>$([System.String]::Copy('$(_BaleWrapperPin)').Replace('[', '').Replace(']', ''))</_BaleWrapperVersion>
+      <_BaleWrapperSource>$(IntermediateOutputPath)DebugFfmpegWrapperVersion.g.cs</_BaleWrapperSource>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_BaleWrapperSource)" Overwrite="true" WriteOnlyWhenDifferent="true"
+      Lines="#if DEBUG_SERVER%0Anamespace Bale.Xbox.Services%3B%0Ainternal static class DebugFfmpegWrapperVersion { internal const string Value = &quot;$(_BaleWrapperVersion)&quot;%3B }%0A#endif" />
+    <ItemGroup>
+      <Compile Include="$(_BaleWrapperSource)" />
+      <FileWrites Include="$(_BaleWrapperSource)" />
+    </ItemGroup>
+  </Target>
+</Project>

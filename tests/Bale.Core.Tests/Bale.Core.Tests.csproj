@@ -43,6 +43,7 @@
     <!-- Execute the actual Xbox seek/reanchor orchestration with a minimal media-session stand-in. -->
     <Compile Include="../../src/Bale.Xbox/PlayerPage.Seek.cs" Link="PlayerPage.Seek.cs" />
     <Compile Include="../../src/Bale.Xbox/PlayerPage.PgsSubtitles.cs" Link="PlayerPage.PgsSubtitles.cs" />
+    <Compile Include="../../src/Bale.Xbox/Services/DebugFfmpegToneMap.cs" Link="DebugFfmpegToneMap.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugFfmpegInputTuning.cs" Link="DebugFfmpegInputTuning.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/FfmpegSource.cs" Link="FfmpegSource.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugVideoMediaType.cs" Link="DebugVideoMediaType.cs" />
@@ -126,5 +127,7 @@
     <None Include="../../src/Bale.Xbox/Controls/ConnectionDialog.xaml" Link="ConnectionDialog.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Controls/SavedServerRow.xaml" Link="SavedServerRow.xaml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <Import Project="../../src/Bale.Xbox/Build/DebugFfmpegWrapperVersion.targets" />
 
 </Project>

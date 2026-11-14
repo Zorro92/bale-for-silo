@@ -41,6 +41,7 @@ internal static class FfmpegSource
         // uses FFmpegInteropX's normal software provider instead.
         if (softwareVideo && SoftwareDecodePolicy.VideoCodecs.Contains(route.VideoCodec!)) ApplySoftwareVideo(config);
 #if DEBUG_SERVER
+        DebugFfmpegToneMap.Apply(config, tuning, DebugFfmpegWrapperVersion.Value);
         ApplyInputTuning(config, tuning, softwareVideo, route.VideoCodec);
 #endif
         return config;
