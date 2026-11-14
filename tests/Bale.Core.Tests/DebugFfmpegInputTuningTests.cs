@@ -102,6 +102,11 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     [InlineData("prefetch", "1")]
     [InlineData("prefetch", "17")]
     [InlineData("prefetch", "2.0")]
+    [InlineData("hdr", "ON")]
+    [InlineData("hdr", "")]
+    [InlineData("hdr", "true")]
+    [InlineData("hdr", "1")]
+    [InlineData("hdr", "pretend")]
     [InlineData("unknown", "1")]
     public void InvalidUpdatesAreAtomicAndNeverChangeTheCurrentOverride(string key, string value)
     {
@@ -112,6 +117,26 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.False(DebugFfmpegInputTuning.TrySet(options, out var current));
         Assert.Same(before, current);
         Assert.Same(before, DebugFfmpegInputTuning.Current);
+    }
+
+    [Theory]
+    [InlineData("on", true)]
+    [InlineData("off", false)]
+    public void HdrOverridesUseTheProbeParserAndAreCapturedUntilExplicitlyCleared(string value, bool enabled)
+    {
+        Set(new(ReadAhead: true, DecodeAheadFrames: 8));
+        var before = DebugFfmpegInputTuning.Current;
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["hdr"] = value }, out var captured));
+        Assert.Equal(before with { HdrSupport = enabled }, captured);
+        Assert.Contains(" hdr=" + value, captured.Description);
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["prefetch"] = "8" }, out var next));
+        Assert.Equal(captured with { Prefetch = 8 }, next);
+        Assert.Equal(enabled, next.HdrSupport);
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["hdr"] = "default" }, out var cleared));
+        Assert.Equal(before with { Prefetch = 8 }, cleared);
+        Assert.DoesNotContain("hdr=", cleared.Description);
+        Assert.Equal(enabled, captured.HdrSupport);
+        Assert.Null(before.HdrSupport);
     }
 
     [Theory]
@@ -263,6 +288,8 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("config.General.ReadAheadBufferDuration = DebugFfmpegInputTuning.ReadAheadCapDuration", experiment);
         Assert.Contains("if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = checked((uint)readSize)", experiment);
         Assert.Contains("var config = Configuration(route)", experiment);
+        Assert.Contains("if (tuning.HdrSupport is { } hdr) config.Video.HdrSupport = hdr ? HdrSupport.Enabled : HdrSupport.Disabled;", experiment);
+        Assert.DoesNotContain("config.Video.HdrSupport", configuration[..start]);
         Assert.DoesNotContain("bale_decode_thread_priority", configuration[..start]);
         Assert.Contains("if (route.SoftwareVideo)\n        {\n            ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.Dav1dMaxFrameDelay));", experiment);
         Assert.Contains("if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions[\"bale_decode_thread_priority\"] = priority.ToString(CultureInfo.InvariantCulture);", experiment);
@@ -444,6 +471,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         ["maxres"] = tuning.DecoderUseMaxResolution?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["dpb"] = tuning.DecoderMaxDpbCount?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["grain"] = DebugFfmpegPlaytest.GrainName(tuning.FilmGrain),
+        ["hdr"] = tuning.HdrSupport is { } hdr ? hdr ? "on" : "off" : "default",
     }, out _));
 
     [Fact]

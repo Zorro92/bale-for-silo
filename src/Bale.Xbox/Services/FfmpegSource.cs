@@ -75,6 +75,7 @@ internal static class FfmpegSource
             }
         }
         if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = checked((uint)readSize);
+        if (tuning.HdrSupport is { } hdr) config.Video.HdrSupport = hdr ? HdrSupport.Enabled : HdrSupport.Disabled;
         if (route.SoftwareVideo)
         {
             ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.Dav1dMaxFrameDelay));

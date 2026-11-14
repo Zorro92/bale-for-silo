@@ -1125,6 +1125,10 @@ fallback for HDR10+). This is an explicit experiment, not a production-policy ch
 picture quality. Stats and `where` show `HDR output: console tone map (debug)` for that plan;
 turning the toggle off mid-play does not change the captured attempt. Restart playback after
 `hdr off` to compare with the normal server tone-mapped transcode.
+`ffmpeg-tune hdr=on|off|default` sets FFmpegInteropX HDR support for the next real FFmpeg attempt;
+`default` restores Automatic, and omitted keys keep their current overrides. Stats and `where` show
+`Video media type (track)` on native, FFmpeg and HLS, plus `(mss)` with decoder mode and compressed
+status on FFmpeg; both log the MF colour/HDR attributes, with absent attributes shown as `unset`.
 
 For the same-frame comparison, `scripts/bale-debug.sh seek <seconds> [pause]` seeks the active
 native, FFmpeg or HLS player to absolute **source/movie** time, optionally pauses, waits for seek

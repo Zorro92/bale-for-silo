@@ -321,13 +321,13 @@ public class DebugPlaytestScriptTests
     [InlineData("hdr=1")]
     [InlineData("hdr=pretend")]
     [InlineData("hdr=on hdr=off")]
-    public async Task InvalidHdrProbeOverrideNeverInvokesCurl(string option)
+    public async Task InvalidHdrOverrideNeverInvokesCurlForEitherPlayer(string option)
     {
         if (!OperatingSystem.IsLinux()) return;
         var result = await RunAsync(["playtest-ffmpeg", "@fixture", "30", "software", .. option.Split(' ')]);
         Assert.Equal(2, result.ExitCode);
         Assert.Empty(result.Arguments);
-        var tune = await RunAsync(["ffmpeg-tune", "hdr=on"]);
+        var tune = await RunAsync(["ffmpeg-tune", .. option.Split(' ')]);
         Assert.Equal(2, tune.ExitCode);
         Assert.Empty(tune.Arguments);
     }
@@ -476,6 +476,9 @@ public class DebugPlaytestScriptTests
     [InlineData("dpb=16", "maxres=1", "prio=2")]
     [InlineData("maxres=001", "prio=001", "dpb=003")]
     [InlineData("dpb=default", "maxres=default", "prio=default")]
+    [InlineData("hdr=on", "maxres=1", "dpb=3")]
+    [InlineData("ahead=8", "hdr=off", "prio=2")]
+    [InlineData("hdr=default", "readahead=default", "buffer=default")]
     public async Task FfmpegInputTuningPostsValidatedOptionsInAnyOrder(string first, string second, string third)
     {
         if (!OperatingSystem.IsLinux()) return;
@@ -495,7 +498,7 @@ public class DebugPlaytestScriptTests
         Assert.Contains("readahead=on", result.Arguments);
         Assert.DoesNotContain("readsize=", result.Arguments);
         Assert.DoesNotContain("prefetch=", result.Arguments);
-        foreach (var key in new[] { "ahead", "sws", "delay", "prio", "maxres", "dpb", "upload" }) Assert.DoesNotContain("\n" + key + "=", result.Arguments);
+        foreach (var key in new[] { "ahead", "sws", "delay", "prio", "maxres", "dpb", "hdr", "upload" }) Assert.DoesNotContain("\n" + key + "=", result.Arguments);
     }
 
     [Theory]

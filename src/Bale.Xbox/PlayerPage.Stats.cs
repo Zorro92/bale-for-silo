@@ -164,6 +164,21 @@ public sealed partial class PlayerPage
         return stats;
     }
 
+    private static void ReadTrackVideoMediaType(Mount media)
+    {
+        var route = media.Transport.IsHls ? "hls" : media.Route.UseFfmpeg ? "ffmpeg" : "native";
+        try
+        {
+            var item = media.Item;
+            var index = item?.VideoTracks.SelectedIndex ?? -1;
+            media.TrackVideoMediaType = item is not null && index >= 0 && index < item.VideoTracks.Count
+                ? DebugVideoMediaType.Describe(route, "track", item.VideoTracks[index].GetEncodingProperties())
+                : $"route={route} source=track unavailable (no selected video track)";
+        }
+        catch (Exception ex) { media.TrackVideoMediaType = $"route={route} source=track unavailable ({ex.GetType().Name})"; }
+        Log.Info("player: video media type " + media.TrackVideoMediaType);
+    }
+
     private static PlaybackStats ReadAudioStats(PlaybackStats stats, MediaPlaybackItem item)
     {
         try
@@ -220,6 +235,9 @@ public sealed partial class PlayerPage
                 $"{stream.DemandWaits} · max {stream.MaxDemandWaitTime.TotalMilliseconds:0.0} ms · total {stream.DemandWaitTime.TotalMilliseconds:0.0} ms · blocks {stream.BlockFetches} new {stream.BlockAllocations} reused {stream.BlockReuses}") : "unavailable"),
             ("Read-ahead", media?.FfmpegReadAhead ?? "unavailable"),
             ("Stream reads", media?.FfmpegStreamReads ?? "unavailable"),
+            ("FFmpeg HDR", media?.FfmpegHdrSupport ?? "unavailable"),
+            ("Video media type (track)", media?.TrackVideoMediaType ?? "unavailable"),
+            ("Video media type (mss)", media?.MssVideoMediaType?.Description ?? "unavailable"),
             ("Sample memory", media?.FrameDelivery?.SampleMemory ?? DebugSampleMemory.Unavailable),
             ("Delivered ahead", frames?.DeliveredAheadSeconds is { } ahead
                 ? ahead.ToString("0.000", CultureInfo.InvariantCulture) + " s" : "unavailable"),

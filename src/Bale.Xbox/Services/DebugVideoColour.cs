@@ -1,6 +1,6 @@
 #if DEBUG_SERVER
+using System.Buffers.Binary;
 using System.Globalization;
-using Windows.Media.MediaProperties;
 
 namespace Bale.Xbox.Services;
 
@@ -13,6 +13,13 @@ internal static class DebugVideoColour
     private static readonly Guid TransferFunction = new("5fb0fce9-be5c-4935-a811-ec838f8eed93");
     private static readonly Guid VideoPrimaries = new("dbfbe4d7-0740-4ee0-8192-850ab0e21935");
     private static readonly Guid NominalRange = new("c21b8ee5-b956-4071-8daf-325edf5cab11");
+    // Microsoft windows-rs windows 0.62.2, Windows/Win32/Media/MediaFoundation/mod.rs
+    // (MF_MT_* constants generated from the Windows SDK). Luminances print raw UINT32 values.
+    private static readonly Guid MaxLuminance = new("50253128-c110-4de4-98ae-46a324fae6da");
+    private static readonly Guid MaxFrameAverageLuminance = new("58d4bf57-6f52-4733-a195-a9e29ecf9e27");
+    private static readonly Guid MinMasteringLuminance = new("839a4460-4e7e-4b4f-ae79-cc08905c7b27");
+    private static readonly Guid MaxMasteringLuminance = new("d6c6b997-272f-4ca1-8d00-8042111a0ff6");
+    private static readonly Guid CustomVideoPrimaries = new("47537213-8cfb-4722-aa34-fbc9e24d77b8");
 
     private static readonly Dictionary<uint, string> MatrixNames = new()
     {
@@ -36,18 +43,32 @@ internal static class DebugVideoColour
         [0] = "unknown", [1] = "full", [2] = "limited", [3] = "48-208",
     };
 
-    internal static string Describe(MediaPropertySet properties) =>
+    internal static string Describe(IDictionary<Guid, object> properties) =>
         $"matrix={Value(properties, YuvMatrix, MatrixNames)} transfer={Value(properties, TransferFunction, TransferNames)}"
-        + $" primaries={Value(properties, VideoPrimaries, PrimariesNames)} range={Value(properties, NominalRange, RangeNames)}";
+        + $" primaries={Value(properties, VideoPrimaries, PrimariesNames)} range={Value(properties, NominalRange, RangeNames)}"
+        + $" maxCLL={Value(properties, MaxLuminance)} maxFALL={Value(properties, MaxFrameAverageLuminance)}"
+        + $" minMasteringLuminance={Value(properties, MinMasteringLuminance)} maxMasteringLuminance={Value(properties, MaxMasteringLuminance)}"
+        + $" customPrimaries={CustomPrimaries(properties)}";
 
-    private static string Value(MediaPropertySet properties, Guid key, Dictionary<uint, string> names)
+    private static string Value(IDictionary<Guid, object> properties, Guid key, Dictionary<uint, string>? names = null)
     {
         if (!properties.TryGetValue(key, out var boxed) || boxed is null) return "unset";
         uint value;
         try { value = boxed is uint u ? u : Convert.ToUInt32(boxed, CultureInfo.InvariantCulture); }
         catch { return "?"; }
         var number = value.ToString(CultureInfo.InvariantCulture);
-        return names.TryGetValue(value, out var name) ? $"{number}({name})" : number;
+        return names is not null && names.TryGetValue(value, out var name) ? $"{number}({name})" : number;
+    }
+
+    private static string CustomPrimaries(IDictionary<Guid, object> properties)
+    {
+        if (!properties.TryGetValue(CustomVideoPrimaries, out var boxed) || boxed is null) return "unset";
+        if (boxed is not byte[] { Length: 32 } bytes) return "present";
+        // MF_MT_CUSTOM_VIDEO_PRIMARIES is eight little-endian floats in Windows' blob layout.
+        var values = new string[8];
+        for (var i = 0; i < values.Length; i++)
+            values[i] = BinaryPrimitives.ReadSingleLittleEndian(bytes.AsSpan(i * 4, 4)).ToString("R", CultureInfo.InvariantCulture);
+        return "[" + string.Join(",", values) + "]";
     }
 }
 #endif

@@ -7,7 +7,7 @@ namespace Bale.Xbox.Services;
 /// <summary>Memory-only overrides of release settings, captured per attempt and never applied to probes or native/HLS routes.</summary>
 internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadSize = null, int? Prefetch = null, int? BufferMs = null,
     int? DecodeAheadFrames = null, int? Dav1dMaxFrameDelay = null, int? DecodeThreadPriority = null,
-    int? DecoderUseMaxResolution = null, int? DecoderMaxDpbCount = null, DebugFilmGrain? FilmGrain = null)
+    int? DecoderUseMaxResolution = null, int? DecoderMaxDpbCount = null, DebugFilmGrain? FilmGrain = null, bool? HdrSupport = null)
 {
     internal const int MinimumReadSize = 16 * 1024;
     internal const int MaximumReadSize = 1024 * 1024;
@@ -16,7 +16,7 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
     // Keep the extra native packet queue below its 100 MB / 60 s defaults on Xbox.
     internal const long ReadAheadCapBytes = 64L * 1024 * 1024;
     internal static readonly TimeSpan ReadAheadCapDuration = TimeSpan.FromSeconds(30);
-    internal const string Usage = "expected [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [delay=0..64|default] [prio=0..2|default] (0=off, 1=above normal, 2=highest) [maxres=0|1|default] [dpb=0..16|default] (system video only; 0=unset) [grain=dav1d|gpu|off|on|default] (software video only; default=gpu (production), on/dav1d=dav1d, gpu=GPU, off=export-only; wrapper 2.1.0-bale.10+); software AV1 is fixed to zero-copy direct write (upload variant 6, wrapper 2.1.0-bale.17+); omitted keys keep their overrides; default restores the release setting (buffer=1000 for software video; software video: ahead=16, buffer=1000 ms, delay unset; above 1080p ahead=8, buffer=500 ms, delay=6; prio unset; system video: maxres/dpb unset)";
+    internal const string Usage = "expected [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [delay=0..64|default] [prio=0..2|default] (0=off, 1=above normal, 2=highest) [maxres=0|1|default] [dpb=0..16|default] (system video only; 0=unset) [hdr=on|off|default] (default=Automatic) [grain=dav1d|gpu|off|on|default] (software video only; default=gpu (production), on/dav1d=dav1d, gpu=GPU, off=export-only; wrapper 2.1.0-bale.10+); software AV1 is fixed to zero-copy direct write (upload variant 6, wrapper 2.1.0-bale.17+); omitted keys keep their overrides; default restores the release setting (buffer=1000 for software video; software video: ahead=16, buffer=1000 ms, delay unset; above 1080p ahead=8, buffer=500 ms, delay=6; prio unset; system video: maxres/dpb unset)";
     private static readonly object Gate = new();
     private static DebugFfmpegInputTuning _current = new();
 
@@ -31,6 +31,7 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
         + (DecodeThreadPriority is { } priority ? $" prio={priority.ToString(CultureInfo.InvariantCulture)}" : "")
         + (DecoderUseMaxResolution is { } maxres ? $" maxres={maxres.ToString(CultureInfo.InvariantCulture)}" : "")
         + (DecoderMaxDpbCount is { } dpb ? $" dpb={dpb.ToString(CultureInfo.InvariantCulture)}" : "")
+        + (HdrSupport is { } hdr ? $" hdr={(hdr ? "on" : "off")}" : "")
         + (FilmGrain is { } grain ? " grain=" + DebugFfmpegPlaytest.GrainName(grain) : "");
 
     internal static bool TrySet(IReadOnlyDictionary<string, string> options, out DebugFfmpegInputTuning tuning)
@@ -82,6 +83,10 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
                     case "grain":
                         if (!DebugFfmpegPlaytest.TryParseGrain(value, out var grain, out _)) return false;
                         next = next with { FilmGrain = grain };
+                        break;
+                    case "hdr":
+                        if (!DebugFfmpegPlaytest.TryParseHdr(value, out var hdr, out _)) return false;
+                        next = next with { HdrSupport = hdr };
                         break;
                     default:
                         return false;

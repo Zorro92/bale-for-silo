@@ -49,6 +49,9 @@ public sealed partial class PlayerPage
 #if DEBUG_SERVER
         public string? FfmpegReadAhead { get; set; }
         public string? FfmpegStreamReads { get; set; }
+        public string? FfmpegHdrSupport { get; set; }
+        public string? TrackVideoMediaType { get; set; }
+        public DebugVideoMediaType? MssVideoMediaType { get; set; }
         public IDebugFrameDelivery? FrameDelivery { get; set; }
         public TimeSpan? CpuTime { get; set; }
         public long? CpuTimestamp { get; set; }
@@ -158,9 +161,10 @@ public sealed partial class PlayerPage
                 media.FfmpegReadAhead = DebugFfmpegInputTuning.ReadAheadText(config.General.ReadAheadBufferEnabled,
                     config.General.ReadAheadBufferSize, config.General.ReadAheadBufferDuration);
                 media.FfmpegStreamReads = DebugFfmpegInputTuning.StreamReadsText(config.General.FileStreamReadSize, media.Stream.PrefetchBlocks);
+                media.FfmpegHdrSupport = config.Video.HdrSupport.ToString();
                 if (!attempt.FfmpegTuningLogged)
                 {
-                    Log.Info($"player: FFmpeg input read-ahead={media.FfmpegReadAhead} · readsize={media.FfmpegStreamReads}");
+                    Log.Info($"player: FFmpeg input read-ahead={media.FfmpegReadAhead} · readsize={media.FfmpegStreamReads} · hdr={media.FfmpegHdrSupport}");
                     attempt.FfmpegTuningLogged = true;
                 }
 #else
@@ -172,6 +176,10 @@ public sealed partial class PlayerPage
                 FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route);
                 Log.Info("player: FFmpeg stream created; before item");
                 media.Item = media.FfmpegSource.CreateMediaPlaybackItem();
+#if DEBUG_SERVER
+                try { media.MssVideoMediaType = new DebugVideoMediaType(media.FfmpegSource, config.Video.VideoDecoderMode); }
+                catch (Exception ex) { Log.Info($"player: video media type route=ffmpeg source=mss unavailable ({ex.GetType().Name})"); }
+#endif
                 // The MSS only exists after CreateMediaPlaybackItem and is kept alive by the item.
                 // FFmpegInteropX sets BufferTime 0, so the renderer pulls decoded frames only ~0.3 s ahead.
                 int? bufferOverrideMs = null;
@@ -303,6 +311,10 @@ public sealed partial class PlayerPage
             sender.PlaybackSession.Position = TimeSpan.FromSeconds(media.StartPosition);
             media.Opened = true;
             Log.Info("player: opened");
+#if DEBUG_SERVER
+            ReadTrackVideoMediaType(media);
+            RefreshStats(attempt);
+#endif
             // The natural video size is known from here; NaturalVideoSizeChanged covers later changes.
             UpdateSubtitleLayout();
             if (media.StartPaused) media.Started = true;
@@ -428,6 +440,7 @@ public sealed partial class PlayerPage
         if (media.SelectedAudioTrack is { } audio)
             Cleanup("detach audio failure", () => audio.OpenFailed -= OnAudioTrackOpenFailed);
 #if DEBUG_SERVER
+        Cleanup("detach video media type", () => media.MssVideoMediaType?.Dispose());
         Cleanup("detach frame delivery", () => media.FrameDelivery?.Dispose());
 #endif
         if (media.Player is { } player)
