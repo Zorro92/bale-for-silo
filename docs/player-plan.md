@@ -1297,6 +1297,14 @@ claim with `hdr pretend`. System decoder: decodes cleanly with the RPU NAL units
 picture. GPU 3D engine (20 samples one second apart) 32.0 % with the pass vs 12.2 % on d3d11va
 without it, about 20 points, i.e. about 8.3 ms of GPU per 4K frame including the slice copy (system
 decoder alone: 7.9 %). That fits a 24 fps frame (41.7 ms) comfortably.
+4K VP9 (0.1.481): a VP9 profile 2 10-bit HDR10 MKV, 3840x2160@23.976, 28.7 Mbps, `hdr pretend`,
+original_http. System decoder: real time, 0.17 cores, but the media type Media Foundation receives has
+no colour attributes at all. VP9 carries no colour signalling of its own (unlike HEVC's VUI/SEI), so
+on an HDR TV the system VP9 path likely presents PQ as untagged and sends no static metadata; this is
+unverified without an HDR display. The fix belongs in the fork: tag compressed video media types
+from the container. `decoder=auto tonemap=bt2390`: vp9_d3d11va decodes it, the pass runs at
+3840x2160 in real time (0.28 cores, 3D engine 31.7 %), and the picture is clean with full contrast.
+App memory for this file is 1.2–1.3 GiB (vs 0.6–0.7 GiB for 1080p HEVC).
 
 Microsoft's media pipeline exposes no tone-mapping algorithm or parameter controls.
 FFmpegInteropX's `SetFFmpegVideoFilters` is not a practical alternative: filters run on the CPU,
