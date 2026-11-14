@@ -33,7 +33,8 @@ internal sealed class DebugNavigationHistory
     internal static void PlayerEvent(string message)
     {
         // Do not retain arbitrary log messages: native failures can contain stream grants.
-        if (message == "player: start") Shared.Add("player", "open");
+        if (message == "player: start") Shared.Add("player", "opening");
+        else if (message == "player: opened") Shared.Add("player", "open");
         else if (message == "player: stop") Shared.Add("player", "stop");
     }
 }

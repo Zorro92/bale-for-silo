@@ -130,6 +130,20 @@ public class DebugNavigationTests
     }
 
     [Fact]
+    public void PlayerEventsDistinguishOpeningFromMediaOpenedAndIgnoreArbitraryLogMessages()
+    {
+        DebugNavigationHistory.PlayerEvent("player: start");
+        Assert.EndsWith("player opening\n", DebugNavigationHistory.Shared.Last(1));
+        DebugNavigationHistory.PlayerEvent("player: opened");
+        Assert.EndsWith("player open\n", DebugNavigationHistory.Shared.Last(1));
+        var opened = DebugNavigationHistory.Shared.Last(1);
+        DebugNavigationHistory.PlayerEvent("native failure https://example.org/?token=private");
+        Assert.Equal(opened, DebugNavigationHistory.Shared.Last(1));
+        DebugNavigationHistory.PlayerEvent("player: stop");
+        Assert.EndsWith("player stop\n", DebugNavigationHistory.Shared.Last(1));
+    }
+
+    [Fact]
     public void NavigationUsesNormalPlayAndShutdownAndCannotPickAProfileOrInjectInput()
     {
         var server = Read("DebugServer.Navigation.cs.txt");
