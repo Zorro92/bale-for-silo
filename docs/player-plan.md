@@ -1223,6 +1223,23 @@ system decoder. The 0.1.237 comparison used the native route (HEVC + E-AC-3 had 
 The decoder's output type is not observable from the app. Server tone mapping stays; an on-console
 tone map needs Bale's own GPU pass (e.g. d3d11va P010 frames), not a pipeline setting.
 
+**FFmpeg d3d11va on the console (0.1.465, 2026-11-14, debug `ffmpeg-tune decoder=auto`).** With the
+fork's wrapper 2.1.0-bale.23 and the existing native FFmpeg (d3d11va already compiled in), the plain
+HDR10 1080p HEVC Main10 MKV decodes through FFmpeg d3d11va: `decoder=ffmpeg-d3d11`, output P010,
+hardware status Available, no software fallback. Both decoders play in real time (source advanced
+15.09 s in 15.09 s wall). Idle process CPU over 10 s windows: d3d11va 0.15–0.18 cores, system decoder
+0.13–0.15 cores (both with FFmpeg software DTS audio); app memory 663–686 MiB vs 590 MiB.
+Picture at the same paused frame (595.25 s, `hdr pretend`, SDR display): `hdr=default` 0/6/70/128/155
+sat 0.40 (media type BT.2020 matrix, transfer/primaries unset); `hdr=on` 0/6/69/128/154 sat 0.40 with
+PQ + BT.2020 tagged. Both match the system-decoder result; the server transcode is 0/4/61/177/223
+sat 0.60. Even FFmpeg-decoded P010 tagged PQ/BT.2020 gets no conversion from the media pipeline, so a
+console tone map needs Bale's own GPU pass on these textures.
+Wrapper bug found (also upstream): the HDR side-data reads cast the `AVPacketSideData*` returned by
+`av_packet_side_data_get` to `AVContentLightMetadata*` / `AVMasteringDisplayMetadata*` instead of
+using its `data`, so `hdr=on` reported MaxCLL 488887616 / MaxFALL 553 (pointer bits; the native
+route reads 4057 / 321) and no mastering luminance. The display-matrix rotation read has the same
+pattern. Fix belongs in the fork. Automatic stays banned in production.
+
 Microsoft's media pipeline exposes no tone-mapping algorithm or parameter controls.
 FFmpegInteropX's `SetFFmpegVideoFilters` is not a practical alternative: filters run on the CPU,
 this build has no zimg/zscale or libplacebo, and Xbox offers no usable OpenCL/Vulkan path for
