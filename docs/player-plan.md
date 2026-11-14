@@ -1282,15 +1282,21 @@ display. The fork's frame stage ran bale_gpu's BT.2390 pass (source peak 1000, w
 limited with no HDR attributes, real time, no replan. Same paused frame (595.25 s):
 GPU tone map 0/4/62/169/218 sat 0.62; server transcode 0/4/61/177/223 sat 0.60; no tone map
 0/6/69/128/154 sat 0.40. It matches the server closely; highlights end slightly lower.
-GPU cost (Device Portal engine utilisation, 20 samples while playing): 3D engine 12.5 % mean with the
-pass vs 6.2 % without, i.e. about 2.6 ms of GPU per 1080p frame including the slice copy; process
-CPU about 0.19 cores either way. Memory over 5 minutes showed no growth on bale.24 or bale.25.
+GPU cost at 1080p (Device Portal engine utilisation): 3D engine 12.5 % mean with the pass vs 6.2 %
+without, about 2.6 ms per frame including the slice copy; these samples were taken within one second,
+so treat them as rough (the 4K figure below is sampled properly). Process CPU about 0.19 cores either way. Memory over 5 minutes showed no growth on bale.24 or bale.25.
 Follow-up (0.1.480): Hable on the same frame 0/3/56/149/198 sat 0.62 (darker than BT.2390 and the
 server, so BT.2390 stays the default). An HDR10+ 1080p HEVC title (base layer, dynamic metadata
 ignored) with BT.2390: 0/9/32/147/164 sat 0.62 vs the server's 0/9/32/149/166 sat 0.61. An SDR 10-bit
 HEVC MKV with the switch on logs `Bale tonemap: request ignored; not a D3D11 10-bit PQ stream.` and
 plays unchanged. 4K is untested: no 4K HDR10 HEVC file in the library takes the FFmpeg route.
 Production stays on server tone mapping until the owner decides.
+4K (0.1.481, 2026-11-14): a Dolby Vision profile 8.1 HEVC MKV, 3840x2160@24, via the new base-layer
+claim with `hdr pretend`. System decoder: decodes cleanly with the RPU NAL units left in, real time,
+0.155 cores. `decoder=auto tonemap=bt2390`: active at 3840x2160, real time, 0.13 cores, clean
+picture. GPU 3D engine (20 samples one second apart) 32.0 % with the pass vs 12.2 % on d3d11va
+without it, about 20 points, i.e. about 8.3 ms of GPU per 4K frame including the slice copy (system
+decoder alone: 7.9 %). That fits a 24 fps frame (41.7 ms) comfortably.
 
 Microsoft's media pipeline exposes no tone-mapping algorithm or parameter controls.
 FFmpegInteropX's `SetFFmpegVideoFilters` is not a practical alternative: filters run on the CPU,
