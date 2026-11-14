@@ -92,6 +92,10 @@ jobs:
           if (-not $fxc) { throw 'Windows SDK fxc.exe is required for real grain shaders' }
           "FXC=$($fxc.FullName)" >> $env:GITHUB_ENV
 
+      - name: Check standalone tone-map math (SM5 and SM6)
+        shell: pwsh
+        run: ./scripts/test-tonemap-shaders.ps1
+
       # Compiled dependencies (windows-rs above all). The key changes only with the lockfile, manifest,
       # cargo config or rustc, so it is saved once per combination; Bale's own crate is rebuilt every run.
       - name: Rust cache key
@@ -323,7 +327,8 @@ jobs:
             $exports = & $dumpbin.FullName /exports $packagedDll
             if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect packaged bale_gpu.dll exports' }
             # Live exports: the wrapper's grain and zero-copy loaders (patch 0020), and the app's P/Invokes.
-            $required = @('bale_grain_abi_version', 'bale_grain_validate',
+            $required = @('bale_tonemap_abi_version', 'bale_tonemap_create', 'bale_tonemap_apply', 'bale_tonemap_destroy',
+              'bale_grain_abi_version', 'bale_grain_validate',
               'bale_grain_gpu_create', 'bale_grain_gpu_apply', 'bale_grain_gpu_destroy', 'bale_grain_gpu_probe',
               'bale_zc_abi_version', 'bale_zc_register_d3d12', 'bale_zc_create', 'bale_zc_alloc', 'bale_zc_release',
               'bale_zc_repack', 'bale_zc_repack_into', 'bale_zc_repack_into_bits', 'bale_zc_stats', 'bale_zc_destroy',

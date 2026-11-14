@@ -541,14 +541,14 @@ impl BaleGrainGpu {
 }
 
 /// Owns the lock and previous state, without borrowing the handle across mutable resource changes.
-struct ContextGuard {
+pub(crate) struct ContextGuard {
     context: ID3D11DeviceContext1,
     multithread: ID3D10Multithread,
     previous: Option<ID3DDeviceContextState>,
 }
 
 impl ContextGuard {
-    fn enter(
+    pub(crate) fn enter(
         context: &ID3D11DeviceContext1,
         multithread: &ID3D10Multithread,
         state: &ID3DDeviceContextState,

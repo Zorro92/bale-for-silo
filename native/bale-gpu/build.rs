@@ -5,8 +5,10 @@ use std::process::Command;
 
 /// (output name, source name, profile, preprocessor define). The zero-copy compute shaders are
 /// built a second time with `BALE_8BIT` for 8-bit pictures; their 10-bit builds take no define.
-const SHADERS: [(&str, &str, &str, Option<&str>); 10] = [
+const SHADERS: [(&str, &str, &str, Option<&str>); 12] = [
     ("fullscreen_vs", "fullscreen_vs", "vs_5_0", None),
+    ("tonemap_luma_ps", "tonemap_luma_ps", "ps_5_0", None),
+    ("tonemap_chroma_ps", "tonemap_chroma_ps", "ps_5_0", None),
     ("grain_luma_ps", "grain_luma_ps", "ps_5_0", None),
     ("grain_chroma_ps", "grain_chroma_ps", "ps_5_0", None),
     ("repack_zc_cs", "repack_zc_cs", "cs_5_0", None),
@@ -34,6 +36,8 @@ fn main() {
     println!("cargo:rerun-if-env-changed=FXC");
     println!("cargo:rerun-if-env-changed=BALE_LIBASS_DIR");
     println!("cargo:rerun-if-changed=shaders/grain_common.hlsli");
+    println!("cargo:rerun-if-changed=shaders/tonemap_common.hlsli");
+    println!("cargo:rerun-if-changed=shaders/tonemap_math.hlsli");
     for (_, source, _, _) in SHADERS {
         println!("cargo:rerun-if-changed=shaders/{source}.hlsl");
     }

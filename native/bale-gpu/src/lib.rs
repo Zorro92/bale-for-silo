@@ -20,6 +20,9 @@ pub mod grain;
 pub mod png;
 pub mod subs;
 pub mod tonemap;
+pub use tonemap::ffi::bale_tonemap_abi_version;
+#[cfg(windows)]
+pub use tonemap::ffi::{bale_tonemap_apply, bale_tonemap_create, bale_tonemap_destroy};
 pub mod zc_frame;
 
 use std::sync::{Arc, Mutex};

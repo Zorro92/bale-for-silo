@@ -1102,6 +1102,15 @@ probe. Parked.
 
 ## Display HDR
 
+**Debug GPU tone-map pass:** `bale_gpu.dll` now provides tone-map ABI 1 (PQ P010 → limited
+BT.709 NV12), with BT.2390/Hable and defaults matching the server's peak/white/desat conventions.
+Create runs a fixed-pattern CPU/GPU self-test; mismatch returns `0x8004BA01`. The debug switch
+`ffmpeg-tune decoder=auto tonemap=off|bt2390|hable|default` requires wrapper 2.1.0-bale.25+;
+older packages reject unknown `bale_*` keys, so the switch is gated until that version ships.
+Production HDR policy remains server tone mapping. See [GPU tone-map ABI and colour details](gpu-tone-map.md),
+including the reusable, binding-free `shaders/tonemap_math.hlsli`, 203-nit internal reference,
+Hable's explicit desat=0, and documented resampling/quantization differences.
+
 Display HDR is detected at runtime on the UI thread at each player start, not inferred from the
 developer's SDR display or installed codecs. `DisplayHdrOutput` reads the supported HDMI modes;
 `DisplayHdrPolicy` claims HDR10 if any non-stereo mode supports SMPTE ST 2084 (PQ). ST 2086
