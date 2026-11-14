@@ -1,7 +1,5 @@
-using System.Numerics;
 using Bale.Xbox.Services;
 using Windows.UI;
-using Windows.UI.Composition;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Hosting;
@@ -30,12 +28,9 @@ public sealed partial class SkylinePanel : ContentControl
             if (ElementCompositionPreview.GetElementChildVisual(host) is not null) return;
 
             // TvSkylinePanelChrome.kt: 4dp / 20dp elevation, black at 35% / 55%, outside the rounded fill.
-            var compositor = ElementCompositionPreview.GetElementVisual(host).Compositor;
-            var container = compositor.CreateContainerVisual();
-            container.RelativeSizeAdjustment = Vector2.One;
-            container.Children.InsertAtTop(CreateShadow(compositor, mask, 0.35f, 8, 2));
-            container.Children.InsertAtTop(CreateShadow(compositor, mask, 0.55f, 32, 8));
-            ElementCompositionPreview.SetElementChildVisual(host, container);
+            UiShadow.Attach(host, mask,
+                new UiShadow.Settings(Colors.Black, 0.35f, 8, 2),
+                new UiShadow.Settings(Colors.Black, 0.55f, 32, 8));
         }
         catch (Exception ex)
         {
@@ -56,17 +51,4 @@ public sealed partial class SkylinePanel : ContentControl
         }
     }
 
-    private static SpriteVisual CreateShadow(Compositor compositor, Shape mask, float opacity, float blurRadius, float offsetY)
-    {
-        var shadow = compositor.CreateDropShadow();
-        shadow.Color = Colors.Black;
-        shadow.Opacity = opacity;
-        shadow.BlurRadius = blurRadius;
-        shadow.Offset = new Vector3(0, offsetY, 0);
-        shadow.Mask = mask.GetAlphaMask();
-        var visual = compositor.CreateSpriteVisual();
-        visual.RelativeSizeAdjustment = Vector2.One;
-        visual.Shadow = shadow;
-        return visual;
-    }
 }

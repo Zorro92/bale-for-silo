@@ -29,6 +29,10 @@ public sealed partial class PageFrame : Frame
     private bool _blocksInput;
     private bool _wasHitTestVisible;
     private int _generation;
+    private TaskCompletionSource<bool>? _transitionFinished;
+
+    internal Task WhenTransitionSettledAsync() => _transitionFinished?.Task ?? Task.CompletedTask;
+    internal void FinishForBackground() => FinishTransition();
 
     /// <summary>Root and nested transitions share an input gate; a held key must not push twice.</summary>
     internal static bool IsTransitioning => _activeTransitions > 0;
@@ -82,6 +86,7 @@ public sealed partial class PageFrame : Frame
         if (!e.Cancel && _current?.Child is not null)
         {
             _blocksInput = true;
+            _transitionFinished = new(TaskCreationOptions.RunContinuationsAsynchronously);
             _activeTransitions++;
             _wasHitTestVisible = IsHitTestVisible;
             IsHitTestVisible = false;
@@ -98,6 +103,7 @@ public sealed partial class PageFrame : Frame
 #if DEBUG_SERVER
         DebugServer.RecordNavigation(e);
 #endif
+        UiResidency.NavigationChanged(this, e.Content);
         ApplyTemplate();
         if (_current is null || _spare is null || ReferenceEquals(_current.Child, e.Content))
         {
@@ -212,6 +218,8 @@ public sealed partial class PageFrame : Frame
             _activeTransitions--;
             IsHitTestVisible = _wasHitTestVisible;
         }
+        _transitionFinished?.TrySetResult(true);
+        _transitionFinished = null;
     }
 
     private static void SetOpacity(UIElement element, float opacity)

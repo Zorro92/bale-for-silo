@@ -144,6 +144,7 @@ Most focus bugs so far were the same few, re-solved page by page. Don't hand-rol
   (`App.OnPreviewKeyDown`). Only the player maps LT/RT to dedicated skip back/forward (see below);
   elsewhere they do nothing, keeping focus on screen.
 - **Back to a page restores its focus** through `IRestoresFocus` + `FocusRetry`.
+- **UI artwork is disposable residency:** background/suspend and pages underneath the player release decoded bitmaps, backdrops/masks, samples and shadows through `UiResidency`; restore visible art lazily from the unchanged disk cache, preserving focus/scroll/page state. Pause does nothing. See `docs/ui-memory.md`.
 
 ## Platform docs (check before guessing)
 

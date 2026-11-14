@@ -351,10 +351,13 @@ public sealed partial class RequestsPage : Page, IRestoresFocus, IBackHandler
         else { _art?.Hide(); _wash?.Show(null); }
     }
 
-    private async Task TintAsync(RequestCardView card, Uri backdrop)
+    private Task TintAsync(RequestCardView card, Uri backdrop)
     {
-        var tint = await AmbientTint.SampleAsync(backdrop);
-        if (_active && ReferenceEquals(_preview, card)) _wash?.Show(tint);
+        AmbientTint.Apply(Wash, backdrop, tint =>
+        {
+            if (_active && ReferenceEquals(_preview, card)) _wash?.Show(tint);
+        });
+        return Task.CompletedTask;
     }
 
     private void FocusRow(RequestRowView row)

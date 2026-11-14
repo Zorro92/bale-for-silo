@@ -745,30 +745,33 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
         }
     }
 
-    private async Task UpdateTintAsync(Uri? poster)
+    private Task UpdateTintAsync(Uri? poster)
     {
         var version = ++_tintVersion;
-        var tint = poster is null ? null : await AmbientTint.SampleAsync(poster);
-        if (version != _tintVersion)
+        AmbientTint.Apply(Wash, poster, tint =>
         {
-            return;
-        }
+            if (version != _tintVersion)
+            {
+                return;
+            }
 
-        _tint = tint;
-        if (!_active)
-        {
-            return;
-        }
+            _tint = tint;
+            if (!_active)
+            {
+                return;
+            }
 
-        if (tint is { } color)
-        {
-            ShowTint(color);
-        }
-        else
-        {
-            _wash?.Dispose();
-            _wash = null;
-        }
+            if (tint is { } color)
+            {
+                ShowTint(color);
+            }
+            else
+            {
+                _wash?.Dispose();
+                _wash = null;
+            }
+        });
+        return Task.CompletedTask;
     }
 
     private void ShowTint(Color tint)

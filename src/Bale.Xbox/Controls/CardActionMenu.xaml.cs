@@ -1,4 +1,3 @@
-using System.Numerics;
 using Bale.Core.Browse;
 using Bale.Xbox.Services;
 using Windows.Foundation;
@@ -184,16 +183,7 @@ public sealed partial class CardActionMenu : UserControl
             || ElementCompositionPreview.GetElementChildVisual(host) is not null) return;
 
         // TvMenuRow / SurfaceGlow.kt: a rounded, zero-offset white shadow at 14%, with 10dp blur.
-        var compositor = ElementCompositionPreview.GetElementVisual(host).Compositor;
-        var shadow = compositor.CreateDropShadow();
-        shadow.Color = Colors.White;
-        shadow.Opacity = 0.14f;
-        shadow.BlurRadius = 10;
-        shadow.Mask = mask.GetAlphaMask();
-        var glow = compositor.CreateSpriteVisual();
-        glow.RelativeSizeAdjustment = Vector2.One;
-        glow.Shadow = shadow;
-        ElementCompositionPreview.SetElementChildVisual(host, glow);
+        UiShadow.Attach(host, mask, new UiShadow.Settings(Colors.White, 0.14f, 10, 0));
     }
 
     private static void RecolorIcons(DependencyObject? node, bool focused)

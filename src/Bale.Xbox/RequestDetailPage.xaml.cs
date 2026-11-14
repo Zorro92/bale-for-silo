@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Numerics;
 using Bale.Core;
 using Bale.Core.Detail;
 using Bale.Core.Requests;
@@ -10,7 +9,6 @@ using Windows.System;
 using Windows.UI;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Hosting;
 using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Navigation;
@@ -507,32 +505,23 @@ public sealed partial class RequestDetailPage : Page, IRestoresFocus, IBackHandl
         else { NotifyGlyph.Fill = NotifyOffGlyph.Fill = ink; FollowSpinner.Foreground = ink; }
     }
 
-    private async Task TintAsync(Uri backdrop)
+    private Task TintAsync(Uri backdrop)
     {
-        var tint = await AmbientTint.SampleAsync(backdrop);
-        if (!_active || backdrop != _backdrop) return;
-        // TvDetailPageSurfaceColor: sampled tint at .42 over black, not the hub's diagonal wash.
-        byte Channel(byte value) => (byte)Math.Round(value * .42);
-        Wash.Fill = new SolidColorBrush(tint is { } color
-            ? Color.FromArgb(255, Channel(color.R), Channel(color.G), Channel(color.B))
-            : Color.FromArgb(255, 4, 13, 15));
+        AmbientTint.Apply(Wash, backdrop, tint =>
+        {
+            if (!_active || backdrop != _backdrop) return;
+            // TvDetailPageSurfaceColor: sampled tint at .42 over black, not the hub's diagonal wash.
+            byte Channel(byte value) => (byte)Math.Round(value * .42);
+            Wash.Fill = new SolidColorBrush(tint is { } color
+                ? Color.FromArgb(255, Channel(color.R), Channel(color.G), Channel(color.B))
+                : Color.FromArgb(255, 4, 13, 15));
+        });
+        return Task.CompletedTask;
     }
 
     private static void AttachTitleShadow(TextBlock text, FrameworkElement host)
     {
         // TvDetailHero.kt, the same half-density text shadow as Bale's normal detail hero.
-        var compositor = ElementCompositionPreview.GetElementVisual(host).Compositor;
-        var shadow = compositor.CreateDropShadow();
-        shadow.Color = Colors.Black;
-        shadow.Opacity = .55f;
-        shadow.BlurRadius = 8;
-        shadow.Offset = new Vector3(0, 2, 0);
-        shadow.Mask = text.GetAlphaMask();
-        var visual = compositor.CreateSpriteVisual();
-        visual.Shadow = shadow;
-        void Resize() => visual.Size = new Vector2((float)text.ActualWidth, (float)text.ActualHeight);
-        text.SizeChanged += (_, _) => Resize();
-        Resize();
-        ElementCompositionPreview.SetElementChildVisual(host, visual);
+        UiShadow.Attach(host, text, new UiShadow.Settings(Colors.Black, 0.55f, 8, 2));
     }
 }

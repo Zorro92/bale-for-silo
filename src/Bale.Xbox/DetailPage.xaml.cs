@@ -9,7 +9,6 @@ using Windows.UI.Xaml;
 using Windows.UI.Xaml.Automation;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Controls.Primitives;
-using Windows.UI.Xaml.Hosting;
 using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Navigation;
@@ -70,6 +69,13 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
             else OpenSimilar(item);
         });
         _cardMenu.Changed += OnMenuCardChanged;
+        // Listen on the page-owned Image, not the bitmap in Artwork's shared logo cache.
+        TitleLogo.ImageOpened += (_, _) =>
+        {
+            TitleLogo.Opacity = 1;
+            TextTitle.Opacity = 0;
+        };
+        TitleLogo.ImageFailed += (_, _) => TextTitle.Opacity = 1;
         Loaded += (_, _) =>
         {
             try
@@ -86,6 +92,12 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
             {
                 Log.Error("Detail art", ex);
             }
+        };
+
+        Unloaded += (_, _) =>
+        {
+            _art?.Dispose();
+            _art = null;
         };
 
         // Show / Season tabs reveal the focused tab without pinning; entering lands on the selected one.
@@ -318,12 +330,6 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
             }
             else
             {
-                image.ImageOpened += (_, _) =>
-                {
-                    TitleLogo.Opacity = 1;
-                    TextTitle.Opacity = 0;
-                };
-                image.ImageFailed += (_, _) => TextTitle.Opacity = 1;
                 var grace = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
                 grace.Tick += (_, _) =>
                 {
@@ -572,13 +578,13 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         WatchedUnmarkIcon.Visibility = flags.Played ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private async Task TintFromAsync(Uri backdrop)
+    private Task TintFromAsync(Uri backdrop)
     {
-        var tint = await AmbientTint.SampleAsync(backdrop);
-        if (_detail?.BackdropUrl == backdrop)
+        AmbientTint.Apply(Wash, backdrop, tint =>
         {
-            SetPageTint(tint);
-        }
+            if (_detail?.BackdropUrl == backdrop) SetPageTint(tint);
+        });
+        return Task.CompletedTask;
     }
 
     private void SetPageTint(Color? sampled)
@@ -596,19 +602,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         // TvDetailHero.kt's heroDisplayHero shadow is in px, not dp: Android TV density 2
         // halves blur 16 / y 4 to blur 8 / y 2 on Bale's dp-equivalent canvas.
         // A text alpha mask keeps black @ 0.55 on the glyphs, not a rectangular title slot.
-        var compositor = ElementCompositionPreview.GetElementVisual(host).Compositor;
-        var shadow = compositor.CreateDropShadow();
-        shadow.Color = Colors.Black;
-        shadow.Opacity = 0.55f;
-        shadow.BlurRadius = 8;
-        shadow.Offset = new Vector3(0, 2, 0);
-        shadow.Mask = text.GetAlphaMask();
-        var visual = compositor.CreateSpriteVisual();
-        visual.Shadow = shadow;
-        void Resize() => visual.Size = new Vector2((float)text.ActualWidth, (float)text.ActualHeight);
-        text.SizeChanged += (_, _) => Resize();
-        Resize();
-        ElementCompositionPreview.SetElementChildVisual(host, visual);
+        UiShadow.Attach(host, text, new UiShadow.Settings(Colors.Black, 0.55f, 8, 2));
     }
 
     private async Task LoadSeasonsAsync(DetailFeed feed, ItemDetail detail, SeriesDetailEntry? entry)

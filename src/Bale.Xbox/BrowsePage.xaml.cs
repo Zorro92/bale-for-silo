@@ -82,6 +82,13 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         ErrorPanel.PreviewKeyDown += OnStateKeyDown;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
+        MarqueeLogo.ImageOpened += (_, _) =>
+        {
+            _logoGrace.Stop();
+            MarqueeLogo.Opacity = 1;
+            MarqueeTitle.Opacity = 0;
+        };
+        MarqueeLogo.ImageFailed += (_, _) => MarqueeTitle.Opacity = 1;
         _logoGrace.Tick += (_, _) =>
         {
             _logoGrace.Stop();
@@ -844,22 +851,6 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             }
             else
             {
-                image.ImageOpened += (_, _) =>
-                {
-                    if (ReferenceEquals(_shownMarquee, view) && view.Card.LogoUrl == logo)
-                    {
-                        _logoGrace.Stop();
-                        MarqueeLogo.Opacity = 1;
-                        MarqueeTitle.Opacity = 0;
-                    }
-                };
-                image.ImageFailed += (_, _) =>
-                {
-                    if (ReferenceEquals(_shownMarquee, view) && view.Card.LogoUrl == logo)
-                    {
-                        MarqueeTitle.Opacity = 1;
-                    }
-                };
                 _logoGrace.Start();
             }
         }
@@ -985,16 +976,15 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         Badges.Visibility = badges.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    private async Task TintFromAsync(CardView view, Uri backdrop)
+    private Task TintFromAsync(CardView view, Uri backdrop)
     {
-        var tint = await AmbientTint.SampleAsync(backdrop);
-        if (!ReferenceEquals(_shownMarquee, view) || view.Card.BackdropUrl != backdrop)
+        AmbientTint.Apply(Wash, backdrop, tint =>
         {
-            return;
-        }
-
-        _tint = tint;
-        _wash?.Show(tint);
+            if (!ReferenceEquals(_shownMarquee, view) || view.Card.BackdropUrl != backdrop) return;
+            _tint = tint;
+            _wash?.Show(tint);
+        });
+        return Task.CompletedTask;
     }
 
     private void ClearMarquee()

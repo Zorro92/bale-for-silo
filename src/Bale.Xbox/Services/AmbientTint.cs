@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices.WindowsRuntime;
+using System.Runtime.CompilerServices;
 using Windows.Graphics.Imaging;
 using Windows.UI;
 using Windows.UI.Composition;
@@ -18,9 +19,68 @@ internal static class AmbientTint
     private const double TargetLuminance = 0.22;
 
     private static readonly Dictionary<Uri, Color> Cache = new();
+    private static CancellationTokenSource _sampling = new();
+    private static readonly ConditionalWeakTable<FrameworkElement, TintResource> Samples = new();
+
+    internal static void Apply(FrameworkElement host, Uri? image, Action<Color?> apply)
+    {
+        if (Samples.TryGetValue(host, out var old)) old.Dispose();
+        Samples.Remove(host);
+        var sample = new TintResource(host, image, apply);
+        Samples.Add(host, sample);
+        UiResidency.Register(host, sample);
+        sample.Restore();
+    }
+
+    private sealed class TintResource(FrameworkElement host, Uri? image, Action<Color?> apply) : IUiResource, IDisposable
+    {
+        private bool _started;
+        private bool _ready;
+        private Color? _color;
+        private int _version;
+        public UiResourceCounts Resident => new(Samples: _started && !_ready ? 1 : 0);
+        public UiResourceCounts Release()
+        {
+            var released = Resident;
+            _version++;
+            _started = false;
+            return released; // keep the tiny Color value, never a bitmap/decoder/pixel array
+        }
+        public UiResourceCounts Restore()
+        {
+            if (_started || UiResidency.IsSuppressed) return default;
+            _started = true;
+            if (_ready) apply(_color);
+            else _ = SampleAsync(++_version);
+            return Resident;
+        }
+        private async Task SampleAsync(int version)
+        {
+            var color = image is null ? null : await AmbientTint.SampleAsync(image);
+            if (version != _version || UiResidency.IsSuppressed) return;
+            _color = color;
+            _ready = true;
+            apply(color);
+        }
+        public void Dispose()
+        {
+            Release();
+            UiResidency.Forget(host, this);
+        }
+    }
+
+    internal static void ReleaseMemory()
+    {
+        _sampling.Cancel();
+        _sampling.Dispose();
+        _sampling = new();
+        Cache.Clear(); // only Color values; no decoded bitmap is kept in this cache
+    }
 
     public static async Task<Color?> SampleAsync(Uri image)
     {
+        if (UiResidency.IsSuppressed) return null;
+        var cancellation = _sampling.Token;
         if (Cache.TryGetValue(image, out var cached))
         {
             return cached;
@@ -29,18 +89,19 @@ internal static class AmbientTint
         try
         {
             // From the artwork cache: the art box shows the same image, so it's downloaded once.
-            if (await Artwork.ReadAsync(image) is not { } bytes)
+            if (await Artwork.ReadAsync(image) is not { } bytes || cancellation.IsCancellationRequested)
             {
                 return null;
             }
 
             using var stream = bytes.AsBuffer().AsStream().AsRandomAccessStream();
-            var decoder = await BitmapDecoder.CreateAsync(stream);
+            var decoder = await BitmapDecoder.CreateAsync(stream).AsTask(cancellation);
 
             // Average a 64x36 downsample, like the Android and tvOS samplers.
             var transform = new BitmapTransform { ScaledWidth = 64, ScaledHeight = 36, InterpolationMode = BitmapInterpolationMode.Linear };
             var pixels = (await decoder.GetPixelDataAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Ignore, transform,
-                ExifOrientationMode.IgnoreExifOrientation, ColorManagementMode.DoNotColorManage)).DetachPixelData();
+                ExifOrientationMode.IgnoreExifOrientation, ColorManagementMode.DoNotColorManage).AsTask(cancellation)).DetachPixelData();
+            if (cancellation.IsCancellationRequested) return null;
 
             double r = 0, g = 0, b = 0;
             var count = pixels.Length / 4;
@@ -55,6 +116,7 @@ internal static class AmbientTint
             Cache[image] = tint;
             return tint;
         }
+        catch (OperationCanceledException) { return null; }
         catch (Exception ex)
         {
             Log.Error("Ambient tint", ex);

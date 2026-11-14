@@ -23,6 +23,7 @@
     <Compile Include="../../src/Bale.Xbox/Services/CardRailMetrics.cs" Link="CardRailMetrics.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/CardMenuPlacement.cs" Link="CardMenuPlacement.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/RailScrollState.cs" Link="RailScrollState.cs" />
+    <Compile Include="../../src/Bale.Xbox/Services/UiResidencyState.cs" Link="UiResidencyState.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/TopMenuPreviewTiming.cs" Link="TopMenuPreviewTiming.cs" />
     <!-- Xbox's conservative audio snapshot has no UWP/reflection dependency. -->
     <Compile Include="../../src/Bale.Xbox/Services/XboxAudioCapabilities.cs" Link="XboxAudioCapabilities.cs" />

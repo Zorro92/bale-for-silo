@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Storage.Streams;
+using Windows.Foundation;
 using Windows.UI.Composition;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Hosting;
@@ -15,7 +16,7 @@ namespace Bale.Xbox.Services;
 /// diagonal wash without leaving a visible seam. Regenerate the mask with:
 ///   magick -size 614x378 xc:white -alpha set -channel A -fx 'min(1, (i/w)/0.68) * (j/h &lt; 0.58 ? 1 : 1 - (j/h - 0.58)/0.42)' +channel PNG32:ArtMask.png
 /// </summary>
-internal sealed class MaskedArt : IDisposable
+internal sealed class MaskedArt : IDisposable, IUiResource
 {
     // TvRootHeroBackdrop.kt / TvFocusMarqueeModel.kt: first art snaps in, later swaps crossfade
     // for 500 ms with the same easing as the tint. Never hide the outgoing image before decoding.
@@ -23,10 +24,11 @@ internal sealed class MaskedArt : IDisposable
 
     private readonly FrameworkElement _host;
     private readonly Compositor _compositor;
-    private readonly ContainerVisual _root;
-    private readonly LoadedImageSurface _maskSurface;
-    private readonly CompositionSurfaceBrush _mask;
-    private readonly CubicBezierEasingFunction _easing;
+    private ContainerVisual? _root;
+    private readonly Uri _maskUri;
+    private LoadedImageSurface? _maskSurface;
+    private CompositionSurfaceBrush? _mask;
+    private CubicBezierEasingFunction? _easing;
     private readonly List<ArtLayer> _retiring = new();
     private ArtLayer? _current;
     private LoadedImageSurface? _pendingSurface;
@@ -40,15 +42,40 @@ internal sealed class MaskedArt : IDisposable
     {
         _host = host;
         _compositor = ElementCompositionPreview.GetElementVisual(host).Compositor;
-        _easing = _compositor.CreateCubicBezierEasingFunction(new Vector2(0.42f, 0), new Vector2(0.58f, 1));
+        _maskUri = new Uri(maskUri);
+        UiResidency.Register(host, this);
+        host.SizeChanged += OnSizeChanged;
+    }
 
-        // One mask image holding both fades (Assets/ArtMask.png): mask brushes can't be nested.
-        _maskSurface = LoadedImageSurface.StartLoadFromUri(new Uri(maskUri));
+    // LoadedImageSurface's desiredMaxSize is in DIPs, just like the XAML host. The API applies
+    // rasterization scale; don't multiply by two again. Never start a full-source decode at size 0.
+    private void OnSizeChanged(object sender, SizeChangedEventArgs args) => Restore();
+
+    private Size DecodeSize => new(Math.Max(1, _host.ActualWidth), Math.Max(1, _host.ActualHeight));
+
+    private void CreateVisuals()
+    {
+        if (_root is not null) return;
+        _easing = _compositor.CreateCubicBezierEasingFunction(new Vector2(0.42f, 0), new Vector2(0.58f, 1));
+        _maskSurface = LoadedImageSurface.StartLoadFromUri(_maskUri, DecodeSize);
         _mask = _compositor.CreateSurfaceBrush(_maskSurface);
         _mask.Stretch = CompositionStretch.Fill;
         _root = _compositor.CreateContainerVisual();
         _root.RelativeSizeAdjustment = Vector2.One;
-        ElementCompositionPreview.SetElementChildVisual(host, _root);
+        ElementCompositionPreview.SetElementChildVisual(_host, _root);
+    }
+
+    public UiResourceCounts Resident => new(Surfaces:
+        (_maskSurface is null ? 0 : 1) + (_pendingSurface is null ? 0 : 1)
+        + (_current is null ? 0 : 1) + _retiring.Count);
+
+    public UiResourceCounts Restore()
+    {
+        if (_disposed || UiResidency.IsSuppressed || !_host.IsLoaded || _root is not null
+            || _requested is null || _host.ActualWidth <= 0 || _host.ActualHeight <= 0) return default;
+        CreateVisuals();
+        _ = ShowAsync(_requested, ++_request);
+        return new(Surfaces: 1); // mask created; backdrop decode follows asynchronously
     }
 
     public void Show(Uri image)
@@ -61,6 +88,8 @@ internal sealed class MaskedArt : IDisposable
         _requested = image;
         var request = ++_request;
         ClearPending();
+        if (UiResidency.IsSuppressed || !_host.IsLoaded || _host.ActualWidth <= 0 || _host.ActualHeight <= 0) return;
+        CreateVisuals();
         _ = ShowAsync(image, request);
     }
 
@@ -72,7 +101,7 @@ internal sealed class MaskedArt : IDisposable
             // The artwork cache shares bytes with the tint sampler. Composition won't load an
             // ms-appdata URI here, but a stream decodes fine. Keep it alive until LoadCompleted.
             var bytes = await Artwork.ReadAsync(image);
-            if (_disposed || request != _request)
+            if (_disposed || UiResidency.IsSuppressed || request != _request)
             {
                 return;
             }
@@ -80,20 +109,20 @@ internal sealed class MaskedArt : IDisposable
             LoadedImageSurface surface;
             if (bytes is null)
             {
-                surface = LoadedImageSurface.StartLoadFromUri(image);
+                surface = LoadedImageSurface.StartLoadFromUri(image, DecodeSize);
             }
             else
             {
                 stream = new InMemoryRandomAccessStream();
                 await stream.WriteAsync(bytes.AsBuffer());
                 stream.Seek(0);
-                if (_disposed || request != _request)
+                if (_disposed || UiResidency.IsSuppressed || request != _request)
                 {
                     stream.Dispose();
                     return;
                 }
 
-                surface = LoadedImageSurface.StartLoadFromStream(stream);
+                surface = LoadedImageSurface.StartLoadFromStream(stream, DecodeSize);
             }
 
             _pendingStream = stream;
@@ -118,9 +147,10 @@ internal sealed class MaskedArt : IDisposable
         _pendingSurface = null;
         _pendingStream?.Dispose();
         _pendingStream = null;
-        if (_disposed || e.Status != LoadedImageSourceLoadStatus.Success)
+        if (_disposed || UiResidency.IsSuppressed || _root is null || _mask is null
+            || e.Status != LoadedImageSourceLoadStatus.Success)
         {
-            Log.Info($"Art failed to load ({e.Status}): {_requested?.AbsolutePath}");
+            Log.Info($"Art failed to load ({e.Status})");
             sender.Dispose();
             return;
         }
@@ -183,13 +213,14 @@ internal sealed class MaskedArt : IDisposable
     private void Retire(ArtLayer layer)
     {
         _retiring.Add(layer);
+        var root = _root!;
         var batch = _compositor.CreateScopedBatch(CompositionBatchTypes.Animation);
         batch.Completed += (_, _) =>
         {
             // A page can unload before this fade finishes; Dispose already clears those layers.
             if (_retiring.Remove(layer))
             {
-                _root.Children.Remove(layer.Visual);
+                root.Children.Remove(layer.Visual);
                 layer.Dispose();
             }
 
@@ -199,30 +230,40 @@ internal sealed class MaskedArt : IDisposable
         batch.End();
     }
 
-    public void Dispose()
+    public UiResourceCounts Release()
     {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
+        var released = Resident;
         _request++;
         ClearPending();
-        ElementCompositionPreview.SetElementChildVisual(_host, null);
-        _root.Children.RemoveAll();
+        if (_root is not null)
+        {
+            ElementCompositionPreview.SetElementChildVisual(_host, null);
+            _root.Children.RemoveAll();
+        }
         _current?.Dispose();
         _current = null;
-        foreach (var layer in _retiring)
-        {
-            layer.Dispose();
-        }
-
+        foreach (var layer in _retiring) layer.Dispose();
         _retiring.Clear();
-        _root.Dispose();
-        _mask.Dispose();
-        _maskSurface.Dispose();
-        _easing.Dispose();
+        _root?.Dispose();
+        _root = null;
+        _mask?.Dispose();
+        _mask = null;
+        _maskSurface?.Dispose();
+        _maskSurface = null;
+        _easing?.Dispose();
+        _easing = null;
+        _hasDisplayedArtwork = false; // first resume image snaps; subsequent changes still crossfade
+        return released;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _host.SizeChanged -= OnSizeChanged;
+        Release();
+        _requested = null;
+        UiResidency.Forget(_host, this);
     }
 
     private sealed class ArtLayer : IDisposable

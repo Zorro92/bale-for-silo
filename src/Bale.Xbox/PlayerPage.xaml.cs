@@ -143,6 +143,11 @@ public sealed partial class PlayerPage : Page, IBackHandler
         try
         {
             if (!_active || _leaving || _suspended) return;
+            // Keep outgoing art intact during PageFrame's fade. Once the player covers it,
+            // release cached UI before allocating a decoder/presenter in Xbox's shared pool.
+            if (Frame is PageFrame pageFrame) await pageFrame.WhenTransitionSettledAsync();
+            if (!_active || _leaving || _suspended) return;
+            UiResidency.EnterPlayback();
             _resourceLease ??= PlaybackResources.Lifetime.EnterPlayer();
             _gcLatencyLease ??= PlaybackGcLatency.Shared.Acquire();
             await StopAttemptAsync();

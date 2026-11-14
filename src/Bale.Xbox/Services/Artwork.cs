@@ -1,6 +1,9 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Runtime.CompilerServices;
+using Windows.Foundation;
 using Windows.Storage;
+using Windows.UI.Xaml;
 using Windows.UI.Xaml.Media.Imaging;
 using Windows.Web.Http;
 using Windows.Web.Http.Filters;
@@ -56,8 +59,94 @@ internal static class Artwork
             image.DecodePixelHeight = h;
         }
 
-        _ = FillAsync(image, uri, priority);
+        var resource = new BitmapResource(image, uri, priority);
+        Images.Add(image, resource);
+        UiResidency.Register(resource);
+        if (!UiResidency.IsSuppressed) resource.Restore();
         return image;
+    }
+
+    private static readonly ConditionalWeakTable<BitmapImage, BitmapResource> Images = new();
+
+    // Also include package/XAML brushes (avatars, backgrounds) without reading XAML resources
+    // from code, which is unsafe under Native AOT. Stream artwork was registered by Load.
+    internal static IUiResource? Track(BitmapImage image)
+    {
+        if (Images.TryGetValue(image, out var resource)) return resource;
+        if (image.UriSource is not { } uri) return null;
+        resource = new BitmapResource(image, uri, priority: false, direct: true);
+        Images.Add(image, resource);
+        UiResidency.Register(resource);
+        return resource;
+    }
+
+    private sealed class BitmapResource(BitmapImage image, Uri uri, bool priority, bool direct = false) : IUiResource
+    {
+        private readonly bool _direct = direct;
+        private bool _resident = direct;
+        private int _version;
+        private Task _pending = Task.CompletedTask;
+        private IAsyncAction? _decode;
+        public UiResourceCounts Resident => new(Images: _resident ? 1 : 0);
+
+        public UiResourceCounts Release()
+        {
+            if (!_resident) return default;
+            _resident = false;
+            _version++;
+            try { _decode?.Cancel(); }
+            catch (Exception ex) { Log.Info($"Artwork cancel hr=0x{unchecked((uint)ex.HResult):X8}"); }
+            // UriSource=null resets XAML's encoded cache AND software/hardware surfaces, even
+            // for a SetSourceAsync bitmap whose UriSource was already null. Keep the empty
+            // BitmapImage bound: models, one-time x:Bind and recycled containers still agree.
+            image.UriSource = null;
+            return new(Images: 1);
+        }
+
+        public UiResourceCounts Restore()
+        {
+            if (_resident || UiResidency.IsSuppressed) return default;
+            _resident = true;
+            var version = ++_version;
+            _pending = FillAfterAsync(_pending, version);
+            return new(Images: 1);
+        }
+
+        private bool IsCurrent(int version) => _resident && version == _version && !UiResidency.IsSuppressed;
+
+        private async Task FillAfterAsync(Task previous, int version)
+        {
+            // A cancelled WinRT decode can finish late. Serialize per bitmap so an old decode
+            // cannot repopulate a suspended source or erase a newer foreground restore.
+            await previous;
+            if (!IsCurrent(version)) return;
+            try
+            {
+                if (!_direct && IsRemote(uri) && await FileAsync(uri, priority) is { } path)
+                {
+                    if (!IsCurrent(version)) return;
+                    var file = await StorageFile.GetFileFromPathAsync(path);
+                    if (!IsCurrent(version)) return;
+                    using var stream = await file.OpenReadAsync();
+                    if (!IsCurrent(version)) return;
+                    _decode = image.SetSourceAsync(stream);
+                    try { await _decode; }
+                    finally
+                    {
+                        _decode = null;
+                        if (!IsCurrent(version)) image.UriSource = null;
+                    }
+                    return;
+                }
+                if (IsCurrent(version)) image.UriSource = uri;
+            }
+            catch (Exception ex)
+            {
+                if (!IsCurrent(version)) return;
+                Log.Info($"Artwork decode hr=0x{unchecked((uint)ex.HResult):X8}");
+                image.UriSource = uri;
+            }
+        }
     }
 
     private const int KeptLimit = 48;
@@ -65,12 +154,14 @@ internal static class Artwork
     private static readonly Queue<string> KeptOrder = new();
     private static int _memoryGeneration;
 
-    /// <summary>UI thread, on background/suspend only; no disk IO or visible source changes.</summary>
-    internal static void ReleaseMemoryCache()
+    /// <summary>UI thread, on background/suspend or player entry only; never touches disk files.</summary>
+    internal static int ReleaseMemoryCache()
     {
+        var count = Kept.Count;
         _memoryGeneration++;
         Kept.Clear();
         KeptOrder.Clear();
+        return count;
     }
 
     /// <summary>
@@ -81,7 +172,8 @@ internal static class Artwork
     public static BitmapImage LoadKept(Uri uri, int height, out bool ready)
     {
         var key = Key(uri) + "@" + height;
-        if (Kept.TryGetValue(key, out var kept))
+        if (Kept.TryGetValue(key, out var kept) && Images.TryGetValue(kept, out var resource)
+            && resource.Resident.Images != 0 && !UiResidency.IsSuppressed)
         {
             ready = true;
             return kept;
@@ -90,9 +182,17 @@ internal static class Artwork
         ready = false;
         var generation = _memoryGeneration;
         var image = Load(uri, height: height, priority: true);
-        image.ImageOpened += (_, _) =>
+        RoutedEventHandler? opened = null;
+        ExceptionRoutedEventHandler? failed = null;
+        void Detach()
         {
-            if (generation != _memoryGeneration || Kept.ContainsKey(key))
+            image.ImageOpened -= opened;
+            image.ImageFailed -= failed;
+        }
+        opened = (_, _) =>
+        {
+            Detach();
+            if (generation != _memoryGeneration || UiResidency.IsSuppressed || Kept.ContainsKey(key))
             {
                 return;
             }
@@ -104,6 +204,9 @@ internal static class Artwork
                 Kept.Remove(KeptOrder.Dequeue());
             }
         };
+        failed = (_, _) => Detach();
+        image.ImageOpened += opened;
+        image.ImageFailed += failed;
         return image;
     }
 
@@ -169,27 +272,6 @@ internal static class Artwork
             Log.Error("Artwork cache trim", ex);
         }
     });
-
-    private static async Task FillAsync(BitmapImage image, Uri uri, bool priority)
-    {
-        try
-        {
-            if (IsRemote(uri) && await FileAsync(uri, priority) is { } path)
-            {
-                var file = await StorageFile.GetFileFromPathAsync(path);
-                using var stream = await file.OpenReadAsync();
-                await image.SetSourceAsync(stream);
-                return;
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Info($"Artwork cache read failed ({uri.Host}{uri.AbsolutePath}): {ex.Message}");
-        }
-
-        // Not cacheable, or the cache failed: let XAML load it directly.
-        image.UriSource = uri;
-    }
 
     private static bool IsRemote(Uri uri) => uri.Scheme is "https" or "http";
 

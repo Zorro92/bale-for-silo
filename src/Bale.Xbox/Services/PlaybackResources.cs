@@ -92,7 +92,7 @@ internal static unsafe class PlaybackResources
         catch (Exception ex) { Failure("trim device", ex); }
     }
 
-    internal static void ReleaseIdle(string reason, bool background = false)
+    internal static void ReleaseIdle(string reason)
     {
         Lifetime.ReleaseIfIdle(() =>
         {
@@ -107,9 +107,8 @@ internal static unsafe class PlaybackResources
 #endif
             }
             catch (Exception ex) { Failure("idle trim", ex); }
-            // Dropping our strong bitmap cache is cheap; visible images retain their own sources.
-            // Disk artwork, page navigation caches and the OS-owned XAML compositor stay intact.
-            if (background) Artwork.ReleaseMemoryCache();
+            // App releases UI residency BEFORE this trim. The XAML compositor is OS-owned;
+            // bale_gpu_trim only touches Bale-owned idle devices, never steals its device.
         });
     }
 

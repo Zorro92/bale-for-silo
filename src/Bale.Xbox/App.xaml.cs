@@ -1,4 +1,5 @@
 using Bale.Xbox.Services;
+using Bale.Core.Playback;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 using Windows.System;
@@ -28,17 +29,33 @@ public sealed partial class App : Application
         };
         DebugSettings.BindingFailed += (_, e) => Log.Info($"XAML binding failed: {e.Message}");
         Suspending += OnSuspending;
-        Resuming += (_, _) => Session.SetForeground(Window.Current?.Visible == true);
+        Resuming += async (_, _) =>
+        {
+            // Resuming may be raised away from the UI thread, before LeavingBackground. Do
+            // not restore artwork into an app that has resumed but is still off screen.
+            if (_uiDispatcher is { } dispatcher)
+                await dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+                {
+                    Session.SetForeground(Window.Current?.Visible == true);
+                    if (Window.Current?.Visible == true)
+                    {
+                        _inBackground = false;
+                        UiResidency.Resume();
+                    }
+                });
+        };
         EnteredBackground += OnEnteredBackground;
         LeavingBackground += async (_, _) =>
         {
             _inBackground = false;
+            UiResidency.Resume();
             if (Window.Current?.Content is Frame { Content: PlayerPage player })
                 await player.RestoreAfterBackgroundAsync();
         };
     }
 
     private bool _inBackground;
+    private CoreDispatcher? _uiDispatcher;
     internal bool IsInBackground => _inBackground;
 
     private async void OnEnteredBackground(object sender, EnteredBackgroundEventArgs e)
@@ -63,10 +80,17 @@ public sealed partial class App : Application
 
     private async Task ReleaseBackgroundResourcesAsync(string reason)
     {
+        // Close the UI gate synchronously, before player shutdown can yield. Downloads/decode
+        // callbacks must not refill a cached page while the app is waiting for media Close.
+        UiResidency.Release();
+        var generation = UiResidency.Generation;
         if (Window.Current?.Content is Frame { Content: PlayerPage player })
             await player.SuspendPlaybackAsync();
         // A quick return can race asynchronous shutdown. Never trim the resumed foreground UI.
-        if (_inBackground) PlaybackResources.ReleaseIdle(reason, background: true);
+        if (!_inBackground || generation != UiResidency.Generation) return;
+        _ = PlaybackMemoryRelease.Shared.Schedule();
+        await PlaybackMemoryRelease.Shared.WaitAsync(PlaybackMemoryRelease.StartWaitLimit);
+        if (_inBackground && generation == UiResidency.Generation) PlaybackResources.ReleaseIdle(reason);
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs e)
@@ -88,6 +112,8 @@ public sealed partial class App : Application
             // panels that enable it (top bar, chips, detail actions) trap arrows inside them.
             frame.XYFocusKeyboardNavigation = XYFocusKeyboardNavigationMode.Enabled;
             Window.Current.Content = frame;
+            _uiDispatcher = frame.Dispatcher;
+            UiResidency.Attach(frame);
             Window.Current.VisibilityChanged += (_, args) => Session.SetForeground(args.Visible);
             frame.PreviewKeyDown += OnPreviewKeyDown;
             frame.PreviewKeyUp += OnPreviewKeyUp;

@@ -1,4 +1,3 @@
-using System.Numerics;
 using Windows.UI;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
@@ -69,17 +68,9 @@ public sealed partial class SurfaceShadow : DependencyObject
             }
 
             var elevation = (float)GetElevation(element);
-            var compositor = ElementCompositionPreview.GetElementVisual(host).Compositor;
-            var shadow = compositor.CreateDropShadow();
-            shadow.Color = GetColor(element);
-            shadow.Opacity = (float)Math.Clamp(GetOpacity(element), 0, 1);
-            shadow.BlurRadius = elevation * 2;
-            shadow.Offset = new Vector3(0, elevation * (float)GetOffsetScale(element), 0);
-            shadow.Mask = mask.GetAlphaMask();
-            var visual = compositor.CreateSpriteVisual();
-            visual.RelativeSizeAdjustment = Vector2.One;
-            visual.Shadow = shadow;
-            ElementCompositionPreview.SetElementChildVisual(host, visual);
+            UiShadow.Attach(host, mask, new UiShadow.Settings(GetColor(element),
+                (float)Math.Clamp(GetOpacity(element), 0, 1), elevation * 2,
+                elevation * (float)GetOffsetScale(element)));
         }
         catch (Exception ex)
         {
