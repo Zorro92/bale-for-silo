@@ -141,27 +141,7 @@ impl ToneMapGpu {
                 return Err(E_INVALIDARG.into());
             }
         }
-        let required = (D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE).0 as u32;
-        if src.Format != DXGI_FORMAT_P010
-            || dst.Format != DXGI_FORMAT_NV12
-            || src.MipLevels != 1
-            || subresource >= src.ArraySize
-            || src.Width < config.width
-            || src.Height < config.height
-            || !src.Width.is_multiple_of(2)
-            || !src.Height.is_multiple_of(2)
-            || dst.Width != config.width
-            || dst.Height != config.height
-            || dst.MipLevels != 1
-            || dst.ArraySize != 1
-            || dst.Usage != D3D11_USAGE_DEFAULT
-            || dst.BindFlags & required != required
-            || [src, dst]
-                .iter()
-                .any(|d| d.SampleDesc.Count != 1 || d.SampleDesc.Quality != 0)
-        {
-            return Err(E_INVALIDARG.into());
-        }
+        validate_descs(config, &src, &dst, subresource)?;
         let context: ID3D11DeviceContext1 = context.cast()?;
         let multithread: ID3D10Multithread = context.cast()?;
         // Views and all allocation are prepared before a copy, draw or context swap.
@@ -315,6 +295,36 @@ impl ToneMapGpu {
     }
 }
 
+fn validate_descs(
+    config: &BaleToneMapConfig,
+    src: &D3D11_TEXTURE2D_DESC,
+    dst: &D3D11_TEXTURE2D_DESC,
+    subresource: u32,
+) -> Result<()> {
+    let required = (D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE).0 as u32;
+    if src.Format != DXGI_FORMAT_P010
+        || dst.Format != DXGI_FORMAT_NV12
+        || src.MipLevels != 1
+        || subresource >= src.ArraySize
+        || src.Width < config.width
+        || src.Height < config.height
+        || !src.Width.is_multiple_of(2)
+        || !src.Height.is_multiple_of(2)
+        || dst.Width != config.width
+        || dst.Height != config.height
+        || dst.MipLevels != 1
+        || dst.ArraySize != 1
+        || dst.Usage != D3D11_USAGE_DEFAULT
+        || dst.BindFlags & required != required
+        || [src, dst]
+            .iter()
+            .any(|d| d.SampleDesc.Count != 1 || d.SampleDesc.Quality != 0)
+    {
+        return Err(E_INVALIDARG.into());
+    }
+    Ok(())
+}
+
 pub(crate) fn compare_self_test(actual: &[u8], expected: &[u8]) -> std::result::Result<(), i32> {
     if actual.len() != expected.len()
         || actual
@@ -357,6 +367,47 @@ fn source_views(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn decoder_arrays_accept_each_slice_and_reject_out_of_bounds_before_commands() {
+        let config = BaleToneMapConfig {
+            width: 12,
+            height: 6,
+            curve: 1,
+            source_peak_nits: 1000.0,
+            target_white_nits: 100.0,
+            ..Default::default()
+        };
+        let mut src = texture_desc(16, 8, DXGI_FORMAT_P010, D3D11_BIND_DECODER.0 as u32);
+        src.ArraySize = 16;
+        let dst = texture_desc(
+            12,
+            6,
+            DXGI_FORMAT_NV12,
+            (D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE).0 as u32,
+        );
+        for slice in 0..16 {
+            assert!(validate_descs(&config, &src, &dst, slice).is_ok());
+        }
+        assert_eq!(
+            validate_descs(&config, &src, &dst, 16).unwrap_err().code(),
+            E_INVALIDARG
+        );
+        assert_eq!(
+            validate_descs(&config, &src, &dst, u32::MAX)
+                .unwrap_err()
+                .code(),
+            E_INVALIDARG
+        );
+        for bind in [
+            0,
+            D3D11_BIND_DECODER.0 as u32,
+            D3D11_BIND_SHADER_RESOURCE.0 as u32,
+        ] {
+            src.BindFlags = bind;
+            assert!(validate_descs(&config, &src, &dst, 15).is_ok());
+        }
+    }
+
     #[test]
     fn self_test_mismatch_has_its_own_hresult() {
         assert!(compare_self_test(&[16, 128, 235], &[19, 128, 232]).is_ok());

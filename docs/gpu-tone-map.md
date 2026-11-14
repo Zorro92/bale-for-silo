@@ -32,7 +32,10 @@ fp32 scalar/vector operations supported by both SM5 and SM6. Resource sampling a
 in `tonemap_common.hlsli`; neither is part of the reusable math include. Rust's
 `src/tonemap/cpu.rs` mirrors the math function for function. CI compiles a resource-free harness
 with FXC ps_5_0 and DXC ps_6_0, and WARP compares the live ABI output to the CPU reference.
-No separate license is assigned to the math file by this change.
+No separate license is assigned to the math file by this change. WARP rejects P010 arrays
+(including decoder-bound arrays), so its pixel comparisons exercise single-texture direct/copy
+paths; descriptor tests cover decoder-array slice bounds. Real decoder-array execution still
+needs hardware validation; no console was used for this implementation.
 
 - Curve 1 uses the server's knee offset **1.0**, brightest **original source RGB** signal and
   `desat=0` (disabled), rather than mapping luminance or each channel independently. A scalar
@@ -71,3 +74,24 @@ and [vf_tonemap](https://github.com/jellyfin/jellyfin-ffmpeg/blob/64bf9db0fcc514
 not copied from those implementations. zimg's
 [transfer selection](https://github.com/sekrit-twc/zimg/blob/master/src/zimg/colorspace/gamma.cpp)
 explains the default display-referred BT.709 interpretation.
+
+## Debug switch
+
+For the next FFmpeg player attempt (with the .25+ wrapper), use one of:
+
+```sh
+scripts/bale-debug.sh ffmpeg-tune decoder=auto tonemap=bt2390
+scripts/bale-debug.sh ffmpeg-tune decoder=auto tonemap=hable
+scripts/bale-debug.sh ffmpeg-tune decoder=auto tonemap=off
+scripts/bale-debug.sh ffmpeg-tune tonemap=default
+```
+
+The options map to `bale_tonemap=1`, `2`, `0`, or no key. Omitted keys retain their captured
+values. Any explicit mode, including off, requires decoder=auto in the resulting tuning;
+changing away from auto requires clearing tone mapping in the same update. Invalid updates
+change nothing. The current package pin is read during compilation, so .25+ enables the switch
+automatically when the wrapper is upgraded. Earlier packages reject explicit modes with a clear
+HTTP 400; default remains available. The current wrapper's
+[TryParseBaleOption](https://github.com/Zorro92/bale-ffmpeginteropx/blob/c3a9adbf2d81024a54063e7570ed9883afd5403c/Source/FFmpegMediaSource.cpp)
+rejects unknown Bale keys with E_INVALIDARG rather than forwarding them to FFmpeg.
+The tuning log and `FFmpeg tone map override` stats/where row report the captured mode.
