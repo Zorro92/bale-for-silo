@@ -187,6 +187,8 @@ public sealed partial class App : Application
             e.Handled = true;
             if (!e.KeyStatus.WasKeyDown) player.ToggleDebugStats();
         }
+        else if (sender is Frame { Content: PlayerPage scroller } && scroller.ScrollDebugStats(e.Key))
+            e.Handled = true;
 #endif
     }
 

@@ -52,6 +52,9 @@
     <!-- Only DEBUG_SERVER code makes this visible. Read-only: it must never take player focus. -->
     <Border x:Name="StatsPanel" Style="{StaticResource SkylinePlayerStatsPanelStyle}"
             Visibility="Collapsed" IsHitTestVisible="False">
+      <!-- Long values wrap; the right stick (keyboard U/N) scrolls when the pane is taller than the screen. -->
+      <ScrollViewer x:Name="StatsScroller" IsTabStop="False" VerticalScrollBarVisibility="Hidden"
+                    HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled">
       <Grid ColumnSpacing="{StaticResource SkylinePlayerStatsColumnGap}">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
@@ -65,6 +68,7 @@
           <TextBlock x:Name="StatsValueStyleSource" Style="{StaticResource SkylinePlayerStatsValueStyle}" />
         </Grid>
       </Grid>
+      </ScrollViewer>
     </Border>
     <!-- TvPlayerScreen.kt TvPlayerLoadingSpinner: one plain, centered 64dp paper spinner. -->
     <ProgressRing x:Name="LoadingRing" Style="{StaticResource SkylinePlayerLoadingStyle}"

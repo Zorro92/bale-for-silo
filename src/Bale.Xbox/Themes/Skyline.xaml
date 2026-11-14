@@ -1495,6 +1495,8 @@
     <Setter Property="HorizontalAlignment" Value="Left" />
     <Setter Property="VerticalAlignment" Value="Top" />
     <Setter Property="Margin" Value="48,26,0,0" />
+    <!-- 540 logical px tall screen: keep the bottom margin; longer content scrolls. -->
+    <Setter Property="MaxHeight" Value="488" />
     <Setter Property="Padding" Value="12" />
     <Setter Property="Background" Value="#F4131417" />
     <Setter Property="BorderBrush" Value="#1AFFFFFF" />
@@ -1521,6 +1523,10 @@
     <Setter Property="Foreground" Value="#99EDEDED" />
     <Setter Property="Margin" Value="12,0,0,0" />
     <Setter Property="TextAlignment" Value="Right" />
+    <!-- Debug values can be long (media types, plans): wrap instead of cutting them off. -->
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="TextTrimming" Value="None" />
+    <Setter Property="MaxLines" Value="0" />
   </Style>
   <Style x:Key="SkylineProfileErrorScreenStyle" TargetType="Grid">
     <Setter Property="Padding" Value="48" />

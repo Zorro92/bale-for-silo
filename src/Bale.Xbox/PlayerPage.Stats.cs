@@ -5,6 +5,7 @@ using Bale.Core.Api.Models;
 using Bale.Core.Playback;
 using Bale.Xbox.Services;
 using Windows.Media.Playback;
+using Windows.System;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 
@@ -35,7 +36,11 @@ public sealed partial class PlayerPage
         try
         {
             StatsPanel.Visibility = DebugStatsVisible ? Visibility.Collapsed : Visibility.Visible;
-            if (DebugStatsVisible) RenderStatsRows();
+            if (DebugStatsVisible)
+            {
+                RenderStatsRows();
+                StatsScroller.ChangeView(null, 0, null, disableAnimation: true);
+            }
         }
         catch (Exception ex) { LogFailure("stats toggle", ex); }
     }
@@ -261,6 +266,22 @@ public sealed partial class PlayerPage
         if (_statsRows.SequenceEqual(rows)) return;
         _statsRows = rows;
         if (DebugStatsVisible) RenderStatsRows();
+    }
+
+    /// <summary>Right stick (keyboard U/N) scrolls the stats pane while it's open; true when handled.</summary>
+    internal bool ScrollDebugStats(VirtualKey key)
+    {
+        if (!DebugStatsVisible) return false;
+        double? step = key switch
+        {
+            VirtualKey.GamepadRightThumbstickUp or VirtualKey.U => -60,
+            VirtualKey.GamepadRightThumbstickDown or VirtualKey.N => 60,
+            _ => null,
+        };
+        if (step is not { } delta) return false;
+        var target = Math.Clamp(StatsScroller.VerticalOffset + delta, 0, StatsScroller.ScrollableHeight);
+        StatsScroller.ChangeView(null, target, null);
+        return true;
     }
 
     private void RenderStatsRows()
