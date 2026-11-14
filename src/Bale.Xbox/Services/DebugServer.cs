@@ -377,6 +377,8 @@ internal sealed partial class DebugServer
                     return ("400 Bad Request", DebugThreadCpu.Usage);
                 return await DebugThreadCpu.MeasureAsync(query.GetValueOrDefault("seconds"));
 
+            case ("GET", "/net"):
+                return DebugNetworkTuning.Set(query.GetValueOrDefault("rcvbuf"));
             case ("GET", "/speed"):
                 return ("200 OK", DebugConnectionSpeed.Describe());
             case ("POST", "/speed"):

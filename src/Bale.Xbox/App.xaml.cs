@@ -16,6 +16,10 @@ public sealed partial class App : Application
     public App()
     {
         InitializeComponent();
+#if DEBUG_SERVER
+        // Before any connection opens: pooled connections keep the receive buffer they were opened with.
+        Services.DebugNetworkTuning.ApplySaved();
+#endif
 
         // Controller-first: the cursor only appears if a page explicitly asks for it.
         RequiresPointerMode = ApplicationRequiresPointerMode.WhenRequested;
