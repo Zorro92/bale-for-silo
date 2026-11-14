@@ -8,7 +8,11 @@ using Bale.Core.Connection;
 namespace Bale.Core.Playback;
 
 /// <summary>The outcome of one speed test: a result, nothing measured, or a 429 hold.</summary>
-public sealed record ConnectionSpeedTestOutcome(ConnectionSpeedResult? Result, TimeSpan? RetryAfter = null);
+public sealed record ConnectionSpeedTestOutcome(ConnectionSpeedResult? Result, TimeSpan? RetryAfter = null)
+{
+    /// <summary>Diagnostics: kbps per 500 ms window of the test, window 0 first.</summary>
+    public IReadOnlyList<long> WindowKbps { get; init; } = [];
+}
 
 /// <summary>How the server took a probe report: kept, refused (never keep it), or not delivered (may keep it).</summary>
 public enum ConnectionSpeedReport { Accepted, Refused, TransportFailure }
@@ -160,16 +164,16 @@ public sealed partial class PlaybackClient
                     try { count = await body.ReadAsync(buffer, limit.Token).ConfigureAwait(false); }
                     catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                     {
-                        return new(meter.Result(meter.StopAt(meter.LimitMs) ?? meter.LimitMs));
+                        return new(meter.Result(meter.StopAt(meter.LimitMs) ?? meter.LimitMs)) { WindowKbps = meter.WindowKbps };
                     }
                     var now = clock.ElapsedMilliseconds;
                     if (count == 0)
                     {
                         // A clean end; a body short of its Content-Length is a failed transfer.
                         if (expected is { } length && received < length) return new(null);
-                        return new(meter.Result(meter.StopAt(now) ?? now, now));
+                        return new(meter.Result(meter.StopAt(now) ?? now, now)) { WindowKbps = meter.WindowKbps };
                     }
-                    if (meter.StopAt(now) is { } stop && stop <= now) return new(meter.Result(stop));
+                    if (meter.StopAt(now) is { } stop && stop <= now) return new(meter.Result(stop)) { WindowKbps = meter.WindowKbps };
                     meter.Add(now, count);
                     received += count;
                 }

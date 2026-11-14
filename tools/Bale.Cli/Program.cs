@@ -117,6 +117,29 @@ switch (command)
         return await PlayPlanCommand.RunAsync(client, identity, args[1], options, cts.Token);
     }
 
+    case "speed-test":
+    {
+        // Diagnostic: runs the same Core speed test the console runs, from this machine. Not reported.
+        var mode = args.Length > 1 && args[1] == "accurate" ? Bale.Core.Playback.ConnectionSpeedTestMode.Accurate
+            : Bale.Core.Playback.ConnectionSpeedTestMode.Quick;
+        using var client = await CliSession.ResumeAsync(identity, cts.Token);
+        if (client is null) { Console.Error.WriteLine("Not signed in."); return 1; }
+        var profile = (await client.GetProfilesAsync(cts.Token)).FirstOrDefault(p => p.Name == "Bale Test");
+        if (profile?.Id is null) { Console.Error.WriteLine("No profile named Bale Test."); return 1; }
+        client.UseProfile(profile.Id);
+        await client.GetAccountAsync(cts.Token);
+        var state = await client.Playback.RefreshConnectionAsync(cts.Token);
+        if (client.Playback.Speed.Schedule is not { } schedule) { Console.Error.WriteLine("Server offers no connection_speed_v1."); return 1; }
+        Console.WriteLine($"connection={state?.Connection ?? "unknown"} target={schedule.TargetKbps?.ToString() ?? "none"} budget={state?.AutoBudgetKbps?.ToString() ?? "none"}");
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var outcome = await client.Playback.RunSpeedTestAsync(schedule, mode, cts.Token);
+        Console.WriteLine(outcome.Result is { } r
+            ? $"{mode}: {r.Kbps} kbps lower_bound={r.LowerBound} bytes={r.Bytes} duration_ms={r.DurationMs} wall_ms={clock.ElapsedMilliseconds}"
+            : $"{mode}: measured nothing retry_after={outcome.RetryAfter?.TotalSeconds.ToString() ?? "none"} wall_ms={clock.ElapsedMilliseconds}");
+        Console.WriteLine("windows_kbps=" + string.Join(",", outcome.WindowKbps));
+        return 0;
+    }
+
     case "profiles" or "home" or "logout" or "detail" or "search":
     {
         using var client = await CliSession.ResumeAsync(identity, cts.Token);

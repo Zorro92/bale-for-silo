@@ -105,6 +105,9 @@ public sealed class ConnectionSpeedMeter
 
     private long Window(int window) => window < _windows.Count ? _windows[window] : 0;
 
+    /// <summary>Diagnostics: kbps per 500 ms window so far (window 0 first).</summary>
+    public IReadOnlyList<long> WindowKbps => _windows.Select(bytes => Rate(bytes, WindowMs)).ToArray();
+
     private static long Rate(long bytes, long durationMs) => durationMs <= 0 ? 0 : bytes * 8 / durationMs;
 
     private static int ClampHigh(long kbps) => (int)Math.Min(kbps, MaxKbps);
