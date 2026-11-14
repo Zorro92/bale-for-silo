@@ -1257,6 +1257,19 @@ pattern. The fork fixes all three reads in commit `c3a9adbf2d81024a54063e7570ed9
 first consumed by Bale as wrapper `2.1.0-bale.24` and retained in `.25`; console verification of that fix remains pending.
 Automatic stays banned in production.
 
+**GPU tone map on the console (0.1.475, wrapper 2.1.0-bale.25, 2026-11-14, debug
+`ffmpeg-tune decoder=auto tonemap=bt2390`).** Same plain-HDR10 1080p24 HEVC MKV, `hdr pretend`, SDR
+display. The fork's frame stage ran bale_gpu's BT.2390 pass (source peak 1000, white 100, desat 0):
+`Bale tonemap active: curve=1 1920x1080`, self-test passed on hardware, MF output type NV12 BT.709
+limited with no HDR attributes, real time, no replan. Same paused frame (595.25 s):
+GPU tone map 0/4/62/169/218 sat 0.62; server transcode 0/4/61/177/223 sat 0.60; no tone map
+0/6/69/128/154 sat 0.40. It matches the server closely; highlights end slightly lower.
+GPU cost (Device Portal engine utilisation, 20 samples while playing): 3D engine 12.5 % mean with the
+pass vs 6.2 % without, i.e. about 2.6 ms of GPU per 1080p frame including the slice copy; process
+CPU about 0.19 cores either way. Memory over 5 minutes showed no growth on bale.24 or bale.25.
+Still to test: Hable, 4K HEVC, HDR10+, and a non-PQ source with the switch on. Production stays on
+server tone mapping until those pass and the owner decides.
+
 Microsoft's media pipeline exposes no tone-mapping algorithm or parameter controls.
 FFmpegInteropX's `SetFFmpegVideoFilters` is not a practical alternative: filters run on the CPU,
 this build has no zimg/zscale or libplacebo, and Xbox offers no usable OpenCL/Vulkan path for
