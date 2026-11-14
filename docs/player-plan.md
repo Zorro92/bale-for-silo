@@ -101,7 +101,7 @@ Current production capability claims (`ConsoleEvidence.ForHardware` over the dec
 | Audio passthrough | None | Receiver verification pending |
 | Display HDR | Runtime HDMI detection, HDR10 only | Exact evidence after a successful read; unknown/empty HDR on failure |
 | HLS | System video/audio claims only, without VP9, VC-1 or MPEG-2 | AdaptiveMediaSource cannot use FFmpeg fallbacks or its demuxer |
-| Progressive remux | `mp4` only; H.264, HEVC, AV1; AAC, AC-3, E-AC-3, MP3, FLAC, Opus, ALAC; `progressive_range_refusal_v1` | Forward-only fMP4 through FFmpeg's non-seekable input; every seek reanchors. TrueHD/DTS/PCM are converted to AAC by the server. Console verification pending |
+| Progressive remux | `mp4` only; H.264, HEVC, AV1; AAC, AC-3, E-AC-3, MP3, FLAC, Opus, ALAC; `progressive_range_refusal_v1` | Forward-only fMP4 through FFmpeg's non-seekable input; every seek reanchors. TrueHD/DTS/PCM are converted to AAC by the server. Verified on the console (0.1.518), subtitles included |
 | Subtitles | Own overlay: text sidecars (ASS/SSA, SubRip, WebVTT); PGS/DVD/DVB images from direct MKV; lossless PGS `.sup` windows on HLS/progressive | Original keeps `native_embedded` (`embedded_subtitles_v1`). Packaged deliveries claim `embedded_bitmap` for server-extracted PGS; DVD/DVB still require burn-in there. Console verification of image tracks pending |
 
 `PlaybackRoutePolicy.Decide` selects the pipeline separately for every mount. `original_http`
@@ -1779,7 +1779,19 @@ buffer's Length before reading its Capacity, which NativeBuffer ties to Length, 
 (`0.1.518`). Seeks (1800 → 1796.8, 300 → 299.0) and ±skips land within a GOP through seek_reanchor.
 A 200 s pause resumed and kept playing on the same response (the server did not reap it). Not seen:
 the `progressive reconnect reason=idle` log after a ≥60 s pause; the reopen did not fire, harmless
-here but worth a look. Subtitles on progressive and the unforced (`delivery auto`) route are untested.
+here but worth a look.
+
+**Subtitles and the unforced route (0.1.518 console + bale-cli, 2026-11-14):** progressive gets every
+selected subtitle as a server artifact drawn by Bale's overlay: ASS, SRT and SubRip→VTT text, and
+embedded PGS as a windowed `.sup`. On the console, embedded ASS and PGS rendered on progressive, and
+after reanchored seeks (paused at the plan's GOP-aligned source position) the frame and the
+subtitle line matched direct play at the same position exactly. Embedded PGS on direct play shows
+nothing at a seek target until the next display set starts (the cue in force across the seek is
+not replayed); progressive's `.sup` window does not have that gap. Unforced: `bale-cli play-plan
+--delivery remux` withdraws only `original_http`, as the audio-mapping replan does; the server chose
+`server_remux_progressive` for all 182 directly playable home titles (180 container normalization,
+2 AAC audio adaptation). With the original offered, none of the library's titles remux at all, so
+in practice progressive is the recovery route, not a first choice.
 
 Silo's planner ranks a copy remux's progressive delivery **ahead of HLS**
 (`candidate_planner_v3.go` "Progressive before HLS"); until now Bale (like Android's
