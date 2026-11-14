@@ -43,19 +43,48 @@ scripts/bale-debug.sh delivery hls|auto        # force HLS
 Set them **before** pressing Play; changing them mid-play doesn't affect the running attempt.
 Always reset to defaults when done: `hdr off`, `ffmpeg policy`, `ffmpeg-tune hdr=default`, `delivery auto`.
 
-## 3. Navigating to the title (keyboard pitfalls)
+## 3. Navigate by content id for playback tests
 
-- Search: `goto Search` → `key enter` → `wait page Search` → `type <text>`. The **first** `type`
-  right after opening search can be lost; check `where` shows results and type again if needed.
-- The result card shares a grid with the query box; Down goes to the filters and the People list,
-  not the card. Use `goto "<text on the card>"` (e.g. `goto HDR10`) then `key enter`.
-- **`key back` is page Back, not backspace.** In search it leaves the page (to Home). To search
-  again, go back to Search and re-open it, don't try to clear the box with Back.
+Use the CLI ids from step 1 and start with a clean navigation stack:
+
+```sh
+scripts/bale-debug.sh home
+scripts/bale-debug.sh open <content-id> [file=<fileId>]
+scripts/bale-debug.sh play <content-id> [file=<fileId>] [start=<seconds>]
+scripts/bale-debug.sh navlog [N]             # last 1–200 navigation/input/player events, default 50
+```
+
+`home` opens Browse/Home for the current profile and clears Back/Forward history. It fails if no
+profile is selected; select **Bale Test** deliberately, never let a test pick a household profile.
+`open` waits for Detail to load, selects the exact file using Version-picker state, and focuses Play.
+`play <id>` uses that Detail's normal Play path (claims/planning/debug switches included), then waits
+for a ready player or error and prints the player state and plan delivery. `start=` is an exact
+non-negative source time without the normal resume rewind; omitted uses normal Play/resume behavior.
+`play` with no id still resumes the mounted player after a paused seek.
+Open/Home allow 30 seconds and Play allows 90 seconds; allow a larger outer tool timeout too.
+HTTP 404 (unknown content/file), 408 (timeout) and 409 (no profile/conflict) fail non-zero.
+
+Prefer `home` + `open`/`play` over Search/`goto` for playback setup. Use real `key`/`press` only for
+behavior being tested. If keyboard navigation is itself under test, remember:
+
+- The **first `type` after opening Search can be lost**, and old query text can remain and get
+  appended. Check `where` instead of assuming a new query replaced the previous one.
+- **Card text changes with debug switches, including `hdr pretend`**. A prior `goto "<card text>"`
+  may stop matching. Inspect `targets`; chain any subsequent Enter with `&&`.
+- **A mismatched `goto` + Enter can start unintended playback** from whatever still has focus.
+  Never send Enter after a failed `goto`.
+- **Back follows the page stack**: it can return to an old Detail page, not Home.
+  `key back` is page Back, not backspace; use `home` for a known clean starting point.
 - **The first Enter on Detail after leaving the player is often swallowed** (`key` returns 408).
-  Always `wait --timeout 15000 page Player`; if you're still on Detail, press Enter again.
-  Confirm a new attempt really started in `scripts/xbox-logs.sh 40 | grep "player: plan"`.
-- After a play, the Play button becomes `Resume mm:ss`: the start position changes, which is
-  fine because you seek anyway.
+  Check `where`/the result before taking any further action; direct `play <id>` avoids that key handoff.
+- After playback the button can become `Resume mm:ss`; specify `start=` when the source start matters.
+- **After two navigation failures in a row, stop and use `home`/`open` instead of retrying keys.**
+
+Diagnose with `navlog` (page types, safe route ids, input results and player open/stop events with
+timestamps). Every `bale-debug.sh` invocation also appends timestamp, subcommand/args, HTTP status,
+and the first response line to `${XDG_STATE_HOME:-$HOME/.local/state}/bale-debug/commands.log`
+(override with `BALE_DEBUG_COMMAND_LOG`). URLs/credentials and typed text are redacted. HTTP
+404/408/409 warnings go to stderr even if stdout is redirected; keep stderr in test reports.
 
 ## 4. Confirm the route before measuring anything
 

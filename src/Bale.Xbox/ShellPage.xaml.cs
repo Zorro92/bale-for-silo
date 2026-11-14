@@ -162,6 +162,9 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
+#if DEBUG_SERVER
+        _debugNavigationLoaded = false;
+#endif
         Log.Info("Shell: navigated to " + (e.Parameter as string ?? ""));
         Current = this;
         _signingOut = false;
@@ -182,6 +185,9 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
             }
             if (_librariesWithCollections is null) _ = ProbeLibraryCollectionsAsync();
             // PageFrame restores the selected content while the incoming shell is still transparent.
+#if DEBUG_SERVER
+            _debugNavigationLoaded = true;
+#endif
             return;
         }
 
@@ -216,6 +222,9 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         Tabs.ItemsSource = _tabs.ToList();
         Tabs.UpdateLayout();
         Select(_tabs[0]);
+#if DEBUG_SERVER
+        _debugNavigationLoaded = true;
+#endif
         _librariesWithCollections = null;
         _ = ProbeLibraryCollectionsAsync();
     }

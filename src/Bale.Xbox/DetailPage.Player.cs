@@ -45,7 +45,14 @@ public sealed partial class DetailPage
             _returnPlaybackFocus = new(targetId, fromEpisode ? targetId : null, overridePosition == 0.0);
             // ShellPage.OpenDetail already pushed Detail into the root PageFrame. Its own Frame
             // therefore covers all shell chrome and keeps Back on this exact Detail stack entry.
+#if DEBUG_SERVER
+            var request = new PlayerRequest(playable, selection, overridePosition);
+            // Explicit debug start= is a source-time command, like seek, with no resume rewind.
+            if (_debugExactStart) request = request with { SuppressResumeRewind = true };
+            NavigateWithReturn(typeof(PlayerPage), request);
+#else
             NavigateWithReturn(typeof(PlayerPage), new PlayerRequest(playable, selection, overridePosition));
+#endif
         }
         catch (Exception ex)
         {

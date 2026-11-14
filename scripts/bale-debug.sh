@@ -8,6 +8,13 @@
 #   scripts/bale-debug.sh type dune             type text as real keystrokes
 #   scripts/bale-debug.sh focus                 what has focus, and the text on it
 #   scripts/bale-debug.sh where                 page, overlays, focus, status and on-screen controls
+#   scripts/bale-debug.sh home                  fresh Browse/Home for the active profile; clear the back stack (never selects a profile)
+#   scripts/bale-debug.sh open <content-id> [file=<fileId>]  load Detail, select an exact version, and focus Play
+#   scripts/bale-debug.sh play <content-id> [file=<fileId>] [start=<seconds>]  normal Detail Play path; wait for player ready/error
+#   scripts/bale-debug.sh navlog [N]            last 1–200 navigation/input/player events (default 50), oldest first
+# Every invocation appends a safe command/status/first-response line to
+# ${XDG_STATE_HOME:-$HOME/.local/state}/bale-debug/commands.log (override: BALE_DEBUG_COMMAND_LOG).
+# URLs/credentials and typed text are redacted. HTTP 404/408/409 also warn on stderr.
 #   scripts/bale-debug.sh stats                 all current player rows as Label: value, including overlay-hidden rows marked [hidden]
 #   scripts/bale-debug.sh frame-trace [reset]   last 300 software-video late deliveries: stream waits, GC pauses, delivery gaps or other; reset clears trace/totals
 #   scripts/bale-debug.sh threads [seconds]     per-thread CPU over 1–30 s (default 10), in cores, grouped by thread name or start module; plus whole process
@@ -105,6 +112,68 @@
 #   scripts/bale-debug.sh show profile edit     preview Edit Profile over the fixture picker
 #   scripts/bale-debug.sh show home             return from a disposable preview to the signed-in app
 set -euo pipefail
+
+# Keep metadata in files: many callers run curl in a command substitution or pipeline.
+# Record one entry per invocation, even for usage/connection failures and multi-key commands.
+command_args=("$@")
+command_name="${1:-usage}"
+command_started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+command_log="${BALE_DEBUG_COMMAND_LOG:-${XDG_STATE_HOME:-$HOME/.local/state}/bale-debug/commands.log}"
+command_tmp="$(mktemp -d)"
+redact_log() {
+  LC_ALL=C sed -E 's~[[:alpha:]][[:alnum:]+.-]*://[^[:space:]"<>]+~[redacted-url]~gI; s~(token|api[_-]?key|authorization|password|secret|grant)([=:]|%3[dD])[^[:space:],;]+~\1=[redacted]~gI; s/text=.*/text=[redacted]/I; s/[[:cntrl:]]/ /g'
+}
+finish_command_log() {
+  local result=$? args='' argument safe first='' statuses=none
+  trap - EXIT
+  if [[ "$command_name" == type ]]; then
+    args='type [redacted text]'
+  else
+    for argument in "${command_args[@]}"; do
+      safe="$(printf '%s' "$argument" | redact_log)"
+      [[ "$argument" == @* ]] && safe='@[file]'
+      printf -v safe '%q' "$safe"
+      args+="${args:+ }$safe"
+    done
+  fi
+  [[ -f "$command_tmp/first" ]] && IFS= read -r first < "$command_tmp/first" || true
+  if [[ -s "$command_tmp/statuses" ]]; then statuses="$(paste -sd, "$command_tmp/statuses")"; fi
+  # A logging error must not change the command's result.
+  (umask 077; mkdir -p -- "$(dirname -- "$command_log")"
+    printf '%s\t%s\tHTTP=%s exit=%s\t%s\n' "$command_started" "$args" "$statuses" "$result" "$first" >> "$command_log") \
+    || echo 'bale-debug: could not append command log' >&2
+  rm -rf -- "$command_tmp"
+  exit "$result"
+}
+trap finish_command_log EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+curl() {
+  local body code status result=0 first='' safe_first
+  body="$(mktemp "$command_tmp/body.XXXXXX")"
+  code="$(mktemp "$command_tmp/code.XXXXXX")"
+  # Preserve failed response bodies too. The last output/write-out options belong to this wrapper.
+  local curl_args=() argument
+  for argument in "$@"; do
+    if [[ "$argument" == -fsS ]]; then curl_args+=(--fail-with-body -sS); else curl_args+=("$argument"); fi
+  done
+  command curl "${curl_args[@]}" --output "$body" --write-out '%{http_code}' > "$code" || result=$?
+  status="$(cat "$code")"
+  [[ "$status" =~ ^[0-9]{3}$ ]] || status=000
+  printf '%s\n' "$status" >> "$command_tmp/statuses"
+  if [[ ! -f "$command_tmp/first" ]]; then
+    IFS= read -r first < "$body" || true
+    safe_first="$(printf '%s' "$first" | redact_log)"
+    printf '%s\n' "${safe_first:0:320}" > "$command_tmp/first"
+  fi
+  case "$status" in
+    404|408|409) printf 'bale-debug: %s failed (HTTP %s)\n' "$(printf '%s' "$command_name" | redact_log)" "$status" >&2 ;;
+  esac
+  cat "$body"
+  rm -f -- "$body" "$code"
+  return "$result"
+}
+
 HOST="${XBOX_HOST:?Set XBOX_HOST to your Xbox IP (shown in Dev Home)}"
 BASE="http://$HOST:8790"
 
@@ -123,13 +192,15 @@ case "${1:-}" in
   press)
     shift
     for button in "$@"; do
-      echo "$button → $(curl -fsS -X POST "$BASE/press/$button")"
+      reply="$(curl -fsS -X POST "$BASE/press/$button")"
+      echo "$button → $reply"
     done
     ;;
   key)
     shift
     for key in "$@"; do
-      echo "$key → $(curl -fsS -X POST "$BASE/key/$key")"
+      reply="$(curl -fsS -X POST "$BASE/key/$key")"
+      echo "$key → $reply"
     done
     ;;
   type)
@@ -138,6 +209,44 @@ case "${1:-}" in
     ;;
   focus) curl -fsS "$BASE/focus" ;;
   where) curl -fsS --max-time 5 "$BASE/where" ;;
+  home)
+    if [[ "$#" != 1 ]]; then echo 'usage: scripts/bale-debug.sh home' >&2; exit 2; fi
+    curl --fail-with-body -sS --max-time 35 -X POST "$BASE/home"
+    ;;
+  navlog)
+    if [[ "$#" -gt 2 || ! "${2-50}" =~ ^[0-9]{1,3}$ ]] || (( 10#${2-50} < 1 || 10#${2-50} > 200 )); then
+      echo 'usage: scripts/bale-debug.sh navlog [N] (1–200, default 50)' >&2
+      exit 2
+    fi
+    curl --fail-with-body -sS --max-time 5 -G "$BASE/navlog" --data-urlencode "n=${2-50}"
+    ;;
+  open|play)
+    if [[ "$1" == play && "$#" == 1 ]]; then
+      curl --fail-with-body -sS --max-time 15 -X POST -G "$BASE/playback" --data-urlencode 'state=play'
+    else
+      navigation_usage='usage: scripts/bale-debug.sh open <content-id> [file=<fileId>] | play <content-id> [file=<fileId>] [start=<seconds>] (no args: resume the active player)'
+      if [[ "$#" -lt 2 || ! "$2" =~ ^[a-zA-Z0-9_.-]{1,256}$ ]]; then
+        echo "$navigation_usage" >&2; exit 2
+      fi
+      navigation_args=(--data-urlencode "id=$2")
+      declare -A navigation_seen=()
+      for option in "${@:3}"; do
+        name="${option%%=*}"
+        value="${option#*=}"
+        if [[ -z "$name" ]] || [[ -n "${navigation_seen[$name]:-}" ]] || ! {
+          [[ "$name" == file && "$option" == file=* && "$value" =~ ^[a-zA-Z0-9_.-]{1,256}$ ]] \
+          || [[ "$1" == play && "$name" == start && "$option" == start=* && "$value" =~ ^[0-9]+([.][0-9]+)?$ ]]
+        }; then
+          echo "$navigation_usage" >&2; exit 2
+        fi
+        navigation_seen[$name]=true
+        navigation_args+=(--data-urlencode "$option")
+      done
+      navigation_timeout=35
+      [[ "$1" == play ]] && navigation_timeout=95
+      curl --fail-with-body -sS --max-time "$navigation_timeout" -X POST -G "$BASE/$1" "${navigation_args[@]}"
+    fi
+    ;;
   stats)
     if [[ "$#" != 1 ]]; then
       echo 'usage: scripts/bale-debug.sh stats' >&2
@@ -368,7 +477,7 @@ case "${1:-}" in
       curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/hdr" --data-urlencode "mode=$2"
     fi
     ;;
-  play|pause|toggle)
+  pause|toggle)
     if [[ "$#" != 1 ]]; then
       echo 'usage: scripts/bale-debug.sh {play|pause|toggle}' >&2
       exit 2

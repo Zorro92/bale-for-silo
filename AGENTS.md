@@ -77,6 +77,11 @@ changes are covered by the debug build and the tests. Then, with `XBOX_HOST` set
 ./scripts/bale-debug.sh type dune             # typed text
 ./scripts/bale-debug.sh focus                 # what has focus, and its text
 ./scripts/bale-debug.sh where                 # page, overlays, focus, status and on-screen controls
+./scripts/bale-debug.sh home                  # fresh Browse/Home for the current profile; clear Back/Forward history; never pick a profile
+./scripts/bale-debug.sh open <content-id> [file=<fileId>]  # wait for Detail, select the exact version, focus Play
+./scripts/bale-debug.sh play <content-id> [file=<fileId>] [start=<seconds>]  # normal Play path; wait for player state + plan delivery
+./scripts/bale-debug.sh play                  # no id: resume the active player after a paused seek
+./scripts/bale-debug.sh navlog [N]            # last 1–200 page/input/player events, default 50
 ./scripts/bale-debug.sh wait page Detail      # wait up to 8 s, then print where (also loaded / text / focus)
 ./scripts/bale-debug.sh wait --timeout 12000 text "Clear filters"  # 0–15000 ms; HTTP 408 keeps the where body
 ./scripts/bale-debug.sh caps                  # installed decoders, display modes, audio mix and baseline
@@ -93,6 +98,14 @@ timeout 300 ./scripts/bale-debug.sh playtest suite 3  # Chromium codec samples, 
 ./scripts/xbox-screenshot.sh out.png          # what's on the TV
 ./scripts/xbox-logs.sh                        # the log file (survives crashes)
 ```
+
+For playback setup, prefer `home` + `open`/`play` using content ids from `bale-cli search/detail`.
+Home/Open wait up to 30 seconds; Play waits up to 90 seconds for ready/error. `start=` specifies
+source seconds without resume rewind. All require the already selected profile. After two navigation
+failures in a row, stop and use `home`/`open` instead of retrying keys. Use `navlog` and the local
+`${XDG_STATE_HOME:-$HOME/.local/state}/bale-debug/commands.log` (override: `BALE_DEBUG_COMMAND_LOG`)
+for diagnosis. The script logs each invocation, status and first response line with URLs/credentials
+and typed text redacted; HTTP 404/408/409 also warn on stderr when stdout is redirected.
 
 Use `targets` and `goto` only to get into position for a test. `goto` matches a control's name,
 automation name or read text (case-insensitively); append `#N` for the Nth match. It refocuses once when

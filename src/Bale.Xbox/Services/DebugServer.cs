@@ -28,6 +28,10 @@ namespace Bale.Xbox.Services;
 ///   POST /type?text=...   types text as real keystrokes into whatever has focus
 ///   GET  /focus           the focused element and its text
 ///   GET  /where           compact page, overlays, focus, status and on-screen controls
+///   POST /home            fresh Home for the active profile; clears Back/Forward history
+///   POST /open?id=...&file=...  open Detail, optionally select an exact file; wait until loaded
+///   POST /play?id=...&file=...&start=...  Detail's normal Play path; wait for player ready/error
+///   GET  /navlog?n=50     last 1–200 page, input-command and player lifecycle events
 ///   GET  /stats           all active player stat rows, with [hidden] on overlay-hidden rows
 ///   GET  /frame-trace     software-video late deliveries with stream/GC/gap evidence
 ///   POST /frame-trace?action=reset  clear the active player's trace and totals
@@ -201,6 +205,23 @@ internal sealed partial class DebugServer
 
     private async Task<(string Status, string Body)> RouteAsync(string requestLine)
     {
+        (string Status, string Body) response;
+        try { response = await RouteCoreAsync(requestLine); }
+        catch (Exception ex)
+        {
+            response = ("500 Internal Server Error", $"debug command failed hr=0x{unchecked((uint)ex.HResult):X8}\n");
+        }
+        var parts = requestLine.Split(' ');
+        if (parts.Length >= 2 && Uri.TryCreate("http://bale" + parts[1], UriKind.Absolute, out var target))
+        {
+            var query = ParseQuery(target.Query, out _);
+            await RecordCommandAsync(target.AbsolutePath.TrimEnd('/'), query, response.Status);
+        }
+        return response;
+    }
+
+    private async Task<(string Status, string Body)> RouteCoreAsync(string requestLine)
+    {
         // "POST /press/down HTTP/1.1"
         var parts = requestLine.Split(' ');
         if (parts.Length < 2)
@@ -212,7 +233,7 @@ internal sealed partial class DebugServer
         var target = new Uri("http://bale" + parts[1]);
         var path = target.AbsolutePath.TrimEnd('/');
         var query = ParseQuery(target.Query, out var duplicateQueryKeys);
-        if (duplicateQueryKeys && path is ("/playtest-ffmpeg" or "/ffmpeg-tune" or "/delivery" or "/stats-rows" or "/frame-trace" or "/display-match" or "/gc" or "/frame-delivery" or "/stream-adapter" or "/av1-claim" or "/idle-test" or "/webview-test"))
+        if (duplicateQueryKeys && path is ("/open" or "/play" or "/home" or "/navlog" or "/playtest-ffmpeg" or "/ffmpeg-tune" or "/delivery" or "/stats-rows" or "/frame-trace" or "/display-match" or "/gc" or "/frame-delivery" or "/stream-adapter" or "/av1-claim" or "/idle-test" or "/webview-test"))
             return ("400 Bad Request", "query keys must appear at most once\n");
 
         switch (method, path)
@@ -242,6 +263,21 @@ internal sealed partial class DebugServer
 
             case ("GET", "/where"):
                 return ("200 OK", await OnUiAsync(DescribeWhere));
+
+            case ("POST", "/home"):
+                if (query.Count != 0) return ("400 Bad Request", "home takes no arguments\n");
+                return await NavigateDebugAsync(null);
+
+            case ("POST", "/open"):
+            case ("POST", "/play"):
+                if (!DebugNavigationRequest.TryParse(query, path == "/play", out var navigation))
+                    return ("400 Bad Request", DebugNavigationRequest.Usage + "\n");
+                return await NavigateDebugAsync(navigation, path == "/play");
+
+            case ("GET", "/navlog"):
+                if (query.Keys.Any(key => key != "n") || !DebugNavigationRequest.TryCount(query.GetValueOrDefault("n"), out var count))
+                    return ("400 Bad Request", "navlog n must be 1 to 200 (default 50)\n");
+                return ("200 OK", DebugNavigationHistory.Shared.Last(count));
 
             case ("GET", "/stats"):
                 return await StatsAsync();
@@ -516,7 +552,7 @@ internal sealed partial class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, GET /stats, GET /frame-trace, POST /frame-trace?action=reset, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, GET /playtest-engine?url=...&seconds=3&mode=cs|rust|rust-ffmpeg&target=bgra|fp16|rgb10 (target: rust only), GET /rust, GET /asstest[?png=ms], POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?decoder={auto|system|software|default}&tonemap={off|bt2390|hable|default} (requires decoder=auto and wrapper 2.1.0-bale.25+)&readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16&hdr=on|off|default&grain=dav1d|gpu|off|on|default (each key accepts default; grain default=gpu (production), on/dav1d=dav1d; software AV1 is fixed to zero-copy upload variant 6), GET /mem?gc=1, GET /gc, POST /gc?latency={batch|interactive|sustained|default}, GET /frame-delivery, POST /frame-delivery?mode={native|managed|off}, GET /stream-adapter, POST /stream-adapter?mode={pooled|builtin}, GET /av1-claim, POST /av1-claim?height={1080|2160}, GET /display-match, POST /display-match?mode={on|off}, GET /hdr, POST /hdr?mode={pretend|off}, GET /idle-test, POST /idle-test?action={display-pulse|smtc-playing|smtc-stopped}, GET /webview-test, POST /webview-test?action={open-video|open-blank|close}, POST /seek?seconds=...&pause=true, POST /playback?state={play|pause|toggle}, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, POST /home, POST /open?id=...&file=..., POST /play?id=...&file=...&start=..., GET /navlog?n=50, GET /stats, GET /frame-trace, POST /frame-trace?action=reset, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, GET /playtest-engine?url=...&seconds=3&mode=cs|rust|rust-ffmpeg&target=bgra|fp16|rgb10 (target: rust only), GET /rust, GET /asstest[?png=ms], POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?decoder={auto|system|software|default}&tonemap={off|bt2390|hable|default} (requires decoder=auto and wrapper 2.1.0-bale.25+)&readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16&hdr=on|off|default&grain=dav1d|gpu|off|on|default (each key accepts default; grain default=gpu (production), on/dav1d=dav1d; software AV1 is fixed to zero-copy upload variant 6), GET /mem?gc=1, GET /gc, POST /gc?latency={batch|interactive|sustained|default}, GET /frame-delivery, POST /frame-delivery?mode={native|managed|off}, GET /stream-adapter, POST /stream-adapter?mode={pooled|builtin}, GET /av1-claim, POST /av1-claim?height={1080|2160}, GET /display-match, POST /display-match?mode={on|off}, GET /hdr, POST /hdr?mode={pretend|off}, GET /idle-test, POST /idle-test?action={display-pulse|smtc-playing|smtc-stopped}, GET /webview-test, POST /webview-test?action={open-video|open-blank|close}, POST /seek?seconds=...&pause=true, POST /playback?state={play|pause|toggle}, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 

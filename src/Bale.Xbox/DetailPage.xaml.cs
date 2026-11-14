@@ -210,6 +210,9 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         }
 
         LoadingRing.Visibility = Visibility.Visible;
+#if DEBUG_SERVER
+        _debugLoadState = "loading";
+#endif
         ErrorPanel.Visibility = Visibility.Collapsed;
         PageScroller.Visibility = Visibility.Visible;
         _playEpisode = null;
@@ -257,13 +260,22 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
             {
                 await LoadSeasonsAsync(client.Detail, detail, entry);
             }
+#if DEBUG_SERVER
+            _debugLoadState = "loaded";
+#endif
         }
         catch (ApiException ex) when (ex.ResponseStatusCode == 404)
         {
+#if DEBUG_SERVER
+            _debugLoadState = "not-found";
+#endif
             ShowError("This title isn't available anymore.");
         }
         catch (Exception ex)
         {
+#if DEBUG_SERVER
+            _debugLoadState = "failed";
+#endif
             Log.Error($"Detail {_contentId} load", ex);
             ShowError($"Couldn't load this title. {ex.Message}");
         }

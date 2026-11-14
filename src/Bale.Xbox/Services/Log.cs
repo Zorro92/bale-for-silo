@@ -40,6 +40,9 @@ internal static class Log
 
     private static void Write(string level, string message)
     {
+#if DEBUG_SERVER
+        DebugNavigationHistory.PlayerEvent(message);
+#endif
         var line = $"{DateTimeOffset.Now:O} {level} {message}";
         lock (Gate)
         {

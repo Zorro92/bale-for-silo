@@ -95,6 +95,9 @@ public sealed partial class PageFrame : Frame
             return;
         }
 
+#if DEBUG_SERVER
+        DebugServer.RecordNavigation(e);
+#endif
         ApplyTemplate();
         if (_current is null || _spare is null || ReferenceEquals(_current.Child, e.Content))
         {

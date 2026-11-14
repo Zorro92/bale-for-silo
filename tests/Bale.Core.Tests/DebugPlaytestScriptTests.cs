@@ -917,7 +917,6 @@ public class DebugPlaytestScriptTests
     }
 
     [Theory]
-    [InlineData("play")]
     [InlineData("pause")]
     [InlineData("toggle")]
     public async Task PlaybackControlRejectsExtraArgumentsAndPreservesHttpFailures(string command)
@@ -1119,14 +1118,138 @@ public class DebugPlaytestScriptTests
         }
     }
 
-    private static async Task<(int ExitCode, string Output, string Arguments)> RunAsync(string[] arguments,
-        string output = "probe result\n", int exitCode = 0)
+    [Theory]
+    [InlineData("open", false)]
+    [InlineData("play", true)]
+    public async Task DirectNavigationEncodesTheIdentityFileAndSourceStart(string command, bool play)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        string[] args = play ? [command, "episode-1", "start=120.5", "file=file-2"] : [command, "movie-1", "file=file-2"];
+        var readout = play ? "Page: PlayerPage\nPlayer: state=playing delivery=original_http\nPlan: delivery=original_http\n"
+            : "Page: DetailPage content=movie-1\nFocus: Button#PlayButton\nStatus: loaded\n";
+        var result = await RunAsync(args, readout);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(readout, result.Output);
+        Assert.Contains("/" + command + "\n", result.Arguments);
+        Assert.Contains("--data-urlencode\nid=" + (play ? "episode-1" : "movie-1"), result.Arguments);
+        Assert.Contains("--data-urlencode\nfile=file-2\n", result.Arguments);
+        Assert.Contains("--max-time\n" + (play ? "95" : "35") + "\n", result.Arguments);
+        Assert.Equal(play, result.Arguments.Contains("--data-urlencode\nstart=120.5\n"));
+        Assert.Contains("HTTP=200 exit=0", result.Log);
+        Assert.Contains(readout.Split('\n')[0], result.Log);
+        Assert.DoesNotContain("debug.invalid", result.Log);
+        Assert.DoesNotContain("Focus:", result.Log);
+    }
+
+    [Fact]
+    public async Task HomeAndHistoryUseTheirOwnRoutesAndValidateCounts()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var home = await RunAsync(["home"]);
+        Assert.Equal(0, home.ExitCode);
+        Assert.Contains("-X\nPOST\n", home.Arguments);
+        Assert.Contains("/home\n", home.Arguments);
+        foreach (var args in new[] { new[] { "navlog" }, ["navlog", "200"] })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(0, result.ExitCode);
+            Assert.Contains("/navlog\n", result.Arguments);
+            Assert.Contains("--data-urlencode\nn=" + (args.Length == 1 ? "50" : "200") + "\n", result.Arguments);
+        }
+        foreach (var args in new[] { new[] { "home", "extra" }, ["navlog", ""], ["navlog", "0"], ["navlog", "201"],
+            ["navlog", "-1"], ["navlog", "1", "2"] })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+            Assert.Contains("HTTP=none exit=2", result.Log);
+        }
+    }
+
+    [Fact]
+    public async Task InvalidDirectNavigationNeverSendsARequest()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[] { new[] { "open" }, ["open", ""], ["play", ""], ["open", "movie/id"],
+            ["open", "movie-1", "start=2"], ["play", "movie-1", "start=-1"], ["play", "movie-1", "start=NaN"],
+            ["play", "movie-1", "start=1,5"], ["play", "movie-1", "start=1", "start=2"],
+            ["open", "movie-1", "file="], ["open", "movie-1", "file=a", "file=b"],
+            ["open", "movie-1", "unknown=a"], ["open", "movie-1", "=a"], ["open", "movie-1", ""] })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+            Assert.Contains("HTTP=none exit=2", result.Log);
+        }
+    }
+
+    [Theory]
+    [InlineData("404")]
+    [InlineData("408")]
+    [InlineData("409")]
+    public async Task FailuresWarnOnStderrWithStdoutRedirectedAndStillLogTheResponse(string status)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["open", "movie-1"], "unknown content id\n", 22, status, redirectOutput: true);
+        Assert.Equal(22, result.ExitCode);
+        Assert.Contains($"bale-debug: open failed (HTTP {status})\n", result.Error);
+        Assert.Contains($"HTTP={status} exit=22\tunknown content id", result.Log);
+    }
+
+    [Fact]
+    public async Task FailedKeySequenceStopsBeforeTheNextKeyAndLogsOnlyOneInvocation()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["key", "enter", "enter"], "input timed out\n", 22, "408");
+        Assert.Equal(22, result.ExitCode);
+        Assert.Single(result.Arguments.Split('\n'), line => line.EndsWith("/key/enter", StringComparison.Ordinal));
+        Assert.Single(result.Log.Split('\n', StringSplitOptions.RemoveEmptyEntries));
+        Assert.Contains("key enter enter", result.Log);
+        Assert.Contains("bale-debug: key failed (HTTP 408)", result.Error);
+    }
+
+    [Fact]
+    public async Task CommandLogRedactsUrlsCredentialsAndTypedTextButKeepsSafeArguments()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var url = await RunAsync(["playtest", "https://example.org/clip?token=private-grant"],
+            "result https://example.org/clip?token=private-grant token=private-grant\nnext line\n");
+        Assert.Contains("playtest", url.Log);
+        Assert.Contains("redacted", url.Log);
+        Assert.DoesNotContain("private-grant", url.Log);
+        Assert.DoesNotContain("example.org", url.Log);
+        Assert.DoesNotContain("next line", url.Log);
+        var typed = await RunAsync(["type", "private-credential"], "typed 18 characters; TextBox#Query text=\"private-credential\"\n");
+        Assert.Contains("type [redacted text]", typed.Log);
+        Assert.DoesNotContain("private-credential", typed.Log);
+        var probe = await RunAsync(["playtest-ffmpeg", "@fixture"]);
+        Assert.DoesNotContain("not-a-real-grant", probe.Log);
+    }
+
+    private static async Task<(int ExitCode, string Output, string Arguments, string Log, string Error)> RunAsync(string[] arguments,
+        string output = "probe result\n", int exitCode = 0, string httpStatus = "200", bool redirectOutput = false)
     {
         var directory = Directory.CreateTempSubdirectory("bale-curl-stub-").FullName;
         try
         {
             var curl = Path.Combine(directory, "curl");
-            await File.WriteAllTextAsync(curl, "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" >> \"$BALE_CURL_ARGS\"\nprintf '%s' \"$BALE_CURL_OUTPUT\"\nexit \"$BALE_CURL_EXIT_CODE\"\n");
+            await File.WriteAllTextAsync(curl, """
+                #!/usr/bin/env bash
+                printf '%s\n' "$@" >> "$BALE_CURL_ARGS"
+                destination=''
+                write_out=false
+                while (( $# > 0 )); do
+                  case "$1" in
+                    --output) destination="$2"; shift ;;
+                    --write-out) write_out=true; shift ;;
+                  esac
+                  shift
+                done
+                if [[ -n "$destination" ]]; then printf '%s' "$BALE_CURL_OUTPUT" > "$destination";
+                else printf '%s' "$BALE_CURL_OUTPUT"; fi
+                [[ "$write_out" == true ]] && printf '%s' "$BALE_CURL_HTTP_STATUS"
+                exit "$BALE_CURL_EXIT_CODE"
+                """ + "\n");
             if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(curl, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             var privateFile = Path.Combine(directory, "url");
             await File.WriteAllTextAsync(privateFile, "https://example.org/direct?st=not-a-real-grant");
@@ -1139,11 +1262,18 @@ public class DebugPlaytestScriptTests
             info.Environment["BALE_CURL_ARGS"] = captured;
             info.Environment["BALE_CURL_OUTPUT"] = output;
             info.Environment["BALE_CURL_EXIT_CODE"] = exitCode.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            info.Environment["BALE_CURL_HTTP_STATUS"] = httpStatus;
+            info.Environment["XDG_STATE_HOME"] = Path.Combine(directory, "state");
+            info.Environment.Remove("BALE_DEBUG_COMMAND_LOG");
             using var process = Process.Start(info)!;
             var stdout = process.StandardOutput.ReadToEndAsync();
             var stderr = process.StandardError.ReadToEndAsync();
             await process.WaitForExitAsync();
-            return (process.ExitCode, await stdout + await stderr, File.Exists(captured) ? await File.ReadAllTextAsync(captured) : string.Empty);
+            var error = await stderr;
+            var stdoutText = await stdout;
+            return (process.ExitCode, (redirectOutput ? "" : stdoutText) + error,
+                File.Exists(captured) ? await File.ReadAllTextAsync(captured) : string.Empty,
+                await File.ReadAllTextAsync(Path.Combine(directory, "state", "bale-debug", "commands.log")), error);
         }
         finally { Directory.Delete(directory, recursive: true); }
     }

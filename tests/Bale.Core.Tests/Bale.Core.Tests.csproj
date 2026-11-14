@@ -34,6 +34,16 @@
     <None Include="../../src/Bale.Xbox/Services/DebugServer.Stats.cs" Link="DebugServer.Stats.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugServer.Gc.cs" Link="DebugServer.Gc.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugWaitCondition.cs" Link="DebugWaitCondition.cs" />
+    <Compile Include="../../src/Bale.Xbox/Services/DebugNavigationRequest.cs" Link="DebugNavigationRequest.cs" />
+    <Compile Include="../../src/Bale.Xbox/Services/DebugNavigationHistory.cs" Link="DebugNavigationHistory.cs" />
+    <None Include="../../src/Bale.Xbox/Services/DebugServer.Navigation.cs" Link="DebugServer.Navigation.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/DetailPage.DebugNavigation.cs" Link="DetailPage.DebugNavigation.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/DetailPage.Player.cs" Link="DetailPage.Player.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/PlayerPage.DebugNavigation.cs" Link="PlayerPage.DebugNavigation.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Services/PageFrame.xaml.cs" Link="PageFrame.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Services/Log.cs" Link="Log.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/ShellPage.DebugNavigation.cs" Link="ShellPage.DebugNavigation.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/ShellPage.xaml.cs" Link="ShellPage.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugCodecNames.cs" Link="DebugCodecNames.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugPlaytest.cs" Link="DebugPlaytest.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugFfmpegPlaytest.cs" Link="DebugFfmpegPlaytest.cs" />
