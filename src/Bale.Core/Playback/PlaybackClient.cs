@@ -98,6 +98,7 @@ public sealed partial class PlaybackClient
                 ClientFeatures = features,
                 BandwidthEstimateKbps = estimate,
                 BandwidthEstimateSource = estimate is null ? null : ConnectionSpeed.ProbeSource,
+                ClientPlaybackContext = request.ClientPlaybackContext.WithoutInactiveClientTransformations(),
             },
             PlaybackJson.Default.PlaybackStartRequestV3, scope, cancellationToken).ConfigureAwait(false);
     }
@@ -122,7 +123,11 @@ public sealed partial class PlaybackClient
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         return PostAsync($"/api/v2/playback/{Uri.EscapeDataString(sessionId)}/replan",
-            request with { InstallationId = InstallationId(installation) }, PlaybackJson.Default.PlaybackReplanRequestV3,
+            request with
+            {
+                InstallationId = InstallationId(installation),
+                ClientPlaybackContext = request.ClientPlaybackContext.WithoutInactiveClientTransformations(),
+            }, PlaybackJson.Default.PlaybackReplanRequestV3,
             _captureScope(), cancellationToken);
     }
 

@@ -287,6 +287,24 @@ public sealed record ClientPlaybackContext(
     PlaybackOutputContext Output,
     IReadOnlyDictionary<string, DeliveryCapability> Deliveries)
 {
+    /// <summary>
+    /// silo-server rejects the whole request (422) when a client-executed transformation sits on a
+    /// delivery that is not enabled and supported (protocol_v3.go "client transformation capability is
+    /// not enabled"). Replans and debug forces disable deliveries; drop their client recipes on the way out.
+    /// </summary>
+    public ClientPlaybackContext WithoutInactiveClientTransformations() =>
+        Deliveries.Any(pair => !(pair.Value.Enabled && pair.Value.SupportedOnDevice) && pair.Value.Transformations.Any(IsClient))
+            ? this with
+            {
+                Deliveries = Deliveries.ToDictionary(pair => pair.Key, pair => pair.Value.Enabled && pair.Value.SupportedOnDevice
+                    ? pair.Value
+                    : pair.Value with { Transformations = pair.Value.Transformations.Where(t => !IsClient(t)).ToArray() }),
+            }
+            : this;
+
+    private static bool IsClient(PlaybackTransformation transformation) =>
+        string.Equals(transformation.Executor?.Trim(), "client", StringComparison.OrdinalIgnoreCase);
+
     public int ProtocolVersion { get; init; } = PlaybackProtocol.Version;
     public string? AppBuild { get; init; }
     public string? AppChannel { get; init; }
