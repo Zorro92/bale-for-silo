@@ -1315,6 +1315,12 @@ A 4K HEVC Main10 MKV that looked like HLG reports transfer 14 (BT.2020 10-bit, t
 primaries/matrix 9 in its container (`ffmpeg-tune colorinfo=on` log): wide-gamut SDR, which silo-server
 correctly calls `sdr`. Neither the server nor Bale converts BT.2020 SDR to BT.709 on direct play, so on
 a BT.709 display its colours are slightly undersaturated (minor, later).
+Console check (0.1.502): with `ffmpeg-tune colorinfo=on` alone, HdrSupport Automatic withholds the
+BT.2020 primaries on this SDR display, so the picture is identical. With `colorinfo=on hdr=on` the media
+type carries matrix BT2020_10, transfer 2020 and primaries BT2020, and the picture is still unchanged
+(saturation 0.166 in both). Windows' pipeline doesn't gamut-convert BT.2020 SDR to BT.709 here, so the fix
+would be an "SDR BT.2020" branch in Bale's GPU pass (linearise, BT.2020→BT.709 matrix, gamut clip,
+re-encode), on the d3d11va route like the tone map.
 
 Microsoft's media pipeline exposes no tone-mapping algorithm or parameter controls.
 FFmpegInteropX's `SetFFmpegVideoFilters` is not a practical alternative: filters run on the CPU,
