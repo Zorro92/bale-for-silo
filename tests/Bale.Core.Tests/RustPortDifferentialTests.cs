@@ -228,6 +228,108 @@ public class RustPortDifferentialTests
         string.Join(",", device.Subtitles.NativeEmbedded.Select(native =>
             $"{native.Container}:{string.Join("+", native.Codecs)}:{native.TrackIdentity}:{native.AssStyling}:{native.FontAttachments}")));
 
+    private static readonly string?[] Languages =
+        [null, "", " ", "en", "ENG", "eng-US", "en_GB", "fre", "fr", "und", "English", "Español", "pt-BR", "zh-Hant", "x", "abcd", "ger"];
+    private static readonly string?[] AudioNames =
+        [null, "", "unknown", "aac", "MP4A", "he-aac", "ac3", "AC-3", "eac3", "dd+", "dts", "DTS-HD", "dts_hd_ma", "truehd", "float", "pcm_s24le", "flac"];
+    private static readonly string?[] Titles = [null, "", " ", "Commentary", "commentary ", "Main", "Director's"];
+
+    [Fact]
+    public void LanguageKeysMatch()
+    {
+        foreach (var value in Languages.Concat(["  ENG_us ", "chi", "zho", "-x", "_", "İng", "baq-ES"]))
+        {
+            Assert.Equal(Reference.SubtitleLanguage.Key(value), Bale.Core.Detail.PlaybackFormatting.SubtitleLanguageKey(value));
+        }
+    }
+
+    [Fact]
+    public void AudioTrackMatchingMatches()
+    {
+        var random = new Random(8);
+        for (var run = 0; run < Runs; run++)
+        {
+            var catalog = random.Next(8) == 0 ? null : Enumerable.Range(0, random.Next(4)).Select(_ => new AudioTrack
+            {
+                Language = Pick(random, Languages), Codec = Pick(random, AudioNames),
+                Channels = Pick(random, new long?[] { null, 0, 2, 6, 8 }), EmbeddedTitle = Pick(random, Titles),
+            }).ToList();
+            // Mounted tracks often mirror the catalog, as on a real console, with some noise.
+            var mounted = Enumerable.Range(0, random.Next(5)).Select(i => catalog is { Count: > 0 } && random.Next(3) != 0
+                ? new MountedPlaybackAudioTrack(Pick(random, new int?[] { null, 0, 1, 2, 3, 5 }), catalog[i % catalog.Count].Language,
+                    catalog[i % catalog.Count].Codec, catalog[i % catalog.Count].Channels, catalog[i % catalog.Count].EmbeddedTitle, random.Next(5) != 0)
+                : new MountedPlaybackAudioTrack(Pick(random, new int?[] { null, 0, 1, 2, 3, 5 }), Pick(random, Languages), Pick(random, AudioNames),
+                    Pick(random, new long?[] { null, 2, 6 }), Pick(random, Titles), random.Next(5) != 0)).ToArray();
+            long? planIndex = random.Next(6) == 0 ? null : random.Next(-1, 4);
+            var ffmpeg = random.Next(2) == 0;
+            Assert.Equal(Selection(() => Reference.PlaybackOriginalAudioSelection.ResolveIndex(planIndex, catalog, mounted, ffmpeg)),
+                Selection(() => PlaybackOriginalAudioSelection.ResolveIndex(planIndex, catalog, mounted, ffmpeg)));
+        }
+    }
+
+    [Fact]
+    public void VersionNoticeTextMatches()
+    {
+        var random = new Random(9);
+        var decode = ConsoleEvidence.ForHardware(Series).VideoDecode;
+        for (var run = 0; run < Runs; run++)
+        {
+            var versions = Enumerable.Range(0, random.Next(4)).Select(_ =>
+            {
+                var version = Version(random);
+                version.Resolution = Pick(random, new string?[] { null, "", "4K", "2160p", "1080p", "720p", "SD", "8K", "1440", "hd" });
+                return version;
+            }).ToList();
+            var plan = Plan(random);
+            plan.DegradationWarnings = random.Next(5) == 0 ? [new DegradationWarningV3 { Code = "bandwidth_cap_applied" }] : null;
+            plan.DecisionReason = Pick(random, new string?[] { null, "QUALITY_BANDWIDTH_CAP", "quality_bandwidth_limit", "quality_fixed_rung",
+                "quality_device_limit", "validated_original_playback" });
+            var selection = new PlaybackSelection(Pick(random, FileIds.Concat(["", " "]).ToArray()));
+            var claims = random.Next(3) == 0 ? null : decode;
+            Assert.Equal(Reference.PlaybackVersionNotice.Describe(plan, selection, versions, claims),
+                PlaybackVersionNotice.Describe(plan, selection, versions, claims));
+        }
+    }
+
+    [Fact]
+    public void SubtitleFormatsMatch()
+    {
+        string?[] names = [null, "", " ass", ".SSA", ". srt", "SubRip", "webvtt", "text/vtt; charset=utf-8", "sup", "PGS", "application/x-pgs",
+            "hdmv_pgs_subtitle", "text/x-ass", "ttml", "..vtt"];
+        foreach (var format in names)
+        {
+            foreach (var mime in names)
+            {
+                Assert.Equal(Reference.PlaybackSubtitleResolver.Format(format, mime), PlaybackSubtitleResolver.Format(format, mime));
+            }
+        }
+        var random = new Random(10);
+        for (var run = 0; run < Runs; run++)
+        {
+            var plan = Plan(random);
+            plan.Subtitle = random.Next(4) == 0 ? null : new SubtitleDecisionV3
+            {
+                Mode = Pick(random, new string?[] { null, "render", "Render", "convert", "off", "burn_in" }),
+                Embedded = random.Next(3) == 0 ? null : new EmbeddedSubtitleV3 { StreamIndex = Pick(random, new long?[] { null, -1, 0, 3, 65535, 65536 }) },
+            };
+            Assert.Equal(Reference.PlaybackSubtitleResolver.ResolveEmbedded(plan)?.StreamIndex,
+                PlaybackSubtitleResolver.ResolveEmbedded(plan)?.StreamIndex);
+        }
+        Assert.Null(PlaybackSubtitleResolver.ResolveEmbedded(null));
+    }
+
+    private static string Selection(Func<int> resolve)
+    {
+        try
+        {
+            return resolve().ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+        catch (PlaybackAudioSelectionException error)
+        {
+            return "failed:" + error.DecoderUnsupported;
+        }
+    }
+
     private static string Outcome(Action action)
     {
         try

@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using Bale.Core.Api.Models;
+using Bale.Core.Native;
 
 namespace Bale.Core.Playback;
 
@@ -42,8 +43,8 @@ public static class PlaybackSubtitleResolver
 {
     /// <summary>The in-container image track this plan asks the client to draw, or null.</summary>
     public static PlaybackEmbeddedSubtitle? ResolveEmbedded(PlaybackPlan? plan) =>
-        plan?.Subtitle is { Mode: "render", Embedded.StreamIndex: >= 0 and <= PlaybackEmbeddedSubtitle.MaxStreamIndex and var index }
-            ? new((int)index) : null;
+        plan is not null && BaleCoreNative.Call("subtitles.resolve_embedded", writer => writer.Server("plan", plan),
+            BaleCoreJson.Default.NullableInt64) is { } index ? new((int)index) : null;
 
     public static PlaybackSubtitleSource? Resolve(PlaybackPlan? plan, Uri server)
     {
@@ -65,18 +66,16 @@ public static class PlaybackSubtitleResolver
         return new(uri, format, mode, origin, fonts);
     }
 
-    /// <summary>The declared format wins; the MIME type decides when it is absent or unknown.</summary>
+    /// <summary>
+    /// The declared format wins; the MIME type decides when it is absent or unknown. Implemented in
+    /// Rust (native/bale-core/src/subtitles.rs); URL checks stay here with .NET's Uri (PlaybackMediaUrl).
+    /// </summary>
     internal static uint? Format(string? format, string? mimeType) =>
-        Named(format) ?? Named(mimeType?.Split(';')[0]);
-
-    private static uint? Named(string? name) => name?.Trim().TrimStart('.').ToLowerInvariant() switch
-    {
-        "ass" or "ssa" or "text/x-ssa" or "text/x-ass" => PlaybackSubtitleSource.Ass,
-        "srt" or "subrip" or "application/x-subrip" => PlaybackSubtitleSource.Srt,
-        "vtt" or "webvtt" or "text/vtt" => PlaybackSubtitleSource.WebVtt,
-        "sup" or "pgs" or "hdmv_pgs_subtitle" or "application/pgs" or "application/x-pgs" => PlaybackSubtitleSource.Pgs,
-        _ => null,
-    };
+        BaleCoreNative.Call("subtitles.format", writer =>
+        {
+            writer.Text("format", format);
+            writer.Text("mime_type", mimeType);
+        }, BaleCoreJson.Default.NullableUInt32);
 }
 
 public static class PlaybackSubtitleText

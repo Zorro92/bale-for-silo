@@ -86,7 +86,10 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
     use crate::models::{
         Checked, DeviceCapabilities, DisplayMode, FileVersion, HdrCapabilities, PlaybackPlan,
     };
-    use crate::{display, dolby_vision7, evidence, hardware, route, software_decode, tone_map};
+    use crate::{
+        audio_selection, display, dolby_vision7, evidence, hardware, language, route,
+        software_decode, subtitles, tone_map, version_notice,
+    };
     use serde::Deserialize;
 
     #[derive(Deserialize)]
@@ -142,6 +145,18 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         hardware: Option<hardware::Limits>,
     }
     #[derive(Deserialize)]
+    struct AudioSelection {
+        plan_index: Option<i64>,
+        catalog: Option<Vec<audio_selection::CatalogTrack>>,
+        mounted: Vec<audio_selection::MountedTrack>,
+        ffmpeg: bool,
+    }
+    #[derive(Deserialize)]
+    struct SubtitleFormat {
+        format: Option<String>,
+        mime_type: Option<String>,
+    }
+    #[derive(Deserialize)]
     struct Hdr10Mode {
         current: DisplayMode,
         modes: Vec<DisplayMode>,
@@ -171,6 +186,26 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         }),
         "evidence.video_decode" => with_json(name, input, |a: VideoDecodeArgs| {
             evidence::video_decode(a.hardware.as_ref(), a.av1_max_width, a.av1_max_height)
+        }),
+        "language.subtitle_language_key" => with_json(name, input, |v: Option<String>| {
+            language::subtitle_language_key(v.as_deref())
+        }),
+        "audio_selection.resolve_index" => with_json(name, input, |a: AudioSelection| {
+            audio_selection::Outcome::from(audio_selection::resolve_index(
+                a.plan_index,
+                a.catalog.as_deref(),
+                &a.mounted,
+                a.ffmpeg,
+            ))
+        }),
+        "version_notice.describe" => with_json(name, input, |a: version_notice::DescribeArgs| {
+            version_notice::describe(&a)
+        }),
+        "subtitles.resolve_embedded" => {
+            with_json(name, input, |a: Plan| subtitles::resolve_embedded(&a.plan))
+        }
+        "subtitles.format" => with_json(name, input, |a: SubtitleFormat| {
+            subtitles::format(a.format.as_deref(), a.mime_type.as_deref())
         }),
         "route.decide" => with_json(name, input, route::decide),
         "route.is_matroska" => with_json(name, input, |c: Option<String>| {

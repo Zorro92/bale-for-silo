@@ -8,12 +8,16 @@
 //! media titles.
 
 pub mod abi;
+pub mod audio_selection;
 pub mod display;
 pub mod dolby_vision7;
 pub mod dotnet;
 pub mod evidence;
 pub mod hardware;
+pub mod language;
 pub mod models;
 pub mod route;
 pub mod software_decode;
+pub mod subtitles;
 pub mod tone_map;
+pub mod version_notice;

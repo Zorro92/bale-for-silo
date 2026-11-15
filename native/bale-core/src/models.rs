@@ -17,6 +17,27 @@ pub struct PlaybackPlan {
     pub selected_tracks: Option<SelectedTracks>,
     pub claims: Option<ValidationClaims>,
     pub transformations: Option<Vec<Transformation>>,
+    pub subtitle: Option<SubtitleDecision>,
+    pub degradation_warnings: Option<Vec<DegradationWarning>>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(default)]
+pub struct SubtitleDecision {
+    pub mode: Option<String>,
+    pub embedded: Option<EmbeddedSubtitle>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(default)]
+pub struct EmbeddedSubtitle {
+    pub stream_index: Option<i64>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(default)]
+pub struct DegradationWarning {
+    pub code: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -100,6 +121,7 @@ pub struct FileVersion {
 #[serde(default)]
 pub struct VideoTrack {
     pub codec: Option<String>,
+    pub height: Option<i64>,
     pub bit_depth: Option<i64>,
     pub pixel_format: Option<String>,
     pub color_transfer: Option<String>,

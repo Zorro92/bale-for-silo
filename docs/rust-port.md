@@ -72,8 +72,13 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    recurred. `ConsoleEvidence` (baseline, probe-based
    claims, AV1/MPEG-4 software claims). `PlaybackClaims` stays C#: it is Xbox-app glue (async probe,
    UI thread, logging) around these calls.
-4. **Plan handling:** `PlaybackStartBuilder`, `PlaybackReplan`, `PlaybackVersionNotice`,
-   `PlaybackOriginalAudioSelection`, `PlaybackSubtitles`, `PlaybackMediaUrl`.
+4. **Plan handling, pure parts** (ported, console check pending; owner's scope 2026-11-15):
+   `PlaybackOriginalAudioSelection.ResolveIndex`, `PlaybackVersionNotice.Describe`,
+   `PlaybackSubtitleResolver.Format`/`ResolveEmbedded`, and `PlaybackFormatting.SubtitleLanguageKey`
+   with its alias table. `ResolutionRank` and `Decodes` stay C# (passed in) until a Detail slice.
+   Kept in C#: `PlaybackMediaUrl` (a security check that must use the same `Uri` parser as the code
+   that fetches), and `PlaybackStartBuilder`/`PlaybackReplan` (they reshape the C# request records
+   the C# HTTP client sends; revisit only if requests move to Rust).
 5. **Meters and timing:** `ConnectionSpeedMeter`, `PlaybackThroughputMeter`,
    `PlaybackFrameDeliveryMeter`, `PlaybackLateFrameTrace`, `PlaybackSeekReanchor`.
 

@@ -106,6 +106,9 @@ public sealed record BaleCoreChecked<T>(T? Ok = default, string? InvalidData = n
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(bool))]
 [JsonSerializable(typeof(int?))]
+[JsonSerializable(typeof(long?))]
+[JsonSerializable(typeof(uint?))]
+[JsonSerializable(typeof(AudioSelectionOutcome))]
 [JsonSerializable(typeof(BaleCoreChecked<int>))]
 [JsonSerializable(typeof(BaleCoreChecked<bool>))]
 [JsonSerializable(typeof(Playback.DeviceCapabilities))]
@@ -136,5 +139,9 @@ internal sealed record FilteredStart(string[] CodecsVideo, string[] CodecsVideoH
     string[] CodecsAudio, string[] Containers, DeliveryLists[] Deliveries, string[] ClientFeatures);
 
 internal sealed record HardwareClaims(string[] VideoCodecs, Playback.VideoDecodeCapability[] VideoDecode);
+
+internal sealed record AudioSelectionFailed(bool DecoderUnsupported);
+
+internal sealed record AudioSelectionOutcome(int? Index = null, AudioSelectionFailed? Failed = null);
 
 internal sealed record DisplayHdr(Playback.HdrCapabilities Hdr, string Evidence);

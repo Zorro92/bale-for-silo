@@ -1,5 +1,5 @@
 using Bale.Core.Api.Models;
-using Bale.Core.Detail;
+using Bale.Core.Native;
 
 namespace Bale.Core.Playback;
 
@@ -39,73 +39,35 @@ public static class PlaybackOriginalAudioSelection
         catch (Exception) { throw new PlaybackAudioSelectionException(); }
     }
 
+    /// <summary>
+    /// The mounted index to select, or -1 for a proven video-only file. FFmpeg mounts map by stream
+    /// order over the complete inventory; Windows mounts need one unique language/codec/channels/title
+    /// identity in both inventories. Implemented in Rust (native/bale-core/src/audio_selection.rs).
+    /// </summary>
     public static int ResolveIndex(long? planIndex, IReadOnlyList<AudioTrack>? catalog,
         IReadOnlyList<MountedPlaybackAudioTrack> mounted, bool ffmpeg)
     {
-        if (planIndex is null && mounted.Count == 0 && catalog is null or { Count: 0 }) return -1;
-        if (catalog is null) throw new PlaybackAudioSelectionException();
-        if (planIndex is not >= 0 || planIndex >= catalog.Count) throw new PlaybackAudioSelectionException();
-        var ordinal = (int)planIndex.Value;
-        int index;
-        if (ffmpeg)
+        var outcome = BaleCoreNative.Call("audio_selection.resolve_index", writer =>
         {
-            // FFmpeg may drop streams with no decoder. Never sort the surviving streams into
-            // shifted catalog ordinals: this positional proof requires the complete inventory.
-            if (catalog.Count != mounted.Count) throw new PlaybackAudioSelectionException();
-            // FFmpegInteropX inserts av_find_best_stream's audio at position zero. Silo's scanner
-            // appends only audio streams in demux order; its audio rows have no global stream id.
-            // Reconstruct that order from AudioStreams[].StreamIndex, including non-audio gaps.
-            var streams = mounted.Select(track => track.StreamIndex ?? -1).ToArray();
-            try { index = PlaybackRoutePolicy.AudioTrackIndex(planIndex, streams, catalog.Count); }
-            catch (InvalidDataException) { throw new PlaybackAudioSelectionException(); }
-            var order = streams.Select((stream, i) => (stream, i)).OrderBy(pair => pair.stream).ToArray();
-            for (var i = 0; i < catalog.Count; i++)
-                if (!Compatible(catalog[i], mounted[order[i].i])) throw new PlaybackAudioSelectionException();
-        }
-        else
-        {
-            // Windows AudioTrack.Id is opaque; neither it nor list position is a source stream
-            // index contract. Require a unique identity in BOTH inventories, rather than guessing
-            // the language of indistinguishable main/commentary tracks from their positions.
-            var candidates = Enumerable.Range(0, mounted.Count).Where(i => Compatible(catalog[ordinal], mounted[i])).ToArray();
-            if (candidates.Length != 1) throw new PlaybackAudioSelectionException();
-            index = candidates[0];
-            if (catalog.Count(track => Compatible(track, mounted[index])) != 1) throw new PlaybackAudioSelectionException();
-        }
-        // Unsupported tracks still occupy their inventory positions; don't filter before mapping.
-        if (!mounted[index].Decodable) throw new PlaybackAudioSelectionException(decoderUnsupported: true);
-        return index;
+            writer.Number("plan_index", planIndex);
+            writer.Server("catalog", catalog);
+            writer.WriteStartArray("mounted");
+            foreach (var track in mounted)
+            {
+                writer.WriteStartObject();
+                writer.Number("stream_index", track.StreamIndex);
+                writer.Text("language", track.Language);
+                writer.Text("codec", track.Codec);
+                writer.Number("channels", track.Channels);
+                writer.Text("embedded_title", track.EmbeddedTitle);
+                writer.WriteBoolean("decodable", track.Decodable);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            writer.WriteBoolean("ffmpeg", ffmpeg);
+        }, BaleCoreJson.Default.AudioSelectionOutcome);
+        return outcome.Failed is { } failed
+            ? throw new PlaybackAudioSelectionException(failed.DecoderUnsupported)
+            : outcome.Index!.Value;
     }
-
-    private static bool Compatible(AudioTrack catalog, MountedPlaybackAudioTrack mounted) =>
-        Agrees(Language(catalog.Language), Language(mounted.Language)) &&
-        Agrees(Codec(catalog.Codec), Codec(mounted.Codec)) &&
-        (catalog.Channels is not > 0 || mounted.Channels is not > 0 || catalog.Channels == mounted.Channels) &&
-        Agrees(Clean(catalog.EmbeddedTitle), Clean(mounted.EmbeddedTitle));
-
-    private static bool Agrees(string? a, string? b) => a is null || b is null || a == b;
-    private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant();
-
-    private static string? Language(string? value)
-    {
-        var tag = Clean(value)?.Replace('_', '-');
-        if (tag is null) return null;
-        var parts = tag.Split('-', 2);
-        // FFmpegInteropX's fallback may be a localized display name rather than a language tag.
-        if (parts[0].Length is < 2 or > 3 || !parts[0].All(char.IsAsciiLetter)) return null;
-        var primary = PlaybackFormatting.SubtitleLanguageKey(parts[0]);
-        return primary is null ? null : primary + (parts.Length == 2 ? "-" + parts[1] : "");
-    }
-
-    private static string? Codec(string? value) => Clean(value) switch
-    {
-        null or "unknown" => null,
-        "mpeg4audio" or "mp4a" or "he-aac" or "aac_adts" => "aac",
-        "ac-3" or "dolby_ac3" => "ac3",
-        "dolby_ddplus" or "dd+" => "eac3",
-        // FFmpeg's codec name is dts even when the catalog names the HD profile separately.
-        "dts_hd" or "dts-hd" or "dts_hd_ma" or "dts_hd_hra" => "dts",
-        "float" => "pcm",
-        var codec => SoftwareDecodePolicy.NormalizeCodec(codec),
-    };
 }

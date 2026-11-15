@@ -1,6 +1,6 @@
-using System.Globalization;
 using Bale.Core.Api.Models;
 using Bale.Core.Detail;
+using Bale.Core.Native;
 
 namespace Bale.Core.Playback;
 
@@ -38,54 +38,27 @@ public sealed class PlaybackVersionNotice
     public bool Visible(long nowMilliseconds) => ShownAtMilliseconds is { } shown
         && nowMilliseconds - shown >= 0 && nowMilliseconds - shown < HideMilliseconds;
 
+    /// <summary>
+    /// The notice text, or null when the plan plays the picked version (or there was no explicit
+    /// pick). Built only from fixed phrases and bounded resolution labels, never server text.
+    /// Implemented in Rust (native/bale-core/src/version_notice.rs).
+    /// </summary>
     public static string? Describe(PlaybackPlan plan, PlaybackSelection selection, IReadOnlyList<FileVersion> versions,
         IReadOnlyList<VideoDecodeCapability>? videoDecode = null)
     {
-        var picked = selection.FileId;
-        var effective = EffectiveFileId(plan);
-        // Auto resolves a file id for Start too; only the Detail selection proves an explicit pick.
-        if (string.IsNullOrWhiteSpace(picked) || string.IsNullOrWhiteSpace(effective) || picked == effective) return null;
-        var asked = versions.FirstOrDefault(version => version.FileId == picked);
-        var played = versions.FirstOrDefault(version => version.FileId == effective);
-        var requestedLabel = Resolution(asked);
-        var original = string.Equals(plan.Delivery, "original_http", StringComparison.OrdinalIgnoreCase);
-        var playedLabel = Resolution(played, original ? plan.Source?.Height : plan.EffectiveRecipe?.Height ?? plan.Source?.Height);
-        var prefix = playedLabel is null ? "Playing another version"
-            : playedLabel == requestedLabel ? $"Playing another {playedLabel} version" : $"Playing {playedLabel}";
-        var selected = requestedLabel is null ? "the selected version" : $"the selected {requestedLabel} version";
-
-        // These are the successful plan's quality constraints, not the discarded file's refusal.
-        // Do not echo server messages: they are free-form and can contain private request data.
-        var reason = plan.DecisionReason?.ToLowerInvariant();
-        if (reason == "quality_bandwidth_cap" || plan.DegradationWarnings?.Any(warning => warning.Code == "bandwidth_cap_applied") == true)
-            return prefix + " — limited by the playback bandwidth cap.";
-        if (reason == "quality_bandwidth_limit") return prefix + " — adjusted for the connection speed.";
-        if (reason == "quality_fixed_rung") return prefix + " — using the selected playback quality.";
-        if (reason == "quality_device_limit") return prefix + " — adjusted for this console's video limits.";
-        if (asked is not null && videoDecode is not null
-            && SoftwareDecodePolicy.NormalizeCodec(asked.VideoTracks?.FirstOrDefault()?.Codec ?? asked.CodecVideo) is not null
-            && !PlaybackFormatting.Decodes(asked, videoDecode))
-            return prefix + $" — this console can't play {selected} directly.";
-
-        // planAlternateVersionV3 returns the alternate's reason (often validated_original_playback),
-        // not the original 4K-policy/codec/subtitle refusal. Stay neutral when that cause is absent.
-        return prefix + (playedLabel == requestedLabel ? " instead of the one selected." : $" instead of {selected}.");
+        var asked = selection.FileId is { } picked ? versions.FirstOrDefault(version => version.FileId == picked) : null;
+        return BaleCoreNative.Call("version_notice.describe", writer =>
+        {
+            writer.Server("plan", plan);
+            writer.Text("picked_file_id", selection.FileId);
+            writer.Server("versions", versions);
+            // Still C# (Detail/PlaybackFormatting) until the Detail slice.
+            writer.Numbers("resolution_ranks", versions.Select(version => PlaybackFormatting.ResolutionRank(version.Resolution)));
+            if (asked is not null && videoDecode is not null)
+                writer.WriteBoolean("asked_decodes", PlaybackFormatting.Decodes(asked, videoDecode));
+            else writer.WriteNull("asked_decodes");
+        }, BaleCoreJson.Default.String);
     }
 
     private static string? EffectiveFileId(PlaybackPlan plan) => plan.EffectiveMediaFileId ?? plan.Source?.MediaFileId;
-
-    private static string? Resolution(FileVersion? version, long? outputHeight = null)
-    {
-        var height = outputHeight is > 0 ? outputHeight.Value
-            : PlaybackFormatting.ResolutionRank(version?.Resolution) is > 0 and var rank ? rank
-            : version?.VideoTracks?.FirstOrDefault()?.Height ?? 0;
-        // Use only bounded numeric facts and fixed labels, never a file name or arbitrary label.
-        return height switch
-        {
-            2160 => "4K",
-            4320 => "8K",
-            > 0 and <= 9999 => height.ToString(CultureInfo.InvariantCulture) + "p",
-            _ => null,
-        };
-    }
 }
