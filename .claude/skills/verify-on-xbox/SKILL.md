@@ -39,8 +39,16 @@ gh run view "$RID" --log-failed | grep -E ' error ' | sed 's/.*Z //' | sort -u  
 
 Wait ~15 s for launch, then confirm it's alive: `./scripts/bale-debug.sh focus`.
 If the debug port doesn't answer, check `./scripts/xbox-logs.sh` and that `Bale.exe` is running
-(`curl -sk https://$XBOX_HOST:11443/api/resourcemanager/processes`); a fresh `deploy-xbox.sh` has
-restored the port before.
+(`curl -sk https://$XBOX_HOST:11443/api/resourcemanager/processes`); a fresh `deploy-xbox.sh` of a
+**newer** build has restored the port before.
+
+**Never reinstall the version that is already installed** (same CI run, or forcing an old run). On
+2026-11-15 reinstalling 0.1.526 over itself left port 8790 silently dropped while Bale ran and logged
+"listening"; relaunches and further reinstalls didn't clear it (docs/rust-port.md, slice 3). Every
+test install must be a newer CI build. Older builds are refused as downgrades anyway.
+
+Right after launch the profile picker has no focus for a moment: wait for `focus` to report the
+profile before pressing Enter, or the key is lost and a following `play` gets HTTP 409.
 
 ## 3. Rules while driving (learned the hard way)
 
