@@ -112,6 +112,104 @@ fn category(error: &ureq::Error) -> &'static str {
     }
 }
 
+#[derive(Deserialize)]
+pub struct FetchArgs {
+    url: String,
+    headers: Vec<(String, String)>,
+    /// First byte of the first block; blocks follow back to back.
+    start: u64,
+    blocks: usize,
+    block_size: u64,
+    concurrency: usize,
+}
+
+/// One block: milliseconds to the response headers and to the end of its body.
+#[derive(Serialize, Debug, Default, Clone, Copy)]
+pub struct BlockTime {
+    ttfb_ms: f64,
+    total_ms: f64,
+}
+
+#[derive(Serialize, Debug, Default)]
+pub struct FetchReport {
+    errors: Vec<&'static str>,
+    blocks: Vec<BlockTime>,
+    wall_ms: f64,
+}
+
+/// The player's fetch pattern (HttpRangeStream): `blocks` range requests of `block_size` bytes,
+/// `concurrency` in flight on a shared connection pool. Timings per block, in completion order.
+pub fn fetch_pattern(args: &FetchArgs) -> FetchReport {
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(Duration::from_secs(10)))
+        .timeout_global(Some(Duration::from_secs(30)))
+        .http_status_as_error(false)
+        .build()
+        .into();
+    let next = AtomicUsize::new(0);
+    let report = Mutex::new(FetchReport::default());
+    let started = Instant::now();
+    std::thread::scope(|scope| {
+        for _ in 0..args.concurrency.max(1) {
+            scope.spawn(|| {
+                let mut buffer = vec![0u8; 64 * 1024];
+                loop {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    if index >= args.blocks {
+                        break;
+                    }
+                    let first = args.start + index as u64 * args.block_size;
+                    let last = first + args.block_size - 1;
+                    let mut request = agent
+                        .get(&args.url)
+                        .header("Range", format!("bytes={first}-{last}"));
+                    for (name, value) in &args.headers {
+                        request = request.header(name, value);
+                    }
+                    let clock = Instant::now();
+                    let outcome = match request.call() {
+                        Err(error) => Err(category(&error)),
+                        Ok(response) if response.status().as_u16() != 206 => Err("status"),
+                        Ok(response) => {
+                            let ttfb = clock.elapsed();
+                            let mut body = response
+                                .into_body()
+                                .into_with_config()
+                                .limit(u64::MAX)
+                                .reader();
+                            loop {
+                                match body.read(&mut buffer) {
+                                    Ok(0) => break Ok((ttfb, clock.elapsed())),
+                                    Ok(_) => {}
+                                    Err(_) => break Err("read"),
+                                }
+                            }
+                        }
+                    };
+                    let mut report = report
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    match outcome {
+                        Ok((ttfb, total)) => report.blocks.push(BlockTime {
+                            ttfb_ms: ttfb.as_secs_f64() * 1000.0,
+                            total_ms: total.as_secs_f64() * 1000.0,
+                        }),
+                        Err(error) => report.errors.push(error),
+                    }
+                }
+            });
+        }
+    });
+    let mut report = report
+        .into_inner()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    report.wall_ms = started.elapsed().as_secs_f64() * 1000.0;
+    report
+}
+
 #[cfg(windows)]
 fn thread_cpu_ms() -> Option<f64> {
     unsafe extern "system" {

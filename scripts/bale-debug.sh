@@ -49,6 +49,7 @@
 #   scripts/bale-debug.sh net [rcvbuf=4m|default]  socket receive buffer for Bale connections (saved; next launch)
 #   scripts/bale-debug.sh speed [check|test]     connection speed test state; check = read + due quick test; test = Test speed (accurate, manual)
 #   scripts/bale-debug.sh rusthttp               Rust HTTP spike: download the speed probe with bale_core's Rust HTTP/TLS stack for 10 s (JSON report)
+#   scripts/bale-debug.sh fetchbench [blocks]     Rust HTTP spike: while an original plays, 1 MiB range fetches (3 in flight) via C# then Rust then Rust then C#; latency summary
 #   scripts/bale-debug.sh gc                     GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
 #   scripts/bale-debug.sh gc latency <batch|interactive|sustained|default>  change latency app-wide now; default restores the saved pre-playback mode; playback acquires sustained automatically
 #   scripts/bale-debug.sh frame-delivery [native|managed|off]  next playback attempt's observer; default native, on aliases native; memory only (restart resets); no args = status
@@ -409,6 +410,8 @@ case "${1:-}" in
     ;;
   rusthttp)
     curl --fail-with-body -sS --max-time 40 -X POST "$BASE/rusthttp" ;;
+  fetchbench)
+    curl --fail-with-body -sS --max-time 300 -X POST "$BASE/fetchbench?blocks=${2-48}" ;;
   gc)
     value="${3-}"
     if [[ "$#" != 1 && ( "$#" != 3 || "${2-}" != latency || ! "$value" =~ ^(batch|interactive|sustained|default)$ ) ]]; then

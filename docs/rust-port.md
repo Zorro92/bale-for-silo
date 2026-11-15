@@ -125,6 +125,11 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    0.075 on the UI thread. 1080p AV1 at 2.3 Mbps used 0.52 cores, 0.42 of it dav1d. Scaling the spike's
    cost per byte, the network share at 18.6 Mbps is about 0.003 cores, around 1% of playback's CPU.
 
+   Owner's goal is control and lower latency/jitter, not CPU, so the next measurement is the player's
+   own fetch pattern: `bale-debug.sh fetchbench` replays HttpRangeStream's 1 MiB range requests, three
+   in flight, through the player's C# transport and through Rust, in four separate regions of the
+   playing file (C#, Rust, Rust, C#), and compares time-to-first-byte and block-time tails.
+
 ### Stays in C#
 
 - The XAML app (`src/Bale.Xbox`) and anything that drives XAML objects.

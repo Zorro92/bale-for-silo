@@ -385,6 +385,14 @@ internal sealed partial class DebugServer
                 return ("200 OK", await DebugConnectionSpeed.TestAsync(query.GetValueOrDefault("mode")));
             case ("POST", "/rusthttp"):
                 return await DebugRustHttp.RunAsync();
+            case ("POST", "/fetchbench"):
+            {
+                var blocks = int.TryParse(query.GetValueOrDefault("blocks"), out var count) && count is >= 8 and <= 256 ? count : 48;
+                var target = await OnFfmpegUiAsync(() => (CurrentPage(out _) as PlayerPage)?.DebugRangeMedia);
+                return target is { } media
+                    ? await DebugFetchBench.RunAsync(media.Media, media.Length, blocks)
+                    : ("409 Conflict", "no original playing through a range stream\n");
+            }
             case ("GET", "/gc"):
                 if (query.Count != 0)
                     return ("400 Bad Request", GcUsage);

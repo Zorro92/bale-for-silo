@@ -36,6 +36,9 @@ public sealed class PlaybackMedia
     }
 
     public Uri Uri { get; }
+
+    /// <summary>Debug only (the Rust HTTP spike): the plan's stream headers this transport adds. Never log them.</summary>
+    public IReadOnlyDictionary<string, string> DebugStreamHeaders => _headers;
     public string? MimeType { get; }
     public string? Container { get; }
     public string? Delivery { get; }

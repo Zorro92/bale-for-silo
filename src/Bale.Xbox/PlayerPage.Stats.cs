@@ -30,6 +30,10 @@ public sealed partial class PlayerPage
     internal string DebugLateFrameTrace => _attempt?.Media?.FrameDelivery?.DescribeLateFrameTrace()
         ?? "frame trace unavailable (no software video observer)\n";
 
+    /// <summary>The playing original's transport and length, for `bale-debug.sh fetchbench`; null without a range stream.</summary>
+    internal (Bale.Core.Playback.PlaybackMedia Media, long Length)? DebugRangeMedia =>
+        _attempt?.Media is { Stream: { } stream } media ? (media.Transport, stream.Length) : null;
+
     internal void ResetDebugLateFrameTrace() => _attempt?.Media?.FrameDelivery?.ResetLateFrameTrace();
 
     internal void ToggleDebugStats()
