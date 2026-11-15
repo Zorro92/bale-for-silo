@@ -84,7 +84,8 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    Kept in C#: `PlaybackMediaUrl` (a security check that must use the same `Uri` parser as the code
    that fetches), and `PlaybackStartBuilder`/`PlaybackReplan` (they reshape the C# request records
    the C# HTTP client sends; revisit only if requests move to Rust).
-5. **Meters and timing** (ported, console check pending): `PlaybackFrameDeliveryMeter`,
+5. **Meters and timing** (done, 56f5e34; verified on the console in 0.1.530: AV1 frame meter and
+   late-frame trace, a progressive seek re-anchor, a 190 Mbps speed test, live bandwidth): `PlaybackFrameDeliveryMeter`,
    `PlaybackLateFrameTrace`, `PlaybackFrameRecordProcessor`, `PlaybackThroughputMeter`,
    `ConnectionSpeedMeter` and `PlaybackSeekReanchor`. The per-frame and per-read meters use a second
    ABI (`abi_meters.rs`): Rust owns each meter behind a handle (a `SafeHandle` in C#, freed by the
