@@ -35,9 +35,11 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
 
 ### Slices, in order
 
-1. **Infrastructure** (in progress). Crate, CI (fmt, clippy, tests on Linux and Windows), packaging, C# loader,
-   ABI version check, one trivial function (`SoftwareDecodePolicy.NormalizeCodec`) end to end,
-   verified on the console.
+1. **Infrastructure** (done, 60c2c82, verified on the console in 0.1.524). Crate, CI (fmt, clippy
+   and tests on Linux; Windows build with static-CRT and export checks), packaging, C# loader, ABI
+   version check, `SoftwareDecodePolicy.NormalizeCodec` end to end. The C# test
+   `LowerCasesLikeToLowerInvariant` caught a casing difference (.NET leaves U+0130 unchanged), so
+   each ported string helper gets a test against the .NET original.
 2. **Decoder and route policy** (~850 lines): `SoftwareDecodePolicy`, `HardwareDecodeLimits`,
    `PlaybackRoutePolicy`, `ConsoleToneMapPolicy`, `DolbyVision7Policy`, `DisplayHdrPolicy`,
    `DisplayMatchPolicy`.
