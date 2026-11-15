@@ -92,7 +92,8 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    ABI (`abi_meters.rs`): Rust owns each meter behind a handle (a `SafeHandle` in C#, freed by the
    GC), calls take `#[repr(C)]` structs and numbers, no JSON. ABI version 2.
 
-6. **Detail helpers** (ported, console check pending; owner 2026-11-15):
+6. **Detail helpers** (done, 355a0e1; verified on the console in 0.1.531: six titles' Auto versions
+   and routes, last-played precedence over display matching; owner 2026-11-15):
    `PlaybackFormatting.SelectVersion` (with Auto's display match), `Decodes`, `IsDolbyVision` and
    `ResolutionRank`. `CanManage` and the version notice now compute these in Rust instead of taking
    C#'s answers. The resolution regex follows .NET's Unicode `\d`/`\b`
