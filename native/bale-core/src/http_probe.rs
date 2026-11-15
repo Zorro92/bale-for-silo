@@ -143,12 +143,40 @@ pub fn fetch_pattern(args: &FetchArgs) -> FetchReport {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_connect(Some(Duration::from_secs(10)))
-        .timeout_global(Some(Duration::from_secs(30)))
-        .http_status_as_error(false)
-        .build()
-        .into();
+    // One pool for the app's lifetime, like the C# HttpClient the player already warmed: a fresh pool
+    // per run made every run's first blocks pay TCP + TLS handshakes.
+    static AGENT: std::sync::OnceLock<ureq::Agent> = std::sync::OnceLock::new();
+    let agent = AGENT.get_or_init(|| {
+        ureq::Agent::config_builder()
+            .timeout_connect(Some(Duration::from_secs(10)))
+            .timeout_global(Some(Duration::from_secs(30)))
+            .http_status_as_error(false)
+            .max_idle_connections_per_host(8)
+            .build()
+            .into()
+    });
+    let request_for = |first: u64, last: u64| {
+        let mut request = agent
+            .get(&args.url)
+            .header("Range", format!("bytes={first}-{last}"));
+        for (name, value) in &args.headers {
+            request = request.header(name, value);
+        }
+        request
+    };
+    // Untimed warm-up: open one connection per worker at once, so the timed blocks start warm.
+    std::thread::scope(|scope| {
+        for _ in 0..args.concurrency.max(1) {
+            scope.spawn(|| {
+                if let Ok(response) = request_for(args.start, args.start).call() {
+                    let _ = std::io::copy(
+                        &mut response.into_body().into_reader(),
+                        &mut std::io::sink(),
+                    );
+                }
+            });
+        }
+    });
     let next = AtomicUsize::new(0);
     let report = Mutex::new(FetchReport::default());
     let started = Instant::now();
@@ -163,12 +191,7 @@ pub fn fetch_pattern(args: &FetchArgs) -> FetchReport {
                     }
                     let first = args.start + index as u64 * args.block_size;
                     let last = first + args.block_size - 1;
-                    let mut request = agent
-                        .get(&args.url)
-                        .header("Range", format!("bytes={first}-{last}"));
-                    for (name, value) in &args.headers {
-                        request = request.header(name, value);
-                    }
+                    let request = request_for(first, last);
                     let clock = Instant::now();
                     let outcome = match request.call() {
                         Err(error) => Err(category(&error)),

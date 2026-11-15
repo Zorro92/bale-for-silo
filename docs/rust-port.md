@@ -130,6 +130,13 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    in flight, through the player's C# transport and through Rust, in four separate regions of the
    playing file (C#, Rust, Rust, C#), and compares time-to-first-byte and block-time tails.
 
+   First run (0.1.534, 4K HEVC original playing, two rounds of 48 × 1 MiB, 3 in flight): medians were
+   equal (time to first byte ~153 ms for both: the round trip to the remote server), but Rust's tail was
+   worse (TTFB p95 290–615 ms vs 170–214; blocks over 500 ms: 3–4 per Rust run vs 0–1 per C# run). Each
+   Rust run built a fresh connection pool, so its first blocks paid TCP + TLS handshakes while C# reused
+   the player's warm pool. The benchmark now keeps one Rust pool for the app's lifetime and warms one
+   connection per worker before timing.
+
 ### Stays in C#
 
 - The XAML app (`src/Bale.Xbox`) and anything that drives XAML objects.
