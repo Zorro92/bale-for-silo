@@ -43,6 +43,9 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
   them no defaults and C# rejects unknown result keys, so a misnamed field fails loudly.
 - Doubles may be NaN or infinite (tests and replans produce them): both sides use .NET's named
   literals ("NaN", "Infinity"), never `double.ToString()` ("∞").
+- Results deserialized into C# records must carry every init-only property: System.Text.Json's
+  generated code sets a missing one to null/false, not to its C# initializer (this broke
+  `ConsoleEvidence.Default`'s empty lists until Rust wrote them all).
 - A C# `InvalidDataException` becomes `{"invalid_data": message}` and is rethrown unchanged.
 
 ### Slices, in order
@@ -56,7 +59,9 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    `HardwareDecodeLimits`, `PlaybackRoutePolicy`, `ConsoleToneMapPolicy`, `DolbyVision7Policy`,
    `DisplayHdrPolicy`, `DisplayMatchPolicy`. `PlaybackFormatting.Decodes`/`IsDolbyVision` stay C#
    for now; `CanManage` passes their answers in.
-3. **Capability claims:** `PlaybackCapabilities` / `ConsoleEvidence`, `PlaybackClaims`.
+3. **Capability claims** (ported, console check pending): `ConsoleEvidence` (baseline, probe-based
+   claims, AV1/MPEG-4 software claims). `PlaybackClaims` stays C#: it is Xbox-app glue (async probe,
+   UI thread, logging) around these calls.
 4. **Plan handling:** `PlaybackStartBuilder`, `PlaybackReplan`, `PlaybackVersionNotice`,
    `PlaybackOriginalAudioSelection`, `PlaybackSubtitles`, `PlaybackMediaUrl`.
 5. **Meters and timing:** `ConnectionSpeedMeter`, `PlaybackThroughputMeter`,

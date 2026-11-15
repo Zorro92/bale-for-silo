@@ -191,6 +191,43 @@ public class RustPortDifferentialTests
         }
     }
 
+    [Fact]
+    public void ConsoleEvidenceMatches()
+    {
+        Assert.Equal(Reference.ConsoleEvidence.EmbeddedBitmapSubtitleCodecs, ConsoleEvidence.EmbeddedBitmapSubtitleCodecs);
+        Assert.Equal(Full(Reference.ConsoleEvidence.Default), Full(ConsoleEvidence.Default));
+        Assert.Equal(Full(Reference.ConsoleEvidence.ForHardware(null)), Full(ConsoleEvidence.ForHardware(null)));
+        Assert.Same(ConsoleEvidence.Default, ConsoleEvidence.ForHardware(new HardwareDecodeLimits()));
+
+        var random = new Random(7);
+        DecodeSize?[] sizes = [null, null, new(1920, 1080), new(3840, 2160), new(4096, 2304), new(7680, 4320)];
+        for (var run = 0; run < Runs; run++)
+        {
+            var limits = new HardwareDecodeLimits(Pick(random, sizes), Pick(random, sizes), Pick(random, sizes), Pick(random, sizes),
+                Pick(random, sizes), Pick(random, sizes), Pick(random, sizes)) { Partial = random.Next(3) == 0 };
+            var hardware = random.Next(10) == 0 ? null : limits;
+            Assert.Equal(Full(Reference.ConsoleEvidence.ForHardware(hardware)), Full(ConsoleEvidence.ForHardware(hardware)));
+            int width = Pick(random, new[] { 1, 1280, 1920, 2560, 3840 }), height = Pick(random, new[] { 1, 720, 1080, 1440, 2160 });
+            Assert.Equal(Claims(Reference.ConsoleEvidence.BuildVideoDecode(hardware, width, height)),
+                Claims(ConsoleEvidence.BuildVideoDecode(hardware, width, height)));
+        }
+        Assert.Throws<ArgumentOutOfRangeException>(() => ConsoleEvidence.BuildVideoDecode(0, 1080));
+    }
+
+    private static string Claims(IEnumerable<VideoDecodeCapability> claims) => string.Join(" ; ", claims.Select(claim =>
+        $"{claim.Codec}/{claim.DecoderName}/{string.Join(",", claim.Profiles)}/{string.Join(",", claim.Levels)}/"
+        + $"{string.Join(",", claim.BitDepths)}/{claim.MaxWidth}x{claim.MaxHeight}@{claim.MaxFrameRate}/{claim.MaxBitrateKbps}/{claim.Hardware}"));
+
+    private static string Full(DeviceCapabilities device) => string.Join(" | ",
+        Project(device), Claims(device.VideoDecode), string.Join(",", device.AudioPassthroughCodecs), device.MaxChannels,
+        $"{device.Hdr.Hdr10}{device.Hdr.Hdr10Plus}{device.Hdr.Hlg}{string.Join(",", device.Hdr.DolbyVisionProfiles)}",
+        device.VideoEvidence, device.AudioEvidence, string.Join(",", device.HardwareVideoCodecs), device.PassthroughEntries.Count,
+        device.DisplayHdrEvidence, device.OriginalAudioTrackSelectionSupported,
+        $"{device.Subtitles.EmbeddedText}{device.Subtitles.SidecarText}{device.Subtitles.AssStyling}{device.Subtitles.EmbeddedBitmap}"
+        + $"{device.Subtitles.SidecarBitmap}{device.Subtitles.FontAttachments}",
+        string.Join(",", device.Subtitles.NativeEmbedded.Select(native =>
+            $"{native.Container}:{string.Join("+", native.Codecs)}:{native.TrackIdentity}:{native.AssStyling}:{native.FontAttachments}")));
+
     private static string Outcome(Action action)
     {
         try

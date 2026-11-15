@@ -38,21 +38,41 @@ pub struct AcceptedSize {
     height: i32,
 }
 
-#[derive(Serialize, Debug, PartialEq, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
 pub struct DecodeSize {
-    width: i32,
-    height: i32,
+    pub width: i32,
+    pub height: i32,
 }
 
-#[derive(Serialize, Debug, PartialEq)]
+/// `HardwareDecodeLimits`: the largest picture each decoder profile accepts, `None` when missing.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Default)]
 pub struct Limits {
-    h264: Option<DecodeSize>,
-    hevc_main: Option<DecodeSize>,
-    hevc_main10: Option<DecodeSize>,
-    vp9_profile0: Option<DecodeSize>,
-    vp9_profile2: Option<DecodeSize>,
-    vc1: Option<DecodeSize>,
-    mpeg2: Option<DecodeSize>,
+    pub h264: Option<DecodeSize>,
+    pub hevc_main: Option<DecodeSize>,
+    pub hevc_main10: Option<DecodeSize>,
+    pub vp9_profile0: Option<DecodeSize>,
+    pub vp9_profile2: Option<DecodeSize>,
+    pub vc1: Option<DecodeSize>,
+    pub mpeg2: Option<DecodeSize>,
+    /// The probe walk failed part-way; H.264/HEVC it did not measure keep the 1080p baseline.
+    pub partial: bool,
+}
+
+impl Limits {
+    /// True when no claimable profile reported a size.
+    pub fn is_empty(&self) -> bool {
+        [
+            self.h264,
+            self.hevc_main,
+            self.hevc_main10,
+            self.vp9_profile0,
+            self.vp9_profile2,
+            self.vc1,
+            self.mpeg2,
+        ]
+        .iter()
+        .all(Option::is_none)
+    }
 }
 
 /// Folds the probe's accepted (profile, output format, size) answers into the largest size per
@@ -89,5 +109,6 @@ pub fn from_accepted_sizes(accepted: &[AcceptedSize]) -> Limits {
         vp9_profile2: largest(VP9_PROFILE2, P010),
         vc1: largest(VC1, NV12),
         mpeg2: largest(MPEG2, NV12),
+        partial: false,
     }
 }

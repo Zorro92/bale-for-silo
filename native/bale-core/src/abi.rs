@@ -86,7 +86,7 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
     use crate::models::{
         Checked, DeviceCapabilities, DisplayMode, FileVersion, HdrCapabilities, PlaybackPlan,
     };
-    use crate::{display, dolby_vision7, hardware, route, software_decode, tone_map};
+    use crate::{display, dolby_vision7, evidence, hardware, route, software_decode, tone_map};
     use serde::Deserialize;
 
     #[derive(Deserialize)]
@@ -132,6 +132,16 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         sizes: Vec<hardware::AcceptedSize>,
     }
     #[derive(Deserialize)]
+    struct VideoDecodeArgs {
+        hardware: Option<hardware::Limits>,
+        av1_max_width: i32,
+        av1_max_height: i32,
+    }
+    #[derive(Deserialize)]
+    struct Hardware {
+        hardware: Option<hardware::Limits>,
+    }
+    #[derive(Deserialize)]
     struct Hdr10Mode {
         current: DisplayMode,
         modes: Vec<DisplayMode>,
@@ -152,6 +162,16 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         "software_decode.without_failed_fallbacks" => {
             with_json(name, input, software_decode::without_failed_fallbacks)
         }
+        "evidence.baseline" => with_json(name, input, |(): ()| evidence::baseline()),
+        "evidence.embedded_bitmap_subtitle_codecs" => with_json(name, input, |(): ()| {
+            evidence::EMBEDDED_BITMAP_SUBTITLE_CODECS
+        }),
+        "evidence.for_hardware" => with_json(name, input, |a: Hardware| {
+            evidence::for_hardware(a.hardware.as_ref())
+        }),
+        "evidence.video_decode" => with_json(name, input, |a: VideoDecodeArgs| {
+            evidence::video_decode(a.hardware.as_ref(), a.av1_max_width, a.av1_max_height)
+        }),
         "route.decide" => with_json(name, input, route::decide),
         "route.is_matroska" => with_json(name, input, |c: Option<String>| {
             route::is_matroska(c.as_deref())

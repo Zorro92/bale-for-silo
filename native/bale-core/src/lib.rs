@@ -11,6 +11,7 @@ pub mod abi;
 pub mod display;
 pub mod dolby_vision7;
 pub mod dotnet;
+pub mod evidence;
 pub mod hardware;
 pub mod models;
 pub mod route;
