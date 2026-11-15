@@ -35,7 +35,7 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
 
 ### Slices, in order
 
-1. **Infrastructure.** Crate, CI (fmt, clippy, tests on Linux and Windows), packaging, C# loader,
+1. **Infrastructure** (in progress). Crate, CI (fmt, clippy, tests on Linux and Windows), packaging, C# loader,
    ABI version check, one trivial function (`SoftwareDecodePolicy.NormalizeCodec`) end to end,
    verified on the console.
 2. **Decoder and route policy** (~850 lines): `SoftwareDecodePolicy`, `HardwareDecodeLimits`,

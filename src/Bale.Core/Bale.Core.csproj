@@ -4,7 +4,21 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Bale.Core</RootNamespace>
     <IsAotCompatible>true</IsAotCompatible>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <!-- Rust logic (native/bale-core, docs/rust-port.md). Linux builds (tests, bale-cli) copy the
+       library cargo builds in native/bale-core (release, locked); the Xbox package
+       carries bale_core.dll itself (Bale.Xbox.csproj). -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <BaleCoreNativeLibrary>$(MSBuildThisFileDirectory)../../native/bale-core/target/release/libbale_core.so</BaleCoreNativeLibrary>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(BaleCoreNativeLibrary)' != ''">
+    <None Include="$(BaleCoreNativeLibrary)" Link="libbale_core.so" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+  <Target Name="CheckBaleCoreNative" BeforeTargets="BeforeBuild" Condition="'$(BaleCoreNativeLibrary)' != '' And !Exists('$(BaleCoreNativeLibrary)')">
+    <Error Text="libbale_core.so is missing: run `cargo build --release --locked` in native/bale-core first." />
+  </Target>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Kiota.Bundle" Version="2.1.2" />

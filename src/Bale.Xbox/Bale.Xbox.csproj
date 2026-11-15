@@ -63,6 +63,8 @@
     <Content Include="$(PkgFFmpegInteropX_UWP_Lib)\SOURCES.txt" Link="Licenses\FFmpegInteropX\SOURCES.txt" CopyToOutputDirectory="PreserveNewest" />
     <!-- Rust GPU/media layer (native/bale-gpu), built by CI with cargo before msbuild. -->
     <Content Include="..\..\native\bale-gpu\target\x86_64-pc-windows-msvc\release\bale_gpu.dll" Link="bale_gpu.dll" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Rust port of Bale.Core's logic (native/bale-core, docs/rust-port.md), built by CI with cargo before msbuild. -->
+    <Content Include="..\..\native\bale-core\target\x86_64-pc-windows-msvc\release\bale_core.dll" Link="bale_core.dll" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\FFmpegInteropX-LICENSE.txt" Link="Licenses\FFmpegInteropX.txt" CopyToOutputDirectory="PreserveNewest" />
     <!-- libass, FreeType, FriBidi, HarfBuzz: static in bale_gpu.dll, built by scripts/build-libass-native.ps1. -->
     <Content Include="$(BaleLibassDir)\licenses\*.txt" Link="Licenses\libass\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

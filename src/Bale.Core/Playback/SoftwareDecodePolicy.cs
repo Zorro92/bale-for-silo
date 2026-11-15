@@ -1,3 +1,5 @@
+using Bale.Core.Native;
+
 namespace Bale.Core.Playback;
 
 /// <summary>Bundled decoder policy, separate from the console's measured system decoders.</summary>
@@ -38,17 +40,15 @@ public static class SoftwareDecodePolicy
         "pcm_f32le", "pcm_f32be", "pcm_f64le", "pcm_f64be", "pcm_u8", "pcm_bluray", "pcm_dvd",
     });
 
-    public static string? NormalizeCodec(string? codec) => codec?.Trim().ToLowerInvariant() switch
-    {
-        null or "" => null,
-        "h265" or "h.265" or "x265" => "hevc",
-        "h.264" or "avc" or "x264" => "h264",
-        "vp09" => "vp9",
-        "e-ac-3" or "ec-3" => "eac3",
-        "mlp fba" => "truehd",
-        { } value when value.StartsWith("pcm_", StringComparison.Ordinal) => "pcm",
-        var value => value,
-    };
+    /// <summary>
+    /// Trimmed, lower-cased codec name with common aliases folded (h265/x265 → hevc, avc → h264,
+    /// every pcm_* → pcm); null for a missing or blank name. Implemented in Rust
+    /// (native/bale-core/src/software_decode.rs).
+    /// </summary>
+    public static string? NormalizeCodec(string? codec) => codec is null
+        ? null
+        : BaleCoreNative.Call("software_decode.normalize_codec", codec, BaleCoreJson.Default.String,
+            BaleCoreJson.Default.String);
 
     /// <summary>
     /// Software video (dav1d AV1 and FFmpeg MPEG-4 Part 2) is measured only on Xbox Series

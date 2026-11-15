@@ -95,6 +95,16 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: '**/packages.lock.json'
+      # Rust port of Bale.Core's logic (docs/rust-port.md). Bale.Core copies libbale_core.so into the
+      # test and CLI outputs, so it is built before them. Small (serde only), so no cache.
+      - name: Check, test and build Rust core logic
+        working-directory: native/bale-core
+        run: |
+          rustup component add rustfmt clippy
+          cargo fmt --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --release --locked
+          cargo build --release --locked
       - run: dotnet test tests/Bale.Core.Tests --configuration Release
       - run: dotnet build tools/Bale.Cli --configuration Release
 
@@ -353,6 +363,28 @@ jobs:
           $dependents
           if ($dependents -match '(?i)vcruntime140(?:_\d+)?d?\.dll|msvcp140(?:_\d+)?d?\.dll|ucrtbased?\.dll') { throw 'bale_gpu.dll must link the CRT statically' }
 
+      # Rust port of Bale.Core's logic (native/bale-core): serde only, so built every run without a cache.
+      - name: Build Rust core logic
+        shell: pwsh
+        run: |
+          Push-Location native/bale-core
+          rustup target add x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'rustup target add failed' }
+          cargo build --release --locked --target x86_64-pc-windows-msvc
+          $cargoExit = $LASTEXITCODE
+          Pop-Location
+          if ($cargoExit -ne 0) { throw 'cargo build failed' }
+          $dll = 'native/bale-core/target/x86_64-pc-windows-msvc/release/bale_core.dll'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -property installationPath
+          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe |
+            Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+          if (-not $dumpbin) { throw 'dumpbin.exe is required to inspect bale_core.dll' }
+          $dependents = & $dumpbin.FullName /dependents $dll
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect bale_core.dll dependents' }
+          $dependents
+          if ($dependents -match '(?i)vcruntime140(?:_\d+)?d?\.dll|msvcp140(?:_\d+)?d?\.dll|ucrtbased?\.dll') { throw 'bale_core.dll must link the CRT statically' }
+
       - name: Save Rust build cache
         if: steps.gpu-cache.outputs.cache-hit != 'true' && steps.rust-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
@@ -457,6 +489,40 @@ jobs:
               }
             }
             Write-Output "Packaged bale_gpu.dll: $($required.Count) live exports present, $($removed.Count) removed exports absent"
+          } finally { Remove-Item $inspection -Recurse -Force }
+
+      - name: Check packaged bale_core.dll
+        shell: pwsh
+        run: |
+          $package = Get-ChildItem out -Recurse -Filter '*.msix' |
+            Where-Object { $_.FullName -notmatch '[\\/]Dependencies[\\/]' } | Select-Object -First 1
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $inspection = Join-Path $env:RUNNER_TEMP "bale-core-exports-$([guid]::NewGuid())"
+          New-Item -ItemType Directory $inspection | Out-Null
+          $packagedDll = Join-Path $inspection 'bale_core.dll'
+          try {
+            $zip = [IO.Compression.ZipFile]::OpenRead($package.FullName)
+            try {
+              $entry = $zip.GetEntry('bale_core.dll')
+              if (-not $entry) { throw 'bale_core.dll missing from the MSIX' }
+              [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $packagedDll)
+            } finally { $zip.Dispose() }
+            $builtDll = 'native/bale-core/target/x86_64-pc-windows-msvc/release/bale_core.dll'
+            if ((Get-FileHash $packagedDll).Hash -ne (Get-FileHash $builtDll).Hash) {
+              throw 'The MSIX must contain the built bale_core.dll unchanged'
+            }
+            $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+            $vs = & $vswhere -latest -products * -property installationPath
+            $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe |
+              Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+            $exports = & $dumpbin.FullName /exports $packagedDll
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect packaged bale_core.dll exports' }
+            foreach ($symbol in 'bale_core_abi_version', 'bale_core_call', 'bale_core_free') {
+              if (-not ($exports | Select-String -Pattern "\s$([regex]::Escape($symbol))\s*$" -Quiet)) {
+                throw "Packaged bale_core.dll is missing export $symbol"
+              }
+            }
+            Write-Output 'Packaged bale_core.dll: exports present'
           } finally { Remove-Item $inspection -Recurse -Force }
 
       - name: Save Rust GPU package files
