@@ -62,11 +62,14 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
 3. **Capability claims** (done, d3050cb; routes verified on the console in 0.1.526, same six titles
    as slice 2). Open: the first launch after installing 0.1.526
    died silently (no log line, no dump) during the first debug `play`, after the debug server had
-   timed out twice. Follow-up (same day): three cold stop/launch cycles with the same commands did
-   not crash. Reinstalling 0.1.526 (stopped or running) then left debug port 8790 silently dropped
-   (connect timeout, not refused) while Bale ran normally and logged "listening"; relaunch and
-   reinstall did not clear it. That points at the console's per-app firewall state after a package
-   update rather than the port; a console restart is the next step (owner deferred it). `ConsoleEvidence` (baseline, probe-based
+   timed out twice. Follow-up (same day): three cold stop/launch cycles with
+   the same commands did not crash. Reinstalling the *same* version 0.1.526 then left debug port 8790
+   silently dropped while Bale ran normally and logged "listening"; relaunches, further reinstalls
+   and a full console restart did not clear it, and the PC side was ruled out. Installing a newer
+   build (0.1.527, a CI re-run of the same commit) fixed it at once, and its first launch played
+   normally. So same-version reinstalls break the package's inbound networking until the next real
+   update; the Rust crates do no networking. The first-launch exit stays unexplained and has not
+   recurred. `ConsoleEvidence` (baseline, probe-based
    claims, AV1/MPEG-4 software claims). `PlaybackClaims` stays C#: it is Xbox-app glue (async probe,
    UI thread, logging) around these calls.
 4. **Plan handling:** `PlaybackStartBuilder`, `PlaybackReplan`, `PlaybackVersionNotice`,
