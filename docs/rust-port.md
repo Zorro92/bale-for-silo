@@ -108,6 +108,17 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    as fast for no more CPU; otherwise remove the spike (ureq, `http_probe.rs`, `RustHttpProbe`, the
    debug route) and keep the streams in C#.
 
+   Spike results (console, 0.1.532, 2026-11-15, remote server over wired Ethernet, app idle on Browse):
+
+   | Run | Throughput | CPU over a 12 s sample |
+   |---|---|---|
+   | C# `speed test` 1 / 2 | 149 / 229 Mbps (last 3 s) | 0.017 / 0.035 cores (process) |
+   | Rust `rusthttp` 1 / 2 | 177 avg, 189–190 Mbps last 3 s | 0.012 cores (process); thread 140–250 ms per 10 s |
+
+   Rust connects from the app container (TLS with bundled roots works) and matches C# throughput, for
+   somewhat less CPU per byte. At real stream bitrates (10–80 Mbps) either costs well under 0.01 cores.
+   A third Rust run got HTTP 429: the probe endpoint rate-limits repeated tests.
+
 ### Stays in C#
 
 - The XAML app (`src/Bale.Xbox`) and anything that drives XAML objects.
