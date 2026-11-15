@@ -8,4 +8,11 @@
 //! media titles.
 
 pub mod abi;
+pub mod display;
+pub mod dolby_vision7;
+pub mod dotnet;
+pub mod hardware;
+pub mod models;
+pub mod route;
 pub mod software_decode;
+pub mod tone_map;

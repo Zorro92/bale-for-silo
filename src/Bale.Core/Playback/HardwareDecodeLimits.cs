@@ -1,3 +1,5 @@
+using Bale.Core.Native;
+
 namespace Bale.Core.Playback;
 
 /// <summary>A picture size a hardware decoder accepts.</summary>
@@ -35,9 +37,7 @@ public sealed record HardwareDecodeLimits(DecodeSize? H264 = null, DecodeSize? H
 
     /// <summary>A short log name for a claimable decoder profile, or "other".</summary>
     public static string ProfileName(Guid profile) =>
-        profile == H264Profile ? "h264" : profile == HevcMainProfile ? "hevc-main" : profile == HevcMain10Profile ? "hevc-main10"
-        : profile == Vp9Profile0Profile ? "vp9-profile0" : profile == Vp9Profile2Profile ? "vp9-profile2"
-        : profile == Vc1Profile ? "vc1" : profile == Mpeg2Profile ? "mpeg2" : "other";
+        BaleCoreNative.Call("hardware.profile_name", profile.ToString(), BaleCoreJson.Default.String, BaleCoreJson.Default.String);
 
     /// <summary>True when no claimable profile reported a size.</summary>
     public bool IsEmpty => H264 is null && HevcMain is null && HevcMain10 is null && Vp9Profile0 is null && Vp9Profile2 is null
@@ -46,25 +46,22 @@ public sealed record HardwareDecodeLimits(DecodeSize? H264 = null, DecodeSize? H
     /// <summary>
     /// Folds the probe's accepted (profile, output format, size) answers into the largest size per
     /// profile. An 8-bit profile counts only with NV12 output and a 10-bit one only with P010, the
-    /// formats the playback pipeline uses for those depths. Other profiles are ignored.
+    /// formats the playback pipeline uses for those depths. Other profiles are ignored. Implemented
+    /// in Rust (native/bale-core/src/hardware.rs, which keeps its own copy of the profile GUIDs).
     /// </summary>
-    public static HardwareDecodeLimits FromAcceptedSizes(IEnumerable<(Guid Profile, int Format, int Width, int Height)> accepted)
-    {
-        var sizes = accepted.ToArray();
-        return new(Largest(H264Profile, Nv12), Largest(HevcMainProfile, Nv12), Largest(HevcMain10Profile, P010),
-            Largest(Vp9Profile0Profile, Nv12), Largest(Vp9Profile2Profile, P010),
-            Largest(Vc1Profile, Nv12), Largest(Mpeg2Profile, Nv12));
-
-        DecodeSize? Largest(Guid profile, int format)
+    public static HardwareDecodeLimits FromAcceptedSizes(IEnumerable<(Guid Profile, int Format, int Width, int Height)> accepted) =>
+        BaleCoreNative.Call("hardware.from_accepted_sizes", writer =>
         {
-            DecodeSize? largest = null;
-            foreach (var size in sizes)
+            writer.WriteStartArray("sizes");
+            foreach (var size in accepted)
             {
-                if (size.Profile != profile || size.Format != format || size.Width <= 0 || size.Height <= 0) continue;
-                if (largest is not { } current || (long)size.Width * size.Height > (long)current.Width * current.Height)
-                    largest = new(size.Width, size.Height);
+                writer.WriteStartObject();
+                writer.WriteString("profile", size.Profile.ToString());
+                writer.WriteNumber("format", size.Format);
+                writer.WriteNumber("width", size.Width);
+                writer.WriteNumber("height", size.Height);
+                writer.WriteEndObject();
             }
-            return largest;
-        }
-    }
+            writer.WriteEndArray();
+        }, BaleCoreJson.Default.HardwareDecodeLimits);
 }

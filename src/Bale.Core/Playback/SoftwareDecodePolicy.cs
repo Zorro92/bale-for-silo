@@ -1,49 +1,39 @@
+using System.Text.Json;
 using Bale.Core.Native;
 
 namespace Bale.Core.Playback;
 
-/// <summary>Bundled decoder policy, separate from the console's measured system decoders.</summary>
+/// <summary>
+/// Bundled decoder policy, separate from the console's measured system decoders. Implemented in Rust
+/// (native/bale-core/src/software_decode.rs), which holds the lists and the reasons behind them.
+/// </summary>
 public static class SoftwareDecodePolicy
 {
-    // The project owner maintains this allowlist. Add no other software video codec without them.
-    public static IReadOnlyList<string> VideoCodecs { get; } = Array.AsReadOnly(new[] { "av1", "mpeg4" });
+    private static readonly SoftwareDecodeLists Lists =
+        BaleCoreNative.Call("software_decode.lists", (string?)null, BaleCoreJson.Default.String, BaleCoreJson.Default.SoftwareDecodeLists);
 
-    // MPEG-4 Part 2 was measured through FFmpeg's ordinary software output on original files,
-    // not fragmented MP4 or AdaptiveMediaSource. Keep it off both packaged deliveries.
-    public static IReadOnlyList<string> OriginalOnlyVideoCodecs { get; } = Array.AsReadOnly(new[] { "mpeg4" });
-    public static IReadOnlyList<string> FfmpegOnlyContainers { get; } = Array.AsReadOnly(new[] { "avi" });
+    /// <summary>The owner-maintained software video allowlist (AV1, MPEG-4 Part 2). Add none without the owner.</summary>
+    public static IReadOnlyList<string> VideoCodecs { get; } = Array.AsReadOnly(Lists.VideoCodecs);
 
-    // Codecs the system (hardware) decoders may take. A claim for one still needs the fixed
-    // baseline or the console's decoder probe (ConsoleEvidence.ForHardware).
-    public static IReadOnlyList<string> SystemVideoCodecs { get; } = Array.AsReadOnly(new[] { "h264", "hevc", "vp9", "vc1", "mpeg2video" });
+    /// <summary>Software video measured only on original files, never on fragmented MP4 or HLS.</summary>
+    public static IReadOnlyList<string> OriginalOnlyVideoCodecs { get; } = Array.AsReadOnly(Lists.OriginalOnlyVideoCodecs);
+    public static IReadOnlyList<string> FfmpegOnlyContainers { get; } = Array.AsReadOnly(Lists.FfmpegOnlyContainers);
 
-    // Hardware codecs that play only through FFmpeg's demuxer feeding the system decoder.
-    // Windows' own WebM source opened VP9 but never left Paused at 0 s, and its MP4 source and
-    // AdaptiveMediaSource are untested for VP9 (docs/player-plan.md). So every direct VP9 file
-    // takes the FFmpeg demuxer, HLS never carries VP9, and "ffmpeg off" withdraws the claim.
-    // VC-1/MPEG-2 use the same original-file boundary: only their compressed FFmpeg providers
-    // feeding system decoders are verified; no Windows container-source or HLS claim follows.
-    public static IReadOnlyList<string> DemuxedVideoCodecs { get; } = Array.AsReadOnly(new[] { "vp9", "vc1", "mpeg2video" });
+    /// <summary>Codecs the system (hardware) decoders may take, given the baseline or the decoder probe.</summary>
+    public static IReadOnlyList<string> SystemVideoCodecs { get; } = Array.AsReadOnly(Lists.SystemVideoCodecs);
 
-    // Measured Media Foundation playback, not merely installed decoder registrations.
-    public static IReadOnlyList<string> SystemAudioCodecs { get; } = Array.AsReadOnly(new[] { "aac", "ac3", "eac3", "mp3" });
+    /// <summary>Hardware codecs that play only through FFmpeg's demuxer feeding the system decoder.</summary>
+    public static IReadOnlyList<string> DemuxedVideoCodecs { get; } = Array.AsReadOnly(Lists.DemuxedVideoCodecs);
 
-    // silo-server capabilities_v3.go normalizeCodecV3 / protocol_v3.go spellings. Decode, not passthrough.
-    // The server compares audio claims to the stored ffprobe codec name exactly (after lowercasing),
-    // so LPCM needs each pcm_* spelling. PCM and MPEG-1 Layer II decode in FFmpeg: Windows' own MP4
-    // source was never verified with LPCM or MP2, so those files take the FFmpeg route like DTS.
-    // "pcm" is the route's normalized name for every pcm_* (NormalizeCodec).
-    public static IReadOnlyList<string> AudioCodecs { get; } = Array.AsReadOnly(new[]
-    {
-        "dts", "dts_hd", "truehd", "flac", "opus", "vorbis", "alac", "mp2",
-        "pcm", "pcm_s16le", "pcm_s16be", "pcm_s24le", "pcm_s24be", "pcm_s32le", "pcm_s32be",
-        "pcm_f32le", "pcm_f32be", "pcm_f64le", "pcm_f64be", "pcm_u8", "pcm_bluray", "pcm_dvd",
-    });
+    /// <summary>Measured Media Foundation audio playback, not merely installed decoder registrations.</summary>
+    public static IReadOnlyList<string> SystemAudioCodecs { get; } = Array.AsReadOnly(Lists.SystemAudioCodecs);
+
+    /// <summary>FFmpeg audio decode (not passthrough), in the server's exact spellings including each pcm_*.</summary>
+    public static IReadOnlyList<string> AudioCodecs { get; } = Array.AsReadOnly(Lists.AudioCodecs);
 
     /// <summary>
     /// Trimmed, lower-cased codec name with common aliases folded (h265/x265 → hevc, avc → h264,
-    /// every pcm_* → pcm); null for a missing or blank name. Implemented in Rust
-    /// (native/bale-core/src/software_decode.rs).
+    /// every pcm_* → pcm); null for a missing or blank name.
     /// </summary>
     public static string? NormalizeCodec(string? codec) => codec is null
         ? null
@@ -51,44 +41,64 @@ public static class SoftwareDecodePolicy
             BaleCoreJson.Default.String);
 
     /// <summary>
-    /// Software video (dav1d AV1 and FFmpeg MPEG-4 Part 2) is measured only on Xbox Series
-    /// (Zen 2 with AVX2). Xbox One, One S and One X have 1.75–2.3 GHz Jaguar cores without AVX2,
-    /// where dav1d drops to its SSSE3 paths, so they
-    /// claim no software video and the server transcodes it. A missing AVX2 alone also excludes it;
-    /// an unknown device form keeps the claim.
+    /// Software video is measured only on Xbox Series (Zen 2 with AVX2): Xbox One consoles and any
+    /// CPU without AVX2 claim none, and the server transcodes. An unknown device form keeps the claim.
     /// </summary>
     public static bool SoftwareVideoSupported(bool avx2, string? deviceForm) =>
-        avx2 && deviceForm?.TrimStart().StartsWith("Xbox One", StringComparison.OrdinalIgnoreCase) != true;
+        BaleCoreNative.Call("software_decode.video_supported", writer =>
+        {
+            writer.WriteBoolean("avx2", avx2);
+            writer.Text("device_form", deviceForm);
+        }, BaleCoreJson.Default.Boolean);
 
     /// <summary>Drops only the bundled software video claims; audio fallbacks stay.</summary>
-    public static DeviceCapabilities WithoutSoftwareVideo(DeviceCapabilities device) => device with
-    {
-        VideoCodecs = device.VideoCodecs.Where(codec => !VideoCodecs.Contains(codec)).ToArray(),
-        VideoDecode = device.VideoDecode.Where(decode => decode.Hardware).ToArray(),
-    };
+    public static DeviceCapabilities WithoutSoftwareVideo(DeviceCapabilities device) =>
+        FilterDevice(device, "without_software_video");
 
     /// <summary>AV1 alone needs the zero-copy runtime; ordinary MPEG-4 software output does not.</summary>
-    public static DeviceCapabilities ForSoftwareVideo(DeviceCapabilities device, bool supported, bool av1ZeroCopy)
-        => !supported ? WithoutSoftwareVideo(device) : av1ZeroCopy ? device : device with
+    public static DeviceCapabilities ForSoftwareVideo(DeviceCapabilities device, bool supported, bool av1ZeroCopy) =>
+        FilterDevice(device, "for_software_video", writer =>
         {
-            VideoCodecs = device.VideoCodecs.Where(codec => codec != "av1").ToArray(),
-            VideoDecode = device.VideoDecode.Where(decode => decode.Codec != "av1").ToArray(),
-        };
+            writer.WriteBoolean("supported", supported);
+            writer.WriteBoolean("av1_zero_copy", av1ZeroCopy);
+        });
 
-    /// <summary>Drops every claim that needs FFmpeg: software video, demuxer-only video and fallback audio.</summary>
-    public static DeviceCapabilities WithoutFallbacks(DeviceCapabilities device) => device with
+    /// <summary>
+    /// Drops every claim that needs FFmpeg: software video, demuxer-only video and fallback audio,
+    /// and the executors built on it (DV base layers, dynamic range mapping, progressive).
+    /// </summary>
+    public static DeviceCapabilities WithoutFallbacks(DeviceCapabilities device) => FilterDevice(device, "without_fallbacks");
+
+    private static DeviceCapabilities FilterDevice(DeviceCapabilities device, string filter, Action<Utf8JsonWriter>? options = null)
     {
-        VideoCodecs = device.VideoCodecs.Where(codec => !VideoCodecs.Contains(codec) && !DemuxedVideoCodecs.Contains(codec)).ToArray(),
-        VideoDecode = device.VideoDecode.Where(decode => decode.Hardware && !DemuxedVideoCodecs.Contains(decode.Codec)).ToArray(),
-        AudioDecodeCodecs = device.AudioDecodeCodecs.Where(codec => !AudioCodecs.Contains(codec)).ToArray(),
-        Containers = device.Containers.Where(container => !FfmpegOnlyContainers.Contains(container)).ToArray(),
-        // The base-layer claim relies on the FFmpeg demuxer for DV-tagged MP4.
-        OriginalDolbyVision8BaseLayerSupported = false,
-        OriginalDolbyVision7BaseLayerSupported = false,
-        OriginalDynamicRangeMappingSupported = false,
-        // The progressive executor is FFmpeg's non-seekable input; Windows' sources need a length.
-        ProgressiveSupported = false,
-    };
+        var result = BaleCoreNative.Call("software_decode.filter_device", writer =>
+        {
+            writer.WriteStartObject("device");
+            writer.Strings("video_codecs", device.VideoCodecs);
+            writer.VideoDecode("video_decode", device.VideoDecode);
+            writer.Strings("audio_decode_codecs", device.AudioDecodeCodecs);
+            writer.Strings("containers", device.Containers);
+            writer.WriteEndObject();
+            writer.WriteString("filter", filter);
+            options?.Invoke(writer);
+        }, BaleCoreJson.Default.FilteredDevice);
+        var filtered = device with
+        {
+            VideoCodecs = result.VideoCodecs,
+            VideoDecode = result.VideoDecode.Select(index => device.VideoDecode[index]).ToArray(),
+            AudioDecodeCodecs = result.AudioDecodeCodecs,
+            Containers = result.Containers,
+        };
+        return result.DropFfmpegExecutors
+            ? filtered with
+            {
+                OriginalDolbyVision8BaseLayerSupported = false,
+                OriginalDolbyVision7BaseLayerSupported = false,
+                OriginalDynamicRangeMappingSupported = false,
+                ProgressiveSupported = false,
+            }
+            : filtered;
+    }
 
     /// <summary>
     /// Checks the opened source's video streams against the route. Every stream must use the route's
@@ -98,50 +108,82 @@ public static class SoftwareDecodePolicy
     /// When supplied, softwareCodec also keeps AV1 zero-copy and ordinary MPEG-4 output separate.
     /// </summary>
     public static bool VideoDecodersAllowed(bool softwareVideo,
-        IReadOnlyCollection<(string? Codec, bool SoftwareDecoder, bool SystemDecoder)> streams, string? softwareCodec = null)
-    {
-        if (softwareVideo && streams.Count == 0) return false;
-        return streams.All(stream => softwareVideo
-            ? NormalizeCodec(stream.Codec) is { } codec && VideoCodecs.Contains(codec) && stream.SoftwareDecoder
-                && (softwareCodec is null || codec == softwareCodec)
-            : stream.SystemDecoder);
-    }
+        IReadOnlyCollection<(string? Codec, bool SoftwareDecoder, bool SystemDecoder)> streams, string? softwareCodec = null) =>
+        BaleCoreNative.Call("software_decode.video_decoders_allowed", writer =>
+        {
+            writer.WriteBoolean("software_video", softwareVideo);
+            writer.WriteStartArray("streams");
+            foreach (var stream in streams)
+            {
+                writer.WriteStartObject();
+                writer.Text("codec", stream.Codec);
+                writer.WriteBoolean("software_decoder", stream.SoftwareDecoder);
+                writer.WriteBoolean("system_decoder", stream.SystemDecoder);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            writer.Text("software_codec", softwareCodec);
+        }, BaleCoreJson.Default.Boolean);
 
+    /// <summary>
+    /// The replan after a failed FFmpeg route: withdraws the claims that route depended on (software
+    /// video, its demuxer-only codec, its FFmpeg audio, FFmpeg-only containers, a DV8 base layer).
+    /// </summary>
     internal static PlaybackStartRequestV3 WithoutFailedFallbacks(PlaybackStartRequestV3 start, PlaybackRouteDecision route)
     {
-        // A software route withdraws the software video codecs. A system-decoder route withdraws its
-        // own codec only when that codec exists here solely through this FFmpeg route (VP9).
-        bool KeepVideo(string codec) => route.SoftwareVideo ? !VideoCodecs.Contains(codec)
-            : codec != route.VideoCodec || !DemuxedVideoCodecs.Contains(codec);
-        // Claims carry exact spellings (pcm_s24le); the route carries the normalized one (pcm).
-        bool KeepAudio(string codec) => !route.SoftwareAudio || NormalizeCodec(codec) != route.AudioCodec;
-        var capabilities = start.ClientCapabilities with
+        var capabilities = start.ClientCapabilities;
+        var deliveries = start.ClientPlaybackContext.Deliveries.ToArray();
+        var result = BaleCoreNative.Call("software_decode.without_failed_fallbacks", writer =>
         {
-            CodecsVideo = start.ClientCapabilities.CodecsVideo.Where(KeepVideo).ToArray(),
-            CodecsVideoHardware = start.ClientCapabilities.CodecsVideoHardware.Where(KeepVideo).ToArray(),
-            VideoDecode = start.ClientCapabilities.VideoDecode.Where(decode => KeepVideo(decode.Codec)).ToArray(),
-            CodecsAudio = start.ClientCapabilities.CodecsAudio.Where(KeepAudio).ToArray(),
-            Containers = start.ClientCapabilities.Containers.Where(container => !FfmpegOnlyContainers.Contains(container)).ToArray(),
-        };
-        var context = start.ClientPlaybackContext with
-        {
-            Deliveries = start.ClientPlaybackContext.Deliveries.ToDictionary(pair => pair.Key, pair => pair.Value with
+            writer.WriteStartObject("start");
+            writer.Strings("codecs_video", capabilities.CodecsVideo);
+            writer.Strings("codecs_video_hardware", capabilities.CodecsVideoHardware);
+            writer.VideoDecode("video_decode", capabilities.VideoDecode);
+            writer.Strings("codecs_audio", capabilities.CodecsAudio);
+            writer.Strings("containers", capabilities.Containers);
+            writer.WriteStartArray("deliveries");
+            foreach (var (key, delivery) in deliveries)
             {
-                VideoCodecs = pair.Value.VideoCodecs.Where(KeepVideo).ToArray(),
-                AudioDecodeCodecs = pair.Value.AudioDecodeCodecs.Where(KeepAudio).ToArray(),
-                Containers = pair.Value.Containers.Where(container => !FfmpegOnlyContainers.Contains(container)).ToArray(),
-                // A failed base-layer mount must not be offered again: the server then remuxes or transcodes.
-                ValidatedClaims = route.DolbyVisionBaseLayer
-                    ? pair.Value.ValidatedClaims.Where(claim => claim != PlaybackProtocol.ClientDolbyVision8BaseLayerClaim).ToArray()
-                    : pair.Value.ValidatedClaims,
-            }),
-        };
+                writer.WriteStartObject();
+                writer.WriteString("key", key);
+                writer.Strings("video_codecs", delivery.VideoCodecs);
+                writer.Strings("audio_decode_codecs", delivery.AudioDecodeCodecs);
+                writer.Strings("containers", delivery.Containers);
+                writer.Strings("validated_claims", delivery.ValidatedClaims);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            writer.Strings("client_features", start.ClientFeatures);
+            writer.WriteEndObject();
+            writer.WriteStartObject("route");
+            writer.WriteBoolean("software_video", route.SoftwareVideo);
+            writer.WriteBoolean("software_audio", route.SoftwareAudio);
+            writer.Text("video_codec", route.VideoCodec);
+            writer.Text("audio_codec", route.AudioCodec);
+            writer.WriteBoolean("dolby_vision_base_layer", route.DolbyVisionBaseLayer);
+            writer.WriteEndObject();
+        }, BaleCoreJson.Default.FilteredStart);
         return start with
         {
-            ClientCapabilities = capabilities,
-            ClientPlaybackContext = context,
-            ClientFeatures = start.ClientFeatures.Where(feature => feature != PlaybackProtocol.SoftwareVideoDecodeFeature
-                || capabilities.VideoDecode.Any(decode => !decode.Hardware)).ToArray(),
+            ClientCapabilities = capabilities with
+            {
+                CodecsVideo = result.CodecsVideo,
+                CodecsVideoHardware = result.CodecsVideoHardware,
+                VideoDecode = result.VideoDecode.Select(index => capabilities.VideoDecode[index]).ToArray(),
+                CodecsAudio = result.CodecsAudio,
+                Containers = result.Containers,
+            },
+            ClientPlaybackContext = start.ClientPlaybackContext with
+            {
+                Deliveries = deliveries.Zip(result.Deliveries).ToDictionary(pair => pair.First.Key, pair => pair.First.Value with
+                {
+                    VideoCodecs = pair.Second.VideoCodecs,
+                    AudioDecodeCodecs = pair.Second.AudioDecodeCodecs,
+                    Containers = pair.Second.Containers,
+                    ValidatedClaims = pair.Second.ValidatedClaims,
+                }),
+            },
+            ClientFeatures = result.ClientFeatures,
         };
     }
 }

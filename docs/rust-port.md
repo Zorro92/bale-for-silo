@@ -32,6 +32,18 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    and the ABI stays two functions: `bale_core_call(name, json) -> json` and `bale_core_free`.
    Errors come back as a JSON error value; Rust panics are caught at the boundary.
 4. Adds Rust unit tests for anything the C# tests do not cover.
+5. Keeps the C# original in `tests/Bale.Core.Tests/Reference/` and compares it with the Rust port on
+   thousands of random inputs (`RustPortDifferentialTests`). Delete a reference once its slice has
+   shipped and been verified on the console for a while.
+
+### Wire details
+
+- Server models (plans, file versions) cross in the server's own JSON, written by Kiota's
+  serializer; Rust declares only the fields it reads. Bale's records cross snake_case; Rust gives
+  them no defaults and C# rejects unknown result keys, so a misnamed field fails loudly.
+- Doubles may be NaN or infinite (tests and replans produce them): both sides use .NET's named
+  literals ("NaN", "Infinity"), never `double.ToString()` ("∞").
+- A C# `InvalidDataException` becomes `{"invalid_data": message}` and is rethrown unchanged.
 
 ### Slices, in order
 
@@ -40,9 +52,10 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    version check, `SoftwareDecodePolicy.NormalizeCodec` end to end. The C# test
    `LowerCasesLikeToLowerInvariant` caught a casing difference (.NET leaves U+0130 unchanged), so
    each ported string helper gets a test against the .NET original.
-2. **Decoder and route policy** (~850 lines): `SoftwareDecodePolicy`, `HardwareDecodeLimits`,
-   `PlaybackRoutePolicy`, `ConsoleToneMapPolicy`, `DolbyVision7Policy`, `DisplayHdrPolicy`,
-   `DisplayMatchPolicy`.
+2. **Decoder and route policy** (in progress: ported, console check pending): `SoftwareDecodePolicy`,
+   `HardwareDecodeLimits`, `PlaybackRoutePolicy`, `ConsoleToneMapPolicy`, `DolbyVision7Policy`,
+   `DisplayHdrPolicy`, `DisplayMatchPolicy`. `PlaybackFormatting.Decodes`/`IsDolbyVision` stay C#
+   for now; `CanManage` passes their answers in.
 3. **Capability claims:** `PlaybackCapabilities` / `ConsoleEvidence`, `PlaybackClaims`.
 4. **Plan handling:** `PlaybackStartBuilder`, `PlaybackReplan`, `PlaybackVersionNotice`,
    `PlaybackOriginalAudioSelection`, `PlaybackSubtitles`, `PlaybackMediaUrl`.

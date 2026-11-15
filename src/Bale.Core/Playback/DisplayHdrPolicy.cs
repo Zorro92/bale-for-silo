@@ -1,4 +1,5 @@
 using Bale.Core.Api.Models;
+using Bale.Core.Native;
 
 namespace Bale.Core.Playback;
 
@@ -10,45 +11,36 @@ public sealed record DisplayModeFacts(bool Smpte2084, bool Metadata2086, bool St
     public double RefreshRate { get; init; }
 }
 
+/// <summary>Implemented in Rust (native/bale-core/src/display.rs).</summary>
 public static class DisplayHdrPolicy
 {
+    /// <summary>
+    /// HDR10 when any non-stereo mode carries SMPTE 2084; HDR10+, HLG and Dolby Vision stay
+    /// unclaimed (Xbox Dolby Vision is low-latency profile 5 only). Evidence is "exact" when the
+    /// modes could be read.
+    /// </summary>
     public static (HdrCapabilities Hdr, string Evidence) FromModes(bool readSucceeded, IReadOnlyList<DisplayModeFacts> modes)
     {
-        // HDR10+, HLG and Dolby Vision are unverified. Xbox Dolby Vision is low-latency DV
-        // (profile 5) only; revisit later rather than claiming support from the HDMI flag.
-        var hdr = new HdrCapabilities { Hdr10 = readSucceeded && modes.Any(mode => !mode.Stereo && mode.Smpte2084) };
-        return (hdr, readSucceeded ? "exact" : "unknown");
+        var result = BaleCoreNative.Call("display.from_modes", writer =>
+        {
+            writer.WriteBoolean("read_succeeded", readSucceeded);
+            writer.Records("modes", modes, BaleCoreJson.Default.DisplayModeFacts);
+        }, BaleCoreJson.Default.DisplayHdr);
+        return (result.Hdr, result.Evidence);
     }
 
-    /// <summary>Return an index into the supported modes, never a synthesized HDMI mode.</summary>
-    public static int? PickHdr10Mode(DisplayModeFacts current, IReadOnlyList<DisplayModeFacts> modes)
-    {
-        if (current.Width == 0 || current.Height == 0 || !double.IsFinite(current.RefreshRate) || current.RefreshRate <= 0)
-            return null;
-        // Keep the current resolution/refresh when possible. Otherwise prefer the smallest
-        // resolution that holds it, then the closest refresh; never shrink or enter stereo.
-        // HdrDisplayController.kt also prioritizes matching/holding resolution over refresh.
-        return modes.Select((mode, index) => (Mode: mode, Index: index))
-            .Where(pair => !pair.Mode.Stereo && pair.Mode.Smpte2084
-                && pair.Mode.Width >= current.Width && pair.Mode.Height >= current.Height
-                // Microsoft's Xbox media guidance excludes 120 Hz; media modes top out at 60 Hz.
-                && double.IsFinite(pair.Mode.RefreshRate) && pair.Mode.RefreshRate is > 0 and <= 60)
-            .OrderBy(pair => (ulong)pair.Mode.Width * pair.Mode.Height)
-            .ThenBy(pair => Math.Abs(pair.Mode.RefreshRate - current.RefreshRate))
-            .ThenByDescending(pair => pair.Mode.Metadata2086)
-            .Select(pair => (int?)pair.Index).FirstOrDefault();
-    }
+    /// <summary>
+    /// Returns an index into the supported modes, never a synthesized HDMI mode: the smallest HDR10
+    /// resolution that holds the current one, then the closest refresh (at most 60 Hz, never stereo).
+    /// </summary>
+    public static int? PickHdr10Mode(DisplayModeFacts current, IReadOnlyList<DisplayModeFacts> modes) =>
+        BaleCoreNative.Call("display.pick_hdr10_mode", writer =>
+        {
+            writer.Record("current", current, BaleCoreJson.Default.DisplayModeFacts);
+            writer.Records("modes", modes, BaleCoreJson.Default.DisplayModeFacts);
+        }, BaleCoreJson.Default.NullableInt32);
 
-    public static bool RequiresHdr10(PlaybackPlan plan)
-    {
-        // Direct and remux deliveries preserve the picture; a tone-mapped HLS plan must not
-        // inherit the original source's HDR range. Follow the effective output when provided.
-        if (plan.Delivery?.ToLowerInvariant() is not ("original_http" or "progressive" or "server_remux_progressive")
-            || string.Equals(plan.Stream?.Protocol, "hls", StringComparison.OrdinalIgnoreCase)) return false;
-        var range = string.IsNullOrWhiteSpace(plan.EffectiveRecipe?.DynamicRange)
-            ? plan.Source?.DynamicRange : plan.EffectiveRecipe.DynamicRange;
-        // The server can also validate HDR10 base-layer playback of HDR10+ / legacy hdr_unknown.
-        return string.Equals(range?.Trim(), "hdr10", StringComparison.OrdinalIgnoreCase) || plan.Claims?.Video?.Hdr10 == true
-            || DolbyVision7Policy.RequiresBaseLayer(plan);
-    }
+    /// <summary>A direct or remux delivery whose effective range is HDR10, or a DV7 base layer.</summary>
+    public static bool RequiresHdr10(PlaybackPlan plan) =>
+        BaleCoreNative.Call("display.requires_hdr10", writer => writer.Server("plan", plan), BaleCoreJson.Default.Boolean);
 }

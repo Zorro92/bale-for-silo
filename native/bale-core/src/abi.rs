@@ -5,8 +5,6 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::software_decode;
-
 /// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched library.
 /// Adding a function name to [`dispatch`] is not an ABI change.
 pub const ABI_VERSION: u32 = 1;
@@ -85,9 +83,125 @@ pub fn call(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
+    use crate::models::{
+        Checked, DeviceCapabilities, DisplayMode, FileVersion, HdrCapabilities, PlaybackPlan,
+    };
+    use crate::{display, dolby_vision7, hardware, route, software_decode, tone_map};
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    struct VideoSupported {
+        avx2: bool,
+        device_form: Option<String>,
+    }
+    #[derive(Deserialize)]
+    struct AudioTrack {
+        selected_ordinal: Option<i64>,
+        stream_indices: Vec<i32>,
+        expected_audio_count: Option<i32>,
+    }
+    #[derive(Deserialize)]
+    struct CanManage {
+        version: FileVersion,
+        device: DeviceCapabilities,
+        decodes: bool,
+        dolby_vision: bool,
+    }
+    #[derive(Deserialize)]
+    struct ToneMap {
+        plan: PlaybackPlan,
+        sdr_output: bool,
+        versions: Option<Vec<FileVersion>>,
+    }
+    #[derive(Deserialize)]
+    struct BaseLayer {
+        stream_indices: Vec<i32>,
+        expected_video_count: Option<i32>,
+    }
+    #[derive(Deserialize)]
+    struct FromModes {
+        read_succeeded: bool,
+        modes: Vec<DisplayMode>,
+    }
+    #[derive(Deserialize)]
+    struct Plan {
+        plan: PlaybackPlan,
+    }
+    #[derive(Deserialize)]
+    struct Sizes {
+        sizes: Vec<hardware::AcceptedSize>,
+    }
+    #[derive(Deserialize)]
+    struct Hdr10Mode {
+        current: DisplayMode,
+        modes: Vec<DisplayMode>,
+    }
+
     match name {
         "software_decode.normalize_codec" => with_json(name, input, |codec: Option<String>| {
             software_decode::normalize_codec(codec.as_deref())
+        }),
+        "software_decode.lists" => with_json(name, input, |(): ()| software_decode::lists()),
+        "software_decode.video_supported" => with_json(name, input, |a: VideoSupported| {
+            software_decode::software_video_supported(a.avx2, a.device_form.as_deref())
+        }),
+        "software_decode.filter_device" => with_json(name, input, software_decode::filter_device),
+        "software_decode.video_decoders_allowed" => {
+            with_json(name, input, software_decode::video_decoders_allowed)
+        }
+        "software_decode.without_failed_fallbacks" => {
+            with_json(name, input, software_decode::without_failed_fallbacks)
+        }
+        "route.decide" => with_json(name, input, route::decide),
+        "route.is_matroska" => with_json(name, input, |c: Option<String>| {
+            route::is_matroska(c.as_deref())
+        }),
+        "route.audio_track_index" => with_json(name, input, |a: AudioTrack| {
+            Checked::from(route::audio_track_index(
+                a.selected_ordinal,
+                &a.stream_indices,
+                a.expected_audio_count,
+            ))
+        }),
+        "tone_map.has_hdr_output" => with_json(name, input, |h: HdrCapabilities| {
+            tone_map::has_hdr_output(&h)
+        }),
+        "tone_map.wrapper_supported" => {
+            with_json(name, input, |v: String| tone_map::wrapper_supported(&v))
+        }
+        "tone_map.can_manage" => with_json(name, input, |a: CanManage| {
+            tone_map::can_manage(&a.version, &a.device, a.decodes, a.dolby_vision)
+        }),
+        "tone_map.requires_tone_map" => with_json(name, input, |a: ToneMap| {
+            tone_map::requires_tone_map(&a.plan, a.sdr_output, a.versions.as_deref())
+        }),
+        "dolby_vision7.requires_base_layer" => with_json(name, input, |a: Plan| {
+            dolby_vision7::requires_base_layer(&a.plan)
+        }),
+        "dolby_vision7.validate_plan" => with_json(name, input, |a: Plan| {
+            Checked::from(dolby_vision7::validate_plan(&a.plan))
+        }),
+        "dolby_vision7.base_layer_track_index" => with_json(name, input, |a: BaseLayer| {
+            Checked::from(dolby_vision7::base_layer_track_index(
+                &a.stream_indices,
+                a.expected_video_count,
+            ))
+        }),
+        "display.from_modes" => with_json(name, input, |a: FromModes| {
+            display::from_modes(a.read_succeeded, &a.modes)
+        }),
+        "display.pick_hdr10_mode" => with_json(name, input, |a: Hdr10Mode| {
+            display::pick_hdr10_mode(&a.current, &a.modes)
+        }),
+        "display.requires_hdr10" => {
+            with_json(name, input, |a: Plan| display::requires_hdr10(&a.plan))
+        }
+        "display.pick_mode" => with_json(name, input, |a: display::PickModeArgs| {
+            display::pick_mode(&a)
+        }),
+        "hardware.profile_name" => with_json(name, input, |p: String| hardware::profile_name(&p)),
+        "hardware.from_accepted_sizes" => with_json(name, input, |a: Sizes| {
+            hardware::from_accepted_sizes(&a.sizes)
         }),
         _ => Err(format!("unknown function {name}")),
     }
