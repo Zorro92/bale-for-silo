@@ -137,6 +137,17 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    the player's warm pool. The benchmark now keeps one Rust pool for the app's lifetime and warms one
    connection per worker before timing.
 
+   Warm rerun (0.1.535, three rounds, 12 runs of 48 × 1 MiB during 4K playback):
+
+   | | TTFB p50 | TTFB p95 | TTFB max | Block p95 | Blocks > 500 ms | Throughput |
+   |---|---|---|---|---|---|---|
+   | C# (6 runs) | 144–147 ms | 168–232 | 235–580 | 280–603 | 5 in total (3 in one run) | 98–109 Mbps |
+   | Rust (6 runs) | 162–167 ms | 220–259 | 233–271 | 299–737 | 3 (all in the first run) | 87–104 Mbps |
+
+   Mixed: Rust's median time to first byte is ~18 ms higher in every run, its worst first byte is
+   steadier (C# has occasional 480–580 ms spikes), and block tails and throughput are the same within
+   noise. No clear latency win for a port.
+
 ### Stays in C#
 
 - The XAML app (`src/Bale.Xbox`) and anything that drives XAML objects.
