@@ -46,7 +46,8 @@ If the debug port doesn't answer, check `./scripts/xbox-logs.sh` and that `Bale.
 2026-11-15 reinstalling 0.1.526 over itself left port 8790 silently dropped while Bale ran and logged
 "listening"; relaunches, further reinstalls and even a console restart didn't clear it. Installing
 a newer build did (docs/rust-port.md, slice 3). Every test install must be a newer CI build; to get
-one without a code change, `gh workflow run ci.yml --ref main` (new run number = new version).
+one without a code change, `gh workflow run ci.yml --ref main` (new run number) or re-run the last
+run's jobs (the attempt number becomes the fourth version part, 0.1.N.1, .2, …).
 Older builds are refused as downgrades anyway.
 
 Right after launch the profile picker has no focus for a moment: wait for `focus` to report the

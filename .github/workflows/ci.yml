@@ -395,13 +395,16 @@ jobs:
             native/bale-gpu/target
           key: ${{ steps.rust.outputs.key }}
 
-      # Every build gets a higher version so the Xbox accepts it as an update.
+      # Every build gets a higher version so the Xbox accepts it as an update: a new run bumps the
+      # third part, and a re-run ("Re-run jobs" keeps the run number) bumps the fourth. Never
+      # reinstall the installed version: it blocks Bale's inbound networking until a newer build
+      # (verify-on-xbox skill). Sideloaded only, so the Store's "revision must be 0" rule doesn't apply.
       - name: Stamp version
         shell: pwsh
         run: |
           $path = Resolve-Path 'src/Bale.Xbox/Package.appxmanifest'
           [xml]$manifest = Get-Content $path
-          $manifest.Package.Identity.Version = "0.1.${{ github.run_number }}.0"
+          $manifest.Package.Identity.Version = "0.1.${{ github.run_number }}.$([int]'${{ github.run_attempt }}' - 1)"
           $manifest.Save($path)
 
       # Throwaway certificate for sideloading, left in the runner's store for the build to sign with.
