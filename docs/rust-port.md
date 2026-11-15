@@ -148,6 +148,12 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    steadier (C# has occasional 480–580 ms spikes), and block tails and throughput are the same within
    noise. No clear latency win for a port.
 
+   Owner 2026-11-15: lean towards Rust to keep GC out of the playback read path, which only works if
+   Rust owns the whole path (its own IRandomAccessStream handed to Media Foundation/FFmpegInteropX,
+   block cache, HTTP); C# would only create it and push refreshed auth headers. Step 1 before that
+   port: close the ~18 ms median. ureq already sets TCP no-delay, but resolves DNS before looking in its
+   pool (a lookup, on a spawned thread, per request); the benchmark agent now uses a caching resolver.
+
 ### Stays in C#
 
 - The XAML app (`src/Bale.Xbox`) and anything that drives XAML objects.
