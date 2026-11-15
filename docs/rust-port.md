@@ -52,7 +52,7 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    version check, `SoftwareDecodePolicy.NormalizeCodec` end to end. The C# test
    `LowerCasesLikeToLowerInvariant` caught a casing difference (.NET leaves U+0130 unchanged), so
    each ported string helper gets a test against the .NET original.
-2. **Decoder and route policy** (in progress: ported, console check pending): `SoftwareDecodePolicy`,
+2. **Decoder and route policy** (done, 8c9c4e2, verified on the console in 0.1.525): `SoftwareDecodePolicy`,
    `HardwareDecodeLimits`, `PlaybackRoutePolicy`, `ConsoleToneMapPolicy`, `DolbyVision7Policy`,
    `DisplayHdrPolicy`, `DisplayMatchPolicy`. `PlaybackFormatting.Decodes`/`IsDolbyVision` stay C#
    for now; `CanManage` passes their answers in.
