@@ -35,7 +35,7 @@ internal static class ConsoleToneMapPolicy
         var codec = SoftwareDecodePolicy.NormalizeCodec(string.IsNullOrWhiteSpace(track.Codec) ? version.CodecVideo : track.Codec);
         if (codec is not ("hevc" or "vp9") || track.BitDepth != 10
             || !device.VideoCodecs.Contains(codec)
-            || !Bale.Core.Detail.PlaybackFormatting.Decodes(version, device.VideoDecode.Where(decode => decode.Hardware).ToArray())) return false;
+            || !PlaybackFormatting.Decodes(version, device.VideoDecode.Where(decode => decode.Hardware).ToArray())) return false;
         // d3d11va supplies 4:2:0 P010. Do not promise the stage for known 4:2:2/4:4:4 input.
         if (!string.IsNullOrWhiteSpace(track.PixelFormat)
             && track.PixelFormat.Trim().ToLowerInvariant() is not ("yuv420p10le" or "p010le")) return false;
@@ -50,7 +50,7 @@ internal static class ConsoleToneMapPolicy
         var bt2020 = (primaries is "bt2020" or "9") && (matrix is "bt2020nc" or "9");
         var bt709 = (primaries is "bt709" or "1") && (matrix is "bt709" or "1");
         if (!bt2020 && !(pq && bt709)) return false;
-        if (!Bale.Core.Detail.PlaybackFormatting.IsDolbyVision(version)) return true;
+        if (!PlaybackFormatting.IsDolbyVision(version)) return true;
         if (codec != "hevc" || track.DvBlPresent != true || track.DvConfigPresent != true) return false;
         // Profile 7 defines an HDR10 base layer; neither MEL nor FEL enhancement is presented.
         // Profile 8 needs its explicit compatibility id: 8.1 = HDR10, 8.4 = HLG, 8.2 = SDR.

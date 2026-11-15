@@ -67,7 +67,7 @@ internal sealed class PlaybackVersionNotice
         if (reason == "quality_device_limit") return prefix + " — adjusted for this console's video limits.";
         if (asked is not null && videoDecode is not null
             && SoftwareDecodePolicy.NormalizeCodec(asked.VideoTracks?.FirstOrDefault()?.Codec ?? asked.CodecVideo) is not null
-            && !Bale.Core.Detail.PlaybackFormatting.Decodes(asked, videoDecode))
+            && !PlaybackFormatting.Decodes(asked, videoDecode))
             return prefix + $" — this console can't play {selected} directly.";
 
         // planAlternateVersionV3 returns the alternate's reason (often validated_original_playback),
@@ -80,7 +80,7 @@ internal sealed class PlaybackVersionNotice
     private static string? Resolution(FileVersion? version, long? outputHeight = null)
     {
         var height = outputHeight is > 0 ? outputHeight.Value
-            : Bale.Core.Detail.PlaybackFormatting.ResolutionRank(version?.Resolution) is > 0 and var rank ? rank
+            : PlaybackFormatting.ResolutionRank(version?.Resolution) is > 0 and var rank ? rank
             : version?.VideoTracks?.FirstOrDefault()?.Height ?? 0;
         // Use only bounded numeric facts and fixed labels, never a file name or arbitrary label.
         return height switch

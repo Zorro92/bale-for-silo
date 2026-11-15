@@ -114,6 +114,9 @@ pub struct Transformation {
 pub struct FileVersion {
     pub file_id: Option<String>,
     pub codec_video: Option<String>,
+    pub resolution: Option<String>,
+    pub bitrate: Option<i64>,
+    pub file_size: Option<i64>,
     pub video_tracks: Option<Vec<VideoTrack>>,
 }
 
@@ -122,6 +125,13 @@ pub struct FileVersion {
 pub struct VideoTrack {
     pub codec: Option<String>,
     pub height: Option<i64>,
+    pub width: Option<i64>,
+    pub bitrate: Option<i64>,
+    pub frame_rate: Option<String>,
+    pub profile: Option<String>,
+    pub dolby_vision: Option<String>,
+    pub video_range: Option<String>,
+    pub video_range_type: Option<String>,
     pub bit_depth: Option<i64>,
     pub pixel_format: Option<String>,
     pub color_transfer: Option<String>,
@@ -140,7 +150,7 @@ pub struct VideoTrack {
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct DeviceCapabilities {
     pub video_codecs: Vec<String>,
-    pub video_decode: Vec<VideoDecode>,
+    pub video_decode: Vec<DecodeClaim>,
     pub audio_decode_codecs: Vec<String>,
     pub containers: Vec<String>,
     pub hdr: HdrCapabilities,
@@ -150,6 +160,21 @@ pub struct DeviceCapabilities {
     pub original_dynamic_range_mapping_supported: bool,
 }
 
+/// Bale's `VideoDecodeCapability`, complete (C# always writes every field).
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct DecodeClaim {
+    pub codec: String,
+    pub profiles: Vec<String>,
+    pub bit_depths: Vec<i32>,
+    pub max_width: Option<i32>,
+    pub max_height: Option<i32>,
+    #[serde(deserialize_with = "crate::dotnet::optional_double")]
+    pub max_frame_rate: Option<f64>,
+    pub max_bitrate_kbps: Option<i32>,
+    pub hardware: bool,
+}
+
+/// The two fields of a `VideoDecodeCapability` the capability filters read.
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct VideoDecode {
     pub codec: String,

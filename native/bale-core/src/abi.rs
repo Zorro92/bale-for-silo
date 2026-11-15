@@ -87,8 +87,8 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         Checked, DeviceCapabilities, DisplayMode, FileVersion, HdrCapabilities, PlaybackPlan,
     };
     use crate::{
-        audio_selection, display, dolby_vision7, evidence, hardware, language, reanchor, route,
-        software_decode, subtitles, tone_map, version_notice,
+        audio_selection, display, dolby_vision7, evidence, formatting, hardware, language,
+        reanchor, route, software_decode, subtitles, tone_map, version_notice,
     };
     use serde::Deserialize;
 
@@ -107,8 +107,15 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
     struct CanManage {
         version: FileVersion,
         device: DeviceCapabilities,
-        decodes: bool,
-        dolby_vision: bool,
+    }
+    #[derive(Deserialize)]
+    struct Version {
+        version: FileVersion,
+    }
+    #[derive(Deserialize)]
+    struct Decodes {
+        version: FileVersion,
+        claims: Vec<crate::models::DecodeClaim>,
     }
     #[derive(Deserialize)]
     struct ToneMap {
@@ -220,6 +227,22 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         "dotnet.format_fixed" => with_json(name, input, |a: FormatArgs| {
             crate::dotnet::format_fixed(a.value, a.decimals.min(6))
         }),
+        "formatting.resolution_rank" => with_json(name, input, |v: Option<String>| {
+            formatting::resolution_rank(v.as_deref())
+        }),
+        "formatting.decodes" => with_json(name, input, |a: Decodes| {
+            formatting::decodes(&a.version, &a.claims)
+        }),
+        "formatting.is_dolby_vision" => with_json(name, input, |a: Version| {
+            formatting::is_dolby_vision(&a.version)
+        }),
+        "formatting.select_version" => with_json(name, input, |a: formatting::SelectArgs| {
+            formatting::select_version(&a)
+        }),
+        // Test hook. The bit pattern, because serde_json writes a non-finite double as null.
+        "dotnet.parse_float" => with_json(name, input, |v: String| {
+            crate::dotnet::parse_float(&v).map(f64::to_bits)
+        }),
         "route.decide" => with_json(name, input, route::decide),
         "route.is_matroska" => with_json(name, input, |c: Option<String>| {
             route::is_matroska(c.as_deref())
@@ -238,7 +261,7 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
             with_json(name, input, |v: String| tone_map::wrapper_supported(&v))
         }
         "tone_map.can_manage" => with_json(name, input, |a: CanManage| {
-            tone_map::can_manage(&a.version, &a.device, a.decodes, a.dolby_vision)
+            tone_map::can_manage(&a.version, &a.device)
         }),
         "tone_map.requires_tone_map" => with_json(name, input, |a: ToneMap| {
             tone_map::requires_tone_map(&a.plan, a.sdr_output, a.versions.as_deref())

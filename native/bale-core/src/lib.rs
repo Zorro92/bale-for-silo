@@ -14,6 +14,7 @@ pub mod display;
 pub mod dolby_vision7;
 pub mod dotnet;
 pub mod evidence;
+pub mod formatting;
 pub mod frames;
 pub mod hardware;
 pub mod language;

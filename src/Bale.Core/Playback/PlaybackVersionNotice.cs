@@ -46,17 +46,13 @@ public sealed class PlaybackVersionNotice
     public static string? Describe(PlaybackPlan plan, PlaybackSelection selection, IReadOnlyList<FileVersion> versions,
         IReadOnlyList<VideoDecodeCapability>? videoDecode = null)
     {
-        var asked = selection.FileId is { } picked ? versions.FirstOrDefault(version => version.FileId == picked) : null;
         return BaleCoreNative.Call("version_notice.describe", writer =>
         {
             writer.Server("plan", plan);
             writer.Text("picked_file_id", selection.FileId);
             writer.Server("versions", versions);
-            // Still C# (Detail/PlaybackFormatting) until the Detail slice.
-            writer.Numbers("resolution_ranks", versions.Select(version => PlaybackFormatting.ResolutionRank(version.Resolution)));
-            if (asked is not null && videoDecode is not null)
-                writer.WriteBoolean("asked_decodes", PlaybackFormatting.Decodes(asked, videoDecode));
-            else writer.WriteNull("asked_decodes");
+            if (videoDecode is null) writer.WriteNull("video_decode");
+            else writer.Records("video_decode", videoDecode, BaleCoreJson.Default.VideoDecodeCapability);
         }, BaleCoreJson.Default.String);
     }
 

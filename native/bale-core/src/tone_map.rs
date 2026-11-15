@@ -2,6 +2,7 @@
 //! never a sink-HDR claim.
 
 use crate::dotnet::{eq_ignore_case, is_blank, trim_lower};
+use crate::formatting;
 use crate::models::{DeviceCapabilities, FileVersion, HdrCapabilities, PlaybackPlan};
 use crate::software_decode::normalize_codec;
 
@@ -25,14 +26,10 @@ pub fn wrapper_supported(version: &str) -> bool {
     })
 }
 
-/// `decodes` is `PlaybackFormatting.Decodes(version, hardware decode claims)` and `dolby_vision`
-/// is `PlaybackFormatting.IsDolbyVision(version)`; both stay in C# until the Detail slice.
-pub fn can_manage(
-    version: &FileVersion,
-    device: &DeviceCapabilities,
-    decodes: bool,
-    dolby_vision: bool,
-) -> bool {
+/// Whether the console tone map can take this version on an SDR display: a hardware-decoded 10-bit
+/// 4:2:0 HEVC/VP9 PQ or HLG track with BT.2020 NCL (PQ also BT.709) colour, and for Dolby Vision only
+/// a profile 7 HDR10 base layer or a profile 8.1/8.4 base layer.
+pub fn can_manage(version: &FileVersion, device: &DeviceCapabilities) -> bool {
     if !device.original_http_supported
         || !device.original_dynamic_range_mapping_supported
         || device.display_hdr_evidence != "exact"
@@ -65,7 +62,16 @@ pub fn can_manage(
     let Some(codec) = codec.filter(|codec| codec == "hevc" || codec == "vp9") else {
         return false;
     };
-    if track.bit_depth != Some(10) || !device.video_codecs.contains(&codec) || !decodes {
+    let hardware: Vec<_> = device
+        .video_decode
+        .iter()
+        .filter(|claim| claim.hardware)
+        .cloned()
+        .collect();
+    if track.bit_depth != Some(10)
+        || !device.video_codecs.contains(&codec)
+        || !formatting::decodes(version, &hardware)
+    {
         return false;
     }
     // d3d11va supplies 4:2:0 P010. Do not promise the stage for known 4:2:2/4:4:4 input.
@@ -89,7 +95,7 @@ pub fn can_manage(
     if !bt2020 && !(pq && bt709) {
         return false;
     }
-    if !dolby_vision {
+    if !formatting::is_dolby_vision(version) {
         return true;
     }
     if codec != "hevc" || track.dv_bl_present != Some(true) || track.dv_config_present != Some(true)

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Bale.Core.Api.Models;
+using Bale.Core.Native;
 
 namespace Bale.Core.Detail;
 
@@ -17,30 +18,24 @@ public static partial class PlaybackFormatting
         string? selectedFileId = null, string? lastFileId = null, string? preferredQuality = null) =>
         SelectVersion(versions, DisplayVersionMatch.Current, selectedFileId, lastFileId, preferredQuality);
 
-    /// <summary><see cref="SelectDisplayVersion"/> with an explicit match; null is the official Auto.</summary>
+    /// <summary>
+    /// <see cref="SelectDisplayVersion"/> with an explicit match; null is the official Auto. Implemented
+    /// in Rust (native/bale-core/src/formatting.rs).
+    /// </summary>
     public static FileVersion? SelectVersion(IReadOnlyList<FileVersion> versions, DisplayVersionMatch? match,
         string? selectedFileId = null, string? lastFileId = null, string? preferredQuality = null)
     {
-        if (selectedFileId is not null && versions.FirstOrDefault(version => version.FileId == selectedFileId) is { } selected)
+        if (versions.Count == 0) return null;
+        var index = BaleCoreNative.Call("formatting.select_version", writer =>
         {
-            return selected;
-        }
-
-        if (lastFileId is not null && versions.FirstOrDefault(version => version.FileId == lastFileId) is { } lastPlayed)
-        {
-            return lastPlayed;
-        }
-
-        var ranked = versions.OrderByDescending(version => ResolutionRank(version.Resolution))
-            .ThenByDescending(version => version.Bitrate ?? 0)
-            .ThenByDescending(version => version.FileSize ?? 0).ToList();
-        var quality = NonEmpty(preferredQuality)?.ToLowerInvariant();
-        // Only plain Auto matches the display; an "original"-style choice asks for the best.
-        if (quality is null or "auto" && match is not null) return MatchDisplay(ranked, match);
-        return quality is null or "auto" or "original" or "source" or "max"
-            ? ranked.FirstOrDefault()
-            : ranked.FirstOrDefault(version => ResolutionRank(version.Resolution) <= ResolutionRank(quality))
-                ?? ranked.FirstOrDefault();
+            writer.Server("versions", versions);
+            if (match is null) writer.WriteNull("match");
+            else writer.Record("match", match, BaleCoreJson.Default.DisplayVersionMatch);
+            writer.Text("selected_file_id", selectedFileId);
+            writer.Text("last_file_id", lastFileId);
+            writer.Text("preferred_quality", preferredQuality);
+        }, BaleCoreJson.Default.NullableInt32);
+        return index is { } chosen ? versions[chosen] : null;
     }
 
     /// <summary>Only resolution and dynamic range appear in the quiet readout, never codecs.</summary>
@@ -64,12 +59,12 @@ public static partial class PlaybackFormatting
         return label.Length == 0 ? "Auto" : label;
     }
 
+    /// <summary>
+    /// A Dolby Vision codec (dvhe/dvh1/dva1/dvav) or any track with DV metadata, a DV profile or a
+    /// DV range. Implemented in Rust (native/bale-core/src/formatting.rs).
+    /// </summary>
     public static bool IsDolbyVision(FileVersion version) =>
-        IsDolbyVisionCodec(version.CodecVideo) || (version.VideoTracks ?? []).Any(track =>
-            NonEmpty(track.DolbyVision) is not null || track.DvProfile is not null
-                || HdrFormatIndicatesDolbyVision(track.VideoRangeType)
-                || HdrFormatIndicatesDolbyVision(track.VideoRange)
-                || IsDolbyVisionCodec(track.Codec));
+        BaleCoreNative.Call("formatting.is_dolby_vision", writer => writer.Server("version", version), BaleCoreJson.Default.Boolean);
 
     private static bool IsHdr(FileVersion version) =>
         version.Hdr == true || (version.VideoTracks ?? []).Any(track =>
@@ -86,35 +81,12 @@ public static partial class PlaybackFormatting
             || Regex.Split(lowered, "[^a-z0-9]+", RegexOptions.CultureInvariant).Contains("dv"));
     }
 
-    private static bool IsDolbyVisionCodec(string? value)
-    {
-        var token = string.Concat((value ?? string.Empty).Where(char.IsLetterOrDigit)).ToLowerInvariant();
-        return token.Contains("dolbyvision") || token.StartsWith("dvhe", StringComparison.Ordinal)
-            || token.StartsWith("dvh1", StringComparison.Ordinal) || token.StartsWith("dva1", StringComparison.Ordinal)
-            || token.StartsWith("dvav", StringComparison.Ordinal);
-    }
-
-    internal static int ResolutionRank(string? value)
-    {
-        var normalized = value?.Trim().ToLowerInvariant() ?? string.Empty;
-        var numeric = ResolutionHeight().Match(normalized);
-        if (numeric.Success && int.TryParse(numeric.Groups[1].Value, CultureInfo.InvariantCulture, out var height))
-        {
-            return height;
-        }
-
-        return normalized switch
-        {
-            var label when label.Contains("4320") || label.Contains("8k") => 4320,
-            var label when label.Contains("2160") || label.Contains("4k") || label.Contains("uhd") => 2160,
-            var label when label.Contains("1440") || label.Contains("qhd") => 1440,
-            var label when label.Contains("1080") || label.Contains("fhd") => 1080,
-            var label when label.Contains("720") || label.Contains("hd") => 720,
-            var label when label.Contains("576") => 576,
-            var label when label.Contains("480") || label.Contains("sd") => 480,
-            _ => 0,
-        };
-    }
+    /// <summary>
+    /// A version label's height: the first 3–4 digit number (optionally p/i), else named tiers (8K,
+    /// 4K/UHD, QHD, FHD, HD, SD), else 0. Implemented in Rust (native/bale-core/src/formatting.rs).
+    /// </summary>
+    internal static int ResolutionRank(string? value) =>
+        BaleCoreNative.Call("formatting.resolution_rank", value, BaleCoreJson.Default.String, BaleCoreJson.Default.Int32);
 
     private static string? DisplayResolution(string? value)
     {
@@ -133,6 +105,4 @@ public static partial class PlaybackFormatting
 
     private static string? NonEmpty(string? value) => value?.Trim() is { Length: > 0 } trimmed ? trimmed : null;
 
-    [GeneratedRegex(@"\b(\d{3,4})(?:p|i)?\b", RegexOptions.CultureInvariant)]
-    private static partial Regex ResolutionHeight();
 }

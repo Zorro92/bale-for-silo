@@ -1,5 +1,4 @@
 using Bale.Core.Api.Models;
-using Bale.Core.Detail;
 using Bale.Core.Native;
 
 namespace Bale.Core.Playback;
@@ -30,9 +29,6 @@ public static class ConsoleToneMapPolicy
         {
             writer.Server("version", version);
             writer.Record("device", device, BaleCoreJson.Default.DeviceCapabilities);
-            // Still C# (Detail/PlaybackFormatting) until the Detail slice.
-            writer.WriteBoolean("decodes", PlaybackFormatting.Decodes(version, device.VideoDecode.Where(decode => decode.Hardware).ToArray()));
-            writer.WriteBoolean("dolby_vision", PlaybackFormatting.IsDolbyVision(version));
         }, BaleCoreJson.Default.Boolean);
 
     /// <summary>Protect even unexpected HDR originals; never let the native container source present them on SDR.</summary>

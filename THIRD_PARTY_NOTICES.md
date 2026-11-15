@@ -144,6 +144,35 @@ NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
 WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+## Rust crates in bale_core.dll
+
+Bale's ported playback logic (`native/bale-core`, shipped as `bale_core.dll`) statically links these
+crates (exact versions in `native/bale-core/Cargo.lock`):
+
+- `serde`, `serde_core` and `serde_json` (Copyright (c) Erick Tryzelaar and David Tolnay), `itoa` and
+  `zmij` (Copyright (c) David Tolnay): MIT, or dual-licensed MIT or Apache-2.0 and used here under MIT.
+- `memchr` (Copyright (c) 2015 Andrew Gallant): dual-licensed Unlicense or MIT, used here under MIT.
+- `unicode-general-category` (Copyright YesLogic Pty. Ltd.): Apache-2.0. The Apache License 2.0 text
+  is packaged as `Licenses/FFmpegInteropX.txt`; the crate ships no NOTICE file.
+
+Build-time-only proc-macro crates (`serde_derive`, `syn`, `quote`, `proc-macro2`, `unicode-ident`)
+generate code but are not shipped. The MIT terms, for the MIT-licensed crates above:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial
+portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 ## libass, FreeType, FriBidi and HarfBuzz
 
 `bale_gpu.dll` statically links the subtitle renderer [libass](https://github.com/libass/libass) and

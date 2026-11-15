@@ -135,6 +135,116 @@ pub fn format_fixed(value: f64, decimals: usize) -> String {
     text
 }
 
+/// [`double`] for a nullable double.
+pub fn optional_double<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    #[derive(serde::Deserialize)]
+    struct Wrapped(#[serde(deserialize_with = "double")] f64);
+    Ok(
+        <Option<Wrapped> as serde::Deserialize>::deserialize(deserializer)?
+            .map(|Wrapped(value)| value),
+    )
+}
+
+/// `double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture)`: optional white space
+/// (tab to carriage return and space) around an optional sign, digits with an optional point, an
+/// optional exponent; or the invariant culture's "Infinity" / "NaN", case-insensitively.
+/// .NET Core 3.0+ parses correctly rounded and overflows to infinity, as Rust's parser does.
+pub fn parse_float(text: &str) -> Option<f64> {
+    let text = text.trim_matches(|c: char| matches!(c, '\t'..='\r' | ' '));
+    let (sign, body) = match text.as_bytes().first() {
+        Some(b'+') => (1.0, &text[1..]),
+        Some(b'-') => (-1.0, &text[1..]),
+        _ => (1.0, text),
+    };
+    if body.eq_ignore_ascii_case("infinity") {
+        return Some(sign * f64::INFINITY);
+    }
+    if body.eq_ignore_ascii_case("nan") {
+        return Some(f64::NAN);
+    }
+    let bytes = body.as_bytes();
+    let mut i = 0;
+    let digits = |i: &mut usize| {
+        let start = *i;
+        while *i < bytes.len() && bytes[*i].is_ascii_digit() {
+            *i += 1;
+        }
+        *i - start
+    };
+    let mut mantissa = digits(&mut i);
+    if i < bytes.len() && bytes[i] == b'.' {
+        i += 1;
+        mantissa += digits(&mut i);
+    }
+    if mantissa == 0 {
+        return None;
+    }
+    if i < bytes.len() && matches!(bytes[i], b'e' | b'E') {
+        i += 1;
+        if i < bytes.len() && matches!(bytes[i], b'+' | b'-') {
+            i += 1;
+        }
+        if digits(&mut i) == 0 {
+            return None;
+        }
+    }
+    if i != bytes.len() {
+        return None;
+    }
+    body.parse::<f64>().ok().map(|value| sign * value)
+}
+
+/// One UTF-16 code unit's general category, as .NET's char-based checks see it: characters outside
+/// the BMP are two surrogates (category Cs), never letters or digits.
+fn bmp_category(c: char) -> Option<unicode_general_category::GeneralCategory> {
+    (u32::from(c) <= 0xFFFF).then(|| unicode_general_category::get_general_category(c))
+}
+
+/// `char.IsLetterOrDigit`: a letter (Lu, Ll, Lt, Lm, Lo) or a decimal digit (Nd).
+pub fn is_letter_or_digit(c: char) -> bool {
+    use unicode_general_category::GeneralCategory::*;
+    matches!(
+        bmp_category(c),
+        Some(
+            UppercaseLetter
+                | LowercaseLetter
+                | TitlecaseLetter
+                | ModifierLetter
+                | OtherLetter
+                | DecimalNumber
+        )
+    )
+}
+
+/// Regex `\d`: a decimal digit (Nd).
+pub fn is_regex_digit(c: char) -> bool {
+    matches!(
+        bmp_category(c),
+        Some(unicode_general_category::GeneralCategory::DecimalNumber)
+    )
+}
+
+/// What .NET's regex `\b` counts as a word character: `\w` (L, Mn, Nd, Pc) plus ZWNJ and ZWJ.
+pub fn is_regex_boundary_word(c: char) -> bool {
+    use unicode_general_category::GeneralCategory::*;
+    matches!(c, '\u{200C}' | '\u{200D}')
+        || matches!(
+            bmp_category(c),
+            Some(
+                UppercaseLetter
+                    | LowercaseLetter
+                    | TitlecaseLetter
+                    | ModifierLetter
+                    | OtherLetter
+                    | NonspacingMark
+                    | DecimalNumber
+                    | ConnectorPunctuation
+            )
+        )
+}
+
 fn simple_lower(c: char) -> char {
     let mut lower = c.to_lowercase();
     match (lower.next(), lower.next()) {

@@ -4,7 +4,8 @@
 use serde::Deserialize;
 
 use crate::dotnet::{eq_ignore_case, is_blank, lower};
-use crate::models::{FileVersion, PlaybackPlan};
+use crate::formatting;
+use crate::models::{DecodeClaim, FileVersion, PlaybackPlan};
 use crate::software_decode::normalize_codec;
 
 #[derive(Deserialize)]
@@ -13,10 +14,8 @@ pub struct DescribeArgs {
     /// The Detail selection's file id: only that proves an explicit pick.
     picked_file_id: Option<String>,
     versions: Vec<FileVersion>,
-    /// `PlaybackFormatting.ResolutionRank(version.Resolution)` for each version (C# until the Detail slice).
-    resolution_ranks: Vec<i32>,
-    /// `PlaybackFormatting.Decodes(asked, videoDecode)`; `None` without decode claims or a picked version.
-    asked_decodes: Option<bool>,
+    /// The console's decode claims; `None` skips the "can't play directly" explanation.
+    video_decode: Option<Vec<DecodeClaim>>,
 }
 
 pub fn describe(args: &DescribeArgs) -> Option<String> {
@@ -71,8 +70,13 @@ pub fn describe(args: &DescribeArgs) -> Option<String> {
         Some("quality_bandwidth_limit") => " — adjusted for the connection speed.".to_owned(),
         Some("quality_fixed_rung") => " — using the selected playback quality.".to_owned(),
         Some("quality_device_limit") => " — adjusted for this console's video limits.".to_owned(),
-        _ if asked.is_some_and(|i| has_video_codec(&args.versions[i]))
-            && args.asked_decodes == Some(false) =>
+        _ if asked.is_some_and(|i| {
+            has_video_codec(&args.versions[i])
+                && args
+                    .video_decode
+                    .as_ref()
+                    .is_some_and(|claims| !formatting::decodes(&args.versions[i], claims))
+        }) =>
         {
             format!(" — this console can't play {selected} directly.")
         }
@@ -110,9 +114,9 @@ fn resolution(
     version: Option<usize>,
     output_height: Option<i64>,
 ) -> Option<String> {
-    let rank = version
-        .and_then(|i| args.resolution_ranks.get(i).copied())
-        .unwrap_or(0);
+    let rank = version.map_or(0, |i| {
+        formatting::resolution_rank(args.versions[i].resolution.as_deref())
+    });
     let track_height = version
         .and_then(|i| args.versions[i].video_tracks.as_ref()?.first()?.height)
         .unwrap_or(0);

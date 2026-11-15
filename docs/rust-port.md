@@ -50,6 +50,7 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
   arriving from C# could differ from the one sent (caught by the formatter test on large values).
 - Text Rust formats for C# must follow .NET's rules: `"0.0"` rounds 15 significant digits half away
   from zero, and the invariant culture writes infinity as "Infinity" (`dotnet::format_fixed`).
+- Never return a non-finite double through JSON: serde_json writes NaN and infinity as `null`.
 - A C# `InvalidDataException` becomes `{"invalid_data": message}` and is rethrown unchanged.
 
 ### Slices, in order
@@ -90,6 +91,13 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    `ConnectionSpeedMeter` and `PlaybackSeekReanchor`. The per-frame and per-read meters use a second
    ABI (`abi_meters.rs`): Rust owns each meter behind a handle (a `SafeHandle` in C#, freed by the
    GC), calls take `#[repr(C)]` structs and numbers, no JSON. ABI version 2.
+
+6. **Detail helpers** (ported, console check pending; owner 2026-11-15):
+   `PlaybackFormatting.SelectVersion` (with Auto's display match), `Decodes`, `IsDolbyVision` and
+   `ResolutionRank`. `CanManage` and the version notice now compute these in Rust instead of taking
+   C#'s answers. The resolution regex follows .NET's Unicode `\d`/`\b`
+   (`unicode-general-category`), and frame rates parse with .NET's `NumberStyles.Float` grammar.
+   Detail label text (`VersionCompactLabel` and friends) stays C#.
 
 After slice 5, decide with the owner whether the HTTP streams (`HttpRangeStream`,
 `ProgressiveHttpStream`) are worth moving: they are tied to .NET streams and the Media Foundation

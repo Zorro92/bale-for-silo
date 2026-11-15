@@ -1,3 +1,5 @@
+using System.Globalization;
+using Bale.Core.Native;
 using Bale.Core.Api.Models;
 using Bale.Core.Detail;
 using Bale.Core.Playback;
@@ -328,6 +330,104 @@ public class RustPortDifferentialTests
         {
             return "failed:" + error.DecoderUnsupported;
         }
+    }
+
+    private static readonly string?[] ResolutionLabels =
+    [
+        null, "", " ", "1080p", "1080P", "720", "720i", "4K", "4k uhd", "UHD", "2160p", "8K", "4320", "1440p", "QHD", "FHD", "HD", "SD", "576i",
+        "480", "x1080p", "1080px", "1080p_x", "a 1080 b", "10800", "720pp", "1080i ", "\u0661\u0660\u0668\u0660p", "\uFF11\uFF10\uFF18\uFF10",
+        "1080p\u200D", "\u200D1080p", "1080\u0301", "\u06F1\u06F0\u06F8\u06F0", "hd 2160", "abc 4k 1080", "0720", "99", "12345", "1080-p",
+        "\U0001D7CF\U0001D7CE\U0001D7D6\U0001D7CE", "\U0001D7CF080", "\u00AA1080", "Ultra HD", "Full HD 1080", "sdr", "4320p 8k",
+        // Numbers the named tiers don't know, so only the regex's \b and \d decide them.
+        "\u200D999p", "999\u200D", "\u200C999", "999_", "_999", "999\u0301", "\u0301999", "999\u00AA", "x999", "999i9", "999p ", " 999i",
+    ];
+
+    [Fact]
+    public void ResolutionRanksMatch()
+    {
+        foreach (var label in ResolutionLabels)
+        {
+            Assert.True(Reference.PlaybackFormatting.ResolutionRank(label) == Bale.Core.Detail.PlaybackFormatting.ResolutionRank(label),
+                $"label {label}");
+        }
+    }
+
+    [Fact]
+    public void FloatParsingMatchesDotNet()
+    {
+        foreach (var text in new[]
+        {
+            "23.976", " 24 ", "+25", "-1", "1.", ".5", ".", "", "1e3", "1E+3", "1e", "1e+", "1e-3", "Infinity", "-infinity", "+INFINITY",
+            "NaN", "-nan", "nan ", "inf", "-inf", "∞", "1,000", "1_000", "0x10", "1.2.3", "\t30\n", "\u00A030", "30\u3000", "١٢",
+            "24000", "1001", "29.97fps", "1e400", "-1e400", "4.9e-324", "1e-400", "00012", "+-1", "--1", " - 1",
+        })
+        {
+            double? expected = double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) ? value : null;
+            var bits = BaleCoreNative.Call("dotnet.parse_float", text, BaleCoreJson.Default.String, BaleCoreJson.Default.NullableUInt64);
+            double? actual = bits is { } b ? BitConverter.UInt64BitsToDouble(b) : null;
+            // .NET's and Rust's NaN bit patterns differ; NaN-ness is what matters.
+            Assert.True(Equals(expected, actual) || expected is { } e && actual is { } a && double.IsNaN(e) && double.IsNaN(a),
+                $"'{text}': .NET {expected}, Rust {actual}");
+        }
+    }
+
+    [Fact]
+    public void FormattingHelpersMatch()
+    {
+        var random = new Random(17);
+        var claims = ConsoleEvidence.ForHardware(Series).VideoDecode;
+        string?[] dolby = [null, "", "DVHE.05", "dvh1", "dva1", "DVAV", "dolby vision", "Dolby-Vision", "dovi", "hdr10 dv", "DV-HDR", "HDR10",
+            "dvx", "d.v", "\uFF24\uFF36\uFF28\uFF25", "dv\u0301he", "HLG", "dv"];
+        string?[] rates = [null, "", "23.976", "24000/1001", "29.97 fps", "30/0", "0", "-24", "60/1", "1e2", "Infinity", "NaN", "abc", "25/x"];
+        for (var run = 0; run < Runs; run++)
+        {
+            var version = Version(random);
+            version.Resolution = Pick(random, ResolutionLabels);
+            version.Bitrate = Pick(random, new long?[] { null, 0, 8_000, 80_000, 25_000_000 });
+            version.CodecVideo = random.Next(3) == 0 ? Pick(random, dolby) : version.CodecVideo;
+            foreach (var track in version.VideoTracks ?? [])
+            {
+                track.FrameRate = Pick(random, rates);
+                track.Bitrate = Pick(random, new long?[] { null, 0, 10_000, 50_000_000 });
+                track.VideoRange = Pick(random, dolby);
+                track.VideoRangeType = Pick(random, dolby);
+                track.DolbyVision = random.Next(5) == 0 ? Pick(random, dolby) : null;
+                track.DvProfile = random.Next(5) == 0 ? 5 : null;
+                if (random.Next(4) == 0) track.Codec = Pick(random, dolby);
+            }
+            Assert.Equal(Reference.PlaybackFormatting.IsDolbyVision(version), Bale.Core.Detail.PlaybackFormatting.IsDolbyVision(version));
+            var someClaims = claims.Where(_ => random.Next(3) != 0).Select(claim => random.Next(4) != 0 ? claim
+                : claim with { Profiles = Pick(random, new[] { new[] { "main 10" }, new[] { "main", "main 10" } }), MaxFrameRate = Pick(random, new double?[] { null, 24, 30 }), MaxBitrateKbps = 40_000 })
+                .ToArray();
+            Assert.Equal(Reference.PlaybackFormatting.Decodes(version, someClaims), Bale.Core.Detail.PlaybackFormatting.Decodes(version, someClaims));
+        }
+    }
+
+    [Fact]
+    public void VersionSelectionMatches()
+    {
+        var random = new Random(18);
+        var claims = ConsoleEvidence.ForHardware(Series).VideoDecode;
+        for (var run = 0; run < Runs; run++)
+        {
+            var versions = Enumerable.Range(0, random.Next(1, 6)).Select(_ =>
+            {
+                var version = Version(random);
+                version.Resolution = Pick(random, ResolutionLabels);
+                version.Bitrate = Pick(random, new long?[] { null, 4_000, 8_000, 20_000 });
+                version.FileSize = Pick(random, new long?[] { null, 1, 2 });
+                return version;
+            }).ToList();
+            var match = random.Next(3) == 0 ? null
+                : new Bale.Core.Detail.DisplayVersionMatch(Pick(random, new[] { 720, 1080, 2160 }), claims.Where(_ => random.Next(4) != 0).ToArray());
+            var selected = random.Next(4) == 0 ? Pick(random, FileIds) : null;
+            var last = random.Next(4) == 0 ? Pick(random, FileIds) : null;
+            var quality = Pick(random, new string?[] { null, "", "auto", " AUTO ", "original", "Source", "max", "1080p", "720p", "4K", "480", "x" });
+            var expected = Reference.PlaybackFormatting.SelectVersion(versions, match, selected, last, quality);
+            var actual = Bale.Core.Detail.PlaybackFormatting.SelectVersion(versions, match, selected, last, quality);
+            Assert.True(ReferenceEquals(expected, actual), $"run {run}: expected {versions.IndexOf(expected!)}, got {versions.IndexOf(actual!)}");
+        }
+        Assert.Null(Bale.Core.Detail.PlaybackFormatting.SelectVersion([], null));
     }
 
     private static string Outcome(Action action)
