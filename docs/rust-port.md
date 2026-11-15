@@ -60,10 +60,13 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    `DisplayHdrPolicy`, `DisplayMatchPolicy`. `PlaybackFormatting.Decodes`/`IsDolbyVision` stay C#
    for now; `CanManage` passes their answers in.
 3. **Capability claims** (done, d3050cb; routes verified on the console in 0.1.526, same six titles
-   as slice 2). Open: the first launch after installing 0.1.526 died silently (no log line, no
-   dump) during the first debug `play`, after the debug server had timed out twice; it did not
-   recur in that session, and a clean restart could not be retried (Device Portal stop/launch
-   timed out). Watch for it on the next fresh installs. `ConsoleEvidence` (baseline, probe-based
+   as slice 2). Open: the first launch after installing 0.1.526
+   died silently (no log line, no dump) during the first debug `play`, after the debug server had
+   timed out twice. Follow-up (same day): three cold stop/launch cycles with the same commands did
+   not crash. Reinstalling 0.1.526 (stopped or running) then left debug port 8790 silently dropped
+   (connect timeout, not refused) while Bale ran normally and logged "listening"; relaunch and
+   reinstall did not clear it. That points at the console's per-app firewall state after a package
+   update rather than the port; a console restart is the next step (owner deferred it). `ConsoleEvidence` (baseline, probe-based
    claims, AV1/MPEG-4 software claims). `PlaybackClaims` stays C#: it is Xbox-app glue (async probe,
    UI thread, logging) around these calls.
 4. **Plan handling:** `PlaybackStartBuilder`, `PlaybackReplan`, `PlaybackVersionNotice`,
