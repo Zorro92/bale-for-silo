@@ -40,7 +40,7 @@ public class DebugFfmpegPlaybackTests
     {
         Assert.Same(ConsoleEvidence.Default, DebugFfmpegPlayback.Capabilities("policy"));
         Assert.Same(ConsoleEvidence.Default, DebugFfmpegPlayback.Capabilities("direct"));
-        Assert.Same(new PlayPlanOptions(true, null, 0).Capabilities(), DebugFfmpegPlayback.Capabilities("policy"));
+        Assert.Same(new PlayPlanOptions(true, null, 0, FallbackClaims: true).Capabilities(), DebugFfmpegPlayback.Capabilities("policy"));
         var off = DebugFfmpegPlayback.Capabilities("off");
         Assert.DoesNotContain("av1", off.VideoCodecs);
         Assert.All(off.VideoDecode, decode => Assert.True(decode.Hardware));

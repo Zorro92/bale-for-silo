@@ -4,7 +4,7 @@ using Bale.Core.Playback;
 internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldSeconds, string? SaveHead = null, int HeadMegabytes = 0,
     string? SaveRange = null, long RangeOffset = 0, int RangeBytes = 0, string? FileId = null, int Av1MaxHeight = 1080,
     int? SubtitleIndex = null, string Delivery = "auto", double? StartSeconds = null,
-    IReadOnlyList<double>? ReanchorSeconds = null, bool InspectHls = false, bool Hdr10 = false)
+    IReadOnlyList<double>? ReanchorSeconds = null, bool InspectHls = false, bool Hdr10 = false, bool FallbackClaims = false)
 {
     internal static bool TryParse(IEnumerable<string> arguments, out PlayPlanOptions options, out string error)
     {
@@ -55,6 +55,9 @@ internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldS
                     break;
                 case "--hdr10" when !options.Hdr10:
                     options = options with { Hdr10 = true };
+                    break;
+                case "--fallback-claims" when !options.FallbackClaims:
+                    options = options with { FallbackClaims = true };
                     break;
                 case "--claim-av1" when !options.ClaimAv1:
                     options = options with { ClaimAv1 = true };
@@ -121,18 +124,27 @@ internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldS
     };
 
     // --claim-av1 remains a compatibility no-op; only the explicit height probe expands AV1.
+    // The Series X decoder report (docs/player-plan.md "GPU decode"): what PlaybackClaims.DetectAsync
+    // claims after a successful probe on the owner's console.
+    internal static HardwareDecodeLimits SeriesXDecoders { get; } = new(H264: new(1920, 1080),
+        HevcMain: new(7680, 4320), HevcMain10: new(7680, 4320), Vp9Profile0: new(3840, 2160), Vp9Profile2: new(3840, 2160),
+        Vc1: new(1920, 1080), Mpeg2: new(1920, 1080));
+
     internal DeviceCapabilities Capabilities()
     {
-        // --hdr10 plans like the app's `hdr pretend` on a Series X: an exact HDR10 display and the
-        // console's decoder report (h264=1080p hevc=4320p vp9=2160p), so 4K HDR originals can be checked.
-        var device = Hdr10
-            ? ConsoleEvidence.ForHardware(new(H264: new(1920, 1080), HevcMain: new(7680, 4320), HevcMain10: new(7680, 4320),
-                Vp9Profile0: new(3840, 2160), Vp9Profile2: new(3840, 2160))) with
+        // Default: plan like the app on a Series X with a 1080p SDR display (the owner's setup): the
+        // console's decoder report, an exact SDR display and the console tone map, as the app claims
+        // with its production defaults. --hdr10 plans like the app's `hdr pretend`: the same decoders
+        // and an exact HDR10 display, so 4K HDR originals can be checked. --fallback-claims plans like
+        // a console whose decoder probe failed (H.264/HEVC 1080p baseline, no VP9/VC-1/MPEG-2).
+        var device = FallbackClaims
+            ? ConsoleEvidence.Default
+            : ConsoleEvidence.ForHardware(SeriesXDecoders) with
             {
-                Hdr = new() { Hdr10 = true },
+                Hdr = Hdr10 ? new() { Hdr10 = true } : new(),
                 DisplayHdrEvidence = "exact",
-            }
-            : ConsoleEvidence.Default;
+                OriginalDynamicRangeMappingSupported = !Hdr10,
+            };
         if (Av1MaxHeight != 2160) return device;
         var av1 = ConsoleEvidence.BuildVideoDecode(3840, 2160).Where(decode => decode.Codec == "av1");
         return device with { VideoDecode = device.VideoDecode.Where(decode => decode.Codec != "av1").Concat(av1).ToArray() };

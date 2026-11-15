@@ -1172,7 +1172,11 @@ Windows' MP4 source never sees dvh1/dvhe entries) to the system HEVC decoder, wh
 units (type 62, unspecified in HEVC). An 8.1 plan switches HDMI to HDR10 like plain HDR10; Bale
 claims no native HLG, so 8.4 stays with the server on HDR displays; eligible SDR starts use the
 client-managed dynamic-range path below. Debug `ffmpeg off` withdraws the claim, and a failed
-mount withdraws it on replan. `bale-cli play-plan --hdr10` plans like `hdr pretend` on a Series X:
+mount withdraws it on replan. Since 2026-11-14 `bale-cli play-plan` plans by default like the app on a
+Series X with a 1080p SDR display: the console's decoder report (H.264/VC-1/MPEG-2 1080p, HEVC 8K,
+VP9 4K), an exact SDR display and the console tone map. `--fallback-claims` plans like a failed
+decoder probe (the old CLI default: H.264/HEVC 1080p, no VP9/VC-1/MPEG-2, server tone map); a
+library scan with it overstates transcodes. `bale-cli play-plan --hdr10` plans like `hdr pretend` on a Series X:
 a 4K DV profile 8 MKV now returns original_http instead of an HLS remux; without HDR10 the server
 still picks the SDR version.
 

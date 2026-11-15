@@ -7,8 +7,9 @@
 //   bale-cli home [--json] [--for-you]         print the home rows Bale would show
 //   bale-cli detail <content-id>   print a title's detail page as Bale shows it
 //   bale-cli search <query>        print search results and their artwork
-//   bale-cli play-plan <content-id> [Bale Test] [--file <fileId>] [--subtitle <index|-1>] [--av1-max-height <1080|2160>] [--hdr10] [--url-file <path>] [--save-head <path> <MiB>] [--save-range <path> <offset> <bytes>] [--hold <seconds>]
+//   bale-cli play-plan <content-id> [Bale Test] [--file <fileId>] [--subtitle <index|-1>] [--av1-max-height <1080|2160>] [--hdr10] [--fallback-claims] [--delivery auto|hls|remux] [--url-file <path>] [--save-head <path> <MiB>] [--save-range <path> <offset> <bytes>] [--hold <seconds>]
 //       Bale Test only; private original_http URL file, hold 0–3600 s then stop (also on Ctrl+C)
+//       Plans as a Series X on a 1080p SDR display (decoder report + console tone map); --hdr10 = HDR10 display, --fallback-claims = failed decoder probe
 //       Explicit file selection; AV1 defaults to 1080p, 2160p is an unmeasured debug claim
 //       HLS seek probe: --delivery hls --start <seconds> --reanchor <seconds> (repeatable) --inspect-hls
 //   bale-cli logout
@@ -288,7 +289,7 @@ catch (Bale.Core.Api.Models.Problem problem)
 
 static int Usage()
 {
-    Console.Error.WriteLine("usage: bale-cli <capability|pair-test|login> <server> | <profiles|home [--json] [--for-you]|detail <id>|search <query>|play-plan <id> [Bale Test] [--file <fileId>] [--subtitle <index|-1>] [--av1-max-height <1080|2160>] [--hdr10] [--delivery auto|hls|remux] [--start <seconds>] [--reanchor <seconds>] [--inspect-hls] [--url-file <path>] [--save-head <path> <MiB>] [--save-range <path> <offset> <bytes>] [--hold <seconds>]|logout>");
+    Console.Error.WriteLine("usage: bale-cli <capability|pair-test|login> <server> | <profiles|home [--json] [--for-you]|detail <id>|search <query>|play-plan <id> [Bale Test] [--file <fileId>] [--subtitle <index|-1>] [--av1-max-height <1080|2160>] [--hdr10] [--fallback-claims] [--delivery auto|hls|remux] [--start <seconds>] [--reanchor <seconds>] [--inspect-hls] [--url-file <path>] [--save-head <path> <MiB>] [--save-range <path> <offset> <bytes>] [--hold <seconds>]|logout>");
     return 2;
 }
 

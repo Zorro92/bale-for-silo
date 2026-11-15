@@ -58,7 +58,27 @@ public class PlayPlanOptionsTests
         Assert.Null(options.FileId);
         Assert.Equal(1080, options.Av1MaxHeight);
         Assert.Equal(0, options.HoldSeconds);
+        Assert.False(options.FallbackClaims);
+        // Plans like the app on a Series X with an SDR display: decoder report plus console tone map.
+        var device = options.Capabilities();
+        Assert.Equal(ConsoleEvidence.ForHardware(PlayPlanOptions.SeriesXDecoders).VideoDecode
+                .Select(decode => (decode.Codec, decode.MaxWidth, decode.MaxHeight, decode.Hardware)),
+            device.VideoDecode.Select(decode => (decode.Codec, decode.MaxWidth, decode.MaxHeight, decode.Hardware)));
+        Assert.Equal("exact", device.DisplayHdrEvidence);
+        Assert.False(device.Hdr.Hdr10);
+        Assert.True(device.OriginalDynamicRangeMappingSupported);
+        foreach (var codec in new[] { "vp9", "vc1", "mpeg2video", "mpeg4", "av1" })
+            Assert.Contains(device.VideoDecode, decode => decode.Codec == codec);
+        Assert.Contains(device.VideoDecode, decode => decode.Codec == "hevc" && decode.MaxWidth == 7680);
+    }
+
+    [Fact]
+    public void FallbackClaimsPlanLikeAFailedDecoderProbe()
+    {
+        Assert.True(PlayPlanOptions.TryParse(["--fallback-claims"], out var options, out _));
+        Assert.True(options.FallbackClaims);
         Assert.Same(ConsoleEvidence.Default, options.Capabilities());
+        Assert.False(PlayPlanOptions.TryParse(["--fallback-claims", "--fallback-claims"], out _, out _));
     }
 
     [Fact]
@@ -95,7 +115,7 @@ public class PlayPlanOptionsTests
     [InlineData("2160", 3840, 2160)]
     public void ExplicitAv1HeightChangesOnlyTheRequestedDecodeBounds(string value, int width, int height)
     {
-        Assert.True(PlayPlanOptions.TryParse(["--av1-max-height", value], out var options, out _));
+        Assert.True(PlayPlanOptions.TryParse(["--av1-max-height", value, "--fallback-claims"], out var options, out _));
         Assert.Equal(height, options.Av1MaxHeight);
         var capabilities = options.Capabilities();
         Assert.Equal(ConsoleEvidence.Default with { VideoDecode = capabilities.VideoDecode }, capabilities);
@@ -213,8 +233,8 @@ public class PlayPlanOptionsTests
     [Fact]
     public void LegacyAv1FlagIsANoOpAndCannotExpandTheMeasuredProductionClaim()
     {
-        Assert.True(PlayPlanOptions.TryParse(["--claim-av1"], out var legacy, out _));
-        Assert.True(PlayPlanOptions.TryParse([], out var normal, out _));
+        Assert.True(PlayPlanOptions.TryParse(["--claim-av1", "--fallback-claims"], out var legacy, out _));
+        Assert.True(PlayPlanOptions.TryParse(["--fallback-claims"], out var normal, out _));
         Assert.Same(ConsoleEvidence.Default, legacy.Capabilities());
         Assert.Same(normal.Capabilities(), legacy.Capabilities());
         var av1 = Assert.Single(legacy.Capabilities().VideoDecode, codec => codec.Codec == "av1");
