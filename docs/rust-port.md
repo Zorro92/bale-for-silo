@@ -46,6 +46,10 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
 - Results deserialized into C# records must carry every init-only property: System.Text.Json's
   generated code sets a missing one to null/false, not to its C# initializer (this broke
   `ConsoleEvidence.Default`'s empty lists until Rust wrote them all).
+- serde_json needs `float_roundtrip`: its default float parser can be one ULP off, so a double
+  arriving from C# could differ from the one sent (caught by the formatter test on large values).
+- Text Rust formats for C# must follow .NET's rules: `"0.0"` rounds 15 significant digits half away
+  from zero, and the invariant culture writes infinity as "Infinity" (`dotnet::format_fixed`).
 - A C# `InvalidDataException` becomes `{"invalid_data": message}` and is rethrown unchanged.
 
 ### Slices, in order
@@ -80,8 +84,11 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    Kept in C#: `PlaybackMediaUrl` (a security check that must use the same `Uri` parser as the code
    that fetches), and `PlaybackStartBuilder`/`PlaybackReplan` (they reshape the C# request records
    the C# HTTP client sends; revisit only if requests move to Rust).
-5. **Meters and timing:** `ConnectionSpeedMeter`, `PlaybackThroughputMeter`,
-   `PlaybackFrameDeliveryMeter`, `PlaybackLateFrameTrace`, `PlaybackSeekReanchor`.
+5. **Meters and timing** (ported, console check pending): `PlaybackFrameDeliveryMeter`,
+   `PlaybackLateFrameTrace`, `PlaybackFrameRecordProcessor`, `PlaybackThroughputMeter`,
+   `ConnectionSpeedMeter` and `PlaybackSeekReanchor`. The per-frame and per-read meters use a second
+   ABI (`abi_meters.rs`): Rust owns each meter behind a handle (a `SafeHandle` in C#, freed by the
+   GC), calls take `#[repr(C)]` structs and numbers, no JSON. ABI version 2.
 
 After slice 5, decide with the owner whether the HTTP streams (`HttpRangeStream`,
 `ProgressiveHttpStream`) are worth moving: they are tied to .NET streams and the Media Foundation

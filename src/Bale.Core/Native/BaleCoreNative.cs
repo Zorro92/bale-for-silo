@@ -16,7 +16,7 @@ internal static unsafe class BaleCoreNative
 {
     // bale_core.dll on Windows, libbale_core.so on Linux.
     private const string Library = "bale_core";
-    private const uint AbiVersion = 1;
+    private const uint AbiVersion = 2;
     private const int CallOk = 0;
     private const int CallFailed = 1;
 
@@ -41,6 +41,12 @@ internal static unsafe class BaleCoreNative
     public static TResult Call<TArgument, TResult>(string name, TArgument argument,
         JsonTypeInfo<TArgument> argumentType, JsonTypeInfo<TResult> resultType) =>
         Call(name, JsonSerializer.SerializeToUtf8Bytes(argument, argumentType), resultType);
+
+    /// <summary>Checks the library's ABI version once (the handle ABI calls this before its first use).</summary>
+    public static void EnsureLoaded() => _ = AbiChecked.Value;
+
+    /// <summary>Releases a buffer the library handed out.</summary>
+    public static void Free(byte* buffer, nuint length) => bale_core_free(buffer, length);
 
     /// <summary>Calls with an argument object written by <paramref name="write"/> (see BaleCoreArgs).</summary>
     public static TResult Call<TResult>(string name, Action<Utf8JsonWriter> write, JsonTypeInfo<TResult> resultType)
@@ -109,6 +115,7 @@ public sealed record BaleCoreChecked<T>(T? Ok = default, string? InvalidData = n
 [JsonSerializable(typeof(long?))]
 [JsonSerializable(typeof(uint?))]
 [JsonSerializable(typeof(AudioSelectionOutcome))]
+[JsonSerializable(typeof(long[]))]
 [JsonSerializable(typeof(BaleCoreChecked<int>))]
 [JsonSerializable(typeof(BaleCoreChecked<bool>))]
 [JsonSerializable(typeof(Playback.DeviceCapabilities))]

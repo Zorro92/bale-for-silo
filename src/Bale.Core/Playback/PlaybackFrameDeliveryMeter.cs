@@ -1,100 +1,40 @@
+using Bale.Core.Native;
+
 namespace Bale.Core.Playback;
 
 /// <summary>
 /// Observes decoded video sample delivery, not rendering. A late frame has a presentation timestamp
 /// behind the player clock when delivered. Display cadence and actual renderer drops are not measured.
+/// Implemented in Rust (native/bale-core/src/frames.rs); thread-safe.
 /// </summary>
-public sealed class PlaybackFrameDeliveryMeter
+public sealed unsafe class PlaybackFrameDeliveryMeter
 {
     public const int RecentWindowMilliseconds = 10_000;
-    private readonly object _gate = new();
-    private readonly Queue<long> _recent = new();
-    private readonly List<double>? _ahead;
-    private long _delivered;
-    private long _late;
-    private bool _observed;
-    private bool _seeking;
-    private bool _ignoreNext = true;
-    private TimeSpan? _deliveredEnd;
+    private readonly DeliveryHandle _handle;
 
     // Retain per-frame horizons only for a bounded debug probe, never the long-running player.
-    public PlaybackFrameDeliveryMeter(bool collectAheadStatistics = false) =>
-        _ahead = collectAheadStatistics ? [] : null;
-
-    public void SetSeeking(bool seeking)
+    public PlaybackFrameDeliveryMeter(bool collectAheadStatistics = false)
     {
-        lock (_gate)
-        {
-            _seeking = seeking;
-            InvalidateTimelineCore();
-        }
+        BaleCoreMeters.EnsureLoaded();
+        _handle = BaleCoreMeters.bale_core_delivery_create(collectAheadStatistics ? (byte)1 : (byte)0);
     }
 
-    public void InvalidateTimeline()
-    {
-        lock (_gate) InvalidateTimelineCore();
-    }
+    public void SetSeeking(bool seeking) => BaleCoreMeters.bale_core_delivery_set_seeking(_handle, seeking ? (byte)1 : (byte)0);
 
-    private void InvalidateTimelineCore()
-    {
-        _deliveredEnd = null;
-        _ignoreNext = true;
-    }
+    public void InvalidateTimeline() => BaleCoreMeters.bale_core_delivery_invalidate(_handle);
 
     /// <param name="nowMilliseconds">Monotonic wall time, shared with Read.</param>
     /// <returns>Whether this sample counted as a late frame.</returns>
     public bool Observe(TimeSpan timestamp, TimeSpan duration, TimeSpan position, bool playing,
-        bool discontinuous, long nowMilliseconds)
-    {
-        lock (_gate)
-        {
-            if (_seeking) return false;
-            var late = false;
-            _observed = true;
-            _delivered++;
-            _deliveredEnd = timestamp + duration;
-            // Exclude preroll, the first frame after a timeline reset, and non-playing delivery.
-            if (playing && !_ignoreNext && !discontinuous)
-            {
-                _ahead?.Add(Math.Max(0, (_deliveredEnd.Value - position).TotalSeconds));
-                if (timestamp < position)
-                {
-                    _late++;
-                    _recent.Enqueue(nowMilliseconds);
-                    late = true;
-                }
-            }
-            _ignoreNext = !playing;
-            Trim(nowMilliseconds);
-            return late;
-        }
-    }
+        bool discontinuous, long nowMilliseconds) =>
+        BaleCoreMeters.bale_core_delivery_observe(_handle, timestamp.Ticks, duration.Ticks, position.Ticks,
+            playing ? (byte)1 : (byte)0, discontinuous ? (byte)1 : (byte)0, nowMilliseconds) != 0;
 
     public PlaybackFrameDeliverySnapshot? Read(TimeSpan position, long nowMilliseconds)
     {
-        lock (_gate)
-        {
-            Trim(nowMilliseconds);
-            double? minimum = null;
-            double? median = null;
-            if (_ahead is { Count: > 0 })
-            {
-                var sorted = _ahead.ToArray();
-                Array.Sort(sorted);
-                minimum = sorted[0];
-                var middle = sorted.Length / 2;
-                median = sorted.Length % 2 == 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
-            }
-            return !_observed ? null : new(_late, _recent.Count,
-                _deliveredEnd is { } end ? Math.Max(0, (end - position).TotalSeconds) : null,
-                _delivered, minimum, median);
-        }
-    }
-
-    private void Trim(long nowMilliseconds)
-    {
-        while (_recent.TryPeek(out var time) && nowMilliseconds - time >= RecentWindowMilliseconds)
-            _recent.Dequeue();
+        NativeDeliverySnapshot native;
+        return BaleCoreMeters.bale_core_delivery_read(_handle, position.Ticks, nowMilliseconds, &native) != 0
+            ? BaleCoreMeters.FromNative(native) : null;
     }
 }
 

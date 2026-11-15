@@ -520,7 +520,18 @@ jobs:
               Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
             $exports = & $dumpbin.FullName /exports $packagedDll
             if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect packaged bale_core.dll exports' }
-            foreach ($symbol in 'bale_core_abi_version', 'bale_core_call', 'bale_core_free') {
+            # JSON calls, then the handle ABI (native/bale-core/src/abi_meters.rs) the C# meters import.
+            $required = @('bale_core_abi_version', 'bale_core_call', 'bale_core_free',
+              'bale_core_frames_create', 'bale_core_frames_destroy', 'bale_core_frames_add_snapshot',
+              'bale_core_frames_snapshot_for', 'bale_core_frames_process', 'bale_core_frames_read',
+              'bale_core_frames_describe', 'bale_core_frames_reset_trace',
+              'bale_core_delivery_create', 'bale_core_delivery_destroy', 'bale_core_delivery_set_seeking',
+              'bale_core_delivery_invalidate', 'bale_core_delivery_observe', 'bale_core_delivery_read',
+              'bale_core_trace_create', 'bale_core_trace_destroy', 'bale_core_trace_sample', 'bale_core_trace_reset',
+              'bale_core_trace_describe', 'bale_core_throughput_create', 'bale_core_throughput_destroy',
+              'bale_core_throughput_sample', 'bale_core_speed_create', 'bale_core_speed_destroy', 'bale_core_speed_add',
+              'bale_core_speed_stop_at', 'bale_core_speed_result', 'bale_core_speed_window_kbps')
+            foreach ($symbol in $required) {
               if (-not ($exports | Select-String -Pattern "\s$([regex]::Escape($symbol))\s*$" -Quiet)) {
                 throw "Packaged bale_core.dll is missing export $symbol"
               }

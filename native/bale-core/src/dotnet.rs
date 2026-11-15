@@ -54,6 +54,87 @@ pub fn double<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<f64, 
     }
 }
 
+/// `value.ToString("0.0")` (more generally `"0." + decimals zeros`) with the invariant culture, as
+/// .NET Core 3.0+ formats a double for a custom format: 15 significant digits first, then the
+/// digit string rounded half away from zero. Rust's `{:.1}` rounds the exact binary value instead,
+/// so 0.15 would print "0.1" where .NET prints "0.2". Checked against .NET by BaleCoreNativeTests.
+pub fn format_fixed(value: f64, decimals: usize) -> String {
+    if value.is_nan() {
+        return "NaN".to_owned();
+    }
+    if value.is_infinite() {
+        // The invariant culture's symbols, not "∞".
+        return if value > 0.0 { "Infinity" } else { "-Infinity" }.to_owned();
+    }
+    let negative = value.is_sign_negative();
+    // 15 significant digits, correctly rounded, as d.dddddddddddddde±x.
+    let (mut digits, point) = if value == 0.0 {
+        (vec![0u8], 1i64)
+    } else {
+        let text = format!("{:.14e}", value.abs());
+        let (mantissa, exponent) = text.split_once('e').unwrap_or((&text, "0"));
+        let digits: Vec<u8> = mantissa
+            .bytes()
+            .filter(u8::is_ascii_digit)
+            .map(|b| b - b'0')
+            .collect();
+        (digits, exponent.parse::<i64>().unwrap_or(0) + 1)
+    };
+    // Round the digit string to `decimals` places after the point, half up on the next digit.
+    let keep = point + decimals as i64;
+    let mut point = point;
+    if keep < 0 {
+        digits = vec![0];
+        point = 1;
+    } else if (keep as usize) < digits.len() {
+        let round_up = digits[keep as usize] >= 5;
+        digits.truncate(keep as usize);
+        if round_up {
+            let mut i = digits.len();
+            loop {
+                if i == 0 {
+                    digits.insert(0, 1);
+                    point += 1;
+                    break;
+                }
+                i -= 1;
+                if digits[i] == 9 {
+                    digits[i] = 0;
+                } else {
+                    digits[i] += 1;
+                    break;
+                }
+            }
+        }
+    }
+    let digit = |i: i64| {
+        if i >= 0 && (i as usize) < digits.len() {
+            char::from(b'0' + digits[i as usize])
+        } else {
+            '0'
+        }
+    };
+    let mut integer: String = (0..point.max(0))
+        .map(digit)
+        .collect::<String>()
+        .trim_start_matches('0')
+        .to_owned();
+    if integer.is_empty() {
+        integer.push('0');
+    }
+    let fraction: String = (point..point + decimals as i64).map(digit).collect();
+    let mut text = String::new();
+    if negative {
+        text.push('-');
+    }
+    text.push_str(&integer);
+    if decimals > 0 {
+        text.push('.');
+        text.push_str(&fraction);
+    }
+    text
+}
+
 fn simple_lower(c: char) -> char {
     let mut lower = c.to_lowercase();
     match (lower.next(), lower.next()) {

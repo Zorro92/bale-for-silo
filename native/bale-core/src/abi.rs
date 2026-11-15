@@ -7,7 +7,7 @@ use serde::de::DeserializeOwned;
 
 /// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched library.
 /// Adding a function name to [`dispatch`] is not an ABI change.
-pub const ABI_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = 2;
 
 /// The result buffer holds the function's JSON result.
 pub const CALL_OK: i32 = 0;
@@ -87,7 +87,7 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         Checked, DeviceCapabilities, DisplayMode, FileVersion, HdrCapabilities, PlaybackPlan,
     };
     use crate::{
-        audio_selection, display, dolby_vision7, evidence, hardware, language, route,
+        audio_selection, display, dolby_vision7, evidence, hardware, language, reanchor, route,
         software_decode, subtitles, tone_map, version_notice,
     };
     use serde::Deserialize;
@@ -157,6 +157,12 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         mime_type: Option<String>,
     }
     #[derive(Deserialize)]
+    struct FormatArgs {
+        #[serde(deserialize_with = "crate::dotnet::double")]
+        value: f64,
+        decimals: usize,
+    }
+    #[derive(Deserialize)]
     struct Hdr10Mode {
         current: DisplayMode,
         modes: Vec<DisplayMode>,
@@ -206,6 +212,13 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         }
         "subtitles.format" => with_json(name, input, |a: SubtitleFormat| {
             subtitles::format(a.format.as_deref(), a.mime_type.as_deref())
+        }),
+        "reanchor.matches" => with_json(name, input, |a: reanchor::MatchesArgs| {
+            reanchor::matches(&a)
+        }),
+        // Test hook: BaleCoreNativeTests checks the formatter against double.ToString.
+        "dotnet.format_fixed" => with_json(name, input, |a: FormatArgs| {
+            crate::dotnet::format_fixed(a.value, a.decimals.min(6))
         }),
         "route.decide" => with_json(name, input, route::decide),
         "route.is_matroska" => with_json(name, input, |c: Option<String>| {

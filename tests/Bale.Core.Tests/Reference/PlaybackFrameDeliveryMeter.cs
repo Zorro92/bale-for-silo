@@ -1,0 +1,103 @@
+using Bale.Core.Playback;
+
+// The C# originals, before the Rust port (docs/rust-port.md), for differential tests only.
+namespace Bale.Core.Tests.Reference;
+
+
+/// <summary>
+/// Observes decoded video sample delivery, not rendering. A late frame has a presentation timestamp
+/// behind the player clock when delivered. Display cadence and actual renderer drops are not measured.
+/// </summary>
+internal sealed class PlaybackFrameDeliveryMeter
+{
+    public const int RecentWindowMilliseconds = 10_000;
+    private readonly object _gate = new();
+    private readonly Queue<long> _recent = new();
+    private readonly List<double>? _ahead;
+    private long _delivered;
+    private long _late;
+    private bool _observed;
+    private bool _seeking;
+    private bool _ignoreNext = true;
+    private TimeSpan? _deliveredEnd;
+
+    // Retain per-frame horizons only for a bounded debug probe, never the long-running player.
+    public PlaybackFrameDeliveryMeter(bool collectAheadStatistics = false) =>
+        _ahead = collectAheadStatistics ? [] : null;
+
+    public void SetSeeking(bool seeking)
+    {
+        lock (_gate)
+        {
+            _seeking = seeking;
+            InvalidateTimelineCore();
+        }
+    }
+
+    public void InvalidateTimeline()
+    {
+        lock (_gate) InvalidateTimelineCore();
+    }
+
+    private void InvalidateTimelineCore()
+    {
+        _deliveredEnd = null;
+        _ignoreNext = true;
+    }
+
+    /// <param name="nowMilliseconds">Monotonic wall time, shared with Read.</param>
+    /// <returns>Whether this sample counted as a late frame.</returns>
+    public bool Observe(TimeSpan timestamp, TimeSpan duration, TimeSpan position, bool playing,
+        bool discontinuous, long nowMilliseconds)
+    {
+        lock (_gate)
+        {
+            if (_seeking) return false;
+            var late = false;
+            _observed = true;
+            _delivered++;
+            _deliveredEnd = timestamp + duration;
+            // Exclude preroll, the first frame after a timeline reset, and non-playing delivery.
+            if (playing && !_ignoreNext && !discontinuous)
+            {
+                _ahead?.Add(Math.Max(0, (_deliveredEnd.Value - position).TotalSeconds));
+                if (timestamp < position)
+                {
+                    _late++;
+                    _recent.Enqueue(nowMilliseconds);
+                    late = true;
+                }
+            }
+            _ignoreNext = !playing;
+            Trim(nowMilliseconds);
+            return late;
+        }
+    }
+
+    public PlaybackFrameDeliverySnapshot? Read(TimeSpan position, long nowMilliseconds)
+    {
+        lock (_gate)
+        {
+            Trim(nowMilliseconds);
+            double? minimum = null;
+            double? median = null;
+            if (_ahead is { Count: > 0 })
+            {
+                var sorted = _ahead.ToArray();
+                Array.Sort(sorted);
+                minimum = sorted[0];
+                var middle = sorted.Length / 2;
+                median = sorted.Length % 2 == 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+            }
+            return !_observed ? null : new Bale.Core.Playback.PlaybackFrameDeliverySnapshot(_late, _recent.Count,
+                _deliveredEnd is { } end ? Math.Max(0, (end - position).TotalSeconds) : null,
+                _delivered, minimum, median);
+        }
+    }
+
+    private void Trim(long nowMilliseconds)
+    {
+        while (_recent.TryPeek(out var time) && nowMilliseconds - time >= RecentWindowMilliseconds)
+            _recent.Dequeue();
+    }
+}
