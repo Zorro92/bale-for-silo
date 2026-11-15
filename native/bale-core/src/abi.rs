@@ -243,6 +243,9 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         "dotnet.parse_float" => with_json(name, input, |v: String| {
             crate::dotnet::parse_float(&v).map(f64::to_bits)
         }),
+        "http_probe.run" => with_json(name, input, |a: crate::http_probe::ProbeArgs| {
+            crate::http_probe::probe(&a)
+        }),
         "route.decide" => with_json(name, input, route::decide),
         "route.is_matroska" => with_json(name, input, |c: Option<String>| {
             route::is_matroska(c.as_deref())

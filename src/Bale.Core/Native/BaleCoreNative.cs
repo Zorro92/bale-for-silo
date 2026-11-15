@@ -116,6 +116,7 @@ public sealed record BaleCoreChecked<T>(T? Ok = default, string? InvalidData = n
 [JsonSerializable(typeof(uint?))]
 [JsonSerializable(typeof(AudioSelectionOutcome))]
 [JsonSerializable(typeof(long[]))]
+[JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(double?))]
 [JsonSerializable(typeof(ulong?))]

@@ -17,3 +17,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value", "float_roundtrip"] }
 # .NET's regex \d/\w and char.IsLetterOrDigit follow Unicode general categories (dotnet.rs).
 unicode-general-category = "1.1"
+# Go/no-go spike for moving the HTTP streams to Rust (docs/rust-port.md, "HTTP streams"): a debug-only
+# download probe. rustls with bundled webpki roots, so it needs nothing from the app container's
+# certificate store. Remove both if the spike says no.
+ureq = { version = "3", default-features = false, features = ["rustls"] }

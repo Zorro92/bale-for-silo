@@ -1,3 +1,4 @@
+using System.Net;
 using Bale.Core.Api;
 using Bale.Core.Api.Models;
 using Bale.Core.Auth;
@@ -18,6 +19,7 @@ public sealed class SiloClient : IDisposable
     private static readonly TimeSpan RefreshMargin = TimeSpan.FromMinutes(2);
 
     private readonly SiloConnection _connection;
+    private readonly ClientIdentity _identity;
     private readonly TimeProvider _time;
     private readonly Func<SiloClient, Task>? _onSessionExpired;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
@@ -31,6 +33,7 @@ public sealed class SiloClient : IDisposable
         Func<SiloClient, Task>? onSessionExpired = null)
     {
         _time = time ?? TimeProvider.System;
+        _identity = identity;
         _onSessionExpired = onSessionExpired;
         _connection = new SiloConnection(server, identity, CurrentCredentialsAsync, transport, RefreshRejectedCredentialsAsync);
         DeviceLogin = new DeviceLoginFlow(_connection.Api, time);
@@ -242,6 +245,33 @@ public sealed class SiloClient : IDisposable
         Profiles.Management.End();
         _connection.Dispose();
         _refreshLock.Dispose();
+    }
+
+    /// <summary>
+    /// Debug only (the Rust HTTP spike, docs/rust-port.md): the exact headers this client would send to
+    /// <paramref name="uri"/> for the current playback profile, bearer token included, without sending
+    /// anything. Credentials: never log or persist the result.
+    /// </summary>
+    public async Task<IReadOnlyList<KeyValuePair<string, string>>> CaptureRequestHeadersAsync(Uri uri, CancellationToken cancellationToken)
+    {
+        var capture = new HeaderCapture();
+        using var invoker = new HttpMessageInvoker(new SiloRequestHandler(_identity, CurrentCredentialsAsync, capture));
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        request.Options.Set(new HttpRequestOptionsKey<ProfileRequestOption>(typeof(ProfileRequestOption).FullName!),
+            CapturePlaybackScope().Request);
+        using var _ = await invoker.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        return capture.Headers;
+    }
+
+    private sealed class HeaderCapture : HttpMessageHandler
+    {
+        public IReadOnlyList<KeyValuePair<string, string>> Headers { get; private set; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Headers = request.Headers.Select(header => KeyValuePair.Create(header.Key, string.Join(", ", header.Value))).ToArray();
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
+        }
     }
 
     private Playback.PlaybackRequestScope CapturePlaybackScope()

@@ -383,6 +383,8 @@ internal sealed partial class DebugServer
                 return ("200 OK", DebugConnectionSpeed.Describe());
             case ("POST", "/speed"):
                 return ("200 OK", await DebugConnectionSpeed.TestAsync(query.GetValueOrDefault("mode")));
+            case ("POST", "/rusthttp"):
+                return await DebugRustHttp.RunAsync();
             case ("GET", "/gc"):
                 if (query.Count != 0)
                     return ("400 Bad Request", GcUsage);

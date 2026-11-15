@@ -100,9 +100,13 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    (`unicode-general-category`), and frame rates parse with .NET's `NumberStyles.Float` grammar.
    Detail label text (`VersionCompactLabel` and friends) stays C#.
 
-After slice 5, decide with the owner whether the HTTP streams (`HttpRangeStream`,
-`ProgressiveHttpStream`) are worth moving: they are tied to .NET streams and the Media Foundation
-byte-stream adapter, so a port means a Rust byte stream handed to MF directly.
+7. **HTTP streams** (owner 2026-11-15: "skeptical, but try it"). Step 0 is a go/no-go spike, not a
+   port: `bale-debug.sh rusthttp` downloads the speed-test probe with a Rust HTTP + TLS stack (ureq,
+   rustls, bundled webpki roots) inside the app, with the exact headers the C# client would send, and
+   reports throughput and the thread's CPU time. Compare with `speed test` (C# `SocketsHttpHandler`),
+   running `threads` alongside each. Port only if Rust connects from the app container and is at least
+   as fast for no more CPU; otherwise remove the spike (ureq, `http_probe.rs`, `RustHttpProbe`, the
+   debug route) and keep the streams in C#.
 
 ### Stays in C#
 

@@ -17,6 +17,7 @@ pub mod evidence;
 pub mod formatting;
 pub mod frames;
 pub mod hardware;
+pub mod http_probe;
 pub mod language;
 pub mod meters;
 pub mod models;
