@@ -134,6 +134,24 @@ pub unsafe extern "C" fn bale_core_progressive_destroy(handle: *mut ProgressiveS
     }
 }
 
+/// Warms a pooled connection to `url`'s host in the background (`http::warm`), e.g. while a seek's
+/// reanchor request runs. Returns at once; -1 for invalid arguments.
+///
+/// # Safety
+/// `url` points to `url_len` readable UTF-8 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_core_http_warm(url: *const u8, url_len: usize) -> i32 {
+    // SAFETY: the caller guarantees a readable range.
+    let Some(Ok(url)) = (unsafe { bytes(url, url_len) }).map(std::str::from_utf8) else {
+        return INVALID;
+    };
+    let url = url.to_owned();
+    match catch_unwind(AssertUnwindSafe(|| crate::http::warm(url))) {
+        Ok(()) => 0,
+        Err(_) => INVALID,
+    }
+}
+
 /// A new WinRT `IInputStream` over the stream, as a raw ABI pointer owning one reference (the
 /// caller releases it). Its reads never fail. Null off Windows or for a null handle.
 ///

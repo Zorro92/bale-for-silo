@@ -124,6 +124,26 @@ public sealed class RustProgressiveStreamTests
         Assert.Equal(0, stream.Read(buffer, 0, buffer.Length));
     }
 
+    /// <summary>
+    /// A seek drops the remux's connection; the warm-up done during the replan must leave one in the
+    /// pool for the next open, or it pays TCP and TLS handshakes (~0.4 s on the console).
+    /// </summary>
+    [Fact]
+    public async Task AWarmedConnectionServesTheNextOpen()
+    {
+        using var server = new LoopbackMediaServer(Payload);
+        using var client = Client(server);
+        RustProgressiveStream.WarmConnection(server.Uri);
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (server.HealthChecks == 0 && DateTime.UtcNow < deadline) await Task.Delay(10);
+        await Task.Delay(100);
+        Assert.Equal(1, server.HealthChecks);
+        Assert.Equal(1, server.Connections);
+        await using var stream = await Open(client, rust: true);
+        Assert.True((await ReadAll(stream)).AsSpan().SequenceEqual(Payload));
+        Assert.Equal(1, server.Connections);
+    }
+
     [Fact]
     public async Task ReadAheadStopsAtSixteenMegabytes()
     {

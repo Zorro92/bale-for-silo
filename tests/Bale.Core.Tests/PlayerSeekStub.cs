@@ -55,6 +55,7 @@ namespace Bale.Xbox
             public CancellationToken Token { get; }
             public TaskCompletionSource<bool> Opening { get; } = Ready();
             public SeekFrameDelivery? FrameDelivery => null;
+            public MediaProgressiveStream? Progressive => null;
             private static TaskCompletionSource<bool> Ready()
             {
                 var ready = new TaskCompletionSource<bool>();

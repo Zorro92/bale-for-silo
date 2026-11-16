@@ -67,3 +67,29 @@ impl ureq::unversioned::resolver::Resolver for CachingResolver {
         Ok(resolved)
     }
 }
+
+/// Opens a pooled connection to `url`'s host in the background: a small GET whose response is read
+/// to its end, so the connection returns to the pool. A progressive remux's connection is dropped
+/// at every seek (its body is unfinished), and the C# client's pool, shared with the API, still had
+/// a warm one; without this the next Rust open paid TCP and TLS handshakes (~0.4 s at 150 ms RTT).
+/// Failures are ignored; nothing is logged.
+pub fn warm(url: String) {
+    let _ = std::thread::Builder::new()
+        .name("bale-http-warm".into())
+        .spawn(move || {
+            if let Ok(response) = agent()
+                .get(&url)
+                .config()
+                .timeout_global(Some(Duration::from_secs(10)))
+                .build()
+                .call()
+            {
+                let mut body = response
+                    .into_body()
+                    .into_with_config()
+                    .limit(64 * 1024)
+                    .reader();
+                let _ = std::io::copy(&mut body, &mut std::io::sink());
+            }
+        });
+}

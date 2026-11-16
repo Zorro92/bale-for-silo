@@ -49,6 +49,25 @@ public sealed class RustProgressiveStream : MediaProgressiveStream
         return stream;
     }
 
+    /// <summary>
+    /// Opens a spare pooled Rust connection to the server in the background. Call when a seek or
+    /// reconnect starts: the old response's connection closes with it, and the next open would
+    /// otherwise pay new TCP and TLS handshakes. Uses the public health route; never throws.
+    /// </summary>
+    public static unsafe void WarmConnection(Uri server)
+    {
+        try
+        {
+            BaleCoreNative.EnsureLoaded();
+            var url = System.Text.Encoding.UTF8.GetBytes(new Uri(server, "/api/v1/health").AbsoluteUri);
+            fixed (byte* pointer = url) bale_core_http_warm(pointer, (nuint)url.Length);
+        }
+        catch (Exception)
+        {
+            // Only a head start; the open still connects on its own.
+        }
+    }
+
     private static unsafe (int Status, ProgressiveHandle? Handle) Open(string url, byte[] json)
     {
         BaleCoreNative.EnsureLoaded();
@@ -230,5 +249,6 @@ public sealed class RustProgressiveStream : MediaProgressiveStream
     [DllImport(Library, ExactSpelling = true)] private static extern unsafe int bale_core_progressive_stats(ProgressiveHandle handle, NativeProgressiveStats* stats);
     [DllImport(Library, ExactSpelling = true)] private static extern void bale_core_progressive_close(ProgressiveHandle handle);
     [DllImport(Library, ExactSpelling = true)] private static extern void bale_core_progressive_destroy(nint handle);
+    [DllImport(Library, ExactSpelling = true)] private static extern unsafe int bale_core_http_warm(byte* url, nuint length);
     [DllImport(Library, ExactSpelling = true)] private static extern nint bale_core_progressive_winrt(ProgressiveHandle handle);
 }

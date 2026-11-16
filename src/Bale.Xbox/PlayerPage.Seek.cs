@@ -172,6 +172,8 @@ public sealed partial class PlayerPage
         // PlaybackSessionManager.kt reanchorActiveVideoSession: without a reliable local window,
         // refresh the SAME route/session at source time instead of clamping to the manifest's head.
         // A progressive remux seeks and reconnects this way too (protocol §6.2): a new URL at source.
+        // The Rust remux's connection closes with the old mount; warm a spare during the replan.
+        if (media.Progressive is RustProgressiveStream) RustProgressiveStream.WarmConnection(attempt.Client.Server);
         var decision = await RequestReanchorAsync(attempt, source);
         if (!IsCurrent(attempt, media) || decision is null)
         {

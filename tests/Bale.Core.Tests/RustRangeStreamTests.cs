@@ -311,6 +311,8 @@ public sealed class RustRangeStreamTests
         /// <summary>Unranged bodies send this many bytes, then nothing more.</summary>
         public int? StallUnrangedAfter { get; init; }
         private int _refreshes, _rejections;
+        private int _healthChecks;
+        public int HealthChecks => Volatile.Read(ref _healthChecks);
         public int Refreshes => Volatile.Read(ref _refreshes);
         /// <summary>Media requests answered 401.</summary>
         public int Rejections => Volatile.Read(ref _rejections);
@@ -363,6 +365,12 @@ public sealed class RustRangeStreamTests
                             Interlocked.Increment(ref _refreshes);
                             var json = $$$"""{"access_token":"{{{RefreshedBearer}}}","refresh_token":"rt-{{{Refreshes}}}","expires_in":{{{RefreshExpiresIn}}}}""";
                             await WriteAsync(stream, $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {json.Length}\r\n\r\n{json}");
+                            continue;
+                        }
+                        if (line.Contains("/api/v1/health", StringComparison.Ordinal))
+                        {
+                            Interlocked.Increment(ref _healthChecks);
+                            await WriteAsync(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 15\r\n\r\n{\"status\":\"ok\"}");
                             continue;
                         }
                         if (AcceptedBearer is { } accepted && authorization != $"Bearer {accepted}")
