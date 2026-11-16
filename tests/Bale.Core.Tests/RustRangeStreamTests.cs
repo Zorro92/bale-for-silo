@@ -161,11 +161,12 @@ public sealed class RustRangeStreamTests
         server.Faults.Enqueue((6 << 20, Fault.Status500));
         rust.Position = 6 << 20;
         await Assert.ThrowsAsync<HttpRequestException>(() => Task.Run(() => rust.Read(new byte[100], 0, 100)));
-        // A fresh stream: the read above already prefetched blocks 7 and 8.
+        // A fresh stream, at a block the first one never fetches: its prefetch of blocks 7 and 8 can
+        // still be in flight and would take faults queued for them.
         await using var fresh = await client.Playback.OpenMedia(Plan()).OpenNativeStreamAsync(default);
-        server.Faults.Enqueue((8 << 20, Fault.WrongRange));
-        server.Faults.Enqueue((8 << 20, Fault.WrongRange));
-        fresh.Position = 8 << 20;
+        server.Faults.Enqueue((3 << 20, Fault.WrongRange));
+        server.Faults.Enqueue((3 << 20, Fault.WrongRange));
+        fresh.Position = 3 << 20;
         await Assert.ThrowsAsync<IOException>(() => Task.Run(() => fresh.Read(new byte[100], 0, 100)));
     }
 
