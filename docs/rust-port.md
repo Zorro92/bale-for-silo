@@ -265,6 +265,21 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    `SiloRequestHandler` again. Tests run both stacks for a retried 429/503 and for four busy answers;
    ignoring Retry-After or demand-retrying a busy block fails them.
 
+   Final console A/B (0.1.546, `stream-adapter pooled|rust`; 30 s of play, then three seeks; stream
+   waits as count / total wait):
+
+   | Title | C# play | Rust play | C# after seeks | Rust after seeks | Seek time C# / Rust |
+   |---|---|---|---|---|---|
+   | 4K HEVC direct, round 1 | 4 / 1.31 s | 5 / 1.17 s | 12 / 2.61 s | 10 / 2.86 s | 0.54–0.68 / 0.69–0.96 s |
+   | 4K HEVC direct, round 2 | 3 / 1.12 s | 5 / 1.56 s | 8 / 2.04 s | 9 / 2.56 s | 0.58–0.79 / 0.55–0.86 s |
+   | 4K VP9 direct | 8 / 1.65 s | 8 / 1.54 s | 29 / 3.94 s | 25 / 3.31 s | 0.64–1.07 / 0.72–0.84 s |
+   | 1080p AV1 software | 3 / 0.97 s | 3 / 1.57 s | 7 / 1.91 s | 6 / 2.29 s | 0.78–1.20 / 0.80–0.89 s |
+   | 4K HEVC progressive | no stall | no stall | no stall | no stall | 2.70–3.03 / 2.88–3.25 s |
+
+   AV1 had 0 late frames on both; pause and resume worked on both; CPU was within noise; no errors in
+   the log over 47 Rust mounts. Verdict: parity, no measurable win or loss on this network. The C#
+   path remains the default until the owner decides.
+
 ### Stays in C#
 
 - The XAML app (`src/Bale.Xbox`) and anything that drives XAML objects.
