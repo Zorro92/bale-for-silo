@@ -53,7 +53,7 @@
 #   scripts/bale-debug.sh gc                     GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
 #   scripts/bale-debug.sh gc latency <batch|interactive|sustained|default>  change latency app-wide now; default restores the saved pre-playback mode; playback acquires sustained automatically
 #   scripts/bale-debug.sh frame-delivery [native|managed|off]  next playback attempt's observer; default native, on aliases native; memory only (restart resets); no args = status
-#   scripts/bale-debug.sh stream-adapter [pooled|builtin|rust]  next playback attempt's stream adapter; default pooled, memory only (restart resets); no args = status
+#   scripts/bale-debug.sh stream-adapter [pooled|builtin|rust]  next playback attempt's stream adapter; default rust (C#: pooled/builtin), memory only (restart resets); no args = status
 #                                               rust: the Rust range stream and Rust IRandomAccessStream (no managed code on reads; FFmpeg and Media Foundation)
 #   scripts/bale-debug.sh av1-claim [1080|2160]   next playback attempt's AV1 software-decode claim: 1080 = 1080p60 (default), 2160 adds a 4K30 entry; memory only (restart resets); no args = status
 #   scripts/bale-debug.sh display-match [on|off|status]  match content HDMI resolution/refresh on the next playback; default off, memory only (restart resets); no args = status

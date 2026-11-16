@@ -169,13 +169,9 @@ public sealed partial class PlayerPage
                 if (!media.Route.UseFfmpeg) throw new InvalidDataException("A progressive remux requires the FFmpeg route.");
                 try
                 {
-#if DEBUG_SERVER
                     media.Progressive = attempt.UseRustTransport
                         ? await transport.OpenNativeProgressiveAsync(media.Token)
                         : await transport.OpenProgressiveAsync(media.Token);
-#else
-                    media.Progressive = await transport.OpenProgressiveAsync(media.Token);
-#endif
                 }
                 catch (ProgressiveRangeRefusedException) when (!rangeRefused
                     && attempt.ServerFeatures.Contains(PlaybackSeekReanchor.Feature))
@@ -202,7 +198,8 @@ public sealed partial class PlayerPage
                     ? await transport.OpenNativeStreamAsync(media.Token, prefetch)
                     : await transport.OpenStreamAsync(media.Token, prefetch);
 #else
-                media.Stream = await transport.OpenStreamAsync(media.Token);
+                // The Rust streams are the default (docs/rust-port.md, slice 7): reads never wait on the GC.
+                media.Stream = await transport.OpenNativeStreamAsync(media.Token);
 #endif
             }
             media.Token.ThrowIfCancellationRequested();

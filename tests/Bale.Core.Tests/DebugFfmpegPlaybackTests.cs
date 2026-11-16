@@ -94,7 +94,7 @@ public class DebugFfmpegPlaybackTests
         var source = Read("PlayerPage.Media.cs.txt");
         Assert.Contains("using FFmpegInteropX;", source);
         Assert.DoesNotContain("#if DEBUG_SERVER\nusing FFmpegInteropX", source);
-        Assert.Contains("media.Stream = await transport.OpenStreamAsync(media.Token)", source);
+        Assert.Contains("media.Stream = await transport.OpenNativeStreamAsync(media.Token);", source);
         Assert.Contains("media.RandomStream = NativeRandomAccessStream(media.Stream!) ?? media.Stream!.AsRandomAccessStream()", source);
         Assert.Contains("Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled, attempt.ForceFfmpeg,", source);
         Assert.Contains("if (media.Route.UseFfmpeg)", source);
@@ -102,7 +102,7 @@ public class DebugFfmpegPlaybackTests
         Assert.Contains(": await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream!, config).AsTask()", source);
         // A progressive remux reaches FFmpeg through its non-seekable input, still as authenticated bytes.
         Assert.Contains("? await FFmpegMediaSource.CreateFromInputStreamAsync(forward, config).AsTask()", source);
-        Assert.Contains("media.Progressive = await transport.OpenProgressiveAsync(media.Token)", source);
+        Assert.Contains("media.Progressive = attempt.UseRustTransport\n                        ? await transport.OpenNativeProgressiveAsync(media.Token)\n                        : await transport.OpenProgressiveAsync(media.Token);", source);
         Assert.Contains("FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route)", source);
         Assert.Contains("media.Item = media.FfmpegSource.CreateMediaPlaybackItem()", source);
         Assert.Contains("media.Item ??= new MediaPlaybackItem(media.Source)", source);

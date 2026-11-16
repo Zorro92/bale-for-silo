@@ -369,7 +369,8 @@ delivery; neither counter is evidence of renderer drops or decoder CPU saturatio
   allocating a pinned CsWinRT replacement for each read. Native direct and HLS routes are unchanged.
   Debug-only `bale-debug.sh stream-adapter [pooled|builtin]` (`GET /stream-adapter`,
   `POST /stream-adapter?mode=pooled|builtin`) selects the next playback attempt's FFmpeg adapter;
-  no argument prints `stream-adapter=pooled|builtin`. It defaults to pooled and resets on restart.
+  no argument prints `stream-adapter=pooled|builtin|rust`. It defaults to rust (the Rust streams,
+  also the release default since slice 7 of docs/rust-port.md) and resets on restart.
   The attempt captures the switch and logs `player: stream adapter=pooled|builtin` once, including
   across seeks/remounts. Close/reopen the same title for A/B allocation and GC-pause deltas; an open
   player and the standalone probe are unchanged. Console performance remains to be verified.

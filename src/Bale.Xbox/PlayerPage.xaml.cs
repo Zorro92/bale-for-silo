@@ -83,7 +83,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public bool ForceFfmpeg => FfmpegMode == "direct";
 #else
         public bool UsePooledStreamAdapter => true;
-        public bool UseRustTransport => false;
+        public bool UseRustTransport => true;
         public bool FfmpegEnabled => true;
         public bool ForceFfmpeg => false;
 #endif
