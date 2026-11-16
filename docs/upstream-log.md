@@ -36,8 +36,9 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
 - **Series page:** ~~Specials first as season zero~~ (done 2026-11-16: season tabs and the
   continuous episode row; a series still opens on a numbered season). The last special continues
   into S1E1 waits for an Up Next (Bale has none yet) (Android `69e39ad45`, Apple `c466777f`, Roku
-  `a41d106`). ~~The Show tab gives way to More › Show Series Info~~ (done 2026-11-16, not yet on
-  the console; Android `3632eda4e`, `064b8d0b7`, `c1371178b`).
+  `a41d106`). ~~The Show tab gives way to More › Show Series Info~~ (done 2026-11-16, verified on
+  0.1.566 with Specials first and Left from S1E1 into Specials; the rail keeps its scroll instead of
+  recentring on the suggested episode; Android `3632eda4e`, `064b8d0b7`, `c1371178b`).
 - **Card overlays:** watch status top-right with episodes left, web badge layout and presets, one
   overlay scale (Android `2d3620d50`/`cc4fd6662`, Apple `fe7aa020`/`4be5334f`); keyline progress
   capsule (Android `f65fe6917`, Apple `1531620d`). Do it together with Card focus style.
@@ -49,7 +50,7 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   open: the primary profile can't have a library limit any more (server `df9f5501`; no TV client
   change yet, so Bale waits); `requests_allowed` toggle once the official TV editor has one
   (server `91611b42`).
-- ~~**Profile menu:**~~ Done 2026-11-16, not yet on the console: Watchlist and Favorites dropped
+- ~~**Profile menu:**~~ Done 2026-11-16, verified on 0.1.566 (Add Profile row not seen: three profiles): Watchlist and Favorites dropped
   (they live under For You); History, Requests, divider, Settings, profile row, Switch Server, red
   Sign Out; header server first, no header divider. The profile row is Switch Profile / Add
   Profile / none by profile count and `max_profiles`. Bale's Add Profile opens the picker's
@@ -61,7 +62,7 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   Remember with focus on Remember; Back answers Ask Every Time (Android `6b832ca73`).
 - **Card focus style:** one shared style, no glow, drop shadow, current-episode outline
   (Android `51d4f9013`, Apple `9e94e24e`).
-- ~~**More Like This chain:**~~ done 2026-11-16, not yet on the console: the first pick pushes,
+- ~~**More Like This chain:**~~ done 2026-11-16, verified on 0.1.566 (two picks, one Back to the start): the first pick pushes,
   later picks replace, picking the start title goes back, a repeat pick of the title on screen
   opens nothing (Android `238134a1b`, Apple `fd40ce61`).
 - ~~**Temporary password:**~~ done 2026-11-16: Who's watching (and any screen using
