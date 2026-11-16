@@ -304,6 +304,12 @@ public sealed class RustRangeStreamTests
         /// <summary>The access token <c>/api/v2/auth/refresh</c> returns.</summary>
         public volatile string RefreshedBearer = "refreshed-access";
         public long RefreshExpiresIn { get; init; } = 3600;
+        /// <summary>Requests without a Range (the progressive open) get 409.</summary>
+        public bool RefuseUnranged { get; init; }
+        /// <summary>Unranged bodies stop halfway and the connection closes.</summary>
+        public bool TruncateUnranged { get; init; }
+        /// <summary>Unranged bodies send this many bytes, then nothing more.</summary>
+        public int? StallUnrangedAfter { get; init; }
         private int _refreshes, _rejections;
         public int Refreshes => Volatile.Read(ref _refreshes);
         /// <summary>Media requests answered 401.</summary>
@@ -387,6 +393,11 @@ public sealed class RustRangeStreamTests
                     await Task.Delay(Timeout.Infinite, _stop.Token);
                 }
             }
+            if (range is null && RefuseUnranged)
+            {
+                await WriteAsync(stream, "HTTP/1.1 409 Conflict\r\nContent-Length: 0\r\n\r\n");
+                return true;
+            }
             Fault? fault = null;
             if (ranged && Faults.TryPeek(out var next) && next.Start == start && Faults.TryDequeue(out next)) fault = next.Fault;
             if (fault == Fault.Status500)
@@ -403,6 +414,16 @@ public sealed class RustRangeStreamTests
             }
             head.Append($"Content-Length: {length}\r\nContent-Type: video/mp4\r\n\r\n");
             await WriteAsync(stream, head.ToString());
+            if (!ranged && StallUnrangedAfter is { } stall)
+            {
+                await stream.WriteAsync(_payload.AsMemory(0, stall), _stop.Token);
+                await Task.Delay(Timeout.Infinite, _stop.Token);
+            }
+            if (!ranged && TruncateUnranged)
+            {
+                await stream.WriteAsync(_payload.AsMemory(0, (int)(length / 2)), _stop.Token);
+                return false;
+            }
             var sent = fault == Fault.Truncate ? length / 2 : length;
             await stream.WriteAsync(_payload.AsMemory((int)start, (int)sent), _stop.Token);
             return fault != Fault.Truncate;

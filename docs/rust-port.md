@@ -225,6 +225,20 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    mid-stream 401, a second 401, a 401 at open, the timer hand-over and a stale callback; removing the
    retry, the stale check or the hand-over fails them.
 
+   Step 5, the forward-only stream (`progressive_stream.rs`, `abi_progressive.rs`): one response with
+   no Range, only a 200 accepted (409 `RangeRefused` = 8, 401 refreshed and retried once at open). A
+   pump thread reads 64 KiB chunks into a 256-chunk queue (16 MiB, as the C# channel); reads take the
+   front chunk and never fail, ending the data at the body's end, after a fault or once closed, with
+   `faulted` and `completed` as in `ProgressiveHttpStream`. One request carries the whole title, so it
+   has no overall deadline, only a 30 s stall limit per body read (`timeout_per_read`); the C# stream
+   waits for the server's stall reap instead. `close` frees the queue and wakes the reader; a pump
+   inside a body read leaves when that read returns. The WinRT `IInputStream` (`winrt_stream.rs`)
+   never faults, reading the buffer's capacity before touching its length, as `ForwardInputStream`
+   does. C# shares the contract through `MediaProgressiveStream`; `stream-adapter rust` opens it.
+   Loopback tests run both stacks for a full read, a truncated body and a 409, plus a 401 at open,
+   close waking a blocked read, and the read-ahead bound; making truncation look complete, unbounding
+   the queue or not waking readers on close fails them.
+
 ### Stays in C#
 
 - The XAML app (`src/Bale.Xbox`) and anything that drives XAML objects.

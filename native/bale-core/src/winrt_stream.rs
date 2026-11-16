@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+use crate::progressive_stream::ProgressiveStream;
 use crate::range_stream::RangeStream;
 
 /// The WinRT object as a raw `IRandomAccessStream` pointer owning one reference.
@@ -20,6 +21,21 @@ pub fn create(stream: Arc<RangeStream>) -> *mut std::ffi::c_void {
 
 #[cfg(not(windows))]
 pub fn create(_stream: Arc<RangeStream>) -> *mut std::ffi::c_void {
+    std::ptr::null_mut()
+}
+
+/// The forward-only progressive input (the C# `ForwardInputStream`) as a raw `IInputStream`
+/// pointer owning one reference.
+#[cfg(windows)]
+pub fn create_progressive(stream: Arc<ProgressiveStream>) -> *mut std::ffi::c_void {
+    use windows::Storage::Streams::IInputStream;
+    use windows_core::Interface;
+    let object: IInputStream = imp::WinrtProgressiveInput::new(stream).into();
+    object.into_raw()
+}
+
+#[cfg(not(windows))]
+pub fn create_progressive(_stream: Arc<ProgressiveStream>) -> *mut std::ffi::c_void {
     std::ptr::null_mut()
 }
 
@@ -39,6 +55,7 @@ mod imp {
     };
     use windows_future::{IAsyncOperation, IAsyncOperationWithProgress};
 
+    use crate::progressive_stream::ProgressiveStream;
     use crate::range_stream::{RangeStream, StreamError};
 
     const E_NOTIMPL: HRESULT = HRESULT(0x8000_4001_u32 as i32);
@@ -222,6 +239,91 @@ mod imp {
         fn CanWrite(&self) -> Result<bool> {
             self.check_open()?;
             Ok(false)
+        }
+    }
+
+    /// Non-owning `IInputStream` over a progressive remux for FFmpeg's non-seekable input. Its
+    /// operations never fault: FFmpegInteropX's read callback calls `ReadAsync(...).get()` without
+    /// a try/catch, so any failure or closed state returns an empty buffer (end of data), and the
+    /// stream's `faulted` flag tells the player why it ended.
+    #[implement(IInputStream, IClosable)]
+    pub struct WinrtProgressiveInput {
+        stream: Arc<ProgressiveStream>,
+        closed: Arc<AtomicBool>,
+    }
+
+    impl WinrtProgressiveInput {
+        pub fn new(stream: Arc<ProgressiveStream>) -> Self {
+            WinrtProgressiveInput {
+                stream,
+                closed: Arc::new(AtomicBool::new(false)),
+            }
+        }
+    }
+
+    /// Fills up to `length` bytes (C# `StreamFill`), or only the first bytes for a partial read.
+    fn fill_forward(
+        stream: &ProgressiveStream,
+        closed: &AtomicBool,
+        buffer: &IBuffer,
+        length: usize,
+        partial: bool,
+    ) -> Result<u32> {
+        let access: IBufferByteAccess = buffer.cast()?;
+        // SAFETY: the buffer's backing memory, valid for its capacity while we hold the buffer;
+        // `length` was clamped to that capacity before Length changed.
+        let memory = unsafe { access.Buffer()? };
+        if memory.is_null() || length == 0 {
+            return Ok(0);
+        }
+        let target = unsafe { std::slice::from_raw_parts_mut(memory, length) };
+        let mut total = 0;
+        while total < length && !closed.load(Ordering::Acquire) {
+            let read = stream.read(&mut target[total..]);
+            if read == 0 {
+                break;
+            }
+            total += read;
+            if partial {
+                break;
+            }
+        }
+        Ok(total as u32)
+    }
+
+    impl IClosable_Impl for WinrtProgressiveInput_Impl {
+        /// Marks this adapter closed; the mount owns the stream and closes it after the source.
+        fn Close(&self) -> Result<()> {
+            self.closed.store(true, Ordering::Release);
+            Ok(())
+        }
+    }
+
+    impl IInputStream_Impl for WinrtProgressiveInput_Impl {
+        fn ReadAsync(
+            &self,
+            buffer: Ref<IBuffer>,
+            count: u32,
+            options: InputStreamOptions,
+        ) -> Result<IAsyncOperationWithProgress<IBuffer, u32>> {
+            let buffer = buffer.ok()?.clone();
+            // Capacity before Length: the wrapper's NativeBuffer reports Capacity as its Length, so
+            // zeroing Length first would make every read 0 bytes (ForwardInputStream.cs).
+            let length = count.min(buffer.Capacity().unwrap_or(0)) as usize;
+            let partial = options == InputStreamOptions::Partial;
+            let (stream, closed) = (self.stream.clone(), self.closed.clone());
+            let agile = AgileReference::new(&buffer)?;
+            Ok(IAsyncOperationWithProgress::spawn(move || {
+                let buffer = agile.resolve()?;
+                let read = if closed.load(Ordering::Acquire) {
+                    0
+                } else {
+                    fill_forward(&stream, &closed, &buffer, length, partial).unwrap_or(0)
+                };
+                // Never fault the operation; an empty buffer is the end of the data.
+                let _ = buffer.SetLength(read);
+                Ok(buffer)
+            }))
         }
     }
 }

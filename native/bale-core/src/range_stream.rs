@@ -41,6 +41,8 @@ pub enum StreamError {
     NoLength = 6,
     /// 401 even after a header refresh, or no refresh arrived (the C# handler's refresh-once rule).
     Unauthorized = 7,
+    /// A progressive remux refused the request's range (409): reopen at the current position.
+    RangeRefused = 8,
 }
 
 /// Asks the stream's owner for fresh headers after a 401, passing the generation of the rejected

@@ -9,6 +9,7 @@
 
 pub mod abi;
 pub mod abi_meters;
+pub mod abi_progressive;
 pub mod abi_stream;
 pub mod audio_selection;
 pub mod display;
@@ -23,6 +24,7 @@ pub mod http_probe;
 pub mod language;
 pub mod meters;
 pub mod models;
+pub mod progressive_stream;
 pub mod range_stream;
 pub mod reanchor;
 pub mod route;

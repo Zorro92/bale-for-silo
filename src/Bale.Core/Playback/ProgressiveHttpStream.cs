@@ -21,7 +21,7 @@ public sealed class ProgressiveRangeRefusedException()
 /// incomplete progressive response is a transport failure, never the end of the title.
 /// </para>
 /// </summary>
-public sealed class ProgressiveHttpStream : Stream
+public sealed class ProgressiveHttpStream : MediaProgressiveStream
 {
     public const int ChunkSize = 64 * 1024;
     /// <summary>16 MiB: about two seconds of a 4K HEVC remux, far below HttpRangeStream's 32 MiB cache.</summary>
@@ -87,19 +87,19 @@ public sealed class ProgressiveHttpStream : Stream
     }
 
     /// <summary>The response ended before the server finished it (abort, reset, stall reap), or was cancelled.</summary>
-    public bool Faulted => Volatile.Read(ref _faulted) != 0;
+    public override bool Faulted => Volatile.Read(ref _faulted) != 0;
 
     /// <summary>The server ended the response cleanly: FFmpeg read the source to its end.</summary>
-    public bool Completed => Volatile.Read(ref _completed) != 0;
+    public override bool Completed => Volatile.Read(ref _completed) != 0;
 
     /// <summary>Downloaded bytes not yet handed to the demuxer.</summary>
-    public long BufferedBytes => Interlocked.Read(ref _bufferedBytes);
+    public override long BufferedBytes => Interlocked.Read(ref _bufferedBytes);
 
     /// <summary>Actual HTTP body bytes received; same meaning as HttpRangeStream.DownloadedBytes.</summary>
-    public long DownloadedBytes => Interlocked.Read(ref _downloadedBytes);
+    public override long DownloadedBytes => Interlocked.Read(ref _downloadedBytes);
 
     /// <summary>Time inside HTTP body reads, excluding time the pump waited for a full buffer to drain.</summary>
-    public TimeSpan DownloadTime => TimeSpan.FromSeconds((double)Interlocked.Read(ref _downloadTicks) / Stopwatch.Frequency);
+    public override TimeSpan DownloadTime => TimeSpan.FromSeconds((double)Interlocked.Read(ref _downloadTicks) / Stopwatch.Frequency);
 
     public override bool CanRead => !_disposed;
     public override bool CanSeek => false;

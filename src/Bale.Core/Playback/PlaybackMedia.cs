@@ -148,6 +148,13 @@ public sealed class PlaybackMedia
     public Task<HttpRangeStream> OpenStreamAsync(CancellationToken ct, int prefetchBlocks = HttpRangeStream.DefaultPrefetchBlocks) =>
         HttpRangeStream.OpenAsync(this, ct, prefetchBlocks);
 
+    /// <summary>The Rust forward-only remux (docs/rust-port.md, slice 7 step 5): the same pump and buffer on a native thread.</summary>
+    public Task<RustProgressiveStream> OpenNativeProgressiveAsync(CancellationToken mountToken)
+    {
+        if (!IsProgressive) throw new InvalidOperationException("The plan is not a progressive remux.");
+        return RustProgressiveStream.OpenAsync(this, mountToken);
+    }
+
     /// <summary>The forward-only remux from its origin; <paramref name="mountToken"/> also ends its read-ahead.</summary>
     public Task<ProgressiveHttpStream> OpenProgressiveAsync(CancellationToken mountToken)
     {

@@ -11,14 +11,14 @@ namespace Bale.Xbox.Services;
 /// FFmpegMediaSource.CreateFromInputStreamAsync (FFmpeg's non-seekable AVIO: no seek callback).
 /// Its operations never fault: the wrapper's InputStreamRead calls ReadAsync(...).get() inside
 /// FFmpeg's C read callback without a try/catch, so a failure, disposal or cancellation returns an
-/// empty buffer (end of data). ProgressiveHttpStream.Faulted tells the player why it ended.
+/// empty buffer (end of data). MediaProgressiveStream.Faulted tells the player why it ended.
 /// </summary>
 internal sealed partial class ForwardInputStream : IInputStream
 {
-    private readonly ProgressiveHttpStream _stream;
+    private readonly MediaProgressiveStream _stream;
     private volatile bool _disposed;
 
-    internal ForwardInputStream(ProgressiveHttpStream stream)
+    internal ForwardInputStream(MediaProgressiveStream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
         _stream = stream;

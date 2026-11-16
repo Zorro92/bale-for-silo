@@ -532,7 +532,9 @@ jobs:
               'bale_core_throughput_sample', 'bale_core_speed_create', 'bale_core_speed_destroy', 'bale_core_speed_add',
               'bale_core_speed_stop_at', 'bale_core_speed_result', 'bale_core_speed_window_kbps',
               'bale_core_range_open', 'bale_core_range_read', 'bale_core_range_stats', 'bale_core_range_set_headers', 'bale_core_range_set_refresh',
-              'bale_core_range_close', 'bale_core_range_destroy', 'bale_core_range_winrt')
+              'bale_core_range_close', 'bale_core_range_destroy', 'bale_core_range_winrt',
+              'bale_core_progressive_open', 'bale_core_progressive_read', 'bale_core_progressive_stats', 'bale_core_progressive_close',
+              'bale_core_progressive_destroy', 'bale_core_progressive_winrt')
             foreach ($symbol in $required) {
               if (-not ($exports | Select-String -Pattern "\s$([regex]::Escape($symbol))\s*$" -Quiet)) {
                 throw "Packaged bale_core.dll is missing export $symbol"

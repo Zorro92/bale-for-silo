@@ -39,8 +39,8 @@ public sealed partial class PlayerPage
         public MediaRangeStream? Stream { get; set; }
         public IRandomAccessStream? RandomStream { get; set; }
         // server_remux_progressive: one forward-only response through FFmpeg's non-seekable input.
-        public ProgressiveHttpStream? Progressive { get; set; }
-        public ForwardInputStream? ForwardInput { get; set; }
+        public MediaProgressiveStream? Progressive { get; set; }
+        public IInputStream? ForwardInput { get; set; }
         public bool Reconnecting { get; set; }
         public long? PausedAt { get; set; }
         public MemoryStream? Playlist { get; set; }
@@ -169,7 +169,13 @@ public sealed partial class PlayerPage
                 if (!media.Route.UseFfmpeg) throw new InvalidDataException("A progressive remux requires the FFmpeg route.");
                 try
                 {
+#if DEBUG_SERVER
+                    media.Progressive = attempt.UseRustTransport
+                        ? await transport.OpenNativeProgressiveAsync(media.Token)
+                        : await transport.OpenProgressiveAsync(media.Token);
+#else
                     media.Progressive = await transport.OpenProgressiveAsync(media.Token);
+#endif
                 }
                 catch (ProgressiveRangeRefusedException) when (!rangeRefused
                     && attempt.ServerFeatures.Contains(PlaybackSeekReanchor.Feature))
@@ -185,7 +191,7 @@ public sealed partial class PlayerPage
                     await MountPlanAsync(attempt, 0, paused, rangeRefused: true);
                     return;
                 }
-                media.ForwardInput = new ForwardInputStream(media.Progressive);
+                media.ForwardInput = NativeInputStream(media.Progressive) ?? new ForwardInputStream(media.Progressive);
             }
             else
             {
@@ -212,7 +218,7 @@ public sealed partial class PlayerPage
                         attempt.StreamAdapterLogged = true;
                     }
                 }
-                else Log.Info("player: stream adapter=forward");
+                else Log.Info($"player: stream adapter={(media.Progressive is RustProgressiveStream ? "rust-forward" : "forward")}");
                 // Keep auth, profile ownership and range cancellation in Core; FFmpeg receives bytes, not a bare URI.
                 Log.Info("player: FFmpeg before create stream");
 #if DEBUG_SERVER
@@ -716,6 +722,14 @@ public sealed partial class PlayerPage
     /// The Rust stream's own IRandomAccessStream (reads on the Windows thread pool, never in managed
     /// code), or null for the C# stream. The projection takes its own reference; release ours.
     /// </summary>
+    private static IInputStream? NativeInputStream(MediaProgressiveStream stream)
+    {
+        var pointer = stream.CreateNativeInputStream();
+        if (pointer == 0) return null;
+        try { return WinRT.MarshalInterface<IInputStream>.FromAbi(pointer); }
+        finally { System.Runtime.InteropServices.Marshal.Release(pointer); }
+    }
+
     private static IRandomAccessStream? NativeRandomAccessStream(MediaRangeStream stream)
     {
         var pointer = stream.CreateNativeRandomAccessStream();
