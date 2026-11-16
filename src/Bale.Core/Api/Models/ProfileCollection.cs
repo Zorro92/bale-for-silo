@@ -24,6 +24,8 @@ namespace Bale.Core.Api.Models
 #endif
         /// <summary>Whether profiles accept max_advisory_age and the server enforces it</summary>
         public bool? MaxAdvisoryAgeSupported { get; set; }
+        /// <summary>How many profiles this account may have, from its effective access policy; createProfile answers 409 once the household holds this many. Omitted on a remote-playback handoff, which lists only its own profile and cannot create one, and when the server could not read the limit; in that second case a client keeps offering new profiles and createProfile stays the check</summary>
+        public long? MaxProfiles { get; set; }
         /// <summary>Cursor state; absent for bounded unpaginated collections</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
@@ -32,6 +34,8 @@ namespace Bale.Core.Api.Models
 #else
         public global::Bale.Core.Api.Models.PageInfo Page { get; set; }
 #endif
+        /// <summary>Whether profiles accept requests_allowed and the server enforces it</summary>
+        public bool? RequestsAllowedSupported { get; set; }
         /// <summary>Whether profiles accept require_advisory_age and the server enforces it</summary>
         public bool? RequireAdvisoryAgeSupported { get; set; }
         /// <summary>
@@ -55,7 +59,9 @@ namespace Bale.Core.Api.Models
                 { "avatar_upload_enabled", n => { AvatarUploadEnabled = n.GetBoolValue(); } },
                 { "items", n => { Items = n.GetCollectionOfObjectValues<global::Bale.Core.Api.Models.Profile>(global::Bale.Core.Api.Models.Profile.CreateFromDiscriminatorValue)?.AsList(); } },
                 { "max_advisory_age_supported", n => { MaxAdvisoryAgeSupported = n.GetBoolValue(); } },
+                { "max_profiles", n => { MaxProfiles = n.GetLongValue(); } },
                 { "page", n => { Page = n.GetObjectValue<global::Bale.Core.Api.Models.PageInfo>(global::Bale.Core.Api.Models.PageInfo.CreateFromDiscriminatorValue); } },
+                { "requests_allowed_supported", n => { RequestsAllowedSupported = n.GetBoolValue(); } },
                 { "require_advisory_age_supported", n => { RequireAdvisoryAgeSupported = n.GetBoolValue(); } },
             };
         }
@@ -69,7 +75,9 @@ namespace Bale.Core.Api.Models
             writer.WriteBoolValue("avatar_upload_enabled", AvatarUploadEnabled);
             writer.WriteCollectionOfObjectValues<global::Bale.Core.Api.Models.Profile>("items", Items);
             writer.WriteBoolValue("max_advisory_age_supported", MaxAdvisoryAgeSupported);
+            writer.WriteLongValue("max_profiles", MaxProfiles);
             writer.WriteObjectValue<global::Bale.Core.Api.Models.PageInfo>("page", Page);
+            writer.WriteBoolValue("requests_allowed_supported", RequestsAllowedSupported);
             writer.WriteBoolValue("require_advisory_age_supported", RequireAdvisoryAgeSupported);
         }
     }

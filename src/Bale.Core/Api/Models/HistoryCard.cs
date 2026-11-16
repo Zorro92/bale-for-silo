@@ -19,6 +19,22 @@ namespace Bale.Core.Api.Models
         public long? AdvisoryAge { get; set; }
         /// <summary>Who recommended advisory_age</summary>
         public global::Bale.Core.Api.Models.HistoryCard_advisory_source? AdvisorySource { get; set; }
+        /// <summary>On an audiobook or ebook card in a catalog browse listing: up to three author names in credit order, the names the book&apos;s detail page lists under authors. Absent for other types, on other listings, and when the book credits no author</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public List<string>? Authors { get; set; }
+#nullable restore
+#else
+        public List<string> Authors { get; set; }
+#endif
+        /// <summary>On a series, complete seasons out of seasons that have aired. On a season, episodes in the library out of the episodes the season lists. Sent only while the acting profile&apos;s poster badges are on and include the availability badge. Absent for other types, for specials, and when episode metadata is incomplete.</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public global::Bale.Core.Api.Models.CatalogAvailability? Availability { get; set; }
+#nullable restore
+#else
+        public global::Bale.Core.Api.Models.CatalogAvailability Availability { get; set; }
+#endif
         /// <summary>Whether backdrop_url is an episode still. False for series artwork; absent when provenance is unavailable.</summary>
         public bool? BackdropIsEpisodeStill { get; set; }
         /// <summary>The backdrop_thumbhash property</summary>
@@ -61,7 +77,7 @@ namespace Bale.Core.Api.Models
 #else
         public string ContentRating { get; set; }
 #endif
-        /// <summary>The duration_seconds property</summary>
+        /// <summary>The length position_seconds is measured against, in seconds, as the progress record holds it. Present with position_seconds; a card draws its progress bar and time left from the pair</summary>
         public double? DurationSeconds { get; set; }
         /// <summary>The episode_number property</summary>
         public long? EpisodeNumber { get; set; }
@@ -72,6 +88,14 @@ namespace Bale.Core.Api.Models
 #nullable restore
 #else
         public List<string> Genres { get; set; }
+#endif
+        /// <summary>The item&apos;s IMDb ID, the one item detail shows. On movie and series cards in catalog browse, collection, favorites, and history listings, and on item detail, when the item has one; Home and library section cards and episode cards leave it absent</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public string? ImdbId { get; set; }
+#nullable restore
+#else
+        public string ImdbId { get; set; }
 #endif
         /// <summary>On a continue-watching card: in_progress or next_up</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
@@ -159,7 +183,7 @@ namespace Bale.Core.Api.Models
 #else
         public string PlayContentId { get; set; }
 #endif
-        /// <summary>Resume position on a continue-watching card</summary>
+        /// <summary>The profile&apos;s resume position, in seconds. On a Continue Watching card, and on a catalog browse or box set card for a title the profile has started and not finished (absent while user_state.played is true); other listings leave it absent. Series, seasons, and ebooks never carry it on a browse card</summary>
         public double? PositionSeconds { get; set; }
         /// <summary>Whether poster_url is an episode still. False for series or season artwork; absent when provenance is unavailable.</summary>
         public bool? PosterIsEpisodeStill { get; set; }
@@ -299,6 +323,22 @@ namespace Bale.Core.Api.Models
 #else
         public string Title { get; set; }
 #endif
+        /// <summary>The item&apos;s TMDB ID, the one item detail shows. Present where imdb_id is</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public string? TmdbId { get; set; }
+#nullable restore
+#else
+        public string TmdbId { get; set; }
+#endif
+        /// <summary>The item&apos;s TVDB ID, the one item detail shows. Present where imdb_id is</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public string? TvdbId { get; set; }
+#nullable restore
+#else
+        public string TvdbId { get; set; }
+#endif
         /// <summary>movie, series, season, episode, audiobook, ebook, podcast, podcast_episode</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
@@ -378,6 +418,8 @@ namespace Bale.Core.Api.Models
                 { "added_at", n => { AddedAt = n.GetDateTimeOffsetValue(); } },
                 { "advisory_age", n => { AdvisoryAge = n.GetLongValue(); } },
                 { "advisory_source", n => { AdvisorySource = n.GetEnumValue<global::Bale.Core.Api.Models.HistoryCard_advisory_source>(); } },
+                { "authors", n => { Authors = n.GetCollectionOfPrimitiveValues<string>()?.AsList(); } },
+                { "availability", n => { Availability = n.GetObjectValue<global::Bale.Core.Api.Models.CatalogAvailability>(global::Bale.Core.Api.Models.CatalogAvailability.CreateFromDiscriminatorValue); } },
                 { "backdrop_is_episode_still", n => { BackdropIsEpisodeStill = n.GetBoolValue(); } },
                 { "backdrop_thumbhash", n => { BackdropThumbhash = n.GetStringValue(); } },
                 { "backdrop_url", n => { BackdropUrl = n.GetStringValue(); } },
@@ -387,6 +429,7 @@ namespace Bale.Core.Api.Models
                 { "duration_seconds", n => { DurationSeconds = n.GetDoubleValue(); } },
                 { "episode_number", n => { EpisodeNumber = n.GetLongValue(); } },
                 { "genres", n => { Genres = n.GetCollectionOfPrimitiveValues<string>()?.AsList(); } },
+                { "imdb_id", n => { ImdbId = n.GetStringValue(); } },
                 { "item_source", n => { ItemSource = n.GetStringValue(); } },
                 { "keywords", n => { Keywords = n.GetCollectionOfPrimitiveValues<string>()?.AsList(); } },
                 { "last_air_date", n => { LastAirDate = n.GetDateValue(); } },
@@ -425,6 +468,8 @@ namespace Bale.Core.Api.Models
                 { "status", n => { Status = n.GetStringValue(); } },
                 { "studios", n => { Studios = n.GetCollectionOfPrimitiveValues<string>()?.AsList(); } },
                 { "title", n => { Title = n.GetStringValue(); } },
+                { "tmdb_id", n => { TmdbId = n.GetStringValue(); } },
+                { "tvdb_id", n => { TvdbId = n.GetStringValue(); } },
                 { "type", n => { Type = n.GetStringValue(); } },
                 { "upcoming_event", n => { UpcomingEvent = n.GetObjectValue<global::Bale.Core.Api.Models.CatalogItemUpcomingEvent>(global::Bale.Core.Api.Models.CatalogItemUpcomingEvent.CreateFromDiscriminatorValue); } },
                 { "user_state", n => { UserState = n.GetObjectValue<global::Bale.Core.Api.Models.CatalogItemUserState>(global::Bale.Core.Api.Models.CatalogItemUserState.CreateFromDiscriminatorValue); } },
@@ -445,6 +490,8 @@ namespace Bale.Core.Api.Models
             writer.WriteDateTimeOffsetValue("added_at", AddedAt);
             writer.WriteLongValue("advisory_age", AdvisoryAge);
             writer.WriteEnumValue<global::Bale.Core.Api.Models.HistoryCard_advisory_source>("advisory_source", AdvisorySource);
+            writer.WriteCollectionOfPrimitiveValues<string>("authors", Authors);
+            writer.WriteObjectValue<global::Bale.Core.Api.Models.CatalogAvailability>("availability", Availability);
             writer.WriteBoolValue("backdrop_is_episode_still", BackdropIsEpisodeStill);
             writer.WriteStringValue("backdrop_thumbhash", BackdropThumbhash);
             writer.WriteStringValue("backdrop_url", BackdropUrl);
@@ -454,6 +501,7 @@ namespace Bale.Core.Api.Models
             writer.WriteDoubleValue("duration_seconds", DurationSeconds);
             writer.WriteLongValue("episode_number", EpisodeNumber);
             writer.WriteCollectionOfPrimitiveValues<string>("genres", Genres);
+            writer.WriteStringValue("imdb_id", ImdbId);
             writer.WriteStringValue("item_source", ItemSource);
             writer.WriteCollectionOfPrimitiveValues<string>("keywords", Keywords);
             writer.WriteDateValue("last_air_date", LastAirDate);
@@ -492,6 +540,8 @@ namespace Bale.Core.Api.Models
             writer.WriteStringValue("status", Status);
             writer.WriteCollectionOfPrimitiveValues<string>("studios", Studios);
             writer.WriteStringValue("title", Title);
+            writer.WriteStringValue("tmdb_id", TmdbId);
+            writer.WriteStringValue("tvdb_id", TvdbId);
             writer.WriteStringValue("type", Type);
             writer.WriteObjectValue<global::Bale.Core.Api.Models.CatalogItemUpcomingEvent>("upcoming_event", UpcomingEvent);
             writer.WriteObjectValue<global::Bale.Core.Api.Models.CatalogItemUserState>("user_state", UserState);

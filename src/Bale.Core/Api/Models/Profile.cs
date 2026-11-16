@@ -70,7 +70,7 @@ namespace Bale.Core.Api.Models
 #else
         public string Language { get; set; }
 #endif
-        /// <summary>The library_restrictions_enabled property</summary>
+        /// <summary>Whether the profile is limited to allowed_library_ids within its account&apos;s libraries. The primary profile is never limited: it sees every library its account can access and hides libraries through its settings instead</summary>
         public bool? LibraryRestrictionsEnabled { get; set; }
         /// <summary>Advisory-age limit: titles whose advisory age (for example Common Sense Media&apos;s 13+) is above it are hidden from the profile. Titles with no advisory age are limited by max_content_rating alone unless require_advisory_age is set; null means no limit</summary>
         public long? MaxAdvisoryAge { get; set; }
@@ -114,6 +114,8 @@ namespace Bale.Core.Api.Models
 #else
         public string QualityPreference { get; set; }
 #endif
+        /// <summary>Whether the profile may make and follow requests and use request discovery. False keeps it out of those even when the account may request; it can still list, read and cancel the requests it made before. The account&apos;s own requests switch still applies on top. Set by the household manager</summary>
+        public bool? RequestsAllowed { get; set; }
         /// <summary>Hide titles with no advisory age as well, so the profile sees only titles an advisory service rated at or under max_advisory_age. Advisory ages are looked up over time, so on a large library a profile with this set starts with few titles. No effect without max_advisory_age</summary>
         public bool? RequireAdvisoryAge { get; set; }
         /// <summary>The show_forced_subtitles property</summary>
@@ -175,6 +177,7 @@ namespace Bale.Core.Api.Models
                 { "name", n => { Name = n.GetStringValue(); } },
                 { "preferred_metadata_language", n => { PreferredMetadataLanguage = n.GetStringValue(); } },
                 { "quality_preference", n => { QualityPreference = n.GetStringValue(); } },
+                { "requests_allowed", n => { RequestsAllowed = n.GetBoolValue(); } },
                 { "require_advisory_age", n => { RequireAdvisoryAge = n.GetBoolValue(); } },
                 { "show_forced_subtitles", n => { ShowForcedSubtitles = n.GetBoolValue(); } },
                 { "subtitle_language", n => { SubtitleLanguage = n.GetStringValue(); } },
@@ -210,6 +213,7 @@ namespace Bale.Core.Api.Models
             writer.WriteStringValue("name", Name);
             writer.WriteStringValue("preferred_metadata_language", PreferredMetadataLanguage);
             writer.WriteStringValue("quality_preference", QualityPreference);
+            writer.WriteBoolValue("requests_allowed", RequestsAllowed);
             writer.WriteBoolValue("require_advisory_age", RequireAdvisoryAge);
             writer.WriteBoolValue("show_forced_subtitles", ShowForcedSubtitles);
             writer.WriteStringValue("subtitle_language", SubtitleLanguage);

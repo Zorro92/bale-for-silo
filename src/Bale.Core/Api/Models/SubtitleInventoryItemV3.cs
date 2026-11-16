@@ -22,6 +22,14 @@ namespace Bale.Core.Api.Models
 #endif
         /// <summary>The combined_index property</summary>
         public long? CombinedIndex { get; set; }
+        /// <summary>Embedded tracks only: the Matroska TrackNumber or MP4 track ID, omitted when unknown</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public string? ContainerTrackId { get; set; }
+#nullable restore
+#else
+        public string ContainerTrackId { get; set; }
+#endif
         /// <summary>The default property</summary>
         public bool? Default { get; set; }
         /// <summary>The delivery property</summary>
@@ -44,6 +52,14 @@ namespace Bale.Core.Api.Models
         public bool? Forced { get; set; }
         /// <summary>The hearing_impaired property</summary>
         public bool? HearingImpaired { get; set; }
+        /// <summary>Embedded text tracks of an HLS plan under hls_subtitle_renditions_all_v1: the track&apos;s WebVTT rendition in the stream&apos;s SUBTITLES group. The client may select it in its player and report the change with a subtitle_track_changed replan, which keeps the stream; url stays the fallback.</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public global::Bale.Core.Api.Models.SubtitleInventoryHLSRenditionV3? HlsRendition { get; set; }
+#nullable restore
+#else
+        public global::Bale.Core.Api.Models.SubtitleInventoryHLSRenditionV3 HlsRendition { get; set; }
+#endif
         /// <summary>The label property</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
@@ -60,6 +76,8 @@ namespace Bale.Core.Api.Models
 #else
         public string Language { get; set; }
 #endif
+        /// <summary>Embedded tracks only: selecting this track, with the plan&apos;s delivery and audio, yields subtitle.embedded. The client may switch to it locally and report the change with a subtitle_track_changed replan, which returns a plan for the same media; url, when the row has one, stays the fallback; a bitmap track delivered only by burn-in has none.</summary>
+        public bool? NativeSelectable { get; set; }
         /// <summary>The source property</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
@@ -68,6 +86,10 @@ namespace Bale.Core.Api.Models
 #else
         public string Source { get; set; }
 #endif
+        /// <summary>Stored subtitle row ID, matching subtitle_ready.subtitle_id. Present for downloaded, uploaded and generated tracks, including tracks without a URL or sync_key. Stable across inventory reordering; selection still uses combined_index.</summary>
+        public long? StoredSubtitleId { get; set; }
+        /// <summary>Embedded tracks only: the absolute probed stream index, the namespace of subtitle.embedded.stream_index and the sidecar URL&apos;s embedded_stream_index</summary>
+        public long? StreamIndex { get; set; }
         /// <summary>The sync_key property</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
@@ -84,6 +106,8 @@ namespace Bale.Core.Api.Models
 #else
         public string TrackId { get; set; }
 #endif
+        /// <summary>No route can show this track: the server has no rendering, conversion, or burn-in route for its format, or doesn&apos;t recognize the format at all. Selecting it gets a subtitle_codec_unsupported terminal, so a client should list it as unavailable.</summary>
+        public bool? Unplayable { get; set; }
         /// <summary>The url property</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
@@ -112,16 +136,22 @@ namespace Bale.Core.Api.Models
             {
                 { "codec", n => { Codec = n.GetStringValue(); } },
                 { "combined_index", n => { CombinedIndex = n.GetLongValue(); } },
+                { "container_track_id", n => { ContainerTrackId = n.GetStringValue(); } },
                 { "default", n => { Default = n.GetBoolValue(); } },
                 { "delivery", n => { Delivery = n.GetStringValue(); } },
                 { "font_bundle_url", n => { FontBundleUrl = n.GetStringValue(); } },
                 { "forced", n => { Forced = n.GetBoolValue(); } },
                 { "hearing_impaired", n => { HearingImpaired = n.GetBoolValue(); } },
+                { "hls_rendition", n => { HlsRendition = n.GetObjectValue<global::Bale.Core.Api.Models.SubtitleInventoryHLSRenditionV3>(global::Bale.Core.Api.Models.SubtitleInventoryHLSRenditionV3.CreateFromDiscriminatorValue); } },
                 { "label", n => { Label = n.GetStringValue(); } },
                 { "language", n => { Language = n.GetStringValue(); } },
+                { "native_selectable", n => { NativeSelectable = n.GetBoolValue(); } },
                 { "source", n => { Source = n.GetStringValue(); } },
+                { "stored_subtitle_id", n => { StoredSubtitleId = n.GetLongValue(); } },
+                { "stream_index", n => { StreamIndex = n.GetLongValue(); } },
                 { "sync_key", n => { SyncKey = n.GetStringValue(); } },
                 { "track_id", n => { TrackId = n.GetStringValue(); } },
+                { "unplayable", n => { Unplayable = n.GetBoolValue(); } },
                 { "url", n => { Url = n.GetStringValue(); } },
             };
         }
@@ -134,16 +164,22 @@ namespace Bale.Core.Api.Models
             if(ReferenceEquals(writer, null)) throw new ArgumentNullException(nameof(writer));
             writer.WriteStringValue("codec", Codec);
             writer.WriteLongValue("combined_index", CombinedIndex);
+            writer.WriteStringValue("container_track_id", ContainerTrackId);
             writer.WriteBoolValue("default", Default);
             writer.WriteStringValue("delivery", Delivery);
             writer.WriteStringValue("font_bundle_url", FontBundleUrl);
             writer.WriteBoolValue("forced", Forced);
             writer.WriteBoolValue("hearing_impaired", HearingImpaired);
+            writer.WriteObjectValue<global::Bale.Core.Api.Models.SubtitleInventoryHLSRenditionV3>("hls_rendition", HlsRendition);
             writer.WriteStringValue("label", Label);
             writer.WriteStringValue("language", Language);
+            writer.WriteBoolValue("native_selectable", NativeSelectable);
             writer.WriteStringValue("source", Source);
+            writer.WriteLongValue("stored_subtitle_id", StoredSubtitleId);
+            writer.WriteLongValue("stream_index", StreamIndex);
             writer.WriteStringValue("sync_key", SyncKey);
             writer.WriteStringValue("track_id", TrackId);
+            writer.WriteBoolValue("unplayable", Unplayable);
             writer.WriteStringValue("url", Url);
         }
     }

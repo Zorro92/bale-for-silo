@@ -23,7 +23,7 @@ namespace Bale.Core.Api.Models
 #else
         public string AirTime { get; set; }
 #endif
-        /// <summary>Empty, never null</summary>
+        /// <summary>The calendar event&apos;s badges: series_premiere, season_premiere, finale; on a movie, digital or physical. Empty, never null</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
         public List<string>? Badges { get; set; }

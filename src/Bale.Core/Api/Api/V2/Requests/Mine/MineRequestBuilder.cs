@@ -34,7 +34,7 @@ namespace Bale.Core.Api.Api.V2.Requests.Mine
         {
         }
         /// <summary>
-        /// List the account&apos;s media requests, newest first.
+        /// Lists the requests every profile on the account made. A profile the household manager blocked from requests sees only the requests it made itself.
         /// </summary>
         /// <returns>A <see cref="global::Bale.Core.Api.Models.MediaRequestCollection"/></returns>
         /// <param name="cancellationToken">Cancellation token to use when cancelling requests</param>
@@ -73,7 +73,7 @@ namespace Bale.Core.Api.Api.V2.Requests.Mine
             return await RequestAdapter.SendAsync<global::Bale.Core.Api.Models.MediaRequestCollection>(requestInfo, global::Bale.Core.Api.Models.MediaRequestCollection.CreateFromDiscriminatorValue, errorMapping, cancellationToken).ConfigureAwait(false);
         }
         /// <summary>
-        /// List the account&apos;s media requests, newest first.
+        /// Lists the requests every profile on the account made. A profile the household manager blocked from requests sees only the requests it made itself.
         /// </summary>
         /// <returns>A <see cref="RequestInformation"/></returns>
         /// <param name="requestConfiguration">Configuration for the request such as headers, query parameters, and middleware options.</param>
@@ -101,7 +101,7 @@ namespace Bale.Core.Api.Api.V2.Requests.Mine
             return new global::Bale.Core.Api.Api.V2.Requests.Mine.MineRequestBuilder(rawUrl, RequestAdapter);
         }
         /// <summary>
-        /// List the account&apos;s media requests, newest first.
+        /// Lists the requests every profile on the account made. A profile the household manager blocked from requests sees only the requests it made itself.
         /// </summary>
         [global::System.CodeDom.Compiler.GeneratedCode("Kiota", "1.0.0")]
         public partial class MineRequestBuilderGetQueryParameters 

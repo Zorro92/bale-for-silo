@@ -96,6 +96,14 @@ namespace Bale.Core.Api.Models
         public long? DvProfile { get; set; }
         /// <summary>The dv_rpu_present property</summary>
         public bool? DvRpuPresent { get; set; }
+        /// <summary>Color range FFmpeg reported on the first decoded frame of a PQ track (tv, pc, or unknown when the frame carried none); absent when the frame was not read. Can differ from color_range, the container&apos;s tag</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public string? FrameColorRange { get; set; }
+#nullable restore
+#else
+        public string FrameColorRange { get; set; }
+#endif
         /// <summary>The frame_rate property</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
@@ -192,6 +200,7 @@ namespace Bale.Core.Api.Models
                 { "dv_level", n => { DvLevel = n.GetLongValue(); } },
                 { "dv_profile", n => { DvProfile = n.GetLongValue(); } },
                 { "dv_rpu_present", n => { DvRpuPresent = n.GetBoolValue(); } },
+                { "frame_color_range", n => { FrameColorRange = n.GetStringValue(); } },
                 { "frame_rate", n => { FrameRate = n.GetStringValue(); } },
                 { "hdr10_plus", n => { Hdr10Plus = n.GetBoolValue(); } },
                 { "height", n => { Height = n.GetLongValue(); } },
@@ -231,6 +240,7 @@ namespace Bale.Core.Api.Models
             writer.WriteLongValue("dv_level", DvLevel);
             writer.WriteLongValue("dv_profile", DvProfile);
             writer.WriteBoolValue("dv_rpu_present", DvRpuPresent);
+            writer.WriteStringValue("frame_color_range", FrameColorRange);
             writer.WriteStringValue("frame_rate", FrameRate);
             writer.WriteBoolValue("hdr10_plus", Hdr10Plus);
             writer.WriteLongValue("height", Height);

@@ -28,6 +28,8 @@ namespace Bale.Core.Api.Models
 #else
         public string GroupId { get; set; }
 #endif
+        /// <summary>1-based position of the rendition in its SUBTITLES group, set when the group lists every embedded text track (hls_subtitle_renditions_all_v1); equal to the selected inventory row&apos;s hls_rendition.index</summary>
+        public long? Index { get; set; }
         /// <summary>The mime_type property</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
@@ -64,6 +66,7 @@ namespace Bale.Core.Api.Models
             {
                 { "format", n => { Format = n.GetStringValue(); } },
                 { "group_id", n => { GroupId = n.GetStringValue(); } },
+                { "index", n => { Index = n.GetLongValue(); } },
                 { "mime_type", n => { MimeType = n.GetStringValue(); } },
                 { "name", n => { Name = n.GetStringValue(); } },
             };
@@ -77,6 +80,7 @@ namespace Bale.Core.Api.Models
             if(ReferenceEquals(writer, null)) throw new ArgumentNullException(nameof(writer));
             writer.WriteStringValue("format", Format);
             writer.WriteStringValue("group_id", GroupId);
+            writer.WriteLongValue("index", Index);
             writer.WriteStringValue("mime_type", MimeType);
             writer.WriteStringValue("name", Name);
         }

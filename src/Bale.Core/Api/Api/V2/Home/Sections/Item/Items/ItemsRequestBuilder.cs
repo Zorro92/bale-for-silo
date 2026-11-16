@@ -22,7 +22,7 @@ namespace Bale.Core.Api.Api.V2.Home.Sections.Item.Items
         /// </summary>
         /// <param name="pathParameters">Path parameters for the request</param>
         /// <param name="requestAdapter">The request adapter to use to execute the requests.</param>
-        public ItemsRequestBuilder(Dictionary<string, object> pathParameters, IRequestAdapter requestAdapter) : base(requestAdapter, "{+baseurl}/api/v2/home/sections/{id}/items{?backdrop_width,image_size,logo_width,photo_width,poster_width,still_width}", pathParameters)
+        public ItemsRequestBuilder(Dictionary<string, object> pathParameters, IRequestAdapter requestAdapter) : base(requestAdapter, "{+baseurl}/api/v2/home/sections/{id}/items{?backdrop_width,image_size,item_limit,logo_width,photo_width,poster_width,still_width}", pathParameters)
         {
         }
         /// <summary>
@@ -30,7 +30,7 @@ namespace Bale.Core.Api.Api.V2.Home.Sections.Item.Items
         /// </summary>
         /// <param name="rawUrl">The raw URL to use for the request builder.</param>
         /// <param name="requestAdapter">The request adapter to use to execute the requests.</param>
-        public ItemsRequestBuilder(string rawUrl, IRequestAdapter requestAdapter) : base(requestAdapter, "{+baseurl}/api/v2/home/sections/{id}/items{?backdrop_width,image_size,logo_width,photo_width,poster_width,still_width}", rawUrl)
+        public ItemsRequestBuilder(string rawUrl, IRequestAdapter requestAdapter) : base(requestAdapter, "{+baseurl}/api/v2/home/sections/{id}/items{?backdrop_width,image_size,item_limit,logo_width,photo_width,poster_width,still_width}", rawUrl)
         {
         }
         /// <summary>
@@ -112,6 +112,9 @@ namespace Bale.Core.Api.Api.V2.Home.Sections.Item.Items
             /// <summary>Artwork size for every image in the response; absent picks each surface&apos;s default</summary>
             [QueryParameter("image_size")]
             public global::Bale.Core.Api.Api.V2.Home.Sections.Item.Items.GetImage_sizeQueryParameterType? ImageSize { get; set; }
+            /// <summary>Answer at most this many cards: the section&apos;s item_limit becomes the smaller of its own and this value; total_count keeps its meaning. Absent keeps the section&apos;s own limit. Send it only when getHomeCapabilities reports row_item_limit_max; an older server rejects the parameter</summary>
+            [QueryParameter("item_limit")]
+            public long? ItemLimit { get; set; }
             /// <summary>Width in device pixels the client draws logo_url at. Overrides image_size for logos</summary>
             [QueryParameter("logo_width")]
             public long? LogoWidth { get; set; }

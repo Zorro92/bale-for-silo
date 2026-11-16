@@ -14,6 +14,8 @@ namespace Bale.Core.Api.Models
     {
         /// <summary>Whether the current principal may use the capability</summary>
         public bool? Allowed { get; set; }
+        /// <summary>searchCatalogBoxSets, getCatalogBoxSet and getCatalogItemBoxSet answer; listUserLibraries reports which libraries have box sets on</summary>
+        public bool? BoxSets { get; set; }
         /// <summary>Rule groups in catalog queries, sections, and Smart collections accept the title, decade, runtime, rating_tmdb, rating_rt_critic, rating_rt_audience, latest_episode_added, and last_air_date fields, the not_contains, begins_with, and ends_with operators on title, and not_in_last on date fields</summary>
         public bool? ExtendedQueryRules { get; set; }
         /// <summary>searchCatalogFacet accepts library_ids and answers values and values_has_more: ranked values with title counts that match word starts, and the most common values for an empty q</summary>
@@ -65,6 +67,7 @@ namespace Bale.Core.Api.Models
             return new Dictionary<string, Action<IParseNode>>
             {
                 { "allowed", n => { Allowed = n.GetBoolValue(); } },
+                { "box_sets", n => { BoxSets = n.GetBoolValue(); } },
                 { "extended_query_rules", n => { ExtendedQueryRules = n.GetBoolValue(); } },
                 { "facet_value_search", n => { FacetValueSearch = n.GetBoolValue(); } },
                 { "letter_index", n => { LetterIndex = n.GetBoolValue(); } },
@@ -88,6 +91,7 @@ namespace Bale.Core.Api.Models
         {
             if(ReferenceEquals(writer, null)) throw new ArgumentNullException(nameof(writer));
             writer.WriteBoolValue("allowed", Allowed);
+            writer.WriteBoolValue("box_sets", BoxSets);
             writer.WriteBoolValue("extended_query_rules", ExtendedQueryRules);
             writer.WriteBoolValue("facet_value_search", FacetValueSearch);
             writer.WriteBoolValue("letter_index", LetterIndex);

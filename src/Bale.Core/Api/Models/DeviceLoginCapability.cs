@@ -38,6 +38,8 @@ namespace Bale.Core.Api.Models
 #else
         public string Revision { get; set; }
 #endif
+        /// <summary>Whether startDeviceLogin accepts binding, getDeviceLogin reports it, and pollDeviceLogin requires the matching binding_secret for a bound request</summary>
+        public bool? SessionBinding { get; set; }
         /// <summary>Support and configuration state, not health</summary>
         public global::Bale.Core.Api.Models.DeviceLoginCapability_state? State { get; set; }
         /// <summary>
@@ -65,6 +67,7 @@ namespace Bale.Core.Api.Models
                 { "protocol_versions", n => { ProtocolVersions = n.GetCollectionOfPrimitiveValues<long?>()?.AsList(); } },
                 { "remote_playback_handoff", n => { RemotePlaybackHandoff = n.GetBoolValue(); } },
                 { "revision", n => { Revision = n.GetStringValue(); } },
+                { "session_binding", n => { SessionBinding = n.GetBoolValue(); } },
                 { "state", n => { State = n.GetEnumValue<global::Bale.Core.Api.Models.DeviceLoginCapability_state>(); } },
             };
         }
@@ -82,6 +85,7 @@ namespace Bale.Core.Api.Models
             writer.WriteCollectionOfPrimitiveValues<long?>("protocol_versions", ProtocolVersions);
             writer.WriteBoolValue("remote_playback_handoff", RemotePlaybackHandoff);
             writer.WriteStringValue("revision", Revision);
+            writer.WriteBoolValue("session_binding", SessionBinding);
             writer.WriteEnumValue<global::Bale.Core.Api.Models.DeviceLoginCapability_state>("state", State);
         }
     }

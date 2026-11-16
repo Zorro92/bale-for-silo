@@ -16,7 +16,7 @@ namespace Bale.Core.Api.Api.V2.Watched
     public partial class WatchedRequestBuilder : BaseRequestBuilder
     {
         /// <summary>Gets an item from the Bale.Core.Api.api.v2.watched.item collection</summary>
-        /// <param name="position">A movie, ebook, episode, season or series; a season or series expands to its episodes</param>
+        /// <param name="position">A movie, audiobook, ebook, episode, season or series; a season or series expands to its episodes</param>
         /// <returns>A <see cref="global::Bale.Core.Api.Api.V2.Watched.Item.WatchedItemRequestBuilder"/></returns>
         public global::Bale.Core.Api.Api.V2.Watched.Item.WatchedItemRequestBuilder this[string position]
         {

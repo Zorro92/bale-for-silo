@@ -1,6 +1,6 @@
 {
-  "descriptionHash": "2A2D4A82844E230DA7B8D00FF0B59FF0D091A0B5D31652547549618D7F21B2040587DE82CA56BD7BA0F97D28D19D8ABA824E5EC14133DECBB3C68E767BC1A5F0",
-  "descriptionLocation": "../../../.cache/silo-openapi-44a345dbfb8c0a5892dc366ee0dd33fc091b7cf2.json",
+  "descriptionHash": "6627A769D21C494677A0AC79E7CF4887E46787DDA111EF40032679D45D11F19F4FC770FF7B1C6D2E13538EF7A9C58A724D53BAAC26C9B2E8E4E77B68E33EC36E",
+  "descriptionLocation": "../../../.cache/silo-openapi-92ee051878c2a791940ec9598e2bdd0f04890b3e.json",
   "lockFileVersion": "1.0.0",
   "kiotaVersion": "1.36.1",
   "clientClassName": "SiloApiClient",
@@ -79,6 +79,8 @@
     "/api/v2/requests/mine",
     "/api/v2/requests",
     "/api/v2/requests/{id}/cancel",
+    "/api/v2/requests/{id}",
+    "/api/v2/capabilities/ratings",
     "/api/v2/requests/follows/{media_type}/{tmdb_id}"
   ],
   "excludePatterns": [],

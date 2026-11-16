@@ -12,6 +12,8 @@ namespace Bale.Core.Api.Models
     public partial class UserLibrary : IParsable
     #pragma warning restore CS1591
     {
+        /// <summary>The library gathers movies of one TMDB collection into a box set, which movie pages and, when box_sets_in_search is true, search show; browsing lists each movie</summary>
+        public bool? BoxSetsEnabled { get; set; }
         /// <summary>Opaque identifier</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
@@ -64,6 +66,7 @@ namespace Bale.Core.Api.Models
         {
             return new Dictionary<string, Action<IParseNode>>
             {
+                { "box_sets_enabled", n => { BoxSetsEnabled = n.GetBoolValue(); } },
                 { "id", n => { Id = n.GetStringValue(); } },
                 { "name", n => { Name = n.GetStringValue(); } },
                 { "poster_url", n => { PosterUrl = n.GetStringValue(); } },
@@ -78,6 +81,7 @@ namespace Bale.Core.Api.Models
         public virtual void Serialize(ISerializationWriter writer)
         {
             if(ReferenceEquals(writer, null)) throw new ArgumentNullException(nameof(writer));
+            writer.WriteBoolValue("box_sets_enabled", BoxSetsEnabled);
             writer.WriteStringValue("id", Id);
             writer.WriteStringValue("name", Name);
             writer.WriteStringValue("poster_url", PosterUrl);

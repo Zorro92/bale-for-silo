@@ -20,6 +20,10 @@ namespace Bale.Core.Api.Models
         public bool? NotInterested { get; set; }
         /// <summary>The played property</summary>
         public bool? Played { get; set; }
+        /// <summary>Available episodes the profile has not watched; present on a series or season the profile has not finished</summary>
+        public long? UnplayedCount { get; set; }
+        /// <summary>Episodes the profile has watched; present on a series or season the profile has not finished</summary>
+        public long? WatchedCount { get; set; }
         /// <summary>
         /// Creates a new instance of the appropriate class based on discriminator value
         /// </summary>
@@ -42,6 +46,8 @@ namespace Bale.Core.Api.Models
                 { "is_favorite", n => { IsFavorite = n.GetBoolValue(); } },
                 { "not_interested", n => { NotInterested = n.GetBoolValue(); } },
                 { "played", n => { Played = n.GetBoolValue(); } },
+                { "unplayed_count", n => { UnplayedCount = n.GetLongValue(); } },
+                { "watched_count", n => { WatchedCount = n.GetLongValue(); } },
             };
         }
         /// <summary>
@@ -55,6 +61,8 @@ namespace Bale.Core.Api.Models
             writer.WriteBoolValue("is_favorite", IsFavorite);
             writer.WriteBoolValue("not_interested", NotInterested);
             writer.WriteBoolValue("played", Played);
+            writer.WriteLongValue("unplayed_count", UnplayedCount);
+            writer.WriteLongValue("watched_count", WatchedCount);
         }
     }
 }

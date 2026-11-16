@@ -24,8 +24,12 @@ namespace Bale.Core.Api.Models
 #else
         public string Revision { get; set; }
 #endif
+        /// <summary>The largest item_limit getHomeSectionItems and getHomeLayout accept: the section, or each section the layout includes, then answers at most that many cards. Absent when the home sections service is not configured, and on a server whose Home row reads take no item_limit</summary>
+        public long? RowItemLimitMax { get; set; }
         /// <summary>The largest item_limit listHomeSections and listLibrarySections accept: each section then answers at most that many cards. Absent when the home sections service is not configured</summary>
         public long? SectionItemLimitMax { get; set; }
+        /// <summary>Sections, profile section settings, admin section definitions and recommendation rows carry title_key, with title_args when its message has placeholders, for titles the server writes, so a client can translate them (a few, such as an editorial row&apos;s subject title, have none; a client shows title whenever the key is absent or unknown), and profile section settings carry default_title_key and default_title_args the same way for default_title. Request Discover rows carry title_key the same way, and the section recipe gallery&apos;s presets carry display_name_key, description_short_key and description_long_key for their text; those came later, so a server that reports this flag may not send them. Informational: clients act on each key whenever it is present. Absent when the home sections service is not configured, and on a server that predates section title keys</summary>
+        public bool? SectionTitleKeys { get; set; }
         /// <summary>Support and configuration state, not health</summary>
         public global::Bale.Core.Api.Models.HomeCapabilities_state? State { get; set; }
         /// <summary>
@@ -49,7 +53,9 @@ namespace Bale.Core.Api.Models
                 { "allowed", n => { Allowed = n.GetBoolValue(); } },
                 { "include_items_max", n => { IncludeItemsMax = n.GetLongValue(); } },
                 { "revision", n => { Revision = n.GetStringValue(); } },
+                { "row_item_limit_max", n => { RowItemLimitMax = n.GetLongValue(); } },
                 { "section_item_limit_max", n => { SectionItemLimitMax = n.GetLongValue(); } },
+                { "section_title_keys", n => { SectionTitleKeys = n.GetBoolValue(); } },
                 { "state", n => { State = n.GetEnumValue<global::Bale.Core.Api.Models.HomeCapabilities_state>(); } },
             };
         }
@@ -63,7 +69,9 @@ namespace Bale.Core.Api.Models
             writer.WriteBoolValue("allowed", Allowed);
             writer.WriteLongValue("include_items_max", IncludeItemsMax);
             writer.WriteStringValue("revision", Revision);
+            writer.WriteLongValue("row_item_limit_max", RowItemLimitMax);
             writer.WriteLongValue("section_item_limit_max", SectionItemLimitMax);
+            writer.WriteBoolValue("section_title_keys", SectionTitleKeys);
             writer.WriteEnumValue<global::Bale.Core.Api.Models.HomeCapabilities_state>("state", State);
         }
     }

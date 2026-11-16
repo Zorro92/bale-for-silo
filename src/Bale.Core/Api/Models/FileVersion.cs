@@ -100,7 +100,7 @@ namespace Bale.Core.Api.Models
 #else
         public string FileId { get; set; }
 #endif
-        /// <summary>The file_name property</summary>
+        /// <summary>Absent for viewers without file-path visibility, except on audiobooks and ebooks</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
         public string? FileName { get; set; }

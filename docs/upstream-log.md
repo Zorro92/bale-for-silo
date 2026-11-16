@@ -27,14 +27,8 @@ The first review (2026-11-10) started from the commit each local clone was made 
 
 Deferred for now: playback comes first (2026-11-10). Grouped by area, newest review first. Strike an item when it ships or is decided against.
 
-- **API contract:** bump `SILO_REF` in `scripts/generate-api.sh`, regenerate and check the build
-  (server 2026-11-16: `requests_allowed` / `requests_allowed_supported`, `availability`,
-  `authors`, `frame_color_range`, Discover and preset title keys; Android/Apple 2026-11-16:
-  `GET /api/v2/capabilities/ratings`, `user_state.watched_count` / `unplayed_count`, overlay
-  config, `last_edition_key`; server 2026-11-10: `max_profiles`, `binding`,
-  `stored_subtitle_id`, catalog IDs, nullable enums, device headers; Android/Apple:
-  remove-failed requests). The pin is older than the server clone, so the bump also brings in
-  changes from before this log started.
+- ~~**API contract:** bump `SILO_REF`~~ Done 2026-11-16: pinned to server `92ee051878c2`, additive only;
+  also generates `GET /api/v2/capabilities/ratings` and `DELETE /api/v2/requests/{id}`.
 - **Edition / Version Auto:** Edition is the cut and Version Auto ranks only inside it; open on
   `last_edition_key`, else the edition of `last_file_id`; an Edition pick keeps Version on Auto
   (Android `466c31968`, Apple `94a6095f`/`197b5c18`, Roku `7bb02a9`). Keep display resolution

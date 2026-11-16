@@ -34,7 +34,7 @@ namespace Bale.Core.Api.Api.V2.Library.Item.Sections
         {
         }
         /// <summary>
-        /// The library&apos;s sections with their cards, as the acting profile sees them.
+        /// The library&apos;s sections that have cards for the acting profile, with those cards.
         /// </summary>
         /// <returns>A <see cref="global::Bale.Core.Api.Models.SectionCollection"/></returns>
         /// <param name="cancellationToken">Cancellation token to use when cancelling requests</param>
@@ -73,7 +73,7 @@ namespace Bale.Core.Api.Api.V2.Library.Item.Sections
             return await RequestAdapter.SendAsync<global::Bale.Core.Api.Models.SectionCollection>(requestInfo, global::Bale.Core.Api.Models.SectionCollection.CreateFromDiscriminatorValue, errorMapping, cancellationToken).ConfigureAwait(false);
         }
         /// <summary>
-        /// The library&apos;s sections with their cards, as the acting profile sees them.
+        /// The library&apos;s sections that have cards for the acting profile, with those cards.
         /// </summary>
         /// <returns>A <see cref="RequestInformation"/></returns>
         /// <param name="requestConfiguration">Configuration for the request such as headers, query parameters, and middleware options.</param>
@@ -101,7 +101,7 @@ namespace Bale.Core.Api.Api.V2.Library.Item.Sections
             return new global::Bale.Core.Api.Api.V2.Library.Item.Sections.SectionsRequestBuilder(rawUrl, RequestAdapter);
         }
         /// <summary>
-        /// The library&apos;s sections with their cards, as the acting profile sees them.
+        /// The library&apos;s sections that have cards for the acting profile, with those cards.
         /// </summary>
         [global::System.CodeDom.Compiler.GeneratedCode("Kiota", "1.0.0")]
         public partial class SectionsRequestBuilderGetQueryParameters 

@@ -44,6 +44,22 @@ namespace Bale.Core.Api.Models
 #else
         public string Title { get; set; }
 #endif
+        /// <summary>Values of the title_key message&apos;s placeholders by name, such as library for a generated library row; present only with title_key, and absent when the message has none</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public global::Bale.Core.Api.Models.SectionLayoutEntry_title_args? TitleArgs { get; set; }
+#nullable restore
+#else
+        public global::Bale.Core.Api.Models.SectionLayoutEntry_title_args TitleArgs { get; set; }
+#endif
+        /// <summary>Key of the shared translation catalog message whose English is title, present only while title is the server&apos;s own text: a built-in or generated section, recommendation row or request Discover row name, or a seasonal row&apos;s built-in in-season title. A client that has the key shows its translation, filling title_args, and otherwise shows title. Absent when an administrator or the profile typed the title, except that upgrading keyed existing titles identical to a built-in name, and a profile title equal to the administrator&apos;s keeps the key. A client acts on title_key whenever it is present</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public string? TitleKey { get; set; }
+#nullable restore
+#else
+        public string TitleKey { get; set; }
+#endif
         /// <summary>
         /// Creates a new instance of the appropriate class based on discriminator value
         /// </summary>
@@ -69,6 +85,8 @@ namespace Bale.Core.Api.Models
                 { "item_limit", n => { ItemLimit = n.GetLongValue(); } },
                 { "section_type", n => { SectionType = n.GetStringValue(); } },
                 { "title", n => { Title = n.GetStringValue(); } },
+                { "title_args", n => { TitleArgs = n.GetObjectValue<global::Bale.Core.Api.Models.SectionLayoutEntry_title_args>(global::Bale.Core.Api.Models.SectionLayoutEntry_title_args.CreateFromDiscriminatorValue); } },
+                { "title_key", n => { TitleKey = n.GetStringValue(); } },
             };
         }
         /// <summary>
@@ -85,6 +103,8 @@ namespace Bale.Core.Api.Models
             writer.WriteLongValue("item_limit", ItemLimit);
             writer.WriteStringValue("section_type", SectionType);
             writer.WriteStringValue("title", Title);
+            writer.WriteObjectValue<global::Bale.Core.Api.Models.SectionLayoutEntry_title_args>("title_args", TitleArgs);
+            writer.WriteStringValue("title_key", TitleKey);
         }
     }
 }

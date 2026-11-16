@@ -45,6 +45,22 @@ namespace Bale.Core.Api.Models
 #else
         public global::Bale.Core.Api.Models.AudiobookDetailExtension Audiobook { get; set; }
 #endif
+        /// <summary>On an audiobook or ebook card in a catalog browse listing: up to three author names in credit order, the names the book&apos;s detail page lists under authors. Absent for other types, on other listings, and when the book credits no author</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public List<string>? Authors { get; set; }
+#nullable restore
+#else
+        public List<string> Authors { get; set; }
+#endif
+        /// <summary>On a series, complete seasons out of seasons that have aired. On a season, episodes in the library out of the episodes the season lists. Sent only while the acting profile&apos;s poster badges are on and include the availability badge. Absent for other types, for specials, and when episode metadata is incomplete.</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public global::Bale.Core.Api.Models.CatalogAvailability? Availability { get; set; }
+#nullable restore
+#else
+        public global::Bale.Core.Api.Models.CatalogAvailability Availability { get; set; }
+#endif
         /// <summary>Whether backdrop_url is an episode still. False for series artwork; absent when provenance is unavailable.</summary>
         public bool? BackdropIsEpisodeStill { get; set; }
         /// <summary>The backdrop_thumbhash property</summary>
@@ -159,7 +175,7 @@ namespace Bale.Core.Api.Models
 #else
         public string DiscUrl { get; set; }
 #endif
-        /// <summary>The duration_seconds property</summary>
+        /// <summary>The length position_seconds is measured against, in seconds, as the progress record holds it. Present with position_seconds; a card draws its progress bar and time left from the pair</summary>
         public double? DurationSeconds { get; set; }
         /// <summary>The ebook property</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
@@ -251,7 +267,7 @@ namespace Bale.Core.Api.Models
 #else
         public List<string> Genres { get; set; }
 #endif
-        /// <summary>The imdb_id property</summary>
+        /// <summary>The item&apos;s IMDb ID, the one item detail shows. On movie and series cards in catalog browse, collection, favorites, and history listings, and on item detail, when the item has one; Home and library section cards and episode cards leave it absent</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
         public string? ImdbId { get; set; }
@@ -389,7 +405,7 @@ namespace Bale.Core.Api.Models
 #endif
         /// <summary>The season of play_content_id when it is an episode, so a client can open that season without fetching the episode; absent otherwise</summary>
         public long? PlaySeasonNumber { get; set; }
-        /// <summary>Resume position on a continue-watching card</summary>
+        /// <summary>The profile&apos;s resume position, in seconds. On a Continue Watching card, and on a catalog browse or box set card for a title the profile has started and not finished (absent while user_state.played is true); other listings leave it absent. Series, seasons, and ebooks never carry it on a browse card</summary>
         public double? PositionSeconds { get; set; }
         /// <summary>Whether poster_url is an episode still. False for series or season artwork; absent when provenance is unavailable.</summary>
         public bool? PosterIsEpisodeStill { get; set; }
@@ -611,7 +627,7 @@ namespace Bale.Core.Api.Models
 #else
         public string Title { get; set; }
 #endif
-        /// <summary>The tmdb_id property</summary>
+        /// <summary>The item&apos;s TMDB ID, the one item detail shows. Present where imdb_id is</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
         public string? TmdbId { get; set; }
@@ -619,7 +635,7 @@ namespace Bale.Core.Api.Models
 #else
         public string TmdbId { get; set; }
 #endif
-        /// <summary>The tvdb_id property</summary>
+        /// <summary>The item&apos;s TVDB ID, the one item detail shows. Present where imdb_id is</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
         public string? TvdbId { get; set; }
@@ -728,6 +744,8 @@ namespace Bale.Core.Api.Models
                 { "air_time", n => { AirTime = n.GetStringValue(); } },
                 { "air_timezone", n => { AirTimezone = n.GetStringValue(); } },
                 { "audiobook", n => { Audiobook = n.GetObjectValue<global::Bale.Core.Api.Models.AudiobookDetailExtension>(global::Bale.Core.Api.Models.AudiobookDetailExtension.CreateFromDiscriminatorValue); } },
+                { "authors", n => { Authors = n.GetCollectionOfPrimitiveValues<string>()?.AsList(); } },
+                { "availability", n => { Availability = n.GetObjectValue<global::Bale.Core.Api.Models.CatalogAvailability>(global::Bale.Core.Api.Models.CatalogAvailability.CreateFromDiscriminatorValue); } },
                 { "backdrop_is_episode_still", n => { BackdropIsEpisodeStill = n.GetBoolValue(); } },
                 { "backdrop_thumbhash", n => { BackdropThumbhash = n.GetStringValue(); } },
                 { "backdrop_url", n => { BackdropUrl = n.GetStringValue(); } },
@@ -845,6 +863,8 @@ namespace Bale.Core.Api.Models
             writer.WriteStringValue("air_time", AirTime);
             writer.WriteStringValue("air_timezone", AirTimezone);
             writer.WriteObjectValue<global::Bale.Core.Api.Models.AudiobookDetailExtension>("audiobook", Audiobook);
+            writer.WriteCollectionOfPrimitiveValues<string>("authors", Authors);
+            writer.WriteObjectValue<global::Bale.Core.Api.Models.CatalogAvailability>("availability", Availability);
             writer.WriteBoolValue("backdrop_is_episode_still", BackdropIsEpisodeStill);
             writer.WriteStringValue("backdrop_thumbhash", BackdropThumbhash);
             writer.WriteStringValue("backdrop_url", BackdropUrl);

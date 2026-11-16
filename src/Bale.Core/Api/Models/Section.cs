@@ -16,6 +16,8 @@ namespace Bale.Core.Api.Models
         public bool? Customized { get; set; }
         /// <summary>The featured property</summary>
         public bool? Featured { get; set; }
+        /// <summary>The section holds more cards than items: reading it again without item_limit answers more. Sent only by getHomeSectionItems and getHomeLayout&apos;s included_sections when the request carried item_limit, and absent when false</summary>
+        public bool? HasMore { get; set; }
         /// <summary>The id property</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
@@ -52,6 +54,22 @@ namespace Bale.Core.Api.Models
 #else
         public string Title { get; set; }
 #endif
+        /// <summary>Values of the title_key message&apos;s placeholders by name, such as library for a generated library row; present only with title_key, and absent when the message has none</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public global::Bale.Core.Api.Models.Section_title_args? TitleArgs { get; set; }
+#nullable restore
+#else
+        public global::Bale.Core.Api.Models.Section_title_args TitleArgs { get; set; }
+#endif
+        /// <summary>Key of the shared translation catalog message whose English is title, present only while title is the server&apos;s own text: a built-in or generated section, recommendation row or request Discover row name, or a seasonal row&apos;s built-in in-season title. A client that has the key shows its translation, filling title_args, and otherwise shows title. Absent when an administrator or the profile typed the title, except that upgrading keyed existing titles identical to a built-in name, and a profile title equal to the administrator&apos;s keeps the key. A client acts on title_key whenever it is present</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public string? TitleKey { get; set; }
+#nullable restore
+#else
+        public string TitleKey { get; set; }
+#endif
         /// <summary>Items the section has in total, at least the number returned</summary>
         public long? TotalCount { get; set; }
         /// <summary>
@@ -74,12 +92,15 @@ namespace Bale.Core.Api.Models
             {
                 { "customized", n => { Customized = n.GetBoolValue(); } },
                 { "featured", n => { Featured = n.GetBoolValue(); } },
+                { "has_more", n => { HasMore = n.GetBoolValue(); } },
                 { "id", n => { Id = n.GetStringValue(); } },
                 { "is_custom", n => { IsCustom = n.GetBoolValue(); } },
                 { "item_limit", n => { ItemLimit = n.GetLongValue(); } },
                 { "items", n => { Items = n.GetCollectionOfObjectValues<global::Bale.Core.Api.Models.CatalogItem>(global::Bale.Core.Api.Models.CatalogItem.CreateFromDiscriminatorValue)?.AsList(); } },
                 { "section_type", n => { SectionType = n.GetStringValue(); } },
                 { "title", n => { Title = n.GetStringValue(); } },
+                { "title_args", n => { TitleArgs = n.GetObjectValue<global::Bale.Core.Api.Models.Section_title_args>(global::Bale.Core.Api.Models.Section_title_args.CreateFromDiscriminatorValue); } },
+                { "title_key", n => { TitleKey = n.GetStringValue(); } },
                 { "total_count", n => { TotalCount = n.GetLongValue(); } },
             };
         }
@@ -92,12 +113,15 @@ namespace Bale.Core.Api.Models
             if(ReferenceEquals(writer, null)) throw new ArgumentNullException(nameof(writer));
             writer.WriteBoolValue("customized", Customized);
             writer.WriteBoolValue("featured", Featured);
+            writer.WriteBoolValue("has_more", HasMore);
             writer.WriteStringValue("id", Id);
             writer.WriteBoolValue("is_custom", IsCustom);
             writer.WriteLongValue("item_limit", ItemLimit);
             writer.WriteCollectionOfObjectValues<global::Bale.Core.Api.Models.CatalogItem>("items", Items);
             writer.WriteStringValue("section_type", SectionType);
             writer.WriteStringValue("title", Title);
+            writer.WriteObjectValue<global::Bale.Core.Api.Models.Section_title_args>("title_args", TitleArgs);
+            writer.WriteStringValue("title_key", TitleKey);
             writer.WriteLongValue("total_count", TotalCount);
         }
     }

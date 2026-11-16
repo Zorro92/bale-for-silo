@@ -24,6 +24,8 @@ namespace Bale.Core.Api.Models
         public bool? MissingSeasonsRequestable { get; set; }
         /// <summary>The rating_restrictions_enforced property</summary>
         public bool? RatingRestrictionsEnforced { get; set; }
+        /// <summary>Whether removeFailedRequest is available: a requester can delete their own failed request that delivered nothing.</summary>
+        public bool? RemoveFailedSupported { get; set; }
         /// <summary>The requests_enabled property</summary>
         public bool? RequestsEnabled { get; set; }
         /// <summary>Opaque revision of this document</summary>
@@ -40,7 +42,7 @@ namespace Bale.Core.Api.Models
         public global::Bale.Core.Api.Models.FeatureStatus_state? State { get; set; }
         /// <summary>Whether adding a title the library doesn&apos;t have to the watchlist also requests it (or follows its request) for this viewer: requests and watchlist requests are on for the server, the profile has not opted out, and the viewer may request.</summary>
         public bool? WatchlistRequests { get; set; }
-        /// <summary>Whether the server keeps watchlist entries for titles the library doesn&apos;t have: the /watchlist/titles operations, and in_watchlist on discovery results and the title detail. False while requests are disabled, when those operations answer 409 capability_disabled; the entries are kept.</summary>
+        /// <summary>Whether the server keeps watchlist entries for titles the library doesn&apos;t have: the /watchlist/titles operations, and in_watchlist on discovery results and the title detail. False while requests are disabled, when those operations answer 409 capability_disabled, and for a profile blocked from requests, when they answer 403; the entries are kept.</summary>
         public bool? WatchlistTitlesSupported { get; set; }
         /// <summary>
         /// Creates a new instance of the appropriate class based on discriminator value
@@ -66,6 +68,7 @@ namespace Bale.Core.Api.Models
                 { "follow_supported", n => { FollowSupported = n.GetBoolValue(); } },
                 { "missing_seasons_requestable", n => { MissingSeasonsRequestable = n.GetBoolValue(); } },
                 { "rating_restrictions_enforced", n => { RatingRestrictionsEnforced = n.GetBoolValue(); } },
+                { "remove_failed_supported", n => { RemoveFailedSupported = n.GetBoolValue(); } },
                 { "requests_enabled", n => { RequestsEnabled = n.GetBoolValue(); } },
                 { "revision", n => { Revision = n.GetStringValue(); } },
                 { "season_requests_supported", n => { SeasonRequestsSupported = n.GetBoolValue(); } },
@@ -87,6 +90,7 @@ namespace Bale.Core.Api.Models
             writer.WriteBoolValue("follow_supported", FollowSupported);
             writer.WriteBoolValue("missing_seasons_requestable", MissingSeasonsRequestable);
             writer.WriteBoolValue("rating_restrictions_enforced", RatingRestrictionsEnforced);
+            writer.WriteBoolValue("remove_failed_supported", RemoveFailedSupported);
             writer.WriteBoolValue("requests_enabled", RequestsEnabled);
             writer.WriteStringValue("revision", Revision);
             writer.WriteBoolValue("season_requests_supported", SeasonRequestsSupported);

@@ -34,13 +34,14 @@ namespace Bale.Core.Api.Api.V2.Auth.Device.Poll
         {
         }
         /// <summary>
-        /// Poll a pairing request from the device and collect its tokens once approved.
+        /// A request started with binding is polled only with its binding_secret: a poll without it, or with another secret, is 403 device_binding_mismatch and leaves the request unchanged.
         /// </summary>
         /// <returns>A <see cref="global::Bale.Core.Api.Models.DeviceLoginPoll"/></returns>
         /// <param name="body">The request body</param>
         /// <param name="cancellationToken">Cancellation token to use when cancelling requests</param>
         /// <param name="requestConfiguration">Configuration for the request such as headers, query parameters, and middleware options.</param>
         /// <exception cref="global::Bale.Core.Api.Models.Problem">When receiving a 400 status code</exception>
+        /// <exception cref="global::Bale.Core.Api.Models.Problem">When receiving a 403 status code</exception>
         /// <exception cref="global::Bale.Core.Api.Models.Problem">When receiving a 404 status code</exception>
         /// <exception cref="global::Bale.Core.Api.Models.Problem">When receiving a 406 status code</exception>
         /// <exception cref="global::Bale.Core.Api.Models.Problem">When receiving a 408 status code</exception>
@@ -64,6 +65,7 @@ namespace Bale.Core.Api.Api.V2.Auth.Device.Poll
             var errorMapping = new Dictionary<string, ParsableFactory<IParsable>>
             {
                 { "400", global::Bale.Core.Api.Models.Problem.CreateFromDiscriminatorValue },
+                { "403", global::Bale.Core.Api.Models.Problem.CreateFromDiscriminatorValue },
                 { "404", global::Bale.Core.Api.Models.Problem.CreateFromDiscriminatorValue },
                 { "406", global::Bale.Core.Api.Models.Problem.CreateFromDiscriminatorValue },
                 { "408", global::Bale.Core.Api.Models.Problem.CreateFromDiscriminatorValue },
@@ -77,7 +79,7 @@ namespace Bale.Core.Api.Api.V2.Auth.Device.Poll
             return await RequestAdapter.SendAsync<global::Bale.Core.Api.Models.DeviceLoginPoll>(requestInfo, global::Bale.Core.Api.Models.DeviceLoginPoll.CreateFromDiscriminatorValue, errorMapping, cancellationToken).ConfigureAwait(false);
         }
         /// <summary>
-        /// Poll a pairing request from the device and collect its tokens once approved.
+        /// A request started with binding is polled only with its binding_secret: a poll without it, or with another secret, is 403 device_binding_mismatch and leaves the request unchanged.
         /// </summary>
         /// <returns>A <see cref="RequestInformation"/></returns>
         /// <param name="body">The request body</param>

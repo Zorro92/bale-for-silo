@@ -12,6 +12,14 @@ namespace Bale.Core.Api.Models
     public partial class PollDeviceLoginInputBody : IParsable
     #pragma warning restore CS1591
     {
+        /// <summary>For a request started with binding: the secret, as base64url without padding, whose SHA-256 is the binding. Required on every poll of a bound request; ignored otherwise</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public string? BindingSecret { get; set; }
+#nullable restore
+#else
+        public string BindingSecret { get; set; }
+#endif
         /// <summary>The device code from startDeviceLogin</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
@@ -38,6 +46,7 @@ namespace Bale.Core.Api.Models
         {
             return new Dictionary<string, Action<IParseNode>>
             {
+                { "binding_secret", n => { BindingSecret = n.GetStringValue(); } },
                 { "device_code", n => { DeviceCode = n.GetStringValue(); } },
             };
         }
@@ -48,6 +57,7 @@ namespace Bale.Core.Api.Models
         public virtual void Serialize(ISerializationWriter writer)
         {
             if(ReferenceEquals(writer, null)) throw new ArgumentNullException(nameof(writer));
+            writer.WriteStringValue("binding_secret", BindingSecret);
             writer.WriteStringValue("device_code", DeviceCode);
         }
     }

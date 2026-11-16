@@ -15,6 +15,14 @@ namespace Bale.Core.Api.Models
     {
         /// <summary>Calendar date, YYYY-MM-DD</summary>
         public Date? AirDate { get; set; }
+        /// <summary>Episodes in the library out of the episodes this season lists. Sent only while the acting profile&apos;s poster badges are on and include the availability badge. Absent for specials and when episode metadata is incomplete.</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public global::Bale.Core.Api.Models.CatalogAvailability? Availability { get; set; }
+#nullable restore
+#else
+        public global::Bale.Core.Api.Models.CatalogAvailability Availability { get; set; }
+#endif
         /// <summary>The content_id property</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
@@ -104,6 +112,7 @@ namespace Bale.Core.Api.Models
             return new Dictionary<string, Action<IParseNode>>
             {
                 { "air_date", n => { AirDate = n.GetDateValue(); } },
+                { "availability", n => { Availability = n.GetObjectValue<global::Bale.Core.Api.Models.CatalogAvailability>(global::Bale.Core.Api.Models.CatalogAvailability.CreateFromDiscriminatorValue); } },
                 { "content_id", n => { ContentId = n.GetStringValue(); } },
                 { "episode_count", n => { EpisodeCount = n.GetLongValue(); } },
                 { "is_specials", n => { IsSpecials = n.GetBoolValue(); } },
@@ -125,6 +134,7 @@ namespace Bale.Core.Api.Models
         {
             if(ReferenceEquals(writer, null)) throw new ArgumentNullException(nameof(writer));
             writer.WriteDateValue("air_date", AirDate);
+            writer.WriteObjectValue<global::Bale.Core.Api.Models.CatalogAvailability>("availability", Availability);
             writer.WriteStringValue("content_id", ContentId);
             writer.WriteLongValue("episode_count", EpisodeCount);
             writer.WriteBoolValue("is_specials", IsSpecials);

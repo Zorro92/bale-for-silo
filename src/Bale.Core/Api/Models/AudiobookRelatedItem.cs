@@ -20,6 +20,18 @@ namespace Bale.Core.Api.Models
 #else
         public string ContentId { get; set; }
 #endif
+        /// <summary>Audiobooks only: total listening time, summed over the book&apos;s files the viewer can play, as the book&apos;s own total_duration_seconds is. Absent for ebooks and when no file reports a duration</summary>
+        public long? DurationSeconds { get; set; }
+        /// <summary>The profile finished this book, by the rule a catalog card&apos;s user_state.played follows: an audiobook&apos;s visible progress or a visible completed history row, an ebook&apos;s reading progress. Absent when false and without a profile</summary>
+        public bool? Played { get; set; }
+        /// <summary>The poster&apos;s ThumbHash, for a blurred preview while poster_url loads</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public string? PosterThumbhash { get; set; }
+#nullable restore
+#else
+        public string PosterThumbhash { get; set; }
+#endif
         /// <summary>The poster_url property</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
@@ -28,6 +40,8 @@ namespace Bale.Core.Api.Models
 #else
         public string PosterUrl { get; set; }
 #endif
+        /// <summary>How far the profile is into the book, 0-1: listening position over the progress row&apos;s duration for an audiobook, reading progress for an ebook. Present only while the book is started and not played</summary>
+        public double? ProgressRatio { get; set; }
         /// <summary>The series_index property</summary>
         public long? SeriesIndex { get; set; }
         /// <summary>The title property</summary>
@@ -59,7 +73,11 @@ namespace Bale.Core.Api.Models
             return new Dictionary<string, Action<IParseNode>>
             {
                 { "content_id", n => { ContentId = n.GetStringValue(); } },
+                { "duration_seconds", n => { DurationSeconds = n.GetLongValue(); } },
+                { "played", n => { Played = n.GetBoolValue(); } },
+                { "poster_thumbhash", n => { PosterThumbhash = n.GetStringValue(); } },
                 { "poster_url", n => { PosterUrl = n.GetStringValue(); } },
+                { "progress_ratio", n => { ProgressRatio = n.GetDoubleValue(); } },
                 { "series_index", n => { SeriesIndex = n.GetLongValue(); } },
                 { "title", n => { Title = n.GetStringValue(); } },
                 { "year", n => { Year = n.GetLongValue(); } },
@@ -73,7 +91,11 @@ namespace Bale.Core.Api.Models
         {
             if(ReferenceEquals(writer, null)) throw new ArgumentNullException(nameof(writer));
             writer.WriteStringValue("content_id", ContentId);
+            writer.WriteLongValue("duration_seconds", DurationSeconds);
+            writer.WriteBoolValue("played", Played);
+            writer.WriteStringValue("poster_thumbhash", PosterThumbhash);
             writer.WriteStringValue("poster_url", PosterUrl);
+            writer.WriteDoubleValue("progress_ratio", ProgressRatio);
             writer.WriteLongValue("series_index", SeriesIndex);
             writer.WriteStringValue("title", Title);
             writer.WriteLongValue("year", Year);

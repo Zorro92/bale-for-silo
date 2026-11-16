@@ -12,6 +12,14 @@ namespace Bale.Core.Api.Models
     public partial class StartDeviceLoginInputBody : IParsable
     #pragma warning restore CS1591
     {
+        /// <summary>Session binding: base64url without padding of SHA-256 of a 32-byte secret the device keeps. getDeviceLogin shows it to the approver, and every poll of the request must send the secret as binding_secret. Omit for an unbound request; an empty string is malformed like any other value</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public string? Binding { get; set; }
+#nullable restore
+#else
+        public string Binding { get; set; }
+#endif
         /// <summary>Pairing purpose; defaults to device_login. remote_playback requires temporary=true and is approved through approve-handoff</summary>
         public global::Bale.Core.Api.Models.StartDeviceLoginInputBody_client_purpose? ClientPurpose { get; set; }
         /// <summary>Human-readable device name shown to the approver</summary>
@@ -50,6 +58,7 @@ namespace Bale.Core.Api.Models
         {
             return new Dictionary<string, Action<IParseNode>>
             {
+                { "binding", n => { Binding = n.GetStringValue(); } },
                 { "client_purpose", n => { ClientPurpose = n.GetEnumValue<global::Bale.Core.Api.Models.StartDeviceLoginInputBody_client_purpose>(); } },
                 { "device_name", n => { DeviceName = n.GetStringValue(); } },
                 { "device_platform", n => { DevicePlatform = n.GetStringValue(); } },
@@ -63,6 +72,7 @@ namespace Bale.Core.Api.Models
         public virtual void Serialize(ISerializationWriter writer)
         {
             if(ReferenceEquals(writer, null)) throw new ArgumentNullException(nameof(writer));
+            writer.WriteStringValue("binding", Binding);
             writer.WriteEnumValue<global::Bale.Core.Api.Models.StartDeviceLoginInputBody_client_purpose>("client_purpose", ClientPurpose);
             writer.WriteStringValue("device_name", DeviceName);
             writer.WriteStringValue("device_platform", DevicePlatform);

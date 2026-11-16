@@ -40,7 +40,7 @@ namespace Bale.Core.Api.Models
 #endif
         /// <summary>Whether the account holds a temporary password. Until changePassword replaces it, the session may only read the account, change the password, and log out; other operations return 403 password_change_required. Refresh the tokens after the change to lift the restriction</summary>
         public bool? PasswordChangeRequired { get; set; }
-        /// <summary>Effective assignable permissions; empty for a disabled account</summary>
+        /// <summary>Assignable permissions the account holds after its access group&apos;s mask; empty for a disabled account. An admin lists only explicitly assigned permissions: its role grants every permission only while it acts as administrator (on the primary profile, or with no profile on a household that does not require one), and clients apply that grant from role and profile</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
         public List<string>? Permissions { get; set; }

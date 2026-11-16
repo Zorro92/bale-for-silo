@@ -33,7 +33,7 @@ namespace Bale.Core.Api.Models
 #else
         public string AirTimezone { get; set; }
 #endif
-        /// <summary>series_premiere, season_premiere, finale; empty, never null</summary>
+        /// <summary>series_premiere, season_premiere, finale; on a movie, digital or physical: the home release it is listed on. Empty, never null</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
         public List<string>? Badges { get; set; }

@@ -12,7 +12,7 @@ namespace Bale.Core.Api.Models
     public partial class ProfileCreate : IParsable
     #pragma warning restore CS1591
     {
-        /// <summary>Unique library identifiers the profile may see when restrictions are enabled</summary>
+        /// <summary>Unique library identifiers the profile may see when restrictions are enabled. Must be empty on an account&apos;s first profile, which becomes its primary profile, even with restrictions off</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
         public List<string>? AllowedLibraryIds { get; set; }
@@ -46,7 +46,7 @@ namespace Bale.Core.Api.Models
 #else
         public string Language { get; set; }
 #endif
-        /// <summary>The library_restrictions_enabled property</summary>
+        /// <summary>Limits the profile to allowed_library_ids. Must be false or omitted on an account&apos;s first profile, which becomes its primary profile</summary>
         public bool? LibraryRestrictionsEnabled { get; set; }
         /// <summary>Advisory-age limit: titles whose advisory age (for example Common Sense Media&apos;s 13+) is above it are hidden from the profile. Titles with no advisory age are limited by max_content_rating alone unless require_advisory_age is set</summary>
         public long? MaxAdvisoryAge { get; set; }
@@ -92,6 +92,8 @@ namespace Bale.Core.Api.Models
 #else
         public string QualityPreference { get; set; }
 #endif
+        /// <summary>Whether the profile may make and follow requests and use request discovery. False keeps it out of those even when the account may request; it can still list, read and cancel the requests it made before. The account&apos;s own requests switch still applies on top. Set by the household manager. Omitted means allowed</summary>
+        public bool? RequestsAllowed { get; set; }
         /// <summary>Hide titles with no advisory age as well, so the profile sees only titles an advisory service rated at or under max_advisory_age. Advisory ages are looked up over time, so on a large library a profile with this set starts with few titles. No effect without max_advisory_age</summary>
         public bool? RequireAdvisoryAge { get; set; }
         /// <summary>Defaults to true when omitted</summary>
@@ -146,6 +148,7 @@ namespace Bale.Core.Api.Models
                 { "pin", n => { Pin = n.GetStringValue(); } },
                 { "preferred_metadata_language", n => { PreferredMetadataLanguage = n.GetStringValue(); } },
                 { "quality_preference", n => { QualityPreference = n.GetStringValue(); } },
+                { "requests_allowed", n => { RequestsAllowed = n.GetBoolValue(); } },
                 { "require_advisory_age", n => { RequireAdvisoryAge = n.GetBoolValue(); } },
                 { "show_forced_subtitles", n => { ShowForcedSubtitles = n.GetBoolValue(); } },
                 { "subtitle_language", n => { SubtitleLanguage = n.GetStringValue(); } },
@@ -175,6 +178,7 @@ namespace Bale.Core.Api.Models
             writer.WriteStringValue("pin", Pin);
             writer.WriteStringValue("preferred_metadata_language", PreferredMetadataLanguage);
             writer.WriteStringValue("quality_preference", QualityPreference);
+            writer.WriteBoolValue("requests_allowed", RequestsAllowed);
             writer.WriteBoolValue("require_advisory_age", RequireAdvisoryAge);
             writer.WriteBoolValue("show_forced_subtitles", ShowForcedSubtitles);
             writer.WriteStringValue("subtitle_language", SubtitleLanguage);

@@ -22,7 +22,7 @@ namespace Bale.Core.Api.Api.V2.Home.Layout
         /// </summary>
         /// <param name="pathParameters">Path parameters for the request</param>
         /// <param name="requestAdapter">The request adapter to use to execute the requests.</param>
-        public LayoutRequestBuilder(Dictionary<string, object> pathParameters, IRequestAdapter requestAdapter) : base(requestAdapter, "{+baseurl}/api/v2/home/layout{?backdrop_width,image_size,include_items,logo_width,photo_width,poster_width,still_width}", pathParameters)
+        public LayoutRequestBuilder(Dictionary<string, object> pathParameters, IRequestAdapter requestAdapter) : base(requestAdapter, "{+baseurl}/api/v2/home/layout{?backdrop_width,image_size,include_items,item_limit,logo_width,photo_width,poster_width,still_width}", pathParameters)
         {
         }
         /// <summary>
@@ -30,7 +30,7 @@ namespace Bale.Core.Api.Api.V2.Home.Layout
         /// </summary>
         /// <param name="rawUrl">The raw URL to use for the request builder.</param>
         /// <param name="requestAdapter">The request adapter to use to execute the requests.</param>
-        public LayoutRequestBuilder(string rawUrl, IRequestAdapter requestAdapter) : base(requestAdapter, "{+baseurl}/api/v2/home/layout{?backdrop_width,image_size,include_items,logo_width,photo_width,poster_width,still_width}", rawUrl)
+        public LayoutRequestBuilder(string rawUrl, IRequestAdapter requestAdapter) : base(requestAdapter, "{+baseurl}/api/v2/home/layout{?backdrop_width,image_size,include_items,item_limit,logo_width,photo_width,poster_width,still_width}", rawUrl)
         {
         }
         /// <summary>
@@ -115,6 +115,9 @@ namespace Bale.Core.Api.Api.V2.Home.Layout
             /// <summary>Also answer the cards of the first N sections in display order (featured sections count where they appear) in included_sections, saving a getHomeSectionItems call per row. 0 answers the layout alone. Send it only when getHomeCapabilities reports include_items_max; an older server rejects the parameter</summary>
             [QueryParameter("include_items")]
             public long? IncludeItems { get; set; }
+            /// <summary>Answer at most this many cards in each included section, exactly as getHomeSectionItems answers it with the same item_limit. The entries in sections keep each section&apos;s own item_limit. Absent keeps each section&apos;s own limit. Send it only when getHomeCapabilities reports row_item_limit_max; an older server rejects the parameter</summary>
+            [QueryParameter("item_limit")]
+            public long? ItemLimit { get; set; }
             /// <summary>Width in device pixels the client draws logo_url at. Overrides image_size for logos</summary>
             [QueryParameter("logo_width")]
             public long? LogoWidth { get; set; }

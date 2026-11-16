@@ -40,6 +40,22 @@ namespace Bale.Core.Api.Models
 #else
         public string Title { get; set; }
 #endif
+        /// <summary>Values of the title_key message&apos;s placeholders by name, such as library for a generated library row; present only with title_key, and absent when the message has none</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public global::Bale.Core.Api.Models.DiscoverSection_title_args? TitleArgs { get; set; }
+#nullable restore
+#else
+        public global::Bale.Core.Api.Models.DiscoverSection_title_args TitleArgs { get; set; }
+#endif
+        /// <summary>Key of the shared translation catalog message whose English is title, present only while title is the server&apos;s own text: a built-in or generated section, recommendation row or request Discover row name, or a seasonal row&apos;s built-in in-season title. A client that has the key shows its translation, filling title_args, and otherwise shows title. Absent when an administrator or the profile typed the title, except that upgrading keyed existing titles identical to a built-in name, and a profile title equal to the administrator&apos;s keeps the key. A client acts on title_key whenever it is present</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public string? TitleKey { get; set; }
+#nullable restore
+#else
+        public string TitleKey { get; set; }
+#endif
         /// <summary>The total_pages property</summary>
         public long? TotalPages { get; set; }
         /// <summary>The total_results property</summary>
@@ -67,6 +83,8 @@ namespace Bale.Core.Api.Models
                 { "page", n => { Page = n.GetLongValue(); } },
                 { "results", n => { Results = n.GetCollectionOfObjectValues<global::Bale.Core.Api.Models.RequestMediaResult>(global::Bale.Core.Api.Models.RequestMediaResult.CreateFromDiscriminatorValue)?.AsList(); } },
                 { "title", n => { Title = n.GetStringValue(); } },
+                { "title_args", n => { TitleArgs = n.GetObjectValue<global::Bale.Core.Api.Models.DiscoverSection_title_args>(global::Bale.Core.Api.Models.DiscoverSection_title_args.CreateFromDiscriminatorValue); } },
+                { "title_key", n => { TitleKey = n.GetStringValue(); } },
                 { "total_pages", n => { TotalPages = n.GetLongValue(); } },
                 { "total_results", n => { TotalResults = n.GetLongValue(); } },
             };
@@ -83,6 +101,8 @@ namespace Bale.Core.Api.Models
             writer.WriteLongValue("page", Page);
             writer.WriteCollectionOfObjectValues<global::Bale.Core.Api.Models.RequestMediaResult>("results", Results);
             writer.WriteStringValue("title", Title);
+            writer.WriteObjectValue<global::Bale.Core.Api.Models.DiscoverSection_title_args>("title_args", TitleArgs);
+            writer.WriteStringValue("title_key", TitleKey);
             writer.WriteLongValue("total_pages", TotalPages);
             writer.WriteLongValue("total_results", TotalResults);
         }

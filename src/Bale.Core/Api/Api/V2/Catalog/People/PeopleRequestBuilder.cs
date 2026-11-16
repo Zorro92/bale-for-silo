@@ -47,7 +47,7 @@ namespace Bale.Core.Api.Api.V2.Catalog.People
         {
         }
         /// <summary>
-        /// Search people by name, with exact matches first and optional media scope.
+        /// Search people by name, with exact matches first, then the most credited for a specific query, and optional media scope.
         /// </summary>
         /// <returns>A <see cref="global::Bale.Core.Api.Models.PersonCollection"/></returns>
         /// <param name="cancellationToken">Cancellation token to use when cancelling requests</param>
@@ -86,7 +86,7 @@ namespace Bale.Core.Api.Api.V2.Catalog.People
             return await RequestAdapter.SendAsync<global::Bale.Core.Api.Models.PersonCollection>(requestInfo, global::Bale.Core.Api.Models.PersonCollection.CreateFromDiscriminatorValue, errorMapping, cancellationToken).ConfigureAwait(false);
         }
         /// <summary>
-        /// Search people by name, with exact matches first and optional media scope.
+        /// Search people by name, with exact matches first, then the most credited for a specific query, and optional media scope.
         /// </summary>
         /// <returns>A <see cref="RequestInformation"/></returns>
         /// <param name="requestConfiguration">Configuration for the request such as headers, query parameters, and middleware options.</param>
@@ -114,7 +114,7 @@ namespace Bale.Core.Api.Api.V2.Catalog.People
             return new global::Bale.Core.Api.Api.V2.Catalog.People.PeopleRequestBuilder(rawUrl, RequestAdapter);
         }
         /// <summary>
-        /// Search people by name, with exact matches first and optional media scope.
+        /// Search people by name, with exact matches first, then the most credited for a specific query, and optional media scope.
         /// </summary>
         [global::System.CodeDom.Compiler.GeneratedCode("Kiota", "1.0.0")]
         public partial class PeopleRequestBuilderGetQueryParameters 
