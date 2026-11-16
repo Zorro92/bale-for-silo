@@ -133,15 +133,24 @@ public sealed class RustProgressiveStreamTests
     {
         using var server = new LoopbackMediaServer(Payload);
         using var client = Client(server);
-        RustProgressiveStream.WarmConnection(server.Uri);
+        RustTransport.WarmConnection(server.Uri);
         var deadline = DateTime.UtcNow.AddSeconds(5);
         while (server.HealthChecks == 0 && DateTime.UtcNow < deadline) await Task.Delay(10);
         await Task.Delay(100);
         Assert.Equal(1, server.HealthChecks);
         Assert.Equal(1, server.Connections);
-        await using var stream = await Open(client, rust: true);
-        Assert.True((await ReadAll(stream)).AsSpan().SequenceEqual(Payload));
-        Assert.Equal(1, server.Connections);
+        await using (var stream = await Open(client, rust: true))
+        {
+            // The open took the warmed connection; the spare it warms next is the only new one.
+            Assert.True((await ReadAll(stream)).AsSpan().SequenceEqual(Payload));
+        }
+        deadline = DateTime.UtcNow.AddSeconds(5);
+        while (server.Connections < 2 && DateTime.UtcNow < deadline) await Task.Delay(10);
+        await Task.Delay(100);
+        Assert.Equal(2, server.HealthChecks);
+        Assert.Equal(2, server.Connections);
+        await using var second = await Open(client, rust: true);
+        Assert.Equal(2, server.Connections);
     }
 
     [Fact]

@@ -190,6 +190,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
             try
             {
                 Log.Info("player: start");
+                // The Rust pool has no API traffic to keep it warm: connect during the plan request.
+                if (attempt.UseRustTransport) RustTransport.WarmConnection(client.Server);
                 var services = attempt.Services = await PlaybackSessions.PrepareAsync(client);
                 ct.ThrowIfCancellationRequested();
                 // TvVideoPlaybackStarter.kt uses the leaf's user-data position. ResumeSeconds is

@@ -12,6 +12,9 @@ pub fn agent() -> &'static ureq::Agent {
             .timeout_global(Some(Duration::from_secs(30)))
             .http_status_as_error(false)
             .max_idle_connections_per_host(8)
+            // SocketsHttpHandler's PooledConnectionIdleTimeout; ureq's default is 15 s, which let a
+            // spare connection expire between seeks.
+            .max_idle_age(Duration::from_secs(60))
             .build();
         ureq::Agent::with_parts(
             config,
