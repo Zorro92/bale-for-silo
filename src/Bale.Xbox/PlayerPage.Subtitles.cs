@@ -158,6 +158,14 @@ public sealed partial class PlayerPage
     {
         try
         {
+            // Embedded PGS draws from the server's .sup windows, which cover a cue that began before a
+            // seek's keyframe; the demuxer would skip it until the next display set.
+            if (attempt.Client.Playback.ResolveEmbeddedPgs(attempt.Plan!) is { } pgs)
+            {
+                _subtitlePayload = null;
+                StartPgsSubtitles(attempt, media, pgs);
+                return;
+            }
             if (attempt.Client.Playback.ResolveEmbeddedSubtitles(attempt.Plan!) is { } embedded)
             {
                 // No sidecar to fetch or reuse.

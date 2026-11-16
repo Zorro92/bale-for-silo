@@ -93,6 +93,7 @@
     <Compile Include="../../src/Bale.Xbox/Services/DebugFfmpegLogFilter.cs" Link="DebugFfmpegLogFilter.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugFfmpegSource.cs" Link="DebugFfmpegSource.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/PlayerPage.Media.cs" Link="PlayerPage.Media.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/PlayerPage.Subtitles.cs" Link="PlayerPage.Subtitles.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/PlayerPage.Stats.cs" Link="PlayerPage.Stats.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/PlayerPage.xaml.cs" Link="PlayerPage.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Bale.Xbox.csproj" Link="Bale.Xbox.csproj.txt" CopyToOutputDirectory="PreserveNewest" />

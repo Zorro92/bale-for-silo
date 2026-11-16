@@ -103,6 +103,63 @@ public class PlaybackSubtitlesTests
     public void OtherEmbeddedDecisionsResolveToNothing(string? mode, long? index) =>
         Assert.Null(PlaybackSubtitleResolver.ResolveEmbedded(EmbeddedPlan(mode, index)));
 
+    private static PlaybackPlan EmbeddedPgsPlan(string? codec = "hdmv_pgs_subtitle", string? url = "/api/v2/stream/session/subtitles/1.sup",
+        string mode = "render", long? index = 3, string rowTrack = "file:42:subtitle:1")
+    {
+        var plan = EmbeddedPlan(mode, index);
+        plan.Subtitle!.Inventory =
+        [
+            new SubtitleInventoryItemV3 { TrackId = "file:42:subtitle:0", Codec = "hdmv_pgs_subtitle", Url = "/api/v2/stream/session/subtitles/0.sup" },
+            new SubtitleInventoryItemV3 { TrackId = rowTrack, Codec = codec, Url = url },
+        ];
+        return plan;
+    }
+
+    [Fact]
+    public void ADirectPlansEmbeddedPgsTrackDrawsFromItsSupWindows()
+    {
+        var source = PlaybackSubtitleResolver.ResolveEmbeddedPgs(EmbeddedPgsPlan(), Server);
+        Assert.NotNull(source);
+        Assert.True(source.IsBitmap);
+        Assert.Equal(new Uri(Server, "/api/v2/stream/session/subtitles/1.sup"), source.Uri);
+        Assert.Equal("render", source.Mode);
+        Assert.Equal(0, source.TimingOriginSeconds);
+        Assert.Null(source.FontBundle);
+        // The demuxer path still resolves, but the player asks for the windows first (PlayerPage.Subtitles.cs).
+        Assert.NotNull(PlaybackSubtitleResolver.ResolveEmbedded(EmbeddedPgsPlan()));
+    }
+
+    [Theory]
+    [InlineData("dvd_subtitle", "/api/v2/stream/session/subtitles/1.sup", "render", 3L, "file:42:subtitle:1")]
+    [InlineData("dvb_subtitle", "/api/v2/stream/session/subtitles/1.sup", "render", 3L, "file:42:subtitle:1")]
+    [InlineData("hdmv_pgs_subtitle", null, "render", 3L, "file:42:subtitle:1")]
+    [InlineData("hdmv_pgs_subtitle", "", "render", 3L, "file:42:subtitle:1")]
+    [InlineData("hdmv_pgs_subtitle", "/api/v2/stream/session/subtitles/1.vtt", "render", 3L, "file:42:subtitle:1")]
+    [InlineData("hdmv_pgs_subtitle", "https://elsewhere.example.com/api/v2/stream/session/subtitles/1.sup", "render", 3L, "file:42:subtitle:1")]
+    [InlineData("hdmv_pgs_subtitle", "/api/v2/stream/session/subtitles/1.sup", "off", 3L, "file:42:subtitle:1")]
+    [InlineData("hdmv_pgs_subtitle", "/api/v2/stream/session/subtitles/1.sup", "render", null, "file:42:subtitle:1")]
+    [InlineData("hdmv_pgs_subtitle", "/api/v2/stream/session/subtitles/1.sup", "render", 3L, "file:42:subtitle:9")]
+    public void OnlyARenderedEmbeddedPgsTrackWithItsOwnServerSupResolves(string? codec, string? url, string mode, long? index, string rowTrack) =>
+        Assert.Null(PlaybackSubtitleResolver.ResolveEmbeddedPgs(EmbeddedPgsPlan(codec, url, mode, index, rowTrack), Server));
+
+    [Fact]
+    public void PackagedAndTextPlansHaveNoEmbeddedPgsWindows()
+    {
+        Assert.Null(PlaybackSubtitleResolver.ResolveEmbeddedPgs(null, Server));
+        Assert.Null(PlaybackSubtitleResolver.ResolveEmbeddedPgs(PlaybackMediaTestSupport.Plan(), Server));
+        Assert.Null(PlaybackSubtitleResolver.ResolveEmbeddedPgs(Plan(), Server));
+    }
+
+    [Fact]
+    public void ThePlayerDrawsEmbeddedPgsFromWindowsBeforeTheDemuxer()
+    {
+        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "PlayerPage.Subtitles.cs.txt")).ReplaceLineEndings("\n");
+        var windows = source.IndexOf("attempt.Client.Playback.ResolveEmbeddedPgs(attempt.Plan!) is { } pgs", StringComparison.Ordinal);
+        Assert.True(windows > 0);
+        Assert.True(windows < source.IndexOf("attempt.Client.Playback.ResolveEmbeddedSubtitles(attempt.Plan!)", StringComparison.Ordinal));
+        Assert.Contains("StartPgsSubtitles(attempt, media, pgs);", source);
+    }
+
     [Fact]
     public void PlansWithoutAnEmbeddedStreamResolveToNoEmbeddedTrack()
     {

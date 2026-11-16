@@ -56,6 +56,8 @@ public sealed partial class PlaybackClient
     /// <summary>The sidecar Bale's overlay should draw for this plan, or null (off, burned in, unusable).</summary>
     public PlaybackSubtitleSource? ResolveSubtitles(PlaybackPlan plan) => PlaybackSubtitleResolver.Resolve(plan, Server);
 
+    public PlaybackSubtitleSource? ResolveEmbeddedPgs(PlaybackPlan plan) => PlaybackSubtitleResolver.ResolveEmbeddedPgs(plan, Server);
+
     /// <summary>The in-container image track Bale's overlay should draw for this plan, or null.</summary>
     public PlaybackEmbeddedSubtitle? ResolveEmbeddedSubtitles(PlaybackPlan plan) => PlaybackSubtitleResolver.ResolveEmbedded(plan);
 

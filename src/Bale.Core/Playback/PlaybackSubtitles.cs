@@ -46,6 +46,25 @@ public static class PlaybackSubtitleResolver
         plan is not null && BaleCoreNative.Call("subtitles.resolve_embedded", writer => writer.Server("plan", plan),
             BaleCoreJson.Default.NullableInt64) is { } index ? new((int)index) : null;
 
+    /// <summary>
+    /// A direct-played container's embedded PGS track, drawn from the server's lossless .sup windows
+    /// (the inventory row's sidecar, the same URL a packaged plan names as its artifact) instead of the
+    /// demuxer: after a seek the demuxer starts at a video keyframe and never sees a cue that began
+    /// earlier, so it stayed blank until the next display set (owner, 2026-11-16). DVD/DVB images have
+    /// no sidecar and stay on the demuxer (ResolveEmbedded).
+    /// </summary>
+    public static PlaybackSubtitleSource? ResolveEmbeddedPgs(PlaybackPlan? plan, Uri server)
+    {
+        if (plan?.Subtitle is not { Embedded: not null, Artifact: null, Mode: "render", TrackId: { Length: > 0 } trackId } subtitle
+            || ResolveEmbedded(plan) is null
+            || subtitle.Inventory?.FirstOrDefault(item => item?.TrackId == trackId) is not { Url: { Length: > 0 } url } row
+            || Format(row.Codec, null) != PlaybackSubtitleSource.Pgs
+            || PlaybackMediaUrl.ResolveSubtitle(url, server) is not { } uri
+            || !uri.AbsolutePath.EndsWith(".sup", StringComparison.Ordinal)) return null;
+        // SUP PTS is source time, as for a packaged plan's artifact (timing origin 0).
+        return new(uri, PlaybackSubtitleSource.Pgs, "render", 0, null);
+    }
+
     public static PlaybackSubtitleSource? Resolve(PlaybackPlan? plan, Uri server)
     {
         if (plan?.Subtitle is not { Embedded: null, Artifact: { } artifact } subtitle) return null;
