@@ -154,6 +154,17 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    port: close the ~18 ms median. ureq already sets TCP no-delay, but resolves DNS before looking in its
    pool (a lookup, on a spawned thread, per request); the benchmark agent now uses a caching resolver.
 
+   With the caching resolver (0.1.536, three rounds during 4K playback):
+
+   | | TTFB p50 | TTFB max | Block max | Blocks > 500 ms | Throughput |
+   |---|---|---|---|---|---|
+   | C# (6 runs) | 150–153 ms | 170–546 | 343–1224 | 3 (in 2 runs) | 93–115 Mbps |
+   | Rust (6 runs) | 152–163 ms | 217–457 (217–255 after the first run) | 287–1058 | 4 (all in the first run) | 88–113 Mbps |
+
+   The median gap fell from ~18 ms to ~5 ms, inside run-to-run noise. After its first run Rust had no
+   block over 500 ms and its worst first byte stayed at 217–255 ms; C# still had occasional 0.5–1.2 s
+   blocks. Step 1 passes; the stream port (steps 2–6) may go ahead.
+
 ### Stays in C#
 
 - The XAML app (`src/Bale.Xbox`) and anything that drives XAML objects.
