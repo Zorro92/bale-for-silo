@@ -110,6 +110,8 @@ internal static class FfmpegSource
         }
         if (tuning.ReadSize is { } readSize) config.General.FileStreamReadSize = checked((uint)readSize);
         if (tuning.HdrSupport is { } hdr) config.Video.HdrSupport = hdr ? HdrSupport.Enabled : HdrSupport.Disabled;
+        // Seek-landing A/B: off is upstream's backward seek (no nearest-keyframe fast seek).
+        if (tuning.FastSeek is { } fastSeek) config.General.FastSeek = fastSeek;
         if (softwareVideo)
         {
             ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.Dav1dMaxFrameDelay));

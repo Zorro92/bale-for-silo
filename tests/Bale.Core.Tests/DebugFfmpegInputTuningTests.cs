@@ -23,6 +23,21 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     }
 
     [Fact]
+    public void FastSeekTakesOnOffOrDefaultAndReachesTheWrapperConfig()
+    {
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["fastseek"] = "off" }, out var off));
+        Assert.False(off.FastSeek);
+        Assert.Equal("readahead=default readsize=default prefetch=default fastseek=off", off.Description);
+        foreach (var invalid in new[] { "OFF", "", "0", "false", "exact" })
+            Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["fastseek"] = invalid }, out _));
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["fastseek"] = "default" }, out var cleared));
+        Assert.Null(cleared.FastSeek);
+        Assert.Contains("[fastseek=on|off|default]", DebugFfmpegInputTuning.Usage);
+        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "FfmpegSource.cs.txt"));
+        Assert.Contains("if (tuning.FastSeek is { } fastSeek) config.General.FastSeek = fastSeek;", source);
+    }
+
+    [Fact]
     public void BufferTimeIsBoundedMillisecondsAndDescribedOnlyWhenSet()
     {
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "1500" }, out var set));

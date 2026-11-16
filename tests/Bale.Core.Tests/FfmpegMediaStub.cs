@@ -34,6 +34,7 @@ namespace FFmpegInteropX
         public long ReadAheadBufferSize { get; set; }
         public TimeSpan ReadAheadBufferDuration { get; set; }
         public uint FileStreamReadSize { get; set; }
+        public bool FastSeek { get; set; } = true;
     }
 
     internal sealed class SubtitleConfig
