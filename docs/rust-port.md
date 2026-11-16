@@ -239,6 +239,18 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    close waking a blocked read, and the read-ahead bound; making truncation look complete, unbounding
    the queue or not waking readers on close fails them.
 
+   Console A/B (4K HEVC, `delivery progressive`, `stream-adapter pooled|rust`, two rounds each): both
+   played 40 s plus three reanchor seeks and a 20 s pause with no stall (position kept pace with the
+   clock in every sample) and no errors; CPU was the same. Rust seeks were first ~0.4 s slower: opening
+   the remux took 0.72–0.99 s against C#'s 0.33–0.42 s. A seek drops the remux's unfinished
+   connection, and the Rust pool then had none, while the C# pool had just been warmed by the replan
+   request, so every Rust open paid TCP and TLS handshakes. `RustTransport.WarmConnection` (a small GET
+   at the public `/api/v1/health` route, read to its end) now runs when a Rust playback attempt starts,
+   when a reanchor starts, and after each Rust progressive open, and idle connections live 60 s as in
+   SocketsHttpHandler (ureq's default is 15 s, which expired spares between seeks). On 0.1.544 the
+   open after a seek takes 0.30–0.38 s (C# 0.33–0.35 s); a start right after launch can still pay one
+   cold connection (0.75 s, then 0.36 s).
+
 ### Stays in C#
 
 - The XAML app (`src/Bale.Xbox`) and anything that drives XAML objects.
