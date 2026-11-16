@@ -247,6 +247,9 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         "formatting.select_version" => with_json(name, input, |a: formatting::SelectArgs| {
             formatting::select_version(&a)
         }),
+        "formatting.playback_editions" => with_json(name, input, |a: formatting::EditionsArgs| {
+            formatting::playback_editions(&a.versions, &a.variants)
+        }),
         // Test hook. The bit pattern, because serde_json writes a non-finite double as null.
         "dotnet.parse_float" => with_json(name, input, |v: String| {
             crate::dotnet::parse_float(&v).map(f64::to_bits)

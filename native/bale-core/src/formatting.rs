@@ -2,13 +2,13 @@
 //! the decode check Bale's version matching shares with the server, and Dolby Vision detection.
 //! The Detail page's label text stays in C#.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::dotnet::{
     is_letter_or_digit, is_regex_boundary_word, is_regex_digit, lower, non_empty, parse_float,
     trim_lower,
 };
-use crate::models::{DecodeClaim, FileVersion};
+use crate::models::{DecodeClaim, FileVersion, PlaybackVariant};
 use crate::software_decode::normalize_codec;
 
 /// A version label's height: the first `\b(\d{3,4})(?:p|i)?\b` number, else named tiers
@@ -198,55 +198,353 @@ pub struct SelectArgs {
     selected_file_id: Option<String>,
     last_file_id: Option<String>,
     preferred_quality: Option<String>,
+    #[serde(default)]
+    variants: Vec<PlaybackVariant>,
+    /// The viewer's Edition pick (an edition id, see [`playback_editions`]).
+    #[serde(default)]
+    edition_id: Option<String>,
+    /// `user_data.last_edition_key`; a present "" names the unnamed edition.
+    #[serde(default)]
+    last_edition_key: Option<String>,
+    /// The item has a resume point (a saved position above 0).
+    #[serde(default)]
+    in_progress: bool,
 }
 
-/// TvDetailVersionSelection.kt / PlaybackVersionSelector.kt: explicit file, last played, then the
-/// best resolution at or below the quality cap; bitrate and size break ties. Auto with a display
-/// match picks per `match_display`. Returns the chosen index into `versions`.
+#[derive(Deserialize)]
+pub struct EditionsArgs {
+    pub versions: Vec<FileVersion>,
+    #[serde(default)]
+    pub variants: Vec<PlaybackVariant>,
+}
+
+/// One edition (cut) with every presentation of it merged (PlaybackEditions.kt). `versions` are
+/// indexes into the caller's versions in server order: each presentation's first part, else every
+/// file of the edition. `file_ids` are every file of the edition, all parts.
+#[derive(Debug, Serialize, PartialEq)]
+pub struct Edition {
+    pub id: String,
+    pub label: String,
+    pub versions: Vec<usize>,
+    pub file_ids: Vec<String>,
+}
+
+/// An edition's label: its raw name, else the key's words capitalised (IMAX kept upper case).
+pub fn edition_label(raw: Option<&str>, key: Option<&str>) -> Option<String> {
+    if let Some(raw) = raw.map(str::trim).filter(|raw| !raw.is_empty()) {
+        return Some(raw.to_string());
+    }
+    let key = key.map(str::trim).filter(|key| !key.is_empty())?;
+    let words: Vec<String> = key
+        .split(['_', '-'])
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            if word.eq_ignore_ascii_case("imax") {
+                "IMAX".to_string()
+            } else {
+                let mut chars = word.chars();
+                chars.next().map_or_else(String::new, |first| {
+                    first.to_uppercase().collect::<String>() + chars.as_str()
+                })
+            }
+        })
+        .collect();
+    Some(words.join(" "))
+}
+
+fn edition_key(key: Option<&str>) -> String {
+    key.map(str::trim).unwrap_or_default().to_string()
+}
+
+/// The editions of an item, one per edition key, in server order (the order of `variants`, else of
+/// first appearance in `versions`). PlaybackEditions.kt `playbackEditions`.
+pub fn playback_editions(versions: &[FileVersion], variants: &[PlaybackVariant]) -> Vec<Edition> {
+    let mut keys: Vec<String> = Vec::new();
+    let mut add_key = |key: String| {
+        if !keys.contains(&key) {
+            keys.push(key);
+        }
+    };
+    let make =
+        |key: &String, raws: Vec<Option<&str>>, mut indexes: Vec<usize>, file_ids: Vec<String>| {
+            indexes.sort_unstable();
+            indexes.dedup();
+            let raw = raws
+                .into_iter()
+                .flatten()
+                .map(str::trim)
+                .find(|raw| !raw.is_empty());
+            Edition {
+                id: key.clone(),
+                label: edition_label(raw, Some(key)).unwrap_or_else(|| "Standard".to_string()),
+                versions: indexes,
+                file_ids,
+            }
+        };
+    if !variants.is_empty() {
+        // Kotlin's associateBy keeps the last catalog object for an id.
+        let by_id = |id: &str| {
+            versions
+                .iter()
+                .rposition(|v| v.file_id.as_deref() == Some(id))
+        };
+        variants
+            .iter()
+            .for_each(|v| add_key(edition_key(v.edition_key.as_deref())));
+        return keys
+            .iter()
+            .filter_map(|key| {
+                let cut: Vec<&PlaybackVariant> = variants
+                    .iter()
+                    .filter(|v| edition_key(v.edition_key.as_deref()) == *key)
+                    .collect();
+                let choices: Vec<usize> = cut
+                    .iter()
+                    .filter_map(|v| {
+                        v.parts
+                            .iter()
+                            .flatten()
+                            .min_by_key(|part| part.part_index.unwrap_or(0))
+                    })
+                    .flat_map(|part| part.versions.iter().flatten())
+                    .filter_map(|file| file.file_id.as_deref().and_then(by_id))
+                    .collect();
+                if choices.is_empty() {
+                    return None;
+                }
+                let mut file_ids: Vec<String> = Vec::new();
+                for id in cut
+                    .iter()
+                    .flat_map(|v| v.parts.iter().flatten())
+                    .flat_map(|part| part.versions.iter().flatten())
+                    .filter_map(|file| file.file_id.clone())
+                {
+                    if !file_ids.contains(&id) {
+                        file_ids.push(id);
+                    }
+                }
+                let raws = cut.iter().map(|v| v.edition_raw.as_deref()).collect();
+                Some(make(key, raws, choices, file_ids))
+            })
+            .collect();
+    }
+    versions
+        .iter()
+        .for_each(|v| add_key(edition_key(v.edition_key.as_deref())));
+    keys.iter()
+        .map(|key| {
+            let indexes: Vec<usize> = (0..versions.len())
+                .filter(|&i| edition_key(versions[i].edition_key.as_deref()) == *key)
+                .collect();
+            let raws = indexes
+                .iter()
+                .map(|&i| versions[i].edition_raw.as_deref())
+                .collect();
+            let file_ids = indexes
+                .iter()
+                .filter_map(|&i| versions[i].file_id.clone())
+                .collect();
+            make(key, raws, indexes, file_ids)
+        })
+        .collect()
+}
+
+/// How Auto ranks inside an edition: the official quality cap (None is no cap), or Bale's display
+/// resolution matching.
+enum AutoMode<'a> {
+    Cap(Option<i64>),
+    Display(&'a DisplayMatch),
+}
+
+/// The file a detail page shows and Play starts (DetailVersionSelector.kt). Edition is the cut and
+/// Version Auto picks a file inside it, never changing it:
+/// - `selected_file_id`, an explicit Version pick, wins.
+/// - The edition is `edition_id`, else the last played one (`last_edition_key`, then the edition
+///   of `last_file_id`), else the one whose Auto file compares best across cuts.
+/// - History picks only the edition, except a later part of a multi-part item while it is
+///   `in_progress`, so Resume continues that part.
+/// - Auto inside the edition ranks like the server's version order (resolution, HDR, file size;
+///   no bitrate) among first parts. Plain Auto with a display match applies Bale's display
+///   resolution matching; a quality cap or Original uses the official rule.
+///
+/// Returns the chosen index into `versions`.
 pub fn select_version(args: &SelectArgs) -> Option<usize> {
     let versions = &args.versions;
-    let find = |id: &Option<String>| {
-        id.as_ref()
-            .and_then(|id| versions.iter().position(|v| v.file_id.as_ref() == Some(id)))
+    if versions.is_empty() {
+        return None;
+    }
+    let find = |id: Option<&str>| {
+        id.and_then(|id| {
+            versions
+                .iter()
+                .position(|v| v.file_id.as_deref() == Some(id))
+        })
     };
-    if let Some(index) = find(&args.selected_file_id).or_else(|| find(&args.last_file_id)) {
+    if let Some(index) = find(args.selected_file_id.as_deref()) {
         return Some(index);
     }
-    // OrderByDescending(rank).ThenByDescending(bitrate ?? 0).ThenByDescending(size ?? 0), stable.
-    let mut ranked: Vec<usize> = (0..versions.len()).collect();
-    ranked.sort_by_key(|&i| {
+    let quality = non_empty(args.preferred_quality.as_deref()).map(lower);
+    let mode = match quality.as_deref() {
+        None | Some("auto") => args
+            .display_match
+            .as_ref()
+            .map_or(AutoMode::Cap(None), AutoMode::Display),
+        Some("original" | "source" | "max") => AutoMode::Cap(None),
+        Some(other) => {
+            AutoMode::Cap(Some(i64::from(resolution_rank(Some(other)))).filter(|&cap| cap > 0))
+        }
+    };
+    let editions = playback_editions(versions, &args.variants);
+    if editions.is_empty() {
+        let all: Vec<usize> = (0..versions.len()).collect();
+        return Some(auto_file(versions, &first_parts(versions, &all), &mode));
+    }
+    let by_id = |id: &str| editions.iter().position(|e| e.id == id);
+    let contains = |e: &Edition, id: &str| e.file_ids.iter().any(|f| f == id);
+    let edition = args
+        .edition_id
+        .as_deref()
+        .and_then(by_id)
+        .or_else(|| {
+            args.last_edition_key
+                .as_deref()
+                .map(str::trim)
+                .and_then(by_id)
+        })
+        .or_else(|| {
+            let last = args.last_file_id.as_deref()?;
+            editions.iter().position(|e| contains(e, last))
+        })
+        .unwrap_or_else(|| opening_edition(versions, &editions, &mode));
+    let edition = &editions[edition];
+    if args.in_progress
+        && let Some(last) = find(args.last_file_id.as_deref())
+        && versions[last]
+            .file_id
+            .as_deref()
+            .is_some_and(|id| contains(edition, id))
+        && first_playback_part(versions, last) != last
+    {
+        return Some(last);
+    }
+    Some(auto_file(
+        versions,
+        &first_parts(versions, &edition.versions),
+        &mode,
+    ))
+}
+
+const SEQUENTIAL_PART_KINDS: [&str; 2] = ["multipart_movie", "split_episode"];
+
+fn is_sequential_part(v: &FileVersion) -> bool {
+    v.presentation_part_index.is_some()
+        && v.presentation_kind
+            .as_deref()
+            .is_some_and(|k| SEQUENTIAL_PART_KINDS.contains(&k))
+}
+
+/// The first part of `selected`'s presentation, preferring its resolution (PlaybackParts.kt).
+fn first_playback_part(versions: &[FileVersion], selected: usize) -> usize {
+    let current = &versions[selected];
+    if !is_sequential_part(current) {
+        return selected;
+    }
+    let parts: Vec<usize> = (0..versions.len())
+        .filter(|&i| {
+            let v = &versions[i];
+            is_sequential_part(v)
+                && v.presentation_kind == current.presentation_kind
+                && v.presentation_group_key == current.presentation_group_key
+                && v.edition_key == current.edition_key
+        })
+        .collect();
+    let Some(first) = parts
+        .iter()
+        .filter_map(|&i| versions[i].presentation_part_index)
+        .min()
+    else {
+        return selected;
+    };
+    if current.presentation_part_index == Some(first) {
+        return selected;
+    }
+    let candidates: Vec<usize> = parts
+        .into_iter()
+        .filter(|&i| versions[i].presentation_part_index == Some(first))
+        .collect();
+    candidates
+        .iter()
+        .copied()
+        .find(|&i| versions[i].resolution == current.resolution)
+        .unwrap_or(candidates[0])
+}
+
+/// Auto starts a multi-part item at its first part.
+fn first_parts(versions: &[FileVersion], candidates: &[usize]) -> Vec<usize> {
+    let firsts: Vec<usize> = candidates
+        .iter()
+        .copied()
+        .filter(|&i| first_playback_part(versions, i) == i)
+        .collect();
+    if firsts.is_empty() {
+        candidates.to_vec()
+    } else {
+        firsts
+    }
+}
+
+/// The server's version order: resolution, HDR before SDR, larger file; stable otherwise.
+fn server_order(versions: &[FileVersion], candidates: &[usize]) -> Vec<usize> {
+    let mut ordered = candidates.to_vec();
+    ordered.sort_by_key(|&i| {
         let v = &versions[i];
         std::cmp::Reverse((
-            resolution_rank(v.resolution.as_deref()),
-            v.bitrate.unwrap_or(0),
+            version_height(v),
+            v.hdr.unwrap_or(false),
             v.file_size.unwrap_or(0),
         ))
     });
-    let quality = non_empty(args.preferred_quality.as_deref()).map(lower);
-    let auto = matches!(quality.as_deref(), None | Some("auto"));
-    // Only plain Auto matches the display; an "original"-style choice asks for the best.
-    if auto && let Some(display_match) = &args.display_match {
-        return match_display(versions, &ranked, display_match);
-    }
-    if auto || matches!(quality.as_deref(), Some("original" | "source" | "max")) {
-        return ranked.first().copied();
-    }
-    let cap = resolution_rank(quality.as_deref());
-    ranked
+    ordered
+}
+
+/// Version Auto among one edition's first-part `candidates`. A file of unknown resolution is picked
+/// only when no file's resolution is known.
+fn auto_file(versions: &[FileVersion], candidates: &[usize], mode: &AutoMode) -> usize {
+    let ordered = server_order(versions, candidates);
+    let known: Vec<usize> = ordered
         .iter()
         .copied()
-        .find(|&i| resolution_rank(versions[i].resolution.as_deref()) <= cap)
-        .or_else(|| ranked.first().copied())
+        .filter(|&i| version_height(&versions[i]) > 0)
+        .collect();
+    if known.is_empty() {
+        return ordered[0];
+    }
+    match mode {
+        AutoMode::Cap(None) => known[0],
+        AutoMode::Cap(Some(cap)) => known
+            .iter()
+            .copied()
+            .find(|&i| version_height(&versions[i]) <= *cap)
+            .unwrap_or_else(|| smallest(versions, &known, |_| true)),
+        AutoMode::Display(display_match) => match_display(versions, &known, display_match),
+    }
+}
+
+/// The lowest file in `ranked`, ties broken by `prefer` then rank order.
+fn smallest(versions: &[FileVersion], ranked: &[usize], prefer: impl Fn(usize) -> bool) -> usize {
+    let mut by_height = ranked.to_vec();
+    by_height.sort_by_key(|&i| (version_height(&versions[i]), std::cmp::Reverse(prefer(i))));
+    by_height[0]
 }
 
 /// Auto with display matching: the best version at or below the display that the decoder claims
 /// admit, else the best at or below the display (the server transcodes it), else the smallest
-/// version above the display. Ties keep the official resolution/bitrate/size order.
+/// version above the display. Ties keep the server order.
 fn match_display(
     versions: &[FileVersion],
     ranked: &[usize],
     display_match: &DisplayMatch,
-) -> Option<usize> {
+) -> usize {
     let fits =
         |i: usize| version_height(&versions[i]) <= i64::from(display_match.display_max_height);
     let decodable = |i: usize| decodes(&versions[i], &display_match.video_decode);
@@ -255,15 +553,60 @@ fn match_display(
         .copied()
         .find(|&i| fits(i) && decodable(i))
         .or_else(|| ranked.iter().copied().find(|&i| fits(i)))
-        .or_else(|| {
-            let mut by_height = ranked.to_vec();
-            // OrderBy(height).ThenByDescending(decodes), stable.
-            by_height.sort_by_key(|&i| {
-                (
-                    version_height(&versions[i]),
-                    std::cmp::Reverse(decodable(i)),
-                )
-            });
-            by_height.first().copied()
+        .unwrap_or_else(|| smallest(versions, ranked, decodable))
+}
+
+/// The edition a page opens on with no history: each edition's Auto file compared across cuts by
+/// fit (within the cap or display, above it, unknown resolution), then resolution (higher within,
+/// lower above), then HDR, then edition preference (unnamed or standard, theatrical, other), then
+/// server order. File size is not compared across cuts.
+fn opening_edition(versions: &[FileVersion], editions: &[Edition], mode: &AutoMode) -> usize {
+    let cap = match mode {
+        AutoMode::Cap(cap) => *cap,
+        AutoMode::Display(display_match) => Some(i64::from(display_match.display_max_height)),
+    };
+    (0..editions.len())
+        .min_by_key(|&index| {
+            let edition = &editions[index];
+            let auto =
+                &versions[auto_file(versions, &first_parts(versions, &edition.versions), mode)];
+            let height = version_height(auto);
+            let fit = match cap {
+                _ if height == 0 => 2,
+                Some(cap) if height > cap => 1,
+                _ => 0,
+            };
+            let resolution = if fit == 1 { height } else { -height };
+            (
+                fit,
+                resolution,
+                !auto.hdr.unwrap_or(false),
+                edition_preference(edition),
+                index,
+            )
         })
+        .unwrap_or(0)
+}
+
+fn edition_preference(edition: &Edition) -> u8 {
+    let names: Vec<String> = [Some(edition.id.as_str()), Some(edition.label.as_str())]
+        .into_iter()
+        .flatten()
+        .map(|name| name.trim().to_lowercase())
+        .filter(|name| !name.is_empty())
+        .collect();
+    if edition.id.trim().is_empty()
+        || names.iter().any(|n| {
+            n == "standard"
+                || n == "default"
+                || n.starts_with("standard ")
+                || n.ends_with(" standard")
+        })
+    {
+        0
+    } else if names.iter().any(|n| n.contains("theatrical")) {
+        1
+    } else {
+        2
+    }
 }

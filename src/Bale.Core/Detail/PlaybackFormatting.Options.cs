@@ -7,7 +7,7 @@ public enum PlaybackSelectorKind { Version, Audio, Subtitles, Edition }
 
 /// <summary>Menu identity is independent of display order (TvPlaybackSelectorRow.kt).</summary>
 public sealed record PlaybackSelectorOption(string Title, string Detail, bool IsSelected,
-    string? FileId = null, int? TrackIndex = null);
+    string? FileId = null, int? TrackIndex = null, string? EditionId = null);
 
 public static partial class PlaybackFormatting
 {
@@ -18,7 +18,7 @@ public static partial class PlaybackFormatting
     /// </summary>
     public static bool SelectorIsInteractive(PlaybackSelectorKind kind, ItemDetail? detail, PlaybackSelection selection)
     {
-        if (detail is null || SelectDisplayVersion(detail.Versions, selection.FileId, detail.LastFileId) is not { } version) return false;
+        if (detail is null || SelectDisplayVersion(detail, selection) is not { } version) return false;
         if (kind is PlaybackSelectorKind.Edition or PlaybackSelectorKind.Version)
         {
             var editions = PlaybackEditions.For(detail.Versions, detail.PlaybackVariants);
@@ -32,7 +32,7 @@ public static partial class PlaybackFormatting
     public static IReadOnlyList<PlaybackSelectorOption> SelectorOptions(PlaybackSelectorKind kind,
         ItemDetail detail, PlaybackSelection selection)
     {
-        var version = SelectDisplayVersion(detail.Versions, selection.FileId, detail.LastFileId);
+        var version = SelectDisplayVersion(detail, selection);
         return kind switch
         {
             PlaybackSelectorKind.Edition => EditionOptions(detail, version),
@@ -50,22 +50,19 @@ public static partial class PlaybackFormatting
     {
         var editions = PlaybackEditions.For(detail.Versions, detail.PlaybackVariants);
         var current = PlaybackEditions.Current(editions, version);
-        // TvPlaybackSelectorRow.kt: selecting an edition starts its first part's default file,
-        // not the highest-quality file across editions (or the variant's later-part default).
-        return editions.Select(edition => new PlaybackSelectorOption(edition.Label, VersionShortLabel(edition.DefaultVersion),
-            edition.Id == current?.Id, FileId: edition.DefaultVersion.FileId)).ToList();
+        // TvPlaybackSelectorRow.kt: each row's detail is the file Version Auto picks in that edition.
+        return editions.Select(edition => new PlaybackSelectorOption(edition.Label,
+            SelectDisplayVersion(detail, selectedFileId: null, editionId: edition.Id) is { } auto ? VersionShortLabel(auto) : string.Empty,
+            edition.Id == current?.Id, EditionId: edition.Id)).ToList();
     }
 
     private static IReadOnlyList<PlaybackSelectorOption> VersionOptions(ItemDetail detail, string? selectedFileId, FileVersion? version)
     {
         var editions = PlaybackEditions.For(detail.Versions, detail.PlaybackVariants);
-        var showEditions = PlaybackEditions.HasChoices(editions);
-        var options = new List<PlaybackSelectorOption>();
-        // TvPlaybackSelectorRow.kt: Auto is global, so omit it rather than escape the chosen edition.
-        if (!showEditions) options.Add(new PlaybackSelectorOption("Auto", "Best match for this device", selectedFileId is null));
-        var selected = selectedFileId ?? (showEditions ? version?.FileId : null);
+        // TvPlaybackSelectorRow.kt: Auto picks inside the current edition, so it is always offered.
+        var options = new List<PlaybackSelectorOption> { new("Auto", "Best match for this device", selectedFileId is null) };
         options.AddRange(PlaybackEditions.ScopedVersions(detail.Versions, editions, version).Select(file => new PlaybackSelectorOption(
-            VersionShortLabel(file), VersionDetailLabel(file), file.FileId == selected, FileId: file.FileId)));
+            VersionShortLabel(file), VersionDetailLabel(file), file.FileId == selectedFileId, FileId: file.FileId)));
         return options;
     }
 

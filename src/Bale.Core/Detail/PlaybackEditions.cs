@@ -1,12 +1,22 @@
 using Bale.Core.Api.Models;
+using Bale.Core.Native;
 
 namespace Bale.Core.Detail;
 
-/// <summary>An edition's first playable part, plus file identities across every part (PlaybackEditions.kt).</summary>
-public sealed record PlaybackEdition(string Id, string Label, IReadOnlyList<FileVersion> Versions,
-    FileVersion DefaultVersion, IReadOnlySet<string> FileIds);
+/// <summary>
+/// One edition (cut), every presentation of it merged (PlaybackEditions.kt). Id is the trimmed edition
+/// key, "" for the unnamed edition. Versions are the files the Version menu offers, in server order:
+/// each presentation's first part, else every file of the edition. FileIds cover every part.
+/// </summary>
+public sealed record PlaybackEdition(string Id, string Label, IReadOnlyList<FileVersion> Versions, IReadOnlySet<string> FileIds);
 
-/// <summary>Port of shared/model/catalog/PlaybackEditions.kt; preserve server order and catalog file objects.</summary>
+/// <summary>Rust's <c>formatting::Edition</c>: indexes into the versions the call was given.</summary>
+internal sealed record EditionIndexes(string Id, string Label, int[] Versions, string[] FileIds);
+
+/// <summary>
+/// Port of shared/model/catalog/PlaybackEditions.kt, implemented in Rust (native/bale-core/src/formatting.rs):
+/// one edition per edition key in server order, keeping the catalog file objects.
+/// </summary>
 public static class PlaybackEditions
 {
     public static string? Label(string? raw, string? key)
@@ -20,55 +30,25 @@ public static class PlaybackEditions
     public static IReadOnlyList<PlaybackEdition> For(IReadOnlyList<FileVersion> versions,
         IReadOnlyList<PlaybackVariant>? variants = null)
     {
-        if (variants is { Count: > 0 })
+        if (versions.Count == 0) return [];
+        var editions = BaleCoreNative.Call("formatting.playback_editions", writer =>
         {
-            // Kotlin's associateBy keeps the last catalog object for an identity. Never substitute
-            // the nested part's copy: track inventories and effective preferences live on the catalog file.
-            var byId = new Dictionary<string, FileVersion>(StringComparer.Ordinal);
-            foreach (var version in versions)
-            {
-                if (version.FileId is { } id) byId[id] = version;
-            }
-
-            var editions = new List<PlaybackEdition>();
-            foreach (var variant in variants)
-            {
-                var firstPart = variant.Parts?.MinBy(part => part.PartIndex ?? 0);
-                if (firstPart is null) continue;
-                var choices = (firstPart.Versions ?? []).Select(file => file.FileId is { } id ? byId.GetValueOrDefault(id) : null)
-                    .OfType<FileVersion>().ToList();
-                var defaultVersion = choices.FirstOrDefault(file => file.FileId == firstPart.DefaultFileId) ?? choices.FirstOrDefault();
-                if (defaultVersion is null) continue;
-                var fileIds = (variant.Parts ?? []).SelectMany(part => part.Versions ?? []).Select(file => file.FileId)
-                    .OfType<string>().ToHashSet(StringComparer.Ordinal);
-                editions.Add(new PlaybackEdition(variant.VariantId ?? string.Empty,
-                    Label(variant.EditionRaw, variant.EditionKey) ?? "Standard", choices, defaultVersion, fileIds));
-            }
-
-            // An explicit variants payload is authoritative, even if every variant is unplayable.
-            return editions;
-        }
-
-        return versions.GroupBy(file => NonBlank(file.EditionKey) ?? Label(file.EditionRaw, file.EditionKey) ?? string.Empty, StringComparer.Ordinal)
-            .Select(group =>
-            {
-                var files = group.ToList();
-                return new PlaybackEdition(group.Key, Label(files[0].EditionRaw, files[0].EditionKey) ?? "Standard", files, files[0],
-                    files.Select(file => file.FileId).OfType<string>().ToHashSet(StringComparer.Ordinal));
-            }).ToList();
+            writer.Server("versions", versions);
+            writer.Server("variants", variants ?? []);
+        }, BaleCoreJson.Default.EditionIndexesArray);
+        return editions.Select(edition => new PlaybackEdition(edition.Id, edition.Label,
+            edition.Versions.Select(index => versions[index]).ToList(),
+            edition.FileIds.ToHashSet(StringComparer.Ordinal))).ToList();
     }
 
-    // Multiple encodes/parts with the same edition label must not create a redundant Edition trigger.
-    public static bool HasChoices(IReadOnlyList<PlaybackEdition> editions) =>
-        editions.Count > 1 && editions.Select(edition => edition.Label).Distinct(StringComparer.OrdinalIgnoreCase).Skip(1).Any();
+    /// <summary>The Edition control shows with two or more edition keys (hasEditionChoices).</summary>
+    public static bool HasChoices(IReadOnlyList<PlaybackEdition> editions) => editions.Count > 1;
 
     public static PlaybackEdition? Current(IReadOnlyList<PlaybackEdition> editions, FileVersion? currentVersion) =>
         editions.FirstOrDefault(edition => currentVersion?.FileId is { } id && edition.FileIds.Contains(id)) ?? editions.FirstOrDefault();
 
-    /// <summary>TvPlaybackSelectorRow.kt scopes quality choices only when the Edition control is shown.</summary>
+    /// <summary>TvPlaybackSelectorRow.kt scopes Version choices to the current edition when Edition shows.</summary>
     public static IReadOnlyList<FileVersion> ScopedVersions(IReadOnlyList<FileVersion> versions,
         IReadOnlyList<PlaybackEdition> editions, FileVersion? currentVersion) =>
         HasChoices(editions) ? Current(editions, currentVersion)?.Versions ?? [] : versions;
-
-    private static string? NonBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

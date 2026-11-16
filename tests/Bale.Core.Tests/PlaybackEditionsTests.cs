@@ -27,13 +27,12 @@ public class PlaybackEditionsTests
         Assert.Equal(new[] { "Theatrical", "International" }, editions.Select(edition => edition.Label));
         Assert.Equal(new[] { "10" }, editions[0].Versions.Select(file => file.FileId));
         Assert.Equal(new[] { "20", "30" }, editions[1].Versions.Select(file => file.FileId));
-        Assert.Same(international, editions[1].DefaultVersion);
         Assert.Same(editions[1], PlaybackEditions.Current(editions, international4k));
         Assert.Same(editions[0], PlaybackEditions.Current(editions, new FileVersion { FileId = "unknown" }));
     }
 
     [Fact]
-    public void MissingAndKeyOnlyLabelsRemainUsableWithoutInventingAnEditionChoice()
+    public void MissingAndKeyOnlyLabelsRemainUsableWithOneEditionPerKey()
     {
         var standard = new FileVersion { FileId = "1" };
         var editions = PlaybackEditions.For([standard, File("2", "imax_extended-cut", " ")]);
@@ -45,14 +44,14 @@ public class PlaybackEditionsTests
     }
 
     [Fact]
-    public void VariantsUseTheFirstPartsDefaultAndPreserveCatalogObjectsAcrossAllParts()
+    public void VariantsOfferTheFirstPartsFilesAndPreserveCatalogObjectsAcrossAllParts()
     {
         var first = File("10");
         var preferred = File("20");
         var later = File("30");
         PlaybackVariant variant = new()
         {
-            VariantId = "international", EditionRaw = " International ", DefaultFileId = "30",
+            VariantId = "international|single", EditionKey = "international", EditionRaw = " International ", DefaultFileId = "30",
             Parts =
             [
                 new() { PartIndex = 2, DefaultFileId = "30", Versions = [new() { FileId = "30" }, new() { FileId = "40" }] },
@@ -62,9 +61,8 @@ public class PlaybackEditionsTests
         var edition = Assert.Single(PlaybackEditions.For([later, preferred, first], [variant]));
         Assert.Equal("international", edition.Id);
         Assert.Equal("International", edition.Label);
-        Assert.Equal(new[] { first, preferred }, edition.Versions);
-        Assert.Same(first, edition.Versions[0]);
-        Assert.Same(preferred, edition.DefaultVersion);
+        // Server order: the order of the catalog's versions, not of the part's list.
+        Assert.Equal(new[] { preferred, first }, edition.Versions);
         Assert.True(edition.FileIds.SetEquals(["10", "20", "30", "40"]));
         Assert.Same(edition, PlaybackEditions.Current([edition], later));
     }
@@ -85,7 +83,7 @@ public class PlaybackEditionsTests
     }
 
     [Fact]
-    public void UnknownDefaultsFallBackToTheFirstKnownFileAndMissingIndexesMeanZero()
+    public void UnknownFilesAreSkippedAndMissingIndexesMeanZero()
     {
         var stale = File("10");
         var current = File("10", "file-key", "File label");
@@ -100,14 +98,14 @@ public class PlaybackEditionsTests
         };
         var edition = Assert.Single(PlaybackEditions.For([stale, other, current], [variant]));
         Assert.Equal("IMAX", edition.Label);
-        Assert.Same(current, edition.DefaultVersion);
-        Assert.Equal(new[] { "10", "20" }, edition.Versions.Select(file => file.FileId));
+        Assert.Equal(new[] { "20", "10" }, edition.Versions.Select(file => file.FileId));
+        Assert.Same(current, edition.Versions[1]);
     }
 
     [Fact]
-    public void SameLabelsWithDifferentKeysDoNotShowEditionsOrScopeVersionOptions()
+    public void OneKeyShowsNoEditionAndOffersEveryFileUnderAuto()
     {
-        var detail = Movie([File("10", "one", "Theatrical"), File("20", "two", "THEATRICAL")]);
+        var detail = Movie([File("10", "one", "Theatrical"), File("20", " one ", "THEATRICAL")]);
         Assert.False(PlaybackEditions.HasChoices(PlaybackEditions.For(detail.Versions)));
         Assert.False(PlaybackFormatting.SelectorIsInteractive(PlaybackSelectorKind.Edition, detail, PlaybackSelection.Auto));
         Assert.True(PlaybackFormatting.SelectorIsInteractive(PlaybackSelectorKind.Version, detail, PlaybackSelection.Auto));
@@ -117,23 +115,23 @@ public class PlaybackEditionsTests
     }
 
     [Fact]
-    public void ScopedVersionOptionsOmitGlobalAutoAndCheckTheResolvedFile()
+    public void ScopedVersionOptionsKeepAutoAndEditionRowsShowTheirAutoFile()
     {
         var detail = Movie([File("10", "theatrical", "Theatrical"), File("20", "international", "International"),
             File("30", "international", "International", "2160p")]) with { LastFileId = "20" };
         Assert.True(PlaybackFormatting.SelectorIsInteractive(PlaybackSelectorKind.Edition, detail, PlaybackSelection.Auto));
         Assert.True(PlaybackFormatting.SelectorIsInteractive(PlaybackSelectorKind.Version, detail, PlaybackSelection.Auto));
         var options = PlaybackFormatting.SelectorOptions(PlaybackSelectorKind.Version, detail, PlaybackSelection.Auto);
-        Assert.Equal(new[] { "20", "30" }, options.Select(option => option.FileId));
-        Assert.Equal("20", Assert.Single(options, option => option.IsSelected).FileId);
+        Assert.Equal(new string?[] { null, "20", "30" }, options.Select(option => option.FileId));
+        Assert.Equal("Auto", Assert.Single(options, option => option.IsSelected).Title);
         var editionOptions = PlaybackFormatting.SelectorOptions(PlaybackSelectorKind.Edition, detail, PlaybackSelection.Auto);
         Assert.Equal(new[] { "Theatrical", "International" }, editionOptions.Select(option => option.Title));
-        Assert.Equal("20", Assert.Single(editionOptions, option => option.IsSelected).FileId);
-        Assert.Equal("1080P", editionOptions[1].Detail);
+        Assert.Equal("international", Assert.Single(editionOptions, option => option.IsSelected).EditionId);
+        // History picks the cut; Auto picks its best file (4K here, with no display match).
+        Assert.Equal("4K", editionOptions[1].Detail);
         Assert.Equal("30", Assert.Single(PlaybackFormatting.SelectorOptions(PlaybackSelectorKind.Version, detail,
             new PlaybackSelection("30")), option => option.IsSelected).FileId);
-        // TvItemDetailScreen.kt's quiet readout still says Auto until the viewer explicitly picks a file.
-        Assert.Equal("Auto · 1080P", PlaybackSummaryValues.For(detail).Version);
+        Assert.Equal("Auto · 4K", PlaybackSummaryValues.For(detail).Version);
     }
 
     [Fact]
@@ -142,7 +140,8 @@ public class PlaybackEditionsTests
         var detail = Movie([File("10", "theatrical", "Theatrical"), File("20", "international", "International")]);
         Assert.True(PlaybackFormatting.SelectorIsInteractive(PlaybackSelectorKind.Edition, detail, PlaybackSelection.Auto));
         Assert.False(PlaybackFormatting.SelectorIsInteractive(PlaybackSelectorKind.Version, detail, PlaybackSelection.Auto));
-        Assert.True(Assert.Single(PlaybackFormatting.SelectorOptions(PlaybackSelectorKind.Version, detail, PlaybackSelection.Auto)).IsSelected);
+        Assert.Equal(new string?[] { null, "10" }, PlaybackFormatting.SelectorOptions(PlaybackSelectorKind.Version, detail,
+            PlaybackSelection.Auto).Select(option => option.FileId));
         Assert.False(PlaybackFormatting.SelectorIsInteractive(PlaybackSelectorKind.Edition, null, PlaybackSelection.Auto));
         Assert.False(PlaybackFormatting.SelectorIsInteractive(PlaybackSelectorKind.Edition, detail with { Versions = [] }, PlaybackSelection.Auto));
     }
@@ -156,7 +155,7 @@ public class PlaybackEditionsTests
             PlaybackVariants =
             [
                 new() { VariantId = "standard", Parts = [new() { Versions = [new() { FileId = "40" }] }] },
-                new() { VariantId = "extended", EditionRaw = "Extended", Parts =
+                new() { VariantId = "extended", EditionKey = "extended", EditionRaw = "Extended", Parts =
                 [
                     new() { PartIndex = 2, Versions = [new() { FileId = "30" }] },
                     new() { PartIndex = 1, DefaultFileId = "20", Versions = [new() { FileId = "10" }, new() { FileId = "20" }] },
@@ -165,14 +164,14 @@ public class PlaybackEditionsTests
         };
         var edition = Assert.Single(PlaybackFormatting.SelectorOptions(PlaybackSelectorKind.Edition, detail, PlaybackSelection.Auto), option => option.IsSelected);
         Assert.Equal("Extended", edition.Title);
-        Assert.Equal("20", edition.FileId);
+        Assert.Equal("extended", edition.EditionId);
         var options = PlaybackFormatting.SelectorOptions(PlaybackSelectorKind.Version, detail, PlaybackSelection.Auto);
-        Assert.Equal(new[] { "10", "20" }, options.Select(option => option.FileId));
-        Assert.DoesNotContain(options, option => option.IsSelected);
+        Assert.Equal(new string?[] { null, "10", "20" }, options.Select(option => option.FileId));
+        Assert.Equal("Auto", Assert.Single(options, option => option.IsSelected).Title);
     }
 
     [Fact]
-    public void EditionPicksUseTheDefaultFileResetTracksAndRemainEpisodeScoped()
+    public void EditionPicksKeepVersionOnAutoResetTracksAndRemainEpisodeScoped()
     {
         var first = File("10", "theatrical", "Theatrical");
         first.AudioTracks = [new() { Language = "eng" }];
@@ -182,9 +181,16 @@ public class PlaybackEditionsTests
         state.Select(detail, PlaybackSelectorKind.Audio, new("English", "", true, TrackIndex: 0));
         state.Select(detail, PlaybackSelectorKind.Subtitles, new("Off", "", true, TrackIndex: -1));
         var edition = PlaybackFormatting.SelectorOptions(PlaybackSelectorKind.Edition, detail, state.For(detail))[1];
-        Assert.Equal(new PlaybackSelection("20"), state.Select(detail, PlaybackSelectorKind.Edition, edition));
+        var picked = new PlaybackSelection(EditionId: "extended");
+        Assert.Equal(picked, state.Select(detail, PlaybackSelectorKind.Edition, edition));
+        Assert.Equal("30", PlaybackFormatting.SelectDisplayVersion(detail, picked)?.FileId);
         Assert.Equal(PlaybackSelection.Auto, state.For(detail with { ContentId = "another-episode" }));
-        Assert.Equal(new PlaybackSelection("20"), state.For(detail));
+        Assert.Equal(picked, state.For(detail));
+        // A Version pick inside the edition keeps the edition.
+        var version = PlaybackFormatting.SelectorOptions(PlaybackSelectorKind.Version, detail, picked)[1];
+        Assert.Equal(new PlaybackSelection("20", EditionId: "extended"), state.Select(detail, PlaybackSelectorKind.Version, version));
+        // An edition the item no longer has falls back to history.
+        Assert.Null(state.For(detail with { Versions = [first] }).EditionId);
     }
 
     private static FileVersion File(string id, string? key = null, string? raw = null, string resolution = "1080p") =>

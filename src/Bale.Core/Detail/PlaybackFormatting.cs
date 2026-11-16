@@ -9,21 +9,33 @@ namespace Bale.Core.Detail;
 public static partial class PlaybackFormatting
 {
     /// <summary>
-    /// TvDetailVersionSelection.kt / PlaybackVersionSelector.kt: explicit file, last played,
-    /// then the best resolution at or below the quality cap; bitrate and size break ties.
-    /// File IDs remain strings, as supplied by Bale's generated API contract. Auto applies
-    /// <see cref="DisplayVersionMatch.Current"/> (Bale's display resolution matching).
+    /// The file a detail page shows and Play starts (DetailVersionSelector.kt): an explicit Version pick,
+    /// else Auto inside the current edition (the Edition pick, else the last-played edition, else the
+    /// best one across cuts). History picks only the edition, except a later part of an item in
+    /// progress. Plain Auto applies <see cref="DisplayVersionMatch.Current"/> (Bale's display
+    /// resolution matching) inside the edition.
     /// </summary>
+    public static FileVersion? SelectDisplayVersion(ItemDetail detail, PlaybackSelection selection, string? preferredQuality = null) =>
+        SelectDisplayVersion(detail, selection.FileId, selection.EditionId, preferredQuality);
+
+    public static FileVersion? SelectDisplayVersion(ItemDetail detail, string? selectedFileId, string? editionId,
+        string? preferredQuality = null) =>
+        SelectVersion(detail.Versions, DisplayVersionMatch.Current, selectedFileId, detail.LastFileId, preferredQuality,
+            detail.PlaybackVariants, editionId, detail.LastEditionKey, detail.PlaybackPositionSeconds > 0);
+
+    /// <summary>Versions without a detail: editions come from the files' edition keys alone.</summary>
     public static FileVersion? SelectDisplayVersion(IReadOnlyList<FileVersion> versions,
         string? selectedFileId = null, string? lastFileId = null, string? preferredQuality = null) =>
         SelectVersion(versions, DisplayVersionMatch.Current, selectedFileId, lastFileId, preferredQuality);
 
     /// <summary>
-    /// <see cref="SelectDisplayVersion"/> with an explicit match; null is the official Auto. Implemented
-    /// in Rust (native/bale-core/src/formatting.rs).
+    /// <see cref="SelectDisplayVersion(ItemDetail, PlaybackSelection, string?)"/> with an explicit match;
+    /// null is the official Auto. Implemented in Rust (native/bale-core/src/formatting.rs).
     /// </summary>
     public static FileVersion? SelectVersion(IReadOnlyList<FileVersion> versions, DisplayVersionMatch? match,
-        string? selectedFileId = null, string? lastFileId = null, string? preferredQuality = null)
+        string? selectedFileId = null, string? lastFileId = null, string? preferredQuality = null,
+        IReadOnlyList<PlaybackVariant>? variants = null, string? editionId = null, string? lastEditionKey = null,
+        bool inProgress = false)
     {
         if (versions.Count == 0) return null;
         var index = BaleCoreNative.Call("formatting.select_version", writer =>
@@ -34,6 +46,10 @@ public static partial class PlaybackFormatting
             writer.Text("selected_file_id", selectedFileId);
             writer.Text("last_file_id", lastFileId);
             writer.Text("preferred_quality", preferredQuality);
+            writer.Server("variants", variants ?? []);
+            writer.Text("edition_id", editionId);
+            writer.Text("last_edition_key", lastEditionKey);
+            writer.WriteBoolean("in_progress", inProgress);
         }, BaleCoreJson.Default.NullableInt32);
         return index is { } chosen ? versions[chosen] : null;
     }

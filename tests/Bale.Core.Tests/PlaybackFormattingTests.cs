@@ -7,11 +7,13 @@ namespace Bale.Core.Tests;
 public class PlaybackFormattingTests
 {
     [Fact]
-    public void AutoDisplayUsesLastPlayedFileBeforeFirstServerVersion()
+    public void TheLastPlayedFilePicksOnlyItsEditionNotTheFile()
     {
+        // DetailVersionSelector.kt: history names the cut; Auto picks the file inside it.
         var versions = Versions();
-        Assert.Same(versions[1], PlaybackFormatting.SelectDisplayVersion(versions, lastFileId: "4k", preferredQuality: "auto"));
-        Assert.Same(versions[2], PlaybackFormatting.SelectDisplayVersion(versions, lastFileId: "720", preferredQuality: "original"));
+        Assert.Same(versions[1], PlaybackFormatting.SelectDisplayVersion(versions, lastFileId: "720", preferredQuality: "auto"));
+        Assert.Same(versions[1], PlaybackFormatting.SelectDisplayVersion(versions, lastFileId: "720", preferredQuality: "original"));
+        Assert.Same(versions[0], PlaybackFormatting.SelectDisplayVersion(versions, lastFileId: "4k", preferredQuality: "1080p"));
     }
 
     [Fact]
@@ -27,7 +29,7 @@ public class PlaybackFormattingTests
     {
         var versions = Versions();
         Assert.Same(versions[0], PlaybackFormatting.SelectDisplayVersion(versions, "1080", "4k"));
-        Assert.Same(versions[2], PlaybackFormatting.SelectDisplayVersion(versions, "missing", "720"));
+        Assert.Same(versions[1], PlaybackFormatting.SelectDisplayVersion(versions, "missing", "720"));
         Assert.Same(versions[1], PlaybackFormatting.SelectDisplayVersion(versions, "missing", "missing"));
         Assert.Null(PlaybackFormatting.SelectDisplayVersion([]));
     }
@@ -39,13 +41,16 @@ public class PlaybackFormattingTests
     [InlineData(" Original ")]
     [InlineData("source")]
     [InlineData("max")]
-    [InlineData("480p")]
     [InlineData("unknown")]
-    public void AutoUsesBestAvailableAndAnUnsatisfiedCapFallsBackToBest(string? quality)
+    public void AutoUsesBestAvailable(string? quality)
     {
         var versions = Versions();
         Assert.Same(versions[1], PlaybackFormatting.SelectDisplayVersion(versions, preferredQuality: quality));
     }
+
+    [Fact]
+    public void AnUnsatisfiedCapTakesTheClosestFileAboveIt() =>
+        Assert.Equal("720", PlaybackFormatting.SelectDisplayVersion(Versions(), preferredQuality: "480p")?.FileId);
 
     [Fact]
     public void ResolutionBitrateAndSizeBreakTiesInThatOrder()

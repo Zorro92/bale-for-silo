@@ -403,33 +403,6 @@ public class RustPortDifferentialTests
         }
     }
 
-    [Fact]
-    public void VersionSelectionMatches()
-    {
-        var random = new Random(18);
-        var claims = ConsoleEvidence.ForHardware(Series).VideoDecode;
-        for (var run = 0; run < Runs; run++)
-        {
-            var versions = Enumerable.Range(0, random.Next(1, 6)).Select(_ =>
-            {
-                var version = Version(random);
-                version.Resolution = Pick(random, ResolutionLabels);
-                version.Bitrate = Pick(random, new long?[] { null, 4_000, 8_000, 20_000 });
-                version.FileSize = Pick(random, new long?[] { null, 1, 2 });
-                return version;
-            }).ToList();
-            var match = random.Next(3) == 0 ? null
-                : new Bale.Core.Detail.DisplayVersionMatch(Pick(random, new[] { 720, 1080, 2160 }), claims.Where(_ => random.Next(4) != 0).ToArray());
-            var selected = random.Next(4) == 0 ? Pick(random, FileIds) : null;
-            var last = random.Next(4) == 0 ? Pick(random, FileIds) : null;
-            var quality = Pick(random, new string?[] { null, "", "auto", " AUTO ", "original", "Source", "max", "1080p", "720p", "4K", "480", "x" });
-            var expected = Reference.PlaybackFormatting.SelectVersion(versions, match, selected, last, quality);
-            var actual = Bale.Core.Detail.PlaybackFormatting.SelectVersion(versions, match, selected, last, quality);
-            Assert.True(ReferenceEquals(expected, actual), $"run {run}: expected {versions.IndexOf(expected!)}, got {versions.IndexOf(actual!)}");
-        }
-        Assert.Null(Bale.Core.Detail.PlaybackFormatting.SelectVersion([], null));
-    }
-
     private static string Outcome(Action action)
     {
         try

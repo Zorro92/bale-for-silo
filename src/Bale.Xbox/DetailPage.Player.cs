@@ -31,14 +31,15 @@ public sealed partial class DetailPage
             var selection = _playbackSelections.For(playable);
             // TvItemDetailScreen.kt: start on exactly what the Subtitles value shows, Auto preview included.
             // An absent V3 subtitle index means Off, so leaving Auto unresolved started without subtitles.
-            var version = PlaybackFormatting.SelectDisplayVersion(playable.Versions, selection.FileId, playable.LastFileId);
+            var version = PlaybackFormatting.SelectDisplayVersion(playable, selection);
             var automaticAudio = PlaybackAudioSelection.AutomaticAudioOrdinal(version, _preferredAudioLanguage,
                 _audioSelectionCapabilities, _playbackSelections.PendingAudioChoiceFor(playable));
             selection = selection with
             {
                 SubtitleIndex = PlaybackSummaryValues.SubtitleLaunchIndex(playable, selection.FileId, selection.AudioIndex,
                     selection.SubtitleIndex, automaticAudioResolutionKnown: _audioSelectionCapabilities is not null,
-                    automaticAudioTrackOrdinal: automaticAudio, subtitleAutoContext: _subtitleAutoContext),
+                    automaticAudioTrackOrdinal: automaticAudio, subtitleAutoContext: _subtitleAutoContext,
+                    selectedEditionId: selection.EditionId),
             };
             _returnCastIndex = null;
             _returnSimilarId = null;
@@ -83,6 +84,7 @@ public sealed partial class DetailPage
                 ResumeSeconds = refreshed.ResumeSeconds,
                 PlaybackPositionSeconds = refreshed.PlaybackPositionSeconds,
                 LastFileId = refreshed.LastFileId,
+                LastEditionKey = refreshed.LastEditionKey,
                 Flags = refreshed.Flags,
             };
             ShowFlags(_detail.Flags);

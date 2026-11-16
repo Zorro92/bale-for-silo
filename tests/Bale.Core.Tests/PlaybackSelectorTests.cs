@@ -202,13 +202,16 @@ public class PlaybackSelectorTests
         var detail = Detail("movie") with { Versions = [first, other] };
         state.Select(detail, PlaybackSelectorKind.Audio, new("Japanese", "", true, TrackIndex: 1));
         var pending = state.PendingAudioChoiceFor(detail);
-        var selection = state.Select(detail, PlaybackSelectorKind.Edition, new("Other", "", true, FileId: "other"));
+        var selection = state.Select(detail, PlaybackSelectorKind.Version, new("Other", "", true, FileId: "other"));
         Assert.Equal(new PlaybackSelection("other"), selection);
         Assert.Same(pending, state.PendingAudioChoiceFor(detail));
         Assert.Equal(0, PlaybackAudioSelection.AutomaticAudioOrdinal(other, "en", null, pending));
         state.Select(detail, PlaybackSelectorKind.Audio, new("Auto", "", true));
         Assert.Null(state.PendingAudioChoiceFor(detail)!.Choice);
         state.Select(detail, PlaybackSelectorKind.Version, new("Auto", "", true));
+        Assert.Null(state.PendingAudioChoiceFor(detail)!.Choice);
+        Assert.Equal(new PlaybackSelection(EditionId: ""),
+            state.Select(detail, PlaybackSelectorKind.Edition, new("Standard", "", true, EditionId: "")));
         Assert.Null(state.PendingAudioChoiceFor(detail)!.Choice);
     }
 

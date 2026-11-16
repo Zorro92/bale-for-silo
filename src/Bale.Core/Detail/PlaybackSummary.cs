@@ -10,11 +10,11 @@ public sealed record PlaybackSummaryValues(string? Version, string? Audio, strin
     public static PlaybackSummaryValues For(ItemDetail? playbackDetail, string? selectedFileId = null,
         int? selectedAudioTrackIndex = null, int? selectedSubtitleTrackIndex = null, string? preferredQuality = null,
         bool automaticAudioResolutionKnown = false, int? automaticAudioTrackOrdinal = null,
-        SubtitleAutoContext? subtitleAutoContext = null)
+        SubtitleAutoContext? subtitleAutoContext = null, string? selectedEditionId = null)
     {
         if (playbackDetail is null) return Empty;
         selectedFileId = playbackDetail.Versions.Any(version => version.FileId == selectedFileId) ? selectedFileId : null;
-        var version = PlaybackFormatting.SelectDisplayVersion(playbackDetail.Versions, selectedFileId, playbackDetail.LastFileId, preferredQuality);
+        var version = PlaybackFormatting.SelectDisplayVersion(playbackDetail, selectedFileId, selectedEditionId, preferredQuality);
         if (version is null) return Empty;
         var compact = PlaybackFormatting.VersionCompactLabel(version);
         var versionValue = selectedFileId is null && compact != "Auto" ? "Auto · " + compact : compact;
@@ -37,12 +37,12 @@ public sealed record PlaybackSummaryValues(string? Version, string? Audio, strin
     public static int? SubtitleLaunchIndex(ItemDetail? playbackDetail, string? selectedFileId = null,
         int? selectedAudioTrackIndex = null, int? selectedSubtitleTrackIndex = null, string? preferredQuality = null,
         bool automaticAudioResolutionKnown = false, int? automaticAudioTrackOrdinal = null,
-        SubtitleAutoContext? subtitleAutoContext = null)
+        SubtitleAutoContext? subtitleAutoContext = null, string? selectedEditionId = null)
     {
         if (selectedSubtitleTrackIndex is not null) return selectedSubtitleTrackIndex;
         if (playbackDetail is null) return null;
         selectedFileId = playbackDetail.Versions.Any(version => version.FileId == selectedFileId) ? selectedFileId : null;
-        var version = PlaybackFormatting.SelectDisplayVersion(playbackDetail.Versions, selectedFileId, playbackDetail.LastFileId, preferredQuality);
+        var version = PlaybackFormatting.SelectDisplayVersion(playbackDetail, selectedFileId, selectedEditionId, preferredQuality);
         if (version is null) return null;
         return PlaybackFormatting.SubtitleLaunchIndex(version, AutoContext(playbackDetail, version, selectedAudioTrackIndex,
             automaticAudioResolutionKnown, automaticAudioTrackOrdinal, subtitleAutoContext));
@@ -73,7 +73,7 @@ public sealed class PlaybackSummaryState
         ItemDetail? nextUpPlaybackDetail = null, bool transitioning = false,
         string? selectedFileId = null, int? selectedAudioTrackIndex = null, int? selectedSubtitleTrackIndex = null,
         bool automaticAudioResolutionKnown = false, int? automaticAudioTrackOrdinal = null,
-        SubtitleAutoContext? subtitleAutoContext = null)
+        SubtitleAutoContext? subtitleAutoContext = null, string? selectedEditionId = null)
     {
         if (_contentId != detail.ContentId)
         {
@@ -86,7 +86,7 @@ public sealed class PlaybackSummaryState
             : detail;
         var resolved = PlaybackSummaryValues.For(playbackDetail, selectedFileId, selectedAudioTrackIndex, selectedSubtitleTrackIndex,
             automaticAudioResolutionKnown: automaticAudioResolutionKnown, automaticAudioTrackOrdinal: automaticAudioTrackOrdinal,
-            subtitleAutoContext: subtitleAutoContext);
+            subtitleAutoContext: subtitleAutoContext, selectedEditionId: selectedEditionId);
         if (detail.PlaysEpisodes && transitioning) return _previous ?? resolved;
         _previous = resolved;
         return resolved;

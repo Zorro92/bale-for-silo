@@ -170,7 +170,7 @@ public class DisplayVersionMatchTests
     }
 
     [Fact]
-    public void TiesKeepTheOfficialBitrateThenSizeOrder()
+    public void TiesKeepTheServerOrderOfHdrThenSizeNotBitrate()
     {
         var versions = new[]
         {
@@ -179,18 +179,18 @@ public class DisplayVersionMatchTests
             Hevc("small", 1920, 1080, bitrate: 8000, size: 1),
             Hevc("large", 1920, 1080, bitrate: 8000, size: 2),
         };
-        Assert.Same(versions[3], Select(versions, 1080, Hevc1080));
-        Assert.Same(versions[3], Select(versions, 1080));
-        Assert.Same(versions[3], Select(versions[1..], 720, Hevc1080));
+        Assert.Same(versions[1], Select(versions, 1080, Hevc1080));
+        Assert.Same(versions[1], Select(versions, 1080));
+        Assert.Same(versions[1], Select(versions[1..], 720, Hevc1080));
     }
 
     [Fact]
-    public void AnExplicitPickAndTheLastPlayedFileStillComeFirst()
+    public void AnExplicitPickComesFirstAndTheLastPlayedFileNamesOnlyTheEdition()
     {
         var versions = new[] { Hevc("4k", 3840, 2160), Hevc("1080", 1920, 1080), Hevc("720", 1280, 720) };
         var match = Match(1080, Hevc1080);
         Assert.Same(versions[0], PlaybackFormatting.SelectVersion(versions, match, selectedFileId: "4k"));
-        Assert.Same(versions[0], PlaybackFormatting.SelectVersion(versions, match, lastFileId: "4k"));
+        Assert.Same(versions[1], PlaybackFormatting.SelectVersion(versions, match, lastFileId: "4k"));
         Assert.Same(versions[2], PlaybackFormatting.SelectVersion(versions, match, "720", "4k", "auto"));
         Assert.Same(versions[1], PlaybackFormatting.SelectVersion(versions, match, "missing", "missing"));
     }
@@ -213,8 +213,8 @@ public class DisplayVersionMatchTests
         var match = Match(2160, Hevc4K);
         Assert.Same(versions[2], PlaybackFormatting.SelectVersion(versions, match, preferredQuality: "720p"));
         Assert.Same(versions[0], PlaybackFormatting.SelectVersion(versions, match, preferredQuality: "1080p"));
-        // An unsatisfied cap still falls back to the best version, not to the display's.
-        Assert.Same(versions[1], PlaybackFormatting.SelectVersion(versions, Match(1080, Hevc1080), preferredQuality: "480p"));
+        // An unsatisfied cap takes the closest version above it (DetailVersionSelector.kt).
+        Assert.Same(versions[2], PlaybackFormatting.SelectVersion(versions, Match(1080, Hevc1080), preferredQuality: "480p"));
     }
 
     [Theory]
@@ -228,7 +228,7 @@ public class DisplayVersionMatchTests
         var expected = quality == "720p" ? versions[2] : versions[1];
         Assert.Same(expected, PlaybackFormatting.SelectVersion(versions, null, preferredQuality: quality));
         Assert.Same(versions[0], PlaybackFormatting.SelectVersion(versions, null, "1080", "4k", quality));
-        Assert.Same(versions[2], PlaybackFormatting.SelectVersion(versions, null, lastFileId: "720", preferredQuality: quality));
+        Assert.Same(expected, PlaybackFormatting.SelectVersion(versions, null, lastFileId: "720", preferredQuality: quality));
     }
 
     [Fact]

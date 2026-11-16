@@ -29,11 +29,10 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
 
 - ~~**API contract:** bump `SILO_REF`~~ Done 2026-11-16: pinned to server `92ee051878c2`, additive only;
   also generates `GET /api/v2/capabilities/ratings` and `DELETE /api/v2/requests/{id}`.
-- **Edition / Version Auto:** Edition is the cut and Version Auto ranks only inside it; open on
-  `last_edition_key`, else the edition of `last_file_id`; an Edition pick keeps Version on Auto
-  (Android `466c31968`, Apple `94a6095f`/`197b5c18`, Roku `7bb02a9`). Keep display resolution
-  matching as the Auto ranking inside the edition. Version icon is Material VideoLibrary
-  (Android `4686d6dd8`).
+- ~~**Edition / Version Auto:**~~ Done 2026-11-16 (Rust `formatting::select_version`): one edition
+  per key, history names only the edition (`last_edition_key`, then `last_file_id`), an Edition
+  pick keeps Version on Auto, server order (resolution, HDR, size), display matching inside the
+  edition. Not yet on the console. Version icon (Material VideoLibrary) not checked.
 - **Series page:** Specials first as season zero, the last special continues into S1E1 (Android
   `69e39ad45`, Apple `c466777f`, Roku `a41d106`); the Show tab gives way to More › Show Series
   Info (Android `3632eda4e` and follow-ups).

@@ -136,6 +136,7 @@ public sealed record BaleCoreChecked<T>(T? Ok = default, string? InvalidData = n
 [JsonSerializable(typeof(FilteredDevice))]
 [JsonSerializable(typeof(FilteredStart))]
 [JsonSerializable(typeof(DisplayHdr))]
+[JsonSerializable(typeof(Detail.EditionIndexes[]))]
 internal sealed partial class BaleCoreJson : JsonSerializerContext;
 
 internal sealed record SoftwareDecodeLists(string[] VideoCodecs,

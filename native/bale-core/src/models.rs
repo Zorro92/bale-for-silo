@@ -117,7 +117,29 @@ pub struct FileVersion {
     pub resolution: Option<String>,
     pub bitrate: Option<i64>,
     pub file_size: Option<i64>,
+    pub hdr: Option<bool>,
+    pub edition_key: Option<String>,
+    pub edition_raw: Option<String>,
+    pub presentation_kind: Option<String>,
+    pub presentation_group_key: Option<String>,
+    pub presentation_part_index: Option<i64>,
     pub video_tracks: Option<Vec<VideoTrack>>,
+}
+
+/// The server's edition/part group (`PlaybackVariant`): only what edition grouping reads.
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(default)]
+pub struct PlaybackVariant {
+    pub edition_key: Option<String>,
+    pub edition_raw: Option<String>,
+    pub parts: Option<Vec<PlaybackVariantPart>>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(default)]
+pub struct PlaybackVariantPart {
+    pub part_index: Option<i64>,
+    pub versions: Option<Vec<FileVersion>>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]

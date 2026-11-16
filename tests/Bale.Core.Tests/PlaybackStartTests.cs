@@ -158,8 +158,10 @@ public class PlaybackStartTests
             Versions = [new FileVersion { FileId = "best", Resolution = "2160p" }, new FileVersion { FileId = "last", Resolution = "1080p" }],
             LastFileId = "last",
         };
+        // History names only the edition; Auto starts the file the page shows (DetailVersionSelector.kt).
         var start = PlaybackStartBuilder.Build(detail, PlaybackSelection.Auto, "profile", "attempt-id", null, ConsoleEvidence.Default, Identity);
-        Assert.Equal("last", start.FileId);
+        Assert.Equal("best", start.FileId);
+        Assert.Equal("last", PlaybackStartBuilder.Build(detail, new("last"), "profile", "attempt-id", 0, ConsoleEvidence.Default, Identity).FileId);
         Assert.Equal("best", PlaybackStartBuilder.Build(detail, new("best"), "profile", "attempt-id", 0, ConsoleEvidence.Default, Identity).FileId);
         Assert.Throws<ArgumentException>(() => PlaybackStartBuilder.Build(detail, new("gone"), "profile", "attempt-id", 0, ConsoleEvidence.Default, Identity));
     }

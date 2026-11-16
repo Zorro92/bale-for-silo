@@ -454,8 +454,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         if (_detail is not { } detail) return;
         var playbackDetail = PlaybackDetail;
         var selection = _playbackSelections.For(playbackDetail);
-        var version = playbackDetail is null ? null : PlaybackFormatting.SelectDisplayVersion(
-            playbackDetail.Versions, selection.FileId, playbackDetail.LastFileId);
+        var version = playbackDetail is null ? null : PlaybackFormatting.SelectDisplayVersion(playbackDetail, selection);
         // TvItemDetailScreen.kt / TvPlaybackSelectorRow.kt share this ordinal and known-state between
         // the Audio value and subtitle Auto context. A series/season resolves only its Play episode.
         var automaticAudio = PlaybackAudioSelection.AutomaticAudioOrdinal(version, _preferredAudioLanguage,
@@ -464,7 +463,8 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
             _nextUpPlaybackLoading || _episodesLoading || _seasonsLoading,
             selection.FileId, selection.AudioIndex, selection.SubtitleIndex,
             automaticAudioResolutionKnown: _audioSelectionCapabilities is not null,
-            automaticAudioTrackOrdinal: automaticAudio, subtitleAutoContext: _subtitleAutoContext);
+            automaticAudioTrackOrdinal: automaticAudio, subtitleAutoContext: _subtitleAutoContext,
+            selectedEditionId: selection.EditionId);
         ShowPlaybackValue(PlaybackVersionSlot, PlaybackVersion, PlaybackVersionSkeleton, values.Version);
         ShowPlaybackValue(PlaybackAudioSlot, PlaybackAudio, PlaybackAudioSkeleton, values.Audio);
         ShowPlaybackValue(PlaybackSubtitleSlot, PlaybackSubtitle, PlaybackSubtitleSkeleton, values.Subtitles);

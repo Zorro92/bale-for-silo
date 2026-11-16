@@ -9,31 +9,6 @@ namespace Bale.Core.Tests.Reference;
 
 internal static partial class PlaybackFormatting
 {
-    public static FileVersion? SelectVersion(IReadOnlyList<FileVersion> versions, DisplayVersionMatch? match,
-        string? selectedFileId = null, string? lastFileId = null, string? preferredQuality = null)
-    {
-        if (selectedFileId is not null && versions.FirstOrDefault(version => version.FileId == selectedFileId) is { } selected)
-        {
-            return selected;
-        }
-
-        if (lastFileId is not null && versions.FirstOrDefault(version => version.FileId == lastFileId) is { } lastPlayed)
-        {
-            return lastPlayed;
-        }
-
-        var ranked = versions.OrderByDescending(version => ResolutionRank(version.Resolution))
-            .ThenByDescending(version => version.Bitrate ?? 0)
-            .ThenByDescending(version => version.FileSize ?? 0).ToList();
-        var quality = NonEmpty(preferredQuality)?.ToLowerInvariant();
-        // Only plain Auto matches the display; an "original"-style choice asks for the best.
-        if (quality is null or "auto" && match is not null) return MatchDisplay(ranked, match);
-        return quality is null or "auto" or "original" or "source" or "max"
-            ? ranked.FirstOrDefault()
-            : ranked.FirstOrDefault(version => ResolutionRank(version.Resolution) <= ResolutionRank(quality))
-                ?? ranked.FirstOrDefault();
-    }
-
     public static bool IsDolbyVision(FileVersion version) =>
         IsDolbyVisionCodec(version.CodecVideo) || (version.VideoTracks ?? []).Any(track =>
             NonEmpty(track.DolbyVision) is not null || track.DvProfile is not null
@@ -82,16 +57,6 @@ internal static partial class PlaybackFormatting
 
     [GeneratedRegex(@"\b(\d{3,4})(?:p|i)?\b", RegexOptions.CultureInvariant)]
     private static partial Regex ResolutionHeight();
-
-    internal static FileVersion? MatchDisplay(IReadOnlyList<FileVersion> ranked, DisplayVersionMatch match)
-    {
-        bool FitsDisplay(FileVersion version) => VersionHeight(version) <= match.DisplayMaxHeight;
-        return ranked.FirstOrDefault(version => FitsDisplay(version) && Decodes(version, match.VideoDecode))
-            ?? ranked.FirstOrDefault(FitsDisplay)
-            ?? ranked.OrderBy(VersionHeight)
-                .ThenByDescending(version => Decodes(version, match.VideoDecode))
-                .FirstOrDefault();
-    }
 
     /// <summary>The label height (what the readout shows), else the first video track's height.</summary>
     internal static int VersionHeight(FileVersion version) =>

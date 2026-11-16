@@ -15,11 +15,11 @@ public class PlaybackSummaryTests
     }
 
     [Fact]
-    public void MovieWithSeveralVersionsUsesLastPlayedThenBestQuality()
+    public void MovieWithSeveralVersionsUsesTheBestQualityInsideTheLastPlayedEdition()
     {
         var movie = Item("m") with { Versions = [new FileVersion { FileId = "1080", Resolution = "1080p" }, .. Item("m").Versions] };
         Assert.Equal("Auto · 4K · HDR", PlaybackSummaryValues.For(movie).Version);
-        Assert.Equal("Auto · 1080P", PlaybackSummaryValues.For(movie with { LastFileId = "1080" }).Version);
+        Assert.Equal("Auto · 4K · HDR", PlaybackSummaryValues.For(movie with { LastFileId = "1080" }).Version);
         Assert.Equal("Auto · 1080P", PlaybackSummaryValues.For(movie, preferredQuality: "1080p").Version);
     }
 

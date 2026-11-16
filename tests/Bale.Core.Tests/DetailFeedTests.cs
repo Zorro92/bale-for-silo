@@ -139,7 +139,7 @@ public class DetailFeedTests
         Assert.Equal(1, part.PartIndex);
         Assert.Equal("file-1", part.DefaultFileId);
         Assert.Equal("file-1", Assert.Single(part.Versions!).FileId);
-        Assert.Same(version, Assert.Single(PlaybackEditions.For(detail.Versions, detail.PlaybackVariants)).DefaultVersion);
+        Assert.Same(version, Assert.Single(Assert.Single(PlaybackEditions.For(detail.Versions, detail.PlaybackVariants)).Versions));
         Assert.Equal("file-1", detail.LastFileId);
         Assert.Equal("eng", Assert.Single(version.AudioTracks!).Language);
         Assert.Equal("fre", Assert.Single(version.SubtitleTracks!).Language);

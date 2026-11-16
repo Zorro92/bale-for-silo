@@ -52,6 +52,9 @@ public sealed record ItemDetail(
 
     public string? LastFileId { get; init; }
 
+    /// <summary>user_data.last_edition_key: the edition last played; "" names the unnamed edition.</summary>
+    public string? LastEditionKey { get; init; }
+
     /// <summary>
     /// TvVideoPlaybackStarter.kt uses userData.positionSeconds, not the hero label's 30-second /
     /// end-of-title threshold. Keep that raw position separate from ResumeSeconds (PlayLabel).

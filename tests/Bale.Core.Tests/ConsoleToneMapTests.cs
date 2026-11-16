@@ -170,7 +170,7 @@ public sealed class ConsoleToneMapTests
     }
 
     [Fact]
-    public void ClaimsFollowTheResolvedVersionIncludingExplicitAndLastPlayedPicks()
+    public void ClaimsFollowTheResolvedVersionIncludingExplicitPicks()
     {
         var hdr = Version();
         var av1 = Version("av1");
@@ -178,7 +178,8 @@ public sealed class ConsoleToneMapTests
         var detail = Detail(hdr, av1) with { LastFileId = "other" };
         PlaybackStartRequestV3 Build(PlaybackSelection selection) => PlaybackStartBuilder.Build(detail,
             selection, "profile", "attempt", null, Device, PlaybackTestSupport.Identity);
-        Assert.False(Claimed(Build(PlaybackSelection.Auto)));
+        // The last-played file names only the edition; Auto resolves to the HDR file (server order).
+        Assert.True(Claimed(Build(PlaybackSelection.Auto)));
         Assert.True(Claimed(Build(new("file"))));
         Assert.False(Claimed(Build(new("other"))));
     }

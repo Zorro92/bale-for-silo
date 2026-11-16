@@ -1,7 +1,11 @@
 namespace Bale.Core.Detail;
 
-/// <summary>Null = Auto; audio is an ordinal, subtitles are combined external-first indexes.</summary>
-public sealed record PlaybackSelection(string? FileId = null, int? AudioIndex = null, int? SubtitleIndex = null)
+/// <summary>
+/// Null = Auto; audio is an ordinal, subtitles are combined external-first indexes. EditionId is the
+/// viewer's Edition pick (an edition key); Version Auto picks inside it (DetailVersionSelector.kt).
+/// </summary>
+public sealed record PlaybackSelection(string? FileId = null, int? AudioIndex = null, int? SubtitleIndex = null,
+    string? EditionId = null)
 {
     public static PlaybackSelection Auto { get; } = new();
 }
@@ -37,10 +41,16 @@ public sealed class PlaybackSelectionState
         var (selection, trackFileId) = _items.GetValueOrDefault(detail.ContentId, (PlaybackSelection.Auto, null));
         if (selection.FileId is not null && !detail.Versions.Any(version => version.FileId == selection.FileId))
         {
-            selection = PlaybackSelection.Auto;
+            selection = PlaybackSelection.Auto with { EditionId = selection.EditionId };
         }
 
-        var version = PlaybackFormatting.SelectDisplayVersion(detail.Versions, selection.FileId, detail.LastFileId);
+        if (selection.EditionId is { } edition
+            && !PlaybackEditions.For(detail.Versions, detail.PlaybackVariants).Any(candidate => candidate.Id == edition))
+        {
+            selection = selection with { EditionId = null };
+        }
+
+        var version = PlaybackFormatting.SelectDisplayVersion(detail, selection);
         if (trackFileId != version?.FileId) selection = selection with { AudioIndex = null, SubtitleIndex = null };
         if (selection.AudioIndex is { } audio && (audio < 0 || audio >= (version?.AudioTracks?.Count ?? 0)))
         {
@@ -62,12 +72,14 @@ public sealed class PlaybackSelectionState
         var current = For(detail);
         var selected = kind switch
         {
-            // TvPlaybackSelectorRow.kt routes Edition through the same onSelectVersion callback.
-            PlaybackSelectorKind.Version or PlaybackSelectorKind.Edition => new PlaybackSelection(option.FileId),
+            // TvItemDetailViewModel.onEditionSelected: picking an edition puts Version back on Auto inside it.
+            PlaybackSelectorKind.Edition => new PlaybackSelection(EditionId: option.EditionId),
+            // A Version pick clears the file-specific tracks and keeps the edition.
+            PlaybackSelectorKind.Version => new PlaybackSelection(option.FileId, EditionId: current.EditionId),
             PlaybackSelectorKind.Audio => current with { AudioIndex = option.TrackIndex },
             _ => current with { SubtitleIndex = option.TrackIndex },
         };
-        var version = PlaybackFormatting.SelectDisplayVersion(detail.Versions, selected.FileId, detail.LastFileId);
+        var version = PlaybackFormatting.SelectDisplayVersion(detail, selected);
         if (kind == PlaybackSelectorKind.Audio && detail.Type is "movie" or "episode" && version is not null
             && (selected.AudioIndex is null || selected.AudioIndex >= 0 && selected.AudioIndex < (version.AudioTracks?.Count ?? 0)))
         {

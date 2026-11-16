@@ -27,9 +27,10 @@ Read the Kotlin with `gh api repos/Silo-Server/silo-android/contents/<path> --jq
 - **Calendar focus** follows the selection: the selected pill/day, then the first card, with
   per-row memory.
 - **Display resolution matching.** Auto version choice picks the file that best matches the
-  connected display, not always the highest resolution (bandwidth and resources on 1080p TVs). An
-  explicit pick and the last played file still win; unreadable display modes give the official
-  highest-first. On by default; the toggle comes with the 0.2.x Settings menu. Decode claims stay
+  connected display, not always the highest resolution (bandwidth and resources on 1080p TVs). It
+  ranks only inside the current edition (the official Edition rule: Edition is the cut, history
+  picks only the edition); an explicit pick still wins; unreadable display modes give the official
+  server order. On by default; the toggle comes with the 0.2.x Settings menu. Decode claims stay
   decoder-based: the display only affects version choice. See `docs/player-plan.md`, "Display
   resolution matching".
 

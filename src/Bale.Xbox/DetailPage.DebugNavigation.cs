@@ -63,6 +63,7 @@ public sealed partial class DetailPage
                 Versions = refreshed.Versions,
                 PlaybackVariants = refreshed.PlaybackVariants,
                 LastFileId = refreshed.LastFileId,
+                LastEditionKey = refreshed.LastEditionKey,
                 PlaybackPositionSeconds = refreshed.PlaybackPositionSeconds,
                 EffectiveSubtitleLanguage = refreshed.EffectiveSubtitleLanguage,
                 EffectiveSubtitleMode = refreshed.EffectiveSubtitleMode,

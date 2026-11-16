@@ -1545,17 +1545,23 @@ selector on Auto, the official apps pick the highest resolution whatever the TV
 (`PlaybackVersionSelector.kt`, `DetailVersionSelection.swift`). **Bale deviates on purpose:** Auto
 picks the version that best matches the connected display.
 
-The rule, in `PlaybackFormatting.SelectVersion` / `MatchDisplay` (Core):
+The rule, in Rust `formatting::select_version` (called through `PlaybackFormatting.SelectVersion`):
 
-1. An explicit version pick wins, then the last played file, as in the official apps.
-2. Otherwise, on Auto, the display's height is the height of its largest supported HDMI mode:
+1. An explicit version pick wins, as in the official apps. Otherwise the official Edition rule
+   (`DetailVersionSelector.kt`, 2026-11) picks the edition: the viewer's Edition pick, else the
+   last played edition (`last_edition_key`, then the edition of `last_file_id`), else the edition
+   whose Auto file compares best across cuts. History picks only the edition, not the file, except
+   a later part of a multi-part item in progress. Display matching below ranks inside that edition.
+2. On Auto, the display's height is the height of its largest supported HDMI mode:
    - the best version at or below that height that a decode claim admits (so it plays as it is);
    - else the best version at or below that height (the server transcodes it);
    - else the smallest version above it, preferring one a decode claim admits.
-   "Best" keeps the official order: resolution, then bitrate, then file size.
+   "Best" keeps the server's order: resolution, then HDR, then file size (no bitrate). A file of
+   unknown resolution is picked only when no file's resolution is known.
 3. A 4K file is still picked when the display is 4K and the decode claims admit it, and when it
    is the title's only version.
-4. Quality "original" / "source" / "max" and the resolution caps ("720p", ...) are untouched.
+4. Quality "original" / "source" / "max" and the resolution caps ("720p", ...) use the official
+   rule: the best file at or below the cap, else the closest above it.
 5. If the display modes can't be read, Auto is the official highest-first.
 
 Why: on a 1080p TV the 4K version costs several times the bandwidth, and on this console often a

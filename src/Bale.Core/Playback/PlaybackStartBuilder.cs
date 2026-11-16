@@ -14,7 +14,7 @@ public static class PlaybackStartBuilder
     {
         if (selection.FileId is { } picked && !detail.Versions.Any(version => version.FileId == picked))
             throw new ArgumentException("The selected version is no longer available.", nameof(selection));
-        var version = PlaybackFormatting.SelectDisplayVersion(detail.Versions, selection.FileId, detail.LastFileId)
+        var version = PlaybackFormatting.SelectDisplayVersion(detail, selection)
             ?? throw new InvalidOperationException("This item has no playable version.");
         return BuildCore(version.FileId!, profileId, attemptId, startPosition, selection, device, identity,
             ConsoleToneMapPolicy.CanManage(version, device));

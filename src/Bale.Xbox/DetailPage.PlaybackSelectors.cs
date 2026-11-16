@@ -60,7 +60,7 @@ public sealed partial class DetailPage
         // Edition uses the same version callback and resets file-specific indexes without deleting
         // durable preferences (TvPlaybackSelectorRow.kt / TvItemDetailViewModel.kt).
         if (kind is PlaybackSelectorKind.Edition or PlaybackSelectorKind.Version || Session.Client is not { } client
-            || PlaybackFormatting.SelectDisplayVersion(detail.Versions, selection.FileId, detail.LastFileId) is not { } version) return;
+            || PlaybackFormatting.SelectDisplayVersion(detail, selection) is not { } version) return;
 
         var revision = ++_trackChoiceRevision;
         ActionStatus.Text = string.Empty;
@@ -114,6 +114,7 @@ public sealed partial class DetailPage
                     Versions = refreshed.Versions,
                     PlaybackVariants = refreshed.PlaybackVariants,
                     LastFileId = refreshed.LastFileId,
+                    LastEditionKey = refreshed.LastEditionKey,
                     EffectiveSubtitleLanguage = refreshed.EffectiveSubtitleLanguage,
                     EffectiveSubtitleMode = refreshed.EffectiveSubtitleMode,
                     EffectiveShowForcedSubtitles = refreshed.EffectiveShowForcedSubtitles,
@@ -172,16 +173,13 @@ public sealed partial class DetailPage
         if (PlaybackDetail is { } detail)
         {
             var selection = _playbackSelections.For(detail);
-            var version = PlaybackFormatting.SelectDisplayVersion(detail.Versions, selection.FileId, detail.LastFileId);
+            var version = PlaybackFormatting.SelectDisplayVersion(detail, selection);
             var editions = PlaybackEditions.For(detail.Versions, detail.PlaybackVariants);
-            // TvPlaybackSelectorRow.kt: only distinct edition labels and a resolved playable file
-            // show Edition. A series/season uses its identity-checked Play episode, never the container.
+            // TvPlaybackSelectorRow.kt: two or more edition keys and a resolved playable file show
+            // Edition. A series/season uses its identity-checked Play episode, never the container.
+            // Version keeps its Auto value: Auto picks inside the edition.
             if (version is not null && PlaybackEditions.HasChoices(editions))
-            {
                 editionValue = PlaybackEditions.Current(editions, version)?.Label;
-                // The Version trigger omits global Auto with editions, unlike the quiet hero readout.
-                versionValue = PlaybackFormatting.VersionCompactLabel(version);
-            }
         }
 
         EditionSelector.Visibility = editionValue is null ? Visibility.Collapsed : Visibility.Visible;
