@@ -16,10 +16,10 @@ part Bale hasn't built yet; check when building it), **deviation** (Bale differs
 
 | Repo | Commit | Reviewed |
 |---|---|---|
-| silo-android | `48015d4ee3ba` | 2026-11-10 |
-| silo-apple | `e792abdcb523` | 2026-11-10 |
-| silo-server | `5159df6dcf52` | 2026-11-10 |
-| silo-roku | `4b9b36f64601` | 2026-11-10 |
+| silo-android | `f66681ed81e1` | 2026-11-16 |
+| silo-apple | `dce56e3c5f0a` | 2026-11-16 |
+| silo-server | `92ee051878c2` | 2026-11-16 |
+| silo-roku | `e09a5e0a3efe` | 2026-11-16 |
 
 The first review (2026-11-10) started from the commit each local clone was made at.
 
@@ -28,12 +28,36 @@ The first review (2026-11-10) started from the commit each local clone was made 
 Deferred for now: playback comes first (2026-11-10). Grouped by area, newest review first. Strike an item when it ships or is decided against.
 
 - **API contract:** bump `SILO_REF` in `scripts/generate-api.sh`, regenerate and check the build
-  (server 2026-11-10: `max_profiles`, `binding`, `stored_subtitle_id`, catalog IDs, nullable enums,
-  device headers; Android/Apple: remove-failed requests). The pin is older than the
-  server clone, so the bump also brings in changes from before this log started.
+  (server 2026-11-16: `requests_allowed` / `requests_allowed_supported`, `availability`,
+  `authors`, `frame_color_range`, Discover and preset title keys; Android/Apple 2026-11-16:
+  `GET /api/v2/capabilities/ratings`, `user_state.watched_count` / `unplayed_count`, overlay
+  config, `last_edition_key`; server 2026-11-10: `max_profiles`, `binding`,
+  `stored_subtitle_id`, catalog IDs, nullable enums, device headers; Android/Apple:
+  remove-failed requests). The pin is older than the server clone, so the bump also brings in
+  changes from before this log started.
+- **Edition / Version Auto:** Edition is the cut and Version Auto ranks only inside it; open on
+  `last_edition_key`, else the edition of `last_file_id`; an Edition pick keeps Version on Auto
+  (Android `466c31968`, Apple `94a6095f`/`197b5c18`, Roku `7bb02a9`). Keep display resolution
+  matching as the Auto ranking inside the edition. Version icon is Material VideoLibrary
+  (Android `4686d6dd8`).
+- **Series page:** Specials first as season zero, the last special continues into S1E1 (Android
+  `69e39ad45`, Apple `c466777f`, Roku `a41d106`); the Show tab gives way to More › Show Series
+  Info (Android `3632eda4e` and follow-ups).
+- **Card overlays:** watch status top-right with episodes left, web badge layout and presets, one
+  overlay scale (Android `2d3620d50`/`cc4fd6662`, Apple `fe7aa020`/`4be5334f`); keyline progress
+  capsule (Android `f65fe6917`, Apple `1531620d`). Do it together with Card focus style.
+- **Library sort options:** the web's list (up to 17, by library type), Rotten Tomatoes gated by
+  the ratings capability, scrolling Sort panel (Android `a60dac2d0`, Apple `55da563c`). Needs
+  the contract bump.
 - **Profiles:** the primary profile can't have a library limit any more (server `df9f5501`);
-  hide Add at `max_profiles` (server `451cba6c`).
-- **Profile menu:** drop Watchlist and Favorites (Android `136de70ad`, Apple `ddebb9fa`).
+  hide Add at `max_profiles` (server `451cba6c`); names wrap to two lines on Who's watching
+  (Android `34cef244f`, Apple `d0e87752`); `requests_allowed` toggle once the official TV editor
+  has one (server `91611b42`).
+- **Profile menu:** drop Watchlist and Favorites (Android `136de70ad`, Apple `ddebb9fa`). Order
+  History, Requests, Watch Party, divider, Settings, profile row, Change Account, Sign Out; the
+  profile row is Switch Profile / Add Profile / none by profile count and `max_profiles`
+  (Android `8b9b3f017`, Apple `3abeaf4f`); header server first, no header divider, red Sign Out
+  (Android `84ea05a6b`).
 - **Remember-profile offer:** new copy, "Ask Every Time" / "Remember", Back = Ask Every Time
   (Android `6b832ca73`).
 - **Card focus style:** one shared style, no glow, drop shadow, current-episode outline
@@ -43,21 +67,200 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
 - **Temporary password:** 403 `password_change_required` state on TV (Android `65664d7ce`,
   Apple `04807485`).
 - **Several accounts per server / Change Account:** large; plan as its own task (Android
-  `623bb3513`, Apple `54cf0f34`).
+  `623bb3513`, Apple `54cf0f34`). Includes Change Account at launch when two or more accounts
+  are saved (Android `ce24a6b5c`, Apple `8d9b2395`, Roku `4a22785`).
+- **Back from Switch Profile** returns to the previous profile and page without its PIN (Apple
+  `7bb8fe3d`); hold until Android `6091fb9e6` merges, then untick the parity-backlog line.
 - **Remove failed requests:** needs the contract bump (Android `4600d910c`, Apple `df891d2e`).
 - **Not doing: box sets.** The Silo developer said box sets reached the server by mistake and
   reversed the decision (2026-11-10), so Bale doesn't build them even though the clients shipped
   them (Android `67e6e224a`, Apple `08c28c8e`). Ignore later box-set commits unless that changes.
 - **Smaller:** device name in sign-in (`bd6ade492`), hero logo grace 700 ms (`e57fbf3f6`),
-  Calendar DIGITAL/PHYSICAL badges (`64ae5f08c`), Search clear button (`548e3cb77`), remote Stop
-  key (`969c0a812`), unplayable subtitle rows (`461240c6d`), return-from-player episode
-  (`e727c9af5`), declined device-code lead (`0548b9255`/`538e2e9a`), port error outline
-  (`d1837b92`).
+  Calendar DIGITAL/PHYSICAL badges (`64ae5f08c`, Apple `a82ff603`), Search clear button
+  (`548e3cb77`), remote Stop key (`969c0a812`), unplayable subtitle rows (`461240c6d`),
+  return-from-player episode (`e727c9af5`), declined device-code lead
+  (`0548b9255`/`538e2e9a`), port error outline (`d1837b92`), no Explore all on a playback row
+  that shows its whole list (`d1c36e7be`, Apple `8655b06b`), detail drawn from the opened card
+  (`62dc95035`), requests re-probe on foreground (`98d077170`), grouped title counts
+  (`b2b0fb565`, Apple `710169c9`).
 - **To check:** Continue Watching focus by series id (`45a869871`), episode rail centring
   (`d9dc3f3de`), Change Server forgetting a never-signed-in server (`0a387afa0`), hero action
-  memory on Up (Apple `067e6cee`, no Android match), Home rows after the server update.
+  memory on Up (Apple `067e6cee`, no Android match), Home rows after the server update; season
+  list re-read after playback (`b7cc29ec8`), stacked simultaneous text cues (`3afd7006f`,
+  Apple `3d4d7d1f`), series year ranges (Apple `9718f17b`), deleted active profile on Home
+  (Apple `b5c73e3a`), cancellable connect (Apple `2d7a4011`), subtitle carried across a
+  Version change (Apple `417508d9`), source-open start budget (Apple `b9446d5d`), top-bar menu
+  timing (Apple `933381d6`), focus after removing a card (Apple `dce56e3c`), sidecar subtitle
+  labels without file names (server `4ac66bd6`), version order after the server sort (server
+  `85d1c166`), Home rows for a quality-capped profile (server `0b579aa6`).
 
 ## Reviews
+
+### 2026-11-16
+
+The TV apps (and Roku) shipped a batch of cross-client owner decisions: Edition-scoped Auto,
+Specials first, the web's card overlays and sort list, and the count-based profile row. Each
+**act** was checked against Bale's source.
+
+#### silo-android (`48015d4ee3ba..f66681ed81e1`, 53 commits, 17 none)
+
+- `8b9b3f017` act: the profile row follows the account: Switch Profile with several profiles,
+  Add Profile with one and room for more (`max_profiles`), no row at a limit of one. Order is
+  History, Requests, Watch Party, divider, Settings, profile row, Change Account, Sign Out,
+  focus on History. Bale shows Switch Profile first and always, and Switch Server (ShellPage).
+- `84ea05a6b` act: menu header reads server first, then role/username; no divider under it;
+  Sign Out is destructive red at rest. Bale has subtitle then host, a divider and a plain
+  Sign Out (ShellPage).
+- `ce24a6b5c` act: with two or more saved accounts and Profile Selection asking, launch and
+  return-from-background open Change Account. Part of the several-accounts task.
+- `2d3620d50`, `cc4fd6662` act: poster overlays match the web: watch status top-right (check,
+  or episodes left), badges in three corners plus two edge rails, seven presets, uploaded badge
+  images, no 0.86 calibration on badge text. Bale draws the fixed Classic stack and a watched
+  check (BrowseViews, BrowseFeed).
+- `f65fe6917` act: watch progress is a keyline capsule (4dp, inset 10/8, black 55% outlined
+  track, `#EDEDED` fill) on media, episode and shelf cards. Bale has the flush white-20% track
+  (`SkylineProgressTrack`).
+- `466c31968` act: Edition picks the cut and Version Auto stays inside it; the page opens on
+  `last_edition_key`, then `last_file_id`; an Edition pick keeps Version on Auto. Bale's Edition
+  pick pins a file (PlaybackSelection, PlaybackEditions). deviation: display resolution
+  matching stays as the ranking inside the edition.
+- `4686d6dd8` act: the Version selector icon is Material VideoLibrary. Bale draws the clapper.
+- `a60dac2d0` act: sort lists mirror the web (up to 17 fields by library type, ratings split by
+  source, Rotten Tomatoes gated by `GET /api/v2/capabilities/ratings`), the Sort panel scrolls.
+  Bale has seven fixed options (LibraryBrowseModels).
+- `3632eda4e`, `5613b278e`, `064b8d0b7`, `c1371178b` act: the Show tab leaves the season row;
+  More › Show Series Info (after Shuffle) returns the hero to the series. Bale still has the
+  Show tab (DetailViews).
+- `69e39ad45` act: Specials first as season zero; the default season still prefers numbered
+  seasons. Bale sorts Specials last (DetailFeed).
+- `d1c36e7be` act: no Explore all on a Continue Watching / In Progress / Next Up row that holds
+  its whole list (`total_count` ≤ cards, fewer cards than min(20, `item_limit`)). Bale offers it
+  on every non-featured row with cards (BrowseModels).
+- `62dc95035` act: detail draws the opened card's title, facts and art on the first frame; Play
+  reads Loading until the fetch. Bale shows the skeleton.
+- `98d077170` act: the requests capability is re-probed on foreground, and open Requests screens
+  close when requests are off. Bale probes on shell load and menu open only.
+- `34cef244f` act: Who's watching names wrap to two lines (one in Manage). Bale trims to one.
+- `b2b0fb565` act: title counts group thousands. Bale prints them ungrouped (PersonModels).
+- `b7cc29ec8` check: after the player stops, the series page re-reads seasons as well as
+  episodes. Bale re-reads detail and episodes, not the season list.
+- `3afd7006f` check: simultaneous text cues stack. libass should already; confirm on the console.
+- Already matched: `40d34e6d9` server resume point after stop, `a4045779b` no local resume for
+  streams, `fe3d9c8af` `pcm_*` claimed, `d902e961b` season zero labelled Specials.
+- later: `69e142cd6` still-watching count resets on pause/seek (phase 5); `cc35bac84`
+  Left/Right seek on a focused skip pill; `d9983125f`, `c24555c70` every marker band above the
+  played fill in the TheIntroDB palette (phase 3); `e8c10f1db` end time ticks while paused,
+  `a09cd3e66` Space toggles pause; `a9c8fa4cf`, `73e55b96b` invitation claim; `376446317`,
+  `f66681ed8` audiobooks; `f410d220b` 13 more languages.
+
+#### silo-apple (`e792abdcb523..dce56e3c5f0a`, 83 commits, 39 none)
+
+Most tvOS changes have an Android TV twin, given in brackets. `6091fb9e6` and `df3b26177`
+exist only on unmerged Android branches.
+
+- `94a6095f`, `197b5c18` act: Edition-scoped Auto (Android `466c31968`); Auto ranks first parts
+  by resolution, HDR, then size, no bitrate. Bale's `select_version` (bale-core formatting)
+  takes `last_file_id` first and ranks across cuts by resolution, bitrate, size. deviation:
+  display matching stays inside the edition.
+- `c466777f` act: Specials first; the last special continues into S1E1 (Android `69e39ad45`).
+- `8655b06b` act: no Explore all on a whole Continue Watching row (Android `d1c36e7be`; tvOS
+  keeps it on Next Up, Android and Roku drop it there too).
+- `55da563c` act: the web's sort list with the ratings capability, scrolling Sort panel
+  (Android `a60dac2d0`). The endpoint is not in `scripts/generate-api.sh`.
+- `fe7aa020`, `4be5334f` act: web overlay layout from `user_state.watched_count` /
+  `unplayed_count`, Plate and Edge band presets, one overlay scale clamped 1.0–1.35 (Android
+  `2d3620d50`).
+- `1531620d` act: keyline progress bar, 4 pt on TV (Android `f65fe6917`).
+- `3abeaf4f` act: profile row by profile count and the new menu order (Android `8b9b3f017`).
+- `8d9b2395` act: Change Account wherever a profile choice is required with two or more
+  accounts (Android `ce24a6b5c`).
+- `7bb8fe3d` act: Back on the picker opened by Switch Profile reopens the same profile without
+  its PIN on the same page; the launch picker still exits (Android `6091fb9e6`, unmerged).
+  Bale's `Session.ShowProfilePicker` clears the profile and back stack, and the parity backlog
+  ticks "Back from Switch Profile exits". Hold until Android merges.
+- `d0e87752` act: two-line profile names (Android `34cef244f`).
+- `710169c9` act: grouped library, collection and person counts (Android `b2b0fb565`).
+- `a82ff603` act: Calendar DIGITAL/PHYSICAL badges (Android `64ae5f08c`, already open).
+- check: `9718f17b` series cards show "2019 – 2023" / "2021 – Present" (no Android match; Bale
+  shows one year); `b5c73e3a` profile list read without `X-Profile-Id`, 404 on Home after the
+  active profile is deleted returns to Who's watching; `2d7a4011` cancellable connect, Back
+  reads Cancel; `417508d9`, `e3a38bae` a subtitle pick follows to the new file's matching track
+  on a Version/Edition change (Bale and Android reset to Auto); `b9446d5d` the 45 s start budget
+  covers source opening (confirm a mount that never opens reaches the single replan);
+  `3d4d7d1f` stacked text cues (Android `3afd7006f`); `933381d6` top-bar menus open after
+  120 ms, Bale uses 180/80 ms (Android `df3b26177`, unmerged); `dce56e3c` focus after removing a
+  Continue Watching card.
+- Already matched: `4b2470ca` end time on the play bar, `1ed93647` "Version" and "Audio"
+  labels, `9df69eda` Sort opens on the current sort.
+- not doing: `026ac351` box sets in Search.
+- later: phase 5 `1fb21c50` still-watching prompt (`player.passout_threshold`, default 3),
+  `fc86b201` Up Next pill closes the player, `08ff656f` an early-stopping stream is not marked
+  watched and Keep Watching remounts where it stopped; phase 3 `e11c5aa8`, `feb2682f`,
+  `9ff49dca`, `5569b192`, `0de9be23`, `034d173e` skip pills, marker bands, scrub end; phase 4
+  `b4f69c11` badges follow the selected audio and replanned file, `d5098c2b` stats grouped as
+  Playback / Stream / Engine; `93488d3e` unplaced text subtitles in Fill; `1d4b6248`
+  translation polling; `9b8b3528` remote-control profile hand-over; `c85526df`, `8ba9c514`,
+  `e0337595` audiobooks.
+
+#### silo-server (`5159df6dcf52..92ee051878c2`, 347 commits, 318 none)
+
+The v3 capability rules Bale relies on (platform-attested entries, `progressive_range_refusal_v1`,
+`embedded_bitmap`, `client_managed_dynamic_range_v1`, `client_dv7_to_hdr10`,
+`client_video_transformations_v1`, `seek_reanchor`) are unchanged: the planner was only split
+into files (`1ba89ab3`, `19088564`, `2e142f0f`), and the public playback routes changed in
+descriptions only. No act items.
+
+- `91611b42` regenerate and check: profiles gain `requests_allowed`, `listProfiles` gains
+  `requests_allowed_supported`; a blocked profile gets `allowed: false` and 403 from discovery.
+  Bale already gates Requests on `Allowed`. later: the editor toggle.
+- `2c757832`, `ceaa1bc4` regenerate and check: cards, detail and seasons gain `availability`
+  and `authors` (the poster badge is web-only so far).
+- `8aae0261` regenerate and check: `VideoTrack.frame_color_range`. Not used by Bale's tone
+  mapping.
+- `4a0aba61` regenerate and check: title keys on Discover rows and recipe presets (later).
+- `7bb66f9a` check: `/api/v1` answers 410 `client_upgrade_required` except health/ready, which
+  is Bale's only v1 call.
+- `4ac66bd6`, `a4e2ed2a` check on the console: file paths and names go only to admins and
+  curators; other viewers get external subtitles labelled by title or numbered language.
+- `85d1c166` check: `versions` now come in `sortFileVersions` order; Bale keeps server order.
+- `0b579aa6`, `d8fe8eea`, `a672677a`, `588d0497`, `29445555`, `47b52e84` check on the console:
+  episodes above a profile's quality ceiling are hidden from season lists and Home rows; Next
+  Up stays full after dismissals; smart collection rows keep their limit; Because You Watched
+  is per library.
+- `7115ee70`, `3864d627`, `e12193d6` check: embedded subtitle windows wait at most 10 s for the
+  index; demuxes are capped at four, a refusal answers 503 with `Retry-After`. Bale's fetches
+  retry 503.
+- `8dae40e6` check: a paused session frees its stream slot after two minutes without progress.
+  Bale reports every 10 s while paused.
+- `aa827602` check: the web player reanchors a dropped progressive remux, as Bale already does.
+- later: `playback.copy_keyframe_playlist` (experimental, off) serves copy-remux fMP4 HLS as one
+  VOD playlist from Matroska Cues (`186c24a2`, `0387303d`, `ac54052c`, `6bd11d96`; check Bale's
+  HLS seek windows if it is turned on); plan `st` authorizes media for Cast (`6e78f5f1`); a
+  replan keeps a stored subtitle by ID (`5d57326b`); font bundles serve what fits 32 MiB
+  (`8f2611d3`); single-field validation errors name the field (`d7d6d970`).
+
+#### silo-roku (`4b9b36f64601..e09a5e0a3efe`, 22 commits, 11 none)
+
+Roku is not a reference for Bale's look, but its docs record cross-client owner decisions.
+
+- `7bb02a9` act: Edition selector, Version Auto stays within the edition (the cross-client
+  rule; Android `466c31968`).
+- `a41d106` act: Specials first as season zero, owner decision 2026-11-15 for every client
+  (Android `69e39ad45`).
+- `cfda7be` act: no Explore all on a Continue Watching / Next Up row that shows its whole list,
+  owner request 2026-11-13 for every client (Android `d1c36e7be`).
+- `431c1f1` act: Switch Profile / Add Profile by profile count, saved with the profile list
+  (Android `8b9b3f017`).
+- `4a22785` act: Change Account at launch with several accounts (Android `ce24a6b5c`).
+- Already matched or covered: `3e0a7d6` Version / Audio labels, `b5fe42b` Show Series Info
+  (Android `3632eda4e`), `fdcd5db` inset progress capsule (Android `f65fe6917`),
+  `d4303e5` web sort list (Android `a60dac2d0`), `ed824d3` grouped counts (Android `b2b0fb565`).
+- later: `f5078a0` an early end (more than 8 s and 1.5% short of `source.duration_seconds`)
+  resumes where the stream stopped instead of replaying the end (phase 5, as Apple
+  `08ff656f`); `53aaa78` Up Next Back pill leaves the player (Apple `fc86b201`); `42249ca`
+  marker bands in the shared palette (phase 3).
+- Idea for constrained devices: `fdcd5db` draws the capsule from 9-patch art at two
+  resolutions instead of per-card shapes.
 
 ### 2026-11-10: backlog since each clone
 
