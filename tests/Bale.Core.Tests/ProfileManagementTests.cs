@@ -242,4 +242,21 @@ public class ProfileManagementTests
         Assert.False(session.IsActive);
         Assert.Equal(1, calls);
     }
+
+    [Fact]
+    public async Task ATemporaryPasswordSaysWhereToChangeIt()
+    {
+        // TvProfilePasswordChangeTest.kt: the 403 password_change_required problem, in v2's problem shape
+        // (internal/apiv2 renders the middleware's refusal so), and the max_profiles a list carries.
+        var problem = new StubHandler().Enqueue(HttpStatusCode.Forbidden,
+            """{"type":"https://siloserver.org/docs/api/v2/problems/password_change_required","title":"Password change required","status":403}""");
+        var error = await Assert.ThrowsAnyAsync<Exception>(() => Create(problem).Profiles.ListAsync());
+        Assert.True(ProfileRepository.IsPasswordChangeRequired(error));
+        Assert.Equal(ProfileRepository.PasswordChangeRequiredMessage, ProfileRepository.ErrorMessage(error, "fallback"));
+        Assert.False(ProfileRepository.IsPasswordChangeRequired(new Problem { Type = "https://siloserver.org/docs/api/v2/problems/forbidden" }));
+
+        var listed = Create(new StubHandler().Enqueue("""{"items":[{"id":"a"}],"max_profiles":1}""")).Profiles;
+        Assert.Single(await listed.ListAsync());
+        Assert.Equal(1, listed.MaxProfiles);
+    }
 }

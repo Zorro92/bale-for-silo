@@ -88,9 +88,28 @@ public sealed class ProfileRepository : IProfileRepository
         config.Options.Add(new RetryHandlerOption { MaxRetry = 0 });
     }
 
+    /// <summary>
+    /// TvProfileSelectionViewModel.kt (65664d7ce): the TV has no form for a temporary password, so it
+    /// says where to change it.
+    /// </summary>
+    public const string PasswordChangeRequiredMessage =
+        "Your password needs to be reset. Use the Silo mobile app or website to set a new one, then come back.";
+
+    /// <summary>
+    /// The server's 403 <c>password_change_required</c>: the account holds a temporary password, and
+    /// until it changes every route but the account read, the password change and sign-out refuses.
+    /// </summary>
+    public static bool IsPasswordChangeRequired(Exception error) => error switch
+    {
+        Problem { Type: { } type } => type.EndsWith("/password_change_required", StringComparison.Ordinal),
+        ApiException { ResponseStatusCode: 403 } api => api.Message.Contains("password_change_required", StringComparison.Ordinal),
+        _ => false,
+    };
+
     public static string ErrorMessage(Exception error, string fallback) => error switch
     {
         HttpRequestException => "Network error. Please try again.",
+        _ when IsPasswordChangeRequired(error) => PasswordChangeRequiredMessage,
         Problem { Detail: { Length: > 0 } detail } => detail,
         Problem { Title: { Length: > 0 } title } => title,
         _ => string.IsNullOrWhiteSpace(error.Message) ? fallback : error.Message,

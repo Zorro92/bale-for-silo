@@ -64,8 +64,9 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
 - ~~**More Like This chain:**~~ done 2026-11-16, not yet on the console: the first pick pushes,
   later picks replace, picking the start title goes back, a repeat pick of the title on screen
   opens nothing (Android `238134a1b`, Apple `fd40ce61`).
-- **Temporary password:** 403 `password_change_required` state on TV (Android `65664d7ce`,
-  Apple `04807485`).
+- ~~**Temporary password:**~~ done 2026-11-16: Who's watching (and any screen using
+  `ProfileRepository.ErrorMessage`) says where to change it on 403 `password_change_required`
+  (Android `65664d7ce`, Apple `04807485`). Not checked: focus on Sign out.
 - **Several accounts per server / Change Account:** large; plan as its own task (Android
   `623bb3513`, Apple `54cf0f34`). Includes Change Account at launch when two or more accounts
   are saved (Android `ce24a6b5c`, Apple `8d9b2395`, Roku `4a22785`).

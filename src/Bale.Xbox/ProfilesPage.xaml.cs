@@ -171,7 +171,9 @@ public sealed partial class ProfilesPage : Page, IBackHandler, IRestoresFocus
             if (IsCurrent && !loading.IsCancellationRequested && ReferenceEquals(_household, household))
             {
                 // TvProfileSelectionViewModel.kt: network failures use this copy; API errors keep their message.
+                // A temporary password says where to change it (65664d7ce).
                 ShowError(ex is HttpRequestException ? "Network error. Please try again."
+                    : ProfileRepository.IsPasswordChangeRequired(ex) ? ProfileRepository.PasswordChangeRequiredMessage
                     : string.IsNullOrWhiteSpace(ex.Message) ? "Failed to load profiles" : ex.Message);
             }
         }
