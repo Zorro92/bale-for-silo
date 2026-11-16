@@ -110,6 +110,9 @@ public class DebugFfmpegPlaybackTests
         Assert.Contains("ffmpeg.PlaybackSession = sender.PlaybackSession", source);
         Assert.Contains("packaged.AudioStreams.Select(stream => stream.StreamIndex)", source);
         Assert.Contains("PlaybackRoutePolicy.AudioTrackIndex(media.Route.AudioOrdinal, streams, expectedCount", source);
+        // Silo packages carry at most one audio stream on every packaged delivery, HLS included.
+        Assert.Contains("int? expectedCount = catalogCount > 0 ? 1 : null;", source);
+        Assert.DoesNotContain("Delivery == \"server_remux_progressive\") expectedCount", source);
         Assert.Contains("media.Item.AudioTracks.SelectedIndex = index", source);
         Assert.True(source.IndexOf("AudioTracks.SelectedIndex = index", StringComparison.Ordinal) < source.IndexOf("sender.Play()", StringComparison.Ordinal));
         Assert.True(source.IndexOf("SelectOriginalAudioTrack(attempt, media, attempt.Plan.SelectedTracks?.Audio?.Index)", StringComparison.Ordinal)

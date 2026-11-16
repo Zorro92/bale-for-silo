@@ -435,8 +435,10 @@ public sealed partial class PlayerPage
                 if (media.Item!.AudioTracks.Count != streams.Length)
                     throw new InvalidDataException("The planned audio tracks could not be mapped.");
                 var fileId = attempt.Plan?.Source?.MediaFileId ?? attempt.Start?.FileId;
-                var expectedCount = attempt.Request.Detail.Versions.FirstOrDefault(version => version.FileId == fileId)?.AudioTracks?.Count;
-                if (attempt.Plan?.Delivery == "server_remux_progressive") expectedCount = 1;
+                var catalogCount = attempt.Request.Detail.Versions.FirstOrDefault(version => version.FileId == fileId)?.AudioTracks?.Count;
+                // Every Silo package (progressive remux, HLS remux or transcode) maps at most one audio
+                // stream (remux.go / transcode.go: -map 0:a:N?), so the original's track count never applies.
+                int? expectedCount = catalogCount > 0 ? 1 : null;
                 // FFmpeg may omit an undecodable stream. Do not let that shift Silo's audio ordinals.
                 var index = PlaybackRoutePolicy.AudioTrackIndex(media.Route.AudioOrdinal, streams, expectedCount is > 0 ? expectedCount : null);
                 if (index >= 0) media.Item.AudioTracks.SelectedIndex = index;
