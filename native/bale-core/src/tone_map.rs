@@ -119,8 +119,10 @@ pub fn can_manage(version: &FileVersion, device: &DeviceCapabilities) -> bool {
 /// Deliveries whose video is the source's own, never re-encoded: the original file, or the server's
 /// forward-only remux (a stream copy). Silo only remuxes HDR for an SDR output when it doesn't know
 /// the source is HDR (packaged deliveries stay output-gated), e.g. HLG in a container tagged SDR, so
-/// the console must map those itself. The HLS remux plays through Windows' own source and can't.
+/// the console must map those itself. The HLS remux counts only when FFmpeg plays it (the Rust HLS
+/// reader); Windows' own HLS source can't take the tone map.
 const COPIED_VIDEO_DELIVERIES: [&str; 2] = ["original_http", "server_remux_progressive"];
+const HLS_REMUX: &str = "server_remux_hls";
 
 /// Protects even unexpected HDR video the server did not re-encode; never lets it reach an SDR
 /// display unmapped.
@@ -128,12 +130,13 @@ pub fn requires_tone_map(
     plan: &PlaybackPlan,
     sdr_output: bool,
     versions: Option<&[FileVersion]>,
+    hls_through_ffmpeg: bool,
 ) -> bool {
-    if !sdr_output
-        || !COPIED_VIDEO_DELIVERIES
-            .iter()
-            .any(|delivery| eq_ignore_case(plan.delivery.as_deref(), delivery))
-    {
+    let copied = COPIED_VIDEO_DELIVERIES
+        .iter()
+        .any(|delivery| eq_ignore_case(plan.delivery.as_deref(), delivery))
+        || hls_through_ffmpeg && eq_ignore_case(plan.delivery.as_deref(), HLS_REMUX);
+    if !sdr_output || !copied {
         return false;
     }
     let source = plan.source.as_ref();

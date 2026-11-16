@@ -128,6 +128,8 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         plan: PlaybackPlan,
         sdr_output: bool,
         versions: Option<Vec<FileVersion>>,
+        #[serde(default)]
+        hls_through_ffmpeg: bool,
     }
     #[derive(Deserialize)]
     struct BaseLayer {
@@ -280,7 +282,12 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
             tone_map::can_manage(&a.version, &a.device)
         }),
         "tone_map.requires_tone_map" => with_json(name, input, |a: ToneMap| {
-            tone_map::requires_tone_map(&a.plan, a.sdr_output, a.versions.as_deref())
+            tone_map::requires_tone_map(
+                &a.plan,
+                a.sdr_output,
+                a.versions.as_deref(),
+                a.hls_through_ffmpeg,
+            )
         }),
         "dolby_vision7.requires_base_layer" => with_json(name, input, |a: Plan| {
             dolby_vision7::requires_base_layer(&a.plan)

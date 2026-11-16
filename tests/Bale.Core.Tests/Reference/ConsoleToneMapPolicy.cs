@@ -63,11 +63,14 @@ internal static class ConsoleToneMapPolicy
     }
 
     /// <summary>Protect even unexpected HDR originals; never let the native container source present them on SDR.</summary>
-    public static bool RequiresToneMap(PlaybackPlan plan, bool sdrOutput, IReadOnlyList<FileVersion>? versions = null)
+    public static bool RequiresToneMap(PlaybackPlan plan, bool sdrOutput, IReadOnlyList<FileVersion>? versions = null,
+        bool hlsThroughFfmpeg = false)
     {
-        // The original file or the forward-only remux (a stream copy): video the server never re-encoded.
+        // The original file or a remux (a stream copy): video the server never re-encoded. The HLS remux
+        // only when FFmpeg plays it.
         if (!sdrOutput || !(string.Equals(plan.Delivery, "original_http", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(plan.Delivery, "server_remux_progressive", StringComparison.OrdinalIgnoreCase))) return false;
+            || string.Equals(plan.Delivery, "server_remux_progressive", StringComparison.OrdinalIgnoreCase)
+            || hlsThroughFfmpeg && string.Equals(plan.Delivery, "server_remux_hls", StringComparison.OrdinalIgnoreCase))) return false;
         // The existing DV 8.2 fallback explicitly promises an SDR base layer, not HDR pixels.
         if (string.Equals(plan.DecisionReason, PlaybackProtocol.ClientDolbyVision8BaseLayerReason, StringComparison.OrdinalIgnoreCase)
             && plan.Source?.DolbyVisionProfile == 8 && plan.Source.DvBlCompatId == 2

@@ -35,11 +35,14 @@ public static class ConsoleToneMapPolicy
     /// Protect even unexpected HDR video the server did not re-encode (the original file or the forward-only
     /// remux); never let it reach an SDR display unmapped.
     /// </summary>
-    public static bool RequiresToneMap(PlaybackPlan plan, bool sdrOutput, IReadOnlyList<FileVersion>? versions = null) =>
+    /// <param name="hlsThroughFfmpeg">The HLS remux plays through the Rust reader and FFmpeg, so it can be mapped too.</param>
+    public static bool RequiresToneMap(PlaybackPlan plan, bool sdrOutput, IReadOnlyList<FileVersion>? versions = null,
+        bool hlsThroughFfmpeg = false) =>
         BaleCoreNative.Call("tone_map.requires_tone_map", writer =>
         {
             writer.Server("plan", plan);
             writer.WriteBoolean("sdr_output", sdrOutput);
             writer.Server("versions", versions);
+            writer.WriteBoolean("hls_through_ffmpeg", hlsThroughFfmpeg);
         }, BaleCoreJson.Default.Boolean);
 }

@@ -98,6 +98,26 @@ public sealed class WideGamutSdrPlaybackTests
         Assert.False(PlaybackRoutePolicy.Decide(plan, false, sdrOutput: false, versions: [Version()]).ConsoleToneMap);
     }
 
+    /// <summary>The HLS remux copies the video too, but only FFmpeg (the Rust HLS reader) can map it.</summary>
+    [Fact]
+    public void AnHlsRemuxIsMappedOnlyThroughFfmpeg()
+    {
+        var plan = Plan();
+        plan.Delivery = "server_remux_hls";
+        var native = PlaybackRoutePolicy.Decide(plan, true, sdrOutput: true, versions: [Version()]);
+        Assert.False(native.UseFfmpeg);
+        Assert.False(native.ConsoleToneMap);
+        var ffmpeg = PlaybackRoutePolicy.Decide(plan, true, sdrOutput: true, versions: [Version()], hlsThroughFfmpeg: true);
+        Assert.True(ffmpeg.UseFfmpeg);
+        Assert.True(ffmpeg.ConsoleToneMap);
+        Assert.Equal(0, ffmpeg.AudioOrdinal);
+        // A server transcode is re-encoded: FFmpeg plays it, the server already mapped it.
+        plan.Delivery = "server_transcode_hls";
+        var transcode = PlaybackRoutePolicy.Decide(plan, true, sdrOutput: true, versions: [Version()], hlsThroughFfmpeg: true);
+        Assert.True(transcode.UseFfmpeg);
+        Assert.False(transcode.ConsoleToneMap);
+    }
+
     [Fact]
     public void ExecutorOnlyRuleDoesNotExpandTheServerRangeClaim()
     {

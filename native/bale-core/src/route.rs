@@ -23,6 +23,9 @@ pub struct DecideArgs {
     force_ffmpeg: bool,
     sdr_output: bool,
     versions: Option<Vec<FileVersion>>,
+    /// HLS plays through the Rust reader and FFmpeg's forward-only input instead of Windows' source.
+    #[serde(default)]
+    hls_through_ffmpeg: bool,
 }
 
 /// `PlaybackRouteDecision`.
@@ -73,7 +76,17 @@ pub fn decide(args: DecideArgs) -> RouteDecision {
     };
     let width = size(source.and_then(|s| s.width), recipe.and_then(|r| r.width));
     let height = size(source.and_then(|s| s.height), recipe.and_then(|r| r.height));
-    let ordinal = if delivery == Some(PROGRESSIVE_DELIVERY) {
+    let hls = args.is_hls
+        || eq_ignore_case(
+            plan.stream.as_ref().and_then(|s| s.protocol.as_deref()),
+            "hls",
+        )
+        || delivery == Some("hls")
+        || delivery.is_some_and(|d| d.ends_with("_hls"));
+    // HLS through FFmpeg: Silo's one rendition, as a forward-only stream like the progressive remux.
+    let hls_ffmpeg = hls && args.hls_through_ffmpeg;
+    // Both forward-only outputs carry only the selected audio stream.
+    let ordinal = if delivery == Some(PROGRESSIVE_DELIVERY) || hls_ffmpeg {
         Some(0)
     } else {
         plan.selected_tracks
@@ -84,14 +97,7 @@ pub fn decide(args: DecideArgs) -> RouteDecision {
     let direct = matches!(
         delivery,
         Some("original_http" | "progressive" | PROGRESSIVE_DELIVERY)
-    );
-    let hls = args.is_hls
-        || eq_ignore_case(
-            plan.stream.as_ref().and_then(|s| s.protocol.as_deref()),
-            "hls",
-        )
-        || delivery == Some("hls")
-        || delivery.is_some_and(|d| d.ends_with("_hls"));
+    ) || hls_ffmpeg;
     let video = video.as_deref();
     let audio_ref = audio.as_deref();
     let software_video =
@@ -118,14 +124,16 @@ pub fn decide(args: DecideArgs) -> RouteDecision {
                 plan.decision_reason.as_deref(),
                 DOLBY_VISION8_BASE_LAYER_REASON,
             );
-    let tone_map = tone_map::requires_tone_map(plan, args.sdr_output, args.versions.as_deref());
+    let tone_map =
+        tone_map::requires_tone_map(plan, args.sdr_output, args.versions.as_deref(), hls_ffmpeg);
     // A forward-only progressive remux has no length or ranges for Windows' own sources: it always
     // takes FFmpeg's non-seekable input (PlaybackProgressive), with the system decoder.
     let progressive = delivery == Some(PROGRESSIVE_DELIVERY);
     let ffmpeg = args.ffmpeg_enabled
         && direct
-        && !hls
+        && (!hls || hls_ffmpeg)
         && (progressive
+            || hls_ffmpeg
             || software_video
             || software_audio
             || matroska

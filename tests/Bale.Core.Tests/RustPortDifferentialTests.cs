@@ -20,7 +20,7 @@ public class RustPortDifferentialTests
     private static readonly string?[] AudioCodecs =
         [null, "", "aac", "ac3", "eac3", "E-AC-3", "dts", "truehd", "MLP FBA", "pcm_s24le", "PCM_BLURAY", "flac", "mp3", "opus", "mp2"];
     private static readonly string?[] Deliveries =
-        [null, "", "original_http", "ORIGINAL_HTTP", "progressive", "server_remux_progressive", "hls", "server_transcode_hls", "remux_hls", "other"];
+        [null, "", "original_http", "ORIGINAL_HTTP", "progressive", "server_remux_progressive", "hls", "server_transcode_hls", "server_remux_hls", "SERVER_REMUX_HLS", "remux_hls", "other"];
     private static readonly string?[] Protocols = [null, "hls", "HLS", "http"];
     private static readonly string?[] Containers = [null, "", "mkv", " MKV ", "webm", "mp4", "avi", " AVI", "matroska,webm", "mka", "ts"];
     private static readonly string?[] Ranges = [null, "", "sdr", "SDR", " sdr ", "hdr10", "HDR10", " hdr10", "hlg", "dv", "hdr10_plus"];
@@ -55,10 +55,11 @@ public class RustPortDifferentialTests
             var plan = Plan(random);
             var versions = random.Next(4) == 0 ? null : Enumerable.Range(0, random.Next(4)).Select(_ => Version(random)).ToList();
             var (isHls, ffmpeg, force, sdr) = (random.Next(5) == 0, random.Next(6) != 0, random.Next(8) == 0, random.Next(2) == 0);
-            Assert.Equal(Reference.PlaybackRoutePolicy.Decide(plan, isHls, ffmpeg, force, sdr, versions),
-                PlaybackRoutePolicy.Decide(plan, isHls, ffmpeg, force, sdr, versions));
-            Assert.Equal(Reference.ConsoleToneMapPolicy.RequiresToneMap(plan, sdr, versions),
-                ConsoleToneMapPolicy.RequiresToneMap(plan, sdr, versions));
+            var hlsFfmpeg = random.Next(2) == 0;
+            Assert.Equal(Reference.PlaybackRoutePolicy.Decide(plan, isHls, ffmpeg, force, sdr, versions, hlsFfmpeg),
+                PlaybackRoutePolicy.Decide(plan, isHls, ffmpeg, force, sdr, versions, hlsFfmpeg));
+            Assert.Equal(Reference.ConsoleToneMapPolicy.RequiresToneMap(plan, sdr, versions, hlsFfmpeg),
+                ConsoleToneMapPolicy.RequiresToneMap(plan, sdr, versions, hlsFfmpeg));
             Assert.Equal(Reference.DisplayHdrPolicy.RequiresHdr10(plan), DisplayHdrPolicy.RequiresHdr10(plan));
             Assert.Equal(Reference.DolbyVision7Policy.RequiresBaseLayer(plan), DolbyVision7Policy.RequiresBaseLayer(plan));
             Assert.Equal(Outcome(() => Reference.DolbyVision7Policy.ValidatePlan(plan)),

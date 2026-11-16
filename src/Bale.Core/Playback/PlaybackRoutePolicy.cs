@@ -12,14 +12,15 @@ public sealed record PlaybackRouteDecision(bool UseFfmpeg, bool SoftwareVideo, s
 }
 
 /// <summary>
-/// Pure per-mount policy. HLS never leaves AdaptiveMediaSource. Implemented in Rust
-/// (native/bale-core/src/route.rs).
+/// Pure per-mount policy. HLS stays on AdaptiveMediaSource unless it plays through the Rust HLS reader
+/// and FFmpeg. Implemented in Rust (native/bale-core/src/route.rs).
 /// </summary>
 public static class PlaybackRoutePolicy
 {
     /// <param name="forceFfmpeg">Debug A/B only: demux every direct mount with FFmpeg, keeping system video decode.</param>
+    /// <param name="hlsThroughFfmpeg">HLS plays through the Rust reader's forward-only stream and FFmpeg.</param>
     public static PlaybackRouteDecision Decide(PlaybackPlan plan, bool isHls, bool ffmpegEnabled = true, bool forceFfmpeg = false,
-        bool sdrOutput = false, IReadOnlyList<FileVersion>? versions = null) =>
+        bool sdrOutput = false, IReadOnlyList<FileVersion>? versions = null, bool hlsThroughFfmpeg = false) =>
         BaleCoreNative.Call("route.decide", writer =>
         {
             writer.Server("plan", plan);
@@ -28,6 +29,7 @@ public static class PlaybackRoutePolicy
             writer.WriteBoolean("force_ffmpeg", forceFfmpeg);
             writer.WriteBoolean("sdr_output", sdrOutput);
             writer.Server("versions", versions);
+            writer.WriteBoolean("hls_through_ffmpeg", hlsThroughFfmpeg);
         }, BaleCoreJson.Default.PlaybackRouteDecision);
 
     /// <summary>MKV and WebM (Matroska-based); MP4 stays on Windows' own source.</summary>
