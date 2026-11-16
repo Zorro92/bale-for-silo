@@ -191,6 +191,13 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    Debug switch: `bale-debug.sh stream-adapter rust` opens the Rust range stream and hands Media
    Foundation or FFmpegInteropX the Rust stream; default stays `pooled` (C#).
 
+   First console run (0.1.538, 4K HEVC original, 25 s, same position, alternating): the Rust stream
+   played, but with 24–34 stream waits totalling 9–10 s against C#'s 3 waits and 1–1.6 s, and a per-fetch
+   rate of ~15 Mbps against 136–159. Cause: block fetches stopped reading at the last expected byte, so
+   ureq never saw the body end and closed the connection instead of pooling it; every block paid a new
+   TCP + TLS handshake and slow start (loopback test: 11 connections for 10 blocks). Fixed by reading to
+   the end of each response; `BlockFetchesReuseConnections` guards it.
+
 ### Stays in C#
 
 - The XAML app (`src/Bale.Xbox`) and anything that drives XAML objects.

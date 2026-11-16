@@ -368,6 +368,17 @@ impl Shared {
                 Err(error) => break Err(error),
             }
         };
+        // Read to the end of the response. ureq returns a connection to its pool only once a body
+        // reports its end; stopping at the last expected byte closed it, so every block paid a new
+        // TCP + TLS handshake and slow start (console: ~10x slower blocks, many more stream waits).
+        let outcome = outcome.and_then(|()| {
+            let mut end = [0u8; 1];
+            match body.read(&mut end) {
+                Ok(0) => Ok(()),
+                Ok(_) => Err(StreamError::InvalidRange),
+                Err(_) => Err(StreamError::Network),
+            }
+        });
         match outcome {
             Ok(()) => Ok(Arc::new(data)),
             Err(error) => {

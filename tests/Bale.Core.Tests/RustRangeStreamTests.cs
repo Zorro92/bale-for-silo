@@ -104,6 +104,25 @@ public sealed class RustRangeStreamTests
         Assert.True(rust.PrefetchHits > blocks / 2, $"Rust prefetch hits {rust.PrefetchHits}");
     }
 
+    /// <summary>
+    /// Block fetches must reuse pooled connections. On the console a fresh connection per block (TCP and
+    /// TLS handshakes, then slow start) cut Rust's per-block rate ~10x and multiplied stream waits.
+    /// </summary>
+    [Fact]
+    public async Task BlockFetchesReuseConnections()
+    {
+        using var server = new LoopbackMediaServer(Payload);
+        using var client = Client(server);
+        await using (var rust = await client.Playback.OpenMedia(Plan()).OpenNativeStreamAsync(default))
+        {
+            var buffer = new byte[64 * 1024];
+            while (rust.Read(buffer, 0, buffer.Length) > 0) { }
+            Assert.Equal(10, rust.BlockFetches);
+        }
+        // The open-ended probe's connection closes unread; the three workers then keep theirs.
+        Assert.InRange(server.Connections, 1, 5);
+    }
+
     [Fact]
     public async Task AServerWithoutRangesGetsTheSequentialReader()
     {
@@ -204,6 +223,9 @@ public sealed class RustRangeStreamTests
         /// <summary>Faults for the next ranged request starting at an offset, in order.</summary>
         public ConcurrentQueue<(long Start, Fault Fault)> Faults { get; } = new();
         public ConcurrentQueue<KeyValuePair<string, string>> Headers { get; } = new();
+        private int _connections;
+        /// <summary>TCP connections accepted so far.</summary>
+        public int Connections => Volatile.Read(ref _connections);
 
         private async Task AcceptAsync()
         {
@@ -212,6 +234,7 @@ public sealed class RustRangeStreamTests
                 while (!_stop.IsCancellationRequested)
                 {
                     var socket = await _listener.AcceptTcpClientAsync(_stop.Token);
+                    Interlocked.Increment(ref _connections);
                     _ = ServeAsync(socket);
                 }
             }
