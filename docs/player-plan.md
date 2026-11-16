@@ -102,8 +102,8 @@ Current production capability claims (`ConsoleEvidence.ForHardware` over the dec
 | FFmpeg fallback audio | `dts`, `dts_hd`, `truehd`, `flac`, `opus`, `vorbis`, `alac`, `mp2`, LPCM (`pcm` and each ffprobe spelling: `pcm_s16le/be`, `pcm_s24le/be`, `pcm_s32le/be`, `pcm_f32le/be`, `pcm_f64le/be`, `pcm_u8`, `pcm_bluray`, `pcm_dvd`) | Decode to PCM, not passthrough. silo-server matches audio claims to the stored ffprobe name exactly, so LPCM needs each spelling. LPCM/MP2 in MP4 take the FFmpeg route too (Windows' MP4 source is unverified with them); HLS never claims them (the server converts HLS audio outside AAC/AC-3/E-AC-3/MP3). Real-library console verification pending |
 | Audio passthrough | None | Receiver verification pending |
 | Display HDR | Runtime HDMI detection, HDR10 only | Exact evidence after a successful read; unknown/empty HDR on failure |
-| HLS | Through FFmpeg (default since 2026-11-16): the original's video codecs except AV1 (H.264, HEVC, VP9, VC-1, MPEG-2, MPEG-4 Part 2); system audio | The Rust HLS reader feeds FFmpeg, like the progressive remux. Silo copies any other codec into fMP4 segments (Bale never asks for MPEG-TS). AV1 waits for the owner's GPU decoder. Windows' HLS (`hls-engine native`, a refused playlist, `ffmpeg off`) narrows the claim to H.264/HEVC. VP9/VC-1/MPEG-2/MPEG-4 packages not yet console-verified |
-| Progressive remux | `mp4` only; the original's video codecs (since 2026-11-16: also VP9, VC-1, MPEG-2, MPEG-4 Part 2, not yet console-verified); AAC, AC-3, E-AC-3, MP3, FLAC, Opus, ALAC; `progressive_range_refusal_v1` | Forward-only fMP4 through FFmpeg's non-seekable input; every seek reanchors. TrueHD/DTS/PCM are converted to AAC by the server. Verified on the console (0.1.518), subtitles included |
+| HLS | Through FFmpeg (default since 2026-11-16): the original's video codecs except AV1 (H.264, HEVC, VP9, VC-1, MPEG-2, MPEG-4 Part 2); system audio | The Rust HLS reader feeds FFmpeg, like the progressive remux. Silo copies any other codec into fMP4 segments (Bale never asks for MPEG-TS). AV1 waits for the owner's GPU decoder. Windows' HLS (`hls-engine native`, a refused playlist, `ffmpeg off`) narrows the claim to H.264/HEVC. Console-verified on 0.1.554 (VP9 4K, MPEG-2 480p and MPEG-4 480p HLS remuxes; VC-1 HLS was transcoded by the server's bandwidth rule, so its HLS remux is unverified) |
+| Progressive remux | `mp4` only; the original's video codecs (since 2026-11-16: also VP9, VC-1, MPEG-2, MPEG-4 Part 2, each console-verified on 0.1.554); AAC, AC-3, E-AC-3, MP3, FLAC, Opus, ALAC; `progressive_range_refusal_v1` | Forward-only fMP4 through FFmpeg's non-seekable input; every seek reanchors. TrueHD/DTS/PCM are converted to AAC by the server. Verified on the console (0.1.518), subtitles included |
 | Subtitles | Own overlay: text sidecars (ASS/SSA, SubRip, WebVTT); PGS/DVD/DVB images from direct MKV; lossless PGS `.sup` windows on HLS/progressive | Original keeps `native_embedded` (`embedded_subtitles_v1`). Packaged deliveries claim `embedded_bitmap` for server-extracted PGS; DVD/DVB still require burn-in there. Console verification of image tracks pending |
 
 `PlaybackRoutePolicy.Decide` selects the pipeline separately for every mount. `original_http`
@@ -1841,7 +1841,16 @@ HLS keeps everything progressive can't do: video transcodes
 (codec, HDR tone mapping, bitrate or quality caps), the server's DV7→DV8.1 conversion (HLS only),
 burn-in subtitles, `remux_execution=worker_only` servers, and every replan after a progressive
 mount failed. Since 2026-11-16 (owner) VP9/VC-1/MPEG-2 and MPEG-4 Part 2 are claimed on both
-packages too: FFmpeg reads them as it reads the originals.
+packages too: FFmpeg reads them as it reads the originals. Console check on 0.1.554 (2026-11-16,
+forced delivery, start at 600 s, a seek to 1200 s, screenshot): every package played with a clean
+picture, VP9/VC-1/MPEG-2 on the system decoder (FFmpeg demuxer), MPEG-4 Part 2 in FFmpeg software.
+
+| Source | Progressive remux | HLS |
+|---|---|---|
+| VP9 4K SDR | remux, playing 5.9 s, seek 2.8 s | remux, playing 6.6 s, seek 3.5 s |
+| VC-1 1080p | remux, playing 5.6 s, seek 2.4 s | server transcode to HEVC (`quality_bandwidth_limit`, not a codec refusal) |
+| MPEG-2 480p | remux, playing 4.4 s, seek 1.9 s | remux, playing 4.7 s, seek 2.5 s |
+| MPEG-4 Part 2 480p (AVI) | remux, playing 5.7 s, seek 1.6 s | remux, playing 4.6 s, seek 2.2 s |
 
 **Claims.** `deliveries.progressive`: containers `mp4`; the original's video codecs; audio `aac`, `ac3`, `eac3`, `mp3`, `flac`, `opus`, `alac` (the planner copies any
 claimed codec into MP4 with no muxability check, and FFmpeg's MP4 muxer takes TrueHD/DTS/PCM only as
