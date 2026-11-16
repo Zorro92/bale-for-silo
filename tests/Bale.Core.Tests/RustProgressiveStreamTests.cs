@@ -156,16 +156,19 @@ public sealed class RustProgressiveStreamTests
         Assert.Equal(1, server.Connections);
         await using (var stream = await Open(client, rust: true))
         {
-            // The open took the warmed connection; the spare it warms next is the only new one.
+            // The open took the warmed connection.
             Assert.True((await ReadAll(stream)).AsSpan().SequenceEqual(Payload));
         }
+        // The open then warmed a spare: a new connection, or the first one when the read had already
+        // finished and returned it. Either way the second open needs no new connection.
         deadline = DateTime.UtcNow.AddSeconds(5);
-        while (server.Connections < 2 && DateTime.UtcNow < deadline) await Task.Delay(10);
+        while (server.HealthChecks < 2 && DateTime.UtcNow < deadline) await Task.Delay(10);
         await Task.Delay(100);
         Assert.Equal(2, server.HealthChecks);
-        Assert.Equal(2, server.Connections);
+        var connections = server.Connections;
+        Assert.InRange(connections, 1, 2);
         await using var second = await Open(client, rust: true);
-        Assert.Equal(2, server.Connections);
+        Assert.Equal(connections, server.Connections);
     }
 
     [Fact]
