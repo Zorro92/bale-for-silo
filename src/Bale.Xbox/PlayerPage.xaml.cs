@@ -217,6 +217,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 capabilities = DebugHdrPlayback.Capabilities(attempt.PretendHdr, capabilities);
                 capabilities = attempt.FfmpegTuning.ToneMapCapabilities(capabilities);
 #endif
+                // Windows' HLS (hls-engine native, or a playlist the Rust reader refused) takes H.264/HEVC only.
+                if (!attempt.HlsThroughFfmpeg) capabilities = capabilities with { HlsFfmpegSupported = false };
                 var start = PlaybackStartBuilder.Build(request.Detail, request.Selection,
                     services.ProfileId, Guid.NewGuid().ToString(), startPosition, capabilities, DeviceIdentity.Current());
 #if DEBUG_SERVER

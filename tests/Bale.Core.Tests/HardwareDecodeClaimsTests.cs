@@ -199,7 +199,7 @@ public class HardwareDecodeClaimsTests
     [Theory]
     [InlineData("vc1")]
     [InlineData("mpeg2video")]
-    public void LegacyHardwareVideoIsScopedToTheDemuxedDirectRouteAndWithdrawnOnFailure(string codec)
+    public void LegacyHardwareVideoIsScopedToFfmpegReadRoutesAndWithdrawnOnFailure(string codec)
     {
         var limits = codec == "vc1" ? Series with { Vc1 = new(1920, 1080) } : Series with { Mpeg2 = new(1920, 1080) };
         var claims = ConsoleEvidence.ForHardware(limits);
@@ -209,7 +209,8 @@ public class HardwareDecodeClaimsTests
         Assert.Equal((1920, 1080), (decode.MaxWidth, decode.MaxHeight));
         var start = PlaybackStartBuilder.Build("file", "profile", "attempt", null, PlaybackSelection.Auto, claims, PlaybackTestSupport.Identity);
         Assert.Contains(codec, start.ClientPlaybackContext.Deliveries["original_http"].VideoCodecs);
-        Assert.DoesNotContain(codec, start.ClientPlaybackContext.Deliveries["hls"].VideoCodecs);
+        Assert.Contains(codec, start.ClientPlaybackContext.Deliveries["progressive"].VideoCodecs);
+        Assert.Contains(codec, start.ClientPlaybackContext.Deliveries["hls"].VideoCodecs);
         Assert.DoesNotContain(codec, SoftwareDecodePolicy.WithoutFallbacks(claims).VideoCodecs);
         Assert.Contains(codec, SoftwareDecodePolicy.WithoutSoftwareVideo(claims).VideoCodecs);
 
@@ -242,15 +243,19 @@ public class HardwareDecodeClaimsTests
     }
 
     [Fact]
-    public void Vp9IsOfferedForDirectPlayOnlyAndEveryFfmpegLessPathWithdrawsIt()
+    public void Vp9IsOfferedWhereFfmpegReadsAndEveryFfmpegLessPathWithdrawsIt()
     {
         var claims = ConsoleEvidence.ForHardware(Series);
         var start = PlaybackStartBuilder.Build("file", "profile", "attempt", null, PlaybackSelection.Auto, claims, PlaybackTestSupport.Identity);
         Assert.Contains("vp9", start.ClientCapabilities.CodecsVideo);
         Assert.Contains("vp9", start.ClientPlaybackContext.Deliveries["original_http"].VideoCodecs);
-        // AdaptiveMediaSource has no FFmpeg demuxer, so HLS never carries VP9.
-        Assert.All(start.ClientPlaybackContext.Deliveries.Where(pair => pair.Value.Containers.Contains("m3u8")),
-            pair => Assert.Equal(new[] { "h264", "hevc" }, pair.Value.VideoCodecs));
+        // FFmpeg reads the progressive remux and HLS too (owner, 2026-11-16).
+        Assert.Contains("vp9", start.ClientPlaybackContext.Deliveries["progressive"].VideoCodecs);
+        Assert.Contains("vp9", start.ClientPlaybackContext.Deliveries["hls"].VideoCodecs);
+        // Windows' AdaptiveMediaSource has no FFmpeg demuxer: with it, HLS never carries VP9.
+        var windowsHls = PlaybackStartBuilder.Build("file", "profile", "attempt", null, PlaybackSelection.Auto,
+            claims with { HlsFfmpegSupported = false }, PlaybackTestSupport.Identity);
+        Assert.Equal(new[] { "h264", "hevc" }, windowsHls.ClientPlaybackContext.Deliveries["hls"].VideoCodecs);
 
         // Debug "ffmpeg off" has no demuxer either.
         var off = SoftwareDecodePolicy.WithoutFallbacks(claims);

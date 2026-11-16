@@ -48,7 +48,8 @@ public sealed class HlsThroughFfmpegTests
         Assert.Contains("if (transport.IsHls && !media.Route.UseFfmpeg)", media);
         Assert.Contains("var hls = await transport.OpenNativeHlsAsync(playerStart, media.Token);", media);
         Assert.Contains("transport.StartPlayerClockAt(hls.SegmentStartSeconds);", media);
-        Assert.Contains("catch (HlsUnsupportedException) when (!attempt.HlsReaderRefused && ReferenceEquals(attempt.Media, media))", media);
+        Assert.Contains("catch (HlsUnsupportedException) when (!attempt.HlsReaderRefused && ReferenceEquals(attempt.Media, media)\n"
+            + "                    && SoftwareDecodePolicy.NormalizeCodec(media.Route.VideoCodec) is \"h264\" or \"hevc\")", media);
         Assert.Contains("if (media.Progressive is null) sender.PlaybackSession.Position", media);
         Assert.Contains("hlsThroughFfmpeg: attempt.HlsThroughFfmpeg", media);
         var seek = Read("PlayerPage.Seek.cs.txt");
@@ -57,6 +58,10 @@ public sealed class HlsThroughFfmpegTests
         Assert.Contains("media = await RemountHlsAsync(attempt, request, paused);", seek);
         var player = Read("PlayerPage.cs.txt");
         Assert.Contains("public bool HlsThroughFfmpeg => HlsEngine == \"ffmpeg\" && !HlsReaderRefused;", player);
+        // Windows' HLS (native engine or a refused playlist) narrows the attempt's HLS claim to H.264/HEVC.
+        Assert.Contains("if (!attempt.HlsThroughFfmpeg) capabilities = capabilities with { HlsFfmpegSupported = false };", player);
+        Assert.True(player.IndexOf("HlsFfmpegSupported = false", StringComparison.Ordinal)
+            < player.IndexOf("var start = PlaybackStartBuilder.Build(", StringComparison.Ordinal));
         // Release builds play HLS through FFmpeg too, keeping Windows' HLS only for a refused playlist.
         Assert.Contains("public bool HlsThroughFfmpeg => !HlsReaderRefused;", player);
         Assert.DoesNotContain("public bool HlsThroughFfmpeg => false;", player);

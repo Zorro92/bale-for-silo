@@ -154,7 +154,6 @@ public class RustPortDifferentialTests
     public void SoftwareDecodeFiltersMatch()
     {
         Assert.Equal(Reference.SoftwareDecodePolicy.VideoCodecs, SoftwareDecodePolicy.VideoCodecs);
-        Assert.Equal(Reference.SoftwareDecodePolicy.OriginalOnlyVideoCodecs, SoftwareDecodePolicy.OriginalOnlyVideoCodecs);
         Assert.Equal(Reference.SoftwareDecodePolicy.FfmpegOnlyContainers, SoftwareDecodePolicy.FfmpegOnlyContainers);
         Assert.Equal(Reference.SoftwareDecodePolicy.SystemVideoCodecs, SoftwareDecodePolicy.SystemVideoCodecs);
         Assert.Equal(Reference.SoftwareDecodePolicy.DemuxedVideoCodecs, SoftwareDecodePolicy.DemuxedVideoCodecs);

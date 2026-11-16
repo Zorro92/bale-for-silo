@@ -40,8 +40,9 @@ public class PlaybackRoutePolicyTests
     [Theory]
     [InlineData("original_http", "av1", "eac3", true, true)]
     [InlineData("original_http", "mpeg4", "mp3", true, true)]
-    [InlineData("progressive", "mpeg4", "mp3", false, false)]
-    [InlineData("server_remux_progressive", "mpeg4", "mp3", true, false)]
+    // FFmpeg reads packages like originals (owner, 2026-11-16): MPEG-4 decodes in software there too.
+    [InlineData("progressive", "mpeg4", "mp3", true, true)]
+    [InlineData("server_remux_progressive", "mpeg4", "mp3", true, true)]
     [InlineData("hls", "mpeg4", "mp3", false, false)]
     [InlineData("progressive", "av1", "aac", true, true)]
     [InlineData("original_http", "hevc", "dts", true, false)]

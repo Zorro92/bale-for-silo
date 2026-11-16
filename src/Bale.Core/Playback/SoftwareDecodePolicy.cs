@@ -15,8 +15,6 @@ public static class SoftwareDecodePolicy
     /// <summary>The owner-maintained software video allowlist (AV1, MPEG-4 Part 2). Add none without the owner.</summary>
     public static IReadOnlyList<string> VideoCodecs { get; } = Array.AsReadOnly(Lists.VideoCodecs);
 
-    /// <summary>Software video measured only on original files, never on fragmented MP4 or HLS.</summary>
-    public static IReadOnlyList<string> OriginalOnlyVideoCodecs { get; } = Array.AsReadOnly(Lists.OriginalOnlyVideoCodecs);
     public static IReadOnlyList<string> FfmpegOnlyContainers { get; } = Array.AsReadOnly(Lists.FfmpegOnlyContainers);
 
     /// <summary>Codecs the system (hardware) decoders may take, given the baseline or the decoder probe.</summary>
@@ -96,6 +94,7 @@ public static class SoftwareDecodePolicy
                 OriginalDolbyVision7BaseLayerSupported = false,
                 OriginalDynamicRangeMappingSupported = false,
                 ProgressiveSupported = false,
+                HlsFfmpegSupported = false,
             }
             : filtered;
     }

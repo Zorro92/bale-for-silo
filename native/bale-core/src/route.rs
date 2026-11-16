@@ -6,8 +6,8 @@ use crate::dolby_vision7;
 use crate::dotnet::{eq_ignore_case, lower, trim_lower};
 use crate::models::{FileVersion, PlaybackPlan};
 use crate::software_decode::{
-    AUDIO_CODECS, DEMUXED_VIDEO_CODECS, FFMPEG_ONLY_CONTAINERS, ORIGINAL_ONLY_VIDEO_CODECS,
-    SYSTEM_AUDIO_CODECS, VIDEO_CODECS, contains, normalize_codec,
+    AUDIO_CODECS, DEMUXED_VIDEO_CODECS, FFMPEG_ONLY_CONTAINERS, SYSTEM_AUDIO_CODECS, VIDEO_CODECS,
+    contains, normalize_codec,
 };
 use crate::tone_map::{self, DOLBY_VISION8_BASE_LAYER_REASON};
 
@@ -100,8 +100,8 @@ pub fn decide(args: DecideArgs) -> RouteDecision {
     ) || hls_ffmpeg;
     let video = video.as_deref();
     let audio_ref = audio.as_deref();
-    let software_video =
-        contains(VIDEO_CODECS, video) && (original || !contains(ORIGINAL_ONLY_VIDEO_CODECS, video));
+    // Packages FFmpeg reads take the same software decoders as originals (owner, 2026-11-16).
+    let software_video = contains(VIDEO_CODECS, video);
     let software_audio =
         !contains(SYSTEM_AUDIO_CODECS, audio_ref) && contains(AUDIO_CODECS, audio_ref);
     let container = plan

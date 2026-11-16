@@ -201,7 +201,9 @@ public sealed partial class PlayerPage
                     media.Progressive = hls;
                     transport.StartPlayerClockAt(hls.SegmentStartSeconds);
                 }
-                catch (HlsUnsupportedException) when (!attempt.HlsReaderRefused && ReferenceEquals(attempt.Media, media))
+                // Windows' HLS takes over only for what it can play; any other package fails to a replan.
+                catch (HlsUnsupportedException) when (!attempt.HlsReaderRefused && ReferenceEquals(attempt.Media, media)
+                    && SoftwareDecodePolicy.NormalizeCodec(media.Route.VideoCodec) is "h264" or "hevc")
                 {
                     Log.Info("player: HLS playlist needs Windows' HLS source; remounting there");
                     attempt.HlsReaderRefused = true;

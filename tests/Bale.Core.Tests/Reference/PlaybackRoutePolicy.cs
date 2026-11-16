@@ -28,8 +28,8 @@ internal static class PlaybackRoutePolicy
         var hlsFfmpeg = hls && hlsThroughFfmpeg;
         var ordinal = delivery == "server_remux_progressive" || hlsFfmpeg ? 0 : plan.SelectedTracks?.Audio?.Index;
         var direct = delivery is "original_http" or "progressive" or "server_remux_progressive" || hlsFfmpeg;
-        var softwareVideo = SoftwareDecodePolicy.VideoCodecs.Contains(video!)
-            && (original || !SoftwareDecodePolicy.OriginalOnlyVideoCodecs.Contains(video!));
+        // Packages FFmpeg reads take the same software decoders as originals (owner, 2026-11-16).
+        var softwareVideo = SoftwareDecodePolicy.VideoCodecs.Contains(video!);
         var softwareAudio = !SoftwareDecodePolicy.SystemAudioCodecs.Contains(audio!)
             && SoftwareDecodePolicy.AudioCodecs.Contains(audio!);
         // Windows' MKV source over-reads (~2.2x the bitrate) and blocks on the network; FFmpeg's demuxer does not.

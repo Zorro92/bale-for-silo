@@ -72,6 +72,8 @@ pub struct Baseline {
     original_dynamic_range_mapping_supported: bool,
     progressive_supported: bool,
     hls_supported: bool,
+    /// HLS through the Rust HLS reader and FFmpeg: packages carry the original's codecs but AV1.
+    hls_ffmpeg_supported: bool,
 }
 
 pub fn baseline() -> Baseline {
@@ -127,6 +129,7 @@ pub fn baseline() -> Baseline {
         // Forward-only remuxes play through FFmpeg's non-seekable input; seeks reanchor (PlaybackProgressive).
         progressive_supported: true,
         hls_supported: true,
+        hls_ffmpeg_supported: true,
     }
 }
 

@@ -45,7 +45,7 @@ public class PlaybackProgressiveTests
     {
         var stub = new StubHandler().Enqueue(Capabilities).Enqueue(HttpStatusCode.Created, Decision);
         using var client = Create(stub);
-        // A full hardware probe adds VP9/VC-1/MPEG-2: verified only as original files through the demuxer.
+        // A full hardware probe adds VP9/VC-1/MPEG-2; FFmpeg's demuxer reads them from the package too.
         var device = ConsoleEvidence.ForHardware(new HardwareDecodeLimits(new(3840, 2160), new(3840, 2160), new(3840, 2160),
             new(3840, 2160), new(3840, 2160), new(1920, 1080), new(1920, 1080)));
         var start = PlaybackStartBuilder.Build("file", "profile", "attempt", 0, new(), device, Identity);
@@ -62,8 +62,11 @@ public class PlaybackProgressiveTests
         // candidate_routes_v3.go writes fragmented MP4 only.
         Assert.Equal(new[] { "mp4" }, Strings(progressive.GetProperty("containers")));
         var video = Strings(progressive.GetProperty("video_codecs")).ToArray();
-        Assert.Contains("vp9", Strings(deliveries.GetProperty("original_http").GetProperty("video_codecs")));
-        Assert.Equal(new[] { "h264", "hevc", "av1" }, video);
+        var originalVideo = Strings(deliveries.GetProperty("original_http").GetProperty("video_codecs")).ToArray();
+        Assert.Equal(new[] { "h264", "hevc", "vp9", "vc1", "mpeg2video", "av1", "mpeg4" }, originalVideo);
+        Assert.Equal(originalVideo, video);
+        // HLS through FFmpeg: the same codecs except AV1, which waits for the owner's GPU decoder.
+        Assert.Equal(originalVideo.Where(codec => codec != "av1"), Strings(deliveries.GetProperty("hls").GetProperty("video_codecs")));
         // TrueHD, DTS and PCM are not plain MP4 copies: the server converts them to AAC instead.
         var audio = Strings(progressive.GetProperty("audio_decode_codecs")).ToArray();
         Assert.Equal(new[] { "aac", "ac3", "eac3", "mp3", "flac", "opus", "alac" }, audio);
@@ -88,6 +91,20 @@ public class PlaybackProgressiveTests
         Assert.Equal("progressive_executor_unavailable", progressive.FailureReason);
         Assert.Empty(progressive.Features);
         Assert.True(ConsoleEvidence.Default.ProgressiveSupported);
+    }
+
+    [Fact]
+    public void WindowsHlsClaimsOnlyH264AndHevc()
+    {
+        var probed = ConsoleEvidence.ForHardware(new HardwareDecodeLimits(new(3840, 2160), new(3840, 2160), new(3840, 2160),
+            new(3840, 2160), new(3840, 2160), new(1920, 1080), new(1920, 1080)));
+        Assert.True(probed.HlsFfmpegSupported);
+        foreach (var device in new[] { probed with { HlsFfmpegSupported = false }, SoftwareDecodePolicy.WithoutFallbacks(probed) })
+        {
+            Assert.False(device.HlsFfmpegSupported);
+            var start = PlaybackStartBuilder.Build("file", "profile", "attempt", 0, new(), device, Identity);
+            Assert.Equal(new[] { "h264", "hevc" }, start.ClientPlaybackContext.Deliveries["hls"].VideoCodecs);
+        }
     }
 
     [Fact]

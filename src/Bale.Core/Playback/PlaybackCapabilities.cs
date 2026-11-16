@@ -37,6 +37,11 @@ public sealed record DeviceCapabilities(
     public bool OriginalDynamicRangeMappingSupported { get; init; }
     public bool ProgressiveSupported { get; init; }
     public bool HlsSupported { get; init; } = true;
+    /// <summary>
+    /// HLS plays through the Rust HLS reader and FFmpeg (docs/rust-port.md), so it may carry the
+    /// original file's video codecs (except AV1, owner 2026-11-16); off, only Windows' HLS (H.264/HEVC).
+    /// </summary>
+    public bool HlsFfmpegSupported { get; init; } = true;
 }
 
 /// <summary>

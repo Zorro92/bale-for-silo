@@ -138,7 +138,7 @@ public sealed record BaleCoreChecked<T>(T? Ok = default, string? InvalidData = n
 [JsonSerializable(typeof(DisplayHdr))]
 internal sealed partial class BaleCoreJson : JsonSerializerContext;
 
-internal sealed record SoftwareDecodeLists(string[] VideoCodecs, string[] OriginalOnlyVideoCodecs,
+internal sealed record SoftwareDecodeLists(string[] VideoCodecs,
     string[] FfmpegOnlyContainers, string[] SystemVideoCodecs, string[] DemuxedVideoCodecs,
     string[] SystemAudioCodecs, string[] AudioCodecs);
 

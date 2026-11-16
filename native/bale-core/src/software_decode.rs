@@ -8,9 +8,6 @@ use crate::dotnet;
 // The project owner maintains this allowlist. Add no other software video codec without them.
 pub const VIDEO_CODECS: &[&str] = &["av1", "mpeg4"];
 
-// MPEG-4 Part 2 was measured through FFmpeg's ordinary software output on original files,
-// not fragmented MP4 or AdaptiveMediaSource. Keep it off both packaged deliveries.
-pub const ORIGINAL_ONLY_VIDEO_CODECS: &[&str] = &["mpeg4"];
 pub const FFMPEG_ONLY_CONTAINERS: &[&str] = &["avi"];
 
 // Codecs the system (hardware) decoders may take. A claim for one still needs the fixed
@@ -19,10 +16,11 @@ pub const SYSTEM_VIDEO_CODECS: &[&str] = &["h264", "hevc", "vp9", "vc1", "mpeg2v
 
 // Hardware codecs that play only through FFmpeg's demuxer feeding the system decoder.
 // Windows' own WebM source opened VP9 but never left Paused at 0 s, and its MP4 source and
-// AdaptiveMediaSource are untested for VP9 (docs/player-plan.md). So every direct VP9 file
-// takes the FFmpeg demuxer, HLS never carries VP9, and "ffmpeg off" withdraws the claim.
-// VC-1/MPEG-2 use the same original-file boundary: only their compressed FFmpeg providers
-// feeding system decoders are verified; no Windows container-source or HLS claim follows.
+// AdaptiveMediaSource are untested for VP9 (docs/player-plan.md). So every VP9 file or package
+// takes the FFmpeg demuxer, Windows' HLS never gets it, and "ffmpeg off" withdraws the claim.
+// VC-1/MPEG-2 follow the same rule: only their compressed FFmpeg providers feeding system
+// decoders are trusted, never a Windows container source. Since the owner's 2026-11-16 call,
+// packaged deliveries read by FFmpeg (progressive, HLS through FFmpeg) claim them too.
 pub const DEMUXED_VIDEO_CODECS: &[&str] = &["vp9", "vc1", "mpeg2video"];
 
 // Measured Media Foundation playback, not merely installed decoder registrations.
@@ -72,7 +70,6 @@ pub fn contains(list: &[&str], value: Option<&str>) -> bool {
 #[derive(Serialize)]
 pub struct Lists {
     video_codecs: &'static [&'static str],
-    original_only_video_codecs: &'static [&'static str],
     ffmpeg_only_containers: &'static [&'static str],
     system_video_codecs: &'static [&'static str],
     demuxed_video_codecs: &'static [&'static str],
@@ -83,7 +80,6 @@ pub struct Lists {
 pub fn lists() -> Lists {
     Lists {
         video_codecs: VIDEO_CODECS,
-        original_only_video_codecs: ORIGINAL_ONLY_VIDEO_CODECS,
         ffmpeg_only_containers: FFMPEG_ONLY_CONTAINERS,
         system_video_codecs: SYSTEM_VIDEO_CODECS,
         demuxed_video_codecs: DEMUXED_VIDEO_CODECS,

@@ -241,8 +241,8 @@ public class PlaybackStartTests
             var delivery = property.Value;
             Assert.Equal(property.Name switch
                 {
-                    "hls" => new[] { "h264", "hevc" },
-                    "progressive" => new[] { "h264", "hevc", "av1" },
+                    // FFmpeg reads both packages: the original's codecs, AV1 kept off HLS (owner, 2026-11-16).
+                    "hls" => new[] { "h264", "hevc", "mpeg4" },
                     _ => new[] { "h264", "hevc", "av1", "mpeg4" },
                 },
                 Strings(delivery.GetProperty("video_codecs")));

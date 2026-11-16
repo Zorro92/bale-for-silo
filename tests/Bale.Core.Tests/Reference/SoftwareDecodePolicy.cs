@@ -11,7 +11,6 @@ internal static class SoftwareDecodePolicy
 
     // MPEG-4 Part 2 was measured through FFmpeg's ordinary software output on original files,
     // not fragmented MP4 or AdaptiveMediaSource. Keep it off both packaged deliveries.
-    public static IReadOnlyList<string> OriginalOnlyVideoCodecs { get; } = Array.AsReadOnly(new[] { "mpeg4" });
     public static IReadOnlyList<string> FfmpegOnlyContainers { get; } = Array.AsReadOnly(new[] { "avi" });
 
     // Codecs the system (hardware) decoders may take. A claim for one still needs the fixed

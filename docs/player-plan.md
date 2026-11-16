@@ -96,14 +96,14 @@ Current production capability claims (`ConsoleEvidence.ForHardware` over the dec
 | H.264 / HEVC / VP9 video | Media Foundation, hardware | The largest size the console's decoder reports per codec, 60 fps, no bitrate limit. H.264 is 8-bit; HEVC is 8-bit if Main is present and 10-bit if Main10 is; VP9 is 8-bit for profile 0 and 10-bit for profile 2. Series X: H.264 1920×1080, HEVC 7680×4320 8/10-bit, VP9 3840×2160 8/10-bit. VP9 is claimed only when the decoder reports it. If the probe fails or finds nothing: H.264 and HEVC at 1920×1080, 60 fps, no bitrate limit, no VP9; a partial probe keeps its measured profiles and gives only the unmeasured H.264/HEVC depths that baseline |
 | VC-1 / MPEG-2 video | FFmpeg demuxer, Media Foundation system decoder | Only when the matching NV12 VLD profile reports a supported size; 8-bit, probed bounds. Series X: both report 1920×1080. Original files only; HLS and `ffmpeg off` withdraw these codecs. Software video decoding remains forbidden |
 | AV1 video | dav1d, **non-hardware**; `software_video_decode_v1` opt-in | 8/10-bit, **1920×1080, 60 fps**; no 4K claim |
-| MPEG-4 Part 2 video | FFmpeg ordinary software output, **non-hardware**; `software_video_decode_v1` opt-in | Simple / Advanced Simple Profile, 8-bit, **1920×1080, 30 fps**, original_http only; no AV1 zero-copy/GPU-grain options |
+| MPEG-4 Part 2 video | FFmpeg ordinary software output, **non-hardware**; `software_video_decode_v1` opt-in | Simple / Advanced Simple Profile, 8-bit, **1920×1080, 30 fps**; original_http, and since 2026-11-16 the progressive remux and HLS (FFmpeg reads both); no AV1 zero-copy/GPU-grain options |
 | AVI container | FFmpeg demuxer on original_http | Never progressive/HLS; system video for hardware codecs, software for MPEG-4 Part 2 |
 | System audio | `aac`, `ac3`, `eac3`, `mp3` | Uses system audio decoders, including on FFmpeg demux/software-video routes |
 | FFmpeg fallback audio | `dts`, `dts_hd`, `truehd`, `flac`, `opus`, `vorbis`, `alac`, `mp2`, LPCM (`pcm` and each ffprobe spelling: `pcm_s16le/be`, `pcm_s24le/be`, `pcm_s32le/be`, `pcm_f32le/be`, `pcm_f64le/be`, `pcm_u8`, `pcm_bluray`, `pcm_dvd`) | Decode to PCM, not passthrough. silo-server matches audio claims to the stored ffprobe name exactly, so LPCM needs each spelling. LPCM/MP2 in MP4 take the FFmpeg route too (Windows' MP4 source is unverified with them); HLS never claims them (the server converts HLS audio outside AAC/AC-3/E-AC-3/MP3). Real-library console verification pending |
 | Audio passthrough | None | Receiver verification pending |
 | Display HDR | Runtime HDMI detection, HDR10 only | Exact evidence after a successful read; unknown/empty HDR on failure |
-| HLS | System video/audio claims only, without VP9, VC-1 or MPEG-2 | AdaptiveMediaSource cannot use FFmpeg fallbacks or its demuxer |
-| Progressive remux | `mp4` only; H.264, HEVC, AV1; AAC, AC-3, E-AC-3, MP3, FLAC, Opus, ALAC; `progressive_range_refusal_v1` | Forward-only fMP4 through FFmpeg's non-seekable input; every seek reanchors. TrueHD/DTS/PCM are converted to AAC by the server. Verified on the console (0.1.518), subtitles included |
+| HLS | Through FFmpeg (default since 2026-11-16): the original's video codecs except AV1 (H.264, HEVC, VP9, VC-1, MPEG-2, MPEG-4 Part 2); system audio | The Rust HLS reader feeds FFmpeg, like the progressive remux. Silo copies any other codec into fMP4 segments (Bale never asks for MPEG-TS). AV1 waits for the owner's GPU decoder. Windows' HLS (`hls-engine native`, a refused playlist, `ffmpeg off`) narrows the claim to H.264/HEVC. VP9/VC-1/MPEG-2/MPEG-4 packages not yet console-verified |
+| Progressive remux | `mp4` only; the original's video codecs (since 2026-11-16: also VP9, VC-1, MPEG-2, MPEG-4 Part 2, not yet console-verified); AAC, AC-3, E-AC-3, MP3, FLAC, Opus, ALAC; `progressive_range_refusal_v1` | Forward-only fMP4 through FFmpeg's non-seekable input; every seek reanchors. TrueHD/DTS/PCM are converted to AAC by the server. Verified on the console (0.1.518), subtitles included |
 | Subtitles | Own overlay: text sidecars (ASS/SSA, SubRip, WebVTT); PGS/DVD/DVB images from direct MKV; lossless PGS `.sup` windows on HLS/progressive | Original keeps `native_embedded` (`embedded_subtitles_v1`). Packaged deliveries claim `embedded_bitmap` for server-extracted PGS; DVD/DVB still require burn-in there. Console verification of image tracks pending |
 
 `PlaybackRoutePolicy.Decide` selects the pipeline separately for every mount. `original_http`
@@ -1840,11 +1840,10 @@ claimed), and the replan after an original whose selected audio track could not 
 HLS keeps everything progressive can't do: video transcodes
 (codec, HDR tone mapping, bitrate or quality caps), the server's DV7→DV8.1 conversion (HLS only),
 burn-in subtitles, `remux_execution=worker_only` servers, and every replan after a progressive
-mount failed. VP9/VC-1/MPEG-2 stay original-only (their FFmpeg demuxer path is verified only on
-the original files), as for HLS.
+mount failed. Since 2026-11-16 (owner) VP9/VC-1/MPEG-2 and MPEG-4 Part 2 are claimed on both
+packages too: FFmpeg reads them as it reads the originals.
 
-**Claims.** `deliveries.progressive`: containers `mp4`; the original's video codecs without
-VP9/VC-1/MPEG-2; audio `aac`, `ac3`, `eac3`, `mp3`, `flac`, `opus`, `alac` (the planner copies any
+**Claims.** `deliveries.progressive`: containers `mp4`; the original's video codecs; audio `aac`, `ac3`, `eac3`, `mp3`, `flac`, `opus`, `alac` (the planner copies any
 claimed codec into MP4 with no muxability check, and FFmpeg's MP4 muxer takes TrueHD/DTS/PCM only as
 experimental, so those convert to AAC); the same HDR details and subtitle claims as HLS (sidecars
 plus `embedded_bitmap` for `.sup` windows, no `native_embedded`); no validated claims or client

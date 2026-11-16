@@ -10,7 +10,7 @@ namespace Bale.Core.Tests;
 public class Mpeg4PlaybackTests
 {
     [Fact]
-    public void ProductionClaimsBoundedSoftwareMpeg4AndAviOnlyOnOriginalHttp()
+    public void ProductionClaimsBoundedSoftwareMpeg4OnEveryDeliveryAndAviOnlyOnOriginalHttp()
     {
         foreach (var device in new[] { ConsoleEvidence.Default, ConsoleEvidence.ForHardware(
             new HardwareDecodeLimits(H264: new(3840, 2160), HevcMain: new(7680, 4320))) })
@@ -40,7 +40,8 @@ public class Mpeg4PlaybackTests
             foreach (var delivery in new[] { "progressive", "hls" })
             {
                 Assert.DoesNotContain("avi", start.ClientPlaybackContext.Deliveries[delivery].Containers);
-                Assert.DoesNotContain("mpeg4", start.ClientPlaybackContext.Deliveries[delivery].VideoCodecs);
+                // FFmpeg reads the package, so MPEG-4 Part 2 is claimed there too (owner, 2026-11-16).
+                Assert.Contains("mpeg4", start.ClientPlaybackContext.Deliveries[delivery].VideoCodecs);
             }
         }
         var raisedAv1 = ConsoleEvidence.BuildVideoDecode(3840, 2160).Single(entry => entry.Codec == "mpeg4");

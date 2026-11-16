@@ -81,9 +81,8 @@ public static class PlaybackStartBuilder
             FailureReason = device.ProgressiveSupported ? null : "progressive_executor_unavailable",
             // candidate_routes_v3.go progressiveCandidate always writes fragmented MP4.
             Containers = ["mp4"],
-            // MPEG-4 software output and VP9/VC-1/MPEG-2 system decode are original-file claims.
-            VideoCodecs = original.VideoCodecs.Where(codec => !SoftwareDecodePolicy.DemuxedVideoCodecs.Contains(codec)
-                && !SoftwareDecodePolicy.OriginalOnlyVideoCodecs.Contains(codec)).ToArray(),
+            // FFmpeg reads the package like an original, with the same decoders (owner, 2026-11-16).
+            VideoCodecs = original.VideoCodecs,
             AudioDecodeCodecs = original.AudioDecodeCodecs.Where(PlaybackProgressive.AudioCodecs.Contains).ToArray(),
             // In-container subtitles are an original_http claim only (the server reads it there).
             Subtitles = device.Subtitles with { NativeEmbedded = [] },
@@ -96,9 +95,12 @@ public static class PlaybackStartBuilder
             Enabled = device.HlsSupported,
             SupportedOnDevice = device.HlsSupported,
             Containers = ["m3u8", "hls"],
-            // AdaptiveMediaSource cannot use the bundled FFmpeg fallbacks or its demuxer.
-            VideoCodecs = original.VideoCodecs.Where(codec => !SoftwareDecodePolicy.VideoCodecs.Contains(codec)
-                && !SoftwareDecodePolicy.DemuxedVideoCodecs.Contains(codec)).ToArray(),
+            // Through FFmpeg, HLS takes the original's codecs except AV1, which waits for the owner's GPU
+            // decoder (2026-11-16). Windows' AdaptiveMediaSource cannot use FFmpeg's decoders or demuxer.
+            VideoCodecs = device.HlsFfmpegSupported
+                ? original.VideoCodecs.Where(codec => !string.Equals(codec, "av1", StringComparison.OrdinalIgnoreCase)).ToArray()
+                : original.VideoCodecs.Where(codec => !SoftwareDecodePolicy.VideoCodecs.Contains(codec)
+                    && !SoftwareDecodePolicy.DemuxedVideoCodecs.Contains(codec)).ToArray(),
             AudioDecodeCodecs = original.AudioDecodeCodecs.Where(codec => !SoftwareDecodePolicy.AudioCodecs.Contains(codec)).ToArray(),
             Subtitles = device.Subtitles with { NativeEmbedded = [] },
             ValidatedClaims = [],
