@@ -11,8 +11,8 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock};
-use std::time::Instant;
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, Instant};
 
 pub const BLOCK_SIZE: u64 = 1024 * 1024;
 pub const DEFAULT_PREFETCH_BLOCKS: u32 = 2;
@@ -21,6 +21,8 @@ const CACHE_CAPACITY: usize = 32;
 const FETCH_SLOTS: usize = 3;
 const FORWARD_SKIP_LIMIT: u64 = 256 * 1024;
 const FREE_BLOCKS: usize = 4;
+/// How long a request rejected with 401 waits for the owner's refreshed headers.
+pub const REFRESH_WAIT: Duration = Duration::from_secs(15);
 
 /// Why a call failed. The C# wrapper maps these to fixed exception messages.
 #[repr(i32)]
@@ -37,6 +39,20 @@ pub enum StreamError {
     Network = 5,
     /// The open response gave no usable total length.
     NoLength = 6,
+    /// 401 even after a header refresh, or no refresh arrived (the C# handler's refresh-once rule).
+    Unauthorized = 7,
+}
+
+/// Asks the stream's owner for fresh headers after a 401, passing the generation of the rejected
+/// headers. It must return quickly and deliver them later through `set_headers`.
+pub type Refresher = Box<dyn Fn(u64) + Send + Sync>;
+
+/// The request headers and their generation (how many times `set_headers` replaced them).
+struct Auth {
+    headers: Vec<(String, String)>,
+    generation: u64,
+    /// The generation a refresh was already requested for, so concurrent 401s ask once.
+    requested: Option<u64>,
 }
 
 /// Diagnostics, the C# `HttpRangeStream` counters. Times are microseconds.
@@ -142,7 +158,10 @@ struct Sequential {
 
 struct Shared {
     url: String,
-    headers: RwLock<Vec<(String, String)>>,
+    auth: Mutex<Auth>,
+    auth_changed: Condvar,
+    /// Cleared by `close`, under this lock, so no call into the owner runs after `close` returns.
+    refresher: Mutex<Option<Refresher>>,
     length: u64,
     prefetch_blocks: u64,
     disposed: AtomicBool,
@@ -184,17 +203,82 @@ pub fn parse_content_range(value: Option<&str>, start: u64) -> Option<(u64, u64)
 }
 
 impl Shared {
+    /// A request with the current headers. A 401 asks the owner for fresh headers and retries once
+    /// with them, as the C# `SiloRequestHandler` does; a second 401 is `Unauthorized`.
     fn request(&self, range: &str) -> Result<ureq::http::Response<ureq::Body>, StreamError> {
+        let (response, generation) = self.send(range)?;
+        if response.status().as_u16() != 401 {
+            return Ok(response);
+        }
+        drop(response);
+        if !self.await_refresh(generation) {
+            return Err(if self.disposed.load(Ordering::Acquire) {
+                StreamError::Disposed
+            } else {
+                StreamError::Unauthorized
+            });
+        }
+        let (response, _) = self.send(range)?;
+        if response.status().as_u16() == 401 {
+            return Err(StreamError::Unauthorized);
+        }
+        Ok(response)
+    }
+
+    fn send(&self, range: &str) -> Result<(ureq::http::Response<ureq::Body>, u64), StreamError> {
+        let (headers, generation) = {
+            let auth = lock(&self.auth);
+            (auth.headers.clone(), auth.generation)
+        };
         let mut request = crate::http::agent().get(&self.url).header("Range", range);
-        for (name, value) in self
-            .headers
-            .read()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-        {
+        for (name, value) in &headers {
             request = request.header(name, value);
         }
-        request.call().map_err(|_| StreamError::Network)
+        let response = request.call().map_err(|_| StreamError::Network)?;
+        Ok((response, generation))
+    }
+
+    /// Waits for headers newer than `generation`, asking the owner once per generation. False on
+    /// timeout, close, or when nobody can refresh.
+    fn await_refresh(&self, generation: u64) -> bool {
+        let ask = {
+            let mut auth = lock(&self.auth);
+            if auth.generation != generation {
+                return true;
+            }
+            let ask = auth.requested != Some(generation);
+            auth.requested = Some(generation);
+            ask
+        };
+        {
+            let refresher = lock(&self.refresher);
+            match refresher.as_ref() {
+                Some(refresh) if ask => refresh(generation),
+                Some(_) => {}
+                None => {
+                    lock(&self.auth).requested = None;
+                    return false;
+                }
+            }
+        }
+        let deadline = Instant::now() + REFRESH_WAIT;
+        let mut auth = lock(&self.auth);
+        while auth.generation == generation && !self.disposed.load(Ordering::Acquire) {
+            let now = Instant::now();
+            if now >= deadline {
+                // Let a later 401 ask again rather than wait out a refresh that never came.
+                if auth.requested == Some(generation) {
+                    auth.requested = None;
+                }
+                return false;
+            }
+            auth = self
+                .auth_changed
+                .wait_timeout(auth, deadline - now)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+        auth.generation != generation
     }
 
     /// A body read, counted as downloaded bytes and download time like the C# `ReadNetworkAsync`.
@@ -306,7 +390,8 @@ impl Shared {
         loop {
             let result = self.fetch_once(start, size);
             match result {
-                Err(StreamError::Disposed) => return result,
+                // A refresh already happened inside `request`; another 401 is final.
+                Err(StreamError::Disposed | StreamError::Unauthorized) => return result,
                 Err(_) if !prefetch && attempt == 0 => attempt += 1,
                 _ => return result,
             }
@@ -469,7 +554,13 @@ impl RangeStream {
             prefetch_blocks.clamp(DEFAULT_PREFETCH_BLOCKS, MAXIMUM_PREFETCH_BLOCKS);
         let probe = Shared {
             url,
-            headers: RwLock::new(headers),
+            auth: Mutex::new(Auth {
+                headers,
+                generation: 0,
+                requested: None,
+            }),
+            auth_changed: Condvar::new(),
+            refresher: Mutex::new(None),
             length: 0,
             prefetch_blocks: u64::from(prefetch_blocks),
             disposed: AtomicBool::new(false),
@@ -550,16 +641,26 @@ impl RangeStream {
         self.supports_ranges
     }
 
-    /// Replaces the request headers, e.g. after a token refresh; the next requests use them.
+    /// Replaces the request headers, e.g. after a token refresh: the next requests use them, and
+    /// requests waiting after a 401 retry with them.
     pub fn set_headers(&self, headers: Vec<(String, String)>) {
-        *self
-            .shared
-            .headers
-            .write()
-            .unwrap_or_else(PoisonError::into_inner) = headers;
+        let mut auth = lock(&self.shared.auth);
+        auth.headers = headers;
+        auth.generation += 1;
+        auth.requested = None;
+        self.shared.auth_changed.notify_all();
     }
 
-    /// Reads at `position`. Returns 0 at or past the end. A read need not fill `buffer`.
+    /// Installs the owner's refresh callback. False once the stream is closed (nothing is kept).
+    pub fn set_refresher(&self, refresher: Refresher) -> bool {
+        let mut slot = lock(&self.shared.refresher);
+        if self.shared.disposed.load(Ordering::Acquire) {
+            return false;
+        }
+        *slot = Some(refresher);
+        true
+    }
+
     pub fn read(&self, position: u64, buffer: &mut [u8]) -> Result<usize, StreamError> {
         let _serialized = lock(&self.read_lock);
         if self.shared.disposed.load(Ordering::Acquire) {
@@ -758,6 +859,11 @@ impl RangeStream {
             fetch.finish(Err(StreamError::Disposed));
         }
         self.shared.work.notify_all();
+        drop(state);
+        // Waits for a callback in progress; none starts afterwards.
+        *lock(&self.shared.refresher) = None;
+        let _auth = lock(&self.shared.auth);
+        self.shared.auth_changed.notify_all();
     }
 }
 

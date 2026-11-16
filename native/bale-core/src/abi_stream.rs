@@ -160,6 +160,51 @@ pub unsafe extern "C" fn bale_core_range_set_headers(
     }
 }
 
+/// The owner's refresh callback: `(context, generation)` of the headers a 401 rejected. It runs on a
+/// stream thread, must return quickly, and answers later with `bale_core_range_set_headers`.
+pub type RefreshCallback = unsafe extern "C" fn(context: *mut std::ffi::c_void, generation: u64);
+
+struct RefreshContext(*mut std::ffi::c_void);
+
+// SAFETY: the owner guarantees the context is usable from any thread until `close` returns.
+unsafe impl Send for RefreshContext {}
+// SAFETY: as above; the stream only passes the pointer back.
+unsafe impl Sync for RefreshContext {}
+
+impl RefreshContext {
+    fn get(&self) -> *mut std::ffi::c_void {
+        self.0
+    }
+}
+
+/// Installs the callback a 401 calls for fresh headers. After `bale_core_range_close` returns, the
+/// callback is never called again, so the owner may then free `context`. Returns 0, or
+/// `Disposed` when the stream is already closed (the callback is not kept).
+///
+/// # Safety
+/// A live handle; `context` stays valid for `callback` until `close` returns.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_core_range_set_refresh(
+    handle: *const RangeStream,
+    callback: Option<RefreshCallback>,
+    context: *mut std::ffi::c_void,
+) -> i32 {
+    // SAFETY: the caller guarantees a live handle.
+    let (Some(stream), Some(callback)) = (unsafe { handle.as_ref() }, callback) else {
+        return INVALID;
+    };
+    let context = RefreshContext(context);
+    let installed = stream.set_refresher(Box::new(move |generation| {
+        // SAFETY: the owner keeps `context` valid until `close`, which clears this callback first.
+        unsafe { callback(context.get(), generation) }
+    }));
+    if installed {
+        0
+    } else {
+        code(StreamError::Disposed)
+    }
+}
+
 /// Stops the stream and wakes blocked reads; they return `Disposed`.
 ///
 /// # Safety

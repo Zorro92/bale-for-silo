@@ -178,7 +178,7 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    retry or the Content-Range check fails them.
 
    Not yet matched (step 6): the C# client also sends Kiota's User-Agent, offers compressed encodings,
-   and gets Kiota's automatic retries on 429/503 with Retry-After; a 401 refresh (step 4) is not wired.
+   and gets Kiota's automatic retries on 429/503 with Retry-After. (The 401 refresh is step 4, below.)
    Not used by playback yet.
 
    Step 3, the Rust IRandomAccessStream (`winrt_stream.rs`, windows-rs `#[implement]`): `ReadAsync`
@@ -209,6 +209,21 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    Also on Rust: Xvid AVI and 1080p AV1 software decode (0 late frames), H.264 system decode, three
    seeks per title, four rapid stop/start cycles with no hang, no errors logged. Not yet exercised:
    the Media Foundation (non-FFmpeg) route, for want of a library original that takes it.
+
+   Step 4, credentials (the C# `SiloRequestHandler` rules). A 401 makes Rust call the owner's callback
+   (`bale_core_range_set_refresh`, an `[UnmanagedCallersOnly]` C# method) with the generation of the
+   rejected headers, once per generation however many fetches met it, and wait up to 15 s for
+   `set_headers`; the request then retries once, and a second 401 is `Unauthorized` (7, an
+   `HttpRequestException` with status 401), never retried again by the demand-fetch retry. C# forces
+   the refresh with the rejected bearer (`CaptureHeadersAsync(..., rejectedAccessToken)`, so a token
+   another request already rotated is reused), and ignores callbacks for headers it already replaced.
+   On a failed refresh it hands back the old headers so the read fails now rather than after the
+   wait. A 401 at open (no callback yet) is refreshed and retried from C#. A one-minute timer also
+   hands over a token the session refreshed ahead of expiry (two-minute margin), so playback should
+   not normally meet a 401 at all. `close` clears the callback under its lock before returning, so
+   the C# GCHandle (weak) is freed only after the last possible call. Loopback tests cover a
+   mid-stream 401, a second 401, a 401 at open, the timer hand-over and a stale callback; removing the
+   retry, the stale check or the hand-over fails them.
 
 ### Stays in C#
 

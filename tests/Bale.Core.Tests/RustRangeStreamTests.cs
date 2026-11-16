@@ -15,10 +15,11 @@ public sealed class RustRangeStreamTests
 {
     private static readonly byte[] Payload = Enumerable.Range(0, 9 * 1024 * 1024 + 12345).Select(i => (byte)(i * 31 % 251)).ToArray();
 
-    private static SiloClient Client(LoopbackMediaServer server)
+    private static SiloClient Client(LoopbackMediaServer server, long expiresIn = 3600)
     {
         var client = new SiloClient(server.Uri, PlaybackTestSupport.Identity);
-        client.SignIn(new TokenPair { AccessToken = "test-access", ExpiresIn = 3600, User = new Account { Id = "account" } },
+        client.SignIn(new TokenPair { AccessToken = "test-access", RefreshToken = "test-refresh", ExpiresIn = expiresIn,
+                User = new Account { Id = "account" } },
             profileId: "profile", profileToken: "test-profile-proof");
         return client;
     }
@@ -199,6 +200,81 @@ public sealed class RustRangeStreamTests
         }
     }
 
+    [Fact]
+    public async Task A401MidStreamRefreshesOnceAndRetries()
+    {
+        using var server = new LoopbackMediaServer(Payload);
+        using var client = Client(server);
+        await using var rust = await client.Playback.OpenMedia(Plan()).OpenNativeStreamAsync(default, prefetchBlocks: 4);
+        Assert.Equal(1, rust.Read(new byte[1], 0, 1));
+        // The server revokes the bearer; the refresh endpoint hands out its replacement.
+        server.AcceptedBearer = server.RefreshedBearer = "rotated-access";
+        rust.Position = 5 << 20;
+        var buffer = new byte[2 << 20];
+        var count = rust.Read(buffer, 0, buffer.Length);
+        Assert.True(buffer.AsSpan(0, count).SequenceEqual(Payload.AsSpan(5 << 20, count)));
+        // The demand fetch and its prefetches all met the 401; one refresh served them.
+        Assert.Equal(1, server.Refreshes);
+        Assert.Equal("rotated-access", client.AccessToken);
+        Assert.True(server.Rejections >= 1);
+    }
+
+    [Fact]
+    public async Task A401AfterTheRefreshFailsTheRead()
+    {
+        using var server = new LoopbackMediaServer(Payload);
+        using var client = Client(server);
+        await using var rust = await client.Playback.OpenMedia(Plan()).OpenNativeStreamAsync(default);
+        server.AcceptedBearer = "nothing-the-refresh-returns";
+        server.RefreshedBearer = "rotated-access";
+        rust.Position = 3 << 20;
+        var error = await Assert.ThrowsAsync<HttpRequestException>(() => Task.Run(() => rust.Read(new byte[100], 0, 100))
+            .WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Equal(HttpStatusCode.Unauthorized, error.StatusCode);
+        Assert.True(server.Refreshes >= 1);
+    }
+
+    [Fact]
+    public async Task A401AtOpenRefreshesAndRetries()
+    {
+        using var server = new LoopbackMediaServer(Payload) { AcceptedBearer = "rotated-access", RefreshedBearer = "rotated-access" };
+        using var client = Client(server);
+        await using var rust = await client.Playback.OpenMedia(Plan()).OpenNativeStreamAsync(default);
+        Assert.Equal(Payload.Length, rust.Length);
+        Assert.Equal(Payload[0], rust.ReadByte());
+        Assert.Equal(1, server.Refreshes);
+    }
+
+    [Fact]
+    public async Task TheHeaderCheckHandsOverATokenRefreshedAheadOfExpiry()
+    {
+        using var server = new LoopbackMediaServer(Payload) { RefreshedBearer = "first-refresh", RefreshExpiresIn = 60 };
+        // Inside the session's two-minute refresh margin: opening refreshes once.
+        using var client = Client(server, expiresIn: 60);
+        await using var rust = await client.Playback.OpenMedia(Plan()).OpenNativeStreamAsync(default);
+        Assert.Equal(1, server.Refreshes);
+        server.AcceptedBearer = server.RefreshedBearer = "second-refresh";
+        await rust.CheckHeadersAsync(default);
+        Assert.Equal(2, server.Refreshes);
+        rust.Position = 4 << 20;
+        Assert.Equal(Payload[4 << 20], rust.ReadByte());
+        Assert.Equal(0, server.Rejections);
+    }
+
+    [Fact]
+    public async Task ARefreshForStaleHeadersIsIgnored()
+    {
+        using var server = new LoopbackMediaServer(Payload) { RefreshedBearer = "first-refresh", RefreshExpiresIn = 60 };
+        using var client = Client(server, expiresIn: 60);
+        await using var rust = await client.Playback.OpenMedia(Plan()).OpenNativeStreamAsync(default);
+        server.RefreshedBearer = "second-refresh";
+        await rust.CheckHeadersAsync(default);
+        var refreshes = server.Refreshes;
+        // Generation 0's headers were already replaced: a late callback for them must not refresh again.
+        await rust.RefreshAfterRejectionAsync(0);
+        Assert.Equal(refreshes, server.Refreshes);
+    }
+
     internal enum Fault { Status500, Truncate, WrongRange }
 
     /// <summary>A minimal HTTP/1.1 server with byte ranges, keep-alive and injectable faults.</summary>
@@ -223,6 +299,15 @@ public sealed class RustRangeStreamTests
         /// <summary>Faults for the next ranged request starting at an offset, in order.</summary>
         public ConcurrentQueue<(long Start, Fault Fault)> Faults { get; } = new();
         public ConcurrentQueue<KeyValuePair<string, string>> Headers { get; } = new();
+        /// <summary>The only bearer media requests accept, once set; others get 401.</summary>
+        public volatile string? AcceptedBearer;
+        /// <summary>The access token <c>/api/v2/auth/refresh</c> returns.</summary>
+        public volatile string RefreshedBearer = "refreshed-access";
+        public long RefreshExpiresIn { get; init; } = 3600;
+        private int _refreshes, _rejections;
+        public int Refreshes => Volatile.Read(ref _refreshes);
+        /// <summary>Media requests answered 401.</summary>
+        public int Rejections => Volatile.Read(ref _rejections);
         private int _connections;
         /// <summary>TCP connections accepted so far.</summary>
         public int Connections => Volatile.Read(ref _connections);
@@ -253,7 +338,8 @@ public sealed class RustRangeStreamTests
                     {
                         var line = await reader.ReadLineAsync(_stop.Token);
                         if (string.IsNullOrEmpty(line)) return;
-                        string? range = null;
+                        string? range = null, authorization = null;
+                        var contentLength = 0;
                         string? header;
                         while (!string.IsNullOrEmpty(header = await reader.ReadLineAsync(_stop.Token)))
                         {
@@ -262,6 +348,22 @@ public sealed class RustRangeStreamTests
                             var value = header[(colon + 1)..].Trim();
                             Headers.Enqueue(new(name, value));
                             if (name == "range") range = value;
+                            if (name == "authorization") authorization = value;
+                            if (name == "content-length") contentLength = int.Parse(value);
+                        }
+                        if (contentLength > 0) await reader.ReadBlockAsync(new char[contentLength], _stop.Token);
+                        if (line.Contains("/api/v2/auth/refresh", StringComparison.Ordinal))
+                        {
+                            Interlocked.Increment(ref _refreshes);
+                            var json = $$$"""{"access_token":"{{{RefreshedBearer}}}","refresh_token":"rt-{{{Refreshes}}}","expires_in":{{{RefreshExpiresIn}}}}""";
+                            await WriteAsync(stream, $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {json.Length}\r\n\r\n{json}");
+                            continue;
+                        }
+                        if (AcceptedBearer is { } accepted && authorization != $"Bearer {accepted}")
+                        {
+                            Interlocked.Increment(ref _rejections);
+                            await WriteAsync(stream, "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n");
+                            continue;
                         }
                         if (!await RespondAsync(stream, range)) return;
                     }

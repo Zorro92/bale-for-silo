@@ -254,16 +254,21 @@ public sealed class SiloClient : IDisposable
     /// anything. Credentials: never log or persist the result.
     /// </summary>
     public Task<IReadOnlyList<KeyValuePair<string, string>>> CaptureRequestHeadersAsync(Uri uri, CancellationToken cancellationToken) =>
-        CaptureHeadersAsync(uri, CapturePlaybackScope().Request, cancellationToken);
+        CaptureHeadersAsync(uri, CapturePlaybackScope().Request, null, cancellationToken);
 
     /// <summary>
     /// The headers this client would send to <paramref name="uri"/> for <paramref name="profile"/>: the
     /// Silo client headers, bearer token and profile proof, from the same handler and credential source
     /// as every other request, without sending anything. For the Rust media transport. Credentials.
+    /// <paramref name="rejectedAccessToken"/>, the bearer a 401 rejected, first refreshes the session
+    /// unless another request already rotated that token.
     /// </summary>
     internal async Task<IReadOnlyList<KeyValuePair<string, string>>> CaptureHeadersAsync(Uri uri, ProfileRequestOption profile,
-        CancellationToken cancellationToken)
+        string? rejectedAccessToken, CancellationToken cancellationToken)
     {
+        // A 401 on the Rust transport: the same refresh-once rule as SiloRequestHandler.
+        if (rejectedAccessToken is not null)
+            await RefreshRejectedCredentialsAsync(rejectedAccessToken, cancellationToken).ConfigureAwait(false);
         var capture = new HeaderCapture();
         using var invoker = new HttpMessageInvoker(new SiloRequestHandler(_identity, CurrentCredentialsAsync, capture));
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);

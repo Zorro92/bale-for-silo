@@ -18,7 +18,7 @@ public sealed class PlaybackMedia
 
     /// <summary>The client's request headers for a URL and profile, without sending (SiloClient.CaptureHeadersAsync).</summary>
     internal delegate Task<IReadOnlyList<KeyValuePair<string, string>>> HeaderCapture(Uri uri, ProfileRequestOption profile,
-        CancellationToken cancellationToken);
+        string? rejectedAccessToken, CancellationToken cancellationToken);
 
     internal PlaybackMedia(HttpClient http, Uri server, PlaybackRequestScope scope, PlaybackPlan plan, Uri uri,
         HeaderCapture? captureHeaders = null)
@@ -129,13 +129,15 @@ public sealed class PlaybackMedia
     /// <summary>
     /// Every header a media request carries except Range: the client's (bearer token, profile proof,
     /// device) for this media's captured profile, then the plan's stream headers. For the Rust
-    /// transport, which sends them itself. Credentials: never log them.
+    /// transport, which sends them itself. Credentials: never log them. <paramref name="rejectedAccessToken"/>:
+    /// the bearer a 401 rejected, refreshed first (once) as the C# transport's handler does.
     /// </summary>
-    internal async Task<IReadOnlyList<KeyValuePair<string, string>>> NativeHeadersAsync(CancellationToken ct)
+    internal async Task<IReadOnlyList<KeyValuePair<string, string>>> NativeHeadersAsync(CancellationToken ct,
+        string? rejectedAccessToken = null)
     {
         var capture = _captureHeaders ?? throw new InvalidOperationException("This client cannot hand headers to the native transport.");
         _scope.Request.CheckCurrent();
-        var client = await capture(Uri, _scope.Request, ct).ConfigureAwait(false);
+        var client = await capture(Uri, _scope.Request, rejectedAccessToken, ct).ConfigureAwait(false);
         return client.Concat(_headers).ToArray();
     }
 
