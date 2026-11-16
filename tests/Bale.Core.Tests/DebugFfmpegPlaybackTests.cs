@@ -121,7 +121,7 @@ public class DebugFfmpegPlaybackTests
         Assert.Contains("audio.OpenFailed -= OnAudioTrackOpenFailed", source);
         Assert.DoesNotContain("CreateFromUriAsync", source);
         Assert.DoesNotContain("ex.Message", source);
-        var hls = source[source.IndexOf("if (transport.IsHls)", StringComparison.Ordinal)
+        var hls = source[source.IndexOf("if (transport.IsHls && !media.Route.UseFfmpeg)", StringComparison.Ordinal)
             ..source.IndexOf("if (transport.IsProgressive)", StringComparison.Ordinal)];
         Assert.Contains("AdaptiveMediaSource.CreateFromStreamAsync", hls);
         Assert.DoesNotContain("FFmpeg", hls);
@@ -162,7 +162,7 @@ public class DebugFfmpegPlaybackTests
         [
             "if (media.FfmpegSource is not null)", "stats = ReadFfmpegStats(stats, media)",
             "else if (media is { Opened: true, Item: { } item })", "BackendDisplayName = \"FFmpegInteropX\"",
-            "BackendRoute = media.Progressive is null ? \"FFmpeg Direct\" : \"FFmpeg Progressive\"", "CurrentVideoStream", "CurrentAudioStream",
+            "BackendRoute = media.Progressive is null ? \"FFmpeg Direct\" : media.Transport.IsHls ? \"FFmpeg HLS\" : \"FFmpeg Progressive\"", "CurrentVideoStream", "CurrentAudioStream",
             "VideoDecoderName = FfmpegSource.DecoderName(video.DecoderEngine)",
             "AudioDecoderName = FfmpegSource.DecoderName(audio.DecoderEngine)",
             "DebugProcessCpu.Read(out var failure)", "Stopwatch.GetElapsedTime(previous, now)",

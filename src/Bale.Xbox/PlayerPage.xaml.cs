@@ -75,6 +75,9 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public bool MatchContentFrameRate { get; } = DebugDisplayMatch.Enabled;
         public string FrameDeliveryMode { get; } = DebugFrameDeliverySwitch.Mode;
         public string StreamAdapter { get; } = DebugStreamAdapterSwitch.Mode;
+        public string HlsEngine { get; } = DebugHlsEngineSwitch.Mode;
+        /// <summary>HLS through the Rust HLS reader and FFmpeg, unless the reader refused this attempt's playlist.</summary>
+        public bool HlsThroughFfmpeg => HlsEngine == "ffmpeg" && !HlsReaderRefused;
         public bool UsePooledStreamAdapter => StreamAdapter == "pooled";
         /// <summary>The Rust range stream and its Rust IRandomAccessStream (docs/rust-port.md, slice 7).</summary>
         public bool UseRustTransport => StreamAdapter == "rust";
@@ -84,10 +87,13 @@ public sealed partial class PlayerPage : Page, IBackHandler
 #else
         public bool UsePooledStreamAdapter => true;
         public bool UseRustTransport => true;
+        public bool HlsThroughFfmpeg => false;
         public bool FfmpegEnabled => true;
         public bool ForceFfmpeg => false;
 #endif
         public CancellationTokenSource? ReportingCancellation { get; set; }
+        /// <summary>The Rust HLS reader refused this attempt's playlist: its HLS mounts use Windows' source.</summary>
+        public bool HlsReaderRefused { get; set; }
         public Task? ReportingTask { get; set; }
     }
 
@@ -440,7 +446,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 return;
             }
             if (failedRoute?.ConsoleToneMap == true && ConsoleToneMapPolicy.RequiresToneMap(attempt.Plan,
-                !ConsoleToneMapPolicy.HasHdrOutput(attempt.Start.ClientPlaybackContext.Output.HdrDetails), attempt.Request.Detail.Versions))
+                !ConsoleToneMapPolicy.HasHdrOutput(attempt.Start.ClientPlaybackContext.Output.HdrDetails), attempt.Request.Detail.Versions,
+                attempt.HlsThroughFfmpeg))
             {
                 // Do not retry a failed local stage if the server ignored claim withdrawal.
                 await ShowErrorAsync(PlaybackMessages.PlaybackFailed);

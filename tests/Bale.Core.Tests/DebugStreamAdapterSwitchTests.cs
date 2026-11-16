@@ -80,7 +80,7 @@ public class DebugStreamAdapterSwitchTests
         Assert.Contains("stream-adapter={DebugStreamAdapterSwitch.Mode}\\n", post);
         Assert.Contains("applies to the next playback attempt", post);
         Assert.Contains("///   GET  /stream-adapter", routes);
-        Assert.Contains("///   POST /stream-adapter?mode=pooled", routes);
+        Assert.Contains("///   POST /stream-adapter?mode=rust", routes);
         var notFound = routes.Split('\n').Single(line => line.Contains("\"routes: ", StringComparison.Ordinal));
         Assert.Contains("GET /stream-adapter, POST /stream-adapter?mode={pooled|builtin|rust}", notFound);
     }

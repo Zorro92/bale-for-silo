@@ -85,7 +85,8 @@ public sealed partial class PlayerPage
         Log.Info("player: " + PlaybackPlanLog.Describe(attempt.Plan));
         // Client-managed originals keep SDR HDMI; all other mounts retain native HDR policy.
         var sdrOutput = !ConsoleToneMapPolicy.HasHdrOutput(attempt.Start!.ClientPlaybackContext.Output.HdrDetails);
-        var consoleToneMap = ConsoleToneMapPolicy.RequiresToneMap(attempt.Plan!, sdrOutput, attempt.Request.Detail.Versions);
+        var consoleToneMap = ConsoleToneMapPolicy.RequiresToneMap(attempt.Plan!, sdrOutput, attempt.Request.Detail.Versions,
+            attempt.HlsThroughFfmpeg);
 #if DEBUG_SERVER
         if (attempt.PretendHdr)
         {
@@ -126,7 +127,7 @@ public sealed partial class PlayerPage
             StartPosition = playerStart,
             StartPaused = paused,
             Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled, attempt.ForceFfmpeg,
-                sdrOutput: sdrOutput, versions: attempt.Request.Detail.Versions),
+                sdrOutput: sdrOutput, versions: attempt.Request.Detail.Versions, hlsThroughFfmpeg: attempt.HlsThroughFfmpeg),
         };
         if (media.Route.ConsoleToneMap && !media.Route.UseFfmpeg)
             throw new InvalidDataException("An HDR original on SDR requires the FFmpeg tone-map route.");
@@ -145,7 +146,7 @@ public sealed partial class PlayerPage
         var delivery = _delivery is { Length: > 0 and < 80 } value
             && value.All(c => char.IsAsciiLetterOrDigit(c) || c == '_') ? value : "unknown";
         Log.Info($"player: playable delivery={delivery}");
-        if (transport.IsHls)
+        if (transport.IsHls && !media.Route.UseFfmpeg)
         {
             var (bytes, _) = await transport.GetBytesAsync(transport.Uri, null, null, media.Token);
             media.Playlist = new MemoryStream(bytes);
@@ -189,6 +190,27 @@ public sealed partial class PlayerPage
                 }
                 media.ForwardInput = NativeInputStream(media.Progressive) ?? new ForwardInputStream(media.Progressive);
             }
+            else if (transport.IsHls)
+            {
+                // HLS through FFmpeg (docs/rust-port.md): the Rust reader's forward-only stream from the
+                // segment holding playerStart. FFmpeg's clock reads 0 at that segment's start, so the
+                // mount's timeline starts there; seeks remount at the target segment (PlayerPage.Seek.cs).
+                try
+                {
+                    var hls = await transport.OpenNativeHlsAsync(playerStart, media.Token);
+                    media.Progressive = hls;
+                    transport.StartPlayerClockAt(hls.SegmentStartSeconds);
+                }
+                catch (HlsUnsupportedException) when (!attempt.HlsReaderRefused && ReferenceEquals(attempt.Media, media))
+                {
+                    Log.Info("player: HLS playlist needs Windows' HLS source; remounting there");
+                    attempt.HlsReaderRefused = true;
+                    DisposeMount(attempt);
+                    await MountPlanAsync(attempt, playerStart, paused, rangeRefused);
+                    return;
+                }
+                media.ForwardInput = NativeInputStream(media.Progressive) ?? new ForwardInputStream(media.Progressive);
+            }
             else
             {
 #if DEBUG_SERVER
@@ -215,7 +237,7 @@ public sealed partial class PlayerPage
                         attempt.StreamAdapterLogged = true;
                     }
                 }
-                else Log.Info($"player: stream adapter={(media.Progressive is RustProgressiveStream ? "rust-forward" : "forward")}");
+                else Log.Info($"player: stream adapter={(media.Progressive is RustProgressiveStream ? transport.IsHls ? "rust-hls" : "rust-forward" : "forward")}");
                 // Keep auth, profile ownership and range cancellation in Core; FFmpeg receives bytes, not a bare URI.
                 Log.Info("player: FFmpeg before create stream");
 #if DEBUG_SERVER
@@ -422,7 +444,8 @@ public sealed partial class PlayerPage
             // TvVideoPlaybackStarter.kt's player coordinate may be zero on reanchored HLS even
             // when the source is minutes into the title. Set it once, only after native opening.
             // A forward-only progressive input cannot seek: it plays from its origin (player 0).
-            if (!media.Transport.IsProgressive) sender.PlaybackSession.Position = TimeSpan.FromSeconds(media.StartPosition);
+            // Forward-only mounts (progressive remux, HLS through FFmpeg) already open where they play.
+            if (media.Progressive is null) sender.PlaybackSession.Position = TimeSpan.FromSeconds(media.StartPosition);
             media.Opened = true;
             Log.Info("player: opened");
 #if DEBUG_SERVER
@@ -603,7 +626,10 @@ public sealed partial class PlayerPage
             var source = SourcePosition(attempt);
             Log.Info($"player: progressive reconnect reason={reason} count={attempt.ProgressiveReconnects}");
             // The same seek_reanchor the seek path uses: same route, session and tracks, no failure budget.
-            var replacement = await ReanchorSeekAsync(attempt, media, source, paused: false);
+            // HLS through FFmpeg remounts the same plan locally; a progressive remux needs the server.
+            var replacement = media.Transport.IsHls
+                ? await RemountHlsAsync(attempt, new PlaybackSeek(source), paused: false)
+                : await ReanchorSeekAsync(attempt, media, source, paused: false);
             fallBack = replacement is null;
             if (replacement is not null) await ReportPositionAsync(attempt, SourcePosition(attempt), false);
         }

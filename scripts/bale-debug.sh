@@ -53,6 +53,7 @@
 #   scripts/bale-debug.sh gc                     GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
 #   scripts/bale-debug.sh gc latency <batch|interactive|sustained|default>  change latency app-wide now; default restores the saved pre-playback mode; playback acquires sustained automatically
 #   scripts/bale-debug.sh frame-delivery [native|managed|off]  next playback attempt's observer; default native, on aliases native; memory only (restart resets); no args = status
+#   scripts/bale-debug.sh hls-engine [native|ffmpeg]   next playback attempt's HLS engine; default native (Windows); ffmpeg = Rust HLS reader + FFmpeg (+ console tone map for HLS remux); memory only; no args = status
 #   scripts/bale-debug.sh stream-adapter [pooled|builtin|rust]  next playback attempt's stream adapter; default rust (C#: pooled/builtin), memory only (restart resets); no args = status
 #                                               rust: the Rust range stream and Rust IRandomAccessStream (no managed code on reads; FFmpeg and Media Foundation)
 #   scripts/bale-debug.sh av1-claim [1080|2160]   next playback attempt's AV1 software-decode claim: 1080 = 1080p60 (default), 2160 adds a 4K30 entry; memory only (restart resets); no args = status
@@ -445,6 +446,17 @@ case "${1:-}" in
       curl --fail-with-body -sS --max-time 5 "$BASE/stream-adapter"
     else
       curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/stream-adapter" --data-urlencode "mode=$2"
+    fi
+    ;;
+  hls-engine)
+    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^(native|ffmpeg)$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh hls-engine [native|ffmpeg]' >&2
+      exit 2
+    fi
+    if [[ "$#" == 1 ]]; then
+      curl --fail-with-body -sS --max-time 5 "$BASE/hls-engine"
+    else
+      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/hls-engine" --data-urlencode "mode=$2"
     fi
     ;;
   av1-claim)

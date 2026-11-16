@@ -56,7 +56,11 @@ public sealed class PlaybackMedia
     /// <summary>A forward-only server_remux_progressive response: open it with <see cref="OpenProgressiveAsync"/>.</summary>
     public bool IsProgressive { get; }
     public double? DurationSeconds { get; }
-    public PlaybackTimeline Timeline { get; }
+    /// <summary>The mount's clocks. An HLS-through-FFmpeg mount shifts it to its first segment (<see cref="StartPlayerClockAt"/>).</summary>
+    public PlaybackTimeline Timeline { get; private set; }
+
+    /// <summary>The engine's clock reads 0 at <paramref name="playerSeconds"/> of the plan's player timeline.</summary>
+    public void StartPlayerClockAt(double playerSeconds) => Timeline = Timeline.StartingAt(playerSeconds);
 
     public Task<HttpResponseMessage> SendAsync(Uri uri, long? offset, long? length,
         HttpCompletionOption completion, CancellationToken ct) => SendAsync(uri, offset, length, completion, streamHeaders: true, ct);

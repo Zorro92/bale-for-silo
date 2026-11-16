@@ -123,7 +123,7 @@ public sealed partial class PlayerPage
         stats = stats with
         {
             BackendDisplayName = "FFmpegInteropX",
-            BackendRoute = media.Progressive is null ? "FFmpeg Direct" : "FFmpeg Progressive",
+            BackendRoute = media.Progressive is null ? "FFmpeg Direct" : media.Transport.IsHls ? "FFmpeg HLS" : "FFmpeg Progressive",
         };
         try
         {
@@ -191,7 +191,7 @@ public sealed partial class PlayerPage
 
     private static void ReadTrackVideoMediaType(Mount media)
     {
-        var route = media.Transport.IsHls ? "hls" : media.Route.UseFfmpeg ? "ffmpeg" : "native";
+        var route = media.Route.UseFfmpeg ? "ffmpeg" : media.Transport.IsHls ? "hls" : "native";
         try
         {
             var item = media.Item;

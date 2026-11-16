@@ -289,7 +289,36 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    Also from this decision: the console tone map now covers `server_remux_progressive` (af495b0), whose
    video is the source's own stream copy. On 0.1.547 the HLG title through the forced forward-only
    delivery plays via FFmpeg d3d11va with `Bale tonemap active` and a correct picture. The HLS remux
-   still plays through Windows' own source and cannot take the tone map.
+   still plays through Windows' own source and cannot take the tone map (see "HLS through FFmpeg" below).
+
+   **HLS through FFmpeg** (owner, 2026-11-15; debug switch `hls-engine ffmpeg`, default `native`
+   until a console A/B). Silo's HLS is simple (checked in silo-server): one rendition, never an
+   adaptive ladder (a multivariant playlist only attaches subtitle groups to its single variant);
+   media playlists are complete VOD lists (`copy_keyframe_plan.go`, `GenerateFullManifest`) or
+   FFmpeg's own append-only EVENT playlist while a copy remux is produced
+   (`stabilizeCopyHLSRemountTimeline`); segments are MPEG-TS, or fMP4 after one EXT-X-MAP init, and
+   either concatenates into one stream; long queries ride on EXT-X-DEFINE `{$silo_query}`. So no HLS
+   client logic is needed beyond reading the playlist:
+
+   - `hls.rs` parses it (single variant, EXT-X-DEFINE NAME/VALUE, VOD/EVENT, EXT-X-MAP) and refuses
+     what it can't play (keys, byte ranges, discontinuities, gaps, parts, ladders, separate audio,
+     QUERYPARAM/IMPORT) with `HlsUnsupported` (10): the player then remounts on Windows' source for
+     that attempt. Every child URI is checked like `PlaybackMediaUrl.IsAllowedChild` (same scheme,
+     host, port, media routes, no traversal; never escaped, so stricter); a differential test runs
+     193 cases against the C# rule.
+   - `HlsSource` feeds the init and segments, from the one holding the start time, into the
+     forward-only pump (`BodySource`), re-reading a growing playlist every half target duration (up
+     to 60 s per segment). Requests go through `AuthClient`, the range stream's headers, 401 refresh
+     and busy retries, now shared; `NativeHeaderRefresh` is the C# side for both streams.
+   - Route: `hls_through_ffmpeg` sends HLS to FFmpeg's forward-only input (audio ordinal 0) and lets
+     the console tone map cover `server_remux_hls`. The mount's clock starts at the opened segment
+     (`PlaybackTimeline.StartingAt`, since FFmpegInteropX zeroes the first timestamp). Seeks inside
+     the server's window remount locally at the target's segment, so playback lands at that segment's
+     start (at most one segment early); outside it the server reanchors as before. A stream that ends
+     early remounts locally.
+   - Not yet on the console. To check there: startup and seek time against Windows' HLS, landing
+     error after a seek, EVENT playlists during a copy remux, PGS/text subtitles on HLS, the HLS remux
+     tone map.
 
 ### Stays in C#
 

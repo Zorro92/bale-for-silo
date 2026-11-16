@@ -99,11 +99,23 @@ public sealed partial class PlayerPage
             var ranges = session.GetSeekableRanges().Select(range => (range.Start.TotalSeconds, range.End.TotalSeconds)).ToArray();
             // Windows' growing-HLS ranges describe production, not reliable seek landings.
             // Keep them for diagnostics; only a complete server window authorizes native HLS.
-            var local = request.CanSeekInMount(attempt.Plan!, media.Transport.IsHls, session.CanSeek);
+            // HLS through FFmpeg is forward-only: inside the server's seek window it remounts locally at
+            // the target's segment (no server round trip); outside it the server reanchors, as for
+            // Windows' HLS source.
+            var forwardHls = media.Transport.IsHls && media.Progressive is not null;
+            var remount = forwardHls && request.CanSeekInMount(attempt.Plan!, isHls: true, canSeek: true);
+            var local = !forwardHls && request.CanSeekInMount(attempt.Plan!, media.Transport.IsHls, session.CanSeek);
 #if DEBUG_SERVER
-            Log.Info($"player: seek target={request.Seconds:0.###} player={session.Position.TotalSeconds:0.###} offset={media.Transport.Timeline.TimelineOffsetSeconds:0.###} ranges={ranges.Length} action={(local ? "native" : "reanchor")}");
+            Log.Info($"player: seek target={request.Seconds:0.###} player={session.Position.TotalSeconds:0.###} offset={media.Transport.Timeline.TimelineOffsetSeconds:0.###} ranges={ranges.Length} action={(local ? "native" : remount ? "remount" : "reanchor")}");
 #endif
-            if (!local)
+            if (remount)
+            {
+                media = await RemountHlsAsync(attempt, request, paused);
+                if (media is null) return new(SeekOutcome.Unavailable);
+                player = media.Player!;
+                session = player.PlaybackSession;
+            }
+            else if (!local)
             {
                 if (!attempt.ServerFeatures.Contains(PlaybackSeekReanchor.Feature)) return new(SeekOutcome.Unavailable);
                 media = await ReanchorSeekAsync(attempt, media, request.Seconds, paused);
@@ -190,6 +202,28 @@ public sealed partial class PlayerPage
         SetLoading(true);
         var timeline = PlaybackTimeline.From(attempt.Plan.Timeline);
         await MountPlanAsync(attempt, PlaybackProgressive.MountPlayerStart(attempt.Plan, timeline.PlayerStartSeconds), paused);
+        return await OpenedReplacementAsync(attempt);
+    }
+
+    /// <summary>
+    /// HLS through FFmpeg: the same plan remounted at the segment holding the target (the Rust reader
+    /// starts there), with no server request. Playback resumes at that segment's start, at most one
+    /// segment before the target.
+    /// </summary>
+    private async Task<Mount?> RemountHlsAsync(Attempt attempt, PlaybackSeek request, bool paused)
+    {
+        if (request.PlayerPosition(PlaybackTimeline.From(attempt.Plan!.Timeline), _duration) is not { } playerTarget) return null;
+        Pause(attempt);
+        DisposeMount(attempt);
+        attempt.Position = _sourcePosition = request.Seconds;
+        _state = "loading";
+        SetLoading(true);
+        await MountPlanAsync(attempt, playerTarget, paused);
+        return await OpenedReplacementAsync(attempt);
+    }
+
+    private async Task<Mount?> OpenedReplacementAsync(Attempt attempt)
+    {
         if (attempt.Media is not { } replacement) return null;
         var ready = await Task.WhenAny(replacement.Opening.Task, Task.Delay(15000, replacement.Token));
         replacement.Token.ThrowIfCancellationRequested();

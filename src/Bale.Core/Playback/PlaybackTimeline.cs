@@ -29,6 +29,13 @@ public sealed record PlaybackTimeline(double SourceStartSeconds, double PlayerSt
     public double SourceStart(double? startRequestPosition, double? overridePosition) =>
         PlaybackStartPosition.Resolve(startRequestPosition, SourceStartSeconds, PlayerStart(overridePosition));
 
+    /// <summary>
+    /// A mount whose player clock starts at <paramref name="playerSeconds"/> of this timeline reads 0
+    /// there: the HLS-through-FFmpeg mount starts at a segment boundary, and FFmpeg's clock at 0.
+    /// </summary>
+    public PlaybackTimeline StartingAt(double playerSeconds) =>
+        double.IsFinite(playerSeconds) && playerSeconds > 0 ? this with { TimelineOffsetSeconds = TimelineOffsetSeconds + playerSeconds } : this;
+
     private static double? Map(double position, double offset)
     {
         if (!double.IsFinite(position) || position < 0 || !double.IsFinite(offset)) return null;
