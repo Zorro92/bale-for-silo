@@ -644,9 +644,13 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         }
     }
 
-    /// <summary>The initial next-up season; Show subsequently keeps the current season (TvItemDetailScreen.kt).</summary>
+    /// <summary>
+    /// The initial next-up season; Show subsequently keeps the current season (TvItemDetailScreen.kt).
+    /// Specials are listed first but don't open a series on their own (CatalogModels.kt).
+    /// </summary>
     private SeasonChoice? PlaySeason() =>
         _tabs.Select(tab => tab.Season).FirstOrDefault(season => season?.Number == _detail?.PlaySeasonNumber)
+        ?? _tabs.Select(tab => tab.Season).FirstOrDefault(season => season is { IsSpecials: false })
         ?? _tabs.Select(tab => tab.Season).FirstOrDefault(season => season is not null);
 
     /// <summary>Show / Season modes follow focus, not a press (TvSeasonPicker.kt).</summary>

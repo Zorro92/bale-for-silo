@@ -121,6 +121,9 @@ public sealed record SeasonChoice(long Number, string Title, long EpisodeCount)
     public string ContentId { get; init; } = string.Empty;
 
     public bool Played { get; init; }
+
+    /// <summary>Season.isSpecialsForDisplay: the server's is_specials flag or season zero.</summary>
+    public bool IsSpecials { get; init; }
 }
 
 /// <summary>An episode card on the series page (TvDetailEpisodeRail), and the hero it shows when focused.</summary>

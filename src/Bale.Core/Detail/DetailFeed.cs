@@ -84,7 +84,10 @@ public sealed partial class DetailFeed
         return ToDetail(item);
     }
 
-    /// <summary>A series' seasons, specials last like the official apps' season picker.</summary>
+    /// <summary>
+    /// A series' seasons in display order (CatalogModels.kt sortedForDisplay): Specials first as season
+    /// zero, then numbered seasons ascending, matching the server, web and the other Silo clients.
+    /// </summary>
     public async Task<IReadOnlyList<SeasonChoice>> SeasonsAsync(string seriesId, CancellationToken cancellationToken = default)
     {
         var seasons = await _api.Api.V2.Catalog.Series[seriesId].Seasons.GetAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -97,8 +100,12 @@ public sealed partial class DetailFeed
             {
                 ContentId = season.ContentId ?? string.Empty,
                 Played = season.UserData?.Played == true,
+                IsSpecials = season.IsSpecials == true || season.SeasonNumber == 0,
             })
-            .OrderBy(season => season.Number == 0 ? long.MaxValue : season.Number)
+            .OrderByDescending(season => season.IsSpecials)
+            .ThenBy(season => season.Number)
+            .ThenBy(season => season.Title, StringComparer.Ordinal)
+            .ThenBy(season => season.ContentId, StringComparer.Ordinal)
             .ToList();
     }
 

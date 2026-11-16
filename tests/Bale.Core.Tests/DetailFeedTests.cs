@@ -295,6 +295,20 @@ public class DetailFeedTests
     }
 
     [Fact]
+    public async Task SpecialsAreListedFirstAsSeasonZero()
+    {
+        // SeasonDisplayOrderTest.kt: Specials (season zero or is_specials) first, then numbered seasons.
+        var handler = new StubHandler().Enqueue("""
+            {"items":[{"content_id":"s2","season_number":2},{"content_id":"s0","season_number":0},
+            {"content_id":"s1","season_number":1},{"content_id":"x","season_number":9,"is_specials":true}]}
+            """);
+        var seasons = await Feed(handler).SeasonsAsync("series:show");
+        Assert.Equal(new[] { "s0", "x", "s1", "s2" }, seasons.Select(season => season.ContentId));
+        Assert.Equal(new[] { true, true, false, false }, seasons.Select(season => season.IsSpecials));
+        Assert.Equal("Specials", seasons[0].Title);
+    }
+
+    [Fact]
     public void RatingsPreferTheServersListThenFallBackToImdbAndTmdb()
     {
         var served = new CatalogItemDetail { Ratings = [new CatalogRating { Source = "tmdb", Name = "TMDB", Display = "8.3" }], RatingImdb = 7.0 };
