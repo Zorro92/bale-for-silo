@@ -143,22 +143,7 @@ pub fn fetch_pattern(args: &FetchArgs) -> FetchReport {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    // One pool for the app's lifetime, like the C# HttpClient the player already warmed: a fresh pool
-    // per run made every run's first blocks pay TCP + TLS handshakes.
-    static AGENT: std::sync::OnceLock<ureq::Agent> = std::sync::OnceLock::new();
-    let agent = AGENT.get_or_init(|| {
-        let config = ureq::Agent::config_builder()
-            .timeout_connect(Some(Duration::from_secs(10)))
-            .timeout_global(Some(Duration::from_secs(30)))
-            .http_status_as_error(false)
-            .max_idle_connections_per_host(8)
-            .build();
-        ureq::Agent::with_parts(
-            config,
-            ureq::unversioned::transport::DefaultConnector::new(),
-            CachingResolver::default(),
-        )
-    });
+    let agent = crate::http::agent();
     let request_for = |first: u64, last: u64| {
         let mut request = agent
             .get(&args.url)
@@ -235,53 +220,6 @@ pub fn fetch_pattern(args: &FetchArgs) -> FetchReport {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     report.wall_ms = started.elapsed().as_secs_f64() * 1000.0;
     report
-}
-
-/// ureq resolves the host before it looks in its connection pool, so every request paid a DNS
-/// lookup (on a spawned thread, with a timeout set) even on a warm connection; the C# handler takes a
-/// pooled connection without one. Resolve each host once a minute instead.
-#[derive(Debug, Default)]
-struct CachingResolver {
-    inner: ureq::unversioned::resolver::DefaultResolver,
-    cache:
-        std::sync::Mutex<std::collections::HashMap<String, (Instant, Vec<std::net::SocketAddr>)>>,
-}
-
-impl ureq::unversioned::resolver::Resolver for CachingResolver {
-    fn resolve(
-        &self,
-        uri: &ureq::http::Uri,
-        config: &ureq::config::Config,
-        timeout: ureq::unversioned::transport::NextTimeout,
-    ) -> Result<ureq::unversioned::resolver::ResolvedSocketAddrs, ureq::Error> {
-        const FRESH: Duration = Duration::from_secs(60);
-        let key = format!(
-            "{}://{}",
-            uri.scheme_str().unwrap_or_default(),
-            uri.authority().map_or("", |a| a.as_str())
-        );
-        let cache = self
-            .cache
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some((at, addresses)) = cache.get(&key)
-            && at.elapsed() < FRESH
-        {
-            let mut resolved = self.empty();
-            for address in addresses {
-                resolved.push(*address);
-            }
-            return Ok(resolved);
-        }
-        drop(cache);
-        let resolved = self.inner.resolve(uri, config, timeout)?;
-        let addresses = resolved.iter().copied().collect();
-        self.cache
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(key, (Instant::now(), addresses));
-        Ok(resolved)
-    }
 }
 
 #[cfg(windows)]

@@ -30,15 +30,18 @@ public sealed partial class PlaybackClient
     private readonly IRequestAdapter _adapter;
     private readonly HttpClient _http;
     private readonly Func<PlaybackRequestScope> _captureScope;
+    private readonly PlaybackMedia.HeaderCapture? _captureHeaders;
     internal Uri Server { get; }
 
-    internal PlaybackClient(SiloApiClient api, IRequestAdapter adapter, HttpClient http, Uri server, Func<PlaybackRequestScope> captureScope)
+    internal PlaybackClient(SiloApiClient api, IRequestAdapter adapter, HttpClient http, Uri server, Func<PlaybackRequestScope> captureScope,
+        PlaybackMedia.HeaderCapture? captureHeaders = null)
     {
         _api = api;
         _adapter = adapter;
         _http = http;
         Server = server;
         _captureScope = captureScope;
+        _captureHeaders = captureHeaders;
     }
 
     /// <summary>Capture this plan's credential owner once; later reads must never adopt another viewer.</summary>
@@ -47,7 +50,7 @@ public sealed partial class PlaybackClient
         var scope = _captureScope();
         var uri = PlaybackMediaUrl.Resolve(plan.Stream?.Url, Server)
             ?? throw new InvalidDataException("The playback plan has no playable stream.");
-        return new(_http, Server, scope, plan, uri);
+        return new(_http, Server, scope, plan, uri, _captureHeaders);
     }
 
     /// <summary>The sidecar Bale's overlay should draw for this plan, or null (off, burned in, unusable).</summary>

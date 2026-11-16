@@ -165,6 +165,22 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    block over 500 ms and its worst first byte stayed at 217–255 ms; C# still had occasional 0.5–1.2 s
    blocks. Step 1 passes; the stream port (steps 2–6) may go ahead.
 
+   Step 2, the Rust range stream (`range_stream.rs`, handle ABI `abi_stream.rs`, C# `RustRangeStream`
+   via `PlaybackMedia.OpenNativeStreamAsync`): HttpRangeStream's 1 MiB blocks, 32-block LRU, 2–16
+   prefetch, three fetch workers, one demand retry, a joined failed prefetch retried as demand, and
+   the sequential fallback (reopen past 256 KiB forward or backward). Readers share blocks by `Arc`,
+   so an evicted block lives until its last reader drops it (C#'s leases). `close` wakes blocked reads
+   before the SafeHandle frees the handle. Headers come from `SiloClient.CaptureHeadersAsync` for the
+   media's captured profile plus the plan's stream headers. Tests (`RustRangeStreamTests`) run both
+   stacks against a real loopback HTTP server: byte-exact random reads, one fetch per block, paced
+   prefetch hits (9 of 10 blocks for both), the no-range fallback, retries, invalid ranges, waking a
+   stalled read, and identical identity/credential headers. Deliberately breaking prefetch, the demand
+   retry or the Content-Range check fails them.
+
+   Not yet matched (step 6): the C# client also sends Kiota's User-Agent, offers compressed encodings,
+   and gets Kiota's automatic retries on 429/503 with Retry-After; a 401 refresh (step 4) is not wired.
+   Not used by playback yet.
+
 ### Stays in C#
 
 - The XAML app (`src/Bale.Xbox`) and anything that drives XAML objects.

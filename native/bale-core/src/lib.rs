@@ -9,6 +9,7 @@
 
 pub mod abi;
 pub mod abi_meters;
+pub mod abi_stream;
 pub mod audio_selection;
 pub mod display;
 pub mod dolby_vision7;
@@ -17,10 +18,12 @@ pub mod evidence;
 pub mod formatting;
 pub mod frames;
 pub mod hardware;
+pub mod http;
 pub mod http_probe;
 pub mod language;
 pub mod meters;
 pub mod models;
+pub mod range_stream;
 pub mod reanchor;
 pub mod route;
 pub mod software_decode;

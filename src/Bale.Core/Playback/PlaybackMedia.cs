@@ -14,9 +14,16 @@ public sealed class PlaybackMedia
     private readonly Uri _server;
     private readonly PlaybackRequestScope _scope;
     private readonly IReadOnlyDictionary<string, string> _headers;
+    private readonly HeaderCapture? _captureHeaders;
 
-    internal PlaybackMedia(HttpClient http, Uri server, PlaybackRequestScope scope, PlaybackPlan plan, Uri uri)
+    /// <summary>The client's request headers for a URL and profile, without sending (SiloClient.CaptureHeadersAsync).</summary>
+    internal delegate Task<IReadOnlyList<KeyValuePair<string, string>>> HeaderCapture(Uri uri, ProfileRequestOption profile,
+        CancellationToken cancellationToken);
+
+    internal PlaybackMedia(HttpClient http, Uri server, PlaybackRequestScope scope, PlaybackPlan plan, Uri uri,
+        HeaderCapture? captureHeaders = null)
     {
+        _captureHeaders = captureHeaders;
         _http = http;
         _server = server;
         _scope = scope;
@@ -118,6 +125,23 @@ public sealed class PlaybackMedia
         }
         return buffer.ToArray();
     }
+
+    /// <summary>
+    /// Every header a media request carries except Range: the client's (bearer token, profile proof,
+    /// device) for this media's captured profile, then the plan's stream headers. For the Rust
+    /// transport, which sends them itself. Credentials: never log them.
+    /// </summary>
+    internal async Task<IReadOnlyList<KeyValuePair<string, string>>> NativeHeadersAsync(CancellationToken ct)
+    {
+        var capture = _captureHeaders ?? throw new InvalidOperationException("This client cannot hand headers to the native transport.");
+        _scope.Request.CheckCurrent();
+        var client = await capture(Uri, _scope.Request, ct).ConfigureAwait(false);
+        return client.Concat(_headers).ToArray();
+    }
+
+    /// <summary>The Rust range stream (docs/rust-port.md, slice 7): the same blocks, cache and prefetch, on native threads.</summary>
+    public Task<RustRangeStream> OpenNativeStreamAsync(CancellationToken ct, int prefetchBlocks = HttpRangeStream.DefaultPrefetchBlocks) =>
+        RustRangeStream.OpenAsync(this, ct, prefetchBlocks);
 
     public Task<HttpRangeStream> OpenStreamAsync(CancellationToken ct, int prefetchBlocks = HttpRangeStream.DefaultPrefetchBlocks) =>
         HttpRangeStream.OpenAsync(this, ct, prefetchBlocks);

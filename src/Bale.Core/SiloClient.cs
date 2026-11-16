@@ -42,7 +42,8 @@ public sealed class SiloClient : IDisposable
         Detail = new DetailFeed(_connection.Api, Browse);
         People = new People.PersonFeed(_connection.Api, Browse);
         Requests = new Requests.RequestsFeed(_connection.Api, _time);
-        Playback = new Playback.PlaybackClient(_connection.Api, _connection.RequestAdapter, _connection.Http, server, CapturePlaybackScope);
+        Playback = new Playback.PlaybackClient(_connection.Api, _connection.RequestAdapter, _connection.Http, server, CapturePlaybackScope,
+            CaptureHeadersAsync);
         Profiles = new Profiles.ProfileRepository(_connection.Api, () => Interlocked.Read(ref _accountGeneration), id =>
         {
             if (ProfileId == id) UseProfile(null);
@@ -252,13 +253,21 @@ public sealed class SiloClient : IDisposable
     /// <paramref name="uri"/> for the current playback profile, bearer token included, without sending
     /// anything. Credentials: never log or persist the result.
     /// </summary>
-    public async Task<IReadOnlyList<KeyValuePair<string, string>>> CaptureRequestHeadersAsync(Uri uri, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<KeyValuePair<string, string>>> CaptureRequestHeadersAsync(Uri uri, CancellationToken cancellationToken) =>
+        CaptureHeadersAsync(uri, CapturePlaybackScope().Request, cancellationToken);
+
+    /// <summary>
+    /// The headers this client would send to <paramref name="uri"/> for <paramref name="profile"/>: the
+    /// Silo client headers, bearer token and profile proof, from the same handler and credential source
+    /// as every other request, without sending anything. For the Rust media transport. Credentials.
+    /// </summary>
+    internal async Task<IReadOnlyList<KeyValuePair<string, string>>> CaptureHeadersAsync(Uri uri, ProfileRequestOption profile,
+        CancellationToken cancellationToken)
     {
         var capture = new HeaderCapture();
         using var invoker = new HttpMessageInvoker(new SiloRequestHandler(_identity, CurrentCredentialsAsync, capture));
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Options.Set(new HttpRequestOptionsKey<ProfileRequestOption>(typeof(ProfileRequestOption).FullName!),
-            CapturePlaybackScope().Request);
+        request.Options.Set(new HttpRequestOptionsKey<ProfileRequestOption>(typeof(ProfileRequestOption).FullName!), profile);
         using var _ = await invoker.SendAsync(request, cancellationToken).ConfigureAwait(false);
         return capture.Headers;
     }
