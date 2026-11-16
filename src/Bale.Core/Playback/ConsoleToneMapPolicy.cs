@@ -31,7 +31,10 @@ public static class ConsoleToneMapPolicy
             writer.Record("device", device, BaleCoreJson.Default.DeviceCapabilities);
         }, BaleCoreJson.Default.Boolean);
 
-    /// <summary>Protect even unexpected HDR originals; never let the native container source present them on SDR.</summary>
+    /// <summary>
+    /// Protect even unexpected HDR video the server did not re-encode (the original file or the forward-only
+    /// remux); never let it reach an SDR display unmapped.
+    /// </summary>
     public static bool RequiresToneMap(PlaybackPlan plan, bool sdrOutput, IReadOnlyList<FileVersion>? versions = null) =>
         BaleCoreNative.Call("tone_map.requires_tone_map", writer =>
         {

@@ -76,13 +76,26 @@ public sealed class WideGamutSdrPlaybackTests
 
     [Theory]
     [InlineData("progressive", false)]
-    [InlineData("server_remux_progressive", false)]
+    [InlineData("server_remux_hls", true)]
     [InlineData("server_transcode_hls", true)]
     public void PackagedSdrOutputsDoNotInheritOriginalColourFacts(string delivery, bool hls)
     {
         var plan = Plan();
         plan.Delivery = delivery;
         Assert.False(PlaybackRoutePolicy.Decide(plan, hls, sdrOutput: true, versions: [Version()]).ConsoleToneMap);
+    }
+
+    /// <summary>The forward-only remux copies the source's video, colour facts included: the console maps it too.</summary>
+    [Fact]
+    public void AProgressiveRemuxCopiesTheVideoAndInheritsItsColourFacts()
+    {
+        var plan = Plan();
+        plan.Delivery = "server_remux_progressive";
+        var route = PlaybackRoutePolicy.Decide(plan, false, sdrOutput: true, versions: [Version()]);
+        Assert.True(route.ConsoleToneMap);
+        Assert.True(route.UseFfmpeg);
+        Assert.True(route.RequiresD3D11);
+        Assert.False(PlaybackRoutePolicy.Decide(plan, false, sdrOutput: false, versions: [Version()]).ConsoleToneMap);
     }
 
     [Fact]

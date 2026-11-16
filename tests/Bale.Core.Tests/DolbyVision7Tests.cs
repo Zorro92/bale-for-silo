@@ -143,7 +143,8 @@ public sealed class DolbyVision7Tests
         plan.Delivery = delivery;
         var route = PlaybackRoutePolicy.Decide(plan, delivery.Contains("hls"), sdrOutput: true);
         Assert.False(route.DolbyVision7BaseLayer);
-        Assert.False(route.ConsoleToneMap);
+        // Only the forward-only remux copies the video, so only it keeps the console tone map.
+        Assert.Equal(delivery == "server_remux_progressive", route.ConsoleToneMap);
     }
 
     [Theory]
