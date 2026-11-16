@@ -277,8 +277,19 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    | 4K HEVC progressive | no stall | no stall | no stall | no stall | 2.70–3.03 / 2.88–3.25 s |
 
    AV1 had 0 late frames on both; pause and resume worked on both; CPU was within noise; no errors in
-   the log over 47 Rust mounts. Verdict: parity, no measurable win or loss on this network. The C#
-   path remains the default until the owner decides.
+   the log over 47 Rust mounts. Verdict: parity, no measurable win or loss on this network.
+
+   Decision (owner, 2026-11-15): the Rust streams are the default (f899b54), in release builds and as
+   the debug switch's default; `stream-adapter pooled|builtin` still selects the C# streams. Checked on
+   0.1.547: with no switch set, direct play logs `stream adapter=rust` and the forward-only delivery
+   `rust-forward`. bale_core already carries route policy and the other ported slices, so there is no
+   separate C# fallback if it fails to load. API and JSON calls stay on the C# HttpClient (with its
+   gzip/deflate/br decompression); media GETs have no body to compress.
+
+   Also from this decision: the console tone map now covers `server_remux_progressive` (af495b0), whose
+   video is the source's own stream copy. On 0.1.547 the HLG title through the forced forward-only
+   delivery plays via FFmpeg d3d11va with `Bale tonemap active` and a correct picture. The HLS remux
+   still plays through Windows' own source and cannot take the tone map.
 
 ### Stays in C#
 
