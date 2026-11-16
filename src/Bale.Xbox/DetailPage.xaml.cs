@@ -212,7 +212,8 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         }
 
         _routeEntry = e.Parameter as SeriesDetailEntry;
-        _contentId = _routeEntry?.SeriesId ?? e.Parameter as string ?? string.Empty;
+        _openedFromRelated = e.Parameter is RelatedDetailEntry;
+        _contentId = _routeEntry?.SeriesId ?? (e.Parameter as RelatedDetailEntry)?.ContentId ?? e.Parameter as string ?? string.Empty;
         Log.Info("Detail: navigated to " + _contentId);
         await LoadAsync();
     }

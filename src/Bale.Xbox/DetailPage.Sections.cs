@@ -20,6 +20,8 @@ public sealed partial class DetailPage
     private bool _active;
     private int? _returnCastIndex;
     private string? _returnSimilarId;
+    // Set on a page a title's More Like This rail opened (TvAppNavigation.kt openedFromRelatedRail).
+    private bool _openedFromRelated;
     private int _focusGeneration;
     private bool _openingPerson;
 
@@ -87,15 +89,35 @@ public sealed partial class DetailPage
 
     private void OnSimilarClick(object sender, ItemClickEventArgs e) => OpenSimilar(e.ClickedItem);
 
+    /// <summary>
+    /// TvAppNavigation.kt navigateToTvRelatedItemDetail (238134a1b): the first pick from a title's More
+    /// Like This rail pushes; a pick from a page such a rail opened replaces that page, so two Backs
+    /// leave the chain. Picking the starting title again goes back to it; a repeat pick of the title
+    /// on screen opens nothing.
+    /// </summary>
     private void OpenSimilar(object item)
     {
-        if (item is CardView { Card: var card })
+        if (item is not CardView { Card: var card } || card.ContentId == _contentId) return;
+        _returnCastIndex = null;
+        _returnPlaybackFocus = null;
+        if (!_openedFromRelated)
         {
-            _returnCastIndex = null;
-            _returnPlaybackFocus = null;
             _returnSimilarId = card.ContentId;
-            NavigateWithReturn(typeof(DetailPage), card.ContentId);
+            NavigateWithReturn(typeof(DetailPage), new RelatedDetailEntry(card.ContentId));
+            return;
         }
+
+        var frame = Frame;
+        if (frame.BackStack.Count > 0 && frame.BackStack[^1].Parameter is DetailReturnEntry start
+            && start.Detail.ContentId == card.ContentId)
+        {
+            frame.GoBack();
+            return;
+        }
+
+        // Replace this page: navigate, then drop the entry the navigation pushed for it.
+        if (frame.Navigate(typeof(DetailPage), new RelatedDetailEntry(card.ContentId)) && frame.BackStack.Count > 0)
+            frame.BackStack.RemoveAt(frame.BackStack.Count - 1);
     }
 
     private async void OnCastClick(object sender, ItemClickEventArgs e)
@@ -196,7 +218,8 @@ public sealed partial class DetailPage
         bool SimilarLoaded,
         int? CastIndex,
         string? SimilarId,
-        PlaybackReturnFocus? PlaybackFocus);
+        PlaybackReturnFocus? PlaybackFocus,
+        bool OpenedFromRelated);
 
     private void NavigateWithReturn(Type page, object parameter)
     {
@@ -208,7 +231,7 @@ public sealed partial class DetailPage
         var saved = new DetailReturnEntry(detail, _tabs.Select(tab => tab.Season).OfType<SeasonChoice>().ToList(),
             _seriesOverview, _selectedTab?.Season?.Number, _shownSeason, Episodes.Items.OfType<EpisodeView>().Select(view => view.Episode).ToList(),
             _seasonsLoading || _episodesLoading, _playEpisode?.ContentId, _playbackSelections,
-            _similarCards, _similarLoaded, _returnCastIndex, _returnSimilarId, _returnPlaybackFocus);
+            _similarCards, _similarLoaded, _returnCastIndex, _returnSimilarId, _returnPlaybackFocus, _openedFromRelated);
         var frame = Frame;
         if (frame.Navigate(page, parameter) && frame.BackStack.Count > 0)
         {
@@ -222,6 +245,7 @@ public sealed partial class DetailPage
         _contentId = saved.Detail.ContentId;
         _returnCastIndex = saved.CastIndex;
         _returnSimilarId = saved.SimilarId;
+        _openedFromRelated = saved.OpenedFromRelated;
         _returnPlaybackFocus = saved.PlaybackFocus;
         _playbackSelections = saved.PlaybackSelections;
         ShowHero(saved.Detail);
@@ -323,3 +347,6 @@ public sealed partial class DetailPage
         base.OnNavigatedFrom(e);
     }
 }
+
+/// <summary>A detail route opened from another title's More Like This rail.</summary>
+internal sealed record RelatedDetailEntry(string ContentId);

@@ -44,10 +44,11 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
 - **Library sort options:** the web's list (up to 17, by library type), Rotten Tomatoes gated by
   the ratings capability, scrolling Sort panel (Android `a60dac2d0`, Apple `55da563c`). Needs
   the contract bump.
-- **Profiles:** the primary profile can't have a library limit any more (server `df9f5501`);
-  hide Add at `max_profiles` (server `451cba6c`); names wrap to two lines on Who's watching
-  (Android `34cef244f`, Apple `d0e87752`); `requests_allowed` toggle once the official TV editor
-  has one (server `91611b42`).
+- **Profiles:** ~~hide Add at `max_profiles` (server `451cba6c`); names wrap to two lines on Who's
+  watching (Android `34cef244f`, Apple `d0e87752`)~~ done 2026-11-16, not yet on the console. Still
+  open: the primary profile can't have a library limit any more (server `df9f5501`; no TV client
+  change yet, so Bale waits); `requests_allowed` toggle once the official TV editor has one
+  (server `91611b42`).
 - ~~**Profile menu:**~~ Done 2026-11-16, not yet on the console: Watchlist and Favorites dropped
   (they live under For You); History, Requests, divider, Settings, profile row, Switch Server, red
   Sign Out; header server first, no header divider. The profile row is Switch Profile / Add
@@ -56,12 +57,13 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   picker rather than back on the screen the menu was on. Switch Server stays until Change Account
   (several accounts) is built. Watch Party: Bale has none. (Android `136de70ad`, `8b9b3f017`,
   `84ea05a6b`; Apple `ddebb9fa`, `3abeaf4f`.)
-- **Remember-profile offer:** new copy, "Ask Every Time" / "Remember", Back = Ask Every Time
-  (Android `6b832ca73`).
+- ~~**Remember-profile offer:**~~ done 2026-11-16: the explanation, then Ask Every Time and
+  Remember with focus on Remember; Back answers Ask Every Time (Android `6b832ca73`).
 - **Card focus style:** one shared style, no glow, drop shadow, current-episode outline
   (Android `51d4f9013`, Apple `9e94e24e`).
-- **More Like This chain:** first pick pushes, later picks replace (Android `238134a1b`,
-  Apple `fd40ce61`).
+- ~~**More Like This chain:**~~ done 2026-11-16, not yet on the console: the first pick pushes,
+  later picks replace, picking the start title goes back, a repeat pick of the title on screen
+  opens nothing (Android `238134a1b`, Apple `fd40ce61`).
 - **Temporary password:** 403 `password_change_required` state on TV (Android `65664d7ce`,
   Apple `04807485`).
 - **Several accounts per server / Change Account:** large; plan as its own task (Android
