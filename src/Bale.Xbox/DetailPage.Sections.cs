@@ -185,6 +185,7 @@ public sealed partial class DetailPage
     private sealed record DetailReturnEntry(
         ItemDetail Detail,
         IReadOnlyList<SeasonChoice> Seasons,
+        bool SeriesOverview,
         long? SelectedSeason,
         long? ShownSeason,
         IReadOnlyList<EpisodeCard> Episodes,
@@ -205,7 +206,7 @@ public sealed partial class DetailPage
         }
 
         var saved = new DetailReturnEntry(detail, _tabs.Select(tab => tab.Season).OfType<SeasonChoice>().ToList(),
-            _selectedTab?.Season?.Number, _shownSeason, Episodes.Items.OfType<EpisodeView>().Select(view => view.Episode).ToList(),
+            _seriesOverview, _selectedTab?.Season?.Number, _shownSeason, Episodes.Items.OfType<EpisodeView>().Select(view => view.Episode).ToList(),
             _seasonsLoading || _episodesLoading, _playEpisode?.ContentId, _playbackSelections,
             _similarCards, _similarLoaded, _returnCastIndex, _returnSimilarId, _returnPlaybackFocus);
         var frame = Frame;
@@ -230,10 +231,10 @@ public sealed partial class DetailPage
         ShowSimilar(saved.Similar);
         if (saved.Detail.PlaysEpisodes)
         {
-            _tabs = saved.Detail.IsSeries ? [new SeasonView(null)] : [];
-            _tabs.AddRange(saved.Seasons.Select(season => new SeasonView(season)));
+            _seriesOverview = saved.SeriesOverview;
+            _tabs = saved.Seasons.Select(season => new SeasonView(season)).ToList();
             Seasons.ItemsSource = _tabs;
-            _selectedTab = _tabs.FirstOrDefault(tab => tab.Season?.Number == saved.SelectedSeason) ?? _tabs.FirstOrDefault();
+            _selectedTab = _tabs.FirstOrDefault(tab => tab.Season?.Number == saved.SelectedSeason) ?? PlaySeasonTab();
             _shownSeason = saved.ShownSeason;
             EpisodesSection.Visibility = Visibility.Visible;
             var episodes = saved.Episodes.Select(episode => new EpisodeView(episode, episode.ContentId == saved.PlayEpisodeId)).ToList();
@@ -242,7 +243,7 @@ public sealed partial class DetailPage
             _episodesRail.Remembered = current;
             SetPlayEpisode(current?.Episode);
             UpdateTabs();
-            ShowEditorial(saved.Detail, _selectedTab?.Season is null ? null : _playEpisode);
+            ShowEditorial(saved.Detail, ShowingSeriesOverview ? null : _playEpisode);
             SetEpisodesLoading(false);
             // Cast/related navigation is available while seasons load. Resume an unfinished rail, not an empty snapshot.
             if (saved.EpisodesLoading && Session.Client is { } client)
@@ -250,7 +251,7 @@ public sealed partial class DetailPage
                 var entry = saved.SelectedSeason is { } number
                     ? new SeriesDetailEntry(saved.Detail.SeriesId ?? saved.Detail.ContentId, number, saved.PlayEpisodeId)
                     : null;
-                _ = LoadSeasonsAsync(client.Detail, saved.Detail, entry);
+                _ = LoadSeasonsAsync(client.Detail, saved.Detail, entry, saved.SeriesOverview);
             }
         }
 

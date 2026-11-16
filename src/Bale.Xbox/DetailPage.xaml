@@ -403,6 +403,14 @@
           <TextBlock Text="MORE ACTIONS" Margin="10,0,10,6" FontSize="9.5" LineHeight="12" FontWeight="SemiBold" CharacterSpacing="140" Foreground="#99EDEDED" />
           <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Hidden" HorizontalScrollMode="Disabled" IsTabStop="False">
             <StackPanel x:Name="MoreOptions">
+              <!-- Series page only, while the hero shows an episode: back to the series (TvItemDetailScreen.kt, after Shuffle). -->
+              <Button x:Name="ShowSeriesInfoItem" Style="{StaticResource SkylineDetailMenuRowStyle}" Click="OnShowSeriesInfoClick" GotFocus="OnMoreRowFocus" LostFocus="OnMoreRowBlur" Visibility="Collapsed">
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="28" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                  <FontIcon Glyph="&#xE946;" FontSize="19" HorizontalAlignment="Left" VerticalAlignment="Top" />
+                  <TextBlock Grid.Column="1" Text="Show Series Info" TextWrapping="Wrap" />
+                </Grid>
+              </Button>
               <Button x:Name="FavoriteItem" Style="{StaticResource SkylineDetailMenuRowStyle}" Click="OnFavoriteClick" GotFocus="OnMoreRowFocus" LostFocus="OnMoreRowBlur">
                 <Grid>
                   <Grid.ColumnDefinitions><ColumnDefinition Width="28" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>

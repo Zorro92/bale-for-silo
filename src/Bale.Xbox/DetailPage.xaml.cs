@@ -51,6 +51,9 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
     private MaskedArt? _art;
     private List<SeasonView> _tabs = new();
     private SeasonView? _selectedTab;
+    // TvItemDetailScreen.kt's isShowingSeriesOverview: a series page's hero shows the series until an
+    // entry season/episode, a season pick or episode focus; More > Show Series Info returns to it.
+    private bool _seriesOverview = true;
     // TvItemDetailViewModel.kt's loadedSeason: belongs to the mounted rail, not the pending tab.
     private long? _shownSeason;
     private bool _seasonsLoading;
@@ -144,7 +147,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         Actions.GotFocus += (_, _) =>
         {
             ScrollTo(0);
-            if (_detail is { } detail && _selectedTab?.Season is null)
+            if (_detail is { } detail && ShowingSeriesOverview)
             {
                 ShowEditorial(detail, null);
             }
@@ -605,11 +608,13 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         UiShadow.Attach(host, text, new UiShadow.Settings(Colors.Black, 0.55f, 8, 2));
     }
 
-    private async Task LoadSeasonsAsync(DetailFeed feed, ItemDetail detail, SeriesDetailEntry? entry)
+    private async Task LoadSeasonsAsync(DetailFeed feed, ItemDetail detail, SeriesDetailEntry? entry, bool? seriesOverview = null)
     {
-        // TvItemDetailScreen.kt keeps the series viewport (including Show) mounted even when
-        // the season request fails. Only the title request owns the full-page error panel.
-        _tabs = detail.IsSeries ? [new SeasonView(null)] : [];
+        // TvItemDetailScreen.kt keeps the series viewport mounted even when the season request
+        // fails. Only the title request owns the full-page error panel. The route's entry (a
+        // season or an episode) takes the hero once; otherwise a series opens on its overview.
+        _seriesOverview = seriesOverview ?? entry is null;
+        _tabs = [];
         Seasons.ItemsSource = _tabs;
         EpisodesSection.Visibility = Visibility.Visible;
         _seasonsLoading = true;
@@ -632,7 +637,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         if (!_active) return;
         Seasons.ItemsSource = _tabs.ToList();
         var entrySeason = entry?.SeasonNumber ?? detail.SeasonNumber;
-        var selected = _tabs.FirstOrDefault(tab => tab.Season?.Number == entrySeason) ?? _tabs.FirstOrDefault();
+        var selected = _tabs.FirstOrDefault(tab => tab.Season?.Number == entrySeason) ?? PlaySeasonTab();
         if (selected is not null)
         {
             await SelectTabAsync(selected, preferredEpisodeId: entry?.EpisodeId, focusEntry: entry?.EpisodeId is not null);
@@ -648,10 +653,15 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
     /// The initial next-up season; Show subsequently keeps the current season (TvItemDetailScreen.kt).
     /// Specials are listed first but don't open a series on their own (CatalogModels.kt).
     /// </summary>
-    private SeasonChoice? PlaySeason() =>
-        _tabs.Select(tab => tab.Season).FirstOrDefault(season => season?.Number == _detail?.PlaySeasonNumber)
-        ?? _tabs.Select(tab => tab.Season).FirstOrDefault(season => season is { IsSpecials: false })
-        ?? _tabs.Select(tab => tab.Season).FirstOrDefault(season => season is not null);
+    private SeasonChoice? PlaySeason() => PlaySeasonTab()?.Season;
+
+    private SeasonView? PlaySeasonTab() =>
+        _tabs.FirstOrDefault(tab => tab.Season?.Number == _detail?.PlaySeasonNumber)
+        ?? _tabs.FirstOrDefault(tab => tab.Season is { IsSpecials: false })
+        ?? _tabs.FirstOrDefault();
+
+    /// <summary>A series page whose hero shows the series itself, not an episode.</summary>
+    private bool ShowingSeriesOverview => _seriesOverview && _detail?.IsSeries == true;
 
     /// <summary>Show / Season modes follow focus, not a press (TvSeasonPicker.kt).</summary>
     private async Task SelectTabAsync(SeasonView tab, bool focusEdge = false, int edge = 0,
@@ -684,12 +694,13 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         {
             _swapping = false;
             SetEpisodesLoading(false);
-            if (tab.Season is null && Episodes.ItemsSource is List<EpisodeView> existing)
+            if (ShowingSeriesOverview && Episodes.ItemsSource is List<EpisodeView> existing)
             {
-                SetPlayEpisode(DetailEpisodes.NextUp(existing.Select(view => view.Episode).ToList()));
+                var shown = existing.Select(view => view.Episode).ToList();
+                SetPlayEpisode(shown.FirstOrDefault(episode => episode.ContentId == preferredEpisodeId) ?? DetailEpisodes.NextUp(shown));
             }
 
-            ShowEditorial(detail, tab.Season is null ? null : _playEpisode);
+            ShowEditorial(detail, ShowingSeriesOverview ? null : _playEpisode);
             return;
         }
 
@@ -717,7 +728,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         if (episodes is null)
         {
             // TvItemDetailViewModel.kt's quiet-failure contract: _shownSeason still identifies
-            // the loaded rail. Revert only a season selection, never Show or keyboard focus.
+            // the loaded rail. Revert only the season selection, never keyboard focus.
             if (_selectedTab?.Season is not null && _shownSeason is { } loadedSeason
                 && _tabs.FirstOrDefault(view => view.Season?.Number == loadedSeason) is { } loadedTab)
             {
@@ -743,7 +754,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         Episodes.ItemsSource = views;
         _episodesRail.Remembered = target;
         SetPlayEpisode(target?.Episode);
-        ShowEditorial(_detail ?? detail, _selectedTab?.Season is null ? null : _playEpisode);
+        ShowEditorial(_detail ?? detail, ShowingSeriesOverview ? null : _playEpisode);
         SetEpisodesLoading(false);
         _swapping = false;
         if (target is not null)
@@ -896,6 +907,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         }
 
         // Focusing an episode selects its season's tab and puts the episode in the hero.
+        _seriesOverview = false;
         if (_tabs.FirstOrDefault(tab => tab.Season?.Number == view.Episode.SeasonNumber) is { } tab && !ReferenceEquals(tab, _selectedTab))
         {
             _selectedTab = tab;
@@ -922,6 +934,8 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         {
             try
             {
+                // TvItemDetailScreen.kt's onSeasonSelected: a season pick puts its episode in the hero.
+                _seriesOverview = false;
                 await SelectTabAsync(view);
             }
             catch (Exception ex)
@@ -940,6 +954,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         {
             try
             {
+                _seriesOverview = false;
                 await SelectTabAsync(view);
             }
             catch (Exception ex)
@@ -1083,8 +1098,11 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
 
         ShowFlags(detail.Flags);
         var season = _selectedTab?.Season;
-        SeasonWatchedItem.Visibility = detail.IsSeries && season is { EpisodeCount: > 0, ContentId.Length: > 0 }
+        // TvItemDetailScreen.kt: the season's watched action shows while the hero shows an episode;
+        // the series overview offers only the whole series, and Show Series Info leads back to it.
+        SeasonWatchedItem.Visibility = detail.IsSeries && !ShowingSeriesOverview && season is { EpisodeCount: > 0, ContentId.Length: > 0 }
             ? Visibility.Visible : Visibility.Collapsed;
+        ShowSeriesInfoItem.Visibility = detail.IsSeries && !ShowingSeriesOverview ? Visibility.Visible : Visibility.Collapsed;
         if (season is not null)
         {
             SeasonWatchedLabel.Text = $"Mark {season.Title} {(season.Played ? "Unwatched" : "Watched")}";
@@ -1099,7 +1117,26 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         MorePanel.Visibility = Visibility.Visible;
         SynopsisPanel.Visibility = Visibility.Collapsed;
         OpenDialog();
-        FocusRetry.Until(FavoriteItem, () => FavoriteItem.Focus(FocusState.Programmatic));
+        // TvOptionDialog.kt focuses the first enabled option.
+        var first = ShowSeriesInfoItem.Visibility == Visibility.Visible ? ShowSeriesInfoItem : FavoriteItem;
+        FocusRetry.Until(first, () => first.Focus(FocusState.Programmatic));
+    }
+
+    /// <summary>More > Show Series Info: the hero returns to the series and its suggested episode (TvItemDetailScreen.kt).</summary>
+    private async void OnShowSeriesInfoClick(object sender, RoutedEventArgs e)
+    {
+        CloseDialog();
+        if (_detail is not { IsSeries: true } detail) return;
+        _seriesOverview = true;
+        try
+        {
+            if (PlaySeasonTab() is { } tab) await SelectTabAsync(tab, preferredEpisodeId: detail.PlayTargetId);
+            else ShowEditorial(detail, null);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Show series info", ex);
+        }
     }
 
     private void OpenDialog()
@@ -1357,10 +1394,9 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
             var seasons = await client.Detail.SeasonsAsync(seriesId);
             var selectedNumber = _selectedTab?.Season?.Number;
             var activeEpisode = _playEpisode?.ContentId;
-            _tabs = detail.IsSeries ? [new SeasonView(null)] : [];
-            _tabs.AddRange(seasons.Select(season => new SeasonView(season)));
+            _tabs = seasons.Select(season => new SeasonView(season)).ToList();
             Seasons.ItemsSource = _tabs;
-            var selected = _tabs.FirstOrDefault(tab => tab.Season?.Number == selectedNumber) ?? _tabs.FirstOrDefault();
+            var selected = _tabs.FirstOrDefault(tab => tab.Season?.Number == selectedNumber) ?? PlaySeasonTab();
             if (selected is not null)
             {
                 await SelectTabAsync(selected, preferredEpisodeId: activeEpisode, reload: true);

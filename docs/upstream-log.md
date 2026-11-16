@@ -36,8 +36,8 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
 - **Series page:** ~~Specials first as season zero~~ (done 2026-11-16: season tabs and the
   continuous episode row; a series still opens on a numbered season). The last special continues
   into S1E1 waits for an Up Next (Bale has none yet) (Android `69e39ad45`, Apple `c466777f`, Roku
-  `a41d106`). The Show tab gives way to More › Show Series Info (Android `3632eda4e` and
-  follow-ups).
+  `a41d106`). ~~The Show tab gives way to More › Show Series Info~~ (done 2026-11-16, not yet on
+  the console; Android `3632eda4e`, `064b8d0b7`, `c1371178b`).
 - **Card overlays:** watch status top-right with episodes left, web badge layout and presets, one
   overlay scale (Android `2d3620d50`/`cc4fd6662`, Apple `fe7aa020`/`4be5334f`); keyline progress
   capsule (Android `f65fe6917`, Apple `1531620d`). Do it together with Card focus style.
