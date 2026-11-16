@@ -201,7 +201,7 @@ public class PlaybackLateFrameTraceTests
     {
         var observer = Read("DebugFrameDelivery.cs.txt");
         Assert.StartsWith("#if DEBUG_SERVER", observer);
-        foreach (var required in new[] { "HttpRangeStream? stream = null", "PlaybackLateFrameTrace _lateFrameTrace = new()", "Stopwatch.GetTimestamp()",
+        foreach (var required in new[] { "MediaRangeStream? stream = null", "PlaybackLateFrameTrace _lateFrameTrace = new()", "Stopwatch.GetTimestamp()",
             "var late = _meter.Observe", "if (!_seeking)", "_lateFrameTrace.Sample", "_stream?.DemandWaits", "_stream?.DemandWaitTime",
             "GC.GetTotalPauseDuration()", "GC.CollectionCount(0)", "GC.CollectionCount(1)", "GC.CollectionCount(2)",
             "public string DescribeLateFrameTrace()", "public void ResetLateFrameTrace()" })

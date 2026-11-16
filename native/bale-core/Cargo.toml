@@ -21,3 +21,13 @@ unicode-general-category = "1.1"
 # download probe. rustls with bundled webpki roots, so it needs nothing from the app container's
 # certificate store. Remove both if the spike says no.
 ureq = { version = "3", default-features = false, features = ["rustls"] }
+
+# Rust's own IRandomAccessStream for the player (winrt_stream.rs), so playback reads never run managed code.
+[target.'cfg(windows)'.dependencies]
+# #[implement] expands to windows_core paths.
+windows-core = "0.62.2"
+windows-future = "0.3.2"
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62.2"
+features = ["Foundation", "Storage_Streams", "Win32_System_WinRT"]

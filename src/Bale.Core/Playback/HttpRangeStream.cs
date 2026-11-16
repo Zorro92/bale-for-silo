@@ -9,7 +9,7 @@ namespace Bale.Core.Playback;
 /// source alternates read positions; one request per jump starved playback. Bounded, aligned blocks
 /// keep both positions warm, with every fetch still inside PlaybackMedia's captured auth scope.
 /// </summary>
-public sealed class HttpRangeStream : Stream
+public sealed class HttpRangeStream : MediaRangeStream
 {
     public const int DefaultPrefetchBlocks = 2;
     public const int MaximumPrefetchBlocks = 16;
@@ -42,30 +42,36 @@ public sealed class HttpRangeStream : Stream
     private volatile bool _disposed;
 
     /// <summary>Immutable per-stream speculation depth; the cache and three-fetch concurrency limit are unchanged.</summary>
-    public int PrefetchBlocks { get; }
-    public bool SupportsRanges => _supportsRanges;
+    public override int PrefetchBlocks { get; }
+    public override bool SupportsRanges => _supportsRanges;
 
     /// <summary>Reads that awaited an unfinished block fetch, including joined prefetches; excludes cache hits and the read lock.</summary>
-    public long DemandWaits => Interlocked.Read(ref _demandWaits);
+    public override long DemandWaits => Interlocked.Read(ref _demandWaits);
 
     /// <summary>Completed demand waits, including canceled/failed reads and retries; unavailable without HTTP range support.</summary>
-    public TimeSpan DemandWaitTime => TimeSpan.FromSeconds((double)Interlocked.Read(ref _demandWaitTicks) / Stopwatch.Frequency);
-    public TimeSpan MaxDemandWaitTime => TimeSpan.FromSeconds((double)Interlocked.Read(ref _maxDemandWaitTicks) / Stopwatch.Frequency);
+    public override TimeSpan DemandWaitTime => TimeSpan.FromSeconds((double)Interlocked.Read(ref _demandWaitTicks) / Stopwatch.Frequency);
+    public override TimeSpan MaxDemandWaitTime => TimeSpan.FromSeconds((double)Interlocked.Read(ref _maxDemandWaitTicks) / Stopwatch.Frequency);
 
     /// <summary>Actual HTTP body bytes, including prefetch, skipped bytes and partial failed downloads; cache reads do not count.</summary>
-    public long DownloadedBytes => Interlocked.Read(ref _downloadedBytes);
+    public override long DownloadedBytes => Interlocked.Read(ref _downloadedBytes);
 
     /// <summary>Time inside HTTP body reads, summed across concurrent fetches; excludes cache reads and idle playback.</summary>
-    public TimeSpan DownloadTime => TimeSpan.FromSeconds((double)Interlocked.Read(ref _downloadTicks) / Stopwatch.Frequency);
+    public override TimeSpan DownloadTime => TimeSpan.FromSeconds((double)Interlocked.Read(ref _downloadTicks) / Stopwatch.Frequency);
 
     /// <summary>Full-size block arrays allocated on the large object heap; excludes the unpooled tail block.</summary>
-    public long BlockAllocations => Interlocked.Read(ref _blockAllocations);
+    public override long BlockAllocations => Interlocked.Read(ref _blockAllocations);
 
     /// <summary>Full-size block fetches that reused an evicted or failed attempt's array.</summary>
-    public long BlockReuses => Interlocked.Read(ref _blockReuses);
+    public override long BlockReuses => Interlocked.Read(ref _blockReuses);
 
     /// <summary>Diagnostics only: counts, never offsets tied to URLs. PrefetchHits counts first use of ready prefetched blocks.</summary>
-    public long Reads, BlockFetches, CacheHits, PrefetchHits, BytesRead, SmallestRead = long.MaxValue;
+    private long _reads, _blockFetches, _cacheHits, _prefetchHits, _bytesRead, _smallestRead = long.MaxValue;
+    public override long Reads => Interlocked.Read(ref _reads);
+    public override long BlockFetches => Interlocked.Read(ref _blockFetches);
+    public override long CacheHits => Interlocked.Read(ref _cacheHits);
+    public override long PrefetchHits => Interlocked.Read(ref _prefetchHits);
+    public override long BytesRead => Interlocked.Read(ref _bytesRead);
+    public override long SmallestRead => Interlocked.Read(ref _smallestRead);
 
     private sealed class CachedBlock(byte[] data, bool prefetched)
     {
@@ -146,13 +152,13 @@ public sealed class HttpRangeStream : Stream
         {
             ThrowIfDisposed();
             if (buffer.Length == 0 || _position >= _length) return 0;
-            Reads++;
-            SmallestRead = Math.Min(SmallestRead, buffer.Length);
+            _reads++;
+            _smallestRead = Math.Min(_smallestRead, buffer.Length);
             var count = _supportsRanges
                 ? await ReadBlocksAsync(buffer, cancellationToken).ConfigureAwait(false)
                 : await ReadSequentialAsync(buffer, cancellationToken).ConfigureAwait(false);
             _position += count;
-            BytesRead += count;
+            _bytesRead += count;
             return count;
         }
         finally
@@ -224,10 +230,10 @@ public sealed class HttpRangeStream : Stream
     {
         if (!_cache.TryGetValue(index, out var block)) return null;
         TouchBlockLocked(block);
-        CacheHits++;
+        _cacheHits++;
         if (block.Prefetched)
         {
-            PrefetchHits++;
+            _prefetchHits++;
             block.Prefetched = false;
         }
         return block;
@@ -342,7 +348,7 @@ public sealed class HttpRangeStream : Stream
                     {
                         var start = index * BlockSize;
                         var size = (int)Math.Min(BlockSize, _length - start);
-                        Interlocked.Increment(ref BlockFetches);
+                        Interlocked.Increment(ref _blockFetches);
                         using var response = await _media.SendAsync(_media.Uri, start, size,
                             HttpCompletionOption.ResponseHeadersRead, _fetchToken).ConfigureAwait(false);
                         PlaybackMedia.RequireSuccess(response);

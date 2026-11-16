@@ -36,7 +36,7 @@ public sealed partial class PlayerPage
         public bool FailureQueued { get; set; }
         public MediaPlayer? Player { get; set; }
         public MediaSource? Source { get; set; }
-        public HttpRangeStream? Stream { get; set; }
+        public MediaRangeStream? Stream { get; set; }
         public IRandomAccessStream? RandomStream { get; set; }
         // server_remux_progressive: one forward-only response through FFmpeg's non-seekable input.
         public ProgressiveHttpStream? Progressive { get; set; }
@@ -192,7 +192,9 @@ public sealed partial class PlayerPage
 #if DEBUG_SERVER
                 var prefetch = media.Route.UseFfmpeg ? attempt.FfmpegTuning.Prefetch ?? HttpRangeStream.DefaultPrefetchBlocks
                     : HttpRangeStream.DefaultPrefetchBlocks;
-                media.Stream = await transport.OpenStreamAsync(media.Token, prefetch);
+                media.Stream = attempt.UseRustTransport
+                    ? await transport.OpenNativeStreamAsync(media.Token, prefetch)
+                    : await transport.OpenStreamAsync(media.Token, prefetch);
 #else
                 media.Stream = await transport.OpenStreamAsync(media.Token);
 #endif
@@ -202,11 +204,11 @@ public sealed partial class PlayerPage
             {
                 if (media.Stream is { } range)
                 {
-                    media.RandomStream = attempt.UsePooledStreamAdapter
-                        ? new RangeRandomAccessStream(range) : range.AsRandomAccessStream();
+                    media.RandomStream = NativeRandomAccessStream(range)
+                        ?? (attempt.UsePooledStreamAdapter ? new RangeRandomAccessStream(range) : range.AsRandomAccessStream());
                     if (!attempt.StreamAdapterLogged)
                     {
-                        Log.Info($"player: stream adapter={(attempt.UsePooledStreamAdapter ? "pooled" : "builtin")}");
+                        Log.Info($"player: stream adapter={(range is RustRangeStream ? "rust" : attempt.UsePooledStreamAdapter ? "pooled" : "builtin")}");
                         attempt.StreamAdapterLogged = true;
                     }
                 }
@@ -292,7 +294,8 @@ public sealed partial class PlayerPage
             }
             else
             {
-                media.RandomStream = media.Stream!.AsRandomAccessStream();
+                media.RandomStream = NativeRandomAccessStream(media.Stream!) ?? media.Stream!.AsRandomAccessStream();
+                if (media.Stream is RustRangeStream) Log.Info("player: stream adapter=rust");
                 media.Source = MediaSource.CreateFromStream(media.RandomStream, transport.MimeType ?? "video/mp4");
             }
         }
@@ -707,5 +710,17 @@ public sealed partial class PlayerPage
     {
         try { action(); }
         catch (Exception ex) { LogFailure(operation, ex); }
+    }
+
+    /// <summary>
+    /// The Rust stream's own IRandomAccessStream (reads on the Windows thread pool, never in managed
+    /// code), or null for the C# stream. The projection takes its own reference; release ours.
+    /// </summary>
+    private static IRandomAccessStream? NativeRandomAccessStream(MediaRangeStream stream)
+    {
+        var pointer = stream.CreateNativeRandomAccessStream();
+        if (pointer == 0) return null;
+        try { return WinRT.MarshalInterface<IRandomAccessStream>.FromAbi(pointer); }
+        finally { System.Runtime.InteropServices.Marshal.Release(pointer); }
     }
 }

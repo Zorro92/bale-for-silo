@@ -181,6 +181,16 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    and gets Kiota's automatic retries on 429/503 with Retry-After; a 401 refresh (step 4) is not wired.
    Not used by playback yet.
 
+   Step 3, the Rust IRandomAccessStream (`winrt_stream.rs`, windows-rs `#[implement]`): `ReadAsync`
+   returns an `IAsyncOperationWithProgress` run on the Windows thread pool that reads the range stream
+   straight into the caller's `IBuffer` memory (`IBufferByteAccess`), filling the request unless it is
+   `Partial` (C# `StreamFill`). The buffer crosses to the pool thread as an `AgileReference`. Seek and
+   Position share one atomic position; `Close` marks only the adapter closed, as the C# adapter does.
+   The handle became a shared reference (`Arc`) so the WinRT object keeps the stream alive.
+   `MediaRangeStream` is the common base of both streams, so the player and its stats take either.
+   Debug switch: `bale-debug.sh stream-adapter rust` opens the Rust range stream and hands Media
+   Foundation or FFmpegInteropX the Rust stream; default stays `pooled` (C#).
+
 ### Stays in C#
 
 - The XAML app (`src/Bale.Xbox`) and anything that drives XAML objects.

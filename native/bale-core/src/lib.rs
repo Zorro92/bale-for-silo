@@ -30,3 +30,4 @@ pub mod software_decode;
 pub mod subtitles;
 pub mod tone_map;
 pub mod version_notice;
+pub mod winrt_stream;

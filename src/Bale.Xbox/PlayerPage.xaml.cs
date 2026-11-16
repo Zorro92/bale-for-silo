@@ -74,12 +74,16 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public bool PretendHdr { get; } = DebugHdrPlayback.Pretend;
         public bool MatchContentFrameRate { get; } = DebugDisplayMatch.Enabled;
         public string FrameDeliveryMode { get; } = DebugFrameDeliverySwitch.Mode;
-        public bool UsePooledStreamAdapter { get; } = DebugStreamAdapterSwitch.Pooled;
+        public string StreamAdapter { get; } = DebugStreamAdapterSwitch.Mode;
+        public bool UsePooledStreamAdapter => StreamAdapter == "pooled";
+        /// <summary>The Rust range stream and its Rust IRandomAccessStream (docs/rust-port.md, slice 7).</summary>
+        public bool UseRustTransport => StreamAdapter == "rust";
         public int Av1ClaimMaxHeight { get; } = DebugAv1ClaimSwitch.MaxHeight;
         public bool FfmpegEnabled => FfmpegMode != "off";
         public bool ForceFfmpeg => FfmpegMode == "direct";
 #else
         public bool UsePooledStreamAdapter => true;
+        public bool UseRustTransport => false;
         public bool FfmpegEnabled => true;
         public bool ForceFfmpeg => false;
 #endif

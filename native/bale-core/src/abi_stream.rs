@@ -2,11 +2,14 @@
 //! status code, never JSON. Status 0 is success; other values are `StreamError` codes, and -1 means
 //! invalid arguments.
 //!
-//! Lifetime: `close` wakes any read blocked on a fetch and may run while reads are in progress;
-//! `destroy` frees the handle and must come after every other call has returned (the C# SafeHandle
-//! guarantees that).
+//! Lifetime: the handle is one shared reference to the stream (`Arc`). `close` wakes any read blocked
+//! on a fetch and may run while reads are in progress; `destroy` drops the handle's reference after
+//! every other call has returned (the C# SafeHandle guarantees that). The WinRT stream from
+//! `bale_core_range_winrt` holds its own reference, so it outlives the handle safely.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
+
+use std::sync::Arc;
 
 use crate::range_stream::{RangeStats, RangeStream, StreamError};
 
@@ -70,7 +73,7 @@ pub unsafe extern "C" fn bale_core_range_open(
             unsafe {
                 *out_length = stream.length();
                 *out_supports_ranges = u8::from(stream.supports_ranges());
-                *out_handle = Box::into_raw(Box::new(stream));
+                *out_handle = Arc::into_raw(Arc::new(stream)).cast_mut();
             }
             0
         }
@@ -174,7 +177,31 @@ pub unsafe extern "C" fn bale_core_range_close(handle: *const RangeStream) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bale_core_range_destroy(handle: *mut RangeStream) {
     if !handle.is_null() {
-        // SAFETY: the caller guarantees ownership and that no other call is in progress.
-        let _ = catch_unwind(AssertUnwindSafe(|| drop(unsafe { Box::from_raw(handle) })));
+        // SAFETY: the handle's own reference, released once, after every other call has returned.
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            drop(unsafe { Arc::from_raw(handle.cast_const()) })
+        }));
     }
+}
+
+/// A new WinRT `IRandomAccessStream` over the stream, as a raw ABI pointer owning one reference
+/// (the caller releases it). It holds its own reference to the range stream and reads on the
+/// Windows thread pool. Null off Windows or for a null handle.
+///
+/// # Safety
+/// A live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_core_range_winrt(
+    handle: *const RangeStream,
+) -> *mut std::ffi::c_void {
+    if handle.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: the handle holds a reference; take another for the WinRT object.
+    let stream = unsafe {
+        Arc::increment_strong_count(handle);
+        Arc::from_raw(handle)
+    };
+    catch_unwind(AssertUnwindSafe(|| crate::winrt_stream::create(stream)))
+        .unwrap_or(std::ptr::null_mut())
 }

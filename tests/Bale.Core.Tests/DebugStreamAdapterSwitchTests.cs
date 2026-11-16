@@ -11,13 +11,13 @@ public class DebugStreamAdapterSwitchTests
         try
         {
             Assert.True(DebugStreamAdapterSwitch.Pooled);
-            foreach (var mode in new[] { "builtin", "pooled" })
+            foreach (var mode in new[] { "builtin", "rust", "pooled" })
             {
                 Assert.True(DebugStreamAdapterSwitch.TrySet(mode));
                 Assert.Equal(mode, DebugStreamAdapterSwitch.Mode);
                 Assert.Equal(mode == "pooled", DebugStreamAdapterSwitch.Pooled);
             }
-            foreach (var invalid in new string?[] { null, "", "status", "on", "POOLED", " pooled", "builtin ", "pooled&extra=1" })
+            foreach (var invalid in new string?[] { null, "", "status", "on", "POOLED", " pooled", "builtin ", "Rust", "pooled&extra=1" })
             {
                 Assert.False(DebugStreamAdapterSwitch.TrySet(invalid));
                 Assert.Equal("pooled", DebugStreamAdapterSwitch.Mode);
@@ -26,7 +26,7 @@ public class DebugStreamAdapterSwitchTests
         finally { DebugStreamAdapterSwitch.TrySet(previous); }
         var source = Read("DebugStreamAdapterSwitch.cs.txt");
         Assert.StartsWith("#if DEBUG_SERVER", source);
-        Assert.Contains("private static int _pooled = 1;", source);
+        Assert.Contains("private static string _mode = \"pooled\";", source);
         Assert.DoesNotContain("Settings", source);
         Assert.DoesNotContain("Storage", source);
     }
@@ -35,22 +35,26 @@ public class DebugStreamAdapterSwitchTests
     public void PlayerCapturesTheDebugSwitchPerAttemptAndUsesPooledOnlyForFfmpeg()
     {
         var player = Read("PlayerPage.cs.txt");
-        var capture = player.IndexOf("public bool UsePooledStreamAdapter { get; } = DebugStreamAdapterSwitch.Pooled;", StringComparison.Ordinal);
+        var capture = player.IndexOf("public string StreamAdapter { get; } = DebugStreamAdapterSwitch.Mode;", StringComparison.Ordinal);
         Assert.True(capture >= 0);
         Assert.True(player.LastIndexOf("#if DEBUG_SERVER", capture, StringComparison.Ordinal)
             > player.LastIndexOf("#endif", capture, StringComparison.Ordinal));
-        Assert.Contains("#else\n        public bool UsePooledStreamAdapter => true;", player);
+        Assert.Contains("public bool UsePooledStreamAdapter => StreamAdapter == \"pooled\";", player);
+        Assert.Contains("public bool UseRustTransport => StreamAdapter == \"rust\";", player);
+        Assert.Contains("#else\n        public bool UsePooledStreamAdapter => true;\n        public bool UseRustTransport => false;", player);
         Assert.Contains("public bool StreamAdapterLogged { get; set; }", player);
         var media = Read("PlayerPage.Media.cs.txt");
         var branch = media.IndexOf("if (media.Route.UseFfmpeg)", StringComparison.Ordinal);
         var pooled = media.IndexOf("new RangeRandomAccessStream(range)", StringComparison.Ordinal);
         var create = media.IndexOf("FFmpegMediaSource.CreateFromStreamAsync", StringComparison.Ordinal);
         Assert.True(branch >= 0 && branch < pooled && pooled < create);
-        Assert.Contains("media.RandomStream = attempt.UsePooledStreamAdapter", media[branch..create]);
+        Assert.Contains("media.RandomStream = NativeRandomAccessStream(range)\n                        ?? (attempt.UsePooledStreamAdapter ? new RangeRandomAccessStream(range) : range.AsRandomAccessStream());", media[branch..create]);
         Assert.Contains("if (!attempt.StreamAdapterLogged)", media[branch..create]);
-        Assert.Contains("player: stream adapter={(attempt.UsePooledStreamAdapter ? \"pooled\" : \"builtin\")}", media[branch..create]);
+        Assert.Contains("player: stream adapter={(range is RustRangeStream ? \"rust\" : attempt.UsePooledStreamAdapter ? \"pooled\" : \"builtin\")}", media[branch..create]);
         Assert.Contains("attempt.StreamAdapterLogged = true;", media[branch..create]);
-        Assert.Contains("media.RandomStream = media.Stream!.AsRandomAccessStream();\n                media.Source = MediaSource.CreateFromStream", media);
+        Assert.Contains("media.RandomStream = NativeRandomAccessStream(media.Stream!) ?? media.Stream!.AsRandomAccessStream();", media);
+        // The Rust stream is opened only on the debug switch; release builds keep the C# stream.
+        Assert.Contains("media.Stream = attempt.UseRustTransport\n                    ? await transport.OpenNativeStreamAsync(media.Token, prefetch)", media);
         Assert.DoesNotContain("DebugStreamAdapterSwitch", media);
         Assert.DoesNotContain("RangeRandomAccessStream", Read("DebugServer.Ffmpeg.cs.txt"));
     }
@@ -77,7 +81,7 @@ public class DebugStreamAdapterSwitchTests
         Assert.Contains("///   GET  /stream-adapter", routes);
         Assert.Contains("///   POST /stream-adapter?mode=pooled", routes);
         var notFound = routes.Split('\n').Single(line => line.Contains("\"routes: ", StringComparison.Ordinal));
-        Assert.Contains("GET /stream-adapter, POST /stream-adapter?mode={pooled|builtin}", notFound);
+        Assert.Contains("GET /stream-adapter, POST /stream-adapter?mode={pooled|builtin|rust}", notFound);
     }
 
     private static string Read(string file) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, file));

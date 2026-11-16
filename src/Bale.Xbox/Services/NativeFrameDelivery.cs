@@ -19,7 +19,7 @@ internal sealed unsafe partial class NativeFrameDelivery : IDebugFrameDelivery
     private const int FailureHResult = unchecked((int)0x80004005);
     private readonly MediaStreamSource _source;
     private readonly MediaPlaybackSession _session;
-    private readonly HttpRangeStream? _stream;
+    private readonly MediaRangeStream? _stream;
     private readonly PlaybackFrameRecordProcessor _processor = new();
     private readonly FrameRecord[] _records = new FrameRecord[DrainCapacity];
     private readonly object _gate = new();
@@ -57,7 +57,7 @@ internal sealed unsafe partial class NativeFrameDelivery : IDebugFrameDelivery
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern void bale_frame_observer_destroy(nint observer);
 
-    internal NativeFrameDelivery(FFmpegMediaSource source, MediaPlaybackSession session, HttpRangeStream? stream = null)
+    internal NativeFrameDelivery(FFmpegMediaSource source, MediaPlaybackSession session, MediaRangeStream? stream = null)
     {
         if (bale_gpu_abi_version() != ExpectedAbi)
             throw new InvalidOperationException("The native frame observer ABI does not match.");

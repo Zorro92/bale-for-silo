@@ -764,7 +764,7 @@ public class DebugPlaytestScriptTests
         {
             var result = await RunAsync(args);
             Assert.Equal(2, result.ExitCode);
-            Assert.Equal("usage: scripts/bale-debug.sh stream-adapter [pooled|builtin]\n", result.Output);
+            Assert.Equal("usage: scripts/bale-debug.sh stream-adapter [pooled|builtin|rust]\n", result.Output);
             Assert.Empty(result.Arguments);
         }
     }

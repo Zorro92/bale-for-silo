@@ -13,7 +13,7 @@ internal sealed partial class DebugFrameDelivery : IDebugFrameDelivery
     private readonly MediaStreamSource _source;
     private readonly MediaPlaybackSession _session;
     private readonly PlaybackFrameDeliveryMeter _meter;
-    private readonly HttpRangeStream? _stream;
+    private readonly MediaRangeStream? _stream;
     private readonly PlaybackLateFrameTrace _lateFrameTrace = new();
     private readonly object _timelineGate = new();
     private bool _seeking;
@@ -29,7 +29,7 @@ internal sealed partial class DebugFrameDelivery : IDebugFrameDelivery
     private readonly Dictionary<object, bool> _kinds = new(ReferenceEqualityComparer.Instance);
 
     internal DebugFrameDelivery(FFmpegMediaSource source, MediaPlaybackSession session,
-        bool collectAheadStatistics = false, HttpRangeStream? stream = null)
+        bool collectAheadStatistics = false, MediaRangeStream? stream = null)
     {
         _meter = new(collectAheadStatistics);
         _stream = stream;

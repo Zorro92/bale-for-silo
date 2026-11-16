@@ -95,7 +95,7 @@ public class DebugFfmpegPlaybackTests
         Assert.Contains("using FFmpegInteropX;", source);
         Assert.DoesNotContain("#if DEBUG_SERVER\nusing FFmpegInteropX", source);
         Assert.Contains("media.Stream = await transport.OpenStreamAsync(media.Token)", source);
-        Assert.Contains("media.RandomStream = media.Stream!.AsRandomAccessStream()", source);
+        Assert.Contains("media.RandomStream = NativeRandomAccessStream(media.Stream!) ?? media.Stream!.AsRandomAccessStream()", source);
         Assert.Contains("Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled, attempt.ForceFfmpeg,", source);
         Assert.Contains("if (media.Route.UseFfmpeg)", source);
         Assert.Contains("FfmpegSource.Configuration(media.Route)", source);

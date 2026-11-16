@@ -10,7 +10,7 @@ namespace Bale.Core.Playback;
 /// (native/bale-core/src/range_stream.rs) on native threads the .NET garbage collector never pauses.
 /// Same counters as the C# stream. Reads block their thread; use them from the player's read thread.
 /// </summary>
-public sealed class RustRangeStream : Stream
+public sealed class RustRangeStream : MediaRangeStream
 {
     private readonly RangeStreamHandle _handle;
     private readonly long _length;
@@ -57,8 +57,8 @@ public sealed class RustRangeStream : Stream
         return new RustRangeStream(handle, checked((long)length), supports != 0, prefetchBlocks);
     }
 
-    public int PrefetchBlocks { get; }
-    public bool SupportsRanges { get; }
+    public override int PrefetchBlocks { get; }
+    public override bool SupportsRanges { get; }
 
     public override bool CanRead => !_disposed;
     public override bool CanSeek => !_disposed;
@@ -131,19 +131,26 @@ public sealed class RustRangeStream : Stream
     }
 
     // HttpRangeStream's diagnostics, with the same meanings.
-    public long DemandWaits => (long)Stats.DemandWaits;
-    public TimeSpan DemandWaitTime => TimeSpan.FromMicroseconds(Stats.DemandWaitUs);
-    public TimeSpan MaxDemandWaitTime => TimeSpan.FromMicroseconds(Stats.MaxDemandWaitUs);
-    public long DownloadedBytes => (long)Stats.DownloadedBytes;
-    public TimeSpan DownloadTime => TimeSpan.FromMicroseconds(Stats.DownloadUs);
-    public long BlockAllocations => (long)Stats.BlockAllocations;
-    public long BlockReuses => (long)Stats.BlockReuses;
-    public long Reads => (long)Stats.Reads;
-    public long BlockFetches => (long)Stats.BlockFetches;
-    public long CacheHits => (long)Stats.CacheHits;
-    public long PrefetchHits => (long)Stats.PrefetchHits;
-    public long BytesRead => (long)Stats.BytesRead;
-    public long SmallestRead => Stats.SmallestRead == ulong.MaxValue ? long.MaxValue : (long)Stats.SmallestRead;
+    public override long DemandWaits => (long)Stats.DemandWaits;
+    public override TimeSpan DemandWaitTime => TimeSpan.FromMicroseconds(Stats.DemandWaitUs);
+    public override TimeSpan MaxDemandWaitTime => TimeSpan.FromMicroseconds(Stats.MaxDemandWaitUs);
+    public override long DownloadedBytes => (long)Stats.DownloadedBytes;
+    public override TimeSpan DownloadTime => TimeSpan.FromMicroseconds(Stats.DownloadUs);
+    public override long BlockAllocations => (long)Stats.BlockAllocations;
+    public override long BlockReuses => (long)Stats.BlockReuses;
+    public override long Reads => (long)Stats.Reads;
+    public override long BlockFetches => (long)Stats.BlockFetches;
+    public override long CacheHits => (long)Stats.CacheHits;
+    public override long PrefetchHits => (long)Stats.PrefetchHits;
+    public override long BytesRead => (long)Stats.BytesRead;
+    public override long SmallestRead => Stats.SmallestRead == ulong.MaxValue ? long.MaxValue : (long)Stats.SmallestRead;
+
+    /// <summary>The Rust WinRT stream over this one (winrt_stream.rs): reads on the Windows thread pool, no managed code.</summary>
+    public override nint CreateNativeRandomAccessStream()
+    {
+        ThrowIfDisposed();
+        return bale_core_range_winrt(_handle);
+    }
 
     public override void Flush() => ThrowIfDisposed();
     public override void SetLength(long value) => throw new NotSupportedException();
@@ -220,4 +227,5 @@ public sealed class RustRangeStream : Stream
     [DllImport(Library, ExactSpelling = true)] private static extern unsafe int bale_core_range_set_headers(RangeStreamHandle handle, byte* headers, nuint length);
     [DllImport(Library, ExactSpelling = true)] private static extern void bale_core_range_close(RangeStreamHandle handle);
     [DllImport(Library, ExactSpelling = true)] private static extern void bale_core_range_destroy(nint handle);
+    [DllImport(Library, ExactSpelling = true)] private static extern nint bale_core_range_winrt(RangeStreamHandle handle);
 }
