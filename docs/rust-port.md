@@ -251,6 +251,20 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    open after a seek takes 0.30–0.38 s (C# 0.33–0.35 s); a start right after launch can still pay one
    cold connection (0.75 s, then 0.36 s).
 
+   Step 6, the wire gaps, measured on the C# stream over the loopback server first. Every C# media
+   request carries `User-Agent: kiota-dotnet/<version>` and `Accept-Encoding: gzip, deflate, br`, and
+   Kiota's RetryHandler retries 429/503/504 three times, after Retry-After (seconds or an HTTP date)
+   or else 3, 6 and 12 s, adding `Retry-Attempt: n`; when the retries run out the read fails without
+   the stream's own demand retry (four requests in all). Rust now does the same (`http::retry_delay`,
+   `call_with_retry`, error `Busy` = 9 mapped to a 503 HttpRequestException) for block fetches, the
+   open probe, the sequential reopen and the progressive open; a range stream's `close` cuts a retry
+   wait short. The User-Agent comes from capturing headers through Kiota's default handler chain.
+   Deliberately not copied: Accept-Encoding, since Silo serves media identity-encoded whatever the
+   request asks (`apiv2/encoding.go`) and the Rust agent decodes nothing; and a C# quirk where a retry
+   repeats the Silo identity headers (`X-Silo-Client: Bale, Bale`), because the retry passes through
+   `SiloRequestHandler` again. Tests run both stacks for a retried 429/503 and for four busy answers;
+   ignoring Retry-After or demand-retrying a busy block fails them.
+
 ### Stays in C#
 
 - The XAML app (`src/Bale.Xbox`) and anything that drives XAML objects.

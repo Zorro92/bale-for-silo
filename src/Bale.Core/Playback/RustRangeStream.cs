@@ -340,6 +340,7 @@ public sealed class RustRangeStream : MediaRangeStream
             case 5: throw new IOException("The media connection failed.");
             case 6: throw new InvalidDataException("The media response has no valid total length.");
             case Unauthorized: throw new HttpRequestException("The media server rejected the credentials.", null, HttpStatusCode.Unauthorized);
+            case 9: throw new HttpRequestException("The media server stayed busy after retries.", null, HttpStatusCode.ServiceUnavailable);
             default: throw new InvalidOperationException($"bale_core rejected a range stream call ({status}).");
         }
     }

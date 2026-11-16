@@ -95,6 +95,21 @@ public sealed class RustProgressiveStreamTests
         await Assert.ThrowsAsync<ProgressiveRangeRefusedException>(() => Open(client, rust));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ABusyOpenIsRetried(bool rust)
+    {
+        using var server = new LoopbackMediaServer(Payload);
+        using var client = Client(server);
+        server.ScriptedUnrangedReplies.Enqueue("503 Service Unavailable\r\nRetry-After: 0");
+        await using var stream = await Open(client, rust);
+        Assert.True((await ReadAll(stream)).AsSpan().SequenceEqual(Payload));
+        Assert.Equal([null, "1"], server.Requests.Where(r => r.Range is null && !r.Headers.Any(h => h.Key == "content-length"))
+            .Where(r => r.Headers.Any(h => h.Key == "x-profile-id"))
+            .Select(r => r.Headers.Where(h => h.Key == "retry-attempt").Select(h => h.Value).FirstOrDefault()));
+    }
+
     [Fact]
     public async Task A401AtOpenRefreshesAndRetries()
     {

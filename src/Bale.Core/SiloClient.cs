@@ -270,7 +270,10 @@ public sealed class SiloClient : IDisposable
         if (rejectedAccessToken is not null)
             await RefreshRejectedCredentialsAsync(rejectedAccessToken, cancellationToken).ConfigureAwait(false);
         var capture = new HeaderCapture();
-        using var invoker = new HttpMessageInvoker(new SiloRequestHandler(_identity, CurrentCredentialsAsync, capture));
+        // Kiota's default handlers wrap the Silo handler as in SiloConnection, so the User-Agent matches
+        // too. Accept-Encoding comes from the socket handler, not this chain: media is identity-encoded.
+        using var invoker = Microsoft.Kiota.Http.HttpClientLibrary.KiotaClientFactory.Create(
+            new SiloRequestHandler(_identity, CurrentCredentialsAsync, capture));
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Options.Set(new HttpRequestOptionsKey<ProfileRequestOption>(typeof(ProfileRequestOption).FullName!), profile);
         using var _ = await invoker.SendAsync(request, cancellationToken).ConfigureAwait(false);
@@ -283,7 +286,9 @@ public sealed class SiloClient : IDisposable
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            Headers = request.Headers.Select(header => KeyValuePair.Create(header.Key, string.Join(", ", header.Value))).ToArray();
+            Headers = request.Headers
+                .Where(header => !header.Key.Equals("Accept-Encoding", StringComparison.OrdinalIgnoreCase))
+                .Select(header => KeyValuePair.Create(header.Key, string.Join(", ", header.Value))).ToArray();
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
         }
     }

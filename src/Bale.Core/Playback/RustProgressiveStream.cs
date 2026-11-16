@@ -206,6 +206,7 @@ public sealed class RustProgressiveStream : MediaProgressiveStream
             case 3: throw new InvalidDataException("The progressive stream did not answer from its origin.");
             case 5: throw new IOException("The media connection failed.");
             case Unauthorized: throw new HttpRequestException("The media server rejected the credentials.", null, HttpStatusCode.Unauthorized);
+            case 9: throw new HttpRequestException("The media server stayed busy after retries.", null, HttpStatusCode.ServiceUnavailable);
             case 8: throw new ProgressiveRangeRefusedException();
             default: throw new InvalidOperationException($"bale_core rejected a progressive stream call ({status}).");
         }

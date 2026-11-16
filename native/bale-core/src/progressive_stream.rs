@@ -129,17 +129,35 @@ impl ProgressiveStream {
     /// failure `Status`, and a success other than 200 `InvalidRange` (it would claim a byte range
     /// this delivery does not have).
     pub fn open(url: &str, headers: &[(String, String)]) -> Result<Self, StreamError> {
-        // One response for the whole title: no overall deadline, only a stall limit per read.
-        let mut request = crate::http::agent()
-            .get(url)
-            .config()
-            .timeout_global(None)
-            .timeout_per_read(Some(READ_STALL))
-            .build();
-        for (name, value) in headers {
-            request = request.header(name, value);
-        }
-        let response = request.call().map_err(|_| StreamError::Network)?;
+        // One response for the whole title: no overall deadline, only a stall limit per read. Busy
+        // answers retry as in the C# handler; nothing can close the stream before it exists.
+        let retried = crate::http::call_with_retry(
+            |attempt| {
+                let mut request = crate::http::agent()
+                    .get(url)
+                    .config()
+                    .timeout_global(None)
+                    .timeout_per_read(Some(READ_STALL))
+                    .build();
+                for (name, value) in headers {
+                    request = request.header(name, value);
+                }
+                if let Some(attempt) = attempt {
+                    request = request.header("Retry-Attempt", attempt.to_string());
+                }
+                request.call().map_err(|_| StreamError::Network)
+            },
+            |delay| {
+                std::thread::sleep(delay);
+                true
+            },
+        )?;
+        let response = match retried {
+            crate::http::Retried::Response(response) => response,
+            crate::http::Retried::Exhausted | crate::http::Retried::Stopped => {
+                return Err(StreamError::Busy);
+            }
+        };
         match response.status().as_u16() {
             409 => return Err(StreamError::RangeRefused),
             401 => return Err(StreamError::Unauthorized),

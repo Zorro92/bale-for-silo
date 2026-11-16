@@ -43,6 +43,8 @@ pub enum StreamError {
     Unauthorized = 7,
     /// A progressive remux refused the request's range (409): reopen at the current position.
     RangeRefused = 8,
+    /// 429/503/504 after every retry (the C# handler's give-up); not retried again.
+    Busy = 9,
 }
 
 /// Asks the stream's owner for fresh headers after a 401, passing the generation of the rejected
@@ -227,17 +229,48 @@ impl Shared {
         Ok(response)
     }
 
+    /// One request with the current headers, retried on 429/503/504 as the C# handler does.
     fn send(&self, range: &str) -> Result<(ureq::http::Response<ureq::Body>, u64), StreamError> {
         let (headers, generation) = {
             let auth = lock(&self.auth);
             (auth.headers.clone(), auth.generation)
         };
-        let mut request = crate::http::agent().get(&self.url).header("Range", range);
-        for (name, value) in &headers {
-            request = request.header(name, value);
+        let retried = crate::http::call_with_retry(
+            |attempt| {
+                let mut request = crate::http::agent().get(&self.url).header("Range", range);
+                for (name, value) in &headers {
+                    request = request.header(name, value);
+                }
+                if let Some(attempt) = attempt {
+                    request = request.header("Retry-Attempt", attempt.to_string());
+                }
+                request.call().map_err(|_| StreamError::Network)
+            },
+            |delay| self.sleep_unless_closed(delay),
+        )?;
+        match retried {
+            crate::http::Retried::Response(response) => Ok((response, generation)),
+            crate::http::Retried::Exhausted => Err(StreamError::Busy),
+            crate::http::Retried::Stopped => Err(StreamError::Disposed),
         }
-        let response = request.call().map_err(|_| StreamError::Network)?;
-        Ok((response, generation))
+    }
+
+    /// A retry's wait; `close` cuts it short. False once closed.
+    fn sleep_unless_closed(&self, delay: Duration) -> bool {
+        let deadline = Instant::now() + delay;
+        let mut auth = lock(&self.auth);
+        while !self.disposed.load(Ordering::Acquire) {
+            let now = Instant::now();
+            if now >= deadline {
+                return true;
+            }
+            auth = self
+                .auth_changed
+                .wait_timeout(auth, deadline - now)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+        false
     }
 
     /// Waits for headers newer than `generation`, asking the owner once per generation. False on
@@ -393,7 +426,9 @@ impl Shared {
             let result = self.fetch_once(start, size);
             match result {
                 // A refresh already happened inside `request`; another 401 is final.
-                Err(StreamError::Disposed | StreamError::Unauthorized) => return result,
+                Err(StreamError::Disposed | StreamError::Unauthorized | StreamError::Busy) => {
+                    return result;
+                }
                 Err(_) if !prefetch && attempt == 0 => attempt += 1,
                 _ => return result,
             }

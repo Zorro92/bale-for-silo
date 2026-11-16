@@ -194,7 +194,7 @@ public sealed class RustRangeStreamTests
         server.Headers.Clear();
         await using (var rust = await client.Playback.OpenMedia(Plan()).OpenNativeStreamAsync(default)) rust.ReadByte();
         var actual = server.Headers.ToArray();
-        foreach (var name in new[] { "authorization", "x-profile-id", "x-profile-token", "x-silo-device-id", "x-silo-client" })
+        foreach (var name in new[] { "authorization", "x-profile-id", "x-profile-token", "x-silo-device-id", "x-silo-client", "user-agent" })
         {
             Assert.Contains(expected, header => header.Key == name);
             Assert.Equal(expected.First(header => header.Key == name).Value, actual.First(header => header.Key == name).Value);
@@ -276,6 +276,66 @@ public sealed class RustRangeStreamTests
         Assert.Equal(refreshes, server.Refreshes);
     }
 
+    private static (string? Attempt, long Ms)[] RequestsFor(LoopbackMediaServer server, string range) =>
+        server.Requests.Where(r => r.Range == range)
+            .Select(r => (r.Headers.Where(h => h.Key == "retry-attempt").Select(h => h.Value).FirstOrDefault(), r.Ms)).ToArray();
+
+    /// <summary>
+    /// Busy answers (429/503/504) are retried as Kiota's RetryHandler retries the C# stream's: after
+    /// Retry-After, with Retry-Attempt numbered from 1. The last block, so no prefetch shares the script.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BusyAnswersAreRetriedAfterRetryAfter(bool rust)
+    {
+        using var server = new LoopbackMediaServer(Payload);
+        using var client = Client(server);
+        var media = client.Playback.OpenMedia(Plan());
+        await using Stream stream = rust ? await media.OpenNativeStreamAsync(default) : await media.OpenStreamAsync(default);
+        server.ScriptedBlockReplies.Enqueue("429 Too Many Requests\r\nRetry-After: 1");
+        server.ScriptedBlockReplies.Enqueue("503 Service Unavailable\r\nRetry-After: 0");
+        stream.Position = 9 << 20;
+        var buffer = new byte[100];
+        Assert.Equal(100, await Task.Run(() => stream.Read(buffer, 0, 100)));
+        Assert.True(buffer.AsSpan().SequenceEqual(Payload.AsSpan(9 << 20, 100)));
+        var requests = RequestsFor(server, $"bytes={9 << 20}-{Payload.Length - 1}");
+        Assert.Equal([null, "1", "2"], requests.Select(r => r.Attempt));
+        Assert.InRange(requests[1].Ms - requests[0].Ms, 900, 2500);
+    }
+
+    /// <summary>After three retries the read fails, without the stream's own demand retry (as in C#).</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ARequestStillBusyAfterThreeRetriesFailsTheRead(bool rust)
+    {
+        using var server = new LoopbackMediaServer(Payload);
+        using var client = Client(server);
+        var media = client.Playback.OpenMedia(Plan());
+        await using Stream stream = rust ? await media.OpenNativeStreamAsync(default) : await media.OpenStreamAsync(default);
+        for (var i = 0; i < 6; i++) server.ScriptedBlockReplies.Enqueue("504 Gateway Timeout\r\nRetry-After: 0");
+        stream.Position = 9 << 20;
+        var error = await Assert.ThrowsAnyAsync<Exception>(() => Task.Run(() => stream.Read(new byte[100], 0, 100)));
+        if (rust) Assert.Equal(System.Net.HttpStatusCode.ServiceUnavailable, Assert.IsType<HttpRequestException>(error).StatusCode);
+        Assert.Equal([null, "1", "2", "3"], RequestsFor(server, $"bytes={9 << 20}-{Payload.Length - 1}").Select(r => r.Attempt));
+    }
+
+    [Fact]
+    public async Task DisposingCutsARetryWaitShort()
+    {
+        using var server = new LoopbackMediaServer(Payload);
+        using var client = Client(server);
+        var rust = await client.Playback.OpenMedia(Plan()).OpenNativeStreamAsync(default);
+        server.ScriptedBlockReplies.Enqueue("503 Service Unavailable\r\nRetry-After: 60");
+        rust.Position = 9 << 20;
+        var read = Task.Run(() => rust.Read(new byte[100], 0, 100));
+        await Task.Delay(500);
+        Assert.False(read.IsCompleted);
+        rust.Dispose();
+        Assert.IsType<ObjectDisposedException>(await Assert.ThrowsAnyAsync<Exception>(() => read.WaitAsync(TimeSpan.FromSeconds(5))));
+    }
+
     internal enum Fault { Status500, Truncate, WrongRange }
 
     /// <summary>A minimal HTTP/1.1 server with byte ranges, keep-alive and injectable faults.</summary>
@@ -309,6 +369,13 @@ public sealed class RustRangeStreamTests
         public bool RefuseUnranged { get; init; }
         /// <summary>Unranged bodies stop halfway and the connection closes.</summary>
         public bool TruncateUnranged { get; init; }
+        /// <summary>Status lines (with extra headers) for the next ranged block requests, in order.</summary>
+        public ConcurrentQueue<string> ScriptedBlockReplies { get; } = new();
+        /// <summary>Status lines for the next unranged media requests (progressive opens), in order.</summary>
+        public ConcurrentQueue<string> ScriptedUnrangedReplies { get; } = new();
+        /// <summary>Every request's arrival time (ms since start), range and headers.</summary>
+        public ConcurrentQueue<(long Ms, string? Range, KeyValuePair<string, string>[] Headers)> Requests { get; } = new();
+        private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
         /// <summary>Unranged bodies send this many bytes, then nothing more.</summary>
         public int? StallUnrangedAfter { get; init; }
         private int _refreshes, _rejections;
@@ -349,6 +416,7 @@ public sealed class RustRangeStreamTests
                         if (string.IsNullOrEmpty(line)) return;
                         string? range = null, authorization = null;
                         var contentLength = 0;
+                        var requestHeaders = new List<KeyValuePair<string, string>>();
                         string? header;
                         while (!string.IsNullOrEmpty(header = await reader.ReadLineAsync(_stop.Token)))
                         {
@@ -356,11 +424,23 @@ public sealed class RustRangeStreamTests
                             var name = header[..colon].Trim().ToLowerInvariant();
                             var value = header[(colon + 1)..].Trim();
                             Headers.Enqueue(new(name, value));
+                            requestHeaders.Add(new(name, value));
                             if (name == "range") range = value;
                             if (name == "authorization") authorization = value;
                             if (name == "content-length") contentLength = int.Parse(value);
                         }
                         if (contentLength > 0) await reader.ReadBlockAsync(new char[contentLength], _stop.Token);
+                        Requests.Enqueue((_clock.ElapsedMilliseconds, range, requestHeaders.ToArray()));
+                        if (range is null && ScriptedUnrangedReplies.TryDequeue(out var unranged))
+                        {
+                            await WriteAsync(stream, $"HTTP/1.1 {unranged}\r\nContent-Length: 0\r\n\r\n");
+                            continue;
+                        }
+                        if (range is not null && range.Contains('-') && !range.EndsWith('-') && ScriptedBlockReplies.TryDequeue(out var scripted))
+                        {
+                            await WriteAsync(stream, $"HTTP/1.1 {scripted}\r\nContent-Length: 0\r\n\r\n");
+                            continue;
+                        }
                         if (line.Contains("/api/v2/auth/refresh", StringComparison.Ordinal))
                         {
                             Interlocked.Increment(ref _refreshes);
