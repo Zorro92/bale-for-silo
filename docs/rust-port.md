@@ -316,9 +316,22 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
      the server's window remount locally at the target's segment, so playback lands at that segment's
      start (at most one segment early); outside it the server reanchors as before. A stream that ends
      early remounts locally.
-   - Not yet on the console. To check there: startup and seek time against Windows' HLS, landing
-     error after a seek, EVENT playlists during a copy remux, PGS/text subtitles on HLS, the HLS remux
-     tone map.
+   - Console A/B on 0.1.551/0.1.552 (2026-11-16, forced HLS, `server_remux_hls`, start at 900 s,
+     then seeks to 2000, 3000 and 1500 s; two rounds each):
+
+     | | Windows HLS | FFmpeg HLS |
+     |---|---|---|
+     | 4K HEVC HLG remux, start to playing | 6.2 / 7.8 s | 7.3 / 7.8 s |
+     | Seek to playing (6 seeks) | 2.7–5.9 s, mean 4.3 s | 2.9–3.8 s, mean 3.2 s |
+     | Landing error | −1.8 to +1.4 s | −3.0 to −0.2 s (segment start) |
+     | Not-playing samples after start/seeks | 0 | 0 |
+
+     FFmpeg HLS decoded the HLG remux with d3d11va and the console tone map (correct picture on the SDR
+     display). A 1080p HEVC 10-bit remux with several original audio tracks first failed: the mount
+     compared FFmpeg's one packaged audio stream with the original's track count (909a498 now
+     expects one stream on every Silo package). After the fix it played (system HEVC, E-AC-3), and
+     PGS subtitles rendered in sync, also after a seek. Not covered: a growing EVENT playlist read
+     far ahead of the remux, and text subtitles.
 
 ### Stays in C#
 
