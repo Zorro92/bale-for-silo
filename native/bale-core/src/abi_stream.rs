@@ -164,7 +164,7 @@ pub unsafe extern "C" fn bale_core_range_set_headers(
 /// stream thread, must return quickly, and answers later with `bale_core_range_set_headers`.
 pub type RefreshCallback = unsafe extern "C" fn(context: *mut std::ffi::c_void, generation: u64);
 
-struct RefreshContext(*mut std::ffi::c_void);
+pub(crate) struct RefreshContext(*mut std::ffi::c_void);
 
 // SAFETY: the owner guarantees the context is usable from any thread until `close` returns.
 unsafe impl Send for RefreshContext {}
@@ -172,7 +172,11 @@ unsafe impl Send for RefreshContext {}
 unsafe impl Sync for RefreshContext {}
 
 impl RefreshContext {
-    fn get(&self) -> *mut std::ffi::c_void {
+    pub(crate) fn new(context: *mut std::ffi::c_void) -> Self {
+        RefreshContext(context)
+    }
+
+    pub(crate) fn get(&self) -> *mut std::ffi::c_void {
         self.0
     }
 }

@@ -44,6 +44,9 @@ public sealed class PlaybackMedia
 
     public Uri Uri { get; }
 
+    /// <summary>The playback server: HLS children must stay on its media routes.</summary>
+    internal Uri Server => _server;
+
     /// <summary>Debug only (the Rust HTTP spike): the plan's stream headers this transport adds. Never log them.</summary>
     public IReadOnlyDictionary<string, string> DebugStreamHeaders => _headers;
     public string? MimeType { get; }
@@ -153,6 +156,17 @@ public sealed class PlaybackMedia
     {
         if (!IsProgressive) throw new InvalidOperationException("The plan is not a progressive remux.");
         return RustProgressiveStream.OpenAsync(this, mountToken);
+    }
+
+    /// <summary>
+    /// HLS through FFmpeg (docs/rust-port.md): the Rust reader's forward-only stream from the segment
+    /// containing <paramref name="playerStartSeconds"/>; its <see cref="RustProgressiveStream.SegmentStartSeconds"/>
+    /// is where the mount's player clock starts.
+    /// </summary>
+    public Task<RustProgressiveStream> OpenNativeHlsAsync(double playerStartSeconds, CancellationToken mountToken)
+    {
+        if (!IsHls) throw new InvalidOperationException("The plan is not HLS.");
+        return RustProgressiveStream.OpenHlsAsync(this, playerStartSeconds, mountToken);
     }
 
     /// <summary>The forward-only remux from its origin; <paramref name="mountToken"/> also ends its read-ahead.</summary>

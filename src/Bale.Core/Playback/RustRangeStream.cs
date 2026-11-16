@@ -17,17 +17,9 @@ namespace Bale.Core.Playback;
 /// </summary>
 public sealed class RustRangeStream : MediaRangeStream
 {
-    private static readonly TimeSpan HeaderCheckInterval = TimeSpan.FromMinutes(1);
     private readonly RangeStreamHandle _handle;
     private readonly long _length;
-    private readonly PlaybackMedia _media;
-    private readonly CancellationTokenSource _lifetime = new();
-    /// <summary>Serializes header hand-overs so <see cref="_generation"/> matches Rust's count.</summary>
-    private readonly SemaphoreSlim _headersGate = new(1, 1);
-    private GCHandle _self;
-    private IReadOnlyList<KeyValuePair<string, string>> _headers;
-    /// <summary>How many times the headers were replaced: Rust's generation for <see cref="_headers"/>.</summary>
-    private ulong _generation;
+    private readonly NativeHeaderRefresh _refresh;
     private long _position;
     private volatile bool _disposed;
 
@@ -36,8 +28,7 @@ public sealed class RustRangeStream : MediaRangeStream
     {
         _handle = handle;
         _length = length;
-        _media = media;
-        _headers = headers;
+        _refresh = new NativeHeaderRefresh(media, headers, SetHeaders);
         SupportsRanges = supportsRanges;
         PrefetchBlocks = prefetchBlocks;
     }
@@ -51,11 +42,11 @@ public sealed class RustRangeStream : MediaRangeStream
         ct.ThrowIfCancellationRequested();
         // The open request blocks; keep it off the caller's thread. No callback exists yet, so a 401
         // here is refreshed and retried once from this side.
-        var (status, opened) = await Task.Run(() => Open(url, HeadersJson(headers), prefetchBlocks), ct).ConfigureAwait(false);
-        if (status == Unauthorized && BearerToken(headers) is { } rejected)
+        var (status, opened) = await Task.Run(() => Open(url, NativeHeaderRefresh.Json(headers), prefetchBlocks), ct).ConfigureAwait(false);
+        if (status == Unauthorized && NativeHeaderRefresh.BearerToken(headers) is { } rejected)
         {
             headers = await media.NativeHeadersAsync(ct, rejected).ConfigureAwait(false);
-            (status, opened) = await Task.Run(() => Open(url, HeadersJson(headers), prefetchBlocks), ct).ConfigureAwait(false);
+            (status, opened) = await Task.Run(() => Open(url, NativeHeaderRefresh.Json(headers), prefetchBlocks), ct).ConfigureAwait(false);
         }
         ThrowFor(status);
         var stream = new RustRangeStream(opened!.Value.Handle, opened.Value.Length, opened.Value.SupportsRanges, prefetchBlocks,
@@ -85,111 +76,12 @@ public sealed class RustRangeStream : MediaRangeStream
         return (0, (handle, checked((long)length), supports != 0));
     }
 
-    private unsafe void StartHeaderRefresh()
-    {
-        // Weak: an undisposed stream may still be collected; its callback then finds no target.
-        _self = GCHandle.Alloc(this, GCHandleType.Weak);
-        if (bale_core_range_set_refresh(_handle, &OnRefreshRequested, GCHandle.ToIntPtr(_self)) != 0)
-            throw new InvalidOperationException("bale_core rejected the refresh callback.");
-        _ = CheckHeadersPeriodicallyAsync(_lifetime.Token);
-    }
+    private unsafe void StartHeaderRefresh() =>
+        _refresh.Start(context => bale_core_range_set_refresh(_handle, NativeHeaderRefresh.Callback, context));
 
-    /// <summary>Rust's 401 callback, on a stream thread: start the refresh and return at once.</summary>
-    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    private static void OnRefreshRequested(nint context, ulong generation)
-    {
-        try
-        {
-            if (GCHandle.FromIntPtr(context).Target is RustRangeStream stream)
-                _ = Task.Run(() => stream.RefreshAfterRejectionAsync(generation));
-        }
-        catch
-        {
-            // Never unwind into Rust; the waiting request times out as Unauthorized.
-        }
-    }
-
-    /// <summary>
-    /// The headers of <paramref name="generation"/> got a 401: refresh the session unless that bearer
-    /// already rotated, and hand over the result. On failure the old headers go back, so Rust's retry
-    /// meets the 401 again and reports it now rather than after the wait.
-    /// </summary>
-    internal async Task RefreshAfterRejectionAsync(ulong generation)
-    {
-        try
-        {
-            await _headersGate.WaitAsync(_lifetime.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-        try
-        {
-            if (_disposed || generation != _generation) return;
-            IReadOnlyList<KeyValuePair<string, string>> headers;
-            try
-            {
-                headers = await _media.NativeHeadersAsync(_lifetime.Token, BearerToken(_headers)).ConfigureAwait(false);
-            }
-            catch (Exception) when (!_disposed)
-            {
-                headers = _headers;
-            }
-            ReplaceHeaders(headers);
-        }
-        catch (Exception)
-        {
-            // Disposed meanwhile: nothing waits for these headers.
-        }
-        finally
-        {
-            _headersGate.Release();
-        }
-    }
-
-    /// <summary>The session refreshes two minutes before expiry; pick that up without waiting for a 401.</summary>
-    private async Task CheckHeadersPeriodicallyAsync(CancellationToken ct)
-    {
-        using var timer = new PeriodicTimer(HeaderCheckInterval);
-        try
-        {
-            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false)) await CheckHeadersAsync(ct).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-        }
-    }
-
-    internal async Task CheckHeadersAsync(CancellationToken ct)
-    {
-        await _headersGate.WaitAsync(ct).ConfigureAwait(false);
-        try
-        {
-            var headers = await _media.NativeHeadersAsync(ct).ConfigureAwait(false);
-            if (!_disposed && BearerToken(headers) != BearerToken(_headers)) ReplaceHeaders(headers);
-        }
-        catch (Exception) when (!ct.IsCancellationRequested)
-        {
-            // An outage or a changed profile: keep the current headers; a 401 still refreshes.
-        }
-        finally
-        {
-            _headersGate.Release();
-        }
-    }
-
-    /// <summary>Under <see cref="_headersGate"/>.</summary>
-    private void ReplaceHeaders(IReadOnlyList<KeyValuePair<string, string>> headers)
-    {
-        SetHeaders(headers);
-        _headers = headers;
-        _generation++;
-    }
-
-    private static string? BearerToken(IReadOnlyList<KeyValuePair<string, string>> headers) =>
-        headers.FirstOrDefault(header => header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase)).Value is { } value
-        && value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? value[7..] : null;
+    /// <summary>Test hooks: the timer's check, and Rust's 401 callback for a header generation.</summary>
+    internal Task CheckHeadersAsync(CancellationToken ct) => _refresh.CheckAsync(ct);
+    internal Task RefreshAfterRejectionAsync(ulong generation) => _refresh.RefreshAfterRejectionAsync(generation);
 
     public override int PrefetchBlocks { get; }
     public override bool SupportsRanges { get; }
@@ -247,10 +139,9 @@ public sealed class RustRangeStream : MediaRangeStream
         return Position;
     }
 
-    /// <summary>Replaces the request headers; later block requests use them. Call through <see cref="ReplaceHeaders"/>.</summary>
-    private unsafe void SetHeaders(IReadOnlyList<KeyValuePair<string, string>> headers)
+    /// <summary>Replaces the request headers; later block requests use them. Only through <see cref="_refresh"/>.</summary>
+    private unsafe void SetHeaders(byte[] json)
     {
-        var json = HeadersJson(headers);
         fixed (byte* pointer = json) bale_core_range_set_headers(_handle, pointer, (nuint)json.Length);
     }
 
@@ -295,11 +186,10 @@ public sealed class RustRangeStream : MediaRangeStream
         if (disposing && !_disposed)
         {
             _disposed = true;
-            _lifetime.Cancel();
             // Wake reads blocked on a fetch first; the SafeHandle then frees once every call has returned.
             // After close returns Rust never calls the refresh callback again, so the GCHandle can go.
             if (!_handle.IsClosed) bale_core_range_close(_handle);
-            if (_self.IsAllocated) _self.Free();
+            _refresh.Dispose();
             _handle.Dispose();
         }
         base.Dispose(disposing);
@@ -307,23 +197,6 @@ public sealed class RustRangeStream : MediaRangeStream
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
-    private static byte[] HeadersJson(IReadOnlyList<KeyValuePair<string, string>> headers)
-    {
-        var buffer = new System.Buffers.ArrayBufferWriter<byte>();
-        using (var writer = new Utf8JsonWriter(buffer))
-        {
-            writer.WriteStartArray();
-            foreach (var (name, value) in headers)
-            {
-                writer.WriteStartArray();
-                writer.WriteStringValue(name);
-                writer.WriteStringValue(value);
-                writer.WriteEndArray();
-            }
-            writer.WriteEndArray();
-        }
-        return buffer.WrittenSpan.ToArray();
-    }
 
     private const int Unauthorized = 7;
 

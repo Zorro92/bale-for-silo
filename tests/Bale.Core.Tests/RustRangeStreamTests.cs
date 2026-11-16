@@ -371,6 +371,14 @@ public sealed class RustRangeStreamTests
         public bool TruncateUnranged { get; init; }
         /// <summary>Status lines (with extra headers) for the next ranged block requests, in order.</summary>
         public ConcurrentQueue<string> ScriptedBlockReplies { get; } = new();
+        /// <summary>Named files (playlists, segments) by path; the function runs per request, so a playlist can grow.</summary>
+        public ConcurrentDictionary<string, Func<byte[]>> Files { get; } = new();
+        /// <summary>Status lines served instead of a named file, per path, in order.</summary>
+        public ConcurrentDictionary<string, ConcurrentQueue<string>> FileReplies { get; } = new();
+        /// <summary>Request targets (path and query) of named files served, in order.</summary>
+        public ConcurrentQueue<string> FileRequests { get; } = new();
+        /// <summary>Paths that never get a response.</summary>
+        public ConcurrentBag<string> StallFiles { get; } = new();
         /// <summary>Status lines for the next unranged media requests (progressive opens), in order.</summary>
         public ConcurrentQueue<string> ScriptedUnrangedReplies { get; } = new();
         /// <summary>Every request's arrival time (ms since start), range and headers.</summary>
@@ -459,6 +467,24 @@ public sealed class RustRangeStreamTests
                             Interlocked.Increment(ref _rejections);
                             await WriteAsync(stream, "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n");
                             continue;
+                        }
+                        var path = line.Split(' ')[1].Split('?')[0];
+                        if (FileReplies.TryGetValue(path, out var replies) && replies.TryDequeue(out var reply))
+                        {
+                            await WriteAsync(stream, $"HTTP/1.1 {reply}\r\nContent-Length: 0\r\n\r\n");
+                            continue;
+                        }
+                        if (Files.TryGetValue(path, out var file))
+                        {
+                            var body = file();
+                            FileRequests.Enqueue(line.Split(' ')[1]);
+                            await WriteAsync(stream, $"HTTP/1.1 200 OK\r\nContent-Length: {body.Length}\r\n\r\n");
+                            await stream.WriteAsync(body, _stop.Token);
+                            continue;
+                        }
+                        if (StallFiles.Contains(path))
+                        {
+                            await Task.Delay(Timeout.Infinite, _stop.Token);
                         }
                         if (!await RespondAsync(stream, range)) return;
                     }

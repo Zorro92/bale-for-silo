@@ -66,15 +66,49 @@ struct Shared {
 
 pub struct ProgressiveStream {
     shared: Arc<Shared>,
+    client: Option<Arc<crate::auth_client::AuthClient>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// The bodies a stream plays in order: one forward-only response, or an HLS init segment and its
+/// media segments (hls.rs). `None` is the clean end; an error ends the data as a fault.
+pub trait BodySource: Send {
+    fn next_body(&mut self) -> Option<Result<Box<dyn Read + Send>, StreamError>>;
+}
+
+/// A single response body.
+struct OneBody(Option<Box<dyn Read + Send>>);
+
+impl BodySource for OneBody {
+    fn next_body(&mut self) -> Option<Result<Box<dyn Read + Send>, StreamError>> {
+        self.0.take().map(Ok)
+    }
+}
+
 impl Shared {
-    fn pump(&self, mut body: impl Read) {
+    fn pump(&self, mut source: Box<dyn BodySource>) {
+        let mut body: Option<Box<dyn Read + Send>> = None;
         loop {
+            if body.is_none() {
+                if self.closed.load(Ordering::Acquire) {
+                    self.faulted.store(true, Ordering::Release);
+                    break;
+                }
+                match source.next_body() {
+                    None => {
+                        self.completed.store(true, Ordering::Release);
+                        break;
+                    }
+                    Some(Err(_)) => {
+                        self.faulted.store(true, Ordering::Release);
+                        break;
+                    }
+                    Some(Ok(next)) => body = Some(next),
+                }
+            }
             let mut data = lock(&self.queue)
                 .free
                 .pop()
@@ -84,15 +118,17 @@ impl Shared {
                 break;
             }
             let started = Instant::now();
-            let result = body.read(&mut data);
+            let result = body.as_mut().expect("a body is open").read(&mut data);
             self.download_us.fetch_add(
                 started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64,
                 Ordering::Relaxed,
             );
             let length = match result {
                 Ok(0) => {
-                    self.completed.store(true, Ordering::Release);
-                    break;
+                    // This body is done; the source decides whether another follows.
+                    lock(&self.queue).free.push(data);
+                    body = None;
+                    continue;
                 }
                 Ok(length) => length,
                 // Chunked HTTP/1.1 without its final chunk, a reset, a stall: never logged.
@@ -170,13 +206,27 @@ impl ProgressiveStream {
             .into_with_config()
             .limit(u64::MAX)
             .reader();
+        Self::start(Box::new(OneBody(Some(Box::new(body)))), None)
+    }
+
+    /// Starts the pump over `source`. `client` is the HLS stream's authenticated client: its headers
+    /// can be replaced and `close` ends its waits.
+    pub fn start(
+        source: Box<dyn BodySource>,
+        client: Option<Arc<crate::auth_client::AuthClient>>,
+    ) -> Result<Self, StreamError> {
         let shared = Arc::new(Shared::default());
         let pump = shared.clone();
         std::thread::Builder::new()
             .name("bale-progressive".into())
-            .spawn(move || pump.pump(body))
+            .spawn(move || pump.pump(source))
             .map_err(|_| StreamError::Network)?;
-        Ok(ProgressiveStream { shared })
+        Ok(ProgressiveStream { shared, client })
+    }
+
+    /// The HLS stream's client, for header refreshes; None for a single forward-only response.
+    pub fn client(&self) -> Option<&crate::auth_client::AuthClient> {
+        self.client.as_deref()
     }
 
     /// Up to `buffer.len()` bytes from the front chunk, waiting for the pump; 0 at the end of the
@@ -249,6 +299,10 @@ impl ProgressiveStream {
         }
         shared.data.notify_all();
         shared.space.notify_all();
+        drop(queue);
+        if let Some(client) = &self.client {
+            client.close();
+        }
     }
 }
 

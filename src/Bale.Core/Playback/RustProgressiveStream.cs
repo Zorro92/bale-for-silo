@@ -16,11 +16,90 @@ namespace Bale.Core.Playback;
 public sealed class RustProgressiveStream : MediaProgressiveStream
 {
     private readonly ProgressiveHandle _handle;
+    /// <summary>HLS only: the playlist, init and segment requests keep their credentials current.</summary>
+    private NativeHeaderRefresh? _refresh;
     private volatile bool _disposed;
     /// <summary>The counters at close, so the flags stay readable after the handle is gone.</summary>
     private NativeProgressiveStats _final;
 
     private RustProgressiveStream(ProgressiveHandle handle) => _handle = handle;
+
+    /// <summary>HLS: the playlist time (sum of EXTINF durations) where the first played segment starts.</summary>
+    public double SegmentStartSeconds { get; private init; }
+
+    /// <summary>
+    /// Silo HLS as one forward-only stream for FFmpeg (native/bale-core/src/hls.rs): the init segment,
+    /// then each segment from the one containing <paramref name="startSeconds"/> (playlist time). A
+    /// playlist the reader won't play throws <see cref="HlsUnsupportedException"/>: keep Windows' source.
+    /// </summary>
+    internal static async Task<RustProgressiveStream> OpenHlsAsync(PlaybackMedia media, double startSeconds, CancellationToken ct)
+    {
+        var headers = await media.NativeHeadersAsync(ct).ConfigureAwait(false);
+        var url = media.Uri.AbsoluteUri;
+        var server = media.Server.AbsoluteUri;
+        ct.ThrowIfCancellationRequested();
+        var (status, handle, start) = await Task.Run(() => OpenHls(url, server, NativeHeaderRefresh.Json(headers), startSeconds), ct)
+            .ConfigureAwait(false);
+        if (status == Unauthorized && NativeHeaderRefresh.BearerToken(headers) is { } rejected)
+        {
+            headers = await media.NativeHeadersAsync(ct, rejected).ConfigureAwait(false);
+            (status, handle, start) = await Task.Run(() => OpenHls(url, server, NativeHeaderRefresh.Json(headers), startSeconds), ct)
+                .ConfigureAwait(false);
+        }
+        if (status == HlsUnsupported) throw new HlsUnsupportedException();
+        ThrowFor(status);
+        var stream = new RustProgressiveStream(handle!) { SegmentStartSeconds = start };
+        try
+        {
+            stream.StartRefresh(media, headers);
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
+        if (ct.IsCancellationRequested)
+        {
+            stream.Dispose();
+            ct.ThrowIfCancellationRequested();
+        }
+        return stream;
+    }
+
+    private unsafe void StartRefresh(PlaybackMedia media, IReadOnlyList<KeyValuePair<string, string>> headers)
+    {
+        _refresh = new NativeHeaderRefresh(media, headers, SetHeaders);
+        _refresh.Start(context => bale_core_progressive_set_refresh(_handle, NativeHeaderRefresh.Callback, context));
+    }
+
+    private unsafe void SetHeaders(byte[] json)
+    {
+        fixed (byte* pointer = json) bale_core_progressive_set_headers(_handle, pointer, (nuint)json.Length);
+    }
+
+    /// <summary>Test hook: the 401 refresh for a header generation (HLS only).</summary>
+    internal Task RefreshAfterRejectionAsync(ulong generation) => _refresh!.RefreshAfterRejectionAsync(generation);
+
+    private static unsafe (int Status, ProgressiveHandle? Handle, double Start) OpenHls(string url, string server, byte[] json, double start)
+    {
+        BaleCoreNative.EnsureLoaded();
+        var urlBytes = System.Text.Encoding.UTF8.GetBytes(url);
+        var serverBytes = System.Text.Encoding.UTF8.GetBytes(server);
+        nint raw;
+        double segmentStart;
+        int status;
+        fixed (byte* urlPointer = urlBytes)
+        fixed (byte* serverPointer = serverBytes)
+        fixed (byte* jsonPointer = json)
+        {
+            status = bale_core_hls_open(urlPointer, (nuint)urlBytes.Length, serverPointer, (nuint)serverBytes.Length, jsonPointer,
+                (nuint)json.Length, start, &raw, &segmentStart);
+        }
+        if (status != 0) return (status, null, 0);
+        var handle = new ProgressiveHandle();
+        Marshal.InitHandle(handle, raw);
+        return (0, handle, segmentStart);
+    }
 
     /// <summary>
     /// Opens the stream. A 409 is <see cref="ProgressiveRangeRefusedException"/>, a 401 refreshes and
@@ -33,11 +112,11 @@ public sealed class RustProgressiveStream : MediaProgressiveStream
         var url = media.Uri.AbsoluteUri;
         mountToken.ThrowIfCancellationRequested();
         // The open blocks until the response headers arrive; keep it off the caller's thread.
-        var (status, handle) = await Task.Run(() => Open(url, HeadersJson(headers)), mountToken).ConfigureAwait(false);
-        if (status == Unauthorized && BearerToken(headers) is { } rejected)
+        var (status, handle) = await Task.Run(() => Open(url, NativeHeaderRefresh.Json(headers)), mountToken).ConfigureAwait(false);
+        if (status == Unauthorized && NativeHeaderRefresh.BearerToken(headers) is { } rejected)
         {
             headers = await media.NativeHeadersAsync(mountToken, rejected).ConfigureAwait(false);
-            (status, handle) = await Task.Run(() => Open(url, HeadersJson(headers)), mountToken).ConfigureAwait(false);
+            (status, handle) = await Task.Run(() => Open(url, NativeHeaderRefresh.Json(headers)), mountToken).ConfigureAwait(false);
         }
         ThrowFor(status);
         // This response's connection closes at the next seek: have a spare ready for that open.
@@ -166,35 +245,18 @@ public sealed class RustProgressiveStream : MediaProgressiveStream
                 unsafe { bale_core_progressive_stats(_handle, &final); }
                 _final = final;
             }
+            // After close returns Rust never calls the refresh callback again.
+            _refresh?.Dispose();
             _disposed = true;
             _handle.Dispose();
         }
         base.Dispose(disposing);
     }
 
-    private static string? BearerToken(IReadOnlyList<KeyValuePair<string, string>> headers) =>
-        headers.FirstOrDefault(header => header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase)).Value is { } value
-        && value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? value[7..] : null;
 
-    private static byte[] HeadersJson(IReadOnlyList<KeyValuePair<string, string>> headers)
-    {
-        var buffer = new System.Buffers.ArrayBufferWriter<byte>();
-        using (var writer = new Utf8JsonWriter(buffer))
-        {
-            writer.WriteStartArray();
-            foreach (var (name, value) in headers)
-            {
-                writer.WriteStartArray();
-                writer.WriteStringValue(name);
-                writer.WriteStringValue(value);
-                writer.WriteEndArray();
-            }
-            writer.WriteEndArray();
-        }
-        return buffer.WrittenSpan.ToArray();
-    }
 
     private const int Unauthorized = 7;
+    private const int HlsUnsupported = 10;
 
     // range_stream.rs StreamError; messages are fixed, never transport text.
     private static void ThrowFor(int status)
@@ -233,5 +295,11 @@ public sealed class RustProgressiveStream : MediaProgressiveStream
     [DllImport(Library, ExactSpelling = true)] private static extern unsafe int bale_core_progressive_stats(ProgressiveHandle handle, NativeProgressiveStats* stats);
     [DllImport(Library, ExactSpelling = true)] private static extern void bale_core_progressive_close(ProgressiveHandle handle);
     [DllImport(Library, ExactSpelling = true)] private static extern void bale_core_progressive_destroy(nint handle);
+    [DllImport(Library, ExactSpelling = true)] private static extern unsafe int bale_core_hls_open(byte* url, nuint urlLength, byte* server, nuint serverLength, byte* headers, nuint headersLength, double startSeconds, nint* handle, double* segmentStart);
+    [DllImport(Library, ExactSpelling = true)] private static extern unsafe int bale_core_progressive_set_headers(ProgressiveHandle handle, byte* headers, nuint length);
+    [DllImport(Library, ExactSpelling = true)] private static extern unsafe int bale_core_progressive_set_refresh(ProgressiveHandle handle, delegate* unmanaged[Cdecl]<nint, ulong, void> callback, nint context);
     [DllImport(Library, ExactSpelling = true)] private static extern nint bale_core_progressive_winrt(ProgressiveHandle handle);
 }
+
+/// <summary>An HLS playlist the Rust reader won't play (hls.rs): keep Windows' own HLS source.</summary>
+public sealed class HlsUnsupportedException() : NotSupportedException("The HLS playlist needs Windows' own HLS source.");

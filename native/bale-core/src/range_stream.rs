@@ -44,6 +44,9 @@ pub enum StreamError {
     RangeRefused = 8,
     /// 429/503/504 after every retry (the C# handler's give-up); not retried again.
     Busy = 9,
+    /// An HLS playlist this reader won't play (encryption, byte ranges, a ladder, foreign URIs...):
+    /// the caller keeps Windows' own HLS source.
+    HlsUnsupported = 10,
 }
 
 pub use crate::auth_client::Refresher;

@@ -104,6 +104,12 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         expected_audio_count: Option<i32>,
     }
     #[derive(Deserialize)]
+    struct Child {
+        base: String,
+        reference: String,
+        server: String,
+    }
+    #[derive(Deserialize)]
     struct CanManage {
         version: FileVersion,
         device: DeviceCapabilities,
@@ -259,6 +265,10 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
                 &a.stream_indices,
                 a.expected_audio_count,
             ))
+        }),
+        // Test hook: the HLS reader's child-URI rule against PlaybackMediaUrl.IsAllowedChild.
+        "hls.resolve_child" => with_json(name, input, |c: Child| {
+            crate::hls::resolve_child(&c.base, &c.reference, &c.server)
         }),
         "tone_map.has_hdr_output" => with_json(name, input, |h: HdrCapabilities| {
             tone_map::has_hdr_output(&h)

@@ -20,6 +20,7 @@ pub mod evidence;
 pub mod formatting;
 pub mod frames;
 pub mod hardware;
+pub mod hls;
 pub mod http;
 pub mod http_probe;
 pub mod language;
