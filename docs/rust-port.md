@@ -288,11 +288,11 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
 
    Also from this decision: the console tone map now covers `server_remux_progressive` (af495b0), whose
    video is the source's own stream copy. On 0.1.547 the HLG title through the forced forward-only
-   delivery plays via FFmpeg d3d11va with `Bale tonemap active` and a correct picture. The HLS remux
-   still plays through Windows' own source and cannot take the tone map (see "HLS through FFmpeg" below).
+   delivery plays via FFmpeg d3d11va with `Bale tonemap active` and a correct picture. Since 2026-11-16
+   the HLS remux takes it too, through FFmpeg (see "HLS through FFmpeg" below).
 
-   **HLS through FFmpeg** (owner, 2026-11-15; debug switch `hls-engine ffmpeg`, default `native`
-   until a console A/B). Silo's HLS is simple (checked in silo-server): one rendition, never an
+   **HLS through FFmpeg** (owner, 2026-11-15; the default for every build since the console A/B
+   below, owner 2026-11-16; debug switch `hls-engine native` brings back Windows' HLS for comparison). Silo's HLS is simple (checked in silo-server): one rendition, never an
    adaptive ladder (a multivariant playlist only attaches subtitle groups to its single variant);
    media playlists are complete VOD lists (`copy_keyframe_plan.go`, `GenerateFullManifest`) or
    FFmpeg's own append-only EVENT playlist while a copy remux is produced
@@ -331,7 +331,8 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
      compared FFmpeg's one packaged audio stream with the original's track count (909a498 now
      expects one stream on every Silo package). After the fix it played (system HEVC, E-AC-3), and
      PGS subtitles rendered in sync, also after a seek. Not covered: a growing EVENT playlist read
-     far ahead of the remux, and text subtitles.
+     far ahead of the remux, and text subtitles. Windows' HLS stays only as the fallback for a
+     playlist the Rust reader refuses (`HlsReaderRefused`).
 
 ### Stays in C#
 

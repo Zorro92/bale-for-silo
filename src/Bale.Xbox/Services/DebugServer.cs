@@ -65,7 +65,7 @@ namespace Bale.Xbox.Services;
 ///   POST /frame-delivery?mode=native  native|managed|off (on aliases native); next playback attempt
 ///   GET  /stream-adapter  memory-only media stream switch; default rust
 ///   POST /stream-adapter?mode=rust  rust (Rust range/forward-only streams + Rust WinRT streams)|pooled|builtin (C#); next playback attempt
-///   GET  /hls-engine      memory-only HLS engine switch; default native
+///   GET  /hls-engine      memory-only HLS engine switch; default ffmpeg
 ///   POST /hls-engine?mode=ffmpeg  native (AdaptiveMediaSource)|ffmpeg (Rust HLS reader + FFmpeg); next playback attempt
 ///   GET  /av1-claim       memory-only AV1 software-decode claim; default 1080p60, restart resets
 ///   POST /av1-claim?height=2160  1080|2160; next playback attempt; 2160 adds a 4K30 entry

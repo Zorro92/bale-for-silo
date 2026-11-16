@@ -87,7 +87,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
 #else
         public bool UsePooledStreamAdapter => true;
         public bool UseRustTransport => true;
-        public bool HlsThroughFfmpeg => false;
+        /// <summary>HLS through the Rust HLS reader and FFmpeg (owner, 2026-11-16, after the console A/B).</summary>
+        public bool HlsThroughFfmpeg => !HlsReaderRefused;
         public bool FfmpegEnabled => true;
         public bool ForceFfmpeg => false;
 #endif

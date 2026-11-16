@@ -10,17 +10,17 @@ public sealed class HlsThroughFfmpegTests
     private static string Read(string name) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, name)).ReplaceLineEndings("\n");
 
     [Fact]
-    public void TheSwitchDefaultsToWindowsHlsAndTakesOnlyItsTwoModes()
+    public void TheSwitchDefaultsToFfmpegHlsAndTakesOnlyItsTwoModes()
     {
         var previous = DebugHlsEngineSwitch.Mode;
         try
         {
-            Assert.Equal("native", previous);
-            Assert.True(DebugHlsEngineSwitch.TrySet("ffmpeg"));
-            Assert.Equal("ffmpeg", DebugHlsEngineSwitch.Mode);
+            Assert.Equal("ffmpeg", previous);
+            Assert.True(DebugHlsEngineSwitch.TrySet("native"));
+            Assert.Equal("native", DebugHlsEngineSwitch.Mode);
             foreach (var invalid in new string?[] { null, "", "FFmpeg", "rust", " native", "ffmpeg&x=1" })
                 Assert.False(DebugHlsEngineSwitch.TrySet(invalid));
-            Assert.Equal("ffmpeg", DebugHlsEngineSwitch.Mode);
+            Assert.Equal("native", DebugHlsEngineSwitch.Mode);
         }
         finally
         {
@@ -57,7 +57,8 @@ public sealed class HlsThroughFfmpegTests
         Assert.Contains("media = await RemountHlsAsync(attempt, request, paused);", seek);
         var player = Read("PlayerPage.cs.txt");
         Assert.Contains("public bool HlsThroughFfmpeg => HlsEngine == \"ffmpeg\" && !HlsReaderRefused;", player);
-        // Release builds keep Windows' HLS until the console A/B.
-        Assert.Contains("public bool UseRustTransport => true;\n        public bool HlsThroughFfmpeg => false;", player);
+        // Release builds play HLS through FFmpeg too, keeping Windows' HLS only for a refused playlist.
+        Assert.Contains("public bool HlsThroughFfmpeg => !HlsReaderRefused;", player);
+        Assert.DoesNotContain("public bool HlsThroughFfmpeg => false;", player);
     }
 }
