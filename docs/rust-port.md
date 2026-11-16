@@ -198,6 +198,18 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    TCP + TLS handshake and slow start (loopback test: 11 connections for 10 blocks). Fixed by reading to
    the end of each response; `BlockFetchesReuseConnections` guards it.
 
+   Retest (0.1.539, `stream-adapter rust`): parity with C#.
+
+   | Run (25 s or a seek sequence) | C# stream waits / total | Rust stream waits / total |
+   |---|---|---|
+   | 4K HEVC from 50:00, round 1 | 3 / 1.15 s | 3 / 1.51 s |
+   | 4K HEVC from 50:00, round 2 | 5 / 0.94 s | 5 / 1.04 s |
+   | 4K VP9, three seeks | 17 / 4.1 s | 20 / 3.8 s |
+
+   Also on Rust: Xvid AVI and 1080p AV1 software decode (0 late frames), H.264 system decode, three
+   seeks per title, four rapid stop/start cycles with no hang, no errors logged. Not yet exercised:
+   the Media Foundation (non-FFmpeg) route, for want of a library original that takes it.
+
 ### Stays in C#
 
 - The XAML app (`src/Bale.Xbox`) and anything that drives XAML objects.
