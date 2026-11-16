@@ -81,7 +81,8 @@
                 </Grid>
                 <TextBlock x:Name="ProfileCaption" Text="{x:Bind Name}" FontSize="{StaticResource SkylineProfileNameSize}" FontWeight="SemiBold"
                            Foreground="{StaticResource SkylineSecondary}" HorizontalAlignment="Center" Margin="0,13,0,0"
-                           TextTrimming="CharacterEllipsis" MaxWidth="{StaticResource SkylineProfileColumnWidth}" />
+                           TextTrimming="CharacterEllipsis" MaxWidth="{StaticResource SkylineProfileColumnWidth}"
+                           TextWrapping="Wrap" MaxLines="{x:Bind CaptionMaxLines}" TextAlignment="Center" />
                 <Button x:Name="DeleteButton" Style="{StaticResource SkylineProfileDeleteStyle}" Visibility="{x:Bind DeleteVisibility}" Click="OnDeleteProfileClick" AutomationProperties.Name="Delete profile">
                   <StackPanel Style="{StaticResource SkylineMarqueeCompactContentStyle}">
                     <Viewbox Style="{StaticResource SkylineMarqueeCompactIconStyle}"><Path x:Name="DeleteIcon" Fill="{StaticResource SkylineSecondary}" Data="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12M19 4h-3.5l-1-1h-5l-1 1H5v2h14Z" /></Viewbox>
@@ -151,14 +152,17 @@
     <Grid x:Name="RememberPanel" Background="{StaticResource SkylinePinScrim}" Visibility="Collapsed" PreviewKeyDown="OnRememberPreviewKeyDown">
       <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="600" Spacing="18">
         <TextBlock x:Name="RememberTitle" FontSize="{StaticResource SkylineProfileTitleSize}" FontWeight="ExtraBold" TextAlignment="Center" TextWrapping="Wrap" />
-        <TextBlock Text="Open this profile when Bale starts on this TV." FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineSecondary}" HorizontalAlignment="Center" />
+        <!-- TvProfileSelectionScreen.kt (6b832ca73), as Apple TV's alert: the explanation, then Ask Every Time
+             and Remember side by side with focus on Remember; Back answers Ask Every Time. -->
+        <TextBlock Text="Bale can skip Who's Watching and open this profile when it starts on this TV. You can change this later in Settings &gt; General &gt; Profile Selection."
+                   FontSize="{StaticResource SkylineAuthCaptionSize}" Foreground="{StaticResource SkylineSecondary}" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
         <!-- rail-layout: non-card — Remember-profile confirmation actions. -->
         <ItemsControl x:Name="RememberActions" HorizontalAlignment="Center">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="11" /></ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
-          <Button x:Name="RememberYesButton" Content="Yes" Click="OnRememberYesClick" Style="{StaticResource SkylineButtonStyle}" />
-          <Button Content="Not now" Click="OnRememberNotNowClick" Style="{StaticResource SkylineButtonStyle}" />
+          <Button Content="Ask Every Time" Click="OnRememberNotNowClick" Style="{StaticResource SkylineButtonStyle}" />
+          <Button x:Name="RememberYesButton" Content="Remember" Click="OnRememberYesClick" Style="{StaticResource SkylineButtonStyle}" />
         </ItemsControl>
       </StackPanel>
     </Grid>

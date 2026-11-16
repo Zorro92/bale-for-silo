@@ -35,6 +35,8 @@ public sealed partial class ProfileView
     public bool IsAdd { get; }
     public string Name => IsAdd ? "Add profile" : Profile.Name ?? string.Empty;
     public double AvatarOpacity => IsManaging ? 0.6 : 1;
+    /// <summary>TvProfileSelectionScreen.kt: two centered lines, one in Manage mode (its Delete buttons need the room).</summary>
+    public int CaptionMaxLines => IsManaging ? 1 : 2;
     public Visibility ProfileVisibility => IsAdd ? Visibility.Collapsed : Visibility.Visible;
     public Visibility AddVisibility => IsAdd ? Visibility.Visible : Visibility.Collapsed;
     public Visibility ManageVisibility => IsManaging ? Visibility.Visible : Visibility.Collapsed;

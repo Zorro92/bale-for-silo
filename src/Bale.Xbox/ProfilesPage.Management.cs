@@ -28,6 +28,9 @@ public sealed partial class ProfilesPage
 
     private ProfileView ViewFor(Profile profile) => new(profile, ProfileAvatars.ImageUrl(profile.AvatarUrl, _household!.ResolveAvatar));
 
+    /// <summary>Hidden once the household reaches its limit (ProfileMenu.CanAdd).</summary>
+    private bool CanAddProfile => ProfileMenu.CanAdd(_profiles.Count, (_household?.Repository as ProfileRepository)?.MaxProfiles);
+
     private void RebuildProfiles(bool restoreFocus)
     {
         var previous = Profiles.Items.ElementAtOrDefault(_lastProfileIndex) as ProfileView;
@@ -36,7 +39,7 @@ public sealed partial class ProfilesPage
         var views = _profiles.Select(profile => new ProfileView(profile,
             ProfileAvatars.ImageUrl(profile.AvatarUrl, _household!.ResolveAvatar), managing)).ToList();
         var canManage = ProfileManagementGate.CanManage(_profiles);
-        if (canManage) views.Add(new(new Profile(), null, managing, isAdd: true));
+        if (canManage && CanAddProfile) views.Add(new(new Profile(), null, managing, isAdd: true));
         Profiles.ItemsSource = views;
         Profiles.Width = Math.Min(6, Math.Max(1, views.Count)) * 142;
         ManageButton.Visibility = canManage ? Visibility.Visible : Visibility.Collapsed;

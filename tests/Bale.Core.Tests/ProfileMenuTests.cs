@@ -15,4 +15,12 @@ public class ProfileMenuTests
     [InlineData(1, 0L, ProfileMenuRow.None)]
     public void TheRowFollowsTheProfileCountAndLimit(int count, long? max, ProfileMenuRow expected) =>
         Assert.Equal(expected, ProfileMenu.Row(count, max));
+
+    [Theory]
+    [InlineData(1, null, true)]
+    [InlineData(5, 6L, true)]
+    [InlineData(6, 6L, false)]
+    [InlineData(1, 1L, false)]
+    public void AddStaysUntilTheLimit(int count, long? max, bool expected) =>
+        Assert.Equal(expected, ProfileMenu.CanAdd(count, max));
 }
