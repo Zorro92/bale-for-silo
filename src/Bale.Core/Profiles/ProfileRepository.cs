@@ -32,8 +32,15 @@ public sealed class ProfileRepository : IProfileRepository
     }
     public HouseholdManagementSession Management { get; }
 
-    public async Task<IReadOnlyList<Profile>> ListAsync(CancellationToken cancellationToken = default) =>
-        (await _api.Api.V2.Profiles.GetAsync(cancellationToken: cancellationToken).ConfigureAwait(false))?.Items ?? [];
+    public async Task<IReadOnlyList<Profile>> ListAsync(CancellationToken cancellationToken = default)
+    {
+        var collection = await _api.Api.V2.Profiles.GetAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+        MaxProfiles = collection?.MaxProfiles;
+        return collection?.Items ?? [];
+    }
+
+    /// <summary>The account's profile limit from the last list (<c>max_profiles</c>); null when not sent.</summary>
+    public long? MaxProfiles { get; private set; }
 
     public async Task<IReadOnlyList<UserLibrary>> ListLibrariesAsync(CancellationToken cancellationToken = default)
     {

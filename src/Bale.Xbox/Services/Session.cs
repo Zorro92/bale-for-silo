@@ -188,7 +188,8 @@ internal static class Session
     }
 
     /// <summary>Switch Profile replaces the shell, not a Back destination (TvAppNavigation.kt onSwitchProfile).</summary>
-    public static void ShowProfilePicker(Frame frame)
+    /// <param name="add">Open the new-profile form once the picker loads (the profile menu's Add Profile).</param>
+    public static void ShowProfilePicker(Frame frame, bool add = false)
     {
         Client?.UseProfile(null);
         if (Client is { } client)
@@ -197,7 +198,8 @@ internal static class Session
         }
 
         ClearProfile();
-        frame.Navigate(typeof(ProfilesPage));
+        frame.Navigate(typeof(ProfilesPage), add && Client is { } current
+            ? new ProfileNavigation(current.Profiles, current.Browse.Resolve, StartAdd: true) : null);
         frame.BackStack.Clear();
     }
 

@@ -78,6 +78,9 @@ public sealed partial class ProfilesPage : Page, IBackHandler, IRestoresFocus
         // TvAppNavigation.kt makes the real picker a root; pushed editors and disposable previews retain Back.
         if (!household.IsPreview && e.NavigationMode != NavigationMode.Back) Frame.BackStack.Clear();
         await LoadAsync(restoreFocus: returning);
+        // The profile menu's Add Profile: the picker's Add, primary PIN first (ProfileMenuRow.kt).
+        if (household.StartAdd && e.NavigationMode != NavigationMode.Back && IsCurrent && _gate is { } gate && _profiles.Count > 0)
+            ApplyManagementAction(gate.Request(_profiles, add: true));
     }
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)

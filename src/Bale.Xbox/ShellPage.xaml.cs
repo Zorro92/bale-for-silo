@@ -1,6 +1,7 @@
 using Bale.Core.Api.Models;
 using Bale.Core.Browse;
 using Bale.Core.Detail;
+using Bale.Core.Profiles;
 using Bale.Xbox.Services;
 using Bale.Xbox.Views;
 using Windows.UI.Xaml;
@@ -242,16 +243,20 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         var profileId = client.ProfileId;
         try
         {
-            var profile = (await client.GetProfilesAsync()).FirstOrDefault(candidate => candidate.Id == profileId);
+            var profiles = await client.GetProfilesAsync();
+            var profile = profiles.FirstOrDefault(candidate => candidate.Id == profileId);
             if (!ReferenceEquals(client, Session.Client) || client.ProfileId != profileId)
             {
                 return;
             }
 
+            ShowProfileRow(ProfileMenu.Row(profiles.Count, client.Profiles.MaxProfiles));
+
             // TvMainShell.kt: only the primary profile gets the account's role; household profiles
-            // must not appear to have the owner's role. Bale currently knows the server by its host.
+            // must not appear to have the owner's role. The server comes first (tvOS §5.8). Bale
+            // currently knows the server by its host.
             var subtitle = profile?.IsPrimary == true ? client.Account?.Role?.ToString() ?? client.Account?.Username : null;
-            PanelServer.Text = string.Join("  ·  ", new[] { subtitle, client.Server.Host }
+            PanelServer.Text = string.Join("  ·  ", new[] { client.Server.Host, subtitle }
                 .Where(part => !string.IsNullOrWhiteSpace(part))).ToUpperInvariant();
         }
         catch (Exception ex)

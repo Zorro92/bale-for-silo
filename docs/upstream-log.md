@@ -48,11 +48,14 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   hide Add at `max_profiles` (server `451cba6c`); names wrap to two lines on Who's watching
   (Android `34cef244f`, Apple `d0e87752`); `requests_allowed` toggle once the official TV editor
   has one (server `91611b42`).
-- **Profile menu:** drop Watchlist and Favorites (Android `136de70ad`, Apple `ddebb9fa`). Order
-  History, Requests, Watch Party, divider, Settings, profile row, Change Account, Sign Out; the
-  profile row is Switch Profile / Add Profile / none by profile count and `max_profiles`
-  (Android `8b9b3f017`, Apple `3abeaf4f`); header server first, no header divider, red Sign Out
-  (Android `84ea05a6b`).
+- ~~**Profile menu:**~~ Done 2026-11-16, not yet on the console: Watchlist and Favorites dropped
+  (they live under For You); History, Requests, divider, Settings, profile row, Switch Server, red
+  Sign Out; header server first, no header divider. The profile row is Switch Profile / Add
+  Profile / none by profile count and `max_profiles`. Bale's Add Profile opens the picker's
+  new-profile form (primary PIN first) through the picker, so cancelling leaves the viewer on the
+  picker rather than back on the screen the menu was on. Switch Server stays until Change Account
+  (several accounts) is built. Watch Party: Bale has none. (Android `136de70ad`, `8b9b3f017`,
+  `84ea05a6b`; Apple `ddebb9fa`, `3abeaf4f`.)
 - **Remember-profile offer:** new copy, "Ask Every Time" / "Remember", Back = Ask Every Time
   (Android `6b832ca73`).
 - **Card focus style:** one shared style, no glow, drop shadow, current-episode outline
