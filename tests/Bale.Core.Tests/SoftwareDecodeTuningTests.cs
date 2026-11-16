@@ -1,4 +1,5 @@
 using Bale.Core.Playback;
+using Bale.Xbox.Services;
 
 namespace Bale.Core.Tests;
 
@@ -66,6 +67,23 @@ public class SoftwareDecodeTuningTests
     [Fact]
     public void SystemVideoBufferStaysUnsetAt4K() =>
         Assert.Null(SoftwareDecodeTuning.BufferTimeMs(false, null, 3840, 2160));
+
+    [Theory]
+    [InlineData("hevc", false)]
+    [InlineData("h264", false)]
+    [InlineData("vp9", false)]
+    [InlineData("av1", true)]
+    [InlineData("mpeg4", true)]
+    public void OnlySoftwareVideoKeepsFastSeek(string video, bool fastSeek)
+    {
+        var plan = PlaybackRoutePolicyTests.Plan("original_http", video, "aac");
+        plan.Source!.Width = 1920;
+        plan.Source.Height = 1080;
+        var route = PlaybackRoutePolicy.Decide(plan, false);
+        Assert.True(route.UseFfmpeg);
+        Assert.Equal(fastSeek, route.SoftwareVideo);
+        Assert.Equal(fastSeek, FfmpegSource.Configuration(route).General.FastSeek);
+    }
 
     [Theory]
     [InlineData("hevc", "aac", true)]

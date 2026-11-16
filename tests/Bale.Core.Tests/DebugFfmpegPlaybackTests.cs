@@ -141,7 +141,7 @@ public class DebugFfmpegPlaybackTests
         var production = DebugFfmpegDecoderTests.ProductionSource();
         // Production sets only exact seeks on General (2026-11-16); input experiments stay debug-only.
         Assert.Equal(1, System.Text.RegularExpressions.Regex.Count(production, @"config\.General\."));
-        Assert.Contains("config.General.FastSeek = false;", production);
+        Assert.Contains("config.General.FastSeek = route.SoftwareVideo;", production);
         Assert.Contains("ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(softwareVideo, route.VideoWidth, route.VideoHeight))", production);
         Assert.Contains("FfmpegLogging.Configure()", production);
         Assert.Contains("VideoDecoderMode.ForceFFmpegSoftwareDecoder : VideoDecoderMode.ForceSystemDecoder", source);

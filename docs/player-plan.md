@@ -228,6 +228,14 @@ on the 4K HEVC d3d11va + tone-map route the paused-seek frame matched the played
 Media Foundation and d3d11va start presenting at the target. Stream waits on the MP4 were 10–31
 through FFmpeg against 37–38 through Windows' source.
 
+**Software video keeps fast seek.** dav1d's zero-copy path uploads every decoded frame, and with the
+normal seek a forced 4K AV1 seek (debug `av1-claim 2160`) decoded from the keyframe into new 4K
+textures until GPU memory ran out (`CreateTexture2D` 0x8007000E, MediaFailed, replan to the 1080p
+H.264 version; twice on 0.1.558). 1080p AV1 seeked fine either way (normal 1.54–1.78 s, exact; fast
+0.94–1.09 s, up to 6.8 s off), but the risk grows with GOP length, so AV1 and MPEG-4 Part 2 stay
+on fast seek until the GPU decoder (rav1g) replaces dav1d or the wrapper drops pre-target frames
+before upload.
+
 **VP9 always uses the FFmpeg demuxer**, in any container, with the system (hardware) VP9 decoder.
 FFmpegInteropX hands VP9 packets to Media Foundation undecoded, as it does H.264 and HEVC
 (`ForceSystemDecoder`; never FFmpeg's D3D11 or software VP9). The server files `.webm` as `mkv`,
