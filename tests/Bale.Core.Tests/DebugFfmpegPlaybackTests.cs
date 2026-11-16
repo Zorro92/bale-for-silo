@@ -139,7 +139,9 @@ public class DebugFfmpegPlaybackTests
         var source = Read("FfmpegSource.cs.txt");
         // Production tunes software video only; input experiments stay in the debug-only overload.
         var production = DebugFfmpegDecoderTests.ProductionSource();
-        Assert.DoesNotContain("config.General.", production);
+        // Production sets only exact seeks on General (2026-11-16); input experiments stay debug-only.
+        Assert.Equal(1, System.Text.RegularExpressions.Regex.Count(production, @"config\.General\."));
+        Assert.Contains("config.General.FastSeek = false;", production);
         Assert.Contains("ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(softwareVideo, route.VideoWidth, route.VideoHeight))", production);
         Assert.Contains("FfmpegLogging.Configure()", production);
         Assert.Contains("VideoDecoderMode.ForceFFmpegSoftwareDecoder : VideoDecoderMode.ForceSystemDecoder", source);

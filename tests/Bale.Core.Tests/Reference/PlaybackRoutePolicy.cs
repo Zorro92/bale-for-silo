@@ -49,7 +49,9 @@ internal static class PlaybackRoutePolicy
         // always takes FFmpeg's non-seekable input (PlaybackProgressive), with the system decoder.
         var progressive = delivery == PlaybackProgressive.Delivery;
         var ffmpeg = ffmpegEnabled && direct && (!hls || hlsFfmpeg)
-            && (progressive || hlsFfmpeg || softwareVideo || softwareAudio || matroska || ffmpegContainer || demuxedVideo || dolbyVisionBaseLayer || forceFfmpeg || toneMap);
+            // Every original goes through FFmpeg (owner, 2026-11-16) when FfmpegSource can decode its video.
+            && (original && (video is null || SoftwareDecodePolicy.SystemVideoCodecs.Contains(video) || softwareVideo)
+                || progressive || hlsFfmpeg || softwareVideo || softwareAudio || matroska || ffmpegContainer || demuxedVideo || dolbyVisionBaseLayer || forceFfmpeg || toneMap);
         return new(ffmpeg, ffmpeg && softwareVideo, video, audio, ordinal, width, height, ffmpeg && dolbyVisionBaseLayer, toneMap, dv7);
     }
 

@@ -246,7 +246,7 @@ public sealed class ConsoleToneMapTests
         Assert.True(route.ConsoleToneMap);
         Assert.False(route.SoftwareVideo);
         Assert.False(PlaybackRoutePolicy.Decide(plan, false, sdrOutput: false).ConsoleToneMap);
-        Assert.False(PlaybackRoutePolicy.Decide(plan, false, sdrOutput: false).UseFfmpeg); // MP4 + AAC stays native on HDR.
+        Assert.True(PlaybackRoutePolicy.Decide(plan, false, sdrOutput: false).UseFfmpeg); // Every original reads through FFmpeg.
         Assert.True(PlaybackRoutePolicy.Decide(plan, false, ffmpegEnabled: false, sdrOutput: true).ConsoleToneMap);
         plan.Delivery = "server_transcode_hls";
         Assert.False(PlaybackRoutePolicy.Decide(plan, true, sdrOutput: true).ConsoleToneMap);

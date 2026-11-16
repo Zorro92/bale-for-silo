@@ -299,7 +299,9 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.DoesNotContain("Settings", tuning);
         Assert.DoesNotContain("Storage", tuning);
         var production = DebugFfmpegDecoderTests.ProductionSource();
-        Assert.DoesNotContain("config.General.", production);
+        // Production sets only exact seeks on General (2026-11-16); input experiments stay debug-only.
+        Assert.Equal(1, System.Text.RegularExpressions.Regex.Count(production, @"config\.General\."));
+        Assert.Contains("config.General.FastSeek = false;", production);
         Assert.Contains("if (route.DolbyVision7BaseLayer && !route.ConsoleToneMap) config.Video.HdrSupport = HdrSupport.Enabled", production);
         Assert.DoesNotContain("bale_decode_thread_priority", production);
         var settings = new DebugFfmpegInputTuning(true, 65536, 8, DecodeAheadFrames: 12,

@@ -68,7 +68,7 @@ public class SoftwareDecodeTuningTests
         Assert.Null(SoftwareDecodeTuning.BufferTimeMs(false, null, 3840, 2160));
 
     [Theory]
-    [InlineData("hevc", "aac", false)]
+    [InlineData("hevc", "aac", true)]
     [InlineData("hevc", "dts", true)]
     [InlineData("h264", "truehd", true)]
     public void NativeAndFfmpegSystemVideoRoutesSetNoForkOptions(string video, string audio, bool useFfmpeg)

@@ -251,7 +251,7 @@ public class PlaybackReplanTests
         var start = Start();
         var plan = PlaybackRoutePolicyTests.Plan("original_http", "hevc", "eac3");
         var request = PlaybackReplan.ForFailure(start, plan, "attempt", [], 1, 0,
-            PlaybackReplan.Classify(1, false, true), PlaybackRoutePolicy.Decide(plan, false));
+            PlaybackReplan.Classify(1, false, true), PlaybackRoutePolicy.Decide(plan, false, ffmpegEnabled: false));
         Assert.Same(start.ClientCapabilities, request.ClientCapabilities);
         Assert.Same(start.ClientFeatures, request.ClientFeatures);
         Assert.Equal("http_failure", request.Failure!.Classification);

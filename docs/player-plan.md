@@ -207,7 +207,26 @@ MKV source over-read the 1080p H.264 Shrek MKV (~385 MB burst at start, then ~2.
 and blocked on the network: 60 s A/B at the same point, native 211 waits / 33.7 s / 359 MB versus
 FFmpeg 5 waits / 1.15 s / 110 MB, and visibly smoother on the console. The likely trigger is sparse
 SRT subtitle tracks. MP4 (faststart, no subtitles) measured the same on both routes (10 vs 6
-startup-only waits, 80 vs 76 MB in 60 s), so MP4 stays on Windows' source.
+startup-only waits, 80 vs 76 MB in 60 s), so MP4 first stayed on Windows' source.
+
+**Every original reads through FFmpeg since 2026-11-16 (owner), MP4 included**, when FfmpegSource
+can decode its video (system codecs, the software allowlist, or no video); anything else stays with
+Windows' source, and debug `ffmpeg off` brings Windows' sources back. The same day **fast seek
+went off** (`General.FastSeek = false`): upstream's fast seek jumps to the nearest keyframe, which
+landed 4.5–10 s off and often late (resume at 900 started at 904.5 on the MP4 and 910.1 on an HEVC
+MKV). Console A/B on 0.1.557, same targets:
+
+| | Windows' MP4 source | FFmpeg, fast seek | FFmpeg, normal seek (now) |
+|---|---|---|---|
+| 1080p H.264 MP4: seek to playing | 0.76–1.61 s | 0.55–0.76 s | 0.80–1.28 s |
+| Landing | within 0.6 s | 4.5–8.3 s off | within 0.6 s |
+| 1080p HEVC MKV: seek to playing | — | 0.57–0.64 s | 0.76–1.24 s |
+| Landing | — | 2.9–10.1 s off | within 0.6 s |
+
+Paused seeks with the normal seek show the same frame as Windows' MP4 source at the same target, and
+on the 4K HEVC d3d11va + tone-map route the paused-seek frame matched the played-through frame, so
+Media Foundation and d3d11va start presenting at the target. Stream waits on the MP4 were 10–31
+through FFmpeg against 37–38 through Windows' source.
 
 **VP9 always uses the FFmpeg demuxer**, in any container, with the system (hardware) VP9 decoder.
 FFmpegInteropX hands VP9 packets to Media Foundation undecoded, as it does H.264 and HEVC

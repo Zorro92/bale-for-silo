@@ -55,7 +55,12 @@ public sealed class WideGamutSdrPlaybackTests
             Assert.Equal("1", config.FFmpegOptions["bale_tonemap"]);
             Assert.Equal("SDR / console tone map", DebugHdrPlayback.Output(false, Plan(codec, depth), route.ConsoleToneMap));
         }
-        else if (codec == "hevc") Assert.False(route.UseFfmpeg); // Native MP4 stays native.
+        else if (codec == "hevc")
+        {
+            // Every original reads through FFmpeg, on the system decoder unless the stage is armed.
+            Assert.True(route.UseFfmpeg);
+            Assert.False(route.RequiresD3D11);
+        }
     }
 
     [Fact]

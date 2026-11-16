@@ -58,7 +58,9 @@ public class DolbyVisionBaseLayerTests
     {
         var mp4 = PlaybackRoutePolicyTests.Plan("original_http", "hevc", "eac3");
         mp4.Source!.Container = "mp4";
-        Assert.False(PlaybackRoutePolicy.Decide(mp4, false).UseFfmpeg);
+        var mp4Route = PlaybackRoutePolicy.Decide(mp4, false);
+        Assert.True(mp4Route.UseFfmpeg); // Every original reads through FFmpeg (2026-11-16).
+        Assert.False(mp4Route.DolbyVisionBaseLayer);
         var remux = BaseLayerPlan("mp4");
         remux.Delivery = "hls";
         Assert.False(PlaybackRoutePolicy.Decide(remux, true).DolbyVisionBaseLayer);

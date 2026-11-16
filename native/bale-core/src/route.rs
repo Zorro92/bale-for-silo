@@ -6,8 +6,8 @@ use crate::dolby_vision7;
 use crate::dotnet::{eq_ignore_case, lower, trim_lower};
 use crate::models::{FileVersion, PlaybackPlan};
 use crate::software_decode::{
-    AUDIO_CODECS, DEMUXED_VIDEO_CODECS, FFMPEG_ONLY_CONTAINERS, SYSTEM_AUDIO_CODECS, VIDEO_CODECS,
-    contains, normalize_codec,
+    AUDIO_CODECS, DEMUXED_VIDEO_CODECS, FFMPEG_ONLY_CONTAINERS, SYSTEM_AUDIO_CODECS,
+    SYSTEM_VIDEO_CODECS, VIDEO_CODECS, contains, normalize_codec,
 };
 use crate::tone_map::{self, DOLBY_VISION8_BASE_LAYER_REASON};
 
@@ -129,10 +129,16 @@ pub fn decide(args: DecideArgs) -> RouteDecision {
     // A forward-only progressive remux has no length or ranges for Windows' own sources: it always
     // takes FFmpeg's non-seekable input (PlaybackProgressive), with the system decoder.
     let progressive = delivery == Some(PROGRESSIVE_DELIVERY);
+    // Every original goes through FFmpeg (owner, 2026-11-16): MP4 too, so all direct play shares the
+    // Rust transport, exact seeks and the console tone map. "ffmpeg off" keeps Windows' sources. A video
+    // codec FFmpeg cannot hand to a decoder Bale allows (FfmpegSource) stays with Windows' source.
+    let original_ffmpeg =
+        original && (video.is_none() || contains(SYSTEM_VIDEO_CODECS, video) || software_video);
     let ffmpeg = args.ffmpeg_enabled
         && direct
         && (!hls || hls_ffmpeg)
-        && (progressive
+        && (original_ffmpeg
+            || progressive
             || hls_ffmpeg
             || software_video
             || software_audio
@@ -156,7 +162,7 @@ pub fn decide(args: DecideArgs) -> RouteDecision {
     }
 }
 
-/// MKV and WebM (Matroska-based); MP4 stays on Windows' own source.
+/// MKV and WebM (Matroska-based).
 pub fn is_matroska(container: Option<&str>) -> bool {
     trim_lower(container).is_some_and(|name| {
         matches!(name.as_str(), "mkv" | "mka" | "webm") || name.contains("matroska")

@@ -22,6 +22,10 @@ internal static class FfmpegSource
         if (route.DolbyVision7BaseLayer && route.VideoCodec != "hevc")
             throw new InvalidDataException("DV7 base-layer playback requires HEVC.");
         var config = new MediaSourceConfig();
+        // Exact seeks (docs/player-plan.md, 2026-11-16): upstream's fast seek jumps to the nearest
+        // keyframe, 4.5-10 s off and often late, skipping content. The normal backward seek lands on
+        // the target; Media Foundation and d3d11va start presenting there (console-verified 0.1.557).
+        config.General.FastSeek = false;
         if (route.ConsoleToneMap && (route.VideoCodec is not ("hevc" or "vp9") || !ConsoleToneMapRuntime.IsAvailable))
             throw new InvalidDataException("Console tone mapping is unavailable for this source.");
         // FFmpeg's HEVC decoder handles only nuh_layer_id 0 and does not apply the RPU.

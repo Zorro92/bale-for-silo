@@ -48,7 +48,7 @@ public class PlaybackRoutePolicyTests
     [InlineData("original_http", "hevc", "dts", true, false)]
     [InlineData("original_http", "", "flac", true, false)]
     [InlineData("original_http", "h264", "truehd", true, false)]
-    [InlineData("original_http", "hevc", "eac3", false, false)]
+    [InlineData("original_http", "hevc", "eac3", true, false)]
     [InlineData("progressive", "h264", "aac", false, false)]
     // VP9 has no Windows container source that plays here: FFmpeg demuxes it for the system decoder.
     [InlineData("original_http", "vp9", "aac", true, false)]
@@ -93,8 +93,14 @@ public class PlaybackRoutePolicyTests
     [InlineData("eac3")]
     [InlineData("mp3")]
     [InlineData("EC-3")]
-    public void SystemAudioNeverMovesOrdinaryHevcOntoFfmpeg(string audio) =>
-        Assert.False(PlaybackRoutePolicy.Decide(Plan("original_http", "hevc", audio), false).UseFfmpeg);
+    public void SystemAudioKeepsOrdinaryHevcOnSystemDecoders(string audio)
+    {
+        // Every original reads through FFmpeg (2026-11-16); system audio still decodes in the system.
+        var route = PlaybackRoutePolicy.Decide(Plan("original_http", "hevc", audio), false);
+        Assert.True(route.UseFfmpeg);
+        Assert.False(route.SoftwareAudio);
+        Assert.False(route.SoftwareVideo);
+    }
 
     // LPCM and MP2 were never verified in Windows' own MP4 source: FFmpeg decodes them.
     [Theory]
@@ -127,7 +133,8 @@ public class PlaybackRoutePolicyTests
     public void DebugForceMovesDirectSystemCodecsOntoFfmpegWithSystemVideo(string delivery, string video, string audio)
     {
         var plan = Plan(delivery, video, audio);
-        Assert.False(PlaybackRoutePolicy.Decide(plan, false).UseFfmpeg);
+        // Originals already read through FFmpeg; the force only matters for the legacy progressive route.
+        Assert.Equal(delivery == "original_http", PlaybackRoutePolicy.Decide(plan, false).UseFfmpeg);
         var route = PlaybackRoutePolicy.Decide(plan, false, forceFfmpeg: true);
         Assert.True(route.UseFfmpeg);
         Assert.False(route.SoftwareVideo);
@@ -149,9 +156,10 @@ public class PlaybackRoutePolicyTests
     [InlineData("progressive", "mp4", "mkv", "hevc", "eac3", false)]
     // A forward-only remux has no length or ranges for Windows' own MP4 source.
     [InlineData("server_remux_progressive", "mp4", "mkv", "hevc", "eac3", true)]
-    [InlineData("original_http", "mp4", null, "h264", "aac", false)]
-    [InlineData("original_http", null, "mp4", "hevc", "eac3", false)]
-    [InlineData("original_http", null, null, "h264", "ac3", false)]
+    // Every original reads through FFmpeg (owner, 2026-11-16), MP4 included.
+    [InlineData("original_http", "mp4", null, "h264", "aac", true)]
+    [InlineData("original_http", null, "mp4", "hevc", "eac3", true)]
+    [InlineData("original_http", null, null, "h264", "ac3", true)]
     [InlineData("server_transcode_hls", "mkv", "mkv", "hevc", "eac3", false)]
     public void MatroskaDirectPlayUsesFfmpegDemuxWithSystemDecoders(string delivery, string? streamContainer, string? sourceContainer,
         string video, string audio, bool ffmpeg)
