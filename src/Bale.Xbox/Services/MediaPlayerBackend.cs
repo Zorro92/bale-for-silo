@@ -1,4 +1,5 @@
 using Windows.Foundation;
+using Windows.Media.Core;
 using Windows.Media.Playback;
 
 namespace Bale.Xbox.Services;
@@ -23,6 +24,43 @@ internal sealed partial class MediaPlayerBackend : PlaybackBackend
     }
 
     public MediaPlayer Player { get; }
+
+    /// <summary>The item the page set as the player's source; its track lists back the track API.</summary>
+    public MediaPlaybackItem? Item { get; set; }
+
+    public override IReadOnlyList<PlaybackBackendTrack> AudioTracks
+    {
+        get
+        {
+            if (Item is not { } item) return [];
+            return item.AudioTracks.Select(track =>
+            {
+                var format = track.GetEncodingProperties();
+                return new PlaybackBackendTrack(track.Language, format.Subtype, format.ChannelCount, track.Name,
+                    track.SupportInfo.DecoderStatus is MediaDecoderStatus.FullySupported or MediaDecoderStatus.Degraded);
+            }).ToArray();
+        }
+    }
+
+    public override int SelectedAudioIndex => Item?.AudioTracks.SelectedIndex ?? -1;
+
+    public override bool SelectAudio(int index)
+    {
+        if (Item is not { } item || index < 0 || index >= item.AudioTracks.Count) return false;
+        item.AudioTracks.SelectedIndex = index;
+        return item.AudioTracks.SelectedIndex == index;
+    }
+
+    public override int VideoTrackCount => Item?.VideoTracks.Count ?? 0;
+
+    public override int SelectedVideoIndex => Item?.VideoTracks.SelectedIndex ?? -1;
+
+    public override bool SelectVideo(int index)
+    {
+        if (Item is not { } item || index < 0 || index >= item.VideoTracks.Count) return false;
+        item.VideoTracks.SelectedIndex = index;
+        return item.VideoTracks.SelectedIndex == index;
+    }
 
     public override PlaybackBackendSession PlaybackSession => _session;
 

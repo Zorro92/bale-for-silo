@@ -113,13 +113,14 @@ public class DebugFfmpegPlaybackTests
         // Silo packages carry at most one audio stream on every packaged delivery, HLS included.
         Assert.Contains("int? expectedCount = catalogCount > 0 ? 1 : null;", source);
         Assert.DoesNotContain("Delivery == \"server_remux_progressive\") expectedCount", source);
-        Assert.Contains("media.Item.AudioTracks.SelectedIndex = index", source);
-        Assert.True(source.IndexOf("AudioTracks.SelectedIndex = index", StringComparison.Ordinal) < source.IndexOf("sender.Play()", StringComparison.Ordinal));
+        Assert.Contains("if (index >= 0) sender.SelectAudio(index);", source);
+        Assert.True(source.IndexOf("sender.SelectAudio(index)", StringComparison.Ordinal) < source.IndexOf("sender.Play()", StringComparison.Ordinal));
         Assert.True(source.IndexOf("SelectOriginalAudioTrack(attempt, media, attempt.Plan.SelectedTracks?.Audio?.Index)", StringComparison.Ordinal)
             < source.IndexOf("sender.Play()", StringComparison.Ordinal));
         Assert.Contains("PlaybackOriginalAudioSelection.Select(planIndex, catalog, mounted", source);
-        Assert.Contains("() => item.AudioTracks.SelectedIndex", source);
-        Assert.Contains("MediaDecoderStatus.FullySupported or MediaDecoderStatus.Degraded", source);
+        Assert.Contains("() => player.SelectedAudioIndex", source);
+        // MediaPlayerBackend reports FullySupported/Degraded tracks as decodable.
+        Assert.Contains("stream?.Name ?? track.Name, track.Decodable", source);
         Assert.Contains("media.SelectedAudioTrack.OpenFailed += OnAudioTrackOpenFailed", source);
         Assert.Contains("audio.OpenFailed -= OnAudioTrackOpenFailed", source);
         Assert.DoesNotContain("CreateFromUriAsync", source);

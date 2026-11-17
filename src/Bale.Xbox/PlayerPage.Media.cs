@@ -359,6 +359,7 @@ public sealed partial class PlayerPage
 #endif
         // The item exposes native track selection in production as well as debug stats.
         media.Item ??= new MediaPlaybackItem(media.Source);
+        backend.Item = media.Item;
         player.Source = media.Item;
     }
 
@@ -375,14 +376,13 @@ public sealed partial class PlayerPage
                 if (media.BaseLayerStreamIndex is { } baseStream)
                 {
                     var streams = ffmpeg.VideoStreams.Select(video => video.StreamIndex).ToArray();
-                    if (media.Item!.VideoTracks.Count != streams.Length)
+                    if (sender.VideoTrackCount != streams.Length)
                         throw new InvalidDataException("The DV7 video tracks could not be mapped.");
                     var index = Array.IndexOf(streams, baseStream);
                     if (index < 0) throw new InvalidDataException("The DV7 base layer is unavailable.");
                     // Never accept FFmpeg's reordered default as the catalog video ordinal.
                     // AutoPlay is off and the output guard also checks the live stream before presentation.
-                    media.Item.VideoTracks.SelectedIndex = index;
-                    if (media.Item.VideoTracks.SelectedIndex != index)
+                    if (!sender.SelectVideo(index))
                         throw new InvalidDataException("The DV7 base layer could not be selected.");
                 }
             }
@@ -392,7 +392,7 @@ public sealed partial class PlayerPage
             {
                 // A server remux carries only its chosen stream; catalog ordinals do not index it.
                 var streams = packaged.AudioStreams.Select(stream => stream.StreamIndex).ToArray();
-                if (media.Item!.AudioTracks.Count != streams.Length)
+                if (sender.AudioTracks.Count != streams.Length)
                     throw new InvalidDataException("The planned audio tracks could not be mapped.");
                 var fileId = attempt.Plan?.Source?.MediaFileId ?? attempt.Start?.FileId;
                 var catalogCount = attempt.Request.Detail.Versions.FirstOrDefault(version => version.FileId == fileId)?.AudioTracks?.Count;
@@ -401,7 +401,7 @@ public sealed partial class PlayerPage
                 int? expectedCount = catalogCount > 0 ? 1 : null;
                 // FFmpeg may omit an undecodable stream. Do not let that shift Silo's audio ordinals.
                 var index = PlaybackRoutePolicy.AudioTrackIndex(media.Route.AudioOrdinal, streams, expectedCount is > 0 ? expectedCount : null);
-                if (index >= 0) media.Item.AudioTracks.SelectedIndex = index;
+                if (index >= 0) sender.SelectAudio(index);
             }
             // TvVideoPlaybackStarter.kt's player coordinate may be zero on reanchored HLS even
             // when the source is minutes into the title. Set it once, only after native opening.
@@ -429,38 +429,42 @@ public sealed partial class PlayerPage
         }
     });
 
-    // Reusable by a future audio picker: planIndex always addresses this original's catalog,
+    // Also the in-player audio picker's local switch: planIndex always addresses this original's catalog,
     // even when Media Foundation or FFmpeg expose tracks in a different order. Call on the UI thread.
     private void SelectOriginalAudioTrack(Attempt attempt, Mount media, long? planIndex)
     {
         try
         {
-            if (attempt.Plan?.Delivery != "original_http" || media.Item is not { } item)
+            if (attempt.Plan?.Delivery != "original_http" || media.Player is not { } player)
                 throw new PlaybackAudioSelectionException();
             var fileId = attempt.Plan.Source?.MediaFileId ?? attempt.Plan.EffectiveMediaFileId;
             var catalog = attempt.Request.Detail.Versions.FirstOrDefault(version => version.FileId == fileId)?.AudioTracks;
             var ffmpeg = media.FfmpegSource;
-            if (ffmpeg is not null && ffmpeg.AudioStreams.Count != item.AudioTracks.Count)
+            var tracks = player.AudioTracks;
+            if (ffmpeg is not null && ffmpeg.AudioStreams.Count != tracks.Count)
                 throw new PlaybackAudioSelectionException();
-            var mounted = item.AudioTracks.Select((track, index) =>
+            var mounted = tracks.Select((track, index) =>
             {
-                var format = track.GetEncodingProperties();
                 var stream = ffmpeg?.AudioStreams[index];
                 // AudioStreamInfo.Language is a localized DISPLAY name in FFmpegInteropX;
                 // the Media Foundation descriptor keeps its BCP 47 tag. Prefer that tag.
                 var language = string.IsNullOrWhiteSpace(track.Language) ? stream?.Language : track.Language;
                 return new MountedPlaybackAudioTrack(stream?.StreamIndex, language,
-                    stream?.CodecName ?? format.Subtype, stream?.Channels ?? (long)format.ChannelCount,
+                    stream?.CodecName ?? track.Codec, stream?.Channels ?? track.Channels,
                     // Windows' Label may be a generated language name, not an embedded title.
-                    stream?.Name ?? track.Name, track.SupportInfo.DecoderStatus is MediaDecoderStatus.FullySupported or MediaDecoderStatus.Degraded);
+                    stream?.Name ?? track.Name, track.Decodable);
             }).ToArray();
             PlaybackOriginalAudioSelection.Select(planIndex, catalog, mounted, ffmpeg is not null, index =>
             {
-                if (media.SelectedAudioTrack is { } prior) prior.OpenFailed -= OnAudioTrackOpenFailed;
-                media.SelectedAudioTrack = item.AudioTracks[index];
-                media.SelectedAudioTrack.OpenFailed += OnAudioTrackOpenFailed;
-                item.AudioTracks.SelectedIndex = index;
-            }, () => item.AudioTracks.SelectedIndex);
+                // MediaPlayer reports a track it cannot open through the track itself.
+                if (media.Item is { } item)
+                {
+                    if (media.SelectedAudioTrack is { } prior) prior.OpenFailed -= OnAudioTrackOpenFailed;
+                    media.SelectedAudioTrack = item.AudioTracks[index];
+                    media.SelectedAudioTrack.OpenFailed += OnAudioTrackOpenFailed;
+                }
+                player.SelectAudio(index);
+            }, () => player.SelectedAudioIndex);
         }
         catch (PlaybackAudioSelectionException) { throw; }
         catch (Exception) { throw new PlaybackAudioSelectionException(); }

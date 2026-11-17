@@ -23,6 +23,24 @@ internal abstract partial class PlaybackBackend : IDisposable
     public event Action<PlaybackBackend, object?>? MediaEnded;
     public event Action<PlaybackBackend, PlaybackBackendFailure>? MediaFailed;
 
+    /// <summary>
+    /// The mounted audio tracks in the player's own order (not catalog order), valid once opened. FFmpeg mounts
+    /// keep FFmpegInteropX's AudioStreams order, which the page maps to catalog ordinals.
+    /// </summary>
+    public virtual IReadOnlyList<PlaybackBackendTrack> AudioTracks => [];
+
+    public virtual int SelectedAudioIndex => -1;
+
+    /// <summary>Selects mounted audio track <paramref name="index"/>; true when the player now reports it selected.</summary>
+    public virtual bool SelectAudio(int index) => false;
+
+    public virtual int VideoTrackCount => 0;
+
+    public virtual int SelectedVideoIndex => -1;
+
+    /// <summary>Selects mounted video track <paramref name="index"/> (the DV7 base layer); true when it is now selected.</summary>
+    public virtual bool SelectVideo(int index) => false;
+
     protected void RaiseOpened() => MediaOpened?.Invoke(this, null);
     protected void RaiseEnded() => MediaEnded?.Invoke(this, null);
     protected void RaiseFailed(PlaybackBackendFailure failure) => MediaFailed?.Invoke(this, failure);
@@ -30,6 +48,12 @@ internal abstract partial class PlaybackBackend : IDisposable
     /// <summary>Stops the pipeline and releases it. The source objects the mount built are the mount's to release.</summary>
     public abstract void Dispose();
 }
+
+/// <summary>
+/// One mounted track as the player reports it: language tag, codec (a subtype name such as "AAC"), channel count,
+/// the label the player gives it, and whether its decoder can play it.
+/// </summary>
+internal sealed record PlaybackBackendTrack(string? Language, string? Codec, long? Channels, string? Name, bool Decodable);
 
 /// <summary>Why playback failed: an HRESULT (0 when unknown) and whether the decoder or the network is to blame.</summary>
 internal sealed record PlaybackBackendFailure(int HResult, bool Decoder, bool Network);

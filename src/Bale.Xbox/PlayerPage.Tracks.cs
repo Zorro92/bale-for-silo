@@ -152,7 +152,7 @@ public sealed partial class PlayerPage
     /// </summary>
     private bool TrySwitchAudioLocally(Attempt attempt, Mount media, int? audioIndex, int? subtitleIndex)
     {
-        if (subtitleIndex is not null || audioIndex is not { } index || media.Item is null
+        if (subtitleIndex is not null || audioIndex is not { } index || media.Player is null
             || !PlaybackReplan.SwitchesAudioLocally(attempt.Plan, index)) return false;
         try
         {
