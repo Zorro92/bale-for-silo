@@ -9,7 +9,8 @@ use std::sync::{Arc, Mutex};
 
 use windows::Win32::Foundation::RECT;
 use windows::Win32::Media::MediaFoundation::{
-    IMFMediaEngine, IMFMediaEngineEx, MFARGB, MFSTARTUP_FULL, MFShutdown, MFStartup,
+    IMFMediaEngine, IMFMediaEngineEx, MF_MEDIA_ENGINE_SEEK_MODE_APPROXIMATE, MFARGB,
+    MFSTARTUP_FULL, MFShutdown, MFStartup,
 };
 use windows::core::HRESULT;
 
@@ -205,12 +206,23 @@ impl Session {
         hr(self.with(|inner| unsafe { inner.engine.Pause() }))
     }
 
-    pub fn seek(&self, seconds: f64) -> HRESULT {
+    /// Seeks to `seconds`; `approximate` lets the engine land on a nearby keyframe
+    /// (`SetCurrentTimeEx` with `MF_MEDIA_ENGINE_SEEK_MODE_APPROXIMATE`) instead of decoding up to the
+    /// exact time, which a caller media source may or may not honour.
+    pub fn seek(&self, seconds: f64, approximate: bool) -> HRESULT {
         if !seconds.is_finite() || seconds < 0.0 {
             return HRESULT(0x8007_0057u32 as i32); // E_INVALIDARG
         }
         // SAFETY: live engine.
-        hr(self.with(|inner| unsafe { inner.engine.SetCurrentTime(seconds) }))
+        hr(self.with(|inner| unsafe {
+            if approximate {
+                inner
+                    .engine_ex
+                    .SetCurrentTimeEx(seconds, MF_MEDIA_ENGINE_SEEK_MODE_APPROXIMATE)
+            } else {
+                inner.engine.SetCurrentTime(seconds)
+            }
+        }))
     }
 
     pub fn set_volume(&self, volume: f64, muted: bool) -> HRESULT {

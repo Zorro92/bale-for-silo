@@ -106,6 +106,13 @@ public sealed partial class PlayerPage
     private bool _engineStatsVisible = true;
     private (long Ticks, ulong Rendered, ulong Dropped) _engineSample;
     private (ulong Rendered, ulong Dropped) _engineLastSecond;
+    // Tap merging and hold scan (as the normal player): presses move a target, one seek follows.
+    private readonly PlaybackHoldScan _engineHold = new();
+    private VirtualKey? _engineHoldKey;
+    private double? _engineTapTarget;
+    private long _engineTapAt;
+    private string _engineLastSeek = "none";
+    private int _engineTicks;
     // The engine restarts its counters on seek and pause; keep running totals across those.
     private (ulong Rendered, ulong Dropped, ulong Corrupted) _engineBase, _engineRaw;
     // Premature ends reanchored at one source position; a repeat there leaves instead of looping.
@@ -198,12 +205,41 @@ public sealed partial class PlayerPage
         _engineSample = (Environment.TickCount64, 0, 0);
         _engineBase = _engineRaw = default;
         _engineRenderedAtMount = 0;
+        _engineTapTarget = null;
+        _engineHoldKey = null;
+        _engineHold.Release();
         SetLoading(false);
-        _engineTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-        _engineTimer.Tick += (_, _) => UpdateEnginePlayer();
+        _engineTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        _engineTimer.Tick += (_, _) => OnEngineTick();
         _engineTimer.Start();
         UpdateEnginePlayer();
     }
+
+    /// <summary>100 ms: scan and merged taps; the stats pane every 500 ms (or while scanning/merging).</summary>
+    private void OnEngineTick()
+    {
+        try
+        {
+            var now = Environment.TickCount64;
+            var busy = false;
+            if (_engineHold.Held && _enginePlayer is { } host && host.TryState(out var held))
+            {
+                busy = _engineHold.Tick(now, _engineTapTarget ?? EngineSourcePosition(held), _duration ?? held.Duration) is not null
+                    || _engineTapTarget is not null;
+            }
+            else if (_engineTapTarget is { } target && now - _engineTapAt >= TapMergeMs)
+            {
+                // Taps merge: once presses stop for a moment, seek once to where they added up.
+                _engineTapTarget = null;
+                _ = EngineSeekSourceAsync(target, paused: _enginePlayer is { } player && player.TryState(out var tapped) && tapped.Paused);
+            }
+            else busy = _engineTapTarget is not null;
+            if (busy || ++_engineTicks % 5 == 0) UpdateEnginePlayer();
+        }
+        catch (Exception ex) { LogFailure("engine player tick", ex); }
+    }
+
+    private const long TapMergeMs = 400;
 
     private void UpdateEnginePlayer()
     {
@@ -254,9 +290,17 @@ public sealed partial class PlayerPage
             var clock = PlaybackTransportFeedback.Clock(source, forceHours: hours);
             var total = double.IsFinite(titleLength) ? PlaybackTransportFeedback.Clock(titleLength, forceHours: hours) : "?";
             host.SetOverlay(!_engineStatsVisible ? null : FormattableString.Invariant(
-                $"Engine player · {_engineRoute}\n{clock} / {total} · {status}\nVideo {state.Width}x{state.Height} · {state.FramesPerSecond:0.###} fps\nFrames shown {state.FramesRendered} · dropped {state.FramesDropped} · corrupted {state.FramesCorrupted}\nLast second +{_engineLastSecond.Rendered} shown / +{_engineLastSecond.Dropped} dropped\nJitter {state.Jitter:0.###} · frame delay {state.FrameDelay:0.###}\nA pause · LT/RT -10/+30 s · LB/RB chapters · View stats · B leave"));
+                $"Engine player · {_engineRoute}\n{clock} / {total} · {status}\nVideo {state.Width}x{state.Height} · {state.FramesPerSecond:0.###} fps\nFrames shown {state.FramesRendered} · dropped {state.FramesDropped} · corrupted {state.FramesCorrupted}\nLast second +{_engineLastSecond.Rendered} shown / +{_engineLastSecond.Dropped} dropped\nJitter {state.Jitter:0.###} · frame delay {state.FrameDelay:0.###}\n{EnginePendingText()}Last seek: {_engineLastSeek}\nA pause · LT/RT -10/+30 s · LB/RB chapters · View stats · B leave"));
         }
         catch (Exception ex) { LogFailure("engine player tick", ex); }
+    }
+
+    private string EnginePendingText()
+    {
+        var hours = _duration >= 3600;
+        if (_engineHold.Target is { } scan)
+            return (_engineHold.Direction > 0 ? "Fast-forward → " : "Rewind → ") + PlaybackTransportFeedback.Clock(scan, forceHours: hours) + "\n";
+        return _engineTapTarget is { } tap ? "Skip → " + PlaybackTransportFeedback.Clock(tap, forceHours: hours) + "\n" : string.Empty;
     }
 
     /// <summary>The engine's player clock as a title (source) position.</summary>
@@ -276,10 +320,34 @@ public sealed partial class PlayerPage
         if (media.Progressive is null)
         {
             var target = media.Transport.Timeline.PlayerForSource(source) ?? source;
-            var hr = host.Seek(target);
+            // Approximate: the engine may land on the keyframe before the target instead of decoding up
+            // to it (FastSeek needs a MediaPlayer session in FFmpegInteropX; this asks the engine instead).
+            var started = Environment.TickCount64;
+            var hr = host.Seek(target, approximate: true);
             if (paused && hr >= 0) hr = host.Pause();
-            Log.Info($"engine-player: seek source={source:0.###} player={target:0.###} hr=0x{unchecked((uint)hr):X8}");
-            return hr >= 0;
+            if (hr < 0)
+            {
+                _engineLastSeek = $"failed hr=0x{unchecked((uint)hr):X8}";
+                return false;
+            }
+            // Where did it land? Poll until the engine finishes seeking, then compare with the target.
+            var landed = await Task.Run(async () =>
+            {
+                for (var i = 0; i < 250; i++)
+                {
+                    await Task.Delay(20);
+                    if (!host.TryState(out var after)) return (double?)null;
+                    if (!after.Seeking && i > 0) return after.Position;
+                }
+                return null;
+            });
+            var elapsed = Environment.TickCount64 - started;
+            _engineLastSeek = landed is { } at
+                ? string.Create(CultureInfo.InvariantCulture,
+                    $"target {target:0.###}s → landed {at:0.###}s ({(target - at > 0.25 ? "keyframe, fast" : "exact")}, {elapsed} ms)")
+                : "no landing seen within 5 s";
+            Log.Info($"engine-player: seek approximate source={source:0.###} player={target:0.###} {_engineLastSeek}");
+            return true;
         }
         if (_engineReanchoring || !_lifecycle.Wait(0))
         {
@@ -307,6 +375,8 @@ public sealed partial class PlayerPage
                 return false;
             }
             Log.Info($"engine-player: seek {(replacement is null ? "failed" : "remounted")}");
+            _engineLastSeek = replacement is null ? "reanchor failed"
+                : string.Create(CultureInfo.InvariantCulture, $"target {source:0.###}s → reanchored at {replacement.Transport.Timeline.SourceForPlayer(0) ?? source:0.###}s (server keyframe)");
             return replacement is not null;
         }
         catch (Exception ex)
@@ -339,6 +409,19 @@ public sealed partial class PlayerPage
             if (keyDown && firstDown) _ = CloseEnginePlayerAsync(leave: true);
             return true;
         }
+        // Releasing a held trigger commits the scan's target (one seek); a short tap's target merges.
+        if (!keyDown && _engineHoldKey == key)
+        {
+            _engineHoldKey = null;
+            if (_engineHold.Release() is { } scanned)
+            {
+                _engineTapTarget = null;
+                Log.Info($"engine-player: scan release target={scanned:0.###}");
+                _ = EngineSeekSourceAsync(scanned, paused: host.TryState(out var released) && released.Paused);
+            }
+            else _engineTapAt = Environment.TickCount64;
+            return true;
+        }
         var action = PlaybackRemoteKeys.Action((int)key, keyDown, firstDown, cleanPlayback: true);
         if (action == PlaybackKeyAction.None) return false;
         if (action == PlaybackKeyAction.ConsumeOnly || !host.TryState(out var state)) return true;
@@ -348,8 +431,11 @@ public sealed partial class PlayerPage
                 Log.Info($"engine-player: {(state.Paused ? "play" : "pause")} hr=0x{unchecked((uint)(state.Paused ? host.Play() : host.Pause())):X8}");
                 break;
             case PlaybackKeyAction.SkipBack or PlaybackKeyAction.SkipForward:
-                _ = EngineSeekSourceAsync(PlaybackSeek.SkipTarget(EngineSourcePosition(state), _duration ?? state.Duration,
-                    action == PlaybackKeyAction.SkipForward), state.Paused);
+                var forward = action == PlaybackKeyAction.SkipForward;
+                _engineTapTarget = PlaybackSeek.SkipTarget(_engineTapTarget ?? EngineSourcePosition(state), _duration ?? state.Duration, forward);
+                _engineTapAt = Environment.TickCount64;
+                _engineHoldKey = key;
+                _engineHold.Press(forward, _engineTapAt);
                 break;
             case PlaybackKeyAction.PreviousChapter or PlaybackKeyAction.NextChapter:
                 var chapters = PlayingChapters();

@@ -45,7 +45,7 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 /// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched DLL.
-pub const ABI_VERSION: u32 = 11;
+pub const ABI_VERSION: u32 = 12;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_gpu_abi_version() -> u32 {
@@ -421,7 +421,7 @@ pub unsafe extern "C" fn bale_gpu_engine_session_pause(session: *mut core::ffi::
     unsafe { session_ref(session) }.map_or(E_POINTER, |s| s.pause().0)
 }
 
-/// Seek to `seconds` (engine time). Returns an HRESULT.
+/// Seek to `seconds` (engine time); `approximate` non-zero allows a keyframe landing. Returns an HRESULT.
 ///
 /// # Safety
 /// `session` must be null or a live, unclosed session pointer.
@@ -430,9 +430,10 @@ pub unsafe extern "C" fn bale_gpu_engine_session_pause(session: *mut core::ffi::
 pub unsafe extern "C" fn bale_gpu_engine_session_seek(
     session: *mut core::ffi::c_void,
     seconds: f64,
+    approximate: u32,
 ) -> i32 {
     // SAFETY: forwarded caller guarantee.
-    unsafe { session_ref(session) }.map_or(E_POINTER, |s| s.seek(seconds).0)
+    unsafe { session_ref(session) }.map_or(E_POINTER, |s| s.seek(seconds, approximate != 0).0)
 }
 
 /// Volume 0..1 and mute. Returns an HRESULT.

@@ -242,7 +242,8 @@ internal sealed class DebugEnginePresent
 
     internal int Pause() => _session == 0 ? unchecked((int)0x80004003) : bale_gpu_engine_session_pause(_session);
 
-    internal int Seek(double seconds) => _session == 0 ? unchecked((int)0x80004003) : bale_gpu_engine_session_seek(_session, seconds);
+    internal int Seek(double seconds, bool approximate = false) =>
+        _session == 0 ? unchecked((int)0x80004003) : bale_gpu_engine_session_seek(_session, seconds, approximate ? 1u : 0u);
 
     internal int Volume(double volume, bool muted) =>
         _session == 0 ? unchecked((int)0x80004003) : bale_gpu_engine_session_volume(_session, volume, muted ? 1u : 0u);
@@ -304,7 +305,7 @@ internal sealed class DebugEnginePresent
         nint* session, byte* report, uint reportCapacity);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_play(nint session);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_pause(nint session);
-    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_seek(nint session, double seconds);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_seek(nint session, double seconds, uint approximate);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_volume(nint session, double volume, uint muted);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_resize(nint session, uint width, uint height);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern unsafe int bale_gpu_engine_session_state(nint session, EngineSessionState* state);
