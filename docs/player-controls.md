@@ -91,6 +91,9 @@ rather than leaving them transparent so they cost nothing while hidden.
    (MOVIE · 2016, title, 1:41:31, HDR10/1080p, Direct play · HEVC · DTS 5.1 · English · Chapter 02);
    Chapters lists 01-07 with times, Chapter 04 seeked to 25:55 and closed. Bumpers on the same
    title: RB to Chapter 05 (32:11), LB within 3 s back to Chapter 04.
+   Subtitle lift (2026-11-16): while the controls are up the subtitle layer slides up 190 so cues clear
+   the title, bar and buttons (TvPlayerScreen.kt liftSubtitlesClearOfControls, ~216 dp reach); hidden
+   while the Options panel is open. Bale moves the whole layer, so a top-placed cue moves with it.
    Options panel, code done 2026-11-16 (`PlayerPage.Options.cs`, `PlaybackOptionsInfo` in Core): the
    control bar's Options button or the Menu button opens a top-centre card that replaces the controls
    until Back. Info: eyebrow, title, length, HDR/resolution badges, and Stream rows (Playback, Video,

@@ -276,11 +276,31 @@ public sealed partial class PlayerPage
         return true;
     }
 
+    private float _subtitleLift = float.NaN;
+
+    /// <summary>
+    /// TvPlayerScreen.kt liftSubtitlesClearOfControls: while the controls are up (not under the Options
+    /// panel or Up Next) cues rise clear of the title, bar and buttons, which reach about 216 dp up; while
+    /// the Options panel is open they are hidden so nothing reads through it. A composited translation of
+    /// the whole layer (a cue placed at the top moves with it).
+    /// </summary>
+    private void UpdateSubtitleLift()
+    {
+        const float lift = 190; // 216 dp reach minus the cues' own bottom margin (~5% of 540).
+        var target = _controls.Visible && !OptionsOpen && !UpNextVisible ? -lift : 0f;
+        SubtitleLayer.Opacity = OptionsOpen ? 0 : 1;
+        if (target == _subtitleLift) return;
+        _subtitleLift = target;
+        SubtitleLayer.TranslationTransition ??= new Vector3Transition { Duration = TimeSpan.FromMilliseconds(160) };
+        SubtitleLayer.Translation = new System.Numerics.Vector3(0, target, 0);
+    }
+
     /// <summary>OnTick: times and bar a few times a second, and the 5 s hide.</summary>
     private void UpdateControls(bool force = false)
     {
         try
         {
+            UpdateSubtitleLift();
             if (!_controls.Visible) return;
             var now = Environment.TickCount64;
             if (_controls.ShouldHide(now, _scrub.Active || TrackMenuOpen))
