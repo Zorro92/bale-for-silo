@@ -31,6 +31,8 @@ internal sealed partial class EngineBackend : PlaybackBackend
     private nint _panel;
     private nint _handle;
     private long _size;
+    private Windows.Graphics.Display.DisplayInformation? _display;
+    private Windows.Graphics.Display.Core.HdmiDisplayInformation? _hdmi;
     private Timer? _poll;
     private EngineSessionState _last;
     private bool _opened;
@@ -48,6 +50,15 @@ internal sealed partial class EngineBackend : PlaybackBackend
         host.Child = _canvas;
         Layout();
         Window.Current.SizeChanged += OnWindowSizeChanged;
+        // A display mode change (Bale's own HDMI switch, or the console's) changes the raw pixel size.
+        _display = Windows.Graphics.Display.DisplayInformation.GetForCurrentView();
+        _display.DpiChanged += OnDisplayChanged;
+        try
+        {
+            _hdmi = Windows.Graphics.Display.Core.HdmiDisplayInformation.GetForCurrentView();
+            if (_hdmi is not null) _hdmi.DisplayModesChanged += OnHdmiModesChanged;
+        }
+        catch (Exception) { _hdmi = null; }
         // An owned IInspectable of the panel; Rust takes ISwapChainPanelNative2 from it.
         _panel = WinRT.MarshalInspectable<object>.FromManaged(_view);
     }
@@ -303,8 +314,13 @@ internal sealed partial class EngineBackend : PlaybackBackend
 
     private void OnWindowSizeChanged(object sender, WindowSizeChangedEventArgs e) => Layout();
 
-    /// <summary>Re-lays the panel out after an HDMI mode or DPI change. UI thread.</summary>
-    public void Relayout() => Layout();
+    private void OnDisplayChanged(Windows.Graphics.Display.DisplayInformation sender, object args) => Layout();
+
+    private void OnHdmiModesChanged(Windows.Graphics.Display.Core.HdmiDisplayInformation sender, object args) =>
+        _ = CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+        {
+            if (!_disposed) Layout();
+        });
 
     private static (uint Width, uint Height) Unpack(long size) => ((uint)(size >> 32), (uint)(size & 0xFFFFFFFF));
 
@@ -339,6 +355,10 @@ internal sealed partial class EngineBackend : PlaybackBackend
         _poll?.Dispose();
         _poll = null;
         Window.Current.SizeChanged -= OnWindowSizeChanged;
+        if (_display is { } display) display.DpiChanged -= OnDisplayChanged;
+        _display = null;
+        if (_hdmi is { } hdmi) hdmi.DisplayModesChanged -= OnHdmiModesChanged;
+        _hdmi = null;
         if (handle != 0)
         {
             try
