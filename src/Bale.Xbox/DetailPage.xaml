@@ -225,7 +225,7 @@
                 <TextBlock Text="Edition" VerticalAlignment="Center" />
               </StackPanel>
             </Button>
-            <Button x:Name="VersionSelector" Style="{StaticResource SkylineActionButtonStyle}" Click="OnVersionSelectorClick" AutomationProperties.Name="Version" Visibility="Collapsed">
+            <Button x:Name="VersionSelector" Style="{StaticResource SkylineActionButtonStyle}" Click="OnVersionSelectorClick" AutomationProperties.Name="Version" IsEnabled="False">
               <StackPanel Style="{StaticResource SkylineDetailActionContentStyle}">
                 <Viewbox Style="{StaticResource SkylineDetailActionIconStyle}">
                   <Path Width="{StaticResource SkylineMaterialIconCanvas}" Height="{StaticResource SkylineMaterialIconCanvas}" Fill="{StaticResource SkylineFocusRing}"
