@@ -44,6 +44,12 @@ public sealed record ItemDetail(
 
     public long? SeasonNumber { get; init; }
 
+    /// <summary>An episode's number in its season (the player's "S2:E4" eyebrow).</summary>
+    public long? EpisodeNumber { get; init; }
+
+    /// <summary>Release year (the player's "MOVIE · 2026" eyebrow).</summary>
+    public long? Year { get; init; }
+
     /// <summary>Playback inventory and last-played file used by TvDetailVersionSelection.kt.</summary>
     public IReadOnlyList<FileVersion> Versions { get; init; } = [];
 

@@ -1506,6 +1506,101 @@
     <Setter Property="Foreground" Value="#99EDEDED" />
     <Setter Property="TextAlignment" Value="Right" />
   </Style>
+  <!-- On-screen player controls (TvPlayerScreen.kt TvPlayerIdleOverlay, TvPlayerTransportCluster.kt,
+       TvPlayerScrubber.kt, TvPlayerChrome.kt): bottom-up 26 inset, 44 transport row, 16 gap, scrubber
+       (28 bar + 8 + clock row), 16, then eyebrow and title. Android dp maps 1:1, sp x 0.86.
+       Buttons: 44 discs of black 38% with a white 24% ring, Paper fill and Ink glyph on focus, no scale;
+       a labelled button widens into a pill on focus. -->
+  <Style x:Key="SkylinePlayerControlsStyle" TargetType="StackPanel">
+    <Setter Property="VerticalAlignment" Value="Bottom" />
+    <Setter Property="Margin" Value="48,0,48,26" />
+  </Style>
+  <Style x:Key="SkylinePlayerEyebrowStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="9.46" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="CharacterSpacing" Value="140" />
+    <Setter Property="Foreground" Value="#99EDEDED" />
+    <Setter Property="MaxLines" Value="1" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="SkylinePlayerTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="23.22" />
+    <Setter Property="LineHeight" Value="28.38" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="Foreground" Value="#FFEDEDED" />
+    <Setter Property="Margin" Value="0,4,0,16" />
+    <Setter Property="MaxLines" Value="1" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="SkylinePlayerScrubberStyle" TargetType="Button">
+    <Setter Property="Height" Value="28" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <ContentPresenter Content="{TemplateBinding Content}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Center" />
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="SkylinePlayerTransportRowStyle" TargetType="Grid">
+    <Setter Property="Margin" Value="0,16,0,0" />
+    <Setter Property="Height" Value="44" />
+  </Style>
+  <Style x:Key="SkylinePlayerTransportButtonStyle" TargetType="Button">
+    <Setter Property="Height" Value="44" />
+    <Setter Property="MinWidth" Value="44" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Foreground" Value="#FFEDEDED" />
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="12.04" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Pill" Background="#61000000" BorderBrush="#3DFFFFFF" BorderThickness="1" CornerRadius="22" Padding="{TemplateBinding Padding}">
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="ActionExpansionStates">
+                <VisualState x:Name="Expanded"><VisualState.Setters>
+                  <Setter Target="Pill.Padding" Value="13,0,18,0" />
+                </VisualState.Setters></VisualState>
+                <VisualState x:Name="Collapsed" />
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" />
+                <VisualState x:Name="PointerOver" />
+                <VisualState x:Name="Pressed" />
+                <VisualState x:Name="Disabled"><VisualState.Setters>
+                  <Setter Target="Pill.Opacity" Value="0.4" />
+                </VisualState.Setters></VisualState>
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused"><VisualState.Setters>
+                  <Setter Target="Pill.Background" Value="#FFEDEDED" />
+                  <Setter Target="Pill.BorderBrush" Value="#00FFFFFF" />
+                  <Setter Target="Content.Foreground" Value="#FF0B0B0C" />
+                </VisualState.Setters></VisualState>
+                <VisualState x:Name="PointerFocused" />
+                <VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" FontSize="{TemplateBinding FontSize}"
+                              FontWeight="{TemplateBinding FontWeight}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="SkylinePlayerGlyphStyle" TargetType="Viewbox">
+    <Setter Property="Width" Value="20" /><Setter Property="Height" Value="20" /><Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
   <!-- Debug playback readout, pending the real HUD: TvPlayerHud.kt HudStatsPane/HudReadOnlyRow
        supplies the 26dp column gap, 34dp rows, 10dp/4dp padding and 12dp label/value gap.
        TvPlayerChrome.kt supplies Smoke, Paper/Graphite and Row/Value type at the TV 0.86 scale. -->

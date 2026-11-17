@@ -106,6 +106,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         ResetStats();
 #endif
         InitializeSubtitleLayer();
+        InitializeControls();
         _timer.Tick += OnTick;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
@@ -310,6 +311,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
             && IsCurrent(current, first)) UpdatePlaybackState(current, first);
         UpdateSpinner();
         UpdateTransport();
+        UpdateControls();
         UpdateVersionNotice();
         // Drift correction about once per second while playing; SubtitleClockPush drops the other ticks.
         PushSubtitleClock();
@@ -567,8 +569,12 @@ public sealed partial class PlayerPage : Page, IBackHandler
         }
     }
 
-    public bool OnBack()
+    public bool OnBack() => OnBack(closeControls: true);
+
+    /// <summary>Back closes a scrub preview, then the controls, then leaves; Stop and Close leave at once.</summary>
+    private bool OnBack(bool closeControls)
     {
+        if (closeControls && BackClosesControls()) return true;
         if (!_leaving) _ = StopAndGoBackAsync();
         return true;
     }

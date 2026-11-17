@@ -23,7 +23,8 @@ public sealed partial class PlayerPage
     {
         try
         {
-            if (!_active || _leaving || _suspended || !_transportFeedback.Visible(Environment.TickCount64)
+            // With the on-screen controls up their own bar shows the position.
+            if (!_active || _leaving || _suspended || _controls.Visible || !_transportFeedback.Visible(Environment.TickCount64)
                 || _attempt is not { } attempt)
             {
                 TransportFeedback.Visibility = Visibility.Collapsed;

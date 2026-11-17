@@ -196,6 +196,8 @@ public sealed partial class DetailFeed
         {
             MarqueeLine = MarqueeLine(item),
             SeasonNumber = item.SeasonNumber,
+            EpisodeNumber = item.EpisodeNumber,
+            Year = item.Year,
             Versions = item.Versions ?? [],
             PlaybackVariants = item.PlaybackVariants ?? [],
             LastFileId = item.UserData?.LastFileId,

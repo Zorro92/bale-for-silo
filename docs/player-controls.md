@@ -62,6 +62,14 @@ rather than leaving them transparent so they cost nothing while hidden.
 2. **Transport overlay and scrubber.** Revealed by the D-pad or by A pausing, hidden after a few
    seconds without input, the transport row (skip, play/pause, Close first; Subtitles/Options once
    step 4 exists), scrubber with nudge/commit/cancel and chapter ticks.
+   Code done 2026-11-16, not yet on the console: `TransportControls` in PlayerPage.xaml,
+   `PlaybackControlsState` / `PlaybackScrub` / `PlaybackControlsText` in Core. Eyebrow and title,
+   the scrubber (focused: Left/Right move a 10 s preview, Select commits it as one seek or toggles
+   playback without one, Down/Back cancel it), the clock row with "Ends", and skip back · play/pause ·
+   skip forward on the left, Close on the right. Play/Pause has focus on reveal; Back closes a
+   preview, then the controls, then the player; Stop and Close leave at once; 5 s without input hides
+   the controls (also while paused). Not yet: chapter ticks and segment colours on the bar, the
+   skip chip's delta while the controls are up.
 3. **Trigger hold.** After a short pause (about 1 s) a held trigger rewinds / fast-forwards at one
    steady rate until released, with a chip showing where it will land; release commits. Built on
    the existing seek path (exact landing with FastSeek off, keyframe for software AV1).
