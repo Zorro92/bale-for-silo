@@ -176,8 +176,10 @@ public sealed partial class PlayerPage
                     var decision = await RequestReanchorAsync(attempt, PlaybackTimeline.From(attempt.Plan!.Timeline).SourceStartSeconds);
                     if (decision is null || !ReferenceEquals(attempt.Media, media)) throw;
                     DisposeMount(attempt);
+                    var kept = ClientBufferingReplan("seek_reanchor")?.BandwidthEstimateKbps;
                     attempt.Plan = decision.PlaybackPlan!;
                     attempt.ServerFeatures = decision.ServerFeatures ?? [];
+                    AdoptBufferingPlan(attempt, controllerInitiated: false, kept);
                     await MountPlanAsync(attempt, 0, paused, rangeRefused: true);
                     return;
                 }
@@ -571,7 +573,11 @@ public sealed partial class PlayerPage
             {
                 if (_attempt is not { Media: { } media } attempt || !ReferenceEquals(media.Player, sender)) return;
                 // An interrupted forward-only response is a lost connection, not a failed route.
-                if (media.Progressive is { Faulted: true }) QueueProgressiveReconnect(attempt, media, "transport");
+                if (media.Progressive is { Faulted: true })
+                {
+                    _bufferingSignals.NoteMediaRequestFailed();
+                    QueueProgressiveReconnect(attempt, media, "transport");
+                }
                 else QueueFailure(attempt, media, hresult, decoder, network);
             });
         }
@@ -613,6 +619,8 @@ public sealed partial class PlayerPage
         SetDisplayActive(_state != "paused");
         // Playing vs paused/buffering changes how the subtitle overlay extrapolates its clock.
         PushSubtitleClock();
+        // Stall detection sees every state change, not only the 100 ms tick.
+        UpdateBufferingSignals(attempt);
     }
 
     private void OnMediaEnded(PlaybackBackend sender, object? args) => _ = DispatchAsync(() =>
@@ -622,7 +630,12 @@ public sealed partial class PlayerPage
         // Protocol §4: a progressive response that did not end cleanly is a transport failure,
         // never the end of the title. Reopen it where it stopped (§6.2) instead of leaving.
         if (media.Progressive is { Completed: false }) QueueProgressiveReconnect(attempt, media, "incomplete");
-        else if (!HandleEndedWithUpNext()) _ = StopAndGoBackAsync();
+        else
+        {
+            // The end of the media is no stall, and the plan stopped playing: its plan_summary goes out.
+            BufferingMediaEnded();
+            if (!HandleEndedWithUpNext()) _ = StopAndGoBackAsync();
+        }
     });
 
     private void TrackProgressiveIdle(Attempt attempt, Mount media, MediaPlaybackState state)

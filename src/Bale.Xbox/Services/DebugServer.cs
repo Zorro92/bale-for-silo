@@ -35,6 +35,8 @@ namespace Bale.Xbox.Services;
 ///   GET  /stats           all active player stat rows, with [hidden] on overlay-hidden rows
 ///   GET  /frame-trace     software-video late deliveries with stream/GC/gap evidence
 ///   POST /frame-trace?action=reset  clear the active player's trace and totals
+///   GET  /buffering       buffering-quality controller state (mode, plan, stalls, throughput, pill)
+///   POST /buffering?action=stall&ms=8000  inject a network stall into the controller (detection bypassed)
 ///   GET  /stats-rows      current row labels with on/off overlay state
 ///   POST /stats-rows?action=hide&labels=Read-ahead,Stream%20reads  hide|show|only|reset; memory only
 ///   GET  /wait?for=...    wait for page Detail | loaded | text ... | focus ...; timeout=8000 ms (max 15000)
@@ -558,6 +560,31 @@ internal sealed partial class DebugServer
                 Interlocked.Exchange(ref _requestDetailFaultOnce, 1);
                 return ("200 OK", "next request-detail load will fail once; Retry will read normally\n");
 
+            case ("GET", "/buffering"):
+                var bufferingFound = false;
+                var bufferingState = await OnUiAsync(() =>
+                {
+                    bufferingFound = CurrentPage(out _) is PlayerPage;
+                    return CurrentPage(out _) is PlayerPage player ? player.DebugBuffering : "no active player\n";
+                });
+                return (bufferingFound ? "200 OK" : "409 Conflict", bufferingState);
+
+            case ("POST", "/buffering"):
+                // Buffering quality (PlayerPage.BufferingQuality.cs): inject a network stall into the controller.
+                if (query.GetValueOrDefault("action") != "stall"
+                    || !long.TryParse(query.GetValueOrDefault("ms") ?? "8000", System.Globalization.NumberStyles.None,
+                        System.Globalization.CultureInfo.InvariantCulture, out var stallMs) || stallMs is < 1 or > 120_000)
+                    return ("400 Bad Request", "usage: POST /buffering?action=stall&ms=1..120000 (default 8000)\n");
+                var stallStatus = "409 Conflict";
+                var stallBody = await OnUiAsync(() =>
+                {
+                    if (CurrentPage(out _) is not PlayerPage player) return "no active player\n";
+                    var (stallCode, stallText) = player.DebugBufferingStall(stallMs);
+                    stallStatus = stallCode;
+                    return stallText;
+                });
+                return (stallStatus, stallBody);
+
             case ("POST", "/fault/playback"):
                 var injected = false;
                 var playbackBody = await OnUiAsync(() =>
@@ -589,7 +616,7 @@ internal sealed partial class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, POST /home, POST /open?id=...&file=..., POST /play?id=...&file=...&start=..., GET /navlog?n=50, GET /stats, GET /frame-trace, POST /frame-trace?action=reset, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, GET /playtest-engine?url=...&seconds=3&mode=cs|rust|rust-ffmpeg&target=bgra|fp16|rgb10 (target: rust only), GET /playtest-present?url=...&seconds=10&target=bgra|fp16|rgb10&hdr=on|off, GET /present-engine, POST /present-engine?seconds=0..120, GET /rust, GET /asstest[?png=ms], POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?decoder={auto|system|software|default}&tonemap={off|bt2390|hable|default} (requires decoder=auto and wrapper 2.1.0-bale.25+)&colorinfo={on|off|default} (compressed system-video colour/HDR metadata; wrapper 2.1.0-bale.26+)&readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16&hdr=on|off|default&grain=dav1d|gpu|off|on|default (each key accepts default; grain default=gpu (production), on/dav1d=dav1d; software AV1 is fixed to zero-copy upload variant 6), GET /mem?gc=1, GET /gc, POST /gc?latency={batch|interactive|sustained|default}, GET /frame-delivery, POST /frame-delivery?mode={native|managed|off}, GET /stream-adapter, POST /stream-adapter?mode={pooled|builtin|rust}, GET /player-backend, POST /player-backend?mode={mediaplayer|engine}, GET /av1-claim, POST /av1-claim?height={1080|2160}, GET /display-match, POST /display-match?mode={on|off}, GET /hdr, POST /hdr?mode={pretend|off}, GET /idle-test, POST /idle-test?action={display-pulse|smtc-playing|smtc-stopped}, GET /webview-test, POST /webview-test?action={open-video|open-blank|close}, POST /seek?seconds=...&pause=true, POST /playback?state={play|pause|toggle}, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, POST /home, POST /open?id=...&file=..., POST /play?id=...&file=...&start=..., GET /navlog?n=50, GET /stats, GET /frame-trace, POST /frame-trace?action=reset, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, GET /playtest-engine?url=...&seconds=3&mode=cs|rust|rust-ffmpeg&target=bgra|fp16|rgb10 (target: rust only), GET /playtest-present?url=...&seconds=10&target=bgra|fp16|rgb10&hdr=on|off, GET /present-engine, POST /present-engine?seconds=0..120, GET /rust, GET /asstest[?png=ms], POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?decoder={auto|system|software|default}&tonemap={off|bt2390|hable|default} (requires decoder=auto and wrapper 2.1.0-bale.25+)&colorinfo={on|off|default} (compressed system-video colour/HDR metadata; wrapper 2.1.0-bale.26+)&readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16&hdr=on|off|default&grain=dav1d|gpu|off|on|default (each key accepts default; grain default=gpu (production), on/dav1d=dav1d; software AV1 is fixed to zero-copy upload variant 6), GET /mem?gc=1, GET /gc, POST /gc?latency={batch|interactive|sustained|default}, GET /frame-delivery, POST /frame-delivery?mode={native|managed|off}, GET /stream-adapter, POST /stream-adapter?mode={pooled|builtin|rust}, GET /player-backend, POST /player-backend?mode={mediaplayer|engine}, GET /av1-claim, POST /av1-claim?height={1080|2160}, GET /display-match, POST /display-match?mode={on|off}, GET /hdr, POST /hdr?mode={pretend|off}, GET /idle-test, POST /idle-test?action={display-pulse|smtc-playing|smtc-stopped}, GET /webview-test, POST /webview-test?action={open-video|open-blank|close}, POST /seek?seconds=...&pause=true, GET /buffering, POST /buffering?action=stall&ms=8000, POST /playback?state={play|pause|toggle}, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 

@@ -99,6 +99,7 @@ public sealed partial class PlayerPage
             return;
         }
         _seeking = true;
+        _remounting = true;
         try
         {
             if (_attempt is not { Media: { Opened: true, FailureQueued: false, Player: { } player } media } attempt
@@ -108,6 +109,8 @@ public sealed partial class PlayerPage
             var position = SourcePosition(attempt);
             var request = PlaybackReplan.ForTrackChange(attempt.Start!, attempt.Plan!, attempt.PlanAttemptId, attempt.AttemptedPlanKeys,
                 attempt.Replanned ? 2 : 1, position, audioIndex, subtitleIndex);
+            // After a lowering, a track change keeps asking for it (the kept step-down estimate, no source).
+            request = PlaybackReplan.WithClientReplan(request, ClientBufferingReplan("track_change"));
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(attempt.Cancellation.Token);
             deadline.CancelAfter(TimeSpan.FromSeconds(15));
             var decision = await attempt.Client.Playback.ReplanAsync(attempt.SessionId!, request, attempt.Services!.Installation, deadline.Token);
@@ -129,6 +132,7 @@ public sealed partial class PlayerPage
             attempt.Start = PlaybackReplan.WithTracks(attempt.Start!, request.SelectedTracks);
             attempt.PlanAttemptId = Guid.NewGuid().ToString();
             attempt.Position = _sourcePosition = PlaybackProgressive.MountSourceStart(attempt.Plan, position);
+            AdoptBufferingPlan(attempt, controllerInitiated: false, request.BandwidthEstimateKbps);
             _state = "loading";
             SetLoading(true);
             var timeline = PlaybackTimeline.From(attempt.Plan.Timeline);
@@ -142,6 +146,7 @@ public sealed partial class PlayerPage
         finally
         {
             _seeking = false;
+            _remounting = false;
             _lifecycle.Release();
         }
     }

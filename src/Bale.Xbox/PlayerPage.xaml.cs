@@ -203,6 +203,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
 
             var attempt = _attempt = new Attempt(request, client);
             var ct = attempt.Cancellation.Token;
+            // A new attempt of the title: the kept step-down estimate belonged to the last one (buffering-quality design).
+            _bufferingController?.NewAttempt();
             try
             {
                 Log.Info("player: start");
@@ -262,6 +264,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 // Otherwise a failed mount could leave a server session with no final stop authority.
                 await AttachSessionAsync(attempt);
                 ct.ThrowIfCancellationRequested();
+                AdoptBufferingPlan(attempt, controllerInitiated: false, client.Playback.StartEstimateKbps(start.PlaybackAttemptId));
                 try
                 {
                     await MountPlanAsync(attempt, PlaybackProgressive.MountPlayerStart(attempt.Plan, timeline.PlayerStart(request.OverridePosition)));
@@ -323,6 +326,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         UpdateTransport();
         UpdateControls();
         UpdateVersionNotice();
+        UpdateBufferingQuality();
         // Drift correction about once per second while playing; SubtitleClockPush drops the other ticks.
         PushSubtitleClock();
         if (_recording || _seeking) return;
@@ -420,6 +424,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 ? PlaybackReplan.ForHdrOutputFailure(attempt.Start!, attempt.Plan!, attempt.PlanAttemptId, [], 1, position)
                 : PlaybackReplan.ForFailure(attempt.Start!, attempt.Plan!, attempt.PlanAttemptId,
                     [], 1, position, failure, failedRoute);
+            // After a lowering, the recovery keeps asking for it (the kept step-down estimate, no source).
+            request = PlaybackReplan.WithClientReplan(request, ClientBufferingReplan("failure_recovery"));
             var decision = await attempt.Client.Playback.ReplanAsync(attempt.SessionId!, request,
                 services.Installation, attempt.Cancellation.Token);
             // Outcome and reason are server enum codes; never log the plan, its URL or message.
@@ -451,6 +457,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 ClientPlaybackContext = request.ClientPlaybackContext,
             };
             attempt.PlanAttemptId = Guid.NewGuid().ToString();
+            AdoptBufferingPlan(attempt, controllerInitiated: false, request.BandwidthEstimateKbps);
             attempt.Cancellation.Token.ThrowIfCancellationRequested();
             if (hdrOutputFailed && DisplayHdrPolicy.RequiresHdr10(attempt.Plan))
             {
@@ -564,6 +571,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         }
         Pause(attempt);
         var position = SourcePosition(attempt);
+        // The plan stops being the playing plan: its plan_summary goes out (never awaited here).
+        EndBufferingPlan();
         attempt.Cancellation.Cancel();
         try
         {

@@ -67,6 +67,27 @@ public class PlaybackHlsStartOverTests
         Assert.Equal(33.9, Assert.Single(await journal.ReadAsync()).LastPosition!.Position, 6);
     }
 
+    [Fact]
+    public async Task AReanchorAfterALoweringRepeatsTheKeptEstimateAndAdoptsANewPlan()
+    {
+        using var handler = new HlsHandler("server_transcode_hls");
+        using var client = Create(handler);
+        var installation = new Installation();
+        var start = Start(new(AudioIndex: 1), 0);
+        var plan = (await client.Playback.StartAsync(start, installation)).PlaybackPlan!;
+        var reporter = client.Playback.CreateProgressReporter(installation, new InMemoryPlaybackJournal(), "login");
+        await reporter.AttachSessionAsync("session", 0);
+        var session = new MediaPlaybackSession(13.9) { CanSeek = true, PlaybackState = MediaPlaybackState.Playing };
+        using var player = new PlayerPage(client, start, plan, installation, reporter, session)
+        {
+            KeptBufferingReplan = new("track_change", "auto") { BandwidthEstimateKbps = 44_100 },
+        };
+
+        await player.SkipAsync(forward: true);
+        Assert.Equal((44_100, false), Assert.Single(handler.Estimates));
+        Assert.Equal((false, 44_100), Assert.Single(player.BufferingAdoptions));
+    }
+
     [Theory]
     [InlineData("server_remux_hls", false)]
     [InlineData("server_transcode_hls", false)]
@@ -167,6 +188,8 @@ public class PlaybackHlsStartOverTests
         public double? StartPosition { get; private set; }
         public List<double> Reanchors { get; } = [];
         public List<double> Progress { get; } = [];
+        /// <summary>Each replan's bandwidth_estimate_kbps, and whether it named a source.</summary>
+        public List<(int? Estimate, bool Source)> Estimates { get; } = [];
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -193,6 +216,8 @@ public class PlaybackHlsStartOverTests
                 Assert.Equal("v3:0123456789abcdef", root.GetProperty("plan_attempt_key").GetString());
                 Assert.Equal(1, root.GetProperty("selected_tracks").GetProperty("audio").GetProperty("index").GetInt32());
                 var source = root.GetProperty("position_seconds").GetDouble();
+                Estimates.Add((root.TryGetProperty("bandwidth_estimate_kbps", out var estimate) ? estimate.GetInt32() : null,
+                    root.TryGetProperty("bandwidth_estimate_source", out _)));
                 Reanchors.Add(source);
                 return Json(DecisionAt(source));
             }

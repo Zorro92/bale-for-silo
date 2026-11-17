@@ -135,6 +135,12 @@ namespace Bale.Xbox
             _state = media.Player.PlaybackSession.PlaybackState.ToString().ToLowerInvariant();
         }
         private void RefreshStats(Attempt attempt) { }
+        // PlayerPage.BufferingQuality.cs: a reanchor is a new plan for buffering quality; the kept estimate rides on it.
+        internal List<(bool ControllerInitiated, int? RequestedEstimateKbps)> BufferingAdoptions { get; } = [];
+        internal BufferingQualityReplan? KeptBufferingReplan { get; set; }
+        private void AdoptBufferingPlan(Attempt attempt, bool controllerInitiated, int? requestedEstimateKbps) =>
+            BufferingAdoptions.Add((controllerInitiated, requestedEstimateKbps));
+        private BufferingQualityReplan? ClientBufferingReplan(string operation) => KeptBufferingReplan is { } kept ? kept with { Operation = operation } : null;
         private void PushSubtitleClock(bool force)
         {
             var source = SourcePosition(_attempt);

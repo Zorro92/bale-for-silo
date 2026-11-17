@@ -170,6 +170,40 @@
         <TextBlock x:Name="VersionNoticeText" Grid.Column="1" Style="{StaticResource SkylinePlayerNoticeTextStyle}" />
       </Grid>
     </Border>
+    <!-- TvPlayerNoticeOverlay.kt: the buffering-quality notice ("Quality lowered to stop buffering", "Can't lower quality
+         for this video"). Same slot and style as the version notice; it waits while that one holds the slot. Passive. -->
+    <Border x:Name="BufferingNotice" Style="{StaticResource SkylinePlayerNoticeStyle}"
+            Visibility="Collapsed" IsHitTestVisible="False" Canvas.ZIndex="1">
+      <Grid ColumnSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="18" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Viewbox Width="18" Height="18" VerticalAlignment="Center">
+          <Path Fill="White" Width="24" Height="24"
+                Data="M11,17 L13,17 L13,11 L11,11 Z M12,2 C6.48,2 2,6.48 2,12 C2,17.52 6.48,22 12,22 C17.52,22 22,17.52 22,12 C22,6.48 17.52,2 12,2 Z M12,20 C7.59,20 4,16.41 4,12 C4,7.59 7.59,4 12,4 C16.41,4 20,7.59 20,12 C20,16.41 16.41,20 12,20 Z M11,9 L13,9 L13,7 L11,7 Z" />
+        </Viewbox>
+        <TextBlock x:Name="BufferingNoticeText" Grid.Column="1" Style="{StaticResource SkylinePlayerNoticeTextStyle}" />
+      </Grid>
+    </Border>
+    <!-- TvPlayerNoticeOverlay.kt TvBufferingQualityPill: "Playback keeps buffering" over Lower quality / Keep quality, or
+         "Quality lowered to stop buffering" over Restore quality, under any notice at the same anchor. It takes focus
+         once when it appears (not mid-scrub); Left/Right stay on the card, Down brings up the controls. Hidden, with its
+         timer frozen, while Options, a track menu or Up Next is up (PlayerPage.BufferingQuality.cs). -->
+    <Border x:Name="BufferingPill" Style="{StaticResource SkylinePlayerBufferingPillStyle}" Visibility="Collapsed"
+            Canvas.ZIndex="1" PreviewKeyDown="OnBufferingPillKeyDown">
+      <Grid>
+        <Border x:Name="BufferingPillFill" Style="{StaticResource SkylinePlayerBufferingPillFillStyle}" />
+        <StackPanel Style="{StaticResource SkylinePlayerBufferingPillContentStyle}">
+          <TextBlock x:Name="BufferingPillTitle" Style="{StaticResource SkylinePlayerBufferingPillTitleStyle}" />
+          <TextBlock x:Name="BufferingPillCaption" Style="{StaticResource SkylinePlayerBufferingPillCaptionStyle}" />
+          <StackPanel Style="{StaticResource SkylinePlayerBufferingActionsStyle}">
+            <Button x:Name="BufferingPrimaryButton" Style="{StaticResource SkylinePlayerPillPrimaryStyle}" Click="OnBufferingPrimaryClick" />
+            <Button x:Name="BufferingSecondaryButton" Style="{StaticResource SkylinePlayerPillSecondaryStyle}" Click="OnBufferingSecondaryClick" />
+          </StackPanel>
+        </StackPanel>
+      </Grid>
+    </Border>
     <!-- Only DEBUG_SERVER code makes this visible. Read-only: it must never take player focus. -->
     <Border x:Name="StatsPanel" Style="{StaticResource SkylinePlayerStatsPanelStyle}"
             Visibility="Collapsed" IsHitTestVisible="False">

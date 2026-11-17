@@ -1441,6 +1441,71 @@
     <Setter Property="TextWrapping" Value="Wrap" />
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
+  <!-- silo-android TvPlayerNoticeOverlay.kt TvBufferingPillCard / TvBufferingPillButton: the buffering-quality pill at the
+       notice's top-start anchor (12dp under a notice), black 72% card at the notice's 16dp radius, 560dp wide at most,
+       20/14dp padding, a white 10% countdown fill behind the content. Title 18sp Medium, caption 14sp Medium at 70%, 12dp
+       above the capsules. Capsules: 24dp horizontal padding, 18sp; primary SemiBold on white 24%, secondary Medium in a
+       2dp white 35% outline; focus lights either white with a black label (SkylineCapsuleStyle's Focused state).
+       Height 44 = 18sp × 0.86 line + 2 × 12dp padding, so the radius is 22 (UWP does not clamp CornerRadius). -->
+  <Style x:Key="SkylinePlayerBufferingPillStyle" TargetType="Border">
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+    <Setter Property="Margin" Value="32,32,32,0" />
+    <Setter Property="MaxWidth" Value="560" />
+    <Setter Property="CornerRadius" Value="16" />
+    <Setter Property="Background" Value="#B8000000" />
+  </Style>
+  <Style x:Key="SkylinePlayerBufferingPillFillStyle" TargetType="Border">
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="Width" Value="0" />
+    <Setter Property="CornerRadius" Value="16" />
+    <Setter Property="Background" Value="#1AFFFFFF" />
+    <Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+  <Style x:Key="SkylinePlayerBufferingPillContentStyle" TargetType="StackPanel">
+    <Setter Property="Padding" Value="20,14" />
+  </Style>
+  <Style x:Key="SkylinePlayerBufferingPillTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="15.48" />
+    <Setter Property="LineHeight" Value="20.64" />
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Foreground" Value="White" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style x:Key="SkylinePlayerBufferingPillCaptionStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="12.04" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Foreground" Value="#B3FFFFFF" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style x:Key="SkylinePlayerBufferingActionsStyle" TargetType="StackPanel">
+    <Setter Property="Orientation" Value="Horizontal" />
+    <Setter Property="Margin" Value="0,12,0,0" />
+  </Style>
+  <Style x:Key="SkylinePlayerPillPrimaryStyle" TargetType="Button" BasedOn="{StaticResource SkylineCapsuleStyle}">
+    <Setter Property="Foreground" Value="White" />
+    <Setter Property="Background" Value="#3DFFFFFF" />
+    <Setter Property="Height" Value="44" />
+    <Setter Property="CornerRadius" Value="22" />
+    <Setter Property="Padding" Value="24,0" />
+    <Setter Property="FontSize" Value="15.48" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style x:Key="SkylinePlayerPillSecondaryStyle" TargetType="Button" BasedOn="{StaticResource SkylineCapsuleStyle}">
+    <Setter Property="Foreground" Value="#CCFFFFFF" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="#59FFFFFF" />
+    <Setter Property="BorderThickness" Value="2" />
+    <Setter Property="Height" Value="44" />
+    <Setter Property="CornerRadius" Value="22" />
+    <Setter Property="Padding" Value="24,0" />
+    <Setter Property="FontSize" Value="15.48" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Margin" Value="12,0,0,0" />
+  </Style>
   <!-- silo-android androidTvApp/.../player/TvPlayerChrome.kt / TvPlayerScrubber.kt:
        Android dp maps 1:1; Time is 14sp × 0.86. Resting track has no puck/focus.
        Bottom 86 = 26 inset + 44 transport + 16 gap, preserving the future transport geometry.

@@ -38,7 +38,8 @@ public sealed partial class PlayerPage
             // Releasing a held skip key ends its scan (a scan commits as one seek).
             if (!keyDown && _holdKey == key) EndHold(commit: true);
             var action = PlaybackRemoteKeys.Action((int)key, keyDown, firstDown,
-                cleanPlayback: ErrorPanel.Visibility != Visibility.Visible && !_controls.Visible && !UpNextVisible && !OptionsOpen,
+                cleanPlayback: ErrorPanel.Visibility != Visibility.Visible && !_controls.Visible && !UpNextVisible && !OptionsOpen
+                    && !BufferingPillVisible,
                 modifier: ModifierHeld());
             switch (action)
             {
@@ -270,8 +271,9 @@ public sealed partial class PlayerPage
         _scrub.Cancel();
         _controls.Hide();
         TransportControls.Visibility = Visibility.Collapsed;
-        // Clean playback: the page holds focus so the next key reaches the player again.
-        Focus(FocusState.Programmatic);
+        // A buffering pill on screen takes focus back; otherwise, clean playback: the page holds focus so the next key
+        // reaches the player again.
+        if (!FocusBufferingPill()) Focus(FocusState.Programmatic);
     }
 
     /// <summary>Back: a scrub preview first, then the controls, then the player (TvPlayerScreen.kt).</summary>
@@ -292,6 +294,8 @@ public sealed partial class PlayerPage
             CloseTrackMenu();
             return true;
         }
+        // The buffering pill's Back: Keep quality on the prompt, only hiding the undo pill (consumed either way).
+        if (BackClosesBufferingPill()) return true;
         if (!_controls.Visible) return false;
         if (_scrub.Active)
         {

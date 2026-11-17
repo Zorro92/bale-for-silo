@@ -38,8 +38,20 @@ internal static class ConnectionSpeedService
             if (_subscribed) return;
             _subscribed = true;
         }
-        NetworkInformation.NetworkStatusChanged += _ => Check("network");
+        NetworkInformation.NetworkStatusChanged += _ =>
+        {
+            Interlocked.Increment(ref _networkChanges);
+            Check("network");
+        };
     }
+
+    private static int _networkChanges;
+
+    /// <summary>
+    /// Network changes seen since launch. A plan that played across one omits its throughput_kbps: the server files a
+    /// sample under the connection of the request that delivers it (buffering-quality design, "Playback samples").
+    /// </summary>
+    internal static int NetworkChanges => Volatile.Read(ref _networkChanges);
 
     /// <summary>Media started loading or playing: no automatic test, and a running one measured nothing.</summary>
     internal static void MediaStarting()

@@ -183,8 +183,11 @@ public sealed partial class PlayerPage
         }
         Pause(attempt);
         DisposeMount(attempt);
+        var kept = ClientBufferingReplan("seek_reanchor")?.BandwidthEstimateKbps;
         attempt.Plan = decision.PlaybackPlan!;
         attempt.ServerFeatures = decision.ServerFeatures ?? [];
+        // Every adopted replan is a new plan for buffering quality, with its own plan_summary.
+        AdoptBufferingPlan(attempt, controllerInitiated: false, kept);
         // A forward-only remux opens at its keyframe origin, at most one GOP before the target.
         attempt.Position = _sourcePosition = PlaybackProgressive.MountSourceStart(attempt.Plan, source);
         _state = "loading";
@@ -221,10 +224,11 @@ public sealed partial class PlayerPage
     }
 
     /// <summary>A same-route seek_reanchor decision at <paramref name="source"/>, or null when the server changed the route.</summary>
-    private static async Task<PlaybackDecision?> RequestReanchorAsync(Attempt attempt, double source)
+    private async Task<PlaybackDecision?> RequestReanchorAsync(Attempt attempt, double source)
     {
-        var request = PlaybackReplan.ForSeek(attempt.Start!, attempt.Plan!, attempt.PlanAttemptId,
-            attempt.AttemptedPlanKeys, attempt.Replanned ? 2 : 1, source);
+        // After a lowering, a reanchor keeps asking for it (the kept step-down estimate, no source).
+        var request = PlaybackReplan.WithClientReplan(PlaybackReplan.ForSeek(attempt.Start!, attempt.Plan!, attempt.PlanAttemptId,
+            attempt.AttemptedPlanKeys, attempt.Replanned ? 2 : 1, source), ClientBufferingReplan("seek_reanchor"));
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(attempt.Cancellation.Token);
         deadline.CancelAfter(TimeSpan.FromSeconds(10));
         var decision = await attempt.Client.Playback.ReplanAsync(attempt.SessionId!, request, attempt.Services!.Installation, deadline.Token);

@@ -48,6 +48,7 @@
 #   scripts/bale-debug.sh mem [gc]               GC/app/Xbox memory + player trim/UI residency counters; gc forces full collection + finalizers
 #   scripts/bale-debug.sh net [rcvbuf=4m|default]  socket receive buffer for Bale connections (saved; next launch)
 #   scripts/bale-debug.sh speed [check|test]     connection speed test state; check = read + due quick test; test = Test speed (accurate, manual)
+#   scripts/bale-debug.sh buffering [stall [ms]]   buffering-quality state; stall = inject a network stall (default 8000 ms; >= 6000 lowers on Auto)
 #   scripts/bale-debug.sh rusthttp               Rust HTTP spike: download the speed probe with bale_core's Rust HTTP/TLS stack for 10 s (JSON report)
 #   scripts/bale-debug.sh fetchbench [blocks]     Rust HTTP spike: while an original plays, 1 MiB range fetches (3 in flight) via C# then Rust then Rust then C#; latency summary
 #   scripts/bale-debug.sh gc                     GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
@@ -410,6 +411,15 @@ case "${1:-}" in
       "") curl --fail-with-body -sS --max-time 10 "$BASE/speed" ;;
       check|test) curl --fail-with-body -sS --max-time 40 -X POST "$BASE/speed?mode=$2" ;;
       *) echo 'usage: scripts/bale-debug.sh speed [check|test]' >&2; exit 2 ;;
+    esac
+    ;;
+  buffering)
+    # Buffering quality: no args = controller state; stall [ms] = a network wait injected into the controller,
+    # ended after ms (detection bypassed; the trigger, replan, pill and plan_summary are real).
+    case "${2-}" in
+      "") curl --fail-with-body -sS --max-time 5 "$BASE/buffering" ;;
+      stall) curl --fail-with-body -sS --max-time 5 -X POST "$BASE/buffering?action=stall&ms=${3-8000}" ;;
+      *) echo 'usage: scripts/bale-debug.sh buffering [stall [ms]]' >&2; exit 2 ;;
     esac
     ;;
   rusthttp)
