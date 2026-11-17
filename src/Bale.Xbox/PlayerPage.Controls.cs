@@ -35,7 +35,8 @@ public sealed partial class PlayerPage
             // Releasing a held skip key ends its scan (a scan commits as one seek).
             if (!keyDown && _holdKey == key) EndHold(commit: true);
             var action = PlaybackRemoteKeys.Action((int)key, keyDown, firstDown,
-                cleanPlayback: ErrorPanel.Visibility != Visibility.Visible && !_controls.Visible && !UpNextVisible, modifier: ModifierHeld());
+                cleanPlayback: ErrorPanel.Visibility != Visibility.Visible && !_controls.Visible && !UpNextVisible && !OptionsOpen,
+                modifier: ModifierHeld());
             switch (action)
             {
                 case PlaybackKeyAction.None:
@@ -55,6 +56,10 @@ public sealed partial class PlayerPage
                 case PlaybackKeyAction.RevealControls:
                     // The first D-pad press only brings up the controls.
                     ShowControls();
+                    break;
+                case PlaybackKeyAction.OpenOptions:
+                    if (OptionsOpen) CloseOptions();
+                    else OpenOptions();
                     break;
                 case PlaybackKeyAction.PreviousChapter:
                 case PlaybackKeyAction.NextChapter:
@@ -157,7 +162,7 @@ public sealed partial class PlayerPage
 
     private void InitializeControls()
     {
-        foreach (var button in new[] { SkipBackButton, PlayPauseButton, SkipForwardButton, AudioButton, SubtitlesButton, CloseButton })
+        foreach (var button in new[] { SkipBackButton, PlayPauseButton, SkipForwardButton, AudioButton, SubtitlesButton, OptionsButton, CloseButton })
         {
             StyleTransportButton(button, false);
             button.GotFocus += (_, _) => StyleTransportButton(button, true);
@@ -167,7 +172,9 @@ public sealed partial class PlayerPage
         ScrubberButton.XYFocusDown = PlayPauseButton;
         ScrubberButton.XYFocusUp = ScrubberButton;
         SkipBackButton.XYFocusLeft = SkipBackButton;
-        CloseButton.XYFocusLeft = SubtitlesButton;
+        CloseButton.XYFocusLeft = OptionsButton;
+        OptionsButton.XYFocusLeft = SubtitlesButton;
+        OptionsButton.XYFocusRight = CloseButton;
         CloseButton.XYFocusRight = CloseButton;
         LinkTrackButtons();
     }
@@ -180,7 +187,7 @@ public sealed partial class PlayerPage
         AudioButton.XYFocusLeft = SkipForwardButton;
         AudioButton.XYFocusRight = SubtitlesButton;
         SubtitlesButton.XYFocusLeft = audio ? AudioButton : SkipForwardButton;
-        SubtitlesButton.XYFocusRight = CloseButton;
+        SubtitlesButton.XYFocusRight = OptionsButton;
     }
 
     private static readonly Windows.UI.Xaml.Media.SolidColorBrush TransportInk = new(Windows.UI.Color.FromArgb(255, 11, 11, 12));
@@ -243,6 +250,11 @@ public sealed partial class PlayerPage
     /// <summary>Back: a scrub preview first, then the controls, then the player (TvPlayerScreen.kt).</summary>
     private bool BackClosesControls()
     {
+        if (OptionsOpen)
+        {
+            CloseOptions();
+            return true;
+        }
         if (UpNextVisible && !_upNext.VideoEnded)
         {
             DismissUpNext();
@@ -411,7 +423,7 @@ public sealed partial class PlayerPage
             {
                 // Along the button row in order, stopping at the ends (vertical-never-horizontal's twin:
                 // no wrap, no jump into another row).
-                var row = new[] { SkipBackButton, PlayPauseButton, SkipForwardButton, AudioButton, SubtitlesButton, CloseButton }
+                var row = new[] { SkipBackButton, PlayPauseButton, SkipForwardButton, AudioButton, SubtitlesButton, OptionsButton, CloseButton }
                     .Where(button => button.Visibility == Visibility.Visible).ToList();
                 var index = row.FindIndex(button => button == FocusManager.GetFocusedElement());
                 if (index >= 0)

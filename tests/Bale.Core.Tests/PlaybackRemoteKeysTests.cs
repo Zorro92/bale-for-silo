@@ -20,6 +20,7 @@ public class PlaybackRemoteKeysTests
     [InlineData(PlaybackRemoteKeys.GamepadRightShoulder, PlaybackKeyAction.NextChapter)]
     [InlineData(PlaybackRemoteKeys.PageDown, PlaybackKeyAction.NextChapter)]
     [InlineData(PlaybackRemoteKeys.GamepadA, PlaybackKeyAction.Select)]
+    [InlineData(PlaybackRemoteKeys.GamepadMenu, PlaybackKeyAction.OpenOptions)]
     [InlineData(PlaybackRemoteKeys.Enter, PlaybackKeyAction.Select)]
     [InlineData(PlaybackRemoteKeys.GamepadDPadLeft, PlaybackKeyAction.RevealControls)]
     [InlineData(PlaybackRemoteKeys.GamepadDPadDown, PlaybackKeyAction.RevealControls)]

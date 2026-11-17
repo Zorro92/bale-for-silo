@@ -123,6 +123,13 @@
                 <TextBlock x:Name="SubtitlesValue" VerticalAlignment="Center" Opacity="0.58" FontWeight="Medium" Visibility="Collapsed" />
               </StackPanel>
             </Button>
+            <Button x:Name="OptionsButton" Style="{StaticResource SkylinePlayerTransportButtonStyle}" AutomationProperties.Name="Options" Click="OnOptionsClick">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Viewbox Style="{StaticResource SkylinePlayerGlyphStyle}"><Path Width="24" Height="24" Fill="#FFEDEDED"
+                  Data="M3,17 V19 H9 V17 Z M3,5 V7 H13 V5 Z M13,21 V19 H21 V17 H13 V15 H11 V21 Z M7,9 V11 H3 V13 H7 V15 H9 V9 Z M21,13 V11 H11 V13 Z M15,9 H17 V7 H21 V5 H17 V3 H15 Z" /></Viewbox>
+                <TextBlock Text="Options" VerticalAlignment="Center" Visibility="Collapsed" />
+              </StackPanel>
+            </Button>
             <Button x:Name="CloseButton" Style="{StaticResource SkylinePlayerTransportButtonStyle}" AutomationProperties.Name="Close"
                     Click="OnCloseClick">
               <StackPanel Orientation="Horizontal" Spacing="8">
@@ -186,6 +193,38 @@
         <Button x:Name="RetryButton" Content="Retry" Click="OnRetryClick" Style="{StaticResource SkylineProfileRetryStyle}" />
       </StackPanel>
     </Grid>
+    <!-- Options (TvPlayerHud.kt): a top-centre card over the picture, tabs that follow focus. Info shows what is
+         playing and how; Chapters lists the file's chapters and seeks. Back closes it. -->
+    <Border x:Name="OptionsPanel" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,26,0,0"
+            Width="736" Padding="20,16" CornerRadius="16" Background="#F4131417" BorderBrush="#1AFFFFFF" BorderThickness="1">
+      <StackPanel Spacing="14">
+        <StackPanel x:Name="OptionsTabs" Orientation="Horizontal" Spacing="8">
+          <ToggleButton x:Name="InfoTab" Content="Info" Style="{StaticResource SkylineChipStyle}" GotFocus="OnOptionsTabFocus" Click="OnOptionsTabFocus" />
+          <ToggleButton x:Name="ChaptersTab" Content="Chapters" Style="{StaticResource SkylineChipStyle}" GotFocus="OnOptionsTabFocus" Click="OnOptionsTabFocus" />
+        </StackPanel>
+        <Grid x:Name="InfoPane" ColumnSpacing="26">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="300" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Spacing="4">
+            <TextBlock Text="TITLE" Style="{StaticResource SkylinePlayerEyebrowStyle}" />
+            <TextBlock x:Name="OptionsEpisode" Style="{StaticResource SkylinePlayerEyebrowStyle}" />
+            <TextBlock x:Name="OptionsTitle" FontFamily="{StaticResource SkylineFont}" FontSize="17.2" FontWeight="Bold" Foreground="#FFEDEDED"
+                       TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="OptionsDuration" Style="{StaticResource SkylinePlayerTimeStyle}" Typography.NumeralAlignment="Tabular" />
+            <StackPanel x:Name="OptionsBadges" Orientation="Horizontal" Spacing="6" Margin="0,4,0,0" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Spacing="6">
+            <TextBlock Text="STREAM" Style="{StaticResource SkylinePlayerEyebrowStyle}" />
+            <StackPanel x:Name="OptionsStreamRows" Spacing="6" />
+          </StackPanel>
+        </Grid>
+        <ScrollViewer x:Name="ChaptersPane" Visibility="Collapsed" MaxHeight="250" VerticalScrollBarVisibility="Hidden" IsTabStop="False">
+          <StackPanel x:Name="ChapterRows" Spacing="2" />
+        </ScrollViewer>
+      </StackPanel>
+    </Border>
     <!-- Up Next (TvPlayerViewModel.kt showNextUp): raised at the credits or at the end, Play Now focused. -->
     <Border x:Name="UpNextCard" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,48,26"
             Width="340" Padding="14" CornerRadius="14" Background="#F3131417" BorderBrush="#1AFFFFFF" BorderThickness="1">

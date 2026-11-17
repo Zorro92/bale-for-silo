@@ -86,7 +86,13 @@ rather than leaving them transparent so they cost nothing while hidden.
    file; a pick sends a `track_change` replan of the same session at the current position
    (`PlaybackReplan.ForTrackChange`) and remounts like a seek reanchor; a refused change keeps
    playback as it was. Always a replan for now; the official local switch (a track the mounted
-   stream already carries) is a later optimisation. The HUD tabs come after.
+   stream already carries) is a later optimisation.
+   Options panel, code done 2026-11-16 (`PlayerPage.Options.cs`, `PlaybackOptionsInfo` in Core): the
+   control bar's Options button or the Menu button opens a top-centre card that replaces the controls
+   until Back. Info: eyebrow, title, length, HDR/resolution badges, and Stream rows (Playback, Video,
+   Audio, Subtitles, Chapter) in names people know. Chapters (only with chapters): a list with start
+   times; a pick seeks and closes. Not yet: the Video tab (playback settings), Audio/Subtitles tabs
+   (the buttons cover them), moving the debug stats into a Stats tab.
    Verified on 0.1.574 (subtitles): PGS -> SRT replanned `playable` and remounted at the same
    position in about 2 s with the new track; Off replanned and no subtitles load. Audio list not
    exercised (the title had one language). Left/Right along the button row are explicit since.

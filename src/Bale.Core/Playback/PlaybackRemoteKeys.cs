@@ -15,6 +15,8 @@ public enum PlaybackKeyAction
     SkipForward,
     PreviousChapter,
     NextChapter,
+    /// <summary>The Menu button: open (or close) the Options panel (TvPlayerRemoteKeyAction.kt OpenSettingsHud).</summary>
+    OpenOptions,
     Stop,
     /// <summary>A player key's repeat or key-up half: swallowed so nothing acts on it twice.</summary>
     ConsumeOnly,
@@ -45,6 +47,7 @@ public static class PlaybackRemoteKeys
     public const int MediaStop = 178;
     public const int MediaPlayPause = 179;
     public const int GamepadA = 195;
+    public const int GamepadMenu = 207;
     public const int GamepadRightShoulder = 199;
     public const int GamepadLeftShoulder = 200;
     public const int GamepadLeftTrigger = 201;
@@ -80,6 +83,7 @@ public static class PlaybackRemoteKeys
             MediaStop => FirstPress(PlaybackKeyAction.Stop),
             GamepadLeftTrigger or J or MediaPreviousTrack => FirstPress(PlaybackKeyAction.SkipBack),
             GamepadRightTrigger or L or MediaNextTrack => FirstPress(PlaybackKeyAction.SkipForward),
+            GamepadMenu => FirstPress(PlaybackKeyAction.OpenOptions),
             GamepadLeftShoulder or PageUp => FirstPress(PlaybackKeyAction.PreviousChapter),
             GamepadRightShoulder or PageDown => FirstPress(PlaybackKeyAction.NextChapter),
             _ when !cleanPlayback => PlaybackKeyAction.None,
