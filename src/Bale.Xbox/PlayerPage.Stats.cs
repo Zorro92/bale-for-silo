@@ -60,7 +60,8 @@ public sealed partial class PlayerPage
         ? PlaybackStats.FromPlan(plan, isHls, attempt.Request.Detail.Versions)
         : new PlaybackStats()) with
     {
-        BackendDisplayName = "Windows MediaPlayer",
+        // The route is decided before the mount opens: name FFmpeg from the start, not after the first refresh.
+        BackendDisplayName = attempt?.Media?.Route is { UseFfmpeg: true } ? "FFmpegInteropX" : "Windows MediaPlayer",
         // VideoBackendCapabilities.kt reports backend support, not a claimed container list.
         HardContainers = "No",
     };
@@ -246,11 +247,17 @@ public sealed partial class PlayerPage
         });
     }
 
+    /// <summary>IMFMediaEngine's own frame statistics (its counters restart after a seek or pause).</summary>
+    private static string EngineFrames(EngineSessionState state) => string.Create(CultureInfo.InvariantCulture,
+        $"rendered {state.FramesRendered} · dropped {state.FramesDropped} · corrupted {state.FramesCorrupted} · {(double.IsFinite(state.FramesPerSecond) ? state.FramesPerSecond.ToString("0.00", CultureInfo.InvariantCulture) : "?")} fps · frame delay {(double.IsFinite(state.FrameDelay) ? state.FrameDelay.ToString("0.###", CultureInfo.InvariantCulture) : "?")}");
+
     private void SetStats(PlaybackStats stats, string? processCpu = null, PlaybackFrameDeliverySnapshot? frames = null)
     {
         var rows = stats.HudRows();
         var media = _attempt?.Media;
-        rows = [.. rows, ("HDR output", DebugHdrOutput),
+        rows = [.. rows, ("Player", media?.Player?.Name ?? "unavailable"),
+            ("Engine frames", media?.Player is EngineBackend engine ? EngineFrames(engine.LastState) : "unavailable"),
+            ("HDR output", DebugHdrOutput),
             ("Display mode", DisplayHdrOutput.CurrentModeText()),
             ("Late frames", frames is null ? "unavailable" : string.Create(CultureInfo.InvariantCulture,
                 $"{frames.LateFrames} · {frames.RecentLateFrames}/10s ({frames.RecentLateFramesPerSecond:0.0}/s)")),

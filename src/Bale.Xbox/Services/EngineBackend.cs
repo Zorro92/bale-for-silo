@@ -56,6 +56,9 @@ internal sealed partial class EngineBackend : PlaybackBackend
 
     public override string Name => "IMFMediaEngine";
 
+    /// <summary>The session state from the last poll (frame counters reset on seek and pause).</summary>
+    internal EngineSessionState LastState => _last;
+
     /// <summary>The open report (step names and HRESULTs only), for the log.</summary>
     public string Report { get; private set; } = string.Empty;
 
