@@ -140,6 +140,7 @@ public sealed partial class ProfilesPage : Page, IBackHandler, IRestoresFocus
             var profiles = await household.Repository.ListAsync(loading.Token);
             if (!IsCurrent || loading.IsCancellationRequested || !ReferenceEquals(_household, household)) return;
             _profiles = profiles;
+            if (client is not null) Session.RecordProfileCount(client, profiles.Count);
             RebuildProfiles(restoreFocus);
             SetLoadState(isLoading: false);
             RestoreFocus();
@@ -349,7 +350,7 @@ public sealed partial class ProfilesPage : Page, IBackHandler, IRestoresFocus
     private void ColorPickerAction(object sender, bool focused)
     {
         // TvMarquee.kt uses the same Ink for its label and icon; a Path does not inherit Foreground.
-        var icon = ReferenceEquals(sender, ManageButton) ? ManageIcon : ReferenceEquals(sender, ChangeServerButton) ? ChangeServerIcon : SignOutIcon;
+        var icon = ReferenceEquals(sender, ManageButton) ? ManageIcon : ReferenceEquals(sender, ChangeAccountButton) ? ChangeAccountIcon : SignOutIcon;
         icon.Fill = new SolidColorBrush(focused ? Colors.Black : Color.FromArgb(255, 237, 237, 237));
     }
 
@@ -549,10 +550,10 @@ public sealed partial class ProfilesPage : Page, IBackHandler, IRestoresFocus
             || PickerPanel.Visibility != Visibility.Visible || SignOutButton.Focus(FocusState.Programmatic));
     }
 
-    private void OnChangeServerClick(object sender, RoutedEventArgs e)
+    private void OnChangeAccountClick(object sender, RoutedEventArgs e)
     {
         if (IsProfilePreview) { ShowError("Profile preview; signed-in server unchanged."); return; }
-        if (!_leaving && !_deleting) Frame.Navigate(typeof(ServerListPage));
+        if (!_leaving && !_deleting) Frame.Navigate(typeof(ChangeAccountPage));
     }
 
     private async Task LeaveServerAsync(bool removeServer = false)

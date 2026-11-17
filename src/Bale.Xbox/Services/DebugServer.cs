@@ -96,7 +96,8 @@ namespace Bale.Xbox.Services;
 ///   POST /fault/playback  inject a decoder failure into the current player (one replan, then error)
 ///   POST /show/login      preview Login with disposable fixtures, without any network or saved-state writes
 ///   POST /show/login/password  preview password sign-in (submissions are local simulated failures)
-///   POST /show/servers    preview saved-server switching/removal on an in-memory registry
+///   POST /show/servers    preview Settings › Accounts (sign out / remove) on an in-memory registry
+///   POST /show/accounts   preview Change Account (rail + accounts) on an in-memory registry
 ///   POST /show/server/http-warning  preview exact-origin HTTP consent
 ///   POST /show/server/discovery  preview two identity-confirmed nearby rows
 ///   POST /show/login/expired  preview Login with the session-expired notice
@@ -602,6 +603,7 @@ internal sealed partial class DebugServer
             case ("POST", "/show/server/http-warning"):
             case ("POST", "/show/server/discovery"):
             case ("POST", "/show/servers"):
+            case ("POST", "/show/accounts"):
             case ("POST", "/show/profiles/manage"):
             case ("POST", "/show/profile/create"):
             case ("POST", "/show/profile/edit"):
@@ -656,6 +658,11 @@ internal sealed partial class DebugServer
             CloseAuthPreview(frame, all: true);
             frame.Navigate(typeof(ServerListPage), fixture);
         }
+        else if (path == "/show/accounts")
+        {
+            CloseAuthPreview(frame, all: true);
+            frame.Navigate(typeof(ChangeAccountPage), new AccountsNavigation(fixture));
+        }
         else
         {
             var screen = path switch
@@ -681,7 +688,7 @@ internal sealed partial class DebugServer
     internal static bool CloseAuthPreview(Frame frame, bool all = false)
     {
         var closed = false;
-        while (frame.Content is MainPage { IsAuthPreview: true } or ServerListPage { IsAuthPreview: true }
+        while (frame.Content is MainPage { IsAuthPreview: true } or ServerListPage { IsAuthPreview: true } or ChangeAccountPage { IsAuthPreview: true }
             or ProfilesPage { IsProfilePreview: true } or ProfileEditorPage { IsProfilePreview: true })
         {
             if (!frame.CanGoBack)

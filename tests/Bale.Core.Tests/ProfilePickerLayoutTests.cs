@@ -16,7 +16,7 @@ public sealed class ProfilePickerLayoutTests
     {
         var picker = Load("ProfilesPage.xaml");
         var actions = Named(picker, "PickerActions").Elements(Ui + "Button");
-        Assert.Equal(["ManageButton", "ChangeServerButton", "SignOutButton"], actions.Select(button => (string?)button.Attribute(Xaml + "Name")));
+        Assert.Equal(["ManageButton", "ChangeAccountButton", "SignOutButton"], actions.Select(button => (string?)button.Attribute(Xaml + "Name")));
         Assert.Equal("OnManageClick", (string?)Named(picker, "ManageButton").Attribute("Click"));
         Assert.Equal("Collapsed", (string?)Named(picker, "ManageButton").Attribute("Visibility"));
         Assert.Single(picker.Descendants(), element => element.Name.LocalName == "ProfilePinDialog");

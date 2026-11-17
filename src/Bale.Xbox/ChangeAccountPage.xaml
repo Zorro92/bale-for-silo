@@ -1,0 +1,51 @@
+<Page
+    x:Class="Bale.Xbox.ChangeAccountPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    FontFamily="{StaticResource SkylineFont}"
+    Background="{StaticResource SkylineAurora}">
+  <!-- TvChangeAccountScreen.kt: Roku's first-run column without its card. The wordmark, the headline and its line,
+       then the server rail and the shown server's accounts; Left/Right between them, Up/Down within each. -->
+  <Grid x:Name="Root" Style="{StaticResource SkylineAuthLayoutStyle}" PreviewKeyDown="OnPreviewKeyDown">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="{StaticResource SkylineAuthHeaderRow}" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Left">
+      <TextBlock Text="BALE" FontSize="{StaticResource SkylineWordmarkSize}" FontWeight="Black" CharacterSpacing="340" VerticalAlignment="Center" />
+      <TextBlock Text="a client for Silo" FontSize="{StaticResource SkylineCardSubtitleSize}" Foreground="{StaticResource SkylineTertiary}" VerticalAlignment="Center" />
+    </StackPanel>
+    <StackPanel Grid.Row="1">
+      <TextBlock Text="Change account" Style="{StaticResource SkylineLoginTitleStyle}" MaxLines="1" />
+      <TextBlock Text="Choose a server, then the account to use on it." Style="{StaticResource SkylineLoginInstructionsStyle}" />
+    </StackPanel>
+    <Grid Grid.Row="2" Margin="0,20,0,0">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="{StaticResource SkylineChangeAccountRailWidth}" />
+        <ColumnDefinition Width="20" />
+        <ColumnDefinition Width="{StaticResource SkylineChangeAccountPaneWidth}" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+      <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+      <!-- rail-layout: non-card — TvChangeAccountScreen.kt's server rail, with Add server under it. -->
+      <ScrollViewer x:Name="RailScroller" Style="{StaticResource SkylineSettingsDetailScrollerStyle}" VerticalAlignment="Top">
+        <StackPanel x:Name="RailRows" Spacing="4" Padding="0,2" />
+      </ScrollViewer>
+      <Button x:Name="AddServerButton" Grid.Row="1" Margin="0,8,0,0" Style="{StaticResource SkylineChangeAccountRailRowStyle}"
+              Click="OnAddServerClick" GotFocus="OnRowGotFocus" AutomationProperties.Name="Add server">
+        <StackPanel Orientation="Horizontal" Spacing="9">
+          <Viewbox Width="28" Height="16"><Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19Z" Fill="{Binding Foreground, ElementName=AddServerLabel}" /></Viewbox>
+          <TextBlock x:Name="AddServerLabel" Text="Add server" VerticalAlignment="Center" />
+        </StackPanel>
+      </Button>
+      <!-- rail-layout: non-card — TvChangeAccountScreen.kt's account cards, then "Add an account". -->
+      <ScrollViewer x:Name="PaneScroller" Grid.Column="2" Grid.RowSpan="2" Style="{StaticResource SkylineSettingsDetailScrollerStyle}" VerticalAlignment="Top">
+        <StackPanel x:Name="PaneRows" Spacing="8" Padding="6,3" />
+      </ScrollViewer>
+    </Grid>
+    <TextBlock x:Name="ErrorText" Grid.Row="3" Margin="0,8,0,0" FontSize="12.04" Foreground="{StaticResource SkylineAuthError}"
+               Text="Couldn't change to that account. Try again." Visibility="Collapsed" AutomationProperties.LiveSetting="Polite" />
+  </Grid>
+</Page>

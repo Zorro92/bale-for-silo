@@ -112,7 +112,8 @@
 #   scripts/bale-debug.sh show login            preview phone Login (no live ticket)
 #   scripts/bale-debug.sh show login expired    preview the session-expired Login notice
 #   scripts/bale-debug.sh show login password   preview password fields, reveal and local validation/errors
-#   scripts/bale-debug.sh show servers          preview Add / Switch / Remove on an in-memory list
+#   scripts/bale-debug.sh show servers          preview Settings › Accounts (sign out / remove) on an in-memory list
+#   scripts/bale-debug.sh show accounts         preview Change Account (server rail + account cards) in memory
 #   scripts/bale-debug.sh show server           preview manual server entry and advanced options
 #   scripts/bale-debug.sh show server http-warning  preview Connect / Cancel origin consent
 #   scripts/bale-debug.sh show server discovery  preview two nearby rows (no LAN browsing)
@@ -780,6 +781,7 @@ case "${1:-}" in
       "login expired") route=login/expired ;;
       "login password") route=login/password ;;
       servers) route=servers ;;
+      accounts) route=accounts ;;
       server) route=server ;;
       "server http-warning") route=server/http-warning ;;
       "server discovery") route=server/discovery ;;
@@ -788,7 +790,7 @@ case "${1:-}" in
       "profile edit") route=profile/edit ;;
       home) route=home ;;
       *)
-        echo "usage: scripts/bale-debug.sh show {login|login expired|login password|servers|server|server http-warning|server discovery|profiles manage|profile create|profile edit|home}" >&2
+        echo "usage: scripts/bale-debug.sh show {login|login expired|login password|servers|accounts|server|server http-warning|server discovery|profiles manage|profile create|profile edit|home}" >&2
         exit 2
         ;;
     esac

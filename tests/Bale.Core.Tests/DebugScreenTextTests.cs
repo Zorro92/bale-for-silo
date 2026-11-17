@@ -74,7 +74,7 @@ public class DebugScreenTextTests
         var output = DebugScreenText.Visible(
         [
             new("ItemsControl#PickerActions", "Button#Manage \"Manage\""),
-            new("ItemsControl#PickerActions", "Button#ChangeServer \"Change server\""),
+            new("ItemsControl#PickerActions", "Button#ChangeAccount \"Change account\""),
             new("ItemsControl#PickerActions", "Button#SignOut \"Sign out\""),
         ]);
         Assert.Contains("  ItemsControl#PickerActions:\n", output);

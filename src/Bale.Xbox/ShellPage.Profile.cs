@@ -112,7 +112,7 @@ public sealed partial class ShellPage
             if (step != 0)
             {
                 e.Handled = true;
-                Control[] candidates = [HistoryRow, RequestsRow, SettingsRow, SwitchProfileRow, AddProfileRow, SwitchServerRow, SignOutRow];
+                Control[] candidates = [HistoryRow, RequestsRow, SettingsRow, SwitchProfileRow, AddProfileRow, ChangeAccountRow, SignOutRow];
                 var rows = candidates.Where(row => row.Visibility == Visibility.Visible && row.IsEnabled).ToArray();
                 var focused = FocusManager.GetFocusedElement() as DependencyObject;
                 var index = Array.FindIndex(rows, row => IsWithin(focused, row));
@@ -186,13 +186,13 @@ public sealed partial class ShellPage
         if (Current == this && !_signingOut) DismissProfileMenu();
     }
 
-    private void OnSwitchServerClick(object sender, RoutedEventArgs e)
+    private void OnChangeAccountClick(object sender, RoutedEventArgs e)
     {
         if (_signingOut) return;
-        // TvAppNavigation.kt opens ServerList without destroying the signed-in session.
+        // TvAppNavigation.kt pushes Change Account over the shell without destroying the signed-in session.
         ClosePanels();
         _personalReturnToProfile = true;
-        Frame.Navigate(typeof(ServerListPage));
+        Frame.Navigate(typeof(ChangeAccountPage));
     }
 
     private void OnSettingsClick(object sender, RoutedEventArgs e) => OpenSettings();
