@@ -2002,9 +2002,61 @@ cold connection. It reports a lower bound when it reaches the target.
   Maximum Bitrate, Audio Language, Dolby Vision / Profile 7 fallback, Match Frame Rate, Force HDR
   Passthrough, True Black Bars and the streaming footer that explains them.
 
-Not yet done: Ask first / Automatically have no effect yet, since Bale has no rebuffer detector or step-down
-(`observed_rebuffer`, Restore quality's `learned_limit: clear`), so Bale never learns a limit itself;
-`plan_summary` route events with `throughput_kbps`. Both need the player page.
+The player's step-down (Ask first / Automatically, Restore quality) and `plan_summary` route events: see
+"Buffering quality" below.
+
+## Buffering quality (silo buffering_quality_v1, playback_plan_summary_v1), 2026-11-17
+
+Bale lowers quality when playback keeps buffering, as silo-server's design
+(`docs/design/2026-10-17-buffering-quality.md`) specifies and silo-apple implements; the pill and notices copy
+`TvPlayerNoticeOverlay.kt`. Windows build and console check pending.
+
+- **Core:** `BufferingQualityController` is a port of silo-apple's controller (stall tracker, trigger, the three modes,
+  Restore quality, re-offer wait, no-lower cooldown, rearm, kept estimate, pills and plan summaries). The tests replay
+  all 66 cases of the server's conformance vectors (`Fixtures/buffering-quality-v1-vectors.json`, copied unchanged), with
+  and without `buffering_quality_v1`. Thresholds are the spec's: startup grace 10 s; a stall counts from 1 s; two counted
+  stalls ending within 120 s, or one stall reaching 6 s, trigger; prompt and undo pill 15 s; re-offer 120 s after an
+  unanswered prompt; 300 s cooldown after a lowering that came back no lower; rearm 60 s after a replan that was never
+  adopted; step-down estimate `floor(delivered × 7 / 10)`, nothing under 100 kbps.
+- **Signals** (`BufferingSignals`, a port of silo-apple's BufferingSignalMapper): both backends report Playing /
+  Buffering / Paused / Opening; the page hands the state over on every state change and on the 100 ms tick. Only a
+  network wait is a stall: buffering after a seek (until playback runs), a pause, a remount of a plan that played (a
+  quality or track change, a reconnect) and the end of the media never count; a start wait counts only with evidence
+  (below). An outage (a broken progressive body, or a wait while no media byte arrived for 4 s, 15 s on HLS) is no stall
+  and ends only when media data arrives or playback runs.
+- **Throughput** (`PlanThroughput`): body bytes over the time spent inside body reads, from the Rust range/progressive
+  transports' counters (the Stats tab's Estimated bandwidth source), per plan, once 1 s of receiving time has
+  accumulated, 100–1,000,000 kbps. It is the evidence a start wait needs, the lowering's `observed_throughput_kbps`, and
+  the summary's `throughput_kbps`. Omitted on HLS (segments arrive at burst rate, as Apple omits on server HLS) and for a
+  plan that played across a network change.
+- **Modes** (`playback.buffering_quality_mode`; a server without the key runs Automatically): *Automatically* sends a
+  `quality_change` replan with `quality_preference: auto`, the step-down estimate, `bandwidth_estimate_source:
+  observed_rebuffer` and the plan's `observed_throughput_kbps`, then shows the undo pill ("Quality lowered to stop
+  buffering" / **Restore quality**) when the new plan is lower. *Ask first* shows "Playback keeps buffering" with
+  **Lower quality** / **Keep quality**; Lower sends the same replan and shows the "Quality lowered…" notice. *Never*
+  detects and reports only (`buffering_action: ignored`). No lower rung: "Can't lower quality for this video", once
+  per title. **Restore quality** replans Auto with no estimate and `learned_limit: clear`.
+- **Replans:** the quality change remounts the same session, tracks and position like a track change
+  (`PlaybackReplan.ForQualityChange`); it never queues behind another pipeline change (it fails and rearms), Restore
+  waits its turn. After a lowering, track changes, seek reanchors and failure recovery repeat the kept estimate without
+  a source until Restore quality or a new attempt. `PlaybackClient` drops the source, observed throughput and
+  `learned_limit` unless the attempt negotiated `buffering_quality_v1`.
+- **Pill:** top-start at the notice anchor (under a notice), takes focus once as it appears (not mid-scrub); A presses
+  the focused action, Left/Right stay on the card, Down brings up the controls, Back answers Keep quality on the prompt
+  and only hides the undo pill. Options, a track menu and Up Next hide it with its timer frozen; a pause freezes it too.
+- **plan_summary:** whenever a plan stops playing (replaced by a quality change, track change, seek reanchor or failure
+  recovery, the end of the media, an error, or the player leaving), Bale posts `POST /api/v2/playback/route-events`
+  with `played_ms`, `stall_count`, `stall_total_ms`, `stall_longest_ms`, `delivered_kbps`, `buffering_mode`,
+  `buffering_action`, `bandwidth_estimate_kbps` (what the plan's request carried) and `throughput_kbps`, only when the
+  server advertises `playback_plan_summary_v1`. Best effort, never retried.
+- **Debug:** `bale-debug.sh buffering` prints the controller's state; `bale-debug.sh buffering stall [ms]` injects a
+  network stall of `ms` (default 8000) into the controller, bypassing detection: 6000 ms or more lowers on Auto, two of
+  1000 ms or more within 120 s also trigger (not inside the first 10 s of a plan).
+- **Skipped:** renderer waits (neither backend reports media buffered past the playhead, so a decoder that falls behind
+  reads as a network stall; the spec's AVPlayer route has the same gap); the missed-start-deadline lowering (Bale's start
+  failure path stays as it was); waiting out an outage instead of failure recovery; keeping a summary on the device for
+  the next launch when the app is killed; quality picks, Watch Party suspension and Wi-Fi/cellular pairs (Bale has no
+  quality menu, rooms or cellular).
 
 ## Debug: IMFMediaEngine rendering mode (windowless swap chain)
 

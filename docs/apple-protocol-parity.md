@@ -22,7 +22,7 @@ player or product decision first.
 | `header_authenticated_media_v1` | Yes (and requires the server to offer it) | No | **Implemented** | Bale already fetches every plan URL (stream, HLS children, `.sup` windows, sidecars, fonts) through the authenticated client with bearer refresh (`PlaybackMedia`, `NativeHeaderRefresh`), and `PlaybackMediaUrl` accepts only API-relative media routes. Declaring it makes the server keep media API-local with no signed credential in URLs. Without it a server with proxy nodes may hand out signed absolute proxy URLs, which Bale refuses. Attempt-sticky on the server. |
 | `authorized_media_origins_v1` | Negotiated when the server offers it | No | Owner | Restores proxy-node egress. Bale would have to accept absolute `/stream/v3/{session}[/master.m3u8\|/segment/…]` URLs on a server-named origin (https, or http only for an http API), send the bearer there, and let the Rust HLS reader follow children on that origin. A security boundary change in `PlaybackMediaUrl` and `hls.rs`; only worth it on servers with proxy nodes. |
 | `output_change_v1` | Yes | No | Owner | The feature only enables the `output_change` replan. Bale would need to notice an HDMI mode or audio sink change while playing and replan (player page work). Goes with `output_context_id` below. |
-| `playback_route_diagnostics` | Yes | No | Skip | The server reads it from nobody's request (only advertises it). Bale posts no route events. |
+| `playback_route_diagnostics` | Yes | No | Skip | The server reads it from nobody's request (only advertises it). Bale posts only `plan_summary` route events, which need `playback_plan_summary_v1` from the server, not this. |
 | `hls_subtitle_renditions_v1`, `hls_remux_subtitle_renditions_v1` | Yes | No | Skip | The server would put the subtitle into the HLS stream as a WebVTT `SUBTITLES` rendition instead of a sidecar. Bale's overlay draws fetched sidecars and its Rust HLS reader reads one media playlist; without the feature the server keeps sidecars, which Bale plays. |
 | `hls_subtitle_renditions_all_v1` | Negotiated | No | Skip | Requires the above. |
 | `buffering_quality_v1` on starts | Yes, when offered | Yes, when offered and unmetered | — | Same, with the highest current reading as a `probe` estimate. |
@@ -34,9 +34,9 @@ player or product decision first.
 
 | Field | Apple | Bale before | Decision | Why |
 |---|---|---|---|---|
-| `learned_limit` (`ignore` / `clear`) | Sent per buffering mode and Restore quality | No | **Implemented** (`ignore`) | Starts and replans send `ignore` while `playback.buffering_quality_mode` is Never and the request names `buffering_quality_v1` (`PlaybackProtocol.LearnedLimit`); Settings has the mode and the learned-limit Reset row (docs/player-plan.md, "Connection speed test"). `clear` rides only on Restore quality, which needs the player's step-down (below); a replan built with `LearnedLimit = clear` already sends it. |
-| `bandwidth_estimate_source: observed_rebuffer`, `observed_throughput_kbps` | Sent on a rebuffer step-down | No | Owner | Needs a rebuffer detector and quality step-down in the player. |
-| `plan_summary` route events (`playback_plan_summary_v1`) | Sent when a plan stops playing | No | Owner | Needs played/stall statistics from the player; listed as not yet done in docs/player-plan.md. |
+| `learned_limit` (`ignore` / `clear`) | Sent per buffering mode and Restore quality | No | **Implemented** | Starts and replans send `ignore` while `playback.buffering_quality_mode` is Never and the request names `buffering_quality_v1` (`PlaybackProtocol.LearnedLimit`); Settings has the mode and the learned-limit Reset row (docs/player-plan.md, "Connection speed test"). Restore quality on the player's undo pill sends `clear` (docs/player-plan.md, "Buffering quality"). |
+| `bandwidth_estimate_source: observed_rebuffer`, `observed_throughput_kbps` | Sent on a rebuffer step-down | No | **Implemented** | `BufferingQualityController` (a port of Apple's, replaying the server's conformance vectors) lowers Auto with the step-down estimate, `observed_rebuffer` and the plan's measured throughput (omitted on HLS, as Apple omits it on server HLS). Later replans of the attempt repeat the kept estimate without a source. Both fields are dropped unless the attempt negotiated `buffering_quality_v1`. |
+| `plan_summary` route events (`playback_plan_summary_v1`) | Sent when a plan stops playing | No | **Implemented** | Posted when a plan is replaced, ends, fails or the player leaves, only when the server advertises the feature. Not kept on the device across an app kill (Apple keeps a journal); best effort, never retried. |
 | Failure classification `subtitle_embedded_failed` | Sent when an embedded subtitle cannot be mounted | No | Owner | Would stop the server offering native embedded selection for the attempt. Belongs to the player page's failure path. |
 | `progress_persistence` | Omitted (server default) | `"server"` | — | Same meaning. |
 | `allow_alternate_versions` | Watch-party only | `false` only under a version-checked range claim | — | Bale-specific guard. |
@@ -67,7 +67,8 @@ player or product decision first.
 | `sequenced_progress_v1` | Required | Required | Same. |
 | `neutral_playback_v3_contract_v1`, `header_authenticated_media_v1` | Required, else "update the server" | Not required | Bale keeps playing on an older server; it accepts its signed `st=` API-local URLs. |
 | `plan_source_duration_v1` | Decides whether to fall back to the catalog duration | Not read | Bale only uses the plan's duration, which is right on servers that offer the feature. |
-| `plan_active_quality_v1` | Quality menu | Logged only | Bale has no quality menu yet. |
+| `plan_active_quality_v1` | Quality menu | Logged; the buffering controller's lower rung | Bale has no quality menu yet; a lowering steps from the named rung when the server reports one. |
+| `playback_plan_summary_v1` | Read | Read | Gates `plan_summary` route events. |
 | `seek_reanchor_v1`, `buffering_quality_v1`, `connection_speed_v1`, `subrip_sidecar_v1` | Read | Read | Same. |
 
 ## Console check
