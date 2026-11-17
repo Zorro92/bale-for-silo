@@ -24,8 +24,10 @@ public sealed partial class DetailPage
             : detail
         : null;
 
-    // TvPlaybackSelectorRow.kt attaches the shared selectorFocus requester to Edition when shown.
-    private Button PlaybackSelectorEntry => EditionSelector.Visibility == Visibility.Visible ? EditionSelector : VersionSelector;
+    // TvPlaybackSelectorRow.kt attaches the shared selectorFocus requester to Edition when shown; Version is
+    // hidden without a choice (silo-android #906, as on Silo Web), so the entry then falls to Audio.
+    private Button PlaybackSelectorEntry => EditionSelector.Visibility == Visibility.Visible ? EditionSelector
+        : VersionSelector.Visibility == Visibility.Visible ? VersionSelector : AudioSelector;
 
     private void OnEditionSelectorClick(object sender, RoutedEventArgs e) => OpenSelectorMenu(PlaybackSelectorKind.Edition, EditionSelector, "Edition");
     private void OnVersionSelectorClick(object sender, RoutedEventArgs e) => OpenSelectorMenu(PlaybackSelectorKind.Version, VersionSelector, "Version");
@@ -170,8 +172,12 @@ public sealed partial class DetailPage
     {
         string? editionValue = null;
         var versionValue = values.Version;
+        var versionChoice = false;
         if (PlaybackDetail is { } detail)
         {
+            // Silo Web and silo-android #906: no Version button without two files to choose from (inside the
+            // edition). A series uses its Play episode; until that loads there is nothing to choose either.
+            versionChoice = PlaybackFormatting.SelectorIsInteractive(PlaybackSelectorKind.Version, detail, _playbackSelections.For(detail));
             var selection = _playbackSelections.For(detail);
             var version = PlaybackFormatting.SelectDisplayVersion(detail, selection);
             var editions = PlaybackEditions.For(detail.Versions, detail.PlaybackVariants);
@@ -183,6 +189,9 @@ public sealed partial class DetailPage
         }
 
         EditionSelector.Visibility = editionValue is null ? Visibility.Collapsed : Visibility.Visible;
+        if (!versionChoice && SelectorMenu.IsOpen && _selectorOpener == VersionSelector) CloseSelectorMenu();
+        if (!versionChoice && VersionSelector.FocusState != FocusState.Unfocused) FocusAction(AudioSelector, FocusState.Keyboard);
+        VersionSelector.Visibility = versionChoice ? Visibility.Visible : Visibility.Collapsed;
         AutomationProperties.SetName(EditionSelector, SelectorDescription("Edition", editionValue));
         AutomationProperties.SetName(VersionSelector, SelectorDescription("Version", versionValue));
         AutomationProperties.SetName(AudioSelector, SelectorDescription("Audio", values.Audio));
