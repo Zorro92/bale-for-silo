@@ -5,7 +5,7 @@ using Bale.Core.Detail;
 namespace Bale.Core.Playback;
 
 /// <summary>
-/// An engine-independent, immutable readout for the debug overlay and the future HUD Stats tab.
+/// An engine-independent, immutable readout for the Options panel's Stats tab and the debug overlay.
 /// Rows and number formats follow silo-android's TvPlayerHud.kt hudRows()/formatBitrate().
 /// </summary>
 public sealed record PlaybackStats
@@ -32,7 +32,15 @@ public sealed record PlaybackStats
     public int BufferingCount { get; init; }
     public double BufferingSeconds { get; init; }
 
-    public IReadOnlyList<(string Label, string Value)> HudRows()
+    /// <summary>
+    /// The Options panel's Stats tab: only TvPlayerHud.kt hudRows(), in its order. The tab shows while this
+    /// has rows (visibleHudTabs). <see cref="HudRows"/> adds Bale's diagnostics for the debug overlay.
+    /// </summary>
+    public IReadOnlyList<(string Label, string Value)> OfficialHudRows() => Rows(diagnostics: false);
+
+    public IReadOnlyList<(string Label, string Value)> HudRows() => Rows(diagnostics: true);
+
+    private List<(string Label, string Value)> Rows(bool diagnostics)
     {
         var rows = new List<(string Label, string Value)>();
         Add("Backend", BackendDisplayName);
@@ -57,8 +65,9 @@ public sealed record PlaybackStats
         if (EstimatedBandwidthBps is >= 0 and { } bandwidth) Add("Estimated bandwidth", FormatBitrate(bandwidth));
         if (DroppedFrames > 0) Add("Dropped frames", DroppedFrames.ToString(CultureInfo.InvariantCulture));
         if (AudioUnderruns > 0) Add("Audio underruns", AudioUnderruns.ToString(CultureInfo.InvariantCulture));
+        if (!diagnostics) return rows;
 
-        // Bale-only diagnostics stay after the official rows so a future HUD can reuse the snapshot.
+        // Bale-only diagnostics stay after the official rows, on the debug overlay only.
         Add("Delivery", Delivery);
         Add("Source", Source);
         if (MediaBitrateBps is > 0 and { } bitrate) Add("Media bitrate", FormatBitrate(bitrate));
@@ -70,6 +79,14 @@ public sealed record PlaybackStats
         {
             if (!string.IsNullOrWhiteSpace(value)) rows.Add((label, value));
         }
+    }
+
+    /// <summary>A runtime readout (codec name) on one line, at most <paramref name="maxLength"/> characters.</summary>
+    public static string? CompactValue(string? text, int maxLength = 80)
+    {
+        if (text is null) return null;
+        var line = string.Join(" ", text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return line.Length <= maxLength ? line : line[..(maxLength - 3)] + "...";
     }
 
     public static string FormatBitrate(long bps) => bps switch

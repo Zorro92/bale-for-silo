@@ -52,7 +52,25 @@ public class PlaybackStatsTests
             ("Media bitrate", "19.0 Mbps"),
             ("Buffering", "3 times, 2.8 s"),
         }, stats.HudRows());
+        // The Options panel's Stats tab shows TvPlayerHud.kt hudRows() only: the overlay's rows up to Audio underruns.
+        Assert.Equal(stats.HudRows().Take(14), stats.OfficialHudRows());
+        Assert.Equal("Audio underruns", stats.OfficialHudRows()[^1].Label);
     }
+
+    [Fact]
+    public void OfficialRowsLeaveOutBaleDiagnosticsAndCanBeEmpty()
+    {
+        var diagnosticsOnly = new PlaybackStats { Delivery = "Direct play", Source = "mkv", MediaBitrateBps = 1_000_000, BufferingCount = 1 };
+        Assert.NotEmpty(diagnosticsOnly.HudRows());
+        Assert.Empty(diagnosticsOnly.OfficialHudRows());
+    }
+
+    [Theory]
+    [InlineData(null, 7, null)]
+    [InlineData("  hevc \n main10 ", 80, "hevc main10")]
+    [InlineData("abcdefghij", 7, "abcd...")]
+    public void CompactValueKeepsOneBoundedLine(string? text, int maxLength, string? expected) =>
+        Assert.Equal(expected, PlaybackStats.CompactValue(text, maxLength));
 
     [Fact]
     public void MissingValuesAndZeroCountersDoNotCreateRows()
