@@ -401,6 +401,21 @@ public sealed partial class PlayerPage
                 PlayPauseButton.Focus(FocusState.Keyboard);
             }
             else if (onBar) OnScrubberKeyDown(sender, e);
+            else if (e.Key is VirtualKey.Left or VirtualKey.GamepadDPadLeft or VirtualKey.GamepadLeftThumbstickLeft
+                or VirtualKey.Right or VirtualKey.GamepadDPadRight or VirtualKey.GamepadLeftThumbstickRight)
+            {
+                // Along the button row in order, stopping at the ends (vertical-never-horizontal's twin:
+                // no wrap, no jump into another row).
+                var row = new[] { SkipBackButton, PlayPauseButton, SkipForwardButton, AudioButton, SubtitlesButton, CloseButton }
+                    .Where(button => button.Visibility == Visibility.Visible).ToList();
+                var index = row.FindIndex(button => button == FocusManager.GetFocusedElement());
+                if (index >= 0)
+                {
+                    e.Handled = true;
+                    var step = e.Key is VirtualKey.Left or VirtualKey.GamepadDPadLeft or VirtualKey.GamepadLeftThumbstickLeft ? -1 : 1;
+                    row[Math.Clamp(index + step, 0, row.Count - 1)].Focus(FocusState.Keyboard);
+                }
+            }
         }
         catch (Exception ex) { LogFailure("controls input", ex); }
     }

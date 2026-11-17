@@ -87,6 +87,9 @@ rather than leaving them transparent so they cost nothing while hidden.
    (`PlaybackReplan.ForTrackChange`) and remounts like a seek reanchor; a refused change keeps
    playback as it was. Always a replan for now; the official local switch (a track the mounted
    stream already carries) is a later optimisation. The HUD tabs come after.
+   Verified on 0.1.574 (subtitles): PGS -> SRT replanned `playable` and remounted at the same
+   position in about 2 s with the new track; Off replanned and no subtitles load. Audio list not
+   exercised (the title had one language). Left/Right along the button row are explicit since.
 5. **Up Next** (10 s countdown, auto-play setting); this also brings "the last special continues
    into S1E1" from the upstream log.
 6. Later: intro/credits skip, trickplay, subtitle delay/appearance.

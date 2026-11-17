@@ -40,7 +40,9 @@ public sealed partial class PlayerPage
     private IReadOnlyList<PlaybackSelectorOption> TrackOptions(PlaybackSelectorKind kind)
     {
         if (PlayingSelection(out var detail) is not { } selection || detail is null) return [];
-        return PlaybackFormatting.SelectorOptions(kind, detail, selection).Where(option => option.TrackIndex is not null).ToList();
+        // The Detail page's "Start without subtitles" describes a start, not a running player.
+        return PlaybackFormatting.SelectorOptions(kind, detail, selection).Where(option => option.TrackIndex is not null)
+            .Select(option => option.TrackIndex == -1 ? option with { Detail = "No subtitles" } : option).ToList();
     }
 
     /// <summary>The value a focused Audio / Subtitles pill shows ("English", "Off").</summary>
