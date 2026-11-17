@@ -346,3 +346,24 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
 - A slice that changes behaviour is a bug, not a port. Behaviour changes go in their own commits.
 - The software-decode allowlist and every other owner-set policy keep their comments in Rust.
 - Never log tokens, URLs, headers or media titles from Rust either.
+
+## Rust 1.100.0 (2026-11-16)
+
+Local stable moved 1.99.1 -> 1.100.0. Both crates pass CI's checks unchanged on it (`cargo fmt
+--check`, `cargo clippy --all-targets -D warnings`, `cargo test`; bale-gpu for
+`x86_64-pc-windows-msvc`); Cargo's new `unused_dependencies` lint finds nothing. CI is not pinned, so
+it picks 1.100 up when the runners do; pin a `rust-toolchain.toml` only once Bale uses a 1.100 API.
+
+What applies to Bale (release notes: rust-lang/rust RELEASES.md, "Version 1.100.0"):
+- **Stable custom allocators** (`std::alloc::Allocator`, `Vec::new_in`, `Box::new_in`): a per-playback
+  arena or pool for the range stream's 1 MiB blocks, subtitle payloads and upload staging, so a
+  stopped player hands memory back in one piece. Fits the 0.2 memory work (docs/ui-memory.md), not
+  before.
+- **`core::mem::DropGuard`**: scoped cleanup on every exit path in bale-gpu's D3D11/D3D12 and FFI code;
+  use when touching that code.
+- **Small library additions**: `str::trim_prefix`/`trim_suffix`, `Vec::from_fn`, `bool::toggle`,
+  `Box`/`Arc::map`; use as code is touched, no sweep.
+- **Cargo dependency cooldowns** (minimum publish age, RFC 3923) and `[lints.cargo]`: worth turning on
+  for supply-chain hygiene when the manifests next change.
+- **Not relevant**: `-Cprofile-sample-use` (Bale's hot native code is C: dav1d/FFmpeg), the 32-bit x86
+  ABI change, ARM/WASM target changes, the build-directory layout change (no script reads `target/*/deps`).
