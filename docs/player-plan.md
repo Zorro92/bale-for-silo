@@ -2096,3 +2096,8 @@ reported via `SetActualStartPosition` (log `Bale seek: sessionless fast seek tar
 Console, 4K AV1 10-bit SDR software decode (debug `av1-claim 2160`): seeks to 600/1800/900/3000/120 s
 landed on keyframes 0.6–6.6 s before the target in 0.8–2.1 s, and a four-tap burst merged into one
 seek; no `0x8007000E`, playback continued at ~24 fps (12 frames dropped in total, all around the seeks).
+
+**Owner check (0.1.601, 2026-11-17).** With a controller: engine player hold-scan, A pause/play,
+picture and sound in sync, stats pane all fine. The owner's display is a 1080p SDR FreeSync
+monitor; Xbox's *Allow 24 Hz* is greyed out (no 24 Hz mode), so 24 fps keeps 59.94 Hz 3:2
+pulldown under the whole-multiple matching rule.
