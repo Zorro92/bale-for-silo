@@ -182,8 +182,13 @@ public sealed partial class PlayerPage
     private bool TryAdoptSubtitleInPlace(Attempt attempt, Mount media, Bale.Core.Api.Models.PlaybackDecision decision,
         PlaybackReplanRequestV3 request, int? audioIndex)
     {
-        if (audioIndex is not null || decision.PlaybackPlan is not { } answer
-            || !PlaybackReplan.KeepsTransport(attempt.Plan!, answer)) return false;
+        if (audioIndex is not null || decision.PlaybackPlan is not { } answer) return false;
+        if (PlaybackReplan.TransportChange(attempt.Plan!, answer) is { } change)
+        {
+            // A fixed field name, never a value.
+            Log.Info("player: subtitle answer changes " + change + "; remounting");
+            return false;
+        }
         // The FFmpeg sink's token is fixed when the mount opens; a fresh bind would never receive.
         if (attempt.Client.Playback.ResolveEmbeddedPgs(answer) is null
             && attempt.Client.Playback.ResolveEmbeddedSubtitles(answer) is not null) return false;

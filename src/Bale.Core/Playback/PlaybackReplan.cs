@@ -118,23 +118,33 @@ public static class PlaybackReplan
     /// file, audio track, recipe and timeline origin, and no burn-in on either side (burn-in changes the video).
     /// Bale draws every rendered subtitle itself, so such an answer swaps only the overlay: no remount, no pause.
     /// </summary>
-    public static bool KeepsTransport(PlaybackPlan playing, PlaybackPlan answer)
+    public static bool KeepsTransport(PlaybackPlan playing, PlaybackPlan answer) => TransportChange(playing, answer) is null;
+
+    /// <summary>The first thing the answer changes about the mounted stream (a fixed field name for logs), or null.</summary>
+    public static string? TransportChange(PlaybackPlan playing, PlaybackPlan answer)
     {
-        if (playing.Subtitle?.Mode == "burn_in" || answer.Subtitle?.Mode == "burn_in") return false;
-        if (!Same(playing.Delivery, answer.Delivery) || answer.Delivery is null) return false;
-        if (playing.Stream is not { } a || answer.Stream is not { } b || string.IsNullOrEmpty(b.Url)
-            || !Same(a.Url, b.Url) || !Same(a.Protocol, b.Protocol) || !Same(a.Container, b.Container)
-            || !Same(a.MimeType, b.MimeType)) return false;
-        if (!Same(playing.Source?.MediaFileId, answer.Source?.MediaFileId)) return false;
-        if (playing.SelectedTracks?.Audio?.Index != answer.SelectedTracks?.Audio?.Index) return false;
+        if (playing.Subtitle?.Mode == "burn_in" || answer.Subtitle?.Mode == "burn_in") return "burn_in";
+        if (!Same(playing.Delivery, answer.Delivery) || answer.Delivery is null) return "delivery";
+        if (playing.Stream is not { } a || answer.Stream is not { } b || string.IsNullOrEmpty(b.Url)) return "stream";
+        if (!Same(a.Url, b.Url)) return "stream.url";
+        if (!Same(a.Protocol, b.Protocol)) return "stream.protocol";
+        if (!Same(a.Container, b.Container)) return "stream.container";
+        if (!Same(a.MimeType, b.MimeType)) return "stream.mime_type";
+        if (!Same(playing.Source?.MediaFileId, answer.Source?.MediaFileId)) return "source.media_file_id";
+        if (playing.SelectedTracks?.Audio?.Index != answer.SelectedTracks?.Audio?.Index) return "selected_tracks.audio";
         var (x, y) = (playing.EffectiveRecipe, answer.EffectiveRecipe);
-        if ((x is null) != (y is null)) return false;
-        if (x is not null && y is not null && (!Same(x.VideoCodec, y.VideoCodec) || !Same(x.AudioCodec, y.AudioCodec)
-            || x.Width != y.Width || x.Height != y.Height || x.BitrateKbps != y.BitrateKbps || x.AudioChannels != y.AudioChannels
-            || !Same(x.AudioLayout, y.AudioLayout) || !Same(x.DynamicRange, y.DynamicRange)))
-            return false;
-        return playing.Timeline?.StreamOriginSeconds == answer.Timeline?.StreamOriginSeconds
-            && playing.Timeline?.TimelineOffsetSeconds == answer.Timeline?.TimelineOffsetSeconds;
+        if ((x is null) != (y is null)) return "effective_recipe";
+        if (x is not null && y is not null)
+        {
+            if (!Same(x.VideoCodec, y.VideoCodec) || x.Width != y.Width || x.Height != y.Height || !Same(x.DynamicRange, y.DynamicRange))
+                return "effective_recipe.video";
+            if (!Same(x.AudioCodec, y.AudioCodec) || x.AudioChannels != y.AudioChannels || !Same(x.AudioLayout, y.AudioLayout))
+                return "effective_recipe.audio";
+            if (x.BitrateKbps != y.BitrateKbps) return "effective_recipe.bitrate";
+        }
+        if (playing.Timeline?.StreamOriginSeconds != answer.Timeline?.StreamOriginSeconds) return "timeline.stream_origin";
+        if (playing.Timeline?.TimelineOffsetSeconds != answer.Timeline?.TimelineOffsetSeconds) return "timeline.offset";
+        return null;
 
         static bool Same(string? left, string? right) => string.Equals(left, right, StringComparison.Ordinal);
     }
