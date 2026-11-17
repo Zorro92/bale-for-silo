@@ -1983,3 +1983,16 @@ the engine statistics (rendered, dropped, corrupted, fps, jitter, delay) and the
 during and after. This is the only lower-level mode that can keep the system HDR10 / Dolby Vision
 presentation; frame-server mode (`playtest-engine`) cannot. Debug only; production stays on
 MediaPlayerElement until this is verified on the console.
+
+**Results (0.1.584, 2026-11-17, SDR display 1920x1080@59.94, public Jellyfin 1080p test clips, 15 s):**
+
+| Clip | Rendering mode | Frames rendered / dropped | fps | CPU |
+|---|---|---|---|---|
+| HEVC HDR10 | presents full screen, system tone-mapped to SDR | 766 / 0 | 60.0 | 0.13 cores |
+| DV Profile 8.1 | presents full screen | 885 / 0 | 59.9 | 0.17 cores |
+| DV Profile 5 | `MF_E_INVALIDMEDIATYPE` (0xC00D36B4) right after play | — | — | — |
+
+DV Profile 5 fails the same way through MediaPlayer (`playtest`), so it is the console on an SDR
+display, not rendering mode. The swap chain handle arrives about 100–130 ms after canplay. The HDR10
+run's ratio of 0.85 is 2.3 s of network buffering at start. Untested: an HDR10/DV display (the
+`hdr=on` switch, real passthrough), 4K, audio, seeking.
