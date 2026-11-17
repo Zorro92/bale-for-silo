@@ -604,10 +604,26 @@ internal sealed partial class DebugServer
                     if (query.Count > 1 || !int.TryParse(maskText, System.Globalization.NumberStyles.None,
                         System.Globalization.CultureInfo.InvariantCulture, out var mask)
                         || !DebugToneMapSwitches.ValidOutputMask(mask))
-                        return ("400 Bad Request", "mask: 0-7 (1 decoder-style copies, 2 no colour attributes, 4 no Flush; 0 clears)\n");
+                        return ("400 Bad Request", "mask: 0-15 (1 decoder-style copies, 2 no colour attributes, 4 no Flush, 8 no bale_gpu; 0 clears)\n");
                     DebugToneMapSwitches.OutputMask = mask;
                     Log.Info($"debug: tone map output mask {mask} for the next tone-map open");
                     return ("200 OK", $"tone map output mask: {mask} (next tone-map open)\n");
+                }
+
+            case ("POST", "/tonemap-churn"):
+                {
+                    // bale_gpu-only opens-to-failure: no MF, no FFmpeg (2026-11-17). Never during playback.
+                    var countText = query.GetValueOrDefault("n") ?? "40";
+                    var control = query.GetValueOrDefault("control") == "1";
+                    if (query.Keys.Any(key => key is not ("n" or "control"))
+                        || !uint.TryParse(countText, System.Globalization.NumberStyles.None,
+                            System.Globalization.CultureInfo.InvariantCulture, out var count) || count is 0 or > 200)
+                        return ("400 Bad Request", "n: 1-200, control=1 skips the tone map\n");
+                    if (await OnUiAsync(() => CurrentPage(out _) is PlayerPage))
+                        return ("409 Conflict", "leave the player first\n");
+                    var report = await Task.Run(() => DebugToneMapChurn.Churn(count, control));
+                    Log.Info("debug: tone map " + report.TrimEnd());
+                    return ("200 OK", report);
                 }
 
             case ("POST", "/fault/playback"):

@@ -80,9 +80,17 @@ public sealed class DebugFfmpegToneMapTests
         => Assert.Equal(supported, DebugToneMapSwitches.OutputSupported(version));
 
     [Theory]
+    [InlineData("2.1.0-bale.33", 7, true)]
+    [InlineData("2.1.0-bale.33", 8, false)]
+    [InlineData("2.1.0-bale.34", 8, true)]
+    public void SkippingBaleGpuNeedsTheBale34Wrapper(string version, int mask, bool supported)
+        => Assert.Equal(supported, DebugToneMapSwitches.OutputSupported(version, mask));
+
+    [Theory]
     [InlineData(0, true)]
     [InlineData(7, true)]
-    [InlineData(8, false)]
+    [InlineData(15, true)]
+    [InlineData(16, false)]
     [InlineData(-1, false)]
     public void OutputMaskAcceptsTheThreeBits(int mask, bool valid)
         => Assert.Equal(valid, DebugToneMapSwitches.ValidOutputMask(mask));

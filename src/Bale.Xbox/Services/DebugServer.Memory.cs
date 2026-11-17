@@ -46,6 +46,10 @@ internal sealed partial class DebugServer
         {
             builder.Append("App memory: unavailable (0x").Append(ex.HResult.ToString("X8", CultureInfo.InvariantCulture)).Append(")\n");
         }
+        var devices = DebugToneMapChurn.DeviceReleases();
+        builder.Append("D3D11 devices: watched ").Append(devices.Watched.ToString(CultureInfo.InvariantCulture))
+            .Append(" destroyed ").Append(devices.Released.ToString(CultureInfo.InvariantCulture))
+            .Append(" alive ").Append((devices.Watched - devices.Released).ToString(CultureInfo.InvariantCulture)).Append('\n');
         builder.Append("Handles: ").Append(DebugProcessCpu.HandleCount()?.ToString(CultureInfo.InvariantCulture) ?? "unavailable").Append('\n');
         // Xbox-only budget split (hevc-xbox GetExtendedMemoryInfo): general heap vs graphics partition.
         builder.Append("Xbox memory: ").Append(DebugXboxMemory.Describe()).Append('\n');
