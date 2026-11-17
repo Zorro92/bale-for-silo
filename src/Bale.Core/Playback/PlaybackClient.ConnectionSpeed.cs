@@ -62,6 +62,15 @@ public sealed class ConnectionSpeedState
         }
     }
 
+    /// <summary>Settings → Reset succeeded: the limit is gone, even if the read after it fails.</summary>
+    public void ForgetLearnedLimit()
+    {
+        lock (_gate)
+        {
+            if (_connection is { LearnedLimit: not null } connection) _connection = connection with { LearnedLimit = null };
+        }
+    }
+
     /// <summary>The estimate a playback start sends, or null (unknown, stale, metered).</summary>
     public int? StartEstimate(DateTimeOffset now) => Metered ? null : ConnectionSpeedPolicy.Estimate(Connection, Schedule, now);
 }
@@ -212,6 +221,7 @@ public sealed partial class PlaybackClient
         using var request = Request(HttpMethod.Delete, new Uri(Server, "/api/v2/playback/connection/learned-limit"), scope);
         using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
         scope.Request.CheckCurrent();
+        if (response.IsSuccessStatusCode) Speed.ForgetLearnedLimit();
         return response.IsSuccessStatusCode;
     }
 
