@@ -71,6 +71,23 @@ public sealed class DebugFfmpegToneMapTests
         => Assert.Equal(supported, DebugFfmpegToneMap.Supported(version));
 
     [Theory]
+    [InlineData("2.1.0-bale.32", false)]
+    [InlineData("2.1.0-bale.33", true)]
+    [InlineData("2.1.0-bale.100", true)]
+    [InlineData("2.1.0-bale.33-beta", false)]
+    [InlineData("2.1.0", false)]
+    public void OutputMaskNeedsTheBale33Wrapper(string version, bool supported)
+        => Assert.Equal(supported, DebugToneMapSwitches.OutputSupported(version));
+
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(7, true)]
+    [InlineData(8, false)]
+    [InlineData(-1, false)]
+    public void OutputMaskAcceptsTheThreeBits(int mask, bool valid)
+        => Assert.Equal(valid, DebugToneMapSwitches.ValidOutputMask(mask));
+
+    [Theory]
     [InlineData("off")]
     [InlineData("bt2390")]
     [InlineData("hable")]

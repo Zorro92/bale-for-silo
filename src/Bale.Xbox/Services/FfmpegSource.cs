@@ -57,6 +57,7 @@ internal static class FfmpegSource
         if (tuning.Decoder is DebugFfmpegDecoder.System or DebugFfmpegDecoder.Software)
             config.FFmpegOptions.Remove("bale_tonemap");
         DebugFfmpegToneMap.Apply(config, tuning, FfmpegWrapperVersion.Value);
+        DebugToneMapSwitches.ApplyOutput(config, FfmpegWrapperVersion.Value);
         DebugFfmpegColorInfo.Apply(config, tuning, FfmpegWrapperVersion.Value);
         ApplyInputTuning(config, tuning, softwareVideo, route.VideoCodec);
 #endif

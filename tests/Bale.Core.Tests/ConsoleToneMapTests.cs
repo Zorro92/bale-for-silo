@@ -231,6 +231,7 @@ public sealed class ConsoleToneMapTests
     [InlineData("2.1.0-bale.30", true)]
     [InlineData("2.1.0-bale.31", true)]
     [InlineData("2.1.0-bale.32", true)]
+    [InlineData("2.1.0-bale.33", true)]
     [InlineData("2.1.0-bale.29-beta", false)]
     [InlineData("2.1.0", false)]
     public void ProductionStageRequiresTheHlgCapableWrapper(string version, bool supported) =>

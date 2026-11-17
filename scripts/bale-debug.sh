@@ -109,6 +109,7 @@
 #   scripts/bale-debug.sh fault request-detail  fail the next request-detail load once
 #   scripts/bale-debug.sh fault playback        inject a decoder failure into the player (one replan, then error)
 #   scripts/bale-debug.sh tonemap-debug [noselftest,nostate]  bale_gpu tone-map debug switches for the next tone-map create (no args clears)
+#   scripts/bale-debug.sh tonemap-output [0-7]  fork bale_tonemap_output mask for the next tone-map open (1 decoder-style copies, 2 no colour attributes, 4 no Flush; 0 or no args clears)
 # Connection previews use disposable fixtures: no network, passwords sent, vault or saved-list writes.
 #   scripts/bale-debug.sh show login            preview phone Login (no live ticket)
 #   scripts/bale-debug.sh show login expired    preview the session-expired Login notice
@@ -775,6 +776,13 @@ case "${1:-}" in
       exit 2
     fi
     curl --fail-with-body -sS -X POST "$BASE/tonemap-debug?flags=${2-}"
+    ;;
+  tonemap-output)
+    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^[0-7]$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh tonemap-output [0-7]' >&2
+      exit 2
+    fi
+    curl --fail-with-body -sS -X POST "$BASE/tonemap-output?mask=${2-0}"
     ;;
   fault)
     if [[ "$#" != 2 || ( "${2:-}" != profiles && "${2:-}" != search && "${2:-}" != catalog && "${2:-}" != home && "${2:-}" != home-empty && "${2:-}" != requests && "${2:-}" != requests-empty && "${2:-}" != request-detail && "${2:-}" != playback ) ]]; then
