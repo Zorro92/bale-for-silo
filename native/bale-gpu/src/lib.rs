@@ -19,6 +19,8 @@ mod frames;
 pub mod grain;
 #[cfg(windows)]
 pub mod lifecycle;
+#[cfg(windows)]
+mod panel;
 pub mod png;
 pub mod subs;
 pub mod tonemap;
@@ -270,6 +272,21 @@ pub unsafe extern "C" fn bale_gpu_engine_present(
     };
     // SAFETY: the caller guarantees `report_capacity` writable bytes.
     unsafe { write_report(&text, report, report_capacity) }
+}
+
+/// Sets an IMFMediaEngine windowless swap chain `handle` on `panel` (any interface of a XAML
+/// `SwapChainPanel`) through `ISwapChainPanelNative2`; returns the HRESULT.
+///
+/// # Safety
+/// `panel` must be a live COM pointer for the call; call on the panel's UI thread.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_gpu_panel_set_swap_chain_handle(
+    panel: *mut core::ffi::c_void,
+    handle: isize,
+) -> i32 {
+    // SAFETY: forwarded caller guarantees.
+    unsafe { panel::set_swap_chain_handle(panel, handle) }.0
 }
 
 /// Runs the libass probe (font discovery through DirectWrite, render timings) and writes the

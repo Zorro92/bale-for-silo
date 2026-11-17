@@ -13,14 +13,12 @@ namespace Bale.Xbox.Services;
 /// IMFMediaEngine rendering mode (windowless swap chain) on a full-screen SwapChainPanel: the one
 /// lower-level path that keeps the system HDR10 / Dolby Vision presentation (docs/player-plan.md).
 /// Debug only. The engine runs on its own thread in bale_gpu.dll; its swap chain handle is set on the
-/// panel on the UI thread. hdr=on switches HDMI to HDR10 first, as the player does, and restores after.
+/// panel on the UI thread, also by bale_gpu.dll (ISwapChainPanelNative2). hdr=on switches HDMI to HDR10 first, as the player does, and restores after.
 /// </summary>
 internal sealed partial class DebugServer
 {
     internal const string PresentUsage =
         "usage: GET /playtest-present?url=...&seconds=10 (1–60)&target=bgra|fp16|rgb10&hdr=on|off\n";
-
-    private static readonly Guid IidSwapChainPanelNative2 = new("D5A2F60C-37B2-44A2-937B-8D8EB9726821");
 
     private static async Task<(string Status, string Body)> PlaytestPresentAsync(IReadOnlyDictionary<string, string> query)
     {
@@ -70,7 +68,7 @@ internal sealed partial class DebugServer
         private uint _width;
         private uint _height;
 
-        /// <summary>The panel's ISwapChainPanelNative2 (owned reference), or 0.</summary>
+        /// <summary>The panel's IInspectable (owned reference), or 0.</summary>
         internal nint Panel { get; private set; }
 
         internal bool IsOpen => Panel != 0 || _popup is not null || _hdr is not null;
@@ -90,19 +88,8 @@ internal sealed partial class DebugServer
             _height = (uint)Math.Max(1, Math.Round(bounds.Height * scale));
             _view = new SwapChainPanel { Width = bounds.Width, Height = bounds.Height };
             _popup = new Popup { Child = _view, IsOpen = true };
-            var inspectable = WinRT.MarshalInspectable<object>.FromManaged(_view);
-            try
-            {
-                var iid = IidSwapChainPanelNative2;
-                var hr = Marshal.QueryInterface(inspectable, in iid, out var native);
-                if (hr < 0)
-                {
-                    Close();
-                    return $"Display before: {before}\nHDR request: {switched}\nPanel: QI ISwapChainPanelNative2 FAILS 0x{unchecked((uint)hr):X8}\n";
-                }
-                Panel = native;
-            }
-            finally { Marshal.Release(inspectable); }
+            // An owned IInspectable of the panel; Rust takes ISwapChainPanelNative2 from it.
+            Panel = WinRT.MarshalInspectable<object>.FromManaged(_view);
             return $"Display before: {before}\nHDR request: {switched}\n"
                 + $"Panel: {bounds.Width:0}x{bounds.Height:0} view pixels, {_width}x{_height} raw (scale {scale:0.###})\n";
         }
@@ -130,7 +117,7 @@ internal sealed partial class DebugServer
 
         /// <summary>Called on the engine thread with the swap chain handle: set it on the panel on the UI thread.</summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        private static unsafe int Attach(nint context, nint handle)
+        private static int Attach(nint context, nint handle)
         {
             try
             {
@@ -138,9 +125,7 @@ internal sealed partial class DebugServer
                 var hr = unchecked((int)0x8000FFFF);
                 CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.High, () =>
                 {
-                    // ISwapChainPanelNative2: IUnknown (3), SetSwapChain (3), SetSwapChainHandle (4).
-                    var vtable = *(nint**)host.Panel;
-                    hr = ((delegate* unmanaged[Stdcall]<nint, nint, int>)vtable[4])(host.Panel, handle);
+                    hr = bale_gpu_panel_set_swap_chain_handle(host.Panel, handle);
                 }).AsTask().Wait(TimeSpan.FromSeconds(5));
                 return hr;
             }
@@ -174,6 +159,8 @@ internal sealed partial class DebugServer
     }
 
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern uint bale_gpu_abi_version();
+
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_panel_set_swap_chain_handle(nint panel, nint handle);
 
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern unsafe uint bale_gpu_engine_present(char* url, uint urlLength, nint source, uint seconds, char* target,

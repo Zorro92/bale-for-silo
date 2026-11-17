@@ -61,18 +61,7 @@ const LEAD: Duration = Duration::from_millis(1);
 /// Upper bound for one frame-latency wait, so a swap chain nobody composites cannot hang the thread.
 const LATENCY_TIMEOUT_MS: u32 = 1000;
 
-mod panel {
-    #![allow(non_snake_case)]
-    use windows_core::{HRESULT, IUnknown, IUnknown_Vtbl, interface};
-
-    /// `ISwapChainPanelNative` of Windows.UI.Xaml (windows.ui.xaml.media.dxinterop.h); the
-    /// `windows` crate no longer ships the XAML interop interfaces.
-    #[interface("F92F19D2-3ADE-45A6-A20C-F6F1EA90554B")]
-    pub unsafe trait ISwapChainPanelNative: IUnknown {
-        pub unsafe fn SetSwapChain(&self, swap_chain: *mut core::ffi::c_void) -> HRESULT;
-    }
-}
-use panel::ISwapChainPanelNative;
+use crate::panel::ISwapChainPanelNative;
 
 /// One quad: matches `Input` in `shaders/sub_vs.hlsl`.
 #[repr(C)]
