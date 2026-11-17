@@ -2017,3 +2017,17 @@ MediaPlayer, then leave. The panel is sized to the screen's raw pixels and scale
 
 Open: why 1080p24 drops ~19% on a 60 Hz output (needs a 24 Hz mode test), and why 4K DV stalls on an
 SDR display (try the HDR10 4K version, or an HDR display). Production stays on MediaPlayerElement.
+
+**Frame accounting (0.1.588, 2026-11-17, 1080p24 MKV, 59.94 Hz).** `present-engine <s> frames` runs
+frame-server mode on the player's stream: every decoded frame is a stream tick, nothing is presented.
+Both modes print `Frame accounting` (counted vs position × the plan's frame rate) and rendering mode
+prints a per-second `Timeline` of rendered/dropped.
+
+| Run | Counted | Expected | Drops |
+|---|---|---|---|
+| frames (decoder) | 686 decoded + 16 dropped | 702 | 16, decoder keeps up |
+| present #1 | 692 rendered + 12 dropped | 714 | all 12 in the first 2 s, then 24/0 every second |
+| present #2 | 706 rendered + 2 dropped | 709 | both in the first 0.5 s, then 24/0 every second |
+
+Rendering mode on this file is clean after startup; the 113–143 drops of the earlier 0.1.585/0.1.587
+runs did not reproduce (cause unknown; the timeline will show where if they return).
