@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use crate::hardware::{DecodeSize, Limits};
 use crate::models::HdrCapabilities;
-use crate::software_decode::{AUDIO_CODECS, SYSTEM_AUDIO_CODECS};
+use crate::software_decode::{AUDIO_CODECS, FFMPEG_VIDEO_CODECS, SYSTEM_AUDIO_CODECS};
 
 /// Image subtitle codecs (silo-server's names) the overlay draws from the container.
 pub const EMBEDDED_BITMAP_SUBTITLE_CODECS: &[&str] =
@@ -76,14 +76,20 @@ pub struct Baseline {
     hls_ffmpeg_supported: bool,
 }
 
+/// MP4 and MKV (Windows reads both) plus every container only FFmpeg's demuxer opens.
+const CONTAINERS: &[&str] = &[
+    "mp4", "mkv", "matroska", "avi", "mov", "m4v", "mpegts", "ts", "m2ts", "mts", "3gp", "3g2",
+    "mpeg", "vob", "ogg", "webm", "flv", "asf",
+];
+
 pub fn baseline() -> Baseline {
     Baseline {
         // AVI needs FFmpeg; see docs/player-plan.md.
-        containers: &["mp4", "mkv", "avi"],
+        containers: CONTAINERS,
         // VP9 joins only when the console's decoder probe reports it (for_hardware). A .webm file
         // needs no container claim: silo-server's detectContainer (internal/scanner/probe.go)
         // names Matroska and WebM both "mkv".
-        video_codecs: &["h264", "hevc", "av1", "mpeg4"],
+        video_codecs: FFMPEG_VIDEO_CODECS,
         // The system baseline plus bundled FFmpeg audio decode; no encoded output/passthrough promise.
         audio_decode_codecs: SYSTEM_AUDIO_CODECS
             .iter()
@@ -239,22 +245,29 @@ pub fn video_decode(
     if av1_max_width > 1920 || av1_max_height > 1080 {
         claims.push(av1(av1_max_width, av1_max_height, 30.0));
     }
-    // Owner's Series X software probes: 30 s each, 0 late frames at 512x384 (0.06 cores), 720x480
-    // (0.08) and 1920x1080 (0.30). No 60 fps evidence: cap at 30 fps. Ordinary FFmpeg output, not
-    // AV1 zero-copy. silo-server capabilities_v3.go compares software profiles literally to
-    // lowercased ffprobe names, even under platform_attested evidence.
-    claims.push(VideoDecodeClaim {
-        codec: "mpeg4",
-        decoder_name: Some("FFmpeg"),
-        profiles: vec!["simple profile", "advanced simple profile"],
-        levels: vec![],
-        bit_depths: vec![8],
-        max_width: Some(1920),
-        max_height: Some(1080),
-        max_frame_rate: Some(30.0),
-        max_bitrate_kbps: None,
-        hardware: false,
-    });
+    // Everything else FFmpeg decodes (owner, 2026-11-17, as AetherEngine declares its build): an
+    // unbounded software entry per codec, so silo-server admits any such file and the console decodes
+    // it in hardware when the probe's entry takes it (route::hardware_admits), else in FFmpeg. AV1
+    // keeps its measured bound above until rav1g. silo-server compares software profiles literally
+    // to ffprobe's names even under platform_attested evidence, so these name none.
+    // Measured before: MPEG-4 Part 2 at 512x384 (0.06 cores), 720x480 (0.08), 1080p (0.30).
+    for &codec in FFMPEG_VIDEO_CODECS {
+        if codec == "av1" {
+            continue;
+        }
+        claims.push(VideoDecodeClaim {
+            codec,
+            decoder_name: Some("FFmpeg"),
+            profiles: vec![],
+            levels: vec![],
+            bit_depths: vec![],
+            max_width: None,
+            max_height: None,
+            max_frame_rate: None,
+            max_bitrate_kbps: None,
+            hardware: false,
+        });
+    }
     claims
 }
 

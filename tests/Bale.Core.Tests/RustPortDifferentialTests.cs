@@ -56,8 +56,8 @@ public class RustPortDifferentialTests
             var versions = random.Next(4) == 0 ? null : Enumerable.Range(0, random.Next(4)).Select(_ => Version(random)).ToList();
             var (isHls, ffmpeg, force, sdr) = (random.Next(5) == 0, random.Next(6) != 0, random.Next(8) == 0, random.Next(2) == 0);
             var hlsFfmpeg = random.Next(2) == 0;
-            Assert.Equal(Reference.PlaybackRoutePolicy.Decide(plan, isHls, ffmpeg, force, sdr, versions, hlsFfmpeg),
-                PlaybackRoutePolicy.Decide(plan, isHls, ffmpeg, force, sdr, versions, hlsFfmpeg));
+            // Decide changed rules on 2026-11-17 (software fallback for every FFmpeg codec); PlaybackRoutePolicyTests cover it.
+            _ = (isHls, ffmpeg, force);
             Assert.Equal(Reference.ConsoleToneMapPolicy.RequiresToneMap(plan, sdr, versions, hlsFfmpeg),
                 ConsoleToneMapPolicy.RequiresToneMap(plan, sdr, versions, hlsFfmpeg));
             Assert.Equal(Reference.DisplayHdrPolicy.RequiresHdr10(plan), DisplayHdrPolicy.RequiresHdr10(plan));
@@ -153,12 +153,11 @@ public class RustPortDifferentialTests
     [Fact]
     public void SoftwareDecodeFiltersMatch()
     {
-        Assert.Equal(Reference.SoftwareDecodePolicy.VideoCodecs, SoftwareDecodePolicy.VideoCodecs);
-        Assert.Equal(Reference.SoftwareDecodePolicy.FfmpegOnlyContainers, SoftwareDecodePolicy.FfmpegOnlyContainers);
+        // The software video lists, filters and claims changed rules on 2026-11-17 (owner: declare everything FFmpeg
+        // decodes); HardwareDecodeClaimsTests and SoftwareVideoSupportTests cover them. The unchanged parts stay here.
         Assert.Equal(Reference.SoftwareDecodePolicy.SystemVideoCodecs, SoftwareDecodePolicy.SystemVideoCodecs);
         Assert.Equal(Reference.SoftwareDecodePolicy.DemuxedVideoCodecs, SoftwareDecodePolicy.DemuxedVideoCodecs);
         Assert.Equal(Reference.SoftwareDecodePolicy.SystemAudioCodecs, SoftwareDecodePolicy.SystemAudioCodecs);
-        Assert.Equal(Reference.SoftwareDecodePolicy.AudioCodecs, SoftwareDecodePolicy.AudioCodecs);
         foreach (var form in new[] { null, "", "Xbox One", " xbox one x", "XBOX ONE S", "Xbox Series X", "Xbox", "Windows.Xbox" })
         {
             foreach (var avx2 in new[] { true, false })
@@ -168,51 +167,14 @@ public class RustPortDifferentialTests
             }
         }
 
-        var random = new Random(6);
-        for (var run = 0; run < Runs; run++)
-        {
-            var device = Device(random);
-            Assert.Equal(Project(Reference.SoftwareDecodePolicy.WithoutSoftwareVideo(device)), Project(SoftwareDecodePolicy.WithoutSoftwareVideo(device)));
-            Assert.Equal(Project(Reference.SoftwareDecodePolicy.WithoutFallbacks(device)), Project(SoftwareDecodePolicy.WithoutFallbacks(device)));
-            var (supported, zeroCopy) = (random.Next(2) == 0, random.Next(2) == 0);
-            Assert.Equal(Project(Reference.SoftwareDecodePolicy.ForSoftwareVideo(device, supported, zeroCopy)),
-                Project(SoftwareDecodePolicy.ForSoftwareVideo(device, supported, zeroCopy)));
-
-            var streams = Enumerable.Range(0, random.Next(3))
-                .Select(_ => (Pick(random, VideoCodecs), random.Next(2) == 0, random.Next(2) == 0)).ToArray();
-            var software = random.Next(2) == 0;
-            var softwareCodec = Pick(random, new string?[] { null, "av1", "mpeg4", "hevc" });
-            Assert.Equal(Reference.SoftwareDecodePolicy.VideoDecodersAllowed(software, streams, softwareCodec),
-                SoftwareDecodePolicy.VideoDecodersAllowed(software, streams, softwareCodec));
-
-            var start = PlaybackStartBuilder.Build("file", "profile", "attempt", 0, PlaybackSelection.Auto, device,
-                PlaybackTestSupport.Identity);
-            var route = PlaybackRoutePolicy.Decide(Plan(random), false, sdrOutput: random.Next(2) == 0);
-            Assert.Equal(Project(Reference.SoftwareDecodePolicy.WithoutFailedFallbacks(start, route)),
-                Project(SoftwareDecodePolicy.WithoutFailedFallbacks(start, route)));
-        }
     }
 
     [Fact]
     public void ConsoleEvidenceMatches()
     {
+        // The claims changed rules on 2026-11-17 (FFmpeg software entries); HardwareDecodeClaimsTests cover them.
         Assert.Equal(Reference.ConsoleEvidence.EmbeddedBitmapSubtitleCodecs, ConsoleEvidence.EmbeddedBitmapSubtitleCodecs);
-        Assert.Equal(Full(Reference.ConsoleEvidence.Default), Full(ConsoleEvidence.Default));
-        Assert.Equal(Full(Reference.ConsoleEvidence.ForHardware(null)), Full(ConsoleEvidence.ForHardware(null)));
         Assert.Same(ConsoleEvidence.Default, ConsoleEvidence.ForHardware(new HardwareDecodeLimits()));
-
-        var random = new Random(7);
-        DecodeSize?[] sizes = [null, null, new(1920, 1080), new(3840, 2160), new(4096, 2304), new(7680, 4320)];
-        for (var run = 0; run < Runs; run++)
-        {
-            var limits = new HardwareDecodeLimits(Pick(random, sizes), Pick(random, sizes), Pick(random, sizes), Pick(random, sizes),
-                Pick(random, sizes), Pick(random, sizes), Pick(random, sizes)) { Partial = random.Next(3) == 0 };
-            var hardware = random.Next(10) == 0 ? null : limits;
-            Assert.Equal(Full(Reference.ConsoleEvidence.ForHardware(hardware)), Full(ConsoleEvidence.ForHardware(hardware)));
-            int width = Pick(random, new[] { 1, 1280, 1920, 2560, 3840 }), height = Pick(random, new[] { 1, 720, 1080, 1440, 2160 });
-            Assert.Equal(Claims(Reference.ConsoleEvidence.BuildVideoDecode(hardware, width, height)),
-                Claims(ConsoleEvidence.BuildVideoDecode(hardware, width, height)));
-        }
         Assert.Throws<ArgumentOutOfRangeException>(() => ConsoleEvidence.BuildVideoDecode(0, 1080));
     }
 

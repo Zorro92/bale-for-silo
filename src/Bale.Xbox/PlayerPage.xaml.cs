@@ -47,6 +47,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
 
     private sealed class Attempt(PlayerRequest request, SiloClient client)
     {
+        /// <summary>The console's hardware decode entries this attempt claimed (route software fallback).</summary>
+        public IReadOnlyList<Bale.Core.Playback.VideoDecodeCapability> HardwareDecode { get; set; } = [];
         public PlayerRequest Request { get; } = request;
         public SiloClient Client { get; } = client;
         public CancellationTokenSource Cancellation { get; } = new();
@@ -230,6 +232,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
                     Log.Info("player: av1 claim=2160p (debug)");
 #endif
                 attempt.Start = start;
+                // The route decodes a hardware codec in FFmpeg when these entries cannot take the file.
+                attempt.HardwareDecode = capabilities.VideoDecode.Where(decode => decode.Hardware).ToArray();
                 var decision = await client.Playback.StartAsync(start, services.Installation, ct);
 #if DEBUG_SERVER
                 DebugRecordPlaybackDecision(decision);

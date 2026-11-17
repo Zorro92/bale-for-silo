@@ -20,7 +20,8 @@ public static class PlaybackRoutePolicy
     /// <param name="forceFfmpeg">Debug A/B only: demux every direct mount with FFmpeg, keeping system video decode.</param>
     /// <param name="hlsThroughFfmpeg">HLS plays through the Rust reader's forward-only stream and FFmpeg.</param>
     public static PlaybackRouteDecision Decide(PlaybackPlan plan, bool isHls, bool ffmpegEnabled = true, bool forceFfmpeg = false,
-        bool sdrOutput = false, IReadOnlyList<FileVersion>? versions = null, bool hlsThroughFfmpeg = false) =>
+        bool sdrOutput = false, IReadOnlyList<FileVersion>? versions = null, bool hlsThroughFfmpeg = false,
+        IReadOnlyList<VideoDecodeCapability>? hardwareDecode = null) =>
         BaleCoreNative.Call("route.decide", writer =>
         {
             writer.Server("plan", plan);
@@ -30,6 +31,9 @@ public static class PlaybackRoutePolicy
             writer.WriteBoolean("sdr_output", sdrOutput);
             writer.Server("versions", versions);
             writer.WriteBoolean("hls_through_ffmpeg", hlsThroughFfmpeg);
+            // The console's hardware entries: a hardware codec they cannot take decodes in FFmpeg.
+            writer.Records("hardware_decode", (hardwareDecode ?? []).Where(decode => decode.Hardware).ToArray(),
+                BaleCoreJson.Default.VideoDecodeCapability);
         }, BaleCoreJson.Default.PlaybackRouteDecision);
 
     /// <summary>MKV and WebM (Matroska-based); MP4 stays on Windows' own source.</summary>

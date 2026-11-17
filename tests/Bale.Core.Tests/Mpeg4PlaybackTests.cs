@@ -10,7 +10,7 @@ namespace Bale.Core.Tests;
 public class Mpeg4PlaybackTests
 {
     [Fact]
-    public void ProductionClaimsBoundedSoftwareMpeg4OnEveryDeliveryAndAviOnlyOnOriginalHttp()
+    public void ProductionClaimsUnboundedSoftwareMpeg4OnEveryDeliveryAndAviOnlyOnOriginalHttp()
     {
         foreach (var device in new[] { ConsoleEvidence.Default, ConsoleEvidence.ForHardware(
             new HardwareDecodeLimits(H264: new(3840, 2160), HevcMain: new(7680, 4320))) })
@@ -22,12 +22,12 @@ public class Mpeg4PlaybackTests
                 entry => entry.GetProperty("codec").GetString() == "mpeg4");
             Assert.False(decode.GetProperty("hardware").GetBoolean());
             Assert.Equal("FFmpeg", decode.GetProperty("decoder_name").GetString());
-            Assert.Equal(new[] { "simple profile", "advanced simple profile" }, Strings(decode.GetProperty("profiles")));
+            // Declared like every FFmpeg codec since 2026-11-17 (owner): no profile, depth or size bound.
+            Assert.Empty(decode.GetProperty("profiles").EnumerateArray());
             Assert.Empty(decode.GetProperty("levels").EnumerateArray());
-            Assert.Equal(8, Assert.Single(decode.GetProperty("bit_depths").EnumerateArray()).GetInt32());
-            Assert.Equal(1920, decode.GetProperty("max_width").GetInt32());
-            Assert.Equal(1080, decode.GetProperty("max_height").GetInt32());
-            Assert.Equal(30, decode.GetProperty("max_frame_rate").GetDouble());
+            Assert.Empty(decode.GetProperty("bit_depths").EnumerateArray());
+            foreach (var bound in new[] { "max_width", "max_height", "max_frame_rate" })
+                Assert.True(!decode.TryGetProperty(bound, out var value) || value.ValueKind == JsonValueKind.Null);
             Assert.Contains("mpeg4", Strings(caps.GetProperty("codecs_video")));
             Assert.DoesNotContain("mpeg4", Strings(caps.GetProperty("codecs_video_hardware")));
             Assert.Contains("avi", Strings(caps.GetProperty("containers")));
@@ -45,22 +45,22 @@ public class Mpeg4PlaybackTests
             }
         }
         var raisedAv1 = ConsoleEvidence.BuildVideoDecode(3840, 2160).Single(entry => entry.Codec == "mpeg4");
-        Assert.Equal((1920, 1080, 30.0), (raisedAv1.MaxWidth, raisedAv1.MaxHeight, raisedAv1.MaxFrameRate));
+        Assert.Null(raisedAv1.MaxWidth);
     }
 
     [Theory]
     [InlineData("Advanced Simple Profile", 1920, 1080, 8, "30000/1001", true)]
     [InlineData("Simple Profile", 720, 480, 8, "30", true)]
-    [InlineData("asp", 720, 480, 8, "24", false)]
-    [InlineData(null, 720, 480, 8, "24", false)]
-    [InlineData("Advanced Simple Profile", 3840, 2160, 8, "24", false)]
-    [InlineData("Advanced Simple Profile", 1920, 1080, 10, "24", false)]
-    [InlineData("Advanced Simple Profile", 720, 480, 8, "60", false)]
+    [InlineData("asp", 720, 480, 8, "24", true)]
+    [InlineData(null, 720, 480, 8, "24", true)]
+    [InlineData("Advanced Simple Profile", 3840, 2160, 8, "24", true)]
+    [InlineData("Advanced Simple Profile", 1920, 1080, 10, "24", true)]
+    [InlineData("Advanced Simple Profile", 720, 480, 8, "60", true)]
     public void ProfileSpellingsAndBoundsAgreeWithTheServer(string? profile, int width, int height,
         int depth, string rate, bool expected)
     {
-        // capabilities_v3.go: platform_attested SOFTWARE entries still match the full ffprobe
-        // profile string and absolute fps bound (no size/rate trade as with exact evidence).
+        // Since 2026-11-17 (owner: declare everything FFmpeg decodes) the MPEG-4 software entry has no
+        // profile, depth, size or rate bound, so every MPEG-4 file is taken (the console decodes it in FFmpeg).
         var version = new FileVersion
         {
             CodecVideo = "mpeg4", Container = "avi", VideoTracks =

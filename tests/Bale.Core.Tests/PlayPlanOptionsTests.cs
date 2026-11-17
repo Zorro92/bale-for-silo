@@ -127,7 +127,7 @@ public class PlayPlanOptionsTests
             Assert.Equal(new[] { 8, 10 }, codec.BitDepths);
             Assert.False(codec.Hardware);
         });
-        Assert.All(capabilities.VideoDecode.Where(codec => codec.Codec != "av1"), codec =>
+        Assert.All(capabilities.VideoDecode.Where(codec => codec.Codec != "av1" && codec.Hardware), codec =>
         {
             Assert.Equal(1920, codec.MaxWidth);
             Assert.Equal(1080, codec.MaxHeight);

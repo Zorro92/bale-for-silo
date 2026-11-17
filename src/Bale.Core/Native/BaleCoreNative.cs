@@ -139,7 +139,7 @@ public sealed record BaleCoreChecked<T>(T? Ok = default, string? InvalidData = n
 [JsonSerializable(typeof(Detail.EditionIndexes[]))]
 internal sealed partial class BaleCoreJson : JsonSerializerContext;
 
-internal sealed record SoftwareDecodeLists(string[] VideoCodecs,
+internal sealed record SoftwareDecodeLists(string[] VideoCodecs, string[] FfmpegVideoCodecs, string[] PackagedVideoCodecs,
     string[] FfmpegOnlyContainers, string[] SystemVideoCodecs, string[] DemuxedVideoCodecs,
     string[] SystemAudioCodecs, string[] AudioCodecs);
 

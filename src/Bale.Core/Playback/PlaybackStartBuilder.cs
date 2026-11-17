@@ -40,8 +40,8 @@ public static class PlaybackStartBuilder
         if (selection.AudioIndex is < 0) throw new ArgumentOutOfRangeException(nameof(selection));
         if (selection.SubtitleIndex is < -1) throw new ArgumentOutOfRangeException(nameof(selection));
         if (device.MaxChannels < 1) throw new ArgumentOutOfRangeException(nameof(device));
-        if (device.VideoDecode.Any(decode => !decode.Hardware && !SoftwareDecodePolicy.VideoCodecs.Contains(decode.Codec)))
-            throw new ArgumentException("Software video decoding is restricted to the owner's allowlist.", nameof(device));
+        if (device.VideoDecode.Any(decode => !decode.Hardware && !SoftwareDecodePolicy.FfmpegVideoCodecs.Contains(decode.Codec)))
+            throw new ArgumentException("Software video decoding is restricted to the bundled FFmpeg decoders.", nameof(device));
 
         var passthrough = new AudioPassthroughCapabilities(device.AudioPassthroughCodecs, device.MaxChannels, device.PassthroughEntries);
         var caps = new ClientCodecCapabilities(device.VideoEvidence, device.AudioEvidence, device.VideoCodecs,
@@ -81,8 +81,9 @@ public static class PlaybackStartBuilder
             FailureReason = device.ProgressiveSupported ? null : "progressive_executor_unavailable",
             // candidate_routes_v3.go progressiveCandidate always writes fragmented MP4.
             Containers = ["mp4"],
-            // FFmpeg reads the package like an original, with the same decoders (owner, 2026-11-16).
-            VideoCodecs = original.VideoCodecs,
+            // FFmpeg reads the package like an original, with the same decoders (owner, 2026-11-16), but only
+            // codecs verified in packages: the newly declared software codecs stay on the original file.
+            VideoCodecs = original.VideoCodecs.Where(SoftwareDecodePolicy.PackagedVideoCodecs.Contains).ToArray(),
             AudioDecodeCodecs = original.AudioDecodeCodecs.Where(PlaybackProgressive.AudioCodecs.Contains).ToArray(),
             // In-container subtitles are an original_http claim only (the server reads it there).
             Subtitles = device.Subtitles with { NativeEmbedded = [] },
@@ -98,7 +99,8 @@ public static class PlaybackStartBuilder
             // Through FFmpeg, HLS takes the original's codecs except AV1, which waits for the owner's GPU
             // decoder (2026-11-16). Windows' AdaptiveMediaSource cannot use FFmpeg's decoders or demuxer.
             VideoCodecs = device.HlsFfmpegSupported
-                ? original.VideoCodecs.Where(codec => !string.Equals(codec, "av1", StringComparison.OrdinalIgnoreCase)).ToArray()
+                ? original.VideoCodecs.Where(codec => !string.Equals(codec, "av1", StringComparison.OrdinalIgnoreCase)
+                    && SoftwareDecodePolicy.PackagedVideoCodecs.Contains(codec)).ToArray()
                 : original.VideoCodecs.Where(codec => !SoftwareDecodePolicy.VideoCodecs.Contains(codec)
                     && !SoftwareDecodePolicy.DemuxedVideoCodecs.Contains(codec)).ToArray(),
             AudioDecodeCodecs = original.AudioDecodeCodecs.Where(codec => !SoftwareDecodePolicy.AudioCodecs.Contains(codec)).ToArray(),

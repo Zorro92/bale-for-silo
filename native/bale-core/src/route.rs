@@ -6,8 +6,8 @@ use crate::dolby_vision7;
 use crate::dotnet::{eq_ignore_case, lower, trim_lower};
 use crate::models::{FileVersion, PlaybackPlan};
 use crate::software_decode::{
-    AUDIO_CODECS, DEMUXED_VIDEO_CODECS, FFMPEG_ONLY_CONTAINERS, SYSTEM_AUDIO_CODECS,
-    SYSTEM_VIDEO_CODECS, VIDEO_CODECS, contains, normalize_codec,
+    AUDIO_CODECS, DEMUXED_VIDEO_CODECS, FFMPEG_ONLY_CONTAINERS, FFMPEG_VIDEO_CODECS,
+    SYSTEM_AUDIO_CODECS, SYSTEM_VIDEO_CODECS, contains, normalize_codec,
 };
 use crate::tone_map::{self, DOLBY_VISION8_BASE_LAYER_REASON};
 
@@ -26,6 +26,10 @@ pub struct DecideArgs {
     /// HLS plays through the Rust reader and FFmpeg's forward-only input instead of Windows' source.
     #[serde(default)]
     hls_through_ffmpeg: bool,
+    /// The console's hardware decode entries (the decoder probe). Empty: every hardware codec is
+    /// taken as decodable in hardware, as before the software fallback existed.
+    #[serde(default)]
+    hardware_decode: Vec<crate::models::DecodeClaim>,
 }
 
 /// `PlaybackRouteDecision`.
@@ -98,10 +102,23 @@ pub fn decide(args: DecideArgs) -> RouteDecision {
         delivery,
         Some("original_http" | "progressive" | PROGRESSIVE_DELIVERY)
     ) || hls_ffmpeg;
-    let video = video.as_deref();
     let audio_ref = audio.as_deref();
-    // Packages FFmpeg reads take the same software decoders as originals (owner, 2026-11-16).
-    let software_video = contains(VIDEO_CODECS, video);
+    // Packages FFmpeg reads take the same software decoders as originals (owner, 2026-11-16). Since
+    // 2026-11-17 (owner: declare everything FFmpeg decodes) a hardware codec the console's decoder
+    // cannot take (bit depth, size, a 4:2:2/4:4:4 or other non-hardware profile) decodes in FFmpeg too.
+    // The source's attributes describe the video only when the delivery keeps the source codec.
+    let source_video = normalize_codec(source.and_then(|s| s.video_codec.as_deref()));
+    let attributes = source.filter(|_| source_video.as_deref() == video.as_deref());
+    let video = video.as_deref();
+    let software_video = contains(FFMPEG_VIDEO_CODECS, video)
+        && !hardware_admits(
+            video,
+            attributes.and_then(|s| s.bit_depth),
+            attributes.and_then(|s| s.video_profile.as_deref()),
+            width,
+            height,
+            &args.hardware_decode,
+        );
     let software_audio =
         !contains(SYSTEM_AUDIO_CODECS, audio_ref) && contains(AUDIO_CODECS, audio_ref);
     let container = plan
@@ -159,6 +176,57 @@ pub fn decide(args: DecideArgs) -> RouteDecision {
         dolby_vision_base_layer: ffmpeg && dolby_vision_base_layer,
         console_tone_map: tone_map,
         dolby_vision7_base_layer: dv7,
+    }
+}
+
+/// Whether the console's hardware decoder takes this video: a hardware codec with a profile the
+/// hardware decodes, and (when the probe's entries are known) an entry admitting its bit depth and
+/// size. Unknown attributes are admitted, as silo-server does.
+pub fn hardware_admits(
+    codec: Option<&str>,
+    bit_depth: Option<i64>,
+    profile: Option<&str>,
+    width: Option<i64>,
+    height: Option<i64>,
+    entries: &[crate::models::DecodeClaim],
+) -> bool {
+    let Some(codec) = codec else { return true };
+    if !SYSTEM_VIDEO_CODECS.contains(&codec) || !hardware_profile(codec, profile) {
+        return false;
+    }
+    if entries.is_empty() {
+        return true;
+    }
+    entries.iter().any(|entry| {
+        entry.hardware
+            && eq_ignore_case(Some(entry.codec.as_str()), codec)
+            && bit_depth.is_none_or(|depth| {
+                entry.bit_depths.is_empty()
+                    || entry.bit_depths.iter().any(|&d| i64::from(d) == depth)
+            })
+            && width.is_none_or(|w| entry.max_width.is_none_or(|max| w <= i64::from(max)))
+            && height.is_none_or(|h| entry.max_height.is_none_or(|max| h <= i64::from(max)))
+    })
+}
+
+/// Profiles the console's Media Foundation decoders take: 4:2:0 H.264 up to High, HEVC Main/Main 10,
+/// VP9 profiles 0 and 2. Anything chroma 4:2:2/4:4:4, H.264 High 10 and HEVC range extensions decode
+/// in FFmpeg. An unknown profile is admitted.
+fn hardware_profile(codec: &str, profile: Option<&str>) -> bool {
+    let Some(profile) = profile.map(|p| p.trim().to_ascii_lowercase()) else {
+        return true;
+    };
+    if profile.is_empty() {
+        return true;
+    }
+    if profile.contains("4:2:2") || profile.contains("4:4:4") || profile.contains("rext") {
+        return false;
+    }
+    match codec {
+        "h264" => !profile.contains("high 10") && !profile.contains("high10"),
+        "hevc" => !profile.contains("12") && !profile.contains("range"),
+        "vp9" => !(profile.contains("profile 1") || profile.contains("profile 3")),
+        _ => true,
     }
 }
 

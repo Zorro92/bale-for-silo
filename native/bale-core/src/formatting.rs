@@ -547,7 +547,16 @@ fn match_display(
 ) -> usize {
     let fits =
         |i: usize| version_height(&versions[i]) <= i64::from(display_match.display_max_height);
-    let decodable = |i: usize| decodes(&versions[i], &display_match.video_decode);
+    // Display matching ranks versions the console plays comfortably: hardware entries and measured
+    // (bounded) software ones. The unbounded software fallbacks declared since 2026-11-17 admit any
+    // file, so they would pick a 4K software decode over a hardware 1080p version.
+    let comfortable: Vec<DecodeClaim> = display_match
+        .video_decode
+        .iter()
+        .filter(|claim| claim.hardware || claim.max_width.is_some() || claim.max_height.is_some())
+        .cloned()
+        .collect();
+    let decodable = |i: usize| decodes(&versions[i], &comfortable);
     ranked
         .iter()
         .copied()

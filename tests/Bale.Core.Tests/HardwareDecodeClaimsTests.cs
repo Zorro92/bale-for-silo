@@ -16,9 +16,23 @@ public class HardwareDecodeClaimsTests
     public void ASeriesProbeClaimsEachHardwareCodecAtItsLargestReportedSize()
     {
         var claims = ConsoleEvidence.ForHardware(Series);
-        Assert.Equal(new[] { "h264", "hevc", "vp9", "av1", "mpeg4" }, claims.VideoCodecs);
-        Assert.Equal(new[] { "h264", "hevc", "vp9", "av1", "mpeg4" }, claims.VideoDecode.Select(decode => decode.Codec));
-        Assert.Equal(new[] { "mp4", "mkv", "avi" }, claims.Containers);
+        // Everything the FFmpeg build decodes (owner, 2026-11-17), hardware codecs first.
+        Assert.Equal(SoftwareDecodePolicy.FfmpegVideoCodecs.Order(), claims.VideoCodecs.Order());
+        Assert.Equal(new[] { "h264", "hevc", "vp9", "av1" }, claims.VideoDecode.Select(decode => decode.Codec).Take(4));
+        Assert.Equal(ConsoleEvidence.Default.Containers, claims.Containers);
+        Assert.Contains("mov", claims.Containers);
+        // Every FFmpeg codec but AV1 has an unbounded software fallback entry.
+        var fallbacks = claims.VideoDecode.Where(decode => !decode.Hardware && decode.Codec != "av1").ToArray();
+        Assert.Equal(SoftwareDecodePolicy.FfmpegVideoCodecs.Where(codec => codec != "av1").Order(), fallbacks.Select(decode => decode.Codec).Order());
+        Assert.All(fallbacks, decode =>
+        {
+            Assert.Equal("FFmpeg", decode.DecoderName);
+            Assert.Null(decode.MaxWidth);
+            Assert.Null(decode.MaxHeight);
+            Assert.Null(decode.MaxFrameRate);
+            Assert.Empty(decode.Profiles);
+            Assert.Empty(decode.BitDepths);
+        });
 
         var hardware = claims.VideoDecode.Where(decode => decode.Hardware).ToArray();
         Assert.Equal(new[] { ("h264", 1920, 1080), ("hevc", 7680, 4320), ("vp9", 3840, 2160) },
@@ -48,7 +62,8 @@ public class HardwareDecodeClaimsTests
     public void TheDebugAv1BoundKeepsTheProbedHardwareClaims()
     {
         var claims = ConsoleEvidence.BuildVideoDecode(Series, 3840, 2160);
-        Assert.Equal(new[] { "h264", "hevc", "vp9", "av1", "av1", "mpeg4" }, claims.Select(decode => decode.Codec));
+        Assert.Equal(new[] { "h264", "hevc", "vp9", "av1", "av1" },
+            claims.Where(decode => decode.Hardware || decode.Codec == "av1").Select(decode => decode.Codec));
         Assert.Equal(ConsoleEvidence.BuildVideoDecode(Series).Where(decode => decode.Hardware).Select(Shape),
             claims.Where(decode => decode.Hardware).Select(Shape));
         Assert.Equal(new[] { (1920, 1080, 60.0), (3840, 2160, 30.0) }, claims.Where(decode => decode.Codec == "av1")
@@ -56,29 +71,29 @@ public class HardwareDecodeClaimsTests
     }
 
     [Fact]
-    public void AProbeWithoutVp9NeverNamesVp9()
+    public void AProbeWithoutVp9DecodesVp9OnlyInSoftware()
     {
         var claims = ConsoleEvidence.ForHardware(Series with { Vp9Profile0 = null, Vp9Profile2 = null });
-        Assert.Equal(new[] { "h264", "hevc", "av1", "mpeg4" }, claims.VideoCodecs);
-        Assert.DoesNotContain(claims.VideoDecode, decode => decode.Codec == "vp9");
+        Assert.Contains("vp9", claims.VideoCodecs);
+        Assert.False(Assert.Single(claims.VideoDecode, decode => decode.Codec == "vp9").Hardware);
+        // Without software video (Xbox One, ffmpeg off) nothing is left to decode it.
+        Assert.DoesNotContain("vp9", SoftwareDecodePolicy.WithoutSoftwareVideo(claims).VideoCodecs);
         var start = PlaybackStartBuilder.Build("file", "profile", "attempt", null, PlaybackSelection.Auto, claims, PlaybackTestSupport.Identity);
-        Assert.DoesNotContain("vp9", start.ClientCapabilities.CodecsVideo);
-        Assert.All(start.ClientPlaybackContext.Deliveries.Values, delivery => Assert.DoesNotContain("vp9", delivery.VideoCodecs));
+        Assert.Contains("vp9", start.ClientCapabilities.CodecsVideo);
     }
 
     [Fact]
     public void HevcMainAloneClaimsOnly8Bit()
     {
         var claims = ConsoleEvidence.ForHardware(new HardwareDecodeLimits(H264: new(1920, 1080), HevcMain: new(3840, 2160)));
-        var hevc = Assert.Single(claims.VideoDecode, decode => decode.Codec == "hevc");
+        var hevc = Assert.Single(claims.VideoDecode, decode => decode.Codec == "hevc" && decode.Hardware);
         Assert.Equal(new[] { 8 }, hevc.BitDepths);
         Assert.Equal((3840, 2160), (hevc.MaxWidth, hevc.MaxHeight));
-        Assert.Equal(new[] { "h264", "hevc", "av1", "mpeg4" }, claims.VideoCodecs);
 
-        // Main10 alone is the mirror case, and a codec the probe did not report is not claimed.
+        // Main10 alone is the mirror case; a codec the probe did not report has no hardware entry.
         var ten = ConsoleEvidence.ForHardware(new HardwareDecodeLimits(HevcMain10: new(3840, 2160)));
-        Assert.Equal(new[] { 10 }, Assert.Single(ten.VideoDecode, decode => decode.Codec == "hevc").BitDepths);
-        Assert.Equal(new[] { "hevc", "av1", "mpeg4" }, ten.VideoCodecs);
+        Assert.Equal(new[] { 10 }, Assert.Single(ten.VideoDecode, decode => decode.Codec == "hevc" && decode.Hardware).BitDepths);
+        Assert.DoesNotContain(ten.VideoDecode, decode => decode.Codec == "h264" && decode.Hardware);
     }
 
     [Fact]
@@ -137,8 +152,8 @@ public class HardwareDecodeClaimsTests
             // No bitrate limit: a failed probe is no evidence of a lower one (owner decision 2026-11-10).
             Assert.All(claims.Where(decode => decode.Hardware), decode => Assert.Null(decode.MaxBitrateKbps));
         }
-        Assert.Equal(new[] { "h264", "hevc", "av1", "mpeg4" }, ConsoleEvidence.Default.VideoCodecs);
-        Assert.DoesNotContain(ConsoleEvidence.Default.VideoDecode, decode => decode.Codec == "vp9");
+        Assert.Equal(SoftwareDecodePolicy.FfmpegVideoCodecs, ConsoleEvidence.Default.VideoCodecs);
+        Assert.DoesNotContain(ConsoleEvidence.Default.VideoDecode, decode => decode.Codec == "vp9" && decode.Hardware);
     }
 
     [Fact]
@@ -184,10 +199,10 @@ public class HardwareDecodeClaimsTests
         Assert.False(limits.IsEmpty);
         Assert.Equal(new HardwareDecodeLimits(Vc1: new(1920, 1080), Mpeg2: new(1920, 1080)), limits);
         var claims = ConsoleEvidence.ForHardware(limits);
-        Assert.Equal(new[] { "vc1", "mpeg2video", "av1", "mpeg4" }, claims.VideoCodecs);
+        Assert.Equal(SoftwareDecodePolicy.FfmpegVideoCodecs.Order(), claims.VideoCodecs.Order());
         Assert.Equal(new[] { ("vc1", "8", 1920, 1080), ("mpeg2video", "8", 1920, 1080) },
             claims.VideoDecode.Where(decode => decode.Hardware).Select(Shape));
-        Assert.DoesNotContain(ConsoleEvidence.Default.VideoCodecs, codec => codec is "vc1" or "mpeg2video");
+        Assert.DoesNotContain(ConsoleEvidence.Default.VideoDecode, decode => decode.Codec is "vc1" or "mpeg2video" && decode.Hardware);
         var wrongFormat = HardwareDecodeLimits.FromAcceptedSizes(
         [
             (HardwareDecodeLimits.Vc1Profile, HardwareDecodeLimits.P010, 1920, 1080),
@@ -203,8 +218,7 @@ public class HardwareDecodeClaimsTests
     {
         var limits = codec == "vc1" ? Series with { Vc1 = new(1920, 1080) } : Series with { Mpeg2 = new(1920, 1080) };
         var claims = ConsoleEvidence.ForHardware(limits);
-        var decode = Assert.Single(claims.VideoDecode, entry => entry.Codec == codec);
-        Assert.True(decode.Hardware);
+        var decode = Assert.Single(claims.VideoDecode, entry => entry.Codec == codec && entry.Hardware);
         Assert.Equal(new[] { 8 }, decode.BitDepths);
         Assert.Equal((1920, 1080), (decode.MaxWidth, decode.MaxHeight));
         var start = PlaybackStartBuilder.Build("file", "profile", "attempt", null, PlaybackSelection.Auto, claims, PlaybackTestSupport.Identity);
@@ -299,8 +313,8 @@ public class HardwareDecodeClaimsTests
 
         var vp9 = PlaybackRoutePolicyTests.Plan("original_http", "vp9", "opus");
         var request = PlaybackReplan.ForFailure(start, vp9, "attempt", [], 1, 0, failure, PlaybackRoutePolicy.Decide(vp9, false));
-        Assert.Equal(new[] { "h264", "hevc", "av1", "mpeg4" }, request.ClientCapabilities.CodecsVideo);
-        Assert.Equal(new[] { "h264", "hevc", "av1", "mpeg4" }, request.ClientCapabilities.VideoDecode.Select(decode => decode.Codec));
+        Assert.Equal(SoftwareDecodePolicy.FfmpegVideoCodecs.Where(codec => codec != "vp9").Order(), request.ClientCapabilities.CodecsVideo.Order());
+        Assert.DoesNotContain(request.ClientCapabilities.VideoDecode, decode => decode.Codec == "vp9");
         Assert.All(request.ClientPlaybackContext.Deliveries.Values, delivery => Assert.DoesNotContain("vp9", delivery.VideoCodecs));
         Assert.DoesNotContain("opus", request.ClientCapabilities.CodecsAudio);
         Assert.Contains(PlaybackProtocol.SoftwareVideoDecodeFeature, request.ClientFeatures);
@@ -308,7 +322,7 @@ public class HardwareDecodeClaimsTests
         // HEVC also plays through Windows' own sources, so an FFmpeg audio-fallback failure keeps it.
         var hevc = PlaybackRoutePolicyTests.Plan("original_http", "hevc", "dts");
         request = PlaybackReplan.ForFailure(start, hevc, "attempt", [], 1, 0, failure, PlaybackRoutePolicy.Decide(hevc, false));
-        Assert.Equal(new[] { "h264", "hevc", "vp9", "av1", "mpeg4" }, request.ClientCapabilities.CodecsVideo);
+        Assert.Equal(SoftwareDecodePolicy.FfmpegVideoCodecs.Order(), request.ClientCapabilities.CodecsVideo.Order());
         Assert.DoesNotContain("dts", request.ClientCapabilities.CodecsAudio);
         // The admitted request stays as it was for Retry.
         Assert.Contains("vp9", start.ClientCapabilities.CodecsVideo);
@@ -319,7 +333,10 @@ public class HardwareDecodeClaimsTests
     {
         Assert.Equal(new[] { "h264", "hevc", "vp9", "vc1", "mpeg2video" }, SoftwareDecodePolicy.SystemVideoCodecs);
         Assert.Equal(new[] { "vp9", "vc1", "mpeg2video" }, SoftwareDecodePolicy.DemuxedVideoCodecs);
-        Assert.Equal(new[] { "av1", "mpeg4" }, SoftwareDecodePolicy.VideoCodecs);
+        Assert.DoesNotContain(SoftwareDecodePolicy.VideoCodecs, SoftwareDecodePolicy.SystemVideoCodecs.Contains);
+        Assert.All(SoftwareDecodePolicy.SystemVideoCodecs, codec => Assert.Contains(codec, SoftwareDecodePolicy.FfmpegVideoCodecs));
+        Assert.Equal(SoftwareDecodePolicy.FfmpegVideoCodecs.Except(SoftwareDecodePolicy.SystemVideoCodecs).Order(),
+            SoftwareDecodePolicy.VideoCodecs.Order());
         Assert.Equal("vp9", SoftwareDecodePolicy.NormalizeCodec("VP09"));
         Assert.Equal("vp9", SoftwareDecodePolicy.NormalizeCodec(" vp9 "));
     }

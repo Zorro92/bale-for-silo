@@ -73,7 +73,8 @@ public class PlaybackCapabilitiesTests
     public void RaisedBoundAddsA4K30Av1EntryBesideTheMeasured1080p60OneAndNeverMutatesTheDefault()
     {
         var claims = ConsoleEvidence.BuildVideoDecode(3840, 2160);
-        Assert.Equal(new[] { "h264", "hevc", "av1", "av1", "mpeg4" }, claims.Select(decode => decode.Codec));
+        Assert.Equal(new[] { "h264", "hevc", "av1", "av1" },
+            claims.Where(decode => decode.Hardware || decode.Codec == "av1").Select(decode => decode.Codec));
         Assert.Equal(new[] { (1920, 1080, 60.0), (3840, 2160, 30.0) },
             claims.Where(decode => decode.Codec == "av1").Select(decode => (decode.MaxWidth ?? 0, decode.MaxHeight ?? 0, decode.MaxFrameRate ?? 0)));
         Assert.All(claims.Where(decode => decode.Codec == "av1"), av1 =>

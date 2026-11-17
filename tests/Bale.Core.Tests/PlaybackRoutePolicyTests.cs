@@ -7,11 +7,15 @@ namespace Bale.Core.Tests;
 public class PlaybackRoutePolicyTests
 {
     [Fact]
-    public void OwnerAllowlistContainsAv1AndMpeg4AndAllSoftwareClaimsObeyIt()
+    public void EverySoftwareClaimIsAnFfmpegDecoderAndOnlyAv1IsBounded()
     {
-        Assert.Equal(new[] { "av1", "mpeg4" }, SoftwareDecodePolicy.VideoCodecs);
+        // Owner, 2026-11-17: declare everything the FFmpeg build decodes, as AetherEngine does.
+        Assert.Contains("av1", SoftwareDecodePolicy.VideoCodecs);
+        Assert.Contains("mpeg4", SoftwareDecodePolicy.VideoCodecs);
         Assert.All(ConsoleEvidence.Default.VideoDecode.Where(decode => !decode.Hardware),
-            decode => Assert.Contains(decode.Codec, SoftwareDecodePolicy.VideoCodecs));
+            decode => Assert.Contains(decode.Codec, SoftwareDecodePolicy.FfmpegVideoCodecs));
+        Assert.All(ConsoleEvidence.Default.VideoDecode.Where(decode => !decode.Hardware && decode.Codec != "av1"),
+            decode => Assert.Null(decode.MaxHeight));
         var av1 = Assert.Single(ConsoleEvidence.Default.VideoDecode, decode => decode.Codec == "av1");
         Assert.Equal("dav1d", av1.DecoderName);
         Assert.Equal(new[] { 8, 10 }, av1.BitDepths);
@@ -25,12 +29,10 @@ public class PlaybackRoutePolicyTests
     }
 
     [Theory]
-    [InlineData("h264")]
-    [InlineData("hevc")]
-    [InlineData("vp9")]
-    [InlineData("vc1")]
-    [InlineData("mpeg2video")]
-    public void BuilderRejectsAnyOtherSoftwareVideoClaim(string codec)
+    [InlineData("rv40")]
+    [InlineData("cinepak")]
+    [InlineData("hap")]
+    public void BuilderRejectsASoftwareClaimOutsideTheBundledDecoders(string codec)
     {
         var device = ConsoleEvidence.Default with { VideoDecode = [new(codec, "invalid", [], [], [8], 1920, 1080, 30, null, false)] };
         Assert.Throws<ArgumentException>(() => PlaybackStartBuilder.Build("file", "profile", "attempt", null,
@@ -289,6 +291,78 @@ public class PlaybackRoutePolicyTests
         Assert.Throws<InvalidDataException>(() => PlaybackRoutePolicy.AudioTrackIndex(0, [-1]));
         Assert.Throws<InvalidDataException>(() => PlaybackRoutePolicy.AudioTrackIndex(1, [1, 7], expectedAudioCount: 3));
         Assert.Equal(1, PlaybackRoutePolicy.AudioTrackIndex(0, [7, 1, 4], expectedAudioCount: 3));
+    }
+
+    // What a Series console's decoder probe reports (HardwareDecodeClaimsTests).
+    private static readonly IReadOnlyList<VideoDecodeCapability> SeriesHardware = ConsoleEvidence.BuildVideoDecode(
+        new HardwareDecodeLimits(H264: new(1920, 1080), HevcMain: new(7680, 4320), HevcMain10: new(7680, 4320),
+            Vp9Profile0: new(3840, 2160), Vp9Profile2: new(3840, 2160), Vc1: new(1920, 1080), Mpeg2: new(1920, 1080)))
+        .Where(decode => decode.Hardware).ToArray();
+
+    [Theory]
+    // Owner, 2026-11-17: the console takes what its decoder can; FFmpeg decodes the rest in software.
+    [InlineData("h264", "high", 8, 1920, 1080, false)]
+    [InlineData("h264", "high 10", 10, 1920, 1080, true)]
+    [InlineData("h264", "high", 8, 3840, 2160, true)]
+    [InlineData("h264", "high 4:4:4 predictive", 8, 1920, 1080, true)]
+    [InlineData("hevc", "main 10", 10, 3840, 2160, false)]
+    [InlineData("hevc", "main", 8, 7680, 4320, false)]
+    [InlineData("hevc", "rext", 10, 1920, 1080, true)]
+    [InlineData("hevc", "main 4:2:2 10", 10, 1920, 1080, true)]
+    [InlineData("hevc", "main 12", 12, 1920, 1080, true)]
+    [InlineData("vp9", "profile 0", 8, 3840, 2160, false)]
+    [InlineData("vp9", "profile 2", 10, 3840, 2160, false)]
+    [InlineData("vp9", "profile 1", 8, 1920, 1080, true)]
+    [InlineData("vc1", "advanced", 8, 1920, 1080, false)]
+    [InlineData("mpeg2video", "main", 8, 1920, 1080, false)]
+    [InlineData("wmv3", "main", 8, 1280, 720, true)]
+    [InlineData("vp8", null, 8, 1920, 1080, true)]
+    [InlineData("msmpeg4v3", null, 8, 640, 480, true)]
+    [InlineData("hevc", null, null, null, null, false)]
+    public void HardwareCodecsTheConsoleCannotTakeDecodeInFfmpeg(string codec, string? profile, int? depth, int? width, int? height,
+        bool software)
+    {
+        var plan = Plan("original_http", codec, "aac");
+        plan.Source!.VideoProfile = profile;
+        plan.Source.BitDepth = depth;
+        plan.Source.Width = width;
+        plan.Source.Height = height;
+        var route = PlaybackRoutePolicy.Decide(plan, false, hardwareDecode: SeriesHardware);
+        Assert.True(route.UseFfmpeg);
+        Assert.Equal(software, route.SoftwareVideo);
+        // An FFmpeg software stream is what that route allows; a hardware route stays on the system decoder.
+        Assert.Equal(software, SoftwareDecodePolicy.VideoDecodersAllowed(route.SoftwareVideo, [(codec, true, false)], route.VideoCodec));
+        Assert.Equal(!software, SoftwareDecodePolicy.VideoDecodersAllowed(route.SoftwareVideo, [(codec, false, true)], route.VideoCodec));
+    }
+
+    [Fact]
+    public void WithoutTheProbeEntriesEveryHardwareCodecStaysInHardwareAsBefore()
+    {
+        var plan = Plan("original_http", "h264", "aac");
+        plan.Source!.BitDepth = 10;
+        plan.Source.Width = 3840;
+        Assert.False(PlaybackRoutePolicy.Decide(plan, false).SoftwareVideo);
+        // A non-hardware profile still goes to FFmpeg: no entry list says the hardware takes it.
+        plan.Source.VideoProfile = "high 10";
+        Assert.True(PlaybackRoutePolicy.Decide(plan, false).SoftwareVideo);
+    }
+
+    [Fact]
+    public void AFailedSoftwareRouteForAHardwareCodecWithdrawsItsSoftwareFallbackOnly()
+    {
+        var device = ConsoleEvidence.ForHardware(new HardwareDecodeLimits(H264: new(1920, 1080), HevcMain: new(3840, 2160)));
+        var start = PlaybackStartBuilder.Build("file", "profile", "attempt", null, PlaybackSelection.Auto, device, PlaybackTestSupport.Identity);
+        var plan = Plan("original_http", "h264", "aac");
+        plan.Source!.VideoProfile = "high 10";
+        plan.Source.BitDepth = 10;
+        var route = PlaybackRoutePolicy.Decide(plan, false, hardwareDecode: device.VideoDecode);
+        Assert.True(route.SoftwareVideo);
+        var failure = new PlaybackFailureV3("decoder_failure", "open failed", "MediaPlayer");
+        var replan = PlaybackReplan.ForFailure(start, plan, "attempt", [], 1, 0, failure, route);
+        // The hardware H.264 entry stays (8-bit 1080p), so the server transcodes the 10-bit file instead.
+        Assert.Contains(replan.ClientCapabilities.VideoDecode, decode => decode.Codec == "h264" && decode.Hardware);
+        Assert.DoesNotContain(replan.ClientCapabilities.VideoDecode, decode => !decode.Hardware);
+        Assert.Contains("h264", replan.ClientCapabilities.CodecsVideo);
     }
 
     internal static PlaybackPlan Plan(string delivery, string video, string audio) => new()

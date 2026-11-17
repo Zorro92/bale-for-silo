@@ -50,6 +50,8 @@ pub struct PlaybackSource {
     pub width: Option<i64>,
     pub height: Option<i64>,
     pub bit_depth: Option<i64>,
+    /// ffprobe's profile name ("high 10", "main 4:2:2 10", "profile 1"), lower-cased by the server.
+    pub video_profile: Option<String>,
     pub dynamic_range: Option<String>,
     pub dolby_vision_profile: Option<i64>,
     pub dv_bl_compat_id: Option<i64>,

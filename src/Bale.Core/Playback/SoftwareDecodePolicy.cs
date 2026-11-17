@@ -12,8 +12,17 @@ public static class SoftwareDecodePolicy
     private static readonly SoftwareDecodeLists Lists =
         BaleCoreNative.Call("software_decode.lists", (string?)null, BaleCoreJson.Default.String, BaleCoreJson.Default.SoftwareDecodeLists);
 
-    /// <summary>The owner-maintained software video allowlist (AV1, MPEG-4 Part 2). Add none without the owner.</summary>
+    /// <summary>Software-only video codecs: those no console hardware decoder takes (AV1, MPEG-4 Part 2, VP8, WMV, …).</summary>
     public static IReadOnlyList<string> VideoCodecs { get; } = Array.AsReadOnly(Lists.VideoCodecs);
+
+    /// <summary>
+    /// Every video codec Bale declares from its FFmpeg build (owner, 2026-11-17): hardware codecs decode
+    /// in FFmpeg when the console's decoder cannot take the file.
+    /// </summary>
+    public static IReadOnlyList<string> FfmpegVideoCodecs { get; } = Array.AsReadOnly(Lists.FfmpegVideoCodecs);
+
+    /// <summary>What the server may package (progressive fMP4, HLS) for Bale: the codecs verified in packages.</summary>
+    public static IReadOnlyList<string> PackagedVideoCodecs { get; } = Array.AsReadOnly(Lists.PackagedVideoCodecs);
 
     public static IReadOnlyList<string> FfmpegOnlyContainers { get; } = Array.AsReadOnly(Lists.FfmpegOnlyContainers);
 

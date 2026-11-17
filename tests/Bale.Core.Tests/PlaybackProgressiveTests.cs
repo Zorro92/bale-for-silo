@@ -63,10 +63,11 @@ public class PlaybackProgressiveTests
         Assert.Equal(new[] { "mp4" }, Strings(progressive.GetProperty("containers")));
         var video = Strings(progressive.GetProperty("video_codecs")).ToArray();
         var originalVideo = Strings(deliveries.GetProperty("original_http").GetProperty("video_codecs")).ToArray();
-        Assert.Equal(new[] { "h264", "hevc", "vp9", "vc1", "mpeg2video", "av1", "mpeg4" }, originalVideo);
-        Assert.Equal(originalVideo, video);
+        Assert.Equal(SoftwareDecodePolicy.FfmpegVideoCodecs.Order(), originalVideo.Order());
+        // Packages carry only the codecs verified there; the newly declared ones stay on the original.
+        Assert.Equal(new[] { "h264", "hevc", "vp9", "vc1", "mpeg2video", "av1", "mpeg4" }.Order(), video.Order());
         // HLS through FFmpeg: the same codecs except AV1, which waits for the owner's GPU decoder.
-        Assert.Equal(originalVideo.Where(codec => codec != "av1"), Strings(deliveries.GetProperty("hls").GetProperty("video_codecs")));
+        Assert.Equal(video.Where(codec => codec != "av1").Order(), Strings(deliveries.GetProperty("hls").GetProperty("video_codecs")).Order());
         // TrueHD, DTS and PCM are not plain MP4 copies: the server converts them to AAC instead.
         var audio = Strings(progressive.GetProperty("audio_decode_codecs")).ToArray();
         Assert.Equal(new[] { "aac", "ac3", "eac3", "mp3", "flac", "opus", "alac" }, audio);

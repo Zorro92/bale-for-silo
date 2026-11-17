@@ -60,7 +60,8 @@ public class SoftwareVideoSupportTests
     [InlineData(true, " AV1 ", true, false, true)]
     [InlineData(true, "av1", false, true, false)] // Software route opened on the system decoder.
     [InlineData(true, "av1", false, false, false)] // FFmpeg D3D11 or unknown engine.
-    [InlineData(true, "hevc", true, false, false)] // Only allowlisted codecs may software-decode.
+    [InlineData(true, "hevc", true, false, true)] // A hardware codec the console cannot take decodes in FFmpeg (2026-11-17).
+    [InlineData(true, "rv40", true, false, false)] // Only the bundled FFmpeg decoders Bale declares.
     [InlineData(true, null, true, false, false)]
     [InlineData(false, "hevc", false, true, true)]
     [InlineData(false, "hevc", true, false, false)] // ForceSystemDecoder fell back to FFmpeg.

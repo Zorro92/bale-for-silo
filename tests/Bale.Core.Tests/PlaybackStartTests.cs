@@ -196,8 +196,8 @@ public class PlaybackStartTests
         await client.Playback.StartAsync(Start(), new Installation());
         using var json = JsonDocument.Parse(stub.RequestBodies[1]!);
         var caps = json.RootElement.GetProperty("client_capabilities");
-        Assert.Equal(new[] { "mp4", "mkv", "avi" }, Strings(caps.GetProperty("containers")));
-        Assert.Equal(new[] { "h264", "hevc", "av1", "mpeg4" }, Strings(caps.GetProperty("codecs_video")));
+        Assert.Equal(ConsoleEvidence.Default.Containers, Strings(caps.GetProperty("containers")));
+        Assert.Equal(SoftwareDecodePolicy.FfmpegVideoCodecs, Strings(caps.GetProperty("codecs_video")));
         Assert.Equal(SoftwareDecodePolicy.SystemAudioCodecs.Concat(SoftwareDecodePolicy.AudioCodecs), Strings(caps.GetProperty("codecs_audio")));
         Assert.Contains("pcm_s24le", Strings(caps.GetProperty("codecs_audio")));
         Assert.Contains("mp2", Strings(caps.GetProperty("codecs_audio")));
@@ -206,7 +206,7 @@ public class PlaybackStartTests
         Assert.Equal("platform_attested", caps.GetProperty("video_evidence").GetString());
         Assert.Empty(caps.GetProperty("codecs_video_hardware").EnumerateArray());
         var videoDecode = caps.GetProperty("video_decode").EnumerateArray().ToArray();
-        Assert.Equal(new[] { "h264", "hevc", "av1", "mpeg4" }, videoDecode.Select(entry => entry.GetProperty("codec").GetString()));
+        Assert.Equal(new[] { "h264", "hevc", "av1" }, videoDecode.Take(3).Select(entry => entry.GetProperty("codec").GetString()));
         Assert.Equal(new[] { 8 }, videoDecode[0].GetProperty("bit_depths").EnumerateArray().Select(value => value.GetInt32()));
         Assert.Equal(new[] { 8, 10 }, videoDecode[1].GetProperty("bit_depths").EnumerateArray().Select(value => value.GetInt32()));
         Assert.All(videoDecode.Take(2), entry =>
@@ -241,11 +241,14 @@ public class PlaybackStartTests
         foreach (var property in deliveries.EnumerateObject())
         {
             var delivery = property.Value;
+            // The original declares everything FFmpeg decodes (owner, 2026-11-17); FFmpeg reads both packages but they
+            // carry only the codecs verified there, AV1 kept off HLS (owner, 2026-11-16).
             Assert.Equal(property.Name switch
                 {
-                    // FFmpeg reads both packages: the original's codecs, AV1 kept off HLS (owner, 2026-11-16).
-                    "hls" => new[] { "h264", "hevc", "mpeg4" },
-                    _ => new[] { "h264", "hevc", "av1", "mpeg4" },
+                    "original_http" => SoftwareDecodePolicy.FfmpegVideoCodecs.ToArray(),
+                    "hls" => SoftwareDecodePolicy.FfmpegVideoCodecs.Where(codec => codec != "av1"
+                        && SoftwareDecodePolicy.PackagedVideoCodecs.Contains(codec)).ToArray(),
+                    _ => SoftwareDecodePolicy.FfmpegVideoCodecs.Where(SoftwareDecodePolicy.PackagedVideoCodecs.Contains).ToArray(),
                 },
                 Strings(delivery.GetProperty("video_codecs")));
             Assert.Equal(property.Name switch

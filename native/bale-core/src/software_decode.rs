@@ -5,10 +5,69 @@ use serde::{Deserialize, Serialize};
 
 use crate::dotnet;
 
-// The project owner maintains this allowlist. Add no other software video codec without them.
-pub const VIDEO_CODECS: &[&str] = &["av1", "mpeg4"];
+// Every video codec the bundled FFmpeg build decodes in software that Bale declares (owner,
+// 2026-11-17: as AetherEngine does, declare everything FFmpeg decodes; Apple's aetherOriginalHTTP
+// list plus MPEG-1, H.263, Theora, MJPEG, ProRes and DNxHD). The build disables no decoders. Hardware
+// codecs (SYSTEM_VIDEO_CODECS) fall back to FFmpeg software when the console's decoder cannot take
+// the file (route::hardware_admits). Names are ffprobe's, as silo-server compares them.
+pub const FFMPEG_VIDEO_CODECS: &[&str] = &[
+    "h264",
+    "hevc",
+    "av1",
+    "vp9",
+    "vp8",
+    "mpeg4",
+    "mpeg2video",
+    "mpeg1video",
+    "vc1",
+    "msmpeg4v1",
+    "msmpeg4v2",
+    "msmpeg4v3",
+    "wmv1",
+    "wmv2",
+    "wmv3",
+    "h263",
+    "theora",
+    "qtrle",
+    "mjpeg",
+    "prores",
+    "dnxhd",
+];
 
-pub const FFMPEG_ONLY_CONTAINERS: &[&str] = &["avi"];
+// Software-only video codecs: FFMPEG_VIDEO_CODECS that no console hardware decoder takes. Filters
+// that withdraw "software video" drop these from the flat lists (hardware codecs keep their
+// hardware entries and lose only their software ones).
+pub const VIDEO_CODECS: &[&str] = &[
+    "av1",
+    "mpeg4",
+    "vp8",
+    "mpeg1video",
+    "msmpeg4v1",
+    "msmpeg4v2",
+    "msmpeg4v3",
+    "wmv1",
+    "wmv2",
+    "wmv3",
+    "h263",
+    "theora",
+    "qtrle",
+    "mjpeg",
+    "prores",
+    "dnxhd",
+];
+
+// What silo-server may package (progressive fMP4, HLS) for Bale: the codecs verified in packages
+// before 2026-11-17. The newly declared software codecs stay on the original file, as Apple keeps
+// packaged routes on their native vocabulary.
+pub const PACKAGED_VIDEO_CODECS: &[&str] =
+    &["h264", "hevc", "av1", "vp9", "vc1", "mpeg2video", "mpeg4"];
+
+// Containers only FFmpeg's demuxer opens (everything but MP4/MKV, which Windows also reads). Spellings
+// follow silo-server's scanner (Apple's aetherVideoContainers): MPEG program streams are "mpeg".
+pub const FFMPEG_ONLY_CONTAINERS: &[&str] = &[
+    "avi", "mov", "m4v", "mpegts", "ts", "m2ts", "mts", "3gp", "3g2", "mpeg", "vob", "ogg", "webm",
+    "flv", "asf",
+];
 
 // Codecs the system (hardware) decoders may take. A claim for one still needs the fixed
 // baseline or the console's decoder probe (ConsoleEvidence.ForHardware).
@@ -54,6 +113,14 @@ pub const AUDIO_CODECS: &[&str] = &[
     "pcm_u8",
     "pcm_bluray",
     "pcm_dvd",
+    // Scanner aliases (Apple's aetherOriginalHTTPAudioCodecs) and Windows Media audio, all FFmpeg decodes.
+    "mlp",
+    "dca",
+    "dts-hd",
+    "dtshd",
+    "wmav1",
+    "wmav2",
+    "wmapro",
 ];
 
 /// `PlaybackProtocol.SoftwareVideoDecodeFeature`.
@@ -70,6 +137,8 @@ pub fn contains(list: &[&str], value: Option<&str>) -> bool {
 #[derive(Serialize)]
 pub struct Lists {
     video_codecs: &'static [&'static str],
+    ffmpeg_video_codecs: &'static [&'static str],
+    packaged_video_codecs: &'static [&'static str],
     ffmpeg_only_containers: &'static [&'static str],
     system_video_codecs: &'static [&'static str],
     demuxed_video_codecs: &'static [&'static str],
@@ -80,6 +149,8 @@ pub struct Lists {
 pub fn lists() -> Lists {
     Lists {
         video_codecs: VIDEO_CODECS,
+        ffmpeg_video_codecs: FFMPEG_VIDEO_CODECS,
+        packaged_video_codecs: PACKAGED_VIDEO_CODECS,
         ffmpeg_only_containers: FFMPEG_ONLY_CONTAINERS,
         system_video_codecs: SYSTEM_VIDEO_CODECS,
         demuxed_video_codecs: DEMUXED_VIDEO_CODECS,
@@ -188,10 +259,18 @@ pub fn filter_device(args: FilterDeviceArgs) -> FilteredDevice {
             containers: device.containers,
             drop_ffmpeg_executors: false,
         };
-    let without_software = |device| {
+    // Without software video a flat codec stays only while a hardware entry still names it: the
+    // software fallbacks (VP9/VC-1/MPEG-2 on a failed probe, every FFmpeg-only codec) go with it.
+    let without_software = |device: DeviceLists| {
+        let hardware: Vec<String> = device
+            .video_decode
+            .iter()
+            .filter(|d| d.hardware)
+            .map(|d| d.codec.clone())
+            .collect();
         filter(
             device,
-            &|c| !VIDEO_CODECS.contains(&c),
+            &|c| !VIDEO_CODECS.contains(&c) && hardware.iter().any(|h| h == c),
             &|d: &crate::models::VideoDecode| d.hardware,
         )
     };
@@ -258,7 +337,7 @@ pub fn video_decoders_allowed(args: VideoDecodersArgs) -> bool {
             return stream.system_decoder;
         }
         normalize_codec(stream.codec.as_deref()).is_some_and(|codec| {
-            VIDEO_CODECS.contains(&codec.as_str())
+            FFMPEG_VIDEO_CODECS.contains(&codec.as_str())
                 && stream.software_decoder
                 && args
                     .software_codec
@@ -339,7 +418,9 @@ pub fn without_failed_fallbacks(args: FailedFallbacksArgs) -> FilteredStart {
         .video_decode
         .iter()
         .enumerate()
-        .filter(|(_, d)| keep_video(&d.codec))
+        // A failed software route withdraws every software entry, also a hardware codec's software
+        // fallback (10-bit H.264, HEVC 4:2:2): its hardware entry alone cannot admit the file again.
+        .filter(|(_, d)| keep_video(&d.codec) && !(route.software_video && !d.hardware))
         .map(|(i, _)| i)
         .collect();
     let software_decode_left = video_decode

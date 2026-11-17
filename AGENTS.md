@@ -213,17 +213,20 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   height > 1080), using route dimensions from the source for original delivery or the effective
   recipe with source fallback otherwise. Unknown size leaves delay unset; hardware/system video
   gets none of these keys. This tuning does not expand the measured software-video capability bounds.
-- **Changing (owner, 2026-11-17):** like AetherEngine, Bale will declare everything its FFmpeg build can
-  decode, relying on the bounded replan when the console can't keep up. Until the Apple-parity work
-  replaces it, the allowlist below is still the implemented policy.
-- `SoftwareDecodePolicy.VideoCodecs` is the project owner's explicit **AV1 and MPEG-4 Part 2** software video
-  allowlist. Add nothing without them. Other unsupported video goes to server transcode, never
-  FFmpeg software or D3D11. Measured AV1 evidence: 8/10-bit, **1080p60** (0.1.230 at 24 fps,
+- **Software video (owner, 2026-11-17, as AetherEngine):** Bale declares every video codec its FFmpeg build
+  decodes (`SoftwareDecodePolicy.FfmpegVideoCodecs`): an unbounded software `video_decode` entry each, except
+  AV1, which keeps its measured bound below until rav1g. The route (`route::hardware_admits`) plays a file on
+  the console's hardware decoder when a probed hardware entry takes its bit depth and size and the profile is
+  4:2:0 H.264 up to High / HEVC Main(10) / VP9 profile 0/2; otherwise FFmpeg decodes it in software. A failed
+  software route withdraws every software entry on the single replan, so the server transcodes. Packages
+  (progressive, HLS) still carry only the codecs verified there (`PackagedVideoCodecs`). Auto's display
+  matching counts only hardware and bounded entries, so it never prefers a software 4K decode.
+  `SoftwareDecodePolicy.VideoCodecs` now means the software-only codecs (no hardware decoder). Video
+  outside the FFmpeg list goes to server transcode. Measured AV1 evidence: 8/10-bit, **1080p60** (0.1.230 at 24 fps,
   0.1.439 at 59.94 fps). Production claims no 4K; the debug 2160 bound adds a separate 4K **30** fps entry.
-  MPEG-4 Part 2 (`mpeg4`, Simple / Advanced Simple Profile) uses FFmpegInteropX's ordinary software
-  output, never AV1 zero-copy or D3D11VA: 8-bit, **1080p30**, original_http only. Owner's Series X
-  measurements: 30 s each, 0 late frames at 512×384 (0.06 cores), 720×480 (0.08), 1920×1080 (0.30).
-  No 60 fps evidence, so do not claim 60. Software video remains limited to the measured Series/AVX2
+  MPEG-4 Part 2 and every other non-AV1 software codec use FFmpegInteropX's ordinary software output,
+  never AV1 zero-copy or D3D11VA. MPEG-4 measurements (owner's Series X, 30 s each, 0 late frames):
+  512×384 (0.06 cores), 720×480 (0.08), 1920×1080 (0.30); its claim is unbounded since 2026-11-17. Software video remains limited to the measured Series/AVX2
   devices; MPEG-4 does not depend on AV1 zero-copy registration. AVI is an FFmpeg-only original
   container; neither AVI nor MPEG-4 is offered over progressive/HLS. `WithoutFallbacks` withdraws
   both; a failed FFmpeg software mount withdraws software codecs and AVI on the single replan.
