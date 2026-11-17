@@ -422,8 +422,10 @@ jobs:
           Export-Certificate -Cert $cert -FilePath out\Bale.cer | Out-Null
 
       - name: Build MSIX
+        id: build
         run: >
           msbuild src/Bale.Xbox/Bale.Xbox.csproj /restore /m /v:minimal
+          "/flp:Verbosity=normal;LogFile=${{ github.workspace }}\msbuild.log"
           /p:Configuration=Release /p:Platform=x64
           /p:BaleDebugServer=${{ matrix.debug_server }}
           /p:GenerateAppxPackageOnBuild=true
@@ -431,10 +433,26 @@ jobs:
           /p:AppxPackageSigningEnabled=true
           /p:PackageCertificateThumbprint=${{ steps.cert.outputs.thumbprint }}
 
-      # A build that fails without an error line (a task or the XAML compiler stopping silently) is
+      # Owner, 2026-11-17: never miss a diagnostic. The console stays minimal; the normal-verbosity file
+      # log's errors and warnings are printed after every build, and its tail when the build failed.
+      - name: MSIX build diagnostics
+        id: build_diagnostics
+        if: always() && steps.cert.outcome == 'success'
+        shell: pwsh
+        run: |
+          $log = Join-Path $env:GITHUB_WORKSPACE 'msbuild.log'
+          if (-not (Test-Path $log)) { 'No MSBuild log was written.'; exit 0 }
+          $lines = Get-Content $log
+          $found = $lines | Select-String -Pattern ': (error|warning) [A-Z]+[0-9]+' | ForEach-Object { $_.Line.Trim() } | Sort-Object -Unique
+          "Errors and warnings: $($found.Count)"
+          $found | Select-Object -First 100
+          "errors=$(@($found | Where-Object { $_ -match ': error ' }).Count)" >> $env:GITHUB_OUTPUT
+          if ('${{ steps.build.outcome }}' -eq 'failure') { '--- log tail ---'; $lines | Select-Object -Last 40 }
+
+      # A failed build whose log names no error (a task or the XAML compiler stopping silently) is
       # rebuilt in one process at normal verbosity; only its diagnostic lines and tail are printed.
       - name: Diagnose a silent MSIX build failure
-        if: failure() && steps.cert.outcome == 'success'
+        if: failure() && steps.cert.outcome == 'success' && steps.build_diagnostics.outputs.errors == '0'
         shell: pwsh
         run: |
           $out = msbuild src/Bale.Xbox/Bale.Xbox.csproj /m:1 /nodeReuse:false /v:normal `

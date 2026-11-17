@@ -86,7 +86,9 @@ Warnings are errors in every project (Directory.Build.props), the Windows Xbox b
 new CsWinRT/nullability warning turns CI red instead of piling up in the log. Run
 `scripts/install-git-hooks.sh` once per clone: the pre-push hook rebuilds the Rust core and runs the
 .NET tests, and stops the push on any failure or warning that Linux can see (`--no-verify` skips it).
-XAML/CsWinRT warnings only show in the Windows build.
+XAML/CsWinRT warnings only show in the Windows build. CI prints every error and warning from a normal-verbosity
+file log after each MSIX build (the minimal console once hid a CsWinRT error entirely), and a failed build whose
+log names no error is rebuilt single-process at normal verbosity.
 CI skips Rust tests when GPU/libass/toolchain/CI inputs match the last successful push and reuses the input/rustc/target-keyed DLL plus libass notices; PRs and manual runs always test Rust.
 Bale is still in its build/debug phase, so pushes build only the debug-server package. Don't
 dispatch CI with `production=true` (the production package) unless the owner asks for it; debug-only
