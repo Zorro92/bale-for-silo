@@ -3,8 +3,9 @@ using System.Globalization;
 namespace Bale.Core.Playback;
 
 /// <summary>
-/// StreamRequest.swift's header-authenticated API-local media boundary. Bale never negotiates
-/// authorized_media_origins_v1, so even same-origin absolute plan URLs are refused.
+/// StreamRequest.swift's header-authenticated API-local media boundary. Bale declares
+/// header_authenticated_media_v1 but never negotiates authorized_media_origins_v1, so the server keeps every
+/// media URL API-relative and even same-origin absolute plan URLs are refused.
 /// </summary>
 public static class PlaybackMediaUrl
 {

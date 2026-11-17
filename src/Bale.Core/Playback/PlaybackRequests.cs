@@ -27,6 +27,14 @@ public static class PlaybackProtocol
     public const string ClientDolbyVision8BaseLayerReason = "client_dv8_base_layer";
     /// <summary>External SubRip arrives as the stored .srt instead of the server's WebVTT conversion.</summary>
     public const string SubripSidecarFeature = "subrip_sidecar_v1";
+    /// <summary>
+    /// silo-server protocol_v3.go FeatureHeaderAuthenticatedMediaV3 (attempt-sticky): plan media, HLS, subtitle and
+    /// font URLs carry no signed credential, and the client sends its own Authorization on every media request.
+    /// Bale already does: PlaybackMedia fetches every byte through the authenticated client (the Rust transports
+    /// with NativeHeaderRefresh), and PlaybackMediaUrl accepts only API-relative media routes. Without it the server
+    /// may answer with signed absolute proxy URLs, which PlaybackMediaUrl refuses. ApplePlaybackV3Capabilities.features.
+    /// </summary>
+    public const string HeaderAuthenticatedMediaFeature = "header_authenticated_media_v1";
 
     /// <summary>
     /// Start-time features that depend on what the server offers. silo-server protocol_v3.go makes
@@ -49,7 +57,7 @@ public static class PlaybackProtocol
         var features = new List<string>
         {
             "playback_plan_v3", ClientVideoTransformationsFeature, "device_quirks_v1",
-            "seek_reanchor_v1", "direct_stream_resume_v1",
+            "seek_reanchor_v1", "direct_stream_resume_v1", HeaderAuthenticatedMediaFeature,
         };
         if (context.Deliveries.TryGetValue("original_http", out var original) && original.Subtitles.NativeEmbedded.Count > 0)
             features.Add("embedded_subtitles_v1");
