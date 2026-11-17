@@ -22,7 +22,6 @@ public sealed partial class PlayerPage
     private static string RouteText(Mount media)
     {
         var route = media.Route;
-        if (media.Adaptive is not null) return "Windows HLS (AdaptiveMediaSource)";
         return route.UseFfmpeg
             ? "ffmpeg " + (route.ConsoleToneMap ? "d3d11va + console tone map" : route.DolbyVision7BaseLayer ? "DV7 base layer"
                 : route.SoftwareVideo ? "software decode" : route.DolbyVisionBaseLayer ? "system decoder, DV8 base layer" : "system decoder passthrough")
@@ -74,14 +73,6 @@ public sealed partial class PlayerPage
                 var pointer = WinRT.MarshalInterface<IRandomAccessStream>.FromManaged(random);
                 owned.Add(pointer);
                 report += await RunEngineAsync(() => host.RunStream(pointer, mime, seconds, frameRate, present));
-            }
-            else if (media.Adaptive is { } adaptiveSource)
-            {
-                // Windows' HLS source (Bale supplies every download through DownloadRequested). The WinRT
-                // MediaSource wrapper exposes no IMFGetService, so hand over the adaptive source itself.
-                var pointer = ((WinRT.IWinRTObject)adaptiveSource).NativeObject.ThisPtr;
-                report += await RunEngineAsync(() => host.RunSource(pointer, seconds, frameRate, present));
-                GC.KeepAlive(adaptiveSource);
             }
             else report += "Route not covered by the probe\n";
         }
@@ -173,17 +164,6 @@ public sealed partial class PlayerPage
                 var pointer = WinRT.MarshalInterface<IRandomAccessStream>.FromManaged(random);
                 try { report += await RunEngineAsync(() => host.OpenSession(pointer, mime, start, paused)); }
                 finally { Marshal.Release(pointer); }
-            }
-            else if (media.Adaptive is { } adaptiveSource && media.Source is { } wrapped)
-            {
-                // The WinRT MediaSource wrapper exposes no IMFGetService; try the adaptive source itself first.
-                var pointer = ((WinRT.IWinRTObject)adaptiveSource).NativeObject.ThisPtr;
-                report += "Attempt 1 (AdaptiveMediaSource)\n" + await RunEngineAsync(() => host.OpenSession(pointer, null, start, paused));
-                if (!host.HasSession)
-                {
-                    var wrappedPointer = ((WinRT.IWinRTObject)wrapped).NativeObject.ThisPtr;
-                    report += "Attempt 2 (MediaSource wrapper)\n" + await RunEngineAsync(() => host.OpenSession(wrappedPointer, null, start, paused));
-                }
             }
             else report += "Route not covered by the engine player\n";
         }

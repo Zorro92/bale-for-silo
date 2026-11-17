@@ -99,8 +99,6 @@ public sealed partial class PlayerPage
                         bandwidth = media.Throughput.Sample(stream.DownloadedBytes, stream.DownloadTime);
                     else if (media.Progressive is { } progressive)
                         bandwidth = media.Throughput.Sample(progressive.DownloadedBytes, progressive.DownloadTime);
-                    else if (media.Adaptive is { } adaptive && adaptive.InboundBitsPerSecond is > 0 and <= long.MaxValue and var inbound)
-                        bandwidth = (long)inbound;
                 }
                 catch (Exception ex) { LogFailure("stats bandwidth", ex); }
                 var bufferingTicks = media.BufferingTicks;

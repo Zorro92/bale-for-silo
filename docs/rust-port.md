@@ -292,7 +292,7 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    the HLS remux takes it too, through FFmpeg (see "HLS through FFmpeg" below).
 
    **HLS through FFmpeg** (owner, 2026-11-15; the default for every build since the console A/B
-   below, owner 2026-11-16; debug switch `hls-engine native` brings back Windows' HLS for comparison). Silo's HLS is simple (checked in silo-server): one rendition, never an
+   below, owner 2026-11-16; Windows' HLS and its `hls-engine` debug switch were removed 2026-11-17). Silo's HLS is simple (checked in silo-server): one rendition, never an
    adaptive ladder (a multivariant playlist only attaches subtitle groups to its single variant);
    media playlists are complete VOD lists (`copy_keyframe_plan.go`, `GenerateFullManifest`) or
    FFmpeg's own append-only EVENT playlist while a copy remux is produced
@@ -331,8 +331,9 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
      compared FFmpeg's one packaged audio stream with the original's track count (909a498 now
      expects one stream on every Silo package). After the fix it played (system HEVC, E-AC-3), and
      PGS subtitles rendered in sync, also after a seek. Not covered: a growing EVENT playlist read
-     far ahead of the remux, and text subtitles. Windows' HLS stays only as the fallback for a
-     playlist the Rust reader refuses (`HlsReaderRefused`).
+     far ahead of the remux, and text subtitles. Windows' HLS was the fallback for a playlist the
+     Rust reader refused until 2026-11-17 (owner: removed so the engine player can take every route);
+     such a playlist now fails to a replan.
 
 ### Stays in C#
 

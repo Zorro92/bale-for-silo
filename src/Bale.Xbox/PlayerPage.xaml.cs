@@ -77,9 +77,6 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public bool MatchContentFrameRate { get; } = DebugDisplayMatch.Enabled;
         public string FrameDeliveryMode { get; } = DebugFrameDeliverySwitch.Mode;
         public string StreamAdapter { get; } = DebugStreamAdapterSwitch.Mode;
-        public string HlsEngine { get; } = DebugHlsEngineSwitch.Mode;
-        /// <summary>HLS through the Rust HLS reader and FFmpeg, unless the reader refused this attempt's playlist.</summary>
-        public bool HlsThroughFfmpeg => HlsEngine == "ffmpeg" && !HlsReaderRefused;
         public bool UsePooledStreamAdapter => StreamAdapter == "pooled";
         /// <summary>The Rust range stream and its Rust IRandomAccessStream (docs/rust-port.md, slice 7).</summary>
         public bool UseRustTransport => StreamAdapter == "rust";
@@ -89,14 +86,15 @@ public sealed partial class PlayerPage : Page, IBackHandler
 #else
         public bool UsePooledStreamAdapter => true;
         public bool UseRustTransport => true;
-        /// <summary>HLS through the Rust HLS reader and FFmpeg (owner, 2026-11-16, after the console A/B).</summary>
-        public bool HlsThroughFfmpeg => !HlsReaderRefused;
         public bool FfmpegEnabled => true;
         public bool ForceFfmpeg => false;
 #endif
+        /// <summary>
+        /// HLS always plays through the Rust HLS reader and FFmpeg (owner, 2026-11-16 console A/B); Windows' HLS
+        /// source was removed 2026-11-17, so a playlist the reader refuses fails to a replan.
+        /// </summary>
+        public bool HlsThroughFfmpeg => true;
         public CancellationTokenSource? ReportingCancellation { get; set; }
-        /// <summary>The Rust HLS reader refused this attempt's playlist: its HLS mounts use Windows' source.</summary>
-        public bool HlsReaderRefused { get; set; }
         public Task? ReportingTask { get; set; }
     }
 
@@ -221,8 +219,6 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 capabilities = DebugHdrPlayback.Capabilities(attempt.PretendHdr, capabilities);
                 capabilities = attempt.FfmpegTuning.ToneMapCapabilities(capabilities);
 #endif
-                // Windows' HLS (hls-engine native, or a playlist the Rust reader refused) takes H.264/HEVC only.
-                if (!attempt.HlsThroughFfmpeg) capabilities = capabilities with { HlsFfmpegSupported = false };
                 var start = PlaybackStartBuilder.Build(request.Detail, request.Selection,
                     services.ProfileId, Guid.NewGuid().ToString(), startPosition, capabilities, DeviceIdentity.Current());
 #if DEBUG_SERVER
@@ -703,7 +699,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
 
     private async Task DispatchAsync(Action action)
     {
-        // MediaPlayer and AdaptiveMediaSource raise callbacks off the XAML thread. Catch both the
+        // MediaPlayer raises callbacks off the XAML thread. Catch both the
         // dispatch and the callback body: uncaught native-event exceptions can terminate UWP/AOT.
         try
         {

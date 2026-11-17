@@ -53,7 +53,6 @@
 #   scripts/bale-debug.sh gc                     GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
 #   scripts/bale-debug.sh gc latency <batch|interactive|sustained|default>  change latency app-wide now; default restores the saved pre-playback mode; playback acquires sustained automatically
 #   scripts/bale-debug.sh frame-delivery [native|managed|off]  next playback attempt's observer; default native, on aliases native; memory only (restart resets); no args = status
-#   scripts/bale-debug.sh hls-engine [native|ffmpeg]   next playback attempt's HLS engine; default ffmpeg = Rust HLS reader + FFmpeg (+ console tone map for HLS remux); native = Windows; memory only; no args = status
 #   scripts/bale-debug.sh stream-adapter [pooled|builtin|rust]  next playback attempt's stream adapter; default rust (C#: pooled/builtin), memory only (restart resets); no args = status
 #                                               rust: the Rust range stream and Rust IRandomAccessStream (no managed code on reads; FFmpeg and Media Foundation)
 #   scripts/bale-debug.sh present-engine [0-120] [present|frames|player]   next playback hands its routed source to IMFMediaEngine (0 = off): present = rendering mode on screen for N s, frames = frame-server for N s (every decoded frame counted), player = interactive engine player with sound, keys and a stats pane until Back (N just enables it); no args = status + last report
@@ -448,17 +447,6 @@ case "${1:-}" in
       curl --fail-with-body -sS --max-time 5 "$BASE/stream-adapter"
     else
       curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/stream-adapter" --data-urlencode "mode=$2"
-    fi
-    ;;
-  hls-engine)
-    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^(native|ffmpeg)$ ) ]]; then
-      echo 'usage: scripts/bale-debug.sh hls-engine [native|ffmpeg]' >&2
-      exit 2
-    fi
-    if [[ "$#" == 1 ]]; then
-      curl --fail-with-body -sS --max-time 5 "$BASE/hls-engine"
-    else
-      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/hls-engine" --data-urlencode "mode=$2"
     fi
     ;;
   present-engine)

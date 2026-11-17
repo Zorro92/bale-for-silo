@@ -5,7 +5,6 @@ using FFmpegInteropX;
 using Windows.Foundation;
 using Windows.Media.Core;
 using Windows.Media.Playback;
-using Windows.Media.Streaming.Adaptive;
 using Windows.Storage.Streams;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Media;
@@ -47,10 +46,6 @@ public sealed partial class PlayerPage
         public IInputStream? ForwardInput { get; set; }
         public bool Reconnecting { get; set; }
         public long? PausedAt { get; set; }
-        public MemoryStream? Playlist { get; set; }
-        public IInputStream? PlaylistInput { get; set; }
-        public AdaptiveMediaSource? Adaptive { get; set; }
-        public TypedEventHandler<AdaptiveMediaSource, AdaptiveMediaSourceDownloadRequestedEventArgs>? DownloadHandler { get; set; }
         public FFmpegMediaSource? FfmpegSource { get; set; }
         public PlaybackResources.MediaDevice? RendererDevice { get; set; }
         public FfmpegVideoOutputGuard? VideoOutputGuard { get; set; }
@@ -151,22 +146,9 @@ public sealed partial class PlayerPage
         var delivery = _delivery is { Length: > 0 and < 80 } value
             && value.All(c => char.IsAsciiLetterOrDigit(c) || c == '_') ? value : "unknown";
         Log.Info($"player: playable delivery={delivery}");
-        if (transport.IsHls && !media.Route.UseFfmpeg)
-        {
-            var (bytes, _) = await transport.GetBytesAsync(transport.Uri, null, null, media.Token);
-            media.Playlist = new MemoryStream(bytes);
-            media.PlaylistInput = media.Playlist.AsInputStream();
-            var result = await AdaptiveMediaSource.CreateFromStreamAsync(media.PlaylistInput, transport.Uri,
-                "application/vnd.apple.mpegurl");
-            media.Adaptive = result.MediaSource;
-            media.Token.ThrowIfCancellationRequested();
-            if (result.Status != AdaptiveMediaSourceCreationStatus.Success || media.Adaptive is null)
-                throw new InvalidDataException("The adaptive media source could not be opened.");
-            media.DownloadHandler = (_, args) => OnDownloadRequested(attempt, media, args);
-            media.Adaptive.DownloadRequested += media.DownloadHandler;
-            media.Source = MediaSource.CreateFromAdaptiveMediaSource(media.Adaptive);
-        }
-        else
+        // Every HLS package plays through the Rust HLS reader and FFmpeg; Windows' HLS source is gone (owner,
+        // 2026-11-17: it cannot feed IMFMediaEngine, the player's future main path).
+        if (transport.IsHls && !media.Route.UseFfmpeg) throw new InvalidDataException("HLS requires the FFmpeg route.");
         {
             if (transport.IsProgressive)
             {
@@ -207,15 +189,6 @@ public sealed partial class PlayerPage
                     transport.StartPlayerClockAt(hls.SegmentStartSeconds);
                 }
                 // Windows' HLS takes over only for what it can play; any other package fails to a replan.
-                catch (HlsUnsupportedException) when (!attempt.HlsReaderRefused && ReferenceEquals(attempt.Media, media)
-                    && SoftwareDecodePolicy.NormalizeCodec(media.Route.VideoCodec) is "h264" or "hevc")
-                {
-                    Log.Info("player: HLS playlist needs Windows' HLS source; remounting there");
-                    attempt.HlsReaderRefused = true;
-                    DisposeMount(attempt);
-                    await MountPlanAsync(attempt, playerStart, paused, rangeRefused);
-                    return;
-                }
                 media.ForwardInput = NativeInputStream(media.Progressive) ?? new ForwardInputStream(media.Progressive);
             }
             else
@@ -385,49 +358,6 @@ public sealed partial class PlayerPage
         // The item exposes native track selection in production as well as debug stats.
         media.Item ??= new MediaPlaybackItem(media.Source);
         player.Source = media.Item;
-    }
-
-    private async void OnDownloadRequested(Attempt attempt, Mount media, AdaptiveMediaSourceDownloadRequestedEventArgs args)
-    {
-        // Supplying every manifest/segment/key's bytes keeps profile proofs and bearer refresh in
-        // Core. Never hand credentials to the native downloader, or follow a foreign child URI.
-        try
-        {
-            var deferral = args.GetDeferral();
-            try
-            {
-                media.Token.ThrowIfCancellationRequested();
-                if (args.ResourceUri is not { } uri || !PlaybackMediaUrl.IsAllowedChild(uri, attempt.Client.Server))
-                    throw new InvalidDataException("The adaptive resource is outside the playback server's media routes.");
-                var (data, contentType) = await media.Transport.GetBytesAsync(uri,
-                    (long?)args.ResourceByteRangeOffset, (long?)args.ResourceByteRangeLength, media.Token);
-                args.Result.Buffer = data.AsBuffer();
-                if (!string.IsNullOrWhiteSpace(contentType)) args.Result.ContentType = contentType;
-            }
-            catch (Exception ex)
-            {
-                // A failed interception must not fall through to an unauthenticated native fetch.
-                try
-                {
-                    args.Result.Buffer = Array.Empty<byte>().AsBuffer();
-                    args.Result.ExtendedStatus = unchecked((uint)ex.HResult);
-                }
-                catch (Exception resultError) { LogFailure("download result", resultError); }
-                if (!media.Token.IsCancellationRequested)
-                {
-                    LogFailure("download", ex);
-                    await DispatchAsync(() => QueueFailure(attempt, media, ex.HResult, isDecoder: false, IsNetworkFailure(ex)));
-                }
-            }
-            finally { deferral.Complete(); }
-        }
-        catch (Exception ex)
-        {
-            // Even GetDeferral/Complete and result projection failures stay inside the handler.
-            LogFailure("adaptive callback", ex);
-            if (!media.Token.IsCancellationRequested)
-                await DispatchAsync(() => QueueFailure(attempt, media, ex.HResult, isDecoder: false, IsNetworkFailure(ex)));
-        }
     }
 
     private void OnMediaOpened(MediaPlayer sender, object args) => _ = DispatchAsync(() =>
@@ -726,34 +656,25 @@ public sealed partial class PlayerPage
             Cleanup("dispose player", player.Dispose);
         }
         Cleanup("release video presenter", ReleaseVideoPresenter);
-        if (media.Adaptive is { } adaptive && media.DownloadHandler is { } handler)
-            Cleanup("detach downloads", () => adaptive.DownloadRequested -= handler);
         // FFmpeg owns an MSS, but CreateMediaPlaybackItem also creates a MediaSource. Closing
         // only FFmpeg does not close that source's MF pipeline (including system HEVC surfaces).
         Cleanup("dispose item source", () => media.Item?.Source?.Dispose());
         Cleanup("dispose source", () => media.Source?.Dispose());
         // The native source owns its MSS/item and must outlive the player, but not the authenticated stream.
         Cleanup("dispose FFmpeg source", () => media.FfmpegSource?.Dispose());
-        Cleanup("dispose adaptive", () => media.Adaptive?.Dispose());
         Cleanup("dispose random stream", () => media.RandomStream?.Dispose());
         Cleanup("dispose forward input", () => media.ForwardInput?.Dispose());
         Cleanup("dispose stream", () => media.Stream?.Dispose());
         Cleanup("dispose progressive stream", () => media.Progressive?.Dispose());
-        Cleanup("dispose playlist input", () => media.PlaylistInput?.Dispose());
-        Cleanup("dispose playlist", () => media.Playlist?.Dispose());
         media.Player = null;
         media.Item = null;
         media.Source = null;
         media.SelectedAudioTrack = null;
         media.FfmpegSource = null;
-        media.Adaptive = null;
-        media.DownloadHandler = null;
         media.RandomStream = null;
         media.Stream = null;
         media.ForwardInput = null;
         media.Progressive = null;
-        media.PlaylistInput = null;
-        media.Playlist = null;
         PlaybackResources.ReleaseMediaDevice(rendererDevice);
         media.Cancellation.Dispose();
 #if DEBUG_SERVER

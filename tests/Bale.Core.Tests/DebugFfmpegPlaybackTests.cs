@@ -124,10 +124,7 @@ public class DebugFfmpegPlaybackTests
         Assert.Contains("audio.OpenFailed -= OnAudioTrackOpenFailed", source);
         Assert.DoesNotContain("CreateFromUriAsync", source);
         Assert.DoesNotContain("ex.Message", source);
-        var hls = source[source.IndexOf("if (transport.IsHls && !media.Route.UseFfmpeg)", StringComparison.Ordinal)
-            ..source.IndexOf("if (transport.IsProgressive)", StringComparison.Ordinal)];
-        Assert.Contains("AdaptiveMediaSource.CreateFromStreamAsync", hls);
-        Assert.DoesNotContain("FFmpeg", hls);
+        Assert.DoesNotContain("AdaptiveMediaSource", source);
         var nativeDisposal = source.IndexOf("Cleanup(\"dispose FFmpeg source\"", StringComparison.Ordinal);
         Assert.True(source.IndexOf("Cleanup(\"dispose player\"", StringComparison.Ordinal) < nativeDisposal);
         Assert.True(nativeDisposal < source.IndexOf("Cleanup(\"dispose random stream\"", StringComparison.Ordinal));

@@ -1,32 +1,12 @@
 using Bale.Core.Api.Models;
 using Bale.Core.Playback;
-using Bale.Xbox.Services;
 
 namespace Bale.Core.Tests;
 
-/// <summary>HLS through FFmpeg (docs/rust-port.md): the debug switch, the mount clock and the player wiring.</summary>
+/// <summary>HLS through FFmpeg (docs/rust-port.md): the mount clock and the player wiring; Windows' HLS is gone.</summary>
 public sealed class HlsThroughFfmpegTests
 {
     private static string Read(string name) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, name)).ReplaceLineEndings("\n");
-
-    [Fact]
-    public void TheSwitchDefaultsToFfmpegHlsAndTakesOnlyItsTwoModes()
-    {
-        var previous = DebugHlsEngineSwitch.Mode;
-        try
-        {
-            Assert.Equal("ffmpeg", previous);
-            Assert.True(DebugHlsEngineSwitch.TrySet("native"));
-            Assert.Equal("native", DebugHlsEngineSwitch.Mode);
-            foreach (var invalid in new string?[] { null, "", "FFmpeg", "rust", " native", "ffmpeg&x=1" })
-                Assert.False(DebugHlsEngineSwitch.TrySet(invalid));
-            Assert.Equal("native", DebugHlsEngineSwitch.Mode);
-        }
-        finally
-        {
-            DebugHlsEngineSwitch.TrySet(previous);
-        }
-    }
 
     [Fact]
     public void AMountStartingAtASegmentShiftsOnlyItsPlayerClock()
@@ -42,14 +22,14 @@ public sealed class HlsThroughFfmpegTests
     }
 
     [Fact]
-    public void ThePlayerOpensTheReaderRemountsLocallyAndFallsBackToWindowsHls()
+    public void ThePlayerOpensTheReaderRemountsLocallyAndNeverUsesWindowsHls()
     {
         var media = Read("PlayerPage.Media.cs.txt");
-        Assert.Contains("if (transport.IsHls && !media.Route.UseFfmpeg)", media);
+        Assert.Contains("if (transport.IsHls && !media.Route.UseFfmpeg) throw new InvalidDataException(\"HLS requires the FFmpeg route.\");", media);
+        Assert.DoesNotContain("AdaptiveMediaSource", media);
+        Assert.DoesNotContain("HlsReaderRefused", media);
         Assert.Contains("var hls = await transport.OpenNativeHlsAsync(playerStart, media.Token);", media);
         Assert.Contains("transport.StartPlayerClockAt(hls.SegmentStartSeconds);", media);
-        Assert.Contains("catch (HlsUnsupportedException) when (!attempt.HlsReaderRefused && ReferenceEquals(attempt.Media, media)\n"
-            + "                    && SoftwareDecodePolicy.NormalizeCodec(media.Route.VideoCodec) is \"h264\" or \"hevc\")", media);
         Assert.Contains("if (media.Progressive is null) sender.PlaybackSession.Position", media);
         Assert.Contains("hlsThroughFfmpeg: attempt.HlsThroughFfmpeg", media);
         var seek = Read("PlayerPage.Seek.cs.txt");
@@ -57,13 +37,9 @@ public sealed class HlsThroughFfmpegTests
         Assert.Contains("var local = !forwardHls && request.CanSeekInMount(", seek);
         Assert.Contains("media = await RemountHlsAsync(attempt, request, paused);", seek);
         var player = Read("PlayerPage.cs.txt");
-        Assert.Contains("public bool HlsThroughFfmpeg => HlsEngine == \"ffmpeg\" && !HlsReaderRefused;", player);
-        // Windows' HLS (native engine or a refused playlist) narrows the attempt's HLS claim to H.264/HEVC.
-        Assert.Contains("if (!attempt.HlsThroughFfmpeg) capabilities = capabilities with { HlsFfmpegSupported = false };", player);
-        Assert.True(player.IndexOf("HlsFfmpegSupported = false", StringComparison.Ordinal)
-            < player.IndexOf("var start = PlaybackStartBuilder.Build(", StringComparison.Ordinal));
-        // Release builds play HLS through FFmpeg too, keeping Windows' HLS only for a refused playlist.
-        Assert.Contains("public bool HlsThroughFfmpeg => !HlsReaderRefused;", player);
-        Assert.DoesNotContain("public bool HlsThroughFfmpeg => false;", player);
+        // Debug and release builds alike: HLS always plays through FFmpeg and its claim is never narrowed.
+        Assert.Contains("public bool HlsThroughFfmpeg => true;", player);
+        Assert.DoesNotContain("HlsFfmpegSupported = false", player);
+        Assert.DoesNotContain("HlsEngine", player);
     }
 }
