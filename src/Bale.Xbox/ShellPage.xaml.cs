@@ -251,11 +251,16 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
             }
 
             ShowProfileRow(ProfileMenu.Row(profiles.Count, client.Profiles.MaxProfiles));
+            Session.RecordProfileCount(client, profiles.Count);
 
             // TvMainShell.kt: only the primary profile gets the account's role; household profiles
             // must not appear to have the owner's role. The server comes first (tvOS §5.8). Bale
-            // currently knows the server by its host.
-            var subtitle = profile?.IsPrimary == true ? client.Account?.Role?.ToString() ?? client.Account?.Username : null;
+            // currently knows the server by its host. With several accounts on this server the
+            // account's username replaces the role, so the header says whose profile it is (spec §4.3).
+            var servers = AppSettings.Servers;
+            var severalAccounts = servers.Active is { } active && servers.AccountsOn(active.Id).Count > 1;
+            var subtitle = severalAccounts ? servers.ActiveAccount?.Username ?? client.Account?.Username
+                : profile?.IsPrimary == true ? client.Account?.Role?.ToString() ?? client.Account?.Username : null;
             PanelServer.Text = string.Join("  ·  ", new[] { client.Server.Host, subtitle }
                 .Where(part => !string.IsNullOrWhiteSpace(part))).ToUpperInvariant();
         }

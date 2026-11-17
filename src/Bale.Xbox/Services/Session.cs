@@ -13,6 +13,7 @@ internal static class Session
     private static Frame? _rootFrame;
     private static bool _routingExpiry;
     private static bool _foreground = true;
+    private static string? _clientAccountId;
 
     public static SiloClient? Client { get; private set; }
 
@@ -43,6 +44,8 @@ internal static class Session
             if (AppSettings.Servers.RequiresHttpApproval(server)) throw new InvalidOperationException("HTTP approval is required.");
             Disconnect();
             var client = Client = new SiloClient(server, DeviceIdentity.Current(), onSessionExpired: RouteExpiryAsync);
+            // The account this client signs requests for; null while a new account signs in.
+            _clientAccountId = AppSettings.Servers.ActiveAccount?.Id;
             Reachability = new ServerReachabilityMonitor(server);
             if (_foreground) Reachability.StartForeground();
             _routingExpiry = false;
@@ -50,7 +53,7 @@ internal static class Session
             {
                 lock (StateGate)
                 {
-                    // A late refresh from the old server can never reactivate it or overwrite the new scope.
+                    // A late refresh from the old server or account can never overwrite the new one's slot.
                     if (ReferenceEquals(Client, client)) Persist();
                 }
             };
@@ -64,6 +67,7 @@ internal static class Session
         Reachability = null;
         var old = Client;
         Client = null;
+        _clientAccountId = null;
         old?.Dispose();
         ProfileName = null;
         ProfileAvatar = null;
@@ -76,33 +80,138 @@ internal static class Session
             Persist();
             AppSettings.Servers.AddAndActivate(server, name, verifiedServerId);
             Disconnect();
-            Log.Info("Server selection committed; saved credentials retained");
+            Log.Info($"Server selection committed; account open={AppSettings.Servers.ActiveAccount is not null}");
         }
     }
 
-    public static void SwitchServer(string id)
+    /// <summary>
+    /// TvChangeAccountViewModel.kt activate: the open account changes (null: the server with no account, where a new
+    /// sign-in starts). The departing account's session is saved first and the live client is dropped.
+    /// </summary>
+    public static void SwitchAccount(string serverId, string? accountId)
     {
         lock (StateGate)
         {
             Persist();
-            AppSettings.Servers.Activate(id);
+            AppSettings.Servers.ActivateAccount(serverId, accountId);
             Disconnect();
-            Log.Info("Saved server switched; resolving saved session");
+            Log.Info($"Account switched; add={accountId is null}");
         }
     }
 
-    public static bool RemoveServer(string id)
+    /// <summary>
+    /// A sign-in on the active server succeeded: save it as a new account, or refresh the saved account it matches
+    /// (multi-account spec §5). Call after <see cref="SiloClient.SignIn"/> and before <see cref="Persist"/>.
+    /// </summary>
+    public static SavedAccount AdoptSignIn(SiloClient client)
     {
         lock (StateGate)
         {
+            if (!ReferenceEquals(Client, client)) throw new InvalidOperationException("The sign-in client is no longer current.");
+            var account = AppSettings.Servers.AdoptSignIn(client.Account?.Id, client.Account?.Username);
+            _clientAccountId = account.Id;
+            return account;
+        }
+    }
+
+    /// <summary>Remove Server signs out of every account on it, then forgets it (TvAccountsViewModel.kt onRemoveServer).</summary>
+    public static bool RemoveServer(string id)
+    {
+        List<(Uri Server, string Refresh, string? Access)> revoke;
+        bool wasActive;
+        lock (StateGate)
+        {
             var entry = AppSettings.Servers.Snapshot.Entries.First(s => s.Id == id);
-            var wasActive = AppSettings.Servers.Active?.Id == id;
-            // Persist the removal before destroying credentials; a failed local write leaves the session usable.
-            AppSettings.Servers.Remove(id);
+            wasActive = AppSettings.Servers.Active?.Id == id;
+            revoke = Revocations(entry, AppSettings.Servers.AccountsOn(id));
+            // Persist the removal before destroying credentials; a failed local write leaves the sessions usable.
+            var removed = AppSettings.Servers.Remove(id);
+            EndOpenClientIfRemoved(removed);
             if (wasActive) Disconnect();
-            AppSettings.ForgetTokens(entry.CredentialKey);
-            Log.Info($"Saved server removed active={wasActive}");
-            return wasActive;
+            foreach (var account in removed) AppSettings.ForgetTokens(account);
+            Log.Info($"Saved server removed active={wasActive} accounts={removed.Count}");
+        }
+        _ = RevokeAsync(revoke);
+        return wasActive;
+    }
+
+    /// <summary>
+    /// Settings › Accounts Sign Out of an account that is not open: it leaves this device (its server stays unless
+    /// <paramref name="removeServer"/>), and its session ends on the server in the background, best effort.
+    /// </summary>
+    public static async Task SignOutAccountAsync(SavedAccount account, bool removeServer = false)
+    {
+        if (AppSettings.Servers.ActiveAccount?.Id == account.Id)
+        {
+            await SignOutAsync(removeServer);
+            return;
+        }
+        List<(Uri Server, string Refresh, string? Access)> revoke;
+        lock (StateGate)
+        {
+            var entry = AppSettings.Servers.Snapshot.Entries.First(s => s.Id == account.ServerId);
+            revoke = Revocations(entry, [account]);
+            var removed = AppSettings.Servers.RemoveAccount(account.Id, removeServer);
+            EndOpenClientIfRemoved(removed);
+            foreach (var gone in removed) AppSettings.ForgetTokens(gone);
+            Log.Info($"Account signed out open=false removeServer={removeServer}");
+        }
+        await RevokeAsync(revoke);
+    }
+
+    /// <summary>The saved sessions to end on the server; the open account's live client ends its own.</summary>
+    private static List<(Uri Server, string Refresh, string? Access)> Revocations(SavedServer server, IReadOnlyList<SavedAccount> accounts)
+    {
+        var list = new List<(Uri, string, string?)>();
+        foreach (var account in accounts)
+        {
+            if (account.Id == _clientAccountId || account.NeedsSignIn) continue;
+            if (AppSettings.LoadRefreshToken(account) is { } refresh) list.Add((new Uri(server.Url), refresh, AppSettings.LoadAccessToken(account)));
+        }
+        return list;
+    }
+
+    /// <summary>After a durable removal: the open account's client, if removed, ends its session and is dropped.</summary>
+    private static void EndOpenClientIfRemoved(IReadOnlyList<SavedAccount> removed)
+    {
+        if (Client is not { } client || !removed.Any(a => a.Id == _clientAccountId)) return;
+        Reachability?.Dispose();
+        Reachability = null;
+        Client = null; // Detached first, so no late refresh writes it back.
+        _clientAccountId = null;
+        ProfileName = null;
+        ProfileAvatar = null;
+        _ = EndClientAsync(client);
+    }
+
+    private static async Task EndClientAsync(SiloClient client)
+    {
+        try
+        {
+            await client.SignOutAsync();
+        }
+        finally
+        {
+            client.Dispose();
+        }
+    }
+
+    private static async Task RevokeAsync(List<(Uri Server, string Refresh, string? Access)> sessions)
+    {
+        foreach (var (server, refresh, access) in sessions)
+        {
+            // Never send a removed account's credentials to an HTTP origin the viewer has not approved.
+            if (AppSettings.Servers.RequiresHttpApproval(server)) continue;
+            try
+            {
+                using var client = new SiloClient(server, DeviceIdentity.Current());
+                client.RestoreSession(refresh, access);
+                await client.SignOutAsync();
+            }
+            catch (Exception ex)
+            {
+                Log.Info($"Background sign-out unavailable type={ex.GetType().Name}");
+            }
         }
     }
 
@@ -128,46 +237,68 @@ internal static class Session
         });
     }
 
-    /// <summary>Restores credentials locally, without making the TV wait for a refresh (MainTvActivity.kt).</summary>
-    public static void Restore(Uri server, string refreshToken)
+    /// <summary>Restores the open account's credentials locally, without making the TV wait for a refresh (MainTvActivity.kt).</summary>
+    public static void Restore(Uri server, SavedAccount account, string refreshToken)
     {
-        var url = ServerAddress.ToBaseUrl(server);
-        var id = ProfileChoice.AutomaticId(AppSettings.ProfileId, AppSettings.OpenProfileAutomatically);
-        Connect(server).RestoreSession(refreshToken, AppSettings.LoadAccessToken(url), AppSettings.AccessTokenExpiresAt,
-            id, id is null ? null : AppSettings.LoadProfileToken(url));
-        ProfileName = id is null ? null : AppSettings.ProfileName;
-        ProfileAvatar = id is not null && Uri.TryCreate(AppSettings.ProfileAvatar, UriKind.Absolute, out var avatar) ? avatar : null;
+        var id = ProfileChoice.AutomaticId(account.ProfileId, AppSettings.OpenProfileAutomatically);
+        Connect(server).RestoreSession(refreshToken, AppSettings.LoadAccessToken(account), account.AccessTokenExpiresAt,
+            id, id is null ? null : AppSettings.LoadProfileToken(account));
+        ProfileName = id is null ? null : account.ProfileName;
+        ProfileAvatar = id is not null && Uri.TryCreate(account.ProfileAvatar, UriKind.Absolute, out var avatar) ? avatar : null;
     }
 
-    /// <summary>Saves resumable credentials, including secure PIN proof for an explicitly automatic profile.</summary>
+    /// <summary>Saves resumable credentials to the open account's slot, including PIN proof for an automatic profile.</summary>
     public static void Persist()
     {
         lock (StateGate)
         {
             if (Client is not { RefreshToken: { } refreshToken } client) return;
-            var server = ServerAddress.ToBaseUrl(client.Server);
-            if (AppSettings.Servers.Active?.Url != server) return;
+            if (AppSettings.Servers.Active?.Url != ServerAddress.ToBaseUrl(client.Server)) return;
+            if (AppSettings.Servers.ActiveAccount is not { } account || account.Id != _clientAccountId) return;
             _routingExpiry = false;
-            AppSettings.SaveRefreshToken(server, refreshToken);
-            AppSettings.SaveAccessToken(server, client.AccessToken);
-            AppSettings.SaveProfileToken(server, client.ProfileToken);
-            AppSettings.Servers.UpdateActive(s => s with
+            AppSettings.SaveRefreshToken(account, refreshToken);
+            AppSettings.SaveAccessToken(account, client.AccessToken);
+            AppSettings.SaveProfileToken(account, client.ProfileToken);
+            AppSettings.Servers.UpdateActiveAccount(a => a with
             {
                 AccessTokenExpiresAt = client.AccessTokenExpiresAt,
                 // The picker has no acting profile; switching there must retain the last saved pick.
-                ProfileId = client.ProfileId ?? s.ProfileId,
-                ProfileName = client.ProfileId is null ? s.ProfileName : ProfileName,
-                ProfileAvatar = client.ProfileId is null ? s.ProfileAvatar : ProfileAvatar?.AbsoluteUri,
-                AccountName = client.Account?.Username ?? s.AccountName,
+                ProfileId = client.ProfileId ?? a.ProfileId,
+                ProfileName = client.ProfileId is null ? a.ProfileName : ProfileName,
+                ProfileAvatar = client.ProfileId is null ? a.ProfileAvatar : ProfileAvatar?.AbsoluteUri,
+                Username = client.Account?.Username ?? a.Username,
+                // The first verified /me fills the id a migrated account never stored (AccountEntry.kt).
+                ServerUserId = a.ServerUserId ?? client.Account?.Id,
+                NeedsSignIn = false,
             });
         }
     }
 
+    /// <summary>The open account's profile count as last read, for Change Account and Settings › Accounts offline.</summary>
+    public static void RecordProfileCount(SiloClient client, int count)
+    {
+        lock (StateGate)
+        {
+            if (!ReferenceEquals(Client, client) || AppSettings.Servers.ActiveAccount is not { } account
+                || account.Id != _clientAccountId || account.ProfileCount == count) return;
+            try
+            {
+                AppSettings.Servers.UpdateActiveAccount(a => a with { ProfileCount = count });
+            }
+            catch (Exception ex)
+            {
+                // A cached count is cosmetic; a failed write must not fail the picker or the menu.
+                Log.Info($"Profile count save failed type={ex.GetType().Name}");
+            }
+        }
+    }
+
     /// <summary>Local launch policy: default to the picker, even offline; only an explicit Yes opens Home.</summary>
-    public static void ContinueToHome(Frame frame)
+    /// <param name="choose">An account was just chosen on Change Account: its picker waits for a choice.</param>
+    public static void ContinueToHome(Frame frame, bool choose = false)
     {
         var client = Client!;
-        var id = ProfileChoice.AutomaticId(AppSettings.ProfileId, AppSettings.OpenProfileAutomatically);
+        var id = choose ? null : ProfileChoice.AutomaticId(AppSettings.ProfileId, AppSettings.OpenProfileAutomatically);
         if (id is null)
         {
             client.UseProfile(null);
@@ -192,9 +323,9 @@ internal static class Session
     public static void ShowProfilePicker(Frame frame, bool add = false)
     {
         Client?.UseProfile(null);
-        if (Client is { } client)
+        if (Client is not null && AppSettings.Servers.ActiveAccount is { } account && account.Id == _clientAccountId)
         {
-            AppSettings.SaveProfileToken(ServerAddress.ToBaseUrl(client.Server), null);
+            AppSettings.SaveProfileToken(account, null);
         }
 
         ClearProfile();
@@ -203,7 +334,10 @@ internal static class Session
         frame.BackStack.Clear();
     }
 
-    /// <summary>TvAppNavigation.kt: a rejected refresh on any route keeps the server, never a dead Back entry.</summary>
+    /// <summary>
+    /// TvAppNavigation.kt: a rejected refresh on any route keeps the server, never a dead Back entry. Expiry is not a
+    /// sign-out (AccountEntry.kt needsSignIn): the account stays saved and asks to sign in again.
+    /// </summary>
     private static void Expire()
     {
         if (_routingExpiry || Client is not { } client || _rootFrame is not { } frame)
@@ -212,37 +346,40 @@ internal static class Session
         }
 
         _routingExpiry = true;
-        var server = ServerAddress.ToBaseUrl(client.Server);
-        AppSettings.ServerUrl = server;
-        AppSettings.ForgetTokens(server);
+        if (AppSettings.Servers.ActiveAccount is { } account && account.Id == _clientAccountId)
+        {
+            AppSettings.Servers.MarkNeedsSignIn(account.Id);
+            // The server refused these credentials; keep the account, not its dead tokens.
+            AppSettings.ForgetTokens(account);
+        }
         client.ForgetSession();
-        ClearProfile();
-        AppSettings.AccountName = null;
+        ProfileName = null;
+        ProfileAvatar = null;
         // TvAppNavigation.kt sessionExpired: Login on the same server with the explanatory notice.
         frame.Navigate(typeof(MainPage), MainPage.SessionExpired);
         frame.BackStack.Clear();
     }
 
+    /// <summary>Sign Out of the open account (TvSignOutDialog.kt): its server stays unless removed with it.</summary>
     public static async Task SignOutAsync(bool removeServer = false)
     {
         SiloClient? client;
         lock (StateGate)
         {
             var entry = AppSettings.Servers.Active;
+            var account = AppSettings.Servers.ActiveAccount;
             // TvServerResolver.kt: durable removal first. Failure leaves the old session usable.
-            if (removeServer && entry is not null) AppSettings.Servers.Remove(entry.Id);
-            else AppSettings.Servers.UpdateActive(s => s with
-            {
-                ProfileId = null, ProfileName = null, ProfileAvatar = null, AccountName = null, AccessTokenExpiresAt = null,
-            });
+            IReadOnlyList<SavedAccount> removed = account is not null ? AppSettings.Servers.RemoveAccount(account.Id, removeServer)
+                : removeServer && entry is not null ? AppSettings.Servers.Remove(entry.Id) : [];
             Reachability?.Dispose();
             Reachability = null;
             client = Client;
             Client = null; // A late refresh must not write a signed-out session back to the vault.
-            if (entry is not null) AppSettings.ForgetTokens(entry.CredentialKey);
+            _clientAccountId = null;
+            foreach (var gone in removed) AppSettings.ForgetTokens(gone);
             ProfileName = null;
             ProfileAvatar = null;
-            Log.Info($"Sign out committed removeServer={removeServer}");
+            Log.Info($"Sign out committed removeServer={removeServer} accounts={removed.Count}");
         }
         if (client is not null)
         {

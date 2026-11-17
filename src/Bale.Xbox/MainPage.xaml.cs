@@ -18,12 +18,19 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
 {
     public const string SessionExpired = "session-expired";
     public const string ServerEntry = "server-entry";
+    /// <summary>An account was chosen on Change Account: restore it and let its picker wait for a choice.</summary>
+    public const string AccountChosen = "account-chosen";
+    /// <summary>Sign-in opened from Change Account (Add an account / Sign in again): Back returns there.</summary>
+    public const string AccountSignIn = "account-sign-in";
+    private static bool _launchResolved;
     private CancellationTokenSource? _pairing;
     private CancellationTokenSource? _loginLife;
     private Uri? _loginServer;
     private bool _active;
     private bool _connecting;
     private bool _expiredNotice;
+    private bool _chooseProfile;
+    private bool _fromAccounts;
     private bool _sessionAdopted;
     private InputPane? _inputPane;
     private bool _keyboardVisible;
@@ -72,13 +79,31 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
                 return;
             }
 #endif
-            _expiredNotice = args.Parameter as string == SessionExpired;
-            if (args.Parameter as string == ServerEntry)
+            var parameter = args.Parameter as string;
+            var launch = !_launchResolved;
+            _launchResolved = true;
+            _expiredNotice = parameter == SessionExpired;
+            _chooseProfile = parameter == AccountChosen;
+            _fromAccounts = parameter == AccountSignIn;
+            if (parameter == ServerEntry)
             {
                 ShowServerEntry(null);
                 return;
             }
-            if (!ServerAddress.TryParse(AppSettings.ServerUrl ?? string.Empty, out var server))
+            // TvAppNavigation.kt start destination with multi-account spec §4.2: Every Time at a cold launch with two
+            // or more saved accounts starts at Change Account; so does no open account while another has a session.
+            var route = _expiredNotice || _fromAccounts ? AccountRoute.SignIn
+                : Servers.Route(selectionRequired: launch && !AppSettings.OpenProfileAutomatically, AppSettings.HasRefreshToken);
+            Log.Info($"Connection route={route} launch={launch}");
+            if (route == AccountRoute.ChangeAccount)
+            {
+                await Task.Yield();
+                if (!_active) return;
+                Frame.Navigate(typeof(ChangeAccountPage));
+                Frame.BackStack.Clear();
+                return;
+            }
+            if (route == AccountRoute.ServerEntry || !ServerAddress.TryParse(AppSettings.ServerUrl ?? string.Empty, out var server))
             {
                 ShowServerEntry(null);
                 return;
@@ -137,12 +162,13 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
             ShowHttpPrompt(server);
             return;
         }
-        if (!_expiredNotice && _preview is null && AppSettings.LoadRefreshToken(ServerAddress.ToBaseUrl(server)) is { } refresh)
+        if (!_expiredNotice && _preview is null && Servers.ActiveAccount is { NeedsSignIn: false } account
+            && AppSettings.LoadRefreshToken(account) is { } refresh)
         {
             StopDiscovery();
-            Session.Restore(server, refresh); // Local adoption only, including the migrated access/profile proof.
+            Session.Restore(server, account, refresh); // Local adoption only, including the migrated access/profile proof.
             await Task.Yield();
-            if (_active) Session.ContinueToHome(Frame);
+            if (_active) Session.ContinueToHome(Frame, _chooseProfile);
             return;
         }
         await StartLoginAsync(server);
@@ -275,6 +301,8 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
         try
         {
             client.SignIn(tokens, profileId, profileToken);
+            // A saved account signing in again is refreshed; anyone else is saved as another account.
+            Session.AdoptSignIn(client);
             AppSettings.RenewPlaybackLogin();
             Session.Persist();
         }
@@ -420,7 +448,9 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
 #if DEBUG_SERVER
         if (IsAuthPreview) return DebugServer.CloseAuthPreview(Frame);
 #endif
-        if (ServerPanel.Visibility == Visibility.Visible && Frame.CanGoBack) Frame.GoBack();
+        // TvAppNavigation.kt: Back from a sign-in started on Change Account or Settings › Accounts returns there.
+        if (_fromAccounts && Frame.CanGoBack) Frame.GoBack();
+        else if (ServerPanel.Visibility == Visibility.Visible && Frame.CanGoBack) Frame.GoBack();
         else Application.Current.Exit();
         return true;
     }

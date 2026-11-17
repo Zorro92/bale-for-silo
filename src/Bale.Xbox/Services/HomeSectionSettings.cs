@@ -5,7 +5,7 @@ using Windows.Storage;
 
 namespace Bale.Xbox.Services;
 
-/// <summary>TvHomeSectionPreferences.kt: device-local choices, never profile-wide server overrides.</summary>
+/// <summary>TvHomeSectionPreferences.kt: device-local choices per server, account and profile, never profile-wide server overrides.</summary>
 internal static class HomeSectionSettings
 {
     private static SiloClient? _cachedClient;
@@ -18,7 +18,7 @@ internal static class HomeSectionSettings
         try
         {
             return HomeSectionLayout.Deserialize(ApplicationData.Current.LocalSettings.Values[
-                HomeSectionLayout.StorageKey(client.Server, profileId)] as string);
+                HomeSectionLayout.StorageKey(client.Server, AppSettings.ProfileScope(profileId)!)] as string);
         }
         catch (Exception error)
         {
@@ -33,7 +33,7 @@ internal static class HomeSectionSettings
         if (!ReferenceEquals(client, Session.Client) || client.ProfileId != profileId) return false;
         try
         {
-            ApplicationData.Current.LocalSettings.Values[HomeSectionLayout.StorageKey(client.Server, profileId)] = layout.Serialize();
+            ApplicationData.Current.LocalSettings.Values[HomeSectionLayout.StorageKey(client.Server, AppSettings.ProfileScope(profileId)!)] = layout.Serialize();
             return true;
         }
         catch (Exception error)

@@ -6,12 +6,12 @@ using Windows.Storage;
 
 namespace Bale.Xbox.Services;
 
-/// <summary>BrowsePrefsStore.kt: preserve ON by default, scoped to server/profile/library/media scope.</summary>
+/// <summary>BrowsePrefsStore.kt: preserve ON by default, scoped to server/account/profile/library/media scope.</summary>
 internal static class LibraryBrowseSettings
 {
     private static string Key(SiloClient client, LibraryBrowseQuery query)
     {
-        var identity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{client.Server}\n{client.ProfileId}\n{query.LibraryId}\n{query.MediaType}")));
+        var identity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{client.Server}\n{AppSettings.ProfileScope(client.ProfileId)}\n{query.LibraryId}\n{query.MediaType}")));
         return "LibraryBrowse." + identity;
     }
 

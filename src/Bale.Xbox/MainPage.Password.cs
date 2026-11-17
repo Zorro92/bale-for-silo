@@ -25,6 +25,9 @@ public sealed partial class MainPage
         PasswordPanel.Visibility = PhoneHelpCard.Visibility = Visibility.Visible;
         CodeActions.Visibility = PhoneHint.Visibility = CodeCard.Visibility = Visibility.Collapsed;
         UsePhoneButton.Visibility = _passwordOnly ? Visibility.Collapsed : Visibility.Visible;
+        // Sign in again: the saved account's username is filled in (TvAccountsViewModel.kt onSignInAgain).
+        if (_preview is null && string.IsNullOrEmpty(UsernameBox.Text) && Servers.ActiveAccount?.Username is { } username)
+            UsernameBox.Text = username;
         UpdatePasswordCopy();
         RestoreFocus();
     }
