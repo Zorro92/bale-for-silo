@@ -62,7 +62,7 @@ internal sealed partial class DebugServer
         }
     }
 
-    private sealed unsafe class PresentHost
+    private sealed class PresentHost
     {
         private Popup? _popup;
         private SwapChainPanel? _view;
@@ -107,7 +107,7 @@ internal sealed partial class DebugServer
                 + $"Panel: {bounds.Width:0}x{bounds.Height:0} view pixels, {_width}x{_height} raw (scale {scale:0.###})\n";
         }
 
-        internal string Run(Uri uri, int seconds, string? target)
+        internal unsafe string Run(Uri uri, int seconds, string? target)
         {
             var abi = bale_gpu_abi_version();
             if (abi != DebugRustProbe.EngineAbi) return $"Rust GPU layer ABI {abi} (expected {DebugRustProbe.EngineAbi}) MISMATCH\n";
@@ -130,7 +130,7 @@ internal sealed partial class DebugServer
 
         /// <summary>Called on the engine thread with the swap chain handle: set it on the panel on the UI thread.</summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        private static int Attach(nint context, nint handle)
+        private static unsafe int Attach(nint context, nint handle)
         {
             try
             {
