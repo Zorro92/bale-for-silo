@@ -1996,3 +1996,17 @@ DV Profile 5 fails the same way through MediaPlayer (`playtest`), so it is the c
 display, not rendering mode. The swap chain handle arrives about 100–130 ms after canplay. The HDR10
 run's ratio of 0.85 is 2.3 s of network buffering at start. Untested: an HDR10/DV display (the
 `hdr=on` switch, real passthrough), 4K, audio, seeking.
+
+**Library playback (0.1.587, 2026-11-17, same SDR display).** Library media needs Bale's auth headers,
+so `scripts/bale-debug.sh present-engine <seconds>` makes the real player hand its authenticated Rust
+range stream to the engine (`MFCreateMFByteStreamOnStreamEx` + `SetSourceFromByteStream`) instead of
+MediaPlayer, then leave. The panel is sized to the screen's raw pixels and scaled back to view pixels
+(before 0.1.586 only the top-left quarter showed), and follows DPI/window/HDMI mode changes.
+
+| File (MKV, played directly) | Result (30 s) |
+|---|---|
+| 1080p version (Auto on SDR) | correct framing, real time, 0.11 cores; 490 rendered / **113 dropped**, jitter 1.6 (24 fps on a 59.94 Hz output) |
+| 4K DV 8.1 version | correct framing and colour on the first frame, then **frozen**: 2 frames rendered while the audio clock ran |
+
+Open: why 1080p24 drops ~19% on a 60 Hz output (needs a 24 Hz mode test), and why 4K DV stalls on an
+SDR display (try the HDR10 4K version, or an HDR display). Production stays on MediaPlayerElement.
