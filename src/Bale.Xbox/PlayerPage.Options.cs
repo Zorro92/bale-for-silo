@@ -1,21 +1,38 @@
 using Bale.Core.Detail;
 using Bale.Core.Playback;
 using Bale.Xbox.Services;
+using Windows.System;
 using Windows.UI;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Controls.Primitives;
+using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
 
 namespace Bale.Xbox;
 
 /// <summary>
-/// The Options panel (TvPlayerHud.kt): opened from the control bar's Options button or the Menu button,
-/// it replaces the controls and stays until Back. Info shows the title and how it plays; Chapters lists
-/// the playing file's chapters and seeks to the one picked. Tabs follow focus, as on the TV apps.
+/// The Options panel (TvPlayerHud.kt, TVPlayerInfoHUD.swift): opened from the control bar's Options button or the
+/// Menu button, it replaces the controls and stays until Back. Tabs Info · Stats · Video · Audio · Subtitles ·
+/// Chapters, empty ones hidden (PlaybackOptionsTabs.Visible). Info shows the title and how it plays; Stats the
+/// official playback readout; Video the automation rows; Audio and Subtitles list the tracks and switch on Select
+/// (the panel stays open, the check moves); Chapters seeks to the one picked. Tabs follow focus, as on the TV apps;
+/// inside a pane Up/Down walk the rows and never turn sideways.
 /// </summary>
 public sealed partial class PlayerPage
 {
+    private static readonly PlaybackOptionsTab[] AllOptionsTabs =
+    [
+        PlaybackOptionsTab.Info, PlaybackOptionsTab.Stats, PlaybackOptionsTab.Video,
+        PlaybackOptionsTab.Audio, PlaybackOptionsTab.Subtitles, PlaybackOptionsTab.Chapters,
+    ];
+
+    private PlaybackOptionsTab _optionsTab = PlaybackOptionsTab.Info;
+    private IReadOnlyList<PlaybackOptionsTab> _optionsTabs = [PlaybackOptionsTab.Info, PlaybackOptionsTab.Video];
+    private IReadOnlyList<PlaybackTrackRow> _audioRows = [];
+    private IReadOnlyList<PlaybackTrackRow> _subtitleRows = [];
+    private IReadOnlyList<(string Label, string Value)> _optionsStatsRows = [];
+
     private bool OptionsOpen => OptionsPanel.Visibility == Visibility.Visible;
 
     private void OnOptionsClick(object sender, RoutedEventArgs e) => OpenOptions();
@@ -33,10 +50,16 @@ public sealed partial class PlayerPage
             }
             FillInfo(attempt.Request.Detail, plan);
             var chapters = PlayingChapters();
-            ChaptersTab.Visibility = chapters.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             FillChapters(chapters);
+            FillTracks();
+            // The last once-a-second throughput sample stays; the rest is read now.
+            FillOptionsStats(RefreshHudStats(attempt, sampleBandwidth: false).OfficialHudRows());
+            _optionsTabs = PlaybackOptionsTabs.Visible(_optionsStatsRows.Count > 0, PlaybackOptionsTabs.TrackCount(_audioRows),
+                PlaybackOptionsTabs.TrackCount(_subtitleRows), chapters.Count);
+            foreach (var tab in AllOptionsTabs)
+                OptionsTabButton(tab).Visibility = _optionsTabs.Contains(tab) ? Visibility.Visible : Visibility.Collapsed;
             UpdateAutoPlayRow();
-            ShowOptionsTab(OptionsTab.Info);
+            ShowOptionsTab(PlaybackOptionsTab.Info);
             OptionsPanel.Visibility = Visibility.Visible;
             FocusRetry.Until(InfoTab, () => !OptionsOpen || InfoTab.Focus(FocusState.Keyboard));
         }
@@ -134,19 +157,232 @@ public sealed partial class PlayerPage
         }
     }
 
-    private enum OptionsTab { Info, Video, Chapters }
-
-    private void OnOptionsTabFocus(object sender, RoutedEventArgs e) => ShowOptionsTab(
-        ReferenceEquals(sender, VideoTab) ? OptionsTab.Video : ReferenceEquals(sender, ChaptersTab) ? OptionsTab.Chapters : OptionsTab.Info);
-
-    private void ShowOptionsTab(OptionsTab tab)
+    private ToggleButton OptionsTabButton(PlaybackOptionsTab tab) => tab switch
     {
-        InfoTab.IsChecked = tab == OptionsTab.Info;
-        VideoTab.IsChecked = tab == OptionsTab.Video;
-        ChaptersTab.IsChecked = tab == OptionsTab.Chapters;
-        InfoPane.Visibility = tab == OptionsTab.Info ? Visibility.Visible : Visibility.Collapsed;
-        VideoPane.Visibility = tab == OptionsTab.Video ? Visibility.Visible : Visibility.Collapsed;
-        ChaptersPane.Visibility = tab == OptionsTab.Chapters ? Visibility.Visible : Visibility.Collapsed;
+        PlaybackOptionsTab.Stats => StatsTab,
+        PlaybackOptionsTab.Video => VideoTab,
+        PlaybackOptionsTab.Audio => AudioTab,
+        PlaybackOptionsTab.Subtitles => SubtitlesTab,
+        PlaybackOptionsTab.Chapters => ChaptersTab,
+        _ => InfoTab,
+    };
+
+    private FrameworkElement OptionsPane(PlaybackOptionsTab tab) => tab switch
+    {
+        PlaybackOptionsTab.Stats => StatsPane,
+        PlaybackOptionsTab.Video => VideoPane,
+        PlaybackOptionsTab.Audio => AudioPane,
+        PlaybackOptionsTab.Subtitles => SubtitlesPane,
+        PlaybackOptionsTab.Chapters => ChaptersPane,
+        _ => InfoPane,
+    };
+
+    /// <summary>The pane's focusable rows, top to bottom (Info and Stats are read-only).</summary>
+    private List<Button> OptionsPaneRows(PlaybackOptionsTab tab) => tab switch
+    {
+        PlaybackOptionsTab.Video => [AutoPlayRow],
+        PlaybackOptionsTab.Audio => AudioRows.Children.OfType<Button>().ToList(),
+        PlaybackOptionsTab.Subtitles => SubtitleRows.Children.OfType<Button>().ToList(),
+        PlaybackOptionsTab.Chapters => ChapterRows.Children.OfType<Button>().ToList(),
+        _ => [],
+    };
+
+    private void OnOptionsTabFocus(object sender, RoutedEventArgs e)
+    {
+        foreach (var tab in AllOptionsTabs)
+        {
+            if (!ReferenceEquals(sender, OptionsTabButton(tab))) continue;
+            ShowOptionsTab(tab);
+            return;
+        }
+    }
+
+    private void ShowOptionsTab(PlaybackOptionsTab tab)
+    {
+        _optionsTab = tab;
+        foreach (var each in AllOptionsTabs)
+        {
+            OptionsTabButton(each).IsChecked = each == tab;
+            OptionsPane(each).Visibility = each == tab ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    /// <summary>
+    /// D-pad inside the panel, explicit rather than directional search (a full-width row is "below" every tab):
+    /// Left/Right walk the tab bar and stop at its ends; Down from a tab enters its pane on the checked row; Up/Down
+    /// walk a pane's rows, Up from the first returns to its tab, and the last row and Left/Right in a pane stay put.
+    /// </summary>
+    private void OnOptionsKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        try
+        {
+            var up = e.Key is VirtualKey.Up or VirtualKey.GamepadDPadUp or VirtualKey.GamepadLeftThumbstickUp;
+            var down = e.Key is VirtualKey.Down or VirtualKey.GamepadDPadDown or VirtualKey.GamepadLeftThumbstickDown;
+            var left = e.Key is VirtualKey.Left or VirtualKey.GamepadDPadLeft or VirtualKey.GamepadLeftThumbstickLeft;
+            var right = e.Key is VirtualKey.Right or VirtualKey.GamepadDPadRight or VirtualKey.GamepadLeftThumbstickRight;
+            if (!up && !down && !left && !right) return;
+            var focused = FocusManager.GetFocusedElement();
+            if (AllOptionsTabs.Where(tab => ReferenceEquals(focused, OptionsTabButton(tab))).Select(tab => (PlaybackOptionsTab?)tab).FirstOrDefault() is { } focusedTab
+                && focusedTab != _optionsTab) ShowOptionsTab(focusedTab);
+            var rows = OptionsPaneRows(_optionsTab);
+            if (ReferenceEquals(focused, OptionsTabButton(_optionsTab)))
+            {
+                e.Handled = true;
+                if ((left || right) && PlaybackOptionsTabs.NextTab(_optionsTabs, _optionsTab, forward: right) is { } nextTab)
+                    OptionsTabButton(nextTab).Focus(FocusState.Keyboard);
+                else if (down && PlaybackOptionsTabs.EntryRow(RowSelection(_optionsTab, rows.Count)) is >= 0 and var entry)
+                    rows[entry].Focus(FocusState.Keyboard);
+                return;
+            }
+            var index = rows.FindIndex(candidate => ReferenceEquals(candidate, focused));
+            if (index < 0) return;
+            e.Handled = true;
+            if (left || right) return;
+            var target = PlaybackOptionsTabs.MoveFromRow(index, rows.Count, down);
+            if (target == -1) OptionsTabButton(_optionsTab).Focus(FocusState.Keyboard);
+            else if (target is { } targetRow) rows[targetRow].Focus(FocusState.Keyboard);
+        }
+        catch (Exception ex) { LogFailure("options input", ex); }
+    }
+
+    /// <summary>Which of a pane's rows is checked: the playing track in Audio / Subtitles, none elsewhere.</summary>
+    private bool[] RowSelection(PlaybackOptionsTab tab, int count)
+    {
+        var tracks = tab == PlaybackOptionsTab.Audio ? _audioRows : tab == PlaybackOptionsTab.Subtitles ? _subtitleRows : null;
+        return Enumerable.Range(0, count).Select(i => tracks is not null && i < tracks.Count && tracks[i].IsSelected).ToArray();
+    }
+
+    /// <summary>TvPlayerHud.kt HudStatsPane: label/value rows, the first half on the left, one line each.</summary>
+    private void FillOptionsStats(IReadOnlyList<(string Label, string Value)> rows)
+    {
+        if (_optionsStatsRows.SequenceEqual(rows)) return;
+        _optionsStatsRows = rows;
+        StatsPaneLeftRows.Children.Clear();
+        StatsPaneRightRows.Children.Clear();
+        var split = (rows.Count + 1) / 2;
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var (label, value) = rows[i];
+            var row = new Grid { Style = StatsRowStyleSource.Style };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.Children.Add(new TextBlock { Text = label, Style = StatsLabelStyleSource.Style });
+            // HudReadOnlyRow: the value ends in an ellipsis rather than wrapping (the debug overlay wraps).
+            var text = new TextBlock
+            {
+                Text = value, Style = StatsValueStyleSource.Style,
+                TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1,
+            };
+            Grid.SetColumn(text, 1);
+            row.Children.Add(text);
+            (i < split ? StatsPaneLeftRows : StatsPaneRightRows).Children.Add(row);
+        }
+    }
+
+    /// <summary>OnTick, once a second: the open Stats tab follows playback.</summary>
+    private void UpdateOptionsStats()
+    {
+        if (OptionsOpen && _optionsTab == PlaybackOptionsTab.Stats) FillOptionsStats(_hudStats.OfficialHudRows());
+    }
+
+    private IReadOnlyList<PlaybackTrackRow> PlayingTrackRows(PlaybackSelectorKind kind) =>
+        PlaybackOptionsTabs.TrackRows(TrackOptions(kind));
+
+    private void FillTracks()
+    {
+        _audioRows = PlayingTrackRows(PlaybackSelectorKind.Audio);
+        _subtitleRows = PlayingTrackRows(PlaybackSelectorKind.Subtitles);
+        FillTrackRows(AudioRows, _audioRows, PlaybackSelectorKind.Audio);
+        FillTrackRows(SubtitleRows, _subtitleRows, PlaybackSelectorKind.Subtitles);
+        // TvPlayerHud.kt HudSubtitlesPane: "Tracks · 3" (Off is not counted).
+        var subtitles = PlaybackOptionsTabs.TrackCount(_subtitleRows);
+        SubtitleTracksHeader.Text = subtitles > 0 ? $"TRACKS · {subtitles}" : "TRACKS";
+    }
+
+    private void FillTrackRows(Panel panel, IReadOnlyList<PlaybackTrackRow> rows, PlaybackSelectorKind kind)
+    {
+        panel.Children.Clear();
+        foreach (var track in rows)
+        {
+            // HudSubtitleTrackRow: check slot, name, attributes on the right; the playing row keeps a soft fill.
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.Children.Add(new FontIcon { Glyph = "\uE73E", FontSize = 15, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center });
+            var name = new TextBlock { Text = track.Name, MaxLines = 1, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(name, 1);
+            grid.Children.Add(name);
+            if (track.Attributes is { } attributes)
+            {
+                var detail = new TextBlock
+                {
+                    Text = attributes, FontSize = 12.04, Opacity = 0.6, MaxWidth = 300, MaxLines = 1, Margin = new Thickness(12, 0, 0, 0),
+                    TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center,
+                };
+                Grid.SetColumn(detail, 2);
+                grid.Children.Add(detail);
+            }
+            var row = new Button { Style = (Style)Application.Current.Resources["SkylinePanelRowStyle"], Content = grid };
+            Windows.UI.Xaml.Automation.AutomationProperties.SetName(row, track.Attributes is { } spoken ? $"{track.Name}, {spoken}" : track.Name);
+            MarkTrackRow(row, track.IsSelected);
+            var index = track.TrackIndex;
+            row.Click += (_, _) => OnTrackRowClick(kind, index);
+            panel.Children.Add(row);
+        }
+    }
+
+    private static void MarkTrackRow(Button row, bool selected)
+    {
+        // TvPlayerChrome.Selected (white 7.5%) under the playing track; focus still inverts the row.
+        if (selected) row.Background = new SolidColorBrush(Color.FromArgb(0x13, 0xFF, 0xFF, 0xFF));
+        else row.ClearValue(Control.BackgroundProperty);
+        if (row.Content is Grid grid && grid.Children.OfType<FontIcon>().FirstOrDefault() is { } check)
+            check.Visibility = selected ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>TVPlayerInfoHUD.swift selectAudio / selectSubtitle: the same switch as the control bar's menus; the panel stays.</summary>
+    private void OnTrackRowClick(PlaybackSelectorKind kind, int trackIndex)
+    {
+        var rows = kind == PlaybackSelectorKind.Audio ? _audioRows : _subtitleRows;
+        if (!rows.Any(row => row.TrackIndex == trackIndex && !row.IsSelected)) return;
+        _ = SwitchTrackFromOptionsAsync(kind, trackIndex);
+    }
+
+    private async Task SwitchTrackFromOptionsAsync(PlaybackSelectorKind kind, int trackIndex)
+    {
+        try
+        {
+            await (kind == PlaybackSelectorKind.Audio ? ChangeTracksAsync(trackIndex, null) : ChangeTracksAsync(null, trackIndex));
+            if (OptionsOpen) MarkTrackRows();
+        }
+        catch (Exception ex) { LogFailure("options track", ex); }
+    }
+
+    /// <summary>Moves the checks to what plays now, in place so focus stays on the row; a changed list is rebuilt.</summary>
+    private void MarkTrackRows()
+    {
+        var audio = PlayingTrackRows(PlaybackSelectorKind.Audio);
+        var subtitles = PlayingTrackRows(PlaybackSelectorKind.Subtitles);
+        if (!SameTracks(audio, _audioRows) || !SameTracks(subtitles, _subtitleRows))
+        {
+            FillTracks();
+            if (_optionsTab is PlaybackOptionsTab.Audio or PlaybackOptionsTab.Subtitles)
+                OptionsTabButton(_optionsTab).Focus(FocusState.Programmatic);
+            return;
+        }
+        _audioRows = audio;
+        _subtitleRows = subtitles;
+        Mark(AudioRows, audio);
+        Mark(SubtitleRows, subtitles);
+
+        static bool SameTracks(IReadOnlyList<PlaybackTrackRow> a, IReadOnlyList<PlaybackTrackRow> b) =>
+            a.Select(row => row.TrackIndex).SequenceEqual(b.Select(row => row.TrackIndex));
+
+        static void Mark(Panel panel, IReadOnlyList<PlaybackTrackRow> rows)
+        {
+            foreach (var (row, track) in panel.Children.OfType<Button>().Zip(rows)) MarkTrackRow(row, track.IsSelected);
+        }
     }
 
     private void UpdateAutoPlayRow() => AutoPlayRowValue.Text = _upNext.AutoPlay ? "On" : "Off";

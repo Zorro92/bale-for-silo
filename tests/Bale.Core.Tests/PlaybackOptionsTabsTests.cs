@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using Bale.Core.Detail;
 using Bale.Core.Playback;
 
@@ -69,4 +70,35 @@ public class PlaybackOptionsTabsTests
         Assert.Null(PlaybackOptionsTabs.MoveFromRow(2, 3, down: true));
         Assert.Null(PlaybackOptionsTabs.MoveFromRow(0, 0, down: true));
     }
+
+    [Fact]
+    public void PanelShowsTheTabsInTvOrderAndOwnsItsDpad()
+    {
+        var page = XDocument.Parse(Read("PlayerPage.xaml"));
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+        XElement Named(string name) => page.Descendants().Single(element => element.Attribute(x + "Name")?.Value == name);
+        var tabs = Named("OptionsTabs").Elements().ToList();
+        Assert.Equal(["Info", "Stats", "Video", "Audio", "Subtitles", "Chapters"], tabs.Select(tab => tab.Attribute("Content")?.Value));
+        Assert.All(tabs, tab =>
+        {
+            Assert.Equal("{StaticResource SkylineChipStyle}", tab.Attribute("Style")?.Value);
+            Assert.Equal("OnOptionsTabFocus", tab.Attribute("GotFocus")?.Value);
+        });
+        var panel = Named("OptionsPanel");
+        Assert.Equal("736", panel.Attribute("Width")?.Value);
+        Assert.Equal("OnOptionsKeyDown", panel.Attribute("PreviewKeyDown")?.Value);
+        foreach (var pane in new[] { "InfoPane", "StatsPane", "VideoPane", "AudioPane", "SubtitlesPane", "ChaptersPane" })
+            Assert.Contains(Named(pane), panel.Descendants());
+
+        var code = Read("PlayerPage.Options.cs.txt");
+        Assert.Contains("PlaybackOptionsTabs.Visible(_optionsStatsRows.Count > 0", code);
+        Assert.Contains("RefreshHudStats(attempt, sampleBandwidth: false).OfficialHudRows()", code);
+        // Picks take the control bar's path (local audio switch or replan) and leave the panel open.
+        Assert.Contains("ChangeTracksAsync(trackIndex, null) : ChangeTracksAsync(null, trackIndex)", code);
+        Assert.Contains("PlaybackOptionsTabs.MoveFromRow(index, rows.Count, down)", code);
+        Assert.Contains("(Style)Application.Current.Resources[\"SkylinePanelRowStyle\"]", code);
+        Assert.Contains("UpdateOptionsStats();", Read("PlayerPage.cs.txt"));
+    }
+
+    private static string Read(string file) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, file));
 }

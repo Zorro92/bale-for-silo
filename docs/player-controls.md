@@ -23,8 +23,8 @@ silo-android `androidTvApp/.../tv/ui/screens/player/` (port of the tvOS player).
 | Transport overlay | Down / any unmapped key reveals it; auto-hides after 5 s of no input | `TvPlayerScreen.kt` | missing |
 | Scrubber | Glass capsule; focus = scrub mode; tap Left/Right nudges ±10 s, hold auto-seeks, Select commits, Back/Down cancels; chapter ticks and segment colours; time bubble | `TvPlayerScrubber.kt` | missing |
 | Transport row | Left: skip back · play/pause · skip forward. Right: Up Next · Subtitles · Options · Close. Discs that widen into labelled pills on focus ("Subtitles · English") | `TvPlayerTransportCluster.kt` | missing |
-| HUD | Top-centre card, tabs Info · Stats · Video · Audio · Subtitles · Chapters (empty ones hidden); row → picker model; Menu opens it on Video, Down from clean playback on Audio/Subtitles | `TvPlayerHud.kt` | debug stats only |
-| Audio / subtitle switch | Local track switch, or a server `replan` when the route needs it | `TvPlayerViewModel.kt` | missing (Detail page only) |
+| HUD | Top-centre card, tabs Info · Stats · Video · Audio · Subtitles · Chapters (empty ones hidden); row → picker model; Menu opens it on Video, Down from clean playback on Audio/Subtitles | `TvPlayerHud.kt` | Options panel, all six tabs (step 4); no Menu-on-Video or Down-to-Audio entry yet |
+| Audio / subtitle switch | Local track switch, or a server `replan` when the route needs it | `TvPlayerViewModel.kt` | control-bar menus and Options tabs: local audio switch on direct play, else replan |
 | Subtitle delay / appearance | In the Subtitles tab | `TvPlayerHud.kt`, `TvSubtitleAppearanceOptions.kt` | missing |
 | Chapters | Tab lists chapters, Select seeks and closes | `TvPlayerHud.kt` | missing |
 | Intro / credits skip | "Skip Intro" pill (ask) or "Intro skipped / Watch Intro" (always), fill tracks the timer | `TvIntroAutoSkipBanner.kt` | missing (player-plan "Later") |
@@ -98,8 +98,22 @@ rather than leaving them transparent so they cost nothing while hidden.
    control bar's Options button or the Menu button opens a top-centre card that replaces the controls
    until Back. Info: eyebrow, title, length, HDR/resolution badges, and Stream rows (Playback, Video,
    Audio, Subtitles, Chapter) in names people know. Chapters (only with chapters): a list with start
-   times; a pick seeks and closes. Not yet: the Video tab (playback settings), Audio/Subtitles tabs
-   (the buttons cover them), moving the debug stats into a Stats tab.
+   times; a pick seeks and closes.
+   Stats, Audio and Subtitles tabs, code done 2026-11-17 (`PlaybackOptionsTabs` in Core, `PlayerPage.Options.cs`,
+   `PlayerPage.HudStats.cs`): tabs in the TV order Info · Stats · Video · Audio · Subtitles · Chapters, hidden when
+   empty (Stats while it has rows, Audio with any audio track, Subtitles with any subtitle track as on tvOS,
+   Chapters with chapters). Stats shows TvPlayerHud.kt's hudRows() only (Backend, Route, Hard containers, codecs,
+   resolution, frame rate, HDR mode, decoders, Estimated bandwidth, dropped frames / underruns when non-zero) in two
+   columns, refreshed once a second while open, in every build (the debug overlay keeps its extra rows).
+   Audio and Subtitles list every track (Subtitles with Off first and "Tracks · N"), the playing one checked
+   with a soft fill; Select switches through the control bar's path (local audio switch on direct play, else a
+   replan) and the panel stays open while the check moves. D-pad: Left/Right walk the tabs and stop at the ends,
+   Down from a tab lands on the checked row, Up/Down walk the rows, Up from the first row returns to its tab, the
+   last row and Left/Right inside a pane stay put.
+   Not mirrored (Bale has nothing behind them yet): Audio delay and Android's Output column (codec / passthrough
+   mode / decoder), subtitle delay, timing sync, appearance and size, secondary subtitles, subtitle search and AI
+   translate, the pending "…" value while a switch is in flight, greyed-out unsupported subtitle formats, and the
+   Video tab's quality / speed / aspect / sleep / intro-skip rows.
    Verified on 0.1.574 (subtitles): PGS -> SRT replanned `playable` and remounted at the same
    position in about 2 s with the new track; Off replanned and no subtitles load. Audio list not
    exercised (the title had one language). Left/Right along the button row are explicit since.

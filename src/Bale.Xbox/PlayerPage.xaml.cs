@@ -336,7 +336,11 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 _lastRangeLog = now;
                 Log.Info($"player: range reads={range.Reads} fetches={range.BlockFetches} hits={range.CacheHits} prefetchhits={range.PrefetchHits} bytes={range.BytesRead} minread={range.SmallestRead}");
             }
+#else
+            // The Options panel's Stats readout (in debug builds RefreshStats above reads it every second).
+            if (OptionsOpen) RefreshHudStats(attempt);
 #endif
+            UpdateOptionsStats();
             var position = SourcePosition(attempt);
             var paused = attempt.Media.Player!.PlaybackSession.PlaybackState == MediaPlaybackState.Paused;
             await attempt.Services!.Reporter.RecordPositionAsync(attempt.SessionId!, position, paused, attempt.Cancellation.Token);
