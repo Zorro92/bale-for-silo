@@ -75,12 +75,13 @@ public sealed partial class PlayerPage
                 owned.Add(pointer);
                 report += await RunEngineAsync(() => host.RunStream(pointer, mime, seconds, frameRate, present));
             }
-            else if (media.Source is { } adaptive && media.Adaptive is not null)
+            else if (media.Adaptive is { } adaptiveSource)
             {
-                // Windows' HLS source (Bale supplies every download through DownloadRequested).
-                var pointer = ((WinRT.IWinRTObject)adaptive).NativeObject.ThisPtr;
+                // Windows' HLS source (Bale supplies every download through DownloadRequested). The WinRT
+                // MediaSource wrapper exposes no IMFGetService, so hand over the adaptive source itself.
+                var pointer = ((WinRT.IWinRTObject)adaptiveSource).NativeObject.ThisPtr;
                 report += await RunEngineAsync(() => host.RunSource(pointer, seconds, frameRate, present));
-                GC.KeepAlive(adaptive);
+                GC.KeepAlive(adaptiveSource);
             }
             else report += "Route not covered by the probe\n";
         }
@@ -105,6 +106,8 @@ public sealed partial class PlayerPage
     private bool _engineStatsVisible = true;
     private (long Ticks, ulong Rendered, ulong Dropped) _engineSample;
     private (ulong Rendered, ulong Dropped) _engineLastSecond;
+    // The engine restarts its counters on seek and pause; keep running totals across those.
+    private (ulong Rendered, ulong Dropped, ulong Corrupted) _engineBase, _engineRaw;
     private bool _engineClosing;
 
     internal bool EnginePlayerActive => _enginePlayer is { HasSession: true };
@@ -141,10 +144,16 @@ public sealed partial class PlayerPage
                 try { report += await RunEngineAsync(() => host.OpenSession(pointer, mime, start, paused)); }
                 finally { Marshal.Release(pointer); }
             }
-            else if (media.Source is { } adaptive && media.Adaptive is not null)
+            else if (media.Adaptive is { } adaptiveSource && media.Source is { } wrapped)
             {
-                var pointer = ((WinRT.IWinRTObject)adaptive).NativeObject.ThisPtr;
-                report += await RunEngineAsync(() => host.OpenSession(pointer, null, start, paused));
+                // The WinRT MediaSource wrapper exposes no IMFGetService; try the adaptive source itself first.
+                var pointer = ((WinRT.IWinRTObject)adaptiveSource).NativeObject.ThisPtr;
+                report += "Attempt 1 (AdaptiveMediaSource)\n" + await RunEngineAsync(() => host.OpenSession(pointer, null, start, paused));
+                if (!host.HasSession)
+                {
+                    var wrappedPointer = ((WinRT.IWinRTObject)wrapped).NativeObject.ThisPtr;
+                    report += "Attempt 2 (MediaSource wrapper)\n" + await RunEngineAsync(() => host.OpenSession(wrappedPointer, null, start, paused));
+                }
             }
             else report += "Route not covered by the engine player\n";
         }
@@ -160,6 +169,7 @@ public sealed partial class PlayerPage
         _enginePlayer = host;
         _engineClosing = false;
         _engineSample = (Environment.TickCount64, 0, 0);
+        _engineBase = _engineRaw = default;
         SetLoading(false);
         _engineTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _engineTimer.Tick += (_, _) => UpdateEnginePlayer();
@@ -172,6 +182,13 @@ public sealed partial class PlayerPage
         try
         {
             if (_enginePlayer is not { } host || !host.TryState(out var state)) return;
+            if (state.FramesRendered < _engineRaw.Rendered || state.FramesDropped < _engineRaw.Dropped)
+                _engineBase = (_engineBase.Rendered + _engineRaw.Rendered, _engineBase.Dropped + _engineRaw.Dropped,
+                    _engineBase.Corrupted + _engineRaw.Corrupted);
+            _engineRaw = (state.FramesRendered, state.FramesDropped, state.FramesCorrupted);
+            state.FramesRendered += _engineBase.Rendered;
+            state.FramesDropped += _engineBase.Dropped;
+            state.FramesCorrupted += _engineBase.Corrupted;
             var now = Environment.TickCount64;
             if (now - _engineSample.Ticks >= 1000)
             {
