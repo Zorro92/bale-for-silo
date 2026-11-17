@@ -152,7 +152,7 @@ public class DebugFfmpegPlaybackTests
         Assert.Contains("config.FFmpegOptions[\"bale_system_decoder_dolby\"] = \"1\"", production);
         Assert.Contains("config.Subtitles.AutoSelectForcedSubtitles = false", source);
         // Every video stream goes to the shared policy (SoftwareVideoSupportTests cover it).
-        Assert.Contains("var streams = source.VideoStreams.Select(video => (video.CodecName,", source);
+        Assert.Contains("var streams = source.VideoStreams.Select(video => ((string?)video.CodecName,", source);
         Assert.Contains("video.DecoderEngine == DecoderEngine.FFmpegSoftwareDecoder, video.DecoderEngine == DecoderEngine.SystemDecoder", source);
         Assert.Contains("if (!SoftwareDecodePolicy.VideoDecodersAllowed(route.SoftwareVideo, streams, route.VideoCodec))", source);
         Assert.DoesNotContain("ex.Message", source);
