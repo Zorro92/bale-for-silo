@@ -35,6 +35,24 @@ public static class PlaybackProtocol
     /// may answer with signed absolute proxy URLs, which PlaybackMediaUrl refuses. ApplePlaybackV3Capabilities.features.
     /// </summary>
     public const string HeaderAuthenticatedMediaFeature = "header_authenticated_media_v1";
+    /// <summary><c>learned_limit</c>: plan without the device's learned limit and leave it stored.</summary>
+    public const string LearnedLimitIgnore = "ignore";
+    /// <summary><c>learned_limit</c>: delete the learned limit, then plan without it (Restore quality).</summary>
+    public const string LearnedLimitClear = "clear";
+
+    /// <summary>
+    /// The <c>learned_limit</c> a start or replan carries. An explicit choice wins (Restore quality sends
+    /// <c>clear</c>); otherwise <c>never</c> mode sends <c>ignore</c> on every request, so a limit learned on this
+    /// device does not reach a profile that turned lowering off, and the other modes send nothing (the limit
+    /// applies). silo-server refuses the field unless client_features names buffering_quality_v1, so without it
+    /// nothing is sent (silo-apple PlaybackV3BufferingQualityRequest, silo-android PlaybackSessionManager
+    /// modeLearnedLimit / BufferingQualityRequestGating).
+    /// </summary>
+    public static string? LearnedLimit(IReadOnlyList<string> clientFeatures, Settings.BufferingQualityMode mode, string? explicitChoice = null)
+    {
+        if (!clientFeatures.Contains(ConnectionSpeed.BufferingQualityFeature)) return null;
+        return explicitChoice ?? (mode == Settings.BufferingQualityMode.Never ? LearnedLimitIgnore : null);
+    }
 
     /// <summary>
     /// Start-time features that depend on what the server offers. silo-server protocol_v3.go makes
@@ -113,6 +131,8 @@ public sealed record PlaybackStartRequestV3(
     /// <summary>The highest current speed reading (buffering_quality_v1); starts only, never replans.</summary>
     public int? BandwidthEstimateKbps { get; init; }
     public string? BandwidthEstimateSource { get; init; }
+    /// <summary><c>ignore</c> / <c>clear</c> with buffering_quality_v1 (<see cref="PlaybackProtocol.LearnedLimit"/>); set by PlaybackClient.</summary>
+    public string? LearnedLimit { get; init; }
     public bool? AllowAlternateVersions { get; init; }
 }
 
@@ -150,6 +170,11 @@ public sealed record PlaybackReplanRequestV3(
     public string QualityPreference { get; init; } = "auto";
     public bool Metered { get; init; }
     public int? BandwidthCapKbps { get; init; }
+    /// <summary>
+    /// An explicit <c>clear</c> (Restore quality) wins; otherwise PlaybackClient applies the mode's <c>ignore</c>.
+    /// Dropped when the replan does not name buffering_quality_v1.
+    /// </summary>
+    public string? LearnedLimit { get; init; }
     public PlaybackFailureV3? Failure { get; init; }
 }
 

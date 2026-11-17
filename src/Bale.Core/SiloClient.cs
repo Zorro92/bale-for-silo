@@ -44,7 +44,10 @@ public sealed class SiloClient : IDisposable
         Requests = new Requests.RequestsFeed(_connection.Api, _time);
         Settings = new Settings.PlaybackSettingsFeed(_connection.Api);
         Playback = new Playback.PlaybackClient(_connection.Api, _connection.RequestAdapter, _connection.Http, server, CapturePlaybackScope,
-            CaptureHeadersAsync);
+            CaptureHeadersAsync)
+        {
+            BufferingQualityMode = () => Settings.BufferingQuality.Value,
+        };
         Profiles = new Profiles.ProfileRepository(_connection.Api, () => Interlocked.Read(ref _accountGeneration), id =>
         {
             if (ProfileId == id) UseProfile(null);

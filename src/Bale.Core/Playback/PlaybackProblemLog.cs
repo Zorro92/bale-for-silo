@@ -36,7 +36,7 @@ public static class PlaybackProblemLog
         "installation_id", "protocol_version", "client_features", "operation", "file_id", "profile_id",
         "playback_attempt_id", "replan_request_id", "failed_plan_id", "plan_attempt_id", "plan_attempt_key",
         "attempted_plan_keys", "local_mutations", "attempt_count", "quality_preference", "position_seconds",
-        "metered", "bandwidth_estimate_kbps", "bandwidth_estimate_source", "bandwidth_cap_kbps",
+        "metered", "bandwidth_estimate_kbps", "bandwidth_estimate_source", "bandwidth_cap_kbps", "learned_limit",
         "selected_tracks", "failure", "client_capabilities", "client_playback_context", "start_position",
         "audio_track_id", "audio_track_index", "subtitle_track_id", "subtitle_track_index",
         "subtitle_fidelity_preference", "progress_persistence", "allow_alternate_versions",

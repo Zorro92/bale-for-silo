@@ -35,6 +35,9 @@ public sealed partial class PlaybackClient
     private volatile NegotiatedStartFeatures? _negotiated;
     internal Uri Server { get; }
 
+    /// <summary>The profile's buffering-quality mode for this device; SiloClient wires it to its settings feed.</summary>
+    internal Func<Settings.BufferingQualityMode> BufferingQualityMode { get; set; } = () => Settings.BufferingQualityModes.Default;
+
     internal PlaybackClient(SiloApiClient api, IRequestAdapter adapter, HttpClient http, Uri server, Func<PlaybackRequestScope> captureScope,
         PlaybackMedia.HeaderCapture? captureHeaders = null)
     {
@@ -107,6 +110,7 @@ public sealed partial class PlaybackClient
                 ClientFeatures = features,
                 BandwidthEstimateKbps = estimate,
                 BandwidthEstimateSource = estimate is null ? null : ConnectionSpeed.ProbeSource,
+                LearnedLimit = PlaybackProtocol.LearnedLimit(features, BufferingQualityMode(), request.LearnedLimit),
                 ClientPlaybackContext = request.ClientPlaybackContext.WithoutInactiveClientTransformations(),
             },
             PlaybackJson.Default.PlaybackStartRequestV3, scope, cancellationToken).ConfigureAwait(false);
@@ -131,11 +135,13 @@ public sealed partial class PlaybackClient
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        var features = PlaybackProtocol.ReplanFeatures(request, _negotiated);
         return PostAsync($"/api/v2/playback/{Uri.EscapeDataString(sessionId)}/replan",
             request with
             {
                 InstallationId = InstallationId(installation),
-                ClientFeatures = PlaybackProtocol.ReplanFeatures(request, _negotiated),
+                ClientFeatures = features,
+                LearnedLimit = PlaybackProtocol.LearnedLimit(features, BufferingQualityMode(), request.LearnedLimit),
                 ClientPlaybackContext = request.ClientPlaybackContext.WithoutInactiveClientTransformations(),
             }, PlaybackJson.Default.PlaybackReplanRequestV3,
             _captureScope(), cancellationToken);
