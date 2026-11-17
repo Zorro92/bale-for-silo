@@ -68,7 +68,7 @@ public class DetailFeedTests
 
         var series = detail with { Type = "series" };
         var nextUp = new EpisodeCard("e", 1, 2, "Ep", null, null, null, null, null, false);
-        Assert.Equal("Play S1:E2", PlayLabel.For(series, nextUp));
+        Assert.Equal("Play S01E02", PlayLabel.For(series, nextUp));
     }
 
     [Theory]
@@ -157,16 +157,16 @@ public class DetailFeedTests
     {
         var series = Movie() with { Type = "series", ResumeSeconds = 900 };
         var episode = new EpisodeCard("e", 2, 3, "Ep", null, null, null, null, null, false);
-        Assert.Equal("Play S2:E3", PlayLabel.For(series, episode));
+        Assert.Equal("Play S02E03", PlayLabel.For(series, episode));
         Assert.Null(PlayLabel.ResumeFor(series, episode));
         Assert.Equal("Play", PlayLabel.For(series, null));
         Assert.Null(PlayLabel.ResumeFor(series, null));
 
         episode = episode with { ResumeSeconds = 750 };
         series = series with { ResumeSeconds = null };
-        Assert.Equal("Resume S2:E3", PlayLabel.For(series, episode));
+        Assert.Equal("Resume S02E03", PlayLabel.For(series, episode));
         Assert.Equal(750, PlayLabel.ResumeFor(series, episode));
-        Assert.Equal("Resume E3", PlayLabel.For(series with { Type = "season" }, episode));
+        Assert.Equal("Resume E03", PlayLabel.For(series with { Type = "season" }, episode));
         Assert.Equal("Resume 12:30", PlayLabel.For(Movie() with { ResumeSeconds = 750 }, null));
     }
 

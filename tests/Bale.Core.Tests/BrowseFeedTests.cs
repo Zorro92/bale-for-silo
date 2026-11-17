@@ -37,7 +37,7 @@ public class BrowseFeedTests
         var card = Assert.Single(row.Cards);
         Assert.Equal("Dark", card.Title);
         Assert.Equal("S01E05 • The Rains", card.Subtitle);
-        Assert.Equal("S1 E5", card.EpisodeCode);
+        Assert.Equal("S01E05", card.EpisodeCode);
         Assert.Equal(0.25, card.Progress);
         Assert.Equal("https://silo.example.com/api/v2/artwork/still.jpg?sig=x", card.ImageUrl!.ToString());
         Assert.Equal("https://silo.example.com/api/v2/artwork/series.jpg", card.BackdropUrl!.ToString());
@@ -80,10 +80,10 @@ public class MarqueeMetaTests
     public void EpisodeMetaMatchesAndroidTv()
     {
         var badges = BrowseFeed.Badges(new CatalogItemOverlay { Resolution = "2160p", Hdr = "HDR10", Audio = "EAC3" }, "TV-MA");
-        var card = new MediaCard("e1", "episode", "Paradise", "Exodus", null, null, null, null, null, 0.6, 18, null, "s1", badges, "S2 E8", "Exodus", "52 min");
+        var card = new MediaCard("e1", "episode", "Paradise", "Exodus", null, null, null, null, null, 0.6, 18, null, "s1", badges, "S02E08", "Exodus", "52 min");
 
         Assert.Equal(["4K", "HDR", "EAC3", "TV-MA"], card.Badges);
-        Assert.Equal("S2 E8 · Exodus · 52 min · 18m left", card.MarqueeMeta);
+        Assert.Equal("S02E08 · Exodus · 52 min · 18m left", card.MarqueeMeta);
     }
 
     [Fact]

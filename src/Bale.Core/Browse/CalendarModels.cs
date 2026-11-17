@@ -68,7 +68,7 @@ public sealed record CalendarItem(
             {
                 if (SeasonNumber is { } season && EpisodeNumber is { } episode)
                 {
-                    parts.Add($"S{season} · E{episode}");
+                    parts.Add(Detail.EpisodeCode.Format(season, episode));
                 }
 
                 if (!string.IsNullOrWhiteSpace(EpisodeTitle))

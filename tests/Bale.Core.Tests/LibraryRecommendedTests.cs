@@ -67,10 +67,10 @@ public class LibraryRecommendedTests
         Assert.Equal(CardShape.Landscape, row.Shape);
         Assert.Equal(73, row.Cards[0].PositionSeconds);
         Assert.Equal("show", row.Cards[0].SeriesId);
-        Assert.Equal("S2 E3", row.Cards[0].EpisodeCode);
+        Assert.Equal("S02E03", row.Cards[0].EpisodeCode);
         Assert.Equal(42, row.Cards[1].PositionSeconds);
         Assert.Equal("other-show", row.Cards[1].SeriesId);
-        Assert.Equal("S1 E4", row.Cards[1].EpisodeCode);
+        Assert.Equal("S01E04", row.Cards[1].EpisodeCode);
         Assert.False(result.Incomplete);
         Assert.Equal(3, stub.Requests.Count);
     }

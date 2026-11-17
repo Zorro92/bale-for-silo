@@ -371,7 +371,7 @@ public sealed partial class BrowseFeed
             item.PlayContentId,
             item.SeriesId,
             Badges(item.OverlaySummary, item.ContentRating),
-            item.Type == "episode" && item.SeasonNumber is { } season && item.EpisodeNumber is { } episode ? $"S{season} E{episode}" : null,
+            item.Type == "episode" && item.SeasonNumber is { } season && item.EpisodeNumber is { } episode ? Detail.EpisodeCode.Format(season, episode) : null,
             item.Type == "episode" ? item.Title : null,
             Runtime(item.Runtime))
         {

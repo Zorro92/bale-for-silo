@@ -72,7 +72,7 @@ public class CalendarFeedTests
         Assert.True(week.HasItems);
         Assert.Equal(["e2", "e1"], week.Days[5].Items.Select(item => item.ContentId));
         var episode = week.Days[5].Items[0];
-        Assert.Equal("S2 · E2 · Second", episode.Subtitle);
+        Assert.Equal("S02E02 · Second", episode.Subtitle);
         Assert.Equal("https://example.com/silo/api/v2/artwork/poster.jpg?sig=example", episode.PosterUrl!.ToString());
         Assert.Equal("hash", episode.PosterThumbhash);
         Assert.True(episode.Watched);
@@ -113,10 +113,10 @@ public class CalendarFeedTests
     }
 
     [Theory]
-    [InlineData(1L, 2L, "Pilot", "S1 · E2 · Pilot")]
+    [InlineData(1L, 2L, "Pilot", "S01E02 · Pilot")]
     [InlineData(null, 2L, "Pilot", "Pilot")]
     [InlineData(1L, null, " ", null)]
-    [InlineData(0L, 1L, null, "S0 · E1")]
+    [InlineData(0L, 1L, null, "S00E01")]
     public void EpisodeCaptionUsesCalendarProseNotTheHomeEpisodeTag(long? season, long? episode, string? title, string? expected)
     {
         var (connection, feed) = Create(new StubHandler());

@@ -75,7 +75,7 @@ public static class PlaybackControlsText
         if (detail.Type == "episode" && !string.IsNullOrWhiteSpace(detail.Title))
         {
             var code = detail.SeasonNumber is { } season && detail.EpisodeNumber is { } episode
-                ? string.Create(CultureInfo.InvariantCulture, $"S{season}:E{episode}") : null;
+                ? EpisodeCode.Format(season, episode) : null;
             return string.Join(" · ", new[] { detail.Title.Trim(), code }.Where(part => part is not null)).ToUpperInvariant();
         }
 

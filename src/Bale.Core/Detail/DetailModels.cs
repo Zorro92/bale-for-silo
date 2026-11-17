@@ -250,13 +250,13 @@ public static class DetailTitle
 /// <summary>Play button wording, as TvItemDetailScreen.playButtonLabel words it.</summary>
 public static class PlayLabel
 {
-    /// <summary>"Play S1:E2" / "Resume S1:E2" for a series' active episode, else "Play" or "Resume 12:34".</summary>
+    /// <summary>"Play S01E02" / "Resume S01E02" for a series' active episode, else "Play" or "Resume 12:34".</summary>
     public static string For(ItemDetail detail, EpisodeCard? episode)
     {
         var resume = ResumeFor(detail, episode);
         if (detail.PlaysEpisodes && episode is not null)
         {
-            var code = detail.IsSeries ? $"S{episode.SeasonNumber}:E{episode.EpisodeNumber}" : $"E{episode.EpisodeNumber}";
+            var code = EpisodeCode.Format(detail.IsSeries ? episode.SeasonNumber : null, episode.EpisodeNumber);
             return $"{(resume is > 0 ? "Resume" : "Play")} {code}";
         }
 

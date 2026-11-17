@@ -92,7 +92,7 @@ public sealed partial class PlayerPage
         if (_nextEpisode is not { } next) return;
         Log.Info("player: up next shown");
         HideControls();
-        UpNextTitle.Text = $"S{next.SeasonNumber}:E{next.EpisodeNumber} · {next.Title}";
+        UpNextTitle.Text = $"{EpisodeCode.Format(next.SeasonNumber, next.EpisodeNumber)} · {next.Title}";
         UpNextStill.Source = next.StillUrl is { } still ? new BitmapImage(still) : null;
         UpdateUpNextCountdown();
         UpNextCard.Visibility = Visibility.Visible;

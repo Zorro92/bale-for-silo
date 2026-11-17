@@ -40,7 +40,7 @@ public class PlaybackControlsTests
     public void EyebrowAndTitleFollowTheOfficialPlayer()
     {
         var episode = Detail("episode", "Severance", "Hello, Ms. Cobel") with { SeasonNumber = 2, EpisodeNumber = 4 };
-        Assert.Equal("SEVERANCE · S2:E4", PlaybackControlsText.Eyebrow(episode));
+        Assert.Equal("SEVERANCE · S02E04", PlaybackControlsText.Eyebrow(episode));
         Assert.Equal("Hello, Ms. Cobel", PlaybackControlsText.Title(episode));
         var movie = Detail("movie", "Film", null) with { Year = 2026 };
         Assert.Equal("MOVIE · 2026", PlaybackControlsText.Eyebrow(movie));
