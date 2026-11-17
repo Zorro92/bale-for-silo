@@ -268,6 +268,13 @@ public sealed partial class PlayerPage
                 var config = FfmpegSource.Configuration(media.Route);
 #endif
                 FfmpegSource.ApplySubtitleSink(config, media.SubtitleStreamIndex, media.SubtitleSinkToken);
+#if DEBUG_SERVER
+                // The debug engine player sets the forward-only mount's real remaining duration itself:
+                // IMFMediaEngine ends at the duration it read at load, so FFmpegInteropX's few-second
+                // auto-extended estimate would stop it (MediaPlayer follows the extensions).
+                if (DebugPresentEngineSwitch.Seconds > 0 && media.Progressive is not null)
+                    config.General.AutoExtendDuration = false;
+#endif
                 media.FfmpegSource = media.ForwardInput is { } forward
                     ? await FFmpegMediaSource.CreateFromInputStreamAsync(forward, config).AsTask()
                     : await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream!, config).AsTask();

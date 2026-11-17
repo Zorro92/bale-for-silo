@@ -110,6 +110,9 @@ public sealed partial class PlayerPage
     private (ulong Rendered, ulong Dropped, ulong Corrupted) _engineBase, _engineRaw;
     // Premature ends reanchored at one source position; a repeat there leaves instead of looping.
     private double _engineLastReconnect = double.NaN;
+    // Reconnects in a row with no frames shown in between; capped so a bad mount cannot loop.
+    private int _engineReconnects;
+    private ulong _engineRenderedAtMount;
     private bool _engineReanchoring;
 
     internal bool EnginePlayerActive => _enginePlayer is { HasSession: true };
@@ -131,11 +134,24 @@ public sealed partial class PlayerPage
         try
         {
             report += await host.OpenAsync(hdr: false);
-            var start = media.StartPosition;
+            // A forward-only mount (progressive remux, HLS through FFmpeg) already opens where it plays,
+            // on a clock that starts at 0 there; only seekable sources take the start position
+            // (as OnMediaOpened does for MediaPlayer).
+            var start = media.Progressive is null ? media.StartPosition : 0;
             var paused = media.StartPaused;
             if (media.FfmpegSource is { } ffmpeg)
             {
                 var mss = ffmpeg.GetMediaStreamSource();
+                if (media.Progressive is not null && _duration is > 0 and var title)
+                {
+                    // The engine ends at the duration it reads at load: give it the rest of the title from
+                    // this mount's origin instead of FFmpeg's estimate of what it has probed.
+                    var origin = media.Transport.Timeline.SourceForPlayer(0) ?? 0;
+                    var remaining = Math.Max(1, title - origin);
+                    mss.Duration = TimeSpan.FromSeconds(remaining);
+                    report += string.Create(CultureInfo.InvariantCulture,
+                        $"Forward-only mount: origin {origin:0.###}s, duration set to {remaining:0.###}s\n");
+                }
                 var pointer = ((WinRT.IWinRTObject)mss).NativeObject.ThisPtr;
                 report += await RunEngineAsync(() => host.OpenSession(pointer, null, start, paused));
                 if (!host.HasSession && report.Contains("MF_MEDIASOURCE_SERVICE): fails", StringComparison.Ordinal))
@@ -181,6 +197,7 @@ public sealed partial class PlayerPage
         media.Opening.TrySetResult(true);
         _engineSample = (Environment.TickCount64, 0, 0);
         _engineBase = _engineRaw = default;
+        _engineRenderedAtMount = 0;
         SetLoading(false);
         _engineTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _engineTimer.Tick += (_, _) => UpdateEnginePlayer();
@@ -211,10 +228,13 @@ public sealed partial class PlayerPage
             if (_attempt is { } current && !_engineReanchoring)
                 current.Position = _sourcePosition = source;
             if (_engineReanchoring) return;
+            if (state.FramesRendered > _engineRenderedAtMount + 24) _engineReconnects = 0;
             if (state.Ended && !state.Failed && _attempt?.Media is { Progressive: not null }
                 && _duration is > 0 and var titleDuration && source < titleDuration - 5
-                && !(Math.Abs(source - _engineLastReconnect) < 1))
+                && !(Math.Abs(source - _engineLastReconnect) < 1) && _engineReconnects < 3)
             {
+                _engineReconnects++;
+                _engineRenderedAtMount = state.FramesRendered;
                 // A forward-only stream ended before the title did (the HLS window or a cut-off
                 // progressive response): reconnect there, as the normal player does (protocol §6.2).
                 _engineLastReconnect = source;
