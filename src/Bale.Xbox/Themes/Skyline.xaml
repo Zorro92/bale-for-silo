@@ -1650,6 +1650,8 @@
     <!-- Debug values can be long (media types, plans): wrap at spaces instead of cutting them off. -->
     <Setter Property="TextWrapping" Value="WrapWholeWords" />
     <Setter Property="TextTrimming" Value="None" />
+    <!-- The label style is one line; 0 lifts the limit so a wrapped value shows all its lines. -->
+    <Setter Property="MaxLines" Value="0" />
     <Setter Property="MaxLines" Value="0" />
   </Style>
   <Style x:Key="SkylineProfileErrorScreenStyle" TargetType="Grid">
