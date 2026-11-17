@@ -125,7 +125,8 @@ namespace Bale.Xbox
                 StartPgsSubtitles(attempt, attempt.Media, source);
             return Task.CompletedTask;
         }
-        private void ShowSkipFeedback(int delta, double target) { }
+        private void ShowSkipFeedback(int delta, double target) => LastSkipLabel = _skipLabel;
+        internal string? LastSkipLabel { get; private set; }
         private void HideTransport() { }
         private void SetLoading(bool loading) { }
         private void UpdatePlaybackState(Attempt attempt, Mount media)
