@@ -400,6 +400,12 @@ Each of these crashed or silently broke the app on the console while compiling f
 - **No XAML `OpacityTransition` on an element you also use with `ElementCompositionPreview`**;
   animate in Composition instead. **Composition mask brushes can't be nested**; combine masks into
   one image (`Assets/ArtMask.png`).
+- **`StackPanel.Spacing` still counts collapsed children**: a gap is added after every child, hidden
+  or not, so an icon whose label shows only on focus sat 8 px (one hidden label) to 16 px (label and
+  value) left of its round button's centre (Detail actions, player buttons, fixed 2026-11-16). For
+  content with children you collapse, zero the spacing while they are hidden
+  (`ActionButton.SetLabelSpacing`) or use a margin on the child instead of `Spacing`, since a
+  collapsed child's margin takes no room.
 - **UWP doesn't clamp `CornerRadius`**: a radius bigger than half the height draws an oval. Pills
   get a fixed height and radius = height / 2 (`SkylineTabHeight`/`SkylineTabPill` etc.).
 - **An exception thrown from a handler attached with `AddHandler(..., handledEventsToo: true)`
