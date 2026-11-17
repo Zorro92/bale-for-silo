@@ -37,6 +37,8 @@ public sealed partial class PlayerPage
         public PlaybackBackend? Player { get; set; }
         /// <summary>The Windows MediaPlayer behind <see cref="Player"/>, for what only it has (element, command manager).</summary>
         public MediaPlayer? NativePlayer => (Player as MediaPlayerBackend)?.Player;
+        /// <summary>The media remote / Guide controls for a backend without MediaPlayer's command manager.</summary>
+        public EngineSystemControls? SystemControls { get; set; }
         public MediaSource? Source { get; set; }
         public MediaRangeStream? Stream { get; set; }
         public IRandomAccessStream? RandomStream { get; set; }
@@ -385,6 +387,20 @@ public sealed partial class PlayerPage
         engine.MediaEnded += OnMediaEnded;
         engine.PlaybackSession.PlaybackStateChanged += OnPlaybackStateChanged;
         AttachSubtitleSession(engine.PlaybackSession);
+        var detail = attempt.Request.Detail;
+        var controls = media.SystemControls = new EngineSystemControls(PlaybackControlsText.Title(detail),
+            detail.Type == "episode" ? detail.Title : null);
+        controls.Command += command => SystemControl(engine, command switch
+        {
+            SystemControlCommand.Play => PlaybackControlRequest.Play,
+            SystemControlCommand.Pause => PlaybackControlRequest.Pause,
+            _ => null,
+        }, command switch
+        {
+            SystemControlCommand.Forward => true,
+            SystemControlCommand.Back => false,
+            _ => null,
+        });
         engine.PlaybackSession.BufferingStarted += OnStatsBufferingStarted;
         engine.PlaybackSession.BufferingEnded += OnStatsBufferingEnded;
         object source;
@@ -573,6 +589,7 @@ public sealed partial class PlayerPage
             MediaPlaybackState.Buffering => "buffering",
             _ => "loading",
         };
+        media.SystemControls?.Update(state);
         SetLoading(_state is "loading" or "buffering");
         SetDisplayActive(_state != "paused");
         // Playing vs paused/buffering changes how the subtitle overlay extrapolates its clock.
@@ -709,6 +726,8 @@ public sealed partial class PlayerPage
             Cleanup("detach element", () => _video?.SetMediaPlayer(null));
             Cleanup("dispose player", player.Dispose);
         }
+        Cleanup("close system controls", () => media.SystemControls?.Dispose());
+        media.SystemControls = null;
         Cleanup("release video presenter", ReleaseVideoPresenter);
         // FFmpeg owns an MSS, but CreateMediaPlaybackItem also creates a MediaSource. Closing
         // only FFmpeg does not close that source's MF pipeline (including system HEVC surfaces).

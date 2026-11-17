@@ -123,9 +123,11 @@ public sealed partial class PlayerPage
         commands.RewindReceived += (_, args) => { args.Handled = true; SystemControl(player, null, false); };
     }
 
-    private void SystemControl(MediaPlayer source, PlaybackControlRequest? request, bool? skipForward) => _ = DispatchAsync(() =>
+    /// <summary>A system media command for <paramref name="source"/> (the mount's MediaPlayer or its backend).</summary>
+    private void SystemControl(object source, PlaybackControlRequest? request, bool? skipForward) => _ = DispatchAsync(() =>
     {
-        if (!_active || _leaving || _attempt is not { Media.NativePlayer: { } player } || !ReferenceEquals(player, source)) return;
+        if (!_active || _leaving || _attempt?.Media is not { } media
+            || !(ReferenceEquals(media.NativePlayer, source) || ReferenceEquals(media.Player, source))) return;
         if (request is { } control)
         {
             Log.Info("player: transport system=" + control);
