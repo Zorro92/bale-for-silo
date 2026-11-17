@@ -120,6 +120,7 @@ public sealed partial class PlayerPage
                 return;
             }
 
+            if (TryAdoptSubtitleInPlace(attempt, media, decision, request, audioIndex)) return;
             Pause(attempt);
             DisposeSubtitles();
             DisposeMount(attempt);
@@ -169,6 +170,33 @@ public sealed partial class PlayerPage
 #if DEBUG_SERVER
         RefreshStats(attempt);
 #endif
+        return true;
+    }
+
+    /// <summary>
+    /// A subtitle pick whose replan answer keeps the playing stream (PlaybackReplan.KeepsTransport): adopt the
+    /// answer and swap only Bale's overlay; the video keeps playing (InPlacePlanAdoption.kt / silo-apple's
+    /// report replan). An embedded image track the FFmpeg sink must draw is bound when the mount opens, so such
+    /// an answer still remounts.
+    /// </summary>
+    private bool TryAdoptSubtitleInPlace(Attempt attempt, Mount media, Bale.Core.Api.Models.PlaybackDecision decision,
+        PlaybackReplanRequestV3 request, int? audioIndex)
+    {
+        if (audioIndex is not null || decision.PlaybackPlan is not { } answer
+            || !PlaybackReplan.KeepsTransport(attempt.Plan!, answer)) return false;
+        // The FFmpeg sink's token is fixed when the mount opens; a fresh bind would never receive.
+        if (attempt.Client.Playback.ResolveEmbeddedPgs(answer) is null
+            && attempt.Client.Playback.ResolveEmbeddedSubtitles(answer) is not null) return false;
+        attempt.Plan = answer;
+        attempt.ServerFeatures = decision.ServerFeatures ?? [];
+        attempt.Start = PlaybackReplan.WithTracks(attempt.Start!, request.SelectedTracks);
+        attempt.PlanAttemptId = Guid.NewGuid().ToString();
+        // The overlay stays; only its track changes (ClearSubtitles also unbinds a demuxer image track).
+        ClearSubtitles();
+        StartSubtitles(attempt, media);
+        PushSubtitleClock(force: true);
+        Log.Info("player: subtitle switched in place");
+        UpdateTrackValues();
         return true;
     }
 }

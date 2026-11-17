@@ -113,6 +113,33 @@ public static class PlaybackReplan
     }
 
     /// <summary>
+    /// A subtitle pick's replan answer that leaves the mounted stream alone (InPlacePlanAdoption.kt
+    /// mediaMountKey; silo-apple's report replan that "keeps the stream for the answer"): same delivery, stream,
+    /// file, audio track, recipe and timeline origin, and no burn-in on either side (burn-in changes the video).
+    /// Bale draws every rendered subtitle itself, so such an answer swaps only the overlay: no remount, no pause.
+    /// </summary>
+    public static bool KeepsTransport(PlaybackPlan playing, PlaybackPlan answer)
+    {
+        if (playing.Subtitle?.Mode == "burn_in" || answer.Subtitle?.Mode == "burn_in") return false;
+        if (!Same(playing.Delivery, answer.Delivery) || answer.Delivery is null) return false;
+        if (playing.Stream is not { } a || answer.Stream is not { } b || string.IsNullOrEmpty(b.Url)
+            || !Same(a.Url, b.Url) || !Same(a.Protocol, b.Protocol) || !Same(a.Container, b.Container)
+            || !Same(a.MimeType, b.MimeType)) return false;
+        if (!Same(playing.Source?.MediaFileId, answer.Source?.MediaFileId)) return false;
+        if (playing.SelectedTracks?.Audio?.Index != answer.SelectedTracks?.Audio?.Index) return false;
+        var (x, y) = (playing.EffectiveRecipe, answer.EffectiveRecipe);
+        if ((x is null) != (y is null)) return false;
+        if (x is not null && y is not null && (!Same(x.VideoCodec, y.VideoCodec) || !Same(x.AudioCodec, y.AudioCodec)
+            || x.Width != y.Width || x.Height != y.Height || x.BitrateKbps != y.BitrateKbps || x.AudioChannels != y.AudioChannels
+            || !Same(x.AudioLayout, y.AudioLayout) || !Same(x.DynamicRange, y.DynamicRange)))
+            return false;
+        return playing.Timeline?.StreamOriginSeconds == answer.Timeline?.StreamOriginSeconds
+            && playing.Timeline?.TimelineOffsetSeconds == answer.Timeline?.TimelineOffsetSeconds;
+
+        static bool Same(string? left, string? right) => string.Equals(left, right, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// TvPlayerViewModel.kt selectAudioOption / AudioReconcile.kt mountedAudioFor: a direct play of the original
     /// file mounts every audio track, so another one is selected on the player instead of replanning. A server
     /// remux or transcode maps only its chosen stream (remux.go / transcode.go -map 0:a:N?) and still replans.

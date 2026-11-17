@@ -78,6 +78,38 @@ public class PlaybackTrackChangeTests
         Assert.Throws<ArgumentOutOfRangeException>(() => PlaybackReplan.WithLocalAudio(Start(), Plan(), -1));
     }
 
+    [Fact]
+    public void ASubtitleAnswerOnTheSameStreamKeepsTheTransport()
+    {
+        PlaybackPlan Answer(Action<PlaybackPlan>? change = null)
+        {
+            var plan = Plan();
+            plan.PlanId = "plan-2";
+            plan.Stream!.Url = "/api/v2/stream/session/original";
+            plan.Subtitle = new SubtitleDecisionV3 { Mode = "render", TrackId = "t2" };
+            plan.SelectedTracks!.Subtitle = new TrackIdentityV3 { Id = "file:file:subtitle:2", Index = 2 };
+            change?.Invoke(plan);
+            return plan;
+        }
+        var playing = Plan();
+        playing.Stream!.Url = "/api/v2/stream/session/original";
+        playing.Subtitle = new SubtitleDecisionV3 { Mode = "render", TrackId = "t3" };
+        Assert.True(PlaybackReplan.KeepsTransport(playing, Answer()));
+        Assert.True(PlaybackReplan.KeepsTransport(playing, Answer(plan => plan.Subtitle = new SubtitleDecisionV3 { Mode = "off" })));
+        // Anything the mount is built from changes: remount.
+        Assert.False(PlaybackReplan.KeepsTransport(playing, Answer(plan => plan.Subtitle!.Mode = "burn_in")));
+        Assert.False(PlaybackReplan.KeepsTransport(playing, Answer(plan => plan.Delivery = "server_transcode_hls")));
+        Assert.False(PlaybackReplan.KeepsTransport(playing, Answer(plan => plan.Stream!.Url = "/api/v2/stream/other/original")));
+        Assert.False(PlaybackReplan.KeepsTransport(playing, Answer(plan => plan.SelectedTracks!.Audio!.Index = 2)));
+        Assert.False(PlaybackReplan.KeepsTransport(playing, Answer(plan => plan.Timeline = new TimelineV3 { StreamOriginSeconds = 600 })));
+        Assert.False(PlaybackReplan.KeepsTransport(playing, Answer(plan => plan.EffectiveRecipe = new EffectiveRecipeV3 { VideoCodec = "h264" })));
+        Assert.False(PlaybackReplan.KeepsTransport(playing, Answer(plan => plan.Source!.MediaFileId = "other")));
+        var burnedIn = Plan();
+        burnedIn.Stream!.Url = "/api/v2/stream/session/original";
+        burnedIn.Subtitle = new SubtitleDecisionV3 { Mode = "burn_in" };
+        Assert.False(PlaybackReplan.KeepsTransport(burnedIn, Answer()));
+    }
+
     private static PlaybackStartRequestV3 Start() => PlaybackStartBuilder.Build("file", "profile",
         "attempt", null, new(AudioIndex: 1, SubtitleIndex: 3), ConsoleEvidence.Default, PlaybackTestSupport.Identity);
 
