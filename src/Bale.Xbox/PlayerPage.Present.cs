@@ -186,15 +186,11 @@ public sealed partial class PlayerPage
                 return;
             }
             var status = state.Seeking ? "seeking" : state.Waiting ? "buffering" : state.Paused ? "paused" : "playing";
-            host.SetOverlay(!_engineStatsVisible ? null : string.Create(CultureInfo.InvariantCulture,
-                $"Engine player · {_engineRoute}\n"
-                + $"{PlaybackTransportFeedback.Clock(state.Position, forceHours: state.Duration >= 3600)} / "
-                + $"{(double.IsFinite(state.Duration) ? PlaybackTransportFeedback.Clock(state.Duration, forceHours: state.Duration >= 3600) : "?")} · {status}\n"
-                + $"Video {state.Width}x{state.Height} · {state.FramesPerSecond:0.###} fps\n"
-                + $"Frames shown {state.FramesRendered} · dropped {state.FramesDropped} · corrupted {state.FramesCorrupted}\n"
-                + $"Last second +{_engineLastSecond.Rendered} shown / +{_engineLastSecond.Dropped} dropped\n"
-                + $"Jitter {state.Jitter:0.###} · frame delay {state.FrameDelay:0.###}\n"
-                + "A pause · LT/RT -10/+30 s · LB/RB chapters · View stats · B leave"));
+            var hours = state.Duration >= 3600;
+            var clock = PlaybackTransportFeedback.Clock(state.Position, forceHours: hours);
+            var total = double.IsFinite(state.Duration) ? PlaybackTransportFeedback.Clock(state.Duration, forceHours: hours) : "?";
+            host.SetOverlay(!_engineStatsVisible ? null : FormattableString.Invariant(
+                $"Engine player · {_engineRoute}\n{clock} / {total} · {status}\nVideo {state.Width}x{state.Height} · {state.FramesPerSecond:0.###} fps\nFrames shown {state.FramesRendered} · dropped {state.FramesDropped} · corrupted {state.FramesCorrupted}\nLast second +{_engineLastSecond.Rendered} shown / +{_engineLastSecond.Dropped} dropped\nJitter {state.Jitter:0.###} · frame delay {state.FrameDelay:0.###}\nA pause · LT/RT -10/+30 s · LB/RB chapters · View stats · B leave"));
         }
         catch (Exception ex) { LogFailure("engine player tick", ex); }
     }
@@ -246,11 +242,11 @@ public sealed partial class PlayerPage
     }
 
     /// <summary>Debug server play/pause/toggle for the engine player.</summary>
-    internal Task<(string Status, string Body)> EnginePlaybackAsync(PlaybackControlRequest request)
+    internal Task<(string Status, string Body)> EnginePlaybackAsync(DebugPlaybackControl request)
     {
         if (_enginePlayer is not { HasSession: true } host || !host.TryState(out var state))
             return Task.FromResult(("409 Conflict", "no engine player\n"));
-        var pause = request == PlaybackControlRequest.Pause || request == PlaybackControlRequest.Toggle && !state.Paused;
+        var pause = request == DebugPlaybackControl.Pause || request == DebugPlaybackControl.Toggle && !state.Paused;
         var hr = pause ? host.Pause() : host.Play();
         UpdateEnginePlayer();
         return Task.FromResult(hr >= 0
