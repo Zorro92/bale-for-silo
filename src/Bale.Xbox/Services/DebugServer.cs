@@ -617,11 +617,16 @@ internal sealed partial class DebugServer
                     var control = query.GetValueOrDefault("control") == "1";
                     if (query.Keys.Any(key => key is not ("n" or "control"))
                         || !uint.TryParse(countText, System.Globalization.NumberStyles.None,
-                            System.Globalization.CultureInfo.InvariantCulture, out var count) || count is 0 or > 200)
+                            System.Globalization.CultureInfo.InvariantCulture, out var iterations) || iterations is 0 or > 200)
                         return ("400 Bad Request", "n: 1-200, control=1 skips the tone map\n");
-                    if (await OnUiAsync(() => CurrentPage(out _) is PlayerPage))
-                        return ("409 Conflict", "leave the player first\n");
-                    var report = await Task.Run(() => DebugToneMapChurn.Churn(count, control));
+                    var inPlayer = false;
+                    await OnUiAsync(() =>
+                    {
+                        inPlayer = CurrentPage(out _) is PlayerPage;
+                        return string.Empty;
+                    });
+                    if (inPlayer) return ("409 Conflict", "leave the player first\n");
+                    var report = await Task.Run(() => DebugToneMapChurn.Churn(iterations, control));
                     Log.Info("debug: tone map " + report.TrimEnd());
                     return ("200 OK", report);
                 }
