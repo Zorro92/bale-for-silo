@@ -431,6 +431,19 @@ jobs:
           /p:AppxPackageSigningEnabled=true
           /p:PackageCertificateThumbprint=${{ steps.cert.outputs.thumbprint }}
 
+      # A build that fails without an error line (a task or the XAML compiler stopping silently) is
+      # rebuilt in one process at normal verbosity; only its diagnostic lines and tail are printed.
+      - name: Diagnose a silent MSIX build failure
+        if: failure() && steps.cert.outcome == 'success'
+        shell: pwsh
+        run: |
+          $out = msbuild src/Bale.Xbox/Bale.Xbox.csproj /m:1 /nodeReuse:false /v:normal `
+            /p:Configuration=Release /p:Platform=x64 /p:BaleDebugServer=${{ matrix.debug_server }} 2>&1 | Out-String -Stream
+          $out | Select-String -Pattern 'error|exited with code|Exception|XamlCompiler|MSB\d{4}' | Select-Object -First 60
+          '--- tail ---'
+          $out | Select-Object -Last 40
+          exit 1
+
       - name: Check FFmpeg native activation and package contents
         shell: pwsh
         run: |
