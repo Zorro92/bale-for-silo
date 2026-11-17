@@ -46,6 +46,7 @@ internal sealed partial class DebugServer
         {
             builder.Append("App memory: unavailable (0x").Append(ex.HResult.ToString("X8", CultureInfo.InvariantCulture)).Append(")\n");
         }
+        builder.Append("Handles: ").Append(DebugProcessCpu.HandleCount()?.ToString(CultureInfo.InvariantCulture) ?? "unavailable").Append('\n');
         // Xbox-only budget split (hevc-xbox GetExtendedMemoryInfo): general heap vs graphics partition.
         builder.Append("Xbox memory: ").Append(DebugXboxMemory.Describe()).Append('\n');
         builder.Append("Playback resources: ").Append(PlaybackResources.Describe()).Append('\n');

@@ -20,6 +20,16 @@ internal static partial class DebugProcessCpu
         return null;
     }
 
+    /// <summary>The process's open kernel handle count (leak runs: a handle that outlives its mount shows up here).</summary>
+    internal static uint? HandleCount()
+    {
+        try { return GetProcessHandleCount(new IntPtr(-1), out var count) != 0 ? count : null; }
+        catch (Exception) { return null; }
+    }
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    private static partial int GetProcessHandleCount(IntPtr process, out uint count);
+
     // Generate the by-ref/last-error stub: DllImport cannot handle these with DisableRuntimeMarshalling=true.
     [LibraryImport("kernel32.dll", SetLastError = true)]
     private static partial int GetProcessTimes(IntPtr process, out long creation, out long exit, out long kernel, out long user);
