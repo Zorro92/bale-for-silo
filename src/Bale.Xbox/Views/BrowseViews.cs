@@ -194,7 +194,8 @@ public sealed partial class CardView : BrowseTileView, INotifyPropertyChanged
     public double ProgressPercent { get; private set; }
 
     /// <summary>The progress fill spans the bottom edge of the art.</summary>
-    public double ProgressFillWidth => Math.Max(0, Width * ProgressPercent / 100);
+    // The keyline bar is inset 10 on each side (SkylineWatchProgressStyle).
+    public double ProgressFillWidth => Math.Max(0, (Width - 20) * ProgressPercent / 100);
 
     public Visibility ProgressVisibility { get; private set; }
 
@@ -204,6 +205,11 @@ public sealed partial class CardView : BrowseTileView, INotifyPropertyChanged
     public double WatchedIconSize => WatchedSize * 0.55;
     public CornerRadius WatchedRadius => new(WatchedSize / 2);
     public Thickness WatchedInset => new(Math.Clamp(Width * 0.06, 4, 8));
+
+    // CardWatchStatusBadge.kt: the same corner shows the episodes a started series or season has left.
+    public Visibility EpisodesLeftVisibility => !Card.Flags.Played && Card.EpisodesLeft > 0 && Height >= Width ? Visibility.Visible : Visibility.Collapsed;
+    public string EpisodesLeftText => Card.EpisodesLeft?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+    public double EpisodesLeftFontSize => WatchedSize * 0.5;
 
     public Visibility FallbackVisibility { get; private set; }
 

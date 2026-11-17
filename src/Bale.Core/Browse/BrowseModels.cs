@@ -45,6 +45,12 @@ public sealed record MediaCard(
 
     public double? PositionSeconds { get; init; }
 
+    /// <summary>
+    /// CardWatchStatus.kt: the episodes a started, unfinished series or season has left (user_state
+    /// watched_count &gt; 0 and unplayed_count &gt; 0); null otherwise, so new shows are not covered in numbers.
+    /// </summary>
+    public int? EpisodesLeft { get; init; }
+
     /// <summary>TvMediaTypeFilters.kt: audiobook covers are square; other TV posters are 2:3.</summary>
     public double PosterAspectRatio => Type.Trim().ToLowerInvariant() is "audiobook" or "audiobooks" ? 1 : 2d / 3;
 

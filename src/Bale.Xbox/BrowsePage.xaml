@@ -37,21 +37,29 @@
                           HorizontalAlignment="Left" VerticalAlignment="Bottom" IsTabStop="False" IsHitTestVisible="False" />
             <!-- TvMediaCard.kt's watched badge reflects optimistic card actions in place. -->
             <Border Visibility="{x:Bind WatchedVisibility, Mode=OneWay}" Width="{x:Bind WatchedSize, Mode=OneWay}" Height="{x:Bind WatchedSize, Mode=OneWay}"
-                    CornerRadius="{x:Bind WatchedRadius, Mode=OneWay}" Margin="{x:Bind WatchedInset, Mode=OneWay}" Background="#FFFFFFFF"
+                    CornerRadius="{x:Bind WatchedRadius, Mode=OneWay}" Margin="{x:Bind WatchedInset, Mode=OneWay}" Background="#FF00BC7D" BorderBrush="#59FFFFFF" BorderThickness="1"
                     HorizontalAlignment="Right" VerticalAlignment="Top" IsHitTestVisible="False" AutomationProperties.Name="Watched">
               <Viewbox Width="{x:Bind WatchedIconSize, Mode=OneWay}" Height="{x:Bind WatchedIconSize, Mode=OneWay}">
-                <Path Width="24" Height="24" Fill="#FF000000" Data="M9,16.17 L4.83,12 L3.41,13.41 L9,19 L21,7 L19.59,5.59 Z" />
+                <Path Width="24" Height="24" Fill="#FFFFFFFF" Data="M9,16.17 L4.83,12 L3.41,13.41 L9,19 L21,7 L19.59,5.59 Z" />
               </Viewbox>
             </Border>
-            <Grid Visibility="{x:Bind ProgressVisibility, Mode=OneWay}" VerticalAlignment="Bottom" Height="3">
-              <Border Background="{StaticResource SkylineProgressTrack}" />
-              <Border Background="{StaticResource SkylinePrimary}" HorizontalAlignment="Left" Width="{x:Bind ProgressFillWidth, Mode=OneWay}" />
+            <Border Visibility="{x:Bind EpisodesLeftVisibility, Mode=OneWay}" Height="{x:Bind WatchedSize, Mode=OneWay}" MinWidth="{x:Bind WatchedSize, Mode=OneWay}"
+                    CornerRadius="{x:Bind WatchedRadius, Mode=OneWay}" Margin="{x:Bind WatchedInset, Mode=OneWay}" Padding="5,0" Background="#A6000000"
+                    BorderBrush="#33FFFFFF" BorderThickness="1" HorizontalAlignment="Right" VerticalAlignment="Top" IsHitTestVisible="False">
+              <TextBlock Text="{x:Bind EpisodesLeftText, Mode=OneWay}" FontSize="{x:Bind EpisodesLeftFontSize, Mode=OneWay}" FontWeight="Bold"
+                         Foreground="#FFFFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <Grid Visibility="{x:Bind ProgressVisibility, Mode=OneWay}" Style="{StaticResource SkylineWatchProgressStyle}">
+              <Border Margin="-1,-1,-1,-2" CornerRadius="3" Background="#26000000" />
+              <Border Margin="-1" CornerRadius="3" BorderBrush="#59000000" BorderThickness="1" />
+              <Border CornerRadius="2" Background="#8C000000" />
+              <Border CornerRadius="2" Background="#FFEDEDED" BorderBrush="#66000000" BorderThickness="0.5" HorizontalAlignment="Left" Width="{x:Bind ProgressFillWidth, Mode=OneWay}" />
             </Grid>
           </Grid>
-          <Border x:Name="FocusGlow" Margin="-6" CornerRadius="{StaticResource SkylineFocusGlowRadius}" BorderThickness="3"
+          <Border x:Name="FocusGlow" Margin="-6,-5,-6,-8" CornerRadius="{StaticResource SkylineFocusGlowRadius}" BorderThickness="3"
                   BorderBrush="{StaticResource SkylineFocusGlow}" Opacity="0" IsHitTestVisible="False" />
           <Border x:Name="FocusRing" Margin="-3" CornerRadius="{StaticResource SkylineFocusRingRadius}" BorderThickness="2"
-                  BorderBrush="{StaticResource SkylineFocusRing}" Opacity="0" IsHitTestVisible="False" />
+                  BorderBrush="{StaticResource SkylineCardFocusOutline}" Opacity="0" IsHitTestVisible="False" />
         </Grid>
         <StackPanel Spacing="1">
           <TextBlock Text="{x:Bind Title, Mode=OneWay}" FontSize="{StaticResource SkylineCardTitleSize}" FontWeight="SemiBold" LineHeight="16"

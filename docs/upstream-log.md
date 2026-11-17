@@ -39,9 +39,13 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   `a41d106`). ~~The Show tab gives way to More › Show Series Info~~ (done 2026-11-16, verified on
   0.1.566 with Specials first and Left from S1E1 into Specials; the rail keeps its scroll instead of
   recentring on the suggested episode; Android `3632eda4e`, `064b8d0b7`, `c1371178b`).
-- **Card overlays:** watch status top-right with episodes left, web badge layout and presets, one
-  overlay scale (Android `2d3620d50`/`cc4fd6662`, Apple `fe7aa020`/`4be5334f`); keyline progress
-  capsule (Android `f65fe6917`, Apple `1531620d`). Do it together with Card focus style.
+- **Card overlays:** ~~watch status top-right with episodes left~~ (emerald check / episodes-left pill
+  on posters, emerald check on episode stills), ~~keyline progress capsule~~ (Android `f65fe6917`),
+  done 2026-11-16, not yet on the console. Still open: the web badge layout (edge rails, three
+  corners, seven presets, style layer, uploaded images; Android `2d3620d50`) and one overlay scale
+  (`cc4fd6662`).
+- ~~**Card focus style:**~~ done 2026-11-16: 2 dp white outline at 70% and a dark drop shadow, no
+  glow, the same outline on the current episode (Android `51d4f9013`).
 - **Library sort options:** the web's list (up to 17, by library type), Rotten Tomatoes gated by
   the ratings capability, scrolling Sort panel (Android `a60dac2d0`, Apple `55da563c`). Needs
   the contract bump.
@@ -60,8 +64,6 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   `84ea05a6b`; Apple `ddebb9fa`, `3abeaf4f`.)
 - ~~**Remember-profile offer:**~~ done 2026-11-16: the explanation, then Ask Every Time and
   Remember with focus on Remember; Back answers Ask Every Time (Android `6b832ca73`).
-- **Card focus style:** one shared style, no glow, drop shadow, current-episode outline
-  (Android `51d4f9013`, Apple `9e94e24e`).
 - ~~**More Like This chain:**~~ done 2026-11-16, verified on 0.1.566 (two picks, one Back to the start): the first pick pushes,
   later picks replace, picking the start title goes back, a repeat pick of the title on screen
   opens nothing (Android `238134a1b`, Apple `fd40ce61`).

@@ -52,7 +52,8 @@ public sealed partial class EpisodeView : INotifyPropertyChanged
 
     public Visibility ProgressVisibility => Episode.Progress is > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-    public double ProgressFillWidth => StillWidth * (Episode.Progress ?? 0);
+    // The keyline bar is inset 10 on each side (SkylineWatchProgressStyle).
+    public double ProgressFillWidth => Math.Max(0, (StillWidth - 20) * Math.Clamp(Episode.Progress ?? 0, 0, 1));
 
     public Visibility WatchedVisibility => Episode.Played ? Visibility.Visible : Visibility.Collapsed;
 }

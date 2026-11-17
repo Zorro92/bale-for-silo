@@ -5,7 +5,7 @@ using Windows.UI.Xaml.Controls;
 namespace Bale.Xbox.Services;
 
 /// <summary>
-/// Card focus as Silo's TV apps draw it: the art lifts 1.05 with a 2 px white ring and soft glow,
+/// Card focus as Silo's TV apps draw it (51d4f9013): the art lifts 1.05 with a 2 px white outline at 70% and a dark drop shadow,
 /// while the caption underneath stays where it is. The card template names its art "Art" (holding
 /// FocusRing and FocusGlow). Takes the container as a ContentControl: under Native AOT, focus
 /// events report list containers as their ContentControl base, so `is ListViewItem` never matches.

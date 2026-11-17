@@ -336,6 +336,10 @@ public sealed partial class BrowseFeed
         };
     }
 
+    /// <summary>CardWatchStatus.of: a count only for a started, unfinished series or season; never on a watched one.</summary>
+    internal static int? EpisodesLeft(CatalogItemUserState? state) =>
+        state is { Played: not true, WatchedCount: > 0, UnplayedCount: > 0 and var left } ? (int)Math.Min(left, 9999) : null;
+
     /// <summary>Continue Watching / Next Up: the server marks their cards with item_source.</summary>
     internal static bool IsProgressRow(Section section, IReadOnlyCollection<CatalogItem> items) =>
         items.Any(item => !string.IsNullOrEmpty(item.ItemSource))
@@ -373,6 +377,7 @@ public sealed partial class BrowseFeed
         {
             Flags = new Detail.ItemFlags(item.UserState?.InWatchlist == true, item.UserState?.IsFavorite == true, item.UserState?.Played == true),
             PositionSeconds = item.PositionSeconds,
+            EpisodesLeft = EpisodesLeft(item.UserState),
             ProgressUpdatedAt = item.ProgressUpdatedAt,
             ContentRating = string.IsNullOrWhiteSpace(item.ContentRating) ? null : item.ContentRating!.Trim().ToUpperInvariant(),
             MarqueeFacts = MarqueeFacts(item, isEpisode),

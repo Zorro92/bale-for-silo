@@ -33,8 +33,17 @@
   <SolidColorBrush x:Key="SkylineScrimDropdown" Color="#8C000000" />
   <SolidColorBrush x:Key="SkylineCardPlaceholder" Color="#FF15171C" />
   <SolidColorBrush x:Key="SkylineProgressTrack" Color="#33FFFFFF" />
+  <!-- WatchProgressBar.kt (f65fe6917): a 4 dp capsule inset 10 dp from the sides and 8 dp from the bottom, a dark
+       track with a keyline and soft shadow, a near-white fill with a hairline, so it reads on bright art.
+       Fill widths subtract the 20 dp inset (CardView / EpisodeView ProgressFillWidth). -->
+  <Style x:Key="SkylineWatchProgressStyle" TargetType="Grid">
+    <Setter Property="VerticalAlignment" Value="Bottom" /><Setter Property="Height" Value="4" /><Setter Property="Margin" Value="10,0,10,8" />
+  </Style>
   <SolidColorBrush x:Key="SkylineFocusRing" Color="#FFFFFFFF" />
-  <SolidColorBrush x:Key="SkylineFocusGlow" Color="#47FFFFFF" />
+  <!-- FocusModifier.kt (51d4f9013, as tvOS): a focused card's 2 dp white outline at 70% and a black drop
+       shadow, no glow. The shadow is a dark rim offset downwards behind the outline. -->
+  <SolidColorBrush x:Key="SkylineCardFocusOutline" Color="#B3FFFFFF" />
+  <SolidColorBrush x:Key="SkylineFocusGlow" Color="#66000000" />
   <SolidColorBrush x:Key="SkylineBadgeFill" Color="#14FFFFFF" />
   <SolidColorBrush x:Key="SkylineBadgeBorder" Color="#3DFFFFFF" />
   <SolidColorBrush x:Key="SkylineBadgeText" Color="#EBFFFFFF" />
@@ -368,8 +377,8 @@
   <!-- TvSkylineSectionFeed.kt / TvMediaRow.kt: 20dp between cards in every media rail. -->
   <Thickness x:Key="SkylineCardItemGap">0,0,20,0</Thickness>
   <!--
-    Card containers. Focus is drawn by the card template's FocusRing/FocusGlow (2 px white ring
-    and soft glow, rounded like the card) and a 1.05 lift of the art only, captions stay put (CardFocus).
+    Card containers. Focus is drawn by the card template's FocusRing/FocusGlow (2 px white outline at
+    70% and a dark drop shadow, rounded like the card) and a 1.05 lift of the art only, captions stay put (CardFocus).
   -->
   <Style x:Key="SkylineCardItemStyle" TargetType="ListViewItem">
     <Setter Property="Padding" Value="0" />
@@ -2630,8 +2639,8 @@
     <Setter Property="Background" Value="{StaticResource SkylineCalendarCapsuleFill}" />
   </Style>
   <Style x:Key="SkylineCalendarFocusRingStyle" TargetType="Border">
-    <Setter Property="Margin" Value="-2.5" /><Setter Property="CornerRadius" Value="12.5" />
-    <Setter Property="BorderBrush" Value="{StaticResource SkylineFocusRing}" /><Setter Property="BorderThickness" Value="2.5" />
+    <Setter Property="Margin" Value="-2" /><Setter Property="CornerRadius" Value="12" />
+    <Setter Property="BorderBrush" Value="{StaticResource SkylineCardFocusOutline}" /><Setter Property="BorderThickness" Value="2" />
     <Setter Property="Opacity" Value="0" /><Setter Property="IsHitTestVisible" Value="False" />
   </Style>
   <Style x:Key="SkylineCalendarCardTitleStyle" TargetType="TextBlock">
@@ -2987,11 +2996,11 @@
   </Style>
   <Style x:Key="SkylineDetailPosterRingStyle" TargetType="Border">
     <Setter Property="Margin" Value="-3" /><Setter Property="CornerRadius" Value="{StaticResource SkylineFocusRingRadius}" />
-    <Setter Property="BorderThickness" Value="2" /><Setter Property="BorderBrush" Value="{StaticResource SkylineFocusRing}" />
+    <Setter Property="BorderThickness" Value="2" /><Setter Property="BorderBrush" Value="{StaticResource SkylineCardFocusOutline}" />
     <Setter Property="Opacity" Value="0" /><Setter Property="IsHitTestVisible" Value="False" />
   </Style>
   <Style x:Key="SkylineDetailPosterGlowStyle" TargetType="Border" BasedOn="{StaticResource SkylineDetailPosterRingStyle}">
-    <Setter Property="Margin" Value="-6" /><Setter Property="CornerRadius" Value="{StaticResource SkylineFocusGlowRadius}" />
+    <Setter Property="Margin" Value="-6,-5,-6,-8" /><Setter Property="CornerRadius" Value="{StaticResource SkylineFocusGlowRadius}" />
     <Setter Property="BorderThickness" Value="3" /><Setter Property="BorderBrush" Value="{StaticResource SkylineFocusGlow}" />
   </Style>
   <Style x:Key="SkylineDetailPosterTitleStyle" TargetType="TextBlock">
