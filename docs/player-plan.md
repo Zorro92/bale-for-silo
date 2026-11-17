@@ -2101,3 +2101,29 @@ seek; no `0x8007000E`, playback continued at ~24 fps (12 frames dropped in total
 picture and sound in sync, stats pane all fine. The owner's display is a 1080p SDR FreeSync
 monitor; Xbox's *Allow 24 Hz* is greyed out (no 24 Hz mode), so 24 fps keeps 59.94 Hz 3:2
 pulldown under the whole-multiple matching rule.
+
+## Engine player becomes the main path (owner, 2026-11-17)
+
+Owner decision: IMFMediaEngine (rendering mode) replaces Windows MediaPlayer once it matches it; HDR/DV
+display work on the engine path waits for a capable display.
+
+1. **Native HLS removed.** Windows' AdaptiveMediaSource can't feed the engine; HLS always plays through the
+   Rust HLS reader and FFmpeg (a playlist the reader refuses fails to a replan). `hls-engine` switch gone.
+2. **`PlaybackBackend`** (`Services/PlaybackBackend.cs`): the page drives a MediaPlayer-shaped backend
+   (play/pause, opened/ended/failed, a session with position, state, can-seek, rate, video size, seekable
+   ranges and their events, plus audio/video track listing and selection). `MediaPlayerBackend` wraps
+   MediaPlayer and keeps it reachable for the element, command manager, FastSeek session and debug observers.
+3. **`EngineBackend`** (`Services/EngineBackend.cs`, bale_gpu ABI 13): the Rust session on a raw-pixel
+   SwapChainPanel in the player's video host; a 100 ms state poll raises the events; tracks come from the
+   engine's stream list (new `stream_count/stream_info/select_stream`). Debug switch
+   `player-backend engine` (memory only).
+
+**Console, 0.1.618 (2026-11-17), engine backend, Bale Test:** direct play (FFmpeg route) opened in ~220 ms;
+pause/resume, a native seek (300 s, landed 300.1), trigger skip (+30 s), local audio switch (no replan;
+Info "Dolby Digital · Stereo"), end → Up Next countdown → next episode on the engine, and forced HLS
+(segment start, server reanchor seek, engine reopen ~140 ms) all worked. Owner: picture sharp and full
+screen, the switched audio really changed, controls/Options/subtitles draw correctly over the video, hold
+scan smooth.
+
+Remaining before the engine is the default: media remote / Guide controls (MediaPlayer's command manager
+is gone on the engine), engine rows in the stats pane, display mode switching on the engine path (on hold).
