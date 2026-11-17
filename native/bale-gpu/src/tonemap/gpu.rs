@@ -35,7 +35,8 @@ struct Scratch {
 pub struct ToneMapGpu {
     device: ID3D11Device1,
     config: BaleToneMapConfig,
-    state: ID3DDeviceContextState,
+    /// None under the debug `nostate` switch: explicit save/restore of our bindings instead.
+    state: Option<ID3DDeviceContextState>,
     vs: ID3D11VertexShader,
     y_ps: ID3D11PixelShader,
     uv_ps: ID3D11PixelShader,
@@ -59,6 +60,7 @@ impl ToneMapGpu {
         }
         let context = unsafe { device.GetImmediateContext()? };
         let device: ID3D11Device1 = device.cast()?;
+        let debug = DebugSwitches::read();
         let mut state = None;
         let mut vs = None;
         let mut y_ps = None;
@@ -66,14 +68,16 @@ impl ToneMapGpu {
         let mut constants = None;
         // SAFETY: valid bytecode/initialized descriptor, local output slots, retained device.
         unsafe {
-            device.CreateDeviceContextState(
-                0,
-                &[device.GetFeatureLevel()],
-                D3D11_SDK_VERSION,
-                &ID3D11Device::IID,
-                None,
-                Some(&mut state),
-            )?;
+            if !debug.no_state {
+                device.CreateDeviceContextState(
+                    0,
+                    &[device.GetFeatureLevel()],
+                    D3D11_SDK_VERSION,
+                    &ID3D11Device::IID,
+                    None,
+                    Some(&mut state),
+                )?;
+            }
             device.CreateVertexShader(VS, None, Some(&mut vs))?;
             device.CreatePixelShader(Y_PS, None, Some(&mut y_ps))?;
             device.CreatePixelShader(UV_PS, None, Some(&mut uv_ps))?;
@@ -91,7 +95,11 @@ impl ToneMapGpu {
         let mut gpu = Self {
             device,
             config,
-            state: state.ok_or(E_FAIL)?,
+            state: match (debug.no_state, state) {
+                (true, _) => None,
+                (false, Some(state)) => Some(state),
+                (false, None) => return Err(E_FAIL.into()),
+            },
             vs: vs.ok_or(E_FAIL)?,
             y_ps: y_ps.ok_or(E_FAIL)?,
             uv_ps: uv_ps.ok_or(E_FAIL)?,
@@ -99,7 +107,9 @@ impl ToneMapGpu {
             scratch: None,
             _not_send_sync: PhantomData,
         };
-        gpu.self_test(&context)?;
+        if !debug.no_self_test {
+            gpu.self_test(&context)?;
+        }
         // Do not keep the small self-test scratch; first decoder input chooses the cache size.
         gpu.scratch = None;
         Ok(gpu)
@@ -198,11 +208,19 @@ impl ToneMapGpu {
         // Fail before queueing work, never return an error after changing the caller's output.
         // D3D11 Draw/Copy/Update queue void commands; asynchronous loss belongs to the caller.
         unsafe { self.device.GetDeviceRemovedReason()? };
-        let _guard = ContextGuard::enter(&context, &multithread, &self.state);
-        // SAFETY: descriptors, devices, slice, dimensions and binds checked above. Private state
-        // isolates all bindings and is restored even if Rust unwinds. No flush in apply.
+        // Private state isolates all bindings and is restored even if Rust unwinds. The debug
+        // `nostate` path saves and restores only what the draw touches, without ClearState.
+        let _guard = match &self.state {
+            Some(state) => {
+                let guard = Guard::Swapped(ContextGuard::enter(&context, &multithread, state));
+                // SAFETY: our private context state is current; clearing it leaves the caller's intact.
+                unsafe { context.ClearState() };
+                guard
+            }
+            None => Guard::Saved(Box::new(SavedBindings::enter(&context, &multithread))),
+        };
+        // SAFETY: descriptors, devices, slice, dimensions and binds checked above. No flush in apply.
         unsafe {
-            context.ClearState();
             if !direct {
                 context.CopySubresourceRegion(
                     &self.scratch.as_ref().ok_or(E_FAIL)?.texture,
@@ -416,5 +434,170 @@ mod tests {
             Err(BALE_TONEMAP_E_SELFTEST)
         );
         assert_eq!(compare_self_test(&[], &[16]), Err(BALE_TONEMAP_E_SELFTEST));
+    }
+}
+
+/// Debug-only switches for the opens-to-failure investigation (2026-11-17), read once per create
+/// from the process environment variable BALE_TONEMAP_DEBUG: `noselftest` skips the create-time
+/// self-test; `nostate` replaces the ID3DDeviceContextState swap with an explicit save/restore.
+#[derive(Clone, Copy, Default)]
+struct DebugSwitches {
+    no_self_test: bool,
+    no_state: bool,
+}
+
+impl DebugSwitches {
+    fn read() -> Self {
+        let value = std::env::var("BALE_TONEMAP_DEBUG").unwrap_or_default();
+        Self::parse(&value)
+    }
+
+    fn parse(value: &str) -> Self {
+        let mut switches = Self::default();
+        for word in value.split([',', ' ']).filter(|w| !w.is_empty()) {
+            match word {
+                "noselftest" => switches.no_self_test = true,
+                "nostate" => switches.no_state = true,
+                _ => {}
+            }
+        }
+        switches
+    }
+}
+
+enum Guard {
+    Swapped(#[allow(dead_code)] ContextGuard),
+    Saved(#[allow(dead_code)] Box<SavedBindings>),
+}
+
+/// Holds the multithread lock and every binding the tone-map draw changes, and puts them back on
+/// drop, so the caller's (MF's) state survives without a context-state swap or ClearState.
+struct SavedBindings {
+    context: ID3D11DeviceContext1,
+    multithread: ID3D10Multithread,
+    topology: windows::Win32::Graphics::Direct3D::D3D_PRIMITIVE_TOPOLOGY,
+    layout: Option<ID3D11InputLayout>,
+    vs: Option<ID3D11VertexShader>,
+    ps: Option<ID3D11PixelShader>,
+    gs: Option<ID3D11GeometryShader>,
+    hs: Option<ID3D11HullShader>,
+    ds: Option<ID3D11DomainShader>,
+    ps_constants: [Option<ID3D11Buffer>; 1],
+    ps_views: [Option<ID3D11ShaderResourceView>; 2],
+    rasterizer: Option<ID3D11RasterizerState>,
+    viewport_count: u32,
+    viewports: [D3D11_VIEWPORT; D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE as usize],
+    targets: [Option<ID3D11RenderTargetView>; D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT as usize],
+    depth: Option<ID3D11DepthStencilView>,
+    blend: Option<ID3D11BlendState>,
+    blend_factor: [f32; 4],
+    sample_mask: u32,
+    depth_state: Option<ID3D11DepthStencilState>,
+    stencil_ref: u32,
+}
+
+impl SavedBindings {
+    fn enter(context: &ID3D11DeviceContext1, multithread: &ID3D10Multithread) -> Self {
+        // SAFETY: live interfaces; the lock is taken before any read and released in Drop.
+        unsafe {
+            multithread.Enter();
+            let mut saved = Self {
+                context: context.clone(),
+                multithread: multithread.clone(),
+                topology: context.IAGetPrimitiveTopology(),
+                layout: context.IAGetInputLayout().ok(),
+                vs: None,
+                ps: None,
+                gs: None,
+                hs: None,
+                ds: None,
+                ps_constants: Default::default(),
+                ps_views: Default::default(),
+                rasterizer: context.RSGetState().ok(),
+                viewport_count: D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE,
+                viewports: Default::default(),
+                targets: Default::default(),
+                depth: None,
+                blend: None,
+                blend_factor: [0.0; 4],
+                sample_mask: 0,
+                depth_state: None,
+                stencil_ref: 0,
+            };
+            context.VSGetShader(&mut saved.vs, None, None);
+            context.PSGetShader(&mut saved.ps, None, None);
+            context.GSGetShader(&mut saved.gs, None, None);
+            context.HSGetShader(&mut saved.hs, None, None);
+            context.DSGetShader(&mut saved.ds, None, None);
+            context.PSGetConstantBuffers(0, Some(&mut saved.ps_constants));
+            context.PSGetShaderResources(0, Some(&mut saved.ps_views));
+            context.RSGetViewports(
+                &mut saved.viewport_count,
+                Some(saved.viewports.as_mut_ptr()),
+            );
+            context.OMGetRenderTargets(Some(&mut saved.targets), Some(&mut saved.depth));
+            context.OMGetBlendState(
+                Some(&mut saved.blend),
+                Some(&mut saved.blend_factor),
+                Some(&mut saved.sample_mask),
+            );
+            context
+                .OMGetDepthStencilState(Some(&mut saved.depth_state), Some(&mut saved.stencil_ref));
+            // Neutral fixed-function state for a full-screen triangle; the draw sets the rest.
+            context.IASetInputLayout(None);
+            context.GSSetShader(None, None);
+            context.HSSetShader(None, None);
+            context.DSSetShader(None, None);
+            context.RSSetState(None);
+            context.OMSetBlendState(None, None, u32::MAX);
+            context.OMSetDepthStencilState(None, 0);
+            saved
+        }
+    }
+}
+
+impl Drop for SavedBindings {
+    fn drop(&mut self) {
+        let c = &self.context;
+        // SAFETY: restores the bindings captured in enter, still under the lock. No allocation,
+        // no fallible calls and no Flush, including during unwinding.
+        unsafe {
+            c.PSSetShaderResources(0, Some(&[None, None]));
+            c.OMSetRenderTargets(Some(&self.targets), self.depth.as_ref());
+            c.IASetPrimitiveTopology(self.topology);
+            c.IASetInputLayout(self.layout.as_ref());
+            c.VSSetShader(self.vs.as_ref(), None);
+            c.PSSetShader(self.ps.as_ref(), None);
+            c.GSSetShader(self.gs.as_ref(), None);
+            c.HSSetShader(self.hs.as_ref(), None);
+            c.DSSetShader(self.ds.as_ref(), None);
+            c.PSSetConstantBuffers(0, Some(&self.ps_constants));
+            c.PSSetShaderResources(0, Some(&self.ps_views));
+            c.RSSetState(self.rasterizer.as_ref());
+            let count = (self.viewport_count as usize).min(self.viewports.len());
+            c.RSSetViewports(Some(&self.viewports[..count]));
+            c.OMSetBlendState(
+                self.blend.as_ref(),
+                Some(&self.blend_factor),
+                self.sample_mask,
+            );
+            c.OMSetDepthStencilState(self.depth_state.as_ref(), self.stencil_ref);
+            self.multithread.Leave();
+        }
+    }
+}
+
+#[cfg(test)]
+mod debug_switch_tests {
+    use super::DebugSwitches;
+
+    #[test]
+    fn parses_known_words_only() {
+        let both = DebugSwitches::parse("noselftest,nostate");
+        assert!(both.no_self_test && both.no_state);
+        let none = DebugSwitches::parse("");
+        assert!(!none.no_self_test && !none.no_state);
+        let one = DebugSwitches::parse("nostate other");
+        assert!(!one.no_self_test && one.no_state);
     }
 }

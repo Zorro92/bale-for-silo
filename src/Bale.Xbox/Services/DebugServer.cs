@@ -586,6 +586,17 @@ internal sealed partial class DebugServer
                 });
                 return (stallStatus, stallBody);
 
+            case ("POST", "/tonemap-debug"):
+                {
+                    // bale_gpu reads BALE_TONEMAP_DEBUG at each tone-map create (opens-to-failure work, 2026-11-17).
+                    var flags = query.GetValueOrDefault("flags") ?? string.Empty;
+                    if (query.Count > 1 || !DebugToneMapSwitches.Valid(flags))
+                        return ("400 Bad Request", "flags: comma-separated noselftest,nostate, or empty to clear\n");
+                    Environment.SetEnvironmentVariable("BALE_TONEMAP_DEBUG", flags.Length == 0 ? null : flags);
+                    Log.Info($"debug: tone map switches '{flags}' for the next tone-map create");
+                    return ("200 OK", $"tone map switches: '{flags}' (next tone-map create)\n");
+                }
+
             case ("POST", "/fault/playback"):
                 var injected = false;
                 var playbackBody = await OnUiAsync(() =>

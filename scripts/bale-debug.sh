@@ -108,6 +108,7 @@
 #   scripts/bale-debug.sh fault requests-empty  return no Requests rows on the next hub load once
 #   scripts/bale-debug.sh fault request-detail  fail the next request-detail load once
 #   scripts/bale-debug.sh fault playback        inject a decoder failure into the player (one replan, then error)
+#   scripts/bale-debug.sh tonemap-debug [noselftest,nostate]  bale_gpu tone-map debug switches for the next tone-map create (no args clears)
 # Connection previews use disposable fixtures: no network, passwords sent, vault or saved-list writes.
 #   scripts/bale-debug.sh show login            preview phone Login (no live ticket)
 #   scripts/bale-debug.sh show login expired    preview the session-expired Login notice
@@ -768,6 +769,13 @@ case "${1:-}" in
     ;;
   targets) curl -fsS "$BASE/targets" ;;
   tree) curl -fsS "$BASE/tree" ;;
+  tonemap-debug)
+    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^(noselftest|nostate)(,(noselftest|nostate))?$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh tonemap-debug [noselftest|nostate|noselftest,nostate]' >&2
+      exit 2
+    fi
+    curl --fail-with-body -sS -X POST "$BASE/tonemap-debug?flags=${2-}"
+    ;;
   fault)
     if [[ "$#" != 2 || ( "${2:-}" != profiles && "${2:-}" != search && "${2:-}" != catalog && "${2:-}" != home && "${2:-}" != home-empty && "${2:-}" != requests && "${2:-}" != requests-empty && "${2:-}" != request-detail && "${2:-}" != playback ) ]]; then
       echo "usage: scripts/bale-debug.sh fault {profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}" >&2
