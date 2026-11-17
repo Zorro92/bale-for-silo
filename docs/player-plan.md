@@ -2031,3 +2031,10 @@ prints a per-second `Timeline` of rendered/dropped.
 
 Rendering mode on this file is clean after startup; the 113–143 drops of the earlier 0.1.585/0.1.587
 runs did not reproduce (cause unknown; the timeline will show where if they return).
+
+**4K DV 8.1 MKV (0.1.588, same SDR display).** Frame-server (`frames`): 644 decoded + 31 dropped of
+700 expected at real time, 0.17 cores, `TransferVideoFrame` mean 3.4 ms: the decoder keeps up.
+Rendering mode: `Timeline 1/0 0/0 ×7, 4 26 24 24 25 23 25 24 23 21, 4, 0/0 ×11`: about 8 s with no
+frames, about 10 s of clean 24 fps, then no frames again, while the clock advanced and nothing
+counted as dropped (224 of 703). No HDMI/display change was logged. So the stall is in rendering
+mode's presentation of DV on an SDR display, not the decoder or the stream; re-test on an HDR/DV TV.
