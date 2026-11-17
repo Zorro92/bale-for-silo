@@ -89,13 +89,46 @@ public static class PlaybackReplan
         return Build(start, plan, planAttemptId, priorAttemptedKeys, attemptCount, sourcePositionSeconds, "seek_reanchor", null);
     }
 
+    /// <summary>
+    /// A mid-playback audio or subtitle pick (TvPlayerViewModel.kt selectAudioOption / selectSubtitleOption):
+    /// the same session at the current position with the new track. <paramref name="audioIndex"/> null keeps
+    /// the audio; <paramref name="subtitleIndex"/> null keeps the subtitle, -1 turns it off. Indexes are the
+    /// catalog's (audio ordinal, combined external-first subtitle index), as in the start request.
+    /// </summary>
+    public static PlaybackReplanRequestV3 ForTrackChange(PlaybackStartRequestV3 start, PlaybackPlan plan, string planAttemptId,
+        IReadOnlyList<string> priorAttemptedKeys, int attemptCount, double sourcePositionSeconds, int? audioIndex, int? subtitleIndex)
+    {
+        if (attemptCount is < 1 or > 8) throw new ArgumentOutOfRangeException(nameof(attemptCount));
+        if (audioIndex is < 0 || subtitleIndex is < -1) throw new ArgumentOutOfRangeException(audioIndex is < 0 ? nameof(audioIndex) : nameof(subtitleIndex));
+        var audio = audioIndex is { } a ? new PlaybackTrackIdentityV3($"file:{start.FileId}:audio:{a}", a)
+            : Track(plan.SelectedTracks?.Audio, start.AudioTrackId, start.AudioTrackIndex);
+        var subtitle = subtitleIndex switch
+        {
+            null => Track(plan.SelectedTracks?.Subtitle, start.SubtitleTrackId, start.SubtitleTrackIndex, subtitle: true),
+            < 0 => null,
+            var s => new PlaybackTrackIdentityV3($"file:{start.FileId}:subtitle:{s}", s),
+        };
+        return Build(start, plan, planAttemptId, priorAttemptedKeys, attemptCount, sourcePositionSeconds, "track_change", null,
+            new SelectedPlaybackTracksV3(audio, subtitle));
+    }
+
+    /// <summary>The start request the session now plays: a committed track change replaces its tracks.</summary>
+    public static PlaybackStartRequestV3 WithTracks(PlaybackStartRequestV3 start, SelectedPlaybackTracksV3 tracks) => start with
+    {
+        AudioTrackId = tracks.Audio?.Id,
+        AudioTrackIndex = tracks.Audio?.Index,
+        SubtitleTrackId = tracks.Subtitle?.Id,
+        SubtitleTrackIndex = tracks.Subtitle?.Index,
+    };
+
     private static PlaybackReplanRequestV3 Build(PlaybackStartRequestV3 start, PlaybackPlan plan, string planAttemptId,
-        IReadOnlyList<string> priorAttemptedKeys, int attemptCount, double sourcePositionSeconds, string operation, PlaybackFailureV3? failure)
+        IReadOnlyList<string> priorAttemptedKeys, int attemptCount, double sourcePositionSeconds, string operation, PlaybackFailureV3? failure,
+        SelectedPlaybackTracksV3? tracksOverride = null)
     {
         if (string.IsNullOrWhiteSpace(plan.PlanId) || string.IsNullOrWhiteSpace(plan.PlanAttemptKey))
             throw new InvalidDataException("The playback plan has no recovery identity.");
         var attemptedKeys = priorAttemptedKeys.Where(key => !string.IsNullOrWhiteSpace(key)).Distinct(StringComparer.Ordinal).ToArray();
-        var tracks = new SelectedPlaybackTracksV3(
+        var tracks = tracksOverride ?? new SelectedPlaybackTracksV3(
             Track(plan.SelectedTracks?.Audio, start.AudioTrackId, start.AudioTrackIndex),
             Track(plan.SelectedTracks?.Subtitle, start.SubtitleTrackId, start.SubtitleTrackIndex, subtitle: true));
         return new(start.PlaybackAttemptId, Guid.NewGuid().ToString(), plan.PlanId, planAttemptId, plan.PlanAttemptKey,

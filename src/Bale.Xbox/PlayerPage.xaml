@@ -2,6 +2,7 @@
     x:Class="Bale.Xbox.PlayerPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Bale.Xbox.Controls"
     Background="Black"
     NavigationCacheMode="Disabled"
     IsTabStop="True"
@@ -105,6 +106,23 @@
             </Button>
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+            <!-- TvPlayerTransportCluster.kt: secondary buttons widen into "Label · value" pills on focus. -->
+            <Button x:Name="AudioButton" Style="{StaticResource SkylinePlayerTransportButtonStyle}" AutomationProperties.Name="Audio" Click="OnAudioClick">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Viewbox Style="{StaticResource SkylinePlayerGlyphStyle}"><Path Width="24" Height="24" Fill="#FFEDEDED"
+                  Data="M3,9 V15 H7 L12,20 V4 L7,9 Z M16.5,12 C16.5,10.23 15.48,8.71 14,7.97 V16.02 C15.48,15.29 16.5,13.77 16.5,12 Z M14,3.23 V5.29 C16.89,6.15 19,8.83 19,12 C19,15.17 16.89,17.85 14,18.71 V20.77 C18.01,19.86 21,16.28 21,12 C21,7.72 18.01,4.14 14,3.23 Z" /></Viewbox>
+                <TextBlock Text="Audio" VerticalAlignment="Center" Visibility="Collapsed" />
+                <TextBlock x:Name="AudioValue" VerticalAlignment="Center" Opacity="0.58" FontWeight="Medium" Visibility="Collapsed" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="SubtitlesButton" Style="{StaticResource SkylinePlayerTransportButtonStyle}" AutomationProperties.Name="Subtitles" Click="OnSubtitlesClick">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Viewbox Style="{StaticResource SkylinePlayerGlyphStyle}"><Path Width="24" Height="24" Fill="#FFEDEDED"
+                  Data="M20,4 H4 C2.9,4 2,4.9 2,6 V18 C2,19.1 2.9,20 4,20 H20 C21.1,20 22,19.1 22,18 V6 C22,4.9 21.1,4 20,4 Z M4,12 H8 V14 H4 Z M14,18 H4 V16 H14 Z M20,18 H16 V16 H20 Z M20,14 H10 V12 H20 Z" /></Viewbox>
+                <TextBlock Text="Subtitles" VerticalAlignment="Center" Visibility="Collapsed" />
+                <TextBlock x:Name="SubtitlesValue" VerticalAlignment="Center" Opacity="0.58" FontWeight="Medium" Visibility="Collapsed" />
+              </StackPanel>
+            </Button>
             <Button x:Name="CloseButton" Style="{StaticResource SkylinePlayerTransportButtonStyle}" AutomationProperties.Name="Close"
                     Click="OnCloseClick">
               <StackPanel Orientation="Horizontal" Spacing="8">
@@ -168,5 +186,8 @@
         <Button x:Name="RetryButton" Content="Retry" Click="OnRetryClick" Style="{StaticResource SkylineProfileRetryStyle}" />
       </StackPanel>
     </Grid>
+    <!-- Audio / Subtitles track lists, the Detail page's anchored menu (TvAnchoredSelectorMenu.kt). -->
+    <controls:PlaybackSelectorMenu x:Name="TrackMenu" IsHitTestVisible="False"
+                                   AnchorGap="{StaticResource SkylinePlaybackSelectorGap}" WindowInset="{StaticResource SkylinePlaybackSelectorWindowInset}" />
   </Grid>
 </Page>

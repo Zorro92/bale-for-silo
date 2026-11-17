@@ -157,7 +157,7 @@ public sealed partial class PlayerPage
 
     private void InitializeControls()
     {
-        foreach (var button in new[] { SkipBackButton, PlayPauseButton, SkipForwardButton, CloseButton })
+        foreach (var button in new[] { SkipBackButton, PlayPauseButton, SkipForwardButton, AudioButton, SubtitlesButton, CloseButton })
         {
             StyleTransportButton(button, false);
             button.GotFocus += (_, _) => StyleTransportButton(button, true);
@@ -167,9 +167,20 @@ public sealed partial class PlayerPage
         ScrubberButton.XYFocusDown = PlayPauseButton;
         ScrubberButton.XYFocusUp = ScrubberButton;
         SkipBackButton.XYFocusLeft = SkipBackButton;
-        SkipForwardButton.XYFocusRight = CloseButton;
-        CloseButton.XYFocusLeft = SkipForwardButton;
+        CloseButton.XYFocusLeft = SubtitlesButton;
         CloseButton.XYFocusRight = CloseButton;
+        LinkTrackButtons();
+    }
+
+    /// <summary>Left/Right across the gap between the two groups (TvPlayerTransportCluster.kt), Audio hidden or not.</summary>
+    private void LinkTrackButtons()
+    {
+        var audio = AudioButton.Visibility == Visibility.Visible;
+        SkipForwardButton.XYFocusRight = audio ? AudioButton : SubtitlesButton;
+        AudioButton.XYFocusLeft = SkipForwardButton;
+        AudioButton.XYFocusRight = SubtitlesButton;
+        SubtitlesButton.XYFocusLeft = audio ? AudioButton : SkipForwardButton;
+        SubtitlesButton.XYFocusRight = CloseButton;
     }
 
     private static readonly Windows.UI.Xaml.Media.SolidColorBrush TransportInk = new(Windows.UI.Color.FromArgb(255, 11, 11, 12));
@@ -212,6 +223,8 @@ public sealed partial class PlayerPage
             TransportControls.Visibility = Visibility.Visible;
             HideTransport();
             DrawChapterGaps();
+            UpdateTrackValues();
+            LinkTrackButtons();
         }
         UpdateControls(force: true);
         if (!wasVisible) FocusRetry.Until(PlayPauseButton, () => !_controls.Visible || PlayPauseButton.Focus(FocusState.Keyboard));
@@ -230,6 +243,11 @@ public sealed partial class PlayerPage
     /// <summary>Back: a scrub preview first, then the controls, then the player (TvPlayerScreen.kt).</summary>
     private bool BackClosesControls()
     {
+        if (TrackMenuOpen)
+        {
+            CloseTrackMenu();
+            return true;
+        }
         if (!_controls.Visible) return false;
         if (_scrub.Active)
         {
@@ -247,7 +265,7 @@ public sealed partial class PlayerPage
         {
             if (!_controls.Visible) return;
             var now = Environment.TickCount64;
-            if (_controls.ShouldHide(now, _scrub.Active))
+            if (_controls.ShouldHide(now, _scrub.Active || TrackMenuOpen))
             {
                 HideControls();
                 return;

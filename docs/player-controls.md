@@ -81,6 +81,12 @@ rather than leaving them transparent so they cost nothing while hidden.
    the existing seek path (exact landing with FastSeek off, keyframe for software AV1).
 4. **HUD: Audio and Subtitles tabs** with mid-playback switching (local switch or replan), then
    Info/Video/Chapters; the debug stats move into the Stats tab.
+   First part, code done 2026-11-16: Audio and Subtitles buttons in the transport row (pills
+   "Audio · English", "Subtitles · Off" on focus) open the Detail page's track lists for the playing
+   file; a pick sends a `track_change` replan of the same session at the current position
+   (`PlaybackReplan.ForTrackChange`) and remounts like a seek reanchor; a refused change keeps
+   playback as it was. Always a replan for now; the official local switch (a track the mounted
+   stream already carries) is a later optimisation. The HUD tabs come after.
 5. **Up Next** (10 s countdown, auto-play setting); this also brings "the last special continues
    into S1E1" from the upstream log.
 6. Later: intro/credits skip, trickplay, subtitle delay/appearance.

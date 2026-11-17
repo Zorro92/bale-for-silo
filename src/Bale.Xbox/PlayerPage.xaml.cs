@@ -107,6 +107,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
 #endif
         InitializeSubtitleLayer();
         InitializeControls();
+        InitializeTracks();
         _timer.Tick += OnTick;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
