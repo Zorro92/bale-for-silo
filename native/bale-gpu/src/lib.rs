@@ -43,7 +43,7 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 /// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched DLL.
-pub const ABI_VERSION: u32 = 8;
+pub const ABI_VERSION: u32 = 9;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_gpu_abi_version() -> u32 {
@@ -197,7 +197,8 @@ pub unsafe extern "C" fn bale_gpu_engine_probe_source(
 /// through the engine extension when `mime_len` is 0, else an `IRandomAccessStream` of MIME type `mime`
 /// through `SetSourceFromByteStream`) with `EnableWindowlessSwapchainMode`, calls `attach(context, handle)` once
 /// with the engine's swap chain handle (the caller sets it on a `SwapChainPanel` on the UI thread and
-/// returns an HRESULT), sizes the video to `width`x`height`, plays `seconds`, and writes the report.
+/// returns an HRESULT), sizes the video to `width`x`height` (then to whatever `size`, if set, returns
+/// while playing), plays `seconds`, and writes the report.
 ///
 /// # Safety
 /// `url` must point to `url_len` readable code units (or be null when `source` is set); `source`, when
@@ -218,6 +219,7 @@ pub unsafe extern "C" fn bale_gpu_engine_present(
     width: u32,
     height: u32,
     attach: Option<unsafe extern "C" fn(*mut core::ffi::c_void, isize) -> i32>,
+    size: Option<unsafe extern "C" fn(*mut core::ffi::c_void) -> u64>,
     context: *mut core::ffi::c_void,
     report: *mut u8,
     report_capacity: u32,
@@ -249,6 +251,7 @@ pub unsafe extern "C" fn bale_gpu_engine_present(
         context,
         width,
         height,
+        size,
     };
     let seconds = seconds.clamp(1, 120);
     let text = if source.is_null() {

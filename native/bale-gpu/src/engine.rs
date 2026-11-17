@@ -375,6 +375,9 @@ pub struct Present {
     /// Destination rectangle in panel pixels.
     pub width: u32,
     pub height: u32,
+    /// Polled during playback: the panel's current size as `width << 32 | height` (0 = unchanged);
+    /// a new size is applied with `UpdateVideoStream` (an HDMI mode switch mid-playback).
+    pub size: Option<unsafe extern "C" fn(context: *mut core::ffi::c_void) -> u64>,
 }
 
 /// How long to wait for `GetVideoSwapchainHandle` to return a handle after canplay.
@@ -914,12 +917,13 @@ unsafe fn present_loop(
             .ok()
             .step("SetSwapChainHandle (UI thread)")?;
         report.push_str("Panel: swap chain attached\n");
-        let destination = RECT {
+        let rect = |width: u32, height: u32| RECT {
             left: 0,
             top: 0,
-            right: present.width as i32,
-            bottom: present.height as i32,
+            right: width as i32,
+            bottom: height as i32,
         };
+        let destination = rect(present.width, present.height);
         let border = MFARGB {
             rgbBlue: 0,
             rgbGreen: 0,
@@ -941,10 +945,38 @@ unsafe fn present_loop(
         let wall = Instant::now();
         let limit = Duration::from_secs(u64::from(seconds));
         let mut first_frame_ms = None;
+        let mut current = (present.width, present.height);
+        let mut resizes = 0u32;
         while wall.elapsed() < limit
             && !shared.error.load(Ordering::Acquire)
             && !shared.ended.load(Ordering::Acquire)
         {
+            if let Some(size) = present.size {
+                let packed = size(present.context);
+                let next = ((packed >> 32) as u32, packed as u32);
+                if next.0 > 0 && next.1 > 0 && next != current {
+                    let result = engine_ex.UpdateVideoStream(
+                        None,
+                        Some(&rect(next.0, next.1)),
+                        Some(&border),
+                    );
+                    if resizes < 8 {
+                        let _ = writeln!(
+                            report,
+                            "Destination changed: {}x{} at {} ms ({})",
+                            next.0,
+                            next.1,
+                            wall.elapsed().as_millis(),
+                            match result {
+                                Ok(()) => "ok".to_owned(),
+                                Err(error) => format!("0x{:08X}", error.code().0 as u32),
+                            }
+                        );
+                    }
+                    resizes += 1;
+                    current = next;
+                }
+            }
             if first_frame_ms.is_none() && shared.first_frame.load(Ordering::Acquire) {
                 first_frame_ms = Some(wall.elapsed().as_millis());
             }

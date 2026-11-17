@@ -23,6 +23,10 @@ internal sealed class DebugEnginePresent
     private DisplayHdrOutput? _hdr;
     private uint _width;
     private uint _height;
+    /// <summary>The panel's raw size for the engine thread: width &lt;&lt; 32 | height.</summary>
+    private long _size;
+    private Windows.Graphics.Display.DisplayInformation? _display;
+    private Windows.Graphics.Display.Core.HdmiDisplayInformation? _hdmi;
 
     /// <summary>The panel's IInspectable (owned reference), or 0.</summary>
     private nint _panel;
@@ -38,23 +42,68 @@ internal sealed class DebugEnginePresent
             _hdr = new DisplayHdrOutput();
             switched = await _hdr.TryEnableHdr10Async() ? "switched to HDR10" : "not switched";
         }
-        var bounds = Window.Current.Bounds;
-        var scale = Windows.Graphics.Display.DisplayInformation.GetForCurrentView().RawPixelsPerViewPixel;
-        _width = (uint)Math.Max(1, Math.Round(bounds.Width * scale));
-        _height = (uint)Math.Max(1, Math.Round(bounds.Height * scale));
-        // A SwapChainPanel maps swap chain pixels to view pixels; the engine's swap chain is in raw
-        // pixels, so lay the panel out at raw size and scale it back, or only its top-left quarter shows.
-        _view = new SwapChainPanel
-        {
-            Width = _width,
-            Height = _height,
-            RenderTransform = new Windows.UI.Xaml.Media.ScaleTransform { ScaleX = 1 / scale, ScaleY = 1 / scale },
-        };
+        _view = new SwapChainPanel();
         _popup = new Popup { Child = _view, IsOpen = true };
+        var layout = Layout();
+        _display = Windows.Graphics.Display.DisplayInformation.GetForCurrentView();
+        _display.DpiChanged += OnDisplayChanged;
+        Window.Current.SizeChanged += OnWindowSizeChanged;
+        try
+        {
+            _hdmi = Windows.Graphics.Display.Core.HdmiDisplayInformation.GetForCurrentView();
+            if (_hdmi is not null) _hdmi.DisplayModesChanged += OnHdmiModesChanged;
+        }
+        catch { _hdmi = null; }
         // An owned IInspectable of the panel; Rust takes ISwapChainPanelNative2 from it.
         _panel = WinRT.MarshalInspectable<object>.FromManaged(_view);
-        return $"Display before: {before}\nHDR request: {switched}\n"
-            + $"Panel: {bounds.Width:0}x{bounds.Height:0} view pixels, {_width}x{_height} raw (scale {scale:0.###})\n";
+        return $"Display before: {before}\nHDR request: {switched}\n" + layout;
+    }
+
+    /// <summary>
+    /// Sizes the panel to the screen in raw pixels (the HDMI output, 3840x2160 on a 4K mode) and scales it
+    /// back to view pixels: a SwapChainPanel maps swap chain pixels to view pixels, so otherwise only the
+    /// top-left part of the engine's raw-pixel swap chain would show. UI thread.
+    /// </summary>
+    private string Layout()
+    {
+        if (_view is not { } view) return string.Empty;
+        var bounds = Window.Current.Bounds;
+        var display = Windows.Graphics.Display.DisplayInformation.GetForCurrentView();
+        var width = display.ScreenWidthInRawPixels;
+        var height = display.ScreenHeightInRawPixels;
+        if (width == 0 || height == 0 || bounds.Width <= 0 || bounds.Height <= 0)
+        {
+            width = (uint)Math.Max(1, Math.Round(bounds.Width * display.RawPixelsPerViewPixel));
+            height = (uint)Math.Max(1, Math.Round(bounds.Height * display.RawPixelsPerViewPixel));
+        }
+        view.Width = width;
+        view.Height = height;
+        view.RenderTransform = new Windows.UI.Xaml.Media.ScaleTransform { ScaleX = bounds.Width / width, ScaleY = bounds.Height / height };
+        _width = width;
+        _height = height;
+        Volatile.Write(ref _size, ((long)width << 32) | height);
+        return $"Panel: {bounds.Width:0}x{bounds.Height:0} view pixels, {width}x{height} raw (screen)\n";
+    }
+
+    private void OnDisplayChanged(Windows.Graphics.Display.DisplayInformation sender, object args) => Relayout();
+
+    private void OnHdmiModesChanged(Windows.Graphics.Display.Core.HdmiDisplayInformation sender, object args) =>
+        _ = CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.Normal, Relayout);
+
+    private void OnWindowSizeChanged(object sender, WindowSizeChangedEventArgs e) => Relayout();
+
+    private void Relayout()
+    {
+        var text = Layout();
+        if (text.Length > 0) Log.Info("present-engine: relayout " + text.TrimEnd());
+    }
+
+    /// <summary>Polled by the engine thread: the current raw panel size.</summary>
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static ulong Size(nint context)
+    {
+        try { return GCHandle.FromIntPtr(context).Target is DebugEnginePresent host ? (ulong)Volatile.Read(ref host._size) : 0; }
+        catch { return 0; }
     }
 
     /// <summary>Plays a URL the engine fetches itself (public media only: no headers).</summary>
@@ -81,7 +130,7 @@ internal sealed class DebugEnginePresent
                 fixed (char* targetText = format)
                 fixed (byte* report = buffer)
                     written = bale_gpu_engine_present(text, (uint)url.Length, source, mimeText, (uint)type.Length, (uint)seconds,
-                        targetText, (uint)format.Length, _width, _height, &Attach, GCHandle.ToIntPtr(self), report, (uint)buffer.Length);
+                        targetText, (uint)format.Length, _width, _height, &Attach, &Size, GCHandle.ToIntPtr(self), report, (uint)buffer.Length);
                 return System.Text.Encoding.UTF8.GetString(buffer, 0, (int)Math.Min(written, (uint)buffer.Length));
             }
             finally { self.Free(); }
@@ -110,6 +159,11 @@ internal sealed class DebugEnginePresent
 
     internal async Task<string> CloseAsync()
     {
+        if (_display is { } display) display.DpiChanged -= OnDisplayChanged;
+        _display = null;
+        Window.Current.SizeChanged -= OnWindowSizeChanged;
+        if (_hdmi is { } hdmi) hdmi.DisplayModesChanged -= OnHdmiModesChanged;
+        _hdmi = null;
         if (_popup is { } popup) popup.IsOpen = false;
         _popup = null;
         _view = null;
@@ -135,7 +189,7 @@ internal sealed class DebugEnginePresent
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern unsafe uint bale_gpu_engine_present(char* url, uint urlLength, nint source, char* mime, uint mimeLength,
         uint seconds, char* target, uint targetLength, uint width, uint height, delegate* unmanaged[Cdecl]<nint, nint, int> attach,
-        nint context, byte* report, uint reportCapacity);
+        delegate* unmanaged[Cdecl]<nint, ulong> size, nint context, byte* report, uint reportCapacity);
 }
 
 /// <summary>
