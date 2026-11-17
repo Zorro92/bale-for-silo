@@ -61,6 +61,8 @@ public sealed partial class PlayerPage
         public ulong SubtitleSinkToken { get; set; }
         public MediaPlaybackItem? Item { get; set; }
         public AudioTrack? SelectedAudioTrack { get; set; }
+        /// <summary>Network throughput for the Stats tab's Estimated bandwidth row (one sample a second).</summary>
+        public PlaybackThroughputMeter Throughput { get; } = new();
 #if DEBUG_SERVER
         public string? FfmpegReadAhead { get; set; }
         public string? FfmpegStreamReads { get; set; }
@@ -75,7 +77,6 @@ public sealed partial class PlayerPage
         public TimeSpan? CpuTime { get; set; }
         public long? CpuTimestamp { get; set; }
         public string? LastCpuFailure { get; set; }
-        public PlaybackThroughputMeter Throughput { get; } = new();
         public int BufferingCount { get; set; }
         public long BufferingTicks { get; set; }
         public long? BufferingSince { get; set; }

@@ -55,17 +55,6 @@ public sealed partial class PlayerPage
         if (DebugStatsVisible) RenderStatsRows();
     }
 
-    private static PlaybackStats PlanStats(Attempt? attempt, bool? isHls = null) => (attempt is { Plan: { } plan }
-        // The title's versions name a version swap in the Delivery row.
-        ? PlaybackStats.FromPlan(plan, isHls, attempt.Request.Detail.Versions)
-        : new PlaybackStats()) with
-    {
-        // The route is decided before the mount opens: name FFmpeg from the start, not after the first refresh.
-        BackendDisplayName = attempt?.Media?.Route is { UseFfmpeg: true } ? "FFmpegInteropX" : "Windows MediaPlayer",
-        // VideoBackendCapabilities.kt reports backend support, not a claimed container list.
-        HardContainers = "No",
-    };
-
     private void ResetStats(Attempt? attempt = null)
     {
         try { SetStats(PlanStats(attempt)); }
@@ -76,80 +65,26 @@ public sealed partial class PlayerPage
     {
         try
         {
-            var stats = PlanStats(attempt, attempt.Media?.Transport.IsHls);
+            // The official rows (and the throughput sample) come from the Stats tab's reader.
+            var stats = RefreshHudStats(attempt);
             string? processCpu = null;
             PlaybackFrameDeliverySnapshot? frames = null;
             if (attempt.Media is { } media)
             {
                 processCpu = ReadProcessCpu(media);
                 frames = media.FrameDelivery?.Read();
-                if (media.FfmpegSource is not null)
-                {
-                    media.MssVideoMediaType?.Refresh(media.Started);
-                    stats = ReadFfmpegStats(stats, media);
-                }
-                else if (media is { Opened: true, Item: { } item })
-                {
-                    stats = ReadVideoStats(stats, item, attempt.Plan, media.Transport.IsHls);
-                    stats = ReadAudioStats(stats, item);
-                }
-                long? bandwidth = null;
-                try
-                {
-                    if (media.Stream is { } stream)
-                        bandwidth = media.Throughput.Sample(stream.DownloadedBytes, stream.DownloadTime);
-                    else if (media.Progressive is { } progressive)
-                        bandwidth = media.Throughput.Sample(progressive.DownloadedBytes, progressive.DownloadTime);
-                }
-                catch (Exception ex) { LogFailure("stats bandwidth", ex); }
+                if (media.FfmpegSource is not null) media.MssVideoMediaType?.Refresh(media.Started);
                 var bufferingTicks = media.BufferingTicks;
                 if (media.BufferingSince is { } started) bufferingTicks += Math.Max(0, Stopwatch.GetTimestamp() - started);
                 stats = stats with
                 {
-                    EstimatedBandwidthBps = bandwidth,
                     BufferingCount = media.BufferingCount,
                     BufferingSeconds = bufferingTicks / (double)Stopwatch.Frequency,
-                    // Buffering is not evidence of dropped frames or audio underruns.
                 };
             }
             SetStats(stats, processCpu, frames);
         }
         catch (Exception ex) { LogFailure("stats refresh", ex); }
-    }
-
-    private static PlaybackStats ReadFfmpegStats(PlaybackStats stats, Mount media)
-    {
-        stats = stats with
-        {
-            BackendDisplayName = "FFmpegInteropX",
-            BackendRoute = media.Progressive is null ? "FFmpeg Direct" : media.Transport.IsHls ? "FFmpeg HLS" : "FFmpeg Progressive",
-        };
-        try
-        {
-            if (media.FfmpegSource!.CurrentVideoStream is { } video)
-                stats = stats with
-                {
-                    VideoCodec = DebugScreenText.Compact(video.CodecName, 80),
-                    VideoDecoderName = FfmpegSource.DecoderName(video.DecoderEngine),
-                    Resolution = video.PixelWidth > 0 && video.PixelHeight > 0
-                        ? string.Create(CultureInfo.InvariantCulture, $"{video.PixelWidth}x{video.PixelHeight}") : null,
-                    FrameRate = video.FramesPerSecond > 0 ? video.FramesPerSecond : null,
-                };
-        }
-        catch (Exception ex) { LogFailure("stats FFmpeg video", ex); }
-        try
-        {
-            if (media.FfmpegSource!.CurrentAudioStream is { } audio)
-                stats = stats with
-                {
-                    AudioCodec = DebugScreenText.Compact(audio.CodecName, 80),
-                    AudioDecoderName = FfmpegSource.DecoderName(audio.DecoderEngine),
-                    AudioChannelCount = audio.Channels,
-                    AudioSampleRate = audio.SampleRate,
-                };
-        }
-        catch (Exception ex) { LogFailure("stats FFmpeg audio", ex); }
-        return stats;
     }
 
     private static string ReadProcessCpu(Mount media)
@@ -165,29 +100,6 @@ public sealed partial class PlayerPage
         return failure is null ? usage : string.Create(CultureInfo.InvariantCulture, $"{failure} · {Environment.ProcessorCount} CPUs");
     }
 
-    private static PlaybackStats ReadVideoStats(PlaybackStats stats, MediaPlaybackItem item, PlaybackPlan? plan, bool isHls)
-    {
-        try
-        {
-            var index = item.VideoTracks.SelectedIndex;
-            if (index < 0 || index >= item.VideoTracks.Count) return stats;
-            var track = item.VideoTracks[index];
-            var format = track.GetEncodingProperties();
-            stats = stats with
-            {
-                VideoCodec = format.Subtype,
-                Resolution = format.Width > 0 && format.Height > 0
-                    ? string.Create(CultureInfo.InvariantCulture, $"{format.Width}x{format.Height}") : null,
-                FrameRate = PlaybackStats.ResolveFrameRate(plan, isHls,
-                    format.FrameRate.Numerator > 0 && format.FrameRate.Denominator > 0
-                        ? (double)format.FrameRate.Numerator / format.FrameRate.Denominator : null),
-            };
-            stats = stats with { VideoDecoderName = $"Media Foundation ({track.SupportInfo.DecoderStatus})" };
-        }
-        catch (Exception ex) { LogFailure("stats video", ex); }
-        return stats;
-    }
-
     private static void ReadTrackVideoMediaType(Mount media)
     {
         var route = media.Route.UseFfmpeg ? "ffmpeg" : media.Transport.IsHls ? "hls" : "native";
@@ -201,26 +113,6 @@ public sealed partial class PlayerPage
         }
         catch (Exception ex) { media.TrackVideoMediaType = $"route={route} source=track unavailable ({ex.GetType().Name})"; }
         Log.Info("player: video media type " + media.TrackVideoMediaType);
-    }
-
-    private static PlaybackStats ReadAudioStats(PlaybackStats stats, MediaPlaybackItem item)
-    {
-        try
-        {
-            var index = item.AudioTracks.SelectedIndex;
-            if (index < 0 || index >= item.AudioTracks.Count) return stats;
-            var track = item.AudioTracks[index];
-            var format = track.GetEncodingProperties();
-            stats = stats with
-            {
-                AudioCodec = format.Subtype,
-                AudioChannelCount = format.ChannelCount,
-                AudioSampleRate = format.SampleRate,
-            };
-            stats = stats with { AudioDecoderName = $"Media Foundation ({track.SupportInfo.DecoderStatus})" };
-        }
-        catch (Exception ex) { LogFailure("stats audio", ex); }
-        return stats;
     }
 
     private void OnStatsBufferingStarted(PlaybackBackendSession sender, object? args) => RecordBuffering(sender, starting: true);

@@ -161,14 +161,23 @@ public class DebugFfmpegPlaybackTests
     {
         var source = Read("PlayerPage.Stats.cs.txt");
         Assert.StartsWith("#if DEBUG_SERVER", source);
-        string[] required =
+        // The official rows are read in every build (the Options panel's Stats tab); the overlay builds on them.
+        var hud = Read("PlayerPage.HudStats.cs.txt");
+        Assert.DoesNotContain("#if", hud);
+        string[] official =
         [
             "if (media.FfmpegSource is not null)", "stats = ReadFfmpegStats(stats, media)",
             "else if (media is { Opened: true, Item: { } item })", "BackendDisplayName = \"FFmpegInteropX\"",
             "BackendRoute = media.Progressive is null ? \"FFmpeg Direct\" : media.Transport.IsHls ? \"FFmpeg HLS\" : \"FFmpeg Progressive\"", "CurrentVideoStream", "CurrentAudioStream",
             "VideoDecoderName = FfmpegSource.DecoderName(video.DecoderEngine)",
             "AudioDecoderName = FfmpegSource.DecoderName(audio.DecoderEngine)",
-            "DebugProcessCpu.Read(out var failure)", "Stopwatch.GetElapsedTime(previous, now)",
+            "bandwidth = media.Throughput.Sample(stream.DownloadedBytes, stream.DownloadTime)",
+        ];
+        foreach (var text in official) Assert.Contains(text, hud);
+        Assert.DoesNotContain("ex.Message", hud);
+        string[] required =
+        [
+            "var stats = RefreshHudStats(attempt);", "DebugProcessCpu.Read(out var failure)", "Stopwatch.GetElapsedTime(previous, now)",
             "DebugFfmpegPlaytest.CpuUsage(media.CpuTime, value, wall, Environment.ProcessorCount)", "SetStats(stats, processCpu, frames)", "(\"CPU\", processCpu)",
         ];
         foreach (var text in required) Assert.Contains(text, source);
