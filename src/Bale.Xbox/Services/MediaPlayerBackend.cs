@@ -8,7 +8,7 @@ namespace Bale.Xbox.Services;
 /// MediaPlayer has: the MediaPlayerElement, its command manager (media remote), FFmpegInteropX's session hook
 /// and the debug frame observers.
 /// </summary>
-internal sealed class MediaPlayerBackend : PlaybackBackend
+internal sealed partial class MediaPlayerBackend : PlaybackBackend
 {
     private readonly Session _session;
     private bool _disposed;

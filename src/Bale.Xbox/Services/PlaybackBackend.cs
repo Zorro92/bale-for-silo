@@ -8,7 +8,7 @@ namespace Bale.Xbox.Services;
 /// subtitle-clock and Up Next code is shared. Events may arrive on any thread, as MediaPlayer's do: handlers
 /// marshal to the UI thread themselves. Plain C#, so the Linux tests compile it with their own backend.
 /// </summary>
-internal abstract class PlaybackBackend : IDisposable
+internal abstract partial class PlaybackBackend : IDisposable
 {
     public abstract PlaybackBackendSession PlaybackSession { get; }
 
