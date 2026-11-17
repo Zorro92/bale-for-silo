@@ -16,6 +16,8 @@ public sealed partial class App : Application
     public App()
     {
         InitializeComponent();
+        // Before any client exists: the last buffering-quality mode seen per profile stands in until the first read.
+        Bale.Core.Settings.PlaybackSettingsFeed.DefaultMemory = new Services.LocalSettingsMemory();
 #if DEBUG_SERVER
         // Before any connection opens: pooled connections keep the receive buffer they were opened with.
         Services.DebugNetworkTuning.ApplySaved();

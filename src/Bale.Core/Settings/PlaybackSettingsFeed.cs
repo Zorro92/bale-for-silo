@@ -26,6 +26,13 @@ public sealed record BufferingQualitySetting(BufferingQualityMode Value = Buffer
 /// Writes follow the Android TV app (PlayerSettingsStore.kt): a change on the TV stores a
 /// profile_device override, and "Use profile setting" deletes that override.
 /// </summary>
+/// <summary>Small device-local key/value storage for settings memory (local settings on the console).</summary>
+public interface ISettingsMemory
+{
+    string? Read(string key);
+    void Write(string key, string value);
+}
+
 public sealed class PlaybackSettingsFeed(SiloApiClient api)
 {
     public const string AutoPlayNextKey = "playback.auto_play_next";
@@ -33,18 +40,60 @@ public sealed class PlaybackSettingsFeed(SiloApiClient api)
     public const string DeviceScope = "profile_device";
 
     private readonly object _sync = new();
+    private readonly Func<string?>? _scope;
     private BooleanSetting _autoPlayNext = new(true);
     private BufferingQualitySetting _bufferingQuality = new();
+    private bool _bufferingRead;
     private int _generation;
 
     /// <summary>Last known auto-play value; defaults to on (the server's default) before a read.</summary>
     public BooleanSetting AutoPlayNext { get { lock (_sync) return _autoPlayNext; } }
 
     /// <summary>
-    /// Last known buffering-quality mode. A start never waits for a read: until one lands it plays the last
-    /// mode seen for this profile in this session, and the default before that.
+    /// Device-local memory of the last buffering-quality mode seen per server and profile, so a start before the
+    /// first read uses it instead of the default (the official apps keep the last mode on the device). The app sets it
+    /// once at launch, before any client exists; null keeps the session-only behaviour.
     /// </summary>
-    public BufferingQualitySetting BufferingQuality { get { lock (_sync) return _bufferingQuality; } }
+    public static ISettingsMemory? DefaultMemory { get; set; }
+
+    /// <summary>This feed's memory; <see cref="DefaultMemory"/> unless set (tests use their own).</summary>
+    public ISettingsMemory? Memory { get; set; } = DefaultMemory;
+
+    /// <param name="scope">The server and profile the values belong to (null while no profile is active).</param>
+    public PlaybackSettingsFeed(SiloApiClient api, Func<string?>? scope) : this(api) => _scope = scope;
+
+    /// <summary>
+    /// Last known buffering-quality mode. A start never waits for a read: until one lands it plays the last mode seen
+    /// for this profile (this session, else on this device), and the default before that.
+    /// </summary>
+    public BufferingQualitySetting BufferingQuality
+    {
+        get
+        {
+            lock (_sync)
+            {
+                if (_bufferingRead || MemoryKey() is not { } key
+                    || BufferingQualityModes.FromWire(Memory?.Read(key)) is not { } remembered) return _bufferingQuality;
+                return _bufferingQuality with { Value = remembered, Supported = true };
+            }
+        }
+    }
+
+    /// <summary>A local-settings key for this server and profile: a hash, so no address or id is stored in clear.</summary>
+    private string? MemoryKey()
+    {
+        if (_scope?.Invoke() is not { Length: > 0 } scope) return null;
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(scope));
+        return "buffering_mode." + Convert.ToHexString(hash, 0, 12).ToLowerInvariant();
+    }
+
+    private void Remember(BufferingQualitySetting setting)
+    {
+        // Only a mode the server defines is remembered: a server without the key plays the default.
+        if (!setting.Supported || MemoryKey() is not { } key) return;
+        try { Memory?.Write(key, BufferingQualityModes.Wire(setting.Value)); }
+        catch (Exception) { /* Memory is a convenience; a failed write keeps the session value. */ }
+    }
 
     public void Reset()
     {
@@ -53,6 +102,7 @@ public sealed class PlaybackSettingsFeed(SiloApiClient api)
             _generation++;
             _autoPlayNext = new(true);
             _bufferingQuality = new();
+            _bufferingRead = false;
         }
     }
 
@@ -87,7 +137,12 @@ public sealed class PlaybackSettingsFeed(SiloApiClient api)
             : new BufferingQualitySetting();
         lock (_sync)
         {
-            if (generation == _generation) _bufferingQuality = mode;
+            if (generation == _generation)
+            {
+                _bufferingQuality = mode;
+                _bufferingRead = true;
+                Remember(mode);
+            }
         }
         return Store(generation, setting);
     }
@@ -120,7 +175,12 @@ public sealed class PlaybackSettingsFeed(SiloApiClient api)
         var setting = new BufferingQualitySetting(mode, true, true);
         lock (_sync)
         {
-            if (generation == _generation) _bufferingQuality = setting;
+            if (generation == _generation)
+            {
+                _bufferingQuality = setting;
+                _bufferingRead = true;
+                Remember(setting);
+            }
         }
         return setting;
     }

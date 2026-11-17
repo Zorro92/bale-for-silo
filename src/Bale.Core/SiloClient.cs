@@ -42,7 +42,7 @@ public sealed class SiloClient : IDisposable
         Detail = new DetailFeed(_connection.Api, Browse);
         People = new People.PersonFeed(_connection.Api, Browse);
         Requests = new Requests.RequestsFeed(_connection.Api, _time);
-        Settings = new Settings.PlaybackSettingsFeed(_connection.Api);
+        Settings = new Settings.PlaybackSettingsFeed(_connection.Api, () => ProfileId is { Length: > 0 } profile ? Server.AbsoluteUri + "\n" + profile : null);
         Playback = new Playback.PlaybackClient(_connection.Api, _connection.RequestAdapter, _connection.Http, server, CapturePlaybackScope,
             CaptureHeadersAsync)
         {

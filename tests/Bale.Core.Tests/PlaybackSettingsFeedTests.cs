@@ -91,6 +91,42 @@ public class BufferingQualitySettingTests
         Assert.Contains("keys=playback.buffering_quality_mode", query);
     }
 
+    private sealed class FakeMemory : ISettingsMemory
+    {
+        public Dictionary<string, string> Values { get; } = new();
+        public string? Read(string key) => Values.GetValueOrDefault(key);
+        public void Write(string key, string value) => Values[key] = value;
+    }
+
+    [Fact]
+    public async Task TheLastModeSeenOnThisDeviceStandsInUntilTheFirstRead()
+    {
+        var handler = new StubHandler()
+            .Enqueue("""{"items":[{"key":"playback.buffering_quality_mode","value":"ask","scope":"profile"}],"revision":3}""")
+            .Enqueue("""{"items":[{"key":"playback.buffering_quality_mode","value":"never","scope":"profile"}],"revision":4}""");
+        using var connection = Connect(handler);
+        var memory = new FakeMemory();
+        var profile = "p1";
+        var feed = new PlaybackSettingsFeed(connection.Api, () => "server\n" + profile) { Memory = memory };
+        Assert.Equal(BufferingQualityMode.Always, feed.BufferingQuality.Value);
+        await feed.RefreshAsync();
+        Assert.Equal(BufferingQualityMode.Ask, feed.BufferingQuality.Value);
+        var key = Assert.Single(memory.Values).Key;
+        Assert.DoesNotContain("server", key);
+        // A new launch (or a reset) for the same profile starts on the remembered mode until its own read.
+        var next = new PlaybackSettingsFeed(connection.Api, () => "server\n" + profile) { Memory = memory };
+        Assert.Equal(BufferingQualityMode.Ask, next.BufferingQuality.Value);
+        await next.RefreshAsync();
+        Assert.Equal(BufferingQualityMode.Never, next.BufferingQuality.Value);
+        next.Reset();
+        Assert.Equal(BufferingQualityMode.Never, next.BufferingQuality.Value);
+        // Another profile has its own memory; no profile, no memory.
+        profile = "p2";
+        Assert.Equal(BufferingQualityMode.Always, next.BufferingQuality.Value);
+        Assert.Equal(BufferingQualityMode.Always,
+            new PlaybackSettingsFeed(connection.Api, () => null) { Memory = memory }.BufferingQuality.Value);
+    }
+
     [Fact]
     public async Task AServerWithoutTheSettingHidesItAndStillReadsAutoPlay()
     {

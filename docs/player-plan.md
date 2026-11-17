@@ -1990,6 +1990,8 @@ cold connection. It reports a lower bound when it reaches the target.
   server defines the key; a pick stores a profile_device value, "Use profile setting" deletes it) with
   its footer, then "Limited to 44 Mbps after buffering on Oct 17" with **Reset**
   (`DELETE /playback/connection/learned-limit`, then a reread; hidden in Never; focus moves up first).
+  Until the first read of a launch lands, starts use the last mode this Xbox saw for the server and profile
+  (`PlaybackSettingsFeed.Memory`, local settings under a hashed key), as the official apps keep it on the device.
 - **Connection** (only with `connection_speed_v1`): *Connection speed* with **Test speed** / *Testing…*,
   the speed line (latest probe, else the playback sample as a lower bound, else "Not measured yet"),
   the Test speed answer (429 countdown, stop playback, failed, not saved), and "Auto plays videos up
