@@ -20,15 +20,27 @@ internal static class DebugToneMapSwitches
     /// </summary>
     public static int OutputMask { get; set; }
 
+    /// <summary>
+    /// The fork's bale_tonemap_format (wrapper 2.1.0-bale.35): 0 NV12, 1 P010, 2 BGRA8. The fork honours it
+    /// only with mask bit 8 (bale_gpu bypassed), so Bale sends it only then. 0 leaves the key unset.
+    /// </summary>
+    public static int OutputFormat { get; set; }
+
+    public static bool ValidOutputFormat(int format) => format is >= 0 and <= 2;
+
+    public static bool FormatSupported(string version) => Revision(version) >= 35;
+
     public static bool ValidOutputMask(int mask) => mask is >= 0 and <= 15;
 
     // Older wrappers reject unknown bale_* keys with E_INVALIDARG; bit 8 needs bale.34.
-    public static bool OutputSupported(string version, int mask = 0)
+    public static bool OutputSupported(string version, int mask = 0) => Revision(version) >= (mask >= 8 ? 34 : 33);
+
+    private static int Revision(string version)
     {
         const string prefix = "2.1.0-bale.";
         return version.StartsWith(prefix, StringComparison.Ordinal)
             && int.TryParse(version.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var revision)
-            && revision >= (mask >= 8 ? 34 : 33);
+            ? revision : -1;
     }
 
     /// <summary>Adds bale_tonemap_output only when the tone-map stage is on for this open.</summary>
@@ -36,6 +48,8 @@ internal static class DebugToneMapSwitches
     {
         if (OutputMask == 0 || !config.FFmpegOptions.ContainsKey("bale_tonemap") || !OutputSupported(version, OutputMask)) return;
         config.FFmpegOptions["bale_tonemap_output"] = OutputMask.ToString(CultureInfo.InvariantCulture);
+        if (OutputFormat != 0 && (OutputMask & 8) != 0 && FormatSupported(version))
+            config.FFmpegOptions["bale_tonemap_format"] = OutputFormat.ToString(CultureInfo.InvariantCulture);
     }
 }
 #endif

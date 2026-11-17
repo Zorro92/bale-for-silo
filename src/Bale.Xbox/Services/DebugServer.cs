@@ -601,13 +601,19 @@ internal sealed partial class DebugServer
                 {
                     // The fork's bale_tonemap_output bitmask, set on each tone-map open (2026-11-17).
                     var maskText = query.GetValueOrDefault("mask") ?? "0";
-                    if (query.Count > 1 || !int.TryParse(maskText, System.Globalization.NumberStyles.None,
-                        System.Globalization.CultureInfo.InvariantCulture, out var mask)
-                        || !DebugToneMapSwitches.ValidOutputMask(mask))
-                        return ("400 Bad Request", "mask: 0-15 (1 decoder-style copies, 2 no colour attributes, 4 no Flush, 8 no bale_gpu; 0 clears)\n");
+                    var formatText = query.GetValueOrDefault("format") ?? "0";
+                    if (query.Keys.Any(key => key is not ("mask" or "format"))
+                        || !int.TryParse(maskText, System.Globalization.NumberStyles.None,
+                            System.Globalization.CultureInfo.InvariantCulture, out var mask)
+                        || !DebugToneMapSwitches.ValidOutputMask(mask)
+                        || !int.TryParse(formatText, System.Globalization.NumberStyles.None,
+                            System.Globalization.CultureInfo.InvariantCulture, out var format)
+                        || !DebugToneMapSwitches.ValidOutputFormat(format) || (format != 0 && (mask & 8) == 0))
+                        return ("400 Bad Request", "mask: 0-15 (1 decoder-style copies, 2 no colour attributes, 4 no Flush, 8 no bale_gpu; 0 clears); format: 0 NV12, 1 P010, 2 BGRA8 (needs mask bit 8)\n");
                     DebugToneMapSwitches.OutputMask = mask;
-                    Log.Info($"debug: tone map output mask {mask} for the next tone-map open");
-                    return ("200 OK", $"tone map output mask: {mask} (next tone-map open)\n");
+                    DebugToneMapSwitches.OutputFormat = format;
+                    Log.Info($"debug: tone map output mask {mask} format {format} for the next tone-map open");
+                    return ("200 OK", $"tone map output mask: {mask} format: {format} (next tone-map open)\n");
                 }
 
             case ("POST", "/tonemap-churn"):

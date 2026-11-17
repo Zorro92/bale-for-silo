@@ -87,6 +87,19 @@ public sealed class DebugFfmpegToneMapTests
         => Assert.Equal(supported, DebugToneMapSwitches.OutputSupported(version, mask));
 
     [Theory]
+    [InlineData("2.1.0-bale.34", false)]
+    [InlineData("2.1.0-bale.35", true)]
+    public void OutputFormatNeedsTheBale35Wrapper(string version, bool supported)
+        => Assert.Equal(supported, DebugToneMapSwitches.FormatSupported(version));
+
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(2, true)]
+    [InlineData(3, false)]
+    public void OutputFormatIsNv12P010OrBgra(int format, bool valid)
+        => Assert.Equal(valid, DebugToneMapSwitches.ValidOutputFormat(format));
+
+    [Theory]
     [InlineData(0, true)]
     [InlineData(7, true)]
     [InlineData(15, true)]
