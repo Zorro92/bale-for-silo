@@ -912,32 +912,6 @@ unsafe fn present_loop(
     report: &mut String,
 ) -> Result<(), Step> {
     unsafe {
-        // The handle can lag canplay; Chromium asks again once the first frame is ready.
-        let waited = Instant::now();
-        let handle = loop {
-            match engine_ex.GetVideoSwapchainHandle() {
-                Ok(handle) if !handle.is_invalid() && !handle.0.is_null() => break handle,
-                Ok(_) | Err(_) if waited.elapsed() < HANDLE_TIMEOUT => {
-                    std::thread::sleep(Duration::from_millis(20));
-                }
-                Ok(_) => {
-                    return Err(Step(
-                        "GetVideoSwapchainHandle null",
-                        HRESULT(0x8000_4005u32 as i32),
-                    ));
-                }
-                Err(error) => return Err(Step("GetVideoSwapchainHandle", error.code())),
-            }
-        };
-        let _ = writeln!(
-            report,
-            "Swap chain handle: after {} ms",
-            waited.elapsed().as_millis()
-        );
-        HRESULT((present.attach)(present.context, handle.0 as isize))
-            .ok()
-            .step("SetSwapChainHandle (UI thread)")?;
-        report.push_str("Panel: swap chain attached\n");
         let rect = |width: u32, height: u32| RECT {
             left: 0,
             top: 0,
@@ -951,6 +925,46 @@ unsafe fn present_loop(
             rgbRed: 0,
             rgbAlpha: 255,
         };
+        // Chromium's MediaFoundationRenderer sets the output rectangle before asking for the handle; a
+        // caller media source (FFmpegInteropX) gets no swap chain without it, or before playback starts.
+        engine_ex
+            .UpdateVideoStream(None, Some(&destination), Some(&border))
+            .step("UpdateVideoStream")?;
+        let waited = Instant::now();
+        let mut started_early = false;
+        let handle = loop {
+            match engine_ex.GetVideoSwapchainHandle() {
+                Ok(handle) if !handle.is_invalid() && !handle.0.is_null() => break handle,
+                Err(error) => return Err(Step("GetVideoSwapchainHandle", error.code())),
+                Ok(_) if waited.elapsed() >= HANDLE_TIMEOUT => {
+                    return Err(Step(
+                        "GetVideoSwapchainHandle null",
+                        HRESULT(0x8000_4005u32 as i32),
+                    ));
+                }
+                Ok(_) => {
+                    if !started_early && waited.elapsed() >= Duration::from_secs(1) {
+                        engine.Play().step("Play (for the swap chain)")?;
+                        started_early = true;
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            }
+        };
+        let _ = writeln!(
+            report,
+            "Swap chain handle: after {} ms{}",
+            waited.elapsed().as_millis(),
+            if started_early {
+                " (only once playing)"
+            } else {
+                ""
+            }
+        );
+        HRESULT((present.attach)(present.context, handle.0 as isize))
+            .ok()
+            .step("SetSwapChainHandle (UI thread)")?;
+        report.push_str("Panel: swap chain attached\n");
         engine_ex
             .UpdateVideoStream(None, Some(&destination), Some(&border))
             .step("UpdateVideoStream")?;
