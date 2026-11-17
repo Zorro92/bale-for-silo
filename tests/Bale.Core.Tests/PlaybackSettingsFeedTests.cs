@@ -61,3 +61,80 @@ public class PlaybackSettingsFeedTests
         Assert.Equal(new BooleanSetting(true), feed.AutoPlayNext);
     }
 }
+
+public class BufferingQualitySettingTests
+{
+    private static SiloConnection Connect(StubHandler handler) => new(new Uri("https://example.com/silo/"),
+        new ClientIdentity("device", "TV", "xbox", "Bale"), transport: handler);
+
+    [Fact]
+    public async Task ReadsTheModeWithAutoPlayAndItsScope()
+    {
+        var handler = new StubHandler()
+            .Enqueue("""
+                {"items":[{"key":"playback.auto_play_next","value":true,"scope":"profile","source":"stored"},
+                {"key":"playback.buffering_quality_mode","value":"never","scope":"profile_device","source":"stored"}],"revision":30}
+                """)
+            .Enqueue("""
+                {"items":[{"key":"playback.auto_play_next","value":true,"scope":"default","source":"default"},
+                {"key":"playback.buffering_quality_mode","value":"always","scope":"default","source":"default"}],"revision":30}
+                """);
+        using var connection = Connect(handler);
+        var feed = new PlaybackSettingsFeed(connection.Api);
+        Assert.Equal(new BufferingQualitySetting(BufferingQualityMode.Always), feed.BufferingQuality);
+        await feed.RefreshAsync();
+        Assert.Equal(new BufferingQualitySetting(BufferingQualityMode.Never, true, true), feed.BufferingQuality);
+        await feed.RefreshAsync();
+        Assert.Equal(new BufferingQualitySetting(BufferingQualityMode.Always, false, true), feed.BufferingQuality);
+        var query = handler.Requests[0].RequestUri!.Query;
+        Assert.Contains("keys=playback.auto_play_next", query);
+        Assert.Contains("keys=playback.buffering_quality_mode", query);
+    }
+
+    [Fact]
+    public async Task AServerWithoutTheSettingHidesItAndStillReadsAutoPlay()
+    {
+        var handler = new StubHandler()
+            .Enqueue(HttpStatusCode.NotFound, """{"status":404,"title":"Not Found","detail":"unknown setting key"}""")
+            .Enqueue("""{"items":[{"key":"playback.auto_play_next","value":false,"scope":"profile"}],"revision":20}""");
+        using var connection = Connect(handler);
+        var feed = new PlaybackSettingsFeed(connection.Api);
+        feed.StoreBufferingQuality(new(BufferingQualityMode.Never, true, true));
+        Assert.Equal(new BooleanSetting(false, false, true), await feed.RefreshAsync());
+        Assert.Equal(new BufferingQualitySetting(), feed.BufferingQuality);
+        Assert.DoesNotContain("buffering_quality_mode", handler.Requests[1].RequestUri!.Query);
+    }
+
+    [Fact]
+    public async Task APickStoresADeviceValueAndUseProfileSettingDeletesIt()
+    {
+        var handler = new StubHandler()
+            .Enqueue("""{"key":"playback.buffering_quality_mode","value":"ask","scope":"profile_device","revision":31}""")
+            .Enqueue(HttpStatusCode.NoContent, "")
+            .Enqueue("""
+                {"items":[{"key":"playback.auto_play_next","value":true,"scope":"default"},
+                {"key":"playback.buffering_quality_mode","value":"never","scope":"profile"}],"revision":32}
+                """);
+        using var connection = Connect(handler);
+        var feed = new PlaybackSettingsFeed(connection.Api);
+        Assert.Equal(new BufferingQualitySetting(BufferingQualityMode.Ask, true, true), await feed.SetBufferingQualityModeAsync(BufferingQualityMode.Ask));
+        Assert.Equal(BufferingQualityMode.Ask, feed.BufferingQuality.Value);
+        Assert.Equal(new BufferingQualitySetting(BufferingQualityMode.Never, false, true), await feed.UseProfileBufferingQualityModeAsync());
+        Assert.Equal(HttpMethod.Put, handler.Requests[0].Method);
+        Assert.Equal("/silo/api/v2/settings/values/playback.buffering_quality_mode", handler.Requests[0].RequestUri!.AbsolutePath);
+        Assert.Contains("scope=profile_device", handler.Requests[0].RequestUri!.Query);
+        Assert.Equal("""{"value":"ask"}""", handler.RequestBodies[0]);
+        Assert.Equal(HttpMethod.Delete, handler.Requests[1].Method);
+        Assert.Contains("scope=profile_device", handler.Requests[1].RequestUri!.Query);
+    }
+
+    [Fact]
+    public void ModesRoundTripTheirWireValuesAndLabels()
+    {
+        Assert.Equal(["never", "ask", "always"], BufferingQualityModes.All.Select(BufferingQualityModes.Wire));
+        Assert.Equal(["Never", "Ask first", "Automatically"], BufferingQualityModes.All.Select(BufferingQualityModes.Label));
+        foreach (var mode in BufferingQualityModes.All) Assert.Equal(mode, BufferingQualityModes.FromWire(BufferingQualityModes.Wire(mode)));
+        Assert.Null(BufferingQualityModes.FromWire("sometimes"));
+        Assert.Equal(BufferingQualityMode.Always, BufferingQualityModes.Default);
+    }
+}
