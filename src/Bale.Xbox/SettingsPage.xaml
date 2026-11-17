@@ -80,6 +80,41 @@
               <TextBlock x:Name="SettingsError" Style="{StaticResource SkylineSettingsErrorStyle}" Visibility="Collapsed" />
             </StackPanel>
             <StackPanel x:Name="PlaybackPane" Style="{StaticResource SkylineSettingsGroupsStyle}" Visibility="Collapsed">
+              <!-- TvSettingsScreen.kt "Streaming": only the rows Bale honors (buffering quality and the learned limit). -->
+              <StackPanel x:Name="StreamingGroup" Style="{StaticResource SkylineSettingsGroupStyle}" Visibility="Collapsed">
+                <TextBlock Text="STREAMING" Style="{StaticResource SkylineSettingsGroupHeaderStyle}" />
+                <Button x:Name="BufferingQualityButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnBufferingQualityClick" Visibility="Collapsed">
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBlock x:Name="BufferingQualityLabel" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+                    <TextBlock x:Name="BufferingQualityValue" Grid.Column="1" Style="{StaticResource SkylineSettingsValueTextStyle}" />
+                  </Grid>
+                </Button>
+                <TextBlock x:Name="BufferingQualityDescription" Style="{StaticResource SkylineSettingsFooterStyle}" Visibility="Collapsed" />
+                <Button x:Name="LearnedLimitButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnLearnedLimitResetClick" Visibility="Collapsed">
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBlock x:Name="LearnedLimitLabel" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+                    <TextBlock x:Name="LearnedLimitValue" Grid.Column="1" Style="{StaticResource SkylineSettingsValueTextStyle}" />
+                  </Grid>
+                </Button>
+                <TextBlock x:Name="LearnedLimitError" Style="{StaticResource SkylineSettingsFooterStyle}" Visibility="Collapsed" />
+              </StackPanel>
+              <!-- TvConnectionSettings.kt: shown only while the server measures speed; a metered link gets the note instead. -->
+              <StackPanel x:Name="ConnectionGroup" Style="{StaticResource SkylineSettingsGroupStyle}" Visibility="Collapsed">
+                <TextBlock Text="CONNECTION" Style="{StaticResource SkylineSettingsGroupHeaderStyle}" />
+                <Button x:Name="ConnectionSpeedButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnTestSpeedClick">
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBlock x:Name="ConnectionSpeedLabel" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+                    <TextBlock x:Name="ConnectionSpeedValue" Grid.Column="1" Style="{StaticResource SkylineSettingsValueTextStyle}" />
+                  </Grid>
+                </Button>
+                <Border x:Name="ConnectionSpeedInfoRow" Style="{StaticResource SkylineSettingsInfoRowStyle}" Visibility="Collapsed">
+                  <TextBlock x:Name="ConnectionSpeedInfoLabel" Style="{StaticResource SkylineSettingsInfoLabelStyle}" />
+                </Border>
+                <TextBlock x:Name="ConnectionSkipped" Style="{StaticResource SkylineSettingsFooterStyle}" Visibility="Collapsed" />
+                <TextBlock x:Name="ConnectionSpeedLine" Style="{StaticResource SkylineSettingsFooterStyle}" Visibility="Collapsed" />
+                <TextBlock x:Name="ConnectionNotice" Style="{StaticResource SkylineSettingsFooterStyle}" Visibility="Collapsed" />
+                <TextBlock x:Name="ConnectionBudget" Style="{StaticResource SkylineSettingsFooterStyle}" Visibility="Collapsed" />
+              </StackPanel>
               <StackPanel Style="{StaticResource SkylineSettingsGroupStyle}">
                 <TextBlock Text="EPISODES" Style="{StaticResource SkylineSettingsGroupHeaderStyle}" />
                 <Button x:Name="AutoPlayButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnAutoPlayClick">
@@ -153,6 +188,41 @@
             </Button>
             <Button x:Name="EveryTimeButton" Tag="askEveryLaunch" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnPolicyClick">
               <StackPanel><TextBlock Text="Every Time" Style="{StaticResource SkylineSettingsRowTextStyle}" /><TextBlock Text="Show Who's Watching each time Bale launches." Style="{StaticResource SkylineSettingsPickerDetailStyle}" /></StackPanel>
+            </Button>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </Grid>
+    <!-- TvSettingsScreen.kt PlaybackPicker.BufferingQualityMode: "Use profile setting" leads, then the modes. -->
+    <Grid x:Name="BufferingPicker" Visibility="Collapsed" Background="{StaticResource SkylineSettingsPickerScrim}">
+      <Border Style="{StaticResource SkylineSettingsPickerCardStyle}">
+        <StackPanel>
+          <Grid Style="{StaticResource SkylineSettingsPickerHeaderStyle}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <StackPanel Style="{StaticResource SkylineSettingsPickerTitleStyle}">
+              <TextBlock x:Name="BufferingPickerTitle" Style="{StaticResource SkylineSettingsPaneTitleStyle}" />
+              <TextBlock Text="Choose an option" Style="{StaticResource SkylineSettingsPickerHintTextStyle}" />
+            </StackPanel>
+            <Border Grid.Column="1" Style="{StaticResource SkylineSettingsPickerHintStyle}">
+              <StackPanel Style="{StaticResource SkylineSettingsPickerHintContentStyle}">
+                <Viewbox Style="{StaticResource SkylineSettingsPickerHintIconStyle}"><Path Style="{StaticResource SkylineSettingsGlyphStyle}" Opacity="{StaticResource SkylineSettingsHintOpacity}" Data="M12.5,8 C9.85,8 7.45,8.99 5.6,10.6 L2,7 V16 H11 L7.38,12.38 C8.77,11.22 10.54,10.5 12.5,10.5 C16.04,10.5 19.05,12.81 20.1,16 L22.47,15.22 C21.08,11.03 17.15,8 12.5,8 Z" /></Viewbox>
+                <TextBlock Text="Back to close" Style="{StaticResource SkylineSettingsPickerHintTextStyle}" />
+              </StackPanel>
+            </Border>
+          </Grid>
+          <Border Style="{StaticResource SkylineSettingsPickerDividerStyle}" />
+          <StackPanel Style="{StaticResource SkylineSettingsPickerOptionsStyle}">
+            <Button x:Name="BufferingProfileOption" Tag="profile" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnBufferingOptionClick">
+              <TextBlock x:Name="BufferingProfileOptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+            <Button x:Name="BufferingNeverOption" Tag="never" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnBufferingOptionClick">
+              <TextBlock x:Name="BufferingNeverOptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+            <Button x:Name="BufferingAskOption" Tag="ask" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnBufferingOptionClick">
+              <TextBlock x:Name="BufferingAskOptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+            <Button x:Name="BufferingAlwaysOption" Tag="always" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnBufferingOptionClick">
+              <TextBlock x:Name="BufferingAlwaysOptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
             </Button>
           </StackPanel>
         </StackPanel>

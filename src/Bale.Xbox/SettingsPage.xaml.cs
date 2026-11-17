@@ -3,6 +3,7 @@ using Bale.Core.Settings;
 using Bale.Xbox.Services;
 using Bale.Xbox.Views;
 using Windows.System;
+using Windows.UI.Core;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Controls.Primitives;
@@ -26,10 +27,32 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     private bool _signingOut;
     private bool _autoPlayBusy;
     private CancellationTokenSource? _autoPlayRead;
+    // Settings → Playback → Streaming / Connection (TvSettingsScreen.kt, TvConnectionSettings.kt).
+    private readonly DispatcherTimer _connectionClock = new() { Interval = TimeSpan.FromSeconds(1) };
+    private bool _testing;
+    private bool _resetBusy;
+    private bool _resetFailed;
+    private bool _modeBusy;
+    private ConnectionSpeedNotice? _notice;
 
     public SettingsPage()
     {
         InitializeComponent();
+        BufferingQualityLabel.Text = BufferingPickerTitle.Text = BufferingQualityModes.Title;
+        BufferingQualityDescription.Text = BufferingQualityModes.Description;
+        LearnedLimitValue.Text = ConnectionSettings.Reset;
+        LearnedLimitError.Text = ConnectionSettings.ResetFailed;
+        ConnectionSpeedLabel.Text = ConnectionSpeedInfoLabel.Text = ConnectionSettings.SpeedLabel;
+        ConnectionSkipped.Text = ConnectionSettings.SkippedMetered;
+        BufferingProfileOptionText.Text = ConnectionSettings.UseProfileSetting;
+        BufferingNeverOptionText.Text = BufferingQualityModes.Label(BufferingQualityMode.Never);
+        BufferingAskOptionText.Text = BufferingQualityModes.Label(BufferingQualityMode.Ask);
+        BufferingAlwaysOptionText.Text = BufferingQualityModes.Label(BufferingQualityMode.Always);
+        // A minute clock for the speed line's age and a second clock for a 429 countdown, in one.
+        _connectionClock.Tick += (_, _) =>
+        {
+            if (OwnsSettings && _category == SettingsCategory.Playback) UpdateConnection();
+        };
         Loaded += OnLoaded;
         Unloaded += (_, _) => DetachFocusBoundary();
         SignOutPrompt.SignOutRequested += OnSignOutRequested;
@@ -54,7 +77,13 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         ServerCategory.Visibility = visible.Contains(SettingsCategory.Server) ? Visibility.Visible : Visibility.Collapsed;
         SelectCategory(SettingsCategories.Resolve(_category, SettingsSupport.Bale));
         PlaybackError.Visibility = Visibility.Collapsed;
+        _notice = null;
+        _resetFailed = false;
+        ConnectionSpeedService.Changed -= OnConnectionChanged;
+        ConnectionSpeedService.Changed += OnConnectionChanged;
+        _connectionClock.Start();
         UpdateAutoPlay();
+        UpdateConnection();
         UpdateIdentity();
         UpdatePolicy();
         var version = DeviceIdentity.Current().ClientVersion;
@@ -66,6 +95,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             ServerAddress.Text = client.Server.GetLeftPart(UriPartial.Path);
             _ = ReadAccountAsync(client, _profileId);
             _ = ReadAutoPlayAsync(client, _profileId);
+            _ = ReadConnectionAsync(client, _profileId);
         }
     }
 
@@ -74,8 +104,11 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         _active = false;
         _accountRead?.Cancel();
         _autoPlayRead?.Cancel();
+        ConnectionSpeedService.Changed -= OnConnectionChanged;
+        _connectionClock.Stop();
         DetachFocusBoundary();
         ProfilePicker.Visibility = Visibility.Collapsed;
+        BufferingPicker.Visibility = Visibility.Collapsed;
         SignOutPrompt.Hide();
         base.OnNavigatedFrom(e);
     }
@@ -144,7 +177,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         ServerPane.Visibility = ServerHeaderIcon.Visibility = server ? Visibility.Visible : Visibility.Collapsed;
         (PaneTitle.Text, PaneBlurb.Text) = category switch
         {
-            SettingsCategory.Playback => ("Playback", "Episode behavior for this Xbox."),
+            SettingsCategory.Playback => ("Playback", "Streaming quality and episode behavior for this Xbox."),
             SettingsCategory.Server => ("Server", "The Silo server this Xbox is connected to."),
             _ => ("General", "App-level options for this Xbox."),
         };
@@ -160,7 +193,10 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
 
     private Control[] DetailActions => _category switch
     {
-        SettingsCategory.Playback => AutoPlayProfileButton.Visibility == Visibility.Visible ? [AutoPlayButton, AutoPlayProfileButton] : [AutoPlayButton],
+        SettingsCategory.Playback => new Control[]
+            {
+                BufferingQualityButton, LearnedLimitButton, ConnectionSpeedButton, AutoPlayButton, AutoPlayProfileButton,
+            }.Where(item => item.Visibility == Visibility.Visible).ToArray(),
         SettingsCategory.Server => [ChangeServerButton],
         _ => [ProfileSelectionButton, HomeSectionsButton],
     };
@@ -196,6 +232,11 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     public bool OnBack()
     {
         if (SignOutPrompt.Dismiss()) return true;
+        if (BufferingPicker.Visibility == Visibility.Visible)
+        {
+            CloseBufferingPicker();
+            return true;
+        }
         if (ProfilePicker.Visibility == Visibility.Visible)
         {
             ClosePicker();
@@ -219,6 +260,18 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         var vertical = SettingsInput.VerticalStep(e.Key);
         var horizontal = SettingsInput.HorizontalStep(e.Key);
         var focused = FocusManager.GetFocusedElement() as DependencyObject;
+        if (BufferingPicker.Visibility == Visibility.Visible)
+        {
+            if (vertical != 0)
+            {
+                var options = BufferingOptions;
+                var index = Array.FindIndex(options, option => SettingsInput.IsWithin(focused, option));
+                options[Math.Clamp(index + vertical, 0, options.Length - 1)].Focus(FocusState.Keyboard);
+                e.Handled = true;
+            }
+            if (horizontal != 0 || e.Key == VirtualKey.Tab) e.Handled = true;
+            return;
+        }
         if (ProfilePicker.Visibility == Visibility.Visible)
         {
             if (vertical != 0)
@@ -273,7 +326,11 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     {
         try
         {
-            if (OwnsSettings && ProfilePicker.Visibility == Visibility.Visible && !SettingsInput.IsWithin(e.NewFocusedElement, ProfilePicker))
+            if (OwnsSettings && BufferingPicker.Visibility == Visibility.Visible && !SettingsInput.IsWithin(e.NewFocusedElement, BufferingPicker))
+            {
+                if (!e.TrySetNewFocusedElement(SelectedBufferingOption)) e.Cancel = true;
+            }
+            else if (OwnsSettings && ProfilePicker.Visibility == Visibility.Visible && !SettingsInput.IsWithin(e.NewFocusedElement, ProfilePicker))
             {
                 var selected = AppSettings.OpenProfileAutomatically ? AutomaticButton : EveryTimeButton;
                 if (!e.TrySetNewFocusedElement(selected)) e.Cancel = true;
@@ -349,7 +406,11 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         try
         {
             await client.Settings.RefreshAsync(read.Token);
-            if (OwnsSettings && !read.IsCancellationRequested && client.ProfileId == profileId) UpdateAutoPlay();
+            if (OwnsSettings && !read.IsCancellationRequested && client.ProfileId == profileId)
+            {
+                UpdateAutoPlay();
+                UpdateConnection();
+            }
         }
         catch (OperationCanceledException) when (read.IsCancellationRequested) { }
         catch (Exception error) { Log.Error("Settings auto-play read", error); }
@@ -408,7 +469,179 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         finally
         {
             _autoPlayBusy = false;
-            if (OwnsSettings && client.ProfileId == profileId) UpdateAutoPlay();
+            if (OwnsSettings && client.ProfileId == profileId)
+            {
+                UpdateAutoPlay();
+                UpdateConnection();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Settings reads the connection when Playback settings opens, after a network change while it is open (via
+    /// <see cref="ConnectionSpeedService.Changed"/>), and after Reset and Test speed (buffering-quality design,
+    /// "Settings").
+    /// </summary>
+    private async Task ReadConnectionAsync(SiloClient client, string? profileId)
+    {
+        try { await ConnectionSpeedService.ReadAsync(client); }
+        catch (Exception error) { Log.Error("Settings connection read", error); }
+        if (OwnsSettings && client.ProfileId == profileId) UpdateConnection();
+    }
+
+    private void OnConnectionChanged() =>
+        _ = Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+        {
+            if (OwnsSettings) UpdateConnection();
+        });
+
+    private void UpdateConnection()
+    {
+        var focused = FocusManager.GetFocusedElement() as DependencyObject;
+        var speed = _client?.Playback.Speed;
+        var view = ConnectionSettings.Build(_client?.Settings.BufferingQuality ?? new BufferingQualitySetting(), speed?.Connection,
+            speed?.Schedule is not null, speed?.Metered == true, _testing, _notice, DateTimeOffset.UtcNow, TimeZoneInfo.Local);
+        StreamingGroup.Visibility = Shown(view.StreamingShown);
+        BufferingQualityButton.Visibility = BufferingQualityDescription.Visibility = Shown(view.ModeShown);
+        BufferingQualityValue.Text = view.ModeValue;
+        LearnedLimitButton.Visibility = Shown(view.LearnedLimit is not null);
+        LearnedLimitLabel.Text = view.LearnedLimit ?? string.Empty;
+        LearnedLimitError.Visibility = Shown(_resetFailed && view.LearnedLimit is not null);
+        ConnectionGroup.Visibility = Shown(view.ConnectionShown);
+        ConnectionSpeedButton.Visibility = Shown(view.ConnectionShown && !view.Skipped);
+        ConnectionSpeedInfoRow.Visibility = ConnectionSkipped.Visibility = Shown(view.Skipped);
+        ConnectionSpeedValue.Text = view.TestValue;
+        SetLine(ConnectionSpeedLine, view.SpeedLine);
+        SetLine(ConnectionNotice, view.Notice);
+        SetLine(ConnectionBudget, view.Budget);
+        // A row that left with focus hands it to the row above it, as the official app does after Reset.
+        foreach (var row in new Control[] { BufferingQualityButton, LearnedLimitButton, ConnectionSpeedButton })
+            if (row.Visibility == Visibility.Collapsed && SettingsInput.IsWithin(focused, row)) FocusTarget(ResetFocusTarget);
+    }
+
+    private static Visibility Shown(bool shown) => shown ? Visibility.Visible : Visibility.Collapsed;
+
+    private static void SetLine(TextBlock line, string? text)
+    {
+        if (line.Text != (text ?? string.Empty)) line.Text = text ?? string.Empty;
+        line.Visibility = Shown(text is not null);
+    }
+
+    /// <summary>Where focus goes when the learned-limit row leaves: the mode row, else the next row down.</summary>
+    private Control ResetFocusTarget =>
+        new Control[] { BufferingQualityButton, ConnectionSpeedButton }.FirstOrDefault(row => row.Visibility == Visibility.Visible) ?? AutoPlayButton;
+
+    /// <summary>Test speed: the accurate test (up to 10 s). The row stays focusable while it runs; a second press is ignored.</summary>
+    private async void OnTestSpeedClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings || _testing || _client is not { } client) return;
+        _returnTarget = ConnectionSpeedButton;
+        var profileId = _profileId;
+        _testing = true;
+        _notice = null;
+        UpdateConnection();
+        ConnectionSpeedNotice? notice;
+        try { notice = await ConnectionSpeedService.TestSpeedAsync(); }
+        catch (Exception error)
+        {
+            Log.Error("Settings test speed", error);
+            notice = new ConnectionSpeedNotice(ConnectionSpeedNoticeKind.Failed);
+        }
+        _testing = false;
+        if (!OwnsSettings || client.ProfileId != profileId) return;
+        _notice = notice;
+        UpdateConnection();
+    }
+
+    /// <summary>Reset: DELETE the learned limit, then read the connection again. Focus moves up first.</summary>
+    private async void OnLearnedLimitResetClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings || _resetBusy || _client is not { } client) return;
+        _resetBusy = true;
+        var profileId = _profileId;
+        FocusTarget(ResetFocusTarget);
+        bool reset;
+        try { reset = await client.Playback.ResetLearnedLimitAsync(CancellationToken.None); }
+        catch (Exception error)
+        {
+            Log.Error("Settings learned-limit reset", error);
+            reset = false;
+        }
+        if (OwnsSettings && client.ProfileId == profileId)
+        {
+            _resetFailed = !reset;
+            UpdateConnection();
+        }
+        if (reset) await ReadConnectionAsync(client, profileId);
+        _resetBusy = false;
+    }
+
+    private Button[] BufferingOptions => [BufferingProfileOption, BufferingNeverOption, BufferingAskOption, BufferingAlwaysOption];
+
+    /// <summary>"Use profile setting" is the checked choice while this Xbox has no value of its own.</summary>
+    private Button SelectedBufferingOption
+    {
+        get
+        {
+            var setting = _client?.Settings.BufferingQuality ?? new BufferingQualitySetting();
+            if (!setting.DeviceOverride) return BufferingProfileOption;
+            return setting.Value switch
+            {
+                BufferingQualityMode.Never => BufferingNeverOption,
+                BufferingQualityMode.Ask => BufferingAskOption,
+                _ => BufferingAlwaysOption,
+            };
+        }
+    }
+
+    private void OnBufferingQualityClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings) return;
+        _returnTarget = BufferingQualityButton;
+        var selected = SelectedBufferingOption;
+        foreach (var option in BufferingOptions)
+        {
+            option.ApplyTemplate();
+            VisualStateManager.GoToState(option, ReferenceEquals(option, selected) ? "Selected" : "Unselected", false);
+        }
+        BufferingPicker.Visibility = Visibility.Visible;
+        FocusRetry.Until(this, () => !OwnsSettings || BufferingPicker.Visibility != Visibility.Visible || selected.Focus(FocusState.Programmatic));
+    }
+
+    private void CloseBufferingPicker()
+    {
+        BufferingPicker.Visibility = Visibility.Collapsed;
+        FocusTarget(BufferingQualityButton);
+    }
+
+    /// <summary>A mode stores this Xbox's own value (profile_device); "Use profile setting" deletes it.</summary>
+    private async void OnBufferingOptionClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings || _client is not { } client) return;
+        var choice = (sender as FrameworkElement)?.Tag as string;
+        CloseBufferingPicker();
+        if (_modeBusy) return;
+        _modeBusy = true;
+        var profileId = _profileId;
+        try
+        {
+            if (choice == "profile") await client.Settings.UseProfileBufferingQualityModeAsync();
+            else if (BufferingQualityModes.FromWire(choice) is { } mode) await client.Settings.SetBufferingQualityModeAsync(mode);
+            if (OwnsSettings && client.ProfileId == profileId) PlaybackError.Visibility = Visibility.Collapsed;
+        }
+        catch (Exception error)
+        {
+            Log.Error("Settings buffering quality write", error);
+            if (OwnsSettings && client.ProfileId == profileId)
+            {
+                PlaybackError.Text = "Bale couldn’t save Lower quality when buffering on the server. Try again.";
+                PlaybackError.Visibility = Visibility.Visible;
+            }
+        }
+        finally
+        {
+            _modeBusy = false;
+            if (OwnsSettings && client.ProfileId == profileId) UpdateConnection();
         }
     }
 
