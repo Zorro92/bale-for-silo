@@ -25,12 +25,25 @@ internal static class ActionButton
         button.LostFocus += (_, _) => Show(button, false);
     }
 
+    // UWP's StackPanel still adds Spacing after collapsed children, so a hidden label left the icon
+    // off centre in its disc. Hidden labels take the spacing with them; focus restores it.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<StackPanel, object> Spacings = new();
+
+    internal static void SetLabelSpacing(Panel panel, bool labelsVisible)
+    {
+        if (panel is not StackPanel stack) return;
+        var original = (double)Spacings.GetValue(stack, item => item.Spacing);
+        stack.Spacing = labelsVisible ? original : 0;
+    }
+
     private static void Show(Button button, bool focused)
     {
         if (button.Content is not Panel panel)
         {
             return;
         }
+
+        SetLabelSpacing(panel, focused);
 
         VisualStateManager.GoToState(button, focused ? "Expanded" : "Collapsed", useTransitions: true);
         foreach (var child in panel.Children)

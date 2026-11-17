@@ -202,6 +202,7 @@ public sealed partial class PlayerPage
         var ink = focused ? TransportInk : TransportPaper;
         if (button.Content is Windows.UI.Xaml.Controls.StackPanel labelled)
         {
+            ActionButton.SetLabelSpacing(labelled, focused);
             VisualStateManager.GoToState(button, focused ? "Expanded" : "Collapsed", useTransitions: true);
             foreach (var child in labelled.Children)
             {
