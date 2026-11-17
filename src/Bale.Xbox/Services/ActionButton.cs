@@ -26,13 +26,17 @@ internal static class ActionButton
     }
 
     // UWP's StackPanel still adds Spacing after collapsed children, so a hidden label left the icon
-    // off centre in its disc. Hidden labels take the spacing with them; focus restores it.
-    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<StackPanel, object> Spacings = new();
-
+    // off centre in its disc. Hidden labels take the spacing with them; focus restores it. The original
+    // spacing is kept in the panel's Tag (on the element itself): a managed table keyed by the wrapper
+    // lost it, because WinRT can hand back a new wrapper for the same element.
     internal static void SetLabelSpacing(Panel panel, bool labelsVisible)
     {
         if (panel is not StackPanel stack) return;
-        var original = (double)Spacings.GetValue(stack, item => item.Spacing);
+        if (stack.Tag is not double original)
+        {
+            original = stack.Spacing;
+            stack.Tag = original;
+        }
         stack.Spacing = labelsVisible ? original : 0;
     }
 
