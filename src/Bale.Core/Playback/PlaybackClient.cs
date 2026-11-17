@@ -137,7 +137,7 @@ public sealed partial class PlaybackClient
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         var features = PlaybackProtocol.ReplanFeatures(request, _negotiated);
         return PostAsync($"/api/v2/playback/{Uri.EscapeDataString(sessionId)}/replan",
-            request with
+            PlaybackProtocol.BufferingQualityFields(request, features) with
             {
                 InstallationId = InstallationId(installation),
                 ClientFeatures = features,

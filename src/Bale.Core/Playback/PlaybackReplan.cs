@@ -113,6 +113,40 @@ public static class PlaybackReplan
     }
 
     /// <summary>
+    /// The buffering-quality controller's <c>quality_change</c> (silo-server buffering-quality design, "Lower
+    /// automatically" / "Ask first" / Restore quality): the same session, tracks and position at the quality and
+    /// estimate the controller chose. Nothing failed, so no attempted key is added and no failure budget is spent.
+    /// </summary>
+    public static PlaybackReplanRequestV3 ForQualityChange(PlaybackStartRequestV3 start, PlaybackPlan plan, string planAttemptId,
+        IReadOnlyList<string> priorAttemptedKeys, int attemptCount, double sourcePositionSeconds, BufferingQualityReplan change)
+    {
+        if (attemptCount is < 1 or > 8) throw new ArgumentOutOfRangeException(nameof(attemptCount));
+        ArgumentNullException.ThrowIfNull(change);
+        return Build(start, plan, planAttemptId, priorAttemptedKeys, attemptCount, sourcePositionSeconds, change.Operation, null) with
+        {
+            QualityPreference = change.QualityPreference,
+            BandwidthEstimateKbps = change.BandwidthEstimateKbps,
+            BandwidthEstimateSource = change.BandwidthEstimateSource,
+            ObservedThroughputKbps = change.ObservedThroughputKbps,
+            LearnedLimit = change.LearnedLimit,
+        };
+    }
+
+    /// <summary>
+    /// A replan the player sends for its own reasons (track change, seek reanchor, failure recovery) after a lowering:
+    /// the controller's quality and, on Auto, the kept step-down estimate without a source, so the lowering holds where
+    /// no learned limit applies ("Later replans after a lowering"). Null leaves the request unchanged.
+    /// </summary>
+    public static PlaybackReplanRequestV3 WithClientReplan(PlaybackReplanRequestV3 request, BufferingQualityReplan? client) =>
+        client is null ? request : request with
+        {
+            QualityPreference = client.QualityPreference,
+            BandwidthEstimateKbps = client.BandwidthEstimateKbps,
+            BandwidthEstimateSource = null,
+            ObservedThroughputKbps = null,
+        };
+
+    /// <summary>
     /// A subtitle pick's replan answer that leaves the mounted stream alone (InPlacePlanAdoption.kt
     /// mediaMountKey; silo-apple's report replan that "keeps the stream for the answer"): same delivery, stream,
     /// file, audio track, recipe and timeline origin, and no burn-in on either side (burn-in changes the video).

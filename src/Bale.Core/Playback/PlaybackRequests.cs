@@ -55,6 +55,30 @@ public static class PlaybackProtocol
     }
 
     /// <summary>
+    /// The buffering-quality fields a replan may carry (silo-server validateBufferingQualityV3): the source and
+    /// observed throughput only with buffering_quality_v1, a source only with an estimate, an observed throughput only
+    /// with <c>observed_rebuffer</c>, each within 100–1,000,000. The estimate itself needs no feature.
+    /// </summary>
+    public static PlaybackReplanRequestV3 BufferingQualityFields(PlaybackReplanRequestV3 request, IReadOnlyList<string> clientFeatures)
+    {
+        var offered = clientFeatures.Contains(ConnectionSpeed.BufferingQualityFeature);
+        // validateOptionalBoundedIntV3: an estimate outside 100–1,000,000 fails the whole replan.
+        var estimate = request.BandwidthEstimateKbps is >= PlanThroughput.MinKbps and <= PlanThroughput.MaxKbps
+            ? request.BandwidthEstimateKbps : null;
+        var source = offered && estimate is not null && request.BandwidthEstimateSource is ObservedRebufferSource
+            ? request.BandwidthEstimateSource : null;
+        var observed = source is not null && request.ObservedThroughputKbps is >= PlanThroughput.MinKbps and <= PlanThroughput.MaxKbps
+            ? request.ObservedThroughputKbps : null;
+        return request with { BandwidthEstimateKbps = estimate, BandwidthEstimateSource = source, ObservedThroughputKbps = observed };
+    }
+
+    /// <summary><c>bandwidth_estimate_source</c> of a lowering after repeated rebuffering.</summary>
+    public const string ObservedRebufferSource = BufferingQualityController.ObservedRebufferSource;
+
+    /// <summary>silo-server FeaturePlaybackPlanSummaryV1: the server accepts <c>plan_summary</c> route events.</summary>
+    public const string PlanSummaryFeature = "playback_plan_summary_v1";
+
+    /// <summary>
     /// Start-time features that depend on what the server offers. silo-server protocol_v3.go makes
     /// subrip_sidecar_v1 attempt-sticky and playback_service.go keeps it across replans from the
     /// attempt record, so it is added to the start only, and only for a server that advertises it and
@@ -175,6 +199,15 @@ public sealed record PlaybackReplanRequestV3(
     /// Dropped when the replan does not name buffering_quality_v1.
     /// </summary>
     public string? LearnedLimit { get; init; }
+    /// <summary>
+    /// A lowering's step-down estimate, or the kept estimate a later Auto replan repeats (buffering-quality design,
+    /// "Later replans after a lowering"). Never the speed-test reading: replans do not send it.
+    /// </summary>
+    public int? BandwidthEstimateKbps { get; init; }
+    /// <summary><c>observed_rebuffer</c> on a lowering only; dropped without buffering_quality_v1 or an estimate.</summary>
+    public string? BandwidthEstimateSource { get; init; }
+    /// <summary>What the plan that kept buffering received (100–1,000,000); only with <c>observed_rebuffer</c>.</summary>
+    public int? ObservedThroughputKbps { get; init; }
     public PlaybackFailureV3? Failure { get; init; }
 }
 
