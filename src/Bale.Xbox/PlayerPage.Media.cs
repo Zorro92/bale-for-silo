@@ -182,13 +182,10 @@ public sealed partial class PlayerPage
                 // HLS through FFmpeg (docs/rust-port.md): the Rust reader's forward-only stream from the
                 // segment holding playerStart. FFmpeg's clock reads 0 at that segment's start, so the
                 // mount's timeline starts there; seeks remount at the target segment (PlayerPage.Seek.cs).
-                try
-                {
-                    var hls = await transport.OpenNativeHlsAsync(playerStart, media.Token);
-                    media.Progressive = hls;
-                    transport.StartPlayerClockAt(hls.SegmentStartSeconds);
-                }
-                // Windows' HLS takes over only for what it can play; any other package fails to a replan.
+                // A playlist the reader refuses (HlsUnsupportedException) fails to a replan.
+                var hls = await transport.OpenNativeHlsAsync(playerStart, media.Token);
+                media.Progressive = hls;
+                transport.StartPlayerClockAt(hls.SegmentStartSeconds);
                 media.ForwardInput = NativeInputStream(media.Progressive) ?? new ForwardInputStream(media.Progressive);
             }
             else
