@@ -50,6 +50,14 @@ public class PlaybackOptionsInfoTests
         var truehd = new AudioTrack { Codec = "truehd", Channels = 8 };
         Assert.Equal("Dolby TrueHD · 7.1 → Dolby Digital Plus · 5.1",
             PlaybackOptionsInfo.StreamRows(remux, null, null, truehd).Single(row => row.Label == "Audio").Value);
+        var direct = new PlaybackPlan
+        {
+            Delivery = "original_http",
+            Source = new PlaybackSource { VideoCodec = "hevc", AudioCodec = "aac", AudioChannels = 2 },
+            EffectiveRecipe = new EffectiveRecipeV3 { AudioCodec = "aac", AudioChannels = 2 },
+        };
+        Assert.Equal("Dolby Digital · Stereo", PlaybackOptionsInfo.StreamRows(direct, null, null,
+            new AudioTrack { Codec = "ac3", Channels = 2 }).Single(row => row.Label == "Audio").Value);
         var eac3 = new AudioTrack { Codec = "eac3", Channels = 6 };
         Assert.Equal("Dolby Digital Plus · 5.1", PlaybackOptionsInfo.StreamRows(remux, null, null, eac3).Single(row => row.Label == "Audio").Value);
     }

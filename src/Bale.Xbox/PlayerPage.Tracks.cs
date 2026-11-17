@@ -166,6 +166,9 @@ public sealed partial class PlayerPage
         attempt.Start = PlaybackReplan.WithLocalAudio(attempt.Start!, attempt.Plan!, index);
         Log.Info($"player: audio switched locally audio={index}");
         UpdateTrackValues();
+#if DEBUG_SERVER
+        RefreshStats(attempt);
+#endif
         return true;
     }
 }

@@ -45,7 +45,8 @@ public static class PlaybackOptionsInfo
         var source = Describe(
             AudioCodecName(playingAudio?.Codec) ?? AudioCodecName(plan.Source?.AudioCodec),
             ChannelName(playingAudio?.Channels is > 0 ? playingAudio.Channels : plan.Source?.AudioChannels));
-        var recipe = plan.EffectiveRecipe;
+        // Direct play converts nothing; its recipe names the planned track, which a local switch has left.
+        var recipe = plan.Delivery is "original_http" or "progressive" ? null : plan.EffectiveRecipe;
         if (AudioCodecName(recipe?.AudioCodec) is not { } outputCodec) return source;
         var output = Describe(outputCodec, ChannelName(recipe!.AudioChannels));
         var sourceCodec = AudioCodecName(playingAudio?.Codec) ?? AudioCodecName(plan.Source?.AudioCodec);
