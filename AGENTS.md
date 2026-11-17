@@ -21,6 +21,14 @@ Where to look:
 
 Read the Kotlin with `gh api repos/Silo-Server/silo-android/contents/<path> --jq .content | base64 -d`.
 
+**Playback follows the Apple TV app (owner, 2026-11-17).** For playback planning and routing (protocol
+features, capability claims, routes, display criteria, HDR/Dolby Vision), the reference is
+`silo-apple` and its engine **AetherEngine** (`Silo-Server/AetherEngine`, LGPL-3: read for behaviour,
+copy no code), not Android: Xbox is the closer platform (fixed box, system HDR/DV pipeline, FFmpeg
+demux feeding a system player). Follow it wherever Xbox hardware allows; where it can't (Xbox does
+not map Dolby Vision for non-DV TVs), the owner's rules below apply. The Skyline UI rule above is
+unchanged. Gap analysis and phases: docs/apple-playback-parity.md.
+
 **Deliberate deviations.** These differ from the official apps on purpose. Keep them; don't
 "fix" them back.
 
@@ -205,6 +213,9 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   height > 1080), using route dimensions from the source for original delivery or the effective
   recipe with source fallback otherwise. Unknown size leaves delay unset; hardware/system video
   gets none of these keys. This tuning does not expand the measured software-video capability bounds.
+- **Changing (owner, 2026-11-17):** like AetherEngine, Bale will declare everything its FFmpeg build can
+  decode, relying on the bounded replan when the console can't keep up. Until the Apple-parity work
+  replaces it, the allowlist below is still the implemented policy.
 - `SoftwareDecodePolicy.VideoCodecs` is the project owner's explicit **AV1 and MPEG-4 Part 2** software video
   allowlist. Add nothing without them. Other unsupported video goes to server transcode, never
   FFmpeg software or D3D11. Measured AV1 evidence: 8/10-bit, **1080p60** (0.1.230 at 24 fps,
@@ -253,7 +264,8 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   before Play. Fail closed if the selected stream is missing.
 - Display HDR is detected from HDMI modes on the UI thread at player start, including debug
   FFmpeg overrides. The bare baseline is unknown, not a hardcoded SDR display. Claim only HDR10
-  from non-stereo PQ modes; native HDR10+/HLG/DV output remains unverified. On a known SDR
+  from non-stereo PQ modes; native HDR10+/HLG/DV output remains unverified. Owner (2026-11-17):
+  HLG must play natively when the TV supports it (as on Apple TV); today only HLG→SDR is done. On a known SDR
   display, eligible selected HEVC/VP9 10-bit PQ/HLG originals use the wrapper's d3d11va + bale_gpu
   BT.2390 stage by default (`client_managed_dynamic_range_v1` on original_http only). Require
   runtime ABI availability and explicit supported colour facts (BT.2020 NCL, or BT.709 for PQ);
