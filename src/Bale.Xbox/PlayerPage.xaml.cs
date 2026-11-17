@@ -77,6 +77,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public bool MatchContentFrameRate { get; } = DebugDisplayMatch.Enabled;
         public string FrameDeliveryMode { get; } = DebugFrameDeliverySwitch.Mode;
         public string StreamAdapter { get; } = DebugStreamAdapterSwitch.Mode;
+        /// <summary>mediaplayer or engine (<see cref="EngineBackend"/>), captured when the attempt starts.</summary>
+        public string PlayerBackend { get; } = DebugPlayerBackendSwitch.Mode;
         public bool UsePooledStreamAdapter => StreamAdapter == "pooled";
         /// <summary>The Rust range stream and its Rust IRandomAccessStream (docs/rust-port.md, slice 7).</summary>
         public bool UseRustTransport => StreamAdapter == "rust";

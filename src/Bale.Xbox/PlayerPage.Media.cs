@@ -246,11 +246,11 @@ public sealed partial class PlayerPage
                 // The debug engine player sets the forward-only mount's real remaining duration itself:
                 // IMFMediaEngine ends at the duration it read at load, so FFmpegInteropX's few-second
                 // auto-extended estimate would stop it (MediaPlayer follows the extensions).
-                if (DebugPresentEngineSwitch.Seconds > 0 && media.Progressive is not null)
+                if ((DebugPresentEngineSwitch.Seconds > 0 || attempt.PlayerBackend == "engine") && media.Progressive is not null)
                     config.General.AutoExtendDuration = false;
                 // The engine player gives FFmpegInteropX no MediaPlayer session; wrapper bale.30's opt-in
                 // FastSeek lands on the keyframe without one (reported via SetActualStartPosition).
-                if (DebugPresentEngineSwitch.Seconds > 0)
+                if (DebugPresentEngineSwitch.Seconds > 0 || attempt.PlayerBackend == "engine")
                     config.FFmpegOptions["bale_fast_seek_without_session"] = "1";
 #endif
                 media.FfmpegSource = media.ForwardInput is { } forward
@@ -325,6 +325,13 @@ public sealed partial class PlayerPage
             return;
         }
 #endif
+#if DEBUG_SERVER
+        if (attempt.PlayerBackend == "engine")
+        {
+            await MountEngineAsync(attempt, media, transport.MimeType ?? "video/mp4");
+            return;
+        }
+#endif
         var backend = new MediaPlayerBackend();
         var player = backend.Player;
         media.Player = backend;
@@ -362,6 +369,49 @@ public sealed partial class PlayerPage
         backend.Item = media.Item;
         player.Source = media.Item;
     }
+
+#if DEBUG_SERVER
+    /// <summary>
+    /// Plays this mount's routed source through IMFMediaEngine (<see cref="EngineBackend"/>) with the page's own
+    /// controls, Up Next, tracks and subtitles (debug player-backend engine; owner, 2026-11-17).
+    /// </summary>
+    private async Task MountEngineAsync(Attempt attempt, Mount media, string mime)
+    {
+        ReleaseVideoPresenter();
+        var engine = new EngineBackend(VideoHost);
+        media.Player = engine;
+        engine.MediaOpened += OnMediaOpened;
+        engine.MediaFailed += OnMediaFailed;
+        engine.MediaEnded += OnMediaEnded;
+        engine.PlaybackSession.PlaybackStateChanged += OnPlaybackStateChanged;
+        AttachSubtitleSession(engine.PlaybackSession);
+        engine.PlaybackSession.BufferingStarted += OnStatsBufferingStarted;
+        engine.PlaybackSession.BufferingEnded += OnStatsBufferingEnded;
+        object source;
+        string? type = null;
+        if (media.FfmpegSource is { } ffmpeg)
+        {
+            var mss = ffmpeg.GetMediaStreamSource();
+            if (media.Progressive is not null && _duration is > 0 and var title)
+            {
+                // The engine ends at the duration it reads at load: give it the rest of the title from this
+                // mount's origin instead of FFmpeg's estimate of what it has probed (AutoExtendDuration is off).
+                var origin = media.Transport.Timeline.SourceForPlayer(0) ?? 0;
+                mss.Duration = TimeSpan.FromSeconds(Math.Max(1, title - origin));
+            }
+            source = mss;
+        }
+        else if (media.RandomStream is { } random)
+        {
+            source = random;
+            type = mime;
+        }
+        else throw new InvalidDataException("The engine has no source for this route.");
+        Log.Info($"player: backend=engine route={RouteText(media)}");
+        await engine.OpenAsync(source, type, canSeek: media.Progressive is null);
+        foreach (var line in engine.Report.Split('\n', StringSplitOptions.RemoveEmptyEntries)) Log.Info("engine: " + line);
+    }
+#endif
 
     private void OnMediaOpened(PlaybackBackend sender, object? args) => _ = DispatchAsync(() =>
     {
@@ -456,8 +506,8 @@ public sealed partial class PlayerPage
             }).ToArray();
             PlaybackOriginalAudioSelection.Select(planIndex, catalog, mounted, ffmpeg is not null, index =>
             {
-                // MediaPlayer reports a track it cannot open through the track itself.
-                if (media.Item is { } item)
+                // MediaPlayer reports a track it cannot open through the track itself (the engine through its state).
+                if (media.NativePlayer is not null && media.Item is { } item)
                 {
                     if (media.SelectedAudioTrack is { } prior) prior.OpenFailed -= OnAudioTrackOpenFailed;
                     media.SelectedAudioTrack = item.AudioTracks[index];

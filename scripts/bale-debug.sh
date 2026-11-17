@@ -53,6 +53,7 @@
 #   scripts/bale-debug.sh gc                     GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
 #   scripts/bale-debug.sh gc latency <batch|interactive|sustained|default>  change latency app-wide now; default restores the saved pre-playback mode; playback acquires sustained automatically
 #   scripts/bale-debug.sh frame-delivery [native|managed|off]  next playback attempt's observer; default native, on aliases native; memory only (restart resets); no args = status
+#   scripts/bale-debug.sh player-backend [mediaplayer|engine]   next playback attempt's player: mediaplayer (default) = Windows MediaPlayer; engine = IMFMediaEngine with Bale's controls; memory only; no args = status
 #   scripts/bale-debug.sh stream-adapter [pooled|builtin|rust]  next playback attempt's stream adapter; default rust (C#: pooled/builtin), memory only (restart resets); no args = status
 #                                               rust: the Rust range stream and Rust IRandomAccessStream (no managed code on reads; FFmpeg and Media Foundation)
 #   scripts/bale-debug.sh present-engine [0-120] [present|frames|player]   next playback hands its routed source to IMFMediaEngine (0 = off): present = rendering mode on screen for N s, frames = frame-server for N s (every decoded frame counted), player = interactive engine player with sound, keys and a stats pane until Back (N just enables it); no args = status + last report
@@ -436,6 +437,17 @@ case "${1:-}" in
       curl --fail-with-body -sS --max-time 5 "$BASE/frame-delivery"
     else
       curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/frame-delivery" --data-urlencode "mode=$2"
+    fi
+    ;;
+  player-backend)
+    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^(mediaplayer|engine)$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh player-backend [mediaplayer|engine]' >&2
+      exit 2
+    fi
+    if [[ "$#" == 1 ]]; then
+      curl --fail-with-body -sS --max-time 5 "$BASE/player-backend"
+    else
+      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/player-backend" --data-urlencode "mode=$2"
     fi
     ;;
   stream-adapter)

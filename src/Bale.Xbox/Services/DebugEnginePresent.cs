@@ -317,30 +317,6 @@ internal sealed class DebugEnginePresent
         delegate* unmanaged[Cdecl]<nint, ulong> size, nint context, byte* report, uint reportCapacity);
 }
 
-/// <summary>Live engine state (engine_session::SessionState, repr(C)).</summary>
-[StructLayout(LayoutKind.Sequential)]
-internal struct EngineSessionState
-{
-    public double Position;
-    public double Duration;
-    public double FramesPerSecond;
-    public double Jitter;
-    public double FrameDelay;
-    public ulong FramesRendered;
-    public ulong FramesDropped;
-    public ulong FramesCorrupted;
-    public uint Width;
-    public uint Height;
-    public uint Flags;
-    public uint ReadyState;
-
-    public readonly bool Paused => (Flags & 1) != 0;
-    public readonly bool Ended => (Flags & 2) != 0;
-    public readonly bool Failed => (Flags & 4) != 0;
-    public readonly bool Seeking => (Flags & 8) != 0;
-    public readonly bool Waiting => (Flags & 16) != 0;
-}
-
 /// <summary>
 /// Memory-only switch: when on, the real player hands its authenticated progressive stream to
 /// <see cref="DebugEnginePresent"/> for <see cref="Seconds"/> instead of MediaPlayer, then leaves.

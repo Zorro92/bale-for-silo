@@ -39,6 +39,37 @@ pub struct SessionState {
     pub ready_state: u32,
 }
 
+/// One stream of the engine's media resource, filled by `stream_info`. Plain C layout; strings are
+/// NUL-terminated UTF-16, cut to fit.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct StreamInfo {
+    /// 0 unknown, 1 audio, 2 video, 3 any other major type.
+    pub kind: u32,
+    pub selected: u32,
+    /// Audio channel count, 0 when unknown or not audio.
+    pub channels: u32,
+    /// MF_MT_SUBTYPE as GUID bytes (Data1/2/3 little-endian, then Data4), zero when unknown.
+    pub subtype: [u8; 16],
+    /// MF_SD_LANGUAGE (an RFC 1766 tag), empty when absent.
+    pub language: [u16; 32],
+    /// MF_SD_STREAM_NAME, empty when absent.
+    pub name: [u16; 128],
+}
+
+impl Default for StreamInfo {
+    fn default() -> Self {
+        Self {
+            kind: 0,
+            selected: 0,
+            channels: 0,
+            subtype: [0; 16],
+            language: [0; 32],
+            name: [0; 128],
+        }
+    }
+}
+
 struct Inner {
     engine: IMFMediaEngine,
     engine_ex: IMFMediaEngineEx,
@@ -302,6 +333,91 @@ impl Session {
         }))
     }
 
+    pub fn stream_count(&self, out: &mut u32) -> HRESULT {
+        // SAFETY: live engine.
+        hr(self.with(|inner| unsafe {
+            *out = inner.engine_ex.GetNumberOfStreams()?;
+            Ok(())
+        }))
+    }
+
+    /// Describes stream `index` (major type, selection, channels, subtype, language, name).
+    pub fn stream_info(&self, index: u32, out: &mut StreamInfo) -> HRESULT {
+        use windows::Win32::Media::MediaFoundation::{
+            MF_MT_AUDIO_NUM_CHANNELS, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MF_SD_LANGUAGE,
+            MF_SD_STREAM_NAME, MFMediaType_Audio, MFMediaType_Video,
+        };
+        hr(self.with(|inner| {
+            let engine = &inner.engine_ex;
+            let mut info = StreamInfo::default();
+            // SAFETY: live engine; every PROPVARIANT read is cleared in `attribute`.
+            unsafe {
+                if index >= engine.GetNumberOfStreams()? {
+                    return Err(windows::core::Error::from_hresult(HRESULT(
+                        0x8007_0057u32 as i32,
+                    )));
+                }
+                info.selected = u32::from(engine.GetStreamSelection(index)?.as_bool());
+                if let Some(Value::Guid(major)) = attribute(engine, index, &MF_MT_MAJOR_TYPE) {
+                    info.kind = if major == MFMediaType_Audio {
+                        1
+                    } else if major == MFMediaType_Video {
+                        2
+                    } else {
+                        3
+                    };
+                }
+                if let Some(Value::Guid(subtype)) = attribute(engine, index, &MF_MT_SUBTYPE) {
+                    info.subtype = guid_bytes(&subtype);
+                }
+                if let Some(Value::Number(channels)) =
+                    attribute(engine, index, &MF_MT_AUDIO_NUM_CHANNELS)
+                {
+                    info.channels = channels;
+                }
+                if let Some(Value::Text(language)) = attribute(engine, index, &MF_SD_LANGUAGE) {
+                    copy_text(&language, &mut info.language);
+                }
+                if let Some(Value::Text(name)) = attribute(engine, index, &MF_SD_STREAM_NAME) {
+                    copy_text(&name, &mut info.name);
+                }
+            }
+            *out = info;
+            Ok(())
+        }))
+    }
+
+    /// Selects stream `index` and deselects every other stream of its major type (one audio
+    /// track, one video track), then applies the selection.
+    pub fn select_stream(&self, index: u32) -> HRESULT {
+        use windows::Win32::Media::MediaFoundation::MF_MT_MAJOR_TYPE;
+        hr(self.with(|inner| {
+            let engine = &inner.engine_ex;
+            // SAFETY: live engine.
+            unsafe {
+                let count = engine.GetNumberOfStreams()?;
+                if index >= count {
+                    return Err(windows::core::Error::from_hresult(HRESULT(
+                        0x8007_0057u32 as i32,
+                    )));
+                }
+                let major = |i| match attribute(engine, i, &MF_MT_MAJOR_TYPE) {
+                    Some(Value::Guid(guid)) => Some(guid),
+                    _ => None,
+                };
+                let wanted = major(index);
+                for i in 0..count {
+                    if i == index {
+                        engine.SetStreamSelection(i, true)?;
+                    } else if wanted.is_some() && major(i) == wanted {
+                        engine.SetStreamSelection(i, false)?;
+                    }
+                }
+                engine.ApplyStreamSelections()
+            }
+        }))
+    }
+
     /// Shuts the engine down and returns the closing report (engine error, events).
     pub fn close(&self) -> String {
         let mut report = String::new();
@@ -353,6 +469,54 @@ fn stat_float(engine_ex: &IMFMediaEngineEx, id: i32) -> f64 {
             _ => f64::NAN,
         }
     }
+}
+
+enum Value {
+    Guid(windows::core::GUID),
+    Number(u32),
+    Text(Vec<u16>),
+}
+
+/// One stream attribute (stream descriptor or media type) as a GUID, a 32-bit number or text; the
+/// PROPVARIANT is always cleared.
+unsafe fn attribute(
+    engine: &IMFMediaEngineEx,
+    index: u32,
+    key: &windows::core::GUID,
+) -> Option<Value> {
+    use windows::Win32::System::Com::StructuredStorage::PropVariantClear;
+    // SAFETY: GetStreamAttribute fills a PROPVARIANT we own and clear below; pointers are read
+    // before the clear.
+    unsafe {
+        let mut variant = engine.GetStreamAttribute(index, key).ok()?;
+        let inner = &variant.Anonymous.Anonymous;
+        let value = match inner.vt.0 {
+            72 if !inner.Anonymous.puuid.is_null() => Some(Value::Guid(*inner.Anonymous.puuid)),
+            19 | 3 => Some(Value::Number(inner.Anonymous.ulVal)),
+            31 if !inner.Anonymous.pwszVal.is_null() => {
+                Some(Value::Text(inner.Anonymous.pwszVal.as_wide().to_vec()))
+            }
+            _ => None,
+        };
+        let _ = PropVariantClear(&mut variant);
+        value
+    }
+}
+
+fn guid_bytes(guid: &windows::core::GUID) -> [u8; 16] {
+    let mut bytes = [0u8; 16];
+    bytes[0..4].copy_from_slice(&guid.data1.to_le_bytes());
+    bytes[4..6].copy_from_slice(&guid.data2.to_le_bytes());
+    bytes[6..8].copy_from_slice(&guid.data3.to_le_bytes());
+    bytes[8..16].copy_from_slice(&guid.data4);
+    bytes
+}
+
+/// Copies `text` into `out` as NUL-terminated UTF-16, cut to fit.
+fn copy_text(text: &[u16], out: &mut [u16]) {
+    let length = text.len().min(out.len().saturating_sub(1));
+    out[..length].copy_from_slice(&text[..length]);
+    out[length] = 0;
 }
 
 fn hr(result: windows::core::Result<()>) -> HRESULT {

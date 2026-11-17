@@ -45,7 +45,7 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 /// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched DLL.
-pub const ABI_VERSION: u32 = 12;
+pub const ABI_VERSION: u32 = 13;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_gpu_abi_version() -> u32 {
@@ -482,6 +482,58 @@ pub unsafe extern "C" fn bale_gpu_engine_session_state(
     };
     // SAFETY: forwarded caller guarantee.
     unsafe { session_ref(session) }.map_or(E_POINTER, |s| s.state(out).0)
+}
+
+/// Number of streams in the session's media resource into `*out`. Returns an HRESULT.
+///
+/// # Safety
+/// `session` as [`session_ref`]; `out` must be writable.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_gpu_engine_session_stream_count(
+    session: *mut core::ffi::c_void,
+    out: *mut u32,
+) -> i32 {
+    // SAFETY: the caller guarantees a writable u32 (or null).
+    let Some(out) = (unsafe { out.as_mut() }) else {
+        return E_POINTER;
+    };
+    // SAFETY: forwarded caller guarantee.
+    unsafe { session_ref(session) }.map_or(E_POINTER, |s| s.stream_count(out).0)
+}
+
+/// Stream `index` described into `*out` (kind, selection, channels, subtype, language, name).
+/// Returns an HRESULT.
+///
+/// # Safety
+/// `session` as [`session_ref`]; `out` must be a writable `StreamInfo`.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_gpu_engine_session_stream_info(
+    session: *mut core::ffi::c_void,
+    index: u32,
+    out: *mut engine_session::StreamInfo,
+) -> i32 {
+    // SAFETY: the caller guarantees a writable struct (or null).
+    let Some(out) = (unsafe { out.as_mut() }) else {
+        return E_POINTER;
+    };
+    // SAFETY: forwarded caller guarantee.
+    unsafe { session_ref(session) }.map_or(E_POINTER, |s| s.stream_info(index, out).0)
+}
+
+/// Selects stream `index`, deselecting the other streams of its major type. Returns an HRESULT.
+///
+/// # Safety
+/// `session` must be null or a live, unclosed session pointer.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_gpu_engine_session_select_stream(
+    session: *mut core::ffi::c_void,
+    index: u32,
+) -> i32 {
+    // SAFETY: forwarded caller guarantee.
+    unsafe { session_ref(session) }.map_or(E_POINTER, |s| s.select_stream(index).0)
 }
 
 /// Closes and frees the session (engine shutdown, then MF), writing the closing report.
