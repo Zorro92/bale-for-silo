@@ -2069,3 +2069,14 @@ No subtitles, no progress reports. **Fork note:** FFmpegInteropX FastSeek works 
 engine player sets none, so every seek is a full seek. For software AV1 that is the 4K seek that ran
 zero-copy out of GPU memory (`0x8007000E`); check 4K AV1 seeks in the engine player before using it
 for AV1.
+
+**Engine player on forward-only deliveries (0.1.597).** IMFMediaEngine ends at the duration it reads
+at load, and FFmpegInteropX reports a forward-only input's probed length (4–28 s on HLS) and grows it
+with `AutoExtendDuration`, which MediaPlayer follows and the engine does not. In engine mode the
+mount turns auto-extend off and the engine player sets `mss.Duration` to the title's remainder from
+the mount's origin; forward-only mounts open at 0 on their own clock (as `OnMediaOpened` does), and
+reconnects are capped at three in a row without frames. Seeks take the normal player's paths (HLS
+remount inside the window, else server reanchor). Console: forced HLS played past the old stop
+(duration 527 s), a skip reanchored at 108 s and a seek to 400 s landed at the 398.667 s keyframe,
+0 dropped; forced progressive opened with 527 s and a seek to 300 s landed at 296.5 s. This test
+title has no chapters.
