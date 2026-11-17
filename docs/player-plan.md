@@ -2041,3 +2041,17 @@ Rendering mode: `Timeline 1/0 0/0 ×7, 4 26 24 24 25 23 25 24 23 21, 4, 0/0 ×11
 frames, about 10 s of clean 24 fps, then no frames again, while the clock advanced and nothing
 counted as dropped (224 of 703). No HDMI/display change was logged. So the stall is in rendering
 mode's presentation of DV on an SDR display, not the decoder or the stream; re-test on an HDR/DV TV.
+
+**Routed (0.1.591, 2026-11-17, same SDR display).** `present-engine` now hooks in after routing and
+hands the engine the source the mount built. With a caller media source the engine returns no swap
+chain handle until the output rectangle is set, so the probe calls `UpdateVideoStream` before
+`GetVideoSwapchainHandle` (Chromium's order); the handle then arrives at once.
+
+| File | Route | Result (30 s, rendering mode) |
+|---|---|---|
+| 4K DV 8.1 MKV | FFmpeg d3d11va + console tone map (DV layer untouched) | 710 rendered / 0 dropped, 24 every second, 0.31 cores, correct picture |
+| 1080p MKV | FFmpeg demux, system decoder passthrough | 722 rendered / 0 dropped, 24 every second, 0.11 cores |
+| 4K DV 8.1, frames mode | as above | 711 decoded of 711 expected, 0.23 cores, transfer 4.6 ms |
+
+The earlier 4K DV stalls came from handing Windows' own reader the raw file (its DV path on an SDR
+TV); Bale's routing never does that on a non-DV display. Rendering mode is clean on both routes.
