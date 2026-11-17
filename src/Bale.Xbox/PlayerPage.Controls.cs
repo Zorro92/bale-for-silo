@@ -1,5 +1,6 @@
 using System.Globalization;
 using Bale.Core.Playback;
+using Bale.Xbox.Services;
 using Windows.Media;
 using Windows.Media.Playback;
 using Windows.System;
