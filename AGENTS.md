@@ -82,6 +82,11 @@ dotnet run --project tools/Bale.Cli -- home   # real home rows (after `bale-cli 
 
 The Xbox app only compiles on Windows: push to `main` and GitHub Actions builds a signed sideload
 MSIX (~2 min).
+Warnings are errors in every project (Directory.Build.props), the Windows Xbox build included, so a
+new CsWinRT/nullability warning turns CI red instead of piling up in the log. Run
+`scripts/install-git-hooks.sh` once per clone: the pre-push hook rebuilds the Rust core and runs the
+.NET tests, and stops the push on any failure or warning that Linux can see (`--no-verify` skips it).
+XAML/CsWinRT warnings only show in the Windows build.
 CI skips Rust tests when GPU/libass/toolchain/CI inputs match the last successful push and reuses the input/rustc/target-keyed DLL plus libass notices; PRs and manual runs always test Rust.
 Bale is still in its build/debug phase, so pushes build only the debug-server package. Don't
 dispatch CI with `production=true` (the production package) unless the owner asks for it; debug-only

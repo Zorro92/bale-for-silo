@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Bale pre-push check: what Linux can verify before CI. Rebuilds the Rust core the tests load
+# (a stale libbale_core.so makes tests run old logic), then builds and runs the .NET tests with
+# warnings as errors (Directory.Build.props). The Xbox package itself needs Windows, so CI stays
+# the only check for XAML/CsWinRT. Skip once with `git push --no-verify`.
+# Enable with: scripts/install-git-hooks.sh
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# Pushing only deletions or tags: nothing to check.
+needed=0
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+  [[ "$local_sha" =~ ^0+$ ]] || needed=1
+done
+[[ $needed -eq 1 ]] || exit 0
+
+echo "pre-push: building Rust core..." >&2
+(cd native/bale-core && cargo build --release --locked -q)
+
+echo "pre-push: running .NET tests..." >&2
+log=$(mktemp)
+trap 'rm -f "$log"' EXIT
+if ! dotnet test tests/Bale.Core.Tests --nologo >"$log" 2>&1; then
+  grep -E "error|Failed |Failed!|warning" "$log" | grep -vE "https?://|token|api_key" | head -40 >&2
+  echo "pre-push: tests or build failed; push stopped (git push --no-verify to override)." >&2
+  exit 1
+fi
+grep -E "Passed!" "$log" >&2 || true
