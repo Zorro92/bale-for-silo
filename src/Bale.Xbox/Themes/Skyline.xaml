@@ -4222,32 +4222,8 @@
   <SolidColorBrush x:Key="SkylineRequestSummaryInk" Color="#E6FFFFFF" />
   <Style x:Key="SkylineRequestActionLineStyle" TargetType="Grid"><Setter Property="Margin" Value="0,13,0,0" /><Setter Property="ColumnSpacing" Value="9" /><Setter Property="MaxWidth" Value="860" /></Style>
   <Style x:Key="SkylineRequestPrimarySpinnerStyle" TargetType="ProgressRing" BasedOn="{StaticResource SkylineRequestSpinnerStyle}"><Setter Property="Foreground" Value="Black" /></Style>
-  <!-- TvServerListScreen.kt: black settings surface, compact flat rows (no focus scale). -->
-  <x:Double x:Key="SkylineSavedServerActionGap">8</x:Double>
-  <Style x:Key="SkylineServerListLayoutStyle" TargetType="Grid"><Setter Property="Margin" Value="44,40,44,40" /></Style>
-  <Style x:Key="SkylineServerListEyebrowStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="13.76" /><Setter Property="FontWeight" Value="Medium" /><Setter Property="Foreground" Value="#8CFFFFFF" /></Style>
+  <!-- TvServerSetupScreen.kt TvUsePhoneCard title. -->
   <Style x:Key="SkylineServerListTitleStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="18.92" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="White" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
-  <Style x:Key="SkylineServerListCaptionStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="13.76" /><Setter Property="Foreground" Value="#9EFFFFFF" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
-  <Style x:Key="SkylineServerListScrollerStyle" TargetType="ScrollViewer"><Setter Property="MaxHeight" Value="340" /><Setter Property="IsTabStop" Value="False" /><Setter Property="VerticalScrollBarVisibility" Value="Hidden" /><Setter Property="HorizontalScrollMode" Value="Disabled" /><Setter Property="HorizontalScrollBarVisibility" Value="Disabled" /></Style>
-  <Style x:Key="SkylineSavedServerButtonStyle" TargetType="Button">
-    <Setter Property="HorizontalAlignment" Value="Stretch" /><Setter Property="HorizontalContentAlignment" Value="Stretch" />
-    <Setter Property="Padding" Value="16,8" /><Setter Property="Background" Value="#0EFFFFFF" />
-    <Setter Property="Foreground" Value="White" /><Setter Property="FontSize" Value="15.48" /><Setter Property="UseSystemFocusVisuals" Value="False" />
-    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
-      <Border x:Name="Surface" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-        <VisualStateManager.VisualStateGroups>
-          <VisualStateGroup x:Name="CommonStates"><VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" /><VisualState x:Name="Disabled"><VisualState.Setters><Setter Target="Surface.Opacity" Value="0.5" /></VisualState.Setters></VisualState></VisualStateGroup>
-          <VisualStateGroup x:Name="FocusStates"><VisualState x:Name="Unfocused" /><VisualState x:Name="PointerFocused" /><VisualState x:Name="Focused"><VisualState.Setters><Setter Target="Surface.Background" Value="White" /><Setter Target="Label.Foreground" Value="Black" /></VisualState.Setters></VisualState></VisualStateGroup>
-        </VisualStateManager.VisualStateGroups>
-        <ContentPresenter x:Name="Label" Content="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" FontSize="{TemplateBinding FontSize}" HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" />
-      </Border>
-    </ControlTemplate></Setter.Value></Setter>
-  </Style>
-  <Style x:Key="SkylineSavedServerAddButtonStyle" TargetType="Button" BasedOn="{StaticResource SkylineSavedServerButtonStyle}"><Setter Property="Padding" Value="16,10" /></Style>
-  <Style x:Key="SkylineSavedServerRemoveButtonStyle" TargetType="Button" BasedOn="{StaticResource SkylineSavedServerButtonStyle}"><Setter Property="Width" Value="48" /><Setter Property="Height" Value="48" /><Setter Property="Padding" Value="14" /><Setter Property="VerticalAlignment" Value="Center" /></Style>
-  <Style x:Key="SkylineSavedServerNameStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="15.48" /><Setter Property="MaxLines" Value="1" /><Setter Property="TextTrimming" Value="CharacterEllipsis" /></Style>
-  <Style x:Key="SkylineSavedServerAddressStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="13.76" /><Setter Property="FontWeight" Value="Medium" /><Setter Property="Opacity" Value="0.62" /><Setter Property="MaxLines" Value="1" /><Setter Property="TextTrimming" Value="CharacterEllipsis" /></Style>
-  <Style x:Key="SkylineSavedServerIconStyle" TargetType="Viewbox"><Setter Property="Width" Value="20" /><Setter Property="Height" Value="20" /><Setter Property="VerticalAlignment" Value="Center" /></Style>
   <!-- TvOptionDialog.kt reuses the existing player option-row typography/surface. -->
   <Style x:Key="SkylineConnectionRemoveDialogStyle" TargetType="Border" BasedOn="{StaticResource SkylineDetailDialogPanelStyle}"><Setter Property="Width" Value="380" /><Setter Property="Padding" Value="10,14,10,10" /></Style>
   <Style x:Key="SkylineConnectionRemoveTitleStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="10.32" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="#9EFFFFFF" /><Setter Property="Margin" Value="10,0,10,6" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
@@ -4660,4 +4636,73 @@
   </Style>
   <Style x:Key="SkylineProfileTextActionStyle" TargetType="Button" BasedOn="{StaticResource SkylineSearchRetryStyle}"><Setter Property="FontSize" Value="12.04" /><Setter Property="Padding" Value="16,8" /><Setter Property="Margin" Value="0" /></Style>
   <SolidColorBrush x:Key="SkylineProfileTextScrim" Color="#D9000000" />
+  <!-- TvChangeAccountScreen.kt (Roku AccountsScreen at half scale): a 260dp rail of 44dp rows 4 apart, a 20dp gap,
+       then 380dp-wide 64dp account cards 8 apart. Text is sp × 0.86 (14 → 12.04, 17 → 14.62, 21 → 18.06, 9 → 7.74). Focused rows and cards fill #EDEDED with black text; a focused card
+       grows 3%. The shown server keeps a white 14% fill; cards rest on white 7% under the hairline. -->
+  <GridLength x:Key="SkylineChangeAccountRailWidth">260</GridLength>
+  <GridLength x:Key="SkylineChangeAccountPaneWidth">380</GridLength>
+  <Style x:Key="SkylineChangeAccountRailRowStyle" TargetType="Button">
+    <Setter Property="Height" Value="44" /><Setter Property="Padding" Value="8,0" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" /><Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Center" /><Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" /><Setter Property="FontSize" Value="12.04" />
+    <Setter Property="FontWeight" Value="Medium" /><Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+      <Border x:Name="Surface" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+        <VisualStateManager.VisualStateGroups>
+          <VisualStateGroup x:Name="CommonStates"><VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" /><VisualState x:Name="Disabled"><VisualState.Setters><Setter Target="Surface.Opacity" Value="0.5" /></VisualState.Setters></VisualState></VisualStateGroup>
+          <VisualStateGroup x:Name="FocusStates"><VisualState x:Name="Unfocused" /><VisualState x:Name="PointerFocused" /><VisualState x:Name="Focused"><VisualState.Setters><Setter Target="Surface.Background" Value="#FFEDEDED" /><Setter Target="Label.Foreground" Value="Black" /></VisualState.Setters></VisualState></VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+        <ContentPresenter x:Name="Label" Content="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Center" />
+      </Border>
+    </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style x:Key="SkylineChangeAccountCardStyle" TargetType="Button">
+    <Setter Property="Height" Value="64" /><Setter Property="Padding" Value="12,0" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" /><Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Center" /><Setter Property="Background" Value="#12FFFFFF" />
+    <Setter Property="BorderBrush" Value="{StaticResource SkylineAuthHairline}" /><Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{StaticResource SkylinePrimary}" /><Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+      <Border x:Name="Surface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+              CornerRadius="15" Padding="{TemplateBinding Padding}" RenderTransformOrigin="0.5,0.5">
+        <Border.RenderTransform><ScaleTransform x:Name="Scale" /></Border.RenderTransform>
+        <VisualStateManager.VisualStateGroups>
+          <VisualStateGroup x:Name="CommonStates"><VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" /><VisualState x:Name="Disabled"><VisualState.Setters><Setter Target="Surface.Opacity" Value="0.5" /></VisualState.Setters></VisualState></VisualStateGroup>
+          <VisualStateGroup x:Name="FocusStates"><VisualState x:Name="Unfocused" /><VisualState x:Name="PointerFocused" /><VisualState x:Name="Focused"><VisualState.Setters><Setter Target="Surface.Background" Value="#FFEDEDED" /><Setter Target="Surface.BorderBrush" Value="Transparent" /><Setter Target="Label.Foreground" Value="Black" /><Setter Target="Scale.ScaleX" Value="1.03" /><Setter Target="Scale.ScaleY" Value="1.03" /></VisualState.Setters></VisualState></VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+        <ContentPresenter x:Name="Label" Content="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Center" />
+      </Border>
+    </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <!-- Roku server_mark.png: the warm square with the username's initial in cream. -->
+  <LinearGradientBrush x:Key="SkylineChangeAccountTileFill" StartPoint="0,0" EndPoint="1,1">
+    <GradientStop Color="#FFEAA65C" Offset="0" /><GradientStop Color="#FFA8521D" Offset="0.5" /><GradientStop Color="#FF5E290D" Offset="1" />
+  </LinearGradientBrush>
+  <Style x:Key="SkylineChangeAccountTileStyle" TargetType="Border">
+    <Setter Property="Width" Value="40" /><Setter Property="Height" Value="40" /><Setter Property="CornerRadius" Value="8.8" />
+    <Setter Property="Background" Value="{StaticResource SkylineChangeAccountTileFill}" /><Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineChangeAccountTileTextStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="18.06" /><Setter Property="FontWeight" Value="Bold" /><Setter Property="Foreground" Value="#FFFFF6EA" />
+    <Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineChangeAccountNameStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="14.62" /><Setter Property="FontWeight" Value="Bold" /><Setter Property="MaxLines" Value="1" /><Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="SkylineChangeAccountDetailStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="12.04" /><Setter Property="Opacity" Value="0.4" /><Setter Property="Margin" Value="0,1,0,0" /><Setter Property="MaxLines" Value="1" /><Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <!-- The badge: uppercase 9sp (7.74) SemiBold tracked 0.8sp in a pill; the warning badge uses the warning colour. -->
+  <Style x:Key="SkylineChangeAccountBadgeStyle" TargetType="Border">
+    <Setter Property="CornerRadius" Value="12" /><Setter Property="Padding" Value="8,4" /><Setter Property="Margin" Value="11,0,0,0" />
+    <Setter Property="BorderThickness" Value="1" /><Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="SkylineChangeAccountBadgeTextStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="7.74" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="CharacterSpacing" Value="89" />
+  </Style>
+  <Style x:Key="SkylineChangeAccountMarkStyle" TargetType="Border">
+    <Setter Property="Width" Value="28" /><Setter Property="Height" Value="28" /><Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Background" Value="#33FFFFFF" /><Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
 </ResourceDictionary>

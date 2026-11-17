@@ -1,3 +1,4 @@
+using Bale.Core.Connection;
 using Bale.Xbox.Services;
 using Windows.System;
 using Windows.UI.Core;
@@ -27,9 +28,30 @@ public sealed partial class SignOutDialog : UserControl
     public event Action? Dismissed;
     public bool IsOpen => ModalLayer.Visibility == Visibility.Visible;
 
-    public void Show()
+    /// <summary>
+    /// TvSignOutDialog.kt: names the account and server (the open ones by default). Sign Out leaves the other accounts
+    /// and the server; Sign Out &amp; Remove Server is offered only for the server's last account.
+    /// </summary>
+    public void Show(SavedAccount? account = null)
     {
         if (IsOpen) return;
+        var servers = AppSettings.Servers;
+        account ??= servers.ActiveAccount;
+        var serverId = account?.ServerId ?? servers.Active?.Id;
+        var server = servers.Snapshot.Entries.FirstOrDefault(s => s.Id == serverId)?.DisplayName;
+        var name = account?.Username is { } username && !string.IsNullOrWhiteSpace(username) ? username : null;
+        var offerRemoveServer = serverId is not null && servers.AccountsOn(serverId).Count <= 1;
+        TitleText.Text = (name, server) switch
+        {
+            ({ } a, { } s) => $"Sign out of {a} on {s}?",
+            ({ } a, null) => $"Sign out of {a}?",
+            (null, { } s) => $"Sign out of {s}?",
+            _ => "Sign Out?",
+        };
+        MessageText.Text = offerRemoveServer
+            ? "This account's profiles and settings leave this TV. Sign Out keeps the server saved, so you can sign in again; Sign Out & Remove Server removes it too."
+            : "This account's profiles and settings leave this TV. The server stays saved, so you can sign in again.";
+        RemoveServerButton.Visibility = offerRemoveServer ? Visibility.Visible : Visibility.Collapsed;
         _backPressed = false;
         _actions.Remembered = CancelButton;
         _focusRoot = Window.Current.Content;
@@ -102,7 +124,7 @@ public sealed partial class SignOutDialog : UserControl
         {
             // TvModalFocusOwnership.kt cancels exit at the boundary; Tab must not reach the page either.
             var step = (Window.Current.CoreWindow.GetKeyState(VirtualKey.Shift) & CoreVirtualKeyStates.Down) != 0 ? -1 : 1;
-            Control[] buttons = [CancelButton, SignOutButton, RemoveServerButton];
+            Control[] buttons = [.. new Control[] { CancelButton, SignOutButton, RemoveServerButton }.Where(button => button.Visibility == Visibility.Visible)];
             var index = Array.FindIndex(buttons, button => button.FocusState != FocusState.Unfocused);
             buttons[Math.Clamp(index + step, 0, buttons.Length - 1)].Focus(FocusState.Keyboard);
             args.Handled = true;

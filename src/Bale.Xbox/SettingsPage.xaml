@@ -146,8 +146,9 @@
                     <TextBlock x:Name="ServerAddress" Grid.Column="1" Style="{StaticResource SkylineSettingsAddressStyle}" />
                   </Grid>
                 </Border>
-                <Button x:Name="ChangeServerButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnChangeServerClick">
-                  <TextBlock Text="Manage Servers" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+                <!-- TvSettingsScreen.kt: Settings › Accounts, every saved server and its accounts, where the server list was. -->
+                <Button x:Name="AccountsButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnAccountsClick">
+                  <TextBlock Text="Accounts" Style="{StaticResource SkylineSettingsRowTextStyle}" />
                 </Button>
               </StackPanel>
               <StackPanel Style="{StaticResource SkylineSettingsGroupStyle}">

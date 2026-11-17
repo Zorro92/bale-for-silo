@@ -152,7 +152,8 @@
     <None Include="../../src/Bale.Xbox/ProfileEditorPage.xaml.cs" Link="ProfileEditorPage.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Controls/ProfileTextDialog.xaml" Link="ProfileTextDialog.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Controls/ConnectionDialog.xaml" Link="ConnectionDialog.xaml" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="../../src/Bale.Xbox/Controls/SavedServerRow.xaml" Link="SavedServerRow.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/ChangeAccountPage.xaml" Link="ChangeAccountPage.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Controls/SignOutDialog.xaml" Link="SignOutDialog.xaml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <Import Project="../../src/Bale.Xbox/Build/FfmpegWrapperVersion.targets" />

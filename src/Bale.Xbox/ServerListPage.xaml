@@ -5,30 +5,32 @@
     xmlns:controls="using:Bale.Xbox.Controls"
     NavigationCacheMode="Required"
     FontFamily="{StaticResource SkylineFont}"
-    Background="Black">
-  <!-- TvServerListScreen.kt: 44dp sides, 40dp top/bottom; 200dp copy, 32dp gap, 620dp list. -->
-  <Grid>
-    <Grid Style="{StaticResource SkylineServerListLayoutStyle}">
-      <Grid.ColumnDefinitions><ColumnDefinition Width="200" /><ColumnDefinition Width="32" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-      <StackPanel Spacing="8">
-        <TextBlock Text="CONNECTION" Style="{StaticResource SkylineServerListEyebrowStyle}" />
-        <TextBlock Text="Manage Servers" Style="{StaticResource SkylineServerListTitleStyle}" />
-        <TextBlock Text="Choose, rename, add, or remove a Silo server." Style="{StaticResource SkylineServerListCaptionStyle}" />
-      </StackPanel>
-      <StackPanel Grid.Column="2" MaxWidth="620" HorizontalAlignment="Stretch" Spacing="10">
-        <TextBlock Text="Saved Servers" Style="{StaticResource SkylineServerListCaptionStyle}" />
-        <Button x:Name="AddButton" Style="{StaticResource SkylineSavedServerAddButtonStyle}" Click="OnAddClick" PreviewKeyDown="OnAddPreviewKeyDown" GotFocus="OnAddGotFocus">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <Viewbox Style="{StaticResource SkylineSavedServerIconStyle}"><Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19Z" Fill="{Binding Foreground, ElementName=AddLabel}" /></Viewbox>
-            <TextBlock x:Name="AddLabel" Text="Add Server" />
-          </StackPanel>
-        </Button>
-        <ScrollViewer x:Name="Scroller" Style="{StaticResource SkylineServerListScrollerStyle}">
-          <StackPanel x:Name="Rows" Spacing="6" />
-        </ScrollViewer>
-        <TextBlock x:Name="ErrorText" Style="{StaticResource SkylineServerEntryErrorStyle}" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite" />
-      </StackPanel>
+    Background="{StaticResource SkylineBackground}">
+  <!-- TvAccountsScreen.kt (Settings › Accounts, the TvRoute.ServerList route): the settings pane header, then per
+       server its accounts, Add an account on it and Remove Server; then Add a server and the footer. -->
+  <Grid x:Name="Root" PreviewKeyDown="OnPreviewKeyDown">
+    <Grid Style="{StaticResource SkylineSettingsLayoutStyle}">
+      <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+      <Grid Style="{StaticResource SkylineSettingsPaneHeaderStyle}">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+        <Border Style="{StaticResource SkylineSettingsPaneTileStyle}">
+          <Viewbox Style="{StaticResource SkylineSettingsPaneGlyphStyle}">
+            <Path Style="{StaticResource SkylineSettingsGlyphStyle}" Data="M20,3 H4 C2.9,3 2,3.9 2,5 V9 C2,10.1 2.9,11 4,11 H20 C21.1,11 22,10.1 22,9 V5 C22,3.9 21.1,3 20,3 Z M20,9 H4 V5 H20 Z M6,6 H8 V8 H6 Z M20,13 H4 C2.9,13 2,13.9 2,15 V19 C2,20.1 2.9,21 4,21 H20 C21.1,21 22,20.1 22,19 V15 C22,13.9 21.1,13 20,13 Z M20,19 H4 V15 H20 Z M6,16 H8 V18 H6 Z" />
+          </Viewbox>
+        </Border>
+        <StackPanel Grid.Column="1" Style="{StaticResource SkylineSettingsPaneHeaderTextStyle}">
+          <TextBlock Text="Accounts" Style="{StaticResource SkylineSettingsPaneTitleStyle}" />
+          <TextBlock Text="Servers and the accounts signed in to them on this TV." Style="{StaticResource SkylineSettingsPaneBlurbStyle}" />
+        </StackPanel>
+      </Grid>
+      <ScrollViewer x:Name="Scroller" Grid.Row="1" Style="{StaticResource SkylineSettingsDetailScrollerStyle}">
+        <StackPanel Style="{StaticResource SkylineSettingsGroupsStyle}">
+          <StackPanel x:Name="Rows" Style="{StaticResource SkylineSettingsGroupStyle}" />
+          <TextBlock x:Name="ErrorText" Style="{StaticResource SkylineSettingsErrorStyle}" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite" />
+        </StackPanel>
+      </ScrollViewer>
     </Grid>
     <controls:ConnectionDialog x:Name="RemovePrompt" />
+    <controls:SignOutDialog x:Name="SignOutPrompt" />
   </Grid>
 </Page>

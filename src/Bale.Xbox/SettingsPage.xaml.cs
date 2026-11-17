@@ -197,7 +197,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             {
                 BufferingQualityButton, LearnedLimitButton, ConnectionSpeedButton, AutoPlayButton, AutoPlayProfileButton,
             }.Where(item => item.Visibility == Visibility.Visible).ToArray(),
-        SettingsCategory.Server => [ChangeServerButton],
+        SettingsCategory.Server => [AccountsButton],
         _ => [ProfileSelectionButton, HomeSectionsButton],
     };
 
@@ -658,10 +658,10 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         SignOutPrompt.Show();
     }
 
-    private void OnChangeServerClick(object sender, RoutedEventArgs e)
+    private void OnAccountsClick(object sender, RoutedEventArgs e)
     {
         if (!OwnsSettings || _signingOut) return;
-        _returnTarget = ChangeServerButton;
+        _returnTarget = AccountsButton;
         Frame.Navigate(typeof(ServerListPage));
     }
 

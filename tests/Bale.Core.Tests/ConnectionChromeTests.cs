@@ -10,21 +10,37 @@ public class ConnectionChromeTests
     private static readonly XDocument Theme = Document("Skyline.xaml");
 
     [Fact]
-    public void ServerListKeepsOfficialSettingsGeometryAndFlatRows()
+    public void ChangeAccountKeepsRokuRailAndCardGeometry()
     {
-        // TvServerListScreen.kt: 44/40dp outer inset, 48dp remove, 8dp gap, no focus zoom.
-        Assert.Equal("44,40,44,40", Value(Style("SkylineServerListLayoutStyle"), "Margin"));
-        Assert.Equal("48", Value(Style("SkylineSavedServerRemoveButtonStyle"), "Width"));
-        Assert.Equal("48", Value(Style("SkylineSavedServerRemoveButtonStyle"), "Height"));
-        Assert.Equal("8", Resource("SkylineSavedServerActionGap").Value);
-        Assert.Equal("15.48", Value(Style("SkylineSavedServerNameStyle"), "FontSize"));
-        Assert.Equal("13.76", Value(Style("SkylineSavedServerAddressStyle"), "FontSize"));
-        var row = Style("SkylineSavedServerButtonStyle");
-        Assert.Equal("8", Attribute(Named(row, "Surface"), "CornerRadius"));
-        Assert.Equal("White", StateValue(Named(row, "Focused"), "Surface.Background"));
-        Assert.Equal("Black", StateValue(Named(row, "Focused"), "Label.Foreground"));
-        Assert.DoesNotContain(row.Descendants(), element => element.Name.LocalName == "ScaleTransform");
-        Assert.Single(row.Descendants(Ui + "ContentPresenter"));
+        // TvChangeAccountScreen.kt: 260dp rail of 44dp rows, 380dp pane of 64dp cards; focus fills #EDEDED, cards grow 3%.
+        Assert.Equal("260", Resource("SkylineChangeAccountRailWidth").Value);
+        Assert.Equal("380", Resource("SkylineChangeAccountPaneWidth").Value);
+        var rail = Style("SkylineChangeAccountRailRowStyle");
+        Assert.Equal("44", Value(rail, "Height"));
+        Assert.Equal("8", Attribute(Named(rail, "Surface"), "CornerRadius"));
+        Assert.Equal("#FFEDEDED", StateValue(Named(rail, "Focused"), "Surface.Background"));
+        Assert.Equal("Black", StateValue(Named(rail, "Focused"), "Label.Foreground"));
+        var card = Style("SkylineChangeAccountCardStyle");
+        Assert.Equal("64", Value(card, "Height"));
+        Assert.Equal("15", Attribute(Named(card, "Surface"), "CornerRadius"));
+        Assert.Equal("1.03", StateValue(Named(card, "Focused"), "Scale.ScaleX"));
+        Assert.Equal("1.03", StateValue(Named(card, "Focused"), "Scale.ScaleY"));
+        Assert.Equal("40", Value(Style("SkylineChangeAccountTileStyle"), "Width"));
+        var page = Document("ChangeAccountPage.xaml").Root!;
+        Assert.Contains(page.Descendants(Ui + "TextBlock"), element => (string?)element.Attribute("Text") == "Change account");
+        Assert.Contains(page.Descendants(Ui + "TextBlock"), element => (string?)element.Attribute("Text") == "Choose a server, then the account to use on it.");
+        Assert.Equal("Add server", (string?)Named(page, "AddServerLabel").Attribute("Text"));
+    }
+
+    [Fact]
+    public void AccountsPageUsesSettingsPaneCopy()
+    {
+        // TvAccountsScreen.kt: the settings pane header, not the old two-column server list.
+        var page = Document("ServerListPage.xaml").Root!;
+        var texts = page.Descendants(Ui + "TextBlock").Select(element => (string?)element.Attribute("Text")).ToArray();
+        Assert.Contains("Accounts", texts);
+        Assert.Contains("Servers and the accounts signed in to them on this TV.", texts);
+        Assert.DoesNotContain("Manage Servers", texts);
     }
 
     [Theory]
@@ -153,8 +169,9 @@ public class ConnectionChromeTests
     [Theory]
     [InlineData("MainPage.xaml")]
     [InlineData("ServerListPage.xaml")]
+    [InlineData("ChangeAccountPage.xaml")]
     [InlineData("ConnectionDialog.xaml")]
-    [InlineData("SavedServerRow.xaml")]
+    [InlineData("SignOutDialog.xaml")]
     public void ConnectionPagesReferenceExistingThemeResources(string file)
     {
         var resources = Theme.Root!.Elements().Select(element => (string?)element.Attribute(Xaml + "Key"))
@@ -167,7 +184,8 @@ public class ConnectionChromeTests
     }
 
     [Theory]
-    [InlineData("SkylineSavedServerButtonStyle")]
+    [InlineData("SkylineChangeAccountRailRowStyle")]
+    [InlineData("SkylineChangeAccountCardStyle")]
     [InlineData("SkylineCredentialFieldStyle")]
     [InlineData("SkylineCredentialPasswordStyle")]
     public void NewTemplatesHaveNoImplicitTransitions(string key) =>

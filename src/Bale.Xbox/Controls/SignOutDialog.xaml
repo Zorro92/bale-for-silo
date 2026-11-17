@@ -3,8 +3,9 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     FontFamily="{StaticResource SkylineFont}" IsTabStop="False" IsHitTestVisible="False">
-  <!-- TvSignOutDialog.kt / TvDialog.kt: a 640dp opaque card over a 78% black scrim.
-       Default-style Cancel comes first and takes focus; destructive actions never take initial focus. -->
+  <!-- TvSignOutDialog.kt / TvDialog.kt: a 640dp opaque card over a 78% black scrim, "Sign out of alex on Home?".
+       Default-style Cancel comes first and takes focus; destructive actions never take initial focus. Sign Out &
+       Remove Server shows only while the server has no other account. -->
   <Grid x:Name="ModalLayer" Background="{StaticResource SkylineDialogScrim}" Visibility="Collapsed"
         PreviewKeyDown="OnPreviewKeyDown" PreviewKeyUp="OnPreviewKeyUp" Tapped="OnBackgroundTapped">
     <Grid Style="{StaticResource SkylineSignOutDialogCardStyle}" AutomationProperties.Name="Sign Out">
@@ -13,8 +14,8 @@
       </Border>
       <Border Style="{StaticResource SkylineDialogSurfaceStyle}" />
       <StackPanel Style="{StaticResource SkylineDialogContentStyle}">
-        <TextBlock Text="Sign Out" Style="{StaticResource SkylineDialogTitleStyle}" />
-        <TextBlock Text="Choose whether to keep or remove this server from this TV." Style="{StaticResource SkylineDialogMessageStyle}" />
+        <TextBlock x:Name="TitleText" Text="Sign Out?" Style="{StaticResource SkylineDialogTitleStyle}" />
+        <TextBlock x:Name="MessageText" Style="{StaticResource SkylineDialogMessageStyle}" />
         <!-- rail-layout: non-card — TvDialog.kt's horizontal confirmation actions, with contained focus. -->
         <ItemsControl x:Name="Actions" Style="{StaticResource SkylineDialogActionsStyle}" IsTabStop="False">
           <ItemsControl.ItemsPanel>

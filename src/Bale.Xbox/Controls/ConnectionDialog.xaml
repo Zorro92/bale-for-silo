@@ -18,7 +18,8 @@
         </ItemsControl>
       </StackPanel>
     </Border>
-    <!-- TvServerListScreen.kt uses TvOptionDialog.kt, with the destructive option first. -->
+    <!-- TvAccountsScreen.kt: Remove Server uses TvOptionDialog.kt with Cancel focused; an account's page offers
+         Sign in again and Sign Out (destructive). -->
     <Border x:Name="RemoveCard" Style="{StaticResource SkylineConnectionRemoveDialogStyle}" Visibility="Collapsed">
       <StackPanel>
         <TextBlock x:Name="RemoveTitle" Style="{StaticResource SkylineConnectionRemoveTitleStyle}" />
@@ -27,6 +28,9 @@
             <TextBlock x:Name="RemoveLabel" TextWrapping="Wrap" />
             <TextBlock x:Name="RemoveMessage" Style="{StaticResource SkylineConnectionRemoveMessageStyle}" />
           </StackPanel>
+        </Button>
+        <Button x:Name="RemoveAlternate" Padding="38,9,10,9" Style="{StaticResource SkylineDetailMenuRowStyle}" Click="OnAlternateClick" Visibility="Collapsed">
+          <TextBlock x:Name="AlternateLabel" Foreground="{StaticResource SkylineAuthError}" />
         </Button>
         <Button x:Name="RemoveCancel" Content="Cancel" Padding="38,9,10,9" Style="{StaticResource SkylineDetailMenuRowStyle}" Click="OnCancelClick" />
       </StackPanel>
