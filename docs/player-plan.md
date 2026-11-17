@@ -1718,6 +1718,13 @@ Things learned on the way:
   authority on Back/end/error/replan/unload/suspend, including retry after a failed restore. A failed
   HDR match uses the existing HDR-withdrawal replan; SDR matching failure does not fail playback.
 - The safe log is `display match: content=<fps> <W>x<H> picked=<W>x<H>@<Hz> switched=<bool>`.
+- **Console check (0.1.587, 2026-11-17):** the switch works: `content=24 1920x1080 picked=1920x1080@50
+  switched=True`, then `restored=True` on leaving. The owner's display only offers 1080p@59.94,
+  1080p@50 and 720p@50 (no 24 Hz; Xbox Settings → TV & display options → Video modes → *Allow 24 Hz*
+  controls that). Without an integer multiple, the selector (like `RefreshRateSelector.kt`) takes the
+  closest rate, so 23.976 fps goes to **50 Hz** (uneven 2:2:…:3 cadence) instead of 59.94 Hz (even
+  3:2 pulldown). Open decision for the owner: keep official behaviour or deviate (no integer
+  multiple → keep the current / 3:2 mode).
   Debug Stats / `where` add **Display mode**, reading current HDMI timing and active HDR/SDR rather
   than treating PQ support as active HDR. **Later:** the Match Content Frame Rate Settings row and
   mid-playback video-size/frame-rate notifications, as in `TvPlayerScreen.kt`.
