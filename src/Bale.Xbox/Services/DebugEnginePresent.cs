@@ -117,6 +117,10 @@ internal sealed class DebugEnginePresent
     internal string RunStream(nint stream, string mime, int seconds, double frameRate, bool present) =>
         Run(string.Empty, stream, mime, seconds, null, frameRate, present);
 
+    /// <summary>Plays a COM media source (FFmpegInteropX's MediaStreamSource; borrowed) through the engine extension.</summary>
+    internal string RunSource(nint source, int seconds, double frameRate, bool present) =>
+        Run(string.Empty, source, null, seconds, null, frameRate, present);
+
     private unsafe string Run(string url, nint source, string? mime, int seconds, string? target, double frameRate, bool present)
     {
         try

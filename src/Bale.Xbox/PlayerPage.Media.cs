@@ -227,13 +227,6 @@ public sealed partial class PlayerPage
 #endif
             }
             media.Token.ThrowIfCancellationRequested();
-#if DEBUG_SERVER
-            if (DebugPresentEngineSwitch.Seconds is > 0 and var presentSeconds && media.Stream is { } presentStream)
-            {
-                await PresentThroughEngineAsync(presentStream, transport.MimeType ?? "video/mp4", presentSeconds, attempt.Plan!);
-                return;
-            }
-#endif
             if (media.Route.UseFfmpeg)
             {
                 if (media.Stream is { } range)
@@ -335,6 +328,14 @@ public sealed partial class PlayerPage
         }
 
         media.Token.ThrowIfCancellationRequested();
+#if DEBUG_SERVER
+        // After routing: the engine gets exactly the source this mount built (FFmpeg or Windows' reader).
+        if (DebugPresentEngineSwitch.Seconds is > 0 and var presentSeconds)
+        {
+            await PresentThroughEngineAsync(media, transport.MimeType ?? "video/mp4", presentSeconds, attempt.Plan!);
+            return;
+        }
+#endif
         var player = media.Player = new MediaPlayer { AutoPlay = false };
         player.MediaOpened += OnMediaOpened;
         player.MediaFailed += OnMediaFailed;
