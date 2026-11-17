@@ -1,0 +1,78 @@
+# Apple TV protocol parity
+
+Owner's rule (AGENTS.md, 2026-11-17): playback planning and routing follow the Apple TV app. This is the
+audit of what the tvOS client declares or sends on protocol-v3 start and replan
+(`silo-apple` `ApplePlaybackV3Capabilities.swift`, `PlaybackProtocolV3Models.swift`, `StreamRequest.swift`,
+`PlaybackSessionBridge.swift`) against what Bale sends (`PlaybackStartBuilder`, `PlaybackRequests`,
+`PlaybackReplan`, `PlaybackClient`, `evidence.rs`). Each field's effect was checked in `silo-server`
+(`internal/playback/protocol_v3.go`, `capabilities_v3.go`, `plan_v3.go`, `internal/api/handlers/playback_v3.go`,
+`playback_connection.go`). Snapshot: silo-apple and silo-server as of 2026-11-16.
+
+Rule for the decisions: a claim Bale cannot actually honour is worse than no claim. "Skip" means
+Bale cannot honour it today, or the server does nothing with it; "owner" means Bale could, but it needs a
+player or product decision first.
+
+## Client features (`client_features`)
+
+| Feature | Apple | Bale before | Decision | Why |
+|---|---|---|---|---|
+| `playback_plan_v3`, `client_video_transformations_v1`, `device_quirks_v1`, `seek_reanchor_v1`, `direct_stream_resume_v1` | Yes | Yes | — | Same. |
+| `software_video_decode_v1` | Yes (video) | Yes, while a software decode entry exists | — | Same intent; Bale drops it with its software entries. |
+| `embedded_subtitles_v1` | Yes | Yes, with a `native_embedded` claim | — | Same. |
+| `header_authenticated_media_v1` | Yes (and requires the server to offer it) | No | **Implemented** | Bale already fetches every plan URL (stream, HLS children, `.sup` windows, sidecars, fonts) through the authenticated client with bearer refresh (`PlaybackMedia`, `NativeHeaderRefresh`), and `PlaybackMediaUrl` accepts only API-relative media routes. Declaring it makes the server keep media API-local with no signed credential in URLs. Without it a server with proxy nodes may hand out signed absolute proxy URLs, which Bale refuses. Attempt-sticky on the server. |
+| `authorized_media_origins_v1` | Negotiated when the server offers it | No | Owner | Restores proxy-node egress. Bale would have to accept absolute `/stream/v3/{session}[/master.m3u8\|/segment/…]` URLs on a server-named origin (https, or http only for an http API), send the bearer there, and let the Rust HLS reader follow children on that origin. A security boundary change in `PlaybackMediaUrl` and `hls.rs`; only worth it on servers with proxy nodes. |
+| `output_change_v1` | Yes | No | Owner | The feature only enables the `output_change` replan. Bale would need to notice an HDMI mode or audio sink change while playing and replan (player page work). Goes with `output_context_id` below. |
+| `playback_route_diagnostics` | Yes | No | Skip | The server reads it from nobody's request (only advertises it). Bale posts no route events. |
+| `hls_subtitle_renditions_v1`, `hls_remux_subtitle_renditions_v1` | Yes | No | Skip | The server would put the subtitle into the HLS stream as a WebVTT `SUBTITLES` rendition instead of a sidecar. Bale's overlay draws fetched sidecars and its Rust HLS reader reads one media playlist; without the feature the server keeps sidecars, which Bale plays. |
+| `hls_subtitle_renditions_all_v1` | Negotiated | No | Skip | Requires the above. |
+| `buffering_quality_v1` on starts | Yes, when offered | Yes, when offered and unmetered | — | Same, with the highest current reading as a `probe` estimate. |
+| `buffering_quality_v1` on replans | Yes, when offered | **No**: replans sent the builder's list | **Implemented** | A non-seek replan replaces the server's stored features with the replan's list, and the connection reading and learned limit apply only when it names the feature. A track change or failure recovery was planned without the Auto budget its start had. `PlaybackClient.ReplanAsync` now repeats what the attempt's start negotiated (also `subrip_sidecar_v1`, which the server pins anyway). Replans still send no estimate; the server fills in its reading. |
+| `subrip_sidecar_v1` | No | Negotiated | — | Bale-only; the overlay parses SubRip itself. |
+| `layout_aware_passthrough` | No (no sink layouts) | Only with passthrough entries (none today) | — | Same outcome. |
+
+## Request fields
+
+| Field | Apple | Bale before | Decision | Why |
+|---|---|---|---|---|
+| `learned_limit` (`ignore` / `clear`) | Sent per buffering mode and Restore quality | No | Owner | Needs the Settings buffering-quality mode and the learned-limit Reset row (docs/player-plan.md, "Connection speed test": not yet done). |
+| `bandwidth_estimate_source: observed_rebuffer`, `observed_throughput_kbps` | Sent on a rebuffer step-down | No | Owner | Needs a rebuffer detector and quality step-down in the player. |
+| `plan_summary` route events (`playback_plan_summary_v1`) | Sent when a plan stops playing | No | Owner | Needs played/stall statistics from the player; listed as not yet done in docs/player-plan.md. |
+| Failure classification `subtitle_embedded_failed` | Sent when an embedded subtitle cannot be mounted | No | Owner | Would stop the server offering native embedded selection for the attempt. Belongs to the player page's failure path. |
+| `progress_persistence` | Omitted (server default) | `"server"` | — | Same meaning. |
+| `allow_alternate_versions` | Watch-party only | `false` only under a version-checked range claim | — | Bale-specific guard. |
+
+## Capabilities and context
+
+| Field | Apple | Bale before | Decision | Why |
+|---|---|---|---|---|
+| `client_playback_context.device.manufacturer` / `model` | `Apple` / machine id | Platform only | **Implemented** | The server records the model on its route events (admin diagnostics). On Xbox the device name is the product name ("Xbox Series X"); elsewhere it is a PC's own name, so non-Xbox sends neither. |
+| `device.os_version`, `platform_details` | Yes | No | Skip | Diagnostics only (quirks read `platform_details` for Android). The OS version needs a `Bale.Xbox` change for no planning effect. |
+| `output.sink_type`, `output.output_context_id` | Yes (hashed route identity) | No | Owner (with `output_change_v1`) | The server compares the id for output-change intent and rejects a seek replan whose id changed. Without output-change replans a changing id only adds risk. |
+| `client_capabilities.max_resolution` | `2160p` | Not sent | Skip | It caps Auto's transcode height; silo-server already fits transcodes to Bale's platform-attested H.264 decode entries (`h264BoundedQualityV3`), which carry the same limit per codec. |
+| `audio_evidence: declared` | Yes | `platform_attested` | Skip | The server treats only `exact` differently (passthrough). |
+| Dolby Vision `dolby_vision_profiles` `[5, 8]` and `client_dv7_to_dv81` | Yes on DV panels | No | Skip | Owner's Dolby Vision rule: no DV output claim until passthrough is implemented and verified on a DV display. |
+| `client_dv7_to_hdr10` | Yes | Yes | — | Same (FFmpeg base layer). |
+| `client_managed_dynamic_range_v1` | Yes | Per selected version | — | Bale's is narrower on purpose (AGENTS.md). |
+| `client_selected_audio_track_v1` | Yes | Yes | — | Same. |
+| Validated claims `authenticated_stream_headers`, `client_subtitle_overlay` | Yes | No | Skip | The server never reads either. |
+| `native_embedded` text codecs (SubRip/ASS/WebVTT in MKV, `mov_text` in MP4) and `embedded_text` | Yes | Bitmap codecs in MKV only | Skip | Bale's overlay takes text from sidecars, not from the demuxer. The server extracts the sidecar instead. |
+| `native_embedded` PGS in `ts` / `m2ts` | Yes (Aether reassembles split PES display sets) | No | Owner | The FFmpeg bitmap path might work, but it is unverified on the console. |
+| `embedded_bitmap` on packaged deliveries | No | Yes (PGS `.sup` windows) | — | Bale-only, verified. |
+| HLS delivery containers | `hls`, `mpegts`, `fmp4`, `mp4` | `m3u8`, `hls` | — | The server gates on the stream container `hls`, which both list. |
+
+## Server features Bale reads
+
+| Feature | Apple | Bale | Note |
+|---|---|---|---|
+| `sequenced_progress_v1` | Required | Required | Same. |
+| `neutral_playback_v3_contract_v1`, `header_authenticated_media_v1` | Required, else "update the server" | Not required | Bale keeps playing on an older server; it accepts its signed `st=` API-local URLs. |
+| `plan_source_duration_v1` | Decides whether to fall back to the catalog duration | Not read | Bale only uses the plan's duration, which is right on servers that offer the feature. |
+| `plan_active_quality_v1` | Quality menu | Logged only | Bale has no quality menu yet. |
+| `seek_reanchor_v1`, `buffering_quality_v1`, `connection_speed_v1`, `subrip_sidecar_v1` | Read | Read | Same. |
+
+## Console check
+
+The `header_authenticated_media_v1` claim changes every plan URL's shape (no `st=` token; transcodes
+answer only an authenticated owner). On the console, check direct play (MP4 and MKV), a progressive remux
+with a seek, an HLS transcode with a seek, a text sidecar with fonts (ASS), and PGS on HLS. Check them
+again after the access token has been refreshed during playback.
