@@ -107,6 +107,15 @@
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
             <!-- TvPlayerTransportCluster.kt: secondary buttons widen into "Label · value" pills on focus. -->
+            <!-- TvPlayerTransportCluster.kt onUpNext: only while a next episode exists and its card is not up. -->
+            <Button x:Name="UpNextButton" Style="{StaticResource SkylinePlayerTransportButtonStyle}" AutomationProperties.Name="Up Next"
+                    Click="OnUpNextButtonClick" Visibility="Collapsed">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Viewbox Style="{StaticResource SkylinePlayerGlyphStyle}"><Path Width="24" Height="24" Fill="#FFEDEDED"
+                  Data="M6,18 L14.5,12 L6,6 Z M16,6 V18 H18 V6 Z" /></Viewbox>
+                <TextBlock Text="Up next" VerticalAlignment="Center" Visibility="Collapsed" />
+              </StackPanel>
+            </Button>
             <Button x:Name="AudioButton" Style="{StaticResource SkylinePlayerTransportButtonStyle}" AutomationProperties.Name="Audio" Click="OnAudioClick">
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <Viewbox Style="{StaticResource SkylinePlayerGlyphStyle}"><Path Width="24" Height="24" Fill="#FFEDEDED"

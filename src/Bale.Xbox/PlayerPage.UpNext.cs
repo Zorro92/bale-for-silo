@@ -32,7 +32,9 @@ public sealed partial class PlayerPage
             var next = PlaybackUpNext.NextInSeason(await feed.EpisodesAsync(seriesId, season), episode);
             if (next is null && PlaybackUpNext.NextSeason(await feed.SeasonsAsync(seriesId), season) is { } following)
                 next = PlaybackUpNext.First(await feed.EpisodesAsync(seriesId, following));
-            if (_active && !_leaving && ReferenceEquals(_attempt, attempt)) _nextEpisode = next;
+            if (!_active || _leaving || !ReferenceEquals(_attempt, attempt)) return;
+            _nextEpisode = next;
+            UpdateUpNextButton();
         }
         catch (Exception ex) { LogFailure("up next", ex); }
     }

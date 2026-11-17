@@ -51,6 +51,7 @@ public sealed class PlaybackUpNextState(bool autoPlay = true)
     private bool _handled;
     private bool _dismissed;
     private long _endedAt;
+    private bool _requested;
 
     /// <summary>playback.auto_play_next: off shows the card without a countdown.</summary>
     public bool AutoPlay { get; private set; } = autoPlay;
@@ -74,7 +75,26 @@ public sealed class PlaybackUpNextState(bool autoPlay = true)
             _endedAt = nowMs;
             Countdown = PlaybackUpNext.CountdownSeconds;
         }
-        else if (duration is { } end) Countdown = (int)Math.Ceiling(Math.Max(0, end - position));
+        else if (!_requested && duration is { } end) Countdown = (int)Math.Ceiling(Math.Max(0, end - position));
+    }
+
+    /// <summary>The control bar's Up Next button is offered while the card is not up.</summary>
+    public bool CanShowNow => !Visible;
+
+    /// <summary>
+    /// The viewer asked for the card early (TvPlayerViewModel.kt onUserRequestedNextUp): it shows without a
+    /// countdown, since they are choosing; the end of the episode still runs the usual end countdown.
+    /// </summary>
+    public bool ShowNow()
+    {
+        if (Visible) return false;
+        _handled = true;
+        _dismissed = false;
+        _requested = true;
+        Visible = true;
+        VideoEnded = false;
+        Countdown = null;
+        return true;
     }
 
     public bool Visible { get; private set; }

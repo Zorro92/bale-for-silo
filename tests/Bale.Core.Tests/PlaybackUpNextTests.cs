@@ -98,6 +98,30 @@ public class PlaybackUpNextTests
         Assert.Null(hidden.Countdown);
     }
 
+    [Fact]
+    public void AskingForTheCardEarlyShowsItWithoutACountdownUntilTheEnd()
+    {
+        var upNext = new PlaybackUpNextState();
+        Assert.True(upNext.CanShowNow);
+        Assert.True(upNext.ShowNow());
+        Assert.False(upNext.CanShowNow);
+        Assert.False(upNext.ShowNow());
+        Assert.Null(upNext.Countdown);
+        Assert.False(upNext.OnPosition(559, 561, 600, 560, false));
+        Assert.False(upNext.Tick(0, 580, 600));
+        upNext.SetAutoPlay(false, 0, 580, 600);
+        upNext.SetAutoPlay(true, 0, 580, 600);
+        Assert.Null(upNext.Countdown);
+        Assert.Equal(UpNextEnd.Show, upNext.OnEnded(1_000));
+        Assert.Equal(PlaybackUpNext.CountdownSeconds, upNext.Countdown);
+
+        var dismissed = new PlaybackUpNextState();
+        dismissed.OnPosition(559, 561, 600, 560, false);
+        dismissed.Dismiss();
+        Assert.True(dismissed.ShowNow());
+        Assert.Equal(UpNextEnd.Show, dismissed.OnEnded(0));
+    }
+
     private static EpisodeCard Episode(long season, long episode) =>
         new($"e{season}-{episode}", season, episode, $"Episode {episode}", null, null, null, null, null, false);
 

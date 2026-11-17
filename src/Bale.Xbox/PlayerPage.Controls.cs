@@ -164,7 +164,7 @@ public sealed partial class PlayerPage
 
     private void InitializeControls()
     {
-        foreach (var button in new[] { SkipBackButton, PlayPauseButton, SkipForwardButton, AudioButton, SubtitlesButton, OptionsButton, CloseButton })
+        foreach (var button in TransportRow)
         {
             StyleTransportButton(button, false);
             button.GotFocus += (_, _) => StyleTransportButton(button, true);
@@ -174,22 +174,43 @@ public sealed partial class PlayerPage
         ScrubberButton.XYFocusDown = PlayPauseButton;
         ScrubberButton.XYFocusUp = ScrubberButton;
         SkipBackButton.XYFocusLeft = SkipBackButton;
-        CloseButton.XYFocusLeft = OptionsButton;
-        OptionsButton.XYFocusLeft = SubtitlesButton;
-        OptionsButton.XYFocusRight = CloseButton;
         CloseButton.XYFocusRight = CloseButton;
         LinkTrackButtons();
     }
 
-    /// <summary>Left/Right across the gap between the two groups (TvPlayerTransportCluster.kt), Audio hidden or not.</summary>
+    private Windows.UI.Xaml.Controls.Button[] TransportRow => [SkipBackButton, PlayPauseButton, SkipForwardButton, UpNextButton, AudioButton, SubtitlesButton, OptionsButton, CloseButton];
+
+    /// <summary>
+    /// Left/Right along the visible buttons, across the gap between the two groups (TvPlayerTransportCluster.kt),
+    /// whichever of Up Next and Audio are shown.
+    /// </summary>
     private void LinkTrackButtons()
     {
-        var audio = AudioButton.Visibility == Visibility.Visible;
-        SkipForwardButton.XYFocusRight = audio ? AudioButton : SubtitlesButton;
-        AudioButton.XYFocusLeft = SkipForwardButton;
-        AudioButton.XYFocusRight = SubtitlesButton;
-        SubtitlesButton.XYFocusLeft = audio ? AudioButton : SkipForwardButton;
-        SubtitlesButton.XYFocusRight = OptionsButton;
+        var row = TransportRow.Where(button => button.Visibility == Visibility.Visible).ToList();
+        for (var i = 1; i < row.Count; i++)
+        {
+            row[i - 1].XYFocusRight = row[i];
+            row[i].XYFocusLeft = row[i - 1];
+        }
+    }
+
+    /// <summary>The Up Next button: shown when there is a next episode and its card is not already up.</summary>
+    private void UpdateUpNextButton()
+    {
+        var show = _nextEpisode is not null && !_advancing && _upNext.CanShowNow;
+        var visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (UpNextButton.Visibility == visibility) return;
+        if (!show && ReferenceEquals(FocusManager.GetFocusedElement(), UpNextButton)) SkipForwardButton.Focus(FocusState.Keyboard);
+        UpNextButton.Visibility = visibility;
+        LinkTrackButtons();
+    }
+
+    private void OnUpNextButtonClick(object sender, RoutedEventArgs e)
+    {
+        if (!_active || _leaving || _advancing || _nextEpisode is null || !_upNext.ShowNow()) return;
+        Log.Info("player: up next requested");
+        ShowUpNextCard();
+        UpdateUpNextButton();
     }
 
     private static readonly Windows.UI.Xaml.Media.SolidColorBrush TransportInk = new(Windows.UI.Color.FromArgb(255, 11, 11, 12));
@@ -234,6 +255,7 @@ public sealed partial class PlayerPage
             HideTransport();
             DrawChapterGaps();
             UpdateTrackValues();
+            UpdateUpNextButton();
             LinkTrackButtons();
         }
         UpdateControls(force: true);
@@ -450,8 +472,7 @@ public sealed partial class PlayerPage
             {
                 // Along the button row in order, stopping at the ends (vertical-never-horizontal's twin:
                 // no wrap, no jump into another row).
-                var row = new[] { SkipBackButton, PlayPauseButton, SkipForwardButton, AudioButton, SubtitlesButton, OptionsButton, CloseButton }
-                    .Where(button => button.Visibility == Visibility.Visible).ToList();
+                var row = TransportRow.Where(button => button.Visibility == Visibility.Visible).ToList();
                 var index = row.FindIndex(button => ReferenceEquals(button, FocusManager.GetFocusedElement()));
                 if (index >= 0)
                 {
