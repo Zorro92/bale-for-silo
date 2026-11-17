@@ -1973,3 +1973,13 @@ cold connection. It reports a lower bound when it reaches the target.
 
 Not yet done: the Settings Connection speed row with Test speed, budget line and learned-limit
 Reset; `plan_summary` route events with `throughput_kbps`.
+
+## Debug: IMFMediaEngine rendering mode (windowless swap chain)
+
+`scripts/bale-debug.sh playtest-present <url|@file> [seconds] [target=…] [hdr=on|off]` plays a URL
+through IMFMediaEngine with `EnableWindowlessSwapchainMode`, sets the engine's swap chain handle on a
+full-screen `SwapChainPanel` (`ISwapChainPanelNative2::SetSwapChainHandle`, UI thread) and reports
+the engine statistics (rendered, dropped, corrupted, fps, jitter, delay) and the display mode before,
+during and after. This is the only lower-level mode that can keep the system HDR10 / Dolby Vision
+presentation; frame-server mode (`playtest-engine`) cannot. Debug only; production stays on
+MediaPlayerElement until this is verified on the console.

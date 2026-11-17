@@ -73,6 +73,7 @@
 #   scripts/bale-debug.sh playtest <url> [seconds]  muted public http(s) stream probe (1–10 s, default 3)
 #   timeout 300 scripts/bale-debug.sh playtest suite [seconds]  Chromium samples, one at a time
 #                                               (the whole suite needs more than the usual timeout 20)
+#   scripts/bale-debug.sh playtest-present <url|@file> [seconds] [target=bgra|fp16|rgb10] [hdr=on|off]  debug IMFMediaEngine rendering mode (windowless swap chain) on a full-screen panel (1–60 s, default 10); hdr=on switches HDMI to HDR10 first
 #   scripts/bale-debug.sh playtest-engine <url|@file|suite> [seconds] [cs|rust|rust-ffmpeg] [target=bgra|fp16|rgb10]  debug IMFMediaEngine frame-server probe (1–60 s, default 3; rust = bale_gpu.dll port; rust-ffmpeg = FFmpeg software source)
 #                                               target= (rust only, after seconds and mode; default bgra) sets the engine output format and texture; fp16/rgb10 read a centred crop back
 #                                               about once a second and print HDR statistics with an hdr-range=preserved|clipped/sdr verdict (phase 0 of GPU tone mapping)
@@ -575,6 +576,37 @@ case "${1:-}" in
         exit 2
         ;;
     esac
+    ;;
+  playtest-present)
+    present_usage='usage: scripts/bale-debug.sh playtest-present <http(s)-url|@file> [seconds] [target=bgra|fp16|rgb10] [hdr=on|off] (1–60 s, default 10)'
+    present_seconds="${3:-10}"
+    if [[ "$#" -lt 2 || "$#" -gt 5 || ! "$present_seconds" =~ ^([1-9]|[1-5][0-9]|60)$ ]]; then
+      echo "$present_usage" >&2
+      exit 2
+    fi
+    present_args=()
+    declare -A present_seen=()
+    for option in "${@:4}"; do
+      name="${option%%=*}"
+      if [[ ! "$option" =~ ^(target=(bgra|fp16|rgb10)|hdr=(on|off))$ || -n "${present_seen[$name]:-}" ]]; then
+        echo "$present_usage" >&2
+        exit 2
+      fi
+      present_seen[$name]=true
+      present_args+=(--data-urlencode "$option")
+    done
+    present_data="url=$2"
+    if [[ "$2" == @* ]]; then
+      if [[ ! -r "${2#@}" ]]; then
+        echo 'URL file is not readable' >&2
+        exit 2
+      fi
+      # curl reads the file directly: the URL never reaches output or curl's argument list.
+      present_data="url@${2#@}"
+    fi
+    # 20 s engine open, 3 s handle wait, HDMI switch and restore.
+    curl --fail-with-body -sS --max-time "$((present_seconds + 45))" -G "$BASE/playtest-present" \
+      --data-urlencode "$present_data" --data-urlencode "seconds=$present_seconds" "${present_args[@]}"
     ;;
   playtest|playtest-ffmpeg|playtest-engine)
     playtest_route="$1"

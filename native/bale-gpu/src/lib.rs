@@ -41,7 +41,7 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 /// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched DLL.
-pub const ABI_VERSION: u32 = 6;
+pub const ABI_VERSION: u32 = 7;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_gpu_abi_version() -> u32 {
@@ -150,7 +150,7 @@ pub unsafe extern "C" fn bale_gpu_engine_probe(
         })
     };
     let text = match target {
-        Some(target) => engine::run(engine::Input::Url(url), seconds.clamp(1, 60), target),
+        Some(target) => engine::run(engine::Input::Url(url), seconds.clamp(1, 60), target, None),
         None => "Error: target must be bgra, fp16 or rgb10\n".to_owned(),
     };
     // SAFETY: the caller guarantees `report_capacity` writable bytes.
@@ -185,7 +185,89 @@ pub unsafe extern "C" fn bale_gpu_engine_probe_source(
         engine::Input::Source(object),
         seconds.clamp(1, 60),
         engine_target::Target::Bgra,
+        None,
     );
+    // SAFETY: the caller guarantees `report_capacity` writable bytes.
+    unsafe { write_report(&text, report, report_capacity) }
+}
+
+/// Rendering-mode probe: plays `url` (or, when `source` is non-null, that COM media source through
+/// the engine extension) with `EnableWindowlessSwapchainMode`, calls `attach(context, handle)` once
+/// with the engine's swap chain handle (the caller sets it on a `SwapChainPanel` on the UI thread and
+/// returns an HRESULT), sizes the video to `width`x`height`, plays `seconds`, and writes the report.
+///
+/// # Safety
+/// `url` must point to `url_len` readable code units (or be null when `source` is set); `source`, when
+/// non-null, a live COM pointer for the call; `target` `target_len` code units or null; `attach` a
+/// valid function for the call; `report` `report_capacity` writable bytes.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn bale_gpu_engine_present(
+    url: *const u16,
+    url_len: u32,
+    source: *mut core::ffi::c_void,
+    seconds: u32,
+    target: *const u16,
+    target_len: u32,
+    width: u32,
+    height: u32,
+    attach: Option<unsafe extern "C" fn(*mut core::ffi::c_void, isize) -> i32>,
+    context: *mut core::ffi::c_void,
+    report: *mut u8,
+    report_capacity: u32,
+) -> u32 {
+    let Some(attach) = attach else { return 0 };
+    if report.is_null() || width == 0 || height == 0 {
+        return 0;
+    }
+    let target = if target.is_null() || target_len == 0 {
+        Some(engine_target::Target::Bgra)
+    } else {
+        // SAFETY: the caller guarantees `target_len` readable code units.
+        engine_target::Target::parse_utf16(unsafe {
+            std::slice::from_raw_parts(target, target_len as usize)
+        })
+    };
+    let Some(target) = target else {
+        // SAFETY: the caller guarantees `report_capacity` writable bytes.
+        return unsafe {
+            write_report(
+                "Error: target must be bgra, fp16 or rgb10\n",
+                report,
+                report_capacity,
+            )
+        };
+    };
+    let present = engine::Present {
+        attach,
+        context,
+        width,
+        height,
+    };
+    let seconds = seconds.clamp(1, 120);
+    let text = if source.is_null() {
+        if url.is_null() || url_len == 0 {
+            return 0;
+        }
+        // SAFETY: the caller guarantees `url_len` readable code units.
+        let url = unsafe { std::slice::from_raw_parts(url, url_len as usize) };
+        engine::run(engine::Input::Url(url), seconds, target, Some(&present))
+    } else {
+        // SAFETY: the caller guarantees a live COM pointer; clone takes our own reference.
+        let Some(object) = (unsafe {
+            <windows::core::IUnknown as windows::core::Interface>::from_raw_borrowed(&source)
+        })
+        .cloned() else {
+            return 0;
+        };
+        engine::run(
+            engine::Input::Source(object),
+            seconds,
+            target,
+            Some(&present),
+        )
+    };
     // SAFETY: the caller guarantees `report_capacity` writable bytes.
     unsafe { write_report(&text, report, report_capacity) }
 }

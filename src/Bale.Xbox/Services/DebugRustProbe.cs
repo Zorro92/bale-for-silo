@@ -11,7 +11,8 @@ namespace Bale.Xbox.Services;
 /// </summary>
 internal static unsafe class DebugRustProbe
 {
-    private const uint ExpectedAbi = 6;
+    private const uint ExpectedAbi = 7;
+    internal const uint EngineAbi = ExpectedAbi;
     private const uint ExpectedGrainAbi = 2;
     private const int EngineReportCapacity = 16 * 1024;
     private const int GrainReportCapacity = 64 * 1024;

@@ -358,13 +358,32 @@ impl Readback {
     }
 }
 
+/// Rendering mode (windowless swap chain) instead of frame-server: the engine presents into its own
+/// composition swap chain, which `attach` hands to a XAML `SwapChainPanel` (on the UI thread, via
+/// `ISwapChainPanelNative2::SetSwapChainHandle`). This is the only IMFMediaEngine mode in which the
+/// system keeps the HDR10 / Dolby Vision presentation path; the probe reports whether it presents.
+pub struct Present {
+    /// Called once with the swap chain handle (borrowed; the engine owns it); returns an HRESULT.
+    pub attach: unsafe extern "C" fn(context: *mut core::ffi::c_void, handle: isize) -> i32,
+    pub context: *mut core::ffi::c_void,
+    /// Destination rectangle in panel pixels.
+    pub width: u32,
+    pub height: u32,
+}
+
+/// How long to wait for `GetVideoSwapchainHandle` to return a handle after canplay.
+const HANDLE_TIMEOUT: Duration = Duration::from_secs(3);
+
 /// Runs the probe and returns the plain-text report.
-pub fn run(input: Input, seconds: u32, target: Target) -> String {
-    let mut report = String::from(match input {
-        Input::Url(_) => {
+pub fn run(input: Input, seconds: u32, target: Target, present: Option<&Present>) -> String {
+    let mut report = String::from(match (&input, present.is_some()) {
+        (_, true) => {
+            "Media engine present probe (Rust bale_gpu.dll; rendering mode: windowless swap chain on a SwapChainPanel, muted)\n"
+        }
+        (Input::Url(_), false) => {
             "Media engine probe (Rust bale_gpu.dll; frame-server mode, muted, own D3D11 device)\n"
         }
-        Input::Source(_) => {
+        (Input::Source(_), false) => {
             "Media engine probe (Rust bale_gpu.dll; caller media source via engine extension; frame-server mode, muted)\n"
         }
     });
@@ -401,6 +420,7 @@ pub fn run(input: Input, seconds: u32, target: Target) -> String {
             &input,
             seconds,
             target,
+            present,
             &shared,
             &mut engine,
             &mut device_lifetime,
@@ -444,10 +464,12 @@ pub fn run(input: Input, seconds: u32, target: Target) -> String {
     report
 }
 
+#[allow(clippy::too_many_arguments)]
 unsafe fn play(
     input: &Input,
     seconds: u32,
     target: Target,
+    present: Option<&Present>,
     shared: &Arc<Shared>,
     engine_slot: &mut Option<IMFMediaEngine>,
     device_lifetime: &mut Option<Arc<crate::lifecycle::Device>>,
@@ -577,6 +599,13 @@ unsafe fn play(
         let engine_ex: IMFMediaEngineEx = engine.cast().step("QI IMFMediaEngineEx")?;
         report.push_str("Engine: created\n");
 
+        if present.is_some() {
+            // Before SetSource, as Chromium's MediaFoundationRenderer does.
+            engine_ex
+                .EnableWindowlessSwapchainMode(true)
+                .step("EnableWindowlessSwapchainMode")?;
+            report.push_str("Rendering mode: windowless swap chain enabled\n");
+        }
         engine.SetMuted(true).step("SetMuted")?;
         engine.SetSource(&url).step("SetSource")?;
 
@@ -618,6 +647,9 @@ unsafe fn play(
         );
         if !has_video || width == 0 || height == 0 {
             return Ok(());
+        }
+        if let Some(present) = present {
+            return present_loop(&engine, &engine_ex, present, seconds, shared, report);
         }
 
         let desc = D3D11_TEXTURE2D_DESC {
@@ -805,6 +837,118 @@ unsafe fn play(
             "Verdict: SLOW - below real time (ratio < 0.9)\n"
         } else {
             "Verdict: PLAYS\n"
+        });
+        Ok(())
+    }
+}
+
+/// Rendering mode: hand the engine's swap chain to the panel, size the video to it, play.
+unsafe fn present_loop(
+    engine: &IMFMediaEngine,
+    engine_ex: &IMFMediaEngineEx,
+    present: &Present,
+    seconds: u32,
+    shared: &Arc<Shared>,
+    report: &mut String,
+) -> Result<(), Step> {
+    unsafe {
+        // The handle can lag canplay; Chromium asks again once the first frame is ready.
+        let waited = Instant::now();
+        let handle = loop {
+            match engine_ex.GetVideoSwapchainHandle() {
+                Ok(handle) if !handle.is_invalid() && !handle.0.is_null() => break handle,
+                Ok(_) | Err(_) if waited.elapsed() < HANDLE_TIMEOUT => {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Ok(_) => {
+                    return Err(Step(
+                        "GetVideoSwapchainHandle null",
+                        HRESULT(0x8000_4005u32 as i32),
+                    ));
+                }
+                Err(error) => return Err(Step("GetVideoSwapchainHandle", error.code())),
+            }
+        };
+        let _ = writeln!(
+            report,
+            "Swap chain handle: after {} ms",
+            waited.elapsed().as_millis()
+        );
+        HRESULT((present.attach)(present.context, handle.0 as isize))
+            .ok()
+            .step("SetSwapChainHandle (UI thread)")?;
+        report.push_str("Panel: swap chain attached\n");
+        let destination = RECT {
+            left: 0,
+            top: 0,
+            right: present.width as i32,
+            bottom: present.height as i32,
+        };
+        let border = MFARGB {
+            rgbBlue: 0,
+            rgbGreen: 0,
+            rgbRed: 0,
+            rgbAlpha: 255,
+        };
+        engine_ex
+            .UpdateVideoStream(None, Some(&destination), Some(&border))
+            .step("UpdateVideoStream")?;
+        let _ = writeln!(
+            report,
+            "Destination: {}x{} panel pixels",
+            present.width, present.height
+        );
+
+        let cpu_before = process_cpu();
+        let start_position = engine.GetCurrentTime();
+        engine.Play().step("Play")?;
+        let wall = Instant::now();
+        let limit = Duration::from_secs(u64::from(seconds));
+        let mut first_frame_ms = None;
+        while wall.elapsed() < limit
+            && !shared.error.load(Ordering::Acquire)
+            && !shared.ended.load(Ordering::Acquire)
+        {
+            if first_frame_ms.is_none() && shared.first_frame.load(Ordering::Acquire) {
+                first_frame_ms = Some(wall.elapsed().as_millis());
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let wall_seconds = wall.elapsed().as_secs_f64();
+        let end_position = engine.GetCurrentTime();
+        let cpu_after = process_cpu();
+        // Statistics before Pause, while the renderer still counts.
+        append_statistics(report, engine_ex);
+        let _ = engine.Pause();
+        match first_frame_ms {
+            Some(ms) => {
+                let _ = writeln!(report, "First frame ready: {ms} ms after Play");
+            }
+            None => report.push_str("First frame ready: not signalled\n"),
+        }
+        let advanced = end_position - start_position;
+        let _ = writeln!(
+            report,
+            "Position: start={}s end={}s wall={wall_seconds:.3}s ratio={:.3}",
+            trim(start_position, 3),
+            trim(end_position, 3),
+            advanced / wall_seconds
+        );
+        if let (Some(before), Some(after)) = (cpu_before, cpu_after) {
+            let _ = writeln!(
+                report,
+                "CPU: {:.3} cores (process)",
+                (after - before) / wall_seconds
+            );
+        }
+        report.push_str(if shared.error.load(Ordering::Acquire) {
+            "Verdict: FAILS - engine error\n"
+        } else if advanced <= 0.0 {
+            "Verdict: FAILS - position did not advance\n"
+        } else if advanced / wall_seconds < 0.9 {
+            "Verdict: SLOW - below real time (ratio < 0.9)\n"
+        } else {
+            "Verdict: PRESENTS (check the screen and the engine frame counts)\n"
         });
         Ok(())
     }
