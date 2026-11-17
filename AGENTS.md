@@ -38,8 +38,8 @@ unchanged. Gap analysis and phases: docs/apple-playback-parity.md.
   - D-pad on clean playback brings up the controls; further presses move between buttons.
   - A while playing pauses and brings up the controls; A while paused with the controls hidden
     resumes without them. With the controls up, A presses the focused button.
-  - Triggers: a tap skips 10 s back / 30 s forward; held, after a short pause they rewind /
-    fast-forward steadily (no speed ladder).
+  - Triggers: a tap skips 10 s back / 30 s forward (on release); held past ~250 ms they rewind /
+    fast-forward steadily from the current position with no skip first (owner 2026-11-17; no speed ladder).
   - Bumpers jump to the previous / next chapter.
   - The controls hide after a while without input.
 - **Display resolution matching.** Auto version choice picks the file that best matches the

@@ -74,9 +74,8 @@ public sealed partial class PlayerPage
                     break;
                 case PlaybackKeyAction.SkipBack:
                 case PlaybackKeyAction.SkipForward:
-                    // The press skips at once; held past a second it scans steadily (owner's map).
+                    // Owner's map: a tap skips on release; a hold scans from here at once, with no skip.
                     var forward = action == PlaybackKeyAction.SkipForward;
-                    QueueSkip(forward);
                     _holdKey = key;
                     _holdScan.Press(forward, Environment.TickCount64);
                     break;
@@ -366,7 +365,11 @@ public sealed partial class PlayerPage
     private void EndHold(bool commit)
     {
         _holdKey = null;
-        if (_holdScan.Release() is { } target && commit) QueueSeekTo(target);
+        var forward = _holdScan.Direction > 0;
+        var target = _holdScan.Release();
+        if (!commit) return;
+        if (target is { } scanned) QueueSeekTo(scanned);
+        else QueueSkip(forward);
     }
 
     private void OnScrubberSizeChanged(object sender, SizeChangedEventArgs e)

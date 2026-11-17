@@ -61,7 +61,7 @@ public class PlaybackControlsTests
         Assert.False(scan.Held);
 
         scan.Press(forward: false, nowMs: 5000);
-        Assert.Null(scan.Tick(5400, 50, 1000));
+        Assert.Null(scan.Tick(5900, 50, 1000));
         Assert.Null(scan.Release());
 
         scan.Press(forward: false, nowMs: 0);
@@ -70,6 +70,16 @@ public class PlaybackControlsTests
         scan.Press(forward: true, nowMs: 0);
         scan.Tick(1000, 990, 1000);
         Assert.Equal(1000, scan.Tick(2000, 990, 1000));
+    }
+
+    [Fact]
+    public void TheDefaultHoldTellsATapFromAHoldWithinAQuarterSecond()
+    {
+        var scan = new PlaybackHoldScan();
+        scan.Press(forward: true, nowMs: 0);
+        Assert.Null(scan.Tick(200, 100, 1000));
+        Assert.Equal(100, scan.Tick(250, 100, 1000));
+        Assert.Equal(160, scan.Tick(1250, 999, 1000));
     }
 
     private static ItemDetail Detail(string type, string title, string? subtitle) =>

@@ -34,8 +34,8 @@ silo-android `androidTvApp/.../tv/ui/screens/player/` (port of the tvOS player).
 ## Bale's controller map (deviation, owner 2026-11-16)
 
 See AGENTS.md. In short: D-pad reveals the controls, A pauses (and reveals) or resumes a paused
-player whose controls have hidden, triggers tap-skip 10 s / 30 s and on hold rewind / fast-forward
-steadily after a short pause, bumpers jump between chapters. Media remote keys keep the official map.
+player whose controls have hidden, triggers tap-skip 10 s / 30 s (on release) and on hold (past ~250 ms)
+rewind / fast-forward steadily from where playback is, without skipping first, bumpers jump between chapters. Media remote keys keep the official map.
 The controls are XAML: the composition engine already draws them on the GPU (see "Rendering").
 
 ## Rendering

@@ -91,13 +91,15 @@ public static class PlaybackControlsText
 }
 
 /// <summary>
-/// A held trigger (owner's map): the press has already skipped; held past <see cref="DelayMs"/>, a
-/// steady scan moves a preview at <see cref="ContentSecondsPerSecond"/> until the release, which
+/// A held trigger (owner's map): the press itself does nothing. Released before <see cref="DelayMs"/>
+/// it is a tap, which skips; held past it, a steady scan starts from the current position (no skip
+/// first) and moves a preview at <see cref="ContentSecondsPerSecond"/> until the release, which
 /// commits it as one seek. No speed ladder.
 /// </summary>
 public sealed class PlaybackHoldScan(long delayMs = PlaybackHoldScan.DelayMs, double rate = PlaybackHoldScan.ContentSecondsPerSecond)
 {
-    public const long DelayMs = 1_000;
+    /// <summary>Long enough to tell a tap from a hold, short enough that a hold scans at once.</summary>
+    public const long DelayMs = 250;
     public const double ContentSecondsPerSecond = 60;
 
     private int _direction;

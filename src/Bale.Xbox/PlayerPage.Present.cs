@@ -412,13 +412,19 @@ public sealed partial class PlayerPage
         if (!keyDown && _engineHoldKey == key)
         {
             _engineHoldKey = null;
+            var forward = _engineHold.Direction > 0;
             if (_engineHold.Release() is { } scanned)
             {
                 _engineTapTarget = null;
                 Log.Info($"engine-player: scan release target={scanned:0.###}");
                 _ = EngineSeekSourceAsync(scanned, paused: host.TryState(out var released) && released.Paused);
             }
-            else _engineTapAt = Environment.TickCount64;
+            else if (host.TryState(out var tapped))
+            {
+                // A tap skips on release; taps in a row merge into one seek.
+                _engineTapTarget = PlaybackSeek.SkipTarget(_engineTapTarget ?? EngineSourcePosition(tapped), _duration ?? tapped.Duration, forward);
+                _engineTapAt = Environment.TickCount64;
+            }
             return true;
         }
         var action = PlaybackRemoteKeys.Action((int)key, keyDown, firstDown, cleanPlayback: true);
@@ -430,11 +436,8 @@ public sealed partial class PlayerPage
                 Log.Info($"engine-player: {(state.Paused ? "play" : "pause")} hr=0x{unchecked((uint)(state.Paused ? host.Play() : host.Pause())):X8}");
                 break;
             case PlaybackKeyAction.SkipBack or PlaybackKeyAction.SkipForward:
-                var forward = action == PlaybackKeyAction.SkipForward;
-                _engineTapTarget = PlaybackSeek.SkipTarget(_engineTapTarget ?? EngineSourcePosition(state), _duration ?? state.Duration, forward);
-                _engineTapAt = Environment.TickCount64;
                 _engineHoldKey = key;
-                _engineHold.Press(forward, _engineTapAt);
+                _engineHold.Press(action == PlaybackKeyAction.SkipForward, Environment.TickCount64);
                 break;
             case PlaybackKeyAction.PreviousChapter or PlaybackKeyAction.NextChapter:
                 var chapters = PlayingChapters();
