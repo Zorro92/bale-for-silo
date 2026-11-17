@@ -110,13 +110,10 @@
   <Grid>
     <VisualStateManager.VisualStateGroups>
       <VisualStateGroup x:Name="Landing">
-        <!-- TvHomeScreen.kt drops only the foreground by 28: base band 270, marquee bottom 266. -->
-        <VisualState x:Name="Home">
-          <VisualState.Setters>
-            <Setter Target="RowsScroller.Margin" Value="0,298,0,0" />
-            <Setter Target="MarqueeRegion.Height" Value="294" />
-          </VisualState.Setters>
-        </VisualState>
+        <!-- Owner deviation (2026-11-17): TvHomeScreen.kt drops Home's foreground by 28 (contentVerticalOffset), which
+             pushes the title of the row after next below the screen; Home keeps the libraries' layout (base band 270,
+             marquee bottom 266) so that title still shows, as on Movies. -->
+        <VisualState x:Name="Home" />
         <VisualState x:Name="ForYou" />
         <!-- TvLibraryDetailScreen.kt: Recommended uses the feed; the shell cascade owns all section pills. -->
         <VisualState x:Name="Library" />

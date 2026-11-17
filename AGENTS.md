@@ -49,6 +49,12 @@ unchanged. Gap analysis and phases: docs/apple-playback-parity.md.
   server order. On by default; the toggle comes with the 0.2.x Settings menu. Decode claims stay
   decoder-based: the display only affects version choice. See `docs/player-plan.md`, "Display
   resolution matching".
+- **Episode codes** are `S01E01` everywhere (`E01` without a season), as under the official season
+  row; the official apps also use `S1:E2`, `S1·E2`, `S1 · E2` and `S1E2` elsewhere (owner, 2026-11-17;
+  `EpisodeCode.Format`; reported upstream).
+- **Home layout** matches the libraries: no 28-point foreground drop (official `TvHomeScreen.kt`
+  `contentVerticalOffset = 28.dp`), so the title of the row after next stays on screen, as on Movies
+  (owner, 2026-11-17; reported upstream).
 
 **Unit mapping.** Xbox lays out at 960×540 effective pixels, the same canvas as Android TV's dp, so
 Android geometry maps 1:1 (`88.dp` → `88`). Android text is `sp × 0.86` (the TV app's
