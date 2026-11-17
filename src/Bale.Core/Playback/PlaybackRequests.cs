@@ -50,6 +50,22 @@ public static class PlaybackProtocol
         return request.ClientFeatures.Append(SubripSidecarFeature).ToArray();
     }
 
+    /// <summary>
+    /// A replan's client_features: the request's own list plus what its attempt's start negotiated with the server
+    /// (buffering_quality_v1, subrip_sidecar_v1). silo-server's non-seek replans replace the durable request's
+    /// features with the replan's list (playback_v3.go), and applyConnectionReading / applyLearnedLimit act only
+    /// when it names buffering_quality_v1, so a track change or failure recovery that dropped it lost the
+    /// connection's Auto budget the start was planned under. Attempt-sticky features are pinned server-side
+    /// whatever is sent (PinAttemptStickyFeaturesV3). silo-apple sends buffering_quality_v1 on replans too
+    /// (PlaybackSessionBridge replanProtocolV3).
+    /// </summary>
+    internal static IReadOnlyList<string> ReplanFeatures(PlaybackReplanRequestV3 request, NegotiatedStartFeatures? negotiated)
+    {
+        if (negotiated is null || negotiated.PlaybackAttemptId != request.PlaybackAttemptId) return request.ClientFeatures;
+        var missing = negotiated.Added.Where(feature => !request.ClientFeatures.Contains(feature)).ToArray();
+        return missing.Length == 0 ? request.ClientFeatures : request.ClientFeatures.Concat(missing).ToArray();
+    }
+
     public static IReadOnlyList<string> SoloClientFeatures(ClientPlaybackContext context,
         IReadOnlyList<VideoDecodeCapability>? videoDecode = null)
     {
@@ -99,6 +115,9 @@ public sealed record PlaybackStartRequestV3(
     public string? BandwidthEstimateSource { get; init; }
     public bool? AllowAlternateVersions { get; init; }
 }
+
+/// <summary>The features a start added to its builder's list after reading the server's capabilities.</summary>
+internal sealed record NegotiatedStartFeatures(string PlaybackAttemptId, IReadOnlyList<string> Added);
 
 public sealed record PlaybackTrackIdentityV3(string Id, int? Index = null);
 public sealed record SelectedPlaybackTracksV3(PlaybackTrackIdentityV3? Audio = null, PlaybackTrackIdentityV3? Subtitle = null);

@@ -31,6 +31,8 @@ public sealed partial class PlaybackClient
     private readonly HttpClient _http;
     private readonly Func<PlaybackRequestScope> _captureScope;
     private readonly PlaybackMedia.HeaderCapture? _captureHeaders;
+    /// <summary>The last start's server-negotiated features (one player plays at a time).</summary>
+    private volatile NegotiatedStartFeatures? _negotiated;
     internal Uri Server { get; }
 
     internal PlaybackClient(SiloApiClient api, IRequestAdapter adapter, HttpClient http, Uri server, Func<PlaybackRequestScope> captureScope,
@@ -97,6 +99,8 @@ public sealed partial class PlaybackClient
             Speed.Update(Schedule(capabilities), null);
             estimate = Speed.StartEstimate(DateTimeOffset.UtcNow);
         }
+        // Replans of this attempt repeat what the start negotiated (ApplePlaybackV3PlanAdapter/PlaybackSessionBridge).
+        _negotiated = new(request.PlaybackAttemptId, features.Except(request.ClientFeatures, StringComparer.Ordinal).ToArray());
         return await PostAsync("/api/v2/playback/start", request with
             {
                 InstallationId = installationId,
@@ -131,6 +135,7 @@ public sealed partial class PlaybackClient
             request with
             {
                 InstallationId = InstallationId(installation),
+                ClientFeatures = PlaybackProtocol.ReplanFeatures(request, _negotiated),
                 ClientPlaybackContext = request.ClientPlaybackContext.WithoutInactiveClientTransformations(),
             }, PlaybackJson.Default.PlaybackReplanRequestV3,
             _captureScope(), cancellationToken);

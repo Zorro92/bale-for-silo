@@ -1964,7 +1964,9 @@ Bale runs silo-server's connection speed test (design: buffering-quality, "Conne
 - **Console:** `ConnectionSpeedService` checks on sign-in, on return to the foreground and on a network
   change. An automatic quick test runs only when due, with no media active, in the foreground and on an
   unmetered link, and a 429 holds tests. Starts on an unmetered link declare `buffering_quality_v1` and
-  send the highest current reading as a `probe` estimate. Replans never send it.
+  send the highest current reading as a `probe` estimate. Replans never send an estimate, but repeat the
+  start's `buffering_quality_v1` (`PlaybackProtocol.ReplanFeatures`), so the server keeps planning a track
+  change or failure recovery under the connection's reading, as on the start.
 - **Debug:** `bale-debug.sh speed [check|test]`, `net [rcvbuf=…]`, and `bale-cli speed-test
   [quick|accurate]`, which prints per-window rates.
 
