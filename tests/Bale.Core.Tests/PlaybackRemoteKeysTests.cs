@@ -7,7 +7,7 @@ public class PlaybackRemoteKeysTests
 {
     [Theory]
     [InlineData(PlaybackRemoteKeys.MediaPlayPause, PlaybackKeyAction.PlayPause)]
-    [InlineData(PlaybackRemoteKeys.Space, PlaybackKeyAction.PlayPause)]
+    [InlineData(PlaybackRemoteKeys.Space, PlaybackKeyAction.Select)]
     [InlineData(PlaybackRemoteKeys.MediaStop, PlaybackKeyAction.Stop)]
     [InlineData(PlaybackRemoteKeys.GamepadLeftTrigger, PlaybackKeyAction.SkipBack)]
     [InlineData(PlaybackRemoteKeys.J, PlaybackKeyAction.SkipBack)]

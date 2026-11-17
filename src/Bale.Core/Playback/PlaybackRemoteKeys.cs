@@ -72,9 +72,11 @@ public static class PlaybackRemoteKeys
         return key switch
         {
             Space when modifier => PlaybackKeyAction.None,
-            // With the controls up, Space (which the console also sends for A) presses the focused button.
+            // The console delivers A as Space (seen with injected input), so Space is A: on clean
+            // playback it pauses and shows the controls; with them up it presses the focused button.
             Space when !cleanPlayback => PlaybackKeyAction.None,
-            MediaPlayPause or Space => FirstPress(PlaybackKeyAction.PlayPause),
+            Space => FirstPress(PlaybackKeyAction.Select),
+            MediaPlayPause => FirstPress(PlaybackKeyAction.PlayPause),
             MediaStop => FirstPress(PlaybackKeyAction.Stop),
             GamepadLeftTrigger or J or MediaPreviousTrack => FirstPress(PlaybackKeyAction.SkipBack),
             GamepadRightTrigger or L or MediaNextTrack => FirstPress(PlaybackKeyAction.SkipForward),

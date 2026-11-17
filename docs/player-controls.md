@@ -62,7 +62,11 @@ rather than leaving them transparent so they cost nothing while hidden.
 2. **Transport overlay and scrubber.** Revealed by the D-pad or by A pausing, hidden after a few
    seconds without input, the transport row (skip, play/pause, Close first; Subtitles/Options once
    step 4 exists), scrubber with nudge/commit/cancel and chapter ticks.
-   Code done 2026-11-16, not yet on the console: `TransportControls` in PlayerPage.xaml,
+   Verified on 0.1.572 with injected input: D-pad reveals with Play/Pause focused, Up to the bar,
+   Right x3 previews +30 s, Select commits, Down back to the buttons, 5 s idle hides, Back hides then
+   leaves, triggers +30/-10 s, Close leaves. Injected gamepad buttons arrive as keyboard keys
+   (A as Space, D-pad as arrows), so Space is treated as A; a real controller still to check.
+   Code: `TransportControls` in PlayerPage.xaml,
    `PlaybackControlsState` / `PlaybackScrub` / `PlaybackControlsText` in Core. Eyebrow and title,
    the scrubber (focused: Left/Right move a 10 s preview, Select commits it as one seek or toggles
    playback without one, Down/Back cancel it), the clock row with "Ends", and skip back · play/pause ·
