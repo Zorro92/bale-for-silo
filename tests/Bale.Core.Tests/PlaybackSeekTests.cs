@@ -134,12 +134,9 @@ public class PlaybackSeekTests
     public void RealInputAndDebugInputShareFirstDownAndAbsoluteSeekPaths()
     {
         var app = Read("App.cs.txt");
-        Assert.Contains("transport.HandleSkipKey(e.Key, firstDown: !e.KeyStatus.WasKeyDown)", app);
-        Assert.Contains("transport.HandleSkipKey(e.Key, firstDown: false)", app);
+        Assert.Contains("transport.HandlePlayerKey(e.Key, keyDown: true, firstDown: !e.KeyStatus.WasKeyDown)", app);
+        Assert.Contains("transport.HandlePlayerKey(e.Key, keyDown: false, firstDown: false)", app);
         var seek = Read("PlayerPage.Seek.cs.txt");
-        Assert.Contains("VirtualKey.GamepadLeftTrigger or VirtualKey.J => -1", seek);
-        Assert.Contains("VirtualKey.GamepadRightTrigger or VirtualKey.L => 1", seek);
-        Assert.Contains("if (firstDown) QueueSkip(direction > 0)", seek);
         Assert.Contains("await SeekAsync(new PlaybackSeek(target))", seek);
         Assert.Contains("_skipTarget ?? SourcePosition(attempt)", seek);
         Assert.Contains("if (_recording || _seeking) return", Read("PlayerPage.cs.txt"));

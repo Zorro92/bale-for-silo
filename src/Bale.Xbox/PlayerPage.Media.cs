@@ -333,6 +333,7 @@ public sealed partial class PlayerPage
         player.MediaFailed += OnMediaFailed;
         player.MediaEnded += OnMediaEnded;
         player.PlaybackSession.PlaybackStateChanged += OnPlaybackStateChanged;
+        AttachSystemControls(player);
         AttachSubtitleSession(player.PlaybackSession);
         _video ??= new MediaPlayerElement { AreTransportControlsEnabled = false, Stretch = Stretch.Uniform, IsTabStop = false };
         VideoHost.Child = _video;

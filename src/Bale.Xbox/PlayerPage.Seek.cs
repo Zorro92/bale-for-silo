@@ -28,20 +28,6 @@ public sealed partial class PlayerPage
         return _sourcePosition = attempt.Position;
     }
 
-    internal bool HandleSkipKey(VirtualKey key, bool firstDown)
-    {
-        var direction = key switch
-        {
-            VirtualKey.GamepadLeftTrigger or VirtualKey.J => -1,
-            VirtualKey.GamepadRightTrigger or VirtualKey.L => 1,
-            _ => 0,
-        };
-        if (direction == 0) return false;
-        // TvPlayerRemoteKeyAction.kt: act on the FIRST DOWN, consume repeats and UP halves.
-        if (firstDown) QueueSkip(direction > 0);
-        return true;
-    }
-
     private void QueueSkip(bool forward)
     {
         try

@@ -165,9 +165,12 @@ public class DebugPlaybackControlTests
         Assert.Contains("case (\"POST\", \"/playback\")", Read("DebugServer.cs.txt"));
         Assert.Contains("await OnFfmpegUiAsync", endpoint);
         Assert.Contains("player.DebugSetPlaybackAsync(request)", endpoint);
-        Assert.DoesNotContain("ex.Message", endpoint + page);
-        Assert.Contains("UpdatePlaybackState(attempt, media)", page);
-        Assert.Contains("await ReportPositionAsync(attempt, source, paused)", page);
+        // The debug endpoint uses the same Play/Pause path as the controller and the remote.
+        var playback = Read("PlayerPage.Playback.cs.txt");
+        Assert.Contains("SetPlaybackAsync(request switch", page);
+        Assert.DoesNotContain("ex.Message", endpoint + page + playback);
+        Assert.Contains("UpdatePlaybackState(attempt, media)", playback);
+        Assert.Contains("await ReportPositionAsync(attempt, source, paused)", playback);
         var shared = Read("PlayerPage.Media.cs.txt");
         Assert.Contains("SetDisplayActive(_state != \"paused\")", shared);
         Assert.Contains("PushSubtitleClock()", shared);

@@ -100,7 +100,7 @@ namespace Bale.Xbox
 
         internal async Task SkipAsync(bool forward)
         {
-            HandleSkipKey(forward ? VirtualKey.GamepadRightTrigger : VirtualKey.GamepadLeftTrigger, firstDown: true);
+            QueueSkip(forward);
             await WaitForSkipAsync().WaitAsync(TimeSpan.FromSeconds(5));
         }
         private async Task WaitForSkipAsync() { while (_skipProcessing) await Task.Yield(); }

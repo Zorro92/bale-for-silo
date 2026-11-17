@@ -33,9 +33,12 @@ silo-android `androidTvApp/.../tv/ui/screens/player/` (port of the tvOS player).
 
 ## Proposed order (each step verified on the console before the next)
 
-1. **Play/Pause and Stop.** Controller A on clean playback, the media remote's Play/Pause and Stop
-   (system media transport controls on Xbox), first-press semantics. Small, and everything else
-   builds on a known pause state. Needs the console: how the Xbox media remote's keys arrive.
+1. **Play/Pause and Stop.** Code done 2026-11-16 (`PlaybackRemoteKeys`, `PlayerPage.Controls.cs`):
+   media Play/Pause and Space toggle, media Stop leaves, D-pad Left/Right and media
+   previous/next skip, all on the first press; the system media controls' Play/Pause/next/previous/
+   fast-forward/rewind take the same path, and a press arriving by both routes acts once. The log
+   line `player: transport key=… / system=…` shows which route the Xbox media remote uses; check
+   that with the remote on the console. Select (A) is left for step 2 (it reveals the controls).
 2. **Transport overlay and scrubber.** Reveal on Down/any key, 5 s auto-hide, the transport row
    (skip, play/pause, Close first; Subtitles/Options buttons once step 4 exists), scrubber with
    nudge/commit/cancel and chapter ticks. Left/Right on clean playback become skips, as official.
