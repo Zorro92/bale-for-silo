@@ -112,6 +112,28 @@ public static class PlaybackReplan
             new SelectedPlaybackTracksV3(audio, subtitle));
     }
 
+    /// <summary>
+    /// TvPlayerViewModel.kt selectAudioOption / AudioReconcile.kt mountedAudioFor: a direct play of the original
+    /// file mounts every audio track, so another one is selected on the player instead of replanning. A server
+    /// remux or transcode maps only its chosen stream (remux.go / transcode.go -map 0:a:N?) and still replans.
+    /// </summary>
+    public static bool SwitchesAudioLocally(PlaybackPlan? plan, int audioIndex) =>
+        audioIndex >= 0 && string.Equals(plan?.Delivery, "original_http", StringComparison.Ordinal)
+        && plan?.SelectedTracks?.Audio?.Index != audioIndex;
+
+    /// <summary>
+    /// Records a local audio switch on the plan and start request, as a committed replan would: the pills, Info and
+    /// later replans (seek reanchor, failure fallback) then name the track that plays. Subtitles are untouched.
+    /// </summary>
+    public static PlaybackStartRequestV3 WithLocalAudio(PlaybackStartRequestV3 start, PlaybackPlan plan, int audioIndex)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(audioIndex);
+        var id = $"file:{start.FileId}:audio:{audioIndex}";
+        plan.SelectedTracks ??= new SelectedTracksV3();
+        plan.SelectedTracks.Audio = new TrackIdentityV3 { Id = id, Index = audioIndex };
+        return start with { AudioTrackId = id, AudioTrackIndex = audioIndex };
+    }
+
     /// <summary>The start request the session now plays: a committed track change replaces its tracks.</summary>
     public static PlaybackStartRequestV3 WithTracks(PlaybackStartRequestV3 start, SelectedPlaybackTracksV3 tracks) => start with
     {

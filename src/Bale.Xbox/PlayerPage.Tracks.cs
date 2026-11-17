@@ -103,6 +103,7 @@ public sealed partial class PlayerPage
         {
             if (_attempt is not { Media: { Opened: true, FailureQueued: false, Player: { } player } media } attempt
                 || !IsCurrent(attempt, media)) return;
+            if (TrySwitchAudioLocally(attempt, media, audioIndex, subtitleIndex)) return;
             var paused = player.PlaybackSession.PlaybackState == MediaPlaybackState.Paused;
             var position = SourcePosition(attempt);
             var request = PlaybackReplan.ForTrackChange(attempt.Start!, attempt.Plan!, attempt.PlanAttemptId, attempt.AttemptedPlanKeys,
@@ -142,5 +143,29 @@ public sealed partial class PlayerPage
             _seeking = false;
             _lifecycle.Release();
         }
+    }
+
+    /// <summary>
+    /// TvPlayerViewModel.kt selectAudioOption: a direct play of the original already carries every audio track, so
+    /// an audio pick selects it on the player (no replan, no remount, no rebuffer). False when the pick needs the
+    /// server: a subtitle change, a remux/transcode, or a track the mount cannot map, which then replans as before.
+    /// </summary>
+    private bool TrySwitchAudioLocally(Attempt attempt, Mount media, int? audioIndex, int? subtitleIndex)
+    {
+        if (subtitleIndex is not null || audioIndex is not { } index || media.Item is null
+            || !PlaybackReplan.SwitchesAudioLocally(attempt.Plan, index)) return false;
+        try
+        {
+            SelectOriginalAudioTrack(attempt, media, index);
+        }
+        catch (PlaybackAudioSelectionException)
+        {
+            Log.Info("player: local audio switch unavailable; replanning");
+            return false;
+        }
+        attempt.Start = PlaybackReplan.WithLocalAudio(attempt.Start!, attempt.Plan!, index);
+        Log.Info($"player: audio switched locally audio={index}");
+        UpdateTrackValues();
+        return true;
     }
 }

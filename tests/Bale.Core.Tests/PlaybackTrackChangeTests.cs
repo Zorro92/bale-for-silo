@@ -41,6 +41,43 @@ public class PlaybackTrackChangeTests
         Assert.Null(start.SubtitleTrackId);
     }
 
+    [Fact]
+    public void ADirectPlayAudioPickSwitchesOnThePlayerAndARemuxReplans()
+    {
+        Assert.True(PlaybackReplan.SwitchesAudioLocally(Plan(), 2));
+        Assert.False(PlaybackReplan.SwitchesAudioLocally(Plan(), 1));
+        Assert.False(PlaybackReplan.SwitchesAudioLocally(Plan(), -1));
+        Assert.False(PlaybackReplan.SwitchesAudioLocally(null, 2));
+        foreach (var delivery in new[] { "server_remux_progressive", "server_remux_hls", "server_transcode_hls" })
+        {
+            var packaged = Plan();
+            packaged.Delivery = delivery;
+            Assert.False(PlaybackReplan.SwitchesAudioLocally(packaged, 2));
+        }
+    }
+
+    [Fact]
+    public void ALocalAudioSwitchIsRecordedLikeACommittedPickAndKeepsTheSubtitle()
+    {
+        var plan = Plan();
+        var start = PlaybackReplan.WithLocalAudio(Start(), plan, 2);
+        Assert.Equal(2, start.AudioTrackIndex);
+        Assert.Equal("file:file:audio:2", start.AudioTrackId);
+        Assert.Equal(3, start.SubtitleTrackIndex);
+        Assert.Equal(2, plan.SelectedTracks!.Audio!.Index);
+        Assert.Equal("file:file:audio:2", plan.SelectedTracks.Audio.Id);
+        Assert.Equal(3, plan.SelectedTracks.Subtitle!.Index);
+        // A later replan (seek reanchor, failure fallback) carries the switched track.
+        var later = PlaybackReplan.ForTrackChange(start, plan, "mount", [], 1, 10, audioIndex: null, subtitleIndex: null);
+        Assert.Equal(new PlaybackTrackIdentityV3("file:file:audio:2", 2), later.SelectedTracks.Audio);
+
+        var bare = Plan();
+        bare.SelectedTracks = null;
+        PlaybackReplan.WithLocalAudio(Start(), bare, 0);
+        Assert.Equal(0, bare.SelectedTracks!.Audio!.Index);
+        Assert.Throws<ArgumentOutOfRangeException>(() => PlaybackReplan.WithLocalAudio(Start(), Plan(), -1));
+    }
+
     private static PlaybackStartRequestV3 Start() => PlaybackStartBuilder.Build("file", "profile",
         "attempt", null, new(AudioIndex: 1, SubtitleIndex: 3), ConsoleEvidence.Default, PlaybackTestSupport.Identity);
 
