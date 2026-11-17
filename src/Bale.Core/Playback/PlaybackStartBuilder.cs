@@ -109,7 +109,7 @@ public static class PlaybackStartBuilder
             Transformations = [],
         };
         var context = new ClientPlaybackContext("tv", identity.ClientVersion ?? "unknown",
-            new PlaybackDeviceContext(identity.Platform), output,
+            DeviceContext(identity), output,
             new Dictionary<string, DeliveryCapability>
             {
                 ["original_http"] = original,
@@ -134,6 +134,24 @@ public static class PlaybackStartBuilder
             AudioTrackId = selection.AudioIndex is { } audio ? $"file:{fileId}:audio:{audio}" : null,
             SubtitleTrackIndex = subtitle,
             SubtitleTrackId = subtitle is { } index ? $"file:{fileId}:subtitle:{index}" : null,
+        };
+    }
+
+    /// <summary>
+    /// ApplePlaybackV3Capabilities.deviceContext sends manufacturer and model; silo-server records the model on its
+    /// route events (playback_v3.go ClientModel) for admin diagnostics. On Xbox the device name is the console's
+    /// product name (EasClientDeviceInformation.SystemProductName, e.g. "Xbox Series X"). Elsewhere it is the
+    /// user's own PC name, which is not a model and stays out. The contract bounds both fields to 128 characters.
+    /// </summary>
+    internal static PlaybackDeviceContext DeviceContext(ClientIdentity identity)
+    {
+        var context = new PlaybackDeviceContext(identity.Platform);
+        if (!string.Equals(identity.Platform, "xbox", StringComparison.Ordinal)) return context;
+        var model = identity.DeviceName?.Trim();
+        return context with
+        {
+            Manufacturer = "Microsoft",
+            Model = string.IsNullOrEmpty(model) ? null : model.Length > 128 ? model[..128] : model,
         };
     }
 
