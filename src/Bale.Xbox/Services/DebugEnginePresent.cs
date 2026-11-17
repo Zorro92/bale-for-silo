@@ -42,7 +42,14 @@ internal sealed class DebugEnginePresent
         var scale = Windows.Graphics.Display.DisplayInformation.GetForCurrentView().RawPixelsPerViewPixel;
         _width = (uint)Math.Max(1, Math.Round(bounds.Width * scale));
         _height = (uint)Math.Max(1, Math.Round(bounds.Height * scale));
-        _view = new SwapChainPanel { Width = bounds.Width, Height = bounds.Height };
+        // A SwapChainPanel maps swap chain pixels to view pixels; the engine's swap chain is in raw
+        // pixels, so lay the panel out at raw size and scale it back, or only its top-left quarter shows.
+        _view = new SwapChainPanel
+        {
+            Width = _width,
+            Height = _height,
+            RenderTransform = new Windows.UI.Xaml.Media.ScaleTransform { ScaleX = 1 / scale, ScaleY = 1 / scale },
+        };
         _popup = new Popup { Child = _view, IsOpen = true };
         // An owned IInspectable of the panel; Rust takes ISwapChainPanelNative2 from it.
         _panel = WinRT.MarshalInspectable<object>.FromManaged(_view);
