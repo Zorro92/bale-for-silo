@@ -275,6 +275,13 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   verify that BL stream plus P010 PQ BT.2020 on HDR, or tone-mapped NV12 BT.709 on SDR. A failure
   withdraws the recipe and client-managed range claim on the existing single replan, keeping
   codec evidence. Never declare DV7→DV8.1 or Dolby Vision output. See docs/player-plan.md.
+- **Owner's Dolby Vision rule (2026-11-17).** The Dolby Vision layer is proprietary: it is passed
+  through untouched or dropped, never processed or tone-mapped by Bale (like Atmos/TrueHD audio).
+  Dolby Vision display: pass Dolby Vision through (Windows' own source and DV path, not the FFmpeg
+  base-layer route). HDR-only display: play only the HDR base layer / fallback. SDR display: tone-map
+  from the HDR base layer, never the Dolby Vision layer. No usable base layer (profile 5) on a non-DV
+  display: server. Dolby Vision output is declared only once passthrough is implemented and verified
+  on a Dolby Vision display; until then the line above stands.
 - Debug real-player override is **policy** (default) or **off** only; off also withdraws fallback
   claims. The standalone `playtest-ffmpeg` probe retains its experimental modes. See docs/player-plan.md.
 - Never print media URLs, stream grants, headers or media/session exception messages. Log only safe
