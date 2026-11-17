@@ -161,7 +161,11 @@ public sealed record PlaybackStartRequestV3(
 }
 
 /// <summary>The features a start added to its builder's list after reading the server's capabilities.</summary>
-internal sealed record NegotiatedStartFeatures(string PlaybackAttemptId, IReadOnlyList<string> Added);
+internal sealed record NegotiatedStartFeatures(string PlaybackAttemptId, IReadOnlyList<string> Added)
+{
+    /// <summary>The speed-test estimate the start sent, for its plan's <c>plan_summary</c>.</summary>
+    public int? BandwidthEstimateKbps { get; init; }
+}
 
 public sealed record PlaybackTrackIdentityV3(string Id, int? Index = null);
 public sealed record SelectedPlaybackTracksV3(PlaybackTrackIdentityV3? Audio = null, PlaybackTrackIdentityV3? Subtitle = null);

@@ -232,3 +232,57 @@ public sealed class BufferingQualityRequestTests
         Assert.False(await other.Playback.ReportRouteEventAsync(routeEvent));
     }
 }
+
+public sealed class BufferingQualityPlansTests
+{
+    [Fact]
+    public void ThePlanMapsDeliveredBitrateRungsAndWarnings()
+    {
+        var plan = new Bale.Core.Api.Models.PlaybackPlan
+        {
+            PlanId = "plan-0123456789",
+            Source = new() { BitrateKbps = 63_000 },
+            EffectiveRecipe = new() { BitrateKbps = 9_800 },
+            ActiveQuality = "1080p-high",
+            AvailableQualities =
+            [
+                new() { Label = "original", BitrateKbps = 63_000 }, new() { Label = "1080p-high", BitrateKbps = 10_000 },
+                new() { Label = "broken" }, new() { Label = "720p-high", BitrateKbps = 4_000 },
+            ],
+            DegradationWarnings = [new() { Code = "quality_reduction_unavailable" }],
+        };
+        var mapped = BufferingQualityPlans.From(plan, "adoption-1", "auto", ["plan_active_quality_v1"], 44_100);
+        Assert.Equal("adoption-1", mapped.Id);
+        Assert.Equal(9_800, mapped.DeliveredKbps);
+        Assert.True(mapped.IsAuto);
+        Assert.Equal(["original", "1080p-high", "720p-high"], mapped.AvailableQualities.Select(rung => rung.Label));
+        Assert.True(mapped.QualityReductionUnavailable);
+        Assert.Equal("1080p-high", mapped.ActiveQuality);
+        Assert.Equal(44_100, mapped.RequestedBandwidthEstimateKbps);
+
+        // Without the feature the server's active_quality is not a report; without a recipe the source's bitrate plays.
+        var bare = BufferingQualityPlans.From(new() { Source = new() { BitrateKbps = 63_000 }, ActiveQuality = "x" }, "a2", null, [], null);
+        Assert.Null(bare.ActiveQuality);
+        Assert.Equal(63_000, bare.DeliveredKbps);
+        Assert.Equal("auto", bare.Quality);
+        Assert.Empty(bare.AvailableQualities);
+        Assert.Null(BufferingQualityPlans.From(new(), "a3", "auto", null, null).DeliveredKbps);
+    }
+
+    [Fact]
+    public async Task TheStartsEstimateAndNegotiatedFeaturesAreKeptForItsAttempt()
+    {
+        const string capabilities = """
+            {"installation_id":"installation","state":"available","allowed":true,"protocol_versions":[3],
+             "features":["sequenced_progress_v1","buffering_quality_v1","connection_speed_v1"],"deliveries":["original_http","hls"],"revision":"1",
+             "bandwidth_probe_url":"/api/v2/playback/bandwidth-probe","bandwidth_probe_max_age_seconds":604800}
+            """;
+        var stub = new StubHandler().Enqueue(capabilities).Enqueue(System.Net.HttpStatusCode.Created, PlaybackTestSupport.Decision);
+        using var client = PlaybackTestSupport.Create(stub);
+        var start = PlaybackTestSupport.Start();
+        await client.Playback.StartAsync(start, new PlaybackTestSupport.Installation());
+        Assert.True(client.Playback.Negotiated(start.PlaybackAttemptId, ConnectionSpeed.BufferingQualityFeature));
+        Assert.False(client.Playback.Negotiated("another-attempt", ConnectionSpeed.BufferingQualityFeature));
+        Assert.Null(client.Playback.StartEstimateKbps(start.PlaybackAttemptId));
+    }
+}

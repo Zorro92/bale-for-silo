@@ -103,7 +103,10 @@ public sealed partial class PlaybackClient
             estimate = Speed.StartEstimate(DateTimeOffset.UtcNow);
         }
         // Replans of this attempt repeat what the start negotiated (ApplePlaybackV3PlanAdapter/PlaybackSessionBridge).
-        _negotiated = new(request.PlaybackAttemptId, features.Except(request.ClientFeatures, StringComparer.Ordinal).ToArray());
+        _negotiated = new(request.PlaybackAttemptId, features.Except(request.ClientFeatures, StringComparer.Ordinal).ToArray())
+        {
+            BandwidthEstimateKbps = estimate,
+        };
         return await PostAsync("/api/v2/playback/start", request with
             {
                 InstallationId = installationId,
@@ -130,6 +133,14 @@ public sealed partial class PlaybackClient
         var owner = new PlaybackJournalOwner(Server.AbsoluteUri, loginId, scope.AccountId, scope.ProfileId, InstallationId(installation));
         return new(this, journal, owner, scope, time ?? TimeProvider.System);
     }
+
+    /// <summary>The attempt's start negotiated <paramref name="feature"/> with the server (buffering_quality_v1, subrip_sidecar_v1).</summary>
+    public bool Negotiated(string playbackAttemptId, string feature) =>
+        _negotiated is { } negotiated && negotiated.PlaybackAttemptId == playbackAttemptId && negotiated.Added.Contains(feature);
+
+    /// <summary>The speed-test estimate the attempt's start sent, or null.</summary>
+    public int? StartEstimateKbps(string playbackAttemptId) =>
+        _negotiated is { } negotiated && negotiated.PlaybackAttemptId == playbackAttemptId ? negotiated.BandwidthEstimateKbps : null;
 
     public Task<PlaybackDecision> ReplanAsync(string sessionId, PlaybackReplanRequestV3 request, IPlaybackInstallationId installation,
         CancellationToken cancellationToken = default)
