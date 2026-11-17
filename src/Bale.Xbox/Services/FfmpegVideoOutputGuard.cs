@@ -5,7 +5,7 @@ using Windows.Media.MediaProperties;
 namespace Bale.Xbox.Services;
 
 /// <summary>Reject a declined tone-map stage, DV7 enhancement stream or decoder/output fallback before presentation.</summary>
-internal sealed class FfmpegVideoOutputGuard : IDisposable
+internal sealed partial class FfmpegVideoOutputGuard : IDisposable
 {
     private static readonly Guid Nv12 = new("3231564e-0000-0010-8000-00aa00389b71");
     private static readonly Guid P010 = new("30313050-0000-0010-8000-00aa00389b71");

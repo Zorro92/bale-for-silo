@@ -669,7 +669,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         return ShutdownAsync();
     }
 
-    private async void OnResuming(object sender, object e)
+    private async void OnResuming(object? sender, object e)
         => await RestoreAfterBackgroundAsync();
 
     internal async Task RestoreAfterBackgroundAsync()

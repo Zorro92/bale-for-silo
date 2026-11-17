@@ -191,7 +191,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         _loading = true;
         if (_rows.Count == 0)
         {
-            VisualStateManager.GoToState(this, "Loading", false);
+            VisualStateManager.GoToState(this, "LoadingState", false);
         }
 
         try
@@ -218,7 +218,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
                 return;
             }
 
-            VisualStateManager.GoToState(this, "Content", false);
+            VisualStateManager.GoToState(this, "ContentState", false);
             ShowMarquee((_lastCard?.Card as CardView) ?? _shownMarquee ?? _rows[0].Cards.OfType<CardView>().First(), refresh);
             if (refresh)
             {

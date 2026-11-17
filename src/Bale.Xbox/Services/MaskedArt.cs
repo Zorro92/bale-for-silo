@@ -16,7 +16,7 @@ namespace Bale.Xbox.Services;
 /// diagonal wash without leaving a visible seam. Regenerate the mask with:
 ///   magick -size 614x378 xc:white -alpha set -channel A -fx 'min(1, (i/w)/0.68) * (j/h &lt; 0.58 ? 1 : 1 - (j/h - 0.58)/0.42)' +channel PNG32:ArtMask.png
 /// </summary>
-internal sealed class MaskedArt : IDisposable, IUiResource
+internal sealed partial class MaskedArt : IDisposable, IUiResource
 {
     // TvRootHeroBackdrop.kt / TvFocusMarqueeModel.kt: first art snaps in, later swaps crossfade
     // for 500 ms with the same easing as the tint. Never hide the outgoing image before decoding.
@@ -266,7 +266,7 @@ internal sealed class MaskedArt : IDisposable, IUiResource
         UiResidency.Forget(_host, this);
     }
 
-    private sealed class ArtLayer : IDisposable
+    private sealed partial class ArtLayer : IDisposable
     {
         private readonly LoadedImageSurface _surface;
         private readonly CompositionSurfaceBrush _image;

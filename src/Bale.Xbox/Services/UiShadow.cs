@@ -10,7 +10,7 @@ using Windows.UI.Xaml.Shapes;
 namespace Bale.Xbox.Services;
 
 /// <summary>Owns shadows/visuals and borrows XAML's alpha masks; the host owns the small recipe.</summary>
-internal static class UiShadow
+internal static partial class UiShadow
 {
     internal readonly record struct Settings(Color Color, float Opacity, float Blur, float OffsetY);
     private static readonly ConditionalWeakTable<FrameworkElement, ShadowResource> Shadows = new();
@@ -25,7 +25,7 @@ internal static class UiShadow
         resource.Restore();
     }
 
-    private sealed class ShadowResource : IUiResource, IDisposable
+    private sealed partial class ShadowResource : IUiResource, IDisposable
     {
         private readonly FrameworkElement _host;
         private readonly FrameworkElement _mask;

@@ -179,7 +179,7 @@ internal static class FfmpegSource
                 throw new InvalidDataException("Console tone mapping requires d3d11va decoding.");
             return;
         }
-        var streams = source.VideoStreams.Select(video => (video.CodecName,
+        var streams = source.VideoStreams.Select(video => ((string?)video.CodecName,
             video.DecoderEngine == DecoderEngine.FFmpegSoftwareDecoder, video.DecoderEngine == DecoderEngine.SystemDecoder)).ToArray();
         if (!SoftwareDecodePolicy.VideoDecodersAllowed(route.SoftwareVideo, streams, route.VideoCodec))
             throw new InvalidDataException("The video decoder violates the local fallback policy.");

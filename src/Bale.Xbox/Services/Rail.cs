@@ -263,12 +263,12 @@ internal sealed class Rail
         return scroller;
     }
 
-    private void OnViewChanging(object sender, ScrollViewerViewChangingEventArgs e)
+    private void OnViewChanging(object? sender, ScrollViewerViewChangingEventArgs e)
     {
         if (sender is ScrollViewer scroller) _scrollState.ViewChanging(scroller.HorizontalOffset, e.FinalView.HorizontalOffset);
     }
 
-    private void OnViewChanged(object sender, ScrollViewerViewChangedEventArgs e) => _scrollState.ViewChanged(e.IsIntermediate);
+    private void OnViewChanged(object? sender, ScrollViewerViewChangedEventArgs e) => _scrollState.ViewChanged(e.IsIntermediate);
 
     private void ReleaseScroller()
     {

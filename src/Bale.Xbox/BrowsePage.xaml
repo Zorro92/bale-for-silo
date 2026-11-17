@@ -123,8 +123,8 @@
       </VisualStateGroup>
       <!-- TvHomeScreen.kt distinguishes first load, error, empty, and content; refresh keeps content visible. -->
       <VisualStateGroup x:Name="LoadState">
-        <VisualState x:Name="Content" />
-        <VisualState x:Name="Loading">
+        <VisualState x:Name="ContentState" />
+        <VisualState x:Name="LoadingState">
           <VisualState.Setters>
             <Setter Target="LoadingRing.Visibility" Value="Visible" />
             <Setter Target="LoadingRing.IsActive" Value="True" />

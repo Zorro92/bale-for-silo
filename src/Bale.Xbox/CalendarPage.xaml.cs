@@ -79,7 +79,7 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
         CalendarScroller.BringIntoViewRequested += (_, args) => args.Handled = true;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
-        Render(_week, "Loading");
+        Render(_week, "LoadingState");
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -151,7 +151,7 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
         var cached = refresh && _week.Start == _weekStart && !_needsLoad ? _week : feed.CachedWeek(_weekStart, _filter, timezone);
         _needsLoad = true;
         _loading = true;
-        Render(cached ?? CalendarWeek.Empty(_weekStart), cached is null ? "Loading" : cached.HasItems ? "Content" : "Empty");
+        Render(cached ?? CalendarWeek.Empty(_weekStart), cached is null ? "LoadingState" : cached.HasItems ? "ContentState" : "Empty");
         try
         {
             var week = await feed.LoadWeekAsync(_weekStart, _filter, timezone, cancellation.Token);
@@ -161,7 +161,7 @@ public sealed partial class CalendarPage : Page, IRestoresFocus
             }
 
             _needsLoad = false;
-            Render(week, week.HasItems ? "Content" : "Empty");
+            Render(week, week.HasItems ? "ContentState" : "Empty");
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {

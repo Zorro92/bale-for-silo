@@ -407,7 +407,7 @@ public sealed partial class PlayerPage
     /// <summary>TvPlayerScrubber.kt: 4 -> 5 (focused) -> 7 (scrubbing) track, 15 -> 21 puck.</summary>
     private void OnScrubberFocus(object sender, RoutedEventArgs e)
     {
-        var focused = FocusManager.GetFocusedElement() == ScrubberButton;
+        var focused = ReferenceEquals(FocusManager.GetFocusedElement(), ScrubberButton);
         if (!focused) _scrub.Cancel();
         ScrubberTrack.Height = _scrub.Active ? 7 : focused ? 5 : 4;
         ScrubberPuck.Width = ScrubberPuck.Height = focused ? 21 : 15;
@@ -427,7 +427,7 @@ public sealed partial class PlayerPage
 #endif
             var up = e.Key is VirtualKey.Up or VirtualKey.GamepadDPadUp or VirtualKey.GamepadLeftThumbstickUp;
             var down = e.Key is VirtualKey.Down or VirtualKey.GamepadDPadDown or VirtualKey.GamepadLeftThumbstickDown;
-            var onBar = FocusManager.GetFocusedElement() == ScrubberButton;
+            var onBar = ReferenceEquals(FocusManager.GetFocusedElement(), ScrubberButton);
             if (up && !onBar)
             {
                 e.Handled = true;
@@ -452,7 +452,7 @@ public sealed partial class PlayerPage
                 // no wrap, no jump into another row).
                 var row = new[] { SkipBackButton, PlayPauseButton, SkipForwardButton, AudioButton, SubtitlesButton, OptionsButton, CloseButton }
                     .Where(button => button.Visibility == Visibility.Visible).ToList();
-                var index = row.FindIndex(button => button == FocusManager.GetFocusedElement());
+                var index = row.FindIndex(button => ReferenceEquals(button, FocusManager.GetFocusedElement()));
                 if (index >= 0)
                 {
                     e.Handled = true;

@@ -9,7 +9,7 @@ namespace Bale.Xbox.Services;
 /// LanServerDiscovery.kt using UWP's supported AssociationEndpointService enumeration, not DnssdServiceWatcher.
 /// All mutable browser state is dispatcher-owned; generation checks reject callbacks from stopped visits/browses.
 /// </summary>
-internal sealed class LanServerDiscovery : IDisposable
+internal sealed partial class LanServerDiscovery : IDisposable
 {
     private const string Addresses = "System.Devices.IpAddress";
     private const string Port = "System.Devices.Dnssd.PortNumber";

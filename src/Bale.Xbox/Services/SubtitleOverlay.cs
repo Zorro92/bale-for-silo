@@ -23,7 +23,7 @@ internal struct BaleSubStats
 /// throws into the player, and failures log a fixed message and an HRESULT only: never subtitle text,
 /// font names or URLs.
 /// </summary>
-internal sealed unsafe class SubtitleOverlay : IDisposable
+internal sealed unsafe partial class SubtitleOverlay : IDisposable
 {
     private const uint ExpectedAbi = 3;
     private const int InvalidArgument = unchecked((int)0x80070057);

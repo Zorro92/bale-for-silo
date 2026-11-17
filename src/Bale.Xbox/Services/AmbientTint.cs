@@ -14,7 +14,7 @@ namespace Bale.Xbox.Services;
 /// TvRootHeroBackdrop): the backdrop's average colour with its luminance pulled to 0.22, laid as a
 /// diagonal wash, strongest top-right behind the art and fading toward the bottom-left.
 /// </summary>
-internal static class AmbientTint
+internal static partial class AmbientTint
 {
     private const double TargetLuminance = 0.22;
 
@@ -32,7 +32,7 @@ internal static class AmbientTint
         sample.Restore();
     }
 
-    private sealed class TintResource(FrameworkElement host, Uri? image, Action<Color?> apply) : IUiResource, IDisposable
+    private sealed partial class TintResource(FrameworkElement host, Uri? image, Action<Color?> apply) : IUiResource, IDisposable
     {
         private bool _started;
         private bool _ready;
@@ -145,7 +145,7 @@ internal static class AmbientTint
     /// TvRootHeroBackdrop.kt: the first sampled tint snaps in; later colours tween for 500 ms using
     /// TvMarqueeEasing. Composition keeps interrupted tweens continuous without touching XAML opacity.
     /// </summary>
-    internal sealed class WashAnimation : IDisposable
+    internal sealed partial class WashAnimation : IDisposable
     {
         private readonly FrameworkElement _host;
         private readonly Compositor _compositor;

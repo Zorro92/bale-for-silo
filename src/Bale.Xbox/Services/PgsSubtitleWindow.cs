@@ -8,7 +8,7 @@ namespace Bale.Xbox.Services;
 /// A worker-decoded .sup window. Commit runs on the UI thread only after mount and request identity
 /// checks. A canceled fetch/decode therefore cannot replace the track of a later seek or remount.
 /// </summary>
-internal sealed unsafe class PgsSubtitleWindow : SafeHandleZeroOrMinusOneIsInvalid
+internal sealed unsafe partial class PgsSubtitleWindow : SafeHandleZeroOrMinusOneIsInvalid
 {
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_pgs_decode(byte* data, nuint length,
         long endMs, uint videoWidth, uint videoHeight, nint* window);

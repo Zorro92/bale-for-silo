@@ -7,7 +7,7 @@ using Windows.Media.MediaProperties;
 namespace Bale.Xbox.Services;
 
 /// <summary>Passive MSS descriptor capture with post-start decoder/format refresh for stats.</summary>
-internal sealed class DebugVideoMediaType : IDisposable
+internal sealed partial class DebugVideoMediaType : IDisposable
 {
     private readonly FFmpegMediaSource _ffmpeg;
     private readonly MediaStreamSource _source;
