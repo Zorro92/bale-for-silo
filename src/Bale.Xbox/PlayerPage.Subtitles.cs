@@ -52,19 +52,19 @@ public sealed partial class PlayerPage
         if (_subtitles is not null) _ = DispatchAsync(UpdateSubtitleLayout);
     }
 
-    private void AttachSubtitleSession(MediaPlaybackSession session)
+    private void AttachSubtitleSession(PlaybackBackendSession session)
     {
         session.NaturalVideoSizeChanged += OnSubtitleVideoSizeChanged;
         session.PlaybackRateChanged += OnSubtitleRateChanged;
     }
 
-    private void DetachSubtitleSession(MediaPlaybackSession session)
+    private void DetachSubtitleSession(PlaybackBackendSession session)
     {
         session.NaturalVideoSizeChanged -= OnSubtitleVideoSizeChanged;
         session.PlaybackRateChanged -= OnSubtitleRateChanged;
     }
 
-    private void OnSubtitleVideoSizeChanged(MediaPlaybackSession sender, object args)
+    private void OnSubtitleVideoSizeChanged(PlaybackBackendSession sender, object? args)
     {
         if (_subtitles is null) return;
         _ = DispatchAsync(() =>
@@ -73,7 +73,7 @@ public sealed partial class PlayerPage
         });
     }
 
-    private void OnSubtitleRateChanged(MediaPlaybackSession sender, object args)
+    private void OnSubtitleRateChanged(PlaybackBackendSession sender, object? args)
     {
         if (_subtitles is null) return;
         _ = DispatchAsync(() =>

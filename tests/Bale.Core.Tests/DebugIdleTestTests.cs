@@ -20,7 +20,7 @@ public class DebugIdleTestTests
 
         var player = Read("PlayerPage.cs.txt");
         var debugBlock = player[player.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal)..];
-        Assert.Contains("internal MediaPlayer? DebugMediaPlayer => _attempt?.Media?.Player;", debugBlock);
+        Assert.Contains("internal MediaPlayer? DebugMediaPlayer => _attempt?.Media?.NativePlayer;", debugBlock);
 
         var script = Read("bale-debug.sh");
         Assert.Contains("^(display-pulse|smtc-playing|smtc-stopped|status)$", script);

@@ -107,7 +107,7 @@ public class DebugFfmpegPlaybackTests
         Assert.Contains("media.Item = media.FfmpegSource.CreateMediaPlaybackItem()", source);
         Assert.Contains("media.Item ??= new MediaPlaybackItem(media.Source)", source);
         Assert.Contains("player.Source = media.Item", source);
-        Assert.Contains("ffmpeg.PlaybackSession = sender.PlaybackSession", source);
+        Assert.Contains("ffmpeg.PlaybackSession = MediaPlayerBackend.NativeSession(sender.PlaybackSession)", source);
         Assert.Contains("packaged.AudioStreams.Select(stream => stream.StreamIndex)", source);
         Assert.Contains("PlaybackRoutePolicy.AudioTrackIndex(media.Route.AudioOrdinal, streams, expectedCount", source);
         // Silo packages carry at most one audio stream on every packaged delivery, HLS included.

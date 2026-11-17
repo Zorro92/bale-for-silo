@@ -727,7 +727,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
 
     internal string DebugError => ErrorText.Text;
 
-    internal MediaPlayer? DebugMediaPlayer => _attempt?.Media?.Player;
+    internal MediaPlayer? DebugMediaPlayer => _attempt?.Media?.NativePlayer;
 
     internal bool DebugFailPlayback()
     {

@@ -159,16 +159,34 @@ namespace Windows.System
 namespace Windows.Media.Playback
 {
     internal enum MediaPlaybackState { None, Opening, Buffering, Playing, Paused }
-    internal sealed class MediaPlayer(MediaPlaybackSession session)
+    // The test player: a Bale.Xbox.Services.PlaybackBackend, as MediaPlayerBackend and the engine backend are.
+    internal sealed class MediaPlayer(MediaPlaybackSession session) : Bale.Xbox.Services.PlaybackBackend
     {
-        public MediaPlaybackSession PlaybackSession { get; } = session;
-        public void Pause() => PlaybackSession.RequestState(MediaPlaybackState.Paused);
-        public void Play() => PlaybackSession.RequestState(MediaPlaybackState.Playing);
+        public override MediaPlaybackSession PlaybackSession { get; } = session;
+        public override string Name => "test";
+        public override void Pause() => PlaybackSession.RequestState(MediaPlaybackState.Paused);
+        public override void Play() => PlaybackSession.RequestState(MediaPlaybackState.Playing);
+        public override void Dispose() { }
     }
-    internal sealed class MediaPlaybackSession(double position)
+    // Lets the test session keep settable PlaybackState/CanSeek while the shared code reads the overrides.
+    internal abstract class TestSessionBase : Bale.Xbox.Services.PlaybackBackendSession
+    {
+        protected abstract MediaPlaybackState StateValue { get; }
+        protected abstract bool CanSeekValue { get; }
+        public override MediaPlaybackState PlaybackState => StateValue;
+        public override bool CanSeek => CanSeekValue;
+        public override double PlaybackRate => 1;
+        public override uint NaturalVideoWidth => 0;
+        public override uint NaturalVideoHeight => 0;
+        protected void StateChanged() => RaiseStateChanged();
+        protected void Seeked() => RaiseSeekCompleted();
+    }
+    internal sealed class MediaPlaybackSession(double position) : TestSessionBase
     {
         private TimeSpan _position = TimeSpan.FromSeconds(position);
-        public bool CanSeek { get; init; }
+        public new bool CanSeek { get; init; }
+        protected override bool CanSeekValue => CanSeek;
+        protected override MediaPlaybackState StateValue => _state;
         public TimeSpan NaturalDuration { get; init; }
         internal IReadOnlyList<(double Start, double End)> Ranges { get; init; } = [];
         // A complete VOD plan can authorize seeks without native ranges; growing HLS cannot.
@@ -178,13 +196,12 @@ namespace Windows.Media.Playback
         // Reproduce the console: a nominally in-range EVENT seek lands at the produced edge.
         internal double? LiveEdge { get; init; }
         private MediaPlaybackState _state = MediaPlaybackState.Playing;
-        public MediaPlaybackState PlaybackState
+        public new MediaPlaybackState PlaybackState
         {
             get => _state;
-            set { _state = value; PlaybackStateChanged?.Invoke(this, new object()); }
+            set { _state = value; StateChanged(); }
         }
-        public event Action<MediaPlaybackSession, object>? PlaybackStateChanged;
-        internal int StateSubscribers => PlaybackStateChanged?.GetInvocationList().Length ?? 0;
+        internal int StateSubscribers => StateSubscriberCount;
         internal Action<MediaPlaybackState>? OnStateRequested { get; set; }
         internal int StateRequests { get; private set; }
         internal void RequestState(MediaPlaybackState state)
@@ -193,8 +210,7 @@ namespace Windows.Media.Playback
             if (OnStateRequested is { } handler) handler(state);
             else PlaybackState = state;
         }
-        public event Action<MediaPlaybackSession, object>? SeekCompleted;
-        public TimeSpan Position
+        public override TimeSpan Position
         {
             get => _position;
             set
@@ -206,11 +222,9 @@ namespace Windows.Media.Playback
                     throw new InvalidOperationException("Native seek outside the proven window.");
                 }
                 _position = LiveEdge is { } edge ? TimeSpan.FromSeconds(edge) : value;
-                SeekCompleted?.Invoke(this, new object());
+                Seeked();
             }
         }
-        public IReadOnlyList<MediaTimeRange> GetSeekableRanges() => Ranges
-            .Select(range => new MediaTimeRange(TimeSpan.FromSeconds(range.Start), TimeSpan.FromSeconds(range.End))).ToArray();
+        public override IReadOnlyList<(double Start, double End)> SeekableRanges() => Ranges;
     }
-    internal sealed record MediaTimeRange(TimeSpan Start, TimeSpan End);
 }

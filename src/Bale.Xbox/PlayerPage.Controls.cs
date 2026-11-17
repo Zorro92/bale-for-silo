@@ -125,7 +125,7 @@ public sealed partial class PlayerPage
 
     private void SystemControl(MediaPlayer source, PlaybackControlRequest? request, bool? skipForward) => _ = DispatchAsync(() =>
     {
-        if (!_active || _leaving || _attempt is not { Media.Player: { } player } || !ReferenceEquals(player, source)) return;
+        if (!_active || _leaving || _attempt is not { Media.NativePlayer: { } player } || !ReferenceEquals(player, source)) return;
         if (request is { } control)
         {
             Log.Info("player: transport system=" + control);

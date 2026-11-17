@@ -33,7 +33,10 @@ public sealed partial class PlayerPage
         public bool Started { get; set; }
         public double? PlayingFrom { get; set; }
         public bool FailureQueued { get; set; }
-        public MediaPlayer? Player { get; set; }
+        /// <summary>The player this mount drives (MediaPlayer today; IMFMediaEngine next).</summary>
+        public PlaybackBackend? Player { get; set; }
+        /// <summary>The Windows MediaPlayer behind <see cref="Player"/>, for what only it has (element, command manager).</summary>
+        public MediaPlayer? NativePlayer => (Player as MediaPlayerBackend)?.Player;
         public MediaSource? Source { get; set; }
         public MediaRangeStream? Stream { get; set; }
         public IRandomAccessStream? RandomStream { get; set; }
@@ -322,20 +325,22 @@ public sealed partial class PlayerPage
             return;
         }
 #endif
-        var player = media.Player = new MediaPlayer { AutoPlay = false };
-        player.MediaOpened += OnMediaOpened;
-        player.MediaFailed += OnMediaFailed;
-        player.MediaEnded += OnMediaEnded;
-        player.PlaybackSession.PlaybackStateChanged += OnPlaybackStateChanged;
+        var backend = new MediaPlayerBackend();
+        var player = backend.Player;
+        media.Player = backend;
+        backend.MediaOpened += OnMediaOpened;
+        backend.MediaFailed += OnMediaFailed;
+        backend.MediaEnded += OnMediaEnded;
+        backend.PlaybackSession.PlaybackStateChanged += OnPlaybackStateChanged;
         AttachSystemControls(player);
-        AttachSubtitleSession(player.PlaybackSession);
+        AttachSubtitleSession(backend.PlaybackSession);
         _video ??= new MediaPlayerElement { AreTransportControlsEnabled = false, Stretch = Stretch.Uniform, IsTabStop = false };
         VideoHost.Child = _video;
         _video.SetMediaPlayer(player);
         // Subscribe before Source: native opening/decoding can fail before MediaOpened is raised.
 #if DEBUG_SERVER
-        player.PlaybackSession.BufferingStarted += OnStatsBufferingStarted;
-        player.PlaybackSession.BufferingEnded += OnStatsBufferingEnded;
+        backend.PlaybackSession.BufferingStarted += OnStatsBufferingStarted;
+        backend.PlaybackSession.BufferingEnded += OnStatsBufferingEnded;
         Log.Info($"player: frame delivery observer={attempt.FrameDeliveryMode}");
         if (attempt.FrameDeliveryMode != "off")
         {
@@ -357,7 +362,7 @@ public sealed partial class PlayerPage
         player.Source = media.Item;
     }
 
-    private void OnMediaOpened(MediaPlayer sender, object args) => _ = DispatchAsync(() =>
+    private void OnMediaOpened(PlaybackBackend sender, object? args) => _ = DispatchAsync(() =>
     {
         if (_attempt is not { Media: { } media } attempt || !ReferenceEquals(media.Player, sender)
             || !IsCurrent(attempt, media) || media.FailureQueued) return;
@@ -365,7 +370,8 @@ public sealed partial class PlayerPage
         {
             if (media.FfmpegSource is { } ffmpeg)
             {
-                ffmpeg.PlaybackSession = sender.PlaybackSession;
+                // FastSeek needs MediaPlayer's session; other backends seek without one (wrapper bale.30).
+                ffmpeg.PlaybackSession = MediaPlayerBackend.NativeSession(sender.PlaybackSession);
                 if (media.BaseLayerStreamIndex is { } baseStream)
                 {
                     var streams = ffmpeg.VideoStreams.Select(video => video.StreamIndex).ToArray();
@@ -467,13 +473,11 @@ public sealed partial class PlayerPage
                 new PlaybackAudioSelectionException(decoderUnsupported: true).Failure);
     });
 
-    private void OnMediaFailed(MediaPlayer sender, MediaPlayerFailedEventArgs args)
+    private void OnMediaFailed(PlaybackBackend sender, PlaybackBackendFailure failure)
     {
         try
         {
-            var hresult = args.ExtendedErrorCode?.HResult ?? 0;
-            var decoder = args.Error is MediaPlayerError.DecodingError or MediaPlayerError.SourceNotSupported;
-            var network = args.Error == MediaPlayerError.NetworkError;
+            var (hresult, decoder, network) = (failure.HResult, failure.Decoder, failure.Network);
             _ = DispatchAsync(() =>
             {
                 if (_attempt is not { Media: { } media } attempt || !ReferenceEquals(media.Player, sender)) return;
@@ -485,7 +489,7 @@ public sealed partial class PlayerPage
         catch (Exception ex) { LogFailure("failed callback", ex); }
     }
 
-    private void OnPlaybackStateChanged(MediaPlaybackSession sender, object args) => _ = DispatchAsync(() =>
+    private void OnPlaybackStateChanged(PlaybackBackendSession sender, object? args) => _ = DispatchAsync(() =>
     {
         if (_attempt is { Media: { Player: { } player } media } attempt
             && ReferenceEquals(player.PlaybackSession, sender) && IsCurrent(attempt, media) && !media.FailureQueued)
@@ -521,7 +525,7 @@ public sealed partial class PlayerPage
         PushSubtitleClock();
     }
 
-    private void OnMediaEnded(MediaPlayer sender, object args) => _ = DispatchAsync(() =>
+    private void OnMediaEnded(PlaybackBackend sender, object? args) => _ = DispatchAsync(() =>
     {
         if (_attempt is not { Media: { } media } attempt || !ReferenceEquals(media.Player, sender)
             || !IsCurrent(attempt, media)) return;
@@ -647,8 +651,7 @@ public sealed partial class PlayerPage
                 player.PlaybackSession.BufferingEnded -= OnStatsBufferingEnded;
 #endif
             });
-            Cleanup("pause pipeline", player.Pause);
-            Cleanup("detach source", () => player.Source = null);
+            // The element lets go first; the backend then pauses, drops its source and disposes.
             Cleanup("detach element", () => _video?.SetMediaPlayer(null));
             Cleanup("dispose player", player.Dispose);
         }

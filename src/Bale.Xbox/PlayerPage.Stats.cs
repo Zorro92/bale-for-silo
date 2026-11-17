@@ -222,10 +222,10 @@ public sealed partial class PlayerPage
         return stats;
     }
 
-    private void OnStatsBufferingStarted(MediaPlaybackSession sender, object args) => RecordBuffering(sender, starting: true);
-    private void OnStatsBufferingEnded(MediaPlaybackSession sender, object args) => RecordBuffering(sender, starting: false);
+    private void OnStatsBufferingStarted(PlaybackBackendSession sender, object? args) => RecordBuffering(sender, starting: true);
+    private void OnStatsBufferingEnded(PlaybackBackendSession sender, object? args) => RecordBuffering(sender, starting: false);
 
-    private void RecordBuffering(MediaPlaybackSession sender, bool starting)
+    private void RecordBuffering(PlaybackBackendSession sender, bool starting)
     {
         // Capture event time before dispatch so a busy UI does not inflate the buffering duration.
         var now = Stopwatch.GetTimestamp();

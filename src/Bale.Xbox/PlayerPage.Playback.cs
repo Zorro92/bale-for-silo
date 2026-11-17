@@ -1,4 +1,5 @@
 using System.Globalization;
+using Bale.Xbox.Services;
 using Windows.Media.Playback;
 
 namespace Bale.Xbox;
@@ -31,7 +32,7 @@ public sealed partial class PlayerPage
                 || request == PlaybackControlRequest.Toggle && session.PlaybackState != MediaPlaybackState.Paused;
             var target = paused ? MediaPlaybackState.Paused : MediaPlaybackState.Playing;
             var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            void OnStateChanged(MediaPlaybackSession sender, object args)
+            void OnStateChanged(PlaybackBackendSession sender, object? args)
             {
                 // Native callbacks may run off-thread; bookkeeping stays on the UI continuation.
                 try

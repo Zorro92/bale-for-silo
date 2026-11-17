@@ -85,7 +85,7 @@ public sealed partial class PlayerPage
 
             var paused = request.Pause || player.PlaybackSession.PlaybackState == MediaPlaybackState.Paused;
             var session = player.PlaybackSession;
-            var ranges = session.GetSeekableRanges().Select(range => (range.Start.TotalSeconds, range.End.TotalSeconds)).ToArray();
+            var ranges = session.SeekableRanges();
             // Windows' growing-HLS ranges describe production, not reliable seek landings.
             // Keep them for diagnostics; only a complete server window authorizes native HLS.
             // HLS through FFmpeg is forward-only: inside the server's seek window it remounts locally at
@@ -95,7 +95,7 @@ public sealed partial class PlayerPage
             var remount = forwardHls && request.CanSeekInMount(attempt.Plan!, isHls: true, canSeek: true);
             var local = !forwardHls && request.CanSeekInMount(attempt.Plan!, media.Transport.IsHls, session.CanSeek);
 #if DEBUG_SERVER
-            Log.Info($"player: seek target={request.Seconds:0.###} player={session.Position.TotalSeconds:0.###} offset={media.Transport.Timeline.TimelineOffsetSeconds:0.###} ranges={ranges.Length} action={(local ? "native" : remount ? "remount" : "reanchor")}");
+            Log.Info($"player: seek target={request.Seconds:0.###} player={session.Position.TotalSeconds:0.###} offset={media.Transport.Timeline.TimelineOffsetSeconds:0.###} ranges={ranges.Count} action={(local ? "native" : remount ? "remount" : "reanchor")}");
 #endif
             if (remount)
             {
@@ -120,7 +120,7 @@ public sealed partial class PlayerPage
             media.FrameDelivery?.SetSeeking(true);
 #endif
             var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            void OnSeekCompleted(MediaPlaybackSession sender, object args) => completed.TrySetResult(true);
+            void OnSeekCompleted(PlaybackBackendSession sender, object? args) => completed.TrySetResult(true);
             session.SeekCompleted += OnSeekCompleted;
             try
             {
