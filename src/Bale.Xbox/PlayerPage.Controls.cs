@@ -352,6 +352,41 @@ public sealed partial class PlayerPage
         UpdateControls(force: true);
     }
 
+    /// <summary>
+    /// TvPlayerTransportCluster.kt onMoveUpToScrubber / TvPlayerScrubber.kt onMoveDownToTransport: Up from
+    /// the buttons and Down from the bar move focus explicitly instead of trusting directional search.
+    /// </summary>
+    private void OnControlsKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        try
+        {
+#if DEBUG_SERVER
+            Log.Info($"player: controls key={(int)e.Key} focus={(FocusManager.GetFocusedElement() as FrameworkElement)?.Name}");
+#endif
+            var up = e.Key is VirtualKey.Up or VirtualKey.GamepadDPadUp or VirtualKey.GamepadLeftThumbstickUp;
+            var down = e.Key is VirtualKey.Down or VirtualKey.GamepadDPadDown or VirtualKey.GamepadLeftThumbstickDown;
+            var onBar = FocusManager.GetFocusedElement() == ScrubberButton;
+            if (up && !onBar)
+            {
+                e.Handled = true;
+                ScrubberButton.Focus(FocusState.Keyboard);
+            }
+            else if (up && onBar) e.Handled = true;
+            else if (down && onBar)
+            {
+                e.Handled = true;
+                if (_scrub.Active)
+                {
+                    _scrub.Cancel();
+                    UpdateControls(force: true);
+                }
+                PlayPauseButton.Focus(FocusState.Keyboard);
+            }
+            else if (onBar) OnScrubberKeyDown(sender, e);
+        }
+        catch (Exception ex) { LogFailure("controls input", ex); }
+    }
+
     /// <summary>Left/Right move the preview 10 s; Down cancels it and moves to the buttons.</summary>
     private void OnScrubberKeyDown(object sender, KeyRoutedEventArgs e)
     {

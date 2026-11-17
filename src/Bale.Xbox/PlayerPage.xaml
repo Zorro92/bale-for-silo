@@ -51,18 +51,21 @@
     </Grid>
     <!-- On-screen controls (TvPlayerScreen.kt TvPlayerIdleOverlay, TvPlayerScrubber.kt, TvPlayerTransportCluster.kt).
          Shown by the D-pad or by A pausing, hidden after 5 s without input (PlaybackControlsState). -->
-    <Grid x:Name="TransportControls" Visibility="Collapsed">
+    <Grid x:Name="TransportControls" Visibility="Collapsed" PreviewKeyDown="OnControlsKeyDown">
       <Border Style="{StaticResource SkylinePlayerTransportScrimStyle}" IsHitTestVisible="False" />
       <StackPanel Style="{StaticResource SkylinePlayerControlsStyle}">
         <TextBlock x:Name="ControlsEyebrow" Style="{StaticResource SkylinePlayerEyebrowStyle}" />
         <TextBlock x:Name="ControlsTitle" Style="{StaticResource SkylinePlayerTitleStyle}" />
         <Button x:Name="ScrubberButton" Style="{StaticResource SkylinePlayerScrubberStyle}" AutomationProperties.Name="Timeline"
-                PreviewKeyDown="OnScrubberKeyDown" Click="OnScrubberClick" GotFocus="OnScrubberFocus" LostFocus="OnScrubberFocus">
-          <Grid x:Name="ScrubberTrack" Height="4" VerticalAlignment="Center" SizeChanged="OnScrubberSizeChanged">
-            <Border CornerRadius="3.5" Background="#38FFFFFF" />
-            <Border x:Name="ScrubberPlayed" CornerRadius="3.5" Background="#FFEDEDED" HorizontalAlignment="Left" Width="0" />
-            <!-- TvPlayerScrubber.kt: chapter starts are 2 px gaps in the bar. -->
-            <Canvas x:Name="ScrubberChapters" IsHitTestVisible="False" />
+                Click="OnScrubberClick" GotFocus="OnScrubberFocus" LostFocus="OnScrubberFocus">
+          <Grid Height="28">
+            <Grid x:Name="ScrubberTrack" Height="4" VerticalAlignment="Center" SizeChanged="OnScrubberSizeChanged">
+              <Border CornerRadius="3.5" Background="#38FFFFFF" />
+              <Border x:Name="ScrubberPlayed" CornerRadius="3.5" Background="#FFEDEDED" HorizontalAlignment="Left" Width="0" />
+              <!-- TvPlayerScrubber.kt: chapter starts are 2 px gaps in the bar. -->
+              <Canvas x:Name="ScrubberChapters" IsHitTestVisible="False" />
+            </Grid>
+            <!-- Outside the 4 px track so it is not clipped to the track's height. -->
             <Ellipse x:Name="ScrubberPuck" Width="15" Height="15" Fill="White" HorizontalAlignment="Left" VerticalAlignment="Center">
               <Ellipse.RenderTransform><TranslateTransform x:Name="ScrubberPuckShift" /></Ellipse.RenderTransform>
             </Ellipse>

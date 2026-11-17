@@ -37,6 +37,7 @@ public class PlaybackRemoteKeysTests
     {
         Assert.Equal(PlaybackKeyAction.None, PlaybackRemoteKeys.Action(PlaybackRemoteKeys.GamepadDPadLeft, true, true, cleanPlayback: false));
         Assert.Equal(PlaybackKeyAction.None, PlaybackRemoteKeys.Action(PlaybackRemoteKeys.GamepadA, true, true, cleanPlayback: false));
+        Assert.Equal(PlaybackKeyAction.None, PlaybackRemoteKeys.Action(PlaybackRemoteKeys.Space, true, true, cleanPlayback: false));
         Assert.Equal(PlaybackKeyAction.None, PlaybackRemoteKeys.Action(PlaybackRemoteKeys.Right, false, false, cleanPlayback: false));
         Assert.Equal(PlaybackKeyAction.SkipForward, PlaybackRemoteKeys.Action(PlaybackRemoteKeys.GamepadRightTrigger, true, true, cleanPlayback: false));
         Assert.Equal(PlaybackKeyAction.NextChapter, PlaybackRemoteKeys.Action(PlaybackRemoteKeys.GamepadRightShoulder, true, true, cleanPlayback: false));
