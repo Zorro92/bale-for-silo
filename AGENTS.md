@@ -278,7 +278,9 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
 - **Owner's Dolby Vision rule (2026-11-17).** The Dolby Vision layer is proprietary: it is passed
   through untouched or dropped, never processed or tone-mapped by Bale (like Atmos/TrueHD audio).
   Dolby Vision display: pass Dolby Vision through (Windows' own source and DV path, not the FFmpeg
-  base-layer route). HDR-only display: play only the HDR base layer / fallback. SDR display: tone-map
+  base-layer route). On Xbox that is player-led/low-latency DV: the console runs Dolby's licensed
+  processing and needs a TV whose HDMI mode reports `IsDolbyVisionLowLatencySupported`, requested
+  with `HdmiDisplayHdrOption.DolbyVisionLowLatency`; Xbox does not map DV for non-DV TVs. HDR-only display: play only the HDR base layer / fallback. SDR display: tone-map
   from the HDR base layer, never the Dolby Vision layer. No usable base layer (profile 5) on a non-DV
   display: server. Dolby Vision output is declared only once passthrough is implemented and verified
   on a Dolby Vision display; until then the line above stands.
