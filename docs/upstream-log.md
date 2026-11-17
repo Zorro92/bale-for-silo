@@ -16,10 +16,10 @@ part Bale hasn't built yet; check when building it), **deviation** (Bale differs
 
 | Repo | Commit | Reviewed |
 |---|---|---|
-| silo-android | `f66681ed81e1` | 2026-11-16 |
-| silo-apple | `dce56e3c5f0a` | 2026-11-16 |
-| silo-server | `92ee051878c2` | 2026-11-16 |
-| silo-roku | `e09a5e0a3efe` | 2026-11-16 |
+| silo-android | `0867eacb14b5` | 2026-11-17 |
+| silo-apple | `6eea7cf74eef` | 2026-11-17 |
+| silo-server | `217ff25abc5b` | 2026-11-17 |
+| silo-roku | `d240f47964d9` | 2026-11-17 |
 
 The first review (2026-11-10) started from the commit each local clone was made at.
 
@@ -79,6 +79,12 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
 - **Not doing: box sets.** The Silo developer said box sets reached the server by mistake and
   reversed the decision (2026-11-10), so Bale doesn't build them even though the clients shipped
   them (Android `67e6e224a`, Apple `08c28c8e`). Ignore later box-set commits unless that changes.
+- **Rows of collections:** show Home and library sections of type `collection_posters` from
+  their `collections` (collection poster cards in a Skyline rail, no Explore all, never the hero
+  row; focused card's backdrop in the hero; server collection opens in its library, personal one
+  its own page; "by Name" for another profile's). Needs the contract bump to server
+  `217ff25abc5b` (also drops the notification-reason fields Bale doesn't use). Apple `6eea7cf7`,
+  Roku `8183af8`/`d240f47`, server `4a0ab33b`/`217ff25a`; Android TV not yet.
 - **Smaller:** device name in sign-in (`bd6ade492`), hero logo grace 700 ms (`e57fbf3f6`),
   Calendar DIGITAL/PHYSICAL badges (`64ae5f08c`, Apple `a82ff603`), Search clear button
   (`548e3cb77`), remote Stop key (`969c0a812`), unplayable subtitle rows (`461240c6d`),
@@ -99,6 +105,45 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   `85d1c166`), Home rows for a quality-capped profile (server `0b579aa6`).
 
 ## Reviews
+
+### 2026-11-17
+
+One cross-client feature: Home and library rows of collections (server, Apple TV, Roku). Android
+TV has not taken it yet.
+
+#### silo-android (`f66681ed81e1..0867eacb14b5`, 1 commit, 1 none)
+
+No TV or shared changes (the phone bottom bar collapses on scroll).
+
+#### silo-apple (`dce56e3c5f0a..6eea7cf74eef`, 1 commit, 0 none)
+
+- `6eea7cf7` act: a section of type `collection_posters` brings its cards in `collections`
+  (no `items`); Apple TV draws them as collection poster cards in a Skyline row with title-row
+  focus, the marquee previews the focused collection and fills the hero with its backdrop
+  (thumbhash first, neighbours warmed); a card that can't be opened is dropped. A server
+  collection opens in its library (keeping a library page's Movies/Shows filter), a personal one
+  opens its own page; another profile's shared collection reads "by Name". No See all / Explore
+  all, never the hero row. Bale drops the row: it has no items (BrowseFeed).
+
+#### silo-server (`92ee051878c2..217ff25abc5b`, 11 commits, 7 none)
+
+- `4a0ab33b`, `217ff25a` regenerate and check: section type `collection_posters` with optional
+  `collections` (`SectionCollectionCard`: id, title, poster, collage flag, `item_count`,
+  `library_id`, `creator_profile_id`, and `backdrop_url`/`backdrop_thumbhash` on server
+  collections), `collection_count`, and `getHomeCapabilities.collection_rows`. A client that
+  doesn't show collections leaves the row out, as Bale does today. act: see Apple `6eea7cf7`.
+- `03489137` regenerate and check (breaking): `notify_favorites`, `notify_watchlist`,
+  `notify_continue_watching` and the `reason` filter of `GET /api/v2/notifications/series` are
+  removed; only the Next Up episode and watchlist arrivals notify. Bale uses none of them.
+- `1bdea6eb` regenerate and check: accounts and profiles may create scoped API keys (admin
+  switch, off by default; no playback scope). Nothing for Bale.
+
+#### silo-roku (`e09a5e0a3efe..d240f47964d9`, 2 commits, 0 none)
+
+- `8183af8`, `d240f47` act: the same rows of collections (Apple `6eea7cf7`): Collections-grid
+  cards, every card the server sends with no Explore all, a card opens the collection page (on a
+  library page, that library's view), never the hero; the focused card's backdrop fills the
+  hero. An empty collection opened from a row says Back, not Back to collections.
 
 ### 2026-11-16
 
