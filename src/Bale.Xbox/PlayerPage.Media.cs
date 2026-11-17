@@ -274,6 +274,10 @@ public sealed partial class PlayerPage
                 // auto-extended estimate would stop it (MediaPlayer follows the extensions).
                 if (DebugPresentEngineSwitch.Seconds > 0 && media.Progressive is not null)
                     config.General.AutoExtendDuration = false;
+                // The engine player gives FFmpegInteropX no MediaPlayer session; wrapper bale.30's opt-in
+                // FastSeek lands on the keyframe without one (reported via SetActualStartPosition).
+                if (DebugPresentEngineSwitch.Seconds > 0)
+                    config.FFmpegOptions["bale_fast_seek_without_session"] = "1";
 #endif
                 media.FfmpegSource = media.ForwardInput is { } forward
                     ? await FFmpegMediaSource.CreateFromInputStreamAsync(forward, config).AsTask()
