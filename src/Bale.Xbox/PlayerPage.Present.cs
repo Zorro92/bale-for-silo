@@ -118,6 +118,12 @@ public sealed partial class PlayerPage
         media.VideoOutputGuard?.Dispose();
         media.VideoOutputGuard = null;
         _engineRoute = RouteText(media);
+        // Fork note (2026-11-17): FFmpegInteropX FastSeek needs FFmpegMediaSource.PlaybackSession to be a
+        // MediaPlayer session; the engine player has none, so every seek is a full seek. For software
+        // AV1 that is the 4K seek that ran zero-copy out of GPU memory (0x8007000E): unverified here.
+        if (media.FfmpegSource is not null && media.Route.SoftwareVideo
+            && string.Equals(media.Route.VideoCodec, "av1", StringComparison.OrdinalIgnoreCase))
+            _engineRoute += " · AV1 software: full seeks only, 4K seeks unverified";
         var host = new DebugEnginePresent();
         var report = $"Engine player (route {_engineRoute}; {mime}; start {media.StartPosition:0.###}s)\n";
         try

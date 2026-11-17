@@ -2055,3 +2055,15 @@ chain handle until the output rectangle is set, so the probe calls `UpdateVideoS
 
 The earlier 4K DV stalls came from handing Windows' own reader the raw file (its DV path on an SDR
 TV); Bale's routing never does that on a non-DV display. Rendering mode is clean on both routes.
+
+**Debug engine player (`present-engine <n> player`, 0.1.593).** The routed source plays in a
+`bale_gpu` engine session with sound, Bale's key map and a live stats pane. Verified on 4K DV 8.1
+(tone-map route): opens in 0.09 s at the saved position, 24–25 frames shown per second, 0 dropped;
+pause/play, ±10/30 s skips and debug-server seek work; Back leaves cleanly. HLS through FFmpeg plays
+but stops at the end of its coverage window (~28 s): the engine player has no reanchor. Windows' HLS
+via the `MediaSource` wrapper has no `IMFGetService`; the adaptive source itself is tried first.
+No subtitles, no progress reports. **Fork note:** FFmpegInteropX FastSeek works only when
+`FFmpegMediaSource.PlaybackSession` is a MediaPlayer session (FFmpegMediaSource.cpp ~l.3184); the
+engine player sets none, so every seek is a full seek. For software AV1 that is the 4K seek that ran
+zero-copy out of GPU memory (`0x8007000E`); check 4K AV1 seeks in the engine player before using it
+for AV1.
