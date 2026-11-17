@@ -46,7 +46,9 @@ public sealed partial class PlayerPage
             if (!_nextLoadStarted)
             {
                 _nextLoadStarted = true;
+                ApplyAutoPlay(attempt.Client.Settings.AutoPlayNext.Value);
                 _ = LoadNextEpisodeAsync(attempt);
+                _ = RefreshAutoPlayAsync(attempt);
             }
             if (_nextEpisode is null) return;
             var position = SourcePosition(attempt);
@@ -93,6 +95,26 @@ public sealed partial class PlayerPage
         UpdateUpNextCountdown();
         UpNextCard.Visibility = Visibility.Visible;
         FocusRetry.Until(UpNextPlayButton, () => !UpNextVisible || UpNextPlayButton.Focus(FocusState.Keyboard));
+    }
+
+    /// <summary>playback.auto_play_next as the server resolves it now (another device may have changed it).</summary>
+    private async Task RefreshAutoPlayAsync(Attempt attempt)
+    {
+        try
+        {
+            var setting = await attempt.Client.Settings.RefreshAsync();
+            if (_active && !_leaving && ReferenceEquals(_attempt, attempt)) ApplyAutoPlay(setting.Value);
+        }
+        catch (Exception ex) { LogFailure("auto-play read", ex); }
+    }
+
+    /// <summary>Off: the card shows without a countdown and waits (TvPlayerViewModel.kt autoCountdown).</summary>
+    private void ApplyAutoPlay(bool value)
+    {
+        var position = _attempt is { } attempt ? SourcePosition(attempt) : 0;
+        _upNext.SetAutoPlay(value, Environment.TickCount64, position, _duration);
+        if (UpNextVisible) UpdateUpNextCountdown();
+        UpdateAutoPlayRow();
     }
 
     private void UpdateUpNextCountdown() =>

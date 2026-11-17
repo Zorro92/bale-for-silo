@@ -28,9 +28,30 @@ public class PlaybackOptionsInfoTests
         };
         var converted = PlaybackOptionsInfo.StreamRows(transcode, null, null);
         Assert.Equal("H.264", converted.Single(row => row.Label == "Video").Value);
-        Assert.Equal("AAC · Stereo", converted.Single(row => row.Label == "Audio").Value);
+        Assert.Equal("Dolby Digital Plus · 5.1 → AAC · Stereo", converted.Single(row => row.Label == "Audio").Value);
         Assert.Equal("Off", converted.Single(row => row.Label == "Subtitles").Value);
         Assert.DoesNotContain(converted, row => row.Label == "Chapter");
+    }
+
+    [Fact]
+    public void AudioComesFromThePlayingTrackWhenThePlanLeavesItOut()
+    {
+        var plan = new PlaybackPlan { Delivery = "original_http", Source = new PlaybackSource { VideoCodec = "h264" } };
+        Assert.DoesNotContain(PlaybackOptionsInfo.StreamRows(plan, null, null), row => row.Label == "Audio");
+        var commentary = new AudioTrack { Codec = "aac", Channels = 2 };
+        Assert.Equal("AAC · Stereo", PlaybackOptionsInfo.StreamRows(plan, null, null, commentary).Single(row => row.Label == "Audio").Value);
+
+        var remux = new PlaybackPlan
+        {
+            Delivery = "server_remux_hls",
+            Source = new PlaybackSource { VideoCodec = "hevc" },
+            EffectiveRecipe = new EffectiveRecipeV3 { AudioCodec = "eac3", AudioChannels = 6 },
+        };
+        var truehd = new AudioTrack { Codec = "truehd", Channels = 8 };
+        Assert.Equal("Dolby TrueHD · 7.1 → Dolby Digital Plus · 5.1",
+            PlaybackOptionsInfo.StreamRows(remux, null, null, truehd).Single(row => row.Label == "Audio").Value);
+        var eac3 = new AudioTrack { Codec = "eac3", Channels = 6 };
+        Assert.Equal("Dolby Digital Plus · 5.1", PlaybackOptionsInfo.StreamRows(remux, null, null, eac3).Single(row => row.Label == "Audio").Value);
     }
 
     [Fact]

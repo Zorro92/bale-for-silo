@@ -21,18 +21,39 @@ public static class PlaybackOptionsInfo
         return badges;
     }
 
-    public static IReadOnlyList<PlaybackInfoRow> StreamRows(PlaybackPlan plan, string? subtitles, string? chapter)
+    /// <param name="playingAudio">
+    /// The catalog track that plays (the plan's selected audio index in the file's audio_tracks). A plan for a
+    /// non-default track can leave its source audio fields out, so the track fills them in.
+    /// </param>
+    public static IReadOnlyList<PlaybackInfoRow> StreamRows(PlaybackPlan plan, string? subtitles, string? chapter, AudioTrack? playingAudio = null)
     {
         var rows = new List<PlaybackInfoRow>();
         if (PlaybackStats.FromPlan(plan).Delivery is { } delivery) rows.Add(new("Playback", delivery));
         if (VideoCodecName(plan.EffectiveRecipe?.VideoCodec ?? plan.Source?.VideoCodec) is { } video) rows.Add(new("Video", video));
-        var audioCodec = AudioCodecName(plan.EffectiveRecipe?.AudioCodec ?? plan.Source?.AudioCodec);
-        var channels = ChannelName(plan.EffectiveRecipe?.AudioChannels ?? plan.Source?.AudioChannels);
-        if (audioCodec is not null || channels is not null)
-            rows.Add(new("Audio", string.Join(" · ", new[] { audioCodec, channels }.Where(part => part is not null))));
+        if (AudioValue(plan, playingAudio) is { } audio) rows.Add(new("Audio", audio));
         rows.Add(new("Subtitles", string.IsNullOrWhiteSpace(subtitles) ? "Off" : subtitles));
         if (!string.IsNullOrWhiteSpace(chapter)) rows.Add(new("Chapter", chapter));
         return rows;
+    }
+
+    /// <summary>
+    /// What the audio is: "Dolby Digital · 5.1"; when the server converts it, "Dolby TrueHD · 7.1 → AAC · Stereo",
+    /// so a remux that re-encodes only the audio still shows.
+    /// </summary>
+    private static string? AudioValue(PlaybackPlan plan, AudioTrack? playingAudio)
+    {
+        var source = Describe(
+            AudioCodecName(playingAudio?.Codec) ?? AudioCodecName(plan.Source?.AudioCodec),
+            ChannelName(playingAudio?.Channels is > 0 ? playingAudio.Channels : plan.Source?.AudioChannels));
+        var recipe = plan.EffectiveRecipe;
+        if (AudioCodecName(recipe?.AudioCodec) is not { } outputCodec) return source;
+        var output = Describe(outputCodec, ChannelName(recipe!.AudioChannels));
+        var sourceCodec = AudioCodecName(playingAudio?.Codec) ?? AudioCodecName(plan.Source?.AudioCodec);
+        if (source is null || sourceCodec == outputCodec) return sourceCodec == outputCodec ? source ?? output : output;
+        return source + " → " + output;
+
+        static string? Describe(string? codec, string? channels) => codec is null && channels is null
+            ? null : string.Join(" · ", new[] { codec, channels }.Where(part => part is not null));
     }
 
     /// <summary>The chapter the position is in: its title, else "Chapter N"; null with no chapters.</summary>

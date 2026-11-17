@@ -72,6 +72,32 @@ public class PlaybackUpNextTests
         Assert.Equal(UpNextEnd.Leave, dismissed.OnEnded(0));
     }
 
+    [Fact]
+    public void TogglingAutoPlayStopsOrStartsTheCountdownOnAShowingCard()
+    {
+        var credits = new PlaybackUpNextState();
+        Assert.True(credits.OnPosition(559, 561, 600, 560, false));
+        Assert.Equal(39, credits.Countdown);
+        credits.SetAutoPlay(false, 0, 570, 600);
+        Assert.Null(credits.Countdown);
+        Assert.False(credits.Tick(0, 599, 600));
+        credits.SetAutoPlay(true, 0, 580, 600);
+        Assert.Equal(20, credits.Countdown);
+
+        var ended = new PlaybackUpNextState(autoPlay: false);
+        Assert.Equal(UpNextEnd.Show, ended.OnEnded(1_000));
+        Assert.Null(ended.Countdown);
+        ended.SetAutoPlay(true, 5_000, 600, 600);
+        Assert.Equal(PlaybackUpNext.CountdownSeconds, ended.Countdown);
+        Assert.False(ended.Tick(14_000, 600, 600));
+        Assert.True(ended.Tick(15_000, 600, 600));
+
+        var hidden = new PlaybackUpNextState(autoPlay: false);
+        hidden.SetAutoPlay(true, 0, 0, 600);
+        Assert.True(hidden.AutoPlay);
+        Assert.Null(hidden.Countdown);
+    }
+
     private static EpisodeCard Episode(long season, long episode) =>
         new($"e{season}-{episode}", season, episode, $"Episode {episode}", null, null, null, null, null, false);
 

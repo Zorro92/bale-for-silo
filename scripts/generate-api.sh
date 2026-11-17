@@ -78,6 +78,9 @@ dotnet kiota generate \
   --include-path '/api/v2/requests/{id}/cancel' \
   --include-path '/api/v2/requests/{id}' \
   --include-path '/api/v2/capabilities/ratings' \
+  --include-path '/api/v2/settings/contract' \
+  --include-path '/api/v2/settings/values/effective' \
+  --include-path '/api/v2/settings/values/{key}' \
   --include-path '/api/v2/requests/follows/{media_type}/{tmdb_id}'
 
 echo "Generated client from Silo-Server/silo-server@$SILO_REF"

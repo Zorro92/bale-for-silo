@@ -35,7 +35,8 @@ public sealed partial class PlayerPage
             var chapters = PlayingChapters();
             ChaptersTab.Visibility = chapters.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             FillChapters(chapters);
-            ShowOptionsTab(info: true);
+            UpdateAutoPlayRow();
+            ShowOptionsTab(OptionsTab.Info);
             OptionsPanel.Visibility = Visibility.Visible;
             FocusRetry.Until(InfoTab, () => !OptionsOpen || InfoTab.Focus(FocusState.Keyboard));
         }
@@ -79,7 +80,7 @@ public sealed partial class PlayerPage
         OptionsStreamRows.Children.Clear();
         var position = _attempt is { } attempt ? SourcePosition(attempt) : 0;
         var subtitles = TrackOptions(PlaybackSelectorKind.Subtitles).FirstOrDefault(option => option.IsSelected)?.Title;
-        foreach (var row in PlaybackOptionsInfo.StreamRows(plan, subtitles, PlaybackOptionsInfo.CurrentChapter(PlayingChapters(), position)))
+        foreach (var row in PlaybackOptionsInfo.StreamRows(plan, subtitles, PlaybackOptionsInfo.CurrentChapter(PlayingChapters(), position), PlayingAudioTrack()))
         {
             var grid = new Grid { ColumnSpacing = 12 };
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
@@ -94,6 +95,14 @@ public sealed partial class PlayerPage
             grid.Children.Add(value);
             OptionsStreamRows.Children.Add(grid);
         }
+    }
+
+    /// <summary>The playing file's catalog audio track at the plan's selected index (an ordinal in audio_tracks).</summary>
+    private Bale.Core.Api.Models.AudioTrack? PlayingAudioTrack()
+    {
+        if (PlayingSelection(out var detail) is not { AudioIndex: { } index } selection || detail is null) return null;
+        var tracks = detail.Versions.FirstOrDefault(version => version.FileId == selection.FileId)?.AudioTracks;
+        return tracks is not null && index >= 0 && index < tracks.Count ? tracks[index] : null;
     }
 
     private static SolidColorBrush Paper() => new(Color.FromArgb(0xFF, 0xED, 0xED, 0xED));
@@ -125,13 +134,34 @@ public sealed partial class PlayerPage
         }
     }
 
-    private void OnOptionsTabFocus(object sender, RoutedEventArgs e) => ShowOptionsTab(info: ReferenceEquals(sender, InfoTab));
+    private enum OptionsTab { Info, Video, Chapters }
 
-    private void ShowOptionsTab(bool info)
+    private void OnOptionsTabFocus(object sender, RoutedEventArgs e) => ShowOptionsTab(
+        ReferenceEquals(sender, VideoTab) ? OptionsTab.Video : ReferenceEquals(sender, ChaptersTab) ? OptionsTab.Chapters : OptionsTab.Info);
+
+    private void ShowOptionsTab(OptionsTab tab)
     {
-        InfoTab.IsChecked = info;
-        ChaptersTab.IsChecked = !info;
-        InfoPane.Visibility = info ? Visibility.Visible : Visibility.Collapsed;
-        ChaptersPane.Visibility = info ? Visibility.Collapsed : Visibility.Visible;
+        InfoTab.IsChecked = tab == OptionsTab.Info;
+        VideoTab.IsChecked = tab == OptionsTab.Video;
+        ChaptersTab.IsChecked = tab == OptionsTab.Chapters;
+        InfoPane.Visibility = tab == OptionsTab.Info ? Visibility.Visible : Visibility.Collapsed;
+        VideoPane.Visibility = tab == OptionsTab.Video ? Visibility.Visible : Visibility.Collapsed;
+        ChaptersPane.Visibility = tab == OptionsTab.Chapters ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void UpdateAutoPlayRow() => AutoPlayRowValue.Text = _upNext.AutoPlay ? "On" : "Off";
+
+    /// <summary>TvPlayerHud.kt "Auto-play next": flips the setting for this device and the card on screen.</summary>
+    private async void OnAutoPlayRowClick(object sender, RoutedEventArgs e)
+    {
+        if (!_active || _leaving || _attempt is not { } attempt) return;
+        var value = !_upNext.AutoPlay;
+        ApplyAutoPlay(value);
+        try { await attempt.Client.Settings.SetAutoPlayNextAsync(value); }
+        catch (Exception ex)
+        {
+            LogFailure("auto-play write", ex);
+            if (_active && ReferenceEquals(_attempt, attempt)) ApplyAutoPlay(!value);
+        }
     }
 }

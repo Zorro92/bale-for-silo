@@ -52,6 +52,31 @@ public sealed class PlaybackUpNextState(bool autoPlay = true)
     private bool _dismissed;
     private long _endedAt;
 
+    /// <summary>playback.auto_play_next: off shows the card without a countdown.</summary>
+    public bool AutoPlay { get; private set; } = autoPlay;
+
+    /// <summary>
+    /// The setting changed (or its first read arrived). Off stops a running countdown; on starts one on a
+    /// card already showing (the 10 s end countdown from now, or the credits countdown to the end).
+    /// </summary>
+    public void SetAutoPlay(bool value, long nowMs, double position, double? duration)
+    {
+        if (AutoPlay == value) return;
+        AutoPlay = value;
+        if (!value)
+        {
+            Countdown = null;
+            return;
+        }
+        if (!Visible || _dismissed) return;
+        if (VideoEnded)
+        {
+            _endedAt = nowMs;
+            Countdown = PlaybackUpNext.CountdownSeconds;
+        }
+        else if (duration is { } end) Countdown = (int)Math.Ceiling(Math.Max(0, end - position));
+    }
+
     public bool Visible { get; private set; }
 
     /// <summary>Raised at the end of the stream (wall clock) rather than at the credits.</summary>
@@ -67,7 +92,7 @@ public sealed class PlaybackUpNextState(bool autoPlay = true)
         if (!(previous < start && current >= start)) return false;
         _handled = true;
         Visible = true;
-        Countdown = autoPlay && duration is { } end ? (int)Math.Ceiling(Math.Max(0, end - current)) : null;
+        Countdown = AutoPlay && duration is { } end ? (int)Math.Ceiling(Math.Max(0, end - current)) : null;
         return true;
     }
 
@@ -83,7 +108,7 @@ public sealed class PlaybackUpNextState(bool autoPlay = true)
         Visible = true;
         VideoEnded = true;
         _endedAt = nowMs;
-        Countdown = autoPlay ? PlaybackUpNext.CountdownSeconds : null;
+        Countdown = AutoPlay ? PlaybackUpNext.CountdownSeconds : null;
         return UpNextEnd.Show;
     }
 

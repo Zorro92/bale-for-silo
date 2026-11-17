@@ -194,12 +194,13 @@
       </StackPanel>
     </Grid>
     <!-- Options (TvPlayerHud.kt): a top-centre card over the picture, tabs that follow focus. Info shows what is
-         playing and how; Chapters lists the file's chapters and seeks. Back closes it. -->
+         playing and how; Video holds the automation rows (auto-play); Chapters lists the file's chapters and seeks. Back closes it. -->
     <Border x:Name="OptionsPanel" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,26,0,0"
             Width="736" Padding="20,16" CornerRadius="16" Background="#F4131417" BorderBrush="#1AFFFFFF" BorderThickness="1">
       <StackPanel Spacing="14">
         <StackPanel x:Name="OptionsTabs" Orientation="Horizontal" Spacing="8">
           <ToggleButton x:Name="InfoTab" Content="Info" Style="{StaticResource SkylineChipStyle}" GotFocus="OnOptionsTabFocus" Click="OnOptionsTabFocus" />
+          <ToggleButton x:Name="VideoTab" Content="Video" Style="{StaticResource SkylineChipStyle}" GotFocus="OnOptionsTabFocus" Click="OnOptionsTabFocus" />
           <ToggleButton x:Name="ChaptersTab" Content="Chapters" Style="{StaticResource SkylineChipStyle}" GotFocus="OnOptionsTabFocus" Click="OnOptionsTabFocus" />
         </StackPanel>
         <Grid x:Name="InfoPane" ColumnSpacing="26">
@@ -220,6 +221,16 @@
             <StackPanel x:Name="OptionsStreamRows" Spacing="6" />
           </StackPanel>
         </Grid>
+        <StackPanel x:Name="VideoPane" Visibility="Collapsed" Spacing="6">
+          <TextBlock Text="AUTOMATION" Style="{StaticResource SkylinePlayerEyebrowStyle}" />
+          <Button x:Name="AutoPlayRow" Style="{StaticResource SkylinePanelRowStyle}" Click="OnAutoPlayRowClick" AutomationProperties.Name="Auto-play next">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+              <TextBlock Text="Auto-play next" VerticalAlignment="Center" />
+              <TextBlock x:Name="AutoPlayRowValue" Grid.Column="1" Opacity="0.6" VerticalAlignment="Center" />
+            </Grid>
+          </Button>
+        </StackPanel>
         <ScrollViewer x:Name="ChaptersPane" Visibility="Collapsed" MaxHeight="250" VerticalScrollBarVisibility="Hidden" IsTabStop="False">
           <StackPanel x:Name="ChapterRows" Spacing="2" />
         </ScrollViewer>

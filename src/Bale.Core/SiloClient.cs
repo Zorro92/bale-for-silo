@@ -42,6 +42,7 @@ public sealed class SiloClient : IDisposable
         Detail = new DetailFeed(_connection.Api, Browse);
         People = new People.PersonFeed(_connection.Api, Browse);
         Requests = new Requests.RequestsFeed(_connection.Api, _time);
+        Settings = new Settings.PlaybackSettingsFeed(_connection.Api);
         Playback = new Playback.PlaybackClient(_connection.Api, _connection.RequestAdapter, _connection.Http, server, CapturePlaybackScope,
             CaptureHeadersAsync);
         Profiles = new Profiles.ProfileRepository(_connection.Api, () => Interlocked.Read(ref _accountGeneration), id =>
@@ -65,6 +66,9 @@ public sealed class SiloClient : IDisposable
     public People.PersonFeed People { get; }
 
     public Requests.RequestsFeed Requests { get; }
+
+    /// <summary>Playback settings (auto-play) for the active profile on this device.</summary>
+    public Settings.PlaybackSettingsFeed Settings { get; }
 
     public Playback.PlaybackClient Playback { get; }
 
@@ -104,6 +108,7 @@ public sealed class SiloClient : IDisposable
         Interlocked.Increment(ref _accountGeneration);
         Profiles.Management.End();
         Requests.Reset();
+        Settings.Reset();
         RefreshToken = refreshToken;
         AccessToken = accessToken;
         _accessTokenExpiresAt = accessTokenExpiresAt ?? _time.GetUtcNow();
@@ -119,6 +124,7 @@ public sealed class SiloClient : IDisposable
         Interlocked.Increment(ref _accountGeneration);
         Profiles.Management.End();
         Requests.Reset();
+        Settings.Reset();
         AccessToken = tokens.AccessToken;
         RefreshToken = tokens.RefreshToken;
         _accessTokenExpiresAt = ExpiresAt(tokens.ExpiresIn);
@@ -175,6 +181,7 @@ public sealed class SiloClient : IDisposable
     {
         Interlocked.Increment(ref _playbackProfileGeneration);
         Requests.Reset();
+        Settings.Reset();
         ProfileId = profileId;
         ProfileToken = null;
     }
@@ -202,6 +209,7 @@ public sealed class SiloClient : IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         Interlocked.Increment(ref _playbackProfileGeneration);
         Requests.Reset();
+        Settings.Reset();
         ProfileId = profileId;
         ProfileToken = proof;
         return true;
@@ -233,6 +241,7 @@ public sealed class SiloClient : IDisposable
         Interlocked.Increment(ref _accountGeneration);
         Profiles.Management.End();
         Requests.Reset();
+        Settings.Reset();
         AccessToken = null;
         RefreshToken = null;
         _accessTokenExpiresAt = null;

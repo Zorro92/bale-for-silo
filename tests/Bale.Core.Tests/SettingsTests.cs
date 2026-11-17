@@ -37,6 +37,14 @@ public class SettingsTests
     }
 
     [Fact]
+    public void BaleShowsPlaybackForAutoPlayButNotSubtitles()
+    {
+        Assert.Equal([SettingsCategory.General, SettingsCategory.Playback, SettingsCategory.Server], SettingsCategories.Visible(SettingsSupport.Bale));
+        Assert.Equal(SettingsCategory.Playback, SettingsCategories.Resolve(SettingsCategory.Playback, SettingsSupport.Bale));
+        Assert.Equal(SettingsCategory.General, SettingsCategories.Resolve(SettingsCategory.Subtitles, SettingsSupport.Bale));
+    }
+
+    [Fact]
     public void AccountPayloadUsesProfileNameAndAdministratorRole()
     {
         var account = new Account { Username = "Household", Role = Account_role.Admin };

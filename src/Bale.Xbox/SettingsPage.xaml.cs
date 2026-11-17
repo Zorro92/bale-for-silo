@@ -24,6 +24,8 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     private bool _active;
     private bool _backPressed;
     private bool _signingOut;
+    private bool _autoPlayBusy;
+    private CancellationTokenSource? _autoPlayRead;
 
     public SettingsPage()
     {
@@ -46,10 +48,13 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             _category = SettingsCategory.General;
             _returnTarget = GeneralCategory;
         }
-        var visible = SettingsCategories.Visible(new SettingsSupport());
+        var visible = SettingsCategories.Visible(SettingsSupport.Bale);
         GeneralCategory.Visibility = visible.Contains(SettingsCategory.General) ? Visibility.Visible : Visibility.Collapsed;
+        PlaybackCategory.Visibility = visible.Contains(SettingsCategory.Playback) ? Visibility.Visible : Visibility.Collapsed;
         ServerCategory.Visibility = visible.Contains(SettingsCategory.Server) ? Visibility.Visible : Visibility.Collapsed;
-        SelectCategory(SettingsCategories.Resolve(_category, new SettingsSupport()));
+        SelectCategory(SettingsCategories.Resolve(_category, SettingsSupport.Bale));
+        PlaybackError.Visibility = Visibility.Collapsed;
+        UpdateAutoPlay();
         UpdateIdentity();
         UpdatePolicy();
         var version = DeviceIdentity.Current().ClientVersion;
@@ -60,6 +65,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             ServerName.Text = AppSettings.GetServerBranding(client.Server).ServerName ?? client.Server.Host;
             ServerAddress.Text = client.Server.GetLeftPart(UriPartial.Path);
             _ = ReadAccountAsync(client, _profileId);
+            _ = ReadAutoPlayAsync(client, _profileId);
         }
     }
 
@@ -67,6 +73,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     {
         _active = false;
         _accountRead?.Cancel();
+        _autoPlayRead?.Cancel();
         DetachFocusBoundary();
         ProfilePicker.Visibility = Visibility.Collapsed;
         SignOutPrompt.Hide();
@@ -78,6 +85,8 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         if (!_active) return;
         ServerCategory.ApplyTemplate();
         VisualStateManager.GoToState(ServerCategory, "ServerIcon", false);
+        PlaybackCategory.ApplyTemplate();
+        VisualStateManager.GoToState(PlaybackCategory, "PlaybackIcon", false);
         DetachFocusBoundary();
         _focusRoot = Window.Current.Content;
         if (_focusRoot is not null) _focusRoot.GettingFocus += OnGettingFocus;
@@ -125,27 +134,51 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     {
         _category = category;
         var general = category == SettingsCategory.General;
+        var playback = category == SettingsCategory.Playback;
+        var server = category == SettingsCategory.Server;
         GeneralCategory.IsChecked = general;
-        ServerCategory.IsChecked = !general;
+        PlaybackCategory.IsChecked = playback;
+        ServerCategory.IsChecked = server;
         GeneralPane.Visibility = GeneralHeaderIcon.Visibility = general ? Visibility.Visible : Visibility.Collapsed;
-        ServerPane.Visibility = ServerHeaderIcon.Visibility = general ? Visibility.Collapsed : Visibility.Visible;
-        PaneTitle.Text = general ? "General" : "Server";
-        PaneBlurb.Text = general ? "App-level options for this Xbox." : "The Silo server this Xbox is connected to.";
+        PlaybackPane.Visibility = PlaybackHeaderIcon.Visibility = playback ? Visibility.Visible : Visibility.Collapsed;
+        ServerPane.Visibility = ServerHeaderIcon.Visibility = server ? Visibility.Visible : Visibility.Collapsed;
+        (PaneTitle.Text, PaneBlurb.Text) = category switch
+        {
+            SettingsCategory.Playback => ("Playback", "Episode behavior for this Xbox."),
+            SettingsCategory.Server => ("Server", "The Silo server this Xbox is connected to."),
+            _ => ("General", "App-level options for this Xbox."),
+        };
         DetailScroller.ChangeView(null, 0, null, disableAnimation: true);
     }
 
-    private ToggleButton SelectedCategory => _category == SettingsCategory.General ? GeneralCategory : ServerCategory;
-    private Control[] DetailActions => _category == SettingsCategory.General ? [ProfileSelectionButton, HomeSectionsButton] : [ChangeServerButton];
+    private ToggleButton SelectedCategory => _category switch
+    {
+        SettingsCategory.Playback => PlaybackCategory,
+        SettingsCategory.Server => ServerCategory,
+        _ => GeneralCategory,
+    };
+
+    private Control[] DetailActions => _category switch
+    {
+        SettingsCategory.Playback => AutoPlayProfileButton.Visibility == Visibility.Visible ? [AutoPlayButton, AutoPlayProfileButton] : [AutoPlayButton],
+        SettingsCategory.Server => [ChangeServerButton],
+        _ => [ProfileSelectionButton, HomeSectionsButton],
+    };
+
+    private SettingsCategory CategoryOf(object sender) =>
+        ReferenceEquals(sender, ServerCategory) ? SettingsCategory.Server
+        : ReferenceEquals(sender, PlaybackCategory) ? SettingsCategory.Playback
+        : SettingsCategory.General;
 
     private void OnCategoryFocus(object sender, RoutedEventArgs e)
     {
-        SelectCategory(ReferenceEquals(sender, ServerCategory) ? SettingsCategory.Server : SettingsCategory.General);
+        SelectCategory(CategoryOf(sender));
         _returnTarget = SelectedCategory;
     }
 
     private void OnCategoryClick(object sender, RoutedEventArgs e)
     {
-        SelectCategory(ReferenceEquals(sender, ServerCategory) ? SettingsCategory.Server : SettingsCategory.General);
+        SelectCategory(CategoryOf(sender));
         FocusTarget(DetailActions[0]);
     }
 
@@ -198,7 +231,8 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         }
         if (SettingsInput.IsWithin(focused, CategoryRail))
         {
-            Control[] rail = [AccountButton, GeneralCategory, ServerCategory, SignOutButton];
+            Control[] rail = new Control[] { AccountButton, GeneralCategory, PlaybackCategory, ServerCategory, SignOutButton }
+                .Where(item => item.Visibility == Visibility.Visible).ToArray();
             if (vertical != 0)
             {
                 var index = Array.FindIndex(rail, item => SettingsInput.IsWithin(focused, item));
@@ -207,7 +241,8 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             }
             else if (horizontal != 0)
             {
-                if (horizontal > 0 && (SettingsInput.IsWithin(focused, GeneralCategory) || SettingsInput.IsWithin(focused, ServerCategory))) FocusTarget(DetailActions[0]);
+                if (horizontal > 0 && (SettingsInput.IsWithin(focused, GeneralCategory) || SettingsInput.IsWithin(focused, PlaybackCategory)
+                    || SettingsInput.IsWithin(focused, ServerCategory))) FocusTarget(DetailActions[0]);
                 e.Handled = true;
             }
         }
@@ -306,10 +341,81 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         ClosePicker();
     }
 
+    private async Task ReadAutoPlayAsync(SiloClient client, string? profileId)
+    {
+        _autoPlayRead?.Cancel();
+        using var read = new CancellationTokenSource();
+        _autoPlayRead = read;
+        try
+        {
+            await client.Settings.RefreshAsync(read.Token);
+            if (OwnsSettings && !read.IsCancellationRequested && client.ProfileId == profileId) UpdateAutoPlay();
+        }
+        catch (OperationCanceledException) when (read.IsCancellationRequested) { }
+        catch (Exception error) { Log.Error("Settings auto-play read", error); }
+        finally { if (ReferenceEquals(_autoPlayRead, read)) _autoPlayRead = null; }
+    }
+
+    private void UpdateAutoPlay()
+    {
+        var setting = _client?.Settings.AutoPlayNext ?? new BooleanSetting(true);
+        AutoPlayValue.Text = setting.Value ? "On" : "Off";
+        AutoPlayDescription.Text = (setting.Value
+            ? "When an episode ends, the next one plays after a short countdown."
+            : "When an episode ends, Up Next waits for you to choose the next episode.")
+            + (setting.DeviceOverride ? " This Xbox uses its own setting." : string.Empty);
+        var profileShown = setting.DeviceOverride;
+        if (!profileShown && SettingsInput.IsWithin(FocusManager.GetFocusedElement() as DependencyObject, AutoPlayProfileButton))
+            FocusTarget(AutoPlayButton);
+        AutoPlayProfileButton.Visibility = profileShown ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>TvSettingsScreen.kt: the switch stores a value for this device (scope profile_device).</summary>
+    private async void OnAutoPlayClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings || _autoPlayBusy || _client is not { } client) return;
+        _returnTarget = AutoPlayButton;
+        await ChangeAutoPlayAsync(client, () => client.Settings.SetAutoPlayNextAsync(!client.Settings.AutoPlayNext.Value));
+    }
+
+    /// <summary>"Use profile setting": delete this device's value so the profile's applies again.</summary>
+    private async void OnAutoPlayProfileClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings || _autoPlayBusy || _client is not { } client) return;
+        FocusTarget(AutoPlayButton);
+        await ChangeAutoPlayAsync(client, () => client.Settings.UseProfileSettingAsync());
+    }
+
+    private async Task ChangeAutoPlayAsync(SiloClient client, Func<Task<BooleanSetting>> change)
+    {
+        _autoPlayBusy = true;
+        _autoPlayRead?.Cancel();
+        var profileId = _profileId;
+        try
+        {
+            await change();
+            if (OwnsSettings && client.ProfileId == profileId) PlaybackError.Visibility = Visibility.Collapsed;
+        }
+        catch (Exception error)
+        {
+            Log.Error("Settings auto-play write", error);
+            if (OwnsSettings)
+            {
+                PlaybackError.Text = "Bale couldn’t save Auto-Play on the server. Try again.";
+                PlaybackError.Visibility = Visibility.Visible;
+            }
+        }
+        finally
+        {
+            _autoPlayBusy = false;
+            if (OwnsSettings && client.ProfileId == profileId) UpdateAutoPlay();
+        }
+    }
+
     private void OnSignOutFocus(object sender, RoutedEventArgs e)
     {
         // TvSettingsScreen.kt hides the category selection while the bottom rail action owns focus.
-        GeneralCategory.IsChecked = ServerCategory.IsChecked = false;
+        GeneralCategory.IsChecked = PlaybackCategory.IsChecked = ServerCategory.IsChecked = false;
     }
 
     private void OnSignOutClick(object sender, RoutedEventArgs e)
