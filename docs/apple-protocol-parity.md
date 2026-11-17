@@ -34,7 +34,7 @@ player or product decision first.
 
 | Field | Apple | Bale before | Decision | Why |
 |---|---|---|---|---|
-| `learned_limit` (`ignore` / `clear`) | Sent per buffering mode and Restore quality | No | Owner | Needs the Settings buffering-quality mode and the learned-limit Reset row (docs/player-plan.md, "Connection speed test": not yet done). |
+| `learned_limit` (`ignore` / `clear`) | Sent per buffering mode and Restore quality | No | **Implemented** (`ignore`) | Starts and replans send `ignore` while `playback.buffering_quality_mode` is Never and the request names `buffering_quality_v1` (`PlaybackProtocol.LearnedLimit`); Settings has the mode and the learned-limit Reset row (docs/player-plan.md, "Connection speed test"). `clear` rides only on Restore quality, which needs the player's step-down (below); a replan built with `LearnedLimit = clear` already sends it. |
 | `bandwidth_estimate_source: observed_rebuffer`, `observed_throughput_kbps` | Sent on a rebuffer step-down | No | Owner | Needs a rebuffer detector and quality step-down in the player. |
 | `plan_summary` route events (`playback_plan_summary_v1`) | Sent when a plan stops playing | No | Owner | Needs played/stall statistics from the player; listed as not yet done in docs/player-plan.md. |
 | Failure classification `subtitle_embedded_failed` | Sent when an embedded subtitle cannot be mounted | No | Owner | Would stop the server offering native embedded selection for the attempt. Belongs to the player page's failure path. |

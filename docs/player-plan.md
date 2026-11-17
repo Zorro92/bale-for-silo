@@ -1984,8 +1984,27 @@ uses `SocketsHttpHandler` (`NetworkTuning`) with the OS default buffer. The remo
 about 2.5 s (1 → 4 → 10 → 24 → 51 → 186 Mbps per 500 ms window), so a quick test can read low on a
 cold connection. It reports a lower bound when it reaches the target.
 
-Not yet done: the Settings Connection speed row with Test speed, budget line and learned-limit
-Reset; `plan_summary` route events with `throughput_kbps`.
+**Settings (2026-11-17, Windows build and console check pending).** Settings → Playback copies
+`TvSettingsScreen.kt` / `TvConnectionSettings.kt` (Core: `ConnectionSettings`, `BufferingQualityModes`):
+- **Streaming**: *Lower quality when buffering* (`playback.buffering_quality_mode`, shown only when the
+  server defines the key; a pick stores a profile_device value, "Use profile setting" deletes it) with
+  its footer, then "Limited to 44 Mbps after buffering on Oct 17" with **Reset**
+  (`DELETE /playback/connection/learned-limit`, then a reread; hidden in Never; focus moves up first).
+- **Connection** (only with `connection_speed_v1`): *Connection speed* with **Test speed** / *Testing…*,
+  the speed line (latest probe, else the playback sample as a lower bound, else "Not measured yet"),
+  the Test speed answer (429 countdown, stop playback, failed, not saved), and "Auto plays videos up
+  to N without converting them" (hidden on a metered link, and in Never while a limit exists). A
+  metered link shows the note instead of the speed, Test speed and budget.
+- Starts and replans send `learned_limit: ignore` in Never mode whenever they name
+  `buffering_quality_v1` (`PlaybackProtocol.LearnedLimit`). The mode is read on sign-in, on return to
+  the foreground and when Settings opens; a start never waits for it.
+- Skipped from the official Streaming group (Bale has no honored setting behind them): Resolution,
+  Maximum Bitrate, Audio Language, Dolby Vision / Profile 7 fallback, Match Frame Rate, Force HDR
+  Passthrough, True Black Bars and the streaming footer that explains them.
+
+Not yet done: Ask first / Automatically have no effect yet, since Bale has no rebuffer detector or step-down
+(`observed_rebuffer`, Restore quality's `learned_limit: clear`), so Bale never learns a limit itself;
+`plan_summary` route events with `throughput_kbps`. Both need the player page.
 
 ## Debug: IMFMediaEngine rendering mode (windowless swap chain)
 
