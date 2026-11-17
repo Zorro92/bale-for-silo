@@ -48,7 +48,7 @@ use windows::core::{BOOL, BSTR, GUID, HRESULT, IUnknown, Interface, OutRef, Ref,
 
 use crate::engine_target::{Sampler, Target, centred_crop, format_name};
 
-const MF_VERSION: u32 = 0x0002_0070; // MF_SDK_VERSION 2 << 16 | MF_API_VERSION 0x70
+pub(crate) const MF_VERSION: u32 = 0x0002_0070; // MF_SDK_VERSION 2 << 16 | MF_API_VERSION 0x70
 const OPEN_TIMEOUT: Duration = Duration::from_secs(20);
 /// Gap between HDR readbacks: often enough to catch a highlight, rare enough not to disturb playback.
 const READBACK_INTERVAL: Duration = Duration::from_secs(1);
@@ -76,7 +76,7 @@ unsafe extern "system" {
 }
 
 /// State the engine's callback writes from its own threads.
-struct Shared {
+pub(crate) struct Shared {
     clock: Instant,
     can_play: AtomicBool,
     error: AtomicBool,
@@ -85,6 +85,28 @@ struct Shared {
     events: Mutex<Vec<(u32, u128)>>,
     /// Object types the extension was asked for (source input only).
     extension_requests: Mutex<Vec<i32>>,
+}
+
+impl Shared {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self {
+            clock: Instant::now(),
+            can_play: AtomicBool::new(false),
+            error: AtomicBool::new(false),
+            ended: AtomicBool::new(false),
+            first_frame: AtomicBool::new(false),
+            events: Mutex::new(Vec::new()),
+            extension_requests: Mutex::new(Vec::new()),
+        })
+    }
+
+    pub(crate) fn ended(&self) -> bool {
+        self.ended.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn failed(&self) -> bool {
+        self.error.load(Ordering::Acquire)
+    }
 }
 
 /// What the probe plays.
@@ -181,9 +203,9 @@ impl IMFMediaEngineNotify_Impl for Notify_Impl {
 }
 
 /// A failed step: its name and HRESULT, nothing else.
-struct Step(&'static str, HRESULT);
+pub(crate) struct Step(pub &'static str, pub HRESULT);
 
-trait StepResult<T> {
+pub(crate) trait StepResult<T> {
     fn step(self, name: &'static str) -> Result<T, Step>;
 }
 
@@ -414,15 +436,7 @@ pub fn run(
         target.format_name(),
         target.dxgi_format()
     );
-    let shared = Arc::new(Shared {
-        clock: Instant::now(),
-        can_play: AtomicBool::new(false),
-        error: AtomicBool::new(false),
-        ended: AtomicBool::new(false),
-        first_frame: AtomicBool::new(false),
-        events: Mutex::new(Vec::new()),
-        extension_requests: Mutex::new(Vec::new()),
-    });
+    let shared = Shared::new();
     // SAFETY: plain MF startup; paired with MFShutdown below only on success.
     if let Err(error) = unsafe { MFStartup(MF_VERSION, MFSTARTUP_FULL) } {
         let _ = writeln!(
@@ -485,18 +499,29 @@ pub fn run(
     report
 }
 
+/// An engine that reached canplay with video.
+pub(crate) struct Opened {
+    pub engine: IMFMediaEngine,
+    pub engine_ex: IMFMediaEngineEx,
+    device: ID3D11Device,
+    attributes: IMFAttributes,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Creates the engine on our own hardware D3D11 device for `input`, waits for canplay and reports
+/// each step. `None`: no canplay or no video (already reported). Shared by the probe and the session.
 #[allow(clippy::too_many_arguments)]
-unsafe fn play(
+pub(crate) unsafe fn open_engine(
     input: &Input,
-    seconds: u32,
     target: Target,
-    present: Option<&Present>,
-    frame_rate: f64,
+    windowless: bool,
+    muted: bool,
     shared: &Arc<Shared>,
     engine_slot: &mut Option<IMFMediaEngine>,
     device_lifetime: &mut Option<Arc<crate::lifecycle::Device>>,
     report: &mut String,
-) -> Result<(), Step> {
+) -> Result<Option<Opened>, Step> {
     unsafe {
         let mut device: Option<ID3D11Device> = None;
         let mut level = D3D_FEATURE_LEVEL::default();
@@ -629,14 +654,14 @@ unsafe fn play(
         let engine_ex: IMFMediaEngineEx = engine.cast().step("QI IMFMediaEngineEx")?;
         report.push_str("Engine: created\n");
 
-        if present.is_some() {
+        if windowless {
             // Before SetSource, as Chromium's MediaFoundationRenderer does.
             engine_ex
                 .EnableWindowlessSwapchainMode(true)
                 .step("EnableWindowlessSwapchainMode")?;
             report.push_str("Rendering mode: windowless swap chain enabled\n");
         }
-        engine.SetMuted(true).step("SetMuted")?;
+        engine.SetMuted(muted).step("SetMuted")?;
         if let Input::Stream { stream, mime } = input {
             let byte_stream =
                 MFCreateMFByteStreamOnStreamEx(stream).step("MFCreateMFByteStreamOnStreamEx")?;
@@ -679,7 +704,7 @@ unsafe fn play(
             open.elapsed().as_millis()
         );
         if !can_play {
-            return Ok(());
+            return Ok(None);
         }
 
         let (mut width, mut height) = (0u32, 0u32);
@@ -695,8 +720,53 @@ unsafe fn play(
             trim(duration, 3)
         );
         if !has_video || width == 0 || height == 0 {
-            return Ok(());
+            return Ok(None);
         }
+        Ok(Some(Opened {
+            engine,
+            engine_ex,
+            device,
+            attributes,
+            width,
+            height,
+        }))
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn play(
+    input: &Input,
+    seconds: u32,
+    target: Target,
+    present: Option<&Present>,
+    frame_rate: f64,
+    shared: &Arc<Shared>,
+    engine_slot: &mut Option<IMFMediaEngine>,
+    device_lifetime: &mut Option<Arc<crate::lifecycle::Device>>,
+    report: &mut String,
+) -> Result<(), Step> {
+    unsafe {
+        let Some(Opened {
+            engine,
+            engine_ex,
+            device,
+            attributes,
+            width,
+            height,
+        }) = open_engine(
+            input,
+            target,
+            present.is_some(),
+            true,
+            shared,
+            engine_slot,
+            device_lifetime,
+            report,
+        )?
+        else {
+            return Ok(());
+        };
+        let format = DXGI_FORMAT(target.dxgi_format() as i32);
         if let Some(present) = present {
             return present_loop(
                 &engine, &engine_ex, present, seconds, frame_rate, shared, report,
@@ -901,14 +971,13 @@ unsafe fn play(
     }
 }
 
-/// Rendering mode: hand the engine's swap chain to the panel, size the video to it, play.
-unsafe fn present_loop(
+/// Rendering mode: sets the output rectangle, waits for the engine's swap chain handle (starting
+/// playback after a second if a caller media source needs that), hands it to `present.attach` and
+/// sizes the video to the panel. Shared by the probe and the session.
+pub(crate) unsafe fn attach_present(
     engine: &IMFMediaEngine,
     engine_ex: &IMFMediaEngineEx,
     present: &Present,
-    seconds: u32,
-    frame_rate: f64,
-    shared: &Arc<Shared>,
     report: &mut String,
 ) -> Result<(), Step> {
     unsafe {
@@ -968,6 +1037,34 @@ unsafe fn present_loop(
         engine_ex
             .UpdateVideoStream(None, Some(&destination), Some(&border))
             .step("UpdateVideoStream")?;
+        Ok(())
+    }
+}
+
+/// Rendering mode: hand the engine's swap chain to the panel, size the video to it, play.
+unsafe fn present_loop(
+    engine: &IMFMediaEngine,
+    engine_ex: &IMFMediaEngineEx,
+    present: &Present,
+    seconds: u32,
+    frame_rate: f64,
+    shared: &Arc<Shared>,
+    report: &mut String,
+) -> Result<(), Step> {
+    unsafe {
+        attach_present(engine, engine_ex, present, report)?;
+        let rect = |width: u32, height: u32| RECT {
+            left: 0,
+            top: 0,
+            right: width as i32,
+            bottom: height as i32,
+        };
+        let border = MFARGB {
+            rgbBlue: 0,
+            rgbGreen: 0,
+            rgbRed: 0,
+            rgbAlpha: 255,
+        };
         let _ = writeln!(
             report,
             "Destination: {}x{} panel pixels",
@@ -1081,7 +1178,7 @@ unsafe fn present_loop(
 }
 
 /// One engine counter (frames rendered, dropped, ...) as an integer, if it is one.
-unsafe fn stat_count(engine_ex: &IMFMediaEngineEx, id: i32) -> Option<u64> {
+pub(crate) unsafe fn stat_count(engine_ex: &IMFMediaEngineEx, id: i32) -> Option<u64> {
     // SAFETY: GetStatistics fills a PROPVARIANT; numeric variants own nothing.
     let value = unsafe { engine_ex.GetStatistics(MF_MEDIA_ENGINE_STATISTIC(id)) }.ok()?;
     // SAFETY: the union member read matches the variant type.
@@ -1135,7 +1232,7 @@ fn append_expected(report: &mut String, label: &str, counted: u64, advanced: f64
     );
 }
 
-unsafe fn append_statistics(report: &mut String, engine_ex: &IMFMediaEngineEx) {
+pub(crate) unsafe fn append_statistics(report: &mut String, engine_ex: &IMFMediaEngineEx) {
     report.push_str("Engine statistics:");
     for (id, name) in STATISTICS {
         // SAFETY: GetStatistics fills a PROPVARIANT; numeric variants own nothing, so no PropVariantClear.
@@ -1158,7 +1255,7 @@ unsafe fn append_statistics(report: &mut String, engine_ex: &IMFMediaEngineEx) {
     report.push('\n');
 }
 
-unsafe fn append_error(report: &mut String, engine: &IMFMediaEngine) {
+pub(crate) unsafe fn append_error(report: &mut String, engine: &IMFMediaEngine) {
     // SAFETY: the engine is alive; GetError returns an owned IMFMediaError or fails.
     if let Ok(error) = unsafe { engine.GetError() } {
         let code = unsafe { error.GetErrorCode() };
@@ -1175,7 +1272,7 @@ unsafe fn append_error(report: &mut String, engine: &IMFMediaEngine) {
     }
 }
 
-fn append_events(report: &mut String, shared: &Shared) {
+pub(crate) fn append_events(report: &mut String, shared: &Shared) {
     let events = shared
         .events
         .lock()
@@ -1217,7 +1314,7 @@ fn append_events(report: &mut String, shared: &Shared) {
 }
 
 /// Process kernel+user CPU time in seconds.
-fn process_cpu() -> Option<f64> {
+pub(crate) fn process_cpu() -> Option<f64> {
     let (mut creation, mut exit, mut kernel, mut user) = (
         FILETIME::default(),
         FILETIME::default(),

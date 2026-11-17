@@ -26,6 +26,9 @@ public sealed partial class PlayerPage
     /// <summary>App's key hook: true when the player acted on or swallowed the key.</summary>
     internal bool HandlePlayerKey(VirtualKey key, bool keyDown, bool firstDown)
     {
+#if DEBUG_SERVER
+        if (_enginePlayer is not null) return HandleEngineKey(key, keyDown, firstDown);
+#endif
         try
         {
             if (!_active || _leaving) return false;

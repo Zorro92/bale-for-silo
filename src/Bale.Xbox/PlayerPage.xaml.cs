@@ -577,6 +577,13 @@ public sealed partial class PlayerPage : Page, IBackHandler
     /// <summary>Back closes a scrub preview, then the controls, then leaves; Stop and Close leave at once.</summary>
     private bool OnBack(bool closeControls)
     {
+#if DEBUG_SERVER
+        if (_enginePlayer is not null)
+        {
+            _ = CloseEnginePlayerAsync(leave: true);
+            return true;
+        }
+#endif
         if (closeControls && BackClosesControls()) return true;
         if (!_leaving) _ = StopAndGoBackAsync();
         return true;

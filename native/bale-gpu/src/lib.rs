@@ -13,6 +13,8 @@ mod d3d12;
 pub mod d3d12_repack;
 #[cfg(windows)]
 mod engine;
+#[cfg(windows)]
+mod engine_session;
 pub mod engine_target;
 #[cfg(windows)]
 mod frames;
@@ -43,7 +45,7 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 /// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched DLL.
-pub const ABI_VERSION: u32 = 10;
+pub const ABI_VERSION: u32 = 11;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_gpu_abi_version() -> u32 {
@@ -298,6 +300,216 @@ pub unsafe extern "C" fn bale_gpu_engine_present(
     // SAFETY: the caller guarantees `report_capacity` writable bytes.
     unsafe { write_report(&text, report, report_capacity) }
 }
+
+/// Opens a debug engine **session** in rendering mode (see `engine_session`): `url`, or `source` (a COM
+/// media source when `mime_len` is 0, else an `IRandomAccessStream` of type `mime`), attached through
+/// `attach(context, handle)` like [`bale_gpu_engine_present`], seeked to `start` and playing unless
+/// `paused`. On success `*out_session` is the session (close it with
+/// [`bale_gpu_engine_session_close`]); the open report is written either way.
+///
+/// # Safety
+/// As [`bale_gpu_engine_present`]; `out_session` must be writable. `context` need only be valid for this call.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn bale_gpu_engine_session_open(
+    url: *const u16,
+    url_len: u32,
+    source: *mut core::ffi::c_void,
+    mime: *const u16,
+    mime_len: u32,
+    width: u32,
+    height: u32,
+    attach: Option<unsafe extern "C" fn(*mut core::ffi::c_void, isize) -> i32>,
+    context: *mut core::ffi::c_void,
+    start: f64,
+    paused: u32,
+    muted: u32,
+    out_session: *mut *mut core::ffi::c_void,
+    report: *mut u8,
+    report_capacity: u32,
+) -> u32 {
+    let Some(attach) = attach else { return 0 };
+    if out_session.is_null() || report.is_null() || width == 0 || height == 0 {
+        return 0;
+    }
+    // SAFETY: the caller guarantees a writable out pointer.
+    unsafe { *out_session = core::ptr::null_mut() };
+    let present = engine::Present {
+        attach,
+        context,
+        width,
+        height,
+        size: None,
+    };
+    let input = if source.is_null() {
+        if url.is_null() || url_len == 0 {
+            return 0;
+        }
+        // SAFETY: the caller guarantees `url_len` readable code units.
+        engine::Input::Url(unsafe { std::slice::from_raw_parts(url, url_len as usize) })
+    } else {
+        // SAFETY: the caller guarantees a live COM pointer; clone takes our own reference.
+        let Some(object) = (unsafe {
+            <windows::core::IUnknown as windows::core::Interface>::from_raw_borrowed(&source)
+        })
+        .cloned() else {
+            return 0;
+        };
+        if mime.is_null() || mime_len == 0 {
+            engine::Input::Source(object)
+        } else {
+            engine::Input::Stream {
+                stream: object,
+                // SAFETY: the caller guarantees `mime_len` readable code units.
+                mime: unsafe { std::slice::from_raw_parts(mime, mime_len as usize) },
+            }
+        }
+    };
+    let (session, text) = engine_session::Session::open(
+        input,
+        engine_target::Target::Bgra,
+        &present,
+        if start.is_finite() {
+            start.max(0.0)
+        } else {
+            0.0
+        },
+        paused != 0,
+        muted != 0,
+    );
+    if let Some(session) = session {
+        let handle = Box::new(engine_session::SessionHandle(Some(session)));
+        // SAFETY: the caller guarantees a writable out pointer.
+        unsafe { *out_session = Box::into_raw(handle).cast() };
+    }
+    // SAFETY: the caller guarantees `report_capacity` writable bytes.
+    unsafe { write_report(&text, report, report_capacity) }
+}
+
+/// The session behind a pointer from [`bale_gpu_engine_session_open`].
+///
+/// # Safety
+/// `session` must be null or a live, unclosed session pointer.
+#[cfg(windows)]
+unsafe fn session_ref<'a>(session: *mut core::ffi::c_void) -> Option<&'a engine_session::Session> {
+    // SAFETY: forwarded caller guarantee.
+    unsafe { session.cast::<engine_session::SessionHandle>().as_ref() }?
+        .0
+        .as_deref()
+}
+
+/// Play. Returns an HRESULT.
+///
+/// # Safety
+/// `session` must be null or a live, unclosed session pointer.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_gpu_engine_session_play(session: *mut core::ffi::c_void) -> i32 {
+    // SAFETY: forwarded caller guarantee.
+    unsafe { session_ref(session) }.map_or(E_POINTER, |s| s.play().0)
+}
+
+/// Pause. Returns an HRESULT.
+///
+/// # Safety
+/// `session` must be null or a live, unclosed session pointer.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_gpu_engine_session_pause(session: *mut core::ffi::c_void) -> i32 {
+    // SAFETY: forwarded caller guarantee.
+    unsafe { session_ref(session) }.map_or(E_POINTER, |s| s.pause().0)
+}
+
+/// Seek to `seconds` (engine time). Returns an HRESULT.
+///
+/// # Safety
+/// `session` must be null or a live, unclosed session pointer.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_gpu_engine_session_seek(
+    session: *mut core::ffi::c_void,
+    seconds: f64,
+) -> i32 {
+    // SAFETY: forwarded caller guarantee.
+    unsafe { session_ref(session) }.map_or(E_POINTER, |s| s.seek(seconds).0)
+}
+
+/// Volume 0..1 and mute. Returns an HRESULT.
+///
+/// # Safety
+/// `session` must be null or a live, unclosed session pointer.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_gpu_engine_session_volume(
+    session: *mut core::ffi::c_void,
+    volume: f64,
+    muted: u32,
+) -> i32 {
+    // SAFETY: forwarded caller guarantee.
+    unsafe { session_ref(session) }.map_or(E_POINTER, |s| s.set_volume(volume, muted != 0).0)
+}
+
+/// New panel size in raw pixels. Returns an HRESULT.
+///
+/// # Safety
+/// `session` must be null or a live, unclosed session pointer.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_gpu_engine_session_resize(
+    session: *mut core::ffi::c_void,
+    width: u32,
+    height: u32,
+) -> i32 {
+    // SAFETY: forwarded caller guarantee.
+    unsafe { session_ref(session) }.map_or(E_POINTER, |s| s.resize(width, height).0)
+}
+
+/// Live state and statistics into `*out`. Returns an HRESULT.
+///
+/// # Safety
+/// `session` as [`session_ref`]; `out` must be a writable `SessionState`.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_gpu_engine_session_state(
+    session: *mut core::ffi::c_void,
+    out: *mut engine_session::SessionState,
+) -> i32 {
+    // SAFETY: the caller guarantees a writable struct (or null).
+    let Some(out) = (unsafe { out.as_mut() }) else {
+        return E_POINTER;
+    };
+    // SAFETY: forwarded caller guarantee.
+    unsafe { session_ref(session) }.map_or(E_POINTER, |s| s.state(out).0)
+}
+
+/// Closes and frees the session (engine shutdown, then MF), writing the closing report.
+///
+/// # Safety
+/// `session` must be a live session pointer, never used again; `report` as for the other reports.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_gpu_engine_session_close(
+    session: *mut core::ffi::c_void,
+    report: *mut u8,
+    report_capacity: u32,
+) -> u32 {
+    if session.is_null() {
+        return 0;
+    }
+    // SAFETY: the caller hands over the pointer from `bale_gpu_engine_session_open`.
+    let handle = unsafe { Box::from_raw(session.cast::<engine_session::SessionHandle>()) };
+    let text = handle.0.as_ref().map(|s| s.close()).unwrap_or_default();
+    drop(handle);
+    if report.is_null() {
+        return 0;
+    }
+    // SAFETY: the caller guarantees `report_capacity` writable bytes.
+    unsafe { write_report(&text, report, report_capacity) }
+}
+
+#[cfg(windows)]
+const E_POINTER: i32 = 0x8000_4003u32 as i32;
 
 /// Sets an IMFMediaEngine windowless swap chain `handle` on `panel` (any interface of a XAML
 /// `SwapChainPanel`) through `ISwapChainPanelNative2`; returns the HRESULT.

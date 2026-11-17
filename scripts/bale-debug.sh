@@ -56,7 +56,7 @@
 #   scripts/bale-debug.sh hls-engine [native|ffmpeg]   next playback attempt's HLS engine; default ffmpeg = Rust HLS reader + FFmpeg (+ console tone map for HLS remux); native = Windows; memory only; no args = status
 #   scripts/bale-debug.sh stream-adapter [pooled|builtin|rust]  next playback attempt's stream adapter; default rust (C#: pooled/builtin), memory only (restart resets); no args = status
 #                                               rust: the Rust range stream and Rust IRandomAccessStream (no managed code on reads; FFmpeg and Media Foundation)
-#   scripts/bale-debug.sh present-engine [0-120] [present|frames]   next playback hands its authenticated progressive stream to IMFMediaEngine for N seconds, then leaves (0 = off): present = rendering mode on screen, frames = frame-server, every decoded frame counted; no args = status + last report
+#   scripts/bale-debug.sh present-engine [0-120] [present|frames|player]   next playback hands its routed source to IMFMediaEngine (0 = off): present = rendering mode on screen for N s, frames = frame-server for N s (every decoded frame counted), player = interactive engine player with sound, keys and a stats pane until Back (N just enables it); no args = status + last report
 #   scripts/bale-debug.sh av1-claim [1080|2160]   next playback attempt's AV1 software-decode claim: 1080 = 1080p60 (default), 2160 adds a 4K30 entry; memory only (restart resets); no args = status
 #   scripts/bale-debug.sh display-match [on|off|status]  match content HDMI resolution/refresh on the next playback; default off, memory only (restart resets); no args = status
 #   scripts/bale-debug.sh hdr pretend|off|status  next attempt: pretend HDR10, skip HDMI switching for console SDR tone mapping; default off, memory only
@@ -462,8 +462,8 @@ case "${1:-}" in
     fi
     ;;
   present-engine)
-    if [[ "$#" -gt 3 || ( "$#" -ge 2 && ! "$2" =~ ^([0-9]|[1-9][0-9]|1[01][0-9]|120)$ ) || ( "$#" -eq 3 && ! "$3" =~ ^(present|frames)$ ) ]]; then
-      echo 'usage: scripts/bale-debug.sh present-engine [0-120] [present|frames]' >&2
+    if [[ "$#" -gt 3 || ( "$#" -ge 2 && ! "$2" =~ ^([0-9]|[1-9][0-9]|1[01][0-9]|120)$ ) || ( "$#" -eq 3 && ! "$3" =~ ^(present|frames|player)$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh present-engine [0-120] [present|frames|player]' >&2
       exit 2
     fi
     if [[ "$#" == 1 ]]; then

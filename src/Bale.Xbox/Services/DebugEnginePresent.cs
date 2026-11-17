@@ -27,6 +27,24 @@ internal sealed class DebugEnginePresent
     private long _size;
     private Windows.Graphics.Display.DisplayInformation? _display;
     private Windows.Graphics.Display.Core.HdmiDisplayInformation? _hdmi;
+    private TextBlock? _overlay;
+    private Border? _overlayBox;
+    /// <summary>An open engine session (bale_gpu_engine_session_open), or 0.</summary>
+    private nint _session;
+
+    internal bool HasSession => _session != 0;
+
+    /// <summary>The stats overlay's text; null hides it. UI thread.</summary>
+    internal void SetOverlay(string? text)
+    {
+        if (_overlay is null || _overlayBox is null) return;
+        if (text is null) _overlayBox.Visibility = Visibility.Collapsed;
+        else
+        {
+            _overlay.Text = text;
+            _overlayBox.Visibility = Visibility.Visible;
+        }
+    }
 
     /// <summary>The panel's IInspectable (owned reference), or 0.</summary>
     private nint _panel;
@@ -43,7 +61,27 @@ internal sealed class DebugEnginePresent
             switched = await _hdr.TryEnableHdr10Async() ? "switched to HDR10" : "not switched";
         }
         _view = new SwapChainPanel();
-        _popup = new Popup { Child = _view, IsOpen = true };
+        _overlay = new TextBlock
+        {
+            Margin = new Thickness(40, 30, 40, 30), FontSize = 15, FontFamily = new Windows.UI.Xaml.Media.FontFamily("Consolas"),
+            Foreground = new Windows.UI.Xaml.Media.SolidColorBrush(Windows.UI.Colors.White), TextWrapping = TextWrapping.Wrap,
+            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
+        };
+        var overlayBox = new Border
+        {
+            Background = new Windows.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0xB0, 0, 0, 0)),
+            CornerRadius = new CornerRadius(8), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(40, 30, 0, 0), Child = _overlay, Visibility = Visibility.Collapsed,
+        };
+        _overlayBox = overlayBox;
+        var bounds = Window.Current.Bounds;
+        var root = new Grid { Width = bounds.Width, Height = bounds.Height };
+        // The panel keeps its raw-pixel layout and scale-back transform (Layout); the overlay is view-sized.
+        var panelCanvas = new Canvas();
+        panelCanvas.Children.Add(_view);
+        root.Children.Add(panelCanvas);
+        root.Children.Add(overlayBox);
+        _popup = new Popup { Child = root, IsOpen = true };
         var layout = Layout();
         _display = Windows.Graphics.Display.DisplayInformation.GetForCurrentView();
         _display.DpiChanged += OnDisplayChanged;
@@ -78,6 +116,7 @@ internal sealed class DebugEnginePresent
         }
         view.Width = width;
         view.Height = height;
+        if (_session != 0) bale_gpu_engine_session_resize(_session, width, height);
         view.RenderTransform = new Windows.UI.Xaml.Media.ScaleTransform { ScaleX = bounds.Width / width, ScaleY = bounds.Height / height };
         _width = width;
         _height = height;
@@ -169,8 +208,69 @@ internal sealed class DebugEnginePresent
         catch (Exception ex) { return ex.HResult; }
     }
 
+    /// <summary>
+    /// Opens an engine session on <paramref name="source"/> (a media source, or a stream of type
+    /// <paramref name="mime"/>) attached to this panel, at <paramref name="start"/> seconds. Any thread
+    /// but the UI thread (the attach callback dispatches to it). Returns the open report.
+    /// </summary>
+    internal unsafe string OpenSession(nint source, string? mime, double start, bool paused)
+    {
+        try
+        {
+            var abi = bale_gpu_abi_version();
+            if (abi != DebugRustProbe.EngineAbi) return $"Rust GPU layer ABI {abi} (expected {DebugRustProbe.EngineAbi}) MISMATCH\n";
+            var type = mime ?? string.Empty;
+            var buffer = new byte[16 * 1024];
+            var self = GCHandle.Alloc(this);
+            try
+            {
+                uint written;
+                nint session;
+                fixed (char* mimeText = type)
+                fixed (byte* report = buffer)
+                    written = bale_gpu_engine_session_open(null, 0, source, mimeText, (uint)type.Length, _width, _height, &Attach,
+                        GCHandle.ToIntPtr(self), start, paused ? 1u : 0u, 0, &session, report, (uint)buffer.Length);
+                _session = session;
+                return System.Text.Encoding.UTF8.GetString(buffer, 0, (int)Math.Min(written, (uint)buffer.Length));
+            }
+            finally { self.Free(); }
+        }
+        catch (Exception ex) { return $"Engine session: FAILS ({ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8})\n"; }
+    }
+
+    internal int Play() => _session == 0 ? unchecked((int)0x80004003) : bale_gpu_engine_session_play(_session);
+
+    internal int Pause() => _session == 0 ? unchecked((int)0x80004003) : bale_gpu_engine_session_pause(_session);
+
+    internal int Seek(double seconds) => _session == 0 ? unchecked((int)0x80004003) : bale_gpu_engine_session_seek(_session, seconds);
+
+    internal int Volume(double volume, bool muted) =>
+        _session == 0 ? unchecked((int)0x80004003) : bale_gpu_engine_session_volume(_session, volume, muted ? 1u : 0u);
+
+    internal unsafe bool TryState(out EngineSessionState state)
+    {
+        state = default;
+        if (_session == 0) return false;
+        fixed (EngineSessionState* pointer = &state)
+            return bale_gpu_engine_session_state(_session, pointer) >= 0;
+    }
+
+    /// <summary>Shuts the session down and returns its closing report (engine error, events).</summary>
+    internal unsafe string CloseSession()
+    {
+        if (_session == 0) return string.Empty;
+        var session = _session;
+        _session = 0;
+        var buffer = new byte[8 * 1024];
+        uint written;
+        fixed (byte* report = buffer)
+            written = bale_gpu_engine_session_close(session, report, (uint)buffer.Length);
+        return System.Text.Encoding.UTF8.GetString(buffer, 0, (int)Math.Min(written, (uint)buffer.Length));
+    }
+
     internal async Task<string> CloseAsync()
     {
+        var closing = CloseSession();
         if (_display is { } display) display.DpiChanged -= OnDisplayChanged;
         _display = null;
         Window.Current.SizeChanged -= OnWindowSizeChanged;
@@ -191,7 +291,7 @@ internal sealed class DebugEnginePresent
             _hdr = null;
             restored = "restore requested";
         }
-        return $"HDR restore: {restored}\nDisplay after: {DisplayHdrOutput.CurrentModeText()}\n";
+        return closing + $"HDR restore: {restored}\nDisplay after: {DisplayHdrOutput.CurrentModeText()}\n";
     }
 
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern uint bale_gpu_abi_version();
@@ -199,9 +299,45 @@ internal sealed class DebugEnginePresent
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_panel_set_swap_chain_handle(nint panel, nint handle);
 
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
+    private static extern unsafe uint bale_gpu_engine_session_open(char* url, uint urlLength, nint source, char* mime, uint mimeLength,
+        uint width, uint height, delegate* unmanaged[Cdecl]<nint, nint, int> attach, nint context, double start, uint paused, uint muted,
+        nint* session, byte* report, uint reportCapacity);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_play(nint session);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_pause(nint session);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_seek(nint session, double seconds);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_volume(nint session, double volume, uint muted);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_resize(nint session, uint width, uint height);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern unsafe int bale_gpu_engine_session_state(nint session, EngineSessionState* state);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern unsafe uint bale_gpu_engine_session_close(nint session, byte* report, uint reportCapacity);
+
+    [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern unsafe uint bale_gpu_engine_present(char* url, uint urlLength, nint source, char* mime, uint mimeLength,
         uint seconds, double frameRate, char* target, uint targetLength, uint width, uint height, delegate* unmanaged[Cdecl]<nint, nint, int> attach,
         delegate* unmanaged[Cdecl]<nint, ulong> size, nint context, byte* report, uint reportCapacity);
+}
+
+/// <summary>Live engine state (engine_session::SessionState, repr(C)).</summary>
+[StructLayout(LayoutKind.Sequential)]
+internal struct EngineSessionState
+{
+    public double Position;
+    public double Duration;
+    public double FramesPerSecond;
+    public double Jitter;
+    public double FrameDelay;
+    public ulong FramesRendered;
+    public ulong FramesDropped;
+    public ulong FramesCorrupted;
+    public uint Width;
+    public uint Height;
+    public uint Flags;
+    public uint ReadyState;
+
+    public readonly bool Paused => (Flags & 1) != 0;
+    public readonly bool Ended => (Flags & 2) != 0;
+    public readonly bool Failed => (Flags & 4) != 0;
+    public readonly bool Seeking => (Flags & 8) != 0;
+    public readonly bool Waiting => (Flags & 16) != 0;
 }
 
 /// <summary>
@@ -216,7 +352,10 @@ internal static class DebugPresentEngineSwitch
     private static string _lastReport = "no run yet\n";
 
     internal static int Seconds => Volatile.Read(ref _seconds);
-    /// <summary>"present" (rendering mode on screen) or "frames" (frame-server: every decoded frame counted, nothing shown).</summary>
+    /// <summary>
+    /// "present" (rendering mode on screen for N seconds), "frames" (frame-server: every decoded frame
+    /// counted, nothing shown) or "player" (an interactive engine player with sound, keys and a stats pane).
+    /// </summary>
     internal static string Mode => Volatile.Read(ref _mode);
     internal static string LastReport => Volatile.Read(ref _lastReport);
 

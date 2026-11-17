@@ -38,6 +38,10 @@ public sealed partial class PlayerPage
         public MediaSource? Source { get; set; }
         public MediaRangeStream? Stream { get; set; }
         public IRandomAccessStream? RandomStream { get; set; }
+#if DEBUG_SERVER
+        /// <summary>A WinRT wrapper the debug engine player holds for the mount's lifetime.</summary>
+        public object? EngineKeepAlive { get; set; }
+#endif
         // server_remux_progressive: one forward-only response through FFmpeg's non-seekable input.
         public MediaProgressiveStream? Progressive { get; set; }
         public IInputStream? ForwardInput { get; set; }
@@ -677,6 +681,11 @@ public sealed partial class PlayerPage
         Cleanup("detach video output guard", () => media.VideoOutputGuard?.Dispose());
         media.VideoOutputGuard = null;
         media.Opening.TrySetCanceled(media.Token);
+#if DEBUG_SERVER
+        // The engine player reads this mount's source; stop it before the source goes.
+        if (_enginePlayer is not null) _ = CloseEnginePlayerAsync(leave: false);
+        media.EngineKeepAlive = null;
+#endif
         if (media.SelectedAudioTrack is { } audio)
             Cleanup("detach audio failure", () => audio.OpenFailed -= OnAudioTrackOpenFailed);
 #if DEBUG_SERVER

@@ -10,7 +10,7 @@ internal sealed partial class DebugServer
         try
         {
             var control = await OnFfmpegUiAsync(() => CurrentPage(out _) is PlayerPage player
-                ? player.DebugSetPlaybackAsync(request)
+                ? player.EnginePlayerActive ? player.EnginePlaybackAsync(request) : player.DebugSetPlaybackAsync(request)
                 : Task.FromResult((Status: "409 Conflict", Body: "no active player pipeline\n")));
             return await control;
         }
@@ -30,7 +30,7 @@ internal sealed partial class DebugServer
         {
             // Use the media-safe dispatcher: never format native/media exception messages.
             var seek = await OnFfmpegUiAsync(() => CurrentPage(out _) is PlayerPage player
-                ? player.DebugSeekAsync(request)
+                ? player.EnginePlayerActive ? player.EngineSeekAsync(request.Seconds, request.Pause) : player.DebugSeekAsync(request)
                 : Task.FromResult((Status: "409 Conflict", Body: "no active player pipeline\n")));
             return await seek;
         }

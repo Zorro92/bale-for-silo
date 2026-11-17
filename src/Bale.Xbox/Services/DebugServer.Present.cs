@@ -53,7 +53,7 @@ internal sealed partial class DebugServer
     }
 
     internal const string PresentEngineUsage =
-        "usage: GET /present-engine (last report) | POST /present-engine?seconds=0..120[&mode=present|frames] (0 = off; the next library playback goes through the engine: present = rendering mode on screen, frames = frame-server, every decoded frame counted)\n";
+        "usage: GET /present-engine (last report) | POST /present-engine?seconds=0..120[&mode=present|frames|player] (0 = off; the next library playback goes through the engine: present = rendering mode on screen for N s, frames = frame-server, every decoded frame counted, player = interactive engine player with sound, keys and stats until Back)\n";
 
     private static (string Status, string Body) PresentEngine(string method, IReadOnlyDictionary<string, string> query)
     {
@@ -61,7 +61,7 @@ internal sealed partial class DebugServer
             return query.Count == 0 ? ("200 OK", $"present-engine: {DebugPresentEngineSwitch.Seconds} s, {DebugPresentEngineSwitch.Mode}\n{DebugPresentEngineSwitch.LastReport}")
                 : ("400 Bad Request", PresentEngineUsage);
         var mode = query.GetValueOrDefault("mode") ?? "present";
-        if (query.Keys.Any(key => key is not ("seconds" or "mode")) || mode is not ("present" or "frames")
+        if (query.Keys.Any(key => key is not ("seconds" or "mode")) || mode is not ("present" or "frames" or "player")
             || !int.TryParse(query.GetValueOrDefault("seconds"), out var seconds) || seconds is < 0 or > 120)
             return ("400 Bad Request", PresentEngineUsage);
         DebugPresentEngineSwitch.Set(seconds, mode);
