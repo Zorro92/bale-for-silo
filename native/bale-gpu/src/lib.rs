@@ -43,7 +43,7 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 /// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched DLL.
-pub const ABI_VERSION: u32 = 9;
+pub const ABI_VERSION: u32 = 10;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_gpu_abi_version() -> u32 {
@@ -152,7 +152,13 @@ pub unsafe extern "C" fn bale_gpu_engine_probe(
         })
     };
     let text = match target {
-        Some(target) => engine::run(engine::Input::Url(url), seconds.clamp(1, 60), target, None),
+        Some(target) => engine::run(
+            engine::Input::Url(url),
+            seconds.clamp(1, 60),
+            target,
+            None,
+            0.0,
+        ),
         None => "Error: target must be bgra, fp16 or rgb10\n".to_owned(),
     };
     // SAFETY: the caller guarantees `report_capacity` writable bytes.
@@ -188,12 +194,14 @@ pub unsafe extern "C" fn bale_gpu_engine_probe_source(
         seconds.clamp(1, 60),
         engine_target::Target::Bgra,
         None,
+        0.0,
     );
     // SAFETY: the caller guarantees `report_capacity` writable bytes.
     unsafe { write_report(&text, report, report_capacity) }
 }
 
-/// Rendering-mode probe: plays `url` (or, when `source` is non-null, that COM object: a media source
+/// Rendering-mode probe (frame-server mode when `attach` is null: every decoded frame is counted and
+/// nothing is presented): plays `url` (or, when `source` is non-null, that COM object: a media source
 /// through the engine extension when `mime_len` is 0, else an `IRandomAccessStream` of MIME type `mime`
 /// through `SetSourceFromByteStream`) with `EnableWindowlessSwapchainMode`, calls `attach(context, handle)` once
 /// with the engine's swap chain handle (the caller sets it on a `SwapChainPanel` on the UI thread and
@@ -214,6 +222,7 @@ pub unsafe extern "C" fn bale_gpu_engine_present(
     mime: *const u16,
     mime_len: u32,
     seconds: u32,
+    frame_rate: f64,
     target: *const u16,
     target_len: u32,
     width: u32,
@@ -224,8 +233,8 @@ pub unsafe extern "C" fn bale_gpu_engine_present(
     report: *mut u8,
     report_capacity: u32,
 ) -> u32 {
-    let Some(attach) = attach else { return 0 };
-    if report.is_null() || width == 0 || height == 0 {
+    // No `attach`: frame-server mode (every decoded frame counted), nothing presented.
+    if report.is_null() || (attach.is_some() && (width == 0 || height == 0)) {
         return 0;
     }
     let target = if target.is_null() || target_len == 0 {
@@ -246,13 +255,13 @@ pub unsafe extern "C" fn bale_gpu_engine_present(
             )
         };
     };
-    let present = engine::Present {
+    let present = attach.map(|attach| engine::Present {
         attach,
         context,
         width,
         height,
         size,
-    };
+    });
     let seconds = seconds.clamp(1, 120);
     let text = if source.is_null() {
         if url.is_null() || url_len == 0 {
@@ -260,7 +269,13 @@ pub unsafe extern "C" fn bale_gpu_engine_present(
         }
         // SAFETY: the caller guarantees `url_len` readable code units.
         let url = unsafe { std::slice::from_raw_parts(url, url_len as usize) };
-        engine::run(engine::Input::Url(url), seconds, target, Some(&present))
+        engine::run(
+            engine::Input::Url(url),
+            seconds,
+            target,
+            present.as_ref(),
+            frame_rate,
+        )
     } else {
         // SAFETY: the caller guarantees a live COM pointer; clone takes our own reference.
         let Some(object) = (unsafe {
@@ -278,7 +293,7 @@ pub unsafe extern "C" fn bale_gpu_engine_present(
                 mime: unsafe { std::slice::from_raw_parts(mime, mime_len as usize) },
             }
         };
-        engine::run(input, seconds, target, Some(&present))
+        engine::run(input, seconds, target, present.as_ref(), frame_rate)
     };
     // SAFETY: the caller guarantees `report_capacity` writable bytes.
     unsafe { write_report(&text, report, report_capacity) }

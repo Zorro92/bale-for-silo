@@ -15,23 +15,26 @@ namespace Bale.Xbox;
 /// </summary>
 public sealed partial class PlayerPage
 {
-    private async Task PresentThroughEngineAsync(MediaRangeStream stream, string mime, int seconds)
+    private async Task PresentThroughEngineAsync(MediaRangeStream stream, string mime, int seconds, Bale.Core.Api.Models.PlaybackPlan plan)
     {
+        var present = DebugPresentEngineSwitch.Mode != "frames";
+        var frameRate = PlaybackStats.FromPlan(plan).FrameRate is { } fps && double.IsFinite(fps) && fps > 0 ? fps : 0;
         var random = NativeRandomAccessStream(stream) ?? stream.AsRandomAccessStream();
         var pointer = WinRT.MarshalInterface<IRandomAccessStream>.FromManaged(random);
         var host = new DebugEnginePresent();
-        var report = $"Library playback through the engine ({mime}, stream adapter {(stream is RustRangeStream ? "rust" : "managed")})\n";
+        var report = $"Library playback through the engine ({(present ? "rendering mode" : "frame-server, decoded frames counted")}; {mime}; "
+            + $"stream adapter {(stream is RustRangeStream ? "rust" : "managed")}; plan frame rate {(frameRate > 0 ? frameRate.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) : "unknown")})\n";
         try
         {
             Log.Info("player: present-engine start");
-            report += await host.OpenAsync(hdr: false);
-            report += await Task.Factory.StartNew(() => host.RunStream(pointer, mime, seconds), CancellationToken.None,
+            if (present) report += await host.OpenAsync(hdr: false);
+            report += await Task.Factory.StartNew(() => host.RunStream(pointer, mime, seconds, frameRate, present), CancellationToken.None,
                 TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
         catch (Exception ex) { report += $"Present error: {ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8}\n"; }
         finally
         {
-            report += await host.CloseAsync();
+            if (present) report += await host.CloseAsync();
             Marshal.Release(pointer);
         }
         DebugPresentEngineSwitch.Report(report);

@@ -107,12 +107,17 @@ internal sealed class DebugEnginePresent
     }
 
     /// <summary>Plays a URL the engine fetches itself (public media only: no headers).</summary>
-    internal string Run(Uri uri, int seconds, string? target) => Run(uri.AbsoluteUri, 0, null, seconds, target);
+    internal string Run(Uri uri, int seconds, string? target) => Run(uri.AbsoluteUri, 0, null, seconds, target, 0, present: true);
 
-    /// <summary>Plays an authenticated <see cref="Windows.Storage.Streams.IRandomAccessStream"/> (borrowed COM pointer).</summary>
-    internal string RunStream(nint stream, string mime, int seconds) => Run(string.Empty, stream, mime, seconds, null);
+    /// <summary>
+    /// Plays an authenticated <see cref="Windows.Storage.Streams.IRandomAccessStream"/> (borrowed COM pointer).
+    /// <paramref name="present"/> false: frame-server mode, counting every decoded frame (no Open/Close needed).
+    /// <paramref name="frameRate"/> (0 = unknown) lets the report compare counts with the expected frames.
+    /// </summary>
+    internal string RunStream(nint stream, string mime, int seconds, double frameRate, bool present) =>
+        Run(string.Empty, stream, mime, seconds, null, frameRate, present);
 
-    private unsafe string Run(string url, nint source, string? mime, int seconds, string? target)
+    private unsafe string Run(string url, nint source, string? mime, int seconds, string? target, double frameRate, bool present)
     {
         try
         {
@@ -129,8 +134,11 @@ internal sealed class DebugEnginePresent
                 fixed (char* mimeText = type)
                 fixed (char* targetText = format)
                 fixed (byte* report = buffer)
-                    written = bale_gpu_engine_present(text, (uint)url.Length, source, mimeText, (uint)type.Length, (uint)seconds,
-                        targetText, (uint)format.Length, _width, _height, &Attach, &Size, GCHandle.ToIntPtr(self), report, (uint)buffer.Length);
+                    written = present
+                        ? bale_gpu_engine_present(text, (uint)url.Length, source, mimeText, (uint)type.Length, (uint)seconds, frameRate,
+                            targetText, (uint)format.Length, _width, _height, &Attach, &Size, GCHandle.ToIntPtr(self), report, (uint)buffer.Length)
+                        : bale_gpu_engine_present(text, (uint)url.Length, source, mimeText, (uint)type.Length, (uint)seconds, frameRate,
+                            targetText, (uint)format.Length, 0, 0, null, null, 0, report, (uint)buffer.Length);
                 return System.Text.Encoding.UTF8.GetString(buffer, 0, (int)Math.Min(written, (uint)buffer.Length));
             }
             finally { self.Free(); }
@@ -188,7 +196,7 @@ internal sealed class DebugEnginePresent
 
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern unsafe uint bale_gpu_engine_present(char* url, uint urlLength, nint source, char* mime, uint mimeLength,
-        uint seconds, char* target, uint targetLength, uint width, uint height, delegate* unmanaged[Cdecl]<nint, nint, int> attach,
+        uint seconds, double frameRate, char* target, uint targetLength, uint width, uint height, delegate* unmanaged[Cdecl]<nint, nint, int> attach,
         delegate* unmanaged[Cdecl]<nint, ulong> size, nint context, byte* report, uint reportCapacity);
 }
 
@@ -200,12 +208,19 @@ internal sealed class DebugEnginePresent
 internal static class DebugPresentEngineSwitch
 {
     private static int _seconds;
+    private static string _mode = "present";
     private static string _lastReport = "no run yet\n";
 
     internal static int Seconds => Volatile.Read(ref _seconds);
+    /// <summary>"present" (rendering mode on screen) or "frames" (frame-server: every decoded frame counted, nothing shown).</summary>
+    internal static string Mode => Volatile.Read(ref _mode);
     internal static string LastReport => Volatile.Read(ref _lastReport);
 
-    internal static void Set(int seconds) => Volatile.Write(ref _seconds, seconds);
+    internal static void Set(int seconds, string mode)
+    {
+        Volatile.Write(ref _mode, mode);
+        Volatile.Write(ref _seconds, seconds);
+    }
     internal static void Report(string text) => Volatile.Write(ref _lastReport, text);
 }
 #endif

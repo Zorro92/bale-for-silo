@@ -53,18 +53,20 @@ internal sealed partial class DebugServer
     }
 
     internal const string PresentEngineUsage =
-        "usage: GET /present-engine (last report) | POST /present-engine?seconds=0..120 (0 = off; the next library playback presents through the engine)\n";
+        "usage: GET /present-engine (last report) | POST /present-engine?seconds=0..120[&mode=present|frames] (0 = off; the next library playback goes through the engine: present = rendering mode on screen, frames = frame-server, every decoded frame counted)\n";
 
     private static (string Status, string Body) PresentEngine(string method, IReadOnlyDictionary<string, string> query)
     {
         if (method == "GET")
-            return query.Count == 0 ? ("200 OK", $"present-engine: {DebugPresentEngineSwitch.Seconds} s\n{DebugPresentEngineSwitch.LastReport}")
+            return query.Count == 0 ? ("200 OK", $"present-engine: {DebugPresentEngineSwitch.Seconds} s, {DebugPresentEngineSwitch.Mode}\n{DebugPresentEngineSwitch.LastReport}")
                 : ("400 Bad Request", PresentEngineUsage);
-        if (query.Count != 1 || !int.TryParse(query.GetValueOrDefault("seconds"), out var seconds) || seconds is < 0 or > 120)
+        var mode = query.GetValueOrDefault("mode") ?? "present";
+        if (query.Keys.Any(key => key is not ("seconds" or "mode")) || mode is not ("present" or "frames")
+            || !int.TryParse(query.GetValueOrDefault("seconds"), out var seconds) || seconds is < 0 or > 120)
             return ("400 Bad Request", PresentEngineUsage);
-        DebugPresentEngineSwitch.Set(seconds);
-        Log.Info($"Debug present-engine: {seconds} s; applies to the next playback attempt");
-        return ("200 OK", $"present-engine: {seconds} s; applies to the next playback attempt\n");
+        DebugPresentEngineSwitch.Set(seconds, mode);
+        Log.Info($"Debug present-engine: {seconds} s, {mode}; applies to the next playback attempt");
+        return ("200 OK", $"present-engine: {seconds} s, {mode}; applies to the next playback attempt\n");
     }
 }
 #endif

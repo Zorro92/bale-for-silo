@@ -230,7 +230,7 @@ public sealed partial class PlayerPage
 #if DEBUG_SERVER
             if (DebugPresentEngineSwitch.Seconds is > 0 and var presentSeconds && media.Stream is { } presentStream)
             {
-                await PresentThroughEngineAsync(presentStream, transport.MimeType ?? "video/mp4", presentSeconds);
+                await PresentThroughEngineAsync(presentStream, transport.MimeType ?? "video/mp4", presentSeconds, attempt.Plan!);
                 return;
             }
 #endif

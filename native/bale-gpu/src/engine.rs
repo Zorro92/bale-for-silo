@@ -384,7 +384,15 @@ pub struct Present {
 const HANDLE_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Runs the probe and returns the plain-text report.
-pub fn run(input: Input, seconds: u32, target: Target, present: Option<&Present>) -> String {
+/// `frame_rate` is the content's frame rate when the caller knows it (0 = unknown): the report then
+/// compares the frames counted with position advanced × frame rate.
+pub fn run(
+    input: Input,
+    seconds: u32,
+    target: Target,
+    present: Option<&Present>,
+    frame_rate: f64,
+) -> String {
     let mut report = String::from(match (&input, present.is_some()) {
         (_, true) => {
             "Media engine present probe (Rust bale_gpu.dll; rendering mode: windowless swap chain on a SwapChainPanel, muted)\n"
@@ -433,6 +441,7 @@ pub fn run(input: Input, seconds: u32, target: Target, present: Option<&Present>
             seconds,
             target,
             present,
+            frame_rate,
             &shared,
             &mut engine,
             &mut device_lifetime,
@@ -482,6 +491,7 @@ unsafe fn play(
     seconds: u32,
     target: Target,
     present: Option<&Present>,
+    frame_rate: f64,
     shared: &Arc<Shared>,
     engine_slot: &mut Option<IMFMediaEngine>,
     device_lifetime: &mut Option<Arc<crate::lifecycle::Device>>,
@@ -688,7 +698,9 @@ unsafe fn play(
             return Ok(());
         }
         if let Some(present) = present {
-            return present_loop(&engine, &engine_ex, present, seconds, shared, report);
+            return present_loop(
+                &engine, &engine_ex, present, seconds, frame_rate, shared, report,
+            );
         }
 
         let desc = D3D11_TEXTURE2D_DESC {
@@ -855,6 +867,14 @@ unsafe fn play(
             trim(end_position, 3),
             advanced / wall_seconds
         );
+        // Each stream tick is a distinct decoded frame, whatever the display does with it.
+        append_expected(
+            report,
+            &format!("decoded frames (stream ticks)={ticks}"),
+            ticks,
+            advanced,
+            frame_rate,
+        );
         if let (Some(before), Some(after)) = (cpu_before, cpu_after) {
             let _ = writeln!(
                 report,
@@ -887,6 +907,7 @@ unsafe fn present_loop(
     engine_ex: &IMFMediaEngineEx,
     present: &Present,
     seconds: u32,
+    frame_rate: f64,
     shared: &Arc<Shared>,
     report: &mut String,
 ) -> Result<(), Step> {
@@ -947,6 +968,9 @@ unsafe fn present_loop(
         let mut first_frame_ms = None;
         let mut current = (present.width, present.height);
         let mut resizes = 0u32;
+        // Once a second: rendered, dropped and position, so a startup burst shows apart from steady drops.
+        let mut timeline: Vec<(u64, u64, f64)> = Vec::new();
+        let mut next_sample = Duration::from_secs(1);
         while wall.elapsed() < limit
             && !shared.error.load(Ordering::Acquire)
             && !shared.ended.load(Ordering::Acquire)
@@ -980,6 +1004,14 @@ unsafe fn present_loop(
             if first_frame_ms.is_none() && shared.first_frame.load(Ordering::Acquire) {
                 first_frame_ms = Some(wall.elapsed().as_millis());
             }
+            if wall.elapsed() >= next_sample && timeline.len() < 120 {
+                timeline.push((
+                    stat_count(engine_ex, 0).unwrap_or(0),
+                    stat_count(engine_ex, 1).unwrap_or(0),
+                    engine.GetCurrentTime(),
+                ));
+                next_sample += Duration::from_secs(1);
+            }
             std::thread::sleep(Duration::from_millis(20));
         }
         let wall_seconds = wall.elapsed().as_secs_f64();
@@ -987,7 +1019,10 @@ unsafe fn present_loop(
         let cpu_after = process_cpu();
         // Statistics before Pause, while the renderer still counts.
         append_statistics(report, engine_ex);
+        let rendered = stat_count(engine_ex, 0);
+        let dropped = stat_count(engine_ex, 1);
         let _ = engine.Pause();
+        append_timeline(report, &timeline, start_position);
         match first_frame_ms {
             Some(ms) => {
                 let _ = writeln!(report, "First frame ready: {ms} ms after Play");
@@ -1002,6 +1037,15 @@ unsafe fn present_loop(
             trim(end_position, 3),
             advanced / wall_seconds
         );
+        if let (Some(rendered), Some(dropped)) = (rendered, dropped) {
+            append_expected(
+                report,
+                &format!("rendered+dropped={}", rendered + dropped),
+                rendered + dropped,
+                advanced,
+                frame_rate,
+            );
+        }
         if let (Some(before), Some(after)) = (cpu_before, cpu_after) {
             let _ = writeln!(
                 report,
@@ -1020,6 +1064,61 @@ unsafe fn present_loop(
         });
         Ok(())
     }
+}
+
+/// One engine counter (frames rendered, dropped, ...) as an integer, if it is one.
+unsafe fn stat_count(engine_ex: &IMFMediaEngineEx, id: i32) -> Option<u64> {
+    // SAFETY: GetStatistics fills a PROPVARIANT; numeric variants own nothing.
+    let value = unsafe { engine_ex.GetStatistics(MF_MEDIA_ENGINE_STATISTIC(id)) }.ok()?;
+    // SAFETY: the union member read matches the variant type.
+    unsafe {
+        let inner = &value.Anonymous.Anonymous;
+        match inner.vt.0 {
+            3 | 19 => Some(u64::from(inner.Anonymous.ulVal)),
+            20 | 21 => Some(inner.Anonymous.uhVal),
+            _ => None,
+        }
+    }
+}
+
+/// Per-second deltas: `+rendered/+dropped` and position, so a startup burst is told from steady drops.
+fn append_timeline(report: &mut String, timeline: &[(u64, u64, f64)], start: f64) {
+    if timeline.is_empty() {
+        return;
+    }
+    report.push_str("Timeline (per second, +rendered/+dropped @position):");
+    let mut previous = (0u64, 0u64);
+    for (rendered, dropped, position) in timeline {
+        let _ = write!(
+            report,
+            " {}/{}@{}",
+            rendered.saturating_sub(previous.0),
+            dropped.saturating_sub(previous.1),
+            trim(position - start, 1)
+        );
+        previous = (*rendered, *dropped);
+    }
+    report.push('\n');
+}
+
+/// Frames counted against position advanced × content frame rate.
+fn append_expected(report: &mut String, label: &str, counted: u64, advanced: f64, frame_rate: f64) {
+    if !(frame_rate.is_finite() && frame_rate > 0.0 && advanced > 0.0) {
+        let _ = writeln!(
+            report,
+            "Frame accounting: {label}; content frame rate unknown"
+        );
+        return;
+    }
+    let expected = advanced * frame_rate;
+    let gap = counted as f64 - expected;
+    let _ = writeln!(
+        report,
+        "Frame accounting: {label}, expected {expected:.0} ({} s x {} fps), gap {gap:+.0} ({:+.1}%)",
+        trim(advanced, 3),
+        trim(frame_rate, 3),
+        gap / expected * 100.0
+    );
 }
 
 unsafe fn append_statistics(report: &mut String, engine_ex: &IMFMediaEngineEx) {
