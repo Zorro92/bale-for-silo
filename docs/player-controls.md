@@ -31,22 +31,40 @@ silo-android `androidTvApp/.../tv/ui/screens/player/` (port of the tvOS player).
 | Up Next | Next-episode card with 10 s countdown, On Deck cards, auto-play setting | `TvOnDeckItems.kt`, `NEXT_UP_COUNTDOWN_SECONDS` | missing |
 | Trickplay thumbnails | Preview frames on the scrubber (server `WatchTrickplaySheet`) | scrubber | missing |
 
+## Bale's controller map (deviation, owner 2026-11-16)
+
+See AGENTS.md. In short: D-pad reveals the controls, A pauses (and reveals) or resumes a paused
+player whose controls have hidden, triggers tap-skip 10 s / 30 s and on hold rewind / fast-forward
+steadily after a short pause, bumpers jump between chapters. Media remote keys keep the official map.
+The controls are XAML: the composition engine already draws them on the GPU (see "Rendering").
+
+## Rendering
+
+The controls stay XAML. XAML is composited by the system on the GPU (DirectComposition / D3D11);
+the CPU only does layout and the occasional value change. Drawing them in Bale's own D3D11 layer, as
+the subtitles are, would mean rebuilding focus, text and accessibility for no saving. Keep the CPU
+side small: fade and slide with composition animations (they run off the UI thread), update the
+progress bar and times a few times a second rather than per frame, and hide (collapse) the controls
+rather than leaving them transparent so they cost nothing while hidden.
+
 ## Proposed order (each step verified on the console before the next)
 
 1. **Play/Pause and Stop.** Code done 2026-11-16 (`PlaybackRemoteKeys`, `PlayerPage.Controls.cs`):
-   media Play/Pause and Space toggle, media Stop leaves, D-pad Left/Right and media
-   previous/next skip, all on the first press; the system media controls' Play/Pause/next/previous/
+   media Play/Pause and Space toggle, media Stop leaves, media previous/next skip, all on the first
+   press; then the owner's controller map: A pauses / resumes, triggers skip, bumpers jump between
+   chapters, the D-pad is held for revealing the controls (step 2); the system media controls' Play/Pause/next/previous/
    fast-forward/rewind take the same path, and a press arriving by both routes acts once. The log
    line `player: transport key=… / system=…` shows which route the Xbox media remote uses; check
-   that with the remote on the console. Select (A) is left for step 2 (it reveals the controls).
-   Verified on 0.1.568 with keyboard Space and the controller D-pad: pause/resume, +30 s and −10 s
+   that with the remote on the console. 
+   Verified on 0.1.568 (before the controller map) with Space and D-pad skips: pause/resume, +30 s and −10 s
    (also while paused, which stays paused), one `transport key=32` line per press, no second
    toggle from the system controls. Still to check with you: the media remote and controller A.
-2. **Transport overlay and scrubber.** Reveal on Down/any key, 5 s auto-hide, the transport row
-   (skip, play/pause, Close first; Subtitles/Options buttons once step 4 exists), scrubber with
-   nudge/commit/cancel and chapter ticks. Left/Right on clean playback become skips, as official.
-3. **Hold-to-seek.** The rate ladder and hold chip, on the existing seek path (exact landing with
-   FastSeek off, keyframe for software AV1).
+2. **Transport overlay and scrubber.** Revealed by the D-pad or by A pausing, hidden after a few
+   seconds without input, the transport row (skip, play/pause, Close first; Subtitles/Options once
+   step 4 exists), scrubber with nudge/commit/cancel and chapter ticks.
+3. **Trigger hold.** After a short pause (about 1 s) a held trigger rewinds / fast-forwards at one
+   steady rate until released, with a chip showing where it will land; release commits. Built on
+   the existing seek path (exact landing with FastSeek off, keyframe for software AV1).
 4. **HUD: Audio and Subtitles tabs** with mid-playback switching (local switch or replan), then
    Info/Video/Chapters; the debug stats move into the Stats tab.
 5. **Up Next** (10 s countdown, auto-play setting); this also brings "the last special continues

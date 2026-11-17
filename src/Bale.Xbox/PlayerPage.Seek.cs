@@ -15,6 +15,8 @@ public sealed partial class PlayerPage
     private bool _skipProcessing;
     private double? _skipTarget;
     private double? _pendingSkipTarget;
+    // A chapter jump's chip names the chapter instead of a delta.
+    private string? _skipLabel;
 
     private double SourcePosition(Attempt attempt)
     {
@@ -37,6 +39,7 @@ public sealed partial class PlayerPage
             // Presses during a native seek/remount build on the requested SOURCE position, never
             // the old player clock. Coalesce pending absolute targets without losing any press.
             _pendingSkipTarget = _skipTarget = PlaybackSeek.SkipTarget(_skipTarget ?? SourcePosition(attempt), _duration, forward);
+            _skipLabel = null;
             ShowSkipFeedback(forward ? PlaybackSeek.SkipForwardSeconds : -PlaybackSeek.SkipBackSeconds, _skipTarget.Value);
             if (!_skipProcessing) _ = ProcessSkipsAsync();
         }

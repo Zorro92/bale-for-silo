@@ -32,7 +32,7 @@ public sealed partial class PlayerPage
             TransportFeedback.Visibility = Visibility.Visible;
             var position = _skipTarget ?? SourcePosition(attempt);
             var duration = _duration is > 0 and { } end && double.IsFinite(end) ? end : (double?)null;
-            SkipDelta.Text = PlaybackTransportFeedback.Delta(_transportFeedback.DeltaSeconds);
+            SkipDelta.Text = _skipLabel ?? PlaybackTransportFeedback.Delta(_transportFeedback.DeltaSeconds);
             SkipLanding.Text = PlaybackTransportFeedback.Clock(_transportFeedback.TargetSeconds, forceHours: duration >= 3600);
             TransportElapsed.Text = PlaybackTransportFeedback.Clock(position);
             TransportPlayed.Width = TransportTrack.ActualWidth * PlaybackTransportFeedback.Progress(position, duration);

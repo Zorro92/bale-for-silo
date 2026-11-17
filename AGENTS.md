@@ -26,6 +26,14 @@ Read the Kotlin with `gh api repos/Silo-Server/silo-android/contents/<path> --jq
 
 - **Calendar focus** follows the selection: the selected pill/day, then the first card, with
   per-row memory.
+- **Player controller map** (owner's design, 2026-11-16; media remote keys stay official):
+  - D-pad on clean playback brings up the controls; further presses move between buttons.
+  - A while playing pauses and brings up the controls; A while paused with the controls hidden
+    resumes without them. With the controls up, A presses the focused button.
+  - Triggers: a tap skips 10 s back / 30 s forward; held, after a short pause they rewind /
+    fast-forward steadily (no speed ladder).
+  - Bumpers jump to the previous / next chapter.
+  - The controls hide after a while without input.
 - **Display resolution matching.** Auto version choice picks the file that best matches the
   connected display, not always the highest resolution (bandwidth and resources on 1080p TVs). It
   ranks only inside the current edition (the official Edition rule: Edition is the cut, history
