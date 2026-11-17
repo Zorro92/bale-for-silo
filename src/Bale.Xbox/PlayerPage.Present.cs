@@ -108,7 +108,9 @@ public sealed partial class PlayerPage
     private (ulong Rendered, ulong Dropped) _engineLastSecond;
     // The engine restarts its counters on seek and pause; keep running totals across those.
     private (ulong Rendered, ulong Dropped, ulong Corrupted) _engineBase, _engineRaw;
-    private bool _engineClosing;
+    // Premature ends reanchored at one source position; a repeat there leaves instead of looping.
+    private double _engineLastReconnect = double.NaN;
+    private bool _engineReanchoring;
 
     internal bool EnginePlayerActive => _enginePlayer is { HasSession: true };
 
@@ -173,7 +175,10 @@ public sealed partial class PlayerPage
             return;
         }
         _enginePlayer = host;
-        _engineClosing = false;
+        // The mount is open from Bale's side: seeks/reanchors wait on Opening, the clock on Started.
+        media.Opened = true;
+        media.Started = true;
+        media.Opening.TrySetResult(true);
         _engineSample = (Environment.TickCount64, 0, 0);
         _engineBase = _engineRaw = default;
         SetLoading(false);
@@ -202,20 +207,98 @@ public sealed partial class PlayerPage
                     state.FramesDropped - Math.Min(state.FramesDropped, _engineSample.Dropped));
                 _engineSample = (now, state.FramesRendered, state.FramesDropped);
             }
+            var source = EngineSourcePosition(state);
+            if (_attempt is { } current && !_engineReanchoring)
+                current.Position = _sourcePosition = source;
+            if (_engineReanchoring) return;
+            if (state.Ended && !state.Failed && _attempt?.Media is { Progressive: not null }
+                && _duration is > 0 and var titleDuration && source < titleDuration - 5
+                && !(Math.Abs(source - _engineLastReconnect) < 1))
+            {
+                // A forward-only stream ended before the title did (the HLS window or a cut-off
+                // progressive response): reconnect there, as the normal player does (protocol §6.2).
+                _engineLastReconnect = source;
+                Log.Info($"engine-player: stream ended early at source {source:0.###}s of {titleDuration:0.###}s; reconnecting");
+                _ = EngineSeekSourceAsync(source, paused: false);
+                return;
+            }
             if (state.Ended || state.Failed)
             {
-                Log.Info($"engine-player: {(state.Failed ? "engine error" : "ended")} at {state.Position:0.###}s");
+                Log.Info($"engine-player: {(state.Failed ? "engine error" : "ended")} at source {source:0.###}s");
                 _ = CloseEnginePlayerAsync(leave: true);
                 return;
             }
             var status = state.Seeking ? "seeking" : state.Waiting ? "buffering" : state.Paused ? "paused" : "playing";
-            var hours = state.Duration >= 3600;
-            var clock = PlaybackTransportFeedback.Clock(state.Position, forceHours: hours);
-            var total = double.IsFinite(state.Duration) ? PlaybackTransportFeedback.Clock(state.Duration, forceHours: hours) : "?";
+            var titleLength = _duration is > 0 and var known ? known : state.Duration;
+            var hours = titleLength >= 3600;
+            var clock = PlaybackTransportFeedback.Clock(source, forceHours: hours);
+            var total = double.IsFinite(titleLength) ? PlaybackTransportFeedback.Clock(titleLength, forceHours: hours) : "?";
             host.SetOverlay(!_engineStatsVisible ? null : FormattableString.Invariant(
                 $"Engine player · {_engineRoute}\n{clock} / {total} · {status}\nVideo {state.Width}x{state.Height} · {state.FramesPerSecond:0.###} fps\nFrames shown {state.FramesRendered} · dropped {state.FramesDropped} · corrupted {state.FramesCorrupted}\nLast second +{_engineLastSecond.Rendered} shown / +{_engineLastSecond.Dropped} dropped\nJitter {state.Jitter:0.###} · frame delay {state.FrameDelay:0.###}\nA pause · LT/RT -10/+30 s · LB/RB chapters · View stats · B leave"));
         }
         catch (Exception ex) { LogFailure("engine player tick", ex); }
+    }
+
+    /// <summary>The engine's player clock as a title (source) position.</summary>
+    private double EngineSourcePosition(in EngineSessionState state) =>
+        _attempt?.Media?.Transport.Timeline.SourceForPlayer(state.Position) ?? state.Position;
+
+    /// <summary>
+    /// Seeks the engine player to a title (source) position. Seekable sources seek the engine in
+    /// player time; forward-only ones (progressive remux, HLS through FFmpeg) take the normal player's
+    /// path: an HLS remount inside the server's window, else a server reanchor. Both rebuild the mount,
+    /// which reopens the engine player at the new origin.
+    /// </summary>
+    private async Task<bool> EngineSeekSourceAsync(double source, bool paused)
+    {
+        if (_attempt is not { Media: { } media } attempt || _enginePlayer is not { } host) return false;
+        source = Math.Max(0, _duration is > 0 and var total ? Math.Min(source, total) : source);
+        if (media.Progressive is null)
+        {
+            var target = media.Transport.Timeline.PlayerForSource(source) ?? source;
+            var hr = host.Seek(target);
+            if (paused && hr >= 0) hr = host.Pause();
+            Log.Info($"engine-player: seek source={source:0.###} player={target:0.###} hr=0x{unchecked((uint)hr):X8}");
+            return hr >= 0;
+        }
+        if (_engineReanchoring || !_lifecycle.Wait(0))
+        {
+            Log.Info("engine-player: seek busy");
+            return false;
+        }
+        _engineReanchoring = true;
+        try
+        {
+            var request = new PlaybackSeek(source, paused);
+            Mount? replacement;
+            if (media.Transport.IsHls && request.CanSeekInMount(attempt.Plan!, isHls: true, canSeek: true))
+            {
+                Log.Info($"engine-player: seek source={source:0.###} action=remount");
+                replacement = await RemountHlsAsync(attempt, request, paused);
+            }
+            else if (attempt.ServerFeatures.Contains(PlaybackSeekReanchor.Feature))
+            {
+                Log.Info($"engine-player: seek source={source:0.###} action=reanchor");
+                replacement = await ReanchorSeekAsync(attempt, media, source, paused);
+            }
+            else
+            {
+                Log.Info("engine-player: seek unavailable (forward-only, no reanchor feature)");
+                return false;
+            }
+            Log.Info($"engine-player: seek {(replacement is null ? "failed" : "remounted")}");
+            return replacement is not null;
+        }
+        catch (Exception ex)
+        {
+            LogFailure("engine player seek", ex);
+            return false;
+        }
+        finally
+        {
+            _engineReanchoring = false;
+            _lifecycle.Release();
+        }
     }
 
     /// <summary>Keys while the engine player is up (Bale's map); true when handled.</summary>
@@ -245,13 +328,15 @@ public sealed partial class PlayerPage
                 Log.Info($"engine-player: {(state.Paused ? "play" : "pause")} hr=0x{unchecked((uint)(state.Paused ? host.Play() : host.Pause())):X8}");
                 break;
             case PlaybackKeyAction.SkipBack or PlaybackKeyAction.SkipForward:
-                var target = PlaybackSeek.SkipTarget(state.Position, state.Duration, action == PlaybackKeyAction.SkipForward);
-                Log.Info($"engine-player: seek {target:0.###}s hr=0x{unchecked((uint)host.Seek(target)):X8}");
+                _ = EngineSeekSourceAsync(PlaybackSeek.SkipTarget(EngineSourcePosition(state), _duration ?? state.Duration,
+                    action == PlaybackKeyAction.SkipForward), state.Paused);
                 break;
             case PlaybackKeyAction.PreviousChapter or PlaybackKeyAction.NextChapter:
-                if (PlaybackChapters.Target(PlayingChapters().Select(chapter => chapter.StartSeconds), state.Position,
+                var chapters = PlayingChapters();
+                Log.Info($"engine-player: chapters={chapters.Count}");
+                if (PlaybackChapters.Target(chapters.Select(chapter => chapter.StartSeconds), EngineSourcePosition(state),
                         action == PlaybackKeyAction.NextChapter) is { } chapter)
-                    Log.Info($"engine-player: chapter {chapter:0.###}s hr=0x{unchecked((uint)host.Seek(chapter)):X8}");
+                    _ = EngineSeekSourceAsync(chapter, state.Paused);
                 break;
             case PlaybackKeyAction.Stop:
                 _ = CloseEnginePlayerAsync(leave: true);
@@ -278,28 +363,27 @@ public sealed partial class PlayerPage
     }
 
     /// <summary>Debug server seek for the engine player (engine time).</summary>
-    internal Task<(string Status, string Body)> EngineSeekAsync(double seconds, bool pause)
+    internal async Task<(string Status, string Body)> EngineSeekAsync(double seconds, bool pause)
     {
-        if (_enginePlayer is not { HasSession: true } host) return Task.FromResult(("409 Conflict", "no engine player\n"));
-        var hr = host.Seek(seconds);
-        if (hr >= 0 && pause) hr = host.Pause();
+        if (_enginePlayer is not { HasSession: true }) return ("409 Conflict", "no engine player\n");
+        var ok = await EngineSeekSourceAsync(seconds, pause);
         UpdateEnginePlayer();
-        return Task.FromResult(hr >= 0
-            ? ("200 OK", string.Create(CultureInfo.InvariantCulture, $"Engine player: seek {seconds:0.###}s{(pause ? " paused" : string.Empty)}\n"))
-            : ("500 Internal Server Error", $"engine hr=0x{unchecked((uint)hr):X8}\n"));
+        return ok
+            ? ("200 OK", string.Create(CultureInfo.InvariantCulture, $"Engine player: seek source {seconds:0.###}s{(pause ? " paused" : string.Empty)}\n"))
+            : ("409 Conflict", "engine player seek failed or busy\n");
     }
 
     /// <summary>Stops the engine player (UI thread); <paramref name="leave"/> also leaves the player.</summary>
     private async Task CloseEnginePlayerAsync(bool leave)
     {
-        if (_engineClosing || _enginePlayer is not { } host) return;
-        _engineClosing = true;
+        if (_enginePlayer is not { } host) return;
+        // Clear at once: a reanchor's new mount may open the next engine player while this one closes.
+        _enginePlayer = null;
         _engineTimer?.Stop();
         _engineTimer = null;
         string closing;
         try { closing = await host.CloseAsync(); }
         catch (Exception ex) { closing = $"close error {ex.GetType().Name}\n"; }
-        _enginePlayer = null;
         foreach (var line in closing.Split('\n', StringSplitOptions.RemoveEmptyEntries)) Log.Info("engine-player: " + line);
         DebugPresentEngineSwitch.Report(DebugPresentEngineSwitch.LastReport + closing);
         if (leave) OnBack(closeControls: false);
