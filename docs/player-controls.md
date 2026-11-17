@@ -87,6 +87,10 @@ rather than leaving them transparent so they cost nothing while hidden.
    (`PlaybackReplan.ForTrackChange`) and remounts like a seek reanchor; a refused change keeps
    playback as it was. Always a replan for now; the official local switch (a track the mounted
    stream already carries) is a later optimisation.
+   Options panel verified on 0.1.577 (Blu-ray movie with chapters): Menu opens it with Info focused
+   (MOVIE · 2016, title, 1:41:31, HDR10/1080p, Direct play · HEVC · DTS 5.1 · English · Chapter 02);
+   Chapters lists 01-07 with times, Chapter 04 seeked to 25:55 and closed. Bumpers on the same
+   title: RB to Chapter 05 (32:11), LB within 3 s back to Chapter 04.
    Options panel, code done 2026-11-16 (`PlayerPage.Options.cs`, `PlaybackOptionsInfo` in Core): the
    control bar's Options button or the Menu button opens a top-centre card that replaces the controls
    until Back. Info: eyebrow, title, length, HDR/resolution badges, and Stream rows (Playback, Video,
