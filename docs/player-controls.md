@@ -39,6 +39,9 @@ silo-android `androidTvApp/.../tv/ui/screens/player/` (port of the tvOS player).
    fast-forward/rewind take the same path, and a press arriving by both routes acts once. The log
    line `player: transport key=… / system=…` shows which route the Xbox media remote uses; check
    that with the remote on the console. Select (A) is left for step 2 (it reveals the controls).
+   Verified on 0.1.568 with keyboard Space and the controller D-pad: pause/resume, +30 s and −10 s
+   (also while paused, which stays paused), one `transport key=32` line per press, no second
+   toggle from the system controls. Still to check with you: the media remote and controller A.
 2. **Transport overlay and scrubber.** Reveal on Down/any key, 5 s auto-hide, the transport row
    (skip, play/pause, Close first; Subtitles/Options buttons once step 4 exists), scrubber with
    nudge/commit/cancel and chapter ticks. Left/Right on clean playback become skips, as official.
