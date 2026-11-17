@@ -227,6 +227,13 @@ public sealed partial class PlayerPage
 #endif
             }
             media.Token.ThrowIfCancellationRequested();
+#if DEBUG_SERVER
+            if (DebugPresentEngineSwitch.Seconds is > 0 and var presentSeconds && media.Stream is { } presentStream)
+            {
+                await PresentThroughEngineAsync(presentStream, transport.MimeType ?? "video/mp4", presentSeconds);
+                return;
+            }
+#endif
             if (media.Route.UseFfmpeg)
             {
                 if (media.Stream is { } range)

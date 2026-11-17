@@ -43,7 +43,7 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 /// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched DLL.
-pub const ABI_VERSION: u32 = 7;
+pub const ABI_VERSION: u32 = 8;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_gpu_abi_version() -> u32 {
@@ -193,14 +193,15 @@ pub unsafe extern "C" fn bale_gpu_engine_probe_source(
     unsafe { write_report(&text, report, report_capacity) }
 }
 
-/// Rendering-mode probe: plays `url` (or, when `source` is non-null, that COM media source through
-/// the engine extension) with `EnableWindowlessSwapchainMode`, calls `attach(context, handle)` once
+/// Rendering-mode probe: plays `url` (or, when `source` is non-null, that COM object: a media source
+/// through the engine extension when `mime_len` is 0, else an `IRandomAccessStream` of MIME type `mime`
+/// through `SetSourceFromByteStream`) with `EnableWindowlessSwapchainMode`, calls `attach(context, handle)` once
 /// with the engine's swap chain handle (the caller sets it on a `SwapChainPanel` on the UI thread and
 /// returns an HRESULT), sizes the video to `width`x`height`, plays `seconds`, and writes the report.
 ///
 /// # Safety
 /// `url` must point to `url_len` readable code units (or be null when `source` is set); `source`, when
-/// non-null, a live COM pointer for the call; `target` `target_len` code units or null; `attach` a
+/// non-null, a live COM pointer for the call; `mime` `mime_len` code units or null; `target` `target_len` code units or null; `attach` a
 /// valid function for the call; `report` `report_capacity` writable bytes.
 #[unsafe(no_mangle)]
 #[cfg(windows)]
@@ -209,6 +210,8 @@ pub unsafe extern "C" fn bale_gpu_engine_present(
     url: *const u16,
     url_len: u32,
     source: *mut core::ffi::c_void,
+    mime: *const u16,
+    mime_len: u32,
     seconds: u32,
     target: *const u16,
     target_len: u32,
@@ -263,12 +266,16 @@ pub unsafe extern "C" fn bale_gpu_engine_present(
         .cloned() else {
             return 0;
         };
-        engine::run(
-            engine::Input::Source(object),
-            seconds,
-            target,
-            Some(&present),
-        )
+        let input = if mime.is_null() || mime_len == 0 {
+            engine::Input::Source(object)
+        } else {
+            engine::Input::Stream {
+                stream: object,
+                // SAFETY: the caller guarantees `mime_len` readable code units.
+                mime: unsafe { std::slice::from_raw_parts(mime, mime_len as usize) },
+            }
+        };
+        engine::run(input, seconds, target, Some(&present))
     };
     // SAFETY: the caller guarantees `report_capacity` writable bytes.
     unsafe { write_report(&text, report, report_capacity) }

@@ -1,11 +1,4 @@
 #if DEBUG_SERVER
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using Windows.ApplicationModel.Core;
-using Windows.UI.Core;
-using Windows.UI.Xaml;
-using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Controls.Primitives;
 
 namespace Bale.Xbox.Services;
 
@@ -33,12 +26,11 @@ internal sealed partial class DebugServer
         if (hdr is not (null or "on" or "off")) return ("400 Bad Request", PresentUsage);
         if (Interlocked.CompareExchange(ref _playtestBusy, 1, 0) != 0)
             return ("409 Conflict", "a playtest is already running\n");
-        var host = new PresentHost();
+        var host = new DebugEnginePresent();
         try
         {
             Log.Info($"Debug present probe (target {target ?? "bgra"}, hdr {hdr ?? "off"}): start");
             var opened = await OnUiTaskAsync(() => host.OpenAsync(hdr == "on"));
-            if (host.Panel == 0) return ("200 OK", opened);
             var middle = Task.Delay(TimeSpan.FromSeconds(duration / 2.0 + 1))
                 .ContinueWith(_ => OnUiAsync(DisplayHdrOutput.CurrentModeText)).Unwrap();
             var body = await Task.Factory.StartNew(() => host.Run(uri, duration, target), CancellationToken.None,
@@ -60,111 +52,19 @@ internal sealed partial class DebugServer
         }
     }
 
-    private sealed class PresentHost
+    internal const string PresentEngineUsage =
+        "usage: GET /present-engine (last report) | POST /present-engine?seconds=0..120 (0 = off; the next library playback presents through the engine)\n";
+
+    private static (string Status, string Body) PresentEngine(string method, IReadOnlyDictionary<string, string> query)
     {
-        private Popup? _popup;
-        private SwapChainPanel? _view;
-        private DisplayHdrOutput? _hdr;
-        private uint _width;
-        private uint _height;
-
-        /// <summary>The panel's IInspectable (owned reference), or 0.</summary>
-        internal nint Panel { get; private set; }
-
-        internal bool IsOpen => Panel != 0 || _popup is not null || _hdr is not null;
-
-        internal async Task<string> OpenAsync(bool hdr)
-        {
-            var before = DisplayHdrOutput.CurrentModeText();
-            var switched = "not requested";
-            if (hdr)
-            {
-                _hdr = new DisplayHdrOutput();
-                switched = await _hdr.TryEnableHdr10Async() ? "switched to HDR10" : "not switched";
-            }
-            var bounds = Window.Current.Bounds;
-            var scale = Windows.Graphics.Display.DisplayInformation.GetForCurrentView().RawPixelsPerViewPixel;
-            _width = (uint)Math.Max(1, Math.Round(bounds.Width * scale));
-            _height = (uint)Math.Max(1, Math.Round(bounds.Height * scale));
-            _view = new SwapChainPanel { Width = bounds.Width, Height = bounds.Height };
-            _popup = new Popup { Child = _view, IsOpen = true };
-            // An owned IInspectable of the panel; Rust takes ISwapChainPanelNative2 from it.
-            Panel = WinRT.MarshalInspectable<object>.FromManaged(_view);
-            return $"Display before: {before}\nHDR request: {switched}\n"
-                + $"Panel: {bounds.Width:0}x{bounds.Height:0} view pixels, {_width}x{_height} raw (scale {scale:0.###})\n";
-        }
-
-        internal unsafe string Run(Uri uri, int seconds, string? target)
-        {
-            var abi = bale_gpu_abi_version();
-            if (abi != DebugRustProbe.EngineAbi) return $"Rust GPU layer ABI {abi} (expected {DebugRustProbe.EngineAbi}) MISMATCH\n";
-            var url = uri.AbsoluteUri;
-            var format = target ?? string.Empty;
-            var buffer = new byte[16 * 1024];
-            var self = GCHandle.Alloc(this);
-            try
-            {
-                uint written;
-                fixed (char* text = url)
-                fixed (char* targetText = format)
-                fixed (byte* report = buffer)
-                    written = bale_gpu_engine_present(text, (uint)url.Length, 0, (uint)seconds, targetText, (uint)format.Length,
-                        _width, _height, &Attach, GCHandle.ToIntPtr(self), report, (uint)buffer.Length);
-                return System.Text.Encoding.UTF8.GetString(buffer, 0, (int)Math.Min(written, (uint)buffer.Length));
-            }
-            finally { self.Free(); }
-        }
-
-        /// <summary>Called on the engine thread with the swap chain handle: set it on the panel on the UI thread.</summary>
-        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        private static int Attach(nint context, nint handle)
-        {
-            try
-            {
-                if (GCHandle.FromIntPtr(context).Target is not PresentHost host || host.Panel == 0) return unchecked((int)0x80004003);
-                var hr = unchecked((int)0x8000FFFF);
-                CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.High, () =>
-                {
-                    hr = bale_gpu_panel_set_swap_chain_handle(host.Panel, handle);
-                }).AsTask().Wait(TimeSpan.FromSeconds(5));
-                return hr;
-            }
-            catch (Exception ex) { return ex.HResult; }
-        }
-
-        internal async Task<string> CloseAsync()
-        {
-            Close();
-            var restored = "nothing to restore";
-            if (_hdr is { } output)
-            {
-                await output.RestoreAsync();
-                _hdr = null;
-                restored = "restore requested";
-            }
-            return $"HDR restore: {restored}\nDisplay after: {DisplayHdrOutput.CurrentModeText()}\n";
-        }
-
-        private void Close()
-        {
-            if (_popup is { } popup) popup.IsOpen = false;
-            _popup = null;
-            _view = null;
-            if (Panel != 0)
-            {
-                Marshal.Release(Panel);
-                Panel = 0;
-            }
-        }
+        if (method == "GET")
+            return query.Count == 0 ? ("200 OK", $"present-engine: {DebugPresentEngineSwitch.Seconds} s\n{DebugPresentEngineSwitch.LastReport}")
+                : ("400 Bad Request", PresentEngineUsage);
+        if (query.Count != 1 || !int.TryParse(query.GetValueOrDefault("seconds"), out var seconds) || seconds is < 0 or > 120)
+            return ("400 Bad Request", PresentEngineUsage);
+        DebugPresentEngineSwitch.Set(seconds);
+        Log.Info($"Debug present-engine: {seconds} s; applies to the next playback attempt");
+        return ("200 OK", $"present-engine: {seconds} s; applies to the next playback attempt\n");
     }
-
-    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern uint bale_gpu_abi_version();
-
-    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_panel_set_swap_chain_handle(nint panel, nint handle);
-
-    [DllImport("bale_gpu.dll", ExactSpelling = true)]
-    private static extern unsafe uint bale_gpu_engine_present(char* url, uint urlLength, nint source, uint seconds, char* target,
-        uint targetLength, uint width, uint height, delegate* unmanaged[Cdecl]<nint, nint, int> attach, nint context,
-        byte* report, uint reportCapacity);
 }
 #endif

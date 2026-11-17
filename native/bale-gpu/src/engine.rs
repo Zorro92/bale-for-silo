@@ -34,14 +34,16 @@ use windows::Win32::Media::MediaFoundation::{
     CLSID_MFMediaEngineClassFactory, IMFAsyncCallback, IMFAsyncResult, IMFAttributes,
     IMFByteStream, IMFDXGIDeviceManager, IMFGetService, IMFMediaEngine, IMFMediaEngineClassFactory,
     IMFMediaEngineEx, IMFMediaEngineExtension, IMFMediaEngineExtension_Impl, IMFMediaEngineNotify,
-    IMFMediaEngineNotify_Impl, IMFMediaSource, IMFMediaSourceEx, MF_E_UNEXPECTED,
-    MF_MEDIA_ENGINE_CALLBACK, MF_MEDIA_ENGINE_CANPLAY, MF_MEDIA_ENGINE_CANPLAY_MAYBE,
-    MF_MEDIA_ENGINE_DXGI_MANAGER, MF_MEDIA_ENGINE_EXTENSION, MF_MEDIA_ENGINE_STATISTIC,
-    MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT, MF_MEDIASOURCE_SERVICE, MF_OBJECT_MEDIASOURCE,
-    MF_OBJECT_TYPE, MFARGB, MFCreateAsyncResult, MFCreateAttributes, MFCreateDXGIDeviceManager,
-    MFInvokeCallback, MFSTARTUP_FULL, MFShutdown, MFStartup,
+    IMFMediaEngineNotify_Impl, IMFMediaSource, IMFMediaSourceEx, MF_BYTESTREAM_CONTENT_TYPE,
+    MF_E_UNEXPECTED, MF_MEDIA_ENGINE_CALLBACK, MF_MEDIA_ENGINE_CANPLAY,
+    MF_MEDIA_ENGINE_CANPLAY_MAYBE, MF_MEDIA_ENGINE_DXGI_MANAGER, MF_MEDIA_ENGINE_EXTENSION,
+    MF_MEDIA_ENGINE_STATISTIC, MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT, MF_MEDIASOURCE_SERVICE,
+    MF_OBJECT_MEDIASOURCE, MF_OBJECT_TYPE, MFARGB, MFCreateAsyncResult, MFCreateAttributes,
+    MFCreateDXGIDeviceManager, MFCreateMFByteStreamOnStreamEx, MFInvokeCallback, MFSTARTUP_FULL,
+    MFShutdown, MFStartup,
 };
 use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes, SetEvent};
+use windows::core::PCWSTR;
 use windows::core::{BOOL, BSTR, GUID, HRESULT, IUnknown, Interface, OutRef, Ref, implement};
 
 use crate::engine_target::{Sampler, Target, centred_crop, format_name};
@@ -91,6 +93,10 @@ pub enum Input<'a> {
     Url(&'a [u16]),
     /// A COM object that should expose `IMFMediaSource`.
     Source(IUnknown),
+    /// An authenticated byte stream (a WinRT `IRandomAccessStream`, such as the player's Rust range
+    /// stream) and its MIME type, UTF-16: wrapped with `MFCreateMFByteStreamOnStreamEx` and opened with
+    /// `SetSourceFromByteStream`, so the system demuxer and decoders (and their HDR/DV path) still apply.
+    Stream { stream: IUnknown, mime: &'a [u16] },
 }
 
 /// Hands the caller's media source to the engine for any URL (only the private one is ever set).
@@ -383,6 +389,9 @@ pub fn run(input: Input, seconds: u32, target: Target, present: Option<&Present>
         (Input::Url(_), false) => {
             "Media engine probe (Rust bale_gpu.dll; frame-server mode, muted, own D3D11 device)\n"
         }
+        (Input::Stream { .. }, false) => {
+            "Media engine probe (Rust bale_gpu.dll; caller byte stream; frame-server mode, muted)\n"
+        }
         (Input::Source(_), false) => {
             "Media engine probe (Rust bale_gpu.dll; caller media source via engine extension; frame-server mode, muted)\n"
         }
@@ -535,6 +544,14 @@ unsafe fn play(
         let notify: IMFMediaEngineNotify = Notify(Arc::clone(shared)).into();
         let url = match input {
             Input::Url(url) => BSTR::from_wide(url),
+            // A name hint only: the content type below decides the demuxer.
+            Input::Stream { mime, .. } => {
+                BSTR::from(if String::from_utf16_lossy(mime).contains("matroska") {
+                    "bale-stream.mkv"
+                } else {
+                    "bale-stream.mp4"
+                })
+            }
             Input::Source(object) => {
                 let source = object.cast::<IMFMediaSource>();
                 let _ = writeln!(
@@ -607,7 +624,26 @@ unsafe fn play(
             report.push_str("Rendering mode: windowless swap chain enabled\n");
         }
         engine.SetMuted(true).step("SetMuted")?;
-        engine.SetSource(&url).step("SetSource")?;
+        if let Input::Stream { stream, mime } = input {
+            let byte_stream =
+                MFCreateMFByteStreamOnStreamEx(stream).step("MFCreateMFByteStreamOnStreamEx")?;
+            if let Ok(stream_attributes) = byte_stream.cast::<IMFAttributes>() {
+                let mut text: Vec<u16> = mime.to_vec();
+                text.push(0);
+                let _ =
+                    stream_attributes.SetString(&MF_BYTESTREAM_CONTENT_TYPE, PCWSTR(text.as_ptr()));
+            }
+            let _ = writeln!(
+                report,
+                "Source: caller byte stream, content type {}",
+                String::from_utf16_lossy(mime)
+            );
+            engine_ex
+                .SetSourceFromByteStream(&byte_stream, &url)
+                .step("SetSourceFromByteStream")?;
+        } else {
+            engine.SetSource(&url).step("SetSource")?;
+        }
 
         let open = Instant::now();
         while !shared.can_play.load(Ordering::Acquire)

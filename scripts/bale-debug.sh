@@ -56,6 +56,7 @@
 #   scripts/bale-debug.sh hls-engine [native|ffmpeg]   next playback attempt's HLS engine; default ffmpeg = Rust HLS reader + FFmpeg (+ console tone map for HLS remux); native = Windows; memory only; no args = status
 #   scripts/bale-debug.sh stream-adapter [pooled|builtin|rust]  next playback attempt's stream adapter; default rust (C#: pooled/builtin), memory only (restart resets); no args = status
 #                                               rust: the Rust range stream and Rust IRandomAccessStream (no managed code on reads; FFmpeg and Media Foundation)
+#   scripts/bale-debug.sh present-engine [0-120]   next playback presents its authenticated progressive stream through IMFMediaEngine rendering mode for N seconds, then leaves (0 = off); no args = status + last report
 #   scripts/bale-debug.sh av1-claim [1080|2160]   next playback attempt's AV1 software-decode claim: 1080 = 1080p60 (default), 2160 adds a 4K30 entry; memory only (restart resets); no args = status
 #   scripts/bale-debug.sh display-match [on|off|status]  match content HDMI resolution/refresh on the next playback; default off, memory only (restart resets); no args = status
 #   scripts/bale-debug.sh hdr pretend|off|status  next attempt: pretend HDR10, skip HDMI switching for console SDR tone mapping; default off, memory only
@@ -458,6 +459,17 @@ case "${1:-}" in
       curl --fail-with-body -sS --max-time 5 "$BASE/hls-engine"
     else
       curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/hls-engine" --data-urlencode "mode=$2"
+    fi
+    ;;
+  present-engine)
+    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^([0-9]|[1-9][0-9]|1[01][0-9]|120)$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh present-engine [0-120]' >&2
+      exit 2
+    fi
+    if [[ "$#" == 1 ]]; then
+      curl --fail-with-body -sS --max-time 5 "$BASE/present-engine"
+    else
+      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/present-engine" --data-urlencode "seconds=$2"
     fi
     ;;
   av1-claim)

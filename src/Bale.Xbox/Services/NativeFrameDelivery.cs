@@ -14,7 +14,7 @@ namespace Bale.Xbox.Services;
 /// </summary>
 internal sealed unsafe partial class NativeFrameDelivery : IDebugFrameDelivery
 {
-    private const uint ExpectedAbi = 7;
+    private const uint ExpectedAbi = 8;
     private const int DrainCapacity = 512;
     private const int FailureHResult = unchecked((int)0x80004005);
     private readonly MediaStreamSource _source;
