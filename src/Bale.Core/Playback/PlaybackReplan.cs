@@ -126,7 +126,8 @@ public static class PlaybackReplan
         if (playing.Subtitle?.Mode == "burn_in" || answer.Subtitle?.Mode == "burn_in") return "burn_in";
         if (!Same(playing.Delivery, answer.Delivery) || answer.Delivery is null) return "delivery";
         if (playing.Stream is not { } a || answer.Stream is not { } b || string.IsNullOrEmpty(b.Url)) return "stream";
-        if (!Same(a.Url, b.Url)) return "stream.url";
+        // The server signs a fresh stream token on every plan (?st=...); the path names the stream.
+        if (!Same(UrlPath(a.Url), UrlPath(b.Url))) return "stream.url";
         if (!Same(a.Protocol, b.Protocol)) return "stream.protocol";
         if (!Same(a.Container, b.Container)) return "stream.container";
         if (!Same(a.MimeType, b.MimeType)) return "stream.mime_type";
@@ -147,6 +148,7 @@ public static class PlaybackReplan
         return null;
 
         static bool Same(string? left, string? right) => string.Equals(left, right, StringComparison.Ordinal);
+        static string? UrlPath(string? url) => url?.Split('?', '#')[0];
     }
 
     /// <summary>

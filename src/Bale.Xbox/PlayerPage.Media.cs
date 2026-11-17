@@ -424,7 +424,9 @@ public sealed partial class PlayerPage
         }
         else throw new InvalidDataException("The engine has no source for this route.");
         Log.Info($"player: backend=engine route={RouteText(media)}");
-        await engine.OpenAsync(source, type, canSeek: media.Progressive is null);
+        // Forward-only mounts open where they play (player 0); seekable ones at the mount's start.
+        await engine.OpenAsync(source, type, canSeek: media.Progressive is null,
+            start: media.Progressive is null ? media.StartPosition : 0);
         foreach (var line in engine.Report.Split('\n', StringSplitOptions.RemoveEmptyEntries)) Log.Info("engine: " + line);
     }
 #endif

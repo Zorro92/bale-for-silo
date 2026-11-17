@@ -95,6 +95,9 @@ public class PlaybackTrackChangeTests
         playing.Stream!.Url = "/api/v2/stream/session/original";
         playing.Subtitle = new SubtitleDecisionV3 { Mode = "render", TrackId = "t3" };
         Assert.True(PlaybackReplan.KeepsTransport(playing, Answer()));
+        // A freshly signed stream token is the same stream.
+        Assert.True(PlaybackReplan.KeepsTransport(playing, Answer(plan => plan.Stream!.Url = "/api/v2/stream/session/original?st=fresh")));
+        Assert.Equal("stream.url", PlaybackReplan.TransportChange(playing, Answer(plan => plan.Stream!.Url = "/api/v2/stream/other/original?st=x")));
         Assert.True(PlaybackReplan.KeepsTransport(playing, Answer(plan => plan.Subtitle = new SubtitleDecisionV3 { Mode = "off" })));
         // Anything the mount is built from changes: remount.
         Assert.False(PlaybackReplan.KeepsTransport(playing, Answer(plan => plan.Subtitle!.Mode = "burn_in")));

@@ -78,7 +78,9 @@ internal sealed partial class EngineBackend : PlaybackBackend
     /// MediaSource wrapper), or with <paramref name="mime"/> an IRandomAccessStream. Raises MediaOpened or
     /// MediaFailed. The caller keeps the source alive until Dispose.
     /// </summary>
-    public async Task OpenAsync(object source, string? mime, bool canSeek)
+    /// <param name="start">Player seconds to open at: the session seeks there before its first frame (a seek issued
+    /// right after opening can be dropped while the engine prerolls). The page's own start seek then finds it there.</param>
+    public async Task OpenAsync(object source, string? mime, bool canSeek, double start = 0)
     {
         _session.CanSeekSource = canSeek;
         nint pointer;
@@ -87,7 +89,7 @@ internal sealed partial class EngineBackend : PlaybackBackend
             ? WinRT.MarshalInterface<IRandomAccessStream>.FromManaged(stream)
             : ((WinRT.IWinRTObject)source).NativeObject.ThisPtr;
         int hr;
-        try { (hr, Report) = await Task.Run(() => Open(pointer, stream is not null ? mime ?? "video/mp4" : null)); }
+        try { (hr, Report) = await Task.Run(() => Open(pointer, stream is not null ? mime ?? "video/mp4" : null, start)); }
         finally { if (stream is not null) Marshal.Release(pointer); }
         if (_disposed) return;
         if (_handle == 0)
@@ -102,7 +104,7 @@ internal sealed partial class EngineBackend : PlaybackBackend
         RaiseOpened();
     }
 
-    private unsafe (int HResult, string Report) Open(nint source, string? mime)
+    private unsafe (int HResult, string Report) Open(nint source, string? mime, double start)
     {
         if (bale_gpu_abi_version() != ExpectedAbi) return (unchecked((int)0x80004002), "Rust GPU layer ABI mismatch\n");
         var type = mime ?? string.Empty;
@@ -116,7 +118,7 @@ internal sealed partial class EngineBackend : PlaybackBackend
             fixed (char* mimeText = type)
             fixed (byte* report = buffer)
                 written = bale_gpu_engine_session_open(null, 0, source, mimeText, (uint)type.Length, width, height, &Attach,
-                    GCHandle.ToIntPtr(self), 0, 1, 0, &session, report, (uint)buffer.Length);
+                    GCHandle.ToIntPtr(self), double.IsFinite(start) && start > 0 ? start : 0, 1, 0, &session, report, (uint)buffer.Length);
             var text = System.Text.Encoding.UTF8.GetString(buffer, 0, (int)Math.Min(written, (uint)buffer.Length));
             lock (_sync)
             {
@@ -409,8 +411,8 @@ internal sealed partial class EngineBackend : PlaybackBackend
             {
                 var target = Math.Max(0, value.TotalSeconds);
                 var current = Position.TotalSeconds;
-                // Already there (the open lands at its start): no engine seek, but report it like one.
-                if (Math.Abs(current - target) < 0.05)
+                // Already there (the open landed at its start, or close to it): no engine seek, but report it like one.
+                if (Math.Abs(current - target) < 0.5)
                 {
                     RaiseSeekCompleted();
                     return;
