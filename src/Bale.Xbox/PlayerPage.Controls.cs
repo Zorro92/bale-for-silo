@@ -35,7 +35,7 @@ public sealed partial class PlayerPage
             // Releasing a held skip key ends its scan (a scan commits as one seek).
             if (!keyDown && _holdKey == key) EndHold(commit: true);
             var action = PlaybackRemoteKeys.Action((int)key, keyDown, firstDown,
-                cleanPlayback: ErrorPanel.Visibility != Visibility.Visible && !_controls.Visible, modifier: ModifierHeld());
+                cleanPlayback: ErrorPanel.Visibility != Visibility.Visible && !_controls.Visible && !UpNextVisible, modifier: ModifierHeld());
             switch (action)
             {
                 case PlaybackKeyAction.None:
@@ -243,6 +243,11 @@ public sealed partial class PlayerPage
     /// <summary>Back: a scrub preview first, then the controls, then the player (TvPlayerScreen.kt).</summary>
     private bool BackClosesControls()
     {
+        if (UpNextVisible && !_upNext.VideoEnded)
+        {
+            DismissUpNext();
+            return true;
+        }
         if (TrackMenuOpen)
         {
             CloseTrackMenu();

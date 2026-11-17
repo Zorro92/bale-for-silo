@@ -312,6 +312,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
             && IsCurrent(current, first)) UpdatePlaybackState(current, first);
         UpdateSpinner();
         UpdateHoldScan();
+        UpdateUpNext();
         UpdateTransport();
         UpdateControls();
         UpdateVersionNotice();

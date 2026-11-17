@@ -92,5 +92,14 @@ rather than leaving them transparent so they cost nothing while hidden.
    exercised (the title had one language). Left/Right along the button row are explicit since.
 5. **Up Next** (10 s countdown, auto-play setting); this also brings "the last special continues
    into S1E1" from the upstream log.
+   Code done 2026-11-16, not yet on the console (`PlaybackUpNext` / `PlaybackUpNextState`, tested
+   in Core; `PlayerPage.UpNext.cs`): for an episode the next one is resolved once playback starts
+   (next number in the season, else the first episode of the next numbered season; the last special
+   continues into S1E1, a regular episode never into Specials). Crossing the file's credits marker
+   raises the card with a countdown mirroring the remaining playback, so the advance waits for the
+   end; without a marker the card appears at the end with a 10 s countdown. Play Now or the countdown
+   opens a fresh player for the next episode that replaces this one (Back still returns to Detail);
+   Hide/Back dismisses the card for this episode. Auto-play is always on for now; the Settings
+   toggle and the transport's Up Next button come later.
 6. Later: intro/credits skip, trickplay, subtitle delay/appearance.
 

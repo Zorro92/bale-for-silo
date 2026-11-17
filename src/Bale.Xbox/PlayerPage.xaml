@@ -186,6 +186,23 @@
         <Button x:Name="RetryButton" Content="Retry" Click="OnRetryClick" Style="{StaticResource SkylineProfileRetryStyle}" />
       </StackPanel>
     </Grid>
+    <!-- Up Next (TvPlayerViewModel.kt showNextUp): raised at the credits or at the end, Play Now focused. -->
+    <Border x:Name="UpNextCard" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,48,26"
+            Width="340" Padding="14" CornerRadius="14" Background="#F3131417" BorderBrush="#1AFFFFFF" BorderThickness="1">
+      <StackPanel Spacing="10">
+        <TextBlock Text="UP NEXT" Style="{StaticResource SkylinePlayerEyebrowStyle}" />
+        <Border CornerRadius="8" Height="176" Background="#14FFFFFF">
+          <Image x:Name="UpNextStill" Stretch="UniformToFill" />
+        </Border>
+        <TextBlock x:Name="UpNextTitle" FontFamily="{StaticResource SkylineFont}" FontSize="14.2" FontWeight="SemiBold"
+                   Foreground="#FFEDEDED" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+        <TextBlock x:Name="UpNextCountdown" FontFamily="{StaticResource SkylineFont}" FontSize="12.04" Foreground="#99EDEDED" />
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <Button x:Name="UpNextPlayButton" Content="Play Now" Style="{StaticResource SkylineButtonStyle}" Click="OnUpNextPlayClick" />
+          <Button x:Name="UpNextHideButton" Content="Hide" Style="{StaticResource SkylineButtonStyle}" Click="OnUpNextHideClick" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
     <!-- Audio / Subtitles track lists, the Detail page's anchored menu (TvAnchoredSelectorMenu.kt). -->
     <controls:PlaybackSelectorMenu x:Name="TrackMenu" IsHitTestVisible="False"
                                    AnchorGap="{StaticResource SkylinePlaybackSelectorGap}" WindowInset="{StaticResource SkylinePlaybackSelectorWindowInset}" />

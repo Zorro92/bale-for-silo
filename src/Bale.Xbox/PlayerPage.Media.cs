@@ -577,7 +577,7 @@ public sealed partial class PlayerPage
         // Protocol §4: a progressive response that did not end cleanly is a transport failure,
         // never the end of the title. Reopen it where it stopped (§6.2) instead of leaving.
         if (media.Progressive is { Completed: false }) QueueProgressiveReconnect(attempt, media, "incomplete");
-        else _ = StopAndGoBackAsync();
+        else if (!HandleEndedWithUpNext()) _ = StopAndGoBackAsync();
     });
 
     private void TrackProgressiveIdle(Attempt attempt, Mount media, MediaPlaybackState state)
