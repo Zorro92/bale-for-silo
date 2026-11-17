@@ -66,11 +66,43 @@ public class DisplayMatchPolicyTests
     }
 
     [Fact]
-    public void TieToleranceNeverLetsANonIntegerClassDisplaceAnIntegerMultiple()
+    public void NearMissesAreNotMultiplesSoTheRateClosestToTheCurrentOneStays()
     {
-        // Straddle the 0.05 ratio boundary near 2x without letting the 0.005 Hz tie mix classes.
-        Assert.Equal(0, Pick([Mode(4096, 2160, 48.751), Mode(3840, 2160, 48.749)],
+        // 48.75 Hz is 1.95x of 25 fps: no whole multiple, so the refresh nearest the current 60 Hz wins;
+        // the two are 0.002 Hz apart, a tie, which 16:9 breaks.
+        Assert.Equal(1, Pick([Mode(4096, 2160, 48.751), Mode(3840, 2160, 48.749)],
             width: 3840, height: 1600, fps: 25));
+        Assert.Equal(0, Pick([Mode(1920, 1080, 50), Mode(1920, 1080, 48)], fps: 25.5));
+    }
+
+    [Theory]
+    [InlineData(59.94, 1)]
+    [InlineData(50, 0)]
+    public void FilmWithoutAWholeMultipleStaysOnTheCurrentRefreshInsteadOf50Hz(double currentRefresh, int expected)
+    {
+        // The owner's 1080p SDR TV: 50 and 59.94 Hz only. 24 fps must not go to 50 Hz from 59.94.
+        DisplayModeFacts[] modes = [Mode(1920, 1080, 50), Mode(1920, 1080, 59.94)];
+        Assert.Equal(expected, DisplayMatchPolicy.PickMode(Mode(1920, 1080, currentRefresh), modes, 1920, 1080, 23.976));
+    }
+
+    [Fact]
+    public void TightToleranceTellsFilmRatesApartThenTheLooseOneAccepts()
+    {
+        DisplayModeFacts[] both = [Mode(1920, 1080, 24), Mode(1920, 1080, 23.976)];
+        Assert.Equal(1, Pick(both, fps: 23.976));
+        Assert.Equal(0, Pick(both, fps: 24));
+        // Only the other film rate offered: 0.1% off, inside the 0.15% second pass.
+        Assert.Equal(1, Pick([Mode(1920, 1080, 59.94), Mode(1920, 1080, 23.976)], fps: 24));
+        Assert.Equal(1, Pick([Mode(1920, 1080, 50), Mode(1920, 1080, 24)], fps: 23.976));
+        // 0.3% off is not a fit.
+        Assert.Equal(0, Pick([Mode(1920, 1080, 60), Mode(1920, 1080, 24.072)], fps: 24));
+    }
+
+    [Fact]
+    public void TheSmallestWholeMultipleWins()
+    {
+        Assert.Equal(1, Pick([Mode(1920, 1080, 48), Mode(1920, 1080, 24)], fps: 24));
+        Assert.Equal(0, Pick([Mode(1920, 1080, 60), Mode(1920, 1080, 50)], fps: 30));
     }
 
     [Fact]

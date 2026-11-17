@@ -164,26 +164,47 @@ pub fn pick_mode(args: &PickModeArgs) -> Option<usize> {
             .copied()
             .collect()
     };
-    // RefreshRateSelector.kt: integer multiples always beat non-integer cadence, then minimize delta.
-    // Compare class/delta separately so the 10000 penalty cannot obscure the 0.005 Hz tie tolerance.
-    let scored: Vec<(usize, &DisplayMode, bool, f64)> = candidates
-        .iter()
-        .map(|&(index, mode)| {
-            (
-                index,
-                mode,
-                integer_multiple(mode.refresh_rate, rate),
-                (mode.refresh_rate - rate).abs(),
-            )
-        })
-        .collect();
-    let best = scored
-        .iter()
-        .min_by(|a, b| b.2.cmp(&a.2).then(by(a.3, b.3)))?;
-    let mut tied: Vec<_> = scored
-        .iter()
-        .filter(|s| s.2 == best.2 && s.3 - best.3 <= 0.005)
-        .collect();
+    // Apple TV / AetherEngine (owner, 2026-11-17): switch only to a refresh that is a whole multiple of
+    // the frame rate, tight enough to tell 23.976 from 24 (0.05%), then within 0.15% (24 fps on a TV
+    // that offers 23.976 Hz but not 24 Hz). The smallest multiple wins (24 over 48). With no fit, stay
+    // at the refresh closest to the current one: 3:2 pulldown at 59.94 Hz beats 24 fps at 50 Hz.
+    let multiple = |mode: &DisplayMode, tolerance: f64| -> Option<f64> {
+        let ratio = mode.refresh_rate / rate;
+        let whole = ratio.round();
+        (whole >= 1.0 && (ratio / whole - 1.0).abs() <= tolerance).then_some(whole)
+    };
+    let fitting = [0.0005, 0.0015].into_iter().find_map(|tolerance| {
+        let fits: Vec<(usize, &DisplayMode, f64)> = candidates
+            .iter()
+            .filter_map(|&(index, mode)| {
+                multiple(mode, tolerance).map(|whole| (index, mode, whole))
+            })
+            .collect();
+        (!fits.is_empty()).then_some(fits)
+    });
+    // (index, mode, distance): the multiple's distance from the frame rate, or from the current refresh.
+    let scored: Vec<(usize, &DisplayMode, f64)> = match fitting {
+        Some(fits) => {
+            let smallest = fits.iter().map(|f| f.2).fold(f64::INFINITY, f64::min);
+            fits.into_iter()
+                .filter(|f| f.2 == smallest)
+                .map(|(index, mode, whole)| (index, mode, (mode.refresh_rate - rate * whole).abs()))
+                .collect()
+        }
+        None => candidates
+            .iter()
+            .map(|&(index, mode)| {
+                (
+                    index,
+                    mode,
+                    (mode.refresh_rate - args.current.refresh_rate).abs(),
+                )
+            })
+            .collect(),
+    };
+    let best = scored.iter().map(|s| s.2).min_by(|a, b| by(*a, *b))?;
+    // Rates within 0.005 Hz tie (pixel-clock rounding); aspect, area and the current mode break ties.
+    let mut tied: Vec<_> = scored.iter().filter(|s| s.2 - best <= 0.005).collect();
     let sixteen_nine = |m: &DisplayMode| u64::from(m.width) * 9 == u64::from(m.height) * 16;
     // HDMI can enumerate several encodings of the same transport; avoid a redundant handshake.
     tied.sort_by(|a, b| {
@@ -193,10 +214,4 @@ pub fn pick_mode(args: &PickModeArgs) -> Option<usize> {
             .then((*b.1 == args.current).cmp(&(*a.1 == args.current)))
     });
     tied.first().map(|s| s.0)
-}
-
-fn integer_multiple(refresh_rate: f64, frame_rate: f64) -> bool {
-    let ratio = refresh_rate / frame_rate;
-    // Math.Round rounds half to even.
-    ratio >= 0.99 && (ratio - ratio.round_ties_even()).abs() < 0.05
 }

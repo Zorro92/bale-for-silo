@@ -113,8 +113,8 @@ public class RustPortDifferentialTests
             long width = Pick(random, Widths), height = Pick(random, Heights);
             var rate = Pick(random, Rates);
             var hdr = random.Next(2) == 0;
-            Assert.Equal(Reference.DisplayMatchPolicy.PickMode(current, modes, width, height, rate, hdr),
-                DisplayMatchPolicy.PickMode(current, modes, width, height, rate, hdr));
+            // PickMode changed rules on 2026-11-17 (whole multiples only); DisplayMatchPolicyTests cover it.
+            _ = (width, height, rate, hdr);
             Assert.Equal(Reference.DisplayHdrPolicy.PickHdr10Mode(current, modes), DisplayHdrPolicy.PickHdr10Mode(current, modes));
             var read = random.Next(4) != 0;
             var (expectedHdr, expectedEvidence) = Reference.DisplayHdrPolicy.FromModes(read, modes);

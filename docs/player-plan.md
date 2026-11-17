@@ -1703,10 +1703,13 @@ Things learned on the way:
   `scripts/bale-debug.sh display-match [on|off|status]` (no argument = status) is memory-only,
   defaults to off and resets on restart. It is captured for the next playback attempt, never
   changes an open player, and is absent with `BaleDebugServer=false`. Production behavior is unchanged.
-- Matches Android TV's `HdrDisplayController.kt` / `RefreshRateSelector.kt`: first exact video
-  width/height, otherwise modes that hold the video, otherwise the largest modes. Integer-multiple
-  refresh rates beat non-integer cadence; closest refresh wins within that class. Rates within
-  0.005 Hz of the best delta tie, preferring 16:9 over DCI 4096×2160, then the largest pixel area.
+- Resolution follows Android TV's `HdrDisplayController.kt`: first exact video width/height, otherwise
+  modes that hold the video, otherwise the largest modes. Refresh follows Apple TV / AetherEngine
+  (owner, 2026-11-17; also Silolux's `DisplayModeMatcher`): only a whole multiple of the frame rate,
+  first within 0.05% (23.976 vs 24 kept apart), then within 0.15%; the smallest multiple wins. With no
+  fit, the refresh closest to the current one stays (24 fps on a 50/59.94 Hz TV keeps 59.94 Hz 3:2
+  pulldown instead of switching to 50 Hz). Rates within 0.005 Hz tie, preferring 16:9 over DCI
+  4096×2160, then the largest pixel area, then the current mode.
   Xbox candidates exclude stereo and anything above 60 Hz, even on a 120 Hz desktop.
 - At mount, use the plan's frame rate (`PlaybackStats.ResolveFrameRate`; recipe/source for HLS)
   and output dimensions (source for original delivery, otherwise effective recipe with source
