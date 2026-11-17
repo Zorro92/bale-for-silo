@@ -48,6 +48,30 @@ public class PlaybackControlsTests
         Assert.Null(PlaybackControlsText.Eyebrow(Detail("other", "X", null)));
     }
 
+    [Fact]
+    public void AHeldTriggerScansSteadilyAfterTheDelayAndATapDoesNot()
+    {
+        var scan = new PlaybackHoldScan(delayMs: 1000, rate: 60);
+        scan.Press(forward: true, nowMs: 0);
+        Assert.Null(scan.Tick(900, 130, 1000));
+        Assert.Equal(130, scan.Tick(1000, 130, 1000));
+        Assert.Equal(136, scan.Tick(1100, 999, 1000));
+        Assert.Equal(160, scan.Tick(1500, 999, 1000));
+        Assert.Equal(160, scan.Release());
+        Assert.False(scan.Held);
+
+        scan.Press(forward: false, nowMs: 5000);
+        Assert.Null(scan.Tick(5400, 50, 1000));
+        Assert.Null(scan.Release());
+
+        scan.Press(forward: false, nowMs: 0);
+        scan.Tick(1000, 20, 1000);
+        Assert.Equal(0, scan.Tick(2000, 20, 1000));
+        scan.Press(forward: true, nowMs: 0);
+        scan.Tick(1000, 990, 1000);
+        Assert.Equal(1000, scan.Tick(2000, 990, 1000));
+    }
+
     private static ItemDetail Detail(string type, string title, string? subtitle) =>
         new("id", type, title, subtitle, null, null, null, null, [], null, [], [], null, [], null, "id", null, null, new(false, false, false), []);
 }

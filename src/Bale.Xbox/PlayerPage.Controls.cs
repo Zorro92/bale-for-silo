@@ -19,6 +19,8 @@ public sealed partial class PlayerPage
     private readonly PlaybackTransportDedup _transportDedup = new();
     private readonly PlaybackControlsState _controls = new();
     private readonly PlaybackScrub _scrub = new();
+    private readonly PlaybackHoldScan _holdScan = new();
+    private VirtualKey? _holdKey;
     private long _lastControlsUpdate;
 
     /// <summary>App's key hook: true when the player acted on or swallowed the key.</summary>
@@ -30,6 +32,8 @@ public sealed partial class PlayerPage
             // Any key keeps visible controls up; with them (or the error panel) up the D-pad and A
             // belong to focus navigation.
             if (keyDown) _controls.Input(Environment.TickCount64);
+            // Releasing a held skip key ends its scan (a scan commits as one seek).
+            if (!keyDown && _holdKey == key) EndHold(commit: true);
             var action = PlaybackRemoteKeys.Action((int)key, keyDown, firstDown,
                 cleanPlayback: ErrorPanel.Visibility != Visibility.Visible && !_controls.Visible, modifier: ModifierHeld());
             switch (action)
@@ -62,7 +66,11 @@ public sealed partial class PlayerPage
                     break;
                 case PlaybackKeyAction.SkipBack:
                 case PlaybackKeyAction.SkipForward:
-                    QueueSkip(action == PlaybackKeyAction.SkipForward);
+                    // The press skips at once; held past a second it scans steadily (owner's map).
+                    var forward = action == PlaybackKeyAction.SkipForward;
+                    QueueSkip(forward);
+                    _holdKey = key;
+                    _holdScan.Press(forward, Environment.TickCount64);
                     break;
             }
             return true;
@@ -203,6 +211,7 @@ public sealed partial class PlayerPage
             ControlsTitle.Text = PlaybackControlsText.Title(detail);
             TransportControls.Visibility = Visibility.Visible;
             HideTransport();
+            DrawChapterGaps();
         }
         UpdateControls(force: true);
         if (!wasVisible) FocusRetry.Until(PlayPauseButton, () => !_controls.Visible || PlayPauseButton.Focus(FocusState.Keyboard));
@@ -251,7 +260,7 @@ public sealed partial class PlayerPage
             PauseGlyph.Visibility = playing ? Visibility.Visible : Visibility.Collapsed;
             PlayGlyph.Visibility = playing ? Visibility.Collapsed : Visibility.Visible;
             Windows.UI.Xaml.Automation.AutomationProperties.SetName(PlayPauseButton, playing ? "Pause" : "Play");
-            var position = _scrub.Preview ?? _skipTarget ?? SourcePosition(attempt);
+            var position = _holdScan.Target ?? _scrub.Preview ?? _skipTarget ?? SourcePosition(attempt);
             var duration = _duration is > 0 and { } end && double.IsFinite(end) ? end : (double?)null;
             var hours = duration >= 3600;
             ControlsElapsed.Text = PlaybackTransportFeedback.Clock(position, forceHours: hours);
@@ -273,7 +282,65 @@ public sealed partial class PlayerPage
         catch (Exception ex) { LogFailure("controls", ex); }
     }
 
-    private void OnScrubberSizeChanged(object sender, SizeChangedEventArgs e) => UpdateControls(force: true);
+    /// <summary>OnTick: advance a held trigger's scan and show where it will land.</summary>
+    private void UpdateHoldScan()
+    {
+        try
+        {
+            if (!_holdScan.Held) return;
+            if (!_active || _leaving || _suspended || _attempt is not { } attempt)
+            {
+                EndHold(commit: false);
+                return;
+            }
+            var started = _holdScan.Target is null;
+            if (_holdScan.Tick(Environment.TickCount64, _skipTarget ?? SourcePosition(attempt), _duration) is not { } target) return;
+            if (started) Log.Info("player: hold scan " + (_holdScan.Direction > 0 ? "forward" : "back"));
+            _skipLabel = _holdScan.Direction > 0 ? "Fast-forward" : "Rewind";
+            ShowSkipFeedback(0, target);
+            _controls.Input(Environment.TickCount64);
+            UpdateControls(force: true);
+        }
+        catch (Exception ex) { LogFailure("hold scan", ex); }
+    }
+
+    private void EndHold(bool commit)
+    {
+        _holdKey = null;
+        if (_holdScan.Release() is { } target && commit) QueueSeekTo(target);
+    }
+
+    private void OnScrubberSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        DrawChapterGaps();
+        UpdateControls(force: true);
+    }
+
+    /// <summary>The playing file's chapter starts as gaps in the bar (none at 0 or at the end).</summary>
+    private void DrawChapterGaps()
+    {
+        try
+        {
+            ScrubberChapters.Children.Clear();
+            if (_attempt is not { } attempt || _duration is not (> 0 and { } duration) || !double.IsFinite(duration)) return;
+            var fileId = attempt.Plan?.Source?.MediaFileId ?? attempt.Start?.FileId;
+            var chapters = attempt.Request.Detail.Versions.FirstOrDefault(version => version.FileId == fileId)?.Chapters ?? [];
+            var width = ScrubberTrack.ActualWidth;
+            var height = ScrubberTrack.ActualHeight;
+            foreach (var start in chapters.Select(chapter => chapter.StartSeconds).OfType<double>())
+            {
+                if (!double.IsFinite(start) || start <= 1 || start >= duration - 1) continue;
+                var gap = new Windows.UI.Xaml.Shapes.Rectangle
+                {
+                    Width = 2, Height = height,
+                    Fill = new Windows.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0xE0, 0, 0, 0)),
+                };
+                Windows.UI.Xaml.Controls.Canvas.SetLeft(gap, width * start / duration - 1);
+                ScrubberChapters.Children.Add(gap);
+            }
+        }
+        catch (Exception ex) { LogFailure("chapter gaps", ex); }
+    }
 
     /// <summary>TvPlayerScrubber.kt: 4 -> 5 (focused) -> 7 (scrubbing) track, 15 -> 21 puck.</summary>
     private void OnScrubberFocus(object sender, RoutedEventArgs e)

@@ -310,6 +310,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         if (_attempt is { Media: { Opened: true, Started: false, FailureQueued: false, Player: not null } first } current
             && IsCurrent(current, first)) UpdatePlaybackState(current, first);
         UpdateSpinner();
+        UpdateHoldScan();
         UpdateTransport();
         UpdateControls();
         UpdateVersionNotice();

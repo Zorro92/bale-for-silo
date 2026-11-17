@@ -61,6 +61,8 @@
           <Grid x:Name="ScrubberTrack" Height="4" VerticalAlignment="Center" SizeChanged="OnScrubberSizeChanged">
             <Border CornerRadius="3.5" Background="#38FFFFFF" />
             <Border x:Name="ScrubberPlayed" CornerRadius="3.5" Background="#FFEDEDED" HorizontalAlignment="Left" Width="0" />
+            <!-- TvPlayerScrubber.kt: chapter starts are 2 px gaps in the bar. -->
+            <Canvas x:Name="ScrubberChapters" IsHitTestVisible="False" />
             <Ellipse x:Name="ScrubberPuck" Width="15" Height="15" Fill="White" HorizontalAlignment="Left" VerticalAlignment="Center">
               <Ellipse.RenderTransform><TranslateTransform x:Name="ScrubberPuckShift" /></Ellipse.RenderTransform>
             </Ellipse>

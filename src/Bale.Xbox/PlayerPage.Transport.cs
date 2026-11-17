@@ -31,7 +31,7 @@ public sealed partial class PlayerPage
                 return;
             }
             TransportFeedback.Visibility = Visibility.Visible;
-            var position = _skipTarget ?? SourcePosition(attempt);
+            var position = _holdScan.Target ?? _skipTarget ?? SourcePosition(attempt);
             var duration = _duration is > 0 and { } end && double.IsFinite(end) ? end : (double?)null;
             SkipDelta.Text = _skipLabel ?? PlaybackTransportFeedback.Delta(_transportFeedback.DeltaSeconds);
             SkipLanding.Text = PlaybackTransportFeedback.Clock(_transportFeedback.TargetSeconds, forceHours: duration >= 3600);

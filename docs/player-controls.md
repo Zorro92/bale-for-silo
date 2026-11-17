@@ -68,10 +68,12 @@ rather than leaving them transparent so they cost nothing while hidden.
    playback without one, Down/Back cancel it), the clock row with "Ends", and skip back · play/pause ·
    skip forward on the left, Close on the right. Play/Pause has focus on reveal; Back closes a
    preview, then the controls, then the player; Stop and Close leave at once; 5 s without input hides
-   the controls (also while paused). Not yet: chapter ticks and segment colours on the bar, the
-   skip chip's delta while the controls are up.
+   the controls (also while paused). Chapter starts are 2 px gaps in the bar. Not yet: segment
+   colours (intro/credits markers), the skip chip's delta while the controls are up.
 3. **Trigger hold.** After a short pause (about 1 s) a held trigger rewinds / fast-forwards at one
-   steady rate until released, with a chip showing where it will land; release commits. Built on
+   steady rate until released, with a chip showing where it will land; release commits. Code done 2026-11-16
+   (`PlaybackHoldScan`): 1 s delay, 60 s of video per second, chip "Rewind"/"Fast-forward" with the
+   landing time; the scan ends without seeking if the player leaves. Rate to tune on the console. Built on
    the existing seek path (exact landing with FastSeek off, keyframe for software AV1).
 4. **HUD: Audio and Subtitles tabs** with mid-playback switching (local switch or replan), then
    Info/Video/Chapters; the debug stats move into the Stats tab.

@@ -89,3 +89,58 @@ public static class PlaybackControlsText
     public static string Title(ItemDetail detail) =>
         detail.Type == "episode" && !string.IsNullOrWhiteSpace(detail.Subtitle) ? detail.Subtitle.Trim() : detail.Title;
 }
+
+/// <summary>
+/// A held trigger (owner's map): the press has already skipped; held past <see cref="DelayMs"/>, a
+/// steady scan moves a preview at <see cref="ContentSecondsPerSecond"/> until the release, which
+/// commits it as one seek. No speed ladder.
+/// </summary>
+public sealed class PlaybackHoldScan(long delayMs = PlaybackHoldScan.DelayMs, double rate = PlaybackHoldScan.ContentSecondsPerSecond)
+{
+    public const long DelayMs = 1_000;
+    public const double ContentSecondsPerSecond = 60;
+
+    private int _direction;
+    private long _pressedAt;
+    private long _lastTick;
+
+    /// <summary>The scan's preview; null until the hold has lasted the delay.</summary>
+    public double? Target { get; private set; }
+
+    public bool Held => _direction != 0;
+
+    public int Direction => _direction;
+
+    public void Press(bool forward, long nowMs)
+    {
+        _direction = forward ? 1 : -1;
+        _pressedAt = _lastTick = nowMs;
+        Target = null;
+    }
+
+    /// <summary>Advance a running scan; <paramref name="origin"/> seeds it when the delay has just passed.</summary>
+    public double? Tick(long nowMs, double origin, double? duration)
+    {
+        if (_direction == 0 || nowMs - _pressedAt < delayMs) return null;
+        if (Target is not { } current)
+        {
+            current = double.IsFinite(origin) ? Math.Max(0, origin) : 0;
+            _lastTick = nowMs;
+        }
+        else current += _direction * rate * (nowMs - _lastTick) / 1000.0;
+        _lastTick = nowMs;
+        current = Math.Max(0, current);
+        if (duration is > 0 and { } end && double.IsFinite(end)) current = Math.Min(current, end);
+        Target = current;
+        return current;
+    }
+
+    /// <summary>The release: the scan's target to seek to, or null for a plain tap.</summary>
+    public double? Release()
+    {
+        var target = Target;
+        _direction = 0;
+        Target = null;
+        return target;
+    }
+}
