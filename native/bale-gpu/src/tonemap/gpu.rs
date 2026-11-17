@@ -155,9 +155,16 @@ impl ToneMapGpu {
         let context: ID3D11DeviceContext1 = context.cast()?;
         let multithread: ID3D10Multithread = context.cast()?;
         // Views and all allocation are prepared before a copy, draw or context swap.
+        // ABI 2: the output's own format picks the plane views and the shaders' quantization.
+        let ten_bit = dst.Format == DXGI_FORMAT_P010;
+        let (luma_view, chroma_view) = if ten_bit {
+            (DXGI_FORMAT_R16_UNORM, DXGI_FORMAT_R16G16_UNORM)
+        } else {
+            (DXGI_FORMAT_R8_UNORM, DXGI_FORMAT_R8G8_UNORM)
+        };
         let targets = [
-            render_view(&self.device, output, DXGI_FORMAT_R8_UNORM)?,
-            render_view(&self.device, output, DXGI_FORMAT_R8G8_UNORM)?,
+            render_view(&self.device, output, luma_view)?,
+            render_view(&self.device, output, chroma_view)?,
         ];
         // D3D11 forbids SRVs on decoder/encoder arrays even with an SRV bind present.
         let direct = src.BindFlags & D3D11_BIND_SHADER_RESOURCE.0 as u32 != 0
@@ -202,7 +209,7 @@ impl ToneMapGpu {
                 config.source_peak_nits,
                 config.target_white_nits,
                 config.desat,
-                0.0,
+                if ten_bit { 1.0 } else { 0.0 },
             ],
         };
         // Fail before queueing work, never return an error after changing the caller's output.
@@ -277,6 +284,8 @@ impl ToneMapGpu {
             };
             let pattern = cpu::test_pattern(16, 8, true, full_range == 1);
             let expected = cpu::reference(&config, &frame, &pattern, 16, 8).map_err(HRESULT)?;
+            let expected10 =
+                cpu::reference_p010(&config, &frame, &pattern, 16, 8).map_err(HRESULT)?;
             let data = D3D11_SUBRESOURCE_DATA {
                 pSysMem: pattern.as_ptr().cast(),
                 SysMemPitch: 32,
@@ -288,25 +297,32 @@ impl ToneMapGpu {
                     &texture_desc(16, 8, DXGI_FORMAT_P010, bind),
                     Some(&data),
                 )?;
-                let output = texture(
-                    &self.device,
-                    &texture_desc(
-                        16,
-                        8,
-                        DXGI_FORMAT_NV12,
-                        (D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE).0 as u32,
-                    ),
-                    None,
-                )?;
-                self.draw(&config, context, &input, 0, &output, &frame)?;
-                let mut read_desc = texture_desc(16, 8, DXGI_FORMAT_NV12, 0);
-                read_desc.Usage = D3D11_USAGE_STAGING;
-                read_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ.0 as u32;
-                let readback = texture(&self.device, &read_desc, None)?;
-                // SAFETY: private matching resources on the caller's protected immediate context.
-                unsafe { context.CopyResource(&readback, &output) };
-                let actual = readback_bytes(context, &readback, 16, 12)?;
-                compare_self_test(&actual, &expected).map_err(HRESULT)?;
+                for format in [DXGI_FORMAT_NV12, DXGI_FORMAT_P010] {
+                    let output = texture(
+                        &self.device,
+                        &texture_desc(
+                            16,
+                            8,
+                            format,
+                            (D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE).0 as u32,
+                        ),
+                        None,
+                    )?;
+                    self.draw(&config, context, &input, 0, &output, &frame)?;
+                    let mut read_desc = texture_desc(16, 8, format, 0);
+                    read_desc.Usage = D3D11_USAGE_STAGING;
+                    read_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ.0 as u32;
+                    let readback = texture(&self.device, &read_desc, None)?;
+                    // SAFETY: private matching resources on the caller's protected immediate context.
+                    unsafe { context.CopyResource(&readback, &output) };
+                    if format == DXGI_FORMAT_P010 {
+                        let actual = readback_bytes(context, &readback, 32, 12)?;
+                        compare_self_test_p010(&actual, &expected10).map_err(HRESULT)?;
+                    } else {
+                        let actual = readback_bytes(context, &readback, 16, 12)?;
+                        compare_self_test(&actual, &expected).map_err(HRESULT)?;
+                    }
+                }
             }
         }
         Ok(())
@@ -321,7 +337,7 @@ fn validate_descs(
 ) -> Result<()> {
     let required = (D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE).0 as u32;
     if src.Format != DXGI_FORMAT_P010
-        || dst.Format != DXGI_FORMAT_NV12
+        || (dst.Format != DXGI_FORMAT_NV12 && dst.Format != DXGI_FORMAT_P010)
         || src.MipLevels != 1
         || subresource >= src.ArraySize
         || src.Width < config.width
@@ -341,6 +357,27 @@ fn validate_descs(
         return Err(E_INVALIDARG.into());
     }
     Ok(())
+}
+
+/// P010 readback bytes (little-endian u16, code << 6) against unshifted 10-bit codes; the
+/// 8-bit tolerance of 3 codes scales to 12, and the six padding bits must be zero.
+pub(crate) fn compare_self_test_p010(
+    actual: &[u8],
+    expected: &[u16],
+) -> std::result::Result<(), i32> {
+    if actual.len() != expected.len() * 2
+        || actual
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&b| u16::from_le_bytes(b))
+            .zip(expected)
+            .any(|(a, &b)| a & 0x3F != 0 || (a >> 6).abs_diff(b) > 12)
+    {
+        Err(BALE_TONEMAP_E_SELFTEST)
+    } else {
+        Ok(())
+    }
 }
 
 pub(crate) fn compare_self_test(actual: &[u8], expected: &[u8]) -> std::result::Result<(), i32> {

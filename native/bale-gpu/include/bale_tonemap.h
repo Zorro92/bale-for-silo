@@ -21,6 +21,13 @@ extern "C" {
 
 /* ABI 1. Every HRESULT-returning call returns S_OK, or a failure HRESULT with no side effects. */
 uint32_t bale_tonemap_abi_version(void); /* returns 1 */
+/* Additive capability (Bale 2026-11-17); resolve with GetProcAddress, absent = NV12 only.
+   Bits of the output texture formats bale_tonemap_apply accepts. P010 carries the same
+   BT.709 limited-range SDR result as 10-bit codes (64-940 / 64-960, code << 6); apply picks
+   the output depth from the output texture's format. */
+#define BALE_TONEMAP_OUTPUT_NV12 1u
+#define BALE_TONEMAP_OUTPUT_P010 2u
+uint32_t bale_tonemap_output_formats(void); /* returns NV12 | P010 */
 typedef struct BaleToneMapConfig {
     uint32_t width, height;     /* coded output size (input may be larger: decoder alignment) */
     uint32_t curve;             /* 1 = BT.2390 EETF, 2 = Hable */
@@ -42,6 +49,7 @@ typedef struct BaleToneMapFrameInfo { /* H.273 code points, per frame */
     uint32_t reserved[4];
 } BaleToneMapFrameInfo;
 HRESULT bale_tonemap_create(ID3D11Device* device, const BaleToneMapConfig* config, void** handle);
+/* output: NV12, or P010 when bale_tonemap_output_formats() has BALE_TONEMAP_OUTPUT_P010; RENDER_TARGET|SHADER_RESOURCE, 1 slice. */
 HRESULT bale_tonemap_apply(void* handle, ID3D11DeviceContext* context, ID3D11Texture2D* input, uint32_t input_subresource, ID3D11Texture2D* output, const BaleToneMapFrameInfo* frame);
 void    bale_tonemap_destroy(void* handle);
 

@@ -7,5 +7,5 @@ float2 main(float4 position : SV_Position) : SV_Target {
         uv += 0.25*sample_pixel(p+int2(0,dy)).yz;
         uv += 0.125*sample_pixel(p+int2(1,dy)).yz;
     }
-    return quantize_chroma(uv)/255.0;
+    return params.w > 0.5 ? quantize_chroma10(uv)*64.0/65535.0 : quantize_chroma(uv)/255.0;
 }

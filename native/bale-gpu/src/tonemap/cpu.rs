@@ -274,11 +274,19 @@ pub fn quantize_luma(y: f32) -> f32 {
 pub fn quantize_chroma(uv: [f32; 2]) -> [f32; 2] {
     uv.map(|v| (128.0 + 224.0 * v + 0.5).floor().clamp(16.0, 240.0))
 }
+/// 10-bit limited-range codes for P010 output (ABI 2).
+pub fn quantize_luma10(y: f32) -> f32 {
+    (64.0 + 876.0 * y + 0.5).floor().clamp(64.0, 940.0)
+}
+pub fn quantize_chroma10(uv: [f32; 2]) -> [f32; 2] {
+    uv.map(|v| (512.0 + 896.0 * v + 0.5).floor().clamp(64.0, 960.0))
+}
 
 /// Tight P010 words (high 10 bits), input may include decoder alignment beyond visible size.
 /// Chroma upsampling: bilinear, centres at (2*x, 2*y+0.5) in luma-centre coordinates.
 /// Downsampling: horizontal [1 2 1]/4 centred at 2*x, vertical [1 1]/2. Clamp visible
 /// edges, never sample alignment padding. This is left-sited, unlike a centred 2x2 box.
+/// NV12 8-bit codes, the ABI 1 output.
 pub fn reference(
     config: &BaleToneMapConfig,
     frame: &BaleToneMapFrameInfo,
@@ -286,6 +294,31 @@ pub fn reference(
     width: u32,
     height: u32,
 ) -> Result<Vec<u8>, i32> {
+    Ok(reference_codes(config, frame, input, width, height, false)?
+        .into_iter()
+        .map(|code| code as u8)
+        .collect())
+}
+
+/// P010 10-bit codes (unshifted, 64-940/960), the ABI 2 output.
+pub fn reference_p010(
+    config: &BaleToneMapConfig,
+    frame: &BaleToneMapFrameInfo,
+    input: &[u16],
+    width: u32,
+    height: u32,
+) -> Result<Vec<u16>, i32> {
+    reference_codes(config, frame, input, width, height, true)
+}
+
+fn reference_codes(
+    config: &BaleToneMapConfig,
+    frame: &BaleToneMapFrameInfo,
+    input: &[u16],
+    width: u32,
+    height: u32,
+    ten_bit: bool,
+) -> Result<Vec<u16>, i32> {
     config.validate()?;
     frame.validate()?;
     let (w, h, iw, ih) = (
@@ -333,7 +366,12 @@ pub fn reference(
     let mut out = vec![0; w * h * 3 / 2];
     for y in 0..h {
         for x in 0..w {
-            out[y * w + x] = quantize_luma(sample(x as i32, y as i32)[0]) as u8;
+            let luma = sample(x as i32, y as i32)[0];
+            out[y * w + x] = if ten_bit {
+                quantize_luma10(luma)
+            } else {
+                quantize_luma(luma)
+            } as u16;
         }
     }
     for y in 0..h / 2 {
@@ -348,7 +386,11 @@ pub fn reference(
                 }
             }
             for c in 0..2 {
-                out[w * h + y * w + 2 * x + c] = quantize_chroma(uv)[c] as u8;
+                out[w * h + y * w + 2 * x + c] = if ten_bit {
+                    quantize_chroma10(uv)[c]
+                } else {
+                    quantize_chroma(uv)[c]
+                } as u16;
             }
         }
     }
@@ -585,6 +627,25 @@ mod tests {
             [400.0, 850.0],
         );
         assert!(neutral[1].abs() + neutral[2].abs() < vivid[1].abs() + vivid[2].abs());
+    }
+    #[test]
+    fn p010_output_is_the_same_picture_at_ten_bits() {
+        for curve in [1, 2] {
+            let (c, f) = (config(curve), frame());
+            let input = test_pattern(16, 8, true, false);
+            let eight = reference(&c, &f, &input, 16, 8).unwrap();
+            let ten = reference_p010(&c, &f, &input, 16, 8).unwrap();
+            assert_eq!(eight.len(), ten.len());
+            // Same limited-range value quantized at 8 and 10 bits: 4x the 8-bit code within rounding.
+            for (&a, &b) in eight.iter().zip(&ten) {
+                assert!((i32::from(a) * 4 - i32::from(b)).abs() <= 2, "{a} vs {b}");
+            }
+            assert!(ten.iter().all(|&code| (64..=960).contains(&code)));
+            assert!(
+                ten.iter().any(|&code| code % 4 != 0),
+                "10-bit output must keep sub-8-bit steps"
+            );
+        }
     }
     #[test]
     fn visible_edges_ignore_decoder_padding_and_chroma_location_defaults_to_left() {

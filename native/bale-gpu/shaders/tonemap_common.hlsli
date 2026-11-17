@@ -3,7 +3,7 @@
 cbuffer ToneMap : register(b0) {
     uint4 geometry; // visible w/h, input w/h
     uint4 flags;    // curve, BT.2020, full range, source mode (0 PQ, 1 SDR gamut only, 2 HLG)
-    float4 params; // source peak nits, target white nits, desat, reserved
+    float4 params; // source peak nits, target white nits, desat, output depth (0 NV12, 1 P010)
 };
 Texture2DArray<uint> input_y : register(t0);
 Texture2DArray<uint2> input_uv : register(t1);

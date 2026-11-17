@@ -124,5 +124,8 @@ float3 tone_map_pixel(float y, float2 uv, float source_peak_nits, float target_w
 // Return integer-valued codes as floats. The binding layer divides by 255 for UNORM RTVs.
 float quantize_luma(float y) { return clamp(floor(16.0 + 219.0 * y + 0.5), 16.0, 235.0); }
 float2 quantize_chroma(float2 uv) { return clamp(floor(128.0 + 224.0 * uv + 0.5), 16.0, 240.0); }
+// 10-bit limited range (ABI 2 P010 output): 64-940 luma, 64-960 chroma.
+float quantize_luma10(float y) { return clamp(floor(64.0 + 876.0 * y + 0.5), 64.0, 940.0); }
+float2 quantize_chroma10(float2 uv) { return clamp(floor(512.0 + 896.0 * uv + 0.5), 64.0, 960.0); }
 
 #endif

@@ -2,6 +2,9 @@
 use std::mem::{align_of, offset_of, size_of};
 
 pub const TONEMAP_ABI_VERSION: u32 = 1;
+/// bale_tonemap_output_formats bits: apply accepts these output texture formats.
+pub const BALE_TONEMAP_OUTPUT_NV12: u32 = 1;
+pub const BALE_TONEMAP_OUTPUT_P010: u32 = 2;
 pub const BALE_TONEMAP_E_SELFTEST: i32 = 0x8004BA01u32 as i32;
 
 #[repr(C)]
