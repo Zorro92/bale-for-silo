@@ -2080,3 +2080,11 @@ remount inside the window, else server reanchor). Console: forced HLS played pas
 (duration 527 s), a skip reanchored at 108 s and a seek to 400 s landed at the 398.667 s keyframe,
 0 dropped; forced progressive opened with 527 s and a seek to 300 s landed at 296.5 s. This test
 title has no chapters.
+
+**Engine player seeks (0.1.598).** Seekable routes seek with `SetCurrentTimeEx` approximate mode and
+the stats pane reports the landing. Console: 1080p FFmpeg passthrough 300 s → 300 s (391 ms); 4K DV
+d3d11va + tone map 100/250/401/450 s → 100/250.016/401/450.021 s (532–891 ms). Every landing is
+frame-exact, so FFmpegInteropX's MediaStreamSource ignores the engine's approximate mode and still
+does a full seek without a MediaPlayer session; a fork-side FastSeek switch is needed for software
+AV1. Trigger taps merge (three quick +30 s taps → one seek, +90 s); hold scan needs a real
+controller (the debug server has no key hold).
