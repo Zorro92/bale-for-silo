@@ -20,6 +20,44 @@ public class RailScrollStateTests
         Assert.False(state.ShouldDrop(1, wasKeyDown: true));
     }
 
+    [Fact]
+    public void HeldStepsKeepTheAnimationPaceWhereTheRowCannotScroll()
+    {
+        var state = new RailScrollState();
+        // Mid-row: the first animation measures the pace.
+        state.Stepped(0);
+        Assert.Equal(108, state.Begin(0, 108, 800, nowMs: 0));
+        Assert.True(state.ShouldDrop(1, wasKeyDown: true, nowMs: 100));
+        state.ViewChanged(isIntermediate: false, nowMs: 220);
+        Assert.Equal(220, state.PaceMs);
+        Assert.False(state.ShouldDrop(1, wasKeyDown: true, nowMs: 230));
+        state.Stepped(230);
+        // Near the end the pin is clamped: nothing animates, but a held key still waits for the pace.
+        Assert.Null(state.Begin(800, 908, 800, nowMs: 230));
+        Assert.True(state.ShouldDrop(1, wasKeyDown: true, nowMs: 300));
+        Assert.False(state.ShouldDrop(1, wasKeyDown: true, nowMs: 450));
+        // A new press is never consumed, whatever the pace.
+        Assert.False(state.ShouldDrop(1, wasKeyDown: false, nowMs: 240));
+        Assert.False(state.ShouldDrop(0, wasKeyDown: true, nowMs: 240));
+    }
+
+    [Fact]
+    public void ThePaceStaysWithinItsBounds()
+    {
+        var state = new RailScrollState();
+        Assert.Equal(RailScrollState.DefaultPaceMs, state.PaceMs);
+        state.Begin(0, 108, 800, nowMs: 0);
+        state.ViewChanged(isIntermediate: false, nowMs: 5);
+        Assert.Equal(RailScrollState.MinPaceMs, state.PaceMs);
+        state.Begin(0, 108, 800, nowMs: 0);
+        state.ViewChanged(isIntermediate: false, nowMs: 5000);
+        Assert.Equal(RailScrollState.MaxPaceMs, state.PaceMs);
+        // An animation without a start time (an older caller) leaves the pace alone.
+        state.Begin(0, 108, 800);
+        state.ViewChanged(isIntermediate: false, nowMs: 100);
+        Assert.Equal(RailScrollState.MaxPaceMs, state.PaceMs);
+    }
+
     [Theory]
     [InlineData(-1, false)]
     [InlineData(1, false)]

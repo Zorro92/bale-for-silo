@@ -151,11 +151,13 @@ internal sealed class Rail
 
         // Layout.kt / tvRailPinOnFocus gates only horizontal input. WasKeyDown keeps a new
         // press responsive, including on entry from another row; never delay or replay a repeat.
-        if (_scrollState.ShouldDrop(step, e.KeyStatus.WasKeyDown))
+        var now = Environment.TickCount64;
+        if (_scrollState.ShouldDrop(step, e.KeyStatus.WasKeyDown, now))
         {
             e.Handled = true;
             return;
         }
+        _scrollState.Stepped(now);
 
         var index = _list.IndexFromContainer(container);
         if ((step < 0 && index == 0) || (step > 0 && index == _list.Items.Count - 1))
@@ -245,7 +247,7 @@ internal sealed class Rail
 
     private void ScrollTo(ScrollViewer scroller, double offset)
     {
-        if (_scrollState.Begin(scroller.HorizontalOffset, offset, scroller.ScrollableWidth) is not { } target) return;
+        if (_scrollState.Begin(scroller.HorizontalOffset, offset, scroller.ScrollableWidth, Environment.TickCount64) is not { } target) return;
         if (!scroller.ChangeView(target, null, null)) _scrollState.Reset();
     }
 
@@ -268,7 +270,8 @@ internal sealed class Rail
         if (sender is ScrollViewer scroller) _scrollState.ViewChanging(scroller.HorizontalOffset, e.FinalView.HorizontalOffset);
     }
 
-    private void OnViewChanged(object? sender, ScrollViewerViewChangedEventArgs e) => _scrollState.ViewChanged(e.IsIntermediate);
+    private void OnViewChanged(object? sender, ScrollViewerViewChangedEventArgs e) =>
+        _scrollState.ViewChanged(e.IsIntermediate, Environment.TickCount64);
 
     private void ReleaseScroller()
     {
