@@ -2088,3 +2088,10 @@ frame-exact, so FFmpegInteropX's MediaStreamSource ignores the engine's approxim
 does a full seek without a MediaPlayer session; a fork-side FastSeek switch is needed for software
 AV1. Trigger taps merge (three quick +30 s taps → one seek, +90 s); hold scan needs a real
 controller (the debug server has no key hold).
+
+**Sessionless FastSeek (wrapper 2.1.0-bale.30, Bale 0.1.599).** The engine player sets
+`bale_fast_seek_without_session=1`: FastSeek without a MediaPlayer session, backward-only keyframe,
+reported via `SetActualStartPosition` (log `Bale seek: sessionless fast seek target=.. landed=..`).
+Console, 4K AV1 10-bit SDR software decode (debug `av1-claim 2160`): seeks to 600/1800/900/3000/120 s
+landed on keyframes 0.6–6.6 s before the target in 0.8–2.1 s, and a four-tap burst merged into one
+seek; no `0x8007000E`, playback continued at ~24 fps (12 frames dropped in total, all around the seeks).
