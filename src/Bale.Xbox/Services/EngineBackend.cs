@@ -75,12 +75,13 @@ internal sealed partial class EngineBackend : PlaybackBackend
 
     /// <summary>
     /// Opens <paramref name="source"/>: an IMFMediaSource-capable COM object (FFmpeg's MediaStreamSource, or its
-    /// MediaSource wrapper), or with <paramref name="mime"/> an IRandomAccessStream. Raises MediaOpened or
-    /// MediaFailed. The caller keeps the source alive until Dispose.
+    /// MediaSource wrapper), or with <paramref name="mime"/> an IRandomAccessStream. Raises MediaOpened, and
+    /// MediaFailed for later failures. False when the engine could not open the source at all (no MediaFailed: the
+    /// caller decides, e.g. falls back to MediaPlayer). The caller keeps the source alive until Dispose.
     /// </summary>
     /// <param name="start">Player seconds to open at: the session seeks there before its first frame (a seek issued
     /// right after opening can be dropped while the engine prerolls). The page's own start seek then finds it there.</param>
-    public async Task OpenAsync(object source, string? mime, bool canSeek, double start = 0)
+    public async Task<bool> OpenAsync(object source, string? mime, bool canSeek, double start = 0)
     {
         _session.CanSeekSource = canSeek;
         nint pointer;
@@ -91,17 +92,18 @@ internal sealed partial class EngineBackend : PlaybackBackend
         int hr;
         try { (hr, Report) = await Task.Run(() => Open(pointer, stream is not null ? mime ?? "video/mp4" : null, start)); }
         finally { if (stream is not null) Marshal.Release(pointer); }
-        if (_disposed) return;
+        if (_disposed) return false;
         if (_handle == 0)
         {
-            RaiseFailed(new PlaybackBackendFailure(hr, Decoder: false, Network: false));
-            return;
+            Log.Info($"engine: open failed 0x{unchecked((uint)hr):X8}");
+            return false;
         }
         LoadStreams();
         _poll = new Timer(_ => Poll(), null, 100, 100);
         Poll();
         _opened = true;
         RaiseOpened();
+        return true;
     }
 
     private unsafe (int HResult, string Report) Open(nint source, string? mime, double start)

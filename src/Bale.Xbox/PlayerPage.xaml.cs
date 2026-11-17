@@ -79,6 +79,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public string StreamAdapter { get; } = DebugStreamAdapterSwitch.Mode;
         /// <summary>mediaplayer or engine (<see cref="EngineBackend"/>), captured when the attempt starts.</summary>
         public string PlayerBackend { get; } = DebugPlayerBackendSwitch.Mode;
+        public bool UseEngine => PlayerBackend == "engine" && !EngineRefused;
         public bool UsePooledStreamAdapter => StreamAdapter == "pooled";
         /// <summary>The Rust range stream and its Rust IRandomAccessStream (docs/rust-port.md, slice 7).</summary>
         public bool UseRustTransport => StreamAdapter == "rust";
@@ -88,6 +89,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
 #else
         public bool UsePooledStreamAdapter => true;
         public bool UseRustTransport => true;
+        /// <summary>IMFMediaEngine is the player (owner, 2026-11-17), unless it could not open this attempt's stream.</summary>
+        public bool UseEngine => !EngineRefused;
         public bool FfmpegEnabled => true;
         public bool ForceFfmpeg => false;
 #endif
@@ -96,6 +99,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         /// source was removed 2026-11-17, so a playlist the reader refuses fails to a replan.
         /// </summary>
         public bool HlsThroughFfmpeg => true;
+        /// <summary>The engine could not open a stream of this attempt: its mounts use Windows MediaPlayer.</summary>
+        public bool EngineRefused { get; set; }
         public CancellationTokenSource? ReportingCancellation { get; set; }
         public Task? ReportingTask { get; set; }
     }

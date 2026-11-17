@@ -250,6 +250,10 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   with no VP9. Never run D3D12 video queries in production: they removed the device. Display fit
   belongs to Auto's version choice, never to a smaller claim. VP9/VC-1/MPEG-2 direct play always takes the
   FFmpeg demuxer with the system decoder and is never offered over HLS.
+- **Player:** IMFMediaEngine (`Services/EngineBackend.cs`) is the default player since 2026-11-17 (owner), behind
+  `PlaybackBackend`; Windows MediaPlayer (`MediaPlayerBackend`) remains only as the per-attempt fallback when the engine
+  cannot open a stream, and via the debug `player-backend mediaplayer` switch. New player features target the backend
+  interface, not MediaPlayer.
 - `PlaybackRoutePolicy` decides each mount. HLS always plays through the Rust HLS reader and FFmpeg; Windows'
   AdaptiveMediaSource was removed 2026-11-17 (owner: it cannot feed IMFMediaEngine). Direct AV1/MPEG-4 Part 2
   forces FFmpeg software video; audio-only fallback forces the system video decoder and validates

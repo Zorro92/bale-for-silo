@@ -245,17 +245,17 @@ public sealed partial class PlayerPage
                 var config = FfmpegSource.Configuration(media.Route);
 #endif
                 FfmpegSource.ApplySubtitleSink(config, media.SubtitleStreamIndex, media.SubtitleSinkToken);
+                var engineSource = attempt.UseEngine;
 #if DEBUG_SERVER
-                // The debug engine player sets the forward-only mount's real remaining duration itself:
-                // IMFMediaEngine ends at the duration it read at load, so FFmpegInteropX's few-second
-                // auto-extended estimate would stop it (MediaPlayer follows the extensions).
-                if ((DebugPresentEngineSwitch.Seconds > 0 || attempt.PlayerBackend == "engine") && media.Progressive is not null)
-                    config.General.AutoExtendDuration = false;
-                // The engine player gives FFmpegInteropX no MediaPlayer session; wrapper bale.30's opt-in
-                // FastSeek lands on the keyframe without one (reported via SetActualStartPosition).
-                if (DebugPresentEngineSwitch.Seconds > 0 || attempt.PlayerBackend == "engine")
-                    config.FFmpegOptions["bale_fast_seek_without_session"] = "1";
+                engineSource |= DebugPresentEngineSwitch.Seconds > 0;
 #endif
+                // The engine sets a forward-only mount's real remaining duration itself: IMFMediaEngine ends at the
+                // duration it read at load, so FFmpegInteropX's few-second auto-extended estimate would stop it
+                // (MediaPlayer follows the extensions).
+                if (engineSource && media.Progressive is not null) config.General.AutoExtendDuration = false;
+                // The engine gives FFmpegInteropX no MediaPlayer session; wrapper bale.30's opt-in FastSeek lands on
+                // the keyframe without one (reported via SetActualStartPosition).
+                if (engineSource) config.FFmpegOptions["bale_fast_seek_without_session"] = "1";
                 media.FfmpegSource = media.ForwardInput is { } forward
                     ? await FFmpegMediaSource.CreateFromInputStreamAsync(forward, config).AsTask()
                     : await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream!, config).AsTask();
@@ -328,13 +328,17 @@ public sealed partial class PlayerPage
             return;
         }
 #endif
-#if DEBUG_SERVER
-        if (attempt.PlayerBackend == "engine")
+        if (attempt.UseEngine)
         {
-            await MountEngineAsync(attempt, media, transport.MimeType ?? "video/mp4");
+            if (await MountEngineAsync(attempt, media, transport.MimeType ?? "video/mp4")) return;
+            // The engine could not open this stream: this attempt plays on Windows MediaPlayer, from a fresh mount
+            // (the engine may have started reading the source it was given).
+            Log.Info("player: engine could not open this stream; remounting on MediaPlayer");
+            attempt.EngineRefused = true;
+            DisposeMount(attempt);
+            await MountPlanAsync(attempt, playerStart, paused, rangeRefused);
             return;
         }
-#endif
         var backend = new MediaPlayerBackend();
         var player = backend.Player;
         media.Player = backend;
@@ -373,12 +377,12 @@ public sealed partial class PlayerPage
         player.Source = media.Item;
     }
 
-#if DEBUG_SERVER
     /// <summary>
     /// Plays this mount's routed source through IMFMediaEngine (<see cref="EngineBackend"/>) with the page's own
-    /// controls, Up Next, tracks and subtitles (debug player-backend engine; owner, 2026-11-17).
+    /// controls, Up Next, tracks and subtitles (owner, 2026-11-17: the engine is the main player). False when the
+    /// engine could not open the stream; the caller then remounts on MediaPlayer.
     /// </summary>
-    private async Task MountEngineAsync(Attempt attempt, Mount media, string mime)
+    private async Task<bool> MountEngineAsync(Attempt attempt, Mount media, string mime)
     {
         ReleaseVideoPresenter();
         var engine = new EngineBackend(VideoHost);
@@ -402,8 +406,10 @@ public sealed partial class PlayerPage
             SystemControlCommand.Back => false,
             _ => null,
         });
+#if DEBUG_SERVER
         engine.PlaybackSession.BufferingStarted += OnStatsBufferingStarted;
         engine.PlaybackSession.BufferingEnded += OnStatsBufferingEnded;
+#endif
         object source;
         string? type = null;
         if (media.FfmpegSource is { } ffmpeg)
@@ -426,11 +432,21 @@ public sealed partial class PlayerPage
         else throw new InvalidDataException("The engine has no source for this route.");
         Log.Info($"player: backend=engine route={RouteText(media)}");
         // Forward-only mounts open where they play (player 0); seekable ones at the mount's start.
-        await engine.OpenAsync(source, type, canSeek: media.Progressive is null,
+        var opened = await engine.OpenAsync(source, type, canSeek: media.Progressive is null,
             start: media.Progressive is null ? media.StartPosition : 0);
         foreach (var line in engine.Report.Split('\n', StringSplitOptions.RemoveEmptyEntries)) Log.Info("engine: " + line);
+        return opened || !ReferenceEquals(attempt.Media, media);
     }
-#endif
+
+    /// <summary>The mount's route in words, for the log: never a URL.</summary>
+    private static string RouteText(Mount media)
+    {
+        var route = media.Route;
+        return route.UseFfmpeg
+            ? "ffmpeg " + (route.ConsoleToneMap ? "d3d11va + console tone map" : route.DolbyVision7BaseLayer ? "DV7 base layer"
+                : route.SoftwareVideo ? "software decode" : route.DolbyVisionBaseLayer ? "system decoder, DV8 base layer" : "system decoder passthrough")
+            : "Windows reader (direct)";
+    }
 
     private void OnMediaOpened(PlaybackBackend sender, object? args) => _ = DispatchAsync(() =>
     {

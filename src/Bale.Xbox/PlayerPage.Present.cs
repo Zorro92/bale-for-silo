@@ -19,15 +19,6 @@ namespace Bale.Xbox;
 /// </summary>
 public sealed partial class PlayerPage
 {
-    private static string RouteText(Mount media)
-    {
-        var route = media.Route;
-        return route.UseFfmpeg
-            ? "ffmpeg " + (route.ConsoleToneMap ? "d3d11va + console tone map" : route.DolbyVision7BaseLayer ? "DV7 base layer"
-                : route.SoftwareVideo ? "software decode" : route.DolbyVisionBaseLayer ? "system decoder, DV8 base layer" : "system decoder passthrough")
-            : "Windows reader (direct)";
-    }
-
     private async Task PresentThroughEngineAsync(Mount media, string mime, int seconds, Bale.Core.Api.Models.PlaybackPlan plan)
     {
         var present = DebugPresentEngineSwitch.Mode != "frames";

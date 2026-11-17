@@ -64,7 +64,7 @@ namespace Bale.Xbox.Services;
 ///   POST /gc?latency=...  batch|interactive|sustained|default; default restores the saved pre-playback mode; memory only
 ///   GET  /frame-delivery  memory-only frame delivery observer mode; default native
 ///   POST /frame-delivery?mode=native  native|managed|off (on aliases native); next playback attempt
-///   GET  /player-backend  memory-only player switch; default mediaplayer
+///   GET  /player-backend  memory-only player switch; default engine (as in release builds)
 ///   POST /player-backend?mode=engine  mediaplayer (Windows MediaPlayer)|engine (IMFMediaEngine); next playback attempt
 ///   GET  /stream-adapter  memory-only media stream switch; default rust
 ///   POST /stream-adapter?mode=rust  rust (Rust range/forward-only streams + Rust WinRT streams)|pooled|builtin (C#); next playback attempt

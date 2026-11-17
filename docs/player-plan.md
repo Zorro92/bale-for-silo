@@ -2129,3 +2129,10 @@ scan smooth.
 
 Remaining before the engine is the default: media remote / Guide controls (MediaPlayer's command manager
 is gone on the engine), engine rows in the stats pane, display mode switching on the engine path (on hold).
+
+**Phase 5 (2026-11-17): the engine is the default player.** Release and debug builds play through
+`EngineBackend`; the media remote and Guide tile go through `EngineSystemControls` (SystemMediaTransportControls).
+If the engine cannot open an attempt's stream, that attempt remounts on Windows MediaPlayer
+(`Attempt.EngineRefused`). The debug switch `player-backend mediaplayer` keeps MediaPlayer for comparison
+(memory only; engine after restart). Still to confirm on the console: the media remote and Guide tile with the
+engine, and a production build (CI builds the debug package only).
