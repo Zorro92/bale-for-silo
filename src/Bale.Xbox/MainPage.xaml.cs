@@ -443,6 +443,7 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
     {
         if (_keyboardVisible) { HideKeyboard(); return true; }
         if (HttpPrompt.Dismiss()) return true;
+        if (CancelConnect()) return true;
         if (PasswordPanel.Visibility == Visibility.Visible && !_passwordOnly)
         {
             OnUsePhoneClick(this, new RoutedEventArgs());

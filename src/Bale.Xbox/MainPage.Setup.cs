@@ -103,6 +103,20 @@ public sealed partial class MainPage
         _connecting = connecting;
         ServerBox.IsReadOnly = PortBox.IsReadOnly = connecting;
         ConnectButton.Content = connecting ? "Connecting…" : "Connect";
+        // Apple 2d7a4011: while a connect runs, Back reads Cancel and stops it (an address that never answers held
+        // the screen for over half a minute).
+        ServerBackButton.Content = connecting ? "Cancel" : "Back";
+    }
+
+    /// <summary>Stops a running connect quietly: no error, no HTTP question, no further address (Apple 2d7a4011).</summary>
+    private bool CancelConnect()
+    {
+        if (!_connecting || ServerPanel.Visibility != Visibility.Visible || _probeLife is not { } probe) return false;
+        Log.Info("Server setup: connect cancelled");
+        probe.Cancel();
+        SetConnecting(false);
+        ConnectButton.Focus(FocusState.Programmatic);
+        return true;
     }
 
     private async void OnConnectClick(object sender, RoutedEventArgs args)
