@@ -3,7 +3,7 @@
 # Bump SILO_REF to pick up a newer server contract, then commit the result.
 set -euo pipefail
 
-SILO_REF="${SILO_REF:-92ee051878c2a791940ec9598e2bdd0f04890b3e}"
+SILO_REF="${SILO_REF:-217ff25abc5b9d0d3dc359de63349b7dc3d1d2eb}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SPEC_DIR="$ROOT/.cache"
 SPEC="$SPEC_DIR/silo-openapi-$SILO_REF.json"

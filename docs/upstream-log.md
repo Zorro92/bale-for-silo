@@ -29,6 +29,9 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
 
 - ~~**API contract:** bump `SILO_REF`~~ Done 2026-11-16: pinned to server `92ee051878c2`, additive only;
   also generates `GET /api/v2/capabilities/ratings` and `DELETE /api/v2/requests/{id}`.
+- ~~**API contract:** bump to server `217ff25abc5b`~~ Done 2026-11-18, additive: `Section.collections`
+  (`SectionCollectionCard` with backdrop), `HomeCapabilities.collection_rows`. The notification
+  reason fields the server dropped (`03489137`) were never generated (their paths aren't included).
 - ~~**Edition / Version Auto:**~~ Done 2026-11-16 (Rust `formatting::select_version`): one edition
   per key, history names only the edition (`last_edition_key`, then `last_file_id`), an Edition
   pick keeps Version on Auto, server order (resolution, HDR, size), display matching inside the

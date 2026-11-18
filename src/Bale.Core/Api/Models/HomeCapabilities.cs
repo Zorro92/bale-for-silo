@@ -14,6 +14,8 @@ namespace Bale.Core.Api.Models
     {
         /// <summary>Whether the current principal may use the capability</summary>
         public bool? Allowed { get; set; }
+        /// <summary>Sections may be rows of collections (section_type collection_posters): such a section answers its cards in collections instead of items, and the section recipe gallery offers the collection_posters recipe. A client that does not show collections leaves the row out, as it leaves out any section with no items. Absent when the home sections service is not configured, and on a server that predates rows of collections</summary>
+        public bool? CollectionRows { get; set; }
         /// <summary>The largest include_items getHomeLayout accepts: the layout then also answers that many first sections with their cards in included_sections. Absent when the home sections service is not configured</summary>
         public long? IncludeItemsMax { get; set; }
         /// <summary>Opaque revision of this document</summary>
@@ -51,6 +53,7 @@ namespace Bale.Core.Api.Models
             return new Dictionary<string, Action<IParseNode>>
             {
                 { "allowed", n => { Allowed = n.GetBoolValue(); } },
+                { "collection_rows", n => { CollectionRows = n.GetBoolValue(); } },
                 { "include_items_max", n => { IncludeItemsMax = n.GetLongValue(); } },
                 { "revision", n => { Revision = n.GetStringValue(); } },
                 { "row_item_limit_max", n => { RowItemLimitMax = n.GetLongValue(); } },
@@ -67,6 +70,7 @@ namespace Bale.Core.Api.Models
         {
             if(ReferenceEquals(writer, null)) throw new ArgumentNullException(nameof(writer));
             writer.WriteBoolValue("allowed", Allowed);
+            writer.WriteBoolValue("collection_rows", CollectionRows);
             writer.WriteLongValue("include_items_max", IncludeItemsMax);
             writer.WriteStringValue("revision", Revision);
             writer.WriteLongValue("row_item_limit_max", RowItemLimitMax);

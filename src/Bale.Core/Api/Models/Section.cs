@@ -12,6 +12,14 @@ namespace Bale.Core.Api.Models
     public partial class Section : IParsable
     #pragma warning restore CS1591
     {
+        /// <summary>The cards of a row of collections (section_type collection_posters), in the row&apos;s order: the collections the viewer can see. Such a section has no items, total_count is the number of collections, and item_limit does not apply. Absent on every other section. See getHomeCapabilities collection_rows</summary>
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#nullable enable
+        public List<global::Bale.Core.Api.Models.SectionCollectionCard>? Collections { get; set; }
+#nullable restore
+#else
+        public List<global::Bale.Core.Api.Models.SectionCollectionCard> Collections { get; set; }
+#endif
         /// <summary>The customized property</summary>
         public bool? Customized { get; set; }
         /// <summary>The featured property</summary>
@@ -90,6 +98,7 @@ namespace Bale.Core.Api.Models
         {
             return new Dictionary<string, Action<IParseNode>>
             {
+                { "collections", n => { Collections = n.GetCollectionOfObjectValues<global::Bale.Core.Api.Models.SectionCollectionCard>(global::Bale.Core.Api.Models.SectionCollectionCard.CreateFromDiscriminatorValue)?.AsList(); } },
                 { "customized", n => { Customized = n.GetBoolValue(); } },
                 { "featured", n => { Featured = n.GetBoolValue(); } },
                 { "has_more", n => { HasMore = n.GetBoolValue(); } },
@@ -111,6 +120,7 @@ namespace Bale.Core.Api.Models
         public virtual void Serialize(ISerializationWriter writer)
         {
             if(ReferenceEquals(writer, null)) throw new ArgumentNullException(nameof(writer));
+            writer.WriteCollectionOfObjectValues<global::Bale.Core.Api.Models.SectionCollectionCard>("collections", Collections);
             writer.WriteBoolValue("customized", Customized);
             writer.WriteBoolValue("featured", Featured);
             writer.WriteBoolValue("has_more", HasMore);
