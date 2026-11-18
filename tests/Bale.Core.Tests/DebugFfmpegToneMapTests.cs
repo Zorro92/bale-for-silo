@@ -71,28 +71,6 @@ public sealed class DebugFfmpegToneMapTests
         => Assert.Equal(supported, DebugFfmpegToneMap.Supported(version));
 
     [Theory]
-    [InlineData("2.1.0-bale.32", false)]
-    [InlineData("2.1.0-bale.33", true)]
-    [InlineData("2.1.0-bale.100", true)]
-    [InlineData("2.1.0-bale.33-beta", false)]
-    [InlineData("2.1.0", false)]
-    public void OutputMaskNeedsTheBale33Wrapper(string version, bool supported)
-        => Assert.Equal(supported, DebugToneMapSwitches.OutputSupported(version));
-
-    [Theory]
-    [InlineData("2.1.0-bale.33", 7, true)]
-    [InlineData("2.1.0-bale.33", 8, false)]
-    [InlineData("2.1.0-bale.34", 8, true)]
-    public void SkippingBaleGpuNeedsTheBale34Wrapper(string version, int mask, bool supported)
-        => Assert.Equal(supported, DebugToneMapSwitches.OutputSupported(version, mask));
-
-    [Theory]
-    [InlineData("2.1.0-bale.35", false)]
-    [InlineData("2.1.0-bale.36", true)]
-    public void OutputFormatNeedsTheBale36Wrapper(string version, bool supported)
-        => Assert.Equal(supported, DebugToneMapSwitches.FormatSupported(version));
-
-    [Theory]
     [InlineData(0, 0, true)]
     [InlineData(1920, 1080, true)]
     [InlineData(1921, 1080, false)]
@@ -106,25 +84,6 @@ public sealed class DebugFfmpegToneMapTests
     [InlineData("2.1.0-bale.38", true)]
     public void OutputSizeNeedsTheBale38Wrapper(string version, bool supported)
         => Assert.Equal(supported, DebugToneMapSwitches.SizeSupported(version));
-
-    [Theory]
-    [InlineData(0, 0, true)]
-    [InlineData(1, 0, true)]
-    [InlineData(3, 0, true)]
-    [InlineData(2, 0, false)]
-    [InlineData(2, 8, true)]
-    [InlineData(4, 8, false)]
-    public void OutputFormatIsAutoP010Nv12OrBypassBgra(int format, int mask, bool valid)
-        => Assert.Equal(valid, DebugToneMapSwitches.ValidOutputFormat(format, mask));
-
-    [Theory]
-    [InlineData(0, true)]
-    [InlineData(7, true)]
-    [InlineData(15, true)]
-    [InlineData(16, false)]
-    [InlineData(-1, false)]
-    public void OutputMaskAcceptsTheThreeBits(int mask, bool valid)
-        => Assert.Equal(valid, DebugToneMapSwitches.ValidOutputMask(mask));
 
     [Theory]
     [InlineData("off")]

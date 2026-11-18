@@ -50,14 +50,7 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
         string.Equals(format.Subtype, name, StringComparison.OrdinalIgnoreCase)
             || Guid.TryParse(format.Subtype, out var subtype) && subtype == guid;
 
-    private static bool IsMarkedToneMapped(VideoEncodingProperties format)
-    {
-#if DEBUG_SERVER
-        // Until the fork marks its P010 output: debug-only, set with `bale-debug.sh tonemap-output`.
-        if (DebugToneMapSwitches.AcceptUnmarkedP010) return true;
-#endif
-        return HasValue(format, ToneMapped, 1);
-    }
+    private static bool IsMarkedToneMapped(VideoEncodingProperties format) => HasValue(format, ToneMapped, 1);
 
     private static bool HasValue(VideoEncodingProperties format, Guid key, uint expected) =>
         format.Properties.TryGetValue(key, out var value) && value is uint number && number == expected;
