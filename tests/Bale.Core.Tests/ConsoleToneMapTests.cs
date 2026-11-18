@@ -382,6 +382,22 @@ public sealed class ConsoleToneMapTests
     }
 
     [Fact]
+    public void GuardTrustsTenBitSdrOutputOnlyWithTheToneMappedMark()
+    {
+        var format = SdrFormat();
+        format.Subtype = "P010";
+        // A declined stage passes P010 through with BT.709 container tags: never trusted.
+        Assert.False(FfmpegVideoOutputGuard.IsSdrOutput(format));
+        format.Properties[FfmpegVideoOutputGuard.ToneMapped] = 1u;
+        Assert.True(FfmpegVideoOutputGuard.IsSdrOutput(format));
+        format.Properties[FfmpegVideoOutputGuard.ToneMapped] = 0u;
+        Assert.False(FfmpegVideoOutputGuard.IsSdrOutput(format));
+        format.Properties[FfmpegVideoOutputGuard.ToneMapped] = 1u;
+        format.Properties[new("5fb0fce9-be5c-4935-a811-ec838f8eed93")] = 15u; // a mark never excuses HDR tags
+        Assert.False(FfmpegVideoOutputGuard.IsSdrOutput(format));
+    }
+
+    [Fact]
     public void GuardRequiresAllColourAttributesAndKeepsCheckingTheLiveDecoder()
     {
         var format = SdrFormat();

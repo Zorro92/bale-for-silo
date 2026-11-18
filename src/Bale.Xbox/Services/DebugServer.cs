@@ -602,7 +602,8 @@ internal sealed partial class DebugServer
                     // The fork's bale_tonemap_output bitmask, set on each tone-map open (2026-11-17).
                     var maskText = query.GetValueOrDefault("mask") ?? "0";
                     var formatText = query.GetValueOrDefault("format") ?? "0";
-                    if (query.Keys.Any(key => key is not ("mask" or "format"))
+                    var unmarked = query.GetValueOrDefault("unmarked") == "1";
+                    if (query.Keys.Any(key => key is not ("mask" or "format" or "unmarked"))
                         || !int.TryParse(maskText, System.Globalization.NumberStyles.None,
                             System.Globalization.CultureInfo.InvariantCulture, out var mask)
                         || !DebugToneMapSwitches.ValidOutputMask(mask)
@@ -612,8 +613,9 @@ internal sealed partial class DebugServer
                         return ("400 Bad Request", "mask: 0-15 (1 decoder-style copies, 2 no colour attributes, 4 no Flush, 8 no bale_gpu; 0 clears); format: 0 auto, 1 P010, 2 BGRA8 (needs mask bit 8), 3 NV12\n");
                     DebugToneMapSwitches.OutputMask = mask;
                     DebugToneMapSwitches.OutputFormat = format;
-                    Log.Info($"debug: tone map output mask {mask} format {format} for the next tone-map open");
-                    return ("200 OK", $"tone map output mask: {mask} format: {format} (next tone-map open)\n");
+                    DebugToneMapSwitches.AcceptUnmarkedP010 = unmarked;
+                    Log.Info($"debug: tone map output mask {mask} format {format} unmarked-p010 {unmarked} for the next tone-map open");
+                    return ("200 OK", $"tone map output mask: {mask} format: {format} accept unmarked P010: {unmarked} (next tone-map open)\n");
                 }
 
             case ("POST", "/tonemap-churn"):

@@ -13,6 +13,10 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
     private static readonly Guid Transfer = new("5fb0fce9-be5c-4935-a811-ec838f8eed93");
     private static readonly Guid Matrix = new("3e23d450-2c75-4d25-a00e-b91670d12327");
     private static readonly Guid Range = new("c21b8ee5-b956-4071-8daf-325edf5cab11");
+    // Bale-private media type attribute (UINT32 1): the fork's tone-map stage produced this output.
+    // A declined stage passes P010 through with the container's (possibly BT.709) tags, so 10-bit
+    // SDR output is trusted only with this mark; NV12 is only ever produced by the stage.
+    internal static readonly Guid ToneMapped = new("b41e6a52-3c9d-4f0b-8e7a-5d2c1f9a0b37");
     private readonly FFmpegMediaSource _ffmpeg;
     private readonly MediaStreamSource _source;
     private readonly Action _failed;
@@ -34,14 +38,26 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
     }
 
     internal static bool IsSdrOutput(VideoEncodingProperties format) =>
-        (string.Equals(format.Subtype, "NV12", StringComparison.OrdinalIgnoreCase)
-            || Guid.TryParse(format.Subtype, out var subtype) && subtype == Nv12)
+        (IsSubtype(format, "NV12", Nv12) || IsSubtype(format, "P010", P010) && IsMarkedToneMapped(format))
         // Wrapper UncompressedVideoSampleProvider::CreateStreamDescriptor: processed output is
         // always limited-range NV12 BT.709, even when the container and bitstream disagree.
         && HasValue(format, Primaries, 2)
         && HasValue(format, Transfer, 5)
         && HasValue(format, Matrix, 1)
         && HasValue(format, Range, 2);
+
+    private static bool IsSubtype(VideoEncodingProperties format, string name, Guid guid) =>
+        string.Equals(format.Subtype, name, StringComparison.OrdinalIgnoreCase)
+            || Guid.TryParse(format.Subtype, out var subtype) && subtype == guid;
+
+    private static bool IsMarkedToneMapped(VideoEncodingProperties format)
+    {
+#if DEBUG_SERVER
+        // Until the fork marks its P010 output: debug-only, set with `bale-debug.sh tonemap-output`.
+        if (DebugToneMapSwitches.AcceptUnmarkedP010) return true;
+#endif
+        return HasValue(format, ToneMapped, 1);
+    }
 
     private static bool HasValue(VideoEncodingProperties format, Guid key, uint expected) =>
         format.Properties.TryGetValue(key, out var value) && value is uint number && number == expected;

@@ -26,6 +26,9 @@ internal static class DebugToneMapSwitches
     /// </summary>
     public static int OutputFormat { get; set; }
 
+    /// <summary>Lets the output guard accept P010 BT.709 output without the fork's tone-mapped mark.</summary>
+    public static bool AcceptUnmarkedP010 { get; set; }
+
     public static bool ValidOutputFormat(int format, int mask) => format is >= 0 and <= 3 && (format != 2 || (mask & 8) != 0);
 
     public static bool FormatSupported(string version) => Revision(version) >= 36;

@@ -109,7 +109,7 @@
 #   scripts/bale-debug.sh fault request-detail  fail the next request-detail load once
 #   scripts/bale-debug.sh fault playback        inject a decoder failure into the player (one replan, then error)
 #   scripts/bale-debug.sh tonemap-debug [noselftest,nostate]  bale_gpu tone-map debug switches for the next tone-map create (no args clears)
-#   scripts/bale-debug.sh tonemap-output [0-15] [format=0|1|2|3]  fork bale_tonemap_output mask for the next tone-map open (1 decoder-style copies, 2 no colour attributes, 4 no Flush, 8 no bale_gpu; 0 or no args clears); format: 0 auto (P010 if bale_gpu supports it), 1 P010, 2 BGRA8 (mask bit 8 only), 3 NV12
+#   scripts/bale-debug.sh tonemap-output [0-15] [format=0|1|2|3] [unmarked]  fork bale_tonemap_output mask for the next tone-map open (1 decoder-style copies, 2 no colour attributes, 4 no Flush, 8 no bale_gpu; 0 or no args clears); format: 0 auto (P010 if bale_gpu supports it), 1 P010, 2 BGRA8 (mask bit 8 only), 3 NV12; unmarked lets the output guard accept P010 BT.709 without the fork's tone-mapped mark
 #   scripts/bale-debug.sh tonemap-churn [N] [control]  bale_gpu-only tone map create/apply/destroy on fresh devices, N times (default 40); control skips the tone map
 # Connection previews use disposable fixtures: no network, passwords sent, vault or saved-list writes.
 #   scripts/bale-debug.sh show login            preview phone Login (no live ticket)
@@ -786,11 +786,11 @@ case "${1:-}" in
     curl --fail-with-body -sS --max-time 900 -X POST "$BASE/tonemap-churn?n=${2:-40}${3:+&control=1}"
     ;;
   tonemap-output)
-    if [[ "$#" -gt 3 || ( "$#" -ge 2 && ! "$2" =~ ^([0-9]|1[0-5])$ ) || ( "$#" -eq 3 && ! "$3" =~ ^format=[0-3]$ ) ]]; then
-      echo 'usage: scripts/bale-debug.sh tonemap-output [0-15] [format=0|1|2|3]' >&2
+    if [[ "$#" -gt 4 || ( "$#" -ge 2 && ! "$2" =~ ^([0-9]|1[0-5])$ ) || ( "$#" -ge 3 && ! "$3" =~ ^format=[0-3]$ ) || ( "$#" -eq 4 && "$4" != unmarked ) ]]; then
+      echo 'usage: scripts/bale-debug.sh tonemap-output [0-15] [format=0|1|2|3] [unmarked]' >&2
       exit 2
     fi
-    curl --fail-with-body -sS -X POST "$BASE/tonemap-output?mask=${2-0}${3:+&$3}"
+    curl --fail-with-body -sS -X POST "$BASE/tonemap-output?mask=${2-0}${3:+&$3}${4:+&unmarked=1}"
     ;;
   fault)
     if [[ "$#" != 2 || ( "${2:-}" != profiles && "${2:-}" != search && "${2:-}" != catalog && "${2:-}" != home && "${2:-}" != home-empty && "${2:-}" != requests && "${2:-}" != requests-empty && "${2:-}" != request-detail && "${2:-}" != playback ) ]]; then
