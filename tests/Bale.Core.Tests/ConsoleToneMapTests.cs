@@ -398,6 +398,16 @@ public sealed class ConsoleToneMapTests
         Assert.Equal(downscale, ConsoleToneMapPolicy.DownscaleToDisplay(width, height, displayWidth, displayHeight));
 
     [Fact]
+    public void TheSdrDownscaleRouteIsGuardedLikeTheToneMapInDebugBuilds()
+    {
+        var downscale = new PlaybackRouteDecision(true, false, "vp9", "aac", 0, 3840, 2160, ConsoleDownscale: true);
+        Assert.True(new DebugFfmpegInputTuning().RequiresToneMapGuard(downscale));
+        Assert.False(new DebugFfmpegInputTuning(Decoder: DebugFfmpegDecoder.System).RequiresToneMapGuard(downscale));
+        Assert.Equal("1", FfmpegSource.Configuration(downscale).FFmpegOptions["bale_tonemap"]);
+        Assert.Equal("Automatic", FfmpegSource.Configuration(downscale).Video.VideoDecoderMode.ToString());
+    }
+
+    [Fact]
     public void ToneMapRouteGetsDisplaySizedOutputOnlyWhenTheVideoIsLarger()
     {
         var uhd = new PlaybackRouteDecision(true, false, "hevc", "eac3", 0, 3840, 2160, ConsoleToneMap: true);

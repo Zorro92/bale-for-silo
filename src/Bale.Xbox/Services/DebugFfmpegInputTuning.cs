@@ -43,7 +43,8 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
             && ToneMap is not (DebugToneMap.Bt2390 or DebugToneMap.Hable),
     };
 
-    internal bool RequiresToneMapGuard(PlaybackRouteDecision route) => route.ConsoleToneMap
+    // Both stage routes (HDR tone map, SDR downscale) must deliver the fork's marked output.
+    internal bool RequiresToneMapGuard(PlaybackRouteDecision route) => route.ConsoleStage
         && ToneMap != DebugToneMap.Off && Decoder is not (DebugFfmpegDecoder.System or DebugFfmpegDecoder.Software);
 
     internal string ToneMapOverride => DebugFfmpegToneMap.Name(ToneMap);
