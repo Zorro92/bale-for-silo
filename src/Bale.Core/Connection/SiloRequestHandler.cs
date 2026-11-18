@@ -113,7 +113,7 @@ internal sealed class SiloRequestHandler : DelegatingHandler
         headers.Remove("X-Profile-Id");
         headers.Remove("X-Profile-Token");
         AddIfPresent(headers, "X-Profile-Id", profile is null ? credentials.ProfileId : profile.ProfileId);
-        AddIfPresent(headers, "X-Profile-Token", profile is null ? credentials.ProfileToken : profile.ProfileToken);
+        AddIfPresent(headers, "X-Profile-Token", profile is null || profile.KeepsSessionToken ? credentials.ProfileToken : profile.ProfileToken);
     }
 
     private static void AddIfPresent(HttpRequestHeaders headers, string name, string? value)

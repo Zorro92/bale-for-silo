@@ -252,6 +252,14 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
                 return;
             }
 
+            // AuthService.swift reconcileAvailableProfiles (Apple b5c73e3a): the list names no profile now, so a
+            // deleted active profile reads as missing here rather than as a 404, and Who's watching comes back.
+            if (profileId is not null && DeletedProfileRecovery.ActiveProfileMissing(profiles, profileId)
+                && Session.ReturnToProfilePicker(client, profileId))
+            {
+                return;
+            }
+
             ShowProfileRow(ProfileMenu.Row(profiles.Count, client.Profiles.MaxProfiles));
             Session.RecordProfileCount(client, profiles.Count);
 

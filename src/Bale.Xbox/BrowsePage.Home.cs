@@ -89,6 +89,9 @@ public sealed partial class BrowsePage
         }
         catch (Exception error)
         {
+            // Apple b5c73e3a: a not_found while a profile is active re-reads the profile list before Home shows the
+            // error, and a deleted profile returns to Who's watching instead of a failing Home.
+            if (IsCurrent() && await ProfileDeletedAsync(client, profileId, error, load.Token)) return;
             if (!IsCurrent() || !_homeState.Fail(request, error)) return;
             Log.Error("Home load", error);
             if (_homeState.Status == HomeFeedStatus.Error)
@@ -108,6 +111,19 @@ public sealed partial class BrowsePage
         }
 
         if (OwnsHome()) StartHomeLoad(_homeState.TakePendingRefresh());
+    }
+
+    private static async Task<bool> ProfileDeletedAsync(SiloClient client, string? profileId, Exception error, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await client.ActiveProfileWasDeletedAsync(error, profileId, cancellationToken)
+                && Session.ReturnToProfilePicker(client, profileId!);
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
     }
 
     private void StartHomeLoad(HomeLoadRequest? request)

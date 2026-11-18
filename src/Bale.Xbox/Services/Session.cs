@@ -335,6 +335,19 @@ internal static class Session
     }
 
     /// <summary>
+    /// Apple b5c73e3a (ContentView.swift siloProfileSelectionRequired): the active profile was deleted, so Who's
+    /// watching replaces the shell, as Switch Profile does. Bale's picker never opens a lone profile by itself, so it
+    /// stays up even with one profile left. A late answer for a profile no longer active changes nothing. UI thread.
+    /// </summary>
+    public static bool ReturnToProfilePicker(SiloClient client, string profileId)
+    {
+        if (!ReferenceEquals(Client, client) || client.ProfileId != profileId || _rootFrame is not { } frame) return false;
+        Log.Info("Active profile deleted: Who's watching");
+        ShowProfilePicker(frame);
+        return true;
+    }
+
+    /// <summary>
     /// TvAppNavigation.kt: a rejected refresh on any route keeps the server, never a dead Back entry. Expiry is not a
     /// sign-out (AccountEntry.kt needsSignIn): the account stays saved and asks to sign in again.
     /// </summary>

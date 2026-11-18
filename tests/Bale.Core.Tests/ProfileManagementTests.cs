@@ -73,7 +73,9 @@ public class ProfileManagementTests
         Assert.Equal("primary", stub.Requests[0].Headers.GetValues("X-Profile-Id").Single());
         Assert.Equal("manager-proof", stub.Requests[1].Headers.GetValues("X-Profile-Token").Single());
         Assert.Equal(HttpMethod.Patch, stub.Requests[1].Method);
-        Assert.Equal("viewer", stub.Requests[2].Headers.GetValues("X-Profile-Id").Single());
+        // Apple b5c73e3a: the account's list names no profile but keeps the viewer's PIN proof.
+        Assert.False(stub.Requests[2].Headers.Contains("X-Profile-Id"));
+        Assert.Equal("viewer-proof", stub.Requests[2].Headers.GetValues("X-Profile-Token").Single());
         Assert.Equal("viewer", client.ProfileId);
         Assert.Equal("viewer-proof", client.ProfileToken);
     }

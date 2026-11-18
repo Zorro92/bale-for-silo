@@ -44,13 +44,14 @@ public class SessionRestoreTests
     [Fact]
     public async Task RestoreIsLocalAndTheFirstRequestUsesSavedTokensAndPinProof()
     {
-        var stub = new StubHandler().Enqueue("""{"items":[]}""");
+        var stub = new StubHandler().Enqueue("""{"id":"u"}""");
         using var client = Create(stub);
         client.RestoreSession("rt", "at", DateTimeOffset.UtcNow.AddHours(1), "p", "proof");
 
         Assert.Empty(stub.Requests);
         Assert.True(client.IsSignedIn);
-        await client.GetProfilesAsync();
+        // A profile-scoped read; the household profile list names no profile (Apple b5c73e3a).
+        await client.GetAccountAsync();
 
         var request = Assert.Single(stub.Requests);
         Assert.Equal("Bearer at", request.Headers.Authorization!.ToString());

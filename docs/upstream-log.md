@@ -137,9 +137,10 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   only). Left as they are: hero action memory on Up (Apple `067e6cee`; Bale follows Android's
   selectorFocus: Up from the season tabs enters Edition/Version, else Play), series year ranges (Apple
   `9718f17b`; Android shows one year, as Bale), subtitle carried across a Version change (Apple
-  `417508d9`; Android's onVersionSelected still clears both picks, as Bale). Still open: deleted active
-  profile on Home (Apple `b5c73e3a`; profile list without X-Profile-Id plus a 404 recovery on Home;
-  no Android counterpart), source-open start budget (Apple `b9446d5d`; Bale has no start deadline at
+  `417508d9`; Android's onVersionSelected still clears both picks, as Bale). ~~deleted active profile on Home~~ (Apple `b5c73e3a`; fixed: the profile list names no
+  profile but keeps the PIN proof; Home's 404 not_found re-reads it and, only when the active profile is
+  gone, returns to Who's watching (the shell's list read reconciles the same way); Bale's picker never
+  opens a lone profile by itself; no Android counterpart). Still open: source-open start budget (Apple `b9446d5d`; Bale has no start deadline at
   all, `StartDeadlinePassed` is unused: player work for the playback phases), Home rows after the
   server update (console check).
 

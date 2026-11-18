@@ -34,7 +34,10 @@ public sealed class ProfileRepository : IProfileRepository
 
     public async Task<IReadOnlyList<Profile>> ListAsync(CancellationToken cancellationToken = default)
     {
-        var collection = await _api.Api.V2.Profiles.GetAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+        // The list belongs to the account, and the server answers 404 not_found when a request names a deleted
+        // profile, so this read names none (APIv2Client.swift householdProfileList, Apple b5c73e3a).
+        var collection = await _api.Api.V2.Profiles.GetAsync(config => config.Options.Add(ProfileRequestOption.AccountKeepingProof()),
+            cancellationToken).ConfigureAwait(false);
         MaxProfiles = collection?.MaxProfiles;
         return collection?.Items ?? [];
     }

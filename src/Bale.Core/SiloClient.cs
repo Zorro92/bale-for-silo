@@ -5,6 +5,7 @@ using Bale.Core.Auth;
 using Bale.Core.Connection;
 using Bale.Core.Detail;
 using Bale.Core.Browse;
+using Bale.Core.Profiles;
 using Microsoft.Kiota.Abstractions;
 
 namespace Bale.Core;
@@ -179,6 +180,27 @@ public sealed class SiloClient : IDisposable
     public async Task<IReadOnlyList<Profile>> GetProfilesAsync(CancellationToken cancellationToken = default)
     {
         return await Profiles.ListAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Apple b5c73e3a: after a request made as <paramref name="requestProfileId"/> failed with <paramref name="error"/>,
+    /// whether that profile was deleted. Only a 404 not_found while a profile is active re-reads the list; a failed
+    /// re-read, or a profile chosen meanwhile, answers false.
+    /// </summary>
+    public async Task<bool> ActiveProfileWasDeletedAsync(Exception error, string? requestProfileId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(requestProfileId) || !DeletedProfileRecovery.IsNotFound(error)) return false;
+        IReadOnlyList<Profile> profiles;
+        try
+        {
+            profiles = await GetProfilesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return false;
+        }
+
+        return ProfileId == requestProfileId && DeletedProfileRecovery.ActiveProfileMissing(profiles, requestProfileId);
     }
 
     /// <summary>Acts as this profile; null clears selection. New locked picks need <see cref="VerifyPinAsync"/>.</summary>

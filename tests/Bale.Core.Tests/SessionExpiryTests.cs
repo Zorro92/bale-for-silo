@@ -121,7 +121,8 @@ public class SessionExpiryTests
         var retry = stub.Requests[2];
         Assert.Equal(stub.Requests[0].RequestUri, retry.RequestUri);
         Assert.Equal("Bearer new-at", retry.Headers.Authorization!.ToString());
-        Assert.Equal("p", Assert.Single(retry.Headers.GetValues("X-Profile-Id")));
+        // The household list stays account-only on the retry and keeps the PIN proof (Apple b5c73e3a).
+        Assert.False(retry.Headers.Contains("X-Profile-Id"));
         Assert.Equal("proof", Assert.Single(retry.Headers.GetValues("X-Profile-Token")));
         Assert.Equal("d", Assert.Single(retry.Headers.GetValues("X-Silo-Device-Id")));
     }
