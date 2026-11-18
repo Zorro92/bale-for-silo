@@ -209,7 +209,8 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   output the input's depth; AV1 grain at the stream's depth). The console tone map's inputs are all 10-bit,
   so it writes P010, and `FfmpegVideoOutputGuard` rejects NV12 stage output unless bale_gpu lacks P010.
   FFmpeg software decode outputs P010 for every source above 8 bits (fork bale.41+); 8-bit sources output NV12.
-  8-bit AV1 zero-copy stores 8-bit samples shifted into the P010 pool (no 10-bit processing) until rav1g.
+  8-bit AV1 zero-copy stores 8-bit samples shifted into the P010 pool (no 10-bit processing) until rav1g;
+  the rav1g integration pool takes NV12 textures for 8-bit AV1 and P010 for 10-bit (owner, 2026-11-17).
 - FFmpegInteropX packages, native activation and license texts ship in **all** builds. Keep the CI
   package checker; CsWinRT's projection alone does not register the WinRT factories for Native AOT.
 - Native FFmpeg is **8.1.2-bale.dav1d.1.5.4.p1**, not public 8.1.2 (which embeds dav1d 1.0.0).
