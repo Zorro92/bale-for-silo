@@ -466,9 +466,28 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
     private void OnChangeServerClick(object sender, RoutedEventArgs args)
     {
         StopConnectionWork();
+        ForgetUnsignedServer();
         _expiredNotice = false;
         SetConnecting(false);
         ShowServerEntry(null);
+    }
+
+    /// <summary>
+    /// Android 0a387afa0: Change server forgets a server this console never signed in to (no account saved on it),
+    /// so the next launch opens setup instead of that server's sign-in code. A server with an account is kept; a
+    /// failed write leaves it saved, as before.
+    /// </summary>
+    private void ForgetUnsignedServer()
+    {
+        try
+        {
+            if (_loginServer is { } server && Servers.Find(server) is { } saved && Servers.AccountsOn(saved.Id).Count == 0)
+            {
+                Servers.Remove(saved.Id);
+                Log.Info("Change server: forgot a server without an account");
+            }
+        }
+        catch (Exception ex) { Log.Error("Change server forget", ex); }
     }
 
     private void OnServerBackClick(object sender, RoutedEventArgs args) => OnBack();
