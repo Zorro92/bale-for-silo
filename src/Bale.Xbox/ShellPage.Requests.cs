@@ -8,6 +8,16 @@ public sealed partial class ShellPage
 {
     private CancellationTokenSource? _requestsProbe;
 
+    /// <summary>
+    /// Back in the foreground (Android 98d077170, as the Apple apps on every foreground): re-check the requests
+    /// capability, so requests an admin turned off while Bale was in the background disappear without a restart.
+    /// Only while signed in with a shell; the first launch has none yet and probes when the shell opens.
+    /// </summary>
+    internal static void OnForeground()
+    {
+        if (Current is { } shell && Session.Client is not null) _ = shell.RefreshRequestsCapabilityAsync();
+    }
+
     /// <summary>TvMainShell.kt / RequestsFeatureStore.kt: profile-menu entry, hidden until positively enabled.</summary>
     private async Task RefreshRequestsCapabilityAsync()
     {

@@ -56,6 +56,7 @@ public sealed partial class App : Application
             _inBackground = false;
             UiResidency.Resume();
             ConnectionSpeedService.Check("foreground");
+            ShellPage.OnForeground();
             if (Window.Current?.Content is Frame { Content: PlayerPage player })
                 await player.RestoreAfterBackgroundAsync();
         };
