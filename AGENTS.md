@@ -58,6 +58,9 @@ unchanged. Gap analysis and phases: docs/apple-playback-parity.md.
 - **Detail hero row memory** follows Apple TV, not Android's selectorFocus (owner, 2026-11-18; Apple
   `067e6cee`, `TVDetailActions.swift`): entering the action row lands on the action last focused there,
   else Play; Play stands in for one that can't take focus, Watchlist for Play; reset per page (`DetailHeroFocus`).
+- **Series years on cards** follow Apple TV, not Android's single year (owner, 2026-11-18; Apple `9718f17b`,
+  `CardYears.swift`): "2019 – 2023" once ended or cancelled, "2021 – Present" while returning, else one year
+  (`CardYears`). Detail and the marquee keep one year, as on Apple TV.
 
 **Unit mapping.** Xbox lays out at 960×540 effective pixels, the same canvas as Android TV's dp, so
 Android geometry maps 1:1 (`88.dp` → `88`). Android text is `sp × 0.86` (the TV app's

@@ -569,7 +569,10 @@ public sealed partial class BrowseFeed
 
     private static string? Upper(string? value) => string.IsNullOrWhiteSpace(value) ? null : value!.Trim().ToUpperInvariant();
 
-    /// <summary>Second caption line, as Silo's Android TV cards show it: the episode's own title, else the year.</summary>
+    /// <summary>
+    /// Second caption line, as Silo's Android TV cards show it: the episode's own title, else the year, or the years
+    /// a series ran as Apple TV shows them (CardYears).
+    /// </summary>
     private static string? Subtitle(CatalogItem item, bool isEpisode)
     {
         if (isEpisode)
@@ -580,7 +583,7 @@ public sealed partial class BrowseFeed
             return tag is null ? title : title is null ? tag : $"{tag} • {title}";
         }
 
-        return item.Year is > 0 ? item.Year.Value.ToString(CultureInfo.InvariantCulture) : null;
+        return CardYears.Caption(item.Type, item.Year, item.ShowStatus, item.LastAirDate);
     }
 
     /// <summary>Marquee facts for a movie or series: "2025 · 1h 58m · Drama · Thriller". Rating is a badge instead.</summary>

@@ -61,6 +61,9 @@ public sealed partial class BrowseFeed
         Type = item.Type,
         Title = item.Title,
         Year = item.Year,
+        // The series years line (CardYears, Apple 9718f17b).
+        ShowStatus = item.ShowStatus,
+        LastAirDate = item.LastAirDate,
         Overview = item.Overview,
         PosterUrl = item.PosterUrl,
         BackdropUrl = item.BackdropUrl,
