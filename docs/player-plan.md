@@ -2184,6 +2184,12 @@ unchanged: dav1d zero-copy, and release packages carry no rav1g.dll.
   from the shared pool and starved the renderer on the console: engine fps 21-38 with bursts over 100 against
   dav1d's steady 23.97 on the same 1080p film; 1000 ms / 8 measured 22.6-24.2, still stuttering, so delivery timing
   in the provider is being chased separately (fork bale.49/bale.50 delivery diagnostics; bale.49's "pts" values were a log-line unit bug).
+- **Provider knobs (wrapper bale.52):** `bale-debug.sh rav1g-tune [inflight=1-8] [perf=on|off] [parse=1|2]` (each also
+  `default`; memory only, rav1g route only) set the fork's `bale_gpu_decode_inflight` (its feeder thread's units in
+  flight, default 3), `bale_rav1g_perf=1` (rav1g's own CPU/GPU ms in the "Bale rav1g: delivery" line) and
+  `bale_rav1g_parse` (frames in parse; 2 only when the decode call is still the limit). The throughput finding that
+  led to the feeder: bale.50 measured rate ~21.7/s against 23.976 with an empty queue, ~93 ms request-to-delivery,
+  where rav1g alone takes ~15 ms a frame when kept fed.
 - **Prewarm (wrapper bale.48):** `bale-debug.sh av1-decoder rav1g` also calls the fork's plain C export
   `int bale_rav1g_prewarm(void)` from FFmpegInteropX.dll (`Rav1gPrewarm`, DllImport with ExactSpelling, on the thread
   pool; skipped when the pinned wrapper is older than bale.48 (`Rav1gPolicy.PrewarmSupported`) or rav1g.dll is not

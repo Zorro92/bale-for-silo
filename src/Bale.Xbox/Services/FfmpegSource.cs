@@ -136,8 +136,8 @@ internal static class FfmpegSource
         if (ZeroCopyRuntime.Register()) ApplySoftwareVideo(config);
         else Log.Info("player: rav1g route without zero-copy; a dav1d fallback would decode without it");
         config.FFmpegOptions["bale_av1_decoder"] = "1";
-        // The fork advises 2-4 decode-ahead frames on its GPU provider, not software video's 16 (8 above 1080p): each one
-        // pins a pool image (Rav1gPolicy.Route). ApplyInputTuning runs after this, so ffmpeg-tune ahead= still wins.
+        // Decode-ahead from Rav1gPolicy.Route (8, as dav1d above 1080p: since fork bale.46 the buffer no longer competes
+        // with rav1g's pool). ApplyInputTuning runs after this, so ffmpeg-tune ahead= still wins.
         if (rav1g.DecodeAheadFrames is { } ahead)
             config.FFmpegOptions["bale_decode_ahead_frames"] = ahead.ToString(CultureInfo.InvariantCulture);
         if (rav1g.ToneMap) config.FFmpegOptions["bale_tonemap"] = "1";
@@ -146,6 +146,9 @@ internal static class FfmpegSource
             config.FFmpegOptions["bale_tonemap_output_width"] = width.ToString(CultureInfo.InvariantCulture);
             config.FFmpegOptions["bale_tonemap_output_height"] = height.ToString(CultureInfo.InvariantCulture);
         }
+        // Console-test knobs for the provider's feeder thread, rav1g's perf timings and parse depth (bale.52+); this
+        // whole method is debug-only (DEBUG_SERVER region).
+        foreach (var (key, value) in DebugRav1gTuning.Options()) config.FFmpegOptions[key] = value;
     }
 
     internal static VideoDecoderMode DecoderMode(VideoDecoderMode production, DebugFfmpegInputTuning tuning) => tuning.Decoder switch

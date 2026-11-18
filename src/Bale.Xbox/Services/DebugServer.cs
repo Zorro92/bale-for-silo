@@ -74,6 +74,8 @@ namespace Bale.Xbox.Services;
 ///   GET  /engine-target  memory-only engine swap-chain format; default bgra (as in release builds)
 ///   POST /engine-target?mode=rgb10  bgra|rgb10|fp16 (MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT); next engine playback attempt
 ///   GET  /av1-decoder     memory-only software AV1 decoder; default dav1d (as in release builds); rav1g.dll packaged?
+///   GET  /rav1g-tune      memory-only rav1g provider knobs (fork bale.52): inflight, perf, parse; rav1g route only
+///   POST /rav1g-tune?inflight=3&perf=on&parse=2  1-8 | on/off | 1-2, each also "default"; next rav1g playback attempt
 ///   POST /av1-decoder?mode=rav1g  dav1d|rav1g (fork GpuDecoderSampleProvider, bale_av1_decoder=1); next playback attempt;
 ///                                 rav1g also starts bale_rav1g_prewarm (device + pipeline compiles) off the UI thread
 ///   GET  /stream-adapter  memory-only media stream switch; default rust
@@ -248,7 +250,7 @@ internal sealed partial class DebugServer
         var target = new Uri("http://bale" + parts[1]);
         var path = target.AbsolutePath.TrimEnd('/');
         var query = ParseQuery(target.Query, out var duplicateQueryKeys);
-        if (duplicateQueryKeys && path is ("/open" or "/play" or "/home" or "/navlog" or "/playtest-ffmpeg" or "/ffmpeg-tune" or "/delivery" or "/stats-rows" or "/frame-trace" or "/display-match" or "/gc" or "/frame-delivery" or "/stream-adapter" or "/player-backend" or "/start-budget" or "/engine-target" or "/av1-decoder" or "/av1-claim" or "/idle-test" or "/webview-test"))
+        if (duplicateQueryKeys && path is ("/open" or "/play" or "/home" or "/navlog" or "/playtest-ffmpeg" or "/ffmpeg-tune" or "/delivery" or "/stats-rows" or "/frame-trace" or "/display-match" or "/gc" or "/frame-delivery" or "/stream-adapter" or "/player-backend" or "/start-budget" or "/engine-target" or "/av1-decoder" or "/rav1g-tune" or "/av1-claim" or "/idle-test" or "/webview-test"))
             return ("400 Bad Request", "query keys must appear at most once\n");
 
         switch (method, path)
@@ -486,6 +488,20 @@ internal sealed partial class DebugServer
                 // rav1g's device and pipeline compiles start now, on the thread pool, not in the first open.
                 if (DebugAv1DecoderSwitch.Mode == "rav1g") Rav1gPrewarm.Start();
                 return ("200 OK", Av1DecoderStatus());
+
+            case ("GET", "/rav1g-tune"):
+                if (query.Count != 0)
+                    return ("400 Bad Request", "usage: GET /rav1g-tune or POST /rav1g-tune?inflight={1-8|default}&perf={on|off|default}&parse={1|2|default}\n");
+                return ("200 OK", DebugRav1gTuning.Describe() + "\n");
+
+            case ("POST", "/rav1g-tune"):
+                if (query.Count == 0 || query.Keys.Any(key => key is not ("inflight" or "perf" or "parse")))
+                    return ("400 Bad Request", "keys: inflight=1-8, perf=on|off, parse=1|2 (each also default)\n");
+                foreach (var (key, value) in query)
+                    if (!DebugRav1gTuning.TrySet(key, value))
+                        return ("400 Bad Request", $"bad value for {key}; inflight=1-8, perf=on|off, parse=1|2 (each also default)\n");
+                Log.Info($"Debug {DebugRav1gTuning.Describe()}; applies to the next rav1g playback attempt");
+                return ("200 OK", DebugRav1gTuning.Describe() + "\n");
 
             case ("GET", "/stream-adapter"):
                 if (query.Count != 0)
