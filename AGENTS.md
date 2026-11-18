@@ -194,6 +194,12 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
 
 ## Playback decoder policy
 
+- **10-bit processing rule (owner, 2026-11-17):** anything that processes video in the pipe
+  (tone map, film grain, scaling, colour or format conversion, repack, FFmpeg sws/filters, bale_gpu
+  shaders, the fork, rav1g) works in 10-bit and outputs 10-bit (P010 or equivalent), even for an 8-bit
+  source. Only native 8-bit video passed through untouched may stay 8-bit. An 8-bit intermediate
+  after processing is a bug. The console tone map writes P010 (bale_gpu `bale_tonemap_output_formats`,
+  fork 2.1.0-bale.36+).
 - FFmpegInteropX packages, native activation and license texts ship in **all** builds. Keep the CI
   package checker; CsWinRT's projection alone does not register the WinRT factories for Native AOT.
 - Native FFmpeg is **8.1.2-bale.dav1d.1.5.4.p1**, not public 8.1.2 (which embeds dav1d 1.0.0).
