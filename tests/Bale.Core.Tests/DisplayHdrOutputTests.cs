@@ -6,6 +6,12 @@ using Windows.Graphics.Display.Core;
 
 namespace Bale.Core.Tests;
 
+// Asserts exact Log.Messages and swaps the static HDMI stubs: other classes log through the same static
+// stub in parallel, which once added a stray line to Assert.Single. Run alone, after the parallel tests.
+[CollectionDefinition("Display HDR", DisableParallelization = true)]
+public sealed class DisplayHdrCollection;
+
+[Collection("Display HDR")]
 public class DisplayHdrOutputTests : IDisposable
 {
     private readonly HdmiDisplayInformation _hdmi = new();
