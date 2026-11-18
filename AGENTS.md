@@ -463,6 +463,9 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   Changes re-render a visible panel immediately, also work before a player opens, and reset on app
   restart; `where` keeps every row. `Dropped frames` (always unavailable) is hidden by default;
   `reset` restores that default and `show "Dropped frames"` brings it back.
+- **Memory ceiling (owner, 2026-11-18): treat about 1.2 GB as Bale's real limit on the Xbox.** `AppMemoryUsageLimit`
+  (the `mem` "of 3328.0 MiB") is not the headroom: in practice apps never get past ~1.2 GB. Judge every reading against
+  that; at or above ~1.1 GB is at the ceiling (4K AV1 through rav1g read 1.25 GiB and is being trimmed).
 - `mem [gc]` reports the managed GC heap/committed bytes, collection counts and
   `MemoryManager.AppMemoryUsage`; "non-GC" is app usage minus GC committed (native decoders, Media
   Foundation, WinRT, Composition). `gc` first forces two full blocking collections with finalizers, so
