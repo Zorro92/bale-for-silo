@@ -2159,6 +2159,67 @@ until the session expired. silo-apple bounds the engine's load with the 45 s Aet
   monitor, and a replan that cannot reach the server shows the error screen as before), and the engine's own 20 s open
   timeout still moves a slow source to MediaPlayer before the budget runs out.
 
+## rav1g (debug), 2026-11-18
+
+The owner approved testing [rav1g](https://github.com/Zorro92/rav1g) (AV1 in D3D12 compute shaders) inside Bale behind
+a debug switch. The fork's side (wrapper 2.1.0-bale.44: `GpuDecoderSampleProvider`, `BaleRav1g.h`) is described in its
+`bale/design-rav1g-provider.md` and the "GPU AV1 decoder option (rav1g)" section of `bale/README.md`. Production is
+unchanged: dav1d zero-copy, and release packages carry no rav1g.dll.
+
+- **Switch:** `bale-debug.sh av1-decoder [dav1d|rav1g]` (memory only, captured per playback attempt, default dav1d,
+  absent from production like the other `Debug*Switch` classes). No argument prints the switch, whether the package
+  carries rav1g.dll, and rav1g's `loaded <version> (interface N)` line once an open tried the library. Decisions:
+  `Rav1gPolicy` (Rust `av1_decoder.rs`).
+- **Keys** (`FfmpegSource.ApplyRav1g`, software AV1 routes only): `bale_av1_decoder=1`. Zero-copy registration is not
+  required; when it registers, the zero-copy/grain keys are still set, because the fork ignores them for a rav1g stream
+  but honours them when the open falls back to dav1d (library missing, interface mismatch, unsupported stream), so that
+  fallback is today's path. FastSeek stays on. `bale_tonemap_output_width/height` = the display size when the video is
+  larger (bale_gpu's area downscale, never Media Foundation's leaking scaler), and `bale_tonemap=1` on an SDR display
+  (PQ/HLG is tone-mapped; SDR sources log `request ignored`). A dav1d fallback ignores the stage keys.
+- **BufferTime:** 200 ms, cut to five frames at higher frame rates (166 ms at 30 fps, 83 ms at 60, floor 40 ms) unless
+  `ffmpeg-tune buffer=` overrides it. The fork's pool is 8 images and rav1g holds up to slots + 2 of them (5 at 4K);
+  today's 500–1000 ms (12–24 frames at 24 fps) could block the start forever. Decode-ahead keeps the software default.
+- **Guard** (`FfmpegVideoOutputGuard` + `Rav1gOutputCheck`, attached on every rav1g mount): direct output must carry
+  the rav1g mark (media-type attribute `{6d553633-9287-4856-bc9f-0c23af00e184}` = UINT32 1, set by
+  `BaleRav1gDecoder::DescribeOutput` on the stream descriptor), the source's depth (8-bit NV12, more P010; never NV12
+  for 10-bit) and the container's colour as the catalog reports it (primaries, transfer, matrix; the HDR policy may
+  omit BT.2020 primaries and HDR transfers but never changes them; PQ/HLG direct output on an SDR display means the
+  stage declined and is rejected). Stage output must carry the tone-map mark as P010 limited BT.709, as today. No mark
+  means the open fell back to dav1d: logged (`player: rav1g output unmarked …`) and shown in stats, not rejected. A
+  rejection fails the mount like any guard rejection.
+- **Remount:** when a rav1g mount fails after rav1g opened (the fork's latched `stream failed` → `NotifyError` →
+  MediaFailed, or a guard rejection), the same plan is remounted once on dav1d zero-copy, with no server replan, through
+  the helper the console-downscale-declined remount uses (`RemountSamePlanAsync`). The attempt then stays on dav1d; a
+  second failure takes the ordinary single replan. HDMI, embedded-subtitle and start-budget failures, and an open that
+  already fell back to dav1d, take the replan directly. Never loops.
+- **Reading it:** the stats/`where` row `AV1 decoder` says what the open used: `rav1g direct · output WxH NV12|P010
+  direct hdr=N`, `rav1g + stage · output … processed …`, `dav1d (rav1g fallback to dav1d (reason, status=0x…))`,
+  `dav1d (no rav1g mark: open fell back)`, `rav1g failed: stream failed (reason, hr=0x…)` or `dav1d (remounted after a
+  rav1g failure)`, plus `rav1g.dll not packaged` when it is missing. It combines the engine FFmpegInteropX reports
+  (rav1g's provider reports the D3D11 engine, dav1d the software one), the guard's mark verdict and the fork's
+  `Bale rav1g:` lines (debug FFmpeg log provider). The log carries `player: AV1 decoder rav1g buffer=… output=…
+  tonemap=… library=…`, `player: AV1 open used rav1g|dav1d …`, `ffmpeg: Bale rav1g: active WxH bits=N slots=S …`,
+  `… output WxH P010 direct hdr=0`, `… destroyed (frames=… blocked=…)` (pool counters at stream end) and, on a
+  failure, `player: rav1g failed; remounting the same plan on dav1d`.
+- **Package:** `scripts/rav1g.json` pins the release (tag, source commit, interface version, SHA256 of `rav1g.dll`,
+  `rav1g.h` and `rav1g-licenses.zip`); `scripts/restore-rav1g.ps1` verifies them before the Windows build and the
+  debug-server MSIX carries `rav1g.dll` next to `bale_gpu.dll` with `Licenses/rav1g/`. CI
+  (`scripts/check-rav1g-package.ps1`) checks the packaged hash, the 12 exports the fork resolves, no desktop CRT, and
+  the `Microsoft.VCLibs.140.00` dependency the DLL's app CRT needs; production and an empty pin
+  (`"release_tag": null`) carry none, the switch then reports rav1g unavailable and the fork falls back to dav1d. A new
+  release: update every field of the pin, never a hash alone.
+- **Console test list** (the fork's design §9; check the rav1g thread and that `uwp_dx12_player.exe` is not running
+  first): `av1-decoder rav1g`, then `play <id>` and `stats`/`where` for each.
+  1. Parity with dav1d: the same AV1 clips (8-bit, 10-bit, film grain, 1080p, 4K) with `av1-decoder dav1d` and
+     `rav1g`; compare screenshots at the same `start=`.
+  2. Heavy 4K in real time (needs `av1-claim height=2160`): `CPU`, `Late frames`, `Xbox memory`, `mem` at a fixed idle
+     offset.
+  3. HDR AV1 tone-mapped on SDR (only when the plan delivers the HDR original; the server normally tone-maps AV1), and
+     4K SDR AV1 downscaled: 40 opens (`play` loop) for the platform-leak check.
+  4. Seeks forward/back 20× (`seek`), stop/start 20×; the `destroyed (…)` pool counters stay steady.
+  5. Fallbacks: a build with `"release_tag": null` (missing DLL → `fallback to dav1d (library missing, …)`), and a
+     forced stream failure to see the one dav1d remount.
+
 ## Debug: IMFMediaEngine rendering mode (windowless swap chain)
 
 `scripts/bale-debug.sh playtest-present <url|@file> [seconds] [target=…] [hdr=on|off]` plays a URL
