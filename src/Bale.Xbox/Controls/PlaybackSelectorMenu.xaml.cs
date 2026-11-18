@@ -111,7 +111,7 @@ public sealed partial class PlaybackSelectorMenu : UserControl
 
     private void OnOptionClick(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: PlaybackOptionView view }) Chosen?.Invoke(view.Option);
+        if (sender is FrameworkElement { DataContext: PlaybackOptionView view } && view.Option.IsEnabled) Chosen?.Invoke(view.Option);
     }
 
     private void OnMenuPreviewKeyDown(object sender, KeyRoutedEventArgs e)
@@ -134,7 +134,8 @@ public sealed partial class PlaybackSelectorMenu : UserControl
             };
             if (step != 0)
             {
-                if (PlaybackSelectorNavigation.NextIndex(_options.Count, _focusedIndex, step > 0) is { } next) FocusRow(next, FocusState.Keyboard);
+                if (PlaybackSelectorNavigation.NextIndex(_options.Select(view => view.Option).ToList(), _focusedIndex, step > 0) is { } next)
+                    FocusRow(next, FocusState.Keyboard);
                 e.Handled = true;
             }
             else if (e.Key is VirtualKey.Left or VirtualKey.Right or VirtualKey.GamepadDPadLeft or VirtualKey.GamepadDPadRight

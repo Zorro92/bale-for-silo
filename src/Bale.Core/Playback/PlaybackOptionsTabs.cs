@@ -6,7 +6,8 @@ namespace Bale.Core.Playback;
 public enum PlaybackOptionsTab { Info, Stats, Video, Audio, Subtitles, Chapters }
 
 /// <summary>A track row in the Audio or Subtitles tab: name, attributes, whether it plays now, and the pick it sends.</summary>
-public sealed record PlaybackTrackRow(string Name, string? Attributes, bool IsSelected, int TrackIndex);
+/// <summary>A disabled row (a subtitle no route can show) is listed dimmed, out of focus and Select (TvPlayerHud.kt).</summary>
+public sealed record PlaybackTrackRow(string Name, string? Attributes, bool IsSelected, int TrackIndex, bool IsEnabled = true);
 
 /// <summary>
 /// Which Options tabs show, the Audio / Subtitles track rows, and D-pad moves inside the panel.
@@ -37,7 +38,7 @@ public static class PlaybackOptionsTabs
         .Where(option => option.TrackIndex is not null)
         .Select(option => new PlaybackTrackRow(option.Title,
             option.TrackIndex < 0 || string.IsNullOrWhiteSpace(option.Detail) ? null : option.Detail,
-            option.IsSelected, option.TrackIndex!.Value))
+            option.IsSelected, option.TrackIndex!.Value, option.IsEnabled))
         .ToList();
 
     /// <summary>The number of real tracks in <paramref name="rows"/> (Off is not a track).</summary>
@@ -45,17 +46,24 @@ public static class PlaybackOptionsTabs
 
     /// <summary>
     /// The row Down from the tab bar lands on: the checked track (TvPlayerHud.kt HudSubtitlesPane entryRow), else
-    /// the first row; -1 without rows.
+    /// the first row; -1 without rows. A disabled row never anchors the pane (Android 461240c6d).
     /// </summary>
-    public static int EntryRow(IReadOnlyList<bool> selected)
+    public static int EntryRow(IReadOnlyList<bool> selected, IReadOnlyList<bool>? enabled = null)
     {
         for (var i = 0; i < selected.Count; i++)
         {
-            if (selected[i]) return i;
+            if (selected[i] && Enabled(enabled, i)) return i;
         }
 
-        return selected.Count > 0 ? 0 : -1;
+        for (var i = 0; i < selected.Count; i++)
+        {
+            if (Enabled(enabled, i)) return i;
+        }
+
+        return -1;
     }
+
+    private static bool Enabled(IReadOnlyList<bool>? enabled, int row) => enabled is null || row >= enabled.Count || enabled[row];
 
     /// <summary>The tab Left/Right moves to along the bar, stopping at its ends (no wrap); null to stay put.</summary>
     public static PlaybackOptionsTab? NextTab(IReadOnlyList<PlaybackOptionsTab> visible, PlaybackOptionsTab current, bool forward)
@@ -75,10 +83,15 @@ public static class PlaybackOptionsTabs
     /// first row, or null to stay put Down from the last. Panes are one column, so Left/Right never leave a row
     /// (owner rule: vertical moves never turn sideways).
     /// </summary>
-    public static int? MoveFromRow(int row, int count, bool down)
+    public static int? MoveFromRow(int row, int count, bool down, IReadOnlyList<bool>? enabled = null)
     {
         if (row < 0 || row >= count) return null;
-        if (!down) return row - 1;
-        return row + 1 < count ? row + 1 : null;
+        // Disabled rows are out of the D-pad's path: step over them, Up past the first enabled row to the tab bar.
+        for (var next = down ? row + 1 : row - 1; next >= 0 && next < count; next += down ? 1 : -1)
+        {
+            if (Enabled(enabled, next)) return next;
+        }
+
+        return down ? null : -1;
     }
 }

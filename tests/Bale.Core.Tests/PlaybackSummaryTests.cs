@@ -100,6 +100,28 @@ public class PlaybackSummaryTests
     }
 
     [Fact]
+    public void AutoNeverStartsOnASubtitleTheServerCannotShow()
+    {
+        // Android 461240c6d: an embedded track with no codec (an unrecognised S_TEXT/WEBVTT) is refused by the
+        // server. Auto starts on the external SRT instead, and the list shows the embedded track disabled.
+        var movie = Item("m") with { EffectiveSubtitleLanguage = "en", EffectiveSubtitleMode = "always" };
+        movie.Versions[0].SubtitleTracks = [new() { Language = "eng" }, new() { Language = "eng", Codec = "srt", External = true }];
+        Assert.Equal(0, PlaybackSummaryValues.SubtitleLaunchIndex(movie, automaticAudioResolutionKnown: true, automaticAudioTrackOrdinal: 0));
+
+        var options = PlaybackFormatting.SelectorOptions(PlaybackSelectorKind.Subtitles, movie, PlaybackSelection.Auto);
+        var unplayable = Assert.Single(options, option => !option.IsEnabled);
+        Assert.Equal(1, unplayable.TrackIndex);
+        Assert.Equal(PlaybackFormatting.UnsupportedSubtitleFormat, unplayable.Detail);
+
+        // The only track, or one matching the remembered signature, is still never picked; an external track
+        // without a codec still plays.
+        movie.Versions[0].SubtitleTracks = [new() { Language = "eng" }];
+        Assert.Equal(-1, PlaybackSummaryValues.SubtitleLaunchIndex(movie, automaticAudioResolutionKnown: true, automaticAudioTrackOrdinal: 0));
+        Assert.False(PlaybackFormatting.IsUnplayableSubtitle(new() { External = true }));
+        Assert.True(PlaybackFormatting.IsUnplayableSubtitle(new() { Codec = " " }));
+    }
+
+    [Fact]
     public void LaunchIndexSendsWhatTheSubtitlesValueShows()
     {
         // Auto preview "English · SRT" travels as its combined index: an absent V3 index would mean Off.

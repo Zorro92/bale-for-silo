@@ -21,7 +21,7 @@
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="views:PlaybackOptionView">
                     <ToggleButton Style="{StaticResource SkylinePlaybackSelectorRowStyle}" IsChecked="{x:Bind Option.IsSelected}"
-                                  Click="OnOptionClick" GotFocus="OnOptionFocus" AutomationProperties.Name="{x:Bind AutomationName}">
+                                  IsEnabled="{x:Bind Option.IsEnabled}" Click="OnOptionClick" GotFocus="OnOptionFocus" AutomationProperties.Name="{x:Bind AutomationName}">
                       <Grid>
                         <Grid.ColumnDefinitions>
                           <ColumnDefinition Width="{StaticResource SkylinePlaybackSelectorCheckSlot}" />

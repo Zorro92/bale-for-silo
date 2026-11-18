@@ -230,7 +230,7 @@ public sealed partial class PlayerPage
                 e.Handled = true;
                 if ((left || right) && PlaybackOptionsTabs.NextTab(_optionsTabs, _optionsTab, forward: right) is { } nextTab)
                     OptionsTabButton(nextTab).Focus(FocusState.Keyboard);
-                else if (down && PlaybackOptionsTabs.EntryRow(RowSelection(_optionsTab, rows.Count)) is >= 0 and var entry)
+                else if (down && PlaybackOptionsTabs.EntryRow(RowSelection(_optionsTab, rows.Count), RowsEnabled(rows)) is >= 0 and var entry)
                     rows[entry].Focus(FocusState.Keyboard);
                 return;
             }
@@ -238,12 +238,14 @@ public sealed partial class PlayerPage
             if (index < 0) return;
             e.Handled = true;
             if (left || right) return;
-            var target = PlaybackOptionsTabs.MoveFromRow(index, rows.Count, down);
+            var target = PlaybackOptionsTabs.MoveFromRow(index, rows.Count, down, RowsEnabled(rows));
             if (target == -1) OptionsTabButton(_optionsTab).Focus(FocusState.Keyboard);
             else if (target is { } targetRow) rows[targetRow].Focus(FocusState.Keyboard);
         }
         catch (Exception ex) { LogFailure("options input", ex); }
     }
+
+    private static bool[] RowsEnabled(List<Button> rows) => rows.Select(row => row.IsEnabled).ToArray();
 
     /// <summary>Which of a pane's rows is checked: the playing track in Audio / Subtitles, none elsewhere.</summary>
     private bool[] RowSelection(PlaybackOptionsTab tab, int count)
@@ -326,6 +328,9 @@ public sealed partial class PlayerPage
             var row = new Button { Style = (Style)Application.Current.Resources["SkylinePanelRowStyle"], Content = grid };
             Windows.UI.Xaml.Automation.AutomationProperties.SetName(row, track.Attributes is { } spoken ? $"{track.Name}, {spoken}" : track.Name);
             MarkTrackRow(row, track.IsSelected);
+            // TvPlayerHud.kt (Android 461240c6d): a track no route can show is listed dimmed (the capsule's Disabled
+            // state), out of focus and Select.
+            if (!track.IsEnabled) row.IsEnabled = false;
             var index = track.TrackIndex;
             row.Click += (_, _) => OnTrackRowClick(kind, index);
             panel.Children.Add(row);
@@ -345,7 +350,7 @@ public sealed partial class PlayerPage
     private void OnTrackRowClick(PlaybackSelectorKind kind, int trackIndex)
     {
         var rows = kind == PlaybackSelectorKind.Audio ? _audioRows : _subtitleRows;
-        if (!rows.Any(row => row.TrackIndex == trackIndex && !row.IsSelected)) return;
+        if (!rows.Any(row => row.TrackIndex == trackIndex && !row.IsSelected && row.IsEnabled)) return;
         _ = SwitchTrackFromOptionsAsync(kind, trackIndex);
     }
 

@@ -126,10 +126,12 @@ public class PlaybackTrackFormattingTests
     [InlineData("fr", "off", "eng", true, "Auto - English (Forced)")]
     public void SubtitleAutoPreviewUsesOfficialLanguageModeAndForcedRules(string? preferred, string mode, string audio, bool forced, string expected)
     {
-        var forcedEnglish = Sub("eng");
+        // Embedded tracks need a codec: one without is unplayable and never auto-picked (Android 461240c6d).
+        var forcedEnglish = Sub("eng", "srt");
         forcedEnglish.Forced = true;
-        var version = new FileVersion { SubtitleTracks = [forcedEnglish, Sub("fre"), Sub("eng")] };
-        Assert.Equal(expected, PlaybackFormatting.SubtitleValueLabel(version, autoContext: new SubtitleAutoContext(preferred, mode, forced, audio)));
+        var version = new FileVersion { SubtitleTracks = [forcedEnglish, Sub("fre", "srt"), Sub("eng", "srt")] };
+        Assert.Equal(expected == "Auto - None" ? expected : expected + " · SRT",
+            PlaybackFormatting.SubtitleValueLabel(version, autoContext: new SubtitleAutoContext(preferred, mode, forced, audio)));
     }
 
     [Theory]
@@ -159,7 +161,7 @@ public class PlaybackTrackFormattingTests
     [InlineData("cym", "cy")]
     public void SubtitleAutoComparesAllIsoAliasesAndRegionalTags(string catalogLanguage, string preference)
     {
-        var version = new FileVersion { SubtitleTracks = [Sub(catalogLanguage)] };
+        var version = new FileVersion { SubtitleTracks = [Sub(catalogLanguage, "srt")] };
         Assert.Equal(0, PlaybackFormatting.AutoResolvedSubtitleOrdinal(version.SubtitleTracks, new SubtitleAutoContext(preference, "always")));
     }
 

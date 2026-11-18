@@ -50,6 +50,26 @@ public class PlaybackOptionsTabsTests
     }
 
     [Fact]
+    public void DisabledRowsAreOutOfTheDpadsPath()
+    {
+        // Android 461240c6d: an unplayable subtitle row never anchors the pane and is stepped over.
+        Assert.Equal(0, PlaybackOptionsTabs.EntryRow([false, true, false], [true, false, true]));
+        Assert.Equal(1, PlaybackOptionsTabs.EntryRow([false, false], [false, true]));
+        Assert.Equal(-1, PlaybackOptionsTabs.EntryRow([false], [false]));
+        Assert.Equal(2, PlaybackOptionsTabs.MoveFromRow(0, 3, down: true, [true, false, true]));
+        Assert.Equal(-1, PlaybackOptionsTabs.MoveFromRow(1, 3, down: false, [false, true, true]));
+        Assert.Null(PlaybackOptionsTabs.MoveFromRow(1, 3, down: true, [true, true, false]));
+
+        var rows = PlaybackOptionsTabs.TrackRows([new PlaybackSelectorOption("English", "Unsupported format", false, TrackIndex: 1, IsEnabled: false)]);
+        Assert.False(Assert.Single(rows).IsEnabled);
+
+        PlaybackSelectorOption[] menu = [new("Auto", "", false), new("English", "", true, TrackIndex: 0, IsEnabled: false), new("French", "", false, TrackIndex: 1)];
+        Assert.Equal(0, PlaybackSelectorNavigation.InitialIndex(menu));
+        Assert.Equal(2, PlaybackSelectorNavigation.NextIndex(menu, 0, forward: true));
+        Assert.Null(PlaybackSelectorNavigation.NextIndex(menu, 2, forward: true));
+    }
+
+    [Fact]
     public void TabsMoveAlongTheBarAndStopAtItsEnds()
     {
         var tabs = PlaybackOptionsTabs.Visible(hasStats: true, audioTracks: 1, subtitleTracks: 0, chapters: 0);
@@ -95,7 +115,7 @@ public class PlaybackOptionsTabsTests
         Assert.Contains("RefreshHudStats(attempt, sampleBandwidth: false).OfficialHudRows()", code);
         // Picks take the control bar's path (local audio switch or replan) and leave the panel open.
         Assert.Contains("ChangeTracksAsync(trackIndex, null) : ChangeTracksAsync(null, trackIndex)", code);
-        Assert.Contains("PlaybackOptionsTabs.MoveFromRow(index, rows.Count, down)", code);
+        Assert.Contains("PlaybackOptionsTabs.MoveFromRow(index, rows.Count, down, RowsEnabled(rows))", code);
         Assert.Contains("(Style)Application.Current.Resources[\"SkylinePanelRowStyle\"]", code);
         Assert.Contains("UpdateOptionsStats();", Read("PlayerPage.cs.txt"));
     }

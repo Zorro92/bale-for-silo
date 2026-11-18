@@ -96,18 +96,35 @@ public sealed class PlaybackSelectionState
 /// <summary>Explicit, boundary-stopping menu traversal from TvAnchoredSelectorMenu.kt.</summary>
 public static class PlaybackSelectorNavigation
 {
+    /// <summary>The selected enabled option, else the first enabled one; -1 when none can take focus.</summary>
     public static int InitialIndex(IReadOnlyList<PlaybackSelectorOption> options)
     {
         for (var i = 0; i < options.Count; i++)
         {
-            if (options[i].IsSelected) return i;
+            if (options[i].IsSelected && options[i].IsEnabled) return i;
         }
 
-        return options.Count > 0 ? 0 : -1;
+        for (var i = 0; i < options.Count; i++)
+        {
+            if (options[i].IsEnabled) return i;
+        }
+
+        return -1;
     }
 
     public static int? NextIndex(int count, int from, bool forward) =>
         from + (forward ? 1 : -1) is var next && next >= 0 && next < count ? next : null;
+
+    /// <summary>The next enabled option past <paramref name="from"/>: a disabled row is out of the D-pad's path.</summary>
+    public static int? NextIndex(IReadOnlyList<PlaybackSelectorOption> options, int from, bool forward)
+    {
+        for (var next = NextIndex(options.Count, from, forward); next is { } i; next = NextIndex(options.Count, i, forward))
+        {
+            if (options[i].IsEnabled) return i;
+        }
+
+        return null;
+    }
 
     public static double ScrollTarget(double scroll, double rowTop, double rowHeight, double viewport, double maxValue)
     {

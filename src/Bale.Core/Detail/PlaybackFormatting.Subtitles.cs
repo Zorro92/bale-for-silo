@@ -9,7 +9,11 @@ public sealed record SubtitleAutoContext(string? PreferredLanguage, string? Mode
 
 public static partial class PlaybackFormatting
 {
-    /// <summary>AutoSubtitleResolver.kt's catalog-only preview, including remembered series choices.</summary>
+    /// <summary>
+    /// AutoSubtitleResolver.kt's catalog-only preview, including remembered series choices. Every branch ranks
+    /// only tracks the server can show (Android 461240c6d): an unplayable track is never picked, not even as the
+    /// only track or the series choice.
+    /// </summary>
     internal static int? AutoResolvedSubtitleOrdinal(IReadOnlyList<VersionSubtitleTrack> tracks, SubtitleAutoContext context)
     {
         if (tracks.Count == 0) return null;
@@ -25,7 +29,7 @@ public static partial class PlaybackFormatting
         {
             for (var i = 0; i < tracks.Count; i++)
             {
-                if (MatchesSignature(tracks[i], signature)) return i;
+                if (!IsUnplayableSubtitle(tracks[i]) && MatchesSignature(tracks[i], signature)) return i;
             }
         }
 
@@ -47,6 +51,7 @@ public static partial class PlaybackFormatting
                 && (language is null || SubtitleLanguageKey(tracks[i].Language) == language)), null).FirstOrDefault();
 
         IEnumerable<int?> Order(IEnumerable<int> candidates, WatchSubtitleSignature? remembered) => candidates
+            .Where(i => !IsUnplayableSubtitle(tracks[i]))
             .OrderByDescending(i => remembered is null ? 0 : SignatureScore(tracks[i], remembered))
             .ThenBy(i => NeedsBurnIn(tracks[i]))
             .ThenBy(i => tracks[i].Forced == true)

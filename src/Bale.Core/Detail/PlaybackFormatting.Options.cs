@@ -5,9 +5,12 @@ namespace Bale.Core.Detail;
 
 public enum PlaybackSelectorKind { Version, Audio, Subtitles, Edition }
 
-/// <summary>Menu identity is independent of display order (TvPlaybackSelectorRow.kt).</summary>
+/// <summary>
+/// Menu identity is independent of display order (TvPlaybackSelectorRow.kt). A disabled option is listed dimmed,
+/// out of focus and Select (TvAnchoredSelectorMenu.kt <c>enabled</c>).
+/// </summary>
 public sealed record PlaybackSelectorOption(string Title, string Detail, bool IsSelected,
-    string? FileId = null, int? TrackIndex = null, string? EditionId = null);
+    string? FileId = null, int? TrackIndex = null, string? EditionId = null, bool IsEnabled = true);
 
 public static partial class PlaybackFormatting
 {
@@ -127,8 +130,20 @@ public static partial class PlaybackFormatting
             new PlaybackSelectorOption("Off", "Start without subtitles", selected == -1, TrackIndex: -1),
         }.Concat(ordinals.Select(i => new PlaybackSelectorOption(
             LanguageDisplayName(tracks[i].Language) ?? MeaningfulSubtitleTitle(tracks[i]) ?? $"Track {i + 1}",
-            SubtitleDetail(tracks[i]), selected == combined[i], TrackIndex: combined[i]))).ToList();
+            IsUnplayableSubtitle(tracks[i]) ? UnsupportedSubtitleFormat : SubtitleDetail(tracks[i]),
+            selected == combined[i], TrackIndex: combined[i], IsEnabled: !IsUnplayableSubtitle(tracks[i])))).ToList();
     }
+
+    /// <summary>strings.xml subtitle_track_unsupported_format (Android 461240c6d).</summary>
+    public const string UnsupportedSubtitleFormat = "Unsupported format";
+
+    /// <summary>
+    /// PlaybackSubtitleChoices.kt isUnplayableSubtitle (Android 461240c6d): an embedded track with no codec is one
+    /// the server's probe did not recognise (a Matroska S_TEXT/WEBVTT track, for one), so no route can send or
+    /// burn it in and a start that names it is refused. Only embedded tracks: a downloaded one can arrive without
+    /// a codec and still play. Listed disabled, never auto-picked; the row stays so combined indexes keep their places.
+    /// </summary>
+    public static bool IsUnplayableSubtitle(VersionSubtitleTrack track) => track.External != true && string.IsNullOrWhiteSpace(track.Codec);
 
     private static bool IsForcedSubtitle(VersionSubtitleTrack track) => track.Forced == true || Contains(track.Title, "forced");
 
