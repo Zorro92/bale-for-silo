@@ -239,6 +239,7 @@ public sealed class ConsoleToneMapTests
     [InlineData("2.1.0-bale.38", true)]
     [InlineData("2.1.0-bale.39", true)]
     [InlineData("2.1.0-bale.40", true)]
+    [InlineData("2.1.0-bale.41", true)]
     [InlineData("2.1.0-bale.29-beta", false)]
     [InlineData("2.1.0", false)]
     public void ProductionStageRequiresTheHlgCapableWrapper(string version, bool supported) =>
@@ -374,8 +375,8 @@ public sealed class ConsoleToneMapTests
         var format = SdrFormat();
         Assert.NotNull(source.Source.Request(new VideoStreamDescriptor { EncodingProperties = format }).Sample);
         Assert.Equal(0, failures);
-        // A container tagged BT.709 over HLG declines the stage; its output remains P010.
-        format.Subtype = "P010";
+        // A container tagged BT.709 over HLG declines the stage; its output remains P010, unmarked.
+        format.Properties.Remove(FfmpegVideoOutputGuard.ToneMapped);
         Assert.Null(source.Source.Request(new VideoStreamDescriptor { EncodingProperties = format }).Sample);
         Assert.Equal(1, source.Source.Errors);
         Assert.Equal(1, failures);
@@ -437,14 +438,25 @@ public sealed class ConsoleToneMapTests
     [InlineData("2.1.0-bale.38", true)]
     [InlineData("2.1.0-bale.39", true)]
     [InlineData("2.1.0-bale.40", true)]
+    [InlineData("2.1.0-bale.41", true)]
     public void DisplaySizedOutputNeedsWrapperBale38(string version, bool supported) =>
         Assert.Equal(supported, ConsoleToneMapPolicy.DownscaleWrapperSupported(version));
+
+    [Fact]
+    public void GuardRejectsEightBitStageOutputUnlessBaleGpuLacksP010()
+    {
+        var format = SdrFormat();
+        format.Subtype = "NV12";
+        // 10-bit rule: with P010 available, NV12 after the stage is an 8-bit result of processing.
+        Assert.False(FfmpegVideoOutputGuard.IsSdrOutput(format));
+        Assert.True(FfmpegVideoOutputGuard.IsSdrOutput(format, allowNv12: true));
+    }
 
     [Fact]
     public void GuardTrustsTenBitSdrOutputOnlyWithTheToneMappedMark()
     {
         var format = SdrFormat();
-        format.Subtype = "P010";
+        format.Properties.Remove(FfmpegVideoOutputGuard.ToneMapped);
         // A declined stage passes P010 through with BT.709 container tags: never trusted.
         Assert.False(FfmpegVideoOutputGuard.IsSdrOutput(format));
         format.Properties[FfmpegVideoOutputGuard.ToneMapped] = 1u;
@@ -478,9 +490,10 @@ public sealed class ConsoleToneMapTests
 
     private static VideoEncodingProperties SdrFormat() => new()
     {
-        Subtype = "NV12",
+        Subtype = "P010",
         Properties =
         {
+            [FfmpegVideoOutputGuard.ToneMapped] = 1u,
             [new("dbfbe4d7-0740-4ee0-8192-850ab0e21935")] = 2u,
             [new("5fb0fce9-be5c-4935-a811-ec838f8eed93")] = 5u,
             [new("3e23d450-2c75-4d25-a00e-b91670d12327")] = 1u,

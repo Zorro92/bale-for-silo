@@ -324,15 +324,21 @@ public sealed class DolbyVision7Tests
         Assert.Equal("SDR / console tone map · Dolby Vision 7 → HDR10 base layer", DebugHdrPlayback.Output(false, Plan(true), true));
     }
 
-    private static VideoEncodingProperties Format(bool sdr) => new()
+    private static VideoEncodingProperties Format(bool sdr)
     {
-        Subtype = sdr ? "NV12" : "P010",
-        Properties =
+        // Both outputs are P010; the stage's tone-mapped SDR carries the fork's mark (10-bit rule).
+        var format = new VideoEncodingProperties
         {
-            [new("dbfbe4d7-0740-4ee0-8192-850ab0e21935")] = sdr ? 2u : 9u,
-            [new("5fb0fce9-be5c-4935-a811-ec838f8eed93")] = sdr ? 5u : 15u,
-            [new("3e23d450-2c75-4d25-a00e-b91670d12327")] = sdr ? 1u : 4u,
-            [new("c21b8ee5-b956-4071-8daf-325edf5cab11")] = 2u,
-        },
-    };
+            Subtype = "P010",
+            Properties =
+            {
+                [new("dbfbe4d7-0740-4ee0-8192-850ab0e21935")] = sdr ? 2u : 9u,
+                [new("5fb0fce9-be5c-4935-a811-ec838f8eed93")] = sdr ? 5u : 15u,
+                [new("3e23d450-2c75-4d25-a00e-b91670d12327")] = sdr ? 1u : 4u,
+                [new("c21b8ee5-b956-4071-8daf-325edf5cab11")] = 2u,
+            },
+        };
+        if (sdr) format.Properties[FfmpegVideoOutputGuard.ToneMapped] = 1u;
+        return format;
+    }
 }

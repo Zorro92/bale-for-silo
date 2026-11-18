@@ -289,7 +289,8 @@ public sealed partial class PlayerPage
                 if (guardToneMap || media.Route.DolbyVision7BaseLayer)
                     media.VideoOutputGuard = new FfmpegVideoOutputGuard(media.FfmpegSource, () =>
                         _ = DispatchAsync(() => QueueFailure(attempt, media, 0, isDecoder: false, isNetwork: false)),
-                        toneMap: guardToneMap, baseLayerStreamIndex: media.BaseLayerStreamIndex);
+                        toneMap: guardToneMap, baseLayerStreamIndex: media.BaseLayerStreamIndex,
+                        allowNv12: !ConsoleToneMapRuntime.SupportsP010);
 
                 // Low-frequency Starting only, no sample observer or rendering state changes.
                 media.RendererDevice = new PlaybackResources.MediaDevice(media.FfmpegSource);

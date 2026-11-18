@@ -204,11 +204,13 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   shaders, the fork, rav1g) works in 10-bit and outputs 10-bit (P010 or equivalent), even for an 8-bit
   source. Only native 8-bit video passed through untouched may stay 8-bit. An 8-bit intermediate
   after processing is a bug. The console tone map writes P010 (bale_gpu `bale_tonemap_output_formats`,
-  fork 2.1.0-bale.36+).
+  fork 2.1.0-bale.36+), and `FfmpegVideoOutputGuard` rejects NV12 stage output unless bale_gpu lacks P010.
+  FFmpeg software decode outputs P010 for every source swscale converts (more than 8 bits, not 4:2:0, full
+  range, RGB, grey; fork bale.41+); plain 8-bit 4:2:0 stays NV12 (samples unchanged).
 - FFmpegInteropX packages, native activation and license texts ship in **all** builds. Keep the CI
   package checker; CsWinRT's projection alone does not register the WinRT factories for Native AOT.
 - Native FFmpeg is **8.1.2-bale.dav1d.1.5.4.p1**, not public 8.1.2 (which embeds dav1d 1.0.0).
-  Keep wrapper `FFmpegInteropX.UWP.Lib` on the pinned **2.1.0-bale.N** fork (currently **2.1.0-bale.40**),
+  Keep wrapper `FFmpegInteropX.UWP.Lib` on the pinned **2.1.0-bale.N** fork (currently **2.1.0-bale.41**),
   consumed from [Zorro92/bale-ffmpeginteropx releases](https://github.com/Zorro92/bale-ffmpeginteropx/releases).
   `scripts/ffmpeg-native.json` and `scripts/ffmpeginteropx-wrapper.json` pin their release tags
   and SHA256s; run
@@ -316,7 +318,7 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   `client_video_transformations_v1`. They require FFmpeg HEVC/d3d11va BL-only decoding, never
   the native container source or system decoder. Select the first playable video in demux order;
   reject an incomplete inventory or an EL default before mounting. The live output guard must
-  verify that BL stream plus P010 PQ BT.2020 on HDR, or tone-mapped NV12 BT.709 on SDR. A failure
+  verify that BL stream plus P010 PQ BT.2020 on HDR, or tone-mapped (marked) P010 BT.709 on SDR. A failure
   withdraws the recipe and client-managed range claim on the existing single replan, keeping
   codec evidence. Never declare DV7→DV8.1 or Dolby Vision output. See docs/player-plan.md.
 - **Owner's Dolby Vision rule (2026-11-17).** The Dolby Vision layer is proprietary: it is passed

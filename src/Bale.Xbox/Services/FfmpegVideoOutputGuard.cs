@@ -15,32 +15,38 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
     private static readonly Guid Range = new("c21b8ee5-b956-4071-8daf-325edf5cab11");
     // Bale-private media type attribute (UINT32 1): the fork's tone-map stage produced this output.
     // A declined stage passes P010 through with the container's (possibly BT.709) tags, so 10-bit
-    // SDR output is trusted only with this mark; NV12 is only ever produced by the stage.
+    // SDR output is trusted only with this mark. The stage writes NV12 only for a bale_gpu without
+    // P010 output (fork bale.41); otherwise NV12 would be an 8-bit result of processing, which the
+    // owner's 10-bit rule forbids (AGENTS.md), so it is rejected.
     internal static readonly Guid ToneMapped = new("b41e6a52-3c9d-4f0b-8e7a-5d2c1f9a0b37");
     private readonly FFmpegMediaSource _ffmpeg;
     private readonly MediaStreamSource _source;
     private readonly Action _failed;
     private readonly bool _toneMap;
+    private readonly bool _allowNv12;
     private readonly int? _baseLayerStreamIndex;
     private readonly object _gate = new();
     private readonly HashSet<object> _nonVideo = new(ReferenceEqualityComparer.Instance);
     private bool _disposed;
     private bool _failure;
 
-    internal FfmpegVideoOutputGuard(FFmpegMediaSource source, Action failed, bool toneMap = true, int? baseLayerStreamIndex = null)
+    /// <param name="allowNv12">True only when bale_gpu cannot write P010, so the stage's SDR output is NV12.</param>
+    internal FfmpegVideoOutputGuard(FFmpegMediaSource source, Action failed, bool toneMap = true, int? baseLayerStreamIndex = null,
+        bool allowNv12 = false)
     {
         _ffmpeg = source;
         _failed = failed;
         _toneMap = toneMap;
+        _allowNv12 = allowNv12;
         _baseLayerStreamIndex = baseLayerStreamIndex;
         _source = source.GetMediaStreamSource();
         _source.SampleRequested += OnSampleRequested;
     }
 
-    internal static bool IsSdrOutput(VideoEncodingProperties format) =>
-        (IsSubtype(format, "NV12", Nv12) || IsSubtype(format, "P010", P010) && IsMarkedToneMapped(format))
+    internal static bool IsSdrOutput(VideoEncodingProperties format, bool allowNv12 = false) =>
+        (allowNv12 && IsSubtype(format, "NV12", Nv12) || IsSubtype(format, "P010", P010) && IsMarkedToneMapped(format))
         // Wrapper UncompressedVideoSampleProvider::CreateStreamDescriptor: processed output is
-        // always limited-range NV12 BT.709, even when the container and bitstream disagree.
+        // always limited-range BT.709, even when the container and bitstream disagree.
         && HasValue(format, Primaries, 2)
         && HasValue(format, Transfer, 5)
         && HasValue(format, Matrix, 1)
@@ -82,7 +88,7 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
                 if (!_failure && current?.DecoderEngine == DecoderEngine.FFmpegD3D11HardwareDecoder
                     && (_baseLayerStreamIndex is null || current.StreamIndex == _baseLayerStreamIndex
                         && Bale.Core.Playback.SoftwareDecodePolicy.NormalizeCodec(current.CodecName) == "hevc")
-                    && (_toneMap ? IsSdrOutput(video.EncodingProperties) : IsHdr10Output(video.EncodingProperties))) return;
+                    && (_toneMap ? IsSdrOutput(video.EncodingProperties, _allowNv12) : IsHdr10Output(video.EncodingProperties))) return;
             }
             catch { } // An unreadable descriptor cannot establish the promised output.
             // The wrapper's handler runs first and assigns synchronously. Remove a rejected sample

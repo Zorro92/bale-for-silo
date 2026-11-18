@@ -10,11 +10,14 @@ internal static class ConsoleToneMapRuntime
     private static readonly Lazy<bool> Available = new(CheckAvailable);
     internal static bool IsAvailable => Available.Value;
 
+    // bale_tonemap_output_formats bit 2 (BALE_TONEMAP_OUTPUT_P010): the stage writes 10-bit SDR.
+    private const uint P010Bit = 2;
     // bale_tonemap_output_formats bit 4 (BALE_TONEMAP_OUTPUT_DOWNSCALE): area downscale to a smaller output.
     private const uint DownscaleBit = 4;
     // INPUT_NV12 (8) | SDR709 (16): the SDR scale-only stage, including 8-bit sources.
     private const uint SdrDownscaleBits = DownscaleBit | 8 | 16;
     private static readonly Lazy<uint> Formats = new(ReadFormats);
+    internal static bool SupportsP010 => IsAvailable && (Formats.Value & P010Bit) != 0;
     internal static bool SupportsDownscale => IsAvailable && (Formats.Value & DownscaleBit) != 0;
     internal static bool SupportsSdrDownscale => IsAvailable && (Formats.Value & SdrDownscaleBits) == SdrDownscaleBits;
 

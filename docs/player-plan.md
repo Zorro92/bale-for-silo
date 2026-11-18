@@ -1240,7 +1240,7 @@ HDR10 displays use the existing PQ HDMI switch/restore lifecycle. The wrapper ex
 HDR colour attributes; its output must be P010, PQ, limited-range BT.2020. Known SDR displays use
 the a6fe7d6 BT.2390 path below; DV7's selected BL must be 10-bit PQ BT.2020 and the stage available.
 Dual-track inventories are eligible here because the BL is explicitly selected; other tone-map
-sources still require one video track. The SDR output guard requires limited-range NV12 BT.709.
+sources still require one video track. The SDR output guard requires limited-range BT.709 P010 with the fork's tone-mapped mark (NV12 only from a bale_gpu without P010 output; 10-bit rule, wrapper bale.41).
 FEL enhancement and RPU trims are intentionally absent from both outputs.
 
 Create/open/MediaFailed, unsupported recipes, missing BL, invalid decoded output, or an HDR HDMI
@@ -1300,7 +1300,7 @@ version's facts. Known pixel formats must fit 4:2:0 P010 and the video inventory
 No extra server claim is needed because the original bytes are already delivered. Wrapper bale.29
 decides per frame: PQ/HLG gets BT.2390 tone mapping; true BT.2020 SDR gets BT.2020→BT.709 gamut
 conversion. BT.709 SDR, 8-bit sources and HDR displays keep their existing routes. The same decoder
-and NV12 BT.709 output guards, single recovery replan and debug overrides apply; a replacement
+and marked-P010 BT.709 output guards, single recovery replan and debug overrides apply; a replacement
 that still needs the failed stage is rejected rather than retried.
 
 Stats show `HDR output: SDR / console tone map` for this route and the existing plan reason reads
