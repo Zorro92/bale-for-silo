@@ -1539,6 +1539,64 @@ References supplied by the owner:
 withdrawal have Core tests, plus output failure/restore tests using an HDMI stand-in; Windows CI
 builds both debug and production Native AOT packages.
 
+### 4K SDR downscale on smaller displays (Xbox MF leak, 2026-11-17)
+
+**Symptom.** Repeated 4K plays in one Bale session crashed the app at about open 22–26 (hardware
+decode, engine or MediaPlayer). Crash dumps: `EXCEPTION_BREAKPOINT` in the Xbox D3D12 driver
+`umd12ddi_arden.dll` (+0x73cda, +0x6f162, +0x69ba4), usually on MF's renderer thread
+RTWorkQ → `mfsvr` (Simple Video Renderer) → `msvproc` (video processor) → d3d11 → d3d11on12 →
+D3D12Core → driver. One dump was a stack overflow on the same path.
+
+**Root cause.** On Xbox, MF's video processor leaks process-level driver state on every open in which
+it scales **4K SDR (BT.709)** video down to a smaller display. It is a count, not memory (a run of
+failed opens peaking at ~180 MB still died at 26), and it survives D3D11 device destruction. The
+breakpoint fires in whoever allocates next, so `msvproc` or FFmpegInteropX appear as victims.
+
+**Evidence** (all on the 1080p SDR TV, 40 opens per pass, results under `~/ext-1/bale-dumps/`):
+
+| What MF's video processor received | Result |
+|---|---|
+| 4K HDR passthrough (tone map off), d3d11va or the system decoder | 40/40, peak ~0.45 GiB |
+| 4K tone-map output, NV12 or P010, any fork variant (pool binds, no Flush, no colour attributes) | died at 22–26, peak ~1.2–1.3 GiB |
+| bale_gpu tone map alone (`tonemap-churn`, no MF/FFmpeg) | 40/40 |
+| Fork stage without bale_gpu (mask 8) | died at 24 |
+| Synthetic 4K SDR HEVC 8-bit, system decoder, engine present | died at ~30 |
+| A 4K VP9 10-bit SDR film, system decoder, real player | died at 24, peak ~1.1 GiB |
+| Synthetic 1080p SDR HEVC, system decoder, engine present | 40/40 |
+| 4K SDR, engine frame-server mode into a native 3840x2160 texture (no downscale, no mfsvr) | 40/40 |
+| **Tone map with bale_gpu area downscale to 1920x1080** | **40/40**, peak ~1.08 GiB |
+| **Automatic sizing (no debug switch)** | **40/40** |
+| **That 4K VP9 SDR film on the SDR downscale route** | **40/40**, peak ~1.0 GiB |
+
+Ruled out on the way: bale_gpu (churn 40/40, self-test and context-state switches made no
+difference), leaked D3D11 devices (the device marker shows every device destroyed), the fork's output
+pool (5–7 textures per open), bind flags, per-frame Flush, NV12 versus P010 (P010 SDR also died at 23),
+codec and decoder. Windows on Xbox has no HDR→SDR tone mapper to fall back on.
+
+**Fix (default since 4535a71 + ab84dd3, wrapper 2.1.0-bale.40).** MF never scales 4K SDR itself:
+- *HDR on an SDR display* (tone-map route): when the video is larger than the current HDMI mode in
+  either dimension, Bale passes `bale_tonemap_output_width/height` = the display size; the fork fits
+  the picture (aspect kept) and bale_gpu tone-maps and area-downscales in linear light to P010
+  (`player: tone map output fits WxH`, fork `Bale tonemap downscale 3840x2160 -> 1920x1080`).
+- *Plain SDR larger than the display* (`console_downscale` route in bale-core `route.decide`):
+  hardware HEVC/VP9 SDR originals with no HDR, DV or HDR10+ go through d3d11va and the same stage's
+  BT.709 scale-only pass (stats: `ffmpeg d3d11va + console downscale`). The fork treats unspecified
+  colour tags as BT.709 for video ≥1280x720 (owner-approved); other explicit tags are declined. If the
+  stage declines a file, the guard rejects the unmarked output and the same plan remounts **once** on
+  the system decoder without a server replan (`player: console downscale declined`).
+- The fork marks the stage's media type with `{b41e6a52-3c9d-4f0b-8e7a-5d2c1f9a0b37}` = 1;
+  `FfmpegVideoOutputGuard` accepts P010 SDR only with that mark (a declined stage can pass P010
+  through with BT.709 container tags).
+- Gates: wrapper ≥ bale.38 (tone-map sizing) / bale.39 (SDR route), and bale_gpu's
+  `bale_tonemap_output_formats` bits (DOWNSCALE; plus INPUT_NV12 and SDR709 for the SDR route).
+- On a 4K display nothing changes: the sizes match, so there is nothing to scale.
+
+**Do not undo:** do not hand MF 4K SDR on a smaller display again (removing the size keys, sending
+SDR 4K straight to the system decoder, or letting the guard accept unmarked P010). If a new route
+produces SDR larger than the display, give it the same display-sized stage. Untested: a real 4K
+display (frame-server mode skips `mfsvr`, so "4K SDR without downscale is safe" is probable, not
+proven), and whether the remaining ~0.6 GiB above HDR passthrough is MF's (see the memory note).
+
 ## Display resolution matching
 
 A title can have several file versions (say a 4K remux and a 1080p encode). With the version

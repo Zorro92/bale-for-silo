@@ -194,6 +194,11 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
 
 ## Playback decoder policy
 
+- **Never let MF scale 4K SDR to a smaller display (2026-11-17):** on Xbox its video processor leaks
+  driver state per open and Bale crashes at ~23 opens. The tone-map route passes the display size
+  (`bale_tonemap_output_width/height`) and plain SDR larger than the display takes the
+  `console_downscale` route (d3d11va + bale_gpu scale-only), both through bale_gpu's linear-light area
+  downscale. Details, evidence and gates: docs/player-plan.md "4K SDR downscale on smaller displays".
 - **10-bit processing rule (owner, 2026-11-17):** anything that processes video in the pipe
   (tone map, film grain, scaling, colour or format conversion, repack, FFmpeg sws/filters, bale_gpu
   shaders, the fork, rav1g) works in 10-bit and outputs 10-bit (P010 or equivalent), even for an 8-bit
