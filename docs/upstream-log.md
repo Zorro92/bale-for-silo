@@ -46,9 +46,13 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   (`cc4fd6662`).
 - ~~**Card focus style:**~~ done 2026-11-16: 2 dp white outline at 70% and a dark drop shadow, no
   glow, the same outline on the current episode (Android `51d4f9013`).
-- **Library sort options:** the web's list (up to 17, by library type), Rotten Tomatoes gated by
-  the ratings capability, scrolling Sort panel (Android `a60dac2d0`, Apple `55da563c`). Needs
-  the contract bump.
+- ~~**Library sort options:**~~ done 2026-11-17, not yet on the console: the web's list (up to 17,
+  by library type), Rotten Tomatoes gated by the ratings capability, scrolling Sort panel (Android
+  `a60dac2d0`, Apple `55da563c`). `CatalogSort.cs` ports the shared `CatalogSort.kt`;
+  `RatingSourcesFeed` probes `GET /api/v2/capabilities/ratings` per profile; a remembered known
+  sort stays in use and listed, only an unknown one falls back to Date Added. Not copied: Android
+  re-keying rows when the RT answer lands while the panel is open (Bale rebuilds rows on open) and
+  Apple's mixed-library Type-filter narrowing (Bale browses mixed libraries per tab side, as Android).
 - **Profiles:** ~~hide Add at `max_profiles` (server `451cba6c`); names wrap to two lines on Who's
   watching (Android `34cef244f`, Apple `d0e87752`)~~ done 2026-11-16, not yet on the console. Still
   open: the primary profile can't have a library limit any more (server `df9f5501`; no TV client

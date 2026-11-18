@@ -142,23 +142,27 @@ public sealed partial class LibraryBrowseOverlay : UserControl
         _facet = null;
         Panel.Width = 260;
         Panel.Height = double.NaN;
+        // TvBrowseSortPanel (a60dac2d0): a series library lists up to 17 sorts, more than the screen
+        // holds, so the panel stops 48dp short of the top and bottom and its rows scroll with focus.
+        Panel.Margin = new Thickness(0, 48, 0, 48);
         Panel.Padding = new Thickness(10);
         PanelEyebrow.Text = "SORT BY";
         PanelTitle.Visibility = PanelDivider.Visibility = Visibility.Collapsed;
         ResetRows();
-        // TvLibrarySortOption.availableForPersonalList: Recently Saved, Title, Date Added, Year, Rating, Runtime.
-        var sorts = _source.IsPersonal ? LibrarySortOption.Personal : LibrarySortOption.For(_source.ControlsMediaType, _source.IsCollection);
-        foreach (var sort in sorts)
+        // The shared CatalogSort list for this source; the active sort is always listed, so focus
+        // lands on it (TvBrowseSortPanel's currentFocusRequester, tvOS defaultFocus on current).
+        var current = _source.Query.Filter.Sort;
+        foreach (var sort in _source.SortOptions)
         {
             Add(sort.Field, sort.Label, () =>
             {
                 var filter = _source.Query.Filter.SelectSort(sort);
                 Close();
                 FilterChanged?.Invoke(filter);
-            }, row => row.Update(_source.Query.Filter.Sort == sort ? sort.DirectionLabel(_source.Query.Filter.Descending) : "",
-                _source.Query.Filter.Sort == sort ? "✓" : ""));
+            }, row => row.Update(_source.Query.Filter.Sort.Field == sort.Field ? sort.DirectionLabel(_source.Query.Filter.Descending) : "",
+                _source.Query.Filter.Sort.Field == sort.Field ? "✓" : ""));
         }
-        Show(Math.Max(0, _rows.ToList().FindIndex(row => row.Key == _source.Query.Filter.Sort.Field)));
+        Show(Math.Max(0, _rows.ToList().FindIndex(row => row.Key == current.Field)));
     }
 
     public void OpenFilter(CatalogFilters? options)
@@ -170,6 +174,7 @@ public sealed partial class LibraryBrowseOverlay : UserControl
         _facet = null;
         Panel.Width = 360;
         Panel.Height = 400;
+        Panel.Margin = new Thickness(0);
         Panel.Padding = new Thickness(16);
         BuildFilters();
         Show(0);

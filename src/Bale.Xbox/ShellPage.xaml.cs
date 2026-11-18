@@ -174,7 +174,9 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         // A sign-in (the shell opening for a profile) reads the connection speed; a due test follows.
         ConnectionSpeedService.Start();
         ConnectionSpeedService.Check("sign-in");
-        // Capability probing must not depend on a successful library-list load.
+        // Capability probing must not depend on a successful library-list load. TvMainShell.kt starts
+        // the rating-source probe first, so the Sort panels' Rotten Tomatoes gate isn't held back.
+        _ = RefreshRatingSourcesAsync();
         _ = RefreshRequestsCapabilityAsync();
 
         // Back from a detail page: the cached shell keeps its tabs and content; just restore focus.

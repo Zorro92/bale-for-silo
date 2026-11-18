@@ -42,6 +42,21 @@ public sealed partial class ShellPage
         catch (Exception ex) { Log.Error("Requests capability", ex); }
     }
 
+    /// <summary>
+    /// RatingSourcesStore.kt: GET /api/v2/capabilities/ratings for the Sort panels. Core resets the
+    /// answer on every profile or session change; a failed probe keeps the previous one.
+    /// </summary>
+    private static async Task RefreshRatingSourcesAsync()
+    {
+        if (Session.Client is not { } client) return;
+        try
+        {
+            var shown = await client.LibraryBrowse.RatingSources.RefreshAsync();
+            Log.Info($"Rating sources: {(shown.Count == 0 ? "none" : string.Join(",", shown.Order(StringComparer.Ordinal)))}");
+        }
+        catch (Exception ex) { Log.Error("Rating sources capability", ex); }
+    }
+
     private void OnRequestsClick(object sender, RoutedEventArgs args)
     {
         if (Session.Client?.Requests.Capability.Enabled != true) return;
