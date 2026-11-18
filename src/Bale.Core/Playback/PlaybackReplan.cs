@@ -22,8 +22,11 @@ public static class PlaybackReplan
         // silo-apple b9446d5d: a mount that ran out of its start budget says nothing about a decoder, a console
         // stage or an audio track (a slow or hung source fails the same way), so every claim stays and the
         // failure keeps its classification. The server excludes the failed route by its attempted key and
-        // offers the next one, as for Apple's noPlayableTrackWithinBudget.
-        if (PlaybackStartBudget.Is(failure))
+        // offers the next one, as for Apple's noPlayableTrackWithinBudget. A seek that never landed, even after the
+        // same plan was remounted at its target, fails the same way (Aether's softwarePipelineFailed /
+        // nativeItemFailed, both "server can adapt" in silo-apple, which resends its capabilities unchanged): a
+        // pipeline that stopped repositioning says nothing about one codec, stage or track.
+        if (PlaybackStartBudget.Is(failure) || PlaybackSeekWatchdog.Is(failure))
             return Build(start, plan, planAttemptId, priorAttemptedKeys.Append(plan.PlanAttemptKey!).ToArray(),
                 attemptCount, sourcePositionSeconds, "failure_recovery", failure);
         if (DolbyVision7Policy.RequiresBaseLayer(plan))
