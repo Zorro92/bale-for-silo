@@ -58,6 +58,11 @@ public sealed partial class PlayerPage
         return _hudStats = stats with { EstimatedBandwidthBps = bandwidth };
     }
 
+    /// <summary>
+    /// The FFmpeg rows come from the mount's stream snapshot, never the wrapper: CurrentVideoStream/CurrentAudioStream
+    /// take its source lock, which the sample thread may hold while it waits on a decoder (rav1g froze the UI thread
+    /// there, 2026-11-18). Each refresh asks for a fresh read on the thread pool and shows the last completed one.
+    /// </summary>
     private static PlaybackStats ReadFfmpegStats(PlaybackStats stats, Mount media)
     {
         stats = stats with
@@ -65,31 +70,25 @@ public sealed partial class PlayerPage
             BackendDisplayName = "FFmpegInteropX",
             BackendRoute = media.Progressive is null ? "FFmpeg Direct" : media.Transport.IsHls ? "FFmpeg HLS" : "FFmpeg Progressive",
         };
-        try
-        {
-            if (media.FfmpegSource!.CurrentVideoStream is { } video)
-                stats = stats with
-                {
-                    VideoCodec = PlaybackStats.CompactValue(video.CodecName, 80),
-                    VideoDecoderName = FfmpegSource.DecoderName(video.DecoderEngine),
-                    Resolution = video.PixelWidth > 0 && video.PixelHeight > 0
-                        ? string.Create(CultureInfo.InvariantCulture, $"{video.PixelWidth}x{video.PixelHeight}") : null,
-                    FrameRate = video.FramesPerSecond > 0 ? video.FramesPerSecond : null,
-                };
-        }
-        catch (Exception ex) { LogFailure("stats FFmpeg video", ex); }
-        try
-        {
-            if (media.FfmpegSource!.CurrentAudioStream is { } audio)
-                stats = stats with
-                {
-                    AudioCodec = PlaybackStats.CompactValue(audio.CodecName, 80),
-                    AudioDecoderName = FfmpegSource.DecoderName(audio.DecoderEngine),
-                    AudioChannelCount = audio.Channels,
-                    AudioSampleRate = audio.SampleRate,
-                };
-        }
-        catch (Exception ex) { LogFailure("stats FFmpeg audio", ex); }
+        if (media.FfmpegStreams is not { } streams) return stats;
+        if (media.Opened) streams.RequestRefresh();
+        if (streams.Value?.Video is { } video)
+            stats = stats with
+            {
+                VideoCodec = PlaybackStats.CompactValue(video.CodecName, 80),
+                VideoDecoderName = FfmpegSource.DecoderName(video.DecoderEngine),
+                Resolution = video.PixelWidth > 0 && video.PixelHeight > 0
+                    ? string.Create(CultureInfo.InvariantCulture, $"{video.PixelWidth}x{video.PixelHeight}") : null,
+                FrameRate = video.FramesPerSecond > 0 ? video.FramesPerSecond : null,
+            };
+        if (streams.Value?.Audio is { } audio)
+            stats = stats with
+            {
+                AudioCodec = PlaybackStats.CompactValue(audio.CodecName, 80),
+                AudioDecoderName = FfmpegSource.DecoderName(audio.DecoderEngine),
+                AudioChannelCount = audio.Channels,
+                AudioSampleRate = audio.SampleRate,
+            };
         return stats;
     }
 

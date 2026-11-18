@@ -48,12 +48,28 @@ namespace FFmpegInteropX
         public string? CodecName { get; set; }
         public DecoderEngine DecoderEngine { get; set; }
         public HardwareDecoderStatus HardwareDecoderStatus { get; set; }
+        public int PixelWidth { get; set; }
+        public int PixelHeight { get; set; }
+        public double FramesPerSecond { get; set; }
+    }
+
+    internal sealed class AudioStreamInfo
+    {
+        public int StreamIndex { get; set; }
+        public string? CodecName { get; set; }
+        public DecoderEngine DecoderEngine { get; set; }
+        public int Channels { get; set; }
+        public int SampleRate { get; set; }
     }
 
     internal sealed class FFmpegMediaSource
     {
         public List<VideoStreamInfo> VideoStreams { get; } = [];
-        public VideoStreamInfo? CurrentVideoStream => VideoStreams.FirstOrDefault();
+        public VideoStreamInfo? CurrentVideoStream { get { CurrentStreamReads++; return VideoStreams.FirstOrDefault(); } }
+        public List<AudioStreamInfo> AudioStreams { get; } = [];
+        public AudioStreamInfo? CurrentAudioStream => AudioStreams.FirstOrDefault();
+        /// <summary>Counts reads of the lock-taking current-stream getters (FfmpegStreamSnapshot tests).</summary>
+        public int CurrentStreamReads { get; private set; }
         internal Windows.Media.Core.MediaStreamSource Source { get; } = new();
         public Windows.Media.Core.MediaStreamSource GetMediaStreamSource() => Source;
     }

@@ -735,6 +735,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
             _gcLatencyLease?.Dispose();
             _gcLatencyLease = null;
             Cleanup("release video presenter", ReleaseVideoPresenter);
+            // The idle trim follows the last mount's native close, which runs on the thread pool (DisposeMount).
+            await WaitForMountCloseAsync("shutdown");
             _resourceLease?.Dispose();
             _resourceLease = null;
             Cleanup("release idle resources", () => PlaybackResources.ReleaseIdle("teardown"));

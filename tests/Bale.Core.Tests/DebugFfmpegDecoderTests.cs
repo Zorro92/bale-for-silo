@@ -121,7 +121,7 @@ public sealed class DebugFfmpegDecoderTests
     {
         var source = Source(DecoderEngine.FFmpegD3D11HardwareDecoder);
         source.CurrentVideoStream!.HardwareDecoderStatus = HardwareDecoderStatus.Available;
-        using var observer = new DebugVideoMediaType(source, VideoDecoderMode.Automatic);
+        using var observer = new DebugVideoMediaType(source, VideoDecoderMode.Automatic, () => FfmpegStreamSnapshot.Read(source).Video);
         source.Source.Request(new object()); // Audio must not finish the video observer.
         Assert.Null(observer.Description);
         Assert.Equal(1, source.Source.Observers);
@@ -151,7 +151,7 @@ public sealed class DebugFfmpegDecoderTests
     public void DiagnosticReportsCompressedSystemVideoAndDetachesOnEarlyDisposal()
     {
         var source = Source(DecoderEngine.SystemDecoder);
-        using (var observer = new DebugVideoMediaType(source, VideoDecoderMode.ForceSystemDecoder))
+        using (var observer = new DebugVideoMediaType(source, VideoDecoderMode.ForceSystemDecoder, () => FfmpegStreamSnapshot.Read(source).Video))
         {
             source.Source.Request(new VideoStreamDescriptor { EncodingProperties = new() { Subtype = "HEVC" } });
             observer.Refresh(playbackStarted: true);
@@ -159,7 +159,7 @@ public sealed class DebugFfmpegDecoderTests
             Assert.Contains("decoder=system compressed=yes", observer.Description);
             Assert.DoesNotContain("fallback=software", observer.Description);
         }
-        using (var observer = new DebugVideoMediaType(source, VideoDecoderMode.Automatic))
+        using (var observer = new DebugVideoMediaType(source, VideoDecoderMode.Automatic, () => FfmpegStreamSnapshot.Read(source).Video))
             Assert.Equal(1, source.Source.Observers);
         Assert.Equal(0, source.Source.Observers);
     }

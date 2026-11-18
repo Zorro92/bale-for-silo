@@ -5,7 +5,7 @@ using Windows.Media.Core;
 
 namespace Bale.Xbox.Services;
 
-/// <summary>Idle-only production resource cleanup. Called on the UI thread after media Close.</summary>
+/// <summary>Idle-only production resource cleanup, after media Close (a mount closes on the thread pool, PlayerPage.DisposeMount).</summary>
 internal static unsafe class PlaybackResources
 {
     internal static PlaybackResourceLifetime Lifetime { get; } = new();

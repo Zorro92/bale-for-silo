@@ -340,6 +340,18 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   and app/game concurrency implications). Never select 120 Hz for media; use at most 60 Hz.
 - An FFmpeg create/open/MediaFailed failure gets the existing single replan with its triggering
   codec claims removed and an explicit server-transcode reason; never retry the same capability.
+- **No locking FFmpegInteropX calls on the UI thread during playback (every route, 2026-11-18).** These
+  `FFmpegMediaSource` members take the source lock, which the sample thread can hold while it waits on a
+  decoder: `CurrentVideoStream`, `CurrentAudioStream`, `MetadataTags`, `PlaybackItem`, `PlaybackSession`
+  (setter), `GetMediaStreamSource`, `CreateMediaPlaybackItem`, `StartBuffering`, `ExtractThumbnail`, the
+  filter setters and `Close`/`Dispose` (the fork's bale/README.md, "rav1g prewarm and threading notes"; with
+  rav1g the UI thread froze in `CurrentVideoStream` and the start budget and debug server stopped with it).
+  Call them at open, before `player.Source` (no sample thread yet), on the sample thread (`SampleRequested`
+  observers), or on the thread pool. The HUD, stats, `where` and `DebugVideoMediaType` read the mount's
+  `FfmpegStreams` snapshot (`FfmpegStreamSnapshot`, Core `BackgroundSnapshot`: read at open, refreshed on the
+  pool, one read in flight, never awaited by the UI tick); `DisposeMount` closes the native sources on the pool
+  in the old order, and the next mount and the page's idle trim await that close (bounded, never blocking).
+  `FfmpegUiThreadTests` pins this; docs/player-plan.md, "rav1g (debug)".
 - **Start budget (silo-apple `b9446d5d`, owner 2026-11-18):** every mount, first plan and each replacement, on every
   route (engine and MediaPlayer, FFmpeg and Windows' reader, HLS through the Rust reader, progressive), shows its first
   frame within 45 s (`PlaybackStartBudget`, Rust `start_budget.rs`), held while the device is offline and deferred while

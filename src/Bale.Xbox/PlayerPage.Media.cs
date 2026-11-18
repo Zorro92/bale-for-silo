@@ -62,6 +62,11 @@ public sealed partial class PlayerPage
         public bool Reconnecting { get; set; }
         public long? PausedAt { get; set; }
         public FFmpegMediaSource? FfmpegSource { get; set; }
+        /// <summary>
+        /// The FFmpeg source's current streams for the UI thread (HUD, stats, debug readers): read at open, refreshed on
+        /// the thread pool. The UI thread never calls the wrapper's locking members during playback (FfmpegStreamSnapshot).
+        /// </summary>
+        public BackgroundSnapshot<FfmpegStreamSnapshot>? FfmpegStreams { get; set; }
         public PlaybackResources.MediaDevice? RendererDevice { get; set; }
         public FfmpegVideoOutputGuard? VideoOutputGuard { get; set; }
         public int? BaseLayerStreamIndex { get; set; }
@@ -107,6 +112,8 @@ public sealed partial class PlayerPage
         // Every accepted plan mounts here: the start, the failure replan and each seek reanchor.
         // The line carries protocol ids only (PlaybackPlanLog), never the URL or warning text.
         Log.Info("player: " + PlaybackPlanLog.Describe(attempt.Plan));
+        // The mount this one replaces closes on the thread pool (DisposeMount); open after its decoders are gone.
+        await WaitForMountCloseAsync("mount");
         // Client-managed originals keep SDR HDMI; all other mounts retain native HDR policy.
         var sdrOutput = !ConsoleToneMapPolicy.HasHdrOutput(attempt.Start!.ClientPlaybackContext.Output.HdrDetails);
         var consoleToneMap = ConsoleToneMapPolicy.RequiresToneMap(attempt.Plan!, sdrOutput, attempt.Request.Detail.Versions,
@@ -324,6 +331,8 @@ public sealed partial class PlayerPage
                     var index = DolbyVision7Policy.BaseLayerTrackIndex(streams, expectedCount);
                     media.BaseLayerStreamIndex = streams[index];
                 }
+                // Open time: no MediaStreamSource yet, so no sample thread can hold the wrapper's source lock.
+                media.FfmpegStreams = FfmpegStreamSnapshot.Open(media.FfmpegSource);
 #if DEBUG_SERVER
                 var rav1gRoute = media.Rav1g is { Rav1g: true } && media.SoftwareVideo && media.Route.VideoCodec == "av1";
                 FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route, attempt.FfmpegTuning, rav1gRoute);
@@ -331,7 +340,7 @@ public sealed partial class PlayerPage
                 if (rav1gRoute)
                 {
                     // rav1g's provider reports the D3D11 engine; the fork's open-time fallback is dav1d's software engine.
-                    media.Rav1gActive = media.FfmpegSource.CurrentVideoStream?.DecoderEngine == DecoderEngine.FFmpegD3D11HardwareDecoder;
+                    media.Rav1gActive = media.FfmpegStreams?.Value?.Video?.DecoderEngine == DecoderEngine.FFmpegD3D11HardwareDecoder;
                     Log.Info($"player: AV1 open used {(media.Rav1gActive ? "rav1g" : "dav1d (rav1g fell back at open)")}");
                 }
 #else
@@ -365,7 +374,8 @@ public sealed partial class PlayerPage
                 // Low-frequency Starting only, no sample observer or rendering state changes.
                 media.RendererDevice = new PlaybackResources.MediaDevice(media.FfmpegSource);
 #if DEBUG_SERVER
-                try { media.MssVideoMediaType = new DebugVideoMediaType(media.FfmpegSource, config.Video.VideoDecoderMode); }
+                var streamSnapshot = media.FfmpegStreams;
+                try { media.MssVideoMediaType = new DebugVideoMediaType(media.FfmpegSource, config.Video.VideoDecoderMode, () => streamSnapshot?.Value?.Video); }
                 catch (Exception ex) { Log.Info($"player: video media type route=ffmpeg source=mss unavailable ({ex.GetType().Name})"); }
 #endif
                 // The MSS only exists after CreateMediaPlaybackItem and is kept alive by the item.
@@ -451,6 +461,9 @@ public sealed partial class PlayerPage
             else Log.Info($"player: frame delivery not attached softwareVideo={media.SoftwareVideo} ffmpeg={media.FfmpegSource is not null}");
         }
 #endif
+        // FastSeek needs MediaPlayer's session (other backends seek without one, wrapper bale.30). The setter takes the
+        // wrapper's source lock: set it before Source, while no sample thread exists, never on the UI thread after open.
+        if (media.FfmpegSource is { } sessionSource) sessionSource.PlaybackSession = player.PlaybackSession;
         // The item exposes native track selection in production as well as debug stats.
         media.Item ??= new MediaPlaybackItem(media.Source);
         backend.Item = media.Item;
@@ -545,8 +558,7 @@ public sealed partial class PlayerPage
         {
             if (media.FfmpegSource is { } ffmpeg)
             {
-                // FastSeek needs MediaPlayer's session; other backends seek without one (wrapper bale.30).
-                ffmpeg.PlaybackSession = MediaPlayerBackend.NativeSession(sender.PlaybackSession);
+                // MediaPlayer's session went to FFmpeg before Source (MountPlanAsync): its setter takes the source lock.
                 if (media.BaseLayerStreamIndex is { } baseStream)
                 {
                     var streams = ffmpeg.VideoStreams.Select(video => video.StreamIndex).ToArray();
@@ -594,6 +606,8 @@ public sealed partial class PlayerPage
             if (media.Progressive is null) sender.PlaybackSession.Position = TimeSpan.FromSeconds(media.StartPosition);
             media.Opened = true;
             Log.Info("player: opened");
+            // The decoder engine can change once samples flow (a D3D11 or rav1g fallback): read again off the UI thread.
+            media.FfmpegStreams?.RequestRefresh();
 #if DEBUG_SERVER
             ReadTrackVideoMediaType(media);
             RefreshStats(attempt);
@@ -648,6 +662,8 @@ public sealed partial class PlayerPage
                     media.SelectedAudioTrack.OpenFailed += OnAudioTrackOpenFailed;
                 }
                 player.SelectAudio(index);
+                // The HUD's audio rows follow the wrapper's current stream; never read it here (UI thread).
+                media.FfmpegStreams?.RequestRefresh();
             }, () => player.SelectedAudioIndex);
         }
         catch (PlaybackAudioSelectionException) { throw; }
@@ -860,16 +876,21 @@ public sealed partial class PlayerPage
         Cleanup("close system controls", () => media.SystemControls?.Dispose());
         media.SystemControls = null;
         Cleanup("release video presenter", ReleaseVideoPresenter);
-        // FFmpeg owns an MSS, but CreateMediaPlaybackItem also creates a MediaSource. Closing
-        // only FFmpeg does not close that source's MF pipeline (including system HEVC surfaces).
-        Cleanup("dispose item source", () => media.Item?.Source?.Dispose());
-        Cleanup("dispose source", () => media.Source?.Dispose());
-        // The native source owns its MSS/item and must outlive the player, but not the authenticated stream.
-        Cleanup("dispose FFmpeg source", () => media.FfmpegSource?.Dispose());
-        Cleanup("dispose random stream", () => media.RandomStream?.Dispose());
-        Cleanup("dispose forward input", () => media.ForwardInput?.Dispose());
-        Cleanup("dispose stream", () => media.Stream?.Dispose());
-        Cleanup("dispose progressive stream", () => media.Progressive?.Dispose());
+        media.FfmpegStreams?.Close();
+        media.FfmpegStreams = null;
+        // The native sources close on the thread pool, in the same order, one mount after another: FFmpegInteropX's
+        // Close (also reached from the item source's MediaStreamSource Closed event) takes the source lock, which a
+        // sample request may hold while it waits on a decoder or a read. The fork cancels a GPU decoder's image wait
+        // first, but the UI thread must not be the one that waits (rav1g, 2026-11-18). The next mount and the page's
+        // idle trim wait for this close without blocking the UI thread (WaitForMountCloseAsync).
+        var itemSource = media.Item?.Source;
+        var source = media.Source;
+        var ffmpeg = media.FfmpegSource;
+        var random = media.RandomStream;
+        var forward = media.ForwardInput;
+        var stream = media.Stream;
+        var progressive = media.Progressive;
+        var cancellation = media.Cancellation;
         media.Player = null;
         media.Item = null;
         media.Source = null;
@@ -879,12 +900,43 @@ public sealed partial class PlayerPage
         media.Stream = null;
         media.ForwardInput = null;
         media.Progressive = null;
-        PlaybackResources.ReleaseMediaDevice(rendererDevice);
-        media.Cancellation.Dispose();
+        _mountClose = _mountClose.ContinueWith(_ =>
+        {
+            // FFmpeg owns an MSS, but CreateMediaPlaybackItem also creates a MediaSource. Closing
+            // only FFmpeg does not close that source's MF pipeline (including system HEVC surfaces).
+            Cleanup("dispose item source", () => itemSource?.Dispose());
+            Cleanup("dispose source", () => source?.Dispose());
+            // The native source owns its MSS/item and must outlive the player, but not the authenticated stream.
+            Cleanup("dispose FFmpeg source", () => ffmpeg?.Dispose());
+            Cleanup("dispose random stream", () => random?.Dispose());
+            Cleanup("dispose forward input", () => forward?.Dispose());
+            Cleanup("dispose stream", () => stream?.Dispose());
+            Cleanup("dispose progressive stream", () => progressive?.Dispose());
+            PlaybackResources.ReleaseMediaDevice(rendererDevice);
+            Cleanup("dispose mount cancellation", cancellation.Dispose);
 #if DEBUG_SERVER
-        Log.Info("player resources: mount released=player,item-source,ffmpeg,streams,observer,video-presenter renderer_device=" + (rendererDevice != 0 ? "released" : "unavailable"));
+            Log.Info("player resources: mount released=player,item-source,ffmpeg,streams,observer,video-presenter renderer_device=" + (rendererDevice != 0 ? "released" : "unavailable"));
 #endif
+        }, CancellationToken.None, TaskContinuationOptions.DenyChildAttach, TaskScheduler.Default);
     }
+
+    /// <summary>The previous mounts' native close (DisposeMount), run in order on the thread pool.</summary>
+    private Task _mountClose = Task.CompletedTask;
+
+    /// <summary>
+    /// Waits, without blocking the UI thread, for earlier mounts' native close: before a new FFmpeg source opens (their
+    /// decoder memory is gone, as when the close ran inline) and before the page's idle trim. A close that never ends
+    /// (a wrapper deadlock) is logged and passed after <see cref="MountCloseWaitMs"/>, so the page stays usable.
+    /// </summary>
+    private async Task WaitForMountCloseAsync(string reason)
+    {
+        var close = _mountClose;
+        if (close.IsCompleted) return;
+        if (await Task.WhenAny(close, Task.Delay(MountCloseWaitMs)) != close)
+            Log.Info($"player: previous mount still closing after {MountCloseWaitMs} ms; continuing ({reason})");
+    }
+
+    private const int MountCloseWaitMs = 5000;
 
     private void ReleaseVideoPresenter()
     {

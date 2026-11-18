@@ -9,7 +9,7 @@ namespace Bale.Xbox.Services;
 /// <summary>Passive MSS descriptor capture with post-start decoder/format refresh for stats.</summary>
 internal sealed partial class DebugVideoMediaType : IDisposable
 {
-    private readonly FFmpegMediaSource _ffmpeg;
+    private readonly Func<FfmpegVideoSnapshot?> _video;
     private readonly MediaStreamSource _source;
     private readonly VideoDecoderMode _decoderMode;
     private readonly object _gate = new();
@@ -20,9 +20,11 @@ internal sealed partial class DebugVideoMediaType : IDisposable
     private VideoEncodingProperties? _format;
     private string? _description;
 
-    internal DebugVideoMediaType(FFmpegMediaSource source, VideoDecoderMode decoderMode)
+    /// <param name="video">The mount's stream snapshot (FfmpegStreamSnapshot): Refresh runs on the UI tick, where the
+    /// wrapper's CurrentVideoStream would take the source lock the sample thread may hold.</param>
+    internal DebugVideoMediaType(FFmpegMediaSource source, VideoDecoderMode decoderMode, Func<FfmpegVideoSnapshot?> video)
     {
-        _ffmpeg = source;
+        _video = video;
         _decoderMode = decoderMode;
         _source = source.GetMediaStreamSource();
         // The public wrapper has no descriptor getter. SampleRequest.StreamDescriptor exposes
@@ -96,7 +98,7 @@ internal sealed partial class DebugVideoMediaType : IDisposable
     {
         try
         {
-            var video = _ffmpeg.CurrentVideoStream;
+            var video = _video();
             var engine = video?.DecoderEngine;
             var description = Describe("ffmpeg", "mss", _format!)
                 + $" decoderMode={_decoderMode}" + DecoderDetails(engine)

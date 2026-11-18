@@ -2179,6 +2179,26 @@ unchanged: dav1d zero-copy, and release packages carry no rav1g.dll.
 - **BufferTime:** 200 ms, cut to five frames at higher frame rates (166 ms at 30 fps, 83 ms at 60, floor 40 ms) unless
   `ffmpeg-tune buffer=` overrides it. The fork's pool is 8 images and rav1g holds up to slots + 2 of them (5 at 4K);
   today's 500–1000 ms (12–24 frames at 24 fps) could block the start forever. Decode-ahead keeps the software default.
+- **UI thread (all routes, after the 2026-11-18 deadlock):** with `av1-decoder rav1g` the fork's `get_image` waited
+  (fixed in bale.48) while the sample thread held the wrapper's source lock, and the UI thread blocked in
+  `CurrentVideoStream` for the stats panel, which stopped the start budget (driven from the UI tick) and the debug
+  server. The fork lists the members that take that lock (its bale/README.md, "rav1g prewarm and threading notes"),
+  and its `PlaybackSession` setter does too. Bale's rule and how each call is placed:
+
+  | Call | Where | Thread / when |
+  |---|---|---|
+  | `CurrentVideoStream`, `CurrentAudioStream` (HUD Stats tab, debug stats, `where`/`stats`, `DebugVideoMediaType.Refresh`) | `PlayerPage.HudStats.cs`, `PlayerPage.Stats.cs`, `DebugVideoMediaType.cs` | Was the UI tick during playback; now the mount's `FfmpegStreams` snapshot (`FfmpegStreamSnapshot` over Core `BackgroundSnapshot`): read once at open, refreshed on the thread pool (one read in flight, requests meanwhile coalesce into one more) on MediaOpened, an audio switch and each HUD/stats refresh; the UI shows the last completed read and never waits |
+  | `CurrentVideoStream` for `Rav1gActive` | `PlayerPage.Media.cs` mount | Open time (after creation, before `CreateMediaPlaybackItem`): now the snapshot's open read |
+  | `CurrentVideoStream` in `ValidateVideoDecoders` (DV7) | `FfmpegSource.cs` | Open time, before the item exists |
+  | `CurrentVideoStream` | `FfmpegVideoOutputGuard.OnSampleRequested` | Sample thread (MSS `SampleRequested`, after the wrapper's own handler returned): fine |
+  | `PlaybackSession =` | `PlayerPage.Media.cs` | Was MediaOpened on the UI thread (the MSS already started); now set before `player.Source`, when no sample thread exists. Engine mounts never had a session |
+  | `CreateMediaPlaybackItem`, `GetMediaStreamSource` (BufferTime, guard, `MediaDevice`, frame delivery, media type, engine and present-engine sources) | `PlayerPage.Media.cs`, `PlayerPage.Present.cs`, services' constructors | Open time, before `player.Source` or the engine open |
+  | `Close` via `FfmpegSource.Dispose` and via the item `MediaSource.Dispose` (MSS Closed → `Close(true)`) | `DisposeMount` | Was the UI thread at stop/seek/replan, while a sample request may wait; now a thread-pool continuation in the old order (item source, source, FFmpeg, streams, renderer device, cancellation), serialized across mounts; `MountPlanAsync` and the page's shutdown (before the idle trim) await it for up to 5 s without blocking, then log and continue |
+  | `CurrentVideoStream`, `CurrentAudioStream`, `CreateMediaPlaybackItem`, `PlaybackSession =`, `AddExternalSubtitleAsync`, `Dispose` in the `playtest-ffmpeg`, subtitle and engine probes | `DebugServer.Ffmpeg.cs`, `DebugServer.Subtitles.cs`, `DebugServer.Engine.cs` | Debug-server request threads (UI work hops through `OnFfmpegUiAsync`): they can delay that probe's reply, never the UI |
+  | `MetadataTags`, `PlaybackItem`, `StartBuffering`, `ExtractThumbnail`, filter setters | none | Not called |
+
+  Not on the lock: `VideoStreams`, `AudioStreams`, `SubtitleStreams` (read in MediaOpened) return the open-time lists.
+  `FfmpegUiThreadTests` pins the UI-thread files, the open-time read, the session order and the pool close.
 - **Guard** (`FfmpegVideoOutputGuard` + `Rav1gOutputCheck`, attached on every rav1g mount): direct output must carry
   the rav1g mark (media-type attribute `{6d553633-9287-4856-bc9f-0c23af00e184}` = UINT32 1, set by
   `BaleRav1gDecoder::DescribeOutput` on the stream descriptor), the source's depth (8-bit NV12, more P010; never NV12
