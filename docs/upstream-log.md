@@ -16,9 +16,9 @@ part Bale hasn't built yet; check when building it), **deviation** (Bale differs
 
 | Repo | Commit | Reviewed |
 |---|---|---|
-| silo-android | `0867eacb14b5` | 2026-11-17 |
-| silo-apple | `6eea7cf74eef` | 2026-11-17 |
-| silo-server | `217ff25abc5b` | 2026-11-17 |
+| silo-android | `db87f835ff90` | 2026-11-18 |
+| silo-apple | `648091a7d9b7` | 2026-11-18 |
+| silo-server | `651e55a32253` | 2026-11-18 |
 | silo-roku | `d240f47964d9` | 2026-11-17 |
 
 The first review (2026-11-10) started from the commit each local clone was made at.
@@ -149,6 +149,50 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   "Start budget").
 
 ## Reviews
+
+### 2026-11-18
+
+No new act items. Android TV took rows of collections (already built from it), Apple TV added Not
+interested and a richer Home backdrop wash; the server batch is mostly jellycompat, web and admin.
+
+#### silo-android (`0867eacb14b5..db87f835ff90`, 1 commit, 0 none)
+
+- `db87f835f` act, done 2026-11-18: Home and library rows of collections on Android TV. Bale's
+  version already follows this commit (Open items, Rows of collections).
+
+#### silo-apple (`6eea7cf74eef..648091a7d9b7`, 5 commits, 2 none)
+
+- `29c0dd43` later: Not interested on movie and series cards and title pages
+  (`PUT`/`DELETE /api/v2/not-interested/{id}`, shown only when the server sends
+  `user_state.not_interested`); Home and For You drop a marked title at once, and tvOS keeps focus
+  when its card or row leaves. Android TV has no Not interested yet; hold until it does. Bale
+  generates `CatalogItemUserState.NotInterested` but not the path.
+- `c5453eae`, `648091a7` later: the tvOS Home/library page wash takes one colour per screen
+  corner from the matching quarter of the art (kept dark, grey art stays grey) and crossfades
+  over 0.7 s while the art still swaps in 0.24 s. Bale ports Android's single-colour
+  `AmbientBackdropTint` (`AmbientTint`); take it if Android TV follows.
+
+#### silo-server (`217ff25abc5b..651e55a32253`, 38 commits, 31 none)
+
+- `e17bfa1` regenerate and check: personal ratings go from 1–5 to 1–10 (five stars with half
+  stars); field names unchanged, `getPersonalRatingCapabilities` reports the scale. Bale generates
+  only `CatalogItemDetail.user_rating` (range and description change) and shows no personal
+  rating; a future rating UI must use 1–10. The other contract changes (admin catalog
+  `include_file_paths`, ws-ticket 410/503, HEAD on the HLS master) are on paths Bale doesn't
+  generate, so bumping `SILO_REF` should give no functional diff.
+- `92763e4` later: with `copy_keyframe_playlist` on, a resumed copy-remux HLS session gets a
+  complete VOD playlist starting at the resume keyframe; the stream origin is unchanged. Extends
+  the 2026-11-10 later item: check the Rust HLS reader on resume and `seek_reanchor` if the setting
+  is turned on.
+- `4564351`, `a1c17ef` later: minting a control ws-ticket answers 410 `playback_session_ended`
+  for a stopped session and 503 with `Retry-After: 5` while it is rebuilt (404 stays for unknown);
+  the web backs off its retries to 30 s. For Bale's control socket when it is built.
+- `951a018` later: the v2 HLS master playlist answers HEAD (for DLNA renderers). Bale sends GET.
+- `651e55a` later: keyword search results are cut at the first weaker match, so searches can
+  return far fewer results; no contract change. Search's short and empty result states should
+  still look right.
+- `75f7712` later: renaming an account also renames its primary profile while it still has the
+  old username. Server-side; Bale shows what the profile list returns.
 
 ### 2026-11-17
 
