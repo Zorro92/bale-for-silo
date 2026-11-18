@@ -6,18 +6,28 @@ namespace Bale.Core.Connection;
 
 public enum ServerSetupScheme { Auto, Https, Http }
 
+/// <summary>
+/// A setup address the probe can't use. <see cref="PortField"/> names the Port field as the culprit, so the page
+/// outlines that field rather than the address (Apple d1837b92: an error outlines the field it is about; a bad port
+/// typed into the address is the address's fault).
+/// </summary>
+public sealed class ServerAddressException(string message, bool portField = false) : ArgumentException(message)
+{
+    public bool PortField { get; } = portField;
+}
+
 /// <summary>ServerSetupAddress.kt: Advanced options and the ordered HTTPS/HTTP/8090 probe candidates.</summary>
 public static class ServerSetupAddress
 {
     public static IReadOnlyList<Uri> Candidates(string? input, ServerSetupScheme scheme = ServerSetupScheme.Auto, string? port = null)
     {
         var text = input?.Trim() ?? string.Empty;
-        if (text.Length == 0) throw new ArgumentException("Please enter a server host.");
+        if (text.Length == 0) throw new ServerAddressException("Please enter a server host.");
         var hasScheme = text.Contains("://", StringComparison.Ordinal);
         if (text.Any(char.IsWhiteSpace) || !Uri.TryCreate(hasScheme ? text : "https://" + text, UriKind.Absolute, out var parsed)
             || parsed.Scheme is not ("http" or "https") || string.IsNullOrEmpty(parsed.Host) || parsed.UserInfo.Length > 0)
         {
-            throw new ArgumentException("Enter a valid server address.");
+            throw new ServerAddressException("Enter a valid server address.");
         }
 
         // A port in the address wins over the separate field, including an explicit default port.
@@ -25,7 +35,7 @@ public static class ServerSetupAddress
         var portStart = authority.StartsWith('[') ? authority.IndexOf(']') + 1 : authority.IndexOf(':');
         var typedPort = portStart >= 0 && portStart < authority.Length && authority[portStart] == ':'
             ? authority[(portStart + 1)..] : null;
-        var explicitPort = ParsePort(typedPort ?? port);
+        var explicitPort = ParsePort(typedPort ?? port, portField: typedPort is null);
         var schemes = scheme switch
         {
             ServerSetupScheme.Https => new[] { "https" },
@@ -59,12 +69,12 @@ public static class ServerSetupAddress
     public static string? OriginDigest(Uri server) => HttpOrigin(server) is { } origin
         ? Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(origin))) : null;
 
-    private static int? ParsePort(string? value)
+    private static int? ParsePort(string? value, bool portField)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
         if (!int.TryParse(value.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var port) || port is < 1 or > 65535)
         {
-            throw new ArgumentException("Port must be a number between 1 and 65535.");
+            throw new ServerAddressException("Port must be a number between 1 and 65535.", portField);
         }
         return port;
     }

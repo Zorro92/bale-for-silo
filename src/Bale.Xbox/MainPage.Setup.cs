@@ -75,6 +75,7 @@ public sealed partial class MainPage
         if (ServerError is null || ServerSecurityHint is null || PortBox is null) return;
         ServerError.Visibility = Visibility.Collapsed;
         VisualStateManager.GoToState(ServerBox, "Valid", false);
+        VisualStateManager.GoToState(PortBox, "Valid", false);
         ServerSecurityHint.Text = ServerSetupAddress.UsesCleartext(ServerBox.Text, _scheme, PortBox.Text)
             ? "This address uses unencrypted HTTP. Fine on a trusted home network; avoid it on public Wi-Fi."
             : "Secure HTTPS is tried automatically.";
@@ -113,8 +114,20 @@ public sealed partial class MainPage
         {
             ServerError.Text = ex.Message;
             ServerError.Visibility = Visibility.Visible;
-            VisualStateManager.GoToState(ServerBox, "Invalid", false);
-            RestoreFocus();
+            if (ex is ServerAddressException { PortField: true })
+            {
+                // Apple d1837b92: only the Port field's own value outlines Port, with Advanced options open so the
+                // outline is in view.
+                if (AdvancedPanel.Visibility != Visibility.Visible) OnAdvancedClick(this, null!);
+                PortBox.ApplyTemplate();
+                VisualStateManager.GoToState(PortBox, "Invalid", false);
+                FocusRetry.Until(ServerPanel, () => !_active || ServerPanel.Visibility != Visibility.Visible || PortBox.Focus(FocusState.Programmatic));
+            }
+            else
+            {
+                VisualStateManager.GoToState(ServerBox, "Invalid", false);
+                RestoreFocus();
+            }
         }
     }
 

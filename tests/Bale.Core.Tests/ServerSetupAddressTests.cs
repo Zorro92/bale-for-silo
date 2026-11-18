@@ -22,16 +22,21 @@ public class ServerSetupAddressTests
     }
 
     [Theory]
-    [InlineData("", "", "Please enter a server host.")]
-    [InlineData("https://", "", "Enter a valid server address.")]
-    [InlineData("ftp://example.com", "", "Enter a valid server address.")]
-    [InlineData("example.com", "0", "Port must be a number between 1 and 65535.")]
-    [InlineData("example.com", "65536", "Port must be a number between 1 and 65535.")]
-    [InlineData("example.com", "abc", "Port must be a number between 1 and 65535.")]
-    [InlineData("https://example.com:0", "", "Port must be a number between 1 and 65535.")]
-    public void UsesOfficialValidationMessages(string input, string port, string message)
+    // Apple d1837b92: only the Port field's own value is the Port field's fault; a port typed into the address is
+    // the address's.
+    [InlineData("", "", "Please enter a server host.", false)]
+    [InlineData("https://", "", "Enter a valid server address.", false)]
+    [InlineData("ftp://example.com", "", "Enter a valid server address.", false)]
+    [InlineData("example.com", "0", "Port must be a number between 1 and 65535.", true)]
+    [InlineData("example.com", "65536", "Port must be a number between 1 and 65535.", true)]
+    [InlineData("example.com", "abc", "Port must be a number between 1 and 65535.", true)]
+    [InlineData("https://example.com:0", "", "Port must be a number between 1 and 65535.", false)]
+    [InlineData("https://example.com:0", "8443", "Port must be a number between 1 and 65535.", false)]
+    public void UsesOfficialValidationMessages(string input, string port, string message, bool portField)
     {
-        Assert.Equal(message, Assert.Throws<ArgumentException>(() => ServerSetupAddress.Candidates(input, port: port)).Message);
+        var error = Assert.Throws<ServerAddressException>(() => ServerSetupAddress.Candidates(input, port: port));
+        Assert.Equal(message, error.Message);
+        Assert.Equal(portField, error.PortField);
     }
 
     [Fact]
