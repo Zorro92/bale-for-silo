@@ -27,14 +27,19 @@ uint32_t bale_tonemap_abi_version(void); /* returns 1 */
    the output depth from the output texture's format. */
 #define BALE_TONEMAP_OUTPUT_NV12 1u
 #define BALE_TONEMAP_OUTPUT_P010 2u
-uint32_t bale_tonemap_output_formats(void); /* returns NV12 | P010 */
+/* DOWNSCALE: config.reserved[0] / reserved[1] may give a larger visible source size (even, at most
+   4x the output per axis; both zero = same as width/height). apply then area-downscales: each
+   output pixel averages the tone-mapped display-linear BT.709 light of the source pixels it covers,
+   weighted by overlap, and encodes once. The input must be at least that source size. */
+#define BALE_TONEMAP_OUTPUT_DOWNSCALE 4u
+uint32_t bale_tonemap_output_formats(void); /* returns NV12 | P010 | DOWNSCALE */
 typedef struct BaleToneMapConfig {
-    uint32_t width, height;     /* coded output size (input may be larger: decoder alignment) */
+    uint32_t width, height;     /* output size (input may be larger: decoder alignment, or a downscale) */
     uint32_t curve;             /* 1 = BT.2390 EETF, 2 = Hable */
     float    source_peak_nits;  /* 1000 = server default (tonemapx peak=100); <= 0: metadata later; v1 E_INVALIDARG */
     float    target_white_nits; /* 100 = server default */
     float    desat;             /* 0 = server default */
-    uint32_t reserved[4];       /* zero */
+    uint32_t reserved[4];       /* [0],[1]: visible source w/h for DOWNSCALE (0,0 = output size); [2],[3] zero */
 } BaleToneMapConfig;
 typedef struct BaleToneMapFrameInfo { /* H.273 code points, per frame */
     uint8_t  transfer;          /* 16 = PQ (only one handled in v1), 18 = HLG (later) */

@@ -1,5 +1,8 @@
 //! Panic-contained ABI 1. A failure never publishes a partially constructed handle.
-use super::types::{BALE_TONEMAP_OUTPUT_NV12, BALE_TONEMAP_OUTPUT_P010, TONEMAP_ABI_VERSION};
+use super::types::{
+    BALE_TONEMAP_OUTPUT_DOWNSCALE, BALE_TONEMAP_OUTPUT_NV12, BALE_TONEMAP_OUTPUT_P010,
+    TONEMAP_ABI_VERSION,
+};
 #[cfg(windows)]
 use super::{
     gpu::ToneMapGpu,
@@ -24,10 +27,11 @@ pub extern "C" fn bale_tonemap_abi_version() -> u32 {
 
 /// Output formats `bale_tonemap_apply` accepts (additive to ABI 1; absent in older DLLs = NV12
 /// only). P010 holds the same BT.709 limited-range SDR result as 10-bit codes; apply picks the
-/// depth from the output texture's format.
+/// depth from the output texture's format. DOWNSCALE: the config may name a larger visible
+/// source size in `reserved[0..2]`, area-downscaled in display-linear light.
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_tonemap_output_formats() -> u32 {
-    BALE_TONEMAP_OUTPUT_NV12 | BALE_TONEMAP_OUTPUT_P010
+    BALE_TONEMAP_OUTPUT_NV12 | BALE_TONEMAP_OUTPUT_P010 | BALE_TONEMAP_OUTPUT_DOWNSCALE
 }
 
 /// Create on the decoder thread, with caller-held D3D multithread protection. Includes a

@@ -102,8 +102,9 @@ float3 desaturate(float3 rgb, bool bt2020, float threshold_nits) {
     float over = clamp(max(luma - threshold_nits, 1e-6) / max(luma, 1e-6), 0.0, 1.0);
     return rgb * (1.0 - over) + luma * over;
 }
-float3 tone_map_pixel(float y, float2 uv, float source_peak_nits, float target_white_nits,
-                      float desat, uint curve, bool bt2020, bool full_range, uint mode) {
+// Tone-mapped display-linear BT.709 RGB in 0..1: the light domain the area downscale averages in.
+float3 tone_map_linear(float y, float2 uv, float source_peak_nits, float target_white_nits,
+                       float desat, uint curve, bool bt2020, bool full_range, uint mode) {
     float3 rgb = source_decode(y, uv, bt2020, full_range, mode);
     if (mode == 1) {
         // BT.2020 SDR: no tone curve, only BT.2020 -> BT.709 in linear light, clip, re-encode.
@@ -119,7 +120,15 @@ float3 tone_map_pixel(float y, float2 uv, float source_peak_nits, float target_w
         rgb *= tone_curve(sig, source_peak_nits, target_white_nits, curve) / max(sig, 1e-6);
         rgb = gamut_to_709(rgb, bt2020 && curve == 2);
     }
+    return rgb;
+}
+float3 encode_linear(float3 rgb) {
     return rgb709_to_ycbcr(float3(sdr_encode(rgb.r), sdr_encode(rgb.g), sdr_encode(rgb.b)));
+}
+float3 tone_map_pixel(float y, float2 uv, float source_peak_nits, float target_white_nits,
+                      float desat, uint curve, bool bt2020, bool full_range, uint mode) {
+    return encode_linear(tone_map_linear(y, uv, source_peak_nits, target_white_nits, desat, curve,
+                                         bt2020, full_range, mode));
 }
 // Return integer-valued codes as floats. The binding layer divides by 255 for UNORM RTVs.
 float quantize_luma(float y) { return clamp(floor(16.0 + 219.0 * y + 0.5), 16.0, 235.0); }

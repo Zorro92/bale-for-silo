@@ -5,6 +5,11 @@ pub const TONEMAP_ABI_VERSION: u32 = 1;
 /// bale_tonemap_output_formats bits: apply accepts these output texture formats.
 pub const BALE_TONEMAP_OUTPUT_NV12: u32 = 1;
 pub const BALE_TONEMAP_OUTPUT_P010: u32 = 2;
+/// The config's `reserved[0..2]` may carry a larger visible source size: apply area-downscales
+/// in display-linear light to `width` x `height`.
+pub const BALE_TONEMAP_OUTPUT_DOWNSCALE: u32 = 4;
+/// Largest source/output ratio per axis the area downscale accepts.
+pub const MAX_DOWNSCALE: u32 = 4;
 pub const BALE_TONEMAP_E_SELFTEST: i32 = 0x8004BA01u32 as i32;
 
 #[repr(C)]

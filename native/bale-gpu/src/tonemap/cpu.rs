@@ -9,7 +9,7 @@
 //! Hable's FFmpeg default desat is 2, but explicit ABI desat=0 disables it on both curves.
 //! Output uses BT.1886 inverse EOTF (power 1/2.4): zscale t=bt709's default display-referred
 //! transfer, rather than its scene-referred camera OETF. No dithering or integer LUTs.
-use super::types::{BaleToneMapConfig, BaleToneMapFrameInfo};
+use super::types::{BaleToneMapConfig, BaleToneMapFrameInfo, MAX_DOWNSCALE};
 
 pub const E_INVALIDARG: i32 = 0x80070057u32 as i32;
 
@@ -26,11 +26,33 @@ impl BaleToneMapConfig {
             || self.target_white_nits <= 0.0
             || !self.desat.is_finite()
             || self.desat < 0.0
-            || self.reserved != [0; 4]
+            || self.reserved[2..] != [0; 2]
+        {
+            return Err(E_INVALIDARG);
+        }
+        // reserved[0..2]: visible source size for an area downscale (both zero = same as output).
+        let [sw, sh] = [self.reserved[0], self.reserved[1]];
+        if (sw, sh) != (0, 0)
+            && (sw == 0
+                || sh == 0
+                || !sw.is_multiple_of(2)
+                || !sh.is_multiple_of(2)
+                || sw < self.width
+                || sh < self.height
+                || sw > self.width.saturating_mul(MAX_DOWNSCALE)
+                || sh > self.height.saturating_mul(MAX_DOWNSCALE))
         {
             return Err(E_INVALIDARG);
         }
         Ok(())
+    }
+
+    /// Visible source size: `reserved[0..2]` when set, else the output size.
+    pub fn source_size(&self) -> (u32, u32) {
+        match [self.reserved[0], self.reserved[1]] {
+            [0, 0] => (self.width, self.height),
+            [w, h] => (w, h),
+        }
     }
 }
 impl BaleToneMapFrameInfo {
@@ -219,11 +241,39 @@ pub fn tone_map_pixel(
     full_range: bool,
     mode: u32,
 ) -> [f32; 3] {
+    encode_linear(tone_map_linear(
+        y,
+        uv,
+        source_peak_nits,
+        target_white_nits,
+        desat,
+        curve,
+        bt2020,
+        full_range,
+        mode,
+    ))
+}
+/// BT.709 display-linear RGB (0..1) to Y'CbCr through the inverse BT.1886 curve.
+pub fn encode_linear(rgb: [f32; 3]) -> [f32; 3] {
+    rgb709_to_ycbcr(rgb.map(sdr_encode))
+}
+/// Tone-mapped display-linear BT.709 RGB in 0..1: the light domain the area downscale averages in.
+#[allow(clippy::too_many_arguments)]
+pub fn tone_map_linear(
+    y: f32,
+    uv: [f32; 2],
+    source_peak_nits: f32,
+    target_white_nits: f32,
+    desat: f32,
+    curve: u32,
+    bt2020: bool,
+    full_range: bool,
+    mode: u32,
+) -> [f32; 3] {
     if mode == MODE_SDR {
         // BT.2020 SDR: no tone curve, only BT.2020 -> BT.709 in linear light, clip, re-encode.
         let rgb = source_decode(y, uv, bt2020, full_range, MODE_SDR);
-        let rgb = gamut_to_709(rgb, bt2020).map(sdr_encode);
-        return rgb709_to_ycbcr(rgb);
+        return gamut_to_709(rgb, bt2020);
     }
     // PQ and HLG both arrive here as display light in nits.
     let mut rgb = source_decode(y, uv, bt2020, full_range, mode);
@@ -247,8 +297,25 @@ pub fn tone_map_pixel(
         rgb.into_iter().fold(0.0f32, f32::max)
     };
     let scale = tone_curve(sig, source_peak_nits, target_white_nits, curve) / sig.max(1e-6);
-    let rgb = gamut_to_709(rgb.map(|v| v * scale), bt2020 && curve == 2).map(sdr_encode);
-    rgb709_to_ycbcr(rgb)
+    gamut_to_709(rgb.map(|v| v * scale), bt2020 && curve == 2)
+}
+pub fn pixel_linear(
+    config: &BaleToneMapConfig,
+    frame: &BaleToneMapFrameInfo,
+    y: f32,
+    uv: [f32; 2],
+) -> [f32; 3] {
+    tone_map_linear(
+        y,
+        uv,
+        config.source_peak_nits,
+        config.target_white_nits,
+        config.desat,
+        config.curve,
+        frame.matrix == 9,
+        frame.full_range == 1,
+        mode(frame.transfer),
+    )
 }
 pub fn pixel(
     config: &BaleToneMapConfig,
@@ -327,26 +394,28 @@ fn reference_codes(
         width as usize,
         height as usize,
     );
+    let (sw, sh) = config.source_size();
+    let (sw, sh) = (sw as usize, sh as usize);
     let len = iw
         .checked_mul(ih)
         .and_then(|n| n.checked_add(n / 2))
         .ok_or(E_INVALIDARG)?;
     if !width.is_multiple_of(2)
         || !height.is_multiple_of(2)
-        || iw < w
-        || ih < h
+        || iw < sw
+        || ih < sh
         || input.len() != len
     {
         return Err(E_INVALIDARG);
     }
     let uv_at = |x: i32, y: i32, plane: usize| {
-        let x = x.clamp(0, w as i32 / 2 - 1) as usize;
-        let y = y.clamp(0, h as i32 / 2 - 1) as usize;
+        let x = x.clamp(0, sw as i32 / 2 - 1) as usize;
+        let y = y.clamp(0, sh as i32 / 2 - 1) as usize;
         (input[iw * ih + y * iw + 2 * x + plane] >> 6) as f32
     };
     let sample = |x: i32, y: i32| {
-        let x = x.clamp(0, w as i32 - 1);
-        let y = y.clamp(0, h as i32 - 1);
+        let x = x.clamp(0, sw as i32 - 1);
+        let y = y.clamp(0, sh as i32 - 1);
         let cx = x as f32 * 0.5;
         let cy = (y as f32 - 0.5) * 0.5;
         let (ix, iy) = (cx.floor() as i32, cy.floor() as i32);
@@ -356,17 +425,40 @@ fn reference_codes(
             let b = uv_at(ix, iy + 1, p) * (1.0 - fx) + uv_at(ix + 1, iy + 1, p) * fx;
             a * (1.0 - fy) + b * fy
         });
-        pixel(
+        pixel_linear(
             config,
             frame,
             (input[y as usize * iw + x as usize] >> 6) as f32,
             uv,
         )
     };
+    // Area downscale in display-linear light, mirroring the shader's output_pixel.
+    let (scale_x, scale_y) = (sw as f32 / w as f32, sh as f32 / h as f32);
+    let output_pixel = |ox: i32, oy: i32| {
+        let ox = ox.clamp(0, w as i32 - 1);
+        let oy = oy.clamp(0, h as i32 - 1);
+        let (lo_x, lo_y) = (ox as f32 * scale_x, oy as f32 * scale_y);
+        let (hi_x, hi_y) = (lo_x + scale_x, lo_y + scale_y);
+        let last_x = (hi_x.ceil() as i32 - 1).min(sw as i32 - 1);
+        let last_y = (hi_y.ceil() as i32 - 1).min(sh as i32 - 1);
+        let (mut sum, mut total) = ([0.0f32; 3], 0.0f32);
+        for sy in lo_y.floor() as i32..=last_y {
+            let wy = (sy as f32 + 1.0).min(hi_y) - (sy as f32).max(lo_y);
+            for sx in lo_x.floor() as i32..=last_x {
+                let weight = wy * ((sx as f32 + 1.0).min(hi_x) - (sx as f32).max(lo_x));
+                let rgb = sample(sx, sy);
+                for c in 0..3 {
+                    sum[c] += weight * rgb[c];
+                }
+                total += weight;
+            }
+        }
+        encode_linear(sum.map(|v| v / total.max(1e-6)))
+    };
     let mut out = vec![0; w * h * 3 / 2];
     for y in 0..h {
         for x in 0..w {
-            let luma = sample(x as i32, y as i32)[0];
+            let luma = output_pixel(x as i32, y as i32)[0];
             out[y * w + x] = if ten_bit {
                 quantize_luma10(luma)
             } else {
@@ -379,7 +471,7 @@ fn reference_codes(
             let mut uv = [0.0; 2];
             for dy in 0..2 {
                 for (dx, weight) in [(-1, 0.125), (0, 0.25), (1, 0.125)] {
-                    let p = sample((2 * x) as i32 + dx, (2 * y + dy) as i32);
+                    let p = output_pixel((2 * x) as i32 + dx, (2 * y + dy) as i32);
                     for c in 0..2 {
                         uv[c] += weight * p[c + 1];
                     }
@@ -627,6 +719,117 @@ mod tests {
             [400.0, 850.0],
         );
         assert!(neutral[1].abs() + neutral[2].abs() < vivid[1].abs() + vivid[2].abs());
+    }
+    #[test]
+    fn downscale_source_size_validation() {
+        let c = config(1); // 16x8 output
+        let with = |reserved| BaleToneMapConfig { reserved, ..c };
+        for good in [
+            [0, 0, 0, 0],
+            [32, 16, 0, 0],
+            [16, 8, 0, 0],
+            [64, 32, 0, 0],
+            [30, 12, 0, 0],
+        ] {
+            assert!(with(good).validate().is_ok(), "{good:?}");
+        }
+        for bad in [
+            [0, 16, 0, 0],
+            [32, 0, 0, 0],
+            [33, 16, 0, 0],
+            [14, 8, 0, 0],
+            [66, 16, 0, 0],
+            [32, 16, 1, 0],
+            [32, 16, 0, 1],
+        ] {
+            assert!(with(bad).validate().is_err(), "{bad:?}");
+        }
+        assert_eq!(with([32, 16, 0, 0]).source_size(), (32, 16));
+        assert_eq!(c.source_size(), (16, 8));
+    }
+    /// A uniform picture stays the same picture at any area-downscale ratio.
+    #[test]
+    fn downscale_of_a_uniform_picture_matches_one_to_one() {
+        let f = frame();
+        let (w, h) = (32usize, 16usize);
+        let mut input = vec![0u16; w * h * 3 / 2];
+        input[..w * h].fill(600 << 6);
+        input[w * h..]
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, v)| *v = if i % 2 == 0 { 540 << 6 } else { 470 << 6 });
+        let one = BaleToneMapConfig {
+            width: 32,
+            height: 16,
+            ..config(1)
+        };
+        let half = BaleToneMapConfig {
+            reserved: [32, 16, 0, 0],
+            ..config(1)
+        };
+        let third = BaleToneMapConfig {
+            width: 10,
+            height: 6,
+            reserved: [30, 16, 0, 0],
+            ..config(1)
+        };
+        let reference_one = reference_p010(&one, &f, &input, 32, 16).unwrap();
+        for c in [half, third] {
+            let scaled = reference_p010(&c, &f, &input, 32, 16).unwrap();
+            let (ow, oh) = (c.width as usize, c.height as usize);
+            assert!(
+                scaled[..ow * oh]
+                    .iter()
+                    .all(|&v| v.abs_diff(reference_one[0]) <= 1)
+            );
+            assert!(scaled[ow * oh..].as_chunks::<2>().0.iter().all(|uv| {
+                uv[0].abs_diff(reference_one[w * h]) <= 1
+                    && uv[1].abs_diff(reference_one[w * h + 1]) <= 1
+            }));
+        }
+    }
+    /// Blending happens in display-linear light: a 2x2 block of one bright and three black pixels
+    /// encodes to more than the average of the four encoded values (a gamma-space blend).
+    #[test]
+    fn downscale_blends_in_linear_light() {
+        let f = frame();
+        let (w, h) = (4usize, 4usize);
+        let mut input = vec![512u16 << 6; w * h * 3 / 2]; // neutral chroma
+        let luma = |x: usize, y: usize| {
+            if x.is_multiple_of(2) && y.is_multiple_of(2) {
+                700u16
+            } else {
+                64
+            }
+        };
+        for y in 0..h {
+            for x in 0..w {
+                input[y * w + x] = luma(x, y) << 6;
+            }
+        }
+        let one = BaleToneMapConfig {
+            width: 4,
+            height: 4,
+            ..config(1)
+        };
+        let half = BaleToneMapConfig {
+            width: 2,
+            height: 2,
+            reserved: [4, 4, 0, 0],
+            ..config(1)
+        };
+        let full = reference_p010(&one, &f, &input, 4, 4).unwrap();
+        let scaled = reference_p010(&half, &f, &input, 4, 4).unwrap();
+        let gamma_mean = (full[0] + full[1] + full[4] + full[5]) as f32 / 4.0;
+        assert!(
+            scaled[0] as f32 > gamma_mean + 20.0,
+            "linear {} vs gamma mean {gamma_mean}",
+            scaled[0]
+        );
+        assert!(
+            scaled[0] < full[0],
+            "the average is darker than the bright pixel"
+        );
     }
     #[test]
     fn p010_output_is_the_same_picture_at_ten_bits() {

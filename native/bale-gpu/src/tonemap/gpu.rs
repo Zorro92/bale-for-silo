@@ -23,6 +23,7 @@ struct Constants {
     geometry: [u32; 4],
     flags: [u32; 4],
     params: [f32; 4],
+    output: [u32; 4],
 }
 struct Scratch {
     width: u32,
@@ -197,8 +198,9 @@ impl ToneMapGpu {
             }
             self.scratch.as_ref().ok_or(E_FAIL)?.views.clone()
         };
+        let (source_width, source_height) = config.source_size();
         let constants = Constants {
-            geometry: [config.width, config.height, src.Width, src.Height],
+            geometry: [source_width, source_height, src.Width, src.Height],
             flags: [
                 config.curve,
                 u32::from(frame.matrix == 9),
@@ -211,6 +213,7 @@ impl ToneMapGpu {
                 config.desat,
                 if ten_bit { 1.0 } else { 0.0 },
             ],
+            output: [config.width, config.height, 0, 0],
         };
         // Fail before queueing work, never return an error after changing the caller's output.
         // D3D11 Draw/Copy/Update queue void commands; asynchronous loss belongs to the caller.
@@ -340,8 +343,8 @@ fn validate_descs(
         || (dst.Format != DXGI_FORMAT_NV12 && dst.Format != DXGI_FORMAT_P010)
         || src.MipLevels != 1
         || subresource >= src.ArraySize
-        || src.Width < config.width
-        || src.Height < config.height
+        || src.Width < config.source_size().0
+        || src.Height < config.source_size().1
         || !src.Width.is_multiple_of(2)
         || !src.Height.is_multiple_of(2)
         || dst.Width != config.width

@@ -225,6 +225,50 @@ fn pq_to_nv12_matches_reference_for_both_curves_ranges_matrices_and_input_paths(
 }
 
 #[test]
+fn area_downscale_matches_reference_at_two_to_one_and_uneven_ratios() {
+    let warp = Warp::new();
+    for curve in [1, 2] {
+        // 24x12 visible source (in a padded 28x14 picture) to 12x6 (2:1) and 10x4 (2.4:1, 3:1).
+        for (width, height) in [(12, 6), (10, 4)] {
+            let c = BaleToneMapConfig {
+                width,
+                height,
+                reserved: [24, 12, 0, 0],
+                ..config(curve)
+            };
+            let handle = warp.create(&c);
+            let f = BaleToneMapFrameInfo {
+                transfer: 16,
+                primaries: 9,
+                matrix: 9,
+                ..Default::default()
+            };
+            let pattern = cpu::test_pattern(28, 14, true, false);
+            let expected = cpu::reference(&c, &f, &pattern, 28, 14).unwrap();
+            let source = warp.texture(
+                &desc(
+                    28,
+                    14,
+                    DXGI_FORMAT_P010,
+                    D3D11_BIND_SHADER_RESOURCE.0 as u32,
+                ),
+                Some(&pattern),
+            );
+            let output = warp.texture(&output_desc(&c), None);
+            assert_eq!(handle.apply(&warp, &source, 0, &output, &f), S_OK);
+            let actual = warp.readback(&output);
+            assert_eq!(actual.len(), expected.len());
+            for (i, (&a, &b)) in actual.iter().zip(&expected).enumerate() {
+                assert!(
+                    a.abs_diff(b) <= 3,
+                    "curve={curve} {width}x{height} code={i}: GPU {a}, CPU {b}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn invalid_arguments_leave_output_and_context_state_unchanged() {
     let warp = Warp::new();
     let c = config(1);
