@@ -165,11 +165,11 @@ public sealed partial class PlayerPage
         {
             object source;
             long bytes;
-            TimeSpan time;
-            if (media.Stream is { } stream) (source, bytes, time) = (stream, stream.DownloadedBytes, stream.DownloadTime);
-            else if (media.Progressive is { } progressive) (source, bytes, time) = (progressive, progressive.DownloadedBytes, progressive.DownloadTime);
+            if (media.Stream is { } stream) (source, bytes) = (stream, stream.DownloadedBytes);
+            else if (media.Progressive is { } progressive) (source, bytes) = (progressive, progressive.DownloadedBytes);
             else return;
-            _planThroughput.Observe(source, bytes, time);
+            // Wall-clock windows, not the transports' DownloadTime: 1 MiB blocks read at burst rate (PlanThroughput).
+            _planThroughput.Observe(source, bytes, now);
             if (_mediaSilence.Observe(source, bytes, now)) _bufferingSignals.NoteMediaDataArrived();
             if (media.Transport.IsHls && _bufferingPlans.TryGetValue(planId, out var record)) record.Segmented = true;
         }

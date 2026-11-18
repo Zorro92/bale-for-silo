@@ -144,26 +144,128 @@ public sealed class BufferingQualityRequestTests
         Assert.Null(Text(body, "observed_throughput_kbps"));
     }
 
+    // PlanThroughput follows silo-apple UpstreamReadMeter.swift: ~1 s windows that saw bytes count whole.
+
+    /// <summary>Feeds the meter every 100 ms from <paramref name="fromMs"/> to <paramref name="toMs"/>, bytes from <paramref name="bytesAt"/>.</summary>
+    private static void Tick(PlanThroughput meter, object source, long fromMs, long toMs, Func<long, long> bytesAt)
+    {
+        for (var t = fromMs; t <= toMs; t += 100) meter.Observe(source, bytesAt(t), t);
+    }
+
     [Fact]
-    public void ThroughputCountsReceivingTimeAcrossMountsAndNeedsOneSecond()
+    public void ThroughputOfAFlatOutReaderIsItsRate()
+    {
+        var meter = new PlanThroughput();
+        var stream = new object();
+        // 10 Mbps: 125,000 bytes every 100 ms.
+        Tick(meter, stream, 0, 900, t => t * 1_250);
+        Assert.Null(meter.Kbps);
+        Tick(meter, stream, 1_000, 3_000, t => t * 1_250);
+        Assert.Equal(10_000, meter.Kbps);
+        Assert.Equal(3_750_000, meter.Bytes);
+    }
+
+    [Fact]
+    public void ThroughputOfAParkedReaderReadsLowNotAtBurstRate()
+    {
+        var meter = new PlanThroughput();
+        var stream = new object();
+        // One 1 MiB block lands within a single 100 ms tick every 2 s and the reader parks: burst rate ~84 Mbps.
+        const long block = 1_048_576;
+        Tick(meter, stream, 0, 10_000, t => (t + 1_900) / 2_000 * block);
+        // Only the windows that saw a block count, each for its whole second: 8 Mbit/s, a tenth of the burst.
+        Assert.Equal(8_388, meter.Kbps);
+        Assert.Equal(5 * block, meter.Bytes);
+    }
+
+    [Fact]
+    public void ThroughputChargesAWindowItsWholeLength()
+    {
+        var meter = new PlanThroughput();
+        var stream = new object();
+        meter.Observe(stream, 0, 0);
+        meter.Observe(stream, 1_000_000, 700);
+        // The window closes at the first call 1 s on, here 1.4 s: its bytes are charged all of it.
+        meter.Observe(stream, 1_000_000, 1_400);
+        Assert.Equal(5_714, meter.Kbps);
+    }
+
+    [Fact]
+    public void ThroughputLeavesOutAWindowLongerThanThreeSeconds()
+    {
+        var meter = new PlanThroughput();
+        var stream = new object();
+        Tick(meter, stream, 0, 1_000, t => t * 1_250);
+        Assert.Equal(10_000, meter.Kbps);
+        // The UI thread was held up for 4 s: what arrived then took an unknown time.
+        meter.Observe(stream, 1_250_000 + 50_000_000, 5_000);
+        Assert.Equal(10_000, meter.Kbps);
+        Assert.Equal(1_250_000, meter.Bytes);
+        // The next window measures again from there.
+        Tick(meter, stream, 5_100, 6_000, t => 51_250_000 + (t - 5_000) * 2_500);
+        Assert.Equal(15_000, meter.Kbps);
+    }
+
+    [Fact]
+    public void ThroughputNeedsOneSecondOfReceiving()
+    {
+        var meter = new PlanThroughput();
+        var stream = new object();
+        // Two windows with no bytes count no time, and a partial window counts nothing.
+        Tick(meter, stream, 0, 2_000, _ => 0);
+        Tick(meter, stream, 2_100, 2_900, t => (t - 2_000) * 10_000);
+        Assert.Null(meter.Kbps);
+        Assert.Equal(0, meter.Bytes);
+    }
+
+    [Fact]
+    public void ThroughputTakesTheFirstReadingAsABaselineAndANewMountFromZero()
     {
         var meter = new PlanThroughput();
         var first = new object();
-        meter.Observe(first, 1_000_000, TimeSpan.FromMilliseconds(500));
-        Assert.Null(meter.Kbps);
-        meter.Observe(first, 2_500_000, TimeSpan.FromMilliseconds(1_000));
-        Assert.Equal(20_000, meter.Kbps);
-        // A seek remount's new stream starts its counters at zero.
-        meter.Observe(new object(), 2_500_000, TimeSpan.FromMilliseconds(1_000));
-        Assert.Equal(20_000, meter.Kbps);
-        Assert.Equal(5_000_000, meter.Bytes);
+        // Bytes before the plan's first call took an unknown time.
+        meter.Observe(first, 5_000_000, 0);
+        meter.Observe(first, 5_500_000, 500);
+        // A seek remount mid-window: the new stream's counters began at zero with it.
+        var second = new object();
+        meter.Observe(second, 750_000, 1_000);
+        Assert.Equal(1_250_000, meter.Bytes);
+        Assert.Equal(10_000, meter.Kbps);
         meter.Reset();
         Assert.Null(meter.Kbps);
-        // Below 100 kbps measures nothing; above 1,000,000 is capped.
-        meter.Observe(first, 10, TimeSpan.FromSeconds(10));
+        Assert.Equal(0, meter.Bytes);
+        meter.Observe(second, 9_000_000, 2_000);
+        meter.Observe(second, 9_000_000, 3_000);
+        Assert.Equal(0, meter.Bytes);
+    }
+
+    [Fact]
+    public void ThroughputRestartsFromCountersThatGoBack()
+    {
+        var meter = new PlanThroughput();
+        var stream = new object();
+        meter.Observe(stream, 0, 0);
+        meter.Observe(stream, 500_000, 400);
+        // A reused stream object starts over: no negative bytes, and what the window had stays.
+        meter.Observe(stream, 100_000, 600);
+        meter.Observe(stream, 850_000, 1_000);
+        Assert.Equal(1_250_000, meter.Bytes);
+        Assert.Equal(10_000, meter.Kbps);
+    }
+
+    [Fact]
+    public void ThroughputOutsideTheBoundsIsNullOrCapped()
+    {
+        var meter = new PlanThroughput();
+        var stream = new object();
+        // Below 100 kbps measures nothing.
+        meter.Observe(stream, 0, 0);
+        meter.Observe(stream, 10, 1_000);
         Assert.Null(meter.Kbps);
         meter.Reset();
-        meter.Observe(first, 1_000_000_000, TimeSpan.FromSeconds(1));
+        // Above 1,000,000 is capped.
+        meter.Observe(stream, 0, 0);
+        meter.Observe(stream, 1_000_000_000, 1_000);
         Assert.Equal(1_000_000, meter.Kbps);
     }
 
