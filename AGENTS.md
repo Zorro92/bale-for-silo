@@ -199,14 +199,17 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   (`bale_tonemap_output_width/height`) and plain SDR larger than the display takes the
   `console_downscale` route (d3d11va + bale_gpu scale-only), both through bale_gpu's linear-light area
   downscale. Details, evidence and gates: docs/player-plan.md "4K SDR downscale on smaller displays".
-- **10-bit processing rule (owner, 2026-11-17):** anything that processes video in the pipe
-  (tone map, film grain, scaling, colour or format conversion, repack, FFmpeg sws/filters, bale_gpu
-  shaders, the fork, rav1g) works in 10-bit and outputs 10-bit (P010 or equivalent), even for an 8-bit
-  source. Only native 8-bit video passed through untouched may stay 8-bit. An 8-bit intermediate
-  after processing is a bug. The console tone map writes P010 (bale_gpu `bale_tonemap_output_formats`,
-  fork 2.1.0-bale.36+), and `FfmpegVideoOutputGuard` rejects NV12 stage output unless bale_gpu lacks P010.
-  FFmpeg software decode outputs P010 for every source swscale converts (more than 8 bits, not 4:2:0, full
-  range, RGB, grey; fork bale.41+); plain 8-bit 4:2:0 stays NV12 (samples unchanged).
+- **Bit-depth rule (owner, 2026-11-17, revised the same day to match AetherEngine):** every stage that
+  processes video (tone map, film grain, scaling, colour or format conversion, repack, FFmpeg sws/filters,
+  bale_gpu shaders, the fork, rav1g) keeps the source's depth: 8-bit in, 8-bit out (NV12); more than 8 bits
+  in, 10-bit out (P010; 12-bit is capped to 10). Never 10 in and 8 out: that is a bug. Don't raise 8-bit to
+  10-bit either, with one exception where it makes sense: bale_gpu's SDR area downscale (the 4K-on-smaller-
+  display route) writes P010 for 8-bit sources too, because averaging in linear light yields values between
+  8-bit codes. AetherEngine does the same per stage (software decode, deinterlace, tone mapper and upscaler
+  output the input's depth; AV1 grain at the stream's depth). The console tone map's inputs are all 10-bit,
+  so it writes P010, and `FfmpegVideoOutputGuard` rejects NV12 stage output unless bale_gpu lacks P010.
+  FFmpeg software decode outputs P010 for every source above 8 bits (fork bale.41+); 8-bit sources output NV12.
+  8-bit AV1 zero-copy stores 8-bit samples shifted into the P010 pool (no 10-bit processing) until rav1g.
 - FFmpegInteropX packages, native activation and license texts ship in **all** builds. Keep the CI
   package checker; CsWinRT's projection alone does not register the WinRT factories for Native AOT.
 - Native FFmpeg is **8.1.2-bale.dav1d.1.5.4.p1**, not public 8.1.2 (which embeds dav1d 1.0.0).

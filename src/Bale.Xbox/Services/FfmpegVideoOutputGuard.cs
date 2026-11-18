@@ -16,8 +16,8 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
     // Bale-private media type attribute (UINT32 1): the fork's tone-map stage produced this output.
     // A declined stage passes P010 through with the container's (possibly BT.709) tags, so 10-bit
     // SDR output is trusted only with this mark. The stage writes NV12 only for a bale_gpu without
-    // P010 output (fork bale.41); otherwise NV12 would be an 8-bit result of processing, which the
-    // owner's 10-bit rule forbids (AGENTS.md), so it is rejected.
+    // P010 output (fork bale.41). Its inputs are 10-bit, or 8-bit SDR on the downscale route, which the
+    // bit-depth rule keeps at P010 (AGENTS.md), so NV12 would drop depth and is rejected.
     internal static readonly Guid ToneMapped = new("b41e6a52-3c9d-4f0b-8e7a-5d2c1f9a0b37");
     private readonly FFmpegMediaSource _ffmpeg;
     private readonly MediaStreamSource _source;

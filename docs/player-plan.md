@@ -1240,7 +1240,7 @@ HDR10 displays use the existing PQ HDMI switch/restore lifecycle. The wrapper ex
 HDR colour attributes; its output must be P010, PQ, limited-range BT.2020. Known SDR displays use
 the a6fe7d6 BT.2390 path below; DV7's selected BL must be 10-bit PQ BT.2020 and the stage available.
 Dual-track inventories are eligible here because the BL is explicitly selected; other tone-map
-sources still require one video track. The SDR output guard requires limited-range BT.709 P010 with the fork's tone-mapped mark (NV12 only from a bale_gpu without P010 output; 10-bit rule, wrapper bale.41).
+sources still require one video track. The SDR output guard requires limited-range BT.709 P010 with the fork's tone-mapped mark (NV12 only from a bale_gpu without P010 output; bit-depth rule in AGENTS.md, wrapper bale.41).
 FEL enhancement and RPU trims are intentionally absent from both outputs.
 
 Create/open/MediaFailed, unsupported recipes, missing BL, invalid decoded output, or an HDR HDMI
