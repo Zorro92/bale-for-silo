@@ -2183,7 +2183,7 @@ unchanged: dav1d zero-copy, and release packages carry no rav1g.dll.
   buffer no longer competes with rav1g's 8 images. The first values (200 ms capped at 5 frames, decode-ahead 3) came
   from the shared pool and starved the renderer on the console: engine fps 21-38 with bursts over 100 against
   dav1d's steady 23.97 on the same 1080p film; 1000 ms / 8 measured 22.6-24.2, still stuttering, so delivery timing
-  in the provider is being chased separately (fork bale.49 delivery diagnostics).
+  in the provider is being chased separately (fork bale.49/bale.50 delivery diagnostics; bale.49's "pts" values were a log-line unit bug).
 - **Prewarm (wrapper bale.48):** `bale-debug.sh av1-decoder rav1g` also calls the fork's plain C export
   `int bale_rav1g_prewarm(void)` from FFmpegInteropX.dll (`Rav1gPrewarm`, DllImport with ExactSpelling, on the thread
   pool; skipped when the pinned wrapper is older than bale.48 (`Rav1gPolicy.PrewarmSupported`) or rav1g.dll is not
