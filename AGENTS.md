@@ -300,7 +300,11 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   the stream index, the player binds
   the overlay to a sink token and passes `bale_subtitle_stream` / `bale_subtitle_sink` to the FFmpeg
   source (wrapper patch 0022). The claim is `native_embedded` on `original_http` alone; `Clear` does
-  not unbind, so every new mount calls `BindBitmaps(0)` first.
+  not unbind, so every new mount calls `BindBitmaps(0)` first. A native selection the mount cannot
+  draw (invalid plan, non-FFmpeg route, no overlay, failed bind, stream missing from FFmpeg's
+  `SubtitleStreams`) sends `subtitle_embedded_failed` on the single recovery replan before Play,
+  keeping session, position, tracks and every claim (`PlaybackEmbeddedSubtitleFailure`). Never for a
+  sidecar, packaged artifact, burn-in or a `.sup` window fetch; with the budget spent, play on without subtitles.
 - FFmpeg audio selection must honor the server's ordinal, not FFmpeg's reordered default:
   map `AudioStreams[].StreamIndex` back to demux order, then set the item's AudioTracks.SelectedIndex
   before Play. Fail closed if the selected stream is missing.

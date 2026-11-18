@@ -17,6 +17,9 @@ namespace Bale.Xbox
         private readonly SemaphoreSlim _subtitleLoads = new(1, 1);
         private SubtitleOverlay EnsureSubtitleOverlay() => _subtitles ??= new();
         private void UpdateSubtitleLayout() { }
+        // PlayerPage.Subtitles.cs owns the real recovery; the PGS setup only reports its stage.
+        internal List<string> EmbeddedSubtitleFailures { get; } = [];
+        private void NoteEmbeddedSubtitleFailure(Attempt attempt, Mount media, string stage) => EmbeddedSubtitleFailures.Add(stage);
         internal List<long> SubtitleClocks { get; } = [];
         internal IReadOnlyList<PgsSubtitleRange> PgsCommits => _subtitles?.Commits ?? [];
         internal int PgsClears => _subtitles?.Clears ?? 0;

@@ -398,7 +398,9 @@ public sealed partial class PlayerPage : Page, IBackHandler
         Log.Info($"player: failed hr=0x{unchecked((uint)hresult):X8}");
         var position = SourcePosition(attempt);
         Pause(attempt);
-        if (attempt.Media?.Route.ConsoleDownscale == true && !attempt.SdrDownscaleDeclined && !hdrOutputFailed)
+        // A subtitle failure says nothing about the video stage; remounting the same plan would fail it again.
+        if (attempt.Media?.Route.ConsoleDownscale == true && !attempt.SdrDownscaleDeclined && !hdrOutputFailed
+            && !PlaybackEmbeddedSubtitleFailure.Is(failure))
         {
             // The SDR scale-only stage is an optimisation, not a new promise: the stage can decline a file
             // (e.g. unspecified colour tags) and the guard then rejects it. Remount the same plan once on the

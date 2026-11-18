@@ -59,6 +59,8 @@ public sealed partial class PlayerPage
         // Set by StartSubtitles for an in-container image track: the FFmpeg source feeds the overlay.
         public int? SubtitleStreamIndex { get; set; }
         public ulong SubtitleSinkToken { get; set; }
+        /// <summary>The fixed stage at which this mount's native embedded subtitle could not be mounted, or null.</summary>
+        public string? EmbeddedSubtitleFailure { get; set; }
         public MediaPlaybackItem? Item { get; set; }
         public AudioTrack? SelectedAudioTrack { get; set; }
         /// <summary>Network throughput for the Stats tab's Estimated bandwidth row (one sample a second).</summary>
@@ -478,6 +480,14 @@ public sealed partial class PlayerPage
                     if (!sender.SelectVideo(index))
                         throw new InvalidDataException("The DV7 base layer could not be selected.");
                 }
+                // silo-apple AetherPlaybackController.validateEmbeddedSubtitleSelection: the bound stream must be
+                // in the opened demuxer's subtitle inventory, or the sink never receives a bitmap.
+                if (media.SubtitleStreamIndex is { } subtitleStream && !PlaybackEmbeddedSubtitleFailure.Mounted(subtitleStream,
+                        ffmpeg.SubtitleStreams.Select(stream => stream.StreamIndex)))
+                {
+                    Log.Info("player: subtitles failed stage=embedded inventory");
+                    media.EmbeddedSubtitleFailure ??= "inventory";
+                }
             }
             if (attempt.Plan?.Delivery == "original_http")
                 SelectOriginalAudioTrack(attempt, media, attempt.Plan.SelectedTracks?.Audio?.Index);
@@ -496,6 +506,8 @@ public sealed partial class PlayerPage
                 var index = PlaybackRoutePolicy.AudioTrackIndex(media.Route.AudioOrdinal, streams, expectedCount is > 0 ? expectedCount : null);
                 if (index >= 0) sender.SelectAudio(index);
             }
+            // Before Play, as for audio: the subtitle_embedded_failed replan keeps this session and position.
+            if (RecoverEmbeddedSubtitle(attempt, media)) return;
             // TvVideoPlaybackStarter.kt's player coordinate may be zero on reanchored HLS even
             // when the source is minutes into the title. Set it once, only after native opening.
             // A forward-only progressive input cannot seek: it plays from its origin (player 0).

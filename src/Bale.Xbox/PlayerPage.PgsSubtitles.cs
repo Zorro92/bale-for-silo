@@ -13,10 +13,20 @@ public sealed partial class PlayerPage
 
     private void StartPgsSubtitles(Attempt attempt, Mount media, PlaybackSubtitleSource source)
     {
+        // A setup failure here fails a native plan's embedded PGS (NoteEmbeddedSubtitleFailure ignores packaged
+        // .sup artifacts); a window's fetch or decode failure is retried below and never replans.
         var overlay = EnsureSubtitleOverlay();
-        if (overlay is null) return;
+        if (overlay is null)
+        {
+            NoteEmbeddedSubtitleFailure(attempt, media, "pgs_overlay");
+            return;
+        }
         _pgsSink = _subtitleSinkToken = _subtitleSinkToken >= MaxSubtitleSinkToken ? 1 : _subtitleSinkToken + 1;
-        if (overlay.BindBitmaps(_pgsSink) < 0) return;
+        if (overlay.BindBitmaps(_pgsSink) < 0)
+        {
+            NoteEmbeddedSubtitleFailure(attempt, media, "pgs_bind");
+            return;
+        }
         _pgsSource = source;
         // Like Apple AetherSubtitleOverlay.renderClock's movie-timeline sidecars: SUP PTS is already
         // source time. HLS origin/resume/reanchor mapping happens only once, in SourcePosition.

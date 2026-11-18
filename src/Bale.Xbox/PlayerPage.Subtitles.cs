@@ -158,6 +158,15 @@ public sealed partial class PlayerPage
     {
         try
         {
+            // silo-apple ApplePlaybackV3PlanAdapter.swift invalidEmbeddedSubtitle: a native selection the
+            // client cannot mount as planned (not original_http, or no usable stream index).
+            if (PlaybackEmbeddedSubtitleFailure.PlanFailure(attempt.Plan) is { } invalid)
+            {
+                _subtitlePayload = null;
+                Log.Info("player: subtitles failed stage=embedded plan_" + invalid);
+                NoteEmbeddedSubtitleFailure(attempt, media, "plan_" + invalid);
+                return;
+            }
             // Embedded PGS draws from the server's .sup windows, which cover a cue that began before a
             // seek's keyframe; the demuxer would skip it until the next display set.
             if (attempt.Client.Playback.ResolveEmbeddedPgs(attempt.Plan!) is { } pgs)
@@ -170,7 +179,7 @@ public sealed partial class PlayerPage
             {
                 // No sidecar to fetch or reuse.
                 _subtitlePayload = null;
-                StartEmbeddedSubtitles(media, embedded);
+                StartEmbeddedSubtitles(attempt, media, embedded);
                 return;
             }
             if (attempt.Client.Playback.ResolveSubtitles(attempt.Plan!) is not { } source)
@@ -194,18 +203,20 @@ public sealed partial class PlayerPage
     /// Binds the overlay to a fresh sink token and records it on the mount; the FFmpeg source created
     /// next pushes that stream's decoded bitmaps to it (FfmpegSource.ApplySubtitleSink).
     /// </summary>
-    private void StartEmbeddedSubtitles(Mount media, PlaybackEmbeddedSubtitle embedded)
+    private void StartEmbeddedSubtitles(Attempt attempt, Mount media, PlaybackEmbeddedSubtitle embedded)
     {
         // Only the FFmpeg demuxer can hand over the stream; the server claim is direct MKV, which uses it.
         if (!media.Route.UseFfmpeg)
         {
             Log.Info("player: subtitles failed stage=embedded route");
+            NoteEmbeddedSubtitleFailure(attempt, media, "route");
             return;
         }
         var overlay = EnsureSubtitleOverlay();
         if (overlay is null)
         {
             Log.Info($"player: subtitles failed stage=embedded hr=0x{unchecked((uint)SubtitlesUnavailable):X8}");
+            NoteEmbeddedSubtitleFailure(attempt, media, "overlay");
             return;
         }
         var token = _subtitleSinkToken = _subtitleSinkToken >= MaxSubtitleSinkToken ? 1 : _subtitleSinkToken + 1;
@@ -213,6 +224,7 @@ public sealed partial class PlayerPage
         if (hr < 0)
         {
             Log.Info($"player: subtitles failed stage=embedded hr=0x{unchecked((uint)hr):X8}");
+            NoteEmbeddedSubtitleFailure(attempt, media, "bind");
             return;
         }
         media.SubtitleStreamIndex = embedded.StreamIndex;
@@ -222,6 +234,35 @@ public sealed partial class PlayerPage
         UpdateSubtitleLayout();
         PushSubtitleClock(force: true);
         Log.Info($"player: subtitles mode=render format=bitmap stream={embedded.StreamIndex.ToString(CultureInfo.InvariantCulture)}");
+    }
+
+    /// <summary>
+    /// Records that this mount cannot draw its plan's native embedded subtitle (PlaybackEmbeddedSubtitleFailure;
+    /// a sidecar, packaged artifact or burn-in plan is never native and is ignored). A mount still opening sends
+    /// the recovery from OnMediaOpened, before Play; an opened one (a subtitle answer adopted in place) sends it now.
+    /// </summary>
+    private void NoteEmbeddedSubtitleFailure(Attempt attempt, Mount media, string stage)
+    {
+        if (!PlaybackEmbeddedSubtitleFailure.IsNative(attempt.Plan)) return;
+        media.EmbeddedSubtitleFailure ??= stage;
+        if (media.Opened) RecoverEmbeddedSubtitle(attempt, media);
+    }
+
+    /// <summary>
+    /// silo-apple protocolV3LoadFailureRecovery: a failed native embedded selection uses the single failure replan
+    /// with subtitle_embedded_failed. Once that budget is spent the video plays on without subtitles. True when queued.
+    /// </summary>
+    private bool RecoverEmbeddedSubtitle(Attempt attempt, Mount media)
+    {
+        if (media.EmbeddedSubtitleFailure is not { } stage) return false;
+        if (!PlaybackEmbeddedSubtitleFailure.Replans(attempt.Plan, attempt.Replanned))
+        {
+            Log.Info($"player: embedded subtitle unavailable stage={stage}; recovery spent, playing without subtitles");
+            return false;
+        }
+        Log.Info($"player: embedded subtitle unavailable stage={stage}; replanning");
+        QueueFailure(attempt, media, 0, isDecoder: false, isNetwork: false, PlaybackEmbeddedSubtitleFailure.Failure);
+        return true;
     }
 
     private async Task LoadPlanSubtitlesAsync(Attempt attempt, Mount media, PlaybackSubtitleSource source, int generation)

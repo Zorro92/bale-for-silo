@@ -9,6 +9,13 @@ public static class PlaybackReplan
         IReadOnlyList<string> priorAttemptedKeys, int attemptCount, double sourcePositionSeconds, PlaybackFailureV3 failure,
         PlaybackRouteDecision? failedRoute = null)
     {
+        // playback-protocol-v3.md "A confirmed native selection failure": only the subtitle failed, so the
+        // video and audio route stays offered as is (no codec, delivery, DV7 or range withdrawal). The server
+        // itself drops native selection for the rest of the attempt; capabilities and features are resent
+        // unchanged, as silo-apple's protocolV3LoadFailureRecovery does.
+        if (PlaybackEmbeddedSubtitleFailure.Is(failure))
+            return Build(start, plan, planAttemptId, priorAttemptedKeys.Append(plan.PlanAttemptKey!).ToArray(),
+                attemptCount, sourcePositionSeconds, "failure_recovery", failure);
         // A progressive mount that failed is not offered again: the next plan uses HLS (or the
         // original) as before progressive existed. Seeks and reconnects never come through here.
         if (PlaybackProgressive.IsProgressive(plan)) start = PlaybackProgressive.WithoutProgressive(start);
