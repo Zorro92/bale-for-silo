@@ -87,8 +87,8 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         Checked, DeviceCapabilities, DisplayMode, FileVersion, HdrCapabilities, PlaybackPlan,
     };
     use crate::{
-        audio_selection, display, dolby_vision7, evidence, formatting, hardware, language,
-        reanchor, route, software_decode, subtitles, tone_map, version_notice,
+        audio_selection, buffering, display, dolby_vision7, evidence, formatting, hardware,
+        language, reanchor, route, software_decode, subtitles, tone_map, version_notice,
     };
     use serde::Deserialize;
 
@@ -190,7 +190,16 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         modes: Vec<DisplayMode>,
     }
 
+    #[derive(Deserialize)]
+    struct BufferingPlan {
+        plan: buffering::Plan,
+    }
+
     match name {
+        "buffering.lower_rung" => with_json(name, input, |a: BufferingPlan| {
+            buffering::lower_rung_index(&a.plan)
+        }),
+        "buffering.step_down_estimate" => with_json(name, input, buffering::step_down_estimate),
         "software_decode.normalize_codec" => with_json(name, input, |codec: Option<String>| {
             software_decode::normalize_codec(codec.as_deref())
         }),
@@ -362,14 +371,14 @@ fn with_json<I: DeserializeOwned, O: Serialize>(
         .map_err(|_| format!("{name}: result could not be serialised"))
 }
 
-fn error_body(message: &str) -> Vec<u8> {
+pub(crate) fn error_body(message: &str) -> Vec<u8> {
     serde_json::to_vec(message).unwrap_or_else(|_| b"\"error\"".to_vec())
 }
 
 /// # Safety
 ///
 /// `pointer` must point to `len` readable bytes unless `len` is 0.
-unsafe fn bytes<'a>(pointer: *const u8, len: usize) -> Option<&'a [u8]> {
+pub(crate) unsafe fn bytes<'a>(pointer: *const u8, len: usize) -> Option<&'a [u8]> {
     if len == 0 {
         Some(&[])
     } else if pointer.is_null() {

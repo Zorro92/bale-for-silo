@@ -16,14 +16,14 @@ use crate::meters::{SpeedMeter, SpeedResult, ThroughputMeter};
 
 pub const NONE: i64 = i64::MIN;
 
-fn create<T>(value: T) -> *mut Mutex<T> {
+pub(crate) fn create<T>(value: T) -> *mut Mutex<T> {
     Box::into_raw(Box::new(Mutex::new(value)))
 }
 
 /// # Safety
 ///
 /// `handle` is null or came from the matching `create` and was not destroyed.
-unsafe fn destroy<T>(handle: *mut Mutex<T>) {
+pub(crate) unsafe fn destroy<T>(handle: *mut Mutex<T>) {
     if !handle.is_null() {
         // SAFETY: the caller guarantees a live handle from `create`, released once.
         drop(unsafe { Box::from_raw(handle) });
@@ -35,7 +35,11 @@ unsafe fn destroy<T>(handle: *mut Mutex<T>) {
 /// # Safety
 ///
 /// `handle` is null or a live handle from the matching `create`.
-unsafe fn with<T, R>(handle: *mut Mutex<T>, fallback: R, f: impl FnOnce(&mut T) -> R) -> R {
+pub(crate) unsafe fn with<T, R>(
+    handle: *mut Mutex<T>,
+    fallback: R,
+    f: impl FnOnce(&mut T) -> R,
+) -> R {
     // SAFETY: the caller guarantees a live handle; the Mutex serializes access.
     let Some(mutex) = (unsafe { handle.as_ref() }) else {
         return fallback;

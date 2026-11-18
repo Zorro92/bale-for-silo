@@ -8,11 +8,13 @@
 //! media titles.
 
 pub mod abi;
+pub mod abi_buffering;
 pub mod abi_meters;
 pub mod abi_progressive;
 pub mod abi_stream;
 pub mod audio_selection;
 pub mod auth_client;
+pub mod buffering;
 pub mod display;
 pub mod dolby_vision7;
 pub mod dotnet;

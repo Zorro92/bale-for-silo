@@ -335,6 +335,62 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
      Rust reader refused until 2026-11-17 (owner: removed so the engine player can take every route);
      such a playlist now fails to a replan.
 
+8. **Buffering quality** (lowering quality when playback keeps buffering; not yet verified on the
+   console). `BufferingQualityController` and `BufferingSignals` moved to `buffering.rs`, ported line
+   for line from the C# port of silo-apple's `BufferingQualityController.swift` /
+   `BufferingSignalMapper.swift` and the server's design (`docs/design/2026-10-17-buffering-quality.md`),
+   comments and citations kept. The C# classes are thin wrappers with the same public surface, so the
+   player page and the tests did not change. Stays C#: the records and enums the page reads, the
+   wire spellings (`BufferingQualityWire`), `BufferingQualityPlans.From` (it reads Kiota models),
+   `BufferingSignals.Apply`, the clock (`PolledBufferingQualityClock`), and the two meters keyed on
+   the identity of C# stream objects, `PlanThroughput` and `MediaSilence`.
+
+   - **ABI** (`abi_buffering.rs`, a handle per controller, freed by its `SafeHandle`):
+     `bale_core_buffering_create` / `_destroy` / `_call`. A call takes one JSON event (`type` plus its
+     fields) with `now` (the clock's `ElapsedMs`), `mode`, `sends_fields` and `measured_kbps`, and
+     returns `steps`, the `state` the page reads between calls (`pill`, `pill_pending`,
+     `kept_estimate_kbps`, `current_plan_id`), and the event's answer (`returned` for `Back` and
+     `StartDeadlinePassed`, `replan` for `ClientReplan`, `summary` for `RunningSummary`). The wrapper
+     caches the state, so the per-tick reads (`Pill`, `CurrentPlanId`) never cross, and
+     `SetCompetingPillVisible`, which the page reports every tick, crosses only when it changes (Rust
+     ignores a repeat too). `LowerRung` and `StepDownEstimate` are plain `bale_core_call` functions
+     (`buffering.lower_rung`, `buffering.step_down_estimate`). The signal mapper runs on every tick, so
+     it takes the snapshot as six bits and returns at most two calls packed one per byte
+     (`bale_core_signals_create` / `_destroy` / `_update` / `_plan_adopted` / `_invalidate` /
+     `_note_request_failed` / `_note_data_arrived` / `_plan_has_run`); a tick with nothing to report
+     allocates nothing. ABI version stays 2 (exports were only added).
+   - **Measured throughput.** `MeasuredThroughputKbps` stays a C# callback; the wrapper reads it once
+     before every call and passes the value in. The original read it only when a decision needed it,
+     but nothing a call does changes what the page's callback reads (the plan's meter and the network
+     generation), so the value is the same; the callback has no side effects.
+   - **Timers.** Rust decides every timer (long stall, suppression, rearm, pill) and its deadline and
+     reports it as a step: `schedule` (timer, deadline) or `cancel` (timer). The wrapper mirrors each one
+     onto the injected `IBufferingQualityClock`, one clock timer per Rust timer, and a firing comes back
+     as a `timer` event. So the polled model is unchanged (the page fires the clock from its UI tick,
+     on the UI thread), firing order is the clock's own (deadline, then scheduling order, interleaved
+     with the page's debug stall timer on the same clock), and the test clock's `Pending` and
+     `NextDueMs` still count the controller's timers. A timer scheduled over a waiting one of the same
+     kind leaves the old one waiting, as the original's overwritten field did.
+   - **Output order.** Steps come back in the order the original performed them; the wrapper takes the
+     new state, then applies the steps in order, raising outputs through `Output` between the timer
+     steps. An output handler may call back in (the page calls `ReplanRefused` from inside a replan it
+     cannot send); that nested call applies its own steps and state before the rest. In the original
+     every replan is the last thing a call does, so the nested call sees the same state.
+   - **Not identical, deliberately:** an output handler sees the state as of the end of the call. The
+     only difference this makes is during `PlanAdopted`: the outgoing plan's summary handler now sees
+     the new plan's `CurrentPlanId` and the original saw null; the page's summary handler does not read
+     it. Within one call Rust uses one `now`, where the original read the clock several times (the
+     same value on the test clocks; at most a millisecond apart on `Environment.TickCount64`).
+   - **Tests.** The C# suite runs unchanged against Rust: the 66 conformance vectors with and without
+     buffering_quality_v1, `BufferingQualityControllerTests`, `BufferingSignalsTests`. Rust replays the
+     same vectors file itself (`buffering/tests.rs`, `include_str!`) through a host harness that mirrors
+     the wrapper and the polled clock, plus the signal cases and the JSON shape (`abi_buffering.rs`).
+     `RustPortBufferingDifferentialTests` runs the originals (`Reference/`) and the port side by side on
+     400 random streams of 200 events (plans, waits, pills and answers, mode and measurement changes,
+     re-entrant refusals, debug stall timers on the same clock), comparing every output, its time, and
+     the state and pending timers after each event, and requires every action, notice, pill and replan
+     field to occur. Allowing a negative `started_ago_ms`, which no vector uses, fails it.
+
 ### Stays in C#
 
 - The XAML app (`src/Bale.Xbox`) and anything that drives XAML objects.

@@ -1,3 +1,5 @@
+using Bale.Core.Native;
+
 namespace Bale.Core.Playback;
 
 /// <summary>What the player page knows about playback at one moment (<see cref="BufferingSignals.Update"/>).</summary>
@@ -31,66 +33,46 @@ public enum BufferingSignal { TroubleStarted, TroubleEnded, Playing, WaitingNetw
 /// ample media buffered (a decoder behind, not the network) is still a network wait; the spec's AVPlayer route has the
 /// same gap. Offline detection is left to the silence rule.
 /// </para>
+/// <para>
+/// The mapping lives in Rust (native/bale-core/src/buffering.rs). The page updates it every UI tick, so it crosses the
+/// handle ABI as bits and packed calls, without JSON, and an update with nothing to report allocates nothing.
+/// </para>
 /// </summary>
 public sealed class BufferingSignals
 {
-    private BufferingSignal? _state;
-    private bool _trouble;
-    private bool _seekSincePlaying;
-    private bool _startPending;
-    private bool _planHasRun = true;
-    private bool _mediaRequestFailed;
-    private bool _mediaDataArrived;
-    private bool _outageAwaitsData;
+    private readonly SignalsHandle _handle;
+
+    public BufferingSignals()
+    {
+        BaleCoreNative.EnsureLoaded();
+        _handle = BaleCoreBuffering.bale_core_signals_create();
+    }
 
     /// <summary>The adopted plan has run since its adoption.</summary>
-    public bool PlanHasRun => _planHasRun;
+    public bool PlanHasRun => BaleCoreBuffering.bale_core_signals_plan_has_run(_handle) != 0;
 
     /// <summary>A media request failed (a broken progressive body, a failed segment): an outage begins.</summary>
-    public void NoteMediaRequestFailed() => _mediaRequestFailed = true;
+    public void NoteMediaRequestFailed() => BaleCoreBuffering.bale_core_signals_note_request_failed(_handle);
 
     /// <summary>The plan's media received bytes: an outage ends once nothing else holds it.</summary>
-    public void NoteMediaDataArrived() => _mediaDataArrived = true;
+    public void NoteMediaDataArrived() => BaleCoreBuffering.bale_core_signals_note_data_arrived(_handle);
 
     /// <summary>Forgets the state last reported, so the next update reports it again.</summary>
-    public void Invalidate() => _state = null;
+    public void Invalidate() => BaleCoreBuffering.bale_core_signals_invalidate(_handle);
 
     /// <summary>A plan was adopted: its start is timed until it first runs or pauses, and it starts with no outage.</summary>
-    public void PlanAdopted()
-    {
-        _state = null;
-        _startPending = true;
-        _planHasRun = false;
-        _seekSincePlaying = false;
-        _outageAwaitsData = false;
-        _mediaRequestFailed = false;
-        _mediaDataArrived = false;
-    }
+    public void PlanAdopted() => BaleCoreBuffering.bale_core_signals_plan_adopted(_handle);
 
     public IReadOnlyList<BufferingSignal> Update(BufferingSnapshot snapshot)
     {
-        var calls = new List<BufferingSignal>(2);
-        if (_planHasRun && snapshot.SeekInFlight) _seekSincePlaying = true;
-        if (!snapshot.WantsToPlay) _startPending = false;
-        var next = MediaState(snapshot);
-        // Buffering after a seek stays the seek's until playback runs, even once the seek has landed.
-        if (next == BufferingSignal.WaitingNetwork && _seekSincePlaying) next = BufferingSignal.WaitingSeek;
-        if (next == BufferingSignal.Playing)
-        {
-            _seekSincePlaying = false;
-            _startPending = false;
-            _planHasRun = true;
-        }
-        var trouble = OutageGoesOn(snapshot, next);
-        if (trouble != _trouble)
-        {
-            _trouble = trouble;
-            calls.Add(trouble ? BufferingSignal.TroubleStarted : BufferingSignal.TroubleEnded);
-        }
-        if (next == _state) return calls;
-        _state = next;
-        calls.Add(next);
-        return calls;
+        var bits = (snapshot.HasMount ? 1u : 0) | (snapshot.WantsToPlay ? 2u : 0) | (snapshot.Playing ? 4u : 0)
+            | (snapshot.SeekInFlight ? 8u : 0) | (snapshot.ReachedEnd ? 16u : 0) | (snapshot.UpstreamSilent ? 32u : 0);
+        // One call per byte from the lowest, as its BufferingSignal value + 1; 0 ends the list.
+        var packed = BaleCoreBuffering.bale_core_signals_update(_handle, bits);
+        if (packed == 0) return [];
+        var first = (BufferingSignal)((packed & 0xFF) - 1);
+        var second = (packed >> 8) & 0xFF;
+        return second == 0 ? [first] : [first, (BufferingSignal)(second - 1)];
     }
 
     /// <summary>Feeds <paramref name="calls"/> to <paramref name="controller"/>.</summary>
@@ -109,43 +91,6 @@ public sealed class BufferingSignals
                 case BufferingSignal.Paused: controller.Paused(); break;
             }
         }
-    }
-
-    /// <summary>
-    /// An outage begins when a media request fails or playback waits while the origin has sent nothing for the
-    /// silence limit. It lasts until the plan's media data arrives again or playback runs; no timer ends it.
-    /// </summary>
-    private bool OutageGoesOn(BufferingSnapshot snapshot, BufferingSignal next)
-    {
-        var dataArrived = _mediaDataArrived;
-        _mediaDataArrived = false;
-        var silentWait = snapshot.UpstreamSilent && next == BufferingSignal.WaitingNetwork;
-        if (_mediaRequestFailed || silentWait)
-        {
-            _mediaRequestFailed = false;
-            _outageAwaitsData = true;
-            return true;
-        }
-        if (!_outageAwaitsData) return false;
-        if (next == BufferingSignal.Playing || dataArrived)
-        {
-            _outageAwaitsData = false;
-            return false;
-        }
-        return true;
-    }
-
-    /// <summary>A reload's wait, or before the plan first runs or pauses, the start's.</summary>
-    private BufferingSignal ReloadWait => _startPending ? BufferingSignal.WaitingNetwork : BufferingSignal.WaitingReload;
-
-    private BufferingSignal MediaState(BufferingSnapshot s)
-    {
-        if (!s.HasMount) return s.WantsToPlay ? ReloadWait : BufferingSignal.Paused;
-        if (s.ReachedEnd || !s.WantsToPlay) return BufferingSignal.Paused;
-        if (s.SeekInFlight) return _planHasRun ? BufferingSignal.WaitingSeek : BufferingSignal.WaitingNetwork;
-        if (s.Playing) return BufferingSignal.Playing;
-        // Opening, Buffering, or Playing with a clock that has not moved yet: the plan waits for media.
-        return BufferingSignal.WaitingNetwork;
     }
 }
 

@@ -551,7 +551,7 @@ jobs:
               Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
             $exports = & $dumpbin.FullName /exports $packagedDll
             if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect packaged bale_core.dll exports' }
-            # JSON calls, then the handle ABI (native/bale-core/src/abi_meters.rs) the C# meters import.
+            # JSON calls, then the handle ABIs (native/bale-core/src/abi_meters.rs, abi_buffering.rs) the C# wrappers import.
             $required = @('bale_core_abi_version', 'bale_core_call', 'bale_core_free',
               'bale_core_frames_create', 'bale_core_frames_destroy', 'bale_core_frames_add_snapshot',
               'bale_core_frames_snapshot_for', 'bale_core_frames_process', 'bale_core_frames_read',
@@ -566,7 +566,11 @@ jobs:
               'bale_core_range_close', 'bale_core_range_destroy', 'bale_core_range_winrt',
               'bale_core_progressive_open', 'bale_core_progressive_read', 'bale_core_progressive_stats', 'bale_core_progressive_close',
               'bale_core_progressive_destroy', 'bale_core_progressive_winrt', 'bale_core_http_warm',
-              'bale_core_hls_open', 'bale_core_progressive_set_headers', 'bale_core_progressive_set_refresh')
+              'bale_core_hls_open', 'bale_core_progressive_set_headers', 'bale_core_progressive_set_refresh',
+              'bale_core_buffering_create', 'bale_core_buffering_destroy', 'bale_core_buffering_call',
+              'bale_core_signals_create', 'bale_core_signals_destroy', 'bale_core_signals_update', 'bale_core_signals_plan_adopted',
+              'bale_core_signals_invalidate', 'bale_core_signals_note_request_failed', 'bale_core_signals_note_data_arrived',
+              'bale_core_signals_plan_has_run')
             foreach ($symbol in $required) {
               if (-not ($exports | Select-String -Pattern "\s$([regex]::Escape($symbol))\s*$" -Quiet)) {
                 throw "Packaged bale_core.dll is missing export $symbol"
