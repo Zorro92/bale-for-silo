@@ -277,6 +277,25 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
             crate::http_probe::probe(&a)
         }),
         "route.decide" => with_json(name, input, route::decide),
+        "av1_decoder.route" => with_json(name, input, |a: crate::av1_decoder::RouteArgs| {
+            crate::av1_decoder::route(&a)
+        }),
+        "av1_decoder.output_verdict" => {
+            with_json(name, input, |a: crate::av1_decoder::VerdictArgs| {
+                crate::av1_decoder::output_verdict(&a)
+            })
+        }
+        "av1_decoder.remount_on_dav1d" => {
+            with_json(name, input, |a: crate::av1_decoder::RemountArgs| {
+                crate::av1_decoder::remount_on_dav1d(&a)
+            })
+        }
+        "av1_decoder.parse_log" => with_json(name, input, |line: String| {
+            crate::av1_decoder::parse_log(&line)
+        }),
+        "av1_decoder.describe" => with_json(name, input, |a: crate::av1_decoder::DescribeArgs| {
+            crate::av1_decoder::describe(&a)
+        }),
         "route.is_matroska" => with_json(name, input, |c: Option<String>| {
             route::is_matroska(c.as_deref())
         }),

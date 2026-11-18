@@ -15,6 +15,7 @@ pub mod abi_start_budget;
 pub mod abi_stream;
 pub mod audio_selection;
 pub mod auth_client;
+pub mod av1_decoder;
 pub mod buffering;
 pub mod display;
 pub mod dolby_vision7;
