@@ -7,7 +7,7 @@ public class NativeFfmpegPackageTests
 {
     [Theory]
     [InlineData("ffmpeg-native.json", "FFmpegInteropX.UWP.FFmpeg", "8.1.2-bale.dav1d.1.5.4.p1")]
-    [InlineData("ffmpeginteropx-wrapper.json", "FFmpegInteropX.UWP.Lib", "2.1.0-bale.55")]
+    [InlineData("ffmpeginteropx-wrapper.json", "FFmpegInteropX.UWP.Lib", "2.1.0-bale.56")]
     public void ExactReferenceAndBothLockEntriesMatchTheReviewedAsset(string pinFile, string packageId, string expectedVersion)
     {
         using var pin = JsonDocument.Parse(Read(pinFile));
@@ -37,11 +37,11 @@ public class NativeFfmpegPackageTests
         Assert.Equal("1.5.4", native.RootElement.GetProperty("dav1d_version").GetString());
         Assert.Equal("54706fc6bc0cdecab7e9593974a4039cc038fca7", native.RootElement.GetProperty("dav1d_commit").GetString());
         using var wrapper = JsonDocument.Parse(Read("ffmpeginteropx-wrapper.json"));
-        Assert.Equal("wrapper-ffmpeginteropx-2.1.0-bale.55", wrapper.RootElement.GetProperty("release_tag").GetString());
-        Assert.Equal("54cf3fc79f993edff21a44ad88a31ae9ca5a5e1882d8f5553e1f50b79052477f", wrapper.RootElement.GetProperty("sha256").GetString());
-        Assert.Equal("5hhyYfPkEzDKhGDSzGIF98LVNCon7PhMPhhMMjZyzh2V+/e1/jhKk/aI8GpdkHRkgLZuk0/CrzYwVYudul3LSw==", wrapper.RootElement.GetProperty("nuget_content_hash").GetString());
+        Assert.Equal("wrapper-ffmpeginteropx-2.1.0-bale.56", wrapper.RootElement.GetProperty("release_tag").GetString());
+        Assert.Equal("8e238359ca6f3471d3e0953e5d90fed00a9085da018a2c4b68ae433f9040f01b", wrapper.RootElement.GetProperty("sha256").GetString());
+        Assert.Equal("gttDT1OeiDYbnTl+zDetvuoY7fp0LreAs3MBZUyjEnXq5E/Fi77fUzhTnD6UgTXF3IABP8c7K+imwRDp2TSJQQ==", wrapper.RootElement.GetProperty("nuget_content_hash").GetString());
         Assert.Equal("Zorro92/bale-ffmpeginteropx", wrapper.RootElement.GetProperty("release_repository").GetString());
-        Assert.Equal("b0bd45c7ac0f9b5e4c707c78bf9722cbfff3a56f", wrapper.RootElement.GetProperty("source_commit").GetString());
+        Assert.Equal("427054a51a39417251c5272a040b14546db4e8fd", wrapper.RootElement.GetProperty("source_commit").GetString());
     }
 
     [Fact]

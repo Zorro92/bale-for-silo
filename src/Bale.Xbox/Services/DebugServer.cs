@@ -512,15 +512,15 @@ internal sealed partial class DebugServer
 
             case ("GET", "/rav1g-tune"):
                 if (query.Count != 0)
-                    return ("400 Bad Request", "usage: GET /rav1g-tune or POST /rav1g-tune?inflight={1-8|default}&perf={on|off|default}&parse={1|2|default}\n");
+                    return ("400 Bad Request", "usage: GET /rav1g-tune or POST /rav1g-tune?inflight={1-8|default}&perf={on|off|default}&parse={1|2|default}&outtex={0-64|default}\n");
                 return ("200 OK", DebugRav1gTuning.Describe() + "\n");
 
             case ("POST", "/rav1g-tune"):
-                if (query.Count == 0 || query.Keys.Any(key => key is not ("inflight" or "perf" or "parse")))
-                    return ("400 Bad Request", "keys: inflight=1-8, perf=on|off, parse=1|2 (each also default)\n");
+                if (query.Count == 0 || query.Keys.Any(key => key is not ("inflight" or "perf" or "parse" or "outtex")))
+                    return ("400 Bad Request", "keys: inflight=1-8, perf=on|off, parse=1|2, outtex=0-64 (each also default)\n");
                 foreach (var (key, value) in query)
                     if (!DebugRav1gTuning.TrySet(key, value))
-                        return ("400 Bad Request", $"bad value for {key}; inflight=1-8, perf=on|off, parse=1|2 (each also default)\n");
+                        return ("400 Bad Request", $"bad value for {key}; inflight=1-8, perf=on|off, parse=1|2, outtex=0-64 (each also default)\n");
                 Log.Info($"Debug {DebugRav1gTuning.Describe()}; applies to the next rav1g playback attempt");
                 return ("200 OK", DebugRav1gTuning.Describe() + "\n");
 

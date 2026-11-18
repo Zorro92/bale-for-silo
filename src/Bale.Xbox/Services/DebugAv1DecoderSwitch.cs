@@ -76,7 +76,8 @@ internal static class DebugRav1gLog
 /// Memory-only rav1g provider knobs for console tests (fork 2.1.0-bale.52; the fork's bale/README.md rav1g sections),
 /// applied only on the rav1g route and reset by an app restart: <c>bale_gpu_decode_inflight</c> (the feeder thread's
 /// units in flight, 1-8, fork default 3), <c>bale_rav1g_perf=1</c> (rav1g's own CPU/GPU ms in the delivery line) and
-/// <c>bale_rav1g_parse</c> (frames in parse, 1-2; try 2 only when the decode call is still the limit). Unset = the
+/// <c>bale_rav1g_parse</c> (frames in parse, 1-2; try 2 only when the decode call is still the limit) and
+/// <c>bale_gpu_output_textures</c> (bale.56: player-side texture cap, 0 = none). Unset = the
 /// fork's defaults.
 /// </summary>
 internal static class DebugRav1gTuning
@@ -85,6 +86,7 @@ internal static class DebugRav1gTuning
     private static int? _inflight;
     private static bool? _perf;
     private static int? _parse;
+    private static int? _outputTextures;
 
     /// <summary>Applies one key=value; "default" clears it. False (and no change) for an unknown key or bad value.</summary>
     internal static bool TrySet(string key, string? value)
@@ -104,6 +106,12 @@ internal static class DebugRav1gTuning
                     if (value is not ("on" or "off")) return false;
                     _perf = value == "on";
                     return true;
+                case "outtex":
+                    // bale_gpu_output_textures (fork bale.56): 0 = no limit, 1-3 act as 4, up to 64.
+                    if (clear) { _outputTextures = null; return true; }
+                    if (!int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var textures) || textures > 64) return false;
+                    _outputTextures = textures;
+                    return true;
                 case "parse":
                     if (clear) { _parse = null; return true; }
                     if (value is not ("1" or "2")) return false;
@@ -120,10 +128,11 @@ internal static class DebugRav1gTuning
     {
         lock (Gate)
         {
-            var options = new List<KeyValuePair<string, string>>(3);
+            var options = new List<KeyValuePair<string, string>>(4);
             if (_inflight is { } inflight) options.Add(new("bale_gpu_decode_inflight", inflight.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             if (_perf is { } perf) options.Add(new("bale_rav1g_perf", perf ? "1" : "0"));
             if (_parse is { } parse) options.Add(new("bale_rav1g_parse", parse.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            if (_outputTextures is { } textures) options.Add(new("bale_gpu_output_textures", textures.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             return options;
         }
     }
@@ -133,7 +142,8 @@ internal static class DebugRav1gTuning
         lock (Gate)
             return "rav1g-tune inflight=" + (_inflight?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "default")
                 + " perf=" + (_perf is { } perf ? perf ? "on" : "off" : "default")
-                + " parse=" + (_parse?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "default");
+                + " parse=" + (_parse?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "default")
+                + " outtex=" + (_outputTextures?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "default");
     }
 }
 #endif
