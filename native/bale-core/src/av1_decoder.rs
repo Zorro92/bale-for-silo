@@ -585,7 +585,7 @@ mod tests {
         // The fork's advice for the GPU provider: 2-4 frames.
         assert!((2..=4).contains(&DECODE_AHEAD_FRAMES));
         // 8 pool images minus rav1g's 4K hold (slots + 2 = 5).
-        assert!(DECODE_AHEAD_FRAMES <= 8 - 5);
+        const { assert!(DECODE_AHEAD_FRAMES <= 8 - 5) };
     }
 
     #[test]
