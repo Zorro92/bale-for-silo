@@ -55,14 +55,15 @@ public sealed partial class RowView : INotifyPropertyChanged
         var width = CardWidth;
         var height = CardHeight;
         var index = 0;
-        // TvMediaRow.kt deduplicates by contentId before displaying the rail.
-        foreach (var card in row.Cards.DistinctBy(card => card.ContentId))
+        // TvMediaRow.kt deduplicates by its card key (contentId, or the series on a progress row) before displaying the rail.
+        foreach (var card in row.Cards.DistinctBy(card => BrowseFocus.CardKey(row, card)))
         {
             var artHeight = landscape ? height : width / card.PosterAspectRatio;
-            var existing = Cards.Skip(index).OfType<CardView>().FirstOrDefault(view => view.Card.ContentId == card.ContentId);
+            var key = BrowseFocus.CardKey(row, card);
+            var existing = Cards.Skip(index).OfType<CardView>().FirstOrDefault(view => view.Key == key);
             if (existing is null)
             {
-                Cards.Insert(index, new CardView(card, row.Title, width, artHeight, landscape));
+                Cards.Insert(index, new CardView(card, row.Title, width, artHeight, landscape) { FocusKey = key });
             }
             else
             {
@@ -113,7 +114,9 @@ public sealed partial class RowView : INotifyPropertyChanged
 
 public sealed partial class CardView : BrowseTileView, INotifyPropertyChanged
 {
-    public override string Key => Card.ContentId;
+    /// <summary>The row's identity for this card (<see cref="BrowseFocus.CardKey"/>); the content id elsewhere.</summary>
+    public string? FocusKey { get; init; }
+    public override string Key => FocusKey ?? Card.ContentId;
     public CardView(MediaCard card, string rowTitle, double width, double height, bool landscape) =>
         Update(card, rowTitle, width, height, landscape);
 

@@ -9,6 +9,17 @@ public static class BrowseFocus
     // TvMediaRow.kt includes Explore all as a focusable slot after the deduplicated media cards.
     public const string ExploreAllKey = "\0explore-all";
 
+    /// <summary>
+    /// A card's identity in its row (TvMediaRow.kt, Android 45a869871): a progress row keys an episode by its
+    /// series, so when Continue Watching or Next Up moves a show on to its next episode the card updates in place
+    /// and focus stays on the show; every other card is its content.
+    /// </summary>
+    public static string CardKey(MediaRow row, MediaCard card) =>
+        CardMenu.IsProgressRow(row.SectionType) && card.Type.Trim().Equals("episode", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(card.SeriesId)
+            ? "\0series:" + card.SeriesId
+            : card.ContentId;
+
     public static BrowseReturnPosition? Resolve(IReadOnlyList<MediaRow> rows, BrowseReturnTarget? target)
     {
         var visible = rows.Where(row => row.Cards.Count > 0).ToList();
@@ -19,7 +30,7 @@ public static class BrowseFocus
         var sameSection = sectionIndex >= 0;
         if (!sameSection) sectionIndex = Math.Clamp(target.SectionIndex, 0, visible.Count - 1);
         var section = visible[sectionIndex];
-        var keys = section.Cards.Select(card => card.ContentId).Distinct(StringComparer.Ordinal).ToList();
+        var keys = section.Cards.Select(card => CardKey(section, card)).Distinct(StringComparer.Ordinal).ToList();
         if (section.OffersExploreAll) keys.Add(ExploreAllKey);
 
         // Home rows overlap. Never follow a removed section's title into a copy in another row.

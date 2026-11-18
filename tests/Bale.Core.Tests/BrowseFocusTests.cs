@@ -8,6 +8,24 @@ public class BrowseFocusTests
         items.Select(item => new MediaCard(item, "movie", item, null, null, null, null, null, null, null, null, null, null, [], null, null, null)).ToList());
 
     [Fact]
+    public void AContinueWatchingCardFollowsItsSeriesWhenTheNextEpisodeReplacesIt()
+    {
+        // Android 45a869871: progress rows key an episode by its series, so the advanced show keeps focus even
+        // after it moves to the front of the row.
+        MediaCard Episode(string id, string series) =>
+            new MediaCard(id, "episode", id, null, null, null, null, null, null, null, null, null, null, [], null, null, null) { SeriesId = series };
+        var before = new MediaRow("cw", "Continue Watching", "continue_watching", false, CardShape.Landscape,
+            [Episode("a1", "a"), Episode("b4", "b")]);
+        var target = new BrowseReturnTarget("cw", BrowseFocus.CardKey(before, before.Cards[1]), 0, 1);
+        var after = before with { Cards = [Episode("b5", "b"), Episode("a1", "a")] };
+        Assert.Equal(new BrowseReturnPosition(0, 0), BrowseFocus.Resolve([after], target));
+
+        // Ordinary rows still key by content.
+        var recent = Row("recent", "m1");
+        Assert.Equal("m1", BrowseFocus.CardKey(recent, recent.Cards[0]));
+    }
+
+    [Fact]
     public void RowAndCardReorderingFollowsIdentityWithinTheOriginalSection()
     {
         var target = new BrowseReturnTarget("recent", "m3", 0, 2);
