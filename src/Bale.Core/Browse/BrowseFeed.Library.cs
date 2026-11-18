@@ -10,9 +10,11 @@ public sealed partial class BrowseFeed
     public async Task<LibraryRecommendedResult> LoadLibraryRecommendedAsync(string libraryId, ArtworkWidths widths,
         string? mediaScope = null, CancellationToken cancellationToken = default)
     {
-        var sections = await LibrarySectionsAsync(libraryId, widths, cancellationToken).ConfigureAwait(false);
+        var sections = await LibrarySectionsAsync(libraryId, widths, cancellationToken).ConfigureAwait(false) ?? [];
+        var context = await CollectionContextAsync(sections, home: false, cancellationToken).ConfigureAwait(false);
         using var permits = new SemaphoreSlim(3);
-        var scoped = await Task.WhenAll((sections ?? []).Where(section => section.Featured != true).Select(async section =>
+        // TvLibraryDetailViewModel.kt: a row of collections is never a hero, so a featured flag on one is ignored.
+        var scoped = await Task.WhenAll(sections.Where(section => section.Featured != true || CollectionRows.IsCollectionRow(section)).Select(async section =>
         {
             await permits.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
@@ -26,15 +28,21 @@ public sealed partial class BrowseFeed
         })).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return new LibraryRecommendedResult(LibraryRecommendedRows.For(scoped.Where(result => result.Section.Items is { Count: > 0 })
-            .Select(result => ToRow(result.Section, libraryId)).ToList(), mediaScope), scoped.Any(result => result.Incomplete));
+        // TvLibraryDetailScreen.RecommendedTab: as the Collections grid, a Movies- or Series-scoped page shows no
+        // collection counts (the whole collection's count would be wrong).
+        return new LibraryRecommendedResult(LibraryRecommendedRows.For(scoped
+            .Select(result => CollectionRows.IsCollectionRow(result.Section)
+                ? ToCollectionRow(result.Section, context, home: false, showCounts: mediaScope is null)
+                : result.Section.Items is { Count: > 0 } ? ToRow(result.Section, libraryId) : null)
+            .OfType<MediaRow>().ToList(), mediaScope), scoped.Any(result => result.Incomplete));
     }
 
     private async Task<(Section Section, bool Incomplete)> ScopeLibrarySectionAsync(Section section, string libraryId,
         string? mediaScope, ArtworkWidths widths, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (mediaScope is null) return (section, false);
+        // LibraryMediaScope.kt: a row of collections has no titles to scope.
+        if (mediaScope is null || CollectionRows.IsCollectionRow(section)) return (section, false);
         var source = new SectionBrowseSource(section.Id ?? string.Empty, section.Title ?? string.Empty, libraryId, mediaScope);
         var items = section.Items ?? [];
         var initial = items.Where(item => source.MatchesMediaScope(item.Type)).ToList();

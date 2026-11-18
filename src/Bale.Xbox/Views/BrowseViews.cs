@@ -127,7 +127,9 @@ public sealed partial class CardView : BrowseTileView, INotifyPropertyChanged
         CaptionSpacing = landscape ? 7 : 11;
         ProgressPercent = (card.Progress ?? 0) * 100;
         ProgressVisibility = card.Progress is > 0 ? Visibility.Visible : Visibility.Collapsed;
-        FallbackVisibility = card.ImageUrl is null ? Visibility.Visible : Visibility.Collapsed;
+        // TvCollectionCard.kt: a collection without a poster shows the VideoLibrary glyph, not its title.
+        FallbackVisibility = card.ImageUrl is null && !card.IsCollection ? Visibility.Visible : Visibility.Collapsed;
+        CollectionFallbackVisibility = card.ImageUrl is null && card.IsCollection ? Visibility.Visible : Visibility.Collapsed;
         OverlayCode = landscape ? card.EpisodeCode?.Replace(" ", " · ") ?? string.Empty : string.Empty;
         OverlayVisibility = OverlayCode.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         SubtitleVisibility = string.IsNullOrEmpty(card.Subtitle) ? Visibility.Collapsed : Visibility.Visible;
@@ -212,6 +214,8 @@ public sealed partial class CardView : BrowseTileView, INotifyPropertyChanged
     public double EpisodesLeftFontSize => WatchedSize * 0.5;
 
     public Visibility FallbackVisibility { get; private set; }
+
+    public Visibility CollectionFallbackVisibility { get; private set; } = Visibility.Collapsed;
 
     public Visibility OverlayVisibility { get; private set; }
 

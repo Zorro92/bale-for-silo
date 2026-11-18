@@ -5,7 +5,8 @@ public static class LibraryRecommendedRows
 {
     public static IReadOnlyList<MediaRow> For(IReadOnlyList<MediaRow> rows, string? mediaScope) => rows
         .Where(row => !row.Featured)
-        .Select(row => row with
+        // A row of collections keeps its cards: they name no media type (LibraryMediaScope.kt).
+        .Select(row => row.IsCollectionRow ? row : row with
         {
             Cards = row.Cards.Where(card => Matches(card.Type, mediaScope)).ToList(),
             ExploreSource = row.ExploreSource is { } source ? source with { MediaScope = mediaScope } : null,

@@ -86,12 +86,20 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
 - **Not doing: box sets.** The Silo developer said box sets reached the server by mistake and
   reversed the decision (2026-11-10), so Bale doesn't build them even though the clients shipped
   them (Android `67e6e224a`, Apple `08c28c8e`). Ignore later box-set commits unless that changes.
-- **Rows of collections:** show Home and library sections of type `collection_posters` from
-  their `collections` (collection poster cards in a Skyline rail, no Explore all, never the hero
-  row; focused card's backdrop in the hero; server collection opens in its library, personal one
-  its own page; "by Name" for another profile's). Needs the contract bump to server
-  `217ff25abc5b` (also drops the notification-reason fields Bale doesn't use). Apple `6eea7cf7`,
-  Roku `8183af8`/`d240f47`, server `4a0ab33b`/`217ff25a`; Android TV not yet.
+- ~~**Rows of collections:**~~ done 2026-11-18, not yet on the console. Follows Android TV's own
+  version, merged since (`db87f835f`: `TvCollectionRow.kt`, `TvCollectionCard.kt`,
+  `TvSkylineSectionFeed.kt`, `TvHomeSections.kt`, `TvMainShell.kt`, `SectionModels.kt`): Home and
+  library `collection_posters` sections as dense 88×132 poster rails of every card (no 20-card cap,
+  no Explore all, a featured flag ignored); the focused card's title and backdrop (else poster) in
+  the marquee, no detail fetch, no card menu; caption "3 items", or "by Name" for another
+  profile's personal collection; no counts on a Movies/Series-scoped library page; Home keeps a
+  server collection only when its library is a TV-visible one (none while the library list is
+  unknown). A server collection opens the collection grid; on a library page both kinds open as
+  the Collections tab opens them. Gap: Home's personal collection opens Bale's collection grid
+  (with Sort/Filter), not Android's separate `TvCollectionDetailScreen` (title, Shuffle, grid).
+  Bale reads the profile list for "by Name" only when a row holds another profile's collection
+  (Android uses its cached list). Apple `6eea7cf7`, Roku `8183af8`/`d240f47`, server
+  `4a0ab33b`/`217ff25a`.
 - **Smaller:** device name in sign-in (`bd6ade492`), hero logo grace 700 ms (`e57fbf3f6`),
   Calendar DIGITAL/PHYSICAL badges (`64ae5f08c`, Apple `a82ff603`), Search clear button
   (`548e3cb77`), remote Stop key (`969c0a812`), unplayable subtitle rows (`461240c6d`),

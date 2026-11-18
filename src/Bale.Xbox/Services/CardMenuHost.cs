@@ -180,6 +180,8 @@ internal sealed class CardMenuHost
         if (!_loaded || IsOpen || Session.Client is not { } client || origin.Content is not { } item) return;
         var id = item switch
         {
+            // TvCollectionRow.kt: collection cards have no card menu.
+            CardView { Card.IsCollection: true } => string.Empty,
             CardView card => card.Card.ContentId,
             EpisodeView episode => episode.Episode.ContentId,
             CalendarCardView calendar => calendar.Item.ContentId,

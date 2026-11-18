@@ -43,6 +43,11 @@ public sealed record MediaCard(
 {
     public Detail.ItemFlags Flags { get; init; } = new(false, false, false);
 
+    /// <summary>A card of a row of collections: what it opens. Its content id names no title; never send it to the server.</summary>
+    public CollectionTarget? Collection { get; init; }
+
+    public bool IsCollection => Collection is not null;
+
     public double? PositionSeconds { get; init; }
 
     /// <summary>
@@ -133,7 +138,16 @@ public sealed record MediaRow(string Id, string Title, string SectionType, bool 
     public SectionBrowseSource? ExploreSource { get; init; }
 
     // SectionRowLimits.kt: even a short row can have titles hidden by Home's cross-row deduplication.
-    public bool OffersExploreAll => ExploreSource is not null && !Featured && Cards.Count > 0;
+    // TvSkylineSectionFeed.kt: a row of collections shows every card and has no Explore all.
+    public bool OffersExploreAll => ExploreSource is not null && !Featured && !IsCollectionRow && Cards.Count > 0;
+
+    /// <summary>A row whose cards are collections, not titles (<c>collection_posters</c>).</summary>
+    public bool IsCollectionRow => SectionType == CollectionRows.SectionType;
+
+    /// <summary>TvHomeSectionsEditor.kt: "3 items", or "3 collections" for a row of collections.</summary>
+    public string CountText => IsCollectionRow
+        ? Cards.Count == 1 ? "1 collection" : $"{Cards.Count} collections"
+        : Cards.Count == 1 ? "1 item" : $"{Cards.Count} items";
 
     /// <summary>TvHomeScreen.kt: only Home's For You row has the header shortcut to the For You tab.</summary>
     public bool OffersSeeAll => ExploreSource is { LibraryId: null } &&

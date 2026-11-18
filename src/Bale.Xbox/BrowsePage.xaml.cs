@@ -651,6 +651,16 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             PauseHomeForNavigation();
             ShellPage.Current?.Frame.Navigate(typeof(CatalogGridPage), new CatalogGridEntry(explore.Source, client));
         }
+        else if (item is CardView { Card.Collection: { } collection, Card: var collectionCard } && Session.Client is { } owner)
+        {
+            // TvMainShell.openHomeCollection: on Home a server collection opens in its library and a personal one
+            // on its own; TvLibraryDetailScreen opens both as its Collections tab does, in the page's scope.
+            PauseHomeForNavigation();
+            var source = _libraryId is { } libraryId
+                ? LibraryCatalogSource.Collection(libraryId, _libraryMediaScope, collection.ToLibraryCollection(collectionCard.Title, collectionCard.ImageUrl), owner.LibraryBrowse)
+                : LibraryCatalogSource.Collection(collection.LibraryId ?? string.Empty, null, collection.ToLibraryCollection(collectionCard.Title, collectionCard.ImageUrl), owner.LibraryBrowse);
+            ShellPage.Current?.Frame.Navigate(typeof(CatalogGridPage), new CatalogGridEntry(source, owner));
+        }
         else if (item is CardView { Card: var card })
         {
             PauseHomeForNavigation();
@@ -799,7 +809,8 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             // Details too: the marquee's cast line, and the page a press opens (an episode opens its series).
             if (row.Cards[i] is not CardView neighbour) continue;
             var card = neighbour.Card;
-            detail?.Preload(card.ContentId);
+            // A collection card's id names no title (TvSkylineSectionFeed.kt fetchDetail); only its backdrop warms.
+            if (!card.IsCollection) detail?.Preload(card.ContentId);
             if (card.Type == "episode" && card.SeriesId is { } series)
             {
                 detail?.Preload(series);
@@ -930,7 +941,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     /// <summary>The cast line arrives with the title's detail, which the card's neighbours already preloaded.</summary>
     private async Task ShowDetailLineAsync(CardView view)
     {
-        if (Session.Client is not { } client)
+        if (Session.Client is not { } client || view.Card.IsCollection)
         {
             return;
         }

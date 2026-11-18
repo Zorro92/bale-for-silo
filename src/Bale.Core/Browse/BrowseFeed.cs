@@ -3,6 +3,7 @@ using Bale.Core.Api;
 using Bale.Core.Api.Api.V2.Catalog;
 using Bale.Core.Api.Api.V2.Catalog.People;
 using Bale.Core.Api.Models;
+using Microsoft.Kiota.Abstractions;
 
 namespace Bale.Core.Browse;
 
@@ -25,6 +26,9 @@ public sealed partial class BrowseFeed
         _server = server;
     }
 
+    /// <summary>The viewer's profile: its own personal collections get no "by Name" line.</summary>
+    public Func<string?> ActiveProfileId { get; init; } = () => null;
+
     /// <summary>Home's rows.</summary>
     public async Task<IReadOnlyList<MediaRow>> LoadHomeAsync(ArtworkWidths widths, CancellationToken cancellationToken = default)
     {
@@ -38,7 +42,80 @@ public sealed partial class BrowseFeed
             config.QueryParameters.ItemLimit = itemLimit;
         }, cancellationToken).ConfigureAwait(false);
 
-        return ToRows(response?.Sections);
+        var sections = response?.Sections ?? [];
+        var context = await CollectionContextAsync(sections, home: true, cancellationToken).ConfigureAwait(false);
+        return ToRows(sections, context: context);
+    }
+
+    /// <summary>What rows of collections need beyond their cards: the libraries Home may show, and makers' names.</summary>
+    private sealed record CollectionContext(IReadOnlySet<string>? ShownLibraryIds, CollectionOwners Owners);
+
+    private async Task<CollectionContext?> CollectionContextAsync(IReadOnlyList<Section> sections, bool home, CancellationToken cancellationToken)
+    {
+        var rows = sections.Where(CollectionRows.IsCollectionRow).ToList();
+        if (rows.Count == 0) return null;
+        var activeProfile = ActiveProfileId();
+        // TvMainShell.kt: Home shows a server collection only once the libraries TV shows are known.
+        var libraries = home && rows.SelectMany(CollectionRows.OpenableCards).Any(card => card.Source == SectionCollectionCard_source.Library)
+            ? ShownLibraryIdsAsync(cancellationToken) : Task.FromResult<IReadOnlySet<string>?>(null);
+        // rememberTvCollectionOwners reads the account's cached profile list; Bale keeps none, so it reads the
+        // list only when a row holds another profile's collection.
+        var owners = CollectionRows.NeedsOwners(rows, activeProfile)
+            ? OwnersAsync(activeProfile, cancellationToken) : Task.FromResult(new CollectionOwners(activeProfile, new Dictionary<string, string>()));
+        await Task.WhenAll(libraries, owners).ConfigureAwait(false);
+        return new CollectionContext(await libraries.ConfigureAwait(false), await owners.ConfigureAwait(false));
+    }
+
+    private async Task<IReadOnlySet<string>?> ShownLibraryIdsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await _api.Api.V2.User.Libraries.GetAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+            // TvMediaTypeFilters.kt UserLibrary.visibleOnTv: never an ebook library.
+            return (response?.Items ?? []).Where(library => !string.IsNullOrWhiteSpace(library.Id) && IsVisibleTvType(library.Type, showAudiobooks: true))
+                .Select(library => library.Id!).ToHashSet(StringComparer.Ordinal);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (ApiException ex) when (ex.ResponseStatusCode == 401)
+        {
+            throw;
+        }
+        catch
+        {
+            // TvHomeSections.withTvShownCollections: unknown libraries hold server collections back.
+            return null;
+        }
+    }
+
+    private async Task<CollectionOwners> OwnersAsync(string? activeProfile, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await _api.Api.V2.Profiles.GetAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+            var names = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var profile in response?.Items ?? [])
+            {
+                if (!string.IsNullOrWhiteSpace(profile.Id) && !string.IsNullOrWhiteSpace(profile.Name)) names[profile.Id] = profile.Name;
+            }
+
+            return new CollectionOwners(activeProfile, names);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (ApiException ex) when (ex.ResponseStatusCode == 401)
+        {
+            throw;
+        }
+        catch
+        {
+            // A maker this device has no name for simply gets no byline.
+            return new CollectionOwners(activeProfile, new Dictionary<string, string>());
+        }
     }
 
     /// <summary>HomeSectionsV2Api.kt sends only the observed progress stamp or the Next Up series ID.</summary>
@@ -59,8 +136,12 @@ public sealed partial class BrowseFeed
     }
 
     /// <summary>A library's Browse landing: its server-defined rows.</summary>
-    public async Task<IReadOnlyList<MediaRow>> LoadLibraryAsync(string libraryId, ArtworkWidths widths, CancellationToken cancellationToken = default) =>
-        ToRows(await LibrarySectionsAsync(libraryId, widths, cancellationToken).ConfigureAwait(false), libraryId);
+    public async Task<IReadOnlyList<MediaRow>> LoadLibraryAsync(string libraryId, ArtworkWidths widths, CancellationToken cancellationToken = default)
+    {
+        var sections = await LibrarySectionsAsync(libraryId, widths, cancellationToken).ConfigureAwait(false) ?? [];
+        var context = await CollectionContextAsync(sections, home: false, cancellationToken).ConfigureAwait(false);
+        return ToRows(sections, libraryId, context);
+    }
 
     private async Task<List<Section>?> LibrarySectionsAsync(string libraryId, ArtworkWidths widths, CancellationToken cancellationToken)
     {
@@ -313,11 +394,20 @@ public sealed partial class BrowseFeed
         return LibraryTabs.From(response?.Items ?? []);
     }
 
-    private IReadOnlyList<MediaRow> ToRows(IEnumerable<Section>? sections, string? libraryId = null) =>
+    private IReadOnlyList<MediaRow> ToRows(IEnumerable<Section>? sections, string? libraryId = null, CollectionContext? context = null) =>
         (sections ?? [])
-            .Where(section => section.Items is { Count: > 0 })
-            .Select(section => ToRow(section, libraryId))
+            .Select(section => CollectionRows.IsCollectionRow(section) ? ToCollectionRow(section, context, home: libraryId is null, showCounts: true)
+                : section.Items is { Count: > 0 } ? ToRow(section, libraryId) : null)
+            .OfType<MediaRow>()
             .ToList();
+
+    /// <summary>A row of collections, or null when it has no card to show (a row with none is left out).</summary>
+    private MediaRow? ToCollectionRow(Section section, CollectionContext? context, bool home, bool showCounts)
+    {
+        var cards = CollectionRows.OpenableCards(section);
+        if (home) cards = CollectionRows.ShownOnHome(cards, context?.ShownLibraryIds);
+        return cards.Count == 0 ? null : CollectionRows.ToRow(section, cards, Resolve, showCounts, context?.Owners ?? CollectionOwners.None);
+    }
 
     internal MediaRow ToRow(Section section, string? libraryId = null)
     {

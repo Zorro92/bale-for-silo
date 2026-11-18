@@ -30,7 +30,7 @@ public sealed partial class HomeSectionEditorRow : UserControl
         SectionId = row.Id;
         _visible = !layout.HiddenSectionIds.Contains(row.Id);
         ShownTitle.Text = HiddenTitle.Text = row.Title;
-        ShownCount.Text = HiddenCount.Text = row.Cards.Count == 1 ? "1 item" : $"{row.Cards.Count} items";
+        ShownCount.Text = HiddenCount.Text = row.CountText;
         ShownCaption.Visibility = _visible ? Visibility.Visible : Visibility.Collapsed;
         HiddenCaption.Visibility = _visible ? Visibility.Collapsed : Visibility.Visible;
         MoveUpButton.Visibility = MoveDownButton.Visibility = editing ? Visibility.Visible : Visibility.Collapsed;

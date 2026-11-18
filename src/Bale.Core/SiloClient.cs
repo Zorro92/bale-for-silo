@@ -37,7 +37,7 @@ public sealed class SiloClient : IDisposable
         _onSessionExpired = onSessionExpired;
         _connection = new SiloConnection(server, identity, CurrentCredentialsAsync, transport, RefreshRejectedCredentialsAsync);
         DeviceLogin = new DeviceLoginFlow(_connection.Api, time);
-        Browse = new BrowseFeed(_connection.Api, server);
+        Browse = new BrowseFeed(_connection.Api, server) { ActiveProfileId = () => ProfileId };
         LibraryBrowse = new LibraryBrowseFeed(_connection.Api, Browse);
         Detail = new DetailFeed(_connection.Api, Browse);
         People = new People.PersonFeed(_connection.Api, Browse);

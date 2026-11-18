@@ -23,6 +23,10 @@
           <Grid CornerRadius="{StaticResource SkylineCardRadius}" Background="{StaticResource SkylineCardPlaceholder}">
             <TextBlock Text="{x:Bind Title, Mode=OneWay}" Visibility="{x:Bind FallbackVisibility, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Center"
                        FontSize="{StaticResource SkylineCardSubtitleSize}" VerticalAlignment="Center" Margin="8" Foreground="{StaticResource SkylineSecondary}" />
+            <!-- TvCollectionCard.kt: Icons.Filled.VideoLibrary at white 80% on a poster-less collection. -->
+            <Viewbox Style="{StaticResource SkylineCollectionFallbackStyle}" Visibility="{x:Bind CollectionFallbackVisibility, Mode=OneWay}">
+              <Path Style="{StaticResource SkylineCollectionFallbackGlyphStyle}" Data="M4,6 H2 V20 C2,21.1 2.9,22 4,22 H18 V20 H4 Z M20,2 H8 C6.9,2 6,2.9 6,4 V16 C6,17.1 6.9,18 8,18 H20 C21.1,18 22,17.1 22,16 V4 C22,2.9 21.1,2 20,2 Z M12,14.5 V5.5 L18,10 Z" />
+            </Viewbox>
             <Image Source="{x:Bind Image, Mode=OneWay}" Stretch="UniformToFill" />
             <!-- CardOverlays: format badges, top-left and bottom-left. -->
             <ItemsControl ItemsSource="{x:Bind CornerTop, Mode=OneWay}" ItemTemplate="{StaticResource BadgeTemplate}" Margin="{x:Bind CornerInset, Mode=OneWay}"
