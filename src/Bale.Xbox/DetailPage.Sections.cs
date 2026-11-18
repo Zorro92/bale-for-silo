@@ -159,10 +159,9 @@ public sealed partial class DetailPage
             stops.Add((SynopsisButton, () => SynopsisButton.Focus(FocusState.Keyboard)));
         }
 
-        // TvItemDetailScreen.kt / TvPlaybackSelectorRow.kt's selectorFocus: Up from season tabs
-        // enters Edition when shown, otherwise Version. Ordinary synopsis entry still starts on Play.
-        stops.Add((Actions, () => FocusAction(direction == FocusNavigationDirection.Up && IsWithin(source, Seasons)
-            ? PlaybackSelectorEntry : PlayButton, FocusState.Keyboard)));
+        // TVDetailActions.swift (Apple 067e6cee; owner, 2026-11-18, not Android's selectorFocus): entering the hero
+        // row from a season pill, a rail or the synopsis lands on the action last focused there, else Play.
+        stops.Add((Actions, () => FocusAction(HeroEntry(), FocusState.Keyboard)));
         if (EpisodesSection.Visibility == Visibility.Visible)
         {
             if (Seasons.Items.Count > 0)
@@ -219,7 +218,8 @@ public sealed partial class DetailPage
         int? CastIndex,
         string? SimilarId,
         PlaybackReturnFocus? PlaybackFocus,
-        bool OpenedFromRelated);
+        bool OpenedFromRelated,
+        DetailHeroAction? HeroAction);
 
     private void NavigateWithReturn(Type page, object parameter)
     {
@@ -231,7 +231,8 @@ public sealed partial class DetailPage
         var saved = new DetailReturnEntry(detail, _tabs.Select(tab => tab.Season).OfType<SeasonChoice>().ToList(),
             _seriesOverview, _selectedTab?.Season?.Number, _shownSeason, Episodes.Items.OfType<EpisodeView>().Select(view => view.Episode).ToList(),
             _seasonsLoading || _episodesLoading, _playEpisode?.ContentId, _playbackSelections,
-            _similarCards, _similarLoaded, _returnCastIndex, _returnSimilarId, _returnPlaybackFocus, _openedFromRelated);
+            _similarCards, _similarLoaded, _returnCastIndex, _returnSimilarId, _returnPlaybackFocus, _openedFromRelated,
+            _heroAction);
         var frame = Frame;
         if (frame.Navigate(page, parameter) && frame.BackStack.Count > 0)
         {
@@ -248,6 +249,7 @@ public sealed partial class DetailPage
         _openedFromRelated = saved.OpenedFromRelated;
         _returnPlaybackFocus = saved.PlaybackFocus;
         _playbackSelections = saved.PlaybackSelections;
+        _heroAction = saved.HeroAction;
         ShowHero(saved.Detail);
         ShowCast(saved.Detail);
         ShowSupportingSections(saved.Detail);

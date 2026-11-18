@@ -55,6 +55,9 @@ unchanged. Gap analysis and phases: docs/apple-playback-parity.md.
 - **Home layout** matches the libraries: no 28-point foreground drop (official `TvHomeScreen.kt`
   `contentVerticalOffset = 28.dp`), so the title of the row after next stays on screen, as on Movies
   (owner, 2026-11-17; reported upstream).
+- **Detail hero row memory** follows Apple TV, not Android's selectorFocus (owner, 2026-11-18; Apple
+  `067e6cee`, `TVDetailActions.swift`): entering the action row lands on the action last focused there,
+  else Play; Play stands in for one that can't take focus, Watchlist for Play; reset per page (`DetailHeroFocus`).
 
 **Unit mapping.** Xbox lays out at 960×540 effective pixels, the same canvas as Android TV's dp, so
 Android geometry maps 1:1 (`88.dp` → `88`). Android text is `sp × 0.86` (the TV app's

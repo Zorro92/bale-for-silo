@@ -134,8 +134,9 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   (server `4ac66bd6`; checked, already matches: Bale never reads file names; numbered labels pass
   through), ~~version order after the server sort~~ (server `85d1c166`; checked, already matches
   `select_version`), ~~Home rows for a quality-capped profile~~ (server `0b579aa6`; server-side
-  only). Left as they are: hero action memory on Up (Apple `067e6cee`; Bale follows Android's
-  selectorFocus: Up from the season tabs enters Edition/Version, else Play), series year ranges (Apple
+  only). ~~hero action memory on Up~~ (Apple `067e6cee`; done, owner's choice over Android's
+  selectorFocus: entering the hero row lands on the last focused action, else Play, Watchlist while Play
+  can't take focus; reset per page). Left as they are: series year ranges (Apple
   `9718f17b`; Android shows one year, as Bale), subtitle carried across a Version change (Apple
   `417508d9`; Android's onVersionSelected still clears both picks, as Bale). ~~deleted active profile on Home~~ (Apple `b5c73e3a`; fixed: the profile list names no
   profile but keeps the PIN proof; Home's 404 not_found re-reads it and, only when the active profile is

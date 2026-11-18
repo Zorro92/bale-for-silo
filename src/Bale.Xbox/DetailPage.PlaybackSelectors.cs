@@ -24,10 +24,40 @@ public sealed partial class DetailPage
             : detail
         : null;
 
-    // TvPlaybackSelectorRow.kt attaches the shared selectorFocus requester to Edition when shown; Version is
-    // disabled without a choice (TVPlaybackSelectorRow.swift), so the entry then falls to Audio.
-    private Button PlaybackSelectorEntry => EditionSelector.Visibility == Visibility.Visible ? EditionSelector
-        : VersionSelector.IsEnabled ? VersionSelector : AudioSelector;
+    // The hero row's memory for this page (TVDetailActions.swift lastFocusedAction, Apple 067e6cee): null is Play.
+    private DetailHeroAction? _heroAction;
+
+    private Button HeroButton(DetailHeroAction action) => action switch
+    {
+        DetailHeroAction.StartOver => StartOverButton,
+        DetailHeroAction.Edition => EditionSelector,
+        DetailHeroAction.Version => VersionSelector,
+        DetailHeroAction.Audio => AudioSelector,
+        DetailHeroAction.Subtitles => SubtitleSelector,
+        DetailHeroAction.Watchlist => WatchlistButton,
+        DetailHeroAction.More => MoreButton,
+        _ => PlayButton,
+    };
+
+    private static readonly DetailHeroAction[] HeroActions =
+    [
+        DetailHeroAction.Play, DetailHeroAction.StartOver, DetailHeroAction.Edition, DetailHeroAction.Version,
+        DetailHeroAction.Audio, DetailHeroAction.Subtitles, DetailHeroAction.Watchlist, DetailHeroAction.More,
+    ];
+
+    private DetailHeroAction? HeroActionOf(object? source)
+    {
+        foreach (var action in HeroActions)
+        {
+            if (ReferenceEquals(source, HeroButton(action))) return action;
+        }
+
+        return null;
+    }
+
+    /// <summary>Where entering the hero row lands: the remembered action when it can take focus (DetailHeroFocus).</summary>
+    private Button HeroEntry() => HeroButton(DetailHeroFocus.Entry(_heroAction,
+        action => HeroButton(action) is { Visibility: Visibility.Visible, IsEnabled: true }));
 
     private void OnEditionSelectorClick(object sender, RoutedEventArgs e) => OpenSelectorMenu(PlaybackSelectorKind.Edition, EditionSelector, "Edition");
     private void OnVersionSelectorClick(object sender, RoutedEventArgs e) => OpenSelectorMenu(PlaybackSelectorKind.Version, VersionSelector, "Version");

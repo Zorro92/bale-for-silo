@@ -139,13 +139,14 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         SelectorMenu.Chosen += OnPlaybackOptionChosen;
         SelectorMenu.Dismissed += CloseSelectorMenu;
 
-        // Normal action row entry lands on Play. Season Up and menu dismiss supply an explicit
-        // entry target without fighting Rail's focus boundary (TvItemDetailScreen.kt's selectorFocus).
+        // Row entry lands on the remembered hero action, else Play (Apple 067e6cee). Menu dismiss and player
+        // return supply an explicit entry target without fighting Rail's focus boundary.
         _actionsRail = Rail.Attach(Actions);
         _actionsRail.Pin = false;
-        _actionsRail.EntryItem = () => _actionEntryTarget ?? PlayButton;
-        Actions.GotFocus += (_, _) =>
+        _actionsRail.EntryItem = () => _actionEntryTarget ?? HeroEntry();
+        Actions.GotFocus += (_, args) =>
         {
+            if (HeroActionOf(args.OriginalSource) is { } action) _heroAction = action;
             ScrollTo(0);
             if (_detail is { } detail && ShowingSeriesOverview)
             {
@@ -211,6 +212,8 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
             return;
         }
 
+        // TVDetailActions.swift resets its memory to Play for each page (focusResetKey); a return keeps it.
+        _heroAction = null;
         _routeEntry = e.Parameter as SeriesDetailEntry;
         _openedFromRelated = e.Parameter is RelatedDetailEntry;
         _contentId = _routeEntry?.SeriesId ?? (e.Parameter as RelatedDetailEntry)?.ContentId ?? e.Parameter as string ?? string.Empty;
