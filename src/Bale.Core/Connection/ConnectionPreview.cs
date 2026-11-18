@@ -16,7 +16,16 @@ public sealed class ConnectionPreview
         Servers.AdoptSignIn("preview-user-3", "robin");
         Servers.MarkNeedsSignIn(Servers.ActiveAccount!.Id);
         Servers.ActivateAccount(Servers.Active.Id, Servers.AccountsOn(Servers.Active.Id)[0].Id);
+        // alex's last known count is out of date; Change Account's refresh corrects it and fills in sam's.
+        Servers.UpdateAccount(Servers.Snapshot.Accounts.Single(a => a.Username == "alex").Id, a => a with { ProfileCount = 1 });
     }
+
+    /// <summary>The fixture's profile counts, read after a short pause as a server would answer; no network.</summary>
+    public AccountProfileCountSource ProfileCounts { get; } = async (_, account, cancellationToken) =>
+    {
+        await Task.Delay(TimeSpan.FromMilliseconds(800), cancellationToken).ConfigureAwait(false);
+        return account.Username switch { "alex" => 2, "sam" => 3, _ => null };
+    };
 
     private sealed class MemoryStorage : ISavedServerStorage
     {

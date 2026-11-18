@@ -1,3 +1,4 @@
+using Bale.Core;
 using Bale.Core.Connection;
 using Bale.Xbox.Services;
 using Windows.UI.Xaml;
@@ -15,7 +16,8 @@ namespace Bale.Xbox;
 /// shown server's accounts beside it. Choosing another account makes it the open one and opens its picker, which waits
 /// for a choice; one that must sign in again opens sign-in with its username; "Add an account" signs in on that server.
 /// It is the root screen while no account is open but another has a session, and at a launch that asks who's watching
-/// with several accounts saved.
+/// with several accounts saved. While it is open every saved account's profile count is refreshed once in the
+/// background (AccountProfilesRefresher.kt).
 /// </summary>
 public sealed partial class ChangeAccountPage : Page, IBackHandler, IRestoresFocus
 {
@@ -23,6 +25,8 @@ public sealed partial class ChangeAccountPage : Page, IBackHandler, IRestoresFoc
     private static readonly SolidColorBrush Transparent = new(Windows.UI.Colors.Transparent);
     private readonly List<(Button Row, AccountServerGroup Group)> _rail = [];
     private readonly List<Button> _pane = [];
+    private readonly Dictionary<string, (Button Card, TextBlock Detail, string? Badge)> _cards = [];
+    private CancellationTokenSource? _refresh;
     private IReadOnlyList<AccountServerGroup> _groups = [];
     private ConnectionPreview? _preview;
     private string? _shownServerId;
@@ -46,13 +50,65 @@ public sealed partial class ChangeAccountPage : Page, IBackHandler, IRestoresFoc
         _preview = navigation?.Preview; // Back navigation restores the same parameter.
         ErrorText.Visibility = Visibility.Collapsed;
         Populate(args.NavigationMode == NavigationMode.Back ? null : navigation?.AddAccountOn);
+        // Once per opening, as the ViewModel's init: coming Back to this screen keeps the counts already read.
+        if (args.NavigationMode != NavigationMode.Back) RefreshProfileCounts();
     }
 
     protected override void OnNavigatedFrom(NavigationEventArgs args)
     {
         _active = false;
+        _refresh?.Cancel();
+        _refresh = null;
         base.OnNavigatedFrom(args);
     }
+
+    /// <summary>
+    /// TvChangeAccountViewModel.kt init: the cards show each account's last known count at once, then every saved
+    /// account's profile list is read once in the background, each with its own saved session. An unreachable server
+    /// or a refused session keeps its count; nothing signs out, marks "Sign in again" or prompts. Previews use the
+    /// fixture's counts, with no network.
+    /// </summary>
+    private async void RefreshProfileCounts()
+    {
+        _refresh?.Cancel();
+        var cancel = _refresh = new CancellationTokenSource();
+        try
+        {
+            var servers = Servers;
+            AccountProfileCountSource source;
+            if (_preview is not null) source = _preview.ProfileCounts;
+            else
+            {
+                var identity = DeviceIdentity.Current();
+                source = AccountProfilesRefresher.FromSavedSessions(servers, VaultAccountCredentials.Instance, url => new SiloClient(url, identity));
+            }
+            var changed = await Task.Run(() => new AccountProfilesRefresher(servers, source).RefreshAllAsync(cancel.Token));
+            if (!_active || cancel.IsCancellationRequested || !ReferenceEquals(servers, Servers)) return;
+            Log.Info($"Account profile counts refreshed changed={changed.Count}");
+            if (changed.Count > 0) ShowCounts();
+        }
+        catch (Exception ex)
+        {
+            Log.Info($"Account profile refresh failed type={ex.GetType().Name}");
+        }
+    }
+
+    /// <summary>New counts land on the shown cards in place, so focus and scrolling stay where they are.</summary>
+    private void ShowCounts()
+    {
+        _groups = Servers.Groups;
+        foreach (var account in _groups.SelectMany(g => g.Accounts))
+        {
+            if (!_cards.TryGetValue(account.Id, out var card)) continue;
+            var profiles = ProfilesLine(account);
+            card.Detail.Text = profiles ?? string.Empty;
+            card.Detail.Visibility = profiles is null ? Visibility.Collapsed : Visibility.Visible;
+            AutomationProperties.SetName(card.Card, string.Join(", ", new[] { account.DisplayName, profiles, card.Badge }.Where(part => part is not null)));
+        }
+    }
+
+    private static string? ProfilesLine(SavedAccount account) =>
+        account.ProfileCount is int count and > 0 ? $"{count} {(count == 1 ? "profile" : "profiles")}" : null;
 
     private void Populate(string? addAccountOn)
     {
@@ -81,19 +137,21 @@ public sealed partial class ChangeAccountPage : Page, IBackHandler, IRestoresFoc
         foreach (var (row, group) in _rail) row.Background = group.Server.Id == serverId ? ShownFill : Transparent;
         PaneRows.Children.Clear();
         _pane.Clear();
+        _cards.Clear();
         if (_groups.FirstOrDefault(g => g.Server.Id == serverId) is not { } shown) return;
         var openId = Servers.ActiveAccount?.Id;
         foreach (var account in shown.Accounts)
         {
             var current = account.Id == openId;
             var badge = account.NeedsSignIn ? "Sign in again" : current ? "Current" : null;
-            var profiles = account.ProfileCount is int count and > 0 ? $"{count} {(count == 1 ? "profile" : "profiles")}" : null;
-            var card = Card(account.DisplayName, profiles, account.DisplayName.Trim()[..1].ToUpperInvariant(), badge, account.NeedsSignIn);
+            var profiles = ProfilesLine(account);
+            var card = Card(account.DisplayName, profiles, account.DisplayName.Trim()[..1].ToUpperInvariant(), badge, account.NeedsSignIn, out var detail);
             AutomationProperties.SetName(card, string.Join(", ", new[] { account.DisplayName, profiles, badge }.Where(part => part is not null)));
+            _cards[account.Id] = (card, detail, badge);
             card.Click += (_, _) => OnAccountChosen(account);
             _pane.Add(card);
         }
-        var add = Card("Add an account", $"Sign in on {shown.Server.DisplayName}", "+", null, false);
+        var add = Card("Add an account", $"Sign in on {shown.Server.DisplayName}", "+", null, false, out _);
         AutomationProperties.SetName(add, "Add an account");
         add.Click += (_, _) => OnAddAccount(shown.Server);
         _pane.Add(add);
@@ -257,7 +315,7 @@ public sealed partial class ChangeAccountPage : Page, IBackHandler, IRestoresFoc
         return true;
     }
 
-    private static Button Card(string title, string? detail, string initial, string? badge, bool warning)
+    private static Button Card(string title, string? detail, string initial, string? badge, bool warning, out TextBlock detailText)
     {
         var grid = new Grid { ColumnSpacing = 11 };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -268,7 +326,13 @@ public sealed partial class ChangeAccountPage : Page, IBackHandler, IRestoresFoc
         grid.Children.Add(tile);
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         text.Children.Add(new TextBlock { Text = title, Style = (Style)Application.Current.Resources["SkylineChangeAccountNameStyle"] });
-        if (detail is not null) text.Children.Add(new TextBlock { Text = detail, Style = (Style)Application.Current.Resources["SkylineChangeAccountDetailStyle"] });
+        // The second line is always there, collapsed without a count, so a refreshed count can fill it in place.
+        detailText = new TextBlock
+        {
+            Text = detail ?? string.Empty, Style = (Style)Application.Current.Resources["SkylineChangeAccountDetailStyle"],
+            Visibility = detail is null ? Visibility.Collapsed : Visibility.Visible,
+        };
+        text.Children.Add(detailText);
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
         var card = new Button { Style = (Style)Application.Current.Resources["SkylineChangeAccountCardStyle"], Content = grid };

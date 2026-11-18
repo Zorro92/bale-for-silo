@@ -249,6 +249,31 @@ public sealed class SavedServerRegistry
         }
     }
 
+    /// <summary>Updates one saved account, open or not. False when it is no longer saved.</summary>
+    public bool UpdateAccount(string accountId, Func<SavedAccount, SavedAccount> update)
+    {
+        lock (_gate)
+        {
+            if (!_state.Accounts.Any(a => a.Id == accountId)) return false;
+            Commit(_state with { Accounts = [.. _state.Accounts.Select(a => a.Id == accountId ? Pin(a, update(a)) : a)] });
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// An account's profile count as just read (AccountProfilesRefresher.kt setCachedProfiles), for Change Account and
+    /// Settings › Accounts offline. True when it changed; nothing is written when it didn't or the account is gone.
+    /// </summary>
+    public bool RecordProfileCount(string accountId, int count)
+    {
+        lock (_gate)
+        {
+            if (_state.Accounts.FirstOrDefault(a => a.Id == accountId) is not { } account || account.ProfileCount == count) return false;
+            Commit(_state with { Accounts = [.. _state.Accounts.Select(a => a.Id == accountId ? a with { ProfileCount = count } : a)] });
+            return true;
+        }
+    }
+
     /// <summary>
     /// A sign-in finished on the active server. An account that is already saved there (same server user id, else
     /// the same username) is refreshed instead of duplicated; the open account being signed in again is refreshed
