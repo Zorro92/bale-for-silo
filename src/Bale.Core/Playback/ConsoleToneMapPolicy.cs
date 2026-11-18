@@ -19,6 +19,10 @@ public static class ConsoleToneMapPolicy
     public static bool WrapperSupported(string version) =>
         BaleCoreNative.Call("tone_map.wrapper_supported", version, BaleCoreJson.Default.String, BaleCoreJson.Default.Boolean);
 
+    /// <summary>bale.39 adds the SDR downscale route (BT.709 SDR through bale_gpu's scale-only stage).</summary>
+    public static bool SdrDownscaleWrapperSupported(string version) =>
+        BaleCoreNative.Call("tone_map.sdr_downscale_wrapper_supported", version, BaleCoreJson.Default.String, BaleCoreJson.Default.Boolean);
+
     /// <summary>bale.38 adds the display-sized tone-map output keys.</summary>
     public static bool DownscaleWrapperSupported(string version) =>
         BaleCoreNative.Call("tone_map.downscale_wrapper_supported", version, BaleCoreJson.Default.String, BaleCoreJson.Default.Boolean);

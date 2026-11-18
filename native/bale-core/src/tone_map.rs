@@ -35,6 +35,15 @@ pub fn downscale_wrapper_supported(version: &str) -> bool {
     })
 }
 
+/// bale.39 adds the SDR downscale route (BT.709 SDR through bale_gpu's scale-only stage).
+pub fn sdr_downscale_wrapper_supported(version: &str) -> bool {
+    version.strip_prefix("2.1.0-bale.").is_some_and(|revision| {
+        !revision.is_empty()
+            && revision.bytes().all(|b| b.is_ascii_digit())
+            && revision.parse::<i32>().is_ok_and(|revision| revision >= 39)
+    })
+}
+
 /// Whether the tone-map stage should hand Media Foundation display-sized output: the video is larger
 /// than the current display mode in either dimension. On Xbox, MF's video processor leaks driver
 /// state per open when it scales 4K SDR down itself (2026-11-17: dies at ~23 opens; 40/40 when

@@ -12,19 +12,22 @@ internal static class ConsoleToneMapRuntime
 
     // bale_tonemap_output_formats bit 4 (BALE_TONEMAP_OUTPUT_DOWNSCALE): area downscale to a smaller output.
     private const uint DownscaleBit = 4;
-    private static readonly Lazy<bool> Downscale = new(CheckDownscale);
-    internal static bool SupportsDownscale => IsAvailable && Downscale.Value;
+    // INPUT_NV12 (8) | SDR709 (16): the SDR scale-only stage, including 8-bit sources.
+    private const uint SdrDownscaleBits = DownscaleBit | 8 | 16;
+    private static readonly Lazy<uint> Formats = new(ReadFormats);
+    internal static bool SupportsDownscale => IsAvailable && (Formats.Value & DownscaleBit) != 0;
+    internal static bool SupportsSdrDownscale => IsAvailable && (Formats.Value & SdrDownscaleBits) == SdrDownscaleBits;
 
-    private static unsafe bool CheckDownscale()
+    private static unsafe uint ReadFormats()
     {
         nint module = 0;
         try
         {
             if (!NativeLibrary.TryLoad("bale_gpu.dll", out module)
-                || !NativeLibrary.TryGetExport(module, "bale_tonemap_output_formats", out var export)) return false;
-            return (((delegate* unmanaged<uint>)export)() & DownscaleBit) != 0;
+                || !NativeLibrary.TryGetExport(module, "bale_tonemap_output_formats", out var export)) return 0;
+            return ((delegate* unmanaged<uint>)export)();
         }
-        catch (Exception) { return false; }
+        catch (Exception) { return 0; }
         finally { if (module != 0) NativeLibrary.Free(module); }
     }
 

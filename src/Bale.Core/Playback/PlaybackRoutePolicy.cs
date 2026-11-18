@@ -5,10 +5,12 @@ namespace Bale.Core.Playback;
 
 public sealed record PlaybackRouteDecision(bool UseFfmpeg, bool SoftwareVideo, string? VideoCodec, string? AudioCodec, long? AudioOrdinal,
     long? VideoWidth, long? VideoHeight, bool DolbyVisionBaseLayer = false, bool ConsoleToneMap = false,
-    bool DolbyVision7BaseLayer = false)
+    bool DolbyVision7BaseLayer = false, bool ConsoleDownscale = false)
 {
     public bool SoftwareAudio => UseFfmpeg && SoftwareDecodePolicy.AudioCodecs.Contains(AudioCodec!);
-    public bool RequiresD3D11 => ConsoleToneMap || DolbyVision7BaseLayer;
+    public bool RequiresD3D11 => ConsoleToneMap || DolbyVision7BaseLayer || ConsoleDownscale;
+    /// <summary>The console's bale_gpu stage runs: the HDR tone map, or the SDR scale-only downscale.</summary>
+    public bool ConsoleStage => ConsoleToneMap || ConsoleDownscale;
 }
 
 /// <summary>
@@ -21,7 +23,8 @@ public static class PlaybackRoutePolicy
     /// <param name="hlsThroughFfmpeg">HLS plays through the Rust reader's forward-only stream and FFmpeg.</param>
     public static PlaybackRouteDecision Decide(PlaybackPlan plan, bool isHls, bool ffmpegEnabled = true, bool forceFfmpeg = false,
         bool sdrOutput = false, IReadOnlyList<FileVersion>? versions = null, bool hlsThroughFfmpeg = false,
-        IReadOnlyList<VideoDecodeCapability>? hardwareDecode = null) =>
+        IReadOnlyList<VideoDecodeCapability>? hardwareDecode = null, (int Width, int Height)? display = null,
+        bool sdrDownscale = false) =>
         BaleCoreNative.Call("route.decide", writer =>
         {
             writer.Server("plan", plan);
@@ -34,6 +37,10 @@ public static class PlaybackRoutePolicy
             // The console's hardware entries: a hardware codec they cannot take decodes in FFmpeg.
             writer.Records("hardware_decode", (hardwareDecode ?? []).Where(decode => decode.Hardware).ToArray(),
                 BaleCoreJson.Default.VideoDecodeCapability);
+            // SDR larger than the display takes bale_gpu's scale-only stage (wrapper bale.39+).
+            writer.WriteNumber("display_width", display?.Width ?? 0);
+            writer.WriteNumber("display_height", display?.Height ?? 0);
+            writer.WriteBoolean("sdr_downscale", sdrDownscale);
         }, BaleCoreJson.Default.PlaybackRouteDecision);
 
     /// <summary>MKV and WebM (Matroska-based); MP4 stays on Windows' own source.</summary>

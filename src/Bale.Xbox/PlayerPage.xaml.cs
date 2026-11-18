@@ -61,6 +61,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public string? SessionId { get; set; }
         public bool Attached { get; set; }
         public bool Replanned { get; set; }
+        /// <summary>The SDR downscale stage failed once: later mounts of this attempt use the system decoder.</summary>
+        public bool SdrDownscaleDeclined { get; set; }
         public double Position { get; set; }
         public Mount? Media { get; set; }
         public bool StreamAdapterLogged { get; set; }
@@ -396,6 +398,25 @@ public sealed partial class PlayerPage : Page, IBackHandler
         Log.Info($"player: failed hr=0x{unchecked((uint)hresult):X8}");
         var position = SourcePosition(attempt);
         Pause(attempt);
+        if (attempt.Media?.Route.ConsoleDownscale == true && !attempt.SdrDownscaleDeclined && !hdrOutputFailed)
+        {
+            // The SDR scale-only stage is an optimisation, not a new promise: the stage can decline a file
+            // (e.g. unspecified colour tags) and the guard then rejects it. Remount the same plan once on the
+            // system decoder (MF scales it as before) without spending the server replan.
+            attempt.SdrDownscaleDeclined = true;
+            HideTransport();
+            _state = "loading";
+            SetLoading(true);
+            DisposeMount(attempt);
+            DisposeSubtitles(keepFetched: true);
+            await _hdrOutput.RestoreAsync();
+            attempt.Cancellation.Token.ThrowIfCancellationRequested();
+            Log.Info("player: console downscale declined; remounting on the system decoder");
+            var current = PlaybackTimeline.From(attempt.Plan!.Timeline);
+            await MountPlanAsync(attempt, PlaybackProgressive.MountPlayerStart(attempt.Plan,
+                current.PlayerForSource(position) ?? current.PlayerStartSeconds));
+            return;
+        }
         if (attempt.Replanned)
         {
             await ShowErrorAsync(PlaybackMessages.PlaybackFailed);

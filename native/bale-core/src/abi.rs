@@ -291,6 +291,9 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         "tone_map.downscale_wrapper_supported" => with_json(name, input, |v: String| {
             tone_map::downscale_wrapper_supported(&v)
         }),
+        "tone_map.sdr_downscale_wrapper_supported" => with_json(name, input, |v: String| {
+            tone_map::sdr_downscale_wrapper_supported(&v)
+        }),
         "tone_map.downscale_to_display" => with_json(name, input, |a: Downscale| {
             tone_map::downscale_to_display(
                 a.video_width,

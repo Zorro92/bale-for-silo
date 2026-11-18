@@ -365,6 +365,44 @@ public class PlaybackRoutePolicyTests
         Assert.Contains("h264", replan.ClientCapabilities.CodecsVideo);
     }
 
+    private static PlaybackPlan Uhd(string video, string? range = "sdr", int? dvProfile = null)
+    {
+        var plan = Plan("original_http", video, "aac");
+        plan.Source!.Width = 3840;
+        plan.Source.Height = 2160;
+        plan.Source.DynamicRange = range;
+        plan.Source.DolbyVisionProfile = dvProfile;
+        return plan;
+    }
+
+    [Theory]
+    [InlineData("hevc")]
+    [InlineData("vp9")]
+    public void SdrLargerThanTheDisplayTakesTheConsoleDownscale(string video)
+    {
+        var route = PlaybackRoutePolicy.Decide(Uhd(video), false, display: (1920, 1080), sdrDownscale: true);
+        Assert.True(route.UseFfmpeg);
+        Assert.True(route.ConsoleDownscale);
+        Assert.True(route.RequiresD3D11 && route.ConsoleStage);
+        Assert.False(route.ConsoleToneMap || route.SoftwareVideo);
+    }
+
+    [Fact]
+    public void ConsoleDownscaleNeedsSdrALargerVideoAKnownDisplayAndTheCapability()
+    {
+        Assert.False(PlaybackRoutePolicy.Decide(Uhd("hevc"), false, display: (1920, 1080), sdrDownscale: false).ConsoleDownscale);
+        Assert.False(PlaybackRoutePolicy.Decide(Uhd("hevc"), false, display: (3840, 2160), sdrDownscale: true).ConsoleDownscale);
+        Assert.False(PlaybackRoutePolicy.Decide(Uhd("hevc"), false, display: null, sdrDownscale: true).ConsoleDownscale);
+        Assert.False(PlaybackRoutePolicy.Decide(Uhd("hevc", "hdr10"), false, display: (1920, 1080), sdrDownscale: true).ConsoleDownscale);
+        Assert.False(PlaybackRoutePolicy.Decide(Uhd("hevc", "sdr", dvProfile: 5), false, display: (1920, 1080), sdrDownscale: true).ConsoleDownscale);
+        Assert.False(PlaybackRoutePolicy.Decide(Uhd("h264"), false, display: (1920, 1080), sdrDownscale: true).ConsoleDownscale);
+        Assert.False(PlaybackRoutePolicy.Decide(Uhd("hevc"), true, display: (1920, 1080), sdrDownscale: true).ConsoleDownscale);
+        var hd = Uhd("hevc");
+        hd.Source!.Width = 1920;
+        hd.Source.Height = 1080;
+        Assert.False(PlaybackRoutePolicy.Decide(hd, false, display: (1920, 1080), sdrDownscale: true).ConsoleDownscale);
+    }
+
     internal static PlaybackPlan Plan(string delivery, string video, string audio) => new()
     {
         PlanId = "plan", PlanAttemptKey = "attempt-key", Delivery = delivery,

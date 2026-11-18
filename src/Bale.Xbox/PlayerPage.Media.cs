@@ -133,7 +133,9 @@ public sealed partial class PlayerPage
             StartPaused = paused,
             Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled, attempt.ForceFfmpeg,
                 sdrOutput: sdrOutput, versions: attempt.Request.Detail.Versions, hlsThroughFfmpeg: attempt.HlsThroughFfmpeg,
-                hardwareDecode: attempt.HardwareDecode),
+                hardwareDecode: attempt.HardwareDecode, display: DisplayHdrOutput.CurrentRawSize(),
+                sdrDownscale: !attempt.SdrDownscaleDeclined && ConsoleToneMapPolicy.SdrDownscaleWrapperSupported(FfmpegWrapperVersion.Value)
+                    && ConsoleToneMapRuntime.SupportsSdrDownscale),
         };
         if (media.Route.ConsoleToneMap && !media.Route.UseFfmpeg)
             throw new InvalidDataException("An HDR original on SDR requires the FFmpeg tone-map route.");
@@ -278,7 +280,8 @@ public sealed partial class PlayerPage
 #endif
                 Log.Info("player: FFmpeg stream created; before item");
                 media.Item = media.FfmpegSource.CreateMediaPlaybackItem();
-                var guardToneMap = media.Route.ConsoleToneMap;
+                // Both stage routes must deliver the fork's marked SDR output, never an unmapped fallback.
+                var guardToneMap = media.Route.ConsoleStage;
 #if DEBUG_SERVER
                 if (!media.Route.DolbyVision7BaseLayer)
                     guardToneMap = attempt.FfmpegTuning.RequiresToneMapGuard(media.Route);
@@ -446,7 +449,8 @@ public sealed partial class PlayerPage
     {
         var route = media.Route;
         return route.UseFfmpeg
-            ? "ffmpeg " + (route.ConsoleToneMap ? "d3d11va + console tone map" : route.DolbyVision7BaseLayer ? "DV7 base layer"
+            ? "ffmpeg " + (route.ConsoleToneMap ? "d3d11va + console tone map" : route.ConsoleDownscale ? "d3d11va + console downscale"
+                : route.DolbyVision7BaseLayer ? "DV7 base layer"
                 : route.SoftwareVideo ? "software decode" : route.DolbyVisionBaseLayer ? "system decoder, DV8 base layer" : "system decoder passthrough")
             : "Windows reader (direct)";
     }

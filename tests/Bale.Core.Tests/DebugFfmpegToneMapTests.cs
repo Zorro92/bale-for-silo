@@ -173,7 +173,7 @@ public sealed class DebugFfmpegToneMapTests
         else
             Assert.Throws<InvalidDataException>(() => FfmpegSource.Configuration(new(true, false, "hevc", "aac", 0, 1920, 1080), tuning));
         Assert.DoesNotContain("bale_tonemap", FfmpegSource.Configuration(new(true, false, "hevc", "aac", 0, 1920, 1080)).FFmpegOptions.Keys);
-        Assert.Contains("if (route.ConsoleToneMap)", DebugFfmpegDecoderTests.ProductionSource());
+        Assert.Contains("if (route.ConsoleStage)", DebugFfmpegDecoderTests.ProductionSource());
         var source = Read("FfmpegSource.cs.txt");
         Assert.Contains("DebugFfmpegToneMap.Apply(config, tuning, FfmpegWrapperVersion.Value)", source);
         Assert.Contains("FFmpeg tone map override", Read("PlayerPage.Stats.cs.txt"));

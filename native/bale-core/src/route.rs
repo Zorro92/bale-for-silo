@@ -30,6 +30,14 @@ pub struct DecideArgs {
     /// taken as decodable in hardware, as before the software fallback existed.
     #[serde(default)]
     hardware_decode: Vec<crate::models::DecodeClaim>,
+    /// The current display mode's raw size (0 = unknown), for the SDR downscale route.
+    #[serde(default)]
+    display_width: i64,
+    #[serde(default)]
+    display_height: i64,
+    /// The wrapper and bale_gpu take the SDR scale-only stage, and this attempt has not declined it.
+    #[serde(default)]
+    sdr_downscale: bool,
 }
 
 /// `PlaybackRouteDecision`.
@@ -45,6 +53,8 @@ pub struct RouteDecision {
     pub dolby_vision_base_layer: bool,
     pub console_tone_map: bool,
     pub dolby_vision7_base_layer: bool,
+    /// SDR HEVC/VP9 larger than the display: d3d11va + bale_gpu's scale-only stage to display size.
+    pub console_downscale: bool,
 }
 
 pub fn decide(args: DecideArgs) -> RouteDecision {
@@ -165,7 +175,33 @@ pub fn decide(args: DecideArgs) -> RouteDecision {
             || dolby_vision_base_layer
             || args.force_ffmpeg
             || tone_map);
+    // On Xbox, MF's video processor leaks driver state per open when it scales 4K SDR down itself
+    // (2026-11-17: Titanic 4K VP9 SDR died at open 24). Hand it display-sized SDR from bale_gpu's
+    // scale-only stage instead: plain SDR (no HDR, DV or HDR10+) hardware HEVC/VP9 originals only.
+    let sdr_source = matches!(
+        trim_lower(source.and_then(|s| s.dynamic_range.as_deref())).as_deref(),
+        None | Some("" | "sdr")
+    ) && source
+        .and_then(|s| s.dolby_vision_profile)
+        .is_none_or(|p| p <= 0)
+        && source.and_then(|s| s.hdr10_plus) != Some(true);
+    let console_downscale = args.sdr_downscale
+        && ffmpeg
+        && original
+        && !hls
+        && !software_video
+        && !tone_map
+        && !dolby_vision_base_layer
+        && matches!(video, Some("hevc" | "vp9"))
+        && sdr_source
+        && tone_map::downscale_to_display(
+            width.unwrap_or(0),
+            height.unwrap_or(0),
+            args.display_width,
+            args.display_height,
+        );
     RouteDecision {
+        console_downscale,
         use_ffmpeg: ffmpeg,
         software_video: ffmpeg && software_video,
         video_codec: video.map(str::to_owned),

@@ -28,14 +28,16 @@ internal static class FfmpegSource
         // Software video keeps fast seek: dav1d's zero-copy path uploads every frame from the keyframe
         // to the target, and a 4K AV1 seek ran out of GPU memory (0x8007000E) on 0.1.558.
         config.General.FastSeek = route.SoftwareVideo;
-        if (route.ConsoleToneMap && (route.VideoCodec is not ("hevc" or "vp9") || !ConsoleToneMapRuntime.IsAvailable))
+        if (route.ConsoleStage && (route.VideoCodec is not ("hevc" or "vp9") || !ConsoleToneMapRuntime.IsAvailable))
             throw new InvalidDataException("Console tone mapping is unavailable for this source.");
         // FFmpeg's HEVC decoder handles only nuh_layer_id 0 and does not apply the RPU.
         // d3d11va gets that base picture, never an opaque DV7 system-decoder bitstream.
         config.Video.VideoDecoderMode = route.RequiresD3D11 ? VideoDecoderMode.Automatic : route.SoftwareVideo
             ? VideoDecoderMode.ForceFFmpegSoftwareDecoder : VideoDecoderMode.ForceSystemDecoder;
         if (route.DolbyVision7BaseLayer && !route.ConsoleToneMap) config.Video.HdrSupport = HdrSupport.Enabled;
-        if (route.ConsoleToneMap) config.FFmpegOptions["bale_tonemap"] = "1"; // BT.2390, same defaults as the server.
+        // BT.2390, same defaults as the server. The SDR downscale route takes the same stage: the fork
+        // runs bale_gpu's scale-only pass for BT.709 SDR larger than the output size (bale.39+).
+        if (route.ConsoleStage) config.FFmpegOptions["bale_tonemap"] = "1";
         var softwareVideo = route.SoftwareVideo;
 #if DEBUG_SERVER
         // Choose the production mode first; default leaves it intact on every route.
@@ -89,7 +91,7 @@ internal static class FfmpegSource
     /// </summary>
     internal static void ApplyDisplaySize(MediaSourceConfig config, PlaybackRouteDecision route, (int Width, int Height)? display)
     {
-        if (!route.ConsoleToneMap || display is not { } screen || config.FFmpegOptions.ContainsKey("bale_tonemap_output_width")
+        if (!route.ConsoleStage || display is not { } screen || config.FFmpegOptions.ContainsKey("bale_tonemap_output_width")
             || !config.FFmpegOptions.ContainsKey("bale_tonemap")
             || !ConsoleToneMapPolicy.DownscaleToDisplay(route.VideoWidth, route.VideoHeight, screen.Width, screen.Height)
             || !ConsoleToneMapPolicy.DownscaleWrapperSupported(FfmpegWrapperVersion.Value)
@@ -190,11 +192,11 @@ internal static class FfmpegSource
         // ForceSystemDecoder falls back to FFmpeg for codecs with no compressed provider in 2.1.0.
         // Check every stream before mounting/reading frames, including unexpected extra video tracks.
         // A software route with no video stream also fails, so the open failure replans to a transcode.
-        if (route.ConsoleToneMap)
+        if (route.ConsoleStage)
         {
             if (source.VideoStreams.Count == 0 || source.VideoStreams.Any(video =>
                 video.DecoderEngine != DecoderEngine.FFmpegD3D11HardwareDecoder))
-                throw new InvalidDataException("Console tone mapping requires d3d11va decoding.");
+                throw new InvalidDataException("The console stage requires d3d11va decoding.");
             return;
         }
         var streams = source.VideoStreams.Select(video => ((string?)video.CodecName,
