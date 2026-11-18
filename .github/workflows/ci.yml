@@ -281,10 +281,16 @@ jobs:
         run: |
           ./scripts/test-ffmpeg-checks.ps1
           ./scripts/test-ffmpeginteropx-wrapper.ps1
+          ./scripts/test-rav1g-checks.ps1
 
       - name: Download and verify pinned FFmpeg native and wrapper packages
         shell: pwsh
         run: ./scripts/restore-ffmpeg-native.ps1
+
+      # rav1g.dll for the debug av1-decoder switch (scripts/rav1g.json); an empty pin restores nothing.
+      - name: Download and verify pinned rav1g.dll
+        shell: pwsh
+        run: ./scripts/restore-rav1g.ps1
 
       # libass with FreeType, FriBidi and HarfBuzz: static, UWP app partition, linked into bale_gpu.dll.
       # A DLL cache hit already includes the notices; no other package input needs the libraries.
@@ -579,6 +585,18 @@ jobs:
             }
             Write-Output 'Packaged bale_core.dll: exports present'
           } finally { Remove-Item $inspection -Recurse -Force }
+
+      - name: Check packaged rav1g.dll
+        shell: pwsh
+        run: |
+          $package = Get-ChildItem out -Recurse -Filter '*.msix' |
+            Where-Object { $_.FullName -notmatch '[\\/]Dependencies[\\/]' } | Select-Object -First 1
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -property installationPath
+          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe |
+            Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+          if (-not $dumpbin) { throw 'dumpbin.exe is required to inspect rav1g.dll' }
+          ./scripts/check-rav1g-package.ps1 -PackagePath $package.FullName -DebugServer '${{ matrix.debug_server }}' -Dumpbin $dumpbin.FullName
 
       - name: Save Rust GPU package files
         if: steps.gpu-cache.outputs.cache-hit != 'true'

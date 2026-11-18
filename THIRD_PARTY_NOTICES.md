@@ -54,6 +54,22 @@ build/integration details are in `docs/player-plan.md` and the fork's
 [`bale/README.md`](https://github.com/Zorro92/bale-ffmpeginteropx/blob/main/bale/README.md).
 Bale remains AGPL-3.0-or-later; third-party components retain their own licenses.
 
+## rav1g
+
+Development (debug-server) builds bundle [rav1g](https://github.com/Zorro92/rav1g) **0.4.0-alpha.1**
+(`rav1g.dll`, x64), a GPU AV1 decoder in D3D12 compute shaders, from its
+[v0.4.0-alpha.1 release](https://github.com/Zorro92/rav1g/releases/tag/v0.4.0-alpha.1) (source commit
+`3f330a19965457a8973574059d317837f5b40e1e`). It is used only by the debug `av1-decoder rav1g` switch through
+the FFmpegInteropX fork; release builds do not carry it. rav1g is distributed under the **BSD-2-Clause**
+license and the **Alliance for Open Media Patent License 1.0**. It bundles
+[rav1d](https://github.com/memorysafety/rav1d) (BSD-2-Clause, with the AOM patent license), AOM code under
+`libav1` (BSD-2-Clause, AOM patent license) and Rust crates under MIT and/or Apache-2.0. The texts from the
+release's `rav1g-licenses.zip` ship unchanged as `Licenses/rav1g/` (`LICENSE.txt`, `libav1/LICENSE`,
+`libav1/PATENTS`, `third_party/rav1d/COPYING`, `third_party/rav1d/doc/PATENTS`,
+`third_party/rust-crates/NOTICES.txt`, which lists each crate with its license text). The release, asset
+hashes and interface version are pinned in `scripts/rav1g.json`. rav1g.dll links the app CRT from the
+Microsoft.VCLibs.140.00 framework package, which the package already depends on.
+
 ## FFmpeg
 
 All builds bundle the UWP x64 package **FFmpegInteropX.UWP.FFmpeg

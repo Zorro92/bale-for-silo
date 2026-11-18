@@ -586,8 +586,15 @@ public class DebugFfmpegPlaytestTests
         Assert.Equal("[8.1.2-bale.dav1d.1.5.4.p1]", packages.Single(p => p.Attribute("Include")!.Value.EndsWith(".FFmpeg")).Attribute("Version")!.Value);
         var target = project.Descendants("Target").Single(t => t.Attribute("Name")!.Value == "PrepareFFmpegManifest");
         Assert.Null(target.Attribute("Condition"));
-        var licenses = project.Descendants("Content").Where(content => content.Attribute("Link")?.Value.StartsWith("Licenses") == true).ToArray();
+        var licenses = project.Descendants("Content").Where(content => content.Attribute("Link")?.Value.StartsWith("Licenses") == true
+            && !content.Attribute("Link")!.Value.StartsWith(@"Licenses\rav1g\")).ToArray();
         Assert.Equal(6, licenses.Length);
+        // rav1g ships only with the debug switch that uses it, and only when a release is pinned (scripts/rav1g.json).
+        var rav1g = project.Descendants("Content").Where(content => content.Attribute("Include")!.Value.Contains(@".cache\rav1g\")).ToArray();
+        Assert.Equal(2, rav1g.Length);
+        Assert.All(rav1g, content => Assert.Equal(
+            @"'$(BaleDebugServer)' == 'true' And Exists('$(MSBuildThisFileDirectory)..\..\.cache\rav1g\rav1g.dll')",
+            content.Parent!.Attribute("Condition")!.Value));
         Assert.Contains(licenses, license => license.Attribute("Link")!.Value == @"Licenses\FFmpeg\SOURCES.txt");
         Assert.Contains(licenses, license => license.Attribute("Link")!.Value == @"Licenses\FFmpegInteropX\SOURCES.txt");
         Assert.Contains(licenses, license => license.Attribute("Link")!.Value == @"Licenses\libass\SOURCES.txt");
