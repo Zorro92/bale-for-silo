@@ -123,6 +123,7 @@ namespace Bale.Xbox.Services
     internal static class ConsoleToneMapRuntime
     {
         internal static bool IsAvailable => true;
+        internal static bool SupportsDownscale { get; set; } = true;
     }
 
     internal static class ZeroCopyRuntime

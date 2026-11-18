@@ -26,6 +26,32 @@ pub fn wrapper_supported(version: &str) -> bool {
     })
 }
 
+/// bale.38 adds the display-sized tone-map output keys (`bale_tonemap_output_width/height`).
+pub fn downscale_wrapper_supported(version: &str) -> bool {
+    version.strip_prefix("2.1.0-bale.").is_some_and(|revision| {
+        !revision.is_empty()
+            && revision.bytes().all(|b| b.is_ascii_digit())
+            && revision.parse::<i32>().is_ok_and(|revision| revision >= 38)
+    })
+}
+
+/// Whether the tone-map stage should hand Media Foundation display-sized output: the video is larger
+/// than the current display mode in either dimension. On Xbox, MF's video processor leaks driver
+/// state per open when it scales 4K SDR down itself (2026-11-17: dies at ~23 opens; 40/40 when
+/// bale_gpu area-downscales to the display first). Unknown sizes keep the video size.
+pub fn downscale_to_display(
+    video_width: i64,
+    video_height: i64,
+    display_width: i64,
+    display_height: i64,
+) -> bool {
+    video_width > 0
+        && video_height > 0
+        && display_width > 0
+        && display_height > 0
+        && (video_width > display_width || video_height > display_height)
+}
+
 /// Whether the console tone map can take this version on an SDR display: a hardware-decoded 10-bit
 /// 4:2:0 HEVC/VP9 PQ or HLG track with BT.2020 NCL (PQ also BT.709) colour, and for Dolby Vision only
 /// a profile 7 HDR10 base layer or a profile 8.1/8.4 base layer.
@@ -230,4 +256,27 @@ fn four_two_zero_ten_bit(pixel_format: Option<&str>) -> bool {
             trim_lower(pixel_format).as_deref(),
             Some("yuv420p10le" | "p010le")
         )
+}
+
+#[cfg(test)]
+mod downscale_tests {
+    #[test]
+    fn downscales_only_when_the_video_is_larger_than_the_display() {
+        assert!(super::downscale_to_display(3840, 2160, 1920, 1080));
+        assert!(super::downscale_to_display(3840, 1600, 1920, 1080));
+        assert!(super::downscale_to_display(1920, 1200, 1920, 1080));
+        assert!(!super::downscale_to_display(3840, 2160, 3840, 2160));
+        assert!(!super::downscale_to_display(1920, 1080, 1920, 1080));
+        assert!(!super::downscale_to_display(1280, 720, 1920, 1080));
+        assert!(!super::downscale_to_display(3840, 2160, 0, 0));
+        assert!(!super::downscale_to_display(0, 0, 1920, 1080));
+    }
+    #[test]
+    fn downscale_keys_need_wrapper_bale_38() {
+        assert!(super::downscale_wrapper_supported("2.1.0-bale.38"));
+        assert!(super::downscale_wrapper_supported("2.1.0-bale.140"));
+        assert!(!super::downscale_wrapper_supported("2.1.0-bale.37"));
+        assert!(!super::downscale_wrapper_supported("2.1.0-bale.38-beta"));
+        assert!(!super::downscale_wrapper_supported("2.1.0"));
+    }
 }

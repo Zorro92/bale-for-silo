@@ -383,6 +383,49 @@ public sealed class ConsoleToneMapTests
         Assert.Equal(0, source.Source.Observers);
     }
 
+    [Theory]
+    [InlineData(3840L, 2160L, 1920, 1080, true)]
+    [InlineData(3840L, 1600L, 1920, 1080, true)]
+    [InlineData(3840L, 2160L, 3840, 2160, false)]
+    [InlineData(1920L, 1080L, 1920, 1080, false)]
+    [InlineData(1280L, 720L, 1920, 1080, false)]
+    [InlineData(null, null, 1920, 1080, false)]
+    [InlineData(3840L, 2160L, null, null, false)]
+    public void ToneMapDownscalesOnlyWhenTheVideoIsLargerThanTheDisplay(long? width, long? height, int? displayWidth,
+        int? displayHeight, bool downscale) =>
+        Assert.Equal(downscale, ConsoleToneMapPolicy.DownscaleToDisplay(width, height, displayWidth, displayHeight));
+
+    [Fact]
+    public void ToneMapRouteGetsDisplaySizedOutputOnlyWhenTheVideoIsLarger()
+    {
+        var uhd = new PlaybackRouteDecision(true, false, "hevc", "eac3", 0, 3840, 2160, ConsoleToneMap: true);
+        var config = FfmpegSource.Configuration(uhd);
+        FfmpegSource.ApplyDisplaySize(config, uhd, (1920, 1080));
+        if (ConsoleToneMapPolicy.DownscaleWrapperSupported(FfmpegWrapperVersion.Value))
+        {
+            Assert.Equal("1920", config.FFmpegOptions["bale_tonemap_output_width"]);
+            Assert.Equal("1080", config.FFmpegOptions["bale_tonemap_output_height"]);
+        }
+        foreach (var (route, display) in new (PlaybackRouteDecision, (int, int)?)[]
+        {
+            (uhd, (3840, 2160)), // a 4K display: MF does not scale
+            (uhd, null), // display unknown
+            (uhd with { ConsoleToneMap = false }, (1920, 1080)), // no stage: nothing to size
+            (uhd with { VideoWidth = 1920, VideoHeight = 1080 }, (1920, 1080)),
+        })
+        {
+            var other = FfmpegSource.Configuration(route);
+            FfmpegSource.ApplyDisplaySize(other, route, display);
+            Assert.DoesNotContain("bale_tonemap_output_width", other.FFmpegOptions.Keys);
+        }
+    }
+
+    [Theory]
+    [InlineData("2.1.0-bale.37", false)]
+    [InlineData("2.1.0-bale.38", true)]
+    public void DisplaySizedOutputNeedsWrapperBale38(string version, bool supported) =>
+        Assert.Equal(supported, ConsoleToneMapPolicy.DownscaleWrapperSupported(version));
+
     [Fact]
     public void GuardTrustsTenBitSdrOutputOnlyWithTheToneMappedMark()
     {

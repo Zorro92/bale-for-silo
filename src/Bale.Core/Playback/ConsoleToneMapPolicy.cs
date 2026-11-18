@@ -19,6 +19,24 @@ public static class ConsoleToneMapPolicy
     public static bool WrapperSupported(string version) =>
         BaleCoreNative.Call("tone_map.wrapper_supported", version, BaleCoreJson.Default.String, BaleCoreJson.Default.Boolean);
 
+    /// <summary>bale.38 adds the display-sized tone-map output keys.</summary>
+    public static bool DownscaleWrapperSupported(string version) =>
+        BaleCoreNative.Call("tone_map.downscale_wrapper_supported", version, BaleCoreJson.Default.String, BaleCoreJson.Default.Boolean);
+
+    /// <summary>
+    /// Whether the tone-map stage should output display-sized video: the video is larger than the
+    /// current display mode. On Xbox, MF's video processor leaks driver state per open when it scales
+    /// 4K SDR down itself; bale_gpu's area downscale in linear light avoids it (40/40 opens).
+    /// </summary>
+    public static bool DownscaleToDisplay(long? videoWidth, long? videoHeight, int? displayWidth, int? displayHeight) =>
+        BaleCoreNative.Call("tone_map.downscale_to_display", writer =>
+        {
+            writer.WriteNumber("video_width", videoWidth ?? 0);
+            writer.WriteNumber("video_height", videoHeight ?? 0);
+            writer.WriteNumber("display_width", displayWidth ?? 0);
+            writer.WriteNumber("display_height", displayHeight ?? 0);
+        }, BaleCoreJson.Default.Boolean);
+
     /// <summary>
     /// Whether the console tone map can take this version on an SDR display: a hardware-decoded
     /// 10-bit 4:2:0 HEVC/VP9 PQ or HLG track with BT.2020 NCL (PQ also BT.709) colour, and for Dolby

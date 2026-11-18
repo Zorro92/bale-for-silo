@@ -10,6 +10,24 @@ internal static class ConsoleToneMapRuntime
     private static readonly Lazy<bool> Available = new(CheckAvailable);
     internal static bool IsAvailable => Available.Value;
 
+    // bale_tonemap_output_formats bit 4 (BALE_TONEMAP_OUTPUT_DOWNSCALE): area downscale to a smaller output.
+    private const uint DownscaleBit = 4;
+    private static readonly Lazy<bool> Downscale = new(CheckDownscale);
+    internal static bool SupportsDownscale => IsAvailable && Downscale.Value;
+
+    private static unsafe bool CheckDownscale()
+    {
+        nint module = 0;
+        try
+        {
+            if (!NativeLibrary.TryLoad("bale_gpu.dll", out module)
+                || !NativeLibrary.TryGetExport(module, "bale_tonemap_output_formats", out var export)) return false;
+            return (((delegate* unmanaged<uint>)export)() & DownscaleBit) != 0;
+        }
+        catch (Exception) { return false; }
+        finally { if (module != 0) NativeLibrary.Free(module); }
+    }
+
     private static bool CheckAvailable()
     {
         if (!ConsoleToneMapPolicy.WrapperSupported(FfmpegWrapperVersion.Value)) return false;

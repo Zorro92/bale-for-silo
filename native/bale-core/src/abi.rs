@@ -115,6 +115,13 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         device: DeviceCapabilities,
     }
     #[derive(Deserialize)]
+    struct Downscale {
+        video_width: i64,
+        video_height: i64,
+        display_width: i64,
+        display_height: i64,
+    }
+    #[derive(Deserialize)]
     struct Version {
         version: FileVersion,
     }
@@ -281,6 +288,17 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         "tone_map.wrapper_supported" => {
             with_json(name, input, |v: String| tone_map::wrapper_supported(&v))
         }
+        "tone_map.downscale_wrapper_supported" => with_json(name, input, |v: String| {
+            tone_map::downscale_wrapper_supported(&v)
+        }),
+        "tone_map.downscale_to_display" => with_json(name, input, |a: Downscale| {
+            tone_map::downscale_to_display(
+                a.video_width,
+                a.video_height,
+                a.display_width,
+                a.display_height,
+            )
+        }),
         "tone_map.can_manage" => with_json(name, input, |a: CanManage| {
             tone_map::can_manage(&a.version, &a.device)
         }),

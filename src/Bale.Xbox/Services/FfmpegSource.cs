@@ -82,6 +82,23 @@ internal static class FfmpegSource
     /// Wrapper patch 0022: decoded bitmaps of this one subtitle stream go to the overlay bound to the
     /// token (SubtitleOverlay.BindBitmaps) instead of becoming cues. Both options or neither.
     /// </summary>
+    /// <summary>
+    /// Hand MF display-sized SDR on the tone-map route: its video processor leaks driver state per open when
+    /// it scales 4K SDR down itself (dies at ~23 opens); bale_gpu's linear-light area downscale ran 40/40
+    /// (2026-11-17). A debug size override set by Configuration is kept.
+    /// </summary>
+    internal static void ApplyDisplaySize(MediaSourceConfig config, PlaybackRouteDecision route, (int Width, int Height)? display)
+    {
+        if (!route.ConsoleToneMap || display is not { } screen || config.FFmpegOptions.ContainsKey("bale_tonemap_output_width")
+            || !config.FFmpegOptions.ContainsKey("bale_tonemap")
+            || !ConsoleToneMapPolicy.DownscaleToDisplay(route.VideoWidth, route.VideoHeight, screen.Width, screen.Height)
+            || !ConsoleToneMapPolicy.DownscaleWrapperSupported(FfmpegWrapperVersion.Value)
+            || !ConsoleToneMapRuntime.SupportsDownscale) return;
+        config.FFmpegOptions["bale_tonemap_output_width"] = screen.Width.ToString(CultureInfo.InvariantCulture);
+        config.FFmpegOptions["bale_tonemap_output_height"] = screen.Height.ToString(CultureInfo.InvariantCulture);
+        Log.Info($"player: tone map output fits {screen.Width}x{screen.Height} (video {route.VideoWidth}x{route.VideoHeight})");
+    }
+
     internal static void ApplySubtitleSink(MediaSourceConfig config, int? streamIndex, ulong token)
     {
         if (streamIndex is not { } index || token == 0) return;

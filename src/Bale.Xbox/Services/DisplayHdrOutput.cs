@@ -44,6 +44,21 @@ internal sealed partial class DisplayHdrOutput
         }
     }
 
+    /// <summary>The current HDMI mode's raw pixel size (UI thread), or null if it cannot be read.</summary>
+    internal static (int Width, int Height)? CurrentRawSize()
+    {
+        try
+        {
+            var mode = HdmiDisplayInformation.GetForCurrentView()?.GetCurrentDisplayMode();
+            return mode is null ? null : ((int)mode.ResolutionWidthInRawPixels, (int)mode.ResolutionHeightInRawPixels);
+        }
+        catch (Exception ex)
+        {
+            Log.Info($"display: current mode unavailable (0x{unchecked((uint)ex.HResult):X8})");
+            return null;
+        }
+    }
+
     internal async Task<bool> TryEnableHdr10Async()
     {
         var switched = false;

@@ -246,6 +246,7 @@ public sealed partial class PlayerPage
 #else
                 var config = FfmpegSource.Configuration(media.Route);
 #endif
+                FfmpegSource.ApplyDisplaySize(config, media.Route, DisplayHdrOutput.CurrentRawSize());
                 FfmpegSource.ApplySubtitleSink(config, media.SubtitleStreamIndex, media.SubtitleSinkToken);
                 var engineSource = attempt.UseEngine;
 #if DEBUG_SERVER
