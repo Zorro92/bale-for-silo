@@ -71,6 +71,16 @@ public sealed partial class DetailPage
         var episodeVersion = _episodeLoadVersion;
         bool Current() => _active && _detail?.ContentId == owner.ContentId && ReferenceEquals(client, Session.Client)
             && client.ProfileId == profile;
+        // Android e727c9af5 / tvOS SeriesPlaybackReturn: land on the episode the player last showed, or the next one
+        // once that one reached its credits or end. Taken before the first await so return focus already uses it.
+        var seriesId = owner.IsSeries ? owner.ContentId : owner.SeriesId;
+        var landing = SeriesReturn.Take(seriesId);
+        if (!owner.PlaysEpisodes || landing?.EpisodeId == _playEpisode?.ContentId) landing = null;
+        if (landing is not null && playback.EpisodeId is not null
+            && Episodes.Items.OfType<EpisodeView>().Any(view => view.Episode.ContentId == landing.EpisodeId))
+        {
+            _returnPlaybackFocus = playback with { EpisodeId = landing.EpisodeId };
+        }
         try
         {
             client.Detail.Forget(playback.ContentId);
@@ -93,7 +103,15 @@ public sealed partial class DetailPage
             if (ReferenceEquals(FocusManager.GetFocusedElement(), StartOverButton)
                 && StartOverButton.Visibility != Visibility.Visible) FocusAction(PlayButton);
 
-            var seriesId = owner.IsSeries ? owner.ContentId : owner.SeriesId;
+            if (landing is not null && _tabs.FirstOrDefault(tab => tab.Season?.Number == landing.SeasonNumber) is { } landingTab
+                && _episodeLoadVersion == episodeVersion)
+            {
+                // Selects the episode in its season (loading that season when needed) and re-reads its progress.
+                await SelectTabAsync(landingTab, preferredEpisodeId: landing.EpisodeId,
+                    focusEntry: playback.EpisodeId is not null, reload: true);
+                return;
+            }
+
             if (!owner.PlaysEpisodes || seriesId is null || season is null) return;
             var episodes = await client.Detail.EpisodesAsync(seriesId, season.Value);
             if (!Current() || _busy || _shownSeason != season || _episodeLoadVersion != episodeVersion) return;

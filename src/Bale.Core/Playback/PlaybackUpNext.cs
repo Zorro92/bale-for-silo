@@ -99,6 +99,13 @@ public sealed class PlaybackUpNextState(bool autoPlay = true)
 
     public bool Visible { get; private set; }
 
+    /// <summary>
+    /// The episode reached its credits or its end (Android e727c9af5): the series page moves on to the next
+    /// episode when the player closes. Recorded before the card's once-per-item guard, so an Up Next opened by hand
+    /// (or kept watching) still counts a later credits crossing; a seek that lands in the credits counts too.
+    /// </summary>
+    public bool Finished { get; private set; }
+
     /// <summary>Raised at the end of the stream (wall clock) rather than at the credits.</summary>
     public bool VideoEnded { get; private set; }
 
@@ -108,6 +115,7 @@ public sealed class PlaybackUpNextState(bool autoPlay = true)
     /// <summary>A sampled position. True when this sample raised the card.</summary>
     public bool OnPosition(double previous, double current, double? duration, double? creditsStart, bool seeking)
     {
+        if (!seeking && creditsStart is { } credits && double.IsFinite(credits) && credits > 0 && current >= credits) Finished = true;
         if (_handled || seeking || creditsStart is not { } start || !double.IsFinite(start) || start <= 0) return false;
         if (!(previous < start && current >= start)) return false;
         _handled = true;
@@ -122,6 +130,7 @@ public sealed class PlaybackUpNextState(bool autoPlay = true)
     /// </summary>
     public UpNextEnd OnEnded(long nowMs)
     {
+        Finished = true;
         if (_dismissed) return UpNextEnd.Leave;
         if (Visible && !VideoEnded && Countdown is not null) return UpNextEnd.Advance;
         _handled = true;
@@ -151,5 +160,20 @@ public sealed class PlaybackUpNextState(bool autoPlay = true)
         _dismissed = true;
         Visible = false;
         Countdown = null;
+    }
+}
+
+/// <summary>
+/// SeriesPlaybackReturn (tvOS) / Android e727c9af5: the episode the series page selects when the player closes. The
+/// episode on screen, or the Up Next episode once the one on screen reached its credits or end.
+/// </summary>
+public sealed record SeriesPlaybackReturn(string SeriesId, string EpisodeId, long? SeasonNumber)
+{
+    public static SeriesPlaybackReturn? For(string? seriesId, string? episodeId, long? seasonNumber, bool finished, EpisodeCard? next)
+    {
+        if (string.IsNullOrWhiteSpace(seriesId) || string.IsNullOrWhiteSpace(episodeId)) return null;
+        return finished && next is not null
+            ? new(seriesId, next.ContentId, next.SeasonNumber)
+            : new(seriesId, episodeId, seasonNumber);
     }
 }

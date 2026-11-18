@@ -635,6 +635,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
     private async Task StopAndGoBackAsync()
     {
         _leaving = true;
+        RecordSeriesReturn();
         var frame = Frame;
         try { await ShutdownAsync(); }
         catch (Exception ex) { LogFailure("back", ex); }

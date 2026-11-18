@@ -122,6 +122,36 @@ public class PlaybackUpNextTests
         Assert.Equal(UpNextEnd.Show, dismissed.OnEnded(0));
     }
 
+    [Fact]
+    public void TheEpisodeIsFinishedAtItsCreditsOrEnd()
+    {
+        // Android e727c9af5: an Up Next opened by hand first still counts a later credits crossing.
+        var state = new PlaybackUpNextState();
+        Assert.True(state.ShowNow());
+        state.OnPosition(100, 200, 1000, 900, seeking: false);
+        Assert.False(state.Finished);
+        state.OnPosition(800, 950, 1000, 900, seeking: true);
+        Assert.False(state.Finished);
+        state.OnPosition(950, 951, 1000, 900, seeking: false);
+        Assert.True(state.Finished);
+
+        var noCredits = new PlaybackUpNextState();
+        noCredits.OnPosition(100, 200, 1000, null, seeking: false);
+        Assert.False(noCredits.Finished);
+        noCredits.OnEnded(0);
+        Assert.True(noCredits.Finished);
+    }
+
+    [Fact]
+    public void TheSeriesPageLandsOnTheNextEpisodeOnlyAfterAFinish()
+    {
+        var next = Episode(2, 1);
+        Assert.Equal(new SeriesPlaybackReturn("show", next.ContentId, 2), SeriesPlaybackReturn.For("show", "e", 1, finished: true, next));
+        Assert.Equal(new SeriesPlaybackReturn("show", "e", 1), SeriesPlaybackReturn.For("show", "e", 1, finished: false, next));
+        Assert.Equal(new SeriesPlaybackReturn("show", "e", 1), SeriesPlaybackReturn.For("show", "e", 1, finished: true, null));
+        Assert.Null(SeriesPlaybackReturn.For(null, "e", 1, finished: true, next));
+    }
+
     private static EpisodeCard Episode(long season, long episode) =>
         new($"e{season}-{episode}", season, episode, $"Episode {episode}", null, null, null, null, null, false);
 

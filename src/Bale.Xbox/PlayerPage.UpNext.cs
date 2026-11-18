@@ -21,6 +21,19 @@ public sealed partial class PlayerPage
 
     private bool UpNextVisible => UpNextCard.Visibility == Visibility.Visible;
 
+    /// <summary>Leaving for the series page: land on this episode, or on Up Next's once this one is finished.</summary>
+    private void RecordSeriesReturn()
+    {
+        try
+        {
+            var detail = _attempt?.Request.Detail ?? _request?.Detail;
+            SeriesReturn.Record(detail?.Type == "episode"
+                ? SeriesPlaybackReturn.For(detail.SeriesId, detail.ContentId, detail.SeasonNumber, _upNext.Finished, _nextEpisode)
+                : null);
+        }
+        catch (Exception ex) { LogFailure("series return", ex); }
+    }
+
     private async Task LoadNextEpisodeAsync(Attempt attempt)
     {
         try
