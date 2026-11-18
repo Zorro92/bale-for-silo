@@ -1,5 +1,6 @@
 using System.Globalization;
 using Bale.Core.Browse;
+using Bale.Core.Text;
 
 namespace Bale.Core.People;
 
@@ -107,8 +108,9 @@ public sealed class PersonWorks
     public bool HasLoaded { get; private set; }
     public string? Error { get; private set; }
     public long Total { get; private set; }
-    public string? CountLabel => Total > 0 ? Total == 1 ? "1 title" : $"{Total} titles"
-        : _items.Count == 0 ? null : HasMore ? $"{_items.Count}+ titles" : _items.Count == 1 ? "1 title" : $"{_items.Count} titles";
+    /// <summary>Grouped thousands (Android b2b0fb565: library.titleCount / titleCountMore).</summary>
+    public string? CountLabel => Total > 0 ? CountFormat.Noun(Total, "title", "titles")
+        : _items.Count == 0 ? null : HasMore ? $"{CountFormat.Grouped(_items.Count)}+ titles" : CountFormat.Noun(_items.Count, "title", "titles");
 
     /// <summary>Keep card actions in the retained route snapshot without resetting filmography focus/paging.</summary>
     public void UpdateCard(MediaCard card)

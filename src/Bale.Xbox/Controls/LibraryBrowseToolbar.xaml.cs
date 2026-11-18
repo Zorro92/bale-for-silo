@@ -1,4 +1,5 @@
 using Bale.Core.Browse;
+using Bale.Core.Text;
 using Bale.Xbox.Services;
 using Windows.System;
 using Windows.UI.Xaml;
@@ -43,7 +44,8 @@ public sealed partial class LibraryBrowseToolbar : UserControl
     public void UpdateCount(long? total)
     {
         // TvPersonalScreens.PersonalControlHeader hides the count while a query is being replaced.
-        ItemCount.Text = total == 1 ? "1 item" : $"{total} items";
+        // Grouped thousands, as the Browse grid subtitle (Android b2b0fb565).
+        ItemCount.Text = CountFormat.Noun(total ?? 0, "item", "items");
         ItemCount.Visibility = total > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
