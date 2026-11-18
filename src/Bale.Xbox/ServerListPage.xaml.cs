@@ -10,7 +10,7 @@ namespace Bale.Xbox;
 
 /// <summary>
 /// Settings › Accounts (TvAccountsScreen.kt / TvAccountsViewModel.kt, multi-account spec §4.5), where the server list
-/// was: each saved server with its accounts, Add an account on it and Remove Server, then Add a server. An account's
+/// was: each saved server with its accounts, Add an account on it, Rename Server and Remove Server, then Add a server. An account's
 /// page offers Sign in again and Sign Out. Switching accounts happens on Change Account, not here. Merely opening this
 /// page never signs out.
 /// </summary>
@@ -20,6 +20,7 @@ public sealed partial class ServerListPage : Page, IBackHandler, IRestoresFocus
     private ConnectionPreview? _preview;
     private SavedAccount? _pageAccount;
     private SavedServer? _removing;
+    private SavedServer? _renaming;
     private string? _lastKey;
     private bool _active;
     private bool _busy;
@@ -34,6 +35,7 @@ public sealed partial class ServerListPage : Page, IBackHandler, IRestoresFocus
         RemovePrompt.Dismissed += () => { _removing = null; _pageAccount = null; RestoreFocus(); };
         SignOutPrompt.SignOutRequested += OnSignOutRequested;
         SignOutPrompt.Dismissed += () => { _pageAccount = null; RestoreFocus(); };
+        RenamePrompt.Confirmed += OnRenameConfirmed;
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs args)
@@ -55,6 +57,8 @@ public sealed partial class ServerListPage : Page, IBackHandler, IRestoresFocus
         _active = false;
         RemovePrompt.Hide();
         SignOutPrompt.Hide();
+        RenamePrompt.Hide(restoreFocus: false);
+        _renaming = null;
         base.OnNavigatedFrom(args);
     }
 
@@ -80,6 +84,8 @@ public sealed partial class ServerListPage : Page, IBackHandler, IRestoresFocus
                 Add(Row(account.DisplayName, value), $"account/{account.Id}", () => OpenAccount(account));
             }
             Add(Row($"Add an account on {server.DisplayName}", null), $"add-account/{server.Id}", () => AddAccount(server));
+            // TvAccountsScreen.kt AccountsRow.Rename: the address without its scheme as the value.
+            Add(Row("Rename Server", server.HostLabel), $"rename/{server.Id}", () => ConfirmRename(server));
             Add(Row("Remove Server", null, destructive: true), $"remove/{server.Id}", () => ConfirmRemove(server));
         }
         var addServer = Row("Add a server", null);
@@ -102,7 +108,7 @@ public sealed partial class ServerListPage : Page, IBackHandler, IRestoresFocus
     {
         button.Click += (_, _) =>
         {
-            if (_active && !_busy && !RemovePrompt.IsOpen && !SignOutPrompt.IsOpen) action();
+            if (_active && !_busy && !RemovePrompt.IsOpen && !SignOutPrompt.IsOpen && !RenamePrompt.IsOpen) action();
         };
         button.GotFocus += (_, _) =>
         {
@@ -132,13 +138,13 @@ public sealed partial class ServerListPage : Page, IBackHandler, IRestoresFocus
         return row;
     }
 
-    public void RestoreFocus() => FocusRetry.Until(Rows, () => !_active || RemovePrompt.IsOpen || SignOutPrompt.IsOpen
+    public void RestoreFocus() => FocusRetry.Until(Rows, () => !_active || RemovePrompt.IsOpen || SignOutPrompt.IsOpen || RenamePrompt.IsOpen
         || (_buttons.FirstOrDefault(b => b.Key == _lastKey).Button ?? _buttons.LastOrDefault().Button) is not { } button
         || button.Focus(FocusState.Programmatic));
 
     private void OnPreviewKeyDown(object sender, KeyRoutedEventArgs args)
     {
-        if (RemovePrompt.IsOpen || SignOutPrompt.IsOpen) return;
+        if (RemovePrompt.IsOpen || SignOutPrompt.IsOpen || RenamePrompt.IsOpen) return;
         var vertical = SettingsInput.VerticalStep(args.Key);
         if (vertical == 0 && SettingsInput.HorizontalStep(args.Key) == 0) return;
         args.Handled = true;
@@ -255,6 +261,33 @@ public sealed partial class ServerListPage : Page, IBackHandler, IRestoresFocus
         }
     }
 
+    /// <summary>
+    /// Rename Server (TvAccountsScreen.kt renameServer): TvTextInputDialog with the current name filled in. Blank is
+    /// allowed and goes back to the name the server gives itself.
+    /// </summary>
+    private void ConfirmRename(SavedServer server)
+    {
+        _renaming = server;
+        RenamePrompt.ShowText("Rename Server", "Name", "Rename", server.DisplayName, allowBlank: true);
+    }
+
+    private void OnRenameConfirmed(string name)
+    {
+        if (_renaming is not { } server || !_active) return;
+        _renaming = null;
+        try
+        {
+            // The fixture registry in previews, the saved list otherwise; only the local name changes.
+            Servers.Rename(server.Id, name);
+        }
+        catch (Exception ex)
+        {
+            // TvAccountsViewModel.kt onRename ignores a failed save; the list keeps the old name.
+            Log.Info($"Server rename failed type={ex.GetType().Name}");
+        }
+        Populate();
+    }
+
     private void ConfirmRemove(SavedServer server)
     {
         _removing = server;
@@ -302,7 +335,7 @@ public sealed partial class ServerListPage : Page, IBackHandler, IRestoresFocus
 
     public bool OnBack()
     {
-        if (RemovePrompt.Dismiss() || SignOutPrompt.Dismiss()) return true;
+        if (RemovePrompt.Dismiss() || SignOutPrompt.Dismiss() || RenamePrompt.Dismiss()) return true;
 #if DEBUG_SERVER
         if (IsAuthPreview && DebugServer.CloseAuthPreview(Frame)) return true;
 #endif

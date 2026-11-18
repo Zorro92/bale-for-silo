@@ -8,12 +8,19 @@ namespace Bale.Core.Connection;
 /// <remarks>
 /// <see cref="LegacyDataUnclaimed"/>: the server had no session when accounts were introduced, so the next
 /// account to sign in here adopts its pre-account local data (ServerEntry.kt legacyDataUnclaimed).
+/// <see cref="UserOverrideName"/> is what the viewer typed in Rename Server (ServerEntry.kt userOverrideName); it wins
+/// over the name the server gives itself. Lists saved before renaming existed read it as null.
 /// </remarks>
 public sealed record SavedServer(
     string Id, string Url, string? FetchedName = null, long LastUsedAtEpochMs = 0, string? VerifiedServerId = null,
-    bool LegacyDataUnclaimed = false)
+    bool LegacyDataUnclaimed = false, string? UserOverrideName = null)
 {
-    public string DisplayName => string.IsNullOrWhiteSpace(FetchedName) ? new Uri(Url).Authority : FetchedName;
+    /// <summary>ServerEntry.kt displayName: the viewer's name, else the server's own, else the host.</summary>
+    public string DisplayName => !string.IsNullOrWhiteSpace(UserOverrideName) ? UserOverrideName
+        : !string.IsNullOrWhiteSpace(FetchedName) ? FetchedName : new Uri(Url).Authority;
+
+    /// <summary>TvAccountsScreen.kt serverHost: the address without its scheme, as Rename Server's value shows it.</summary>
+    public string HostLabel => Url.Contains("://", StringComparison.Ordinal) ? Url[(Url.IndexOf("://", StringComparison.Ordinal) + 3)..].TrimEnd('/') : Url.TrimEnd('/');
 }
 
 /// <summary>
@@ -214,6 +221,21 @@ public sealed class SavedServerRegistry
             {
                 Entries = [.. _state.Entries.Select(s => s.Id == _state.ActiveServerId ? Pin(s, update(s)) : s)],
             });
+        }
+    }
+
+    /// <summary>
+    /// Rename Server (AndroidServerRegistry.kt rename): only the viewer's name changes. A blank name goes back to the
+    /// name the server gives itself. False when the server is no longer saved.
+    /// </summary>
+    public bool Rename(string serverId, string? name)
+    {
+        var trimmed = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+        lock (_gate)
+        {
+            if (!_state.Entries.Any(s => s.Id == serverId)) return false;
+            Commit(_state with { Entries = [.. _state.Entries.Select(s => s.Id == serverId ? s with { UserOverrideName = trimmed } : s)] });
+            return true;
         }
     }
 

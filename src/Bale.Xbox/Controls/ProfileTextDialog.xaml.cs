@@ -7,7 +7,10 @@ using Windows.UI.Xaml.Input;
 
 namespace Bale.Xbox.Controls;
 
-/// <summary>TvTextInputDialog.kt: explicit selection opens the IME, closing restores the field surface.</summary>
+/// <summary>
+/// TvTextInputDialog.kt: explicit selection opens the IME, closing restores the field surface. The profile form's Name
+/// and PIN use <see cref="Show"/>; Rename Server uses <see cref="ShowText"/> with its own title, label and confirm.
+/// </summary>
 public sealed partial class ProfileTextDialog : UserControl
 {
     private readonly Rail _actions;
@@ -15,6 +18,7 @@ public sealed partial class ProfileTextDialog : UserControl
     private Control? _opener;
     private InputPane? _keyboard;
     private bool _pin;
+    private bool _allowBlank;
     private bool _backPressed;
     public bool IsOpen => ModalLayer.Visibility == Visibility.Visible;
     public event Action<string>? Confirmed;
@@ -28,12 +32,22 @@ public sealed partial class ProfileTextDialog : UserControl
         Unloaded += (_, _) => Hide(restoreFocus: false);
     }
 
-    public void Show(string value, bool pin)
+    public void Show(string value, bool pin) =>
+        Open(pin ? "Profile PIN" : "Profile Name", "Profile name", "Done", value, pin, allowBlank: false);
+
+    /// <summary>A one-line text entry; <paramref name="allowBlank"/> lets Confirm send an empty value.</summary>
+    public void ShowText(string title, string label, string confirmLabel, string value, bool allowBlank) =>
+        Open(title, label, confirmLabel, value, pin: false, allowBlank);
+
+    private void Open(string title, string label, string confirmLabel, string value, bool pin, bool allowBlank)
     {
         Hide(restoreFocus: false);
         _opener = FocusManager.GetFocusedElement() as Control;
         _pin = pin;
-        Title.Text = pin ? "Profile PIN" : "Profile Name";
+        _allowBlank = allowBlank;
+        Title.Text = title;
+        NameInput.Header = label;
+        DoneButton.Content = confirmLabel;
         NameInput.Visibility = pin ? Visibility.Collapsed : Visibility.Visible;
         PinInput.Visibility = pin ? Visibility.Visible : Visibility.Collapsed;
         if (pin) PinInput.Password = value; else NameInput.Text = value;
@@ -106,7 +120,7 @@ public sealed partial class ProfileTextDialog : UserControl
     private void OnPasswordChanged(object sender, RoutedEventArgs args) => UpdateConfirm();
     private void UpdateConfirm()
     {
-        if (DoneButton is not null) DoneButton.IsEnabled = _pin || !string.IsNullOrWhiteSpace(NameInput.Text);
+        if (DoneButton is not null) DoneButton.IsEnabled = _pin || _allowBlank || !string.IsNullOrWhiteSpace(NameInput.Text);
     }
 
     private void OnPreviewKeyDown(object sender, KeyRoutedEventArgs args)

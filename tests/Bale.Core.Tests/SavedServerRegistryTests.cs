@@ -394,4 +394,78 @@ public class SavedServerRegistryTests
         Assert.True(reloaded.RequiresHttpApproval(new Uri("http://other.example.com")));
         Assert.DoesNotContain("example.com", storage.Json!);
     }
+    [Fact]
+    public void RenameOverridesTheServersNameAndBlankGoesBackToIt()
+    {
+        var storage = new Storage();
+        var registry = new SavedServerRegistry(storage);
+        registry.AddAndActivate(new Uri("https://example.com/silo"), "Example server");
+        var id = registry.Active!.Id;
+        Assert.Equal("example.com/silo", registry.Active.HostLabel);
+
+        Assert.True(registry.Rename(id, "  Living room  "));
+        Assert.Equal("Living room", registry.Active!.UserOverrideName);
+        Assert.Equal("Living room", registry.Active.DisplayName);
+        Assert.Equal("Example server", registry.Active.FetchedName);
+        Assert.Equal("Living room", Assert.Single(registry.Groups).Server.DisplayName);
+
+        // The name survives a reload, a new branding name and reconnecting to the same server.
+        var reloaded = new SavedServerRegistry(storage);
+        Assert.Equal("Living room", reloaded.Active!.DisplayName);
+        reloaded.UpdateActive(s => s with { FetchedName = "Rebranded" });
+        reloaded.AddAndActivate(new Uri("https://example.com/silo"), "Rebranded again");
+        Assert.Equal("Living room", reloaded.Active!.DisplayName);
+
+        Assert.True(reloaded.Rename(id, "   "));
+        Assert.Null(reloaded.Active!.UserOverrideName);
+        Assert.Equal("Rebranded again", reloaded.Active.DisplayName);
+        Assert.True(reloaded.Rename(id, null));
+        Assert.Equal("Rebranded again", reloaded.Active!.DisplayName);
+        Assert.False(reloaded.Rename("missing", "Name"));
+    }
+
+    [Fact]
+    public void RenameWritesNothingWhenTheServerIsGoneOrStorageFails()
+    {
+        var storage = new Storage();
+        var registry = new SavedServerRegistry(storage);
+        registry.AddAndActivate(new Uri("https://example.com"), "Home");
+        var writes = storage.Writes;
+        Assert.False(registry.Rename("missing", "Name"));
+        Assert.Equal(writes, storage.Writes);
+
+        storage.FailWrites = true;
+        Assert.Throws<IOException>(() => registry.Rename(registry.Active!.Id, "Cabin"));
+        Assert.Equal("Home", registry.Active!.DisplayName);
+    }
+
+    [Fact]
+    public void ListsSavedBeforeRenamingLoadWithoutAName()
+    {
+        // A v2 blob written before UserOverrideName existed: no field, so the server's own name shows.
+        var id = SavedServerRegistry.IdFor(new Uri("https://example.com"));
+        var storage = new Storage
+        {
+            Json = $$"""{"Entries":[{"Id":"{{id}}","Url":"https://example.com","FetchedName":"Home","LastUsedAtEpochMs":1,"VerifiedServerId":null,"LegacyDataUnclaimed":false}],"Accounts":[],"ActiveServerId":"{{id}}","ActiveAccountId":null,"ApprovedHttpOrigins":[]}""",
+        };
+        var registry = new SavedServerRegistry(storage);
+        Assert.Null(registry.Active!.UserOverrideName);
+        Assert.Equal("Home", registry.Active.DisplayName);
+        Assert.Equal("example.com", registry.Active.HostLabel);
+    }
+
+    [Fact]
+    public void MigratedServersStartWithoutAName()
+    {
+        var first = new Uri("https://example.com");
+        var v1 = V1(new
+        {
+            Entries = new object[] { new { Id = SavedServerRegistry.IdFor(first), Url = "https://example.com", CredentialKey = "https://example.com", FetchedName = "Home" } },
+            ActiveServerId = SavedServerRegistry.IdFor(first),
+            ApprovedHttpOrigins = Array.Empty<string>(),
+        });
+        var registry = new SavedServerRegistry(new Storage(), new SavedServerMigration(v1, null, _ => true));
+        Assert.Null(registry.Active!.UserOverrideName);
+        Assert.Equal("Home", registry.Active.DisplayName);
+    }
 }

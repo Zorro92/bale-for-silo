@@ -7,7 +7,7 @@
     FontFamily="{StaticResource SkylineFont}"
     Background="{StaticResource SkylineBackground}">
   <!-- TvAccountsScreen.kt (Settings › Accounts, the TvRoute.ServerList route): the settings pane header, then per
-       server its accounts, Add an account on it and Remove Server; then Add a server and the footer. -->
+       server its accounts, Add an account on it, Rename Server and Remove Server; then Add a server and the footer. -->
   <Grid x:Name="Root" PreviewKeyDown="OnPreviewKeyDown">
     <Grid Style="{StaticResource SkylineSettingsLayoutStyle}">
       <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
@@ -32,5 +32,6 @@
     </Grid>
     <controls:ConnectionDialog x:Name="RemovePrompt" />
     <controls:SignOutDialog x:Name="SignOutPrompt" />
+    <controls:ProfileTextDialog x:Name="RenamePrompt" />
   </Grid>
 </Page>
