@@ -37,8 +37,9 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
 
     private readonly DispatcherTimer _marqueeTimer = new() { Interval = MarqueeSettle };
 
-    /// <summary>How long a marquee waits for its logo before showing the text title instead.</summary>
-    private readonly DispatcherTimer _logoGrace = new() { Interval = TimeSpan.FromMilliseconds(350) };
+    /// <summary>How long a marquee waits for its logo before showing the text title instead
+    /// (TvFocusMarquee.kt MarqueeLogoGraceMs).</summary>
+    private readonly DispatcherTimer _logoGrace = new() { Interval = TimeSpan.FromMilliseconds(700) };
     private CardView? _pendingMarquee;
     private CardView? _shownMarquee;
     private string? _libraryId;
