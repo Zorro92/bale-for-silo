@@ -47,8 +47,13 @@
       <GridView.Header>
         <StackPanel Margin="0,90,0,0">
           <!-- Focus alone never raises the on-screen keyboard; A/Select on the field does (TvSearchScreen: the field is read-only until Select). The page focuses this box from code on open and on Up from the chips. -->
-          <TextBox x:Name="QueryBox" HorizontalAlignment="Left" PlaceholderText="Search movies and series"
-                   Style="{StaticResource SkylineSearchTextBoxStyle}" TextChanged="OnQueryChanged" InputScope="Search" PreventKeyboardDisplayOnProgrammaticFocus="True" />
+          <!-- TvSearchScreen.kt (Android 548e3cb77): a clear (X) button sits 12dp right of the field while it holds text. -->
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+            <TextBox x:Name="QueryBox" PlaceholderText="Search movies and series"
+                     Style="{StaticResource SkylineSearchTextBoxStyle}" TextChanged="OnQueryChanged" InputScope="Search" PreventKeyboardDisplayOnProgrammaticFocus="True" />
+            <Button x:Name="ClearButton" Style="{StaticResource SkylineSearchClearButtonStyle}" Visibility="Collapsed"
+                    AutomationProperties.Name="Clear search" Click="OnClearClick" />
+          </StackPanel>
 
           <!-- rail-layout: non-card — Search filter pills. -->
           <ItemsControl x:Name="Filters" Margin="0,8,0,0" ItemTemplate="{StaticResource FilterTemplate}" XYFocusKeyboardNavigation="Enabled">

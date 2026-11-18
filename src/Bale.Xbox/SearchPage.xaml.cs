@@ -5,6 +5,7 @@ using Bale.Xbox.Views;
 using Windows.Foundation;
 using Windows.System;
 using Windows.UI.Core;
+using Windows.UI.ViewManagement;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Controls.Primitives;
@@ -82,6 +83,7 @@ public sealed partial class SearchPage : Page, IRestoresFocus
         Filters.PreviewKeyDown += OnFiltersPreviewKeyDown;
         People.PreviewKeyDown += OnPeoplePreviewKeyDown;
         QueryBox.PreviewKeyDown += OnQueryPreviewKeyDown;
+        ClearButton.PreviewKeyDown += OnClearPreviewKeyDown;
         Results.Loaded += (_, _) => HookResults();
         Results.ContainerContentChanging += (_, _) => QueuePagingCheck();
         Results.SizeChanged += (_, _) => QueuePagingCheck();
@@ -219,6 +221,43 @@ public sealed partial class SearchPage : Page, IRestoresFocus
             e.Handled = true;
             FocusSelectedFilter();
         }
+        else if (IsRight(e.Key) && ClearButton.Visibility == Visibility.Visible
+            && QueryBox.SelectionLength == 0 && QueryBox.SelectionStart >= QueryBox.Text.Length)
+        {
+            // TvSearchScreen.kt takes Right to the clear button. Only from the end of the text, so a
+            // keyboard's Right still moves the caret through the query first.
+            e.Handled = true;
+            ClearButton.Focus(FocusState.Keyboard);
+        }
+    }
+
+    private void OnClearPreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (IsDown(e.Key))
+        {
+            // TvHeroToggleIconButton downFocusRequester = the first filter chip, as from the field.
+            e.Handled = true;
+            FocusSelectedFilter();
+        }
+        else if (IsLeft(e.Key))
+        {
+            e.Handled = true;
+            QueryBox.Focus(FocusState.Keyboard);
+        }
+        else if (IsRight(e.Key))
+        {
+            e.Handled = true; // The row ends here.
+        }
+    }
+
+    private void OnClearClick(object sender, RoutedEventArgs e)
+    {
+        // TvSearchScreen.kt onClearQuery: focus goes back to the field first (the button is about to
+        // collapse), then the query clears and the keyboard opens, so voice input is one press away.
+        QueryBox.Focus(FocusState.Programmatic);
+        QueryBox.Text = string.Empty;
+        try { InputPane.GetForCurrentView().TryShow(); }
+        catch (Exception ex) { Log.Error("Search clear keyboard", ex); }
     }
 
     private void OnFiltersPreviewKeyDown(object sender, KeyRoutedEventArgs e)
@@ -282,6 +321,8 @@ public sealed partial class SearchPage : Page, IRestoresFocus
 
     private static bool IsUp(VirtualKey key) => key is VirtualKey.Up or VirtualKey.GamepadDPadUp or VirtualKey.GamepadLeftThumbstickUp;
     private static bool IsDown(VirtualKey key) => key is VirtualKey.Down or VirtualKey.GamepadDPadDown or VirtualKey.GamepadLeftThumbstickDown;
+    private static bool IsLeft(VirtualKey key) => key is VirtualKey.Left or VirtualKey.GamepadDPadLeft or VirtualKey.GamepadLeftThumbstickLeft;
+    private static bool IsRight(VirtualKey key) => key is VirtualKey.Right or VirtualKey.GamepadDPadRight or VirtualKey.GamepadLeftThumbstickRight;
 
     private IEnumerable<ContentControl> ResultContainers() =>
         Results.ItemsPanelRoot?.Children.OfType<ContentControl>().Where(container => container.Content is CardView) ?? [];
@@ -384,6 +425,7 @@ public sealed partial class SearchPage : Page, IRestoresFocus
 
     private void OnQueryChanged(object sender, TextChangedEventArgs e)
     {
+        ClearButton.Visibility = QueryBox.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         if (!_ready)
         {
             return;

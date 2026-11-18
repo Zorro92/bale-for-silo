@@ -589,6 +589,51 @@
     </Setter>
   </Style>
 
+  <!--
+    Search clear button (TvSearchScreen.kt, Android 548e3cb77: TvHeroToggleIconButton with Icons.Filled.Close).
+    56×54 capsule, black @ 48% with a white @ 18% hairline and a white @ 86% icon at rest; on focus
+    SiloOnSurface (#EDEDED) with a black icon, a 3dp black @ 78% border and a 1.08 lift. The 24dp
+    Material icon is drawn twice and swapped, since a template can't recolor a Path from code.
+    The official white @ 28% glow is left out, as on Bale's other focus styles.
+  -->
+  <Style x:Key="SkylineSearchClearButtonStyle" TargetType="Button">
+    <Setter Property="Width" Value="56" />
+    <Setter Property="Height" Value="54" />
+    <Setter Property="Margin" Value="12,0,0,0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid RenderTransformOrigin="0.5,0.5">
+            <Grid.RenderTransform><ScaleTransform x:Name="Lift" /></Grid.RenderTransform>
+            <Border x:Name="Rest" CornerRadius="27" Background="#7A000000" BorderBrush="#2EFFFFFF" BorderThickness="1" />
+            <Border x:Name="FocusFill" CornerRadius="27" Background="#FFEDEDED" BorderBrush="#C7000000" BorderThickness="3" Opacity="0" />
+            <Viewbox Width="24" Height="24">
+              <Grid Width="24" Height="24">
+                <Path x:Name="RestIcon" Fill="#DBFFFFFF" Data="M19,6.41 L17.59,5 L12,10.59 L6.41,5 L5,6.41 L10.59,12 L5,17.59 L6.41,19 L12,13.41 L17.59,19 L19,17.59 L13.41,12 Z" />
+                <Path x:Name="FocusIcon" Fill="#FF000000" Opacity="0" Data="M19,6.41 L17.59,5 L12,10.59 L6.41,5 L5,6.41 L10.59,12 L5,17.59 L6.41,19 L12,13.41 L17.59,19 L19,17.59 L13.41,12 Z" />
+              </Grid>
+            </Viewbox>
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" /><VisualState x:Name="Disabled" />
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Unfocused" />
+                <VisualState x:Name="Focused"><VisualState.Setters>
+                  <Setter Target="FocusFill.Opacity" Value="1" /><Setter Target="RestIcon.Opacity" Value="0" /><Setter Target="FocusIcon.Opacity" Value="1" />
+                  <Setter Target="Lift.ScaleX" Value="1.08" /><Setter Target="Lift.ScaleY" Value="1.08" />
+                </VisualState.Setters></VisualState>
+                <VisualState x:Name="PointerFocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <Style x:Key="SkylineSearchStatusStyle" TargetType="TextBlock">
     <Setter Property="FontSize" Value="13.8" />
     <Setter Property="LineHeight" Value="18.9" />
