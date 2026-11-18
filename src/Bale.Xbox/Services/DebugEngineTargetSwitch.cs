@@ -2,23 +2,24 @@
 namespace Bale.Xbox.Services;
 
 /// <summary>
-/// Memory-only engine swap-chain format, captured per playback attempt; bgra after restart, as in release builds
-/// (which never call bale_gpu_engine_session_set_target). rgb10 asks IMFMediaEngine for R10G10B10A2 output so 10-bit
-/// SDR can reach the screen at 10 bits (owner's bit-depth rule, AGENTS.md); fp16 is scRGB. For comparing banding
-/// on the console: playtest-present target=rgb10 played a 10-bit SDR clip with 0 dropped frames (2026-11-17).
+/// Memory-only override of the engine swap-chain format, captured per playback attempt; auto after restart. auto
+/// follows the frames Bale hands the engine, as release builds do (EngineOutputPolicy, owner's bit-depth rule in
+/// AGENTS.md): rgb10 (R10G10B10A2) for P010, bgra (B8G8R8A8) for NV12 or unknown depth. bgra, rgb10 and fp16 (scRGB)
+/// force that format on every engine open, e.g. to compare banding on the console.
 /// </summary>
 internal static class DebugEngineTargetSwitch
 {
-    private static string _mode = "bgra";
+    private static string _mode = "auto";
 
     internal static string Mode => Volatile.Read(ref _mode);
 
-    /// <summary>The bale_gpu_engine_session_set_target value: 0 bgra, 1 fp16, 2 rgb10.</summary>
-    internal static uint Code => Mode switch { "fp16" => 1u, "rgb10" => 2u, _ => 0u };
+    /// <summary>The forced bale_gpu engine target code (0 bgra, 1 fp16, 2 rgb10), or null for auto.</summary>
+    internal static uint? Code => Mode switch { "bgra" => 0u, "fp16" => 1u, "rgb10" => 2u, _ => null };
 
     internal static bool TrySet(string? mode)
     {
-        if (mode is not ("bgra" or "rgb10" or "fp16")) return false;
+        if (mode is "default") mode = "auto";
+        if (mode is not ("auto" or "bgra" or "rgb10" or "fp16")) return false;
         Volatile.Write(ref _mode, mode);
         return true;
     }

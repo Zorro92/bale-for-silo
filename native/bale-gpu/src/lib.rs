@@ -45,7 +45,7 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 /// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched DLL.
-pub const ABI_VERSION: u32 = 13;
+pub const ABI_VERSION: u32 = 14;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_gpu_abi_version() -> u32 {
@@ -301,10 +301,10 @@ pub unsafe extern "C" fn bale_gpu_engine_present(
     unsafe { write_report(&text, report, report_capacity) }
 }
 
-/// Debug: the swap-chain format later [`bale_gpu_engine_session_open`] calls request, as
-/// `MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT` (0 bgra, the default; 1 fp16; 2 rgb10). Release builds never
-/// call it, so sessions keep B8G8R8A8; the debug `engine-target` switch sets it to compare 10-bit SDR
-/// output (owner's bit-depth rule, AGENTS.md). Returns 1 when accepted, 0 for an unknown value.
+/// The swap-chain format later [`bale_gpu_engine_session_open`] calls request, as
+/// `MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT` (0 bgra, the default; 1 fp16; 2 rgb10). Bale passes the format
+/// per open with [`bale_gpu_engine_session_open_target`] instead (ABI 14); this setter stays for older
+/// callers and debug tools. Returns 1 when accepted, 0 for an unknown value.
 #[cfg(windows)]
 static SESSION_TARGET: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
@@ -320,18 +320,27 @@ pub extern "C" fn bale_gpu_engine_session_set_target(target: u32) -> u32 {
 
 #[cfg(windows)]
 fn session_target() -> engine_target::Target {
-    match SESSION_TARGET.load(std::sync::atomic::Ordering::Relaxed) {
-        1 => engine_target::Target::Fp16,
-        2 => engine_target::Target::Rgb10,
-        _ => engine_target::Target::Bgra,
+    target_from_code(SESSION_TARGET.load(std::sync::atomic::Ordering::Relaxed))
+        .unwrap_or(engine_target::Target::Bgra)
+}
+
+/// The C ABI's target codes: 0 bgra, 1 fp16, 2 rgb10.
+#[cfg(windows)]
+fn target_from_code(code: u32) -> Option<engine_target::Target> {
+    match code {
+        0 => Some(engine_target::Target::Bgra),
+        1 => Some(engine_target::Target::Fp16),
+        2 => Some(engine_target::Target::Rgb10),
+        _ => None,
     }
 }
 
-/// Opens a debug engine **session** in rendering mode (see `engine_session`): `url`, or `source` (a COM
-/// media source when `mime_len` is 0, else an `IRandomAccessStream` of type `mime`), attached through
-/// `attach(context, handle)` like [`bale_gpu_engine_present`], seeked to `start` and playing unless
-/// `paused`. On success `*out_session` is the session (close it with
-/// [`bale_gpu_engine_session_close`]); the open report is written either way.
+/// Opens an engine **session** (Bale's engine player) in rendering mode (see `engine_session`): `url`,
+/// or `source` (a COM media source when `mime_len` is 0, else an `IRandomAccessStream` of type `mime`),
+/// attached through `attach(context, handle)` like [`bale_gpu_engine_present`], seeked to `start` and
+/// playing unless `paused`, in the format of [`bale_gpu_engine_session_set_target`]. On success
+/// `*out_session` is the session (close it with [`bale_gpu_engine_session_close`]); the open report is
+/// written either way.
 ///
 /// # Safety
 /// As [`bale_gpu_engine_present`]; `out_session` must be writable. `context` need only be valid for this call.
@@ -351,6 +360,111 @@ pub unsafe extern "C" fn bale_gpu_engine_session_open(
     start: f64,
     paused: u32,
     muted: u32,
+    out_session: *mut *mut core::ffi::c_void,
+    report: *mut u8,
+    report_capacity: u32,
+) -> u32 {
+    // SAFETY: the caller's guarantees, unchanged.
+    unsafe {
+        session_open(
+            url,
+            url_len,
+            source,
+            mime,
+            mime_len,
+            width,
+            height,
+            attach,
+            context,
+            start,
+            paused,
+            muted,
+            session_target(),
+            out_session,
+            report,
+            report_capacity,
+        )
+    }
+}
+
+/// As [`bale_gpu_engine_session_open`], with the swap-chain format for this open: `target` 0 bgra
+/// (B8G8R8A8), 1 fp16, 2 rgb10 (R10G10B10A2) as `MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT`. Bale picks it per
+/// mount from the frames it hands the engine (owner's bit-depth rule, AGENTS.md). 0 for an unknown
+/// `target`, with `*out_session` null and no report.
+///
+/// # Safety
+/// As [`bale_gpu_engine_session_open`].
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn bale_gpu_engine_session_open_target(
+    url: *const u16,
+    url_len: u32,
+    source: *mut core::ffi::c_void,
+    mime: *const u16,
+    mime_len: u32,
+    width: u32,
+    height: u32,
+    attach: Option<unsafe extern "C" fn(*mut core::ffi::c_void, isize) -> i32>,
+    context: *mut core::ffi::c_void,
+    start: f64,
+    paused: u32,
+    muted: u32,
+    target: u32,
+    out_session: *mut *mut core::ffi::c_void,
+    report: *mut u8,
+    report_capacity: u32,
+) -> u32 {
+    let Some(target) = target_from_code(target) else {
+        if !out_session.is_null() {
+            // SAFETY: the caller guarantees a writable out pointer.
+            unsafe { *out_session = core::ptr::null_mut() };
+        }
+        return 0;
+    };
+    // SAFETY: the caller's guarantees, unchanged.
+    unsafe {
+        session_open(
+            url,
+            url_len,
+            source,
+            mime,
+            mime_len,
+            width,
+            height,
+            attach,
+            context,
+            start,
+            paused,
+            muted,
+            target,
+            out_session,
+            report,
+            report_capacity,
+        )
+    }
+}
+
+/// The body of both session opens.
+///
+/// # Safety
+/// As [`bale_gpu_engine_session_open`].
+#[cfg(windows)]
+#[allow(clippy::too_many_arguments)]
+unsafe fn session_open(
+    url: *const u16,
+    url_len: u32,
+    source: *mut core::ffi::c_void,
+    mime: *const u16,
+    mime_len: u32,
+    width: u32,
+    height: u32,
+    attach: Option<unsafe extern "C" fn(*mut core::ffi::c_void, isize) -> i32>,
+    context: *mut core::ffi::c_void,
+    start: f64,
+    paused: u32,
+    muted: u32,
+    target: engine_target::Target,
     out_session: *mut *mut core::ffi::c_void,
     report: *mut u8,
     report_capacity: u32,
@@ -394,7 +508,7 @@ pub unsafe extern "C" fn bale_gpu_engine_session_open(
     };
     let (session, text) = engine_session::Session::open(
         input,
-        session_target(),
+        target,
         &present,
         if start.is_finite() {
             start.max(0.0)

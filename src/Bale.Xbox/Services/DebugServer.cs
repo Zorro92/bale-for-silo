@@ -74,8 +74,8 @@ namespace Bale.Xbox.Services;
 ///                         is watched but never reaches the source)
 ///   GET  /player-backend  memory-only player switch; default engine (as in release builds)
 ///   POST /player-backend?mode=engine  mediaplayer (Windows MediaPlayer)|engine (IMFMediaEngine); next playback attempt
-///   GET  /engine-target  memory-only engine swap-chain format; default bgra (as in release builds)
-///   POST /engine-target?mode=rgb10  bgra|rgb10|fp16 (MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT); next engine playback attempt
+///   GET  /engine-target  memory-only engine swap-chain format override; default auto (follow the frames, as in release)
+///   POST /engine-target?mode=rgb10  auto|bgra|rgb10|fp16 (MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT); next engine playback attempt
 ///   GET  /av1-decoder     memory-only software AV1 decoder; default dav1d (as in release builds); rav1g.dll packaged?
 ///   GET  /rav1g-tune      memory-only rav1g provider knobs (fork bale.52): inflight, perf, parse; rav1g route only
 ///   POST /rav1g-tune?inflight=3&perf=on&parse=2  1-8 | on/off | 1-2, each also "default"; next rav1g playback attempt
@@ -488,7 +488,7 @@ internal sealed partial class DebugServer
 
             case ("GET", "/engine-target"):
                 if (query.Count != 0)
-                    return ("400 Bad Request", "usage: GET /engine-target or POST /engine-target?mode={bgra|rgb10|fp16}\n");
+                    return ("400 Bad Request", "usage: GET /engine-target or POST /engine-target?mode={auto|bgra|rgb10|fp16}\n");
                 return ("200 OK", $"engine-target={DebugEngineTargetSwitch.Mode}\n");
 
             case ("POST", "/engine-target"):

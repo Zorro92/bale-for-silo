@@ -20,8 +20,8 @@ namespace Bale.Xbox.Services;
 /// </summary>
 internal sealed partial class EngineBackend : PlaybackBackend
 {
-    /// <summary>bale_gpu.dll's ABI with the session's stream API (keep with NativeFrameDelivery.ExpectedAbi).</summary>
-    internal const uint ExpectedAbi = 13;
+    /// <summary>bale_gpu.dll's ABI with the session's stream API and per-open target (keep with NativeFrameDelivery.ExpectedAbi).</summary>
+    internal const uint ExpectedAbi = 14;
 
     private readonly Session _session;
     private readonly Border _host;
@@ -81,7 +81,9 @@ internal sealed partial class EngineBackend : PlaybackBackend
     /// </summary>
     /// <param name="start">Player seconds to open at: the session seeks there before its first frame (a seek issued
     /// right after opening can be dropped while the engine prerolls). The page's own start seek then finds it there.</param>
-    public async Task<bool> OpenAsync(object source, string? mime, bool canSeek, double start = 0)
+    /// <param name="target">The swap-chain format as bale_gpu's engine target code (0 bgra, 1 fp16, 2 rgb10), from
+    /// EngineOutputPolicy: the owner's bit-depth rule keeps 10-bit frames at 10 bits to the screen.</param>
+    public async Task<bool> OpenAsync(object source, string? mime, bool canSeek, double start = 0, uint target = 0)
     {
         _session.CanSeekSource = canSeek;
         nint pointer;
@@ -90,7 +92,7 @@ internal sealed partial class EngineBackend : PlaybackBackend
             ? WinRT.MarshalInterface<IRandomAccessStream>.FromManaged(stream)
             : ((WinRT.IWinRTObject)source).NativeObject.ThisPtr;
         int hr;
-        try { (hr, Report) = await Task.Run(() => Open(pointer, stream is not null ? mime ?? "video/mp4" : null, start)); }
+        try { (hr, Report) = await Task.Run(() => Open(pointer, stream is not null ? mime ?? "video/mp4" : null, start, target)); }
         finally { if (stream is not null) Marshal.Release(pointer); }
         if (_disposed) return false;
         if (_handle == 0)
@@ -106,7 +108,7 @@ internal sealed partial class EngineBackend : PlaybackBackend
         return true;
     }
 
-    private unsafe (int HResult, string Report) Open(nint source, string? mime, double start)
+    private unsafe (int HResult, string Report) Open(nint source, string? mime, double start, uint target)
     {
         if (bale_gpu_abi_version() != ExpectedAbi) return (unchecked((int)0x80004002), "Rust GPU layer ABI mismatch\n");
         var type = mime ?? string.Empty;
@@ -117,15 +119,10 @@ internal sealed partial class EngineBackend : PlaybackBackend
             uint written;
             nint session;
             var (width, height) = Unpack(Volatile.Read(ref _size));
-#if DEBUG_SERVER
-            // Debug engine-target switch; release builds never call it, so sessions keep bale_gpu's B8G8R8A8 default.
-            if (bale_gpu_engine_session_set_target(DebugEngineTargetSwitch.Code) == 0)
-                Log.Info("player: engine target not accepted; bgra stays");
-#endif
             fixed (char* mimeText = type)
             fixed (byte* report = buffer)
-                written = bale_gpu_engine_session_open(null, 0, source, mimeText, (uint)type.Length, width, height, &Attach,
-                    GCHandle.ToIntPtr(self), double.IsFinite(start) && start > 0 ? start : 0, 1, 0, &session, report, (uint)buffer.Length);
+                written = bale_gpu_engine_session_open_target(null, 0, source, mimeText, (uint)type.Length, width, height, &Attach,
+                    GCHandle.ToIntPtr(self), double.IsFinite(start) && start > 0 ? start : 0, 1, 0, target, &session, report, (uint)buffer.Length);
             var text = System.Text.Encoding.UTF8.GetString(buffer, 0, (int)Math.Min(written, (uint)buffer.Length));
             lock (_sync)
             {
@@ -478,13 +475,10 @@ internal sealed partial class EngineBackend : PlaybackBackend
 
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern uint bale_gpu_abi_version();
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_panel_set_swap_chain_handle(nint panel, nint handle);
-#if DEBUG_SERVER
-    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern uint bale_gpu_engine_session_set_target(uint target);
-#endif
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
-    private static extern unsafe uint bale_gpu_engine_session_open(char* url, uint urlLength, nint source, char* mime, uint mimeLength,
+    private static extern unsafe uint bale_gpu_engine_session_open_target(char* url, uint urlLength, nint source, char* mime, uint mimeLength,
         uint width, uint height, delegate* unmanaged[Cdecl]<nint, nint, int> attach, nint context, double start, uint paused, uint muted,
-        nint* session, byte* report, uint reportCapacity);
+        uint target, nint* session, byte* report, uint reportCapacity);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_play(nint session);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_pause(nint session);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_seek(nint session, double seconds, uint approximate);

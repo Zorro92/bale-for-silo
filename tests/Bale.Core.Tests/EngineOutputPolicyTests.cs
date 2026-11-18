@@ -121,4 +121,18 @@ public sealed class EngineOutputPolicyTests
         FileVersion[] versions = [new() { FileId = "file", VideoTracks = [new VideoTrack { PixelFormat = "yuv420p10le" }] }];
         Assert.Equal("rgb10", Engine(plan, route, versions: versions).Target);
     }
+
+    [Fact]
+    public void EveryEngineOpenPassesThePolicyTarget()
+    {
+        var media = Read("PlayerPage.Media.cs.txt");
+        Assert.Contains("EngineOutputPolicy.Decide(plan, media.Route, attempt.Request.Detail.Versions, ConsoleToneMapRuntime.SupportsP010)", media);
+        Assert.Contains("target: target);", media);
+        var engine = Read("EngineBackend.cs.txt");
+        Assert.Contains("bale_gpu_engine_session_open_target(", engine);
+        Assert.DoesNotContain("bale_gpu_engine_session_open(", engine);
+        Assert.Contains("internal const uint ExpectedAbi = 14;", engine);
+    }
+
+    private static string Read(string file) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, file));
 }

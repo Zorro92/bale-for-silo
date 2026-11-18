@@ -510,7 +510,8 @@ jobs:
               'bale_gpu_lifecycle_abi_version', 'bale_gpu_trim', 'bale_gpu_trimmed_count',
               'bale_gpu_device_count', 'bale_gpu_device_release_counts', 'bale_tonemap_debug_churn',
               'bale_gpu_trim_device', 'bale_gpu_media_device_hold', 'bale_gpu_media_device_release',
-              'bale_gpu_engine_probe', 'bale_gpu_engine_probe_source', 'bale_ass_probe', 'bale_ass_probe_png',
+              'bale_gpu_engine_probe', 'bale_gpu_engine_probe_source', 'bale_gpu_engine_session_open_target',
+              'bale_ass_probe', 'bale_ass_probe_png',
               'bale_sub_pgs_decode', 'bale_sub_pgs_bind', 'bale_sub_pgs_destroy',
               'bale_frame_observer_create', 'bale_frame_observer_mark', 'bale_frame_observer_drain',
               'bale_frame_observer_status', 'bale_frame_observer_video_descriptor', 'bale_frame_observer_destroy')

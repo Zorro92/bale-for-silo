@@ -524,11 +524,44 @@ public sealed partial class PlayerPage
         }
         else throw new InvalidDataException("The engine has no source for this route.");
         Log.Info($"player: backend=engine route={RouteText(media)}");
+        var target = EngineTarget(attempt, media);
         // Forward-only mounts open where they play (player 0); seekable ones at the mount's start.
         var opened = await engine.OpenAsync(source, type, canSeek: media.Progressive is null,
-            start: media.Progressive is null ? media.StartPosition : 0);
+            start: media.Progressive is null ? media.StartPosition : 0, target: target);
         foreach (var line in engine.Report.Split('\n', StringSplitOptions.RemoveEmptyEntries)) Log.Info("engine: " + line);
         return opened || !ReferenceEquals(attempt.Media, media);
+    }
+
+    /// <summary>
+    /// The engine swap-chain format for this mount (bale_gpu target code): R10G10B10A2 for P010 frames, B8G8R8A8 for
+    /// NV12 or unknown depth (owner's bit-depth rule, AGENTS.md; EngineOutputPolicy). Logged once per open.
+    /// </summary>
+    private static uint EngineTarget(Attempt attempt, Mount media)
+    {
+        EngineOutputDecision output;
+        try
+        {
+            output = attempt.Plan is { } plan
+                ? EngineOutputPolicy.Decide(plan, media.Route, attempt.Request.Detail.Versions, ConsoleToneMapRuntime.SupportsP010)
+                : new EngineOutputDecision("bgra", "unknown", "no plan");
+        }
+        catch (Exception ex)
+        {
+            Log.Info($"player: engine output policy failed {ex.GetType().Name}");
+            output = new EngineOutputDecision("bgra", "unknown", "policy failed");
+        }
+        if (output.Frames == "unknown") Log.Info("player: engine output depth unknown; bgra kept");
+        var code = output.Code;
+        var name = output.Target;
+#if DEBUG_SERVER
+        if (DebugEngineTargetSwitch.Code is { } forced)
+        {
+            code = forced;
+            name = DebugEngineTargetSwitch.Mode + " (debug engine-target)";
+        }
+#endif
+        Log.Info($"player: engine output={name} frames={output.Frames} reason={output.Reason}");
+        return code;
     }
 
     /// <summary>The mount's route in words, for the log: never a URL.</summary>

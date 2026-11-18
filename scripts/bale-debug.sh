@@ -57,7 +57,7 @@
 #   scripts/bale-debug.sh start-budget [seconds=1..120|default] [hang=none|open|ready]  start budget per mount (45 s default) for new mounts; hang applies to the next mount only: open = its open never finishes, ready = MediaOpened never seen; memory only; no args = status + the current mount's budget
 #   scripts/bale-debug.sh seek-watchdog [seconds=1..120|default] [hang=none|once]  seek watchdog per local seek (15 s default) for new seeks; hang=once: the next local seek is watched but never reaches the source (first time: same-plan remount at the target; armed again after it: failure replan); memory only; no args = status + the watched seek
 #   scripts/bale-debug.sh player-backend [mediaplayer|engine]   next playback attempt's player: engine (default, as in release) = IMFMediaEngine with Bale's controls, MediaPlayer only if it cannot open the stream; mediaplayer = Windows MediaPlayer; memory only; no args = status
-#   scripts/bale-debug.sh engine-target [bgra|rgb10|fp16]   next engine attempt's swap-chain format (MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT): bgra (default, as in release) | rgb10 (10-bit SDR to the screen) | fp16; memory only; no args = status
+#   scripts/bale-debug.sh engine-target [auto|bgra|rgb10|fp16]   next engine attempt's swap-chain format (MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT): auto (default, as in release: rgb10 for 10-bit frames, bgra for 8-bit or unknown) | force bgra | rgb10 | fp16; memory only; no args = status
 #   scripts/bale-debug.sh av1-decoder [dav1d|rav1g]   next playback attempt's software AV1 decoder: dav1d (default, as in release) = zero-copy | rav1g = GPU decode on the fork's provider (bale_av1_decoder=1, ~200 ms BufferTime, dav1d remount once on failure); memory only; no args = status (+ whether rav1g.dll is packaged)
 #   scripts/bale-debug.sh rav1g-tune [inflight=1-8|default] [perf=on|off|default] [parse=1|2|default] [outtex=0-64|default]   rav1g provider knobs (fork bale.52: feeder units in flight, rav1g CPU/GPU ms in the delivery line, frames in parse; bale.56: player-side texture cap, 0 = none); rav1g route only; memory only; no args = status
 #   scripts/bale-debug.sh stream-adapter [pooled|builtin|rust]  next playback attempt's stream adapter; default rust (C#: pooled/builtin), memory only (restart resets); no args = status
@@ -502,8 +502,8 @@ case "${1:-}" in
     fi
     ;;
   engine-target)
-    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^(bgra|rgb10|fp16)$ ) ]]; then
-      echo 'usage: scripts/bale-debug.sh engine-target [bgra|rgb10|fp16]' >&2
+    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^(auto|default|bgra|rgb10|fp16)$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh engine-target [auto|bgra|rgb10|fp16]' >&2
       exit 2
     fi
     if [[ "$#" == 1 ]]; then

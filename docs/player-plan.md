@@ -2436,7 +2436,7 @@ display work on the engine path waits for a capable display.
    (play/pause, opened/ended/failed, a session with position, state, can-seek, rate, video size, seekable
    ranges and their events, plus audio/video track listing and selection). `MediaPlayerBackend` wraps
    MediaPlayer and keeps it reachable for the element, command manager, FastSeek session and debug observers.
-3. **`EngineBackend`** (`Services/EngineBackend.cs`, bale_gpu ABI 13): the Rust session on a raw-pixel
+3. **`EngineBackend`** (`Services/EngineBackend.cs`, bale_gpu ABI 14): the Rust session on a raw-pixel
    SwapChainPanel in the player's video host; a 100 ms state poll raises the events; tracks come from the
    engine's stream list (new `stream_count/stream_info/select_stream`). Debug switch
    `player-backend engine` (memory only).
