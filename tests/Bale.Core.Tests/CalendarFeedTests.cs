@@ -83,6 +83,13 @@ public class CalendarFeedTests
     }
 
     [Theory]
+    [InlineData("digital", "DIGITAL")]
+    [InlineData("physical", "PHYSICAL")]
+    [InlineData("series_premiere", "PREMIERE")]
+    [InlineData("future_badge", null)]
+    public void LabelsMovieReleaseBadges(string badge, string? label) => Assert.Equal(label, CalendarFeed.BadgeLabel(badge));
+
+    [Theory]
     [InlineData("episode", " series ", 0L, true)]
     [InlineData(" Episode ", "series", 2L, true)]
     [InlineData("episode", " ", 2L, false)]

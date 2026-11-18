@@ -113,11 +113,17 @@ public sealed class CalendarFeed
         (item.Badges ?? []).Select(BadgeLabel).OfType<string>().ToArray(),
         DisplayAirTime(item.AirAt, item.AirTime, timezone));
 
-    private static string? BadgeLabel(string badge) => badge switch
+    /// <summary>
+    /// CalendarModels.kt calendarBadgeLabel (Android 64ae5f08c, Apple a82ff603): the web's labels; a movie is
+    /// listed on its first home release, tagged digital or physical. Unknown badges are hidden.
+    /// </summary>
+    internal static string? BadgeLabel(string badge) => badge switch
     {
         "series_premiere" => "PREMIERE",
         "season_premiere" => "NEW SEASON",
         "finale" => "FINALE",
+        "digital" => "DIGITAL",
+        "physical" => "PHYSICAL",
         _ => null,
     };
 
