@@ -55,6 +55,9 @@ float3 luma_weights(bool bt2020) {
 }
 // SDR sources are display-referred: decode with the BT.1886 EOTF (power 2.4) to linear 0..1.
 float sdr_decode(float signal) { return pow(clamp(signal, 0.0, 1.0), 2.4); }
+// Sign-preserving BT.1886 for the BT.709 scale-only pass: saturated colours outside 0..1 RGB survive.
+float sdr_decode_signed(float signal) { return sign(signal) * pow(min(abs(signal), 1.5), 2.4); }
+float sdr_encode_signed(float linear_value) { return sign(linear_value) * pow(min(abs(linear_value), 3.0), 1.0 / 2.4); }
 // Source modes (flags.w): 0 PQ, 1 SDR (BT.1886), 2 HLG (BT.2100, 1000-nit nominal peak).
 float hlg_inverse_oetf(float signal) {
     float e = clamp(signal, 0.0, 1.0);
@@ -73,7 +76,8 @@ float3 source_decode(float y, float2 uv, bool bt2020, bool full_range, uint mode
     float g = (y - weights.r * r - weights.b * b) / weights.g;
     // One return: FXC rejects early returns here (X4000).
     float3 decoded = float3(pq_eotf(r), pq_eotf(g), pq_eotf(b));
-    if (mode == 1) decoded = float3(sdr_decode(r), sdr_decode(g), sdr_decode(b));
+    if (mode == 1) decoded = bt2020 ? float3(sdr_decode(r), sdr_decode(g), sdr_decode(b))
+                                    : float3(sdr_decode_signed(r), sdr_decode_signed(g), sdr_decode_signed(b));
     if (mode == 2) decoded = hlg_ootf(float3(hlg_inverse_oetf(r), hlg_inverse_oetf(g), hlg_inverse_oetf(b)));
     return decoded;
 }
@@ -108,7 +112,8 @@ float3 tone_map_linear(float y, float2 uv, float source_peak_nits, float target_
     float3 rgb = source_decode(y, uv, bt2020, full_range, mode);
     if (mode == 1) {
         // BT.2020 SDR: no tone curve, only BT.2020 -> BT.709 in linear light, clip, re-encode.
-        rgb = gamut_to_709(rgb, bt2020);
+        // BT.709 SDR is scale only: no clip, so the final quantization alone limits the range.
+        if (bt2020) rgb = gamut_to_709(rgb, true);
     } else {
         float original = max(rgb.r, max(rgb.g, rgb.b));
         if (curve == 1 && bt2020) rgb = rgb2020_to_709(rgb);
@@ -123,7 +128,8 @@ float3 tone_map_linear(float y, float2 uv, float source_peak_nits, float target_
     return rgb;
 }
 float3 encode_linear(float3 rgb) {
-    return rgb709_to_ycbcr(float3(sdr_encode(rgb.r), sdr_encode(rgb.g), sdr_encode(rgb.b)));
+    // Identical to sdr_encode inside 0..1; only the unclipped BT.709 scale-only pass leaves it.
+    return rgb709_to_ycbcr(float3(sdr_encode_signed(rgb.r), sdr_encode_signed(rgb.g), sdr_encode_signed(rgb.b)));
 }
 float3 tone_map_pixel(float y, float2 uv, float source_peak_nits, float target_white_nits,
                       float desat, uint curve, bool bt2020, bool full_range, uint mode) {

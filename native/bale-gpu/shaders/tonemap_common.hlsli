@@ -4,14 +4,16 @@ cbuffer ToneMap : register(b0) {
     uint4 geometry; // visible source w/h, input texture w/h
     uint4 flags;    // curve, BT.2020, full range, source mode (0 PQ, 1 SDR gamut only, 2 HLG)
     float4 params;  // source peak nits, target white nits, desat, output depth (0 NV12, 1 P010)
-    uint4 output;   // output w/h (smaller than the visible source when downscaling), unused, unused
+    uint4 output;   // output w/h (smaller than the visible source when downscaling), input 8-bit, unused
 };
 Texture2DArray<uint> input_y : register(t0);
 Texture2DArray<uint2> input_uv : register(t1);
 
 float2 uv_at(int2 p) {
     p = clamp(p, int2(0,0), int2(geometry.xy/2)-1);
-    return float2(input_uv.Load(int4(p,0,0)) >> 6);
+    uint2 raw = input_uv.Load(int4(p,0,0));
+    // NV12 codes << 2 are exactly the 10-bit codes (16-235 -> 64-940); P010 keeps them in the top bits.
+    return float2(output.z != 0 ? raw << 2 : raw >> 6);
 }
 // Tone-mapped display-linear RGB of one visible source pixel.
 float3 sample_linear(int2 p) {
@@ -22,7 +24,8 @@ float3 sample_linear(int2 p) {
     float2 f = c-float2(base);
     float2 uv = lerp(lerp(uv_at(base),uv_at(base+int2(1,0)),f.x),
                      lerp(uv_at(base+int2(0,1)),uv_at(base+int2(1,1)),f.x),f.y);
-    float y = float(input_y.Load(int4(p,0,0)) >> 6);
+    uint raw = input_y.Load(int4(p,0,0));
+    float y = float(output.z != 0 ? raw << 2 : raw >> 6);
     return tone_map_linear(y, uv, params.x, params.y, params.z, flags.x, flags.y != 0, flags.z != 0, flags.w);
 }
 // One output pixel: area downscale in display-linear light. Each covered source pixel is weighted

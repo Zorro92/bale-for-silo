@@ -8,6 +8,11 @@ pub const BALE_TONEMAP_OUTPUT_P010: u32 = 2;
 /// The config's `reserved[0..2]` may carry a larger visible source size: apply area-downscales
 /// in display-linear light to `width` x `height`.
 pub const BALE_TONEMAP_OUTPUT_DOWNSCALE: u32 = 4;
+/// The input may be NV12 (8-bit codes read as code << 2); output stays NV12 or P010 as chosen.
+pub const BALE_TONEMAP_INPUT_NV12: u32 = 8;
+/// BT.709 SDR sources (transfer 1/6/14/15, primaries 1, matrix 1) are accepted: decode BT.1886 to
+/// linear light, area-downscale, re-encode; no tone curve and no gamut change (scale only).
+pub const BALE_TONEMAP_SDR709: u32 = 16;
 /// Largest source/output ratio per axis the area downscale accepts.
 pub const MAX_DOWNSCALE: u32 = 4;
 pub const BALE_TONEMAP_E_SELFTEST: i32 = 0x8004BA01u32 as i32;

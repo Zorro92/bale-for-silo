@@ -28,6 +28,7 @@ struct Constants {
 struct Scratch {
     width: u32,
     height: u32,
+    format: DXGI_FORMAT,
     texture: ID3D11Texture2D,
     views: [ID3D11ShaderResourceView; 2],
 }
@@ -168,30 +169,30 @@ impl ToneMapGpu {
             render_view(&self.device, output, chroma_view)?,
         ];
         // D3D11 forbids SRVs on decoder/encoder arrays even with an SRV bind present.
+        let eight_bit_input = src.Format == DXGI_FORMAT_NV12;
         let direct = src.BindFlags & D3D11_BIND_SHADER_RESOURCE.0 as u32 != 0
             && src.BindFlags & (D3D11_BIND_DECODER | D3D11_BIND_VIDEO_ENCODER).0 as u32 == 0;
         let views = if direct {
-            source_views(&self.device, input, subresource)?
+            source_views(&self.device, input, subresource, eight_bit_input)?
         } else {
-            if self
-                .scratch
-                .as_ref()
-                .is_none_or(|s| s.width != src.Width || s.height != src.Height)
-            {
+            if self.scratch.as_ref().is_none_or(|s| {
+                s.width != src.Width || s.height != src.Height || s.format != src.Format
+            }) {
                 let texture = texture(
                     &self.device,
                     &texture_desc(
                         src.Width,
                         src.Height,
-                        DXGI_FORMAT_P010,
+                        src.Format,
                         D3D11_BIND_SHADER_RESOURCE.0 as u32,
                     ),
                     None,
                 )?;
-                let views = source_views(&self.device, &texture, 0)?;
+                let views = source_views(&self.device, &texture, 0, eight_bit_input)?;
                 self.scratch = Some(Scratch {
                     width: src.Width,
                     height: src.Height,
+                    format: src.Format,
                     texture,
                     views,
                 });
@@ -213,7 +214,7 @@ impl ToneMapGpu {
                 config.desat,
                 if ten_bit { 1.0 } else { 0.0 },
             ],
-            output: [config.width, config.height, 0, 0],
+            output: [config.width, config.height, u32::from(eight_bit_input), 0],
         };
         // Fail before queueing work, never return an error after changing the caller's output.
         // D3D11 Draw/Copy/Update queue void commands; asynchronous loss belongs to the caller.
@@ -342,7 +343,7 @@ fn validate_descs(
     subresource: u32,
 ) -> Result<()> {
     let required = (D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE).0 as u32;
-    if src.Format != DXGI_FORMAT_P010
+    if (src.Format != DXGI_FORMAT_P010 && src.Format != DXGI_FORMAT_NV12)
         || (dst.Format != DXGI_FORMAT_NV12 && dst.Format != DXGI_FORMAT_P010)
         || src.MipLevels != 1
         || subresource >= src.ArraySize
@@ -403,6 +404,7 @@ fn source_views(
     device: &ID3D11Device,
     texture: &ID3D11Texture2D,
     slice: u32,
+    eight_bit: bool,
 ) -> Result<[ID3D11ShaderResourceView; 2]> {
     let view = |format| -> Result<ID3D11ShaderResourceView> {
         let desc = D3D11_SHADER_RESOURCE_VIEW_DESC {
@@ -418,11 +420,15 @@ fn source_views(
             },
         };
         let mut result = None;
-        // SAFETY: validated P010 SRV texture and array slice; format selects D3D11.1's plane.
+        // SAFETY: validated P010/NV12 SRV texture and array slice; format selects D3D11.1's plane.
         unsafe { device.CreateShaderResourceView(texture, Some(&desc), Some(&mut result))? };
         result.ok_or_else(|| E_FAIL.into())
     };
-    Ok([view(DXGI_FORMAT_R16_UINT)?, view(DXGI_FORMAT_R16G16_UINT)?])
+    if eight_bit {
+        Ok([view(DXGI_FORMAT_R8_UINT)?, view(DXGI_FORMAT_R8G8_UINT)?])
+    } else {
+        Ok([view(DXGI_FORMAT_R16_UINT)?, view(DXGI_FORMAT_R16G16_UINT)?])
+    }
 }
 
 #[cfg(test)]

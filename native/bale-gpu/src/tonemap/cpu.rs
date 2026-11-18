@@ -64,7 +64,9 @@ impl BaleToneMapFrameInfo {
         // gamut conversion.
         let supported = match self.transfer {
             16 => matches!((self.primaries, self.matrix), (9, 9) | (1, 1)),
-            18 | 1 | 6 | 14 | 15 => (self.primaries, self.matrix) == (9, 9),
+            18 => (self.primaries, self.matrix) == (9, 9),
+            // SDR: BT.2020 gamut conversion, or BT.709 scale only (BALE_TONEMAP_SDR709).
+            1 | 6 | 14 | 15 => matches!((self.primaries, self.matrix), (9, 9) | (1, 1)),
             _ => false,
         };
         if !supported || self.full_range > 1 {
@@ -144,6 +146,14 @@ fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
 pub fn sdr_decode(signal: f32) -> f32 {
     signal.clamp(0.0, 1.0).powf(2.4)
 }
+/// Sign-preserving BT.1886 decode/encode for the BT.709 scale-only pass: Y'CbCr that maps outside
+/// 0..1 RGB (saturated colours) survives the round trip instead of being clipped.
+pub fn sdr_decode_signed(signal: f32) -> f32 {
+    signal.signum() * signal.abs().min(1.5).powf(2.4)
+}
+pub fn sdr_encode_signed(linear: f32) -> f32 {
+    linear.signum() * linear.abs().min(3.0).powf(1.0 / 2.4)
+}
 /// Source transfer modes, matching the shader's flags.w.
 pub const MODE_PQ: u32 = 0;
 pub const MODE_SDR: u32 = 1;
@@ -185,7 +195,8 @@ pub fn source_decode(y: f32, uv: [f32; 2], bt2020: bool, full_range: bool, mode:
     let b = y + 2.0 * (1.0 - kb) * uv[0];
     let g = (y - kr * r - kb * b) / kg;
     match mode {
-        MODE_SDR => [r, g, b].map(sdr_decode),
+        MODE_SDR if bt2020 => [r, g, b].map(sdr_decode),
+        MODE_SDR => [r, g, b].map(sdr_decode_signed),
         MODE_HLG => hlg_ootf([r, g, b].map(hlg_inverse_oetf)),
         _ => [r, g, b].map(pq_eotf),
     }
@@ -255,7 +266,9 @@ pub fn tone_map_pixel(
 }
 /// BT.709 display-linear RGB (0..1) to Y'CbCr through the inverse BT.1886 curve.
 pub fn encode_linear(rgb: [f32; 3]) -> [f32; 3] {
-    rgb709_to_ycbcr(rgb.map(sdr_encode))
+    // Identical to sdr_encode inside 0..1 (every tone-mapped and gamut-converted value);
+    // only the unclipped BT.709 scale-only pass reaches outside it.
+    rgb709_to_ycbcr(rgb.map(sdr_encode_signed))
 }
 /// Tone-mapped display-linear BT.709 RGB in 0..1: the light domain the area downscale averages in.
 #[allow(clippy::too_many_arguments)]
@@ -273,7 +286,8 @@ pub fn tone_map_linear(
     if mode == MODE_SDR {
         // BT.2020 SDR: no tone curve, only BT.2020 -> BT.709 in linear light, clip, re-encode.
         let rgb = source_decode(y, uv, bt2020, full_range, MODE_SDR);
-        return gamut_to_709(rgb, bt2020);
+        // BT.709 SDR is scale only: no clip, so the final quantization alone limits the range.
+        return if bt2020 { gamut_to_709(rgb, true) } else { rgb };
     }
     // PQ and HLG both arrive here as display light in nits.
     let mut rgb = source_decode(y, uv, bt2020, full_range, mode);
@@ -635,7 +649,7 @@ mod tests {
                 .validate()
                 .is_ok()
         );
-        // SDR from BT.709 primaries needs nothing: not accepted.
+        // BT.709 SDR is accepted for the scale-only route (BALE_TONEMAP_SDR709); mixed tags are not.
         assert!(
             BaleToneMapFrameInfo {
                 primaries: 1,
@@ -643,8 +657,19 @@ mod tests {
                 ..sdr
             }
             .validate()
-            .is_err()
+            .is_ok()
         );
+        for (primaries, matrix) in [(1, 9), (9, 1), (2, 2)] {
+            assert!(
+                BaleToneMapFrameInfo {
+                    primaries,
+                    matrix,
+                    ..sdr
+                }
+                .validate()
+                .is_err()
+            );
+        }
         assert!(
             BaleToneMapFrameInfo {
                 transfer: 17,
@@ -719,6 +744,24 @@ mod tests {
             [400.0, 850.0],
         );
         assert!(neutral[1].abs() + neutral[2].abs() < vivid[1].abs() + vivid[2].abs());
+    }
+    /// BT.709 SDR at 1:1 is a scale-only pass: every code comes back (within rounding), so a
+    /// display-sized 8- or 10-bit SDR picture is not altered by going through the stage.
+    #[test]
+    fn bt709_sdr_scale_only_round_trips_at_one_to_one() {
+        let c = config(1);
+        let f = BaleToneMapFrameInfo {
+            transfer: 1,
+            primaries: 1,
+            matrix: 1,
+            ..frame()
+        };
+        let input = test_pattern(16, 8, false, false);
+        let out = reference_p010(&c, &f, &input, 16, 8).unwrap();
+        for (i, &code) in out[..16 * 8].iter().enumerate() {
+            let source = (input[i] >> 6).clamp(64, 940);
+            assert!(code.abs_diff(source) <= 2, "luma {i}: {source} -> {code}");
+        }
     }
     #[test]
     fn downscale_source_size_validation() {

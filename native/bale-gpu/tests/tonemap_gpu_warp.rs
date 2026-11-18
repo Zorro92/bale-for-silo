@@ -72,6 +72,26 @@ impl Warp {
         }
         out.unwrap()
     }
+    fn texture8(&self, desc: &D3D11_TEXTURE2D_DESC, data: &[u8]) -> ID3D11Texture2D {
+        let initial = D3D11_SUBRESOURCE_DATA {
+            pSysMem: data.as_ptr().cast(),
+            SysMemPitch: desc.Width,
+            SysMemSlicePitch: 0,
+        };
+        let mut out = None;
+        // SAFETY: initial data covers the full single-slice NV12 extent (Width bytes per row).
+        unsafe {
+            self.device
+                .CreateTexture2D(desc, Some(&initial), Some(&mut out))
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "WARP NV12 texture {desc:?}: HRESULT=0x{:08x}",
+                        e.code().0 as u32
+                    )
+                });
+        }
+        out.unwrap()
+    }
     fn readback(&self, output: &ID3D11Texture2D) -> Vec<u8> {
         let mut d = D3D11_TEXTURE2D_DESC::default();
         // SAFETY: live interface and local descriptor storage.
@@ -264,6 +284,55 @@ fn area_downscale_matches_reference_at_two_to_one_and_uneven_ratios() {
                     "curve={curve} {width}x{height} code={i}: GPU {a}, CPU {b}"
                 );
             }
+        }
+    }
+}
+
+#[test]
+fn nv12_bt709_sdr_scale_only_downscale_matches_reference() {
+    let warp = Warp::new();
+    // 8-bit BT.709 SDR in a padded 28x14 NV12 picture, visible 24x12, to 12x6 and 10x4.
+    let words = cpu::test_pattern(28, 14, false, false);
+    let bytes: Vec<u8> = words.iter().map(|&w| (w >> 8) as u8).collect();
+    // The CPU reference reads P010 words; an NV12 code c is the 10-bit code c << 2, i.e. word c << 8.
+    let as_p010: Vec<u16> = bytes.iter().map(|&b| u16::from(b) << 8).collect();
+    let f = BaleToneMapFrameInfo {
+        transfer: 1,
+        primaries: 1,
+        matrix: 1,
+        ..Default::default()
+    };
+    for (width, height, reserved) in [
+        (12, 6, [24, 12, 0, 0]),
+        (10, 4, [24, 12, 0, 0]),
+        (24, 12, [0; 4]),
+    ] {
+        let c = BaleToneMapConfig {
+            width,
+            height,
+            reserved,
+            ..config(1)
+        };
+        let handle = warp.create(&c);
+        let expected = cpu::reference(&c, &f, &as_p010, 28, 14).unwrap();
+        let source = warp.texture8(
+            &desc(
+                28,
+                14,
+                DXGI_FORMAT_NV12,
+                D3D11_BIND_SHADER_RESOURCE.0 as u32,
+            ),
+            &bytes,
+        );
+        let output = warp.texture(&output_desc(&c), None);
+        assert_eq!(handle.apply(&warp, &source, 0, &output, &f), S_OK);
+        let actual = warp.readback(&output);
+        assert_eq!(actual.len(), expected.len());
+        for (i, (&a, &b)) in actual.iter().zip(&expected).enumerate() {
+            assert!(
+                a.abs_diff(b) <= 3,
+                "{width}x{height} code={i}: GPU {a}, CPU {b}"
+            );
         }
     }
 }
