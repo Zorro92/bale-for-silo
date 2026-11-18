@@ -398,6 +398,13 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   seek, uses negotiated protocol-v3 `seek_reanchor`, retaining the same route, plan, session and tracks. This does not spend failure
   recovery budget. Seek completion flushes the actual landed source position through the sequenced
   progress reporter/journal, including short clamped seeks; pause state is preserved.
+- **Seek watchdog (AetherEngine seek budgets, 2026-11-18):** a local seek (native or FFmpeg, never a reanchor) is watched
+  until `SeekCompleted` or the clock near the target, past the skip's 10 s wait. After 15 s (`PlaybackSeekWatchdog`, Rust
+  `seek_watchdog.rs`, `PlayerPage.SeekWatchdog.cs`) the attempt's first stuck seek remounts the same plan at the target
+  (its own start budget bounds it); a later one fails through the single replan as `softwarePipelineFailed` /
+  `nativeItemFailed`, keeping every claim. A newer seek restarts it; Back, suspension and replacement mounts drop it; the
+  check never calls a locking FFmpegInteropX member. Debug: `bale-debug.sh seek-watchdog hang=once`. docs/player-plan.md,
+  "Seek watchdog".
 - Passive feedback copies `TvSkipSeekIndicator.kt`, `TvPlayerScrubber.kt` and `TvPlayerChrome.kt`:
   a signed skip/landing-time chip, resting 4dp track (white at 22% / Paper fill), elapsed and
   minus-remaining / wall-clock end time. Inter uses the TV 0.86 text scale; Android dp is 1:1 with

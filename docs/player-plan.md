@@ -2159,6 +2159,55 @@ until the session expired. silo-apple bounds the engine's load with the 45 s Aet
   monitor, and a replan that cannot reach the server shows the error screen as before), and the engine's own 20 s open
   timeout still moves a slow source to MediaPlayer before the budget runs out.
 
+## Seek watchdog (AetherEngine seek budgets), 2026-11-18
+
+On the debug rav1g route (fork wrapper bale.52) a seek issued right after the previous one completed never reached the
+provider: the picture stayed at the old position for minutes, every later seek timed out after the skip's 10 s wait, and
+only Back recovered (a clean close). The fork is fixing its livelock; Bale no longer leaves a viewer on a frozen player
+because a seek never lands, on any route.
+
+- **What Apple does:** AetherEngine bounds both seek paths. Its native (AVPlayer) host waits
+  `nativeSeekReconcileBudgetSeconds` (8 s), extends in 4 s steps (at most four) only while the buffer at the target
+  measurably grows, then re-anchors its producer at the target and re-seeks once (the clock held at the target), and
+  finally reports the seek stalled. Its software (FFmpeg) host gives a reposition `seekBudgetSeconds` (30 s) and then fails
+  the item as `softwarePipelineFailed` ("Playback source could not reposition."), which silo-apple's
+  `serverCanAdapt` list sends as an ordinary `failure_recovery` with its capabilities unchanged. silo-apple itself does not
+  use the server's `seek_failure_recovery` operation (Android TV does, for failed reanchors).
+- **Decision** (`PlaybackSeekWatchdog`, Rust `seek_watchdog.rs`, handle ABI `bale_core_seek_watchdog_*`): every local seek
+  (the player's clock moved inside the mounted source, MediaPlayer or engine, Windows' reader or FFmpeg) is watched from the
+  moment `SeekAsync` issues it until it lands: `SeekCompleted` after it was issued, or the clock within 5 s of the target
+  (Aether's landing window; only for a seek that started farther away, so a frozen clock never passes). One 15 s window per
+  seek: above Apple's 8 s first native window (Bale cannot read the target's buffer without the source lock, so it cannot
+  extend a shorter one), below its 30 s software budget, and above the skip's own 10 s wait, so the skip has let go of the
+  player by then. A seek_reanchor or forward-HLS seek remount is a new mount under its start budget and is never watched.
+- **Recovery:** the attempt's first stuck seek remounts the same plan, session and tracks at the seek's source target
+  (`RemountStuckSeekAsync`, the forward-HLS remount's shape: `MountPlanAsync` keeps the HDMI mode and reloads the subtitle
+  track; the old source closes on the pool), with the seek's pause intent. The remount is bounded by its own 45 s start
+  budget; an open that fails or runs out takes the ordinary single replan with its own classification. Any later stuck seek
+  of the attempt (one remount per attempt, so it never loops) fails the mount through the single recovery replan as
+  `softwarePipelineFailed` on FFmpeg routes or `nativeItemFailed` on Windows' source (both in Apple's server-can-adapt
+  list), from the seek's target rather than the frozen clock. Like the start budget, that replan keeps every claim (only
+  progressive is withdrawn, and progressive seeks are reanchors anyway) and skips the SDR-downscale and rav1g→dav1d
+  same-plan remounts and the DV7/tone-map "server ignored the withdrawal" guards. With the single replan already spent,
+  the error screen shows, as for any second failure.
+- **Races:** a landing or an ended mount in the same tick as the deadline wins. A newer seek replaces the watch with a full
+  budget (a superseded seek spends nothing). Back, suspension, a queued failure, or a replan, reanchor or track change
+  that replaced the mount drop the watch without spending the remount. The budget is held while the device is offline,
+  and an expiry waits while something else holds the player lifecycle.
+- **Threading:** the check runs on the UI tick (`UpdateSeekWatchdog`) and reads only the backend's clock and state, the
+  connectivity flag and mount fields; it never touches the FFmpeg source, so a source wedged on its sample thread cannot
+  stop it (`FfmpegUiThreadTests` covers the file). The completion flag is set from the backend's thread.
+- **Exercise it:** `bale-debug.sh seek-watchdog hang=once` (optionally `seconds=5`), then skip (`key l`) while playing.
+  The skip times out after 10 s (`player: skip not completed outcome=TimedOut`), then `player: seek did not land;
+  remounting the same plan at the target` and the player resumes at the target. Arm `hang=once` again and skip: `player:
+  seek did not land after the remount; failure recovery`, `player: failed`, `player: replan` and a new route. For a
+  remount that hangs too, also arm `start-budget seconds=10 hang=open` before the first stuck seek: the remount's start
+  budget fails it to the replan. `seek-watchdog` alone prints the switches, the watched seek's remaining budget and
+  whether the remount was spent; `seconds=default` restores 15 s. The debug hang watches the seek but never sets the
+  player's position, so it does not show a wrapper's real livelock (Back still closes cleanly either way).
+- **Not covered:** Apple's progress-based extensions (no lock-free buffer-at-target reading), and a seek that lands and then
+  stalls (that is buffering, not a stuck seek).
+
 ## rav1g (debug), 2026-11-18
 
 The owner approved testing [rav1g](https://github.com/Zorro92/rav1g) (AV1 in D3D12 compute shaders) inside Bale behind
