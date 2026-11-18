@@ -126,9 +126,13 @@ public sealed record HomeCardDismissal(string Surface, string Label)
             "episode" or "episodes" => dismissed.SeriesId,
             _ => null,
         };
-        return rows.Select(row => !CardMenu.IsProgressRow(row.SectionType) ? row : row with
+        return rows.Select(row =>
         {
-            Cards = row.Cards.Where(card => !Matches(card)).ToList(),
+            if (!CardMenu.IsProgressRow(row.SectionType)) return row;
+            var cards = row.Cards.Where(card => !Matches(card)).ToList();
+            // Android d1c36e7be: only a row that held its whole list lowers its count, so it gains no Explore all
+            // before the re-read, and a row cut at 20 does not turn whole at 19.
+            return row with { Cards = cards, TotalCount = row.ShowsWholeList ? cards.Count : row.TotalCount };
         }).Where(row => row.Cards.Count > 0).ToList();
 
         bool MatchesAnchor(MediaCard card) => card.ContentId == dismissed.ContentId && (dismissed.ProgressUpdatedAt is not null

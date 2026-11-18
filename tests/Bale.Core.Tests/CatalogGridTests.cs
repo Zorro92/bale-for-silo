@@ -27,6 +27,44 @@ public class CatalogGridTests
         Assert.Equal(expected, row.OffersExploreAll);
     }
 
+    // SectionRowLimits.kt showsWholeList (Android d1c36e7be).
+    [Theory]
+    [InlineData("continue_watching", 1, 1, 0, false)] // whole list: the page would repeat it
+    [InlineData("next_up", 3, 3, 10, false)]
+    [InlineData("in_progress", 2, 0, 0, true)]          // no total_count proves nothing
+    [InlineData("continue_watching", 2, 5, 0, true)]    // more than it shows
+    [InlineData("continue_watching", 20, 20, 0, true)]  // filled to the cap: cut there
+    [InlineData("next_up", 10, 10, 10, true)]           // filled to its item_limit
+    [InlineData("recent", 1, 1, 0, true)]               // only playback rows count their own list
+    public void APlaybackRowThatShowsItsWholeListOffersNoExploreAll(string type, int cards, long total, long limit, bool expected)
+    {
+        var row = new MediaRow("row", "Row", type, false, CardShape.Landscape,
+            Enumerable.Range(1, cards).Select(id => Card(id.ToString())).ToList())
+        {
+            ExploreSource = new SectionBrowseSource("row", "Row"),
+            TotalCount = total,
+            ItemLimit = limit,
+        };
+
+        Assert.Equal(expected, row.OffersExploreAll);
+    }
+
+    [Fact]
+    public void DismissingFromAWholeRowLowersItsCountOnly()
+    {
+        MediaCard Progress(string id) => Card(id) with { ProgressUpdatedAt = DateTimeOffset.UnixEpoch };
+        var whole = new MediaRow("cw", "Continue Watching", "continue_watching", false, CardShape.Landscape, [Progress("a"), Progress("b")])
+        {
+            ExploreSource = new SectionBrowseSource("cw", "Continue Watching"), TotalCount = 2,
+        };
+        var cut = whole with { Cards = Enumerable.Range(1, 20).Select(id => Progress(id.ToString())).ToList(), TotalCount = 20 };
+
+        Assert.Equal(1, HomeCardDismissal.Remove([whole], Progress("a")).Single().TotalCount);
+        var after = HomeCardDismissal.Remove([cut], Progress("1")).Single();
+        Assert.Equal(20, after.TotalCount);
+        Assert.True(after.OffersExploreAll);
+    }
+
     [Theory]
     [InlineData("for_you", "Anything", true)]
     [InlineData("FORYOU", "Anything", true)]

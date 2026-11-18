@@ -137,9 +137,32 @@ public sealed record MediaRow(string Id, string Title, string SectionType, bool 
     /// <summary>Only server-defined Home/library sections have a full section page; discovery rows do not.</summary>
     public SectionBrowseSource? ExploreSource { get; init; }
 
-    // SectionRowLimits.kt: even a short row can have titles hidden by Home's cross-row deduplication.
+    /// <summary>The section's <c>total_count</c>; 0 when absent, which proves nothing.</summary>
+    public long TotalCount { get; init; }
+
+    /// <summary>The section's <c>item_limit</c>; 0 when absent.</summary>
+    public long ItemLimit { get; init; }
+
+    /// <summary>
+    /// SectionRowLimits.kt showsWholeList (Android d1c36e7be, Apple 8655b06b): only a playback row (Continue
+    /// Watching, In Progress, Next Up) counts its own list; the server counts other rows after Home's cross-row
+    /// deduplication. It must report a total no larger than its cards and hold fewer cards than its limit
+    /// (item_limit when positive, capped at 20), because a row filled to its limit was cut there.
+    /// </summary>
+    public bool ShowsWholeList
+    {
+        get
+        {
+            if (SectionType.Trim().ToLowerInvariant() is not ("continue_watching" or "in_progress" or "next_up")) return false;
+            var limit = ItemLimit > 0 ? Math.Min(BrowseFeed.CardsPerRow, ItemLimit) : BrowseFeed.CardsPerRow;
+            return Cards.Count < limit && TotalCount >= 1 && TotalCount <= Cards.Count;
+        }
+    }
+
+    // SectionRowLimits.kt offersExploreAll: even a short row can have titles hidden by Home's cross-row
+    // deduplication, unless it is a playback row known to hold its whole list.
     // TvSkylineSectionFeed.kt: a row of collections shows every card and has no Explore all.
-    public bool OffersExploreAll => ExploreSource is not null && !Featured && !IsCollectionRow && Cards.Count > 0;
+    public bool OffersExploreAll => ExploreSource is not null && !Featured && !IsCollectionRow && Cards.Count > 0 && !ShowsWholeList;
 
     /// <summary>A row whose cards are collections, not titles (<c>collection_posters</c>).</summary>
     public bool IsCollectionRow => SectionType == CollectionRows.SectionType;

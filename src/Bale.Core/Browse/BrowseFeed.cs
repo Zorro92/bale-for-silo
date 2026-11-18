@@ -423,6 +423,8 @@ public sealed partial class BrowseFeed
             items.Select(item => ToCard(item, shape)).ToList())
         {
             ExploreSource = string.IsNullOrWhiteSpace(section.Id) ? null : new SectionBrowseSource(section.Id, section.Title ?? string.Empty, libraryId),
+            TotalCount = section.TotalCount ?? 0,
+            ItemLimit = section.ItemLimit ?? 0,
         };
     }
 
