@@ -19,6 +19,13 @@ public static class PlaybackReplan
         // A progressive mount that failed is not offered again: the next plan uses HLS (or the
         // original) as before progressive existed. Seeks and reconnects never come through here.
         if (PlaybackProgressive.IsProgressive(plan)) start = PlaybackProgressive.WithoutProgressive(start);
+        // silo-apple b9446d5d: a mount that ran out of its start budget says nothing about a decoder, a console
+        // stage or an audio track (a slow or hung source fails the same way), so every claim stays and the
+        // failure keeps its classification. The server excludes the failed route by its attempted key and
+        // offers the next one, as for Apple's noPlayableTrackWithinBudget.
+        if (PlaybackStartBudget.Is(failure))
+            return Build(start, plan, planAttemptId, priorAttemptedKeys.Append(plan.PlanAttemptKey!).ToArray(),
+                attemptCount, sourcePositionSeconds, "failure_recovery", failure);
         if (DolbyVision7Policy.RequiresBaseLayer(plan))
         {
             start = WithoutDolbyVision7(start);
