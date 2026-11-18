@@ -277,6 +277,9 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
             crate::http_probe::probe(&a)
         }),
         "route.decide" => with_json(name, input, route::decide),
+        "engine_output.decide" => with_json(name, input, |a: crate::engine_output::DecideArgs| {
+            crate::engine_output::decide(&a)
+        }),
         "av1_decoder.route" => with_json(name, input, |a: crate::av1_decoder::RouteArgs| {
             crate::av1_decoder::route(&a)
         }),

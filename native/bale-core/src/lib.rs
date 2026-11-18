@@ -21,6 +21,7 @@ pub mod buffering;
 pub mod display;
 pub mod dolby_vision7;
 pub mod dotnet;
+pub mod engine_output;
 pub mod evidence;
 pub mod formatting;
 pub mod frames;
