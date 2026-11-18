@@ -225,10 +225,15 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   FFmpeg software decode outputs P010 for every source above 8 bits (fork bale.41+) and NV12 for 8-bit sources, also 4:2:2, 4:4:4, full range, RGB and grey (bale.42+).
   8-bit AV1 zero-copy stores 8-bit samples shifted into the P010 pool (no 10-bit processing) until rav1g;
   the rav1g integration pool takes NV12 textures for 8-bit AV1 and P010 for 10-bit (owner, 2026-11-17).
-  Release engine sessions request B8G8R8A8 output (`MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT`), so 10-bit SDR
-  reaches the screen at 8 bits (HDR on the engine is on hold). Debug `bale-debug.sh engine-target rgb10` asks for
-  R10G10B10A2 on the next engine attempt to compare banding; `playtest-present target=rgb10` played 10-bit SDR
-  with 0 dropped frames (2026-11-17).
+  The engine's output follows the frames Bale hands it, per mount (`EngineOutputPolicy`, Rust
+  `engine_output.rs`, passed to `bale_gpu_engine_session_open_target` as `MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT`,
+  logged once per open): P010 (a source above 8 bits on the system decoder or software decode, the console tone
+  map, the SDR downscale) → R10G10B10A2; NV12 (8-bit sources, 8-bit AV1 included, server transcodes, a stage on
+  a bale_gpu without P010) → B8G8R8A8; unknown depth → B8G8R8A8, logged. R10G10B10A2 is 32 bits per pixel like
+  BGRA and played with 0 dropped frames on the console (2026-11-17/18). HDR passthrough on an HDR display gets
+  R10G10B10A2 too (on hold; colour-space handling unchanged). The MediaPlayer fallback is unchanged. Debug
+  `bale-debug.sh engine-target auto|bgra|rgb10|fp16` overrides it for the next engine attempt; `auto` (default,
+  alias `default`) follows the policy as release builds do.
 - FFmpegInteropX packages, native activation and license texts ship in **all** builds. Keep the CI
   package checker; CsWinRT's projection alone does not register the WinRT factories for Native AOT.
 - Native FFmpeg is **8.1.2-bale.dav1d.1.5.4.p1**, not public 8.1.2 (which embeds dav1d 1.0.0).

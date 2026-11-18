@@ -2457,3 +2457,13 @@ If the engine cannot open an attempt's stream, that attempt remounts on Windows 
 (`Attempt.EngineRefused`). The debug switch `player-backend mediaplayer` keeps MediaPlayer for comparison
 (memory only; engine after restart). Still to confirm on the console: the media remote and Guide tile with the
 engine, and a production build (CI builds the debug package only).
+
+**Engine output depth (2026-11-18, owner's bit-depth rule).** Engine sessions no longer always ask for
+B8G8R8A8: each mount's swap-chain format follows its frames (`EngineOutputPolicy` → `engine_output.rs`, passed
+per open through `bale_gpu_engine_session_open_target`, bale_gpu ABI 14). P010 frames (10-bit sources on the
+system decoder or software decode, the console tone map, the SDR downscale, which writes P010 for 8-bit too) get
+R10G10B10A2; NV12 frames (8-bit sources including 8-bit AV1 on dav1d zero-copy or rav1g, Silo's 8-bit transcodes)
+keep B8G8R8A8; unknown depth keeps B8G8R8A8 and is logged (`player: engine output=... frames=... reason=...`).
+Depth comes from the plan's source, else the catalog track's bit depth or pixel format, else HDR/DV implies
+10-bit. A console A/B on 2026-11-18 played R10G10B10A2 smoothly with 0 dropped frames. Debug `engine-target`
+(`auto` default, or force `bgra`/`rgb10`/`fp16`) overrides it.
