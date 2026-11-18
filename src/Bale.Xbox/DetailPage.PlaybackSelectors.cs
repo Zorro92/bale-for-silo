@@ -89,8 +89,8 @@ public sealed partial class DetailPage
         var selection = _playbackSelections.Select(detail, kind, option);
         CloseSelectorMenu();
         ShowPlaybackSummary();
-        // Edition uses the same version callback and resets file-specific indexes without deleting
-        // durable preferences (TvPlaybackSelectorRow.kt / TvItemDetailViewModel.kt).
+        // Edition and Version carry the file-specific picks (PlaybackSelectionState, Apple 417508d9) and never
+        // write or delete durable preferences (TvPlaybackSelectorRow.kt / TvItemDetailViewModel.kt).
         if (kind is PlaybackSelectorKind.Edition or PlaybackSelectorKind.Version || Session.Client is not { } client
             || PlaybackFormatting.SelectDisplayVersion(detail, selection) is not { } version) return;
 

@@ -61,6 +61,11 @@ unchanged. Gap analysis and phases: docs/apple-playback-parity.md.
 - **Series years on cards** follow Apple TV, not Android's single year (owner, 2026-11-18; Apple `9718f17b`,
   `CardYears.swift`): "2019 – 2023" once ended or cancelled, "2021 – Present" while returning, else one year
   (`CardYears`). Detail and the marquee keep one year, as on Apple TV.
+- **Track picks across a Version or Edition change** follow Apple TV, not Android's onVersionSelected, which
+  clears both (owner, 2026-11-18; Apple `417508d9`, `TVItemDetailView.swift`, `DetailPlaybackFormatting.swift`):
+  a subtitle pick moves to the new file's track with the same language, forced and SDH flags (same full tag
+  first, then the same title), else Auto; Auto and Off carry. A Version pick keeps an audio ordinal the new
+  file has; an Edition pick that changes the file drops it.
 
 **Unit mapping.** Xbox lays out at 960×540 effective pixels, the same canvas as Android TV's dp, so
 Android geometry maps 1:1 (`88.dp` → `88`). Android text is `sp × 0.86` (the TV app's

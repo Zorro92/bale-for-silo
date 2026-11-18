@@ -11,9 +11,10 @@ public sealed record PlaybackSelection(string? FileId = null, int? AudioIndex = 
 }
 
 /// <summary>
-/// Page-owned choices, keyed to the playable item, never its series/season container.
-/// TvItemDetailViewModel.kt clears file-specific tracks on a version change; its next-up
-/// variants use exactly the same rules against the focused episode's identity.
+/// Page-owned choices, keyed to the playable item, never its series/season container; the series' next-up episode
+/// uses exactly the same rules against the focused episode's identity. A Version or Edition pick carries the tracks
+/// as Apple TV does (TVItemDetailView.swift selectVersion / selectEdition, Apple 417508d9; owner, 2026-11-18), not
+/// as Android's onVersionSelected, which clears both.
 /// </summary>
 public sealed class PlaybackSelectionState
 {
@@ -70,12 +71,13 @@ public sealed class PlaybackSelectionState
     public PlaybackSelection Select(ItemDetail detail, PlaybackSelectorKind kind, PlaybackSelectorOption option)
     {
         var current = For(detail);
+        var shown = PlaybackFormatting.SelectDisplayVersion(detail, current);
         var selected = kind switch
         {
             // TvItemDetailViewModel.onEditionSelected: picking an edition puts Version back on Auto inside it.
-            PlaybackSelectorKind.Edition => new PlaybackSelection(EditionId: option.EditionId),
-            // A Version pick clears the file-specific tracks and keeps the edition.
-            PlaybackSelectorKind.Version => new PlaybackSelection(option.FileId, EditionId: current.EditionId),
+            PlaybackSelectorKind.Edition => CarryTracks(new PlaybackSelection(EditionId: option.EditionId), keepsAudio: false),
+            // A Version pick keeps the edition.
+            PlaybackSelectorKind.Version => CarryTracks(new PlaybackSelection(option.FileId, EditionId: current.EditionId), keepsAudio: true),
             PlaybackSelectorKind.Audio => current with { AudioIndex = option.TrackIndex },
             _ => current with { SubtitleIndex = option.TrackIndex },
         };
@@ -90,6 +92,20 @@ public sealed class PlaybackSelectionState
 
         _items[detail.ContentId] = (selected, version?.FileId);
         return For(detail);
+
+        // TVItemDetailView.swift: a Version pick keeps the audio ordinal while the new file has that many tracks
+        // (For drops it otherwise); an Edition pick that changes the file drops it, and one that keeps the file keeps
+        // both picks. The subtitle moves to the new file's matching track (SubtitleIndexAfterVersionPick).
+        PlaybackSelection CarryTracks(PlaybackSelection picked, bool keepsAudio)
+        {
+            var next = PlaybackFormatting.SelectDisplayVersion(detail, picked);
+            if (next?.FileId == shown?.FileId) return picked with { AudioIndex = current.AudioIndex, SubtitleIndex = current.SubtitleIndex };
+            return picked with
+            {
+                AudioIndex = keepsAudio ? current.AudioIndex : null,
+                SubtitleIndex = PlaybackFormatting.SubtitleIndexAfterVersionPick(current.SubtitleIndex, shown, next),
+            };
+        }
     }
 }
 

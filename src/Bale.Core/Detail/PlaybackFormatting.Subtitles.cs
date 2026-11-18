@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Bale.Core.Native;
 using Bale.Core.Api.Models;
 
@@ -59,6 +60,76 @@ public static partial class PlaybackFormatting
             .ThenBy(i => tracks[i].External == true)
             .Select(i => (int?)i);
     }
+
+    /// <summary>
+    /// DetailPlaybackFormatting.swift subtitleIndexAfterVersionPick (Apple 417508d9; owner, 2026-11-18, a deliberate
+    /// deviation from Android's onVersionSelected, which clears the pick): the subtitle to keep when a Version or
+    /// Edition pick moves the page from <paramref name="previous"/> to <paramref name="next"/>. Auto (null) and Off
+    /// (-1) carry over, and so does any pick when the file stays. A track index names a stream of one file, so a
+    /// picked track becomes the next file's track in the same language with the same forced and SDH flags, the same
+    /// full tag (zh-Hant) before the same primary language, preferring the same title; with none, Auto. A track
+    /// tagged "und" or untagged identifies no track. Every stored Bale pick is the viewer's own (Auto is never
+    /// seeded with an index), so Apple's reseed-from-preference branch for unpicked seeds has no counterpart here.
+    /// </summary>
+    public static int? SubtitleIndexAfterVersionPick(int? index, FileVersion? previous, FileVersion? next)
+    {
+        if (index is not >= 0 || previous?.FileId == next?.FileId) return index;
+        var before = previous?.SubtitleTracks ?? [];
+        var ordinal = CombinedSubtitleSelectionIndexes(before).IndexOf(index.Value);
+        if (ordinal < 0) return null;
+        var picked = before[ordinal];
+        // "und" names no language, so it identifies no track (TrackSelectionPersistence.swift taggedLanguage).
+        if (SubtitleLanguageKey(picked.Language) is not { } language) return null;
+
+        var tracks = next?.SubtitleTracks ?? [];
+        var combined = CombinedSubtitleSelectionIndexes(tracks);
+        var sameLanguage = Enumerable.Range(0, tracks.Count).Where(i => !IsUnplayableSubtitle(tracks[i])
+            && SubtitleLanguageKey(tracks[i].Language) == language
+            && CarriedForced(tracks[i]) == CarriedForced(picked)
+            && CarriedHearingImpaired(tracks[i]) == CarriedHearingImpaired(picked)).ToList();
+        // The same tag (zh-Hant) before the same primary language (zh-Hans), as the player's resolver ranks them.
+        var sameTag = sameLanguage.Where(i => LanguageTag(tracks[i].Language) == LanguageTag(picked.Language)).ToList();
+        var matches = sameTag.Count > 0 ? sameTag : sameLanguage;
+        // "Latin American" and "Spanish (Latin American)" name the same track.
+        if (CarriedTitle(picked) is { } wanted
+            && (Titled(title => title.Equals(wanted, StringComparison.OrdinalIgnoreCase))
+                ?? Titled(title => title.Contains(wanted, StringComparison.OrdinalIgnoreCase) || wanted.Contains(title, StringComparison.OrdinalIgnoreCase)))
+            is { } match)
+        {
+            return combined[match];
+        }
+
+        return matches.Count > 0 ? combined[matches[0]] : null;
+
+        int? Titled(Func<string, bool> test)
+        {
+            foreach (var i in matches)
+            {
+                if (CarriedTitle(tracks[i]) is { } title && test(title)) return i;
+            }
+
+            return null;
+        }
+
+        static string? LanguageTag(string? code) => code?.Trim().ToLowerInvariant().Replace('_', '-');
+    }
+
+    // DetailPlaybackFormatting.swift isForced / isHearingImpaired / nonEmpty(title) ?? nonEmpty(embeddedTitle).
+    private static bool CarriedForced(VersionSubtitleTrack track) =>
+        track.Forced == true || (track.Title ?? track.EmbeddedTitle)?.Contains("forced", StringComparison.OrdinalIgnoreCase) == true;
+
+    private static bool CarriedHearingImpaired(VersionSubtitleTrack track)
+    {
+        if (track.HearingImpaired == true) return true;
+        // SubtitleAutoResolver.titleIndicatesHearingImpaired.
+        var title = (track.Title ?? track.EmbeddedTitle)?.ToLowerInvariant();
+        if (string.IsNullOrEmpty(title)) return false;
+        if (title.Contains("hearing impaired", StringComparison.Ordinal) || title.Contains("closed caption", StringComparison.Ordinal)) return true;
+        var tokens = Regex.Split(title, @"[^\p{L}\p{N}]+");
+        return tokens.Contains("cc") || tokens.Contains("sdh");
+    }
+
+    private static string? CarriedTitle(VersionSubtitleTrack track) => NonEmpty(track.Title) ?? NonEmpty(track.EmbeddedTitle);
 
     private static bool NeedsBurnIn(VersionSubtitleTrack track)
     {

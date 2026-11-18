@@ -99,15 +99,18 @@ public class PlaybackSelectorTests
     }
 
     [Fact]
-    public void VersionChangeResetsBothTracksEvenWhenChoosingAuto()
+    public void VersionChangeCarriesOffAndOnlyAnAudioOrdinalTheNewFileHas()
     {
+        // TVItemDetailView.swift selectVersion (Apple 417508d9): "other" has no audio tracks, so ordinal 1 goes;
+        // Off carries to it and back to Auto's file.
         var state = new PlaybackSelectionState();
         var detail = Detail("movie") with { Versions = [Version(), new FileVersion { FileId = "other" }] };
         state.Select(detail, PlaybackSelectorKind.Audio, new("Japanese", "", true, TrackIndex: 1));
         state.Select(detail, PlaybackSelectorKind.Subtitles, new("Off", "", true, TrackIndex: -1));
         Assert.Equal(new PlaybackSelection(AudioIndex: 1, SubtitleIndex: -1), state.For(detail));
-        Assert.Equal(new PlaybackSelection("other"), state.Select(detail, PlaybackSelectorKind.Version, new("Other", "", true, FileId: "other")));
-        Assert.Equal(PlaybackSelection.Auto, state.Select(detail, PlaybackSelectorKind.Version, new("Auto", "", true)));
+        Assert.Equal(new PlaybackSelection("other", SubtitleIndex: -1),
+            state.Select(detail, PlaybackSelectorKind.Version, new("Other", "", true, FileId: "other")));
+        Assert.Equal(new PlaybackSelection(SubtitleIndex: -1), state.Select(detail, PlaybackSelectorKind.Version, new("Auto", "", true)));
     }
 
     [Fact]
@@ -192,7 +195,7 @@ public class PlaybackSelectorTests
     }
 
     [Fact]
-    public void VersionAndEditionChangesKeepTheSeriesOverlayButClearFileSpecificChoices()
+    public void VersionAndEditionChangesKeepTheSeriesOverlay()
     {
         var state = new PlaybackSelectionState();
         var first = Version();
@@ -203,7 +206,8 @@ public class PlaybackSelectorTests
         state.Select(detail, PlaybackSelectorKind.Audio, new("Japanese", "", true, TrackIndex: 1));
         var pending = state.PendingAudioChoiceFor(detail);
         var selection = state.Select(detail, PlaybackSelectorKind.Version, new("Other", "", true, FileId: "other"));
-        Assert.Equal(new PlaybackSelection("other"), selection);
+        // Apple's selectVersion keeps an ordinal the new file has.
+        Assert.Equal(new PlaybackSelection("other", AudioIndex: 1), selection);
         Assert.Same(pending, state.PendingAudioChoiceFor(detail));
         Assert.Equal(0, PlaybackAudioSelection.AutomaticAudioOrdinal(other, "en", null, pending));
         state.Select(detail, PlaybackSelectorKind.Audio, new("Auto", "", true));

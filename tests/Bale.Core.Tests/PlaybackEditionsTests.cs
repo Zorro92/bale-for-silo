@@ -171,7 +171,7 @@ public class PlaybackEditionsTests
     }
 
     [Fact]
-    public void EditionPicksKeepVersionOnAutoResetTracksAndRemainEpisodeScoped()
+    public void EditionPicksKeepVersionOnAutoCarryTracksAndRemainEpisodeScoped()
     {
         var first = File("10", "theatrical", "Theatrical");
         first.AudioTracks = [new() { Language = "eng" }];
@@ -181,14 +181,15 @@ public class PlaybackEditionsTests
         state.Select(detail, PlaybackSelectorKind.Audio, new("English", "", true, TrackIndex: 0));
         state.Select(detail, PlaybackSelectorKind.Subtitles, new("Off", "", true, TrackIndex: -1));
         var edition = PlaybackFormatting.SelectorOptions(PlaybackSelectorKind.Edition, detail, state.For(detail))[1];
-        var picked = new PlaybackSelection(EditionId: "extended");
+        // TVItemDetailView.swift selectEdition (Apple 417508d9): the file changes, so audio goes and Off carries.
+        var picked = new PlaybackSelection(EditionId: "extended", SubtitleIndex: -1);
         Assert.Equal(picked, state.Select(detail, PlaybackSelectorKind.Edition, edition));
         Assert.Equal("30", PlaybackFormatting.SelectDisplayVersion(detail, picked)?.FileId);
         Assert.Equal(PlaybackSelection.Auto, state.For(detail with { ContentId = "another-episode" }));
         Assert.Equal(picked, state.For(detail));
         // A Version pick inside the edition keeps the edition.
         var version = PlaybackFormatting.SelectorOptions(PlaybackSelectorKind.Version, detail, picked)[1];
-        Assert.Equal(new PlaybackSelection("20", EditionId: "extended"), state.Select(detail, PlaybackSelectorKind.Version, version));
+        Assert.Equal(new PlaybackSelection("20", SubtitleIndex: -1, EditionId: "extended"), state.Select(detail, PlaybackSelectorKind.Version, version));
         // An edition the item no longer has falls back to history.
         Assert.Null(state.For(detail with { Versions = [first] }).EditionId);
     }

@@ -119,32 +119,34 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   only), ~~grouped title counts~~ (`b2b0fb565`, Apple `710169c9`). Still open: detail drawn from the
   opened card (`62dc95035`): large (a seed model from every card origin, partial hero, actions
   gated until the fetch, 27 files upstream).
-- **To check** (2026-11-18): ~~Continue Watching focus by series id~~ (`45a869871`; fixed: progress
-  rows key episodes by series), ~~episode rail centring~~ (`d9dc3f3de`; checked, already matches:
-  instant centre once per season load, retried until realized; the carousel-join parts don't apply to
-  Bale's one-season rail), ~~Change Server forgetting a never-signed-in server~~ (`0a387afa0`; fixed:
-  a server with no saved account), ~~season list re-read after playback~~ (`b7cc29ec8`; fixed:
-  season watched state; Bale already awaits the stop), ~~stacked simultaneous text cues~~
-  (`3afd7006f`, Apple `3d4d7d1f`; checked in code: every cue is a Layer 0 Default event without
-  position, so libass collision handling stacks them, earliest at the bottom; console look not yet
-  confirmed), ~~cancellable connect~~ (Apple `2d7a4011`; fixed: Back reads Cancel), ~~top-bar menu
-  timing~~ (Apple `933381d6`; checked, already matches: Down always opens a tab's menu; the rest is
-  tvOS focus-engine specific), ~~focus after removing a card~~ (Apple `dce56e3c`; checked, already
-  matches: BrowseFocus clamps to the removed index), ~~sidecar subtitle labels without file names~~
-  (server `4ac66bd6`; checked, already matches: Bale never reads file names; numbered labels pass
-  through), ~~version order after the server sort~~ (server `85d1c166`; checked, already matches
-  `select_version`), ~~Home rows for a quality-capped profile~~ (server `0b579aa6`; server-side
-  only). ~~hero action memory on Up~~ (Apple `067e6cee`; done, owner's choice over Android's
-  selectorFocus: entering the hero row lands on the last focused action, else Play, Watchlist while Play
-  can't take focus; reset per page). ~~series year ranges~~ (Apple `9718f17b`; done, owner's choice over Android's one year: card
-  captions in Home and library rows, grids, search and history read show_status/last_air_date). Left as
-  they are: subtitle carried across a Version change (Apple
-  `417508d9`; Android's onVersionSelected still clears both picks, as Bale). ~~deleted active profile on Home~~ (Apple `b5c73e3a`; fixed: the profile list names no
-  profile but keeps the PIN proof; Home's 404 not_found re-reads it and, only when the active profile is
-  gone, returns to Who's watching (the shell's list read reconciles the same way); Bale's picker never
-  opens a lone profile by itself; no Android counterpart). Still open: source-open start budget (Apple `b9446d5d`; Bale has no start deadline at
-  all, `StartDeadlinePassed` is unused: player work for the playback phases), Home rows after the
-  server update (console check).
+- **To check** (2026-11-18): ~~Continue Watching focus by series id~~ (`45a869871`; fixed: progress rows
+  key episodes by series), ~~episode rail centring~~ (`d9dc3f3de`; checked, already matches: instant
+  centre once per season load, retried until realized; the carousel-join parts don't apply to Bale's
+  one-season rail), ~~Change Server forgetting a never-signed-in server~~ (`0a387afa0`; fixed: a server
+  with no saved account), ~~season list re-read after playback~~ (`b7cc29ec8`; fixed: season watched
+  state; Bale already awaits the stop), ~~stacked simultaneous text cues~~ (`3afd7006f`, Apple
+  `3d4d7d1f`; checked in code: every cue is a Layer 0 Default event without position, so libass
+  collision handling stacks them, earliest at the bottom; console look not yet confirmed), ~~cancellable
+  connect~~ (Apple `2d7a4011`; fixed: Back reads Cancel), ~~top-bar menu timing~~ (Apple `933381d6`;
+  checked, already matches: Down always opens a tab's menu; the rest is tvOS focus-engine specific),
+  ~~focus after removing a card~~ (Apple `dce56e3c`; checked, already matches: BrowseFocus clamps to the
+  removed index), ~~sidecar subtitle labels without file names~~ (server `4ac66bd6`; checked, already
+  matches: Bale never reads file names; numbered labels pass through), ~~version order after the server
+  sort~~ (server `85d1c166`; checked, already matches `select_version`), ~~Home rows for a
+  quality-capped profile~~ (server `0b579aa6`; server-side only), ~~hero action memory on Up~~ (Apple
+  `067e6cee`; done 2026-11-18, the owner's choice over Android's selectorFocus: entering the hero row
+  lands on the last focused action, else Play, Watchlist while Play can't take focus; reset per page),
+  ~~series year ranges~~ (Apple `9718f17b`; done, the owner's choice over Android's one year: card
+  captions in Home and library rows, grids, search and history read show_status/last_air_date),
+  ~~subtitle carried across a Version change~~ (Apple `417508d9`; done, the owner's choice over
+  Android's onVersionSelected: a subtitle pick moves to the new file's matching track, Auto and Off
+  carry; a Version pick keeps an audio ordinal the new file has, an Edition file change drops it),
+  ~~deleted active profile on Home~~ (Apple `b5c73e3a`; fixed: the profile list names no profile but
+  keeps the PIN proof; Home's 404 not_found re-reads it and, only when the active profile is gone,
+  returns to Who's watching, as the shell's list read does; Bale's picker never opens a lone profile by
+  itself; no Android counterpart). Still open: source-open start budget (Apple `b9446d5d`; Bale has no
+  start deadline at all, `StartDeadlinePassed` is unused: player work for the playback phases), Home
+  rows after the server update (console check).
 
 ## Reviews
 
