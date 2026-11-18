@@ -127,7 +127,13 @@ public sealed partial class SeasonView
     /// Always set: the season row lists seasons only, and More > Show Series Info replaced the
     /// former Show tab (TvSeasonPicker.kt). Nullable for the empty-row case.
     /// </summary>
-    public SeasonChoice? Season { get; }
+    public SeasonChoice? Season { get; private set; }
 
     public string Title => Season?.Title ?? string.Empty;
+
+    /// <summary>A re-read of the same season (its watched state changed); the tab's title is unchanged.</summary>
+    public void Refresh(SeasonChoice season)
+    {
+        if (Season?.Number == season.Number) Season = season;
+    }
 }

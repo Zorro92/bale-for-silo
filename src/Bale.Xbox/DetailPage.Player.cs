@@ -76,10 +76,12 @@ public sealed partial class DetailPage
         var seriesId = owner.IsSeries ? owner.ContentId : owner.SeriesId;
         var landing = SeriesReturn.Take(seriesId);
         if (!owner.PlaysEpisodes || landing?.EpisodeId == _playEpisode?.ContentId) landing = null;
-        if (landing is not null && playback.EpisodeId is not null
-            && Episodes.Items.OfType<EpisodeView>().Any(view => view.Episode.ContentId == landing.EpisodeId))
+        var landingEpisode = landing?.EpisodeId;
+        var landingSeason = landing?.SeasonNumber;
+        if (landingEpisode is not null && playback.EpisodeId is not null
+            && Episodes.Items.OfType<EpisodeView>().Any(view => view.Episode.ContentId == landingEpisode))
         {
-            _returnPlaybackFocus = playback with { EpisodeId = landing.EpisodeId };
+            _returnPlaybackFocus = playback with { EpisodeId = landingEpisode };
         }
         try
         {
@@ -103,11 +105,13 @@ public sealed partial class DetailPage
             if (ReferenceEquals(FocusManager.GetFocusedElement(), StartOverButton)
                 && StartOverButton.Visibility != Visibility.Visible) FocusAction(PlayButton);
 
-            if (landing is not null && _tabs.FirstOrDefault(tab => tab.Season?.Number == landing.SeasonNumber) is { } landingTab
+            if (owner.PlaysEpisodes && seriesId is not null) await RefreshSeasonsAsync(client, seriesId, Current);
+            if (!Current() || _busy) return;
+            if (landingEpisode is not null && _tabs.FirstOrDefault(tab => tab.Season?.Number == landingSeason) is { } landingTab
                 && _episodeLoadVersion == episodeVersion)
             {
                 // Selects the episode in its season (loading that season when needed) and re-reads its progress.
-                await SelectTabAsync(landingTab, preferredEpisodeId: landing.EpisodeId,
+                await SelectTabAsync(landingTab, preferredEpisodeId: landingEpisode,
                     focusEntry: playback.EpisodeId is not null, reload: true);
                 return;
             }
@@ -127,6 +131,27 @@ public sealed partial class DetailPage
         {
             // Returning/focus must not fail just because the progress read is temporarily offline.
             Log.Info($"Detail playback refresh type={ex.GetType().Name} hr=0x{unchecked((uint)ex.HResult):X8}");
+        }
+    }
+
+    /// <summary>
+    /// Android b7cc29ec8: after playback the series page reads its seasons again, not only the episodes, so a season
+    /// the viewer just finished offers Mark Unwatched. Watched state only: tabs keep their order and focus.
+    /// </summary>
+    private async Task RefreshSeasonsAsync(Bale.Core.SiloClient client, string seriesId, Func<bool> current)
+    {
+        IReadOnlyList<SeasonChoice> seasons;
+        try { seasons = await client.Detail.SeasonsAsync(seriesId); }
+        catch (Exception ex)
+        {
+            // A failed season read keeps the tabs as they were; the episode refresh still runs.
+            Log.Info($"Detail season refresh type={ex.GetType().Name} hr=0x{unchecked((uint)ex.HResult):X8}");
+            return;
+        }
+        if (!current()) return;
+        foreach (var season in seasons)
+        {
+            _tabs.FirstOrDefault(tab => tab.Season?.Number == season.Number)?.Refresh(season);
         }
     }
 }
