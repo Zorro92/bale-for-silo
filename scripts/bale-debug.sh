@@ -110,6 +110,7 @@
 #   scripts/bale-debug.sh fault playback        inject a decoder failure into the player (one replan, then error)
 #   scripts/bale-debug.sh tonemap-debug [noselftest,nostate]  bale_gpu tone-map debug switches for the next tone-map create (no args clears)
 #   scripts/bale-debug.sh tonemap-output [0-15] [format=0|1|2|3] [unmarked]  fork bale_tonemap_output mask for the next tone-map open (1 decoder-style copies, 2 no colour attributes, 4 no Flush, 8 no bale_gpu; 0 or no args clears); format: 0 auto (P010 if bale_gpu supports it), 1 P010, 2 BGRA8 (mask bit 8 only), 3 NV12; unmarked lets the output guard accept P010 BT.709 without the fork's tone-mapped mark
+#   scripts/bale-debug.sh tonemap-size [W H]   display-sized tone-map output (fork bale.38 + bale_gpu area downscale, aspect kept) for the next tone-map open; no args clears
 #   scripts/bale-debug.sh tonemap-churn [N] [control]  bale_gpu-only tone map create/apply/destroy on fresh devices, N times (default 40); control skips the tone map
 # Connection previews use disposable fixtures: no network, passwords sent, vault or saved-list writes.
 #   scripts/bale-debug.sh show login            preview phone Login (no live ticket)
@@ -777,6 +778,13 @@ case "${1:-}" in
       exit 2
     fi
     curl --fail-with-body -sS -X POST "$BASE/tonemap-debug?flags=${2-}"
+    ;;
+  tonemap-size)
+    if [[ "$#" -ne 1 && "$#" -ne 3 ]] || [[ "$#" -eq 3 && ( ! "$2" =~ ^[0-9]+$ || ! "$3" =~ ^[0-9]+$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh tonemap-size [W H]' >&2
+      exit 2
+    fi
+    curl --fail-with-body -sS -X POST "$BASE/tonemap-size?width=${2:-0}&height=${3:-0}"
     ;;
   tonemap-churn)
     if [[ "$#" -gt 3 || ( "$#" -ge 2 && ! "$2" =~ ^[0-9]+$ ) || ( "$#" -eq 3 && "$3" != control ) ]]; then

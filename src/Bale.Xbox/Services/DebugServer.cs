@@ -618,6 +618,22 @@ internal sealed partial class DebugServer
                     return ("200 OK", $"tone map output mask: {mask} format: {format} accept unmarked P010: {unmarked} (next tone-map open)\n");
                 }
 
+            case ("POST", "/tonemap-size"):
+                {
+                    // The fork's display-sized tone-map output (bale.38): 0x0 clears (2026-11-17).
+                    if (query.Keys.Any(key => key is not ("width" or "height"))
+                        || !int.TryParse(query.GetValueOrDefault("width") ?? "0", System.Globalization.NumberStyles.None,
+                            System.Globalization.CultureInfo.InvariantCulture, out var sizeWidth)
+                        || !int.TryParse(query.GetValueOrDefault("height") ?? "0", System.Globalization.NumberStyles.None,
+                            System.Globalization.CultureInfo.InvariantCulture, out var sizeHeight)
+                        || !DebugToneMapSwitches.ValidOutputSize(sizeWidth, sizeHeight))
+                        return ("400 Bad Request", "width/height: even sizes up to 7680x4320, or 0 0 to clear\n");
+                    DebugToneMapSwitches.OutputWidth = sizeWidth;
+                    DebugToneMapSwitches.OutputHeight = sizeHeight;
+                    Log.Info($"debug: tone map output size {sizeWidth}x{sizeHeight} for the next tone-map open");
+                    return ("200 OK", $"tone map output size: {sizeWidth}x{sizeHeight} (next tone-map open)\n");
+                }
+
             case ("POST", "/tonemap-churn"):
                 {
                     // bale_gpu-only opens-to-failure: no MF, no FFmpeg (2026-11-17). Never during playback.

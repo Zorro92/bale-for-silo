@@ -94,6 +94,21 @@ public sealed class DebugFfmpegToneMapTests
 
     [Theory]
     [InlineData(0, 0, true)]
+    [InlineData(1920, 1080, true)]
+    [InlineData(1921, 1080, false)]
+    [InlineData(1920, 0, false)]
+    [InlineData(8000, 4000, false)]
+    public void OutputSizeIsEvenAndBounded(int width, int height, bool valid)
+        => Assert.Equal(valid, DebugToneMapSwitches.ValidOutputSize(width, height));
+
+    [Theory]
+    [InlineData("2.1.0-bale.37", false)]
+    [InlineData("2.1.0-bale.38", true)]
+    public void OutputSizeNeedsTheBale38Wrapper(string version, bool supported)
+        => Assert.Equal(supported, DebugToneMapSwitches.SizeSupported(version));
+
+    [Theory]
+    [InlineData(0, 0, true)]
     [InlineData(1, 0, true)]
     [InlineData(3, 0, true)]
     [InlineData(2, 0, false)]

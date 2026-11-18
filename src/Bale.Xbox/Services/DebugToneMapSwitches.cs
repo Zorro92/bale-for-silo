@@ -33,6 +33,19 @@ internal static class DebugToneMapSwitches
 
     public static bool FormatSupported(string version) => Revision(version) >= 36;
 
+    /// <summary>
+    /// The fork's bale_tonemap_output_width/height (wrapper 2.1.0-bale.38): display-sized tone-map
+    /// output through bale_gpu's area downscale (aspect kept by the fork). 0 leaves the keys unset.
+    /// </summary>
+    public static int OutputWidth { get; set; }
+
+    public static int OutputHeight { get; set; }
+
+    public static bool ValidOutputSize(int width, int height) =>
+        (width, height) == (0, 0) || width is >= 2 and <= 7680 && height is >= 2 and <= 4320 && width % 2 == 0 && height % 2 == 0;
+
+    public static bool SizeSupported(string version) => Revision(version) >= 38;
+
     public static bool ValidOutputMask(int mask) => mask is >= 0 and <= 15;
 
     // Older wrappers reject unknown bale_* keys with E_INVALIDARG; bit 8 needs bale.34.
@@ -54,6 +67,11 @@ internal static class DebugToneMapSwitches
             config.FFmpegOptions["bale_tonemap_output"] = OutputMask.ToString(CultureInfo.InvariantCulture);
         if (OutputFormat != 0 && FormatSupported(version))
             config.FFmpegOptions["bale_tonemap_format"] = OutputFormat.ToString(CultureInfo.InvariantCulture);
+        if (OutputWidth != 0 && SizeSupported(version))
+        {
+            config.FFmpegOptions["bale_tonemap_output_width"] = OutputWidth.ToString(CultureInfo.InvariantCulture);
+            config.FFmpegOptions["bale_tonemap_output_height"] = OutputHeight.ToString(CultureInfo.InvariantCulture);
+        }
     }
 }
 #endif
