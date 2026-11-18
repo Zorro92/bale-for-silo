@@ -2225,14 +2225,14 @@ unchanged: dav1d zero-copy, and release packages carry no rav1g.dll.
   fallback is today's path. FastSeek stays on. `bale_tonemap_output_width/height` = the display size when the video is
   larger (bale_gpu's area downscale, never Media Foundation's leaking scaler), and `bale_tonemap=1` on an SDR display
   (PQ/HLG is tone-mapped; SDR sources log `request ignored`). A dav1d fallback ignores the stage keys.
-- **BufferTime and decode-ahead (since 2026-11-18, fork bale.46+):** 1000 ms up to 1080p and 500 ms above (each 4K
-  frame ~25 MiB, ~6 MiB at 1080p; the fork's numbers), with `bale_decode_ahead_frames=8`, like dav1d above 1080p
-  (`Rav1gPolicy.Route`, Rust `av1_decoder::buffer_ms`/`DECODE_AHEAD_FRAMES`); `ffmpeg-tune buffer=`/`ahead=` override
-  them. Since bale.46 the provider copies each rav1g image into a player-side pool and returns it at once, so the
-  buffer no longer competes with rav1g's 8 images. The first values (200 ms capped at 5 frames, decode-ahead 3) came
-  from the shared pool and starved the renderer on the console: engine fps 21-38 with bursts over 100 against
-  dav1d's steady 23.97 on the same 1080p film; 1000 ms / 8 measured 22.6-24.2, still stuttering, so delivery timing
-  in the provider is being chased separately (fork bale.49/bale.50 delivery diagnostics; bale.49's "pts" values were a log-line unit bug).
+- **BufferTime, decode-ahead and the texture cap (owner, 2026-11-18):** 250 ms at every resolution, 8 decode-ahead
+  frames, and `bale_gpu_output_textures` (fork bale.56) = frames in 250 ms at the source frame rate + 4 in flight + 2
+  (12 at 24 fps, 14 at 30, 21 at 60; no cap when the rate is unknown, since a cap below the buffer makes frames wait
+  150 ms each) — `Rav1gPolicy.Route`, Rust `av1_decoder::output_textures`. `ffmpeg-tune buffer=`/`ahead=` and
+  `rav1g-tune outtex=` override them. History: the first 200 ms / 5-frame cap starved the renderer (engine fps 21-38,
+  bursts over 100); bale.46 decoupled the pools and bale.52/54 added the feeder (4 in flight), after which 4K AV1 on
+  the console measured app memory 1225 MiB uncapped at 500 ms, 1179-1205 with cap 16 at 500 ms, and 1157-1182 with
+  cap 12 at 250 ms, the steadiest (23.92-23.99 fps, 0 overruns, seeks ~1.1 s). The Xbox's practical ceiling is ~1.2 GB.
 - **Provider knobs (wrapper bale.52):** `bale-debug.sh rav1g-tune [inflight=1-8] [perf=on|off] [parse=1|2]` (each also
   `default`; memory only, rav1g route only) set the fork's `bale_gpu_decode_inflight` (its feeder thread's units in
   flight, default 3; 4 since bale.54, which the owner watched as smooth), `bale_rav1g_perf=1` (rav1g's own CPU/GPU ms in the "Bale rav1g: delivery" line) and

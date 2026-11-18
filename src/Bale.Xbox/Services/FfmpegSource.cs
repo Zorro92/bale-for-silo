@@ -140,6 +140,9 @@ internal static class FfmpegSource
         // with rav1g's pool). ApplyInputTuning runs after this, so ffmpeg-tune ahead= still wins.
         if (rav1g.DecodeAheadFrames is { } ahead)
             config.FFmpegOptions["bale_decode_ahead_frames"] = ahead.ToString(CultureInfo.InvariantCulture);
+        // Player-side texture cap (fork bale.56), from the frame rate (Rav1gPolicy.Route); rav1g-tune outtex= overrides it below.
+        if (rav1g.OutputTextures is { } textures)
+            config.FFmpegOptions["bale_gpu_output_textures"] = textures.ToString(CultureInfo.InvariantCulture);
         if (rav1g.ToneMap) config.FFmpegOptions["bale_tonemap"] = "1";
         if (rav1g.OutputWidth is { } width && rav1g.OutputHeight is { } height)
         {

@@ -45,16 +45,18 @@ public sealed class Rav1gPolicyTests
     public void Rav1gRouteBuffersLikeDav1dAndDownscalesThroughTheStage()
     {
         var decision = Decide();
-        // Since fork bale.46 the buffer no longer competes with rav1g's pool: 500 ms above 1080p, 1000 ms up to it.
-        Assert.Equal(500, decision.BufferMs);
-        Assert.Equal(1000, Decide(route: Route(width: 1920, height: 1080)).BufferMs);
+        // 250 ms at every resolution (owner, 2026-11-18); the texture cap follows the frame rate (23.976 fps here).
+        Assert.Equal(250, decision.BufferMs);
+        Assert.Equal(250, Decide(route: Route(width: 1920, height: 1080)).BufferMs);
+        Assert.Equal(12, decision.OutputTextures);
         Assert.Equal(8, decision.DecodeAheadFrames);
         Assert.Equal(8, Decide(route: Route(width: 1920, height: 1080)).DecodeAheadFrames);
         Assert.Equal((1920, 1080), (decision.OutputWidth, decision.OutputHeight));
         Assert.True(decision.ToneMap);
         Assert.Equal(new Av1SourceFacts(10, 2, 5, 1, 24000.0 / 1001), decision.Source);
-        // The frame rate no longer matters: the buffer follows the picture size only (fork bale.46+).
-        Assert.Equal(500, Decide(version: Version(rate: "60")).BufferMs);
+        // 60 fps: the same 250 ms, a larger cap so the buffer never waits for a texture (15 + 4 + 2).
+        Assert.Equal(250, Decide(version: Version(rate: "60")).BufferMs);
+        Assert.Equal(21, Decide(version: Version(rate: "60")).OutputTextures);
         var fits = Decide(route: Route(width: 1920, height: 1080), sdr: false);
         Assert.Null(fits.OutputWidth);
         Assert.Null(fits.OutputHeight);

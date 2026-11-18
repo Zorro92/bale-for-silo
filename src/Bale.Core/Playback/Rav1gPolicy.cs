@@ -14,7 +14,7 @@ public sealed record Av1SourceFacts(long? BitDepth, uint? Primaries, uint? Trans
 /// <see cref="DecodeAheadFrames"/> is <c>bale_decode_ahead_frames</c> on the rav1g route (null: the software default).
 /// </summary>
 public sealed record Rav1gRouteDecision(bool Rav1g, int? BufferMs, int? OutputWidth, int? OutputHeight, bool ToneMap,
-    Av1SourceFacts Source, int? DecodeAheadFrames = null);
+    Av1SourceFacts Source, int? DecodeAheadFrames = null, int? OutputTextures = null);
 
 /// <summary>The media type the output guard read off a rav1g route's video sample.</summary>
 public sealed record Rav1gOutputFacts(string? Subtype, bool Rav1gMark, bool ToneMapMark, uint? Primaries, uint? Transfer,
@@ -44,8 +44,8 @@ public static class Rav1gPolicy
 
     /// <summary>
     /// Whether this mount takes rav1g (the switch, a software AV1 route, not withdrawn by an earlier failure)
-    /// and what it sets: BufferTime (1000 ms up to 1080p, 500 ms above; since fork bale.46 the buffer no longer
-    /// competes with rav1g's pool), 8 decode-ahead frames, the display size for SDR larger than
+    /// and what it sets: BufferTime (250 ms at every resolution), 8 decode-ahead frames, the player-side texture cap
+    /// (frames in 250 ms + 4 in flight + 2, by frame rate; none when unknown), the display size for SDR larger than
     /// the display, and the tone map on a known SDR display.
     /// </summary>
     public static Rav1gRouteDecision Route(string selected, PlaybackRouteDecision route, PlaybackPlan plan,

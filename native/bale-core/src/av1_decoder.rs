@@ -13,14 +13,16 @@ use crate::dotnet::trim_lower;
 use crate::models::{FileVersion, PlaybackPlan, VideoTrack};
 use crate::software_decode::normalize_codec;
 
-/// MSS BufferTime on the rav1g route up to 1080p. Since fork 2.1.0-bale.46 the provider copies each rav1g
-/// image into a player-side pool and returns it at once, so the buffer no longer competes with rav1g's 8
-/// images (the fork, 2026-11-18): 1000 ms is fine at 1080p (~6 MiB per buffered frame), as for dav1d. The
-/// earlier 200 ms / 5-frame cap starved the renderer and stuttered on the console (engine fps 21-38).
-pub const BUFFER_MS: i32 = 1000;
-/// Above 1080p (width > 1920 or height > 1080): 500 ms, each 4K frame being ~25 MiB (the fork), as
-/// `SoftwareDecodeTuning` trims dav1d there.
-pub const BUFFER_MS_ABOVE_1080P: i32 = 500;
+/// MSS BufferTime on the rav1g route, at every resolution (owner, 2026-11-18). Since fork bale.46 the provider
+/// returns each rav1g image at once and its feeder thread keeps 4 units in flight (bale.54), so a short buffer no
+/// longer starves the renderer; the console measured 4K AV1 at 250 ms smoothest (23.92-23.99 fps) and leanest. Every
+/// output frame is display-sized after the stage (~5.9 MiB at 1080p), so the saving is the same at any resolution,
+/// and the Xbox's practical app ceiling is ~1.2 GB.
+pub const BUFFER_MS: i32 = 250;
+/// Units the fork's feeder keeps in flight (its bale.54 default), part of the output texture cap below.
+pub const INFLIGHT_UNITS: i32 = 4;
+/// Spare textures above buffered frames + in flight in the cap below.
+pub const OUTPUT_TEXTURE_MARGIN: i32 = 2;
 /// `bale_decode_ahead_frames` on the rav1g route: 8, what the fork confirmed for 1080p and what dav1d gets
 /// above 1080p. `ffmpeg-tune ahead=` still overrides it.
 pub const DECODE_AHEAD_FRAMES: i32 = 8;
@@ -81,6 +83,8 @@ pub struct RouteDecision {
     pub buffer_ms: Option<i32>,
     /// `bale_decode_ahead_frames` for this mount, or `None` for the software-video default.
     pub decode_ahead_frames: Option<i32>,
+    /// `bale_gpu_output_textures` (player-side texture cap), or `None` for no cap.
+    pub output_textures: Option<i32>,
     /// `bale_tonemap_output_width/height`: SDR larger than the display goes through the fork's stage
     /// (bale_gpu's area downscale), never Media Foundation's scaler, which leaks per open on Xbox.
     pub output_width: Option<i32>,
@@ -101,6 +105,7 @@ pub fn route(args: &RouteArgs) -> RouteDecision {
             rav1g,
             buffer_ms: None,
             decode_ahead_frames: None,
+            output_textures: None,
             output_width: None,
             output_height: None,
             tone_map: false,
@@ -119,8 +124,9 @@ pub fn route(args: &RouteArgs) -> RouteDecision {
     );
     RouteDecision {
         rav1g,
-        buffer_ms: Some(buffer_ms(width, height)),
+        buffer_ms: Some(BUFFER_MS),
         decode_ahead_frames: Some(DECODE_AHEAD_FRAMES),
+        output_textures: output_textures(source.frame_rate),
         output_width: downscale.then_some(args.display_width as i32),
         output_height: downscale.then_some(args.display_height as i32),
         tone_map: args.sdr_display,
@@ -128,14 +134,14 @@ pub fn route(args: &RouteArgs) -> RouteDecision {
     }
 }
 
-/// [`BUFFER_MS`], or [`BUFFER_MS_ABOVE_1080P`] for a picture wider than 1920 or taller than 1080. An unknown
-/// size (0) takes the 1080p value.
-pub fn buffer_ms(width: i64, height: i64) -> i32 {
-    if width > 1920 || height > 1080 {
-        BUFFER_MS_ABOVE_1080P
-    } else {
-        BUFFER_MS
-    }
+/// `bale_gpu_output_textures` (fork bale.56): frames in [`BUFFER_MS`] at the source's frame rate (rounded up) +
+/// [`INFLIGHT_UNITS`] + [`OUTPUT_TEXTURE_MARGIN`]: 12 at 24 fps (the 4K console measurement, 0 overruns), 14 at 30,
+/// 21 at 60. A cap below what the buffer holds makes frames wait up to 150 ms each (the fork's overrun), so an unknown
+/// or implausible frame rate gets no cap (`None`, the fork's unlimited default).
+pub fn output_textures(frame_rate: Option<f64>) -> Option<i32> {
+    let fps = frame_rate.filter(|fps| fps.is_finite() && (1.0..=240.0).contains(fps))?;
+    let buffered = (fps * f64::from(BUFFER_MS) / 1000.0).ceil() as i32;
+    Some((buffered + INFLIGHT_UNITS + OUTPUT_TEXTURE_MARGIN).clamp(4, 64))
 }
 
 /// Whether the pinned wrapper exports `bale_rav1g_prewarm` (2.1.0-bale.48 or later).
@@ -560,8 +566,8 @@ mod tests {
     #[test]
     fn rav1g_route_sets_buffer_stage_and_display_size() {
         let decision = route(&route_args("rav1g"));
-        // A 4K picture: the above-1080p buffer.
-        assert_eq!(decision.buffer_ms, Some(BUFFER_MS_ABOVE_1080P));
+        // 250 ms at every resolution; the cap follows the frame rate.
+        assert_eq!(decision.buffer_ms, Some(BUFFER_MS));
         assert_eq!(decision.decode_ahead_frames, Some(8));
         assert_eq!(
             (decision.output_width, decision.output_height),
@@ -598,14 +604,17 @@ mod tests {
     }
 
     #[test]
-    fn buffer_time_follows_the_picture_size() {
-        // The fork (bale.46+): the buffer no longer competes with rav1g's pool; 1000 ms up to 1080p, 500 above.
-        assert_eq!(buffer_ms(1920, 1080), 1000);
-        assert_eq!(buffer_ms(1920, 1078), 1000);
-        assert_eq!(buffer_ms(0, 0), 1000);
-        assert_eq!(buffer_ms(1921, 800), 500);
-        assert_eq!(buffer_ms(3840, 2160), 500);
-        assert_eq!(buffer_ms(1440, 1081), 500);
+    fn output_texture_cap_follows_the_frame_rate() {
+        assert_eq!(output_textures(Some(24000.0 / 1001.0)), Some(12));
+        assert_eq!(output_textures(Some(24.0)), Some(12));
+        assert_eq!(output_textures(Some(25.0)), Some(13));
+        assert_eq!(output_textures(Some(30.0)), Some(14));
+        assert_eq!(output_textures(Some(59.94)), Some(21));
+        assert_eq!(output_textures(Some(120.0)), Some(36));
+        assert_eq!(output_textures(None), None);
+        assert_eq!(output_textures(Some(f64::NAN)), None);
+        assert_eq!(output_textures(Some(0.0)), None);
+        assert_eq!(output_textures(Some(1000.0)), None);
     }
 
     #[test]
