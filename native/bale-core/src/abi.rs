@@ -296,6 +296,12 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         "av1_decoder.describe" => with_json(name, input, |a: crate::av1_decoder::DescribeArgs| {
             crate::av1_decoder::describe(&a)
         }),
+        "av1_decoder.prewarm_supported" => with_json(name, input, |v: String| {
+            crate::av1_decoder::prewarm_supported(&v)
+        }),
+        "av1_decoder.prewarm_result" => with_json(name, input, |code: i32| {
+            crate::av1_decoder::prewarm_result(code)
+        }),
         "route.is_matroska" => with_json(name, input, |c: Option<String>| {
             route::is_matroska(c.as_deref())
         }),

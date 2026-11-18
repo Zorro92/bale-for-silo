@@ -121,6 +121,7 @@
     <None Include="../../tools/Bale.Cli/Program.cs" Link="CliProgram.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugServer.Capabilities.cs" Link="DebugServer.Capabilities.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugServer.cs" Link="DebugServer.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Services/Rav1gPrewarm.cs" Link="Rav1gPrewarm.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/FfmpegStreamSnapshot.cs" Link="FfmpegStreamSnapshot.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugVideoMediaType.cs" Link="DebugVideoMediaType.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/PlayerPage.Tracks.cs" Link="PlayerPage.Tracks.cs.txt" CopyToOutputDirectory="PreserveNewest" />

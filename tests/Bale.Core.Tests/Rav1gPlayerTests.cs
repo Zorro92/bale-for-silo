@@ -48,6 +48,23 @@ public sealed class Rav1gPlayerTests
     }
 
     [Fact]
+    public void SettingTheSwitchToRav1gPrewarmsOffTheUiThreadInDebugOnly()
+    {
+        var server = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "DebugServer.cs.txt"));
+        var handler = server[server.IndexOf("case (\"POST\", \"/av1-decoder\"):", StringComparison.Ordinal)..];
+        handler = handler[..handler.IndexOf("case (", 10, StringComparison.Ordinal)];
+        Assert.Contains("if (DebugAv1DecoderSwitch.Mode == \"rav1g\") Rav1gPrewarm.Start();", handler);
+        var prewarm = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Rav1gPrewarm.cs.txt"));
+        Assert.StartsWith("#if DEBUG_SERVER", prewarm);
+        Assert.Contains("[DllImport(\"FFmpegInteropX.dll\", ExactSpelling = true)]\n    private static extern int bale_rav1g_prewarm();", prewarm);
+        Assert.Contains("Rav1gPolicy.PrewarmSupported(FfmpegWrapperVersion.Value)", prewarm);
+        Assert.Contains("catch (EntryPointNotFoundException)", prewarm);
+        Assert.Contains("_ = Task.Run(() =>", prewarm);
+        // Never at app start: only the switch handler calls it.
+        Assert.DoesNotContain("Rav1gPrewarm", File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "App.cs.txt")));
+    }
+
+    [Fact]
     public void Dav1dAndNonAv1RoutesNeverSetTheForkKey()
     {
         Assert.False(FfmpegSource.Configuration(Route()).FFmpegOptions.ContainsKey("bale_av1_decoder"));

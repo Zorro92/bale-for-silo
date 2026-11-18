@@ -2185,6 +2185,14 @@ unchanged: dav1d zero-copy, and release packages carry no rav1g.dll.
   fill beside it; 2 would leave less slack at 1080p, where rav1g holds fewer. `ffmpeg-tune ahead=` still overrides it
   (applied after the route), and an open that falls back to dav1d decodes with 3 too (debug only). The BufferTime cap
   above is unchanged.
+- **Prewarm (wrapper bale.48):** `bale-debug.sh av1-decoder rav1g` also calls the fork's plain C export
+  `int bale_rav1g_prewarm(void)` from FFmpegInteropX.dll (`Rav1gPrewarm`, DllImport with ExactSpelling, on the thread
+  pool; skipped when the pinned wrapper is older than bale.48 (`Rav1gPolicy.PrewarmSupported`) or rav1g.dll is not
+  packaged; a missing export is caught). It creates rav1g's process device and starts its ~99 pipeline compiles (about
+  6.5 s on a Series X, 6 compile threads) so the first open does not; the log reads `player: rav1g prewarm started
+  (return 0)`, `already started (return 1)` or `failed (could not start its thread) (return -1)`, then the fork's
+  `ffmpeg: Bale rav1g: prewarm ready ms=N`. Never in production or at app start. **Later (owner-approved plan):** if
+  rav1g reaches production, the call moves to Detail opening an AV1 version, not app start.
 - **UI thread (all routes, after the 2026-11-18 deadlock):** with `av1-decoder rav1g` the fork's `get_image` waited
   (fixed in bale.48) while the sample thread held the wrapper's source lock, and the UI thread blocked in
   `CurrentVideoStream` for the stats panel, which stopped the start budget (driven from the UI tick) and the debug

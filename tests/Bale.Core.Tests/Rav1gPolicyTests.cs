@@ -157,6 +157,23 @@ public sealed class Rav1gPolicyTests
             Rav1gPolicy.Describe("rav1g", false, true, false, null, null, null, null, true));
     }
 
+    [Theory]
+    [InlineData("2.1.0-bale.48", true)]
+    [InlineData("2.1.0-bale.52", true)]
+    [InlineData("2.1.0-bale.47", false)]
+    [InlineData("2.1.0", false)]
+    [InlineData("", false)]
+    public void PrewarmNeedsTheBale48Export(string version, bool supported) =>
+        Assert.Equal(supported, Rav1gPolicy.PrewarmSupported(version));
+
+    [Theory]
+    [InlineData(0, "started")]
+    [InlineData(1, "already started")]
+    [InlineData(-1, "failed (could not start its thread)")]
+    [InlineData(2, "unexpected return 2")]
+    public void PrewarmReturnReadsAsTheForkDocumentsIt(int code, string expected) =>
+        Assert.Equal(expected, Rav1gPolicy.PrewarmResult(code));
+
     [Fact]
     public void OutputMarkIsTheForksGuid() =>
         Assert.Equal(new Guid(0x6d553633, 0x9287, 0x4856, 0xbc, 0x9f, 0x0c, 0x23, 0xaf, 0x00, 0xe1, 0x84), Rav1gPolicy.OutputMark);

@@ -101,6 +101,14 @@ public static class Rav1gPolicy
         ? BaleCoreNative.Call("av1_decoder.parse_log", line, BaleCoreJson.Default.String, BaleCoreJson.Default.Rav1gLogEvent)
         : null;
 
+    /// <summary>Whether the pinned wrapper exports <c>bale_rav1g_prewarm</c> from FFmpegInteropX.dll (2.1.0-bale.48+).</summary>
+    public static bool PrewarmSupported(string wrapperVersion) =>
+        BaleCoreNative.Call("av1_decoder.prewarm_supported", wrapperVersion, BaleCoreJson.Default.String, BaleCoreJson.Default.Boolean);
+
+    /// <summary>The log words for <c>bale_rav1g_prewarm</c>'s return: 0 started, 1 already started, -1 failed.</summary>
+    public static string PrewarmResult(int code) =>
+        BaleCoreNative.Call("av1_decoder.prewarm_result", code, BaleCoreJson.Default.Int32, BaleCoreJson.Default.String);
+
     /// <summary>The stats/where row: which decoder the open actually used, from the engine, the guard's mark and the logs.</summary>
     public static string Describe(string selected, bool rav1gRoute, bool libraryPresent, bool? gpuEngine, string? verdict,
         string? fallback, string? failed, string? output, bool remounted) =>

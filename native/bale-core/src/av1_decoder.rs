@@ -27,6 +27,8 @@ pub const MIN_BUFFER_MS: i32 = 40;
 /// renderer's BufferTime (at most 5 frames) waits for; 2 leaves less slack for a slow frame at 1080p, where
 /// rav1g holds fewer. `ffmpeg-tune ahead=` still overrides it.
 pub const DECODE_AHEAD_FRAMES: i32 = 3;
+/// Wrapper 2.1.0-bale.48 exports `bale_rav1g_prewarm` from FFmpegInteropX.dll.
+pub const PREWARM_WRAPPER_REVISION: i32 = 48;
 
 // Media Foundation's enum values, as the fork's VideoColorAttributes::Apply writes them.
 const MF_PRIMARIES_BT709: u32 = 2;
@@ -137,6 +139,28 @@ pub fn buffer_ms(frame_rate: Option<f64>) -> i32 {
             (frames.min(f64::from(BUFFER_MS)) as i32).max(MIN_BUFFER_MS)
         }
         _ => BUFFER_MS,
+    }
+}
+
+/// Whether the pinned wrapper exports `bale_rav1g_prewarm` (2.1.0-bale.48 or later).
+pub fn prewarm_supported(version: &str) -> bool {
+    version.strip_prefix("2.1.0-bale.").is_some_and(|revision| {
+        !revision.is_empty()
+            && revision.bytes().all(|b| b.is_ascii_digit())
+            && revision
+                .parse::<i32>()
+                .is_ok_and(|revision| revision >= PREWARM_WRAPPER_REVISION)
+    })
+}
+
+/// The log words for `bale_rav1g_prewarm`'s return (the fork's bale/README.md: 0 started, 1 already
+/// started, -1 could not start its thread).
+pub fn prewarm_result(code: i32) -> String {
+    match code {
+        0 => "started".into(),
+        1 => "already started".into(),
+        -1 => "failed (could not start its thread)".into(),
+        other => format!("unexpected return {other}"),
     }
 }
 
@@ -562,6 +586,25 @@ mod tests {
         assert!((2..=4).contains(&DECODE_AHEAD_FRAMES));
         // 8 pool images minus rav1g's 4K hold (slots + 2 = 5).
         assert!(DECODE_AHEAD_FRAMES <= 8 - 5);
+    }
+
+    #[test]
+    fn prewarm_needs_wrapper_bale_48() {
+        assert!(prewarm_supported("2.1.0-bale.48"));
+        assert!(prewarm_supported("2.1.0-bale.120"));
+        assert!(!prewarm_supported("2.1.0-bale.47"));
+        assert!(!prewarm_supported("2.1.0-bale."));
+        assert!(!prewarm_supported("2.1.0-bale.4x"));
+        assert!(!prewarm_supported("2.1.0"));
+        assert!(!prewarm_supported(""));
+    }
+
+    #[test]
+    fn prewarm_results_read_as_the_fork_documents_them() {
+        assert_eq!(prewarm_result(0), "started");
+        assert_eq!(prewarm_result(1), "already started");
+        assert_eq!(prewarm_result(-1), "failed (could not start its thread)");
+        assert_eq!(prewarm_result(7), "unexpected return 7");
     }
 
     #[test]
