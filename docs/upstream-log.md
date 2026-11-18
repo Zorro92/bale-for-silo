@@ -108,24 +108,40 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   Bale reads the profile list for "by Name" only when a row holds another profile's collection
   (Android uses its cached list). Apple `6eea7cf7`, Roku `8183af8`/`d240f47`, server
   `4a0ab33b`/`217ff25a`.
-- **Smaller:** device name in sign-in (`bd6ade492`), hero logo grace 700 ms (`e57fbf3f6`),
-  Calendar DIGITAL/PHYSICAL badges (`64ae5f08c`, Apple `a82ff603`), Search clear button
-  (`548e3cb77`), remote Stop key (`969c0a812`), unplayable subtitle rows (`461240c6d`),
-  return-from-player episode (`e727c9af5`), declined device-code lead
-  (`0548b9255`/`538e2e9a`), port error outline (`d1837b92`), no Explore all on a playback row
-  that shows its whole list (`d1c36e7be`, Apple `8655b06b`), detail drawn from the opened card
-  (`62dc95035`), requests re-probe on foreground (`98d077170`), grouped title counts
-  (`b2b0fb565`, Apple `710169c9`).
-- **To check:** Continue Watching focus by series id (`45a869871`), episode rail centring
-  (`d9dc3f3de`), Change Server forgetting a never-signed-in server (`0a387afa0`), hero action
-  memory on Up (Apple `067e6cee`, no Android match), Home rows after the server update; season
-  list re-read after playback (`b7cc29ec8`), stacked simultaneous text cues (`3afd7006f`,
-  Apple `3d4d7d1f`), series year ranges (Apple `9718f17b`), deleted active profile on Home
-  (Apple `b5c73e3a`), cancellable connect (Apple `2d7a4011`), subtitle carried across a
-  Version change (Apple `417508d9`), source-open start budget (Apple `b9446d5d`), top-bar menu
-  timing (Apple `933381d6`), focus after removing a card (Apple `dce56e3c`), sidecar subtitle
-  labels without file names (server `4ac66bd6`), version order after the server sort (server
-  `85d1c166`), Home rows for a quality-capped profile (server `0b579aa6`).
+- **Smaller** (worked through 2026-11-18, none yet on the console): ~~device name in sign-in~~
+  (`bd6ade492`; console name, model kept for playback diagnostics), ~~hero logo grace 700 ms~~
+  (`e57fbf3f6`), ~~Calendar DIGITAL/PHYSICAL badges~~ (`64ae5f08c`, Apple `a82ff603`), ~~Search
+  clear button~~ (`548e3cb77`), ~~remote Stop key~~ (`969c0a812`; already handled since the 11-16
+  transport keys), ~~unplayable subtitle rows~~ (`461240c6d`), ~~return-from-player episode~~
+  (`e727c9af5`), ~~declined device-code lead~~ (`0548b9255`/`538e2e9a`; the code actions wrap),
+  ~~port error outline~~ (`d1837b92`), ~~no Explore all on a playback row that shows its whole
+  list~~ (`d1c36e7be`, Apple `8655b06b`), ~~requests re-probe on foreground~~ (`98d077170`, probe
+  only), ~~grouped title counts~~ (`b2b0fb565`, Apple `710169c9`). Still open: detail drawn from the
+  opened card (`62dc95035`): large (a seed model from every card origin, partial hero, actions
+  gated until the fetch, 27 files upstream).
+- **To check** (2026-11-18): ~~Continue Watching focus by series id~~ (`45a869871`; fixed: progress
+  rows key episodes by series), ~~episode rail centring~~ (`d9dc3f3de`; checked, already matches:
+  instant centre once per season load, retried until realized; the carousel-join parts don't apply to
+  Bale's one-season rail), ~~Change Server forgetting a never-signed-in server~~ (`0a387afa0`; fixed:
+  a server with no saved account), ~~season list re-read after playback~~ (`b7cc29ec8`; fixed:
+  season watched state; Bale already awaits the stop), ~~stacked simultaneous text cues~~
+  (`3afd7006f`, Apple `3d4d7d1f`; checked in code: every cue is a Layer 0 Default event without
+  position, so libass collision handling stacks them, earliest at the bottom; console look not yet
+  confirmed), ~~cancellable connect~~ (Apple `2d7a4011`; fixed: Back reads Cancel), ~~top-bar menu
+  timing~~ (Apple `933381d6`; checked, already matches: Down always opens a tab's menu; the rest is
+  tvOS focus-engine specific), ~~focus after removing a card~~ (Apple `dce56e3c`; checked, already
+  matches: BrowseFocus clamps to the removed index), ~~sidecar subtitle labels without file names~~
+  (server `4ac66bd6`; checked, already matches: Bale never reads file names; numbered labels pass
+  through), ~~version order after the server sort~~ (server `85d1c166`; checked, already matches
+  `select_version`), ~~Home rows for a quality-capped profile~~ (server `0b579aa6`; server-side
+  only). Left as they are: hero action memory on Up (Apple `067e6cee`; Bale follows Android's
+  selectorFocus: Up from the season tabs enters Edition/Version, else Play), series year ranges (Apple
+  `9718f17b`; Android shows one year, as Bale), subtitle carried across a Version change (Apple
+  `417508d9`; Android's onVersionSelected still clears both picks, as Bale). Still open: deleted active
+  profile on Home (Apple `b5c73e3a`; profile list without X-Profile-Id plus a 404 recovery on Home;
+  no Android counterpart), source-open start budget (Apple `b9446d5d`; Bale has no start deadline at
+  all, `StartDeadlinePassed` is unused: player work for the playback phases), Home rows after the
+  server update (console check).
 
 ## Reviews
 
