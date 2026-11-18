@@ -10,9 +10,9 @@
       },
       "FFmpegInteropX.UWP.Lib": {
         "type": "Direct",
-        "requested": "[2.1.0-bale.41, 2.1.0-bale.41]",
-        "resolved": "2.1.0-bale.41",
-        "contentHash": "a6BbzyWaD0WLm1GJxt1Btvfk4Dy+g6ymijh4eB3nHvacqLutLzsQtiTxJkDJG08VZEQIcRcIgFK/MyBT/lxsVA==",
+        "requested": "[2.1.0-bale.42, 2.1.0-bale.42]",
+        "resolved": "2.1.0-bale.42",
+        "contentHash": "r6s480B5EErglUt9fNsZy2jDvo7uFO4B0gqDp7pfUq+84Tn0seKup+rV0/c5YjWMA1k2zhwb5VNID07CZEPLZA==",
         "dependencies": {
           "Microsoft.Windows.CsWinRT": "2.2.0"
         }
@@ -153,9 +153,9 @@
       },
       "FFmpegInteropX.UWP.Lib": {
         "type": "Direct",
-        "requested": "[2.1.0-bale.41, 2.1.0-bale.41]",
-        "resolved": "2.1.0-bale.41",
-        "contentHash": "a6BbzyWaD0WLm1GJxt1Btvfk4Dy+g6ymijh4eB3nHvacqLutLzsQtiTxJkDJG08VZEQIcRcIgFK/MyBT/lxsVA==",
+        "requested": "[2.1.0-bale.42, 2.1.0-bale.42]",
+        "resolved": "2.1.0-bale.42",
+        "contentHash": "r6s480B5EErglUt9fNsZy2jDvo7uFO4B0gqDp7pfUq+84Tn0seKup+rV0/c5YjWMA1k2zhwb5VNID07CZEPLZA==",
         "dependencies": {
           "Microsoft.Windows.CsWinRT": "2.2.0"
         }
