@@ -184,7 +184,7 @@ public sealed class DebugFfmpegDecoderTests
         Assert.Contains("media.SoftwareVideo = attempt.FfmpegTuning.SoftwareVideo(media.Route.SoftwareVideo)", media);
         Assert.Contains("softwareVideo = media.SoftwareVideo;", media);
         Assert.Contains("if (media.SoftwareVideo && media.FfmpegSource is { } softwareSource)", media);
-        Assert.Contains("FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route, attempt.FfmpegTuning)", media);
+        Assert.Contains("FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route, attempt.FfmpegTuning, rav1gRoute)", media);
         Assert.Contains("decoder={media.FfmpegDecoderOverride} decoderMode={config.Video.VideoDecoderMode}", media);
         var stats = Read("PlayerPage.Stats.cs.txt");
         Assert.Contains("media.MssVideoMediaType?.Refresh(media.Started)", stats);

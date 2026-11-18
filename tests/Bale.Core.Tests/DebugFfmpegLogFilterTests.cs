@@ -52,7 +52,9 @@ public class DebugFfmpegLogFilterTests
         Assert.Contains("#if DEBUG_SERVER\n// Partial", logging);
         Assert.Contains("internal sealed partial class DebugFfmpegLogProvider : ILogProvider", logging);
         Assert.Contains("public void Log(LogLevel level, string message)", logging);
-        Assert.Contains("try\n        {\n            if (DebugFfmpegLogFilter.Message(message) is { } safe) Bale.Xbox.Services.Log.Info(safe);\n        }\n        catch", logging);
+        Assert.Contains("try\n        {\n            // The debug rav1g switch reads which decoder the open used from the fork's fixed lines.\n"
+            + "            DebugRav1gLog.Observe(message);\n"
+            + "            if (DebugFfmpegLogFilter.Message(message) is { } safe) Bale.Xbox.Services.Log.Info(safe);\n        }\n        catch", logging);
         Assert.DoesNotContain("Log.Error", logging);
         Assert.DoesNotContain("Dispatcher", logging);
         Assert.DoesNotContain("ex.Message", logging);

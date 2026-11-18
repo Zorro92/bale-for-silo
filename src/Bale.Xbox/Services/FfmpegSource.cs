@@ -10,7 +10,9 @@ internal static class FfmpegSource
 #if DEBUG_SERVER
         => Configuration(route, new DebugFfmpegInputTuning());
 
-    internal static MediaSourceConfig Configuration(PlaybackRouteDecision route, DebugFfmpegInputTuning tuning)
+    /// <param name="rav1g">The debug AV1 decoder switch's decision for this mount (Rav1gPolicy.Route); null is dav1d.</param>
+    internal static MediaSourceConfig Configuration(PlaybackRouteDecision route, DebugFfmpegInputTuning tuning,
+        Rav1gRouteDecision? rav1g = null)
 #endif
     {
         // Debug captures only our safe Bale diagnostics; production keeps the native logger off.
@@ -54,6 +56,11 @@ internal static class FfmpegSource
         ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(softwareVideo, route.VideoWidth, route.VideoHeight));
         // Only AV1 uses zero-copy/GPU grain. MPEG-4 Part 2 uses FFmpegInteropX's ordinary
         // software provider; it has neither a D3D11VA decoder nor an AV1 zero-copy output path.
+#if DEBUG_SERVER
+        // Debug only (owner, 2026-11-18): rav1g decodes software AV1 on the fork's GPU provider instead.
+        if (rav1g is { Rav1g: true } && softwareVideo && route.VideoCodec == "av1") ApplyRav1g(config, rav1g);
+        else
+#endif
         if (softwareVideo && route.VideoCodec == "av1") ApplySoftwareVideo(config);
 #if DEBUG_SERVER
         if (tuning.Decoder is DebugFfmpegDecoder.System or DebugFfmpegDecoder.Software)
@@ -115,6 +122,28 @@ internal static class FfmpegSource
     }
 
 #if DEBUG_SERVER
+    /// <summary>
+    /// The debug rav1g route (wrapper 2.1.0-bale.44, the fork's bale/design-rav1g-provider.md): bale_av1_decoder=1 puts
+    /// AV1 on GpuDecoderSampleProvider. rav1g needs no zero-copy registration, so its absence never fails the open.
+    /// The fork ignores the zero-copy/grain keys for a rav1g stream but honours them when the open falls back to dav1d
+    /// (rav1g.dll missing, ABI mismatch, unsupported stream), so they are set whenever zero-copy registers: that
+    /// fallback is then today's dav1d path. The stage keys work as on the D3D11 path: SDR larger than the display is
+    /// downscaled by bale_gpu (never Media Foundation's leaking scaler), PQ/HLG is tone-mapped on an SDR display;
+    /// a dav1d fallback ignores them.
+    /// </summary>
+    internal static void ApplyRav1g(MediaSourceConfig config, Rav1gRouteDecision rav1g)
+    {
+        if (ZeroCopyRuntime.Register()) ApplySoftwareVideo(config);
+        else Log.Info("player: rav1g route without zero-copy; a dav1d fallback would decode without it");
+        config.FFmpegOptions["bale_av1_decoder"] = "1";
+        if (rav1g.ToneMap) config.FFmpegOptions["bale_tonemap"] = "1";
+        if (rav1g.OutputWidth is { } width && rav1g.OutputHeight is { } height)
+        {
+            config.FFmpegOptions["bale_tonemap_output_width"] = width.ToString(CultureInfo.InvariantCulture);
+            config.FFmpegOptions["bale_tonemap_output_height"] = height.ToString(CultureInfo.InvariantCulture);
+        }
+    }
+
     internal static VideoDecoderMode DecoderMode(VideoDecoderMode production, DebugFfmpegInputTuning tuning) => tuning.Decoder switch
     {
         DebugFfmpegDecoder.Auto => VideoDecoderMode.Automatic,
@@ -153,8 +182,19 @@ internal static class FfmpegSource
         }
     }
 
-    internal static void ValidateVideoDecoders(FFmpegMediaSource source, PlaybackRouteDecision route, DebugFfmpegInputTuning tuning)
+    internal static void ValidateVideoDecoders(FFmpegMediaSource source, PlaybackRouteDecision route, DebugFfmpegInputTuning tuning,
+        bool rav1g = false)
     {
+        if (rav1g)
+        {
+            // rav1g's provider reports the D3D11 engine (the wrapper's engine enum is frozen); its open-time fallback is
+            // dav1d's software engine. Either is this route's one AV1 stream; anything else fails the open as before.
+            var av1 = source.VideoStreams;
+            if (av1.Count == 0 || av1.Any(video => SoftwareDecodePolicy.NormalizeCodec(video.CodecName) != "av1"
+                    || video.DecoderEngine is not (DecoderEngine.FFmpegD3D11HardwareDecoder or DecoderEngine.FFmpegSoftwareDecoder)))
+                throw new InvalidDataException("The rav1g route requires its AV1 stream on rav1g or dav1d.");
+            return;
+        }
         if (tuning.Decoder is null || tuning.RequiresToneMapGuard(route) || route.DolbyVision7BaseLayer)
         {
             ValidateVideoDecoders(source, route);

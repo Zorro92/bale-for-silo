@@ -141,6 +141,7 @@
     <None Include="../../src/Bale.Xbox/PlayerPage.StartBudget.cs" Link="PlayerPage.StartBudget.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/PlayerPage.BufferingQuality.cs" Link="PlayerPage.BufferingQuality.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugEngineTargetSwitch.cs" Link="DebugEngineTargetSwitch.cs" />
+    <Compile Include="../../src/Bale.Xbox/Services/DebugAv1DecoderSwitch.cs" Link="DebugAv1DecoderSwitch.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugStreamAdapterSwitch.cs" Link="DebugStreamAdapterSwitch.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugAv1ClaimSwitch.cs" Link="DebugAv1ClaimSwitch.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugAv1ClaimSwitch.cs" Link="DebugAv1ClaimSwitch.cs.txt" CopyToOutputDirectory="PreserveNewest" />

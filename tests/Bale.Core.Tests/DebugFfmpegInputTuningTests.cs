@@ -56,7 +56,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     public void BufferTimeIsAppliedAfterItemCreationWithOnlyTheOverrideDebugGuarded()
     {
         var player = Read("PlayerPage.Media.cs.txt");
-        Assert.Contains("int? bufferOverrideMs = null;\n                var softwareVideo = media.Route.SoftwareVideo;\n#if DEBUG_SERVER\n                bufferOverrideMs = attempt.FfmpegTuning.BufferMs;\n                softwareVideo = media.SoftwareVideo;\n#endif\n                if (SoftwareDecodeTuning.BufferTimeMs(softwareVideo, bufferOverrideMs,\n                        media.Route.VideoWidth, media.Route.VideoHeight) is { } bufferMs)", player);
+        Assert.Contains("int? bufferOverrideMs = null;\n                var softwareVideo = media.Route.SoftwareVideo;\n#if DEBUG_SERVER\n                // rav1g's pool is 8 images: a few frames of BufferTime, unless ffmpeg-tune buffer= overrides it.\n                bufferOverrideMs = attempt.FfmpegTuning.BufferMs ?? (rav1gRoute ? media.Rav1g!.BufferMs : null);\n                softwareVideo = media.SoftwareVideo;\n#endif\n                if (SoftwareDecodeTuning.BufferTimeMs(softwareVideo, bufferOverrideMs,\n                        media.Route.VideoWidth, media.Route.VideoHeight) is { } bufferMs)", player);
         var item = player.IndexOf("media.Item = media.FfmpegSource.CreateMediaPlaybackItem();", StringComparison.Ordinal);
         var buffering = player.IndexOf("if (SoftwareDecodeTuning.BufferTimeMs(", StringComparison.Ordinal);
         Assert.True(item >= 0 && buffering > item);
@@ -318,7 +318,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("public DebugFfmpegInputTuning FfmpegTuning { get; } = DebugFfmpegInputTuning.Current", Read("PlayerPage.cs.txt"));
         var player = Read("PlayerPage.Media.cs.txt");
         Assert.Contains("media.Route.UseFfmpeg ? attempt.FfmpegTuning.Prefetch ?? HttpRangeStream.DefaultPrefetchBlocks", player);
-        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning)", player);
+        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g)", player);
         Assert.Contains("prefetched.PrefetchBlocks", player);
         Assert.Contains("if (!attempt.FfmpegTuningLogged)", player);
         Assert.Contains("attempt.FfmpegTuningLogged = true", player);

@@ -86,6 +86,10 @@ public sealed partial class PlayerPage : Page, IBackHandler
         /// <summary>The Rust range stream and its Rust IRandomAccessStream (docs/rust-port.md, slice 7).</summary>
         public bool UseRustTransport => StreamAdapter == "rust";
         public int Av1ClaimMaxHeight { get; } = DebugAv1ClaimSwitch.MaxHeight;
+        /// <summary>dav1d or rav1g for software AV1 (DebugAv1DecoderSwitch), captured when the attempt starts.</summary>
+        public string Av1Decoder { get; } = DebugAv1DecoderSwitch.Mode;
+        /// <summary>A rav1g mount failed and the same plan was remounted on dav1d; later mounts stay on dav1d.</summary>
+        public bool Rav1gRemounted { get; set; }
         public bool FfmpegEnabled => FfmpegMode != "off";
         public bool ForceFfmpeg => FfmpegMode == "direct";
 #else
@@ -367,6 +371,34 @@ public sealed partial class PlayerPage : Page, IBackHandler
         finally { _recording = false; }
     }
 
+    /// <summary>
+    /// Remount the current plan once more on another local path (no server replan), from the same source position.
+    /// The caller has marked the attempt so the new mount takes that path; a failed open takes the single replan.
+    /// </summary>
+    private async Task RemountSamePlanAsync(Attempt attempt, double position, string reason)
+    {
+        HideTransport();
+        _state = "loading";
+        SetLoading(true);
+        DisposeMount(attempt);
+        DisposeSubtitles(keepFetched: true);
+        await _hdrOutput.RestoreAsync();
+        attempt.Cancellation.Token.ThrowIfCancellationRequested();
+        Log.Info(reason);
+        var current = PlaybackTimeline.From(attempt.Plan!.Timeline);
+        try
+        {
+            await MountPlanAsync(attempt, PlaybackProgressive.MountPlayerStart(attempt.Plan,
+                current.PlayerForSource(position) ?? current.PlayerStartSeconds));
+        }
+        catch (Exception ex) when (!attempt.Cancellation.IsCancellationRequested)
+        {
+            // The remount's open failed (or its start budget stopped it): the single replan decides, as for the start.
+            LogFailure("open", ex);
+            await RecoverCoreAsync(attempt, ex.HResult, isDecoder: false, IsNetworkFailure(ex));
+        }
+    }
+
     private bool IsCurrent(Attempt attempt, Mount media) => _active && !_leaving && !_suspended
         && ReferenceEquals(_attempt, attempt) && ReferenceEquals(attempt.Media, media)
         && !attempt.Cancellation.IsCancellationRequested;
@@ -422,28 +454,20 @@ public sealed partial class PlayerPage : Page, IBackHandler
             // (e.g. unspecified colour tags) and the guard then rejects it. Remount the same plan once on the
             // system decoder (MF scales it as before) without spending the server replan.
             attempt.SdrDownscaleDeclined = true;
-            HideTransport();
-            _state = "loading";
-            SetLoading(true);
-            DisposeMount(attempt);
-            DisposeSubtitles(keepFetched: true);
-            await _hdrOutput.RestoreAsync();
-            attempt.Cancellation.Token.ThrowIfCancellationRequested();
-            Log.Info("player: console downscale declined; remounting on the system decoder");
-            var current = PlaybackTimeline.From(attempt.Plan!.Timeline);
-            try
-            {
-                await MountPlanAsync(attempt, PlaybackProgressive.MountPlayerStart(attempt.Plan,
-                    current.PlayerForSource(position) ?? current.PlayerStartSeconds));
-            }
-            catch (Exception ex) when (!attempt.Cancellation.IsCancellationRequested)
-            {
-                // The remount's open failed (or its start budget stopped it): the single replan decides, as for the start.
-                LogFailure("open", ex);
-                await RecoverCoreAsync(attempt, ex.HResult, isDecoder: false, IsNetworkFailure(ex));
-            }
+            await RemountSamePlanAsync(attempt, position, "player: console downscale declined; remounting on the system decoder");
             return;
         }
+#if DEBUG_SERVER
+        // Debug rav1g switch (owner, 2026-11-18): a rav1g mount that failed (the fork's latched NotifyError, or the guard
+        // rejecting its output) remounts the same plan once on today's dav1d zero-copy path; its failure takes the replan.
+        if (attempt.Media is { } failedMount && Rav1gPolicy.RemountOnDav1d(failedMount.Rav1gRoute, failedMount.Rav1gActive,
+                attempt.Rav1gRemounted, hdrOutputFailed, PlaybackEmbeddedSubtitleFailure.Is(failure), startBudget))
+        {
+            attempt.Rav1gRemounted = true;
+            await RemountSamePlanAsync(attempt, position, "player: rav1g failed; remounting the same plan on dav1d");
+            return;
+        }
+#endif
         if (attempt.Replanned)
         {
             await ShowErrorAsync(PlaybackMessages.PlaybackFailed);

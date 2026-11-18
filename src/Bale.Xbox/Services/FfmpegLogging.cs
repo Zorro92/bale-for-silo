@@ -27,6 +27,8 @@ internal sealed partial class DebugFfmpegLogProvider : ILogProvider
     {
         try
         {
+            // The debug rav1g switch reads which decoder the open used from the fork's fixed lines.
+            DebugRav1gLog.Observe(message);
             if (DebugFfmpegLogFilter.Message(message) is { } safe) Bale.Xbox.Services.Log.Info(safe);
         }
         catch

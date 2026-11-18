@@ -139,6 +139,20 @@ public sealed partial class PlayerPage
         });
     }
 
+    /// <summary>
+    /// The debug AV1 decoder switch: which decoder this mount's open actually used, from the engine FFmpegInteropX reports
+    /// (rav1g's provider reports D3D11), the guard's mark verdict and the fork's "Bale rav1g:" lines.
+    /// </summary>
+    private static string Av1DecoderRow(Attempt? attempt, Mount? media)
+    {
+        if (attempt is null || media?.FfmpegSource is null) return "unavailable";
+        if (!media.SoftwareVideo || media.Route.VideoCodec != "av1") return $"not software AV1 · switch {attempt.Av1Decoder}";
+        var (_, _, fallback, failed, output) = media.Rav1gRoute ? DebugRav1gLog.Snapshot() : default;
+        return Rav1gPolicy.Describe(attempt.Av1Decoder, media.Rav1gRoute, Rav1gLibrary.Present,
+            media.Rav1gCheck?.GpuEngine ?? (media.Rav1gRoute ? media.Rav1gActive : null), media.Rav1gCheck?.Verdict,
+            fallback, failed, output, attempt.Rav1gRemounted);
+    }
+
     /// <summary>IMFMediaEngine's own frame statistics (its counters restart after a seek or pause).</summary>
     private static string EngineFrames(EngineSessionState state) => string.Create(CultureInfo.InvariantCulture,
         $"rendered {state.FramesRendered} · dropped {state.FramesDropped} · corrupted {state.FramesCorrupted} · {(double.IsFinite(state.FramesPerSecond) ? state.FramesPerSecond.ToString("0.00", CultureInfo.InvariantCulture) : "?")} fps · frame delay {(double.IsFinite(state.FrameDelay) ? state.FrameDelay.ToString("0.###", CultureInfo.InvariantCulture) : "?")}");
@@ -161,6 +175,7 @@ public sealed partial class PlayerPage
             ("FFmpeg decoder override", media?.FfmpegDecoderOverride ?? "unavailable"),
             ("FFmpeg tone map override", media?.FfmpegToneMapOverride ?? "unavailable"),
             ("FFmpeg colour info override", media?.FfmpegColorInfoOverride ?? "unavailable"),
+            ("AV1 decoder", Av1DecoderRow(_attempt, media)),
             ("Video media type (track)", media?.TrackVideoMediaType ?? "unavailable"),
             ("Video media type (mss)", media?.MssVideoMediaType?.Description ?? "unavailable"),
             ("Sample memory", media?.FrameDelivery?.SampleMemory ?? DebugSampleMemory.Unavailable),

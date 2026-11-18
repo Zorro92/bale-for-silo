@@ -82,6 +82,13 @@ public sealed partial class PlayerPage
         public string? FfmpegDecoderOverride { get; set; }
         public string? FfmpegToneMapOverride { get; set; }
         public string? FfmpegColorInfoOverride { get; set; }
+        /// <summary>The debug AV1 decoder switch's decision for this mount, or null with the switch on dav1d.</summary>
+        public Rav1gRouteDecision? Rav1g { get; set; }
+        /// <summary>This mount was configured for rav1g (bale_av1_decoder=1): a software AV1 route with the switch on rav1g.</summary>
+        public bool Rav1gRoute { get; set; }
+        /// <summary>The open took rav1g's provider (its D3D11 engine), not the fork's open-time dav1d fallback.</summary>
+        public bool Rav1gActive { get; set; }
+        public Rav1gOutputCheck? Rav1gCheck { get; set; }
         public bool SoftwareVideo { get; set; }
         public string? TrackVideoMediaType { get; set; }
         public DebugVideoMediaType? MssVideoMediaType { get; set; }
@@ -259,7 +266,20 @@ public sealed partial class PlayerPage
                 // Keep auth, profile ownership and range cancellation in Core; FFmpeg receives bytes, not a bare URI.
                 Log.Info("player: FFmpeg before create stream");
 #if DEBUG_SERVER
-                var config = FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning);
+                // Debug rav1g switch: software AV1 only, and never again on this attempt once a rav1g mount failed.
+                var sdrDisplay = !ConsoleToneMapPolicy.HasHdrOutput(attempt.Start!.ClientPlaybackContext.Output.HdrDetails);
+                if (attempt.Av1Decoder == "rav1g")
+                {
+                    var rav1g = media.Rav1g = Rav1gPolicy.Route(attempt.Av1Decoder, media.Route, attempt.Plan!,
+                        attempt.Request.Detail.Versions, DisplayHdrOutput.CurrentRawSize(), sdrDisplay, attempt.Rav1gRemounted);
+                    if (rav1g.Rav1g)
+                    {
+                        DebugRav1gLog.Reset();
+                        var output = rav1g.OutputWidth is { } width && rav1g.OutputHeight is { } height ? $"{width}x{height}" : "source";
+                        Log.Info($"player: AV1 decoder rav1g buffer={rav1g.BufferMs} ms output={output} tonemap={rav1g.ToneMap} library={(Rav1gLibrary.Present ? "packaged" : "missing")}");
+                    }
+                }
+                var config = FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g);
                 media.SoftwareVideo = attempt.FfmpegTuning.SoftwareVideo(media.Route.SoftwareVideo);
                 media.FfmpegDecoderOverride = attempt.FfmpegTuning.DecoderOverride;
                 media.FfmpegToneMapOverride = attempt.FfmpegTuning.ToneMapOverride;
@@ -305,7 +325,15 @@ public sealed partial class PlayerPage
                     media.BaseLayerStreamIndex = streams[index];
                 }
 #if DEBUG_SERVER
-                FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route, attempt.FfmpegTuning);
+                var rav1gRoute = media.Rav1g is { Rav1g: true } && media.SoftwareVideo && media.Route.VideoCodec == "av1";
+                FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route, attempt.FfmpegTuning, rav1gRoute);
+                media.Rav1gRoute = rav1gRoute;
+                if (rav1gRoute)
+                {
+                    // rav1g's provider reports the D3D11 engine; the fork's open-time fallback is dav1d's software engine.
+                    media.Rav1gActive = media.FfmpegSource.CurrentVideoStream?.DecoderEngine == DecoderEngine.FFmpegD3D11HardwareDecoder;
+                    Log.Info($"player: AV1 open used {(media.Rav1gActive ? "rav1g" : "dav1d (rav1g fell back at open)")}");
+                }
 #else
                 FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route);
 #endif
@@ -316,6 +344,17 @@ public sealed partial class PlayerPage
 #if DEBUG_SERVER
                 if (!media.Route.DolbyVision7BaseLayer)
                     guardToneMap = attempt.FfmpegTuning.RequiresToneMapGuard(media.Route);
+#endif
+#if DEBUG_SERVER
+                if (rav1gRoute)
+                {
+                    // Design §4: direct output only with the rav1g mark, the source depth and colour; stage output marked as
+                    // today; unmarked output is the open's dav1d fallback, reported and accepted on this debug route.
+                    media.Rav1gCheck = new Rav1gOutputCheck(media.Rav1g!.Source, sdrDisplay, !ConsoleToneMapRuntime.SupportsP010);
+                    media.VideoOutputGuard = new FfmpegVideoOutputGuard(media.FfmpegSource, () =>
+                        _ = DispatchAsync(() => QueueFailure(attempt, media, 0, isDecoder: false, isNetwork: false)), media.Rav1gCheck);
+                }
+                else
 #endif
                 if (guardToneMap || media.Route.DolbyVision7BaseLayer)
                     media.VideoOutputGuard = new FfmpegVideoOutputGuard(media.FfmpegSource, () =>
@@ -334,7 +373,8 @@ public sealed partial class PlayerPage
                 int? bufferOverrideMs = null;
                 var softwareVideo = media.Route.SoftwareVideo;
 #if DEBUG_SERVER
-                bufferOverrideMs = attempt.FfmpegTuning.BufferMs;
+                // rav1g's pool is 8 images: a few frames of BufferTime, unless ffmpeg-tune buffer= overrides it.
+                bufferOverrideMs = attempt.FfmpegTuning.BufferMs ?? (rav1gRoute ? media.Rav1g!.BufferMs : null);
                 softwareVideo = media.SoftwareVideo;
 #endif
                 if (SoftwareDecodeTuning.BufferTimeMs(softwareVideo, bufferOverrideMs,

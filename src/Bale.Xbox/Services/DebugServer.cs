@@ -73,6 +73,8 @@ namespace Bale.Xbox.Services;
 ///   POST /player-backend?mode=engine  mediaplayer (Windows MediaPlayer)|engine (IMFMediaEngine); next playback attempt
 ///   GET  /engine-target  memory-only engine swap-chain format; default bgra (as in release builds)
 ///   POST /engine-target?mode=rgb10  bgra|rgb10|fp16 (MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT); next engine playback attempt
+///   GET  /av1-decoder     memory-only software AV1 decoder; default dav1d (as in release builds); rav1g.dll packaged?
+///   POST /av1-decoder?mode=rav1g  dav1d|rav1g (fork GpuDecoderSampleProvider, bale_av1_decoder=1); next playback attempt
 ///   GET  /stream-adapter  memory-only media stream switch; default rust
 ///   POST /stream-adapter?mode=rust  rust (Rust range/forward-only streams + Rust WinRT streams)|pooled|builtin (C#); next playback attempt
 ///   GET  /av1-claim       memory-only AV1 software-decode claim; default 1080p60, restart resets
@@ -245,7 +247,7 @@ internal sealed partial class DebugServer
         var target = new Uri("http://bale" + parts[1]);
         var path = target.AbsolutePath.TrimEnd('/');
         var query = ParseQuery(target.Query, out var duplicateQueryKeys);
-        if (duplicateQueryKeys && path is ("/open" or "/play" or "/home" or "/navlog" or "/playtest-ffmpeg" or "/ffmpeg-tune" or "/delivery" or "/stats-rows" or "/frame-trace" or "/display-match" or "/gc" or "/frame-delivery" or "/stream-adapter" or "/player-backend" or "/start-budget" or "/engine-target" or "/av1-claim" or "/idle-test" or "/webview-test"))
+        if (duplicateQueryKeys && path is ("/open" or "/play" or "/home" or "/navlog" or "/playtest-ffmpeg" or "/ffmpeg-tune" or "/delivery" or "/stats-rows" or "/frame-trace" or "/display-match" or "/gc" or "/frame-delivery" or "/stream-adapter" or "/player-backend" or "/start-budget" or "/engine-target" or "/av1-decoder" or "/av1-claim" or "/idle-test" or "/webview-test"))
             return ("400 Bad Request", "query keys must appear at most once\n");
 
         switch (method, path)
@@ -470,6 +472,17 @@ internal sealed partial class DebugServer
                     return ("400 Bad Request", "mode must be bgra, rgb10 or fp16\n");
                 Log.Info($"Debug engine target: {DebugEngineTargetSwitch.Mode}; applies to the next engine playback attempt");
                 return ("200 OK", $"engine-target={DebugEngineTargetSwitch.Mode}\n");
+
+            case ("GET", "/av1-decoder"):
+                if (query.Count != 0)
+                    return ("400 Bad Request", "usage: GET /av1-decoder or POST /av1-decoder?mode={dav1d|rav1g}\n");
+                return ("200 OK", Av1DecoderStatus());
+
+            case ("POST", "/av1-decoder"):
+                if (query.Count != 1 || !DebugAv1DecoderSwitch.TrySet(query.GetValueOrDefault("mode")))
+                    return ("400 Bad Request", "mode must be dav1d or rav1g\n");
+                Log.Info($"Debug AV1 decoder: {DebugAv1DecoderSwitch.Mode}; applies to the next playback attempt");
+                return ("200 OK", Av1DecoderStatus());
 
             case ("GET", "/stream-adapter"):
                 if (query.Count != 0)
@@ -873,6 +886,16 @@ internal sealed partial class DebugServer
 
         // Never echo entered credentials, including when the software keyboard owns focus.
         return $"typed {text.Length} characters";
+    }
+
+    /// <summary>The switch, whether the package carries rav1g.dll, and the library's load line once a rav1g open tried it.</summary>
+    private static string Av1DecoderStatus()
+    {
+        var loaded = DebugRav1gLog.Snapshot().Loaded;
+        return $"av1-decoder={DebugAv1DecoderSwitch.Mode}\n"
+            + (Rav1gLibrary.Present ? "rav1g.dll=packaged\n"
+                : "rav1g.dll=missing (no release pinned in scripts/rav1g.json): rav1g unavailable, the fork falls back to dav1d\n")
+            + $"rav1g={loaded ?? "not loaded yet"}\n";
     }
 
     private static string DescribeFocus()

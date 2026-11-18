@@ -57,6 +57,7 @@
 #   scripts/bale-debug.sh start-budget [seconds=1..120|default] [hang=none|open|ready]  start budget per mount (45 s default) for new mounts; hang applies to the next mount only: open = its open never finishes, ready = MediaOpened never seen; memory only; no args = status + the current mount's budget
 #   scripts/bale-debug.sh player-backend [mediaplayer|engine]   next playback attempt's player: engine (default, as in release) = IMFMediaEngine with Bale's controls, MediaPlayer only if it cannot open the stream; mediaplayer = Windows MediaPlayer; memory only; no args = status
 #   scripts/bale-debug.sh engine-target [bgra|rgb10|fp16]   next engine attempt's swap-chain format (MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT): bgra (default, as in release) | rgb10 (10-bit SDR to the screen) | fp16; memory only; no args = status
+#   scripts/bale-debug.sh av1-decoder [dav1d|rav1g]   next playback attempt's software AV1 decoder: dav1d (default, as in release) = zero-copy | rav1g = GPU decode on the fork's provider (bale_av1_decoder=1, ~200 ms BufferTime, dav1d remount once on failure); memory only; no args = status (+ whether rav1g.dll is packaged)
 #   scripts/bale-debug.sh stream-adapter [pooled|builtin|rust]  next playback attempt's stream adapter; default rust (C#: pooled/builtin), memory only (restart resets); no args = status
 #                                               rust: the Rust range stream and Rust IRandomAccessStream (no managed code on reads; FFmpeg and Media Foundation)
 #   scripts/bale-debug.sh present-engine [0-120] [present|frames|player]   next playback hands its routed source to IMFMediaEngine (0 = off): present = rendering mode on screen for N s, frames = frame-server for N s (every decoded frame counted), player = interactive engine player with sound, keys and a stats pane until Back (N just enables it); no args = status + last report
@@ -491,6 +492,17 @@ case "${1:-}" in
       curl --fail-with-body -sS --max-time 5 "$BASE/engine-target"
     else
       curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/engine-target" --data-urlencode "mode=$2"
+    fi
+    ;;
+  av1-decoder)
+    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^(dav1d|rav1g)$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh av1-decoder [dav1d|rav1g]' >&2
+      exit 2
+    fi
+    if [[ "$#" == 1 ]]; then
+      curl --fail-with-body -sS --max-time 5 "$BASE/av1-decoder"
+    else
+      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/av1-decoder" --data-urlencode "mode=$2"
     fi
     ;;
   stream-adapter)
