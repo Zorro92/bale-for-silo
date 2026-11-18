@@ -21,14 +21,14 @@ internal static class DebugToneMapSwitches
     public static int OutputMask { get; set; }
 
     /// <summary>
-    /// The fork's bale_tonemap_format (wrapper 2.1.0-bale.35): 0 NV12, 1 P010, 2 BGRA8. The fork honours it
-    /// only with mask bit 8 (bale_gpu bypassed), so Bale sends it only then. 0 leaves the key unset.
+    /// The fork's bale_tonemap_format (wrapper 2.1.0-bale.36): 0 auto (P010 when bale_gpu reports it),
+    /// 1 P010, 2 BGRA8 (only with mask bit 8, bale_gpu bypassed), 3 NV12. 0 leaves the key unset.
     /// </summary>
     public static int OutputFormat { get; set; }
 
-    public static bool ValidOutputFormat(int format) => format is >= 0 and <= 2;
+    public static bool ValidOutputFormat(int format, int mask) => format is >= 0 and <= 3 && (format != 2 || (mask & 8) != 0);
 
-    public static bool FormatSupported(string version) => Revision(version) >= 35;
+    public static bool FormatSupported(string version) => Revision(version) >= 36;
 
     public static bool ValidOutputMask(int mask) => mask is >= 0 and <= 15;
 
@@ -46,9 +46,10 @@ internal static class DebugToneMapSwitches
     /// <summary>Adds bale_tonemap_output only when the tone-map stage is on for this open.</summary>
     public static void ApplyOutput(MediaSourceConfig config, string version)
     {
-        if (OutputMask == 0 || !config.FFmpegOptions.ContainsKey("bale_tonemap") || !OutputSupported(version, OutputMask)) return;
-        config.FFmpegOptions["bale_tonemap_output"] = OutputMask.ToString(CultureInfo.InvariantCulture);
-        if (OutputFormat != 0 && (OutputMask & 8) != 0 && FormatSupported(version))
+        if (!config.FFmpegOptions.ContainsKey("bale_tonemap")) return;
+        if (OutputMask != 0 && OutputSupported(version, OutputMask))
+            config.FFmpegOptions["bale_tonemap_output"] = OutputMask.ToString(CultureInfo.InvariantCulture);
+        if (OutputFormat != 0 && FormatSupported(version))
             config.FFmpegOptions["bale_tonemap_format"] = OutputFormat.ToString(CultureInfo.InvariantCulture);
     }
 }

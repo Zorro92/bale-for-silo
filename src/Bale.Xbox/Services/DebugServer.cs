@@ -608,8 +608,8 @@ internal sealed partial class DebugServer
                         || !DebugToneMapSwitches.ValidOutputMask(mask)
                         || !int.TryParse(formatText, System.Globalization.NumberStyles.None,
                             System.Globalization.CultureInfo.InvariantCulture, out var format)
-                        || !DebugToneMapSwitches.ValidOutputFormat(format) || (format != 0 && (mask & 8) == 0))
-                        return ("400 Bad Request", "mask: 0-15 (1 decoder-style copies, 2 no colour attributes, 4 no Flush, 8 no bale_gpu; 0 clears); format: 0 NV12, 1 P010, 2 BGRA8 (needs mask bit 8)\n");
+                        || !DebugToneMapSwitches.ValidOutputFormat(format, mask))
+                        return ("400 Bad Request", "mask: 0-15 (1 decoder-style copies, 2 no colour attributes, 4 no Flush, 8 no bale_gpu; 0 clears); format: 0 auto, 1 P010, 2 BGRA8 (needs mask bit 8), 3 NV12\n");
                     DebugToneMapSwitches.OutputMask = mask;
                     DebugToneMapSwitches.OutputFormat = format;
                     Log.Info($"debug: tone map output mask {mask} format {format} for the next tone-map open");
