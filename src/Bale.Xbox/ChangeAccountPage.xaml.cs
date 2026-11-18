@@ -17,7 +17,7 @@ namespace Bale.Xbox;
 /// for a choice; one that must sign in again opens sign-in with its username; "Add an account" signs in on that server.
 /// It is the root screen while no account is open but another has a session, and at a launch that asks who's watching
 /// with several accounts saved. While it is open every saved account's profile count is refreshed once in the
-/// background (AccountProfilesRefresher.kt).
+/// background (AccountProfilesRefresher.kt), and an arrow under each column says when rows wait above or below.
 /// </summary>
 public sealed partial class ChangeAccountPage : Page, IBackHandler, IRestoresFocus
 {
@@ -110,6 +110,22 @@ public sealed partial class ChangeAccountPage : Page, IBackHandler, IRestoresFoc
     private static string? ProfilesLine(SavedAccount account) =>
         account.ProfileCount is int count and > 0 ? $"{count} {(count == 1 ? "profile" : "profiles")}" : null;
 
+    private void OnScrollerViewChanged(object sender, ScrollViewerViewChangedEventArgs args) => ShowScrollArrows();
+    private void OnScrollerSizeChanged(object sender, SizeChangedEventArgs args) => ShowScrollArrows();
+
+    /// <summary>ScrollingColumn's arrows: up while rows are above (canScrollBackward), down while rows are below.</summary>
+    private void ShowScrollArrows()
+    {
+        Arrows(RailScroller, RailMoreAbove, RailMoreBelow);
+        Arrows(PaneScroller, PaneMoreAbove, PaneMoreBelow);
+
+        static void Arrows(ScrollViewer scroller, UIElement above, UIElement below)
+        {
+            above.Visibility = scroller.VerticalOffset > 0.5 ? Visibility.Visible : Visibility.Collapsed;
+            below.Visibility = scroller.ScrollableHeight - scroller.VerticalOffset > 0.5 ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
     private void Populate(string? addAccountOn)
     {
         _groups = Servers.Groups;
@@ -138,6 +154,8 @@ public sealed partial class ChangeAccountPage : Page, IBackHandler, IRestoresFoc
         PaneRows.Children.Clear();
         _pane.Clear();
         _cards.Clear();
+        // ScrollingColumn's pane scroll state is keyed by the server: another server's accounts start at the top.
+        PaneScroller.ChangeView(null, 0, null, disableAnimation: true);
         if (_groups.FirstOrDefault(g => g.Server.Id == serverId) is not { } shown) return;
         var openId = Servers.ActiveAccount?.Id;
         foreach (var account in shown.Accounts)

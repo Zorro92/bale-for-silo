@@ -28,22 +28,48 @@
         <ColumnDefinition Width="{StaticResource SkylineChangeAccountPaneWidth}" />
         <ColumnDefinition Width="*" />
       </Grid.ColumnDefinitions>
-      <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-      <!-- rail-layout: non-card — TvChangeAccountScreen.kt's server rail, with Add server under it. -->
-      <ScrollViewer x:Name="RailScroller" Style="{StaticResource SkylineSettingsDetailScrollerStyle}" VerticalAlignment="Top">
-        <StackPanel x:Name="RailRows" Spacing="4" Padding="0,2" />
-      </ScrollViewer>
-      <Button x:Name="AddServerButton" Grid.Row="1" Margin="0,8,0,0" Style="{StaticResource SkylineChangeAccountRailRowStyle}"
-              Click="OnAddServerClick" GotFocus="OnRowGotFocus" AutomationProperties.Name="Add server">
-        <StackPanel Orientation="Horizontal" Spacing="9">
-          <Viewbox Width="28" Height="16"><Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19Z" Fill="{Binding Foreground, ElementName=AddServerLabel}" /></Viewbox>
-          <TextBlock x:Name="AddServerLabel" Text="Add server" VerticalAlignment="Center" />
+      <!-- TvChangeAccountScreen.kt ScrollingColumn: each column's rows take only the room they need, up to the space
+           left, then scroll; Add server follows the rail's rows. The arrow row under each column always takes its
+           height, so the columns don't move when an arrow shows. -->
+      <Grid VerticalAlignment="Top">
+        <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+        <!-- rail-layout: non-card — TvChangeAccountScreen.kt's server rail, with Add server under it. -->
+        <ScrollViewer x:Name="RailScroller" Style="{StaticResource SkylineSettingsDetailScrollerStyle}" VerticalAlignment="Top"
+                      ViewChanged="OnScrollerViewChanged" SizeChanged="OnScrollerSizeChanged">
+          <StackPanel x:Name="RailRows" Spacing="4" Padding="0,2" SizeChanged="OnScrollerSizeChanged" />
+        </ScrollViewer>
+        <Button x:Name="AddServerButton" Grid.Row="1" Margin="0,8,0,0" Style="{StaticResource SkylineChangeAccountRailRowStyle}"
+                Click="OnAddServerClick" GotFocus="OnRowGotFocus" AutomationProperties.Name="Add server">
+          <StackPanel Orientation="Horizontal" Spacing="9">
+            <Viewbox Width="28" Height="16"><Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19Z" Fill="{Binding Foreground, ElementName=AddServerLabel}" /></Viewbox>
+            <TextBlock x:Name="AddServerLabel" Text="Add server" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+        <StackPanel Grid.Row="2" Style="{StaticResource SkylineChangeAccountScrollArrowRowStyle}">
+          <Viewbox x:Name="RailMoreAbove" Style="{StaticResource SkylineChangeAccountScrollArrowStyle}" AutomationProperties.Name="More above">
+            <Path Width="24" Height="24" Fill="{StaticResource SkylineChangeAccountScrollArrowFill}" Data="M7.41,15.41 L12,10.83 L16.59,15.41 L18,14 L12,8 L6,14 Z" />
+          </Viewbox>
+          <Viewbox x:Name="RailMoreBelow" Style="{StaticResource SkylineChangeAccountScrollArrowStyle}" AutomationProperties.Name="More below">
+            <Path Width="24" Height="24" Fill="{StaticResource SkylineChangeAccountScrollArrowFill}" Data="M7.41,8.59 L12,13.17 L16.59,8.59 L18,10 L12,16 L6,10 Z" />
+          </Viewbox>
         </StackPanel>
-      </Button>
-      <!-- rail-layout: non-card — TvChangeAccountScreen.kt's account cards, then "Add an account". -->
-      <ScrollViewer x:Name="PaneScroller" Grid.Column="2" Grid.RowSpan="2" Style="{StaticResource SkylineSettingsDetailScrollerStyle}" VerticalAlignment="Top">
-        <StackPanel x:Name="PaneRows" Spacing="8" Padding="6,3" />
-      </ScrollViewer>
+      </Grid>
+      <Grid Grid.Column="2" VerticalAlignment="Top">
+        <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+        <!-- rail-layout: non-card — TvChangeAccountScreen.kt's account cards, then "Add an account". -->
+        <ScrollViewer x:Name="PaneScroller" Style="{StaticResource SkylineSettingsDetailScrollerStyle}" VerticalAlignment="Top"
+                      ViewChanged="OnScrollerViewChanged" SizeChanged="OnScrollerSizeChanged">
+          <StackPanel x:Name="PaneRows" Spacing="8" Padding="6,3" SizeChanged="OnScrollerSizeChanged" />
+        </ScrollViewer>
+        <StackPanel Grid.Row="1" Style="{StaticResource SkylineChangeAccountScrollArrowRowStyle}">
+          <Viewbox x:Name="PaneMoreAbove" Style="{StaticResource SkylineChangeAccountScrollArrowStyle}" AutomationProperties.Name="More above">
+            <Path Width="24" Height="24" Fill="{StaticResource SkylineChangeAccountScrollArrowFill}" Data="M7.41,15.41 L12,10.83 L16.59,15.41 L18,14 L12,8 L6,14 Z" />
+          </Viewbox>
+          <Viewbox x:Name="PaneMoreBelow" Style="{StaticResource SkylineChangeAccountScrollArrowStyle}" AutomationProperties.Name="More below">
+            <Path Width="24" Height="24" Fill="{StaticResource SkylineChangeAccountScrollArrowFill}" Data="M7.41,8.59 L12,13.17 L16.59,8.59 L18,10 L12,16 L6,10 Z" />
+          </Viewbox>
+        </StackPanel>
+      </Grid>
     </Grid>
     <TextBlock x:Name="ErrorText" Grid.Row="3" Margin="0,8,0,0" FontSize="12.04" Foreground="{StaticResource SkylineAuthError}"
                Text="Couldn't change to that account. Try again." Visibility="Collapsed" AutomationProperties.LiveSetting="Polite" />
