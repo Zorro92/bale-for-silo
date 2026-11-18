@@ -10,6 +10,9 @@ public sealed class LibraryBrowseFeed(SiloApiClient api, BrowseFeed browse)
 {
     public const int PageSize = 100;
 
+    /// <summary>The server's shown rating sources, which gate the Rotten Tomatoes sorts.</summary>
+    public RatingSourcesFeed RatingSources { get; } = new(api);
+
     // TvLibraryDetailViewModel.kt loadBrowse: server feedback or the library fallback; transport failures include their message.
     public static string ErrorMessage(Exception error) => error switch
     {

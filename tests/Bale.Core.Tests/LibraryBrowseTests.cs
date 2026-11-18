@@ -112,7 +112,8 @@ public class LibraryBrowseTests
         Assert.Empty(selection.Toggle(LibraryFacet.WatchStatus, "in_progress").Selected(LibraryFacet.WatchStatus));
         Assert.Equal(1, selection.Clear(LibraryFacet.Genre).ActiveCount);
         Assert.True(new LibraryFacetSelection { MatchAll = false }.CanReset);
-        Assert.Equal(["Title", "Date Added", "Release Date", "Year", "Rating", "Runtime", "Resolution"], LibrarySortOption.Video.Select(option => option.Label));
+        Assert.Equal(["Title", "Date Added", "Release Date", "Year", "Content Rating", "Duration", "IMDb Rating", "TMDB Rating", "Resolution",
+            "Bitrate", "Progress", "Date Viewed", "Plays"], LibrarySortOption.For("movie").Select(option => option.Label));
     }
 
     [Theory]

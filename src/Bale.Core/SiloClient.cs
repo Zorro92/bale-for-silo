@@ -111,6 +111,7 @@ public sealed class SiloClient : IDisposable
         Interlocked.Increment(ref _accountGeneration);
         Profiles.Management.End();
         Requests.Reset();
+        LibraryBrowse.RatingSources.Reset();
         Settings.Reset();
         RefreshToken = refreshToken;
         AccessToken = accessToken;
@@ -127,6 +128,7 @@ public sealed class SiloClient : IDisposable
         Interlocked.Increment(ref _accountGeneration);
         Profiles.Management.End();
         Requests.Reset();
+        LibraryBrowse.RatingSources.Reset();
         Settings.Reset();
         AccessToken = tokens.AccessToken;
         RefreshToken = tokens.RefreshToken;
@@ -184,6 +186,7 @@ public sealed class SiloClient : IDisposable
     {
         Interlocked.Increment(ref _playbackProfileGeneration);
         Requests.Reset();
+        LibraryBrowse.RatingSources.Reset();
         Settings.Reset();
         ProfileId = profileId;
         ProfileToken = null;
@@ -212,6 +215,7 @@ public sealed class SiloClient : IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         Interlocked.Increment(ref _playbackProfileGeneration);
         Requests.Reset();
+        LibraryBrowse.RatingSources.Reset();
         Settings.Reset();
         ProfileId = profileId;
         ProfileToken = proof;
@@ -244,6 +248,7 @@ public sealed class SiloClient : IDisposable
         Interlocked.Increment(ref _accountGeneration);
         Profiles.Management.End();
         Requests.Reset();
+        LibraryBrowse.RatingSources.Reset();
         Settings.Reset();
         AccessToken = null;
         RefreshToken = null;

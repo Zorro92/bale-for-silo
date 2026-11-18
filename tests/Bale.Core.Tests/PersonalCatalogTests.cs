@@ -18,10 +18,14 @@ public class PersonalCatalogTests
     [Fact]
     public void PersonalSortOptionsMatchTheOfficialSavedLists()
     {
-        Assert.Equal(["Recently Saved", "Title", "Date Added", "Year", "Rating", "Runtime"],
-            LibrarySortOption.Personal.Select(sort => sort.Label));
-        Assert.Equal(["", "title", "added_at", "year", "rating_imdb", "runtime"],
-            LibrarySortOption.Personal.Select(sort => sort.Field));
+        // TvLibrarySortOption.availableForPersonalList (a60dac2d0): Recently Saved, then every field
+        // except the per-viewer ones; Rotten Tomatoes only while shown.
+        Assert.Equal(["Recently Saved", "Title", "Date Added", "Release Date", "Latest Episode Air Date", "Latest Episode Added", "Year",
+                "Content Rating", "Duration", "IMDb Rating", "TMDB Rating", "Resolution", "Bitrate", "Author", "Narrator", "Series"],
+            LibrarySortOption.ForPersonal().Select(sort => sort.Label));
+        Assert.Equal(["", "title", "added_at", "release_date", "last_air_date", "latest_episode_added", "year", "content_rating", "runtime",
+                "rating_imdb", "rating_tmdb", "resolution", "bitrate", "author", "narrator", "series"],
+            LibrarySortOption.ForPersonal().Select(sort => sort.Field));
         Assert.Equal("Default", LibrarySortOption.ListOrder.DirectionLabel(true));
         Assert.Equal("Default", LibrarySortOption.ListOrder.DirectionLabel(false));
         Assert.False(new LibraryBrowseFilter().SelectSort(LibrarySortOption.ListOrder).Descending);
@@ -92,7 +96,7 @@ public class PersonalCatalogTests
         Assert.Equal("movie", inline.Query.MediaType);
         Assert.Equal("No favorite movies yet", inline.EmptyMessage);
 
-        inline.SetFilter(inline.Query.Filter.SelectSort(LibrarySortOption.Personal.Single(sort => sort.Field == "year"))
+        inline.SetFilter(inline.Query.Filter.SelectSort(LibrarySortOption.ForPersonal().Single(sort => sort.Field == "year"))
             .ApplyFacets(new LibraryFacetSelection().Toggle(LibraryFacet.Genre, "Drama")));
         inline.SetFavoriteMediaType("series");
         Assert.Equal(inline.Query.Filter, fullScreen.Query.Filter);
@@ -147,7 +151,7 @@ public class PersonalCatalogTests
         var fullScreen = LibraryCatalogSource.Personal("favorites", client.LibraryBrowse);
         var inline = fullScreen.ForInlineFavorites();
         inline.SetFavoriteMediaType(mediaType);
-        inline.SetFilter(inline.Query.Filter.SelectSort(LibrarySortOption.Personal.Single(sort => sort.Field == "year"))
+        inline.SetFilter(inline.Query.Filter.SelectSort(LibrarySortOption.ForPersonal().Single(sort => sort.Field == "year"))
             .ApplyFacets(new LibraryFacetSelection().Toggle(LibraryFacet.Genre, "Drama")));
         await inline.LoadPageAsync(client.Browse, ArtworkWidths.Tv1080, null);
         Assert.Equal(0, inline.Total);

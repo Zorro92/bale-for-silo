@@ -108,7 +108,9 @@ public static class LibraryBrowsePreferences
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
             var field = root.GetProperty("sort").GetString();
-            var sort = LibrarySortOption.For(mediaType).FirstOrDefault(option => option.Field == field) ?? LibrarySortOption.DateAdded;
+            // a60dac2d0 "keep a restored phone sort the library doesn't list": a known field stays in use
+            // (and listed); only a field this client doesn't know falls back to Date Added.
+            var sort = LibrarySortOption.FromWire(field, mediaType) ?? LibrarySortOption.DateAdded;
             var selection = new LibraryFacetSelection { MatchAll = root.GetProperty("matchAll").GetBoolean() };
             var available = LibraryFacets.For(mediaType);
             foreach (var property in root.GetProperty("facets").EnumerateObject())

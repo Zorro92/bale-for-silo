@@ -26,6 +26,12 @@ public sealed class LibraryCatalogSource(string title, LibraryBrowseQuery query,
     // not merely an active filter count (Match Any without a selected facet is resettable too).
     public bool CanClearErrorFilters => !IsPersonal && !IsCollection && Query.Filter.Facets.CanReset;
     public string? ControlsMediaType { get; private init; } = query.MediaType;
+    // TvLibraryDetailScreen / TvLibraryCollectionDetailScreen / TvPersonalScreens Sort panels: the
+    // shared list for this source, Rotten Tomatoes gated by the server's shown rating sources, and
+    // the active sort always listed.
+    public IReadOnlyList<LibrarySortOption> SortOptions => IsPersonal
+        ? LibrarySortOption.ForPersonal(library.RatingSources.Shown, Query.Filter.Sort)
+        : LibrarySortOption.For(ControlsMediaType, IsCollection, library.RatingSources.Shown, Query.Filter.Sort);
     // screens/library/TvLibraryCollectionDetailScreen.kt has Sort/Filter, but no A–Z rail.
     public bool ShowsAlphabet => !IsPersonal && !IsCollection && Query.Filter.ShowsAlphabet;
     // TvPersonalScreens.kt: only inline Favorites narrows its empty copy by Movies / TV Shows.

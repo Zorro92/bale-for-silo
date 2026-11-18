@@ -4,34 +4,49 @@ using Microsoft.Kiota.Abstractions.Serialization;
 
 namespace Bale.Core.Browse;
 
-/// <summary>TvLibrarySortOption: display order, wire names and natural directions.</summary>
+/// <summary>
+/// TvLibraryDetailViewModel.kt TvLibrarySortOption: one Sort panel entry, a catalog field from the
+/// shared <see cref="CatalogSortField"/> list (the web client's names, order and directions), or a
+/// "keep the source's own order" entry that sends no sort.
+/// </summary>
 public sealed record LibrarySortOption(string Label, string Field, bool DescendingByDefault = true)
 {
     public static LibrarySortOption CollectionOrder { get; } = new("Collection Order", string.Empty, false);
     public static LibrarySortOption ListOrder { get; } = new("Recently Saved", string.Empty, false);
-    public static LibrarySortOption Title { get; } = new("Title", "title", false);
-    public static LibrarySortOption DateAdded { get; } = new("Date Added", "added_at");
-    public static IReadOnlyList<LibrarySortOption> Personal { get; } =
-        [ListOrder, Title, DateAdded, new("Year", "year"), new("Rating", "rating_imdb"), new("Runtime", "runtime")];
-    public static IReadOnlyList<LibrarySortOption> Video { get; } =
-        [Title, DateAdded, new("Release Date", "release_date"), new("Year", "year"), new("Rating", "rating_imdb"), new("Runtime", "runtime"), new("Resolution", "resolution")];
-    public static IReadOnlyList<LibrarySortOption> Audiobooks { get; } =
-        [Title, new("Author", "author", false), new("Narrator", "narrator", false), new("Series", "series", false), DateAdded, new("Runtime", "runtime")];
+    public static LibrarySortOption Title { get; } = Of(CatalogSortField.Title);
+    public static LibrarySortOption DateAdded { get; } = Of(CatalogSortField.DateAdded);
 
-    public static IReadOnlyList<LibrarySortOption> For(string? mediaType, bool collection = false)
+    /// <summary>Null for the source-order entries.</summary>
+    public CatalogSortField? SortField => CatalogSortField.All.FirstOrDefault(sortField => sortField.Wire == Field);
+
+    public static LibrarySortOption Of(CatalogSortField field, CatalogSortRelevance relevance = default) =>
+        new(field.LabelFor(relevance), field.Wire, field.DescendingByDefault);
+
+    /// <summary>TvLibrarySortOption.fromWire: the entry for a stored field, or null when this client doesn't know it.</summary>
+    public static LibrarySortOption? FromWire(string? field, string? mediaType) =>
+        CatalogSortField.FromWire(field) is { } known ? Of(known, CatalogSortRelevance.ForLibrary(mediaType)) : null;
+
+    /// <summary>
+    /// availableFor / availableForCollection: a library grid lists its scope's fields with the
+    /// per-viewer ones; a library collection leads with Collection Order and leaves the per-viewer
+    /// ones out (it resolves without a viewer). The active sort always stays listed.
+    /// </summary>
+    public static IReadOnlyList<LibrarySortOption> For(string? mediaType, bool collection = false,
+        IReadOnlySet<string>? shownRatingSources = null, LibrarySortOption? current = null)
     {
-        var options = mediaType == "audiobook" ? Audiobooks : Video;
-        return collection ? new[] { CollectionOrder }.Concat(options).ToList() : options;
+        var relevance = CatalogSortRelevance.ForLibrary(mediaType);
+        var fields = CatalogSortField.Options(relevance, !collection, shownRatingSources ?? NoRatingSources, current?.SortField)
+            .Select(field => Of(field, relevance));
+        return collection ? [CollectionOrder, .. fields] : fields.ToList();
     }
 
-    public string DirectionLabel(bool descending) => Field switch
-    {
-        "" => "Default",
-        "title" or "author" or "narrator" or "series" => descending ? "Z–A" : "A–Z",
-        "added_at" or "release_date" or "year" => descending ? "Newest" : "Oldest",
-        "runtime" => descending ? "Longest" : "Shortest",
-        _ => descending ? "Highest" : "Lowest",
-    };
+    /// <summary>availableForPersonalList: Recently Saved, then every field except the per-viewer ones.</summary>
+    public static IReadOnlyList<LibrarySortOption> ForPersonal(IReadOnlySet<string>? shownRatingSources = null, LibrarySortOption? current = null) =>
+        [ListOrder, .. CatalogSortField.Options(CatalogSortRelevance.Any, false, shownRatingSources ?? NoRatingSources, current?.SortField).Select(field => Of(field))];
+
+    public string DirectionLabel(bool descending) => SortField?.DirectionLabel(descending) ?? "Default";
+
+    private static readonly IReadOnlySet<string> NoRatingSources = new HashSet<string>();
 }
 
 public enum LibraryFacet
