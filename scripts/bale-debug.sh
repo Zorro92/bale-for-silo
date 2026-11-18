@@ -11,6 +11,10 @@
 #   scripts/bale-debug.sh home                  fresh Browse/Home for the active profile; clear the back stack (never selects a profile)
 #   scripts/bale-debug.sh open <content-id> [file=<fileId>]  load Detail, select an exact version, and focus Play
 #   scripts/bale-debug.sh play <content-id> [file=<fileId>] [start=<seconds>]  normal Detail Play path; wait for player ready/error
+#   scripts/bale-debug.sh alive                 is Bale running (Device Portal), does its debug port answer, newest crash dump
+#                                               Any command whose debug-port request fails says why: not running (crashed/closed),
+#                                               hung (process alive, port silent) or console unreachable. Requests with --max-time 20+
+#                                               check every 5 s that Bale is still running and stop early if it is gone.
 #   scripts/bale-debug.sh navlog [N]            last 1–200 navigation/input/player events (default 50), oldest first
 # Every invocation appends a safe command/status/first-response line to
 # ${XDG_STATE_HOME:-$HOME/.local/state}/bale-debug/commands.log (override: BALE_DEBUG_COMMAND_LOG).
@@ -167,6 +171,56 @@ finish_command_log() {
 trap finish_command_log EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+PORTAL="https://${XBOX_HOST:-}:11443"
+PORTAL_AUTH=()
+[[ -n "${XBOX_USER:-}" ]] && PORTAL_AUTH=(--user "$XBOX_USER:${XBOX_PASS:-}")
+# Device Portal (port 11443) answers even when Bale is gone or hung. Prints running|stopped|unreachable.
+bale_process_state() {
+  local processes
+  processes="$(command curl -fsSk --max-time 6 "${PORTAL_AUTH[@]}" "$PORTAL/api/resourcemanager/processes" 2>/dev/null)" \
+    || { echo unreachable; return; }
+  if jq -e '[.Processes[]? | select((.ImageName // "" | ascii_downcase) == "bale.exe")] | length > 0' \
+    <<<"$processes" >/dev/null 2>&1; then echo running; else echo stopped; fi
+}
+# Newest Bale crash dump as "<date> <file>", or nothing.
+bale_latest_dump() {
+  command curl -fsSk --max-time 6 "${PORTAL_AUTH[@]}" "$PORTAL/api/debug/dump/usermode/dumps" 2>/dev/null \
+    | jq -r '[.CrashDumps[]? | select((.PackageFullName // "" | startswith("Bale.")) or (.FileName // "" | test("^Bale"; "i")))]
+             | sort_by(.FileDateAsNumber // 0) | last | select(. != null) | "\(.FileDate // "?") \(.FileName // "?")"' 2>/dev/null || true
+}
+# Explain a failed debug-port request: crashed/closed, hung or unreachable.
+diagnose_debug_port() {
+  local state dump
+  state="$(bale_process_state)"
+  case "$state" in
+    stopped)
+      dump="$(bale_latest_dump)"
+      echo "bale-debug: Bale is not running (crashed or closed)${dump:+; newest crash dump: $dump}" >&2 ;;
+    running) echo 'bale-debug: Bale is running but its debug port did not answer (hung, busy or suspended)' >&2 ;;
+    *) echo 'bale-debug: the console is unreachable (Device Portal did not answer either)' >&2 ;;
+  esac
+}
+# Run curl; for long requests, check every 5 s that Bale still runs and stop early if it is gone.
+run_watched_curl() {
+  local max_time=0 i pid result=0 ticks=0
+  for (( i = 1; i <= $#; i++ )); do
+    if [[ "${!i}" == --max-time ]]; then local next=$((i + 1)); max_time="${!next%%.*}"; fi
+  done
+  if (( max_time < 20 )); then command curl "$@"; return; fi
+  command curl "$@" & pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep 1
+    (( ++ticks % 5 == 0 )) || continue
+    if [[ "$(bale_process_state)" == stopped ]]; then
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      echo 'bale-debug: stopped waiting: Bale is no longer running' >&2
+      return 7
+    fi
+  done
+  wait "$pid" || result=$?
+  return "$result"
+}
 curl() {
   local body code status result=0 first='' safe_first
   body="$(mktemp "$command_tmp/body.XXXXXX")"
@@ -176,7 +230,7 @@ curl() {
   for argument in "$@"; do
     if [[ "$argument" == -fsS ]]; then curl_args+=(--fail-with-body -sS); else curl_args+=("$argument"); fi
   done
-  command curl "${curl_args[@]}" --output "$body" --write-out '%{http_code}' > "$code" || result=$?
+  run_watched_curl "${curl_args[@]}" --output "$body" --write-out '%{http_code}' > "$code" || result=$?
   status="$(cat "$code")"
   [[ "$status" =~ ^[0-9]{3}$ ]] || status=000
   printf '%s\n' "$status" >> "$command_tmp/statuses"
@@ -185,6 +239,8 @@ curl() {
     safe_first="$(printf '%s' "$first" | redact_log)"
     printf '%s\n' "${safe_first:0:320}" > "$command_tmp/first"
   fi
+  # 000 = no HTTP answer (refused, timed out or the watch stopped it): say why.
+  if [[ "$status" == 000 && "$command_name" != log ]]; then diagnose_debug_port; fi
   case "$status" in
     404|408|409) printf 'bale-debug: %s failed (HTTP %s)\n' "$(printf '%s' "$command_name" | redact_log)" "$status" >&2 ;;
   esac
@@ -225,6 +281,21 @@ case "${1:-}" in
   type)
     shift
     curl -fsS -X POST -G "$BASE/type" --data-urlencode "text=$*"
+    ;;
+  alive)
+    state="$(bale_process_state)"
+    case "$state" in
+      running)
+        if command curl -fsS --max-time 5 -o /dev/null "$BASE/where" 2>/dev/null; then
+          echo 'alive: Bale is running and its debug port answers'
+        else
+          echo 'hung: Bale is running but its debug port did not answer in 5 s (hung, busy or suspended)'; exit 1
+        fi ;;
+      stopped)
+        dump="$(bale_latest_dump)"
+        echo "stopped: Bale is not running${dump:+; newest crash dump: $dump}"; exit 1 ;;
+      *) echo 'unreachable: Device Portal did not answer'; exit 1 ;;
+    esac
     ;;
   focus) curl -fsS "$BASE/focus" ;;
   where) curl -fsS --max-time 5 "$BASE/where" ;;

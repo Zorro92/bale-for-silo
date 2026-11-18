@@ -122,6 +122,7 @@ changes are covered by the debug build and the tests. Then, with `XBOX_HOST` set
 ./scripts/bale-debug.sh type dune             # typed text
 ./scripts/bale-debug.sh focus                 # what has focus, and its text
 ./scripts/bale-debug.sh where                 # page, overlays, focus, status and on-screen controls
+./scripts/bale-debug.sh alive                 # running / hung / stopped (+ newest crash dump) via Device Portal; failed or long requests say the same
 ./scripts/bale-debug.sh home                  # fresh Browse/Home for the current profile; clear Back/Forward history; never pick a profile
 ./scripts/bale-debug.sh open <content-id> [file=<fileId>]  # wait for Detail, select the exact version, focus Play
 ./scripts/bale-debug.sh play <content-id> [file=<fileId>] [start=<seconds>]  # normal Play path; wait for player state + plan delivery
