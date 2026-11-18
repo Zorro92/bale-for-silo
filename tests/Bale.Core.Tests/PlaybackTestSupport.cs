@@ -7,7 +7,7 @@ namespace Bale.Core.Tests;
 
 internal static class PlaybackTestSupport
 {
-    public static ClientIdentity Identity { get; } = new("device", "Test Xbox", "xbox", "Bale", "0.1.0", "1", "dev", "tv");
+    public static ClientIdentity Identity { get; } = new("device", "Living Room", "xbox", "Bale", "0.1.0", "1", "dev", "tv", "Test Xbox");
     public sealed record Installation(string InstallationId = "installation") : IPlaybackInstallationId;
 
     public const string Capabilities = """

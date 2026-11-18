@@ -115,7 +115,7 @@ public class AppleProtocolParityTests
     [Fact]
     public void APcNameIsNeverSentAsAModel()
     {
-        var device = PlaybackStartBuilder.DeviceContext(Identity with { Platform = "windows", DeviceName = "Someone's PC" });
+        var device = PlaybackStartBuilder.DeviceContext(Identity with { Platform = "windows", DeviceName = "Someone's PC", DeviceModel = "Some PC" });
         Assert.Equal("windows", device.Platform);
         Assert.Null(device.Manufacturer);
         Assert.Null(device.Model);
@@ -124,7 +124,7 @@ public class AppleProtocolParityTests
     [Fact]
     public void ModelsStayWithinTheContractBound()
     {
-        Assert.Equal(128, PlaybackStartBuilder.DeviceContext(Identity with { DeviceName = new string('x', 300) }).Model!.Length);
-        Assert.Null(PlaybackStartBuilder.DeviceContext(Identity with { DeviceName = "  " }).Model);
+        Assert.Equal(128, PlaybackStartBuilder.DeviceContext(Identity with { DeviceModel = new string('x', 300) }).Model!.Length);
+        Assert.Null(PlaybackStartBuilder.DeviceContext(Identity with { DeviceModel = "  " }).Model);
     }
 }

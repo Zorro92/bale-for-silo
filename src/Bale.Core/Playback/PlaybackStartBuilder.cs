@@ -139,15 +139,15 @@ public static class PlaybackStartBuilder
 
     /// <summary>
     /// ApplePlaybackV3Capabilities.deviceContext sends manufacturer and model; silo-server records the model on its
-    /// route events (playback_v3.go ClientModel) for admin diagnostics. On Xbox the device name is the console's
-    /// product name (EasClientDeviceInformation.SystemProductName, e.g. "Xbox Series X"). Elsewhere it is the
-    /// user's own PC name, which is not a model and stays out. The contract bounds both fields to 128 characters.
+    /// route events (playback_v3.go ClientModel) for admin diagnostics. On Xbox the model is the console's product
+    /// name (EasClientDeviceInformation.SystemProductName, e.g. "Xbox Series X"), never the owner's device name.
+    /// Elsewhere nothing is sent. The contract bounds both fields to 128 characters.
     /// </summary>
     internal static PlaybackDeviceContext DeviceContext(ClientIdentity identity)
     {
         var context = new PlaybackDeviceContext(identity.Platform);
         if (!string.Equals(identity.Platform, "xbox", StringComparison.Ordinal)) return context;
-        var model = identity.DeviceName?.Trim();
+        var model = identity.DeviceModel?.Trim();
         return context with
         {
             Manufacturer = "Microsoft",

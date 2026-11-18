@@ -43,15 +43,19 @@ internal static partial class DeviceIdentity
         var info = new EasClientDeviceInformation();
         var version = Package.Current.Id.Version;
         var product = string.IsNullOrWhiteSpace(info.SystemProductName) ? "Xbox" : info.SystemProductName;
+        var xbox = IsXbox;
 
+        // The console's own name (Settings > System > Console info), as Android TV names itself by its device
+        // name (silo-android TvDeviceName.kt); the product name is the fallback and the playback model.
         return new ClientIdentity(
             DeviceId: AppSettings.DeviceId,
-            DeviceName: IsXbox ? product : info.FriendlyName,
-            Platform: IsXbox ? "xbox" : "windows",
+            DeviceName: DeviceNaming.Choose(info.FriendlyName, xbox ? product : null),
+            Platform: xbox ? "xbox" : "windows",
             ClientName: "Bale",
             ClientVersion: $"{version.Major}.{version.Minor}.{version.Build}",
             ClientBuild: version.Build.ToString(),
             ClientChannel: "sideload",
-            ClientFamily: IsXbox ? "tv" : "desktop");
+            ClientFamily: xbox ? "tv" : "desktop",
+            DeviceModel: xbox ? product : null);
     }
 }
