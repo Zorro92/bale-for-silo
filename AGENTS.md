@@ -232,7 +232,7 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
 - FFmpegInteropX packages, native activation and license texts ship in **all** builds. Keep the CI
   package checker; CsWinRT's projection alone does not register the WinRT factories for Native AOT.
 - Native FFmpeg is **8.1.2-bale.dav1d.1.5.4.p1**, not public 8.1.2 (which embeds dav1d 1.0.0).
-  Keep wrapper `FFmpegInteropX.UWP.Lib` on the pinned **2.1.0-bale.N** fork (currently **2.1.0-bale.48**),
+  Keep wrapper `FFmpegInteropX.UWP.Lib` on the pinned **2.1.0-bale.N** fork (currently **2.1.0-bale.49**),
   consumed from [Zorro92/bale-ffmpeginteropx releases](https://github.com/Zorro92/bale-ffmpeginteropx/releases).
   `scripts/ffmpeg-native.json` and `scripts/ffmpeginteropx-wrapper.json` pin their release tags
   and SHA256s; run
@@ -255,8 +255,8 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   `bale_grain_gpu_*`) fills the pooled texture. 8- and 10-bit 4:2:0 (Main profile) only; GPU grain only.
   Anything zero-copy can't take, and any zero-copy failure, goes to server transcode. There is no CPU
   grain, staging upload, swscale thread pool, upload variant choice, debug repack or upload/zero-copy probe.
-  Debug only: `bale-debug.sh av1-decoder rav1g` decodes it with rav1g on the fork's GPU provider instead (~200 ms
-  BufferTime, rav1g-mark guard, one dav1d remount on failure; debug builds package the `scripts/rav1g.json` DLL);
+  Debug only: `bale-debug.sh av1-decoder rav1g` decodes it with rav1g on the fork's GPU provider instead (1000 ms
+  BufferTime up to 1080p, 500 ms above, rav1g-mark guard, one dav1d remount on failure; debug builds package the `scripts/rav1g.json` DLL);
   docs/player-plan.md, "rav1g (debug)".
 - All builds tune software AV1 with `bale_decode_ahead_frames=16` and a 1000 ms
   MSS BufferTime. Above 1080p `SoftwareDecodeTuning` trims decode-ahead to 8 and BufferTime to 500 ms

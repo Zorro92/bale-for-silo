@@ -42,18 +42,19 @@ public sealed class Rav1gPolicyTests
     }
 
     [Fact]
-    public void Rav1gRouteBuffersAFewFramesAndDownscalesThroughTheStage()
+    public void Rav1gRouteBuffersLikeDav1dAndDownscalesThroughTheStage()
     {
         var decision = Decide();
-        Assert.Equal(200, decision.BufferMs);
-        // The fork advises 2-4 on its GPU provider; 3 fits beside rav1g's 5-image hold at 4K.
-        Assert.Equal(3, decision.DecodeAheadFrames);
-        Assert.Equal(3, Decide(route: Route(width: 1920, height: 1080)).DecodeAheadFrames);
+        // Since fork bale.46 the buffer no longer competes with rav1g's pool: 500 ms above 1080p, 1000 ms up to it.
+        Assert.Equal(500, decision.BufferMs);
+        Assert.Equal(1000, Decide(route: Route(width: 1920, height: 1080)).BufferMs);
+        Assert.Equal(8, decision.DecodeAheadFrames);
+        Assert.Equal(8, Decide(route: Route(width: 1920, height: 1080)).DecodeAheadFrames);
         Assert.Equal((1920, 1080), (decision.OutputWidth, decision.OutputHeight));
         Assert.True(decision.ToneMap);
         Assert.Equal(new Av1SourceFacts(10, 2, 5, 1, 24000.0 / 1001), decision.Source);
-        // 60 fps: 5 frames, not 12, so the 8-image pool can satisfy Media Foundation.
-        Assert.Equal(83, Decide(version: Version(rate: "60")).BufferMs);
+        // The frame rate no longer matters: the buffer follows the picture size only (fork bale.46+).
+        Assert.Equal(500, Decide(version: Version(rate: "60")).BufferMs);
         var fits = Decide(route: Route(width: 1920, height: 1080), sdr: false);
         Assert.Null(fits.OutputWidth);
         Assert.Null(fits.OutputHeight);

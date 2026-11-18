@@ -44,8 +44,8 @@ public static class Rav1gPolicy
 
     /// <summary>
     /// Whether this mount takes rav1g (the switch, a software AV1 route, not withdrawn by an earlier failure)
-    /// and what it sets: BufferTime (200 ms, at most 5 frames: the fork's pool holds 8 images), 3 decode-ahead
-    /// frames (the fork advises 2-4; rav1g holds up to 5 of the 8 at 4K), the display size for SDR larger than
+    /// and what it sets: BufferTime (1000 ms up to 1080p, 500 ms above; since fork bale.46 the buffer no longer
+    /// competes with rav1g's pool), 8 decode-ahead frames, the display size for SDR larger than
     /// the display, and the tone map on a known SDR display.
     /// </summary>
     public static Rav1gRouteDecision Route(string selected, PlaybackRouteDecision route, PlaybackPlan plan,

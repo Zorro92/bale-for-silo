@@ -2176,15 +2176,14 @@ unchanged: dav1d zero-copy, and release packages carry no rav1g.dll.
   fallback is today's path. FastSeek stays on. `bale_tonemap_output_width/height` = the display size when the video is
   larger (bale_gpu's area downscale, never Media Foundation's leaking scaler), and `bale_tonemap=1` on an SDR display
   (PQ/HLG is tone-mapped; SDR sources log `request ignored`). A dav1d fallback ignores the stage keys.
-- **BufferTime:** 200 ms, cut to five frames at higher frame rates (166 ms at 30 fps, 83 ms at 60, floor 40 ms) unless
-  `ffmpeg-tune buffer=` overrides it. The fork's pool is 8 images and rav1g holds up to slots + 2 of them (5 at 4K);
-  today's 500–1000 ms (12–24 frames at 24 fps) could block the start forever.
-- **Decode-ahead:** `bale_decode_ahead_frames=3` on the rav1g route (`Rav1gPolicy.Route`, Rust `DECODE_AHEAD_FRAMES`),
-  not software video's 16 (8 above 1080p). The fork advises 2–4 on its GPU provider: every decoded-ahead frame pins a
-  pool image until Media Foundation takes it, and at 4K rav1g holds up to 5 of the 8, so 3 is the most that can ever
-  fill beside it; 2 would leave less slack at 1080p, where rav1g holds fewer. `ffmpeg-tune ahead=` still overrides it
-  (applied after the route), and an open that falls back to dav1d decodes with 3 too (debug only). The BufferTime cap
-  above is unchanged.
+- **BufferTime and decode-ahead (since 2026-11-18, fork bale.46+):** 1000 ms up to 1080p and 500 ms above (each 4K
+  frame ~25 MiB, ~6 MiB at 1080p; the fork's numbers), with `bale_decode_ahead_frames=8`, like dav1d above 1080p
+  (`Rav1gPolicy.Route`, Rust `av1_decoder::buffer_ms`/`DECODE_AHEAD_FRAMES`); `ffmpeg-tune buffer=`/`ahead=` override
+  them. Since bale.46 the provider copies each rav1g image into a player-side pool and returns it at once, so the
+  buffer no longer competes with rav1g's 8 images. The first values (200 ms capped at 5 frames, decode-ahead 3) came
+  from the shared pool and starved the renderer on the console: engine fps 21-38 with bursts over 100 against
+  dav1d's steady 23.97 on the same 1080p film; 1000 ms / 8 measured 22.6-24.2, still stuttering, so delivery timing
+  in the provider is being chased separately (fork bale.49 delivery diagnostics).
 - **Prewarm (wrapper bale.48):** `bale-debug.sh av1-decoder rav1g` also calls the fork's plain C export
   `int bale_rav1g_prewarm(void)` from FFmpegInteropX.dll (`Rav1gPrewarm`, DllImport with ExactSpelling, on the thread
   pool; skipped when the pinned wrapper is older than bale.48 (`Rav1gPolicy.PrewarmSupported`) or rav1g.dll is not

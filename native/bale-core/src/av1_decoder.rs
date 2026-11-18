@@ -13,20 +13,17 @@ use crate::dotnet::trim_lower;
 use crate::models::{FileVersion, PlaybackPlan, VideoTrack};
 use crate::software_decode::normalize_codec;
 
-/// MSS BufferTime on the rav1g route. The fork's image pool is 8 images and rav1g itself holds up to
-/// slots + 2 of them (5 at 4K), so Media Foundation must not wait for more than a few decoded frames
-/// before it starts: today's 500-1000 ms (12-24 frames at 24 fps) could block the start forever.
-pub const BUFFER_MS: i32 = 200;
-/// The most decoded frames the BufferTime may ask Media Foundation to hold (8 images minus rav1g's 3+).
-pub const BUFFER_FRAMES: f64 = 5.0;
-/// A floor so a very high frame rate still buffers something.
-pub const MIN_BUFFER_MS: i32 = 40;
-/// `bale_decode_ahead_frames` on the rav1g route (the fork advises 2-4 there; software video gets 16, or 8
-/// above 1080p). Each decoded-ahead frame pins one of the 8 pool images until Media Foundation takes it. At
-/// 4K rav1g holds up to 5 (slots + 2), leaving 3: more ahead could never fill and would only hold images the
-/// renderer's BufferTime (at most 5 frames) waits for; 2 leaves less slack for a slow frame at 1080p, where
-/// rav1g holds fewer. `ffmpeg-tune ahead=` still overrides it.
-pub const DECODE_AHEAD_FRAMES: i32 = 3;
+/// MSS BufferTime on the rav1g route up to 1080p. Since fork 2.1.0-bale.46 the provider copies each rav1g
+/// image into a player-side pool and returns it at once, so the buffer no longer competes with rav1g's 8
+/// images (the fork, 2026-11-18): 1000 ms is fine at 1080p (~6 MiB per buffered frame), as for dav1d. The
+/// earlier 200 ms / 5-frame cap starved the renderer and stuttered on the console (engine fps 21-38).
+pub const BUFFER_MS: i32 = 1000;
+/// Above 1080p (width > 1920 or height > 1080): 500 ms, each 4K frame being ~25 MiB (the fork), as
+/// `SoftwareDecodeTuning` trims dav1d there.
+pub const BUFFER_MS_ABOVE_1080P: i32 = 500;
+/// `bale_decode_ahead_frames` on the rav1g route: 8, what the fork confirmed for 1080p and what dav1d gets
+/// above 1080p. `ffmpeg-tune ahead=` still overrides it.
+pub const DECODE_AHEAD_FRAMES: i32 = 8;
 /// Wrapper 2.1.0-bale.48 exports `bale_rav1g_prewarm` from FFmpegInteropX.dll.
 pub const PREWARM_WRAPPER_REVISION: i32 = 48;
 
@@ -122,7 +119,7 @@ pub fn route(args: &RouteArgs) -> RouteDecision {
     );
     RouteDecision {
         rav1g,
-        buffer_ms: Some(buffer_ms(source.frame_rate)),
+        buffer_ms: Some(buffer_ms(width, height)),
         decode_ahead_frames: Some(DECODE_AHEAD_FRAMES),
         output_width: downscale.then_some(args.display_width as i32),
         output_height: downscale.then_some(args.display_height as i32),
@@ -131,14 +128,13 @@ pub fn route(args: &RouteArgs) -> RouteDecision {
     }
 }
 
-/// [`BUFFER_MS`], or [`BUFFER_FRAMES`] frames when that is shorter at the source's frame rate.
-pub fn buffer_ms(frame_rate: Option<f64>) -> i32 {
-    match frame_rate {
-        Some(fps) if fps.is_finite() && fps > 0.0 => {
-            let frames = (BUFFER_FRAMES * 1000.0 / fps).floor();
-            (frames.min(f64::from(BUFFER_MS)) as i32).max(MIN_BUFFER_MS)
-        }
-        _ => BUFFER_MS,
+/// [`BUFFER_MS`], or [`BUFFER_MS_ABOVE_1080P`] for a picture wider than 1920 or taller than 1080. An unknown
+/// size (0) takes the 1080p value.
+pub fn buffer_ms(width: i64, height: i64) -> i32 {
+    if width > 1920 || height > 1080 {
+        BUFFER_MS_ABOVE_1080P
+    } else {
+        BUFFER_MS
     }
 }
 
@@ -564,8 +560,9 @@ mod tests {
     #[test]
     fn rav1g_route_sets_buffer_stage_and_display_size() {
         let decision = route(&route_args("rav1g"));
-        assert_eq!(decision.buffer_ms, Some(200));
-        assert_eq!(decision.decode_ahead_frames, Some(3));
+        // A 4K picture: the above-1080p buffer.
+        assert_eq!(decision.buffer_ms, Some(BUFFER_MS_ABOVE_1080P));
+        assert_eq!(decision.decode_ahead_frames, Some(8));
         assert_eq!(
             (decision.output_width, decision.output_height),
             (Some(1920), Some(1080))
@@ -578,14 +575,7 @@ mod tests {
         let decision = route(&args);
         assert_eq!(decision.output_width, None);
         assert!(!decision.tone_map);
-    }
-
-    #[test]
-    fn decode_ahead_stays_in_the_forks_range_beside_rav1gs_4k_hold() {
-        // The fork's advice for the GPU provider: 2-4 frames.
-        assert!((2..=4).contains(&DECODE_AHEAD_FRAMES));
-        // 8 pool images minus rav1g's 4K hold (slots + 2 = 5).
-        const { assert!(DECODE_AHEAD_FRAMES <= 8 - 5) };
+        assert_eq!(decision.buffer_ms, Some(BUFFER_MS));
     }
 
     #[test]
@@ -608,14 +598,14 @@ mod tests {
     }
 
     #[test]
-    fn buffer_time_holds_at_most_five_frames() {
-        assert_eq!(buffer_ms(None), 200);
-        assert_eq!(buffer_ms(Some(23.976)), 200);
-        assert_eq!(buffer_ms(Some(30.0)), 166);
-        assert_eq!(buffer_ms(Some(59.94)), 83);
-        assert_eq!(buffer_ms(Some(240.0)), MIN_BUFFER_MS);
-        assert_eq!(buffer_ms(Some(f64::NAN)), 200);
-        assert_eq!(buffer_ms(Some(0.0)), 200);
+    fn buffer_time_follows_the_picture_size() {
+        // The fork (bale.46+): the buffer no longer competes with rav1g's pool; 1000 ms up to 1080p, 500 above.
+        assert_eq!(buffer_ms(1920, 1080), 1000);
+        assert_eq!(buffer_ms(1920, 1078), 1000);
+        assert_eq!(buffer_ms(0, 0), 1000);
+        assert_eq!(buffer_ms(1921, 800), 500);
+        assert_eq!(buffer_ms(3840, 2160), 500);
+        assert_eq!(buffer_ms(1440, 1081), 500);
     }
 
     #[test]
