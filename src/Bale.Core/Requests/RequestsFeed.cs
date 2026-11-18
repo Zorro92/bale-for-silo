@@ -6,7 +6,7 @@ using Microsoft.Kiota.Http.HttpClientLibrary.Middleware.Options;
 
 namespace Bale.Core.Requests;
 
-public sealed record RequestsCapability(bool Enabled = false, bool Resolved = false, bool FollowSupported = false);
+public sealed record RequestsCapability(bool Enabled = false, bool Resolved = false, bool FollowSupported = false, bool RemoveFailedSupported = false);
 public sealed record RequestMutationResult(bool Succeeded, string? Message = null, bool Unconfirmed = false);
 
 /// <summary>
@@ -61,11 +61,13 @@ public sealed class RequestsFeed(SiloApiClient api, TimeProvider? time = null)
             {
                 CheckGeneration(generation);
                 var enabled = RequestPresentation.IsEnabled(status);
-                _capability = new(enabled, true, enabled && status.FollowSupported == true);
+                // RequestsFeatureStore.kt: Remove is offered only when the server reports remove_failed_supported.
+                _capability = new(enabled, true, enabled && status.FollowSupported == true, enabled && status.RemoveFailedSupported == true);
                 _lastProbeError = null;
                 _lastProbeSummary = ($"requests_enabled={status.RequestsEnabled?.ToString() ?? "null"}, "
                     + $"allowed={status.Allowed?.ToString() ?? "null"}, state={status.State?.ToString() ?? "null"}, "
-                    + $"follow_supported={status.FollowSupported?.ToString() ?? "null"}").ToLowerInvariant();
+                    + $"follow_supported={status.FollowSupported?.ToString() ?? "null"}, "
+                    + $"remove_failed_supported={status.RemoveFailedSupported?.ToString() ?? "null"}").ToLowerInvariant();
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
@@ -242,6 +244,73 @@ public sealed class RequestsFeed(SiloApiClient api, TimeProvider? time = null)
                 config => config.Options.Add(new RetryHandlerOption { MaxRetry = 0 }), cancellationToken),
             () => _cancellations[record.Id!] = new(_time.GetUtcNow(), record.UpdatedAt), RequestPresentation.UnconfirmedCancel,
             "Couldn't cancel the request").ConfigureAwait(false);
+    }
+
+    /// <summary>MyRequestsUiState.canRemove: a failed request that delivered nothing, on a server that takes removals.</summary>
+    public bool CanRemove(MediaRequest record)
+    {
+        lock (_sync)
+            return _capability.Enabled && _capability.RemoveFailedSupported && Valid(record) && RequestPresentation.IsRemovableFailure(record)
+                && !_inFlight.Any(operation => operation.StartsWith("remove:", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// RequestsRepository.removeFailed / MyRequestsViewModel.removeFailed: DELETE /api/v2/requests/{id}, never retried.
+    /// 204 drops the row ("Request removed"); 404 means another device removed it, so it leaves too, silently;
+    /// 409 conflict means it was retried or completed since the list loaded. Nothing is held after an uncertain
+    /// answer: a resend of a removal that landed answers 404 and changes nothing. <see cref="RequestMutationResult.Succeeded"/>
+    /// is true when the request is gone.
+    /// </summary>
+    public async Task<RequestMutationResult> RemoveFailedAsync(MediaRequest record, CancellationToken cancellationToken = default)
+    {
+        if (!CanRemove(record)) return new(false);
+        var operation = $"remove:{record.Id}";
+        int generation;
+        lock (_sync)
+        {
+            if (!_inFlight.Add(operation)) return new(false);
+            generation = _generation;
+        }
+        try
+        {
+            await api.Api.V2.Requests[record.Id!].DeleteAsync(config => config.Options.Add(new RetryHandlerOption { MaxRetry = 0 }),
+                cancellationToken).ConfigureAwait(false);
+            Drop(record, generation);
+            return new(true, RequestPresentation.Removed);
+        }
+        catch (ApiException ex) when (ex.ResponseStatusCode == 404)
+        {
+            Drop(record, generation);
+            return new(true);
+        }
+        catch (Problem ex) when (ex.ResponseStatusCode == 409 && ex.Type?.Split('/', ':').LastOrDefault() == "conflict")
+        {
+            return new(false, RequestPresentation.RemoveConflict);
+        }
+        catch (Exception ex)
+        {
+            var uncertain = IsUncertain(ex);
+            return new(false, uncertain ? RequestPresentation.UnconfirmedRemove : ErrorMessage(ex, "Couldn't remove the request"), uncertain);
+        }
+        finally
+        {
+            lock (_sync)
+            {
+                if (generation == _generation) _inFlight.Remove(operation);
+            }
+        }
+    }
+
+    /// <summary>publishRemoval: the request leaves the user's list, and its title is requestable again.</summary>
+    private void Drop(MediaRequest record, int generation)
+    {
+        lock (_sync)
+        {
+            if (generation != _generation) return;
+            // The list as read, minus that row, stays exact (RequestsRepository.publishRemoval keeps it).
+            _mutations++;
+            _mine = _mine.Where(item => item.Id != record.Id).ToArray();
+        }
     }
 
     private async Task<RequestMutationResult> MutateAsync(string operation, int generation, Func<Task<MediaRequest?>> send,

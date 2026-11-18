@@ -3,7 +3,9 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     IsTabStop="False" IsHitTestVisible="False">
-  <!-- TvRequestActionDialog: Close is first. TvExpandableSynopsis uses the same contained modal. -->
+  <!-- TvRequestActionDialog: Close is first. TvExpandableSynopsis uses the same contained modal. The one
+       destructive action is Cancel Request or Remove request (never both: one needs a pending request, the
+       other a failed one), or the removal confirmation's Remove request after Keep request. -->
   <Grid x:Name="ModalLayer" Background="{StaticResource SkylineDialogScrim}" Visibility="Collapsed"
         PreviewKeyDown="OnPreviewKeyDown" PreviewKeyUp="OnPreviewKeyUp" Tapped="OnBackgroundTapped">
     <Grid Style="{StaticResource SkylineSignOutDialogCardStyle}">
@@ -13,11 +15,11 @@
         <ScrollViewer Style="{StaticResource SkylineRequestDialogScrollerStyle}">
           <TextBlock x:Name="MessageText" Style="{StaticResource SkylineDialogMessageStyle}" />
         </ScrollViewer>
-        <!-- rail-layout: non-card — TvDialog.kt's horizontal Close and optional explicit cancellation. -->
+        <!-- rail-layout: non-card — TvDialog.kt's horizontal Close and optional destructive action. -->
         <ItemsControl x:Name="Actions" Style="{StaticResource SkylineDialogActionsStyle}" IsTabStop="False">
           <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylineDialogActionGap}" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
           <Button x:Name="CloseButton" Content="Close" Style="{StaticResource SkylineDialogButtonStyle}" Click="OnCloseClick" />
-          <Button x:Name="CancelButton" Content="Cancel Request" Style="{StaticResource SkylineDialogDestructiveButtonStyle}" Click="OnCancelClick" Visibility="Collapsed" />
+          <Button x:Name="ActionButton" Content="Cancel Request" Style="{StaticResource SkylineDialogDestructiveButtonStyle}" Click="OnActionClick" Visibility="Collapsed" />
         </ItemsControl>
       </StackPanel>
     </Grid>

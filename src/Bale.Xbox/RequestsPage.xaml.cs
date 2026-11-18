@@ -54,8 +54,8 @@ public sealed partial class RequestsPage : Page, IRestoresFocus, IBackHandler
             _longPress = true;
             if (ReferenceEquals(FocusedCard(), _pressed) && _pressed?.Content is RequestCardView card) ShowActions(card);
         };
-        ActionDialog.Dismissed += () => { _actionTarget = null; FocusContent(); };
-        ActionDialog.Confirmed += OnCancelConfirmed;
+        ActionDialog.Dismissed += () => { _actionTarget = null; _actionStage = ActionStage.None; FocusContent(); };
+        ActionDialog.Confirmed += OnActionConfirmed;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
     }
@@ -302,11 +302,66 @@ public sealed partial class RequestsPage : Page, IRestoresFocus, IBackHandler
         else ShowToast("Request details for this media type are not available on TV yet");
     }
 
+    /// <summary>Which step of the long-press dialog is open (TvRequestsPage.kt actionTarget / removeTarget).</summary>
+    private enum ActionStage { None, Cancel, Remove, ConfirmRemove }
+    private ActionStage _actionStage;
+
     private void ShowActions(RequestCardView card)
     {
-        if (card.Item.Record is not { } record || _client?.Requests.CanCancel(record) != true) return;
+        if (card.Item.Record is not { } record || _client is not { } client) return;
+        // TvRequestItem.actions: Cancel on a pending request, Remove on a failed one that delivered nothing.
+        _actionStage = client.Requests.CanCancel(record) ? ActionStage.Cancel
+            : client.Requests.CanRemove(record) ? ActionStage.Remove : ActionStage.None;
+        if (_actionStage == ActionStage.None) return;
         _actionTarget = card;
-        ActionDialog.Show(card.Item.Title, card.Item.Progress!.LongLabel, canCancel: true);
+        ActionDialog.Show(card.Item.Title, card.Item.Progress!.LongLabel,
+            _actionStage == ActionStage.Cancel ? "Cancel Request" : RequestPresentation.RemoveConfirm);
+    }
+
+    private void OnActionConfirmed()
+    {
+        var stage = _actionStage;
+        _actionStage = ActionStage.None;
+        switch (stage)
+        {
+            case ActionStage.Cancel:
+                OnCancelConfirmed();
+                break;
+            case ActionStage.Remove when _actionTarget is { } card:
+                // Keep request comes first and takes focus, so a stray Select deletes nothing.
+                _actionStage = ActionStage.ConfirmRemove;
+                ActionDialog.Show(RequestPresentation.RemoveTitle, RequestPresentation.RemoveMessage(card.Item.Title),
+                    RequestPresentation.RemoveConfirm, RequestPresentation.RemoveKeep);
+                break;
+            case ActionStage.ConfirmRemove:
+                OnRemoveConfirmed();
+                break;
+            default:
+                _actionTarget = null;
+                FocusContent();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// MyRequestsViewModel.removeFailed: one DELETE, then the list is read again so the row shows what happened.
+    /// An uncertain answer whose re-read no longer lists the request still says "Request removed".
+    /// </summary>
+    private async void OnRemoveConfirmed()
+    {
+        var record = _actionTarget?.Item.Record;
+        _actionTarget = null;
+        if (record is null || _client is not { } client) return;
+        var profile = _profile;
+        FocusContent();
+        var result = await client.Requests.RemoveFailedAsync(record);
+        if (!_active || !ReferenceEquals(client, Session.Client) || profile != client.ProfileId) return;
+        _entryPending = true;
+        await LoadAsync();
+        if (!_active || !ReferenceEquals(client, Session.Client) || profile != client.ProfileId) return;
+        var listed = _rows.Any(row => row.Cards.Any(card => card.Item.Record?.Id == record.Id));
+        var message = result.Unconfirmed && !listed ? RequestPresentation.Removed : result.Message;
+        if (message is not null) ShowToast(message);
     }
 
     private async void OnCancelConfirmed()

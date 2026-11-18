@@ -82,7 +82,15 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   are saved (Android `ce24a6b5c`, Apple `8d9b2395`, Roku `4a22785`).
 - **Back from Switch Profile** returns to the previous profile and page without its PIN (Apple
   `7bb8fe3d`); hold until Android `6091fb9e6` merges, then untick the parity-backlog line.
-- **Remove failed requests:** needs the contract bump (Android `4600d910c`, Apple `df891d2e`).
+- ~~**Remove failed requests:**~~ done 2026-11-18, not yet on the console (Android `4600d910c`:
+  `TvRequestsPage.kt`, `RequestsViewModels.kt`, `RequestsRepository.kt`, `RequestModels.kt`,
+  `RequestMutations.kt`; Apple `df891d2e` agrees). Long-press / Menu on a failed request that
+  delivered nothing offers Close + Remove request when the server reports
+  `remove_failed_supported`; then "Remove this request?" with Keep request focused first. One
+  `DELETE /api/v2/requests/{id}`, never retried: 204 "Request removed", 404 leaves silently,
+  409 conflict keeps the row and says why, an uncertain answer re-reads and says either. Focus
+  moves to the card that took the removed one's place. The request detail page has no Remove (as
+  on both TV apps).
 - **Not doing: box sets.** The Silo developer said box sets reached the server by mistake and
   reversed the decision (2026-11-10), so Bale doesn't build them even though the clients shipped
   them (Android `67e6e224a`, Apple `08c28c8e`). Ignore later box-set commits unless that changes.

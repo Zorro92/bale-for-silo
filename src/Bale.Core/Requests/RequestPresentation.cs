@@ -57,6 +57,21 @@ public static class RequestPresentation
 {
     public const string UnconfirmedSubmit = "We couldn't confirm the request. Check My Requests before trying again.";
     public const string UnconfirmedCancel = "We couldn't confirm the cancellation. Refresh your requests to check it.";
+    // RequestMutations.kt RequestActionCopy / strings_catalog.xml requests_remove_*: removing a failed request.
+    public const string UnconfirmedRemove = "We couldn't confirm the removal. Refresh your requests to check it.";
+    public const string Removed = "Request removed";
+    public const string RemoveTitle = "Remove this request?";
+    public const string RemoveConfirm = "Remove request";
+    public const string RemoveKeep = "Keep request";
+    public const string RemoveConflict = "This request changed since the list loaded, so it wasn't removed.";
+    public static string RemoveMessage(string title) => $"Your failed request for \"{title}\" will be deleted. You can request the title again later.";
+
+    /// <summary>
+    /// MediaRequest.isRemovableFailure, the server's rule for removeFailedRequest: it failed and delivered nothing.
+    /// One that delivered a quality before failing stays as the record of that copy.
+    /// </summary>
+    public static bool IsRemovableFailure(MediaRequest record) =>
+        record.Outcome == "failed" && !(record.Targets ?? []).Any(target => target.Status == "completed");
     public static IReadOnlyList<string> Steps { get; } = ["Requested", "Approved", "Downloading", "In your library"];
 
     // TvRequestPresentation.kt: TV deliberately omits ebooks, but retains audiobook aliases.

@@ -30,7 +30,7 @@ public class RequestsFeedTests
         var capability = await feed.RefreshCapabilityAsync();
         Assert.True(capability.Enabled);
         Assert.Null(feed.LastProbeError);
-        Assert.Equal("requests_enabled=true, allowed=true, state=available, follow_supported=true", feed.LastProbeSummary);
+        Assert.Equal("requests_enabled=true, allowed=true, state=available, follow_supported=true, remove_failed_supported=null", feed.LastProbeSummary);
         Assert.Equal(capability, await feed.RefreshCapabilityAsync());
         var error = Assert.IsType<Problem>(feed.LastProbeError);
         Assert.Equal(403, error.ResponseStatusCode);
@@ -44,7 +44,7 @@ public class RequestsFeedTests
         Assert.False((await feed.RefreshCapabilityAsync()).Enabled);
         Assert.True(feed.Capability.Resolved);
         Assert.Null(feed.LastProbeError);
-        Assert.Equal("requests_enabled=true, allowed=null, state=available, follow_supported=null", feed.LastProbeSummary);
+        Assert.Equal("requests_enabled=true, allowed=null, state=available, follow_supported=null, remove_failed_supported=null", feed.LastProbeSummary);
     }
 
     [Fact]
@@ -58,7 +58,7 @@ public class RequestsFeedTests
         Assert.Null(feed.LastProbeSummary);
         Assert.True((await feed.RefreshCapabilityAsync()).Enabled);
         Assert.Null(feed.LastProbeError);
-        Assert.Equal("requests_enabled=true, allowed=true, state=available, follow_supported=true", feed.LastProbeSummary);
+        Assert.Equal("requests_enabled=true, allowed=true, state=available, follow_supported=true, remove_failed_supported=null", feed.LastProbeSummary);
     }
 
     [Fact]
@@ -201,6 +201,91 @@ public class RequestsFeedTests
         Assert.Equal(HttpMethod.Put, handler.Requests[1].Method);
         Assert.Equal(HttpMethod.Delete, handler.Requests[2].Method);
         Assert.Equal("/silo/api/v2/requests/follows/movie/1", handler.Requests[1].RequestUri!.AbsolutePath);
+    }
+
+    private const string RemovableEnabled = """{"requests_enabled":true,"allowed":true,"state":"available","remove_failed_supported":true}""";
+    private const string FailedMine = """{"items":[{"id":"r1","media_type":"movie","tmdb_id":1,"title":"Gone","status":"failed","state":"failed","outcome":"failed"}],"page":{"has_more":false}}""";
+
+    private static MediaRequest Failed(string? targetStatus = null) => new()
+    {
+        Id = "r1", MediaType = "movie", TmdbId = 1, Title = "Gone", State = "failed", Status = "failed", Outcome = "failed",
+        Targets = targetStatus is null ? null : [new() { Status = targetStatus }],
+    };
+
+    [Fact]
+    public async Task RemoveIsOfferedOnlyForFailedRequestsThatDeliveredNothingOnServersThatTakeIt()
+    {
+        var old = new StubHandler().Enqueue(Enabled);
+        using var oldConnection = Connect(old);
+        var oldFeed = new RequestsFeed(oldConnection.Api);
+        await oldFeed.RefreshCapabilityAsync();
+        Assert.False(oldFeed.CanRemove(Failed()));
+        Assert.False((await oldFeed.RemoveFailedAsync(Failed())).Succeeded);
+        Assert.Single(old.Requests);
+
+        using var connection = Connect(new StubHandler().Enqueue(RemovableEnabled));
+        var feed = new RequestsFeed(connection.Api);
+        await feed.RefreshCapabilityAsync();
+        Assert.True(feed.Capability.RemoveFailedSupported);
+        Assert.True(feed.CanRemove(Failed()));
+        Assert.True(feed.CanRemove(Failed("failed")));
+        Assert.False(feed.CanRemove(Failed("completed")));
+        Assert.False(feed.CanRemove(new MediaRequest { Id = "r2", MediaType = "movie", TmdbId = 2, Status = "pending", Outcome = "active" }));
+    }
+
+    [Fact]
+    public async Task RemovalDeletesOnceDropsTheRowAndConfirms()
+    {
+        var handler = new StubHandler().Enqueue(RemovableEnabled).Enqueue(FailedMine).Enqueue(HttpStatusCode.NoContent, string.Empty);
+        using var connection = Connect(handler);
+        var feed = new RequestsFeed(connection.Api);
+        await feed.RefreshCapabilityAsync();
+        var record = Assert.Single(await feed.LoadMineAsync(force: true));
+
+        var result = await feed.RemoveFailedAsync(record);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("Request removed", result.Message);
+        Assert.Empty(await feed.LoadMineAsync(force: false));
+        Assert.Equal(HttpMethod.Delete, handler.Requests[2].Method);
+        Assert.Equal("/silo/api/v2/requests/r1", handler.Requests[2].RequestUri!.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task RemovalElsewhereDropsTheRowSilently()
+    {
+        var handler = new StubHandler().Enqueue(RemovableEnabled).Enqueue(FailedMine)
+            .Enqueue(HttpStatusCode.NotFound, """{"type":"urn:silo:problem:not_found","status":404}""");
+        using var connection = Connect(handler);
+        var feed = new RequestsFeed(connection.Api);
+        await feed.RefreshCapabilityAsync();
+        var record = Assert.Single(await feed.LoadMineAsync(force: true));
+
+        var result = await feed.RemoveFailedAsync(record);
+
+        Assert.True(result.Succeeded);
+        Assert.Null(result.Message);
+        Assert.Empty(await feed.LoadMineAsync(force: false));
+    }
+
+    [Fact]
+    public async Task ConflictKeepsTheRowAndSaysWhyAndUncertainAnswersAreNeverResent()
+    {
+        var handler = new StubHandler().Enqueue(RemovableEnabled)
+            .Enqueue(HttpStatusCode.Conflict, """{"type":"urn:silo:problem:conflict","status":409}""")
+            .Enqueue(HttpStatusCode.GatewayTimeout, "{}");
+        using var connection = Connect(handler);
+        var feed = new RequestsFeed(connection.Api);
+        await feed.RefreshCapabilityAsync();
+
+        var conflict = await feed.RemoveFailedAsync(Failed());
+        Assert.False(conflict.Succeeded);
+        Assert.Equal(RequestPresentation.RemoveConflict, conflict.Message);
+
+        var uncertain = await feed.RemoveFailedAsync(Failed());
+        Assert.True(uncertain.Unconfirmed);
+        Assert.Equal(RequestPresentation.UnconfirmedRemove, uncertain.Message);
+        Assert.Equal(3, handler.Requests.Count);
     }
 
     [Fact]

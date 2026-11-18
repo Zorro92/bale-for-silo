@@ -38,6 +38,7 @@ public sealed partial class RequestRowView(RequestRow row) : INotifyPropertyChan
 
     public void Update(RequestRow row)
     {
+        var rememberedIndex = LastFocused is { } last ? Cards.IndexOf(last) : -1;
         Title = row.Title;
         Eyebrow = row.Eyebrow;
         var index = 0;
@@ -54,7 +55,9 @@ public sealed partial class RequestRowView(RequestRow row) : INotifyPropertyChan
             index++;
         }
         while (Cards.Count > index) Cards.RemoveAt(Cards.Count - 1);
-        if (LastFocused is not null && !Cards.Contains(LastFocused)) LastFocused = Cards.FirstOrDefault();
+        // TvRequestsPage.kt: a focused card that left (removed or cancelled) hands focus to the card that took its place.
+        if (LastFocused is not null && !Cards.Contains(LastFocused))
+            LastFocused = Cards.Count > 0 ? Cards[Math.Clamp(rememberedIndex, 0, Cards.Count - 1)] : null;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
     }
 }

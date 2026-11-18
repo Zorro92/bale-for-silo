@@ -26,12 +26,18 @@ public sealed partial class RequestDialog : UserControl
     public event Action? Confirmed;
     public event Action? Dismissed;
 
-    public void Show(string title, string message, bool canCancel = false)
+    /// <summary>
+    /// Shows <paramref name="title"/> with Close (or <paramref name="closeLabel"/>, "Keep request" on the removal
+    /// confirmation) focused first, and the destructive <paramref name="actionLabel"/> after it when given.
+    /// </summary>
+    public void Show(string title, string message, string? actionLabel = null, string closeLabel = "Close")
     {
         Hide();
         TitleText.Text = title;
         MessageText.Text = message;
-        CancelButton.Visibility = canCancel ? Visibility.Visible : Visibility.Collapsed;
+        CloseButton.Content = closeLabel;
+        ActionButton.Content = actionLabel ?? string.Empty;
+        ActionButton.Visibility = actionLabel is null ? Visibility.Collapsed : Visibility.Visible;
         _actions.Remembered = CloseButton;
         _focusRoot = Window.Current.Content;
         if (_focusRoot is not null) _focusRoot.GettingFocus += OnGettingFocus;
@@ -100,9 +106,9 @@ public sealed partial class RequestDialog : UserControl
     }
 
     private void OnCloseClick(object sender, RoutedEventArgs args) => Dismiss();
-    private void OnCancelClick(object sender, RoutedEventArgs args)
+    private void OnActionClick(object sender, RoutedEventArgs args)
     {
-        if (!IsOpen || CancelButton.Visibility != Visibility.Visible) return;
+        if (!IsOpen || ActionButton.Visibility != Visibility.Visible) return;
         Hide();
         Confirmed?.Invoke();
     }
