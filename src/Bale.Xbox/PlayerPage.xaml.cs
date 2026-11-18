@@ -112,6 +112,10 @@ public sealed partial class PlayerPage : Page, IBackHandler
         /// lowering is adopted (silo-apple heldStartDeadlineFailure). A refused or failed lowering recovers it.
         /// </summary>
         public Mount? HeldStartDeadline { get; set; }
+        /// <summary>The attempt's seek watchdog (PlayerPage.SeekWatchdog.cs): its one remount spans every seek and mount.</summary>
+        public PlaybackSeekWatchdog? SeekWatchdog { get; set; }
+        /// <summary>The source target of the seek whose failure the watchdog queued: the replan starts there.</summary>
+        public double? StuckSeekTarget { get; set; }
         public CancellationTokenSource? ReportingCancellation { get; set; }
         public Task? ReportingTask { get; set; }
     }
@@ -339,6 +343,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         UpdateVersionNotice();
         UpdateBufferingQuality();
         UpdateStartBudget();
+        UpdateSeekWatchdog();
         // Drift correction about once per second while playing; SubtitleClockPush drops the other ticks.
         PushSubtitleClock();
         if (_recording || _seeking) return;
@@ -443,12 +448,17 @@ public sealed partial class PlayerPage : Page, IBackHandler
         }
         Log.Info($"player: failed hr=0x{unchecked((uint)hresult):X8}");
         var position = SourcePosition(attempt);
+        // A stuck seek's replan starts where the viewer asked to go, not at the clock that never moved.
+        if (PlaybackSeekWatchdog.Is(failure) && attempt.StuckSeekTarget is { } stuckTarget)
+            attempt.Position = _sourcePosition = position = stuckTarget;
         Pause(attempt);
-        var startBudget = PlaybackStartBudget.Is(failure);
+        // A start that ran out of time, or a seek still stuck after the seek watchdog's same-plan remount, withdraws no
+        // claim (PlaybackReplan.ForFailure): no other same-plan remount, and the claim guards below do not apply.
+        var keepsClaims = PlaybackStartBudget.Is(failure) || PlaybackSeekWatchdog.Is(failure);
         // A subtitle failure says nothing about the video stage; remounting the same plan would fail it again. Nor does
         // a start that ran out of time: the server's next route is the answer, not the same plan on another decoder.
         if (attempt.Media?.Route.ConsoleDownscale == true && !attempt.SdrDownscaleDeclined && !hdrOutputFailed
-            && !PlaybackEmbeddedSubtitleFailure.Is(failure) && !startBudget)
+            && !PlaybackEmbeddedSubtitleFailure.Is(failure) && !keepsClaims)
         {
             // The SDR scale-only stage is an optimisation, not a new promise: the stage can decline a file
             // (e.g. unspecified colour tags) and the guard then rejects it. Remount the same plan once on the
@@ -461,7 +471,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         // Debug rav1g switch (owner, 2026-11-18): a rav1g mount that failed (the fork's latched NotifyError, or the guard
         // rejecting its output) remounts the same plan once on today's dav1d zero-copy path; its failure takes the replan.
         if (attempt.Media is { } failedMount && Rav1gPolicy.RemountOnDav1d(failedMount.Rav1gRoute, failedMount.Rav1gActive,
-                attempt.Rav1gRemounted, hdrOutputFailed, PlaybackEmbeddedSubtitleFailure.Is(failure), startBudget))
+                attempt.Rav1gRemounted, hdrOutputFailed, PlaybackEmbeddedSubtitleFailure.Is(failure), keepsClaims))
         {
             attempt.Rav1gRemounted = true;
             await RemountSamePlanAsync(attempt, position, "player: rav1g failed; remounting the same plan on dav1d");
@@ -537,14 +547,14 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 await ShowErrorAsync(PlaybackMessages.PlaybackFailed);
                 return;
             }
-            // A start that ran out of time withdrew no claim (PlaybackReplan.ForFailure): the next route may use them.
-            if (failedDolbyVision7 && !startBudget && DolbyVision7Policy.RequiresBaseLayer(attempt.Plan))
+            // A start that ran out of time or a stuck seek withdrew no claim (PlaybackReplan.ForFailure): the next route may use them.
+            if (failedDolbyVision7 && !keepsClaims && DolbyVision7Policy.RequiresBaseLayer(attempt.Plan))
             {
                 // The recovery withdrew both DV7 promises. Never mount the same local conversion again.
                 await ShowErrorAsync(PlaybackMessages.PlaybackFailed);
                 return;
             }
-            if (failedRoute?.ConsoleToneMap == true && !startBudget && ConsoleToneMapPolicy.RequiresToneMap(attempt.Plan,
+            if (failedRoute?.ConsoleToneMap == true && !keepsClaims && ConsoleToneMapPolicy.RequiresToneMap(attempt.Plan,
                 !ConsoleToneMapPolicy.HasHdrOutput(attempt.Start.ClientPlaybackContext.Output.HdrDetails), attempt.Request.Detail.Versions,
                 attempt.HlsThroughFfmpeg))
             {
@@ -660,6 +670,9 @@ public sealed partial class PlayerPage : Page, IBackHandler
         finally
         {
             DisposeMount(attempt);
+            StopWatchingSeek();
+            Cleanup("dispose seek watchdog", () => attempt.SeekWatchdog?.Dispose());
+            attempt.SeekWatchdog = null;
             attempt.Cancellation.Dispose();
             if (ReferenceEquals(_attempt, attempt)) _attempt = null;
             // Explicit Close/Trim has released native owners; collect leftover unreachable wrappers.

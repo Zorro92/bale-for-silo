@@ -125,6 +125,14 @@ namespace Bale.Xbox
                 StartPgsSubtitles(attempt, attempt.Media, source);
             return Task.CompletedTask;
         }
+        // PlayerPage.SeekWatchdog.cs: every local seek that moves the clock is watched (pinned by source in
+        // PlayerSeekWatchdogWiringTests); the stub records it and lets the seek through.
+        internal List<(double PlayerTarget, double SourceTarget, bool Paused)> WatchedSeeks { get; } = [];
+        private bool BeginWatchedSeek(Attempt attempt, Mount media, double playerTarget, double sourceTarget, bool paused)
+        {
+            WatchedSeeks.Add((playerTarget, sourceTarget, paused));
+            return true;
+        }
         private void ShowSkipFeedback(int delta, double target) => LastSkipLabel = _skipLabel;
         internal string? LastSkipLabel { get; private set; }
         private void HideTransport() { }

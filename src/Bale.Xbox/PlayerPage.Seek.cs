@@ -129,7 +129,10 @@ public sealed partial class PlayerPage
                 // seek after opening would reintroduce EVENT/live-edge jumps as its clock advances.
                 if (local && Math.Abs(session.Position.TotalSeconds - target) > 0.000001)
                 {
-                    session.Position = TimeSpan.FromSeconds(target);
+                    // The seek watchdog (PlayerPage.SeekWatchdog.cs) follows this seek until it lands, past this wait
+                    // too, and recovers a seek that never does. Only its debug hang keeps the seek from the source.
+                    if (BeginWatchedSeek(attempt, media, target, request.Seconds, paused))
+                        session.Position = TimeSpan.FromSeconds(target);
                     var winner = await Task.WhenAny(completed.Task, Task.Delay(10000, media.Token));
                     media.Token.ThrowIfCancellationRequested();
                     if (winner != completed.Task) return new(SeekOutcome.TimedOut);

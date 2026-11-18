@@ -57,7 +57,7 @@ public class PlayerStartBudgetWiringTests
         var player = Read("PlayerPage.cs.txt");
         Assert.Contains("if (attempt.Media is { StartBudgetRanOut: true } && failure is null && !hdrOutputFailed) failure = PlaybackStartBudget.Failure;", player);
         Assert.Contains("if (StartDeadlineLoweringOwns(attempt))", player);
-        Assert.Contains("&& !PlaybackEmbeddedSubtitleFailure.Is(failure) && !startBudget)", player);
+        Assert.Contains("&& !PlaybackEmbeddedSubtitleFailure.Is(failure) && !keepsClaims)", player);
     }
 
     [Fact]

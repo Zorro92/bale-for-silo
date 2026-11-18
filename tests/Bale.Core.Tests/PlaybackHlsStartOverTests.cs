@@ -117,6 +117,8 @@ public class PlaybackHlsStartOverTests
         Assert.Equal(completeVod ? 0 : expected.Length, player.Mounts.Count);
         Assert.Equal(expected.Length, handler.Progress.Count);
         for (var i = 0; i < expected.Length; i++) Assert.Equal(expected[i], handler.Progress[i], 6);
+        // The seek watchdog follows each native seek; a reanchor is a new mount under its start budget instead.
+        Assert.Equal(completeVod ? expected : [], player.WatchedSeeks.Select(seek => Math.Round(seek.SourceTarget, 6)));
     }
 
     [Fact]
@@ -175,6 +177,7 @@ public class PlaybackHlsStartOverTests
         Assert.Equal(target, Assert.Single(handler.Reanchors), 6);
         Assert.Equal(0, original.NativeSeeks);
         Assert.Equal(0, player.Session.NativeSeeks);
+        Assert.Empty(player.WatchedSeeks);
         Assert.Equal(target + 0.2, player.Source, 6);
         Assert.Equal(paused, player.IsPaused);
         Assert.Equal(player.Source, Assert.Single(handler.Progress), 6);

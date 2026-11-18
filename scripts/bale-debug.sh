@@ -55,6 +55,7 @@
 #   scripts/bale-debug.sh gc latency <batch|interactive|sustained|default>  change latency app-wide now; default restores the saved pre-playback mode; playback acquires sustained automatically
 #   scripts/bale-debug.sh frame-delivery [native|managed|off]  next playback attempt's observer; default native, on aliases native; memory only (restart resets); no args = status
 #   scripts/bale-debug.sh start-budget [seconds=1..120|default] [hang=none|open|ready]  start budget per mount (45 s default) for new mounts; hang applies to the next mount only: open = its open never finishes, ready = MediaOpened never seen; memory only; no args = status + the current mount's budget
+#   scripts/bale-debug.sh seek-watchdog [seconds=1..120|default] [hang=none|once]  seek watchdog per local seek (15 s default) for new seeks; hang=once: the next local seek is watched but never reaches the source (first time: same-plan remount at the target; armed again after it: failure replan); memory only; no args = status + the watched seek
 #   scripts/bale-debug.sh player-backend [mediaplayer|engine]   next playback attempt's player: engine (default, as in release) = IMFMediaEngine with Bale's controls, MediaPlayer only if it cannot open the stream; mediaplayer = Windows MediaPlayer; memory only; no args = status
 #   scripts/bale-debug.sh engine-target [bgra|rgb10|fp16]   next engine attempt's swap-chain format (MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT): bgra (default, as in release) | rgb10 (10-bit SDR to the screen) | fp16; memory only; no args = status
 #   scripts/bale-debug.sh av1-decoder [dav1d|rav1g]   next playback attempt's software AV1 decoder: dav1d (default, as in release) = zero-copy | rav1g = GPU decode on the fork's provider (bale_av1_decoder=1, ~200 ms BufferTime, dav1d remount once on failure); memory only; no args = status (+ whether rav1g.dll is packaged)
@@ -471,6 +472,22 @@ case "${1:-}" in
       curl --fail-with-body -sS --max-time 5 "$BASE/start-budget"
     else
       curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/start-budget" "${args[@]}"
+    fi
+    ;;
+  seek-watchdog)
+    shift
+    args=()
+    for arg in "$@"; do
+      if [[ ! "$arg" =~ ^(seconds=([0-9]+|default)|hang=(none|once))$ ]]; then
+        echo 'usage: scripts/bale-debug.sh seek-watchdog [seconds=1..120|default] [hang=none|once]' >&2
+        exit 2
+      fi
+      args+=(--data-urlencode "$arg")
+    done
+    if [[ "${#args[@]}" == 0 ]]; then
+      curl --fail-with-body -sS --max-time 5 "$BASE/seek-watchdog"
+    else
+      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/seek-watchdog" "${args[@]}"
     fi
     ;;
   player-backend)

@@ -47,6 +47,7 @@ public sealed class FfmpegUiThreadTests
     [InlineData("PlayerPage.Options.cs.txt")]
     [InlineData("PlayerPage.Subtitles.cs.txt")]
     [InlineData("PlayerPage.StartBudget.cs.txt")]
+    [InlineData("PlayerPage.SeekWatchdog.cs.txt")]
     [InlineData("PlayerPage.BufferingQuality.cs.txt")]
     [InlineData("PlayerPage.cs.txt")]
     public void UiThreadPlayerCodeNeverCallsTheWrappersLockingMembers(string file)
