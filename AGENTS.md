@@ -101,8 +101,11 @@ The Xbox app only compiles on Windows: push to `main` and GitHub Actions builds 
 MSIX (~2 min).
 Warnings are errors in every project (Directory.Build.props), the Windows Xbox build included, so a
 new CsWinRT/nullability warning turns CI red instead of piling up in the log. Run
-`scripts/install-git-hooks.sh` once per clone: the pre-push hook rebuilds the Rust core and runs the
-.NET tests, and stops the push on any failure or warning that Linux can see (`--no-verify` skips it).
+`scripts/install-git-hooks.sh` once per clone: the pre-push hook lints every Rust crate exactly as CI does
+(`cargo fmt --check` and `cargo clippy --all-targets --locked -- -D warnings`, so test code is linted too, plus
+bale-gpu for `x86_64-pc-windows-msvc` when that target is installed), rebuilds the Rust core and runs the
+.NET tests, and stops the push on any failure or warning that Linux can see (`--no-verify` skips it). Lint by
+hand with the same `--all-targets` flags; plain `cargo clippy` skips tests.
 XAML/CsWinRT warnings only show in the Windows build. CI prints every error and warning from a normal-verbosity
 file log after each MSIX build (the minimal console once hid a CsWinRT error entirely), and a failed build whose
 log names no error is rebuilt single-process at normal verbosity.

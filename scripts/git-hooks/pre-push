@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Bale pre-push check: what Linux can verify before CI. Rebuilds the Rust core the tests load
+# Bale pre-push check: what Linux can verify before CI. Lints every Rust crate exactly as CI does
+# (cargo fmt --check, cargo clippy --all-targets -D warnings, which also lints test code; bale-gpu a
+# second time for the Windows target when that target is installed), rebuilds the Rust core the tests load
 # (a stale libbale_core.so makes tests run old logic), then builds and runs the .NET tests with
 # warnings as errors (Directory.Build.props). The Xbox package itself needs Windows, so CI stays
 # the only check for XAML/CsWinRT. Skip once with `git push --no-verify`.
@@ -15,6 +17,25 @@ while read -r _local_ref local_sha _remote_ref _remote_sha; do
   [[ "$local_sha" =~ ^0+$ ]] || needed=1
 done
 [[ $needed -eq 1 ]] || exit 0
+
+# Same Rust lint as CI (.github/workflows/ci.yml), for every crate under native/.
+for crate in native/*/; do
+  [[ -f "$crate/Cargo.toml" ]] || continue
+  echo "pre-push: linting ${crate%/} (fmt, clippy --all-targets)..." >&2
+  if ! (cd "$crate" && cargo fmt --check && cargo clippy --all-targets --locked -q -- -D warnings); then
+    echo "pre-push: Rust lint failed in ${crate%/}; push stopped (git push --no-verify to override)." >&2
+    exit 1
+  fi
+done
+if rustup target list --installed 2>/dev/null | grep -qx x86_64-pc-windows-msvc; then
+  echo "pre-push: linting native/bale-gpu for x86_64-pc-windows-msvc..." >&2
+  if ! (cd native/bale-gpu && cargo clippy --all-targets --locked -q --target x86_64-pc-windows-msvc -- -D warnings); then
+    echo "pre-push: Windows-target Rust lint failed in native/bale-gpu; push stopped." >&2
+    exit 1
+  fi
+else
+  echo "pre-push: x86_64-pc-windows-msvc target not installed; Windows-target lint left to CI." >&2
+fi
 
 echo "pre-push: building Rust core..." >&2
 (cd native/bale-core && cargo build --release --locked -q)
