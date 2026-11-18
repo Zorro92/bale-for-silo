@@ -33,6 +33,16 @@ public sealed partial class PlayerPage
         public bool Started { get; set; }
         public double? PlayingFrom { get; set; }
         public bool FailureQueued { get; set; }
+        /// <summary>This mount's start budget (PlayerPage.StartBudget.cs), from its creation to its first frame.</summary>
+        public PlaybackStartBudget? StartBudget { get; set; }
+        /// <summary>MountPlanAsync is still building this mount (under the lifecycle), as opposed to waiting for the backend.</summary>
+        public bool Mounting { get; set; } = true;
+        /// <summary>The start budget ran out before the first frame.</summary>
+        public bool StartBudgetRanOut { get; set; }
+#if DEBUG_SERVER
+        /// <summary>bale-debug.sh start-budget hang: "open" never finishes opening, "ready" never reports MediaOpened.</summary>
+        public string? DebugHang { get; init; }
+#endif
         /// <summary>The player this mount drives (MediaPlayer today; IMFMediaEngine next).</summary>
         public PlaybackBackend? Player { get; set; }
         /// <summary>The Windows MediaPlayer behind <see cref="Player"/>, for what only it has (element, command manager).</summary>
@@ -133,12 +143,25 @@ public sealed partial class PlayerPage
         {
             StartPosition = playerStart,
             StartPaused = paused,
+            StartBudget = NewStartBudget(),
+#if DEBUG_SERVER
+            DebugHang = DebugStartBudget.TakeHang(),
+#endif
             Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled, attempt.ForceFfmpeg,
                 sdrOutput: sdrOutput, versions: attempt.Request.Detail.Versions, hlsThroughFfmpeg: attempt.HlsThroughFfmpeg,
                 hardwareDecode: attempt.HardwareDecode, display: DisplayHdrOutput.CurrentRawSize(),
                 sdrDownscale: !attempt.SdrDownscaleDeclined && ConsoleToneMapPolicy.SdrDownscaleWrapperSupported(FfmpegWrapperVersion.Value)
                     && ConsoleToneMapRuntime.SupportsSdrDownscale),
         };
+        // From here the mount opens; the start budget may stop it (PlayerPage.StartBudget.cs) until this returns.
+        try { await OpenMountAsync(attempt, media, transport, playerStart, paused, rangeRefused); }
+        finally { media.Mounting = false; }
+    }
+
+    /// <summary>Opens a new mount's source and hands it to the player (MountPlanAsync's second half).</summary>
+    private async Task OpenMountAsync(Attempt attempt, Mount media, PlaybackMedia transport, double playerStart, bool paused,
+        bool rangeRefused)
+    {
         if (media.Route.ConsoleToneMap && !media.Route.UseFfmpeg)
             throw new InvalidDataException("An HDR original on SDR requires the FFmpeg tone-map route.");
         if (media.Route.DolbyVision7BaseLayer)
@@ -159,6 +182,10 @@ public sealed partial class PlayerPage
         // Every HLS package plays through the Rust HLS reader and FFmpeg; Windows' HLS source is gone (owner,
         // 2026-11-17: it cannot feed IMFMediaEngine, the player's future main path).
         if (transport.IsHls && !media.Route.UseFfmpeg) throw new InvalidDataException("HLS requires the FFmpeg route.");
+#if DEBUG_SERVER
+        // bale-debug.sh start-budget hang=open: this mount's open never returns, as a source that never answers.
+        if (media.DebugHang == "open") await DebugStartBudget.HangAsync(media.Token);
+#endif
         {
             if (transport.IsProgressive)
             {
@@ -168,8 +195,8 @@ public sealed partial class PlayerPage
                 try
                 {
                     media.Progressive = attempt.UseRustTransport
-                        ? await transport.OpenNativeProgressiveAsync(media.Token)
-                        : await transport.OpenProgressiveAsync(media.Token);
+                        ? await OpenStepAsync(transport.OpenNativeProgressiveAsync(media.Token), media.Token)
+                        : await OpenStepAsync(transport.OpenProgressiveAsync(media.Token), media.Token);
                 }
                 catch (ProgressiveRangeRefusedException) when (!rangeRefused
                     && attempt.ServerFeatures.Contains(PlaybackSeekReanchor.Feature))
@@ -178,6 +205,8 @@ public sealed partial class PlayerPage
                     // Nothing has played from this mount, so that is the plan's own source start.
                     Log.Info("player: progressive range refused; reanchoring");
                     var decision = await RequestReanchorAsync(attempt, PlaybackTimeline.From(attempt.Plan!.Timeline).SourceStartSeconds);
+                    // The start budget ran out (or Back) while the server answered: no replacement mount.
+                    media.Token.ThrowIfCancellationRequested();
                     if (decision is null || !ReferenceEquals(attempt.Media, media)) throw;
                     DisposeMount(attempt);
                     var kept = ClientBufferingReplan("seek_reanchor")?.BandwidthEstimateKbps;
@@ -195,7 +224,7 @@ public sealed partial class PlayerPage
                 // segment holding playerStart. FFmpeg's clock reads 0 at that segment's start, so the
                 // mount's timeline starts there; seeks remount at the target segment (PlayerPage.Seek.cs).
                 // A playlist the reader refuses (HlsUnsupportedException) fails to a replan.
-                var hls = await transport.OpenNativeHlsAsync(playerStart, media.Token);
+                var hls = await OpenStepAsync(transport.OpenNativeHlsAsync(playerStart, media.Token), media.Token);
                 media.Progressive = hls;
                 transport.StartPlayerClockAt(hls.SegmentStartSeconds);
                 media.ForwardInput = NativeInputStream(media.Progressive) ?? new ForwardInputStream(media.Progressive);
@@ -206,11 +235,11 @@ public sealed partial class PlayerPage
                 var prefetch = media.Route.UseFfmpeg ? attempt.FfmpegTuning.Prefetch ?? HttpRangeStream.DefaultPrefetchBlocks
                     : HttpRangeStream.DefaultPrefetchBlocks;
                 media.Stream = attempt.UseRustTransport
-                    ? await transport.OpenNativeStreamAsync(media.Token, prefetch)
-                    : await transport.OpenStreamAsync(media.Token, prefetch);
+                    ? await OpenStepAsync(transport.OpenNativeStreamAsync(media.Token, prefetch), media.Token)
+                    : await OpenStepAsync(transport.OpenStreamAsync(media.Token, prefetch), media.Token);
 #else
                 // The Rust streams are the default (docs/rust-port.md, slice 7): reads never wait on the GC.
-                media.Stream = await transport.OpenNativeStreamAsync(media.Token);
+                media.Stream = await OpenStepAsync(transport.OpenNativeStreamAsync(media.Token), media.Token);
 #endif
             }
             media.Token.ThrowIfCancellationRequested();
@@ -340,6 +369,8 @@ public sealed partial class PlayerPage
         if (attempt.UseEngine)
         {
             if (await MountEngineAsync(attempt, media, transport.MimeType ?? "video/mp4")) return;
+            // A start budget that ran out ended this open: it fails, it does not move to another player.
+            media.Token.ThrowIfCancellationRequested();
             // The engine could not open this stream: this attempt plays on Windows MediaPlayer, from a fresh mount
             // (the engine may have started reading the source it was given).
             Log.Info("player: engine could not open this stream; remounting on MediaPlayer");
@@ -462,6 +493,14 @@ public sealed partial class PlayerPage
     {
         if (_attempt is not { Media: { } media } attempt || !ReferenceEquals(media.Player, sender)
             || !IsCurrent(attempt, media) || media.FailureQueued) return;
+#if DEBUG_SERVER
+        // bale-debug.sh start-budget hang=ready: the backend's open is never seen, so the mount never starts.
+        if (media.DebugHang == "ready")
+        {
+            Log.Info("player: debug start-budget hang: MediaOpened ignored");
+            return;
+        }
+#endif
         try
         {
             if (media.FfmpegSource is { } ffmpeg)
@@ -742,6 +781,8 @@ public sealed partial class PlayerPage
         var rendererDevice = media.RendererDevice?.TakeForClose() ?? 0;
         media.RendererDevice = null;
         Cleanup("cancel mount", media.Cancellation.Cancel);
+        Cleanup("dispose start budget", () => media.StartBudget?.Dispose());
+        media.StartBudget = null;
         Cleanup("detach video output guard", () => media.VideoOutputGuard?.Dispose());
         media.VideoOutputGuard = null;
         media.Opening.TrySetCanceled(media.Token);

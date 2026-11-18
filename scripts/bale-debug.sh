@@ -54,6 +54,7 @@
 #   scripts/bale-debug.sh gc                     GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
 #   scripts/bale-debug.sh gc latency <batch|interactive|sustained|default>  change latency app-wide now; default restores the saved pre-playback mode; playback acquires sustained automatically
 #   scripts/bale-debug.sh frame-delivery [native|managed|off]  next playback attempt's observer; default native, on aliases native; memory only (restart resets); no args = status
+#   scripts/bale-debug.sh start-budget [seconds=1..120|default] [hang=none|open|ready]  start budget per mount (45 s default) for new mounts; hang applies to the next mount only: open = its open never finishes, ready = MediaOpened never seen; memory only; no args = status + the current mount's budget
 #   scripts/bale-debug.sh player-backend [mediaplayer|engine]   next playback attempt's player: engine (default, as in release) = IMFMediaEngine with Bale's controls, MediaPlayer only if it cannot open the stream; mediaplayer = Windows MediaPlayer; memory only; no args = status
 #   scripts/bale-debug.sh engine-target [bgra|rgb10|fp16]   next engine attempt's swap-chain format (MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT): bgra (default, as in release) | rgb10 (10-bit SDR to the screen) | fp16; memory only; no args = status
 #   scripts/bale-debug.sh stream-adapter [pooled|builtin|rust]  next playback attempt's stream adapter; default rust (C#: pooled/builtin), memory only (restart resets); no args = status
@@ -452,6 +453,22 @@ case "${1:-}" in
       curl --fail-with-body -sS --max-time 5 "$BASE/frame-delivery"
     else
       curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/frame-delivery" --data-urlencode "mode=$2"
+    fi
+    ;;
+  start-budget)
+    shift
+    args=()
+    for arg in "$@"; do
+      if [[ ! "$arg" =~ ^(seconds=([0-9]+|default)|hang=(none|open|ready))$ ]]; then
+        echo 'usage: scripts/bale-debug.sh start-budget [seconds=1..120|default] [hang=none|open|ready]' >&2
+        exit 2
+      fi
+      args+=(--data-urlencode "$arg")
+    done
+    if [[ "${#args[@]}" == 0 ]]; then
+      curl --fail-with-body -sS --max-time 5 "$BASE/start-budget"
+    else
+      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/start-budget" "${args[@]}"
     fi
     ;;
   player-backend)

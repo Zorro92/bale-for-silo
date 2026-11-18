@@ -214,7 +214,10 @@ public sealed partial class PlayerPage
     private async Task RunBufferingReplanAsync(BufferingQualityReplan change)
     {
         var restore = change.IsRestore;
-        if (restore) await _lifecycle.WaitAsync();
+        // A lowering that answers a start budget that ran out waits its turn too: the open it replaces may still hold the
+        // lifecycle while it stops (PlayerPage.StartBudget.cs), and refusing it would fail the start at the same quality.
+        var heldAttempt = _attempt is { HeldStartDeadline: not null } held ? held : null;
+        if (restore || heldAttempt is not null) await _lifecycle.WaitAsync();
         else if (!_lifecycle.Wait(0))
         {
             Log.Info("player: buffering replan busy");
@@ -231,6 +234,7 @@ public sealed partial class PlayerPage
                 || !IsCurrent(attempt, media) || attempt.SessionId is null)
             {
                 Buffering.ReplanRefused();
+                await RecoverHeldStartDeadlineAsync(heldAttempt);
                 return;
             }
             current = attempt;
@@ -250,6 +254,7 @@ public sealed partial class PlayerPage
             {
                 Log.Info("player: buffering replan refused; playback continues unchanged");
                 Buffering.ReplanFailed();
+                await RecoverHeldStartDeadlineAsync(heldAttempt);
                 return;
             }
             // As a track change: position sampling and Up Next treat the remount like a seek.
@@ -264,6 +269,8 @@ public sealed partial class PlayerPage
             attempt.Position = _sourcePosition = PlaybackProgressive.MountSourceStart(attempt.Plan, position);
             AdoptBufferingPlan(attempt, controllerInitiated: true, request.BandwidthEstimateKbps);
             adopted = true;
+            // The lowering is adopted: the mount that ran out of its start budget is gone with its held failure.
+            attempt.HeldStartDeadline = null;
             _state = "loading";
             SetLoading(true);
             var timeline = PlaybackTimeline.From(attempt.Plan.Timeline);
@@ -279,7 +286,11 @@ public sealed partial class PlayerPage
         catch (Exception ex)
         {
             LogFailure("buffering replan", ex);
-            if (!adopted) _bufferingController?.ReplanFailed();
+            if (!adopted)
+            {
+                _bufferingController?.ReplanFailed();
+                if (_active && !_leaving && !_suspended) await RecoverHeldStartDeadlineAsync(heldAttempt);
+            }
             // The old mount is gone: the ordinary single failure replan decides, as for a start that cannot open.
             else if (current is not null && _active && !_leaving && !_suspended)
                 await RecoverCoreAsync(current, ex.HResult, isDecoder: false, IsNetworkFailure(ex));

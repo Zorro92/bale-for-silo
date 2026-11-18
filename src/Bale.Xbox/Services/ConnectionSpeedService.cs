@@ -38,14 +38,38 @@ internal static class ConnectionSpeedService
             if (_subscribed) return;
             _subscribed = true;
         }
+        ReadOffline();
         NetworkInformation.NetworkStatusChanged += _ =>
         {
             Interlocked.Increment(ref _networkChanges);
+            ReadOffline();
             Check("network");
         };
     }
 
     private static int _networkChanges;
+    private static int _offline;
+
+    /// <summary>
+    /// The device has no network connection, as of the last network change (read once at start, then on each change, so
+    /// the player can ask every tick). It holds a playback start budget: an outage never ends playback by itself.
+    /// </summary>
+    internal static bool DeviceOffline => Volatile.Read(ref _offline) != 0;
+
+    private static void ReadOffline()
+    {
+        bool offline;
+        try
+        {
+            // Any profile with at least local access counts: a server on the LAN needs no internet.
+            offline = !NetworkInformation.GetConnectionProfiles().Any(profile => profile.GetNetworkConnectivityLevel()
+                is NetworkConnectivityLevel.LocalAccess or NetworkConnectivityLevel.ConstrainedInternetAccess
+                or NetworkConnectivityLevel.InternetAccess);
+        }
+        // A platform that cannot report the link is not known to be offline.
+        catch { offline = false; }
+        Volatile.Write(ref _offline, offline ? 1 : 0);
+    }
 
     /// <summary>
     /// Network changes seen since launch. A plan that played across one omits its throughput_kbps: the server files a

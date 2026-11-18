@@ -28,7 +28,7 @@ public sealed class HlsThroughFfmpegTests
         Assert.Contains("if (transport.IsHls && !media.Route.UseFfmpeg) throw new InvalidDataException(\"HLS requires the FFmpeg route.\");", media);
         Assert.DoesNotContain("AdaptiveMediaSource", media);
         Assert.DoesNotContain("HlsReaderRefused", media);
-        Assert.Contains("var hls = await transport.OpenNativeHlsAsync(playerStart, media.Token);", media);
+        Assert.Contains("var hls = await OpenStepAsync(transport.OpenNativeHlsAsync(playerStart, media.Token), media.Token);", media);
         Assert.Contains("transport.StartPlayerClockAt(hls.SegmentStartSeconds);", media);
         Assert.Contains("if (media.Progressive is null) sender.PlaybackSession.Position", media);
         Assert.Contains("hlsThroughFfmpeg: attempt.HlsThroughFfmpeg", media);

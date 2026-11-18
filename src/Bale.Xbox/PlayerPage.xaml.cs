@@ -103,6 +103,11 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public bool HlsThroughFfmpeg => true;
         /// <summary>The engine could not open a stream of this attempt: its mounts use Windows MediaPlayer.</summary>
         public bool EngineRefused { get; set; }
+        /// <summary>
+        /// The mount whose start budget ran out while the buffering controller's lowering owns its recovery, until that
+        /// lowering is adopted (silo-apple heldStartDeadlineFailure). A refused or failed lowering recovers it.
+        /// </summary>
+        public Mount? HeldStartDeadline { get; set; }
         public CancellationTokenSource? ReportingCancellation { get; set; }
         public Task? ReportingTask { get; set; }
     }
@@ -329,6 +334,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         UpdateControls();
         UpdateVersionNotice();
         UpdateBufferingQuality();
+        UpdateStartBudget();
         // Drift correction about once per second while playing; SubtitleClockPush drops the other ticks.
         PushSubtitleClock();
         if (_recording || _seeking) return;
@@ -395,12 +401,22 @@ public sealed partial class PlayerPage : Page, IBackHandler
         PlaybackFailureV3? failure = null)
     {
         if (!_active || _leaving || _suspended || attempt.Cancellation.IsCancellationRequested) return;
+        // A mount whose start budget ran out fails as such, whichever path noticed (its interrupted open or the queue).
+        if (attempt.Media is { StartBudgetRanOut: true } && failure is null && !hdrOutputFailed) failure = PlaybackStartBudget.Failure;
+        if (StartDeadlineLoweringOwns(attempt))
+        {
+            // The buffering controller's lowering replaces this mount, or hands it back if it is refused.
+            Log.Info("player: failed open left to the start budget's lowering");
+            return;
+        }
         Log.Info($"player: failed hr=0x{unchecked((uint)hresult):X8}");
         var position = SourcePosition(attempt);
         Pause(attempt);
-        // A subtitle failure says nothing about the video stage; remounting the same plan would fail it again.
+        var startBudget = PlaybackStartBudget.Is(failure);
+        // A subtitle failure says nothing about the video stage; remounting the same plan would fail it again. Nor does
+        // a start that ran out of time: the server's next route is the answer, not the same plan on another decoder.
         if (attempt.Media?.Route.ConsoleDownscale == true && !attempt.SdrDownscaleDeclined && !hdrOutputFailed
-            && !PlaybackEmbeddedSubtitleFailure.Is(failure))
+            && !PlaybackEmbeddedSubtitleFailure.Is(failure) && !startBudget)
         {
             // The SDR scale-only stage is an optimisation, not a new promise: the stage can decline a file
             // (e.g. unspecified colour tags) and the guard then rejects it. Remount the same plan once on the
@@ -415,8 +431,17 @@ public sealed partial class PlayerPage : Page, IBackHandler
             attempt.Cancellation.Token.ThrowIfCancellationRequested();
             Log.Info("player: console downscale declined; remounting on the system decoder");
             var current = PlaybackTimeline.From(attempt.Plan!.Timeline);
-            await MountPlanAsync(attempt, PlaybackProgressive.MountPlayerStart(attempt.Plan,
-                current.PlayerForSource(position) ?? current.PlayerStartSeconds));
+            try
+            {
+                await MountPlanAsync(attempt, PlaybackProgressive.MountPlayerStart(attempt.Plan,
+                    current.PlayerForSource(position) ?? current.PlayerStartSeconds));
+            }
+            catch (Exception ex) when (!attempt.Cancellation.IsCancellationRequested)
+            {
+                // The remount's open failed (or its start budget stopped it): the single replan decides, as for the start.
+                LogFailure("open", ex);
+                await RecoverCoreAsync(attempt, ex.HResult, isDecoder: false, IsNetworkFailure(ex));
+            }
             return;
         }
         if (attempt.Replanned)
@@ -488,13 +513,14 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 await ShowErrorAsync(PlaybackMessages.PlaybackFailed);
                 return;
             }
-            if (failedDolbyVision7 && DolbyVision7Policy.RequiresBaseLayer(attempt.Plan))
+            // A start that ran out of time withdrew no claim (PlaybackReplan.ForFailure): the next route may use them.
+            if (failedDolbyVision7 && !startBudget && DolbyVision7Policy.RequiresBaseLayer(attempt.Plan))
             {
                 // The recovery withdrew both DV7 promises. Never mount the same local conversion again.
                 await ShowErrorAsync(PlaybackMessages.PlaybackFailed);
                 return;
             }
-            if (failedRoute?.ConsoleToneMap == true && ConsoleToneMapPolicy.RequiresToneMap(attempt.Plan,
+            if (failedRoute?.ConsoleToneMap == true && !startBudget && ConsoleToneMapPolicy.RequiresToneMap(attempt.Plan,
                 !ConsoleToneMapPolicy.HasHdrOutput(attempt.Start.ClientPlaybackContext.Output.HdrDetails), attempt.Request.Detail.Versions,
                 attempt.HlsThroughFfmpeg))
             {
@@ -510,6 +536,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         catch (Exception ex)
         {
             LogFailure("replan", ex);
+            // The replacement's start budget ran out and the buffering controller lowers instead.
+            if (StartDeadlineLoweringOwns(attempt)) return;
             if (_active && !_leaving && !_suspended) await ShowErrorAsync(PlaybackMessages.PlaybackFailed);
         }
     }

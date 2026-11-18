@@ -2113,10 +2113,51 @@ Bale lowers quality when playback keeps buffering, as silo-server's design
   network stall of `ms` (default 8000) into the controller, bypassing detection: 6000 ms or more lowers on Auto, two of
   1000 ms or more within 120 s also trigger (not inside the first 10 s of a plan).
 - **Skipped:** renderer waits (neither backend reports media buffered past the playhead, so a decoder that falls behind
-  reads as a network stall; the spec's AVPlayer route has the same gap); the missed-start-deadline lowering (Bale's start
-  failure path stays as it was); waiting out an outage instead of failure recovery; keeping a summary on the device for
+  reads as a network stall; the spec's AVPlayer route has the same gap); waiting out an outage instead of failure recovery; keeping a summary on the device for
   the next launch when the app is killed; quality picks, Watch Party suspension and Wi-Fi/cellular pairs (Bale has no
   quality menu, rooms or cellular).
+
+## Start budget (silo-apple `b9446d5d`), 2026-11-18
+
+Before this, nothing bounded a start: a mount whose open never returned (an engine or MediaPlayer that never raised
+MediaOpened, an FFmpeg probe stuck on its reads) showed the spinner forever, and the server saw only `plan_selected`
+until the session expired. silo-apple bounds the engine's load with the 45 s AetherEngine gives server HLS
+(`PlaybackOpeningBudget`) and the adopted plan until it plays (`PlaybackStartDeadline`); a start that misses it fails as
+`noPlayableTrackWithinBudget` and the existing recovery asks for the next route.
+
+- **Decision** (`PlaybackStartBudget`, Rust `start_budget.rs`, handle ABI `bale_core_start_budget_*`): one 45 s budget
+  per mount, the first plan's and every replacement's (failure replan, quality change, track change, seek reanchor, HLS
+  seek remount, progressive reconnect, the engine→MediaPlayer fallback and the SDR-downscale remount each get their own,
+  as Apple's saved-address retry does), from the mount's creation to its first frame (`Mount.Started`: the clock moved
+  while playing, or a paused remount opened). A Bale mount opens and starts in one step, so one budget covers Apple's
+  two. Held while the device has no network connection (any connection profile with local access or better counts, so
+  a LAN-only server is fine); deferred while a seek, track change or replan owns the mount. A first frame or a queued
+  failure at the same tick wins, and it fires once. A viewer pause cannot meet an unstarted mount (the controls refuse
+  Play/Pause until it started), so the pause hold is unused on Xbox.
+- **Routes:** all of them. Apple exempts server HLS only because AetherEngine has its own readiness deadline; Bale's HLS
+  goes through the Rust reader and FFmpeg with none, so it is bounded too. Bale has no downloads.
+- **When it runs out:** the buffering controller is asked first (`StartDeadlinePassed`: Auto, always mode, media that
+  measurably arrived below the plan's bitrate, no outage). A lowering owns the recovery and waits for the lifecycle;
+  the failure is held (Apple's `heldStartDeadlineFailure`) and goes to the usual recovery if the lowering is refused,
+  fails or is never adopted, unless the mount started meanwhile. Otherwise the mount fails on the single recovery replan
+  with `failure.classification: noPlayableTrackWithinBudget` ("Playback didn't start within 45 seconds."). The replan
+  keeps every decode, stage and audio claim (a slow or hung source says nothing about them) and only withdraws
+  progressive, as for any progressive failure; the server excludes the failed route by its attempted key. It skips the
+  SDR-downscale same-plan remount and the DV7/tone-map "server ignored the withdrawal" guards, since nothing was
+  withdrawn.
+- **Stopping an open in progress:** a mount still inside `MountPlanAsync` holds the lifecycle, so the budget cancels the
+  mount token and closes its transports: stream opens are abandoned (`OpenStepAsync`, a late stream is closed),
+  FFmpeg's create and the engine's open see the end of data, and an engine that could not open does not fall back to
+  MediaPlayer. Whoever was opening (start, recovery, quality change, seek, track change) fails, and exactly one recovery
+  runs: the caller's own, or the queued failure when the caller swallows it.
+- **Exercise it:** `bale-debug.sh start-budget seconds=10 hang=open` (the next mount's open never returns: the lifecycle
+  path) or `hang=ready` (the backend opens but MediaOpened is ignored: the out-of-lifecycle path), then `play <id>`.
+  The log shows `player: start budget ran out`, `player: failed`, `player: replan`; the replacement mounts normally
+  (the hang is one-shot). `start-budget` alone prints the switches and the current mount's remaining budget;
+  `seconds=default` restores 45 s.
+- **Not covered:** a server-reachability hold (Apple also holds while its server is unreachable; Bale has no server
+  monitor, and a replan that cannot reach the server shows the error screen as before), and the engine's own 20 s open
+  timeout still moves a slow source to MediaPlayer before the budget runs out.
 
 ## Debug: IMFMediaEngine rendering mode (windowless swap chain)
 

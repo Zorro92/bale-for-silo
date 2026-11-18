@@ -337,6 +337,14 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   and app/game concurrency implications). Never select 120 Hz for media; use at most 60 Hz.
 - An FFmpeg create/open/MediaFailed failure gets the existing single replan with its triggering
   codec claims removed and an explicit server-transcode reason; never retry the same capability.
+- **Start budget (silo-apple `b9446d5d`, owner 2026-11-18):** every mount, first plan and each replacement, on every
+  route (engine and MediaPlayer, FFmpeg and Windows' reader, HLS through the Rust reader, progressive), shows its first
+  frame within 45 s (`PlaybackStartBudget`, Rust `start_budget.rs`), held while the device is offline and deferred while
+  a seek, track change or replan owns the mount. When it runs out, ask `BufferingQualityController.StartDeadlinePassed`
+  first (its lowering owns the recovery; a refused or failed lowering hands the held failure back); otherwise stop the
+  open (cancel the mount, close its transports, no engine→MediaPlayer fallback) and send the single failure replan as
+  `noPlayableTrackWithinBudget`, keeping every claim (only progressive is withdrawn). Never fire it twice, after a first
+  frame, a queued failure, Back or suspension. Debug: `bale-debug.sh start-budget`. docs/player-plan.md, "Start budget".
 - DV7 originals declare only `client_dv7_to_hdr10` on `original_http`, with
   `client_video_transformations_v1`. They require FFmpeg HEVC/d3d11va BL-only decoding, never
   the native container source or system decoder. Select the first playable video in demux order;

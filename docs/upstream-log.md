@@ -144,9 +144,9 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   ~~deleted active profile on Home~~ (Apple `b5c73e3a`; fixed: the profile list names no profile but
   keeps the PIN proof; Home's 404 not_found re-reads it and, only when the active profile is gone,
   returns to Who's watching, as the shell's list read does; Bale's picker never opens a lone profile by
-  itself; no Android counterpart). Still open: source-open start budget (Apple `b9446d5d`; Bale has no
-  start deadline at all, `StartDeadlinePassed` is unused: player work for the playback phases), Home
-  rows after the server update (console check).
+  itself; no Android counterpart). Still open: Home rows after the server update (console check). ~~source-open start budget~~
+  (Apple `b9446d5d`; done 2026-11-18: a 45 s budget per mount on every route, docs/player-plan.md
+  "Start budget").
 
 ## Reviews
 

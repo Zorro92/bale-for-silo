@@ -55,7 +55,7 @@ public class DebugStreamAdapterSwitchTests
         Assert.Contains("attempt.StreamAdapterLogged = true;", media[branch..create]);
         Assert.Contains("media.RandomStream = NativeRandomAccessStream(media.Stream!) ?? media.Stream!.AsRandomAccessStream();", media);
         // The Rust streams are the default; the debug switch can still select the C# ones.
-        Assert.Contains("media.Stream = attempt.UseRustTransport\n                    ? await transport.OpenNativeStreamAsync(media.Token, prefetch)", media);
+        Assert.Contains("media.Stream = attempt.UseRustTransport\n                    ? await OpenStepAsync(transport.OpenNativeStreamAsync(media.Token, prefetch), media.Token)", media);
         Assert.DoesNotContain("DebugStreamAdapterSwitch", media);
         Assert.DoesNotContain("RangeRandomAccessStream", Read("DebugServer.Ffmpeg.cs.txt"));
     }
