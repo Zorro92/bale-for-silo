@@ -267,6 +267,9 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
                         break;
                     case DeviceLoginOutcome.Denied:
                         ShowCodeFailure("Sign-in was declined.", "Show a new code");
+                        // tvSignIn_declinedLead (Android 0548b9255, Apple 538e2e9a): a decline withdraws the code,
+                        // so the scan-the-code lead would point at nothing. The next code restores it.
+                        if (PasswordPanel.Visibility != Visibility.Visible) SignInInstructions.Text = "Show a new code to try again.";
                         return;
                     default:
                         ShowCodeFailure("Sign-in paused.", "Show a new code");
@@ -471,7 +474,16 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
     private void OnServerBackClick(object sender, RoutedEventArgs args) => OnBack();
     private void OnCodeActionsPreviewKeyDown(object sender, KeyRoutedEventArgs args)
     {
-        if (SettingsInput.VerticalStep(args.Key) != 0) args.Handled = true;
+        var step = SettingsInput.VerticalStep(args.Key);
+        if (step == 0) return;
+        args.Handled = true;
+        // Wrapped actions (TvLoginScreen.kt FlowRow): Up/Down move between their lines, never out of the row.
+        if (CodeActions.ItemsPanelRoot is Controls.FlowRow flow && args.OriginalSource is UIElement source
+            && flow.LineOf(source) is >= 0 and var line
+            && flow.OnLine(line + step).OfType<Control>().FirstOrDefault(button => button.IsEnabled) is { } target)
+        {
+            target.Focus(FocusState.Keyboard);
+        }
     }
 
     private void OnInputPaneShowing(InputPane sender, InputPaneVisibilityEventArgs args)

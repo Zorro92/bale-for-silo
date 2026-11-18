@@ -175,10 +175,11 @@
             <Button x:Name="PasswordChangeServerButton" Content="Change server" Style="{StaticResource SkylineAuthPlainButtonStyle}" Click="OnChangeServerClick" />
           </ItemsControl>
         </StackPanel>
-        <!-- rail-layout: non-card — TvLoginScreen.kt CodeActions, including password sign-in. -->
+        <!-- rail-layout: non-card — TvLoginScreen.kt CodeActions, including password sign-in. They wrap (FlowRow,
+             Android 0548b9255) when all three don't fit the copy column, as on the declined screen. -->
         <ItemsControl x:Name="CodeActions" Style="{StaticResource SkylineLoginActionsStyle}" PreviewKeyDown="OnCodeActionsPreviewKeyDown">
           <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="{StaticResource SkylineAuthActionGap}" /></ItemsPanelTemplate>
+            <ItemsPanelTemplate><controls:FlowRow Spacing="{StaticResource SkylineAuthActionGap}" /></ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
           <Button x:Name="NewCodeButton" Content="Show a new code" Click="OnNewCodeClick" Visibility="Collapsed" Style="{StaticResource SkylineAuthButtonStyle}" />
           <Button x:Name="PasswordButton" Content="Sign in with a password" Click="OnPasswordClick" Style="{StaticResource SkylineAuthButtonStyle}" />
