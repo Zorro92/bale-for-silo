@@ -112,4 +112,49 @@ public class RailScrollStateTests
         Assert.Null(state.Begin(0, 0, 800));
         Assert.True(state.IsAnimating);
     }
+
+    [Fact]
+    public void TheRowsEndKeepsTheWholeHeldCycleNotJustTheAnimation()
+    {
+        var state = new RailScrollState();
+        // A press, then held repeats: focus work (100 ms) + animation (200 ms) + the wait for the next repeat.
+        state.Stepped(0, held: false);
+        state.Begin(0, 108, 2000, nowMs: 100);
+        state.ViewChanged(isIntermediate: false, nowMs: 300);
+        Assert.Equal(200, state.PaceMs);
+        // The first repeat carries the repeat delay: it must not set the pace.
+        state.Stepped(600, held: true);
+        Assert.Equal(200, state.PaceMs);
+        state.Begin(108, 216, 2000, nowMs: 700);
+        state.ViewChanged(isIntermediate: false, nowMs: 900);
+        // An animated step is gated by its animation only, never by the pace.
+        Assert.False(state.ShouldDrop(1, wasKeyDown: true, nowMs: 920));
+        state.Stepped(933, held: true);
+        Assert.Equal(333, state.PaceMs);
+        // A later animation alone never shortens the measured cycle.
+        state.Begin(216, 324, 2000, nowMs: 1033);
+        state.ViewChanged(isIntermediate: false, nowMs: 1233);
+        Assert.Equal(333, state.PaceMs);
+        state.Stepped(1266, held: true);
+        // Clamped near the end: nothing animates, and held steps keep the 333 ms cycle.
+        Assert.Null(state.Begin(2000, 2108, 2000, nowMs: 1366));
+        Assert.True(state.ShouldDrop(1, wasKeyDown: true, nowMs: 1500));
+        Assert.False(state.ShouldDrop(1, wasKeyDown: true, nowMs: 1600));
+    }
+
+    [Fact]
+    public void AScrollCutShortByTheRowsEndNeverSetsThePace()
+    {
+        var state = new RailScrollState();
+        state.Stepped(0, held: true);
+        state.Begin(0, 400, 2000, nowMs: 50);
+        state.ViewChanged(isIntermediate: false, nowMs: 300);
+        state.Stepped(333, held: true);
+        Assert.Equal(333, state.PaceMs);
+        // The last scroll only reaches the end (asked 2400, clamped to 2000) and is quicker.
+        Assert.Equal(2000, state.Begin(1800, 2400, 2000, nowMs: 383));
+        state.ViewChanged(isIntermediate: false, nowMs: 480);
+        state.Stepped(513, held: true);
+        Assert.Equal(333, state.PaceMs);
+    }
 }

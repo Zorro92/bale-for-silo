@@ -157,7 +157,7 @@ internal sealed class Rail
             e.Handled = true;
             return;
         }
-        _scrollState.Stepped(now);
+        _scrollState.Stepped(now, e.KeyStatus.WasKeyDown);
 
         var index = _list.IndexFromContainer(container);
         if ((step < 0 && index == 0) || (step > 0 && index == _list.Items.Count - 1))
