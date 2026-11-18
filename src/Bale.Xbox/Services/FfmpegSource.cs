@@ -136,6 +136,10 @@ internal static class FfmpegSource
         if (ZeroCopyRuntime.Register()) ApplySoftwareVideo(config);
         else Log.Info("player: rav1g route without zero-copy; a dav1d fallback would decode without it");
         config.FFmpegOptions["bale_av1_decoder"] = "1";
+        // The fork advises 2-4 decode-ahead frames on its GPU provider, not software video's 16 (8 above 1080p): each one
+        // pins a pool image (Rav1gPolicy.Route). ApplyInputTuning runs after this, so ffmpeg-tune ahead= still wins.
+        if (rav1g.DecodeAheadFrames is { } ahead)
+            config.FFmpegOptions["bale_decode_ahead_frames"] = ahead.ToString(CultureInfo.InvariantCulture);
         if (rav1g.ToneMap) config.FFmpegOptions["bale_tonemap"] = "1";
         if (rav1g.OutputWidth is { } width && rav1g.OutputHeight is { } height)
         {

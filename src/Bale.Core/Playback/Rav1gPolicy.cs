@@ -9,9 +9,12 @@ namespace Bale.Core.Playback;
 /// </summary>
 public sealed record Av1SourceFacts(long? BitDepth, uint? Primaries, uint? Transfer, uint? Matrix, double? FrameRate);
 
-/// <summary>What a mount sets for rav1g; <see cref="Rav1g"/> false is today's dav1d zero-copy route, unchanged.</summary>
+/// <summary>
+/// What a mount sets for rav1g; <see cref="Rav1g"/> false is today's dav1d zero-copy route, unchanged.
+/// <see cref="DecodeAheadFrames"/> is <c>bale_decode_ahead_frames</c> on the rav1g route (null: the software default).
+/// </summary>
 public sealed record Rav1gRouteDecision(bool Rav1g, int? BufferMs, int? OutputWidth, int? OutputHeight, bool ToneMap,
-    Av1SourceFacts Source);
+    Av1SourceFacts Source, int? DecodeAheadFrames = null);
 
 /// <summary>The media type the output guard read off a rav1g route's video sample.</summary>
 public sealed record Rav1gOutputFacts(string? Subtype, bool Rav1gMark, bool ToneMapMark, uint? Primaries, uint? Transfer,
@@ -41,8 +44,9 @@ public static class Rav1gPolicy
 
     /// <summary>
     /// Whether this mount takes rav1g (the switch, a software AV1 route, not withdrawn by an earlier failure)
-    /// and what it sets: BufferTime (200 ms, at most 5 frames: the fork's pool holds 8 images), the display
-    /// size for SDR larger than the display, and the tone map on a known SDR display.
+    /// and what it sets: BufferTime (200 ms, at most 5 frames: the fork's pool holds 8 images), 3 decode-ahead
+    /// frames (the fork advises 2-4; rav1g holds up to 5 of the 8 at 4K), the display size for SDR larger than
+    /// the display, and the tone map on a known SDR display.
     /// </summary>
     public static Rav1gRouteDecision Route(string selected, PlaybackRouteDecision route, PlaybackPlan plan,
         IReadOnlyList<FileVersion>? versions, (int Width, int Height)? display, bool sdrDisplay, bool withdrawn) =>

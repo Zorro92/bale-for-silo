@@ -36,6 +36,7 @@ public sealed class Rav1gPolicyTests
         Assert.False(Decide(route: Route(codec: "mpeg4")).Rav1g);
         var dav1d = Decide("dav1d");
         Assert.Null(dav1d.BufferMs);
+        Assert.Null(dav1d.DecodeAheadFrames);
         Assert.Null(dav1d.OutputWidth);
         Assert.False(dav1d.ToneMap);
     }
@@ -45,6 +46,9 @@ public sealed class Rav1gPolicyTests
     {
         var decision = Decide();
         Assert.Equal(200, decision.BufferMs);
+        // The fork advises 2-4 on its GPU provider; 3 fits beside rav1g's 5-image hold at 4K.
+        Assert.Equal(3, decision.DecodeAheadFrames);
+        Assert.Equal(3, Decide(route: Route(width: 1920, height: 1080)).DecodeAheadFrames);
         Assert.Equal((1920, 1080), (decision.OutputWidth, decision.OutputHeight));
         Assert.True(decision.ToneMap);
         Assert.Equal(new Av1SourceFacts(10, 2, 5, 1, 24000.0 / 1001), decision.Source);

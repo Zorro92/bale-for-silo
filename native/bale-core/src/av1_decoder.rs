@@ -21,6 +21,12 @@ pub const BUFFER_MS: i32 = 200;
 pub const BUFFER_FRAMES: f64 = 5.0;
 /// A floor so a very high frame rate still buffers something.
 pub const MIN_BUFFER_MS: i32 = 40;
+/// `bale_decode_ahead_frames` on the rav1g route (the fork advises 2-4 there; software video gets 16, or 8
+/// above 1080p). Each decoded-ahead frame pins one of the 8 pool images until Media Foundation takes it. At
+/// 4K rav1g holds up to 5 (slots + 2), leaving 3: more ahead could never fill and would only hold images the
+/// renderer's BufferTime (at most 5 frames) waits for; 2 leaves less slack for a slow frame at 1080p, where
+/// rav1g holds fewer. `ffmpeg-tune ahead=` still overrides it.
+pub const DECODE_AHEAD_FRAMES: i32 = 3;
 
 // Media Foundation's enum values, as the fork's VideoColorAttributes::Apply writes them.
 const MF_PRIMARIES_BT709: u32 = 2;
@@ -74,6 +80,8 @@ pub struct RouteDecision {
     pub rav1g: bool,
     /// MSS BufferTime for this mount, or `None` for the software-video default.
     pub buffer_ms: Option<i32>,
+    /// `bale_decode_ahead_frames` for this mount, or `None` for the software-video default.
+    pub decode_ahead_frames: Option<i32>,
     /// `bale_tonemap_output_width/height`: SDR larger than the display goes through the fork's stage
     /// (bale_gpu's area downscale), never Media Foundation's scaler, which leaks per open on Xbox.
     pub output_width: Option<i32>,
@@ -93,6 +101,7 @@ pub fn route(args: &RouteArgs) -> RouteDecision {
         return RouteDecision {
             rav1g,
             buffer_ms: None,
+            decode_ahead_frames: None,
             output_width: None,
             output_height: None,
             tone_map: false,
@@ -112,6 +121,7 @@ pub fn route(args: &RouteArgs) -> RouteDecision {
     RouteDecision {
         rav1g,
         buffer_ms: Some(buffer_ms(source.frame_rate)),
+        decode_ahead_frames: Some(DECODE_AHEAD_FRAMES),
         output_width: downscale.then_some(args.display_width as i32),
         output_height: downscale.then_some(args.display_height as i32),
         tone_map: args.sdr_display,
@@ -522,6 +532,7 @@ mod tests {
         assert!(!route(&args).rav1g);
         let dav1d = route(&route_args("dav1d"));
         assert_eq!(dav1d.buffer_ms, None);
+        assert_eq!(dav1d.decode_ahead_frames, None);
         assert_eq!(dav1d.output_width, None);
         assert!(!dav1d.tone_map);
     }
@@ -530,6 +541,7 @@ mod tests {
     fn rav1g_route_sets_buffer_stage_and_display_size() {
         let decision = route(&route_args("rav1g"));
         assert_eq!(decision.buffer_ms, Some(200));
+        assert_eq!(decision.decode_ahead_frames, Some(3));
         assert_eq!(
             (decision.output_width, decision.output_height),
             (Some(1920), Some(1080))
@@ -542,6 +554,14 @@ mod tests {
         let decision = route(&args);
         assert_eq!(decision.output_width, None);
         assert!(!decision.tone_map);
+    }
+
+    #[test]
+    fn decode_ahead_stays_in_the_forks_range_beside_rav1gs_4k_hold() {
+        // The fork's advice for the GPU provider: 2-4 frames.
+        assert!((2..=4).contains(&DECODE_AHEAD_FRAMES));
+        // 8 pool images minus rav1g's 4K hold (slots + 2 = 5).
+        assert!(DECODE_AHEAD_FRAMES <= 8 - 5);
     }
 
     #[test]

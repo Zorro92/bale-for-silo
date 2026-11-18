@@ -34,6 +34,20 @@ public sealed class Rav1gPlayerTests
     }
 
     [Fact]
+    public void Rav1gRouteDecodesAFewFramesAheadAndTheTuneOverrideStillWins()
+    {
+        var decision = Decision() with { DecodeAheadFrames = 3 };
+        Assert.Equal("3", FfmpegSource.Configuration(Route(), new DebugFfmpegInputTuning(), decision)
+            .FFmpegOptions["bale_decode_ahead_frames"]);
+        Assert.Equal("12", FfmpegSource.Configuration(Route(), new DebugFfmpegInputTuning(DecodeAheadFrames: 12), decision)
+            .FFmpegOptions["bale_decode_ahead_frames"]);
+        // dav1d keeps the software default (8 above 1080p), also when the switch decided dav1d.
+        Assert.Equal("8", FfmpegSource.Configuration(Route()).FFmpegOptions["bale_decode_ahead_frames"]);
+        Assert.Equal("8", FfmpegSource.Configuration(Route(), new DebugFfmpegInputTuning(), decision with { Rav1g = false })
+            .FFmpegOptions["bale_decode_ahead_frames"]);
+    }
+
+    [Fact]
     public void Dav1dAndNonAv1RoutesNeverSetTheForkKey()
     {
         Assert.False(FfmpegSource.Configuration(Route()).FFmpegOptions.ContainsKey("bale_av1_decoder"));

@@ -2178,7 +2178,13 @@ unchanged: dav1d zero-copy, and release packages carry no rav1g.dll.
   (PQ/HLG is tone-mapped; SDR sources log `request ignored`). A dav1d fallback ignores the stage keys.
 - **BufferTime:** 200 ms, cut to five frames at higher frame rates (166 ms at 30 fps, 83 ms at 60, floor 40 ms) unless
   `ffmpeg-tune buffer=` overrides it. The fork's pool is 8 images and rav1g holds up to slots + 2 of them (5 at 4K);
-  today's 500–1000 ms (12–24 frames at 24 fps) could block the start forever. Decode-ahead keeps the software default.
+  today's 500–1000 ms (12–24 frames at 24 fps) could block the start forever.
+- **Decode-ahead:** `bale_decode_ahead_frames=3` on the rav1g route (`Rav1gPolicy.Route`, Rust `DECODE_AHEAD_FRAMES`),
+  not software video's 16 (8 above 1080p). The fork advises 2–4 on its GPU provider: every decoded-ahead frame pins a
+  pool image until Media Foundation takes it, and at 4K rav1g holds up to 5 of the 8, so 3 is the most that can ever
+  fill beside it; 2 would leave less slack at 1080p, where rav1g holds fewer. `ffmpeg-tune ahead=` still overrides it
+  (applied after the route), and an open that falls back to dav1d decodes with 3 too (debug only). The BufferTime cap
+  above is unchanged.
 - **UI thread (all routes, after the 2026-11-18 deadlock):** with `av1-decoder rav1g` the fork's `get_image` waited
   (fixed in bale.48) while the sample thread held the wrapper's source lock, and the UI thread blocked in
   `CurrentVideoStream` for the stats panel, which stopped the start budget (driven from the UI tick) and the debug
