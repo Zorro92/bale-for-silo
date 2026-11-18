@@ -68,6 +68,8 @@ namespace Bale.Xbox.Services;
 ///   POST /frame-delivery?mode=native  native|managed|off (on aliases native); next playback attempt
 ///   GET  /player-backend  memory-only player switch; default engine (as in release builds)
 ///   POST /player-backend?mode=engine  mediaplayer (Windows MediaPlayer)|engine (IMFMediaEngine); next playback attempt
+///   GET  /engine-target  memory-only engine swap-chain format; default bgra (as in release builds)
+///   POST /engine-target?mode=rgb10  bgra|rgb10|fp16 (MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT); next engine playback attempt
 ///   GET  /stream-adapter  memory-only media stream switch; default rust
 ///   POST /stream-adapter?mode=rust  rust (Rust range/forward-only streams + Rust WinRT streams)|pooled|builtin (C#); next playback attempt
 ///   GET  /av1-claim       memory-only AV1 software-decode claim; default 1080p60, restart resets
@@ -240,7 +242,7 @@ internal sealed partial class DebugServer
         var target = new Uri("http://bale" + parts[1]);
         var path = target.AbsolutePath.TrimEnd('/');
         var query = ParseQuery(target.Query, out var duplicateQueryKeys);
-        if (duplicateQueryKeys && path is ("/open" or "/play" or "/home" or "/navlog" or "/playtest-ffmpeg" or "/ffmpeg-tune" or "/delivery" or "/stats-rows" or "/frame-trace" or "/display-match" or "/gc" or "/frame-delivery" or "/stream-adapter" or "/player-backend" or "/av1-claim" or "/idle-test" or "/webview-test"))
+        if (duplicateQueryKeys && path is ("/open" or "/play" or "/home" or "/navlog" or "/playtest-ffmpeg" or "/ffmpeg-tune" or "/delivery" or "/stats-rows" or "/frame-trace" or "/display-match" or "/gc" or "/frame-delivery" or "/stream-adapter" or "/player-backend" or "/engine-target" or "/av1-claim" or "/idle-test" or "/webview-test"))
             return ("400 Bad Request", "query keys must appear at most once\n");
 
         switch (method, path)
@@ -436,6 +438,17 @@ internal sealed partial class DebugServer
                     return ("400 Bad Request", "mode must be mediaplayer or engine\n");
                 Log.Info($"Debug player backend: {DebugPlayerBackendSwitch.Mode}; applies to the next playback attempt");
                 return ("200 OK", $"player-backend={DebugPlayerBackendSwitch.Mode}\n");
+
+            case ("GET", "/engine-target"):
+                if (query.Count != 0)
+                    return ("400 Bad Request", "usage: GET /engine-target or POST /engine-target?mode={bgra|rgb10|fp16}\n");
+                return ("200 OK", $"engine-target={DebugEngineTargetSwitch.Mode}\n");
+
+            case ("POST", "/engine-target"):
+                if (query.Count != 1 || !DebugEngineTargetSwitch.TrySet(query.GetValueOrDefault("mode")))
+                    return ("400 Bad Request", "mode must be bgra, rgb10 or fp16\n");
+                Log.Info($"Debug engine target: {DebugEngineTargetSwitch.Mode}; applies to the next engine playback attempt");
+                return ("200 OK", $"engine-target={DebugEngineTargetSwitch.Mode}\n");
 
             case ("GET", "/stream-adapter"):
                 if (query.Count != 0)

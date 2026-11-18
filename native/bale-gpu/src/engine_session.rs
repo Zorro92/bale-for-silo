@@ -110,6 +110,15 @@ impl Session {
         let mut report = String::from(
             "Engine session (Rust bale_gpu.dll; rendering mode: windowless swap chain on a SwapChainPanel)\n",
         );
+        if target != Target::Bgra {
+            // Debug engine-target switch only (bale_gpu_engine_session_set_target).
+            let _ = writeln!(
+                report,
+                "Target: {} (DXGI_FORMAT_{}) as MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT",
+                target.name(),
+                target.format_name()
+            );
+        }
         // SAFETY: plain MF startup, paired with MFShutdown on failure here or in `close`.
         if let Err(error) = unsafe { MFStartup(MF_VERSION, MFSTARTUP_FULL) } {
             let _ = writeln!(

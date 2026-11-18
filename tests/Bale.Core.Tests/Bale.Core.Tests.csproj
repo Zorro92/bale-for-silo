@@ -137,6 +137,7 @@
     <None Include="../../src/Bale.Xbox/Services/DebugFrameDeliverySwitch.cs" Link="DebugFrameDeliverySwitch.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugStreamAdapterSwitch.cs" Link="DebugStreamAdapterSwitch.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugPlayerBackendSwitch.cs" Link="DebugPlayerBackendSwitch.cs" />
+    <Compile Include="../../src/Bale.Xbox/Services/DebugEngineTargetSwitch.cs" Link="DebugEngineTargetSwitch.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugStreamAdapterSwitch.cs" Link="DebugStreamAdapterSwitch.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugAv1ClaimSwitch.cs" Link="DebugAv1ClaimSwitch.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugAv1ClaimSwitch.cs" Link="DebugAv1ClaimSwitch.cs.txt" CopyToOutputDirectory="PreserveNewest" />

@@ -301,6 +301,32 @@ pub unsafe extern "C" fn bale_gpu_engine_present(
     unsafe { write_report(&text, report, report_capacity) }
 }
 
+/// Debug: the swap-chain format later [`bale_gpu_engine_session_open`] calls request, as
+/// `MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT` (0 bgra, the default; 1 fp16; 2 rgb10). Release builds never
+/// call it, so sessions keep B8G8R8A8; the debug `engine-target` switch sets it to compare 10-bit SDR
+/// output (owner's bit-depth rule, AGENTS.md). Returns 1 when accepted, 0 for an unknown value.
+#[cfg(windows)]
+static SESSION_TARGET: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub extern "C" fn bale_gpu_engine_session_set_target(target: u32) -> u32 {
+    if target > 2 {
+        return 0;
+    }
+    SESSION_TARGET.store(target, std::sync::atomic::Ordering::Relaxed);
+    1
+}
+
+#[cfg(windows)]
+fn session_target() -> engine_target::Target {
+    match SESSION_TARGET.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => engine_target::Target::Fp16,
+        2 => engine_target::Target::Rgb10,
+        _ => engine_target::Target::Bgra,
+    }
+}
+
 /// Opens a debug engine **session** in rendering mode (see `engine_session`): `url`, or `source` (a COM
 /// media source when `mime_len` is 0, else an `IRandomAccessStream` of type `mime`), attached through
 /// `attach(context, handle)` like [`bale_gpu_engine_present`], seeked to `start` and playing unless
@@ -368,7 +394,7 @@ pub unsafe extern "C" fn bale_gpu_engine_session_open(
     };
     let (session, text) = engine_session::Session::open(
         input,
-        engine_target::Target::Bgra,
+        session_target(),
         &present,
         if start.is_finite() {
             start.max(0.0)

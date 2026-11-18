@@ -117,6 +117,11 @@ internal sealed partial class EngineBackend : PlaybackBackend
             uint written;
             nint session;
             var (width, height) = Unpack(Volatile.Read(ref _size));
+#if DEBUG_SERVER
+            // Debug engine-target switch; release builds never call it, so sessions keep bale_gpu's B8G8R8A8 default.
+            if (bale_gpu_engine_session_set_target(DebugEngineTargetSwitch.Code) == 0)
+                Log.Info("player: engine target not accepted; bgra stays");
+#endif
             fixed (char* mimeText = type)
             fixed (byte* report = buffer)
                 written = bale_gpu_engine_session_open(null, 0, source, mimeText, (uint)type.Length, width, height, &Attach,
@@ -473,6 +478,9 @@ internal sealed partial class EngineBackend : PlaybackBackend
 
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern uint bale_gpu_abi_version();
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_panel_set_swap_chain_handle(nint panel, nint handle);
+#if DEBUG_SERVER
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern uint bale_gpu_engine_session_set_target(uint target);
+#endif
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern unsafe uint bale_gpu_engine_session_open(char* url, uint urlLength, nint source, char* mime, uint mimeLength,
         uint width, uint height, delegate* unmanaged[Cdecl]<nint, nint, int> attach, nint context, double start, uint paused, uint muted,
