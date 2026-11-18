@@ -94,7 +94,7 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
 - **Not doing: box sets.** The Silo developer said box sets reached the server by mistake and
   reversed the decision (2026-11-10), so Bale doesn't build them even though the clients shipped
   them (Android `67e6e224a`, Apple `08c28c8e`). Ignore later box-set commits unless that changes.
-- ~~**Rows of collections:**~~ done 2026-11-18, not yet on the console. Follows Android TV's own
+- ~~**Rows of collections:**~~ done 2026-11-18, verified on the console (0.1.687; owner, backdrop and tint follow focus). Follows Android TV's own
   version, merged since (`db87f835f`: `TvCollectionRow.kt`, `TvCollectionCard.kt`,
   `TvSkylineSectionFeed.kt`, `TvHomeSections.kt`, `TvMainShell.kt`, `SectionModels.kt`): Home and
   library `collection_posters` sections as dense 88×132 poster rails of every card (no 20-card cap,
