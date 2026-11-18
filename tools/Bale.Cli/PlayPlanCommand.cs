@@ -37,6 +37,8 @@ internal static class PlayPlanCommand
             if (plan?.Stream is not { } stream) return 1;
             Console.WriteLine($"delivery={plan.Delivery} protocol={stream.Protocol} container={stream.Container} mime={stream.MimeType}");
             Console.WriteLine($"reason={plan.DecisionReason} quirks=[{string.Join(",", plan.AppliedQuirks?.Select(q => q.Id) ?? [])}] warnings=[{string.Join(",", plan.DegradationWarnings?.Select(w => w.Code) ?? [])}]");
+            // The buffering-quality controller lowers to these rungs (BufferingQualityPlans.From); none means cant_lower.
+            Console.WriteLine($"qualities=[{string.Join(",", plan.AvailableQualities?.Select(q => $"{q.Label}:{q.BitrateKbps}") ?? [])}] active={plan.ActiveQuality}");
             var source = plan.Source;
             var recipe = plan.EffectiveRecipe;
             Console.WriteLine($"source container={source?.Container} video={source?.VideoCodec}" +
