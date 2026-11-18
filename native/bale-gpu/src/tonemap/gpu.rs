@@ -272,9 +272,12 @@ impl ToneMapGpu {
     }
 
     fn self_test(&mut self, context: &ID3D11DeviceContext) -> Result<()> {
+        // Always 1:1: the self-test checks the curve, and its 16x8 input is smaller than any
+        // configured downscale source.
         let config = BaleToneMapConfig {
             width: 16,
             height: 8,
+            reserved: [0; 4],
             ..self.config
         };
         for full_range in [0, 1] {
