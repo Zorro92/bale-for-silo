@@ -2522,6 +2522,19 @@ R10G10B10A2 behaviour for all displays. Debug `engine-target` (`auto` default, o
 still wins over everything. Both switches are memory only and apply on the next engine open.
 See "First 10-bit video after a boot slows the console GPU" below for the reason for the display ceiling.
 
+**Stage output at display depth (phase 2, 2026-11-19).** On an 8-bit SDR display the console stage itself
+delivers 8 bits: when the route uses the stage (tone map or SDR downscale), the current HDMI mode is below
+30 bpp (or unknown) and not HDR passthrough, the source is not AV1, the debug `output-depth` is `display`,
+and bale_gpu reports `BALE_TONEMAP_OUTPUT_NV12_DITHERED`, `engine_output.rs` returns `stage_output_depth` 8.
+`FfmpegSource.ApplyStageOutputDepth` then sets the fork key `bale_tonemap_output_depth=8` (beside
+`bale_tonemap_output_width/height`; unset keeps P010), the stage writes ordered-dithered NV12 in the same pass
+(half the stage's output frame memory, one rounding at full precision; docs/gpu-tone-map.md), and the engine
+decision reads `frames=nv12 target=bgra reason=console stage writes dithered NV12 (SDR 8-bit display)`.
+`FfmpegVideoOutputGuard` accepts that NV12 only with the tone-map mark, and still accepts marked P010.
+Each FFmpeg open logs `player: stage 8-bit output requested|not requested (<reason>)`. This needs a fork
+wrapper that reads `bale_tonemap_output_depth` (it applies the key on every stage route, D3D11 and rav1g);
+older wrappers ignore the key and keep P010, which then plays as before with the B8G8R8A8 target.
+
 **First 10-bit video after a boot slows the console GPU (2026-11-18, bisect with rav1g timing).** The first
 10-bit video output after a console boot leaves the GPU slow for a while: rav1g's j4k40 GPU time went from
 18.6 to about 30 ms, ext_borders rose 7x, and Bale's own playback still dropped no frames.

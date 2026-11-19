@@ -19,11 +19,32 @@ announced by bits instead. Absent export = NV12 output only.
 | 4 | `BALE_TONEMAP_OUTPUT_DOWNSCALE` | `config.reserved[0..2]` = visible source size; area downscale to `width`×`height` (≤4:1 per axis) |
 | 8 | `BALE_TONEMAP_INPUT_NV12` | NV12 input, read as `code << 2` (exactly the 10-bit code) |
 | 16 | `BALE_TONEMAP_SDR709` | BT.709 SDR frames (transfer 1/6/14/15, primaries/matrix 1): scale only |
+| 32 | `BALE_TONEMAP_OUTPUT_NV12_DITHERED` | NV12 output is ordered-dithered to 8 bits (below); P010 unchanged |
 
 Apply picks the output depth from the output texture's format and the input depth from the input
 texture's format. The owner's rule is that processed video is always output in 10-bit, so the fork
-asks for P010 whenever bit 2 is present (bale.36+). The create self-test checks NV12 and P010
+asks for P010 whenever bit 2 is present (bale.36+). Phase 2 of the bit-depth rule (2026-11-19): on an 8-bit
+SDR display Bale sets `bale_tonemap_output_depth=8` when bit 32 is present (not for AV1), and the fork's
+stage pool and media type become NV12 from the first frame. The create self-test checks NV12 and P010
 output at 1:1 (it never inherits a configured downscale source size).
+
+## Dithered NV12 output (`BALE_TONEMAP_OUTPUT_NV12_DITHERED`, 2026-11-19)
+
+NV12 output from the tone map and the area downscale is computed in fp32 exactly like P010 and only the
+final 8-bit quantisation changes: plain rounding `floor(x + 0.5)` becomes `floor(x + t)`, with
+`t = (bayer8(x, y) + 0.5) / 64` from a static 8x8 Bayer (ordered-dither) matrix at the output pixel, for
+luma and chroma (Cr on the mirrored index `63 - bayer8`, so Cb and Cr do not step together; chroma uses
+its own half-size plane position). The 64 thresholds are evenly spaced with mean 0.5, so a flat area keeps
+its mean level, each code is under one code from the exact value, and a slow 10-bit ramp becomes a fine
+fixed pattern instead of 8-bit bands.
+
+Why this pattern: Bayer is computed from the pixel position alone (no noise texture or table), its
+thresholds are exact in f32, so `cpu.rs` mirrors the shader exactly, and its period-8 structure sits at
+the highest spatial frequencies, invisible at a one-code amplitude. There is **no per-frame offset**:
+the pattern is tied to the output pixel, so a still picture produces identical frames (no crawl, no
+temporal shimmer); only the content moves. P010 output stays plainly rounded, bit for bit as before.
+Tests: `cpu.rs` (permutation, mean error ~0 and more local levels than plain rounding on a smooth
+ramp) and WARP (`nv12_output_is_dithered_like_the_reference_and_p010_is_unchanged`, Windows CI only).
 
 ## Area downscale in display-linear light
 
@@ -103,7 +124,7 @@ BT.2020 (gamut conversion) or, with SDR709, BT.709 (scale only). Frame HDR metad
   it does not reproduce zscale's default bicubic resampler or tonemapx's block chroma handling.
 
 Differences from the server's implementation: fp32 math instead of its integer LUT/SIMD
-quantization, no dithering, explicit linear gamut clipping, and the chroma filter above. Inputs
+quantization, ordered dithering for NV12 only (above), explicit linear gamut clipping, and the chroma filter above. Inputs
 above the configured source peak clamp to the EETF endpoint rather than extrapolating its
 cubic (which can roll highlights back). Fixed peak selection does not track frame metadata.
 These are not claimed to be bit-identical server output.

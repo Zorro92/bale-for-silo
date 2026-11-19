@@ -18,15 +18,18 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
     internal static readonly Guid Range = new("c21b8ee5-b956-4071-8daf-325edf5cab11");
     // Bale-private media type attribute (UINT32 1): the fork's tone-map stage produced this output.
     // A declined stage passes P010 through with the container's (possibly BT.709) tags, so 10-bit
-    // SDR output is trusted only with this mark. The stage writes NV12 only for a bale_gpu without
-    // P010 output (fork bale.41). Its inputs are 10-bit, or 8-bit SDR on the downscale route, which the
-    // bit-depth rule keeps at P010 (AGENTS.md), so NV12 would drop depth and is rejected.
+    // SDR output is trusted only with this mark. The stage writes NV12 for a bale_gpu without P010
+    // output (fork bale.41), or when Bale asked for dithered 8-bit output on an 8-bit SDR display
+    // (bale_tonemap_output_depth=8, phase 2 of the bit-depth rule, AGENTS.md); that NV12 must carry the
+    // mark. Otherwise its inputs are 10-bit, or 8-bit SDR on the downscale route, which the rule keeps
+    // at P010, so unrequested NV12 would drop depth and is rejected.
     internal static readonly Guid ToneMapped = new("b41e6a52-3c9d-4f0b-8e7a-5d2c1f9a0b37");
     private readonly FFmpegMediaSource _ffmpeg;
     private readonly MediaStreamSource _source;
     private readonly Action _failed;
     private readonly bool _toneMap;
     private readonly bool _allowNv12;
+    private readonly bool _nv12Requested;
     private readonly int? _baseLayerStreamIndex;
 #if DEBUG_SERVER
     private readonly Rav1gOutputCheck? _rav1g;
@@ -37,16 +40,18 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
     private bool _failure;
 
     /// <param name="allowNv12">True only when bale_gpu cannot write P010, so the stage's SDR output is NV12.</param>
+    /// <param name="nv12Requested">Bale asked this mount's stage for dithered 8-bit output (FfmpegSource.ApplyStageOutputDepth):
+    /// marked NV12 is accepted; marked P010 (an older wrapper ignoring the key) still is.</param>
     internal FfmpegVideoOutputGuard(FFmpegMediaSource source, Action failed, bool toneMap = true, int? baseLayerStreamIndex = null,
-        bool allowNv12 = false)
+        bool allowNv12 = false, bool nv12Requested = false)
 #if DEBUG_SERVER
-        : this(source, failed, null, toneMap, baseLayerStreamIndex, allowNv12)
+        : this(source, failed, null, toneMap, baseLayerStreamIndex, allowNv12, nv12Requested)
     {
     }
 
     /// <param name="rav1g">The debug rav1g route's rule (Rav1gPolicy.OutputVerdict) instead of the stage/DV7 rules.</param>
     internal FfmpegVideoOutputGuard(FFmpegMediaSource source, Action failed, Rav1gOutputCheck? rav1g, bool toneMap = true,
-        int? baseLayerStreamIndex = null, bool allowNv12 = false)
+        int? baseLayerStreamIndex = null, bool allowNv12 = false, bool nv12Requested = false)
 #endif
     {
 #if DEBUG_SERVER
@@ -56,13 +61,16 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
         _failed = failed;
         _toneMap = toneMap;
         _allowNv12 = allowNv12;
+        _nv12Requested = nv12Requested;
         _baseLayerStreamIndex = baseLayerStreamIndex;
         _source = source.GetMediaStreamSource();
         _source.SampleRequested += OnSampleRequested;
     }
 
-    internal static bool IsSdrOutput(VideoEncodingProperties format, bool allowNv12 = false) =>
-        (allowNv12 && IsSubtype(format, "NV12", Nv12) || IsSubtype(format, "P010", P010) && IsMarkedToneMapped(format))
+    internal static bool IsSdrOutput(VideoEncodingProperties format, bool allowNv12 = false, bool nv12Requested = false) =>
+        (allowNv12 && IsSubtype(format, "NV12", Nv12)
+            || nv12Requested && IsSubtype(format, "NV12", Nv12) && IsMarkedToneMapped(format)
+            || IsSubtype(format, "P010", P010) && IsMarkedToneMapped(format))
         // Wrapper UncompressedVideoSampleProvider::CreateStreamDescriptor: processed output is
         // always limited-range BT.709, even when the container and bitstream disagree.
         && HasValue(format, Primaries, 2)
@@ -113,7 +121,8 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
                 if (!_failure && current?.DecoderEngine == DecoderEngine.FFmpegD3D11HardwareDecoder
                     && (_baseLayerStreamIndex is null || current.StreamIndex == _baseLayerStreamIndex
                         && Bale.Core.Playback.SoftwareDecodePolicy.NormalizeCodec(current.CodecName) == "hevc")
-                    && (_toneMap ? IsSdrOutput(video.EncodingProperties, _allowNv12) : IsHdr10Output(video.EncodingProperties))) return;
+                    && (_toneMap ? IsSdrOutput(video.EncodingProperties, _allowNv12, _nv12Requested)
+                        : IsHdr10Output(video.EncodingProperties))) return;
             }
             catch { } // An unreadable descriptor cannot establish the promised output.
             // The wrapper's handler runs first and assigns synchronously. Remove a rejected sample

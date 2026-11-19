@@ -19,8 +19,97 @@ public sealed class EngineOutputPolicyTests
     }
 
     private static EngineOutputDecision Engine(PlaybackPlan plan, PlaybackRouteDecision route, bool stageP010 = true,
-        IReadOnlyList<FileVersion>? versions = null, int? displayBitsPerPixel = 30, string ceiling = "display") =>
-        EngineOutputPolicy.Decide(plan, route, versions, stageP010, displayBitsPerPixel, ceiling);
+        IReadOnlyList<FileVersion>? versions = null, int? displayBitsPerPixel = 30, string ceiling = "display",
+        bool stageNv12Dithered = false) =>
+        EngineOutputPolicy.Decide(plan, route, versions, stageP010, displayBitsPerPixel, ceiling, stageNv12Dithered);
+
+    private const string DitheredReason = "console stage writes dithered NV12 (SDR 8-bit display)";
+
+    private static (PlaybackPlan Plan, PlaybackRouteDecision Route) Stage(bool toneMap, string codec = "hevc")
+    {
+        var plan = toneMap ? Plan("original_http", "hevc", 10, "hdr10", 3840, 2160) : Plan("original_http", "hevc", 8, "sdr", 3840, 2160);
+        var route = toneMap
+            ? PlaybackRoutePolicy.Decide(plan, false, sdrOutput: true)
+            : PlaybackRoutePolicy.Decide(plan, false, display: (1920, 1080), sdrDownscale: true);
+        Assert.Equal(toneMap, route.ConsoleToneMap);
+        Assert.Equal(!toneMap, route.ConsoleDownscale);
+        if (codec == "hevc") return (plan, route);
+        plan.Source!.VideoCodec = codec;
+        return (plan, route with { VideoCodec = codec });
+    }
+
+    [Theory]
+    [InlineData(true, 24)]
+    [InlineData(true, 29)]
+    [InlineData(true, null)]
+    [InlineData(false, 24)]
+    [InlineData(false, null)]
+    public void An8BitSdrDisplayAsksTheStageForDitheredNv12(bool toneMap, int? bpp)
+    {
+        var (plan, route) = Stage(toneMap);
+        var output = Engine(plan, route, displayBitsPerPixel: bpp, stageNv12Dithered: true);
+        Assert.Equal(("bgra", "nv12", DitheredReason, 8, "SDR 8-bit display"),
+            (output.Target, output.Frames, output.Reason, output.StageOutputDepth, output.StageReason));
+        Assert.Equal(0u, output.Code);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void A10BitDisplayKeepsP010FromTheStage(bool toneMap)
+    {
+        var (plan, route) = Stage(toneMap);
+        var output = Engine(plan, route, displayBitsPerPixel: 30, stageNv12Dithered: true);
+        Assert.Equal(("rgb10", "p010", 10, "SDR 10-bit display"),
+            (output.Target, output.Frames, output.StageOutputDepth, output.StageReason));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Av1NeverAsksForAn8BitStage(bool toneMap)
+    {
+        var (plan, route) = Stage(toneMap, "av1");
+        var output = Engine(plan, route, displayBitsPerPixel: 24, stageNv12Dithered: true);
+        Assert.Equal((10, "AV1 keeps 10-bit output (until rav1g is stable)"), (output.StageOutputDepth, output.StageReason));
+        Assert.Equal("p010", output.Frames);
+    }
+
+    [Fact]
+    public void HdrPassthroughNeverAsksForAn8BitStage()
+    {
+        // A downscale route over HDR video is not tone-mapped: passthrough keeps 10 bits.
+        var (plan, route) = Stage(false);
+        plan.Source!.DynamicRange = "hdr10";
+        plan.Source.BitDepth = 10;
+        var output = Engine(plan, route, displayBitsPerPixel: 24, stageNv12Dithered: true);
+        Assert.Equal(("rgb10", "p010", 10, "HDR passthrough"),
+            (output.Target, output.Frames, output.StageOutputDepth, output.StageReason));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void WithoutTheDitherBitOrInSourceModeTheStageKeepsP010(bool toneMap)
+    {
+        var (plan, route) = Stage(toneMap);
+        var old = Engine(plan, route, displayBitsPerPixel: 24);
+        Assert.Equal(("bgra", "p010", "SDR 8-bit display: 8-bit output", 10, "bale_gpu without dithered NV12"),
+            (old.Target, old.Frames, old.Reason, old.StageOutputDepth, old.StageReason));
+        var source = Engine(plan, route, displayBitsPerPixel: 24, ceiling: "source", stageNv12Dithered: true);
+        Assert.Equal(("rgb10", "p010", 10, "debug output-depth source keeps P010"),
+            (source.Target, source.Frames, source.StageOutputDepth, source.StageReason));
+    }
+
+    [Fact]
+    public void RoutesWithoutAStageReportNoStageDepth()
+    {
+        var plan = Plan("original_http", "hevc", 10);
+        var output = Engine(plan, PlaybackRoutePolicy.Decide(plan, false), displayBitsPerPixel: 24, stageNv12Dithered: true);
+        Assert.Equal((0, "no console stage"), (output.StageOutputDepth, output.StageReason));
+        Assert.Equal((0, "no console stage"), (new EngineOutputDecision("bgra", "unknown", "no plan").StageOutputDepth,
+            new EngineOutputDecision("bgra", "unknown", "no plan").StageReason));
+    }
 
     [Theory]
     [InlineData("sdr", false, 24, "display", "bgra")]
@@ -191,7 +280,13 @@ public sealed class EngineOutputPolicyTests
         var media = Read("PlayerPage.Media.cs.txt");
         Assert.Contains("var displayBitsPerPixel = DisplayHdrOutput.CurrentBitsPerPixel();", media);
         Assert.Contains("EngineOutputPolicy.Decide(plan, media.Route, attempt.Request.Detail.Versions, ConsoleToneMapRuntime.SupportsP010,", media);
-        Assert.Contains("displayBitsPerPixel, ceiling)", media);
+        Assert.Contains("DisplayHdrOutput.CurrentBitsPerPixel(), ceiling, stageNv12Dithered)", media);
+        // FFmpeg mounts decide once at configuration: the stage depth key, the guard and the engine share it.
+        Assert.Contains("media.EngineOutput = DecideEngineOutput(attempt, media, ConsoleToneMapRuntime.SupportsDitheredNv12);", media);
+        Assert.Contains("media.StageOutput8Bit = FfmpegSource.ApplyStageOutputDepth(config, media.Route, media.EngineOutput);", media);
+        Assert.Contains("nv12Requested: media.StageOutput8Bit", media);
+        Assert.True(media.IndexOf("FfmpegSource.ApplyStageOutputDepth(", StringComparison.Ordinal)
+            < media.IndexOf("FFmpegMediaSource.CreateFromInputStreamAsync", StringComparison.Ordinal));
         Assert.Contains("frames={output.Frames} display={display} reason={output.Reason}", media);
         Assert.Contains("target: target);", media);
         var engine = Read("EngineBackend.cs.txt");

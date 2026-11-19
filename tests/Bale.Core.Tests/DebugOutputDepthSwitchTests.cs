@@ -29,10 +29,13 @@ public sealed class DebugOutputDepthSwitchTests
     {
         var media = Read("PlayerPage.Media.cs.txt");
         var target = media[media.IndexOf("private static uint EngineTarget", StringComparison.Ordinal)..];
-        Assert.Contains("var ceiling = \"display\";", target);
-        Assert.Contains("#if DEBUG_SERVER\n        ceiling = DebugOutputDepthSwitch.Mode;\n#endif", target);
-        Assert.True(target.IndexOf("DebugOutputDepthSwitch.Mode", StringComparison.Ordinal)
-            < target.IndexOf("EngineOutputPolicy.Decide", StringComparison.Ordinal));
+        // The policy (and with it the stage's output depth) is decided in one place, ceiling first.
+        var decide = media[media.IndexOf("private static EngineOutputDecision DecideEngineOutput", StringComparison.Ordinal)..];
+        Assert.Contains("var ceiling = \"display\";", decide);
+        Assert.Contains("#if DEBUG_SERVER\n        ceiling = DebugOutputDepthSwitch.Mode;\n#endif", decide);
+        Assert.True(decide.IndexOf("DebugOutputDepthSwitch.Mode", StringComparison.Ordinal)
+            < decide.IndexOf("EngineOutputPolicy.Decide", StringComparison.Ordinal));
+        Assert.Contains("media.EngineOutput ?? DecideEngineOutput(attempt, media, stageNv12Dithered: false)", target);
         Assert.True(target.IndexOf("var code = output.Code;", StringComparison.Ordinal)
             < target.IndexOf("if (DebugEngineTargetSwitch.Code is { } forced)", StringComparison.Ordinal));
         Assert.Contains("code = forced;", target);

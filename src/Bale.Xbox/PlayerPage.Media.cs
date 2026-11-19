@@ -69,6 +69,10 @@ public sealed partial class PlayerPage
         public BackgroundSnapshot<FfmpegStreamSnapshot>? FfmpegStreams { get; set; }
         public PlaybackResources.MediaDevice? RendererDevice { get; set; }
         public FfmpegVideoOutputGuard? VideoOutputGuard { get; set; }
+        /// <summary>EngineOutputPolicy's decision, made once when the FFmpeg source is configured (null on other routes).</summary>
+        public EngineOutputDecision? EngineOutput { get; set; }
+        /// <summary>The stage was asked for dithered 8-bit NV12 (bale_tonemap_output_depth=8) for this mount.</summary>
+        public bool StageOutput8Bit { get; set; }
         public int? BaseLayerStreamIndex { get; set; }
         public PlaybackRouteDecision Route { get; set; } = null!;
         // Set by StartSubtitles for an in-container image track: the FFmpeg source feeds the overlay.
@@ -308,6 +312,11 @@ public sealed partial class PlayerPage
                 var config = FfmpegSource.Configuration(media.Route, attempt.Dav1dGpuFilmGrain);
 #endif
                 FfmpegSource.ApplyDisplaySize(config, media.Route, DisplayHdrOutput.CurrentRawSize());
+                // Phase 2 of the bit-depth rule: decide the stage's depth with the engine output, once per open.
+                media.EngineOutput = DecideEngineOutput(attempt, media, ConsoleToneMapRuntime.SupportsDitheredNv12);
+                media.StageOutput8Bit = FfmpegSource.ApplyStageOutputDepth(config, media.Route, media.EngineOutput);
+                if (!media.StageOutput8Bit && media.EngineOutput.StageOutputDepth == 8)
+                    media.EngineOutput = DecideEngineOutput(attempt, media, stageNv12Dithered: false);
                 FfmpegSource.ApplySubtitleSink(config, media.SubtitleStreamIndex, media.SubtitleSinkToken);
                 var engineSource = attempt.UseEngine;
 #if DEBUG_SERVER
@@ -370,7 +379,7 @@ public sealed partial class PlayerPage
                     media.VideoOutputGuard = new FfmpegVideoOutputGuard(media.FfmpegSource, () =>
                         _ = DispatchAsync(() => QueueFailure(attempt, media, 0, isDecoder: false, isNetwork: false)),
                         toneMap: guardToneMap, baseLayerStreamIndex: media.BaseLayerStreamIndex,
-                        allowNv12: !ConsoleToneMapRuntime.SupportsP010);
+                        allowNv12: !ConsoleToneMapRuntime.SupportsP010, nv12Requested: media.StageOutput8Bit);
 
                 // Low-frequency Starting only, no sample observer or rendering state changes.
                 media.RendererDevice = new PlaybackResources.MediaDevice(media.FfmpegSource);
@@ -540,23 +549,8 @@ public sealed partial class PlayerPage
     private static uint EngineTarget(Attempt attempt, Mount media)
     {
         var displayBitsPerPixel = DisplayHdrOutput.CurrentBitsPerPixel();
-        var ceiling = "display";
-#if DEBUG_SERVER
-        ceiling = DebugOutputDepthSwitch.Mode;
-#endif
-        EngineOutputDecision output;
-        try
-        {
-            output = attempt.Plan is { } plan
-                ? EngineOutputPolicy.Decide(plan, media.Route, attempt.Request.Detail.Versions, ConsoleToneMapRuntime.SupportsP010,
-                    displayBitsPerPixel, ceiling)
-                : new EngineOutputDecision("bgra", "unknown", "no plan");
-        }
-        catch (Exception ex)
-        {
-            Log.Info($"player: engine output policy failed {ex.GetType().Name}");
-            output = new EngineOutputDecision("bgra", "unknown", "policy failed");
-        }
+        // An FFmpeg mount decided at configuration, together with the stage depth it asked for.
+        var output = media.EngineOutput ?? DecideEngineOutput(attempt, media, stageNv12Dithered: false);
         if (output.Frames == "unknown") Log.Info("player: engine output depth unknown; bgra kept");
         var code = output.Code;
         var name = output.Target;
@@ -570,6 +564,30 @@ public sealed partial class PlayerPage
         var display = displayBitsPerPixel is { } bpp ? $"{bpp}bpp" : "unknown";
         Log.Info($"player: engine output={name} frames={output.Frames} display={display} reason={output.Reason}");
         return code;
+    }
+
+    /// <summary>
+    /// EngineOutputPolicy for this mount: the swap-chain format and the console stage's output depth (8 = dithered NV12
+    /// on an 8-bit SDR display, phase 2 of the bit-depth rule). Reads the current HDMI mode on the UI thread.
+    /// </summary>
+    private static EngineOutputDecision DecideEngineOutput(Attempt attempt, Mount media, bool stageNv12Dithered)
+    {
+        var ceiling = "display";
+#if DEBUG_SERVER
+        ceiling = DebugOutputDepthSwitch.Mode;
+#endif
+        try
+        {
+            return attempt.Plan is { } plan
+                ? EngineOutputPolicy.Decide(plan, media.Route, attempt.Request.Detail.Versions, ConsoleToneMapRuntime.SupportsP010,
+                    DisplayHdrOutput.CurrentBitsPerPixel(), ceiling, stageNv12Dithered)
+                : new EngineOutputDecision("bgra", "unknown", "no plan");
+        }
+        catch (Exception ex)
+        {
+            Log.Info($"player: engine output policy failed {ex.GetType().Name}");
+            return new EngineOutputDecision("bgra", "unknown", "policy failed");
+        }
     }
 
     /// <summary>The mount's route in words, for the log: never a URL.</summary>

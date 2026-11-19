@@ -16,10 +16,14 @@ internal static class ConsoleToneMapRuntime
     private const uint DownscaleBit = 4;
     // INPUT_NV12 (8) | SDR709 (16): the SDR scale-only stage, including 8-bit sources.
     private const uint SdrDownscaleBits = DownscaleBit | 8 | 16;
+    // BALE_TONEMAP_OUTPUT_NV12_DITHERED (32): the stage's NV12 output is ordered-dithered, so 8-bit stage output
+    // may be requested on an 8-bit SDR display (EngineOutputPolicy, bale_tonemap_output_depth=8).
+    private const uint DitheredNv12Bit = 32;
     private static readonly Lazy<uint> Formats = new(ReadFormats);
     internal static bool SupportsP010 => IsAvailable && (Formats.Value & P010Bit) != 0;
     internal static bool SupportsDownscale => IsAvailable && (Formats.Value & DownscaleBit) != 0;
     internal static bool SupportsSdrDownscale => IsAvailable && (Formats.Value & SdrDownscaleBits) == SdrDownscaleBits;
+    internal static bool SupportsDitheredNv12 => IsAvailable && (Formats.Value & DitheredNv12Bit) != 0;
 
     private static unsafe uint ReadFormats()
     {

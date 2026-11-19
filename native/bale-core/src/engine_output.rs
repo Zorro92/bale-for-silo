@@ -1,7 +1,11 @@
 //! The IMFMediaEngine swap-chain format of one mount (owner's bit-depth rule, AGENTS.md): work at
 //! source depth, deliver at display depth. P010 gets R10G10B10A2 (`rgb10`) for HDR passthrough or a
 //! 30+ bpp SDR display, otherwise B8G8R8A8 (`bgra`). AV1 temporarily keeps 10-bit output until rav1g
-//! is stable. NV12 and unknown frames keep `bgra`; the frame/processing depth never changes here.
+//! is stable. NV12 and unknown frames keep `bgra`.
+//!
+//! Phase 2 (2026-11-19): on an 8-bit SDR display the console stage (tone map or SDR downscale) is
+//! asked for dithered 8-bit NV12 (`stage_output_depth` 8, the fork's `bale_tonemap_output_depth`)
+//! when bale_gpu dithers it, except for AV1. Otherwise no stage output depth changes here.
 
 use serde::{Deserialize, Serialize};
 
@@ -47,6 +51,10 @@ pub struct DecideArgs {
     /// bale_gpu's console stage writes P010 (`ConsoleToneMapRuntime.SupportsP010`); without it the
     /// tone map and the downscale write NV12.
     stage_p010: bool,
+    /// bale_gpu dithers the stage's NV12 output (`ConsoleToneMapRuntime.SupportsDitheredNv12`,
+    /// BALE_TONEMAP_OUTPUT_NV12_DITHERED); only then is 8-bit stage output requested.
+    #[serde(default)]
+    stage_nv12_dithered: bool,
     /// Current HDMI mode, not the display's supported modes. Unknown caps SDR at 8 bits.
     display_bits_per_pixel: Option<i32>,
     #[serde(default)]
@@ -62,6 +70,11 @@ pub struct EngineOutput {
     pub frames: &'static str,
     /// Fixed text for the log: why.
     pub reason: &'static str,
+    /// The console stage's requested output depth: 8 (dithered NV12, the fork key
+    /// `bale_tonemap_output_depth=8`), 10 (today's P010, key unset), or 0 without a stage.
+    pub stage_output_depth: u8,
+    /// Fixed text for the log: why that stage depth.
+    pub stage_reason: &'static str,
 }
 
 fn output(frames: &'static str, reason: &'static str) -> EngineOutput {
@@ -69,12 +82,77 @@ fn output(frames: &'static str, reason: &'static str) -> EngineOutput {
         target: if frames == "p010" { "rgb10" } else { "bgra" },
         frames,
         reason,
+        stage_output_depth: 0,
+        stage_reason: "no console stage",
     }
+}
+
+/// Whether the console stage writes dithered 8-bit NV12 for this mount, and why (fixed log text).
+/// Only on an SDR display whose current HDMI mode is below 30 bpp (unknown counts as 8-bit, as for
+/// the engine output), never for AV1 (temporary exception) or HDR passthrough, and only when
+/// bale_gpu dithers its NV12. Debug `output-depth source` keeps today's P010.
+fn stage_output(args: &DecideArgs, depth: &Depth) -> (u8, &'static str) {
+    let route = &args.route;
+    if !route.console_tone_map && !route.console_downscale {
+        return (0, "no console stage");
+    }
+    if args.ceiling == Ceiling::Source {
+        return (10, "debug output-depth source keeps P010");
+    }
+    if !args.stage_nv12_dithered {
+        return (10, "bale_gpu without dithered NV12");
+    }
+    if AV1_KEEPS_10_BIT_OUTPUT_UNTIL_RAV1G_IS_STABLE && is_av1(args) {
+        return (10, "AV1 keeps 10-bit output (until rav1g is stable)");
+    }
+    if !route.console_tone_map && matches!(depth, Depth::Hdr | Depth::Known { hdr: true, .. }) {
+        return (10, "HDR passthrough");
+    }
+    if args.display_bits_per_pixel.is_some_and(|bpp| bpp >= 30) {
+        return (10, "SDR 10-bit display");
+    }
+    (8, "SDR 8-bit display")
+}
+
+fn is_av1(args: &DecideArgs) -> bool {
+    [
+        args.route.video_codec.as_deref(),
+        args.plan
+            .source
+            .as_ref()
+            .and_then(|s| s.video_codec.as_deref()),
+    ]
+    .iter()
+    .any(|&codec| normalize_codec(codec).as_deref() == Some("av1"))
 }
 
 pub fn decide(args: &DecideArgs) -> EngineOutput {
     let route = &args.route;
     let depth = delivered_depth(&args.plan, args.versions.as_deref(), route);
+    let (stage_output_depth, stage_reason) = stage_output(args, &depth);
+    let mut decision = with_stage(
+        decide_frames(args, &depth),
+        stage_output_depth,
+        stage_reason,
+    );
+    if stage_output_depth == 8 {
+        // Phase 2: the stage itself rounds to 8 bits once, dithered; the engine gets NV12.
+        decision.frames = "nv12";
+        decision.target = "bgra";
+        decision.reason = "console stage writes dithered NV12 (SDR 8-bit display)";
+    }
+    decision
+}
+
+fn with_stage(mut decision: EngineOutput, depth: u8, reason: &'static str) -> EngineOutput {
+    decision.stage_output_depth = depth;
+    decision.stage_reason = reason;
+    decision
+}
+
+fn decide_frames(args: &DecideArgs, depth: &Depth) -> EngineOutput {
+    let route = &args.route;
+    let depth = *depth;
     // bale_gpu's stage: the tone map's inputs are all 10-bit; the SDR area downscale writes P010 for
     // 8-bit sources too (the rule's one exception). An old bale_gpu without P010 writes NV12.
     let mut decision = if route.console_tone_map {
@@ -114,17 +192,7 @@ pub fn decide(args: &DecideArgs) -> EngineOutput {
     }
     if !route.console_tone_map && matches!(depth, Depth::Hdr | Depth::Known { hdr: true, .. }) {
         decision.reason = "HDR passthrough: 10-bit output";
-    } else if AV1_KEEPS_10_BIT_OUTPUT_UNTIL_RAV1G_IS_STABLE
-        && [
-            route.video_codec.as_deref(),
-            args.plan
-                .source
-                .as_ref()
-                .and_then(|s| s.video_codec.as_deref()),
-        ]
-        .iter()
-        .any(|&codec| normalize_codec(codec).as_deref() == Some("av1"))
-    {
+    } else if AV1_KEEPS_10_BIT_OUTPUT_UNTIL_RAV1G_IS_STABLE && is_av1(args) {
         decision.reason = "AV1 keeps 10-bit output (until rav1g is stable)";
     } else if args.display_bits_per_pixel.is_some_and(|bpp| bpp >= 30) {
         decision.reason = "SDR 10-bit display: 10-bit output";
@@ -135,6 +203,7 @@ pub fn decide(args: &DecideArgs) -> EngineOutput {
     decision
 }
 
+#[derive(Clone, Copy)]
 enum Depth {
     Known {
         bits: i64,
@@ -287,6 +356,7 @@ mod tests {
             versions: None,
             route,
             stage_p010,
+            stage_nv12_dithered: false,
             display_bits_per_pixel: Some(30),
             ceiling: Ceiling::Display,
         })
@@ -298,6 +368,7 @@ mod tests {
             route,
             versions: None,
             stage_p010: true,
+            stage_nv12_dithered: false,
             display_bits_per_pixel: bpp,
             ceiling: Ceiling::Display,
         }
@@ -545,6 +616,7 @@ mod tests {
             versions: Some(versions),
             route: route("hevc"),
             stage_p010: true,
+            stage_nv12_dithered: false,
             display_bits_per_pixel: Some(30),
             ceiling: Ceiling::Display,
         });
@@ -560,6 +632,183 @@ mod tests {
     fn a_routed_codec_other_than_the_source_is_unknown() {
         let out = run(plan("original_http", "hevc", Some(10)), route("h264"), true);
         assert_eq!((out.target, out.frames), ("bgra", "unknown"));
+    }
+
+    fn stage_args(
+        codec: &str,
+        bits: i64,
+        range: &str,
+        tone_map: bool,
+        bpp: Option<i32>,
+    ) -> DecideArgs {
+        let mut p = plan("original_http", codec, Some(bits));
+        p.source.as_mut().unwrap().dynamic_range = Some(range.into());
+        let mut r = route(codec);
+        r.console_tone_map = tone_map;
+        r.console_downscale = !tone_map;
+        let mut args = display_args(p, r, bpp);
+        args.stage_nv12_dithered = true;
+        args
+    }
+
+    fn stage(args: &DecideArgs) -> (&'static str, &'static str, u8, &'static str) {
+        let out = decide(args);
+        (
+            out.target,
+            out.frames,
+            out.stage_output_depth,
+            out.stage_reason,
+        )
+    }
+
+    const DITHERED: &str = "console stage writes dithered NV12 (SDR 8-bit display)";
+
+    #[test]
+    fn eight_bit_sdr_display_gets_dithered_nv12_from_both_stages() {
+        for (codec, bits, range, tone_map) in [
+            ("hevc", 10, "hdr10", true),
+            ("hevc", 10, "hlg", true),
+            ("vp9", 10, "hdr10", true),
+            ("hevc", 8, "sdr", false),
+            ("vp9", 10, "sdr", false),
+        ] {
+            for bpp in [Some(24), Some(29), Some(0), None] {
+                let args = stage_args(codec, bits, range, tone_map, bpp);
+                let out = decide(&args);
+                assert_eq!(
+                    (out.target, out.frames, out.reason),
+                    ("bgra", "nv12", DITHERED),
+                    "{codec} {range} {bpp:?}"
+                );
+                assert_eq!(
+                    (out.stage_output_depth, out.stage_reason),
+                    (8, "SDR 8-bit display")
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_10_bit_sdr_display_keeps_p010_from_the_stage() {
+        for bpp in [30, 36] {
+            for tone_map in [true, false] {
+                let args = stage_args(
+                    "hevc",
+                    10,
+                    if tone_map { "hdr10" } else { "sdr" },
+                    tone_map,
+                    Some(bpp),
+                );
+                assert_eq!(stage(&args), ("rgb10", "p010", 10, "SDR 10-bit display"));
+            }
+        }
+    }
+
+    #[test]
+    fn hdr_passthrough_never_asks_the_stage_for_8_bits() {
+        // A downscale route over HDR video (not tone-mapped) is passthrough: never 8-bit.
+        for range in ["hdr10", "dolby_vision"] {
+            let args = stage_args("hevc", 10, range, false, Some(24));
+            let (target, frames, depth, reason) = stage(&args);
+            assert_eq!((frames, depth, reason), ("p010", 10, "HDR passthrough"));
+            assert_eq!(target, "rgb10");
+        }
+    }
+
+    #[test]
+    fn av1_keeps_the_10_bit_stage_until_rav1g_is_stable() {
+        for tone_map in [true, false] {
+            let range = if tone_map { "hdr10" } else { "sdr" };
+            let args = stage_args(" AV1 ", 10, range, tone_map, Some(24));
+            let out = decide(&args);
+            assert_eq!(
+                (
+                    out.target,
+                    out.frames,
+                    out.stage_output_depth,
+                    out.stage_reason
+                ),
+                (
+                    "rgb10",
+                    "p010",
+                    10,
+                    "AV1 keeps 10-bit output (until rav1g is stable)"
+                )
+            );
+            // AV1 known only from the source (route codec missing) counts too.
+            let mut source_only = stage_args("av1", 10, range, tone_map, Some(24));
+            source_only.route.video_codec = None;
+            assert_eq!(decide(&source_only).stage_output_depth, 10);
+        }
+    }
+
+    #[test]
+    fn without_the_dither_bit_the_stage_output_is_unchanged() {
+        let mut args = stage_args("hevc", 10, "hdr10", true, Some(24));
+        args.stage_nv12_dithered = false;
+        let out = decide(&args);
+        assert_eq!(
+            (
+                out.target,
+                out.frames,
+                out.reason,
+                out.stage_output_depth,
+                out.stage_reason
+            ),
+            (
+                "bgra",
+                "p010",
+                "SDR 8-bit display: 8-bit output",
+                10,
+                "bale_gpu without dithered NV12"
+            )
+        );
+    }
+
+    #[test]
+    fn debug_source_mode_keeps_p010_from_the_stage() {
+        for tone_map in [true, false] {
+            let range = if tone_map { "hdr10" } else { "sdr" };
+            let mut args = stage_args("hevc", 10, range, tone_map, Some(24));
+            args.ceiling = Ceiling::Source;
+            let (target, frames, depth, reason) = stage(&args);
+            assert_eq!(
+                (target, frames, depth, reason),
+                ("rgb10", "p010", 10, "debug output-depth source keeps P010")
+            );
+        }
+    }
+
+    #[test]
+    fn routes_without_a_stage_report_no_stage_depth() {
+        let mut args = display_args(
+            plan("original_http", "hevc", Some(10)),
+            route("hevc"),
+            Some(24),
+        );
+        args.stage_nv12_dithered = true;
+        let out = decide(&args);
+        assert_eq!(
+            (
+                out.target,
+                out.frames,
+                out.stage_output_depth,
+                out.stage_reason
+            ),
+            ("bgra", "p010", 0, "no console stage")
+        );
+        // Older callers omit the bit: serde defaults it to false (no 8-bit request).
+        let args: DecideArgs = serde_json::from_value(serde_json::json!({
+            "plan": { "delivery": "original_http", "source": { "video_codec": "hevc", "bit_depth": 10 } },
+            "route": { "use_ffmpeg": true, "software_video": false, "video_codec": "hevc",
+                "console_tone_map": true, "console_downscale": false, "dolby_vision7_base_layer": false },
+            "stage_p010": true, "display_bits_per_pixel": 24
+        }))
+        .unwrap();
+        assert_eq!(decide(&args).stage_output_depth, 10);
+        let json = serde_json::to_value(decide(&args)).unwrap();
+        assert_eq!(json["stage_output_depth"], 10);
+        assert_eq!(json["stage_reason"], "bale_gpu without dithered NV12");
     }
 
     #[test]

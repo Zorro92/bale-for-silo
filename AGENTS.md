@@ -224,7 +224,14 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   display route) writes P010 for 8-bit sources too, because averaging in linear light yields values between
   8-bit codes. AetherEngine does the same per stage (software decode, deinterlace, tone mapper and upscaler
   output the input's depth; AV1 grain at the stream's depth). The console tone map's inputs are all 10-bit,
-  so it writes P010, and `FfmpegVideoOutputGuard` rejects NV12 stage output unless bale_gpu lacks P010.
+  so it writes P010, and `FfmpegVideoOutputGuard` rejects NV12 stage output unless bale_gpu lacks P010 or
+  Bale requested 8-bit for that mount. **Phase 2 (2026-11-19):** on an 8-bit SDR display (current HDMI mode
+  below 30 bpp or unknown, not HDR passthrough, not debug `output-depth source`) the console stage (tone map
+  or SDR downscale) writes **dithered 8-bit NV12** in the same pass instead of P010, rounding once at full
+  precision (static 8x8 Bayer, bale_gpu bit `BALE_TONEMAP_OUTPUT_NV12_DITHERED`); AV1 is excepted (keeps P010
+  until rav1g is stable). The decision is Rust (`engine_output.rs`, `stage_output_depth`), sets the fork key
+  `bale_tonemap_output_depth=8`, and the guard then accepts NV12 only with the tone-map mark. P010 output is
+  unchanged. Needs a fork wrapper that reads the key; older ones keep P010.
   FFmpeg software decode outputs P010 for every source above 8 bits (fork bale.41+) and NV12 for 8-bit sources, also 4:2:2, 4:4:4, full range, RGB and grey (bale.42+).
   dav1d now hands MF CPU NV12 for 8-bit AV1 and P010 for 10-bit on D3D11 (owner, 2026-11-19);
   rav1g takes NV12 textures for 8-bit and P010 for 10-bit. Only debug `dav1d-path zerocopy` keeps

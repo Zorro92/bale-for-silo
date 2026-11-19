@@ -483,6 +483,64 @@ public sealed class ConsoleToneMapTests
     }
 
     [Fact]
+    public void GuardAcceptsMarkedNv12OnlyWhenBaleRequested8BitStageOutput()
+    {
+        var format = SdrFormat();
+        format.Subtype = "NV12";
+        // Phase 2: requested dithered NV12 is the stage's own output, so it must carry the tone-map mark.
+        Assert.True(FfmpegVideoOutputGuard.IsSdrOutput(format, nv12Requested: true));
+        Assert.False(FfmpegVideoOutputGuard.IsSdrOutput(format));
+        format.Properties.Remove(FfmpegVideoOutputGuard.ToneMapped);
+        Assert.False(FfmpegVideoOutputGuard.IsSdrOutput(format, nv12Requested: true));
+        format.Properties[FfmpegVideoOutputGuard.ToneMapped] = 1u;
+        format.Properties[new("5fb0fce9-be5c-4935-a811-ec838f8eed93")] = 15u; // never HDR tags
+        Assert.False(FfmpegVideoOutputGuard.IsSdrOutput(format, nv12Requested: true));
+        // An older wrapper ignores the key and keeps marked P010: still accepted.
+        Assert.True(FfmpegVideoOutputGuard.IsSdrOutput(SdrFormat(), nv12Requested: true));
+
+        var source = new FFmpegMediaSource();
+        source.VideoStreams.Add(new() { DecoderEngine = DecoderEngine.FFmpegD3D11HardwareDecoder });
+        var nv12 = SdrFormat();
+        nv12.Subtype = "NV12";
+        var failures = 0;
+        using (new FfmpegVideoOutputGuard(source, () => failures++, nv12Requested: true))
+            Assert.NotNull(source.Source.Request(new VideoStreamDescriptor { EncodingProperties = nv12 }).Sample);
+        Assert.Equal(0, failures);
+        var unrequested = new FFmpegMediaSource();
+        unrequested.VideoStreams.Add(new() { DecoderEngine = DecoderEngine.FFmpegD3D11HardwareDecoder });
+        using (new FfmpegVideoOutputGuard(unrequested, () => failures++))
+            Assert.Null(unrequested.Source.Request(new VideoStreamDescriptor { EncodingProperties = nv12 }).Sample);
+        Assert.Equal(1, failures);
+    }
+
+    [Fact]
+    public void StageOutputDepthKeyFollowsTheEngineOutputDecision()
+    {
+        var uhd = new PlaybackRouteDecision(true, false, "hevc", "eac3", 0, 3840, 2160, ConsoleToneMap: true);
+        var eight = new EngineOutputDecision("bgra", "nv12", "console stage writes dithered NV12 (SDR 8-bit display)", 8, "SDR 8-bit display");
+        var ten = new EngineOutputDecision("bgra", "p010", "SDR 8-bit display: 8-bit output", 10, "AV1 keeps 10-bit output (until rav1g is stable)");
+        var config = FfmpegSource.Configuration(uhd);
+        Assert.True(FfmpegSource.ApplyStageOutputDepth(config, uhd, eight));
+        Assert.Equal("8", config.FFmpegOptions["bale_tonemap_output_depth"]);
+        // Unset (not "10") keeps today's P010 for every other decision.
+        Assert.False(FfmpegSource.ApplyStageOutputDepth(config, uhd, ten));
+        Assert.DoesNotContain("bale_tonemap_output_depth", config.FFmpegOptions.Keys);
+        var downscale = new PlaybackRouteDecision(true, false, "vp9", "aac", 0, 3840, 2160, ConsoleDownscale: true);
+        var down = FfmpegSource.Configuration(downscale);
+        Assert.True(FfmpegSource.ApplyStageOutputDepth(down, downscale, eight));
+        Assert.Equal("8", down.FFmpegOptions["bale_tonemap_output_depth"]);
+        // No stage, or a stage a debug override removed: never requested.
+        var plain = uhd with { ConsoleToneMap = false };
+        var none = FfmpegSource.Configuration(plain);
+        Assert.False(FfmpegSource.ApplyStageOutputDepth(none, plain, eight));
+        Assert.DoesNotContain("bale_tonemap_output_depth", none.FFmpegOptions.Keys);
+        var removed = FfmpegSource.Configuration(uhd);
+        removed.FFmpegOptions.Remove("bale_tonemap");
+        Assert.False(FfmpegSource.ApplyStageOutputDepth(removed, uhd, eight));
+        Assert.DoesNotContain("bale_tonemap_output_depth", removed.FFmpegOptions.Keys);
+    }
+
+    [Fact]
     public void GuardTrustsTenBitSdrOutputOnlyWithTheToneMappedMark()
     {
         var format = SdrFormat();
