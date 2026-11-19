@@ -38,7 +38,11 @@ uint32_t bale_tonemap_abi_version(void); /* returns 1 */
 /* SDR709: frames with transfer 1/6/14/15 and primaries 1, matrix 1 (BT.709 SDR) are accepted:
    BT.1886 decode to linear light, area downscale, re-encode; no tone curve, no gamut change. */
 #define BALE_TONEMAP_SDR709 16u
-uint32_t bale_tonemap_output_formats(void); /* returns NV12 | P010 | DOWNSCALE | INPUT_NV12 | SDR709 */
+/* NV12_DITHERED (Bale 2026-11-19): NV12 output is ordered-dithered before the 8-bit quantisation, in
+   luma and chroma, with a static 8x8 Bayer threshold at the output pixel (no per-frame change, so still
+   pictures stay still). P010 output is unchanged. Absent = NV12 is plainly rounded. */
+#define BALE_TONEMAP_OUTPUT_NV12_DITHERED 32u
+uint32_t bale_tonemap_output_formats(void); /* returns NV12 | P010 | DOWNSCALE | INPUT_NV12 | SDR709 | NV12_DITHERED */
 typedef struct BaleToneMapConfig {
     uint32_t width, height;     /* output size (input may be larger: decoder alignment, or a downscale) */
     uint32_t curve;             /* 1 = BT.2390 EETF, 2 = Hable */

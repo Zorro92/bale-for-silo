@@ -8,7 +8,8 @@
 //! desaturation. Hable uses npl=100 and max RGB AFTER desaturation, like vf_tonemap.
 //! Hable's FFmpeg default desat is 2, but explicit ABI desat=0 disables it on both curves.
 //! Output uses BT.1886 inverse EOTF (power 1/2.4): zscale t=bt709's default display-referred
-//! transfer, rather than its scene-referred camera OETF. No dithering or integer LUTs.
+//! transfer, rather than its scene-referred camera OETF. No integer LUTs. P010 output is plainly
+//! rounded; NV12 output is ordered-dithered (static 8x8 Bayer, `quantize_luma_dithered`).
 use super::types::{BaleToneMapConfig, BaleToneMapFrameInfo, MAX_DOWNSCALE};
 
 pub const E_INVALIDARG: i32 = 0x80070057u32 as i32;
@@ -362,12 +363,39 @@ pub fn quantize_luma10(y: f32) -> f32 {
 pub fn quantize_chroma10(uv: [f32; 2]) -> [f32; 2] {
     uv.map(|v| (512.0 + 896.0 * v + 0.5).floor().clamp(64.0, 960.0))
 }
+/// The 8x8 Bayer index (0..64) of an output pixel, as the shader's `bayer8`: each level adds the 2x2
+/// matrix [0 2; 3 1] below the previous one, so the finest bit pair is the most significant.
+pub fn bayer8(x: u32, y: u32) -> u32 {
+    (0..3).fold(0, |v, i| {
+        let (bx, by) = ((x >> i) & 1, (y >> i) & 1);
+        v * 4 + ((bx ^ by) << 1) + by
+    })
+}
+/// Rounding offset in (0, 1) with mean 0.5: `floor(x + t)` replaces plain `floor(x + 0.5)`. Exact in
+/// f32 (k/128 values), so the CPU and the shader add the same number.
+pub fn dither_threshold(index: u32) -> f32 {
+    (index as f32 + 0.5) / 64.0
+}
+/// NV12 luma with a static ordered dither (BALE_TONEMAP_OUTPUT_NV12_DITHERED); see the shader's
+/// comment in tonemap_math.hlsli for why a constant Bayer pattern. Never more than one code from
+/// the exact value (plain rounding: half a code).
+pub fn quantize_luma_dithered(y: f32, x: u32, row: u32) -> f32 {
+    (16.0 + 219.0 * y + dither_threshold(bayer8(x, row)))
+        .floor()
+        .clamp(16.0, 235.0)
+}
+/// NV12 chroma at chroma-plane position (x, row); Cr uses the mirrored threshold.
+pub fn quantize_chroma_dithered(uv: [f32; 2], x: u32, row: u32) -> [f32; 2] {
+    let index = bayer8(x, row);
+    let t = [dither_threshold(index), dither_threshold(63 - index)];
+    std::array::from_fn(|c| (128.0 + 224.0 * uv[c] + t[c]).floor().clamp(16.0, 240.0))
+}
 
 /// Tight P010 words (high 10 bits), input may include decoder alignment beyond visible size.
 /// Chroma upsampling: bilinear, centres at (2*x, 2*y+0.5) in luma-centre coordinates.
 /// Downsampling: horizontal [1 2 1]/4 centred at 2*x, vertical [1 1]/2. Clamp visible
 /// edges, never sample alignment padding. This is left-sited, unlike a centred 2x2 box.
-/// NV12 8-bit codes, the ABI 1 output.
+/// NV12 8-bit codes, the ABI 1 output, ordered-dithered like the shader.
 pub fn reference(
     config: &BaleToneMapConfig,
     frame: &BaleToneMapFrameInfo,
@@ -476,7 +504,7 @@ fn reference_codes(
             out[y * w + x] = if ten_bit {
                 quantize_luma10(luma)
             } else {
-                quantize_luma(luma)
+                quantize_luma_dithered(luma, x as u32, y as u32)
             } as u16;
         }
     }
@@ -491,16 +519,39 @@ fn reference_codes(
                     }
                 }
             }
+            let codes = if ten_bit {
+                quantize_chroma10(uv)
+            } else {
+                quantize_chroma_dithered(uv, x as u32, y as u32)
+            };
             for c in 0..2 {
-                out[w * h + y * w + 2 * x + c] = if ten_bit {
-                    quantize_chroma10(uv)[c]
-                } else {
-                    quantize_chroma(uv)[c]
-                } as u16;
+                out[w * h + y * w + 2 * x + c] = codes[c] as u16;
             }
         }
     }
     Ok(out)
+}
+
+/// A smooth BT.709 SDR picture (P010 words) for dither tests: luma rises from `from` to `to`
+/// (10-bit codes) left to right, chroma from 500 to 530 top to bottom; a slow ramp that plain
+/// 8-bit rounding turns into a few flat bands.
+pub fn sdr_ramp(width: u32, height: u32, from: f32, to: f32) -> Vec<u16> {
+    let (w, h) = (width as usize, height as usize);
+    let mut data = vec![0; w * h * 3 / 2];
+    let step = |i: usize, n: usize| i as f32 / (n.max(2) - 1) as f32;
+    for y in 0..h {
+        for x in 0..w {
+            data[y * w + x] = ((from + (to - from) * step(x, w)).round() as u16) << 6;
+        }
+    }
+    for y in 0..h / 2 {
+        let v = (500.0 + 30.0 * step(y, h / 2)).round() as u16;
+        for x in 0..w / 2 {
+            data[w * h + y * w + 2 * x] = v << 6;
+            data[w * h + y * w + 2 * x + 1] = (1030 - v) << 6;
+        }
+    }
+    data
 }
 
 /// Shared fixed pattern for create-time self-test and WARP: black, reference white, peak,
@@ -883,8 +934,10 @@ mod tests {
             let ten = reference_p010(&c, &f, &input, 16, 8).unwrap();
             assert_eq!(eight.len(), ten.len());
             // Same limited-range value quantized at 8 and 10 bits: 4x the 8-bit code within rounding.
+            // The dithered 8-bit code is under one code (4 at 10 bits) from the exact value, the
+            // 10-bit one within half a 10-bit code.
             for (&a, &b) in eight.iter().zip(&ten) {
-                assert!((i32::from(a) * 4 - i32::from(b)).abs() <= 2, "{a} vs {b}");
+                assert!((i32::from(a) * 4 - i32::from(b)).abs() <= 4, "{a} vs {b}");
             }
             assert!(ten.iter().all(|&code| (64..=960).contains(&code)));
             assert!(
@@ -892,6 +945,133 @@ mod tests {
                 "10-bit output must keep sub-8-bit steps"
             );
         }
+    }
+    #[test]
+    fn bayer8_is_a_permutation_with_zero_mean_offset() {
+        let mut seen = [false; 64];
+        for y in 0..8 {
+            for x in 0..8 {
+                let v = bayer8(x, y) as usize;
+                assert!(!seen[v], "({x},{y}) repeats {v}");
+                seen[v] = true;
+                // Periodic: only the low three bits of each coordinate matter.
+                assert_eq!(bayer8(x + 8, y + 16), bayer8(x, y));
+            }
+        }
+        assert_eq!(bayer8(0, 0), 0);
+        assert_eq!(bayer8(1, 1), 16);
+        let mean = (0..64).map(dither_threshold).sum::<f32>() / 64.0;
+        assert!((mean - 0.5).abs() < 1e-6);
+        // Every threshold is strictly inside (0, 1): never two codes away from plain rounding.
+        assert!(
+            (0..64).all(|v| (0.0..1.0).contains(&dither_threshold(v)) && dither_threshold(v) > 0.0)
+        );
+    }
+    /// A slow ramp: dithered codes stay within one code of the exact value, the mean error over
+    /// the ramp is ~0, and local averages resolve many more levels than plain rounding's bands.
+    #[test]
+    fn dither_removes_banding_without_biasing_a_smooth_gradient() {
+        let (w, h) = (512u32, 8u32);
+        // 0.40..0.44 of the luma range: under nine 8-bit codes across 512 columns.
+        let exact = |x: u32| 16.0 + 219.0 * (0.40 + 0.04 * x as f32 / (w - 1) as f32);
+        let mut error = 0.0f64;
+        let (mut plain_levels, mut dithered_levels) = (Vec::new(), Vec::new());
+        for x in 0..w {
+            let y = (exact(x) - 16.0) / 219.0;
+            let mut column = 0.0;
+            for row in 0..h {
+                let d = quantize_luma_dithered(y, x, row);
+                assert!(
+                    (d - exact(x)).abs() < 1.0,
+                    "x={x} row={row}: {d} vs {}",
+                    exact(x)
+                );
+                assert!((d - quantize_luma(y)).abs() <= 1.0);
+                error += f64::from(d - exact(x));
+                column += d;
+            }
+            dithered_levels.push((column / h as f32 * 64.0).round() as i32);
+            plain_levels.push(quantize_luma(y) as i32);
+        }
+        let mean_error = error / f64::from(w * h);
+        assert!(mean_error.abs() < 0.02, "mean error {mean_error}");
+        plain_levels.dedup();
+        dithered_levels.dedup();
+        assert!(plain_levels.len() <= 10, "{}", plain_levels.len());
+        assert!(
+            dithered_levels.len() >= 4 * plain_levels.len(),
+            "dithered {} vs plain {} levels",
+            dithered_levels.len(),
+            plain_levels.len()
+        );
+        // Chroma: both planes unbiased over an 8x8 tile, Cr on the mirrored pattern.
+        for uv in [[0.013f32, -0.021], [0.1, 0.2], [-0.3, 0.004]] {
+            let mut sum = [0.0f32; 2];
+            for row in 0..8 {
+                for x in 0..8 {
+                    let q = quantize_chroma_dithered(uv, x, row);
+                    for c in 0..2 {
+                        sum[c] += q[c] - (128.0 + 224.0 * uv[c]);
+                    }
+                }
+            }
+            assert!(
+                sum.iter().all(|s| (s / 64.0).abs() < 1.0 / 64.0 + 1e-4),
+                "{sum:?}"
+            );
+        }
+    }
+    /// The full reference on a smooth SDR ramp: NV12 codes within one code of the P010 result
+    /// (exact at 8 bits), unbiased, and more local levels than plainly rounding that same result.
+    #[test]
+    fn dithered_nv12_reference_tracks_p010_on_a_smooth_ramp() {
+        let c = BaleToneMapConfig {
+            width: 256,
+            height: 16,
+            ..config(1)
+        };
+        let f = BaleToneMapFrameInfo {
+            transfer: 1,
+            primaries: 1,
+            matrix: 1,
+            ..frame()
+        };
+        let input = sdr_ramp(256, 16, 400.0, 416.0);
+        let eight = reference(&c, &f, &input, 256, 16).unwrap();
+        let ten = reference_p010(&c, &f, &input, 256, 16).unwrap();
+        let mut error = 0.0f64;
+        for (i, (&a, &b)) in eight.iter().zip(&ten).enumerate() {
+            let exact = f32::from(b) / 4.0;
+            assert!(
+                (f32::from(a) - exact).abs() <= 1.0 + 0.125,
+                "{i}: {a} vs {exact}"
+            );
+            error += f64::from(f32::from(a) - exact);
+        }
+        assert!((error / eight.len() as f64).abs() < 0.05);
+        let levels = |codes: &[u8]| {
+            let mut means: Vec<u32> = (0..256)
+                .step_by(8)
+                .map(|x| {
+                    (0..16)
+                        .flat_map(|y| (0..8).map(move |dx| (x + dx, y)))
+                        .map(|(x, y)| u32::from(codes[y * 256 + x]))
+                        .sum()
+                })
+                .collect();
+            means.dedup();
+            means.len()
+        };
+        let plain: Vec<u8> = ten[..256 * 16]
+            .iter()
+            .map(|&b| ((f32::from(b) / 4.0) + 0.5).floor() as u8)
+            .collect();
+        assert!(
+            levels(&eight[..256 * 16]) >= 3 * levels(&plain),
+            "{} vs {}",
+            levels(&eight[..256 * 16]),
+            levels(&plain)
+        );
     }
     #[test]
     fn visible_edges_ignore_decoder_padding_and_chroma_location_defaults_to_left() {

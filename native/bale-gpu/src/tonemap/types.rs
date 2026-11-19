@@ -13,6 +13,9 @@ pub const BALE_TONEMAP_INPUT_NV12: u32 = 8;
 /// BT.709 SDR sources (transfer 1/6/14/15, primaries 1, matrix 1) are accepted: decode BT.1886 to
 /// linear light, area-downscale, re-encode; no tone curve and no gamut change (scale only).
 pub const BALE_TONEMAP_SDR709: u32 = 16;
+/// NV12 output is ordered-dithered (static 8x8 Bayer threshold, luma and chroma) before the 8-bit
+/// quantisation, from the same float result P010 rounds to 10 bits. P010 output is unchanged.
+pub const BALE_TONEMAP_OUTPUT_NV12_DITHERED: u32 = 32;
 /// Largest source/output ratio per axis the area downscale accepts.
 pub const MAX_DOWNSCALE: u32 = 4;
 pub const BALE_TONEMAP_E_SELFTEST: i32 = 0x8004BA01u32 as i32;

@@ -48,6 +48,22 @@ fn c_and_cpp_header_match_rust() {
         "CHECK(BALE_TONEMAP_E_SELFTEST == (HRESULT){});\n",
         BALE_TONEMAP_E_SELFTEST
     ));
+    for (name, value) in [
+        ("BALE_TONEMAP_OUTPUT_NV12", BALE_TONEMAP_OUTPUT_NV12),
+        ("BALE_TONEMAP_OUTPUT_P010", BALE_TONEMAP_OUTPUT_P010),
+        (
+            "BALE_TONEMAP_OUTPUT_DOWNSCALE",
+            BALE_TONEMAP_OUTPUT_DOWNSCALE,
+        ),
+        ("BALE_TONEMAP_INPUT_NV12", BALE_TONEMAP_INPUT_NV12),
+        ("BALE_TONEMAP_SDR709", BALE_TONEMAP_SDR709),
+        (
+            "BALE_TONEMAP_OUTPUT_NV12_DITHERED",
+            BALE_TONEMAP_OUTPUT_NV12_DITHERED,
+        ),
+    ] {
+        source.push_str(&format!("CHECK({name} == {value}u);\n"));
+    }
     let dir = std::env::temp_dir().join(format!("bale-tonemap-header-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     for (compiler, extension, standard, prefix) in [

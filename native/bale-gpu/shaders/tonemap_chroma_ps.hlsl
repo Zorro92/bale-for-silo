@@ -7,5 +7,7 @@ float2 main(float4 position : SV_Position) : SV_Target {
         uv += 0.25*output_pixel(p+int2(0,dy)).yz;
         uv += 0.125*output_pixel(p+int2(1,dy)).yz;
     }
-    return params.w > 0.5 ? quantize_chroma10(uv)*64.0/65535.0 : quantize_chroma(uv)/255.0;
+    // The dither pattern is indexed by the chroma sample's own position in its half-size plane.
+    return params.w > 0.5 ? quantize_chroma10(uv)*64.0/65535.0
+                          : quantize_chroma_dithered(uv, uint2(position.xy))/255.0;
 }

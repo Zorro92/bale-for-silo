@@ -109,8 +109,14 @@ impl Warp {
                 .unwrap();
         }
         let _unmap = Unmap(&self.context, &read);
+        // P010 rows are two bytes per sample.
+        let row_bytes = if d.Format == DXGI_FORMAT_P010 {
+            d.Width * 2
+        } else {
+            d.Width
+        };
         assert!(!m.pData.is_null());
-        assert!(m.RowPitch >= d.Width);
+        assert!(m.RowPitch >= row_bytes);
         // SAFETY: mapped NV12 extent is RowPitch*(Height + Height/2), at these tiny sizes.
         let data = unsafe {
             std::slice::from_raw_parts(
@@ -119,7 +125,20 @@ impl Warp {
             )
         };
         data.chunks_exact(m.RowPitch as usize)
-            .flat_map(|r| r[..d.Width as usize].iter().copied())
+            .flat_map(|r| r[..row_bytes as usize].iter().copied())
+            .collect()
+    }
+    /// P010 readback as unshifted 10-bit codes; the six padding bits must be zero.
+    fn readback_p010(&self, output: &ID3D11Texture2D) -> Vec<u16> {
+        self.readback(output)
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&b| {
+                let word = u16::from_le_bytes(b);
+                assert_eq!(word & 0x3F, 0, "P010 padding bits");
+                word >> 6
+            })
             .collect()
     }
 }
@@ -184,12 +203,122 @@ fn desc(width: u32, height: u32, format: DXGI_FORMAT, bind: u32) -> D3D11_TEXTUR
     }
 }
 fn output_desc(c: &BaleToneMapConfig) -> D3D11_TEXTURE2D_DESC {
+    output_desc_as(c, DXGI_FORMAT_NV12)
+}
+fn output_desc_as(c: &BaleToneMapConfig, format: DXGI_FORMAT) -> D3D11_TEXTURE2D_DESC {
     desc(
         c.width,
         c.height,
-        DXGI_FORMAT_NV12,
+        format,
         (D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE).0 as u32,
     )
+}
+
+/// NV12 output is ordered-dithered exactly like the CPU reference (at most one code apart, from
+/// float differences at a threshold), resolves a slow ramp into more levels than plain rounding,
+/// and is the same on a second apply (static pattern: still content stays still). P010 output
+/// keeps the plain-rounded 10-bit result.
+#[test]
+fn nv12_output_is_dithered_like_the_reference_and_p010_is_unchanged() {
+    assert_ne!(
+        bale_tonemap_output_formats() & BALE_TONEMAP_OUTPUT_NV12_DITHERED,
+        0
+    );
+    let warp = Warp::new();
+    let (w, h) = (256u32, 16u32);
+    let sdr = BaleToneMapFrameInfo {
+        transfer: 1,
+        primaries: 1,
+        matrix: 1,
+        ..Default::default()
+    };
+    let pq = BaleToneMapFrameInfo {
+        transfer: 16,
+        primaries: 9,
+        matrix: 9,
+        ..Default::default()
+    };
+    let ramp = cpu::sdr_ramp(w, h, 400.0, 416.0);
+    let pattern = cpu::test_pattern(w, h, true, false);
+    for (curve, reserved) in [(1, [0; 4]), (2, [0; 4]), (1, [512, 32, 0, 0])] {
+        let c = BaleToneMapConfig {
+            width: w,
+            height: h,
+            reserved,
+            ..config(curve)
+        };
+        // The downscale case reads a 512x32 picture: same ramp, twice the size.
+        let (iw, ih) = c.source_size();
+        let inputs = if reserved[0] == 0 {
+            [(&sdr, ramp.clone()), (&pq, pattern.clone())]
+        } else {
+            [
+                (&sdr, cpu::sdr_ramp(iw, ih, 400.0, 416.0)),
+                (&pq, cpu::test_pattern(iw, ih, true, false)),
+            ]
+        };
+        let handle = warp.create(&c);
+        for (f, input) in inputs {
+            let source = warp.texture(
+                &desc(
+                    iw,
+                    ih,
+                    DXGI_FORMAT_P010,
+                    D3D11_BIND_SHADER_RESOURCE.0 as u32,
+                ),
+                Some(&input),
+            );
+            let nv12 = warp.texture(&output_desc(&c), None);
+            assert_eq!(handle.apply(&warp, &source, 0, &nv12, f), S_OK);
+            let actual = warp.readback(&nv12);
+            let expected = cpu::reference(&c, f, &input, iw, ih).unwrap();
+            // The smooth SDR ramp only differs by a threshold flip; the PQ pattern's saturated
+            // edges keep the tone-map tests' tolerance (3 codes; 12 at 10 bits, as the self-test).
+            let (tolerance, tolerance10) = if f.transfer == 1 { (1, 1) } else { (3, 12) };
+            assert_eq!(actual.len(), expected.len());
+            for (i, (&a, &b)) in actual.iter().zip(&expected).enumerate() {
+                assert!(
+                    a.abs_diff(b) <= tolerance,
+                    "NV12 curve={curve} transfer={} code={i}: GPU {a}, CPU {b}",
+                    f.transfer
+                );
+            }
+            assert_eq!(handle.apply(&warp, &source, 0, &nv12, f), S_OK);
+            assert_eq!(warp.readback(&nv12), actual, "the dither is static");
+            let p010 = warp.texture(&output_desc_as(&c, DXGI_FORMAT_P010), None);
+            assert_eq!(handle.apply(&warp, &source, 0, &p010, f), S_OK);
+            let actual10 = warp.readback_p010(&p010);
+            let expected10 = cpu::reference_p010(&c, f, &input, iw, ih).unwrap();
+            assert_eq!(actual10.len(), expected10.len());
+            for (i, (&a, &b)) in actual10.iter().zip(&expected10).enumerate() {
+                assert!(
+                    a.abs_diff(b) <= tolerance10,
+                    "P010 curve={curve} transfer={} code={i}: GPU {a}, CPU {b}",
+                    f.transfer
+                );
+            }
+            if f.transfer == 1 {
+                // On the ramp, 8x8-block sums of the dithered luma resolve the 10-bit steps that
+                // plain rounding of the P010 result collapses into a few bands.
+                let levels = |codes: Vec<u32>| {
+                    let mut sums: Vec<u32> = (0..w as usize)
+                        .step_by(8)
+                        .map(|x| {
+                            (0..8)
+                                .flat_map(|y| (0..8).map(move |dx| (y, x + dx)))
+                                .map(|(y, x)| codes[y * w as usize + x])
+                                .sum()
+                        })
+                        .collect();
+                    sums.dedup();
+                    sums.len()
+                };
+                let dithered = levels(actual.iter().map(|&a| u32::from(a)).collect());
+                let plain = levels(actual10.iter().map(|&b| (u32::from(b) + 2) / 4).collect());
+                assert!(dithered >= 3 * plain, "{dithered} vs {plain} levels");
+            }
+        }
+    }
 }
 
 #[test]

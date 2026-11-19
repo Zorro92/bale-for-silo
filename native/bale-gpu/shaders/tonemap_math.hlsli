@@ -142,5 +142,32 @@ float2 quantize_chroma(float2 uv) { return clamp(floor(128.0 + 224.0 * uv + 0.5)
 // 10-bit limited range (ABI 2 P010 output): 64-940 luma, 64-960 chroma.
 float quantize_luma10(float y) { return clamp(floor(64.0 + 876.0 * y + 0.5), 64.0, 940.0); }
 float2 quantize_chroma10(float2 uv) { return clamp(floor(512.0 + 896.0 * uv + 0.5), 64.0, 960.0); }
+// 8-bit NV12 output is ordered-dithered (BALE_TONEMAP_OUTPUT_NV12_DITHERED). Plain rounding adds
+// floor(x + 0.5); this adds floor(x + t) with t = (bayer8 + 0.5) / 64, a static 8x8 Bayer matrix at
+// the output pixel: 64 evenly spaced thresholds with mean 0.5, so a flat area keeps its mean level
+// and a slow ramp's 10-bit steps become a fixed fine pattern instead of 8-bit bands. Bayer rather
+// than blue noise: it is computed exactly from the pixel position (no table/texture, bit-identical
+// CPU reference) and its period-8 structure is at the highest spatial frequency, invisible at one
+// code. No per-frame offset: the pattern is tied to the output pixel and constant over time, so a
+// still picture produces identical frames (no crawl, no shimmer); motion only moves the content.
+// Chroma V uses the mirrored threshold (63 - bayer8) so Cb and Cr do not step together.
+uint bayer8(uint2 p) {
+    uint v = 0u;
+    [unroll] for (uint i = 0u; i < 3u; i++) {
+        uint bx = (p.x >> i) & 1u;
+        uint by = (p.y >> i) & 1u;
+        v = v * 4u + ((bx ^ by) << 1) + by;
+    }
+    return v;
+}
+float dither_threshold(uint v) { return (float(v) + 0.5) / 64.0; }
+float quantize_luma_dithered(float y, uint2 p) {
+    return clamp(floor(16.0 + 219.0 * y + dither_threshold(bayer8(p))), 16.0, 235.0);
+}
+float2 quantize_chroma_dithered(float2 uv, uint2 p) {
+    uint v = bayer8(p);
+    float2 t = float2(dither_threshold(v), dither_threshold(63u - v));
+    return clamp(floor(128.0 + 224.0 * uv + t), 16.0, 240.0);
+}
 
 #endif
