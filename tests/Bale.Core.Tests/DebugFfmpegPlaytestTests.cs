@@ -186,6 +186,7 @@ public class DebugFfmpegPlaytestTests
     [InlineData("on", "Dav1d")]
     [InlineData("dav1d", "Dav1d")]
     [InlineData("gpu", "Gpu")]
+    [InlineData("d3d11", "GpuD3d11")]
     [InlineData("off", "Off")]
     public void GrainProbeOverrideIsOptIn(string? grain, string? expected)
     {
@@ -203,7 +204,7 @@ public class DebugFfmpegPlaytestTests
     public void InvalidGrainProbeOverrideIsRejected(string grain)
     {
         Assert.False(DebugFfmpegPlaytest.TryParseGrain(grain, out _, out var error));
-        Assert.Equal("grain must be dav1d, gpu, off, on or default", error);
+        Assert.Equal("grain must be dav1d, gpu, d3d11, off, on or default", error);
     }
 
     [Fact]
@@ -223,6 +224,7 @@ public class DebugFfmpegPlaytestTests
     [InlineData("on", "bale_film_grain_mode", "0", "dav1d (override)")]
     [InlineData("dav1d", "bale_film_grain_mode", "0", "dav1d (override)")]
     [InlineData("gpu", "bale_film_grain_mode", "2", "GPU (override)")]
+    [InlineData("d3d11", "bale_film_grain_mode", "3", "GPU D3D11 (override)")]
     [InlineData("off", "bale_dav1d_export_film_grain", "1", "exported, not applied (override; libdav1d only)")]
     public void GrainOptionEmissionAndReportPreserveExportOnlyAndDav1dDefaults(string? input, string? key, string? value, string description)
     {
