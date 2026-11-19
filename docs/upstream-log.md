@@ -148,6 +148,17 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   (Apple `b9446d5d`; done 2026-11-18: a 45 s budget per mount on every route, docs/player-plan.md
   "Start budget").
 
+- **Later, from the 2026-11-18 review** (tracked so they aren't lost; none needs work today):
+  Not interested on cards and title pages (Apple `29c0dd43`; hold until Android TV has it), the
+  per-corner Home wash with a 0.7 s colour crossfade (Apple `c5453eae`, `648091a7`; hold until
+  Android TV follows, Bale ports its single-colour `AmbientBackdropTint`), personal ratings on a
+  1–10 scale for any future rating UI and a `SILO_REF` bump with no functional diff expected
+  (server `e17bfa1`), the Rust HLS reader on resume and `seek_reanchor` if
+  `copy_keyframe_playlist` is turned on (server `92763e4`), ws-ticket 410 (stop) and 503 with
+  `Retry-After` (wait, back off to 30 s) for the future control socket (server `4564351`,
+  `a1c17ef`), Search's short and empty result states after the tighter keyword cut-off (server
+  `651e55a`, console check).
+
 ## Reviews
 
 ### 2026-11-18
