@@ -98,8 +98,7 @@ pub fn decide(args: &DecideArgs) -> EngineOutput {
     } else {
         // Every other route keeps the delivered video's depth: the system decoder (Windows' source or
         // FFmpeg passthrough, DV base layers) and FFmpeg software decode output NV12 for 8-bit and P010
-        // above 8 bits; rav1g takes NV12 for 8-bit AV1. dav1d zero-copy shifts 8-bit AV1 into its P010
-        // pool without 10-bit processing, so it stays 8-bit here, like rav1g and the rule.
+        // above 8 bits. Both dav1d CPU output on D3D11 and rav1g take NV12 for 8-bit AV1.
         match depth {
             Depth::Known { bits, .. } if bits > 8 => output("p010", "source above 8 bits"),
             Depth::Known { .. } => output("nv12", "8-bit source"),
@@ -460,7 +459,7 @@ mod tests {
             true,
         );
         assert_eq!(ten.target, "rgb10");
-        // dav1d zero-copy's P010 pool holds shifted 8-bit samples: still 8-bit, as rav1g's NV12.
+        // dav1d CPU output and rav1g both deliver NV12 for 8-bit AV1.
         let eight = run(
             plan("original_http", "av1", Some(8)),
             software.clone(),

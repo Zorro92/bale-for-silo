@@ -24,7 +24,7 @@ internal static class PlaybackClaims
         var capabilities = DisplayHdrOutput.DetectCapabilities(ConsoleEvidence.ForHardware(hardware));
         capabilities = capabilities with { OriginalDynamicRangeMappingSupported = ConsoleToneMapRuntime.IsAvailable };
         var softwareVideo = SoftwareVideo();
-        return (SoftwareDecodePolicy.ForSoftwareVideo(capabilities, DeviceIdentity.SoftwareVideoSupported, softwareVideo), softwareVideo);
+        return (SoftwareDecodePolicy.ForSoftwareVideo(capabilities, softwareVideo), softwareVideo);
     }
 
     /// <summary>
@@ -52,7 +52,7 @@ internal static class PlaybackClaims
         {
             // The decode claims don't depend on the display, so this skips the HDR detection.
             var claims = ConsoleEvidence.ForHardware(hardware);
-            claims = SoftwareDecodePolicy.ForSoftwareVideo(claims, DeviceIdentity.SoftwareVideoSupported, SoftwareVideo());
+            claims = SoftwareDecodePolicy.ForSoftwareVideo(claims, SoftwareVideo());
             match = DisplayHdrOutput.DetectVersionMatch(claims.VideoDecode);
         }
         catch
@@ -70,9 +70,8 @@ internal static class PlaybackClaims
     }
 
     /// <summary>
-    /// Software AV1 has one path (zero-copy D3D12). Xbox One (no AVX2), or a console where
-    /// bale_gpu.dll can't register d3d12.dll, claims no software AV1, so the server transcodes it.
-    /// MPEG-4 Part 2 uses ordinary software output and is independent of zero-copy registration.
+    /// Software video keeps the measured Series/AVX2 device gate. dav1d uses CPU buffers and grain
+    /// on D3D11, so AV1 claims do not load or depend on the dormant D3D12 zero-copy runtime.
     /// </summary>
-    private static bool SoftwareVideo() => DeviceIdentity.SoftwareVideoSupported && ZeroCopyRuntime.Register();
+    private static bool SoftwareVideo() => DeviceIdentity.SoftwareVideoSupported;
 }

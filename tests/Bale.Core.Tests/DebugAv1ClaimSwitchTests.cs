@@ -51,15 +51,17 @@ public class DebugAv1ClaimSwitchTests
         var capture = player.IndexOf(captureText, StringComparison.Ordinal);
         AssertDebugGuard(player, capture);
         Assert.DoesNotContain("DebugAv1ClaimSwitch", player[(capture + captureText.Length)..]);
-        var raised = player.IndexOf("if (attempt.Av1ClaimMaxHeight == 2160 && softwareVideo)", StringComparison.Ordinal);
+        var raised = player.IndexOf("if (attempt.Av1ClaimMaxHeight == 2160 && attempt.Av1Decoder == \"rav1g\" && softwareVideo)", StringComparison.Ordinal);
         var off = player.IndexOf("capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);", StringComparison.Ordinal);
         AssertDebugGuard(player, raised);
         Assert.True(raised < off);
         // The raised AV1 bound keeps the probed hardware claims.
         Assert.Contains("capabilities = capabilities with { VideoDecode = ConsoleEvidence.BuildVideoDecode(await HardwareDecodeProbe.Limits, 3840, 2160) };", player[raised..off]);
-        var log = player.IndexOf("Log.Info(\"player: av1 claim=2160p (debug)\");", StringComparison.Ordinal);
+        var log = player.IndexOf("Log.Info(attempt.Av1Decoder == \"rav1g\" ? \"player: av1 claim=2160p (debug rav1g)\"", StringComparison.Ordinal);
         AssertDebugGuard(player, log);
-        Assert.Contains("if (attempt.Av1ClaimMaxHeight == 2160 && attempt.FfmpegEnabled)", player[off..log]);
+        Assert.Contains("if (attempt.Av1ClaimMaxHeight == 2160 && softwareVideo && attempt.FfmpegEnabled)", player[off..log]);
+        Assert.Contains("player: av1 claim=1080p (dav1d cap; debug av1-claim 2160 ignored)", player);
+        Assert.Equal(1, player.Split("debug av1-claim 2160 ignored").Length - 1);
         Assert.DoesNotContain("DebugAv1ClaimSwitch", Read("DebugServer.Ffmpeg.cs.txt"));
     }
 

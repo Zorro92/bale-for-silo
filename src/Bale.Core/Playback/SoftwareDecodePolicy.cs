@@ -62,12 +62,11 @@ public static class SoftwareDecodePolicy
     public static DeviceCapabilities WithoutSoftwareVideo(DeviceCapabilities device) =>
         FilterDevice(device, "without_software_video");
 
-    /// <summary>AV1 alone needs the zero-copy runtime; ordinary MPEG-4 software output does not.</summary>
-    public static DeviceCapabilities ForSoftwareVideo(DeviceCapabilities device, bool supported, bool av1ZeroCopy) =>
+    /// <summary>Software AV1 uses D3D11 CPU buffers and grain; no D3D12 or zero-copy capability is needed.</summary>
+    public static DeviceCapabilities ForSoftwareVideo(DeviceCapabilities device, bool supported) =>
         FilterDevice(device, "for_software_video", writer =>
         {
             writer.WriteBoolean("supported", supported);
-            writer.WriteBoolean("av1_zero_copy", av1ZeroCopy);
         });
 
     /// <summary>
@@ -113,7 +112,7 @@ public static class SoftwareDecodePolicy
     /// decoder (system decoder, or FFmpeg software for an allowlisted codec), and a software-video route
     /// must have at least one video stream: the server planned a software decode, so a source without
     /// video is a failed open that must replan to a server transcode, never silent audio-only playback.
-    /// When supplied, softwareCodec also keeps AV1 zero-copy and ordinary MPEG-4 output separate.
+    /// When supplied, softwareCodec also keeps AV1 and ordinary MPEG-4 output separate.
     /// </summary>
     public static bool VideoDecodersAllowed(bool softwareVideo,
         IReadOnlyCollection<(string? Codec, bool SoftwareDecoder, bool SystemDecoder)> streams, string? softwareCodec = null) =>

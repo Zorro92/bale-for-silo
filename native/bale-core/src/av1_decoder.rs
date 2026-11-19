@@ -1,7 +1,7 @@
 //! The debug AV1 decoder switch (owner, 2026-11-18): software AV1 routes may decode with rav1g (AV1 in
 //! D3D12 compute shaders) through the FFmpegInteropX fork's `GpuDecoderSampleProvider`
 //! (`bale_av1_decoder=1`, wrapper 2.1.0-bale.44; the fork's `bale/design-rav1g-provider.md`) instead of
-//! dav1d zero-copy. Debug builds only; production never asks for rav1g.
+//! dav1d CPU decode/grain on D3D11. Debug builds only; production never asks for rav1g.
 //!
 //! The decisions here: which mounts take rav1g and what they set ([`route`]), which output the live
 //! guard accepts ([`output_verdict`]), whether a failed rav1g mount remounts once on dav1d
@@ -75,7 +75,7 @@ pub struct RouteArgs {
     pub versions: Option<Vec<FileVersion>>,
 }
 
-/// What a mount sets for rav1g. `rav1g` false means today's dav1d zero-copy route, unchanged.
+/// What a mount sets for rav1g. `rav1g` false means dav1d CPU decode/grain on D3D11.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct RouteDecision {
     pub rav1g: bool,
@@ -382,9 +382,11 @@ pub struct RemountArgs {
     pub hdr_output_failed: bool,
     pub subtitle_failure: bool,
     pub start_budget: bool,
+    /// Delivered source height, never the scaled display output; unknown fails closed.
+    pub source_height: Option<i64>,
 }
 
-/// Whether a failed mount remounts the same plan once on dav1d zero-copy instead of spending the
+/// Whether a failed mount of at most 1080 lines remounts once on dav1d/D3D11 instead of spending the
 /// single server replan, as the console-downscale-declined remount does. Failures that say nothing
 /// about the decoder (HDMI, subtitles, a start that ran out of time) take the ordinary path; a second
 /// failure always does, so this never loops.
@@ -395,6 +397,7 @@ pub fn remount_on_dav1d(args: &RemountArgs) -> bool {
         && !args.hdr_output_failed
         && !args.subtitle_failure
         && !args.start_budget
+        && matches!(args.source_height, Some(1..=1080))
 }
 
 /// One of the fork's fixed `Bale rav1g:` log lines (BaleRav1g.h, GpuDecoderSampleProvider.h).
@@ -809,15 +812,25 @@ mod tests {
             hdr_output_failed: false,
             subtitle_failure: false,
             start_budget: false,
+            source_height: Some(1080),
         };
         assert!(remount_on_dav1d(&base));
-        let changes: [fn(&mut RemountArgs); 6] = [
+        assert!(remount_on_dav1d(&RemountArgs {
+            source_height: Some(720),
+            ..base
+        }));
+        let changes: [fn(&mut RemountArgs); 11] = [
             |a: &mut RemountArgs| a.rav1g_route = false,
             |a: &mut RemountArgs| a.rav1g_active = false,
             |a: &mut RemountArgs| a.remounted = true,
             |a: &mut RemountArgs| a.hdr_output_failed = true,
             |a: &mut RemountArgs| a.subtitle_failure = true,
             |a: &mut RemountArgs| a.start_budget = true,
+            |a: &mut RemountArgs| a.source_height = Some(1081),
+            |a: &mut RemountArgs| a.source_height = Some(2160),
+            |a: &mut RemountArgs| a.source_height = None,
+            |a: &mut RemountArgs| a.source_height = Some(0),
+            |a: &mut RemountArgs| a.source_height = Some(-1),
         ];
         for change in changes {
             let mut args = RemountArgs { ..base };

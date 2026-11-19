@@ -245,6 +245,30 @@ public class PlaybackReplanTests
             .Any(feature => feature.GetString() == PlaybackProtocol.SoftwareVideoDecodeFeature));
     }
 
+    [Theory]
+    [InlineData(unchecked((int)0xC00D36B4))] // MF_E_UNSUPPORTED_FORMAT: rav1g declined a 4K open.
+    [InlineData(unchecked((int)0x80042B23))] // rav1g stream failure after opening.
+    public void Rav1g4KFailureReplansWithoutReclaiming4KAv1(int hresult)
+    {
+        var baseline = Start();
+        var raised = ConsoleEvidence.Default with { VideoDecode = ConsoleEvidence.BuildVideoDecode(3840, 2160) };
+        var start = baseline with { ClientCapabilities = baseline.ClientCapabilities with { VideoDecode = raised.VideoDecode } };
+        Assert.Contains(start.ClientCapabilities.VideoDecode, entry => entry.Codec == "av1" && entry.MaxHeight == 2160);
+        var plan = PlaybackRoutePolicyTests.Plan("original_http", "av1", "eac3");
+        plan.Source!.Width = 3840;
+        plan.Source.Height = 2160;
+        var route = PlaybackRoutePolicy.Decide(plan, false);
+        Assert.False(Rav1gPolicy.RemountOnDav1d(true, true, false, false, false, false, route.VideoHeight));
+        var request = PlaybackReplan.ForFailure(start, plan, "mount", [], 1, 42,
+            PlaybackReplan.Classify(hresult, false, false), route);
+        // Recovery reuses and filters the start request; it never rebuilds debug capabilities.
+        Assert.DoesNotContain("av1", request.ClientCapabilities.CodecsVideo);
+        Assert.DoesNotContain(request.ClientCapabilities.VideoDecode, entry => entry.Codec == "av1");
+        Assert.All(request.ClientPlaybackContext.Deliveries.Values, delivery => Assert.DoesNotContain("av1", delivery.VideoCodecs));
+        Assert.Contains("server transcode required", request.Failure!.Message);
+        Assert.Contains(start.ClientCapabilities.VideoDecode, entry => entry.Codec == "av1" && entry.MaxHeight == 2160);
+    }
+
     [Fact]
     public void SystemFailuresDoNotWithdrawWorkingFfmpegClaims()
     {

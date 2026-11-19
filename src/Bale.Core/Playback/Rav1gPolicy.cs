@@ -10,7 +10,7 @@ namespace Bale.Core.Playback;
 public sealed record Av1SourceFacts(long? BitDepth, uint? Primaries, uint? Transfer, uint? Matrix, double? FrameRate);
 
 /// <summary>
-/// What a mount sets for rav1g; <see cref="Rav1g"/> false is today's dav1d zero-copy route, unchanged.
+/// What a mount sets for rav1g; <see cref="Rav1g"/> false is the dav1d D3D11 CPU route.
 /// <see cref="DecodeAheadFrames"/> is <c>bale_decode_ahead_frames</c> on the rav1g route (null: the software default).
 /// </summary>
 public sealed record Rav1gRouteDecision(bool Rav1g, int? BufferMs, int? OutputWidth, int? OutputHeight, bool ToneMap,
@@ -32,7 +32,7 @@ public sealed record Rav1gLogEvent(string Kind, string Detail);
 /// <summary>
 /// The debug AV1 decoder switch (owner, 2026-11-18): software AV1 may decode with rav1g through the
 /// FFmpegInteropX fork's GPU provider (<c>bale_av1_decoder=1</c>, wrapper 2.1.0-bale.44) instead of
-/// dav1d zero-copy. Debug builds only. Implemented in Rust (native/bale-core/src/av1_decoder.rs).
+/// dav1d on D3D11. Debug builds only. Implemented in Rust (native/bale-core/src/av1_decoder.rs).
 /// </summary>
 public static class Rav1gPolicy
 {
@@ -80,12 +80,12 @@ public static class Rav1gPolicy
         }, BaleCoreJson.Default.Rav1gVerdict);
 
     /// <summary>
-    /// A failed rav1g mount remounts the same plan once on dav1d zero-copy (no server replan), like the
+    /// A failed rav1g mount at a known height of at most 1080 remounts once on dav1d (no server replan), like the
     /// console-downscale-declined remount. HDMI, subtitle and start-budget failures, an open that already fell
-    /// back to dav1d, and any second failure take the ordinary single replan.
+    /// back to dav1d, taller/unknown sources and any second failure take the ordinary single replan.
     /// </summary>
     public static bool RemountOnDav1d(bool rav1gRoute, bool rav1gActive, bool remounted, bool hdrOutputFailed,
-        bool subtitleFailure, bool startBudget) =>
+        bool subtitleFailure, bool startBudget, long? sourceHeight) =>
         BaleCoreNative.Call("av1_decoder.remount_on_dav1d", writer =>
         {
             writer.WriteBoolean("rav1g_route", rav1gRoute);
@@ -94,6 +94,7 @@ public static class Rav1gPolicy
             writer.WriteBoolean("hdr_output_failed", hdrOutputFailed);
             writer.WriteBoolean("subtitle_failure", subtitleFailure);
             writer.WriteBoolean("start_budget", startBudget);
+            writer.Number("source_height", sourceHeight);
         }, BaleCoreJson.Default.Boolean);
 
     /// <summary>The fork's rav1g log line, or null for any other line.</summary>

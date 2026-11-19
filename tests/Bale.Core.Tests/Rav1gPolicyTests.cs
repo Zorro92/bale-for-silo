@@ -120,7 +120,18 @@ public sealed class Rav1gPolicyTests
     [InlineData(true, true, false, false, false, true, false)]
     public void FailedRav1gMountRemountsOnceOnDav1d(bool route, bool active, bool remounted, bool hdr, bool subtitle,
         bool budget, bool expected) =>
-        Assert.Equal(expected, Rav1gPolicy.RemountOnDav1d(route, active, remounted, hdr, subtitle, budget));
+        Assert.Equal(expected, Rav1gPolicy.RemountOnDav1d(route, active, remounted, hdr, subtitle, budget, 1080));
+
+    [Theory]
+    [InlineData(720L, true)]
+    [InlineData(1080L, true)]
+    [InlineData(1081L, false)]
+    [InlineData(2160L, false)]
+    [InlineData(null, false)]
+    [InlineData(0L, false)]
+    [InlineData(-1L, false)]
+    public void Dav1dRemountRequiresAKnownSourceAtMost1080(long? height, bool expected) =>
+        Assert.Equal(expected, Rav1gPolicy.RemountOnDav1d(true, true, false, false, false, false, height));
 
     [Theory]
     [InlineData("Bale rav1g: loaded rav1g 0.4.0 (interface 1)\n", "loaded")]

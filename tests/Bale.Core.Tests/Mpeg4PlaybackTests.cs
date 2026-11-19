@@ -114,7 +114,7 @@ public class Mpeg4PlaybackTests
         }
         source.VideoStreams[0].DecoderEngine = DecoderEngine.FFmpegSoftwareDecoder;
         source.VideoStreams.Add(new() { CodecName = "av1", DecoderEngine = DecoderEngine.FFmpegSoftwareDecoder });
-        // AV1 cannot ride the MPEG-4 route without its own zero-copy configuration (or vice versa).
+        // AV1 cannot ride the MPEG-4 route without its own grain configuration (or vice versa).
         Assert.Throws<InvalidDataException>(() => FfmpegSource.ValidateVideoDecoders(source, route));
     }
 
@@ -152,19 +152,18 @@ public class Mpeg4PlaybackTests
     }
 
     [Theory]
-    [InlineData(true, true, true, true)]
-    [InlineData(true, false, false, true)]
-    [InlineData(false, true, false, false)]
-    [InlineData(false, false, false, false)]
-    public void Mpeg4NeedsMeasuredSoftwareSupportButDoesNotDependOnAv1ZeroCopy(bool supported, bool zeroCopy,
-        bool av1, bool mpeg4)
+    [InlineData(true)]
+    [InlineData(false)]
+    public void SoftwareClaimsDependOnlyOnMeasuredDeviceSupport(bool supported)
     {
-        var device = SoftwareDecodePolicy.ForSoftwareVideo(ConsoleEvidence.Default, supported, zeroCopy);
+        var device = SoftwareDecodePolicy.ForSoftwareVideo(ConsoleEvidence.Default, supported);
         var start = Start(device);
-        Assert.Equal(av1, start.ClientCapabilities.CodecsVideo.Contains("av1"));
-        Assert.Equal(mpeg4, start.ClientCapabilities.CodecsVideo.Contains("mpeg4"));
-        Assert.Equal(mpeg4, start.ClientCapabilities.VideoDecode.Any(entry => entry.Codec == "mpeg4"));
-        Assert.Equal(av1 || mpeg4, start.ClientFeatures.Contains(PlaybackProtocol.SoftwareVideoDecodeFeature));
+        Assert.Equal(supported, start.ClientCapabilities.CodecsVideo.Contains("av1"));
+        Assert.Equal(supported, start.ClientCapabilities.CodecsVideo.Contains("mpeg4"));
+        Assert.Equal(supported, start.ClientCapabilities.VideoDecode.Any(entry => entry.Codec == "mpeg4"));
+        Assert.Equal(supported, start.ClientFeatures.Contains(PlaybackProtocol.SoftwareVideoDecodeFeature));
+        Assert.All(start.ClientCapabilities.VideoDecode.Where(entry => entry.Codec == "av1"),
+            entry => Assert.True(entry.MaxHeight <= 1080));
     }
 
     private static void AssertWithdrawn(ClientCodecCapabilities caps, ClientPlaybackContext context)

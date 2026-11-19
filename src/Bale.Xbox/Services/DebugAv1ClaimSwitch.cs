@@ -3,7 +3,7 @@ namespace Bale.Xbox.Services;
 
 /// <summary>
 /// Memory-only AV1 claim bound, captured per playback attempt. Debug builds start at 2160 (owner, 2026-11-19: 4K AV1
-/// on rav1g for testing); `av1-claim 1080` lowers it until restart. Release builds claim 1080p60.
+/// on rav1g for testing, ignored with dav1d which stays at 1080); `av1-claim 1080` lowers it until restart. Release builds claim 1080p60.
 /// </summary>
 internal static class DebugAv1ClaimSwitch
 {

@@ -212,11 +212,8 @@ pub struct FilteredDevice {
 pub enum DeviceFilter {
     /// Drops only the bundled software video claims; audio fallbacks stay.
     WithoutSoftwareVideo,
-    /// AV1 alone needs the zero-copy runtime; ordinary MPEG-4 software output does not.
-    ForSoftwareVideo {
-        supported: bool,
-        av1_zero_copy: bool,
-    },
+    /// dav1d uses D3D11 CPU buffers and grain; no D3D12 or zero-copy gate.
+    ForSoftwareVideo { supported: bool },
     /// Drops every claim that needs FFmpeg: software video, demuxer-only video and fallback audio,
     /// plus the base-layer, dynamic-range and progressive executors (FFmpeg's demuxer, tone map and
     /// non-seekable input; Windows' sources need a length).
@@ -276,16 +273,8 @@ pub fn filter_device(args: FilterDeviceArgs) -> FilteredDevice {
     };
     match args.filter {
         DeviceFilter::WithoutSoftwareVideo => without_software(device),
-        DeviceFilter::ForSoftwareVideo {
-            supported: false, ..
-        } => without_software(device),
-        DeviceFilter::ForSoftwareVideo {
-            av1_zero_copy: true,
-            ..
-        } => keep_all(device),
-        DeviceFilter::ForSoftwareVideo { .. } => {
-            filter(device, &|c| c != "av1", &|d| d.codec != "av1")
-        }
+        DeviceFilter::ForSoftwareVideo { supported: false } => without_software(device),
+        DeviceFilter::ForSoftwareVideo { supported: true } => keep_all(device),
         DeviceFilter::WithoutFallbacks => FilteredDevice {
             audio_decode_codecs: device
                 .audio_decode_codecs
@@ -327,7 +316,7 @@ pub struct VideoDecodersArgs {
 /// decoder (system decoder, or FFmpeg software for an allowlisted codec), and a software-video route
 /// must have at least one video stream: the server planned a software decode, so a source without
 /// video is a failed open that must replan to a server transcode, never silent audio-only playback.
-/// When supplied, `software_codec` also keeps AV1 zero-copy and ordinary MPEG-4 output separate.
+/// When supplied, `software_codec` also keeps AV1 and ordinary MPEG-4 output separate.
 pub fn video_decoders_allowed(args: VideoDecodersArgs) -> bool {
     if args.software_video && args.streams.is_empty() {
         return false;
@@ -459,6 +448,24 @@ pub fn without_failed_fallbacks(args: FailedFallbacksArgs) -> FilteredStart {
 #[cfg(test)]
 mod tests {
     use super::normalize_codec;
+
+    #[test]
+    fn software_av1_claim_needs_no_zero_copy_capability() {
+        let args = serde_json::from_value(serde_json::json!({
+            "device": {
+                "video_codecs": ["av1", "h264"],
+                "video_decode": [{ "codec": "av1", "hardware": false, "max_height": 1080 }],
+                "audio_decode_codecs": [],
+                "containers": []
+            },
+            "filter": "for_software_video",
+            "supported": true
+        }))
+        .unwrap();
+        let result = super::filter_device(args);
+        assert!(result.video_codecs.iter().any(|codec| codec == "av1"));
+        assert_eq!(result.video_decode, vec![0]);
+    }
 
     fn n(codec: &str) -> Option<String> {
         normalize_codec(Some(codec))

@@ -225,8 +225,9 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   output the input's depth; AV1 grain at the stream's depth). The console tone map's inputs are all 10-bit,
   so it writes P010, and `FfmpegVideoOutputGuard` rejects NV12 stage output unless bale_gpu lacks P010.
   FFmpeg software decode outputs P010 for every source above 8 bits (fork bale.41+) and NV12 for 8-bit sources, also 4:2:2, 4:4:4, full range, RGB and grey (bale.42+).
-  8-bit AV1 zero-copy stores 8-bit samples shifted into the P010 pool (no 10-bit processing) until rav1g;
-  the rav1g integration pool takes NV12 textures for 8-bit AV1 and P010 for 10-bit (owner, 2026-11-17).
+  dav1d now hands MF CPU NV12 for 8-bit AV1 and P010 for 10-bit on D3D11 (owner, 2026-11-19);
+  rav1g takes NV12 textures for 8-bit and P010 for 10-bit. Only debug `dav1d-path zerocopy` keeps
+  the old D3D12 P010 pool with shifted 8-bit samples (no 10-bit processing).
   The engine's output is capped at the display's depth, per mount (`EngineOutputPolicy`, Rust
   `engine_output.rs`, passed to `bale_gpu_engine_session_open_target` as `MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT`,
   logged once per open with current HDMI bpp): P010 → R10G10B10A2 for HDR passthrough (not console tone-mapped),
@@ -259,14 +260,22 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   for build/release steps. The fork's CI forbids IDL/project changes and checks the built winmd's public
   type names against the retained upstream package. Bale no longer carries the wrapper patch series
   or builds wrapper packages; native FFmpeg builds remain here.
-- Software AV1 has one path: libdav1d decodes into `bale_gpu` zero-copy D3D12 buffers, then the D3D12
-  direct write (`bale_zc_*`, fused GPU grain) or the D3D11 landing fallback (`bale_zc_repack` +
-  `bale_grain_gpu_*`) fills the pooled texture. 8- and 10-bit 4:2:0 (Main profile) only; GPU grain only.
-  Anything zero-copy can't take, and any zero-copy failure, goes to server transcode. There is no CPU
-  grain, staging upload, swscale thread pool, upload variant choice, debug repack or upload/zero-copy probe.
-  Debug only: `bale-debug.sh av1-decoder rav1g` decodes it with rav1g on the fork's GPU provider instead (250 ms
-  BufferTime and a frame-rate-based output texture cap, rav1g-mark guard, one dav1d remount on failure; debug builds package the `scripts/rav1g.json` DLL);
-  docs/player-plan.md, "rav1g (debug)".
+- **AV1 chain (owner, 2026-11-19):** rav1g (D3D12, debug default since da3e045) → dav1d
+  on D3D11 with CPU NV12/P010 buffers and dav1d CPU film grain, **max 1080p** → server transcode.
+  Keep dav1d for older consoles; the measured Series/AVX2 software-device claim gate remains.
+  dav1d must not require D3D12: neither claims nor its default configuration register zero-copy.
+  `bale_film_grain_mode=0` means dav1d applies grain; 2 is GPU grain, only on zero-copy streams.
+  `bale_dav1d_export_film_grain=1` (`ffmpeg-tune grain=off`) wins over either: export only, no grain applied.
+  Debug `dav1d-path [d3d11|zerocopy]` is memory only, captured per attempt, default d3d11. `zerocopy`
+  alone restores the old `ZeroCopyRuntime` / `bale_zc_*` D3D12 route (upload 6, GPU grain); failed
+  registration logs and keeps D3D11. Leave this runtime and bale_gpu zero-copy code dormant otherwise.
+  rav1g always sets `bale_av1_fallback_max_height=1080` (wrapper bale.59): a taller stream whose GPU
+  open declines fails with MF_E_UNSUPPORTED_FORMAT and takes the normal failure replan. A failed active
+  rav1g mount remounts once on dav1d only with a known source height of at most 1080 (never the scaled
+  output height); taller/unknown sources replan directly, withdrawing software claims including 2160.
+  Debug `av1-claim 2160` adds 4K30 only with `av1-decoder rav1g`; dav1d stays at 1080p60 and logs an
+  ignored 2160 override once per attempt. rav1g keeps its 250 ms buffer and frame-rate-based texture cap;
+  debug builds package the `scripts/rav1g.json` DLL. See docs/player-plan.md, "rav1g (debug)".
 - All builds tune software AV1 with `bale_decode_ahead_frames=16` and a 1000 ms
   MSS BufferTime. Above 1080p `SoftwareDecodeTuning` trims decode-ahead to 8 and BufferTime to 500 ms
   (~460 MiB less at 4K, console-measured) and sets `bale_dav1d_max_frame_delay=6` (width > 1920 or
@@ -283,11 +292,11 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   matching counts only hardware and bounded entries, so it never prefers a software 4K decode.
   `SoftwareDecodePolicy.VideoCodecs` now means the software-only codecs (no hardware decoder). Video
   outside the FFmpeg list goes to server transcode. Measured AV1 evidence: 8/10-bit, **1080p60** (0.1.230 at 24 fps,
-  0.1.439 at 59.94 fps). Production claims no 4K; the debug 2160 bound adds a separate 4K **30** fps entry.
+  0.1.439 at 59.94 fps). Production claims no 4K; the debug 2160 bound adds a separate 4K **30** fps entry only with rav1g.
   MPEG-4 Part 2 and every other non-AV1 software codec use FFmpegInteropX's ordinary software output,
-  never AV1 zero-copy or D3D11VA. MPEG-4 measurements (owner's Series X, 30 s each, 0 late frames):
+  never AV1-specific grain options or D3D11VA. MPEG-4 measurements (owner's Series X, 30 s each, 0 late frames):
   512×384 (0.06 cores), 720×480 (0.08), 1920×1080 (0.30); its claim is unbounded since 2026-11-17. Software video remains limited to the measured Series/AVX2
-  devices; MPEG-4 does not depend on AV1 zero-copy registration. AVI is an FFmpeg-only original
+  devices; software AV1 and MPEG-4 need no zero-copy registration. AVI is an FFmpeg-only original
   container; neither AVI nor MPEG-4 is offered over progressive/HLS. `WithoutFallbacks` withdraws
   both; a failed FFmpeg software mount withdraws software codecs and AVI on the single replan.
 - Hardware video claims (H.264, HEVC, VP9, VC-1, MPEG-2) follow the console's own decoder report, not hand-set
@@ -439,7 +448,7 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   (default 1). `ahead` is 0–64 decoded frames (0 = off),
   `delay` is 0–64 dav1d frames (0 = dav1d default), and `prio` is 0–2 (0 = off,
   1 = THREAD_PRIORITY_ABOVE_NORMAL, 2 = THREAD_PRIORITY_HIGHEST; default unset). Software-mode
-  probes use the release ahead=16 default and the production zero-copy path; URI probes have unknown dimensions before creation, so delay stays
+  probes use the release ahead=16 default and D3D11 CPU output/dav1d CPU grain; URI probes have unknown dimensions before creation, so delay stays
   unset unless overridden (use delay=6 for a known above-1080p comparison). Auto/system probes
   retain the wrapper defaults unless overridden; threads/10bit defaults are 0/true. `10bit=off`
   requests 8-bit NV12 instead of 10-bit P010 for 10-bit AV1. The response reports applied values/defaults

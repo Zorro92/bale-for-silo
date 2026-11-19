@@ -12,7 +12,7 @@ internal static class FfmpegSource
 
     /// <param name="rav1g">The debug AV1 decoder switch's decision for this mount (Rav1gPolicy.Route); null is dav1d.</param>
     internal static MediaSourceConfig Configuration(PlaybackRouteDecision route, DebugFfmpegInputTuning tuning,
-        Rav1gRouteDecision? rav1g = null)
+        Rav1gRouteDecision? rav1g = null, string dav1dPath = "d3d11")
 #endif
     {
         // Debug captures only our safe Bale diagnostics; production keeps the native logger off.
@@ -27,8 +27,8 @@ internal static class FfmpegSource
         // Exact seeks (docs/player-plan.md, 2026-11-16): upstream's fast seek jumps to the nearest
         // keyframe, 4.5-10 s off and often late, skipping content. The normal backward seek lands on
         // the target; Media Foundation and d3d11va start presenting there (console-verified 0.1.557).
-        // Software video keeps fast seek: dav1d's zero-copy path uploads every frame from the keyframe
-        // to the target, and a 4K AV1 seek ran out of GPU memory (0x8007000E) on 0.1.558.
+        // Keep the existing fast-seek policy for software video: its earlier zero-copy route uploaded
+        // every frame from the keyframe, and a 4K seek ran out of GPU memory (0x8007000E) on 0.1.558.
         config.General.FastSeek = route.SoftwareVideo;
         if (route.ConsoleStage && (route.VideoCodec is not ("hevc" or "vp9") || !ConsoleToneMapRuntime.IsAvailable))
             throw new InvalidDataException("Console tone mapping is unavailable for this source.");
@@ -54,14 +54,20 @@ internal static class FfmpegSource
         config.Subtitles.AutoSelectForcedSubtitles = false;
         config.FFmpegOptions["rw_timeout"] = "10000000";
         ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(softwareVideo, route.VideoWidth, route.VideoHeight));
-        // Only AV1 uses zero-copy/GPU grain. MPEG-4 Part 2 uses FFmpegInteropX's ordinary
-        // software provider; it has neither a D3D11VA decoder nor an AV1 zero-copy output path.
+        // AV1 uses dav1d CPU output and CPU grain on D3D11 (owner, 2026-11-19).
+        // Other software codecs use the ordinary provider without AV1-specific grain options.
 #if DEBUG_SERVER
         // Debug only (owner, 2026-11-18): rav1g decodes software AV1 on the fork's GPU provider instead.
-        if (rav1g is { Rav1g: true } && softwareVideo && route.VideoCodec == "av1") ApplyRav1g(config, rav1g);
+        if (rav1g is { Rav1g: true } && softwareVideo && route.VideoCodec == "av1") ApplyRav1g(config, rav1g, dav1dPath);
         else
 #endif
-        if (softwareVideo && route.VideoCodec == "av1") ApplySoftwareVideo(config);
+        if (softwareVideo && route.VideoCodec == "av1")
+        {
+            ApplySoftwareVideo(config);
+#if DEBUG_SERVER
+            ApplyDav1dPath(config, dav1dPath);
+#endif
+        }
 #if DEBUG_SERVER
         if (tuning.Decoder is DebugFfmpegDecoder.System or DebugFfmpegDecoder.Software)
             config.FFmpegOptions.Remove("bale_tonemap");
@@ -74,17 +80,13 @@ internal static class FfmpegSource
     }
 
     /// <summary>
-    /// Software AV1's one path: zero-copy D3D12 decode, direct write into upload variant 6, GPU grain.
-    /// PlayerPage claims no software AV1 when registration fails, so this throw is a backstop; an open
-    /// failure on a software route replans to a server transcode.
+    /// dav1d decodes and applies film grain on the CPU, handing MF CPU NV12 (8-bit) or P010 (10-bit)
+    /// buffers on Direct3D 11. No D3D12 registration or bale_gpu upload is needed, so the fallback works
+    /// without D3D12 (owner, 2026-11-19). Its capability claim and rav1g fallback are capped at 1080p.
     /// </summary>
     internal static void ApplySoftwareVideo(MediaSourceConfig config)
     {
-        // Patch 0015: bale_gpu.dll needs d3d12.dll registered before the upload device arrives.
-        if (!ZeroCopyRuntime.Register()) throw new InvalidDataException("Software AV1 needs zero-copy.");
-        config.FFmpegOptions["bale_d3d11_upload"] = SoftwareDecodeTuning.DefaultD3d11Upload.ToString(CultureInfo.InvariantCulture);
         config.FFmpegOptions["bale_film_grain_mode"] = SoftwareDecodeTuning.FilmGrainMode.ToString(CultureInfo.InvariantCulture);
-        config.FFmpegOptions["bale_zero_copy"] = "1";
     }
 
     /// <summary>
@@ -123,18 +125,34 @@ internal static class FfmpegSource
 
 #if DEBUG_SERVER
     /// <summary>
-    /// The debug rav1g route (wrapper 2.1.0-bale.44, the fork's bale/design-rav1g-provider.md): bale_av1_decoder=1 puts
-    /// AV1 on GpuDecoderSampleProvider. rav1g needs no zero-copy registration, so its absence never fails the open.
-    /// The fork ignores the zero-copy/grain keys for a rav1g stream but honours them when the open falls back to dav1d
-    /// (rav1g.dll missing, ABI mismatch, unsupported stream), so they are set whenever zero-copy registers: that
-    /// fallback is then today's dav1d path. The stage keys work as on the D3D11 path: SDR larger than the display is
-    /// downscaled by bale_gpu (never Media Foundation's leaking scaler), PQ/HLG is tone-mapped on an SDR display;
-    /// a dav1d fallback ignores them.
+    /// Debug-only restoration of the old dav1d zero-copy path for a grain A/B. The caller passes the
+    /// attempt's captured switch; failure to register keeps D3D11 CPU output and CPU grain.
     /// </summary>
-    internal static void ApplyRav1g(MediaSourceConfig config, Rav1gRouteDecision rav1g)
+    private static void ApplyDav1dPath(MediaSourceConfig config, string path)
     {
-        if (ZeroCopyRuntime.Register()) ApplySoftwareVideo(config);
-        else Log.Info("player: rav1g route without zero-copy; a dav1d fallback would decode without it");
+        if (path != "zerocopy") return;
+        if (!ZeroCopyRuntime.Register())
+        {
+            Log.Info("player: dav1d zero-copy unavailable; using d3d11 CPU output and grain");
+            return;
+        }
+        config.FFmpegOptions["bale_d3d11_upload"] = "6";
+        config.FFmpegOptions["bale_zero_copy"] = "1";
+        config.FFmpegOptions["bale_film_grain_mode"] = "2";
+    }
+
+    /// <summary>
+    /// The debug rav1g route (the fork's bale/design-rav1g-provider.md). Always configure dav1d's
+    /// D3D11 CPU output/grain for an in-open fallback, capped at 1080 lines by wrapper bale.59.
+    /// A taller stream whose GPU open declines fails to the normal server replan. The stage keys
+    /// downscale SDR or tone-map PQ/HLG on an SDR display; a dav1d fallback ignores those keys.
+    /// Only the captured debug dav1d-path zerocopy switch restores the old fallback path.
+    /// </summary>
+    internal static void ApplyRav1g(MediaSourceConfig config, Rav1gRouteDecision rav1g, string dav1dPath = "d3d11")
+    {
+        ApplySoftwareVideo(config);
+        ApplyDav1dPath(config, dav1dPath);
+        config.FFmpegOptions["bale_av1_fallback_max_height"] = "1080";
         config.FFmpegOptions["bale_av1_decoder"] = "1";
         // Decode-ahead from Rav1gPolicy.Route (8, as dav1d above 1080p: since fork bale.46 the buffer no longer competes
         // with rav1g's pool). ApplyInputTuning runs after this, so ffmpeg-tune ahead= still wins.

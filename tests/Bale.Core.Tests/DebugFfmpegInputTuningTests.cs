@@ -318,7 +318,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("public DebugFfmpegInputTuning FfmpegTuning { get; } = DebugFfmpegInputTuning.Current", Read("PlayerPage.cs.txt"));
         var player = Read("PlayerPage.Media.cs.txt");
         Assert.Contains("media.Route.UseFfmpeg ? attempt.FfmpegTuning.Prefetch ?? HttpRangeStream.DefaultPrefetchBlocks", player);
-        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g)", player);
+        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath)", player);
         Assert.Contains("prefetched.PrefetchBlocks", player);
         Assert.Contains("if (!attempt.FfmpegTuningLogged)", player);
         Assert.Contains("attempt.FfmpegTuningLogged = true", player);
@@ -358,7 +358,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["grain"] = "default" }, out var cleared));
         Assert.Null(cleared.FilmGrain);
         Assert.DoesNotContain("grain=", cleared.Description);
-        Assert.Equal(2, SoftwareDecodeTuning.FilmGrainMode);
+        Assert.Equal(0, SoftwareDecodeTuning.FilmGrainMode);
         Assert.Null(DebugFfmpegPlaytest.GrainOption(cleared.FilmGrain));
         foreach (var invalid in new[] { "OFF", "1", "", "true", "cpu" })
             Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["grain"] = invalid }, out _));
@@ -378,43 +378,28 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("grain=dav1d|gpu|off|on|default", DebugFfmpegInputTuning.Usage);
         Assert.Contains("config.FFmpegOptions[\"bale_film_grain_mode\"] = SoftwareDecodeTuning.FilmGrainMode.ToString(CultureInfo.InvariantCulture);", production);
         Assert.Equal(("bale_film_grain_mode", "0"), DebugFfmpegPlaytest.GrainOption(DebugFilmGrain.Dav1d));
-        Assert.Contains("default=gpu (production), on/dav1d=dav1d", DebugFfmpegInputTuning.Usage);
-        Assert.Contains("production default=gpu, on/dav1d=dav1d", Read("DebugServer.cs.txt"));
-        Assert.Contains("grain=default: gpu (production default); on/dav1d: dav1d", Read("bale-debug.sh"));
-        Assert.Contains("software mode uses the production path (zero-copy, upload variant 6, GPU grain)", Read("bale-debug.sh"));
+        Assert.Contains("default=dav1d (d3d11), on/dav1d=dav1d", DebugFfmpegInputTuning.Usage);
+        Assert.Contains("production default=dav1d, on/dav1d=dav1d", Read("DebugServer.cs.txt"));
+        Assert.Contains("grain=default: dav1d (d3d11 default); on/dav1d: dav1d", Read("bale-debug.sh"));
+        Assert.Contains("software mode uses CPU buffers and dav1d CPU grain on D3D11", Read("bale-debug.sh"));
     }
 
     [Fact]
-    public void SoftwareAv1AlwaysTakesTheFixedZeroCopyPathWithNoDebugOverride()
+    public void SoftwareAv1UsesCpuOutputWithoutD3d12InProductionAndProbes()
     {
-        var configuration = Read("FfmpegSource.cs.txt");
-        var start = configuration.IndexOf("    private static void ApplyInputTuning", StringComparison.Ordinal);
-        var end = configuration.IndexOf("#endif", start, StringComparison.Ordinal);
         var production = DebugFfmpegDecoderTests.ProductionSource();
-        Assert.Contains("if (softwareVideo && route.VideoCodec == \"av1\") ApplySoftwareVideo(config);", production);
-        var apply = production[production.IndexOf("internal static void ApplySoftwareVideo(MediaSourceConfig config)", StringComparison.Ordinal)..];
-        var register = apply.IndexOf("if (!ZeroCopyRuntime.Register()) throw new InvalidDataException(", StringComparison.Ordinal);
-        Assert.True(register >= 0);
-        foreach (var line in new[]
-        {
-            "config.FFmpegOptions[\"bale_d3d11_upload\"] = SoftwareDecodeTuning.DefaultD3d11Upload.ToString(CultureInfo.InvariantCulture);",
-            "config.FFmpegOptions[\"bale_film_grain_mode\"] = SoftwareDecodeTuning.FilmGrainMode.ToString(CultureInfo.InvariantCulture);",
-            "config.FFmpegOptions[\"bale_zero_copy\"] = \"1\";",
-        })
-            Assert.True(apply.IndexOf(line, StringComparison.Ordinal) > register, line);
-        foreach (var option in new[] { "\"bale_d3d11_upload\"", "\"bale_zero_copy\"", "\"bale_film_grain_mode\"" })
-            Assert.Equal(1, configuration.Split(option).Length - 1);
-        var experiment = configuration[start..end];
-        foreach (var removed in new[] { "bale_d3d11_upload", "bale_zero_copy", "bale_d3d11_repack", "bale_d3d11_upload_fault_frames", "bale_sws_threads" })
-            Assert.DoesNotContain(removed, experiment);
-        foreach (var removed in new[] { "bale_sws_threads", "bale_d3d11_repack", "bale_d3d11_upload_fault_frames" })
-            Assert.DoesNotContain(removed, configuration);
-        // The probe takes the same path in software mode, before any grain override.
+        Assert.Contains("if (softwareVideo && route.VideoCodec == \"av1\")", production);
+        Assert.Contains("ApplySoftwareVideo(config);", production);
+        Assert.Contains("config.FFmpegOptions[\"bale_film_grain_mode\"] = SoftwareDecodeTuning.FilmGrainMode.ToString(CultureInfo.InvariantCulture);", production);
+        Assert.DoesNotContain("ZeroCopyRuntime.Register()", production);
+        Assert.DoesNotContain("bale_d3d11_upload", production);
+        Assert.DoesNotContain("bale_zero_copy", production);
         var probe = Read("DebugFfmpegSource.cs.txt");
         var shared = probe.IndexOf("if (mode == \"software\") FfmpegSource.ApplySoftwareVideo(config);", StringComparison.Ordinal);
         Assert.True(shared >= 0 && shared < probe.IndexOf("DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain)", StringComparison.Ordinal));
-        Assert.DoesNotContain("bale_d3d11_upload", probe);
-        Assert.Contains("software AV1 is fixed to zero-copy direct write (upload variant 6", DebugFfmpegInputTuning.Usage);
+        Assert.DoesNotContain("ZeroCopyRuntime", probe);
+        Assert.DoesNotContain("DebugDav1dPathSwitch", probe);
+        Assert.Contains("software AV1 uses D3D11 CPU output", DebugFfmpegInputTuning.Usage);
         var server = Read("DebugServer.cs.txt");
         Assert.Contains("FFmpeg tuning: {DebugFfmpegInputTuning.Current.Description}", server);
         Assert.Contains("FFmpeg tuning: {tuning.Description}", server);
@@ -440,13 +425,14 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     }
 
     [Fact]
-    public void PlayerRequiresZeroCopyOnlyForAv1AndSharesTheDeviceGateWithDisplayMatching()
+    public void PlayerSharesTheSoftwareDeviceGateWithDisplayMatchingWithoutD3d12()
     {
         // The gate lives in the claims helper the player shares with Auto's display matching.
         var claims = Read("PlaybackClaims.cs.txt");
-        Assert.Contains("private static bool SoftwareVideo() => DeviceIdentity.SoftwareVideoSupported && ZeroCopyRuntime.Register();", claims);
-        Assert.Contains("SoftwareDecodePolicy.ForSoftwareVideo(capabilities, DeviceIdentity.SoftwareVideoSupported, softwareVideo)", claims);
-        Assert.Contains("SoftwareDecodePolicy.ForSoftwareVideo(claims, DeviceIdentity.SoftwareVideoSupported, SoftwareVideo())", claims);
+        Assert.Contains("private static bool SoftwareVideo() => DeviceIdentity.SoftwareVideoSupported;", claims);
+        Assert.DoesNotContain("ZeroCopyRuntime.Register()", claims);
+        Assert.Contains("SoftwareDecodePolicy.ForSoftwareVideo(capabilities, softwareVideo)", claims);
+        Assert.Contains("SoftwareDecodePolicy.ForSoftwareVideo(claims, SoftwareVideo())", claims);
         Assert.DoesNotContain("#if", claims);
         var player = Read("PlayerPage.cs.txt");
         var detect = player.IndexOf("var (capabilities, softwareVideo) = await PlaybackClaims.DetectAsync();", StringComparison.Ordinal);

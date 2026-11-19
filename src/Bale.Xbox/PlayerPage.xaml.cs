@@ -88,6 +88,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public int Av1ClaimMaxHeight { get; } = DebugAv1ClaimSwitch.MaxHeight;
         /// <summary>dav1d or rav1g for software AV1 (DebugAv1DecoderSwitch), captured when the attempt starts.</summary>
         public string Av1Decoder { get; } = DebugAv1DecoderSwitch.Mode;
+        public string Dav1dPath { get; } = DebugDav1dPathSwitch.Mode;
         /// <summary>A rav1g mount failed and the same plan was remounted on dav1d; later mounts stay on dav1d.</summary>
         public bool Rav1gRemounted { get; set; }
         public bool FfmpegEnabled => FfmpegMode != "off";
@@ -237,7 +238,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 ct.ThrowIfCancellationRequested();
 #if DEBUG_SERVER
                 // Keep the probed hardware claims; only the software AV1 bound is raised.
-                if (attempt.Av1ClaimMaxHeight == 2160 && softwareVideo)
+                if (attempt.Av1ClaimMaxHeight == 2160 && attempt.Av1Decoder == "rav1g" && softwareVideo)
                     capabilities = capabilities with { VideoDecode = ConsoleEvidence.BuildVideoDecode(await HardwareDecodeProbe.Limits, 3840, 2160) };
                 capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);
                 capabilities = DebugHdrPlayback.Capabilities(attempt.PretendHdr, capabilities);
@@ -248,8 +249,9 @@ public sealed partial class PlayerPage : Page, IBackHandler
 #if DEBUG_SERVER
                 start = DebugPlaybackDelivery.Apply(attempt.DeliveryMode, start);
                 if (attempt.DeliveryMode != "auto") Log.Info("player: delivery forced=" + attempt.DeliveryMode);
-                if (attempt.Av1ClaimMaxHeight == 2160 && attempt.FfmpegEnabled)
-                    Log.Info("player: av1 claim=2160p (debug)");
+                if (attempt.Av1ClaimMaxHeight == 2160 && softwareVideo && attempt.FfmpegEnabled)
+                    Log.Info(attempt.Av1Decoder == "rav1g" ? "player: av1 claim=2160p (debug rav1g)"
+                        : "player: av1 claim=1080p (dav1d cap; debug av1-claim 2160 ignored)");
 #endif
                 attempt.Start = start;
                 // The route decodes a hardware codec in FFmpeg when these entries cannot take the file.
@@ -469,9 +471,9 @@ public sealed partial class PlayerPage : Page, IBackHandler
         }
 #if DEBUG_SERVER
         // Debug rav1g switch (owner, 2026-11-18): a rav1g mount that failed (the fork's latched NotifyError, or the guard
-        // rejecting its output) remounts the same plan once on today's dav1d zero-copy path; its failure takes the replan.
+        // rejecting its output) remounts once on dav1d/D3D11 only up to 1080 lines; taller sources take the ordinary replan.
         if (attempt.Media is { } failedMount && Rav1gPolicy.RemountOnDav1d(failedMount.Rav1gRoute, failedMount.Rav1gActive,
-                attempt.Rav1gRemounted, hdrOutputFailed, PlaybackEmbeddedSubtitleFailure.Is(failure), keepsClaims))
+                attempt.Rav1gRemounted, hdrOutputFailed, PlaybackEmbeddedSubtitleFailure.Is(failure), keepsClaims, failedMount.Route.VideoHeight))
         {
             attempt.Rav1gRemounted = true;
             await RemountSamePlanAsync(attempt, position, "player: rav1g failed; remounting the same plan on dav1d");

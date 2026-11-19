@@ -152,6 +152,8 @@
     <Compile Include="../../src/Bale.Xbox/Services/DebugOutputDepthSwitch.cs" Link="DebugOutputDepthSwitch.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugAv1DecoderSwitch.cs" Link="DebugAv1DecoderSwitch.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugStreamAdapterSwitch.cs" Link="DebugStreamAdapterSwitch.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="../../src/Bale.Xbox/Services/DebugDav1dPathSwitch.cs" Link="DebugDav1dPathSwitch.cs" />
+    <None Include="../../src/Bale.Xbox/Services/DebugDav1dPathSwitch.cs" Link="DebugDav1dPathSwitch.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugAv1ClaimSwitch.cs" Link="DebugAv1ClaimSwitch.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugAv1ClaimSwitch.cs" Link="DebugAv1ClaimSwitch.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/RangeRandomAccessStream.cs" Link="RangeRandomAccessStream.cs.txt" CopyToOutputDirectory="PreserveNewest" />

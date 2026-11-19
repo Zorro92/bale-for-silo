@@ -47,7 +47,7 @@ namespace Bale.Xbox.Services;
 ///   GET  /playtest-ffmpeg?url=...  muted FFmpegInteropX probe; seconds=3 (1–60), mode=auto|software|system
 ///                         optional threads=0–16, 10bit=on|off, rate=0.5–2.0 (default 1), ahead=0–64, delay=0–64, prio=0–2, maxres=0|1|default, dpb=0–16|default (system video only),
 ///                         hdr=on|off|default (wrapper HdrSupport Enabled/Disabled; default Automatic),
-///                         grain=dav1d|gpu|off|on|default (software mode default=gpu, production zero-copy upload 6; on/dav1d=dav1d; off=export-only; wrapper 2.1.0-bale.10+)
+///                         grain=dav1d|gpu|off|on|default (software mode default=dav1d, CPU buffers on D3D11; on/dav1d=dav1d; off=export-only; wrapper 2.1.0-bale.10+)
 ///   GET  /playtest-present?url=...  IMFMediaEngine rendering mode (windowless swap chain) on a full-screen panel; seconds=10 (1–60), target=bgra|fp16|rgb10, hdr=on switches HDMI to HDR10 first,
 ///   GET  /playtest-engine?url=...  muted IMFMediaEngine frame-server probe; seconds=3 (1–60), mode=cs|rust|rust-ffmpeg (Rust port in bale_gpu.dll; rust-ffmpeg = FFmpeg software source via engine extension),
 ///                                  target=bgra|fp16|rgb10 (mode=rust only, default bgra: engine output format and texture; fp16/rgb10 add the HDR readback and an hdr-range= verdict)
@@ -59,8 +59,8 @@ namespace Bale.Xbox.Services;
 ///                         optional buffer=0–5000, ahead=0–64, delay=0–64, prio=0–2, maxres=0|1|default, dpb=0–16|default (system video only)
 ///                         colorinfo=on|off|default (compressed system-video colour/HDR metadata; wrapper 2.1.0-bale.26+; no decoder override required)
 ///                         hdr=on|off|default (HdrSupport Enabled/Disabled/Automatic)
-///                         grain=dav1d|gpu|off|on|default (production default=gpu, on/dav1d=dav1d; off=export-only; wrapper 2.1.0-bale.10+)
-///                         software AV1 is fixed to zero-copy direct write (upload variant 6) with GPU grain
+///                         grain=dav1d|gpu|off|on|default (production default=dav1d, on/dav1d=dav1d; off=export-only; wrapper 2.1.0-bale.10+)
+///                         software AV1 uses D3D11 CPU output; dav1d-path zerocopy restores the old D3D12/GPU grain path
 ///   GET  /mem?gc=1        managed GC heap vs app memory; gc=1 first forces a full collection + finalizers
 ///   GET  /gc              GC mode, playback lease, total pauses and last full-blocking/background/ephemeral collections
 ///   POST /gc?latency=...  batch|interactive|sustained|default; default restores the saved pre-playback mode; memory only
@@ -78,15 +78,17 @@ namespace Bale.Xbox.Services;
 ///   POST /engine-target?mode=rgb10  auto|bgra|rgb10|fp16 (MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT); next engine playback attempt
 ///   GET  /output-depth   memory-only engine output-depth ceiling; default display (as in release builds)
 ///   POST /output-depth?mode=source  display|source (P010 always rgb10); next engine mount; engine-target wins
-///   GET  /av1-decoder     memory-only software AV1 decoder; default dav1d (as in release builds); rav1g.dll packaged?
+///   GET  /dav1d-path      memory-only dav1d output/grain path; default d3d11 (CPU buffers and grain)
+///   POST /dav1d-path?mode=zerocopy  d3d11|zerocopy (old D3D12/GPU grain path); next playback attempt
+///   GET  /av1-decoder     memory-only software AV1 decoder; debug default rav1g; rav1g.dll packaged?
 ///   GET  /rav1g-tune      memory-only rav1g provider knobs (fork bale.52): inflight, perf, parse; rav1g route only
 ///   POST /rav1g-tune?inflight=3&perf=on&parse=2  1-8 | on/off | 1-2, each also "default"; next rav1g playback attempt
 ///   POST /av1-decoder?mode=rav1g  dav1d|rav1g (fork GpuDecoderSampleProvider, bale_av1_decoder=1); next playback attempt;
 ///                                 rav1g also starts bale_rav1g_prewarm (device + pipeline compiles) off the UI thread
 ///   GET  /stream-adapter  memory-only media stream switch; default rust
 ///   POST /stream-adapter?mode=rust  rust (Rust range/forward-only streams + Rust WinRT streams)|pooled|builtin (C#); next playback attempt
-///   GET  /av1-claim       memory-only AV1 software-decode claim; default 1080p60, restart resets
-///   POST /av1-claim?height=2160  1080|2160; next playback attempt; 2160 adds a 4K30 entry
+///   GET  /av1-claim       memory-only AV1 claim; debug default 2160 with rav1g only, dav1d capped at 1080p60
+///   POST /av1-claim?height=2160  1080|2160; next playback attempt; 2160 adds a 4K30 entry only with rav1g
 ///   GET  /display-match   memory-only content frame-rate matching; default off
 ///   POST /display-match?mode=on  on|off; applies to the next playback attempt
 ///   GET  /hdr             memory-only HDR comparison mode; default off
@@ -255,7 +257,7 @@ internal sealed partial class DebugServer
         var target = new Uri("http://bale" + parts[1]);
         var path = target.AbsolutePath.TrimEnd('/');
         var query = ParseQuery(target.Query, out var duplicateQueryKeys);
-        if (duplicateQueryKeys && path is ("/open" or "/play" or "/home" or "/navlog" or "/playtest-ffmpeg" or "/ffmpeg-tune" or "/delivery" or "/stats-rows" or "/frame-trace" or "/display-match" or "/gc" or "/frame-delivery" or "/stream-adapter" or "/player-backend" or "/start-budget" or "/seek-watchdog" or "/engine-target" or "/output-depth" or "/av1-decoder" or "/rav1g-tune" or "/av1-claim" or "/idle-test" or "/webview-test"))
+        if (duplicateQueryKeys && path is ("/open" or "/play" or "/home" or "/navlog" or "/playtest-ffmpeg" or "/ffmpeg-tune" or "/delivery" or "/stats-rows" or "/frame-trace" or "/display-match" or "/gc" or "/frame-delivery" or "/stream-adapter" or "/player-backend" or "/start-budget" or "/seek-watchdog" or "/engine-target" or "/output-depth" or "/dav1d-path" or "/av1-decoder" or "/rav1g-tune" or "/av1-claim" or "/idle-test" or "/webview-test"))
             return ("400 Bad Request", "query keys must appear at most once\n");
 
         switch (method, path)
@@ -509,6 +511,17 @@ internal sealed partial class DebugServer
                     return ("400 Bad Request", "mode must be display or source\n");
                 Log.Info($"Debug output depth: {DebugOutputDepthSwitch.Mode}; applies to the next engine mount");
                 return ("200 OK", $"output-depth={DebugOutputDepthSwitch.Mode}\n");
+
+            case ("GET", "/dav1d-path"):
+                if (query.Count != 0)
+                    return ("400 Bad Request", "usage: GET /dav1d-path or POST /dav1d-path?mode={d3d11|zerocopy}\n");
+                return ("200 OK", $"dav1d-path={DebugDav1dPathSwitch.Mode}\n");
+
+            case ("POST", "/dav1d-path"):
+                if (query.Count != 1 || !DebugDav1dPathSwitch.TrySet(query.GetValueOrDefault("mode")))
+                    return ("400 Bad Request", "mode must be d3d11 or zerocopy\n");
+                Log.Info($"Debug dav1d path: {DebugDav1dPathSwitch.Mode}; applies to the next playback attempt");
+                return ("200 OK", $"dav1d-path={DebugDav1dPathSwitch.Mode}\n");
 
             case ("GET", "/av1-decoder"):
                 if (query.Count != 0)
@@ -766,7 +779,7 @@ internal sealed partial class DebugServer
                 return (showStatus, showBody);
 
             default:
-                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, POST /home, POST /open?id=...&file=..., POST /play?id=...&file=...&start=..., GET /navlog?n=50, GET /stats, GET /frame-trace, POST /frame-trace?action=reset, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, GET /playtest-engine?url=...&seconds=3&mode=cs|rust|rust-ffmpeg&target=bgra|fp16|rgb10 (target: rust only), GET /playtest-present?url=...&seconds=10&target=bgra|fp16|rgb10&hdr=on|off, GET /present-engine, POST /present-engine?seconds=0..120, GET /rust, GET /asstest[?png=ms], POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?decoder={auto|system|software|default}&tonemap={off|bt2390|hable|default} (requires decoder=auto and wrapper 2.1.0-bale.25+)&colorinfo={on|off|default} (compressed system-video colour/HDR metadata; wrapper 2.1.0-bale.26+)&readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16&hdr=on|off|default&grain=dav1d|gpu|off|on|default (each key accepts default; grain default=gpu (production), on/dav1d=dav1d; software AV1 is fixed to zero-copy upload variant 6), GET /mem?gc=1, GET /gc, POST /gc?latency={batch|interactive|sustained|default}, GET /frame-delivery, POST /frame-delivery?mode={native|managed|off}, GET /stream-adapter, POST /stream-adapter?mode={pooled|builtin|rust}, GET /player-backend, POST /player-backend?mode={mediaplayer|engine}, GET /start-budget, POST /start-budget?seconds={1..120|default}&hang={none|open|ready}, GET /seek-watchdog, POST /seek-watchdog?seconds={1..120|default}&hang={none|once}, GET /av1-claim, POST /av1-claim?height={1080|2160}, GET /display-match, POST /display-match?mode={on|off}, GET /hdr, POST /hdr?mode={pretend|off}, GET /idle-test, POST /idle-test?action={display-pulse|smtc-playing|smtc-stopped}, GET /webview-test, POST /webview-test?action={open-video|open-blank|close}, POST /seek?seconds=...&pause=true, GET /buffering, POST /buffering?action=stall&ms=8000, POST /playback?state={play|pause|toggle}, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
+                return ("404 Not Found", "routes: GET /log?since=N, POST /press/{up|down|left|right|a|b|menu|view|lb|rb|lt|rt}, POST /key/{VirtualKey}, POST /type?text=, GET /focus, GET /where, POST /home, POST /open?id=...&file=..., POST /play?id=...&file=...&start=..., GET /navlog?n=50, GET /stats, GET /frame-trace, POST /frame-trace?action=reset, GET /stats-rows, POST /stats-rows?action={hide|show|only|reset}&labels=..., GET /caps, GET /playtest?url=...&seconds=3, GET /playtest-ffmpeg?url=...&seconds=3&mode=auto, GET /playtest-engine?url=...&seconds=3&mode=cs|rust|rust-ffmpeg&target=bgra|fp16|rgb10 (target: rust only), GET /playtest-present?url=...&seconds=10&target=bgra|fp16|rgb10&hdr=on|off, GET /present-engine, POST /present-engine?seconds=0..120, GET /rust, GET /asstest[?png=ms], POST /ffmpeg?mode={policy|off}, GET /ffmpeg-tune, POST /ffmpeg-tune?decoder={auto|system|software|default}&tonemap={off|bt2390|hable|default} (requires decoder=auto and wrapper 2.1.0-bale.25+)&colorinfo={on|off|default} (compressed system-video colour/HDR metadata; wrapper 2.1.0-bale.26+)&readahead={on|off|default}&readsize=16384..1048576&prefetch=2..16&buffer=0..5000&ahead=0..64&delay=0..64&prio=0..2&maxres=0|1&dpb=0..16&hdr=on|off|default&grain=dav1d|gpu|off|on|default (each key accepts default; grain default=dav1d (d3d11), on/dav1d=dav1d; dav1d-path selects CPU D3D11 or debug zero-copy GPU grain), GET /mem?gc=1, GET /gc, POST /gc?latency={batch|interactive|sustained|default}, GET /frame-delivery, POST /frame-delivery?mode={native|managed|off}, GET /stream-adapter, POST /stream-adapter?mode={pooled|builtin|rust}, GET /player-backend, POST /player-backend?mode={mediaplayer|engine}, GET /start-budget, POST /start-budget?seconds={1..120|default}&hang={none|open|ready}, GET /seek-watchdog, POST /seek-watchdog?seconds={1..120|default}&hang={none|once}, GET /dav1d-path, POST /dav1d-path?mode={d3d11|zerocopy}, GET /av1-claim, POST /av1-claim?height={1080|2160}, GET /display-match, POST /display-match?mode={on|off}, GET /hdr, POST /hdr?mode={pretend|off}, GET /idle-test, POST /idle-test?action={display-pulse|smtc-playing|smtc-stopped}, GET /webview-test, POST /webview-test?action={open-video|open-blank|close}, POST /seek?seconds=...&pause=true, GET /buffering, POST /buffering?action=stall&ms=8000, POST /playback?state={play|pause|toggle}, GET /wait?for={page ...|loaded|text ...|focus ...}&timeout=8000, POST /goto?target=, GET /targets, GET /tree, POST /fault/{profiles|search|catalog|home|home-empty|requests|requests-empty|request-detail|playback}, POST /show/{login|login/expired|login/password|server|server/http-warning|server/discovery|servers|profiles/manage|profile/create|profile/edit|home}\n");
         }
     }
 

@@ -145,6 +145,12 @@ namespace Bale.Xbox.Services
 
     internal static class ZeroCopyRuntime
     {
-        internal static bool Register() => true;
+        internal static bool Available { get; set; } = true;
+        internal static int Registrations { get; set; }
+        internal static bool Register()
+        {
+            Registrations++;
+            return Available;
+        }
     }
 }

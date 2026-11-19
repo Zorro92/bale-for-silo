@@ -17,12 +17,15 @@ public sealed class Rav1gPlayerTests
         new(true, 200, width, height, toneMap, new Av1SourceFacts(10, 2, 5, 1, null));
 
     [Fact]
-    public void Rav1gRouteSetsTheForkKeyAndKeepsZeroCopyForTheOpenFallback()
+    public void Rav1gRouteCapsTheOpenFallbackAndUsesDav1dCpuOutput()
     {
         var config = FfmpegSource.Configuration(Route(), new DebugFfmpegInputTuning(), Decision());
         Assert.Equal("1", config.FFmpegOptions["bale_av1_decoder"]);
         // Honoured only if the fork falls back to dav1d at open; ignored for a rav1g stream.
-        Assert.Equal("1", config.FFmpegOptions["bale_zero_copy"]);
+        Assert.Equal("1080", config.FFmpegOptions["bale_av1_fallback_max_height"]);
+        Assert.Equal("0", config.FFmpegOptions["bale_film_grain_mode"]);
+        Assert.DoesNotContain("bale_zero_copy", config.FFmpegOptions.Keys);
+        Assert.DoesNotContain("bale_d3d11_upload", config.FFmpegOptions.Keys);
         Assert.Equal("1", config.FFmpegOptions["bale_tonemap"]);
         Assert.Equal("1920", config.FFmpegOptions["bale_tonemap_output_width"]);
         Assert.Equal("1080", config.FFmpegOptions["bale_tonemap_output_height"]);
@@ -183,6 +186,7 @@ public sealed class Rav1gPlayerTests
         Assert.Contains("Rav1gPolicy.RemountOnDav1d(failedMount.Rav1gRoute, failedMount.Rav1gActive,", page);
         Assert.Contains("attempt.Rav1gRemounted = true;\n            await RemountSamePlanAsync(attempt, position, \"player: rav1g failed; remounting the same plan on dav1d\");", page);
         Assert.Contains("attempt.SdrDownscaleDeclined = true;\n            await RemountSamePlanAsync(", page);
+        Assert.Contains("keepsClaims, failedMount.Route.VideoHeight))", page);
         // The remount withdraws rav1g for the rest of the attempt, so its mount is dav1d's and a failure replans.
         var media = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "PlayerPage.Media.cs.txt"));
         Assert.Contains("DisplayHdrOutput.CurrentRawSize(), sdrDisplay, attempt.Rav1gRemounted);", media);

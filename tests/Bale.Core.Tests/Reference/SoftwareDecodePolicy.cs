@@ -69,13 +69,9 @@ internal static class SoftwareDecodePolicy
         VideoDecode = device.VideoDecode.Where(decode => decode.Hardware).ToArray(),
     };
 
-    /// <summary>AV1 alone needs the zero-copy runtime; ordinary MPEG-4 software output does not.</summary>
-    public static DeviceCapabilities ForSoftwareVideo(DeviceCapabilities device, bool supported, bool av1ZeroCopy)
-        => !supported ? WithoutSoftwareVideo(device) : av1ZeroCopy ? device : device with
-        {
-            VideoCodecs = device.VideoCodecs.Where(codec => codec != "av1").ToArray(),
-            VideoDecode = device.VideoDecode.Where(decode => decode.Codec != "av1").ToArray(),
-        };
+    /// <summary>Software AV1 uses D3D11 CPU buffers and grain, without D3D12.</summary>
+    public static DeviceCapabilities ForSoftwareVideo(DeviceCapabilities device, bool supported)
+        => supported ? device : WithoutSoftwareVideo(device);
 
     /// <summary>Drops every claim that needs FFmpeg: software video, demuxer-only video and fallback audio.</summary>
     public static DeviceCapabilities WithoutFallbacks(DeviceCapabilities device) => device with

@@ -14,12 +14,10 @@ public sealed record SoftwareDecodeTuning(int? DecodeAheadFrames = null, int? Da
     // MiB less than 8 with the same CPU and stalls; 5 and 4 save more but stall noticeably more in heavy
     // scenes. Trimming decode-ahead or BufferTime further also added stalls.
     public const int Above1080pDav1dMaxFrameDelay = 6;
-    // Software AV1 has exactly one path: dav1d decodes into D3D12 buffers (zero-copy, wrapper 0015),
-    // the GPU repacks straight into the pooled variant-6 texture (RT|SRV|UAV, shared NT handle,
-    // wrapper 0017/0018) and applies film grain there (mode 2). There is no CPU fallback; a stream
-    // that path can't take is transcoded by the server.
-    public const int DefaultD3d11Upload = 6;
-    public const int FilmGrainMode = 2;
+    // Owner, 2026-11-19: dav1d's own CPU grain on D3D11, with CPU NV12/P010 output.
+    // Fork modes: 0 = dav1d applies grain, 2 = GPU grain (zero-copy streams only).
+    // Export-only bale_dav1d_export_film_grain=1 overrides either mode for grain=off.
+    public const int FilmGrainMode = 0;
 
     public static int? BufferTimeMs(bool softwareVideo, int? overrideMs = null, long? width = null, long? height = null) =>
         overrideMs ?? (softwareVideo ? (Above1080p(width, height) ? Above1080pBufferMs : DefaultBufferMs) : null);

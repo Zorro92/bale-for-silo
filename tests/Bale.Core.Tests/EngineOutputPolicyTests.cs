@@ -110,7 +110,7 @@ public sealed class EngineOutputPolicyTests
 
     [Theory]
     [InlineData("av1", 10, "rgb10")]
-    // dav1d zero-copy keeps 8-bit AV1 as shifted samples in its P010 pool (no 10-bit processing); rav1g takes NV12.
+    // dav1d CPU output on D3D11 and rav1g both deliver NV12 for 8-bit AV1.
     [InlineData("av1", 8, "bgra")]
     [InlineData("mpeg4", 8, "bgra")]
     public void SoftwareDecodeFollowsTheSourceDepth(string video, int depth, string target)

@@ -286,7 +286,7 @@ public sealed partial class PlayerPage
                         Log.Info($"player: AV1 decoder rav1g buffer={rav1g.BufferMs} ms output={output} tonemap={rav1g.ToneMap} library={(Rav1gLibrary.Present ? "packaged" : "missing")}");
                     }
                 }
-                var config = FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g);
+                var config = FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath);
                 media.SoftwareVideo = attempt.FfmpegTuning.SoftwareVideo(media.Route.SoftwareVideo);
                 media.FfmpegDecoderOverride = attempt.FfmpegTuning.DecoderOverride;
                 media.FfmpegToneMapOverride = attempt.FfmpegTuning.ToneMapOverride;

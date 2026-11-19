@@ -6,6 +6,34 @@ public class DebugPlaytestScriptTests
 {
     [Theory]
     [InlineData(null)]
+    [InlineData("d3d11")]
+    [InlineData("zerocopy")]
+    public async Task Dav1dPathUsesStatusOrAnEncodedPost(string? mode)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(mode is null ? ["dav1d-path"] : ["dav1d-path", mode]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/dav1d-path\n", result.Arguments);
+        if (mode is null) Assert.DoesNotContain("POST", result.Arguments);
+        else Assert.Contains("-X\nPOST\n-G\n", result.Arguments);
+        if (mode is not null) Assert.Contains("--data-urlencode\nmode=" + mode + "\n", result.Arguments);
+    }
+
+    [Fact]
+    public async Task InvalidDav1dPathsNeverInvokeCurl()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[] { new[] { "dav1d-path", "" }, ["dav1d-path", "D3D11"],
+            ["dav1d-path", "gpu"], ["dav1d-path", "zerocopy "], ["dav1d-path", "zerocopy", "d3d11"] })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
+    [Theory]
+    [InlineData(null)]
     [InlineData("display")]
     [InlineData("source")]
     public async Task OutputDepthUsesStatusOrAnEncodedPost(string? mode)
@@ -281,7 +309,7 @@ public class DebugPlaytestScriptTests
         if (!OperatingSystem.IsLinux()) return;
         var result = await RunAsync(["ffmpeg-tune", "upload=6"]);
         Assert.Equal(2, result.ExitCode);
-        Assert.Contains("software AV1 is fixed to zero-copy direct write (upload variant 6", result.Output);
+        Assert.Contains("software AV1 uses D3D11 CPU output and dav1d CPU grain", result.Output);
         foreach (var text in new[] { "sws=", "upload=", "uploadfault=", "repack=", "zerocopy=", "cpu|" })
             Assert.DoesNotContain(text, result.Output);
     }

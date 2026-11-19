@@ -218,8 +218,8 @@ public class DebugFfmpegPlaytestTests
     }
 
     [Theory]
-    [InlineData(null, null, null, "GPU (production default)")]
-    [InlineData("default", null, null, "GPU (production default)")]
+    [InlineData(null, null, null, "dav1d (D3D11 default)")]
+    [InlineData("default", null, null, "dav1d (D3D11 default)")]
     [InlineData("on", "bale_film_grain_mode", "0", "dav1d (override)")]
     [InlineData("dav1d", "bale_film_grain_mode", "0", "dav1d (override)")]
     [InlineData("gpu", "bale_film_grain_mode", "2", "GPU (override)")]
@@ -232,7 +232,7 @@ public class DebugFfmpegPlaytestTests
         Assert.Equal(value, option?.Value);
         var report = DebugFfmpegPlaytest.Settings(0, true, 8, new(FilmGrain: grain), "software");
         Assert.Contains("Film grain requested: " + description + "\n", report);
-        Assert.Contains("D3D11 upload requested: 6 (production zero-copy direct write)\n", report);
+        Assert.Contains("D3D11 upload requested: 0 (D3D11 CPU buffers)\n", report);
         Assert.Contains("D3D11 upload requested: 0 (not software mode)\n", DebugFfmpegPlaytest.Settings(0, true, 8, new(FilmGrain: grain), "system"));
     }
 
@@ -257,7 +257,7 @@ public class DebugFfmpegPlaytestTests
         var source = Read("DebugFfmpegSource.cs.txt");
         Assert.StartsWith("#if DEBUG_SERVER", source);
         Assert.Contains("FfmpegSource.ApplyDecodeTuning(config, tuning.DecodeTuning(mode))", source);
-        // Software mode takes the production zero-copy settings; the probe sets no upload variant itself.
+        // Software mode takes the D3D11 CPU settings; the probe sets no upload variant itself.
         Assert.Contains("if (mode == \"software\") FfmpegSource.ApplySoftwareVideo(config);", source);
         Assert.DoesNotContain("bale_d3d11_upload", source);
         Assert.DoesNotContain("bale_zero_copy", source);

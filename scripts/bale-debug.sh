@@ -42,8 +42,8 @@
 #                                               next FFmpeg player attempt only; on = 64 MiB / 30 s, readsize 16384–1048576 bytes, prefetch 2–16 blocks, buffer = MediaStreamSource.BufferTime 0–5000 ms (FFmpegInteropX sets 0)
 #                                               software video only: ahead 0–64 decoded frames (0=off), delay 0–64 dav1d frames (0=dav1d default)
 #                                               prio 0–2 (0=off, 1=THREAD_PRIORITY_ABOVE_NORMAL, 2=THREAD_PRIORITY_HIGHEST); software video only, release default unset
-#                                               grain=default: gpu (production default); on/dav1d: dav1d; gpu: GPU; off: export-only (software video; wrapper 2.1.0-bale.10+)
-#                                               software AV1 is fixed to zero-copy direct write (upload variant 6) with GPU grain; streams it can't take transcode on the server
+#                                               grain=default: dav1d (d3d11 default); on/dav1d: dav1d; gpu: GPU; off: export-only (software video; wrapper 2.1.0-bale.10+)
+#                                               software AV1 uses D3D11 CPU output and dav1d CPU grain; debug dav1d-path zerocopy restores upload variant 6 and GPU grain
 #                                               system/passthrough video only: maxres 0–1, dpb 0–16 (0=unset); both default unset, opt-in pending wrapper release/repin
 #                                               software-video release defaults: ahead=16, buffer=1000 ms, delay unset; above 1080p (width >1920 or height >1080) ahead=8, buffer=500 ms, delay=6
 #                                               key i / where show applied settings and demand block waits (count/max/total ms)
@@ -63,12 +63,13 @@
 #   scripts/bale-debug.sh player-backend [mediaplayer|engine]   next playback attempt's player: engine (default, as in release) = IMFMediaEngine with Bale's controls, MediaPlayer only if it cannot open the stream; mediaplayer = Windows MediaPlayer; memory only; no args = status
 #   scripts/bale-debug.sh engine-target [auto|bgra|rgb10|fp16]   next engine attempt's swap-chain format (MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT): auto (default, follows output-depth policy) | force bgra | rgb10 | fp16; wins over output-depth; memory only; no args = status
 #   scripts/bale-debug.sh output-depth [display|source]   next engine mount's output: display (default, as in release) caps SDR P010 at HDMI depth, keeps HDR passthrough and AV1 at rgb10; source always gives P010 rgb10; NV12/unknown stay bgra; memory only; no args = status
-#   scripts/bale-debug.sh av1-decoder [dav1d|rav1g]   next playback attempt's software AV1 decoder: rav1g (debug-build default since 11-19) = GPU decode on the fork's provider (bale_av1_decoder=1, 250 ms BufferTime, dav1d remount once on failure) | dav1d = zero-copy, as in release; memory only; no args = status (+ whether rav1g.dll is packaged)
+#   scripts/bale-debug.sh dav1d-path [d3d11|zerocopy]   next playback attempt's dav1d output/grain path: d3d11 (default) = CPU buffers and CPU grain, no D3D12 | zerocopy = old D3D12/upload-6/GPU grain route; registration failure keeps d3d11; memory only; no args = status
+#   scripts/bale-debug.sh av1-decoder [dav1d|rav1g]   next playback attempt's software AV1 decoder: rav1g (debug-build default since 11-19) = GPU decode on the fork's provider (bale_av1_decoder=1, 250 ms BufferTime, dav1d remount once at <=1080p on failure) | dav1d = CPU buffers/grain on D3D11, capped at 1080p; memory only; no args = status (+ whether rav1g.dll is packaged)
 #   scripts/bale-debug.sh rav1g-tune [inflight=1-8|default] [perf=on|off|default] [parse=1|2|default] [outtex=0-64|default]   rav1g provider knobs (fork bale.52: feeder units in flight, rav1g CPU/GPU ms in the delivery line, frames in parse; bale.56: player-side texture cap, 0 = none); rav1g route only; memory only; no args = status
 #   scripts/bale-debug.sh stream-adapter [pooled|builtin|rust]  next playback attempt's stream adapter; default rust (C#: pooled/builtin), memory only (restart resets); no args = status
 #                                               rust: the Rust range stream and Rust IRandomAccessStream (no managed code on reads; FFmpeg and Media Foundation)
 #   scripts/bale-debug.sh present-engine [0-120] [present|frames|player]   next playback hands its routed source to IMFMediaEngine (0 = off): present = rendering mode on screen for N s, frames = frame-server for N s (every decoded frame counted), player = interactive engine player with sound, keys and a stats pane until Back (N just enables it); no args = status + last report
-#   scripts/bale-debug.sh av1-claim [1080|2160]   next playback attempt's AV1 software-decode claim: 2160 adds a 4K30 entry (debug-build default since 11-19) | 1080 = 1080p60, as in release; memory only (restart resets); no args = status
+#   scripts/bale-debug.sh av1-claim [1080|2160]   next playback attempt's AV1 software-decode claim: 2160 adds a 4K30 entry only with rav1g (debug-build default since 11-19); dav1d always claims 1080p | 1080 = 1080p60, as in release; memory only (restart resets); no args = status
 #   scripts/bale-debug.sh display-match [on|off|status]  match content HDMI resolution/refresh on the next playback; default off, memory only (restart resets); no args = status
 #   scripts/bale-debug.sh hdr pretend|off|status  next attempt: pretend HDR10, skip HDMI switching for console SDR tone mapping; default off, memory only
 #   scripts/bale-debug.sh idle-test [display-pulse|smtc-playing|smtc-stopped|status]  input-idle experiments: pulse a DisplayRequest or set the media session status (player's, else the view's); no args = status
@@ -91,13 +92,13 @@
 #                                               about once a second and print HDR statistics with an hdr-range=preserved|clipped/sdr verdict (phase 0 of GPU tone mapping)
 #   scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [mode] [threads=N] [10bit=on|off] [rate=R] [ahead=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|gpu|off|on|default]
 #                                               hdr=on|off forces the wrapper's HdrSupport Enabled/Disabled (default omitted = Automatic: HDR colour info only if HDMI is already BT.2020)
-#                                               software mode uses the production path (zero-copy, upload variant 6, GPU grain); grain=on/dav1d: dav1d; gpu: GPU; off exports only (wrapper 2.1.0-bale.10+)
+#                                               software mode uses CPU buffers and dav1d CPU grain on D3D11; grain=on/dav1d: dav1d; gpu: GPU; off exports only (wrapper 2.1.0-bale.10+)
 #                                               debug FFmpeg probe (1–60 s, default 3; auto|software|system, default auto)
 #                                               tuning after seconds/mode, any order: threads 0–16 (0=CPU count), rate 0.5–2.0 (default 1)
 #                                               software video only: ahead 0–64 (0=off), delay 0–64 (0=dav1d default)
 #                                               prio 0–2 (0=off, 1=THREAD_PRIORITY_ABOVE_NORMAL, 2=THREAD_PRIORITY_HIGHEST); software video only, default unset
 #                                               system/passthrough video only: maxres 0–1, dpb 0–16 (0=unset); default = omitted, both unset unless supplied; pending wrapper release/repin
-#                                               software mode defaults: ahead=16, GPU grain; delay unset (URI size unknown before open; use delay=6 for known above-1080p media)
+#                                               software mode defaults: ahead=16, dav1d CPU grain; delay unset (URI size unknown before open; use delay=6 for known above-1080p media)
 #                                               auto/system retain wrapper defaults unless overridden; reports actual settings/output and software frame delivery
 #   timeout 900 scripts/bale-debug.sh playtest-ffmpeg suite 15 software  same Chromium samples; allow 30 s create + 15 s open per clip
 #   scripts/bale-debug.sh subtest <url> [native|ffmpeg] [seconds] [sidecar-url] [idx-url]  muted subtitle probe: lists
@@ -439,7 +440,7 @@ case "${1:-}" in
         echo 'tone map override: requires decoder=auto in the same tuning and wrapper 2.1.0-bale.25+; older packages reject it without changing tuning; default removes the key' >&2
         echo 'decoder override: debug-only, next FFmpeg route only (ffmpeg direct forces it outside HLS); auto=FFmpeg d3d11va or software fallback, system=system decoder, software=FFmpeg software, default=production choice; auto keeps upstream software/decode-ahead defaults' >&2
         echo 'software video defaults: ahead=16, buffer=1000 ms, delay unset; above 1080p (width >1920 or height >1080) ahead=8, buffer=500 ms, delay=6; prio unset (0=off, 1=above normal, 2=highest); system video defaults: maxres/dpb unset' >&2
-        echo 'software AV1 is fixed to zero-copy direct write (upload variant 6, wrapper 2.1.0-bale.17+) with GPU grain; grain=default: gpu, on/dav1d: dav1d, off: export-only' >&2
+        echo 'software AV1 uses D3D11 CPU output and dav1d CPU grain; debug dav1d-path zerocopy restores upload variant 6 and GPU grain; grain=default follows the path, on/dav1d: dav1d, off: export-only' >&2
         exit 2
       fi
       ffmpeg_tune_seen[$name]=true
@@ -593,6 +594,17 @@ case "${1:-}" in
       curl --fail-with-body -sS --max-time 5 "$BASE/output-depth"
     else
       curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/output-depth" --data-urlencode "mode=$2"
+    fi
+    ;;
+  dav1d-path)
+    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^(d3d11|zerocopy)$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh dav1d-path [d3d11|zerocopy]' >&2
+      exit 2
+    fi
+    if [[ "$#" == 1 ]]; then
+      curl --fail-with-body -sS --max-time 5 "$BASE/dav1d-path"
+    else
+      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/dav1d-path" --data-urlencode "mode=$2"
     fi
     ;;
   av1-decoder)
@@ -841,7 +853,7 @@ case "${1:-}" in
           rate=*) [[ "$value" =~ ^(0*[.][5-9][0-9]*|0*1([.][0-9]*)?|0*2([.]0*)?)$ ]] && valid_tuning=true ;;
         esac
         if [[ "$valid_tuning" != true || -n "${playtest_tuning_seen[$name]:-}" ]]; then
-          echo 'tuning after seconds/mode: [threads=N] [10bit=on|off] [rate=R] [ahead=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|gpu|off|on|default], any order, no duplicates; N=0–16 (0=CPU count), R=0.5–2.0, ahead/delay=0–64, prio=0–2 (0=off, 1=above normal, 2=highest); system video only: maxres=0–1, dpb=0–16 (0=unset), default = omitted; hdr=on|off forces wrapper HdrSupport Enabled/Disabled (default Automatic); software mode uses the production zero-copy path (upload variant 6, GPU grain); grain=on/dav1d keeps dav1d, gpu=GPU, off=export-only (wrapper 2.1.0-bale.10+)' >&2
+          echo 'tuning after seconds/mode: [threads=N] [10bit=on|off] [rate=R] [ahead=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|gpu|off|on|default], any order, no duplicates; N=0–16 (0=CPU count), R=0.5–2.0, ahead/delay=0–64, prio=0–2 (0=off, 1=above normal, 2=highest); system video only: maxres=0–1, dpb=0–16 (0=unset), default = omitted; hdr=on|off forces wrapper HdrSupport Enabled/Disabled (default Automatic); software mode uses CPU buffers and dav1d CPU grain on D3D11; grain=on/dav1d keeps dav1d, gpu=GPU, off=export-only (wrapper 2.1.0-bale.10+)' >&2
           exit 2
         fi
         playtest_tuning_seen[$name]=true
