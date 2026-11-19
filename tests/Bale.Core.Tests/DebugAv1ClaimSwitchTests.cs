@@ -6,12 +6,12 @@ namespace Bale.Core.Tests;
 public class DebugAv1ClaimSwitchTests
 {
     [Fact]
-    public void SwitchDefaultsTo1080AndPublishesOnlyValidatedMemoryOnlyValues()
+    public void SwitchDefaultsTo2160AndPublishesOnlyValidatedMemoryOnlyValues()
     {
         var previous = DebugAv1ClaimSwitch.MaxHeight;
         try
         {
-            Assert.Equal(1080, previous);
+            Assert.Equal(2160, previous);
             Assert.True(DebugAv1ClaimSwitch.TrySet("2160"));
             var captured = DebugAv1ClaimSwitch.MaxHeight;
             Assert.Equal(2160, captured);
@@ -27,7 +27,7 @@ public class DebugAv1ClaimSwitchTests
         finally { DebugAv1ClaimSwitch.TrySet(previous == 2160 ? "2160" : "1080"); }
         var source = Read("DebugAv1ClaimSwitch.cs.txt");
         Assert.StartsWith("#if DEBUG_SERVER", source);
-        Assert.Contains("private static int _maxHeight = 1080;", source);
+        Assert.Contains("private static int _maxHeight = 2160;", source);
         Assert.DoesNotContain("Settings", source);
         Assert.DoesNotContain("Storage", source);
     }

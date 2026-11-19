@@ -4,14 +4,15 @@ using Bale.Core.Playback;
 namespace Bale.Xbox.Services;
 
 /// <summary>
-/// Memory-only software AV1 decoder, captured per playback attempt; dav1d after restart, as in release builds (which
-/// never set bale_av1_decoder). rav1g decodes AV1 in D3D12 compute shaders on the fork's GpuDecoderSampleProvider
+/// Memory-only software AV1 decoder, captured per playback attempt. Debug builds start on rav1g (owner, 2026-11-19:
+/// rav1g is the default for testing); `av1-decoder dav1d` switches back until restart. Release builds never set
+/// bale_av1_decoder, so they keep dav1d. rav1g decodes AV1 in D3D12 compute shaders on the fork's GpuDecoderSampleProvider
 /// (wrapper 2.1.0-bale.44; owner-approved 2026-11-18 for testing). Only software AV1 routes change: see
 /// Rav1gPolicy.Route, FfmpegSource.ApplyRav1g and docs/player-plan.md, "rav1g (debug)".
 /// </summary>
 internal static class DebugAv1DecoderSwitch
 {
-    private static string _mode = "dav1d";
+    private static string _mode = "rav1g";
 
     internal static string Mode => Volatile.Read(ref _mode);
 

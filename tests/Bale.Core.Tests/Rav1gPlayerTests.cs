@@ -139,9 +139,10 @@ public sealed class Rav1gPlayerTests
     }
 
     [Fact]
-    public void SwitchIsDav1dUnlessSetAndRejectsOtherNames()
+    public void SwitchStartsOnRav1gAndRejectsOtherNames()
     {
         var previous = DebugAv1DecoderSwitch.Mode;
+        Assert.Equal("rav1g", previous);
         try
         {
             Assert.True(DebugAv1DecoderSwitch.TrySet("rav1g"));

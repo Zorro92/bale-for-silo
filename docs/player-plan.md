@@ -2215,8 +2215,10 @@ a debug switch. The fork's side (wrapper 2.1.0-bale.44: `GpuDecoderSampleProvide
 `bale/design-rav1g-provider.md` and the "GPU AV1 decoder option (rav1g)" section of `bale/README.md`. Production is
 unchanged: dav1d zero-copy, and release packages carry no rav1g.dll.
 
-- **Switch:** `bale-debug.sh av1-decoder [dav1d|rav1g]` (memory only, captured per playback attempt, default dav1d,
-  absent from production like the other `Debug*Switch` classes). No argument prints the switch, whether the package
+- **Switch:** `bale-debug.sh av1-decoder [dav1d|rav1g]` (memory only, captured per playback attempt,
+  absent from production like the other `Debug*Switch` classes). **Since 2026-11-19 debug builds start on rav1g with
+  the 4K AV1 claim (`av1-claim 2160`) on** (owner: rav1g is the default for testing); `av1-decoder dav1d` and
+  `av1-claim 1080` go back until restart. Release builds still use dav1d and claim 1080p60. No argument prints the switch, whether the package
   carries rav1g.dll, and rav1g's `loaded <version> (interface N)` line once an open tried the library. Decisions:
   `Rav1gPolicy` (Rust `av1_decoder.rs`).
 - **Keys** (`FfmpegSource.ApplyRav1g`, software AV1 routes only): `bale_av1_decoder=1`. Zero-copy registration is not
