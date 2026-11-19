@@ -67,6 +67,10 @@
     <Compile Include="../../src/Bale.Xbox/Services/FfmpegVideoOutputGuard.cs" Link="FfmpegVideoOutputGuard.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/FfmpegStreamSnapshot.cs" Link="FfmpegStreamSnapshot.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/FfmpegSource.cs" Link="FfmpegSource.cs" />
+    <!-- Exercise device-local preferences with a minimal LocalSettings/vault stand-in. -->
+    <Compile Include="../../src/Bale.Xbox/Services/AppSettings.cs" Link="AppSettings.cs" />
+    <None Include="../../src/Bale.Xbox/SettingsPage.xaml" Link="SettingsPage.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/SettingsPage.xaml.cs" Link="SettingsPage.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugVideoMediaType.cs" Link="DebugVideoMediaType.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugVideoColour.cs" Link="DebugVideoColour.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugFfmpegInputTuning.cs" Link="DebugFfmpegInputTuning.cs.txt" CopyToOutputDirectory="PreserveNewest" />

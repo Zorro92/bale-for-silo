@@ -32,6 +32,7 @@ unchanged. Gap analysis and phases: docs/apple-playback-parity.md.
 **Deliberate deviations.** These differ from the official apps on purpose. Keep them; don't
 "fix" them back.
 
+- **Experimental GPU film grain:** Settings › Playback offers a device-wide, persisted, off-by-default dav1d D3D11 GPU grain toggle (owner, 2026-11-19); it needs no zero-copy or D3D12.
 - **Calendar focus** follows the selection: the selected pill/day, then the first card, with
   per-row memory.
 - **Player controller map** (owner's design, 2026-11-16; media remote keys stay official):
@@ -264,8 +265,9 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   on D3D11 with CPU NV12/P010 buffers and dav1d CPU film grain, **max 1080p** → server transcode.
   Keep dav1d for older consoles; the measured Series/AVX2 software-device claim gate remains.
   dav1d must not require D3D12: neither claims nor its default configuration register zero-copy.
-  `bale_film_grain_mode=0` means dav1d applies grain; 2 is GPU grain, only on zero-copy streams.
-  `bale_dav1d_export_film_grain=1` (`ffmpeg-tune grain=off`) wins over either: export only, no grain applied.
+  `bale_film_grain_mode=0` means dav1d applies grain; the experimental device setting opts into mode 3
+  (private D3D11 staged upload + GPU grain, CPU grain on probe failure); 2 is GPU grain on debug zero-copy streams.
+  `bale_dav1d_export_film_grain=1` (`ffmpeg-tune grain=off`) wins over every mode: export only, no grain applied.
   Debug `dav1d-path [d3d11|zerocopy]` is memory only, captured per attempt, default d3d11. `zerocopy`
   alone restores the old `ZeroCopyRuntime` / `bale_zc_*` D3D12 route (upload 6, GPU grain); failed
   registration logs and keeps D3D11. Leave this runtime and bale_gpu zero-copy code dormant otherwise.

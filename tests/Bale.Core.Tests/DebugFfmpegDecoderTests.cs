@@ -211,6 +211,7 @@ public sealed class DebugFfmpegDecoderTests
         return string.Join('\n', Read("FfmpegSource.cs.txt").Split('\n').Where(line =>
         {
             if (line == "#if DEBUG_SERVER") { debug = true; return false; }
+            if (line == "#else") { debug = !debug; return false; }
             if (line == "#endif") { debug = false; return false; }
             return !debug;
         }));

@@ -35,7 +35,7 @@ public sealed class DebugDav1dPathSwitchTests
         const string capture = "public string Dav1dPath { get; } = DebugDav1dPathSwitch.Mode;";
         Assert.Contains(capture, player);
         Assert.DoesNotContain("DebugDav1dPathSwitch", player.Replace(capture, "", StringComparison.Ordinal));
-        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath)",
+        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,\n                    attempt.Dav1dGpuFilmGrain)",
             Read("PlayerPage.Media.cs.txt"));
         Assert.DoesNotContain("DebugDav1dPathSwitch", Read("FfmpegSource.cs.txt"));
     }
@@ -62,7 +62,7 @@ public sealed class DebugDav1dPathSwitchTests
                 Assert.DoesNotContain("bale_zero_copy", config.FFmpegOptions.Keys);
                 if (rav1g) Assert.Equal("1080", config.FFmpegOptions["bale_av1_fallback_max_height"]);
             }
-            Assert.Contains("player: dav1d zero-copy unavailable; using d3d11 CPU output and grain", Log.Messages);
+            Assert.Contains("player: dav1d zero-copy unavailable; using d3d11", Log.Messages);
         }
         finally { ZeroCopyRuntime.Available = previous; }
     }

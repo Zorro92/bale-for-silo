@@ -129,6 +129,17 @@
                 </Button>
                 <TextBlock x:Name="AutoPlayDescription" Style="{StaticResource SkylineSettingsFooterStyle}" />
               </StackPanel>
+              <!-- Owner-requested deviation from the official Silo apps: opt-in GPU grain for the AV1 fallback. -->
+              <StackPanel Style="{StaticResource SkylineSettingsGroupStyle}">
+                <TextBlock Text="EXPERIMENTAL" Style="{StaticResource SkylineSettingsGroupHeaderStyle}" />
+                <Button x:Name="Dav1dGpuFilmGrainButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnDav1dGpuFilmGrainClick">
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBlock Text="GPU film grain (AV1 fallback)" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+                    <TextBlock x:Name="Dav1dGpuFilmGrainValue" Grid.Column="1" Style="{StaticResource SkylineSettingsValueTextStyle}" />
+                  </Grid>
+                </Button>
+                <TextBlock Text="Applies AV1 film grain on the GPU when the software decoder plays. May help slower consoles." Style="{StaticResource SkylineSettingsFooterStyle}" />
+              </StackPanel>
               <TextBlock x:Name="PlaybackError" Style="{StaticResource SkylineSettingsErrorStyle}" Visibility="Collapsed" />
             </StackPanel>
             <StackPanel x:Name="ServerPane" Style="{StaticResource SkylineSettingsGroupsStyle}" Visibility="Collapsed">

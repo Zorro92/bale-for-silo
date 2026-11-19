@@ -6,13 +6,15 @@ namespace Bale.Xbox.Services;
 
 internal static class FfmpegSource
 {
-    internal static MediaSourceConfig Configuration(PlaybackRouteDecision route)
 #if DEBUG_SERVER
+    internal static MediaSourceConfig Configuration(PlaybackRouteDecision route)
         => Configuration(route, new DebugFfmpegInputTuning());
 
     /// <param name="rav1g">The debug AV1 decoder switch's decision for this mount (Rav1gPolicy.Route); null is dav1d.</param>
     internal static MediaSourceConfig Configuration(PlaybackRouteDecision route, DebugFfmpegInputTuning tuning,
-        Rav1gRouteDecision? rav1g = null, string dav1dPath = "d3d11")
+        Rav1gRouteDecision? rav1g = null, string dav1dPath = "d3d11", bool dav1dGpuFilmGrain = false)
+#else
+    internal static MediaSourceConfig Configuration(PlaybackRouteDecision route, bool dav1dGpuFilmGrain = false)
 #endif
     {
         // Debug captures only our safe Bale diagnostics; production keeps the native logger off.
@@ -54,16 +56,17 @@ internal static class FfmpegSource
         config.Subtitles.AutoSelectForcedSubtitles = false;
         config.FFmpegOptions["rw_timeout"] = "10000000";
         ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(softwareVideo, route.VideoWidth, route.VideoHeight));
-        // AV1 uses dav1d CPU output and CPU grain on D3D11 (owner, 2026-11-19).
+        // AV1 uses dav1d on D3D11, with CPU grain unless the attempt opted into GPU grain (owner, 2026-11-19).
         // Other software codecs use the ordinary provider without AV1-specific grain options.
 #if DEBUG_SERVER
         // Debug only (owner, 2026-11-18): rav1g decodes software AV1 on the fork's GPU provider instead.
-        if (rav1g is { Rav1g: true } && softwareVideo && route.VideoCodec == "av1") ApplyRav1g(config, rav1g, dav1dPath);
+        if (rav1g is { Rav1g: true } && softwareVideo && route.VideoCodec == "av1")
+            ApplyRav1g(config, rav1g, dav1dPath, dav1dGpuFilmGrain);
         else
 #endif
         if (softwareVideo && route.VideoCodec == "av1")
         {
-            ApplySoftwareVideo(config);
+            ApplySoftwareVideo(config, dav1dGpuFilmGrain);
 #if DEBUG_SERVER
             ApplyDav1dPath(config, dav1dPath);
 #endif
@@ -76,17 +79,32 @@ internal static class FfmpegSource
         DebugFfmpegColorInfo.Apply(config, tuning, FfmpegWrapperVersion.Value);
         ApplyInputTuning(config, tuning, softwareVideo, route.VideoCodec);
 #endif
+        if (softwareVideo && route.VideoCodec == "av1") LogFilmGrainRequest(config, dav1dGpuFilmGrain);
         return config;
     }
 
     /// <summary>
-    /// dav1d decodes and applies film grain on the CPU, handing MF CPU NV12 (8-bit) or P010 (10-bit)
-    /// buffers on Direct3D 11. No D3D12 registration or bale_gpu upload is needed, so the fallback works
-    /// without D3D12 (owner, 2026-11-19). Its capability claim and rav1g fallback are capped at 1080p.
+    /// dav1d uses CPU grain by default. The opt-in uses the fork's private D3D11 staged upload and
+    /// bale_gpu grain pass (bale.60), with CPU grain on probe failure. Neither choice needs D3D12
+    /// or public upload/zero-copy keys. Its capability claim and rav1g fallback stay capped at 1080p.
     /// </summary>
-    internal static void ApplySoftwareVideo(MediaSourceConfig config)
+    internal static void ApplySoftwareVideo(MediaSourceConfig config, bool dav1dGpuFilmGrain = false)
     {
-        config.FFmpegOptions["bale_film_grain_mode"] = SoftwareDecodeTuning.FilmGrainMode.ToString(CultureInfo.InvariantCulture);
+        config.FFmpegOptions["bale_film_grain_mode"] = dav1dGpuFilmGrain ? "3"
+            : SoftwareDecodeTuning.FilmGrainMode.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static void LogFilmGrainRequest(MediaSourceConfig config, bool dav1dGpuFilmGrain)
+    {
+        // Log the final request after debug overrides; the fork reports the probe's actual outcome.
+        var mode = config.FFmpegOptions.ContainsKey("bale_dav1d_export_film_grain") ? "off"
+            : config.FFmpegOptions["bale_film_grain_mode"] switch
+            {
+                "3" => "gpu-d3d11",
+                "2" => "gpu-zerocopy",
+                _ => "cpu",
+            };
+        Log.Info($"player: dav1d grain request={mode} (setting={(dav1dGpuFilmGrain ? "on" : "off")})");
     }
 
     /// <summary>
@@ -126,14 +144,14 @@ internal static class FfmpegSource
 #if DEBUG_SERVER
     /// <summary>
     /// Debug-only restoration of the old dav1d zero-copy path for a grain A/B. The caller passes the
-    /// attempt's captured switch; failure to register keeps D3D11 CPU output and CPU grain.
+    /// attempt's captured switch; failure to register keeps D3D11 with the captured grain setting.
     /// </summary>
     private static void ApplyDav1dPath(MediaSourceConfig config, string path)
     {
         if (path != "zerocopy") return;
         if (!ZeroCopyRuntime.Register())
         {
-            Log.Info("player: dav1d zero-copy unavailable; using d3d11 CPU output and grain");
+            Log.Info("player: dav1d zero-copy unavailable; using d3d11");
             return;
         }
         config.FFmpegOptions["bale_d3d11_upload"] = "6";
@@ -143,14 +161,15 @@ internal static class FfmpegSource
 
     /// <summary>
     /// The debug rav1g route (the fork's bale/design-rav1g-provider.md). Always configure dav1d's
-    /// D3D11 CPU output/grain for an in-open fallback, capped at 1080 lines by wrapper bale.59.
+    /// D3D11 output with the captured grain setting for an in-open fallback, capped at 1080 lines by wrapper bale.59.
     /// A taller stream whose GPU open declines fails to the normal server replan. The stage keys
     /// downscale SDR or tone-map PQ/HLG on an SDR display; a dav1d fallback ignores those keys.
     /// Only the captured debug dav1d-path zerocopy switch restores the old fallback path.
     /// </summary>
-    internal static void ApplyRav1g(MediaSourceConfig config, Rav1gRouteDecision rav1g, string dav1dPath = "d3d11")
+    internal static void ApplyRav1g(MediaSourceConfig config, Rav1gRouteDecision rav1g, string dav1dPath = "d3d11",
+        bool dav1dGpuFilmGrain = false)
     {
-        ApplySoftwareVideo(config);
+        ApplySoftwareVideo(config, dav1dGpuFilmGrain);
         ApplyDav1dPath(config, dav1dPath);
         config.FFmpegOptions["bale_av1_fallback_max_height"] = "1080";
         config.FFmpegOptions["bale_av1_decoder"] = "1";

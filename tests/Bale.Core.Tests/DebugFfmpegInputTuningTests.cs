@@ -318,7 +318,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("public DebugFfmpegInputTuning FfmpegTuning { get; } = DebugFfmpegInputTuning.Current", Read("PlayerPage.cs.txt"));
         var player = Read("PlayerPage.Media.cs.txt");
         Assert.Contains("media.Route.UseFfmpeg ? attempt.FfmpegTuning.Prefetch ?? HttpRangeStream.DefaultPrefetchBlocks", player);
-        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath)", player);
+        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,\n                    attempt.Dav1dGpuFilmGrain)", player);
         Assert.Contains("prefetched.PrefetchBlocks", player);
         Assert.Contains("if (!attempt.FfmpegTuningLogged)", player);
         Assert.Contains("attempt.FfmpegTuningLogged = true", player);
@@ -369,14 +369,15 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     public void FilmGrainExportIsDebugOnlyAndAppliedOnlyToSoftwareVideo()
     {
         var production = DebugFfmpegDecoderTests.ProductionSource();
-        Assert.DoesNotContain("bale_dav1d_export_film_grain", production);
+        Assert.DoesNotContain("DebugFfmpegPlaytest.GrainOption", production);
         var tuning = new DebugFfmpegInputTuning(FilmGrain: DebugFilmGrain.Off);
         var system = FfmpegSource.Configuration(new(true, false, "hevc", "aac", 0, 1920, 1080), tuning);
         Assert.DoesNotContain("bale_dav1d_export_film_grain", system.FFmpegOptions.Keys);
         var software = FfmpegSource.Configuration(new(true, true, "av1", "aac", 0, 1920, 1080), tuning);
         Assert.Equal("1", software.FFmpegOptions["bale_dav1d_export_film_grain"]);
         Assert.Contains("grain=dav1d|gpu|off|on|default", DebugFfmpegInputTuning.Usage);
-        Assert.Contains("config.FFmpegOptions[\"bale_film_grain_mode\"] = SoftwareDecodeTuning.FilmGrainMode.ToString(CultureInfo.InvariantCulture);", production);
+        Assert.Contains("config.FFmpegOptions[\"bale_film_grain_mode\"] = dav1dGpuFilmGrain ? \"3\"", production);
+        Assert.Contains(": SoftwareDecodeTuning.FilmGrainMode.ToString(CultureInfo.InvariantCulture);", production);
         Assert.Equal(("bale_film_grain_mode", "0"), DebugFfmpegPlaytest.GrainOption(DebugFilmGrain.Dav1d));
         Assert.Contains("default=dav1d (d3d11), on/dav1d=dav1d", DebugFfmpegInputTuning.Usage);
         Assert.Contains("production default=dav1d, on/dav1d=dav1d", Read("DebugServer.cs.txt"));
@@ -385,12 +386,12 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     }
 
     [Fact]
-    public void SoftwareAv1UsesCpuOutputWithoutD3d12InProductionAndProbes()
+    public void SoftwareAv1UsesD3d11WithoutD3d12InProductionAndProbes()
     {
         var production = DebugFfmpegDecoderTests.ProductionSource();
         Assert.Contains("if (softwareVideo && route.VideoCodec == \"av1\")", production);
-        Assert.Contains("ApplySoftwareVideo(config);", production);
-        Assert.Contains("config.FFmpegOptions[\"bale_film_grain_mode\"] = SoftwareDecodeTuning.FilmGrainMode.ToString(CultureInfo.InvariantCulture);", production);
+        Assert.Contains("ApplySoftwareVideo(config, dav1dGpuFilmGrain);", production);
+        Assert.Contains("config.FFmpegOptions[\"bale_film_grain_mode\"] = dav1dGpuFilmGrain ? \"3\"", production);
         Assert.DoesNotContain("ZeroCopyRuntime.Register()", production);
         Assert.DoesNotContain("bale_d3d11_upload", production);
         Assert.DoesNotContain("bale_zero_copy", production);

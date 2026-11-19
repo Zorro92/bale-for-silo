@@ -83,6 +83,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         ConnectionSpeedService.Changed += OnConnectionChanged;
         _connectionClock.Start();
         UpdateAutoPlay();
+        UpdateDav1dGpuFilmGrain();
         UpdateConnection();
         UpdateIdentity();
         UpdatePolicy();
@@ -196,6 +197,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         SettingsCategory.Playback => new Control[]
             {
                 BufferingQualityButton, LearnedLimitButton, ConnectionSpeedButton, AutoPlayButton, AutoPlayProfileButton,
+                Dav1dGpuFilmGrainButton,
             }.Where(item => item.Visibility == Visibility.Visible).ToArray(),
         SettingsCategory.Server => [AccountsButton],
         _ => [ProfileSelectionButton, HomeSectionsButton],
@@ -429,6 +431,27 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         if (!profileShown && SettingsInput.IsWithin(FocusManager.GetFocusedElement() as DependencyObject, AutoPlayProfileButton))
             FocusTarget(AutoPlayButton);
         AutoPlayProfileButton.Visibility = profileShown ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void UpdateDav1dGpuFilmGrain() =>
+        Dav1dGpuFilmGrainValue.Text = AppSettings.Dav1dGpuFilmGrain ? "On" : "Off";
+
+    private void OnDav1dGpuFilmGrainClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings) return;
+        _returnTarget = Dav1dGpuFilmGrainButton;
+        try
+        {
+            AppSettings.Dav1dGpuFilmGrain = !AppSettings.Dav1dGpuFilmGrain;
+            PlaybackError.Visibility = Visibility.Collapsed;
+        }
+        catch (Exception error)
+        {
+            Log.Error("Settings GPU film grain write", error);
+            PlaybackError.Text = "Bale couldn’t save the film grain preference on this Xbox. Try again.";
+            PlaybackError.Visibility = Visibility.Visible;
+        }
+        UpdateDav1dGpuFilmGrain();
     }
 
     /// <summary>TvSettingsScreen.kt: the switch stores a value for this device (scope profile_device).</summary>

@@ -186,15 +186,28 @@ these results do not establish a CPU improvement.
 **Software AV1 path (owner decision, 2026-11-19; wrapper `2.1.0-bale.59`).**
 The chain is **rav1g (D3D12, debug default since da3e045) → dav1d on D3D11, max 1080p → server transcode**.
 Keep dav1d for older consoles; the existing measured Series/AVX2 software-device claim gate remains.
-dav1d must work without D3D12: decode and grain run on the CPU, with MF CPU NV12 (8-bit) or P010 (10-bit) buffers.
+dav1d must work without D3D12: decode and grain run on the CPU by default, with MF CPU NV12 (8-bit) or P010 (10-bit) buffers.
 Claims and the default dav1d configuration never call `ZeroCopyRuntime.Register()`. The production claim
 stays 1080p60; debug 2160/4K30 applies only with rav1g, and `av1-decoder dav1d` logs the ignored raised claim
 once per attempt. This decision does not claim new performance measurements.
 
-`FfmpegSource.ApplySoftwareVideo` sets `bale_film_grain_mode=0` (dav1d applies grain). The fork's GPU
+Settings › Playback › **EXPERIMENTAL** offers **GPU film grain (AV1 fallback)**, an owner-requested
+deviation from the official Silo apps. `AppSettings.Dav1dGpuFilmGrain` is device-wide, persisted and off
+by default. Each playback attempt captures it, including replans/remounts and rav1g's in-open dav1d
+fallback. When enabled, `FfmpegSource.ApplySoftwareVideo` requests `bale_film_grain_mode=3` from wrapper
+`2.1.0-bale.60`: dav1d CPU output passes through a private D3D11 staged upload and bale_gpu's D3D11
+grain pass, without `bale_zero_copy`, `bale_d3d11_upload` or D3D12. This may help slower older consoles;
+console performance/visual checks are pending. A failed open-time probe keeps CPU grain for that stream
+and logs `Bale film grain: mode=dav1d (reason, hr=..)`, while success logs
+`Bale film grain: mode=gpu-d3d11`. Bale logs the final `player: dav1d grain request=... (setting=on|off)`
+once per AV1 open, after debug overrides; that request does not establish which path the fork used.
+Debug `grain=dav1d` still forces CPU grain, `grain=off` still exports only, and debug zero-copy keeps
+its own mode 2. The standalone probe keeps its CPU default independently of the setting.
+
+`FfmpegSource.ApplySoftwareVideo` defaults to `bale_film_grain_mode=0` (dav1d applies grain). The fork's GPU
 mode 2 exists only for zero-copy streams. The memory-only debug `dav1d-path [d3d11|zerocopy]`, captured
 per attempt and reset to d3d11 on restart, restores the old D3D12 buffer/upload-6/GPU grain route only
-when set to zerocopy. Registration failure logs and keeps D3D11 CPU output/grain. `ZeroCopyRuntime` and
+when set to zerocopy. Registration failure logs and keeps D3D11 with the captured grain setting. `ZeroCopyRuntime` and
 bale_gpu's `bale_zc_*` implementation stay dormant otherwise; nothing is removed from bale_gpu.
 On D3D11, `ffmpeg-tune grain=dav1d` selects mode 0 and `grain=off` sends
 `bale_dav1d_export_film_grain=1`, which takes precedence: export only, no grain applied. CPU grain cost
@@ -312,9 +325,10 @@ attempt, not an already open player, Native Direct, HLS or the standalone probe.
 remains independent.
 
 - `grain=dav1d|gpu` (software AV1 only) sends `bale_film_grain_mode=0|2`; `on` aliases dav1d.
-  `default` clears the override, keeping the captured dav1d path's grain: CPU on D3D11, GPU on debug
-  zerocopy. GPU grain runs only on zero-copy streams, on Bale-owned textures rather than dav1d reference
-  pictures. `grain=off` sends `bale_dav1d_export_film_grain=1`, independently overriding either mode:
+  `default` clears the override, keeping the captured dav1d path and device grain setting: CPU on D3D11
+  unless the experimental GPU setting selects mode 3, GPU mode 2 on debug zerocopy. The explicit debug
+  `grain=gpu` mode 2 works only on zero-copy streams, on Bale-owned textures rather than dav1d reference
+  pictures. `grain=off` sends `bale_dav1d_export_film_grain=1`, independently overriding every mode:
   export only, no grain applied. The D3D11 CPU-grain A/B is `grain=dav1d` versus `grain=off` on the same
   authenticated library file. `grain=cpu` was removed with Bale's former CPU grain implementation;
   dav1d's own CPU grain is mode 0.
@@ -2247,8 +2261,8 @@ Release packages carry no rav1g.dll and keep the 1080p60 claim.
   whether the package carries rav1g.dll, and rav1g's `loaded <version> (interface N)` line once an open tried the library. Decisions:
   `Rav1gPolicy` (Rust `av1_decoder.rs`).
 - **Keys** (`FfmpegSource.ApplyRav1g`, software AV1 only): `bale_av1_decoder=1` and
-  `bale_av1_fallback_max_height=1080` (bale.59). dav1d's D3D11 CPU output and mode-0 grain are configured
-  unconditionally for the fork's in-open fallback (missing library, interface mismatch, unsupported
+  `bale_av1_fallback_max_height=1080` (bale.59). dav1d's D3D11 output and captured grain setting (mode 0
+  by default, mode 3 when enabled) are configured for the fork's in-open fallback (missing library, interface mismatch, unsupported
   stream). No zero-copy registration or upload keys unless debug `dav1d-path zerocopy` is captured.
   If rav1g declines a stream taller than 1080, the fork refuses it with `MF_E_UNSUPPORTED_FORMAT`, logging
   `Bale AV1: refusing video stream (GPU decoder declined, height N above the fallback limit M)`;

@@ -286,7 +286,8 @@ public sealed partial class PlayerPage
                         Log.Info($"player: AV1 decoder rav1g buffer={rav1g.BufferMs} ms output={output} tonemap={rav1g.ToneMap} library={(Rav1gLibrary.Present ? "packaged" : "missing")}");
                     }
                 }
-                var config = FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath);
+                var config = FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,
+                    attempt.Dav1dGpuFilmGrain);
                 media.SoftwareVideo = attempt.FfmpegTuning.SoftwareVideo(media.Route.SoftwareVideo);
                 media.FfmpegDecoderOverride = attempt.FfmpegTuning.DecoderOverride;
                 media.FfmpegToneMapOverride = attempt.FfmpegTuning.ToneMapOverride;
@@ -304,7 +305,7 @@ public sealed partial class PlayerPage
                     attempt.FfmpegTuningLogged = true;
                 }
 #else
-                var config = FfmpegSource.Configuration(media.Route);
+                var config = FfmpegSource.Configuration(media.Route, attempt.Dav1dGpuFilmGrain);
 #endif
                 FfmpegSource.ApplyDisplaySize(config, media.Route, DisplayHdrOutput.CurrentRawSize());
                 FfmpegSource.ApplySubtitleSink(config, media.SubtitleStreamIndex, media.SubtitleSinkToken);

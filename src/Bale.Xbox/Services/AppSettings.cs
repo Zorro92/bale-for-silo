@@ -112,6 +112,13 @@ internal static class AppSettings
         set => Local.Values[nameof(ProfileRememberOfferAnswered)] = value;
     }
 
+    /// <summary>Device-wide opt-in for dav1d's D3D11 GPU grain pass; absent means CPU grain.</summary>
+    public static bool Dav1dGpuFilmGrain
+    {
+        get => Local.Values[nameof(Dav1dGpuFilmGrain)] is true;
+        set => Local.Values[nameof(Dav1dGpuFilmGrain)] = value;
+    }
+
     public static DateTimeOffset? AccessTokenExpiresAt
     {
         get => Servers.ActiveAccount?.AccessTokenExpiresAt;
