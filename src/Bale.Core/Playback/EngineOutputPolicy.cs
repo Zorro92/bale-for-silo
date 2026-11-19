@@ -15,20 +15,26 @@ public sealed record EngineOutputDecision(string Target, string Frames, string R
 }
 
 /// <summary>
-/// Owner's bit-depth rule (AGENTS.md): the engine's output follows the frames Bale hands it. 10-bit frames (P010:
-/// a source above 8 bits, the console tone map, the SDR downscale) get R10G10B10A2; 8-bit frames (NV12) keep
-/// B8G8R8A8; unknown depth keeps B8G8R8A8. Implemented in Rust (native/bale-core/src/engine_output.rs).
+/// Owner's bit-depth rule (AGENTS.md): work at source depth, deliver at display depth. P010 gets R10G10B10A2
+/// for HDR passthrough or SDR on a 30+ bpp display; AV1 keeps 10-bit output until rav1g is stable. Other P010,
+/// NV12 and unknown frames get B8G8R8A8. Implemented in Rust (native/bale-core/src/engine_output.rs).
 /// </summary>
 public static class EngineOutputPolicy
 {
     /// <param name="stageP010">bale_gpu's console stage writes P010 (ConsoleToneMapRuntime.SupportsP010).</param>
+    /// <param name="displayBitsPerPixel">The current HDMI mode's depth; unknown caps SDR at 8 bits.</param>
+    /// <param name="ceiling">display (default), or source to keep P010 at 10 bits regardless of the display.</param>
     public static EngineOutputDecision Decide(PlaybackPlan plan, PlaybackRouteDecision route,
-        IReadOnlyList<FileVersion>? versions = null, bool stageP010 = true) =>
+        IReadOnlyList<FileVersion>? versions = null, bool stageP010 = true,
+        int? displayBitsPerPixel = null, string ceiling = "display") =>
         BaleCoreNative.Call("engine_output.decide", writer =>
         {
             writer.Server("plan", plan);
             writer.Server("versions", versions);
             writer.Record("route", route, BaleCoreJson.Default.PlaybackRouteDecision);
             writer.WriteBoolean("stage_p010", stageP010);
+            if (displayBitsPerPixel is { } bpp) writer.WriteNumber("display_bits_per_pixel", bpp);
+            else writer.WriteNull("display_bits_per_pixel");
+            writer.WriteString("ceiling", ceiling);
         }, BaleCoreJson.Default.EngineOutputDecision);
 }

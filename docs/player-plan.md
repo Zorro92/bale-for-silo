@@ -2458,15 +2458,21 @@ If the engine cannot open an attempt's stream, that attempt remounts on Windows 
 (memory only; engine after restart). Still to confirm on the console: the media remote and Guide tile with the
 engine, and a production build (CI builds the debug package only).
 
-**Engine output depth (2026-11-18, owner's bit-depth rule).** Engine sessions no longer always ask for
-B8G8R8A8: each mount's swap-chain format follows its frames (`EngineOutputPolicy` → `engine_output.rs`, passed
-per open through `bale_gpu_engine_session_open_target`, bale_gpu ABI 14). P010 frames (10-bit sources on the
-system decoder or software decode, the console tone map, the SDR downscale, which writes P010 for 8-bit too) get
-R10G10B10A2; NV12 frames (8-bit sources including 8-bit AV1 on dav1d zero-copy or rav1g, Silo's 8-bit transcodes)
-keep B8G8R8A8; unknown depth keeps B8G8R8A8 and is logged (`player: engine output=... frames=... reason=...`).
-Depth comes from the plan's source, else the catalog track's bit depth or pixel format, else HDR/DV implies
-10-bit. A console A/B on 2026-11-18 played R10G10B10A2 smoothly with 0 dropped frames. Debug `engine-target`
-(`auto` default, or force `bgra`/`rgb10`/`fp16`) overrides it.
+**Engine output depth (2026-11-18, owner's revised bit-depth rule).** Work at source depth, deliver at
+display depth: each mount's swap-chain format is capped at the current HDMI mode (`EngineOutputPolicy` →
+`engine_output.rs`, passed per open through `bale_gpu_engine_session_open_target`, bale_gpu ABI 14). P010
+frames get R10G10B10A2 for HDR/HLG passthrough (not console tone-mapped). For SDR output, including console
+tone-mapped HDR, P010 gets R10G10B10A2 only at 30 bpp or more; below that or with unknown display depth it
+gets B8G8R8A8. **Temporary AV1 exception:** a route or source codec normalising to AV1 keeps P010 →
+R10G10B10A2 until rav1g is stable, so decoder development retains realistic 10-bit resource use; one named
+constant in `engine_output.rs` controls it. NV12 and unknown frames always keep B8G8R8A8. Decoders, tone map,
+scaling and the reported `frames` stay at their existing depth (source, else catalog bit depth/pixel format,
+else HDR/DV implies 10-bit; the SDR area downscale still writes P010 for 8-bit sources too). HDMI bpp is read
+on the UI thread at engine open and logged (`player: engine output=... frames=... display=24bpp reason=...`).
+Debug `output-depth display|source` selects this ceiling (default `display`, as in release) or the old P010 →
+R10G10B10A2 behaviour for all displays. Debug `engine-target` (`auto` default, or force `bgra`/`rgb10`/`fp16`)
+still wins over everything. Both switches are memory only and apply on the next engine open.
+See "First 10-bit video after a boot slows the console GPU" below for the reason for the display ceiling.
 
 **First 10-bit video after a boot slows the console GPU (2026-11-18, bisect with rav1g timing).** The first
 10-bit video output after a console boot leaves the GPU slow for a while: rav1g's j4k40 GPU time went from
@@ -2477,5 +2483,6 @@ Depth comes from the plan's source, else the catalog track's bit depth or pixel 
   forced stay clean, and later 10-bit plays in the same boot are clean.
 - **Usually short:** it normally wears off within 2 minutes. One afternoon case lasted 35+ minutes, after
   longer, repeated 10-bit viewing.
-- **Consequence:** a console behaviour, not a Bale bug. The bit-depth rule stands. Before GPU timing runs, do
-  not take a reading within a few minutes of the first 10-bit play after a boot.
+- **Consequence:** the revised engine policy avoids 10-bit presentation on 8-bit SDR outputs, except for
+  the temporary AV1 development exception or an explicit debug override. Before GPU timing runs, do not
+  take a reading within a few minutes of the first 10-bit play after a boot.

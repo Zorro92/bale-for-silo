@@ -74,8 +74,10 @@ namespace Bale.Xbox.Services;
 ///                         is watched but never reaches the source)
 ///   GET  /player-backend  memory-only player switch; default engine (as in release builds)
 ///   POST /player-backend?mode=engine  mediaplayer (Windows MediaPlayer)|engine (IMFMediaEngine); next playback attempt
-///   GET  /engine-target  memory-only engine swap-chain format override; default auto (follow the frames, as in release)
+///   GET  /engine-target  memory-only engine swap-chain format override; default auto (follow output-depth policy)
 ///   POST /engine-target?mode=rgb10  auto|bgra|rgb10|fp16 (MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT); next engine playback attempt
+///   GET  /output-depth   memory-only engine output-depth ceiling; default display (as in release builds)
+///   POST /output-depth?mode=source  display|source (P010 always rgb10); next engine mount; engine-target wins
 ///   GET  /av1-decoder     memory-only software AV1 decoder; default dav1d (as in release builds); rav1g.dll packaged?
 ///   GET  /rav1g-tune      memory-only rav1g provider knobs (fork bale.52): inflight, perf, parse; rav1g route only
 ///   POST /rav1g-tune?inflight=3&perf=on&parse=2  1-8 | on/off | 1-2, each also "default"; next rav1g playback attempt
@@ -253,7 +255,7 @@ internal sealed partial class DebugServer
         var target = new Uri("http://bale" + parts[1]);
         var path = target.AbsolutePath.TrimEnd('/');
         var query = ParseQuery(target.Query, out var duplicateQueryKeys);
-        if (duplicateQueryKeys && path is ("/open" or "/play" or "/home" or "/navlog" or "/playtest-ffmpeg" or "/ffmpeg-tune" or "/delivery" or "/stats-rows" or "/frame-trace" or "/display-match" or "/gc" or "/frame-delivery" or "/stream-adapter" or "/player-backend" or "/start-budget" or "/seek-watchdog" or "/engine-target" or "/av1-decoder" or "/rav1g-tune" or "/av1-claim" or "/idle-test" or "/webview-test"))
+        if (duplicateQueryKeys && path is ("/open" or "/play" or "/home" or "/navlog" or "/playtest-ffmpeg" or "/ffmpeg-tune" or "/delivery" or "/stats-rows" or "/frame-trace" or "/display-match" or "/gc" or "/frame-delivery" or "/stream-adapter" or "/player-backend" or "/start-budget" or "/seek-watchdog" or "/engine-target" or "/output-depth" or "/av1-decoder" or "/rav1g-tune" or "/av1-claim" or "/idle-test" or "/webview-test"))
             return ("400 Bad Request", "query keys must appear at most once\n");
 
         switch (method, path)
@@ -496,6 +498,17 @@ internal sealed partial class DebugServer
                     return ("400 Bad Request", "mode must be bgra, rgb10 or fp16\n");
                 Log.Info($"Debug engine target: {DebugEngineTargetSwitch.Mode}; applies to the next engine playback attempt");
                 return ("200 OK", $"engine-target={DebugEngineTargetSwitch.Mode}\n");
+
+            case ("GET", "/output-depth"):
+                if (query.Count != 0)
+                    return ("400 Bad Request", "usage: GET /output-depth or POST /output-depth?mode={display|source}\n");
+                return ("200 OK", $"output-depth={DebugOutputDepthSwitch.Mode}\n");
+
+            case ("POST", "/output-depth"):
+                if (query.Count != 1 || !DebugOutputDepthSwitch.TrySet(query.GetValueOrDefault("mode")))
+                    return ("400 Bad Request", "mode must be display or source\n");
+                Log.Info($"Debug output depth: {DebugOutputDepthSwitch.Mode}; applies to the next engine mount");
+                return ("200 OK", $"output-depth={DebugOutputDepthSwitch.Mode}\n");
 
             case ("GET", "/av1-decoder"):
                 if (query.Count != 0)

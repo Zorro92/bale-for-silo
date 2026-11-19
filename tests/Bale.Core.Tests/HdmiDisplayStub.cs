@@ -11,6 +11,7 @@ namespace Windows.Graphics.Display.Core
         public uint ResolutionWidthInRawPixels { get; init; } = 1920;
         public uint ResolutionHeightInRawPixels { get; init; } = 1080;
         public double RefreshRate { get; init; } = 60;
+        public ushort BitsPerPixel { get; init; } = 24;
 
         public bool IsEqual(HdmiDisplayMode other) => ResolutionWidthInRawPixels == other.ResolutionWidthInRawPixels
             && ResolutionHeightInRawPixels == other.ResolutionHeightInRawPixels && RefreshRate == other.RefreshRate

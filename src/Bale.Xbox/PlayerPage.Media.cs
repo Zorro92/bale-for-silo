@@ -533,16 +533,22 @@ public sealed partial class PlayerPage
     }
 
     /// <summary>
-    /// The engine swap-chain format for this mount (bale_gpu target code): R10G10B10A2 for P010 frames, B8G8R8A8 for
-    /// NV12 or unknown depth (owner's bit-depth rule, AGENTS.md; EngineOutputPolicy). Logged once per open.
+    /// The engine swap-chain format for this mount (bale_gpu target code), capped at display depth for SDR
+    /// (owner's bit-depth rule, AGENTS.md; EngineOutputPolicy). Read HDMI on the UI thread; log once per open.
     /// </summary>
     private static uint EngineTarget(Attempt attempt, Mount media)
     {
+        var displayBitsPerPixel = DisplayHdrOutput.CurrentBitsPerPixel();
+        var ceiling = "display";
+#if DEBUG_SERVER
+        ceiling = DebugOutputDepthSwitch.Mode;
+#endif
         EngineOutputDecision output;
         try
         {
             output = attempt.Plan is { } plan
-                ? EngineOutputPolicy.Decide(plan, media.Route, attempt.Request.Detail.Versions, ConsoleToneMapRuntime.SupportsP010)
+                ? EngineOutputPolicy.Decide(plan, media.Route, attempt.Request.Detail.Versions, ConsoleToneMapRuntime.SupportsP010,
+                    displayBitsPerPixel, ceiling)
                 : new EngineOutputDecision("bgra", "unknown", "no plan");
         }
         catch (Exception ex)
@@ -560,7 +566,8 @@ public sealed partial class PlayerPage
             name = DebugEngineTargetSwitch.Mode + " (debug engine-target)";
         }
 #endif
-        Log.Info($"player: engine output={name} frames={output.Frames} reason={output.Reason}");
+        var display = displayBitsPerPixel is { } bpp ? $"{bpp}bpp" : "unknown";
+        Log.Info($"player: engine output={name} frames={output.Frames} display={display} reason={output.Reason}");
         return code;
     }
 

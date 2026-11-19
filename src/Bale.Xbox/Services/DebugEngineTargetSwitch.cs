@@ -3,9 +3,8 @@ namespace Bale.Xbox.Services;
 
 /// <summary>
 /// Memory-only override of the engine swap-chain format, captured per playback attempt; auto after restart. auto
-/// follows the frames Bale hands the engine, as release builds do (EngineOutputPolicy, owner's bit-depth rule in
-/// AGENTS.md): rgb10 (R10G10B10A2) for P010, bgra (B8G8R8A8) for NV12 or unknown depth. bgra, rgb10 and fp16 (scRGB)
-/// force that format on every engine open, e.g. to compare banding on the console.
+/// follows EngineOutputPolicy (owner's bit-depth rule in AGENTS.md), including the output-depth switch. bgra,
+/// rgb10 and fp16 (scRGB) force that format on every engine open, overriding every output-depth rule.
 /// </summary>
 internal static class DebugEngineTargetSwitch
 {

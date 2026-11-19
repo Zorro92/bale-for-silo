@@ -214,10 +214,11 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   (`bale_tonemap_output_width/height`) and plain SDR larger than the display takes the
   `console_downscale` route (d3d11va + bale_gpu scale-only), both through bale_gpu's linear-light area
   downscale. Details, evidence and gates: docs/player-plan.md "4K SDR downscale on smaller displays".
-- **Bit-depth rule (owner, 2026-11-17, revised the same day to match AetherEngine):** every stage that
+- **Bit-depth rule (owner, revised 2026-11-18):** work at source depth, deliver at display depth;
+  AV1 keeps 10-bit output until rav1g is stable. Every stage that
   processes video (tone map, film grain, scaling, colour or format conversion, repack, FFmpeg sws/filters,
   bale_gpu shaders, the fork, rav1g) keeps the source's depth: 8-bit in, 8-bit out (NV12); more than 8 bits
-  in, 10-bit out (P010; 12-bit is capped to 10). Never 10 in and 8 out: that is a bug. Don't raise 8-bit to
+  in, 10-bit out (P010; 12-bit is capped to 10). Never reduce processing depth. Don't raise 8-bit to
   10-bit either, with one exception where it makes sense: bale_gpu's SDR area downscale (the 4K-on-smaller-
   display route) writes P010 for 8-bit sources too, because averaging in linear light yields values between
   8-bit codes. AetherEngine does the same per stage (software decode, deinterlace, tone mapper and upscaler
@@ -226,15 +227,17 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   FFmpeg software decode outputs P010 for every source above 8 bits (fork bale.41+) and NV12 for 8-bit sources, also 4:2:2, 4:4:4, full range, RGB and grey (bale.42+).
   8-bit AV1 zero-copy stores 8-bit samples shifted into the P010 pool (no 10-bit processing) until rav1g;
   the rav1g integration pool takes NV12 textures for 8-bit AV1 and P010 for 10-bit (owner, 2026-11-17).
-  The engine's output follows the frames Bale hands it, per mount (`EngineOutputPolicy`, Rust
+  The engine's output is capped at the display's depth, per mount (`EngineOutputPolicy`, Rust
   `engine_output.rs`, passed to `bale_gpu_engine_session_open_target` as `MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT`,
-  logged once per open): P010 (a source above 8 bits on the system decoder or software decode, the console tone
-  map, the SDR downscale) → R10G10B10A2; NV12 (8-bit sources, 8-bit AV1 included, server transcodes, a stage on
-  a bale_gpu without P010) → B8G8R8A8; unknown depth → B8G8R8A8, logged. R10G10B10A2 is 32 bits per pixel like
-  BGRA and played with 0 dropped frames on the console (2026-11-17/18). HDR passthrough on an HDR display gets
-  R10G10B10A2 too (on hold; colour-space handling unchanged). The MediaPlayer fallback is unchanged. Debug
-  `bale-debug.sh engine-target auto|bgra|rgb10|fp16` overrides it for the next engine attempt; `auto` (default,
-  alias `default`) follows the policy as release builds do.
+  logged once per open with current HDMI bpp): P010 → R10G10B10A2 for HDR passthrough (not console tone-mapped),
+  or SDR output on a current HDMI mode of at least 30 bpp; otherwise B8G8R8A8. Unknown display depth treats SDR
+  as 8-bit. AV1 on the route or source temporarily keeps P010 → R10G10B10A2 until rav1g is stable, behind one
+  named Rust constant. NV12 (8-bit sources, 8-bit AV1 included, server transcodes, a stage on a bale_gpu without
+  P010) and unknown frames always keep B8G8R8A8. Frame depth, decoders, tone map and scaling are unchanged.
+  See docs/player-plan.md, "First 10-bit video after a boot slows the console GPU". The MediaPlayer fallback
+  is unchanged. Debug `bale-debug.sh output-depth display|source` selects the display ceiling (default, as in
+  release) or the old P010 → R10G10B10A2 behaviour; `bale-debug.sh engine-target auto|bgra|rgb10|fp16` still
+  overrides everything for the next engine open. Both are memory only; `auto` (alias `default`) follows the policy.
 - FFmpegInteropX packages, native activation and license texts ship in **all** builds. Keep the CI
   package checker; CsWinRT's projection alone does not register the WinRT factories for Native AOT.
 - Native FFmpeg is **8.1.2-bale.dav1d.1.5.4.p1**, not public 8.1.2 (which embeds dav1d 1.0.0).

@@ -32,6 +32,31 @@ public class DisplayHdrOutputTests : IDisposable
     }
 
     [Fact]
+    public void OutputDepthReadsTheCurrentModeInsteadOfTheSupportedModes()
+    {
+        _hdmi.Current = new() { BitsPerPixel = 24 };
+        _hdmi.ReadModes = () => [new() { BitsPerPixel = 30 }];
+        Assert.Equal(24, DisplayHdrOutput.CurrentBitsPerPixel());
+        _hdmi.Current = new() { BitsPerPixel = 30 };
+        Assert.Equal(30, DisplayHdrOutput.CurrentBitsPerPixel());
+        Assert.Equal(0, _hdmi.Switches);
+        Assert.Empty(Log.Messages);
+    }
+
+    [Theory]
+    [InlineData("view")]
+    [InlineData("mode")]
+    [InlineData("throws")]
+    public void MissingOrFailedCurrentModeReadsGiveUnknownDepth(string failure)
+    {
+        if (failure == "view") HdmiDisplayInformation.ForCurrentView = () => null;
+        if (failure == "mode") _hdmi.Current = null;
+        if (failure == "throws") HdmiDisplayInformation.ForCurrentView = () => throw new InvalidOperationException("private diagnostic");
+        Assert.Null(DisplayHdrOutput.CurrentBitsPerPixel());
+        Assert.Empty(Log.Messages);
+    }
+
+    [Fact]
     public void DetectionReportsTheConnectedDisplayWithoutChangingIt()
     {
         var capabilities = DisplayHdrOutput.DetectCapabilities();

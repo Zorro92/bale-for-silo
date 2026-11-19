@@ -6,6 +6,41 @@ public class DebugPlaytestScriptTests
 {
     [Theory]
     [InlineData(null)]
+    [InlineData("display")]
+    [InlineData("source")]
+    public async Task OutputDepthUsesStatusOrAnEncodedPost(string? mode)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(mode is null ? ["output-depth"] : ["output-depth", mode]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/output-depth\n", result.Arguments);
+        if (mode is null)
+        {
+            Assert.DoesNotContain("POST", result.Arguments);
+            Assert.DoesNotContain("--data-urlencode", result.Arguments);
+        }
+        else
+        {
+            Assert.Contains("-X\nPOST\n", result.Arguments);
+            Assert.Contains("--data-urlencode\nmode=" + mode + "\n", result.Arguments);
+        }
+    }
+
+    [Fact]
+    public async Task InvalidOutputDepthModesAndExtraArgumentsNeverInvokeCurl()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[] { new[] { "output-depth", "" }, ["output-depth", "DISPLAY"],
+            ["output-depth", "auto"], ["output-depth", "source "], ["output-depth", "source", "display"] })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
+    [Theory]
+    [InlineData(null)]
     [InlineData("hls")]
     [InlineData("auto")]
     public async Task DeliverySwitchUsesStatusOrAnEncodedPost(string? mode)

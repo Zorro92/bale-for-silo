@@ -59,6 +59,16 @@ internal sealed partial class DisplayHdrOutput
         }
     }
 
+    /// <summary>The current HDMI mode's bits per pixel (UI thread), or null if it cannot be read.</summary>
+    internal static int? CurrentBitsPerPixel()
+    {
+        try
+        {
+            return HdmiDisplayInformation.GetForCurrentView()?.GetCurrentDisplayMode()?.BitsPerPixel;
+        }
+        catch { return null; }
+    }
+
     internal async Task<bool> TryEnableHdr10Async()
     {
         var switched = false;

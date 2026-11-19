@@ -82,7 +82,7 @@ internal sealed partial class EngineBackend : PlaybackBackend
     /// <param name="start">Player seconds to open at: the session seeks there before its first frame (a seek issued
     /// right after opening can be dropped while the engine prerolls). The page's own start seek then finds it there.</param>
     /// <param name="target">The swap-chain format as bale_gpu's engine target code (0 bgra, 1 fp16, 2 rgb10), from
-    /// EngineOutputPolicy: the owner's bit-depth rule keeps 10-bit frames at 10 bits to the screen.</param>
+    /// EngineOutputPolicy: work at source depth, deliver at display depth (with the temporary AV1 exception).</param>
     public async Task<bool> OpenAsync(object source, string? mime, bool canSeek, double start = 0, uint target = 0)
     {
         _session.CanSeekSource = canSeek;

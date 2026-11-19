@@ -1,7 +1,7 @@
-//! The IMFMediaEngine swap-chain format of one mount (owner's bit-depth rule, AGENTS.md): it follows
-//! the frames Bale hands the engine. 10-bit frames (P010) get R10G10B10A2 (`rgb10`), 8-bit frames
-//! (NV12) keep B8G8R8A8 (`bgra`), so no mount goes 10 in, 8 out. Decided before the engine opens,
-//! from the route decision, the plan and the catalog versions; unknown depth keeps `bgra`.
+//! The IMFMediaEngine swap-chain format of one mount (owner's bit-depth rule, AGENTS.md): work at
+//! source depth, deliver at display depth. P010 gets R10G10B10A2 (`rgb10`) for HDR passthrough or a
+//! 30+ bpp SDR display, otherwise B8G8R8A8 (`bgra`). AV1 temporarily keeps 10-bit output until rav1g
+//! is stable. NV12 and unknown frames keep `bgra`; the frame/processing depth never changes here.
 
 use serde::{Deserialize, Serialize};
 
@@ -16,6 +16,17 @@ const COPIED_VIDEO_DELIVERIES: [&str; 4] = [
     "server_remux_progressive",
     "server_remux_hls",
 ];
+
+/// Owner's temporary exception: retain realistic 10-bit resource use while developing rav1g.
+const AV1_KEEPS_10_BIT_OUTPUT_UNTIL_RAV1G_IS_STABLE: bool = true;
+
+#[derive(Deserialize, Default, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum Ceiling {
+    #[default]
+    Display,
+    Source,
+}
 
 /// The `PlaybackRouteDecision` fields this reads (C# writes the whole record; serde skips the rest).
 #[derive(Deserialize, Debug, Default, Clone)]
@@ -36,6 +47,10 @@ pub struct DecideArgs {
     /// bale_gpu's console stage writes P010 (`ConsoleToneMapRuntime.SupportsP010`); without it the
     /// tone map and the downscale write NV12.
     stage_p010: bool,
+    /// Current HDMI mode, not the display's supported modes. Unknown caps SDR at 8 bits.
+    display_bits_per_pixel: Option<i32>,
+    #[serde(default)]
+    ceiling: Ceiling,
 }
 
 /// `EngineOutputDecision`.
@@ -59,44 +74,73 @@ fn output(frames: &'static str, reason: &'static str) -> EngineOutput {
 
 pub fn decide(args: &DecideArgs) -> EngineOutput {
     let route = &args.route;
+    let depth = delivered_depth(&args.plan, args.versions.as_deref(), route);
     // bale_gpu's stage: the tone map's inputs are all 10-bit; the SDR area downscale writes P010 for
     // 8-bit sources too (the rule's one exception). An old bale_gpu without P010 writes NV12.
-    if route.console_tone_map {
-        return if args.stage_p010 {
+    let mut decision = if route.console_tone_map {
+        if args.stage_p010 {
             output("p010", "console tone map writes P010")
         } else {
             output(
                 "nv12",
                 "console tone map writes NV12 (bale_gpu without P010)",
             )
-        };
-    }
-    if route.console_downscale {
-        return if args.stage_p010 {
+        }
+    } else if route.console_downscale {
+        if args.stage_p010 {
             output("p010", "console downscale writes P010")
         } else {
             output(
                 "nv12",
                 "console downscale writes NV12 (bale_gpu without P010)",
             )
-        };
+        }
+    } else {
+        // Every other route keeps the delivered video's depth: the system decoder (Windows' source or
+        // FFmpeg passthrough, DV base layers) and FFmpeg software decode output NV12 for 8-bit and P010
+        // above 8 bits; rav1g takes NV12 for 8-bit AV1. dav1d zero-copy shifts 8-bit AV1 into its P010
+        // pool without 10-bit processing, so it stays 8-bit here, like rav1g and the rule.
+        match depth {
+            Depth::Known { bits, .. } if bits > 8 => output("p010", "source above 8 bits"),
+            Depth::Known { .. } => output("nv12", "8-bit source"),
+            Depth::Hdr => output("p010", "HDR source (above 8 bits)"),
+            Depth::Transcode => output("nv12", "server transcode (8-bit)"),
+            Depth::Unknown => output("unknown", "unknown depth"),
+        }
+    };
+    // Never raise NV12/unknown frames to rgb10, even for HDR or a deep display. Source mode is the
+    // old presentation behaviour, including the old reasons, without changing any stage's output.
+    if decision.frames != "p010" || args.ceiling == Ceiling::Source {
+        return decision;
     }
-    // Every other route keeps the delivered video's depth: the system decoder (Windows' source or
-    // FFmpeg passthrough, DV base layers) and FFmpeg software decode output NV12 for 8-bit and P010
-    // above 8 bits; rav1g takes NV12 for 8-bit AV1. dav1d zero-copy shifts 8-bit AV1 into its P010
-    // pool without 10-bit processing, so it stays 8-bit here, like rav1g and the rule.
-    let plan = &args.plan;
-    match delivered_depth(plan, args.versions.as_deref(), route) {
-        Depth::Known(depth) if depth > 8 => output("p010", "source above 8 bits"),
-        Depth::Known(_) => output("nv12", "8-bit source"),
-        Depth::Hdr => output("p010", "HDR source (above 8 bits)"),
-        Depth::Transcode => output("nv12", "server transcode (8-bit)"),
-        Depth::Unknown => output("unknown", "unknown depth"),
+    if !route.console_tone_map && matches!(depth, Depth::Hdr | Depth::Known { hdr: true, .. }) {
+        decision.reason = "HDR passthrough: 10-bit output";
+    } else if AV1_KEEPS_10_BIT_OUTPUT_UNTIL_RAV1G_IS_STABLE
+        && [
+            route.video_codec.as_deref(),
+            args.plan
+                .source
+                .as_ref()
+                .and_then(|s| s.video_codec.as_deref()),
+        ]
+        .iter()
+        .any(|&codec| normalize_codec(codec).as_deref() == Some("av1"))
+    {
+        decision.reason = "AV1 keeps 10-bit output (until rav1g is stable)";
+    } else if args.display_bits_per_pixel.is_some_and(|bpp| bpp >= 30) {
+        decision.reason = "SDR 10-bit display: 10-bit output";
+    } else {
+        decision.target = "bgra";
+        decision.reason = "SDR 8-bit display: 8-bit output";
     }
+    decision
 }
 
 enum Depth {
-    Known(i64),
+    Known {
+        bits: i64,
+        hdr: bool,
+    },
     /// No depth given, but HDR/Dolby Vision video needs more than 8 bits.
     Hdr,
     /// Silo's encoders write 8-bit yuv420p SDR (transcode.go `-pix_fmt yuv420p`).
@@ -152,9 +196,6 @@ fn delivered_depth(
         .or(track.and_then(|t| t.bit_depth))
         .filter(|&d| d > 0)
         .or_else(|| pixel_format_depth(track.and_then(|t| t.pixel_format.as_deref())));
-    if let Some(depth) = depth {
-        return Depth::Known(depth);
-    }
     let hdr = source.is_some_and(|s| {
         is_hdr(s.dynamic_range.as_deref())
             || s.dolby_vision_profile.is_some_and(|p| p > 0)
@@ -162,6 +203,9 @@ fn delivered_depth(
     }) || recipe_hdr
         || route.dolby_vision7_base_layer
         || track.is_some_and(|t| is_hdr(t.video_range.as_deref()));
+    if let Some(bits) = depth {
+        return Depth::Known { bits, hdr };
+    }
     if hdr { Depth::Hdr } else { Depth::Unknown }
 }
 
@@ -244,7 +288,155 @@ mod tests {
             versions: None,
             route,
             stage_p010,
+            display_bits_per_pixel: Some(30),
+            ceiling: Ceiling::Display,
         })
+    }
+
+    fn display_args(plan: PlaybackPlan, route: EngineRoute, bpp: Option<i32>) -> DecideArgs {
+        DecideArgs {
+            plan,
+            route,
+            versions: None,
+            stage_p010: true,
+            display_bits_per_pixel: bpp,
+            ceiling: Ceiling::Display,
+        }
+    }
+
+    #[test]
+    fn sdr_p010_is_capped_at_the_current_display_depth() {
+        for bits in [10, 12] {
+            for bpp in [None, Some(0), Some(24), Some(29), Some(30), Some(36)] {
+                let args = display_args(
+                    plan("original_http", "hevc", Some(bits)),
+                    route("hevc"),
+                    bpp,
+                );
+                let out = decide(&args);
+                let (target, reason) = if bpp.is_some_and(|b| b >= 30) {
+                    ("rgb10", "SDR 10-bit display: 10-bit output")
+                } else {
+                    ("bgra", "SDR 8-bit display: 8-bit output")
+                };
+                assert_eq!(
+                    (out.target, out.frames, out.reason),
+                    (target, "p010", reason)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn hdr_passthrough_is_rgb10_even_without_a_deep_current_sdr_mode() {
+        for range in ["hdr10", "hlg", "dolby_vision"] {
+            for bits in [None, Some(10)] {
+                let mut p = plan("original_http", "hevc", bits);
+                p.source.as_mut().unwrap().dynamic_range = Some(range.into());
+                for bpp in [None, Some(24), Some(30)] {
+                    let out = decide(&display_args(p.clone(), route("hevc"), bpp));
+                    assert_eq!((out.target, out.frames), ("rgb10", "p010"));
+                    assert_eq!(out.reason, "HDR passthrough: 10-bit output");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tone_mapped_hdr_uses_the_sdr_display_ceiling() {
+        for range in ["hdr10", "hlg"] {
+            let mut p = plan("original_http", "hevc", Some(10));
+            p.source.as_mut().unwrap().dynamic_range = Some(range.into());
+            let mut tone = route("hevc");
+            tone.console_tone_map = true;
+            for (bpp, target) in [(None, "bgra"), (Some(24), "bgra"), (Some(30), "rgb10")] {
+                let out = decide(&display_args(p.clone(), tone.clone(), bpp));
+                assert_eq!((out.target, out.frames), (target, "p010"));
+                assert!(out.reason.starts_with("SDR "));
+            }
+        }
+    }
+
+    #[test]
+    fn av1_on_the_route_or_source_keeps_10_bit_output_until_rav1g_is_stable() {
+        let mut no_route_codec = route("av1");
+        no_route_codec.video_codec = None;
+        let mut no_source_codec = plan("original_http", "hevc", Some(10));
+        no_source_codec.source.as_mut().unwrap().video_codec = None;
+        for (p, r) in [
+            (plan("original_http", " AV1 ", Some(10)), route("av1")),
+            (plan("original_http", "av1", Some(10)), no_route_codec),
+            (no_source_codec, route(" AV1 ")),
+        ] {
+            let out = decide(&display_args(p, r, Some(24)));
+            assert_eq!((out.target, out.frames), ("rgb10", "p010"));
+            assert_eq!(
+                out.reason,
+                "AV1 keeps 10-bit output (until rav1g is stable)"
+            );
+        }
+    }
+
+    #[test]
+    fn nv12_and_unknown_frames_never_get_raised_to_rgb10() {
+        for ceiling in [Ceiling::Display, Ceiling::Source] {
+            for codec in ["hevc", "av1"] {
+                for bpp in [None, Some(24), Some(30)] {
+                    for bits in [None, Some(8)] {
+                        let mut args =
+                            display_args(plan("original_http", codec, bits), route(codec), bpp);
+                        args.ceiling = ceiling;
+                        let out = decide(&args);
+                        let frames = if bits.is_some() { "nv12" } else { "unknown" };
+                        assert_eq!((out.target, out.frames), ("bgra", frames));
+                    }
+                }
+            }
+        }
+        let mut p = plan("original_http", "hevc", Some(10));
+        p.source.as_mut().unwrap().dynamic_range = Some("hdr10".into());
+        let mut args = display_args(p, route("hevc"), Some(30));
+        args.route.console_tone_map = true;
+        args.stage_p010 = false;
+        assert_eq!(decide(&args).target, "bgra");
+        // Even contradictory HDR facts must not raise explicitly 8-bit frames.
+        args.route.console_tone_map = false;
+        args.plan.source.as_mut().unwrap().bit_depth = Some(8);
+        assert_eq!(decide(&args).target, "bgra");
+    }
+
+    #[test]
+    fn source_ceiling_keeps_the_previous_p010_targets_and_reasons() {
+        let mut tone = route("hevc");
+        tone.console_tone_map = true;
+        let mut down = route("hevc");
+        down.console_downscale = true;
+        for (r, reason) in [
+            (route("hevc"), "source above 8 bits"),
+            (tone, "console tone map writes P010"),
+            (down, "console downscale writes P010"),
+        ] {
+            let mut args = display_args(plan("original_http", "hevc", Some(10)), r, Some(24));
+            args.ceiling = Ceiling::Source;
+            let out = decide(&args);
+            assert_eq!(
+                (out.target, out.frames, out.reason),
+                ("rgb10", "p010", reason)
+            );
+        }
+    }
+
+    #[test]
+    fn missing_display_inputs_default_to_the_8_bit_sdr_ceiling() {
+        let args = serde_json::from_value(serde_json::json!({
+            "plan": { "delivery": "original_http", "source": { "video_codec": "hevc", "bit_depth": 10 } },
+            "route": { "use_ffmpeg": true, "software_video": false, "video_codec": "hevc",
+                "console_tone_map": false, "console_downscale": false, "dolby_vision7_base_layer": false },
+            "stage_p010": true
+        }))
+        .unwrap();
+        let out = decide(&args);
+        assert_eq!((out.target, out.frames), ("bgra", "p010"));
     }
 
     #[test]
@@ -354,6 +546,8 @@ mod tests {
             versions: Some(versions),
             route: route("hevc"),
             stage_p010: true,
+            display_bits_per_pixel: Some(30),
+            ceiling: Ceiling::Display,
         });
         assert_eq!(out.target, "rgb10");
         let out = run(p.clone(), route("hevc"), true);

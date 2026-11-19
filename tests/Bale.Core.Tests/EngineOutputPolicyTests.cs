@@ -3,7 +3,7 @@ using Bale.Core.Playback;
 
 namespace Bale.Core.Tests;
 
-/// <summary>Owner's bit-depth rule: the engine's swap chain follows the frames of every route (AGENTS.md).</summary>
+/// <summary>Owner's bit-depth rule: work at source depth, deliver at display depth (AGENTS.md).</summary>
 public sealed class EngineOutputPolicyTests
 {
     private static PlaybackPlan Plan(string delivery, string video, int? depth, string range = "sdr", int width = 1920, int height = 1080)
@@ -19,7 +19,68 @@ public sealed class EngineOutputPolicyTests
     }
 
     private static EngineOutputDecision Engine(PlaybackPlan plan, PlaybackRouteDecision route, bool stageP010 = true,
-        IReadOnlyList<FileVersion>? versions = null) => EngineOutputPolicy.Decide(plan, route, versions, stageP010);
+        IReadOnlyList<FileVersion>? versions = null, int? displayBitsPerPixel = 30, string ceiling = "display") =>
+        EngineOutputPolicy.Decide(plan, route, versions, stageP010, displayBitsPerPixel, ceiling);
+
+    [Theory]
+    [InlineData("sdr", false, 24, "display", "bgra")]
+    [InlineData("sdr", false, 29, "display", "bgra")]
+    [InlineData("sdr", false, 30, "display", "rgb10")]
+    [InlineData("sdr", false, 36, "display", "rgb10")]
+    [InlineData("sdr", false, null, "display", "bgra")]
+    [InlineData("hdr10", false, 24, "display", "rgb10")]
+    [InlineData("hlg", false, 24, "display", "rgb10")]
+    [InlineData("hdr10", false, null, "display", "rgb10")]
+    [InlineData("hdr10", true, 24, "display", "bgra")]
+    [InlineData("hdr10", true, 30, "display", "rgb10")]
+    [InlineData("hlg", true, 24, "display", "bgra")]
+    [InlineData("hlg", true, 30, "display", "rgb10")]
+    [InlineData("sdr", false, 24, "source", "rgb10")]
+    [InlineData("sdr", false, null, "source", "rgb10")]
+    [InlineData("hdr10", true, 24, "source", "rgb10")]
+    public void P010TargetFollowsTheDisplayUnlessHdrPassesThroughOrSourceModeWins(
+        string range, bool toneMapped, int? bpp, string ceiling, string target)
+    {
+        var plan = Plan("original_http", "hevc", 10, range);
+        var route = PlaybackRoutePolicy.Decide(plan, false, sdrOutput: toneMapped);
+        Assert.Equal(toneMapped, route.ConsoleToneMap);
+        var output = Engine(plan, route, displayBitsPerPixel: bpp, ceiling: ceiling);
+        Assert.Equal((target, "p010"), (output.Target, output.Frames));
+        if (ceiling == "display" && (range == "sdr" || toneMapped))
+            Assert.Equal(bpp >= 30 ? "SDR 10-bit display: 10-bit output" : "SDR 8-bit display: 8-bit output", output.Reason);
+    }
+
+    [Fact]
+    public void DefaultInputsTreatAnUnknownSdrDisplayAs8Bit()
+    {
+        var plan = Plan("original_http", "hevc", 10);
+        var output = EngineOutputPolicy.Decide(plan, PlaybackRoutePolicy.Decide(plan, false));
+        Assert.Equal(("bgra", "p010", "SDR 8-bit display: 8-bit output"), (output.Target, output.Frames, output.Reason));
+    }
+
+    [Theory]
+    [InlineData("av1")]
+    [InlineData(" AV1 ")]
+    public void Av1TemporarilyKeeps10BitOutputOnAn8BitDisplay(string codec)
+    {
+        var plan = Plan("original_http", codec, 10);
+        var output = Engine(plan, PlaybackRoutePolicy.Decide(plan, false), displayBitsPerPixel: 24);
+        Assert.Equal(("rgb10", "p010", "AV1 keeps 10-bit output (until rav1g is stable)"),
+            (output.Target, output.Frames, output.Reason));
+    }
+
+    [Theory]
+    [InlineData("hevc", 8, "display", "nv12")]
+    [InlineData("av1", 8, "display", "nv12")]
+    [InlineData("av1", 8, "source", "nv12")]
+    [InlineData("hevc", null, "display", "unknown")]
+    [InlineData("hevc", null, "source", "unknown")]
+    public void ADeepDisplayOrSourceModeNeverRaisesNv12OrUnknownFrames(string codec, int? bits, string ceiling, string frames)
+    {
+        var plan = Plan("original_http", codec, bits);
+        var output = Engine(plan, PlaybackRoutePolicy.Decide(plan, false), displayBitsPerPixel: 30, ceiling: ceiling);
+        Assert.Equal(("bgra", frames), (output.Target, output.Frames));
+    }
 
     [Theory]
     [InlineData("h264", 8, "bgra")]
@@ -78,6 +139,8 @@ public sealed class EngineOutputPolicyTests
         var route = PlaybackRoutePolicy.Decide(plan, false, display: (1920, 1080), sdrDownscale: true);
         Assert.True(route.ConsoleDownscale);
         Assert.Equal(("rgb10", "p010"), (Engine(plan, route).Target, Engine(plan, route).Frames));
+        var shallow = Engine(plan, route, displayBitsPerPixel: 24);
+        Assert.Equal(("bgra", "p010"), (shallow.Target, shallow.Frames));
         Assert.Equal("bgra", Engine(plan, route, stageP010: false).Target);
     }
 
@@ -126,7 +189,10 @@ public sealed class EngineOutputPolicyTests
     public void EveryEngineOpenPassesThePolicyTarget()
     {
         var media = Read("PlayerPage.Media.cs.txt");
-        Assert.Contains("EngineOutputPolicy.Decide(plan, media.Route, attempt.Request.Detail.Versions, ConsoleToneMapRuntime.SupportsP010)", media);
+        Assert.Contains("var displayBitsPerPixel = DisplayHdrOutput.CurrentBitsPerPixel();", media);
+        Assert.Contains("EngineOutputPolicy.Decide(plan, media.Route, attempt.Request.Detail.Versions, ConsoleToneMapRuntime.SupportsP010,", media);
+        Assert.Contains("displayBitsPerPixel, ceiling)", media);
+        Assert.Contains("frames={output.Frames} display={display} reason={output.Reason}", media);
         Assert.Contains("target: target);", media);
         var engine = Read("EngineBackend.cs.txt");
         Assert.Contains("bale_gpu_engine_session_open_target(", engine);
