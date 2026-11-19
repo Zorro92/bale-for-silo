@@ -2467,3 +2467,15 @@ keep B8G8R8A8; unknown depth keeps B8G8R8A8 and is logged (`player: engine outpu
 Depth comes from the plan's source, else the catalog track's bit depth or pixel format, else HDR/DV implies
 10-bit. A console A/B on 2026-11-18 played R10G10B10A2 smoothly with 0 dropped frames. Debug `engine-target`
 (`auto` default, or force `bgra`/`rgb10`/`fp16`) overrides it.
+
+**First 10-bit video after a boot slows the console GPU (2026-11-18, bisect with rav1g timing).** The first
+10-bit video output after a console boot leaves the GPU slow for a while: rav1g's j4k40 GPU time went from
+18.6 to about 30 ms, ext_borders rose 7x, and Bale's own playback still dropped no frames.
+- **Not Bale's engine path:** it happens on both the engine (R10G10B10A2) and the MediaPlayer backend, where
+  Windows picks the format.
+- **The decoder doesn't matter:** HEVC hardware and dav1d/D3D12 both trip it. The same films with B8G8R8A8
+  forced stay clean, and later 10-bit plays in the same boot are clean.
+- **Usually short:** it normally wears off within 2 minutes. One afternoon case lasted 35+ minutes, after
+  longer, repeated 10-bit viewing.
+- **Consequence:** a console behaviour, not a Bale bug. The bit-depth rule stands. Before GPU timing runs, do
+  not take a reading within a few minutes of the first 10-bit play after a boot.
