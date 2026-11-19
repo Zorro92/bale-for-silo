@@ -16,10 +16,10 @@ part Bale hasn't built yet; check when building it), **deviation** (Bale differs
 
 | Repo | Commit | Reviewed |
 |---|---|---|
-| silo-android | `db87f835ff90` | 2026-11-18 |
-| silo-apple | `648091a7d9b7` | 2026-11-18 |
-| silo-server | `651e55a32253` | 2026-11-18 |
-| silo-roku | `d240f47964d9` | 2026-11-17 |
+| silo-android | `e158795142f8` | 2026-11-19 |
+| silo-apple | `9dabb6213812` | 2026-11-19 |
+| silo-server | `bd40bd9ebfa4` | 2026-11-19 |
+| silo-roku | `3e7ee3a566c1` | 2026-11-19 |
 
 The first review (2026-11-10) started from the commit each local clone was made at.
 
@@ -36,6 +36,12 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   per key, history names only the edition (`last_edition_key`, then `last_file_id`), an Edition
   pick keeps Version on Auto, server order (resolution, HDR, size), display matching inside the
   edition. Not yet on the console. Version icon (Material VideoLibrary) not checked.
+- **Edition / Version Auto, opening edition (2026-11-19):** with no history, pick the edition by name
+  class first (unnamed or standard/default, then theatrical, then any other cut); only editions of the
+  best class present compare their Auto files (fit, resolution, HDR, server order). Bale's
+  `formatting::opening_edition` still compares quality first and uses the name only as a tiebreak, so a
+  2160p HDR Extended Cut beats a 1080p Standard cut (Android `e15879514`, Apple `b54fefb1`, Roku
+  `3e7ee3a`, web `66105aa`).
 - **Series page:** ~~Specials first as season zero~~ (done 2026-11-16: season tabs and the
   continuous episode row; a series still opens on a numbered season). ~~The last special continues
   into S1E1~~ (with Up Next, 2026-11-16) (Android `69e39ad45`, Apple `c466777f`, Roku
@@ -160,6 +166,47 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   `651e55a`, console check).
 
 ## Reviews
+
+### 2026-11-19
+
+One act item, on every client at once: the opening edition is chosen by name before quality. The
+server batch is web, plugins, admin environment settings and nodes, with no change to a path Bale
+generates.
+
+#### silo-android (`db87f835ff90..e158795142f8`, 2 commits, 0 none)
+
+- `e15879514` act: with no history the detail page opens the unnamed or standard edition, then
+  theatrical, then any other cut; quality (fit, resolution, HDR, server order) competes only inside
+  that best name class (`DetailVersionSelector.openingEdition`). Bale ranks quality first (Open
+  items, opening edition).
+- `bb59172f8` later: Media3 direct play gets a fresh retry window after sustained progress (enough
+  bytes over a recovery interval, at a new file offset), so a later outage in a long film isn't
+  counted against the first one's window; failures log Media3 codes and exception class names, never
+  messages. Android-only player; playback follows Apple, but check Bale's original_http reconnect
+  budget the same way if long films give up after an early outage.
+
+#### silo-apple (`648091a7d9b7..9dabb6213812`, 2 commits, 0 none)
+
+- `b54fefb1` act: the same opening-edition rule as Android (`DetailVersionSelection.swift`).
+- `9dabb621` later: the tvOS Home/library corner wash drops the top-right colour beneath wide
+  artwork (the art fades into the other three corners); framed covers keep all four with a glow.
+  Extends the 2026-11-18 corner-wash later item; Bale keeps Android's single-colour `AmbientTint`.
+
+#### silo-server (`651e55a32253..bd40bd9ebfa4`, 27 commits, 24 none)
+
+- `66105aa` act: the web's opening-edition change, the source of the client commits above.
+- `e78f889` later: Recently Released rows order by release date (a series' premiere when it has
+  none), exactly as their See All page. Server-side; Bale shows the server's order, so rows and See
+  all should now agree.
+- `4a73f48` later: the web keeps a seek made before a direct-played original loads while a quality
+  change is queued. Check Bale's quality-change replan keeps a pending seek target the same way.
+
+Contract changes (admin settings `managed_by_env_vars`, node `env_managed` and job-cap refusals,
+plugin schedules and notification destinations) are on paths Bale doesn't generate.
+
+#### silo-roku (`d240f47964d9..3e7ee3a566c1`, 1 commit, 0 none)
+
+- `3e7ee3a` act: the same opening-edition rule; a last played edition still wins.
 
 ### 2026-11-18
 
