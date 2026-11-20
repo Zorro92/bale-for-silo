@@ -253,13 +253,27 @@ test player, 1024 MiB without the capability). Microsoft's hevc-xbox page only s
 on Series X|S; games may get one, apps don't. So never add GPU memory to app memory, and the `mem`
 remainder line is **app memory minus the counted total**: CPU heaps (managed and native), Media
 Foundation, driver, rav1g internals, uninstrumented textures and padding. Estimates and snapshot timing
-make it approximate. The practical ceiling (~1.2 GB) is Bale's own observation, not a documented limit,
-and it does not apply to total app memory: 4K AV1 on dav1d (debug `av1-claim 2160-dav1d`, 0.1.707) held
-~2000 MiB for 60 s with 0 dropped frames (Device Portal: Bale working set 1.5 GB, commit 2.0 GB). Device
-Portal's "total" (~1.6 GB) is the system partition's physical pages, not the app's quota. The ~1.2 GB
-symptoms come from GPU-heavy routes, so the likely limit is the DXGI local video-memory budget (~1210 MiB
-measured by rav1g without hevcPlayback; not yet measured with it). Until it is logged, keep GPU-resident
-memory (the ledger's counted total plus rav1g internals) near 1.0–1.2 GB.
+make it approximate.
+
+**Measured limits (memprobe, Bale 0.1.708, Series X, hevcPlayback, 2026-11-20).** There is no ~1.2 GB
+ceiling; that was only what the playback routes happened to use.
+
+| Probe | Reached | Stopped by |
+|---|---|---|
+| `memprobe cpu` (touched native memory) | 3200 MiB probe, app 3251 of 3328 MiB | app limit (next step would pass 3328); level Low → Medium at ~1.7 GB, High at ~3.2 GB |
+| `memprobe d3d11` (resident textures) | 2828 MiB GPU, app 2963 MiB | E_OUTOFMEMORY at the DXGI local budget, **2857 MiB** |
+| `memprobe d3d12` (committed resources) | 2828 MiB GPU, app 2962 MiB | E_OUTOFMEMORY at the same 2857 MiB budget |
+| `memprobe mixed cpu=1000` | 1000 MiB CPU + 1928 MiB GPU, app 3029 MiB | app limit: CPU and GPU share the 3328 MiB pool |
+
+- The DXGI local budget with hevcPlayback is 2857 MiB (rav1g's ~1210 MiB was the package without it);
+  the non-local segment group is empty (budget 0), and AvailableForReservation reads 1507.8 MiB.
+- No paging before the failure: the fixed 64 MiB GPU copy stayed at 1.70–1.77 ms from 128 MiB to 2.8 GB.
+- D3D11 and D3D12 report the same budget and fail at the same size.
+- So the limits are: everything ≤ 3328 MiB of app memory, of which GPU-resident memory ≤ ~2857 MiB.
+  Earlier symptoms near 1.2 GB (rav1g stutter, the tone-map route's failures) had other causes
+  (memory bandwidth, the per-open msvproc leak), not a quota.
+- Device Portal's "total" (~1.6 GB) is the system partition's physical pages, not the app's quota; 4K AV1
+  on dav1d held ~2000 MiB (working set 1.5 GB, commit 2.0 GB) with 0 dropped frames.
 
 **Debug memory limit probe.** Leave the player, then run one of:
 
