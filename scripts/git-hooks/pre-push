@@ -10,6 +10,8 @@ set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 cd "$root"
 export PATH="$HOME/.cargo/bin:$PATH"
+# Incremental caches get corrupted on exFAT (rustc ICEs, "stream did not contain valid UTF-8"); lint without them.
+export CARGO_INCREMENTAL=0
 
 # Pushing only deletions or tags: nothing to check.
 needed=0 cswinrt=0
