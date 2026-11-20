@@ -211,6 +211,7 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
 
 ## Console resource limits (check every design decision against them)
 
+Budget per part: docs/resource-budget.md (0.2.x goal; rav1g envelope now).
 Owner rule (2026-11-20): every design decision (where work runs, buffer/pool sizes, threads, CPU vs GPU,
 copies, bit depth) is checked against the measured limits and says which limit it is sized for. Source of
 truth: docs/gpu-tone-map.md "Measured limits" (also the bale-projects skill, "Measured console limits").
