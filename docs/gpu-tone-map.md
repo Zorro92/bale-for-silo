@@ -253,7 +253,13 @@ test player, 1024 MiB without the capability). Microsoft's hevc-xbox page only s
 on Series X|S; games may get one, apps don't. So never add GPU memory to app memory, and the `mem`
 remainder line is **app memory minus the counted total**: CPU heaps (managed and native), Media
 Foundation, driver, rav1g internals, uninstrumented textures and padding. Estimates and snapshot timing
-make it approximate. The practical ceiling (~1.2 GB) is Bale's own measurement, not a documented limit.
+make it approximate. The practical ceiling (~1.2 GB) is Bale's own observation, not a documented limit,
+and it does not apply to total app memory: 4K AV1 on dav1d (debug `av1-claim 2160-dav1d`, 0.1.707) held
+~2000 MiB for 60 s with 0 dropped frames (Device Portal: Bale working set 1.5 GB, commit 2.0 GB). Device
+Portal's "total" (~1.6 GB) is the system partition's physical pages, not the app's quota. The ~1.2 GB
+symptoms come from GPU-heavy routes, so the likely limit is the DXGI local video-memory budget (~1210 MiB
+measured by rav1g without hevcPlayback; not yet measured with it). Until it is logged, keep GPU-resident
+memory (the ledger's counted total plus rav1g internals) near 1.0–1.2 GB.
 
 Console readings, Bale 0.1.705 (wrapper bale.62), 1080p SDR display, 40 s into playback:
 
