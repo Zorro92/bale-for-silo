@@ -6,7 +6,7 @@ using System.Text;
 namespace Bale.Xbox.Services;
 
 /// <summary>Independent bale_gpu memory ABI 1. Missing exports are expected with an older DLL.</summary>
-internal static class DebugGpuMemory
+internal static partial class DebugGpuMemory
 {
     [StructLayout(LayoutKind.Sequential)]
     private struct Entry
@@ -73,18 +73,19 @@ internal static class DebugGpuMemory
         3 => "bale_gpu subtitle overlay",
         4 => "bale_gpu engine target/staging",
         5 => "bale_gpu zero-copy resources",
-        16 => "FFmpeg decoder frames",
-        17 => "FFmpeg tone-map output pool",
-        18 => "FFmpeg dav1d upload pool",
-        19 => "FFmpeg rav1g output image pool",
-        20 => "FFmpeg rav1g prewarm resident",
-        21 => "FFmpeg other textures",
+        16 => "d3d11va decoder texture array",
+        17 => "stage output (tone map/downscale output)",
+        18 => "dav1d upload pool + staging ring",
+        19 => "rav1g output images",
+        20 => "rav1g process device present",
+        21 => "d3d11va copy pool / rav1g direct-copy textures",
+        22 => "rav1g decoder buffers",
         32 => "Bale player swap chain (estimate)",
         _ => "reserved/unassigned",
     };
 
     /// <summary>One real player's output: MF hides the buffer count, so assume two buffers.</summary>
-    internal sealed class PlayerSwapChain : IDisposable
+    internal sealed partial class PlayerSwapChain : IDisposable
     {
         private long _bytes;
         private bool _active;

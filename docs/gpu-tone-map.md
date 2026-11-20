@@ -194,9 +194,10 @@ uint64_t bale_mem_underflows(uint32_t category);
 the **total needed**, writes `min(capacity, total)` entries in ascending category order,
 and accepts null `out` as a size query. Use capacity 64 to avoid a query/allocation race.
 Every category ever accounted remains in snapshots, including zero rows after releases
-and peak resets. Rows are individually coherent under concurrent accounting; the whole
-snapshot is not a single instant. Atomics serialize each category without allocation or
-poisoning. Invalid IDs (>=64) are ignored. Bytes/count clamp independently at zero on
+and peak resets. Accounting uses only lock-free atomics, with no mutex/spin lock, allocation
+or D3D calls, including when invoked from texture destruction under a D3D11 lock on any
+thread. Snapshots use only atomic reads: counters are independently sampled during concurrent
+updates, with peak floored at the observed bytes. Invalid IDs (>=64) are ignored. Bytes/count clamp independently at zero on
 underflow and saturate at their signed MAX on overflow; the lifetime underflow counter
 increments once per faulty call (saturating at UINT64_MAX), and is visible on `mem` rows.
 Reset sets peak=current, preserving residency, history and underflow counters.
@@ -210,21 +211,23 @@ Reset sets peak=current, preserving residency, history and underflow counters.
 | 4 | bale_gpu engine target/staging textures (`engine.rs`) |
 | 5 | bale_gpu zero-copy resources: D3D12 committed resources and private D3D11 landing/self-test textures |
 | 6–15 | Reserved for bale_gpu |
-| 16 | FFmpegInteropX decoder frames |
-| 17 | FFmpegInteropX tone-map output pool |
-| 18 | FFmpegInteropX dav1d upload pool |
-| 19 | FFmpegInteropX rav1g output image pool |
-| 20 | FFmpegInteropX rav1g prewarm resident (count 1 while resident; bytes if known) |
-| 21 | FFmpegInteropX other textures |
-| 22–31 | Reserved for FFmpegInteropX |
+| 16 | d3d11va decoder texture array (count = slices) |
+| 17 | Stage output (tone map/downscale output) |
+| 18 | dav1d upload pool + staging ring |
+| 19 | rav1g output images |
+| 20 | rav1g process device present (count 1, bytes 0) |
+| 21 | d3d11va copy pool / rav1g direct-copy textures |
+| 22 | rav1g decoder buffers (`device_size` per stream; count = streams) |
+| 23–31 | Reserved for FFmpegInteropX |
 | 32 | Bale real-player swap chain **(estimate)** |
 | 33–63 | Reserved |
 
 Count allocations at their allocator, once per underlying resource (swap-chain count is
-its buffer count), and pair additions with final releases, including pooled residency.
+its buffer count; category 16 counts slices and 22 counts streams), and pair additions
+with final releases, including pooled residency.
 Unknown-size residents can use bytes=0/count=1. The fork should resolve these exports at
 runtime, check `bale_mem_abi_version()==1`, and skip accounting on older DLLs. This change
-only reserves its IDs; the fork/rav1g are not instrumented here. Shared-resource opens,
+defines its ABI/IDs; fork instrumentation is maintained in the fork repository. Shared-resource opens,
 views and imported caller textures must not add another charge. bale_gpu resources hold
 a `Tracked` RAII guard in COM private data, so clones/views/context references keep their
 charge until destruction. A marker on subtitle buffer zero covers all swap-chain buffers;

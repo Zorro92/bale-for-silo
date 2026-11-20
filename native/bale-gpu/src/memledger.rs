@@ -1,11 +1,12 @@
 //! Memory ledger ABI 1 (independent of the GPU/decoder ABIs). Fixed category IDs:
 //! 1 tone map, 2 film grain, 3 subtitles, 4 engine target/staging, 5 zero-copy resources;
-//! 6–15 reserved for bale_gpu; 16 decoder frames, 17 tone-map output pool, 18 dav1d upload
-//! pool, 19 rav1g output pool, 20 rav1g prewarm resident, 21 other fork textures;
-//! 22–31 reserved for FFmpegInteropX; 32 player swap chain (estimate); 33–63 reserved.
+//! 6–15 reserved for bale_gpu; 16 d3d11va decoder texture array (slices), 17 stage output,
+//! 18 dav1d upload pool/staging, 19 rav1g output images, 20 rav1g process device present, 21 decoder copy
+//! pool/rav1g direct-copy textures, 22 rav1g decoder buffers (streams); 23–31 reserved for
+//! FFmpegInteropX; 32 player swap chain (estimate); 33–63 reserved.
 //! 0 is unassigned. See `include/bale_mem.h` and docs/gpu-tone-map.md.
 
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 
 #[cfg(windows)]
 mod gpu;
@@ -31,10 +32,9 @@ pub struct BaleMemEntry {
 }
 
 struct Category {
-    busy: AtomicBool,
     used: AtomicBool,
     bytes: AtomicI64,
-    count: AtomicI32,
+    count: AtomicI64,
     peak: AtomicI64,
     underflows: AtomicU64,
 }
@@ -42,58 +42,50 @@ struct Category {
 impl Category {
     const fn new() -> Self {
         Self {
-            busy: AtomicBool::new(false),
             used: AtomicBool::new(false),
             bytes: AtomicI64::new(0),
-            count: AtomicI32::new(0),
+            count: AtomicI64::new(0),
             peak: AtomicI64::new(0),
             underflows: AtomicU64::new(0),
         }
     }
 
-    fn lock(&self) -> CategoryLock<'_> {
-        // A tiny, allocation-free critical section: byte/count/peak updates and reads must agree.
-        // No OS mutex, poisoning or fallible work, including when a guard drops during unwinding.
-        while self
-            .busy
-            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            std::hint::spin_loop();
-        }
-        CategoryLock(self)
-    }
-
     fn account(&self, delta_bytes: i64, delta_count: i32) {
-        let _lock = self.lock();
-        let bytes = self
-            .bytes
-            .load(Ordering::Relaxed)
-            .saturating_add(delta_bytes);
-        let count = self
-            .count
-            .load(Ordering::Relaxed)
-            .saturating_add(delta_count);
-        if bytes < 0 || count < 0 {
+        // Resource destruction may call us while D3D11 holds its own locks, on any thread.
+        // No lock (including a spin lock), allocation, callback or D3D call is allowed here.
+        let (bytes, byte_underflow) = adjust(&self.bytes, delta_bytes, i64::MAX);
+        let (_, count_underflow) = adjust(&self.count, i64::from(delta_count), i64::from(i32::MAX));
+        if byte_underflow || count_underflow {
             // One error per account call, even if both counters underflow. Never wraps.
-            self.underflows.store(
-                self.underflows.load(Ordering::Relaxed).saturating_add(1),
-                Ordering::Relaxed,
-            );
+            let mut value = self.underflows.load(Ordering::Relaxed);
+            loop {
+                match self.underflows.compare_exchange_weak(
+                    value,
+                    value.saturating_add(1),
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => break,
+                    Err(current) => value = current,
+                }
+            }
         }
-        let bytes = bytes.max(0);
-        self.bytes.store(bytes, Ordering::Relaxed);
-        self.count.store(count.max(0), Ordering::Relaxed);
         self.peak.fetch_max(bytes, Ordering::Relaxed);
-        self.used.store(true, Ordering::Relaxed);
+        self.used.store(true, Ordering::Release);
     }
 }
 
-struct CategoryLock<'a>(&'a Category);
-
-impl Drop for CategoryLock<'_> {
-    fn drop(&mut self) {
-        self.0.busy.store(false, Ordering::Release);
+/// CAS retry is lock-free: a suspended writer can never prevent another caller's progress.
+/// Keep count in an i64 atomic too, capped at i32::MAX, to share the exact clamp logic.
+fn adjust(counter: &AtomicI64, delta: i64, ceiling: i64) -> (i64, bool) {
+    let mut current = counter.load(Ordering::Relaxed);
+    loop {
+        let sum = current.saturating_add(delta);
+        let next = sum.max(0).min(ceiling);
+        match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => return (next, sum < 0),
+            Err(value) => current = value,
+        }
     }
 }
 
@@ -113,13 +105,15 @@ impl Ledger {
     fn snapshot(&self, mut write: impl FnMut(BaleMemEntry)) -> u32 {
         let mut needed = 0;
         for (category, entry) in self.0.iter().enumerate() {
-            let _lock = entry.lock();
-            if entry.used.load(Ordering::Relaxed) {
+            if entry.used.load(Ordering::Acquire) {
+                let bytes = entry.bytes.load(Ordering::Relaxed);
                 write(BaleMemEntry {
                     category: category as u32,
-                    count: entry.count.load(Ordering::Relaxed),
-                    bytes: entry.bytes.load(Ordering::Relaxed),
-                    peak_bytes: entry.peak.load(Ordering::Relaxed),
+                    count: entry.count.load(Ordering::Relaxed) as i32,
+                    bytes,
+                    // Counters are independently sampled; an account can be between its byte
+                    // and peak updates, so never show a peak below the observed current bytes.
+                    peak_bytes: entry.peak.load(Ordering::Relaxed).max(bytes),
                 });
                 needed += 1;
             }
@@ -129,7 +123,6 @@ impl Ledger {
 
     fn reset_peaks(&self) {
         for entry in &self.0 {
-            let _lock = entry.lock();
             entry
                 .peak
                 .store(entry.bytes.load(Ordering::Relaxed), Ordering::Relaxed);
@@ -156,7 +149,7 @@ pub extern "C" fn bale_mem_account(category: u32, delta_bytes: i64, delta_count:
 
 /// Returns the TOTAL needed, writing only min(capacity, total) entries, in ascending ID order.
 /// Null out is a size query (no writes regardless of capacity). Ever-used zero entries remain.
-/// Each row is coherent; rows can represent different instants during concurrent accounting.
+/// Counters are independently sampled during concurrent accounting; no lock or D3D call is taken.
 ///
 /// # Safety
 /// A non-null `out` points to `capacity` writable BaleMemEntry slots.
@@ -334,7 +327,7 @@ mod tests {
     }
 
     #[test]
-    fn concurrent_accounting_keeps_rows_coherent() {
+    fn concurrent_accounting_and_snapshots_do_not_lose_updates() {
         let ledger = Ledger::new();
         std::thread::scope(|scope| {
             for _ in 0..8 {
@@ -342,7 +335,8 @@ mod tests {
                     for _ in 0..2000 {
                         ledger.account(1, 8, 1);
                         ledger.snapshot(|e| {
-                            assert_eq!(e.bytes, i64::from(e.count) * 8);
+                            assert!((0..=8 * 8).contains(&e.bytes));
+                            assert!((0..=8).contains(&e.count));
                             assert!(e.peak_bytes >= e.bytes);
                         });
                         ledger.reset_peaks();
@@ -353,6 +347,27 @@ mod tests {
         });
         ledger.snapshot(|e| assert_eq!((e.bytes, e.count), (0, 0)));
         assert_eq!(ledger.0[1].underflows.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn snapshot_samples_an_incomplete_account_without_waiting() {
+        let ledger = Ledger::new();
+        // A writer may be suspended after its byte CAS and before its count/peak updates.
+        ledger.0[1].used.store(true, Ordering::Release);
+        ledger.0[1].bytes.store(4096, Ordering::Relaxed);
+        assert_eq!(
+            ledger.snapshot(|e| {
+                assert_eq!(e.bytes, 4096);
+                assert_eq!(e.count, 0);
+                assert_eq!(e.peak_bytes, 4096);
+            }),
+            1
+        );
+        ledger.account(2, 8, -1); // count underflows, bytes survive
+        ledger.account(2, -9, 2); // bytes underflow, count survives
+        assert_eq!(ledger.0[2].bytes.load(Ordering::Relaxed), 0);
+        assert_eq!(ledger.0[2].count.load(Ordering::Relaxed), 2);
+        assert_eq!(ledger.0[2].underflows.load(Ordering::Relaxed), 2);
     }
 
     #[test]
