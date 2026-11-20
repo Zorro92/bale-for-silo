@@ -56,10 +56,10 @@ Bale remains AGPL-3.0-or-later; third-party components retain their own licenses
 
 ## rav1g
 
-Development (debug-server) builds bundle [rav1g](https://github.com/Zorro92/rav1g) **0.5.0-alpha.1**
+Development (debug-server) builds bundle [rav1g](https://github.com/Zorro92/rav1g) **0.5.0-alpha.2**
 (`rav1g.dll`, x64), a GPU AV1 decoder in D3D12 compute shaders, from its
-[v0.5.0-alpha.1 release](https://github.com/Zorro92/rav1g/releases/tag/v0.5.0-alpha.1) (source commit
-`ba4a9a962551e41a77312316a7c5d2517aad1f8a`). It is used only by the debug `av1-decoder rav1g` switch through
+[v0.5.0-alpha.2 release](https://github.com/Zorro92/rav1g/releases/tag/v0.5.0-alpha.2) (source commit
+`95ea0ddf3b691f84fdfa722faf506c1507021327`). It is used only by the debug `av1-decoder rav1g` switch through
 the FFmpegInteropX fork; release builds do not carry it. rav1g is distributed under the **BSD-2-Clause**
 license and the **Alliance for Open Media Patent License 1.0**. It bundles
 [rav1d](https://github.com/memorysafety/rav1d) (BSD-2-Clause, with the AOM patent license), AOM code under
