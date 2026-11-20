@@ -209,6 +209,20 @@ Look up UWP media and Xbox app behavior in Microsoft's docs before guessing:
   capabilities, system resources (Series apps get D3D11/D3D12 at FL 11.0; see docs/player-plan.md
   for what was measured).
 
+## Console resource limits (check every design decision against them)
+
+Owner rule (2026-11-20): every design decision (where work runs, buffer/pool sizes, threads, CPU vs GPU,
+copies, bit depth) is checked against the measured limits and says which limit it is sized for. Source of
+truth: docs/gpu-tone-map.md "Measured limits" (also the bale-projects skill, "Measured console limits").
+For Bale, a normal app with hevcPlayback on the Series X:
+- 3328 MiB app memory, one pool for CPU and GPU; GPU-resident memory ≤ ~2857 MiB (DXGI budget).
+- ~1.86 TFLOP/s GPU compute (about 1/6 of the console); the queue isn't preempted.
+- 4 cores (8 logical CPUs) shared with the system; throughput stops growing beyond 4 threads.
+- The idle state (~10 s after the last input, i.e. all real playback) slows the CPU ~21-25%, CPU RAM copies
+  3.6-4x and GPU copies ~2.4x. GPU compute isn't slowed.
+- So: put heavy per-frame work in GPU compute; touch whole frames on the CPU at most once; avoid extra
+  full-frame copies on either side. `expandedResources`/Game mode is not an option (Store rejects it).
+
 ## Playback decoder policy
 
 - **Never let MF scale 4K SDR to a smaller display (2026-11-17):** on Xbox its video processor leaks
