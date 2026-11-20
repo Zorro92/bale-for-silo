@@ -16,10 +16,10 @@ part Bale hasn't built yet; check when building it), **deviation** (Bale differs
 
 | Repo | Commit | Reviewed |
 |---|---|---|
-| silo-android | `e158795142f8` | 2026-11-19 |
-| silo-apple | `9dabb6213812` | 2026-11-19 |
-| silo-server | `bd40bd9ebfa4` | 2026-11-19 |
-| silo-roku | `3e7ee3a566c1` | 2026-11-19 |
+| silo-android | `1b4732d90beb` | 2026-11-20 |
+| silo-apple | `f70e16aeba15` | 2026-11-20 |
+| silo-server | `975bbf41b33c` | 2026-11-20 |
+| silo-roku | `c1841aeb896e` | 2026-11-20 |
 
 The first review (2026-11-10) started from the commit each local clone was made at.
 
@@ -154,6 +154,20 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   (Apple `b9446d5d`; done 2026-11-18: a 45 s budget per mount on every route, docs/player-plan.md
   "Start budget").
 
+- **Home watch state across devices (2026-11-20):** Apple (`0414ff74`) and Roku (`c1841ae`) now
+  subscribe to the `silo.events.v2` socket's `user_state` channel while Home is on screen (ticket per
+  profile, backoff to 30 s, Roku also polls every 120 s) and re-read Home on `user_state.changed` for
+  the active profile and on each (re)subscribe; the server now publishes it after every stop that
+  writes progress (`165ab2b`, `playback_stopped: true`) and closes sockets with codes 4001–4004
+  (`f31842a`). Android TV already listens and now also re-reads when Home returns, retrying a
+  transient section failure up to three times (1/2/4 s; `1b4732d90`). Bale has no events socket
+  (`HomeFeedState.cs`: one refresh on return only), so another device's playback or a watched toggle
+  stays stale until Bale's own return refresh.
+- **Top-bar menu timing (2026-11-20):** menus open 120 ms after focus reaches a tab (was 180) and swap
+  at once between neighbouring menu tabs (was 80); Down right after Back closed a menu opens it again
+  (Android `5d90cf32f`, `TvTopMenuBar.kt`, `TvShellFocusState.kt`). Bale's
+  `TopMenuPreviewTiming.Delay` still returns 180/80 ms; check the Down-after-Back case on the console.
+
 - **Later, from the 2026-11-18 review** (tracked so they aren't lost; none needs work today):
   Not interested on cards and title pages (Apple `29c0dd43`; hold until Android TV has it), the
   per-corner Home wash with a 0.7 s colour crossfade (Apple `c5453eae`, `648091a7`; hold until
@@ -165,7 +179,82 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   `a1c17ef`), Search's short and empty result states after the tighter keyword cut-off (server
   `651e55a`, console check).
 
+- **Later, from the 2026-11-20 review:** subtitle search shown only when
+  `GET /api/v2/subtitles/providers/status` says a provider exists, re-read per panel open, 5 s bound,
+  failure keeps the last answer (Android `2ee32f414`; Bale has no subtitle search yet); the planner's
+  E-AC-3/AC-3 5.1 conversion when the sink can't bitstream the source (server `d203b9f`; only with
+  passthrough claims, which Bale doesn't make); `parallel_range_origin_v1` /
+  `stream.parallel_range_url` (server `4eb4d4a`; withheld under `header_authenticated_media_v1`);
+  catalog-event `library_id` as a string (server `9c2ec94`); the item's collections route
+  (server `faa406d`; web only so far); Next Up timed from the file end by
+  `playback.next_up_prompt_seconds` (server `7019d69`; Android TV still uses credits start, as Bale);
+  a seek kept across a replan (server `d22e55f`, with `4a73f48`); HLS kept playing through a server
+  outage (server `40c093c`, compare the Rust HLS reader).
+
 ## Reviews
+
+### 2026-11-20
+
+Two act items: Home should follow watch-state changes from other devices (Apple and Roku joined
+Android on the `user_state` events channel, and the server now announces every stop), and the
+top-bar menu timing moved to 120 ms / immediate. The server batch touches no path Bale generates
+except two optional fields.
+
+#### silo-android (`e158795142f8..1b4732d90beb`, 5 commits, 2 none)
+
+- `5d90cf32f` act: top-bar menus open 120 ms after focus reaches a tab (was 180) and swap at once
+  between neighbouring menu tabs (was 80); Down after Back closed a menu opens it every time.
+  Bale's `TopMenuPreviewTiming` keeps 180/80 ms (Open items, top-bar menu timing).
+- `1b4732d90` act: Home re-reads when it returns (not on a new ViewModel's first load) and retries a
+  transient section hydration failure up to three times with 1/2/4 s backoff. Bale refreshes once on
+  return with no retry (Open items, Home watch state).
+- `2ee32f414` later: subtitle search (Find more / Search online) only when
+  `subtitles/providers/status` reports a provider; Bale has no subtitle search yet.
+
+#### silo-apple (`9dabb6213812..f70e16aeba15`, 4 commits, 3 none)
+
+- `0414ff74` act: Home subscribes to the `user_state` channel (`HomeWatchStateRealtime.swift`) and
+  re-reads on `user_state.changed` for the active profile and on each subscribe. Bale has no events
+  socket (Open items, Home watch state).
+
+#### silo-server (`bd40bd9ebfa4..975bbf41b33c`, 50 commits, 34 none)
+
+- `165ab2b` act: a stop that writes progress, history or watched state publishes
+  `user_state.changed` with `playback_stopped: true` (`content_id`, `series_id`); stop finalisation
+  survives the player dropping its connection (Open items, Home watch state).
+- `f31842a` later: v2 sockets close with 4001 `access_changed` / 4003 `lifetime_ended` (new ticket,
+  reconnect), 4002 `credential_invalid` (final), 4004 `authority_unavailable` (back off); an
+  uncheckable ticket mint answers 503. For Bale's events socket and the future control socket.
+- `9a180df` later: control-socket commands carry the administrator's reason as top-level `reason`.
+- `d203b9f` later: `server_remux_hls` converts a surround track to E-AC-3 (else AC-3) 5.1 when the
+  sink attests `layout_aware_passthrough` but can't bitstream the source
+  (`surround_bitstream_conversion_v1`). Bale sends that feature only with passthrough entries
+  (`PlaybackRequests.cs`) and claims none, so it never triggers.
+- `4eb4d4a` later: `parallel_range_origin_v1` and `stream.parallel_range_url` (original_http,
+  self-authorising); absent under `header_authenticated_media_v1`, which Bale sends.
+- `0e9cf1f` later: spellings of one named edition (durations within 5 s) share an `edition_key`; files
+  keep their `edition_raw`. Bale groups by key (`formatting.rs`); console check of the label.
+- `faa406d` later: `GET /api/v2/catalog/items/{id}/collections` (capability `item_collections`); only
+  the web shows it so far.
+- `7019d69` later: the web opens Next Up `playback.next_up_prompt_seconds` before the file end;
+  Android TV and Bale still use credits start.
+- `d22e55f` later: the web keeps a seek made during a replan (with `4a73f48`, still to check).
+- `40c093c` later: the web plays buffered HLS through a server outage and reconnects only when needed.
+- `9c2ec94` later: `library_id` is a string in catalog events.
+- `36640d6` later: video and episode rows list the same titles as their See All page; console check.
+- `c7c1559`, `6415237`, `9df62cd`, `5a748e2` later: live session rows rename `content_id` →
+  `media_item_id` and `series_name` → `series_title` and drop `episode_name` (breaking, on household
+  sessions); session rows and history gain `subtitle`; admin history `end_position_seconds`; signed
+  admin poster route. None on a path Bale generates.
+
+Contract changes on generated paths, additive (regenerate and check at the next `SILO_REF` bump):
+`StreamV3.parallel_range_url`, `CatalogSearchCapabilities.item_collections`. The breaking renames,
+new routes and admin/plugin/download fields are on paths Bale doesn't generate.
+
+#### silo-roku (`3e7ee3a566c1..c1841aeb896e`, 1 commit, 0 none)
+
+- `c1841ae` act: Home follows `user_state` changes over the events socket, with a 120 s poll as
+  fallback (`HomeWatchState.bs`, `HomeEventsTask.bs`) (Open items, Home watch state).
 
 ### 2026-11-19
 
