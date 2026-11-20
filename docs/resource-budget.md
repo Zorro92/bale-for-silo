@@ -1,7 +1,7 @@
 # Resource budget
 
 Status: **goal for 0.2.x tuning** (owner, 2026-11-20). Until then the priority is rav1g playing as smoothly as
-possible; its envelope is in "Now: rav1g's envelope" below. Every number is checked against the measured
+possible (higher performance is better, not higher usage); its ceiling is in "Now: rav1g's envelope" below. Every number is checked against the measured
 limits in [gpu-tone-map.md](gpu-tone-map.md) "Measured limits" (normal app with `hevcPlayback`, Series X):
 3328 MiB app memory in one pool, GPU-resident ≤ 2857 MiB (DXGI budget), ~1.86 TFLOP/s GPU compute (about 1/6
 of the console), 4 cores (8 logical CPUs) shared with the system, and the input-idle state that all real
@@ -10,9 +10,11 @@ unchanged).
 
 Soft = the design point a part is built for. Hard = enforced; going over it starts the degradation ladder.
 
-## Now: rav1g's envelope (higher is better)
+## Now: rav1g's envelope
 
-What the rest of Bale leaves for rav1g during 4K AV1 playback, so rav1g can be tuned against it. Measured on
+The goal is the highest playback performance (smooth, real-time 4K with headroom); the envelope is the
+ceiling rav1g must stay under, not a target to fill. At equal performance, less is better. This is what the
+rest of Bale leaves for rav1g during 4K AV1 playback. Measured on
 2026-11-20 (Bale 0.1.705, 1080p SDR display): app 1117 MiB, of which rav1g ~600 MiB (decoder buffers 488,
 output images 4 × 23.7) and the rest of Bale ~520 MiB (stage output 71, subtitles 18, swap chain 16, UI,
 buffers, Media Foundation).
@@ -30,8 +32,8 @@ buffers, Media Foundation).
 - Measure in the idle state (no input for > 12 s), which is what a viewer gets.
 - The CPU stage that reads the compressed stream is the known limit and grows with bitrate; heavy 4K
   AV1 above ~40 Mbps is the risk case.
-- Memory is not the constraint: trading memory for speed (more slots, more frames in flight) is fine up to
-  the soft limit.
+- Spend resources only where they buy measured performance: e.g. more slots or frames in flight are worth
+  their memory if they raise idle-state fps or remove stalls; otherwise keep the smaller setting.
 
 ## 0.2.x goal: the whole app during 4K playback
 
