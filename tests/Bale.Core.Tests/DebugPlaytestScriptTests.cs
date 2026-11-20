@@ -1342,6 +1342,52 @@ public class DebugPlaytestScriptTests
         Assert.DoesNotContain("not-a-real-grant", probe.Log);
     }
 
+    [Theory]
+    [InlineData("cpu")]
+    [InlineData("d3d11")]
+    [InlineData("d3d12")]
+    [InlineData("mixed")]
+    public async Task MemprobeUsesAnEncodedGetAndGenerousTimeout(string mode)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var args = new[] { "memprobe", mode, "max=3000", "step=0064" };
+        if (mode == "mixed") args = [.. args, "cpu=0"];
+        var result = await RunAsync(args);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/memprobe\n", result.Arguments);
+        Assert.Contains("--max-time\n300\n-G\n", result.Arguments);
+        Assert.Contains("--data-urlencode\nmode=" + mode + "\n", result.Arguments);
+        Assert.Contains("--data-urlencode\nstep=64\n", result.Arguments);
+        Assert.Contains("--data-urlencode\nmax=3000\n", result.Arguments);
+        if (mode == "mixed") Assert.Contains("--data-urlencode\ncpu=0\n", result.Arguments);
+        Assert.DoesNotContain("POST", result.Arguments);
+        var defaults = await RunAsync(["memprobe", mode]);
+        Assert.Equal(0, defaults.ExitCode);
+        Assert.DoesNotContain("step=", defaults.Arguments);
+    }
+
+    [Fact]
+    public async Task InvalidMemprobeArgumentsNeverInvokeCurl()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        List<string[]> invalid = [ ["memprobe"], ["memprobe", "CPU"], ["memprobe", "cpu", "100"],
+            ["memprobe", "cpu", "step=100", "step=200"], ["memprobe", "mixed", "cpu=0", "cpu=1"],
+            ["memprobe", "cpu", "max=100", "max=200"], ["memprobe", "cpu", "step=200", "max=100"],
+            ["memprobe", "d3d11", "max=127", "step=1"], ["memprobe", "d3d12", "cpu=0"],
+            ["memprobe", "cpu", "cpu=1000"], ["memprobe", "mixed", "unknown=1"] ];
+        foreach (var key in new[] { "step", "max", "cpu" })
+        foreach (var value in new[] { "", "-1", "+1", " 1", "1 ", "1.0", "1e2", "0x10", "4097", "99999999999999999999999", "00001", "1&max=4096" })
+            invalid.Add(["memprobe", "mixed", key + "=" + value]);
+        invalid.Add(["memprobe", "cpu", "step=0"]);
+        invalid.Add(["memprobe", "cpu", "max=0"]);
+        foreach (var args in invalid)
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
     private static async Task<(int ExitCode, string Output, string Arguments, string Log, string Error)> RunAsync(string[] arguments,
         string output = "probe result\n", int exitCode = 0, string httpStatus = "200", bool redirectOutput = false)
     {

@@ -261,6 +261,53 @@ symptoms come from GPU-heavy routes, so the likely limit is the DXGI local video
 measured by rav1g without hevcPlayback; not yet measured with it). Until it is logged, keep GPU-resident
 memory (the ledger's counted total plus rav1g internals) near 1.0–1.2 GB.
 
+**Debug memory limit probe.** Leave the player, then run one of:
+
+```sh
+scripts/bale-debug.sh memprobe cpu
+scripts/bale-debug.sh memprobe d3d11 step=100 max=3400
+scripts/bale-debug.sh memprobe d3d12 step=100 max=3400
+scripts/bale-debug.sh memprobe mixed cpu=1000 step=100 max=2400
+```
+
+These call `GET /memprobe?mode=...&step=...&max=...[&cpu=...]` in a `DEBUG_SERVER` build. Sizes
+are binary MiB: step defaults to 100, max to 3400, and mixed's held CPU allocation to 1000.
+Step/max accept 1–4096 with step <= max; GPU modes require max >= 128. `cpu=0..4096` is mixed-only.
+Duplicate/unknown parameters are rejected; an open player or another running memory/media probe
+returns HTTP 409. The entire run stays on a dedicated worker, including native creation/destruction.
+The script allows 300 s. Do not open a player or run other GPU diagnostics during a probe.
+
+CPU allocates native blocks, writing one byte every 4 KiB. Mixed holds those touched blocks while
+running D3D11. Each GPU run uses the engine/churn's default hardware adapter and its own device
+references; D3D12 uses that exact adapter too (Windows can reuse an existing D3D12 device for an
+adapter). DEFAULT RGBA8 textures are at most 4096×4096 (64 MiB), with shorter textures making exact
+MiB steps. Each new texture is cleared and GPU completion is awaited. The first GPU row (`step=0`)
+allocates the fixed 128 MiB source/destination pair, warms a copy, and establishes the baseline.
+Subsequent rows add step MiB (the last can be partial), then time one fixed 64 MiB copy using GPU
+timestamps, without another warmup that might mask paging. **GPU max includes that 128 MiB pair; mixed's CPU hold is additional.**
+All probe resources bypass the memory ledger. `cpu_mib`/`gpu_mib` report owned logical bytes, not
+alignment, query/device or driver costs; those costs appear in app usage and DXGI CurrentUsage.
+
+The response and app log contain a header, one row per CPU/GPU step, a `STOP reason=...` row,
+and a `freed cpu_mib=0 gpu_mib=0 app_mib=...` row after all owned resources/device references are
+released. Every step includes app usage/limit/level, elapsed step time and memory-event counts
+(limit changing and usage increased). GPU rows add `copy_ms`, HRESULT/stage, device-removed reason,
+and `LOCAL[...] NON_LOCAL[...]`, each with budget, current usage, available reservation and current
+reservation in MiB. DXGI query failures show their HRESULT rather than misleading zero budgets.
+Stage 1 is texture creation, 2 is write/completion wait, 3 is timed copy; invalid/disjoint timestamps
+stop at stage 3 with an error rather than treating an unavailable measurement as zero.
+
+Stops are max, allocation/create failure, device removal, a copy taking **more than 5×** the baseline,
+or app usage within one configured step of its current limit (also checked before GPU setup).
+GPU query/fence waits are bounded at 15 s. `finally` releases allocations even on reported failure;
+a process terminated by the OS cannot return a final report, so each completed row is logged as it
+happens. The freed reading is immediate; driver accounting may settle later. A fall in LOCAL usage,
+rising NON_LOCAL usage or a copy-time jump near the LOCAL budget is evidence of paging/demotion,
+not proof of a hard allocation cap. Compare CPU vs GPU runs and mixed's shifted threshold with the
+same app state and input-idle timing; the debug HTTP request itself injects no controller input.
+The probe does not change `hevcPlayback` or the production allocator, and cannot establish a console
+limit until run there by the owner.
+
 Console readings, Bale 0.1.705 (wrapper bale.62), 1080p SDR display, 40 s into playback:
 
 | Route | App memory | Counted | Largest lines |

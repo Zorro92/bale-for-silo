@@ -121,6 +121,8 @@
 #   scripts/bale-debug.sh fault playback        inject a decoder failure into the player (one replan, then error)
 #   scripts/bale-debug.sh tonemap-debug [noselftest,nostate]  bale_gpu tone-map debug switches for the next tone-map create (no args clears)
 #   scripts/bale-debug.sh tonemap-size [W H]   display-sized tone-map output (fork bale.38 + bale_gpu area downscale, aspect kept) for the next tone-map open; no args clears
+#   scripts/bale-debug.sh memprobe cpu|d3d11|d3d12|mixed [step=100] [max=3400] [cpu=1000]
+#                                               idle-only memory limit probe; MiB, step/max 1-4096, step<=max; GPU max>=128 (includes timing pair); cpu 0-4096, mixed only
 #   scripts/bale-debug.sh tonemap-churn [N] [control]  bale_gpu-only tone map create/apply/destroy on fresh devices, N times (default 40); control skips the tone map
 # Connection previews use disposable fixtures: no network, passwords sent, vault or saved-list writes.
 #   scripts/bale-debug.sh show login            preview phone Login (no live ticket)
@@ -953,6 +955,36 @@ case "${1:-}" in
       exit 2
     fi
     curl --fail-with-body -sS -X POST "$BASE/tonemap-size?width=${2:-0}&height=${3:-0}"
+    ;;
+  memprobe)
+    memprobe_usage() {
+      echo 'usage: scripts/bale-debug.sh memprobe cpu|d3d11|d3d12|mixed [step=100] [max=3400] [cpu=1000] (MiB; step/max 1-4096, step<=max; GPU max>=128; cpu 0-4096, mixed only)' >&2
+      exit 2
+    }
+    (( $# >= 2 )) || memprobe_usage
+    mode="$2"
+    [[ "$mode" =~ ^(cpu|d3d11|d3d12|mixed)$ ]] || memprobe_usage
+    shift 2
+    step=100 max=3400 cpu=1000
+    seen=' '
+    args=(--data-urlencode "mode=$mode")
+    for arg in "$@"; do
+      [[ "$arg" =~ ^(step|max|cpu)=([0-9]{1,4})$ ]] || memprobe_usage
+      key="${BASH_REMATCH[1]}" value="${BASH_REMATCH[2]}"
+      [[ "$seen" != *" $key "* ]] || memprobe_usage
+      seen+="$key "
+      value=$((10#$value))
+      if [[ "$key" == cpu ]]; then
+        [[ "$mode" == mixed ]] && (( value <= 4096 )) || memprobe_usage
+      else
+        (( value >= 1 && value <= 4096 )) || memprobe_usage
+      fi
+      printf -v "$key" '%s' "$value"
+      args+=(--data-urlencode "$key=$value")
+    done
+    (( step <= max )) || memprobe_usage
+    [[ "$mode" == cpu ]] || (( max >= 128 )) || memprobe_usage
+    curl --fail-with-body -sS --max-time 300 -G "$BASE/memprobe" "${args[@]}"
     ;;
   tonemap-churn)
     if [[ "$#" -gt 3 || ( "$#" -ge 2 && ! "$2" =~ ^[0-9]+$ ) || ( "$#" -eq 3 && "$3" != control ) ]]; then

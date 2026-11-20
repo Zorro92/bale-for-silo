@@ -1491,7 +1491,10 @@ fn fits_target(target: &ID3D11Texture2D, frame: &BaleZcFrame) -> bool {
 ///
 /// # Safety
 /// `module` must be a loaded `d3d12.dll`.
-unsafe fn create_device(module: HMODULE, adapter: &IDXGIAdapter) -> Result<ID3D12Device> {
+pub(crate) unsafe fn create_device(
+    module: HMODULE,
+    adapter: &IDXGIAdapter,
+) -> Result<ID3D12Device> {
     // SAFETY: the caller guarantees a loaded module; the name is a static C string.
     let proc = unsafe { GetProcAddress(module, s!("D3D12CreateDevice")) }.ok_or(E_NOINTERFACE)?;
     // SAFETY: D3D12CreateDevice's documented signature; both are plain `system` fn pointers.

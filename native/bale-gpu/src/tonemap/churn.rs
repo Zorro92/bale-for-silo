@@ -45,7 +45,8 @@ fn texture(device: &ID3D11Device, desc: &D3D11_TEXTURE2D_DESC) -> Result<ID3D11T
     Ok(texture)
 }
 
-fn one(flags: u32) -> Result<()> {
+/// Fresh default-adapter hardware device, also used by the idle memory probe.
+pub(crate) fn create_device() -> Result<ID3D11Device> {
     let mut device = None;
     // SAFETY: plain hardware device creation, as the engine session does per open.
     unsafe {
@@ -61,7 +62,11 @@ fn one(flags: u32) -> Result<()> {
             None,
         )?
     };
-    let device = device.ok_or(E_POINTER)?;
+    device.ok_or_else(|| E_POINTER.into())
+}
+
+fn one(flags: u32) -> Result<()> {
+    let device = create_device()?;
     crate::lifecycle::watch_release(&device);
     let multithread: ID3D10Multithread = device.cast()?;
     // SAFETY: live interfaces; this thread is the only user of the fresh device.

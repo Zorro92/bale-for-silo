@@ -22,6 +22,7 @@ pub mod grain;
 #[cfg(windows)]
 pub mod lifecycle;
 pub mod memledger;
+pub mod memprobe;
 #[cfg(windows)]
 mod panel;
 pub mod png;
