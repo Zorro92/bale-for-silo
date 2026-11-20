@@ -87,6 +87,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public bool UsePooledStreamAdapter => StreamAdapter == "pooled";
         /// <summary>The Rust range stream and its Rust IRandomAccessStream (docs/rust-port.md, slice 7).</summary>
         public bool UseRustTransport => StreamAdapter == "rust";
+        /// <summary>`av1-claim 2160-dav1d`: the 2160 claim also applies with dav1d (memory/stress tests only).</summary>
+        public bool Av1ClaimDav1d { get; } = DebugAv1ClaimSwitch.Dav1dToo;
         public int Av1ClaimMaxHeight { get; } = DebugAv1ClaimSwitch.MaxHeight;
         /// <summary>dav1d or rav1g for software AV1 (DebugAv1DecoderSwitch), captured when the attempt starts.</summary>
         public string Av1Decoder { get; } = DebugAv1DecoderSwitch.Mode;
@@ -240,7 +242,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 ct.ThrowIfCancellationRequested();
 #if DEBUG_SERVER
                 // Keep the probed hardware claims; only the software AV1 bound is raised.
-                if (attempt.Av1ClaimMaxHeight == 2160 && attempt.Av1Decoder == "rav1g" && softwareVideo)
+                if (attempt.Av1ClaimMaxHeight == 2160 && (attempt.Av1Decoder == "rav1g" || attempt.Av1ClaimDav1d) && softwareVideo)
                     capabilities = capabilities with { VideoDecode = ConsoleEvidence.BuildVideoDecode(await HardwareDecodeProbe.Limits, 3840, 2160) };
                 capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);
                 capabilities = DebugHdrPlayback.Capabilities(attempt.PretendHdr, capabilities);
@@ -253,6 +255,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 if (attempt.DeliveryMode != "auto") Log.Info("player: delivery forced=" + attempt.DeliveryMode);
                 if (attempt.Av1ClaimMaxHeight == 2160 && softwareVideo && attempt.FfmpegEnabled)
                     Log.Info(attempt.Av1Decoder == "rav1g" ? "player: av1 claim=2160p (debug rav1g)"
+                        : attempt.Av1ClaimDav1d ? "player: av1 claim=2160p (debug av1-claim 2160-dav1d)"
                         : "player: av1 claim=1080p (dav1d cap; debug av1-claim 2160 ignored)");
 #endif
                 attempt.Start = start;

@@ -891,12 +891,12 @@ public class DebugPlaytestScriptTests
         {
             new[] { "av1-claim", "" }, ["av1-claim", "status"], ["av1-claim", "720"], ["av1-claim", "4320"],
             ["av1-claim", "2160p"], ["av1-claim", "02160"], ["av1-claim", "2160.0"], ["av1-claim", " 2160"],
-            ["av1-claim", "1080 "], ["av1-claim", "2160&extra=1"], ["av1-claim", "1080", "2160"], ["av1-claim", "2160", ""],
+            ["av1-claim", "1080 "], ["av1-claim", "2160&extra=1"], ["av1-claim", "1080", "2160"], ["av1-claim", "2160", ""], ["av1-claim", "2160-DAV1D"], ["av1-claim", "dav1d"],
         })
         {
             var result = await RunAsync(args);
             Assert.Equal(2, result.ExitCode);
-            Assert.Equal("usage: scripts/bale-debug.sh av1-claim [1080|2160]\n", result.Output);
+            Assert.Equal("usage: scripts/bale-debug.sh av1-claim [1080|2160|2160-dav1d]\n", result.Output);
             Assert.Empty(result.Arguments);
         }
     }
@@ -907,7 +907,7 @@ public class DebugPlaytestScriptTests
     public async Task Av1ClaimFailurePreservesTheResponseBodyAndExitStatus(string? height)
     {
         if (!OperatingSystem.IsLinux()) return;
-        const string failure = "height must be 1080 or 2160\n";
+        const string failure = "height must be 1080, 2160 or 2160-dav1d\n";
         var result = await RunAsync(height is null ? ["av1-claim"] : ["av1-claim", height], failure, 22);
         Assert.Equal(22, result.ExitCode);
         Assert.Equal(failure, result.Output);

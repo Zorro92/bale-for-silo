@@ -69,7 +69,7 @@
 #   scripts/bale-debug.sh stream-adapter [pooled|builtin|rust]  next playback attempt's stream adapter; default rust (C#: pooled/builtin), memory only (restart resets); no args = status
 #                                               rust: the Rust range stream and Rust IRandomAccessStream (no managed code on reads; FFmpeg and Media Foundation)
 #   scripts/bale-debug.sh present-engine [0-120] [present|frames|player]   next playback hands its routed source to IMFMediaEngine (0 = off): present = rendering mode on screen for N s, frames = frame-server for N s (every decoded frame counted), player = interactive engine player with sound, keys and a stats pane until Back (N just enables it); no args = status + last report
-#   scripts/bale-debug.sh av1-claim [1080|2160]   next playback attempt's AV1 software-decode claim: 2160 adds a 4K30 entry only with rav1g (debug-build default since 11-19); dav1d always claims 1080p | 1080 = 1080p60, as in release; memory only (restart resets); no args = status
+#   scripts/bale-debug.sh av1-claim [1080|2160|2160-dav1d]   next playback attempt's AV1 software-decode claim: 2160 adds a 4K30 entry only with rav1g (debug-build default since 11-19); dav1d claims 1080p | 2160-dav1d = 4K30 with dav1d too (memory/stress tests only) | 1080 = 1080p60, as in release; memory only (restart resets); no args = status
 #   scripts/bale-debug.sh display-match [on|off|status]  match content HDMI resolution/refresh on the next playback; default off, memory only (restart resets); no args = status
 #   scripts/bale-debug.sh hdr pretend|off|status  next attempt: pretend HDR10, skip HDMI switching for console SDR tone mapping; default off, memory only
 #   scripts/bale-debug.sh idle-test [display-pulse|smtc-playing|smtc-stopped|status]  input-idle experiments: pulse a DisplayRequest or set the media session status (player's, else the view's); no args = status
@@ -656,8 +656,8 @@ case "${1:-}" in
     fi
     ;;
   av1-claim)
-    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^(1080|2160)$ ) ]]; then
-      echo 'usage: scripts/bale-debug.sh av1-claim [1080|2160]' >&2
+    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^(1080|2160|2160-dav1d)$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh av1-claim [1080|2160|2160-dav1d]' >&2
       exit 2
     fi
     if [[ "$#" == 1 ]]; then

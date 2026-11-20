@@ -20,8 +20,15 @@ public class DebugAv1ClaimSwitchTests
                 Assert.False(DebugAv1ClaimSwitch.TrySet(invalid));
                 Assert.Equal(2160, DebugAv1ClaimSwitch.MaxHeight);
             }
+            Assert.False(DebugAv1ClaimSwitch.Dav1dToo);
+            Assert.True(DebugAv1ClaimSwitch.TrySet("2160-dav1d"));
+            Assert.Equal(2160, DebugAv1ClaimSwitch.MaxHeight);
+            Assert.True(DebugAv1ClaimSwitch.Dav1dToo);
+            Assert.Equal("2160-dav1d", DebugAv1ClaimSwitch.Status);
             Assert.True(DebugAv1ClaimSwitch.TrySet("1080"));
             Assert.Equal(1080, DebugAv1ClaimSwitch.MaxHeight);
+            Assert.False(DebugAv1ClaimSwitch.Dav1dToo);
+            Assert.Equal("1080", DebugAv1ClaimSwitch.Status);
             Assert.Equal(2160, captured);
         }
         finally { DebugAv1ClaimSwitch.TrySet(previous == 2160 ? "2160" : "1080"); }
@@ -51,7 +58,7 @@ public class DebugAv1ClaimSwitchTests
         var capture = player.IndexOf(captureText, StringComparison.Ordinal);
         AssertDebugGuard(player, capture);
         Assert.DoesNotContain("DebugAv1ClaimSwitch", player[(capture + captureText.Length)..]);
-        var raised = player.IndexOf("if (attempt.Av1ClaimMaxHeight == 2160 && attempt.Av1Decoder == \"rav1g\" && softwareVideo)", StringComparison.Ordinal);
+        var raised = player.IndexOf("if (attempt.Av1ClaimMaxHeight == 2160 && (attempt.Av1Decoder == \"rav1g\" || attempt.Av1ClaimDav1d) && softwareVideo)", StringComparison.Ordinal);
         var off = player.IndexOf("capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);", StringComparison.Ordinal);
         AssertDebugGuard(player, raised);
         Assert.True(raised < off);
@@ -76,19 +83,19 @@ public class DebugAv1ClaimSwitchTests
             ..routes.IndexOf("case (\"POST\", \"/av1-claim\")", StringComparison.Ordinal)];
         Assert.Contains("if (query.Count != 0)", get);
         Assert.Contains("\"400 Bad Request\"", get);
-        Assert.Contains("av1-claim={DebugAv1ClaimSwitch.MaxHeight}\\n", get);
+        Assert.Contains("av1-claim={DebugAv1ClaimSwitch.Status}\\n", get);
         Assert.DoesNotContain("TrySet", get);
         var post = routes[routes.IndexOf("case (\"POST\", \"/av1-claim\")", StringComparison.Ordinal)
             ..routes.IndexOf("case (\"GET\", \"/display-match\")", StringComparison.Ordinal)];
         Assert.Contains("query.Count != 1 || !DebugAv1ClaimSwitch.TrySet(query.GetValueOrDefault(\"height\"))", post);
         Assert.Contains("\"400 Bad Request\"", post);
-        Assert.Contains("av1-claim={DebugAv1ClaimSwitch.MaxHeight}\\n", post);
+        Assert.Contains("av1-claim={DebugAv1ClaimSwitch.Status}\\n", post);
         Assert.Contains("applies to the next playback attempt", post);
         Assert.Contains("///   GET  /av1-claim", routes);
         Assert.Contains("///   POST /av1-claim?height=2160", routes);
         var notFound = routes.Split('\n').Single(line => line.Contains("\"routes: ", StringComparison.Ordinal));
-        Assert.Contains("GET /av1-claim, POST /av1-claim?height={1080|2160}", notFound);
-        Assert.Contains("scripts/bale-debug.sh av1-claim [1080|2160]", Read("bale-debug.sh"));
+        Assert.Contains("GET /av1-claim, POST /av1-claim?height={1080|2160|2160-dav1d}", notFound);
+        Assert.Contains("scripts/bale-debug.sh av1-claim [1080|2160|2160-dav1d]", Read("bale-debug.sh"));
     }
 
     private static void AssertDebugGuard(string source, int index)
