@@ -108,7 +108,7 @@ bale-gpu for `x86_64-pc-windows-msvc` when that target is installed), rebuilds t
 .NET tests, and stops the push on any failure or warning that Linux can see (`--no-verify` skips it). Lint by
 hand with the same `--all-targets` flags; plain `cargo clippy` skips tests.
 XAML/CsWinRT warnings only show in the Windows build, but `scripts/check-cswinrt.sh` (skill `cswinrt-check`) catches
-CsWinRT analyzer errors such as CsWinRT1028 on Linux in seconds: run it before pushing C# changes to src/Bale.Xbox. CI prints every error and warning from a normal-verbosity
+CsWinRT analyzer errors such as CsWinRT1028 on Linux in seconds; the pre-push hook runs it when C# inputs changed. CI prints every error and warning from a normal-verbosity
 file log after each MSIX build (the minimal console once hid a CsWinRT error entirely), and a failed build whose
 log names no error is rebuilt single-process at normal verbosity.
 CI skips Rust tests when GPU/libass/toolchain/CI inputs match the last successful push and reuses the input/rustc/target-keyed DLL plus libass notices; PRs and manual runs always test Rust.

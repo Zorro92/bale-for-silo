@@ -17,7 +17,7 @@ scripts/check-cswinrt.sh --self-test  # plants a non-partial class under DEBUG_S
 scripts/check-cswinrt.sh --all        # also counts the other (expected) errors
 ```
 
-Run it after editing C# in `src/Bale.Xbox` and before `git push`; it checks the working tree, including
+The pre-push hook runs it automatically when pushed commits touch `src/`, the build props, NuGet config or the script (exit 2, e.g. no network, only warns). Run it by hand while editing; it checks the working tree, including
 uncommitted and untracked files. If it prints a CsWinRT error, fix it (usually: mark the class *and every
 containing class* `partial`) and run it again. Run `--self-test` once if the toolchain, CsWinRT version or the
 script changed, to prove the check still sees errors.
