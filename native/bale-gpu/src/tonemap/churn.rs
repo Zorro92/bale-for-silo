@@ -40,7 +40,9 @@ fn texture(device: &ID3D11Device, desc: &D3D11_TEXTURE2D_DESC) -> Result<ID3D11T
     let mut out = None;
     // SAFETY: live device, complete descriptor, no initial data.
     unsafe { device.CreateTexture2D(desc, None, Some(&mut out))? };
-    out.ok_or_else(|| E_POINTER.into())
+    let texture = out.ok_or(E_POINTER)?;
+    crate::memledger::track_texture(&texture, crate::memledger::TONE_MAP)?;
+    Ok(texture)
 }
 
 fn one(flags: u32) -> Result<()> {

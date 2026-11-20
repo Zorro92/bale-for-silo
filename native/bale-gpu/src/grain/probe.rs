@@ -238,7 +238,7 @@ fn diagnostics(device: &ProbeDevice, report: &mut String) {
             format,
             (D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE).0 as u32,
         );
-        let texture = gpu::texture(&device.device, &desc, None);
+        let texture = gpu::texture(crate::memledger::FILM_GRAIN, &device.device, &desc, None);
         report.push_str(&format!(
             "    {} texture 64x64 (RENDER_TARGET|SHADER_RESOURCE): {}\n",
             format_name(format),
@@ -388,6 +388,7 @@ impl Frame {
         desc.Usage = D3D11_USAGE_STAGING;
         desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE.0 as u32;
         let source = gpu::texture(
+            crate::memledger::FILM_GRAIN,
             &device.device,
             &desc,
             Some(&D3D11_SUBRESOURCE_DATA {
@@ -402,7 +403,7 @@ impl Frame {
             case.format(),
             (D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE).0 as u32,
         );
-        let destination = gpu::texture(&device.device, &desc, None)?;
+        let destination = gpu::texture(crate::memledger::FILM_GRAIN, &device.device, &desc, None)?;
         Ok(Self {
             source,
             destination,
@@ -420,7 +421,7 @@ fn correctness(device: &ProbeDevice, grain: &mut BaleGrainGpu, case: Case) -> Re
     let mut desc = gpu::texture_desc(case.width, case.height, case.format(), 0);
     desc.Usage = D3D11_USAGE_STAGING;
     desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ.0 as u32;
-    let readback = gpu::texture(&device.device, &desc, None)?;
+    let readback = gpu::texture(crate::memledger::FILM_GRAIN, &device.device, &desc, None)?;
     let actual = {
         let _lock = ContextLock::enter(&device.multithread);
         // SAFETY: matching unmapped single-subresource textures on this locked immediate context.

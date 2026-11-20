@@ -55,6 +55,7 @@ internal sealed partial class DebugServer
         builder.Append("Xbox memory: ").Append(DebugXboxMemory.Describe()).Append('\n');
         builder.Append("Playback resources: ").Append(PlaybackResources.Describe()).Append('\n');
         builder.Append("UI residency: ").Append(UiResidency.Describe()).Append('\n');
+        builder.Append(DebugGpuMemory.Describe());
         return ("200 OK", builder.ToString());
     }
 }

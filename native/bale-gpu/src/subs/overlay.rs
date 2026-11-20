@@ -808,6 +808,7 @@ impl Atlas {
                 Some(&mut texture),
             )?;
             let texture: ID3D11Texture2D = texture.ok_or_else(fail)?;
+            crate::memledger::track_texture(&texture, crate::memledger::SUBTITLES)?;
             device.CreateShaderResourceView(&texture, None, Some(&mut view))?;
             Ok(Atlas {
                 texture,
@@ -940,6 +941,7 @@ impl Gpu {
                 .CreateSwapChainForComposition(&device, &desc, None)?
                 .cast()?
         };
+        crate::memledger::track_swap_chain(&swap_chain, crate::memledger::SUBTITLES)?;
         // SAFETY: a waitable swap chain; the returned handle is ours to close (see Drop).
         let latency = unsafe { swap_chain.GetFrameLatencyWaitableObject() };
 
@@ -1016,6 +1018,8 @@ impl Gpu {
                 Some(&mut constants),
             )?;
         }
+        let constants = constants.ok_or_else(fail)?;
+        crate::memledger::track_buffer(&constants, crate::memledger::SUBTITLES)?;
         let gpu = Gpu {
             _device_lifetime: crate::lifecycle::Device::track(&device),
             atlas: Atlas::new(&device, ATLAS_START)?,
@@ -1032,7 +1036,7 @@ impl Gpu {
             input_layout: input_layout.ok_or_else(fail)?,
             blend: blend.ok_or_else(fail)?,
             rasterizer: rasterizer.ok_or_else(fail)?,
-            constants: constants.ok_or_else(fail)?,
+            constants,
             instance_buffer: None,
             instance_capacity: 0,
             width,
@@ -1081,6 +1085,7 @@ impl Gpu {
                     DXGI_FORMAT_B8G8R8A8_UNORM,
                     DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT,
                 )?;
+                crate::memledger::track_swap_chain(&self.swap_chain, crate::memledger::SUBTITLES)?;
                 self.width = layout.width;
                 self.height = layout.height;
                 self.update_constants();
@@ -1128,6 +1133,7 @@ impl Gpu {
                     Some(&mut texture),
                 )?;
                 let texture: ID3D11Texture2D = texture.ok_or_else(fail)?;
+                crate::memledger::track_texture(&texture, crate::memledger::SUBTITLES)?;
                 self.device
                     .CreateShaderResourceView(&texture, None, Some(&mut view))?;
             }
@@ -1342,7 +1348,9 @@ impl Gpu {
                     Some(&mut buffer),
                 )?;
             }
-            self.instance_buffer = Some(buffer.ok_or_else(fail)?);
+            let buffer = buffer.ok_or_else(fail)?;
+            crate::memledger::track_buffer(&buffer, crate::memledger::SUBTITLES)?;
+            self.instance_buffer = Some(buffer);
             self.instance_capacity = capacity;
         }
         let buffer = self.instance_buffer.clone().ok_or_else(fail)?;
@@ -1455,6 +1463,7 @@ impl Gpu {
             self.device
                 .CreateTexture2D(&desc, None, Some(&mut staging))?;
             let staging: ID3D11Texture2D = staging.ok_or_else(fail)?;
+            crate::memledger::track_texture(&staging, crate::memledger::SUBTITLES)?;
             self.context.CopyResource(&staging, &buffer);
             let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
             self.context

@@ -1,13 +1,15 @@
-//! Compile the public header as C and C++, checking it against Rust's actual layout.
+//! Compile the public tone-map and memory headers as C and C++, checking them against Rust's actual layout.
 //! Windows additionally checks the Rust layout at compile time; Linux CI has cc/c++.
 #![cfg(not(windows))]
+use bale_gpu::memledger::BaleMemEntry;
 use bale_gpu::tonemap::types::*;
 use std::mem::{align_of, offset_of, size_of};
 use std::process::Command;
 
 #[test]
 fn c_and_cpp_header_match_rust() {
-    let mut source = String::from("#include <stddef.h>\n#include \"bale_tonemap.h\"\n");
+    let mut source =
+        String::from("#include <stddef.h>\n#include \"bale_tonemap.h\"\n#include \"bale_mem.h\"\n");
     macro_rules! record {
         ($ty:ty, $($field:ident),+ $(,)?) => {{
             source.push_str(&format!("CHECK(sizeof({}) == {});\nCHECK(ALIGN({}) == {});\n",
@@ -16,6 +18,7 @@ fn c_and_cpp_header_match_rust() {
                 stringify!($ty), stringify!($field), offset_of!($ty, $field)));)+
         }};
     }
+    record!(BaleMemEntry, category, count, bytes, peak_bytes);
     record!(
         BaleToneMapConfig,
         width,

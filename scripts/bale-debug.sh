@@ -49,7 +49,7 @@
 #                                               key i / where show applied settings and demand block waits (count/max/total ms)
 #   scripts/bale-debug.sh asstest [ms out.png]   libass in bale_gpu.dll: version, DirectWrite font lookups/fallback, render timings; with ms, saves the probe script frame as PNG
 #   scripts/bale-debug.sh rust                   Rust loader + GPU film grain: hardware/self-tests, 1080p correctness, 1080p/4K GPU and CPU timings (120 s timeout)
-#   scripts/bale-debug.sh mem [gc]               GC/app/Xbox memory + player trim/UI residency counters; gc forces full collection + finalizers
+#   scripts/bale-debug.sh mem [gc|peaks-reset]   GC/app/Xbox memory + GPU ledger; gc collects, peaks-reset resets ledger peaks
 #   scripts/bale-debug.sh net [rcvbuf=4m|default]  socket receive buffer for Bale connections (saved; next launch)
 #   scripts/bale-debug.sh speed [check|test]     connection speed test state; check = read + due quick test; test = Test speed (accurate, manual)
 #   scripts/bale-debug.sh buffering [stall [ms]]   buffering-quality state; stall = inject a network stall (default 8000 ms; >= 6000 lowers on Auto)
@@ -471,12 +471,14 @@ case "${1:-}" in
     curl --fail-with-body -sS --max-time 120 "$BASE/rust"
     ;;
   mem)
-    if [[ "$#" -gt 2 || ( "$#" -eq 2 && "$2" != gc ) ]]; then
-      echo 'usage: scripts/bale-debug.sh mem [gc]' >&2
+    if [[ "$#" -gt 2 || ( "$#" -eq 2 && "$2" != gc && "$2" != peaks-reset ) ]]; then
+      echo 'usage: scripts/bale-debug.sh mem [gc|peaks-reset]' >&2
       exit 2
     fi
     if [[ "${2-}" == gc ]]; then
       curl --fail-with-body -sS --max-time 60 "$BASE/mem?gc=1"
+    elif [[ "${2-}" == peaks-reset ]]; then
+      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/mem" --data-urlencode 'action=peaks-reset'
     else
       curl --fail-with-body -sS --max-time 5 "$BASE/mem"
     fi

@@ -264,6 +264,8 @@ impl Readback {
             "CreateTexture2D staging",
             HRESULT(0x8000_4003u32 as i32),
         ))?;
+        crate::memledger::track_texture(&staging, crate::memledger::ENGINE)
+            .step("track staging")?;
         // SAFETY: the device is alive.
         let context = unsafe { device.GetImmediateContext() }.step("GetImmediateContext")?;
         Ok(Self {
@@ -794,6 +796,8 @@ unsafe fn play(
             .CreateTexture2D(&desc, None, Some(&mut texture))
             .step("CreateTexture2D")?;
         let texture = texture.ok_or(Step("CreateTexture2D", HRESULT(0x8000_4003u32 as i32)))?;
+        crate::memledger::track_texture(&texture, crate::memledger::ENGINE)
+            .step("track texture")?;
         // What is really in use, read back rather than assumed.
         let mut created = D3D11_TEXTURE2D_DESC::default();
         texture.GetDesc(&mut created);

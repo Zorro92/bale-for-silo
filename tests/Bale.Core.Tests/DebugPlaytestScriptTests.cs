@@ -651,10 +651,22 @@ public class DebugPlaytestScriptTests
     }
 
     [Fact]
+    public async Task MemoryPeaksResetUsesAnEncodedPost()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["mem", "peaks-reset"]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("-X\nPOST\n-G\n", result.Arguments);
+        Assert.Contains("/mem\n", result.Arguments);
+        Assert.Contains("--data-urlencode\naction=peaks-reset\n", result.Arguments);
+    }
+
+    [Fact]
     public async Task InvalidMemoryArgumentsNeverReachCurl()
     {
         if (!OperatingSystem.IsLinux()) return;
-        foreach (var args in new[] { new[] { "mem", "" }, ["mem", "GC"], ["mem", "gc", "extra"] })
+        foreach (var args in new[] { new[] { "mem", "" }, ["mem", "GC"], ["mem", "gc", "extra"],
+            ["mem", "peaks-reset", "extra"], ["mem", "PEAKS-RESET"] })
         {
             var result = await RunAsync(args);
             Assert.Equal(2, result.ExitCode);

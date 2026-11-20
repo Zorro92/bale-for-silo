@@ -169,3 +169,79 @@ HTTP 400; default remains available. The pre-.25 wrapper's
 [TryParseBaleOption](https://github.com/Zorro92/bale-ffmpeginteropx/blob/c3a9adbf2d81024a54063e7570ed9883afd5403c/Source/FFmpegMediaSource.cpp)
 rejects unknown Bale keys with E_INVALIDARG rather than forwarding them to FFmpeg.
 The tuning log and `FFmpeg tone map override` stats/where row report the captured mode.
+
+## Memory ledger
+
+`bale_gpu.dll` also exports the independent **memory ABI 1**, declared in
+[`native/bale-gpu/include/bale_mem.h`](../native/bale-gpu/include/bale_mem.h) (C/cdecl).
+It does not change the tone-map, grain, subtitle, zero-copy or engine ABI versions:
+
+```c
+typedef struct BaleMemEntry {
+    uint32_t category;
+    int32_t count;
+    int64_t bytes;
+    int64_t peak_bytes;
+} BaleMemEntry;
+uint32_t bale_mem_abi_version(void); /* 1 */
+void bale_mem_account(uint32_t category, int64_t delta_bytes, int32_t delta_count);
+uint32_t bale_mem_snapshot(BaleMemEntry* out, uint32_t capacity);
+void bale_mem_reset_peaks(void);
+uint64_t bale_mem_underflows(uint32_t category);
+```
+
+`BaleMemEntry` is 24 bytes, with fields at offsets 0, 4, 8, 16. The snapshot returns
+the **total needed**, writes `min(capacity, total)` entries in ascending category order,
+and accepts null `out` as a size query. Use capacity 64 to avoid a query/allocation race.
+Every category ever accounted remains in snapshots, including zero rows after releases
+and peak resets. Rows are individually coherent under concurrent accounting; the whole
+snapshot is not a single instant. Atomics serialize each category without allocation or
+poisoning. Invalid IDs (>=64) are ignored. Bytes/count clamp independently at zero on
+underflow and saturate at their signed MAX on overflow; the lifetime underflow counter
+increments once per faulty call (saturating at UINT64_MAX), and is visible on `mem` rows.
+Reset sets peak=current, preserving residency, history and underflow counters.
+
+| ID | Component |
+|---|---|
+| 0 | Unassigned |
+| 1 | bale_gpu tone map: constants, scratch, self-test textures, churn probe |
+| 2 | bale_gpu film grain: GPU buffers/textures and probes |
+| 3 | bale_gpu subtitle overlay: swap-chain buffers (including resize), atlas, bitmap/staging textures, buffers |
+| 4 | bale_gpu engine target/staging textures (`engine.rs`) |
+| 5 | bale_gpu zero-copy resources: D3D12 committed resources and private D3D11 landing/self-test textures |
+| 6–15 | Reserved for bale_gpu |
+| 16 | FFmpegInteropX decoder frames |
+| 17 | FFmpegInteropX tone-map output pool |
+| 18 | FFmpegInteropX dav1d upload pool |
+| 19 | FFmpegInteropX rav1g output image pool |
+| 20 | FFmpegInteropX rav1g prewarm resident (count 1 while resident; bytes if known) |
+| 21 | FFmpegInteropX other textures |
+| 22–31 | Reserved for FFmpegInteropX |
+| 32 | Bale real-player swap chain **(estimate)** |
+| 33–63 | Reserved |
+
+Count allocations at their allocator, once per underlying resource (swap-chain count is
+its buffer count), and pair additions with final releases, including pooled residency.
+Unknown-size residents can use bytes=0/count=1. The fork should resolve these exports at
+runtime, check `bale_mem_abi_version()==1`, and skip accounting on older DLLs. This change
+only reserves its IDs; the fork/rav1g are not instrumented here. Shared-resource opens,
+views and imported caller textures must not add another charge. bale_gpu resources hold
+a `Tracked` RAII guard in COM private data, so clones/views/context references keep their
+charge until destruction. A marker on subtitle buffer zero covers all swap-chain buffers;
+successful resize destroys the old marker before attaching the new one, while failed
+resize leaves the old charge intact.
+
+`scripts/bale-debug.sh mem [gc]` preserves the process totals and adds current/peak MiB,
+counts and a counted total. `mem peaks-reset` sends `POST /mem?action=peaks-reset`.
+Older DLLs print `GPU ledger: unavailable`. Category 32 is debug-only, follows successful
+`EngineBackend` open/resize/close, uses the requested BGRA8/RGB10A2 (4 B/px) or RGBA16F
+(8 B/px), and assumes **two buffers** because MF hides the count. MediaPlayer and standalone
+debug presentation probes remain uninstrumented.
+
+Sizes are **logical**: sum mip extents × bytes per pixel × array size (and MSAA samples),
+NV12=1.5 B/px, P010/P016=3 B/px, buffers=ByteWidth; common DXGI formats are handled and
+unknown ones use 4 B/px. Xbox tiling/alignment padding is not counted. “Uncounted graphics”
+is Xbox `ExtendedMemoryUsage` minus the counted logical total: Media Foundation, driver,
+rav1g internals, uninstrumented pools and padding. It is a diagnostic remainder, not a
+leak measurement or exact residency: estimates, snapshot timing and resources placed in
+the general rather than graphics partition can even make it negative.

@@ -164,7 +164,9 @@ fn committed(
     let mut out = None;
     // SAFETY: live device; descriptors outlive the call; `out` is our slot.
     unsafe { device.CreateCommittedResource(properties, flags, desc, state, None, &mut out)? };
-    out.ok_or_else(|| E_FAIL.into())
+    let resource = out.ok_or(E_FAIL)?;
+    crate::memledger::track_committed(&resource, crate::memledger::ZERO_COPY)?;
+    Ok(resource)
 }
 
 /// Maps a buffer for CPU reads and writes and leaves it mapped; D3D12 allows releasing a mapped
@@ -986,7 +988,8 @@ impl Inner {
         let mut desc = texture_desc(width, height, DXGI_FORMAT_P010, bind);
         desc.MiscFlags =
             (D3D11_RESOURCE_MISC_SHARED_NTHANDLE.0 | D3D11_RESOURCE_MISC_SHARED.0) as u32;
-        let texture11 = texture(&self.device11, &desc, None).step("D3D11 landing texture")?;
+        let texture11 = texture(crate::memledger::ZERO_COPY, &self.device11, &desc, None)
+            .step("D3D11 landing texture")?;
         let texture = self.open(&texture11, width, height, uav)?;
         Ok((texture, texture11))
     }
@@ -1429,7 +1432,8 @@ impl BaleZeroCopy {
         desc.Usage = D3D11_USAGE_STAGING;
         desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ.0 as u32;
         let _lock = Locked::enter(&inner.multithread);
-        let staging = texture(&inner.device11, &desc, None).step("self-test staging")?;
+        let staging = texture(crate::memledger::ZERO_COPY, &inner.device11, &desc, None)
+            .step("self-test staging")?;
         // SAFETY: matching unmapped P010 textures on this device, under the lock.
         unsafe { inner.context.CopyResource(&staging, &output) };
         let actual = readback_bytes(
@@ -1463,9 +1467,9 @@ const TARGET_BIND: u32 = (D3D11_BIND_RENDER_TARGET.0
 fn test_target(device: &ID3D11Device, width: u32, height: u32) -> Result<ID3D11Texture2D> {
     let mut desc = texture_desc(width, height, DXGI_FORMAT_P010, TARGET_BIND);
     desc.MiscFlags = (D3D11_RESOURCE_MISC_SHARED_NTHANDLE.0 | D3D11_RESOURCE_MISC_SHARED.0) as u32;
-    texture(device, &desc, None).or_else(|_| {
+    texture(crate::memledger::ZERO_COPY, device, &desc, None).or_else(|_| {
         desc.BindFlags &= !(D3D11_BIND_RENDER_TARGET.0 as u32);
-        texture(device, &desc, None)
+        texture(crate::memledger::ZERO_COPY, device, &desc, None)
     })
 }
 

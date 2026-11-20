@@ -112,7 +112,8 @@ public class NativeFfmpegPackageTests
         Assert.True(required >= 0 && removed > required);
         // Grain ABI 2: the GPU exports the wrapper loads stay required; CPU grain must be gone.
         foreach (var symbol in new[] { "bale_grain_abi_version", "bale_grain_validate", "bale_grain_gpu_create",
-            "bale_grain_gpu_apply", "bale_grain_gpu_destroy" })
+            "bale_grain_gpu_apply", "bale_grain_gpu_destroy", "bale_mem_abi_version", "bale_mem_account",
+            "bale_mem_snapshot", "bale_mem_reset_peaks", "bale_mem_underflows" })
             Assert.Contains($"'{symbol}'", inspection[required..removed]);
         Assert.Contains("'bale_grain_cpu_apply'", inspection[removed..]);
         Assert.DoesNotContain("'bale_grain_cpu_apply'", inspection[required..removed]);

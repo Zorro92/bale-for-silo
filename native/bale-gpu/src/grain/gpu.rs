@@ -80,6 +80,7 @@ struct InputTexture {
 impl InputTexture {
     fn new(device: &ID3D11Device, width: u32, height: u32, format: DXGI_FORMAT) -> Result<Self> {
         let texture = texture(
+            crate::memledger::FILM_GRAIN,
             device,
             &texture_desc(width, height, format, D3D11_BIND_SHADER_RESOURCE.0 as u32),
             None,
@@ -99,6 +100,7 @@ impl Intermediate {
     fn new(device: &ID3D11Device, desc: &D3D11_TEXTURE2D_DESC) -> Result<Self> {
         // Never inherit staging/decoder/shared flags from the caller's texture.
         let texture = texture(
+            crate::memledger::FILM_GRAIN,
             device,
             &texture_desc(
                 desc.Width,
@@ -225,6 +227,8 @@ impl BaleGrainGpu {
                 Some(&mut constants),
             )?;
         }
+        let constants = constants.ok_or(E_FAIL)?;
+        crate::memledger::track_buffer(&constants, crate::memledger::FILM_GRAIN)?;
         let mut gpu = Self {
             luma: InputTexture::new(
                 &device,
@@ -245,7 +249,7 @@ impl BaleGrainGpu {
             vs: vs.ok_or(E_FAIL)?,
             luma_ps: luma_ps.ok_or(E_FAIL)?,
             chroma_ps: chroma_ps.ok_or(E_FAIL)?,
-            constants: constants.ok_or(E_FAIL)?,
+            constants,
             frame: None,
             poison: None,
             _not_send_sync: PhantomData,
@@ -519,12 +523,22 @@ impl BaleGrainGpu {
                     } else {
                         staging_desc
                     };
-                    let src = texture(&self.device, &src_desc, Some(&data))?;
-                    let dst = texture(&self.device, &desc, None)?;
+                    let src = texture(
+                        crate::memledger::FILM_GRAIN,
+                        &self.device,
+                        &src_desc,
+                        Some(&data),
+                    )?;
+                    let dst = texture(crate::memledger::FILM_GRAIN, &self.device, &desc, None)?;
                     self.draw_frame(&params, &src, &dst, &src_desc)?;
                     let mut readback_desc = staging_desc;
                     readback_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ.0 as u32;
-                    let readback = texture(&self.device, &readback_desc, None)?;
+                    let readback = texture(
+                        crate::memledger::FILM_GRAIN,
+                        &self.device,
+                        &readback_desc,
+                        None,
+                    )?;
                     // SAFETY: matching unmapped single-subresource textures, on the locked context.
                     unsafe { self.context.CopyResource(&readback, &dst) };
                     let actual = readback_bytes(&self.context, &readback, pitch, 96)?;
@@ -662,6 +676,7 @@ pub(crate) fn texture_desc(
 }
 
 pub(crate) fn texture(
+    category: u32,
     device: &ID3D11Device,
     desc: &D3D11_TEXTURE2D_DESC,
     data: Option<&D3D11_SUBRESOURCE_DATA>,
@@ -670,7 +685,9 @@ pub(crate) fn texture(
     // SAFETY: private callers supply one subresource and, if present, initialized data covering
     // desc's complete extent with the declared pitch. Descriptors/data/output live through the call.
     unsafe { device.CreateTexture2D(desc, data.map(std::ptr::from_ref), Some(&mut texture))? };
-    texture.ok_or_else(|| E_FAIL.into())
+    let texture = texture.ok_or(E_FAIL)?;
+    crate::memledger::track_texture(&texture, category)?;
+    Ok(texture)
 }
 
 pub(crate) fn shader_view(

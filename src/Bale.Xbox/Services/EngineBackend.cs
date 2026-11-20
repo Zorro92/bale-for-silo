@@ -31,6 +31,10 @@ internal sealed partial class EngineBackend : PlaybackBackend
     private nint _panel;
     private nint _handle;
     private long _size;
+#if DEBUG_SERVER
+    private readonly DebugGpuMemory.PlayerSwapChain _swapMemory = new();
+    private uint _swapTarget;
+#endif
     private Windows.Graphics.Display.DisplayInformation? _display;
     private Windows.Graphics.Display.Core.HdmiDisplayInformation? _hdmi;
     private Timer? _poll;
@@ -132,6 +136,13 @@ internal sealed partial class EngineBackend : PlaybackBackend
                     session = 0;
                 }
                 _handle = session;
+#if DEBUG_SERVER
+                if (session != 0)
+                {
+                    _swapTarget = target;
+                    _swapMemory.Set(width, height, target);
+                }
+#endif
             }
             return (session != 0 ? 0 : ParseError(text), text);
         }
@@ -315,7 +326,14 @@ internal sealed partial class EngineBackend : PlaybackBackend
             ScaleY = bounds.Height / Math.Max(1, height),
         };
         Volatile.Write(ref _size, ((long)width << 32) | height);
-        Call(handle => bale_gpu_engine_session_resize(handle, width, height));
+        Call(handle =>
+        {
+            var hr = bale_gpu_engine_session_resize(handle, width, height);
+#if DEBUG_SERVER
+            if (hr >= 0) _swapMemory.Set(width, height, _swapTarget);
+#endif
+            return hr;
+        });
     }
 
     private void OnWindowSizeChanged(object sender, WindowSizeChangedEventArgs e) => Layout();
@@ -380,6 +398,9 @@ internal sealed partial class EngineBackend : PlaybackBackend
             }
             catch (Exception ex) { Log.Info($"engine: close {ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8}"); }
         }
+#if DEBUG_SERVER
+        lock (_sync) _swapMemory.Dispose();
+#endif
         if (ReferenceEquals(_host.Child, _canvas)) _host.Child = null;
         if (_panel != 0)
         {

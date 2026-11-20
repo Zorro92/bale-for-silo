@@ -94,6 +94,8 @@ impl ToneMapGpu {
                 Some(&mut constants),
             )?;
         }
+        let constants = constants.ok_or(E_FAIL)?;
+        crate::memledger::track_buffer(&constants, crate::memledger::TONE_MAP)?;
         let mut gpu = Self {
             device,
             config,
@@ -105,7 +107,7 @@ impl ToneMapGpu {
             vs: vs.ok_or(E_FAIL)?,
             y_ps: y_ps.ok_or(E_FAIL)?,
             uv_ps: uv_ps.ok_or(E_FAIL)?,
-            constants: constants.ok_or(E_FAIL)?,
+            constants,
             scratch: None,
             _not_send_sync: PhantomData,
         };
@@ -179,6 +181,7 @@ impl ToneMapGpu {
                 s.width != src.Width || s.height != src.Height || s.format != src.Format
             }) {
                 let texture = texture(
+                    crate::memledger::TONE_MAP,
                     &self.device,
                     &texture_desc(
                         src.Width,
@@ -300,12 +303,14 @@ impl ToneMapGpu {
             };
             for bind in [0, D3D11_BIND_SHADER_RESOURCE.0 as u32] {
                 let input = texture(
+                    crate::memledger::TONE_MAP,
                     &self.device,
                     &texture_desc(16, 8, DXGI_FORMAT_P010, bind),
                     Some(&data),
                 )?;
                 for format in [DXGI_FORMAT_NV12, DXGI_FORMAT_P010] {
                     let output = texture(
+                        crate::memledger::TONE_MAP,
                         &self.device,
                         &texture_desc(
                             16,
@@ -319,7 +324,8 @@ impl ToneMapGpu {
                     let mut read_desc = texture_desc(16, 8, format, 0);
                     read_desc.Usage = D3D11_USAGE_STAGING;
                     read_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ.0 as u32;
-                    let readback = texture(&self.device, &read_desc, None)?;
+                    let readback =
+                        texture(crate::memledger::TONE_MAP, &self.device, &read_desc, None)?;
                     // SAFETY: private matching resources on the caller's protected immediate context.
                     unsafe { context.CopyResource(&readback, &output) };
                     if format == DXGI_FORMAT_P010 {
