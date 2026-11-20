@@ -243,8 +243,26 @@ debug presentation probes remain uninstrumented.
 
 Sizes are **logical**: sum mip extents × bytes per pixel × array size (and MSAA samples),
 NV12=1.5 B/px, P010/P016=3 B/px, buffers=ByteWidth; common DXGI formats are handled and
-unknown ones use 4 B/px. Xbox tiling/alignment padding is not counted. “Uncounted graphics”
-is Xbox `ExtendedMemoryUsage` minus the counted logical total: Media Foundation, driver,
-rav1g internals, uninstrumented pools and padding. It is a diagnostic remainder, not a
-leak measurement or exact residency: estimates, snapshot timing and resources placed in
-the general rather than graphics partition can even make it negative.
+unknown ones use 4 B/px. Xbox tiling/alignment padding is not counted.
+
+**One memory pool.** With the `hevcPlayback` capability (declared in Package.appxmanifest) the app gets
+3328 MiB in a single pool that CPU heaps and D3D11/D3D12 resources both count against:
+`MemoryManager.AppMemoryUsage` already includes every texture, and `GetExtendedMemoryInfo` reports the
+graphics partition as 0 of 0 on the Series X (measured 2026-11-20; rav1g measured the same with its
+test player, 1024 MiB without the capability). Microsoft's hevc-xbox page only says the partition exists
+on Series X|S; games may get one, apps don't. So never add GPU memory to app memory, and the `mem`
+remainder line is **app memory minus the counted total**: CPU heaps (managed and native), Media
+Foundation, driver, rav1g internals, uninstrumented textures and padding. Estimates and snapshot timing
+make it approximate. The practical ceiling (~1.2 GB) is Bale's own measurement, not a documented limit.
+
+Console readings, Bale 0.1.705 (wrapper bale.62), 1080p SDR display, 40 s into playback:
+
+| Route | App memory | Counted | Largest lines |
+|---|---|---|---|
+| 4K HEVC HDR, console tone map (no rav1g device) | 1201.7 MiB | 532.7 MiB | 16 decoder array 20 slices 478.1 MiB; 1 tone map 23.9; 32 swap chain 15.8 (est.); 17 stage output 5× 14.8 |
+| Same, rav1g device resident (after an AV1 play) | 1244.7 MiB | 532.7 MiB | same; 20 rav1g device present |
+| 4K AV1 on rav1g | 1117.1 MiB | 687.6 MiB | 22 rav1g decoder buffers 487.8 MiB; 19 rav1g output images 4× 94.9; 17 stage output 12× 71.2; 3 subtitles 17.8 |
+
+Every line returns to 0 after stop except 20, the rav1g process device, which stays once created
+(idle app memory 240 → 280 MiB). That resident device is the ~43 MiB that takes the 4K tone-map route
+over ~1.2 GB; the biggest single item on that route is the 20-slice d3d11va decoder array.

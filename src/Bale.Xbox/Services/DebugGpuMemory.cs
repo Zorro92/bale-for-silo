@@ -42,10 +42,19 @@ internal static partial class DebugGpuMemory
                 builder.Append('\n');
             }
             builder.Append("  counted total: ").Append(MiB(total)).Append('\n');
-            var (memory, _) = DebugXboxMemory.Read();
-            builder.Append("  uncounted graphics = Xbox graphics usage minus counted total: ")
-                .Append(memory is { } value ? MiB(value.ExtendedMemoryUsage - total) : "unavailable")
-                .Append(" (Media Foundation/driver/rav1g internals and padding; includes uninstrumented allocations)\n");
+            // With hevcPlayback the app has ONE pool (3328 MiB on Series X): D3D textures count in AppMemoryUsage
+            // and GetExtendedMemoryInfo's graphics partition reads 0 of 0 (measured 2026-11-20). So the rest is
+            // app memory minus the ledger, not a graphics-only remainder.
+            builder.Append("  rest of app memory = app memory minus counted total: ");
+            try
+            {
+                builder.Append(MiB((double)Windows.System.MemoryManager.AppMemoryUsage - total));
+            }
+            catch (Exception)
+            {
+                builder.Append("unavailable");
+            }
+            builder.Append(" (CPU heaps, Media Foundation, driver, rav1g internals, padding, uninstrumented textures)\n");
             return builder.ToString();
         }
         catch (DllNotFoundException) { return "GPU ledger: unavailable\n"; }

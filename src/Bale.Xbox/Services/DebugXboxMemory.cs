@@ -8,7 +8,8 @@ namespace Bale.Xbox.Services;
 /// Xbox-only split of the app's memory budget, from Microsoft's "4K video playback for UWP apps on
 /// Xbox" (hevc-xbox): Windows.Xbox.ApplicationModel.ApplicationResources' IApplicationResourcesStatics2
 /// GetExtendedMemoryInfo. appMemory is the general heap; extendedMemory is the graphics partition on
-/// Xbox Series X|S. Debug readout only; production claims and limits do not use it.
+/// Xbox Series X|S for titles that get one. Bale (an app with hevcPlayback) reads graphics 0 of 0: one pool,
+/// textures counted in appMemory (docs/gpu-tone-map.md "One memory pool"). Debug readout only; production claims and limits do not use it.
 /// </summary>
 internal static class DebugXboxMemory
 {
