@@ -275,6 +275,23 @@ ceiling; that was only what the playback routes happened to use.
 - Device Portal's "total" (~1.6 GB) is the system partition's physical pages, not the app's quota; 4K AV1
   on dav1d held ~2000 MiB (working set 1.5 GB, commit 2.0 GB) with 0 dropped frames.
 
+Other console limits (shared list: the bale-projects skill, "Measured console limits"):
+- **Input-idle state** (~10 s after the last input, console-wide; 2026-11-10): CPU clock ~25% slower, CPU
+  RAM copies 4-6x slower (~1.4 GB/s per thread, ~3 GB/s with 4), cache-resident copies ~20% slower, GPU
+  copies not slowed (~31 GB/s). Real playback runs in this state.
+- **GPU features** (D3D12, measured by rav1g): shader model 6.4 at most, waves of 64 lanes only, no native
+  16-bit arithmetic. WARP in CI uses small waves, so wave-dependent shader paths are only tested on the console.
+- **GPU slow state** (rav1g, 2026-11-18): after the first 10-bit video output following a boot, the GPU ran
+  ~2.6x slower; it wore off within ~2 min in some cases, in others only a restart cleared it. Plain Windows
+  10-bit playback did not trigger it. Bale avoids it by capping output at the display's depth (see "First
+  10-bit video after a boot slows the console GPU" in docs/player-plan.md).
+- **D3D12 pipeline caches** (rav1g, 2026-11-18): ID3D12PipelineLibrary and GetCachedBlob remove the device
+  (DXGI_ERROR_DRIVER_INTERNAL_ERROR); don't use them on the console.
+- **Dependent compute steps** (rav1g, 2026-11-19): each step of a chain of dependent dispatches costs about
+  30 us of GPU time, so the number of serial steps, not the number of dispatches, sets the cost.
+- Still unmeasured: the GPU time share an app gets, how many cores an app may use, App vs Game type
+  (the xbox-console-profiler project measures these).
+
 **Debug memory limit probe.** Leave the player, then run one of:
 
 ```sh
