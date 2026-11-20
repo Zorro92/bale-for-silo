@@ -276,9 +276,11 @@ ceiling; that was only what the playback routes happened to use.
   on dav1d held ~2000 MiB (working set 1.5 GB, commit 2.0 GB) with 0 dropped frames.
 
 Other console limits (shared list: the bale-projects skill, "Measured console limits"):
-- **Input-idle state** (~10 s after the last input, console-wide; 2026-11-10): CPU clock ~25% slower, CPU
-  RAM copies 4-6x slower (~1.4 GB/s per thread, ~3 GB/s with 4), cache-resident copies ~20% slower, GPU
-  copies not slowed (~31 GB/s). Real playback runs in this state.
+- **Input-idle state** (~10 s after the last input, console-wide, normal apps; xbox-console-profiler
+  2026-11-20): CPU ALU ~21-25% slower, CPU RAM copies 3.6-4x slower (1 thread ~13 -> ~3.5 GB/s, 4 threads
+  ~23.5 -> ~6.5 GB/s), cache-resident copies ~20% slower, **GPU copies ~2.4x slower** (97 -> 40 GB/s
+  DEFAULT->DEFAULT, 68 -> 37 GB/s upload->default), GPU compute unchanged. Real playback runs in this state.
+  This corrects the 2026-11-10 note that GPU copies were not slowed (one small copy).
 - **GPU features** (D3D12, measured by rav1g): shader model 6.4 at most, waves of 64 lanes only, no native
   16-bit arithmetic. WARP in CI uses small waves, so wave-dependent shader paths are only tested on the console.
 - **GPU slow state** (rav1g, 2026-11-18): after the first 10-bit video output following a boot, the GPU ran
@@ -289,8 +291,21 @@ Other console limits (shared list: the bale-projects skill, "Measured console li
   (DXGI_ERROR_DRIVER_INTERNAL_ERROR); don't use them on the console.
 - **Dependent compute steps** (rav1g, 2026-11-19): each step of a chain of dependent dispatches costs about
   30 us of GPU time, so the number of serial steps, not the number of dispatches, sets the cost.
-- Still unmeasured: the GPU time share an app gets, how many cores an app may use, App vs Game type
-  (the xbox-console-profiler project measures these).
+- **Profiler results** (Zorro92/xbox-console-profiler docs/results.md, 9d6dad1, one run per variant):
+
+  | | plain | hevcPlayback (Bale) | expandedResources |
+  |---|---|---|---|
+  | App memory limit | 1024 MiB | 3328 MiB | 5120 MiB |
+  | DXGI local budget | 1210 MiB (app limit stops GPU first: D3D11 792, D3D12 928) | 2857 MiB | 4147 MiB |
+  | CPUs | 8 logical (4 cores, shared) | 8 logical (4 cores, shared) | 6 logical (3 dedicated cores) |
+  | GPU compute | 1.86 TFLOP/s | 1.85 TFLOP/s | 11.25 TFLOP/s |
+  | GPU copy, active / idle | 97 / 40 GB/s | 89 / 38 GB/s | 144 / 144 GB/s |
+  | Idle slowdown | yes | yes | none |
+
+  A normal app's GPU queue is never preempted (busy 99.8%) but runs on ~1/6 of the GPU. CPU throughput stops
+  growing beyond 4 threads. `expandedResources` is a restricted game capability (Store policy: fails Xbox
+  certification); it worked sideloaded in Developer Mode, untested together with hevcPlayback or for media
+  playback behaviour.
 
 **Debug memory limit probe.** Leave the player, then run one of:
 
