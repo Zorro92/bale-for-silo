@@ -4,7 +4,7 @@
 # second time for the Windows target when that target is installed), rebuilds the Rust core the tests load
 # (a stale libbale_core.so makes tests run old logic), then builds and runs the .NET tests with
 # warnings as errors (Directory.Build.props). The Xbox package itself needs Windows, so CI stays
-# the only check for XAML/CsWinRT. Skip once with `git push --no-verify`.
+# the only check for XAML; scripts/check-cswinrt.sh catches CsWinRT analyzer errors on Linux. Skip once with `git push --no-verify`.
 # Enable with: scripts/install-git-hooks.sh
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
