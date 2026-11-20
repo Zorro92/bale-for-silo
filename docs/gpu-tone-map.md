@@ -303,9 +303,8 @@ Other console limits (shared list: the bale-projects skill, "Measured console li
   | Idle slowdown | yes | yes | none |
 
   A normal app's GPU queue is never preempted (busy 99.8%) but runs on ~1/6 of the GPU. CPU throughput stops
-  growing beyond 4 threads. `expandedResources` is a restricted game capability (Store policy: fails Xbox
-  certification); it worked sideloaded in Developer Mode, untested together with hevcPlayback or for media
-  playback behaviour.
+  growing beyond 4 threads. `expandedResources` is the deprecated manifest route to Game resources and Store
+  submissions declaring it are rejected: it shows what Game mode gets, it is not an option for Bale.
 
 **Debug memory limit probe.** Leave the player, then run one of:
 
