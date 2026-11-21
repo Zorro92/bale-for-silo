@@ -289,8 +289,11 @@ Other console limits (shared list: the bale-projects skill, "Measured console li
   10-bit video after a boot slows the console GPU" in docs/player-plan.md).
 - **D3D12 pipeline caches** (rav1g, 2026-11-18): ID3D12PipelineLibrary and GetCachedBlob remove the device
   (DXGI_ERROR_DRIVER_INTERNAL_ERROR); don't use them on the console.
-- **Dependent compute steps** (rav1g, 2026-11-19): each step of a chain of dependent dispatches costs about
-  30 us of GPU time, so the number of serial steps, not the number of dispatches, sets the cost.
+- **Dependent compute steps** (rav1g intra wavefront; per-step GPU timestamps, 34,900 steps, 2 rounds,
+  2026-11-21): each step of a chain of dependent dispatches costs about 18 us fixed (dispatch + barrier) plus
+  the latency of its slowest thread group; extra groups in the same step add only ~0.1 us each. So the number
+  of serial steps and the slowest group's latency set the cost, not the amount of work (replaces the
+  2026-11-19 average of ~30 us).
 - **Profiler results** (Zorro92/xbox-console-profiler docs/results.md, 9d6dad1, one run per variant):
 
   | | plain | hevcPlayback (Bale) | expandedResources |
