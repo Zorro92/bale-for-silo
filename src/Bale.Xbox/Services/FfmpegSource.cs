@@ -232,6 +232,8 @@ internal static class FfmpegSource
         if (tuning.HdrSupport is { } hdr) config.Video.HdrSupport = hdr ? HdrSupport.Enabled : HdrSupport.Disabled;
         // Seek-landing A/B: off is upstream's backward seek (no nearest-keyframe fast seek).
         if (tuning.FastSeek is { } fastSeek) config.General.FastSeek = fastSeek;
+        // Wrapper bale.63 experiment: shader-readable d3d11va decoder pools (the fork logs whether D3D11 allows them).
+        if (tuning.DecoderShaderResource is { } srv) config.FFmpegOptions["bale_d3d11va_shader_resource"] = srv ? "1" : "0";
         if (softwareVideo)
         {
             ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.Dav1dMaxFrameDelay));
