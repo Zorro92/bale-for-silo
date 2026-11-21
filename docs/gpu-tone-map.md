@@ -20,6 +20,7 @@ announced by bits instead. Absent export = NV12 output only.
 | 8 | `BALE_TONEMAP_INPUT_NV12` | NV12 input, read as `code << 2` (exactly the 10-bit code) |
 | 16 | `BALE_TONEMAP_SDR709` | BT.709 SDR frames (transfer 1/6/14/15, primaries/matrix 1): scale only |
 | 32 | `BALE_TONEMAP_OUTPUT_NV12_DITHERED` | NV12 output is ordered-dithered to 8 bits (below); P010 unchanged |
+| 64 | `BALE_TONEMAP_INPUT_DECODER_SRV` | a decoder array that also has `SHADER_RESOURCE` is read in place, no private copy, when D3D11 makes the view (Xbox: yes; desktop/WARP: refused once, then the copy) |
 
 Apply picks the output depth from the output texture's format and the input depth from the input
 texture's format. The owner's rule is that processed video is always output in 10-bit, so the fork
@@ -27,6 +28,13 @@ asks for P010 whenever bit 2 is present (bale.36+). Phase 2 of the bit-depth rul
 SDR display Bale sets `bale_tonemap_output_depth=8` when bit 32 is present (not for AV1), and the fork's
 stage pool and media type become NV12 from the first frame. The create self-test checks NV12 and P010
 output at 1:1 (it never inherits a configured downscale source size).
+
+Bit 64 (2026-11-21): the fork's bale.63 probe showed the Xbox allows shader views of d3d11va decoder
+arrays (NV12 and P010, `hr=0`) and plays normally with them (4K HDR, 0 drops, seek OK). With
+`bale_d3d11va_shader_resource=1` the fork's decoder pools carry `SHADER_RESOURCE`, and apply then reads
+the decoder slice directly: one ~24 MB GPU copy per 4K frame less (~0.6 ms in the idle state, where GPU
+copies run ~40 GB/s) and no 4K scratch texture (ledger category 1 drops by ~24 MiB). The fork should
+request such pools only when bit 64 is present. Debug: `ffmpeg-tune srv=on`.
 
 ## Dithered NV12 output (`BALE_TONEMAP_OUTPUT_NV12_DITHERED`, 2026-11-19)
 

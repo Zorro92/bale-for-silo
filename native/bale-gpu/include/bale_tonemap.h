@@ -42,7 +42,12 @@ uint32_t bale_tonemap_abi_version(void); /* returns 1 */
    luma and chroma, with a static 8x8 Bayer threshold at the output pixel (no per-frame change, so still
    pictures stay still). P010 output is unchanged. Absent = NV12 is plainly rounded. */
 #define BALE_TONEMAP_OUTPUT_NV12_DITHERED 32u
-uint32_t bale_tonemap_output_formats(void); /* returns NV12 | P010 | DOWNSCALE | INPUT_NV12 | SDR709 | NV12_DITHERED */
+/* INPUT_DECODER_SRV (Bale 2026-11-21): the input may be a D3D11_BIND_DECODER array that also has
+   D3D11_BIND_SHADER_RESOURCE; apply then reads the slice in place, without its private copy, when D3D11
+   can create the view (the Xbox can; desktop D3D11/WARP refuse and apply falls back to the copy).
+   Absent = decoder arrays are always copied first. Request SHADER_RESOURCE pools only when this is set. */
+#define BALE_TONEMAP_INPUT_DECODER_SRV 64u
+uint32_t bale_tonemap_output_formats(void); /* returns NV12 | P010 | DOWNSCALE | INPUT_NV12 | SDR709 | NV12_DITHERED | INPUT_DECODER_SRV */
 typedef struct BaleToneMapConfig {
     uint32_t width, height;     /* output size (input may be larger: decoder alignment, or a downscale) */
     uint32_t curve;             /* 1 = BT.2390 EETF, 2 = Hable */

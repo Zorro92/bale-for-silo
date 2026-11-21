@@ -44,6 +44,8 @@ pub struct ToneMapGpu {
     uv_ps: ID3D11PixelShader,
     constants: ID3D11Buffer,
     scratch: Option<Scratch>,
+    /// Set once D3D11 refused a view of a decoder array (desktop/WARP): stop retrying every frame.
+    decoder_view_refused: bool,
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -109,6 +111,7 @@ impl ToneMapGpu {
             uv_ps: uv_ps.ok_or(E_FAIL)?,
             constants,
             scratch: None,
+            decoder_view_refused: false,
             _not_send_sync: PhantomData,
         };
         if !debug.no_self_test {
@@ -170,12 +173,26 @@ impl ToneMapGpu {
             render_view(&self.device, output, luma_view)?,
             render_view(&self.device, output, chroma_view)?,
         ];
-        // D3D11 forbids SRVs on decoder/encoder arrays even with an SRV bind present.
+        // Read in place when the source is shader-readable. Desktop D3D11 forbids SRVs on decoder
+        // arrays even with an SRV bind; the Xbox allows them (fork bale.63 probe), saving one full-frame
+        // GPU copy per frame (~24 MB at 4K P010; idle-state GPU copies run ~40 GB/s). A refused view on
+        // a decoder array falls back to the private copy and is not retried.
         let eight_bit_input = src.Format == DXGI_FORMAT_NV12;
-        let direct = src.BindFlags & D3D11_BIND_SHADER_RESOURCE.0 as u32 != 0
-            && src.BindFlags & (D3D11_BIND_DECODER | D3D11_BIND_VIDEO_ENCODER).0 as u32 == 0;
-        let views = if direct {
-            source_views(&self.device, input, subresource, eight_bit_input)?
+        let decoder_bound = src.BindFlags & D3D11_BIND_DECODER.0 as u32 != 0;
+        let in_place = match read_in_place(src.BindFlags, self.decoder_view_refused) {
+            false => None,
+            true => match source_views(&self.device, input, subresource, eight_bit_input) {
+                Ok(views) => Some(views),
+                Err(_) if decoder_bound => {
+                    self.decoder_view_refused = true;
+                    None
+                }
+                Err(error) => return Err(error),
+            },
+        };
+        let direct = in_place.is_some();
+        let views = if let Some(views) = in_place {
+            views
         } else {
             if self.scratch.as_ref().is_none_or(|s| {
                 s.width != src.Width || s.height != src.Height || s.format != src.Format
@@ -406,6 +423,15 @@ pub(crate) fn compare_self_test(actual: &[u8], expected: &[u8]) -> std::result::
     }
 }
 
+/// Whether apply tries to read the source in place: it needs a shader-resource bind and must not be an
+/// encoder surface; a decoder array qualifies until D3D11 has refused such a view once.
+fn read_in_place(bind_flags: u32, decoder_view_refused: bool) -> bool {
+    let srv = bind_flags & D3D11_BIND_SHADER_RESOURCE.0 as u32 != 0;
+    let encoder = bind_flags & D3D11_BIND_VIDEO_ENCODER.0 as u32 != 0;
+    let decoder = bind_flags & D3D11_BIND_DECODER.0 as u32 != 0;
+    srv && !encoder && !(decoder && decoder_view_refused)
+}
+
 fn source_views(
     device: &ID3D11Device,
     texture: &ID3D11Texture2D,
@@ -479,6 +505,20 @@ mod tests {
             src.BindFlags = bind;
             assert!(validate_descs(&config, &src, &dst, 15).is_ok());
         }
+    }
+
+    #[test]
+    fn decoder_arrays_with_a_shader_resource_bind_are_read_in_place_until_refused() {
+        let srv = D3D11_BIND_SHADER_RESOURCE.0 as u32;
+        let decoder = D3D11_BIND_DECODER.0 as u32;
+        let encoder = D3D11_BIND_VIDEO_ENCODER.0 as u32;
+        assert!(read_in_place(srv, false));
+        assert!(read_in_place(srv, true));
+        assert!(read_in_place(decoder | srv, false));
+        assert!(!read_in_place(decoder | srv, true));
+        assert!(!read_in_place(decoder, false));
+        assert!(!read_in_place(0, false));
+        assert!(!read_in_place(encoder | srv, false));
     }
 
     #[test]
