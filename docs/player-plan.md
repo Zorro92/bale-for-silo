@@ -1587,7 +1587,7 @@ it scales **4K SDR (BT.709)** video down to a smaller display. It is a count, no
 failed opens peaking at ~180 MB still died at 26), and it survives D3D11 device destruction. The
 breakpoint fires in whoever allocates next, so `msvproc` or FFmpegInteropX appear as victims.
 
-**Evidence** (all on the 1080p SDR TV, 40 opens per pass, results under `~/ext-1/bale-dumps/`):
+**Evidence** (all on the 1080p SDR TV, 40 opens per pass; the raw dumps and logs were not kept):
 
 | What MF's video processor received | Result |
 |---|---|
