@@ -5,7 +5,7 @@
 `bale_tonemap_output_formats()`. It is the production path for HDR originals on SDR displays
 (see `docs/player-plan.md` "Console tone mapping by default"), and since 2026-11-17 also the
 display-sized scaler for 4K SDR on smaller displays (see "4K SDR downscale on smaller displays").
-The FFmpegInteropX fork (wrapper 2.1.0-bale.63 pinned) owns the stage around it.
+The FFmpegInteropX fork (wrapper 2.1.0-bale.64 pinned) owns the stage around it.
 
 ## Capabilities (`bale_tonemap_output_formats`, 2026-11-17)
 
@@ -35,6 +35,13 @@ arrays (NV12 and P010, `hr=0`) and plays normally with them (4K HDR, 0 drops, se
 the decoder slice directly: one ~24 MB GPU copy per 4K frame less (~0.6 ms in the idle state, where GPU
 copies run ~40 GB/s) and no 4K scratch texture (ledger category 1 drops by ~24 MiB). The fork should
 request such pools only when bit 64 is present. Debug: `ffmpeg-tune srv=on`.
+
+Console A/B (Bale 0.1.712, 4K HDR HEVC tone map, two pairs, 45 s in): srv off app 1185/1191 MiB (ledger 1 =
+23.9 MiB scratch); srv on with the in-place read app 1255/1247 MiB (ledger 1 = 0), 24 fps and 0 drops both
+ways, seek OK. A srv-on run that still copied measured 1189 MiB, so the bind costs nothing but reading
+decoder arrays through SRVs adds ~80-90 MiB the driver does not report (likely internal decompress/shadow
+copies, which may also cost the GPU time the copy saved). **Default stays off** (wrapper bale.64 gates the
+pools on bit 64) until per-stage GPU timestamps show a real saving.
 
 ## Dithered NV12 output (`BALE_TONEMAP_OUTPUT_NV12_DITHERED`, 2026-11-19)
 
