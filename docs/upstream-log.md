@@ -16,10 +16,10 @@ part Bale hasn't built yet; check when building it), **deviation** (Bale differs
 
 | Repo | Commit | Reviewed |
 |---|---|---|
-| silo-android | `1b4732d90beb` | 2026-11-20 |
-| silo-apple | `f70e16aeba15` | 2026-11-20 |
-| silo-server | `975bbf41b33c` | 2026-11-20 |
-| silo-roku | `c1841aeb896e` | 2026-11-20 |
+| silo-android | `c6dfd52a631c` | 2026-11-21 |
+| silo-apple | `71a3beb9c0c4` | 2026-11-21 |
+| silo-server | `a84b2551b236` | 2026-11-21 |
+| silo-roku | `5778e4765def` | 2026-11-21 |
 
 The first review (2026-11-10) started from the commit each local clone was made at.
 
@@ -191,7 +191,63 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   a seek kept across a replan (server `d22e55f`, with `4a73f48`); HLS kept playing through a server
   outage (server `40c093c`, compare the Rust HLS reader).
 
+- **Later, from the 2026-11-21 review:** the profile section baseline route and
+  `home_layout_baseline` flag, and the section settings read listing a page's default rows (server
+  `f18678f`; for a future Home row editor, Bale's layout is local today); request create dropping
+  `poster_path` / `backdrop_path` values that aren't plain TMDB image paths, and the admin-only
+  `MediaRequest.poster_url` (server `6633874`; Bale forwards the detail read's paths); a zero
+  download estimate omitted from `download.estimated_completion_at` (server `28dd148`); hero
+  backdrop banding on dark art (Android `c6dfd52a6`; console check of Bale's masked art).
+
 ## Reviews
+
+### 2026-11-21
+
+No act items. The server batch (243 commits) is almost entirely web admin UI, accessibility,
+right-to-left and translation fixes, backup, deployment configuration and CI; the only change on a
+path Bale generates is one optional admin-only field. The TV apps dropped the older phones'
+match-word footnote from device sign-in, which Bale never showed.
+
+#### silo-android (`1b4732d90beb..c6dfd52a631c`, 2 commits, 1 none)
+
+- `c6dfd52a6` later: the Home hero backdrop no longer bands on dark art: the art draws whole and the
+  wash is painted over it through the corner fade in one draw, dithered before rounding (Android 9's
+  GPU path doesn't dither gradients). The look is unchanged; Bale masks the art with
+  `Assets/ArtMask.png` over its tint (`MaskedArt.cs`, `AmbientTint.cs`): console check for banding
+  on dark art.
+- `63c898084` none for Bale: device sign-in approval copy is device-neutral and the "Older phones
+  show ..." match-word note is gone from `TvPairingPanel.kt`; Bale's sign-in never showed match
+  words.
+
+#### silo-apple (`f70e16aeba15..71a3beb9c0c4`, 1 commit, 1 none)
+
+The same pairing change (`71a3beb9`): match-word note removed, a generic approval title when the
+device name is unknown.
+
+#### silo-server (`975bbf41b33c..a84b2551b236`, 243 commits, 240 none)
+
+- `6633874` later: admin request reads return `poster_url`, a server path that fetches the TMDB
+  poster (capability `request_posters` on the admin request capabilities); the field sits on the
+  shared `MediaRequest` schema but is filled on admin reads only. Request create now keeps
+  `poster_path` / `backdrop_path` only when they are plain TMDB image paths and drops any other
+  shape without failing. Bale's create (`RequestsFeed.cs`) passes the detail read's paths through
+  unchanged, so nothing changes.
+- `28dd148` later: a request's `download.estimated_completion_at` is left out when the estimate is
+  zero. Bale doesn't read the download estimate (`RequestPresentation.cs`).
+- `f18678f` later: a profile section baseline route (per-profile tokens for the server rows a page
+  shows, for the web's Home layout export/import) and `home_layout_baseline` on the profile section
+  flags; the section settings read lists a page's default rows. Bale keeps its row layout locally
+  (`HomeSectionLayout.cs`); for a future Home row editor.
+
+Contract changes on generated paths, additive (regenerate and check at the next `SILO_REF` bump):
+`MediaRequest.poster_url` (optional, admin reads only). The rest of the contract diff (the two new
+routes, `home_layout_baseline`, `AdminRequestCounts.requests_enabled`, deployment-managed node and
+AI provider fields, backup restore change lists, refresh-task samples) is on paths Bale doesn't
+generate.
+
+#### silo-roku (`c1841aeb896e..5778e4765def`, 1 commit, 1 none)
+
+The same pairing change (`5778e47`): the companion code card loses the match-word line.
 
 ### 2026-11-20
 
