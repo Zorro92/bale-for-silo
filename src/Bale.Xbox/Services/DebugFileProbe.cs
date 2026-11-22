@@ -39,12 +39,12 @@ internal static unsafe class DebugFileProbeReader
             if (context == 0) throw new OutOfMemoryException();
             ((FormatContext*)context)->Io = io;
             // Plain self-contained files only. No playlists or nested URL/file opens, even if mislabeled.
-            Set(ref options, "format_whitelist", "mov,matroska,avi,mpegts,mpeg,ogg,asf,flv,ivf");
-            Set(ref options, "protocol_whitelist", "");
-            Set(ref options, "probesize", "5000000");
-            Set(ref options, "analyzeduration", "5000000");
-            Set(ref options, "max_streams", "32");
-            Require(avformat_open_input(ref context, 0, 0, ref options));
+            Set(&options, "format_whitelist", "mov,matroska,avi,mpegts,mpeg,ogg,asf,flv,ivf");
+            Set(&options, "protocol_whitelist", "");
+            Set(&options, "probesize", "5000000");
+            Set(&options, "analyzeduration", "5000000");
+            Set(&options, "max_streams", "32");
+            Require(avformat_open_input(&context, 0, 0, &options));
             var format = (FormatContext*)context;
             if (format->StreamCount is 0 or > 32) throw new DebugPlayUrlException("Debug file stream inventory is unsupported.");
             // find_stream_info may decode a header/frame when the container omitted facts; keep that temporary
@@ -54,12 +54,12 @@ internal static unsafe class DebugFileProbeReader
             new Span<nint>(streamOptions, initialStreams).Clear();
             try
             {
-                for (var i = 0; i < initialStreams; i++) Set(ref streamOptions[i], "threads", "1");
+                for (var i = 0; i < initialStreams; i++) Set(streamOptions + i, "threads", "1");
                 Require(avformat_find_stream_info(context, streamOptions));
             }
             finally
             {
-                for (var i = 0; i < initialStreams; i++) av_dict_free(ref streamOptions[i]);
+                for (var i = 0; i < initialStreams; i++) av_dict_free(streamOptions + i);
             }
             cancellation.ThrowIfCancellationRequested();
             var videos = new List<nint>();
@@ -102,13 +102,13 @@ internal static unsafe class DebugFileProbeReader
         }
         finally
         {
-            av_dict_free(ref options);
-            if (context != 0) avformat_close_input(ref context);
+            av_dict_free(&options);
+            if (context != 0) avformat_close_input(&context);
             if (io != 0)
             {
                 // AVIOContext's public prefix: av_class, buffer. avio_context_free does not free this buffer.
                 av_free(((nint*)io)[1]);
-                avio_context_free(ref io);
+                avio_context_free(&io);
             }
             if (buffer != null) av_free((nint)buffer);
             handle.Free();
@@ -147,7 +147,14 @@ internal static unsafe class DebugFileProbeReader
     {
         if (result < 0) throw new DebugPlayUrlException($"Debug file probe failed (FFmpeg {result}).");
     }
-    private static void Set(ref nint options, string name, string value) => Require(av_dict_set(ref options, name, value, 0));
+    // Pointer-only signatures: the app disables runtime marshalling (CA1420), so strings go over as UTF-8 by hand.
+    private static void Set(nint* options, string name, string value)
+    {
+        var n = Marshal.StringToCoTaskMemUTF8(name);
+        var v = Marshal.StringToCoTaskMemUTF8(value);
+        try { Require(av_dict_set(options, (byte*)n, (byte*)v, 0)); }
+        finally { Marshal.FreeCoTaskMem(n); Marshal.FreeCoTaskMem(v); }
+    }
 
     [StructLayout(LayoutKind.Sequential)] private struct Rational { public int Num, Den; }
     [StructLayout(LayoutKind.Explicit)] private struct FormatContext
@@ -190,16 +197,15 @@ internal static unsafe class DebugFileProbeReader
     [DllImport(Util, CallingConvention = CallingConvention.Cdecl)] private static extern void av_free(nint memory);
     [DllImport(Format, CallingConvention = CallingConvention.Cdecl)] private static extern nint avio_alloc_context(byte* buffer, int size, int write,
         nint opaque, delegate* unmanaged[Cdecl]<nint, byte*, int, int> read, nint writePacket, delegate* unmanaged[Cdecl]<nint, long, int, long> seek);
-    [DllImport(Format, CallingConvention = CallingConvention.Cdecl)] private static extern void avio_context_free(ref nint io);
+    [DllImport(Format, CallingConvention = CallingConvention.Cdecl)] private static extern void avio_context_free(nint* io);
     [DllImport(Format, CallingConvention = CallingConvention.Cdecl)] private static extern nint avformat_alloc_context();
-    [DllImport(Format, CallingConvention = CallingConvention.Cdecl)] private static extern int avformat_open_input(ref nint context, nint url, nint format, ref nint options);
+    [DllImport(Format, CallingConvention = CallingConvention.Cdecl)] private static extern int avformat_open_input(nint* context, nint url, nint format, nint* options);
     [DllImport(Format, CallingConvention = CallingConvention.Cdecl)] private static extern int avformat_find_stream_info(nint context, nint* options);
-    [DllImport(Format, CallingConvention = CallingConvention.Cdecl)] private static extern void avformat_close_input(ref nint context);
+    [DllImport(Format, CallingConvention = CallingConvention.Cdecl)] private static extern void avformat_close_input(nint* context);
     [DllImport(Format, CallingConvention = CallingConvention.Cdecl)] private static extern Rational av_guess_frame_rate(nint context, nint stream, nint frame);
     [DllImport(Format, CallingConvention = CallingConvention.Cdecl)] private static extern int av_find_best_stream(nint context, int type, int wanted, int related, nint decoder, int flags);
-    [DllImport(Util, CallingConvention = CallingConvention.Cdecl)] private static extern int av_dict_set(ref nint dict,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string name, [MarshalAs(UnmanagedType.LPUTF8Str)] string value, int flags);
-    [DllImport(Util, CallingConvention = CallingConvention.Cdecl)] private static extern void av_dict_free(ref nint dict);
+    [DllImport(Util, CallingConvention = CallingConvention.Cdecl)] private static extern int av_dict_set(nint* dict, byte* name, byte* value, int flags);
+    [DllImport(Util, CallingConvention = CallingConvention.Cdecl)] private static extern void av_dict_free(nint* dict);
     [DllImport(Util, CallingConvention = CallingConvention.Cdecl)] private static extern nint av_pix_fmt_desc_get(int format);
     [DllImport(Util, CallingConvention = CallingConvention.Cdecl)] private static extern nint av_get_pix_fmt_name(int format);
     [DllImport(Util, CallingConvention = CallingConvention.Cdecl)] private static extern nint av_color_transfer_name(int transfer);
