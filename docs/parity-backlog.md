@@ -148,11 +148,37 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
 
 ## From upstream reviews
 
-Held items from `docs/upstream-log.md` (review of 2026-11-18). Each waits on the condition given.
+Items from the upstream reviews in `docs/upstream-log.md` (Open items there has the detail). Held items wait on the condition given.
+
+### To implement (act, 2026-11-19 to 11-22)
+
+- [ ] Opening edition by name class first (unnamed or standard, then theatrical, then any other cut); quality competes only inside the best class; a last played edition still wins. Bale's `formatting::opening_edition` ranks quality first. Android `e15879514`, Apple `b54fefb1`, Roku `3e7ee3a`, server `66105aa`
+- [ ] Home follows watch state from other devices: subscribe to the events socket's `user_state` channel while Home shows and re-read on `user_state.changed` for the active profile and on each (re)subscribe; handle close codes 4001–4004; Home also retries a transient section failure up to 3 times (1/2/4 s). Bale has no events socket (`HomeFeedState.cs`). Android `1b4732d90`, Apple `0414ff74`, Roku `c1841ae`, server `165ab2b`, `f31842a`
+- [ ] Top-bar menu timing: open 120 ms after focus reaches a tab (was 180), swap at once between menu tabs (was 80), Down after Back reopens; Bale's `TopMenuPreviewTiming.Delay` keeps 180/80. Android `5d90cf32f`
+- [ ] Buffering quality slow-link evidence: send `observed_rebuffer` / `observed_throughput_kbps` with an Auto lowering only when measured throughput is below the plan's delivered bitrate (also after first frame; drop it when the reading is gone), else the estimate alone; Lower prompt pick too; decide HLS segment-body timing as evidence; tests with and without evidence. Bale's `buffering.rs` sends the source on every lowering once played. Android `878c972c4`, Apple `3709c5fb`, server `f503d7e`
+- [ ] Up Next opens on crossing `playback.next_up_prompt_seconds` before the file end (default 30, 0 = at the end), not at `Credits.Start`; credits drive only Skip Credits; no countdown for a hand-opened card. Bale's `PlayerPage.UpNext.cs` reads no setting. Android `e580e1811`, server `7019d69`
+- [ ] Collections on the title page: with `item_collections`, read `listCatalogItemCollections`; one collection shows up to six other titles plus Explore all, several an "Also in" poster row; Back returns to the opening card. Needs the route in `scripts/generate-api.sh`. Android `cb2c32d8a`, server `faa406d`
+
+### To review or check
+
+- [ ] API contract: next `SILO_REF` bump, regenerate and check (`MediaRequest.poster_url`, `StreamV3.parallel_range_url`, `CatalogSearchCapabilities.item_collections`, rating range 1–10). Server `6633874`, `4eb4d4a`, `faa406d`, `e17bfa1`
+- [ ] Sidecar subtitle pick answered with burn-in: the menu checks the picked row and an Auto burn-in isn't saved (console). Android `c89bdf34b`
+- [ ] Edition labels after the server's rescan changes (one key for spellings within 5 s; edition from filename tags first) still read right on Detail (console). Server `0e9cf1f`, `b3d25aa`
+- [ ] Search ordering (episodes after same-titled movies and series) and Date Viewed on a TV library (console). Server `3e11909`, `b1d07ad`
+- [ ] A seek kept across a quality-change replan, as the web now does. Server `4a73f48`, `d22e55f`
+- [ ] HLS through a server outage: compare the Rust HLS reader with the web keeping buffered playback going. Server `40c093c`
+- [ ] original_http reconnect budget on long films: a fresh retry window after sustained progress, so a late outage isn't counted against an early one. Android `bb59172f8`
+- [ ] Home hero backdrop banding on dark art (console check of `MaskedArt` over `AmbientTint`). Android `c6dfd52a6`
+- [ ] Rows and See all agree for Recently Released and video/episode rows (console). Server `e78f889`, `36640d6`
+
+### Held (2026-11-18 onward)
+
 
 - [ ] Not interested on movie and series cards and title pages (`PUT`/`DELETE /api/v2/not-interested/{id}`, shown only when the server sends `user_state.not_interested`; Home and For You drop a marked title at once). Apple `29c0dd43`; waits until Android TV has it
-- [ ] Home/library page wash: one dark colour per screen corner from the matching quarter of the art, crossfading over 0.7 s while the art swaps in 0.24 s. Apple `c5453eae`, `648091a7`; Bale ports Android's single-colour `AmbientBackdropTint` (`AmbientTint`), so waits until Android TV follows
+- [ ] Home/library page wash: one dark colour per screen corner from the matching quarter of the art, crossfading over 0.7 s while the art swaps in 0.24 s. Apple `c5453eae`, `648091a7`; Bale ports Android's single-colour `AmbientBackdropTint` (`AmbientTint`), so waits until Android TV follows (Apple `9dabb621` also drops the top-right colour under wide art)
 - [ ] Personal ratings use a 1–10 scale (five stars with half stars; `getPersonalRatingCapabilities` reports it) in any rating UI Bale builds; bumping `SILO_REF` past server `e17bfa1` should give no functional diff
 - [ ] With the server's `copy_keyframe_playlist` on, check the Rust HLS reader on a resumed copy-remux session and on `seek_reanchor` (complete VOD playlist from the resume keyframe). Server `92763e4`
 - [ ] Control socket (when built): stop minting a ws-ticket on 410 `playback_session_ended`; on 503 wait at least `Retry-After`, backing off to 30 s. Server `4564351`, `a1c17ef`
 - [ ] Search with short and empty result sets after the server's tighter keyword cut-off (console check). Server `651e55a`
+- [ ] Subtitle search (Find more / Search online) only when `subtitles/providers/status` reports a provider; when Bale builds subtitle search. Android `2ee32f414`
+- [ ] Future Home row editor: the profile section baseline route and `home_layout_baseline`. Server `f18678f`
