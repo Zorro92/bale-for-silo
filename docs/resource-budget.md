@@ -31,8 +31,11 @@ buffers, Media Foundation).
 
 - Measure in the idle state (no input for > 12 s), which is what a viewer gets.
 - rav1g v0.6.0-alpha.1 in Bale (2026-11-22, `play-url` test clips, 4K60 AV1 10-bit, 30 s, 1080p SDR display):
-  40/60/100 Mbps all 0 dropped of 1797; GPU ~10 ms/frame (of 14 ms), CPU ~1.5 cores at 40-60 Mbps and ~2 at 100;
-  app 1.12-1.16 GB (rav1g ~710 MiB with the player's output textures). Well inside the envelope.
+  **not real time**: rav1g delivered 42-47 frames/s in every window at 40/60/100 Mbps. The engine dropped nothing
+  (0 of 1797) but stalled instead (waiting/bufferingstarted about every 1-1.3 s, ~300 ms each; a 30 s clip took
+  41 s), and the owner saw frequent pauses. Decode-ahead starved 237-240 of 240; GPU ~10 ms/frame, CPU ~1.5-2 cores,
+  app 1.12-1.16 GB. Memory and GPU are inside the envelope; throughput is not. "Dropped frames" alone can't show
+  this: judge smoothness by stalls and the delivery rate against the stream's fps.
 - The CPU stage that reads the compressed stream is the known limit and grows with bitrate; heavy 4K
   AV1 above ~40 Mbps is the risk case.
 - Spend resources only where they buy measured performance: e.g. more slots or frames in flight are worth
