@@ -503,11 +503,10 @@ For Bale, a normal app with hevcPlayback on the Series X:
 - `scripts/bale-debug.sh stats` prints all current player rows as `Label: value`, marking overlay-hidden
   rows `[hidden]`; no active player exits non-zero. `stats-rows [list|hide <labels>|show <labels>|only
   <labels>|reset]` filters only the overlay using one comma-separated argument of exact, case-insensitive
-  labels (for example, `stats-rows hide "Read-ahead,Stream reads,Dropped frames"`). Labels outside the
+  labels (for example, `stats-rows hide "Read-ahead,Stream reads,Dropped (engine)"`). Labels outside the
   known overlay rows are accepted and reported as unknown; `only` also hides future unlisted rows.
   Changes re-render a visible panel immediately, also work before a player opens, and reset on app
-  restart; `where` keeps every row. `Dropped frames` (always unavailable) is hidden by default;
-  `reset` restores that default and `show "Dropped frames"` brings it back.
+  restart; `where` keeps every row. All rows are visible by default; `reset` restores that default.
 - **Memory ceiling (owner, 2026-11-18): treat about 1.2 GB as Bale's real limit on the Xbox.** `AppMemoryUsageLimit`
   (the `mem` "of 3328.0 MiB") is not the headroom: in practice apps never get past ~1.2 GB. Judge every reading against
   that; at or above ~1.1 GB is at the ceiling (4K AV1 through rav1g read 1.25 GiB and is being trimmed).
@@ -525,11 +524,24 @@ For Bale, a normal app with hevcPlayback on the Series X:
   The count is per mount, with a rolling last-10-wall-second count/rate. Preroll, paused/buffering
   delivery, discontinuities and seeks are excluded. **Delivered ahead** is the last decoded sample
   end minus the current player clock, floored at zero; it is not a renderer queue depth.
-- UWP `MediaPlayer` / `MediaPlaybackSession` exposes no renderer-drop statistics or decoded queue.
-  Native direct, HLS and FFmpeg system-video decoding therefore show late delivery/ahead as
-  **unavailable**. Actual dropped frames are unavailable on every route. Never infer drops from
-  buffering, clock polling, expected FPS, or the 23.976-on-59.94 display cadence. The MF media-engine
-  statistics interface is not an interface exposed by this WinRT MediaPlayer pipeline.
+- **Judge playback smoothness from stalls + drops, never dropped frames alone.** IMFMediaEngine pauses its clock
+  while waiting for data and can report zero drops throughout visibly stuttering playback. All builds show
+  **Missed frames** = engine drops + stalled seconds × stream fps, as a percentage of frames expected over
+  playing + stalled time. The timestamped native engine-event feed counts waiting/buffering after Playing;
+  initial/resume/seek preroll, user pauses and seeking do not count. Totals survive replacement mounts in the
+  same playback and reset for the next playback. Network rebuffering counts too.
+- Debug stats / `stats` add **Stalls** (count, total/longest ms, last-10-s count/ms, network/decoder breakdown),
+  **Dropped (engine)** (cumulative despite MF counter resets), **Decode rate** (rav1g delivery fps / stream fps;
+  dav1d unavailable), **Decoder discarded** (rav1g close report), **Starved** (decode-ahead timing), and
+  **Playback time** (elapsed wall seconds / media advanced since first Playing, excluding seek jumps). Each completed
+  stall logs its heuristic cause; source teardown logs a summary after the decoder's final counters arrive.
+  Network evidence is an empty unfinished progressive/HLS reader or range demand waits/time growing between
+  state samples; otherwise the tag is decoder. It is a heuristic, not proof of the bottleneck. Details:
+  `docs/player-plan.md`, “Playback smoothness”. No frame textures, per-frame callbacks or frame histories.
+- UWP `MediaPlayer` / `MediaPlaybackSession` exposes no renderer-drop statistics or decoded queue. Its fallback
+  route shows Missed frames and Dropped (engine) as unavailable; stalls remain measurable. Do not infer renderer
+  drops from buffering, clock polling, expected fps or the 23.976-on-59.94 display cadence. Missed frames
+  explicitly includes stall equivalents and is separate from the measured engine drops.
 
 ## Native AOT + UWP pitfalls (all hit for real)
 

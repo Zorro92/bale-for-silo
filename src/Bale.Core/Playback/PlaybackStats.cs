@@ -24,7 +24,7 @@ public sealed record PlaybackStats
     public long? AudioSampleRate { get; init; }
     public string? AudioDecoderName { get; init; }
     public long? EstimatedBandwidthBps { get; init; }
-    public long DroppedFrames { get; init; }
+    public PlaybackSmoothnessSnapshot? Smoothness { get; init; }
     public long AudioUnderruns { get; init; }
     public string? Delivery { get; init; }
     public string? Source { get; init; }
@@ -33,8 +33,8 @@ public sealed record PlaybackStats
     public double BufferingSeconds { get; init; }
 
     /// <summary>
-    /// The Options panel's Stats tab: only TvPlayerHud.kt hudRows(), in its order. The tab shows while this
-    /// has rows (visibleHudTabs). <see cref="HudRows"/> adds Bale's diagnostics for the debug overlay.
+    /// The Options panel's Stats tab: TvPlayerHud.kt hudRows() plus the owner's Missed frames row.
+    /// The tab shows while this has rows (visibleHudTabs). <see cref="HudRows"/> adds debug diagnostics.
     /// </summary>
     public IReadOnlyList<(string Label, string Value)> OfficialHudRows() => Rows(diagnostics: false);
 
@@ -63,7 +63,8 @@ public sealed record PlaybackStats
         Add("Audio decoder", AudioDecoderName);
         // Network throughput, never the plan's media bitrate (TvPlayerHud.kt).
         if (EstimatedBandwidthBps is >= 0 and { } bandwidth) Add("Estimated bandwidth", FormatBitrate(bandwidth));
-        if (DroppedFrames > 0) Add("Dropped frames", DroppedFrames.ToString(CultureInfo.InvariantCulture));
+        // Owner-approved addition to the official rows: one user-facing smoothness number.
+        if (Smoothness is { } smoothness) Add("Missed frames", smoothness.MissedText);
         if (AudioUnderruns > 0) Add("Audio underruns", AudioUnderruns.ToString(CultureInfo.InvariantCulture));
         if (!diagnostics) return rows;
 

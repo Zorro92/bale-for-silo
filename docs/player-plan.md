@@ -2306,6 +2306,59 @@ may decline them. Actual decoded-frame color and output remain subject to the no
 HDR AV1 uses rav1g's existing stage/mark guard rather than asking the HEVC/VP9 stage gate to accept
 dav1d. Console decode/performance, HDMI switching and physical Back behavior require Xbox checks.
 
+## Playback smoothness (2026-11-22)
+
+**Smoothness = stalls + drops; never judge it from dropped frames alone.** A waiting IMFMediaEngine
+pauses its playback clock. No frame arrives late, so a visibly stuttering decode can drop zero frames,
+show a healthy playing-only fps, and take much longer than the media's duration.
+
+Every build's Stats tab adds one row, **Missed frames: N (x%)**:
+
+- `missed = engine drops + stalled seconds × stream fps` (round the final count, keeping fractional fps).
+- `expected = (playing seconds + stalled seconds) × stream fps`; `x = 100 × missed / expected`, bounded 0–100.
+  With no elapsed time the percentage is zero. Unknown/nonfinite fps is unavailable, never assumed 60.
+- A waiting/bufferingstarted event after Playing starts a stall. Bufferingended or Playing ends it;
+  overlapping notifications count once. Initial start, resume/seek preroll, user pauses and seeking
+  are excluded. A pause or seek during an existing stall preserves only the portion before the command.
+  Network rebuffering counts because the viewer sees a pause either way.
+- Totals belong to one playback attempt and survive source replacements (including seek reanchors).
+  Source replacement starts fresh preroll, media-position and engine-drop baselines. A new playback resets all.
+  MF's raw counters reset on seeks/pauses; the meter accumulates their deltas across those boundaries.
+- Example: 30 s of media taking 41 wall seconds at 60 fps, with 0 engine drops and 11 s stalled,
+  reports **660 (26.8%)**. This is a stall-equivalent metric, not a claim that the renderer dropped 660 frames.
+
+Debug overlay and `bale-debug.sh stats` keep each source visible separately (all rows default visible):
+
+| Row | Meaning |
+|---|---|
+| Missed frames | The production number |
+| Stalls | Count, total ms, longest ms; count of starts in the last 10 wall seconds and duration overlapping that window; network/decoder count and ms |
+| Dropped (engine) | Cumulative IMFMediaEngine drops, independent of its per-segment resets |
+| Decode rate | The latest fork `Bale rav1g: delivery ... rate=` window in fps / stream fps; dav1d and missing delivery reports are unavailable |
+| Decoder discarded | `Bale rav1g: destroyed (... discarded=N ...)`; unavailable until decoder close, not falsely zero while playing |
+| Starved | Latest `Bale decode-ahead timing: ... starved=N` counter; unavailable when the fork has not reported it |
+| Playback time | Elapsed wall time since first Playing vs media seconds advanced; wall includes pauses/seeks, media advance excludes seek jumps |
+
+Every completed stall logs `player: stall cause=network|decoder duration=N ms`. The **heuristic** samples
+only nonblocking transport counters at the existing backend state/event cadence: an empty unfinished
+progressive/HLS reader or growth in range demand-wait count/time tags network; otherwise decoder. A
+later HTTP completion can upgrade an ongoing stall. Prefetch activity, shared reader work and event
+polling can misattribute a cause; it is evidence, not a definitive bottleneck diagnosis. The classification
+does not change the missed-frame total. Missed-frame percentages use only playing + stalled time; the
+separate elapsed Playback time readout also includes user pauses and seeks. Source teardown logs `player: smoothness summary` with all rows
+after FFmpeg disposal, so the final rav1g discard/starved diagnostics are included. The raw **Engine frames**
+row remains useful for MF's rendered/dropped/corrupted/playing-fps values but cannot demonstrate smoothness.
+
+The native timestamped event feed (`bale_gpu_engine_session_events`, ABI 15) is separate from the close
+log's truncated event list. It drains on the existing 100 ms state poll, so a complete stall between two
+polls still counts at its event times. Only playback transitions enter a fixed 256-entry ring (~4 KiB per
+engine); timeupdate/progress do not enter it. Overflow logs a lost-event count (results then incomplete).
+The Core meter keeps only counters/timestamps and the last 10 s of stall intervals. This adds no per-frame
+work, frame histories or pixel copies, fitting the console's four shared cores and throttled idle RAM.
+MediaPlayer fallback lacks renderer-drop statistics: its missed-frame total and dropped row are unavailable;
+its buffering events still feed the stall meter. Late delivery and delivered-ahead remain separate sample
+observer diagnostics and are not substituted for renderer drops.
+
 ## rav1g (debug), 2026-11-18
 
 The owner approved testing [rav1g](https://github.com/Zorro92/rav1g) (AV1 in D3D12 compute shaders) inside Bale behind
@@ -2547,7 +2600,7 @@ display work on the engine path waits for a capable display.
    (play/pause, opened/ended/failed, a session with position, state, can-seek, rate, video size, seekable
    ranges and their events, plus audio/video track listing and selection). `MediaPlayerBackend` wraps
    MediaPlayer and keeps it reachable for the element, command manager, FastSeek session and debug observers.
-3. **`EngineBackend`** (`Services/EngineBackend.cs`, bale_gpu ABI 14): the Rust session on a raw-pixel
+3. **`EngineBackend`** (`Services/EngineBackend.cs`, bale_gpu ABI 15): the Rust session on a raw-pixel
    SwapChainPanel in the player's video host; a 100 ms state poll raises the events; tracks come from the
    engine's stream list (new `stream_count/stream_info/select_stream`). Debug switch
    `player-backend engine` (memory only).

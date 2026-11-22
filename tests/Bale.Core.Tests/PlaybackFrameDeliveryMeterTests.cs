@@ -201,7 +201,8 @@ public class PlaybackFrameDeliveryMeterTests
         Assert.True(media.IndexOf("media.FrameDelivery?.Dispose()", StringComparison.Ordinal)
             < media.IndexOf("player.Dispose", StringComparison.Ordinal));
         var stats = Read("PlayerPage.Stats.cs.txt");
-        Assert.Contains("(\"Dropped frames\", \"unavailable\")", stats);
+        Assert.Contains("(\"Dropped (engine)\", media?.Player is EngineBackend", stats);
+        Assert.DoesNotContain("(\"Dropped frames\", \"unavailable\")", stats);
         Assert.Contains("frames.RecentLateFramesPerSecond", stats);
         Assert.Contains("frames?.DeliveredAheadSeconds", stats);
         Assert.Contains("player.DebugStatsRows", Read("DebugServer.cs.txt"));

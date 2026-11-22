@@ -7,6 +7,7 @@ using Windows.UI.Core;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.Media.Playback;
+using Bale.Core.Playback;
 
 namespace Bale.Xbox.Services;
 
@@ -21,7 +22,7 @@ namespace Bale.Xbox.Services;
 internal sealed partial class EngineBackend : PlaybackBackend
 {
     /// <summary>bale_gpu.dll's ABI with the session's stream API and per-open target (keep with NativeFrameDelivery.ExpectedAbi).</summary>
-    internal const uint ExpectedAbi = 14;
+    internal const uint ExpectedAbi = 15;
 
     private readonly Session _session;
     private readonly Border _host;
@@ -43,6 +44,8 @@ internal sealed partial class EngineBackend : PlaybackBackend
     private bool _ended;
     private bool _failed;
     private bool _disposed;
+    private double? _eventClockOffset;
+    private uint _lostEvents;
     private EngineStream[] _audio = [];
     private EngineStream[] _video = [];
 
@@ -160,12 +163,16 @@ internal sealed partial class EngineBackend : PlaybackBackend
 
     public override void Play()
     {
+        Poll();
+        Smoothness.Observe(PlaybackSmoothnessEvent.Play, ClockSeconds);
         Call(handle => bale_gpu_engine_session_play(handle));
         Poll();
     }
 
     public override void Pause()
     {
+        Poll();
+        Smoothness.Observe(PlaybackSmoothnessEvent.Pause, ClockSeconds);
         Call(handle => bale_gpu_engine_session_pause(handle));
         Poll();
     }
@@ -267,27 +274,74 @@ internal sealed partial class EngineBackend : PlaybackBackend
     /// <summary>Raises the backend's events from the session's state; also refreshes the position cache.</summary>
     private void Poll()
     {
-        EngineSessionState state;
         lock (_sync)
         {
             if (_handle == 0 || _disposed) return;
-            if (!TryState(out state)) return;
+            if (!TryState(out var state)) return;
+            ReadSmoothnessEvents(state);
+            var previous = _last;
+            _last = state;
+            _session.Update(state, previous);
+            if (state.Failed && !_failed)
+            {
+                _failed = true;
+                RaiseFailed(new PlaybackBackendFailure(unchecked((int)0x80004005), Decoder: true, Network: false));
+                return;
+            }
+            if (state.Ended && !_ended && _opened)
+            {
+                _ended = true;
+                RaiseEnded();
+            }
+            else if (!state.Ended) _ended = false;
         }
-        var previous = _last;
-        _last = state;
-        _session.Update(state, previous);
-        if (state.Failed && !_failed)
+    }
+
+    /// <summary>
+    /// Drain the native callback's timestamps, including stalls entirely between two polls. Fixed stack storage;
+    /// no per-frame observer, COM callback, UI dispatch or allocation. The queue excludes timeupdate/progress.
+    /// </summary>
+    private unsafe void ReadSmoothnessEvents(EngineSessionState state)
+    {
+        var events = stackalloc EnginePlaybackEvent[256];
+        uint count = 0, lost = 0;
+        double seconds = 0;
+        if (bale_gpu_engine_session_events(_handle, events, 256, &count, &seconds, &lost) < 0) return;
+        _eventClockOffset ??= ClockSeconds - seconds;
+        var network = false;
+#if DEBUG_SERVER
+        try { network = NetworkWaiting?.Invoke() == true; }
+        catch (Exception) { }
+#endif
+        Smoothness.NoteNetworkWait(network);
+        for (uint i = 0; i < count; i++)
         {
-            _failed = true;
-            RaiseFailed(new PlaybackBackendFailure(unchecked((int)0x80004005), Decoder: true, Network: false));
-            return;
+            var kind = events[i].Kind switch
+            {
+                8 => PlaybackSmoothnessEvent.Play,
+                9 => PlaybackSmoothnessEvent.Pause,
+                12 => PlaybackSmoothnessEvent.Waiting,
+                13 => PlaybackSmoothnessEvent.Playing,
+                16 => PlaybackSmoothnessEvent.Seeking,
+                17 => PlaybackSmoothnessEvent.Seeked,
+                19 => PlaybackSmoothnessEvent.Ended,
+                1005 => PlaybackSmoothnessEvent.BufferingStarted,
+                _ => PlaybackSmoothnessEvent.BufferingEnded,
+            };
+            if (kind == PlaybackSmoothnessEvent.Ended)
+            {
+                Smoothness.ObserveDropped(state.FramesDropped);
+                Smoothness.ObservePosition(state.Position);
+            }
+            Smoothness.Observe(kind, events[i].Seconds + _eventClockOffset.Value, network);
         }
-        if (state.Ended && !_ended && _opened)
+        Smoothness.ObserveDropped(state.FramesDropped);
+        Smoothness.ObservePosition(state.Position);
+        if (lost != _lostEvents)
         {
-            _ended = true;
-            RaiseEnded();
+            _lostEvents = lost;
+            Log.Info($"engine: smoothness event overflow lost={lost}");
         }
-        else if (!state.Ended) _ended = false;
     }
 
     private unsafe bool TryState(out EngineSessionState state)
@@ -368,6 +422,8 @@ internal sealed partial class EngineBackend : PlaybackBackend
     /// <summary>Stops polling, shuts the engine down (before the caller releases the source) and removes the panel. UI thread.</summary>
     public override void Dispose()
     {
+        Poll();
+        Smoothness.Observe(PlaybackSmoothnessEvent.Ended, ClockSeconds);
         nint handle;
         lock (_sync)
         {
@@ -443,6 +499,8 @@ internal sealed partial class EngineBackend : PlaybackBackend
                     return;
                 }
                 _seekTarget = target;
+                owner.Poll();
+                owner.Smoothness.Observe(PlaybackSmoothnessEvent.Seeking, ClockSeconds);
                 _seekIssued = Environment.TickCount64;
                 _seekSawSeeking = false;
                 // FFmpeg's sessionless FastSeek (wrapper bale.30) lands on a keyframe either way; other sources may
@@ -451,6 +509,9 @@ internal sealed partial class EngineBackend : PlaybackBackend
                 if (hr < 0)
                 {
                     _seekTarget = double.NaN;
+                    owner.Smoothness.Observe(PlaybackSmoothnessEvent.Seeked, ClockSeconds);
+                    if (_state == MediaPlaybackState.Playing)
+                        owner.Smoothness.Observe(PlaybackSmoothnessEvent.Playing, ClockSeconds);
                     throw Marshal.GetExceptionForHR(hr) ?? new InvalidOperationException();
                 }
             }
@@ -505,10 +566,20 @@ internal sealed partial class EngineBackend : PlaybackBackend
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_seek(nint session, double seconds, uint approximate);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_resize(nint session, uint width, uint height);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern unsafe int bale_gpu_engine_session_state(nint session, EngineSessionState* state);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern unsafe int bale_gpu_engine_session_events(nint session,
+        EnginePlaybackEvent* events, uint capacity, uint* count, double* seconds, uint* lost);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern unsafe int bale_gpu_engine_session_stream_count(nint session, uint* count);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern unsafe int bale_gpu_engine_session_stream_info(nint session, uint index, EngineStreamInfo* info);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_select_stream(nint session, uint index);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern unsafe uint bale_gpu_engine_session_close(nint session, byte* report, uint reportCapacity);
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct EnginePlaybackEvent
+{
+    public double Seconds;
+    public uint Kind;
+    public uint Reserved;
 }
 
 /// <summary>engine_session::StreamInfo (C layout).</summary>

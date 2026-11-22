@@ -23,7 +23,7 @@ public class PlaybackStatsTests
             AudioCodec = "AAC",
             AudioDecoderName = "Media Foundation (FullySupported)",
             EstimatedBandwidthBps = 151_300_000,
-            DroppedFrames = 2,
+            Smoothness = new PlaybackSmoothnessSnapshot(2, 20, 2.5, 1, 0.3, 0.3, 1, 0.3, 0, 0, 10, 9.7),
             AudioUnderruns = 1,
             Delivery = "Direct play (source_compatible)",
             Source = "mkv · hevc · Main 10 · 10-bit · 1920x1080 · aac 6 ch",
@@ -45,14 +45,14 @@ public class PlaybackStatsTests
             ("Audio codec", "AAC"),
             ("Audio decoder", "Media Foundation (FullySupported)"),
             ("Estimated bandwidth", "151.3 Mbps"),
-            ("Dropped frames", "2"),
+            ("Missed frames", "20 (2.5%)"),
             ("Audio underruns", "1"),
             ("Delivery", "Direct play (source_compatible)"),
             ("Source", "mkv · hevc · Main 10 · 10-bit · 1920x1080 · aac 6 ch"),
             ("Media bitrate", "19.0 Mbps"),
             ("Buffering", "3 times, 2.8 s"),
         }, stats.HudRows());
-        // The Options panel's Stats tab shows TvPlayerHud.kt hudRows() only: the overlay's rows up to Audio underruns.
+        // The Options panel's Stats tab shows TvPlayerHud.kt hudRows() plus Missed frames: the overlay's rows up to Audio underruns.
         Assert.Equal(stats.HudRows().Take(14), stats.OfficialHudRows());
         Assert.Equal("Audio underruns", stats.OfficialHudRows()[^1].Label);
     }
@@ -82,7 +82,6 @@ public class PlaybackStatsTests
             VideoCodec = "",
             FrameRate = double.NaN,
             EstimatedBandwidthBps = -1,
-            DroppedFrames = -1,
             AudioUnderruns = 0,
             AudioChannelCount = 6,
             AudioSampleRate = 48000,

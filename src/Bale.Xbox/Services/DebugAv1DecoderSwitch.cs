@@ -1,5 +1,6 @@
 #if DEBUG_SERVER
 using Bale.Core.Playback;
+using System.Globalization;
 
 namespace Bale.Xbox.Services;
 
@@ -71,6 +72,58 @@ internal static class DebugRav1gLog
     {
         lock (Gate) return (_loaded, _active, _fallback, _failed, _output);
     }
+}
+
+/// <summary>Only the fork's fixed numeric diagnostics, per source. Missing values stay unavailable, never zero.</summary>
+internal static class DebugDecoderLog
+{
+    private static readonly object Gate = new();
+    private static DebugDecoderSnapshot _value;
+
+    internal static void Reset() { lock (Gate) _value = default; }
+    internal static DebugDecoderSnapshot Snapshot() { lock (Gate) return _value; }
+
+    internal static void Observe(string? message)
+    {
+        if (message is null) return;
+        lock (Gate)
+        {
+            if (message.StartsWith("Bale rav1g: delivery ", StringComparison.Ordinal)
+                && Number(message, "rate=") is { } rate)
+                _value = _value with { DeliveryRate = rate };
+            if (message.StartsWith("Bale rav1g: destroyed (", StringComparison.Ordinal)
+                && Counter(message, "discarded=") is { } discarded)
+                _value = _value with { Discarded = discarded };
+            if (message.StartsWith("Bale decode-ahead timing:", StringComparison.Ordinal)
+                && Counter(message, "starved=") is { } starved)
+                _value = _value with { Starved = starved };
+        }
+    }
+
+    private static ReadOnlySpan<char> Token(string text, string key)
+    {
+        var at = text.IndexOf(key, StringComparison.Ordinal);
+        if (at < 0 || at > 0 && text[at - 1] is not (' ' or '(')) return default;
+        var value = text.AsSpan(at + key.Length);
+        var length = 0;
+        while (length < value.Length && (char.IsAsciiDigit(value[length]) || value[length] == '.')) length++;
+        if (length < value.Length && value[length] is not (' ' or ')' or '/' or '\r' or '\n')) return default;
+        return value[..length];
+    }
+
+    private static double? Number(string text, string key) => double.TryParse(Token(text, key), NumberStyles.AllowDecimalPoint,
+        CultureInfo.InvariantCulture, out var value) && double.IsFinite(value) && value >= 0 ? value : null;
+
+    private static ulong? Counter(string text, string key) => ulong.TryParse(Token(text, key), NumberStyles.None,
+        CultureInfo.InvariantCulture, out var value) ? value : null;
+}
+
+internal readonly record struct DebugDecoderSnapshot(double? DeliveryRate, ulong? Discarded, ulong? Starved)
+{
+    internal string DecodeRateText(double? framesPerSecond) => (DeliveryRate?.ToString("0.0", CultureInfo.InvariantCulture) ?? "unavailable")
+        + " / " + (framesPerSecond is > 0 and { } fps && double.IsFinite(fps) ? fps.ToString("0.###", CultureInfo.InvariantCulture) : "?") + " fps";
+    internal string DiscardedText => Discarded?.ToString(CultureInfo.InvariantCulture) ?? "unavailable (on decoder close)";
+    internal string StarvedText => Starved?.ToString(CultureInfo.InvariantCulture) ?? "unavailable";
 }
 
 /// <summary>

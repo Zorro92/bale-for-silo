@@ -119,6 +119,7 @@ public sealed partial class PlayerPage
         // The mount this one replaces closes on the thread pool (DisposeMount); open after its decoders are gone.
         await WaitForMountCloseAsync("mount");
 #if DEBUG_SERVER
+        DebugDecoderLog.Reset();
         // Probe on this mount and keep its one range reader; the start budget also bounds the probe.
         Mount? debugMedia = attempt.DebugUrl is not null ? await ProbeDebugUrlAsync(attempt, playerStart, paused) : null;
 #endif
@@ -464,6 +465,7 @@ public sealed partial class PlayerPage
         var backend = new MediaPlayerBackend();
         var player = backend.Player;
         media.Player = backend;
+        ConfigureSmoothness(attempt, media, backend);
         backend.MediaOpened += OnMediaOpened;
         backend.MediaFailed += OnMediaFailed;
         backend.MediaEnded += OnMediaEnded;
@@ -512,6 +514,7 @@ public sealed partial class PlayerPage
         ReleaseVideoPresenter();
         var engine = new EngineBackend(VideoHost);
         media.Player = engine;
+        ConfigureSmoothness(attempt, media, engine);
         engine.MediaOpened += OnMediaOpened;
         engine.MediaFailed += OnMediaFailed;
         engine.MediaEnded += OnMediaEnded;
@@ -912,6 +915,10 @@ public sealed partial class PlayerPage
     {
         VersionNotice.Visibility = Windows.UI.Xaml.Visibility.Collapsed;
         if (attempt.Media is not { } media) return;
+#if DEBUG_SERVER
+        var smoothnessFps = RefreshHudStats(attempt, sampleBandwidth: false).FrameRate;
+        var smoothnessPlayer = media.Player;
+#endif
         attempt.Media = null;
         // MSS exposes MF's renderer device even for ForceSystemDecoder. Hold it across Close so
         // Trim happens after MF/FFmpeg have released their decoder surfaces and texture pools.
@@ -954,6 +961,11 @@ public sealed partial class PlayerPage
             Cleanup("detach element", () => _video?.SetMediaPlayer(null));
             Cleanup("dispose player", player.Dispose);
         }
+#if DEBUG_SERVER
+        // The next mount reuses this playback's meter. Freeze this summary before the asynchronous source close,
+        // including when the bounded close wait lets a later mount proceed before an old decoder shuts down.
+        var smoothnessSummary = smoothnessPlayer?.Smoothness.Read(PlaybackBackend.ClockSeconds, smoothnessFps);
+#endif
         Cleanup("close system controls", () => media.SystemControls?.Dispose());
         media.SystemControls = null;
         Cleanup("release video presenter", ReleaseVideoPresenter);
@@ -993,6 +1005,11 @@ public sealed partial class PlayerPage
             Cleanup("dispose forward input", () => forward?.Dispose());
             Cleanup("dispose stream", () => stream?.Dispose());
             Cleanup("dispose progressive stream", () => progressive?.Dispose());
+#if DEBUG_SERVER
+            if (smoothnessSummary is { } summary)
+                LogSmoothnessSummary(summary,
+                    smoothnessPlayer is EngineBackend, DebugDecoderLog.Snapshot(), smoothnessFps);
+#endif
             PlaybackResources.ReleaseMediaDevice(rendererDevice);
             Cleanup("dispose mount cancellation", cancellation.Dispose);
 #if DEBUG_SERVER

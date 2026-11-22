@@ -161,8 +161,17 @@ public sealed partial class PlayerPage
     {
         var rows = stats.HudRows();
         var media = _attempt?.Media;
+        var smoothness = stats.Smoothness;
+        var decoder = media?.FfmpegSource is not null ? DebugDecoderLog.Snapshot() : default;
         rows = [.. rows, ("Player", media?.Player?.Name ?? "unavailable"),
             ("Engine frames", media?.Player is EngineBackend engine ? EngineFrames(engine.LastState) : "unavailable"),
+            ("Stalls", smoothness?.StallsText ?? "unavailable"),
+            ("Dropped (engine)", media?.Player is EngineBackend && smoothness is { } measured
+                ? measured.DroppedFrames.ToString(CultureInfo.InvariantCulture) : "unavailable"),
+            ("Decode rate", decoder.DecodeRateText(stats.FrameRate)),
+            ("Decoder discarded", decoder.DiscardedText),
+            ("Starved", decoder.StarvedText),
+            ("Playback time", smoothness?.PlaybackTimeText ?? "unavailable"),
             ("HDR output", DebugHdrOutput),
             ("Display mode", DisplayHdrOutput.CurrentModeText()),
             ("Late frames", frames is null ? "unavailable" : string.Create(CultureInfo.InvariantCulture,
@@ -181,9 +190,7 @@ public sealed partial class PlayerPage
             ("Sample memory", media?.FrameDelivery?.SampleMemory ?? DebugSampleMemory.Unavailable),
             ("Xbox memory", DebugXboxMemory.Describe()),
             ("Delivered ahead", frames?.DeliveredAheadSeconds is { } ahead
-                ? ahead.ToString("0.000", CultureInfo.InvariantCulture) + " s" : "unavailable"),
-            // Neither MediaPlayer's WinRT API nor the pinned FFmpeg wrapper exposes render drops.
-            ("Dropped frames", "unavailable")];
+                ? ahead.ToString("0.000", CultureInfo.InvariantCulture) + " s" : "unavailable")];
         // Debug-only process load is a Bale diagnostic, after the official HUD rows.
         if (processCpu is not null) rows = [.. rows, ("CPU", processCpu)];
         if (_statsRows.SequenceEqual(rows)) return;

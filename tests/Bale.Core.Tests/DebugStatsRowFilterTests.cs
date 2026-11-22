@@ -8,27 +8,27 @@ public class DebugStatsRowFilterTests
 {
     private static readonly (string Label, string Value)[] Rows =
     [
-        ("Read-ahead", "on"), ("Stream reads", "65536 B"), ("Dropped frames", "unavailable"), ("CPU", "1.2 cores"),
+        ("Read-ahead", "on"), ("Stream reads", "65536 B"), ("Dropped (engine)", "0"), ("CPU", "1.2 cores"),
     ];
 
     [Fact]
-    public void OnlyDroppedFramesStartsHiddenAndListKeepsSnapshotOrder()
+    public void AllRowsStartVisibleAndListKeepsSnapshotOrder()
     {
         var filter = new DebugStatsRowFilter();
-        Assert.All(Rows.Where(row => row.Label != "Dropped frames"), row => Assert.False(filter.IsHidden(row.Label)));
-        Assert.True(filter.IsHidden("dropped frames"));
+        Assert.All(Rows.Where(row => row.Label != "Dropped (engine)"), row => Assert.False(filter.IsHidden(row.Label)));
+        Assert.False(filter.IsHidden("dropped (engine)"));
         Assert.False(filter.IsHidden("Future row"));
-        Assert.Equal("Read-ahead: on\nStream reads: on\nDropped frames: off\nCPU: on\n", filter.DescribeLabels(Rows));
+        Assert.Equal("Read-ahead: on\nStream reads: on\nDropped (engine): on\nCPU: on\n", filter.DescribeLabels(Rows));
     }
 
     [Fact]
-    public void ShowBringsBackTheDefaultHiddenDroppedFramesRow()
+    public void ResetRestoresTheVisibleEngineDropRow()
     {
         var filter = new DebugStatsRowFilter();
-        Assert.Empty(Apply(filter, "show", "Dropped frames"));
-        Assert.False(filter.IsHidden("Dropped frames"));
+        Assert.Empty(Apply(filter, "show", "Dropped (engine)"));
+        Assert.False(filter.IsHidden("Dropped (engine)"));
         Assert.Empty(Apply(filter, "reset", null));
-        Assert.True(filter.IsHidden("Dropped frames"));
+        Assert.False(filter.IsHidden("Dropped (engine)"));
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public class DebugStatsRowFilterTests
         // Before a player opens there are no live rows, but known overlay labels are still not "unknown".
         Assert.True(filter.TryApply("hide", "CPU,Read-ahead,Future row", [], out var unknown));
         Assert.Equal(["Future row"], unknown);
-        Assert.Equal("Read-ahead: off\nStream reads: on\nDropped frames: off\nCPU: off\n", filter.DescribeLabels(Rows));
+        Assert.Equal("Read-ahead: off\nStream reads: on\nDropped (engine): on\nCPU: off\n", filter.DescribeLabels(Rows));
     }
 
     [Fact]
@@ -101,8 +101,8 @@ public class DebugStatsRowFilterTests
         Assert.Empty(Apply(filter, "list", null));
         Assert.Equal(before, filter.DescribeLabels(Rows));
         Assert.Empty(Apply(filter, "reset", null));
-        Assert.All(Rows.Where(row => row.Label != "Dropped frames"), row => Assert.False(filter.IsHidden(row.Label)));
-        Assert.True(filter.IsHidden("Dropped frames"));
+        Assert.All(Rows.Where(row => row.Label != "Dropped (engine)"), row => Assert.False(filter.IsHidden(row.Label)));
+        Assert.False(filter.IsHidden("Dropped (engine)"));
         Assert.False(filter.IsHidden("Future row"));
         Assert.False(filter.IsHidden("Unlisted row"));
     }
@@ -141,10 +141,10 @@ public class DebugStatsRowFilterTests
     {
         var filter = new DebugStatsRowFilter();
         var before = Rows.ToArray();
-        Apply(filter, "hide", "Stream reads,Dropped frames");
-        Assert.Equal("Read-ahead: on\nStream reads: 65536 B [hidden]\nDropped frames: unavailable [hidden]\nCPU: 1.2 cores\n",
+        Apply(filter, "hide", "Stream reads,Dropped (engine)");
+        Assert.Equal("Read-ahead: on\nStream reads: 65536 B [hidden]\nDropped (engine): 0 [hidden]\nCPU: 1.2 cores\n",
             filter.DescribeStats(Rows));
-        Assert.Equal("Read-ahead: on\nStream reads: off\nDropped frames: off\nCPU: on\n", filter.DescribeLabels(Rows));
+        Assert.Equal("Read-ahead: on\nStream reads: off\nDropped (engine): off\nCPU: on\n", filter.DescribeLabels(Rows));
         Assert.Equal(before, Rows);
         Assert.Equal("CPU: first\\r\\nsecond [hidden]\n", HiddenCpuStats());
 

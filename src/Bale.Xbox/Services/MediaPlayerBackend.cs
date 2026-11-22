@@ -1,6 +1,7 @@
 using Windows.Foundation;
 using Windows.Media.Core;
 using Windows.Media.Playback;
+using Bale.Core.Playback;
 
 namespace Bale.Xbox.Services;
 
@@ -17,7 +18,7 @@ internal sealed partial class MediaPlayerBackend : PlaybackBackend
     public MediaPlayerBackend()
     {
         Player = new MediaPlayer { AutoPlay = false };
-        _session = new Session(Player.PlaybackSession);
+        _session = new Session(this, Player.PlaybackSession);
         Player.MediaOpened += OnOpened;
         Player.MediaEnded += OnEnded;
         Player.MediaFailed += OnFailed;
@@ -66,13 +67,42 @@ internal sealed partial class MediaPlayerBackend : PlaybackBackend
 
     public override string Name => "MediaPlayer";
 
-    public override void Play() => Player.Play();
+    public override void Play()
+    {
+        Smoothness.Observe(PlaybackSmoothnessEvent.Play, ClockSeconds);
+        Player.Play();
+    }
 
-    public override void Pause() => Player.Pause();
+    public override void Pause()
+    {
+        SampleSmoothnessPosition();
+        Smoothness.Observe(PlaybackSmoothnessEvent.Pause, ClockSeconds);
+        Player.Pause();
+    }
 
     private void OnOpened(MediaPlayer sender, object args) => RaiseOpened();
 
-    private void OnEnded(MediaPlayer sender, object args) => RaiseEnded();
+    private void OnEnded(MediaPlayer sender, object args)
+    {
+        SampleSmoothnessPosition();
+        Smoothness.Observe(PlaybackSmoothnessEvent.Ended, ClockSeconds);
+        RaiseEnded();
+    }
+
+    internal override PlaybackSmoothnessSnapshot ReadSmoothness(double? framesPerSecond)
+    {
+        SampleSmoothnessPosition();
+        // WinRT MediaPlayer has no renderer-drop counter. Keep its stall diagnostics, but do not claim a
+        // complete missed-frame total when this attempt fell back from IMFMediaEngine.
+        return base.ReadSmoothness(framesPerSecond) with { MissedFrames = null, MissedPercent = null };
+    }
+
+    private void SampleSmoothnessPosition()
+    {
+        // State/seek callbacks can already be in flight when Dispose detaches them.
+        try { Smoothness.ObservePosition(_session.Position.TotalSeconds); }
+        catch (Exception) { }
+    }
 
     private void OnFailed(MediaPlayer sender, MediaPlayerFailedEventArgs args)
     {
@@ -98,6 +128,8 @@ internal sealed partial class MediaPlayerBackend : PlaybackBackend
     {
         if (_disposed) return;
         _disposed = true;
+        SampleSmoothnessPosition();
+        Smoothness.Observe(PlaybackSmoothnessEvent.Ended, ClockSeconds);
         Step(() =>
         {
             Player.MediaOpened -= OnOpened;
@@ -119,15 +151,38 @@ internal sealed partial class MediaPlayerBackend : PlaybackBackend
     private sealed class Session : PlaybackBackendSession
     {
         private readonly MediaPlaybackSession _native;
+        private readonly MediaPlayerBackend _owner;
         private readonly TypedEventHandler<MediaPlaybackSession, object> _state, _seek, _bufferingStarted, _bufferingEnded, _size, _rate;
 
-        public Session(MediaPlaybackSession native)
+        public Session(MediaPlayerBackend owner, MediaPlaybackSession native)
         {
+            _owner = owner;
             _native = native;
-            _state = (_, _) => RaiseStateChanged();
-            _seek = (_, _) => RaiseSeekCompleted();
-            _bufferingStarted = (_, _) => RaiseBufferingStarted();
-            _bufferingEnded = (_, _) => RaiseBufferingEnded();
+            _state = (_, _) =>
+            {
+                try
+                {
+                    var state = _native.PlaybackState;
+                    owner.SampleSmoothnessPosition();
+                    if (state == MediaPlaybackState.Playing) Observe(PlaybackSmoothnessEvent.Playing);
+                    else if (state == MediaPlaybackState.Paused) Observe(PlaybackSmoothnessEvent.Pause);
+                }
+                catch (Exception) { } // A native callback may outlive detachment during Dispose.
+                RaiseStateChanged();
+            };
+            _seek = (_, _) =>
+            {
+                Observe(PlaybackSmoothnessEvent.Seeked);
+                owner.SampleSmoothnessPosition();
+                try
+                {
+                    if (_native.PlaybackState == MediaPlaybackState.Playing) Observe(PlaybackSmoothnessEvent.Playing);
+                }
+                catch (Exception) { }
+                RaiseSeekCompleted();
+            };
+            _bufferingStarted = (_, _) => { Observe(PlaybackSmoothnessEvent.BufferingStarted); RaiseBufferingStarted(); };
+            _bufferingEnded = (_, _) => { Observe(PlaybackSmoothnessEvent.BufferingEnded); RaiseBufferingEnded(); };
             _size = (_, _) => RaiseNaturalVideoSizeChanged();
             _rate = (_, _) => RaisePlaybackRateChanged();
             native.PlaybackStateChanged += _state;
@@ -138,13 +193,29 @@ internal sealed partial class MediaPlayerBackend : PlaybackBackend
             native.PlaybackRateChanged += _rate;
         }
 
+        private void Observe(PlaybackSmoothnessEvent kind)
+        {
+            var network = false;
+#if DEBUG_SERVER
+            try { network = _owner.NetworkWaiting?.Invoke() == true; }
+            catch (Exception) { }
+#endif
+            _owner.Smoothness.Observe(kind, ClockSeconds, network);
+        }
+
         /// <summary>The native session, for FFmpegInteropX's FastSeek hook and the debug frame observers.</summary>
         public MediaPlaybackSession Native => _native;
 
         public override TimeSpan Position
         {
             get => _native.Position;
-            set => _native.Position = value;
+            set
+            {
+                // MediaOpened sets the start even when already there; a no-op need not raise SeekCompleted.
+                if (Math.Abs(_native.Position.TotalSeconds - value.TotalSeconds) > 0.000001)
+                    Observe(PlaybackSmoothnessEvent.Seeking);
+                _native.Position = value;
+            }
         }
 
         public override MediaPlaybackState PlaybackState => _native.PlaybackState;

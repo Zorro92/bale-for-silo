@@ -342,6 +342,23 @@ impl Session {
         }))
     }
 
+    pub fn playback_events(
+        &self,
+        out: &mut [crate::engine_events::PlaybackEvent],
+        count: &mut u32,
+        seconds: &mut f64,
+        lost: &mut u32,
+    ) -> HRESULT {
+        hr(self.with(|inner| {
+            if let Ok(mut events) = inner.shared.playback_events.lock() {
+                *count = events.drain(out) as u32;
+                *seconds = inner.shared.elapsed_seconds();
+                *lost = events.lost;
+            }
+            Ok(())
+        }))
+    }
+
     pub fn stream_count(&self, out: &mut u32) -> HRESULT {
         // SAFETY: live engine.
         hr(self.with(|inner| unsafe {

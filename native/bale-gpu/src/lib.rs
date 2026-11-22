@@ -13,6 +13,7 @@ mod d3d12;
 pub mod d3d12_repack;
 #[cfg(windows)]
 mod engine;
+pub mod engine_events;
 #[cfg(windows)]
 mod engine_session;
 pub mod engine_target;
@@ -47,7 +48,7 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 /// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched DLL.
-pub const ABI_VERSION: u32 = 14;
+pub const ABI_VERSION: u32 = 15;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_gpu_abi_version() -> u32 {
@@ -624,6 +625,40 @@ pub unsafe extern "C" fn bale_gpu_engine_session_state(
     };
     // SAFETY: forwarded caller guarantee.
     unsafe { session_ref(session) }.map_or(E_POINTER, |s| s.state(out).0)
+}
+
+/// Drains timestamped playback transitions (not frame/progress events). Returns an HRESULT.
+/// `seconds` is the event clock now; `lost` counts overflow if the caller stopped polling.
+///
+/// # Safety
+/// `session` as [`session_ref`]; `out` has `capacity` writable entries (1..=256),
+/// and `count`, `seconds`, `lost` each point to a writable value.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_gpu_engine_session_events(
+    session: *mut core::ffi::c_void,
+    out: *mut engine_events::PlaybackEvent,
+    capacity: u32,
+    count: *mut u32,
+    seconds: *mut f64,
+    lost: *mut u32,
+) -> i32 {
+    if out.is_null() || capacity == 0 || capacity > 256 {
+        return E_POINTER;
+    }
+    // SAFETY: writable scalar pointers and an output slice are the caller's guarantee.
+    let (Some(count), Some(seconds), Some(lost)) =
+        (unsafe { (count.as_mut(), seconds.as_mut(), lost.as_mut()) })
+    else {
+        return E_POINTER;
+    };
+    *count = 0;
+    // SAFETY: validated non-null and bounded length; caller owns the storage.
+    let out = unsafe { core::slice::from_raw_parts_mut(out, capacity as usize) };
+    // SAFETY: forwarded caller guarantee.
+    unsafe { session_ref(session) }.map_or(E_POINTER, |s| {
+        s.playback_events(out, count, seconds, lost).0
+    })
 }
 
 /// Number of streams in the session's media resource into `*out`. Returns an HRESULT.

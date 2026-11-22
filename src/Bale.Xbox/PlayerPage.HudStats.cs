@@ -53,8 +53,9 @@ public sealed partial class PlayerPage
                 }
                 catch (Exception ex) { LogFailure("stats bandwidth", ex); }
             }
+            if (media.Player is { } player) stats = stats with { Smoothness = player.ReadSmoothness(stats.FrameRate) };
         }
-        // Buffering is not evidence of dropped frames or audio underruns.
+        // Smoothness keeps renderer drops and waiting-time equivalents separate; audio underruns stay unknown.
         return _hudStats = stats with { EstimatedBandwidthBps = bandwidth };
     }
 
@@ -79,7 +80,8 @@ public sealed partial class PlayerPage
                 VideoDecoderName = FfmpegSource.DecoderName(video.DecoderEngine),
                 Resolution = video.PixelWidth > 0 && video.PixelHeight > 0
                     ? string.Create(CultureInfo.InvariantCulture, $"{video.PixelWidth}x{video.PixelHeight}") : null,
-                FrameRate = video.FramesPerSecond > 0 ? video.FramesPerSecond : null,
+                FrameRate = video.FramesPerSecond > 0 && double.IsFinite(video.FramesPerSecond)
+                    ? video.FramesPerSecond : stats.FrameRate,
             };
         if (streams.Value?.Audio is { } audio)
             stats = stats with

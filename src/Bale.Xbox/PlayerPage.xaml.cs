@@ -47,6 +47,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
 
     private sealed class Attempt(PlayerRequest request, SiloClient client)
     {
+        public PlaybackSmoothnessMeter Smoothness { get; } = new();
         /// <summary>The console's hardware decode entries this attempt claimed (route software fallback).</summary>
         public IReadOnlyList<Bale.Core.Playback.VideoDecodeCapability> HardwareDecode { get; set; } = [];
         public PlayerRequest Request { get; set; } = request;

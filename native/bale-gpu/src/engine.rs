@@ -83,6 +83,7 @@ pub(crate) struct Shared {
     ended: AtomicBool,
     first_frame: AtomicBool,
     events: Mutex<Vec<(u32, u128)>>,
+    pub(crate) playback_events: Mutex<crate::engine_events::PlaybackEvents>,
     /// Object types the extension was asked for (source input only).
     extension_requests: Mutex<Vec<i32>>,
 }
@@ -96,6 +97,7 @@ impl Shared {
             ended: AtomicBool::new(false),
             first_frame: AtomicBool::new(false),
             events: Mutex::new(Vec::new()),
+            playback_events: Mutex::new(crate::engine_events::PlaybackEvents::default()),
             extension_requests: Mutex::new(Vec::new()),
         })
     }
@@ -106,6 +108,10 @@ impl Shared {
 
     pub(crate) fn failed(&self) -> bool {
         self.error.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn elapsed_seconds(&self) -> f64 {
+        self.clock.elapsed().as_secs_f64()
     }
 }
 
@@ -192,6 +198,11 @@ impl IMFMediaEngineNotify_Impl for Notify_Impl {
             19 => shared.ended.store(true, Ordering::Release),
             1009 => shared.first_frame.store(true, Ordering::Release),
             _ => {}
+        }
+        if matches!(event, 8 | 9 | 12 | 13 | 16 | 17 | 19 | 1005 | 1006)
+            && let Ok(mut events) = shared.playback_events.lock()
+        {
+            events.observe(event, shared.elapsed_seconds());
         }
         if let Ok(mut events) = shared.events.lock()
             && events.len() < 400

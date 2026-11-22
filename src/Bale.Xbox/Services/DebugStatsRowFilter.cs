@@ -11,14 +11,14 @@ internal sealed class DebugStatsRowFilter
     internal static readonly string[] KnownLabels =
     [
         "Backend", "Route", "Subtitles", "Hard containers", "Video codec", "Resolution", "Frame rate", "HDR mode",
-        "Video decoder", "Audio codec", "Audio decoder", "Estimated bandwidth", "Dropped frames", "Audio underruns",
+        "Video decoder", "Audio codec", "Audio decoder", "Estimated bandwidth", "Missed frames", "Audio underruns",
+        "Stalls", "Dropped (engine)", "Decode rate", "Decoder discarded", "Starved", "Playback time", "Player", "Engine frames",
         "Delivery", "Source", "Media bitrate", "Buffering", "HDR output", "Display mode", "Late frames",
         "Stream waits", "Read-ahead", "Stream reads", "FFmpeg HDR", "Video media type (track)", "Video media type (mss)",
         "Sample memory", "Xbox memory", "Delivered ahead", "CPU", "AV1 decoder",
     ];
 
-    // No route exposes render drops, so that row always reads "unavailable"; hide it until asked for.
-    private static readonly string[] DefaultHidden = ["Dropped frames"];
+    private static readonly string[] DefaultHidden = [];
 
     private readonly HashSet<string> _labels = new(DefaultHidden, StringComparer.OrdinalIgnoreCase);
     private bool _only;

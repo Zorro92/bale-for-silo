@@ -1,4 +1,6 @@
 using Windows.Media.Playback;
+using Bale.Core.Playback;
+using System.Diagnostics;
 
 namespace Bale.Xbox.Services;
 
@@ -10,6 +12,17 @@ namespace Bale.Xbox.Services;
 /// </summary>
 internal abstract partial class PlaybackBackend : IDisposable
 {
+    internal PlaybackSmoothnessMeter Smoothness { get; set; } = new();
+
+    internal static double ClockSeconds => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
+
+    internal virtual PlaybackSmoothnessSnapshot ReadSmoothness(double? framesPerSecond) => Smoothness.Read(ClockSeconds, framesPerSecond);
+
+#if DEBUG_SERVER
+    /// <summary>Transport evidence sampled with state, never a locking FFmpeg source call.</summary>
+    internal Func<bool>? NetworkWaiting { get; set; }
+#endif
+
     public abstract PlaybackBackendSession PlaybackSession { get; }
 
     /// <summary>A short name for logs and stats ("MediaPlayer", "IMFMediaEngine").</summary>
