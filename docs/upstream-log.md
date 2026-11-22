@@ -16,10 +16,10 @@ part Bale hasn't built yet; check when building it), **deviation** (Bale differs
 
 | Repo | Commit | Reviewed |
 |---|---|---|
-| silo-android | `c6dfd52a631c` | 2026-11-21 |
-| silo-apple | `71a3beb9c0c4` | 2026-11-21 |
-| silo-server | `a84b2551b236` | 2026-11-21 |
-| silo-roku | `5778e4765def` | 2026-11-21 |
+| silo-android | `e8071640afc1` | 2026-11-22 |
+| silo-apple | `3709c5fbefd1` | 2026-11-22 |
+| silo-server | `c90e406db71e` | 2026-11-22 |
+| silo-roku | `5778e4765def` | 2026-11-22 |
 
 The first review (2026-11-10) started from the commit each local clone was made at.
 
@@ -199,7 +199,108 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   download estimate omitted from `download.estimated_completion_at` (server `28dd148`); hero
   backdrop banding on dark art (Android `c6dfd52a6`; console check of Bale's masked art).
 
+- **Buffering quality, slow-link evidence (2026-11-22):** an Auto lowering sends
+  `bandwidth_estimate_source: observed_rebuffer` and `observed_throughput_kbps` only when the plan's
+  measured throughput is below its delivered bitrate, also after the attempt has played, and drops the
+  source when the reading is gone at send time (network change); otherwise the estimate goes alone,
+  which the server plans under but never learns. The Lower prompt pick follows the same rule (Android
+  `878c972c4`, Apple `3709c5fb`, server `f503d7e`). Bale's `buffering.rs` sends the source on every
+  lowering once played, and has no reading on HLS (`PlanThroughput`), where Apple times each segment
+  from first to last byte (segments under 1 s left out, overlaps once). Add tests for a lowering with
+  and without evidence; decide whether the Rust HLS reader times segment bodies as evidence.
+- **Up Next timing (2026-11-22):** the card opens on crossing `playback.next_up_prompt_seconds` before
+  the end of the file (default 30; 0 = only at the stream's end), not at the credits marker; credits
+  drive only Skip Credits; a hand-opened card gets no countdown at the prompt point; the series-page
+  return still records the closing-credits crossing (Android `e580e1811`, shared `NextUpPrompt.kt`,
+  server `7019d69`). Bale's `PlayerPage.UpNext.cs` raises it at `Credits.Start` and reads no setting.
+- **Collections on the title page (2026-11-22):** with `item_collections` in the search capabilities,
+  movies and series read `listCatalogItemCollections`: one collection shows up to six of its other
+  titles plus Explore all, several show an "Also in" row of collection posters; no books, no
+  collections of libraries TV hides; Back returns to the card that opened it (Android `cb2c32d8a`,
+  `TvCollectionRow.kt`; server `faa406d`). Needs the route in `scripts/generate-api.sh`.
+
+- **Later, from the 2026-11-22 review:** a sidecar pick the server answers with burn-in, adopted and
+  standing for the picked row (Android `c89bdf34b`; Bale remounts on burn-in already, console check of the
+  menu and saved choice); episodes after same-titled movies and series in search (server `3e11909`); Date
+  Viewed dating a series by its episodes (server `b1d07ad`); burned-in PGS fitted to cropped frames
+  (server `2972dc6`); edition read from filename tags and the item's own folder (server `b3d25aa`).
+
 ## Reviews
+
+### 2026-11-22
+
+Three act items. All three official apps now send `observed_rebuffer` with a lowering only when there is
+measured slow-transfer evidence (the server's design now says the same). Android TV opens Up Next at
+the playback setting's point before the end of the file instead of at the credits marker, and shows
+the collections a title is in on its page. The rest of the server batch (82 commits) is web UI,
+right-to-left, notification, backup and node work, with no contract change on a path Bale generates.
+
+#### silo-android (`c6dfd52a631c..e8071640afc1`, 7 commits, 3 none)
+
+- `878c972c4` act: a stall's Auto lowering still goes out on every counted stall, but carries
+  `bandwidth_estimate_source: observed_rebuffer` (and `observed_throughput_kbps`) only when the
+  playback throughput meter shows the plan's media arrived below its delivered bitrate (transfer
+  timed from each request's first byte, requests under 1 s ignored); otherwise the estimate goes
+  unsourced, which the server plans under but never learns (24 h). A stall from a slow encoder,
+  burn-in or a node starting no longer caps later playback on the connection. The source is also
+  dropped when the meter has no reading at send time (network change). Bale's Rust controller
+  (`buffering.rs` `send_replan`) attaches `observed_rebuffer` to every Auto lowering with an estimate,
+  as Android did before.
+- `e580e1811` act: Up Next opens `playback.next_up_prompt_seconds` before the end of the file
+  (shared `NextUpPrompt.kt`, crossing only, so a resume or seek past it doesn't open it), or only at
+  the stream's end for "At end" (0); credits markers drive only Skip Credits, and skipping credits
+  that run to the end ends the stream. The TV settings default is now 30 s, as the server's. The
+  series-page return still records the closing-credits crossing on its own, and a hand-opened Up
+  Next isn't turned into a countdown at the prompt point. Bale's `PlayerPage.UpNext.cs` still raises
+  the card at the version's `Credits.Start` and doesn't read the setting (follows server `7019d69`,
+  tracked as later on 2026-11-20).
+- `cb2c32d8a` act: the title page shows the collections a movie or series is in, read from
+  `listCatalogItemCollections` only when the search capabilities advertise `item_collections`: one
+  collection gives up to six of its other titles under its name plus Explore all; several give an
+  "Also in" row of collection posters. Nothing while loading, empty or on a first-read failure; a
+  failed refresh keeps the row. TV leaves out books and collections of libraries TV doesn't show;
+  Back from a card it opened returns to that card, Up from a first-rail row returns to the hero.
+  Bale's Detail has no such row and doesn't generate the item collections route (server `faa406d`).
+- `c89bdf34b` later: a sidecar subtitle pick the server answers with burn-in (an ASS track on an HLS
+  transcode) is now adopted and remounts at the current position, standing for the picked row
+  (menu check, saved choice). Bale's `PlaybackReplan.TransportChange` already remounts on a burn-in
+  answer; console check that the menu checks the picked row and an Auto burn-in isn't saved.
+- `03972d479` none for Bale: the TV menu no longer lists an embedded track twice (server row plus
+  Media3's own track); Bale lists only the server's rows.
+
+#### silo-apple (`71a3beb9c0c4..3709c5fbefd1`, 2 commits, 1 none)
+
+- `3709c5fb` act: the same slow-link rule as Android `878c972c4`, also for the Lower prompt pick; on
+  server HLS the evidence is now the relay's own segment timing (first to last byte, segments under
+  1 s left out, overlaps counted once), not AVPlayer's loopback access log, which counted encode time
+  as transfer. Bale has no throughput reading on HLS (`PlanThroughput`).
+
+#### silo-server (`a84b2551b236..c90e406db71e`, 82 commits, 77 none)
+
+- `f503d7e` act: the buffering-quality design gains a "Slow-link evidence" rule, the server side of
+  Android `878c972c4` / Apple `3709c5fb`: an Auto lowering carries `observed_rebuffer` and
+  `observed_throughput_kbps` only when the playing plan's measured throughput (first body byte to last,
+  at least 1 s receiving, at least 100 kbps, no network change while it played) is below its delivered
+  bitrate, before and after the first frame; without evidence the estimate goes with no source. The
+  server also declines to learn a limit when its transcode had no lead over the client (new node route
+  `GET /transcode/{session_id}/output-bound`; unknown learns nothing). Bale requires evidence only
+  before the attempt has played (`buffering.rs` `evaluate_trigger` / `send_replan`). The conformance
+  vectors are unchanged; the spec asks each client to test a lowering without evidence itself.
+- `3e11909` later: keyword search ranks episodes after movies and series with the same title (search
+  index schema 5, servers rebuild their index). Bale shows the server's order; console check.
+- `b1d07ad` later: the Date Viewed sort dates a series by its latest finished episode (before, a TV
+  library fell back to title order). Bale offers the sort (`CatalogSort.cs`); console check of a TV
+  library.
+- `2972dc6` later: burned-in PGS is fitted to the video frame (aspect kept, centred), so subtitles on
+  cropped encodes stay inside the picture. Server-side only.
+- `b3d25aa` later: the scanner reads a file's edition from filename tags before folder names, and only
+  from the item's own folder. Edition labels and keys can change after a rescan; Bale groups by key
+  (`formatting.rs`), console check of the label.
+
+Contract changes on generated paths: none. The contract diff (admin direct-connections routes, the
+email unsubscribe link route, backup restore items and settings, `AdminPluginInstallation`, the
+VideoToolbox node override value, the node-listener `output-bound` route) is on paths Bale doesn't
+generate.
 
 ### 2026-11-21
 
