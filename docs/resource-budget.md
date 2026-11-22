@@ -30,6 +30,9 @@ buffers, Media Foundation).
 | GPU full-frame copies | as few as possible | idle GPU copies ~40 GB/s (~0.6 ms per 4K frame); compute is not slowed |
 
 - Measure in the idle state (no input for > 12 s), which is what a viewer gets.
+- rav1g v0.6.0-alpha.1 in Bale (2026-11-22, `play-url` test clips, 4K60 AV1 10-bit, 30 s, 1080p SDR display):
+  40/60/100 Mbps all 0 dropped of 1797; GPU ~10 ms/frame (of 14 ms), CPU ~1.5 cores at 40-60 Mbps and ~2 at 100;
+  app 1.12-1.16 GB (rav1g ~710 MiB with the player's output textures). Well inside the envelope.
 - The CPU stage that reads the compressed stream is the known limit and grows with bitrate; heavy 4K
   AV1 above ~40 Mbps is the risk case.
 - Spend resources only where they buy measured performance: e.g. more slots or frames in flight are worth
