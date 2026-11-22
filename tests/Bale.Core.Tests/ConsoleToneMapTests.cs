@@ -260,6 +260,7 @@ public sealed class ConsoleToneMapTests
     [InlineData("2.1.0-bale.63", true)]
     [InlineData("2.1.0-bale.64", true)]
     [InlineData("2.1.0-bale.65", true)]
+    [InlineData("2.1.0-bale.66", true)]
     [InlineData("2.1.0-bale.29-beta", false)]
     [InlineData("2.1.0", false)]
     public void ProductionStageRequiresTheHlgCapableWrapper(string version, bool supported) =>
@@ -479,6 +480,7 @@ public sealed class ConsoleToneMapTests
     [InlineData("2.1.0-bale.63", true)]
     [InlineData("2.1.0-bale.64", true)]
     [InlineData("2.1.0-bale.65", true)]
+    [InlineData("2.1.0-bale.66", true)]
     public void DisplaySizedOutputNeedsWrapperBale38(string version, bool supported) =>
         Assert.Equal(supported, ConsoleToneMapPolicy.DownscaleWrapperSupported(version));
 
