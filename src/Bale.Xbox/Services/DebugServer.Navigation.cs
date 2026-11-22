@@ -41,6 +41,7 @@ internal sealed partial class DebugServer
             "/type" => $"type characters={query.GetValueOrDefault("text")?.Length ?? 0}",
             "/goto" => $"goto characters={query.GetValueOrDefault("target")?.Length ?? 0}",
             "/open" or "/play" => path.TrimStart('/') + " content=" + DebugNavigationHistory.Identity(query.GetValueOrDefault("id")),
+            "/play-url" => "play-url [redacted-url]",
             "/home" => "home",
             _ when path.StartsWith("/key/", StringComparison.Ordinal) => "key " + DebugNavigationHistory.Identity(path[5..]),
             _ when path.StartsWith("/press/", StringComparison.Ordinal) => "press " + DebugNavigationHistory.Identity(path[7..]),
@@ -69,6 +70,60 @@ internal sealed partial class DebugServer
             return ("500 Internal Server Error", $"debug navigation failed hr=0x{unchecked((uint)ex.HResult):X8}\n");
         }
         finally { NavigationGate.Release(); }
+    }
+
+    private static async Task<(string Status, string Body)> NavigateDebugUrlAsync(DebugPlayUrlRequest request)
+    {
+        if (!NavigationGate.Wait(0)) return ("409 Conflict", "another debug navigation is in progress\n");
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        try
+        {
+            return await await OnFfmpegUiAsync(() => NavigateUrlOnUiAsync(request, deadline.Token));
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+        {
+            return ("408 Request Timeout", "debug file navigation timed out\n" + await OnFfmpegUiAsync(NavigationSummary));
+        }
+        catch (Exception ex)
+        {
+            return ("500 Internal Server Error", $"debug file navigation failed hr=0x{unchecked((uint)ex.HResult):X8}\n");
+        }
+        finally { NavigationGate.Release(); }
+    }
+
+    private static async Task<(string Status, string Body)> NavigateUrlOnUiAsync(DebugPlayUrlRequest request, CancellationToken cancellation)
+    {
+        if (Session.Client is not { IsSignedIn: true, ProfileId: { Length: > 0 } profile } client)
+            return ("409 Conflict", "no profile selected\n");
+        if (Window.Current.Content is not Frame frame) return ("409 Conflict", "no navigation frame\n");
+        bool SameProfile() => ReferenceEquals(Session.Client, client) && client.ProfileId == profile;
+        var wasPlayer = frame.Content is PlayerPage;
+        if (frame.Content is PlayerPage previous)
+        {
+            await previous.DebugStopForNavigationAsync().WaitAsync(cancellation);
+            if (!SameProfile() || !ReferenceEquals(frame.Content, previous))
+                return ("409 Conflict", "navigation or profile changed while stopping the player\n");
+        }
+        cancellation.ThrowIfCancellationRequested();
+        if (OpenPopups().Count > 0) return ("409 Conflict", "dismiss the open overlay before playback\n");
+        var handoff = new PlayerRequest(request.Detail(), new(DebugPlayUrlRequest.FileId), request.StartSeconds, true) { DebugUrl = request };
+        if (!frame.Navigate(typeof(PlayerPage), handoff) || frame.Content is not PlayerPage player)
+            return ("500 Internal Server Error", "Player navigation failed\n");
+        // Back returns to the previous non-player page, never to a stopped player that starts itself again.
+        if (wasPlayer && frame.BackStack.Count > 0) frame.BackStack.RemoveAt(frame.BackStack.Count - 1);
+        while (SameProfile() && ReferenceEquals(frame.Content, player))
+        {
+            cancellation.ThrowIfCancellationRequested();
+            if (player.DebugNavigationFailed)
+            {
+                var failure = player.DebugNavigationFailure;
+                return (failure.Status, failure.Body + NavigationSummary());
+            }
+            if (player.IsLoaded && player.DebugNavigationReady && !PageFrame.IsTransitioning)
+                return ("200 OK", NavigationSummary());
+            await Task.Delay(50, cancellation);
+        }
+        return ("409 Conflict", "player navigation was superseded\n");
     }
 
     private static string NavigationSummary()

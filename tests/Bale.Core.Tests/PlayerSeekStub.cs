@@ -22,6 +22,7 @@ namespace Bale.Xbox
 
         private sealed class Attempt
         {
+            public DebugPlayUrlRequest? DebugUrl { get; set; }
             public required SiloClient Client { get; init; }
             public required PlaybackStartRequestV3 Start { get; init; }
             public required PlaybackPlan Plan { get; set; }
@@ -92,6 +93,7 @@ namespace Bale.Xbox
             _attempt.Media.Started = started;
         }
         internal void Unmount() => DisposeMount(_attempt);
+        internal void UseDebugFileSession() => _attempt.DebugUrl = new(new("https://example.invalid/clip.mp4"), null);
         internal async Task<string> SeekSourceAsync(double target)
         {
             var result = await SeekAsync(new(target));

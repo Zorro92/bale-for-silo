@@ -32,7 +32,13 @@ internal static class FfmpegSource
         // Keep the existing fast-seek policy for software video: its earlier zero-copy route uploaded
         // every frame from the keyframe, and a 4K seek ran out of GPU memory (0x8007000E) on 0.1.558.
         config.General.FastSeek = route.SoftwareVideo;
-        if (route.ConsoleStage && (route.VideoCodec is not ("hevc" or "vp9") || !ConsoleToneMapRuntime.IsAvailable))
+        var rav1gStage = false;
+#if DEBUG_SERVER
+        // A probed URL can expose HDR AV1 that the Silo planner normally transcodes. rav1g already owns
+        // its tone-map/downscale stage; keep that same configuration and its marked-output guard.
+        rav1gStage = rav1g is { Rav1g: true } && route.SoftwareVideo && route.VideoCodec == "av1";
+#endif
+        if (route.ConsoleStage && (route.VideoCodec is not ("hevc" or "vp9") && !rav1gStage || !ConsoleToneMapRuntime.IsAvailable))
             throw new InvalidDataException("Console tone mapping is unavailable for this source.");
         // FFmpeg's HEVC decoder handles only nuh_layer_id 0 and does not apply the RPU.
         // d3d11va gets that base picture, never an opaque DV7 system-decoder bitstream.
@@ -44,6 +50,7 @@ internal static class FfmpegSource
         if (route.ConsoleStage) config.FFmpegOptions["bale_tonemap"] = "1";
         var softwareVideo = route.SoftwareVideo;
 #if DEBUG_SERVER
+        if (rav1gStage) config.Video.VideoDecoderMode = VideoDecoderMode.ForceFFmpegSoftwareDecoder;
         // Choose the production mode first; default leaves it intact on every route.
         config.Video.VideoDecoderMode = DecoderMode(config.Video.VideoDecoderMode, tuning);
         softwareVideo = tuning.SoftwareVideo(softwareVideo);

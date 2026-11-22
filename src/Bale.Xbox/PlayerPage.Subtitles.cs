@@ -158,6 +158,9 @@ public sealed partial class PlayerPage
     {
         try
         {
+#if DEBUG_SERVER
+            if (attempt.DebugUrl is not null) return;
+#endif
             // silo-apple ApplePlaybackV3PlanAdapter.swift invalidEmbeddedSubtitle: a native selection the
             // client cannot mount as planned (not original_http, or no usable stream index).
             if (PlaybackEmbeddedSubtitleFailure.PlanFailure(attempt.Plan) is { } invalid)

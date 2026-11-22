@@ -104,6 +104,9 @@ public sealed partial class PlayerPage
         {
             if (_attempt is not { Media: { Opened: true, FailureQueued: false, Player: { } player } media } attempt
                 || !IsCurrent(attempt, media)) return;
+#if DEBUG_SERVER
+            if (attempt.DebugUrl is not null) return;
+#endif
             if (TrySwitchAudioLocally(attempt, media, audioIndex, subtitleIndex)) return;
             var paused = player.PlaybackSession.PlaybackState == MediaPlaybackState.Paused;
             var position = SourcePosition(attempt);

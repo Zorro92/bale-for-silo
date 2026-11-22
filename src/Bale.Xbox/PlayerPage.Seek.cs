@@ -229,6 +229,9 @@ public sealed partial class PlayerPage
     /// <summary>A same-route seek_reanchor decision at <paramref name="source"/>, or null when the server changed the route.</summary>
     private async Task<PlaybackDecision?> RequestReanchorAsync(Attempt attempt, double source)
     {
+#if DEBUG_SERVER
+        if (attempt.DebugUrl is not null) return null;
+#endif
         // After a lowering, a reanchor keeps asking for it (the kept step-down estimate, no source).
         var request = PlaybackReplan.WithClientReplan(PlaybackReplan.ForSeek(attempt.Start!, attempt.Plan!, attempt.PlanAttemptId,
             attempt.AttemptedPlanKeys, attempt.Replanned ? 2 : 1, source), ClientBufferingReplan("seek_reanchor"));
@@ -240,6 +243,9 @@ public sealed partial class PlayerPage
 
     private static async Task ReportPositionAsync(Attempt attempt, double source, bool paused)
     {
+#if DEBUG_SERVER
+        if (attempt.DebugUrl is not null) return;
+#endif
         try
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(attempt.Cancellation.Token);

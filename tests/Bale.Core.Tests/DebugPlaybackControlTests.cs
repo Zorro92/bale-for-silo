@@ -81,6 +81,21 @@ public class DebugPlaybackControlTests
         Assert.Equal(4, session.StateRequests - 2); // The seek pauses twice; idempotent transport calls do nothing.
     }
 
+    [Fact]
+    public async Task DebugFileSeeksAndPlaybackControlsDoNotReportOrUpdateTheSiloJournal()
+    {
+        using var fixture = await Fixture.CreateAsync("mp4", 0);
+        var before = Assert.Single(await fixture.Journal.ReadAsync());
+        fixture.Player.UseDebugFileSession();
+        Assert.Equal("200 OK", (await fixture.Player.DebugSeekAsync(new(12.5, true))).Status);
+        Assert.Equal("200 OK", (await fixture.Player.DebugSetPlaybackAsync(DebugPlaybackControl.Play)).Status);
+        Assert.Equal("200 OK", (await fixture.Player.DebugSetPlaybackAsync(DebugPlaybackControl.Pause)).Status);
+        Assert.Empty(fixture.Handler.Pauses);
+        var after = Assert.Single(await fixture.Journal.ReadAsync());
+        Assert.Equal(before.LastPosition, after.LastPosition);
+        Assert.Empty(fixture.Player.Mounts);
+    }
+
     [Theory]
     [InlineData(false, false, "Opening")]
     [InlineData(false, false, "Paused")]

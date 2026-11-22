@@ -396,6 +396,9 @@ public sealed partial class PlayerPage
     private async void OnAutoPlayRowClick(object sender, RoutedEventArgs e)
     {
         if (!_active || _leaving || _attempt is not { } attempt) return;
+#if DEBUG_SERVER
+        if (attempt.DebugUrl is not null) return;
+#endif
         var value = !_upNext.AutoPlay;
         ApplyAutoPlay(value);
         try { await attempt.Client.Settings.SetAutoPlayNextAsync(value); }

@@ -23,7 +23,7 @@ public sealed partial class PlayerPage
             Token = Cancellation.Token;
         }
 
-        public PlaybackMedia Transport { get; }
+        public PlaybackMedia Transport { get; set; }
         public CancellationTokenSource Cancellation { get; }
         public CancellationToken Token { get; }
         public double StartPosition { get; set; }
@@ -118,6 +118,10 @@ public sealed partial class PlayerPage
         Log.Info("player: " + PlaybackPlanLog.Describe(attempt.Plan));
         // The mount this one replaces closes on the thread pool (DisposeMount); open after its decoders are gone.
         await WaitForMountCloseAsync("mount");
+#if DEBUG_SERVER
+        // Probe on this mount and keep its one range reader; the start budget also bounds the probe.
+        Mount? debugMedia = attempt.DebugUrl is not null ? await ProbeDebugUrlAsync(attempt, playerStart, paused) : null;
+#endif
         // Client-managed originals keep SDR HDMI; all other mounts retain native HDR policy.
         var sdrOutput = !ConsoleToneMapPolicy.HasHdrOutput(attempt.Start!.ClientPlaybackContext.Output.HdrDetails);
         var consoleToneMap = ConsoleToneMapPolicy.RequiresToneMap(attempt.Plan!, sdrOutput, attempt.Request.Detail.Versions,
@@ -156,8 +160,16 @@ public sealed partial class PlayerPage
         // A kept overlay (seek reanchor) must not show the previous mount's track over this one;
         // StartSubtitles below reloads this plan's track for the new mount.
         ClearSubtitles();
-        var transport = attempt.Client.Playback.OpenMedia(attempt.Plan!);
-        var media = attempt.Media = new Mount(transport, attempt.Cancellation.Token)
+        var transport =
+#if DEBUG_SERVER
+            debugMedia?.Transport ??
+#endif
+            attempt.Client.Playback.OpenMedia(attempt.Plan!);
+        var media = attempt.Media =
+#if DEBUG_SERVER
+            debugMedia ??
+#endif
+            new Mount(transport, attempt.Cancellation.Token)
         {
             StartPosition = playerStart,
             StartPaused = paused,
@@ -165,12 +177,15 @@ public sealed partial class PlayerPage
 #if DEBUG_SERVER
             DebugHang = DebugStartBudget.TakeHang(),
 #endif
-            Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled, attempt.ForceFfmpeg,
+        };
+        media.Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled, attempt.ForceFfmpeg,
                 sdrOutput: sdrOutput, versions: attempt.Request.Detail.Versions, hlsThroughFfmpeg: attempt.HlsThroughFfmpeg,
                 hardwareDecode: attempt.HardwareDecode, display: DisplayHdrOutput.CurrentRawSize(),
                 sdrDownscale: !attempt.SdrDownscaleDeclined && ConsoleToneMapPolicy.SdrDownscaleWrapperSupported(FfmpegWrapperVersion.Value)
-                    && ConsoleToneMapRuntime.SupportsSdrDownscale),
-        };
+                    && ConsoleToneMapRuntime.SupportsSdrDownscale);
+#if DEBUG_SERVER
+        DebugValidateUrlRoute(attempt, media);
+#endif
         // From here the mount opens; the start budget may stop it (PlayerPage.StartBudget.cs) until this returns.
         try { await OpenMountAsync(attempt, media, transport, playerStart, paused, rangeRefused); }
         finally { media.Mounting = false; }
@@ -247,7 +262,7 @@ public sealed partial class PlayerPage
                 transport.StartPlayerClockAt(hls.SegmentStartSeconds);
                 media.ForwardInput = NativeInputStream(media.Progressive) ?? new ForwardInputStream(media.Progressive);
             }
-            else
+            else if (media.Stream is null)
             {
 #if DEBUG_SERVER
                 var prefetch = media.Route.UseFfmpeg ? attempt.FfmpegTuning.Prefetch ?? HttpRangeStream.DefaultPrefetchBlocks
@@ -290,6 +305,7 @@ public sealed partial class PlayerPage
                         Log.Info($"player: AV1 decoder rav1g buffer={rav1g.BufferMs} ms output={output} tonemap={rav1g.ToneMap} library={(Rav1gLibrary.Present ? "packaged" : "missing")}");
                     }
                 }
+                DebugDescribeUrlRoute(attempt, media);
                 var config = FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,
                     attempt.Dav1dGpuFilmGrain);
                 media.SoftwareVideo = attempt.FfmpegTuning.SoftwareVideo(media.Route.SoftwareVideo);
@@ -352,6 +368,12 @@ public sealed partial class PlayerPage
                     // rav1g's provider reports the D3D11 engine; the fork's open-time fallback is dav1d's software engine.
                     media.Rav1gActive = media.FfmpegStreams?.Value?.Video?.DecoderEngine == DecoderEngine.FFmpegD3D11HardwareDecoder;
                     Log.Info($"player: AV1 open used {(media.Rav1gActive ? "rav1g" : "dav1d (rav1g fell back at open)")}");
+                    if (attempt.DebugUrl is not null)
+                    {
+                        _debugUrlDiagnostics += $"Debug file: AV1 open used {(media.Rav1gActive ? "rav1g" : "dav1d; rav1g declined (see Bale rav1g log)")}\n";
+                        if (!media.Rav1gActive && media.Route.ConsoleToneMap)
+                            throw new DebugPlayUrlException("rav1g declined; dav1d cannot provide this HDR stage");
+                    }
                 }
 #else
                 FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route);

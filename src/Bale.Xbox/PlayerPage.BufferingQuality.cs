@@ -73,6 +73,9 @@ public sealed partial class PlayerPage
     {
         try
         {
+#if DEBUG_SERVER
+            if (attempt.DebugUrl is not null) return;
+#endif
             if (attempt.Plan is not { } plan || attempt.Start is not { } start || attempt.Services is not { } services) return;
             var controller = Buffering;
             // The outgoing source is gone already: report its reload (or pause) to the plan it belonged to.

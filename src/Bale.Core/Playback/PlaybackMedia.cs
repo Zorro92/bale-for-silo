@@ -8,11 +8,11 @@ namespace Bale.Core.Playback;
 /// Authenticated media transport for a captured playback owner. The platform player receives bytes,
 /// never bearer credentials or a URL it could fetch without the profile/refresh handler.
 /// </summary>
-public sealed class PlaybackMedia
+public sealed partial class PlaybackMedia
 {
     private readonly HttpClient _http;
     private readonly Uri _server;
-    private readonly PlaybackRequestScope _scope;
+    private readonly PlaybackRequestScope? _scope;
     private readonly IReadOnlyDictionary<string, string> _headers;
     private readonly HeaderCapture? _captureHeaders;
 
@@ -79,8 +79,11 @@ public sealed class PlaybackMedia
         if (offset is { } start)
             request.Headers.Range = new RangeHeaderValue(start, length is { } count ? checked(start + (count - 1)) : null);
         // Kiota 2.1.2 HttpRequestMessageExtensions.GetRequestOption<T> uses the type's FullName.
-        request.Options.Set(new HttpRequestOptionsKey<ProfileRequestOption>(typeof(ProfileRequestOption).FullName!), _scope.Request);
-        _scope.Request.CheckCurrent();
+        if (_scope is { } scope)
+        {
+            request.Options.Set(new HttpRequestOptionsKey<ProfileRequestOption>(typeof(ProfileRequestOption).FullName!), scope.Request);
+            scope.Request.CheckCurrent();
+        }
         return await _http.SendAsync(request, completion, ct).ConfigureAwait(false);
     }
 
@@ -143,8 +146,11 @@ public sealed class PlaybackMedia
         string? rejectedAccessToken = null)
     {
         var capture = _captureHeaders ?? throw new InvalidOperationException("This client cannot hand headers to the native transport.");
-        _scope.Request.CheckCurrent();
-        var client = await capture(Uri, _scope.Request, rejectedAccessToken, ct).ConfigureAwait(false);
+        _scope?.Request.CheckCurrent();
+#if DEBUG_SERVER
+        if (_scope is null) return []; // External debug files never capture or refresh Silo credentials.
+#endif
+        var client = await capture(Uri, _scope!.Request, rejectedAccessToken, ct).ConfigureAwait(false);
         return client.Concat(_headers).ToArray();
     }
 

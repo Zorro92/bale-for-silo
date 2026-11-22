@@ -2243,6 +2243,69 @@ because a seek never lands, on any route.
 - **Not covered:** Apple's progress-based extensions (no lock-free buffer-at-target reading), and a seek that lands and then
   stalls (that is buffering, not a stuck seek).
 
+## Debug: play a file URL through the real player
+
+`POST /play-url?url=<encoded-http(s)-file-url>[&start=<source-seconds>]` is compiled only with
+`DEBUG_SERVER`, including its anonymous transport factory in Core. It opens `PlayerPage` directly,
+returning the same `Page:`, `Player: state=...` and `Plan: delivery=original_http` lines as `/play`.
+An already selected profile is required, as for `/play`; this route never queries that profile or
+creates a Silo playback session. Back/Escape uses the normal controls/previous-page behavior.
+
+Serve a folder on the development PC, then use a URL reachable from the console (set `MEDIA_HOST`
+to the PC's LAN host name or address; no address is saved in the repo):
+
+```sh
+python3 -I scripts/serve-media.py ./test-clips --bind "$MEDIA_HOST" --port 8765
+# Alternatively: uv run scripts/serve-media.py ./test-clips --port 8765
+scripts/bale-debug.sh play-url "http://${MEDIA_HOST}:8765/clip.mkv" start=0
+scripts/bale-debug.sh wait page Player
+scripts/bale-debug.sh stats
+scripts/bale-debug.sh mem
+```
+
+The stdlib-only server prints each file's quoted URL, supports GET byte ranges and HEAD, rejects
+paths outside its root, and supplies MP4/Matroska/WebM content types. There is no directory listing
+or write endpoint. Its default bind is all IPv4 interfaces; `--bind` restricts it. On Fedora, allow
+the chosen TCP port in the active firewall zone yourself; the tool does not change the firewall.
+`python3 -I scripts/serve-media.py --self-test` checks ranges, HEAD, types and traversal locally.
+
+Bale probes the bytes with the packaged FFmpeg 8 demuxer through the mount's **same range reader**,
+then rewinds it and releases the probe before the regular decoder opens. Codec/profile, dimensions,
+frame rate, source bit depth, pixel format, color primaries/matrix/transfer/range, audio codec and
+known duration populate the synthetic plan and its one video-track inventory. There is no filename
+or library metadata lookup. FFmpeg may inspect decoded headers/frames to fill missing facts;
+that temporary state is freed before playback. Probe IO uses 32 KiB and one CPU probe thread,
+adding no playback queue, GPU allocation, full-frame copy or second reader. The real-player cache,
+network read-ahead, rav1g 250 ms buffer/texture cap and software tuning are unchanged, sized for the
+3328 MiB shared pool, 2857 MiB GPU budget and four shared cores (the practical app ceiling remains
+about 1.2 GB). The normal mount start budget bounds probing too.
+
+The existing route policy, `FfmpegSource.Configuration`/`ApplyRav1g`, d3d11va, tone-map/downscale stage,
+display matching, output depth, backend and debug switches apply. `av1-decoder`, `av1-claim`,
+`ffmpeg-tune` and `rav1g-tune` are captured as for Silo playback. **There is no server planner**, so
+`av1-claim` changes the captured capabilities but cannot impose a server size/fps gate: a 4K60 AV1
+file can be attempted with `av1-decoder rav1g` regardless of the server's 4K30 claim ceiling.
+This does not broaden production claims. Probe/route facts and decoder selection are included in
+the response; a failure returns a fixed diagnostic and HRESULT, with rav1g's fixed decline/failure
+reason where available. A small SDR AV1 file may still use the fork's ordinary open-time dav1d
+fallback (reported explicitly); an HDR AV1 stage refuses that fallback. The existing safe
+`Bale rav1g:` logs, stats pane, `stats`, `mem` and memory ledger remain on the real-player path.
+URLs and credentials are redacted from Bale logs, command logs and `play-url` output.
+
+This session has no Silo headers, bearer/profile refresh, progress/scrobble/stop/journal reporting,
+plan-summary reporting, quality/lower-version/server recovery, server track replan, sidecars or Up Next.
+Pipeline failures stop visibly; Retry can open the same URL again. The transport uses a separate
+HTTP client and supplies empty native headers even after a 401. No release-build factory can open
+these URLs, and the authenticated Silo media URL boundary is unchanged.
+
+Probe limits: self-contained files only (MP4/MOV, MKV/WebM, AVI, MPEG/TS, Ogg, ASF, FLV, IVF), exactly
+one non-cover-art video stream, and a known source size/depth. The probe does not collect chapters,
+subtitle/audio track inventories or prove Dolby Vision base-layer compatibility; DV configuration
+is refused explicitly. Missing color tags remain unknown (never invented); routing/output guards
+may decline them. Actual decoded-frame color and output remain subject to the normal stage/guard.
+HDR AV1 uses rav1g's existing stage/mark guard rather than asking the HEVC/VP9 stage gate to accept
+dav1d. Console decode/performance, HDMI switching and physical Back behavior require Xbox checks.
+
 ## rav1g (debug), 2026-11-18
 
 The owner approved testing [rav1g](https://github.com/Zorro92/rav1g) (AV1 in D3D12 compute shaders) inside Bale behind

@@ -49,7 +49,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
     {
         /// <summary>The console's hardware decode entries this attempt claimed (route software fallback).</summary>
         public IReadOnlyList<Bale.Core.Playback.VideoDecodeCapability> HardwareDecode { get; set; } = [];
-        public PlayerRequest Request { get; } = request;
+        public PlayerRequest Request { get; set; } = request;
         public SiloClient Client { get; } = client;
         public CancellationTokenSource Cancellation { get; } = new();
         public PlaybackSessionServices? Services { get; set; }
@@ -72,6 +72,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         /// <summary>Keep the device's grain choice through every open/remount of this attempt.</summary>
         public bool Dav1dGpuFilmGrain { get; } = AppSettings.Dav1dGpuFilmGrain;
 #if DEBUG_SERVER
+        public DebugPlayUrlRequest? DebugUrl => Request.DebugUrl;
         // Match the capability claim and backend even if the debug toggle changes during a request/replan.
         public string FfmpegMode { get; } = DebugFfmpegPlayback.Mode;
         public string DeliveryMode { get; } = DebugPlaybackDelivery.Mode;
@@ -228,6 +229,13 @@ public sealed partial class PlayerPage : Page, IBackHandler
             try
             {
                 Log.Info("player: start");
+#if DEBUG_SERVER
+                if (attempt.DebugUrl is not null)
+                {
+                    await StartDebugUrlAsync(attempt);
+                    return;
+                }
+#endif
                 // The Rust pool has no API traffic to keep it warm: connect during the plan request.
                 if (attempt.UseRustTransport) RustTransport.WarmConnection(client.Server);
                 var services = attempt.Services = await PlaybackSessions.PrepareAsync(client);
@@ -376,6 +384,9 @@ public sealed partial class PlayerPage : Page, IBackHandler
             UpdateOptionsStats();
             var position = SourcePosition(attempt);
             var paused = attempt.Media.Player!.PlaybackSession.PlaybackState == MediaPlaybackState.Paused;
+#if DEBUG_SERVER
+            if (attempt.DebugUrl is not null) return;
+#endif
             await attempt.Services!.Reporter.RecordPositionAsync(attempt.SessionId!, position, paused, attempt.Cancellation.Token);
         }
         catch (OperationCanceledException) { }
@@ -445,6 +456,14 @@ public sealed partial class PlayerPage : Page, IBackHandler
         PlaybackFailureV3? failure = null)
     {
         if (!_active || _leaving || _suspended || attempt.Cancellation.IsCancellationRequested) return;
+#if DEBUG_SERVER
+        if (attempt.DebugUrl is not null)
+        {
+            await DebugUrlFailedAsync(hdrOutputFailed ? "HDR display switch failed"
+                : attempt.Media?.StartBudgetRanOut == true ? "playback start budget expired" : "player pipeline failed; no server recovery", hresult);
+            return;
+        }
+#endif
         // A mount whose start budget ran out fails as such, whichever path noticed (its interrupted open or the queue).
         if (attempt.Media is { StartBudgetRanOut: true } && failure is null && !hdrOutputFailed) failure = PlaybackStartBudget.Failure;
         if (StartDeadlineLoweringOwns(attempt))
@@ -642,6 +661,9 @@ public sealed partial class PlayerPage : Page, IBackHandler
         attempt.ReportingTask = null;
         if (!attempt.Attached) return;
         attempt.Attached = false;
+#if DEBUG_SERVER
+        if (attempt.DebugUrl is not null) return;
+#endif
         try
         {
             // The durable stop survives a timeout; keep Back and the suspension deferral bounded.

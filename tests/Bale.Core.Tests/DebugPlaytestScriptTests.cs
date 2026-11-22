@@ -1388,6 +1388,41 @@ public class DebugPlaytestScriptTests
         }
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("start=12.5")]
+    public async Task PlayUrlPostsTheEncodedUrlAndRedactsOutputAndCommandLog(string? start)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        const string url = "https://example.invalid/clip.mp4?token=private&x=1";
+        var args = start is null ? new[] { "play-url", url } : ["play-url", url, start];
+        var result = await RunAsync(args, "Page: Player\nPlayer: state=playing source=0s\nURL: " + url + "\n");
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/play-url\n", result.Arguments);
+        Assert.Contains("--max-time\n95\n", result.Arguments);
+        Assert.Contains("--data-urlencode\nurl=" + url + "\n", result.Arguments);
+        Assert.Contains("-X\nPOST\n-G\n", result.Arguments);
+        if (start is not null) Assert.Contains("--data-urlencode\n" + start + "\n", result.Arguments);
+        Assert.Contains("state=playing", result.Output);
+        Assert.DoesNotContain(url, result.Output);
+        Assert.DoesNotContain("private", result.Output + result.Log + result.Error);
+        Assert.Contains("redacted-url", result.Output);
+    }
+
+    [Fact]
+    public async Task InvalidPlayUrlArgumentsNeverInvokeCurl()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[] { new[] { "play-url" }, ["play-url", "file:///clip.mp4"],
+            ["play-url", "https://example.invalid/clip", "start=-1"], ["play-url", "https://example.invalid/clip", "file=1"],
+            ["play-url", "https://example.invalid/clip", "start=1", "start=2"] })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
     private static async Task<(int ExitCode, string Output, string Arguments, string Log, string Error)> RunAsync(string[] arguments,
         string output = "probe result\n", int exitCode = 0, string httpStatus = "200", bool redirectOutput = false)
     {

@@ -5,6 +5,7 @@
     <RootNamespace>Bale.Core</RootNamespace>
     <IsAotCompatible>true</IsAotCompatible>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DefineConstants Condition="'$(BaleDebugServer)' == 'true'">$(DefineConstants);DEBUG_SERVER</DefineConstants>
   </PropertyGroup>
 
   <!-- Rust logic (native/bale-core, docs/rust-port.md). Linux builds (tests, bale-cli) copy the

@@ -19,6 +19,6 @@ public sealed partial class PlayerPage
     internal bool DebugNavigationFailed => _state == "error";
     internal (string Status, string Body) DebugNavigationFailure => _debugNavigationFailure
         ?? ("500 Internal Server Error", "Playback failed\n");
-    internal string DebugPlanDelivery => $"Plan: delivery={DebugNavigationHistory.Identity(_attempt?.Plan?.Delivery ?? _delivery ?? "none")}\n";
+    internal string DebugPlanDelivery => $"Plan: delivery={DebugNavigationHistory.Identity(_attempt?.Plan?.Delivery ?? _delivery ?? "none")}\n" + _debugUrlDiagnostics;
 }
 #endif

@@ -10,6 +10,7 @@
 #   scripts/bale-debug.sh where                 page, overlays, focus, status and on-screen controls
 #   scripts/bale-debug.sh home                  fresh Browse/Home for the active profile; clear the back stack (never selects a profile)
 #   scripts/bale-debug.sh open <content-id> [file=<fileId>]  load Detail, select an exact version, and focus Play
+#   scripts/bale-debug.sh play-url <url> [start=<s>]  debug HTTP file through the real player; no Silo session; wait for ready/error
 #   scripts/bale-debug.sh play <content-id> [file=<fileId>] [start=<seconds>]  normal Detail Play path; wait for player ready/error
 #   scripts/bale-debug.sh alive                 is Bale running (Device Portal), does its debug port answer, newest crash dump
 #                                               Any command whose debug-port request fails says why: not running (crashed/closed),
@@ -313,6 +314,16 @@ case "${1:-}" in
       exit 2
     fi
     curl --fail-with-body -sS --max-time 5 -G "$BASE/navlog" --data-urlencode "n=${2-50}"
+    ;;
+  play-url)
+    if [[ "$#" -lt 2 || "$#" -gt 3 ]] || ! [[ "$2" == http://* || "$2" == https://* ]] \
+      || { [[ "$#" == 3 ]] && ! [[ "$3" =~ ^start=[0-9]+([.][0-9]+)?$ ]]; }; then
+      echo 'usage: scripts/bale-debug.sh play-url <http(s)-file-url> [start=<seconds>]' >&2
+      exit 2
+    fi
+    url_args=(--data-urlencode "url=$2")
+    [[ "$#" == 3 ]] && url_args+=(--data-urlencode "$3")
+    curl --fail-with-body -sS --max-time 95 -X POST -G "$BASE/play-url" "${url_args[@]}" | redact_log
     ;;
   open|play)
     if [[ "$1" == play && "$#" == 1 ]]; then

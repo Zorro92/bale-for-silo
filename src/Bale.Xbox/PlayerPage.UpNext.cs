@@ -58,6 +58,9 @@ public sealed partial class PlayerPage
         try
         {
             if (!_active || _leaving || _advancing || _attempt is not { Media: { Started: true } } attempt) return;
+#if DEBUG_SERVER
+            if (attempt.DebugUrl is not null) return;
+#endif
             if (!_nextLoadStarted)
             {
                 _nextLoadStarted = true;

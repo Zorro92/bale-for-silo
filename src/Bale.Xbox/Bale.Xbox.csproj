@@ -39,7 +39,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Bale.Core\Bale.Core.csproj" />
+    <ProjectReference Include="..\Bale.Core\Bale.Core.csproj" AdditionalProperties="BaleDebugServer=$(BaleDebugServer)" />
   </ItemGroup>
 
   <!-- Debug-server builds only: WinUI 2 for the WebView2 input-idle comparison (Services/DebugServer.WebViewTest.cs).
