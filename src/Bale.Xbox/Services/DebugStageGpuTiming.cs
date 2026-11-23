@@ -19,6 +19,7 @@ internal sealed class DebugStageGpuTiming(ulong? baselineSession, bool requested
     }
 
     private ulong _lastSession, _lastWindow;
+    private ulong _disabledSession;
     private string _row = !requested ? "off (next playback: gpu-timing on)" : baselineSession is null
         ? "unavailable (native snapshot busy at mount)" : "waiting for a measured stage";
     internal static bool Enabled { get; private set; }
@@ -56,7 +57,15 @@ internal sealed class DebugStageGpuTiming(ulong? baselineSession, bool requested
     {
         logLine = null;
         if (!requested || baselineSession is null || stats.Session <= baselineSession.Value) return _row;
-        if (stats.Window > 0 && (stats.Session != _lastSession || stats.Window != _lastWindow))
+        if (stats.State == 2)
+        {
+            if (_disabledSession != stats.Session)
+            {
+                logLine = "Bale stage gpu: " + Disabled(stats);
+                _disabledSession = stats.Session;
+            }
+        }
+        else if (stats.Window > 0 && (stats.Session != _lastSession || stats.Window != _lastWindow))
         {
             logLine = "Bale stage gpu: " + DescribeWindow(stats);
             _lastSession = stats.Session;
@@ -64,11 +73,29 @@ internal sealed class DebugStageGpuTiming(ulong? baselineSession, bool requested
         }
         var state = stats.State switch
         {
-            2 => string.Create(CultureInfo.InvariantCulture, $"unavailable (query HRESULT 0x{stats.Error:X8})"),
+            2 => Disabled(stats),
             3 => "closed",
             _ => "collecting",
         };
         return _row = stats.Window == 0 ? $"{state} (window: 240 frames)" : $"{DescribeWindow(stats)} · {state}";
+    }
+
+    private static string Disabled(Stats stats)
+    {
+        // Additive reason codes in the ABI's reserved word. Old native DLLs leave it zero.
+        var reason = stats.Reserved switch
+        {
+            1 => "query creation failed",
+            2 => "query data size mismatch",
+            3 => "GetData failed",
+            4 => "zero timestamp frequency",
+            5 => "invalid timestamp sequence",
+            6 => "timing panic contained",
+            7 => "context is not immediate",
+            8 => "device failure",
+            _ => "query failure",
+        };
+        return string.Create(CultureInfo.InvariantCulture, $"disabled ({reason}; query HRESULT 0x{stats.Error:X8})");
     }
 
     internal static string DescribeWindow(Stats stats)

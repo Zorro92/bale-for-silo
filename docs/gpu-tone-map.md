@@ -405,21 +405,23 @@ Timing is **off after app launch**. Before starting a new playback:
 or `stats` / `where`. The one-second stats refresh logs each new window once, even with the overlay
 hidden. The line begins `Bale stage gpu: frames=240 total avg/max ... ms` and includes `input-copy`,
 `luma`, `chroma` avg/max milliseconds, `valid`, `disjoint`, `unavailable`, `pending`, `session` and
-`window`. The first window needs about 244 apply calls (roughly four seconds at 60 fps); until then the
+`window`. The first window needs about 241 apply calls (roughly four seconds at 60 fps); until then the
 row says collecting. A route without a Bale stage stays waiting, never displays another playback's
 result. This measures actual stage submissions, including decode preroll; use later idle-state windows
-for the resource budget. Self-test draws are excluded. No console was used to validate this feature.
+for the resource budget. Self-test draws are excluded. The asynchronous timing hardening described
+below has not been validated on the console.
 
 The current shaders are **two plane passes**, not separate horizontal/vertical filters: each luma and
 chroma shader combines linearization, area filtering, tone mapping/gamut conversion when needed,
 encoding, dithering when requested and format conversion. Timing covers:
 
-- **total**: GPU timestamps enclosing state isolation, optional input copy, both draws and state restore;
+- **total**: GPU timestamps enclosing the optional input copy, bindings and both draws, inside the
+  stage's private context state (excludes state isolation/restore);
 - **input-copy**: only `CopySubresourceRegion` into the SRV scratch texture (zero for in-place input);
 - **luma**: constant update/bindings and the luma draw;
 - **chroma**: chroma bindings and the chroma draw.
 
-Total can exceed the sum of passes because it includes the surrounding state commands. This is elapsed
+Total can exceed the sum of passes because it includes surrounding commands within the stage. This is elapsed
 GPU time on the decoder's D3D11 immediate context, **not whole-device busy time**. It excludes CPU view
 creation/allocation, decoder work before apply, the wrapper's output pool/release waits, the engine's
 conversion/present and other queues; scheduling/interleaved GPU work can inflate elapsed intervals.
@@ -427,19 +429,44 @@ Compare total with the ~2–2.5 ms budget for all non-decode GPU work at 60 fps 
 and compare like-for-like dimensions, output depth, content and idle state. This does not establish
 that the stage causes rav1g release-fence waits; it supplies the missing measurement.
 
-There are eight query sets (one disjoint plus six timestamps each), no additional frame textures.
-Results are polled no sooner than four apply calls later, once per old slot per apply using
+There is one query set (one disjoint plus six timestamps), no additional frame textures. At most one
+disjoint interval may be unresolved: a busy set skips that apply's measurement, counted as unavailable.
+This reduces the original 56 query objects to seven, without a frame copy or extra thread against the
+console's shared memory/CPU budget. Results are polled no sooner than four apply calls later, once per apply using
 [`GetData`](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-getdata)
 with `D3D11_ASYNC_GETDATA_DONOTFLUSH`. Raw `S_FALSE` leaves the slot pending; the CPU never spins,
-flushes or waits for results, and an occupied set is never overwritten. A full ring skips that frame's
-measurement, counted as unavailable. Query creation/read failure disables that stage's measurement and
-shows its HRESULT without failing playback. Teardown releases queries without a wait and counts unread
-ones unavailable; it publishes any partial final window for readers still attached.
+flushes or waits for results, and an occupied set is never overwritten. Even with immediately ready
+queries, at most one in four applies is measured; skipped applies are unavailable, not zero-ms samples.
+Query creation validates the returned interface, descriptor and `GetDataSize`; every read verifies its
+exact typed buffer size again before passing a pointer to the driver. Only `S_OK` consumes data;
+`S_FALSE` keeps the set pending, including when only some timestamps are ready. All timestamps must be
+ready before reuse, even for a disjoint interval. Query calls run under the stage's existing context
+lock, after state isolation and before restoration. `Begin`/`End` return no HRESULT, so device status
+is checked around timing operations; every fallible call's HRESULT is checked.
+
+A timing error or Rust panic disables that stage's measurement permanently, accounts pending samples
+as unavailable, and lets the draw continue. The debug row shows the reason/HRESULT and logs
+`Bale stage gpu: disabled (<reason>; query HRESULT 0x...)` once per measured session, even for creation
+failure before the first window. The ABI's reserved word now carries a fixed failure reason code (see
+the header); layout and ABI 1 are unchanged. Teardown performs no query reads/waits and preserves a
+disabled state, publishing any partial final window for readers still attached. An export-level panic
+catch remains a final guard, but timing has its own catch so an instrumentation panic does not become
+an apply error. Rust unwind handling does not catch native driver faults or repair a removed device.
+
+The original asynchronous path terminated playback on the console with timing on, after stage create
+and before the first published window. The exact driver instruction is unproven without a crash dump.
+Leading candidates are several unresolved disjoint intervals on MF's shared device (unlike the older
+successful private-device probe), or a query-data layout difference. Crossing context-state swaps was
+also avoidable driver exposure, though desktop D3D11 documents that queries survive swaps. The WARP
+test originally synchronized every apply, masking unresolved-query behavior; a P010 in-place-input
+burst now covers submission without per-apply readback. Serialization, size validation and containment
+address these risks without claiming that desktop tests reproduce the console failure.
 
 Each 240 accounted outcomes makes a window (valid result, disjoint result or unavailable measurement);
 results completing late may fall into a later window. `frames = valid + disjoint + unavailable`;
 averages/maxima use **valid only**, never zero-fill missing results. Pending is the unresolved set count
-at publication. Zero frequency and reversed timestamps are unavailable. All-invalid windows say
+at publication. A zero frequency or reversed timestamps disables timing instead of producing bogus
+milliseconds. Disjoint intervals remain excluded samples. All-invalid windows say
 unavailable rather than reporting 0 ms. The
 [disjoint frequency](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_query_data_timestamp_disjoint)
 is used separately for every frame and discontinuous intervals are excluded. Whether Xbox app-mode

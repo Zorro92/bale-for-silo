@@ -80,10 +80,12 @@ void    bale_tonemap_destroy(void* handle);
    All values in one report belong to the latest measured stage and one completed window. */
 typedef struct BaleToneMapTimingStats {
     uint64_t session, window;
-    uint32_t state; /* 0 = no measured stage, 1 = collecting, 2 = query error, 3 = destroyed */
+    uint32_t state; /* 0 = no measured stage, 1 = collecting, 2 = timing disabled, 3 = destroyed */
     uint32_t frames, valid, disjoint, unavailable, pending;
-    int32_t error; /* HRESULT of query creation/read failure; playback continues */
-    uint32_t reserved;
+    int32_t error; /* HRESULT of timing failure; playback continues */
+    uint32_t reserved; /* failure reason: 0 = unknown (older DLL), 1 = create, 2 = data size,
+                         3 = GetData, 4 = zero frequency, 5 = sequence, 6 = contained panic,
+                         7 = non-immediate context, 8 = device failure */
     double avg_ms[4], max_ms[4]; /* total, input copy, luma, chroma; averages use valid only */
 } BaleToneMapTimingStats;
 HRESULT bale_tonemap_debug_timing_enable(uint32_t enabled); /* 0 or 1; default 0 */

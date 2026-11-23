@@ -98,4 +98,50 @@ public sealed class DebugStageGpuTimingTests
         Assert.Contains("native snapshot busy at mount", missedBaseline.Accept(stats, out var stale));
         Assert.Null(stale);
     }
+
+    [Theory]
+    [InlineData(0u, "query failure")]
+    [InlineData(1u, "query creation failed")]
+    [InlineData(2u, "query data size mismatch")]
+    [InlineData(3u, "GetData failed")]
+    [InlineData(4u, "zero timestamp frequency")]
+    [InlineData(5u, "invalid timestamp sequence")]
+    [InlineData(6u, "timing panic contained")]
+    [InlineData(7u, "context is not immediate")]
+    [InlineData(8u, "device failure")]
+    [InlineData(uint.MaxValue, "query failure")]
+    public void DisabledStageLogsOnceEvenWhenCreationFailsBeforeTheFirstWindow(uint reason, string expected)
+    {
+        var timing = new DebugStageGpuTiming(1, true);
+        var stats = new DebugStageGpuTiming.Stats
+        {
+            Session = 2, State = 2, Error = unchecked((int)0x80004005), Reserved = reason,
+        };
+        var row = timing.Accept(stats, out var line);
+        Assert.Contains($"disabled ({expected}; query HRESULT 0x80004005)", row);
+        Assert.Equal($"Bale stage gpu: disabled ({expected}; query HRESULT 0x80004005)", line);
+        timing.Accept(stats, out var repeated);
+        Assert.Null(repeated);
+        stats.Window = 1; // a final partial window or teardown must not emit the failure twice
+        timing.Accept(stats, out var closed);
+        Assert.Null(closed);
+        stats.Session++;
+        timing.Accept(stats, out var nextSession);
+        Assert.NotNull(nextSession);
+    }
+
+    [Fact]
+    public void FailureAfterAValidWindowDoesNotReplayTheLastValidMeasurementAsItsLog()
+    {
+        var timing = new DebugStageGpuTiming(1, true);
+        var stats = Window();
+        timing.Accept(stats, out _);
+        stats.State = 2;
+        stats.Error = unchecked((int)0x887A0005);
+        stats.Reserved = 3;
+        Assert.Contains("disabled (GetData failed", timing.Accept(stats, out var line));
+        Assert.Equal("Bale stage gpu: disabled (GetData failed; query HRESULT 0x887A0005)", line);
+        timing.Accept(stats, out var repeated);
+        Assert.Null(repeated);
+    }
 }

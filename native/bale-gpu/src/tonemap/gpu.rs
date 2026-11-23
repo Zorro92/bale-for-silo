@@ -247,11 +247,11 @@ impl ToneMapGpu {
         // Fail before queueing work, never return an error after changing the caller's output.
         // D3D11 Draw/Copy/Update queue void commands; asynchronous loss belongs to the caller.
         unsafe { self.device.GetDeviceRemovedReason()? };
-        #[cfg(feature = "stage-timing")]
-        let timing_slot = self
-            .timing
-            .as_mut()
-            .and_then(|t| t.begin(&context, !direct));
+        let copy_source = if direct {
+            None
+        } else {
+            Some(&self.scratch.as_ref().ok_or(E_FAIL)?.texture)
+        };
         // Private state isolates all bindings and is restored even if Rust unwinds. The debug
         // `nostate` path saves and restores only what the draw touches, without ClearState.
         let guard = match &self.state {
@@ -263,26 +263,24 @@ impl ToneMapGpu {
             }
             None => Guard::Saved(Box::new(SavedBindings::enter(&context, &multithread))),
         };
+        // Keep query issue/read/close inside this lock and private state. Desktop permits active
+        // queries across state swaps, but avoid exercising that path on the shared Xbox MF device.
         #[cfg(feature = "stage-timing")]
-        if let (Some(timing), Some(slot)) = (&self.timing, timing_slot) {
+        let timing_slot = self
+            .timing
+            .as_mut()
+            .and_then(|t| t.begin(&context, !direct));
+        #[cfg(feature = "stage-timing")]
+        if let (Some(timing), Some(slot)) = (&mut self.timing, timing_slot) {
             timing.mark(&context, slot, 1);
         }
         // SAFETY: descriptors, devices, slice, dimensions and binds checked above. No flush in apply.
         unsafe {
-            if !direct {
-                context.CopySubresourceRegion(
-                    &self.scratch.as_ref().ok_or(E_FAIL)?.texture,
-                    0,
-                    0,
-                    0,
-                    0,
-                    input,
-                    subresource,
-                    None,
-                );
+            if let Some(copy_source) = copy_source {
+                context.CopySubresourceRegion(copy_source, 0, 0, 0, 0, input, subresource, None);
             }
             #[cfg(feature = "stage-timing")]
-            if let (Some(timing), Some(slot)) = (&self.timing, timing_slot) {
+            if let (Some(timing), Some(slot)) = (&mut self.timing, timing_slot) {
                 timing.mark(&context, slot, 2);
             }
             context.UpdateSubresource(
@@ -309,16 +307,16 @@ impl ToneMapGpu {
                 context.PSSetShader(shader, None);
                 context.Draw(3, 0);
                 #[cfg(feature = "stage-timing")]
-                if let (Some(timing), Some(slot)) = (&self.timing, timing_slot) {
+                if let (Some(timing), Some(slot)) = (&mut self.timing, timing_slot) {
                     timing.mark(&context, slot, 3 + plane);
                 }
             }
         }
-        drop(guard);
         #[cfg(feature = "stage-timing")]
-        if let (Some(timing), Some(slot)) = (&self.timing, timing_slot) {
+        if let (Some(timing), Some(slot)) = (&mut self.timing, timing_slot) {
             timing.end(&context, slot);
         }
+        drop(guard);
         Ok(())
     }
 

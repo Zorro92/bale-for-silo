@@ -580,7 +580,7 @@ fn stage_timestamps_exclude_self_test_and_survive_state_restore() {
         stats.frames
     );
     assert!(stats.valid > 0, "no reliable WARP timestamps: {stats:?}");
-    assert!(stats.pending <= 8);
+    assert!(stats.pending <= 1);
     assert!(stats.avg_ms.iter().all(|ms| ms.is_finite() && *ms >= 0.0));
     assert!(
         stats
@@ -596,4 +596,65 @@ fn stage_timestamps_exclude_self_test_and_survive_state_restore() {
     // Off-by-default create owns no queries and must not replace the last measured session.
     let _off = warp.create(&c);
     assert_eq!(snapshot().session, final_stats.session);
+}
+
+#[cfg(feature = "stage-timing")]
+#[test]
+fn stage_timestamps_survive_a_burst_without_per_apply_readback() {
+    struct Disable;
+    impl Drop for Disable {
+        fn drop(&mut self) {
+            assert_eq!(bale_tonemap_debug_timing_enable(0), S_OK);
+        }
+    }
+    let warp = Warp::new();
+    let c = config(1);
+    let input = warp.texture(
+        &desc(16, 8, DXGI_FORMAT_P010, D3D11_BIND_SHADER_RESOURCE.0 as u32),
+        Some(&cpu::test_pattern(16, 8, true, false)),
+    );
+    let output = warp.texture(&output_desc_as(&c, DXGI_FORMAT_P010), None);
+    let frame = BaleToneMapFrameInfo {
+        transfer: 16,
+        primaries: 9,
+        matrix: 9,
+        ..Default::default()
+    };
+    assert_eq!(bale_tonemap_debug_timing_enable(1), S_OK);
+    let _disable = Disable;
+    let handle = warp.create(&c);
+    // The old test read back after every apply, masking unresolved-query behavior. Submit a
+    // shader-readable P010 burst with state restoration but no Flush or readback between frames.
+    for _ in 0..244 {
+        assert_eq!(handle.apply(&warp, &input, 0, &output, &frame), S_OK);
+    }
+    let mut stats = BaleToneMapTimingStats::default();
+    // SAFETY: complete writable snapshot; no GPU queries or caller state are touched by read.
+    assert_eq!(unsafe { bale_tonemap_debug_timing_read(&mut stats) }, S_OK);
+    assert_eq!((stats.state, stats.window, stats.frames), (1, 1, 240));
+    assert!(
+        stats.pending <= 1,
+        "more than one unresolved disjoint interval: {stats:?}"
+    );
+    assert!(
+        stats.unavailable > 0,
+        "busy intervals must skip measurement: {stats:?}"
+    );
+    assert_eq!(
+        stats.valid + stats.disjoint + stats.unavailable,
+        stats.frames
+    );
+    // Read back only after the burst; then exercise recovery/reuse of the single query set.
+    let _pixels = warp.readback(&output);
+    for _ in 0..244 {
+        assert_eq!(handle.apply(&warp, &input, 0, &output, &frame), S_OK);
+        let _pixels = warp.readback(&output);
+    }
+    assert_eq!(unsafe { bale_tonemap_debug_timing_read(&mut stats) }, S_OK);
+    assert_eq!(stats.state, 1);
+    assert!(stats.window >= 2);
+    assert!(
+        stats.valid > 0,
+        "completed query set was not reused: {stats:?}"
+    );
 }

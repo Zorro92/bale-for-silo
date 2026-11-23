@@ -93,7 +93,7 @@ const _: () = {
 pub struct BaleToneMapTimingStats {
     pub session: u64,
     pub window: u64,
-    /// 0 = no measured stage, 1 = collecting, 2 = query failure, 3 = stage destroyed.
+    /// 0 = no measured stage, 1 = collecting, 2 = timing disabled, 3 = stage destroyed.
     pub state: u32,
     pub frames: u32,
     pub valid: u32,
@@ -101,6 +101,7 @@ pub struct BaleToneMapTimingStats {
     pub unavailable: u32,
     pub pending: u32,
     pub error: i32,
+    /// Additive failure reason (see bale_tonemap.h); zero in older DLLs.
     pub reserved: u32,
     pub avg_ms: [f64; 4],
     pub max_ms: [f64; 4],
