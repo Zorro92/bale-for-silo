@@ -66,7 +66,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Null(cleared.DecoderPoolFromStream);
         Assert.Contains("[pool=stream|ffmpeg|default]", DebugFfmpegInputTuning.Usage);
         var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "FfmpegSource.cs.txt"));
-        Assert.Contains("var pool = tuning.DecoderPoolFromStream ?? codec == \"hevc\";", source);
+        Assert.Contains("var pool = tuning.DecoderPoolFromStream ?? codec is \"hevc\" or \"h264\" or \"vp9\";", source);
         Assert.Contains("config.FFmpegOptions[\"bale_d3d11va_pool_from_stream\"] = pool ? \"1\" : \"0\";", source);
     }
 
