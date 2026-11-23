@@ -15,7 +15,7 @@ if ! git push origin "$ref" >"$log" 2>&1; then
   clean <"$log" | tail -8 >&2
   exit 1
 fi
-clean <"$log" | grep -E "Passed!|check-cswinrt:|check-fxc:|recreated"
+clean <"$log" | grep -E "Passed!|check-cswinrt:|check-fxc:|recreated|docs only"
 sha=$(git rev-parse HEAD)
 for _ in $(seq 1 24); do
   run=$(gh run list --commit "$sha" --json databaseId -q '.[0].databaseId' 2>/dev/null)

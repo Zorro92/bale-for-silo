@@ -105,7 +105,7 @@ new CsWinRT/nullability warning turns CI red instead of piling up in the log. Ru
 `scripts/install-git-hooks.sh` once per clone: the pre-push hook lints every Rust crate exactly as CI does
 (`cargo fmt --check` and `cargo clippy --all-targets --locked -- -D warnings`, so test code is linted too, plus
 bale-gpu for `x86_64-pc-windows-msvc` when that target is installed), rebuilds the Rust core and runs the
-.NET tests, and stops the push on any failure or warning that Linux can see (`--no-verify` skips it). Agents push
+.NET tests, and stops the push on any failure or warning that Linux can see (`--no-verify` skips it). A push that changes only Markdown, `docs/` or `.claude/` skips all of it, as CI does. Agents push
 with `scripts/push-main.sh` (stops at the first failure with its reason, then prints the CI run id); never chain a
 CI wait after `git push` with `;`. Lint by
 hand with the same `--all-targets` flags; plain `cargo clippy` skips tests.

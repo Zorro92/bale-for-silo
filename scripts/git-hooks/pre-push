@@ -15,20 +15,26 @@ export PATH="$HOME/.cargo/bin:$PATH"
 export CARGO_INCREMENTAL=0
 
 # Pushing only deletions or tags: nothing to check.
-needed=0 cswinrt=0 fxc=0
+needed=0 cswinrt=0 fxc=0 docs_only=1
 while read -r _local_ref local_sha _remote_ref remote_sha; do
   [[ "$local_sha" =~ ^0+$ ]] && continue
   needed=1
   # CsWinRT/FXC pre-checks only when the pushed commits touch their inputs (or the remote ref is new).
   if [[ "$remote_sha" =~ ^0+$ ]] || ! git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
-    cswinrt=1 fxc=1
+    cswinrt=1 fxc=1 docs_only=0
     continue
   fi
   changed=$(git diff --name-only "$remote_sha" "$local_sha")
+  # Same paths CI ignores (.github/workflows/ci.yml paths-ignore): Markdown, docs/ and .claude/.
+  grep -qvE '(\.md$|^docs/|^\.claude/)' <<<"$changed" && docs_only=0
   grep -qE '^(src/|Directory\.Build\.|NuGet\.Config|global\.json|scripts/check-cswinrt\.sh)' <<<"$changed" && cswinrt=1
   grep -qE '^(native/bale-gpu/(shaders/|tests/shaders/|build\.rs)|scripts/(check-fxc\.sh|fxc-wine\.sh|fxc-tool\.json|fxc/))' <<<"$changed" && fxc=1
 done
 [[ $needed -eq 1 ]] || exit 0
+if [[ $docs_only -eq 1 ]]; then
+  echo "pre-push: docs only (Markdown, docs/, .claude/), checks skipped, as in CI." >&2
+  exit 0
+fi
 
 # Worktrees link native/<crate>/target to build dirs on the scratch drive; a cleaned-up dir leaves a dangling
 # link and cargo fails with "Not a directory". Recreate the link's directory instead of failing the push.
