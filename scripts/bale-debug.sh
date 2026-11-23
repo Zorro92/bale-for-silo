@@ -743,9 +743,9 @@ case "${1:-}" in
       --data-urlencode "seconds=$2" --data-urlencode "pause=$seek_pause"
     ;;
   subtest)
-    if [[ "$#" -lt 2 || "$#" -gt 6 || ! "${3:-native}" =~ ^(native|ffmpeg)$ || ! "${4:-31}" =~ ^([1-9]|[1-3][0-9]|40)$
+    if [[ "$#" -lt 2 || "$#" -gt 6 || ! "${3:-native}" =~ ^(native|ffmpeg)$ || ! "${4:-31}" =~ ^([1-9]|[1-9][0-9]|1[01][0-9]|120)$
           || ! "${BALE_SUBTEST_SHOW:-0}" =~ ^([0-9]|[12][0-9]|3[01])$ ]]; then
-      echo 'usage: [BALE_SUBTEST_SHOW=<track 0–31>] scripts/bale-debug.sh subtest <http(s)-url> [native|ffmpeg] [seconds 1–40, default 31] [sidecar-url] [vobsub-idx-url]' >&2
+      echo 'usage: [BALE_SUBTEST_SHOW=<track 0–31>] scripts/bale-debug.sh subtest <http(s)-url> [native|ffmpeg] [seconds 1–120, default 31] [sidecar-url] [vobsub-idx-url]' >&2
       exit 2
     fi
     curl --fail-with-body -sS --max-time "$(( ${4:-31} + 60 ))" -G "$BASE/subtest" --data-urlencode "url=$2" \

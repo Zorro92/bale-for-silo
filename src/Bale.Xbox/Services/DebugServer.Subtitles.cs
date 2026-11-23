@@ -21,7 +21,7 @@ namespace Bale.Xbox.Services;
 /// </summary>
 internal sealed partial class DebugServer
 {
-    private const int SubtitleProbeMaxSeconds = 40;
+    private const int SubtitleProbeMaxSeconds = 120;
 
     private static async Task<(string Status, string Body)> SubtitleProbeAsync(string? url, string? route, string? seconds,
         string? sidecar, string? index, string? show)
