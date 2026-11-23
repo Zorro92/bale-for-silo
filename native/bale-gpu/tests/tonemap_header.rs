@@ -18,6 +18,23 @@ fn c_and_cpp_header_match_rust() {
                 stringify!($ty), stringify!($field), offset_of!($ty, $field)));)+
         }};
     }
+    record!(
+        BaleToneMapTimingStats,
+        session,
+        window,
+        state,
+        frames,
+        valid,
+        disjoint,
+        unavailable,
+        pending,
+        error,
+        reserved,
+        avg_ms,
+        max_ms
+    );
+    // Function pointer assignments also check the optional exports' C declarations.
+    source.push_str("static HRESULT (*timing_enable)(uint32_t) = &bale_tonemap_debug_timing_enable;\nstatic HRESULT (*timing_read)(BaleToneMapTimingStats*) = &bale_tonemap_debug_timing_read;\n");
     record!(BaleMemEntry, category, count, bytes, peak_bytes);
     record!(
         BaleToneMapConfig,

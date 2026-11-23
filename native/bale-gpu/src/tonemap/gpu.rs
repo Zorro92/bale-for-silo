@@ -46,6 +46,8 @@ pub struct ToneMapGpu {
     scratch: Option<Scratch>,
     /// Set once D3D11 refused a view of a decoder array (desktop/WARP): stop retrying every frame.
     decoder_view_refused: bool,
+    #[cfg(feature = "stage-timing")]
+    timing: Option<super::timing_gpu::Timing>,
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
@@ -112,6 +114,8 @@ impl ToneMapGpu {
             constants,
             scratch: None,
             decoder_view_refused: false,
+            #[cfg(feature = "stage-timing")]
+            timing: None,
             _not_send_sync: PhantomData,
         };
         if !debug.no_self_test {
@@ -119,6 +123,10 @@ impl ToneMapGpu {
         }
         // Do not keep the small self-test scratch; first decoder input chooses the cache size.
         gpu.scratch = None;
+        #[cfg(feature = "stage-timing")]
+        {
+            gpu.timing = super::timing_gpu::Timing::create(&gpu.device);
+        }
         Ok(gpu)
     }
 
@@ -239,9 +247,14 @@ impl ToneMapGpu {
         // Fail before queueing work, never return an error after changing the caller's output.
         // D3D11 Draw/Copy/Update queue void commands; asynchronous loss belongs to the caller.
         unsafe { self.device.GetDeviceRemovedReason()? };
+        #[cfg(feature = "stage-timing")]
+        let timing_slot = self
+            .timing
+            .as_mut()
+            .and_then(|t| t.begin(&context, !direct));
         // Private state isolates all bindings and is restored even if Rust unwinds. The debug
         // `nostate` path saves and restores only what the draw touches, without ClearState.
-        let _guard = match &self.state {
+        let guard = match &self.state {
             Some(state) => {
                 let guard = Guard::Swapped(ContextGuard::enter(&context, &multithread, state));
                 // SAFETY: our private context state is current; clearing it leaves the caller's intact.
@@ -250,6 +263,10 @@ impl ToneMapGpu {
             }
             None => Guard::Saved(Box::new(SavedBindings::enter(&context, &multithread))),
         };
+        #[cfg(feature = "stage-timing")]
+        if let (Some(timing), Some(slot)) = (&self.timing, timing_slot) {
+            timing.mark(&context, slot, 1);
+        }
         // SAFETY: descriptors, devices, slice, dimensions and binds checked above. No flush in apply.
         unsafe {
             if !direct {
@@ -263,6 +280,10 @@ impl ToneMapGpu {
                     subresource,
                     None,
                 );
+            }
+            #[cfg(feature = "stage-timing")]
+            if let (Some(timing), Some(slot)) = (&self.timing, timing_slot) {
+                timing.mark(&context, slot, 2);
             }
             context.UpdateSubresource(
                 &self.constants,
@@ -287,7 +308,16 @@ impl ToneMapGpu {
                 context.OMSetRenderTargets(Some(&[Some(targets[plane].clone())]), None);
                 context.PSSetShader(shader, None);
                 context.Draw(3, 0);
+                #[cfg(feature = "stage-timing")]
+                if let (Some(timing), Some(slot)) = (&self.timing, timing_slot) {
+                    timing.mark(&context, slot, 3 + plane);
+                }
             }
+        }
+        drop(guard);
+        #[cfg(feature = "stage-timing")]
+        if let (Some(timing), Some(slot)) = (&self.timing, timing_slot) {
+            timing.end(&context, slot);
         }
         Ok(())
     }

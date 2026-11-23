@@ -124,7 +124,8 @@ jobs:
         run: rustup component add rustfmt clippy
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
-      - run: cargo test --release --locked
+      - run: cargo clippy --all-targets --locked --features stage-timing -- -D warnings
+      - run: cargo test --release --locked --features stage-timing
 
   rust-windows:
     name: Rust GPU layer (Windows)
@@ -195,6 +196,8 @@ jobs:
           rustup target add x86_64-pc-windows-msvc
           Push-Location native/bale-gpu
           cargo clippy --all-targets --locked --target x86_64-pc-windows-msvc -- -D warnings
+          if ($LASTEXITCODE -ne 0) { throw 'production cargo clippy failed' }
+          cargo clippy --all-targets --locked --target x86_64-pc-windows-msvc --features stage-timing -- -D warnings
           $cargoExit = $LASTEXITCODE
           Pop-Location
           if ($cargoExit -ne 0) { throw 'cargo clippy failed' }
@@ -208,7 +211,7 @@ jobs:
           # One test at a time: zero_copy_warp crashed (access violation) about 1 run in 30 when its
           # WARP tests ran in parallel, and always passed serially. Cause not found yet (our shared
           # state or WARP). Serial also names a crashing test: libtest prints the name before it runs.
-          cargo test --release --locked --target x86_64-pc-windows-msvc -- --nocapture --test-threads=1
+          cargo test --release --locked --target x86_64-pc-windows-msvc --features stage-timing -- --nocapture --test-threads=1
           $cargoExit = $LASTEXITCODE
           Pop-Location
           if ($cargoExit -ne 0) { throw 'cargo test failed' }
@@ -253,8 +256,8 @@ jobs:
         run: |
           $rustc = (rustc -V) -replace '[^0-9A-Za-z.]', '-'
           if ($LASTEXITCODE -ne 0) { throw 'Cannot determine rustc version' }
-          "key=cargo-windows-build-$rustc-${{ hashFiles('native/bale-gpu/Cargo.lock', 'native/bale-gpu/Cargo.toml', 'native/bale-gpu/.cargo/config.toml') }}" >> $env:GITHUB_OUTPUT
-          "dll-key=bale-gpu-dll-x86_64-pc-windows-msvc-$rustc-${{ needs.changes.outputs.rust_inputs_hash }}" >> $env:GITHUB_OUTPUT
+          "key=cargo-windows-build-debug${{ matrix.debug_server }}-$rustc-${{ hashFiles('native/bale-gpu/Cargo.lock', 'native/bale-gpu/Cargo.toml', 'native/bale-gpu/.cargo/config.toml') }}" >> $env:GITHUB_OUTPUT
+          "dll-key=bale-gpu-dll-debug${{ matrix.debug_server }}-x86_64-pc-windows-msvc-$rustc-${{ needs.changes.outputs.rust_inputs_hash }}" >> $env:GITHUB_OUTPUT
 
       # Exact hits only: the DLL and its packaged libass notices must come from these inputs.
       - name: Restore Rust GPU package files
@@ -347,7 +350,10 @@ jobs:
           Push-Location native/bale-gpu
           rustup target add x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { throw 'rustup target add failed' }
-          cargo build --release --locked --target x86_64-pc-windows-msvc
+          # Optimised development DLLs opt in explicitly; production has no timing queries/exports.
+          $timingFeatures = @()
+          if ('${{ matrix.debug_server }}' -eq 'true') { $timingFeatures = @('--features', 'stage-timing') }
+          cargo build --release --locked --target x86_64-pc-windows-msvc @timingFeatures
           $cargoExit = $LASTEXITCODE
           Pop-Location
           if ($cargoExit -ne 0) { throw 'cargo build failed' }
@@ -516,10 +522,13 @@ jobs:
               'bale_sub_pgs_decode', 'bale_sub_pgs_bind', 'bale_sub_pgs_destroy',
               'bale_frame_observer_create', 'bale_frame_observer_mark', 'bale_frame_observer_drain',
               'bale_frame_observer_status', 'bale_frame_observer_video_descriptor', 'bale_frame_observer_destroy')
+            $timingExports = @('bale_tonemap_debug_timing_enable', 'bale_tonemap_debug_timing_read')
+            if ('${{ matrix.debug_server }}' -eq 'true') { $required += $timingExports }
             # Removed with the staging upload, CPU grain, debug repack and upload/zero-copy probes.
             $removed = @('bale_grain_cpu_apply', 'bale_repack_abi_version', 'bale_repack_gpu_create',
               'bale_repack_gpu_apply', 'bale_repack_gpu_destroy',
               'bale_gpu_upload_probe', 'bale_gpu_d3d12_probe', 'bale_gpu_zero_copy_probe')
+            if ('${{ matrix.debug_server }}' -ne 'true') { $removed += $timingExports }
             foreach ($symbol in $required) {
               if (-not ($exports | Select-String -Pattern "\s$([regex]::Escape($symbol))\s*$" -Quiet)) {
                 throw "Packaged bale_gpu.dll is missing export $symbol"

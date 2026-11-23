@@ -6,6 +6,33 @@ public class DebugPlaytestScriptTests
 {
     [Theory]
     [InlineData(null)]
+    [InlineData("on")]
+    [InlineData("off")]
+    public async Task GpuTimingUsesStatusOrAValidatedPost(string? mode)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(mode is null ? ["gpu-timing"] : ["gpu-timing", mode]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/gpu-timing" + (mode is null ? "" : "?mode=" + mode) + "\n", result.Arguments);
+        if (mode is null) Assert.DoesNotContain("POST", result.Arguments);
+        else Assert.Contains("-X\nPOST\n", result.Arguments);
+    }
+
+    [Fact]
+    public async Task InvalidGpuTimingModesNeverInvokeCurl()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[] { new[] { "gpu-timing", "" }, ["gpu-timing", "ON"],
+            ["gpu-timing", "on&extra=1"], ["gpu-timing", "on", "off"] })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
+    [Theory]
+    [InlineData(null)]
     [InlineData("d3d11")]
     [InlineData("zerocopy")]
     public async Task Dav1dPathUsesStatusOrAnEncodedPost(string? mode)

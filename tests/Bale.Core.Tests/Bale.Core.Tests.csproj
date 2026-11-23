@@ -36,6 +36,7 @@
     <!-- The DEBUG_SERVER fixture has no UWP, network, client or storage dependency. -->
     <Compile Include="../../src/Bale.Xbox/Services/ProfilePreview.cs" Link="ProfilePreview.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugScreenText.cs" Link="DebugScreenText.cs" />
+    <Compile Include="../../src/Bale.Xbox/Services/DebugStageGpuTiming.cs" Link="DebugStageGpuTiming.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugStatsRowFilter.cs" Link="DebugStatsRowFilter.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugMemprobe.cs" Link="DebugMemprobe.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugMemprobeGpu.cs" Link="DebugMemprobeGpu.cs" />

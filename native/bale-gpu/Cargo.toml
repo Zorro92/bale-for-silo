@@ -6,6 +6,10 @@ license = "AGPL-3.0-only"
 description = "Bale's native GPU/media layer for Xbox (C ABI for the C# app)"
 publish = false
 
+[features]
+# Only development packages opt in; independent of Rust optimisation/debug assertions.
+stage-timing = []
+
 [lib]
 name = "bale_gpu"
 crate-type = ["cdylib", "rlib"]

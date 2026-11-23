@@ -80,5 +80,11 @@ tests to pin it down: does the extra stay flat or grow over a long play; does re
 ~24 MiB; and do GPU timestamps around apply show any saving. bale_gpu creates its views per apply and
 caches none.
 
+Stage measurement is now available in debug packages: `bale-debug.sh gpu-timing on` before a new
+playback, then **Stage GPU** / `Bale stage gpu:` (240-outcome avg/max windows for input copy, luma,
+chroma and total). See [gpu-tone-map.md](gpu-tone-map.md#measure-the-stages-gpu-time-debug-packages).
+Open: collect idle-state 4K60 windows, check disjoint/unavailable counts and Xbox timestamp validity,
+and test the stage's ~2 ms share against the rav1g release-fence waits; no stage cost is measured yet.
+
 Open: the HEVC pool floor with the fork's stage and Media Foundation holding frames; the GPU cost of the
 stages other than rav1g; the ladder needs a real low-memory test.

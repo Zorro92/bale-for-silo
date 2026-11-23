@@ -74,6 +74,21 @@ HRESULT bale_tonemap_create(ID3D11Device* device, const BaleToneMapConfig* confi
 HRESULT bale_tonemap_apply(void* handle, ID3D11DeviceContext* context, ID3D11Texture2D* input, uint32_t input_subresource, ID3D11Texture2D* output, const BaleToneMapFrameInfo* frame);
 void    bale_tonemap_destroy(void* handle);
 
+/* Optional debug-package exports (Cargo feature stage-timing), additive to ABI 1.
+   Resolve dynamically; absent in production. Enable is captured by the next stage create,
+   never changes an active handle. Read does no GPU work: S_FALSE = busy, output untouched.
+   All values in one report belong to the latest measured stage and one completed window. */
+typedef struct BaleToneMapTimingStats {
+    uint64_t session, window;
+    uint32_t state; /* 0 = no measured stage, 1 = collecting, 2 = query error, 3 = destroyed */
+    uint32_t frames, valid, disjoint, unavailable, pending;
+    int32_t error; /* HRESULT of query creation/read failure; playback continues */
+    uint32_t reserved;
+    double avg_ms[4], max_ms[4]; /* total, input copy, luma, chroma; averages use valid only */
+} BaleToneMapTimingStats;
+HRESULT bale_tonemap_debug_timing_enable(uint32_t enabled); /* 0 or 1; default 0 */
+HRESULT bale_tonemap_debug_timing_read(BaleToneMapTimingStats* stats);
+
 #ifdef __cplusplus
 }
 #endif

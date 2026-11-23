@@ -97,8 +97,9 @@ texture with RT|SRV binds. A
 non-SRV decoder texture is copied with CopySubresourceRegion into a cached SRV texture of the same format;
 array SRVs select the requested slice directly. Two ps_5_0 draws use D3D11.1 R8_UNORM/R8G8_UNORM (NV12) or R16_UNORM/R16G16_UNORM (P010)
 plane RTVs. All validation, allocations and view creation precede output writes. The context's
-pipeline state is restored. Apply does not flush or perform readback. Input synchronization,
-flushing and asynchronous device-loss handling belong to the caller. Destroy releases resources;
+pipeline state is restored. Apply does not flush or perform texture readback (debug timestamp queries
+use asynchronous metadata readback only). Input synchronization, flushing and asynchronous device-loss
+handling belong to the caller. Destroy releases resources;
 null is a no-op. No tone-map call logs anything.
 
 ## Colour and server parameter semantics
@@ -382,3 +383,74 @@ Console readings, Bale 0.1.705 (wrapper bale.62), 1080p SDR display, 40 s into p
 Every line returns to 0 after stop except 20, the rav1g process device, which stays once created
 (idle app memory 240 → 280 MiB). That resident device is the ~43 MiB that takes the 4K tone-map route
 over ~1.2 GB; the biggest single item on that route is the 20-slice d3d11va decoder array.
+
+## Measure the stage's GPU time (debug packages)
+
+Development packages opt into the native Cargo feature `stage-timing`, even though the DLL is built
+with `--release`. Production (`BaleDebugServer=false` in CI) omits the feature, query code and debug
+exports entirely; feature-dependent DLL caches and the MSIX export check enforce the separation.
+Timing is **off after app launch**. Before starting a new playback:
+
+```sh
+./scripts/bale-debug.sh gpu-timing on
+# Start playback normally, or with the existing play/play-url command.
+# Leave controller/keyboard input idle for at least 15 seconds before comparing windows.
+./scripts/bale-debug.sh stats
+./scripts/bale-debug.sh log
+# Disable for the next playback (the current stage retains its create-time setting):
+./scripts/bale-debug.sh gpu-timing off
+```
+
+`gpu-timing` without an argument reports the switch. Read **Stage GPU** in the debug overlay (I / View)
+or `stats` / `where`. The one-second stats refresh logs each new window once, even with the overlay
+hidden. The line begins `Bale stage gpu: frames=240 total avg/max ... ms` and includes `input-copy`,
+`luma`, `chroma` avg/max milliseconds, `valid`, `disjoint`, `unavailable`, `pending`, `session` and
+`window`. The first window needs about 244 apply calls (roughly four seconds at 60 fps); until then the
+row says collecting. A route without a Bale stage stays waiting, never displays another playback's
+result. This measures actual stage submissions, including decode preroll; use later idle-state windows
+for the resource budget. Self-test draws are excluded. No console was used to validate this feature.
+
+The current shaders are **two plane passes**, not separate horizontal/vertical filters: each luma and
+chroma shader combines linearization, area filtering, tone mapping/gamut conversion when needed,
+encoding, dithering when requested and format conversion. Timing covers:
+
+- **total**: GPU timestamps enclosing state isolation, optional input copy, both draws and state restore;
+- **input-copy**: only `CopySubresourceRegion` into the SRV scratch texture (zero for in-place input);
+- **luma**: constant update/bindings and the luma draw;
+- **chroma**: chroma bindings and the chroma draw.
+
+Total can exceed the sum of passes because it includes the surrounding state commands. This is elapsed
+GPU time on the decoder's D3D11 immediate context, **not whole-device busy time**. It excludes CPU view
+creation/allocation, decoder work before apply, the wrapper's output pool/release waits, the engine's
+conversion/present and other queues; scheduling/interleaved GPU work can inflate elapsed intervals.
+Compare total with the ~2–2.5 ms budget for all non-decode GPU work at 60 fps (~1.86 TFLOP/s app slice),
+and compare like-for-like dimensions, output depth, content and idle state. This does not establish
+that the stage causes rav1g release-fence waits; it supplies the missing measurement.
+
+There are eight query sets (one disjoint plus six timestamps each), no additional frame textures.
+Results are polled no sooner than four apply calls later, once per old slot per apply using
+[`GetData`](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-getdata)
+with `D3D11_ASYNC_GETDATA_DONOTFLUSH`. Raw `S_FALSE` leaves the slot pending; the CPU never spins,
+flushes or waits for results, and an occupied set is never overwritten. A full ring skips that frame's
+measurement, counted as unavailable. Query creation/read failure disables that stage's measurement and
+shows its HRESULT without failing playback. Teardown releases queries without a wait and counts unread
+ones unavailable; it publishes any partial final window for readers still attached.
+
+Each 240 accounted outcomes makes a window (valid result, disjoint result or unavailable measurement);
+results completing late may fall into a later window. `frames = valid + disjoint + unavailable`;
+averages/maxima use **valid only**, never zero-fill missing results. Pending is the unresolved set count
+at publication. Zero frequency and reversed timestamps are unavailable. All-invalid windows say
+unavailable rather than reporting 0 ms. The
+[disjoint frequency](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_query_data_timestamp_disjoint)
+is used separately for every frame and discontinuous intervals are excluded. Whether Xbox app-mode
+D3D11 timestamps have a stable frequency, useful precision or frequent disjoint results under load is
+**unmeasured**; check those health counts before interpreting timing. No whole-device busy estimate or
+second API is used.
+
+The two optional exports `bale_tonemap_debug_timing_enable` / `bale_tonemap_debug_timing_read` and
+`BaleToneMapTimingStats` are documented in `include/bale_tonemap.h`; absence means measurement is
+unavailable. They do not change create/apply/config or the wrapper's required **ABI 1**. The UI reads a
+small native snapshot only, with no D3D or FFmpegInteropX source lock. The snapshot belongs to the
+most recently created measured stage in the process: run one playback/probe at a time when comparing
+windows. A mount whose initial snapshot is busy fails closed as unavailable rather than showing an
+older playback's results.

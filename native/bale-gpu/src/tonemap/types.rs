@@ -85,3 +85,30 @@ const _: () = {
     assert!(offset_of!(BaleToneMapFrameInfo, max_fall) == 52);
     assert!(offset_of!(BaleToneMapFrameInfo, reserved) == 56);
 };
+
+/// Optional debug snapshot, additive to ABI 1. Layout is checked against C and C#.
+/// avg_ms/max_ms: total, input copy, luma, chroma. Counters describe one completed window.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct BaleToneMapTimingStats {
+    pub session: u64,
+    pub window: u64,
+    /// 0 = no measured stage, 1 = collecting, 2 = query failure, 3 = stage destroyed.
+    pub state: u32,
+    pub frames: u32,
+    pub valid: u32,
+    pub disjoint: u32,
+    pub unavailable: u32,
+    pub pending: u32,
+    pub error: i32,
+    pub reserved: u32,
+    pub avg_ms: [f64; 4],
+    pub max_ms: [f64; 4],
+}
+const _: () = {
+    assert!(size_of::<BaleToneMapTimingStats>() == 112);
+    assert!(align_of::<BaleToneMapTimingStats>() == 8);
+    assert!(offset_of!(BaleToneMapTimingStats, state) == 16);
+    assert!(offset_of!(BaleToneMapTimingStats, avg_ms) == 48);
+    assert!(offset_of!(BaleToneMapTimingStats, max_ms) == 80);
+};

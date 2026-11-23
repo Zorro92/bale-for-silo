@@ -529,3 +529,71 @@ fn invalid_arguments_leave_output_and_context_state_unchanged() {
     assert!(ptr.is_null());
     unsafe { bale_tonemap_destroy(ptr::null_mut()) };
 }
+
+/// Exercise the real query lifetime across context-state swaps and asynchronous apply calls.
+/// Only the test's texture readback waits; the instrumented apply never flushes or waits.
+#[cfg(feature = "stage-timing")]
+#[test]
+fn stage_timestamps_exclude_self_test_and_survive_state_restore() {
+    struct Disable;
+    impl Drop for Disable {
+        fn drop(&mut self) {
+            assert_eq!(bale_tonemap_debug_timing_enable(0), S_OK);
+        }
+    }
+    fn snapshot() -> BaleToneMapTimingStats {
+        let mut stats = BaleToneMapTimingStats::default();
+        // SAFETY: writable complete snapshot, no retained pointer or concurrent stage calls.
+        assert_eq!(unsafe { bale_tonemap_debug_timing_read(&mut stats) }, S_OK);
+        stats
+    }
+    let warp = Warp::new();
+    let c = config(1);
+    let frame = BaleToneMapFrameInfo {
+        transfer: 16,
+        primaries: 9,
+        matrix: 9,
+        ..Default::default()
+    };
+    let input = warp.texture(
+        &desc(16, 8, DXGI_FORMAT_P010, 0),
+        Some(&cpu::test_pattern(16, 8, true, false)),
+    );
+    let output = warp.texture(&output_desc(&c), None);
+    assert_eq!(bale_tonemap_debug_timing_enable(1), S_OK);
+    let _disable = Disable;
+    let handle = warp.create(&c);
+    // Captured once per create: turning the switch off must not stop this handle's measurement.
+    assert_eq!(bale_tonemap_debug_timing_enable(0), S_OK);
+    let stats = snapshot();
+    assert_eq!(stats.state, 1, "timestamp query creation failed: {stats:?}");
+    assert_eq!((stats.window, stats.frames, stats.valid), (0, 0, 0));
+    for _ in 0..244 {
+        assert_eq!(handle.apply(&warp, &input, 0, &output, &frame), S_OK);
+        // Synchronise in the TEST so subsequent applies can read old query results deterministically.
+        let _pixels = warp.readback(&output);
+    }
+    let stats = snapshot();
+    assert_eq!((stats.state, stats.window, stats.frames), (1, 1, 240));
+    assert_eq!(
+        stats.valid + stats.disjoint + stats.unavailable,
+        stats.frames
+    );
+    assert!(stats.valid > 0, "no reliable WARP timestamps: {stats:?}");
+    assert!(stats.pending <= 8);
+    assert!(stats.avg_ms.iter().all(|ms| ms.is_finite() && *ms >= 0.0));
+    assert!(
+        stats
+            .avg_ms
+            .iter()
+            .zip(stats.max_ms)
+            .all(|(avg, max)| *avg <= max)
+    );
+    drop(handle);
+    let final_stats = snapshot();
+    assert_eq!((final_stats.state, final_stats.pending), (3, 0));
+    assert!(final_stats.window > stats.window);
+    // Off-by-default create owns no queries and must not replace the last measured session.
+    let _off = warp.create(&c);
+    assert_eq!(snapshot().session, final_stats.session);
+}

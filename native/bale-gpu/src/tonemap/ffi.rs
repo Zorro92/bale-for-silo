@@ -9,14 +9,14 @@ use super::{
     gpu::ToneMapGpu,
     types::{BaleToneMapConfig, BaleToneMapFrameInfo},
 };
-#[cfg(any(windows, test))]
+#[cfg(any(windows, feature = "stage-timing", test))]
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 pub const S_OK: i32 = 0;
 pub const E_INVALIDARG: i32 = super::cpu::E_INVALIDARG;
 pub const E_UNEXPECTED: i32 = 0x8000ffffu32 as i32;
 
-#[cfg(any(windows, test))]
+#[cfg(any(windows, feature = "stage-timing", test))]
 fn boundary(f: impl FnOnce() -> i32) -> i32 {
     catch_unwind(AssertUnwindSafe(f)).unwrap_or(E_UNEXPECTED)
 }
@@ -149,9 +149,64 @@ pub unsafe extern "C" fn bale_tonemap_destroy(handle: *mut ToneMapGpu) {
     });
 }
 
+/// Debug-package-only, additive exports. The flag is captured after each stage's create self-test;
+/// an active stage keeps its setting. No query objects exist in builds without stage-timing.
+#[cfg(feature = "stage-timing")]
+#[unsafe(no_mangle)]
+pub extern "C" fn bale_tonemap_debug_timing_enable(enabled: u32) -> i32 {
+    boundary(|| {
+        if enabled > 1 {
+            return E_INVALIDARG;
+        }
+        super::timing::ENABLED.store(enabled != 0, std::sync::atomic::Ordering::Relaxed);
+        S_OK
+    })
+}
+
+/// Copy the latest measured stage's completed window (or collecting/error/closed state).
+/// Returns S_FALSE on snapshot contention without changing the output; no D3D or source lock.
+/// # Safety
+/// out is writable for one complete BaleToneMapTimingStats record.
+#[cfg(feature = "stage-timing")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_tonemap_debug_timing_read(
+    out: *mut super::types::BaleToneMapTimingStats,
+) -> i32 {
+    boundary(|| {
+        if out.is_null() {
+            return E_INVALIDARG;
+        }
+        let Some(stats) = super::timing::snapshot() else {
+            return 1;
+        };
+        // SAFETY: complete local record and caller-provided writable output; no retained pointer.
+        unsafe {
+            out.write_unaligned(stats);
+        }
+        S_OK
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "stage-timing")]
+    #[test]
+    fn debug_snapshot_validates_arguments_without_touching_a_device() {
+        use super::super::types::BaleToneMapTimingStats;
+        assert_eq!(bale_tonemap_debug_timing_enable(2), E_INVALIDARG);
+        // SAFETY: null is explicitly rejected before any write; the second output is complete storage.
+        unsafe {
+            assert_eq!(
+                bale_tonemap_debug_timing_read(std::ptr::null_mut()),
+                E_INVALIDARG
+            );
+            let mut stats = BaleToneMapTimingStats::default();
+            assert_eq!(bale_tonemap_debug_timing_read(&mut stats), S_OK);
+            assert_eq!(stats.state, 0);
+            assert_eq!(stats.session, 0);
+        }
+    }
     #[test]
     fn version_and_panic_boundary() {
         assert_eq!(bale_tonemap_abi_version(), 1);

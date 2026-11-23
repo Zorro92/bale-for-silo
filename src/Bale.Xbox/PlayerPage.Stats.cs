@@ -162,6 +162,9 @@ public sealed partial class PlayerPage
         var rows = stats.HudRows();
         var media = _attempt?.Media;
         var smoothness = stats.Smoothness;
+        string? stageLog = null;
+        var stageGpu = media?.StageGpuTiming.ReadRow(out stageLog) ?? "unavailable";
+        if (stageLog is not null) Log.Info(stageLog);
         var decoder = media?.FfmpegSource is not null ? DebugDecoderLog.Snapshot() : default;
         rows = [.. rows, ("Player", media?.Player?.Name ?? "unavailable"),
             ("Engine frames", media?.Player is EngineBackend engine ? EngineFrames(engine.LastState) : "unavailable"),
@@ -169,6 +172,7 @@ public sealed partial class PlayerPage
             ("Dropped (engine)", media?.Player is EngineBackend && smoothness is { } measured
                 ? measured.DroppedFrames.ToString(CultureInfo.InvariantCulture) : "unavailable"),
             ("Decode rate", decoder.DecodeRateText(stats.FrameRate)),
+            ("Stage GPU", stageGpu),
             ("Decoder discarded", decoder.DiscardedText),
             ("Starved", decoder.StarvedText),
             ("Playback time", smoothness?.PlaybackTimeText ?? "unavailable"),

@@ -12,7 +12,7 @@ internal sealed class DebugStatsRowFilter
     [
         "Backend", "Route", "Subtitles", "Hard containers", "Video codec", "Resolution", "Frame rate", "HDR mode",
         "Video decoder", "Audio codec", "Audio decoder", "Estimated bandwidth", "Missed frames", "Audio underruns",
-        "Stalls", "Dropped (engine)", "Decode rate", "Decoder discarded", "Starved", "Playback time", "Player", "Engine frames",
+        "Stage GPU", "Stalls", "Dropped (engine)", "Decode rate", "Decoder discarded", "Starved", "Playback time", "Player", "Engine frames",
         "Delivery", "Source", "Media bitrate", "Buffering", "HDR output", "Display mode", "Late frames",
         "Stream waits", "Read-ahead", "Stream reads", "FFmpeg HDR", "Video media type (track)", "Video media type (mss)",
         "Sample memory", "Xbox memory", "Delivered ahead", "CPU", "AV1 decoder",

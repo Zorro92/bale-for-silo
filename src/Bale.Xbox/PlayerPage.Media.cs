@@ -42,6 +42,7 @@ public sealed partial class PlayerPage
 #if DEBUG_SERVER
         /// <summary>bale-debug.sh start-budget hang: "open" never finishes opening, "ready" never reports MediaOpened.</summary>
         public string? DebugHang { get; init; }
+        public DebugStageGpuTiming StageGpuTiming { get; } = DebugStageGpuTiming.Capture();
 #endif
         /// <summary>The player this mount drives (MediaPlayer today; IMFMediaEngine next).</summary>
         public PlaybackBackend? Player { get; set; }
