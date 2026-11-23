@@ -66,7 +66,7 @@
 #   scripts/bale-debug.sh output-depth [display|source]   next engine mount's output: display (default, as in release) caps SDR P010 at HDMI depth, keeps HDR passthrough and AV1 at rgb10; source always gives P010 rgb10; NV12/unknown stay bgra; memory only; no args = status
 #   scripts/bale-debug.sh dav1d-path [d3d11|zerocopy]   next playback attempt's dav1d output/grain path: d3d11 (default) = CPU buffers and CPU grain, no D3D12 | zerocopy = old D3D12/upload-6/GPU grain route; registration failure keeps d3d11; memory only; no args = status
 #   scripts/bale-debug.sh av1-decoder [dav1d|rav1g]   next playback attempt's software AV1 decoder: rav1g (debug-build default since 11-19) = GPU decode on the fork's provider (bale_av1_decoder=1, 250 ms BufferTime, dav1d remount once at <=1080p on failure) | dav1d = CPU buffers/grain on D3D11, capped at 1080p; memory only; no args = status (+ whether rav1g.dll is packaged)
-#   scripts/bale-debug.sh rav1g-tune [inflight=1-8|default] [perf=on|off|default] [parse=1|2|default] [outtex=0-64|default]   rav1g provider knobs (fork bale.52: feeder units in flight, rav1g CPU/GPU ms in the delivery line, frames in parse; bale.56: player-side texture cap, 0 = none); rav1g route only; memory only; no args = status
+#   scripts/bale-debug.sh rav1g-tune [inflight=1-8|default] [perf=on|off|default] [parse=1|2|default] [outtex=0-64|default] [images=0-16|default]   rav1g provider knobs (fork bale.52: feeder units in flight, rav1g CPU/GPU ms in the delivery line, frames in parse; bale.56: player-side texture cap, 0 = none); rav1g route only; memory only; no args = status
 #   scripts/bale-debug.sh stream-adapter [pooled|builtin|rust]  next playback attempt's stream adapter; default rust (C#: pooled/builtin), memory only (restart resets); no args = status
 #                                               rust: the Rust range stream and Rust IRandomAccessStream (no managed code on reads; FFmpeg and Media Foundation)
 #   scripts/bale-debug.sh present-engine [0-120] [present|frames|player]   next playback hands its routed source to IMFMediaEngine (0 = off): present = rendering mode on screen for N s, frames = frame-server for N s (every decoded frame counted), player = interactive engine player with sound, keys and a stats pane until Back (N just enables it); no args = status + last report
@@ -642,7 +642,7 @@ case "${1:-}" in
     else
       args=()
       for kv in "$@"; do
-        [[ "$kv" =~ ^(inflight|perf|parse|outtex)=[a-z0-9]+$ ]] || { echo 'usage: scripts/bale-debug.sh rav1g-tune [inflight=1-8|default] [perf=on|off|default] [parse=1|2|default] [outtex=0-64|default]' >&2; exit 2; }
+        [[ "$kv" =~ ^(inflight|perf|parse|outtex|images)=[a-z0-9]+$ ]] || { echo 'usage: scripts/bale-debug.sh rav1g-tune [inflight=1-8|default] [perf=on|off|default] [parse=1|2|default] [outtex=0-64|default] [images=0-16|default]' >&2; exit 2; }
         args+=(--data-urlencode "$kv")
       done
       curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/rav1g-tune" "${args[@]}"

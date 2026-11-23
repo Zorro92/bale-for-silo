@@ -142,7 +142,8 @@ internal readonly record struct DebugDecoderSnapshot(double? DeliveryRate, ulong
 /// applied only on the rav1g route and reset by an app restart: <c>bale_gpu_decode_inflight</c> (the feeder thread's
 /// units in flight, 1-8, fork default 3), <c>bale_rav1g_perf=1</c> (rav1g's own CPU/GPU ms in the delivery line) and
 /// <c>bale_rav1g_parse</c> (frames in parse, 1-2; try 2 only when the decode call is still the limit) and
-/// <c>bale_gpu_output_textures</c> (bale.56: player-side texture cap, 0 = none). Unset = the
+/// <c>bale_gpu_output_textures</c> (bale.56: player-side texture cap, 0 = none) and <c>bale_gpu_output_images</c>
+/// (bale.70: rav1g's output-image cap, 0-16, fork default 10). Unset = the
 /// fork's defaults.
 /// </summary>
 internal static class DebugRav1gTuning
@@ -152,6 +153,7 @@ internal static class DebugRav1gTuning
     private static bool? _perf;
     private static int? _parse;
     private static int? _outputTextures;
+    private static int? _outputImages;
 
     /// <summary>Applies one key=value; "default" clears it. False (and no change) for an unknown key or bad value.</summary>
     internal static bool TrySet(string key, string? value)
@@ -177,6 +179,12 @@ internal static class DebugRav1gTuning
                     if (!int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var textures) || textures > 64) return false;
                     _outputTextures = textures;
                     return true;
+                case "images":
+                    // bale_gpu_output_images (fork bale.70): rav1g's output-image cap, 0-16 (fork default 10, 1-3 act as 4).
+                    if (clear) { _outputImages = null; return true; }
+                    if (!int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var images) || images > 16) return false;
+                    _outputImages = images;
+                    return true;
                 case "parse":
                     if (clear) { _parse = null; return true; }
                     if (value is not ("1" or "2")) return false;
@@ -198,6 +206,7 @@ internal static class DebugRav1gTuning
             if (_perf is { } perf) options.Add(new("bale_rav1g_perf", perf ? "1" : "0"));
             if (_parse is { } parse) options.Add(new("bale_rav1g_parse", parse.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             if (_outputTextures is { } textures) options.Add(new("bale_gpu_output_textures", textures.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            if (_outputImages is { } images) options.Add(new("bale_gpu_output_images", images.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             return options;
         }
     }
@@ -208,7 +217,8 @@ internal static class DebugRav1gTuning
             return "rav1g-tune inflight=" + (_inflight?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "default")
                 + " perf=" + (_perf is { } perf ? perf ? "on" : "off" : "default")
                 + " parse=" + (_parse?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "default")
-                + " outtex=" + (_outputTextures?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "default");
+                + " outtex=" + (_outputTextures?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "default")
+                + " images=" + (_outputImages?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "default");
     }
 }
 #endif
