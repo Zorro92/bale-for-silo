@@ -26,6 +26,15 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
 done
 [[ $needed -eq 1 ]] || exit 0
 
+# Worktrees link native/<crate>/target to build dirs on the scratch drive; a cleaned-up dir leaves a dangling
+# link and cargo fails with "Not a directory". Recreate the link's directory instead of failing the push.
+for link in native/*/target; do
+  if [[ -L "$link" && ! -e "$link" ]]; then
+    dest=$(readlink "$link")
+    mkdir -p -- "$dest" && echo "pre-push: recreated missing build dir for ${link%/target}" >&2
+  fi
+done
+
 # Same Rust lint as CI (.github/workflows/ci.yml), for every crate under native/.
 for crate in native/*/; do
   [[ -f "$crate/Cargo.toml" ]] || continue
