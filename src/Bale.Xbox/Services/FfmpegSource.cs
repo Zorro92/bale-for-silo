@@ -241,6 +241,7 @@ internal static class FfmpegSource
         if (tuning.FastSeek is { } fastSeek) config.General.FastSeek = fastSeek;
         // Wrapper bale.63 experiment: shader-readable d3d11va decoder pools (the fork logs whether D3D11 allows them).
         if (tuning.DecoderShaderResource is { } srv) config.FFmpegOptions["bale_d3d11va_shader_resource"] = srv ? "1" : "0";
+        if (tuning.DecoderPoolFromStream is { } pool) config.FFmpegOptions["bale_d3d11va_pool_from_stream"] = pool ? "1" : "0";
         if (softwareVideo)
         {
             ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.Dav1dMaxFrameDelay));

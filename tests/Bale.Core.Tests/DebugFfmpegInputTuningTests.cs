@@ -53,6 +53,23 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     }
 
     [Fact]
+    public void DecoderPoolTakesStreamFfmpegOrDefaultAndReachesTheWrapperOption()
+    {
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["pool"] = "stream" }, out var stream));
+        Assert.True(stream.DecoderPoolFromStream);
+        Assert.EndsWith(" pool=stream", stream.Description);
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["pool"] = "ffmpeg" }, out var ffmpeg));
+        Assert.False(ffmpeg.DecoderPoolFromStream);
+        foreach (var invalid in new[] { "on", "", "1", "Stream" })
+            Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["pool"] = invalid }, out _));
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["pool"] = "default" }, out var cleared));
+        Assert.Null(cleared.DecoderPoolFromStream);
+        Assert.Contains("[pool=stream|ffmpeg|default]", DebugFfmpegInputTuning.Usage);
+        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "FfmpegSource.cs.txt"));
+        Assert.Contains("config.FFmpegOptions[\"bale_d3d11va_pool_from_stream\"] = pool ? \"1\" : \"0\";", source);
+    }
+
+    [Fact]
     public void BufferTimeIsBoundedMillisecondsAndDescribedOnlyWhenSet()
     {
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "1500" }, out var set));
