@@ -140,7 +140,8 @@ internal readonly record struct DebugDecoderSnapshot(double? DeliveryRate, ulong
 /// <summary>
 /// Memory-only rav1g provider knobs for console tests (fork 2.1.0-bale.52; the fork's bale/README.md rav1g sections),
 /// applied only on the rav1g route and reset by an app restart: <c>bale_gpu_decode_inflight</c> (the feeder thread's
-/// units in flight, 1-8, fork default 3), <c>bale_rav1g_perf=1</c> (rav1g's own CPU/GPU ms in the delivery line) and
+/// units in flight, 1-8, fork default 3), <c>bale_rav1g_perf=1</c> (rav1g's own CPU/GPU ms in the delivery line; <c>perf=frames</c> sets 2, bale.72: one
+/// `Bale rav1g stage u= pts= take= submit= release= gpudone=` line per frame in QPC ms) and
 /// <c>bale_rav1g_parse</c> (frames in parse, 1-2; try 2 only when the decode call is still the limit) and
 /// <c>bale_gpu_output_textures</c> (bale.56: player-side texture cap, 0 = none) and <c>bale_gpu_output_images</c>
 /// (bale.70: rav1g's output-image cap, 0-16, fork default 10). Unset = the
@@ -150,7 +151,7 @@ internal static class DebugRav1gTuning
 {
     private static readonly object Gate = new();
     private static int? _inflight;
-    private static bool? _perf;
+    private static int? _perf;
     private static int? _parse;
     private static int? _outputTextures;
     private static int? _outputImages;
@@ -170,8 +171,8 @@ internal static class DebugRav1gTuning
                     return true;
                 case "perf":
                     if (clear) { _perf = null; return true; }
-                    if (value is not ("on" or "off")) return false;
-                    _perf = value == "on";
+                    if (value is not ("on" or "off" or "frames")) return false;
+                    _perf = value switch { "frames" => 2, "on" => 1, _ => 0 };
                     return true;
                 case "outtex":
                     // bale_gpu_output_textures (fork bale.56): 0 = no limit, 1-3 act as 4, up to 64.
@@ -203,7 +204,7 @@ internal static class DebugRav1gTuning
         {
             var options = new List<KeyValuePair<string, string>>(4);
             if (_inflight is { } inflight) options.Add(new("bale_gpu_decode_inflight", inflight.ToString(System.Globalization.CultureInfo.InvariantCulture)));
-            if (_perf is { } perf) options.Add(new("bale_rav1g_perf", perf ? "1" : "0"));
+            if (_perf is { } perf) options.Add(new("bale_rav1g_perf", perf.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             if (_parse is { } parse) options.Add(new("bale_rav1g_parse", parse.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             if (_outputTextures is { } textures) options.Add(new("bale_gpu_output_textures", textures.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             if (_outputImages is { } images) options.Add(new("bale_gpu_output_images", images.ToString(System.Globalization.CultureInfo.InvariantCulture)));
@@ -215,7 +216,7 @@ internal static class DebugRav1gTuning
     {
         lock (Gate)
             return "rav1g-tune inflight=" + (_inflight?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "default")
-                + " perf=" + (_perf is { } perf ? perf ? "on" : "off" : "default")
+                + " perf=" + (_perf switch { 2 => "frames", 1 => "on", 0 => "off", _ => "default" })
                 + " parse=" + (_parse?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "default")
                 + " outtex=" + (_outputTextures?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "default")
                 + " images=" + (_outputImages?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "default");

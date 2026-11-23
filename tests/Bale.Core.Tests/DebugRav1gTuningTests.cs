@@ -25,6 +25,7 @@ public sealed class DebugRav1gTuningTests
         Assert.False(DebugRav1gTuning.TrySet("inflight", "-1"));
         Assert.False(DebugRav1gTuning.TrySet("parse", "3"));
         Assert.False(DebugRav1gTuning.TrySet("perf", "yes"));
+        Assert.False(DebugRav1gTuning.TrySet("perf", "2"));
         Assert.False(DebugRav1gTuning.TrySet("slots", "3"));
         Assert.False(DebugRav1gTuning.TrySet("outtex", "65"));
         Assert.False(DebugRav1gTuning.TrySet("images", "17"));
@@ -33,5 +34,12 @@ public sealed class DebugRav1gTuningTests
         Assert.Equal("rav1g-tune inflight=4 perf=on parse=2 outtex=16 images=14", DebugRav1gTuning.Describe());
         foreach (var key in new[] { "inflight", "perf", "parse", "outtex", "images" }) Assert.True(DebugRav1gTuning.TrySet(key, "default"));
         Assert.Equal("rav1g-tune inflight=default perf=default parse=default outtex=default images=default", DebugRav1gTuning.Describe());
+        // perf=frames (wrapper bale.72): one stage line per frame.
+        Assert.True(DebugRav1gTuning.TrySet("perf", "frames"));
+        Assert.Equal([new KeyValuePair<string, string>("bale_rav1g_perf", "2")], DebugRav1gTuning.Options());
+        Assert.Equal("rav1g-tune inflight=default perf=frames parse=default outtex=default images=default", DebugRav1gTuning.Describe());
+        Assert.True(DebugRav1gTuning.TrySet("perf", "off"));
+        Assert.Equal([new KeyValuePair<string, string>("bale_rav1g_perf", "0")], DebugRav1gTuning.Options());
+        Assert.True(DebugRav1gTuning.TrySet("perf", "default"));
     }
 }
