@@ -50,7 +50,7 @@ public sealed class DebugFfmpegDecoderTests
         Assert.Equal(VideoDecoderMode.Automatic, config.Video.VideoDecoderMode);
         Assert.Null(SoftwareDecodeTuning.BufferTimeMs(tuning.SoftwareVideo(route.SoftwareVideo), width: route.VideoWidth, height: route.VideoHeight));
         Assert.Equal(750, SoftwareDecodeTuning.BufferTimeMs(tuning.SoftwareVideo(route.SoftwareVideo), 750));
-        Assert.Equal(new[] { "bale_system_decoder_dolby", "rw_timeout" }, config.FFmpegOptions.Keys.Order().ToArray());
+        Assert.Equal(new[] { "bale_d3d11va_pool_from_stream", "bale_system_decoder_dolby", "rw_timeout" }, config.FFmpegOptions.Keys.Order().ToArray());
     }
 
     [Fact]
