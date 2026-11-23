@@ -141,7 +141,8 @@ internal readonly record struct DebugDecoderSnapshot(double? DeliveryRate, ulong
 /// Memory-only rav1g provider knobs for console tests (fork 2.1.0-bale.52; the fork's bale/README.md rav1g sections),
 /// applied only on the rav1g route and reset by an app restart: <c>bale_gpu_decode_inflight</c> (the feeder thread's
 /// units in flight, 1-8, fork default 3), <c>bale_rav1g_perf=1</c> (rav1g's own CPU/GPU ms in the delivery line; <c>perf=frames</c> sets 2, bale.72: one
-/// `Bale rav1g stage u= pts= take= submit= release= gpudone=` line per frame in QPC ms) and
+/// `Bale rav1g stage u= pts= take= submit= release= gpudone=` line per frame in QPC ms; bale.73 + rav1g 0.6.0-alpha.3 add
+/// `Bale rav1g frame u= pts= ...`, which needs that rav1g or later) and
 /// <c>bale_rav1g_parse</c> (frames in parse, 1-2; try 2 only when the decode call is still the limit) and
 /// <c>bale_gpu_output_textures</c> (bale.56: player-side texture cap, 0 = none) and <c>bale_gpu_output_images</c>
 /// (bale.70: rav1g's output-image cap, 0-16, fork default 10). Unset = the
