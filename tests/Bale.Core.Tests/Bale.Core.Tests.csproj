@@ -154,6 +154,10 @@
     <None Include="../../src/Bale.Xbox/DetailPage.xaml.cs" Link="DetailPage.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugFrameDeliverySwitch.cs" Link="DebugFrameDeliverySwitch.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugFrameDeliverySwitch.cs" Link="DebugFrameDeliverySwitch.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="../../src/Bale.Xbox/Services/DebugFrameLogSwitch.cs" Link="DebugFrameLogSwitch.cs" />
+    <None Include="../../src/Bale.Xbox/Services/DebugFrameLogSwitch.cs" Link="DebugFrameLogSwitch.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="../../src/Bale.Xbox/Services/DebugFrameLog.cs" Link="DebugFrameLog.cs" />
+    <None Include="../../scripts/xbox-logs.sh" Link="xbox-logs.sh" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugStreamAdapterSwitch.cs" Link="DebugStreamAdapterSwitch.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugPlayerBackendSwitch.cs" Link="DebugPlayerBackendSwitch.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugStartBudget.cs" Link="DebugStartBudget.cs" />

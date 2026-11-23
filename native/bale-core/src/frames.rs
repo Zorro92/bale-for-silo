@@ -340,7 +340,8 @@ impl LateFrameTrace {
 }
 
 /// `PlaybackFrameRecord`: kind 1 = video sample, 2 = Starting, 3 = seeking on, 4 = seeking off;
-/// flags bit 0 = playing, bit 1 = discontinuous; times in ticks, `now` in QPC milliseconds.
+/// flags bit 0 = playing, bit 1 = discontinuous, bit 2 = no player clock (position 0, never playing;
+/// unused here); times in ticks, `now` in QPC milliseconds.
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct FrameRecord {

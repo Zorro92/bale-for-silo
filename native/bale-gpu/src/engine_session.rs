@@ -5,6 +5,7 @@
 //! ordered. Reports carry step names and HRESULTs only, never the URL.
 
 use std::fmt::Write as _;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use windows::Win32::Foundation::RECT;
@@ -359,6 +360,27 @@ impl Session {
         }))
     }
 
+    /// The engine's clock for a debug frame observer (`bale_frame_observer_attach_engine`): fills
+    /// `Shared::engine_clock`, which `close` empties again, and returns the state that holds it.
+    pub(crate) fn frame_clock(&self) -> windows::core::Result<Arc<Shared>> {
+        self.with(|inner| {
+            inner.shared.engine_clock.set(Some(&inner.engine));
+            Ok(Arc::clone(&inner.shared))
+        })
+    }
+
+    /// Debug frame log on or off: while on, each playback event also records the engine position at the
+    /// event, read in the engine's callback through `Shared::engine_clock`.
+    pub fn set_frame_log(&self, on: bool) -> HRESULT {
+        hr(self.with(|inner| {
+            if on {
+                inner.shared.engine_clock.set(Some(&inner.engine));
+            }
+            inner.shared.frame_log.store(on, Ordering::Release);
+            Ok(())
+        }))
+    }
+
     pub fn stream_count(&self, out: &mut u32) -> HRESULT {
         // SAFETY: live engine.
         hr(self.with(|inner| unsafe {
@@ -451,6 +473,10 @@ impl Session {
             && !inner.closed
         {
             inner.closed = true;
+            // No debug clock reader may be inside the engine during or after Shutdown (EngineClock); this also
+            // ends the reference cycle a filled clock makes.
+            inner.shared.frame_log.store(false, Ordering::Release);
+            inner.shared.engine_clock.set(None);
             // SAFETY: the engine is alive; Shutdown precedes its final release (on drop).
             unsafe {
                 append_error(&mut report, &inner.engine);

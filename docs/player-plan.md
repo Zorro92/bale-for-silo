@@ -415,7 +415,7 @@ delivery; neither counter is evidence of renderer drops or decoder CPU saturatio
   `default` restores the helper's saved pre-playback mode even if the first `/gc` request is during playback.
 - Debug-only `bale-debug.sh frame-delivery [native|managed|off]` (`GET /frame-delivery`,
   `POST /frame-delivery?mode=native|managed|off`) selects the regular player's software-video observer for
-  the next playback attempt; no argument prints `frame-delivery=native|managed|off`. Native is the restart
+  the next playback attempt (native on both backends since 2026-11-23, managed on MediaPlayer only; see "Frame log"); no argument prints `frame-delivery=native|managed|off`. Native is the restart
   default (`on` is an alias): Rust observes/releases samples without managed wrappers or forced GC;
   a background C# thread samples GC/stream counters every 25 ms and drains ordered records every 250 ms
   into the existing delivery meter/trace. Counter lookup allows a 50 ms post-delivery sampling race;
@@ -1847,7 +1847,7 @@ The lifecycle audit found these ownership paths (code evidence, not a console he
 | XAML video presenter | `SetMediaPlayer(null)` detached the explicit player, but its MediaPlayerElement remained in the page. PageFrame keeps an outgoing page during its 500 ms fade. | Remove the presenter on teardown; recreate on mount. Player navigation cache is explicitly disabled. |
 | FFmpeg / MF | Wrapper Close stops decode-ahead, clears sample providers/upload pools and drops its device-manager references. Driver allocations had no Trim call. | Borrow the MSS renderer device at Starting (also for system-decoder HEVC, before end-of-media can close the source); detach that observer, then ClearState / Flush / IDXGIDevice3::Trim after middleware Close, and release the borrowed device. Native/HLS renderer devices are OS-owned and not exposed by MediaPlayer; their source, player and XAML presenter are closed/detached. |
 | SubtitleOverlay / PGS | Overlay destruction already joined its worker and detached the swap chain. PGS windows are scoped CPU data; the overlay owns bitmap textures/queues. | Keep that destruction, detach the panel before worker GPU teardown, unbind resources and trim the private D3D11 device after its textures/views drop. |
-| NativeFrameDelivery | Debug-only: Dispose requests stop and joins up to 1 s; the worker destroys the native observer even if the join times out. No sample survives its callback. | Unsubscribe/dispose before source Close and clear the mount's observer fields; a late worker owns its remaining cleanup. |
+| NativeFrameDelivery | Debug-only: Dispose requests stop and joins up to 1 s; the worker destroys the native observer even if the join times out (with the frame log on, after a last drain and write). No sample survives its callback. An engine observer's clock is emptied when the engine session closes. | Unsubscribe/dispose before source Close and clear the mount's observer fields; a late worker owns its remaining cleanup. |
 | Zero-copy / grain | Each wrapper provider owns its zero-copy handle and texture/grain pools. Rust's LIVE map owns decoder-lent buffers until unref. `ZeroCopyRuntime` only retains the loaded d3d12.dll module and a registration flag, not a device. | Normal wrapper Close destroys handles. Idle cleanup can also retire a still-live handle, wait for GPU fences and drop queues/heaps/landing/cached target textures; no new work is accepted. Decoder-lent memory stays valid until unref, then releases instead of re-pooling. Registries hold only Weak references. |
 | Other caches/devices | PlaybackSessions caches client/reporting services, not GPU objects. HardwareDecodeProbe caches only its report. Rust engine devices exist only during debug probes. Artwork keeps up to 48 decoded logos. | Trim short-lived probe devices before final release; drop the logo cache on background/suspend and player entry, including ignoring late cache insertions. Keep disk artwork and the OS-owned XAML compositor; `UiResidency` now clears decoded model/visible sources and Composition art/shadows on background and underneath the player (see `docs/ui-memory.md`). Release DisplayRequest and restore HDMI as before. |
 
@@ -2349,15 +2349,51 @@ separate elapsed Playback time readout also includes user pauses and seeks. Sour
 after FFmpeg disposal, so the final rav1g discard/starved diagnostics are included. The raw **Engine frames**
 row remains useful for MF's rendered/dropped/corrupted/playing-fps values but cannot demonstrate smoothness.
 
-The native timestamped event feed (`bale_gpu_engine_session_events`, ABI 15) is separate from the close
+The native timestamped event feed (`bale_gpu_engine_session_events`, ABI 15; ABI 16 adds each event's
+QueryPerformanceCounter milliseconds and, with the debug frame log, the engine position) is separate from the close
 log's truncated event list. It drains on the existing 100 ms state poll, so a complete stall between two
-polls still counts at its event times. Only playback transitions enter a fixed 256-entry ring (~4 KiB per
-engine); timeupdate/progress do not enter it. Overflow logs a lost-event count (results then incomplete).
+polls still counts at its event times. Only playback transitions enter a fixed 256-entry ring (32-byte events,
+~8 KiB per engine); timeupdate/progress do not enter it. Overflow logs a lost-event count (results then incomplete).
 The Core meter keeps only counters/timestamps and the last 10 s of stall intervals. This adds no per-frame
 work, frame histories or pixel copies, fitting the console's four shared cores and throttled idle RAM.
 MediaPlayer fallback lacks renderer-drop statistics: its missed-frame total and dropped row are unavailable;
 its buffering events still feed the stall meter. Late delivery and delivered-ahead remain separate sample
 observer diagnostics and are not substituted for renderer drops.
+
+### Frame log (debug), 2026-11-23
+
+To classify each missed frame of 4K60 AV1 playback (parse, decoder GPU, stage or present), the renderer side logs one
+line per video sample and per engine event, to join with the FFmpegInteropX fork's per-frame line
+`Bale rav1g stage u=<unit> pts=<100 ns as handed to MF> take= submit= release= gpudone=`. **The clock: every `t=` is
+QueryPerformanceCounter milliseconds** (counter × 1000 / frequency, 3 decimals), the clock of the native observer's
+records, of Stopwatch and of the fork's line, so the two logs also join on time. **`pts` is the MediaStreamSample
+Timestamp in integer 100 ns ticks**, exactly the value the fork handed MF: join on pts.
+
+- `bale-debug.sh frame-log [on|off]` (`GET /frame-log`, `POST /frame-log?mode=on|off`): default off, memory only,
+  captured per playback attempt like `frame-delivery`; every mount logs `player: frame log on backend=...` saying which
+  lines follow. Sample lines need the native observer (`frame-delivery native`, the default) on FFmpeg software video.
+- `frame: t=<ms> pts=<ticks> dur=<ticks> pos=<ticks> lead=<ms> kind=<n> flags=<n>`, one per observer record, written
+  by the observer's drain thread every 250 ms in one batch (`Log.Lines`), never on the sample thread. Kind 1 is a video
+  sample at delivery (after FFmpeg's sample handler filled it) with the player position read then; `lead` = pts − pos in
+  ms (1 decimal; negative = late). Kinds 2 (MSS Starting) and 3/4 (seeking on/off) print `-` for pts, dur, pos and lead.
+  Flags: bit 0 playing, bit 1 discontinuous, bit 2 no player clock (`pos=- lead=-`).
+- `frame-event: t=<ms> kind=<name> pos=<ticks>` for each engine playback event from the event ring above (play, pause,
+  waiting, playing, seeking, seeked, ended, bufferingstarted, bufferingended), written after each 100 ms state poll;
+  `pos` is read in the engine's callback without waiting: `-` for the open's own events (before the session's frame
+  log is on) and, rarely, when a sample callback held the engine clock at that instant.
+- **With `frame-log on`, the observer also runs on the engine** (bale_gpu ABI 16; off by default so default debug
+  playback and its measurements are unchanged): it subscribes to the FFmpeg MediaStreamSource before
+  the engine opens (its preroll records carry flag bit 2) and takes the engine's clock once the session is open
+  (`bale_frame_observer_attach_engine`): IMFMediaEngine's current time, paused/seeking/ended and ready state, read on the
+  sample thread without the session lock. Close empties that clock before Shutdown, so no reader is inside the engine
+  then. Late frames, Delivered ahead and `frame-trace` therefore work on the engine too. `frame-delivery managed`
+  stays MediaPlayer-only (it needs MediaPlaybackSession).
+- Volume and limits: 60 fps × 45 s ≈ 2700 lines (~350 KB). bale.log is capped at 1 MiB: debug builds now move it to
+  bale.1.log (replacing the one before) and start the new file with `log: bale.log passed 1024 KiB; earlier lines are in
+  bale.1.log` (release builds still start it again); `scripts/xbox-logs.sh 100000 bale.1.log` reads the older part.
+  The live `bale-debug.sh log` buffer keeps the newest 2000 lines (it polls every 0.5 s). Nothing drops silently: a
+  native ring overflow (4096 records, ~68 s of 60 fps without a drain) fails the observer closed with
+  `player: native frame delivery unavailable`, and a writer backlog over 16384 records logs `frame-log: N records dropped`.
 
 ## rav1g (debug), 2026-11-18
 
@@ -2600,7 +2636,7 @@ display work on the engine path waits for a capable display.
    (play/pause, opened/ended/failed, a session with position, state, can-seek, rate, video size, seekable
    ranges and their events, plus audio/video track listing and selection). `MediaPlayerBackend` wraps
    MediaPlayer and keeps it reachable for the element, command manager, FastSeek session and debug observers.
-3. **`EngineBackend`** (`Services/EngineBackend.cs`, bale_gpu ABI 15): the Rust session on a raw-pixel
+3. **`EngineBackend`** (`Services/EngineBackend.cs`, bale_gpu ABI 16): the Rust session on a raw-pixel
    SwapChainPanel in the player's video host; a 100 ms state poll raises the events; tracks come from the
    engine's stream list (new `stream_count/stream_info/select_stream`). Debug switch
    `player-backend engine` (memory only).

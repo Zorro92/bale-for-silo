@@ -15,7 +15,7 @@
 
 use std::fmt::Write as _;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError, TryLockError};
 use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{FILETIME, HANDLE, HMODULE, RECT};
@@ -42,6 +42,7 @@ use windows::Win32::Media::MediaFoundation::{
     MFCreateDXGIDeviceManager, MFCreateMFByteStreamOnStreamEx, MFInvokeCallback, MFSTARTUP_FULL,
     MFShutdown, MFStartup,
 };
+use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
 use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes, SetEvent};
 use windows::core::PCWSTR;
 use windows::core::{BOOL, BSTR, GUID, HRESULT, IUnknown, Interface, OutRef, Ref, implement};
@@ -75,6 +76,92 @@ unsafe extern "system" {
     ) -> HRESULT;
 }
 
+/// QueryPerformanceCounter in milliseconds (counter × 1000 / frequency): the clock of the frame observer's
+/// records (`frames`), C#'s Stopwatch and the FFmpegInteropX fork's per-frame log lines, so the debug frame log
+/// joins them on time. NaN if QPC fails (never on Windows XP and later).
+pub(crate) fn qpc_ms() -> f64 {
+    static SCALE: OnceLock<f64> = OnceLock::new();
+    let scale = *SCALE.get_or_init(|| {
+        let mut frequency = 0;
+        // SAFETY: the out-pointer is a valid local.
+        match unsafe { QueryPerformanceFrequency(&mut frequency) } {
+            Ok(()) if frequency > 0 => 1000.0 / frequency as f64,
+            _ => f64::NAN,
+        }
+    });
+    let mut counter = 0;
+    // SAFETY: the out-pointer is a valid local.
+    match unsafe { QueryPerformanceCounter(&mut counter) } {
+        Ok(()) => counter as f64 * scale,
+        Err(_) => f64::NAN,
+    }
+}
+
+/// The engine for readers on other threads that must not take the session lock: the debug frame observer's
+/// sample callback (`frames`) and this engine's own event callback, for the debug frame log. `Session::close`
+/// holds the session lock across Shutdown, so a sample callback waiting for it could hold up the media source
+/// that Shutdown tears down. Empty until a debug caller fills it (`Session::frame_clock`,
+/// `Session::set_frame_log`); `close` empties it before Shutdown, waiting for a reader inside the engine, so no
+/// reader calls the engine during or after Shutdown. The event callback only tries the lock (`try_position`), so
+/// a sample callback that holds it while waiting for the engine can never wait on that callback in turn. Filled,
+/// it makes a reference cycle (engine → its callback → `Shared` → engine) that `close` ends; every session is
+/// closed (`SessionHandle`'s drop).
+#[derive(Default)]
+pub(crate) struct EngineClock(Mutex<Option<ClockEngine>>);
+
+/// IMFMediaEngine, readable from the clock's threads.
+struct ClockEngine(IMFMediaEngine);
+
+// SAFETY: the Media Engine is free-threaded (Bale already calls one engine from the UI, poll and engine
+// threads). The clock only reads its time and state, under the clock's lock.
+unsafe impl Send for ClockEngine {}
+
+impl EngineClock {
+    /// Fills (or, before Shutdown, empties) the clock; waits for a reader inside the engine.
+    pub(crate) fn set(&self, engine: Option<&IMFMediaEngine>) {
+        // A poisoned lock still holds the engine: always replace it, or close could not end the cycle.
+        let mut slot = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        *slot = engine.cloned().map(ClockEngine);
+    }
+
+    /// The engine's current time in seconds, for the engine's own event callback; None while empty, not
+    /// finite, or when the clock stays busy. Never waits for the lock: the engine may call back while it holds
+    /// its own lock, and a sample callback holding the clock may be waiting for that engine lock, so after a
+    /// few tries it gives up instead.
+    pub(crate) fn try_position(&self) -> Option<f64> {
+        for _ in 0..32 {
+            match self.0.try_lock() {
+                Ok(slot) => {
+                    let ClockEngine(engine) = slot.as_ref()?;
+                    // SAFETY: a live engine; close empties the slot (under this lock) before Shutdown.
+                    let seconds = unsafe { engine.GetCurrentTime() };
+                    return seconds.is_finite().then_some(seconds);
+                }
+                Err(TryLockError::WouldBlock) => std::thread::yield_now(),
+                Err(TryLockError::Poisoned(_)) => return None,
+            }
+        }
+        None
+    }
+
+    /// The engine's current time in seconds and whether it is playing, as EngineBackend maps the engine to
+    /// MediaPlaybackState.Playing: not paused, seeking, ended or waiting for data (ready state below
+    /// HAVE_FUTURE_DATA). None while empty or with a time that is not finite.
+    pub(crate) fn read(&self) -> Option<(f64, bool)> {
+        let slot = self.0.lock().ok()?;
+        let ClockEngine(engine) = slot.as_ref()?;
+        // SAFETY: a live engine; close empties the slot (under this lock) before Shutdown.
+        unsafe {
+            let seconds = engine.GetCurrentTime();
+            let playing = !engine.IsPaused().as_bool()
+                && !engine.IsSeeking().as_bool()
+                && !engine.IsEnded().as_bool()
+                && engine.GetReadyState() >= 3;
+            seconds.is_finite().then_some((seconds, playing))
+        }
+    }
+}
+
 /// State the engine's callback writes from its own threads.
 pub(crate) struct Shared {
     clock: Instant,
@@ -86,6 +173,10 @@ pub(crate) struct Shared {
     pub(crate) playback_events: Mutex<crate::engine_events::PlaybackEvents>,
     /// Object types the extension was asked for (source input only).
     extension_requests: Mutex<Vec<i32>>,
+    /// The engine for debug readers that must not take the session lock.
+    pub(crate) engine_clock: EngineClock,
+    /// Debug frame log (`Session::set_frame_log`): each playback event also records the engine position.
+    pub(crate) frame_log: AtomicBool,
 }
 
 impl Shared {
@@ -99,6 +190,8 @@ impl Shared {
             events: Mutex::new(Vec::new()),
             playback_events: Mutex::new(crate::engine_events::PlaybackEvents::default()),
             extension_requests: Mutex::new(Vec::new()),
+            engine_clock: EngineClock::default(),
+            frame_log: AtomicBool::new(false),
         })
     }
 
@@ -199,10 +292,25 @@ impl IMFMediaEngineNotify_Impl for Notify_Impl {
             1009 => shared.first_frame.store(true, Ordering::Release),
             _ => {}
         }
-        if matches!(event, 8 | 9 | 12 | 13 | 16 | 17 | 19 | 1005 | 1006)
-            && let Ok(mut events) = shared.playback_events.lock()
-        {
-            events.observe(event, shared.elapsed_seconds());
+        if matches!(event, 8 | 9 | 12 | 13 | 16 | 17 | 19 | 1005 | 1006) {
+            let seconds = shared.elapsed_seconds();
+            let qpc_ms = qpc_ms();
+            // Debug frame log only, never waiting (EngineClock::try_position); read before taking the ring's
+            // lock, which is never held across an engine call.
+            let position = if shared.frame_log.load(Ordering::Acquire) {
+                shared.engine_clock.try_position().unwrap_or(f64::NAN)
+            } else {
+                f64::NAN
+            };
+            if let Ok(mut events) = shared.playback_events.lock() {
+                events.observe(crate::engine_events::PlaybackEvent {
+                    seconds,
+                    kind: event,
+                    reserved: 0,
+                    qpc_ms,
+                    position,
+                });
+            }
         }
         if let Ok(mut events) = shared.events.lock()
             && events.len() < 400

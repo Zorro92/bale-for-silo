@@ -1,8 +1,13 @@
 //! Passive, native-only sample delivery observation. No sample or request survives its callback.
+//!
+//! The player clock (position and playing state at each delivery) is MediaPlayer's MediaPlaybackSession, or
+//! for Bale's IMFMediaEngine player the engine's own current time, attached once the engine session has opened
+//! (`bale_frame_observer_attach_engine`). Records carry QueryPerformanceCounter milliseconds, the clock of the
+//! FFmpegInteropX fork's per-frame log lines, so the debug frame log joins both on pts and time.
 
 use core::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use windows::Foundation::TypedEventHandler;
 use windows::Media::Core::{
@@ -10,11 +15,16 @@ use windows::Media::Core::{
     MediaStreamSourceStartingEventArgs, VideoStreamDescriptor,
 };
 use windows::Media::Playback::{MediaPlaybackSession, MediaPlaybackState};
-use windows::Win32::Foundation::{E_FAIL, E_INVALIDARG, E_NOINTERFACE, E_POINTER};
+use windows::Win32::Foundation::{
+    E_FAIL, E_ILLEGAL_METHOD_CALL, E_INVALIDARG, E_NOINTERFACE, E_POINTER,
+};
 use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
 use windows::core::{Error, Interface, Result};
 
-/// Blittable C ABI; timestamps, durations and positions are 100 ns TimeSpan ticks.
+/// Blittable C ABI; timestamps, durations and positions are 100 ns TimeSpan ticks, `now_ms`
+/// QueryPerformanceCounter milliseconds. `kind`: 1 video sample, 2 Starting, 3 seeking on, 4 seeking off.
+/// `flags`: bit 0 playing, bit 1 discontinuous, bit 2 no player clock (an engine observer before its clock
+/// was attached or after the engine session closed: `position` is 0 and the sample counts as not playing).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct FrameRecord {
@@ -141,12 +151,72 @@ mod buffer {
     }
 }
 
+// Pure record fields, unit-tested like the ring.
+mod record {
+    /// Bit 0 playing, bit 1 discontinuous, bit 2 no player clock.
+    pub fn sample_flags(playing: bool, discontinuous: bool, clocked: bool) -> u32 {
+        u32::from(playing) | (u32::from(discontinuous) << 1) | (u32::from(!clocked) << 2)
+    }
+
+    /// Engine seconds as 100 ns ticks, rounded to the nearest tick (the engine's finite current time).
+    pub fn ticks(seconds: f64) -> i64 {
+        (seconds * 10_000_000.0).round() as i64
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn flags_mark_playing_discontinuous_and_a_missing_clock() {
+            assert_eq!(sample_flags(true, false, true), 1);
+            assert_eq!(sample_flags(false, true, true), 2);
+            assert_eq!(sample_flags(true, true, true), 3);
+            assert_eq!(sample_flags(false, false, false), 4);
+            assert_eq!(sample_flags(false, true, false), 6);
+        }
+
+        #[test]
+        fn engine_seconds_become_sample_ticks() {
+            assert_eq!(ticks(0.0), 0);
+            assert_eq!(ticks(4.170_833_3), 41_708_333);
+            assert_eq!(ticks(1.000_000_04), 10_000_000);
+            assert_eq!(ticks(1.000_000_06), 10_000_001);
+            assert_eq!(ticks(3600.0), 36_000_000_000);
+        }
+    }
+}
+
+/// Where each delivery's player position and playing state come from.
+enum Clock {
+    /// MediaPlayer. windows 0.62.2 explicitly implements both Send and Sync for MediaPlaybackSession.
+    Session(MediaPlaybackSession),
+    /// Bale's IMFMediaEngine player: its clock, attached once the engine session has opened. The sample
+    /// callback reads it without the session lock (`engine::EngineClock`).
+    Engine(OnceLock<Arc<crate::engine::Shared>>),
+}
+
+impl Clock {
+    /// Position in ticks and whether the player is playing; None without a player clock.
+    fn read(&self) -> Result<Option<(i64, bool)>> {
+        Ok(match self {
+            Clock::Session(session) => Some((
+                session.Position()?.Duration,
+                session.PlaybackState()? == MediaPlaybackState::Playing,
+            )),
+            Clock::Engine(shared) => shared
+                .get()
+                .and_then(|shared| shared.engine_clock.read())
+                .map(|(seconds, playing)| (record::ticks(seconds), playing)),
+        })
+    }
+}
+
 struct State {
     ring: Mutex<buffer::Ring>,
     kinds: Mutex<Vec<(usize, bool)>>,
     video: Mutex<Option<VideoStreamDescriptor>>,
-    // windows 0.62.2 explicitly implements both Send and Sync for MediaPlaybackSession.
-    session: MediaPlaybackSession,
+    clock: Clock,
     frequency: i64,
     unavailable: AtomicBool,
     status: AtomicI32,
@@ -208,11 +278,13 @@ impl State {
         let timestamp = sample.Timestamp()?.Duration;
         let duration = sample.Duration()?.Duration;
         let discontinuous = sample.Discontinuous()?;
-        let position = self.session.Position()?.Duration;
-        let playing = self.session.PlaybackState()? == MediaPlaybackState::Playing;
+        let (position, playing, clocked) = match self.clock.read()? {
+            Some((position, playing)) => (position, playing, true),
+            None => (0, false, false),
+        };
         ring.push(FrameRecord {
             kind: 1,
-            flags: u32::from(playing) | (u32::from(discontinuous) << 1),
+            flags: record::sample_flags(playing, discontinuous, clocked),
             now_ms: self.now_ms()?,
             timestamp,
             duration,
@@ -252,7 +324,8 @@ impl Drop for Observer {
     }
 }
 
-fn create(source: MediaStreamSource, session: MediaPlaybackSession) -> Result<Observer> {
+/// `session` None: an engine observer, without a player clock until `bale_frame_observer_attach_engine`.
+fn create(source: MediaStreamSource, session: Option<MediaPlaybackSession>) -> Result<Observer> {
     let mut frequency = 0;
     // SAFETY: the out-pointer is a valid local.
     unsafe { QueryPerformanceFrequency(&mut frequency)? };
@@ -263,7 +336,10 @@ fn create(source: MediaStreamSource, session: MediaPlaybackSession) -> Result<Ob
         ring: Mutex::new(buffer::Ring::new()),
         kinds: Mutex::new(Vec::with_capacity(16)),
         video: Mutex::new(None),
-        session,
+        clock: match session {
+            Some(session) => Clock::Session(session),
+            None => Clock::Engine(OnceLock::new()),
+        },
         frequency,
         unavailable: AtomicBool::new(false),
         status: AtomicI32::new(0),
@@ -308,11 +384,13 @@ fn create(source: MediaStreamSource, session: MediaPlaybackSession) -> Result<Ob
     })
 }
 
-/// Subscribes after FFmpeg's synchronous sample handler; takes its own references to both objects.
+/// Subscribes after FFmpeg's synchronous sample handler; takes its own references to both objects. A null
+/// `session` (ABI 16) makes an observer for Bale's engine player: its records carry no player clock (flag
+/// bit 2) until [`bale_frame_observer_attach_engine`] gives it the engine session's.
 ///
 /// # Safety
-/// `source` and `session` must be live borrowed default-interface pointers for MediaStreamSource and
-/// MediaPlaybackSession. `out` must point to one writable pointer. Destroy the returned handle once.
+/// `source` must be a live borrowed default-interface pointer for MediaStreamSource, and `session` null or
+/// one for MediaPlaybackSession. `out` must point to one writable pointer. Destroy the returned handle once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bale_frame_observer_create(
     source: *mut c_void,
@@ -328,17 +406,44 @@ pub unsafe extern "C" fn bale_frame_observer_create(
     let Some(source) = (unsafe { MediaStreamSource::from_raw_borrowed(&source) }).cloned() else {
         return E_POINTER.0;
     };
-    // SAFETY: same borrowing contract as source above.
-    let Some(session) = (unsafe { MediaPlaybackSession::from_raw_borrowed(&session) }).cloned()
-    else {
-        return E_POINTER.0;
-    };
+    // SAFETY: same borrowing contract as source above; null is no session.
+    let session = (unsafe { MediaPlaybackSession::from_raw_borrowed(&session) }).cloned();
     match create(source, session) {
         Ok(observer) => {
             // SAFETY: out is writable; ownership of this allocation passes to destroy.
             unsafe { *out = Box::into_raw(Box::new(observer)).cast() };
             0
         }
+        Err(error) => error.code().0,
+    }
+}
+
+/// Gives an engine observer (created with a null session) the clock of an open engine session: later
+/// samples record IMFMediaEngine's current time and playing state, read on the sample thread without the
+/// session lock. 0 when attached, S_FALSE (1) when it already was, E_ILLEGAL_METHOD_CALL for an observer
+/// with a MediaPlaybackSession; otherwise an HRESULT (E_ILLEGAL_METHOD_CALL also for a closed session).
+///
+/// # Safety
+/// `obs` must be null or a live observer handle, not concurrently destroyed; `session` null or a live
+/// engine session pointer (`bale_gpu_engine_session_open*`), not concurrently closed, for this call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_frame_observer_attach_engine(
+    obs: *mut c_void,
+    session: *mut c_void,
+) -> i32 {
+    // SAFETY: guaranteed by the handle contract.
+    let Some(observer) = (unsafe { obs.cast::<Observer>().as_ref() }) else {
+        return E_POINTER.0;
+    };
+    let Clock::Engine(slot) = &observer.state.clock else {
+        return E_ILLEGAL_METHOD_CALL.0;
+    };
+    // SAFETY: the caller guarantees a live session pointer for this call.
+    let Some(session) = (unsafe { crate::session_ref(session) }) else {
+        return E_POINTER.0;
+    };
+    match session.frame_clock() {
+        Ok(shared) => i32::from(slot.set(shared).is_err()),
         Err(error) => error.code().0,
     }
 }

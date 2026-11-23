@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Prints Bale's log (LocalState/bale.log) from an Xbox in Developer Mode, via Device Portal.
-#   XBOX_HOST=192.168.1.50 scripts/xbox-logs.sh [lines]
+#   XBOX_HOST=<console-ip> scripts/xbox-logs.sh [lines] [bale.log|bale.1.log]
+# Debug builds move bale.log to bale.1.log at 1 MiB (the new file's first line says so); pass bale.1.log for the
+# older part, e.g. of a frame log (bale-debug.sh frame-log) that crossed the limit.
 set -euo pipefail
+FILE="${2:-bale.log}"
+[[ "$FILE" == bale.log || "$FILE" == bale.1.log ]] || { echo "usage: scripts/xbox-logs.sh [lines] [bale.log|bale.1.log]" >&2; exit 2; }
 HOST="${XBOX_HOST:?Set XBOX_HOST to your Xbox IP (shown in Dev Home)}"
 BASE="https://$HOST:11443"
 AUTH=()
@@ -16,4 +20,4 @@ curl -fsSk "${AUTH[@]}" -G "$BASE/api/filesystem/apps/file" \
   --data-urlencode knownfolderid=LocalAppData \
   --data-urlencode "packagefullname=$PACKAGE" \
   --data-urlencode 'path=\LocalState' \
-  --data-urlencode filename=bale.log | tail -n "${1:-200}"
+  --data-urlencode "filename=$FILE" | tail -n "${1:-200}"

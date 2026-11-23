@@ -507,6 +507,11 @@ For Bale, a normal app with hevcPlayback on the Series X:
   three overrides apply only to software video; they do not affect an open player, native/HLS routes or
   the standalone probe. Production uses the release defaults without debug overrides.
 
+- Debug `bale-debug.sh frame-log on` (next attempt, memory only) writes one bale.log line per video sample
+  (`frame: t= pts= dur= pos= lead= kind= flags=`) and per engine event (`frame-event: t= kind= pos=`): `t` is
+  QueryPerformanceCounter ms, pts/dur/pos 100 ns ticks, so they join with the fork's `Bale rav1g stage` lines on pts
+  and time. Debug bale.log moves to bale.1.log at 1 MiB (`xbox-logs.sh N bale.1.log`). docs/player-plan.md, "Frame log".
+
 - `scripts/bale-debug.sh stats` prints all current player rows as `Label: value`, marking overlay-hidden
   rows `[hidden]`; no active player exits non-zero. `stats-rows [list|hide <labels>|show <labels>|only
   <labels>|reset]` filters only the overlay using one comma-separated argument of exact, case-insensitive
@@ -527,7 +532,8 @@ For Bale, a normal app with hevcPlayback on the Series X:
   CPU count. This is app-process load, not system-wide CPU or a single decoder thread's load.
 - **Late frames** is available only for FFmpeg software video. The pinned FFmpegInteropX
   `Source/FFmpegMediaSource.cpp` `OnSampleRequested` assigns decoded video samples synchronously;
-  a later observer compares each sample's PTS with `MediaPlaybackSession.Position` at delivery.
+  a later observer compares each sample's PTS with the player clock at delivery (`MediaPlaybackSession.Position`
+  on MediaPlayer, IMFMediaEngine's current time on the engine, attached once its session is open).
   The count is per mount, with a rolling last-10-wall-second count/rate. Preroll, paused/buffering
   delivery, discontinuities and seeks are excluded. **Delivered ahead** is the last decoded sample
   end minus the current player clock, floored at zero; it is not a renderer queue depth.

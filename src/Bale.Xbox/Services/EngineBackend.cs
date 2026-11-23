@@ -21,8 +21,8 @@ namespace Bale.Xbox.Services;
 /// </summary>
 internal sealed partial class EngineBackend : PlaybackBackend
 {
-    /// <summary>bale_gpu.dll's ABI with the session's stream API and per-open target (keep with NativeFrameDelivery.ExpectedAbi).</summary>
-    internal const uint ExpectedAbi = 15;
+    /// <summary>bale_gpu.dll's ABI with the session's stream API, per-open target and QPC-timed events (keep with NativeFrameDelivery.ExpectedAbi).</summary>
+    internal const uint ExpectedAbi = 16;
 
     private readonly Session _session;
     private readonly Border _host;
@@ -35,6 +35,8 @@ internal sealed partial class EngineBackend : PlaybackBackend
 #if DEBUG_SERVER
     private readonly DebugGpuMemory.PlayerSwapChain _swapMemory = new();
     private uint _swapTarget;
+    // frame-log: frame-event lines drained under _sync, written after it (WriteFrameEvents).
+    private List<string>? _frameEvents;
 #endif
     private Windows.Graphics.Display.DisplayInformation? _display;
     private Windows.Graphics.Display.Core.HdmiDisplayInformation? _hdmi;
@@ -80,6 +82,18 @@ internal sealed partial class EngineBackend : PlaybackBackend
     /// <summary>The open report (step names and HRESULTs only), for the log.</summary>
     public string Report { get; private set; } = string.Empty;
 
+#if DEBUG_SERVER
+    /// <summary>
+    /// bale-debug.sh frame-log for this mount (set before <see cref="OpenAsync"/>): every engine playback event becomes a
+    /// <c>frame-event:</c> line (<see cref="DebugFrameLog.Event"/>) with its QPC time and, once the session is open, the
+    /// engine position bale_gpu read in the engine's callback.
+    /// </summary>
+    internal bool FrameLog { get; set; }
+
+    /// <summary>Runs <paramref name="call"/> with the live session handle under the session lock; E_POINTER once closed.</summary>
+    internal int WithSessionHandle(Func<nint, int> call) => Call(call);
+#endif
+
     /// <summary>
     /// Opens <paramref name="source"/>: an IMFMediaSource-capable COM object (FFmpeg's MediaStreamSource, or its
     /// MediaSource wrapper), or with <paramref name="mime"/> an IRandomAccessStream. Raises MediaOpened, and
@@ -107,6 +121,14 @@ internal sealed partial class EngineBackend : PlaybackBackend
             Log.Info($"engine: open failed 0x{unchecked((uint)hr):X8}");
             return false;
         }
+#if DEBUG_SERVER
+        if (FrameLog)
+        {
+            // Events from here on also carry the engine position; the open's own events (pause, seek to start) have none.
+            var frameLogHr = Call(handle => bale_gpu_engine_session_frame_log(handle, 1));
+            if (frameLogHr < 0) Log.Info($"engine: frame log positions unavailable 0x{unchecked((uint)frameLogHr):X8}");
+        }
+#endif
         LoadStreams();
         _poll = new Timer(_ => Poll(), null, 100, 100);
         Poll();
@@ -274,6 +296,29 @@ internal sealed partial class EngineBackend : PlaybackBackend
     /// <summary>Raises the backend's events from the session's state; also refreshes the position cache.</summary>
     private void Poll()
     {
+        PollState();
+#if DEBUG_SERVER
+        WriteFrameEvents();
+#endif
+    }
+
+#if DEBUG_SERVER
+    /// <summary>frame-log: the frame-event lines this poll drained, as one batch after the session lock is released.</summary>
+    private void WriteFrameEvents()
+    {
+        if (!FrameLog) return;
+        List<string>? lines;
+        lock (_sync)
+        {
+            lines = _frameEvents;
+            _frameEvents = null;
+        }
+        if (lines is { Count: > 0 }) Log.Lines(lines);
+    }
+#endif
+
+    private void PollState()
+    {
         lock (_sync)
         {
             if (_handle == 0 || _disposed) return;
@@ -334,6 +379,9 @@ internal sealed partial class EngineBackend : PlaybackBackend
                 Smoothness.ObservePosition(state.Position);
             }
             Smoothness.Observe(kind, events[i].Seconds + _eventClockOffset.Value, network);
+#if DEBUG_SERVER
+            if (FrameLog) (_frameEvents ??= []).Add(DebugFrameLog.Event(events[i].QpcMilliseconds, events[i].Kind, events[i].Position));
+#endif
         }
         Smoothness.ObserveDropped(state.FramesDropped);
         Smoothness.ObservePosition(state.Position);
@@ -572,14 +620,22 @@ internal sealed partial class EngineBackend : PlaybackBackend
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern unsafe int bale_gpu_engine_session_stream_info(nint session, uint index, EngineStreamInfo* info);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_select_stream(nint session, uint index);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern unsafe uint bale_gpu_engine_session_close(nint session, byte* report, uint reportCapacity);
+#if DEBUG_SERVER
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_gpu_engine_session_frame_log(nint session, uint on);
+#endif
 }
 
+/// <summary>engine_events::PlaybackEvent (C layout, bale_gpu ABI 16).</summary>
 [StructLayout(LayoutKind.Sequential)]
 internal struct EnginePlaybackEvent
 {
     public double Seconds;
     public uint Kind;
     public uint Reserved;
+    /// <summary>QueryPerformanceCounter milliseconds at the event: the frame observer's and the fork's clock.</summary>
+    public double QpcMilliseconds;
+    /// <summary>Engine seconds at the event while the session's frame log is on; NaN otherwise.</summary>
+    public double Position;
 }
 
 /// <summary>engine_session::StreamInfo (C layout).</summary>

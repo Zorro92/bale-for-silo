@@ -82,6 +82,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public bool PretendHdr { get; } = DebugHdrPlayback.Pretend;
         public bool MatchContentFrameRate { get; } = DebugDisplayMatch.Enabled;
         public string FrameDeliveryMode { get; } = DebugFrameDeliverySwitch.Mode;
+        /// <summary>bale-debug.sh frame-log, captured when the attempt starts: frame:/frame-event: lines in bale.log.</summary>
+        public bool FrameLog { get; } = DebugFrameLogSwitch.Enabled;
         public string StreamAdapter { get; } = DebugStreamAdapterSwitch.Mode;
         /// <summary>mediaplayer or engine (<see cref="EngineBackend"/>), captured when the attempt starts.</summary>
         public string PlayerBackend { get; } = DebugPlayerBackendSwitch.Mode;

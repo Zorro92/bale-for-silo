@@ -65,7 +65,8 @@ public sealed unsafe class PlaybackFrameRecordProcessor
 }
 
 /// <param name="Kind">1 = video sample, 2 = Starting, 3 = seeking on, 4 = seeking off.</param>
-/// <param name="Flags">Bit 0 = playing, bit 1 = discontinuous.</param>
+/// <param name="Flags">Bit 0 = playing, bit 1 = discontinuous, bit 2 = no player clock (an engine observer before
+/// its clock was attached: Position 0, never playing).</param>
 /// <param name="NowMilliseconds">Stopwatch/QPC milliseconds, not Environment.TickCount64.</param>
 /// <param name="Timestamp">Sample PTS in 100 ns ticks.</param>
 /// <param name="Duration">Sample duration in 100 ns ticks.</param>

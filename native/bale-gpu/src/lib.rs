@@ -47,8 +47,11 @@ use windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDevice, ID3D11Device,
 };
 
-/// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched DLL.
-pub const ABI_VERSION: u32 = 15;
+/// Bumped whenever an export's signature or meaning changes; C# refuses a mismatched DLL. 16: engine
+/// playback events carry their QPC time and (debug frame log) engine position; a frame observer can be
+/// created without a MediaPlaybackSession and take an engine session's clock
+/// (`bale_frame_observer_attach_engine`); `bale_gpu_engine_session_frame_log`.
+pub const ABI_VERSION: u32 = 16;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_gpu_abi_version() -> u32 {
@@ -628,7 +631,9 @@ pub unsafe extern "C" fn bale_gpu_engine_session_state(
 }
 
 /// Drains timestamped playback transitions (not frame/progress events). Returns an HRESULT.
-/// `seconds` is the event clock now; `lost` counts overflow if the caller stopped polling.
+/// `seconds` is the event clock now; `lost` counts overflow if the caller stopped polling. Each event
+/// also carries its QueryPerformanceCounter milliseconds and, while the session's debug frame log is on
+/// ([`bale_gpu_engine_session_frame_log`]), the engine position at the event (ABI 16).
 ///
 /// # Safety
 /// `session` as [`session_ref`]; `out` has `capacity` writable entries (1..=256),
@@ -659,6 +664,22 @@ pub unsafe extern "C" fn bale_gpu_engine_session_events(
     unsafe { session_ref(session) }.map_or(E_POINTER, |s| {
         s.playback_events(out, count, seconds, lost).0
     })
+}
+
+/// Debug frame log on (`on` non-zero) or off for this session: while on, each playback event
+/// ([`bale_gpu_engine_session_events`]) also records the engine position at the event, read in the engine's
+/// callback without the session lock. Only debug builds call it. Returns an HRESULT.
+///
+/// # Safety
+/// `session` must be null or a live, unclosed session pointer.
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_gpu_engine_session_frame_log(
+    session: *mut core::ffi::c_void,
+    on: u32,
+) -> i32 {
+    // SAFETY: forwarded caller guarantee.
+    unsafe { session_ref(session) }.map_or(E_POINTER, |s| s.set_frame_log(on != 0).0)
 }
 
 /// Number of streams in the session's media resource into `*out`. Returns an HRESULT.

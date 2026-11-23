@@ -292,7 +292,7 @@ public sealed class EngineOutputPolicyTests
         var engine = Read("EngineBackend.cs.txt");
         Assert.Contains("bale_gpu_engine_session_open_target(", engine);
         Assert.DoesNotContain("bale_gpu_engine_session_open(", engine);
-        Assert.Contains("internal const uint ExpectedAbi = 15;", engine);
+        Assert.Contains("internal const uint ExpectedAbi = 16;", engine);
     }
 
     private static string Read(string file) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, file));

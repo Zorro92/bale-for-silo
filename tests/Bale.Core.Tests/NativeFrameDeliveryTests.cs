@@ -11,13 +11,18 @@ public class NativeFrameDeliveryTests
         Assert.Contains("partial class NativeFrameDelivery : IDebugFrameDelivery", source);
         Assert.Contains("partial class DebugFrameDelivery : IDebugFrameDelivery", Read("DebugFrameDelivery.cs.txt"));
         Assert.StartsWith("#if DEBUG_SERVER", Read("IDebugFrameDelivery.cs.txt"));
-        Assert.Contains("private const uint ExpectedAbi = 15;", source);
+        Assert.Contains("private const uint ExpectedAbi = 16;", source);
         Assert.Contains("bale_gpu_abi_version() != ExpectedAbi", source);
         Assert.Contains("[StructLayout(LayoutKind.Sequential)]", source);
         foreach (var field in new[] { "uint Kind", "uint Flags", "double NowMilliseconds", "long Timestamp", "long Duration", "long Position" })
             Assert.Contains("public " + field + ";", source);
         Assert.Contains("((WinRT.IWinRTObject)_source).NativeObject.ThisPtr", source);
         Assert.Contains("((WinRT.IWinRTObject)_session).NativeObject.ThisPtr", source);
+        // MediaPlayer passes its session; the engine observer passes none and attaches the engine clock after the open.
+        Assert.Contains("var sessionPointer = _session is null ? 0 : ((WinRT.IWinRTObject)_session).NativeObject.ThisPtr;", source);
+        Assert.Contains(": this(source, session, () => session.Position, stream, frameLog) { }", source);
+        Assert.Contains(": this(source, null, () => engine.Position, stream, frameLog) { }", source);
+        Assert.Contains("engine.WithSessionHandle(session => bale_frame_observer_attach_engine(observer, session))", source);
         Assert.DoesNotContain(".SampleRequested", source);
         Assert.DoesNotContain("GC.Collect(", source);
         Assert.DoesNotContain("Environment.TickCount", source);
@@ -34,7 +39,7 @@ public class NativeFrameDeliveryTests
         Assert.Contains("snapshot.NowMilliseconds - lastDrain < 250", source);
         Assert.Contains("fixed (FrameRecord* records = _records)", source);
         Assert.Contains("while (count == DrainCapacity)", source);
-        Assert.Contains("_processor.Read(_session.Position, (long)NowMilliseconds)", source);
+        Assert.Contains("_processor.Read(_position(), (long)NowMilliseconds)", source);
         Assert.Contains("Stopwatch.GetTimestamp() * (1000.0 / Stopwatch.Frequency)", source);
         Assert.Contains("seeking ? 3u : 4u", source);
         Assert.Contains("bale_frame_observer_status(_observer)", source);

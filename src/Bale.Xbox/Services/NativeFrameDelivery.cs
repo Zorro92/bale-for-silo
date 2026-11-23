@@ -11,17 +11,26 @@ namespace Bale.Xbox.Services;
 /// <summary>
 /// Rust releases every sample in its native callback. This thread only sees blittable records and
 /// samples GC/stream counters independently of delivery, without forced collections or managed events.
+/// The player clock at each delivery is MediaPlayer's session, or on the engine IMFMediaEngine's current time
+/// (<see cref="AttachEngine"/>). With the frame log on (<see cref="DebugFrameLog"/>), this thread also writes every
+/// record as one bale.log line, in batches, never on the sample thread.
 /// </summary>
 internal sealed unsafe partial class NativeFrameDelivery : IDebugFrameDelivery
 {
-    private const uint ExpectedAbi = 15;
+    private const uint ExpectedAbi = 16;
     private const int DrainCapacity = 512;
+    /// <summary>Frame-log records drained but not yet written; beyond it records are counted and the count logged.</summary>
+    private const int FrameLogBacklog = 16384;
     private const int FailureHResult = unchecked((int)0x80004005);
     private readonly MediaStreamSource _source;
-    private readonly MediaPlaybackSession _session;
+    private readonly MediaPlaybackSession? _session;
+    private readonly Func<TimeSpan> _position;
     private readonly MediaRangeStream? _stream;
     private readonly PlaybackFrameRecordProcessor _processor = new();
     private readonly FrameRecord[] _records = new FrameRecord[DrainCapacity];
+    // Frame log: filled under _gate by every drain, written by the drain thread outside it (WriteFrameLog).
+    private readonly List<PlaybackFrameRecord>? _frameLog;
+    private long _frameLogDropped;
     private readonly object _gate = new();
     private readonly ManualResetEvent _stop = new(false);
     private readonly Thread _thread;
@@ -47,6 +56,8 @@ internal sealed unsafe partial class NativeFrameDelivery : IDebugFrameDelivery
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern int bale_frame_observer_create(nint source, nint session, nint* observer);
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
+    private static extern int bale_frame_observer_attach_engine(nint observer, nint session);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern int bale_frame_observer_mark(nint observer, uint kind);
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern uint bale_frame_observer_drain(nint observer, FrameRecord* records, uint capacity, ulong* dropped);
@@ -57,17 +68,34 @@ internal sealed unsafe partial class NativeFrameDelivery : IDebugFrameDelivery
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern void bale_frame_observer_destroy(nint observer);
 
-    internal NativeFrameDelivery(FFmpegMediaSource source, MediaPlaybackSession session, MediaRangeStream? stream = null)
+    /// <summary>MediaPlayer: each delivery records MediaPlaybackSession's position and state.</summary>
+    internal NativeFrameDelivery(FFmpegMediaSource source, MediaPlaybackSession session, MediaRangeStream? stream = null,
+        bool frameLog = false)
+        : this(source, session, () => session.Position, stream, frameLog) { }
+
+    /// <summary>
+    /// IMFMediaEngine: create before the engine opens, so its preroll is observed too (without a player clock, record
+    /// flag bit 2); <see cref="AttachEngine"/> adds the engine's clock once its session is open.
+    /// </summary>
+    internal NativeFrameDelivery(FFmpegMediaSource source, PlaybackBackendSession engine, MediaRangeStream? stream,
+        bool frameLog)
+        : this(source, null, () => engine.Position, stream, frameLog) { }
+
+    private NativeFrameDelivery(FFmpegMediaSource source, MediaPlaybackSession? session, Func<TimeSpan> position,
+        MediaRangeStream? stream, bool frameLog)
     {
         if (bale_gpu_abi_version() != ExpectedAbi)
             throw new InvalidOperationException("The native frame observer ABI does not match.");
         _source = source.GetMediaStreamSource();
         _session = session;
+        _position = position;
         _stream = stream;
+        if (frameLog) _frameLog = new List<PlaybackFrameRecord>(DrainCapacity);
         _processor.AddSnapshot(CaptureSnapshot());
         nint observer = 0;
-        var hr = bale_frame_observer_create(((WinRT.IWinRTObject)_source).NativeObject.ThisPtr,
-            ((WinRT.IWinRTObject)_session).NativeObject.ThisPtr, &observer);
+        // No session: an engine observer (bale_gpu ABI 16), clockless until AttachEngine.
+        var sessionPointer = _session is null ? 0 : ((WinRT.IWinRTObject)_session).NativeObject.ThisPtr;
+        var hr = bale_frame_observer_create(((WinRT.IWinRTObject)_source).NativeObject.ThisPtr, sessionPointer, &observer);
         if (hr < 0) Marshal.ThrowExceptionForHR(hr);
         if (observer == 0) throw new InvalidOperationException("The native frame observer was not created.");
         _observer = observer;
@@ -85,6 +113,25 @@ internal sealed unsafe partial class NativeFrameDelivery : IDebugFrameDelivery
     public string? OutputPixelFormat => Volatile.Read(ref _outputPixelFormat);
     public string? OutputColour => Volatile.Read(ref _outputColour);
     public string? SampleMemory => null;
+
+    /// <summary>
+    /// Gives an engine observer the engine's clock once the session is open: later deliveries record IMFMediaEngine's
+    /// current time and playing state, which bale_gpu reads on the sample thread without the session lock.
+    /// </summary>
+    internal void AttachEngine(EngineBackend engine)
+    {
+        lock (_gate)
+        {
+            if (!Available) return;
+            try
+            {
+                var observer = _observer;
+                var hr = engine.WithSessionHandle(session => bale_frame_observer_attach_engine(observer, session));
+                if (hr < 0) Unavailable(hr);
+            }
+            catch (Exception ex) { Unavailable(ex.HResult); }
+        }
+    }
 
     public void SetSeeking(bool seeking)
     {
@@ -108,7 +155,7 @@ internal sealed unsafe partial class NativeFrameDelivery : IDebugFrameDelivery
             try
             {
                 DrainCore();
-                return Available ? _processor.Read(_session.Position, (long)NowMilliseconds) : null;
+                return Available ? _processor.Read(_position(), (long)NowMilliseconds) : null;
             }
             catch (Exception ex) { Unavailable(ex.HResult); return null; }
         }
@@ -164,6 +211,7 @@ internal sealed unsafe partial class NativeFrameDelivery : IDebugFrameDelivery
                     DrainCore();
                     lastDrain = snapshot.NowMilliseconds;
                 }
+                WriteFrameLog();
             }
         }
         catch (Exception ex) { Unavailable(ex.HResult); }
@@ -175,12 +223,20 @@ internal sealed unsafe partial class NativeFrameDelivery : IDebugFrameDelivery
             {
                 if (_observer != 0)
                 {
+                    // The frame log keeps the deliveries since the last drain (up to 250 ms).
+                    if (_frameLog is not null && Volatile.Read(ref _unavailable) == 0)
+                    {
+                        try { DrainCore(); }
+                        catch (Exception ex) { Unavailable(ex.HResult); }
+                    }
                     bale_frame_observer_destroy(_observer);
                     _observer = 0;
                 }
                 GC.KeepAlive(_source);
                 GC.KeepAlive(_session);
             }
+            try { WriteFrameLog(); }
+            catch (Exception) { }
             _stop.Dispose();
         }
     }
@@ -202,13 +258,42 @@ internal sealed unsafe partial class NativeFrameDelivery : IDebugFrameDelivery
             for (var i = 0; i < count; i++)
             {
                 ref readonly var record = ref _records[i];
-                _processor.Process(new(record.Kind, record.Flags, record.NowMilliseconds,
-                    record.Timestamp, record.Duration, record.Position));
+                var processed = new PlaybackFrameRecord(record.Kind, record.Flags, record.NowMilliseconds,
+                    record.Timestamp, record.Duration, record.Position);
+                _processor.Process(processed);
+                if (_frameLog is not null)
+                {
+                    if (_frameLog.Count < FrameLogBacklog) _frameLog.Add(processed);
+                    else _frameLogDropped++;
+                }
                 if (record.Kind == 1 && !_descriptorRead) ReadOutputDescriptor();
             }
         } while (count == DrainCapacity);
         status = bale_frame_observer_status(_observer);
         if (status != 0) Unavailable(status);
+    }
+
+    /// <summary>
+    /// The frame log's lines for every record drained so far (by this thread, or by a stats read on another), written as
+    /// one batch on the drain thread, outside the gate. A backlog past <see cref="FrameLogBacklog"/> is logged as a count.
+    /// </summary>
+    private void WriteFrameLog()
+    {
+        if (_frameLog is null) return;
+        List<string> lines;
+        lock (_gate)
+        {
+            if (_frameLog.Count == 0 && _frameLogDropped == 0) return;
+            lines = new List<string>(_frameLog.Count + 1);
+            foreach (var record in _frameLog) lines.Add(DebugFrameLog.Frame(record));
+            _frameLog.Clear();
+            if (_frameLogDropped != 0)
+            {
+                lines.Add($"frame-log: {_frameLogDropped} records dropped (the log writer fell behind)");
+                _frameLogDropped = 0;
+            }
+        }
+        Log.Lines(lines);
     }
 
     private void ReadOutputDescriptor()

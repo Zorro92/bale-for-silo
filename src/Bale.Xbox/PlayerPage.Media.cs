@@ -489,12 +489,13 @@ public sealed partial class PlayerPage
                 {
                     media.FrameDelivery = attempt.FrameDeliveryMode == "managed"
                         ? new DebugFrameDelivery(softwareSource, player.PlaybackSession, stream: media.Stream)
-                        : new NativeFrameDelivery(softwareSource, player.PlaybackSession, stream: media.Stream);
+                        : new NativeFrameDelivery(softwareSource, player.PlaybackSession, stream: media.Stream, frameLog: attempt.FrameLog);
                 }
                 catch (Exception ex) { LogFailure("frame delivery observer", ex); }
             }
             else Log.Info($"player: frame delivery not attached softwareVideo={media.SoftwareVideo} ffmpeg={media.FfmpegSource is not null}");
         }
+        LogFrameLog(attempt, media, "mediaplayer");
 #endif
         // FastSeek needs MediaPlayer's session (other backends seek without one, wrapper bale.30). The setter takes the
         // wrapper's source lock: set it before Source, while no sample thread exists, never on the UI thread after open.
@@ -538,6 +539,7 @@ public sealed partial class PlayerPage
 #if DEBUG_SERVER
         engine.PlaybackSession.BufferingStarted += OnStatsBufferingStarted;
         engine.PlaybackSession.BufferingEnded += OnStatsBufferingEnded;
+        engine.FrameLog = attempt.FrameLog;
 #endif
         object source;
         string? type = null;
@@ -561,12 +563,59 @@ public sealed partial class PlayerPage
         else throw new InvalidDataException("The engine has no source for this route.");
         Log.Info($"player: backend=engine route={RouteText(media)}");
         var target = EngineTarget(attempt, media);
+#if DEBUG_SERVER
+        // Before the open: the engine pulls its preroll samples while it opens. Its clock follows the open.
+        AttachEngineFrameDelivery(attempt, media, engine);
+#endif
         // Forward-only mounts open where they play (player 0); seekable ones at the mount's start.
         var opened = await engine.OpenAsync(source, type, canSeek: media.Progressive is null,
             start: media.Progressive is null ? media.StartPosition : 0, target: target);
         foreach (var line in engine.Report.Split('\n', StringSplitOptions.RemoveEmptyEntries)) Log.Info("engine: " + line);
+#if DEBUG_SERVER
+        if (opened && ReferenceEquals(attempt.Media, media) && media.FrameDelivery is NativeFrameDelivery frames)
+            frames.AttachEngine(engine);
+#endif
         return opened || !ReferenceEquals(attempt.Media, media);
     }
+
+#if DEBUG_SERVER
+    /// <summary>
+    /// The attempt's sample observer (frame-delivery switch) on the engine: native only, since the managed observer reads
+    /// MediaPlayer's session. Subscribed to the FFmpeg MSS before the engine pulls samples; NativeFrameDelivery.AttachEngine
+    /// adds IMFMediaEngine's clock (current time and state) once the session is open.
+    /// </summary>
+    private static void AttachEngineFrameDelivery(Attempt attempt, Mount media, EngineBackend engine)
+    {
+        Log.Info($"player: frame delivery observer={attempt.FrameDeliveryMode} backend=engine");
+        if (attempt.FrameDeliveryMode == "managed")
+            Log.Info("player: frame delivery managed needs MediaPlayer's session; not attached to the engine");
+        // Only with frame-log on: the observer reads the engine's clock on the sample thread, and default debug
+        // playback (the console measurements) must behave as before.
+        else if (!attempt.FrameLog)
+            Log.Info("player: frame delivery not attached on the engine (frame-log off)");
+        else if (attempt.FrameDeliveryMode != "off")
+        {
+            if (media.SoftwareVideo && media.FfmpegSource is { } softwareSource)
+            {
+                try { media.FrameDelivery = new NativeFrameDelivery(softwareSource, engine.PlaybackSession, media.Stream, attempt.FrameLog); }
+                catch (Exception ex) { LogFailure("frame delivery observer", ex); }
+            }
+            else Log.Info($"player: frame delivery not attached softwareVideo={media.SoftwareVideo} ffmpeg={media.FfmpegSource is not null}");
+        }
+        LogFrameLog(attempt, media, "engine");
+    }
+
+    /// <summary>frame-log: once per mount, which lines follow (frame: needs the native observer; frame-event: the engine).</summary>
+    private static void LogFrameLog(Attempt attempt, Mount media, string backend)
+    {
+        if (!attempt.FrameLog) return;
+        var frames = media.FrameDelivery is NativeFrameDelivery
+            ? "frame: lines"
+            : "no frame: lines (needs frame-delivery native and FFmpeg software video)";
+        var events = backend == "engine" ? ", frame-event: lines" : string.Empty;
+        Log.Info($"player: frame log on backend={backend}: {frames}{events}; t = QPC ms, pts/dur/pos = 100 ns, lead = ms");
+    }
+#endif
 
     /// <summary>
     /// The engine swap-chain format for this mount (bale_gpu target code), capped at display depth for SDR
