@@ -41,6 +41,10 @@ buffers, Media Foundation).
   output pixel once into a 1080p fp32 intermediate (31.6 MiB; output identical, 0 of 36 CI cases differ). 4K60 AV1 40 Mbps:
   47.1 → 57.6 fps from rav1g, missed frames 21.8% → 4.5%, image release waits 233 → 96 of 240. That equals the stage-off
   run (57.5 fps / 5.0%), so the remaining ~4.5% isn't the stage. `tonemap-debug nostaged` restores the old path.
+- rav1g v0.6.0-alpha.2 in Bale (2026-11-23, fused output write; `play-url`, 45 s, two rounds, rav1g rate / missed
+  frames): 40M 60.4, 60.1 / 1.3%, 0.8% (alpha.1: 57.6 / 4.5%); 60M 57.0, 57.5 / 5.5%, 4.9%; 100M 53.0, 53.3 / 12.2%, 12.0%;
+  HDR10 60M 52.8, 53.1 / 12.4%, 12.2% (alpha.1: ~51.2 / 14.7-15.4%); HDR10 100M 51.2, 51.7 / 15.0%, 14.1%. 40 Mbps 4K60 is
+  now about real time; above that the decoder is still the limit.
 - The CPU stage that reads the compressed stream is the known limit and grows with bitrate; heavy 4K
   AV1 above ~40 Mbps is the risk case.
 - Spend resources only where they buy measured performance: e.g. more slots or frames in flight are worth
