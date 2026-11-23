@@ -466,6 +466,142 @@ fn nv12_bt709_sdr_scale_only_downscale_matches_reference() {
     }
 }
 
+/// Representative picture: the self-test's saturated 2x2 colour blocks (sharp chroma edges) in the
+/// top half, a luma ramp with pseudo-random detail and slowly turning chroma in the bottom half.
+/// Limited-range P010 words; an NV12 copy takes each word's high byte.
+fn mixed_pattern(width: u32, height: u32, bt2020: bool) -> Vec<u16> {
+    let (w, h) = (width as usize, height as usize);
+    let mut data = cpu::test_pattern(width, height, bt2020, false);
+    let mut seed = 0x2545_f491_u32;
+    let mut noise = |range: u32| {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        seed % range
+    };
+    for y in h / 2..h {
+        for x in 0..w {
+            let ramp = 64 + (876 * x / w.max(1)) as u32;
+            data[y * w + x] = ((ramp + noise(48)).clamp(64, 940) as u16) << 6;
+        }
+    }
+    for y in h / 4..h / 2 {
+        for x in 0..w / 2 {
+            let u = 512 + ((x * 7 + y * 3) % 400) as u32 - 200 + noise(16);
+            let v = 512 + ((x * 3 + y * 5) % 400) as u32 - 200 + noise(16);
+            data[w * h + y * w + 2 * x] = (u.clamp(64, 960) as u16) << 6;
+            data[w * h + y * w + 2 * x + 1] = (v.clamp(64, 960) as u16) << 6;
+        }
+    }
+    data
+}
+
+/// The staged downscale (one area pass into an fp32 intermediate, plane passes read it) must give
+/// the same codes as the per-plane path it replaces (each plane evaluating the area sum itself).
+/// Both run on one handle; set_staged_downscale switches between them. Prints one summary line
+/// per case (`staged identity:`) for the CI log; allows at most one code of float noise.
+#[test]
+fn staged_downscale_matches_the_per_plane_path() {
+    let warp = Warp::new();
+    let frames = [
+        (
+            "pq",
+            BaleToneMapFrameInfo {
+                transfer: 16,
+                primaries: 9,
+                matrix: 9,
+                ..Default::default()
+            },
+        ),
+        (
+            "sdr709",
+            BaleToneMapFrameInfo {
+                transfer: 1,
+                primaries: 1,
+                matrix: 1,
+                ..Default::default()
+            },
+        ),
+        (
+            "hlg",
+            BaleToneMapFrameInfo {
+                transfer: 18,
+                primaries: 9,
+                matrix: 9,
+                ..Default::default()
+            },
+        ),
+    ];
+    let mut worst = 0u16;
+    let mut summary = Vec::new();
+    for (sw, sh, w, h) in [
+        (3840, 2160, 1920, 1080),
+        (3840, 2160, 1280, 720),
+        (1920, 1080, 1280, 720),
+    ] {
+        let c = BaleToneMapConfig {
+            width: w,
+            height: h,
+            reserved: [sw, sh, 0, 0],
+            ..config(1)
+        };
+        let handle = warp.create(&c);
+        // SAFETY (each deref below): the test owns the live handle; no apply is in flight, and the
+        // reference ends with the call.
+        assert!(
+            unsafe { (*handle.0).staged_downscale() },
+            "downscale creates the intermediate"
+        );
+        for (name, f) in &frames {
+            let pattern = mixed_pattern(sw, sh, f.matrix == 9);
+            let bytes: Vec<u8> = pattern.iter().map(|&w| (w >> 8) as u8).collect();
+            let bind = D3D11_BIND_SHADER_RESOURCE.0 as u32;
+            for input in ["p010", "nv12"] {
+                let source = match input {
+                    "p010" => warp.texture(&desc(sw, sh, DXGI_FORMAT_P010, bind), Some(&pattern)),
+                    _ => warp.texture8(&desc(sw, sh, DXGI_FORMAT_NV12, bind), &bytes),
+                };
+                for (output, format) in [("nv12", DXGI_FORMAT_NV12), ("p010", DXGI_FORMAT_P010)] {
+                    let target = warp.texture(&output_desc_as(&c, format), None);
+                    let render = |staged: bool| {
+                        unsafe { (*handle.0).set_staged_downscale(staged) }.unwrap();
+                        assert_eq!(unsafe { (*handle.0).staged_downscale() }, staged);
+                        assert_eq!(handle.apply(&warp, &source, 0, &target, f), S_OK);
+                        if format == DXGI_FORMAT_P010 {
+                            warp.readback_p010(&target)
+                        } else {
+                            warp.readback(&target).into_iter().map(u16::from).collect()
+                        }
+                    };
+                    let old = render(false);
+                    let new = render(true);
+                    assert_eq!(old.len(), new.len());
+                    let differing = old.iter().zip(&new).filter(|(a, b)| a != b).count();
+                    let max = old
+                        .iter()
+                        .zip(&new)
+                        .map(|(a, b)| a.abs_diff(*b))
+                        .max()
+                        .unwrap_or(0);
+                    worst = worst.max(max);
+                    let line = format!(
+                        "staged identity: {sw}x{sh}->{w}x{h} {name} in={input} out={output}: \
+                         {differing} of {} codes differ, max {max}",
+                        old.len()
+                    );
+                    println!("{line}");
+                    summary.push(line);
+                }
+            }
+        }
+    }
+    assert!(
+        worst <= 1,
+        "staged downscale changed the output:\n{}",
+        summary.join("\n")
+    );
+}
+
 #[test]
 fn invalid_arguments_leave_output_and_context_state_unchanged() {
     let warp = Warp::new();

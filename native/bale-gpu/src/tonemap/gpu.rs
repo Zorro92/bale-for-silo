@@ -2,7 +2,7 @@
 //! The C owner serializes calls and holds the MF device's multithread protection.
 use super::{cpu, types::*};
 use crate::grain::gpu::{
-    ContextGuard, readback_bytes, render_view, same_device, texture, texture_desc,
+    ContextGuard, readback_bytes, render_view, same_device, shader_view, texture, texture_desc,
 };
 use std::{marker::PhantomData, rc::Rc};
 use windows::Win32::Foundation::{E_FAIL, E_INVALIDARG, E_NOTIMPL};
@@ -17,6 +17,12 @@ use windows::core::{HRESULT, Interface, Result};
 const VS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/fullscreen_vs.cso"));
 const Y_PS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_luma_ps.cso"));
 const UV_PS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_chroma_ps.cso"));
+const AREA_PS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_area_ps.cso"));
+const Y_STAGED_PS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_luma_staged_ps.cso"));
+const UV_STAGED_PS: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_chroma_staged_ps.cso"));
+/// Downscale intermediate: output_pixel's encoded float3 per output pixel, exact fp32 (16 B/pixel).
+const STAGED_FORMAT: DXGI_FORMAT = DXGI_FORMAT_R32G32B32A32_FLOAT;
 
 #[repr(C)]
 struct Constants {
@@ -32,6 +38,14 @@ struct Scratch {
     texture: ID3D11Texture2D,
     views: [ID3D11ShaderResourceView; 2],
 }
+/// Output-sized fp32 intermediate of the downscale path, created and released with the stage.
+struct Staged {
+    width: u32,
+    height: u32,
+    target: ID3D11RenderTargetView,
+    view: ID3D11ShaderResourceView,
+    _texture: ID3D11Texture2D,
+}
 
 /// Exclusive serialized C-ABI owner; retains the device, never the caller's textures.
 pub struct ToneMapGpu {
@@ -42,8 +56,14 @@ pub struct ToneMapGpu {
     vs: ID3D11VertexShader,
     y_ps: ID3D11PixelShader,
     uv_ps: ID3D11PixelShader,
+    area_ps: ID3D11PixelShader,
+    y_staged_ps: ID3D11PixelShader,
+    uv_staged_ps: ID3D11PixelShader,
     constants: ID3D11Buffer,
     scratch: Option<Scratch>,
+    /// Present when the configured output is smaller than the visible source and the debug
+    /// `nostaged` switch is off: one area pass per output pixel instead of one per plane read.
+    staged: Option<Staged>,
     /// Set once D3D11 refused a view of a decoder array (desktop/WARP): stop retrying every frame.
     decoder_view_refused: bool,
     #[cfg(feature = "stage-timing")]
@@ -71,6 +91,9 @@ impl ToneMapGpu {
         let mut vs = None;
         let mut y_ps = None;
         let mut uv_ps = None;
+        let mut area_ps = None;
+        let mut y_staged_ps = None;
+        let mut uv_staged_ps = None;
         let mut constants = None;
         // SAFETY: valid bytecode/initialized descriptor, local output slots, retained device.
         unsafe {
@@ -87,6 +110,9 @@ impl ToneMapGpu {
             device.CreateVertexShader(VS, None, Some(&mut vs))?;
             device.CreatePixelShader(Y_PS, None, Some(&mut y_ps))?;
             device.CreatePixelShader(UV_PS, None, Some(&mut uv_ps))?;
+            device.CreatePixelShader(AREA_PS, None, Some(&mut area_ps))?;
+            device.CreatePixelShader(Y_STAGED_PS, None, Some(&mut y_staged_ps))?;
+            device.CreatePixelShader(UV_STAGED_PS, None, Some(&mut uv_staged_ps))?;
             device.CreateBuffer(
                 &D3D11_BUFFER_DESC {
                     ByteWidth: size_of::<Constants>() as u32,
@@ -100,6 +126,10 @@ impl ToneMapGpu {
         }
         let constants = constants.ok_or(E_FAIL)?;
         crate::memledger::track_buffer(&constants, crate::memledger::TONE_MAP)?;
+        let staged = match !debug.no_staged && downscales(&config) {
+            true => Some(Staged::create(&device, config.width, config.height)?),
+            false => None,
+        };
         let mut gpu = Self {
             device,
             config,
@@ -111,8 +141,12 @@ impl ToneMapGpu {
             vs: vs.ok_or(E_FAIL)?,
             y_ps: y_ps.ok_or(E_FAIL)?,
             uv_ps: uv_ps.ok_or(E_FAIL)?,
+            area_ps: area_ps.ok_or(E_FAIL)?,
+            y_staged_ps: y_staged_ps.ok_or(E_FAIL)?,
+            uv_staged_ps: uv_staged_ps.ok_or(E_FAIL)?,
             constants,
             scratch: None,
+            staged,
             decoder_view_refused: false,
             #[cfg(feature = "stage-timing")]
             timing: None,
@@ -140,6 +174,27 @@ impl ToneMapGpu {
     ) -> Result<()> {
         let config = self.config;
         self.draw(&config, context, input, subresource, output, frame)
+    }
+
+    /// Test hook: drop (false) or recreate (true) the downscale intermediate, so a WARP test can
+    /// render the same frame through the per-plane path and the staged path on one handle.
+    #[doc(hidden)]
+    pub fn set_staged_downscale(&mut self, on: bool) -> Result<()> {
+        self.staged = match on && downscales(&self.config) {
+            true => Some(Staged::create(
+                &self.device,
+                self.config.width,
+                self.config.height,
+            )?),
+            false => None,
+        };
+        Ok(())
+    }
+
+    /// Whether the downscale intermediate exists (tests, and the ledger reading in docs).
+    #[doc(hidden)]
+    pub fn staged_downscale(&self) -> bool {
+        self.staged.is_some()
     }
 
     fn draw(
@@ -228,6 +283,16 @@ impl ToneMapGpu {
             self.scratch.as_ref().ok_or(E_FAIL)?.views.clone()
         };
         let (source_width, source_height) = config.source_size();
+        // The self-test draws its own 1:1 config: only the configured downscale uses the intermediate.
+        let staged = self
+            .staged
+            .as_ref()
+            .filter(|s| s.width == config.width && s.height == config.height && downscales(config))
+            .map(|s| (s.target.clone(), s.view.clone()));
+        let shaders = match staged {
+            Some(_) => [&self.y_staged_ps, &self.uv_staged_ps],
+            None => [&self.y_ps, &self.uv_ps],
+        };
         let constants = Constants {
             geometry: [source_width, source_height, src.Width, src.Height],
             flags: [
@@ -295,7 +360,20 @@ impl ToneMapGpu {
             context.VSSetShader(&self.vs, None);
             context.PSSetConstantBuffers(0, Some(&[Some(self.constants.clone())]));
             context.PSSetShaderResources(0, Some(&views.map(Some)));
-            for (plane, shader) in [&self.y_ps, &self.uv_ps].into_iter().enumerate() {
+            // Downscale: each output pixel's area sum once (counted in the luma timing interval).
+            if let Some((target, _)) = &staged {
+                context.RSSetViewports(Some(&[D3D11_VIEWPORT {
+                    Width: config.width as f32,
+                    Height: config.height as f32,
+                    MinDepth: 0.0,
+                    MaxDepth: 1.0,
+                    ..Default::default()
+                }]));
+                context.OMSetRenderTargets(Some(&[Some(target.clone())]), None);
+                context.PSSetShader(&self.area_ps, None);
+                context.Draw(3, 0);
+            }
+            for (plane, shader) in shaders.into_iter().enumerate() {
                 context.RSSetViewports(Some(&[D3D11_VIEWPORT {
                     Width: (config.width >> plane) as f32,
                     Height: (config.height >> plane) as f32,
@@ -304,6 +382,10 @@ impl ToneMapGpu {
                     ..Default::default()
                 }]));
                 context.OMSetRenderTargets(Some(&[Some(targets[plane].clone())]), None);
+                // Bound only once the intermediate is no longer a render target.
+                if let (0, Some((_, view))) = (plane, &staged) {
+                    context.PSSetShaderResources(2, Some(&[Some(view.clone())]));
+                }
                 context.PSSetShader(shader, None);
                 context.Draw(3, 0);
                 #[cfg(feature = "stage-timing")]
@@ -384,6 +466,34 @@ impl ToneMapGpu {
             }
         }
         Ok(())
+    }
+}
+
+/// The configured output is smaller than the visible source (area downscale).
+fn downscales(config: &BaleToneMapConfig) -> bool {
+    config.source_size() != (config.width, config.height)
+}
+
+impl Staged {
+    fn create(device: &ID3D11Device1, width: u32, height: u32) -> Result<Self> {
+        let texture = texture(
+            crate::memledger::TONE_MAP,
+            device,
+            &texture_desc(
+                width,
+                height,
+                STAGED_FORMAT,
+                (D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE).0 as u32,
+            ),
+            None,
+        )?;
+        Ok(Self {
+            width,
+            height,
+            target: render_view(device, &texture, STAGED_FORMAT)?,
+            view: shader_view(device, &texture, STAGED_FORMAT)?,
+            _texture: texture,
+        })
     }
 }
 
@@ -562,11 +672,14 @@ mod tests {
 
 /// Debug-only switches for the opens-to-failure investigation (2026-11-17), read once per create
 /// from the process environment variable BALE_TONEMAP_DEBUG: `noselftest` skips the create-time
-/// self-test; `nostate` replaces the ID3DDeviceContextState swap with an explicit save/restore.
+/// self-test; `nostate` replaces the ID3DDeviceContextState swap with an explicit save/restore;
+/// `nostaged` (2026-11-22, GPU cost A/B) skips the downscale intermediate and evaluates the area
+/// sum in each plane pass as before.
 #[derive(Clone, Copy, Default)]
 struct DebugSwitches {
     no_self_test: bool,
     no_state: bool,
+    no_staged: bool,
 }
 
 impl DebugSwitches {
@@ -581,6 +694,7 @@ impl DebugSwitches {
             match word {
                 "noselftest" => switches.no_self_test = true,
                 "nostate" => switches.no_state = true,
+                "nostaged" => switches.no_staged = true,
                 _ => {}
             }
         }
@@ -606,7 +720,7 @@ struct SavedBindings {
     hs: Option<ID3D11HullShader>,
     ds: Option<ID3D11DomainShader>,
     ps_constants: [Option<ID3D11Buffer>; 1],
-    ps_views: [Option<ID3D11ShaderResourceView>; 2],
+    ps_views: [Option<ID3D11ShaderResourceView>; 3],
     rasterizer: Option<ID3D11RasterizerState>,
     viewport_count: u32,
     viewports: [D3D11_VIEWPORT; D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE as usize],
@@ -685,7 +799,7 @@ impl Drop for SavedBindings {
         // SAFETY: restores the bindings captured in enter, still under the lock. No allocation,
         // no fallible calls and no Flush, including during unwinding.
         unsafe {
-            c.PSSetShaderResources(0, Some(&[None, None]));
+            c.PSSetShaderResources(0, Some(&[None, None, None]));
             c.OMSetRenderTargets(Some(&self.targets), self.depth.as_ref());
             c.IASetPrimitiveTopology(self.topology);
             c.IASetInputLayout(self.layout.as_ref());
@@ -721,6 +835,7 @@ mod debug_switch_tests {
         let none = DebugSwitches::parse("");
         assert!(!none.no_self_test && !none.no_state);
         let one = DebugSwitches::parse("nostate other");
-        assert!(!one.no_self_test && one.no_state);
+        assert!(!one.no_self_test && one.no_state && !one.no_staged);
+        assert!(DebugSwitches::parse("noselftest,nostaged").no_staged);
     }
 }

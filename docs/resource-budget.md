@@ -86,5 +86,12 @@ chroma and total). See [gpu-tone-map.md](gpu-tone-map.md#measure-the-stages-gpu-
 Open: collect idle-state 4K60 windows, check disjoint/unavailable counts and Xbox timestamp validity,
 and test the stage's ~2 ms share against the rav1g release-fence waits; no stage cost is measured yet.
 
+Open (2026-11-22): the stage evaluates each output pixel's area sum once when downscaling
+([gpu-tone-map.md](gpu-tone-map.md#pass-structure-each-output-pixel-once-2026-11-22)): 20.7 M → 8.3 M
+full per-sample evaluations at 4K → 1080p, expected ~10 ms → ~4–4.5 ms of GPU per frame, for a 31.6 MiB
+fp32 intermediate at 1080p. Measure on the console at 4K60 AV1 against `tonemap-debug nostaged`: delivered
+fps (was ~48, stage off 57.5), missed frames/stalls, and rav1g image release waits. Still over the ~2 ms
+budget if the estimate holds.
+
 Open: the HEVC pool floor with the fork's stage and Media Foundation holding frames; the GPU cost of the
 stages other than rav1g; the ladder needs a real low-memory test.

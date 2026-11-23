@@ -4,11 +4,26 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// (output name, source name, profile, preprocessor define). The zero-copy compute shaders are
-/// built a second time with `BALE_8BIT` for 8-bit pictures; their 10-bit builds take no define.
-const SHADERS: [(&str, &str, &str, Option<&str>); 12] = [
+/// built a second time with `BALE_8BIT` for 8-bit pictures; their 10-bit builds take no define. The
+/// tone-map plane shaders are built again with `BALE_STAGED` for the downscale path.
+const SHADERS: [(&str, &str, &str, Option<&str>); 15] = [
     ("fullscreen_vs", "fullscreen_vs", "vs_5_0", None),
     ("tonemap_luma_ps", "tonemap_luma_ps", "ps_5_0", None),
     ("tonemap_chroma_ps", "tonemap_chroma_ps", "ps_5_0", None),
+    // Downscale: one area pass into an fp32 intermediate, then plane passes that read it.
+    ("tonemap_area_ps", "tonemap_area_ps", "ps_5_0", None),
+    (
+        "tonemap_luma_staged_ps",
+        "tonemap_luma_ps",
+        "ps_5_0",
+        Some("BALE_STAGED=1"),
+    ),
+    (
+        "tonemap_chroma_staged_ps",
+        "tonemap_chroma_ps",
+        "ps_5_0",
+        Some("BALE_STAGED=1"),
+    ),
     ("grain_luma_ps", "grain_luma_ps", "ps_5_0", None),
     ("grain_chroma_ps", "grain_chroma_ps", "ps_5_0", None),
     ("repack_zc_cs", "repack_zc_cs", "cs_5_0", None),

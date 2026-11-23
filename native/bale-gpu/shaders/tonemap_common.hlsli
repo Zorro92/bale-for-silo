@@ -50,3 +50,16 @@ float3 output_pixel(int2 o) {
     }
     return encode_linear(sum / max(total, 1e-6));
 }
+#ifdef BALE_STAGED
+// Downscale: tonemap_area_ps has already written output_pixel(o) of every output pixel at full fp32,
+// so the plane passes read it instead of evaluating the area sum again (luma 1x, chroma 6x).
+// Same clamp as output_pixel: an out-of-range neighbour reads the edge pixel, never Load's zero.
+Texture2D<float4> staged : register(t2);
+float3 staged_pixel(int2 o) {
+    o = clamp(o, int2(0,0), int2(output.xy)-1);
+    return staged.Load(int3(o,0)).xyz;
+}
+#define OUTPUT_PIXEL staged_pixel
+#else
+#define OUTPUT_PIXEL output_pixel
+#endif

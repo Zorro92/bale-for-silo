@@ -67,11 +67,50 @@ Owner's choice (2026-11-17), "area downscaling in linear light". Each output pix
 tone-mapped, display-linear BT.709 RGB of the source pixels its footprint covers, weighted by the
 overlap of each source pixel's unit square, then encodes (inverse BT.1886) and quantizes **once**.
 At 1:1 the footprint is exactly one pixel with weight 1, so unscaled output is unchanged. Chroma
-uses the same left-sited [1 2 1]/4 × [1 1]/2 filter on the output grid. At 2:1 the cost is about the
-same as unscaled output (four samples per output pixel, a quarter as many pixels); there is no
-intermediate texture and no CPU work. `shaders/tonemap_common.hlsli` `output_pixel` and
-`src/tonemap/cpu.rs` `reference_codes` implement it identically. CPU tests cover validation,
-uniform pictures and linear-light blending; the WARP test compares GPU and CPU at 2:1, 2.4:1 and 3:1.
+uses the same left-sited [1 2 1]/4 × [1 1]/2 filter on the output grid. There is no CPU work.
+`shaders/tonemap_common.hlsli` `output_pixel` and `src/tonemap/cpu.rs` `reference_codes` implement it
+identically. CPU tests cover validation, uniform pictures and linear-light blending; the WARP test
+compares GPU and CPU at 2:1, 2.4:1 and 3:1.
+
+### Pass structure: each output pixel once (2026-11-22)
+
+`output_pixel(o)` is the expensive part: for every covered source pixel a full `sample_linear` (chroma
+bilinear, decode, tone curve, gamut; several `pow` per channel). Before, both plane passes evaluated it
+from scratch: luma once per output pixel and chroma six times per chroma sample (the [1 2 1] × [1 1]
+taps), so 4K → 1080p cost 4 × 2.07 M (luma) + 24 × 0.52 M (chroma) = **20.7 M** `sample_linear` for
+8.3 M source pixels. On the console that was ~10 ms of GPU per 4K60 frame and made 4K60 AV1 GPU-bound
+at ~48 fps (stage off: 57.5 fps).
+
+When the output is smaller than the visible source the stage now runs three passes:
+
+1. `tonemap_area_ps` writes `output_pixel(o)` (the encoded float3) for every output pixel into an
+   output-sized `R32G32B32A32_FLOAT` intermediate: exact fp32, nothing rounded.
+2. The luma pass (`tonemap_luma_ps` built with `BALE_STAGED`) loads `.x` once.
+3. The chroma pass (`tonemap_chroma_ps` with `BALE_STAGED`) loads the same six neighbours' `.yz` with
+   the same weights and summation order; `staged_pixel` clamps the neighbour exactly like
+   `output_pixel`'s own `o = clamp(...)` (edge pixel, never `Load`'s zero).
+
+Dithering and quantization are unchanged. 4K → 1080p now costs **8.3 M** `sample_linear` (one per
+source pixel, −60%); 3:1 (4K → 720p) the same; 1.5:1 (1080p → 720p) 3.7 M instead of 9.2 M. The price is
+one write and about one read of the intermediate per frame (~33 MB each at 1080p, the chroma pass's
+overlapping loads mostly hit the cache). Expected: the stage's ~10 ms at 4K → 1080p falls to roughly
+4–4.5 ms (ALU share scaled by 0.4, plus well under 1 ms of traffic); still above the ~2 ms budget, so
+cheaper per-sample math is the next step. Not measured on the console yet.
+
+At 1:1 the old two-pass path stays: each output pixel is already evaluated once by luma, and chroma's
+six taps reuse no work, but a 4K fp32 intermediate would cost ~127 MiB.
+
+Intermediate memory (ledger category 1, created with the stage and released with it; only when
+downscaling): 1920×1080 31.6 MiB, 1280×720 14.1 MiB (a 4K output from an 8K source would be 126.6 MiB).
+It fits the measured limits (app 3328 MiB, DXGI budget 2857 MiB; the rest of Bale holds ~0.15 GB on the
+GPU at a 1080p display).
+
+Identity: the WARP test `staged_downscale_matches_the_per_plane_path` renders PQ, BT.709 SDR and HLG
+frames (P010 and NV12 input, NV12 and P010 output) at 3840×2160 → 1920×1080, 3840×2160 → 1280×720 and
+1920×1080 → 1280×720 through both paths on one handle and prints `staged identity:` lines with the
+count of differing codes and the largest difference (target 0; fxc may compile `output_pixel`
+differently in the area shader than inside the plane shaders, so at most one code is allowed). The
+per-plane path stays available on the console as the debug switch `nostaged`.
 
 ## BT.709 SDR scale-only pass
 
@@ -162,8 +201,10 @@ explains the default display-referred BT.709 interpretation.
 - `scripts/bale-debug.sh tonemap-churn [N] [control]` runs bale_gpu's tone map alone N times on a
   fresh hardware device (create, five 4K applies, destroy; no MF or FFmpeg). It ran 40/40 on
   2026-11-17 and isolated the crash from bale_gpu.
-- `scripts/bale-debug.sh tonemap-debug [noselftest,nostate]` skips the create self-test, or replaces
-  the private ID3DDeviceContextState swap with explicit save/restore of what the draw touches.
+- `scripts/bale-debug.sh tonemap-debug [noselftest,nostate,nostaged]` skips the create self-test,
+  replaces the private ID3DDeviceContextState swap with explicit save/restore of what the draw touches,
+  or (`nostaged`) skips the downscale intermediate so each plane pass evaluates the area sum itself
+  (the pre-2026-11-22 path, for GPU-cost A/B).
 - `bale-debug.sh mem` reports `D3D11 devices: watched N destroyed M alive K`: each engine device
   carries a private-data marker that only real destruction frees.
 
@@ -221,7 +262,7 @@ Reset sets peak=current, preserving residency, history and underflow counters.
 | ID | Component |
 |---|---|
 | 0 | Unassigned |
-| 1 | bale_gpu tone map: constants, scratch, self-test textures, churn probe |
+| 1 | bale_gpu tone map: constants, scratch, downscale intermediate, self-test textures, churn probe |
 | 2 | bale_gpu film grain: GPU buffers/textures and probes |
 | 3 | bale_gpu subtitle overlay: swap-chain buffers (including resize), atlas, bitmap/staging textures, buffers |
 | 4 | bale_gpu engine target/staging textures (`engine.rs`) |
@@ -411,14 +452,14 @@ result. This measures actual stage submissions, including decode preroll; use la
 for the resource budget. Self-test draws are excluded. The asynchronous timing hardening described
 below has not been validated on the console.
 
-The current shaders are **two plane passes**, not separate horizontal/vertical filters: each luma and
-chroma shader combines linearization, area filtering, tone mapping/gamut conversion when needed,
-encoding, dithering when requested and format conversion. Timing covers:
+The shaders are **two plane passes** at 1:1 and **three** when downscaling (area pass into the fp32
+intermediate, then the plane passes; see "Pass structure"), never separate horizontal/vertical filters.
+Timing keeps its four intervals; the area pass is counted in **luma**. Timing covers:
 
 - **total**: GPU timestamps enclosing the optional input copy, bindings and both draws, inside the
   stage's private context state (excludes state isolation/restore);
 - **input-copy**: only `CopySubresourceRegion` into the SRV scratch texture (zero for in-place input);
-- **luma**: constant update/bindings and the luma draw;
+- **luma**: constant update/bindings, the area draw when downscaling, and the luma draw;
 - **chroma**: chroma bindings and the chroma draw.
 
 Total can exceed the sum of passes because it includes surrounding commands within the stage. This is elapsed

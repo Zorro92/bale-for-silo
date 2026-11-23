@@ -121,7 +121,7 @@
 #   scripts/bale-debug.sh fault request-detail  fail the next request-detail load once
 #   scripts/bale-debug.sh fault playback        inject a decoder failure into the player (one replan, then error)
 #   scripts/bale-debug.sh gpu-timing [on|off]   asynchronous stage GPU timestamps for next playback; no args = status
-#   scripts/bale-debug.sh tonemap-debug [noselftest,nostate]  bale_gpu tone-map debug switches for the next tone-map create (no args clears)
+#   scripts/bale-debug.sh tonemap-debug [noselftest,nostate,nostaged]  bale_gpu tone-map debug switches for the next tone-map create (no args clears)
 #   scripts/bale-debug.sh tonemap-size [W H]   display-sized tone-map output (fork bale.38 + bale_gpu area downscale, aspect kept) for the next tone-map open; no args clears
 #   scripts/bale-debug.sh memprobe cpu|d3d11|d3d12|mixed [step=100] [max=3400] [cpu=1000]
 #                                               idle-only memory limit probe; MiB, step/max 1-4096, step<=max; GPU max>=128 (includes timing pair); cpu 0-4096, mixed only
@@ -964,8 +964,8 @@ case "${1:-}" in
     else curl --fail-with-body -sS -X POST "$BASE/gpu-timing?mode=$2"; fi
     ;;
   tonemap-debug)
-    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^(noselftest|nostate)(,(noselftest|nostate))?$ ) ]]; then
-      echo 'usage: scripts/bale-debug.sh tonemap-debug [noselftest|nostate|noselftest,nostate]' >&2
+    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^(noselftest|nostate|nostaged)(,(noselftest|nostate|nostaged)){0,2}$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh tonemap-debug [comma-separated noselftest,nostate,nostaged]' >&2
       exit 2
     fi
     curl --fail-with-body -sS -X POST "$BASE/tonemap-debug?flags=${2-}"
