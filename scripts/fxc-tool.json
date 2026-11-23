@@ -1,0 +1,9 @@
+{
+  "package": "Microsoft.Windows.SDK.CPP",
+  "version": "10.0.28000.2957",
+  "sha256": "f0a200dae58858f418b30dc9e2f52b4188f97eb7837bd4f73074652a01937ddd",
+  "files": [
+    "c/bin/10.0.28000.0/x64/fxc.exe",
+    "c/bin/10.0.28000.0/x64/d3dcompiler_47.dll"
+  ]
+}

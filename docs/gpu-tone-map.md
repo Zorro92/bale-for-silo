@@ -198,6 +198,10 @@ fp32 scalar/vector operations supported by both SM5 and SM6. Resource sampling a
 in `tonemap_common.hlsli`; neither is part of the reusable math include. Rust's
 `src/tonemap/cpu.rs` mirrors the math function for function. CI compiles a resource-free harness
 with FXC ps_5_0 and DXC ps_6_0, and WARP compares the live ABI output to the CPU reference.
+Before a push, `scripts/check-fxc.sh` compiles every shader (the `SHADERS` list in `build.rs`, same
+flags) plus that FXC harness with Microsoft's fxc.exe under Wine on Linux, so FXC-only `/WX` errors such
+as X3571 (`pow` of a base FXC cannot prove non-negative: write `abs()` outermost in the `pow` call) show up in
+about 30 s instead of failing CI. The pre-push hook runs it when shaders change.
 No separate license is assigned to the math file by this change. WARP rejects P010 arrays
 (including decoder-bound arrays), so its pixel comparisons exercise single-texture direct/copy
 paths; descriptor tests cover decoder-array slice bounds. Real decoder-array execution still

@@ -1,0 +1,18 @@
+# Wine runtime for scripts/fxc-wine.sh (Microsoft fxc.exe on Linux). Holds no Microsoft binaries: fxc.exe and
+# d3dcompiler_47.dll come from the pinned NuGet package (scripts/fxc-tool.json) in a bind-mounted cache.
+# Built by scripts/check-fxc.sh as localhost/bale-fxc:<tag from scripts/fxc-tool.json>.
+FROM docker.io/library/ubuntu:24.04
+# Ubuntu ships Wine's PE DLLs with debug info (~630 MB); strip it (code and the builtin marker stay).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends wine wine64 binutils \
+ && find /usr/lib/x86_64-linux-gnu/wine/x86_64-windows -type f \( -name '*.dll' -o -name '*.exe' -o -name '*.drv' -o -name '*.sys' \) \
+      -exec strip --strip-debug {} + \
+ && apt-get purge -y --auto-remove binutils \
+ && rm -rf /var/lib/apt/lists/* /usr/share/doc/* /usr/share/man/*
+ENV WINEDEBUG=-all WINEPREFIX=/opt/wineprefix WINEARCH=win64 WINEDLLOVERRIDES="mscoree,mshtml=;d3dcompiler_47=n"
+# Prepared prefix so each run skips first-start setup (the slow, flaky part of Wine).
+# Wine copies every builtin DLL into the prefix (~600 MB); point identical copies back at the installed ones.
+RUN mkdir -p /opt/wineprefix && wine wineboot --init && wineserver -w \
+ && lib=/usr/lib/x86_64-linux-gnu/wine/x86_64-windows \
+ && cd /opt/wineprefix/drive_c/windows/system32 \
+ && for f in *; do if [ -f "$lib/$f" ] && cmp -s "$f" "$lib/$f"; then ln -sf "$lib/$f" "$f"; fi; done

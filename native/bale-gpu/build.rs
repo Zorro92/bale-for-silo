@@ -61,7 +61,10 @@ fn main() {
     }
     link_libass();
     let out = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"));
-    if !cfg!(windows) {
+    // Another host compiles the real shaders only when FXC names a compiler (scripts/check-fxc.sh points it at
+    // scripts/fxc-wine.sh, Microsoft's fxc.exe under Wine); the Windows flags below are then the only shader list.
+    let fxc = env::var_os("FXC").map(PathBuf::from);
+    if !cfg!(windows) && fxc.is_none() {
         // Cross-check Rust types/lints only. A DLL built this way cannot create a grain handle.
         println!("cargo:rustc-cfg=bale_grain_no_shaders");
         for (name, _, _, _) in SHADERS {
@@ -69,9 +72,7 @@ fn main() {
         }
         return;
     }
-    let fxc = env::var_os("FXC")
-        .map(PathBuf::from)
-        .unwrap_or_else(find_fxc);
+    let fxc = fxc.unwrap_or_else(find_fxc);
     let shaders = Path::new("shaders");
     for (name, source, profile, define) in SHADERS {
         let blob = out.join(format!("{name}.cso"));

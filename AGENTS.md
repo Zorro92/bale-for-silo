@@ -110,7 +110,12 @@ with `scripts/push-main.sh` (stops at the first failure with its reason, then pr
 CI wait after `git push` with `;`. Lint by
 hand with the same `--all-targets` flags; plain `cargo clippy` skips tests.
 XAML/CsWinRT warnings only show in the Windows build, but `scripts/check-cswinrt.sh` (skill `cswinrt-check`) catches
-CsWinRT analyzer errors such as CsWinRT1028 on Linux in seconds; the pre-push hook runs it when C# inputs changed. CI prints every error and warning from a normal-verbosity
+CsWinRT analyzer errors such as CsWinRT1028 on Linux in seconds; the pre-push hook runs it when C# inputs changed. FXC-only shader
+errors (e.g. X3571 under `/WX`) likewise show up only in the Windows build: `scripts/check-fxc.sh` (`--self-test`
+proves it fails) runs Microsoft's real fxc.exe, pinned with its SHA256 in `scripts/fxc-tool.json` and cached in
+`~/.cache/bale-fxc`, under Wine in podman (`localhost/bale-fxc`, ~420 MB) through `build.rs` with `FXC=scripts/fxc-wine.sh`
+(~30 s warm). The pre-push hook runs it when `native/bale-gpu/shaders/`, `build.rs` or the check's files changed, stops
+on fxc errors and only warns when podman or the download is missing. Shaders stay SM5/FXC; a DXC pass is no evidence. CI prints every error and warning from a normal-verbosity
 file log after each MSIX build (the minimal console once hid a CsWinRT error entirely), and a failed build whose
 log names no error is rebuilt single-process at normal verbosity.
 CI skips Rust tests when GPU/libass/toolchain/CI inputs match the last successful push and reuses the input/rustc/target-keyed DLL plus libass notices; PRs and manual runs always test Rust.

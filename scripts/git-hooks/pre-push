@@ -4,7 +4,8 @@
 # second time for the Windows target when that target is installed), rebuilds the Rust core the tests load
 # (a stale libbale_core.so makes tests run old logic), then builds and runs the .NET tests with
 # warnings as errors (Directory.Build.props). The Xbox package itself needs Windows, so CI stays
-# the only check for XAML; scripts/check-cswinrt.sh runs when C# inputs changed and catches CsWinRT errors. Skip once with `git push --no-verify`.
+# the only check for XAML; scripts/check-cswinrt.sh runs when C# inputs changed and catches CsWinRT errors, scripts/check-fxc.sh when shaders
+# changed (real fxc.exe under Wine). Skip once with `git push --no-verify`.
 # Enable with: scripts/install-git-hooks.sh
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
@@ -14,15 +15,18 @@ export PATH="$HOME/.cargo/bin:$PATH"
 export CARGO_INCREMENTAL=0
 
 # Pushing only deletions or tags: nothing to check.
-needed=0 cswinrt=0
+needed=0 cswinrt=0 fxc=0
 while read -r _local_ref local_sha _remote_ref remote_sha; do
   [[ "$local_sha" =~ ^0+$ ]] && continue
   needed=1
-  # CsWinRT pre-check only when the pushed commits touch C# app inputs (or the remote ref is new).
-  if [[ "$remote_sha" =~ ^0+$ ]] || ! git cat-file -e "$remote_sha^{commit}" 2>/dev/null ||
-     git diff --name-only "$remote_sha" "$local_sha" | grep -qE '^(src/|Directory\.Build\.|NuGet\.Config|global\.json|scripts/check-cswinrt\.sh)'; then
-    cswinrt=1
+  # CsWinRT/FXC pre-checks only when the pushed commits touch their inputs (or the remote ref is new).
+  if [[ "$remote_sha" =~ ^0+$ ]] || ! git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+    cswinrt=1 fxc=1
+    continue
   fi
+  changed=$(git diff --name-only "$remote_sha" "$local_sha")
+  grep -qE '^(src/|Directory\.Build\.|NuGet\.Config|global\.json|scripts/check-cswinrt\.sh)' <<<"$changed" && cswinrt=1
+  grep -qE '^(native/bale-gpu/(shaders/|tests/shaders/|build\.rs)|scripts/(check-fxc\.sh|fxc-wine\.sh|fxc-tool\.json|fxc/))' <<<"$changed" && fxc=1
 done
 [[ $needed -eq 1 ]] || exit 0
 
@@ -80,5 +84,18 @@ if [[ $cswinrt -eq 1 ]]; then
     exit 1
   elif [[ $rc -ne 0 ]]; then
     echo "pre-push: CsWinRT pre-check could not run (exit $rc); left to CI." >&2
+  fi
+fi
+
+# FXC-only shader diagnostics (e.g. X3571 under /WX) fail CI's Windows build; scripts/check-fxc.sh runs the real
+# fxc.exe under Wine. Exit 1 = fxc errors (stop), 2 = setup problem such as no podman or no download (warn).
+if [[ $fxc -eq 1 ]]; then
+  echo "pre-push: FXC shader pre-check (scripts/check-fxc.sh)..." >&2
+  set +e; scripts/check-fxc.sh >&2; rc=$?; set -e
+  if [[ $rc -eq 1 ]]; then
+    echo "pre-push: fxc errors would fail CI's Windows build; push stopped (git push --no-verify to override)." >&2
+    exit 1
+  elif [[ $rc -ne 0 ]]; then
+    echo "pre-push: WARNING: FXC pre-check could not run (exit $rc); shaders left to CI." >&2
   fi
 fi
