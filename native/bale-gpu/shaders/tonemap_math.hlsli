@@ -91,8 +91,9 @@ float3 source_decode(float y, float2 uv, bool bt2020, bool full_range, uint mode
     float3 s = float3(sign(e));
     if (!is_signed) s = max(s, 0.0);
     float3 decoded = s * float3(pq_eotf(m.r), pq_eotf(m.g), pq_eotf(m.b));
-    // abs() inline (not m): FXC only proves pow's base non-negative when it sees abs() itself (X3571).
-    if (mode == 1) decoded = s * pow(min(abs(e), is_signed ? 1.5 : 1.0), 2.4);
+    // abs() as the outermost call of pow's base: FXC's X3571 check doesn't see through a variable or
+    // a min() with a ternary cap. The base is already >= 0, so the outer abs() changes no value.
+    if (mode == 1) decoded = s * pow(abs(min(m, is_signed ? 1.5 : 1.0)), 2.4);
     if (mode == 2) decoded = hlg_ootf(s * float3(hlg_inverse_oetf(m.r), hlg_inverse_oetf(m.g), hlg_inverse_oetf(m.b)));
     return decoded;
 }
