@@ -243,7 +243,8 @@ internal static class FfmpegSource
         if (tuning.DecoderShaderResource is { } srv) config.FFmpegOptions["bale_d3d11va_shader_resource"] = srv ? "1" : "0";
         // Debug default since 2026-11-22 (owner): HEVC d3d11va pool from the stream's DPB + 3 (wrapper bale.68; 4K: 20 -> ~8
         // surfaces, -287 MiB, same smoothness on the console). Release keeps FFmpeg's 20 until a long HEVC play is verified.
-        var pool = tuning.DecoderPoolFromStream ?? true;
+        // Wrapper bale.69 also sizes H.264 and VP9 pools; those stay on FFmpeg's pool by default until tested.
+        var pool = tuning.DecoderPoolFromStream ?? codec == "hevc";
         config.FFmpegOptions["bale_d3d11va_pool_from_stream"] = pool ? "1" : "0";
         if (softwareVideo)
         {
