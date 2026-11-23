@@ -84,6 +84,8 @@ internal sealed partial class DebugVideoMediaType : IDisposable
                 // on first decoded frames (e.g. P010); the engine can also fall back after OnStarting.
                 _format = video.EncodingProperties;
                 UpdateDescription();
+                // Every attribute the system decoder is handed (first-10-bit-after-boot investigation, 2026-11-23).
+                Log.Info("player: video media type attrs route=ffmpeg source=mss " + DebugMediaAttributes.Describe(_format.Properties));
             }
             catch (Exception ex)
             {

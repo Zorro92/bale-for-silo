@@ -204,6 +204,10 @@ internal sealed partial class DebugServer
                     $" Subtype={names.Describe(format.Subtype)} {format.Width}x{format.Height}"
                     + $" FrameRate={format.FrameRate.Numerator}/{format.FrameRate.Denominator} Bitrate={format.Bitrate}"
                     + $" DecoderStatus={support.DecoderStatus} MediaSourceStatus={support.MediaSourceStatus}\n"));
+                // Every attribute Windows' own source hands the decoder (compare with the MSS's `video media type attrs`).
+                var attributes = DebugMediaAttributes.Describe(format.Properties);
+                builder.Append("    ").Append(attributes).Append('\n');
+                Log.Info($"Debug playtest: video {i + 1} media type attrs source=windows {attributes}");
                 if (support.DecoderStatus != MediaDecoderStatus.FullySupported)
                     failures.Enqueue($"Video {i + 1} DecoderStatus={support.DecoderStatus}");
             }
