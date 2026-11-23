@@ -1,13 +1,13 @@
 {
-  "version": "0.6.0-alpha.1",
+  "version": "0.6.0-alpha.2",
   "release_repository": "Zorro92/rav1g",
-  "release_tag": "v0.6.0-alpha.1",
-  "source_commit": "88c05f0a129149bfd8c9bd65ac1883a83bb76ba0",
+  "release_tag": "v0.6.0-alpha.2",
+  "source_commit": "505b6c3021fce11fafc2afe2725260e94062fe4b",
   "abi_version": 1,
   "dll_asset": "rav1g.dll",
-  "dll_sha256": "49e530c2d9ac472386bc4c692f8cfae39d913b8222bc389ea9d04ed9f3c898a3",
+  "dll_sha256": "dd116624cd962a6bf25355e945bc4fe438f13433710eb9231712c87336217361",
   "header_asset": "rav1g.h",
   "header_sha256": "8a1d11d91e4617c3bbe6cfc1b8ff58ca12a964df936195e54f3c2529e3a5be52",
   "licenses_asset": "rav1g-licenses.zip",
-  "licenses_sha256": "5bbf9d14dbd273227b3cc7844a3fadafa70fb29a554f32d8b6dec8ba89bd0068"
+  "licenses_sha256": "d33708efb786a7ead25626c6db8ecf58d9aefd0cb91ee3a3f55630b54b1c784f"
 }
