@@ -16,10 +16,10 @@ part Bale hasn't built yet; check when building it), **deviation** (Bale differs
 
 | Repo | Commit | Reviewed |
 |---|---|---|
-| silo-android | `e8071640afc1` | 2026-11-22 |
-| silo-apple | `3709c5fbefd1` | 2026-11-22 |
-| silo-server | `c90e406db71e` | 2026-11-22 |
-| silo-roku | `5778e4765def` | 2026-11-22 |
+| silo-android | `bbbfdeeb57f9` | 2026-11-23 |
+| silo-apple | `07c4c0d4843b` | 2026-11-23 |
+| silo-server | `3b2b321688ac` | 2026-11-23 |
+| silo-roku | `5778e4765def` | 2026-11-23 |
 
 The first review (2026-11-10) started from the commit each local clone was made at.
 
@@ -226,6 +226,54 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   (server `2972dc6`); edition read from filename tags and the item's own folder (server `b3d25aa`).
 
 ## Reviews
+
+### 2026-11-23
+
+No act items. The batch is quiet for Bale: all three projects raise the default cellular quality to Auto up
+to 10 Mbps with a 2 Mbps Data Saver / Low Data Mode cap (settings manifest revision 30; Bale is never
+metered), Apple redesigns its tvOS More menu, and the server marks an item watched at its end credits,
+stops forcing a transcode for multi-PPS H.264 and lets a web player give up on a progressive remux that
+keeps dropping at the same point. No contract change on a path Bale generates.
+
+#### silo-android (`e8071640afc1..bbbfdeeb57f9`, 1 commit, 1 none)
+
+- `bbbfdeeb5` none: cellular quality defaults to Auto up to 10 Mbps, Data Saver caps at 2 Mbps; the TV
+  player only renames its unmetered quality pair (`PlaybackNetworkTier.UNMETERED`).
+
+#### silo-apple (`3709c5fbefd1..07c4c0d4843b`, 2 commits, 1 none)
+
+- `131efb8c` later: the tvOS detail More menu is redesigned: episode watched toggle, submenus, a
+  popover anchored at the side, the episode rail's long-press menu aligned with it (no Play, no Watch
+  Party; remote Play/Pause plays the focused episode), the Version selector focusable with a single
+  version, and focus returning straight to the popover trigger. Apple-only; hold until Android TV
+  follows, as with Not interested.
+
+#### silo-server (`c90e406db71e..3b2b321688ac`, 23 commits, 19 none)
+
+- `47a85e4` later: reaching the played file's end-credits marker now finishes the item (whichever comes
+  first of the credits and the watched threshold), also below the resume floor, only for the file the
+  session actually streams. Server-side; Bale's stop report is unchanged. Console check that a title
+  stopped in its credits leaves Continue Watching on Bale's return refresh.
+- `7a74859` later: the planner no longer skips stream-copy routes for multi-PPS H.264; a strict decoder
+  fails the copy and the ordinary recovery walk ends at the encode. Bale's hardware H.264 route may now
+  get a copy where it got a transcode; a decode failure takes Bale's single replan.
+- `41ea93e` later: protocol §6 reconnect exception: when a reopened progressive remux drops again within
+  30 s, with no seek, less than 1 s past where it dropped before, the client sends `failure_recovery`
+  with `failure.classification: "progressive_drop_repeated"` instead of another reconnect cycle (web
+  player; Chromium's media cache re-asking for dropped bytes). Bale reads the remux forward-only and
+  already caps reconnects (3 per 120 s, then the network failure replan, `PlayerPage.Media.cs`); adopt
+  the classification if the console ever shows a same-point drop loop.
+- `6a13f8a` later: the library Collections tab and `GET /api/v2/library/{id}/user-collections` list a
+  profile's own collections in its saved order, then shared ones by creator (was by name). Bale shows
+  the server's order; console check when the tab's personal group is checked.
+
+None for Bale also: `cf64c37` (MKV bitrates no longer count attached fonts, with a one-off backfill;
+fansub releases may now direct-play where they transcoded), `113c97c` (cellular defaults, settings
+revision 30), `b2bab50` (admin history subtitle order), `4d5040e`, the web, jellycompat, admin, reader,
+metadata, task-manager and CI fixes.
+
+Contract changes on generated paths: none. The OpenAPI diff is two summary lines on the library
+collections routes (shared collections from other profiles on the same login).
 
 ### 2026-11-22
 
