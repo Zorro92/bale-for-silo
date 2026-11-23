@@ -241,7 +241,10 @@ internal static class FfmpegSource
         if (tuning.FastSeek is { } fastSeek) config.General.FastSeek = fastSeek;
         // Wrapper bale.63 experiment: shader-readable d3d11va decoder pools (the fork logs whether D3D11 allows them).
         if (tuning.DecoderShaderResource is { } srv) config.FFmpegOptions["bale_d3d11va_shader_resource"] = srv ? "1" : "0";
-        if (tuning.DecoderPoolFromStream is { } pool) config.FFmpegOptions["bale_d3d11va_pool_from_stream"] = pool ? "1" : "0";
+        // Debug default since 2026-11-22 (owner): HEVC d3d11va pool from the stream's DPB + 3 (wrapper bale.68; 4K: 20 -> ~8
+        // surfaces, -287 MiB, same smoothness on the console). Release keeps FFmpeg's 20 until a long HEVC play is verified.
+        var pool = tuning.DecoderPoolFromStream ?? true;
+        config.FFmpegOptions["bale_d3d11va_pool_from_stream"] = pool ? "1" : "0";
         if (softwareVideo)
         {
             ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.Dav1dMaxFrameDelay));

@@ -36,6 +36,11 @@ buffers, Media Foundation).
   41 s), and the owner saw frequent pauses. Decode-ahead starved 237-240 of 240; GPU ~10 ms/frame, CPU ~1.5-2 cores,
   app 1.12-1.16 GB. Memory and GPU are inside the envelope; throughput is not. "Dropped frames" alone can't show
   this: judge smoothness by stalls and the delivery rate against the stream's fps.
+- Cause found and fixed (2026-11-22): bale_gpu's 4K → 1080p stage cost ~10 ms of GPU because both planes re-evaluated
+  every output pixel's area sum (~20.7 M full tone-map evaluations for 8.3 M source pixels). The stage now computes each
+  output pixel once into a 1080p fp32 intermediate (31.6 MiB; output identical, 0 of 36 CI cases differ). 4K60 AV1 40 Mbps:
+  47.1 → 57.6 fps from rav1g, missed frames 21.8% → 4.5%, image release waits 233 → 96 of 240. That equals the stage-off
+  run (57.5 fps / 5.0%), so the remaining ~4.5% isn't the stage. `tonemap-debug nostaged` restores the old path.
 - The CPU stage that reads the compressed stream is the known limit and grows with bitrate; heavy 4K
   AV1 above ~40 Mbps is the risk case.
 - Spend resources only where they buy measured performance: e.g. more slots or frames in flight are worth
@@ -55,7 +60,7 @@ buffers, Media Foundation).
 |---|---|---|---|
 | UI, managed heap, images | 250 MiB browsing, ~150 MiB in playback | 400 MiB | drop image caches/backdrops when playback starts; ~0 CPU in playback |
 | Network + demux buffer | 256 MiB | 512 MiB | sized by time (20-30 s), byte cap for remuxes (128 Mbps peak = 16 MB/s); ~0.25 core |
-| HW decoder (fork, FFmpeg d3d11va) | ~290 MiB at 4K | 480 MiB | FFmpeg's default is 4 + 16 frames for HEVC/H.264 (20 = 478 MiB at 4K P010); size from the stream's DPB (4K HEVC levels: ≤ 6 refs) + current + frames in flight, ~10-12. Windows' own decoders (passthrough) can't be shrunk |
+| HW decoder (fork, FFmpeg d3d11va) | ~190-290 MiB at 4K | 480 MiB | FFmpeg's default is 4 + 16 frames for HEVC/H.264 (20 = 478 MiB at 4K P010); size from the stream's DPB (4K HEVC levels: ≤ 6 refs) + current + frames in flight. Done for HEVC (wrapper bale.68 `bale_d3d11va_pool_from_stream`, DPB + 3): 4K clips 20 → 8 surfaces (478 → 191 MiB), same smoothness; debug default since 2026-11-22, release after a long HEVC play. Windows' own decoders (passthrough) can't be shrunk |
 | rav1g (4K) | ~650 MiB | 900 MiB | budget passed in as a parameter; free the process device when the next mount is not AV1 (~43 MiB) |
 | dav1d (1080p only) | ~600 MiB, ≤ 3 threads | — | one CPU pass per frame |
 | Stage output (tone map/downscale/dither) | 6-8 frames at display size (~24 MiB at 1080p P010) | — | display depth (dithered 8-bit on SDR 8-bit); ≤ 10% of the frame's GPU time |

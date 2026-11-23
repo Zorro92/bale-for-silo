@@ -16,6 +16,8 @@ public class DebugFfmpegLogFilterTests
     [InlineData("[ffmpeg] Bale D3D11 upload")]
     [InlineData("Opening private media input")]
     [InlineData("HTTP request headers")]
+    [InlineData("D3D11 decoder pool")]
+    [InlineData(" D3D11 decoder pool: 8 surfaces")]
     public void DropsEveryMessageWithoutTheExactPrefix(string? message)
     {
         Assert.Null(DebugFfmpegLogFilter.Message(message));
@@ -27,6 +29,7 @@ public class DebugFfmpegLogFilterTests
     [InlineData("Bale D3D11 upload Processed index=1.\r\n\r\n", "ffmpeg: Bale D3D11 upload Processed index=1.")]
     [InlineData("Bale compressed colour info: transfer=16 primaries=9 matrix=9 range=1 hdr=1\n", "ffmpeg: Bale compressed colour info: transfer=16 primaries=9 matrix=9 range=1 hdr=1")]
     [InlineData("Bale diagnostic \n", "ffmpeg: Bale diagnostic ")]
+    [InlineData("D3D11 decoder pool: 8 surfaces 3840x2176 (stream buffer 5, FFmpeg default 20)\n", "ffmpeg: D3D11 decoder pool: 8 surfaces 3840x2176 (stream buffer 5, FFmpeg default 20)")]
     public void ForwardsBaleDiagnosticsWithATagAndOnlyTrimsTrailingNewlines(string message, string expected)
     {
         Assert.Equal(expected, DebugFfmpegLogFilter.Message(message));
