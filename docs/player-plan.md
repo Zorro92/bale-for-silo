@@ -2663,3 +2663,15 @@ older wrappers ignore the key and keep P010, which then plays as before with the
 - **Consequence:** the revised engine policy avoids 10-bit presentation on 8-bit SDR outputs, except for
   the temporary AV1 development exception or an explicit debug override. Before GPU timing runs, do not
   take a reading within a few minutes of the first 10-bit play after a boot.
+
+**No longer reproduces (2026-11-23, console OS 26100.9673, build 261116).** Restart before each play, 60 s of
+the same 1080p HEVC Main 10 SDR clip on a 24 bpp display, rav1g j4k40 health run before and at +0/+2/+5 min
+(GPU busy / inter / ext_borders, baseline ~11.7 ms / 1.01 / 0.047). All clean, no reading moved:
+- Windows' own player (MediaSource.CreateFromUri, full screen): clean.
+- FFmpeg source → system decoder (HEVC_ES passthrough), MediaPlayer backend: clean.
+- Same, engine backend with the output forced to R10G10B10A2 (`engine-target rgb10`, the 11-18 trigger): clean.
+
+The source description doesn't matter either: Windows' MP4 source hands the decoder 21 attributes (sequence
+header, level, colour tags), the MSS only 8 (`video media type attrs` log lines), and both stay clean. The
+console had taken an OS update since 11-18 (dev-mode sign-out on 11-23), so the likeliest reading is that the
+update fixed it; the 11-18 OS build wasn't recorded. The display-depth output policy is unchanged.
