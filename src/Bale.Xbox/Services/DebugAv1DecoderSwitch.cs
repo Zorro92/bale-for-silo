@@ -79,8 +79,11 @@ internal static class DebugDecoderLog
 {
     private static readonly object Gate = new();
     private static DebugDecoderSnapshot _value;
+    // Delivery windows are 240 samples except the last partial one at teardown; weight each window's rate by
+    // its samples so the playback's rate is total frames over total time, not whichever window came last.
+    private static double _rateSamples, _rateSeconds;
 
-    internal static void Reset() { lock (Gate) _value = default; }
+    internal static void Reset() { lock (Gate) { _value = default; _rateSamples = 0; _rateSeconds = 0; } }
     internal static DebugDecoderSnapshot Snapshot() { lock (Gate) return _value; }
 
     internal static void Observe(string? message)
@@ -90,7 +93,15 @@ internal static class DebugDecoderLog
         {
             if (message.StartsWith("Bale rav1g: delivery ", StringComparison.Ordinal)
                 && Number(message, "rate=") is { } rate)
+            {
+                if (Counter(message, "samples=") is { } samples and > 0 && rate > 0)
+                {
+                    _rateSamples += samples;
+                    _rateSeconds += samples / rate;
+                    rate = _rateSamples / _rateSeconds;
+                }
                 _value = _value with { DeliveryRate = rate };
+            }
             if (message.StartsWith("Bale rav1g: destroyed (", StringComparison.Ordinal)
                 && Counter(message, "discarded=") is { } discarded)
                 _value = _value with { Discarded = discarded };

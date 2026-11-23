@@ -18,10 +18,23 @@ public class DebugDecoderLogTests
         DebugDecoderLog.Observe("Bale rav1g: destroyed (frames=90 discarded=7 images created=8 peak in use=8)");
         Assert.Equal(7UL, DebugDecoderLog.Snapshot().Discarded);
         DebugDecoderLog.Observe("Bale rav1g: delivery samples=12 rate=24.00/s");
-        Assert.Equal("24.0 / 23.976 fps", DebugDecoderLog.Snapshot().DecodeRateText(23.976));
+        // Weighted by samples: 102 frames over 90/45.1 + 12/24 s.
+        Assert.Equal("40.9 / 23.976 fps", DebugDecoderLog.Snapshot().DecodeRateText(23.976));
         Assert.Equal(7UL, DebugDecoderLog.Snapshot().Discarded);
         DebugDecoderLog.Reset();
         Assert.Equal(default, DebugDecoderLog.Snapshot());
+    }
+
+    [Fact]
+    public void ThePartialTeardownWindowDoesNotReplaceThePlaybackRate()
+    {
+        DebugDecoderLog.Reset();
+        DebugDecoderLog.Observe("Bale rav1g: delivery samples=240 rate=60.00/s");
+        DebugDecoderLog.Observe("Bale rav1g: delivery samples=240 rate=60.00/s");
+        DebugDecoderLog.Observe("Bale rav1g: delivery samples=117 rate=34.61/s");
+        // 597 frames over 8 s + 3.38 s = 52.5 fps, not the last window's 34.6.
+        Assert.Equal("52.5 / 60 fps", DebugDecoderLog.Snapshot().DecodeRateText(60));
+        DebugDecoderLog.Reset();
     }
 
     [Theory]
