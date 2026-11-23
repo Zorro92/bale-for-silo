@@ -60,7 +60,7 @@ buffers, Media Foundation).
 |---|---|---|---|
 | UI, managed heap, images | 250 MiB browsing, ~150 MiB in playback | 400 MiB | drop image caches/backdrops when playback starts; ~0 CPU in playback |
 | Network + demux buffer | 256 MiB | 512 MiB | sized by time (20-30 s), byte cap for remuxes (128 Mbps peak = 16 MB/s); ~0.25 core |
-| HW decoder (fork, FFmpeg d3d11va) | ~190-290 MiB at 4K | 480 MiB | FFmpeg's default is 4 + 16 frames for HEVC/H.264 (20 = 478 MiB at 4K P010); size from the stream's DPB (4K HEVC levels: ≤ 6 refs) + current + frames in flight. Done for HEVC (wrapper bale.68 `bale_d3d11va_pool_from_stream`, DPB + 3): 4K clips 20 → 8 surfaces (478 → 191 MiB), same smoothness; debug default since 2026-11-22, release after a long HEVC play. Windows' own decoders (passthrough) can't be shrunk |
+| HW decoder (fork, FFmpeg d3d11va) | ~190-290 MiB at 4K | 480 MiB | FFmpeg's default is 4 + 16 frames for HEVC/H.264 (20 = 478 MiB at 4K P010); size from the stream's DPB (4K HEVC levels: ≤ 6 refs) + current + frames in flight. Done for HEVC (wrapper bale.68 `bale_d3d11va_pool_from_stream`, DPB + 3): 4K clips 20 → 8 surfaces (478 → 191 MiB), same smoothness; debug default since 2026-11-22, release after a long HEVC play. VP9 and H.264 (bale.71, `ffmpeg-tune pool=stream`): 4K VP9 12 → 11 surfaces (261 MiB), 1080p H.264 with `decoder=auto` 20 → 8 (57.1 → 22.9 MiB), 0 missed frames on both (2026-11-23); 1080p H.264 takes the system decoder by default, so there it doesn't apply. Windows' own decoders (passthrough) can't be shrunk |
 | rav1g (4K) | ~650 MiB | 900 MiB | budget passed in as a parameter; free the process device when the next mount is not AV1 (~43 MiB) |
 | dav1d (1080p only) | ~600 MiB, ≤ 3 threads | — | one CPU pass per frame |
 | Stage output (tone map/downscale/dither) | 6-8 frames at display size (~24 MiB at 1080p P010) | — | display depth (dithered 8-bit on SDR 8-bit); ≤ 10% of the frame's GPU time |
@@ -106,6 +106,11 @@ ops per source pixel; DXC ps_6_0 static size of the area shader 631 → 678 inst
 unused `gammachroma` branch). Console A/B to run at 4K60 AV1 and 4K HEVC HDR → 1080p: delivered fps,
 missed frames/stalls and Stage GPU against `tonemap-debug gammachroma`; plus a visual check of fine
 saturated detail and a TOPLEFT-sited stream.
+
+Result (2026-11-23, 4K60 AV1 HDR10 60M → 1080p, rav1g 0.6, two 45 s runs each): new math 15.0 / 14.8% missed
+frames, `gammachroma` 15.4 / 14.7%, 18-19 stalls each, rav1g rate ~51/s in all four. The new chroma path costs
+nothing measurable; the misses come from the decoder (51 of 60 fps). The 11-22 single run (14.8 vs 12.3%) was noise.
+The visual check is still open.
 
 Open: the HEVC pool floor with the fork's stage and Media Foundation holding frames; the GPU cost of the
 stages other than rav1g; the ladder needs a real low-memory test.
