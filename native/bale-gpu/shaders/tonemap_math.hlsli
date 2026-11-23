@@ -55,7 +55,8 @@ float3 luma_weights(bool bt2020) {
 }
 // SDR sources are display-referred: decode with the BT.1886 EOTF (power 2.4) to linear 0..1.
 float sdr_decode(float signal) { return pow(clamp(signal, 0.0, 1.0), 2.4); }
-// Sign-preserving BT.1886 for the BT.709 scale-only pass: saturated colours outside 0..1 RGB survive.
+// Sign-preserving BT.1886 for the BT.709 scale-only pass (saturated colours outside 0..1 RGB survive)
+// and for the extended BT.2020 SDR decode; magnitude capped at 1.5.
 float sdr_decode_signed(float signal) { return sign(signal) * pow(min(abs(signal), 1.5), 2.4); }
 float sdr_encode_signed(float linear_value) { return sign(linear_value) * pow(min(abs(linear_value), 3.0), 1.0 / 2.4); }
 // Source modes (flags.w): 0 PQ, 1 SDR (BT.1886), 2 HLG (BT.2100, 1000-nit nominal peak).
@@ -67,7 +68,12 @@ float3 hlg_ootf(float3 scene) {
     float ys = max(dot(float3(0.2627, 0.6780, 0.0593), scene), 0.0);
     return scene * (1000.0 * pow(ys, 0.2));
 }
-float3 source_decode(float y, float2 uv, bool bt2020, bool full_range, uint mode) {
+// extended: sign-preserving (extended-range) transfer decode, the current downscale: a signal below 0
+// (footroom, chroma overshoot at a saturated edge) becomes negative light instead of black, so the
+// area average keeps it and the one late clip decides; magnitude capped at 1 for PQ (10000 nits)
+// and HLG, 1.5 for SDR. false is the pre-2026-11-22 per-pixel clip at 0 (debug `gammachroma`).
+// BT.709 SDR is signed either way (its scale-only pass never clipped).
+float3 source_decode(float y, float2 uv, bool bt2020, bool full_range, uint mode, bool extended) {
     float3 weights = luma_weights(bt2020);
     y = full_range ? y / 1023.0 : (y - 64.0) / 876.0;
     uv = (uv - 512.0) / (full_range ? 1023.0 : 896.0);
@@ -75,10 +81,18 @@ float3 source_decode(float y, float2 uv, bool bt2020, bool full_range, uint mode
     float b = y + 2.0 * (1.0 - weights.b) * uv.x;
     float g = (y - weights.r * r - weights.b * b) / weights.g;
     // One return: FXC rejects early returns here (X4000).
-    float3 decoded = float3(pq_eotf(r), pq_eotf(g), pq_eotf(b));
-    if (mode == 1) decoded = bt2020 ? float3(sdr_decode(r), sdr_decode(g), sdr_decode(b))
-                                    : float3(sdr_decode_signed(r), sdr_decode_signed(g), sdr_decode_signed(b));
-    if (mode == 2) decoded = hlg_ootf(float3(hlg_inverse_oetf(r), hlg_inverse_oetf(g), hlg_inverse_oetf(b)));
+    // One transfer evaluation per channel for both methods (an HLSL ?: evaluates both sides):
+    // signed takes the magnitude and restores the sign, the clipped decode clamps at 0 itself.
+    // Clipped: sign 0 below 0 gives the same 0 as clamping (every decode is 0 at 0). Rust spells
+    // the same values as pq_eotf_signed / hlg_inverse_oetf_signed / sdr_decode_signed.
+    bool is_signed = extended || (mode == 1 && !bt2020);
+    float3 e = float3(r, g, b);
+    float3 m = abs(e);
+    float3 s = float3(sign(e));
+    if (!is_signed) s = max(s, 0.0);
+    float3 decoded = s * float3(pq_eotf(m.r), pq_eotf(m.g), pq_eotf(m.b));
+    if (mode == 1) decoded = s * pow(min(m, is_signed ? 1.5 : 1.0), 2.4);
+    if (mode == 2) decoded = hlg_ootf(s * float3(hlg_inverse_oetf(m.r), hlg_inverse_oetf(m.g), hlg_inverse_oetf(m.b)));
     return decoded;
 }
 float3 rgb2020_to_709(float3 rgb) {
@@ -89,6 +103,12 @@ float3 rgb2020_to_709(float3 rgb) {
 float3 gamut_clip(float3 rgb) { return clamp(rgb, 0.0, 1.0); }
 float3 gamut_to_709(float3 rgb, bool bt2020) {
     return gamut_clip(bt2020 ? rgb2020_to_709(rgb) : rgb);
+}
+// The one late clip of the current downscale: applied to an averaged output value (an output pixel's
+// area, or a chroma footprint), never per source pixel. BT.709 SDR (mode 1, BT.709 matrix) is scale
+// only and never clipped: the final quantization alone limits its range, as before.
+float3 finish_linear(float3 rgb, bool bt2020, uint mode) {
+    return mode == 1 && !bt2020 ? rgb : gamut_clip(rgb);
 }
 // Scene-referred camera OETF, available for consumers requiring that interpretation.
 float bt709_oetf(float linear_value) {
@@ -106,14 +126,19 @@ float3 desaturate(float3 rgb, bool bt2020, float threshold_nits) {
     float over = clamp(max(luma - threshold_nits, 1e-6) / max(luma, 1e-6), 0.0, 1.0);
     return rgb * (1.0 - over) + luma * over;
 }
-// Tone-mapped display-linear BT.709 RGB in 0..1: the light domain the area downscale averages in.
+// Tone-mapped display-linear BT.709 RGB: the light domain the area downscale averages in.
+// extended (current): unclipped, may leave 0..1 (out-of-gamut colours, sub-black); finish_linear
+// clips the average once. !extended (debug `gammachroma`): clipped to 0..1 here, per source pixel.
+// Negative and >1 channels are safe below: the curves clamp their input at 0 and the peak, the
+// scale divides by max(sig, 1e-6), desaturate guards its divisions; no pow/log of a negative.
 float3 tone_map_linear(float y, float2 uv, float source_peak_nits, float target_white_nits,
-                       float desat, uint curve, bool bt2020, bool full_range, uint mode) {
-    float3 rgb = source_decode(y, uv, bt2020, full_range, mode);
+                       float desat, uint curve, bool bt2020, bool full_range, uint mode, bool extended) {
+    float3 rgb = source_decode(y, uv, bt2020, full_range, mode, extended);
     if (mode == 1) {
         // BT.2020 SDR: no tone curve, only BT.2020 -> BT.709 in linear light, clip, re-encode.
         // BT.709 SDR is scale only: no clip, so the final quantization alone limits the range.
-        if (bt2020) rgb = gamut_to_709(rgb, true);
+        if (bt2020) rgb = rgb2020_to_709(rgb);
+        if (bt2020 && !extended) rgb = gamut_clip(rgb);
     } else {
         float original = max(rgb.r, max(rgb.g, rgb.b));
         if (curve == 1 && bt2020) rgb = rgb2020_to_709(rgb);
@@ -123,7 +148,8 @@ float3 tone_map_linear(float y, float2 uv, float source_peak_nits, float target_
         }
         float sig = curve == 1 ? original : max(rgb.r, max(rgb.g, rgb.b));
         rgb *= tone_curve(sig, source_peak_nits, target_white_nits, curve) / max(sig, 1e-6);
-        rgb = gamut_to_709(rgb, bt2020 && curve == 2);
+        if (bt2020 && curve == 2) rgb = rgb2020_to_709(rgb);
+        if (!extended) rgb = gamut_clip(rgb);
     }
     return rgb;
 }
@@ -131,10 +157,11 @@ float3 encode_linear(float3 rgb) {
     // Identical to sdr_encode inside 0..1; only the unclipped BT.709 scale-only pass leaves it.
     return rgb709_to_ycbcr(float3(sdr_encode_signed(rgb.r), sdr_encode_signed(rgb.g), sdr_encode_signed(rgb.b)));
 }
+// One pixel at 1:1 with the current math: extended decode, then the late clip on that pixel.
 float3 tone_map_pixel(float y, float2 uv, float source_peak_nits, float target_white_nits,
                       float desat, uint curve, bool bt2020, bool full_range, uint mode) {
-    return encode_linear(tone_map_linear(y, uv, source_peak_nits, target_white_nits, desat, curve,
-                                         bt2020, full_range, mode));
+    return encode_linear(finish_linear(tone_map_linear(y, uv, source_peak_nits, target_white_nits, desat,
+                                                       curve, bt2020, full_range, mode, true), bt2020, mode));
 }
 // Return integer-valued codes as floats. The binding layer divides by 255 for UNORM RTVs.
 float quantize_luma(float y) { return clamp(floor(16.0 + 219.0 * y + 0.5), 16.0, 235.0); }

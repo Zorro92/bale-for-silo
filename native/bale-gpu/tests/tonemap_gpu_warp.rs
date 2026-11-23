@@ -386,14 +386,7 @@ fn area_downscale_matches_reference_at_two_to_one_and_uneven_ratios() {
                 ..config(curve)
             };
             let handle = warp.create(&c);
-            let f = BaleToneMapFrameInfo {
-                transfer: 16,
-                primaries: 9,
-                matrix: 9,
-                ..Default::default()
-            };
             let pattern = cpu::test_pattern(28, 14, true, false);
-            let expected = cpu::reference(&c, &f, &pattern, 28, 14).unwrap();
             let source = warp.texture(
                 &desc(
                     28,
@@ -404,14 +397,34 @@ fn area_downscale_matches_reference_at_two_to_one_and_uneven_ratios() {
                 Some(&pattern),
             );
             let output = warp.texture(&output_desc(&c), None);
-            assert_eq!(handle.apply(&warp, &source, 0, &output, &f), S_OK);
-            let actual = warp.readback(&output);
-            assert_eq!(actual.len(), expected.len());
-            for (i, (&a, &b)) in actual.iter().zip(&expected).enumerate() {
-                assert!(
-                    a.abs_diff(b) <= 3,
-                    "curve={curve} {width}x{height} code={i}: GPU {a}, CPU {b}"
-                );
+            // Current math at every input chroma location, and the legacy math (`gammachroma`).
+            for (method, chroma_location) in [
+                (cpu::Method::Linear, 0),
+                (cpu::Method::Linear, 2),
+                (cpu::Method::Linear, 3),
+                (cpu::Method::Linear, 4),
+                (cpu::Method::Linear, 6),
+                (cpu::Method::Legacy, 3),
+            ] {
+                let f = BaleToneMapFrameInfo {
+                    transfer: 16,
+                    primaries: 9,
+                    matrix: 9,
+                    chroma_location,
+                    ..Default::default()
+                };
+                // SAFETY: the test owns the live handle; no apply is in flight.
+                unsafe { (*handle.0).set_method(method) };
+                let expected = cpu::reference_with(&c, &f, &pattern, 28, 14, method).unwrap();
+                assert_eq!(handle.apply(&warp, &source, 0, &output, &f), S_OK);
+                let actual = warp.readback(&output);
+                assert_eq!(actual.len(), expected.len());
+                for (i, (&a, &b)) in actual.iter().zip(&expected).enumerate() {
+                    assert!(
+                        a.abs_diff(b) <= 3,
+                        "curve={curve} {width}x{height} {method:?} location={chroma_location} code={i}: GPU {a}, CPU {b}"
+                    );
+                }
             }
         }
     }
@@ -497,9 +510,12 @@ fn mixed_pattern(width: u32, height: u32, bt2020: bool) -> Vec<u16> {
 }
 
 /// The staged downscale (one area pass into an fp32 intermediate, plane passes read it) must give
-/// the same codes as the per-plane path it replaces (each plane evaluating the area sum itself).
-/// Both run on one handle; set_staged_downscale switches between them. Prints one summary line
-/// per case (`staged identity:`) for the CI log; allows at most one code of float noise.
+/// the same codes as the per-plane path (each plane evaluating the area sum itself), under the
+/// current math and the legacy one (`gammachroma`). Both run on one handle; set_staged_downscale and
+/// set_method switch. Prints one summary line per case (`staged identity:`) for the CI log; allows
+/// at most one code of float noise. Also prints how many luma codes the current math changes
+/// against the legacy math (`method luma:`): none may change for BT.709 SDR (no clip either way,
+/// same siting), PQ/HLG change only where a value left 0..1 before the clip.
 #[test]
 fn staged_downscale_matches_the_per_plane_path() {
     let warp = Warp::new();
@@ -563,7 +579,8 @@ fn staged_downscale_matches_the_per_plane_path() {
                 };
                 for (output, format) in [("nv12", DXGI_FORMAT_NV12), ("p010", DXGI_FORMAT_P010)] {
                     let target = warp.texture(&output_desc_as(&c, format), None);
-                    let render = |staged: bool| {
+                    let render = |staged: bool, method: cpu::Method| {
+                        unsafe { (*handle.0).set_method(method) };
                         unsafe { (*handle.0).set_staged_downscale(staged) }.unwrap();
                         assert_eq!(unsafe { (*handle.0).staged_downscale() }, staged);
                         assert_eq!(handle.apply(&warp, &source, 0, &target, f), S_OK);
@@ -573,24 +590,38 @@ fn staged_downscale_matches_the_per_plane_path() {
                             warp.readback(&target).into_iter().map(u16::from).collect()
                         }
                     };
-                    let old = render(false);
-                    let new = render(true);
-                    assert_eq!(old.len(), new.len());
-                    let differing = old.iter().zip(&new).filter(|(a, b)| a != b).count();
-                    let max = old
-                        .iter()
-                        .zip(&new)
-                        .map(|(a, b)| a.abs_diff(*b))
-                        .max()
-                        .unwrap_or(0);
-                    worst = worst.max(max);
-                    let line = format!(
-                        "staged identity: {sw}x{sh}->{w}x{h} {name} in={input} out={output}: \
-                         {differing} of {} codes differ, max {max}",
-                        old.len()
+                    let mut staged_luma = Vec::new();
+                    for method in [cpu::Method::Linear, cpu::Method::Legacy] {
+                        let old = render(false, method);
+                        let new = render(true, method);
+                        assert_eq!(old.len(), new.len());
+                        let differing = old.iter().zip(&new).filter(|(a, b)| a != b).count();
+                        let max = old
+                            .iter()
+                            .zip(&new)
+                            .map(|(a, b)| a.abs_diff(*b))
+                            .max()
+                            .unwrap_or(0);
+                        worst = worst.max(max);
+                        let line = format!(
+                            "staged identity: {sw}x{sh}->{w}x{h} {name} {method:?} in={input} \
+                             out={output}: {differing} of {} codes differ, max {max}",
+                            old.len()
+                        );
+                        println!("{line}");
+                        summary.push(line);
+                        staged_luma.push(new[..(w * h) as usize].to_vec());
+                    }
+                    let (linear, legacy) = (&staged_luma[0], &staged_luma[1]);
+                    let differing = linear.iter().zip(legacy).filter(|(a, b)| a != b).count();
+                    println!(
+                        "method luma: {sw}x{sh}->{w}x{h} {name} in={input} out={output}: \
+                         {differing} of {} luma codes differ from gammachroma",
+                        linear.len()
                     );
-                    println!("{line}");
-                    summary.push(line);
+                    if *name == "sdr709" {
+                        assert_eq!(differing, 0, "BT.709 SDR luma must not change");
+                    }
                 }
             }
         }

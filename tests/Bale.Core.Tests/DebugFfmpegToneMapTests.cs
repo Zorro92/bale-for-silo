@@ -80,6 +80,17 @@ public sealed class DebugFfmpegToneMapTests
         => Assert.Equal(valid, DebugToneMapSwitches.ValidOutputSize(width, height));
 
     [Theory]
+    [InlineData("", true)]
+    [InlineData("nostaged", true)]
+    [InlineData("gammachroma", true)]
+    [InlineData("gammachroma,nostaged", true)]
+    [InlineData("noselftest,nostate,nostaged,gammachroma", true)]
+    [InlineData("gammachroma,other", false)]
+    [InlineData("GammaChroma", false)]
+    public void ToneMapSwitchesAcceptOnlyKnownWords(string flags, bool valid)
+        => Assert.Equal(valid, DebugToneMapSwitches.Valid(flags));
+
+    [Theory]
     [InlineData("2.1.0-bale.37", false)]
     [InlineData("2.1.0-bale.38", true)]
     public void OutputSizeNeedsTheBale38Wrapper(string version, bool supported)

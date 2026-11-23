@@ -7,7 +7,7 @@ namespace Bale.Xbox.Services;
 /// <summary>Tone-map debug switches (debug builds only).</summary>
 internal static class DebugToneMapSwitches
 {
-    private static readonly string[] Known = ["noselftest", "nostate", "nostaged"];
+    private static readonly string[] Known = ["noselftest", "nostate", "nostaged", "gammachroma"];
 
     /// <summary>The words bale_gpu's tone map accepts in BALE_TONEMAP_DEBUG.</summary>
     public static bool Valid(string flags) =>

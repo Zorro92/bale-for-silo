@@ -98,5 +98,14 @@ fp32 intermediate at 1080p. Measure on the console at 4K60 AV1 against `tonemap-
 fps (was ~48, stage off 57.5), missed frames/stalls, and rav1g image release waits. Still over the ~2 ms
 budget if the estimate holds.
 
+Open (2026-11-22): output chroma mixed in linear light, input siting from the stream and one late clip
+([gpu-tone-map.md](gpu-tone-map.md#closer-to-true-area-scaling-in-linear-light-2026-11-22-part-1)). No
+memory added (same 31.6 MiB intermediate at 1080p, now holding the linear average); per-pixel work about the
+same (the encode moves from the area pass to the plane passes, +1 encode per chroma sample, a few sign/abs
+ops per source pixel; DXC ps_6_0 static size of the area shader 631 → 678 instructions, including the
+unused `gammachroma` branch). Console A/B to run at 4K60 AV1 and 4K HEVC HDR → 1080p: delivered fps,
+missed frames/stalls and Stage GPU against `tonemap-debug gammachroma`; plus a visual check of fine
+saturated detail and a TOPLEFT-sited stream.
+
 Open: the HEVC pool floor with the fork's stage and Media Foundation holding frames; the GPU cost of the
 stages other than rav1g; the ladder needs a real low-memory test.

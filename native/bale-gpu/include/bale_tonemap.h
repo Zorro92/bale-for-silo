@@ -61,7 +61,8 @@ typedef struct BaleToneMapFrameInfo { /* H.273 code points, per frame */
     uint8_t  primaries;         /* 9 = BT.2020; 1 = BT.709 (PQ, or SDR709) */
     uint8_t  matrix;            /* 9 = BT.2020 NCL; 1 = BT.709 */
     uint8_t  full_range;        /* 0 = limited */
-    uint8_t  chroma_location;   /* AVChromaLocation value; 0/1 and all other values use left */
+    uint8_t  chroma_location;   /* AVChromaLocation of the input: 2 center, 3 topleft, 4 top, 5 bottomleft,
+                                   6 bottom are honoured; 0 (unspecified), 1 and unknown values use left */
     uint8_t  has_mastering, has_content_light, reserved0;
     float    mastering_primaries[3][2], mastering_white[2];
     float    mastering_min_nits, mastering_max_nits;

@@ -81,6 +81,12 @@ pub fn pq_eotf(signal: f32) -> f32 {
     let p = signal.clamp(0.0, 1.0).powf(1.0 / 78.84375);
     ((p - 0.8359375).max(0.0) / (18.851563 - 18.6875 * p)).powf(1.0 / 0.15930176) * 10000.0
 }
+/// Extended (sign-preserving) PQ: a signal below 0 (footroom, chroma overshoot at a saturated edge)
+/// becomes negative light instead of black, so the area average keeps it and the one late clip
+/// (`finish_linear`) decides. Magnitude capped at 1 (10000 nits) by `pq_eotf`'s clamp.
+pub fn pq_eotf_signed(signal: f32) -> f32 {
+    signal.signum() * pq_eotf(signal.abs())
+}
 pub fn pq_encode(nits: f32) -> f32 {
     let p = (nits.clamp(0.0, 10000.0) / 10000.0).powf(0.15930176);
     ((0.8359375 + 18.851563 * p) / (1.0 + 18.6875 * p)).powf(78.84375)
@@ -148,7 +154,8 @@ pub fn sdr_decode(signal: f32) -> f32 {
     signal.clamp(0.0, 1.0).powf(2.4)
 }
 /// Sign-preserving BT.1886 decode/encode for the BT.709 scale-only pass: Y'CbCr that maps outside
-/// 0..1 RGB (saturated colours) survives the round trip instead of being clipped.
+/// 0..1 RGB (saturated colours) survives the round trip instead of being clipped. The decode is
+/// also the extended BT.2020 SDR decode (magnitude capped at 1.5).
 pub fn sdr_decode_signed(signal: f32) -> f32 {
     signal.signum() * signal.abs().min(1.5).powf(2.4)
 }
@@ -178,13 +185,26 @@ pub fn hlg_inverse_oetf(signal: f32) -> f32 {
         (((e - c) / a).exp() + b) / 12.0
     }
 }
+/// Extended HLG inverse OETF: sign-preserving, magnitude capped at 1.
+pub fn hlg_inverse_oetf_signed(signal: f32) -> f32 {
+    signal.signum() * hlg_inverse_oetf(signal.abs())
+}
 /// BT.2100 HLG OOTF at the nominal peak: display nits = Lw * Ys^(gamma-1) * E per channel.
 pub fn hlg_ootf(scene: [f32; 3]) -> [f32; 3] {
     let ys = dot(luma_weights(true), scene).max(0.0);
     let gain = HLG_PEAK_NITS * ys.powf(0.2);
     scene.map(|v| v * gain)
 }
-pub fn source_decode(y: f32, uv: [f32; 2], bt2020: bool, full_range: bool, mode: u32) -> [f32; 3] {
+/// `extended`: sign-preserving transfer decode (the current math); false is the per-pixel clip at 0
+/// of [`Method::Legacy`]. BT.709 SDR is signed either way.
+pub fn source_decode(
+    y: f32,
+    uv: [f32; 2],
+    bt2020: bool,
+    full_range: bool,
+    mode: u32,
+    extended: bool,
+) -> [f32; 3] {
     let [kr, kg, kb] = luma_weights(bt2020);
     let y = if full_range {
         y / 1023.0
@@ -195,11 +215,13 @@ pub fn source_decode(y: f32, uv: [f32; 2], bt2020: bool, full_range: bool, mode:
     let r = y + 2.0 * (1.0 - kr) * uv[1];
     let b = y + 2.0 * (1.0 - kb) * uv[0];
     let g = (y - kr * r - kb * b) / kg;
-    match mode {
-        MODE_SDR if bt2020 => [r, g, b].map(sdr_decode),
-        MODE_SDR => [r, g, b].map(sdr_decode_signed),
-        MODE_HLG => hlg_ootf([r, g, b].map(hlg_inverse_oetf)),
-        _ => [r, g, b].map(pq_eotf),
+    match (mode, extended) {
+        (MODE_SDR, false) if bt2020 => [r, g, b].map(sdr_decode),
+        (MODE_SDR, _) => [r, g, b].map(sdr_decode_signed),
+        (MODE_HLG, true) => hlg_ootf([r, g, b].map(hlg_inverse_oetf_signed)),
+        (MODE_HLG, false) => hlg_ootf([r, g, b].map(hlg_inverse_oetf)),
+        (_, true) => [r, g, b].map(pq_eotf_signed),
+        (_, false) => [r, g, b].map(pq_eotf),
     }
 }
 pub fn rgb2020_to_709(rgb: [f32; 3]) -> [f32; 3] {
@@ -214,6 +236,16 @@ pub fn gamut_clip(rgb: [f32; 3]) -> [f32; 3] {
 }
 pub fn gamut_to_709(rgb: [f32; 3], bt2020: bool) -> [f32; 3] {
     gamut_clip(if bt2020 { rgb2020_to_709(rgb) } else { rgb })
+}
+/// The one late clip of the current math: applied to an averaged output value (an output pixel's
+/// area, or a chroma footprint), never per source pixel. BT.709 SDR (mode SDR, BT.709 matrix) is
+/// scale only and never clipped: the final quantization alone limits its range, as before.
+pub fn finish_linear(rgb: [f32; 3], bt2020: bool, mode: u32) -> [f32; 3] {
+    if mode == MODE_SDR && !bt2020 {
+        rgb
+    } else {
+        gamut_clip(rgb)
+    }
 }
 /// Scene-referred BT.709 camera OETF, available to other consumers. The server uses
 /// display-referred SDR instead, so tone_map_pixel calls sdr_encode below.
@@ -253,15 +285,21 @@ pub fn tone_map_pixel(
     full_range: bool,
     mode: u32,
 ) -> [f32; 3] {
-    encode_linear(tone_map_linear(
-        y,
-        uv,
-        source_peak_nits,
-        target_white_nits,
-        desat,
-        curve,
+    // One pixel at 1:1 with the current math: extended decode, then the late clip on that pixel.
+    encode_linear(finish_linear(
+        tone_map_linear(
+            y,
+            uv,
+            source_peak_nits,
+            target_white_nits,
+            desat,
+            curve,
+            bt2020,
+            full_range,
+            mode,
+            true,
+        ),
         bt2020,
-        full_range,
         mode,
     ))
 }
@@ -271,7 +309,12 @@ pub fn encode_linear(rgb: [f32; 3]) -> [f32; 3] {
     // only the unclipped BT.709 scale-only pass reaches outside it.
     rgb709_to_ycbcr(rgb.map(sdr_encode_signed))
 }
-/// Tone-mapped display-linear BT.709 RGB in 0..1: the light domain the area downscale averages in.
+/// Tone-mapped display-linear BT.709 RGB: the light domain the area downscale averages in.
+/// `extended` (current math): unclipped, may leave 0..1 (out-of-gamut colours, sub-black);
+/// [`finish_linear`] clips the average once. `!extended` ([`Method::Legacy`]): clipped to 0..1
+/// here, per source pixel. Negative and >1 channels are safe: the curves clamp their input at 0
+/// and the peak, the scale divides by max(sig, 1e-6), desaturate guards its divisions, and no
+/// pow/log ever sees a negative (the signed decodes take the magnitude).
 #[allow(clippy::too_many_arguments)]
 pub fn tone_map_linear(
     y: f32,
@@ -283,15 +326,20 @@ pub fn tone_map_linear(
     bt2020: bool,
     full_range: bool,
     mode: u32,
+    extended: bool,
 ) -> [f32; 3] {
     if mode == MODE_SDR {
         // BT.2020 SDR: no tone curve, only BT.2020 -> BT.709 in linear light, clip, re-encode.
-        let rgb = source_decode(y, uv, bt2020, full_range, MODE_SDR);
+        let rgb = source_decode(y, uv, bt2020, full_range, MODE_SDR, extended);
         // BT.709 SDR is scale only: no clip, so the final quantization alone limits the range.
-        return if bt2020 { gamut_to_709(rgb, true) } else { rgb };
+        return match (bt2020, extended) {
+            (false, _) => rgb,
+            (true, true) => rgb2020_to_709(rgb),
+            (true, false) => gamut_to_709(rgb, true),
+        };
     }
     // PQ and HLG both arrive here as display light in nits.
-    let mut rgb = source_decode(y, uv, bt2020, full_range, mode);
+    let mut rgb = source_decode(y, uv, bt2020, full_range, mode, extended);
     let original = rgb.into_iter().fold(0.0f32, f32::max);
     // Match tonemapx's order for nonzero desat: convert primaries before desaturating,
     // but derive the scale from the original RGB. The scalar scale commutes with the matrix.
@@ -312,13 +360,51 @@ pub fn tone_map_linear(
         rgb.into_iter().fold(0.0f32, f32::max)
     };
     let scale = tone_curve(sig, source_peak_nits, target_white_nits, curve) / sig.max(1e-6);
-    gamut_to_709(rgb.map(|v| v * scale), bt2020 && curve == 2)
+    let rgb = rgb.map(|v| v * scale);
+    let rgb = if bt2020 && curve == 2 {
+        rgb2020_to_709(rgb)
+    } else {
+        rgb
+    };
+    if extended { rgb } else { gamut_clip(rgb) }
+}
+/// Which downscale math the stage runs. `Linear` is the current one; `Legacy` is the
+/// pre-2026-11-22 math kept for console A/B (debug switch `gammachroma`): per-source-pixel clip,
+/// input chroma always left-sited, output chroma filtered from encoded Cb/Cr.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Method {
+    #[default]
+    Linear,
+    Legacy,
+}
+/// Input chroma sample (i, j) sits at luma position (2i, 2j) + this offset, from the stream's
+/// AVChromaLocation: 1 LEFT (and 0 unspecified, and any unknown value): co-sited horizontally,
+/// halfway between two rows; 2 CENTER: halfway both ways; 3 TOPLEFT: co-sited both ways; 4 TOP:
+/// halfway horizontally, on the top row; 5 BOTTOMLEFT / 6 BOTTOM: on the bottom row of the pair.
+/// Mirrors the shader's `chroma_offset`.
+pub fn chroma_offset(location: u8) -> [f32; 2] {
+    let x = if matches!(location, 2 | 4 | 6) {
+        0.5
+    } else {
+        0.0
+    };
+    let y = match location {
+        3 | 4 => 0.0,
+        5 | 6 => 1.0,
+        _ => 0.5,
+    };
+    [x, y]
+}
+/// The cbuffer's `output.w` for a frame: bits 0-7 the chroma location, bit 8 the legacy math.
+pub fn method_word(frame: &BaleToneMapFrameInfo, method: Method) -> u32 {
+    u32::from(frame.chroma_location) | if method == Method::Legacy { 0x100 } else { 0 }
 }
 pub fn pixel_linear(
     config: &BaleToneMapConfig,
     frame: &BaleToneMapFrameInfo,
     y: f32,
     uv: [f32; 2],
+    method: Method,
 ) -> [f32; 3] {
     tone_map_linear(
         y,
@@ -330,6 +416,7 @@ pub fn pixel_linear(
         frame.matrix == 9,
         frame.full_range == 1,
         mode(frame.transfer),
+        method == Method::Linear,
     )
 }
 pub fn pixel(
@@ -392,10 +479,12 @@ pub fn quantize_chroma_dithered(uv: [f32; 2], x: u32, row: u32) -> [f32; 2] {
 }
 
 /// Tight P010 words (high 10 bits), input may include decoder alignment beyond visible size.
-/// Chroma upsampling: bilinear, centres at (2*x, 2*y+0.5) in luma-centre coordinates.
-/// Downsampling: horizontal [1 2 1]/4 centred at 2*x, vertical [1 1]/2. Clamp visible
-/// edges, never sample alignment padding. This is left-sited, unlike a centred 2x2 box.
-/// NV12 8-bit codes, the ABI 1 output, ordered-dithered like the shader.
+/// Chroma upsampling: bilinear from the stream's chroma location ([`chroma_offset`]; left when
+/// unspecified). Area downscale in display-linear light, then output chroma (left-sited): a
+/// [1 2 1]/4 x [1 1]/2 footprint centred at (2x, 2y + 0.5) that mixes the output pixels' linear
+/// RGB, then clips and encodes once. Clamp visible edges, never sample alignment padding.
+/// NV12 8-bit codes, the ABI 1 output, ordered-dithered like the shader. Current math
+/// ([`Method::Linear`]); see [`reference_with`] for the legacy one.
 pub fn reference(
     config: &BaleToneMapConfig,
     frame: &BaleToneMapFrameInfo,
@@ -403,10 +492,24 @@ pub fn reference(
     width: u32,
     height: u32,
 ) -> Result<Vec<u8>, i32> {
-    Ok(reference_codes(config, frame, input, width, height, false)?
-        .into_iter()
-        .map(|code| code as u8)
-        .collect())
+    reference_with(config, frame, input, width, height, Method::Linear)
+}
+
+/// [`reference`] with an explicit [`Method`].
+pub fn reference_with(
+    config: &BaleToneMapConfig,
+    frame: &BaleToneMapFrameInfo,
+    input: &[u16],
+    width: u32,
+    height: u32,
+    method: Method,
+) -> Result<Vec<u8>, i32> {
+    Ok(
+        reference_codes(config, frame, input, width, height, false, method)?
+            .into_iter()
+            .map(|code| code as u8)
+            .collect(),
+    )
 }
 
 /// P010 10-bit codes (unshifted, 64-940/960), the ABI 2 output.
@@ -417,7 +520,19 @@ pub fn reference_p010(
     width: u32,
     height: u32,
 ) -> Result<Vec<u16>, i32> {
-    reference_codes(config, frame, input, width, height, true)
+    reference_p010_with(config, frame, input, width, height, Method::Linear)
+}
+
+/// [`reference_p010`] with an explicit [`Method`].
+pub fn reference_p010_with(
+    config: &BaleToneMapConfig,
+    frame: &BaleToneMapFrameInfo,
+    input: &[u16],
+    width: u32,
+    height: u32,
+    method: Method,
+) -> Result<Vec<u16>, i32> {
+    reference_codes(config, frame, input, width, height, true, method)
 }
 
 fn reference_codes(
@@ -427,6 +542,7 @@ fn reference_codes(
     width: u32,
     height: u32,
     ten_bit: bool,
+    method: Method,
 ) -> Result<Vec<u16>, i32> {
     config.validate()?;
     frame.validate()?;
@@ -450,6 +566,9 @@ fn reference_codes(
     {
         return Err(E_INVALIDARG);
     }
+    let legacy = method == Method::Legacy;
+    let (bt2020, mode) = (frame.matrix == 9, mode(frame.transfer));
+    let offset = chroma_offset(if legacy { 1 } else { frame.chroma_location });
     let uv_at = |x: i32, y: i32, plane: usize| {
         let x = x.clamp(0, sw as i32 / 2 - 1) as usize;
         let y = y.clamp(0, sh as i32 / 2 - 1) as usize;
@@ -458,8 +577,8 @@ fn reference_codes(
     let sample = |x: i32, y: i32| {
         let x = x.clamp(0, sw as i32 - 1);
         let y = y.clamp(0, sh as i32 - 1);
-        let cx = x as f32 * 0.5;
-        let cy = (y as f32 - 0.5) * 0.5;
+        let cx = (x as f32 - offset[0]) * 0.5;
+        let cy = (y as f32 - offset[1]) * 0.5;
         let (ix, iy) = (cx.floor() as i32, cy.floor() as i32);
         let (fx, fy) = (cx - ix as f32, cy - iy as f32);
         let uv = std::array::from_fn(|p| {
@@ -472,11 +591,12 @@ fn reference_codes(
             frame,
             (input[y as usize * iw + x as usize] >> 6) as f32,
             uv,
+            method,
         )
     };
-    // Area downscale in display-linear light, mirroring the shader's output_pixel.
+    // Area downscale in display-linear light, mirroring the shader's area_linear.
     let (scale_x, scale_y) = (sw as f32 / w as f32, sh as f32 / h as f32);
-    let output_pixel = |ox: i32, oy: i32| {
+    let area_linear = |ox: i32, oy: i32| {
         let ox = ox.clamp(0, w as i32 - 1);
         let oy = oy.clamp(0, h as i32 - 1);
         let (lo_x, lo_y) = (ox as f32 * scale_x, oy as f32 * scale_y);
@@ -495,12 +615,26 @@ fn reference_codes(
                 total += weight;
             }
         }
-        encode_linear(sum.map(|v| v / total.max(1e-6)))
+        sum.map(|v| v / total.max(1e-6))
+    };
+    // The shader's area_value: linear (current) or encoded (legacy) per output pixel, computed once
+    // per pixel like the staged intermediate.
+    let encode_output = |rgb: [f32; 3]| encode_linear(finish_linear(rgb, bt2020, mode));
+    let mut values = Vec::with_capacity(w * h);
+    for y in 0..h {
+        for x in 0..w {
+            let rgb = area_linear(x as i32, y as i32);
+            values.push(if legacy { encode_linear(rgb) } else { rgb });
+        }
+    }
+    let value = |x: i32, y: i32| {
+        values[y.clamp(0, h as i32 - 1) as usize * w + x.clamp(0, w as i32 - 1) as usize]
     };
     let mut out = vec![0; w * h * 3 / 2];
     for y in 0..h {
         for x in 0..w {
-            let luma = output_pixel(x as i32, y as i32)[0];
+            let v = value(x as i32, y as i32);
+            let luma = if legacy { v[0] } else { encode_output(v)[0] };
             out[y * w + x] = if ten_bit {
                 quantize_luma10(luma)
             } else {
@@ -510,15 +644,17 @@ fn reference_codes(
     }
     for y in 0..h / 2 {
         for x in 0..w / 2 {
-            let mut uv = [0.0; 2];
+            let mut acc = [0.0f32; 3];
             for dy in 0..2 {
                 for (dx, weight) in [(-1, 0.125), (0, 0.25), (1, 0.125)] {
-                    let p = output_pixel((2 * x) as i32 + dx, (2 * y + dy) as i32);
-                    for c in 0..2 {
-                        uv[c] += weight * p[c + 1];
+                    let p = value((2 * x) as i32 + dx, (2 * y + dy) as i32);
+                    for c in 0..3 {
+                        acc[c] += weight * p[c];
                     }
                 }
             }
+            let encoded = if legacy { acc } else { encode_output(acc) };
+            let uv = [encoded[1], encoded[2]];
             let codes = if ten_bit {
                 quantize_chroma10(uv)
             } else {
@@ -1074,7 +1210,7 @@ mod tests {
         );
     }
     #[test]
-    fn visible_edges_ignore_decoder_padding_and_chroma_location_defaults_to_left() {
+    fn visible_edges_ignore_decoder_padding_and_unknown_chroma_locations_read_as_left() {
         let mut c = config(1);
         c.width = 12;
         c.height = 6;
@@ -1097,7 +1233,8 @@ mod tests {
             }
         }
         assert_eq!(reference(&c, &f, &padded, 16, 8).unwrap(), expected);
-        for loc in [0, 1, 2, 3, 4, 5, 255] {
+        // Unspecified, left and unknown locations all read as left; the others move the chroma.
+        for loc in [0, 1, 7, 255] {
             assert_eq!(
                 reference(
                     &c,
@@ -1110,7 +1247,8 @@ mod tests {
                     8
                 )
                 .unwrap(),
-                expected
+                expected,
+                "location {loc}"
             );
         }
         assert!(expected[..72].iter().all(|&v| (16..=235).contains(&v)));
@@ -1179,5 +1317,295 @@ mod tests {
             .validate()
             .is_ok()
         );
+    }
+
+    /// BT.709 SDR picture (P010 words): flat luma 500, neutral chroma except the chroma samples
+    /// `hot` marks, which get a strong Cr (red).
+    fn chroma_probe(w: usize, h: usize, hot: impl Fn(usize, usize) -> bool) -> Vec<u16> {
+        let mut data = vec![500u16 << 6; w * h * 3 / 2];
+        for y in 0..h / 2 {
+            for x in 0..w / 2 {
+                let (u, v) = if hot(x, y) { (440, 760) } else { (512, 512) };
+                data[w * h + y * w + 2 * x] = u << 6;
+                data[w * h + y * w + 2 * x + 1] = v << 6;
+            }
+        }
+        data
+    }
+    fn sdr709() -> BaleToneMapFrameInfo {
+        BaleToneMapFrameInfo {
+            transfer: 1,
+            primaries: 1,
+            matrix: 1,
+            ..frame()
+        }
+    }
+    #[test]
+    fn chroma_offsets_follow_av_chroma_location() {
+        assert_eq!(chroma_offset(0), [0.0, 0.5]);
+        assert_eq!(chroma_offset(1), [0.0, 0.5]);
+        assert_eq!(chroma_offset(2), [0.5, 0.5]);
+        assert_eq!(chroma_offset(3), [0.0, 0.0]);
+        assert_eq!(chroma_offset(4), [0.5, 0.0]);
+        assert_eq!(chroma_offset(5), [0.0, 1.0]);
+        assert_eq!(chroma_offset(6), [0.5, 1.0]);
+        assert_eq!(chroma_offset(7), [0.0, 0.5]);
+        assert_eq!(chroma_offset(255), [0.0, 0.5]);
+        assert_eq!(
+            method_word(
+                &BaleToneMapFrameInfo {
+                    chroma_location: 3,
+                    ..frame()
+                },
+                Method::Legacy
+            ),
+            0x103
+        );
+        assert_eq!(method_word(&frame(), Method::Linear), 0);
+    }
+    /// One red chroma row (or column) at 1:1: with the input sited like the output (left), the
+    /// output chroma rows (columns) on both sides get the same amount of red. A location that
+    /// sits the input elsewhere shifts it to that side; the legacy math ignores the location.
+    #[test]
+    fn input_chroma_siting_moves_the_chroma_where_the_stream_says() {
+        let (w, h) = (16usize, 8usize);
+        let c = config(1);
+        let red = |out: &[u16], x: usize, y: usize| i32::from(out[w * h + y * w + 2 * x + 1]) - 512;
+        let at = |input: &[u16], loc: u8, method: Method| {
+            let f = BaleToneMapFrameInfo {
+                chroma_location: loc,
+                ..sdr709()
+            };
+            reference_p010_with(&c, &f, input, 16, 8, method).unwrap()
+        };
+        // Vertical: chroma row 1 red; output chroma rows 0 and 2 are its neighbours.
+        let row = chroma_probe(w, h, |_, y| y == 1);
+        let left = at(&row, 1, Method::Linear);
+        assert!(red(&left, 3, 1) > 100, "{}", red(&left, 3, 1));
+        assert!(red(&left, 3, 0).abs_diff(red(&left, 3, 2)) <= 1);
+        for (loc, up) in [(3, true), (4, true), (5, false), (6, false)] {
+            let out = at(&row, loc, Method::Linear);
+            let (above, below) = (red(&out, 3, 0), red(&out, 3, 2));
+            assert!(
+                if up {
+                    above > below + 20
+                } else {
+                    below > above + 20
+                },
+                "location {loc}: above {above}, below {below}"
+            );
+            assert_eq!(at(&row, loc, Method::Legacy), at(&row, 1, Method::Legacy));
+        }
+        // CENTER keeps the vertical siting of LEFT.
+        let center = at(&row, 2, Method::Linear);
+        assert!(red(&center, 3, 0).abs_diff(red(&center, 3, 2)) <= 1);
+        // Horizontal: chroma column 3 red; output chroma columns 2 and 4 are its neighbours.
+        let column = chroma_probe(w, h, |x, _| x == 3);
+        let left = at(&column, 1, Method::Linear);
+        assert!(red(&left, 2, 1).abs_diff(red(&left, 4, 1)) <= 1);
+        for loc in [2, 4, 6] {
+            let out = at(&column, loc, Method::Linear);
+            let (l, r) = (red(&out, 2, 1), red(&out, 4, 1));
+            assert!(r > l + 20, "location {loc}: left {l}, right {r}");
+        }
+        for loc in [3, 5] {
+            let out = at(&column, loc, Method::Linear);
+            assert!(
+                red(&out, 2, 1).abs_diff(red(&out, 4, 1)) <= 1,
+                "location {loc}"
+            );
+        }
+    }
+    /// A pixel checkerboard of saturated red and green at 1:1: luma stays per pixel, and each
+    /// chroma sample mixes red and green. Mixing their linear light gives the colour the eye
+    /// sees (yellow, encoded once); mixing encoded Cb/Cr gives a much weaker, greyer yellow.
+    #[test]
+    fn linear_chroma_keeps_the_saturation_of_fine_red_green_detail() {
+        let (w, h) = (16usize, 8usize);
+        let c = config(1);
+        let f = sdr709();
+        let mut input = vec![0u16; w * h * 3 / 2];
+        // Per-pixel luma of encoded BT.709 red / green; the 4:2:0 chroma is what an encoder stores
+        // for each 2x2 (the mix of its red and green Cb/Cr).
+        let colour = |x: usize, y: usize| {
+            if (x + y).is_multiple_of(2) {
+                [1.0f32, 0.0, 0.0]
+            } else {
+                [0.0, 1.0, 0.0]
+            }
+        };
+        for y in 0..h {
+            for x in 0..w {
+                let ycc = rgb709_to_ycbcr(colour(x, y));
+                input[y * w + x] = ((64.0 + 876.0 * ycc[0]).round() as u16) << 6;
+            }
+        }
+        // Both methods see the same input, so only the output chroma math differs.
+        for y in 0..h / 2 {
+            for x in 0..w / 2 {
+                let mix = [0, 1].map(|c| {
+                    let a = rgb709_to_ycbcr(colour(2 * x, 2 * y))[c + 1];
+                    let b = rgb709_to_ycbcr(colour(2 * x + 1, 2 * y))[c + 1];
+                    (a + b) / 2.0
+                });
+                for p in 0..2 {
+                    input[w * h + y * w + 2 * x + p] =
+                        ((512.0 + 896.0 * mix[p]).round() as u16) << 6;
+                }
+            }
+        }
+        let linear = reference_p010_with(&c, &f, &input, 16, 8, Method::Linear).unwrap();
+        let legacy = reference_p010_with(&c, &f, &input, 16, 8, Method::Legacy).unwrap();
+        // Luma is per output pixel in both: identical (no out-of-range values for BT.709 SDR).
+        assert_eq!(linear[..w * h], legacy[..w * h]);
+        let strength = |out: &[u16]| {
+            out[w * h..]
+                .iter()
+                .map(|&code| i32::from(code) - 512)
+                .map(i32::abs)
+                .sum::<i32>()
+        };
+        let (s_linear, s_legacy) = (strength(&linear), strength(&legacy));
+        assert!(
+            s_linear * 10 > s_legacy * 11,
+            "linear chroma {s_linear} vs gamma chroma {s_legacy}"
+        );
+        // Reconstructed light: decode each output pixel back to linear BT.709; the linear chroma
+        // keeps at least the mean luminance of the gamma one (here it is equal or brighter).
+        let light = |out: &[u16]| {
+            let mut sum = 0.0f32;
+            for y in 0..h {
+                for x in 0..w {
+                    let yy = (f32::from(out[y * w + x]) - 64.0) / 876.0;
+                    let ci = w * h + (y / 2) * w + 2 * (x / 2);
+                    let cb = (f32::from(out[ci]) - 512.0) / 896.0;
+                    let cr = (f32::from(out[ci + 1]) - 512.0) / 896.0;
+                    let r = yy + 1.5748 * cr;
+                    let b = yy + 1.8556 * cb;
+                    let g = (yy - 0.2126 * r - 0.0722 * b) / 0.7152;
+                    let rgb = [r, g, b].map(|v| v.clamp(0.0, 1.0).powf(2.4));
+                    sum += dot(luma_weights(false), rgb);
+                }
+            }
+            sum / (w * h) as f32
+        };
+        assert!(
+            light(&linear) >= light(&legacy) - 0.002,
+            "linear {} vs gamma {}",
+            light(&linear),
+            light(&legacy)
+        );
+    }
+    /// An out-of-gamut colour next to a neutral one: the current math averages the unclipped light
+    /// and clips the average once; the legacy math clipped each pixel first.
+    #[test]
+    fn out_of_range_pairs_average_before_the_one_clip() {
+        // Saturated BT.2020 green at ~200 nits: outside BT.709, so its BT.709 red/blue are negative.
+        let rgb2020 = [0.0f32, 200.0, 0.0].map(pq_encode);
+        let kw = luma_weights(true);
+        let luma = dot(kw, rgb2020);
+        let uv = [
+            512.0 + 896.0 * (rgb2020[2] - luma) / (2.0 * (1.0 - kw[2])),
+            512.0 + 896.0 * (rgb2020[0] - luma) / (2.0 * (1.0 - kw[0])),
+        ];
+        let y = 64.0 + 876.0 * luma;
+        for curve in [1, 2] {
+            let tm = |y, uv, extended| {
+                tone_map_linear(
+                    y, uv, 1000.0, 100.0, 0.0, curve, true, false, MODE_PQ, extended,
+                )
+            };
+            let green = tm(y, uv, true);
+            assert!(
+                green[0] < -0.01 && green[2] < 0.0,
+                "curve {curve}: {green:?}"
+            );
+            let green_clipped = tm(y, uv, false);
+            assert_eq!(green_clipped, gamut_clip(green));
+            let grey = tm(64.0 + 876.0 * pq_encode(100.0), [512.0; 2], true);
+            let mean = |a: [f32; 3], b: [f32; 3]| {
+                std::array::from_fn::<f32, 3, _>(|i| (a[i] + b[i]) / 2.0)
+            };
+            let late = finish_linear(mean(green, grey), true, MODE_PQ);
+            let early = mean(green_clipped, grey);
+            // The green's negative red takes light out of the pair's red channel.
+            assert!(
+                late[0] < early[0] - 0.005,
+                "curve {curve}: {late:?} vs {early:?}"
+            );
+            assert!((late[1] - early[1]).abs() < 1e-6);
+        }
+        // BT.709 SDR stays unclipped through finish_linear; everything else is clipped there.
+        assert_eq!(
+            finish_linear([-0.2, 1.3, 0.5], false, MODE_SDR),
+            [-0.2, 1.3, 0.5]
+        );
+        assert_eq!(
+            finish_linear([-0.2, 1.3, 0.5], true, MODE_SDR),
+            [0.0, 1.0, 0.5]
+        );
+        assert_eq!(
+            finish_linear([-0.2, 1.3, 0.5], false, MODE_PQ),
+            [0.0, 1.0, 0.5]
+        );
+    }
+    /// In-range content is the same picture under both methods: they differ only where a value
+    /// leaves 0..1 (clip) or chroma varies (linear vs encoded chroma mix).
+    #[test]
+    fn methods_agree_on_a_flat_in_gamut_picture() {
+        let (w, h) = (32usize, 16usize);
+        let mut input = vec![0u16; w * h * 3 / 2];
+        input[..w * h].fill(600 << 6);
+        input[w * h..]
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, v)| *v = if i % 2 == 0 { 540 << 6 } else { 470 << 6 });
+        let c = BaleToneMapConfig {
+            reserved: [32, 16, 0, 0],
+            ..config(1)
+        };
+        for f in [frame(), sdr709()] {
+            let linear = reference_p010_with(&c, &f, &input, 32, 16, Method::Linear).unwrap();
+            let legacy = reference_p010_with(&c, &f, &input, 32, 16, Method::Legacy).unwrap();
+            assert!(linear.iter().zip(&legacy).all(|(a, b)| a.abs_diff(*b) <= 1));
+        }
+    }
+    /// The extended math never produces NaN or infinity: every luma code with extreme chroma, all
+    /// curves, desat on and off, every source mode and range.
+    #[test]
+    fn extended_math_stays_finite_for_out_of_range_inputs() {
+        for curve in [1, 2] {
+            for desat in [0.0, 2.0] {
+                for (mode, bt2020) in [
+                    (MODE_PQ, true),
+                    (MODE_PQ, false),
+                    (MODE_HLG, true),
+                    (MODE_SDR, true),
+                    (MODE_SDR, false),
+                ] {
+                    for full_range in [false, true] {
+                        for y in (0..=1023).step_by(31) {
+                            for uv in [
+                                [0.0, 0.0],
+                                [0.0, 1023.0],
+                                [1023.0, 0.0],
+                                [1023.0, 1023.0],
+                                [512.0, 512.0],
+                            ] {
+                                let rgb = tone_map_linear(
+                                    y as f32, uv, 1000.0, 100.0, desat, curve, bt2020, full_range,
+                                    mode, true,
+                                );
+                                let out = encode_linear(finish_linear(rgb, bt2020, mode));
+                                assert!(
+                                    rgb.iter().chain(&out).all(|v| v.is_finite()),
+                                    "curve {curve} desat {desat} mode {mode} 2020 {bt2020} y {y} uv {uv:?}: {rgb:?} {out:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

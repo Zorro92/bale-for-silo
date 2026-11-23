@@ -66,11 +66,56 @@ ramp) and WARP (`nv12_output_is_dithered_like_the_reference_and_p010_is_unchange
 Owner's choice (2026-11-17), "area downscaling in linear light". Each output pixel averages the
 tone-mapped, display-linear BT.709 RGB of the source pixels its footprint covers, weighted by the
 overlap of each source pixel's unit square, then encodes (inverse BT.1886) and quantizes **once**.
-At 1:1 the footprint is exactly one pixel with weight 1, so unscaled output is unchanged. Chroma
-uses the same left-sited [1 2 1]/4 × [1 1]/2 filter on the output grid. There is no CPU work.
-`shaders/tonemap_common.hlsli` `output_pixel` and `src/tonemap/cpu.rs` `reference_codes` implement it
-identically. CPU tests cover validation, uniform pictures and linear-light blending; the WARP test
+At 1:1 the footprint is exactly one pixel with weight 1. Output chroma (left-sited) mixes the output
+pixels' linear RGB over a [1 2 1]/4 × [1 1]/2 footprint and encodes that once (below). There is no CPU
+work. `shaders/tonemap_common.hlsli` `area_linear` and `src/tonemap/cpu.rs` `reference_codes` implement
+it identically. CPU tests cover validation, uniform pictures and linear-light blending; the WARP test
 compares GPU and CPU at 2:1, 2.4:1 and 3:1.
+
+### Closer to true area scaling in linear light (2026-11-22, part 1)
+
+The xav encoder's guide documents a downscale method it calls "true area scaling in linear light"
+(xav `src/guide.txt`, section "Perfect/True Area Scaling in Linear Light"; MIT non-AI licence, so only
+the documented method was read, none of its code). Bale already did its core: exact fractional area
+weights over display-linear light, encoded once. Part 1 moves three cheap points of that method in:
+
+1. **Output chroma in linear light.** Before, the chroma pass filtered the output pixels' *encoded*
+   Cb/Cr. Now it mixes their linear RGB over the 2-luma-pixel footprint centred on the left-sited
+   chroma position (1/4, 1/2, 1/4 across columns 2i−1..2i+1, 1/2, 1/2 over rows 2j, 2j+1), then clips
+   and encodes once and keeps `.yz`. Averaging encoded Cb/Cr darkens and desaturates saturated fine
+   detail (red/green texture turns brownish); linear mixing keeps its hue and brightness. The staged
+   intermediate now holds the unclipped linear average (`area_value`), the luma pass encodes it and the
+   chroma pass mixes six of them, so the encode moves rather than multiplies (one extra encode per
+   chroma sample, a quarter of the output pixels). Luma is the same operations on the same value in
+   both paths.
+2. **Input chroma siting from the stream.** `BaleToneMapFrameInfo.chroma_location` (FFmpeg's
+   AVChromaLocation, filled by the fork) now sets where the bilinear chroma upsampling reads: LEFT (1)
+   and UNSPECIFIED (0) as before (co-sited horizontally, halfway between rows); CENTER (2) halfway both
+   ways; TOPLEFT (3) co-sited both ways; TOP (4), BOTTOMLEFT (5) and BOTTOM (6) their positions too;
+   unknown values read as left. Most HEVC/AVC is left or unspecified; UHD Blu-ray HDR10 HEVC is
+   specified as TOPLEFT (chroma_sample_loc_type 2) and AV1 can signal colocated (TOPLEFT), where left
+   siting shifted the chroma half a luma row down. Which values real library files carry is not yet
+   checked (the fork passes what FFmpeg reports).
+   The cbuffer carries it in `output.w` bits 0-7.
+3. **Clip once, late.** Per-source-pixel values are no longer clipped: PQ, HLG and BT.2020 SDR decode
+   sign-preserving (`sign(x)·f(|x|)`, magnitude capped at 1, 1 and 1.5), the tone curve's result and the
+   BT.2020→709 conversion stay unclipped (negative or >1 channels for out-of-gamut colours), and
+   `finish_linear` clips to 0..1 once per output pixel and once per chroma footprint, just before the
+   encode. A sub-black or out-of-gamut pixel thus pulls its neighbourhood's average the way its light
+   does instead of counting as 0/1. BT.709 SDR keeps its scale-only, never-clipped pass. The curves
+   clamp their own inputs at 0 and the peak, the scale divides by `max(sig, 1e-6)` and `desaturate`
+   guards its divisions, so negative channels cannot produce NaN (`extended_math_stays_finite_...`).
+
+Expected visual differences: finer saturated colour detail (red/green, coloured text, foliage) stays
+brighter and more saturated after a downscale; TOPLEFT/CENTER-sited streams lose a half-row chroma
+offset (colour edges line up with luma edges); near out-of-gamut edges a few codes of difference. Flat
+in-gamut content is unchanged (`methods_agree_on_a_flat_in_gamut_picture`). Luma changes only where a
+source value left 0..1 before the old clip (PQ/HLG/BT.2020 SDR); BT.709 SDR luma is bit-identical.
+
+Not in part 1: cubic (or exact-area) chroma *upsampling* of the input, and averaging HDR light before
+the tone curve. The old math stays available on the console as `tonemap-debug gammachroma`
+(`cpu::Method::Legacy`): per-pixel clip, left siting, encoded-chroma filter; the WARP tests compare
+both methods against the CPU reference.
 
 ### Pass structure: each output pixel once (2026-11-22)
 
@@ -83,12 +128,13 @@ at ~48 fps (stage off: 57.5 fps).
 
 When the output is smaller than the visible source the stage now runs three passes:
 
-1. `tonemap_area_ps` writes `output_pixel(o)` (the encoded float3) for every output pixel into an
-   output-sized `R32G32B32A32_FLOAT` intermediate: exact fp32, nothing rounded.
-2. The luma pass (`tonemap_luma_ps` built with `BALE_STAGED`) loads `.x` once.
-3. The chroma pass (`tonemap_chroma_ps` with `BALE_STAGED`) loads the same six neighbours' `.yz` with
-   the same weights and summation order; `staged_pixel` clamps the neighbour exactly like
-   `output_pixel`'s own `o = clamp(...)` (edge pixel, never `Load`'s zero).
+1. `tonemap_area_ps` writes `area_value(o)` for every output pixel into an output-sized
+   `R32G32B32A32_FLOAT` intermediate: exact fp32, nothing rounded. Since part 1 above that is the
+   unclipped linear average (`gammachroma`: its encoded Y'CbCr, as before).
+2. The luma pass (`tonemap_luma_ps` built with `BALE_STAGED`) loads it once, clips and encodes.
+3. The chroma pass (`tonemap_chroma_ps` with `BALE_STAGED`) loads the same six neighbours with the
+   same weights and summation order, then clips and encodes the mix; `staged_value` clamps the
+   neighbour exactly like `area_linear`'s own `o = clamp(...)` (edge pixel, never `Load`'s zero).
 
 Dithering and quantization are unchanged. 4K → 1080p now costs **8.3 M** `sample_linear` (one per
 source pixel, −60%); 3:1 (4K → 720p) the same; 1.5:1 (1080p → 720p) 3.7 M instead of 9.2 M. The price is
@@ -108,9 +154,11 @@ GPU at a 1080p display).
 Identity: the WARP test `staged_downscale_matches_the_per_plane_path` renders PQ, BT.709 SDR and HLG
 frames (P010 and NV12 input, NV12 and P010 output) at 3840×2160 → 1920×1080, 3840×2160 → 1280×720 and
 1920×1080 → 1280×720 through both paths on one handle and prints `staged identity:` lines with the
-count of differing codes and the largest difference (target 0; fxc may compile `output_pixel`
-differently in the area shader than inside the plane shaders, so at most one code is allowed). The
-per-plane path stays available on the console as the debug switch `nostaged`.
+count of differing codes and the largest difference (target 0; fxc may compile `area_linear`
+differently in the area shader than inside the plane shaders, so at most one code is allowed), for the
+current math and for `gammachroma`. `method luma:` lines count the luma codes the current math changes
+against `gammachroma` (asserted 0 for BT.709 SDR). The per-plane path stays available on the console as
+the debug switch `nostaged`.
 
 ## BT.709 SDR scale-only pass
 
@@ -173,9 +221,10 @@ needs hardware validation; no console was used for this implementation.
   primaries/matrix pairs work for PQ (16); HLG (18) needs BT.2020; SDR transfers 1/6/14/15 take
 BT.2020 (gamut conversion) or, with SDR709, BT.709 (scale only). Frame HDR metadata is accepted
   but ignored; a positive fixed source peak is mandatory in v1.
-- Chroma is left-sited, including unspecified/unknown locations: bilinear upsampling at luma
-  coordinates (2x, 2y+0.5), then horizontal [1 2 1]/4 and vertical [1 1]/2 downsampling. Visible
-  edges clamp without reading decoder padding. This deliberately specifies a compact filter;
+- Input chroma is upsampled bilinearly from the stream's chroma location (left for unspecified and
+  unknown values; see "Closer to true area scaling" above). Output chroma is left-sited: the output
+  pixels' linear RGB mixed by horizontal [1 2 1]/4 and vertical [1 1]/2 around (2x, 2y+0.5), then
+  clipped and encoded once. Visible edges clamp without reading decoder padding. This deliberately specifies a compact filter;
   it does not reproduce zscale's default bicubic resampler or tonemapx's block chroma handling.
 
 Differences from the server's implementation: fp32 math instead of its integer LUT/SIMD
@@ -201,10 +250,12 @@ explains the default display-referred BT.709 interpretation.
 - `scripts/bale-debug.sh tonemap-churn [N] [control]` runs bale_gpu's tone map alone N times on a
   fresh hardware device (create, five 4K applies, destroy; no MF or FFmpeg). It ran 40/40 on
   2026-11-17 and isolated the crash from bale_gpu.
-- `scripts/bale-debug.sh tonemap-debug [noselftest,nostate,nostaged]` skips the create self-test,
-  replaces the private ID3DDeviceContextState swap with explicit save/restore of what the draw touches,
-  or (`nostaged`) skips the downscale intermediate so each plane pass evaluates the area sum itself
-  (the pre-2026-11-22 path, for GPU-cost A/B).
+- `scripts/bale-debug.sh tonemap-debug [noselftest,nostate,nostaged,gammachroma]` skips the create
+  self-test, replaces the private ID3DDeviceContextState swap with explicit save/restore of what the draw
+  touches, (`nostaged`) skips the downscale intermediate so each plane pass evaluates the area sum itself
+  (the pre-2026-11-22 path, for GPU-cost A/B), or (`gammachroma`) runs the pre-2026-11-22 math: encoded
+  chroma filter, left input siting, per-pixel clip (quality/cost A/B; the self-test checks that math).
+  Words combine (`gammachroma,nostaged` is the fully old stage).
 - `bale-debug.sh mem` reports `D3D11 devices: watched N destroyed M alive K`: each engine device
   carries a private-data marker that only real destruction frees.
 

@@ -21,7 +21,8 @@ const AREA_PS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_area_ps
 const Y_STAGED_PS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_luma_staged_ps.cso"));
 const UV_STAGED_PS: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_chroma_staged_ps.cso"));
-/// Downscale intermediate: output_pixel's encoded float3 per output pixel, exact fp32 (16 B/pixel).
+/// Downscale intermediate: area_value's float3 per output pixel (the unclipped linear average, or
+/// its encoded Y'CbCr under the legacy math), exact fp32 (16 B/pixel).
 const STAGED_FORMAT: DXGI_FORMAT = DXGI_FORMAT_R32G32B32A32_FLOAT;
 
 #[repr(C)]
@@ -64,6 +65,8 @@ pub struct ToneMapGpu {
     /// Present when the configured output is smaller than the visible source and the debug
     /// `nostaged` switch is off: one area pass per output pixel instead of one per plane read.
     staged: Option<Staged>,
+    /// Current linear-light math, or the legacy one (debug `gammachroma`, console A/B).
+    method: cpu::Method,
     /// Set once D3D11 refused a view of a decoder array (desktop/WARP): stop retrying every frame.
     decoder_view_refused: bool,
     #[cfg(feature = "stage-timing")]
@@ -147,6 +150,11 @@ impl ToneMapGpu {
             constants,
             scratch: None,
             staged,
+            method: if debug.gamma_chroma {
+                cpu::Method::Legacy
+            } else {
+                cpu::Method::Linear
+            },
             decoder_view_refused: false,
             #[cfg(feature = "stage-timing")]
             timing: None,
@@ -189,6 +197,13 @@ impl ToneMapGpu {
             false => None,
         };
         Ok(())
+    }
+
+    /// Test hook: switch between the current math and the legacy one (debug `gammachroma`) on one
+    /// handle, so a WARP test can compare both on the same frame.
+    #[doc(hidden)]
+    pub fn set_method(&mut self, method: cpu::Method) {
+        self.method = method;
     }
 
     /// Whether the downscale intermediate exists (tests, and the ledger reading in docs).
@@ -307,7 +322,12 @@ impl ToneMapGpu {
                 config.desat,
                 if ten_bit { 1.0 } else { 0.0 },
             ],
-            output: [config.width, config.height, u32::from(eight_bit_input), 0],
+            output: [
+                config.width,
+                config.height,
+                u32::from(eight_bit_input),
+                cpu::method_word(frame, self.method),
+            ],
         };
         // Fail before queueing work, never return an error after changing the caller's output.
         // D3D11 Draw/Copy/Update queue void commands; asynchronous loss belongs to the caller.
@@ -420,9 +440,11 @@ impl ToneMapGpu {
                 ..Default::default()
             };
             let pattern = cpu::test_pattern(16, 8, true, full_range == 1);
-            let expected = cpu::reference(&config, &frame, &pattern, 16, 8).map_err(HRESULT)?;
+            let expected = cpu::reference_with(&config, &frame, &pattern, 16, 8, self.method)
+                .map_err(HRESULT)?;
             let expected10 =
-                cpu::reference_p010(&config, &frame, &pattern, 16, 8).map_err(HRESULT)?;
+                cpu::reference_p010_with(&config, &frame, &pattern, 16, 8, self.method)
+                    .map_err(HRESULT)?;
             let data = D3D11_SUBRESOURCE_DATA {
                 pSysMem: pattern.as_ptr().cast(),
                 SysMemPitch: 32,
@@ -674,12 +696,15 @@ mod tests {
 /// from the process environment variable BALE_TONEMAP_DEBUG: `noselftest` skips the create-time
 /// self-test; `nostate` replaces the ID3DDeviceContextState swap with an explicit save/restore;
 /// `nostaged` (2026-11-22, GPU cost A/B) skips the downscale intermediate and evaluates the area
-/// sum in each plane pass as before.
+/// sum in each plane pass as before; `gammachroma` (2026-11-22, quality/cost A/B) restores the
+/// pre-2026-11-22 math: per-source-pixel clip, left input siting, output chroma filtered from
+/// encoded Cb/Cr ([`cpu::Method::Legacy`]).
 #[derive(Clone, Copy, Default)]
 struct DebugSwitches {
     no_self_test: bool,
     no_state: bool,
     no_staged: bool,
+    gamma_chroma: bool,
 }
 
 impl DebugSwitches {
@@ -695,6 +720,7 @@ impl DebugSwitches {
                 "noselftest" => switches.no_self_test = true,
                 "nostate" => switches.no_state = true,
                 "nostaged" => switches.no_staged = true,
+                "gammachroma" => switches.gamma_chroma = true,
                 _ => {}
             }
         }
@@ -837,5 +863,8 @@ mod debug_switch_tests {
         let one = DebugSwitches::parse("nostate other");
         assert!(!one.no_self_test && one.no_state && !one.no_staged);
         assert!(DebugSwitches::parse("noselftest,nostaged").no_staged);
+        assert!(!one.gamma_chroma);
+        let ab = DebugSwitches::parse("gammachroma,nostaged");
+        assert!(ab.gamma_chroma && ab.no_staged && !ab.no_state);
     }
 }
