@@ -1,2 +1,4 @@
 # Source patches must stay byte-exact (LF) so git apply matches the LF upstream checkout on Windows.
 scripts/ffmpeg-native-patches/*.patch -text
+# Golden test lists compared byte for byte in Rust tests (include_str!): keep LF on Windows checkouts.
+native/bale-gpu/src/audio_out/variants_golden.txt text eol=lf

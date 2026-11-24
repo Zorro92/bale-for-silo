@@ -1109,7 +1109,8 @@ mod tests {
     /// six formats, shared for two, Movie then Media), then the first run's rows unchanged.
     #[test]
     fn variants_are_the_documented_list() {
-        let expected = include_str!("variants_golden.txt");
+        // A Windows checkout may turn the file's LF into CRLF (.gitattributes pins LF; this keeps the test robust).
+        let expected = include_str!("variants_golden.txt").replace("\r\n", "\n");
         let actual: String = variants()
             .iter()
             .map(|v| {
