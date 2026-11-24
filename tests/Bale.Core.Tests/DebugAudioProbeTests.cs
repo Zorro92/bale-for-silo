@@ -33,11 +33,13 @@ public class DebugAudioProbeTests
         // bale_gpu blocks its caller for the activation: a pool (MTA) thread, never the UI thread.
         Assert.Contains("var report = await Task.Run(Probe);", probe);
         Assert.DoesNotContain("OnUiAsync", probe);
-        // mmdevapi.dll is loaded here and freed after the call; bale_gpu never imports it.
-        var load = probe.IndexOf("NativeLibrary.TryLoad(\"mmdevapi.dll\", out mmdevapi)", StringComparison.Ordinal);
+        // mmdevapi.dll is loaded here from System32 (else the in-process copy is borrowed) and freed after the call
+        // unless borrowed; bale_gpu never imports it.
+        var load = probe.IndexOf("NativeLibrary.TryLoad(\"mmdevapi.dll\", typeof(DebugAudioProbe).Assembly, DllImportSearchPath.System32, out mmdevapi)", StringComparison.Ordinal);
+        Assert.Contains("fixed (char* name = \"mmdevapi.dll\") mmdevapi = GetModuleHandleW(name);", probe);
         var breadcrumb = probe.IndexOf("Log.Info(\"Debug audio-probe: before bale_gpu_audio_probe\");", StringComparison.Ordinal);
         var call = probe.IndexOf("written = bale_gpu_audio_probe(mmdevapi, report, (uint)buffer.Length);", StringComparison.Ordinal);
-        var free = probe.IndexOf("if (mmdevapi != 0) NativeLibrary.Free(mmdevapi);", StringComparison.Ordinal);
+        var free = probe.IndexOf("if (mmdevapi != 0 && !borrowed) NativeLibrary.Free(mmdevapi);", StringComparison.Ordinal);
         Assert.True(load >= 0 && breadcrumb > load && call > breadcrumb && free > call);
         // One probe at a time, and the gate always reopens.
         Assert.Contains("if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0)", probe);

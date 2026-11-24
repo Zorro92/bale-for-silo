@@ -23,6 +23,11 @@ internal static class DebugAudioProbe
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern unsafe uint bale_gpu_audio_probe(nint mmdevapi, byte* report, uint reportCapacity);
 
+    // UWP-allowed (api-ms-win-core-libraryloader); a borrowed handle is never freed. Pointer-only signature:
+    // DisableRuntimeMarshalling=true, Native AOT and CA1420.
+    [DllImport("api-ms-win-core-libraryloader-l1-2-0.dll", ExactSpelling = true)]
+    private static extern unsafe nint GetModuleHandleW(char* moduleName);
+
     internal static async Task<(string Status, string Body)> RunAsync()
     {
         if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0)
@@ -42,10 +47,19 @@ internal static class DebugAudioProbe
     {
         var builder = new StringBuilder();
         nint mmdevapi = 0;
+        var borrowed = false;
         try
         {
-            // bale_gpu reports a missing module itself, so a failed load still reaches it (with 0).
-            if (!NativeLibrary.TryLoad("mmdevapi.dll", out mmdevapi)) mmdevapi = 0;
+            // bale_gpu reports a missing module itself, so a failed load still reaches it (with 0). On the console a
+            // bare-name load finds nothing (a UWP package's search path has no System32; 0.1.752 reported E_INVALIDARG):
+            // load it from System32, else borrow the copy Media Foundation's audio renderer already loaded.
+            if (!NativeLibrary.TryLoad("mmdevapi.dll", typeof(DebugAudioProbe).Assembly, DllImportSearchPath.System32, out mmdevapi))
+            {
+                var loadError = Marshal.GetLastPInvokeError();
+                fixed (char* name = "mmdevapi.dll") mmdevapi = GetModuleHandleW(name);
+                borrowed = mmdevapi != 0;
+                Log.Info($"Debug audio-probe: System32 load failed (error {loadError}); in-process module {(borrowed ? "found" : "missing")}");
+            }
             // A native failure ends the app without reaching a catch: leave a breadcrumb first.
             Log.Info("Debug audio-probe: before bale_gpu_audio_probe");
             var buffer = new byte[ReportCapacity];
@@ -61,7 +75,7 @@ internal static class DebugAudioProbe
         }
         finally
         {
-            if (mmdevapi != 0) NativeLibrary.Free(mmdevapi);
+            if (mmdevapi != 0 && !borrowed) NativeLibrary.Free(mmdevapi);
         }
         Log.Info("Debug audio-probe: before spatial audio");
         builder.Append(DescribeSpatialAudio());
