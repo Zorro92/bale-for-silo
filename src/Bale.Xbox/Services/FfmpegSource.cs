@@ -212,7 +212,8 @@ internal static class FfmpegSource
             config.FFmpegOptions["bale_tonemap_output_height"] = height.ToString(CultureInfo.InvariantCulture);
         }
         // rav1g's display output (fork bale.74, rav1g interface 2): rav1g writes the display-size, tone-mapped image where
-        // the stage would run; the fork's default (unset) is the stage, so the rav1g route asks for it. rav1g-tune
+        // the stage would run; the fork's default (unset) is the stage, so the rav1g route asks for it (owner, 2026-11-24:
+        // the default, after 0% missed at 4K60 60M SDR and HDR10 vs the stage's 3-5% / 12-13%). rav1g-tune
         // display=off restores the stage for A/B (the loop below overrides this).
         config.FFmpegOptions["bale_rav1g_display"] = "1";
         // Console-test knobs for the provider's feeder thread, rav1g's perf timings and parse depth (bale.52+); this
