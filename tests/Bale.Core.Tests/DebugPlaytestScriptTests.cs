@@ -573,6 +573,10 @@ public class DebugPlaytestScriptTests
     [InlineData("hdr=default", "decoder=system", "buffer=default")]
     [InlineData("prio=2", "buffer=1000", "decoder=software")]
     [InlineData("decoder=default", "readahead=default", "buffer=default")]
+    [InlineData("white=80", "hdr=on", "prio=2")]
+    [InlineData("pool=stream", "white=400", "buffer=default")]
+    [InlineData("decoder=auto", "tonemap=hable", "white=0150")]
+    [InlineData("white=default", "readahead=default", "ahead=8")]
     public async Task FfmpegInputTuningPostsValidatedOptionsInAnyOrder(string first, string second, string third)
     {
         if (!OperatingSystem.IsLinux()) return;
@@ -619,6 +623,16 @@ public class DebugPlaytestScriptTests
     [InlineData("decoder=1")]
     [InlineData("decoder=")]
     [InlineData("decoder= auto")]
+    [InlineData("white=79")]
+    [InlineData("white=401")]
+    [InlineData("white=0")]
+    [InlineData("white=1000")]
+    [InlineData("white=-80")]
+    [InlineData("white=+80")]
+    [InlineData("white=80.0")]
+    [InlineData("white=150nits")]
+    [InlineData("white=DEFAULT")]
+    [InlineData("white=")]
     public async Task InvalidFfmpegInputTuningNeverReachesCurl(string option)
     {
         if (!OperatingSystem.IsLinux()) return;
@@ -632,6 +646,7 @@ public class DebugPlaytestScriptTests
     [InlineData("readsize=16384", "readsize=65536")]
     [InlineData("prefetch=2", "prefetch=8")]
     [InlineData("decoder=auto", "decoder=system")]
+    [InlineData("white=150", "white=default")]
     public async Task DuplicateFfmpegInputTuningNeverReachesCurl(string first, string second)
     {
         if (!OperatingSystem.IsLinux()) return;

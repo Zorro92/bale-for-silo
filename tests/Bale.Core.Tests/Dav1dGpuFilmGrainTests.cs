@@ -139,12 +139,12 @@ public sealed class Dav1dGpuFilmGrainTests
         Assert.Contains(capture, attempt[..attempt.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal)]);
         Assert.DoesNotContain("AppSettings.Dav1dGpuFilmGrain", player.Replace(capture, "", StringComparison.Ordinal));
         var media = Read("PlayerPage.Media.cs.txt");
-        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,\n                    attempt.Dav1dGpuFilmGrain)", media);
-        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.Dav1dGpuFilmGrain)", media);
+        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,\n                    attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits)", media);
+        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits)", media);
         Assert.DoesNotContain("AppSettings.Dav1dGpuFilmGrain", media);
         Assert.DoesNotContain("AppSettings", Read("FfmpegSource.cs.txt"));
         var production = DebugFfmpegDecoderTests.ProductionSource();
-        Assert.Contains("Configuration(PlaybackRouteDecision route, bool dav1dGpuFilmGrain = false)", production);
+        Assert.Contains("Configuration(PlaybackRouteDecision route, bool dav1dGpuFilmGrain = false,\n        int sdrWhiteNits = SdrBrightness.DefaultNits)", production);
         Assert.Contains("ApplySoftwareVideo(config, dav1dGpuFilmGrain);", production);
     }
 
@@ -156,7 +156,8 @@ public sealed class Dav1dGpuFilmGrainTests
         var page = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "SettingsPage.xaml"));
         var pane = page.Descendants().Single(element => (string?)element.Attribute(xaml + "Name") == "PlaybackPane");
         var groups = pane.Elements(ui + "StackPanel").ToArray();
-        Assert.Equal("EPISODES", (string?)groups[^2].Element(ui + "TextBlock")?.Attribute("Text"));
+        Assert.Equal("EPISODES", (string?)groups[^3].Element(ui + "TextBlock")?.Attribute("Text"));
+        Assert.Equal("HDR ON SDR TVS", (string?)groups[^2].Element(ui + "TextBlock")?.Attribute("Text"));
         var experimental = groups[^1];
         var header = experimental.Element(ui + "TextBlock")!;
         Assert.Equal("EXPERIMENTAL", (string?)header.Attribute("Text"));
@@ -175,7 +176,7 @@ public sealed class Dav1dGpuFilmGrainTests
         Assert.Contains(pane.Nodes().OfType<XComment>(), comment => comment.Value.Contains("deviation from the official Silo apps", StringComparison.Ordinal));
         var code = Read("SettingsPage.cs.txt");
         var actions = code[code.IndexOf("private Control[] DetailActions", StringComparison.Ordinal)..code.IndexOf("private SettingsCategory CategoryOf", StringComparison.Ordinal)];
-        Assert.Contains("AutoPlayButton, AutoPlayProfileButton,\n                Dav1dGpuFilmGrainButton,", actions);
+        Assert.Contains("AutoPlayButton, AutoPlayProfileButton,\n                SdrBrightnessButton, Dav1dGpuFilmGrainButton,", actions);
         Assert.Contains("FocusTarget(actions[Math.Clamp(index + vertical, 0, actions.Length - 1)]);", code);
         Assert.Contains("_returnTarget = Dav1dGpuFilmGrainButton;", code);
         Assert.Contains("AppSettings.Dav1dGpuFilmGrain = !AppSettings.Dav1dGpuFilmGrain;", code);

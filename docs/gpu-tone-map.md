@@ -259,8 +259,19 @@ to the output pixel, so stills don't shimmer). Owner asked for these to be on th
   woven frame shows it. The fork marks interlaced samples (MFSampleExtension_Interlaced, field order) and Media
   Foundation's processor deinterlaces them. Not covered: interlaced sources through the stage (HDR, or larger than
   the display), which practically don't exist.
-- [ ] **SDR display brightness setting** (`target_white_nits`, today fixed 100), a user setting for
-  brighter or dimmer SDR TVs. Cheap.
+- [x] **SDR display brightness setting** (`target_white_nits`, 2026-11-24; implemented, not console-verified). Settings ›
+  Playback › HDR ON SDR TVS › **SDR Brightness** (an owner-requested deviation: the official apps never tone-map on the
+  device) picks the SDR white the curve maps to: **Default (100 nits)**, as before, or 80, 120, 150, 200, 250 or 300 nits.
+  BT.2390 ends at 2.03 times that white, so a higher value maps more of the source into the SDR range and the picture
+  looks brighter (for brighter SDR TVs or a bright room); 80 is dimmer. Device-local and persisted
+  (`AppSettings.SdrWhiteNits`: LocalSettings int nits, Default stored as no value, unknown or wrongly typed values read
+  as Default); each playback attempt reads it once and keeps it through replans and remounts. `FfmpegSource.ApplySdrWhite`
+  sends it as the fork key `bale_tonemap_white_nits` (wrapper bale.77, the same value for Bale's stage and rav1g's display
+  pass) in release and debug builds, only on mounts that configure the tone map (`bale_tonemap`: HDR10/HLG/DV base layer
+  on an SDR display, the SDR downscale, where the scale-only pass applies no curve, and the rav1g route when it
+  tone-maps), after the debug overrides that add or remove the stage. Default leaves the key unset; an open that sends
+  a white logs `player: tone map SDR white=N nits`. Debug `ffmpeg-tune white=80..400|default` overrides it for the next
+  attempt (see "Debug switches"). The setting changes only the white, never the source peak the curve starts from.
 - [ ] **Possibility: Dolby Vision tone mapping** (MPC-VR maps profiles 5, 8.1 and 8.4 with the DV dynamic
   metadata, ST 2094-10 L1/L2). Today's owner rule is DV passthrough only, base layer on SDR; this would be
   the owner's decision to change that rule, and it would make profile 5 playable on SDR displays.
@@ -283,6 +294,9 @@ upscalers (Jinc, vendor Super Resolution); 1080p to 4K stays with the console's 
   Words combine (`gammachroma,nostaged` is the fully old stage).
 - `bale-debug.sh mem` reports `D3D11 devices: watched N destroyed M alive K`: each engine device
   carries a private-data marker that only real destruction frees.
+- `scripts/bale-debug.sh ffmpeg-tune white=80..400` sets the SDR white (nits) of the next attempt's tone map, the
+  stage's and rav1g's display pass alike, over Settings › SDR Brightness (memory only; `white=default` returns to the
+  setting; 100 sends no key). It applies only where the tone map is configured, like the setting.
 
 For the next FFmpeg player attempt, the curve can be overridden with one of:
 

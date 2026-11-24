@@ -56,6 +56,39 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     }
 
     [Fact]
+    public void SdrWhiteTakes80To400OrDefaultAndKeepsTheOtherOverrides()
+    {
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["prio"] = "2" }, out _));
+        foreach (var (value, nits) in new[] { ("80", 80), ("400", 400), ("150", 150), ("0250", 250) })
+        {
+            Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["white"] = value }, out var set));
+            Assert.Equal(nits, set.SdrWhiteNits);
+            Assert.Equal(2, set.DecodeThreadPriority);
+            Assert.EndsWith(" prio=2 white=" + nits.ToString(CultureInfo.InvariantCulture), set.Description);
+        }
+        var before = DebugFfmpegInputTuning.Current;
+        // The fork treats 1-79 as 80 and refuses more than 400, so the override takes exactly 80-400.
+        foreach (var invalid in new[] { "79", "401", "0", "-80", "+80", " 80", "80 ", "80.0", "8e1", "0x50", "", "DEFAULT", "2147483648" })
+        {
+            Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["prio"] = "1", ["white"] = invalid }, out var rejected), invalid);
+            Assert.Same(before, rejected);
+            Assert.Same(before, DebugFfmpegInputTuning.Current);
+        }
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["white"] = "default" }, out var cleared));
+        Assert.Null(cleared.SdrWhiteNits);
+        Assert.DoesNotContain("white=", cleared.Description);
+        Assert.Equal(2, cleared.DecodeThreadPriority);
+        Assert.Contains("[white=80..400|default]", DebugFfmpegInputTuning.Usage);
+        // Applied after the other overrides, so it wins over the device setting (SdrBrightnessTests covers the result).
+        var source = Read("FfmpegSource.cs.txt");
+        Assert.True(source.IndexOf("ApplyInputTuning(config, tuning, softwareVideo, route.VideoCodec);", StringComparison.Ordinal)
+            < source.IndexOf("if (tuning.SdrWhiteNits is { } white) sdrWhiteNits = white;", StringComparison.Ordinal));
+        Assert.Contains("white=80..400|default", Read("DebugServer.cs.txt"));
+        Assert.Contains("[white=nits|default]", Read("bale-debug.sh"));
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["prio"] = "default" }, out _));
+    }
+
+    [Fact]
     public void BufferTimeIsBoundedMillisecondsAndDescribedOnlyWhenSet()
     {
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["buffer"] = "1500" }, out var set));
@@ -336,7 +369,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("public DebugFfmpegInputTuning FfmpegTuning { get; } = DebugFfmpegInputTuning.Current", Read("PlayerPage.cs.txt"));
         var player = Read("PlayerPage.Media.cs.txt");
         Assert.Contains("media.Route.UseFfmpeg ? attempt.FfmpegTuning.Prefetch ?? HttpRangeStream.DefaultPrefetchBlocks", player);
-        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,\n                    attempt.Dav1dGpuFilmGrain)", player);
+        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,\n                    attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits)", player);
         Assert.Contains("prefetched.PrefetchBlocks", player);
         Assert.Contains("if (!attempt.FfmpegTuningLogged)", player);
         Assert.Contains("attempt.FfmpegTuningLogged = true", player);
@@ -562,6 +595,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         ["decoder"] = tuning.DecoderOverride,
         ["tonemap"] = tuning.ToneMapOverride,
         ["colorinfo"] = tuning.ColorInfoOverride,
+        ["white"] = tuning.SdrWhiteNits?.ToString(CultureInfo.InvariantCulture) ?? "default",
     }, out _));
 
     [Fact]

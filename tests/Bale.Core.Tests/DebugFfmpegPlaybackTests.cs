@@ -98,7 +98,7 @@ public class DebugFfmpegPlaybackTests
         Assert.Contains("media.RandomStream = NativeRandomAccessStream(media.Stream!) ?? media.Stream!.AsRandomAccessStream()", source);
         Assert.Contains("Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled, attempt.ForceFfmpeg,", source);
         Assert.Contains("if (media.Route.UseFfmpeg)", source);
-        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.Dav1dGpuFilmGrain)", source);
+        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits)", source);
         Assert.Contains(": await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream!, config).AsTask()", source);
         // A progressive remux reaches FFmpeg through its non-seekable input, still as authenticated bytes.
         Assert.Contains("? await FFmpegMediaSource.CreateFromInputStreamAsync(forward, config).AsTask()", source);

@@ -1318,8 +1318,8 @@ selected-version facts (including CLI planning) do not make the claim.
 
 The executor forces the FFmpeg route for that decision and for any HDR original unexpectedly
 returned to an SDR output, including MP4. It requests `VideoDecoderMode.Automatic` (d3d11va) and
-`bale_tonemap=1` (BT.2390 with the server's peak/white/desaturation defaults). A production guard
-checks the wrapper's MSS video descriptor and live decoder: only d3d11va NV12 limited-range
+`bale_tonemap=1` (BT.2390 with the server's peak/white/desaturation defaults; the white follows SDR Brightness
+below). A production guard checks the wrapper's MSS video descriptor and live decoder: only d3d11va NV12 limited-range
 BT.709 reaches the presenter. A declined stage, system/software decoder fallback, unavailable ABI,
 self-test failure or apply/MediaFailed error spends the existing single failure-recovery replan,
 withdraws the dynamic-range claim, and asks for server tone mapping at the current source position.
@@ -1344,6 +1344,15 @@ Stats show `HDR output: SDR / console tone map` for this route and the existing 
 claim before Start; explicit debug HDR-pretend experiments can still bypass that production guard.
 Clearing overrides restores the defaults. No console verification of this production integration
 was performed during implementation; the console-verified shader/wrapper evidence is below.
+
+**SDR Brightness (owner, 2026-11-24; a deliberate deviation, the official apps never tone-map on the device).**
+Settings › Playback › **HDR ON SDR TVS** › *SDR Brightness* is a value row with the Buffering Quality picker sheet:
+Default (100 nits), 80, 120, 150, 200, 250 or 300 nits, the SDR white the tone map maps HDR to (higher is brighter). It
+is device-local (`AppSettings.SdrWhiteNits`, LocalSettings int nits; Default is stored as no value, and unknown or
+wrongly typed values read as Default), captured once per playback attempt and sent as `bale_tonemap_white_nits`
+(wrapper bale.77) on every mount that configures `bale_tonemap`, in release builds too, so Bale's stage and rav1g's
+display pass give the same picture; Default sends no key. Debug `ffmpeg-tune white=80..400|default` wins over it for
+the next attempt. Not console-verified yet. Details: docs/gpu-tone-map.md, Backlog.
 
 **Debug-only tone-mapping comparison:** `scripts/bale-debug.sh hdr pretend|off|status` defaults to
 `off` and is memory-only (restart resets it). `pretend` affects later playback attempts: it claims
@@ -2093,6 +2102,8 @@ cold connection. It reports a lower bound when it reaches the target.
 - Starts and replans send `learned_limit: ignore` in Never mode whenever they name
   `buffering_quality_v1` (`PlaybackProtocol.LearnedLimit`). The mode is read on sign-in, on return to
   the foreground and when Settings opens; a start never waits for it.
+- **HDR on SDR TVs** (Bale's own group, owner's deviation, 2026-11-24): *SDR Brightness*, the console tone map's SDR
+  white (see "Console tone mapping by default"), then **Experimental** (*GPU film grain*). Both follow Episodes.
 - Skipped from the official Streaming group (Bale has no honored setting behind them): Resolution,
   Maximum Bitrate, Audio Language, Dolby Vision / Profile 7 fallback, Match Frame Rate, Force HDR
   Passthrough, True Black Bars and the streaming footer that explains them.

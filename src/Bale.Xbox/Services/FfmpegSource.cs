@@ -1,5 +1,6 @@
 using System.Globalization;
 using Bale.Core.Playback;
+using Bale.Core.Settings;
 using FFmpegInteropX;
 
 namespace Bale.Xbox.Services;
@@ -11,10 +12,14 @@ internal static class FfmpegSource
         => Configuration(route, new DebugFfmpegInputTuning());
 
     /// <param name="rav1g">The debug AV1 decoder switch's decision for this mount (Rav1gPolicy.Route); null is dav1d.</param>
+    /// <param name="sdrWhiteNits">The attempt's captured SDR Brightness, the device setting; ffmpeg-tune white= wins.</param>
     internal static MediaSourceConfig Configuration(PlaybackRouteDecision route, DebugFfmpegInputTuning tuning,
-        Rav1gRouteDecision? rav1g = null, string dav1dPath = "d3d11", bool dav1dGpuFilmGrain = false)
+        Rav1gRouteDecision? rav1g = null, string dav1dPath = "d3d11", bool dav1dGpuFilmGrain = false,
+        int sdrWhiteNits = SdrBrightness.DefaultNits)
 #else
-    internal static MediaSourceConfig Configuration(PlaybackRouteDecision route, bool dav1dGpuFilmGrain = false)
+    /// <param name="sdrWhiteNits">The attempt's captured SDR Brightness, the device setting.</param>
+    internal static MediaSourceConfig Configuration(PlaybackRouteDecision route, bool dav1dGpuFilmGrain = false,
+        int sdrWhiteNits = SdrBrightness.DefaultNits)
 #endif
     {
         // Debug captures only our safe Bale diagnostics; production keeps the native logger off.
@@ -85,9 +90,29 @@ internal static class FfmpegSource
         DebugToneMapSwitches.ApplyOutput(config, FfmpegWrapperVersion.Value);
         DebugFfmpegColorInfo.Apply(config, tuning, FfmpegWrapperVersion.Value);
         ApplyInputTuning(config, tuning, softwareVideo, route.VideoCodec);
+        // ffmpeg-tune white= wins over the device setting for this attempt; default leaves the setting.
+        if (tuning.SdrWhiteNits is { } white) sdrWhiteNits = white;
 #endif
+        // After every override that adds or removes the stage (bale_tonemap), in release builds as in debug ones.
+        ApplySdrWhite(config, sdrWhiteNits);
         if (softwareVideo && route.VideoCodec == "av1") LogFilmGrainRequest(config, dav1dGpuFilmGrain);
         return config;
+    }
+
+    /// <summary>
+    /// Settings › Playback › SDR Brightness (owner, 2026-11-24): the SDR white the console tone map maps HDR to on an SDR TV,
+    /// the same for Bale's stage and rav1g's display pass (fork key <c>bale_tonemap_white_nits</c>, wrapper bale.77). Only on
+    /// mounts that configure that tone map (<c>bale_tonemap</c>: the stage route, HDR or the SDR downscale, and the rav1g
+    /// route when it tone-maps); the SDR downscale applies no curve, so there it changes nothing. Default, and any value
+    /// outside the fork's 80-400 nits, leaves the key unset (the fork's 100 nits, as before), so it can never fail an open.
+    /// Logs once per open that sends a white (the fork doesn't log it).
+    /// </summary>
+    internal static void ApplySdrWhite(MediaSourceConfig config, int nits)
+    {
+        if (nits == SdrBrightness.DefaultNits || nits is < SdrBrightness.MinimumNits or > SdrBrightness.MaximumNits
+            || !config.FFmpegOptions.ContainsKey("bale_tonemap")) return;
+        config.FFmpegOptions["bale_tonemap_white_nits"] = nits.ToString(CultureInfo.InvariantCulture);
+        Log.Info($"player: tone map SDR white={nits} nits");
     }
 
     /// <summary>

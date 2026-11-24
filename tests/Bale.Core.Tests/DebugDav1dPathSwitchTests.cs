@@ -35,7 +35,7 @@ public sealed class DebugDav1dPathSwitchTests
         const string capture = "public string Dav1dPath { get; } = DebugDav1dPathSwitch.Mode;";
         Assert.Contains(capture, player);
         Assert.DoesNotContain("DebugDav1dPathSwitch", player.Replace(capture, "", StringComparison.Ordinal));
-        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,\n                    attempt.Dav1dGpuFilmGrain)",
+        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,\n                    attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits)",
             Read("PlayerPage.Media.cs.txt"));
         Assert.DoesNotContain("DebugDav1dPathSwitch", Read("FfmpegSource.cs.txt"));
     }

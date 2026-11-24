@@ -1,5 +1,6 @@
 using Bale.Core.Auth;
 using Bale.Core.Connection;
+using Bale.Core.Settings;
 using Windows.Security.Credentials;
 using Windows.Storage;
 
@@ -117,6 +118,26 @@ internal static class AppSettings
     {
         get => Local.Values[nameof(Dav1dGpuFilmGrain)] is true;
         set => Local.Values[nameof(Dav1dGpuFilmGrain)] = value;
+    }
+
+    /// <summary>
+    /// Device-wide SDR Brightness: the SDR white (int nits) the console tone map maps HDR to (<see cref="SdrBrightness"/>).
+    /// Default is stored as no value, so it keeps following Bale's default; an unreadable, unknown or wrongly typed value
+    /// reads as Default, never as another level. A player attempt reads it once, when it starts.
+    /// </summary>
+    public static int SdrWhiteNits
+    {
+        get
+        {
+            try { return SdrBrightness.FromStored(Local.Values[nameof(SdrWhiteNits)] as int?); }
+            catch (Exception) { return SdrBrightness.DefaultNits; }
+        }
+        set
+        {
+            var nits = SdrBrightness.FromStored(value);
+            if (nits == SdrBrightness.DefaultNits) Local.Values.Remove(nameof(SdrWhiteNits));
+            else Local.Values[nameof(SdrWhiteNits)] = nits;
+        }
     }
 
     public static DateTimeOffset? AccessTokenExpiresAt

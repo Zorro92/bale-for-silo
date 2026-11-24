@@ -129,6 +129,18 @@
                 </Button>
                 <TextBlock x:Name="AutoPlayDescription" Style="{StaticResource SkylineSettingsFooterStyle}" />
               </StackPanel>
+              <!-- Owner-requested deviation from the official Silo apps (they never tone-map on the device): the SDR white of
+                   the console tone map (Bale's stage and rav1g's display pass), a value row and picker like Buffering Quality's. -->
+              <StackPanel Style="{StaticResource SkylineSettingsGroupStyle}">
+                <TextBlock Text="HDR ON SDR TVS" Style="{StaticResource SkylineSettingsGroupHeaderStyle}" />
+                <Button x:Name="SdrBrightnessButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnSdrBrightnessClick">
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBlock Text="SDR Brightness" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+                    <TextBlock x:Name="SdrBrightnessValue" Grid.Column="1" Style="{StaticResource SkylineSettingsValueTextStyle}" />
+                  </Grid>
+                </Button>
+                <TextBlock Text="How bright HDR video looks when this Xbox tone-maps it for an SDR TV. Higher is brighter; Default matches the reference white of 100 nits." Style="{StaticResource SkylineSettingsFooterStyle}" />
+              </StackPanel>
               <!-- Owner-requested deviation from the official Silo apps: opt-in GPU grain for the AV1 fallback. -->
               <StackPanel Style="{StaticResource SkylineSettingsGroupStyle}">
                 <TextBlock Text="EXPERIMENTAL" Style="{StaticResource SkylineSettingsGroupHeaderStyle}" />
@@ -235,6 +247,51 @@
             </Button>
             <Button x:Name="BufferingAlwaysOption" Tag="always" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnBufferingOptionClick">
               <TextBlock x:Name="BufferingAlwaysOptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </Grid>
+    <!-- SDR Brightness (owner's deviation): the same TvSettingsPickerSheet; Default leads, then dimmer to brighter
+         (SdrBrightness.Choices). Each Tag is the option's SDR white in nits. -->
+    <Grid x:Name="SdrBrightnessPicker" Visibility="Collapsed" Background="{StaticResource SkylineSettingsPickerScrim}">
+      <Border Style="{StaticResource SkylineSettingsPickerCardStyle}">
+        <StackPanel>
+          <Grid Style="{StaticResource SkylineSettingsPickerHeaderStyle}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <StackPanel Style="{StaticResource SkylineSettingsPickerTitleStyle}">
+              <TextBlock Text="SDR Brightness" Style="{StaticResource SkylineSettingsPaneTitleStyle}" />
+              <TextBlock Text="Choose an option" Style="{StaticResource SkylineSettingsPickerHintTextStyle}" />
+            </StackPanel>
+            <Border Grid.Column="1" Style="{StaticResource SkylineSettingsPickerHintStyle}">
+              <StackPanel Style="{StaticResource SkylineSettingsPickerHintContentStyle}">
+                <Viewbox Style="{StaticResource SkylineSettingsPickerHintIconStyle}"><Path Style="{StaticResource SkylineSettingsGlyphStyle}" Opacity="{StaticResource SkylineSettingsHintOpacity}" Data="M12.5,8 C9.85,8 7.45,8.99 5.6,10.6 L2,7 V16 H11 L7.38,12.38 C8.77,11.22 10.54,10.5 12.5,10.5 C16.04,10.5 19.05,12.81 20.1,16 L22.47,15.22 C21.08,11.03 17.15,8 12.5,8 Z" /></Viewbox>
+                <TextBlock Text="Back to close" Style="{StaticResource SkylineSettingsPickerHintTextStyle}" />
+              </StackPanel>
+            </Border>
+          </Grid>
+          <Border Style="{StaticResource SkylineSettingsPickerDividerStyle}" />
+          <StackPanel Style="{StaticResource SkylineSettingsPickerOptionsStyle}">
+            <Button x:Name="SdrBrightnessDefaultOption" Tag="100" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnSdrBrightnessOptionClick">
+              <TextBlock x:Name="SdrBrightnessDefaultOptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+            <Button x:Name="SdrBrightness80Option" Tag="80" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnSdrBrightnessOptionClick">
+              <TextBlock x:Name="SdrBrightness80OptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+            <Button x:Name="SdrBrightness120Option" Tag="120" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnSdrBrightnessOptionClick">
+              <TextBlock x:Name="SdrBrightness120OptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+            <Button x:Name="SdrBrightness150Option" Tag="150" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnSdrBrightnessOptionClick">
+              <TextBlock x:Name="SdrBrightness150OptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+            <Button x:Name="SdrBrightness200Option" Tag="200" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnSdrBrightnessOptionClick">
+              <TextBlock x:Name="SdrBrightness200OptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+            <Button x:Name="SdrBrightness250Option" Tag="250" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnSdrBrightnessOptionClick">
+              <TextBlock x:Name="SdrBrightness250OptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+            <Button x:Name="SdrBrightness300Option" Tag="300" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnSdrBrightnessOptionClick">
+              <TextBlock x:Name="SdrBrightness300OptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
             </Button>
           </StackPanel>
         </StackPanel>

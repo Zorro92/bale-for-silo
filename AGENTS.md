@@ -33,6 +33,10 @@ unchanged. Gap analysis and phases: docs/apple-playback-parity.md.
 "fix" them back.
 
 - **Experimental GPU film grain:** Settings › Playback offers a device-wide, persisted, off-by-default dav1d D3D11 GPU grain toggle (owner, 2026-11-19); it needs no zero-copy or D3D12.
+- **SDR Brightness:** Settings › Playback › HDR on SDR TVs offers a device-wide, persisted SDR white for the console
+  tone map of HDR video on an SDR TV: Default (100 nits) or 80/120/150/200/250/300 nits, sent as the fork's
+  `bale_tonemap_white_nits` to Bale's stage and rav1g's display pass (owner, 2026-11-24; `SdrBrightness`,
+  docs/gpu-tone-map.md). The official apps never tone-map on the device, so they have no such row.
 - **Calendar focus** follows the selection: the selected pill/day, then the first card, with
   per-row memory.
 - **Player controller map** (owner's design, 2026-11-16; media remote keys stay official):

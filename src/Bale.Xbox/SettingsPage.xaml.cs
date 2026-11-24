@@ -1,3 +1,4 @@
+using System.Globalization;
 using Bale.Core;
 using Bale.Core.Settings;
 using Bale.Xbox.Services;
@@ -48,6 +49,15 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         BufferingNeverOptionText.Text = BufferingQualityModes.Label(BufferingQualityMode.Never);
         BufferingAskOptionText.Text = BufferingQualityModes.Label(BufferingQualityMode.Ask);
         BufferingAlwaysOptionText.Text = BufferingQualityModes.Label(BufferingQualityMode.Always);
+        // One label for the row's value and each option (SdrBrightness.Label); an option's Tag is its nits.
+        foreach (var (option, label) in new (Button, TextBlock)[]
+        {
+            (SdrBrightnessDefaultOption, SdrBrightnessDefaultOptionText), (SdrBrightness80Option, SdrBrightness80OptionText),
+            (SdrBrightness120Option, SdrBrightness120OptionText), (SdrBrightness150Option, SdrBrightness150OptionText),
+            (SdrBrightness200Option, SdrBrightness200OptionText), (SdrBrightness250Option, SdrBrightness250OptionText),
+            (SdrBrightness300Option, SdrBrightness300OptionText),
+        })
+            label.Text = SdrBrightness.Label(SdrBrightnessNits(option));
         // A minute clock for the speed line's age and a second clock for a 429 countdown, in one.
         _connectionClock.Tick += (_, _) =>
         {
@@ -84,6 +94,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         _connectionClock.Start();
         UpdateAutoPlay();
         UpdateDav1dGpuFilmGrain();
+        UpdateSdrBrightness();
         UpdateConnection();
         UpdateIdentity();
         UpdatePolicy();
@@ -110,6 +121,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         DetachFocusBoundary();
         ProfilePicker.Visibility = Visibility.Collapsed;
         BufferingPicker.Visibility = Visibility.Collapsed;
+        SdrBrightnessPicker.Visibility = Visibility.Collapsed;
         SignOutPrompt.Hide();
         base.OnNavigatedFrom(e);
     }
@@ -197,7 +209,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         SettingsCategory.Playback => new Control[]
             {
                 BufferingQualityButton, LearnedLimitButton, ConnectionSpeedButton, AutoPlayButton, AutoPlayProfileButton,
-                Dav1dGpuFilmGrainButton,
+                SdrBrightnessButton, Dav1dGpuFilmGrainButton,
             }.Where(item => item.Visibility == Visibility.Visible).ToArray(),
         SettingsCategory.Server => [AccountsButton],
         _ => [ProfileSelectionButton, HomeSectionsButton],
@@ -239,6 +251,11 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             CloseBufferingPicker();
             return true;
         }
+        if (SdrBrightnessPicker.Visibility == Visibility.Visible)
+        {
+            CloseSdrBrightnessPicker();
+            return true;
+        }
         if (ProfilePicker.Visibility == Visibility.Visible)
         {
             ClosePicker();
@@ -267,6 +284,18 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             if (vertical != 0)
             {
                 var options = BufferingOptions;
+                var index = Array.FindIndex(options, option => SettingsInput.IsWithin(focused, option));
+                options[Math.Clamp(index + vertical, 0, options.Length - 1)].Focus(FocusState.Keyboard);
+                e.Handled = true;
+            }
+            if (horizontal != 0 || e.Key == VirtualKey.Tab) e.Handled = true;
+            return;
+        }
+        if (SdrBrightnessPicker.Visibility == Visibility.Visible)
+        {
+            if (vertical != 0)
+            {
+                var options = SdrBrightnessOptions;
                 var index = Array.FindIndex(options, option => SettingsInput.IsWithin(focused, option));
                 options[Math.Clamp(index + vertical, 0, options.Length - 1)].Focus(FocusState.Keyboard);
                 e.Handled = true;
@@ -331,6 +360,10 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             if (OwnsSettings && BufferingPicker.Visibility == Visibility.Visible && !SettingsInput.IsWithin(e.NewFocusedElement, BufferingPicker))
             {
                 if (!e.TrySetNewFocusedElement(SelectedBufferingOption)) e.Cancel = true;
+            }
+            else if (OwnsSettings && SdrBrightnessPicker.Visibility == Visibility.Visible && !SettingsInput.IsWithin(e.NewFocusedElement, SdrBrightnessPicker))
+            {
+                if (!e.TrySetNewFocusedElement(SelectedSdrBrightnessOption)) e.Cancel = true;
             }
             else if (OwnsSettings && ProfilePicker.Visibility == Visibility.Visible && !SettingsInput.IsWithin(e.NewFocusedElement, ProfilePicker))
             {
@@ -452,6 +485,69 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             PlaybackError.Visibility = Visibility.Visible;
         }
         UpdateDav1dGpuFilmGrain();
+    }
+
+    private void UpdateSdrBrightness() => SdrBrightnessValue.Text = SdrBrightness.Label(AppSettings.SdrWhiteNits);
+
+    private Button[] SdrBrightnessOptions =>
+    [
+        SdrBrightnessDefaultOption, SdrBrightness80Option, SdrBrightness120Option, SdrBrightness150Option, SdrBrightness200Option,
+        SdrBrightness250Option, SdrBrightness300Option,
+    ];
+
+    /// <summary>An option's SDR white: its Tag in nits; anything that isn't a choice reads as Default.</summary>
+    private static int SdrBrightnessNits(object? option) =>
+        int.TryParse((option as FrameworkElement)?.Tag as string, NumberStyles.None, CultureInfo.InvariantCulture, out var nits)
+            ? SdrBrightness.FromStored(nits) : SdrBrightness.DefaultNits;
+
+    /// <summary>The checked option: this Xbox's stored white, Default while none (or an unknown value) is stored.</summary>
+    private Button SelectedSdrBrightnessOption
+    {
+        get
+        {
+            var nits = AppSettings.SdrWhiteNits;
+            return SdrBrightnessOptions.FirstOrDefault(option => SdrBrightnessNits(option) == nits) ?? SdrBrightnessDefaultOption;
+        }
+    }
+
+    /// <summary>The Buffering Quality picker's pattern: the checked option takes focus, Back or a choice returns to the row.</summary>
+    private void OnSdrBrightnessClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings) return;
+        _returnTarget = SdrBrightnessButton;
+        var selected = SelectedSdrBrightnessOption;
+        foreach (var option in SdrBrightnessOptions)
+        {
+            option.ApplyTemplate();
+            VisualStateManager.GoToState(option, ReferenceEquals(option, selected) ? "Selected" : "Unselected", false);
+        }
+        SdrBrightnessPicker.Visibility = Visibility.Visible;
+        FocusRetry.Until(this, () => !OwnsSettings || SdrBrightnessPicker.Visibility != Visibility.Visible || selected.Focus(FocusState.Programmatic));
+    }
+
+    private void CloseSdrBrightnessPicker()
+    {
+        SdrBrightnessPicker.Visibility = Visibility.Collapsed;
+        FocusTarget(SdrBrightnessButton);
+    }
+
+    /// <summary>A choice is stored on this Xbox only (no server value); the next playback attempt reads it.</summary>
+    private void OnSdrBrightnessOptionClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings) return;
+        try
+        {
+            AppSettings.SdrWhiteNits = SdrBrightnessNits(sender);
+            PlaybackError.Visibility = Visibility.Collapsed;
+        }
+        catch (Exception error)
+        {
+            Log.Error("Settings SDR brightness write", error);
+            PlaybackError.Text = "Bale couldn’t save the SDR brightness preference on this Xbox. Try again.";
+            PlaybackError.Visibility = Visibility.Visible;
+        }
+        UpdateSdrBrightness();
+        CloseSdrBrightnessPicker();
     }
 
     /// <summary>TvSettingsScreen.kt: the switch stores a value for this device (scope profile_device).</summary>
