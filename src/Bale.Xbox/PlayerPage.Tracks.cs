@@ -145,7 +145,11 @@ public sealed partial class PlayerPage
             UpdateTrackValues();
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { LogFailure("track change", ex); }
+        catch (Exception ex)
+        {
+            // A server end leaves the player (PlayerPage.ServerEnd.cs); any other failure keeps playback unchanged.
+            if (_attempt is not { } current || !LeftForServerEnd(current, ex)) LogFailure("track change", ex);
+        }
         finally
         {
             _seeking = false;

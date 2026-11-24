@@ -158,12 +158,29 @@ namespace Bale.Xbox
             SubtitleClocks.Add(SubtitleClockPush.Milliseconds(source - _subtitleTimingOrigin));
         }
         private static void LogFailure(string operation, Exception error) => Log.Info($"{operation}: {error.GetType().Name}");
+        // PlayerPage.ServerEnd.cs runs as is; leaving counts the exit instead of navigating back.
+        internal int Exits { get; private set; }
+        private Task StopAndGoBackAsync()
+        {
+            Exits++;
+            return Task.CompletedTask;
+        }
         public void Dispose()
         {
             if (_attempt.Media is not null) DisposeMount(_attempt);
             _attempt.Cancellation.Dispose();
             _lifecycle.Dispose();
         }
+    }
+}
+
+namespace Bale.Xbox.Services
+{
+    // The notice's window popup is UWP; tests read what a leaving player showed.
+    internal static class ExitNotice
+    {
+        internal static List<string> Shown { get; } = [];
+        internal static void Show(string message) => Shown.Add(message);
     }
 }
 

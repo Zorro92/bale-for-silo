@@ -42,7 +42,7 @@ public class PlaybackStartTests
         Assert.False(body.GetProperty("metered").GetBoolean());
         Assert.False(body.TryGetProperty("allow_alternate_versions", out _));
         Assert.False(body.TryGetProperty("fileId", out _));
-        Assert.Equal(new[] { "playback_plan_v3", "client_video_transformations_v1", "device_quirks_v1", "seek_reanchor_v1", "direct_stream_resume_v1", "header_authenticated_media_v1", "embedded_subtitles_v1", "software_video_decode_v1" },
+        Assert.Equal(new[] { "playback_plan_v3", "client_video_transformations_v1", "device_quirks_v1", "seek_reanchor_v1", "direct_stream_resume_v1", "header_authenticated_media_v1", "paused_timeout_v1", "embedded_subtitles_v1", "software_video_decode_v1" },
             body.GetProperty("client_features").EnumerateArray().Select(value => value.GetString()));
     }
 

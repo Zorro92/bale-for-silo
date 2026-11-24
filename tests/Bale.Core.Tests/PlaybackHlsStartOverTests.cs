@@ -67,6 +67,35 @@ public class PlaybackHlsStartOverTests
         Assert.Equal(33.9, Assert.Single(await journal.ReadAsync()).LastPosition!.Position, 6);
     }
 
+    [Theory]
+    [InlineData("playback_session_paused_timeout", "Playback stopped because it was paused for too long.")]
+    [InlineData("playback_session_ended", "An administrator ended this playback session.")]
+    public async Task ASeekReanchorTheServerEndedLeavesWithItsNoticeAndStartsNothing(string code, string notice)
+    {
+        // Server dde5ed2 / Android 56e23561a: the session is over, so a pinned recovery would get the same answer.
+        using var handler = new HlsHandler("server_transcode_hls")
+        {
+            EndedAnswer = $$"""{"type":"https://siloserver.org/docs/api/v2/problems/{{code}}","title":"Ended","status":410}""",
+        };
+        using var client = Create(handler);
+        var installation = new Installation();
+        var start = Start(new(AudioIndex: 1), 0);
+        var plan = (await client.Playback.StartAsync(start, installation)).PlaybackPlan!;
+        var reporter = client.Playback.CreateProgressReporter(installation, new InMemoryPlaybackJournal(), "login");
+        await reporter.AttachSessionAsync("session", 0);
+        var session = new MediaPlaybackSession(13.9) { CanSeek = true, PlaybackState = MediaPlaybackState.Playing };
+        using var player = new PlayerPage(client, start, plan, installation, reporter, session);
+        var shown = Bale.Xbox.Services.ExitNotice.Shown.Count;
+
+        Assert.Equal("Unavailable", await player.SeekSourceAsync(43.9));
+        Assert.Equal(43.9, Assert.Single(handler.Reanchors), 6);
+        Assert.Equal(1, player.Exits);
+        Assert.Equal(notice, Assert.Single(Bale.Xbox.Services.ExitNotice.Shown.Skip(shown)));
+        // Nothing replaces the mount, and no progress goes out for a session the server ended.
+        Assert.Empty(player.Mounts);
+        Assert.Empty(handler.Progress);
+    }
+
     [Fact]
     public async Task AReanchorAfterALoweringRepeatsTheKeptEstimateAndAdoptsANewPlan()
     {
@@ -193,6 +222,8 @@ public class PlaybackHlsStartOverTests
         public List<double> Progress { get; } = [];
         /// <summary>Each replan's bandwidth_estimate_kbps, and whether it named a source.</summary>
         public List<(int? Estimate, bool Source)> Estimates { get; } = [];
+        /// <summary>A problem the replan answers with 410 instead of a decision (the server ended the session).</summary>
+        public string? EndedAnswer { get; init; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -222,6 +253,8 @@ public class PlaybackHlsStartOverTests
                 Estimates.Add((root.TryGetProperty("bandwidth_estimate_kbps", out var estimate) ? estimate.GetInt32() : null,
                     root.TryGetProperty("bandwidth_estimate_source", out _)));
                 Reanchors.Add(source);
+                if (EndedAnswer is { } ended)
+                    return new(HttpStatusCode.Gone) { Content = new StringContent(ended, Encoding.UTF8, "application/problem+json") };
                 return Json(DecisionAt(source));
             }
             Assert.EndsWith("/progress", path);

@@ -343,12 +343,18 @@ public sealed partial class PlayerPage : Page, IBackHandler
         await services.Reporter.AttachSessionAsync(attempt.SessionId!, attempt.Position, isPaused: false);
         attempt.Attached = true;
         var cancellation = attempt.ReportingCancellation = new CancellationTokenSource();
-        attempt.ReportingTask = ObserveReporterAsync(services.Reporter, attempt.SessionId!, cancellation.Token);
+        attempt.ReportingTask = ObserveReporterAsync(attempt, services.Reporter, attempt.SessionId!, cancellation.Token);
     }
 
-    private static async Task ObserveReporterAsync(PlaybackProgressReporter reporter, string sessionId, CancellationToken ct)
+    private async Task ObserveReporterAsync(Attempt attempt, PlaybackProgressReporter reporter, string sessionId, CancellationToken ct)
     {
-        try { await reporter.RunAsync(sessionId, ct); }
+        try
+        {
+            // The heartbeat returns only when the server ended the session (PlayerPage.ServerEnd.cs). A late answer about
+            // a session this attempt already moved on from (a replan's new session) must not end the one that replaced it.
+            var end = await reporter.RunAsync(sessionId, ct);
+            if (!ct.IsCancellationRequested && attempt.SessionId == sessionId) LeaveServerEnded(attempt, end);
+        }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
         catch (Exception ex) { LogFailure("reporter", ex); }
     }
@@ -604,6 +610,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         catch (OperationCanceledException) when (attempt.Cancellation.IsCancellationRequested) { }
         catch (Exception ex)
         {
+            // The server ended the session: leave with its notice; no error screen, no other attempt.
+            if (LeftForServerEnd(attempt, ex)) return;
             LogFailure("replan", ex);
             // The replacement's start budget ran out and the buffering controller lowers instead.
             if (StartDeadlineLoweringOwns(attempt)) return;

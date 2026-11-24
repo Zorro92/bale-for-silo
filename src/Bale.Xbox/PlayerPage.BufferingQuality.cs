@@ -288,6 +288,8 @@ public sealed partial class PlayerPage
         }
         catch (Exception ex)
         {
+            // The server ended the session: leave with its notice and start nothing (PlayerPage.ServerEnd.cs).
+            if (current is not null && LeftForServerEnd(current, ex)) return;
             LogFailure("buffering replan", ex);
             if (!adopted)
             {

@@ -35,6 +35,14 @@ public static class PlaybackProtocol
     /// may answer with signed absolute proxy URLs, which PlaybackMediaUrl refuses. ApplePlaybackV3Capabilities.features.
     /// </summary>
     public const string HeaderAuthenticatedMediaFeature = "header_authenticated_media_v1";
+    /// <summary>
+    /// silo-server protocol_v3.go FeaturePausedTimeoutV3 (attempt-sticky): a session the server ended because it stayed
+    /// paused past the administrator's limit answers progress and replans 410 <c>playback_session_paused_timeout</c>
+    /// instead of <c>playback_session_ended</c>, and the player leaves with its own notice (<see cref="PlaybackServerEnds"/>).
+    /// Every start sends it, as Android's video player does (PlaybackProtocolV3.kt PAUSED_TIMEOUT_V1_FEATURE, 56e23561a),
+    /// and every replan repeats the start's list. Older servers ignore client features they do not know.
+    /// </summary>
+    public const string PausedTimeoutFeature = "paused_timeout_v1";
     /// <summary><c>learned_limit</c>: plan without the device's learned limit and leave it stored.</summary>
     public const string LearnedLimitIgnore = "ignore";
     /// <summary><c>learned_limit</c>: delete the learned limit, then plan without it (Restore quality).</summary>
@@ -116,6 +124,8 @@ public static class PlaybackProtocol
         {
             "playback_plan_v3", ClientVideoTransformationsFeature, "device_quirks_v1",
             "seek_reanchor_v1", "direct_stream_resume_v1", HeaderAuthenticatedMediaFeature,
+            // Bale's only player is this device's own video player (playbackClientFeaturesV3 pausedTimeout = true).
+            PausedTimeoutFeature,
         };
         if (context.Deliveries.TryGetValue("original_http", out var original) && original.Subtitles.NativeEmbedded.Count > 0)
             features.Add("embedded_subtitles_v1");

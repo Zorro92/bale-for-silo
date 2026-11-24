@@ -112,8 +112,12 @@ public sealed class PlaybackProgressReporter
         finally { _mutex.Release(); }
     }
 
-    /// <summary>Optional Core-owned timer. Cancel and await it on player teardown; transient failures do not end the loop.</summary>
-    public async Task RunAsync(string sessionId, CancellationToken cancellationToken)
+    /// <summary>
+    /// Optional Core-owned timer. Cancel and await it on player teardown; transient failures do not end the loop. It returns
+    /// only when the server ended the session for good (<see cref="PlaybackServerEnds"/>): the player then leaves with the
+    /// notice, renews nothing and starts nothing (PlaybackSessionLifecycle.kt checks this before its other branches).
+    /// </summary>
+    public async Task<PlaybackServerEnd> RunAsync(string sessionId, CancellationToken cancellationToken)
     {
         while (true)
         {
@@ -122,6 +126,7 @@ public sealed class PlaybackProgressReporter
             catch (Exception error) when (error is HttpRequestException or ApiException or InvalidDataException)
             {
                 LastProgressError = error;
+                if (PlaybackServerEnds.From(error) is { } end) return end;
             }
         }
     }

@@ -169,20 +169,26 @@ public sealed partial class PlaybackClient
         request.Headers.TryAdd("Accept", "application/json");
         request.SetStreamContent(stream, "application/json");
         request.AddRequestOptions(new IRequestOption[] { scope.Request, new RetryHandlerOption { MaxRetry = 0 }, new SingleAttemptRequestOption() });
-        var response = await _adapter.SendAsync(request, PlaybackDecision.CreateFromDiscriminatorValue,
-            new Dictionary<string, ParsableFactory<IParsable>>
-            {
-                ["4XX"] = Problem.CreateFromDiscriminatorValue,
-                ["5XX"] = Problem.CreateFromDiscriminatorValue,
-            }, cancellationToken).ConfigureAwait(false);
+        var response = await _adapter.SendAsync(request, PlaybackDecision.CreateFromDiscriminatorValue, ProblemErrors,
+            cancellationToken).ConfigureAwait(false);
         scope.Request.CheckCurrent();
         return response ?? throw new InvalidDataException("The server returned no playback decision.");
     }
 
+    /// <summary>Every error answer as a v2 problem, so its type stays readable.</summary>
+    private static readonly Dictionary<string, ParsableFactory<IParsable>> ProblemErrors = new()
+    {
+        ["4XX"] = Problem.CreateFromDiscriminatorValue,
+        ["5XX"] = Problem.CreateFromDiscriminatorValue,
+    };
+
     internal async Task<PlaybackMutation> ProgressAsync(string sessionId, PlaybackProgressV2 progress, PlaybackRequestScope scope,
         CancellationToken cancellationToken)
     {
-        var response = await _api.Api.V2.Playback[sessionId].Progress.PostAsync(new PlaybackProgressBody
+        // The generated builder maps only the contract's listed codes, and the contract lists no 410 for progress, so a
+        // server end (PlaybackServerEnds) would arrive without its problem type. Send its own request with every error
+        // read as a problem instead, as start and replan do.
+        var request = _api.Api.V2.Playback[sessionId].Progress.ToPostRequestInformation(new PlaybackProgressBody
         {
             InstallationId = progress.InstallationId, Sequence = progress.Sequence,
             Position = progress.Position, IsPaused = progress.IsPaused,
@@ -190,7 +196,9 @@ public sealed partial class PlaybackClient
         {
             config.Options.Add(scope.Request);
             config.Options.Add(new RetryHandlerOption { MaxRetry = 0 });
-        }, cancellationToken).ConfigureAwait(false);
+        });
+        var response = await _adapter.SendAsync(request, PlaybackMutation.CreateFromDiscriminatorValue, ProblemErrors,
+            cancellationToken).ConfigureAwait(false);
         scope.Request.CheckCurrent();
         return response ?? throw new InvalidDataException("The server returned no playback progress receipt.");
     }

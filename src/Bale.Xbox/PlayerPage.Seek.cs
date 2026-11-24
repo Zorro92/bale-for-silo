@@ -237,11 +237,19 @@ public sealed partial class PlayerPage
             attempt.AttemptedPlanKeys, attempt.Replanned ? 2 : 1, source), ClientBufferingReplan("seek_reanchor"));
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(attempt.Cancellation.Token);
         deadline.CancelAfter(TimeSpan.FromSeconds(10));
-        var decision = await attempt.Client.Playback.ReplanAsync(attempt.SessionId!, request, attempt.Services!.Installation, deadline.Token);
+        PlaybackDecision decision;
+        try { decision = await attempt.Client.Playback.ReplanAsync(attempt.SessionId!, request, attempt.Services!.Installation, deadline.Token); }
+        catch (Exception ex) when (PlaybackServerEnds.From(ex) is { } end)
+        {
+            // The session is over; a pinned recovery would get the same answer (TvPlayerViewModel.kt). Leave, and every
+            // caller then sees a rejected reanchor while the page is leaving, so nothing else starts.
+            LeaveServerEnded(attempt, end);
+            return null;
+        }
         return PlaybackSeekReanchor.Matches(attempt.Plan!, decision, attempt.SessionId!, attempt.Start!.FileId) ? decision : null;
     }
 
-    private static async Task ReportPositionAsync(Attempt attempt, double source, bool paused)
+    private async Task ReportPositionAsync(Attempt attempt, double source, bool paused)
     {
 #if DEBUG_SERVER
         if (attempt.DebugUrl is not null) return;
@@ -253,6 +261,9 @@ public sealed partial class PlayerPage
             await attempt.Services!.Reporter.ReportProgressAsync(attempt.SessionId!, source, paused, deadline.Token);
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { LogFailure("progress flush", ex); }
+        catch (Exception ex)
+        {
+            if (!LeftForServerEnd(attempt, ex)) LogFailure("progress flush", ex);
+        }
     }
 }

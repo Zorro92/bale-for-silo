@@ -27,6 +27,7 @@ public static class PlaybackProblemLog
         ["capability_unsupported"] = "Capability unsupported",
         ["playback_installation_changed"] = "Playback installation changed",
         ["playback_session_ended"] = "Playback session ended",
+        ["playback_session_paused_timeout"] = "Playback session paused too long",
         ["playback_progress_conflict"] = "Playback progress conflict",
     };
 
