@@ -356,7 +356,7 @@ to the output pixel, so stills don't shimmer). Owner asked for these to be on th
   woven frame shows it. The fork marks interlaced samples (MFSampleExtension_Interlaced, field order) and Media
   Foundation's processor deinterlaces them. Not covered: interlaced sources through the stage (HDR, or larger than
   the display), which practically don't exist.
-- [x] **SDR display brightness setting** (`target_white_nits`, 2026-11-24; implemented, not console-verified). Settings ›
+- [x] **SDR display brightness setting** (`target_white_nits`, 2026-11-24; console: `ffmpeg-tune white=200` logged `tone map SDR white=200 nits` on the HEVC stage route and the rav1g display-pass route, playback normal; the brightness itself still needs the owner's eyes). Settings ›
   Playback › HDR ON SDR TVS › **SDR Brightness** (an owner-requested deviation: the official apps never tone-map on the
   device) picks the SDR white the curve maps to: **Default (100 nits)**, as before, or 80, 120, 150, 200, 250 or 300 nits.
   BT.2390 ends at 2.03 times that white, so a higher value maps more of the source into the SDR range and the picture
@@ -375,6 +375,16 @@ to the output pixel, so stills don't shimmer). Owner asked for these to be on th
 
 Not planned: more tone curves (ACES, Reinhard, Mobius, spline; BT.2390 stays the standard) and GPU-heavy
 upscalers (Jinc, vendor Super Resolution); 1080p to 4K stays with the console's scaler.
+
+### Console check of the 2026-11-24 changes (Bale 0.1.749)
+
+- **Peak from metadata:** a 1080p HDR HEVC film with MaxCLL 4057 and mastering max 1000 logged `peak: 1000 nits from
+  mastering`; a 4K HDR VP9 film with MaxCLL 1184 and mastering max 4000 logged `1184 nits from maxcll`. The open
+  HDR test clips carry no HDR metadata and log `from config` (1000).
+- **Catmull-Rom chroma cost:** 4K60 HEVC HDR10 60M, two pairs, engine 0 load 61.0 / 57.5% (cubic) vs 53.8 / 51.0%
+  (`bilinearchroma`): about +6.5-7 points, roughly 1.1 ms per 4K frame at 60 fps (estimate was 0.3-0.6 ms); 0 missed
+  frames either way. The stage runs on hardware-decoded HEVC/VP9 here, where engine 0 has room.
+- **Picture:** not judged yet (Device Portal's screenshot doesn't capture the HDR video plane); needs the owner's eyes.
 
 ## Debug switches
 
