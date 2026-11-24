@@ -53,6 +53,9 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "FfmpegSource.cs.txt"));
         Assert.Contains("var pool = tuning.DecoderPoolFromStream ?? codec is \"hevc\" or \"h264\" or \"vp9\";", source);
         Assert.Contains("config.FFmpegOptions[\"bale_d3d11va_pool_from_stream\"] = pool ? \"1\" : \"0\";", source);
+        // Release default (2026-11-24): hardware-decoded HEVC/H.264/VP9 ask for stream-sized pools outside DEBUG_SERVER too.
+        Assert.Contains("if (!route.SoftwareVideo && route.VideoCodec is \"hevc\" or \"h264\" or \"vp9\")", source);
+        Assert.Contains("route.VideoCodec is not (\"hevc\" or \"vp9\" or \"h264\")", source);
     }
 
     [Fact]

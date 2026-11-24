@@ -43,7 +43,8 @@ internal static class FfmpegSource
         // its tone-map/downscale stage; keep that same configuration and its marked-output guard.
         rav1gStage = rav1g is { Rav1g: true } && route.SoftwareVideo && route.VideoCodec == "av1";
 #endif
-        if (route.ConsoleStage && (route.VideoCodec is not ("hevc" or "vp9") && !rav1gStage || !ConsoleToneMapRuntime.IsAvailable))
+        // H.264 joined the SDR downscale route on 2026-11-24 (route.rs); the fork's stage is codec-neutral.
+        if (route.ConsoleStage && (route.VideoCodec is not ("hevc" or "vp9" or "h264") && !rav1gStage || !ConsoleToneMapRuntime.IsAvailable))
             throw new InvalidDataException("Console tone mapping is unavailable for this source.");
         // FFmpeg's HEVC decoder handles only nuh_layer_id 0 and does not apply the RPU.
         // d3d11va gets that base picture, never an opaque DV7 system-decoder bitstream.
@@ -53,6 +54,12 @@ internal static class FfmpegSource
         // BT.2390, same defaults as the server. The SDR downscale route takes the same stage: the fork
         // runs bale_gpu's scale-only pass for BT.709 SDR larger than the output size (bale.39+).
         if (route.ConsoleStage) config.FFmpegOptions["bale_tonemap"] = "1";
+        // Stream-sized d3d11va decoder pools (fork bale.68+, in-band SPS since bale.79): the stream's DPB + 3 instead
+        // of FFmpeg's 20 (4K HEVC 478 -> ~191-215 MiB). Release default since 2026-11-24 after the owner's long-play
+        // check (30 min 4K HEVC HDR10, 0 missed, pool 8; a library MKV with in-band SPS: 9 surfaces). Unsupported codecs
+        // and unreadable streams keep FFmpeg's pool inside the fork.
+        if (!route.SoftwareVideo && route.VideoCodec is "hevc" or "h264" or "vp9")
+            config.FFmpegOptions["bale_d3d11va_pool_from_stream"] = "1";
         var softwareVideo = route.SoftwareVideo;
 #if DEBUG_SERVER
         if (rav1gStage) config.Video.VideoDecoderMode = VideoDecoderMode.ForceFFmpegSoftwareDecoder;
@@ -270,9 +277,8 @@ internal static class FfmpegSource
         if (tuning.HdrSupport is { } hdr) config.Video.HdrSupport = hdr ? HdrSupport.Enabled : HdrSupport.Disabled;
         // Seek-landing A/B: off is upstream's backward seek (no nearest-keyframe fast seek).
         if (tuning.FastSeek is { } fastSeek) config.General.FastSeek = fastSeek;
-        // Debug default (owner): d3d11va pool from the stream's DPB + 3 instead of FFmpeg's pool, for the codecs the wrapper
-        // sizes and the console verified on bale.71: HEVC (4K 20 -> 8 surfaces, -287 MiB), VP9 (4K 12 -> 11) and H.264
-        // (1080p 20 -> 8), each with 0 missed frames. Release keeps FFmpeg's pool until a long play is verified.
+        // ffmpeg-tune pool= overrides the release default (set in Configuration) for A/B; default = the same codecs:
+        // HEVC (4K 20 -> 8 surfaces, -287 MiB), VP9 (4K 12 -> 11) and H.264 (1080p 20 -> 8), each with 0 missed frames.
         var pool = tuning.DecoderPoolFromStream ?? codec is "hevc" or "h264" or "vp9";
         config.FFmpegOptions["bale_d3d11va_pool_from_stream"] = pool ? "1" : "0";
         if (softwareVideo)

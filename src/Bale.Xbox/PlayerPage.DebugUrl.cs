@@ -72,6 +72,10 @@ public sealed partial class PlayerPage
     private static void DebugValidateUrlRoute(Attempt attempt, Mount media)
     {
         if (attempt.DebugUrl is null) return;
+        // No server can transcode a debug file: a codec past the console's hardware limits (e.g. 4K H.264 on a 1080p-only
+        // H.264 decoder) that Bale doesn't software-decode cannot play here; say so instead of a generic open failure.
+        if (media.Route.SoftwareVideo && media.Route.VideoCodec is { } codec && !SoftwareDecodePolicy.VideoCodecs.Contains(codec))
+            throw new DebugPlayUrlException($"{codec} at this size/rate exceeds the console's hardware decoder and Bale does not software-decode {codec}; no server here to transcode");
         if (media.Route.ConsoleToneMap && !media.Route.UseFfmpeg)
             throw new DebugPlayUrlException("tone map declined: FFmpeg is disabled or the codec is unsupported");
         if (media.Route.ConsoleStage && !ConsoleToneMapRuntime.IsAvailable)
