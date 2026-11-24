@@ -66,8 +66,10 @@ pub struct ToneMapGpu {
     /// Present when the configured output is smaller than the visible source and the debug
     /// `nostaged` switch is off: one area pass per output pixel instead of one per plane read.
     staged: Option<Staged>,
-    /// Current math, or the debug A/B words (`gammachroma`, `fixedpeak`; console A/B).
+    /// Current math, or the debug A/B words (`gammachroma`, `fixedpeak`, `bilinearchroma`).
     options: cpu::Options,
+    /// The cubic's co-sited fast path (`cpu::cosited_bits`); off only in a test comparing both.
+    cosited_fast_path: bool,
     /// What the constant buffer holds: apply uploads only when a frame needs other constants (a new
     /// peak from the stream's metadata, another size or colour description), normally once per stream.
     uploaded: Option<Constants>,
@@ -164,7 +166,9 @@ impl ToneMapGpu {
                     cpu::Method::Linear
                 },
                 fixed_peak: debug.fixed_peak,
+                bilinear_chroma: debug.bilinear_chroma,
             },
+            cosited_fast_path: true,
             uploaded: None,
             uploads: 0,
             stage: 0,
@@ -235,10 +239,17 @@ impl ToneMapGpu {
         self.options.method = method;
     }
 
-    /// Test hook: all debug A/B options at once (`gammachroma`, `fixedpeak`).
+    /// Test hook: all debug A/B options at once (`gammachroma`, `fixedpeak`, `bilinearchroma`).
     #[doc(hidden)]
     pub fn set_options(&mut self, options: cpu::Options) {
         self.options = options;
+    }
+
+    /// Test hook: turn the cubic's co-sited fast path off, so a WARP test can check that it gives
+    /// exactly what the full 16-tap filter gives.
+    #[doc(hidden)]
+    pub fn set_cosited_fast_path(&mut self, on: bool) {
+        self.cosited_fast_path = on;
     }
 
     /// Test hook: this stage's number in the peak report (`bale_tonemap_peak_read`).
@@ -361,7 +372,12 @@ impl ToneMapGpu {
                 config.width,
                 config.height,
                 u32::from(eight_bit_input),
-                cpu::method_word(frame, self.options),
+                cpu::method_word(frame, self.options)
+                    | if self.cosited_fast_path {
+                        cpu::cosited_bits(config)
+                    } else {
+                        0
+                    },
             ],
         };
         // Fail before queueing work, never return an error after changing the caller's output.
@@ -739,7 +755,9 @@ mod tests {
 /// sum in each plane pass as before; `gammachroma` (2026-11-22, quality/cost A/B) restores the
 /// pre-2026-11-22 math: per-source-pixel clip, left input siting, output chroma filtered from
 /// encoded Cb/Cr ([`cpu::Method::Legacy`]); `fixedpeak` (2026-11-24, A/B) tone-maps PQ from the
-/// config's source peak as before, not from the stream's MaxCLL / mastering metadata.
+/// config's source peak as before, not from the stream's MaxCLL / mastering metadata;
+/// `bilinearchroma` (2026-11-24, quality/cost A/B) upsamples the input chroma bilinearly as before
+/// instead of with Catmull-Rom.
 #[derive(Clone, Copy, Default)]
 struct DebugSwitches {
     no_self_test: bool,
@@ -747,6 +765,7 @@ struct DebugSwitches {
     no_staged: bool,
     gamma_chroma: bool,
     fixed_peak: bool,
+    bilinear_chroma: bool,
 }
 
 impl DebugSwitches {
@@ -764,6 +783,7 @@ impl DebugSwitches {
                 "nostaged" => switches.no_staged = true,
                 "gammachroma" => switches.gamma_chroma = true,
                 "fixedpeak" => switches.fixed_peak = true,
+                "bilinearchroma" => switches.bilinear_chroma = true,
                 _ => {}
             }
         }
@@ -912,5 +932,8 @@ mod debug_switch_tests {
         let peak = DebugSwitches::parse("fixedpeak");
         assert!(peak.fixed_peak && !peak.gamma_chroma && !peak.no_staged);
         assert!(DebugSwitches::parse("gammachroma fixedpeak").fixed_peak);
+        let chroma = DebugSwitches::parse("bilinearchroma,gammachroma");
+        assert!(chroma.bilinear_chroma && chroma.gamma_chroma && !chroma.fixed_peak);
+        assert!(!peak.bilinear_chroma);
     }
 }

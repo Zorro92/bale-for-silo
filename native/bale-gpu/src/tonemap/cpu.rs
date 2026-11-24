@@ -461,6 +461,8 @@ pub struct Options {
     /// `fixedpeak`: the config's source peak even when the stream's metadata names one
     /// ([`source_peak`]).
     pub fixed_peak: bool,
+    /// `bilinearchroma`: bilinear input chroma upsampling (before 2026-11-24) instead of Catmull-Rom.
+    pub bilinear_chroma: bool,
 }
 impl From<Method> for Options {
     fn from(method: Method) -> Self {
@@ -488,7 +490,8 @@ pub fn chroma_offset(location: u8) -> [f32; 2] {
     };
     [x, y]
 }
-/// The cbuffer's `output.w` for a frame: bits 0-7 the chroma location, bit 8 the legacy math.
+/// The cbuffer's `output.w` for a frame: bits 0-7 the chroma location, bit 8 the legacy math, bit 9
+/// bilinear input chroma (bits 10-11: [`cosited_bits`], GPU only).
 pub fn method_word(frame: &BaleToneMapFrameInfo, options: impl Into<Options>) -> u32 {
     let options = options.into();
     u32::from(frame.chroma_location)
@@ -497,6 +500,87 @@ pub fn method_word(frame: &BaleToneMapFrameInfo, options: impl Into<Options>) ->
         } else {
             0
         }
+        | if options.bilinear_chroma { 0x200 } else { 0 }
+}
+/// cbuffer `output.w` bit 10 (11): the visible source is exactly 2 or 4 times the output wide
+/// (high). In every step of the area loop all lanes of a shader wave then read the same chroma phase
+/// on that axis, so the shader's cubic skips the zero-weight taps of a co-sited phase (fraction 0)
+/// behind a uniform branch: same result, fewer loads. GPU only; the reference always reads all taps.
+pub fn cosited_bits(config: &BaleToneMapConfig) -> u32 {
+    let (source_width, source_height) = config.source_size();
+    let even = |source: u32, output: u32| source == 2 * output || source == 4 * output;
+    (u32::from(even(source_width, config.width)) << 10)
+        | (u32::from(even(source_height, config.height)) << 11)
+}
+/// Catmull-Rom (Keys cubic, a = -0.5) weights of the taps at -1, 0, +1 and +2 for a sample the
+/// fraction `t` (0 <= t < 1) past tap 0. Interpolating (t = 0 gives 0, 1, 0, 0), they sum to 1 and
+/// reproduce linear ramps. At the quarter phases chroma upsampling uses (0, 1/4, 1/2, 3/4) each weight
+/// is a multiple of 1/128, exact in f32. Mirrors the shader's `catmull_rom`.
+pub fn catmull_rom(t: f32) -> [f32; 4] {
+    let t2 = t * t;
+    let t3 = t2 * t;
+    [
+        0.5 * (-t3 + 2.0 * t2 - t),
+        0.5 * (3.0 * t3 - 5.0 * t2) + 1.0,
+        0.5 * (-3.0 * t3 + 4.0 * t2 + t),
+        0.5 * (t3 - t2),
+    ]
+}
+/// Valid 10-bit chroma codes, the cubic's clamp: 64-960 in limited range (16-240 at 8 bits), 0-1023
+/// in full range.
+pub fn chroma_code_range(full_range: bool) -> (f32, f32) {
+    if full_range {
+        (0.0, 1023.0)
+    } else {
+        (64.0, 960.0)
+    }
+}
+/// The visible chroma plane of a tight P010 picture, read as 10-bit codes.
+struct ChromaPlane<'a> {
+    input: &'a [u16],
+    /// Words per row (the picture's width) and the plane's first word.
+    stride: usize,
+    start: usize,
+    /// Visible chroma size: reads clamp to it and never touch decoder padding.
+    width: i32,
+    height: i32,
+    full_range: bool,
+}
+impl ChromaPlane<'_> {
+    /// Plane `p` (0 Cb, 1 Cr) at chroma sample (x, y), clamped to the visible plane.
+    fn code(&self, x: i32, y: i32, p: usize) -> f32 {
+        let x = x.clamp(0, self.width - 1) as usize;
+        let y = y.clamp(0, self.height - 1) as usize;
+        (self.input[self.start + y * self.stride + 2 * x + p] >> 6) as f32
+    }
+    /// Bilinear at chroma-sample position `c` (debug `bilinearchroma`), as the shader's
+    /// `chroma_bilinear`.
+    fn bilinear(&self, c: [f32; 2]) -> [f32; 2] {
+        let (ix, iy) = (c[0].floor() as i32, c[1].floor() as i32);
+        let (fx, fy) = (c[0] - ix as f32, c[1] - iy as f32);
+        std::array::from_fn(|p| {
+            let a = self.code(ix, iy, p) * (1.0 - fx) + self.code(ix + 1, iy, p) * fx;
+            let b = self.code(ix, iy + 1, p) * (1.0 - fx) + self.code(ix + 1, iy + 1, p) * fx;
+            a * (1.0 - fy) + b * fy
+        })
+    }
+    /// Separable 4x4 Catmull-Rom at chroma-sample position `c`, rows first, clamped to the valid code
+    /// range against the filter's overshoot at sharp edges; as the shader's `chroma_cubic`.
+    fn cubic(&self, c: [f32; 2]) -> [f32; 2] {
+        let (ix, iy) = (c[0].floor() as i32, c[1].floor() as i32);
+        let (wx, wy) = (catmull_rom(c[0] - ix as f32), catmull_rom(c[1] - iy as f32));
+        let (lo, hi) = chroma_code_range(self.full_range);
+        std::array::from_fn(|p| {
+            let row = |y: i32| {
+                (0..4).fold(0.0f32, |sum, i| {
+                    sum + wx[i] * self.code(ix - 1 + i as i32, y, p)
+                })
+            };
+            (0..4)
+                .fold(0.0f32, |sum, j| sum + wy[j] * row(iy - 1 + j as i32))
+                .clamp(lo, hi)
+        })
+    }
 }
 pub fn pixel_linear(
     config: &BaleToneMapConfig,
@@ -578,10 +662,11 @@ pub fn quantize_chroma_dithered(uv: [f32; 2], x: u32, row: u32) -> [f32; 2] {
 }
 
 /// Tight P010 words (high 10 bits), input may include decoder alignment beyond visible size.
-/// Chroma upsampling: bilinear from the stream's chroma location ([`chroma_offset`]; left when
-/// unspecified). Area downscale in display-linear light, then output chroma (left-sited): a
-/// [1 2 1]/4 x [1 1]/2 footprint centred at (2x, 2y + 0.5) that mixes the output pixels' linear
-/// RGB, then clips and encodes once. Clamp visible edges, never sample alignment padding.
+/// Chroma upsampling: separable 4x4 Catmull-Rom clamped to the valid code range (bilinear under
+/// `bilinear_chroma`) at the stream's chroma location ([`chroma_offset`]; left when unspecified).
+/// Area downscale in display-linear light, then output chroma (left-sited): a [1 2 1]/4 x [1 1]/2
+/// footprint centred at (2x, 2y + 0.5) that mixes the output pixels' linear RGB, then clips and
+/// encodes once. Clamp visible edges, never sample alignment padding.
 /// NV12 8-bit codes, the ABI 1 output, ordered-dithered like the shader. Current math
 /// ([`Options::default`]: the stream's metadata peak); see [`reference_with`] for the debug options.
 pub fn reference(
@@ -675,23 +760,24 @@ fn reference_codes(
     let legacy = method == Method::Legacy;
     let (bt2020, mode) = (frame.matrix == 9, mode(frame.transfer));
     let offset = chroma_offset(if legacy { 1 } else { frame.chroma_location });
-    let uv_at = |x: i32, y: i32, plane: usize| {
-        let x = x.clamp(0, sw as i32 / 2 - 1) as usize;
-        let y = y.clamp(0, sh as i32 / 2 - 1) as usize;
-        (input[iw * ih + y * iw + 2 * x + plane] >> 6) as f32
+    let chroma = ChromaPlane {
+        input,
+        stride: iw,
+        start: iw * ih,
+        width: sw as i32 / 2,
+        height: sh as i32 / 2,
+        full_range: frame.full_range == 1,
     };
     let sample = |x: i32, y: i32| {
         let x = x.clamp(0, sw as i32 - 1);
         let y = y.clamp(0, sh as i32 - 1);
-        let cx = (x as f32 - offset[0]) * 0.5;
-        let cy = (y as f32 - offset[1]) * 0.5;
-        let (ix, iy) = (cx.floor() as i32, cy.floor() as i32);
-        let (fx, fy) = (cx - ix as f32, cy - iy as f32);
-        let uv = std::array::from_fn(|p| {
-            let a = uv_at(ix, iy, p) * (1.0 - fx) + uv_at(ix + 1, iy, p) * fx;
-            let b = uv_at(ix, iy + 1, p) * (1.0 - fx) + uv_at(ix + 1, iy + 1, p) * fx;
-            a * (1.0 - fy) + b * fy
-        });
+        // This luma pixel's position in chroma-sample coordinates.
+        let c = [(x as f32 - offset[0]) * 0.5, (y as f32 - offset[1]) * 0.5];
+        let uv = if options.bilinear_chroma {
+            chroma.bilinear(c)
+        } else {
+            chroma.cubic(c)
+        };
         pixel_linear(
             config,
             frame,
@@ -1615,6 +1701,140 @@ mod tests {
             0x103
         );
         assert_eq!(method_word(&frame(), Method::Linear), 0);
+        let bilinear = Options {
+            bilinear_chroma: true,
+            ..Options::default()
+        };
+        assert_eq!(method_word(&frame(), bilinear), 0x200);
+        // Fast-path bits: exactly 2:1 or 4:1 per axis, never 1:1, 3:1 or fractional ratios.
+        for (source, output, bits) in [
+            ([64, 32], [32, 16], 0xc00),
+            ([128, 64], [32, 16], 0xc00),
+            ([64, 24], [32, 16], 0x400),
+            ([48, 32], [32, 16], 0x800),
+            ([96, 48], [32, 16], 0),
+            ([0, 0], [32, 16], 0),
+        ] {
+            let c = BaleToneMapConfig {
+                width: output[0],
+                height: output[1],
+                reserved: [source[0], source[1], 0, 0],
+                ..config(1)
+            };
+            assert_eq!(cosited_bits(&c), bits, "{source:?} -> {output:?}");
+        }
+    }
+    /// Catmull-Rom at the four chroma phases: interpolating, unit sum, linear ramps reproduced,
+    /// mirror-symmetric, and exact multiples of 1/128 (so the shader computes the same weights).
+    #[test]
+    fn catmull_rom_weights_are_exact_at_the_quarter_phases() {
+        assert_eq!(catmull_rom(0.0), [0.0, 1.0, 0.0, 0.0]);
+        assert_eq!(
+            catmull_rom(0.25),
+            [-9.0, 111.0, 29.0, -3.0].map(|k| k / 128.0)
+        );
+        assert_eq!(
+            catmull_rom(0.5),
+            [-8.0, 72.0, 72.0, -8.0].map(|k| k / 128.0)
+        );
+        assert_eq!(
+            catmull_rom(0.75),
+            [-3.0, 29.0, 111.0, -9.0].map(|k| k / 128.0)
+        );
+        for t in [0.0f32, 0.25, 0.5, 0.75] {
+            let w = catmull_rom(t);
+            assert_eq!(w.iter().sum::<f32>(), 1.0, "t={t}");
+            assert_eq!(-w[0] + w[2] + 2.0 * w[3], t, "t={t}: linear ramp");
+            let mut mirrored = catmull_rom(1.0 - t);
+            mirrored.reverse();
+            assert_eq!(mirrored, w, "t={t}");
+        }
+    }
+    /// A chroma plane (P010 words) whose Cb and Cr both follow `f(x)` across, constant down.
+    fn chroma_columns(f: impl Fn(usize) -> f32) -> Vec<u16> {
+        let (w, h) = (32usize, 8usize);
+        let mut data = vec![512u16 << 6; w * h * 3 / 2];
+        for y in 0..h / 2 {
+            for x in 0..w / 2 {
+                let code = (f(x).round() as u16) << 6;
+                data[w * h + y * w + 2 * x] = code;
+                data[w * h + y * w + 2 * x + 1] = code;
+            }
+        }
+        data
+    }
+    fn plane(data: &[u16], full_range: bool) -> ChromaPlane<'_> {
+        ChromaPlane {
+            input: data,
+            stride: 32,
+            start: 32 * 8,
+            width: 16,
+            height: 4,
+            full_range,
+        }
+    }
+    /// Away from the picture edges the cubic reproduces linear and quadratic chroma exactly at every
+    /// phase (bilinear misses a curve's midpoints by a quarter code here), and at a sharp edge its
+    /// overshoot is clamped to the valid code range on both sides.
+    #[test]
+    fn cubic_chroma_is_exact_on_curves_and_clamped_at_sharp_edges() {
+        let ramp = chroma_columns(|x| 300.0 + 10.0 * x as f32);
+        let curve = chroma_columns(|x| 200.0 + (x * x) as f32);
+        for i in 2..12 {
+            for t in [0.0f32, 0.25, 0.5, 0.75] {
+                let x = i as f32 + t;
+                for y in [0.0, 0.25, 1.75] {
+                    let c = [x, y];
+                    assert_eq!(plane(&ramp, false).cubic(c), [300.0 + 10.0 * x; 2]);
+                    assert_eq!(plane(&ramp, false).bilinear(c), [300.0 + 10.0 * x; 2]);
+                    assert_eq!(plane(&curve, false).cubic(c), [200.0 + x * x; 2], "x={x}");
+                }
+            }
+            let mid = [i as f32 + 0.5, 1.0];
+            let exact = 200.0 + mid[0] * mid[0];
+            assert_eq!(plane(&curve, false).bilinear(mid), [exact + 0.25; 2]);
+        }
+        for (full_range, low, high) in [(false, 64.0, 960.0), (true, 0.0, 1023.0)] {
+            let step = chroma_columns(|x| if x < 8 { low } else { high });
+            let p = plane(&step, full_range);
+            let (mut clamped_low, mut clamped_high) = (false, false);
+            for i in 0..16 {
+                for t in [0.0f32, 0.25, 0.5, 0.75] {
+                    let [cb, cr] = p.cubic([i as f32 + t, 1.0]);
+                    assert_eq!(cb, cr);
+                    assert!((low..=high).contains(&cb), "{i}+{t}: {cb}");
+                    clamped_low |= cb == low && i == 6;
+                    clamped_high |= cb == high && i == 8;
+                }
+            }
+            // Unclamped, 6.25 would read 43 (or -24) and 8.75 981 (or 1047).
+            assert!(clamped_low && clamped_high, "full range {full_range}");
+            assert_eq!(chroma_code_range(full_range), (low, high));
+        }
+    }
+    /// The full reference: the cubic changes sharp chroma edges (the test pattern's colour blocks),
+    /// not flat areas, and `bilinear_chroma` restores the bilinear read.
+    #[test]
+    fn reference_upsamples_chroma_with_catmull_rom_unless_bilinear_chroma() {
+        let c = config(1);
+        let f = frame();
+        let input = test_pattern(16, 8, true, false);
+        let bilinear = Options {
+            bilinear_chroma: true,
+            ..Options::default()
+        };
+        let cubic = reference_p010(&c, &f, &input, 16, 8).unwrap();
+        let old = reference_p010_with(&c, &f, &input, 16, 8, bilinear).unwrap();
+        assert_ne!(cubic, old);
+        let mut flat = vec![0u16; 16 * 8 * 3 / 2];
+        flat[..128].fill(600 << 6);
+        for (i, v) in flat[128..].iter_mut().enumerate() {
+            *v = if i % 2 == 0 { 540 << 6 } else { 470 << 6 };
+        }
+        assert_eq!(
+            reference_p010(&c, &f, &flat, 16, 8).unwrap(),
+            reference_p010_with(&c, &f, &flat, 16, 8, bilinear).unwrap()
+        );
     }
     /// One red chroma row (or column) at 1:1: with the input sited like the output (left), the
     /// output chroma rows (columns) on both sides get the same amount of red. A location that

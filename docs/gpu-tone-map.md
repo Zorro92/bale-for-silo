@@ -104,15 +104,67 @@ offset (colour edges line up with luma edges); near out-of-gamut edges a few cod
 in-gamut content is unchanged (`methods_agree_on_a_flat_in_gamut_picture`). Luma changes only where a
 source value left 0..1 before the old clip (PQ/HLG/BT.2020 SDR); BT.709 SDR luma is bit-identical.
 
-Not in part 1: cubic (or exact-area) chroma *upsampling* of the input, and averaging HDR light before
-the tone curve. The old math stays available on the console as `tonemap-debug gammachroma`
-(`cpu::Method::Legacy`): per-pixel clip, left siting, encoded-chroma filter; the WARP tests compare
-both methods against the CPU reference.
+Not in part 1: cubic (or exact-area) chroma *upsampling* of the input (Catmull-Rom since 2026-11-24,
+see "Cubic input chroma" below), and averaging HDR light before the tone curve. The old math stays
+available on the console as `tonemap-debug gammachroma` (`cpu::Method::Legacy`): per-pixel clip, left
+siting, encoded-chroma filter; the WARP tests compare both methods against the CPU reference.
+
+### Cubic input chroma (2026-11-24, part 2, first half)
+
+The input chroma is now upsampled with a separable 4x4 **Catmull-Rom** cubic (Keys, a = −0.5) instead of
+bilinear: the same encoded Cb/Cr samples at the same siting (part 1's `chroma_offset`), only the filter
+changes (`chroma_cubic` in `tonemap_common.hlsli`, `ChromaPlane::cubic` in `cpu.rs`; rows first, then the
+column). Bilinear softens chroma detail; Catmull-Rom passes through the samples and reproduces linear
+and quadratic chroma exactly, so fine colour detail and colour edges (coloured text, saturated edges,
+foliage) stay sharper and line up better with luma. Its negative lobes overshoot at a sharp chroma edge
+(about 7% of the step per axis), so the result is clamped to the valid code range (64-960 limited,
+0-1023 full, in 10-bit codes) and overshoot never leaves the legal chroma range. There is no
+neighbourhood (anti-ringing) clamp, so a faint fringe at hard colour edges stays possible. The "average
+HDR light before the tone curve" half of part 2 is not done.
+
+Exactness: a luma pixel's chroma position has the fraction 0, 1/4, 1/2 or 3/4 per axis, where every
+weight is a multiple of 1/128 (exact in fp32), and with integer codes every sum is exact too unless a
+partial sum passes 1024 (near-white chroma, which the clamp then cuts), so the GPU and `cpu.rs` agree
+on the upsampled chroma itself, not just within the tolerance. NV12 input is filtered in 8-bit codes and
+scaled by 4 once, which is the same value.
+
+Fast path: on an axis where the visible source is exactly 2 or 4 times the output (4K → 1080p, both
+axes), every lane of a wave reads the same chroma phase in each step of the area loop, so a uniform
+branch can skip the zero-weight taps of a co-sited phase (fraction 0, weights 0 1 0 0): 4 loads when
+one axis is co-sited, 1 when both are, 16 otherwise. `cpu::cosited_bits` sets it per axis (cbuffer
+`output.w` bits 10/11); at 1:1, 3:1 or fractional ratios lanes disagree, so the bits stay off and the
+full filter runs without the branch's divergence. Same codes either way
+(`cubic_chroma_fast_path_is_exact_and_both_filters_match_the_reference`, WARP).
+
+Cost (per evaluated source pixel; FXC ps_5_0 DXBC of `tonemap_area_ps`: 337 → 511 static instruction
+slots): bilinear read 4 chroma loads and ~50 instructions; the cubic 16 loads and ~110 on the full path,
+~52 (4 loads) with one axis co-sited, ~39 (1 load) with both. Against the ~220-instruction loop
+body (plus its ~15 transcendentals) that is about **+27%** of the per-sample work on the full path,
+**+14%** for left-sited (or unspecified) streams at 2:1 and **+6%** for top-left-sited ones (UHD Blu-ray
+HDR10) at 2:1. Chroma texture reads per output pixel: 4K → 1080p 16 → 40 (left), 25 (top-left), 64
+(center); 4K → 720p (3:1, 9 source pixels per output pixel) 36 → 144; 1:1 (2.5 evaluations per output
+pixel, see "Pass structure") 10 → 40. No new memory. Expected: roughly +0.3–0.6 ms of the stage at 4K →
+1080p for left-sited HEVC (if the stage is ~4–4.5 ms as estimated there), and up to +1 ms on the full
+path; more if the area pass turns out texture-bound rather than ALU-bound on the console (11 instead of 5
+loads per source pixel at 2:1 left, 17 on the full path). Not measured on the console yet. Limits it is
+sized for: the ~1.86 TFLOP/s app GPU slice and the ~2–2.5 ms budget for non-decode GPU work at 60 fps
+(GPU compute is not slowed in the input-idle state); it adds no memory (3328 MiB app, 2857 MiB DXGI
+budget) and no CPU work. The co-sited fast path exists to keep the main case (4K → 1080p) close to
+that budget.
+
+`tonemap-debug bilinearchroma` keeps the bilinear read for A/B (cbuffer `output.w` bit 9,
+`cpu::Options::bilinear_chroma`). Tests: CPU (`catmull_rom_weights_are_exact_at_the_quarter_phases`,
+`cubic_chroma_is_exact_on_curves_and_clamped_at_sharp_edges`,
+`reference_upsamples_chroma_with_catmull_rom_unless_bilinear_chroma`); WARP: both filters against the
+reference at 1:1, 2:1, 4:1 and 2.4:1/3:1, every siting class, P010/NV12 in and out, the fast-path
+identity and `cubic chroma:` lines counting the codes the cubic changes; the staged-identity test and
+the create self-test run the cubic.
 
 ### Pass structure: each output pixel once (2026-11-22)
 
-`output_pixel(o)` is the expensive part: for every covered source pixel a full `sample_linear` (chroma
-bilinear, decode, tone curve, gamut; several `pow` per channel). Before, both plane passes evaluated it
+`output_pixel(o)` is the expensive part: for every covered source pixel a full `sample_linear` (input
+chroma, bilinear then and Catmull-Rom since 2026-11-24; decode, tone curve, gamut; several `pow` per
+channel). Before, both plane passes evaluated it
 from scratch: luma once per output pixel and chroma six times per chroma sample (the [1 2 1] × [1 1]
 taps), so 4K → 1080p cost 4 × 2.07 M (luma) + 24 × 0.52 M (chroma) = **20.7 M** `sample_linear` for
 8.3 M source pixels. On the console that was ~10 ms of GPU per 4K60 frame and made 4K60 AV1 GPU-bound
@@ -219,8 +271,9 @@ needs hardware validation; no console was used for this implementation.
 BT.2020 (gamut conversion) or, with SDR709, BT.709 (scale only). Frame HDR metadata sets the PQ
   source peak (see "Source peak from the stream's HDR metadata"); the config peak is the fallback, and
   0 means 1000 nits (older DLLs reject 0).
-- Input chroma is upsampled bilinearly from the stream's chroma location (left for unspecified and
-  unknown values; see "Closer to true area scaling" above). Output chroma is left-sited: the output
+- Input chroma is upsampled with a 4x4 Catmull-Rom cubic, clamped to the valid code range, from the
+  stream's chroma location (left for unspecified and unknown values; see "Closer to true area scaling"
+  and "Cubic input chroma" above; debug `bilinearchroma`: bilinear). Output chroma is left-sited: the output
   pixels' linear RGB mixed by horizontal [1 2 1]/4 and vertical [1 1]/2 around (2x, 2y+0.5), then
   clipped and encoded once. Visible edges clamp without reading decoder padding. This deliberately specifies a compact filter;
   it does not reproduce zscale's default bicubic resampler or tonemapx's block chroma handling.
@@ -293,8 +346,10 @@ to the output pixel, so stills don't shimmer). Owner asked for these to be on th
   added metadata-based conversion and a per-frame "Measured" peak in 2026; a measured peak needs an extra
   GPU reduction pass and is a later option only if the HDR GPU budget allows. Implemented 2026-11-24, not
   console-verified: see "Source peak from the stream's HDR metadata".
-- [ ] **Cubic chroma upsampling** (Catmull-Rom class) of the input chroma: xav part 2 (see part 1 above).
-  MPC-VR offers nearest / bilinear / Catmull-Rom with chroma siting.
+- [x] **Cubic chroma upsampling** (Catmull-Rom class) of the input chroma: xav part 2 (see part 1 above).
+  MPC-VR offers nearest / bilinear / Catmull-Rom with chroma siting. Implemented 2026-11-24 (Catmull-Rom
+  at the stream's siting; the "average HDR light before the tone curve" half is not), not
+  console-verified: see "Cubic input chroma".
 - [x] **Check deinterlacing on the FFmpeg routes** (2026-11-24, console). 20 s 1080i (top field first) H.264 and
   MPEG-2 clips made from the open test set, played on a 1080p display with `ffmpeg-tune decoder=default|auto|software`
   (system decoder, FFmpeg D3D11, FFmpeg software): no combing on moving edges in any console capture, while the raw
@@ -328,14 +383,16 @@ upscalers (Jinc, vendor Super Resolution); 1080p to 4K stays with the console's 
 - `scripts/bale-debug.sh tonemap-churn [N] [control]` runs bale_gpu's tone map alone N times on a
   fresh hardware device (create, five 4K applies, destroy; no MF or FFmpeg). It ran 40/40 on
   2026-11-17 and isolated the crash from bale_gpu.
-- `scripts/bale-debug.sh tonemap-debug [noselftest,nostate,nostaged,gammachroma,fixedpeak]` skips the
-  create self-test, replaces the private ID3DDeviceContextState swap with explicit save/restore of what the
-  draw touches, (`nostaged`) skips the downscale intermediate so each plane pass evaluates the area sum
-  itself (the pre-2026-11-22 path, for GPU-cost A/B), (`gammachroma`) runs the pre-2026-11-22 math: encoded
-  chroma filter, left input siting, per-pixel clip (quality/cost A/B; the self-test checks that math), or
-  (`fixedpeak`) tone-maps PQ from the config peak (1000 nits) instead of the stream's MaxCLL / mastering
-  metadata (the pre-2026-11-24 peak; the Tone-map peak row then says `debug fixedpeak`). Words combine
-  (`gammachroma,fixedpeak,nostaged` is the fully old stage). Each applies from the next tone-map create.
+- `scripts/bale-debug.sh tonemap-debug [noselftest,nostate,nostaged,gammachroma,fixedpeak,bilinearchroma]`
+  skips the create self-test, replaces the private ID3DDeviceContextState swap with explicit save/restore
+  of what the draw touches, (`nostaged`) skips the downscale intermediate so each plane pass evaluates the
+  area sum itself (the pre-2026-11-22 path, for GPU-cost A/B), (`gammachroma`) runs the pre-2026-11-22
+  math: encoded chroma filter, left input siting, per-pixel clip (quality/cost A/B; the self-test checks
+  that math), (`fixedpeak`) tone-maps PQ from the config peak (1000 nits) instead of the stream's MaxCLL /
+  mastering metadata (the pre-2026-11-24 peak; the Tone-map peak row then says `debug fixedpeak`), or
+  (`bilinearchroma`) upsamples the input chroma bilinearly instead of with Catmull-Rom (the pre-2026-11-24
+  filter, quality/cost A/B). Words combine (`gammachroma,bilinearchroma,fixedpeak,nostaged` is the fully
+  old stage). Each applies from the next tone-map create.
 - `bale-debug.sh mem` reports `D3D11 devices: watched N destroyed M alive K`: each engine device
   carries a private-data marker that only real destruction frees.
 - `scripts/bale-debug.sh ffmpeg-tune white=80..400` sets the SDR white (nits) of the next attempt's tone map, the

@@ -6,5 +6,8 @@ float4 main(float4 position : SV_Position) : SV_Target {
     // Plain and dithered 8-bit quantisation both compile on SM5 and SM6.
     float dithered = quantize_luma_dithered(yuv.x, uint2(position.xy));
     float2 dithered_uv = quantize_chroma_dithered(yuv.yz, uint2(position.xy));
-    return float4(quantize_luma(yuv.x) + dithered, quantize_chroma(yuv.yz) + dithered_uv, bt709_oetf(position.w));
+    // So do the Catmull-Rom chroma upsampling weights.
+    float4 cubic = catmull_rom(frac(position.z));
+    return float4(quantize_luma(yuv.x) + dithered, quantize_chroma(yuv.yz) + dithered_uv + cubic.xy * cubic.zw,
+                  bt709_oetf(position.w));
 }

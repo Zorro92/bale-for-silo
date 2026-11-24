@@ -128,5 +128,13 @@ frames, `gammachroma` 15.4 / 14.7%, 18-19 stalls each, rav1g rate ~51/s in all f
 nothing measurable; the misses come from the decoder (51 of 60 fps). The 11-22 single run (14.8 vs 12.3%) was noise.
 The visual check is still open.
 
+Open (2026-11-24): Catmull-Rom input chroma
+([gpu-tone-map.md](gpu-tone-map.md#cubic-input-chroma-2026-11-24-part-2-first-half)). No memory added;
+16 chroma loads per evaluated source pixel instead of 4 (10 for left-sited streams at 2:1 thanks to the
+co-sited fast path, 6.25 top-left-sited), about +14% of the per-sample work at 4K → 1080p for left-sited
+HEVC and +27% on the full path (1:1, 3:1, fractional ratios). Expected +0.3–0.6 ms of the stage at 4K →
+1080p. Console A/B against `tonemap-debug bilinearchroma` at 4K HEVC HDR → 1080p and 4K60 AV1: Stage GPU,
+delivered fps, missed frames/stalls; plus a visual check of fine colour detail and hard colour edges.
+
 Open: the HEVC pool floor with the fork's stage and Media Foundation holding frames; the GPU cost of the
 stages other than rav1g; the ladder needs a real low-memory test.

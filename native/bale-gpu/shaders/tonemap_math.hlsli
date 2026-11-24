@@ -165,6 +165,18 @@ float3 tone_map_pixel(float y, float2 uv, float source_peak_nits, float target_w
     return encode_linear(finish_linear(tone_map_linear(y, uv, source_peak_nits, target_white_nits, desat,
                                                        curve, bt2020, full_range, mode, true), bt2020, mode));
 }
+// Catmull-Rom (Keys cubic, a = -0.5) weights of the taps at -1, 0, +1 and +2 for a sample the
+// fraction t (0 <= t < 1) past tap 0: interpolating (t = 0 gives 0 1 0 0), summing to 1, linear ramps
+// reproduced. At the quarter phases of chroma upsampling (0, 1/4, 1/2, 3/4) each weight is a multiple
+// of 1/128, exact in fp32. Rust: cpu::catmull_rom.
+float4 catmull_rom(float t) {
+    float t2 = t * t;
+    float t3 = t2 * t;
+    return float4(0.5 * (-t3 + 2.0 * t2 - t),
+                  0.5 * (3.0 * t3 - 5.0 * t2) + 1.0,
+                  0.5 * (-3.0 * t3 + 4.0 * t2 + t),
+                  0.5 * (t3 - t2));
+}
 // Return integer-valued codes as floats. The binding layer divides by 255 for UNORM RTVs.
 float quantize_luma(float y) { return clamp(floor(16.0 + 219.0 * y + 0.5), 16.0, 235.0); }
 float2 quantize_chroma(float2 uv) { return clamp(floor(128.0 + 224.0 * uv + 0.5), 16.0, 240.0); }

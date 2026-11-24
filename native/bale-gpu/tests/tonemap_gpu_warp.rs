@@ -398,14 +398,26 @@ fn area_downscale_matches_reference_at_two_to_one_and_uneven_ratios() {
                 Some(&pattern),
             );
             let output = warp.texture(&output_desc(&c), None);
-            // Current math at every input chroma location, and the legacy math (`gammachroma`).
-            for (method, chroma_location) in [
-                (cpu::Method::Linear, 0),
-                (cpu::Method::Linear, 2),
-                (cpu::Method::Linear, 3),
-                (cpu::Method::Linear, 4),
-                (cpu::Method::Linear, 6),
-                (cpu::Method::Legacy, 3),
+            // Current math at every input chroma location, the legacy math (`gammachroma`) and the
+            // bilinear input chroma (`bilinearchroma`).
+            let (linear, legacy) = (
+                cpu::Options::default(),
+                cpu::Options::from(cpu::Method::Legacy),
+            );
+            let bilinear = |options: cpu::Options| cpu::Options {
+                bilinear_chroma: true,
+                ..options
+            };
+            for (options, chroma_location) in [
+                (linear, 0),
+                (linear, 2),
+                (linear, 3),
+                (linear, 4),
+                (linear, 6),
+                (legacy, 3),
+                (bilinear(linear), 0),
+                (bilinear(linear), 3),
+                (bilinear(legacy), 3),
             ] {
                 let f = BaleToneMapFrameInfo {
                     transfer: 16,
@@ -415,15 +427,15 @@ fn area_downscale_matches_reference_at_two_to_one_and_uneven_ratios() {
                     ..Default::default()
                 };
                 // SAFETY: the test owns the live handle; no apply is in flight.
-                unsafe { (*handle.0).set_method(method) };
-                let expected = cpu::reference_with(&c, &f, &pattern, 28, 14, method).unwrap();
+                unsafe { (*handle.0).set_options(options) };
+                let expected = cpu::reference_with(&c, &f, &pattern, 28, 14, options).unwrap();
                 assert_eq!(handle.apply(&warp, &source, 0, &output, &f), S_OK);
                 let actual = warp.readback(&output);
                 assert_eq!(actual.len(), expected.len());
                 for (i, (&a, &b)) in actual.iter().zip(&expected).enumerate() {
                     assert!(
                         a.abs_diff(b) <= 3,
-                        "curve={curve} {width}x{height} {method:?} location={chroma_location} code={i}: GPU {a}, CPU {b}"
+                        "curve={curve} {width}x{height} {options:?} location={chroma_location} code={i}: GPU {a}, CPU {b}"
                     );
                 }
             }
@@ -508,6 +520,110 @@ fn mixed_pattern(width: u32, height: u32, bt2020: bool) -> Vec<u16> {
         }
     }
     data
+}
+
+/// Catmull-Rom input chroma (the default) at 1:1, 2:1 and 4:1 for every siting class (left, center,
+/// topleft, bottom), PQ and BT.709 SDR, P010 and NV12 in and out: the co-sited fast path (2:1 and 4:1)
+/// gives exactly the full 16-tap filter's codes, both filters match the CPU reference, and debug
+/// `bilinearchroma` matches the reference's bilinear read. Prints how many codes the cubic changes
+/// against bilinear (`cubic chroma:` lines).
+#[test]
+fn cubic_chroma_fast_path_is_exact_and_both_filters_match_the_reference() {
+    let warp = Warp::new();
+    let cubic = cpu::Options::default();
+    let bilinear = cpu::Options {
+        bilinear_chroma: true,
+        ..cubic
+    };
+    for (sw, sh, w, h) in [(32, 16, 32, 16), (64, 32, 32, 16), (128, 64, 32, 16)] {
+        let c = BaleToneMapConfig {
+            width: w,
+            height: h,
+            reserved: [sw, sh, 0, 0],
+            ..config(1)
+        };
+        let handle = warp.create(&c);
+        for (name, transfer, matrix) in [("pq", 16, 9), ("sdr709", 1, 1)] {
+            let pattern = mixed_pattern(sw, sh, matrix == 9);
+            let bytes: Vec<u8> = pattern.iter().map(|&w| (w >> 8) as u8).collect();
+            // The reference reads P010 words; an NV12 code b is the 10-bit code b << 2, word b << 8.
+            let as_p010: Vec<u16> = bytes.iter().map(|&b| u16::from(b) << 8).collect();
+            let bind = D3D11_BIND_SHADER_RESOURCE.0 as u32;
+            for chroma_location in [0u8, 2, 3, 6] {
+                let f = BaleToneMapFrameInfo {
+                    transfer,
+                    primaries: matrix,
+                    matrix,
+                    chroma_location,
+                    ..Default::default()
+                };
+                for input in ["p010", "nv12"] {
+                    let (source, words) = match input {
+                        "p010" => (
+                            warp.texture(&desc(sw, sh, DXGI_FORMAT_P010, bind), Some(&pattern)),
+                            &pattern,
+                        ),
+                        _ => (
+                            warp.texture8(&desc(sw, sh, DXGI_FORMAT_NV12, bind), &bytes),
+                            &as_p010,
+                        ),
+                    };
+                    for format in [DXGI_FORMAT_NV12, DXGI_FORMAT_P010] {
+                        let ten_bit = format == DXGI_FORMAT_P010;
+                        let target = warp.texture(&output_desc_as(&c, format), None);
+                        let render = |options: cpu::Options, fast: bool| -> Vec<u16> {
+                            // SAFETY: the test owns the live handle; no apply is in flight.
+                            unsafe {
+                                (*handle.0).set_options(options);
+                                (*handle.0).set_cosited_fast_path(fast);
+                            }
+                            assert_eq!(handle.apply(&warp, &source, 0, &target, &f), S_OK);
+                            if ten_bit {
+                                warp.readback_p010(&target)
+                            } else {
+                                warp.readback(&target).into_iter().map(u16::from).collect()
+                            }
+                        };
+                        let expected = |options: cpu::Options| -> Vec<u16> {
+                            if ten_bit {
+                                cpu::reference_p010_with(&c, &f, words, sw, sh, options).unwrap()
+                            } else {
+                                cpu::reference_with(&c, &f, words, sw, sh, options)
+                                    .unwrap()
+                                    .into_iter()
+                                    .map(u16::from)
+                                    .collect()
+                            }
+                        };
+                        let case = format!(
+                            "{sw}x{sh}->{w}x{h} {name} location={chroma_location} in={input} out={}",
+                            if ten_bit { "p010" } else { "nv12" }
+                        );
+                        let fast = render(cubic, true);
+                        assert_eq!(fast, render(cubic, false), "fast path changed {case}");
+                        let old = render(bilinear, true);
+                        let tolerance = if ten_bit { 12 } else { 3 };
+                        for (options, actual) in [(cubic, &fast), (bilinear, &old)] {
+                            let reference = expected(options);
+                            assert_eq!(actual.len(), reference.len());
+                            for (i, (&a, &b)) in actual.iter().zip(&reference).enumerate() {
+                                assert!(
+                                    a.abs_diff(b) <= tolerance,
+                                    "{case} bilinear={} code={i}: GPU {a}, CPU {b}",
+                                    options.bilinear_chroma
+                                );
+                            }
+                        }
+                        let differing = fast.iter().zip(&old).filter(|(a, b)| a != b).count();
+                        println!(
+                            "cubic chroma: {case}: {differing} of {} codes differ from bilinear",
+                            fast.len()
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// The staged downscale (one area pass into an fp32 intermediate, plane passes read it) must give
