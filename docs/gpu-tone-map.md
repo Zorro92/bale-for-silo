@@ -5,7 +5,7 @@
 `bale_tonemap_output_formats()`. It is the production path for HDR originals on SDR displays
 (see `docs/player-plan.md` "Console tone mapping by default"), and since 2026-11-17 also the
 display-sized scaler for 4K SDR on smaller displays (see "4K SDR downscale on smaller displays").
-The FFmpegInteropX fork (wrapper 2.1.0-bale.75 pinned) owns the stage around it.
+The FFmpegInteropX fork (wrapper 2.1.0-bale.76 pinned) owns the stage around it.
 
 ## Capabilities (`bale_tonemap_output_formats`, 2026-11-17)
 
@@ -41,7 +41,8 @@ Console A/B (Bale 0.1.712, 4K HDR HEVC tone map, two pairs, 45 s in): srv off ap
 ways, seek OK. A srv-on run that still copied measured 1189 MiB, so the bind costs nothing but reading
 decoder arrays through SRVs adds ~80-90 MiB the driver does not report (likely internal decompress/shadow
 copies, which may also cost the GPU time the copy saved). **Default stays off** (wrapper bale.64 gates the
-pools on bit 64) until per-stage GPU timestamps show a real saving.
+pools on bit 64) until per-stage GPU timestamps show a real saving. **Retired 2026-11-24 (owner):** wrapper bale.76
+ignores `bale_d3d11va_shader_resource`, so `ffmpeg-tune srv=on` has no effect; bit 64 stays in bale_gpu but is unused.
 
 ## Dithered NV12 output (`BALE_TONEMAP_OUTPUT_NV12_DITHERED`, 2026-11-19)
 
