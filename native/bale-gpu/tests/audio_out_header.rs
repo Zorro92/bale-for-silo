@@ -46,7 +46,8 @@ fn c_and_cpp_header_match_rust() {
         ring_frames,
         mmcss,
         realigned,
-        reserved
+        path,
+        offload_hr
     );
     record!(
         BaleAudioOutStats,
@@ -72,6 +73,7 @@ fn c_and_cpp_header_match_rust() {
         pad_corrections,
         dropped_frames,
         padded_frames,
+        path,
         reserved
     );
     // Function pointer assignments check every export's C declaration.
@@ -107,6 +109,15 @@ fn c_and_cpp_header_match_rust() {
         ("BALE_AUDIO_OUT_STEP_INITIALIZE", u64::from(STEP_INITIALIZE)),
         ("BALE_AUDIO_OUT_STEP_SERVICES", u64::from(STEP_SERVICES)),
         ("BALE_AUDIO_OUT_STEP_TABLE", u64::from(STEP_TABLE)),
+        ("BALE_AUDIO_OUT_PATH_EXCLUSIVE", u64::from(PATH_EXCLUSIVE)),
+        (
+            "BALE_AUDIO_OUT_PATH_EXCLUSIVE_OFFLOAD",
+            u64::from(PATH_EXCLUSIVE_OFFLOAD),
+        ),
+        (
+            "BALE_AUDIO_OUT_PATH_SHARED_OFFLOAD",
+            u64::from(PATH_SHARED_OFFLOAD),
+        ),
         ("BALE_AUDIO_OUT_MMCSS_NONE", u64::from(MMCSS_NONE)),
         ("BALE_AUDIO_OUT_MMCSS_PRO_AUDIO", u64::from(MMCSS_PRO_AUDIO)),
         ("BALE_AUDIO_OUT_MMCSS_FAILED", u64::from(MMCSS_FAILED)),

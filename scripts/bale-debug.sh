@@ -92,12 +92,15 @@
 #   scripts/bale-debug.sh audio-probe           audio passthrough probe: exclusive-mode IsFormatSupported for each IEC 61937 bitstream
 #                                               (AC-3, E-AC-3, DTS, DTS-HD, TrueHD/MAT) and PCM format, the shared mix format and spatial audio;
 #                                               never initializes the endpoint, so it is safe during playback (docs/audio-passthrough.md)
-#   scripts/bale-debug.sh audio-out-test [seconds] [freq]  bale_gpu's exclusive-mode output: a tone (default 440 Hz, 20-20000) on
-#                                               front L/R in the console's PCM 7.1 format for 1-30 s (default 5), synced to a wall-clock
-#                                               video position; reports create/Initialize HRESULTs, period/buffer, clock drift, underruns,
-#                                               sync corrections and the final status. Takes the endpoint: refused (409) during playback
-#   scripts/bale-debug.sh audio-out-test variants  Initialize variants: per row (init flags/timing, client properties, format, AC-3/E-AC-3)
-#                                               a fresh client, IsFormatSupported + Initialize, released without Start (nothing plays); 409 during playback
+#   scripts/bale-debug.sh audio-out-test [seconds] [freq] [channels=2|6|8] [uisounds=off]  bale_gpu's exclusive-mode output (offload
+#                                               fallbacks): a tone (default 440 Hz, 20-20000) on front L/R in PCM 24-in-32 at 48 kHz, 8 channels
+#                                               by default (the console's 7.1), for 1-30 s (default 5), synced to a wall-clock video position;
+#                                               reports create/Initialize HRESULTs and the path, period/buffer, clock drift, underruns, sync
+#                                               corrections and the final status. Takes the endpoint: refused (409) during playback
+#   scripts/bale-debug.sh audio-out-test variants [uisounds=off]  Initialize variants: offload first (exclusive within GetBufferSizeLimits,
+#                                               shared), then flags/timing, properties, formats, AC-3/E-AC-3; a fresh client per row, released
+#                                               without Start (nothing plays), 150 ms between rows; 409 during playback. uisounds=off: XAML UI
+#                                               sounds off for the run (restored), as they may hold a shared stream on the endpoint
 #   scripts/bale-debug.sh playtest <url> [seconds]  muted public http(s) stream probe (1–10 s, default 3)
 #   timeout 300 scripts/bale-debug.sh playtest suite [seconds]  Chromium samples, one at a time
 #                                               (the whole suite needs more than the usual timeout 20)
@@ -425,19 +428,47 @@ case "${1:-}" in
     curl --fail-with-body -sS --max-time 15 "$BASE/audio-probe"
     ;;
   audio-out-test)
-    if [[ "$#" -eq 2 && "$2" == variants ]]; then
-      # One activation per row, milliseconds each; a 2 s activation timeout stops the run.
-      curl --fail-with-body -sS --max-time 30 -G "$BASE/audio-out-test" --data-urlencode "variants=1"
+    audio_out_usage() {
+      echo 'usage: scripts/bale-debug.sh audio-out-test [seconds 1-30, default 5] [freq 20-20000 Hz, default 440] [channels=2|6|8] [uisounds=off]' >&2
+      echo '       scripts/bale-debug.sh audio-out-test variants [uisounds=off]' >&2
+      exit 2
+    }
+    shift
+    audio_out_query=()
+    if [[ "${1-}" == variants ]]; then
+      shift
+      audio_out_query+=(--data-urlencode "variants=1")
+      # One activation and a 150 ms pause per row (about 12 s); a 2 s activation timeout stops the run.
+      audio_out_max=60
+      audio_out_keys='uisounds'
     else
-      if [[ "$#" -gt 3 || ( "$#" -ge 2 && ! "$2" =~ ^([1-9]|[12][0-9]|30)$ ) \
-        || ( "$#" -eq 3 && ! "$3" =~ ^[1-9][0-9]{1,4}$ ) ]] || { [[ "$#" -eq 3 ]] && (( $3 < 20 || $3 > 20000 )); }; then
-        echo 'usage: scripts/bale-debug.sh audio-out-test [seconds 1-30, default 5] [freq 20-20000 Hz, default 440] | audio-out-test variants' >&2
-        exit 2
+      audio_out_seconds=5
+      if [[ "${1-}" =~ ^[0-9]+$ ]]; then
+        [[ "$1" =~ ^([1-9]|[12][0-9]|30)$ ]] || audio_out_usage
+        audio_out_seconds=$1
+        audio_out_query+=(--data-urlencode "seconds=$1")
+        shift
+        if [[ "${1-}" =~ ^[0-9]+$ ]]; then
+          { [[ "$1" =~ ^[1-9][0-9]{1,4}$ ]] && (( $1 >= 20 && $1 <= 20000 )); } || audio_out_usage
+          audio_out_query+=(--data-urlencode "tone=$1")
+          shift
+        fi
       fi
-      # Up to ~6 s to open the device and ~3 s to close it around the tone.
-      curl --fail-with-body -sS --max-time "$(( ${2:-5} + 25 ))" -G "$BASE/audio-out-test" \
-        ${2:+--data-urlencode "seconds=$2"} ${3:+--data-urlencode "tone=$3"}
+      # Up to ~12 s to open the device (with the offload fallbacks) and ~3 s to close it around the tone.
+      audio_out_max=$(( audio_out_seconds + 30 ))
+      audio_out_keys='channels uisounds'
     fi
+    audio_out_seen=' '
+    for audio_out_arg in "$@"; do
+      audio_out_key=${audio_out_arg%%=*}
+      [[ " $audio_out_keys " == *" $audio_out_key "* && "$audio_out_seen" != *" $audio_out_key "* ]] || audio_out_usage
+      audio_out_seen+="$audio_out_key "
+      case "$audio_out_arg" in
+        channels=2|channels=6|channels=8|uisounds=off) audio_out_query+=(--data-urlencode "$audio_out_arg") ;;
+        *) audio_out_usage ;;
+      esac
+    done
+    curl --fail-with-body -sS --max-time "$audio_out_max" -G "$BASE/audio-out-test" ${audio_out_query[@]+"${audio_out_query[@]}"}
     ;;
   ffmpeg)
     if [[ "$#" != 2 || ! "${2:-}" =~ ^(policy|direct|off)$ ]]; then

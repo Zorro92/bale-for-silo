@@ -1,0 +1,68 @@
+offload Movie 7.1 24 in 32 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period), within GetBufferSizeLimits; Movie offload; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+offload Movie 7.1 24 in 32 polling: polling, buffer 200.000 ms, period 0, within GetBufferSizeLimits; Movie offload; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+offload Movie 5.1 24 in 32 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period), within GetBufferSizeLimits; Movie offload; ext 6 ch 48000 Hz 32-bit (24 valid) mask 0x3F PCM
+offload Movie 5.1 24 in 32 polling: polling, buffer 200.000 ms, period 0, within GetBufferSizeLimits; Movie offload; ext 6 ch 48000 Hz 32-bit (24 valid) mask 0x3F PCM
+offload Movie 2.0 24 in 32 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period), within GetBufferSizeLimits; Movie offload; ext 2 ch 48000 Hz 32-bit (24 valid) mask 0x3 PCM
+offload Movie 2.0 24 in 32 polling: polling, buffer 200.000 ms, period 0, within GetBufferSizeLimits; Movie offload; ext 2 ch 48000 Hz 32-bit (24 valid) mask 0x3 PCM
+offload Movie 2.0 16 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period), within GetBufferSizeLimits; Movie offload; ext 2 ch 48000 Hz 16-bit mask 0x3 PCM
+offload Movie 2.0 16 polling: polling, buffer 200.000 ms, period 0, within GetBufferSizeLimits; Movie offload; ext 2 ch 48000 Hz 16-bit mask 0x3 PCM
+offload Movie AC-3 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period), within GetBufferSizeLimits; Movie offload; ext 2 ch 48000 Hz 16-bit mask 0x3 IEC61937_DOLBY_DIGITAL
+offload Movie AC-3 polling: polling, buffer 200.000 ms, period 0, within GetBufferSizeLimits; Movie offload; ext 2 ch 48000 Hz 16-bit mask 0x3 IEC61937_DOLBY_DIGITAL
+offload Movie E-AC-3 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period), within GetBufferSizeLimits; Movie offload; ext 2 ch 192000 Hz 16-bit mask 0x3 IEC61937_DOLBY_DIGITAL_PLUS
+offload Movie E-AC-3 polling: polling, buffer 200.000 ms, period 0, within GetBufferSizeLimits; Movie offload; ext 2 ch 192000 Hz 16-bit mask 0x3 IEC61937_DOLBY_DIGITAL_PLUS
+offload Movie shared mix format event: shared event, buffer 20.000 ms, period 0, within GetBufferSizeLimits; Movie offload; the mix format
+offload Movie shared mix format polling: shared polling, buffer 200.000 ms, period 0, within GetBufferSizeLimits; Movie offload; the mix format
+offload Movie shared 7.1 24 in 32 event: shared event, buffer 20.000 ms, period 0, within GetBufferSizeLimits; Movie offload; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+offload Movie shared 7.1 24 in 32 polling: shared polling, buffer 200.000 ms, period 0, within GetBufferSizeLimits; Movie offload; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+offload Media 7.1 24 in 32 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period), within GetBufferSizeLimits; Media offload; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+offload Media 7.1 24 in 32 polling: polling, buffer 200.000 ms, period 0, within GetBufferSizeLimits; Media offload; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+offload Media 5.1 24 in 32 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period), within GetBufferSizeLimits; Media offload; ext 6 ch 48000 Hz 32-bit (24 valid) mask 0x3F PCM
+offload Media 5.1 24 in 32 polling: polling, buffer 200.000 ms, period 0, within GetBufferSizeLimits; Media offload; ext 6 ch 48000 Hz 32-bit (24 valid) mask 0x3F PCM
+offload Media 2.0 24 in 32 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period), within GetBufferSizeLimits; Media offload; ext 2 ch 48000 Hz 32-bit (24 valid) mask 0x3 PCM
+offload Media 2.0 24 in 32 polling: polling, buffer 200.000 ms, period 0, within GetBufferSizeLimits; Media offload; ext 2 ch 48000 Hz 32-bit (24 valid) mask 0x3 PCM
+offload Media 2.0 16 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period), within GetBufferSizeLimits; Media offload; ext 2 ch 48000 Hz 16-bit mask 0x3 PCM
+offload Media 2.0 16 polling: polling, buffer 200.000 ms, period 0, within GetBufferSizeLimits; Media offload; ext 2 ch 48000 Hz 16-bit mask 0x3 PCM
+offload Media AC-3 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period), within GetBufferSizeLimits; Media offload; ext 2 ch 48000 Hz 16-bit mask 0x3 IEC61937_DOLBY_DIGITAL
+offload Media AC-3 polling: polling, buffer 200.000 ms, period 0, within GetBufferSizeLimits; Media offload; ext 2 ch 48000 Hz 16-bit mask 0x3 IEC61937_DOLBY_DIGITAL
+offload Media E-AC-3 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period), within GetBufferSizeLimits; Media offload; ext 2 ch 192000 Hz 16-bit mask 0x3 IEC61937_DOLBY_DIGITAL_PLUS
+offload Media E-AC-3 polling: polling, buffer 200.000 ms, period 0, within GetBufferSizeLimits; Media offload; ext 2 ch 192000 Hz 16-bit mask 0x3 IEC61937_DOLBY_DIGITAL_PLUS
+offload Media shared mix format event: shared event, buffer 20.000 ms, period 0, within GetBufferSizeLimits; Media offload; the mix format
+offload Media shared mix format polling: shared polling, buffer 200.000 ms, period 0, within GetBufferSizeLimits; Media offload; the mix format
+offload Media shared 7.1 24 in 32 event: shared event, buffer 20.000 ms, period 0, within GetBufferSizeLimits; Media offload; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+offload Media shared 7.1 24 in 32 polling: shared polling, buffer 200.000 ms, period 0, within GetBufferSizeLimits; Media offload; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+a event default: event, buffer 10.000 ms (default period), period 10.000 ms (default period); Movie; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+b event minimum: event, buffer 3.000 ms (minimum period), period 3.000 ms (minimum period); Movie; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+c polling 200 ms: polling, buffer 200.000 ms, period 0; Movie; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+d polling default: polling, buffer 10.000 ms (default period), period 10.000 ms (default period); Movie; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+e event nopersist: event+nopersist, buffer 10.000 ms (default period), period 10.000 ms (default period); Movie; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+f event 0/0: event, buffer 0, period 0; Movie; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+g Initialize alone: event, buffer 10.000 ms (default period), period 10.000 ms (default period), no IsFormatSupported first; Movie; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+p1 no properties: event, buffer 10.000 ms (default period), period 10.000 ms (default period); no client properties; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+p2 Other: event, buffer 10.000 ms (default period), period 10.000 ms (default period); Other; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+p3 Media: event, buffer 10.000 ms (default period), period 10.000 ms (default period); Media; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+p4 Movie RAW: event, buffer 10.000 ms (default period), period 10.000 ms (default period); Movie RAW; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+p5 polling no properties: polling, buffer 200.000 ms, period 0; no client properties; ext 8 ch 48000 Hz 32-bit (24 valid) mask 0x63F PCM
+7.1 32 valid event: event, buffer 10.000 ms (default period), period 10.000 ms (default period); Movie; ext 8 ch 48000 Hz 32-bit mask 0x63F PCM
+7.1 32 valid polling: polling, buffer 200.000 ms, period 0; Movie; ext 8 ch 48000 Hz 32-bit mask 0x63F PCM
+5.1 24 in 32 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period); Movie; ext 6 ch 48000 Hz 32-bit (24 valid) mask 0x3F PCM
+5.1 24 in 32 polling: polling, buffer 200.000 ms, period 0; Movie; ext 6 ch 48000 Hz 32-bit (24 valid) mask 0x3F PCM
+2.0 16 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period); Movie; ext 2 ch 48000 Hz 16-bit mask 0x3 PCM
+2.0 16 polling: polling, buffer 200.000 ms, period 0; Movie; ext 2 ch 48000 Hz 16-bit mask 0x3 PCM
+2.0 24 in 32 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period); Movie; ext 2 ch 48000 Hz 32-bit (24 valid) mask 0x3 PCM
+2.0 24 in 32 polling: polling, buffer 200.000 ms, period 0; Movie; ext 2 ch 48000 Hz 32-bit (24 valid) mask 0x3 PCM
+7.1 16 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period); Movie; ext 8 ch 48000 Hz 16-bit mask 0x63F PCM
+7.1 16 polling: polling, buffer 200.000 ms, period 0; Movie; ext 8 ch 48000 Hz 16-bit mask 0x63F PCM
+2.0 16 WAVEFORMATEX event: event, buffer 10.000 ms (default period), period 10.000 ms (default period); Movie; WAVE_FORMAT_PCM 2 ch 48000 Hz 16-bit
+2.0 16 WAVEFORMATEX polling: polling, buffer 200.000 ms, period 0; Movie; WAVE_FORMAT_PCM 2 ch 48000 Hz 16-bit
+7.1 float event: event, buffer 10.000 ms (default period), period 10.000 ms (default period); Movie; ext 8 ch 48000 Hz 32-bit mask 0x63F IEEE_FLOAT
+7.1 float polling: polling, buffer 200.000 ms, period 0; Movie; ext 8 ch 48000 Hz 32-bit mask 0x63F IEEE_FLOAT
+mix format event: event, buffer 10.000 ms (default period), period 10.000 ms (default period); Movie; the mix format
+mix format polling: polling, buffer 200.000 ms, period 0; Movie; the mix format
+shared closest event: event, buffer 10.000 ms (default period), period 10.000 ms (default period); Movie; the shared closest match
+shared closest polling: polling, buffer 200.000 ms, period 0; Movie; the shared closest match
+AC-3 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period); Movie; ext 2 ch 48000 Hz 16-bit mask 0x3 IEC61937_DOLBY_DIGITAL
+AC-3 polling: polling, buffer 200.000 ms, period 0; Movie; ext 2 ch 48000 Hz 16-bit mask 0x3 IEC61937_DOLBY_DIGITAL
+E-AC-3 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period); Movie; ext 2 ch 192000 Hz 16-bit mask 0x3 IEC61937_DOLBY_DIGITAL_PLUS
+E-AC-3 polling: polling, buffer 200.000 ms, period 0; Movie; ext 2 ch 192000 Hz 16-bit mask 0x3 IEC61937_DOLBY_DIGITAL_PLUS
+E-AC-3 iec 48k 5.1 event: event, buffer 10.000 ms (default period), period 10.000 ms (default period); Movie; iec 2 ch 192000 Hz 16-bit mask 0x3F IEC61937_DOLBY_DIGITAL_PLUS, decoded 48000 Hz 6 ch
+E-AC-3 iec 48k 5.1 polling: polling, buffer 200.000 ms, period 0; Movie; iec 2 ch 192000 Hz 16-bit mask 0x3F IEC61937_DOLBY_DIGITAL_PLUS, decoded 48000 Hz 6 ch

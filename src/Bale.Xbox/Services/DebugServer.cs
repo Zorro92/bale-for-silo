@@ -47,9 +47,10 @@ namespace Bale.Xbox.Services;
 ///   GET  /audio-probe     audio passthrough probe (docs/audio-passthrough.md): the default endpoint's mix format and
 ///                         exclusive-mode IsFormatSupported per IEC 61937 bitstream / PCM format (never Initialize), spatial audio
 ///   GET  /audio-out-test?seconds=5&tone=440  bale_gpu exclusive-mode output (docs/audio-passthrough.md, "Exclusive output"):
-///                         a tone on front L/R in the console's PCM 7.1 format for 1-30 s, synced to a wall-clock video
-///                         position; create/device details, clock drift, underruns, sync. 409 while a film plays
-///                         variants=1 alone: Initialize variants, a fresh client per row, released without Start (nothing plays)
+///                         a tone on front L/R, channels=2|6|8 (default 8, the console's 7.1) of 24 bits in 32, for 1-30 s, synced
+///                         to a wall-clock video position, with the offload fallbacks; create/device details and path, clock
+///                         drift, underruns, sync. 409 while a film plays. variants=1: Initialize variants (offload first), a fresh
+///                         client per row, released without Start (nothing plays). uisounds=off: XAML UI sounds off for the run
 ///   GET  /playtest?url=...  muted public http(s) stream probe; seconds=3 (1–10), open timeout 8 s
 ///   GET  /playtest-ffmpeg?url=...  muted FFmpegInteropX probe; seconds=3 (1–60), mode=auto|software|system
 ///                         optional threads=0–16, 10bit=on|off, rate=0.5–2.0 (default 1), ahead=0–64, delay=0–64, prio=0–2, maxres=0|1|default, dpb=0–16|default (system video only),

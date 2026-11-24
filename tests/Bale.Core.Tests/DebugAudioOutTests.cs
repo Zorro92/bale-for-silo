@@ -22,6 +22,8 @@ public class DebugAudioOutTests
         Assert.Equal(48, Offset<BaleAudioOutOpenInfo>(nameof(BaleAudioOutOpenInfo.Period100ns)));
         Assert.Equal(56, Offset<BaleAudioOutOpenInfo>(nameof(BaleAudioOutOpenInfo.BufferFrames)));
         Assert.Equal(68, Offset<BaleAudioOutOpenInfo>(nameof(BaleAudioOutOpenInfo.Realigned)));
+        Assert.Equal(72, Offset<BaleAudioOutOpenInfo>(nameof(BaleAudioOutOpenInfo.Path)));
+        Assert.Equal(76, Offset<BaleAudioOutOpenInfo>(nameof(BaleAudioOutOpenInfo.OffloadHr)));
         Assert.Equal(152, Unsafe.SizeOf<BaleAudioOutStats>());
         Assert.Equal(28, Offset<BaleAudioOutStats>(nameof(BaleAudioOutStats.Flushes)));
         Assert.Equal(32, Offset<BaleAudioOutStats>(nameof(BaleAudioOutStats.FramesWritten)));
@@ -29,7 +31,8 @@ public class DebugAudioOutTests
         Assert.Equal(88, Offset<BaleAudioOutStats>(nameof(BaleAudioOutStats.SyncError100ns)));
         Assert.Equal(96, Offset<BaleAudioOutStats>(nameof(BaleAudioOutStats.Syncs)));
         Assert.Equal(112, Offset<BaleAudioOutStats>(nameof(BaleAudioOutStats.DroppedFrames)));
-        Assert.Equal(128, Offset<BaleAudioOutStats>(nameof(BaleAudioOutStats.Reserved0)));
+        Assert.Equal(128, Offset<BaleAudioOutStats>(nameof(BaleAudioOutStats.Path)));
+        Assert.Equal(132, Offset<BaleAudioOutStats>(nameof(BaleAudioOutStats.Reserved1)));
         // The header's constants.
         var header = Read("bale_audio_out.h");
         Assert.Contains("#define BALE_AUDIO_OUT_WRITE_CLOSED 0xFFFFFFFFu", header);
@@ -37,30 +40,42 @@ public class DebugAudioOutTests
         Assert.Equal(long.MinValue, BaleAudioOut.PtsNone);
         Assert.Contains("#define BALE_AUDIO_OUT_STATUS_DEVICE_LOST 3u", header);
         Assert.Equal(3u, BaleAudioOut.StatusDeviceLost);
+        Assert.Contains("#define BALE_AUDIO_OUT_PATH_EXCLUSIVE_OFFLOAD 1u", header);
+        Assert.Contains("#define BALE_AUDIO_OUT_PATH_SHARED_OFFLOAD    2u", header);
+        Assert.Equal((0u, 1u, 2u), (BaleAudioOut.PathExclusive, BaleAudioOut.PathExclusiveOffload, BaleAudioOut.PathSharedOffload));
     }
 
     [Fact]
     public void TheTestOpensTheConsolesAcceptedFormat()
     {
-        var format = DebugAudioOutTone.Format;
+        var format = DebugAudioOutTone.Format(8);
         Assert.Equal((0u, 8u, 48_000u, 32u, 24u, 0x63Fu, 0u, 0u, 0u),
             (format.Kind, format.Channels, format.SampleRate, format.ContainerBits, format.ValidBits, format.ChannelMask,
                 format.IecSubtype, format.EncodedRate, format.EncodedChannels));
-        Assert.Equal(32, DebugAudioOutTone.BlockAlign);
+        Assert.Equal(32, DebugAudioOutTone.BlockAlign(8));
+        // The layouts IsFormatSupported also accepted in the variants run: 5.1 and 2.0, 24 bits in 32.
+        Assert.Equal((6u, 0x3Fu), (DebugAudioOutTone.Format(6).Channels, DebugAudioOutTone.Format(6).ChannelMask));
+        Assert.Equal((2u, 0x3u), (DebugAudioOutTone.Format(2).Channels, DebugAudioOutTone.Format(2).ChannelMask));
+        Assert.Equal(8, DebugAudioOutTone.BlockAlign(2));
     }
 
     [Theory]
-    [InlineData(null, null, 5, 440)]
-    [InlineData("1", null, 1, 440)]
-    [InlineData("30", "20000", 30, 20_000)]
-    [InlineData(null, "20", 5, 20)]
-    public void OptionsDefaultAndAcceptTheirRanges(string? seconds, string? tone, int expectedSeconds, int expectedTone)
+    [InlineData(null, null, null, 5, 440, 8)]
+    [InlineData("1", null, null, 1, 440, 8)]
+    [InlineData("30", "20000", "2", 30, 20_000, 2)]
+    [InlineData(null, "20", "6", 5, 20, 6)]
+    public void OptionsDefaultAndAcceptTheirRanges(string? seconds, string? tone, string? channels, int expectedSeconds,
+        int expectedTone, int expectedChannels)
     {
         var query = new Dictionary<string, string>();
         if (seconds is not null) query["seconds"] = seconds;
         if (tone is not null) query["tone"] = tone;
+        if (channels is not null) query["channels"] = channels;
         Assert.True(DebugAudioOutOptions.TryParse(query, out var options));
-        Assert.Equal(new DebugAudioOutOptions(expectedSeconds, expectedTone), options);
+        Assert.Equal(new DebugAudioOutOptions(expectedSeconds, expectedTone, Channels: expectedChannels), options);
+        query["uisounds"] = "off";
+        Assert.True(DebugAudioOutOptions.TryParse(query, out var quiet));
+        Assert.True(quiet.UiSoundsOff);
     }
 
     [Theory]
@@ -77,11 +92,16 @@ public class DebugAudioOutTests
     [InlineData("variants", "0")]
     [InlineData("variants", "yes")]
     [InlineData("variants", "")]
+    [InlineData("channels", "4")]
+    [InlineData("channels", "1")]
+    [InlineData("channels", "08")]
+    [InlineData("uisounds", "on")]
+    [InlineData("uisounds", "")]
     public void BadOptionsAreRefused(string key, string value)
     {
         Assert.False(DebugAudioOutOptions.TryParse(new Dictionary<string, string> { [key] = value }, out _));
         Assert.StartsWith("usage: GET /audio-out-test?seconds=1..30&tone=20..20000", DebugAudioOutOptions.Usage);
-        Assert.EndsWith("or GET /audio-out-test?variants=1\n", DebugAudioOutOptions.Usage);
+        Assert.EndsWith("or GET /audio-out-test?variants=1; either with uisounds=off\n", DebugAudioOutOptions.Usage);
     }
 
     [Fact]
@@ -90,6 +110,9 @@ public class DebugAudioOutTests
         Assert.True(DebugAudioOutOptions.TryParse(new Dictionary<string, string> { ["variants"] = "1" }, out var options));
         Assert.True(options.Variants);
         Assert.False(DebugAudioOutOptions.TryParse(new Dictionary<string, string> { ["variants"] = "1", ["seconds"] = "5" }, out _));
+        Assert.False(DebugAudioOutOptions.TryParse(new Dictionary<string, string> { ["variants"] = "1", ["channels"] = "2" }, out _));
+        Assert.True(DebugAudioOutOptions.TryParse(new Dictionary<string, string> { ["variants"] = "1", ["uisounds"] = "off" }, out var quiet));
+        Assert.True(quiet.Variants && quiet.UiSoundsOff);
         Assert.True(DebugAudioOutOptions.TryParse(new Dictionary<string, string>(), out var tone));
         Assert.False(tone.Variants);
     }
@@ -97,8 +120,8 @@ public class DebugAudioOutTests
     [Fact]
     public void TheToneIsOnFrontLeftAndRightOnlyIn24BitsAtMinus18Dbfs()
     {
-        var samples = new int[48_000 * DebugAudioOutTone.Channels];
-        DebugAudioOutTone.Fill(samples, 0, 1_000);
+        var samples = new int[48_000 * 8];
+        DebugAudioOutTone.Fill(samples, 0, 1_000, 8);
         var peak = 0;
         for (var frame = 0; frame < 48_000; frame++)
         {
@@ -119,12 +142,20 @@ public class DebugAudioOutTests
     public void ChunksJoinWithoutAClickAndPtsCountFrames()
     {
         var whole = new int[960 * 8];
-        DebugAudioOutTone.Fill(whole, 47_520, 440);
+        DebugAudioOutTone.Fill(whole, 47_520, 440, 8);
         var first = new int[480 * 8];
         var second = new int[480 * 8];
-        DebugAudioOutTone.Fill(first, 47_520, 440);
-        DebugAudioOutTone.Fill(second, 48_000, 440);
+        DebugAudioOutTone.Fill(first, 47_520, 440, 8);
+        DebugAudioOutTone.Fill(second, 48_000, 440, 8);
         Assert.Equal(whole, first.Concat(second).ToArray());
+        // Two channels carry the same tone on both, frame for frame.
+        var stereo = new int[960 * 2];
+        DebugAudioOutTone.Fill(stereo, 47_520, 440, 2);
+        for (var frame = 0; frame < 960; frame++)
+        {
+            Assert.Equal(whole[frame * 8], stereo[frame * 2]);
+            Assert.Equal(whole[frame * 8 + 1], stereo[frame * 2 + 1]);
+        }
         Assert.Equal(0, DebugAudioOutTone.Pts(0));
         Assert.Equal(100_000, DebugAudioOutTone.Pts(480));
         Assert.Equal(10_000_000, DebugAudioOutTone.Pts(48_000));
@@ -140,9 +171,9 @@ public class DebugAudioOutTests
         uint Ring(ReadOnlySpan<byte> data, long pts)
         {
             calls.Add((data.Length, pts));
-            var frames = Math.Min(room, data.Length / DebugAudioOutTone.BlockAlign);
+            var frames = Math.Min(room, data.Length / DebugAudioOutTone.BlockAlign(8));
             room -= frames;
-            return (uint)(frames * DebugAudioOutTone.BlockAlign);
+            return (uint)(frames * DebugAudioOutTone.BlockAlign(8));
         }
         Assert.Equal(1_000, feeder.Feed(Ring));
         Assert.Equal([(480 * 32, 0L), (480 * 32, 100_000L), (480 * 32, 200_000L), (440 * 32, 208_333L)], calls);
@@ -201,8 +232,21 @@ public class DebugAudioOutTests
         var badArguments = new BaleAudioOutOpenInfo { Step = 1, Hr = unchecked((int)0x80070057) };
         Assert.Equal("Create: E_INVALIDARG (0x80070057) at arguments\n", DebugAudioOutReport.Open(badArguments.Hr, 0, badArguments));
         var inUse = new BaleAudioOutOpenInfo { Step = 7, Hr = unchecked((int)0x8889000A), InitializeHr = unchecked((int)0x8889000A) };
-        Assert.EndsWith(", IsFormatSupported S_OK, Initialize AUDCLNT_E_DEVICE_IN_USE (0x8889000A)\n",
+        Assert.EndsWith(", IsFormatSupported S_OK, Initialize AUDCLNT_E_DEVICE_IN_USE (0x8889000A); path exclusive\n",
             DebugAudioOutReport.Open(inUse.Hr, 0, inUse));
+        // The console's case: plain exclusive refused, exclusive offload refused, shared offload opened.
+        var shared = new BaleAudioOutOpenInfo
+        {
+            InitializeHr = unchecked((int)0x88890008),
+            OffloadHr = unchecked((int)0x88890008),
+            Path = BaleAudioOut.PathSharedOffload,
+        };
+        Assert.EndsWith(", Initialize AUDCLNT_E_UNSUPPORTED_FORMAT (0x88890008), exclusive offload Initialize "
+            + "AUDCLNT_E_UNSUPPORTED_FORMAT (0x88890008), shared offload Initialize S_OK; path shared offload\n",
+            DebugAudioOutReport.Open(0, 2, shared));
+        Assert.Equal("shared offload", DebugAudioOutReport.Path(2));
+        Assert.Equal("App: XAML UI sounds (ElementSoundPlayer.State) Auto, switched Off for this run\n",
+            DebugAudioOutReport.UiSounds("Auto", true));
         var opened = new BaleAudioOutOpenInfo
         {
             DefaultPeriod100ns = 100_000,
@@ -213,7 +257,7 @@ public class DebugAudioOutTests
             Mmcss = 1,
         };
         Assert.Equal(
-            "Create: S_OK id=1; activation S_OK in 0 ms, Movie category S_OK, IsFormatSupported S_OK, Initialize S_OK\n"
+            "Create: S_OK id=1; activation S_OK in 0 ms, Movie category S_OK, IsFormatSupported S_OK, Initialize S_OK; path exclusive\n"
             + "Device: period default 10.000 ms, minimum 3.000 ms; initialized 10.000 ms, buffer 480 frames; ring 24000 frames (500 ms); "
             + "render thread MMCSS Pro Audio\n",
             DebugAudioOutReport.Open(0, 1, opened));
@@ -256,6 +300,14 @@ public class DebugAudioOutTests
         Assert.True(parse >= 0 && gate > parse && player > gate && refuse > player && run > refuse);
         Assert.Contains("TaskCreationOptions.LongRunning", handler);
         Assert.Contains("finally { Interlocked.Exchange(ref _playtestBusy, 0); }", handler);
+        // UI sounds: reported always, switched off only on request and only outside the player, restored in finally.
+        Assert.Contains("sounds = ElementSoundPlayer.State.ToString();", handler);
+        var off = handler.IndexOf("if (!inPlayer && options.UiSoundsOff)", StringComparison.Ordinal);
+        var set = handler.IndexOf("ElementSoundPlayer.State = ElementSoundPlayerState.Off;", StringComparison.Ordinal);
+        var restoreAt = handler.IndexOf("if (restore is { } state)", StringComparison.Ordinal);
+        var gateAt = handler.LastIndexOf("finally { Interlocked.Exchange(ref _playtestBusy, 0); }", StringComparison.Ordinal);
+        Assert.True(off >= 0 && set > off && restoreAt > set && gateAt > restoreAt);
+        Assert.Contains("report = DebugAudioOutReport.UiSounds(sounds, restore is not null) + report;", handler);
         Assert.Contains("var label = options.Variants ? \"Debug audio-out-test variants: \" : \"Debug audio-out-test: \";", handler);
         Assert.Contains("Log.Info(label + (summary is null ? \"no summary\" : summary[DebugAudioOutReport.SummaryPrefix.Length..]));", handler);
     }

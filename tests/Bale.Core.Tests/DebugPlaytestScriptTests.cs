@@ -1433,14 +1433,16 @@ public class DebugPlaytestScriptTests
         var defaults = await RunAsync(["audio-out-test"], "Summary: played; status running\n");
         Assert.Equal(0, defaults.ExitCode);
         Assert.Contains("http://debug.invalid:8790/audio-out-test\n", defaults.Arguments);
-        // Open (~6 s) and close (~3 s) around the default 5 s tone.
-        Assert.Contains("--max-time\n30\n", defaults.Arguments);
+        // Open (up to ~12 s with the offload fallbacks) and close (~3 s) around the default 5 s tone.
+        Assert.Contains("--max-time\n35\n", defaults.Arguments);
         Assert.DoesNotContain("seconds=", defaults.Arguments);
         Assert.DoesNotContain("POST", defaults.Arguments);
         Assert.Contains("Summary: played; status running", defaults.Output);
-        var both = await RunAsync(["audio-out-test", "30", "20000"]);
+        var both = await RunAsync(["audio-out-test", "30", "20000", "channels=2", "uisounds=off"]);
         Assert.Equal(0, both.ExitCode);
-        Assert.Contains("--max-time\n55\n", both.Arguments);
+        Assert.Contains("--max-time\n60\n", both.Arguments);
+        Assert.Contains("--data-urlencode\nchannels=2\n", both.Arguments);
+        Assert.Contains("--data-urlencode\nuisounds=off\n", both.Arguments);
         Assert.Contains("--data-urlencode\nseconds=30\n", both.Arguments);
         Assert.Contains("--data-urlencode\ntone=20000\n", both.Arguments);
         var seconds = await RunAsync(["audio-out-test", "1"]);
@@ -1449,7 +1451,14 @@ public class DebugPlaytestScriptTests
         var variants = await RunAsync(["audio-out-test", "variants"], "Summary: initialized: none\n");
         Assert.Equal(0, variants.ExitCode);
         Assert.Contains("--data-urlencode\nvariants=1\n", variants.Arguments);
-        Assert.Contains("--max-time\n30\n", variants.Arguments);
+        Assert.Contains("--max-time\n60\n", variants.Arguments);
+        var quiet = await RunAsync(["audio-out-test", "variants", "uisounds=off"]);
+        Assert.Equal(0, quiet.ExitCode);
+        Assert.Contains("--data-urlencode\nuisounds=off\n", quiet.Arguments);
+        var stereo = await RunAsync(["audio-out-test", "channels=6"]);
+        Assert.Equal(0, stereo.ExitCode);
+        Assert.Contains("--data-urlencode\nchannels=6\n", stereo.Arguments);
+        Assert.DoesNotContain("seconds=", stereo.Arguments);
         Assert.DoesNotContain("seconds=", variants.Arguments);
         Assert.Contains("Summary: initialized: none", variants.Output);
         foreach (var args in new[]
@@ -1457,7 +1466,9 @@ public class DebugPlaytestScriptTests
             new[] { "audio-out-test", "0" }, ["audio-out-test", "31"], ["audio-out-test", "05"], ["audio-out-test", "5", "19"],
             ["audio-out-test", "5", "20001"], ["audio-out-test", "5", "0440"], ["audio-out-test", "5", "440", "x"],
             ["audio-out-test", "tone=440"], ["audio-out-test", "variants", "5"], ["audio-out-test", "variant"],
-            ["audio-out-test", "5", "variants"],
+            ["audio-out-test", "5", "variants"], ["audio-out-test", "channels=4"], ["audio-out-test", "uisounds=on"],
+            ["audio-out-test", "channels=2", "channels=2"], ["audio-out-test", "variants", "channels=2"],
+            ["audio-out-test", "5", "440", "channels=2", "x"],
         })
         {
             var invalid = await RunAsync(args);

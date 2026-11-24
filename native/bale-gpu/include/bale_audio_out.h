@@ -77,7 +77,7 @@ typedef struct BaleAudioFormat {
 #define BALE_AUDIO_OUT_STEP_ARGUMENTS  1u /* format, ring_ms or a pointer: E_INVALIDARG / E_POINTER */
 #define BALE_AUDIO_OUT_STEP_MODULE     2u /* mmdevapi.dll null or without ActivateAudioInterfaceAsync */
 #define BALE_AUDIO_OUT_STEP_THREAD     3u /* render thread, COM apartment, event, or the open did not finish
-                                             within ~6 s (HRESULT_FROM_WIN32(ERROR_TIMEOUT)) */
+                                             within ~12 s (HRESULT_FROM_WIN32(ERROR_TIMEOUT)) */
 #define BALE_AUDIO_OUT_STEP_DEVICE_ID  4u /* MediaDevice.GetDefaultAudioRenderId failed or is empty */
 #define BALE_AUDIO_OUT_STEP_ACTIVATE   5u /* ActivateAudioInterfaceAsync, including its 2 s wait */
 #define BALE_AUDIO_OUT_STEP_FORMAT     6u /* IsFormatSupported(EXCLUSIVE): AUDCLNT_E_UNSUPPORTED_FORMAT,
@@ -86,6 +86,15 @@ typedef struct BaleAudioFormat {
 #define BALE_AUDIO_OUT_STEP_INITIALIZE 7u /* GetDevicePeriod / Initialize, including the re-aligned retry */
 #define BALE_AUDIO_OUT_STEP_SERVICES   8u /* SetEventHandle, GetBufferSize, IAudioRenderClient, IAudioClock */
 #define BALE_AUDIO_OUT_STEP_TABLE      9u /* 8 outputs already open: E_OUTOFMEMORY */
+
+/* BaleAudioOutOpenInfo.path and BaleAudioOutStats.path (Bale 2026-11-24, from reserved fields: older DLLs report 0).
+   Plain exclusive comes first; the offload paths only after its Initialize answered AUDCLNT_E_UNSUPPORTED_FORMAT or
+   AUDCLNT_E_OFFLOAD_MODE_ONLY (the console). Each offload try is a new client with bIsOffload and the buffer fitted
+   into GetBufferSizeLimits, event-driven. */
+#define BALE_AUDIO_OUT_PATH_EXCLUSIVE         0u /* exclusive, event-driven, buffer = periodicity = default period */
+#define BALE_AUDIO_OUT_PATH_EXCLUSIVE_OFFLOAD 1u /* exclusive with offload */
+#define BALE_AUDIO_OUT_PATH_SHARED_OFFLOAD    2u /* shared with offload, PCM only (the engine may mix; never for
+                                                    IEC 61937); each event takes what the engine played */
 
 /* BaleAudioOutOpenInfo.mmcss */
 #define BALE_AUDIO_OUT_MMCSS_NONE      0u /* avrt.dll not loaded in the process: normal priority */
@@ -111,7 +120,9 @@ typedef struct BaleAudioOutOpenInfo {
     uint32_t mmcss;                /* BALE_AUDIO_OUT_MMCSS_* */
     uint32_t realigned;            /* 1 = Microsoft's re-align recipe ran (GetBufferSize, new client,
                                       Initialize with the aligned duration) */
-    uint32_t reserved[2];
+    uint32_t path;                 /* BALE_AUDIO_OUT_PATH_*: the path that opened, or the last one tried; on
+                                      failure hr is that path's answer */
+    HRESULT  offload_hr;           /* Initialize of the exclusive offload try; 0 = not tried */
 } BaleAudioOutOpenInfo; /* 80 bytes */
 
 /* BaleAudioOutStats.status */
@@ -152,7 +163,8 @@ typedef struct BaleAudioOutStats {
     uint32_t pad_corrections;       /* corrections that inserted silence (audio ahead) */
     uint64_t dropped_frames;
     uint64_t padded_frames;
-    uint32_t reserved[6];
+    uint32_t path;                  /* BALE_AUDIO_OUT_PATH_*, as in the open info */
+    uint32_t reserved[5];
 } BaleAudioOutStats; /* 152 bytes */
 
 uint32_t bale_audio_out_abi_version(void); /* BALE_AUDIO_OUT_ABI_VERSION */
@@ -161,9 +173,9 @@ uint32_t bale_audio_out_abi_version(void); /* BALE_AUDIO_OUT_ABI_VERSION */
    mmdevapi: the caller's loaded mmdevapi.dll (HMODULE; bale_gpu keeps its own reference while the output
    lives). ring_ms: ring capacity, 0 = 500, else 50-1000 (at least two device buffers either way): the most
    the feeder can queue ahead. Waits for the activation and the format calls (normally milliseconds, at most
-   ~6 s); never call on the UI thread. On success writes the id; on failure *id = 0 and the HRESULT says why
-   (AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED, AUDCLNT_E_UNSUPPORTED_FORMAT, AUDCLNT_E_DEVICE_IN_USE, ...), so the
-   caller can fall back. info may be NULL. */
+   ~12 s with the offload tries); never call on the UI thread. On success writes the id; on failure *id = 0 and
+   the HRESULT says why (AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED, AUDCLNT_E_UNSUPPORTED_FORMAT,
+   AUDCLNT_E_DEVICE_IN_USE, ...), so the caller can fall back. info may be NULL. */
 HRESULT bale_audio_out_create(void* mmdevapi, const BaleAudioFormat* format, uint32_t ring_ms, uint32_t* id,
                               BaleAudioOutOpenInfo* info);
 

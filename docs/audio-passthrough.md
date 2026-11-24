@@ -216,15 +216,21 @@ and no claim changes. The FFmpegInteropX fork will be the feeder; the app owns t
   `ActivateAudioInterfaceAsync` through the app's `mmdevapi.dll`, which bale_gpu pins while the output lives but never
   imports), `AudioCategory_Movie`, `IsFormatSupported(EXCLUSIVE)`, then `Initialize(EXCLUSIVE, EVENTCALLBACK)` with
   buffer duration = periodicity = the device's default period. `AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED` takes Microsoft's
-  documented recipe (`GetBufferSize`, a new client, the aligned duration). A refusal returns its HRESULT and the step
-  (`BaleAudioOutOpenInfo`), so the caller falls back: `AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED` (headset connected, or
-  "Allow passthrough" off), `AUDCLNT_E_UNSUPPORTED_FORMAT`, `AUDCLNT_E_DEVICE_IN_USE`. Formats: integer PCM (1-8
+  documented recipe (`GetBufferSize`, a new client, the aligned duration). When that `Initialize` answers
+  `AUDCLNT_E_UNSUPPORTED_FORMAT` or `AUDCLNT_E_OFFLOAD_MODE_ONLY` (the console, below), create goes on to offload, each
+  try a new client with `bIsOffload` set and the buffer fitted into `GetBufferSizeLimits`, event-driven: exclusive with
+  offload, then (PCM only, since a shared engine may mix) shared with offload, whose render loop fills what the engine
+  played (`GetCurrentPadding`) instead of the whole buffer. `BaleAudioOutOpenInfo.path` and `BaleAudioOutStats.path` say
+  which path opened (0 exclusive, 1 exclusive offload, 2 shared offload; fields that were reserved), `offload_hr` what
+  the exclusive offload try answered. The plain path stays first, for other platforms. A refusal returns its HRESULT
+  and the step (`BaleAudioOutOpenInfo`), so the caller falls back: `AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED` (headset
+  connected, or "Allow passthrough" off), `AUDCLNT_E_UNSUPPORTED_FORMAT`, `AUDCLNT_E_DEVICE_IN_USE`. Formats: integer PCM (1-8
   channels, 16/24/32-bit containers) or IEC 61937 (2 or 8 lines of 16-bit words at a carrier rate, the probe's five
   subtypes), as `WAVEFORMATEXTENSIBLE`, or `WAVEFORMATEXTENSIBLE_IEC61937` (`cbSize` 34) when a decoded rate is given;
   the Rust tests check them byte for byte against the probe's rows. The console's TV path takes only PCM 7.1 48 kHz,
   24 bits in 32, mask `0x63F`.
 - **Ids**: 1-65535 (never 0) in a thread-safe table, so the fork takes the id through an FFmpegOptions int; an id comes
-  back only after the counter has gone round. Every call is thread-safe; only create (activation, at most ~6 s) and
+  back only after the counter has gone round. Every call is thread-safe; only create (activations, at most ~12 s) and
   destroy (joining the thread, at most 3 s) wait, so neither belongs on the UI thread.
 - **Render thread**, one per output, makes every COM call: it waits for the buffer event (or a control wake), fills one
   period from the ring and reads `IAudioClock` each period. A ring that runs short is filled up with silence (counted:
@@ -262,15 +268,18 @@ of copies, a small fraction of one core even when input-idle. No GPU.
 
 ### Debug test
 
-`scripts/bale-debug.sh audio-out-test [seconds] [freq]` (debug builds only: `GET /audio-out-test?seconds=5&tone=440`;
-1-30 s, default 5; 20-20000 Hz, default 440) opens the output in the console's format, fills the ring, starts it and
-plays a sine on front left and right (-18 dBFS; the other six channels silent) for the given time. It feeds 10 ms chunks
+`scripts/bale-debug.sh audio-out-test [seconds] [freq] [channels=2|6|8] [uisounds=off]` (debug builds only:
+`GET /audio-out-test?seconds=5&tone=440&channels=8`; 1-30 s, default 5; 20-20000 Hz, default 440; 2, 6 or 8 channels of
+24 bits in 32 at 48 kHz, default 8, the console's format) opens the output (with the offload fallbacks above), fills the
+ring, starts it and plays a sine on front left and right (-18 dBFS; the other channels silent) for the given time. It feeds 10 ms chunks
 with their pts as the fork's feeder will (waiting on "full", resending the frames not taken) and sends a sync reference
 every 100 ms from a wall-clock "video" that starts at Start. It is refused with 409 while a film plays (Media Foundation
 holds the endpoint) or another media probe runs, and it always destroys the output.
 
-The report: `Create:` (HRESULT and the step it stopped at; activation, Movie category, IsFormatSupported, Initialize and
-a re-aligned Initialize), `Device:` (default and minimum period, the initialized period, buffer frames, ring, MMCSS),
+The report starts with the app's XAML UI sound state (`ElementSoundPlayer.State`; `uisounds=off` switches them off
+for the run and restores them afterwards, as they may hold a shared stream on the endpoint). Then `Create:` (HRESULT
+and the step it stopped at; activation, Movie category, IsFormatSupported, Initialize, a re-aligned Initialize, the
+offload tries and the path), `Device:` (default and minimum period, the initialized period, buffer frames, ring, MMCSS),
 `Prefill:`, `Start:`, one line a second (device clock, queued ms, underruns, sync error and corrections), `Pause:`,
 `Result:` (frames fed and rendered, the device clock against wall time since Start, which includes the start latency,
 the clock drift against QPC in ppm between the first and last reading, underruns, sync and corrections, final status)
@@ -288,35 +297,57 @@ opens on Xbox; the probe's answers (above) say what is offered, not what initial
 
 ### Initialize variants
 
-`scripts/bale-debug.sh audio-out-test variants` (debug builds only: `GET /audio-out-test?variants=1`; bale_gpu
-`bale_audio_out_init_variants`, `native/bale-gpu/src/audio_out/variants.rs`) narrows that down. For each row it
-activates a fresh `IAudioClient`, applies the row's client properties, asks `IsFormatSupported(EXCLUSIVE)` and calls
-`Initialize`, records both answers (and on success `GetBufferSize` and `GetStreamLatency`), then releases the client.
-It never calls `Start` or asks for a render client (a Rust test pins that), so nothing plays; an initialized client
-holds the endpoint only until it is released, milliseconds later. `AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED` runs
-Microsoft's re-align recipe on a new client and reports that answer too. A 2 s activation timeout stops the run. It is
-refused with 409 while a film plays or another media probe runs; the summary line goes to bale.log as
-`Debug audio-out-test variants: ...`.
+`scripts/bale-debug.sh audio-out-test variants [uisounds=off]` (debug builds only: `GET /audio-out-test?variants=1`;
+bale_gpu `bale_audio_out_init_variants`, `native/bale-gpu/src/audio_out/variants.rs`) narrows that down. For each row
+it activates a fresh `IAudioClient`, applies the row's client properties, asks `IsFormatSupported` and calls
+`Initialize` in the row's share mode, records the answers (and on success `GetBufferSize` and `GetStreamLatency`),
+then releases the client and waits 150 ms before the next row, so a just-released client cannot make the next one look
+in use. It never calls `Start` or asks for a render client (a Rust test pins that), so nothing plays; an initialized
+client holds the endpoint only until it is released, milliseconds later. `AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED` runs
+Microsoft's re-align recipe on a new client and `AUDCLNT_E_DEVICE_IN_USE` tries once more on a new client 500 ms
+later; the line reports both answers. A 2 s activation timeout stops the run. It is refused with 409 while a film plays
+or another media probe runs; the report starts with the XAML UI sound state (as the tone test's), and the summary line
+goes to bale.log as `Debug audio-out-test variants: ...`.
 
 Before the rows, one client that is only asked reports the context: the shared mix format, the device periods,
-whether `IAudioClient3` exists, `IsFormatSupported(SHARED)` of the output's format with the closest match it offers,
-and `IAudioClient2::GetBufferSizeLimits` for it, event-driven and polling. Then one line per row,
-`name: init; client properties; format -> answers`. The rows (all with the output's format and the Movie category
-unless named otherwise):
+whether `IAudioClient3` exists, `IAudioClient2::IsOffloadCapable` for Movie and Media, `IsFormatSupported(SHARED)` of
+the output's format with the closest match it offers, and `GetBufferSizeLimits` for it without offload, event-driven
+and polling. Then one line per row, `name: init; client properties; format -> answers`. The rows (all with the
+output's format and the Movie category unless named otherwise):
 
 | Rows | What varies |
 |---|---|
+| offload Movie / Media (first) | `SetClientProperties` with `bIsOffload` set, `GetBufferSizeLimits` after it (the line shows the limits and the buffer and periodicity passed), then: exclusive event-driven (buffer = periodicity = the default period, fitted into the limits) and exclusive polling (200 ms fitted, periodicity 0) for 7.1, 5.1 and 2.0 24-in-32, 2.0 16-bit, AC-3 and E-AC-3; and shared mode (`IsFormatSupported(SHARED)` and `Initialize(SHARED)`: event-driven with a 20 ms buffer, and polling with 200 ms, both fitted, periodicity 0) for the mix format and 7.1 24-in-32 |
 | a-g | `Initialize` flags and timing: (a) event-driven, buffer = periodicity = default period (the output's own call); (b) event-driven at the minimum period; (c) polling, 200 ms buffer, periodicity 0; (d) polling, buffer = periodicity = default; (e) (a) plus `AUDCLNT_STREAMFLAGS_NOPERSIST`; (f) event-driven with 0/0; (g) (a) without asking `IsFormatSupported` first |
 | p1-p5 | client properties: (p1) plain `IAudioClient`, no properties; (p2) `AudioCategory_Other`; (p3) `AudioCategory_Media`; (p4) Movie with `AUDCLNT_STREAMOPTIONS_RAW` (the line shows it if refused); (p5) polling without properties |
 | formats, each event-driven (as a) and polling (as c) | PCM 7.1 with 32 valid bits; 5.1 24-in-32 (mask `0x3F`); 2.0 16-bit; 2.0 24-in-32; 7.1 16-bit; 2.0 16-bit as a plain `WAVEFORMATEX`; 7.1 32-bit float; the shared mix format as `GetMixFormat` returns it; the closest match `IsFormatSupported(SHARED)` offers; AC-3 and E-AC-3 as IEC 61937 (`WAVEFORMATEXTENSIBLE`), and E-AC-3 as Microsoft's `WAVEFORMATEXTENSIBLE_IEC61937` example |
 
-The summary names the rows that initialized and counts the `Initialize` answers of the others. The AC-3 and E-AC-3
-rows are expected to be refused on this TV (it takes only stereo PCM); they show whether a bitstream goes the same
-way through `Initialize`.
+The summary names the rows that initialized and counts the last `Initialize` answers of the others. The AC-3 and
+E-AC-3 rows are expected to be refused on this TV (it takes only stereo PCM); they show whether a bitstream goes the
+same way through `Initialize`.
+
+### Second console run: variants (2026-11-24, Bale ea84c7b, same setup)
+
+All 36 rows of the first variants list (before the offload rows) were refused: `Initialize` `AUDCLNT_E_UNSUPPORTED_FORMAT`
+x28, `AUDCLNT_E_DEVICE_IN_USE` x8. Context: mix format 2 ch 48 kHz 32-bit float; device period 10 ms default, 3 ms
+minimum; `IAudioClient3` available; `IsFormatSupported(SHARED)` of the 7.1 format `S_FALSE` with the float stereo mix
+as closest match; `GetBufferSizeLimits` (no offload, event-driven and polling) `AUDCLNT_E_OFFLOAD_MODE_ONLY`.
+
+- `IsFormatSupported(EXCLUSIVE)` accepted 24-in-32 PCM in 7.1, 5.1 and 2.0 (the probe had not asked 5.1 or 2.0 in that
+  layout) and refused 16-bit, 32 valid bits, float, the mix format and the bitstreams.
+- `AUDCLNT_E_DEVICE_IN_USE` came exactly for the stereo and 5.1 PCM rows (including 2.0 16-bit, which
+  `IsFormatSupported` had refused); 7.1, float, the mix format and the bitstreams got `AUDCLNT_E_UNSUPPORTED_FORMAT`.
+  No earlier row had initialized, so the cause was not one of the test's own clients. Microsoft documents
+  `AUDCLNT_E_DEVICE_IN_USE` as "the device is being used in shared mode and the caller asked to use the device in
+  exclusive mode": likely the console's own shared audio, or Bale's XAML UI sounds (`ElementSoundPlayer`, on by default
+  on Xbox), which the report now shows and `uisounds=off` switches off for a run.
+- `AUDCLNT_E_OFFLOAD_MODE_ONLY` from `GetBufferSizeLimits` says that call answers only for offload clients; the offload
+  rows (now first) and create's offload fallbacks test whether this endpoint takes offload streams, exclusive or shared.
 
 ### Not known yet (needs the console)
 
-- Why `Initialize` refuses what `IsFormatSupported` accepted (the variants above), and then the device's buffer.
+- Whether an offload `Initialize` (exclusive or shared) succeeds where the plain one did not (the offload rows above,
+  and the tone test's path), and whether `AUDCLNT_E_DEVICE_IN_USE` goes away with the UI sounds off.
 - Whether the app can load `avrt.dll` and join MMCSS, and how `IAudioClock` reports there (its `GetFrequency` units, the
   drift against QPC).
 - What plugging in a headset does to an open exclusive stream (invalidated, silent, or still on HDMI; the output is

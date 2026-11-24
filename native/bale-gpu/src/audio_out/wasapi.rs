@@ -16,10 +16,10 @@ use windows::Win32::Foundation::{
     CloseHandle, FreeLibrary, HANDLE, HMODULE, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use windows::Win32::Media::Audio::{
-    AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_E_BUFFER_TOO_LARGE, AUDCLNT_SHAREMODE_EXCLUSIVE,
-    AUDCLNT_STREAMFLAGS_EVENTCALLBACK, AUDCLNT_STREAMOPTIONS_NONE, AudioCategory_Movie,
-    AudioClientProperties, IAudioClient, IAudioClient2, IAudioClock, IAudioRenderClient,
-    WAVEFORMATEX,
+    AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_E_BUFFER_TOO_LARGE, AUDCLNT_SHAREMODE,
+    AUDCLNT_SHAREMODE_EXCLUSIVE, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+    AUDCLNT_STREAMOPTIONS_NONE, AudioCategory_Movie, AudioClientProperties, IAudioClient,
+    IAudioClient2, IAudioClock, IAudioRenderClient, WAVEFORMATEX,
 };
 use windows::Win32::System::LibraryLoader::{
     GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GetModuleHandleExW, GetProcAddress,
@@ -41,10 +41,11 @@ use super::{
     AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED, AUDCLNT_E_UNSUPPORTED_FORMAT, BaleAudioFormat,
     BaleAudioOutOpenInfo, BaleAudioOutStats, E_HANDLE, E_INVALIDARG, E_NOT_SET, E_OUTOFMEMORY,
     E_POINTER, E_TIMEOUT, E_UNEXPECTED, Format, MMCSS_FAILED, MMCSS_NONE, MMCSS_PRO_AUDIO,
-    PTS_NONE, S_OK, STATUS_DEVICE_LOST, STATUS_FAILED, STATUS_PAUSED, STATUS_RUNNING,
-    STATUS_STOPPED, STEP_ACTIVATE, STEP_ARGUMENTS, STEP_DEVICE_ID, STEP_FORMAT, STEP_INITIALIZE,
-    STEP_MODULE, STEP_SERVICES, STEP_TABLE, STEP_THREAD, WRITE_CLOSED, aligned_period_hns,
-    is_device_lost, ring_frames, valid_ring_ms,
+    PATH_EXCLUSIVE, PATH_EXCLUSIVE_OFFLOAD, PATH_SHARED_OFFLOAD, PTS_NONE, S_OK,
+    STATUS_DEVICE_LOST, STATUS_FAILED, STATUS_PAUSED, STATUS_RUNNING, STATUS_STOPPED,
+    STEP_ACTIVATE, STEP_ARGUMENTS, STEP_DEVICE_ID, STEP_FORMAT, STEP_INITIALIZE, STEP_MODULE,
+    STEP_SERVICES, STEP_TABLE, STEP_THREAD, WRITE_CLOSED, aligned_period_hns, is_device_lost,
+    offload_timing, ring_frames, tries_offload, valid_ring_ms,
 };
 use crate::audio_probe::wasapi::{
     ActivateAudioInterfaceAsync, Failed, Mta, activate_client, activation_function,
@@ -53,9 +54,10 @@ use crate::audio_probe::wasapi::{
 /// Live outputs at once. An endpoint takes one exclusive stream; the rest is headroom for an output being
 /// destroyed while the next is created.
 const MAX_OUTPUTS: usize = 8;
-/// How long create waits for the render thread to open the device: two activations (2 s each; the second
-/// only after `AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED`) and the format calls.
-const OPEN_TIMEOUT: Duration = Duration::from_secs(6);
+/// How long create waits for the render thread to open the device: up to four activations (2 s each at worst:
+/// the first, a re-aligned one after `AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED`, exclusive offload and shared offload) and
+/// the format calls. Activations take milliseconds on the console.
+const OPEN_TIMEOUT: Duration = Duration::from_secs(12);
 /// How long destroy waits for the render thread to stop the stream and release the client.
 const DESTROY_TIMEOUT: Duration = Duration::from_secs(3);
 /// A started stream without a buffer event for this long has stalled and fails with
@@ -353,9 +355,9 @@ fn guard(f: impl FnOnce() -> i32) -> i32 {
     catch_unwind(AssertUnwindSafe(f)).unwrap_or(E_UNEXPECTED)
 }
 
-/// Creates an exclusive-mode output on the default render endpoint (`include/bale_audio_out.h`). Blocks for
-/// the activation and the format calls (normally milliseconds, at most about 6 s); never call it on the UI
-/// thread. Writes the id (1-65535) to `id` on success, else 0; `info` (optional) gets what was done either way.
+/// Creates an exclusive-mode output on the default render endpoint (`include/bale_audio_out.h`), falling back to
+/// offload as the header describes. Blocks for the activations and the format calls (normally milliseconds, at
+/// most about 12 s); never call it on the UI thread. Writes the id (1-65535) to `id` on success, else 0; `info` (optional) gets what was done either way.
 ///
 /// # Safety
 /// `mmdevapi` must be null or a module the caller keeps loaded for the call; `format` must point to a
@@ -700,6 +702,7 @@ fn run_thread(
                 buffer_frames: info.buffer_frames,
                 ring_frames: info.ring_frames,
                 device_pts_100ns: PTS_NONE,
+                path: info.path,
                 ..BaleAudioOutStats::default()
             },
         }),
@@ -733,7 +736,8 @@ fn run_thread(
     drop(mmcss);
 }
 
-/// The initialized exclusive-mode stream. Fields drop in order: the client before its event.
+/// The initialized stream: exclusive (plain or offload) or shared offload. Fields drop in order: the client before
+/// its event.
 struct Device {
     client: IAudioClient,
     render: IAudioRenderClient,
@@ -743,6 +747,8 @@ struct Device {
     frequency: u64,
     rate: u32,
     block: usize,
+    /// Shared mode: each event fills what the engine has played (`GetCurrentPadding`), not the whole buffer.
+    shared: bool,
 }
 
 fn code(error: windows::core::Error) -> i32 {
@@ -765,7 +771,14 @@ impl Device {
             return Err(fail(info, STEP_DEVICE_ID, E_NOT_SET));
         }
         let endpoint = PCWSTR(id.as_ptr());
-        let mut client = Self::activate(activate, endpoint, info, true)?;
+        let (client, elapsed, properties) =
+            Self::activate(activate, endpoint, false).map_err(|hr| {
+                info.activate_hr = hr;
+                fail(info, STEP_ACTIVATE, hr)
+            })?;
+        info.activate_hr = S_OK;
+        info.activate_ms = elapsed.as_millis().min(u128::from(u32::MAX)) as u32;
+        info.properties_hr = properties;
         let wave = std::ptr::from_ref(&format.wave).cast::<WAVEFORMATEX>();
         // SAFETY: a live client; `wave` points to a whole WaveFormat, which covers the WAVEFORMATEX and the
         // cbSize extra bytes it declares. Exclusive mode takes no closest-match out-pointer.
@@ -792,26 +805,9 @@ impl Device {
         .map_err(|error| fail(info, STEP_INITIALIZE, code(error)))?;
         info.default_period_100ns = default;
         info.minimum_period_100ns = minimum;
-        let mut period = default;
-        let first = initialize(&client, period, wave);
-        info.initialize_hr = first;
-        if first == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED {
-            // Microsoft's recipe: the aligned size from this client, then a new client with that duration.
-            // SAFETY: a live client; after this failure GetBufferSize returns the next aligned size.
-            let frames = unsafe { client.GetBufferSize() }
-                .map_err(|error| fail(info, STEP_INITIALIZE, code(error)))?;
-            drop(client);
-            period = aligned_period_hns(frames, format.rate());
-            client = Self::activate(activate, endpoint, info, false)?;
-            info.realigned = 1;
-            let second = initialize(&client, period, wave);
-            info.realign_hr = second;
-            if second != S_OK {
-                return Err(fail(info, STEP_INITIALIZE, second));
-            }
-        } else if first != S_OK {
-            return Err(fail(info, STEP_INITIALIZE, first));
-        }
+        let (client, period, shared) =
+            Self::initialize_paths(activate, endpoint, client, format, info, default)
+                .map_err(|hr| fail(info, STEP_INITIALIZE, hr))?;
         info.period_100ns = period;
         let services =
             |info: &mut BaleAudioOutOpenInfo, error| fail(info, STEP_SERVICES, code(error));
@@ -842,27 +838,114 @@ impl Device {
             frequency,
             rate: format.rate(),
             block: format.block_align(),
+            shared,
         })
     }
 
-    /// Activates a client on `endpoint` and sets `AudioCategory_Movie` on it, as the probe does (also on the
-    /// client of a re-aligned open). The first activation's result, time and category answer go into `info`.
+    /// Initializes `client` exclusive and event-driven at the default period (re-aligning as Microsoft documents),
+    /// then, when that answers `AUDCLNT_E_UNSUPPORTED_FORMAT` or `AUDCLNT_E_OFFLOAD_MODE_ONLY` (the console), a new
+    /// client exclusive with offload, and for PCM a new client shared with offload. Returns the initialized client,
+    /// its buffer duration and whether it is shared; records the path and answers in `info`.
+    fn initialize_paths(
+        activate: ActivateAudioInterfaceAsync,
+        endpoint: PCWSTR,
+        client: IAudioClient,
+        format: &Format,
+        info: &mut BaleAudioOutOpenInfo,
+        default: i64,
+    ) -> Result<(IAudioClient, i64, bool), i32> {
+        let wave = std::ptr::from_ref(&format.wave).cast::<WAVEFORMATEX>();
+        info.path = PATH_EXCLUSIVE;
+        let first = initialize(&client, AUDCLNT_SHAREMODE_EXCLUSIVE, default, default, wave);
+        info.initialize_hr = first;
+        let refused = if first == S_OK {
+            return Ok((client, default, false));
+        } else if first == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED {
+            // Microsoft's recipe: the aligned size from this client, then a new client with that duration.
+            // SAFETY: a live client; after this failure GetBufferSize returns the next aligned size.
+            let frames = unsafe { client.GetBufferSize() }.map_err(code)?;
+            drop(client);
+            let period = aligned_period_hns(frames, format.rate());
+            let (client, _, _) = Self::activate(activate, endpoint, false)?;
+            info.realigned = 1;
+            let second = initialize(&client, AUDCLNT_SHAREMODE_EXCLUSIVE, period, period, wave);
+            info.realign_hr = second;
+            if second == S_OK {
+                return Ok((client, period, false));
+            }
+            second
+        } else {
+            drop(client);
+            first
+        };
+        if !tries_offload(refused) {
+            return Err(refused);
+        }
+        info.path = PATH_EXCLUSIVE_OFFLOAD;
+        match Self::open_offload(activate, endpoint, wave, false, default) {
+            Ok((client, buffer)) => {
+                info.offload_hr = S_OK;
+                return Ok((client, buffer, false));
+            }
+            Err(hr) => info.offload_hr = hr,
+        }
+        if format.is_bitstream() {
+            // A shared engine may mix: never for IEC 61937 bursts.
+            return Err(info.offload_hr);
+        }
+        info.path = PATH_SHARED_OFFLOAD;
+        let (client, buffer) = Self::open_offload(activate, endpoint, wave, true, default)?;
+        Ok((client, buffer, true))
+    }
+
+    /// An offload open: a new client with `AudioCategory_Movie` and `bIsOffload`, the buffer fitted into
+    /// `GetBufferSizeLimits`, then an event-driven `Initialize`, exclusive or shared. Refused properties (no offload)
+    /// end it before `Initialize`.
+    fn open_offload(
+        activate: ActivateAudioInterfaceAsync,
+        endpoint: PCWSTR,
+        wave: *const WAVEFORMATEX,
+        shared: bool,
+        default: i64,
+    ) -> Result<(IAudioClient, i64), i32> {
+        let (client, _, properties) = Self::activate(activate, endpoint, true)?;
+        if properties != S_OK {
+            return Err(properties);
+        }
+        let limits = client.cast::<IAudioClient2>().ok().and_then(|client2| {
+            let (mut minimum, mut maximum) = (0i64, 0i64);
+            // SAFETY: a live client; `wave` covers its declared bytes; both out-slots are valid locals.
+            unsafe { client2.GetBufferSizeLimits(wave, true, &mut minimum, &mut maximum) }
+                .ok()
+                .map(|()| (minimum, maximum))
+        });
+        let (buffer, period) = offload_timing(shared, default, limits);
+        let mode = if shared {
+            AUDCLNT_SHAREMODE_SHARED
+        } else {
+            AUDCLNT_SHAREMODE_EXCLUSIVE
+        };
+        let hr = initialize(&client, mode, buffer, period, wave);
+        if hr != S_OK {
+            return Err(hr);
+        }
+        Ok((client, buffer))
+    }
+
+    /// Activates a client on `endpoint` and sets `AudioCategory_Movie` on it, as the probe does, with `bIsOffload`
+    /// as asked. Returns the client, how long the activation took and the properties' answer (a refusal is not
+    /// fatal here).
     fn activate(
         activate: ActivateAudioInterfaceAsync,
         endpoint: PCWSTR,
-        info: &mut BaleAudioOutOpenInfo,
-        first: bool,
-    ) -> Result<IAudioClient, i32> {
-        let (client, elapsed) = activate_client(activate, endpoint).map_err(|Failed(_, hr)| {
-            info.activate_hr = hr;
-            info.step = STEP_ACTIVATE;
-            hr
-        })?;
+        offload: bool,
+    ) -> Result<(IAudioClient, std::time::Duration, i32), i32> {
+        let (client, elapsed) = activate_client(activate, endpoint).map_err(|Failed(_, hr)| hr)?;
         let properties = match client.cast::<IAudioClient2>() {
             Ok(client2) => {
                 let properties = AudioClientProperties {
                     cbSize: size_of::<AudioClientProperties>() as u32,
-                    bIsOffload: BOOL(0),
+                    bIsOffload: BOOL::from(offload),
                     eCategory: AudioCategory_Movie,
                     Options: AUDCLNT_STREAMOPTIONS_NONE,
                 };
@@ -871,12 +954,7 @@ impl Device {
             }
             Err(error) => code(error),
         };
-        if first {
-            info.activate_hr = S_OK;
-            info.activate_ms = elapsed.as_millis().min(u128::from(u32::MAX)) as u32;
-            info.properties_hr = properties;
-        }
-        Ok(client)
+        Ok((client, elapsed, properties))
     }
 
     fn start(&self) -> Result<(), i32> {
@@ -912,14 +990,20 @@ impl Device {
     }
 }
 
-/// `Initialize` in exclusive, event-driven mode with buffer duration = periodicity = `period`.
-fn initialize(client: &IAudioClient, period: i64, format: *const WAVEFORMATEX) -> i32 {
+/// An event-driven `Initialize` in `mode` with the given buffer duration and periodicity (exclusive: equal; shared: 0).
+fn initialize(
+    client: &IAudioClient,
+    mode: AUDCLNT_SHAREMODE,
+    buffer: i64,
+    period: i64,
+    format: *const WAVEFORMATEX,
+) -> i32 {
     // SAFETY: a live client; `format` points to the whole format block (see `Device::open`).
     unsafe {
         client.Initialize(
-            AUDCLNT_SHAREMODE_EXCLUSIVE,
+            mode,
             AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
-            period,
+            buffer,
             period,
             format,
             None,
@@ -1032,9 +1116,19 @@ fn render(shared: &Shared, device: &Device) -> Result<(), i32> {
     }
 }
 
-/// Fills one device period: from the ring, or silence while a flush waits to be applied.
+/// Fills one device period: from the ring, or silence while a flush waits to be applied. Exclusive streams take
+/// the whole buffer each event; a shared stream takes what the engine has played since (`GetCurrentPadding`).
 fn fill(shared: &Shared, device: &Device, r: &mut Render) -> Result<(), i32> {
-    let frames = device.buffer_frames;
+    let frames = if device.shared {
+        // SAFETY: a live, initialized client.
+        let padding = unsafe { device.client.GetCurrentPadding() }.map_err(code)?;
+        device.buffer_frames.saturating_sub(padding)
+    } else {
+        device.buffer_frames
+    };
+    if frames == 0 {
+        return Ok(());
+    }
     // SAFETY: a live render client of a started or primed-before-start stream.
     let data = match unsafe { device.render.GetBuffer(frames) } {
         Ok(data) => data,

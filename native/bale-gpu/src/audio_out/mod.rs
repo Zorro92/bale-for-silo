@@ -85,6 +85,13 @@ pub const STEP_INITIALIZE: u32 = 7;
 pub const STEP_SERVICES: u32 = 8;
 pub const STEP_TABLE: u32 = 9;
 
+/// `BaleAudioOutOpenInfo::path` (and `BaleAudioOutStats::path`): how the stream was initialized. Exclusive comes
+/// first; the offload paths only after the plain exclusive `Initialize` answered `AUDCLNT_E_UNSUPPORTED_FORMAT` or
+/// `AUDCLNT_E_OFFLOAD_MODE_ONLY` (the console, 2026-11-24). Shared offload is PCM only: the engine may mix it.
+pub const PATH_EXCLUSIVE: u32 = 0;
+pub const PATH_EXCLUSIVE_OFFLOAD: u32 = 1;
+pub const PATH_SHARED_OFFLOAD: u32 = 2;
+
 /// `BaleAudioOutOpenInfo::mmcss`.
 pub const MMCSS_NONE: u32 = 0;
 pub const MMCSS_PRO_AUDIO: u32 = 1;
@@ -110,6 +117,7 @@ pub const AUDCLNT_E_DEVICE_INVALIDATED: i32 = 0x8889_0004u32 as i32;
 pub const AUDCLNT_E_DEVICE_IN_USE: i32 = 0x8889_000Au32 as i32;
 pub const AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED: i32 = 0x8889_000Eu32 as i32;
 pub const AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED: i32 = 0x8889_0019u32 as i32;
+pub const AUDCLNT_E_OFFLOAD_MODE_ONLY: i32 = 0x8889_0024u32 as i32;
 pub const AUDCLNT_E_RESOURCES_INVALIDATED: i32 = 0x8889_0026u32 as i32;
 
 /// The endpoint went away or changed under the stream (HDMI change, a headset taking over): the caller falls
@@ -207,7 +215,10 @@ pub struct BaleAudioOutOpenInfo {
     /// 1 when the first `Initialize` returned `AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED` and a new client was
     /// initialized with the aligned buffer (Microsoft's documented recipe).
     pub realigned: u32,
-    pub reserved: [u32; 2],
+    /// `PATH_*`: the path that opened the stream, or the last one tried (was reserved, zero, before 2026-11-24).
+    pub path: u32,
+    /// `Initialize` of the exclusive offload try; 0 when it was not tried (was reserved).
+    pub offload_hr: i32,
 }
 
 /// `BaleAudioOutStats` (152 bytes): a snapshot taken without waiting for the render thread.
@@ -255,7 +266,9 @@ pub struct BaleAudioOutStats {
     pub pad_corrections: u32,
     pub dropped_frames: u64,
     pub padded_frames: u64,
-    pub reserved: [u32; 6],
+    /// `PATH_*`, as in the open info (was reserved, zero, before 2026-11-24).
+    pub path: u32,
+    pub reserved: [u32; 5],
 }
 
 /// The `KSDATAFORMAT_SUBTYPE_IEC61937_*` GUID of an `IEC_*` value (the probe's GUIDs).
@@ -414,6 +427,32 @@ pub fn ring_frames(ring_ms: u32, rate: u32, buffer_frames: u32) -> u32 {
     (frames.min(u64::from(u32::MAX)) as u32).max(buffer_frames.saturating_mul(2))
 }
 
+/// Whether the plain exclusive `Initialize`'s answer sends create on to the offload paths.
+pub fn tries_offload(hr: i32) -> bool {
+    matches!(
+        hr,
+        AUDCLNT_E_UNSUPPORTED_FORMAT | AUDCLNT_E_OFFLOAD_MODE_ONLY
+    )
+}
+
+/// The buffer duration and periodicity of an offload open (event-driven): the default period exclusive (periodicity
+/// = buffer), two default periods shared (periodicity 0), each fitted into `GetBufferSizeLimits` when it answered
+/// with usable limits.
+pub fn offload_timing(shared: bool, default_period: i64, limits: Option<(i64, i64)>) -> (i64, i64) {
+    let base = if shared {
+        default_period.saturating_mul(2)
+    } else {
+        default_period
+    };
+    let buffer = match limits {
+        Some((minimum, maximum)) if minimum > 0 && minimum <= maximum => {
+            base.clamp(minimum, maximum)
+        }
+        _ => base,
+    };
+    (buffer, if shared { 0 } else { buffer })
+}
+
 /// The buffer duration for `frames` after `AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED`, exactly as Microsoft's
 /// `IAudioClient::Initialize` remarks compute it: `(REFERENCE_TIME)((10000.0 * 1000 / nSamplesPerSec *
 /// nFrames) + 0.5)`.
@@ -477,13 +516,16 @@ mod tests {
         assert_eq!(offset_of!(BaleAudioOutOpenInfo, default_period_100ns), 32);
         assert_eq!(offset_of!(BaleAudioOutOpenInfo, buffer_frames), 56);
         assert_eq!(offset_of!(BaleAudioOutOpenInfo, realigned), 68);
+        assert_eq!(offset_of!(BaleAudioOutOpenInfo, path), 72);
+        assert_eq!(offset_of!(BaleAudioOutOpenInfo, offload_hr), 76);
         assert_eq!(size_of::<BaleAudioOutStats>(), 152);
         assert_eq!(offset_of!(BaleAudioOutStats, frames_written), 32);
         assert_eq!(offset_of!(BaleAudioOutStats, device_position_100ns), 64);
         assert_eq!(offset_of!(BaleAudioOutStats, sync_error_100ns), 88);
         assert_eq!(offset_of!(BaleAudioOutStats, syncs), 96);
         assert_eq!(offset_of!(BaleAudioOutStats, dropped_frames), 112);
-        assert_eq!(offset_of!(BaleAudioOutStats, reserved), 128);
+        assert_eq!(offset_of!(BaleAudioOutStats, path), 128);
+        assert_eq!(offset_of!(BaleAudioOutStats, reserved), 132);
         assert_eq!(bale_audio_out_abi_version(), 1);
     }
 
@@ -708,6 +750,34 @@ mod tests {
         assert_eq!(aligned_period_hns(448, 44_100), 101_587);
         assert_eq!(aligned_period_hns(512, 48_000), 106_667);
         assert_eq!(aligned_period_hns(1, 192_000), 52);
+    }
+
+    #[test]
+    fn offload_comes_after_unsupported_and_fits_its_limits() {
+        assert!(tries_offload(AUDCLNT_E_UNSUPPORTED_FORMAT));
+        assert!(tries_offload(AUDCLNT_E_OFFLOAD_MODE_ONLY));
+        assert!(!tries_offload(AUDCLNT_E_DEVICE_IN_USE));
+        assert!(!tries_offload(AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED));
+        // Exclusive: the default period, periodicity = buffer; shared: two periods, periodicity 0.
+        assert_eq!(offload_timing(false, 100_000, None), (100_000, 100_000));
+        assert_eq!(offload_timing(true, 100_000, None), (200_000, 0));
+        // Fitted into the limits, unless they make no sense.
+        assert_eq!(
+            offload_timing(false, 100_000, Some((200_000, 400_000))),
+            (200_000, 200_000)
+        );
+        assert_eq!(
+            offload_timing(true, 100_000, Some((10_000, 150_000))),
+            (150_000, 0)
+        );
+        assert_eq!(
+            offload_timing(false, 100_000, Some((0, 400_000))),
+            (100_000, 100_000)
+        );
+        assert_eq!(
+            offload_timing(true, 100_000, Some((500_000, 400_000))),
+            (200_000, 0)
+        );
     }
 
     #[test]

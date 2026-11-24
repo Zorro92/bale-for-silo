@@ -46,8 +46,8 @@ internal struct BaleAudioOutOpenInfo
     public uint RingFrames;
     public uint Mmcss;
     public uint Realigned;
-    public uint Reserved0;
-    public uint Reserved1;
+    public uint Path;
+    public int OffloadHr;
 }
 
 /// <summary><c>BaleAudioOutStats</c> (152 bytes).</summary>
@@ -76,7 +76,7 @@ internal struct BaleAudioOutStats
     public uint PadCorrections;
     public ulong DroppedFrames;
     public ulong PaddedFrames;
-    public uint Reserved0;
+    public uint Path;
     public uint Reserved1;
     public uint Reserved2;
     public uint Reserved3;
@@ -94,30 +94,41 @@ internal static class BaleAudioOut
     public const uint StatusPaused = 2;
     public const uint StatusDeviceLost = 3;
     public const uint StatusFailed = 4;
+    public const uint PathExclusive = 0;
+    public const uint PathExclusiveOffload = 1;
+    public const uint PathSharedOffload = 2;
 }
 
 /// <summary>
-/// <c>GET /audio-out-test?seconds=5&amp;tone=440</c>: 1-30 s (default 5), a 20-20000 Hz tone (default 440); or
-/// <c>?variants=1</c> alone: the Initialize variants (one fresh client per row, never started).
+/// <c>GET /audio-out-test?seconds=5&amp;tone=440&amp;channels=8</c>: 1-30 s (default 5), a 20-20000 Hz tone (default
+/// 440) in 2, 6 or 8 channels of 24 bits in 32 (default 8, the console's 7.1); or <c>?variants=1</c>: the Initialize
+/// variants (one fresh client per row, never started). Either takes <c>uisounds=off</c>: XAML's UI sounds off for the
+/// run (they may hold a shared stream on the endpoint), restored afterwards.
 /// </summary>
-internal readonly record struct DebugAudioOutOptions(int Seconds, int ToneHz, bool Variants = false)
+internal readonly record struct DebugAudioOutOptions(int Seconds, int ToneHz, bool Variants = false, int Channels = 8,
+    bool UiSoundsOff = false)
 {
-    public const string Usage = "usage: GET /audio-out-test?seconds=1..30&tone=20..20000 (defaults: 5 s, 440 Hz), or GET /audio-out-test?variants=1\n";
+    public const string Usage = "usage: GET /audio-out-test?seconds=1..30&tone=20..20000&channels=2|6|8 (defaults: 5 s, 440 Hz, 8), "
+        + "or GET /audio-out-test?variants=1; either with uisounds=off\n";
 
     public static bool TryParse(IReadOnlyDictionary<string, string> query, out DebugAudioOutOptions options)
     {
         options = new(5, 440);
+        if (query.TryGetValue("uisounds", out var sounds) && sounds != "off") return false;
+        var soundsOff = sounds == "off";
         if (query.TryGetValue("variants", out var variants))
         {
-            if (variants != "1" || query.Count != 1) return false;
-            options = new(5, 440, Variants: true);
+            if (variants != "1" || query.Keys.Any(key => key is not ("variants" or "uisounds"))) return false;
+            options = new(5, 440, Variants: true, UiSoundsOff: soundsOff);
             return true;
         }
-        if (query.Keys.Any(key => key is not ("seconds" or "tone"))
+        var channels = query.GetValueOrDefault("channels") ?? "8";
+        if (query.Keys.Any(key => key is not ("seconds" or "tone" or "channels" or "uisounds"))
             || !Number(query.GetValueOrDefault("seconds"), 5, 1, 30, out var seconds)
-            || !Number(query.GetValueOrDefault("tone"), 440, 20, 20_000, out var tone))
+            || !Number(query.GetValueOrDefault("tone"), 440, 20, 20_000, out var tone)
+            || channels is not ("2" or "6" or "8"))
             return false;
-        options = new(seconds, tone);
+        options = new(seconds, tone, Channels: channels[0] - '0', UiSoundsOff: soundsOff);
         return true;
     }
 
@@ -134,47 +145,56 @@ internal readonly record struct DebugAudioOutOptions(int Seconds, int ToneHz, bo
 }
 
 /// <summary>
-/// The console's only accepted exclusive format (probe, 2026-11-24, "Allow passthrough" on, no headset): PCM 7.1,
-/// 48 kHz, 24 valid bits in a 32-bit container, mask 0x63F, so channels interleave FL FR FC LFE BL BR SL SR. The tone
-/// plays on front left and right only; the other six stay silent.
+/// The test's formats: PCM at 48 kHz, 24 valid bits in a 32-bit container, 2, 6 or 8 channels with ksmedia's masks
+/// (0x3, 0x3F, 0x63F). 8 channels is the console's only accepted exclusive format in the probe (2026-11-24, "Allow
+/// passthrough" on, no headset), interleaved FL FR FC LFE BL BR SL SR; the variants run also saw 5.1 and 2.0 accepted
+/// by IsFormatSupported. The tone plays on front left and right only; the other channels stay silent.
 /// </summary>
 internal static class DebugAudioOutTone
 {
-    public const int Channels = 8;
     public const int SampleRate = 48_000;
-    public const int BlockAlign = Channels * 4;
-    public const uint ChannelMask = 0x63F;
     /// <summary>-18 dBFS: plainly audible on a TV without being loud.</summary>
     public const double Amplitude = 0.125;
     private const int Full24 = 8_388_607;
 
-    public static BaleAudioFormat Format => new()
+    /// <summary>ksmedia.h's mask for 2, 6 (5.1 back) or 8 (7.1 surround) channels.</summary>
+    public static uint Mask(int channels) => channels switch
+    {
+        2 => 0x3,
+        6 => 0x3F,
+        _ => 0x63F,
+    };
+
+    public static int BlockAlign(int channels) => channels * 4;
+
+    public static BaleAudioFormat Format(int channels) => new()
     {
         Kind = 0,
-        Channels = Channels,
+        Channels = (uint)channels,
         SampleRate = SampleRate,
         ContainerBits = 32,
         ValidBits = 24,
-        ChannelMask = ChannelMask,
+        ChannelMask = Mask(channels),
     };
 
     /// <summary>The pts (100 ns) of absolute frame <paramref name="frame"/>.</summary>
     public static long Pts(long frame) => frame * 10_000_000 / SampleRate;
 
     /// <summary>
-    /// Fills whole frames of <paramref name="samples"/> from absolute frame <paramref name="first"/>: the sine's 24-bit
-    /// value sits in the top three bytes of each 32-bit sample (the low byte stays zero), front left and right only.
-    /// The phase comes from the absolute frame, so chunks join without a click.
+    /// Fills whole frames of <paramref name="samples"/> (<paramref name="channels"/> samples each) from absolute frame
+    /// <paramref name="first"/>: the sine's 24-bit value sits in the top three bytes of each 32-bit sample (the low
+    /// byte stays zero), front left and right only. The phase comes from the absolute frame, so chunks join without a
+    /// click.
     /// </summary>
-    public static void Fill(Span<int> samples, long first, int toneHz)
+    public static void Fill(Span<int> samples, long first, int toneHz, int channels)
     {
-        var frames = samples.Length / Channels;
+        var frames = samples.Length / channels;
         for (var i = 0; i < frames; i++)
         {
             // An integer frequency repeats every SampleRate frames, which keeps the phase exact for hours.
             var phase = 2 * Math.PI * toneHz * ((first + i) % SampleRate) / SampleRate;
             var value = (int)Math.Round(Math.Sin(phase) * Amplitude * Full24) << 8;
-            var frame = samples.Slice(i * Channels, Channels);
+            var frame = samples.Slice(i * channels, channels);
             frame.Clear();
             frame[0] = value;
             frame[1] = value;
@@ -190,10 +210,10 @@ internal delegate uint DebugAudioOutWrite(ReadOnlySpan<byte> data, long pts100ns
 /// as much as the ring takes; on "full" it stops and the caller tries again a few milliseconds later, and a partly
 /// taken chunk is resent from the first frame not taken, with that frame's pts.
 /// </summary>
-internal sealed class DebugAudioOutFeeder(int toneHz)
+internal sealed class DebugAudioOutFeeder(int toneHz, int channels = 8)
 {
     public const int ChunkFrames = 480;
-    private readonly int[] _samples = new int[ChunkFrames * DebugAudioOutTone.Channels];
+    private readonly int[] _samples = new int[ChunkFrames * channels];
     private long _chunk;
     private int _taken = ChunkFrames;
 
@@ -209,17 +229,17 @@ internal sealed class DebugAudioOutFeeder(int toneHz)
         {
             if (_taken == ChunkFrames)
             {
-                DebugAudioOutTone.Fill(_samples, _chunk, toneHz);
+                DebugAudioOutTone.Fill(_samples, _chunk, toneHz, channels);
                 _taken = 0;
             }
-            var data = MemoryMarshal.AsBytes(_samples.AsSpan(_taken * DebugAudioOutTone.Channels));
+            var data = MemoryMarshal.AsBytes(_samples.AsSpan(_taken * channels));
             var answer = write(data, DebugAudioOutTone.Pts(_chunk + _taken));
             if (answer == BaleAudioOut.WriteClosed)
             {
                 Closed = true;
                 break;
             }
-            var frames = (int)(Math.Min(answer, (uint)data.Length) / DebugAudioOutTone.BlockAlign);
+            var frames = (int)(Math.Min(answer, (uint)data.Length) / DebugAudioOutTone.BlockAlign(channels));
             if (frames == 0)
             {
                 FullAnswers++;
@@ -326,8 +346,21 @@ internal static class DebugAudioOutReport
     public static string Ms(long hns) => (hns / 10_000.0).ToString("0.000", CultureInfo.InvariantCulture);
 
     public static string Header(DebugAudioOutOptions options) =>
-        $"Audio output test: exclusive WASAPI, PCM 8 ch {DebugAudioOutTone.SampleRate} Hz 32-bit (24 valid) mask 0x{DebugAudioOutTone.ChannelMask:X}, "
-        + $"{options.ToneHz} Hz tone on front L/R at -18 dBFS, {options.Seconds} s, synced to a wall-clock video position\n";
+        $"Audio output test: exclusive WASAPI (offload fallbacks), PCM {options.Channels} ch {DebugAudioOutTone.SampleRate} Hz 32-bit (24 valid) "
+        + $"mask 0x{DebugAudioOutTone.Mask(options.Channels):X}, {options.ToneHz} Hz tone on front L/R at -18 dBFS, {options.Seconds} s, "
+        + "synced to a wall-clock video position\n";
+
+    public static string Path(uint path) => path switch
+    {
+        BaleAudioOut.PathExclusive => "exclusive",
+        BaleAudioOut.PathExclusiveOffload => "exclusive offload",
+        BaleAudioOut.PathSharedOffload => "shared offload",
+        _ => $"path {path}",
+    };
+
+    /// <summary>The app's XAML UI sounds, which may hold a shared stream on the endpoint (context for DEVICE_IN_USE).</summary>
+    public static string UiSounds(string state, bool switchedOff) =>
+        $"App: XAML UI sounds (ElementSoundPlayer.State) {state}{(switchedOff ? ", switched Off for this run" : string.Empty)}\n";
 
     /// <summary>Create's result and each step it reached (steps after the one it stopped at are left out).</summary>
     public static string Open(int hr, uint id, in BaleAudioOutOpenInfo info)
@@ -345,6 +378,12 @@ internal static class DebugAudioOutReport
                 .Append(", IsFormatSupported ").Append(Hr(info.FormatHr));
         if (Reached(7)) text.Append(", Initialize ").Append(Hr(info.InitializeHr));
         if (info.Realigned != 0) text.Append(", re-aligned Initialize ").Append(Hr(info.RealignHr));
+        // The offload tries come after a plain exclusive refusal (UNSUPPORTED_FORMAT / OFFLOAD_MODE_ONLY).
+        if (info.Path != BaleAudioOut.PathExclusive || info.OffloadHr != 0)
+            text.Append(", exclusive offload Initialize ").Append(Hr(info.OffloadHr));
+        if (info.Path == BaleAudioOut.PathSharedOffload)
+            text.Append(", shared offload Initialize ").Append(Hr(hr >= 0 ? 0 : hr));
+        if (Reached(7)) text.Append("; path ").Append(Path(info.Path));
         text.Append('\n');
         if (info.DefaultPeriod100ns != 0)
         {

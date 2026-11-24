@@ -69,7 +69,7 @@ internal static class DebugAudioOutTest
             // MMCSS for the render thread only if avrt.dll can be loaded here; bale_gpu only looks for a loaded copy.
             if (!NativeLibrary.TryLoad("avrt.dll", typeof(DebugAudioOutTest).Assembly, DllImportSearchPath.System32, out avrt))
                 avrt = 0;
-            var format = DebugAudioOutTone.Format;
+            var format = DebugAudioOutTone.Format(options.Channels);
             var info = default(BaleAudioOutOpenInfo);
             // A native failure ends the app without reaching a catch: leave a breadcrumb first.
             Log.Info("Debug audio-out-test: before bale_audio_out_create");
@@ -151,7 +151,7 @@ internal static class DebugAudioOutTest
             return hr < 0 ? default : stats;
         }
 
-        var feeder = new DebugAudioOutFeeder(options.ToneHz);
+        var feeder = new DebugAudioOutFeeder(options.ToneHz, options.Channels);
         // Fill the ring before starting, as a player prerolls.
         var prefill = feeder.Feed(Write);
         report.Append($"Prefill: {prefill} frames ({prefill * 1000 / DebugAudioOutTone.SampleRate} ms) queued before start\n");
