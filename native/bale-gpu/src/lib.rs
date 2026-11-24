@@ -3,11 +3,13 @@
 //! grain ([`grain`], grain ABI), the debug frame observer (`frames`), and debug loader/engine
 //! probes (`bale_gpu_*`, this file and `engine`), the subtitle overlay ([`subs`], subtitle ABI,
 //! `bale_sub_*` in this file, with the bitmap ABI `bale_sub_bitmap_*` for image subtitles), the
-//! debug libass subtitle probes (`ass`) and the debug audio passthrough probe ([`audio_probe`],
-//! `bale_gpu_audio_probe`).
+//! debug libass subtitle probes (`ass`), the debug audio passthrough probe ([`audio_probe`],
+//! `bale_gpu_audio_probe`) and the exclusive-mode audio output ([`audio_out`], audio output ABI,
+//! `bale_audio_out_*`).
 
 #[cfg(windows)]
 mod ass;
+pub mod audio_out;
 pub mod audio_probe;
 #[cfg(windows)]
 mod d3d12;

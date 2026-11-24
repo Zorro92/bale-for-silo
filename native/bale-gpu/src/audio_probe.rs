@@ -538,8 +538,10 @@ pub fn not_probed(step: &str, hr: i32) -> String {
 #[cfg(windows)]
 pub use wasapi::bale_gpu_audio_probe;
 
+/// The probe's COM side. Activation (`Mta`, `activation_function`, `activate_client`) is shared with the
+/// exclusive-mode output (`audio_out`), which gets its `IAudioClient` the same way.
 #[cfg(windows)]
-mod wasapi {
+pub(crate) mod wasapi {
     use std::ffi::c_void;
     use std::fmt::Write as _;
     use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -573,7 +575,7 @@ mod wasapi {
     const ACTIVATION_TIMEOUT: Duration = Duration::from_secs(2);
 
     /// mmdeviceapi.h `ActivateAudioInterfaceAsync`, called through `GetProcAddress` (never imported).
-    type ActivateAudioInterfaceAsync = unsafe extern "system" fn(
+    pub(crate) type ActivateAudioInterfaceAsync = unsafe extern "system" fn(
         PCWSTR,
         *const GUID,
         *const c_void,
@@ -610,7 +612,7 @@ mod wasapi {
     }
 
     /// A failed step: its name and HRESULT, nothing else (no system error text).
-    struct Failed(&'static str, i32);
+    pub(crate) struct Failed(pub(crate) &'static str, pub(crate) i32);
 
     trait StepResult<T> {
         fn step(self, name: &'static str) -> Result<T, Failed>;
@@ -624,10 +626,10 @@ mod wasapi {
 
     /// The calling thread in the multithreaded apartment for the probe, balanced on drop. A
     /// single-threaded apartment is refused: the probe blocks while it waits for the activation callback.
-    struct Mta;
+    pub(crate) struct Mta;
 
     impl Mta {
-        fn join() -> Result<Self, Failed> {
+        pub(crate) fn join() -> Result<Self, Failed> {
             // SAFETY: plain COM initialization of this thread; `Drop` balances it only on success (S_OK
             // or S_FALSE, already in the MTA).
             let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
@@ -698,7 +700,12 @@ mod wasapi {
                 E_NOT_SET,
             ));
         }
-        let client = activate_client(activate, PCWSTR(id.as_ptr()), report)?;
+        let (client, elapsed) = activate_client(activate, PCWSTR(id.as_ptr()))?;
+        let _ = writeln!(
+            report,
+            "Activation: IAudioClient in {} ms (MediaDevice default render id, ActivateAudioInterfaceAsync off the UI thread)",
+            elapsed.as_millis()
+        );
 
         match client.cast::<IAudioClient2>() {
             Ok(client2) => {
@@ -766,7 +773,9 @@ mod wasapi {
         Ok(results)
     }
 
-    fn activation_function(module: HMODULE) -> Result<ActivateAudioInterfaceAsync, Failed> {
+    pub(crate) fn activation_function(
+        module: HMODULE,
+    ) -> Result<ActivateAudioInterfaceAsync, Failed> {
         if module.is_invalid() {
             return Err(Failed(
                 "mmdevapi.dll (not loaded by the caller)",
@@ -787,12 +796,12 @@ mod wasapi {
         })
     }
 
-    /// Activates `IAudioClient` on `device` and waits for the callback, at most [`ACTIVATION_TIMEOUT`].
-    fn activate_client(
+    /// Activates `IAudioClient` on `device` and waits for the callback, at most [`ACTIVATION_TIMEOUT`];
+    /// returns the client and how long the activation took. The calling thread must be in the MTA.
+    pub(crate) fn activate_client(
         activate: ActivateAudioInterfaceAsync,
         device: PCWSTR,
-        report: &mut String,
-    ) -> Result<IAudioClient, Failed> {
+    ) -> Result<(IAudioClient, Duration), Failed> {
         let (sender, receiver) = sync_channel(1);
         let handler: IActivateAudioInterfaceCompletionHandler =
             Completion(Mutex::new(Some(sender))).into();
@@ -849,12 +858,7 @@ mod wasapi {
             .ok_or(Failed("GetActivateResult (no interface)", E_NOINTERFACE.0))?
             .cast::<IAudioClient>()
             .step("IAudioClient")?;
-        let _ = writeln!(
-            report,
-            "Activation: IAudioClient in {} ms (MediaDevice default render id, ActivateAudioInterfaceAsync off the UI thread)",
-            elapsed.as_millis()
-        );
-        Ok(client)
+        Ok((client, elapsed))
     }
 
     /// Reads a `WAVEFORMATEX` block of `18 + cbSize` bytes.

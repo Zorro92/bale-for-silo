@@ -1427,6 +1427,39 @@ public class DebugPlaytestScriptTests
     }
 
     [Fact]
+    public async Task AudioOutTestIsAGetWithOptionalSecondsAndFrequency()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var defaults = await RunAsync(["audio-out-test"], "Summary: played; status running\n");
+        Assert.Equal(0, defaults.ExitCode);
+        Assert.Contains("http://debug.invalid:8790/audio-out-test\n", defaults.Arguments);
+        // Open (~6 s) and close (~3 s) around the default 5 s tone.
+        Assert.Contains("--max-time\n30\n", defaults.Arguments);
+        Assert.DoesNotContain("seconds=", defaults.Arguments);
+        Assert.DoesNotContain("POST", defaults.Arguments);
+        Assert.Contains("Summary: played; status running", defaults.Output);
+        var both = await RunAsync(["audio-out-test", "30", "20000"]);
+        Assert.Equal(0, both.ExitCode);
+        Assert.Contains("--max-time\n55\n", both.Arguments);
+        Assert.Contains("--data-urlencode\nseconds=30\n", both.Arguments);
+        Assert.Contains("--data-urlencode\ntone=20000\n", both.Arguments);
+        var seconds = await RunAsync(["audio-out-test", "1"]);
+        Assert.Contains("--data-urlencode\nseconds=1\n", seconds.Arguments);
+        Assert.DoesNotContain("tone=", seconds.Arguments);
+        foreach (var args in new[]
+        {
+            new[] { "audio-out-test", "0" }, ["audio-out-test", "31"], ["audio-out-test", "05"], ["audio-out-test", "5", "19"],
+            ["audio-out-test", "5", "20001"], ["audio-out-test", "5", "0440"], ["audio-out-test", "5", "440", "x"],
+            ["audio-out-test", "tone=440"],
+        })
+        {
+            var invalid = await RunAsync(args);
+            Assert.Equal(2, invalid.ExitCode);
+            Assert.Empty(invalid.Arguments);
+        }
+    }
+
+    [Fact]
     public async Task InvalidMemprobeArgumentsNeverInvokeCurl()
     {
         if (!OperatingSystem.IsLinux()) return;

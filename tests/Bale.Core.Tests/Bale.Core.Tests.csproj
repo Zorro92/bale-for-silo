@@ -144,6 +144,10 @@
     <None Include="../../src/Bale.Xbox/Services/DebugServer.WebViewTest.cs" Link="DebugServer.WebViewTest.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugRustProbe.cs" Link="DebugRustProbe.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugAudioProbe.cs" Link="DebugAudioProbe.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="../../src/Bale.Xbox/Services/DebugAudioOut.cs" Link="DebugAudioOut.cs" />
+    <None Include="../../src/Bale.Xbox/Services/DebugAudioOutTest.cs" Link="DebugAudioOutTest.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Services/DebugServer.AudioOut.cs" Link="DebugServer.AudioOut.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../native/bale-gpu/include/bale_audio_out.h" Link="bale_audio_out.h" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/ZeroCopyRuntime.cs" Link="ZeroCopyRuntime.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/bale-debug.sh" Link="bale-debug.sh" CopyToOutputDirectory="PreserveNewest" />
     <!-- Exercise HDMI failure/restore orchestration against a minimal API stand-in, not a display. -->

@@ -4,7 +4,8 @@ Status: **groundwork, nothing claimed** (2026-11-24). Bale still declares no `au
 (docs/player-plan.md); AC-3/E-AC-3 reach the console's own Dolby decoder and everything else is decoded to PCM.
 Passthrough means handing a receiver the encoded stream as an IEC 61937 bitstream, which on Xbox needs the
 console's "Allow passthrough" setting for media apps (since May 2021) and an audio endpoint that takes the
-format in exclusive mode. Nothing here has been measured on the console yet; the owner has no receiver so far.
+format in exclusive mode. The capability probe has run on the console (below); the exclusive output (below) has not
+yet. The owner has no receiver so far.
 
 ## Plan (owner, 2026-11-24: "get as much of the plumbing in as possible to future proof")
 
@@ -13,8 +14,10 @@ format in exclusive mode. Nothing here has been measured on the console yet; the
 3. **IEC 61937 packers:** below.
 4. **AC-3/E-AC-3 passthrough through Media Foundation** with the console's "Allow passthrough" (the route Plex and
    Disney+ use): to check with the owner at the TV (guide indicator).
-5. **Bale's own exclusive-mode WASAPI output** fed by the packers, with the video following its audio clock, behind
-   a debug switch; provable with AC-3 into a TV, TrueHD/DTS-HD then wait for a receiver.
+5. **Bale's own exclusive-mode WASAPI output** fed by the packers (and decoded multichannel PCM), behind a debug
+   switch; provable with AC-3 into a TV, TrueHD/DTS-HD then wait for a receiver. The audio follows the video
+   (2026-11-24): IMFMediaEngine stays the master clock and the output drops or pads to match it. Step 1, the output
+   itself with a debug test, is in place: "Exclusive output" below.
 6. **Claims:** `audio_passthrough_codecs` only from probe evidence.
 
 References read (never copied): VLC `winstore.c`, `wasapi.c`, `tospdif.c` (LGPL 2.1+); Google Cobalt
@@ -197,5 +200,108 @@ split and trailing bytes after the last whole frame are dropped; E-AC-3 counts p
 under 10 bytes are accepted; `flush` sends the partly filled E-AC-3 burst or MAT frame (FFmpeg drops it).
 Rates IEC 61937 doesn't carry (below 32 kHz, E-AC-3's reduced rates) are refused.
 
-Open: the renderer (WASAPI exclusive mode or Media Foundation's audio renderer with these subtypes),
-receiver capability checks, a C ABI, and verification on a real receiver.
+Open: feeding the exclusive output ("Exclusive output", next steps), receiver capability checks, a C ABI for the
+packers, and verification on a real receiver.
+
+## Exclusive output
+
+Step 1 of plan item 5, debug plumbing only: bale_gpu's exclusive-mode WASAPI output (`native/bale-gpu/src/audio_out/`),
+C ABI 1 in `native/bale-gpu/include/bale_audio_out.h` (`bale_audio_out_*`, additive: the bale_gpu ABI version stays;
+CI requires the exports and fails if bale_gpu.dll imports mmdevapi.dll or avrt.dll). No release path creates an output
+and no claim changes. The FFmpegInteropX fork will be the feeder; the app owns the output.
+
+### What it does
+
+- **Open** (`bale_audio_out_create`): the default render endpoint the probe's way (MediaDevice default render id, then
+  `ActivateAudioInterfaceAsync` through the app's `mmdevapi.dll`, which bale_gpu pins while the output lives but never
+  imports), `AudioCategory_Movie`, `IsFormatSupported(EXCLUSIVE)`, then `Initialize(EXCLUSIVE, EVENTCALLBACK)` with
+  buffer duration = periodicity = the device's default period. `AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED` takes Microsoft's
+  documented recipe (`GetBufferSize`, a new client, the aligned duration). A refusal returns its HRESULT and the step
+  (`BaleAudioOutOpenInfo`), so the caller falls back: `AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED` (headset connected, or
+  "Allow passthrough" off), `AUDCLNT_E_UNSUPPORTED_FORMAT`, `AUDCLNT_E_DEVICE_IN_USE`. Formats: integer PCM (1-8
+  channels, 16/24/32-bit containers) or IEC 61937 (2 or 8 lines of 16-bit words at a carrier rate, the probe's five
+  subtypes), as `WAVEFORMATEXTENSIBLE`, or `WAVEFORMATEXTENSIBLE_IEC61937` (`cbSize` 34) when a decoded rate is given;
+  the Rust tests check them byte for byte against the probe's rows. The console's TV path takes only PCM 7.1 48 kHz,
+  24 bits in 32, mask `0x63F`.
+- **Ids**: 1-65535 (never 0) in a thread-safe table, so the fork takes the id through an FFmpegOptions int; an id comes
+  back only after the counter has gone round. Every call is thread-safe; only create (activation, at most ~6 s) and
+  destroy (joining the thread, at most 3 s) wait, so neither belongs on the UI thread.
+- **Render thread**, one per output, makes every COM call: it waits for the buffer event (or a control wake), fills one
+  period from the ring and reads `IAudioClock` each period. A ring that runs short is filled up with silence (counted:
+  `underruns`, `silence_frames`). MMCSS "Pro Audio" when `avrt.dll` is already in the process (the app loads it; bale_gpu
+  only looks for a loaded copy), else normal priority. No buffer event for 2 s while running is a stall: status
+  `FAILED` with `HRESULT_FROM_WIN32(ERROR_TIMEOUT)`, as in Microsoft's exclusive-mode sample. `AUDCLNT_E_DEVICE_INVALIDATED`
+  or `AUDCLNT_E_RESOURCES_INVALIDATED` (an output change) is `DEVICE_LOST`. Either way writes return
+  `BALE_AUDIO_OUT_WRITE_CLOSED`, control calls return the error, and the caller falls back and destroys the output.
+- **Writes never block**: a bounded ring (500 ms by default, 50-1000 ms at create, at least two device buffers) takes
+  whole frames until full and then answers 0, and the feeder waits a few milliseconds. That bound keeps the feeder from
+  reading the file far ahead of the video. Each write's pts times its first frame; a pts within 2 ms of the counted one
+  continues the timeline (container timestamps are often rounded), a bigger jump starts a new one there.
+- **Start / pause / flush** are idempotent and callable from any thread. Flush is the seek: it drops the ring at once
+  (frames written after it stay), then the render thread stops and resets the stream (its clock restarts at 0) and starts
+  it again if it was playing.
+- **Sync** (`bale_audio_out_sync(id, video_position_100ns, qpc_ticks)`, the brief's "set reference clock"): the app sends
+  the video position and the QueryPerformanceCounter value at the same instant. At its next period the render thread
+  extrapolates its `IAudioClock` position to that QPC time and reports pts-at-the-device minus video position as
+  `sync_error_100ns` (positive = audio ahead). It decides on the error the next frame handed to the device will have
+  when heard, which already includes the silence still queued and the corrections still pending: an underrun's silence
+  is caught up while it is still queued, and no correction is counted twice. Beyond 20 ms, PCM is corrected with whole
+  frames: silence when the audio is ahead, dropped queued frames when it is behind, at most 1 s per reference; errors
+  beyond 10 s are taken for a stale reference (a seek in flight) and ignored. IEC 61937 is only measured for now:
+  a correction inside a data burst would break it.
+
+The platform-independent parts (format rules, ring, timeline, sync controller, the per-period fill and a simulated
+device: in sync, ahead, behind, an underrun, a bitstream) are unit tested on Linux; the header is compiled as C and C++
+against the Rust layout. The COM side compiles and lints for `x86_64-pc-windows-msvc` and has not run yet.
+
+Sized for docs/resource-budget.md's audio line (< 0.25 core, ~20 MiB) against the measured console limits (3328 MiB
+app memory, 4 shared cores, CPU copies 3.6-4x slower input-idle): the ring is at most 1000 ms (the 500 ms default is
+750 KiB for 7.1 32-bit 48 kHz PCM, 1.46 MiB for an 8-line 192 kHz IEC 61937 link), the device buffers are the audio
+engine's, and one thread wakes once a period (10 ms by default) to copy one period (15 KiB for 7.1 PCM): about 1.5 MB/s
+of copies, a small fraction of one core even when input-idle. No GPU.
+
+### Debug test
+
+`scripts/bale-debug.sh audio-out-test [seconds] [freq]` (debug builds only: `GET /audio-out-test?seconds=5&tone=440`;
+1-30 s, default 5; 20-20000 Hz, default 440) opens the output in the console's format, fills the ring, starts it and
+plays a sine on front left and right (-18 dBFS; the other six channels silent) for the given time. It feeds 10 ms chunks
+with their pts as the fork's feeder will (waiting on "full", resending the frames not taken) and sends a sync reference
+every 100 ms from a wall-clock "video" that starts at Start. It is refused with 409 while a film plays (Media Foundation
+holds the endpoint) or another media probe runs, and it always destroys the output.
+
+The report: `Create:` (HRESULT and the step it stopped at; activation, Movie category, IsFormatSupported, Initialize and
+a re-aligned Initialize), `Device:` (default and minimum period, the initialized period, buffer frames, ring, MMCSS),
+`Prefill:`, `Start:`, one line a second (device clock, queued ms, underruns, sync error and corrections), `Pause:`,
+`Result:` (frames fed and rendered, the device clock against wall time since Start, which includes the start latency,
+the clock drift against QPC in ppm between the first and last reading, underruns, sync and corrections, final status)
+and `Summary:` (also in bale.log as `Debug audio-out-test: ...`), then `Destroy:`. The first sync errors show the start
+latency (the wall clock starts before the first sample sounds), so a first correction of a few tens of milliseconds is
+expected.
+
+### Not known yet (needs the console)
+
+- Whether `Initialize` succeeds where the probe's `IsFormatSupported` said yes, and the device's period and buffer.
+- Whether the app can load `avrt.dll` and join MMCSS, and how `IAudioClock` reports there (its `GetFrequency` units, the
+  drift against QPC).
+- What plugging in a headset does to an open exclusive stream (invalidated, silent, or still on HDMI; the output is
+  bound to the endpoint it opened).
+- Whether the TV plays the 7.1 PCM (it reports stereo only; the console's fixed exclusive format is 7.1), and whether
+  an exclusive stream mutes the console's own sounds.
+- What suspending the app does to the stream; the app must destroy the output on suspend once it uses one.
+
+### Next steps (not done)
+
+1. **Fork** (FFmpegInteropX, as the fork's thread described it): a debug key with the id (`bale_audio_out=<id>`) and the
+   audio track chosen at open (`bale_audio_out_stream=<index>`; switching tracks means reopening). Its own audio feeder
+   thread decodes, converts with swr to signed 32-bit 8 ch 48 kHz in WASAPI 7.1 order (FL FR FC LFE BL BR SL SR, the
+   24-bit value in the top three bytes), writes with pts in 100 ns on the video's timeline, waits on "full", and calls
+   flush and writes from the new pts after a seek or stream switch. `bale_audio_out_format` tells it the format from
+   the id alone.
+2. **App**: create the output before the open and fall back to Media Foundation's audio on any failure; pass the id;
+   start and pause it with the engine; call `bale_audio_out_sync` every 100-250 ms while playing (not during a seek)
+   with IMFMediaEngine's current time and the QPC value read with it; destroy it on stop, suspend and track changes.
+   Check exclusive mode per playback (a headset can come at any time) and fall back on `DEVICE_LOST`.
+3. **Passthrough** later through the same feeder: codec id, access units and pts into the bale-core packers, whose
+   `Format::carrier` gives the `BaleAudioFormat` (kind IEC 61937, the subtype, the carrier's channels and rate), with
+   sync corrections in whole bursts (the packer's repetition period as the controller's granularity).
+4. **Claims** (`audio_passthrough_codecs`) only from probe evidence and a stream verified on a receiver.

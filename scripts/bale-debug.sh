@@ -92,6 +92,10 @@
 #   scripts/bale-debug.sh audio-probe           audio passthrough probe: exclusive-mode IsFormatSupported for each IEC 61937 bitstream
 #                                               (AC-3, E-AC-3, DTS, DTS-HD, TrueHD/MAT) and PCM format, the shared mix format and spatial audio;
 #                                               never initializes the endpoint, so it is safe during playback (docs/audio-passthrough.md)
+#   scripts/bale-debug.sh audio-out-test [seconds] [freq]  bale_gpu's exclusive-mode output: a tone (default 440 Hz, 20-20000) on
+#                                               front L/R in the console's PCM 7.1 format for 1-30 s (default 5), synced to a wall-clock
+#                                               video position; reports create/Initialize HRESULTs, period/buffer, clock drift, underruns,
+#                                               sync corrections and the final status. Takes the endpoint: refused (409) during playback
 #   scripts/bale-debug.sh playtest <url> [seconds]  muted public http(s) stream probe (1–10 s, default 3)
 #   timeout 300 scripts/bale-debug.sh playtest suite [seconds]  Chromium samples, one at a time
 #                                               (the whole suite needs more than the usual timeout 20)
@@ -417,6 +421,16 @@ case "${1:-}" in
       exit 2
     fi
     curl --fail-with-body -sS --max-time 15 "$BASE/audio-probe"
+    ;;
+  audio-out-test)
+    if [[ "$#" -gt 3 || ( "$#" -ge 2 && ! "$2" =~ ^([1-9]|[12][0-9]|30)$ ) \
+      || ( "$#" -eq 3 && ! "$3" =~ ^[1-9][0-9]{1,4}$ ) ]] || { [[ "$#" -eq 3 ]] && (( $3 < 20 || $3 > 20000 )); }; then
+      echo 'usage: scripts/bale-debug.sh audio-out-test [seconds 1-30, default 5] [freq 20-20000 Hz, default 440]' >&2
+      exit 2
+    fi
+    # Up to ~6 s to open the device and ~3 s to close it around the tone.
+    curl --fail-with-body -sS --max-time "$(( ${2:-5} + 25 ))" -G "$BASE/audio-out-test" \
+      ${2:+--data-urlencode "seconds=$2"} ${3:+--data-urlencode "tone=$3"}
     ;;
   ffmpeg)
     if [[ "$#" != 2 || ! "${2:-}" =~ ^(policy|direct|off)$ ]]; then
