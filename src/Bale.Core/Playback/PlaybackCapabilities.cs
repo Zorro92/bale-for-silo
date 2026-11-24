@@ -35,6 +35,11 @@ public sealed record DeviceCapabilities(
     public bool OriginalDolbyVision7BaseLayerSupported { get; init; }
     /// <summary>The pinned wrapper and bale_gpu tone-map ABI are available; eligibility is still per selected version.</summary>
     public bool OriginalDynamicRangeMappingSupported { get; init; }
+    /// <summary>
+    /// AV1 HDR originals can be tone-mapped on the console too: rav1g's display output (debug rav1g route, wrapper
+    /// bale.74+) maps PQ/HLG to SDR itself. Never set by release builds (dav1d, 1080p, server-side mapping).
+    /// </summary>
+    public bool Av1DynamicRangeMappingSupported { get; init; }
     public bool ProgressiveSupported { get; init; }
     public bool HlsSupported { get; init; } = true;
     /// <summary>

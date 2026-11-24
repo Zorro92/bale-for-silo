@@ -206,6 +206,12 @@ internal static class DebugRav1gTuning
         }
     }
 
+    /// <summary>Whether rav1g's display output is in use for the next attempt (default on; `display=off` forces the stage).</summary>
+    internal static bool DisplayOutputOn
+    {
+        get { lock (Gate) return _display != false; }
+    }
+
     /// <summary>The fork's option keys for the current knobs (only those set).</summary>
     internal static IReadOnlyList<KeyValuePair<string, string>> Options()
     {

@@ -257,6 +257,10 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 // Keep the probed hardware claims; only the software AV1 bound is raised.
                 if (attempt.Av1ClaimMaxHeight == 2160 && (attempt.Av1Decoder == "rav1g" || attempt.Av1ClaimDav1d) && softwareVideo)
                     capabilities = capabilities with { VideoDecode = ConsoleEvidence.BuildVideoDecode(await HardwareDecodeProbe.Limits, 3840, 2160) };
+                // rav1g's display output tone-maps AV1 HDR to SDR itself (wrapper bale.74+), so HDR AV1 originals can
+                // be promised like HEVC/VP9 ones; without it the server has no SDR version to offer (2026-11-24).
+                if (attempt.Av1Decoder == "rav1g" && softwareVideo && DebugRav1gTuning.DisplayOutputOn)
+                    capabilities = capabilities with { Av1DynamicRangeMappingSupported = true };
                 capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);
                 capabilities = DebugHdrPlayback.Capabilities(attempt.PretendHdr, capabilities);
                 capabilities = attempt.FfmpegTuning.ToneMapCapabilities(capabilities);

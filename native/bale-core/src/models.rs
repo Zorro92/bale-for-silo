@@ -182,6 +182,7 @@ pub struct DeviceCapabilities {
     pub original_http_supported: bool,
     pub original_dolby_vision7_base_layer_supported: bool,
     pub original_dynamic_range_mapping_supported: bool,
+    pub av1_dynamic_range_mapping_supported: bool,
 }
 
 /// Bale's `VideoDecodeCapability`, complete (C# always writes every field).

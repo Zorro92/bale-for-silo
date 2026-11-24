@@ -94,18 +94,22 @@ pub fn can_manage(version: &FileVersion, device: &DeviceCapabilities) -> bool {
     } else {
         track.codec.as_deref()
     });
-    let Some(codec) = codec.filter(|codec| codec == "hevc" || codec == "vp9") else {
+    // AV1 joins only where rav1g's display output maps it (debug rav1g route); never AV1 Dolby Vision.
+    let av1 = codec.as_deref() == Some("av1") && device.av1_dynamic_range_mapping_supported;
+    let Some(codec) = codec.filter(|codec| codec == "hevc" || codec == "vp9" || av1) else {
         return false;
     };
-    let hardware: Vec<_> = device
+    // HEVC/VP9 need a hardware decode claim (d3d11va feeds the stage); AV1 is rav1g's own (software-class) claim.
+    let decoders: Vec<_> = device
         .video_decode
         .iter()
-        .filter(|claim| claim.hardware)
+        .filter(|claim| claim.hardware || av1)
         .cloned()
         .collect();
     if track.bit_depth != Some(10)
         || !device.video_codecs.contains(&codec)
-        || !formatting::decodes(version, &hardware)
+        || !formatting::decodes(version, &decoders)
+        || av1 && formatting::is_dolby_vision(version)
     {
         return false;
     }
