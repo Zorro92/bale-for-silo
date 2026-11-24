@@ -148,6 +148,24 @@ So an app can open exclusive mode on Xbox when "Allow passthrough" is on and no 
 are accepted then follows the HDMI device. The future passthrough path must re-check per playback (a headset can be
 plugged in at any time) and fall back to decoded audio.
 
+### Third console run: offload variants (2026-11-24, Bale 0.1.758, TV, "Allow passthrough" on, no headset)
+
+`audio-out-test variants`, twice (the second with XAML UI sounds off): identical results.
+- `IsOffloadCapable` is **no** for Movie and Media; `SetClientProperties(bIsOffload)` returns
+  `AUDCLNT_E_ENDPOINT_OFFLOAD_NOT_CAPABLE`. The earlier `AUDCLNT_E_OFFLOAD_MODE_ONLY` from `GetBufferSizeLimits` only
+  means that call answers for offload clients.
+- **No exclusive Initialize succeeds**, in any mode, format or client setting: `AUDCLNT_E_DEVICE_IN_USE` (x20) for the
+  PCM layouts the endpoint knows (5.1 and 2.0, 24 in 32; 2.0 16), `AUDCLNT_E_UNSUPPORTED_FORMAT` (x44) for the rest,
+  even where `IsFormatSupported(EXCLUSIVE)` said S_OK. UI sounds off changes nothing, so the shared-mode holder is the
+  console's own audio session, not Bale.
+- Only plain shared mode with the mix format (2 ch 48 kHz float) initializes.
+
+Conclusion for this console and TV: an app cannot get exclusive mode, so Bale's exclusive output can't play here, and
+`IsFormatSupported` is not a reliable gate (only a real `Initialize` is). Whether the console releases the endpoint for
+exclusive IEC 61937 when a receiver reports bitstream formats is unknown without such a receiver (VLC's Xbox
+passthrough suggests it does). The exclusive output stays as dormant plumbing behind the debug switch; the practical
+route on this setup is Media Foundation's own passthrough for AC-3/E-AC-3 (plan step 4), and decoded PCM for the rest.
+
 ## IEC 61937 packers
 
 `native/bale-core/src/iec61937.rs` (pure Rust, tested on Linux) wraps compressed access units in the
