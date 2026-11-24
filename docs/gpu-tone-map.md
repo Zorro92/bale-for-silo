@@ -373,6 +373,15 @@ to the output pixel, so stills don't shimmer). Owner asked for these to be on th
   metadata, ST 2094-10 L1/L2). Today's owner rule is DV passthrough only, base layer on SDR; this would be
   the owner's decision to change that rule, and it would make profile 5 playable on SDR displays.
 
+- [ ] **HDR10+ dynamic metadata** (SMPTE ST 2094-40 SEI in HEVC, ITU-T T.35 metadata OBUs in AV1): a per-scene or
+  per-frame peak and tone curve instead of the stream's static MaxCLL/mastering values. Cheap on the GPU (numbers the
+  stage reads per frame); needs the fork to pass FFmpeg's `AV_FRAME_DATA_DYNAMIC_HDR_PLUS` side data and, for AV1,
+  rav1g to read the T.35 OBUs. Today both paths use HDR10's static metadata only (2026-11-24).
+- [ ] **Check AV1 metadata OBUs win over the container's values** on a stream where they differ (rav1g display pass,
+  fork bale.78 says OBUs win; not yet seen). Bale's stage already prefers per-frame (bitstream SEI) metadata over the
+  container's (fork `VideoFrameProcessor`: frame side data first, then the stream's coded side data).
+- Dolby Vision tone mapping (above) would use the RPU's per-scene metadata (L1/L2) the same way.
+
 Not planned: more tone curves (ACES, Reinhard, Mobius, spline; BT.2390 stays the standard) and GPU-heavy
 upscalers (Jinc, vendor Super Resolution); 1080p to 4K stays with the console's scaler.
 
