@@ -6,8 +6,9 @@ $Rav1gExports = @('rav1g_abi_version', 'rav1g_version', 'rav1g_peek_stream_info'
     'rav1g_device_d3d12_device', 'rav1g_settings_default', 'rav1g_decoder_create', 'rav1g_decoder_decode',
     'rav1g_decoder_drain', 'rav1g_decoder_configuration', 'rav1g_decoder_output_fence', 'rav1g_decoder_destroy')
 
-# The interface version the pinned wrapper (2.1.0-bale.44) is built against: static_assert in BaleRav1g.h.
-$Rav1gWrapperAbiVersion = 1
+# The interface version the pinned wrapper is built against: static_assert in BaleRav1g.h (bale.74 onward: 2,
+# rav1g 0.7's optional display output; bale.44 to bale.73: 1).
+$Rav1gWrapperAbiVersion = 2
 
 # The licence texts the release's rav1g-licenses.zip carries (rav1g's build.yml release job). They ship in the
 # package as Licenses/rav1g/<path>.

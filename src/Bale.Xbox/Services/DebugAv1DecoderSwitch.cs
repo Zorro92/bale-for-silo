@@ -156,6 +156,7 @@ internal static class DebugRav1gTuning
     private static int? _parse;
     private static int? _outputTextures;
     private static int? _outputImages;
+    private static bool? _display;
 
     /// <summary>Applies one key=value; "default" clears it. False (and no change) for an unknown key or bad value.</summary>
     internal static bool TrySet(string key, string? value)
@@ -187,6 +188,13 @@ internal static class DebugRav1gTuning
                     if (!int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var images) || images > 16) return false;
                     _outputImages = images;
                     return true;
+                case "display":
+                    // bale_rav1g_display (fork bale.74, rav1g interface 2): on = rav1g writes the display-size,
+                    // tone-mapped image where the stage would run (Bale's default on the rav1g route); off = the stage.
+                    if (clear) { _display = null; return true; }
+                    if (value is not ("on" or "off")) return false;
+                    _display = value == "on";
+                    return true;
                 case "parse":
                     if (clear) { _parse = null; return true; }
                     if (value is not ("1" or "2")) return false;
@@ -209,6 +217,7 @@ internal static class DebugRav1gTuning
             if (_parse is { } parse) options.Add(new("bale_rav1g_parse", parse.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             if (_outputTextures is { } textures) options.Add(new("bale_gpu_output_textures", textures.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             if (_outputImages is { } images) options.Add(new("bale_gpu_output_images", images.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            if (_display is { } display) options.Add(new("bale_rav1g_display", display ? "1" : "0"));
             return options;
         }
     }
@@ -220,7 +229,8 @@ internal static class DebugRav1gTuning
                 + " perf=" + (_perf switch { 2 => "frames", 1 => "on", 0 => "off", _ => "default" })
                 + " parse=" + (_parse?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "default")
                 + " outtex=" + (_outputTextures?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "default")
-                + " images=" + (_outputImages?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "default");
+                + " images=" + (_outputImages?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "default")
+                + " display=" + (_display is { } display ? display ? "on" : "off" : "default");
     }
 }
 #endif
