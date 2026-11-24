@@ -11,7 +11,7 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
     int? DecodeAheadFrames = null, int? Dav1dMaxFrameDelay = null, int? DecodeThreadPriority = null,
     int? DecoderUseMaxResolution = null, int? DecoderMaxDpbCount = null, DebugFilmGrain? FilmGrain = null, bool? HdrSupport = null,
     DebugFfmpegDecoder? Decoder = null, DebugToneMap? ToneMap = null, bool? ColorInfo = null, bool? FastSeek = null,
-    bool? DecoderShaderResource = null, bool? DecoderPoolFromStream = null)
+    bool? DecoderPoolFromStream = null)
 {
     internal const int MinimumReadSize = 16 * 1024;
     internal const int MaximumReadSize = 1024 * 1024;
@@ -20,7 +20,7 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
     // Keep the extra native packet queue below its 100 MB / 60 s defaults on Xbox.
     internal const long ReadAheadCapBytes = 64L * 1024 * 1024;
     internal static readonly TimeSpan ReadAheadCapDuration = TimeSpan.FromSeconds(30);
-    internal const string Usage = "expected [decoder=auto|system|software|default] (debug-only FFmpeg route; auto=FFmpeg D3D11 or software fallback; default=production decoder) [tonemap=off|bt2390|hable|default] (requires decoder=auto in the same tuning and wrapper 2.1.0-bale.25+) [colorinfo=on|off|default] (compressed system-video colour/HDR metadata; wrapper 2.1.0-bale.26+) [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [delay=0..64|default] [prio=0..2|default] (0=off, 1=above normal, 2=highest) [maxres=0|1|default] [dpb=0..16|default] (system video only; 0=unset) [hdr=on|off|default] (default=Automatic) [fastseek=on|off|default] (wrapper General.FastSeek; default=on, off=upstream backward seek) [srv=on|off|default] [pool=stream|ffmpeg|default] (d3d11va pool sized from the stream: HEVC 2.1.0-bale.68+, H.264/VP9 bale.69+; debug default on for HEVC only; ffmpeg = FFmpeg's pool) (wrapper 2.1.0-bale.63 experiment: bale_d3d11va_shader_resource=1 asks for shader-readable d3d11va decoder pools; default=off) [grain=dav1d|gpu|off|on|default] (software video only; default=dav1d (d3d11), on/dav1d=dav1d, gpu=GPU on zerocopy, off=export-only; wrapper 2.1.0-bale.10+); software AV1 uses D3D11 CPU output; dav1d-path zerocopy restores D3D12 GPU grain; omitted keys keep their overrides; default restores the release setting (buffer=1000 for software video; software video: ahead=16, buffer=1000 ms, delay unset; above 1080p ahead=8, buffer=500 ms, delay=6; prio unset; system video: maxres/dpb unset)";
+    internal const string Usage = "expected [decoder=auto|system|software|default] (debug-only FFmpeg route; auto=FFmpeg D3D11 or software fallback; default=production decoder) [tonemap=off|bt2390|hable|default] (requires decoder=auto in the same tuning and wrapper 2.1.0-bale.25+) [colorinfo=on|off|default] (compressed system-video colour/HDR metadata; wrapper 2.1.0-bale.26+) [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [delay=0..64|default] [prio=0..2|default] (0=off, 1=above normal, 2=highest) [maxres=0|1|default] [dpb=0..16|default] (system video only; 0=unset) [hdr=on|off|default] (default=Automatic) [fastseek=on|off|default] (wrapper General.FastSeek; default=on, off=upstream backward seek) [pool=stream|ffmpeg|default] (d3d11va pool sized from the stream: HEVC 2.1.0-bale.68+, H.264/VP9 bale.69+; debug default on for HEVC only; ffmpeg = FFmpeg's pool) [grain=dav1d|gpu|off|on|default] (software video only; default=dav1d (d3d11), on/dav1d=dav1d, gpu=GPU on zerocopy, off=export-only; wrapper 2.1.0-bale.10+); software AV1 uses D3D11 CPU output; dav1d-path zerocopy restores D3D12 GPU grain; omitted keys keep their overrides; default restores the release setting (buffer=1000 for software video; software video: ahead=16, buffer=1000 ms, delay unset; above 1080p ahead=8, buffer=500 ms, delay=6; prio unset; system video: maxres/dpb unset)";
     private static readonly object Gate = new();
     private static DebugFfmpegInputTuning _current = new();
 
@@ -76,7 +76,6 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
         + (ToneMap is not null ? $" tonemap={ToneMapOverride}" : "")
         + (ColorInfo is not null ? $" colorinfo={ColorInfoOverride}" : "")
         + (FastSeek is { } fast ? $" fastseek={(fast ? "on" : "off")}" : "")
-        + (DecoderShaderResource is { } srv ? $" srv={(srv ? "on" : "off")}" : "")
         + (DecoderPoolFromStream is { } pool ? $" pool={(pool ? "stream" : "ffmpeg")}" : "");
 
     internal static bool TrySet(IReadOnlyDictionary<string, string> options, out DebugFfmpegInputTuning tuning)
@@ -140,10 +139,6 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
                 case "fastseek":
                     if (value is not ("on" or "off" or "default")) return false;
                     next = next with { FastSeek = value == "default" ? null : value == "on" };
-                    break;
-                case "srv":
-                    if (value is not ("on" or "off" or "default")) return false;
-                    next = next with { DecoderShaderResource = value == "default" ? null : value == "on" };
                     break;
                 case "pool":
                     // d3d11va pool from the stream (HEVC bale.68+, H.264/VP9 bale.69+); ffmpeg = FFmpeg's pool.

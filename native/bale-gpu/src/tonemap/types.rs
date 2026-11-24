@@ -16,11 +16,8 @@ pub const BALE_TONEMAP_SDR709: u32 = 16;
 /// NV12 output is ordered-dithered (static 8x8 Bayer threshold, luma and chroma) before the 8-bit
 /// quantisation, from the same float result P010 rounds to 10 bits. P010 output is unchanged.
 pub const BALE_TONEMAP_OUTPUT_NV12_DITHERED: u32 = 32;
-/// The input may be a decoder-bound texture array (D3D11_BIND_DECODER) that also carries
-/// D3D11_BIND_SHADER_RESOURCE: apply reads the slice in place, with no copy, when D3D11 can make the
-/// view (the Xbox can; desktop D3D11/WARP refuse, and apply falls back to its private copy). Without
-/// SHADER_RESOURCE, or if the view fails, apply copies the slice first, as before.
-pub const BALE_TONEMAP_INPUT_DECODER_SRV: u32 = 64;
+// Bit 64 is retired (2026-11-24) and stays unused: wrappers 2.1.0-bale.64 to bale.75 read it as
+// permission for shader-readable decoder pools. Decoder arrays are always copied first.
 /// Largest source/output ratio per axis the area downscale accepts.
 pub const MAX_DOWNSCALE: u32 = 4;
 pub const BALE_TONEMAP_E_SELFTEST: i32 = 0x8004BA01u32 as i32;

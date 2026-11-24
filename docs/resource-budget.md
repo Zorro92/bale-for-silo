@@ -96,11 +96,10 @@ Enforcement (0.2.x):
 4. Per-stage GPU timestamps (decode, stage, grain, subtitles, present) in the stats pane, so the GPU split is
    measured rather than assumed.
 
-Parked with the per-stage GPU timestamps: whether reading decoder arrays in place (`ffmpeg-tune srv=on`)
-saves GPU time. On the console it adds ~80-90 MiB the driver does not report (2026-11-21). The fork's
-tests to pin it down: does the extra stay flat or grow over a long play; does reading one fixed slice add
-~24 MiB; and do GPU timestamps around apply show any saving. bale_gpu creates its views per apply and
-caches none.
+Reading decoder arrays in place is retired (2026-11-24, owner): on the console it saved the ~24 MiB copy
+but cost ~80-90 MiB the driver does not report (2026-11-21), so wrapper bale.76 never asks for
+shader-readable decoder pools and bale_gpu copies every decoder array first
+([gpu-tone-map.md](gpu-tone-map.md), "Capabilities").
 
 Stage measurement is now available in debug packages: `bale-debug.sh gpu-timing on` before a new
 playback, then **Stage GPU** / `Bale stage gpu:` (240-outcome avg/max windows for input copy, luma,

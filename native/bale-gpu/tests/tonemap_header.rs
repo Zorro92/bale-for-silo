@@ -81,10 +81,6 @@ fn c_and_cpp_header_match_rust() {
             "BALE_TONEMAP_OUTPUT_NV12_DITHERED",
             BALE_TONEMAP_OUTPUT_NV12_DITHERED,
         ),
-        (
-            "BALE_TONEMAP_INPUT_DECODER_SRV",
-            BALE_TONEMAP_INPUT_DECODER_SRV,
-        ),
     ] {
         source.push_str(&format!("CHECK({name} == {value}u);\n"));
     }

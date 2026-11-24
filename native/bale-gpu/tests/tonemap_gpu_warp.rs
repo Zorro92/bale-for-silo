@@ -355,8 +355,9 @@ fn pq_to_nv12_matches_reference_for_both_curves_ranges_matrices_and_input_paths(
                                 Some(&pattern),
                             );
                             // WARP cannot create P010 arrays (including DECODER-bound arrays).
-                            // Real decoder slice bounds are covered by gpu::tests; this exercises
-                            // both the same copy operation and the in-place SRV shader path.
+                            // Real decoder slice bounds are covered by gpu::tests. Bind 0 takes the
+                            // copy every decoder array takes (with or without an SRV bind); the SRV
+                            // bind takes the in-place path of other shader-readable sources.
                             assert_eq!(handle.apply(&warp, &source, 0, &output, &f), S_OK);
                             let actual = warp.readback(&output);
                             for (i, (&a, &b)) in actual.iter().zip(&expected).enumerate() {

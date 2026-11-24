@@ -244,8 +244,6 @@ internal static class FfmpegSource
         if (tuning.HdrSupport is { } hdr) config.Video.HdrSupport = hdr ? HdrSupport.Enabled : HdrSupport.Disabled;
         // Seek-landing A/B: off is upstream's backward seek (no nearest-keyframe fast seek).
         if (tuning.FastSeek is { } fastSeek) config.General.FastSeek = fastSeek;
-        // Wrapper bale.63 experiment: shader-readable d3d11va decoder pools (the fork logs whether D3D11 allows them).
-        if (tuning.DecoderShaderResource is { } srv) config.FFmpegOptions["bale_d3d11va_shader_resource"] = srv ? "1" : "0";
         // Debug default (owner): d3d11va pool from the stream's DPB + 3 instead of FFmpeg's pool, for the codecs the wrapper
         // sizes and the console verified on bale.71: HEVC (4K 20 -> 8 surfaces, -287 MiB), VP9 (4K 12 -> 11) and H.264
         // (1080p 20 -> 8), each with 0 missed frames. Release keeps FFmpeg's pool until a long play is verified.

@@ -1,8 +1,8 @@
 //! Panic-contained ABI 1. A failure never publishes a partially constructed handle.
 use super::types::{
-    BALE_TONEMAP_INPUT_DECODER_SRV, BALE_TONEMAP_INPUT_NV12, BALE_TONEMAP_OUTPUT_DOWNSCALE,
-    BALE_TONEMAP_OUTPUT_NV12, BALE_TONEMAP_OUTPUT_NV12_DITHERED, BALE_TONEMAP_OUTPUT_P010,
-    BALE_TONEMAP_SDR709, TONEMAP_ABI_VERSION,
+    BALE_TONEMAP_INPUT_NV12, BALE_TONEMAP_OUTPUT_DOWNSCALE, BALE_TONEMAP_OUTPUT_NV12,
+    BALE_TONEMAP_OUTPUT_NV12_DITHERED, BALE_TONEMAP_OUTPUT_P010, BALE_TONEMAP_SDR709,
+    TONEMAP_ABI_VERSION,
 };
 #[cfg(windows)]
 use super::{
@@ -33,7 +33,7 @@ pub extern "C" fn bale_tonemap_abi_version() -> u32 {
 /// may be NV12. SDR709: BT.709 SDR sources are accepted (scale only, no tone curve or gamut change).
 /// NV12_DITHERED: NV12 output is ordered-dithered to 8 bits (static 8x8 Bayer), so a caller may ask
 /// for 8-bit stage output on an 8-bit display without banding (Bale's `bale_tonemap_output_depth`).
-/// INPUT_DECODER_SRV: a decoder array with SHADER_RESOURCE is read in place when D3D11 allows the view.
+/// Bit 64 is retired (2026-11-24) and never set: decoder arrays are always copied first.
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_tonemap_output_formats() -> u32 {
     BALE_TONEMAP_OUTPUT_NV12
@@ -42,7 +42,6 @@ pub extern "C" fn bale_tonemap_output_formats() -> u32 {
         | BALE_TONEMAP_INPUT_NV12
         | BALE_TONEMAP_SDR709
         | BALE_TONEMAP_OUTPUT_NV12_DITHERED
-        | BALE_TONEMAP_INPUT_DECODER_SRV
 }
 
 /// Create on the decoder thread, with caller-held D3D multithread protection. Includes a
@@ -210,7 +209,7 @@ mod tests {
     #[test]
     fn version_and_panic_boundary() {
         assert_eq!(bale_tonemap_abi_version(), 1);
-        assert_eq!(bale_tonemap_output_formats(), 127);
+        assert_eq!(bale_tonemap_output_formats(), 63);
         assert_eq!(boundary(|| panic!("boundary test")), E_UNEXPECTED);
     }
 }

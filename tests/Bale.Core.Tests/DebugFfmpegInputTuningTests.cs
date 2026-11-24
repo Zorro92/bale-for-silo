@@ -38,21 +38,6 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     }
 
     [Fact]
-    public void ShaderResourceTakesOnOffOrDefaultAndReachesTheWrapperOption()
-    {
-        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["srv"] = "on" }, out var on));
-        Assert.True(on.DecoderShaderResource);
-        Assert.EndsWith(" srv=on", on.Description);
-        foreach (var invalid in new[] { "ON", "", "1", "true" })
-            Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["srv"] = invalid }, out _));
-        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["srv"] = "default" }, out var cleared));
-        Assert.Null(cleared.DecoderShaderResource);
-        Assert.Contains("[srv=on|off|default]", DebugFfmpegInputTuning.Usage);
-        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "FfmpegSource.cs.txt"));
-        Assert.Contains("config.FFmpegOptions[\"bale_d3d11va_shader_resource\"] = srv ? \"1\" : \"0\";", source);
-    }
-
-    [Fact]
     public void DecoderPoolTakesStreamFfmpegOrDefaultAndReachesTheWrapperOption()
     {
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["pool"] = "stream" }, out var stream));
