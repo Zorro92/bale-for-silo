@@ -48,7 +48,9 @@ uint32_t bale_tonemap_output_formats(void); /* returns NV12 | P010 | DOWNSCALE |
 typedef struct BaleToneMapConfig {
     uint32_t width, height;     /* output size (input may be larger: decoder alignment, or a downscale) */
     uint32_t curve;             /* 1 = BT.2390 EETF, 2 = Hable */
-    float    source_peak_nits;  /* 1000 = server default (tonemapx peak=100); <= 0: metadata later; v1 E_INVALIDARG */
+    float    source_peak_nits;  /* 1000 = server default (tonemapx peak=100); 0 = none (1000) since 2026-11-24, older
+                                   DLLs: E_INVALIDARG; < 0: E_INVALIDARG. PQ frames with MaxCLL / mastering metadata
+                                   use that peak instead (BaleToneMapPeakInfo below) */
     float    target_white_nits; /* 100 = server default */
     float    desat;             /* 0 = server default */
     uint32_t reserved[4];       /* [0],[1]: visible source w/h for DOWNSCALE (0,0 = output size); [2],[3] zero */
@@ -62,8 +64,8 @@ typedef struct BaleToneMapFrameInfo { /* H.273 code points, per frame */
                                    6 bottom are honoured; 0 (unspecified), 1 and unknown values use left */
     uint8_t  has_mastering, has_content_light, reserved0;
     float    mastering_primaries[3][2], mastering_white[2];
-    float    mastering_min_nits, mastering_max_nits;
-    uint32_t max_cll, max_fall;
+    float    mastering_min_nits, mastering_max_nits; /* max: PQ source peak when MaxCLL is absent or larger */
+    uint32_t max_cll, max_fall;                      /* max_cll: PQ source peak (400-10000 nits) */
     uint32_t reserved[4];
 } BaleToneMapFrameInfo;
 HRESULT bale_tonemap_create(ID3D11Device* device, const BaleToneMapConfig* config, void** handle);
@@ -71,6 +73,24 @@ HRESULT bale_tonemap_create(ID3D11Device* device, const BaleToneMapConfig* confi
    bale_tonemap_output_formats() has BALE_TONEMAP_OUTPUT_P010; RENDER_TARGET|SHADER_RESOURCE, 1 slice. */
 HRESULT bale_tonemap_apply(void* handle, ID3D11DeviceContext* context, ID3D11Texture2D* input, uint32_t input_subresource, ID3D11Texture2D* output, const BaleToneMapFrameInfo* frame);
 void    bale_tonemap_destroy(void* handle);
+
+/* Additive (Bale 2026-11-24), every build; absent in older DLLs, which always use the config peak.
+   The source peak the most recently created stage applies. PQ: the frame's MaxCLL, else its mastering
+   display maximum (a MaxCLL above it gives the maximum), clamped to 400-10000 nits, else the config
+   peak; HLG: the config peak; SDR frames don't change the report. Read does no GPU work and never waits:
+   S_FALSE = apply holds the record, output untouched. */
+typedef struct BaleToneMapPeakInfo {
+    uint64_t stage;              /* that stage's create number (1, 2, ...); 0 = none created yet */
+    uint32_t changes;            /* how often its peak or peak source changed; 0 = no PQ/HLG frame yet */
+    uint32_t source;             /* 1 = config, 2 = MaxCLL, 3 = mastering display maximum */
+    float    peak_nits;          /* the peak the tone curve uses */
+    float    config_peak_nits;   /* the stage's config.source_peak_nits (0 = none: 1000) */
+    uint32_t max_cll;            /* that frame's MaxCLL; 0 = none */
+    float    mastering_max_nits; /* that frame's mastering display maximum; 0 = none */
+    uint32_t transfer;           /* that frame's H.273 transfer: 16 PQ, 18 HLG */
+    uint32_t flags;              /* bit 0: debug fixedpeak (config peak despite the metadata) */
+} BaleToneMapPeakInfo;
+HRESULT bale_tonemap_peak_read(BaleToneMapPeakInfo* info);
 
 /* Optional debug-package exports (Cargo feature stage-timing), additive to ABI 1.
    Resolve dynamically; absent in production. Enable is captured by the next stage create,

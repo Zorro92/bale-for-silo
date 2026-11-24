@@ -5,6 +5,7 @@ pub mod cpu;
 pub mod ffi;
 #[cfg(windows)]
 pub mod gpu;
+mod peak;
 pub mod types;
 
 #[cfg(any(feature = "stage-timing", test))]

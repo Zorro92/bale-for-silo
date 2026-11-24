@@ -21,8 +21,9 @@ impl BaleToneMapConfig {
             || !self.width.is_multiple_of(2)
             || !self.height.is_multiple_of(2)
             || !matches!(self.curve, 1 | 2)
+            // 0 = no configured peak: the stream's metadata, else DEFAULT_PEAK_NITS (2026-11-24).
             || !self.source_peak_nits.is_finite()
-            || self.source_peak_nits <= 0.0
+            || self.source_peak_nits < 0.0
             || !self.target_white_nits.is_finite()
             || self.target_white_nits <= 0.0
             || !self.desat.is_finite()
@@ -58,7 +59,8 @@ impl BaleToneMapConfig {
 }
 impl BaleToneMapFrameInfo {
     pub fn validate(&self) -> Result<(), i32> {
-        // Metadata is intentionally ignored, including reserved fields, in ABI 1.
+        // Metadata never fails validation (reserved fields are ignored); PQ frames take their source
+        // peak from it ([`source_peak`]), with unusable values treated as absent.
         // PQ (16) is tone mapped from BT.2020 or BT.709. HLG (18, BT.2020) goes through the
         // BT.2100 OOTF at the 1000-nit nominal peak, then the same curve. SDR on the
         // BT.709/BT.1886 curve (H.273 1, 6, 14, 15) with BT.2020 primaries only needs the
@@ -137,6 +139,79 @@ pub fn curve(config: &BaleToneMapConfig, nits: f32) -> f32 {
         config.source_peak_nits,
         config.target_white_nits,
         config.curve,
+    )
+}
+/// The source peak when neither the config nor the stream names one: the server's default
+/// (tonemapx peak=100).
+pub const DEFAULT_PEAK_NITS: f32 = 1000.0;
+/// A metadata peak is clamped to this range: below 400 nits MaxCLL or a mastering maximum is broken
+/// metadata (no HDR grade peaks that low), and 10000 nits is PQ's ceiling.
+pub const METADATA_PEAK_MIN_NITS: f32 = 400.0;
+pub const METADATA_PEAK_MAX_NITS: f32 = 10000.0;
+/// Where a frame's source peak comes from (`BaleToneMapPeakInfo.source`; Bale's log line uses
+/// [`Self::name`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum PeakSource {
+    /// `source_peak_nits` (0: [`DEFAULT_PEAK_NITS`]): HLG, PQ without metadata, debug `fixedpeak`.
+    Config = 1,
+    /// The stream's MaxCLL (its brightest pixel).
+    MaxCll = 2,
+    /// The stream's mastering display maximum luminance.
+    Mastering = 3,
+}
+impl PeakSource {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Config => "config",
+            Self::MaxCll => "maxcll",
+            Self::Mastering => "mastering",
+        }
+    }
+}
+/// The configured peak: `source_peak_nits`, or [`DEFAULT_PEAK_NITS`] when the config leaves it 0.
+pub fn config_peak(config: &BaleToneMapConfig) -> f32 {
+    if config.source_peak_nits > 0.0 {
+        config.source_peak_nits
+    } else {
+        DEFAULT_PEAK_NITS
+    }
+}
+/// A frame's usable metadata peaks (MaxCLL, mastering maximum): signalled and above 0 (the mastering
+/// value also finite). Anything else counts as absent.
+pub fn metadata_peaks(frame: &BaleToneMapFrameInfo) -> (Option<f32>, Option<f32>) {
+    let cll = (frame.has_content_light != 0 && frame.max_cll > 0).then_some(frame.max_cll as f32);
+    let mastering = (frame.has_mastering != 0
+        && frame.mastering_max_nits.is_finite()
+        && frame.mastering_max_nits > 0.0)
+        .then_some(frame.mastering_max_nits);
+    (cll, mastering)
+}
+/// The source peak a frame is tone-mapped from, and where it comes from (2026-11-24). PQ only: the
+/// stream's MaxCLL, else its mastering display maximum, else the config peak; a MaxCLL above the
+/// mastering maximum (broken metadata: no pixel is brighter than the display it was graded on) gives
+/// the mastering maximum. A metadata peak is clamped to [400, 10000] nits; the config peak is used as
+/// configured. HLG keeps the config peak (its OOTF already renders for a 1000-nit display) and SDR
+/// has no tone curve. `fixed` (debug `fixedpeak`) always takes the config peak. The metadata is per
+/// stream in practice, so the result changes only when the stream's metadata does.
+pub fn source_peak(
+    config: &BaleToneMapConfig,
+    frame: &BaleToneMapFrameInfo,
+    fixed: bool,
+) -> (f32, PeakSource) {
+    let configured = (config_peak(config), PeakSource::Config);
+    if fixed || mode(frame.transfer) != MODE_PQ {
+        return configured;
+    }
+    let (nits, source) = match metadata_peaks(frame) {
+        (Some(cll), Some(mastering)) if cll > mastering => (mastering, PeakSource::Mastering),
+        (Some(cll), _) => (cll, PeakSource::MaxCll),
+        (None, Some(mastering)) => (mastering, PeakSource::Mastering),
+        (None, None) => return configured,
+    };
+    (
+        nits.clamp(METADATA_PEAK_MIN_NITS, METADATA_PEAK_MAX_NITS),
+        source,
     )
 }
 pub fn luma_weights(bt2020: bool) -> [f32; 3] {
@@ -377,6 +452,24 @@ pub enum Method {
     Linear,
     Legacy,
 }
+/// One stage's math choices: the defaults, or the debug A/B words of `tonemap-debug`. Each word is
+/// independent; a [`Method`] alone converts to these options with the others at their defaults.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Options {
+    /// [`Method::Legacy`] under `gammachroma`.
+    pub method: Method,
+    /// `fixedpeak`: the config's source peak even when the stream's metadata names one
+    /// ([`source_peak`]).
+    pub fixed_peak: bool,
+}
+impl From<Method> for Options {
+    fn from(method: Method) -> Self {
+        Self {
+            method,
+            ..Self::default()
+        }
+    }
+}
 /// Input chroma sample (i, j) sits at luma position (2i, 2j) + this offset, from the stream's
 /// AVChromaLocation: 1 LEFT (and 0 unspecified, and any unknown value): co-sited horizontally,
 /// halfway between two rows; 2 CENTER: halfway both ways; 3 TOPLEFT: co-sited both ways; 4 TOP:
@@ -396,8 +489,14 @@ pub fn chroma_offset(location: u8) -> [f32; 2] {
     [x, y]
 }
 /// The cbuffer's `output.w` for a frame: bits 0-7 the chroma location, bit 8 the legacy math.
-pub fn method_word(frame: &BaleToneMapFrameInfo, method: Method) -> u32 {
-    u32::from(frame.chroma_location) | if method == Method::Legacy { 0x100 } else { 0 }
+pub fn method_word(frame: &BaleToneMapFrameInfo, options: impl Into<Options>) -> u32 {
+    let options = options.into();
+    u32::from(frame.chroma_location)
+        | if options.method == Method::Legacy {
+            0x100
+        } else {
+            0
+        }
 }
 pub fn pixel_linear(
     config: &BaleToneMapConfig,
@@ -484,7 +583,7 @@ pub fn quantize_chroma_dithered(uv: [f32; 2], x: u32, row: u32) -> [f32; 2] {
 /// [1 2 1]/4 x [1 1]/2 footprint centred at (2x, 2y + 0.5) that mixes the output pixels' linear
 /// RGB, then clips and encodes once. Clamp visible edges, never sample alignment padding.
 /// NV12 8-bit codes, the ABI 1 output, ordered-dithered like the shader. Current math
-/// ([`Method::Linear`]); see [`reference_with`] for the legacy one.
+/// ([`Options::default`]: the stream's metadata peak); see [`reference_with`] for the debug options.
 pub fn reference(
     config: &BaleToneMapConfig,
     frame: &BaleToneMapFrameInfo,
@@ -492,20 +591,20 @@ pub fn reference(
     width: u32,
     height: u32,
 ) -> Result<Vec<u8>, i32> {
-    reference_with(config, frame, input, width, height, Method::Linear)
+    reference_with(config, frame, input, width, height, Options::default())
 }
 
-/// [`reference`] with an explicit [`Method`].
+/// [`reference`] with explicit [`Options`] (or just a [`Method`]).
 pub fn reference_with(
     config: &BaleToneMapConfig,
     frame: &BaleToneMapFrameInfo,
     input: &[u16],
     width: u32,
     height: u32,
-    method: Method,
+    options: impl Into<Options>,
 ) -> Result<Vec<u8>, i32> {
     Ok(
-        reference_codes(config, frame, input, width, height, false, method)?
+        reference_codes(config, frame, input, width, height, false, options.into())?
             .into_iter()
             .map(|code| code as u8)
             .collect(),
@@ -520,19 +619,19 @@ pub fn reference_p010(
     width: u32,
     height: u32,
 ) -> Result<Vec<u16>, i32> {
-    reference_p010_with(config, frame, input, width, height, Method::Linear)
+    reference_p010_with(config, frame, input, width, height, Options::default())
 }
 
-/// [`reference_p010`] with an explicit [`Method`].
+/// [`reference_p010`] with explicit [`Options`] (or just a [`Method`]).
 pub fn reference_p010_with(
     config: &BaleToneMapConfig,
     frame: &BaleToneMapFrameInfo,
     input: &[u16],
     width: u32,
     height: u32,
-    method: Method,
+    options: impl Into<Options>,
 ) -> Result<Vec<u16>, i32> {
-    reference_codes(config, frame, input, width, height, true, method)
+    reference_codes(config, frame, input, width, height, true, options.into())
 }
 
 fn reference_codes(
@@ -542,10 +641,17 @@ fn reference_codes(
     width: u32,
     height: u32,
     ten_bit: bool,
-    method: Method,
+    options: Options,
 ) -> Result<Vec<u16>, i32> {
     config.validate()?;
     frame.validate()?;
+    // The peak the stage puts in its cbuffer for this frame: the stream's metadata (PQ), else the
+    // config's.
+    let config = &BaleToneMapConfig {
+        source_peak_nits: source_peak(config, frame, options.fixed_peak).0,
+        ..*config
+    };
+    let method = options.method;
     let (w, h, iw, ih) = (
         config.width as usize,
         config.height as usize,
@@ -1263,7 +1369,7 @@ mod tests {
             BaleToneMapConfig { curve: 0, ..c },
             BaleToneMapConfig { curve: 3, ..c },
             BaleToneMapConfig {
-                source_peak_nits: 0.0,
+                source_peak_nits: -1.0,
                 ..c
             },
             BaleToneMapConfig {
@@ -1296,6 +1402,15 @@ mod tests {
                 assert_eq!(bad.validate(), Err(E_INVALIDARG));
             }
         }
+        // Peak 0: none configured (the stream's metadata, else 1000 nits).
+        assert!(
+            BaleToneMapConfig {
+                source_peak_nits: 0.0,
+                ..c
+            }
+            .validate()
+            .is_ok()
+        );
         let f = frame();
         for bad in [
             BaleToneMapFrameInfo { transfer: 17, ..f },
@@ -1316,6 +1431,144 @@ mod tests {
             }
             .validate()
             .is_ok()
+        );
+    }
+
+    fn with_metadata(
+        f: BaleToneMapFrameInfo,
+        cll: Option<u32>,
+        mastering: Option<f32>,
+    ) -> BaleToneMapFrameInfo {
+        BaleToneMapFrameInfo {
+            has_content_light: u8::from(cll.is_some()),
+            max_cll: cll.unwrap_or(0),
+            has_mastering: u8::from(mastering.is_some()),
+            mastering_max_nits: mastering.unwrap_or(0.0),
+            ..f
+        }
+    }
+    /// PQ: MaxCLL, else the mastering maximum, else the config peak; MaxCLL above the mastering
+    /// maximum gives the mastering maximum; metadata peaks clamp to 400..10000 nits (compared first,
+    /// clamped after); the config peak is used as configured, 0 meaning 1000 nits.
+    #[test]
+    fn source_peak_takes_pq_metadata_with_clamps() {
+        use PeakSource::*;
+        let c = config(1);
+        for (cll, mastering, expected) in [
+            (Some(1500), Some(4000.0), (1500.0, MaxCll)),
+            (Some(1500), None, (1500.0, MaxCll)),
+            (None, Some(4000.0), (4000.0, Mastering)),
+            (None, None, (1000.0, Config)),
+            (Some(4000), Some(1000.0), (1000.0, Mastering)),
+            (Some(1000), Some(1000.0), (1000.0, MaxCll)),
+            (Some(120), None, (400.0, MaxCll)),
+            (Some(20000), None, (10000.0, MaxCll)),
+            (None, Some(100.0), (400.0, Mastering)),
+            (None, Some(12000.0), (10000.0, Mastering)),
+            (Some(300), Some(350.0), (400.0, MaxCll)),
+            (Some(500), Some(300.0), (400.0, Mastering)),
+            (Some(u32::MAX), None, (10000.0, MaxCll)),
+        ] {
+            let f = with_metadata(frame(), cll, mastering);
+            assert_eq!(
+                source_peak(&c, &f, false),
+                expected,
+                "{cll:?} {mastering:?}"
+            );
+            assert_eq!(
+                expected.1.name(),
+                ["config", "maxcll", "mastering"][expected.1 as usize - 1]
+            );
+        }
+        // The config peak is never clamped (a 100-nit config stays 100, as before); 0 is the default.
+        for (configured, expected) in [(4000.0, 4000.0), (100.0, 100.0), (0.0, DEFAULT_PEAK_NITS)] {
+            let c = BaleToneMapConfig {
+                source_peak_nits: configured,
+                ..c
+            };
+            assert_eq!(config_peak(&c), expected);
+            assert_eq!(source_peak(&c, &frame(), false), (expected, Config));
+        }
+    }
+    /// Unusable metadata counts as absent: a flag without a value, a value without its flag, a
+    /// mastering maximum that is zero, negative or not finite. HLG and SDR keep the config peak;
+    /// `fixed` (debug `fixedpeak`) always does.
+    #[test]
+    fn source_peak_ignores_unusable_metadata_and_non_pq_frames() {
+        use PeakSource::*;
+        let c = config(1);
+        let unflagged = BaleToneMapFrameInfo {
+            max_cll: 1500,
+            mastering_max_nits: 4000.0,
+            ..frame()
+        };
+        assert_eq!(metadata_peaks(&unflagged), (None, None));
+        assert_eq!(source_peak(&c, &unflagged, false), (1000.0, Config));
+        for mastering in [0.0, -5.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let f = with_metadata(frame(), Some(0), Some(mastering));
+            assert_eq!(metadata_peaks(&f), (None, None), "{mastering}");
+            assert_eq!(source_peak(&c, &f, false), (1000.0, Config));
+            // A usable MaxCLL is used alone; nothing to compare it with.
+            let f = with_metadata(frame(), Some(1500), Some(mastering));
+            assert_eq!(source_peak(&c, &f, false), (1500.0, MaxCll), "{mastering}");
+        }
+        let rich = with_metadata(frame(), Some(1500), Some(4000.0));
+        assert_eq!(source_peak(&c, &rich, true), (1000.0, Config));
+        for transfer in [18, 1, 14] {
+            let f = BaleToneMapFrameInfo { transfer, ..rich };
+            assert_eq!(
+                source_peak(&c, &f, false),
+                (1000.0, Config),
+                "transfer {transfer}"
+            );
+        }
+    }
+    /// The reference (and so the self-test and WARP comparisons) tone-maps a PQ frame from its
+    /// metadata peak exactly like a config with that peak; `fixed_peak` and HLG ignore it.
+    #[test]
+    fn reference_tone_maps_pq_from_the_metadata_peak() {
+        let input = test_pattern(16, 8, true, false);
+        let c = config(1);
+        let codes = |c: &BaleToneMapConfig, f: &BaleToneMapFrameInfo, options: Options| {
+            reference_p010_with(c, f, &input, 16, 8, options).unwrap()
+        };
+        let bright = with_metadata(frame(), Some(4000), Some(4000.0));
+        let at_4000 = codes(
+            &BaleToneMapConfig {
+                source_peak_nits: 4000.0,
+                ..c
+            },
+            &frame(),
+            Options::default(),
+        );
+        let at_1000 = codes(&c, &frame(), Options::default());
+        assert_ne!(
+            at_4000, at_1000,
+            "the pattern's 1000- and 4000-nit patches move"
+        );
+        assert_eq!(codes(&c, &bright, Options::default()), at_4000);
+        let fixed = Options {
+            fixed_peak: true,
+            ..Options::default()
+        };
+        assert_eq!(codes(&c, &bright, fixed), at_1000);
+        let unset = BaleToneMapConfig {
+            source_peak_nits: 0.0,
+            ..c
+        };
+        assert_eq!(codes(&unset, &frame(), Options::default()), at_1000);
+        assert_eq!(codes(&unset, &bright, Options::default()), at_4000);
+        let hlg = BaleToneMapFrameInfo {
+            transfer: 18,
+            ..frame()
+        };
+        let hlg_bright = BaleToneMapFrameInfo {
+            transfer: 18,
+            ..bright
+        };
+        assert_eq!(
+            codes(&c, &hlg_bright, Options::default()),
+            codes(&c, &hlg, Options::default())
         );
     }
 

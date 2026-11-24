@@ -35,6 +35,20 @@ fn c_and_cpp_header_match_rust() {
     );
     // Function pointer assignments also check the optional exports' C declarations.
     source.push_str("static HRESULT (*timing_enable)(uint32_t) = &bale_tonemap_debug_timing_enable;\nstatic HRESULT (*timing_read)(BaleToneMapTimingStats*) = &bale_tonemap_debug_timing_read;\n");
+    record!(
+        BaleToneMapPeakInfo,
+        stage,
+        changes,
+        source,
+        peak_nits,
+        config_peak_nits,
+        max_cll,
+        mastering_max_nits,
+        transfer,
+        flags
+    );
+    source
+        .push_str("static HRESULT (*peak_read)(BaleToneMapPeakInfo*) = &bale_tonemap_peak_read;\n");
     record!(BaleMemEntry, category, count, bytes, peak_bytes);
     record!(
         BaleToneMapConfig,

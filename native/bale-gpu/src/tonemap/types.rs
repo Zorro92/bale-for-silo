@@ -28,6 +28,8 @@ pub struct BaleToneMapConfig {
     pub width: u32,
     pub height: u32,
     pub curve: u32,
+    /// The tone curve's source peak without stream metadata (0 = the 1000-nit default). PQ frames with
+    /// MaxCLL or mastering metadata use that instead (`cpu::source_peak`).
     pub source_peak_nits: f32,
     pub target_white_nits: f32,
     pub desat: f32,
@@ -81,6 +83,43 @@ const _: () = {
     assert!(offset_of!(BaleToneMapFrameInfo, max_cll) == 48);
     assert!(offset_of!(BaleToneMapFrameInfo, max_fall) == 52);
     assert!(offset_of!(BaleToneMapFrameInfo, reserved) == 56);
+};
+
+/// The source peak the most recently created stage applies (additive export `bale_tonemap_peak_read`,
+/// 2026-11-24, in every build). Layout is checked against C and C#.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct BaleToneMapPeakInfo {
+    /// That stage's create number (1, 2, ...); 0 = no stage created yet.
+    pub stage: u64,
+    /// How often its peak or peak source changed; 0 = no PQ or HLG frame applied yet.
+    pub changes: u32,
+    /// 1 = config, 2 = MaxCLL, 3 = mastering display maximum (`cpu::PeakSource`).
+    pub source: u32,
+    /// The source peak the tone curve uses.
+    pub peak_nits: f32,
+    /// The stage's `config.source_peak_nits` (0 = from the metadata, 1000 without).
+    pub config_peak_nits: f32,
+    /// The frame's MaxCLL; 0 = none.
+    pub max_cll: u32,
+    /// The frame's mastering display maximum; 0 = none (or not a positive finite value).
+    pub mastering_max_nits: f32,
+    /// That frame's H.273 transfer: 16 PQ, 18 HLG.
+    pub transfer: u32,
+    /// Bit 0: debug `fixedpeak` (the config peak despite the metadata).
+    pub flags: u32,
+}
+const _: () = {
+    assert!(size_of::<BaleToneMapPeakInfo>() == 40);
+    assert!(align_of::<BaleToneMapPeakInfo>() == 8);
+    assert!(offset_of!(BaleToneMapPeakInfo, changes) == 8);
+    assert!(offset_of!(BaleToneMapPeakInfo, source) == 12);
+    assert!(offset_of!(BaleToneMapPeakInfo, peak_nits) == 16);
+    assert!(offset_of!(BaleToneMapPeakInfo, config_peak_nits) == 20);
+    assert!(offset_of!(BaleToneMapPeakInfo, max_cll) == 24);
+    assert!(offset_of!(BaleToneMapPeakInfo, mastering_max_nits) == 28);
+    assert!(offset_of!(BaleToneMapPeakInfo, transfer) == 32);
+    assert!(offset_of!(BaleToneMapPeakInfo, flags) == 36);
 };
 
 /// Optional debug snapshot, additive to ABI 1. Layout is checked against C and C#.

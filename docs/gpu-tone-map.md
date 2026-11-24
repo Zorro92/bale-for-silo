@@ -216,8 +216,9 @@ needs hardware validation; no console was used for this implementation.
   function for future consumers; the Bale pass does not use the camera OETF.
 - P010 limited/full range is decoded explicitly. Both BT.2020 NCL (9/9) and BT.709 (1/1)
   primaries/matrix pairs work for PQ (16); HLG (18) needs BT.2020; SDR transfers 1/6/14/15 take
-BT.2020 (gamut conversion) or, with SDR709, BT.709 (scale only). Frame HDR metadata is accepted
-  but ignored; a positive fixed source peak is mandatory in v1.
+BT.2020 (gamut conversion) or, with SDR709, BT.709 (scale only). Frame HDR metadata sets the PQ
+  source peak (see "Source peak from the stream's HDR metadata"); the config peak is the fallback, and
+  0 means 1000 nits (older DLLs reject 0).
 - Input chroma is upsampled bilinearly from the stream's chroma location (left for unspecified and
   unknown values; see "Closer to true area scaling" above). Output chroma is left-sited: the output
   pixels' linear RGB mixed by horizontal [1 2 1]/4 and vertical [1 1]/2 around (2x, 2y+0.5), then
@@ -226,9 +227,10 @@ BT.2020 (gamut conversion) or, with SDR709, BT.709 (scale only). Frame HDR metad
 
 Differences from the server's implementation: fp32 math instead of its integer LUT/SIMD
 quantization, ordered dithering for NV12 only (above), explicit linear gamut clipping, and the chroma filter above. Inputs
-above the configured source peak clamp to the EETF endpoint rather than extrapolating its
-cubic (which can roll highlights back). Fixed peak selection does not track frame metadata.
-These are not claimed to be bit-identical server output.
+above the source peak clamp to the EETF endpoint rather than extrapolating its
+cubic (which can roll highlights back). The PQ source peak follows the stream's MaxCLL / mastering
+metadata (next section), where the server uses its fixed `peak`; streams without metadata get the same
+fixed 1000 nits. These are not claimed to be bit-identical server output.
 
 Parameter semantics were inspected in Jellyfin FFmpeg commit
 `64bf9db0fcc51454f129eb6f8d817ad43f476695`,
@@ -240,6 +242,45 @@ not copied from those implementations. zimg's
 [transfer selection](https://github.com/sekrit-twc/zimg/blob/master/src/zimg/colorspace/gamma.cpp)
 explains the default display-referred BT.709 interpretation.
 
+## Source peak from the stream's HDR metadata (2026-11-24)
+
+Before, every PQ stream was tone-mapped from the config's fixed `source_peak_nits` (the fork sets 1000,
+tonemapx `peak=100`): a 4000-nit grade clipped everything above 1000 nits, and a 600-nit grade was mapped
+as if it reached 1000 (its highlights dimmer than needed). Apply now picks the peak per frame from the
+`BaleToneMapFrameInfo` metadata the fork already fills (`cpu::source_peak`):
+
+1. MaxCLL (`has_content_light` and `max_cll > 0`), else
+2. the mastering display maximum (`has_mastering`, `mastering_max_nits` finite and above 0), else
+3. the config peak (`source_peak_nits`; 0, accepted since this change, means 1000).
+
+A MaxCLL above the mastering maximum is broken metadata (no pixel is brighter than the display it was
+graded on), so the mastering maximum is used then. A metadata peak is clamped to 400-10000 nits (lower is
+broken metadata, 10000 is PQ's ceiling); the config peak is used as configured. PQ only: HLG keeps the
+config peak (its OOTF already renders for the 1000-nit nominal display) and SDR has no tone curve.
+
+Cost: no GPU work (the peak is the cbuffer's `params.x`). The metadata is per stream in practice, so the
+peak changes only when the stream's metadata does, and apply now uploads the constant buffer only when a
+constant changes (normally once per stream, after the self-test's), no longer on every frame. The CPU
+reference applies the same rule, so the self-test and every WARP comparison cover it;
+`pq_peak_follows_the_stream_metadata_and_constants_upload_only_on_change` (WARP, Windows CI) checks each
+source against the reference, `fixedpeak`, the report and the upload count, and CPU tests cover every
+branch and clamp.
+
+Log: no tone-map call logs (see "Ownership and GPU work"), so the additive export `bale_tonemap_peak_read`
+(every build, `BaleToneMapPeakInfo` in the header) reports the peak the most recently created stage
+applies, its source and the metadata it saw. Debug builds read it in the one-second stats refresh: the
+**Tone-map peak** stats row, and one log line per stream (again only when the peak changes), for example
+`Bale tone map peak: 1500 nits from maxcll (PQ · MaxCLL 1500 · mastering 4000 · config 1000) · stage 3`.
+The sources are `maxcll`, `mastering` and `config`. The record sits behind a mutex that apply takes only
+on a change; the read only tries it (S_FALSE when busy), so it never waits, and neither side touches D3D
+or the wrapper's source lock. The export's presence also tells a caller that the metadata peak exists.
+
+Expected visual difference: streams mastered above 1000 nits keep highlight detail between 1000 nits and
+their peak instead of clipping it, with slightly darker mid-tones (the curve fits a larger range into
+SDR); streams peaking below 1000 nits get brighter highlights; streams without metadata look as before.
+`tonemap-debug fixedpeak` restores the config peak for A/B. Not verified on the console yet, and which
+metadata real library files carry is not checked either.
+
 ## Backlog (from a feature comparison with MPC Video Renderer, 2026-11-24)
 
 Compared from MPC-VR's README, wiki, history.txt and release notes only (GPL-3.0: its code and shaders
@@ -247,10 +288,11 @@ were not read). Bale's stage is already ahead on downscaling (linear-light area 
 only "bicubic sharp") and level on dithering (both reduce 10-bit to 8-bit; Bale's ordered pattern is fixed
 to the output pixel, so stills don't shimmer). Owner asked for these to be on the backlog:
 
-- [ ] **Peak from the stream's HDR metadata.** Use MaxCLL / mastering display max luminance (with sane
+- [x] **Peak from the stream's HDR metadata.** Use MaxCLL / mastering display max luminance (with sane
   clamps) for `source_peak_nits` instead of the fixed 1000 nits; one value per stream, no GPU cost. MPC-VR
   added metadata-based conversion and a per-frame "Measured" peak in 2026; a measured peak needs an extra
-  GPU reduction pass and is a later option only if the HDR GPU budget allows.
+  GPU reduction pass and is a later option only if the HDR GPU budget allows. Implemented 2026-11-24, not
+  console-verified: see "Source peak from the stream's HDR metadata".
 - [ ] **Cubic chroma upsampling** (Catmull-Rom class) of the input chroma: xav part 2 (see part 1 above).
   MPC-VR offers nearest / bilinear / Catmull-Rom with chroma siting.
 - [x] **Check deinterlacing on the FFmpeg routes** (2026-11-24, console). 20 s 1080i (top field first) H.264 and
@@ -286,12 +328,14 @@ upscalers (Jinc, vendor Super Resolution); 1080p to 4K stays with the console's 
 - `scripts/bale-debug.sh tonemap-churn [N] [control]` runs bale_gpu's tone map alone N times on a
   fresh hardware device (create, five 4K applies, destroy; no MF or FFmpeg). It ran 40/40 on
   2026-11-17 and isolated the crash from bale_gpu.
-- `scripts/bale-debug.sh tonemap-debug [noselftest,nostate,nostaged,gammachroma]` skips the create
-  self-test, replaces the private ID3DDeviceContextState swap with explicit save/restore of what the draw
-  touches, (`nostaged`) skips the downscale intermediate so each plane pass evaluates the area sum itself
-  (the pre-2026-11-22 path, for GPU-cost A/B), or (`gammachroma`) runs the pre-2026-11-22 math: encoded
-  chroma filter, left input siting, per-pixel clip (quality/cost A/B; the self-test checks that math).
-  Words combine (`gammachroma,nostaged` is the fully old stage).
+- `scripts/bale-debug.sh tonemap-debug [noselftest,nostate,nostaged,gammachroma,fixedpeak]` skips the
+  create self-test, replaces the private ID3DDeviceContextState swap with explicit save/restore of what the
+  draw touches, (`nostaged`) skips the downscale intermediate so each plane pass evaluates the area sum
+  itself (the pre-2026-11-22 path, for GPU-cost A/B), (`gammachroma`) runs the pre-2026-11-22 math: encoded
+  chroma filter, left input siting, per-pixel clip (quality/cost A/B; the self-test checks that math), or
+  (`fixedpeak`) tone-maps PQ from the config peak (1000 nits) instead of the stream's MaxCLL / mastering
+  metadata (the pre-2026-11-24 peak; the Tone-map peak row then says `debug fixedpeak`). Words combine
+  (`gammachroma,fixedpeak,nostaged` is the fully old stage). Each applies from the next tone-map create.
 - `bale-debug.sh mem` reports `D3D11 devices: watched N destroyed M alive K`: each engine device
   carries a private-data marker that only real destruction frees.
 - `scripts/bale-debug.sh ffmpeg-tune white=80..400` sets the SDR white (nits) of the next attempt's tone map, the

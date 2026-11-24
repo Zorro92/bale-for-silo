@@ -85,7 +85,11 @@ public sealed class DebugFfmpegToneMapTests
     [InlineData("gammachroma", true)]
     [InlineData("gammachroma,nostaged", true)]
     [InlineData("noselftest,nostate,nostaged,gammachroma", true)]
+    [InlineData("fixedpeak", true)]
+    [InlineData("gammachroma,fixedpeak", true)]
+    [InlineData("noselftest,nostate,nostaged,gammachroma,fixedpeak", true)]
     [InlineData("gammachroma,other", false)]
+    [InlineData("FixedPeak", false)]
     [InlineData("GammaChroma", false)]
     public void ToneMapSwitchesAcceptOnlyKnownWords(string flags, bool valid)
         => Assert.Equal(valid, DebugToneMapSwitches.Valid(flags));

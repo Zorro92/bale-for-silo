@@ -9,14 +9,13 @@ use super::{
     gpu::ToneMapGpu,
     types::{BaleToneMapConfig, BaleToneMapFrameInfo},
 };
-#[cfg(any(windows, feature = "stage-timing", test))]
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 pub const S_OK: i32 = 0;
+pub const S_FALSE: i32 = 1;
 pub const E_INVALIDARG: i32 = super::cpu::E_INVALIDARG;
 pub const E_UNEXPECTED: i32 = 0x8000ffffu32 as i32;
 
-#[cfg(any(windows, feature = "stage-timing", test))]
 fn boundary(f: impl FnOnce() -> i32) -> i32 {
     catch_unwind(AssertUnwindSafe(f)).unwrap_or(E_UNEXPECTED)
 }
@@ -148,6 +147,29 @@ pub unsafe extern "C" fn bale_tonemap_destroy(handle: *mut ToneMapGpu) {
     });
 }
 
+/// The source peak the most recently created stage applies: from the stream's HDR metadata for PQ
+/// (`cpu::source_peak`), else the config peak (additive to ABI 1, 2026-11-24, every build). For Bale's
+/// once-per-stream log line and stats row. No GPU work and no wait: S_FALSE while apply updates the
+/// record (output untouched; read again later).
+/// # Safety
+/// out is writable for one complete BaleToneMapPeakInfo record.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_tonemap_peak_read(
+    out: *mut super::types::BaleToneMapPeakInfo,
+) -> i32 {
+    boundary(|| {
+        if out.is_null() {
+            return E_INVALIDARG;
+        }
+        let Some(info) = super::peak::snapshot() else {
+            return S_FALSE;
+        };
+        // SAFETY: complete local record and caller-provided writable output; no retained pointer.
+        unsafe { out.write_unaligned(info) };
+        S_OK
+    })
+}
+
 /// Debug-package-only, additive exports. The flag is captured after each stage's create self-test;
 /// an active stage keeps its setting. No query objects exist in builds without stage-timing.
 #[cfg(feature = "stage-timing")]
@@ -176,7 +198,7 @@ pub unsafe extern "C" fn bale_tonemap_debug_timing_read(
             return E_INVALIDARG;
         }
         let Some(stats) = super::timing::snapshot() else {
-            return 1;
+            return S_FALSE;
         };
         // SAFETY: complete local record and caller-provided writable output; no retained pointer.
         unsafe {
@@ -204,6 +226,23 @@ mod tests {
             assert_eq!(bale_tonemap_debug_timing_read(&mut stats), S_OK);
             assert_eq!(stats.state, 0);
             assert_eq!(stats.session, 0);
+        }
+    }
+    #[test]
+    fn peak_snapshot_validates_arguments_and_never_waits() {
+        // SAFETY: null is rejected before any write; the second output is complete storage.
+        unsafe {
+            assert_eq!(bale_tonemap_peak_read(std::ptr::null_mut()), E_INVALIDARG);
+            let mut info = super::super::types::BaleToneMapPeakInfo {
+                changes: 7,
+                ..Default::default()
+            };
+            // S_FALSE (another test holds the record) leaves the output untouched.
+            match bale_tonemap_peak_read(&mut info) {
+                S_OK => assert_eq!(info.stage, 0, "unit tests create no stage"),
+                S_FALSE => assert_eq!(info.changes, 7),
+                hr => panic!("HRESULT 0x{:08x}", hr as u32),
+            }
         }
     }
     #[test]

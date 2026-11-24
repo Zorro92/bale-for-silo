@@ -26,6 +26,7 @@ const UV_STAGED_PS: &[u8] =
 const STAGED_FORMAT: DXGI_FORMAT = DXGI_FORMAT_R32G32B32A32_FLOAT;
 
 #[repr(C)]
+#[derive(Clone, Copy, PartialEq)]
 struct Constants {
     geometry: [u32; 4],
     flags: [u32; 4],
@@ -65,8 +66,16 @@ pub struct ToneMapGpu {
     /// Present when the configured output is smaller than the visible source and the debug
     /// `nostaged` switch is off: one area pass per output pixel instead of one per plane read.
     staged: Option<Staged>,
-    /// Current linear-light math, or the legacy one (debug `gammachroma`, console A/B).
-    method: cpu::Method,
+    /// Current math, or the debug A/B words (`gammachroma`, `fixedpeak`; console A/B).
+    options: cpu::Options,
+    /// What the constant buffer holds: apply uploads only when a frame needs other constants (a new
+    /// peak from the stream's metadata, another size or colour description), normally once per stream.
+    uploaded: Option<Constants>,
+    /// Constant buffer uploads so far (test hook).
+    uploads: u64,
+    /// This stage's number in the peak report (`peak::start`), and the peak it last reported.
+    stage: u64,
+    peak: Option<(u32, cpu::PeakSource)>,
     #[cfg(feature = "stage-timing")]
     timing: Option<super::timing_gpu::Timing>,
     _not_send_sync: PhantomData<Rc<()>>,
@@ -148,11 +157,18 @@ impl ToneMapGpu {
             constants,
             scratch: None,
             staged,
-            method: if debug.gamma_chroma {
-                cpu::Method::Legacy
-            } else {
-                cpu::Method::Linear
+            options: cpu::Options {
+                method: if debug.gamma_chroma {
+                    cpu::Method::Legacy
+                } else {
+                    cpu::Method::Linear
+                },
+                fixed_peak: debug.fixed_peak,
             },
+            uploaded: None,
+            uploads: 0,
+            stage: 0,
+            peak: None,
             #[cfg(feature = "stage-timing")]
             timing: None,
             _not_send_sync: PhantomData,
@@ -166,6 +182,7 @@ impl ToneMapGpu {
         {
             gpu.timing = super::timing_gpu::Timing::create(&gpu.device);
         }
+        gpu.stage = super::peak::start(&gpu.config, gpu.options.fixed_peak);
         Ok(gpu)
     }
 
@@ -178,7 +195,22 @@ impl ToneMapGpu {
         frame: &BaleToneMapFrameInfo,
     ) -> Result<()> {
         let config = self.config;
-        self.draw(&config, context, input, subresource, output, frame)
+        self.draw(&config, context, input, subresource, output, frame)?;
+        self.note_peak(frame);
+        Ok(())
+    }
+
+    /// Reports this stage's peak when it changes (the first PQ or HLG frame, or new metadata), for
+    /// Bale's once-per-stream log line. SDR frames have no tone curve and leave it as it was.
+    fn note_peak(&mut self, frame: &BaleToneMapFrameInfo) {
+        if cpu::mode(frame.transfer) == cpu::MODE_SDR {
+            return;
+        }
+        let (nits, source) = cpu::source_peak(&self.config, frame, self.options.fixed_peak);
+        if self.peak != Some((nits.to_bits(), source)) {
+            self.peak = Some((nits.to_bits(), source));
+            super::peak::publish(self.stage, frame, (nits, source), self.options.fixed_peak);
+        }
     }
 
     /// Test hook: drop (false) or recreate (true) the downscale intermediate, so a WARP test can
@@ -200,7 +232,25 @@ impl ToneMapGpu {
     /// handle, so a WARP test can compare both on the same frame.
     #[doc(hidden)]
     pub fn set_method(&mut self, method: cpu::Method) {
-        self.method = method;
+        self.options.method = method;
+    }
+
+    /// Test hook: all debug A/B options at once (`gammachroma`, `fixedpeak`).
+    #[doc(hidden)]
+    pub fn set_options(&mut self, options: cpu::Options) {
+        self.options = options;
+    }
+
+    /// Test hook: this stage's number in the peak report (`bale_tonemap_peak_read`).
+    #[doc(hidden)]
+    pub fn peak_stage(&self) -> u64 {
+        self.stage
+    }
+
+    /// Test hook: how often a draw uploaded the constant buffer (self-test draws included).
+    #[doc(hidden)]
+    pub fn constant_uploads(&self) -> u64 {
+        self.uploads
     }
 
     /// Whether the downscale intermediate exists (tests, and the ledger reading in docs).
@@ -301,7 +351,8 @@ impl ToneMapGpu {
                 cpu::mode(frame.transfer),
             ],
             params: [
-                config.source_peak_nits,
+                // PQ: the stream's MaxCLL / mastering peak (debug `fixedpeak`: the config's).
+                cpu::source_peak(config, frame, self.options.fixed_peak).0,
                 config.target_white_nits,
                 config.desat,
                 if ten_bit { 1.0 } else { 0.0 },
@@ -310,7 +361,7 @@ impl ToneMapGpu {
                 config.width,
                 config.height,
                 u32::from(eight_bit_input),
-                cpu::method_word(frame, self.method),
+                cpu::method_word(frame, self.options),
             ],
         };
         // Fail before queueing work, never return an error after changing the caller's output.
@@ -352,14 +403,19 @@ impl ToneMapGpu {
             if let (Some(timing), Some(slot)) = (&mut self.timing, timing_slot) {
                 timing.mark(&context, slot, 2);
             }
-            context.UpdateSubresource(
-                &self.constants,
-                0,
-                None,
-                (&constants as *const Constants).cast(),
-                0,
-                0,
-            );
+            // The buffer keeps its contents across context-state swaps: upload only what changed.
+            if self.uploaded != Some(constants) {
+                context.UpdateSubresource(
+                    &self.constants,
+                    0,
+                    None,
+                    (&constants as *const Constants).cast(),
+                    0,
+                    0,
+                );
+                self.uploaded = Some(constants);
+                self.uploads += 1;
+            }
             context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             context.VSSetShader(&self.vs, None);
             context.PSSetConstantBuffers(0, Some(&[Some(self.constants.clone())]));
@@ -424,10 +480,10 @@ impl ToneMapGpu {
                 ..Default::default()
             };
             let pattern = cpu::test_pattern(16, 8, true, full_range == 1);
-            let expected = cpu::reference_with(&config, &frame, &pattern, 16, 8, self.method)
+            let expected = cpu::reference_with(&config, &frame, &pattern, 16, 8, self.options)
                 .map_err(HRESULT)?;
             let expected10 =
-                cpu::reference_p010_with(&config, &frame, &pattern, 16, 8, self.method)
+                cpu::reference_p010_with(&config, &frame, &pattern, 16, 8, self.options)
                     .map_err(HRESULT)?;
             let data = D3D11_SUBRESOURCE_DATA {
                 pSysMem: pattern.as_ptr().cast(),
@@ -682,13 +738,15 @@ mod tests {
 /// `nostaged` (2026-11-22, GPU cost A/B) skips the downscale intermediate and evaluates the area
 /// sum in each plane pass as before; `gammachroma` (2026-11-22, quality/cost A/B) restores the
 /// pre-2026-11-22 math: per-source-pixel clip, left input siting, output chroma filtered from
-/// encoded Cb/Cr ([`cpu::Method::Legacy`]).
+/// encoded Cb/Cr ([`cpu::Method::Legacy`]); `fixedpeak` (2026-11-24, A/B) tone-maps PQ from the
+/// config's source peak as before, not from the stream's MaxCLL / mastering metadata.
 #[derive(Clone, Copy, Default)]
 struct DebugSwitches {
     no_self_test: bool,
     no_state: bool,
     no_staged: bool,
     gamma_chroma: bool,
+    fixed_peak: bool,
 }
 
 impl DebugSwitches {
@@ -705,6 +763,7 @@ impl DebugSwitches {
                 "nostate" => switches.no_state = true,
                 "nostaged" => switches.no_staged = true,
                 "gammachroma" => switches.gamma_chroma = true,
+                "fixedpeak" => switches.fixed_peak = true,
                 _ => {}
             }
         }
@@ -849,6 +908,9 @@ mod debug_switch_tests {
         assert!(DebugSwitches::parse("noselftest,nostaged").no_staged);
         assert!(!one.gamma_chroma);
         let ab = DebugSwitches::parse("gammachroma,nostaged");
-        assert!(ab.gamma_chroma && ab.no_staged && !ab.no_state);
+        assert!(ab.gamma_chroma && ab.no_staged && !ab.no_state && !ab.fixed_peak);
+        let peak = DebugSwitches::parse("fixedpeak");
+        assert!(peak.fixed_peak && !peak.gamma_chroma && !peak.no_staged);
+        assert!(DebugSwitches::parse("gammachroma fixedpeak").fixed_peak);
     }
 }

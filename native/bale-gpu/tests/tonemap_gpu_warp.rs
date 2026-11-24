@@ -634,6 +634,146 @@ fn staged_downscale_matches_the_per_plane_path() {
     );
 }
 
+/// PQ frames take their source peak from the stream's MaxCLL / mastering metadata exactly as the CPU
+/// reference does, the debug `fixedpeak` option restores the config peak, `bale_tonemap_peak_read`
+/// reports each change once with its source, and the constant buffer is uploaded only when a frame
+/// needs other constants (the same frame again uploads nothing).
+#[test]
+fn pq_peak_follows_the_stream_metadata_and_constants_upload_only_on_change() {
+    let warp = Warp::new();
+    let c = BaleToneMapConfig {
+        width: 16,
+        height: 8,
+        ..config(1)
+    };
+    let handle = warp.create(&c);
+    let pattern = cpu::test_pattern(16, 8, true, false);
+    let source = warp.texture(
+        &desc(16, 8, DXGI_FORMAT_P010, D3D11_BIND_SHADER_RESOURCE.0 as u32),
+        Some(&pattern),
+    );
+    let output = warp.texture(&output_desc_as(&c, DXGI_FORMAT_P010), None);
+    let pq = BaleToneMapFrameInfo {
+        transfer: 16,
+        primaries: 9,
+        matrix: 9,
+        ..Default::default()
+    };
+    let meta = |max_cll: u32, mastering_max_nits: f32| BaleToneMapFrameInfo {
+        has_content_light: u8::from(max_cll > 0),
+        max_cll,
+        has_mastering: u8::from(mastering_max_nits > 0.0),
+        mastering_max_nits,
+        ..pq
+    };
+    let read = || {
+        let mut info = BaleToneMapPeakInfo::default();
+        // SAFETY: complete writable record; tests run serially, so apply never holds the report here.
+        assert_eq!(unsafe { bale_tonemap_peak_read(&mut info) }, S_OK);
+        info
+    };
+    // SAFETY (each deref below): the test owns the live handle and no apply is in flight.
+    let stage = unsafe { (*handle.0).peak_stage() };
+    let uploads = || unsafe { (*handle.0).constant_uploads() };
+    let render = |f: &BaleToneMapFrameInfo| {
+        assert_eq!(handle.apply(&warp, &source, 0, &output, f), S_OK);
+        warp.readback_p010(&output)
+    };
+    let matches = |actual: &[u16], expected: &[u16], what: &str| {
+        assert_eq!(actual.len(), expected.len());
+        for (i, (&a, &b)) in actual.iter().zip(expected).enumerate() {
+            assert!(a.abs_diff(b) <= 12, "{what} code={i}: GPU {a}, CPU {b}");
+        }
+    };
+    assert!(stage > 0);
+    assert_eq!(
+        (read().stage, read().changes),
+        (stage, 0),
+        "create starts a fresh report"
+    );
+    let plain = render(&pq);
+    matches(
+        &plain,
+        &cpu::reference_p010(&c, &pq, &pattern, 16, 8).unwrap(),
+        "no metadata",
+    );
+    let info = read();
+    assert_eq!((info.stage, info.changes, info.source), (stage, 1, 1));
+    assert_eq!(
+        (info.peak_nits, info.config_peak_nits, info.transfer),
+        (1000.0, 1000.0, 16)
+    );
+    let settled = uploads();
+    render(&pq);
+    render(&pq);
+    assert_eq!(uploads(), settled, "the same frame needs no new constants");
+    assert_eq!(read().changes, 1, "the same peak is reported once");
+    let mut changes = 1;
+    // Each step changes the peak value: one upload and one report each.
+    for (f, source, peak) in [
+        (meta(4000, 4000.0), 2, 4000.0),
+        (meta(0, 600.0), 3, 600.0),
+        (meta(4000, 1000.0), 3, 1000.0),
+        (meta(1500, 0.0), 2, 1500.0),
+    ] {
+        let before = uploads();
+        let actual = render(&f);
+        matches(
+            &actual,
+            &cpu::reference_p010(&c, &f, &pattern, 16, 8).unwrap(),
+            "metadata",
+        );
+        if peak == 4000.0 {
+            assert_ne!(actual, plain, "a 4000-nit peak must change the picture");
+        }
+        assert_eq!(uploads(), before + 1);
+        render(&f);
+        assert_eq!(uploads(), before + 1);
+        changes += 1;
+        let info = read();
+        assert_eq!(
+            (info.stage, info.changes, info.source),
+            (stage, changes, source)
+        );
+        assert_eq!(info.peak_nits, peak);
+        assert_eq!(
+            (info.max_cll, info.mastering_max_nits),
+            (f.max_cll, f.mastering_max_nits)
+        );
+        assert_eq!(info.flags, 0);
+    }
+    // NV12 output takes the same peak.
+    let bright = meta(4000, 4000.0);
+    let nv12 = warp.texture(&output_desc(&c), None);
+    assert_eq!(handle.apply(&warp, &source, 0, &nv12, &bright), S_OK);
+    let expected = cpu::reference(&c, &bright, &pattern, 16, 8).unwrap();
+    for (i, (&a, &b)) in warp.readback(&nv12).iter().zip(&expected).enumerate() {
+        assert!(a.abs_diff(b) <= 3, "NV12 code={i}: GPU {a}, CPU {b}");
+    }
+    // Debug fixedpeak: the config peak again, reported with its flag.
+    let fixed = cpu::Options {
+        fixed_peak: true,
+        ..Default::default()
+    };
+    unsafe { (*handle.0).set_options(fixed) };
+    let actual = render(&bright);
+    matches(
+        &actual,
+        &cpu::reference_p010_with(&c, &bright, &pattern, 16, 8, fixed).unwrap(),
+        "fixedpeak",
+    );
+    matches(&actual, &plain, "fixedpeak against no metadata");
+    let info = read();
+    assert_eq!((info.source, info.peak_nits, info.flags), (1, 1000.0, 1));
+    // Another stage takes over the report; this one's later changes no longer show.
+    let newer = warp.create(&c);
+    let newer_stage = unsafe { (*newer.0).peak_stage() };
+    assert!(newer_stage > stage);
+    unsafe { (*handle.0).set_options(cpu::Options::default()) };
+    render(&bright);
+    assert_eq!((read().stage, read().changes), (newer_stage, 0));
+}
+
 #[test]
 fn invalid_arguments_leave_output_and_context_state_unchanged() {
     let warp = Warp::new();
@@ -685,8 +825,13 @@ fn invalid_arguments_leave_output_and_context_state_unchanged() {
         E_INVALIDARG
     );
     assert_eq!(handle.apply(&foreign, &input, 0, &output, &f), E_INVALIDARG);
-    let invalid = BaleToneMapConfig {
+    // Peak 0 means "none configured" since 2026-11-24 (metadata, else 1000 nits); negative stays invalid.
+    let _unset = warp.create(&BaleToneMapConfig {
         source_peak_nits: 0.0,
+        ..c
+    });
+    let invalid = BaleToneMapConfig {
+        source_peak_nits: -1.0,
         ..c
     };
     let mut ptr = std::ptr::dangling_mut();

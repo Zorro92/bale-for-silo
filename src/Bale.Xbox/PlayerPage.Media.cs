@@ -43,6 +43,8 @@ public sealed partial class PlayerPage
         /// <summary>bale-debug.sh start-budget hang: "open" never finishes opening, "ready" never reports MediaOpened.</summary>
         public string? DebugHang { get; init; }
         public DebugStageGpuTiming StageGpuTiming { get; } = DebugStageGpuTiming.Capture();
+        /// <summary>The source peak of this mount's tone-map stage (stream metadata or config), logged once per change.</summary>
+        public DebugToneMapPeak ToneMapPeak { get; } = DebugToneMapPeak.Capture();
 #endif
         /// <summary>The player this mount drives (MediaPlayer today; IMFMediaEngine next).</summary>
         public PlaybackBackend? Player { get; set; }
