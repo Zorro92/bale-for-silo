@@ -89,7 +89,7 @@ namespace Bale.Xbox.Services;
 ///   POST /dav1d-path?mode=zerocopy  d3d11|zerocopy (old D3D12/GPU grain path); next playback attempt
 ///   GET  /av1-decoder     memory-only software AV1 decoder; debug default rav1g; rav1g.dll packaged?
 ///   GET  /rav1g-tune      memory-only rav1g provider knobs (fork bale.52): inflight, perf, parse; rav1g route only
-///   POST /rav1g-tune?inflight=3&perf=on&parse=2  1-8 | on/off | 1-2, each also "default"; next rav1g playback attempt
+///   POST /rav1g-tune?inflight=3&perf=on&parse=2&display=off  1-8 | on/frames/off | 1-2 | on/off, each also "default"; next rav1g playback attempt
 ///   POST /av1-decoder?mode=rav1g  dav1d|rav1g (fork GpuDecoderSampleProvider, bale_av1_decoder=1); next playback attempt;
 ///                                 rav1g also starts bale_rav1g_prewarm (device + pipeline compiles) off the UI thread
 ///   GET  /stream-adapter  memory-only media stream switch; default rust
@@ -570,15 +570,15 @@ internal sealed partial class DebugServer
 
             case ("GET", "/rav1g-tune"):
                 if (query.Count != 0)
-                    return ("400 Bad Request", "usage: GET /rav1g-tune or POST /rav1g-tune?inflight={1-8|default}&perf={on|off|default}&parse={1|2|default}&outtex={0-64|default}&images={0-16|default}\n");
+                    return ("400 Bad Request", "usage: GET /rav1g-tune or POST /rav1g-tune?inflight={1-8|default}&perf={on|off|default}&parse={1|2|default}&outtex={0-64|default}&images={0-16|default}&display={on|off|default}\n");
                 return ("200 OK", DebugRav1gTuning.Describe() + "\n");
 
             case ("POST", "/rav1g-tune"):
-                if (query.Count == 0 || query.Keys.Any(key => key is not ("inflight" or "perf" or "parse" or "outtex" or "images")))
-                    return ("400 Bad Request", "keys: inflight=1-8, perf=on|off, parse=1|2, outtex=0-64, images=0-16 (each also default)\n");
+                if (query.Count == 0 || query.Keys.Any(key => key is not ("inflight" or "perf" or "parse" or "outtex" or "images" or "display")))
+                    return ("400 Bad Request", "keys: inflight=1-8, perf=on|frames|off, parse=1|2, outtex=0-64, images=0-16, display=on|off (each also default)\n");
                 foreach (var (key, value) in query)
                     if (!DebugRav1gTuning.TrySet(key, value))
-                        return ("400 Bad Request", $"bad value for {key}; inflight=1-8, perf=on|off, parse=1|2, outtex=0-64, images=0-16 (each also default)\n");
+                        return ("400 Bad Request", $"bad value for {key}; inflight=1-8, perf=on|frames|off, parse=1|2, outtex=0-64, images=0-16, display=on|off (each also default)\n");
                 Log.Info($"Debug {DebugRav1gTuning.Describe()}; applies to the next rav1g playback attempt");
                 return ("200 OK", DebugRav1gTuning.Describe() + "\n");
 

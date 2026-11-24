@@ -51,5 +51,8 @@ public sealed class DebugRav1gTuningTests
         Assert.True(DebugRav1gTuning.TrySet("display", "default"));
         var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "FfmpegSource.cs.txt"));
         Assert.Contains("config.FFmpegOptions[\"bale_rav1g_display\"] = \"1\";", source);
+        // The debug endpoint must accept the key (it keeps its own key list).
+        var server = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "DebugServer.cs.txt"));
+        Assert.Contains("key is not (\"inflight\" or \"perf\" or \"parse\" or \"outtex\" or \"images\" or \"display\")", server);
     }
 }
