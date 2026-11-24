@@ -253,9 +253,12 @@ to the output pixel, so stills don't shimmer). Owner asked for these to be on th
   GPU reduction pass and is a later option only if the HDR GPU budget allows.
 - [ ] **Cubic chroma upsampling** (Catmull-Rom class) of the input chroma: xav part 2 (see part 1 above).
   MPC-VR offers nearest / bilinear / Catmull-Rom with chroma siting.
-- [ ] **Check deinterlacing on the FFmpeg routes.** Interlaced sources (1080i, MPEG-2, VC-1) that take the
-  d3d11va + stage or software routes may reach the stage without deinterlacing; MPC-VR deinterlaces in the
-  video processor (and blends in its shader path). Correctness first: find out what happens today.
+- [x] **Check deinterlacing on the FFmpeg routes** (2026-11-24, console). 20 s 1080i (top field first) H.264 and
+  MPEG-2 clips made from the open test set, played on a 1080p display with `ffmpeg-tune decoder=default|auto|software`
+  (system decoder, FFmpeg D3D11, FFmpeg software): no combing on moving edges in any console capture, while the raw
+  woven frame shows it. The fork marks interlaced samples (MFSampleExtension_Interlaced, field order) and Media
+  Foundation's processor deinterlaces them. Not covered: interlaced sources through the stage (HDR, or larger than
+  the display), which practically don't exist.
 - [ ] **SDR display brightness setting** (`target_white_nits`, today fixed 100), a user setting for
   brighter or dimmer SDR TVs. Cheap.
 - [ ] **Possibility: Dolby Vision tone mapping** (MPC-VR maps profiles 5, 8.1 and 8.4 with the DV dynamic
