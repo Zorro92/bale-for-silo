@@ -1409,6 +1409,24 @@ public class DebugPlaytestScriptTests
     }
 
     [Fact]
+    public async Task AudioProbeIsAPlainGetAndTakesNoArguments()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["audio-probe"], "Summary: bitstream accepted: none\n");
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("http://debug.invalid:8790/audio-probe\n", result.Arguments);
+        Assert.Contains("--max-time\n15\n", result.Arguments);
+        Assert.DoesNotContain("POST", result.Arguments);
+        Assert.Contains("Summary: bitstream accepted: none", result.Output);
+        foreach (var args in new[] { new[] { "audio-probe", "now" }, ["audio-probe", "only=ac3"] })
+        {
+            var invalid = await RunAsync(args);
+            Assert.Equal(2, invalid.ExitCode);
+            Assert.Empty(invalid.Arguments);
+        }
+    }
+
+    [Fact]
     public async Task InvalidMemprobeArgumentsNeverInvokeCurl()
     {
         if (!OperatingSystem.IsLinux()) return;

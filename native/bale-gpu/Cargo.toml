@@ -23,6 +23,8 @@ version = "0.62.2"
 features = [
     "Foundation",
     "Media_Core",
+    # Debug audio passthrough probe: MediaDevice's default render id (audio_probe.rs).
+    "Media_Devices",
     "Media_Playback",
     "Media_MediaProperties",
     "Win32_Foundation",
@@ -33,6 +35,8 @@ features = [
     "Win32_Graphics_Direct3D12",
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Dxgi_Common",
+    # Debug audio passthrough probe: IAudioClient. mmdevapi.dll is loaded by the caller, never imported.
+    "Win32_Media_Audio",
     "Win32_Media_MediaFoundation",
     # Zero-copy repack: D3D12/DXGI shared handles and events take SECURITY_ATTRIBUTES.
     "Win32_Security",

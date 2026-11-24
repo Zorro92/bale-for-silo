@@ -89,6 +89,9 @@
 #   scripts/bale-debug.sh key i                 player: toggle stats (same as press view); where includes counters even when hidden
 #   scripts/bale-debug.sh caps [section]        installed decoders, GPU decode profiles, display modes, platform, audio mix and baseline
 #                                               (section: video, gpu, audio, display, platform, device or graph)
+#   scripts/bale-debug.sh audio-probe           audio passthrough probe: exclusive-mode IsFormatSupported for each IEC 61937 bitstream
+#                                               (AC-3, E-AC-3, DTS, DTS-HD, TrueHD/MAT) and PCM format, the shared mix format and spatial audio;
+#                                               never initializes the endpoint, so it is safe during playback (docs/audio-passthrough.md)
 #   scripts/bale-debug.sh playtest <url> [seconds]  muted public http(s) stream probe (1–10 s, default 3)
 #   timeout 300 scripts/bale-debug.sh playtest suite [seconds]  Chromium samples, one at a time
 #                                               (the whole suite needs more than the usual timeout 20)
@@ -408,6 +411,13 @@ case "${1:-}" in
     fi
     ;;
   caps) curl -fsS --max-time 18 -G "$BASE/caps" ${2:+--data-urlencode "only=$2"} ;;
+  audio-probe)
+    if [[ "$#" -ne 1 ]]; then
+      echo 'usage: scripts/bale-debug.sh audio-probe' >&2
+      exit 2
+    fi
+    curl --fail-with-body -sS --max-time 15 "$BASE/audio-probe"
+    ;;
   ffmpeg)
     if [[ "$#" != 2 || ! "${2:-}" =~ ^(policy|direct|off)$ ]]; then
       echo 'usage: scripts/bale-debug.sh ffmpeg {policy|direct|off}' >&2

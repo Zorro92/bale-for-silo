@@ -374,6 +374,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect bale_gpu.dll dependents' }
           $dependents
           if ($dependents -match '(?i)vcruntime140(?:_\d+)?d?\.dll|msvcp140(?:_\d+)?d?\.dll|ucrtbased?\.dll') { throw 'bale_gpu.dll must link the CRT statically' }
+          # The debug audio probe gets ActivateAudioInterfaceAsync from the module the app loads (audio_probe.rs):
+          # an import would make every build of bale_gpu.dll fail to load wherever mmdevapi.dll is missing.
+          if ($dependents -match '(?i)mmdevapi\.dll') { throw 'bale_gpu.dll must not import mmdevapi.dll' }
 
       # Rust port of Bale.Core's logic (native/bale-core): serde only, so built every run without a cache.
       - name: Build Rust core logic
@@ -513,7 +516,7 @@ jobs:
               'bale_grain_gpu_create', 'bale_grain_gpu_apply', 'bale_grain_gpu_destroy', 'bale_grain_gpu_probe',
               'bale_zc_abi_version', 'bale_zc_register_d3d12', 'bale_zc_create', 'bale_zc_alloc', 'bale_zc_release',
               'bale_zc_repack', 'bale_zc_repack_into', 'bale_zc_repack_into_bits', 'bale_zc_stats', 'bale_zc_destroy',
-              'bale_gpu_abi_version', 'bale_gpu_std_probe', 'bale_gpu_d3d11_probe',
+              'bale_gpu_abi_version', 'bale_gpu_std_probe', 'bale_gpu_d3d11_probe', 'bale_gpu_audio_probe',
               'bale_mem_abi_version', 'bale_mem_account', 'bale_mem_snapshot', 'bale_mem_reset_peaks', 'bale_mem_underflows',
               'bale_gpu_lifecycle_abi_version', 'bale_gpu_trim', 'bale_gpu_trimmed_count',
               'bale_gpu_device_count', 'bale_gpu_device_release_counts', 'bale_tonemap_debug_churn',

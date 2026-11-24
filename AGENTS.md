@@ -147,6 +147,7 @@ python3 -I scripts/serve-media.py ./test-clips --port 8765  # read-only HTTP ran
 ./scripts/bale-debug.sh wait --timeout 12000 text "Clear filters"  # 0–15000 ms; HTTP 408 keeps the where body
 ./scripts/bale-debug.sh caps                  # installed decoders, display modes, audio mix and baseline
 ./scripts/bale-debug.sh caps gpu              # D3D11 decode; D3D12 app-mode adapters/compute, game mode and console model
+./scripts/bale-debug.sh audio-probe           # IEC 61937 bitstream/PCM formats the audio endpoint takes in exclusive mode now (IsFormatSupported only; docs/audio-passthrough.md)
 ./scripts/bale-debug.sh playtest "https://example.org/public.mp4" 3  # muted built-in-player probe; 1–10 s (default 3)
 timeout 300 ./scripts/bale-debug.sh playtest suite 3  # Chromium codec samples, sequential; needs a larger outer timeout
 ./scripts/bale-debug.sh playtest-ffmpeg @/tmp/x 30 software  # debug FFmpegInteropX; URL, @file or suite; 1–60 s; auto|software|system

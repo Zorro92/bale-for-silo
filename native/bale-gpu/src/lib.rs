@@ -2,11 +2,13 @@
 //! narrow C ABI: the zero-copy software AV1 repack (`d3d12_repack`, zero-copy ABI), GPU film
 //! grain ([`grain`], grain ABI), the debug frame observer (`frames`), and debug loader/engine
 //! probes (`bale_gpu_*`, this file and `engine`), the subtitle overlay ([`subs`], subtitle ABI,
-//! `bale_sub_*` in this file, with the bitmap ABI `bale_sub_bitmap_*` for image subtitles) and the
-//! debug libass subtitle probes (`ass`).
+//! `bale_sub_*` in this file, with the bitmap ABI `bale_sub_bitmap_*` for image subtitles), the
+//! debug libass subtitle probes (`ass`) and the debug audio passthrough probe ([`audio_probe`],
+//! `bale_gpu_audio_probe`).
 
 #[cfg(windows)]
 mod ass;
+pub mod audio_probe;
 #[cfg(windows)]
 mod d3d12;
 #[cfg(windows)]
