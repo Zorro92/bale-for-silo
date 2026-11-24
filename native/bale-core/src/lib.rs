@@ -29,6 +29,7 @@ pub mod hardware;
 pub mod hls;
 pub mod http;
 pub mod http_probe;
+pub mod iec61937;
 pub mod language;
 pub mod meters;
 pub mod models;

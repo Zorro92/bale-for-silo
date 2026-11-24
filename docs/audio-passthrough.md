@@ -6,6 +6,23 @@ Passthrough means handing a receiver the encoded stream as an IEC 61937 bitstrea
 console's "Allow passthrough" setting for media apps (since May 2021) and an audio endpoint that takes the
 format in exclusive mode. Nothing here has been measured on the console yet; the owner has no receiver so far.
 
+## Plan (owner, 2026-11-24: "get as much of the plumbing in as possible to future proof")
+
+1. **Lossless decode to PCM** for TrueHD and DTS-HD MA: in place (FFmpeg decode, `software_decode.rs`, up to 8 channels).
+2. **Capability probe:** below.
+3. **IEC 61937 packers:** below.
+4. **AC-3/E-AC-3 passthrough through Media Foundation** with the console's "Allow passthrough" (the route Plex and
+   Disney+ use): to check with the owner at the TV (guide indicator).
+5. **Bale's own exclusive-mode WASAPI output** fed by the packers, with the video following its audio clock, behind
+   a debug switch; provable with AC-3 into a TV, TrueHD/DTS-HD then wait for a receiver.
+6. **Claims:** `audio_passthrough_codecs` only from probe evidence.
+
+References read (never copied): VLC `winstore.c`, `wasapi.c`, `tospdif.c` (LGPL 2.1+); Google Cobalt
+`starboard/shared/uwp` (Apache-2.0; AC-3/E-AC-3 only, audio clock, seek and preroll handling); FFmpeg `spdifenc`
+(LGPL); Microsoft's "Representing Formats for IEC 61937 Transmissions". Kodi (GPL) is not read. Real-app
+behaviour (Plex forum): passthrough only on direct play; A/V desync after start and stutter at high bitrates are the
+known hard parts.
+
 ## Capability probe
 
 `scripts/bale-debug.sh audio-probe` (debug builds only: `GET /audio-probe`) answers one question: which encoded
@@ -106,3 +123,58 @@ console bitstreams its own mix; it is context, not evidence that an app's bitstr
 Worth running: once without a receiver (the TV alone), with "Allow passthrough" off and on, and again when a
 receiver is connected. The accepted layout decides how the IEC 61937 packers' output will be handed to the
 endpoint.
+
+## IEC 61937 packers
+
+`native/bale-core/src/iec61937.rs` (pure Rust, tested on Linux) wraps compressed access units in the
+IEC 61937 bitstream a receiver decodes: the bytes a WASAPI exclusive-mode client writes as 16-bit
+little-endian PCM in a `WAVEFORMATEXTENSIBLE_IEC61937` format. Nothing calls it yet: no renderer, no C
+ABI, no capability claim.
+
+| Format | Packer | Burst (IEC 61937 data type) | Carrier, 16-bit | `KSDATAFORMAT_SUBTYPE_…` | Carrier frames a burst |
+|---|---|---|---|---|---|
+| AC-3 | `Ac3Packer` | -3 type 1: one sync frame | 2 ch at the stream rate (48 kHz) | `IEC61937_DOLBY_DIGITAL` | 1536 |
+| E-AC-3, Atmos included | `Eac3Packer` | -3 type 21: frames for six audio blocks (1536 samples) | 2 ch at 4× the stream rate (192 kHz) | `IEC61937_DOLBY_DIGITAL_PLUS` | 6144 |
+| DTS core | `DtsPacker` | -5 types 11/12/13 by 512/1024/2048 samples; a DTS-HD extension is dropped | 2 ch at the core rate (48 kHz) | `IEC61937_DTS` | 512/1024/2048 |
+| DTS-HD MA/HRA | `DtsHdPacker` (`DtsHdLink::HighBitrate`) | -5 type 17: 12-byte DTS-HD header, core, extension | 8 ch at 4× the core rate (192 kHz, HBR) | `IEC61937_DTS_HD` | 2048 for a 512-sample core |
+| TrueHD / MLP, Atmos included | `TrueHdPacker` | -9 type 22: one MAT frame, 24 access units | 8 ch at 192 kHz (176.4 kHz for 44.1 kHz streams) | `IEC61937_DOLBY_MLP` | 3840 |
+
+Use: `Format::carrier(sample_rate)` gives the device format from the demuxer's rate before the first
+unit; `push(unit)` takes one access unit as FFmpeg's demuxer delivers it and returns the bursts it
+completed (`Burst { data, frames, carrier }`); `reset()` on a seek or discontinuity; `flush()` at the end
+of the stream. A rejected unit returns an `Error` and changes nothing. Every burst plays for
+`frames / carrier.sample_rate`, so the audio clock is the carrier frames written since the last reset
+plus the timestamp of the first unit pushed after it. `DtsHdLink::Stereo` (2 ch at 192 kHz) exists for
+links without HBR; DTS-HD frames that don't fit it fall back to the core for a minute, as FFmpeg does.
+
+Sized for docs/resource-budget.md's audio line (< 0.25 core, ~20 MiB): a packer holds at most one MAT
+frame (60 KiB) or one E-AC-3 burst's frames (24 KiB), and each burst is one allocation of its period
+(at most 64 KiB, 43 ms of audio at the longest). Work is one copy and byte swap per output byte, at
+most 3.1 MB/s (HBR), on the CPU; nothing needs the GPU.
+
+**Verification.** `native/bale-core/tests/iec61937_golden.rs` compares every packer with FFmpeg 9.0.2's
+`spdif` muxer byte for byte; the fixtures and how they were made are in
+`native/bale-core/tests/fixtures/iec61937/README.md`. Byte-identical on every fixture:
+
+- AC-3 (48 and 44.1 kHz), E-AC-3 (6-block from FFmpeg's encoder; synthetic 1-block 7.1 with dependent
+  frames and 3-block), DTS core (types I-III, 16-bit big- and little-endian, 14-bit both ways, a
+  no-preamble DTS CD-style stream, core taken from DTS-HD), TrueHD (48 and 96 kHz), MLP, and TrueHD
+  with timing jumps: real FFmpeg encodes except where marked synthetic.
+- DTS-HD over HBR (`-dtshd_rate 768000`) and over the stereo link (`-dtshd_rate 192000`, with the
+  core-only fallback): synthetic, since no DTS-HD clip exists locally and FFmpeg can't encode one. The
+  cores are real, the extension substreams have real headers and filler, so the IEC 61937-5 framing is
+  checked exactly but no real Master Audio stream was packed.
+
+Unit tests cover what fixtures can't: errors, AC-3 frame sizes at every rate, the DTS-HD fallback's
+length, TrueHD units landing on their 2560-byte slots, reset and flush.
+
+Where the standards leave room, FFmpeg's choice is kept: Pd rounding, the DTS-HD Pd alignment
+(`Pd % 16 == 8`), the MAT code positions and TrueHD's padding limit (half a frame). Where FFmpeg's
+demuxers never produce the input, the packers do more than its muxer: a unit holding several frames is
+split and trailing bytes after the last whole frame are dropped; E-AC-3 counts program 0's audio blocks
+(FFmpeg counts units by the first frame's block count, the same for every real stream); TrueHD units
+under 10 bytes are accepted; `flush` sends the partly filled E-AC-3 burst or MAT frame (FFmpeg drops it).
+Rates IEC 61937 doesn't carry (below 32 kHz, E-AC-3's reduced rates) are refused.
+
+Open: the renderer (WASAPI exclusive mode or Media Foundation's audio renderer with these subtypes),
+receiver capability checks, a C ABI, and verification on a real receiver.
