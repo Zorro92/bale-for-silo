@@ -31,10 +31,39 @@ public static class PlaybackUpNext
 }
 
 /// <summary>
-/// TvPlayerViewModel.kt's Up Next surface. Raised when playback crosses the credits start (never by a
-/// resume or seek that lands inside them) with a countdown that mirrors the remaining playback, so the
-/// advance waits for the stream to end; or raised at the end with a 10 s wall-clock countdown. With
-/// auto-play off it shows without a countdown and never advances by itself.
+/// When the Up Next card opens before an episode ends (Android e580e1811, shared NextUpPrompt.kt):
+/// <c>playback.next_up_prompt_seconds</c> before the end of the file, as on iOS/tvOS. Credits markers
+/// do not move this point.
+/// </summary>
+public static class NextUpPrompt
+{
+    /// <summary>The manifest's default, which the TV apps also assume before a read (TvSettingsViewModel.kt).</summary>
+    public const int DefaultSeconds = 30;
+
+    /// <summary>The contract's range is 0–120 s; Apple clamps a stored value to it (PlayerSettings.swift).</summary>
+    public const int MaxSeconds = 120;
+
+    public static int Clamp(long seconds) => (int)Math.Clamp(seconds, 0, MaxSeconds);
+
+    /// <summary>
+    /// True when playback moves from <paramref name="previous"/> to <paramref name="position"/> across the
+    /// point <paramref name="promptSeconds"/> before <paramref name="duration"/>. Only the crossing counts, so
+    /// resuming or seeking past that point doesn't open the card. 0 ("At end") or an unknown duration never
+    /// opens it early; the card then waits for the stream to end.
+    /// </summary>
+    public static bool CrossesPromptPoint(double previous, double position, double? duration, int promptSeconds)
+    {
+        if (promptSeconds <= 0 || duration is not (> 0 and var end) || !double.IsFinite(end)) return false;
+        var promptStart = end - promptSeconds;
+        return previous < promptStart && position >= promptStart;
+    }
+}
+
+/// <summary>
+/// TvPlayerViewModel.kt's Up Next surface. Raised when playback crosses the prompt point
+/// (<see cref="NextUpPrompt"/>; never by a resume or seek that lands past it) with a countdown that mirrors
+/// the remaining playback, so the advance waits for the stream to end; or raised at the end with a 10 s
+/// wall-clock countdown. With auto-play off it shows without a countdown and never advances by itself.
 /// </summary>
 public enum UpNextEnd
 {
@@ -58,7 +87,7 @@ public sealed class PlaybackUpNextState(bool autoPlay = true)
 
     /// <summary>
     /// The setting changed (or its first read arrived). Off stops a running countdown; on starts one on a
-    /// card already showing (the 10 s end countdown from now, or the credits countdown to the end).
+    /// card already showing (the 10 s end countdown from now, or the before-end countdown to the end).
     /// </summary>
     public void SetAutoPlay(bool value, long nowMs, double position, double? duration)
     {
@@ -102,22 +131,28 @@ public sealed class PlaybackUpNextState(bool autoPlay = true)
     /// <summary>
     /// The episode reached its credits or its end (Android e727c9af5): the series page moves on to the next
     /// episode when the player closes. Recorded before the card's once-per-item guard, so an Up Next opened by hand
-    /// (or kept watching) still counts a later credits crossing; a seek that lands in the credits counts too.
+    /// (or kept watching) still counts a later credits crossing; a seek that lands in the credits counts too. The
+    /// card opening at the prompt point does not count: the story can still be playing (Android e580e1811).
     /// </summary>
     public bool Finished { get; private set; }
 
-    /// <summary>Raised at the end of the stream (wall clock) rather than at the credits.</summary>
+    /// <summary>Raised at the end of the stream (wall clock) rather than at the prompt point.</summary>
     public bool VideoEnded { get; private set; }
 
     /// <summary>Seconds left on the countdown; null when there is none.</summary>
     public int? Countdown { get; private set; }
 
-    /// <summary>A sampled position. True when this sample raised the card.</summary>
-    public bool OnPosition(double previous, double current, double? duration, double? creditsStart, bool seeking)
+    /// <summary>
+    /// A sampled position. True when this sample raised the card: playback crossed
+    /// <paramref name="promptSeconds"/> before the end (<see cref="NextUpPrompt.CrossesPromptPoint"/>). The credits
+    /// marker only records <see cref="Finished"/>; it no longer moves the card (Android e580e1811).
+    /// </summary>
+    public bool OnPosition(double previous, double current, double? duration, double? creditsStart, int promptSeconds, bool seeking)
     {
         if (!seeking && creditsStart is { } credits && double.IsFinite(credits) && credits > 0 && current >= credits) Finished = true;
-        if (_handled || seeking || creditsStart is not { } start || !double.IsFinite(start) || start <= 0) return false;
-        if (!(previous < start && current >= start)) return false;
+        // A card opened by hand (or already raised or hidden) is left alone: the crossing never starts a countdown
+        // on it. The end still does (OnEnded).
+        if (_handled || seeking || !NextUpPrompt.CrossesPromptPoint(previous, current, duration, promptSeconds)) return false;
         _handled = true;
         Visible = true;
         Countdown = AutoPlay && duration is { } end ? (int)Math.Ceiling(Math.Max(0, end - current)) : null;
@@ -125,7 +160,7 @@ public sealed class PlaybackUpNextState(bool autoPlay = true)
     }
 
     /// <summary>
-    /// The stream ended: a credits card's countdown advances; a card the viewer hid leaves; otherwise the
+    /// The stream ended: a before-end card's countdown advances; a card the viewer hid leaves; otherwise the
     /// card shows with a 10 s countdown (none with auto-play off) and waits for the viewer.
     /// </summary>
     public UpNextEnd OnEnded(long nowMs)

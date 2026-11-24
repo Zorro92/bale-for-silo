@@ -1,6 +1,7 @@
 using Bale.Core.Api;
 using Bale.Core.Api.Api.V2.Settings.Values.Item;
 using Bale.Core.Api.Models;
+using Bale.Core.Playback;
 using Microsoft.Kiota.Abstractions.Serialization;
 
 namespace Bale.Core.Settings;
@@ -10,6 +11,12 @@ namespace Bale.Core.Settings;
 /// <param name="DeviceOverride">True when this device stores its own value (scope profile_device).</param>
 /// <param name="Known">False until a read succeeded; <paramref name="Value"/> is then the default.</param>
 public sealed record BooleanSetting(bool Value, bool DeviceOverride = false, bool Known = false);
+
+/// <summary>An integer setting as the server resolves it for this profile and device.</summary>
+/// <param name="Value">The effective value.</param>
+/// <param name="DeviceOverride">True when this device stores its own value (scope profile_device).</param>
+/// <param name="Known">False until a read succeeded; <paramref name="Value"/> is then the default.</param>
+public sealed record IntegerSetting(int Value, bool DeviceOverride = false, bool Known = false);
 
 /// <summary><c>playback.buffering_quality_mode</c> as the server resolves it for this profile and device.</summary>
 /// <param name="Value">The effective mode; the default (<c>always</c>) before a read or on a server without the setting.</param>
@@ -36,18 +43,27 @@ public interface ISettingsMemory
 public sealed class PlaybackSettingsFeed(SiloApiClient api)
 {
     public const string AutoPlayNextKey = "playback.auto_play_next";
+    public const string NextUpPromptSecondsKey = "playback.next_up_prompt_seconds";
     public const string BufferingQualityModeKey = BufferingQualityModes.Key;
     public const string DeviceScope = "profile_device";
 
     private readonly object _sync = new();
     private readonly Func<string?>? _scope;
     private BooleanSetting _autoPlayNext = new(true);
+    private IntegerSetting _nextUpPromptSeconds = new(NextUpPrompt.DefaultSeconds);
     private BufferingQualitySetting _bufferingQuality = new();
     private bool _bufferingRead;
     private int _generation;
 
     /// <summary>Last known auto-play value; defaults to on (the server's default) before a read.</summary>
     public BooleanSetting AutoPlayNext { get { lock (_sync) return _autoPlayNext; } }
+
+    /// <summary>
+    /// Last known Show Next Up lead: seconds before the end of the file the Up Next card opens (0 = only at the end).
+    /// Defaults to 30 before a read, as the TV apps' settings stores do (TvPlayerViewModel.kt nextUpPromptSeconds,
+    /// PlayerSettings.swift). Read with auto-play: both keys came with the first settings manifest.
+    /// </summary>
+    public IntegerSetting NextUpPromptSeconds { get { lock (_sync) return _nextUpPromptSeconds; } }
 
     /// <summary>
     /// Device-local memory of the last buffering-quality mode seen per server and profile, so a start before the
@@ -101,15 +117,16 @@ public sealed class PlaybackSettingsFeed(SiloApiClient api)
         {
             _generation++;
             _autoPlayNext = new(true);
+            _nextUpPromptSeconds = new(NextUpPrompt.DefaultSeconds);
             _bufferingQuality = new();
             _bufferingRead = false;
         }
     }
 
     /// <summary>
-    /// Reads the effective values of auto-play and the buffering-quality mode; a failed read keeps the last
-    /// known values. A server whose manifest lacks the mode answers 404 for the whole read, so that is retried
-    /// with auto-play alone and the mode marked unsupported.
+    /// Reads the effective values of auto-play, the Show Next Up lead and the buffering-quality mode; a failed
+    /// read keeps the last known values. A server whose manifest lacks the mode answers 404 for the whole read,
+    /// so that is retried without it and the mode marked unsupported.
     /// </summary>
     public async Task<BooleanSetting> RefreshAsync(CancellationToken cancellationToken = default)
     {
@@ -119,17 +136,21 @@ public sealed class PlaybackSettingsFeed(SiloApiClient api)
         try
         {
             collection = await api.Api.V2.Settings.Values.Effective.GetAsync(
-                c => c.QueryParameters.Keys = [AutoPlayNextKey, BufferingQualityModeKey], cancellationToken).ConfigureAwait(false);
+                c => c.QueryParameters.Keys = [AutoPlayNextKey, NextUpPromptSecondsKey, BufferingQualityModeKey],
+                cancellationToken).ConfigureAwait(false);
         }
         catch (Problem problem) when (problem.ResponseStatusCode == 404)
         {
             supported = false;
             collection = await api.Api.V2.Settings.Values.Effective.GetAsync(
-                c => c.QueryParameters.Keys = [AutoPlayNextKey], cancellationToken).ConfigureAwait(false);
+                c => c.QueryParameters.Keys = [AutoPlayNextKey, NextUpPromptSecondsKey], cancellationToken).ConfigureAwait(false);
         }
         var row = collection?.Items?.FirstOrDefault(item => item.Key == AutoPlayNextKey);
         var setting = row is null ? new BooleanSetting(true, Known: true)
             : new BooleanSetting(Boolean(row.Value) ?? true, row.Scope == DeviceScope, true);
+        var promptRow = collection?.Items?.FirstOrDefault(item => item.Key == NextUpPromptSecondsKey);
+        var prompt = new IntegerSetting(Integer(promptRow?.Value) is { } seconds ? NextUpPrompt.Clamp(seconds) : NextUpPrompt.DefaultSeconds,
+            promptRow?.Scope == DeviceScope, true);
         var modeRow = supported ? collection?.Items?.FirstOrDefault(item => item.Key == BufferingQualityModeKey) : null;
         var mode = supported
             ? new BufferingQualitySetting(BufferingQualityModes.FromWire(Text(modeRow?.Value)) ?? BufferingQualityModes.Default,
@@ -139,6 +160,7 @@ public sealed class PlaybackSettingsFeed(SiloApiClient api)
         {
             if (generation == _generation)
             {
+                _nextUpPromptSeconds = prompt;
                 _bufferingQuality = mode;
                 _bufferingRead = true;
                 Remember(mode);
@@ -202,6 +224,21 @@ public sealed class PlaybackSettingsFeed(SiloApiClient api)
     };
 
     internal static string? Text(UntypedNode? node) => node is UntypedString text ? text.GetValue() : null;
+
+    /// <summary>
+    /// A whole number: the JSON parser types one as an integer or long, and <c>30.0</c> as a decimal. A fraction
+    /// or anything else is not one.
+    /// </summary>
+    internal static long? Integer(UntypedNode? node) => node switch
+    {
+        UntypedInteger value => value.GetValue(),
+        UntypedLong value => value.GetValue(),
+        UntypedDecimal value when decimal.Truncate(value.GetValue()) == value.GetValue() =>
+            (long)Math.Clamp(value.GetValue(), long.MinValue, long.MaxValue),
+        UntypedString text when long.TryParse(text.GetValue(), System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture, out var parsed) => parsed,
+        _ => null,
+    };
 
     /// <summary>Tests: adopt a mode without a read.</summary>
     internal void StoreBufferingQuality(BufferingQualitySetting setting)

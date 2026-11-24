@@ -306,7 +306,7 @@
         </ScrollViewer>
       </StackPanel>
     </Border>
-    <!-- Up Next (TvPlayerViewModel.kt showNextUp): raised at the credits or at the end, Play Now focused. -->
+    <!-- Up Next (TvPlayerViewModel.kt showNextUp): raised at the Show Next Up point before the end or at the end, Play Now focused. -->
     <Border x:Name="UpNextCard" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,48,26"
             Width="340" Padding="14" CornerRadius="14" Background="#F3131417" BorderBrush="#1AFFFFFF" BorderThickness="1">
       <StackPanel Spacing="10">

@@ -47,6 +47,43 @@ public class PlaybackSettingsFeedTests
     }
 
     [Fact]
+    public async Task ReadsTheShowNextUpLeadWithAutoPlay()
+    {
+        // playback.next_up_prompt_seconds: integer 0–120, default 30 (settings manifest; Android e580e1811).
+        var handler = new StubHandler()
+            .Enqueue("""{"items":[{"key":"playback.next_up_prompt_seconds","value":10,"scope":"profile_device","source":"stored"}],"revision":3}""")
+            .Enqueue("""{"items":[{"key":"playback.next_up_prompt_seconds","value":0,"scope":"profile","source":"stored"}],"revision":4}""")
+            .Enqueue("""{"items":[{"key":"playback.next_up_prompt_seconds","value":300,"scope":"profile"}],"revision":5}""")
+            .Enqueue("""{"items":[{"key":"playback.next_up_prompt_seconds","value":"45","scope":"profile"}],"revision":6}""")
+            .Enqueue("""{"items":[{"key":"playback.next_up_prompt_seconds","value":12.5,"scope":"profile"}],"revision":7}""")
+            .Enqueue("""{"items":[],"revision":8}""")
+            .Enqueue("""{"items":[{"key":"playback.next_up_prompt_seconds","value":60,"scope":"profile"}],"revision":9}""")
+            .Enqueue(HttpStatusCode.InternalServerError, """{"detail":"No"}""");
+        using var connection = Connect(handler);
+        var feed = new PlaybackSettingsFeed(connection.Api);
+        Assert.Equal(new IntegerSetting(30), feed.NextUpPromptSeconds);
+        await feed.RefreshAsync();
+        Assert.Equal(new IntegerSetting(10, true, true), feed.NextUpPromptSeconds);
+        Assert.Contains("keys=playback.next_up_prompt_seconds", handler.Requests[0].RequestUri!.Query);
+        await feed.RefreshAsync();
+        Assert.Equal(new IntegerSetting(0, false, true), feed.NextUpPromptSeconds);
+        await feed.RefreshAsync();
+        Assert.Equal(new IntegerSetting(120, false, true), feed.NextUpPromptSeconds);
+        await feed.RefreshAsync();
+        Assert.Equal(new IntegerSetting(45, false, true), feed.NextUpPromptSeconds);
+        await feed.RefreshAsync();
+        Assert.Equal(new IntegerSetting(30, false, true), feed.NextUpPromptSeconds);
+        await feed.RefreshAsync();
+        Assert.Equal(new IntegerSetting(30, false, true), feed.NextUpPromptSeconds);
+        // A failed read keeps the last value; Reset (a profile switch) drops it.
+        await feed.RefreshAsync();
+        await Assert.ThrowsAnyAsync<Exception>(() => feed.RefreshAsync());
+        Assert.Equal(new IntegerSetting(60, false, true), feed.NextUpPromptSeconds);
+        feed.Reset();
+        Assert.Equal(new IntegerSetting(30), feed.NextUpPromptSeconds);
+    }
+
+    [Fact]
     public async Task AFailedReadKeepsTheLastValueAndResetDropsIt()
     {
         var handler = new StubHandler()
@@ -139,6 +176,8 @@ public class BufferingQualitySettingTests
         Assert.Equal(new BooleanSetting(false, false, true), await feed.RefreshAsync());
         Assert.Equal(new BufferingQualitySetting(), feed.BufferingQuality);
         Assert.DoesNotContain("buffering_quality_mode", handler.Requests[1].RequestUri!.Query);
+        // The Show Next Up lead came with the first settings manifest, as auto-play did, so the retry keeps it.
+        Assert.Contains("keys=playback.next_up_prompt_seconds", handler.Requests[1].RequestUri!.Query);
     }
 
     [Fact]

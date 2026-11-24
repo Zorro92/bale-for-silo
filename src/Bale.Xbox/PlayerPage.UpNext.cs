@@ -8,8 +8,10 @@ namespace Bale.Xbox;
 
 /// <summary>
 /// Up Next for episodes (TvPlayerViewModel.kt): the next episode is resolved in the background once
-/// playback starts; crossing the credits (or reaching the end) raises the card, and its countdown
-/// plays the next episode in a fresh player that replaces this one, so Back still returns to Detail.
+/// playback starts; crossing <c>playback.next_up_prompt_seconds</c> before the end of the file (or reaching
+/// the end) raises the card, and its countdown plays the next episode in a fresh player that replaces this
+/// one, so Back still returns to Detail. The credits marker only records the series-page return
+/// (Android e580e1811).
 /// </summary>
 public sealed partial class PlayerPage
 {
@@ -52,7 +54,7 @@ public sealed partial class PlayerPage
         catch (Exception ex) { LogFailure("up next", ex); }
     }
 
-    /// <summary>OnTick: start resolving the next episode, raise the card at the credits, run its countdown.</summary>
+    /// <summary>OnTick: start resolving the next episode, raise the card at the prompt point, run its countdown.</summary>
     private void UpdateUpNext()
     {
         try
@@ -72,8 +74,11 @@ public sealed partial class PlayerPage
             var position = SourcePosition(attempt);
             var fileId = attempt.Plan?.Source?.MediaFileId ?? attempt.Start?.FileId;
             var credits = attempt.Request.Detail.Versions.FirstOrDefault(version => version.FileId == fileId)?.Credits?.Start;
+            // Read every sample, as TvPlayerViewModel.kt reads nextUpPromptSeconds.value: the refresh below may land
+            // (or another device may change it) while this episode plays.
+            var promptSeconds = attempt.Client.Settings.NextUpPromptSeconds.Value;
             if (!double.IsNaN(_lastUpNextPosition)
-                && _upNext.OnPosition(_lastUpNextPosition, position, _duration, credits, _seeking || _skipProcessing))
+                && _upNext.OnPosition(_lastUpNextPosition, position, _duration, credits, promptSeconds, _seeking || _skipProcessing))
                 ShowUpNextCard();
             _lastUpNextPosition = position;
             if (_upNext.Tick(Environment.TickCount64, position, _duration))
@@ -115,7 +120,10 @@ public sealed partial class PlayerPage
         FocusRetry.Until(UpNextPlayButton, () => !UpNextVisible || UpNextPlayButton.Focus(FocusState.Keyboard));
     }
 
-    /// <summary>playback.auto_play_next as the server resolves it now (another device may have changed it).</summary>
+    /// <summary>
+    /// playback.auto_play_next and playback.next_up_prompt_seconds as the server resolves them now (another device
+    /// may have changed them); the prompt lead is read from the feed on each tick.
+    /// </summary>
     private async Task RefreshAutoPlayAsync(Attempt attempt)
     {
         try

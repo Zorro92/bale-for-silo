@@ -125,9 +125,12 @@ rather than leaving them transparent so they cost nothing while hidden.
    Code (`PlaybackUpNext` / `PlaybackUpNextState`, tested
    in Core; `PlayerPage.UpNext.cs`): for an episode the next one is resolved once playback starts
    (next number in the season, else the first episode of the next numbered season; the last special
-   continues into S1E1, a regular episode never into Specials). Crossing the file's credits marker
-   raises the card with a countdown mirroring the remaining playback, so the advance waits for the
-   end; without a marker the card appears at the end with a 10 s countdown. Play Now or the countdown
+   continues into S1E1, a regular episode never into Specials). Crossing
+   `playback.next_up_prompt_seconds` before the end of the file (default 30, read with auto-play;
+   `NextUpPrompt`, Android `e580e1811`) raises the card with a countdown mirroring the remaining
+   playback, so the advance waits for the end; with "At end" (0) the card appears at the end with a
+   10 s countdown. The credits marker no longer moves the card (it only records the series-page
+   return), and the prompt point leaves a hand-opened card without a countdown. Play Now or the countdown
    opens a fresh player for the next episode that replaces this one (Back still returns to Detail);
    Hide/Back dismisses the card for this episode. Auto-play is always on for now; the Settings
    toggle and the transport's Up Next button come later.
