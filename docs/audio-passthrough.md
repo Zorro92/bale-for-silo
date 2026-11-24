@@ -132,6 +132,19 @@ returned `AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED` (0x8889000E):** with "Allow pass
 mode to apps altogether. Next: the same probe with Settings › General › Volume & audio output › Advanced › "Allow
 passthrough" on (owner at the console).
 
+Same day, two more runs:
+- **"Allow passthrough" on, a headset connected:** still all 20 `AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED`. With a headset
+  connected the console routes all audio to it and locks the HDMI settings ("headset is connected, changing HDMI output
+  is temporarily disabled"); the default render endpoint is then the headset, which never offers exclusive mode.
+- **Headset unplugged, HDMI to the TV ("Stereo uncompressed" is the only speaker option the TV offers), "Allow
+  passthrough" on:** exclusive mode is **allowed**. Accepted: `PCM 7.1 24-bit in 32` (8 ch 48 kHz, 32-bit container,
+  24 valid bits), the console's fixed exclusive format. Rejected (`AUDCLNT_E_UNSUPPORTED_FORMAT`): every other PCM
+  layout and every bitstream (AC-3, E-AC-3, DTS, DTS-HD, TrueHD, MAT), as expected for a TV that takes only stereo PCM.
+
+So an app can open exclusive mode on Xbox when "Allow passthrough" is on and no headset is connected; which bitstreams
+are accepted then follows the HDMI device. The future passthrough path must re-check per playback (a headset can be
+plugged in at any time) and fall back to decoded audio.
+
 ## IEC 61937 packers
 
 `native/bale-core/src/iec61937.rs` (pure Rust, tested on Linux) wraps compressed access units in the
