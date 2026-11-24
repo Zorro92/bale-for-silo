@@ -20,7 +20,7 @@ namespace Bale.Xbox;
 /// </summary>
 public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
 {
-    // TvTopMenuBar.kt: first preview waits 180ms; switching an open library/For You panel waits 80ms.
+    // TvTopMenuBar.kt: the first preview waits 120ms; an open library/For You panel switches at once (OnTabFocus).
     private readonly DispatcherTimer _dwell = new() { Interval = TopMenuPreviewTiming.Delay(hasOpenPanel: false) };
     private readonly List<TabView> _tabs = new();
     private TabView? _selected;
@@ -380,9 +380,16 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         if (sender is Control { DataContext: TabView { LibraryTab.Libraries.Count: > 0 } or TabView { Page: "foryou" } } button)
         {
             // TvTopMenuBar.kt samples openPanel on focus; retain the old preview until this delay ends.
-            _dwell.Interval = TopMenuPreviewTiming.Delay(
+            var delay = TopMenuPreviewTiming.Delay(
                 hasOpenPanel: LibraryPanel.Visibility == Visibility.Visible || ForYouPanel.Visibility == Visibility.Visible);
             _dwellTab = button;
+            if (delay <= TimeSpan.Zero)
+            {
+                // TopMenuPanelSwitchDelayMillis = 0: a showing menu swaps to this tab's at once, as the dwell tick would.
+                OpenLibraryPanel(button);
+                return;
+            }
+            _dwell.Interval = delay;
             _dwell.Start();
         }
         else
