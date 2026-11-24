@@ -162,3 +162,35 @@ public sealed class DebugFfmpegToneMapTests
 
     private static string Read(string file) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, file));
 }
+
+[Collection("Tone map debug environment")]
+public sealed class DebugToneMapRav1gDisplayTests
+{
+    [Fact]
+    public void StageSwitchesAlsoSetRav1gDisplayKeysOnlyOnTheDisplayRoute()
+    {
+        var saved = Environment.GetEnvironmentVariable("BALE_TONEMAP_DEBUG");
+        try
+        {
+            Environment.SetEnvironmentVariable("BALE_TONEMAP_DEBUG", "fixedpeak,bilinearchroma");
+            var stage = new MediaSourceConfig();
+            stage.FFmpegOptions["bale_tonemap"] = "1";
+            DebugToneMapSwitches.ApplyRav1gDisplay(stage);
+            Assert.False(stage.FFmpegOptions.ContainsKey("bale_rav1g_display_fixed_peak"));
+
+            var display = new MediaSourceConfig();
+            display.FFmpegOptions["bale_rav1g_display"] = "1";
+            DebugToneMapSwitches.ApplyRav1gDisplay(display);
+            Assert.Equal("1", display.FFmpegOptions["bale_rav1g_display_fixed_peak"]);
+            Assert.Equal("1", display.FFmpegOptions["bale_rav1g_display_bilinear_chroma"]);
+
+            Environment.SetEnvironmentVariable("BALE_TONEMAP_DEBUG", null);
+            var cleared = new MediaSourceConfig();
+            cleared.FFmpegOptions["bale_rav1g_display"] = "1";
+            DebugToneMapSwitches.ApplyRav1gDisplay(cleared);
+            Assert.Equal("0", cleared.FFmpegOptions["bale_rav1g_display_fixed_peak"]);
+            Assert.Equal("0", cleared.FFmpegOptions["bale_rav1g_display_bilinear_chroma"]);
+        }
+        finally { Environment.SetEnvironmentVariable("BALE_TONEMAP_DEBUG", saved); }
+    }
+}

@@ -34,14 +34,14 @@ try {
     $assets = Join-Path $root 'assets'
     New-Item -ItemType Directory $assets | Out-Null
     Set-Content (Join-Path $assets 'rav1g.dll') 'fixture dll' -NoNewline
-    Set-Content (Join-Path $assets 'rav1g.h') "#pragma once`n#define RAV1G_ABI_VERSION 2`n" -NoNewline
+    Set-Content (Join-Path $assets 'rav1g.h') "#pragma once`n#define RAV1G_ABI_VERSION 3`n" -NoNewline
     $licenseFiles = @{}
     foreach ($name in $Rav1gLicenseFiles) { $licenseFiles[$name] = "text of $name" }
     New-Zip (Join-Path $assets 'rav1g-licenses.zip') $licenseFiles
 
     $pin = [ordered]@{
         version = '0.4.0-alpha.1'; release_repository = 'Zorro92/rav1g'; release_tag = 'v0.4.0-alpha.1'
-        source_commit = '3f330a19965457a8973574059d317837f5b40e1e'; abi_version = 2
+        source_commit = '3f330a19965457a8973574059d317837f5b40e1e'; abi_version = 3
         dll_asset = 'rav1g.dll'; dll_sha256 = Hash (Join-Path $assets 'rav1g.dll')
         header_asset = 'rav1g.h'; header_sha256 = Hash (Join-Path $assets 'rav1g.h')
         licenses_asset = 'rav1g-licenses.zip'; licenses_sha256 = Hash (Join-Path $assets 'rav1g-licenses.zip')
@@ -73,16 +73,16 @@ try {
     Assert-Throws { & "$PSScriptRoot/restore-rav1g.ps1" -PinPath $pinPath -OutDirectory $out -AssetDirectory $assets } 'SHA256 mismatch'
     $bad = [ordered]@{} + $pin; $bad.release_tag = 'v0.4.0'; Write-Pin $bad
     Assert-Throws { Get-Rav1gPin $pinPath } 'Invalid or inconsistent rav1g pin'
-    $bad = [ordered]@{} + $pin; $bad.abi_version = 1; Write-Pin $bad
+    $bad = [ordered]@{} + $pin; $bad.abi_version = 2; Write-Pin $bad
     Assert-Throws { Get-Rav1gPin $pinPath } 'Invalid or inconsistent rav1g pin'
     $bad = [ordered]@{} + $pin; $bad.release_repository = 'x/y?z'; Write-Pin $bad
     Assert-Throws { Get-Rav1gPin $pinPath } 'Invalid or inconsistent rav1g pin'
     $header = Join-Path $root 'header'
     New-Item -ItemType Directory $header | Out-Null
     Copy-Item (Join-Path $assets '*') $header
-    Set-Content (Join-Path $header 'rav1g.h') "#define RAV1G_ABI_VERSION 1`n" -NoNewline
+    Set-Content (Join-Path $header 'rav1g.h') "#define RAV1G_ABI_VERSION 2`n" -NoNewline
     $bad = [ordered]@{} + $pin; $bad.header_sha256 = Hash (Join-Path $header 'rav1g.h'); Write-Pin $bad
-    Assert-Throws { & "$PSScriptRoot/restore-rav1g.ps1" -PinPath $pinPath -OutDirectory $out -AssetDirectory $header } 'RAV1G_ABI_VERSION 2'
+    Assert-Throws { & "$PSScriptRoot/restore-rav1g.ps1" -PinPath $pinPath -OutDirectory $out -AssetDirectory $header } 'RAV1G_ABI_VERSION 3'
     $extra = Join-Path $root 'extra'
     New-Item -ItemType Directory $extra | Out-Null
     Copy-Item (Join-Path $assets '*') $extra

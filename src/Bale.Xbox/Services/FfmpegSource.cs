@@ -88,6 +88,7 @@ internal static class FfmpegSource
             config.FFmpegOptions.Remove("bale_tonemap");
         DebugFfmpegToneMap.Apply(config, tuning, FfmpegWrapperVersion.Value);
         DebugToneMapSwitches.ApplyOutput(config, FfmpegWrapperVersion.Value);
+        DebugToneMapSwitches.ApplyRav1gDisplay(config);
         DebugFfmpegColorInfo.Apply(config, tuning, FfmpegWrapperVersion.Value);
         ApplyInputTuning(config, tuning, softwareVideo, route.VideoCodec);
         // ffmpeg-tune white= wins over the device setting for this attempt; default leaves the setting.

@@ -37,6 +37,20 @@ internal static class DebugToneMapSwitches
             ? revision : -1;
     }
 
+    /// <summary>
+    /// rav1g's display pass (fork bale.78, rav1g interface 3) mirrors the stage's `fixedpeak` and `bilinearchroma`
+    /// (fork keys bale_rav1g_display_fixed_peak / bale_rav1g_display_bilinear_chroma), so one tonemap-debug switch
+    /// covers AV1 too. The keys are process-wide in rav1g and set at each decoder create, so both are always sent.
+    /// </summary>
+    public static void ApplyRav1gDisplay(MediaSourceConfig config)
+    {
+        if (!config.FFmpegOptions.ContainsKey("bale_rav1g_display")) return;
+        var words = (Environment.GetEnvironmentVariable("BALE_TONEMAP_DEBUG") ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries);
+        config.FFmpegOptions["bale_rav1g_display_fixed_peak"] = words.Contains("fixedpeak") ? "1" : "0";
+        config.FFmpegOptions["bale_rav1g_display_bilinear_chroma"] = words.Contains("bilinearchroma") ? "1" : "0";
+    }
+
     /// <summary>Applies the size override only when the console stage is on for this open.</summary>
     public static void ApplyOutput(MediaSourceConfig config, string version)
     {
