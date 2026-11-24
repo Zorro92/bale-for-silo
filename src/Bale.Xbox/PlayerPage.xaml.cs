@@ -866,7 +866,14 @@ public sealed partial class PlayerPage : Page, IBackHandler
 
     private static void LogFailure(string operation, Exception ex) =>
         Log.Info($"player: {operation} type={ex.GetType().Name} hr=0x{unchecked((uint)ex.HResult):X8}"
-            + (ex is Bale.Core.Api.Models.Problem problem ? " " + PlaybackProblemLog.Describe(problem) : ""));
+            + (ex is Bale.Core.Api.Models.Problem problem ? " " + PlaybackProblemLog.Describe(problem) : "")
+#if DEBUG_SERVER
+            // Debug: Bale's own InvalidDataException texts are fixed sentences naming the failed step; anything long or
+            // holding a URL stays unlogged (2026-11-24: a play-url open failed with no way to tell which check threw).
+            + (ex is InvalidDataException { Message: { Length: > 0 and < 120 } text } && !text.Contains("://", StringComparison.Ordinal)
+                ? $" reason=\"{text}\"" : "")
+#endif
+        );
 
 #if DEBUG_SERVER
     internal string DebugPlayback => string.Create(CultureInfo.InvariantCulture,
