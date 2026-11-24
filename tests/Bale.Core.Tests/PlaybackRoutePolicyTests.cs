@@ -378,6 +378,7 @@ public class PlaybackRoutePolicyTests
     [Theory]
     [InlineData("hevc")]
     [InlineData("vp9")]
+    [InlineData("h264")]
     public void SdrLargerThanTheDisplayTakesTheConsoleDownscale(string video)
     {
         var route = PlaybackRoutePolicy.Decide(Uhd(video), false, display: (1920, 1080), sdrDownscale: true);
@@ -395,7 +396,7 @@ public class PlaybackRoutePolicyTests
         Assert.False(PlaybackRoutePolicy.Decide(Uhd("hevc"), false, display: null, sdrDownscale: true).ConsoleDownscale);
         Assert.False(PlaybackRoutePolicy.Decide(Uhd("hevc", "hdr10"), false, display: (1920, 1080), sdrDownscale: true).ConsoleDownscale);
         Assert.False(PlaybackRoutePolicy.Decide(Uhd("hevc", "sdr", dvProfile: 5), false, display: (1920, 1080), sdrDownscale: true).ConsoleDownscale);
-        Assert.False(PlaybackRoutePolicy.Decide(Uhd("h264"), false, display: (1920, 1080), sdrDownscale: true).ConsoleDownscale);
+        Assert.False(PlaybackRoutePolicy.Decide(Uhd("mpeg2video"), false, display: (1920, 1080), sdrDownscale: true).ConsoleDownscale);
         Assert.False(PlaybackRoutePolicy.Decide(Uhd("hevc"), true, display: (1920, 1080), sdrDownscale: true).ConsoleDownscale);
         var hd = Uhd("hevc");
         hd.Source!.Width = 1920;

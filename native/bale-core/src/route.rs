@@ -177,7 +177,8 @@ pub fn decide(args: DecideArgs) -> RouteDecision {
             || tone_map);
     // On Xbox, MF's video processor leaks driver state per open when it scales 4K SDR down itself
     // (2026-11-17: Titanic 4K VP9 SDR died at open 24). Hand it display-sized SDR from bale_gpu's
-    // scale-only stage instead: plain SDR (no HDR, DV or HDR10+) hardware HEVC/VP9 originals only.
+    // scale-only stage instead: plain SDR (no HDR, DV or HDR10+) hardware HEVC/VP9/H.264 originals only
+    // (H.264 joined 2026-11-24: d3d11va H.264 verified on the console, the stage reads its NV12).
     let sdr_source = matches!(
         trim_lower(source.and_then(|s| s.dynamic_range.as_deref())).as_deref(),
         None | Some("" | "sdr")
@@ -192,7 +193,7 @@ pub fn decide(args: DecideArgs) -> RouteDecision {
         && !software_video
         && !tone_map
         && !dolby_vision_base_layer
-        && matches!(video, Some("hevc" | "vp9"))
+        && matches!(video, Some("hevc" | "vp9" | "h264"))
         && sdr_source
         && tone_map::downscale_to_display(
             width.unwrap_or(0),
