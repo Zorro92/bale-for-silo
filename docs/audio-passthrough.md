@@ -124,6 +124,14 @@ Worth running: once without a receiver (the TV alone), with "Allow passthrough" 
 receiver is connected. The accepted layout decides how the IEC 61937 packers' output will be handed to the
 endpoint.
 
+### First console run (2026-11-24, Bale 0.1.754, TV over HDMI, console "Allow passthrough" off)
+
+Activation through `ActivateAudioInterfaceAsync` worked (6 ms) after loading `mmdevapi.dll` from System32 (a bare-name
+load fails in the UWP package). Mix format: 2 ch, 48 kHz, 32-bit float. **All 20 exclusive-mode checks, PCM included,
+returned `AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED` (0x8889000E):** with "Allow passthrough" off the console refuses exclusive
+mode to apps altogether. Next: the same probe with Settings › General › Volume & audio output › Advanced › "Allow
+passthrough" on (owner at the console).
+
 ## IEC 61937 packers
 
 `native/bale-core/src/iec61937.rs` (pure Rust, tested on Linux) wraps compressed access units in the
