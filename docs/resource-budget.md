@@ -45,6 +45,19 @@ buffers, Media Foundation).
   frames): 40M 60.4, 60.1 / 1.3%, 0.8% (alpha.1: 57.6 / 4.5%); 60M 57.0, 57.5 / 5.5%, 4.9%; 100M 53.0, 53.3 / 12.2%, 12.0%;
   HDR10 60M 52.8, 53.1 / 12.4%, 12.2% (alpha.1: ~51.2 / 14.7-15.4%); HDR10 100M 51.2, 51.7 / 15.0%, 14.1%. 40 Mbps 4K60 is
   now about real time; above that the decoder is still the limit.
+- rav1g v0.7.0-alpha.1 display output in Bale (2026-11-24, fork bale.74, debug trial `rav1g-tune display=on|off`;
+  same build both ways, 1080p 24 bpp display, 45 s, two rounds, rate / missed / stalls). rav1g writes the 1080p
+  tone-mapped P010 image itself (display pass 0.97-1.01 ms SDR, 1.18 ms HDR10 per 4K frame) instead of Bale's stage:
+
+  | 4K60 AV1 | display output | Bale's stage |
+|---|---|---|
+  | 40M SDR | 60.0, 60.9 / 1.2%, 0% / 1, 0 | 60.8, 59.9 / 1.4%, 0.8% / 1, 1 |
+  | 60M SDR | 60.9, 60.8 / 0%, 0% / 0, 0 | 58.3, 57.4 / 3.4%, 4.9% / 4, 6 |
+  | HDR10 60M | 60.8, 60.9 / 0%, 0% / 0, 0 | 52.8, 53.0 / 12.2%, 13.0% / 15, 15 |
+
+  rav1g's images (ledger 19): 8 x 5.9 = 47.5 MiB at display size vs 10 x 23.7 = 237.3 MiB at 4K (-190 MiB). The
+  owner's bar (40 Mbps smooth, 60 Mbps headroom, SDR and HDR10) is met with the display output, not with the stage.
+  Picture parity against Bale's stage (incl. the 11-22 linear-light chroma) is still to be checked by eye and test.
 - The CPU stage that reads the compressed stream is the known limit and grows with bitrate; heavy 4K
   AV1 above ~40 Mbps is the risk case.
 - Spend resources only where they buy measured performance: e.g. more slots or frames in flight are worth
