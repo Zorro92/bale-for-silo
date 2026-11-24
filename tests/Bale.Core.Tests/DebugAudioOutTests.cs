@@ -74,10 +74,24 @@ public class DebugAudioOutTests
     [InlineData("tone", "000440")]
     [InlineData("tone", "")]
     [InlineData("freq", "440")]
+    [InlineData("variants", "0")]
+    [InlineData("variants", "yes")]
+    [InlineData("variants", "")]
     public void BadOptionsAreRefused(string key, string value)
     {
         Assert.False(DebugAudioOutOptions.TryParse(new Dictionary<string, string> { [key] = value }, out _));
         Assert.StartsWith("usage: GET /audio-out-test?seconds=1..30&tone=20..20000", DebugAudioOutOptions.Usage);
+        Assert.EndsWith("or GET /audio-out-test?variants=1\n", DebugAudioOutOptions.Usage);
+    }
+
+    [Fact]
+    public void VariantsStandAlone()
+    {
+        Assert.True(DebugAudioOutOptions.TryParse(new Dictionary<string, string> { ["variants"] = "1" }, out var options));
+        Assert.True(options.Variants);
+        Assert.False(DebugAudioOutOptions.TryParse(new Dictionary<string, string> { ["variants"] = "1", ["seconds"] = "5" }, out _));
+        Assert.True(DebugAudioOutOptions.TryParse(new Dictionary<string, string>(), out var tone));
+        Assert.False(tone.Variants);
     }
 
     [Fact]
@@ -229,7 +243,7 @@ public class DebugAudioOutTests
         Assert.Contains("return await AudioOutTestAsync(query);", route);
         Assert.Contains("///   GET  /audio-out-test?seconds=5&tone=440", server);
         var notFound = server.Split('\n').Single(line => line.Contains("\"routes: ", StringComparison.Ordinal));
-        Assert.Contains("GET /audio-probe, GET /audio-out-test?seconds=5&tone=440,", notFound);
+        Assert.Contains("GET /audio-probe, GET /audio-out-test?seconds=5&tone=440, GET /audio-out-test?variants=1,", notFound);
         Assert.Contains("or \"/audio-out-test\" or \"/webview-test\"))", server);
 
         var handler = Read("DebugServer.AudioOut.cs.txt");
@@ -238,11 +252,12 @@ public class DebugAudioOutTests
         var gate = handler.IndexOf("if (Interlocked.CompareExchange(ref _playtestBusy, 1, 0) != 0)", StringComparison.Ordinal);
         var player = handler.IndexOf("inPlayer = CurrentPage(out _) is PlayerPage;", StringComparison.Ordinal);
         var refuse = handler.IndexOf("if (inPlayer) return (\"409 Conflict\",", StringComparison.Ordinal);
-        var run = handler.IndexOf("Task.Factory.StartNew(() => DebugAudioOutTest.Run(options),", StringComparison.Ordinal);
+        var run = handler.IndexOf("() => options.Variants ? DebugAudioOutTest.RunVariants() : DebugAudioOutTest.Run(options),", StringComparison.Ordinal);
         Assert.True(parse >= 0 && gate > parse && player > gate && refuse > player && run > refuse);
         Assert.Contains("TaskCreationOptions.LongRunning", handler);
         Assert.Contains("finally { Interlocked.Exchange(ref _playtestBusy, 0); }", handler);
-        Assert.Contains("Log.Info(\"Debug audio-out-test: \" + (summary is null ? \"no summary\" : summary[DebugAudioOutReport.SummaryPrefix.Length..]));", handler);
+        Assert.Contains("var label = options.Variants ? \"Debug audio-out-test variants: \" : \"Debug audio-out-test: \";", handler);
+        Assert.Contains("Log.Info(label + (summary is null ? \"no summary\" : summary[DebugAudioOutReport.SummaryPrefix.Length..]));", handler);
     }
 
     [Fact]
@@ -270,13 +285,32 @@ public class DebugAudioOutTests
     }
 
     [Fact]
+    public void VariantsLoadTheModuleBreadcrumbTheCallAndFreeIt()
+    {
+        var test = Read("DebugAudioOutTest.cs.txt");
+        Assert.Contains("private static extern unsafe uint bale_audio_out_init_variants(nint mmdevapi, byte* report, uint reportCapacity);", test);
+        var start = test.IndexOf("internal static unsafe string RunVariants()", StringComparison.Ordinal);
+        Assert.True(start >= 0);
+        var variants = test[start..test.IndexOf("private static unsafe void Play(", start, StringComparison.Ordinal)];
+        var load = variants.IndexOf("NativeLibrary.TryLoad(\"mmdevapi.dll\", typeof(DebugAudioOutTest).Assembly, DllImportSearchPath.System32, out mmdevapi)", StringComparison.Ordinal);
+        var breadcrumb = variants.IndexOf("Log.Info(\"Debug audio-out-test: before bale_audio_out_init_variants\");", StringComparison.Ordinal);
+        var call = variants.IndexOf("written = bale_audio_out_init_variants(mmdevapi, report, (uint)buffer.Length);", StringComparison.Ordinal);
+        var free = variants.IndexOf("if (mmdevapi != 0 && !borrowed) NativeLibrary.Free(mmdevapi);", StringComparison.Ordinal);
+        Assert.True(load >= 0 && breadcrumb > load && call > breadcrumb && free > call);
+        // Variants only ask and initialize: the output itself is never created there.
+        Assert.DoesNotContain("bale_audio_out_create(", variants);
+        Assert.DoesNotContain("ex.Message", variants);
+    }
+
+    [Fact]
     public void ScriptAndPackagedDllChecksKnowTheOutput()
     {
         var script = Read("bale-debug.sh");
         Assert.Contains("#   scripts/bale-debug.sh audio-out-test [seconds] [freq] ", script);
+        Assert.Contains("#   scripts/bale-debug.sh audio-out-test variants ", script);
         Assert.Contains("  audio-out-test)\n", script);
         var workflow = Read("ci.yml.txt");
-        foreach (var export in new[] { "abi_version", "create", "write", "start", "pause", "flush", "sync", "stats", "format", "destroy" })
+        foreach (var export in new[] { "abi_version", "create", "write", "start", "pause", "flush", "sync", "stats", "format", "destroy", "init_variants" })
             Assert.Contains($"'bale_audio_out_{export}'", workflow);
         Assert.Contains("if ($dependents -match '(?i)avrt\\.dll') { throw 'bale_gpu.dll must not import avrt.dll' }", workflow);
     }

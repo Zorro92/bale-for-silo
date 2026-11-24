@@ -26,9 +26,12 @@ pub mod ring;
 pub mod sync;
 pub mod table;
 pub mod timeline;
+pub mod variants;
 #[cfg(windows)]
 mod wasapi;
 
+#[cfg(windows)]
+pub use variants::bale_audio_out_init_variants;
 #[cfg(windows)]
 pub use wasapi::{
     bale_audio_out_create, bale_audio_out_destroy, bale_audio_out_flush, bale_audio_out_format,

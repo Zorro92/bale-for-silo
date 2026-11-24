@@ -4,8 +4,8 @@ Status: **groundwork, nothing claimed** (2026-11-24). Bale still declares no `au
 (docs/player-plan.md); AC-3/E-AC-3 reach the console's own Dolby decoder and everything else is decoded to PCM.
 Passthrough means handing a receiver the encoded stream as an IEC 61937 bitstream, which on Xbox needs the
 console's "Allow passthrough" setting for media apps (since May 2021) and an audio endpoint that takes the
-format in exclusive mode. The capability probe has run on the console (below); the exclusive output (below) has not
-yet. The owner has no receiver so far.
+format in exclusive mode. The capability probe has run on the console (below); the exclusive output's first run
+stopped at `Initialize` ("Exclusive output", "First console run"). The owner has no receiver so far.
 
 ## Plan (owner, 2026-11-24: "get as much of the plumbing in as possible to future proof")
 
@@ -278,9 +278,45 @@ and `Summary:` (also in bale.log as `Debug audio-out-test: ...`), then `Destroy:
 latency (the wall clock starts before the first sample sounds), so a first correction of a few tens of milliseconds is
 expected.
 
+### First console run (2026-11-24, Bale 9e216fe, TV over HDMI, "Allow passthrough" on, no headset)
+
+`audio-out-test 10 440`: activation `S_OK` in 10 ms, Movie category `S_OK`, `IsFormatSupported(EXCLUSIVE)` of the
+console's format (PCM 8 ch 48 kHz, 24 bits in 32, mask `0x63F`) `S_OK`, but **`Initialize` (exclusive, event-driven,
+buffer = periodicity = the default period) returned `AUDCLNT_E_UNSUPPORTED_FORMAT` (0x88890008)**. Device period:
+default 10 ms, minimum 3 ms. Nothing played. So `IsFormatSupported` alone is no evidence that an exclusive stream
+opens on Xbox; the probe's answers (above) say what is offered, not what initializes.
+
+### Initialize variants
+
+`scripts/bale-debug.sh audio-out-test variants` (debug builds only: `GET /audio-out-test?variants=1`; bale_gpu
+`bale_audio_out_init_variants`, `native/bale-gpu/src/audio_out/variants.rs`) narrows that down. For each row it
+activates a fresh `IAudioClient`, applies the row's client properties, asks `IsFormatSupported(EXCLUSIVE)` and calls
+`Initialize`, records both answers (and on success `GetBufferSize` and `GetStreamLatency`), then releases the client.
+It never calls `Start` or asks for a render client (a Rust test pins that), so nothing plays; an initialized client
+holds the endpoint only until it is released, milliseconds later. `AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED` runs
+Microsoft's re-align recipe on a new client and reports that answer too. A 2 s activation timeout stops the run. It is
+refused with 409 while a film plays or another media probe runs; the summary line goes to bale.log as
+`Debug audio-out-test variants: ...`.
+
+Before the rows, one client that is only asked reports the context: the shared mix format, the device periods,
+whether `IAudioClient3` exists, `IsFormatSupported(SHARED)` of the output's format with the closest match it offers,
+and `IAudioClient2::GetBufferSizeLimits` for it, event-driven and polling. Then one line per row,
+`name: init; client properties; format -> answers`. The rows (all with the output's format and the Movie category
+unless named otherwise):
+
+| Rows | What varies |
+|---|---|
+| a-g | `Initialize` flags and timing: (a) event-driven, buffer = periodicity = default period (the output's own call); (b) event-driven at the minimum period; (c) polling, 200 ms buffer, periodicity 0; (d) polling, buffer = periodicity = default; (e) (a) plus `AUDCLNT_STREAMFLAGS_NOPERSIST`; (f) event-driven with 0/0; (g) (a) without asking `IsFormatSupported` first |
+| p1-p5 | client properties: (p1) plain `IAudioClient`, no properties; (p2) `AudioCategory_Other`; (p3) `AudioCategory_Media`; (p4) Movie with `AUDCLNT_STREAMOPTIONS_RAW` (the line shows it if refused); (p5) polling without properties |
+| formats, each event-driven (as a) and polling (as c) | PCM 7.1 with 32 valid bits; 5.1 24-in-32 (mask `0x3F`); 2.0 16-bit; 2.0 24-in-32; 7.1 16-bit; 2.0 16-bit as a plain `WAVEFORMATEX`; 7.1 32-bit float; the shared mix format as `GetMixFormat` returns it; the closest match `IsFormatSupported(SHARED)` offers; AC-3 and E-AC-3 as IEC 61937 (`WAVEFORMATEXTENSIBLE`), and E-AC-3 as Microsoft's `WAVEFORMATEXTENSIBLE_IEC61937` example |
+
+The summary names the rows that initialized and counts the `Initialize` answers of the others. The AC-3 and E-AC-3
+rows are expected to be refused on this TV (it takes only stereo PCM); they show whether a bitstream goes the same
+way through `Initialize`.
+
 ### Not known yet (needs the console)
 
-- Whether `Initialize` succeeds where the probe's `IsFormatSupported` said yes, and the device's period and buffer.
+- Why `Initialize` refuses what `IsFormatSupported` accepted (the variants above), and then the device's buffer.
 - Whether the app can load `avrt.dll` and join MMCSS, and how `IAudioClock` reports there (its `GetFrequency` units, the
   drift against QPC).
 - What plugging in a headset does to an open exclusive stream (invalidated, silent, or still on HDMI; the output is

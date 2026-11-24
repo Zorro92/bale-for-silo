@@ -1446,11 +1446,18 @@ public class DebugPlaytestScriptTests
         var seconds = await RunAsync(["audio-out-test", "1"]);
         Assert.Contains("--data-urlencode\nseconds=1\n", seconds.Arguments);
         Assert.DoesNotContain("tone=", seconds.Arguments);
+        var variants = await RunAsync(["audio-out-test", "variants"], "Summary: initialized: none\n");
+        Assert.Equal(0, variants.ExitCode);
+        Assert.Contains("--data-urlencode\nvariants=1\n", variants.Arguments);
+        Assert.Contains("--max-time\n30\n", variants.Arguments);
+        Assert.DoesNotContain("seconds=", variants.Arguments);
+        Assert.Contains("Summary: initialized: none", variants.Output);
         foreach (var args in new[]
         {
             new[] { "audio-out-test", "0" }, ["audio-out-test", "31"], ["audio-out-test", "05"], ["audio-out-test", "5", "19"],
             ["audio-out-test", "5", "20001"], ["audio-out-test", "5", "0440"], ["audio-out-test", "5", "440", "x"],
-            ["audio-out-test", "tone=440"],
+            ["audio-out-test", "tone=440"], ["audio-out-test", "variants", "5"], ["audio-out-test", "variant"],
+            ["audio-out-test", "5", "variants"],
         })
         {
             var invalid = await RunAsync(args);

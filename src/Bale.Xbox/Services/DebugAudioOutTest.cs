@@ -41,6 +41,11 @@ internal static class DebugAudioOutTest
     [DllImport("bale_gpu.dll", ExactSpelling = true)]
     private static extern int bale_audio_out_destroy(uint id);
 
+    [DllImport("bale_gpu.dll", ExactSpelling = true)]
+    private static extern unsafe uint bale_audio_out_init_variants(nint mmdevapi, byte* report, uint reportCapacity);
+
+    private const int VariantsReportCapacity = 32 * 1024;
+
     // UWP-allowed (api-ms-win-core-libraryloader); a borrowed handle is never freed. Pointer-only signature:
     // DisableRuntimeMarshalling=true, Native AOT and CA1420.
     [DllImport("api-ms-win-core-libraryloader-l1-2-0.dll", ExactSpelling = true)]
@@ -95,6 +100,42 @@ internal static class DebugAudioOutTest
             if (avrt != 0) NativeLibrary.Free(avrt);
         }
         return report.ToString();
+    }
+
+    /// <summary>
+    /// The Initialize variants (docs/audio-passthrough.md, "Initialize variants"): bale_gpu activates a fresh client per
+    /// row, asks IsFormatSupported and calls Initialize, then releases it without Start, so nothing plays.
+    /// </summary>
+    internal static unsafe string RunVariants()
+    {
+        nint mmdevapi = 0;
+        var borrowed = false;
+        try
+        {
+            // As DebugAudioProbe: System32, else the copy Media Foundation's audio renderer already loaded.
+            if (!NativeLibrary.TryLoad("mmdevapi.dll", typeof(DebugAudioOutTest).Assembly, DllImportSearchPath.System32, out mmdevapi))
+            {
+                fixed (char* name = "mmdevapi.dll") mmdevapi = GetModuleHandleW(name);
+                borrowed = mmdevapi != 0;
+            }
+            // A native failure ends the app without reaching a catch: leave a breadcrumb first.
+            Log.Info("Debug audio-out-test: before bale_audio_out_init_variants");
+            var buffer = new byte[VariantsReportCapacity];
+            uint written;
+            fixed (byte* report = buffer)
+                written = bale_audio_out_init_variants(mmdevapi, report, (uint)buffer.Length);
+            return Encoding.UTF8.GetString(buffer, 0, (int)Math.Min(written, (uint)buffer.Length));
+        }
+        catch (Exception ex)
+        {
+            // Includes EntryPointNotFoundException for an older bale_gpu.dll; type and HRESULT only.
+            return $"Audio Initialize variants: FAILS ({ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8})\n"
+                + $"{DebugAudioOutReport.SummaryPrefix}not run (exception)\n";
+        }
+        finally
+        {
+            if (mmdevapi != 0 && !borrowed) NativeLibrary.Free(mmdevapi);
+        }
     }
 
     private static unsafe void Play(uint id, DebugAudioOutOptions options, StringBuilder report)

@@ -96,14 +96,23 @@ internal static class BaleAudioOut
     public const uint StatusFailed = 4;
 }
 
-/// <summary><c>GET /audio-out-test?seconds=5&amp;tone=440</c>: 1-30 s (default 5), a 20-20000 Hz tone (default 440).</summary>
-internal readonly record struct DebugAudioOutOptions(int Seconds, int ToneHz)
+/// <summary>
+/// <c>GET /audio-out-test?seconds=5&amp;tone=440</c>: 1-30 s (default 5), a 20-20000 Hz tone (default 440); or
+/// <c>?variants=1</c> alone: the Initialize variants (one fresh client per row, never started).
+/// </summary>
+internal readonly record struct DebugAudioOutOptions(int Seconds, int ToneHz, bool Variants = false)
 {
-    public const string Usage = "usage: GET /audio-out-test?seconds=1..30&tone=20..20000 (defaults: 5 s, 440 Hz)\n";
+    public const string Usage = "usage: GET /audio-out-test?seconds=1..30&tone=20..20000 (defaults: 5 s, 440 Hz), or GET /audio-out-test?variants=1\n";
 
     public static bool TryParse(IReadOnlyDictionary<string, string> query, out DebugAudioOutOptions options)
     {
         options = new(5, 440);
+        if (query.TryGetValue("variants", out var variants))
+        {
+            if (variants != "1" || query.Count != 1) return false;
+            options = new(5, 440, Variants: true);
+            return true;
+        }
         if (query.Keys.Any(key => key is not ("seconds" or "tone"))
             || !Number(query.GetValueOrDefault("seconds"), 5, 1, 30, out var seconds)
             || !Number(query.GetValueOrDefault("tone"), 440, 20, 20_000, out var tone))
