@@ -16,10 +16,10 @@ part Bale hasn't built yet; check when building it), **deviation** (Bale differs
 
 | Repo | Commit | Reviewed |
 |---|---|---|
-| silo-android | `bbbfdeeb57f9` | 2026-11-23 |
-| silo-apple | `07c4c0d4843b` | 2026-11-23 |
-| silo-server | `3b2b321688ac` | 2026-11-23 |
-| silo-roku | `5778e4765def` | 2026-11-23 |
+| silo-android | `b7c0412af6b4` | 2026-11-24 |
+| silo-apple | `d9bbdc77c102` | 2026-11-24 |
+| silo-server | `64f9ee20ecee` | 2026-11-24 |
+| silo-roku | `6389fccb8ead` | 2026-11-24 |
 
 The first review (2026-11-10) started from the commit each local clone was made at.
 
@@ -224,8 +224,88 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   menu and saved choice); episodes after same-titled movies and series in search (server `3e11909`); Date
   Viewed dating a series by its episodes (server `b1d07ad`); burned-in PGS fitted to cropped frames
   (server `2972dc6`); edition read from filename tags and the item's own folder (server `b3d25aa`).
+- **Paused-session timeout (2026-11-24):** the server ends a native session paused longer than
+  `playback.paused_session_timeout_minutes` (default 15) and answers progress and replans with 410
+  (server `dde5ed2`). Send `paused_timeout_v1` in `client_features` on every start and keep it on each
+  replan of the attempt; on 410 `playback_session_paused_timeout` or `playback_session_ended` from progress,
+  a failure/quality/track replan or a seek reanchor, leave the player without a new attempt or a stop (the
+  server already ended it), with "Playback stopped because it was paused for too long." for the former and
+  the admin wording for the latter (Android `56e23561a` `PlaybackSessionLifecycle.playbackServerEnd`, Apple
+  `80ae9437`, Roku `6389fcc`). Today `PlaybackProgressReporter.RunAsync` only stores the error.
 
 ## Reviews
+
+### 2026-11-24
+
+One act item, raised by all four projects: the server now ends a session left paused for 15 minutes
+(default) and answers progress and replans with 410; the official apps advertise `paused_timeout_v1` and
+leave the player with a "paused for too long" notice, and Bale handles no 410 there at all. Also: Android
+labels sports episodes by air date (server side not merged yet), Apple adds star ratings on the title page,
+and transcode playlists may now end in empty segments.
+
+#### silo-android (`bbbfdeeb57f9..b7c0412af6b4`, 3 commits, 1 none)
+
+- `56e23561a` act: a 410 `playback_session_paused_timeout` (the server ended a session left paused past an
+  admin limit) on progress, failure-recovery or staged replans, seek reanchor or seek fallback leaves the
+  player like an administrator's 410 `playback_session_ended`, with `player.notice.pausedTimeout` instead
+  of the admin wording; video starts advertise `paused_timeout_v1`, repeated on every replan of the
+  attempt (`PlaybackSessionLifecycle.playbackServerEnd`). Bale handles neither 410: the progress loop
+  only stores `LastProgressError` (`PlaybackProgressReporter.RunAsync`) and the player stays.
+- `b7c0412af` later: a series the server marks `episode_labels=air_date` (Sportarr leagues numbered
+  S<year>E<n>) shows the episode's air date ("Nov 20, 2026") wherever the episode code went: Continue
+  Watching and Home episode cards, the hero marquee, the season rail's metadata line, play labels, the
+  player eyebrow and Info pane, Up Next; undated episodes keep their code, sorting keeps the numbers.
+  The player reads the labels from `/api/v2/watch` only. Bale always prints `S01E01` (`EpisodeCode`). The
+  server side (`episode_labels`, `air_date` on cards, detail and watch) is not on silo-server's main branch
+  or in its contract yet; build it once it lands.
+
+None for Bale also: `137fca310` (downloads: an offline stop in the end credits queues the full duration).
+
+#### silo-apple (`07c4c0d4843b..d9bbdc77c102`, 4 commits, 2 none)
+
+- `80ae9437` act: the same paused-timeout exit and `paused_timeout_v1` advertisement as Android
+  `56e23561a`.
+- `c4cbdeb4` later: movie and series pages get a star rating button between Watchlist and More (tvOS:
+  Select opens a half-star editing pill, Left/Right change it, Select saves, Back cancels, holding Select
+  removes; `PUT`/`DELETE /api/v2/ratings/{item_id}`, `user_rating` on detail). Apple-only; hold until
+  Android TV follows, as with the More menu redesign.
+
+None for Bale also: `82b9bfab` (the player's own watched checks count the end credits; Bale has no local
+90% check and refreshes from the server), `d9bbdc77` (iPad/iPhone sidebar).
+
+#### silo-server (`3b2b321688ac..64f9ee20ecee`, 46 commits, 42 none)
+
+- `dde5ed2` act: the server ends a native session left paused longer than
+  `playback.paused_session_timeout_minutes` (default 15, 0 off) while the client still reports. Progress
+  and replan then answer 410 `playback_session_paused_timeout` when the start listed the attempt-sticky
+  client feature `paused_timeout_v1`, else 410 `playback_session_ended`; the client leaves the player and
+  starts nothing. On by default and Bale reports every 10 s while paused, so a Bale session paused 15
+  minutes is ended while the player stays open. See the Open item.
+- `4bee8f8` later: an encoded transcode's synthetic VOD playlist can list segments past the media's real
+  end; once FFmpeg has read to the end they answer 200 with a segment holding no media (MPEG-TS PAT/PMT,
+  or fMP4 `moof` with an empty `mdat`) instead of 404/500, and the stored duration is lowered. Console
+  check that Bale's Rust HLS reader and FFmpeg step over such segments and end playback cleanly.
+- `1da5b75` later: audio-only remuxes are written in 2-second fragments instead of one at the end; matters
+  once Bale plays audio-only files (no audiobook player yet).
+- `abef9b3` later: an admin message receipt reads `acknowledged` when the player answers on the control
+  socket within 3 s. For Bale's control socket when it is built: answer a message frame on receipt.
+
+None for Bale also: `6480841` (CPU decode fallback for WMV 7/8, MS-MPEG-4 and AV1 transcodes without a GPU
+decoder), `708d199` (keyframe-planned copy handles open-GOP files), `835e488`, `97ace34` (transcode nodes),
+`ebd0adf`, `d858c3c` (panics answer the `internal_error` problem), `c8d4d41`, `1c33d53`, `a62176b` (SVG
+logos cached at full size), `fdb187a` (web hides format-only audio titles), `bbde112` (web player leaves when
+the session ends while minimized), and jellycompat, recommendations, plugins, metadata, watchsync, blobstore,
+task-manager, test, web and admin fixes.
+
+Contract changes on generated paths: none. The OpenAPI diff touches only admin and node schemas
+(`acknowledged` on `AdminPlaybackCommandReceipt.delivery`, `stream_end_seconds` / `stream_planned_seconds` on
+the transcode-node session report); the new 410 problem type is documented in the protocol docs only.
+
+#### silo-roku (`5778e4765def..6389fccb8ead`, 1 commit)
+
+- `6389fcc` act: the same paused-timeout exit on Roku: every start and replan sends `paused_timeout_v1`,
+  the 410 drops the queued stop job (the server already ended the session) and the notice draws over the
+  screen the player returns to.
 
 ### 2026-11-23
 
