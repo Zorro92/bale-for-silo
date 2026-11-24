@@ -1840,6 +1840,15 @@ Things learned on the way:
 - Subtitle search / styling.
 - Watch Party.
 - Audiobooks.
+- **Software decode fallback for H.264 / HEVC / VP9** (owner, 2026-11-24). Today only AV1 may be software-decoded
+  (`SoftwareDecodePolicy.VideoCodecs`; `FfmpegSource.Configuration` refuses the rest with "The video codec cannot use the
+  local fallback"). Anything past the console's hardware decoder (this console: H.264 stops at 1080p,
+  `H264_VLD_NOFGT NV12 1080p`; 8-bit HEVC/VP9 profiles or levels it lacks, 4:2:2/4:4:4) then needs the server to pick a
+  lower version or transcode. A local FFmpeg software fallback would let such originals play direct where the CPU
+  allows: decide by resolution, frame rate and bit rate against the CPU budget (docs/resource-budget.md: ~3 cores;
+  4K60 H.264 is out of reach, 4K24-30 may fit), claim it to the server only within that budget, keep the hardware path
+  first, and route the decoded frames through the same output/stage as software AV1 (dav1d's D3D11 CPU-buffer path:
+  upload, then the downscale/tone-map stage). Check the claim rules against silo-apple / AetherEngine first.
 
 ## Playback resource lifetime
 
