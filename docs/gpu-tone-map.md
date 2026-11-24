@@ -247,6 +247,31 @@ not copied from those implementations. zimg's
 [transfer selection](https://github.com/sekrit-twc/zimg/blob/master/src/zimg/colorspace/gamma.cpp)
 explains the default display-referred BT.709 interpretation.
 
+## Backlog (from a feature comparison with MPC Video Renderer, 2026-11-24)
+
+Compared from MPC-VR's README, wiki, history.txt and release notes only (GPL-3.0: its code and shaders
+were not read). Bale's stage is already ahead on downscaling (linear-light area average; MPC-VR documents
+only "bicubic sharp") and level on dithering (both reduce 10-bit to 8-bit; Bale's ordered pattern is fixed
+to the output pixel, so stills don't shimmer). Owner asked for these to be on the backlog:
+
+- [ ] **Peak from the stream's HDR metadata.** Use MaxCLL / mastering display max luminance (with sane
+  clamps) for `source_peak_nits` instead of the fixed 1000 nits; one value per stream, no GPU cost. MPC-VR
+  added metadata-based conversion and a per-frame "Measured" peak in 2026; a measured peak needs an extra
+  GPU reduction pass and is a later option only if the HDR GPU budget allows.
+- [ ] **Cubic chroma upsampling** (Catmull-Rom class) of the input chroma: xav part 2 (see part 1 above).
+  MPC-VR offers nearest / bilinear / Catmull-Rom with chroma siting.
+- [ ] **Check deinterlacing on the FFmpeg routes.** Interlaced sources (1080i, MPEG-2, VC-1) that take the
+  d3d11va + stage or software routes may reach the stage without deinterlacing; MPC-VR deinterlaces in the
+  video processor (and blends in its shader path). Correctness first: find out what happens today.
+- [ ] **SDR display brightness setting** (`target_white_nits`, today fixed 100), a user setting for
+  brighter or dimmer SDR TVs. Cheap.
+- [ ] **Possibility: Dolby Vision tone mapping** (MPC-VR maps profiles 5, 8.1 and 8.4 with the DV dynamic
+  metadata, ST 2094-10 L1/L2). Today's owner rule is DV passthrough only, base layer on SDR; this would be
+  the owner's decision to change that rule, and it would make profile 5 playable on SDR displays.
+
+Not planned: more tone curves (ACES, Reinhard, Mobius, spline; BT.2390 stays the standard) and GPU-heavy
+upscalers (Jinc, vendor Super Resolution); 1080p to 4K stays with the console's scaler.
+
 ## Debug switches
 
 - `scripts/bale-debug.sh tonemap-size W H` overrides the display-sized target for the next open
