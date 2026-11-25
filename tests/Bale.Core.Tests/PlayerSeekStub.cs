@@ -135,6 +135,37 @@ namespace Bale.Xbox
             WatchedSeeks.Add((playerTarget, sourceTarget, paused));
             return true;
         }
+        // PlayerPage.SeekWatchdog.cs: a local seek the watchdog still follows (it has not landed).
+        internal double? UnlandedSeek { get; set; }
+        private double? UnlandedSeekTarget(Attempt attempt) => UnlandedSeek;
+        // PlayerPage.BufferingQuality.cs / PlayerPage.Tracks.cs: a quality or track change replan, step by step. Begin keeps
+        // seeks for it and takes the player; Mount adopts the next plan where the change resumes; End lets the player go.
+        internal async Task<double> BeginReplanAsync()
+        {
+            BeginReplanSeeks();
+            await _lifecycle.WaitAsync();
+            return ReplanSeekPosition(_attempt);
+        }
+        internal async Task<double> MountReplanAsync(PlaybackPlan next, double requested)
+        {
+            Pause(_attempt);
+            DisposeMount(_attempt);
+            _attempt.Plan = next;
+            var resume = TakeReplanSeek(next, requested);
+            _attempt.Position = _sourcePosition = PlaybackProgressive.MountSourceStart(next, resume);
+            var timeline = PlaybackTimeline.From(next.Timeline);
+            await MountPlanAsync(_attempt, PlaybackProgressive.MountPlayerStart(next,
+                timeline.PlayerForSource(resume) ?? timeline.PlayerStartSeconds), false);
+            return resume;
+        }
+        internal void EndReplan()
+        {
+            _lifecycle.Release();
+            EndReplanSeeks();
+        }
+        internal void Skip(bool forward) => QueueSkip(forward);
+        internal bool SkipsPending => _skipProcessing;
+        internal Task SkipsDoneAsync() => WaitForSkipAsync().WaitAsync(TimeSpan.FromSeconds(5));
         private void ShowSkipFeedback(int delta, double target) => LastSkipLabel = _skipLabel;
         internal string? LastSkipLabel { get; private set; }
         private void HideTransport() { }

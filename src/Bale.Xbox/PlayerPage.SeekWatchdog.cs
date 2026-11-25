@@ -65,6 +65,14 @@ public sealed partial class PlayerPage
         return true;
     }
 
+    /// <summary>
+    /// The source target of a local seek of this attempt's current mount that has not landed yet (the watchdog still
+    /// follows it), or null: a quality or track change starts there instead of at the clock that has not moved.
+    /// </summary>
+    private double? UnlandedSeekTarget(Attempt attempt) =>
+        _watchedSeek is { Completed: false } watched && ReferenceEquals(watched.Attempt, attempt)
+            && attempt.Media is { } media && ReferenceEquals(watched.Media, media) ? watched.SourceTarget : null;
+
     /// <summary>OnTick: spend or hold the watched seek's budget, and act once when it runs out.</summary>
     private void UpdateSeekWatchdog()
     {

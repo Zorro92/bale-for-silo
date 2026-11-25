@@ -100,6 +100,8 @@ public sealed partial class PlayerPage
         }
         _seeking = true;
         _remounting = true;
+        // A seek made while the change is in flight is kept for the stream it brings (PlayerPage.Seek.cs, TakeReplanSeek).
+        BeginReplanSeeks();
         try
         {
             if (_attempt is not { Media: { Opened: true, FailureQueued: false, Player: { } player } media } attempt
@@ -109,7 +111,8 @@ public sealed partial class PlayerPage
 #endif
             if (TrySwitchAudioLocally(attempt, media, audioIndex, subtitleIndex)) return;
             var paused = player.PlaybackSession.PlaybackState == MediaPlaybackState.Paused;
-            var position = SourcePosition(attempt);
+            // silo-server 4a73f48/d22e55f: a seek still waiting, not the clock it has not moved yet.
+            var position = ReplanSeekPosition(attempt);
             var request = PlaybackReplan.ForTrackChange(attempt.Start!, attempt.Plan!, attempt.PlanAttemptId, attempt.AttemptedPlanKeys,
                 attempt.Replanned ? 2 : 1, position, audioIndex, subtitleIndex);
             // After a lowering, a track change keeps asking for it (the kept step-down estimate, no source).
@@ -134,13 +137,15 @@ public sealed partial class PlayerPage
             attempt.ServerFeatures = decision.ServerFeatures ?? [];
             attempt.Start = PlaybackReplan.WithTracks(attempt.Start!, request.SelectedTracks);
             attempt.PlanAttemptId = Guid.NewGuid().ToString();
-            attempt.Position = _sourcePosition = PlaybackProgressive.MountSourceStart(attempt.Plan, position);
+            // The viewer's newest seek made while the replan was in flight, when the new plan can start there.
+            var resume = TakeReplanSeek(attempt.Plan, position);
+            attempt.Position = _sourcePosition = PlaybackProgressive.MountSourceStart(attempt.Plan, resume);
             AdoptBufferingPlan(attempt, controllerInitiated: false, request.BandwidthEstimateKbps);
             _state = "loading";
             SetLoading(true);
             var timeline = PlaybackTimeline.From(attempt.Plan.Timeline);
             await MountPlanAsync(attempt, PlaybackProgressive.MountPlayerStart(attempt.Plan,
-                timeline.PlayerForSource(position) ?? timeline.PlayerStartSeconds), paused);
+                timeline.PlayerForSource(resume) ?? timeline.PlayerStartSeconds), paused);
             await OpenedReplacementAsync(attempt);
             UpdateTrackValues();
         }
@@ -155,6 +160,8 @@ public sealed partial class PlayerPage
             _seeking = false;
             _remounting = false;
             _lifecycle.Release();
+            // After the release: a seek the replacement did not take runs on whatever plays now.
+            EndReplanSeeks();
         }
     }
 

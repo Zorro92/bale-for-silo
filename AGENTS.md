@@ -484,7 +484,9 @@ For Bale, a normal app with hevcPlayback on the Series X:
   for `SeekCompleted`; a target outside a produced/reanchored HLS window, and every progressive-remux
   seek, uses negotiated protocol-v3 `seek_reanchor`, retaining the same route, plan, session and tracks. This does not spend failure
   recovery budget. Seek completion flushes the actual landed source position through the sequenced
-  progress reporter/journal, including short clamped seeks; pause state is preserved.
+  progress reporter/journal, including short clamped seeks; pause state is preserved. A seek made while a quality or track
+  change replan holds the player waits for it instead of being refused: the replacement mounts at the newest target when
+  it can, else the seek follows it (silo-server `4a73f48`, `d22e55f`; PlayerPage.Seek.cs `TakeReplanSeek`).
 - **Seek watchdog (AetherEngine seek budgets, 2026-11-18):** a local seek (native or FFmpeg, never a reanchor) is watched
   until `SeekCompleted` or the clock near the target, past the skip's 10 s wait. After 15 s (`PlaybackSeekWatchdog`, Rust
   `seek_watchdog.rs`, `PlayerPage.SeekWatchdog.cs`) the attempt's first stuck seek remounts the same plan at the target

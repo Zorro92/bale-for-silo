@@ -8,7 +8,8 @@ namespace Bale.Xbox;
 
 public sealed partial class PlayerPage
 {
-    private enum SeekOutcome { Completed, Busy, Unavailable, InvalidPosition, TimedOut, Stopped, Failed }
+    // Deferred: a quality or track change holds the player; the seek waits in the skip queue for the stream it brings.
+    private enum SeekOutcome { Completed, Busy, Unavailable, InvalidPosition, TimedOut, Stopped, Failed, Deferred }
     private sealed record SeekResult(SeekOutcome Outcome, double Source = 0, double Player = 0,
         MediaPlaybackState State = MediaPlaybackState.None, int HResult = 0);
     private bool _seeking;
@@ -17,6 +18,9 @@ public sealed partial class PlayerPage
     private double? _pendingSkipTarget;
     // A chapter jump's chip names the chapter instead of a delta.
     private string? _skipLabel;
+    // Quality or track change replans holding (or waiting for) the player, and the task the skip queue waits on meanwhile.
+    private int _replansInFlight;
+    private TaskCompletionSource? _replanFinished;
 
     private double SourcePosition(Attempt attempt)
     {
@@ -35,7 +39,7 @@ public sealed partial class PlayerPage
         try
         {
             if (!_active || _leaving || _suspended || _attempt is not { Attached: true } attempt
-                || !_skipProcessing && attempt.Media is not { Opened: true, Started: true, FailureQueued: false }) return;
+                || !_skipProcessing && _replanFinished is null && attempt.Media is not { Opened: true, Started: true, FailureQueued: false }) return;
             // Presses during a native seek/remount build on the requested SOURCE position, never
             // the old player clock. Coalesce pending absolute targets without losing any press.
             _pendingSkipTarget = _skipTarget = PlaybackSeek.SkipTarget(_skipTarget ?? SourcePosition(attempt), _duration, forward);
@@ -56,6 +60,12 @@ public sealed partial class PlayerPage
                 _pendingSkipTarget = null;
                 var result = await SeekAsync(new PlaybackSeek(target));
                 if (result.Outcome == SeekOutcome.Completed) continue;
+                if (result.Outcome == SeekOutcome.Deferred)
+                {
+                    // The change's replacement takes the newest target (TakeReplanSeek) or leaves it for the stream it brings.
+                    await (_replanFinished?.Task ?? Task.CompletedTask);
+                    continue;
+                }
                 Log.Info($"player: skip not completed outcome={result.Outcome}");
                 HideTransport();
                 break;
@@ -73,7 +83,15 @@ public sealed partial class PlayerPage
     {
         // This is the original debug absolute-seek path, now shared with real transport input.
         // Do not queue a seek behind an opening/recovering pipeline; Back can cancel an active seek.
-        if (!_lifecycle.Wait(0)) return new(SeekOutcome.Busy);
+        if (!_lifecycle.Wait(0))
+        {
+            if (_replanFinished is null) return new(SeekOutcome.Busy);
+            // silo-server 4a73f48/d22e55f: a seek made while a quality or track change is in flight is kept, never dropped.
+            // It waits in the skip queue: the replacement starts there (TakeReplanSeek), or the seek follows it.
+            _pendingSkipTarget = _skipTarget = request.Seconds;
+            if (!_skipProcessing) _ = ProcessSkipsAsync();
+            return new(SeekOutcome.Deferred);
+        }
         Mount? observed = null;
         _seeking = true;
         try
@@ -169,6 +187,51 @@ public sealed partial class PlayerPage
             PushSubtitleClock(force: true);
             _lifecycle.Release();
         }
+    }
+
+    /// <summary>
+    /// A quality or track change replan starts (silo-server 4a73f48, d22e55f; call on the UI thread before waiting for or
+    /// taking the player): from here until <see cref="EndReplanSeeks"/>, a seek the viewer makes is kept in the skip queue
+    /// for the stream the change brings instead of being refused because the player is busy.
+    /// </summary>
+    private void BeginReplanSeeks()
+    {
+        if (_replansInFlight++ == 0) _replanFinished = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    /// <summary>
+    /// The replan ended (adopted, refused or failed; call after releasing the player). A seek the replacement did not take,
+    /// or that a refused change left with the playing stream, now runs through the skip queue on whatever plays.
+    /// </summary>
+    private void EndReplanSeeks()
+    {
+        if (--_replansInFlight > 0) return;
+        var finished = _replanFinished;
+        _replanFinished = null;
+        finished?.TrySetResult();
+        if (_pendingSkipTarget is not null && !_skipProcessing) _ = ProcessSkipsAsync();
+    }
+
+    /// <summary>
+    /// Where a quality or track change asks to resume: the viewer's newest seek still waiting (a queued skip, or a local
+    /// seek that has not landed yet), else the playing clock. A seek still in flight is queued so the replacement takes it.
+    /// </summary>
+    private double ReplanSeekPosition(Attempt attempt)
+    {
+        if (_pendingSkipTarget is null && UnlandedSeekTarget(attempt) is { } unlanded) _pendingSkipTarget = _skipTarget = unlanded;
+        return _pendingSkipTarget ?? SourcePosition(attempt);
+    }
+
+    /// <summary>
+    /// The source time a quality or track change's replacement mounts at: the newest waiting seek, taken out of the skip
+    /// queue, when the new plan starts there (<see cref="PlaybackReplanSeek.StartsAt"/>); otherwise
+    /// <paramref name="requested"/>, and the seek follows once the replacement plays (a reanchor where it cannot seek).
+    /// </summary>
+    private double TakeReplanSeek(PlaybackPlan plan, double requested)
+    {
+        if (_pendingSkipTarget is not { } seek || !PlaybackReplanSeek.StartsAt(plan, seek)) return requested;
+        _pendingSkipTarget = null;
+        return seek;
     }
 
     private async Task<Mount?> ReanchorSeekAsync(Attempt attempt, Mount media, double source, bool paused)

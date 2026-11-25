@@ -210,9 +210,10 @@ public sealed partial class PlayerPage
 
     /// <summary>
     /// The controller's quality_change: Lower automatically / Lower quality with the step-down estimate, or Restore
-    /// quality with learned_limit clear. Like a track change it remounts the same session at the current position; a
-    /// refused or failed replan keeps the current playback. A lowering never queues behind another pipeline change
-    /// (the spec: it fails and rearms); Restore quality waits its turn.
+    /// quality with learned_limit clear. Like a track change it remounts the same session at the current position, or at
+    /// the viewer's seek made meanwhile (PlayerPage.Seek.cs, TakeReplanSeek); a refused or failed replan keeps the current
+    /// playback. A lowering never queues behind another pipeline change (the spec: it fails and rearms); Restore quality
+    /// waits its turn.
     /// </summary>
     private async Task RunBufferingReplanAsync(BufferingQualityReplan change)
     {
@@ -220,13 +221,19 @@ public sealed partial class PlayerPage
         // A lowering that answers a start budget that ran out waits its turn too: the open it replaces may still hold the
         // lifecycle while it stops (PlayerPage.StartBudget.cs), and refusing it would fail the start at the same quality.
         var heldAttempt = _attempt is { HeldStartDeadline: not null } held ? held : null;
-        if (restore || heldAttempt is not null) await _lifecycle.WaitAsync();
+        if (restore || heldAttempt is not null)
+        {
+            // Seeks made while this waits for the player are kept for it too.
+            BeginReplanSeeks();
+            await _lifecycle.WaitAsync();
+        }
         else if (!_lifecycle.Wait(0))
         {
             Log.Info("player: buffering replan busy");
             Buffering.ReplanRefused();
             return;
         }
+        else BeginReplanSeeks();
         var adopted = false;
         var remounted = false;
         _remounting = true;
@@ -243,7 +250,8 @@ public sealed partial class PlayerPage
             current = attempt;
             var paused = media is { Opened: true, Player: { } player }
                 ? player.PlaybackSession.PlaybackState == MediaPlaybackState.Paused : media.StartPaused;
-            var position = SourcePosition(attempt);
+            // silo-server 4a73f48/d22e55f: a seek still waiting, not the clock it has not moved yet.
+            var position = ReplanSeekPosition(attempt);
             var request = PlaybackReplan.ForQualityChange(start, plan, attempt.PlanAttemptId, attempt.AttemptedPlanKeys,
                 attempt.Replanned ? 2 : 1, position, change);
             Log.Info("player: buffering replan " + (restore ? "restore" : "lower")
@@ -269,7 +277,9 @@ public sealed partial class PlayerPage
             attempt.ServerFeatures = decision.ServerFeatures ?? [];
             attempt.Start = start with { QualityPreference = change.QualityPreference };
             attempt.PlanAttemptId = Guid.NewGuid().ToString();
-            attempt.Position = _sourcePosition = PlaybackProgressive.MountSourceStart(attempt.Plan, position);
+            // The viewer's newest seek made while the replan was in flight, when the new plan can start there.
+            var resume = TakeReplanSeek(attempt.Plan, position);
+            attempt.Position = _sourcePosition = PlaybackProgressive.MountSourceStart(attempt.Plan, resume);
             AdoptBufferingPlan(attempt, controllerInitiated: true, request.BandwidthEstimateKbps);
             adopted = true;
             // The lowering is adopted: the mount that ran out of its start budget is gone with its held failure.
@@ -278,7 +288,7 @@ public sealed partial class PlayerPage
             SetLoading(true);
             var timeline = PlaybackTimeline.From(attempt.Plan.Timeline);
             await MountPlanAsync(attempt, PlaybackProgressive.MountPlayerStart(attempt.Plan,
-                timeline.PlayerForSource(position) ?? timeline.PlayerStartSeconds), paused);
+                timeline.PlayerForSource(resume) ?? timeline.PlayerStartSeconds), paused);
             await OpenedReplacementAsync(attempt);
             UpdateTrackValues();
         }
@@ -305,6 +315,8 @@ public sealed partial class PlayerPage
             if (remounted) _seeking = false;
             _remounting = false;
             _lifecycle.Release();
+            // After the release: a seek the replacement did not take runs on whatever plays now.
+            EndReplanSeeks();
         }
     }
 

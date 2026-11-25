@@ -147,7 +147,7 @@ public sealed partial class PlayerPage
         try
         {
             if (!_active || _leaving || _suspended || _attempt is not { Attached: true } attempt
-                || !_skipProcessing && attempt.Media is not { Opened: true, Started: true, FailureQueued: false }) return;
+                || !_skipProcessing && _replanFinished is null && attempt.Media is not { Opened: true, Started: true, FailureQueued: false }) return;
             var fileId = attempt.Plan?.Source?.MediaFileId ?? attempt.Start?.FileId;
             var chapters = attempt.Request.Detail.Versions.FirstOrDefault(version => version.FileId == fileId)?.Chapters ?? [];
             var origin = _skipTarget ?? SourcePosition(attempt);
@@ -537,7 +537,7 @@ public sealed partial class PlayerPage
         try
         {
             if (!_active || _leaving || _suspended || _attempt is not { Attached: true } attempt
-                || !_skipProcessing && attempt.Media is not { Opened: true, Started: true, FailureQueued: false }) return;
+                || !_skipProcessing && _replanFinished is null && attempt.Media is not { Opened: true, Started: true, FailureQueued: false }) return;
             _skipLabel = null;
             _pendingSkipTarget = _skipTarget = target;
             if (!_skipProcessing) _ = ProcessSkipsAsync();

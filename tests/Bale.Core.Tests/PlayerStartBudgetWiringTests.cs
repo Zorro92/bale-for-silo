@@ -64,7 +64,8 @@ public class PlayerStartBudgetWiringTests
     public void TheLoweringWaitsForTheOpenAndHandsBackARefusal()
     {
         var quality = Read("PlayerPage.BufferingQuality.cs.txt");
-        Assert.Contains("if (restore || heldAttempt is not null) await _lifecycle.WaitAsync();", quality);
+        // It waits for the player, keeping seeks made meanwhile for its replacement (PlaybackReplanSeekTests).
+        Assert.Contains("if (restore || heldAttempt is not null)\n        {\n            // Seeks made while this waits for the player are kept for it too.\n            BeginReplanSeeks();\n            await _lifecycle.WaitAsync();\n        }", quality);
         Assert.Equal(3, quality.Split("await RecoverHeldStartDeadlineAsync(heldAttempt);").Length - 1);
         Assert.Contains("adopted = true;\n            // The lowering is adopted: the mount that ran out of its start budget is gone with its held failure.\n            attempt.HeldStartDeadline = null;", quality);
     }

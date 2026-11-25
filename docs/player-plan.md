@@ -2310,6 +2310,33 @@ Now (`retry_window.rs`, a port of silo-android's `MediaLoadRetryPolicy.kt` with 
   a spent window, non-transient failures, a later outage's fresh window, the debug outage);
   `RustRangeStreamTests.ABlockFailingTwiceRidesOutTheOutageButAWrongRangeFailsTheRead` covers it from C#.
 
+### A seek kept across a quality or track change (server `4a73f48`, `d22e55f`)
+
+Before: a quality change (the buffering controller's lowering or Restore quality) and a track change hold the player
+lifecycle from their replan request until the replacement opens, and `SeekAsync` refuses to queue behind them, so a skip
+pressed meanwhile was dropped (`skip not completed outcome=Busy`), and the replacement mounted where the change was asked.
+A press while the replacement opened was ignored outright, and a seek that had not landed yet when a change began (the
+seek watchdog still following it) was lost with its mount: the change resumed at the clock that never moved.
+
+Now, as the web (`VideoPlayer.tsx` `replanSeekRef`, `noteViewerSeek`):
+
+- **While a change is in flight** (`BeginReplanSeeks` … `EndReplanSeeks`, PlayerPage.Seek.cs; a Restore that waits for
+  the player counts from when it starts waiting), every seek waits in the skip queue instead of being refused: skips,
+  bumpers, scrub commits and `bale-debug.sh seek` (which answers `202 Accepted`). Presses build on the newest target, and
+  are taken while the replacement opens too.
+- **Where the change resumes:** its request asks at the newest waiting seek, or at a local seek that has not landed yet,
+  else at the clock (`ReplanSeekPosition`). The replacement mounts at the newest seek made meanwhile when the new plan
+  starts there (`PlaybackReplanSeek.StartsAt`: anchored within the web's 1 s settle tolerance, or the plan can seek
+  there itself) and takes it out of the queue (`TakeReplanSeek`).
+- **Otherwise the seek follows:** a seek the replacement did not take (a later press, a remux that can't seek, a change
+  the server refused) runs once the change lets go of the player, on whatever plays then: a local seek, or a
+  `seek_reanchor` where the stream can't seek anywhere, as the web asks for one.
+- **Unchanged:** a lowering still refuses to start while the player is busy (the spec: it fails and rearms); seeks during
+  a failure replan, reanchor, reconnect or seek-watchdog remount are still refused as before.
+- **Tests:** `PlaybackReplanSeekTests` runs PlayerPage.Seek.cs against the seek stub (skips during a change, a refused
+  change, a press after the replacement mounted, a remux that can't seek, a seek still in flight, the debug seek) and pins
+  the quality and track change call sites by source.
+
 ### Debug: `media-fault`
 
 `bale-debug.sh media-fault outage=<0..600>` (native/bale-core/src/media_fault.rs, memory only, nothing armed at start):
