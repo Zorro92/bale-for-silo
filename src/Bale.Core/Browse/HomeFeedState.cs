@@ -2,7 +2,14 @@ using Bale.Core.Settings;
 
 namespace Bale.Core.Browse;
 
-public sealed record HomeLoadRequest(int Generation, bool Quiet);
+public sealed record HomeLoadRequest(int Generation, bool Quiet)
+{
+    /// <summary>How many retries of a transiently failed quiet read came before this one (0: a first read).</summary>
+    public int Retry { get; init; }
+}
+
+/// <summary>A quiet read that failed transiently is read again <see cref="Delay"/> later, as retry <see cref="Retry"/>.</summary>
+public sealed record HomeRetry(int Retry, TimeSpan Delay);
 
 /// <summary>
 /// TvHomeScreen.kt / HomeViewModel.kt: one initial load, quiet single-flight resume reads,
@@ -10,7 +17,11 @@ public sealed record HomeLoadRequest(int Generation, bool Quiet);
 /// </summary>
 public sealed class HomeFeedState
 {
+    /// <summary>HomeViewModel.kt refreshFromRealtime (1b4732d90): <c>for (attempt in 0..3)</c>, waiting 1, 2 and 4 s.</summary>
+    public const int MaxRetries = 3;
+
     private HomeLoadRequest? _request;
+    private HomeRetry? _retry;
     private int _generation;
     private bool _everShown;
     private bool _hasResult;
@@ -29,7 +40,10 @@ public sealed class HomeFeedState
     public bool IsLoading => !_hasResult || (_request is { Quiet: false } && AvailableRows.Count == 0);
     public HomeFeedStatus Status => HomeFeedback.Status(IsLoading, Rows.Count, Error);
 
-    /// <summary>Initial load or an explicit Refresh/Retry; never race an existing read.</summary>
+    /// <summary>The retry a transiently failed quiet read is waiting for; the page starts it with <see cref="StartRetry"/>.</summary>
+    public HomeRetry? PendingRetry => _retry;
+
+    /// <summary>Initial load or an explicit Refresh/Retry; never race an existing read. It replaces a waiting retry.</summary>
     public HomeLoadRequest? BeginLoad() => IsBusy ? null : Start(quiet: false);
 
     public HomeLoadRequest? OnShown(bool deferUntilFocusRestored = false)
@@ -39,8 +53,9 @@ public sealed class HomeFeedState
         _restoringFocus = deferUntilFocusRestored;
         // TvHomeScreen.kt skips the resume read while the very first load is still running.
         // A first load that finished before Loaded must not be fetched a second time either.
-        // Bale has no realtime socket yet: a real return supplies one freshness signal, held
-        // behind Detail-return focus restoration like TvHomeScreen.kt's pending realtime read.
+        // A real return supplies one freshness signal, held behind Detail-return focus restoration like
+        // TvHomeScreen.kt's pending realtime read (1b4732d90 re-reads on every return, not on a first load). The
+        // events socket (HomeWatchState) adds its own on every subscription and change.
         if (_everShown && _hasResult) _refreshPending = true;
         _everShown = true;
         return TakePendingRefresh();
@@ -50,10 +65,12 @@ public sealed class HomeFeedState
     {
         IsShown = false;
         _restoringFocus = false;
-        // HomeViewModel.onHidden drops a quiet read, but keeps the one filling an empty Home.
-        if (_request is { Quiet: true })
+        // HomeViewModel.onHidden drops a quiet read, but keeps the one filling an empty Home. A waiting retry goes
+        // with it, and the read runs when Home is shown again.
+        if (_request is { Quiet: true } || _retry is not null)
         {
-            _request = null;
+            if (_request is { Quiet: true }) _request = null;
+            _retry = null;
             _refreshPending = true;
         }
     }
@@ -73,15 +90,28 @@ public sealed class HomeFeedState
 
     public HomeLoadRequest? TakePendingRefresh()
     {
-        if (!IsShown || _restoringFocus || IsBusy || !_hasResult || !_refreshPending) return null;
+        // A waiting retry covers the signals that arrive meanwhile.
+        if (!IsShown || _restoringFocus || IsBusy || _retry is not null || !_hasResult || !_refreshPending) return null;
         _refreshPending = false;
         return Start(quiet: true);
     }
 
-    private HomeLoadRequest Start(bool quiet)
+    /// <summary>
+    /// The retry's wait is over: its read, unless Home was hidden or another read replaced it meanwhile. HomeViewModel.kt:
+    /// "The retry will cover any events that arrived while it waited."
+    /// </summary>
+    public HomeLoadRequest? StartRetry(HomeRetry retry)
+    {
+        if (!ReferenceEquals(retry, _retry) || !IsShown || IsBusy) return null;
+        _refreshPending = false;
+        return Start(quiet: true, retry.Retry);
+    }
+
+    private HomeLoadRequest Start(bool quiet, int retry = 0)
     {
         if (!quiet) Error = null;
-        return _request = new HomeLoadRequest(++_generation, quiet);
+        _retry = null;
+        return _request = new HomeLoadRequest(++_generation, quiet) { Retry = retry };
     }
 
     public bool IsCurrent(HomeLoadRequest request) => ReferenceEquals(request, _request);
@@ -101,6 +131,11 @@ public sealed class HomeFeedState
         _request = null;
         // TvHomeScreen.kt leaves good prior sections visible, without a blocking error or spinner.
         Error = AvailableRows.Count > 0 ? null : HomeFeedback.ErrorMessage(error);
+        // HomeViewModel.kt refreshFromRealtime (1b4732d90): a quiet read that failed transiently is read again up to
+        // three times, 1, 2 and 4 s later, while Home stays shown and no other read replaces it. The initial load and an
+        // explicit Refresh or Retry are not retried, as there.
+        if (request.Quiet && IsShown && request.Retry < MaxRetries && HomeFeedback.IsTransient(error))
+            _retry = new HomeRetry(request.Retry + 1, TimeSpan.FromSeconds(1 << request.Retry));
         return true;
     }
 

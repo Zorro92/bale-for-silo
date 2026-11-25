@@ -9,6 +9,7 @@
 
 pub mod abi;
 pub mod abi_buffering;
+pub mod abi_home_events;
 pub mod abi_meters;
 pub mod abi_progressive;
 pub mod abi_seek_watchdog;
@@ -27,6 +28,7 @@ pub mod formatting;
 pub mod frames;
 pub mod hardware;
 pub mod hls;
+pub mod home_events;
 pub mod http;
 pub mod http_probe;
 pub mod iec61937;

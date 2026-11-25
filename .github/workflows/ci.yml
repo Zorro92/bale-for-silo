@@ -598,7 +598,8 @@ jobs:
               'bale_core_signals_create', 'bale_core_signals_destroy', 'bale_core_signals_update', 'bale_core_signals_plan_adopted',
               'bale_core_signals_invalidate', 'bale_core_signals_note_request_failed', 'bale_core_signals_note_data_arrived',
               'bale_core_signals_plan_has_run', 'bale_core_start_budget_create', 'bale_core_start_budget_destroy',
-              'bale_core_start_budget_update', 'bale_core_start_budget_remaining')
+              'bale_core_start_budget_update', 'bale_core_start_budget_remaining',
+              'bale_core_home_events_create', 'bale_core_home_events_destroy', 'bale_core_home_events_call')
             foreach ($symbol in $required) {
               if (-not ($exports | Select-String -Pattern "\s$([regex]::Escape($symbol))\s*$" -Quiet)) {
                 throw "Packaged bale_core.dll is missing export $symbol"

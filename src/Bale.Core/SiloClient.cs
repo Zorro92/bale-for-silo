@@ -345,6 +345,14 @@ public sealed class SiloClient : IDisposable
                 && profileGeneration == Interlocked.Read(ref _playbackProfileGeneration) && ProfileId == profileId && IsSignedIn));
     }
 
+    /// <summary>
+    /// The request option for <paramref name="profileId"/> while it is still the acting profile: requests made with it
+    /// carry that profile and its PIN proof and fail once the account or the profile changes, as playback's do. Null when
+    /// another profile acts now or nobody is signed in.
+    /// </summary>
+    internal ProfileRequestOption? CaptureProfileScope(string profileId) =>
+        IsSignedIn && !string.IsNullOrWhiteSpace(profileId) && ProfileId == profileId ? CapturePlaybackScope().Request : null;
+
     private async Task<RequestCredentials?> CurrentCredentialsAsync(CancellationToken cancellationToken)
     {
         await ThrowIfSessionExpiredAsync().ConfigureAwait(false);

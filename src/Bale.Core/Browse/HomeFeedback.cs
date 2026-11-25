@@ -29,4 +29,16 @@ public static class HomeFeedback
         HttpRequestException or OperationCanceledException or TimeoutException => "Network error. Check your connection.",
         _ => "Failed to load home sections",
     };
+
+    /// <summary>
+    /// HomeSectionHydrator.kt isTransientHomeReadFailure (1b4732d90): a 408, 429 or 5xx answer, or no answer at all. Home's
+    /// own cancellation never reaches here (the page drops a hidden read before it fails), so a cancellation is a timeout.
+    /// </summary>
+    public static bool IsTransient(Exception error) => error switch
+    {
+        Microsoft.Kiota.Abstractions.ApiException { ResponseStatusCode: 408 or 429 or (>= 500 and <= 599) } => true,
+        Microsoft.Kiota.Abstractions.ApiException => false,
+        HttpRequestException or TimeoutException or IOException or OperationCanceledException => true,
+        _ => false,
+    };
 }

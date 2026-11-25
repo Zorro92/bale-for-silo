@@ -16,6 +16,7 @@ public sealed partial class BrowsePage
     private string? _homeProfile;
     private CancellationTokenSource? _homeLoad;
     private HomeLoadRequest? _homeRequest;
+    private HomeWatchState? _homeWatch;
     private Window? _homeWindow;
     private bool _homeActive;
     private bool _homeSuspended;
@@ -110,7 +111,23 @@ public sealed partial class BrowsePage
             }
         }
 
-        if (OwnsHome()) StartHomeLoad(_homeState.TakePendingRefresh());
+        if (OwnsHome()) ContinueHome(client, profileId);
+    }
+
+    /// <summary>After a read: its retry (HomeViewModel.kt refreshFromRealtime, 1b4732d90), else the refresh that waited.</summary>
+    private void ContinueHome(SiloClient client, string? profileId)
+    {
+        if (_homeState.PendingRetry is { } retry) _ = RetryHomeAsync(retry, client, profileId);
+        else StartHomeLoad(_homeState.TakePendingRefresh());
+    }
+
+    private async Task RetryHomeAsync(HomeRetry retry, SiloClient client, string? profileId)
+    {
+        Log.Info($"Home: retry {retry.Retry} in {retry.Delay.TotalSeconds:0} s");
+        await Task.Delay(retry.Delay);
+        // A hidden Home, another read meanwhile, or another session or profile drops it (StartRetry answers null).
+        if (IsHome && ReferenceEquals(client, Session.Client) && client.ProfileId == profileId)
+            StartHomeLoad(_homeState.StartRetry(retry));
     }
 
     private static async Task<bool> ProfileDeletedAsync(SiloClient client, string? profileId, Exception error, CancellationToken cancellationToken)
@@ -162,14 +179,68 @@ public sealed partial class BrowsePage
         var request = _homeState.OnShown(deferUntilFocusRestored: _homeReturnPending);
         FocusPendingHomeEntry();
         StartHomeLoad(request);
+        StartHomeWatch();
     }
 
     private void HideHome(bool restoringFocus = false)
     {
         _homeReturnPending |= restoringFocus;
         _homeReturnVersion++;
+        StopHomeWatch();
         _homeState.OnHidden();
         if (_homeRequest is { Quiet: true }) _homeLoad?.Cancel();
+    }
+
+    /// <summary>
+    /// HomeWatchStateRealtime.swift (silo-apple 0414ff74) / HomeWatchState.bs (silo-roku c1841ae): while Home is on
+    /// screen, the events socket's user_state channel re-reads Home on each (re)subscription and on a change for this
+    /// profile, as a quiet coalesced refresh that Detail-return focus restoration still holds back. Every hide (Detail,
+    /// the player, another app, suspension, the shell unloading for a profile switch or sign-out) ends it.
+    /// </summary>
+    private void StartHomeWatch()
+    {
+        if (_homeWatch is not null || !_homeState.IsShown || Session.Client is not { ProfileId: { Length: > 0 } profileId } client) return;
+        HomeWatchState? watch = null;
+        try
+        {
+            watch = new HomeWatchState(client, profileId,
+                () => _ = Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () => OnHomeWatchRefresh(watch!, client, profileId)),
+                note => Log.Info("Home events: " + note));
+            _homeWatch = watch;
+            watch.Start();
+        }
+        catch (Exception error)
+        {
+            // Home keeps its own reads without the socket.
+            Log.Error("Home events", error);
+            watch?.Dispose();
+            _homeWatch = null;
+        }
+    }
+
+    private void OnHomeWatchRefresh(HomeWatchState watch, SiloClient client, string profileId)
+    {
+        try
+        {
+            // A signal from a subscription Home has since ended changes nothing; one for another session or profile ends it.
+            if (!ReferenceEquals(_homeWatch, watch)) return;
+            if (!IsHome || !ReferenceEquals(client, Session.Client) || client.ProfileId != profileId)
+            {
+                StopHomeWatch();
+                return;
+            }
+            StartHomeLoad(_homeState.RequestRefresh());
+        }
+        catch (Exception error)
+        {
+            Log.Error("Home events refresh", error);
+        }
+    }
+
+    private void StopHomeWatch()
+    {
+        _homeWatch?.Dispose();
+        _homeWatch = null;
     }
 
     internal void PauseHomeForNavigation()

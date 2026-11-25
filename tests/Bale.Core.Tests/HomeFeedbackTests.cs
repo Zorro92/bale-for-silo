@@ -55,4 +55,38 @@ public class HomeFeedbackTests
 
         Assert.Equal("Failed to load home sections", HomeFeedback.ErrorMessage(new InvalidDataException("private response details")));
     }
+
+    [Theory]
+    [InlineData(408, true)]
+    [InlineData(429, true)]
+    [InlineData(500, true)]
+    [InlineData(502, true)]
+    [InlineData(503, true)]
+    [InlineData(599, true)]
+    [InlineData(400, false)]
+    [InlineData(401, false)]
+    [InlineData(403, false)]
+    [InlineData(404, false)]
+    [InlineData(422, false)]
+    [InlineData(0, false)]
+    public void OnlyTimeoutsThrottlingAndServerErrorsAreTransientAnswers(int status, bool transient)
+    {
+        // HomeSectionHydrator.kt isTransientHomeReadFailure: code == 408 || code == 429 || code in 500..599.
+        Assert.Equal(transient, HomeFeedback.IsTransient(new Microsoft.Kiota.Abstractions.ApiException { ResponseStatusCode = status }));
+        Assert.Equal(transient, HomeFeedback.IsTransient(new Problem { ResponseStatusCode = status }));
+    }
+
+    [Fact]
+    public void NoAnswerIsTransientAndAnUnreadableOneIsNot()
+    {
+        foreach (var error in new Exception[]
+        {
+            new HttpRequestException(), new TaskCanceledException(), new TimeoutException(), new IOException(),
+        })
+        {
+            Assert.True(HomeFeedback.IsTransient(error), error.GetType().Name);
+        }
+        Assert.False(HomeFeedback.IsTransient(new InvalidDataException()));
+        Assert.False(HomeFeedback.IsTransient(new System.Text.Json.JsonException()));
+    }
 }
