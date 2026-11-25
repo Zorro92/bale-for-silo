@@ -76,4 +76,15 @@ public class PlaybackTransportStallTests
         var same = player[player.IndexOf("private async Task RemountSamePlanAsync(", StringComparison.Ordinal)..];
         Assert.Contains("await RecoverCoreAsync(attempt, ex.HResult, isDecoder: false, IsNetworkFailure(ex), failure: failure);", same);
     }
+
+    [Fact]
+    public void ThePositionStaysWhereTheStreamGaveUp()
+    {
+        // Console 0.1.774: the engine's clock ran on to the title's end, so the remount and Retry started there and ended.
+        var seek = Read("PlayerPage.Seek.cs.txt");
+        Assert.Contains("private static bool StreamGaveUp(Mount media) => media.Stream is { LastReadFailed: true };", seek);
+        Assert.Contains("if (attempt.Media is { Opened: true, Player: { } player } media && !StreamGaveUp(media)", seek);
+        var present = Read("PlayerPage.Present.cs.txt");
+        Assert.Contains("if (_attempt is { } current && !_engineReanchoring && !(current.Media is { } mounted && StreamGaveUp(mounted)))", present);
+    }
 }

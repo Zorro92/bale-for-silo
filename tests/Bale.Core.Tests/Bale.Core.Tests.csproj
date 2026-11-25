@@ -94,6 +94,7 @@
     <None Include="../../src/Bale.Xbox/Services/DebugServer.Playback.cs" Link="DebugServer.Playback.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/PlayerPage.Debug.cs" Link="PlayerPage.Debug.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/PlayerPage.Seek.cs" Link="PlayerPage.Seek.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/PlayerPage.Present.cs" Link="PlayerPage.Present.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/PlayerPage.Playback.cs" Link="PlayerPage.Playback.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/PlayerPage.Transport.cs" Link="PlayerPage.Transport.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/PlayerPage.Controls.cs" Link="PlayerPage.Controls.cs.txt" CopyToOutputDirectory="PreserveNewest" />

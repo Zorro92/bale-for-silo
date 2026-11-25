@@ -231,7 +231,7 @@ public sealed partial class PlayerPage
                 _engineSample = (now, state.FramesRendered, state.FramesDropped);
             }
             var source = EngineSourcePosition(state);
-            if (_attempt is { } current && !_engineReanchoring)
+            if (_attempt is { } current && !_engineReanchoring && !(current.Media is { } mounted && StreamGaveUp(mounted)))
                 current.Position = _sourcePosition = source;
             if (_engineReanchoring) return;
             if (state.FramesRendered > _engineRenderedAtMount + 24) _engineReconnects = 0;

@@ -57,6 +57,7 @@ namespace Bale.Xbox
             public TaskCompletionSource<bool> Opening { get; } = Ready();
             public SeekFrameDelivery? FrameDelivery => null;
             public MediaProgressiveStream? Progressive => null;
+            public MediaRangeStream? Stream => null;
             private static TaskCompletionSource<bool> Ready()
             {
                 var ready = new TaskCompletionSource<bool>();

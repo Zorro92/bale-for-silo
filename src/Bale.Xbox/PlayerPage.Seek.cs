@@ -22,11 +22,16 @@ public sealed partial class PlayerPage
     private int _replansInFlight;
     private TaskCompletionSource? _replanFinished;
 
+    /// <summary>The mount's range stream failed its latest read: the player's clock past it is not the title's.</summary>
+    private static bool StreamGaveUp(Mount media) => media.Stream is { LastReadFailed: true };
+
     private double SourcePosition(Attempt attempt)
     {
         try
         {
-            if (attempt.Media is { Opened: true, Player: { } player } media
+            // After a failed range read the player runs on to a false end of file (PlaybackTransportStall): keep the
+            // position where the stream gave up, for the recovery, Retry and the server's progress.
+            if (attempt.Media is { Opened: true, Player: { } player } media && !StreamGaveUp(media)
                 && media.Transport.Timeline.SourceForPlayer(player.PlaybackSession.Position.TotalSeconds) is { } source)
                 attempt.Position = source;
         }
