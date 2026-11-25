@@ -733,6 +733,14 @@ first read and time the CPU's recording rather than the passes. The ABI's `avg_m
 total, end resolution, 0, 0 (they were total, input copy, luma, chroma), and `disjoint` is always 0. For a pass's
 cost, compare totals against an A/B switch (`tonemap-debug nostaged`, `bilinearchroma`, ...).
 
+**Console check (2026-11-24, 0.1.764, overlay on, not idle-state):** no crash on 4K HEVC HDR10 60 Mbps
+(local clip, 0 missed over 2+ min), a 4K HEVC HDR film (1 missed) and 4K AV1 on rav1g with Bale's stage
+(`rav1g-tune display=off`). Totals read 19–23 ms (HEVC 60 fps), ~46 ms (HEVC 24 fps) and ~52 ms (AV1 24 fps),
+end resolution 1.6–3 ms: all above a frame period while frames were not missed, so they are dominated by
+queueing (the stage waits behind the frame's decode and presentation pacing), not stage cost. Treat the row as
+"timing works and does not crash", and use A/B switches with the smoothness summary for cost; timestamps with
+`D3D11_CONTEXT_TYPE_3D` remain the untested way back to real GPU time.
+
 ### Bounds and failures
 
 One measurement is in flight at a time: two event queries, one thread, no frame textures. An event is never ended
