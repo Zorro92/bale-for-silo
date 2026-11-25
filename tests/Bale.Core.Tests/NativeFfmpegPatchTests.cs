@@ -39,14 +39,18 @@ public class NativeFfmpegPatchTests
     {
         var build = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "build-ffmpeg-native.ps1.txt"));
         Assert.Contains("$allowedPatchFiles = @('libavcodec/libdav1d.c')", build);
-        Assert.Contains("throw 'PatchRevision must be set exactly when FFmpeg source patches exist'", build);
+        // An empty revision builds stock FFmpeg (9.1, 2026-11-25); a set one must find its patches.
+        Assert.Contains("throw 'PatchRevision is set but no FFmpeg source patches exist'", build);
+        Assert.Contains("[ValidateSet('8.1.2', '9.1')][string]$FfmpegVersion", build);
+        Assert.Contains("throw \"The FFmpeg n$FfmpegVersion tag no longer resolves to the reviewed commit\"", build);
         Assert.True(build.IndexOf("Invoke-Git $ffmpeg @('apply', $patch.FullName)", StringComparison.Ordinal)
             < build.IndexOf("-File ./Build-FFmpeg.ps1", StringComparison.Ordinal));
         Assert.Contains("FFmpeg source patch set:", build);
         Assert.Contains("throw \"FFmpeg source patch has CRLF line endings: $($patch.Name)\"", build);
         Assert.Contains("Copy-Item $patch.FullName (Join-Path $output $patch.Name)", build);
         var workflow = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "ffmpeg-native.yml.txt"));
-        Assert.Contains("-PatchRevision $env:PATCH_REVISION", workflow);
+        Assert.Contains("-PatchRevision $env:PATCH_REVISION -FfmpegVersion $env:FFMPEG_VERSION", workflow);
+        Assert.Contains("if: ${{ inputs.publish }}", workflow);
         var restore = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "restore-ffmpeg-native.ps1.txt"));
         Assert.Contains("$patchRevision -cnotmatch '^(p[1-9][0-9]*)?$'", restore);
     }

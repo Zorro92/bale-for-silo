@@ -3,14 +3,22 @@ param(
     [Parameter(Mandatory = $true)][string]$UpstreamRepository,
     [Parameter(Mandatory = $true)][string]$UpstreamRef,
     [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Dav1dTag = '1.5.4',
+    # FFmpeg release (tag n<version>). 8.1.2 is the selected FFmpegInteropX ref's own pin; any other
+    # reviewed release replaces the Libs/ffmpeg gitlink with that tag's commit, like dav1d below.
+    [ValidateSet('8.1.2', '9.1')][string]$FfmpegVersion = '8.1.2',
     # Names the reviewed FFmpeg source patch set (scripts/ffmpeg-native-patches); empty = unpatched.
     [ValidatePattern('^(p[1-9][0-9]*)?$')][string]$PatchRevision = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $SourcePath = (Resolve-Path $SourcePath).Path
-$version = "8.1.2-bale.dav1d.$Dav1dTag"
-$tag = "native-ffmpeg-8.1.2-dav1d-$Dav1dTag"
+$version = "$FfmpegVersion-bale.dav1d.$Dav1dTag"
+$tag = "native-ffmpeg-$FfmpegVersion-dav1d-$Dav1dTag"
+# Reviewed commits of each FFmpeg release tag (peeled). A moved tag fails the build.
+$ffmpegCommits = @{
+    '8.1.2' = '38b88335f99e76ed89ff3c93f877fdefce736c13'
+    '9.1'   = '74e4393595cf2b5857f0da925c4e0dd74ea306e5'
+}
 if ($PatchRevision) {
     $version += ".$PatchRevision"
     $tag += "-$PatchRevision"
@@ -36,9 +44,17 @@ function Get-SubmodulePins {
 
 $upstreamCommit = Invoke-Git $SourcePath @('rev-parse', 'HEAD')
 $before = Get-SubmodulePins
-# 8.1.2 identifies the native FFmpeg ABI/source, independently of the interop wrapper.
-if ($before['Libs/ffmpeg'] -ne '38b88335f99e76ed89ff3c93f877fdefce736c13') {
-    throw 'This package version requires the upstream 8.1.2 FFmpeg revision'
+# The FFmpeg version identifies the native FFmpeg ABI/source, independently of the interop wrapper.
+$originalFfmpeg = $before['Libs/ffmpeg']
+$ffmpeg = Join-Path $SourcePath 'Libs/ffmpeg'
+if ($FfmpegVersion -eq '8.1.2') {
+    if ($originalFfmpeg -ne $ffmpegCommits['8.1.2']) { throw 'This package version requires the upstream 8.1.2 FFmpeg revision' }
+}
+else {
+    Invoke-Git $ffmpeg @('fetch', 'origin', "refs/tags/n${FfmpegVersion}:refs/tags/n${FfmpegVersion}")
+    $ffmpegCommit = Invoke-Git $ffmpeg @('rev-parse', "refs/tags/n$FfmpegVersion`^{commit}")
+    if ($ffmpegCommit -ne $ffmpegCommits[$FfmpegVersion]) { throw "The FFmpeg n$FfmpegVersion tag no longer resolves to the reviewed commit" }
+    Invoke-Git $ffmpeg @('checkout', '--detach', $ffmpegCommit)
 }
 $originalDav1d = $before['Libs/dav1d']
 $dav1d = Join-Path $SourcePath 'Libs/dav1d'
@@ -51,18 +67,22 @@ Invoke-Git $dav1d @('checkout', '--detach', $dav1dCommit)
 $after = Get-SubmodulePins
 if ($before.Count -ne $after.Count) { throw 'The submodule set changed' }
 foreach ($path in $before.Keys) {
-    if ($path -ne 'Libs/dav1d' -and $before[$path] -ne $after[$path]) {
+    if ($path -ne 'Libs/dav1d' -and $path -ne 'Libs/ffmpeg' -and $before[$path] -ne $after[$path]) {
         throw "Unexpected submodule change: $path"
     }
 }
-# No configure/build-script patches: only the dav1d gitlink differs from the selected ref.
+if ($after['Libs/ffmpeg'] -ne $ffmpegCommits[$FfmpegVersion]) { throw 'Unexpected FFmpeg revision' }
+# No configure/build-script patches: only the dav1d (and a selected FFmpeg release's) gitlink differs from the ref.
 Invoke-Git $SourcePath @('diff', '--exit-code', 'HEAD', '--', 'Build', 'Libs/build-scripts', 'Build-FFmpeg.ps1')
 
 # Reviewed FFmpeg source patches. They may change only the allowed files below (no configure,
 # build or other library changes); the source archive below is taken from this patched tree.
-$ffmpeg = Join-Path $SourcePath 'Libs/ffmpeg'
-$patches = @(Get-ChildItem (Join-Path $PSScriptRoot 'ffmpeg-native-patches') -Filter '*.patch' | Sort-Object Name)
-if ([bool]$PatchRevision -ne ($patches.Count -gt 0)) { throw 'PatchRevision must be set exactly when FFmpeg source patches exist' }
+# An empty PatchRevision builds stock FFmpeg; the patch files stay in the repository for older pins.
+$patches = @()
+if ($PatchRevision) {
+    $patches = @(Get-ChildItem (Join-Path $PSScriptRoot 'ffmpeg-native-patches') -Filter '*.patch' | Sort-Object Name)
+    if ($patches.Count -eq 0) { throw 'PatchRevision is set but no FFmpeg source patches exist' }
+}
 Invoke-Git $ffmpeg @('diff', '--exit-code', 'HEAD') | Out-Null
 foreach ($patch in $patches) {
     # A CRLF checkout of the patch (missing -text in .gitattributes) would not apply to LF sources.
@@ -88,13 +108,19 @@ try {
 finally { Pop-Location }
 
 $native = Join-Path $SourcePath 'Output/FFmpegUWP/x64'
+# The DLL names carry each library's major version, which a new FFmpeg release may bump.
+function Get-NativeDll([string]$Name) {
+    $found = @(Get-ChildItem (Join-Path $native 'bin') -Filter "$Name-*.dll")
+    if ($found.Count -ne 1) { throw "Expected one $Name DLL, found $($found.Count)" }
+    return $found[0].FullName
+}
 & "$PSScriptRoot/check-dav1d-version.ps1" `
-    -Bytes ([System.IO.File]::ReadAllBytes((Join-Path $native 'bin/avcodec-62.dll'))) -ExpectedVersion $Dav1dTag
+    -Bytes ([System.IO.File]::ReadAllBytes((Get-NativeDll 'avcodec'))) -ExpectedVersion $Dav1dTag
 $config = Get-Content (Join-Path $SourcePath 'Intermediate/FFmpegUWP/x64/int/ffmpeg/config.h') -Raw
 foreach ($disabled in @('GPL', 'VERSION3', 'NONFREE', 'LIBX264', 'LIBX265')) {
     if ($config -notmatch "(?m)^#define CONFIG_$disabled 0\s*$") { throw "CONFIG_$disabled is not disabled" }
 }
-$avutil = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes((Join-Path $native 'bin/avutil-60.dll')))
+$avutil = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes((Get-NativeDll 'avutil')))
 foreach ($flag in @('--disable-gpl', '--disable-version3', '--disable-encoders', '--enable-shared', '--enable-libdav1d', 'LGPL version 2.1 or later')) {
     if (-not $avutil.Contains($flag)) { throw "Missing native configuration evidence: $flag" }
 }
@@ -113,6 +139,7 @@ $sources = @(
     "dav1d tag: $Dav1dTag",
     "dav1d commit: $dav1dCommit",
     "Original dav1d commit: $originalDav1d",
+    "FFmpeg release: $FfmpegVersion (commit $($after['Libs/ffmpeg']); the ref's own pin was $originalFfmpeg)",
     "FFmpeg source patch set: $(if ($PatchRevision) { $PatchRevision } else { 'none' })"
 )
 foreach ($patch in $patches) {
@@ -122,7 +149,7 @@ foreach ($patch in $patches) {
 }
 $sources += @(
     '',
-    'All submodule revisions (only dav1d changed from the selected FFmpegInteropX ref):'
+    'All submodule revisions (only dav1d and, for a selected FFmpeg release, ffmpeg changed from the selected FFmpegInteropX ref):'
 )
 foreach ($path in ($after.Keys | Sort-Object)) { $sources += "$path $($after[$path])" }
 $sources += @('', 'Upstream submodule URLs:', (Get-Content (Join-Path $SourcePath '.gitmodules') -Raw),
