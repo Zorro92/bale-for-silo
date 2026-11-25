@@ -348,6 +348,19 @@ software frames, Series S.
 (2.95 cores, 0 missed, logged "past the release bounds"); 1080p HEVC Main 10 stays on the system decoder and 4K
 HEVC HDR10 on FFmpeg D3D11. Not checked: a library title through Silo (none at hand past the hardware decoder).
 
+**Phase B console check (2026-11-25, 0.1.769, wrapper bale.81, release gate, no switches, 1080p SDR TV):**
+
+- 4K H.264 through the software stage (`Bale software stage: 3840x2160 NV12 -> 1920x1080 NV12`, active, no
+  declines): 24 fps 25 Mbps 1.62 cores / 767 MiB; 30 fps 13 Mbps 1.89 / 844 MiB; 30 fps 50 Mbps 2.77 / 833 MiB; all
+  0 missed, 0 stalls. Versus Media Foundation scaling: slightly less CPU and ~400 MiB less app memory.
+- Leak check: 25 consecutive opens of the 2160p24 clip, all playing, 0 missed; idle app memory 334 -> 348 MiB. The
+  Media Foundation scaling route died at ~23.
+- HDR software: the 4:2:2 HEVC HDR10 clip goes through the stage tone map (P010 -> NV12, peak 1000 from config),
+  1.90 cores, 0 missed, picture correctly tone-mapped (screenshot check).
+- 1080p non-4:2:0 with threaded swscale, vs phase A: 0.72 / 2.03 / 1.97 / 2.27 / 1.14 / 0.92 cores (High 10 24/60,
+  H.264 4:2:2, HEVC 4:2:2, HEVC 12-bit, VP9 p1): flat to +9%, not lower. All 0 missed.
+- Unchanged: 4K HEVC HDR10 (FFmpeg D3D11, hardware stage), 1080p and 4K AV1 (rav1g in debug).
+
 ### Costs besides the decoder
 
 - **Frame memory.** A 4K frame is 12.4 MB (8-bit 4:2:0) or 24.9 MB (10/12-bit, 16-bit samples); 1080p is a quarter.
