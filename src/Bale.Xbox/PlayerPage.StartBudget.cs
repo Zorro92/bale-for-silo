@@ -21,6 +21,12 @@ public sealed partial class PlayerPage
         try
         {
             if (_attempt is not { Media: { StartBudget: { } budget } media } attempt || !IsCurrent(attempt, media)) return;
+            // An opened mount whose HLS segments to the playlist's end held no media never starts (silo-server 4bee8f8).
+            if (!media.Started && !media.Mounting && !media.FailureQueued && media.Progressive is { EndedWithoutMedia: true })
+            {
+                EndAtEmptyTail(attempt, media);
+                return;
+            }
             var now = Environment.TickCount64;
             var facts = new PlaybackStartFacts
             {

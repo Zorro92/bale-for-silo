@@ -33,6 +33,9 @@ pub struct ProgressiveStats {
     pub position: u64,
     pub faulted: u64,
     pub completed: u64,
+    /// HLS: completed, and no segment from the mount's start held media (segment_media.rs): the mount
+    /// started past the media's end.
+    pub no_media: u64,
 }
 
 struct Chunk {
@@ -58,6 +61,7 @@ struct Shared {
     closed: AtomicBool,
     faulted: AtomicBool,
     completed: AtomicBool,
+    no_media: AtomicBool,
     downloaded_bytes: AtomicU64,
     download_us: AtomicU64,
     buffered_bytes: AtomicU64,
@@ -77,6 +81,11 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// media segments (hls.rs). `None` is the clean end; an error ends the data as a fault.
 pub trait BodySource: Send {
     fn next_body(&mut self) -> Option<Result<Box<dyn Read + Send>, StreamError>>;
+
+    /// HLS: whether any media segment so far held media (segment_media.rs); None for a single response.
+    fn delivered_media(&self) -> Option<bool> {
+        None
+    }
 }
 
 /// A single response body.
@@ -99,6 +108,11 @@ impl Shared {
                 }
                 match source.next_body() {
                     None => {
+                        // Every segment to the playlist's end held no media (silo-server 4bee8f8).
+                        if source.delivered_media() == Some(false) {
+                            self.no_media.store(true, Ordering::Release);
+                            crate::media_fault::count(&crate::media_fault::HLS_NO_MEDIA);
+                        }
                         self.completed.store(true, Ordering::Release);
                         break;
                     }
@@ -290,6 +304,7 @@ impl ProgressiveStream {
             position: s.position.load(Ordering::Relaxed),
             faulted: flag(&s.faulted),
             completed: flag(&s.completed),
+            no_media: flag(&s.no_media),
         }
     }
 

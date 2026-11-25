@@ -1046,11 +1046,13 @@ mod tests {
         let stream = open(&server, Policy::DIRECT_PLAY);
         media_fault::set(media_fault::SetArgs {
             outage_seconds: Some(1),
+            ..Default::default()
         });
         let started = Instant::now();
         let result = read_block(&stream, &data, 2 * MIB);
         media_fault::set(media_fault::SetArgs {
             outage_seconds: Some(0),
+            ..Default::default()
         });
         result.expect("the window outlasted a one-second outage");
         assert!(started.elapsed() >= Duration::from_millis(900));

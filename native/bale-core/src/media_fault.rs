@@ -5,9 +5,11 @@
 //! - **outage**: for the next N seconds every Rust media request (range opens and blocks, HLS playlists and
 //!   segments, the progressive open) fails as a network error, and reads of bodies already open fail too,
 //!   as a server that went away mid-response would.
+//! - **empty tail**: the next HLS mount answers a complete playlist's last N segments itself with segments
+//!   that hold no media, as Silo answers segments past a finished transcode's real end (hls.rs).
 
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
@@ -27,6 +29,20 @@ pub static RANGE_RETRIES: AtomicU64 = AtomicU64::new(0);
 pub static RANGE_RENEWALS: AtomicU64 = AtomicU64::new(0);
 /// Range stream: outage windows spent (the read then fails).
 pub static RANGE_GIVEN_UP: AtomicU64 = AtomicU64::new(0);
+/// HLS: media segments that held no media (segment_media.rs), the server's or the debug tail's.
+pub static HLS_EMPTY_SEGMENTS: AtomicU64 = AtomicU64::new(0);
+/// HLS: segments the debug empty tail answered.
+pub static HLS_EMPTY_SERVED: AtomicU64 = AtomicU64::new(0);
+/// HLS: mounts whose segments to the playlist's end held no media (started past the media's end).
+pub static HLS_NO_MEDIA: AtomicU64 = AtomicU64::new(0);
+
+/// The debug empty tail armed for the next HLS mount.
+static EMPTY_TAIL: AtomicU32 = AtomicU32::new(0);
+
+/// The armed debug empty tail, for the HLS mount opening now (then disarmed).
+pub fn take_empty_tail() -> usize {
+    EMPTY_TAIL.swap(0, Ordering::Relaxed) as usize
+}
 
 /// True while a debug outage is armed; always false in normal playback.
 pub fn outage() -> bool {
@@ -43,14 +59,20 @@ pub fn count(counter: &AtomicU64) {
 pub struct SetArgs {
     /// Seconds of outage from now; 0 ends an armed one.
     pub outage_seconds: Option<u64>,
+    /// Empty segments for the next HLS mount's playlist end; 0 disarms.
+    pub empty_tail: Option<u32>,
 }
 
 #[derive(Serialize, Debug, PartialEq, Eq)]
 pub struct State {
     pub outage_remaining_ms: u64,
+    pub empty_tail_armed: u32,
     pub range_retries: u64,
     pub range_renewals: u64,
     pub range_given_up: u64,
+    pub hls_empty_segments: u64,
+    pub hls_empty_served: u64,
+    pub hls_no_media: u64,
 }
 
 pub fn set(args: SetArgs) -> State {
@@ -64,6 +86,9 @@ pub fn set(args: SetArgs) -> State {
         };
         OUTAGE_UNTIL_MS.store(until, Ordering::Relaxed);
     }
+    if let Some(segments) = args.empty_tail {
+        EMPTY_TAIL.store(segments, Ordering::Relaxed);
+    }
     state()
 }
 
@@ -72,9 +97,13 @@ pub fn state() -> State {
     let get = |counter: &AtomicU64| counter.load(Ordering::Relaxed);
     State {
         outage_remaining_ms: until.saturating_sub(now_ms()),
+        empty_tail_armed: EMPTY_TAIL.load(Ordering::Relaxed),
         range_retries: get(&RANGE_RETRIES),
         range_renewals: get(&RANGE_RENEWALS),
         range_given_up: get(&RANGE_GIVEN_UP),
+        hls_empty_segments: get(&HLS_EMPTY_SEGMENTS),
+        hls_empty_served: get(&HLS_EMPTY_SERVED),
+        hls_no_media: get(&HLS_NO_MEDIA),
     }
 }
 
@@ -96,6 +125,7 @@ pub(crate) mod tests {
         assert!(!outage());
         let state = set(SetArgs {
             outage_seconds: Some(30),
+            ..Default::default()
         });
         assert!(outage());
         assert!((29_000..=30_000).contains(&state.outage_remaining_ms));
@@ -103,7 +133,8 @@ pub(crate) mod tests {
         assert_ne!(set(SetArgs::default()).outage_remaining_ms, 0);
         assert_eq!(
             set(SetArgs {
-                outage_seconds: Some(0)
+                outage_seconds: Some(0),
+                ..Default::default()
             })
             .outage_remaining_ms,
             0

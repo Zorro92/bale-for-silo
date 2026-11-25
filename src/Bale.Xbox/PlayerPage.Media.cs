@@ -354,9 +354,19 @@ public sealed partial class PlayerPage
                 // The engine gives FFmpegInteropX no MediaPlayer session; wrapper bale.30's opt-in FastSeek lands on
                 // the keyframe without one (reported via SetActualStartPosition).
                 if (engineSource) config.FFmpegOptions["bale_fast_seek_without_session"] = "1";
-                media.FfmpegSource = media.ForwardInput is { } forward
-                    ? await FFmpegMediaSource.CreateFromInputStreamAsync(forward, config).AsTask()
-                    : await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream!, config).AsTask();
+                try
+                {
+                    media.FfmpegSource = media.ForwardInput is { } forward
+                        ? await FFmpegMediaSource.CreateFromInputStreamAsync(forward, config).AsTask()
+                        : await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream!, config).AsTask();
+                }
+                catch (Exception ex) when (media.Progressive is { EndedWithoutMedia: true } && !media.Token.IsCancellationRequested)
+                {
+                    // Segments with no media to the playlist's end (an MPEG-TS stream of only PAT/PMT has no streams).
+                    LogFailure("FFmpeg open past the media's end", ex);
+                    EndAtEmptyTail(attempt, media);
+                    return;
+                }
                 media.Token.ThrowIfCancellationRequested();
                 if (media.Route.DolbyVision7BaseLayer)
                 {
@@ -836,6 +846,8 @@ public sealed partial class PlayerPage
                     _bufferingSignals.NoteMediaRequestFailed();
                     QueueProgressiveReconnect(attempt, media, "transport");
                 }
+                // A mount past the media's end fails for want of media: the title ended there.
+                else if (!media.Started && media.Progressive is { EndedWithoutMedia: true }) EndAtEmptyTail(attempt, media);
                 else QueueFailure(attempt, media, hresult, decoder, network);
             });
         }
@@ -895,6 +907,29 @@ public sealed partial class PlayerPage
             if (!HandleEndedWithUpNext()) _ = StopAndGoBackAsync();
         }
     });
+
+    /// <summary>
+    /// The mount started past the media's end (silo-server 4bee8f8): a transcode's playlist lists segments to the file's
+    /// stored duration, and Silo answers those past the media's real end with no media, so this mount's HLS segments from
+    /// its start to the playlist's end held none (a seek or start into that tail) and FFmpeg has nothing to open or play.
+    /// The title ended there, as the web's hls.js steps over such segments to the end: end as MediaEnded does (Up Next or
+    /// back), never an error screen, a replan or a wait for the start budget. Playing into the tail ends normally anyway.
+    /// </summary>
+    private void EndAtEmptyTail(Attempt attempt, Mount media)
+    {
+        if (!IsCurrent(attempt, media) || media.FailureQueued || media.Started) return;
+        // Finished: no failure, start budget or seek watchdog acts on this mount any more.
+        media.FailureQueued = true;
+        media.Opening.TrySetResult(false);
+        Log.Info("player: HLS mount opened past the media's end (no media to the playlist's end); ending playback");
+        _ = DispatchAsync(() =>
+        {
+            if (!_active || _leaving || _suspended || !ReferenceEquals(_attempt, attempt) || !ReferenceEquals(attempt.Media, media)) return;
+            SetLoading(false);
+            BufferingMediaEnded();
+            if (!HandleEndedWithUpNext()) _ = StopAndGoBackAsync();
+        });
+    }
 
     private void TrackProgressiveIdle(Attempt attempt, Mount media, MediaPlaybackState state)
     {

@@ -14,6 +14,13 @@ public abstract class MediaProgressiveStream : Stream
     /// <summary>The server ended the response cleanly: FFmpeg read the source to its end.</summary>
     public abstract bool Completed { get; }
 
+    /// <summary>
+    /// HLS: <see cref="Completed"/>, and no segment from the mount's start held media (native/bale-core/src/segment_media.rs).
+    /// Silo answers segments past a finished transcode's real end with no media (silo-server 4bee8f8), so the mount started
+    /// past the media's end: the title ended there.
+    /// </summary>
+    public virtual bool EndedWithoutMedia => false;
+
     /// <summary>Downloaded bytes not yet handed to the demuxer.</summary>
     public abstract long BufferedBytes { get; }
 

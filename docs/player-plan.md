@@ -2337,14 +2337,42 @@ Now, as the web (`VideoPlayer.tsx` `replanSeekRef`, `noteViewerSeek`):
   change, a press after the replacement mounted, a remux that can't seek, a seek still in flight, the debug seek) and pins
   the quality and track change call sites by source.
 
+### Empty segments at a transcode's end (server `4bee8f8`)
+
+A transcode's synthetic VOD playlist lists segments up to the file's stored duration, which can outlast its audio and
+video. Once FFmpeg has read the media to its end, Silo answers the segments past it with `200` and a segment that holds
+no media: the PAT and PMT of the session's MPEG-TS, an fMP4 `moof` whose tracks have no samples with an empty `mdat`, or
+no bytes when it can't read the init segment (before, a `404`/`500` that players retried until they gave up).
+
+- **Played into, they end cleanly** (checked with FFmpeg 9.0.2 on Linux through a pipe, as Bale's reader feeds it, on
+  real H.264/AAC segments: the same packet counts with and without the empty tail, no errors): the Rust reader appends
+  them to the forward-only stream like any segment, reaches `EXT-X-ENDLIST`, completes (not faulted), FFmpeg reaches its
+  end, and the engine's `MediaEnded` sees a completed stream: Up Next or back to Detail, as for any end.
+- **A mount that starts in that tail** (a skip or seek past the media's real end, which `SkipTarget` allows up to the
+  stored duration, or a start there) has nothing to play: FFmpeg can't open an MPEG-TS stream of only PAT/PMT (no
+  streams), and an fMP4 init with empty fragments opens with no packets. That failed to the single failure replan, or
+  waited out the 45 s start budget. Now the reader scans every media segment (`segment_media.rs`: an MPEG-TS packet that
+  starts a PES, or an `mdat` with a payload; it decides within the first packets or boxes and then stops) and reports a
+  mount that completed with no media from its start (`EndedWithoutMedia`, `ProgressiveStats.no_media`). The player then
+  ends playback as `MediaEnded` does (`EndAtEmptyTail`): when FFmpeg's open fails, when the backend fails, or on the
+  tick once the open finished without a first frame. Never an error screen, a replan or a wait for the start budget, as
+  the web's hls.js steps over such segments to the end.
+- **Tests:** `segment_media.rs` (the server's three empty shapes, real segments in any pieces, adaptation fields,
+  64-bit and open-ended `mdat`), `hls.rs` loopback playlists (TS and fMP4 ending in empty segments play to a clean end; a
+  mount starting in the tail reports no media; the debug tail), `RustHlsStreamTests.AMountThatStartsPastTheMediasEndReportsNoMedia`,
+  `PlayerEmptyTailWiringTests`.
+
 ### Debug: `media-fault`
 
 `bale-debug.sh media-fault outage=<0..600>` (native/bale-core/src/media_fault.rs, memory only, nothing armed at start):
 for that many seconds every Rust media request (range opens and blocks, HLS playlists and segments, the progressive
 open) fails as a network error, and reads of bodies already open fail too, as a server that went away mid-response;
-`outage=0` ends it. Without arguments it prints the remaining outage and the Rust streams' recovery counters (range
-retries, fresh windows, windows given up). It works on any route, the real server's or `play-url`'s, because it sits in
-Bale's own transport.
+`outage=0` ends it. `empty-tail=<0..20>` makes the next HLS mount answer that many of a complete playlist's last segments
+itself with no media, as Silo does past a transcode's real end (the PAT and PMT the mount saw for MPEG-TS, else no
+bytes), without requesting them; it applies to one mount, so arm it after the first mount started to aim it at a seek's
+remount. Without arguments it prints the armed faults and the Rust streams' recovery counters (range retries, fresh
+windows, windows given up; HLS segments without media, debug empty segments served, mounts that found no media). It
+works on any route, the real server's or `play-url`'s, because it sits in Bale's own transport.
 
 ## Debug: play a file URL through the real player
 

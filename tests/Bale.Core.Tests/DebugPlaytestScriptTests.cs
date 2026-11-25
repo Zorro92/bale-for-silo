@@ -35,6 +35,7 @@ public class DebugPlaytestScriptTests
     [InlineData(null)]
     [InlineData("outage=0")]
     [InlineData("outage=40")]
+    [InlineData("empty-tail=3")]
     public async Task MediaFaultUsesStatusOrAnEncodedPost(string? fault)
     {
         if (!OperatingSystem.IsLinux()) return;
@@ -51,12 +52,22 @@ public class DebugPlaytestScriptTests
     {
         if (!OperatingSystem.IsLinux()) return;
         foreach (var args in new[] { new[] { "media-fault", "" }, ["media-fault", "outage"], ["media-fault", "outage=-1"],
-            ["media-fault", "outage=1000"], ["media-fault", "outage=4&x=1"], ["media-fault", "drop=1"] })
+            ["media-fault", "outage=1000"], ["media-fault", "outage=4&x=1"], ["media-fault", "drop=1"],
+            ["media-fault", "empty-tail=100"], ["media-fault", "empty-tail"], ["media-fault", "outage=4", "tail=2"] })
         {
             var result = await RunAsync(args);
             Assert.Equal(2, result.ExitCode);
             Assert.Empty(result.Arguments);
         }
+    }
+
+    [Fact]
+    public async Task MediaFaultSendsAnOutageAndAnEmptyTailTogether()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(["media-fault", "outage=30", "empty-tail=2"]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("--data-urlencode\noutage=30\n--data-urlencode\nempty-tail=2\n", result.Arguments);
     }
 
     [Theory]

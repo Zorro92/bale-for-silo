@@ -70,6 +70,43 @@ public sealed class RustHlsStreamTests
 
     private static byte[] Expected(int from) => Init.Concat(Segments.Skip(from).SelectMany(s => s)).ToArray();
 
+    private static byte[] Box(string type, int payload) =>
+        [.. BitConverter.GetBytes(System.Buffers.Binary.BinaryPrimitives.ReverseEndianness(8 + payload)),
+            .. Encoding.ASCII.GetBytes(type), .. new byte[payload]];
+
+    [Fact]
+    public async Task AMountThatStartsPastTheMediasEndReportsNoMedia()
+    {
+        // silo-server 4bee8f8: a finished transcode answers segments past the media's real end with no media (a moof whose
+        // tracks have no samples and an empty mdat, or no bytes). Played into, they end cleanly; a mount starting there
+        // has nothing to play (native/bale-core/src/segment_media.rs).
+        byte[] Fragment(int media) => [.. Box("moof", 96), .. Box("mdat", media)];
+        using var server = new LoopbackMediaServer([1]);
+        server.Files[Dir + "index.m3u8"] = () => Encoding.ASCII.GetBytes(
+            "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:6\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MAP:URI=\"init.mp4\"\n" +
+            string.Concat(Enumerable.Range(0, 4).Select(i => $"#EXTINF:6.000000,\nseg_{i}.m4s\n")) + "#EXT-X-ENDLIST\n");
+        server.Files[Dir + "init.mp4"] = () => Init;
+        server.Files[Dir + "seg_0.m4s"] = () => Fragment(5000);
+        server.Files[Dir + "seg_1.m4s"] = () => Fragment(5000);
+        server.Files[Dir + "seg_2.m4s"] = () => Fragment(0);
+        server.Files[Dir + "seg_3.m4s"] = () => [];
+        using var client = Client(server);
+        var plan = Plan();
+        plan.Stream!.Url = Dir + "index.m3u8";
+        await using (var through = await client.Playback.OpenMedia(plan).OpenNativeHlsAsync(0, default))
+        {
+            Assert.Equal(Init.Length + 2 * Fragment(5000).Length + Fragment(0).Length, (await ReadAll(through)).Length);
+            Assert.True(through.Completed);
+            Assert.False(through.Faulted);
+            Assert.False(through.EndedWithoutMedia);
+        }
+        await using var tail = await client.Playback.OpenMedia(plan).OpenNativeHlsAsync(13, default);
+        Assert.Equal(12, tail.SegmentStartSeconds);
+        Assert.Equal(Init.Length + Fragment(0).Length, (await ReadAll(tail)).Length);
+        Assert.True(tail.Completed);
+        Assert.True(tail.EndedWithoutMedia);
+    }
+
     [Fact]
     public async Task PlaysInitThenEverySegmentFromTheStart()
     {

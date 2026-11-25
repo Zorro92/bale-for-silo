@@ -40,6 +40,7 @@ pub mod reanchor;
 pub mod retry_window;
 pub mod route;
 pub mod seek_watchdog;
+pub mod segment_media;
 pub mod software_decode;
 pub mod start_budget;
 pub mod subtitles;

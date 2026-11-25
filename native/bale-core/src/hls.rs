@@ -12,12 +12,15 @@
 
 use std::collections::HashMap;
 use std::io::Read;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use crate::auth_client::AuthClient;
+use crate::media_fault;
 use crate::progressive_stream::BodySource;
 use crate::range_stream::StreamError;
+use crate::segment_media::Scanned;
 
 /// Silo warns above 3.5 MiB and Roku refuses 4 MiB; anything bigger is not a Silo playlist.
 const MAX_PLAYLIST_BYTES: u64 = 8 * 1024 * 1024;
@@ -326,6 +329,15 @@ pub struct HlsSource {
     /// Media sequence number of the next segment to play.
     next_sequence: u64,
     init_pending: Option<String>,
+    /// A media segment of this mount held media (segment_media.rs). Silo answers segments past a finished
+    /// transcode's real end with none (silo-server `4bee8f8`): a mount whose segments to the playlist's end
+    /// held none started past the media's end.
+    media: Arc<AtomicBool>,
+    /// The PAT and PMT of this mount's MPEG-TS, once a segment showed them (for the debug empty tail).
+    ts_tables: Arc<Mutex<Option<Vec<u8>>>>,
+    /// Debug (`media-fault empty-tail`): this many of a complete playlist's last segments are answered here
+    /// with no media, as Silo answers segments past a transcode's real end.
+    empty_tail: usize,
 }
 
 impl HlsSource {
@@ -355,6 +367,9 @@ impl HlsSource {
             playlist: Playlist::default(),
             next_sequence: 0,
             init_pending: None,
+            media: Arc::new(AtomicBool::new(false)),
+            ts_tables: Arc::new(Mutex::new(None)),
+            empty_tail: media_fault::take_empty_tail(),
         };
         let mut playlist = source.fetch(url)?;
         if let Some(variant) = playlist.variant.clone() {
@@ -458,7 +473,15 @@ impl HlsSource {
                     .child(&segment.uri)
                     .map_err(|_| StreamError::InvalidRange)?;
                 self.next_sequence += 1;
-                return self.body(&url).map(Some);
+                if self.playlist.ended && index + self.empty_tail >= self.playlist.segments.len() {
+                    return Ok(Some(self.debug_empty_segment()));
+                }
+                let body = self.body(&url)?;
+                return Ok(Some(Box::new(Scanned::new(
+                    body,
+                    self.media.clone(),
+                    self.ts_tables.clone(),
+                ))));
             }
             if self.playlist.ended {
                 return Ok(None);
@@ -474,17 +497,176 @@ impl HlsSource {
     }
 }
 
+impl HlsSource {
+    /// Debug empty tail: Silo's past-end answer, the PAT and PMT of this mount's MPEG-TS, or no bytes
+    /// (its answer for fMP4 when it can't read the init segment, and here for a mount that saw no tables).
+    fn debug_empty_segment(&self) -> Box<dyn Read + Send> {
+        media_fault::count(&media_fault::HLS_EMPTY_SERVED);
+        media_fault::count(&media_fault::HLS_EMPTY_SEGMENTS);
+        let tables = self
+            .ts_tables
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        Box::new(std::io::Cursor::new(tables.unwrap_or_default()))
+    }
+}
+
 impl BodySource for HlsSource {
     fn next_body(&mut self) -> Option<Result<Box<dyn Read + Send>, StreamError>> {
         self.next().transpose()
+    }
+
+    fn delivered_media(&self) -> Option<bool> {
+        Some(self.media.load(Ordering::Acquire))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::progressive_stream::{ProgressiveStats, ProgressiveStream};
+    use crate::segment_media::tests::{mp4_empty, mp4_media, ts_media, ts_tables};
+    use crate::test_http::{Reply, TestServer};
 
     const SERVER: &str = "https://silo.example:8443/base";
+    const ROUTE: &str = "/api/v2/playback/transcode/s";
+
+    /// A complete VOD playlist of 4 s segments (fMP4 with an init when `init` is given) and a server for it.
+    fn serve(segments: Vec<Vec<u8>>, init: Option<Vec<u8>>) -> TestServer {
+        let extension = if init.is_some() { "m4s" } else { "ts" };
+        let mut playlist = String::from(
+            "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n",
+        );
+        if init.is_some() {
+            playlist.push_str("#EXT-X-MAP:URI=\"init.mp4?st=t\"\n");
+        }
+        for index in 0..segments.len() {
+            playlist.push_str(&format!(
+                "#EXTINF:4.000000,\nseg_{index}.{extension}?st=t\n"
+            ));
+        }
+        playlist.push_str("#EXT-X-ENDLIST\n");
+        TestServer::start(move |request| {
+            let name = request.path().rsplit('/').next().unwrap_or_default();
+            if name == "index.m3u8" {
+                return Reply::ok(playlist.clone().into_bytes());
+            }
+            if name == "init.mp4" {
+                return init.clone().map_or_else(|| Reply::status(404), Reply::ok);
+            }
+            name.strip_prefix("seg_")
+                .and_then(|rest| rest.split('.').next())
+                .and_then(|index| index.parse::<usize>().ok())
+                .and_then(|index| segments.get(index))
+                .map_or_else(|| Reply::status(404), |body| Reply::ok(body.clone()))
+        })
+    }
+
+    /// Opens the server's playlist at `start` and reads the stream to its end.
+    fn play(server: &TestServer, start: f64) -> (Vec<u8>, ProgressiveStats) {
+        let client = Arc::new(AuthClient::new(Vec::new()));
+        let url = format!("{}{ROUTE}/index.m3u8?st=t", server.base);
+        let (source, _) = HlsSource::open(client.clone(), &server.base, &url, start).expect("open");
+        let stream = ProgressiveStream::start(Box::new(source), Some(client)).expect("start");
+        let mut out = Vec::new();
+        let mut buffer = vec![0; 65_536];
+        loop {
+            let count = stream.read(&mut buffer);
+            if count == 0 {
+                break;
+            }
+            out.extend_from_slice(&buffer[..count]);
+        }
+        (out, stream.stats())
+    }
+
+    #[test]
+    fn a_ts_playlist_ending_in_empty_segments_plays_to_a_clean_end() {
+        let _faults = media_fault::tests::exclusive();
+        let segments = vec![
+            ts_media(40),
+            ts_media(40),
+            ts_media(40),
+            ts_tables(),
+            ts_tables(),
+        ];
+        let server = serve(segments.clone(), None);
+        let (bytes, stats) = play(&server, 0.0);
+        assert_eq!(bytes, segments.concat());
+        assert_eq!((stats.completed, stats.faulted, stats.no_media), (1, 0, 0));
+    }
+
+    #[test]
+    fn an_fmp4_playlist_ending_in_empty_fragments_or_no_bytes_plays_to_a_clean_end() {
+        let _faults = media_fault::tests::exclusive();
+        let init = b"\0\0\0\x10ftypiso6\0\0\0\0".to_vec();
+        let segments = vec![mp4_media(5_000), mp4_media(5_000), mp4_empty(), Vec::new()];
+        let server = serve(segments.clone(), Some(init.clone()));
+        let (bytes, stats) = play(&server, 0.0);
+        assert_eq!(bytes, [init, segments.concat()].concat());
+        assert_eq!((stats.completed, stats.faulted, stats.no_media), (1, 0, 0));
+    }
+
+    #[test]
+    fn a_mount_that_starts_in_the_empty_tail_reports_no_media() {
+        let _faults = media_fault::tests::exclusive();
+        let segments = vec![
+            ts_media(40),
+            ts_media(40),
+            ts_media(40),
+            ts_tables(),
+            ts_tables(),
+        ];
+        let server = serve(segments.clone(), None);
+        // A seek to 13 s opens the fourth segment: past the media's real end.
+        let (bytes, stats) = play(&server, 13.0);
+        assert_eq!(bytes, segments[3..].concat());
+        assert_eq!((stats.completed, stats.faulted, stats.no_media), (1, 0, 1));
+        let init = b"\0\0\0\x10ftypiso6\0\0\0\0".to_vec();
+        let server = serve(vec![mp4_media(500), mp4_empty(), Vec::new()], Some(init));
+        assert_eq!(play(&server, 5.0).1.no_media, 1);
+        // The last real segment is no tail.
+        assert_eq!(play(&server, 1.0).1.no_media, 0);
+    }
+
+    #[test]
+    fn the_debug_empty_tail_answers_the_last_segments_itself() {
+        let _faults = media_fault::tests::exclusive();
+        let segments = vec![ts_media(40), ts_media(40), ts_media(40), ts_media(40)];
+        let server = serve(segments.clone(), None);
+        let arm = |segments| {
+            media_fault::set(media_fault::SetArgs {
+                empty_tail: Some(segments),
+                ..Default::default()
+            })
+        };
+        assert_eq!(arm(2).empty_tail_armed, 2);
+        let (bytes, stats) = play(&server, 0.0);
+        // The last two answered with the session's PAT and PMT, never requested from the server.
+        assert_eq!(
+            bytes,
+            [
+                segments[0].clone(),
+                segments[1].clone(),
+                ts_tables(),
+                ts_tables()
+            ]
+            .concat()
+        );
+        assert_eq!((stats.completed, stats.no_media), (1, 0));
+        assert_eq!(
+            server.count(|r| r.path().ends_with("seg_2.ts") || r.path().ends_with("seg_3.ts")),
+            0
+        );
+        // Armed for one mount only; a mount inside an armed tail sees no media at all.
+        assert_eq!(media_fault::state().empty_tail_armed, 0);
+        arm(2);
+        let (bytes, stats) = play(&server, 13.0);
+        assert!(bytes.is_empty());
+        assert_eq!((stats.completed, stats.no_media), (1, 1));
+        assert_eq!(play(&server, 13.0).0, segments[3]);
+    }
 
     #[test]
     fn parses_silos_vod_and_variables() {

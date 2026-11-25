@@ -161,6 +161,7 @@ public sealed class RustProgressiveStream : MediaProgressiveStream
 
     public override bool Faulted => Stats.Faulted != 0;
     public override bool Completed => Stats.Completed != 0;
+    public override bool EndedWithoutMedia => Stats.NoMedia != 0;
     public override long BufferedBytes => (long)Stats.BufferedBytes;
     public override long DownloadedBytes => (long)Stats.DownloadedBytes;
     public override TimeSpan DownloadTime => TimeSpan.FromMicroseconds(Stats.DownloadUs);
@@ -277,7 +278,7 @@ public sealed class RustProgressiveStream : MediaProgressiveStream
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeProgressiveStats
     {
-        public ulong DownloadedBytes, DownloadUs, BufferedBytes, Position, Faulted, Completed;
+        public ulong DownloadedBytes, DownloadUs, BufferedBytes, Position, Faulted, Completed, NoMedia;
     }
 
     private sealed class ProgressiveHandle() : SafeHandleZeroOrMinusOneIsInvalid(true)
