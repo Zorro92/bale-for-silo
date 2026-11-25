@@ -157,14 +157,14 @@ public class DebugFileProbeIntegrationTests
     private const string BlackFrame = "REtJRgAAIABBVjAxAA9wCDwAAAABAAAAAQAAAAAAAAA3AAAAAAAAAAAAAAASAAoMAAAAau+/4b3K+QBAMiUQAJ/gAACwAAADrRnO4wlW/3/WI/hTOWNO34U5+qGt1L/AmUog";
 
     [Fact]
-    public void WhenFfmpeg8IsInstalledTheActualDemuxProbeReads4K60Av1WithoutAUrlOrPlayer()
+    public void WhenFfmpeg9IsInstalledTheActualDemuxProbeReads4K60Av1WithoutAUrlOrPlayer()
     {
-        if (!OperatingSystem.IsLinux() || !NativeLibrary.TryLoad("libavformat.so.62", out _)) return;
+        if (!OperatingSystem.IsLinux() || !NativeLibrary.TryLoad("libavformat.so.63", out _)) return;
         NativeLibrary.SetDllImportResolver(typeof(DebugFileProbeReader).Assembly, (name, _, _) => name switch
         {
-            "avformat-62.dll" => NativeLibrary.Load("libavformat.so.62"),
-            "avcodec-62.dll" => NativeLibrary.Load("libavcodec.so.62"),
-            "avutil-60.dll" => NativeLibrary.Load("libavutil.so.60"),
+            "avformat-63.dll" => NativeLibrary.Load("libavformat.so.63"),
+            "avcodec-63.dll" => NativeLibrary.Load("libavcodec.so.63"),
+            "avutil-61.dll" => NativeLibrary.Load("libavutil.so.61"),
             _ => 0,
         });
         using var stream = new MemoryStream(Convert.FromBase64String(BlackFrame));

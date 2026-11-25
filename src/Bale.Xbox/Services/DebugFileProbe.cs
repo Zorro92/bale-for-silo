@@ -10,7 +10,7 @@ internal sealed class DebugPlayUrlException(string reason) : Exception(reason);
 
 /// <summary>
 /// Demux through the mount's existing range stream, before any player/decoder is opened. Never hand FFmpeg a URL.
-/// Bind only public FFmpeg 8 ABI prefixes (n8.1 libavformat/avformat.h, libavcodec/codec_par.h, libavutil/pixdesc.h);
+/// Bind only public FFmpeg 9 ABI prefixes (n9.1 libavformat/avformat.h, libavcodec/codec_par.h, libavutil/pixdesc.h);
 /// check all three majors before dereferencing them. The packaged FFmpeg and Linux integration tests use this ABI.
 /// </summary>
 internal static unsafe class DebugFileProbeReader
@@ -22,8 +22,8 @@ internal static unsafe class DebugFileProbeReader
     // Deliberately synchronous on a pool thread: the normal range readers already own caching/prefetch.
     internal static DebugFileProbe Read(Stream stream, CancellationToken cancellation)
     {
-        if (IntPtr.Size != 8 || avformat_version() >> 16 != 62 || avcodec_version() >> 16 != 62 || avutil_version() >> 16 != 60)
-            throw new DebugPlayUrlException("Debug file probe requires the packaged FFmpeg 8 ABI.");
+        if (IntPtr.Size != 8 || avformat_version() >> 16 != 63 || avcodec_version() >> 16 != 63 || avutil_version() >> 16 != 61)
+            throw new DebugPlayUrlException("Debug file probe requires the packaged FFmpeg 9 ABI.");
         cancellation.ThrowIfCancellationRequested();
         var handle = GCHandle.Alloc(new Input(stream, cancellation));
         nint io = 0, context = 0, options = 0;
