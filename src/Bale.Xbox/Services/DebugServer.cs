@@ -67,7 +67,8 @@ namespace Bale.Xbox.Services;
 ///                         optional buffer=0–5000, ahead=0–64, delay=0–64, prio=0–2, maxres=0|1|default, dpb=0–16|default (system video only)
 ///                         threads=0..16|default (software video decoder threads; 0/default = logical CPU count)
 ///                         swfallback=on|off|default (H.264/HEVC/VP9 past the hardware decoder decode in FFmpeg software even outside
-///                         the release envelope; decoder=software implies it; never with a console stage; docs/software-decode.md)
+///                         the release envelope, through the route's console stage; decoder=software implies it without the stage;
+///                         docs/software-decode.md)
 ///                         colorinfo=on|off|default (compressed system-video colour/HDR metadata; wrapper 2.1.0-bale.26+; no decoder override required)
 ///                         hdr=on|off|default (HdrSupport Enabled/Disabled/Automatic)
 ///                         white=80..400|default (tone-map SDR white in nits for the stage and rav1g's display pass, wrapper 2.1.0-bale.77+;

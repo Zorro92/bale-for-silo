@@ -498,14 +498,18 @@ public sealed partial class PlayerPage : Page, IBackHandler
         var keepsClaims = PlaybackStartBudget.Is(failure) || PlaybackSeekWatchdog.Is(failure);
         // A subtitle failure says nothing about the video stage; remounting the same plan would fail it again. Nor does
         // a start that ran out of time: the server's next route is the answer, not the same plan on another decoder.
-        if (attempt.Media?.Route.ConsoleDownscale == true && !attempt.SdrDownscaleDeclined && !hdrOutputFailed
+        if (attempt.Media is { Route.ConsoleDownscale: true } downscaled && !attempt.SdrDownscaleDeclined && !hdrOutputFailed
             && !PlaybackEmbeddedSubtitleFailure.Is(failure) && !keepsClaims)
         {
             // The SDR scale-only stage is an optimisation, not a new promise: the stage can decline a file
             // (e.g. unspecified colour tags) and the guard then rejects it. Remount the same plan once on the
-            // system decoder (MF scales it as before) without spending the server replan.
+            // system decoder (MF scales it as before) without spending the server replan. A software route keeps
+            // FFmpeg software without the stage; above 1080p the route then refuses it (MF must never scale those
+            // frames down), so that remount fails at once to the replan (docs/software-decode.md phase B).
             attempt.SdrDownscaleDeclined = true;
-            await RemountSamePlanAsync(attempt, position, "player: console downscale declined; remounting on the system decoder");
+            await RemountSamePlanAsync(attempt, position, downscaled.Route.SoftwareVideo
+                ? "player: console downscale declined; remounting the software route without the stage"
+                : "player: console downscale declined; remounting on the system decoder");
             return;
         }
 #if DEBUG_SERVER

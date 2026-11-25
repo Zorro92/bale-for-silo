@@ -23,6 +23,13 @@ public static class ConsoleToneMapPolicy
     public static bool SdrDownscaleWrapperSupported(string version) =>
         BaleCoreNative.Call("tone_map.sdr_downscale_wrapper_supported", version, BaleCoreJson.Default.String, BaleCoreJson.Default.Boolean);
 
+    /// <summary>
+    /// bale.80 runs the stage on FFmpeg software frames too (tone map, downscale, output depth, white nits), through a
+    /// staged D3D11 upload (docs/software-decode.md phase B).
+    /// </summary>
+    public static bool SoftwareStageWrapperSupported(string version) =>
+        BaleCoreNative.Call("tone_map.software_stage_wrapper_supported", version, BaleCoreJson.Default.String, BaleCoreJson.Default.Boolean);
+
     /// <summary>bale.38 adds the display-sized tone-map output keys.</summary>
     public static bool DownscaleWrapperSupported(string version) =>
         BaleCoreNative.Call("tone_map.downscale_wrapper_supported", version, BaleCoreJson.Default.String, BaleCoreJson.Default.Boolean);

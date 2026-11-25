@@ -24,22 +24,25 @@ internal static class FfmpegSource
     {
         // Debug captures only our safe Bale diagnostics; production keeps the native logger off.
         FfmpegLogging.Configure();
+        // Software frames through the console stage (phase B), for the software fallback log lines.
+        var stageWords = route.ConsoleToneMap ? "; console tone map" : route.ConsoleDownscale ? "; console downscale" : "";
 #if DEBUG_SERVER
         // Debug software fallback past the release bounds (ffmpeg-tune swfallback=on, or decoder=software;
         // docs/software-decode.md): any H.264/HEVC/VP9 the console's decoder can't take decodes in FFmpeg software, for
-        // measurements. Release builds take only the route's bounded fallback below and refuse the rest.
+        // measurements, through the route's stage (swfallback; decoder=software drops it). Release builds take only the
+        // route's bounded fallback below and refuse the rest.
         if (!route.SoftwareFallback && tuning.SoftwareFallbackAdmits(route))
-            Log.Info($"player: debug software fallback codec={route.VideoCodec} {route.VideoWidth}x{route.VideoHeight} (past the release bounds)");
+            Log.Info($"player: debug software fallback codec={route.VideoCodec} {route.VideoWidth}x{route.VideoHeight} (past the release bounds{stageWords})");
         else
 #endif
-        // A hardware codec's software route plays only as the route's bounded fallback (phase A: a claimed software envelope
-        // admits the file, no console stage); otherwise the open fails and the replan withdraws the codec (server transcode).
+        // A hardware codec's software route plays only as the route's bounded fallback (a claimed software envelope admits the
+        // file; phase B: through the stage where one applies); otherwise the open fails and the replan withdraws the codec.
         if (!route.UseFfmpeg || (route.SoftwareVideo
             ? !SoftwareDecodePolicy.VideoCodecs.Contains(route.VideoCodec!) && !route.SoftwareFallback
             : route.VideoCodec is not null && !SoftwareDecodePolicy.SystemVideoCodecs.Contains(route.VideoCodec)))
             throw new InvalidDataException("The video codec cannot use the local fallback.");
         if (route.SoftwareFallback)
-            Log.Info($"player: software fallback codec={route.VideoCodec} {route.VideoWidth}x{route.VideoHeight} (past the hardware decoder)");
+            Log.Info($"player: software fallback codec={route.VideoCodec} {route.VideoWidth}x{route.VideoHeight} (past the hardware decoder{stageWords})");
         if (route.DolbyVision7BaseLayer && route.VideoCodec != "hevc")
             throw new InvalidDataException("DV7 base-layer playback requires HEVC.");
         var config = new MediaSourceConfig();
@@ -55,16 +58,20 @@ internal static class FfmpegSource
         // its tone-map/downscale stage; keep that same configuration and its marked-output guard.
         rav1gStage = rav1g is { Rav1g: true } && route.SoftwareVideo && route.VideoCodec == "av1";
 #endif
-        // H.264 joined the SDR downscale route on 2026-11-24 (route.rs); the fork's stage is codec-neutral.
-        if (route.ConsoleStage && (route.VideoCodec is not ("hevc" or "vp9" or "h264") && !rav1gStage || !ConsoleToneMapRuntime.IsAvailable))
+        // H.264 joined the SDR downscale route on 2026-11-24 (route.rs); the fork's stage is codec-neutral. Software frames
+        // take it from wrapper bale.80 (phase B; AV1 only on the debug rav1g route, which has its own stage).
+        if (route.ConsoleStage && (route.VideoCodec is not ("hevc" or "vp9" or "h264") && !rav1gStage || !ConsoleToneMapRuntime.IsAvailable
+                || route.SoftwareVideo && !rav1gStage && !ConsoleToneMapPolicy.SoftwareStageWrapperSupported(FfmpegWrapperVersion.Value)))
             throw new InvalidDataException("Console tone mapping is unavailable for this source.");
         // FFmpeg's HEVC decoder handles only nuh_layer_id 0 and does not apply the RPU.
-        // d3d11va gets that base picture, never an opaque DV7 system-decoder bitstream.
-        config.Video.VideoDecoderMode = route.RequiresD3D11 ? VideoDecoderMode.Automatic : route.SoftwareVideo
-            ? VideoDecoderMode.ForceFFmpegSoftwareDecoder : VideoDecoderMode.ForceSystemDecoder;
+        // d3d11va gets that base picture, never an opaque DV7 system-decoder bitstream. A software route's stage runs on
+        // FFmpeg's software frames (phase B), so software stays forced there: Automatic could pick d3d11va instead.
+        config.Video.VideoDecoderMode = route.SoftwareVideo ? VideoDecoderMode.ForceFFmpegSoftwareDecoder
+            : route.RequiresD3D11 ? VideoDecoderMode.Automatic : VideoDecoderMode.ForceSystemDecoder;
         if (route.DolbyVision7BaseLayer && !route.ConsoleToneMap) config.Video.HdrSupport = HdrSupport.Enabled;
         // BT.2390, same defaults as the server. The SDR downscale route takes the same stage: the fork
-        // runs bale_gpu's scale-only pass for BT.709 SDR larger than the output size (bale.39+).
+        // runs bale_gpu's scale-only pass for BT.709 SDR larger than the output size (bale.39+). Since bale.80 the keys
+        // run the stage on software frames too (swscale into a staging texture, then the same stage).
         if (route.ConsoleStage) config.FFmpegOptions["bale_tonemap"] = "1";
         // Stream-sized d3d11va decoder pools (fork bale.68+, in-band SPS since bale.79): the stream's DPB + 3 instead
         // of FFmpeg's 20 (4K HEVC 478 -> ~191-215 MiB). Release default since 2026-11-24 after the owner's long-play
@@ -363,9 +370,11 @@ internal static class FfmpegSource
         // A software route with no video stream also fails, so the open failure replans to a transcode.
         if (route.ConsoleStage)
         {
-            if (source.VideoStreams.Count == 0 || source.VideoStreams.Any(video =>
-                video.DecoderEngine != DecoderEngine.FFmpegD3D11HardwareDecoder))
-                throw new InvalidDataException("The console stage requires d3d11va decoding.");
+            // The stage reads d3d11va frames, or on a software route (phase B, wrapper bale.80+) FFmpeg's software frames.
+            var engine = route.SoftwareVideo ? DecoderEngine.FFmpegSoftwareDecoder : DecoderEngine.FFmpegD3D11HardwareDecoder;
+            if (source.VideoStreams.Count == 0 || source.VideoStreams.Any(video => video.DecoderEngine != engine))
+                throw new InvalidDataException(route.SoftwareVideo ? "The software stage requires FFmpeg software decoding."
+                    : "The console stage requires d3d11va decoding.");
             return;
         }
         var streams = source.VideoStreams.Select(video => ((string?)video.CodecName,

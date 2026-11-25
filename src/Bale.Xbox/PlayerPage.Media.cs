@@ -188,7 +188,10 @@ public sealed partial class PlayerPage
                 sdrDownscale: !attempt.SdrDownscaleDeclined && ConsoleToneMapPolicy.SdrDownscaleWrapperSupported(FfmpegWrapperVersion.Value)
                     && ConsoleToneMapRuntime.SupportsSdrDownscale,
                 // The claims as they stand (a replan may have withdrawn software video): only those admit a software fallback.
-                softwareDecode: attempt.Start?.ClientCapabilities.VideoDecode);
+                softwareDecode: attempt.Start?.ClientCapabilities.VideoDecode,
+                // Phase B: the stage (tone map, downscale) takes FFmpeg software frames too (wrapper bale.80+).
+                softwareStage: ConsoleToneMapPolicy.SoftwareStageWrapperSupported(FfmpegWrapperVersion.Value)
+                    && ConsoleToneMapRuntime.IsAvailable);
 #if DEBUG_SERVER
         DebugValidateUrlRoute(attempt, media);
 #endif
@@ -407,7 +410,8 @@ public sealed partial class PlayerPage
                     media.VideoOutputGuard = new FfmpegVideoOutputGuard(media.FfmpegSource, () =>
                         _ = DispatchAsync(() => QueueFailure(attempt, media, 0, isDecoder: false, isNetwork: false)),
                         toneMap: guardToneMap, baseLayerStreamIndex: media.BaseLayerStreamIndex,
-                        allowNv12: !ConsoleToneMapRuntime.SupportsP010, nv12Requested: media.StageOutput8Bit);
+                        allowNv12: !ConsoleToneMapRuntime.SupportsP010, nv12Requested: media.StageOutput8Bit,
+                        softwareStage: media.Route.SoftwareVideo);
 
                 // Low-frequency Starting only, no sample observer or rendering state changes.
                 media.RendererDevice = new PlaybackResources.MediaDevice(media.FfmpegSource);
@@ -673,8 +677,11 @@ public sealed partial class PlayerPage
     private static string RouteText(Mount media)
     {
         var route = media.Route;
+        // Software frames through the stage (phase B); the debug rav1g route keeps its words.
+        var software = route.SoftwareVideo && route.VideoCodec != "av1";
         return route.UseFfmpeg
-            ? "ffmpeg " + (route.ConsoleToneMap ? "d3d11va + console tone map" : route.ConsoleDownscale ? "d3d11va + console downscale"
+            ? "ffmpeg " + (route.ConsoleToneMap ? (software ? "software + console tone map" : "d3d11va + console tone map")
+                : route.ConsoleDownscale ? (software ? "software + console downscale" : "d3d11va + console downscale")
                 : route.DolbyVision7BaseLayer ? "DV7 base layer"
                 : route.SoftwareVideo ? "software decode" : route.DolbyVisionBaseLayer ? "system decoder, DV8 base layer" : "system decoder passthrough")
             : "Windows reader (direct)";

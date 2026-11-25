@@ -43,6 +43,11 @@ pub struct DecideArgs {
     /// hardware codec's software route plays only when one admits the file (`fallback_admits`).
     #[serde(default)]
     software_decode: Vec<crate::models::DecodeClaim>,
+    /// The wrapper (bale.80+) and bale_gpu run the stage on FFmpeg software frames too: a software
+    /// route may take the tone map, and with `sdr_downscale` the downscale (phase B,
+    /// docs/software-decode.md).
+    #[serde(default)]
+    software_stage: bool,
 }
 
 /// `PlaybackRouteDecision`.
@@ -58,11 +63,13 @@ pub struct RouteDecision {
     pub dolby_vision_base_layer: bool,
     pub console_tone_map: bool,
     pub dolby_vision7_base_layer: bool,
-    /// SDR HEVC/VP9 larger than the display: d3d11va + bale_gpu's scale-only stage to display size.
+    /// SDR HEVC/VP9/H.264 larger than the display: bale_gpu's scale-only stage to display size, on
+    /// d3d11va frames or (phase B, wrapper bale.80+) FFmpeg software frames.
     pub console_downscale: bool,
     /// A hardware codec (H.264/HEVC/VP9) the console's decoder can't take, inside a claimed software
-    /// envelope and without a console stage: FFmpeg decodes it in software (docs/software-decode.md
-    /// phase A). A software route of a hardware codec without it is refused (FfmpegSource).
+    /// envelope: FFmpeg decodes it in software, through the console stage where one applies
+    /// (docs/software-decode.md phases A and B). A software route of a hardware codec without it is
+    /// refused (FfmpegSource).
     pub software_fallback: bool,
 }
 
@@ -195,11 +202,13 @@ pub fn decide(args: DecideArgs) -> RouteDecision {
         .and_then(|s| s.dolby_vision_profile)
         .is_none_or(|p| p <= 0)
         && source.and_then(|s| s.hdr10_plus) != Some(true);
+    // Phase B (owner, 2026-11-24): software frames take the same stage when the wrapper runs it on
+    // them (bale.80+); AV1 and the other software codecs stay off it (the codec list below).
     let console_downscale = args.sdr_downscale
         && ffmpeg
         && original
         && !hls
-        && !software_video
+        && (!software_video || args.software_stage)
         && !tone_map
         && !dolby_vision_base_layer
         && matches!(video, Some("hevc" | "vp9" | "h264"))
@@ -212,14 +221,27 @@ pub fn decide(args: DecideArgs) -> RouteDecision {
         );
     // Phase A (owner, 2026-11-24): a hardware codec's software route plays only inside a software
     // envelope the attempt still claims, judged on the delivered file's catalog facts (pixel format,
-    // frame rate and bitrate are only there), and never through a console stage: the tone map and the
-    // downscale read d3d11va textures, not software frames (phase B). Without the file's version the
-    // route stays refused.
+    // frame rate and bitrate are only there). Without the file's version the route stays refused.
+    // Phase B: the stage takes software frames too (wrapper bale.80+), so a tone map (HDR on an SDR
+    // display) needs that stage, and a frame above 1080p needs the stage's downscale unless the
+    // display is known to fit it: Media Foundation must never scale it (its scaler leaks per open
+    // with 4K SDR). At 1080p and below a declined downscale leaves the scaling to Media Foundation,
+    // as on hardware.
+    let above_1080p = width.is_some_and(|w| w > 1920) || height.is_some_and(|h| h > 1080);
+    let display_fits = args.display_width > 0
+        && args.display_height > 0
+        && !tone_map::downscale_to_display(
+            width.unwrap_or(0),
+            height.unwrap_or(0),
+            args.display_width,
+            args.display_height,
+        );
     let software_fallback = ffmpeg
         && software_video
         && contains(SOFTWARE_FALLBACK_VIDEO_CODECS, video)
-        && !tone_map
+        && (!tone_map || args.software_stage)
         && !dolby_vision_base_layer
+        && (!above_1080p || display_fits || console_downscale || tone_map)
         && delivered_version(plan, args.versions.as_deref()).is_some_and(|version| {
             normalize_codec(version_codec(version)).as_deref() == video
                 && fallback_admits(version, &args.software_decode)

@@ -30,6 +30,7 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
     private readonly bool _toneMap;
     private readonly bool _allowNv12;
     private readonly bool _nv12Requested;
+    private readonly bool _softwareStage;
     private readonly int? _baseLayerStreamIndex;
 #if DEBUG_SERVER
     private readonly Rav1gOutputCheck? _rav1g;
@@ -42,16 +43,18 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
     /// <param name="allowNv12">True only when bale_gpu cannot write P010, so the stage's SDR output is NV12.</param>
     /// <param name="nv12Requested">Bale asked this mount's stage for dithered 8-bit output (FfmpegSource.ApplyStageOutputDepth):
     /// marked NV12 is accepted; marked P010 (an older wrapper ignoring the key) still is.</param>
+    /// <param name="softwareStage">The stage runs on FFmpeg software frames (a software route, wrapper bale.80+): its output
+    /// comes from the software decoder's stream instead of d3d11va's, under the same output rule.</param>
     internal FfmpegVideoOutputGuard(FFmpegMediaSource source, Action failed, bool toneMap = true, int? baseLayerStreamIndex = null,
-        bool allowNv12 = false, bool nv12Requested = false)
+        bool allowNv12 = false, bool nv12Requested = false, bool softwareStage = false)
 #if DEBUG_SERVER
-        : this(source, failed, null, toneMap, baseLayerStreamIndex, allowNv12, nv12Requested)
+        : this(source, failed, null, toneMap, baseLayerStreamIndex, allowNv12, nv12Requested, softwareStage)
     {
     }
 
     /// <param name="rav1g">The debug rav1g route's rule (Rav1gPolicy.OutputVerdict) instead of the stage/DV7 rules.</param>
     internal FfmpegVideoOutputGuard(FFmpegMediaSource source, Action failed, Rav1gOutputCheck? rav1g, bool toneMap = true,
-        int? baseLayerStreamIndex = null, bool allowNv12 = false, bool nv12Requested = false)
+        int? baseLayerStreamIndex = null, bool allowNv12 = false, bool nv12Requested = false, bool softwareStage = false)
 #endif
     {
 #if DEBUG_SERVER
@@ -62,6 +65,7 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
         _toneMap = toneMap;
         _allowNv12 = allowNv12;
         _nv12Requested = nv12Requested;
+        _softwareStage = softwareStage;
         _baseLayerStreamIndex = baseLayerStreamIndex;
         _source = source.GetMediaStreamSource();
         _source.SampleRequested += OnSampleRequested;
@@ -118,7 +122,9 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
                 }
                 else
 #endif
-                if (!_failure && current?.DecoderEngine == DecoderEngine.FFmpegD3D11HardwareDecoder
+                // The stage's stream: d3d11va, or FFmpeg software on a software route (phase B); DV7 is d3d11va only.
+                if (!_failure && current?.DecoderEngine == (_softwareStage && _baseLayerStreamIndex is null
+                        ? DecoderEngine.FFmpegSoftwareDecoder : DecoderEngine.FFmpegD3D11HardwareDecoder)
                     && (_baseLayerStreamIndex is null || current.StreamIndex == _baseLayerStreamIndex
                         && Bale.Core.Playback.SoftwareDecodePolicy.NormalizeCodec(current.CodecName) == "hevc")
                     && (_toneMap ? IsSdrOutput(video.EncodingProperties, _allowNv12, _nv12Requested)

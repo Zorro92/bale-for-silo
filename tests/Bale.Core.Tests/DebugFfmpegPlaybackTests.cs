@@ -143,8 +143,9 @@ public class DebugFfmpegPlaybackTests
         Assert.Contains("config.General.FastSeek = route.SoftwareVideo;", production);
         Assert.Contains("ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(softwareVideo, route.VideoWidth, route.VideoHeight))", production);
         Assert.Contains("FfmpegLogging.Configure()", production);
-        Assert.Contains("VideoDecoderMode.ForceFFmpegSoftwareDecoder : VideoDecoderMode.ForceSystemDecoder", source);
-        Assert.Contains("route.RequiresD3D11 ? VideoDecoderMode.Automatic", production);
+        // Software routes stay forced to FFmpeg software, also with a stage (phase B): Automatic only for d3d11va stages.
+        Assert.Contains("config.Video.VideoDecoderMode = route.SoftwareVideo ? VideoDecoderMode.ForceFFmpegSoftwareDecoder", source);
+        Assert.Contains(": route.RequiresD3D11 ? VideoDecoderMode.Automatic : VideoDecoderMode.ForceSystemDecoder;", production);
         Assert.Contains("config.Audio.SystemDecoderAAC = true", source);
         Assert.Contains("config.Audio.SystemDecoderMP3 = true", source);
         // Patch 0021: AC3/EAC3 go undecoded to the system Dolby decoder on every FFmpeg mount.

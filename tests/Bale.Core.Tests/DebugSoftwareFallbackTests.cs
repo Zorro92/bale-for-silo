@@ -93,16 +93,23 @@ public sealed class DebugSoftwareFallbackTests
     }
 
     [Fact]
-    public void NeverWithAConsoleStage()
+    public void ThroughTheRoutesConsoleStageButDecoderSoftwareDropsIt()
     {
-        // HDR HEVC RExt on an SDR display: the route wants the tone map, which reads d3d11va textures only.
-        var route = Route("hevc", "rext", 10, 1920, 1080, 30, "yuv422p10le", range: "hdr10", sdrOutput: true);
+        // HDR HEVC RExt 4:2:2 at 60 fps on an SDR display: outside the envelope (4:2:2 up to 30 fps), and the route wants the
+        // tone map, which takes software frames since wrapper bale.80 (phase B).
+        var route = Route("hevc", "rext", 10, 1920, 1080, 60, "yuv422p10le", range: "hdr10", sdrOutput: true);
         Assert.True(route.SoftwareVideo);
         Assert.True(route.ConsoleToneMap);
         Assert.False(route.SoftwareFallback);
-        Assert.False(Fallback.SoftwareFallbackAdmits(route));
-        Assert.False(new DebugFfmpegInputTuning(Decoder: DebugFfmpegDecoder.Software).SoftwareFallbackAdmits(route));
-        Assert.Throws<InvalidDataException>(() => FfmpegSource.Configuration(route, Fallback));
+        Assert.Throws<InvalidDataException>(() => FfmpegSource.Configuration(route, new DebugFfmpegInputTuning()));
+        Assert.True(Fallback.SoftwareFallbackAdmits(route));
+        var config = FfmpegSource.Configuration(route, Fallback);
+        Assert.Equal(VideoDecoderMode.ForceFFmpegSoftwareDecoder, config.Video.VideoDecoderMode);
+        Assert.Equal("1", config.FFmpegOptions["bale_tonemap"]);
+        // decoder=software forces FFmpeg software and drops the stage, as on every route (a comparison mode).
+        var forced = new DebugFfmpegInputTuning(Decoder: DebugFfmpegDecoder.Software);
+        Assert.True(forced.SoftwareFallbackAdmits(route));
+        Assert.DoesNotContain("bale_tonemap", FfmpegSource.Configuration(route, forced).FFmpegOptions.Keys);
     }
 
     [Theory]
@@ -178,7 +185,7 @@ public sealed class DebugSoftwareFallbackTests
         var bypass = source.IndexOf("if (!route.SoftwareFallback && tuning.SoftwareFallbackAdmits(route))", StringComparison.Ordinal);
         Assert.True(bypass > 0 && bypass < source.IndexOf("throw new InvalidDataException(\"The video codec cannot use the local fallback.\");",
             StringComparison.Ordinal));
-        Assert.Contains("(past the release bounds)", source);
+        Assert.Contains("(past the release bounds{stageWords})", source);
         var url = Read("PlayerPage.DebugUrl.cs.txt");
         Assert.StartsWith("#if DEBUG_SERVER", url);
         Assert.Contains("&& !media.Route.SoftwareFallback && !attempt.FfmpegTuning.SoftwareFallbackAdmits(media.Route))", url);
@@ -186,7 +193,11 @@ public sealed class DebugSoftwareFallbackTests
         Assert.Contains("(debug: ffmpeg-tune swfallback=on)", url);
         Assert.Contains("if (attempt.FfmpegTuning.SoftwareFallbackAdmits(media.Route))", url);
         // The player decides every mount with the attempt's claims as they stand.
-        Assert.Contains("softwareDecode: attempt.Start?.ClientCapabilities.VideoDecode);", Read("PlayerPage.Media.cs.txt"));
+        var media = Read("PlayerPage.Media.cs.txt");
+        Assert.Contains("softwareDecode: attempt.Start?.ClientCapabilities.VideoDecode,", media);
+        // Phase B: software frames take the stage when the pinned wrapper and bale_gpu run it on them.
+        Assert.Contains("softwareStage: ConsoleToneMapPolicy.SoftwareStageWrapperSupported(FfmpegWrapperVersion.Value)", media);
+        Assert.Contains("softwareStage: media.Route.SoftwareVideo);", media);
         // The switch is the captured per-attempt tuning, not a setting.
         Assert.Contains("public DebugFfmpegInputTuning FfmpegTuning { get; } = DebugFfmpegInputTuning.Current;", Read("PlayerPage.cs.txt"));
         Assert.Contains("swfallback=on|off|default", Read("DebugServer.cs.txt"));

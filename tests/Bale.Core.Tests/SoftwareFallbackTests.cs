@@ -40,13 +40,19 @@ public sealed class SoftwareFallbackTests
         return (plan, [new FileVersion { FileId = "file", CodecVideo = codec, VideoTracks = [track] }]);
     }
 
-    /// <summary>The player's call (PlayerPage.Media): probed hardware entries, and the claims the attempt holds now.</summary>
+    /// <summary>
+    /// The player's call (PlayerPage.Media): probed hardware entries, the claims the attempt holds now, the display (unknown
+    /// unless given), and the pinned wrapper and bale_gpu, which run the stage on software frames (phase B) unless a test
+    /// says otherwise.
+    /// </summary>
     internal static PlaybackRouteDecision Decide((PlaybackPlan Plan, FileVersion[] Versions) file,
-        IReadOnlyList<VideoDecodeCapability>? claims = null, bool sdrOutput = false)
+        IReadOnlyList<VideoDecodeCapability>? claims = null, bool sdrOutput = false, (int Width, int Height)? display = null,
+        bool sdrDownscale = true, bool softwareStage = true)
     {
         claims ??= Device.VideoDecode;
         return PlaybackRoutePolicy.Decide(file.Plan, false, sdrOutput: sdrOutput, versions: file.Versions,
-            hardwareDecode: Device.VideoDecode.Where(decode => decode.Hardware).ToArray(), softwareDecode: claims);
+            hardwareDecode: Device.VideoDecode.Where(decode => decode.Hardware).ToArray(), display: display,
+            sdrDownscale: sdrDownscale, softwareDecode: claims, softwareStage: softwareStage);
     }
 
     [Fact]
@@ -192,25 +198,8 @@ public sealed class SoftwareFallbackTests
     }
 
     [Fact]
-    public void NoFallbackThroughAConsoleStageOrWithoutTheFilesFacts()
+    public void NoFallbackWithoutTheFilesFacts()
     {
-        // HDR HEVC RExt 4:2:2 on an SDR TV: the route wants the tone map, which reads d3d11va textures only.
-        var hdr = File("hevc", "rext", 10, 1920, 1080, 29.97, "yuv422p10le", range: "hdr10");
-        var route = Decide(hdr, sdrOutput: true);
-        Assert.True(route.SoftwareVideo);
-        Assert.True(route.ConsoleToneMap);
-        Assert.False(route.SoftwareFallback);
-        Assert.Throws<InvalidDataException>(() => FfmpegSource.Configuration(route));
-        // Nor is the console tone map promised for it (4:2:2), so the server tone-maps it instead of planning it direct.
-        var track = hdr.Versions[0].VideoTracks![0];
-        track.ColorTransfer = "smpte2084";
-        track.ColorPrimaries = "bt2020";
-        track.ColorSpace = "bt2020nc";
-        var sdrTv = Device with { OriginalDynamicRangeMappingSupported = true, DisplayHdrEvidence = "exact" };
-        Assert.False(ConsoleToneMapPolicy.CanManage(hdr.Versions[0], sdrTv));
-        // The same file on an HDR TV needs no stage: FFmpeg software with the stream's HDR10 colour (unverified output).
-        Assert.True(Decide(hdr, sdrOutput: false).SoftwareFallback);
-
         // Without the delivered file's catalog version (pixel format, rate), or with another file's, the route stays refused.
         var file = File("h264", "high 10", 10, 1920, 1080, 23.976, "yuv420p10le");
         var hardware = Device.VideoDecode.Where(decode => decode.Hardware).ToArray();

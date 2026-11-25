@@ -44,6 +44,17 @@ pub fn sdr_downscale_wrapper_supported(version: &str) -> bool {
     })
 }
 
+/// bale.80 runs the stage on FFmpeg software frames too (the staged D3D11 upload): the same keys
+/// (`bale_tonemap`, output size, depth, white nits) on a software route (docs/software-decode.md
+/// phase B).
+pub fn software_stage_wrapper_supported(version: &str) -> bool {
+    version.strip_prefix("2.1.0-bale.").is_some_and(|revision| {
+        !revision.is_empty()
+            && revision.bytes().all(|b| b.is_ascii_digit())
+            && revision.parse::<i32>().is_ok_and(|revision| revision >= 80)
+    })
+}
+
 /// Whether the tone-map stage should hand Media Foundation display-sized output: the video is larger
 /// than the current display mode in either dimension. On Xbox, MF's video processor leaks driver
 /// state per open when it scales 4K SDR down itself (2026-11-17: dies at ~23 opens; 40/40 when
@@ -283,6 +294,16 @@ mod downscale_tests {
         assert!(!super::downscale_to_display(1280, 720, 1920, 1080));
         assert!(!super::downscale_to_display(3840, 2160, 0, 0));
         assert!(!super::downscale_to_display(0, 0, 1920, 1080));
+    }
+    #[test]
+    fn software_frames_take_the_stage_from_wrapper_bale_80() {
+        assert!(super::software_stage_wrapper_supported("2.1.0-bale.80"));
+        assert!(super::software_stage_wrapper_supported("2.1.0-bale.81"));
+        assert!(!super::software_stage_wrapper_supported("2.1.0-bale.79"));
+        assert!(!super::software_stage_wrapper_supported(
+            "2.1.0-bale.80-beta"
+        ));
+        assert!(!super::software_stage_wrapper_supported("2.1.0"));
     }
     #[test]
     fn downscale_keys_need_wrapper_bale_38() {
