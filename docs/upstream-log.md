@@ -199,15 +199,14 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   download estimate omitted from `download.estimated_completion_at` (server `28dd148`); hero
   backdrop banding on dark art (Android `c6dfd52a6`; console check of Bale's masked art).
 
-- **Buffering quality, slow-link evidence (2026-11-22):** an Auto lowering sends
-  `bandwidth_estimate_source: observed_rebuffer` and `observed_throughput_kbps` only when the plan's
-  measured throughput is below its delivered bitrate, also after the attempt has played, and drops the
-  source when the reading is gone at send time (network change); otherwise the estimate goes alone,
-  which the server plans under but never learns. The Lower prompt pick follows the same rule (Android
-  `878c972c4`, Apple `3709c5fb`, server `f503d7e`). Bale's `buffering.rs` sends the source on every
-  lowering once played, and has no reading on HLS (`PlanThroughput`), where Apple times each segment
-  from first to last byte (segments under 1 s left out, overlaps once). Add tests for a lowering with
-  and without evidence; decide whether the Rust HLS reader times segment bodies as evidence.
+- ~~**Buffering quality, slow-link evidence (2026-11-22):**~~ Done 2026-11-25 (`8f873e4`), console check
+  pending. An Auto lowering sends `bandwidth_estimate_source: observed_rebuffer` and
+  `observed_throughput_kbps` only when the plan's measured throughput is below its delivered bitrate,
+  also after the attempt has played, the Lower prompt pick included, and drops both when the reading is
+  gone at send time (network change); otherwise the estimate goes alone (Android `878c972c4`, Apple
+  `3709c5fb`, server `f503d7e`). Decided: the Rust HLS reader times segment bodies as evidence (inside
+  their reads, first read and full-buffer pauses left out, under 1 s ignored), never as a
+  `throughput_kbps` sample.
 - **Up Next timing (2026-11-22):** the card opens on crossing `playback.next_up_prompt_seconds` before
   the end of the file (default 30; 0 = only at the stream's end), not at the credits marker; credits
   drive only Skip Credits; a hand-opened card gets no countdown at the prompt point; the series-page
