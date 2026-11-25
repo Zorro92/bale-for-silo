@@ -159,6 +159,7 @@ Items from the upstream reviews in `docs/upstream-log.md` (Open items there has 
 - [x] Up Next opens on crossing `playback.next_up_prompt_seconds` before the file end (default 30, 0 = at the end), not at `Credits.Start`; credits drive only Skip Credits; no countdown for a hand-opened card. Bale's `PlayerPage.UpNext.cs` reads no setting. Android `e580e1811`, server `7019d69` — done (2026-11-24, `5553d51`); console-checked 2026-11-24 (0.1.764: card shown 28.5 s before the end of a 693 s episode). Settings › Playback has no Show Next Up picker yet (Android TV's `TvSettingsScreen.kt` has one)
 - [x] Collections on the title page: with `item_collections`, read `listCatalogItemCollections`; one collection shows up to six other titles plus Explore all, several an "Also in" poster row; Back returns to the opening card. Android `cb2c32d8a`, server `faa406d` — done (2026-11-24: `0eae2c1` moves `SILO_REF` to `faa406d` and generates the route, `1b057d3` the row); console check pending. The row follows Cast & Crew on a series page and Trailers on a movie page (Bale builds no box set row); Bale's Detail has no library to send, so the server leaves out a box set's synced collection as if a box set row showed it
 - [x] Paused-session timeout: advertise `paused_timeout_v1` on every start and replan; a 410 `playback_session_paused_timeout` (or `playback_session_ended`) on progress, replan or seek reanchor leaves the player with a "paused for too long" notice (admin wording for `ended`) and starts nothing. The server ends a session paused 15 min by default; Bale ignores the 410 (`PlaybackProgressReporter.RunAsync` only stores it) and stays in the player. Android `56e23561a`, Apple `80ae9437`, Roku `6389fcc`, server `dde5ed2` (review 2026-11-24) — done (2026-11-24, `e09f25d`); console check pending. The notice is a window popup over the page the player returns to (Android's long Toast; `ExitNotice`)
+- [ ] Save a track picked in the player as the series or movie's track preference on the server once a plan plays it (embedded by stream index, external by position among externals); Detail re-reads its choices after the player. Android TV and tvOS already do this; Bale's player never writes it. Roku `3ae62aa` (review 2026-11-25)
 
 ### To review or check
 
@@ -175,9 +176,9 @@ Items from the upstream reviews in `docs/upstream-log.md` (Open items there has 
 - [ ] A title stopped in its end credits leaves Continue Watching on Bale's return refresh (console). Server `47a85e4`
 - [ ] Multi-PPS H.264 may now get a stream copy instead of a transcode; a decode failure takes the single replan (watch for it on the console). Server `7a74859`
 - [ ] Library Collections tab: own collections in saved order, then shared ones by creator (console). Server `6a13f8a`
+- [ ] Titles opened from a title page's collection row open without a library scope (console). Apple `fd83eb46`
 
 ### Held (2026-11-18 onward)
-
 
 - [ ] Not interested on movie and series cards and title pages (`PUT`/`DELETE /api/v2/not-interested/{id}`, shown only when the server sends `user_state.not_interested`; Home and For You drop a marked title at once). Apple `29c0dd43`; waits until Android TV has it
 - [ ] Home/library page wash: one dark colour per screen corner from the matching quarter of the art, crossfading over 0.7 s while the art swaps in 0.24 s. Apple `c5453eae`, `648091a7`; Bale ports Android's single-colour `AmbientBackdropTint` (`AmbientTint`), so waits until Android TV follows (Apple `9dabb621` also drops the top-right colour under wide art)
@@ -186,10 +187,10 @@ Items from the upstream reviews in `docs/upstream-log.md` (Open items there has 
 - [ ] Control socket (when built): stop minting a ws-ticket on 410 `playback_session_ended`; on 503 wait at least `Retry-After`, backing off to 30 s. Server `4564351`, `a1c17ef`
 - [ ] Search with short and empty result sets after the server's tighter keyword cut-off (console check). Server `651e55a`
 - [ ] Subtitle search (Find more / Search online) only when `subtitles/providers/status` reports a provider; when Bale builds subtitle search. Android `2ee32f414`
-- [ ] Future Home row editor: the profile section baseline route and `home_layout_baseline`. Server `f18678f`
+- [ ] Future Home row editor: the profile section baseline route and `home_layout_baseline` (server `f18678f`); Apple's in-place Home and library section customization and collection pinning (Settings only on tvOS, `c24cb682`). Waits until Android TV ships a TV Home editor
 - [ ] Star rating on movie and series pages (half-star pill, `PUT`/`DELETE /api/v2/ratings/{item_id}`, 1–10 scale). Apple `c4cbdeb4`; waits until Android TV has it
 - [ ] Detail More menu redesign (episode watched toggle, submenus, side popover, Version focusable with one version). Apple `131efb8c`; waits until Android TV follows
-- [ ] Sports episodes labelled by air date where the code goes (`episode_labels=air_date`). Android `b7c0412af`; waits until the server side lands in silo-server's contract
+- [ ] Sports episodes labelled by air date where the code goes (`episode_labels=air_date`). Android `b7c0412af`, Apple `5495cdfc`; waits until the server side lands in silo-server's contract
 - [ ] Control socket (when built): answer an admin message frame on receipt so it reads `acknowledged`. Server `abef9b3`
 - [ ] Progressive remux dropping again at the same point: send `failure_recovery` with `progressive_drop_repeated` if the console ever shows that loop. Server `41ea93e`
 - [ ] Audio-only remuxes come in 2 s fragments; check when Bale plays audio-only files. Server `1da5b75`
