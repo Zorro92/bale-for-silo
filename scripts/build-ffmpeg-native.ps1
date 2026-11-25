@@ -60,8 +60,14 @@ $originalDav1d = $before['Libs/dav1d']
 $dav1d = Join-Path $SourcePath 'Libs/dav1d'
 Invoke-Git $dav1d @('fetch', 'origin', "refs/tags/${Dav1dTag}:refs/tags/${Dav1dTag}")
 $dav1dCommit = Invoke-Git $dav1d @('rev-parse', "refs/tags/$Dav1dTag`^{commit}")
-if ($Dav1dTag -eq '1.5.4' -and $dav1dCommit -ne '54706fc6bc0cdecab7e9593974a4039cc038fca7') {
-    throw 'The dav1d 1.5.4 tag no longer resolves to the reviewed commit'
+# Reviewed dav1d release commits. 1.5.5 defines __has_include_next for MSVC, which newer MSVC
+# requires (1.5.4's compat stdatomic.h fails with C7780 there).
+$dav1dCommits = @{
+    '1.5.4' = '54706fc6bc0cdecab7e9593974a4039cc038fca7'
+    '1.5.5' = '6c7bee685677fd997a431302be4fea8ea4017606'
+}
+if ($dav1dCommits.ContainsKey($Dav1dTag) -and $dav1dCommit -ne $dav1dCommits[$Dav1dTag]) {
+    throw "The dav1d $Dav1dTag tag no longer resolves to the reviewed commit"
 }
 Invoke-Git $dav1d @('checkout', '--detach', $dav1dCommit)
 $after = Get-SubmodulePins
