@@ -152,7 +152,7 @@ public sealed class RustRangeStreamTests
     }
 
     [Fact]
-    public async Task ABlockFailingTwiceOrAWrongRangeFailsTheRead()
+    public async Task ABlockFailingTwiceRidesOutTheOutageButAWrongRangeFailsTheRead()
     {
         using var server = new LoopbackMediaServer(Payload);
         using var client = Client(server);
@@ -160,9 +160,15 @@ public sealed class RustRangeStreamTests
         server.Faults.Enqueue((6 << 20, Fault.Status500));
         server.Faults.Enqueue((6 << 20, Fault.Status500));
         rust.Position = 6 << 20;
-        await Assert.ThrowsAsync<HttpRequestException>(() => Task.Run(() => rust.Read(new byte[100], 0, 100)));
+        // retry_window.rs (silo-android bb59172f8): after the immediate retry, a transient failure waits 1 s and
+        // tries again while the outage's window lasts. The window's own limits are Rust tests.
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var buffer = new byte[100];
+        var count = await Task.Run(() => rust.Read(buffer, 0, buffer.Length));
+        Assert.True(buffer.AsSpan(0, count).SequenceEqual(Payload.AsSpan(6 << 20, count)));
+        Assert.InRange(started.ElapsedMilliseconds, 900, 10_000);
         // A fresh stream, at a block the first one never fetches: its prefetch of blocks 7 and 8 can
-        // still be in flight and would take faults queued for them.
+        // still be in flight and would take faults queued for them. A wrong range is not transient.
         await using var fresh = await client.Playback.OpenMedia(Plan()).OpenNativeStreamAsync(default);
         server.Faults.Enqueue((3 << 20, Fault.WrongRange));
         server.Faults.Enqueue((3 << 20, Fault.WrongRange));

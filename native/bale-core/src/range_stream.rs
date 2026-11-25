@@ -4,6 +4,10 @@
 //! `prefetch` blocks fetched ahead, three fetches at a time. A server without range support gets a
 //! single sequential body that is reopened for backward or far-forward seeks.
 //!
+//! A block the player waits for rides out an outage: a failure retries at once, then a transient one
+//! retries with backoff while the outage's retry window lasts, and a later outage after sustained
+//! progress gets a window of its own (retry_window.rs, silo-android `bb59172f8`).
+//!
 //! Everything here runs on native threads, so .NET's garbage collector can never pause it
 //! (docs/rust-port.md, slice 7). Nothing logs; errors are fixed categories. The URL and headers are
 //! credentials and stay in memory.
@@ -12,7 +16,10 @@ use std::collections::{HashMap, VecDeque};
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+use crate::media_fault;
+use crate::retry_window::{Policy, RetryWindow};
 
 pub const BLOCK_SIZE: u64 = 1024 * 1024;
 pub const DEFAULT_PREFETCH_BLOCKS: u32 = 2;
@@ -162,6 +169,33 @@ struct Shared {
     state: Mutex<State>,
     work: Condvar,
     counters: Counters,
+    /// The outage retry window of the blocks the player waits for.
+    retry: Mutex<RetryWindow>,
+    /// The retry window's clock.
+    epoch: Instant,
+}
+
+/// A failed block attempt, and whether the retry window may try it again.
+struct Failure {
+    error: StreamError,
+    /// A transport failure, a body that ended early, or a status a restarting server answers
+    /// (silo-android `isRetryableMediaLoadFailure` for a resumable direct play).
+    transient: bool,
+}
+
+impl From<StreamError> for Failure {
+    fn from(error: StreamError) -> Self {
+        Failure {
+            error,
+            transient: error == StreamError::Network,
+        }
+    }
+}
+
+/// silo-android `isRetryableMediaStatus`. 429/503/504 never arrive here: the client already waited out
+/// their retries and answers `Busy`.
+fn retryable_status(status: u16) -> bool {
+    matches!(status, 404 | 500 | 502 | 503 | 504 | 520..=527 | 530)
 }
 
 pub struct RangeStream {
@@ -203,6 +237,9 @@ impl Shared {
 
     /// A body read, counted as downloaded bytes and download time like the C# `ReadNetworkAsync`.
     fn read_network(&self, body: &mut dyn Read, buffer: &mut [u8]) -> Result<usize, StreamError> {
+        if media_fault::outage() {
+            return Err(StreamError::Network);
+        }
         let started = Instant::now();
         let result = body.read(buffer);
         self.counters
@@ -301,33 +338,64 @@ impl Shared {
         }
     }
 
-    /// A worker's fetch of one block. Demand fetches retry once; a second failure belongs to
-    /// playback recovery. Speculation gets one attempt.
+    fn now_ms(&self) -> u64 {
+        self.epoch.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
+    }
+
+    /// A worker's fetch of one block. Speculation gets one attempt. A demand fetch retries any failure
+    /// once at once (a pooled connection the server closed fails its first request); after that a
+    /// transient failure retries with backoff while the outage's window lasts (retry_window.rs), and
+    /// anything else, or a spent window, belongs to playback recovery.
     fn fetch_block(&self, index: u64, prefetch: bool) -> Result<Block, StreamError> {
         let start = index * BLOCK_SIZE;
         let size = BLOCK_SIZE.min(self.length - start);
-        let mut attempt = 0;
+        let mut failures = 0;
         loop {
-            let result = self.fetch_once(start, size);
-            match result {
-                // A refresh already happened inside `request`; another 401 is final.
-                Err(StreamError::Disposed | StreamError::Unauthorized | StreamError::Busy) => {
-                    return result;
+            let failure = match self.fetch_once(start, size) {
+                Ok(block) => return Ok(block),
+                Err(failure) => failure,
+            };
+            failures += 1;
+            match failure.error {
+                // A refresh already happened inside `request`, so another 401 is final; `Busy` already
+                // waited out the client's retries (http.rs).
+                StreamError::Disposed | StreamError::Unauthorized | StreamError::Busy => {
+                    return Err(failure.error);
                 }
-                Err(_) if !prefetch && attempt == 0 => attempt += 1,
-                _ => return result,
+                _ if prefetch => return Err(failure.error),
+                _ if failures == 1 => continue,
+                _ if !failure.transient => return Err(failure.error),
+                _ => {}
+            }
+            let decision = lock(&self.retry).failed(self.now_ms(), start);
+            if decision.renewed {
+                media_fault::count(&media_fault::RANGE_RENEWALS);
+            }
+            let Some(delay) = decision.delay_ms else {
+                media_fault::count(&media_fault::RANGE_GIVEN_UP);
+                return Err(failure.error);
+            };
+            media_fault::count(&media_fault::RANGE_RETRIES);
+            if !self
+                .client
+                .sleep_unless_closed(Duration::from_millis(delay))
+            {
+                return Err(StreamError::Disposed);
             }
         }
     }
 
-    fn fetch_once(&self, start: u64, size: u64) -> Result<Block, StreamError> {
+    fn fetch_once(&self, start: u64, size: u64) -> Result<Block, Failure> {
         if self.disposed.load(Ordering::Acquire) {
-            return Err(StreamError::Disposed);
+            return Err(StreamError::Disposed.into());
         }
         self.counters.block_fetches.fetch_add(1, Ordering::Relaxed);
         let response = self.request(&format!("bytes={}-{}", start, start + size - 1))?;
         if !response.status().is_success() {
-            return Err(StreamError::Status);
+            return Err(Failure {
+                error: StreamError::Status,
+                transient: retryable_status(response.status().as_u16()),
+            });
         }
         let content_range = response
             .headers()
@@ -338,7 +406,7 @@ impl Shared {
             parse_content_range(content_range, start),
         ) {
             (206, Some((to, total))) if total == self.length && to == start + size - 1 => {}
-            _ => return Err(StreamError::InvalidRange),
+            _ => return Err(StreamError::InvalidRange.into()),
         }
         let mut data = if size == BLOCK_SIZE {
             match lock(&self.state).free.pop() {
@@ -367,12 +435,18 @@ impl Shared {
                 break Ok(());
             }
             if self.disposed.load(Ordering::Acquire) {
-                break Err(StreamError::Disposed);
+                break Err(StreamError::Disposed.into());
             }
             match self.read_network(&mut body, &mut data[downloaded..]) {
-                Ok(0) => break Err(StreamError::ShortBody),
+                // A body that ended early is a premature end, resumable for a direct play.
+                Ok(0) => {
+                    break Err(Failure {
+                        error: StreamError::ShortBody,
+                        transient: true,
+                    });
+                }
                 Ok(count) => downloaded += count,
-                Err(error) => break Err(error),
+                Err(error) => break Err(error.into()),
             }
         };
         // Read to the end of the response. ureq returns a connection to its pool only once a body
@@ -382,8 +456,8 @@ impl Shared {
             let mut end = [0u8; 1];
             match body.read(&mut end) {
                 Ok(0) => Ok(()),
-                Ok(_) => Err(StreamError::InvalidRange),
-                Err(_) => Err(StreamError::Network),
+                Ok(_) => Err(StreamError::InvalidRange.into()),
+                Err(_) => Err(StreamError::Network.into()),
             }
         });
         match outcome {
@@ -447,6 +521,9 @@ impl Shared {
                 }
             };
             let result = self.fetch_block(index, fetch.prefetch);
+            if let Ok(block) = &result {
+                lock(&self.retry).delivered(self.now_ms(), block.len() as u64);
+            }
             {
                 let mut state = lock(&self.state);
                 state.in_flight.remove(&index);
@@ -472,6 +549,16 @@ impl RangeStream {
         headers: Vec<(String, String)>,
         prefetch_blocks: u32,
     ) -> Result<Self, StreamError> {
+        Self::open_with_policy(url, headers, prefetch_blocks, Policy::DIRECT_PLAY)
+    }
+
+    /// [`RangeStream::open`] with another retry window (tests scale it down).
+    pub fn open_with_policy(
+        url: String,
+        headers: Vec<(String, String)>,
+        prefetch_blocks: u32,
+        policy: Policy,
+    ) -> Result<Self, StreamError> {
         let prefetch_blocks =
             prefetch_blocks.clamp(DEFAULT_PREFETCH_BLOCKS, MAXIMUM_PREFETCH_BLOCKS);
         let probe = Shared {
@@ -483,6 +570,8 @@ impl RangeStream {
             state: Mutex::new(State::default()),
             work: Condvar::new(),
             counters: Counters::default(),
+            retry: Mutex::new(RetryWindow::new(policy)),
+            epoch: Instant::now(),
         };
         probe
             .counters
@@ -781,6 +870,193 @@ impl Drop for RangeStream {
 #[cfg(test)]
 mod tests {
     use super::parse_content_range as parse;
+    use super::{BLOCK_SIZE, RangeStream, StreamError};
+    use crate::media_fault;
+    use crate::retry_window::Policy;
+    use crate::test_http::{Reply, Request, TestServer};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{Duration, Instant};
+
+    const MIB: u64 = BLOCK_SIZE;
+
+    fn payload(len: usize) -> Arc<Vec<u8>> {
+        Arc::new((0..len).map(|i| (i * 31 % 251) as u8).collect())
+    }
+
+    fn block_start(request: &Request) -> Option<u64> {
+        let range = request.range.as_deref()?.strip_prefix("bytes=")?;
+        let (from, to) = range.split_once('-')?;
+        (!to.is_empty()).then(|| from.parse().ok())?
+    }
+
+    /// A block's start, how many of its ranged requests fail, and how.
+    type Fault = (u64, usize, fn() -> Reply);
+
+    /// A server whose ranged requests for each faulty block get its fault for the first requests;
+    /// everything else is answered normally.
+    fn server(payload: &Arc<Vec<u8>>, faults: Vec<Fault>) -> TestServer {
+        let payload = payload.clone();
+        let seen: Vec<_> = faults.iter().map(|_| AtomicUsize::new(0)).collect();
+        TestServer::start(move |request| {
+            if let Some(start) = block_start(request) {
+                for ((block, failures, fault), seen) in faults.iter().zip(&seen) {
+                    if start == *block && seen.fetch_add(1, Ordering::SeqCst) < *failures {
+                        return fault();
+                    }
+                }
+            }
+            Reply::ranged(&payload, request.range.as_deref())
+        })
+    }
+
+    fn open(server: &TestServer, policy: Policy) -> RangeStream {
+        RangeStream::open_with_policy(
+            format!("{}/api/v2/stream/f", server.base),
+            Vec::new(),
+            2,
+            policy,
+        )
+        .expect("open")
+    }
+
+    fn quick(window_ms: u64) -> Policy {
+        Policy {
+            window_ms,
+            recovery_bytes: 2 * MIB,
+            recovery_interval_ms: 40,
+            backoff_ms: [20, 20, 20, 20],
+        }
+    }
+
+    fn read_block(stream: &RangeStream, payload: &[u8], at: u64) -> Result<(), StreamError> {
+        let mut buffer = vec![0; 4096];
+        let count = stream.read(at, &mut buffer)?;
+        assert!(count > 0);
+        assert_eq!(&buffer[..count], &payload[at as usize..at as usize + count]);
+        Ok(())
+    }
+
+    #[test]
+    fn a_block_the_player_waits_for_rides_out_a_short_outage() {
+        let _faults = media_fault::tests::exclusive();
+        let data = payload(4 * MIB as usize + 123);
+        let server = server(&data, vec![(MIB, 4, || Reply::status(500))]);
+        let stream = open(&server, quick(2_000));
+        // Failure, the immediate retry, then waits until the fifth request succeeds.
+        read_block(&stream, &data, MIB).expect("the outage was ridden out");
+        assert_eq!(server.count(|r| block_start(r) == Some(MIB)), 5);
+    }
+
+    #[test]
+    fn a_dropped_connection_or_a_cut_body_is_transient_too() {
+        let _faults = media_fault::tests::exclusive();
+        let data = payload(4 * MIB as usize);
+        let server = server(
+            &data,
+            vec![
+                (MIB, 3, || Reply::Drop),
+                (3 * MIB, 3, || Reply::Cut {
+                    status: 206,
+                    headers: vec![(
+                        "Content-Range".into(),
+                        format!("bytes {}-{}/{}", 3 * MIB, 4 * MIB - 1, 4 * MIB),
+                    )],
+                    body: vec![0; MIB as usize],
+                    sent: 1000,
+                }),
+            ],
+        );
+        let stream = open(&server, quick(2_000));
+        read_block(&stream, &data, MIB).expect("dropped connections");
+        read_block(&stream, &data, 3 * MIB).expect("cut bodies");
+    }
+
+    #[test]
+    fn a_block_still_failing_when_the_window_is_spent_fails_the_read() {
+        let _faults = media_fault::tests::exclusive();
+        let data = payload(3 * MIB as usize);
+        let server = server(&data, vec![(MIB, usize::MAX, || Reply::status(502))]);
+        let stream = open(&server, quick(200));
+        let started = Instant::now();
+        assert_eq!(read_block(&stream, &data, MIB), Err(StreamError::Status));
+        assert!(started.elapsed() < Duration::from_secs(5));
+        // The first failure, its immediate retry, and one attempt after each of the window's waits.
+        assert!(server.count(|r| block_start(r) == Some(MIB)) >= 4);
+    }
+
+    #[test]
+    fn a_wrong_range_or_a_final_status_fails_after_one_retry() {
+        let _faults = media_fault::tests::exclusive();
+        let data = payload(4 * MIB as usize);
+        let wrong_range = || Reply::Full {
+            status: 206,
+            headers: vec![("Content-Range".into(), "bytes 7-9/10".into())],
+            body: vec![0; 3],
+        };
+        for (fault, error) in [
+            (wrong_range as fn() -> Reply, StreamError::InvalidRange),
+            (|| Reply::status(403), StreamError::Status),
+        ] {
+            // The faulty block is read first, so no prefetch reaches it.
+            let server = server(&data, vec![(MIB, usize::MAX, fault)]);
+            let stream = open(&server, quick(60_000));
+            assert_eq!(read_block(&stream, &data, MIB), Err(error));
+            assert_eq!(server.count(|r| block_start(r) == Some(MIB)), 2);
+        }
+    }
+
+    #[test]
+    fn a_later_outage_after_sustained_progress_gets_a_fresh_window() {
+        let _faults = media_fault::tests::exclusive();
+        let data = payload(12 * MIB as usize);
+        // Each outage needs three waits (60 ms each); one window of 250 ms can't hold both.
+        let server = server(
+            &data,
+            vec![
+                (MIB, 4, || Reply::status(500)),
+                (9 * MIB, 6, || Reply::status(500)),
+            ],
+        );
+        let policy = Policy {
+            window_ms: 250,
+            recovery_bytes: 2 * MIB,
+            recovery_interval_ms: 40,
+            backoff_ms: [60, 60, 60, 60],
+        };
+        let stream = open(&server, policy);
+        let renewals = media_fault::RANGE_RENEWALS.load(Ordering::Relaxed);
+        let started = Instant::now();
+        read_block(&stream, &data, MIB).expect("first outage");
+        // Sustained progress far from the first outage, then the first window is long spent.
+        for block in 2..=7 {
+            std::thread::sleep(Duration::from_millis(15));
+            read_block(&stream, &data, block * MIB).expect("recovered");
+        }
+        std::thread::sleep(Duration::from_millis(400).saturating_sub(started.elapsed()));
+        read_block(&stream, &data, 9 * MIB).expect("the later outage got a window of its own");
+        assert!(media_fault::RANGE_RENEWALS.load(Ordering::Relaxed) > renewals);
+    }
+
+    #[test]
+    fn a_debug_outage_fails_requests_and_reads_until_it_ends() {
+        let _faults = media_fault::tests::exclusive();
+        let data = payload(3 * MIB as usize);
+        let server = server(&data, Vec::new());
+        let stream = open(&server, Policy::DIRECT_PLAY);
+        media_fault::set(media_fault::SetArgs {
+            outage_seconds: Some(1),
+        });
+        let started = Instant::now();
+        let result = read_block(&stream, &data, 2 * MIB);
+        media_fault::set(media_fault::SetArgs {
+            outage_seconds: Some(0),
+        });
+        result.expect("the window outlasted a one-second outage");
+        assert!(started.elapsed() >= Duration::from_millis(900));
+        // No request reached the server while the outage lasted.
+        assert!(server.count(|r| block_start(r) == Some(2 * MIB)) <= 2);
+    }
 
     #[test]
     fn content_ranges() {

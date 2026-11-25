@@ -2274,6 +2274,51 @@ because a seek never lands, on any route.
 - **Not covered:** Apple's progress-based extensions (no lock-free buffer-at-target reading), and a seek that lands and then
   stalls (that is buffering, not a stuck seek).
 
+## Playback reliability (upstream reviews), 2026-11-25
+
+Rules from the 2026-11-19 to 11-24 upstream reviews (docs/upstream-log.md, docs/parity-backlog.md "To review or
+check") for playback that meets an outage or an unusual stream.
+
+### original_http retry window (silo-android `bb59172f8`)
+
+Before: a block of the original the player waited for (`range_stream.rs` demand fetch) was retried once, at once, and a
+second failure failed the read. On the FFmpeg route that read error is FFmpeg's end of file (the fork's `FileStreamRead`
+returns -1, libavformat marks the input `eof_reached`, `FFmpegReader` stops reading), so a server away for more than a
+moment ended a direct-played film as if it had finished; on Windows' reader the engine failed and took the single failure
+replan. There was no time window at all, so nothing tied a late outage to an early one, but nothing rode one out either.
+
+Now (`retry_window.rs`, a port of silo-android's `MediaLoadRetryPolicy.kt` with `bb59172f8`):
+
+- **Retries:** a demand fetch still retries any failure once at once (a pooled connection the server closed fails its
+  first request). After that a transient failure waits 1, 2, 4, then 8 s between attempts while the outage's window
+  lasts: 90 s, measured from its first failure or summed from the waits, whichever is longer. Transient means a
+  transport failure (connect, reset, timeout), a body that ended early, or a status a restarting server answers (404,
+  500, 502, 503, 504, 520–527, 530: Android's `isRetryableMediaStatus`). A wrong `Content-Range`, a 401 after the refresh,
+  `Busy` (429/503/504 after the client's own three retries, http.rs) and other statuses fail as before. Speculative
+  prefetches still get one attempt; a read that joins a failed one retries it as a demand fetch.
+- **Fresh window after sustained progress (`bb59172f8`):** a stream lives for the whole film (local seeks keep it), so one
+  window from the first outage would leave nothing for a later one. A failure opens a fresh window when the blocks fetched
+  since the previous failure total at least 512 KiB, span at least 20 s, and the failing block is at least 512 KiB away
+  from where the last substantial run before a failure ended. Short bursts between failures, frequent cuts and re-reading
+  the same part of the file stay one outage. Android measures one long request per load; Bale's run of 1 MiB block
+  fetches stands in for it, and the failing block's offset for the request's end offset.
+- **Unchanged:** when a window is spent the read fails exactly as before (so the FFmpeg route still ends the film there:
+  a separate question from this rule). The sequential reader of a server without ranges keeps its single reopen. The C#
+  `HttpRangeStream` (debug `stream-adapter pooled|builtin` only) keeps its single demand retry.
+- **Tests:** `retry_window.rs` replays Android's `DirectPlayRetryWindowTest` cases on Bale's block runs; `range_stream.rs`
+  runs the real stream against a loopback server (`test_http.rs`: outages ridden out, dropped connections and cut bodies,
+  a spent window, non-transient failures, a later outage's fresh window, the debug outage);
+  `RustRangeStreamTests.ABlockFailingTwiceRidesOutTheOutageButAWrongRangeFailsTheRead` covers it from C#.
+
+### Debug: `media-fault`
+
+`bale-debug.sh media-fault outage=<0..600>` (native/bale-core/src/media_fault.rs, memory only, nothing armed at start):
+for that many seconds every Rust media request (range opens and blocks, HLS playlists and segments, the progressive
+open) fails as a network error, and reads of bodies already open fail too, as a server that went away mid-response;
+`outage=0` ends it. Without arguments it prints the remaining outage and the Rust streams' recovery counters (range
+retries, fresh windows, windows given up). It works on any route, the real server's or `play-url`'s, because it sits in
+Bale's own transport.
+
 ## Debug: play a file URL through the real player
 
 `POST /play-url?url=<encoded-http(s)-file-url>[&start=<source-seconds>]` is compiled only with

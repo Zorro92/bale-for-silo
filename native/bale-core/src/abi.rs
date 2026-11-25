@@ -377,6 +377,8 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         "display.pick_mode" => with_json(name, input, |a: display::PickModeArgs| {
             display::pick_mode(&a)
         }),
+        // Debug only (bale-debug.sh media-fault): memory-only media faults and the recovery counters.
+        "media_fault.set" => with_json(name, input, crate::media_fault::set),
         "hardware.profile_name" => with_json(name, input, |p: String| hardware::profile_name(&p)),
         "hardware.from_accepted_sizes" => with_json(name, input, |a: Sizes| {
             hardware::from_accepted_sizes(&a.sizes)

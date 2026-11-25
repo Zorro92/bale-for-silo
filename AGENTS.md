@@ -140,6 +140,7 @@ changes are covered by the debug build and the tests. Then, with `XBOX_HOST` set
 ./scripts/bale-debug.sh open <content-id> [file=<fileId>]  # wait for Detail, select the exact version, focus Play
 ./scripts/bale-debug.sh play <content-id> [file=<fileId>] [start=<seconds>]  # normal Play path; wait for player state + plan delivery
 ./scripts/bale-debug.sh play-url <url> [start=<seconds>]  # debug HTTP file through the real player; no Silo session
+./scripts/bale-debug.sh media-fault outage=40  # simulated server outage for every Rust media request/read (0 ends); no args = recovery counters
 python3 -I scripts/serve-media.py ./test-clips --port 8765  # read-only HTTP ranges; see --help for bind/firewall
 ./scripts/bale-debug.sh play                  # no id: resume the active player after a paused seek
 ./scripts/bale-debug.sh navlog [N]            # last 1–200 page/input/player events, default 50

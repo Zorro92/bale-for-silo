@@ -100,6 +100,10 @@ impl AuthClient {
         };
         let retried = crate::http::call_with_retry(
             |attempt| {
+                // bale-debug.sh media-fault outage: the server is away.
+                if crate::media_fault::outage() {
+                    return Err(StreamError::Network);
+                }
                 let mut request = configure(crate::http::agent().get(url));
                 if let Some(range) = range {
                     request = request.header("Range", range);

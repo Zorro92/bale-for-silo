@@ -167,7 +167,8 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
 
    Step 2, the Rust range stream (`range_stream.rs`, handle ABI `abi_stream.rs`, C# `RustRangeStream`
    via `PlaybackMedia.OpenNativeStreamAsync`): HttpRangeStream's 1 MiB blocks, 32-block LRU, 2–16
-   prefetch, three fetch workers, one demand retry, a joined failed prefetch retried as demand, and
+   prefetch, three fetch workers, one demand retry (since 2026-11-25 followed by the outage retry window,
+   `retry_window.rs`, docs/player-plan.md "Playback reliability"), a joined failed prefetch retried as demand, and
    the sequential fallback (reopen past 256 KiB forward or backward). Readers share blocks by `Arc`,
    so an evicted block lives until its last reader drops it (C#'s leases). `close` wakes blocked reads
    before the SafeHandle frees the handle. Headers come from `SiloClient.CaptureHeadersAsync` for the

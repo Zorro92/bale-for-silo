@@ -118,7 +118,12 @@ impl Shared {
                 break;
             }
             let started = Instant::now();
-            let result = body.as_mut().expect("a body is open").read(&mut data);
+            let result = if crate::media_fault::outage() {
+                // bale-debug.sh media-fault outage: the response is cut where it stands.
+                Err(std::io::ErrorKind::ConnectionReset.into())
+            } else {
+                body.as_mut().expect("a body is open").read(&mut data)
+            };
             self.download_us.fetch_add(
                 started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64,
                 Ordering::Relaxed,
@@ -169,6 +174,10 @@ impl ProgressiveStream {
         // answers retry as in the C# handler; nothing can close the stream before it exists.
         let retried = crate::http::call_with_retry(
             |attempt| {
+                // bale-debug.sh media-fault outage: the server is away.
+                if crate::media_fault::outage() {
+                    return Err(StreamError::Network);
+                }
                 let mut request = crate::http::agent()
                     .get(url)
                     .config()

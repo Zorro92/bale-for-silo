@@ -33,6 +33,34 @@ public class DebugPlaytestScriptTests
 
     [Theory]
     [InlineData(null)]
+    [InlineData("outage=0")]
+    [InlineData("outage=40")]
+    public async Task MediaFaultUsesStatusOrAnEncodedPost(string? fault)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var result = await RunAsync(fault is null ? ["media-fault"] : ["media-fault", fault]);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("/media-fault\n", result.Arguments);
+        if (fault is null) Assert.DoesNotContain("POST", result.Arguments);
+        else Assert.Contains("-X\nPOST\n-G\n", result.Arguments);
+        if (fault is not null) Assert.Contains("--data-urlencode\n" + fault + "\n", result.Arguments);
+    }
+
+    [Fact]
+    public async Task InvalidMediaFaultsNeverInvokeCurl()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        foreach (var args in new[] { new[] { "media-fault", "" }, ["media-fault", "outage"], ["media-fault", "outage=-1"],
+            ["media-fault", "outage=1000"], ["media-fault", "outage=4&x=1"], ["media-fault", "drop=1"] })
+        {
+            var result = await RunAsync(args);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Arguments);
+        }
+    }
+
+    [Theory]
+    [InlineData(null)]
     [InlineData("d3d11")]
     [InlineData("zerocopy")]
     public async Task Dav1dPathUsesStatusOrAnEncodedPost(string? mode)

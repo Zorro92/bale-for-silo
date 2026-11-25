@@ -71,6 +71,7 @@
 #                                               fork's 'Bale rav1g stage' lines on pts; needs frame-delivery native; default off, memory only; no args = status (docs/player-plan.md)
 #   scripts/bale-debug.sh start-budget [seconds=1..120|default] [hang=none|open|ready]  start budget per mount (45 s default) for new mounts; hang applies to the next mount only: open = its open never finishes, ready = MediaOpened never seen; memory only; no args = status + the current mount's budget
 #   scripts/bale-debug.sh seek-watchdog [seconds=1..120|default] [hang=none|once]  seek watchdog per local seek (15 s default) for new seeks; hang=once: the next local seek is watched but never reaches the source (first time: same-plan remount at the target; armed again after it: failure replan); memory only; no args = status + the watched seek
+#   scripts/bale-debug.sh media-fault [outage=0..600]  simulated server outage: every Rust media request (range opens and blocks, HLS playlists and segments, progressive open) and open body read fails as a network error for that many seconds (0 ends it); memory only; no args = status + the Rust streams' recovery counters (range retries, fresh windows, windows given up)
 #   scripts/bale-debug.sh player-backend [mediaplayer|engine]   next playback attempt's player: engine (default, as in release) = IMFMediaEngine with Bale's controls, MediaPlayer only if it cannot open the stream; mediaplayer = Windows MediaPlayer; memory only; no args = status
 #   scripts/bale-debug.sh engine-target [auto|bgra|rgb10|fp16]   next engine attempt's swap-chain format (MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT): auto (default, follows output-depth policy) | force bgra | rgb10 | fp16; wins over output-depth; memory only; no args = status
 #   scripts/bale-debug.sh output-depth [display|source]   next engine mount's output: display (default, as in release) caps SDR P010 at HDMI depth, keeps HDR passthrough and AV1 at rgb10; source always gives P010 rgb10; NV12/unknown stay bgra; memory only; no args = status
@@ -664,6 +665,22 @@ case "${1:-}" in
       curl --fail-with-body -sS --max-time 5 "$BASE/seek-watchdog"
     else
       curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/seek-watchdog" "${args[@]}"
+    fi
+    ;;
+  media-fault)
+    shift
+    args=()
+    for arg in "$@"; do
+      if [[ ! "$arg" =~ ^outage=[0-9]{1,3}$ ]]; then
+        echo 'usage: scripts/bale-debug.sh media-fault [outage=0..600]' >&2
+        exit 2
+      fi
+      args+=(--data-urlencode "$arg")
+    done
+    if [[ "${#args[@]}" == 0 ]]; then
+      curl --fail-with-body -sS --max-time 5 "$BASE/media-fault"
+    else
+      curl --fail-with-body -sS --max-time 5 -X POST -G "$BASE/media-fault" "${args[@]}"
     fi
     ;;
   player-backend)
