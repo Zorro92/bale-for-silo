@@ -1856,8 +1856,9 @@ Things learned on the way:
   (`route.software_fallback`); everything else is refused and the replan withdraws the codec, so the server transcodes.
   **Phase B is in Bale** (2026-11-24, wrapper bale.81): software frames go through the console stage (fork bale.80;
   threaded conversion bale.81), which adds 8-bit H.264 up to 4K30 at 50 Mbps (only through the stage's downscale or on a
-  fitting display) and the console tone map for HDR software video on SDR TVs. Left: the phase B console checks (CPU and
-  memory at 4K30, the 25-open leak check, the HDR tone map, 4:2:2 CPU with the threaded conversion). Research,
+  fitting display) and the console tone map for HDR software video on SDR TVs. Phase B console-checked on 0.1.769
+  (2026-11-25): 4K30 through the stage 1.6-2.8 cores, ~400 MiB less than MF scaling, 25-open leak check passed, HDR
+  software tone-mapped. Left: a library title end to end through Silo. Research,
   envelopes, what the server plans per case and the console checks: [software-decode.md](software-decode.md).
 
 ## Playback resource lifetime
