@@ -93,6 +93,18 @@ jobs:
             make diffutils gcc perl nasm yasm
             mingw-w64-x86_64-meson mingw-w64-x86_64-ninja
 
+      # Build-FFmpeg.ps1 downloads NASM and portable Strawberry Perl into upstream/Tools whenever those folders are
+      # missing (Build/InstallTools.ps1, fixed versions). Restore them instead: no download, no failure when
+      # strawberryperl.com or nasm.us is unreachable. The key follows the installer, so a version change downloads again.
+      - name: Restore NASM and Perl
+        id: tools
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            upstream/Tools/nasm
+            upstream/Tools/perl
+          key: ffmpeg-build-tools-${{ hashFiles('upstream/Build/InstallTools.ps1') }}
+
       - name: Build LGPL UWP x64 native package
         id: build
         shell: pwsh
@@ -106,6 +118,16 @@ jobs:
           ./bale/scripts/build-ffmpeg-native.ps1 -SourcePath ./upstream `
             -UpstreamRepository $env:UPSTREAM_REPOSITORY -UpstreamRef $env:UPSTREAM_REF -Dav1dTag $env:DAV1D_TAG `
             -PatchRevision $env:PATCH_REVISION -FfmpegVersion $env:FFMPEG_VERSION
+
+      # Saved even when the build fails later, as long as both tools were installed.
+      - name: Save NASM and Perl
+        if: ${{ always() && steps.tools.outputs.cache-hit != 'true' && hashFiles('upstream/Tools/nasm/nasm.exe') != '' && hashFiles('upstream/Tools/perl/perl/bin/perl.exe') != '' }}
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            upstream/Tools/nasm
+            upstream/Tools/perl
+          key: ${{ steps.tools.outputs.cache-primary-key }}
 
       - name: Preserve package, provenance and build diagnostics
         if: always()
