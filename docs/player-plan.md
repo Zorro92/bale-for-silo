@@ -97,7 +97,7 @@ Current production capability claims (`ConsoleEvidence.ForHardware` over the dec
 | VC-1 / MPEG-2 video | FFmpeg demuxer, Media Foundation system decoder | Only when the matching NV12 VLD profile reports a supported size; 8-bit, probed bounds. Series X: both report 1920×1080. Original files only; HLS and `ffmpeg off` withdraw these codecs. Software video decoding remains forbidden |
 | AV1 video | dav1d CPU buffers/grain on D3D11, **non-hardware**; `software_video_decode_v1` opt-in | 8/10-bit, **1920×1080, 60 fps**; no 4K claim |
 | MPEG-4 Part 2 video | FFmpeg ordinary software output, **non-hardware**; `software_video_decode_v1` opt-in | Simple / Advanced Simple Profile, 8-bit, **1920×1080, 30 fps**; original_http, and since 2026-11-16 the progressive remux and HLS (FFmpeg reads both); no AV1 zero-copy/GPU-grain options |
-| Everything else FFmpeg decodes (2026-11-17, owner, as AetherEngine) | FFmpeg ordinary software output; also H.264/HEVC/VP9/VC-1/MPEG-2 files the hardware cannot take (10-bit H.264, 4:2:2/4:4:4, HEVC RExt/12-bit, VP9 profile 1/3, sizes above the probe) | Unbounded software entry per codec (VP8, MPEG-1, MS-MPEG4 v1–3, WMV1–3, H.263, Theora, QuickTime RLE, MJPEG, ProRes, DNxHD, plus the hardware codecs); original_http only for the new ones (packages keep their verified codecs); containers MOV/M4V/TS/M2TS/MTS/3GP/MPEG/VOB/OGG/WebM/FLV/ASF via FFmpeg's demuxer. Console verification pending |
+| Everything else FFmpeg decodes (2026-11-17, owner, as AetherEngine) | FFmpeg ordinary software output; the hardware codecs' entries also cover H.264/HEVC/VP9/VC-1/MPEG-2 files the hardware cannot take (10-bit H.264, 4:2:2/4:4:4, HEVC RExt/12-bit, VP9 profile 1/3, sizes above the probe), but the player still refuses those (`FfmpegSource`: one failed open, then the replan; docs/software-decode.md) | Unbounded software entry per codec (VP8, MPEG-1, MS-MPEG4 v1–3, WMV1–3, H.263, Theora, QuickTime RLE, MJPEG, ProRes, DNxHD, plus the hardware codecs); original_http only for the new ones (packages keep their verified codecs); containers MOV/M4V/TS/M2TS/MTS/3GP/MPEG/VOB/OGG/WebM/FLV/ASF via FFmpeg's demuxer. Console verification pending |
 | AVI container | FFmpeg demuxer on original_http | Never progressive/HLS; system video for hardware codecs, software for MPEG-4 Part 2 |
 | System audio | `aac`, `ac3`, `eac3`, `mp3` | Uses system audio decoders, including on FFmpeg demux/software-video routes |
 | FFmpeg fallback audio | `dts`, `dts_hd`, `truehd`, `flac`, `opus`, `vorbis`, `alac`, `mp2`, LPCM (`pcm` and each ffprobe spelling: `pcm_s16le/be`, `pcm_s24le/be`, `pcm_s32le/be`, `pcm_f32le/be`, `pcm_f64le/be`, `pcm_u8`, `pcm_bluray`, `pcm_dvd`) | Decode to PCM, not passthrough. silo-server matches audio claims to the stored ffprobe name exactly, so LPCM needs each spelling. LPCM/MP2 in MP4 take the FFmpeg route too (Windows' MP4 source is unverified with them); HLS never claims them (the server converts HLS audio outside AAC/AC-3/E-AC-3/MP3). Real-library console verification pending |
@@ -1841,15 +1841,18 @@ Things learned on the way:
 - Subtitle search / styling.
 - Watch Party.
 - Audiobooks.
-- **Software decode fallback for H.264 / HEVC / VP9** (owner, 2026-11-24). Today only AV1 may be software-decoded
-  (`SoftwareDecodePolicy.VideoCodecs`; `FfmpegSource.Configuration` refuses the rest with "The video codec cannot use the
-  local fallback"). Anything past the console's hardware decoder (this console: H.264 stops at 1080p,
-  `H264_VLD_NOFGT NV12 1080p`; 8-bit HEVC/VP9 profiles or levels it lacks, 4:2:2/4:4:4) then needs the server to pick a
-  lower version or transcode. A local FFmpeg software fallback would let such originals play direct where the CPU
-  allows: decide by resolution, frame rate and bit rate against the CPU budget (docs/resource-budget.md: ~3 cores;
-  4K60 H.264 is out of reach, 4K24-30 may fit), claim it to the server only within that budget, keep the hardware path
-  first, and route the decoded frames through the same output/stage as software AV1 (dav1d's D3D11 CPU-buffer path:
-  upload, then the downscale/tone-map stage). Check the claim rules against silo-apple / AetherEngine first.
+- **Software decode fallback for H.264 / HEVC / VP9** (owner, 2026-11-24). Research, proposed claims and the console
+  measurement plan: [software-decode.md](software-decode.md). Today the route sends what the console's decoder can't
+  take (this console: H.264 stops at 1080p, `H264_VLD_NOFGT NV12 1080p`; H.264 High 10/4:2:2/4:4:4, HEVC RExt/12-bit,
+  VP9 profile 1/3) to software, the release claims already admit it (an unbounded software entry per FFmpeg codec
+  since 2026-11-17), but `FfmpegSource.Configuration` refuses it ("The video codec cannot use the local fallback"):
+  one failed open, then the replan has the server transcode. Debug `ffmpeg-tune swfallback=on` (2026-11-24) decodes
+  those routes in FFmpeg software so the console can be measured; release behaviour is unchanged. HEVC RExt, VP9
+  profile 1/3 and 8-bit H.264 4:2:2/4:4:4 likely fail outright today (the profile-blind hardware entry admits them
+  again after the replan). Proposal: two small fixes now (drop the hardware codecs' unbounded software entries; a
+  refused route withdraws its codec on the replan), then bounded 1080p entries for H.264 High 10, VP9 profile 1 and
+  12-bit HEVC; 4:2:2 needs the fork's conversion off one swscale call, 4K needs software frames through the stage
+  (MF's scaler must never downscale 4K SDR) and fits only around 4K24 / 25 Mbps by the host estimates.
 
 ## Playback resource lifetime
 

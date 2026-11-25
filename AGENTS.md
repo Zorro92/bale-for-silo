@@ -327,7 +327,11 @@ For Bale, a normal app with hevcPlayback on the Series X:
   decodes (`SoftwareDecodePolicy.FfmpegVideoCodecs`): an unbounded software `video_decode` entry each, except
   AV1, which keeps its measured bound below until rav1g. The route (`route::hardware_admits`) plays a file on
   the console's hardware decoder when a probed hardware entry takes its bit depth and size and the profile is
-  4:2:0 H.264 up to High / HEVC Main(10) / VP9 profile 0/2; otherwise FFmpeg decodes it in software. A failed
+  4:2:0 H.264 up to High / HEVC Main(10) / VP9 profile 0/2; otherwise the route is software. FFmpeg then decodes
+  the software-only codecs; for the hardware codecs (H.264/HEVC/VP9/VC-1/MPEG-2) `FfmpegSource` still refuses that
+  route ("The video codec cannot use the local fallback"), so such a file costs one failed open and the replan,
+  although the unbounded entries claimed it (docs/software-decode.md: research, proposed bounded claims and the
+  debug `ffmpeg-tune swfallback=on` that decodes H.264/HEVC/VP9 there for console measurements). A failed
   software route withdraws every software entry on the single replan, so the server transcodes. Packages
   (progressive, HLS) still carry only the codecs verified there (`PackagedVideoCodecs`). Auto's display
   matching counts only hardware and bounded entries, so it never prefers a software 4K decode.
@@ -512,7 +516,11 @@ For Bale, a normal app with hevcPlayback on the Series X:
   keep their values, `default` clears only that override and restores the release setting (prio unset),
   and invalid updates change nothing. Explicit values win, including zero for ahead/delay/prio. These
   three overrides apply only to software video; they do not affect an open player, native/HLS routes or
-  the standalone probe. Production uses the release defaults without debug overrides.
+  the standalone probe. Production uses the release defaults without debug overrides. `threads=0..16|default`
+  sets FFmpeg's software decoder threads (`MaxDecoderThreads`, software video only; 0/default = the logical CPU
+  count). `swfallback=on|off|default` decodes H.264/HEVC/VP9 the console's decoder can't take (the route's own
+  software decision) in FFmpeg software instead of refusing them as release does; `decoder=software` takes them
+  too. Never with a console stage (it reads d3d11va textures only). See docs/software-decode.md.
 
 - Debug `bale-debug.sh frame-log on` (next attempt, memory only) writes one bale.log line per video sample
   (`frame: t= pts= dur= pos= lead= kind= flags=`) and per engine event (`frame-event: t= kind= pos=`): `t` is

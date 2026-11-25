@@ -24,6 +24,13 @@ internal static class FfmpegSource
     {
         // Debug captures only our safe Bale diagnostics; production keeps the native logger off.
         FfmpegLogging.Configure();
+#if DEBUG_SERVER
+        // Debug software fallback (ffmpeg-tune swfallback=on, or decoder=software; docs/software-decode.md): H.264/HEVC/VP9 the
+        // console's decoder can't take decode in FFmpeg software. Release builds refuse that route below and replan to the server.
+        if (tuning.SoftwareFallbackAdmits(route))
+            Log.Info($"player: debug software fallback codec={route.VideoCodec} {route.VideoWidth}x{route.VideoHeight}");
+        else
+#endif
         if (!route.UseFfmpeg || (route.SoftwareVideo
             ? !SoftwareDecodePolicy.VideoCodecs.Contains(route.VideoCodec!)
             : route.VideoCodec is not null && !SoftwareDecodePolicy.SystemVideoCodecs.Contains(route.VideoCodec)))
@@ -285,6 +292,9 @@ internal static class FfmpegSource
         {
             ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.Dav1dMaxFrameDelay));
             if (tuning.DecodeThreadPriority is { } priority) config.FFmpegOptions["bale_decode_thread_priority"] = priority.ToString(CultureInfo.InvariantCulture);
+            // FFmpeg's software decoder threads (frame + slice for H.264/HEVC/VP9, dav1d's pool for AV1); unset keeps the
+            // wrapper's logical CPU count. A/B for the 4-core console (docs/software-decode.md).
+            if (tuning.DecoderThreads is { } threads) config.Video.MaxDecoderThreads = (uint)threads;
             // Patch 0009: dav1d/gpu modes; off retains the independent export-only override.
             if (codec == "av1" && DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain) is { } grain)
                 config.FFmpegOptions[grain.Key] = grain.Value;

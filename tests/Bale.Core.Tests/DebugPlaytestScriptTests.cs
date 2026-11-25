@@ -226,6 +226,7 @@ public class DebugPlaytestScriptTests
     [InlineData("prio", 0, 2)]
     [InlineData("maxres", 0, 1)]
     [InlineData("dpb", 0, 16)]
+    [InlineData("threads", 0, 16)]
     public async Task InvalidForkTuningAndDuplicatesNeverInvokeCurlOnEitherPath(string key, int minimum, int maximum)
     {
         if (!OperatingSystem.IsLinux()) return;
@@ -344,6 +345,11 @@ public class DebugPlaytestScriptTests
     [Theory]
     [InlineData("ffmpeg-tune", "grain=OFF")]
     [InlineData("ffmpeg-tune", "grain=1")]
+    [InlineData("ffmpeg-tune", "swfallback=ON")]
+    [InlineData("ffmpeg-tune", "swfallback=1")]
+    [InlineData("ffmpeg-tune", "swfallback=")]
+    [InlineData("ffmpeg-tune", "swfallback=true")]
+    [InlineData("playtest-ffmpeg", "swfallback=on")]
     [InlineData("playtest-ffmpeg", "grain=OFF")]
     [InlineData("playtest-ffmpeg", "grain=1")]
     [InlineData("playtest-engine", "csharp")]
@@ -577,6 +583,9 @@ public class DebugPlaytestScriptTests
     [InlineData("pool=stream", "white=400", "buffer=default")]
     [InlineData("decoder=auto", "tonemap=hable", "white=0150")]
     [InlineData("white=default", "readahead=default", "ahead=8")]
+    [InlineData("swfallback=on", "threads=4", "decoder=default")]
+    [InlineData("threads=016", "swfallback=off", "prio=2")]
+    [InlineData("swfallback=default", "threads=default", "decoder=software")]
     public async Task FfmpegInputTuningPostsValidatedOptionsInAnyOrder(string first, string second, string third)
     {
         if (!OperatingSystem.IsLinux()) return;

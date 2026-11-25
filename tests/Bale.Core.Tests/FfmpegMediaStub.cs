@@ -20,6 +20,7 @@ namespace FFmpegInteropX
     {
         public VideoDecoderMode VideoDecoderMode { get; set; }
         public HdrSupport HdrSupport { get; set; }
+        public uint MaxDecoderThreads { get; set; }
     }
 
     internal sealed class AudioConfig

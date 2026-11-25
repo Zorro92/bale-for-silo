@@ -74,8 +74,14 @@ public sealed partial class PlayerPage
         if (attempt.DebugUrl is null) return;
         // No server can transcode a debug file: a codec past the console's hardware limits (e.g. 4K H.264 on a 1080p-only
         // H.264 decoder) that Bale doesn't software-decode cannot play here; say so instead of a generic open failure.
-        if (media.Route.SoftwareVideo && media.Route.VideoCodec is { } codec && !SoftwareDecodePolicy.VideoCodecs.Contains(codec))
-            throw new DebugPlayUrlException($"{codec} at this size/rate exceeds the console's hardware decoder and Bale does not software-decode {codec}; no server here to transcode");
+        // The debug software fallback (ffmpeg-tune swfallback=on or decoder=software) decodes H.264/HEVC/VP9 such files.
+        if (media.Route.SoftwareVideo && media.Route.VideoCodec is { } codec && !SoftwareDecodePolicy.VideoCodecs.Contains(codec)
+            && !attempt.FfmpegTuning.SoftwareFallbackAdmits(media.Route))
+            throw new DebugPlayUrlException(!DebugFfmpegInputTuning.SoftwareFallbackCodecs.Contains(codec)
+                ? $"{codec} at this size/rate exceeds the console's hardware decoder and Bale does not software-decode {codec}; no server here to transcode"
+                : media.Route.ConsoleStage
+                    ? $"{codec} past the console's hardware decoder needs FFmpeg software, and the console stage takes only d3d11va frames; no server here to tone-map"
+                    : $"{codec} at this size/rate exceeds the console's hardware decoder and Bale does not software-decode {codec} (debug: ffmpeg-tune swfallback=on); no server here to transcode");
         if (media.Route.ConsoleToneMap && !media.Route.UseFfmpeg)
             throw new DebugPlayUrlException("tone map declined: FFmpeg is disabled or the codec is unsupported");
         if (media.Route.ConsoleStage && !ConsoleToneMapRuntime.IsAvailable)
@@ -89,6 +95,8 @@ public sealed partial class PlayerPage
     {
         if (attempt.DebugUrl is null) return;
         var route = $"route={(media.Route.SoftwareVideo ? "software" : "system")} codec={media.Route.VideoCodec} stage={media.Route.ConsoleStage}";
+        if (attempt.FfmpegTuning.SoftwareFallbackAdmits(media.Route))
+            route += "; debug software fallback (past the hardware decoder; release builds refuse it)";
         if (media.Route.VideoCodec == "av1")
         {
             route += !attempt.FfmpegTuning.SoftwareVideo(media.Route.SoftwareVideo) ? "; rav1g not applied: ffmpeg-tune decoder override"

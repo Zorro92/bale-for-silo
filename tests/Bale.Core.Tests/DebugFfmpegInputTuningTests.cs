@@ -599,7 +599,45 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         ["tonemap"] = tuning.ToneMapOverride,
         ["colorinfo"] = tuning.ColorInfoOverride,
         ["white"] = tuning.SdrWhiteNits?.ToString(CultureInfo.InvariantCulture) ?? "default",
+        ["threads"] = tuning.DecoderThreads?.ToString(CultureInfo.InvariantCulture) ?? "default",
+        ["swfallback"] = tuning.SoftwareFallback ? "on" : "default",
     }, out _));
+
+    [Fact]
+    public void SoftwareFallbackAndDecoderThreadsParseDescribeAndClear()
+    {
+        // docs/software-decode.md: swfallback=on decodes H.264/HEVC/VP9 past the hardware decoder in FFmpeg software;
+        // threads= sets FFmpeg's software decoder threads (DebugSoftwareFallbackTests covers what reaches the wrapper).
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["swfallback"] = "on", ["threads"] = "04" }, out var set));
+        Assert.True(set.SoftwareFallback);
+        Assert.Equal(4, set.DecoderThreads);
+        Assert.Equal("readahead=default readsize=default prefetch=default threads=4 swfallback=on", set.Description);
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["threads"] = "0" }, out var zero));
+        Assert.Equal(0, zero.DecoderThreads);
+        Assert.True(zero.SoftwareFallback);
+        foreach (var off in new[] { "off", "default" })
+        {
+            Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["swfallback"] = off }, out var cleared));
+            Assert.False(cleared.SoftwareFallback);
+            Assert.Equal(0, cleared.DecoderThreads);
+            Assert.DoesNotContain("swfallback", cleared.Description);
+            Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["swfallback"] = "on" }, out _));
+        }
+        var before = DebugFfmpegInputTuning.Current;
+        foreach (var (key, value) in new[] { ("swfallback", "ON"), ("swfallback", "1"), ("swfallback", ""), ("swfallback", "true"),
+            ("threads", "17"), ("threads", "-1"), ("threads", "+4"), ("threads", "4 "), ("threads", ""), ("threads", "DEFAULT"),
+            ("threads", "2147483648") })
+        {
+            Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["prio"] = "1", [key] = value }, out var rejected), key + "=" + value);
+            Assert.Same(before, rejected);
+            Assert.Same(before, DebugFfmpegInputTuning.Current);
+        }
+        Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["threads"] = "default", ["swfallback"] = "default" }, out var reset));
+        Assert.Equal(new DebugFfmpegInputTuning(), reset);
+        Assert.Contains("[swfallback=on|off|default]", DebugFfmpegInputTuning.Usage);
+        Assert.Contains("[threads=0..16|default]", DebugFfmpegInputTuning.Usage);
+        Assert.Contains("software also takes H.264/HEVC/VP9 past the hardware decoder", DebugFfmpegInputTuning.Usage);
+    }
 
     [Fact]
     public void ZeroCopyRegistrationIsCachedAndLogsNoExceptionText()
