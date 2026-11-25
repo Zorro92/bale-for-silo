@@ -667,7 +667,7 @@ namespace Bale.Core.Api.Models
 #else
         public global::Bale.Core.Api.Models.WatchRollup UserData { get; set; }
 #endif
-        /// <summary>The user_rating property</summary>
+        /// <summary>The profile&apos;s rating, 1 to 10, which clients show as five stars with half stars; absent when unrated</summary>
         public long? UserRating { get; set; }
         /// <summary>The viewer&apos;s flags; absent without a profile</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER

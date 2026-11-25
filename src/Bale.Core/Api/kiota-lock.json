@@ -1,6 +1,6 @@
 {
-  "descriptionHash": "9BEFB9DFD68E689872573D4934A272E418C469F765FEE7B7286A5CFCDB2645F5992B7E6C26AEAC4B3D4339CBA4DD5219147D71A8D948887D2F3674E0AA655D4D",
-  "descriptionLocation": "../../../../../../../../../var/home/xbrwn/ext-1/bale-wt/collections/.cache/silo-openapi-217ff25abc5b9d0d3dc359de63349b7dc3d1d2eb.json",
+  "descriptionHash": "A2917E26946333115F5E442737F4478E6EECD11DE8CC338BF001391632AF167DB37EB816438873A9BB9915B981DF1F77A479649395E01D2DDCE015401268D622",
+  "descriptionLocation": "../../../.cache/silo-openapi-faa406d9246fde64767bc0d350d59278a8317812.json",
   "lockFileVersion": "1.0.0",
   "kiotaVersion": "1.36.1",
   "clientClassName": "SiloApiClient",
@@ -49,6 +49,7 @@
     "/api/v2/home/sections",
     "/api/v2/home/sections/{id}/items",
     "/api/v2/catalog/items/{id}",
+    "/api/v2/catalog/items/{id}/collections",
     "/api/v2/catalog",
     "/api/v2/catalog/query",
     "/api/v2/catalog/filters",

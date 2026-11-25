@@ -20,6 +20,8 @@ namespace Bale.Core.Api.Models
         public bool? ExtendedQueryRules { get; set; }
         /// <summary>searchCatalogFacet accepts library_ids and answers values and values_has_more: ranked values with title counts that match word starts, and the most common values for an empty q</summary>
         public bool? FacetValueSearch { get; set; }
+        /// <summary>listCatalogItemCollections answers the collections a title&apos;s page lists under &quot;Also in&quot;</summary>
+        public bool? ItemCollections { get; set; }
         /// <summary>queryCatalogLetters answers how many titles of a title-ordered query-source browse file under each letter and where each letter&apos;s first title sits, for an alphabetical jump bar</summary>
         public bool? LetterIndex { get; set; }
         /// <summary>Oldest ranking sessions expire when this retention bound is exceeded</summary>
@@ -70,6 +72,7 @@ namespace Bale.Core.Api.Models
                 { "box_sets", n => { BoxSets = n.GetBoolValue(); } },
                 { "extended_query_rules", n => { ExtendedQueryRules = n.GetBoolValue(); } },
                 { "facet_value_search", n => { FacetValueSearch = n.GetBoolValue(); } },
+                { "item_collections", n => { ItemCollections = n.GetBoolValue(); } },
                 { "letter_index", n => { LetterIndex = n.GetBoolValue(); } },
                 { "max_sessions_per_account", n => { MaxSessionsPerAccount = n.GetLongValue(); } },
                 { "people_media_scope", n => { PeopleMediaScope = n.GetBoolValue(); } },
@@ -94,6 +97,7 @@ namespace Bale.Core.Api.Models
             writer.WriteBoolValue("box_sets", BoxSets);
             writer.WriteBoolValue("extended_query_rules", ExtendedQueryRules);
             writer.WriteBoolValue("facet_value_search", FacetValueSearch);
+            writer.WriteBoolValue("item_collections", ItemCollections);
             writer.WriteBoolValue("letter_index", LetterIndex);
             writer.WriteLongValue("max_sessions_per_account", MaxSessionsPerAccount);
             writer.WriteBoolValue("people_media_scope", PeopleMediaScope);

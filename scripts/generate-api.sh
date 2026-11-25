@@ -3,7 +3,7 @@
 # Bump SILO_REF to pick up a newer server contract, then commit the result.
 set -euo pipefail
 
-SILO_REF="${SILO_REF:-217ff25abc5b9d0d3dc359de63349b7dc3d1d2eb}"
+SILO_REF="${SILO_REF:-faa406d9246fde64767bc0d350d59278a8317812}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SPEC_DIR="$ROOT/.cache"
 SPEC="$SPEC_DIR/silo-openapi-$SILO_REF.json"
@@ -46,6 +46,7 @@ dotnet kiota generate \
   --include-path '/api/v2/home/sections' \
   --include-path '/api/v2/home/sections/{id}/items' \
   --include-path '/api/v2/catalog/items/{id}' \
+  --include-path '/api/v2/catalog/items/{id}/collections' \
   --include-path '/api/v2/catalog' \
   --include-path '/api/v2/catalog/query' \
   --include-path '/api/v2/catalog/filters' \

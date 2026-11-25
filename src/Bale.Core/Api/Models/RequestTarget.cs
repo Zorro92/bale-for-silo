@@ -46,7 +46,7 @@ namespace Bale.Core.Api.Models
 #else
         public string Id { get; set; }
 #endif
-        /// <summary>Admins only: the download server&apos;s name</summary>
+        /// <summary>Admins only, and left out of the admin request list for API keys with scopes: the download server&apos;s name</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
         public string? InstanceName { get; set; }
@@ -72,7 +72,7 @@ namespace Bale.Core.Api.Models
 #endif
         /// <summary>The is_anime property</summary>
         public bool? IsAnime { get; set; }
-        /// <summary>Admins only: why the download server failed this target</summary>
+        /// <summary>Admins only, and left out of the admin request list for API keys with scopes: why the download server failed this target</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
         public string? LastError { get; set; }
@@ -96,7 +96,7 @@ namespace Bale.Core.Api.Models
 #else
         public string RequestId { get; set; }
 #endif
-        /// <summary>Admins only: the routing rule that sent this target to its server, as named when it was sent</summary>
+        /// <summary>Admins only, and left out of the admin request list for API keys with scopes: the routing rule that sent this target to its server, as named when it was sent</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
         public string? RouteName { get; set; }

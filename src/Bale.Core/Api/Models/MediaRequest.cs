@@ -76,7 +76,7 @@ namespace Bale.Core.Api.Models
 #endif
         /// <summary>The is_anime property</summary>
         public bool? IsAnime { get; set; }
-        /// <summary>Admins only: why the last submission to a download server failed. It can name servers and routing rules</summary>
+        /// <summary>Admins only, and left out of the admin request list for API keys with scopes: why the last submission to a download server failed. It can name servers and routing rules</summary>
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 #nullable enable
         public string? LastError { get; set; }
