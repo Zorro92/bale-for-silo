@@ -69,6 +69,9 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public bool StreamAdapterLogged { get; set; }
         public int ProgressiveReconnects { get; set; }
         public long ProgressiveReconnectAt { get; set; }
+        /// <summary>Same-plan remounts after a range stream gave up (PlaybackTransportStall).</summary>
+        public int TransportStallRemounts { get; set; }
+        public long TransportStallRemountAt { get; set; }
         public PlaybackVersionNotice VersionNotice { get; } = new();
         /// <summary>Keep the device's grain choice through every open/remount of this attempt.</summary>
         public bool Dav1dGpuFilmGrain { get; } = AppSettings.Dav1dGpuFilmGrain;
@@ -413,7 +416,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
     /// Remount the current plan once more on another local path (no server replan), from the same source position.
     /// The caller has marked the attempt so the new mount takes that path; a failed open takes the single replan.
     /// </summary>
-    private async Task RemountSamePlanAsync(Attempt attempt, double position, string reason)
+    private async Task RemountSamePlanAsync(Attempt attempt, double position, string reason, PlaybackFailureV3? failure = null)
     {
         HideTransport();
         _state = "loading";
@@ -433,7 +436,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         {
             // The remount's open failed (or its start budget stopped it): the single replan decides, as for the start.
             LogFailure("open", ex);
-            await RecoverCoreAsync(attempt, ex.HResult, isDecoder: false, IsNetworkFailure(ex));
+            // A transport stall's remount keeps its classification, so the replan keeps every claim.
+            await RecoverCoreAsync(attempt, ex.HResult, isDecoder: false, IsNetworkFailure(ex), failure: failure);
         }
     }
 
@@ -495,7 +499,22 @@ public sealed partial class PlayerPage : Page, IBackHandler
         Pause(attempt);
         // A start that ran out of time, or a seek still stuck after the seek watchdog's same-plan remount, withdraws no
         // claim (PlaybackReplan.ForFailure): no other same-plan remount, and the claim guards below do not apply.
-        var keepsClaims = PlaybackStartBudget.Is(failure) || PlaybackSeekWatchdog.Is(failure);
+        var keepsClaims = PlaybackStartBudget.Is(failure) || PlaybackSeekWatchdog.Is(failure) || PlaybackTransportStall.Is(failure);
+        if (PlaybackTransportStall.Is(failure))
+        {
+            // silo-android: a network failure retries the same route once (renewed after recovered playback) before the
+            // replan. Its open fails at once while the server is still away, and the replan then decides.
+            var now = Environment.TickCount64;
+            attempt.TransportStallRemounts = PlaybackTransportStall.RemountsAfterRenewal(attempt.TransportStallRemounts,
+                attempt.TransportStallRemountAt, now);
+            if (PlaybackTransportStall.RemountsSamePlan(attempt.TransportStallRemounts, attempt.TransportStallRemountAt, now))
+            {
+                attempt.TransportStallRemounts++;
+                attempt.TransportStallRemountAt = now;
+                await RemountSamePlanAsync(attempt, position, "player: range stream gave up; remounting the same plan", failure);
+                return;
+            }
+        }
         // A subtitle failure says nothing about the video stage; remounting the same plan would fail it again. Nor does
         // a start that ran out of time: the server's next route is the answer, not the same plan on another decoder.
         if (attempt.Media is { Route.ConsoleDownscale: true } downscaled && !attempt.SdrDownscaleDeclined && !hdrOutputFailed

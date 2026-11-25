@@ -135,6 +135,20 @@ pub unsafe extern "C" fn bale_core_range_stats(
     }
 }
 
+/// 1 when the latest read failed (not by closing), else 0: the end of the media after it is a
+/// transport failure, not the end of the title.
+///
+/// # Safety
+/// A live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_core_range_last_read_failed(handle: *const RangeStream) -> i32 {
+    // SAFETY: the caller guarantees a live handle.
+    match unsafe { handle.as_ref() } {
+        Some(stream) => i32::from(stream.last_read_failed()),
+        None => INVALID,
+    }
+}
+
 /// Replaces the request headers (`[[name, value], ...]`), e.g. after a token refresh.
 ///
 /// # Safety

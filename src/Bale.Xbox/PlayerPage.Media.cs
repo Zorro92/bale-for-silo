@@ -900,6 +900,14 @@ public sealed partial class PlayerPage
         // Protocol §4: a progressive response that did not end cleanly is a transport failure,
         // never the end of the title. Reopen it where it stopped (§6.2) instead of leaving.
         if (media.Progressive is { Completed: false }) QueueProgressiveReconnect(attempt, media, "incomplete");
+        // A direct play's range stream gave up (its retry window spent, or a final status): FFmpeg read the failed
+        // read as the end of the file. A transport stall, never the end of the title: one same-plan remount, then
+        // the replan with every claim kept, then the error with Retry (PlaybackTransportStall).
+        else if (media.Stream is { LastReadFailed: true })
+        {
+            Log.Info("player: media ended after a failed range read; treating it as a transport stall");
+            QueueFailure(attempt, media, 0, isDecoder: false, isNetwork: true, PlaybackTransportStall.Failure);
+        }
         else
         {
             // The end of the media is no stall, and the plan stopped playing: its plan_summary goes out.

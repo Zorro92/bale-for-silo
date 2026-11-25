@@ -168,6 +168,7 @@ public sealed class RustRangeStream : MediaRangeStream
     public override long CacheHits => (long)Stats.CacheHits;
     public override long PrefetchHits => (long)Stats.PrefetchHits;
     public override long BytesRead => (long)Stats.BytesRead;
+    public override bool LastReadFailed => !_handle.IsClosed && bale_core_range_last_read_failed(_handle) == 1;
     public override long SmallestRead => Stats.SmallestRead == ulong.MaxValue ? long.MaxValue : (long)Stats.SmallestRead;
 
     /// <summary>The Rust WinRT stream over this one (winrt_stream.rs): reads on the Windows thread pool, no managed code.</summary>
@@ -238,6 +239,7 @@ public sealed class RustRangeStream : MediaRangeStream
     [DllImport(Library, ExactSpelling = true)] private static extern unsafe int bale_core_range_open(byte* url, nuint urlLength, byte* headers, nuint headersLength, uint prefetchBlocks, nint* handle, ulong* length, byte* supportsRanges);
     [DllImport(Library, ExactSpelling = true)] private static extern unsafe int bale_core_range_read(RangeStreamHandle handle, ulong position, byte* buffer, nuint length, nuint* read);
     [DllImport(Library, ExactSpelling = true)] private static extern unsafe int bale_core_range_stats(RangeStreamHandle handle, NativeRangeStats* stats);
+    [DllImport(Library, ExactSpelling = true)] private static extern int bale_core_range_last_read_failed(RangeStreamHandle handle);
     [DllImport(Library, ExactSpelling = true)] private static extern unsafe int bale_core_range_set_headers(RangeStreamHandle handle, byte* headers, nuint length);
     [DllImport(Library, ExactSpelling = true)] private static extern unsafe int bale_core_range_set_refresh(RangeStreamHandle handle, delegate* unmanaged[Cdecl]<nint, ulong, void> callback, nint context);
     [DllImport(Library, ExactSpelling = true)] private static extern void bale_core_range_close(RangeStreamHandle handle);

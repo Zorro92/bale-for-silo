@@ -26,7 +26,8 @@ public static class PlaybackReplan
         // same plan was remounted at its target, fails the same way (Aether's softwarePipelineFailed /
         // nativeItemFailed, both "server can adapt" in silo-apple, which resends its capabilities unchanged): a
         // pipeline that stopped repositioning says nothing about one codec, stage or track.
-        if (PlaybackStartBudget.Is(failure) || PlaybackSeekWatchdog.Is(failure))
+        // A range stream that gave up after its retry window (PlaybackTransportStall) is an outage, nothing more.
+        if (PlaybackStartBudget.Is(failure) || PlaybackSeekWatchdog.Is(failure) || PlaybackTransportStall.Is(failure))
             return Build(start, plan, planAttemptId, priorAttemptedKeys.Append(plan.PlanAttemptKey!).ToArray(),
                 attemptCount, sourcePositionSeconds, "failure_recovery", failure);
         if (DolbyVision7Policy.RequiresBaseLayer(plan))

@@ -37,4 +37,11 @@ public abstract class MediaRangeStream : Stream
     /// reference; 0 when this stream has none (the C# stream).
     /// </summary>
     public virtual nint CreateNativeRandomAccessStream() => 0;
+
+    /// <summary>
+    /// The latest read failed (not by disposal) and no read has succeeded since. A demuxer takes a failed
+    /// read for the end of the file, so the player's MediaEnded checks this before it treats the end of
+    /// the media as the end of the title.
+    /// </summary>
+    public abstract bool LastReadFailed { get; }
 }

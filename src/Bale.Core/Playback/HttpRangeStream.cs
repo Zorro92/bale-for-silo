@@ -145,12 +145,16 @@ public sealed class HttpRangeStream : MediaRangeStream
         }
     }
 
+    private volatile bool _lastReadFailed;
+    public override bool LastReadFailed => _lastReadFailed;
+
     public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
         await _readLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             ThrowIfDisposed();
+            _lastReadFailed = false;
             if (buffer.Length == 0 || _position >= _length) return 0;
             _reads++;
             _smallestRead = Math.Min(_smallestRead, buffer.Length);
@@ -160,6 +164,11 @@ public sealed class HttpRangeStream : MediaRangeStream
             _position += count;
             _bytesRead += count;
             return count;
+        }
+        catch (Exception ex) when (ex is not ObjectDisposedException && !(ex is OperationCanceledException && cancellationToken.IsCancellationRequested))
+        {
+            _lastReadFailed = true;
+            throw;
         }
         finally
         {

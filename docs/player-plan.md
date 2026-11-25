@@ -2302,13 +2302,24 @@ Now (`retry_window.rs`, a port of silo-android's `MediaLoadRetryPolicy.kt` with 
   from where the last substantial run before a failure ended. Short bursts between failures, frequent cuts and re-reading
   the same part of the file stay one outage. Android measures one long request per load; Bale's run of 1 MiB block
   fetches stands in for it, and the failing block's offset for the request's end offset.
-- **Unchanged:** when a window is spent the read fails exactly as before (so the FFmpeg route still ends the film there:
-  a separate question from this rule). The sequential reader of a server without ranges keeps its single reopen. The C#
-  `HttpRangeStream` (debug `stream-adapter pooled|builtin` only) keeps its single demand retry.
+- **A spent window is a transport stall, not the end** (`PlaybackTransportStall`): FFmpeg reads a failed read as the end
+  of the file, so the film used to end there as if finished. Both range streams now report whether their latest read
+  failed (`last_read_failed`, cleared by the next good read; closing never sets it), and MediaEnded checks it first. A
+  stall then follows silo-android's TvPlayerViewModel: one remount of the same plan at the position
+  (`MAX_TRANSIENT_NETWORK_RETRIES` = 1, renewed after two minutes, as Bale's progressive reconnects), then the single
+  replan as `transport_stall` with every claim kept (an outage says nothing about a decoder, stage or track, as for the
+  start budget), then the error screen with Retry at the position.
+- **Unchanged:** the sequential reader of a server without ranges keeps its single reopen. The C# `HttpRangeStream`
+  (debug `stream-adapter pooled|builtin` only) keeps its single demand retry.
 - **Tests:** `retry_window.rs` replays Android's `DirectPlayRetryWindowTest` cases on Bale's block runs; `range_stream.rs`
   runs the real stream against a loopback server (`test_http.rs`: outages ridden out, dropped connections and cut bodies,
   a spent window, non-transient failures, a later outage's fresh window, the debug outage);
   `RustRangeStreamTests.ABlockFailingTwiceRidesOutTheOutageButAWrongRangeFailsTheRead` covers it from C#.
+  `PlaybackTransportStallTests` covers the stall's classification, remount rule, kept claims and MediaEnded wiring.
+- **Console check:** `media-fault outage=N` longer than the 90 s window during a direct play of a library title (FFmpeg route; `play-url` reports failures to the debug caller instead): the log shows
+  `media ended after a failed range read`, then `range stream gave up; remounting the same plan`. Ended before the
+  remount opens, the film resumes at the position; still on, the remount's open fails and the replan decides (the debug
+  outage leaves the API reachable, so the server's next route plays, or the error screen offers Retry).
 
 ### A seek kept across a quality or track change (server `4a73f48`, `d22e55f`)
 

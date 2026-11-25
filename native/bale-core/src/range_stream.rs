@@ -204,6 +204,9 @@ pub struct RangeStream {
     /// Reads are serialized, as the C# stream's read lock does.
     sequential: Mutex<Sequential>,
     read_lock: Mutex<()>,
+    /// The latest read failed (other than by closing). A demuxer reads a failed read as the end of
+    /// the file, so the player asks this before it treats the end of the media as the title's end.
+    last_read_failed: AtomicBool,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -635,6 +638,7 @@ impl RangeStream {
             supports_ranges,
             sequential: Mutex::new(sequential),
             read_lock: Mutex::new(()),
+            last_read_failed: AtomicBool::new(false),
         })
     }
 
@@ -657,7 +661,23 @@ impl RangeStream {
         self.shared.client.set_refresher(refresher)
     }
 
+    /// True when the latest read failed for any reason but closing: a spent retry window, a final
+    /// status, a refused credential. A later successful read clears it.
+    pub fn last_read_failed(&self) -> bool {
+        self.last_read_failed.load(Ordering::Acquire)
+    }
+
     pub fn read(&self, position: u64, buffer: &mut [u8]) -> Result<usize, StreamError> {
+        let result = self.read_serialized(position, buffer);
+        match result {
+            Ok(_) => self.last_read_failed.store(false, Ordering::Release),
+            Err(StreamError::Disposed) => {}
+            Err(_) => self.last_read_failed.store(true, Ordering::Release),
+        }
+        result
+    }
+
+    fn read_serialized(&self, position: u64, buffer: &mut [u8]) -> Result<usize, StreamError> {
         let _serialized = lock(&self.read_lock);
         if self.shared.disposed.load(Ordering::Acquire) {
             return Err(StreamError::Disposed);
@@ -979,8 +999,13 @@ mod tests {
         let server = server(&data, vec![(MIB, usize::MAX, || Reply::status(502))]);
         let stream = open(&server, quick(200));
         let started = Instant::now();
+        assert!(!stream.last_read_failed());
         assert_eq!(read_block(&stream, &data, MIB), Err(StreamError::Status));
         assert!(started.elapsed() < Duration::from_secs(5));
+        // The player tells this end of reading from the end of the file; a later good read clears it.
+        assert!(stream.last_read_failed());
+        read_block(&stream, &data, 0).expect("block 0 still reads");
+        assert!(!stream.last_read_failed());
         // The first failure, its immediate retry, and one attempt after each of the window's waits.
         assert!(server.count(|r| block_start(r) == Some(MIB)) >= 4);
     }

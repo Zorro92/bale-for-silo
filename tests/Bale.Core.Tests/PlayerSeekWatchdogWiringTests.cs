@@ -64,7 +64,7 @@ public class PlayerSeekWatchdogWiringTests
         Assert.DoesNotContain("attempt.Plan =", remount);
 
         var player = Read("PlayerPage.cs.txt");
-        Assert.Contains("var keepsClaims = PlaybackStartBudget.Is(failure) || PlaybackSeekWatchdog.Is(failure);", player);
+        Assert.Contains("var keepsClaims = PlaybackStartBudget.Is(failure) || PlaybackSeekWatchdog.Is(failure) || PlaybackTransportStall.Is(failure);", player);
         Assert.Contains("if (PlaybackSeekWatchdog.Is(failure) && attempt.StuckSeekTarget is { } stuckTarget)", player);
         Assert.Contains("attempt.Rav1gRemounted, hdrOutputFailed, PlaybackEmbeddedSubtitleFailure.Is(failure), keepsClaims, failedMount.Route.VideoHeight))", player);
         Assert.Contains("if (failedDolbyVision7 && !keepsClaims && DolbyVision7Policy.RequiresBaseLayer(attempt.Plan))", player);
