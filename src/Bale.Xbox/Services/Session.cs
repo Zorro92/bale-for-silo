@@ -25,6 +25,9 @@ internal static class Session
     /// <summary>The acting profile's picture, when it has one.</summary>
     public static Uri? ProfileAvatar { get; set; }
 
+    /// <summary>The connected server's build identity (GET /api/v2/system/info), for logs and the debug readout only.</summary>
+    public static string? ServerVersion { get; private set; }
+
     public static void Attach(Frame frame) => _rootFrame = frame;
 
     /// <summary>MainTvActivity.kt starts fresh discovery only while the app is in the foreground.</summary>
@@ -49,6 +52,7 @@ internal static class Session
             Reachability = new ServerReachabilityMonitor(server);
             if (_foreground) Reachability.StartForeground();
             _routingExpiry = false;
+            _ = ReadServerVersionAsync(server, client);
             client.TokensRefreshed += (_, _) =>
             {
                 lock (StateGate)
@@ -61,8 +65,28 @@ internal static class Session
         }
     }
 
+    private static async Task ReadServerVersionAsync(Uri server, SiloClient client)
+    {
+        try
+        {
+            using var probe = new ServerSetupProbe();
+            var version = await probe.VersionAsync(server).ConfigureAwait(false);
+            lock (StateGate)
+            {
+                if (!ReferenceEquals(Client, client)) return;
+                ServerVersion = version;
+            }
+            Log.Info($"Server version {version ?? "unknown"}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Server version", ex);
+        }
+    }
+
     private static void Disconnect()
     {
+        ServerVersion = null;
         Reachability?.Dispose();
         Reachability = null;
         var old = Client;

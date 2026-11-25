@@ -27,7 +27,7 @@ namespace Bale.Xbox.Services;
 ///   POST /key/{key}       a real keystroke, by VirtualKey name: Enter, Escape, Tab, Down, Back, F5...
 ///   POST /type?text=...   types text as real keystrokes into whatever has focus
 ///   GET  /focus           the focused element and its text
-///   GET  /where           compact page, overlays, focus, status and on-screen controls
+///   GET  /where           compact page, server version, overlays, focus, status and on-screen controls
 ///   POST /home            fresh Home for the active profile; clears Back/Forward history
 ///   POST /open?id=...&file=...  open Detail, optionally select an exact file; wait until loaded
 ///   POST /play?id=...&file=...&start=...  Detail's normal Play path; wait for player ready/error
@@ -1227,6 +1227,7 @@ internal sealed partial class DebugServer
     private static string DescribeWhere()
     {
         var builder = new StringBuilder("Page: " + DescribePage() + "\n");
+        builder.Append("Server: ").Append(Session.ServerVersion ?? "unknown").Append('\n');
         if (CurrentPage(out _) is PlayerPage player)
         {
             builder.Append("Player: ").Append(player.DebugPlayback).Append('\n');

@@ -75,6 +75,16 @@ public sealed class ServerSetupProbe : IDisposable
         catch (Exception ex) when (ex is JsonException or InvalidOperationException) { return ServerContractOutcome.MalformedResponse; }
     }
 
+    /// <summary>
+    /// The server's build identity from the public contract probe (`server_version`: short revision, "+dirty", or
+    /// "unavailable"). The server documents it as diagnostic only, so Bale logs and reports it but never branches on it.
+    /// </summary>
+    public async Task<string?> VersionAsync(Uri server, CancellationToken cancellationToken = default) =>
+        ServerVersion((await ReadAsync(server, "/api/v2/system/info", cancellationToken).ConfigureAwait(false)).Json);
+
+    internal static string? ServerVersion(JsonElement? info) => String(info, "server_version") is { Length: > 0 and <= 64 } version
+        && version.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '+' or '_') ? version : null;
+
     public async Task<string?> IdentityAsync(Uri server, CancellationToken cancellationToken = default) =>
         String((await ReadAsync(server, "/api/v2/system/identity", cancellationToken).ConfigureAwait(false)).Json, "server_id");
 

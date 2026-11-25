@@ -65,6 +65,31 @@ public class ServerSetupProbeTests
         Assert.Equal(2, handler.Requests.Count);
     }
 
+    [Theory]
+    [InlineData("""{"server_version":"1f11c118"}""", "1f11c118")]
+    [InlineData("""{"server_version":"1f11c118+dirty"}""", "1f11c118+dirty")]
+    [InlineData("""{"server_version":"unavailable"}""", "unavailable")]
+    [InlineData("""{"server_version":""}""", null)]
+    [InlineData("""{"server_version":"a b\n"}""", null)]
+    [InlineData("""{"server_version":2}""", null)]
+    [InlineData("<html>", null)]
+    public async Task VersionReadsOnlyAPlainBuildIdentityWithoutCredentials(string body, string? expected)
+    {
+        var handler = new StubHandler().Enqueue(body);
+        using var probe = new ServerSetupProbe(handler);
+        Assert.Equal(expected, await probe.VersionAsync(new Uri("https://example.com")));
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal("/api/v2/system/info", request.RequestUri!.AbsolutePath);
+        Assert.Null(request.Headers.Authorization);
+    }
+
+    [Fact]
+    public async Task VersionIsUnknownWhenTheServerFails()
+    {
+        using var probe = new ServerSetupProbe(new StubHandler().Enqueue(HttpStatusCode.ServiceUnavailable, Info));
+        Assert.Null(await probe.VersionAsync(new Uri("https://example.com")));
+    }
+
     [Fact]
     public async Task UpdateVerdictStopsBeforeSetupAndDoesNotTryAnotherScheme()
     {
