@@ -94,7 +94,7 @@ Current production capability claims (`ConsoleEvidence.ForHardware` over the dec
 | Stream | Claims / engine | Bounds / limitations |
 |---|---|---|
 | H.264 / HEVC / VP9 video | Media Foundation, hardware | The largest size the console's decoder reports per codec, 60 fps, no bitrate limit. H.264 is 8-bit; HEVC is 8-bit if Main is present and 10-bit if Main10 is; VP9 is 8-bit for profile 0 and 10-bit for profile 2. Series X: H.264 1920×1080, HEVC 7680×4320 8/10-bit, VP9 3840×2160 8/10-bit. VP9 is claimed only when the decoder reports it. If the probe fails or finds nothing: H.264 and HEVC at 1920×1080, 60 fps, no bitrate limit, no VP9; a partial probe keeps its measured profiles and gives only the unmeasured H.264/HEVC depths that baseline |
-| H.264 / HEVC / VP9 past the hardware decoder (phase A, 2026-11-24, owner) | FFmpeg ordinary software output, **non-hardware**; `software_video_decode_v1` opt-in | Bounded entries (`software_decode::FALLBACK_ENVELOPES`), all **1920×1080**, no bitrate bound: H.264 `high 10` 8/10-bit and HEVC `rext` 12-bit at **60 fps**; H.264 `high 4:2:2` / `high 4:4:4 predictive` 8/10-bit, HEVC `rext` 8/10/12-bit and VP9 `profile 1` / `profile 3` at **30 fps**. The route takes a mount only when one of the attempt's software entries admits the delivered file, a file not known to be 4:2:0 stays at or under 30 fps, and no console stage is involved (`route.software_fallback`); otherwise `FfmpegSource` refuses and the replan withdraws the codec, so the server transcodes. Console-measured at 1080p: 0.8–2.1 cores, 0 missed frames. 4K waits for phase B (docs/software-decode.md) |
+| H.264 / HEVC / VP9 past the hardware decoder (phases A and B, 2026-11-24, owner) | FFmpeg ordinary software output, **non-hardware**, through the console stage where one applies (wrapper bale.80+); `software_video_decode_v1` opt-in | Bounded entries (`software_decode::FALLBACK_ENVELOPES`). At **1920×1080**, no bitrate bound: H.264 `high 10` 8/10-bit and HEVC `rext` 12-bit at **60 fps**; H.264 `high 4:2:2` / `high 4:4:4 predictive` 8/10-bit, HEVC `rext` 8/10/12-bit and VP9 `profile 1` / `profile 3` at **30 fps**. Phase B: 8-bit H.264 `constrained baseline`–`high` up to **3840×2160, 30 fps, 50 000 kbps**, claimed only where the stage takes software frames. The route takes a mount only when one of the attempt's software entries admits the delivered file, a file not known to be 4:2:0 stays at or under 30 fps, a needed stage takes software frames, and a frame above 1080p goes through the downscale unless the display fits it (`route.software_fallback`); otherwise `FfmpegSource` refuses and the replan withdraws the codec, so the server transcodes. HDR (PQ/HLG, 10/12-bit, any chroma) inside the envelopes is promised the console tone map. Console-measured at 1080p: 0.8–2.1 cores, 0 missed frames; 4K30 H.264 1.97–2.87 cores (before the stage). Phase B console checks pending (docs/software-decode.md) |
 | VC-1 / MPEG-2 video | FFmpeg demuxer, Media Foundation system decoder | Only when the matching NV12 VLD profile reports a supported size; 8-bit, probed bounds. Series X: both report 1920×1080. Original files only; HLS and `ffmpeg off` withdraw these codecs. Software video decoding remains forbidden |
 | AV1 video | dav1d CPU buffers/grain on D3D11, **non-hardware**; `software_video_decode_v1` opt-in | 8/10-bit, **1920×1080, 60 fps**; no 4K claim |
 | MPEG-4 Part 2 video | FFmpeg ordinary software output, **non-hardware**; `software_video_decode_v1` opt-in | Simple / Advanced Simple Profile, 8-bit, **1920×1080, 30 fps**; original_http, and since 2026-11-16 the progressive remux and HLS (FFmpeg reads both); no AV1 zero-copy/GPU-grain options |
@@ -1635,6 +1635,12 @@ codec and decoder. Windows on Xbox has no HDR→SDR tone mapper to fall back on.
 - Gates: wrapper ≥ bale.38 (tone-map sizing) / bale.39 (SDR route), and bale_gpu's
   `bale_tonemap_output_formats` bits (DOWNSCALE; plus INPUT_NV12 and SDR709 for the SDR route).
 - On a 4K display nothing changes: the sizes match, so there is nothing to scale.
+- *Software frames* (phase B of [software-decode.md](software-decode.md), wrapper bale.80+, 2026-11-24): the fork runs
+  the same stage on FFmpeg software frames (swscale into a staging texture, then the stage), so software H.264/HEVC/VP9
+  routes take the downscale and the tone map too (stats: `ffmpeg software + console downscale`). A software frame
+  above 1080p plays only through it or on a display known to fit it; after a declined stage the remount refuses such a
+  route, so the replan transcodes instead of handing MF 4K SDR. Console checks pending (the 25-open leak check is in
+  software-decode.md "Verify phase B on the console").
 
 **Do not undo:** do not hand MF 4K SDR on a smaller display again (removing the size keys, sending
 SDR 4K straight to the system decoder, or letting the guard accept unmarked P010). If a new route
@@ -1842,15 +1848,17 @@ Things learned on the way:
 - Subtitle search / styling.
 - Watch Party.
 - Audiobooks.
-- **Software decode fallback for H.264 / HEVC / VP9** (owner, 2026-11-24). **Phase A is in release** (2026-11-24): what
-  the console's hardware decoder can't take (this console: H.264 stops at 1080p, `H264_VLD_NOFGT NV12 1080p`; H.264 High
-  10/4:2:2/4:4:4, HEVC RExt/12-bit, VP9 profile 1/3) decodes in FFmpeg software inside the console-measured 1080p
-  envelopes (4:2:0 H.264 High 10 and 12-bit HEVC up to 60 fps, 4:2:2/4:4:4 up to 30 fps; 0.8-2.1 cores, 0 missed
-  frames), claimed as bounded software entries and checked per mount by the route (`route.software_fallback`);
-  everything else is refused and the replan withdraws the codec, so the server transcodes. Research, envelopes, what the
-  server plans per case and the console checks: [software-decode.md](software-decode.md). Left (phase B, fork): 4K
-  software (the CPU fits 4K30 H.264, 2.87 cores at 50 Mbps), which needs software frames through Bale's stage (MF's
-  scaler must never downscale 4K SDR), and HDR tone mapping of software frames on SDR TVs.
+- **Software decode fallback for H.264 / HEVC / VP9** (owner, 2026-11-24). **Phase A is in release** (2026-11-24,
+  console-checked on 0.1.768): what the console's hardware decoder can't take (this console: H.264 stops at 1080p,
+  `H264_VLD_NOFGT NV12 1080p`; H.264 High 10/4:2:2/4:4:4, HEVC RExt/12-bit, VP9 profile 1/3) decodes in FFmpeg software
+  inside the console-measured 1080p envelopes (4:2:0 H.264 High 10 and 12-bit HEVC up to 60 fps, 4:2:2/4:4:4 up to 30
+  fps; 0.8-2.1 cores, 0 missed frames), claimed as bounded software entries and checked per mount by the route
+  (`route.software_fallback`); everything else is refused and the replan withdraws the codec, so the server transcodes.
+  **Phase B is in Bale** (2026-11-24, wrapper bale.81): software frames go through the console stage (fork bale.80;
+  threaded conversion bale.81), which adds 8-bit H.264 up to 4K30 at 50 Mbps (only through the stage's downscale or on a
+  fitting display) and the console tone map for HDR software video on SDR TVs. Left: the phase B console checks (CPU and
+  memory at 4K30, the 25-open leak check, the HDR tone map, 4:2:2 CPU with the threaded conversion). Research,
+  envelopes, what the server plans per case and the console checks: [software-decode.md](software-decode.md).
 
 ## Playback resource lifetime
 

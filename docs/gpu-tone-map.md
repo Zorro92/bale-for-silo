@@ -5,7 +5,9 @@
 `bale_tonemap_output_formats()`. It is the production path for HDR originals on SDR displays
 (see `docs/player-plan.md` "Console tone mapping by default"), and since 2026-11-17 also the
 display-sized scaler for 4K SDR on smaller displays (see "4K SDR downscale on smaller displays").
-The FFmpegInteropX fork (wrapper 2.1.0-bale.81 pinned) owns the stage around it.
+The FFmpegInteropX fork (wrapper 2.1.0-bale.81 pinned) owns the stage around it; since bale.80 it also
+feeds the stage FFmpeg software frames (swscale into a staging texture of NV12 for 8-bit, else P010), for
+the software fallback of H.264/HEVC/VP9 (`docs/software-decode.md` phase B).
 
 ## Capabilities (`bale_tonemap_output_formats`, 2026-11-17)
 

@@ -62,6 +62,12 @@ buffers, Media Foundation).
   AV1 above ~40 Mbps is the risk case.
 - Spend resources only where they buy measured performance: e.g. more slots or frames in flight are worth
   their memory if they raise idle-state fps or remove stalls; otherwise keep the smaller setting.
+- Software H.264/HEVC/VP9 (docs/software-decode.md) sits inside the same envelope. Measured 2026-11-24 (0.1.767,
+  Media Foundation still scaling 4K): 1080p 0.8-2.1 cores, app 664-1055 MiB; 4K30 H.264 1.97 cores at 13 Mbps and 2.87
+  at 50 Mbps, app 1228-1230 MiB; 4K60 at 80 Mbps fails (6.58 cores). Phase B (wrapper bale.81) moves those frames
+  through Bale's stage: one CPU pass (swscale into the staging texture) instead of two, a staging ring of three
+  decoded-size textures (~37 MiB at 4K NV12), a GPU copy and the display-sized output pool. Not yet measured on the
+  console.
 
 ## 0.2.x goal: the whole app during 4K playback
 

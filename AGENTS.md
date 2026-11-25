@@ -246,7 +246,10 @@ For Bale, a normal app with hevcPlayback on the Series X:
   driver state per open and Bale crashes at ~23 opens. The tone-map route passes the display size
   (`bale_tonemap_output_width/height`) and plain SDR larger than the display takes the
   `console_downscale` route (d3d11va + bale_gpu scale-only), both through bale_gpu's linear-light area
-  downscale. Details, evidence and gates: docs/player-plan.md "4K SDR downscale on smaller displays".
+  downscale. Since wrapper bale.80 the same stage runs on FFmpeg software frames (phase B of
+  docs/software-decode.md): a software H.264/HEVC/VP9 route takes both, and a software frame above 1080p plays only
+  through it or on a display known to fit it. Details, evidence and gates: docs/player-plan.md "4K SDR downscale on
+  smaller displays".
 - **Bit-depth rule (owner, revised 2026-11-18):** work at source depth, deliver at display depth;
   AV1 keeps 10-bit output until rav1g is stable. Every stage that
   processes video (tone map, film grain, scaling, colour or format conversion, repack, FFmpeg sws/filters,
@@ -340,22 +343,30 @@ For Bale, a normal app with hevcPlayback on the Series X:
   devices; software AV1 and MPEG-4 need no zero-copy registration. AVI is an FFmpeg-only original
   container; neither AVI nor MPEG-4 is offered over progressive/HLS. `WithoutFallbacks` withdraws
   both; a failed FFmpeg software mount withdraws software codecs and AVI on the single replan.
-- **Software fallback of the hardware codecs (phase A, owner 2026-11-24, docs/software-decode.md):** H.264, HEVC and VP9
-  the console's decoder can't take decode in FFmpeg software inside console-measured envelopes, claimed as bounded
-  software entries (`software_decode::FALLBACK_ENVELOPES`: 1920x1080; H.264 `high 10` 8/10-bit and HEVC `rext` 12-bit up
-  to 60 fps; H.264 `high 4:2:2`/`high 4:4:4 predictive` 8/10-bit, HEVC `rext` 8/10/12-bit and VP9 `profile 1`/`profile 3`
-  up to 30 fps; ffprobe's lower-cased profile names, no bitrate bound). The server can't hold files to them where the
+- **Software fallback of the hardware codecs (phases A and B, owner 2026-11-24, docs/software-decode.md):** H.264, HEVC
+  and VP9 the console's decoder can't take decode in FFmpeg software inside console-measured envelopes, claimed as
+  bounded software entries (`software_decode::FALLBACK_ENVELOPES`: at 1920x1080 H.264 `high 10` 8/10-bit and HEVC `rext`
+  12-bit up to 60 fps, H.264 `high 4:2:2`/`high 4:4:4 predictive` 8/10-bit, HEVC `rext` 8/10/12-bit and VP9 `profile
+  1`/`profile 3` up to 30 fps, no bitrate bound; and 8-bit H.264 `constrained baseline`/`baseline`/`main`/`high` up to
+  3840x2160, 30 fps and 50 000 kbps; ffprobe's lower-cased profile names). The server can't hold files to them where the
   profile-blind hardware entry admits the file anyway (8/10-bit HEVC RExt and VP9 profile 1/3 up to the probed size at
   60 fps, 8-bit H.264 4:2:2/4:4:4 up to 1080p60), nor see chroma (`rext` 12-bit is 4:2:0 and 4:2:2), so the route
-  decides each mount (`route.software_fallback` → `FfmpegSource`): one of the attempt's current
-  software entries must admit the delivered file's catalog version (`software_decode::fallback_admits` over
-  `formatting::decodes`), a file not known to be 4:2:0 stays at or under 30 fps, and no console stage (tone map,
-  downscale) or DV base layer is involved; everything else is refused ("The video codec cannot use the local
-  fallback"). VC-1/MPEG-2 have no fallback. A failed software route withdraws every software entry on the single
-  replan, and for a hardware codec the codec itself (a remux of the same stream would fail the same way), so the server
-  transcodes. 4K software (and HDR tone mapping of software frames) waits for phase B: software frames through Bale's
-  stage, since Media Foundation must never scale 4K SDR down. Debug `ffmpeg-tune swfallback=on` decodes past the
-  envelope for measurements.
+  decides each mount (`route.software_fallback` → `FfmpegSource`): one of the attempt's current software entries must
+  admit the delivered file's catalog version (`software_decode::fallback_admits` over `formatting::decodes`), a file not
+  known to be 4:2:0 stays at or under 30 fps, no DV base layer is involved, and a stage the route needs runs on software
+  frames (phase B, wrapper bale.80+, `software_stage`: the tone map for HDR on an SDR display; the downscale for a
+  larger frame, required above 1080p unless the display is known to fit it, since Media Foundation must never scale
+  those down); everything else is refused ("The video codec cannot use the local fallback"). On a software route
+  FfmpegSource keeps FFmpeg software forced with the stage's keys, and the decoder check and `FfmpegVideoOutputGuard`
+  expect the software decoder's stream. The 4K entry is claimed only where the stage takes software frames
+  (`SoftwareDecodePolicy.ForSoftwareStage`), and display matching never counts it. HDR files inside a software envelope
+  (10/12-bit, any chroma, PQ/HLG, never DV) are promised the console tone map
+  (`DeviceCapabilities.SoftwareDynamicRangeMappingSupported`, `tone_map::can_manage`). VC-1/MPEG-2 have no fallback. A
+  failed software route withdraws every software entry on the single replan, and for a hardware codec the codec itself
+  (a remux of the same stream would fail the same way), so the server transcodes; a failed tone-map route withdraws only
+  the promise. AV1 and the software-only codecs never take the stage (release AV1 sends no stage key; on the debug rav1g
+  route the fork's in-open dav1d fallback now runs the stage when rav1g's stage keys are set). Debug `ffmpeg-tune
+  swfallback=on` decodes past the envelope for measurements, through the route's stage.
 - Hardware video claims (H.264, HEVC, VP9, VC-1, MPEG-2) follow the console's own decoder report, not hand-set
   bounds. `HardwareDecodeProbe` asks the D3D11 video device once per process, off the UI thread,
   and `ConsoleEvidence.ForHardware` claims the largest of 1080p/4K/8K each profile accepts at
@@ -531,9 +542,9 @@ For Bale, a normal app with hevcPlayback on the Series X:
   the standalone probe. Production uses the release defaults without debug overrides. `threads=0..16|default`
   sets FFmpeg's software decoder threads (`MaxDecoderThreads`, software video only; 0/default = the logical CPU
   count). `swfallback=on|off|default` decodes H.264/HEVC/VP9 the console's decoder can't take (the route's own
-  software decision) in FFmpeg software even outside the release envelope (4K, 4:2:2 at 60 fps), which release
-  refuses; `decoder=software` takes them too. Never with a console stage (it reads d3d11va textures only). See
-  docs/software-decode.md.
+  software decision) in FFmpeg software even outside the release envelope (4K60, 4:2:2 at 60 fps), which release
+  refuses, through the route's console stage (wrapper bale.80+); `decoder=software` takes them too but drops the stage.
+  See docs/software-decode.md.
 
 - Debug `bale-debug.sh frame-log on` (next attempt, memory only) writes one bale.log line per video sample
   (`frame: t= pts= dur= pos= lead= kind= flags=`) and per engine event (`frame-event: t= kind= pos=`): `t` is
