@@ -761,6 +761,9 @@ public sealed partial class PlayerPage
             if (media.Progressive is null) sender.PlaybackSession.Position = TimeSpan.FromSeconds(media.StartPosition);
             media.Opened = true;
             Log.Info("player: opened");
+            // A pick made in the player is the viewer's choice once a plan that plays it opens: the track change's own
+            // remount, or a later plan that asks for it again (PlayerPage.Tracks.cs).
+            SaveTrackPicks(attempt);
             // The decoder engine can change once samples flow (a D3D11 or rav1g fallback): read again off the UI thread.
             media.FfmpegStreams?.RequestRefresh();
 #if DEBUG_SERVER

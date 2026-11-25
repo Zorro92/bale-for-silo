@@ -230,6 +230,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 return;
             }
 
+            // A new attempt starts from the Detail page's tracks: the last one's picks no longer wait for a plan.
+            _trackPicks.Clear();
             var attempt = _attempt = new Attempt(request, client);
             var ct = attempt.Cancellation.Token;
             // A new attempt of the title: the kept step-down estimate belonged to the last one (buffering-quality design).

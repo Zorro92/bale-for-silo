@@ -117,6 +117,16 @@ rather than leaving them transparent so they cost nothing while hidden.
    Verified on 0.1.574 (subtitles): PGS -> SRT replanned `playable` and remounted at the same
    position in about 2 s with the new track; Off replanned and no subtitles load. Audio list not
    exercised (the title had one language). Left/Right along the button row are explicit since.
+   Track preferences, code done 2026-11-25 (`PlayerTrackPreferences` in Core, `PlayerPage.Tracks.cs`; Android
+   `TvPlayerViewModel.kt` rememberSeriesAudioChoice / rememberSeriesSubtitleChoice, Roku `3ae62aa`): a pick in either
+   menu, the checked row included, is saved as the series' (an episode) or movie's track preference once a plan plays
+   it, with the body a Detail pick writes: on the local audio switch, the in-place subtitle answer, or the opened
+   replacement mount (also a later replan that asks for it again). A refused or failed change saves nothing, nor does
+   anything the player or server chose itself (start tracks, an Auto burn-in, a fallback); Off is saved as Off, a
+   burned-in answer as the picked track. The track is matched through the plan's inventory row (embedded by stream
+   index, external by place among the externals when language and codec agree). The write outlives the player; Up Next
+   and the Detail page wait up to 1.5 s for it before reading, and Detail puts its own picks of the saved kinds back on
+   Auto and reads its choices again (`TrackChoiceReturn`). Console check pending.
 5. **Up Next** (10 s countdown, auto-play setting); this also brings "the last special continues
    into S1E1" from the upstream log.
    Verified on 0.1.576: started 24 s before the end of S1E1, the card rose at the credits marker

@@ -12,11 +12,13 @@ namespace Bale.Xbox;
 /// Mid-playback audio and subtitle picks (TvPlayerViewModel.kt selectAudioOption / selectSubtitleOption):
 /// the Detail page's track lists for the playing file, and a track_change replan of the same session at
 /// the current position, remounted like a seek reanchor. A refused change keeps the current playback.
+/// A pick becomes the series' or movie's track preference once a plan plays it (PlayerTrackPreferences).
 /// </summary>
 public sealed partial class PlayerPage
 {
     private PlaybackSelectorKind? _trackMenuKind;
     private Button? _trackMenuOpener;
+    private readonly PlayerTrackPreferences _trackPicks = new();
 
     private void InitializeTracks()
     {
@@ -86,7 +88,8 @@ public sealed partial class PlayerPage
     {
         var kind = _trackMenuKind;
         CloseTrackMenu();
-        if (kind is null || option.IsSelected || option.TrackIndex is not { } index) return;
+        // The checked row too: picking what plays switches nothing, but it is the viewer's choice now (ChangeTracksAsync).
+        if (kind is null || option.TrackIndex is not { } index) return;
         _ = kind == PlaybackSelectorKind.Audio ? ChangeTracksAsync(index, null) : ChangeTracksAsync(null, index);
     }
 
@@ -102,6 +105,9 @@ public sealed partial class PlayerPage
         _remounting = true;
         // A seek made while the change is in flight is kept for the stream it brings (PlayerPage.Seek.cs, TakeReplanSeek).
         BeginReplanSeeks();
+        PlayerTrackPick? pick = null;
+        // Once a plan is adopted the pick waits for a plan that plays it; before that, a change that ends is refused.
+        var adopted = false;
         try
         {
             if (_attempt is not { Media: { Opened: true, FailureQueued: false, Player: { } player } media } attempt
@@ -109,7 +115,25 @@ public sealed partial class PlayerPage
 #if DEBUG_SERVER
             if (attempt.DebugUrl is not null) return;
 #endif
-            if (TrySwitchAudioLocally(attempt, media, audioIndex, subtitleIndex)) return;
+            pick = audioIndex is { } audio ? new PlayerTrackPick(PlayerTrackKind.Audio, audio, attempt.Start!.FileId)
+                : subtitleIndex is { } subtitle ? new PlayerTrackPick(PlayerTrackKind.Subtitle, subtitle, attempt.Start!.FileId) : null;
+            if (pick is not null)
+            {
+                _trackPicks.Picked(pick);
+                // TvPlayerViewModel.kt rememberSeriesSubtitleChoice / confirmDesiredAudio: a pick of what already plays has
+                // nothing to switch or commit and is saved at once.
+                if (attempt.Plan is { } playing && PlayerTrackPreferences.Plays(pick, playing, attempt.Start!.FileId))
+                {
+                    adopted = true;
+                    SaveTrackPicks(attempt);
+                    return;
+                }
+            }
+            if (TrySwitchAudioLocally(attempt, media, audioIndex, subtitleIndex))
+            {
+                adopted = true;
+                return;
+            }
             var paused = player.PlaybackSession.PlaybackState == MediaPlaybackState.Paused;
             // silo-server 4a73f48/d22e55f: a seek still waiting, not the clock it has not moved yet.
             var position = ReplanSeekPosition(attempt);
@@ -129,11 +153,17 @@ public sealed partial class PlayerPage
                 return;
             }
 
-            if (TryAdoptSubtitleInPlace(attempt, media, decision, request, audioIndex)) return;
+            if (TryAdoptSubtitleInPlace(attempt, media, decision, request, audioIndex))
+            {
+                adopted = true;
+                return;
+            }
             Pause(attempt);
             DisposeSubtitles();
             DisposeMount(attempt);
             attempt.Plan = decision.PlaybackPlan!;
+            // Saved when the replacement opens, if the answer plays the pick (OnMediaOpened, SaveTrackPicks).
+            adopted = true;
             attempt.ServerFeatures = decision.ServerFeatures ?? [];
             attempt.Start = PlaybackReplan.WithTracks(attempt.Start!, request.SelectedTracks);
             attempt.PlanAttemptId = Guid.NewGuid().ToString();
@@ -157,6 +187,8 @@ public sealed partial class PlayerPage
         }
         finally
         {
+            // A refused, failed or abandoned change never makes its pick the viewer's choice; a newer pick waits on.
+            if (pick is not null && !adopted) _trackPicks.Refused(pick);
             _seeking = false;
             _remounting = false;
             _lifecycle.Release();
@@ -185,6 +217,8 @@ public sealed partial class PlayerPage
         }
         attempt.Start = PlaybackReplan.WithLocalAudio(attempt.Start!, attempt.Plan!, index);
         Log.Info($"player: audio switched locally audio={index}");
+        // TvPlayerViewModel.kt confirmDesiredAudio: the player is on the picked track, so now it is the viewer's choice.
+        SaveTrackPicks(attempt);
         UpdateTrackValues();
 #if DEBUG_SERVER
         RefreshStats(attempt);
@@ -220,7 +254,48 @@ public sealed partial class PlayerPage
         StartSubtitles(attempt, media);
         PushSubtitleClock(force: true);
         Log.Info("player: subtitle switched in place");
+        SaveTrackPicks(attempt);
         UpdateTrackValues();
         return true;
+    }
+
+    /// <summary>
+    /// A plan now plays (a mount opened, a subtitle answer was adopted in place, or the original switched audio locally):
+    /// the waiting picks it plays become the series' or movie's track preference (PlayerTrackPreferences), and the Detail
+    /// page underneath reads its choices again on return (TrackChoiceReturn). Never fails playback.
+    /// </summary>
+    private void SaveTrackPicks(Attempt attempt)
+    {
+        try
+        {
+            if (!_trackPicks.Waiting || attempt.Plan is not { } plan) return;
+            foreach (var played in _trackPicks.Settle(attempt.Request.Detail, plan, attempt.Start?.FileId))
+            {
+                // Fixed words only, never a track's name or language.
+                var kind = played.Kind == PlayerTrackKind.Audio ? "audio" : "subtitle";
+                if (played.Write is not { } write)
+                {
+                    Log.Info($"player: {kind} pick plays; no series, movie or catalog track to remember it for");
+                    continue;
+                }
+                TrackChoiceReturn.Record(write);
+                _ = SaveTrackPreferenceAsync(attempt.Client.Detail, write, kind);
+            }
+        }
+        catch (Exception ex) { LogFailure("track preference", ex); }
+    }
+
+    /// <summary>
+    /// Not on the attempt's token: the write outlives the player (silo-roku 3ae62aa TRACK_PREFS_OWNER), so Back right after
+    /// a pick does not cancel it. A failure costs the remembered track, never playback.
+    /// </summary>
+    private static async Task SaveTrackPreferenceAsync(DetailFeed feed, PlayerTrackPreferenceWrite write, string kind)
+    {
+        try
+        {
+            await feed.SaveTrackPreferenceAsync(write);
+            Log.Info($"player: {kind} preference saved");
+        }
+        catch (Exception ex) { LogFailure(kind + " preference", ex); }
     }
 }

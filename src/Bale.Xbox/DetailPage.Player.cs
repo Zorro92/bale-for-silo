@@ -84,8 +84,19 @@ public sealed partial class DetailPage
         {
             _returnPlaybackFocus = playback with { EpisodeId = landingEpisode };
         }
+        // silo-roku 3ae62aa: a player that saved a track it played as this series' or movie's preference is newer than the
+        // page's own picks of that kind. They go back to Auto, and the reads below bring the choices the server now holds.
+        var tracks = TrackChoiceReturn.Take(PlaybackTrackChoices.OwnerId(owner));
+        var trackRevision = _trackChoiceRevision;
+        if (tracks is not null)
+        {
+            _playbackSelections.ForgetTrackPicks(tracks);
+            ShowPlaybackSummary();
+        }
         try
         {
+            // tvOS settlePendingWrites: the player's writes land before the page reads its choices again.
+            if (tracks is not null) await client.Detail.WhenTrackChoicesSavedAsync(DetailFeed.TrackChoiceSettleTimeout);
             client.Detail.Forget(playback.ContentId);
             client.Detail.Forget(owner.ContentId);
             var refreshed = await client.Detail.GetAsync(owner.ContentId);
@@ -100,6 +111,20 @@ public sealed partial class DetailPage
                 LastEditionKey = refreshed.LastEditionKey,
                 Flags = refreshed.Flags,
             };
+            // ...and, after a player saved a track, the choices the server resolves now, as RefreshPlaybackChoicesAsync
+            // takes them after a page pick, unless a page pick since owns them. A series re-reads its Play episode below.
+            if (tracks is not null && !owner.PlaysEpisodes && trackRevision == _trackChoiceRevision)
+            {
+                _detail = _detail with
+                {
+                    Versions = refreshed.Versions,
+                    PlaybackVariants = refreshed.PlaybackVariants,
+                    EffectiveSubtitleLanguage = refreshed.EffectiveSubtitleLanguage,
+                    EffectiveSubtitleMode = refreshed.EffectiveSubtitleMode,
+                    EffectiveShowForcedSubtitles = refreshed.EffectiveShowForcedSubtitles,
+                    EffectiveSubtitleTrackSignature = refreshed.EffectiveSubtitleTrackSignature,
+                };
+            }
             ShowFlags(_detail.Flags);
             _nextUpPlaybackTargetId = null;
             ShowPlayback();

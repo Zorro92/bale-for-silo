@@ -346,11 +346,14 @@ public sealed partial class PlayerPage
             check.Visibility = selected ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    /// <summary>TVPlayerInfoHUD.swift selectAudio / selectSubtitle: the same switch as the control bar's menus; the panel stays.</summary>
+    /// <summary>
+    /// TVPlayerInfoHUD.swift selectAudio / selectSubtitle: the same switch as the control bar's menus; the panel stays. The
+    /// checked row goes through too: it switches nothing but saves the playing track as the viewer's choice.
+    /// </summary>
     private void OnTrackRowClick(PlaybackSelectorKind kind, int trackIndex)
     {
         var rows = kind == PlaybackSelectorKind.Audio ? _audioRows : _subtitleRows;
-        if (!rows.Any(row => row.TrackIndex == trackIndex && !row.IsSelected && row.IsEnabled)) return;
+        if (!rows.Any(row => row.TrackIndex == trackIndex && row.IsEnabled)) return;
         _ = SwitchTrackFromOptionsAsync(kind, trackIndex);
     }
 

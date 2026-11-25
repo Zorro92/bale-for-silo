@@ -169,6 +169,10 @@ public sealed partial class PlayerPage
         try
         {
             Log.Info("player: up next advance");
+            // A track picked during this episode is being saved as the series' preference: let the write land first, so the
+            // next episode's detail and start answer with it (tvOS settlePendingWrites; the server resolves an omitted audio
+            // track from the saved preference).
+            await attempt.Client.Detail.WhenTrackChoicesSavedAsync(DetailFeed.TrackChoiceSettleTimeout);
             var detail = await attempt.Client.Detail.GetAsync(next.ContentId);
             _leaving = true;
             UpNextCard.Visibility = Visibility.Collapsed;

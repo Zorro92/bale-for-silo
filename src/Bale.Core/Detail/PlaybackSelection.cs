@@ -1,3 +1,5 @@
+using Bale.Core.Playback;
+
 namespace Bale.Core.Detail;
 
 /// <summary>
@@ -34,6 +36,28 @@ public sealed class PlaybackSelectionState
         return detail.ContentId == picked.ContentId
             && !detail.Versions.Select(version => version.EffectiveAudioTrackIndex).SequenceEqual(picked.EffectiveAudio)
             ? null : picked.Pending;
+    }
+
+    /// <summary>
+    /// A player saved a track picked in it as this page's series or movie preference (silo-roku 3ae62aa reseedTracks;
+    /// TvItemDetailViewModel.kt refreshOnReturn drops the page's own landed picks, since the server now holds them or
+    /// something newer picked in the player): the page's picks of those kinds go back to Auto, so the values and Play
+    /// follow the preference the server holds once the page reads it again. Version and Edition picks, and picks of the
+    /// other kind, stay. A page holds only its movie's or its series' episodes' picks, so all share the one owner.
+    /// </summary>
+    public void ForgetTrackPicks(PlayerTrackChoiceReturn saved)
+    {
+        ArgumentNullException.ThrowIfNull(saved);
+        foreach (var (contentId, (selection, trackFileId)) in _items.ToList())
+        {
+            _items[contentId] = (selection with
+            {
+                AudioIndex = saved.Audio ? null : selection.AudioIndex,
+                SubtitleIndex = saved.Subtitle ? null : selection.SubtitleIndex,
+            }, trackFileId);
+        }
+
+        if (saved.Audio) _audioChoices.Remove(saved.OwnerId);
     }
 
     public PlaybackSelection For(ItemDetail? detail)
