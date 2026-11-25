@@ -24,7 +24,7 @@ on:
         options: ['8.1.2', '9.1']
         default: '8.1.2'
       patch_revision:
-        description: FFmpeg source patch set (scripts/ffmpeg-native-patches); empty = stock FFmpeg
+        description: FFmpeg source patch set (scripts/ffmpeg-native-patches); none = stock FFmpeg (an empty value falls back to the default)
         type: string
         required: false
         default: p1
@@ -100,7 +100,7 @@ jobs:
           UPSTREAM_REPOSITORY: ${{ inputs.upstream_repository }}
           UPSTREAM_REF: ${{ inputs.upstream_ref }}
           DAV1D_TAG: ${{ inputs.dav1d_tag }}
-          PATCH_REVISION: ${{ inputs.patch_revision }}
+          PATCH_REVISION: ${{ inputs.patch_revision != 'none' && inputs.patch_revision || '' }}
           FFMPEG_VERSION: ${{ inputs.ffmpeg_version }}
         run: |
           ./bale/scripts/build-ffmpeg-native.ps1 -SourcePath ./upstream `

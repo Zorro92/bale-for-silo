@@ -12,7 +12,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $SourcePath = (Resolve-Path $SourcePath).Path
-$version = "$FfmpegVersion-bale.dav1d.$Dav1dTag"
+# NuGet normalizes a two-part version (9.1 -> 9.1.0); name the package the way NuGet writes it.
+$packageFfmpegVersion = if ($FfmpegVersion -match '^\d+\.\d+$') { "$FfmpegVersion.0" } else { $FfmpegVersion }
+$version = "$packageFfmpegVersion-bale.dav1d.$Dav1dTag"
 $tag = "native-ffmpeg-$FfmpegVersion-dav1d-$Dav1dTag"
 # Reviewed commits of each FFmpeg release tag (peeled). A moved tag fails the build.
 $ffmpegCommits = @{
