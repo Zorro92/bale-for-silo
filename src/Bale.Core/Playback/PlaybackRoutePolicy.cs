@@ -3,9 +3,14 @@ using Bale.Core.Native;
 
 namespace Bale.Core.Playback;
 
+/// <param name="SoftwareFallback">
+/// A hardware codec (H.264/HEVC/VP9) the console's decoder can't take, inside a software envelope the attempt claims and
+/// without a console stage: FFmpeg decodes it (docs/software-decode.md phase A). Any other software route of a hardware
+/// codec is refused (FfmpegSource), and the failure replan withdraws the codec.
+/// </param>
 public sealed record PlaybackRouteDecision(bool UseFfmpeg, bool SoftwareVideo, string? VideoCodec, string? AudioCodec, long? AudioOrdinal,
     long? VideoWidth, long? VideoHeight, bool DolbyVisionBaseLayer = false, bool ConsoleToneMap = false,
-    bool DolbyVision7BaseLayer = false, bool ConsoleDownscale = false)
+    bool DolbyVision7BaseLayer = false, bool ConsoleDownscale = false, bool SoftwareFallback = false)
 {
     public bool SoftwareAudio => UseFfmpeg && SoftwareDecodePolicy.AudioCodecs.Contains(AudioCodec!);
     public bool RequiresD3D11 => ConsoleToneMap || DolbyVision7BaseLayer || ConsoleDownscale;
@@ -21,10 +26,14 @@ public static class PlaybackRoutePolicy
 {
     /// <param name="forceFfmpeg">Debug A/B only: demux every direct mount with FFmpeg, keeping system video decode.</param>
     /// <param name="hlsThroughFfmpeg">HLS plays through the Rust reader's forward-only stream and FFmpeg.</param>
+    /// <param name="softwareDecode">
+    /// The decode entries the attempt claims now (its start request, as any replan left them); their software entries decide
+    /// a hardware codec's software fallback against the delivered file in <paramref name="versions"/>.
+    /// </param>
     public static PlaybackRouteDecision Decide(PlaybackPlan plan, bool isHls, bool ffmpegEnabled = true, bool forceFfmpeg = false,
         bool sdrOutput = false, IReadOnlyList<FileVersion>? versions = null, bool hlsThroughFfmpeg = false,
         IReadOnlyList<VideoDecodeCapability>? hardwareDecode = null, (int Width, int Height)? display = null,
-        bool sdrDownscale = false) =>
+        bool sdrDownscale = false, IReadOnlyList<VideoDecodeCapability>? softwareDecode = null) =>
         BaleCoreNative.Call("route.decide", writer =>
         {
             writer.Server("plan", plan);
@@ -41,6 +50,9 @@ public static class PlaybackRoutePolicy
             writer.WriteNumber("display_width", display?.Width ?? 0);
             writer.WriteNumber("display_height", display?.Height ?? 0);
             writer.WriteBoolean("sdr_downscale", sdrDownscale);
+            // Only software entries: the hardware ones above already decided whether the route is software.
+            writer.Records("software_decode", (softwareDecode ?? []).Where(decode => !decode.Hardware).ToArray(),
+                BaleCoreJson.Default.VideoDecodeCapability);
         }, BaleCoreJson.Default.PlaybackRouteDecision);
 
     /// <summary>MKV and WebM (Matroska-based); MP4 stays on Windows' own source.</summary>

@@ -32,6 +32,13 @@ public static class SoftwareDecodePolicy
     /// <summary>Hardware codecs that play only through FFmpeg's demuxer feeding the system decoder.</summary>
     public static IReadOnlyList<string> DemuxedVideoCodecs { get; } = Array.AsReadOnly(Lists.DemuxedVideoCodecs);
 
+    /// <summary>
+    /// Hardware codecs FFmpeg decodes in software where the console's decoder can't take the file, inside the
+    /// console-measured envelopes the claims carry (H.264, HEVC, VP9; docs/software-decode.md phase A). The route
+    /// decides each file (<see cref="PlaybackRouteDecision.SoftwareFallback"/>).
+    /// </summary>
+    public static IReadOnlyList<string> SoftwareFallbackVideoCodecs { get; } = Array.AsReadOnly(Lists.SoftwareFallbackVideoCodecs);
+
     /// <summary>Measured Media Foundation audio playback, not merely installed decoder registrations.</summary>
     public static IReadOnlyList<string> SystemAudioCodecs { get; } = Array.AsReadOnly(Lists.SystemAudioCodecs);
 

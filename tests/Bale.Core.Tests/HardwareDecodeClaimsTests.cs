@@ -17,16 +17,19 @@ public class HardwareDecodeClaimsTests
     {
         var claims = ConsoleEvidence.ForHardware(Series);
         // The probed hardware codecs first, then the software-only codecs FFmpeg decodes (owner, 2026-11-17). No
-        // VC-1/MPEG-2 decoder here, and their software route is refused, so they are not named (2026-11-24).
+        // VC-1/MPEG-2 decoder here, and they have no software fallback, so they are not named (2026-11-24).
         Assert.Equal(SoftwareDecodePolicy.FfmpegVideoCodecs.Where(codec => codec is "h264" or "hevc" or "vp9"
             || SoftwareDecodePolicy.VideoCodecs.Contains(codec)).Order(), claims.VideoCodecs.Order());
         Assert.Equal(new[] { "h264", "hevc", "vp9", "av1" }, claims.VideoDecode.Select(decode => decode.Codec).Take(4));
         Assert.Equal(ConsoleEvidence.Default.Containers, claims.Containers);
         Assert.Contains("mov", claims.Containers);
-        // Every software-only codec but AV1 has a software entry bounded only at 60 fps; the hardware codecs have none,
-        // since the player refuses their software route (docs/software-decode.md).
-        var fallbacks = claims.VideoDecode.Where(decode => !decode.Hardware && decode.Codec != "av1").ToArray();
+        // Every software-only codec but AV1 has a software entry bounded only at 60 fps. The hardware codecs have only the
+        // bounded fallback envelopes (phase A, SoftwareFallbackTests), never an entry the player would refuse.
+        var fallbacks = claims.VideoDecode.Where(decode => !decode.Hardware && decode.Codec != "av1"
+            && !SoftwareDecodePolicy.SoftwareFallbackVideoCodecs.Contains(decode.Codec)).ToArray();
         Assert.Equal(SoftwareDecodePolicy.VideoCodecs.Where(codec => codec != "av1").Order(), fallbacks.Select(decode => decode.Codec).Order());
+        Assert.All(claims.VideoDecode.Where(decode => !decode.Hardware && SoftwareDecodePolicy.SoftwareFallbackVideoCodecs.Contains(decode.Codec)),
+            decode => Assert.Equal((1920, 1080), (decode.MaxWidth, decode.MaxHeight)));
         Assert.All(fallbacks, decode =>
         {
             Assert.Equal("FFmpeg", decode.DecoderName);
@@ -74,14 +77,20 @@ public class HardwareDecodeClaimsTests
     }
 
     [Fact]
-    public void AProbeWithoutVp9DoesNotClaimVp9()
+    public void AProbeWithoutVp9ClaimsOnlyTheVp9SoftwareEnvelope()
     {
-        // The player refuses a software VP9 route, so without the hardware decoder the server transcodes VP9.
+        // Without the hardware decoder VP9 profiles 0/2 transcode; only the software fallback's profiles 1/3 (1080p30)
+        // stay, which the software decoder plays whatever the probe found.
         var claims = ConsoleEvidence.ForHardware(Series with { Vp9Profile0 = null, Vp9Profile2 = null });
-        Assert.DoesNotContain("vp9", claims.VideoCodecs);
-        Assert.DoesNotContain(claims.VideoDecode, decode => decode.Codec == "vp9");
+        Assert.Contains("vp9", claims.VideoCodecs);
+        var vp9 = Assert.Single(claims.VideoDecode, decode => decode.Codec == "vp9");
+        Assert.False(vp9.Hardware);
+        Assert.Equal(new[] { "profile 1", "profile 3" }, vp9.Profiles);
+        Assert.Equal((1920, 1080, 30.0), (vp9.MaxWidth, vp9.MaxHeight, vp9.MaxFrameRate));
         var start = PlaybackStartBuilder.Build("file", "profile", "attempt", null, PlaybackSelection.Auto, claims, PlaybackTestSupport.Identity);
-        Assert.DoesNotContain("vp9", start.ClientCapabilities.CodecsVideo);
+        Assert.Contains("vp9", start.ClientCapabilities.CodecsVideo);
+        // Without software video (Xbox One, ffmpeg off) nothing is left to decode it.
+        Assert.DoesNotContain("vp9", SoftwareDecodePolicy.WithoutSoftwareVideo(claims).VideoCodecs);
     }
 
     [Fact]
@@ -201,9 +210,11 @@ public class HardwareDecodeClaimsTests
         Assert.False(limits.IsEmpty);
         Assert.Equal(new HardwareDecodeLimits(Vc1: new(1920, 1080), Mpeg2: new(1920, 1080)), limits);
         var claims = ConsoleEvidence.ForHardware(limits);
-        // No H.264/HEVC/VP9 decoder reported: those are not named, since their software route is refused.
+        // No H.264/HEVC/VP9 decoder reported: those are named only through their bounded software fallback.
         Assert.Equal(SoftwareDecodePolicy.FfmpegVideoCodecs.Where(codec => codec is "vc1" or "mpeg2video"
-            || SoftwareDecodePolicy.VideoCodecs.Contains(codec)).Order(), claims.VideoCodecs.Order());
+            || SoftwareDecodePolicy.VideoCodecs.Contains(codec) || SoftwareDecodePolicy.SoftwareFallbackVideoCodecs.Contains(codec)).Order(),
+            claims.VideoCodecs.Order());
+        Assert.All(claims.VideoDecode.Where(decode => decode.Codec is "h264" or "hevc" or "vp9"), decode => Assert.False(decode.Hardware));
         Assert.Equal(new[] { ("vc1", "8", 1920, 1080), ("mpeg2video", "8", 1920, 1080) },
             claims.VideoDecode.Where(decode => decode.Hardware).Select(Shape));
         Assert.DoesNotContain(ConsoleEvidence.Default.VideoDecode, decode => decode.Codec is "vc1" or "mpeg2video" && decode.Hardware);

@@ -94,10 +94,11 @@ Current production capability claims (`ConsoleEvidence.ForHardware` over the dec
 | Stream | Claims / engine | Bounds / limitations |
 |---|---|---|
 | H.264 / HEVC / VP9 video | Media Foundation, hardware | The largest size the console's decoder reports per codec, 60 fps, no bitrate limit. H.264 is 8-bit; HEVC is 8-bit if Main is present and 10-bit if Main10 is; VP9 is 8-bit for profile 0 and 10-bit for profile 2. Series X: H.264 1920×1080, HEVC 7680×4320 8/10-bit, VP9 3840×2160 8/10-bit. VP9 is claimed only when the decoder reports it. If the probe fails or finds nothing: H.264 and HEVC at 1920×1080, 60 fps, no bitrate limit, no VP9; a partial probe keeps its measured profiles and gives only the unmeasured H.264/HEVC depths that baseline |
+| H.264 / HEVC / VP9 past the hardware decoder (phase A, 2026-11-24, owner) | FFmpeg ordinary software output, **non-hardware**; `software_video_decode_v1` opt-in | Bounded entries (`software_decode::FALLBACK_ENVELOPES`), all **1920×1080**, no bitrate bound: H.264 `high 10` 8/10-bit and HEVC `rext` 12-bit at **60 fps**; H.264 `high 4:2:2` / `high 4:4:4 predictive` 8/10-bit, HEVC `rext` 8/10/12-bit and VP9 `profile 1` / `profile 3` at **30 fps**. The route takes a mount only when one of the attempt's software entries admits the delivered file, a file not known to be 4:2:0 stays at or under 30 fps, and no console stage is involved (`route.software_fallback`); otherwise `FfmpegSource` refuses and the replan withdraws the codec, so the server transcodes. Console-measured at 1080p: 0.8–2.1 cores, 0 missed frames. 4K waits for phase B (docs/software-decode.md) |
 | VC-1 / MPEG-2 video | FFmpeg demuxer, Media Foundation system decoder | Only when the matching NV12 VLD profile reports a supported size; 8-bit, probed bounds. Series X: both report 1920×1080. Original files only; HLS and `ffmpeg off` withdraw these codecs. Software video decoding remains forbidden |
 | AV1 video | dav1d CPU buffers/grain on D3D11, **non-hardware**; `software_video_decode_v1` opt-in | 8/10-bit, **1920×1080, 60 fps**; no 4K claim |
 | MPEG-4 Part 2 video | FFmpeg ordinary software output, **non-hardware**; `software_video_decode_v1` opt-in | Simple / Advanced Simple Profile, 8-bit, **1920×1080, 30 fps**; original_http, and since 2026-11-16 the progressive remux and HLS (FFmpeg reads both); no AV1 zero-copy/GPU-grain options |
-| Everything else FFmpeg decodes (2026-11-17, owner, as AetherEngine) | FFmpeg ordinary software output; the hardware codecs' entries also cover H.264/HEVC/VP9/VC-1/MPEG-2 files the hardware cannot take (10-bit H.264, 4:2:2/4:4:4, HEVC RExt/12-bit, VP9 profile 1/3, sizes above the probe), but the player still refuses those (`FfmpegSource`: one failed open, then the replan; docs/software-decode.md) | Unbounded software entry per codec (VP8, MPEG-1, MS-MPEG4 v1–3, WMV1–3, H.263, Theora, QuickTime RLE, MJPEG, ProRes, DNxHD, plus the hardware codecs); original_http only for the new ones (packages keep their verified codecs); containers MOV/M4V/TS/M2TS/MTS/3GP/MPEG/VOB/OGG/WebM/FLV/ASF via FFmpeg's demuxer. Console verification pending |
+| Everything else FFmpeg decodes (2026-11-17, owner, as AetherEngine; narrowed 2026-11-24) | FFmpeg ordinary software output | Software entry per codec bounded only at 60 fps (VP8, MPEG-1, MS-MPEG4 v1–3, WMV1–3, H.263, Theora, QuickTime RLE, MJPEG, ProRes, DNxHD); the hardware codecs have their hardware entries and, for H.264/HEVC/VP9, the bounded fallback above (VC-1/MPEG-2 none); original_http only for the new ones (packages keep their verified codecs); containers MOV/M4V/TS/M2TS/MTS/3GP/MPEG/VOB/OGG/WebM/FLV/ASF via FFmpeg's demuxer. Console verification pending |
 | AVI container | FFmpeg demuxer on original_http | Never progressive/HLS; system video for hardware codecs, software for MPEG-4 Part 2 |
 | System audio | `aac`, `ac3`, `eac3`, `mp3` | Uses system audio decoders, including on FFmpeg demux/software-video routes |
 | FFmpeg fallback audio | `dts`, `dts_hd`, `truehd`, `flac`, `opus`, `vorbis`, `alac`, `mp2`, LPCM (`pcm` and each ffprobe spelling: `pcm_s16le/be`, `pcm_s24le/be`, `pcm_s32le/be`, `pcm_f32le/be`, `pcm_f64le/be`, `pcm_u8`, `pcm_bluray`, `pcm_dvd`) | Decode to PCM, not passthrough. silo-server matches audio claims to the stored ffprobe name exactly, so LPCM needs each spelling. LPCM/MP2 in MP4 take the FFmpeg route too (Windows' MP4 source is unverified with them); HLS never claims them (the server converts HLS audio outside AAC/AC-3/E-AC-3/MP3). Real-library console verification pending |
@@ -1841,18 +1842,15 @@ Things learned on the way:
 - Subtitle search / styling.
 - Watch Party.
 - Audiobooks.
-- **Software decode fallback for H.264 / HEVC / VP9** (owner, 2026-11-24). Research, proposed claims and the console
-  measurement plan: [software-decode.md](software-decode.md). Today the route sends what the console's decoder can't
-  take (this console: H.264 stops at 1080p, `H264_VLD_NOFGT NV12 1080p`; H.264 High 10/4:2:2/4:4:4, HEVC RExt/12-bit,
-  VP9 profile 1/3) to software, the release claims already admit it (an unbounded software entry per FFmpeg codec
-  since 2026-11-17), but `FfmpegSource.Configuration` refuses it ("The video codec cannot use the local fallback"):
-  one failed open, then the replan has the server transcode. Debug `ffmpeg-tune swfallback=on` (2026-11-24) decodes
-  those routes in FFmpeg software so the console can be measured; release behaviour is unchanged. HEVC RExt, VP9
-  profile 1/3 and 8-bit H.264 4:2:2/4:4:4 likely fail outright today (the profile-blind hardware entry admits them
-  again after the replan). Proposal: two small fixes now (drop the hardware codecs' unbounded software entries; a
-  refused route withdraws its codec on the replan), then bounded 1080p entries for H.264 High 10, VP9 profile 1 and
-  12-bit HEVC; 4:2:2 needs the fork's conversion off one swscale call, 4K needs software frames through the stage
-  (MF's scaler must never downscale 4K SDR) and fits only around 4K24 / 25 Mbps by the host estimates.
+- **Software decode fallback for H.264 / HEVC / VP9** (owner, 2026-11-24). **Phase A is in release** (2026-11-24): what
+  the console's hardware decoder can't take (this console: H.264 stops at 1080p, `H264_VLD_NOFGT NV12 1080p`; H.264 High
+  10/4:2:2/4:4:4, HEVC RExt/12-bit, VP9 profile 1/3) decodes in FFmpeg software inside the console-measured 1080p
+  envelopes (4:2:0 H.264 High 10 and 12-bit HEVC up to 60 fps, 4:2:2/4:4:4 up to 30 fps; 0.8-2.1 cores, 0 missed
+  frames), claimed as bounded software entries and checked per mount by the route (`route.software_fallback`);
+  everything else is refused and the replan withdraws the codec, so the server transcodes. Research, envelopes, what the
+  server plans per case and the console checks: [software-decode.md](software-decode.md). Left (phase B, fork): 4K
+  software (the CPU fits 4K30 H.264, 2.87 cores at 50 Mbps), which needs software frames through Bale's stage (MF's
+  scaler must never downscale 4K SDR), and HDR tone mapping of software frames on SDR TVs.
 
 ## Playback resource lifetime
 

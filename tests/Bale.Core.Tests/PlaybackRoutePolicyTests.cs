@@ -7,15 +7,18 @@ namespace Bale.Core.Tests;
 public class PlaybackRoutePolicyTests
 {
     [Fact]
-    public void EverySoftwareClaimIsAnFfmpegDecoderAndOnlyAv1IsBounded()
+    public void EverySoftwareClaimIsAnFfmpegDecoderAndOnlyAv1AndTheFallbackAreSizeBounded()
     {
         // Owner, 2026-11-17: declare everything the FFmpeg build decodes, as AetherEngine does.
         Assert.Contains("av1", SoftwareDecodePolicy.VideoCodecs);
         Assert.Contains("mpeg4", SoftwareDecodePolicy.VideoCodecs);
         Assert.All(ConsoleEvidence.Default.VideoDecode.Where(decode => !decode.Hardware),
             decode => Assert.Contains(decode.Codec, SoftwareDecodePolicy.FfmpegVideoCodecs));
-        Assert.All(ConsoleEvidence.Default.VideoDecode.Where(decode => !decode.Hardware && decode.Codec != "av1"),
-            decode => Assert.Null(decode.MaxHeight));
+        Assert.All(ConsoleEvidence.Default.VideoDecode.Where(decode => !decode.Hardware && decode.Codec != "av1"
+            && !SoftwareDecodePolicy.SoftwareFallbackVideoCodecs.Contains(decode.Codec)), decode => Assert.Null(decode.MaxHeight));
+        // The hardware codecs' software fallback stays inside its measured 1080p envelopes (phase A, owner 2026-11-24).
+        Assert.All(ConsoleEvidence.Default.VideoDecode.Where(decode => !decode.Hardware
+            && SoftwareDecodePolicy.SoftwareFallbackVideoCodecs.Contains(decode.Codec)), decode => Assert.Equal(1080, decode.MaxHeight));
         var av1 = Assert.Single(ConsoleEvidence.Default.VideoDecode, decode => decode.Codec == "av1");
         Assert.Equal("dav1d", av1.DecoderName);
         Assert.Equal(new[] { 8, 10 }, av1.BitDepths);

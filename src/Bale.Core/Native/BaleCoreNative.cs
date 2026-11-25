@@ -147,7 +147,7 @@ internal sealed partial class BaleCoreJson : JsonSerializerContext;
 
 internal sealed record SoftwareDecodeLists(string[] VideoCodecs, string[] FfmpegVideoCodecs, string[] PackagedVideoCodecs,
     string[] FfmpegOnlyContainers, string[] SystemVideoCodecs, string[] DemuxedVideoCodecs,
-    string[] SystemAudioCodecs, string[] AudioCodecs);
+    string[] SystemAudioCodecs, string[] AudioCodecs, string[] SoftwareFallbackVideoCodecs);
 
 internal sealed record FilteredDevice(string[] VideoCodecs, int[] VideoDecode, string[] AudioDecodeCodecs,
     string[] Containers, bool DropFfmpegExecutors);

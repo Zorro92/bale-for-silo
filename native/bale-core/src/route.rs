@@ -7,7 +7,8 @@ use crate::dotnet::{eq_ignore_case, lower, trim_lower};
 use crate::models::{FileVersion, PlaybackPlan};
 use crate::software_decode::{
     AUDIO_CODECS, DEMUXED_VIDEO_CODECS, FFMPEG_ONLY_CONTAINERS, FFMPEG_VIDEO_CODECS,
-    SYSTEM_AUDIO_CODECS, SYSTEM_VIDEO_CODECS, contains, normalize_codec,
+    SOFTWARE_FALLBACK_VIDEO_CODECS, SYSTEM_AUDIO_CODECS, SYSTEM_VIDEO_CODECS, contains,
+    fallback_admits, normalize_codec,
 };
 use crate::tone_map::{self, DOLBY_VISION8_BASE_LAYER_REASON};
 
@@ -38,6 +39,10 @@ pub struct DecideArgs {
     /// The wrapper and bale_gpu take the SDR scale-only stage, and this attempt has not declined it.
     #[serde(default)]
     sdr_downscale: bool,
+    /// The software entries the attempt claims now (its start request, as any replan left them): a
+    /// hardware codec's software route plays only when one admits the file (`fallback_admits`).
+    #[serde(default)]
+    software_decode: Vec<crate::models::DecodeClaim>,
 }
 
 /// `PlaybackRouteDecision`.
@@ -55,6 +60,10 @@ pub struct RouteDecision {
     pub dolby_vision7_base_layer: bool,
     /// SDR HEVC/VP9 larger than the display: d3d11va + bale_gpu's scale-only stage to display size.
     pub console_downscale: bool,
+    /// A hardware codec (H.264/HEVC/VP9) the console's decoder can't take, inside a claimed software
+    /// envelope and without a console stage: FFmpeg decodes it in software (docs/software-decode.md
+    /// phase A). A software route of a hardware codec without it is refused (FfmpegSource).
+    pub software_fallback: bool,
 }
 
 pub fn decide(args: DecideArgs) -> RouteDecision {
@@ -201,8 +210,23 @@ pub fn decide(args: DecideArgs) -> RouteDecision {
             args.display_width,
             args.display_height,
         );
+    // Phase A (owner, 2026-11-24): a hardware codec's software route plays only inside a software
+    // envelope the attempt still claims, judged on the delivered file's catalog facts (pixel format,
+    // frame rate and bitrate are only there), and never through a console stage: the tone map and the
+    // downscale read d3d11va textures, not software frames (phase B). Without the file's version the
+    // route stays refused.
+    let software_fallback = ffmpeg
+        && software_video
+        && contains(SOFTWARE_FALLBACK_VIDEO_CODECS, video)
+        && !tone_map
+        && !dolby_vision_base_layer
+        && delivered_version(plan, args.versions.as_deref()).is_some_and(|version| {
+            normalize_codec(version_codec(version)).as_deref() == video
+                && fallback_admits(version, &args.software_decode)
+        });
     RouteDecision {
         console_downscale,
+        software_fallback,
         use_ffmpeg: ffmpeg,
         software_video: ffmpeg && software_video,
         video_codec: video.map(str::to_owned),
@@ -214,6 +238,32 @@ pub fn decide(args: DecideArgs) -> RouteDecision {
         console_tone_map: tone_map,
         dolby_vision7_base_layer: dv7,
     }
+}
+
+/// The catalog version of the file the plan delivers (its effective file, else the source's).
+fn delivered_version<'a>(
+    plan: &PlaybackPlan,
+    versions: Option<&'a [FileVersion]>,
+) -> Option<&'a FileVersion> {
+    let id = plan.effective_media_file_id.as_deref().or(plan
+        .source
+        .as_ref()
+        .and_then(|source| source.media_file_id.as_deref()))?;
+    versions?
+        .iter()
+        .find(|version| version.file_id.as_deref() == Some(id))
+}
+
+/// A version's video codec: its first track's, else the file's.
+fn version_codec(version: &FileVersion) -> Option<&str> {
+    crate::dotnet::non_empty(
+        version
+            .video_tracks
+            .as_ref()
+            .and_then(|tracks| tracks.first())
+            .and_then(|track| track.codec.as_deref()),
+    )
+    .or(version.codec_video.as_deref())
 }
 
 /// Whether the console's hardware decoder takes this video: a hardware codec with a profile the
@@ -249,7 +299,7 @@ pub fn hardware_admits(
 /// Profiles the console's Media Foundation decoders take: 4:2:0 H.264 up to High, HEVC Main/Main 10,
 /// VP9 profiles 0 and 2. Anything chroma 4:2:2/4:4:4, H.264 High 10 and HEVC range extensions decode
 /// in FFmpeg. An unknown profile is admitted.
-fn hardware_profile(codec: &str, profile: Option<&str>) -> bool {
+pub(crate) fn hardware_profile(codec: &str, profile: Option<&str>) -> bool {
     let Some(profile) = profile.map(|p| p.trim().to_ascii_lowercase()) else {
         return true;
     };

@@ -82,6 +82,74 @@ pub const SYSTEM_VIDEO_CODECS: &[&str] = &["h264", "hevc", "vp9", "vc1", "mpeg2v
 // packaged deliveries read by FFmpeg (progressive, HLS through FFmpeg) claim them too.
 pub const DEMUXED_VIDEO_CODECS: &[&str] = &["vp9", "vc1", "mpeg2video"];
 
+// Hardware codecs FFmpeg decodes in software where the console's decoder can't take the file
+// (route::hardware_admits), only inside FALLBACK_ENVELOPES (owner, 2026-11-24: docs/software-decode.md
+// phase A). VC-1 and MPEG-2 have no files past their 1080p hardware decoders worth it.
+pub const SOFTWARE_FALLBACK_VIDEO_CODECS: &[&str] = &["h264", "hevc", "vp9"];
+
+/// One console-measured software envelope of a hardware codec. The claims
+/// (`evidence::video_decode`) and the player's gate (`fallback_admits`) both come from these.
+pub struct FallbackEnvelope {
+    pub codec: &'static str,
+    /// ffprobe's profile names, lower-cased: silo-server compares a software entry's profiles
+    /// literally (capabilities_v3.go videoProfileSupportedV3), so a file the hardware takes ("high",
+    /// "main 10", "profile 0") or one with no recorded profile never matches.
+    pub profiles: &'static [&'static str],
+    pub bit_depths: &'static [i32],
+    pub max_frame_rate: f64,
+}
+
+/// Every envelope's size. Media Foundation must never scale software 4K SDR down to a smaller
+/// display (its video processor leaks per open, docs/player-plan.md), so larger files wait for
+/// software frames through Bale's stage (phase B); the 4K30 CPU fits already.
+pub const FALLBACK_MAX_WIDTH: i32 = 1920;
+pub const FALLBACK_MAX_HEIGHT: i32 = 1080;
+
+/// 4:2:2, 4:4:4 and 4:4:0 decode in software up to this rate (owner, 2026-11-24). The claims can't
+/// say chroma (silo-server has no field for it, and HEVC RExt is one profile for 4:2:0 12-bit and
+/// 4:2:2), so the player applies it (`fallback_admits`).
+pub const FALLBACK_NON_420_MAX_FRAME_RATE: f64 = 30.0;
+
+/// Measured on the Series X (2026-11-24, docs/software-decode.md "Measured on the console"), 0 missed
+/// frames each: H.264 High 10 1080p24 8 Mbps 0.78 cores and 1080p60 20 Mbps 1.90; H.264 High 4:2:2
+/// 10-bit 1080p30 50 Mbps 1.80; HEVC RExt 4:2:2 10-bit 1080p30 30 Mbps 2.08 and 12-bit 4:2:0 1080p24
+/// 1.06; VP9 profile 1 4:4:4 1080p30 0.90. No bitrate bound was approved; those clips' rates (20-50
+/// Mbps) are the measured ones.
+pub const FALLBACK_ENVELOPES: &[FallbackEnvelope] = &[
+    // 4:2:0 above 8 bits: up to 60 fps, the console's app-mode output (owner).
+    FallbackEnvelope {
+        codec: "h264",
+        profiles: &["high 10"],
+        bit_depths: &[8, 10],
+        max_frame_rate: 60.0,
+    },
+    FallbackEnvelope {
+        codec: "hevc",
+        profiles: &["rext"],
+        bit_depths: &[12],
+        max_frame_rate: 60.0,
+    },
+    // 4:2:2 and 4:4:4: up to 30 fps.
+    FallbackEnvelope {
+        codec: "h264",
+        profiles: &["high 4:2:2", "high 4:4:4 predictive"],
+        bit_depths: &[8, 10],
+        max_frame_rate: 30.0,
+    },
+    FallbackEnvelope {
+        codec: "hevc",
+        profiles: &["rext"],
+        bit_depths: &[8, 10, 12],
+        max_frame_rate: 30.0,
+    },
+    FallbackEnvelope {
+        codec: "vp9",
+        profiles: &["profile 1", "profile 3"],
+        bit_depths: &[8, 10, 12],
+        max_frame_rate: 30.0,
+    },
+];
+
 // Measured Media Foundation playback, not merely installed decoder registrations.
 pub const SYSTEM_AUDIO_CODECS: &[&str] = &["aac", "ac3", "eac3", "mp3"];
 
@@ -144,6 +212,7 @@ pub struct Lists {
     demuxed_video_codecs: &'static [&'static str],
     system_audio_codecs: &'static [&'static str],
     audio_codecs: &'static [&'static str],
+    software_fallback_video_codecs: &'static [&'static str],
 }
 
 pub fn lists() -> Lists {
@@ -156,7 +225,79 @@ pub fn lists() -> Lists {
         demuxed_video_codecs: DEMUXED_VIDEO_CODECS,
         system_audio_codecs: SYSTEM_AUDIO_CODECS,
         audio_codecs: AUDIO_CODECS,
+        software_fallback_video_codecs: SOFTWARE_FALLBACK_VIDEO_CODECS,
     }
+}
+
+/// Whether the player decodes this file in FFmpeg software as a hardware codec's fallback (phase A
+/// of docs/software-decode.md): a software entry the attempt still claims admits it
+/// (`formatting::decodes`, Bale's mirror of the server's matching: codec, profile, bit depth, size,
+/// frame rate, bitrate), and a file not known to be 4:2:0 runs at most
+/// `FALLBACK_NON_420_MAX_FRAME_RATE` (a known rate). The server can't apply the chroma rule, nor any
+/// software bound when the profile-blind hardware entry admitted the file (HEVC RExt, VP9 profile
+/// 1/3, H.264 4:2:2), so the player refuses everything else and the failure replan withdraws the
+/// codec.
+pub fn fallback_admits(
+    version: &crate::models::FileVersion,
+    claims: &[crate::models::DecodeClaim],
+) -> bool {
+    let track = version
+        .video_tracks
+        .as_ref()
+        .and_then(|tracks| tracks.first());
+    let Some(codec) = normalize_codec(
+        dotnet::non_empty(track.and_then(|t| t.codec.as_deref()))
+            .or(version.codec_video.as_deref()),
+    ) else {
+        return false;
+    };
+    if !SOFTWARE_FALLBACK_VIDEO_CODECS.contains(&codec.as_str()) {
+        return false;
+    }
+    let software: Vec<crate::models::DecodeClaim> = claims
+        .iter()
+        .filter(|claim| !claim.hardware && claim.codec == codec)
+        .cloned()
+        .collect();
+    if !crate::formatting::decodes(version, &software) {
+        return false;
+    }
+    let profile = dotnet::non_empty(track.and_then(|t| t.profile.as_deref())).map(dotnet::lower);
+    let pixel_format = track.and_then(|t| t.pixel_format.as_deref());
+    chroma_420(&codec, profile.as_deref(), pixel_format) == Some(true)
+        || crate::formatting::frame_rate(track.and_then(|t| t.frame_rate.as_deref()))
+            .is_some_and(|fps| fps <= FALLBACK_NON_420_MAX_FRAME_RATE + 0.01)
+}
+
+/// Whether a file is 4:2:0 (or monochrome): from its pixel format (ffprobe's names), else from a
+/// profile that allows no other chroma. `None` when neither says.
+fn chroma_420(codec: &str, profile: Option<&str>, pixel_format: Option<&str>) -> Option<bool> {
+    if let Some(format) = dotnet::trim_lower(pixel_format).filter(|format| !format.is_empty()) {
+        return Some(
+            format.contains("420")
+                || ["nv12", "nv21", "p010", "p016", "gray"]
+                    .iter()
+                    .any(|prefix| format.starts_with(prefix)),
+        );
+    }
+    let four_two_zero = match codec {
+        "h264" => matches!(
+            profile,
+            Some(
+                "constrained baseline"
+                    | "baseline"
+                    | "main"
+                    | "extended"
+                    | "high"
+                    | "high 10"
+                    | "high 10 intra"
+            )
+        ),
+        "hevc" => matches!(profile, Some("main" | "main 10" | "main still picture")),
+        "vp9" => matches!(profile, Some("profile 0" | "profile 2")),
+        _ => false,
+    };
+    four_two_zero.then_some(true)
 }
 
 /// The planner's spelling of a codec name: trimmed, lower-cased, with common aliases folded
@@ -512,5 +653,302 @@ mod tests {
         assert_eq!(n("ΣΑΣ").as_deref(), Some("σασ"));
         assert_eq!(n("\u{130}X").as_deref(), Some("\u{130}x"));
         assert_eq!(n("Ǆẞ").as_deref(), Some("ǆß"));
+    }
+}
+
+#[cfg(test)]
+mod fallback_tests {
+    use serde_json::json;
+
+    use crate::models::{DecodeClaim, FileVersion};
+
+    /// The production claims of a Series console (hardware entries from its probe report, AV1, the
+    /// software-only codecs and the phase A fallback), as the C# side would send them back.
+    fn series_claims() -> Vec<DecodeClaim> {
+        let limits: crate::hardware::Limits = serde_json::from_value(json!({
+            "h264": { "width": 1920, "height": 1080 },
+            "hevc_main": { "width": 7680, "height": 4320 }, "hevc_main10": { "width": 7680, "height": 4320 },
+            "vp9_profile0": { "width": 3840, "height": 2160 }, "vp9_profile2": { "width": 3840, "height": 2160 },
+            "vc1": null, "mpeg2": null, "partial": false
+        }))
+        .unwrap();
+        let claims = crate::evidence::video_decode(Some(&limits), 1920, 1080);
+        serde_json::from_value(serde_json::to_value(claims).unwrap()).unwrap()
+    }
+
+    fn file(
+        codec: &str,
+        profile: Option<&str>,
+        depth: i64,
+        size: (i64, i64),
+        fps: Option<&str>,
+        pixel_format: Option<&str>,
+    ) -> FileVersion {
+        serde_json::from_value(json!({
+            "file_id": "file", "codec_video": codec,
+            "video_tracks": [{ "codec": codec, "profile": profile, "bit_depth": depth, "width": size.0,
+                               "height": size.1, "frame_rate": fps, "pixel_format": pixel_format }]
+        }))
+        .unwrap()
+    }
+
+    const HD: (i64, i64) = (1920, 1080);
+    const UHD: (i64, i64) = (3840, 2160);
+
+    #[test]
+    fn the_claims_carry_each_envelope_with_ffprobe_profiles() {
+        let claims = series_claims();
+        let fallback: Vec<&DecodeClaim> = claims
+            .iter()
+            .filter(|c| {
+                !c.hardware && super::SOFTWARE_FALLBACK_VIDEO_CODECS.contains(&c.codec.as_str())
+            })
+            .collect();
+        assert_eq!(fallback.len(), super::FALLBACK_ENVELOPES.len());
+        for (claim, envelope) in fallback.iter().zip(super::FALLBACK_ENVELOPES) {
+            assert_eq!(claim.codec, envelope.codec);
+            assert_eq!(claim.profiles, envelope.profiles);
+            assert_eq!(claim.bit_depths, envelope.bit_depths);
+            assert_eq!(
+                (claim.max_width, claim.max_height),
+                (Some(1920), Some(1080))
+            );
+            assert_eq!(claim.max_frame_rate, Some(envelope.max_frame_rate));
+            assert_eq!(claim.max_bitrate_kbps, None);
+            // ffprobe's names, lower-cased, as silo-server compares them.
+            assert!(claim.profiles.iter().all(|p| *p == p.to_lowercase()));
+        }
+    }
+
+    #[test]
+    fn inside_the_envelopes() {
+        let claims = series_claims();
+        for version in [
+            file(
+                "h264",
+                Some("High 10"),
+                10,
+                HD,
+                Some("24000/1001"),
+                Some("yuv420p10le"),
+            ),
+            file(
+                "h264",
+                Some("high 10"),
+                10,
+                HD,
+                Some("60"),
+                Some("yuv420p10le"),
+            ),
+            file("h264", Some("high 10"), 8, (1280, 720), Some("50"), None),
+            file(
+                "h264",
+                Some("high 4:2:2"),
+                10,
+                HD,
+                Some("30000/1001"),
+                Some("yuv422p10le"),
+            ),
+            file(
+                "h264",
+                Some("high 4:4:4 predictive"),
+                8,
+                HD,
+                Some("30"),
+                Some("yuv444p"),
+            ),
+            file(
+                "hevc",
+                Some("Rext"),
+                10,
+                HD,
+                Some("30000/1001"),
+                Some("yuv422p10le"),
+            ),
+            file(
+                "hevc",
+                Some("rext"),
+                12,
+                HD,
+                Some("60"),
+                Some("yuv420p12le"),
+            ),
+            file("hevc", Some("rext"), 12, HD, Some("24"), None),
+            file(
+                "vp9",
+                Some("Profile 1"),
+                8,
+                HD,
+                Some("30000/1001"),
+                Some("yuv444p"),
+            ),
+            file(
+                "vp9",
+                Some("profile 3"),
+                10,
+                HD,
+                Some("25"),
+                Some("yuv422p10le"),
+            ),
+        ] {
+            assert!(
+                super::fallback_admits(&version, &claims),
+                "{:?}",
+                version.video_tracks
+            );
+        }
+    }
+
+    #[test]
+    fn outside_the_envelopes() {
+        let claims = series_claims();
+        for version in [
+            // 4K waits for phase B (software frames through Bale's stage).
+            file("h264", Some("high"), 8, UHD, Some("30"), Some("yuv420p")),
+            file(
+                "h264",
+                Some("high 10"),
+                10,
+                UHD,
+                Some("24"),
+                Some("yuv420p10le"),
+            ),
+            file(
+                "hevc",
+                Some("rext"),
+                10,
+                UHD,
+                Some("30"),
+                Some("yuv422p10le"),
+            ),
+            file(
+                "vp9",
+                Some("profile 1"),
+                8,
+                UHD,
+                Some("30"),
+                Some("yuv444p"),
+            ),
+            // 4:2:2 / 4:4:4 above 30 fps, also where only the chroma rule refuses (12-bit RExt's 60 fps entry).
+            file(
+                "h264",
+                Some("high 4:2:2"),
+                10,
+                HD,
+                Some("60"),
+                Some("yuv422p10le"),
+            ),
+            file(
+                "hevc",
+                Some("rext"),
+                10,
+                HD,
+                Some("60"),
+                Some("yuv422p10le"),
+            ),
+            file(
+                "hevc",
+                Some("rext"),
+                12,
+                HD,
+                Some("60"),
+                Some("yuv422p12le"),
+            ),
+            file("hevc", Some("rext"), 12, HD, Some("60"), None),
+            file("vp9", Some("profile 1"), 8, HD, Some("60"), Some("yuv444p")),
+            // Not 4:2:0 and no known rate.
+            file("hevc", Some("rext"), 10, HD, None, Some("yuv422p10le")),
+            // Above 60 fps, and profiles the envelopes don't list (the hardware's, intra, none).
+            file(
+                "h264",
+                Some("high 10"),
+                10,
+                HD,
+                Some("120"),
+                Some("yuv420p10le"),
+            ),
+            file("h264", Some("high"), 8, HD, Some("30"), Some("yuv420p")),
+            file(
+                "h264",
+                Some("high 4:2:2 intra"),
+                10,
+                HD,
+                Some("30"),
+                Some("yuv422p10le"),
+            ),
+            file("vp9", Some("profile 0"), 8, HD, Some("30"), Some("yuv420p")),
+            file("h264", None, 10, HD, Some("24"), Some("yuv420p10le")),
+            // A software-only codec is not a hardware codec's fallback.
+            file("av1", Some("main"), 10, HD, Some("24"), Some("yuv420p10le")),
+            file("mpeg4", None, 8, (720, 480), Some("25"), Some("yuv420p")),
+        ] {
+            assert!(
+                !super::fallback_admits(&version, &claims),
+                "{:?}",
+                version.video_tracks
+            );
+        }
+    }
+
+    #[test]
+    fn only_claimed_software_entries_admit() {
+        let version = file(
+            "h264",
+            Some("high 10"),
+            10,
+            HD,
+            Some("24"),
+            Some("yuv420p10le"),
+        );
+        let claims = series_claims();
+        // Xbox One / no AVX2, or a replan that withdrew software video: hardware entries alone never admit.
+        let hardware: Vec<DecodeClaim> = claims.iter().filter(|c| c.hardware).cloned().collect();
+        assert!(!super::fallback_admits(&version, &hardware));
+        assert!(!super::fallback_admits(&version, &[]));
+        assert!(super::fallback_admits(&version, &claims));
+    }
+
+    #[test]
+    fn chroma_comes_from_the_pixel_format_else_a_four_two_zero_profile() {
+        use super::chroma_420;
+        for format in [
+            "yuv420p",
+            "yuvj420p",
+            "yuv420p10le",
+            "yuv420p12le",
+            "nv12",
+            "p010le",
+            "gray",
+            "gray10le",
+            "yuva420p",
+        ] {
+            assert_eq!(
+                chroma_420("hevc", Some("rext"), Some(format)),
+                Some(true),
+                "{format}"
+            );
+        }
+        for format in [
+            "yuv422p",
+            "yuv422p10le",
+            "yuvj422p",
+            "yuv444p",
+            "yuv444p12le",
+            "yuv440p",
+            "gbrp",
+            "nv16",
+            "yuv411p",
+        ] {
+            assert_eq!(
+                chroma_420("hevc", Some("rext"), Some(format)),
+                Some(false),
+                "{format}"
+            );
+        }
+        assert_eq!(chroma_420("h264", Some("high 10"), None), Some(true));
+        assert_eq!(chroma_420("h264", Some("high 10"), Some(" ")), Some(true));
+        assert_eq!(chroma_420("hevc", Some("rext"), None), None);
+        assert_eq!(chroma_420("h264", Some("high 4:2:2"), None), None);
+        assert_eq!(chroma_420("vp9", Some("profile 1"), None), None);
     }
 }

@@ -25,16 +25,21 @@ internal static class FfmpegSource
         // Debug captures only our safe Bale diagnostics; production keeps the native logger off.
         FfmpegLogging.Configure();
 #if DEBUG_SERVER
-        // Debug software fallback (ffmpeg-tune swfallback=on, or decoder=software; docs/software-decode.md): H.264/HEVC/VP9 the
-        // console's decoder can't take decode in FFmpeg software. Release builds refuse that route below and replan to the server.
-        if (tuning.SoftwareFallbackAdmits(route))
-            Log.Info($"player: debug software fallback codec={route.VideoCodec} {route.VideoWidth}x{route.VideoHeight}");
+        // Debug software fallback past the release bounds (ffmpeg-tune swfallback=on, or decoder=software;
+        // docs/software-decode.md): any H.264/HEVC/VP9 the console's decoder can't take decodes in FFmpeg software, for
+        // measurements. Release builds take only the route's bounded fallback below and refuse the rest.
+        if (!route.SoftwareFallback && tuning.SoftwareFallbackAdmits(route))
+            Log.Info($"player: debug software fallback codec={route.VideoCodec} {route.VideoWidth}x{route.VideoHeight} (past the release bounds)");
         else
 #endif
+        // A hardware codec's software route plays only as the route's bounded fallback (phase A: a claimed software envelope
+        // admits the file, no console stage); otherwise the open fails and the replan withdraws the codec (server transcode).
         if (!route.UseFfmpeg || (route.SoftwareVideo
-            ? !SoftwareDecodePolicy.VideoCodecs.Contains(route.VideoCodec!)
+            ? !SoftwareDecodePolicy.VideoCodecs.Contains(route.VideoCodec!) && !route.SoftwareFallback
             : route.VideoCodec is not null && !SoftwareDecodePolicy.SystemVideoCodecs.Contains(route.VideoCodec)))
             throw new InvalidDataException("The video codec cannot use the local fallback.");
+        if (route.SoftwareFallback)
+            Log.Info($"player: software fallback codec={route.VideoCodec} {route.VideoWidth}x{route.VideoHeight} (past the hardware decoder)");
         if (route.DolbyVision7BaseLayer && route.VideoCodec != "hevc")
             throw new InvalidDataException("DV7 base-layer playback requires HEVC.");
         var config = new MediaSourceConfig();

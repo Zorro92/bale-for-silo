@@ -9,7 +9,7 @@ use crate::dotnet::{
     trim_lower,
 };
 use crate::models::{DecodeClaim, FileVersion, PlaybackVariant};
-use crate::software_decode::normalize_codec;
+use crate::software_decode::{SOFTWARE_FALLBACK_VIDEO_CODECS, fallback_admits, normalize_codec};
 
 /// A version label's height: the first `\b(\d{3,4})(?:p|i)?\b` number, else named tiers
 /// (8K, 4K/UHD, QHD, FHD, HD, SD), else 0.
@@ -129,7 +129,7 @@ pub fn decodes(version: &FileVersion, claims: &[DecodeClaim]) -> bool {
 }
 
 /// "23.976", "24000/1001" or "29.97 fps"; `None` when unreadable.
-fn frame_rate(value: Option<&str>) -> Option<f64> {
+pub(crate) fn frame_rate(value: Option<&str>) -> Option<f64> {
     let text = non_empty(value)?.split(' ').next().unwrap_or_default();
     let parts: Vec<&str> = text.split('/').collect();
     match parts[..] {
@@ -547,22 +547,56 @@ fn match_display(
 ) -> usize {
     let fits =
         |i: usize| version_height(&versions[i]) <= i64::from(display_match.display_max_height);
-    // Display matching ranks versions the console plays comfortably: hardware entries and measured
-    // (bounded) software ones. The size-unbounded software entries of the software-only codecs
-    // (2026-11-17) admit any file, so they would pick a 4K software decode over a hardware 1080p version.
-    let comfortable: Vec<DecodeClaim> = display_match
+    // Display matching ranks versions the console plays comfortably, as the route would play them: on the
+    // hardware decoder (an entry admits the file and the hardware takes its profile: the entries name no
+    // profiles, so HEVC RExt, VP9 profile 1/3 and H.264 4:2:2 pass them on size and depth alone), in a
+    // bounded software entry, or in the hardware codecs' software fallback (phase A, docs/software-decode.md;
+    // `fallback_admits` adds the 30 fps chroma rule the claims can't say). The size-unbounded software
+    // entries of the software-only codecs (2026-11-17) admit any file, so they would pick a 4K software
+    // decode over a hardware 1080p version.
+    let hardware: Vec<DecodeClaim> = display_match
         .video_decode
         .iter()
-        .filter(|claim| claim.hardware || claim.max_width.is_some() || claim.max_height.is_some())
+        .filter(|claim| claim.hardware)
         .cloned()
         .collect();
-    let decodable = |i: usize| decodes(&versions[i], &comfortable);
+    let bounded_software: Vec<DecodeClaim> = display_match
+        .video_decode
+        .iter()
+        .filter(|claim| {
+            !claim.hardware
+                && (claim.max_width.is_some() || claim.max_height.is_some())
+                && !SOFTWARE_FALLBACK_VIDEO_CODECS.contains(&claim.codec.as_str())
+        })
+        .cloned()
+        .collect();
+    let decodable = |i: usize| {
+        let version = &versions[i];
+        hardware_takes_profile(version) && decodes(version, &hardware)
+            || decodes(version, &bounded_software)
+            || fallback_admits(version, &display_match.video_decode)
+    };
     ranked
         .iter()
         .copied()
         .find(|&i| fits(i) && decodable(i))
         .or_else(|| ranked.iter().copied().find(|&i| fits(i)))
         .unwrap_or_else(|| smallest(versions, ranked, decodable))
+}
+
+/// Whether the console's hardware decoders take the version's profile (`route::hardware_profile`: no
+/// 4:2:2/4:4:4, H.264 High 10 or HEVC RExt); an unknown profile is taken.
+fn hardware_takes_profile(version: &FileVersion) -> bool {
+    let track = version
+        .video_tracks
+        .as_ref()
+        .and_then(|tracks| tracks.first());
+    let codec = normalize_codec(
+        non_empty(track.and_then(|t| t.codec.as_deref())).or(version.codec_video.as_deref()),
+    );
+    codec.is_none_or(|codec| {
+        crate::route::hardware_profile(&codec, track.and_then(|t| t.profile.as_deref()))
+    })
 }
 
 /// The edition a page opens on with no history, chosen by name first (DetailVersionSelector.kt,

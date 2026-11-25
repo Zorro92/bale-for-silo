@@ -186,7 +186,9 @@ public sealed partial class PlayerPage
                 sdrOutput: sdrOutput, versions: attempt.Request.Detail.Versions, hlsThroughFfmpeg: attempt.HlsThroughFfmpeg,
                 hardwareDecode: attempt.HardwareDecode, display: DisplayHdrOutput.CurrentRawSize(),
                 sdrDownscale: !attempt.SdrDownscaleDeclined && ConsoleToneMapPolicy.SdrDownscaleWrapperSupported(FfmpegWrapperVersion.Value)
-                    && ConsoleToneMapRuntime.SupportsSdrDownscale);
+                    && ConsoleToneMapRuntime.SupportsSdrDownscale,
+                // The claims as they stand (a replan may have withdrawn software video): only those admit a software fallback.
+                softwareDecode: attempt.Start?.ClientCapabilities.VideoDecode);
 #if DEBUG_SERVER
         DebugValidateUrlRoute(attempt, media);
 #endif

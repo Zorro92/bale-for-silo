@@ -1,36 +1,89 @@
 # Software decode fallback for H.264, HEVC and VP9
 
-Status (2026-11-24): research, proposal and debug plumbing. **Production is unchanged**: release builds still
-refuse software H.264/HEVC/VP9, and the claims are the same. Console measurements are pending (steps in
-[Measure it on the console](#measure-it-on-the-console)). Backlog item: [player-plan.md](player-plan.md), "Later".
+Status (2026-11-24): **phase A is in release** ([Phase A in release](#phase-a-in-release-2026-11-24)): H.264, HEVC and
+VP9 the console's hardware decoder can't take decode in FFmpeg software inside the console-measured 1080p envelopes.
+Phase B (4K, and HDR tone mapping of software frames) waits for the fork. Backlog item: [player-plan.md](player-plan.md),
+"Later".
 
 Answer first:
 
-- **Bale over-claimed until 2026-11-24 (fixed, see "Now" below).** Since 2026-11-17 the claims carry an unbounded software `video_decode` entry for every
-  FFmpeg codec, H.264/HEVC/VP9 included, and the route sends what the console's hardware decoder can't take to
-  software. But `FfmpegSource.Configuration` refuses a software route for a hardware codec ("The video codec cannot use
-  the local fallback"). So every such file (4K H.264, H.264 High 10 ...) is planned direct, fails its first open, and
-  only the failure replan (which withdraws every software entry) has the server transcode it. HEVC RExt, VP9 profile 1/3
-  and 8-bit H.264 4:2:2/4:4:4 likely fail outright: the profile-blind hardware entry still admits them after the replan.
+- **Bale over-claimed until 2026-11-24 (fixed, see "Now" below).** From 2026-11-17 the claims carried an unbounded
+  software `video_decode` entry for every FFmpeg codec, H.264/HEVC/VP9 included, and the route sends what the
+  console's hardware decoder can't take to software. But `FfmpegSource.Configuration` refused a software route for a
+  hardware codec ("The video codec cannot use the local fallback"). So every such file (4K H.264, H.264 High 10 ...)
+  was planned direct, failed its first open, and only the failure replan (which withdraws every software entry) had
+  the server transcode it. HEVC RExt, VP9 profile 1/3 and 8-bit H.264 4:2:2/4:4:4 could fail outright: the
+  profile-blind hardware entry still admitted them after the replan.
 - **The official clients:** Apple TV 4K declares everything its engine decodes, unbounded, and lets the engine pick
   hardware or software per file; slower Apple devices claim small, fixture-measured software envelopes (H.264 High 10
   1080p30 10 Mbps, VP9 profile 0 1080p30 3 Mbps). Android claims hardware decoders only.
-- **The console** (host measurements scaled to it; estimates until the console runs below): 1080p 4:2:0 fits the
-  ~2.5 cores a software decode may take (H.264 High 10 at 24 fps ~1 core, at 60 fps / 20 Mbps ~2.3; VP9 profile 1 and
-  12-bit HEVC ~1.9). 4:2:2 does not fit at 1080p30 (3.3-3.9 cores), largely because the fork's single-threaded swscale
-  conversion to P010 costs a third of it. 4K H.264 is at or over the budget: ~2.3 cores at 4K24 / 25 Mbps, ~3.7 at the
-  4K30 / 50 Mbps a phone records; 4K60 is out of reach.
-- **Proposal:** two small production fixes now (drop the unbounded entries of the hardware codecs; let a refused
-  hardware-codec route withdraw that codec on the replan so the server transcodes). Then phase A (Bale only): bounded
-  1080p entries for H.264 High 10, VP9 profile 1 and 12-bit HEVC, with a Bale-side envelope check. Phase B (fork):
-  threaded or GPU chroma conversion for 4:2:2/4:4:4, and software frames through the staged D3D11 upload and Bale's
-  stage; only then could 4K H.264 at ~24 fps be claimed, and the estimates say it isn't worth much. Without the stage,
-  4K software would hand Media Foundation 4K SDR to scale on a smaller display, which crashes the app after ~23 opens.
-- **Debug plumbing (done):** `bale-debug.sh ffmpeg-tune swfallback=on` decodes those routes in FFmpeg software;
-  `threads=N` sets the software decoder's thread count; `decoder=software` (existing) forces FFmpeg software on files
-  the hardware could take, to measure the software cost of 4K HEVC/VP9.
+- **The console** ([measured](#measured-on-the-console-2026-11-24-bale-01767-series-x-1080p-sdr-tv), beating the
+  host-scaled estimates by 20-50 %): every 1080p case took 0.8-2.1 cores with 0 missed frames (H.264 High 10 1080p24
+  and 1080p60, H.264 4:2:2 10-bit 1080p30 50 Mbps, HEVC 4:2:2 1080p30, HEVC 12-bit 1080p24, VP9 4:4:4 1080p30); 4K30
+  H.264 fits too (2.87 cores at 50 Mbps), only 4K60 fails.
+- **Done:** the two production fixes (no unbounded software entries for the hardware codecs; a refused hardware-codec
+  route withdraws that codec on the replan, so the server transcodes), then phase A: bounded 1080p entries (4:2:0
+  H.264 High 10 and 12-bit HEVC up to 60 fps, 4:2:2/4:4:4 up to 30 fps) with a player-side envelope check. Left for
+  phase B (fork): software frames through the staged D3D11 upload and Bale's stage, without which 4K software would
+  hand Media Foundation 4K SDR to scale on a smaller display (the app crashes after ~23 such opens), and HDR on SDR
+  TVs can't be tone-mapped.
+- **Debug plumbing:** `bale-debug.sh ffmpeg-tune swfallback=on` decodes those routes in FFmpeg software also past the
+  release envelope (4K, 4:2:2 at 60 fps); `threads=N` sets the software decoder's thread count; `decoder=software`
+  forces FFmpeg software on files the hardware could take, to measure the software cost of 4K HEVC/VP9.
 
-## Bale today
+## Phase A in release (2026-11-24)
+
+Approved by the owner after the console measurements. **Claims** (`software_decode::FALLBACK_ENVELOPES`, sent by
+`evidence::video_decode` whatever the probe found): decoder "FFmpeg", `hardware: false`, at most 1920x1080, no level or
+bitrate bound, `software_video_decode_v1` on.
+
+| Codec | Profiles (ffprobe, lower-cased) | Bit depths | Max fps | Measured (cores, 0 missed) |
+|---|---|---|---|---|
+| h264 | `high 10` | 8, 10 | 60 | 1080p24 8 Mbps 0.78; 1080p60 20 Mbps 1.90 |
+| hevc | `rext` | 12 | 60 | 12-bit 4:2:0 1080p24 10 Mbps 1.06 |
+| h264 | `high 4:2:2`, `high 4:4:4 predictive` | 8, 10 | 30 | 4:2:2 10-bit 1080p30 50 Mbps 1.80 |
+| hevc | `rext` | 8, 10, 12 | 30 | 4:2:2 10-bit 1080p30 30 Mbps 2.08 |
+| vp9 | `profile 1`, `profile 3` | 8, 10, 12 | 30 | profile 1 4:4:4 1080p30 10 Mbps 0.90 |
+
+silo-server applies codec, profile (literal; a file without a recorded profile never matches), bit depth, size and the
+absolute frame rate to them. **The player decides each mount itself** (`route::decide` → `software_fallback`, read by
+`FfmpegSource`): a hardware codec's software route decodes in FFmpeg software only when
+
+1. a software entry the attempt claims now (its start request, after any replan) admits the delivered file's catalog
+   version (`software_decode::fallback_admits` over `formatting::decodes`, Bale's mirror of the server's matching: codec,
+   profile, depth, size, frame rate, bitrate);
+2. a file not known to be 4:2:0 (pixel format, else a 4:2:0-only profile such as `high 10`) has a known frame rate of at
+   most 30: the claims can't say chroma, and `rext` 12-bit is one profile for 4:2:0 and 4:2:2;
+3. no console stage (tone map, SDR downscale) or Dolby Vision base layer is involved: the stage reads d3d11va textures.
+
+Otherwise `FfmpegSource` refuses as before and the replan withdraws the codec (fix 2). The player's check is what keeps
+the envelope: Bale's hardware entries name no profiles and the server skips profiles on platform-attested hardware
+entries, so it plans HEVC RExt 8/10-bit, VP9 profile 1/3 and 8-bit H.264 4:2:2 direct at any size and rate the hardware
+entry allows (4K, 60 fps). **Display matching** (`match_display`) counts a version only where the console plays it: a
+hardware entry only for a profile the hardware decodes (`route::hardware_profile`), a bounded software entry, or
+`fallback_admits`; so a 1080p Hi10P version beats a 720p hardware one, and a 1080p60 HEVC 4:2:2 version loses to one
+the console plays. **Logs:** `player: software fallback codec=hevc 1920x1080 (past the hardware decoder)` on every such
+mount; with `swfallback=on` past the envelope, `player: debug software fallback ... (past the release bounds)`; the
+`play-url` route line adds `software fallback (past the hardware decoder, inside the release envelope)`.
+
+What the server plans now (Series X claims, Bale's mirror of its matching; `SoftwareFallbackTests` pins every row):
+
+| File | Server | Player |
+|---|---|---|
+| H.264 High 10 1080p24 or 1080p60; H.264 High 4:2:2 10-bit 1080p30; H.264 High 4:4:4 Predictive 720p30 | direct (fallback entry) | FFmpeg software |
+| HEVC RExt 4:2:2 10-bit 1080p30; HEVC RExt 12-bit 4:2:0 1080p24 or 1080p60 | direct | FFmpeg software |
+| VP9 profile 1 (4:4:4) 1080p30; VP9 profile 3 1080p25 | direct | FFmpeg software |
+| H.264 8-bit 4K30; H.264 High 10 4K24; H.264 4:2:2 10-bit 1080p60; H.264 High 10 1080p120 | transcode (no entry admits it) | |
+| H.264 4:2:2 8-bit 1080p60; HEVC RExt 10-bit 1080p60 or 4K30; VP9 profile 1/3 at 60 fps or 4K | direct (the profile-blind hardware entry) | refused; the replan withdraws the codec; transcode |
+| HEVC RExt 12-bit 4:2:2 1080p60 | direct (the 12-bit entry; the server can't see chroma) | refused (30 fps chroma rule); transcode |
+| HDR HEVC RExt 4:2:2 on an SDR TV | tone-mapped by the server (no console tone map promise for 4:2:2) | (a direct plan would be refused: stage) |
+| HDR HEVC RExt 4:2:2 1080p30 on an HDR TV | direct | FFmpeg software with the stream's HDR10 colour (unverified, the owner's TV is SDR) |
+| HEVC Main 10 4K60; H.264 High 1080p60; VP9 profile 2 4K60 | direct | hardware, as before |
+
+A refused route costs one failed open before the transcode, as before phase A. A failed software mount (decode error)
+withdraws every software entry and the codec; a start that runs out of time keeps the claims, as for software AV1.
+
+## Bale before phase A (until 2026-11-24)
 
 **The hardware.** The console's D3D11 video device reports H.264 VLD_NOFGT at 1080p (`H264_VLD_NOFGT NV12 1080p`),
 HEVC Main and Main10 up to 8K, VP9 profile 0 and 2 up to 4K, VC-1 and MPEG-2 at 1080p ([player-plan.md](player-plan.md),
@@ -269,49 +322,24 @@ console's app-mode output is at most 60 Hz, so files above 60 fps transcode, and
    transcodes to another codec instead of offering a remux that fails the same way (HEVC RExt, VP9 profile 1/3, 8-bit
    H.264 4:2:2/4:4:4). Still needed after phase A for files outside the software envelopes (4K RExt).
 
-**Phase A, Bale only (no fork change).** After the console measurements, add bounded software entries
-(`decoder_name` "FFmpeg", `hardware: false`) and let `FfmpegSource` take a software route for H.264/HEVC/VP9 when no
-console stage is involved **and a bounded software entry admits the delivered file**. That last check matters because
-the server can't apply the bounds when the profile-blind hardware entry admits the file (a 4K HEVC RExt original is
-planned direct whatever the software entries say): run `formatting::decodes` (Bale's mirror of the server's matching:
-codec, profile, depth, size, fps, bitrate) over the software entries for the plan's file, also refuse 4:2:2/4:4:4 pixel
-formats for HEVC (`rext` covers both 4:2:0 12-bit and 4:2:2, and the claims can't tell them apart), and refuse
-otherwise (fix 2 then has the server transcode). Starting values, each inside the host estimate's ~2.5-core budget,
-to confirm or lower with the console runs:
+**Phase A: done 2026-11-24**, as approved ([Phase A in release](#phase-a-in-release-2026-11-24)). Differences from the
+proposal above the measurements: the console beat the estimates, so the envelopes take 4:2:2/4:4:4 at 30 fps and 4:2:0
+H.264 High 10 and 12-bit HEVC at 60 fps, without bitrate bounds; intra profiles (`high 10 intra`, `high 4:2:2 intra`)
+stay out. Possible refinements: a hardware-first tie-break in display matching between versions of the same height;
+bitrate bounds if a heavy camera file (100 Mbps+ 4:2:2) stalls.
 
-| Codec | Profiles (ffprobe, lower-case) | Depths | Max size | Max fps | Max kbps | Estimate |
-|---|---|---|---|---|---|---|
-| h264 | `high 10` | 10 | 1920x1080 | 30 (60 if the 1080p60 clip passes) | 20 000 | ~1.0 core at 24 fps / 8 Mbps; ~2.3 at 60 fps / 20 Mbps |
-| vp9 | `profile 1` | 8 | 1920x1080 | 30 | 10 000 | ~1.9 cores (4:4:4 8-bit, 9.7 Mbps) |
-| hevc | `rext` | 12 | 1920x1080 | 24 | 10 000 | ~1.8 cores (4:2:0 12-bit); 4:2:2/4:4:4 refused by Bale (above) |
+**Phase B, with the fork.** What is left, in this order:
 
-- Profiles keep these entries off files the hardware takes (a profile-less 8-bit H.264 entry would also admit 4K) and
-  off unknown profiles (the server fails those, which is the safe side). Intra variants (`high 10 intra`) stay out
-  until measured.
-- 1920x1080 keeps Media Foundation from ever scaling 4K SDR, and matches the hardware entries' 1080p.
-- Not yet: H.264 `high 4:2:2` / `high 4:4:4 predictive`, HEVC 4:2:2/4:4:4, VP9 `profile 3` (3.3-3.9 cores at 1080p30,
-  and the single-threaded conversion alone runs out of time per frame), until phase B's conversion work. Fix 2 has
-  the server transcode them.
-- These entries are bounded, so Auto's display matching counts them (`match_display`). On a 1080p display that changes
-  nothing; if a title has both a software and a hardware version of the same height, a later refinement could prefer
-  the hardware one.
-- Value: Hi10P anime encodes are the common case; VP9 profile 1 and 12-bit HEVC are rare.
-
-**Phase B, with the fork.** Two pieces, in this order:
-
-1. **Chroma conversion off the single swscale call** (4:2:2/4:4:4 and 10/12-bit to NV12/P010): either swscale's own
-   slice threads (`sws_scale_frame` on a context with the `threads` option instead of one `sws_scale` call per frame),
-   or the GPU (upload the planar planes and let a bale_gpu pass subsample and pack). Decode-only estimates then: H.264
-   4:2:2 10-bit 1080p30 / 50 Mbps ~2.2 cores, HEVC 4:2:2 10-bit 1080p30 / 30 Mbps ~2.7, VP9 4:4:4 ~1.4, which brings
-   1080p24-30 4:2:2 into reach.
-2. **Software frames through the stage**, needed for anything larger than the display (and for HDR on an SDR display).
-   Only then could 4K be claimed, and the estimates leave little: H.264 8-bit 4K at 24 fps up to ~25 Mbps (~2.3 cores)
-   is the only 4K case inside the budget; 4K30 at phone bitrates (~3.7 cores) and 4K60 are not. Claim it only if the
-   console beats the estimate:
+1. **Software frames through the stage**, needed for anything larger than the display (and for HDR on an SDR display).
+   The CPU no longer stands in the way: H.264 4K30 took 1.97 cores at 13 Mbps and 2.87 at 50 Mbps (4K60 80 Mbps fails
+   at 6.6). Candidate claim once the stage takes software frames, inside the ~3-core budget:
 
 | Codec | Profiles | Depths | Max size | Max fps | Max kbps |
 |---|---|---|---|---|---|
-| h264 | `constrained baseline`, `baseline`, `main`, `high` | 8 | 3840x2160 | 24 (30 only if 4K30 / 13 Mbps passes) | 25 000 |
+| h264 | `constrained baseline`, `baseline`, `main`, `high` | 8 | 3840x2160 | 30 | per a long-play check (50 000 measured) |
+
+2. **Chroma conversion off the single swscale call**, now an optimisation only: at 1080p30 the console decoded 4:2:2
+   10-bit in 1.8-2.1 cores, so the conversion is not the limit there; it may be at 4K 4:2:2 or 1080p60 4:2:2.
 
 What to ask the fork thread for (the two pieces above):
 
@@ -340,28 +368,29 @@ withdrawn (the server transcodes), keeping position and tracks. That safety net 
 
 | Piece | File | Change |
 |---|---|---|
-| Claims | `native/bale-core/src/evidence.rs` (`video_decode`) | bounded entries above instead of unbounded ones for the hardware codecs (fix 1 first) |
-| Which hardware codecs may decode in software | `native/bale-core/src/software_decode.rs` | a `SOFTWARE_FALLBACK_VIDEO_CODECS` list (h264, hevc, vp9), exposed through `SoftwareDecodePolicy` |
-| Gate | `src/Bale.Xbox/Services/FfmpegSource.cs` | accept `route.SoftwareVideo` for that list when `!route.ConsoleStage` (today's debug `SoftwareFallbackAdmits`) and a bounded software entry admits the file |
-| Envelope check | `route.rs` (new `software_admits`, beside `hardware_admits`) | `formatting::decodes` of the plan's file (versions are already a route input) over the software entries, plus the HEVC pixel-format refusal; the route then marks the mount refused before it opens |
+| Claims | `native/bale-core/src/evidence.rs` (`video_decode`) | done: the bounded envelopes (`software_decode::FALLBACK_ENVELOPES`); fix 1 dropped the unbounded ones |
+| Which hardware codecs may decode in software | `native/bale-core/src/software_decode.rs` | done: `SOFTWARE_FALLBACK_VIDEO_CODECS` (h264, hevc, vp9), `SoftwareDecodePolicy.SoftwareFallbackVideoCodecs` |
+| Gate | `src/Bale.Xbox/Services/FfmpegSource.cs` | done: a software route of those codecs needs `route.SoftwareFallback`; the debug `SoftwareFallbackAdmits` bypasses it |
+| Envelope check | `route.rs` (`software_fallback`) + `software_decode::fallback_admits` | done: the delivered file's version against the attempt's current software entries, the 30 fps chroma rule, no stage |
 | Route | `route.rs` | `hardware_admits` unchanged; phase B drops `!software_video` from `console_downscale` |
 | Tone map promise | `tone_map.rs` (`can_manage`) | unchanged until phase B: hardware entries only |
-| Failure | `software_decode.rs` (`without_failed_fallbacks`) | a failed software route withdraws every software entry (as today) and, for a refused hardware codec, the codec itself (fix 2) |
-| Tuning | `SoftwareDecodeTuning` | decode-ahead/BufferTime already apply to any software video; thread count per the `threads=` A/B |
-| Device gate | `software_video_supported` | unchanged: Series consoles with AVX2 only |
-| Version choice | `formatting.rs` (`match_display`) | counts bounded entries already; optional hardware-first tie-break |
+| Failure | `software_decode.rs` (`without_failed_fallbacks`) | done (fix 2): a failed software route withdraws every software entry and, for a hardware codec, the codec itself |
+| Tuning | `SoftwareDecodeTuning` | decode-ahead/BufferTime apply to any software video; `threads=4` changed nothing at 4K30 |
+| Device gate | `software_video_supported` | unchanged: Series consoles with AVX2 only (no software entries otherwise, so no fallback) |
+| Version choice | `formatting.rs` (`match_display`) | done: hardware entries count only for profiles the hardware decodes; the fallback through `fallback_admits` |
 | Packages | `PackagedVideoCodecs` | lists unchanged; the decode entries are per request, so a remux of such a file (read by FFmpeg, same route) takes the same software decoder |
 
 ## Debug switches
 
-Implemented 2026-11-24, debug builds only (`DEBUG_SERVER`), memory only, captured per playback attempt like every
-`ffmpeg-tune` key; release builds and claims are unchanged.
+Debug builds only (`DEBUG_SERVER`), memory only, captured per playback attempt like every `ffmpeg-tune` key; they
+never change the claims.
 
 - `bale-debug.sh ffmpeg-tune swfallback=on|off|default`: a software route for H.264/HEVC/VP9 (the route's own decision:
-  the console's decoder can't take the file) decodes in FFmpeg software instead of being refused. Off and default are
-  the release behaviour. Never with a console stage (an HDR file on an SDR display stays refused: the stage reads
-  d3d11va textures). Logs `player: debug software fallback codec=h264 3840x2160`; `play-url` adds
-  `debug software fallback` to its route line. VC-1 and MPEG-2 stay refused.
+  the console's decoder can't take the file) decodes in FFmpeg software even outside the release envelope (4K, 4:2:2 at
+  60 fps), for measurements. Off and default are the release behaviour (phase A: the envelope decodes, the rest is
+  refused). Never with a console stage (an HDR file on an SDR display stays refused: the stage reads d3d11va textures).
+  Logs `player: debug software fallback codec=h264 3840x2160 (past the release bounds)`; `play-url` adds `debug software
+  fallback` to its route line. VC-1 and MPEG-2 stay refused.
 - `ffmpeg-tune decoder=software` (existing) forces FFmpeg software on every mount, now including those routes. Use it to
   measure the software cost of files the hardware takes (4K HEVC Main 10, 4K VP9). It drops the stage, so 4K on a 1080p
   display is scaled by Media Foundation (see the caveat below).
@@ -371,7 +400,34 @@ Implemented 2026-11-24, debug builds only (`DEBUG_SERVER`), memory only, capture
   `frame-log on`; the standalone probe `playtest-ffmpeg <url> 30 software threads=N` (no route gate, muted, a 160x90
   surface).
 
+## Verify phase A on the console
+
+No Silo title is needed: `play-url` takes the same route decision (the probe's version and the attempt's claims).
+Reset the tuning first (`scripts/bale-debug.sh ffmpeg-tune decoder=default swfallback=default threads=default`), serve
+the clips as below, and keep the input-idle rule for readings.
+
+1. **Inside the envelope, no switch** (each of `derived/sw-decode/1080p24-H264-High10-8M-30s.mkv`,
+   `1080p60-H264-High10-20M-30s.mkv`, `1080p30-H264-High422-10bit-50M-30s.mkv`, `1080p30-HEVC-Main422-10-30M-30s.mkv`,
+   `1080p24-HEVC-Main12-10M-30s.mkv`, `1080p30-VP9-Profile1-444-10M-30s.webm`): `play-url` answers with
+   `route=software codec=... stage=False; software fallback (past the hardware decoder, inside the release envelope)`,
+   the log shows `player: software fallback codec=... 1920x1080 (past the hardware decoder)` and no `debug software
+   fallback`, and `stats` matches the measured run (CPU, Missed frames 0, Stalls 0; Video media type decoder
+   ffmpeg-software, P010 for the 10/12-bit clips, NV12 for VP9 4:4:4).
+2. **Outside it, no switch** (`derived/sw-decode/2160p30-H264-High-50M-30s.mp4`, or `2160p24-H264-High-25M-30s.mp4`):
+   `play-url` fails with 409 `... is past the console's hardware decoder and outside Bale's software envelope ...`,
+   before the player opens it.
+3. **Outside it with `ffmpeg-tune swfallback=on`**: the same 4K clip plays, the log says `debug software fallback ...
+   (past the release bounds)`. Mind the 4K caveat below (restart Bale after a few 4K opens).
+4. **Hardware files unchanged**: `jellyfin/4K-HEVC-HDR10-60M.mp4` and `derived/1080p-HEVC-10bit-90s.mp4` keep
+   `route=system`, with no software fallback line.
+5. **Through Silo, if the library has such a file** (Hi10P anime, camera 4:2:2): `bale-debug.sh play <id>` shows
+   `Plan: delivery=original_http`, `player: software fallback ...` and no `player: replan`; a 1080p60 4:2:2 or 4K RExt
+   file instead shows one failed open (`The video codec cannot use the local fallback`) and `player: replan outcome=`
+   with a transcode.
+
 ## Measure it on the console
+
+The measurement runs behind phase A (results in [Measured on the console](#measured-on-the-console-2026-11-24-bale-01767-series-x-1080p-sdr-tv)).
 
 Clips: the local test-media folder (`$TEST_MEDIA`; not in the repo, see its MANIFEST.md). The software-decode set is
 `derived/sw-decode/` (made 2026-11-24 from the Jellyfin 4K60 HEVC clip, 30 s each, no audio); the rest is the existing
@@ -427,20 +483,20 @@ av1-decoder rav1g` (the debug default).
 
 ## Open questions
 
-- **The calibration.** The console estimates scale host CPU time by one dav1d anchor with different content and
-  bitrate; run 0 above measures the anchor clip itself on the console. 4K estimates are the least certain: the idle
-  state slows RAM 3.6-4x, and 4K decoding reads far more reference data than 1080p.
-- **Thread count.** FFmpeg runs one frame thread per logical CPU (8) on 4 shared cores. On the host 4 threads used
-  ~10 % less CPU per frame and 120 MB less memory at 4K, at a lower peak rate; which wins on the console is the
-  `threads=4` A/B.
-- **Series S** (3.4 GHz with SMT, ~7 % below the X) and its memory limits are unmeasured; size claims with that margin
-  or measure there.
+- **Bitrate.** The envelopes have no bitrate bound (none approved). The heaviest measured files ran at 50 Mbps (H.264
+  4:2:2 10-bit, 1.80 cores) and 30 Mbps (HEVC 4:2:2, 2.08); camera 4:2:2 at 100 Mbps and above is unmeasured. A stall
+  there would be the case for a bound, or for phase C.
+- **High 4:4:4 Predictive** has no test clip yet (claimed with the 4:2:2 envelope as approved; screen recordings are
+  usually low motion). Intra-only profiles (AVC-Intra, `high 10 intra`, `high 4:2:2 intra`) stay out of the claims.
+- **Unknown facts.** A 4:2:2-capable profile (`rext`, VP9 profile 1/3, H.264 4:2:2/4:4:4) without a recorded pixel
+  format falls back to the 30 fps limit, and such a file without a recorded frame rate is refused (the server plans no
+  direct route without one anyway).
+- **Series S** (3.4 GHz with SMT, ~7 % below the X) and its memory limits are unmeasured; the envelopes keep ~1 core of
+  margin at their worst measured case (2.08 cores).
 - **720p displays.** Media Foundation's leak was found scaling 4K SDR; whether a 1080p software frame scaled to 720p
   is safe is untested (the hardware path has the same question).
-- **HDR passthrough** of software-decoded 10-bit video (HEVC RExt with PQ/HLG) is plumbed in the fork but unverified;
-  the owner's TV is SDR.
-- **Intra-only and 4:4:4 H.264** (AVC-Intra, `high 4:4:4 predictive` screen recordings) have no test clip yet; keep them
-  out of the claims until measured.
+- **HDR passthrough** of software-decoded 10-bit video (HEVC RExt with PQ/HLG) on an HDR TV is plumbed in the fork but
+  unverified; the owner's TV is SDR.
 - **Interlaced 4:2:2** (1080i broadcast masters) would also need deinterlacing of software frames (Aether deinterlaces
   in software; Bale relies on Media Foundation's video processor).
-- **VC-1 and MPEG-2 software entries** are as unbounded and as refused as H.264's; the "now" step drops them too.
+- **Thread count.** `threads=4` changed nothing at 4K30 on the console; the default (8) stays.

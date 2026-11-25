@@ -1,48 +1,36 @@
-using Bale.Core.Api.Models;
 using Bale.Core.Playback;
 using Bale.Xbox.Services;
 using FFmpegInteropX;
 
 namespace Bale.Core.Tests;
 
-// The debug software fallback for H.264/HEVC/VP9 past the console's hardware decoder (docs/software-decode.md).
-// FfmpegSource logs through the shared stand-in, so this stays in the collection of the other log users.
+// The debug software fallback past the release envelope (ffmpeg-tune swfallback=on / decoder=software,
+// docs/software-decode.md); SoftwareFallbackTests covers the release fallback itself. FfmpegSource logs through the
+// shared stand-in, so this stays in the collection of the other log users.
 [Collection("Player seek")]
 public sealed class DebugSoftwareFallbackTests
 {
-    // What a Series console's decoder probe reports (HardwareDecodeClaimsTests): H.264 stops at 1080p.
-    private static readonly IReadOnlyList<VideoDecodeCapability> SeriesHardware = ConsoleEvidence.BuildVideoDecode(
-        new HardwareDecodeLimits(H264: new(1920, 1080), HevcMain: new(7680, 4320), HevcMain10: new(7680, 4320),
-            Vp9Profile0: new(3840, 2160), Vp9Profile2: new(3840, 2160), Vc1: new(1920, 1080), Mpeg2: new(1920, 1080)))
-        .Where(decode => decode.Hardware).ToArray();
-
     private static readonly DebugFfmpegInputTuning Fallback = new(SoftwareFallback: true);
 
-    private static PlaybackRouteDecision Route(string codec, string? profile, int depth, int width, int height,
-        string range = "sdr", bool sdrOutput = false)
-    {
-        var plan = PlaybackRoutePolicyTests.Plan("original_http", codec, "aac");
-        plan.Source!.VideoProfile = profile;
-        plan.Source.BitDepth = depth;
-        plan.Source.Width = width;
-        plan.Source.Height = height;
-        plan.Source.DynamicRange = range;
-        return PlaybackRoutePolicy.Decide(plan, false, sdrOutput: sdrOutput, hardwareDecode: SeriesHardware);
-    }
+    // The player's own decision for a file (versions and the attempt's claims), so the release fallback is real.
+    private static PlaybackRouteDecision Route(string codec, string? profile, int depth, int width, int height, double fps = 30,
+        string? pixelFormat = null, string range = "sdr", bool sdrOutput = false) =>
+        SoftwareFallbackTests.Decide(SoftwareFallbackTests.File(codec, profile, depth, width, height, fps, pixelFormat, range), sdrOutput: sdrOutput);
 
     [Theory]
-    // The cases the backlog names: 4K H.264 on a 1080p-only H.264 decoder, and profiles the console's decoders lack.
-    [InlineData("h264", "high", 8, 3840, 2160)]
-    [InlineData("h264", "high 10", 10, 1920, 1080)]
-    [InlineData("h264", "high 4:2:2", 10, 1920, 1080)]
-    [InlineData("hevc", "rext", 10, 1920, 1080)]
-    [InlineData("hevc", "main 12", 12, 1920, 1080)]
-    [InlineData("vp9", "profile 1", 8, 1920, 1080)]
-    public void ReleaseRefusesTheRouteAndTheSwitchDecodesItInFfmpegSoftware(string codec, string profile, int depth, int width, int height)
+    // Outside the release envelope (1920x1080; 4:2:2 / 4:4:4 up to 30 fps): 4K H.264, 4:2:2 at 60 fps, 4K VP9 profile 1.
+    [InlineData("h264", "high", 8, 3840, 2160, 30, "yuv420p")]
+    [InlineData("h264", "high 10", 10, 3840, 2160, 24, "yuv420p10le")]
+    [InlineData("h264", "high 4:2:2", 10, 1920, 1080, 60, "yuv422p10le")]
+    [InlineData("hevc", "rext", 10, 1920, 1080, 60, "yuv422p10le")]
+    [InlineData("vp9", "profile 1", 8, 3840, 2160, 30, "yuv444p")]
+    public void OutsideTheReleaseEnvelopeOnlyTheSwitchDecodesInFfmpegSoftware(string codec, string profile, int depth, int width,
+        int height, double fps, string pixelFormat)
     {
-        var route = Route(codec, profile, depth, width, height);
+        var route = Route(codec, profile, depth, width, height, fps, pixelFormat);
         Assert.True(route.UseFfmpeg);
         Assert.True(route.SoftwareVideo);
+        Assert.False(route.SoftwareFallback);
         Assert.False(route.ConsoleStage);
 
         // Release behaviour, and the debug default: refused, so a Silo mount replans to the server.
@@ -79,6 +67,18 @@ public sealed class DebugSoftwareFallbackTests
     }
 
     [Fact]
+    public void InsideTheReleaseEnvelopeTheSwitchChangesNothing()
+    {
+        var route = Route("h264", "high 10", 10, 1920, 1080, 23.976, "yuv420p10le");
+        Assert.True(route.SoftwareFallback);
+        var release = FfmpegSource.Configuration(route, new DebugFfmpegInputTuning());
+        var debug = FfmpegSource.Configuration(route, Fallback);
+        Assert.Equal(VideoDecoderMode.ForceFFmpegSoftwareDecoder, release.Video.VideoDecoderMode);
+        Assert.Equal(release.Video.VideoDecoderMode, debug.Video.VideoDecoderMode);
+        Assert.Equal(release.FFmpegOptions.OrderBy(pair => pair.Key), debug.FFmpegOptions.OrderBy(pair => pair.Key));
+    }
+
+    [Fact]
     public void TheOpenedStreamMustBeTheFfmpegSoftwareDecoder()
     {
         var route = Route("h264", "high", 8, 3840, 2160);
@@ -96,9 +96,10 @@ public sealed class DebugSoftwareFallbackTests
     public void NeverWithAConsoleStage()
     {
         // HDR HEVC RExt on an SDR display: the route wants the tone map, which reads d3d11va textures only.
-        var route = Route("hevc", "rext", 10, 1920, 1080, range: "hdr10", sdrOutput: true);
+        var route = Route("hevc", "rext", 10, 1920, 1080, 30, "yuv422p10le", range: "hdr10", sdrOutput: true);
         Assert.True(route.SoftwareVideo);
         Assert.True(route.ConsoleToneMap);
+        Assert.False(route.SoftwareFallback);
         Assert.False(Fallback.SoftwareFallbackAdmits(route));
         Assert.False(new DebugFfmpegInputTuning(Decoder: DebugFfmpegDecoder.Software).SoftwareFallbackAdmits(route));
         Assert.Throws<InvalidDataException>(() => FfmpegSource.Configuration(route, Fallback));
@@ -109,11 +110,12 @@ public sealed class DebugSoftwareFallbackTests
     [InlineData("mpeg2video", "main", 8)]
     public void OnlyH264HevcAndVp9TakeTheFallback(string codec, string profile, int depth)
     {
-        var route = Route(codec, profile, depth, 2560, 1440);
+        var route = Route(codec, profile, depth, 2560, 1440, 30, "yuv420p");
         Assert.True(route.SoftwareVideo);
+        Assert.False(route.SoftwareFallback);
         Assert.False(Fallback.SoftwareFallbackAdmits(route));
         Assert.Throws<InvalidDataException>(() => FfmpegSource.Configuration(route, Fallback));
-        Assert.Equal(new[] { "h264", "hevc", "vp9" }, DebugFfmpegInputTuning.SoftwareFallbackCodecs.ToArray());
+        Assert.Equal(new[] { "h264", "hevc", "vp9" }, SoftwareDecodePolicy.SoftwareFallbackVideoCodecs);
     }
 
     [Theory]
@@ -125,8 +127,9 @@ public sealed class DebugSoftwareFallbackTests
     [InlineData("mpeg4", "advanced simple profile", 8, 720, 480)]
     public void OtherRoutesAreUnchanged(string codec, string profile, int depth, int width, int height)
     {
-        var route = Route(codec, profile, depth, width, height);
+        var route = Route(codec, profile, depth, width, height, 24, "yuv420p");
         Assert.False(Fallback.SoftwareFallbackAdmits(route));
+        Assert.False(route.SoftwareFallback);
         var release = FfmpegSource.Configuration(route, new DebugFfmpegInputTuning());
         var debug = FfmpegSource.Configuration(route, Fallback);
         Assert.Equal(release.Video.VideoDecoderMode, debug.Video.VideoDecoderMode);
@@ -137,14 +140,12 @@ public sealed class DebugSoftwareFallbackTests
     [Fact]
     public void TheSwitchNeverChangesClaims()
     {
-        var device = ConsoleEvidence.ForHardware(new HardwareDecodeLimits(H264: new(1920, 1080), HevcMain: new(7680, 4320),
-            HevcMain10: new(7680, 4320), Vp9Profile0: new(3840, 2160), Vp9Profile2: new(3840, 2160)));
-        device = device with { OriginalDynamicRangeMappingSupported = true };
+        var device = SoftwareFallbackTests.Device with { OriginalDynamicRangeMappingSupported = true };
         Assert.Equal(device, Fallback.ToneMapCapabilities(device));
-        // Release claims carry no software entry for the hardware codecs (2026-11-24, docs/software-decode.md fix 1);
-        // the switch is a play-url measurement aid and never adds one.
-        Assert.All(new[] { "h264", "hevc", "vp9" }, codec => Assert.DoesNotContain(device.VideoDecode,
-            decode => decode.Codec == codec && !decode.Hardware));
+        // The release claims carry the bounded envelopes only (phase A); the switch is a play-url measurement aid and never
+        // widens them, so the server never plans what only the switch would decode.
+        Assert.All(device.VideoDecode.Where(decode => !decode.Hardware && SoftwareDecodePolicy.SoftwareFallbackVideoCodecs.Contains(decode.Codec)),
+            decode => Assert.Equal((1920, 1080), (decode.MaxWidth, decode.MaxHeight)));
     }
 
     [Fact]
@@ -152,6 +153,8 @@ public sealed class DebugSoftwareFallbackTests
     {
         var tuning = new DebugFfmpegInputTuning(DecoderThreads: 4, SoftwareFallback: true);
         Assert.Equal(4u, FfmpegSource.Configuration(Route("h264", "high", 8, 3840, 2160), tuning).Video.MaxDecoderThreads);
+        Assert.Equal(4u, FfmpegSource.Configuration(Route("h264", "high 10", 10, 1920, 1080), tuning with { SoftwareFallback = false })
+            .Video.MaxDecoderThreads);
         Assert.Equal(4u, FfmpegSource.Configuration(Route("av1", "main", 10, 1920, 1080), tuning).Video.MaxDecoderThreads);
         Assert.Equal(4u, FfmpegSource.Configuration(Route("hevc", "main 10", 10, 3840, 2160),
             tuning with { Decoder = DebugFfmpegDecoder.Software }).Video.MaxDecoderThreads);
@@ -162,22 +165,28 @@ public sealed class DebugSoftwareFallbackTests
     }
 
     [Fact]
-    public void ReleaseBuildsKeepTheRefusalAndPlayUrlExplainsIt()
+    public void ReleaseTakesOnlyTheBoundedFallbackAndPlayUrlExplainsTheRest()
     {
         var production = DebugFfmpegDecoderTests.ProductionSource();
-        Assert.DoesNotContain("SoftwareFallback", production);
-        Assert.DoesNotContain("MaxDecoderThreads", production);
-        Assert.Contains("? !SoftwareDecodePolicy.VideoCodecs.Contains(route.VideoCodec!)", production);
+        // Release builds know no debug switch: only the route's bounded decision opens the gate.
+        foreach (var debugOnly in new[] { "SoftwareFallbackAdmits", "swfallback", "MaxDecoderThreads", "DebugFfmpegInputTuning" })
+            Assert.DoesNotContain(debugOnly, production);
+        Assert.Contains("? !SoftwareDecodePolicy.VideoCodecs.Contains(route.VideoCodec!) && !route.SoftwareFallback", production);
         Assert.Contains("throw new InvalidDataException(\"The video codec cannot use the local fallback.\");", production);
+        Assert.Contains("player: software fallback codec={route.VideoCodec}", production);
         var source = Read("FfmpegSource.cs.txt");
-        var bypass = source.IndexOf("if (tuning.SoftwareFallbackAdmits(route))", StringComparison.Ordinal);
+        var bypass = source.IndexOf("if (!route.SoftwareFallback && tuning.SoftwareFallbackAdmits(route))", StringComparison.Ordinal);
         Assert.True(bypass > 0 && bypass < source.IndexOf("throw new InvalidDataException(\"The video codec cannot use the local fallback.\");",
             StringComparison.Ordinal));
+        Assert.Contains("(past the release bounds)", source);
         var url = Read("PlayerPage.DebugUrl.cs.txt");
         Assert.StartsWith("#if DEBUG_SERVER", url);
-        Assert.Contains("&& !attempt.FfmpegTuning.SoftwareFallbackAdmits(media.Route))", url);
+        Assert.Contains("&& !media.Route.SoftwareFallback && !attempt.FfmpegTuning.SoftwareFallbackAdmits(media.Route))", url);
+        Assert.Contains("outside Bale's software envelope", url);
         Assert.Contains("(debug: ffmpeg-tune swfallback=on)", url);
         Assert.Contains("if (attempt.FfmpegTuning.SoftwareFallbackAdmits(media.Route))", url);
+        // The player decides every mount with the attempt's claims as they stand.
+        Assert.Contains("softwareDecode: attempt.Start?.ClientCapabilities.VideoDecode);", Read("PlayerPage.Media.cs.txt"));
         // The switch is the captured per-attempt tuning, not a setting.
         Assert.Contains("public DebugFfmpegInputTuning FfmpegTuning { get; } = DebugFfmpegInputTuning.Current;", Read("PlayerPage.cs.txt"));
         Assert.Contains("swfallback=on|off|default", Read("DebugServer.cs.txt"));

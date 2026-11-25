@@ -6,7 +6,8 @@ use serde::Serialize;
 use crate::hardware::{DecodeSize, Limits};
 use crate::models::HdrCapabilities;
 use crate::software_decode::{
-    AUDIO_CODECS, FFMPEG_VIDEO_CODECS, SYSTEM_AUDIO_CODECS, VIDEO_CODECS,
+    AUDIO_CODECS, FALLBACK_ENVELOPES, FALLBACK_MAX_HEIGHT, FALLBACK_MAX_WIDTH, FFMPEG_VIDEO_CODECS,
+    SYSTEM_AUDIO_CODECS, VIDEO_CODECS,
 };
 
 /// Image subtitle codecs (silo-server's names) the overlay draws from the container.
@@ -250,11 +251,11 @@ pub fn video_decode(
     // The software-only codecs FFmpeg decodes (owner, 2026-11-17, as AetherEngine declares its build):
     // one software entry per codec, capped at 60 fps (owner, 2026-11-24: the console's app-mode output
     // is at most 60 Hz, so faster files transcode). AV1 keeps its measured bound above until rav1g.
-    // The hardware codecs (H.264, HEVC, VP9, VC-1, MPEG-2) get no software entry: the player refuses
-    // their software route (FfmpegSource; docs/software-decode.md), so the server transcodes what the
-    // hardware entries above don't admit instead of planning a direct play that fails to open.
-    // silo-server compares software profiles literally to ffprobe's names even under
-    // platform_attested evidence, so these name none.
+    // The hardware codecs (H.264, HEVC, VP9, VC-1, MPEG-2) get no such entry: outside the bounded
+    // fallback below the player refuses their software route (FfmpegSource; docs/software-decode.md),
+    // so the server transcodes what the hardware entries above don't admit instead of planning a direct
+    // play that fails to open. silo-server compares software profiles literally to ffprobe's names even
+    // under platform_attested evidence, so these name none.
     // Measured before: MPEG-4 Part 2 at 512x384 (0.06 cores), 720x480 (0.08), 1080p (0.30).
     for &codec in FFMPEG_VIDEO_CODECS {
         if codec == "av1" || !VIDEO_CODECS.contains(&codec) {
@@ -269,6 +270,26 @@ pub fn video_decode(
             max_width: None,
             max_height: None,
             max_frame_rate: Some(60.0),
+            max_bitrate_kbps: None,
+            hardware: false,
+        });
+    }
+    // The hardware codecs' software fallback (owner, 2026-11-24, docs/software-decode.md phase A):
+    // only the console-measured envelopes, 1920x1080 at most, with profile names and bit depths so
+    // silo-server keeps them off files the hardware takes and off unknown profiles. The server takes a
+    // source any entry admits; what it can't check (chroma, and any bound when the profile-blind hardware
+    // entry admitted the file) the player does (software_decode::fallback_admits). Claimed with or
+    // without a probed hardware decoder: the software decoder doesn't depend on it.
+    for envelope in FALLBACK_ENVELOPES {
+        claims.push(VideoDecodeClaim {
+            codec: envelope.codec,
+            decoder_name: Some("FFmpeg"),
+            profiles: envelope.profiles.to_vec(),
+            levels: vec![],
+            bit_depths: envelope.bit_depths.to_vec(),
+            max_width: Some(FALLBACK_MAX_WIDTH),
+            max_height: Some(FALLBACK_MAX_HEIGHT),
+            max_frame_rate: Some(envelope.max_frame_rate),
             max_bitrate_kbps: None,
             hardware: false,
         });
