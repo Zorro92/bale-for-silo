@@ -348,7 +348,7 @@ public class PlaybackRoutePolicyTests
     }
 
     [Fact]
-    public void AFailedSoftwareRouteForAHardwareCodecWithdrawsItsSoftwareFallbackOnly()
+    public void AFailedSoftwareRouteForAHardwareCodecWithdrawsThatCodec()
     {
         var device = ConsoleEvidence.ForHardware(new HardwareDecodeLimits(H264: new(1920, 1080), HevcMain: new(3840, 2160)));
         var start = PlaybackStartBuilder.Build("file", "profile", "attempt", null, PlaybackSelection.Auto, device, PlaybackTestSupport.Identity);
@@ -359,10 +359,13 @@ public class PlaybackRoutePolicyTests
         Assert.True(route.SoftwareVideo);
         var failure = new PlaybackFailureV3("decoder_failure", "open failed", "MediaPlayer");
         var replan = PlaybackReplan.ForFailure(start, plan, "attempt", [], 1, 0, failure, route);
-        // The hardware H.264 entry stays (8-bit 1080p), so the server transcodes the 10-bit file instead.
-        Assert.Contains(replan.ClientCapabilities.VideoDecode, decode => decode.Codec == "h264" && decode.Hardware);
+        // The player refuses that software route, and a profile-blind hardware entry could admit a remux of the same
+        // stream again (HEVC RExt, H.264 4:2:2), so H.264 leaves the attempt and the server transcodes to HEVC.
+        Assert.DoesNotContain(replan.ClientCapabilities.VideoDecode, decode => decode.Codec == "h264");
         Assert.DoesNotContain(replan.ClientCapabilities.VideoDecode, decode => !decode.Hardware);
-        Assert.Contains("h264", replan.ClientCapabilities.CodecsVideo);
+        Assert.DoesNotContain("h264", replan.ClientCapabilities.CodecsVideo);
+        Assert.DoesNotContain("h264", replan.ClientCapabilities.CodecsVideoHardware);
+        Assert.Contains(replan.ClientCapabilities.VideoDecode, decode => decode.Codec == "hevc" && decode.Hardware);
     }
 
     private static PlaybackPlan Uhd(string video, string? range = "sdr", int? dvProfile = null)

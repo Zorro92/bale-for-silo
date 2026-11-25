@@ -22,12 +22,14 @@ public class Mpeg4PlaybackTests
                 entry => entry.GetProperty("codec").GetString() == "mpeg4");
             Assert.False(decode.GetProperty("hardware").GetBoolean());
             Assert.Equal("FFmpeg", decode.GetProperty("decoder_name").GetString());
-            // Declared like every FFmpeg codec since 2026-11-17 (owner): no profile, depth or size bound.
+            // Declared like every software-only codec since 2026-11-17 (owner): no profile, depth or size bound;
+            // 60 fps at most, the console's app-mode output (owner, 2026-11-24).
             Assert.Empty(decode.GetProperty("profiles").EnumerateArray());
             Assert.Empty(decode.GetProperty("levels").EnumerateArray());
             Assert.Empty(decode.GetProperty("bit_depths").EnumerateArray());
-            foreach (var bound in new[] { "max_width", "max_height", "max_frame_rate" })
+            foreach (var bound in new[] { "max_width", "max_height" })
                 Assert.True(!decode.TryGetProperty(bound, out var value) || value.ValueKind == JsonValueKind.Null);
+            Assert.Equal(60, decode.GetProperty("max_frame_rate").GetDouble());
             Assert.Contains("mpeg4", Strings(caps.GetProperty("codecs_video")));
             Assert.DoesNotContain("mpeg4", Strings(caps.GetProperty("codecs_video_hardware")));
             Assert.Contains("avi", Strings(caps.GetProperty("containers")));

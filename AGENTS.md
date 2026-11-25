@@ -323,16 +323,18 @@ For Bale, a normal app with hevcPlayback on the Series X:
   height > 1080), using route dimensions from the source for original delivery or the effective
   recipe with source fallback otherwise. Unknown size leaves delay unset; hardware/system video
   gets none of these keys. This tuning does not expand the measured software-video capability bounds.
-- **Software video (owner, 2026-11-17, as AetherEngine):** Bale declares every video codec its FFmpeg build
-  decodes (`SoftwareDecodePolicy.FfmpegVideoCodecs`): an unbounded software `video_decode` entry each, except
-  AV1, which keeps its measured bound below until rav1g. The route (`route::hardware_admits`) plays a file on
-  the console's hardware decoder when a probed hardware entry takes its bit depth and size and the profile is
-  4:2:0 H.264 up to High / HEVC Main(10) / VP9 profile 0/2; otherwise the route is software. FFmpeg then decodes
-  the software-only codecs; for the hardware codecs (H.264/HEVC/VP9/VC-1/MPEG-2) `FfmpegSource` still refuses that
-  route ("The video codec cannot use the local fallback"), so such a file costs one failed open and the replan,
-  although the unbounded entries claimed it (docs/software-decode.md: research, proposed bounded claims and the
-  debug `ffmpeg-tune swfallback=on` that decodes H.264/HEVC/VP9 there for console measurements). A failed
-  software route withdraws every software entry on the single replan, so the server transcodes. Packages
+- **Software video (owner, 2026-11-17, as AetherEngine; narrowed 2026-11-24):** Bale declares the software-only
+  codecs its FFmpeg build decodes (`SoftwareDecodePolicy.VideoCodecs`): a software `video_decode` entry each,
+  bounded only at 60 fps (owner: app-mode output is at most 60 Hz), except AV1, which keeps its measured bound
+  below until rav1g. The hardware codecs (H.264/HEVC/VP9/VC-1/MPEG-2) get hardware entries only, since
+  `FfmpegSource` refuses their software route ("The video codec cannot use the local fallback"); the server
+  transcodes what those entries don't admit. The route (`route::hardware_admits`) plays a file on the console's
+  hardware decoder when a probed hardware entry takes its bit depth and size and the profile is 4:2:0 H.264 up to
+  High / HEVC Main(10) / VP9 profile 0/2; otherwise the route is software. A failed software route withdraws every
+  software entry on the single replan, and for a hardware codec the codec itself (the profile-blind hardware entry
+  would admit a remux of HEVC RExt / VP9 profile 1/3 / H.264 4:2:2 again), so the server transcodes
+  (docs/software-decode.md: research, proposed bounded claims and the debug `ffmpeg-tune swfallback=on` that
+  decodes H.264/HEVC/VP9 there for console measurements). Packages
   (progressive, HLS) still carry only the codecs verified there (`PackagedVideoCodecs`). Auto's display
   matching counts only hardware and bounded entries, so it never prefers a software 4K decode.
   `SoftwareDecodePolicy.VideoCodecs` now means the software-only codecs (no hardware decoder). Video

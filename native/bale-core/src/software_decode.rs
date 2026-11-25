@@ -387,11 +387,15 @@ pub struct FilteredStart {
 pub fn without_failed_fallbacks(args: FailedFallbacksArgs) -> FilteredStart {
     let route = args.route;
     let start = args.start;
-    // A software route withdraws the software video codecs. A system-decoder route withdraws its
-    // own codec only when that codec exists here solely through this FFmpeg route (VP9).
+    // A software route withdraws the software video codecs, and its own codec when that is a hardware
+    // codec (H.264, HEVC, VP9 ...), whose software route the player refuses: the hardware entries can't
+    // exclude HEVC RExt, VP9 profile 1/3 or H.264 4:2:2 by profile, so a remux of the same stream would
+    // fail the same way; without the codec the server transcodes (docs/software-decode.md, fix 2).
+    // A system-decoder route withdraws its own codec only when that codec exists here solely through
+    // this FFmpeg route (VP9).
     let keep_video = |codec: &str| {
         if route.software_video {
-            !VIDEO_CODECS.contains(&codec)
+            !VIDEO_CODECS.contains(&codec) && route.video_codec.as_deref() != Some(codec)
         } else {
             route.video_codec.as_deref() != Some(codec) || !DEMUXED_VIDEO_CODECS.contains(&codec)
         }

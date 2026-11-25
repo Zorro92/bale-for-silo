@@ -6,7 +6,7 @@ refuse software H.264/HEVC/VP9, and the claims are the same. Console measurement
 
 Answer first:
 
-- **Today Bale over-claims.** Since 2026-11-17 the claims carry an unbounded software `video_decode` entry for every
+- **Bale over-claimed until 2026-11-24 (fixed, see "Now" below).** Since 2026-11-17 the claims carry an unbounded software `video_decode` entry for every
   FFmpeg codec, H.264/HEVC/VP9 included, and the route sends what the console's hardware decoder can't take to
   software. But `FfmpegSource.Configuration` refuses a software route for a hardware codec ("The video codec cannot use
   the local fallback"). So every such file (4K H.264, H.264 High 10 ...) is planned direct, fails its first open, and
@@ -224,7 +224,9 @@ Reading, against the ~2.5 cores a software decode may take:
 The rule, as Apple's bounded classes: claim software only inside envelopes measured on the console with real files;
 keep the hardware decoder first; never claim what the player refuses.
 
-**Now (owner's call, no measurement needed), two small production fixes:**
+**Now: two small production fixes, both done 2026-11-24.** The owner approved fix 1 with a 60 fps cap: the
+console's app-mode output is at most 60 Hz, so files above 60 fps transcode, and the remaining software entries
+(software-only codecs) carry `max_frame_rate` 60 too.
 
 1. Drop the unbounded software entries of the hardware codecs (H.264, HEVC, VP9, VC-1, MPEG-2) from
    `evidence.rs::video_decode`, keeping those of the software-only codecs. The server then transcodes 4K H.264, H.264

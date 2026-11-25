@@ -5,7 +5,9 @@ use serde::Serialize;
 
 use crate::hardware::{DecodeSize, Limits};
 use crate::models::HdrCapabilities;
-use crate::software_decode::{AUDIO_CODECS, FFMPEG_VIDEO_CODECS, SYSTEM_AUDIO_CODECS};
+use crate::software_decode::{
+    AUDIO_CODECS, FFMPEG_VIDEO_CODECS, SYSTEM_AUDIO_CODECS, VIDEO_CODECS,
+};
 
 /// Image subtitle codecs (silo-server's names) the overlay draws from the container.
 pub const EMBEDDED_BITMAP_SUBTITLE_CODECS: &[&str] =
@@ -245,14 +247,17 @@ pub fn video_decode(
     if av1_max_width > 1920 || av1_max_height > 1080 {
         claims.push(av1(av1_max_width, av1_max_height, 30.0));
     }
-    // Everything else FFmpeg decodes (owner, 2026-11-17, as AetherEngine declares its build): an
-    // unbounded software entry per codec, so silo-server admits any such file and the console decodes
-    // it in hardware when the probe's entry takes it (route::hardware_admits), else in FFmpeg. AV1
-    // keeps its measured bound above until rav1g. silo-server compares software profiles literally
-    // to ffprobe's names even under platform_attested evidence, so these name none.
+    // The software-only codecs FFmpeg decodes (owner, 2026-11-17, as AetherEngine declares its build):
+    // one software entry per codec, capped at 60 fps (owner, 2026-11-24: the console's app-mode output
+    // is at most 60 Hz, so faster files transcode). AV1 keeps its measured bound above until rav1g.
+    // The hardware codecs (H.264, HEVC, VP9, VC-1, MPEG-2) get no software entry: the player refuses
+    // their software route (FfmpegSource; docs/software-decode.md), so the server transcodes what the
+    // hardware entries above don't admit instead of planning a direct play that fails to open.
+    // silo-server compares software profiles literally to ffprobe's names even under
+    // platform_attested evidence, so these name none.
     // Measured before: MPEG-4 Part 2 at 512x384 (0.06 cores), 720x480 (0.08), 1080p (0.30).
     for &codec in FFMPEG_VIDEO_CODECS {
-        if codec == "av1" {
+        if codec == "av1" || !VIDEO_CODECS.contains(&codec) {
             continue;
         }
         claims.push(VideoDecodeClaim {
@@ -263,7 +268,7 @@ pub fn video_decode(
             bit_depths: vec![],
             max_width: None,
             max_height: None,
-            max_frame_rate: None,
+            max_frame_rate: Some(60.0),
             max_bitrate_kbps: None,
             hardware: false,
         });

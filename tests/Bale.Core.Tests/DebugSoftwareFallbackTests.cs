@@ -141,10 +141,10 @@ public sealed class DebugSoftwareFallbackTests
             HevcMain10: new(7680, 4320), Vp9Profile0: new(3840, 2160), Vp9Profile2: new(3840, 2160)));
         device = device with { OriginalDynamicRangeMappingSupported = true };
         Assert.Equal(device, Fallback.ToneMapCapabilities(device));
-        // Release claims already carry an unbounded software entry per FFmpeg codec (owner, 2026-11-17); the switch
-        // only lets the player honour them. docs/software-decode.md proposes the measured bounds that replace them.
-        Assert.All(new[] { "h264", "hevc", "vp9" }, codec => Assert.Contains(device.VideoDecode,
-            decode => decode.Codec == codec && !decode.Hardware && decode.MaxHeight is null));
+        // Release claims carry no software entry for the hardware codecs (2026-11-24, docs/software-decode.md fix 1);
+        // the switch is a play-url measurement aid and never adds one.
+        Assert.All(new[] { "h264", "hevc", "vp9" }, codec => Assert.DoesNotContain(device.VideoDecode,
+            decode => decode.Codec == codec && !decode.Hardware));
     }
 
     [Fact]
