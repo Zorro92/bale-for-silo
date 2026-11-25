@@ -17,9 +17,9 @@ part Bale hasn't built yet; check when building it), **deviation** (Bale differs
 | Repo | Commit | Reviewed |
 |---|---|---|
 | silo-android | `b7c0412af6b4` | 2026-11-24 |
-| silo-apple | `d9bbdc77c102` | 2026-11-24 |
-| silo-server | `64f9ee20ecee` | 2026-11-24 |
-| silo-roku | `6389fccb8ead` | 2026-11-24 |
+| silo-apple | `3289bedbdd01` | 2026-11-25 |
+| silo-server | `3f7985e7e44a` | 2026-11-25 |
+| silo-roku | `3ae62aa5c260` | 2026-11-25 |
 
 The first review (2026-11-10) started from the commit each local clone was made at.
 
@@ -233,7 +233,63 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   the admin wording for the latter (Android `56e23561a` `PlaybackSessionLifecycle.playbackServerEnd`, Apple
   `80ae9437`, Roku `6389fcc`). Today `PlaybackProgressReporter.RunAsync` only stores the error.
 
+- **Track picks made in the player (2026-11-25):** an audio or subtitle pick made in the player is saved
+  to the series/movie track preference once a plan plays it, as a Detail pick is, so the next episode or
+  start keeps it; an automatic subtitle pick is never written back as the viewer's; the Detail page
+  re-reads its Audio/Subtitles choices after the player (Roku `3ae62aa`, matching Android TV's
+  `TvPlayerViewModel` persistence port `recordTrackSelection` and tvOS). Bale's player track change
+  (`PlayerPage.Tracks.cs`) only replans with `track_change`; nothing writes the preference.
+
 ## Reviews
+### 2026-11-25
+
+One act item, from Roku, which catches up with Android TV and tvOS: a track picked in the player is
+saved as the series or movie's track preference; Bale's player never writes it. Also: Apple shows the
+collections a title is in and labels sports episodes by air date (the server side of `episode_labels`
+is still not on silo-server's main branch), and adds Home section customization (in Settings on tvOS).
+No contract change on generated paths.
+
+#### silo-android
+
+No new commits.
+
+#### silo-apple (`d9bbdc77c102..3289bedbdd01`, 6 commits, 2 none)
+
+- `fd83eb46` later: movie and series pages read `listCatalogItemCollections` when `item_collections` is
+  advertised (one collection: up to six other titles plus Explore all; several: an "Also in" row), its
+  titles opened without a library scope, tvOS focus returning to the card left. Same feature as Android
+  `cb2c32d8a`, already in the parity backlog (ticked); check Bale opens a collection's titles unscoped.
+- `5495cdfc` later: Apple's version of Android `b7c0412af` (sports episodes named by air date when the
+  series says `episode_labels=air_date`, one `EpisodeLabel` helper for every code style). The server
+  field is still not on silo-server's main branch or in the contract; the parity-backlog line waits.
+- `c24cb682` later: in-place Home and library section customization and collection pinning; on tvOS it
+  stays in Settings only. Hold until Android TV ships a TV Home editor (server `f18678f` baseline
+  route already noted).
+
+None for Bale also: `d721eaf0` (tvOS Play pill has a fixed 340 pt width and now scales/truncates a long
+title; Bale's Play button has no fixed width and grows, as on Android), `72c5b416` (iOS tab bar),
+`3289bedb` (iPhone/iPad detail card Go back).
+
+#### silo-server (`64f9ee20ecee..3f7985e7e44a`, 8 commits, 8 none)
+
+None for Bale: `d5026eb93` (card badge ranking speed; winner unchanged), `c81518c86` (jellycompat mixed
+episode browse), `fcfdbc20d` (admin posters through the artwork route), `90ec5a5f9` (a locked sign-in
+name stays open from addresses its account used), `f49287099` (OAuth sign-in starts rate limited, 429;
+Bale signs in by password and device code), `704dffbb2`, `b024fdacc` (web), `3f7985e7e` (admin playback
+Insights and history).
+
+Contract changes on generated paths: none. The OpenAPI file was reordered and gained admin Insights
+schemas; no included path changed (`PlaybackSession` changes are admin-side).
+
+#### silo-roku (`6389fccb8ead..3ae62aa5c260`, 1 commit)
+
+- `3ae62aa` act: a track picked in the player (Options, phone, `*` overlay) is saved to the server's
+  track preferences for the series or movie once a plan plays it, built from the plan's inventory entry
+  (embedded by stream index, external by position among externals), and Detail re-reads its choices
+  after the player. Android TV and tvOS already do this; Bale does not. See the Open item. The readout
+  naming the audio Auto plays (TrueHD swapped for E-AC-3/AC-3) and refused-subtitle memory are
+  Roku-specific.
+
 
 ### 2026-11-24
 
