@@ -7,6 +7,9 @@ namespace Bale.Xbox.Services;
 /// <summary>Independent snapshot ABI: never enters FFmpegInteropX or queries D3D from the UI thread.</summary>
 internal sealed class DebugStageGpuTiming(ulong? baselineSession, bool requested)
 {
+    // Event-query timing (2026-11-24, docs/gpu-tone-map.md): slot 0 is the total, an upper bound of
+    // the stage's elapsed GPU time; slot 1 its end resolution. Slots 2-3 and Disjoint stay zero (they
+    // held input copy/luma/chroma and disjoint counts under the timestamp queries).
     [StructLayout(LayoutKind.Sequential)]
     internal struct Stats
     {
@@ -14,8 +17,8 @@ internal sealed class DebugStageGpuTiming(ulong? baselineSession, bool requested
         public uint State, Frames, Valid, Disjoint, Unavailable, Pending;
         public int Error;
         public uint Reserved;
-        public double TotalAvg, CopyAvg, LumaAvg, ChromaAvg;
-        public double TotalMax, CopyMax, LumaMax, ChromaMax;
+        public double TotalAvg, ResolutionAvg, UnusedAvg2, UnusedAvg3;
+        public double TotalMax, ResolutionMax, UnusedMax2, UnusedMax3;
     }
 
     private ulong _lastSession, _lastWindow;
@@ -88,11 +91,13 @@ internal sealed class DebugStageGpuTiming(ulong? baselineSession, bool requested
             1 => "query creation failed",
             2 => "query data size mismatch",
             3 => "GetData failed",
-            4 => "zero timestamp frequency",
-            5 => "invalid timestamp sequence",
+            4 => "zero QPC frequency",
+            5 => "invalid event sequence",
             6 => "timing panic contained",
             7 => "context is not immediate",
             8 => "device failure",
+            9 => "no event poll thread",
+            10 => "event never completed",
             _ => "query failure",
         };
         return string.Create(CultureInfo.InvariantCulture, $"disabled ({reason}; query HRESULT 0x{stats.Error:X8})");
@@ -100,11 +105,12 @@ internal sealed class DebugStageGpuTiming(ulong? baselineSession, bool requested
 
     internal static string DescribeWindow(Stats stats)
     {
-        var timing = stats.Valid == 0 ? "total/luma/chroma unavailable (no valid timestamps)" :
+        // Only the total is measured: per-pass event boundaries would time the CPU's recording.
+        var timing = stats.Valid == 0 ? "total unavailable (no completed event pairs)" :
             string.Create(CultureInfo.InvariantCulture,
-                $"total avg/max {stats.TotalAvg:0.000}/{stats.TotalMax:0.000} ms · input-copy {stats.CopyAvg:0.000}/{stats.CopyMax:0.000} ms · luma {stats.LumaAvg:0.000}/{stats.LumaMax:0.000} ms · chroma {stats.ChromaAvg:0.000}/{stats.ChromaMax:0.000} ms");
+                $"total avg/max {stats.TotalAvg:0.000}/{stats.TotalMax:0.000} ms (upper bound) · end resolution {stats.ResolutionAvg:0.000}/{stats.ResolutionMax:0.000} ms");
         return string.Create(CultureInfo.InvariantCulture,
-            $"frames={stats.Frames} {timing} · valid={stats.Valid} disjoint={stats.Disjoint} unavailable={stats.Unavailable} pending={stats.Pending} · session={stats.Session} window={stats.Window}");
+            $"frames={stats.Frames} {timing} · valid={stats.Valid} unavailable={stats.Unavailable} pending={stats.Pending} · session={stats.Session} window={stats.Window}");
     }
 
     private static unsafe Stats? Read()

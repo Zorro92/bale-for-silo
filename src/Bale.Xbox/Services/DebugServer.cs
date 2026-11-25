@@ -92,8 +92,8 @@ namespace Bale.Xbox.Services;
 ///   POST /engine-target?mode=rgb10  auto|bgra|rgb10|fp16 (MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT); next engine playback attempt
 ///   GET  /output-depth   memory-only engine output-depth ceiling; default display (as in release builds)
 ///   POST /output-depth?mode=source  display|source (P010 always rgb10); next engine mount; engine-target wins
-///   GET  /gpu-timing      stage timestamp switch (off by default)
-///   POST /gpu-timing?mode=on  asynchronous per-pass GPU timing for the next playback; on|off
+///   GET  /gpu-timing      stage GPU timing switch (off by default)
+///   POST /gpu-timing?mode=on  stage GPU time (event queries, total upper bound) for the next playback; on|off
 ///   GET  /dav1d-path      memory-only dav1d output/grain path; default d3d11 (CPU buffers and grain)
 ///   POST /dav1d-path?mode=zerocopy  d3d11|zerocopy (old D3D12/GPU grain path); next playback attempt
 ///   GET  /av1-decoder     memory-only software AV1 decoder; debug default rav1g; rav1g.dll packaged?

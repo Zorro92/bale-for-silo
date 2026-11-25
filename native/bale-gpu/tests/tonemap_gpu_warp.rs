@@ -959,22 +959,66 @@ fn invalid_arguments_leave_output_and_context_state_unchanged() {
     unsafe { bale_tonemap_destroy(ptr::null_mut()) };
 }
 
-/// Exercise the real query lifetime across context-state swaps and asynchronous apply calls.
-/// Only the test's texture readback waits; the instrumented apply never flushes or waits.
+/// Event timing reports only the total (an upper bound) and its end resolution: the pass slots
+/// and `disjoint` stay zero, and every accounted outcome is valid or unavailable.
+#[cfg(feature = "stage-timing")]
+fn assert_event_window(stats: &BaleToneMapTimingStats) {
+    assert_eq!(stats.valid + stats.unavailable, stats.frames, "{stats:?}");
+    assert_eq!(stats.disjoint, 0, "{stats:?}");
+    assert_eq!(
+        [
+            stats.avg_ms[2],
+            stats.avg_ms[3],
+            stats.max_ms[2],
+            stats.max_ms[3]
+        ],
+        [0.0; 4],
+        "{stats:?}"
+    );
+    assert!(
+        stats
+            .avg_ms
+            .iter()
+            .chain(&stats.max_ms)
+            .all(|ms| ms.is_finite() && *ms >= 0.0),
+        "{stats:?}"
+    );
+    assert!(
+        stats
+            .avg_ms
+            .iter()
+            .zip(stats.max_ms)
+            .all(|(avg, max)| *avg <= max),
+        "{stats:?}"
+    );
+    // Sample by sample the end resolution is part of the total.
+    assert!(
+        stats.avg_ms[1] <= stats.avg_ms[0] && stats.max_ms[1] <= stats.max_ms[0],
+        "{stats:?}"
+    );
+    if stats.valid > 0 {
+        assert!(stats.avg_ms[0] > 0.0, "{stats:?}");
+    }
+}
+
+#[cfg(feature = "stage-timing")]
+fn timing_snapshot() -> BaleToneMapTimingStats {
+    let mut stats = BaleToneMapTimingStats::default();
+    // SAFETY: writable complete snapshot, no retained pointer; read touches no GPU or caller state.
+    assert_eq!(unsafe { bale_tonemap_debug_timing_read(&mut stats) }, S_OK);
+    stats
+}
+
+/// Exercise the real event queries and poll thread across context-state swaps and asynchronous
+/// apply calls. Only the test's texture readback waits; the instrumented apply never waits.
 #[cfg(feature = "stage-timing")]
 #[test]
-fn stage_timestamps_exclude_self_test_and_survive_state_restore() {
+fn stage_events_exclude_self_test_and_survive_state_restore() {
     struct Disable;
     impl Drop for Disable {
         fn drop(&mut self) {
             assert_eq!(bale_tonemap_debug_timing_enable(0), S_OK);
         }
-    }
-    fn snapshot() -> BaleToneMapTimingStats {
-        let mut stats = BaleToneMapTimingStats::default();
-        // SAFETY: writable complete snapshot, no retained pointer or concurrent stage calls.
-        assert_eq!(unsafe { bale_tonemap_debug_timing_read(&mut stats) }, S_OK);
-        stats
     }
     let warp = Warp::new();
     let c = config(1);
@@ -994,42 +1038,35 @@ fn stage_timestamps_exclude_self_test_and_survive_state_restore() {
     let handle = warp.create(&c);
     // Captured once per create: turning the switch off must not stop this handle's measurement.
     assert_eq!(bale_tonemap_debug_timing_enable(0), S_OK);
-    let stats = snapshot();
-    assert_eq!(stats.state, 1, "timestamp query creation failed: {stats:?}");
+    let stats = timing_snapshot();
+    assert_eq!(
+        stats.state, 1,
+        "event query or poll thread creation failed: {stats:?}"
+    );
     assert_eq!((stats.window, stats.frames, stats.valid), (0, 0, 0));
     for _ in 0..244 {
         assert_eq!(handle.apply(&warp, &input, 0, &output, &frame), S_OK);
-        // Synchronise in the TEST so subsequent applies can read old query results deterministically.
+        // Synchronise in the TEST so each measurement completes before its read delay passes.
         let _pixels = warp.readback(&output);
     }
-    let stats = snapshot();
+    let stats = timing_snapshot();
     assert_eq!((stats.state, stats.window, stats.frames), (1, 1, 240));
-    assert_eq!(
-        stats.valid + stats.disjoint + stats.unavailable,
-        stats.frames
-    );
-    assert!(stats.valid > 0, "no reliable WARP timestamps: {stats:?}");
+    assert_event_window(&stats);
+    assert!(stats.valid > 0, "no completed WARP event pairs: {stats:?}");
     assert!(stats.pending <= 1);
-    assert!(stats.avg_ms.iter().all(|ms| ms.is_finite() && *ms >= 0.0));
-    assert!(
-        stats
-            .avg_ms
-            .iter()
-            .zip(stats.max_ms)
-            .all(|(avg, max)| *avg <= max)
-    );
     drop(handle);
-    let final_stats = snapshot();
+    let final_stats = timing_snapshot();
     assert_eq!((final_stats.state, final_stats.pending), (3, 0));
     assert!(final_stats.window > stats.window);
+    assert_event_window(&final_stats);
     // Off-by-default create owns no queries and must not replace the last measured session.
     let _off = warp.create(&c);
-    assert_eq!(snapshot().session, final_stats.session);
+    assert_eq!(timing_snapshot().session, final_stats.session);
 }
 
 #[cfg(feature = "stage-timing")]
 #[test]
-fn stage_timestamps_survive_a_burst_without_per_apply_readback() {
+fn stage_events_survive_a_burst_without_per_apply_readback() {
     struct Disable;
     impl Drop for Disable {
         fn drop(&mut self) {
@@ -1052,38 +1089,90 @@ fn stage_timestamps_survive_a_burst_without_per_apply_readback() {
     assert_eq!(bale_tonemap_debug_timing_enable(1), S_OK);
     let _disable = Disable;
     let handle = warp.create(&c);
-    // The old test read back after every apply, masking unresolved-query behavior. Submit a
-    // shader-readable P010 burst with state restoration but no Flush or readback between frames.
+    // A readback after every apply would mask unresolved-measurement behaviour. Submit a
+    // shader-readable P010 burst with state restoration but no readback between frames.
     for _ in 0..244 {
         assert_eq!(handle.apply(&warp, &input, 0, &output, &frame), S_OK);
     }
-    let mut stats = BaleToneMapTimingStats::default();
-    // SAFETY: complete writable snapshot; no GPU queries or caller state are touched by read.
-    assert_eq!(unsafe { bale_tonemap_debug_timing_read(&mut stats) }, S_OK);
+    let stats = timing_snapshot();
     assert_eq!((stats.state, stats.window, stats.frames), (1, 1, 240));
     assert!(
         stats.pending <= 1,
-        "more than one unresolved disjoint interval: {stats:?}"
+        "more than one measurement in flight: {stats:?}"
     );
     assert!(
         stats.unavailable > 0,
-        "busy intervals must skip measurement: {stats:?}"
+        "busy measurements must skip applies: {stats:?}"
     );
-    assert_eq!(
-        stats.valid + stats.disjoint + stats.unavailable,
-        stats.frames
-    );
-    // Read back only after the burst; then exercise recovery/reuse of the single query set.
+    assert_event_window(&stats);
+    // Read back only after the burst; then exercise recovery/reuse of the single event pair.
     let _pixels = warp.readback(&output);
     for _ in 0..244 {
         assert_eq!(handle.apply(&warp, &input, 0, &output, &frame), S_OK);
         let _pixels = warp.readback(&output);
     }
-    assert_eq!(unsafe { bale_tonemap_debug_timing_read(&mut stats) }, S_OK);
-    assert_eq!(stats.state, 1);
+    let stats = timing_snapshot();
+    assert_eq!(stats.state, 1, "{stats:?}");
     assert!(stats.window >= 2);
     assert!(
         stats.valid > 0,
-        "completed query set was not reused: {stats:?}"
+        "completed event pair was not reused: {stats:?}"
     );
+    assert_event_window(&stats);
+}
+
+/// Destroy with a measurement in flight: no read and no wait (the poll thread is detached, never
+/// joined), the stage closes with nothing pending, and the next stage on the device measures.
+#[cfg(feature = "stage-timing")]
+#[test]
+fn stage_events_tear_down_with_a_measurement_in_flight() {
+    struct Disable;
+    impl Drop for Disable {
+        fn drop(&mut self) {
+            assert_eq!(bale_tonemap_debug_timing_enable(0), S_OK);
+        }
+    }
+    let warp = Warp::new();
+    let c = config(1);
+    let input = warp.texture(
+        &desc(16, 8, DXGI_FORMAT_P010, 0),
+        Some(&cpu::test_pattern(16, 8, true, false)),
+    );
+    let output = warp.texture(&output_desc(&c), None);
+    let frame = BaleToneMapFrameInfo {
+        transfer: 16,
+        primaries: 9,
+        matrix: 9,
+        ..Default::default()
+    };
+    assert_eq!(bale_tonemap_debug_timing_enable(1), S_OK);
+    let _disable = Disable;
+    let first = warp.create(&c);
+    let session = timing_snapshot().session;
+    // The first apply issues a measurement, the second finds it in flight.
+    for _ in 0..2 {
+        assert_eq!(first.apply(&warp, &input, 0, &output, &frame), S_OK);
+    }
+    drop(first);
+    let closed = timing_snapshot();
+    assert_eq!(
+        (closed.session, closed.state, closed.pending, closed.frames),
+        (session, 3, 0, 2),
+        "{closed:?}"
+    );
+    assert_event_window(&closed);
+    let second = warp.create(&c);
+    assert!(timing_snapshot().session > session);
+    for _ in 0..24 {
+        assert_eq!(second.apply(&warp, &input, 0, &output, &frame), S_OK);
+        let _pixels = warp.readback(&output);
+    }
+    drop(second);
+    let stats = timing_snapshot();
+    assert_eq!(stats.state, 3, "{stats:?}");
+    assert!(
+        stats.valid > 0,
+        "the second stage measured nothing: {stats:?}"
+    );
+    assert_event_window(&stats);
 }

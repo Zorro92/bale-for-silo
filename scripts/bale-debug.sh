@@ -137,7 +137,7 @@
 #   scripts/bale-debug.sh fault requests-empty  return no Requests rows on the next hub load once
 #   scripts/bale-debug.sh fault request-detail  fail the next request-detail load once
 #   scripts/bale-debug.sh fault playback        inject a decoder failure into the player (one replan, then error)
-#   scripts/bale-debug.sh gpu-timing [on|off]   asynchronous stage GPU timestamps for next playback; no args = status
+#   scripts/bale-debug.sh gpu-timing [on|off]   stage GPU time (event queries, total upper bound) for next playback; no args = status
 #   scripts/bale-debug.sh tonemap-debug [noselftest,nostate,nostaged,gammachroma,fixedpeak,bilinearchroma]  bale_gpu tone-map debug switches for the next tone-map create (no args clears); gammachroma = pre-2026-11-22 math (gamma chroma, left siting, early clip); fixedpeak = config peak (1000 nits), not the stream's MaxCLL/mastering; bilinearchroma = bilinear input chroma, not Catmull-Rom
 #   scripts/bale-debug.sh tonemap-size [W H]   display-sized tone-map output (fork bale.38 + bale_gpu area downscale, aspect kept) for the next tone-map open; no args clears
 #   scripts/bale-debug.sh memprobe cpu|d3d11|d3d12|mixed [step=100] [max=3400] [cpu=1000]

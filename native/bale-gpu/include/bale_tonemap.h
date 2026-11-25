@@ -95,16 +95,24 @@ HRESULT bale_tonemap_peak_read(BaleToneMapPeakInfo* info);
 /* Optional debug-package exports (Cargo feature stage-timing), additive to ABI 1.
    Resolve dynamically; absent in production. Enable is captured by the next stage create,
    never changes an active handle. Read does no GPU work: S_FALSE = busy, output untouched.
-   All values in one report belong to the latest measured stage and one completed window. */
+   All values in one report belong to the latest measured stage and one completed window.
+   Since 2026-11-24 the stage measures with two D3D11 event queries whose completion a poll thread
+   sees on the CPU (timestamp queries crashed the Xbox driver); a measured apply then requests two
+   submissions. Layout unchanged. */
 typedef struct BaleToneMapTimingStats {
     uint64_t session, window;
     uint32_t state; /* 0 = no measured stage, 1 = collecting, 2 = timing disabled, 3 = destroyed */
-    uint32_t frames, valid, disjoint, unavailable, pending;
+    uint32_t frames, valid, disjoint, unavailable, pending; /* disjoint: always 0 with events */
     int32_t error; /* HRESULT of timing failure; playback continues */
     uint32_t reserved; /* failure reason: 0 = unknown (older DLL), 1 = create, 2 = data size,
-                         3 = GetData, 4 = zero frequency, 5 = sequence, 6 = contained panic,
-                         7 = non-immediate context, 8 = device failure */
-    double avg_ms[4], max_ms[4]; /* total, input copy, luma, chroma; averages use valid only */
+                         3 = GetData, 4 = zero QPC frequency, 5 = sequence, 6 = contained panic,
+                         7 = non-immediate context, 8 = device failure, 9 = no poll thread
+                         (no immediate context or multithread protection, or no thread),
+                         10 = an end event still pending after ~1 s of polling */
+    double avg_ms[4], max_ms[4]; /* [0] total, an upper bound of the stage's elapsed GPU time;
+                                    [1] end resolution, how long before the poll that saw the end
+                                    the stage could have finished; [2], [3] 0 (were total, input
+                                    copy, luma, chroma with timestamps); averages use valid only */
 } BaleToneMapTimingStats;
 HRESULT bale_tonemap_debug_timing_enable(uint32_t enabled); /* 0 or 1; default 0 */
 HRESULT bale_tonemap_debug_timing_read(BaleToneMapTimingStats* stats);

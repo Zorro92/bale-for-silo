@@ -93,19 +93,23 @@ Enforcement (0.2.x):
 2. Pools read their caps from Bale at mount (fork `bale_*` options, a rav1g parameter), never fixed inside.
 3. Degradation ladder when over a hard cap: drop UI caches → shorten decode-ahead and the network buffer →
    shrink output pools → last resort, a lower server version.
-4. Per-stage GPU timestamps (decode, stage, grain, subtitles, present) in the stats pane, so the GPU split is
-   measured rather than assumed.
+4. Per-stage GPU timings (decode, stage, grain, subtitles, present) in the stats pane, so the GPU split is
+   measured rather than assumed. Not with plain D3D11 timestamp queries on Media Foundation's device: d3d11on12
+   also records them on the video queues and the console's driver breaks (2026-11-24); the stage uses event
+   queries ([gpu-tone-map.md](gpu-tone-map.md#event-queries-not-timestamps-2026-11-24)).
 
 Reading decoder arrays in place is retired (2026-11-24, owner): on the console it saved the ~24 MiB copy
 but cost ~80-90 MiB the driver does not report (2026-11-21), so wrapper bale.76 never asks for
 shader-readable decoder pools and bale_gpu copies every decoder array first
 ([gpu-tone-map.md](gpu-tone-map.md), "Capabilities").
 
-Stage measurement is now available in debug packages: `bale-debug.sh gpu-timing on` before a new
-playback, then **Stage GPU** / `Bale stage gpu:` (240-outcome avg/max windows for input copy, luma,
-chroma and total). See [gpu-tone-map.md](gpu-tone-map.md#measure-the-stages-gpu-time-debug-packages).
-Open: collect idle-state 4K60 windows, check disjoint/unavailable counts and Xbox timestamp validity,
-and test the stage's ~2 ms share against the rav1g release-fence waits; no stage cost is measured yet.
+Stage measurement is available in debug packages: `bale-debug.sh gpu-timing on` before a new
+playback, then **Stage GPU** / `Bale stage gpu:` (240-outcome avg/max windows of the stage's total GPU
+time, an upper bound from D3D11 event queries since 2026-11-24, when the timestamp version turned out to
+crash the console's driver; no per-pass parts). See
+[gpu-tone-map.md](gpu-tone-map.md#measure-the-stages-gpu-time-debug-packages).
+Open: collect idle-state 4K60 windows (check state, valid count and end resolution first) and test the
+stage's ~2 ms share against the rav1g release-fence waits; no stage cost is measured yet.
 
 Open (2026-11-22): the stage evaluates each output pixel's area sum once when downscaling
 ([gpu-tone-map.md](gpu-tone-map.md#pass-structure-each-output-pixel-once-2026-11-22)): 20.7 M → 8.3 M

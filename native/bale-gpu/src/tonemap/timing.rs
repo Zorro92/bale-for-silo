@@ -1,4 +1,5 @@
-//! Bounded, device-independent accounting for the optional stage timestamps.
+//! Bounded, device-independent accounting for the optional stage GPU timing: D3D11 event queries
+//! whose completion a poll thread sees on the CPU (timing_gpu.rs says why timestamps were dropped).
 use super::types::BaleToneMapTimingStats;
 
 #[cfg(feature = "stage-timing")]
@@ -56,11 +57,28 @@ pub(super) mod accounting {
     use super::*;
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
-    // The Xbox probe has validated one outstanding disjoint query, not several unresolved
-    // intervals on MF's shared device. Keep playback asynchronous by skipping busy applies.
+    /// One measurement (a start and an end event) in flight at a time. An event is never ended
+    /// again before the previous measurement completed and was accounted; applies meanwhile skip
+    /// measuring and count as unavailable.
     pub const RING_SIZE: usize = 1;
+    /// A finished measurement is accounted no sooner than four applies after it was issued, so at
+    /// most one apply in four pays for the measurement's two extra submissions.
     pub const READ_DELAY: u64 = 4;
     pub const WINDOW_FRAMES: u32 = 240;
+    /// The poll thread's period while a measurement is in flight. std's sleep uses a
+    /// high-resolution waitable timer on Windows 10 1803+ (else whole milliseconds).
+    pub const POLL_INTERVAL_US: u64 = 250;
+    /// An end event still pending after this many polls (about 1 s) disables timing: polling a
+    /// set that never completes would only cost CPU and device-lock time. Counted in polls, not
+    /// wall time, so an app suspension mid-measurement cannot trigger it.
+    pub const GIVE_UP_POLLS: u32 = 4000;
+    /// No stage frame takes this long on the GPU: a longer reading spans an app suspension or a
+    /// starved poll thread and is accounted as unavailable, not as a time.
+    pub const GIVE_UP_MS: f64 = 1000.0;
+
+    const E_FAIL: i32 = 0x80004005u32 as i32;
+    /// HRESULT_FROM_WIN32(ERROR_TIMEOUT).
+    const E_TIMEOUT: i32 = 0x800705B4u32 as i32;
 
     /// Additive diagnostic codes in TimingStats.reserved; never contain driver/stream strings.
     #[derive(Clone, Copy, Debug, PartialEq)]
@@ -69,11 +87,16 @@ pub(super) mod accounting {
         Create = 1,
         Size = 2,
         Read = 3,
+        /// QueryPerformanceFrequency/Counter (was the timestamp frequency).
         Frequency = 4,
         Sequence = 5,
         Panic = 6,
         Context = 7,
         Device = 8,
+        /// No poll thread: no immediate context or multithread protection, or no thread.
+        Poller = 9,
+        /// An end event still pending after GIVE_UP_POLLS polls.
+        Timeout = 10,
     }
 
     #[derive(Clone, Copy, Debug, PartialEq)]
@@ -85,7 +108,7 @@ pub(super) mod accounting {
         pub fn new(reason: FailureReason, code: i32) -> Self {
             Self {
                 reason,
-                code: if code < 0 { code } else { 0x80004005u32 as i32 },
+                code: if code < 0 { code } else { E_FAIL },
             }
         }
     }
@@ -150,12 +173,14 @@ pub(super) mod accounting {
         }
     }
 
-    /// Validate before GetData ever receives a pointer. Unexpected positive HRESULTs are not
-    /// data, either: only S_OK is ready, and S_FALSE must leave the entire query set pending.
-    pub fn data_ready(code: i32) -> Result<bool, Failure> {
-        match code {
-            0 => Ok(true),
-            1 => Ok(false),
+    /// Validate an event's GetData result before it means anything. Only S_OK with TRUE is
+    /// complete (D3D11_QUERY_EVENT's documented result) and S_FALSE is pending. Anything else,
+    /// including S_OK with FALSE, is a failure, never a guess.
+    pub fn event_state(code: i32, value: i32) -> Result<bool, Failure> {
+        match (code, value) {
+            (0, 0) => Err(Failure::new(FailureReason::Read, E_FAIL)),
+            (0, _) => Ok(true),
+            (1, _) => Ok(false),
             _ => Err(Failure::new(FailureReason::Read, code)),
         }
     }
@@ -205,38 +230,138 @@ pub(super) mod accounting {
 
     #[derive(Debug, PartialEq)]
     pub enum Sample {
+        /// Milliseconds: [total (upper bound), end resolution, 0, 0]. The ABI's last two slots
+        /// carried luma and chroma under the timestamp queries; events report no passes.
         Valid([f64; 4]),
-        Disjoint,
         Unavailable,
     }
 
-    /// Reject invalid/discontinuous counters before subtraction; never turn them into zero-ms results.
-    pub fn sample(ticks: [u64; 6], frequency: u64, disjoint: bool, copied: bool) -> Sample {
-        if disjoint {
-            return Sample::Disjoint;
+    /// One measurement's observations in QueryPerformanceCounter ticks. Every edge is taken
+    /// conservatively, so the result never under-states the stage's elapsed GPU time:
+    /// - the stage cannot start on the GPU before `issued` (read after the start event's
+    ///   submission request, before the stage's first command is recorded), nor before the
+    ///   start event completed, which was after the last read that still saw it pending;
+    /// - the stage had finished by the end of the first read that saw the end event complete.
+    #[derive(Debug, PartialEq)]
+    pub struct Flight {
+        issued: u64,
+        start_done: bool,
+        start_pending: u64,
+        end_pending: u64,
+        polls: u32,
+        frequency: u64,
+    }
+    impl Flight {
+        /// `issued`: QPC after the start event's submission request; `start_done`: that read
+        /// already saw it complete. `end_issued`: QPC before the end event's End.
+        pub fn new(issued: u64, start_done: bool, end_issued: u64, frequency: u64) -> Self {
+            Self {
+                issued,
+                start_done,
+                start_pending: issued,
+                end_pending: end_issued,
+                polls: 0,
+                frequency,
+            }
         }
-        if frequency == 0 || ticks.iter().zip(ticks.iter().skip(1)).any(|(a, b)| b < a) {
-            return Sample::Unavailable;
+        pub fn start_done(&self) -> bool {
+            self.start_done
         }
-        let [start, copy_start, copy_end, luma_end, chroma_end, end] = ticks;
-        let ms = |a, b| (b - a) as f64 * 1000.0 / frequency as f64;
-        Sample::Valid([
-            ms(start, end),
-            if copied {
-                ms(copy_start, copy_end)
+        /// `before`: QPC read just before the GetData that returned `done` for the start event.
+        pub fn start_polled(&mut self, before: u64, done: bool) {
+            if done {
+                self.start_done = true;
             } else {
-                0.0
-            },
-            ms(copy_end, luma_end),
-            ms(luma_end, chroma_end),
-        ])
+                self.start_pending = self.start_pending.max(before);
+            }
+        }
+        /// `before` / `after`: QPC read just before / after the GetData that returned `done` for
+        /// the end event. Some once the measurement finished (or timed out).
+        pub fn end_polled(
+            &mut self,
+            before: u64,
+            after: u64,
+            done: bool,
+        ) -> Option<Result<Sample, Failure>> {
+            if done {
+                // The end completing implies the start did; its last pending read stays the edge.
+                return Some(sample(
+                    self.issued.max(self.start_pending),
+                    self.end_pending,
+                    after,
+                    self.frequency,
+                ));
+            }
+            self.end_pending = self.end_pending.max(before);
+            self.polls = self.polls.saturating_add(1);
+            (self.polls >= GIVE_UP_POLLS)
+                .then(|| Err(Failure::new(FailureReason::Timeout, E_TIMEOUT)))
+        }
+    }
+
+    /// Milliseconds from conservative edges: no stage GPU work before `begin`, the end event
+    /// still pending (or not yet ended) at `end_pending`, complete by `end`. Resolution is how
+    /// long before `end` the stage could have finished. Reject edges out of order and a zero
+    /// frequency instead of turning them into zero-ms results.
+    pub fn sample(
+        begin: u64,
+        end_pending: u64,
+        end: u64,
+        frequency: u64,
+    ) -> Result<Sample, Failure> {
+        if frequency == 0 {
+            return Err(Failure::new(FailureReason::Frequency, E_FAIL));
+        }
+        if end < begin || end < end_pending {
+            return Err(Failure::new(FailureReason::Sequence, E_FAIL));
+        }
+        let ms = |ticks: u64| ticks as f64 * 1000.0 / frequency as f64;
+        let total = ms(end - begin);
+        if total > GIVE_UP_MS {
+            return Ok(Sample::Unavailable);
+        }
+        // The stage cannot have finished before it began.
+        Ok(Sample::Valid([
+            total,
+            ms(end - end_pending.max(begin)),
+            0.0,
+            0.0,
+        ]))
+    }
+
+    /// What the poll thread hands back to the apply side.
+    #[derive(Debug, PartialEq)]
+    pub enum Outcome {
+        Measured(Sample),
+        Failed(Failure),
+    }
+
+    /// The apply side ↔ poll thread hand-off. Neither side holds it across a D3D call or a sleep.
+    #[derive(Default)]
+    pub struct Mailbox {
+        /// Issued by the apply side, taken by the poll thread.
+        pub flight: Option<Flight>,
+        /// Posted by the poll thread (or by apply when the end flush already saw it complete).
+        pub outcome: Option<Outcome>,
+    }
+    impl Mailbox {
+        /// Apply side: a failure at once; a measurement only when the ring's read delay passed.
+        pub fn take(&mut self, ready: bool) -> Result<Option<Sample>, Failure> {
+            match self.outcome.take() {
+                Some(Outcome::Failed(failure)) => Err(failure),
+                Some(Outcome::Measured(sample)) if ready => Ok(Some(sample)),
+                other => {
+                    self.outcome = other;
+                    Ok(None)
+                }
+            }
+        }
     }
 
     #[derive(Default)]
     pub struct Window {
         frames: u32,
         valid: u32,
-        disjoint: u32,
         unavailable: u32,
         sum: [f64; 4],
         max: [f64; 4],
@@ -252,7 +377,6 @@ pub(super) mod accounting {
                         *max = max.max(value);
                     }
                 }
-                Sample::Disjoint => self.disjoint += 1,
                 Sample::Unavailable => self.unavailable += 1,
             }
             self.frames == WINDOW_FRAMES
@@ -264,7 +388,8 @@ pub(super) mod accounting {
             stats.window = stats.window.saturating_add(1);
             stats.frames = self.frames;
             stats.valid = self.valid;
-            stats.disjoint = self.disjoint;
+            // Events have no disjoint intervals; the ABI field stays for layout.
+            stats.disjoint = 0;
             stats.unavailable = self.unavailable;
             stats.avg_ms = self.sum.map(|s| {
                 if self.valid > 0 {
@@ -326,34 +451,51 @@ mod tests {
         assert_eq!((stats.frames, stats.unavailable), (1, 1));
     }
     #[test]
-    fn converts_frequency_and_excludes_disjoint_zero_frequency_and_reversed_ticks() {
+    fn converts_ticks_to_an_upper_bound_and_rejects_zero_frequency_and_reversed_edges() {
+        // 10 MHz QPC: begin 1000, end seen pending at 9000, complete by 26000.
         assert_eq!(
-            sample([100, 100, 102, 108, 110, 110], 1000, false, true),
-            Sample::Valid([10.0, 2.0, 6.0, 2.0])
+            sample(1_000, 9_000, 26_000, 10_000_000),
+            Ok(Sample::Valid([2.5, 1.7, 0.0, 0.0]))
         );
+        // A pending read before the start edge cannot place the stage's end before its begin.
         assert_eq!(
-            sample([100, 100, 102, 108, 110, 110], 2000, false, false),
-            Sample::Valid([5.0, 0.0, 3.0, 1.0])
+            sample(5_000, 1_000, 7_000, 1_000_000),
+            Ok(Sample::Valid([2.0, 2.0, 0.0, 0.0]))
         );
-        assert_eq!(sample([0; 6], 0, true, true), Sample::Disjoint);
-        assert_eq!(sample([0; 6], 0, false, true), Sample::Unavailable);
+        for (begin, pending, end, frequency, reason) in [
+            (0, 0, 0, 0, FailureReason::Frequency),
+            (10, 0, 9, 1_000, FailureReason::Sequence),
+            (0, 10, 9, 1_000, FailureReason::Sequence),
+        ] {
+            let failure = sample(begin, pending, end, frequency).unwrap_err();
+            assert_eq!(failure.reason, reason);
+            assert!(failure.code < 0);
+        }
+        // Over GIVE_UP_MS (e.g. suspended mid-measurement): unavailable, never a time.
         assert_eq!(
-            sample([100, 100, 99, 108, 110, 110], 1000, false, true),
-            Sample::Unavailable
+            sample(0, 0, 10_000_001, 10_000_000),
+            Ok(Sample::Unavailable)
         );
+        assert!(matches!(
+            sample(0, 0, 10_000_000, 10_000_000),
+            Ok(Sample::Valid(_))
+        ));
     }
     #[test]
     fn windows_average_only_valid_frames_and_reset_every_counter() {
         let mut window = Window::default();
         for _ in 0..119 {
-            assert!(!window.record(Sample::Valid([2.0, 0.0, 1.5, 0.5])));
+            assert!(!window.record(Sample::Valid([2.0, 0.5, 0.0, 0.0])));
         }
-        assert!(!window.record(Sample::Valid([6.0, 2.0, 3.0, 1.0])));
+        assert!(!window.record(Sample::Valid([6.0, 1.0, 0.0, 0.0])));
         for _ in 0..119 {
-            assert!(!window.record(Sample::Disjoint));
+            assert!(!window.record(Sample::Unavailable));
         }
         assert!(window.record(Sample::Unavailable));
-        let mut stats = BaleToneMapTimingStats::default();
+        let mut stats = BaleToneMapTimingStats {
+            disjoint: 7,
+            ..Default::default()
+        };
         assert!(window.finish(&mut stats));
         assert_eq!(
             (
@@ -363,10 +505,12 @@ mod tests {
                 stats.disjoint,
                 stats.unavailable
             ),
-            (1, 240, 120, 119, 1)
+            (1, 240, 120, 0, 120)
         );
-        assert_eq!(stats.max_ms, [6.0, 2.0, 3.0, 1.0]);
+        assert_eq!(stats.max_ms, [6.0, 1.0, 0.0, 0.0]);
         assert!((stats.avg_ms[0] - 244.0 / 120.0).abs() < 1e-9);
+        assert!((stats.avg_ms[1] - 60.5 / 120.0).abs() < 1e-9);
+        assert_eq!(stats.avg_ms[2..], [0.0, 0.0]);
         assert!(!window.finish(&mut stats));
         assert!(!window.record(Sample::Unavailable));
         assert!(window.finish(&mut stats));
@@ -399,6 +543,141 @@ mod tests {
             (stats.frames, stats.valid, stats.unavailable),
             (240, 0, 240)
         );
+        // The poll thread itself gives up after about a second of pending polls.
+        let mut flight = Flight::new(0, true, 0, 10_000_000);
+        for poll in 1..GIVE_UP_POLLS {
+            let at = u64::from(poll) * POLL_INTERVAL_US * 10;
+            assert_eq!(flight.end_polled(at, at + 1, false), None);
+        }
+        let failure = flight.end_polled(u64::MAX - 1, u64::MAX, false);
+        assert!(matches!(
+            failure,
+            Some(Err(Failure {
+                reason: FailureReason::Timeout,
+                code
+            })) if code < 0
+        ));
+        let budget_us = u64::from(GIVE_UP_POLLS) * POLL_INTERVAL_US;
+        assert!((500_000..=2_000_000).contains(&budget_us));
+    }
+
+    #[test]
+    fn the_start_edge_is_the_later_of_the_submission_and_the_last_pending_start_read() {
+        let frequency = 1_000_000; // 1 tick = 1 µs
+        // Start complete at its own submission request, end complete at its flush: begin is the
+        // submission request, end the flush read.
+        let mut flight = Flight::new(100, true, 400, frequency);
+        assert!(flight.start_done());
+        assert_eq!(
+            flight.end_polled(400, 450, true),
+            Some(Ok(Sample::Valid([0.35, 0.05, 0.0, 0.0])))
+        );
+
+        // The GPU was busy: the poll thread saw the start pending twice, then complete, then the
+        // end pending until the fourth read.
+        let mut flight = Flight::new(100, false, 400, frequency);
+        assert_eq!(flight.end_polled(400, 401, false), None);
+        flight.start_polled(600, false);
+        assert_eq!(flight.end_polled(601, 602, false), None);
+        flight.start_polled(900, false);
+        assert_eq!(flight.end_polled(901, 902, false), None);
+        flight.start_polled(1_200, true);
+        assert!(flight.start_done());
+        assert_eq!(flight.end_polled(1_201, 1_202, false), None);
+        assert_eq!(
+            flight.end_polled(1_500, 1_510, true),
+            Some(Ok(Sample::Valid([0.61, 0.309, 0.0, 0.0])))
+        );
+
+        // First read after apply: the start already done, so only its submission bounds it.
+        let mut flight = Flight::new(100, false, 400, frequency);
+        flight.start_polled(700, true);
+        assert_eq!(
+            flight.end_polled(701, 1_100, true),
+            Some(Ok(Sample::Valid([1.0, 0.7, 0.0, 0.0])))
+        );
+
+        // Start seen pending and the end complete in the same pass: both happened after the
+        // start read, so resolution never exceeds the total.
+        let mut flight = Flight::new(100, false, 400, frequency);
+        flight.start_polled(2_000, false);
+        let Some(Ok(Sample::Valid([total, resolution, rest @ ..]))) =
+            flight.end_polled(2_001, 2_010, true)
+        else {
+            panic!("expected a measurement");
+        };
+        assert!((total - 0.01).abs() < 1e-12);
+        assert!((resolution - total).abs() < 1e-12);
+        assert_eq!(rest, [0.0, 0.0]);
+    }
+
+    #[test]
+    fn a_flight_handed_to_the_poll_thread_comes_back_once_as_a_measurement() {
+        // What timing_gpu does across its two threads, without a device: apply issues a flight
+        // whose end was still pending at its flush, the poll thread takes it and posts the result,
+        // and apply accounts it after the read delay.
+        let mut report = collecting();
+        let mut mailbox = Mailbox::default();
+        report.ring.advance();
+        assert_eq!(report.ring.reserve(), Some(0));
+        let mut flight = Flight::new(100, false, 400, 1_000_000);
+        assert_eq!(flight.end_polled(400, 410, false), None);
+        mailbox.flight = Some(flight);
+
+        let mut polled = mailbox.flight.take().expect("handed over");
+        assert_eq!(mailbox.flight, None);
+        polled.start_polled(500, true);
+        let mut at = 500;
+        let outcome = loop {
+            at += POLL_INTERVAL_US;
+            if let Some(result) = polled.end_polled(at, at + 2, at >= 1_500) {
+                break result;
+            }
+        };
+        mailbox.outcome = Some(match outcome {
+            Ok(sample) => Outcome::Measured(sample),
+            Err(failure) => Outcome::Failed(failure),
+        });
+
+        for _ in 1..READ_DELAY {
+            report.ring.advance();
+            assert_eq!(mailbox.take(report.ring.ready_to_poll(0)), Ok(None));
+            assert_eq!(report.ring.reserve(), None);
+            report.record(Sample::Unavailable);
+        }
+        report.ring.advance();
+        let sample = mailbox
+            .take(report.ring.ready_to_poll(0))
+            .expect("no failure")
+            .expect("ready");
+        assert!(report.ring.release(0));
+        // Poll reads at 500 µs + n × 250 µs: the end is seen at 1500 µs, last pending at 1250 µs.
+        assert_eq!(sample, Sample::Valid([1.402, 0.252, 0.0, 0.0]));
+        report.record(sample);
+        assert_eq!(mailbox.take(true), Ok(None));
+        report.close();
+        assert_eq!(
+            (report.stats.frames, report.stats.valid, report.stats.state),
+            (4, 1, 3)
+        );
+    }
+
+    #[test]
+    fn the_mailbox_hands_failures_back_at_once_and_measurements_after_the_read_delay() {
+        let mut mailbox = Mailbox::default();
+        assert_eq!(mailbox.take(true), Ok(None));
+        mailbox.outcome = Some(Outcome::Measured(Sample::Valid([1.0, 0.25, 0.0, 0.0])));
+        assert_eq!(mailbox.take(false), Ok(None));
+        assert!(mailbox.outcome.is_some());
+        assert_eq!(
+            mailbox.take(true),
+            Ok(Some(Sample::Valid([1.0, 0.25, 0.0, 0.0])))
+        );
+        assert_eq!(mailbox.outcome, None);
+        let failure = Failure::new(FailureReason::Read, 0x887A0005u32 as i32);
+        mailbox.outcome = Some(Outcome::Failed(failure));
+        assert_eq!(mailbox.take(false), Err(failure));
+        assert_eq!(mailbox.take(true), Ok(None));
     }
 
     fn collecting() -> Report {
@@ -410,18 +689,24 @@ mod tests {
     }
 
     #[test]
-    fn get_data_accepts_only_ready_or_not_ready_and_rejects_mismatched_sizes() {
-        assert_eq!(data_ready(0), Ok(true));
-        assert_eq!(data_ready(1), Ok(false));
-        for code in [0x80004005u32 as i32, 0x887A0005u32 as i32, 2] {
-            let failure = data_ready(code).unwrap_err();
+    fn get_data_accepts_only_complete_or_pending_and_rejects_mismatched_sizes() {
+        assert_eq!(event_state(0, 1), Ok(true));
+        assert_eq!(event_state(0, -1), Ok(true));
+        assert_eq!(event_state(1, 0), Ok(false));
+        assert_eq!(event_state(1, 1), Ok(false));
+        for (code, value) in [
+            (0x80004005u32 as i32, 1),
+            (0x887A0005u32 as i32, 0),
+            (2, 1),
+            (0, 0),
+        ] {
+            let failure = event_state(code, value).unwrap_err();
             assert_eq!(failure.reason, FailureReason::Read);
             assert!(failure.code < 0);
         }
-        assert_eq!(data_size(8, size_of::<u64>()), Ok(()));
-        assert_eq!(data_size(16, 16), Ok(()));
-        for size in [0, 4, 12, 24, u32::MAX] {
-            assert_eq!(data_size(size, 16).unwrap_err().reason, FailureReason::Size);
+        assert_eq!(data_size(4, size_of::<i32>()), Ok(()));
+        for size in [0, 1, 8, 16, u32::MAX] {
+            assert_eq!(data_size(size, 4).unwrap_err().reason, FailureReason::Size);
         }
     }
 
@@ -436,9 +721,11 @@ mod tests {
             FailureReason::Panic,
             FailureReason::Context,
             FailureReason::Device,
+            FailureReason::Poller,
+            FailureReason::Timeout,
         ] {
             let mut report = collecting();
-            report.record(Sample::Valid([4.0, 1.0, 2.0, 1.0]));
+            report.record(Sample::Valid([4.0, 0.5, 0.0, 0.0]));
             assert_eq!(report.ring.reserve(), Some(0));
             assert_eq!(
                 report.attempt::<()>(|_| Err(Failure::new(reason, -1))),
@@ -505,13 +792,16 @@ mod tests {
     }
 
     #[test]
-    fn a_pending_read_stays_owned_until_release_and_close_publishes_partial_window() {
+    fn a_pending_measurement_stays_owned_until_release_and_close_publishes_partial_window() {
         let mut report = collecting();
+        let mut mailbox = Mailbox::default();
         assert_eq!(report.attempt(|r| Ok(r.ring.reserve())), Some(Some(0)));
-        for _ in 0..READ_DELAY {
+        // The poll thread finishes early; apply still waits for the read delay.
+        mailbox.outcome = Some(Outcome::Measured(Sample::Valid([1.0, 0.25, 0.0, 0.0])));
+        for _ in 1..READ_DELAY {
             report.attempt(|r| {
                 r.ring.advance();
-                assert!(!data_ready(1)?);
+                assert_eq!(mailbox.take(r.ring.ready_to_poll(0))?, None);
                 assert_eq!(r.ring.reserve(), None);
                 r.record(Sample::Unavailable);
                 Ok(())
@@ -519,9 +809,11 @@ mod tests {
         }
         assert_eq!(report.ring.pending(), 1);
         report.attempt(|r| {
-            assert!(data_ready(0)?);
+            r.ring.advance();
+            let sample = mailbox.take(r.ring.ready_to_poll(0))?.expect("ready");
             assert!(r.ring.release(0));
-            r.record(Sample::Valid([1.0, 0.0, 0.5, 0.5]));
+            r.record(sample);
+            assert_eq!(r.ring.reserve(), Some(0));
             Ok(())
         });
         report.close();
@@ -535,5 +827,6 @@ mod tests {
             ),
             (3, 5, 1, 4, 0)
         );
+        assert_eq!(report.stats.max_ms, [1.0, 0.25, 0.0, 0.0]);
     }
 }

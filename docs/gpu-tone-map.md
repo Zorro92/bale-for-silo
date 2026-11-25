@@ -229,9 +229,9 @@ decoder array (with or without an SRV bind), or any input without an SRV bind, i
 CopySubresourceRegion into a cached SRV texture of the same format; other SRV-bound inputs are read in
 place, array SRVs selecting the requested slice directly. Two ps_5_0 draws use D3D11.1 R8_UNORM/R8G8_UNORM (NV12) or R16_UNORM/R16G16_UNORM (P010)
 plane RTVs. All validation, allocations and view creation precede output writes. The context's
-pipeline state is restored. Apply does not flush or perform texture readback (debug timestamp queries
-use asynchronous metadata readback only). Input synchronization, flushing and asynchronous device-loss
-handling belong to the caller. Destroy releases resources;
+pipeline state is restored. Apply does not flush or perform texture readback (with debug stage timing on, a
+measured apply requests two submissions through its event queries and never waits; see "Measure the stage's GPU
+time"). Input synchronization, flushing and asynchronous device-loss handling belong to the caller. Destroy releases resources;
 null is a no-op. No tone-map call logs anything.
 
 ## Colour and server parameter semantics
@@ -638,8 +638,8 @@ over ~1.2 GB; the biggest single item on that route is the 20-slice d3d11va deco
 ## Measure the stage's GPU time (debug packages)
 
 Development packages opt into the native Cargo feature `stage-timing`, even though the DLL is built
-with `--release`. Production (`BaleDebugServer=false` in CI) omits the feature, query code and debug
-exports entirely; feature-dependent DLL caches and the MSIX export check enforce the separation.
+with `--release`. Production (`BaleDebugServer=false` in CI) omits the feature, event queries, poll thread
+and debug exports entirely; feature-dependent DLL caches and the MSIX export check enforce the separation.
 Timing is **off after app launch**. Before starting a new playback:
 
 ```sh
@@ -654,76 +654,117 @@ Timing is **off after app launch**. Before starting a new playback:
 
 `gpu-timing` without an argument reports the switch. Read **Stage GPU** in the debug overlay (I / View)
 or `stats` / `where`. The one-second stats refresh logs each new window once, even with the overlay
-hidden. The line begins `Bale stage gpu: frames=240 total avg/max ... ms` and includes `input-copy`,
-`luma`, `chroma` avg/max milliseconds, `valid`, `disjoint`, `unavailable`, `pending`, `session` and
-`window`. The first window needs about 241 apply calls (roughly four seconds at 60 fps); until then the
-row says collecting. A route without a Bale stage stays waiting, never displays another playback's
-result. This measures actual stage submissions, including decode preroll; use later idle-state windows
-for the resource budget. Self-test draws are excluded. The asynchronous timing hardening described
-below has not been validated on the console.
+hidden. The line begins `Bale stage gpu: frames=240 total avg/max ... ms (upper bound) · end resolution
+.../... ms` and includes `valid`, `unavailable`, `pending`, `session` and `window`. The first window needs
+about 241 apply calls (roughly four seconds at 60 fps); until then the row says collecting. A route
+without a Bale stage stays waiting, never displays another playback's result. This measures actual
+stage submissions, including decode preroll; use later idle-state windows for the resource budget.
+Self-test draws are excluded. **Only the stage's total is measured** (see below): the input-copy, luma
+and chroma parts of the timestamp version are gone.
 
-The shaders are **two plane passes** at 1:1 and **three** when downscaling (area pass into the fp32
-intermediate, then the plane passes; see "Pass structure"), never separate horizontal/vertical filters.
-Timing keeps its four intervals; the area pass is counted in **luma**. Timing covers:
+### Event queries, not timestamps (2026-11-24)
 
-- **total**: GPU timestamps enclosing the optional input copy, bindings and both draws, inside the
-  stage's private context state (excludes state isolation/restore);
-- **input-copy**: only `CopySubresourceRegion` into the SRV scratch texture (zero for in-place input);
-- **luma**: constant update/bindings, the area draw when downscaling, and the luma draw;
-- **chroma**: chroma bindings and the chroma draw.
+The first version used D3D11 `TIMESTAMP` / `TIMESTAMP_DISJOINT` queries. With timing on it crashed Bale on
+the Xbox every time, on HEVC (d3d11va) and AV1 (rav1g), about 3 s after the stage started. The full crash
+dump (2026-11-24, Bale 0.1.762) shows `EXCEPTION_BREAKPOINT` (`int 3`) in the AMD D3D12 driver
+(`umd12ddi_arden.dll`) on a `d3d11on12.dll` worker thread: the console's D3D11 is d3d11on12. Microsoft's
+public [D3D11On12](https://github.com/microsoft/D3D11On12) and
+[D3D12TranslationLayer](https://github.com/microsoft/D3D12TranslationLayer) sources show how our queries got
+there. A timestamp or disjoint query made on the immediate context (context type ALL) covers **every command
+list type the device has created** (`GetCommandListTypeMaskForQuery`). On Media Foundation's device, d3d11va
+and MF's video processing have created the video decode and video process lists, so each timestamp also
+recorded `EndQuery` + `ResolveQueryData` on those video command lists, and the disjoint query asked the video
+queues for a timestamp frequency. That is the most likely trigger of the driver's break, and it fits the grain
+probe, whose timestamps work on a private device that never does video work. It retires the earlier theories
+(several unresolved disjoint intervals, a query-data layout difference): one interval at a time crashed too.
 
-Total can exceed the sum of passes because it includes surrounding commands within the stage. This is elapsed
-GPU time on the decoder's D3D11 immediate context, **not whole-device busy time**. It excludes CPU view
-creation/allocation, decoder work before apply, the wrapper's output pool/release waits, the engine's
-conversion/present and other queues; scheduling/interleaved GPU work can inflate elapsed intervals.
-Compare total with the ~2–2.5 ms budget for all non-decode GPU work at 60 fps (~1.86 TFLOP/s app slice),
-and compare like-for-like dimensions, output depth, content and idle state. This does not establish
-that the stage causes rav1g release-fence waits; it supplies the missing measurement.
+An **event** query records no GPU command at all: d3d11on12 completes it by comparing fence values
+(`EventQuery::EndInternal` is empty). The stage ends two of them, created for `D3D11_CONTEXT_TYPE_3D`
+(`ID3D11Device3::CreateQuery1`) so they follow the graphics queue the stage runs on. An ALL-context event
+would also wait for the decode queue's newest work, often a later frame decoding alongside the stage, and could
+hide stage time instead of bounding it. A device without `ID3D11Device3`, or one that is not
+multithread-protected, disables timing with a reason; nothing falls back to timestamps.
 
-There is one query set (one disjoint plus six timestamps), no additional frame textures. At most one
-disjoint interval may be unresolved: a busy set skips that apply's measurement, counted as unavailable.
-This reduces the original 56 query objects to seven, without a frame copy or extra thread against the
-console's shared memory/CPU budget. Results are polled no sooner than four apply calls later, once per apply using
-[`GetData`](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-getdata)
-with `D3D11_ASYNC_GETDATA_DONOTFLUSH`. Raw `S_FALSE` leaves the slot pending; the CPU never spins,
-flushes or waits for results, and an occupied set is never overwritten. Even with immediately ready
-queries, at most one in four applies is measured; skipped applies are unavailable, not zero-ms samples.
-Query creation validates the returned interface, descriptor and `GetDataSize`; every read verifies its
-exact typed buffer size again before passing a pointer to the driver. Only `S_OK` consumes data;
-`S_FALSE` keeps the set pending, including when only some timestamps are ready. All timestamps must be
-ready before reuse, even for a disjoint interval. Query calls run under the stage's existing context
-lock, after state isolation and before restoration. `Begin`/`End` return no HRESULT, so device status
-is checked around timing operations; every fallible call's HRESULT is checked.
+### How one measurement works
 
-A timing error or Rust panic disables that stage's measurement permanently, accounts pending samples
-as unavailable, and lets the draw continue. The debug row shows the reason/HRESULT and logs
-`Bale stage gpu: disabled (<reason>; query HRESULT 0x...)` once per measured session, even for creation
-failure before the first window. The ABI's reserved word now carries a fixed failure reason code (see
-the header); layout and ABI 1 are unchanged. Teardown performs no query reads/waits and preserves a
-disabled state, publishing any partial final window for readers still attached. An export-level panic
-catch remains a final guard, but timing has its own catch so an instrumentation panic does not become
-an apply error. Rust unwind handling does not catch native driver faults or repair a removed device.
+- The **start** event is ended just before the stage's first command (the optional input copy), the **end**
+  event just after its last draw, both inside the stage's lock and private context state.
+- Right after each `End` the stage calls `GetData` once **without** `D3D11_ASYNC_GETDATA_DONOTFLUSH`, D3D11's
+  documented flush for an unfinished query. On d3d11on12 that hands the current batch to its worker thread with
+  a flush request and returns, whereas `ID3D11DeviceContext::Flush` waits for the worker thread to go idle
+  (`BatchedContext::Flush` → `ProcessBatch` → `WaitForBatchThreadIdle`), so the stage never calls `Flush`. An
+  event on d3d11on12 completes with the command list it was ended in; the start's flush therefore also gives the
+  stage a command list of its own. A measured apply makes **two extra submissions** and never waits for the GPU
+  (only d3d11on12's usual back-pressure applies: a submission waits while five batches are queued for its worker).
+- A poll thread (`bale-stage-timing`, one per measured stage, asleep on a condition variable between
+  measurements) reads both events with `DONOTFLUSH` every 0.25 ms (std's high-resolution sleep) under the
+  device's multithread lock, reading `QueryPerformanceCounter` around each `GetData`. It cannot read while
+  apply holds that lock, and it never holds its hand-off lock while it takes the device lock or sleeps.
+- **total** runs from the later of the start's flush and the last read that still saw the start pending, to the
+  end of the first read that saw the end complete. **end resolution** is how long before that read the stage
+  could have finished (from its last pending read, or from the end's `End` when the first read already saw it
+  complete): about a poll period when the poller saw the stage still running, longer when it had finished before
+  the first read.
 
-The original asynchronous path terminated playback on the console with timing on, after stage create
-and before the first published window. The exact driver instruction is unproven without a crash dump.
-Leading candidates are several unresolved disjoint intervals on MF's shared device (unlike the older
-successful private-device probe), or a query-data layout difference. Crossing context-state swaps was
-also avoidable driver exposure, though desktop D3D11 documents that queries survive swaps. The WARP
-test originally synchronized every apply, masking unresolved-query behavior; a P010 in-place-input
-burst now covers submission without per-apply readback. Serialization, size validation and containment
-address these risks without claiming that desktop tests reproduce the console failure.
+### Accuracy: an upper bound
 
-Each 240 accounted outcomes makes a window (valid result, disjoint result or unavailable measurement);
-results completing late may fall into a later window. `frames = valid + disjoint + unavailable`;
-averages/maxima use **valid only**, never zero-fill missing results. Pending is the unresolved set count
-at publication. A zero frequency or reversed timestamps disables timing instead of producing bogus
-milliseconds. Disjoint intervals remain excluded samples. All-invalid windows say
-unavailable rather than reporting 0 ms. The
-[disjoint frequency](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_query_data_timestamp_disjoint)
-is used separately for every frame and discontinuous intervals are excluded. Whether Xbox app-mode
-D3D11 timestamps have a stable frequency, useful precision or frequent disjoint results under load is
-**unmeasured**; check those health counts before interpreting timing. No whole-device busy estimate or
-second API is used.
+Every edge is taken conservatively, so **total never under-states the stage's elapsed GPU time**, but it can be
+well above it:
+
+- Event completion includes **queueing behind other GPU work**: whatever the graphics queue runs before or
+  between the stage's commands (the shell, other processes), and on the d3d11va route the wait for the frame's
+  decode when the decoder finished it just before the stage (the copy has to wait for it; timestamps excluded
+  that wait).
+- When the GPU was idle at the start, total also holds the CPU's recording of the stage and d3d11on12's
+  translation and submission (typically a few tenths of a millisecond), plus up to a poll period at each edge.
+- The poll thread waits for the device lock like any D3D11 caller, so a busy lock (MF, the decoder) delays the
+  end edge; end resolution shows by how much.
+
+So readings with little other GPU work queued are the closest: idle-state playback (no input for 15 s, as for
+every reading), overlay hidden, one playback at a time. Compare like-for-like dimensions, output depth, content
+and idle state. A total under the ~2–2.5 ms budget for all non-decode GPU work at 60 fps (~1.86 TFLOP/s app
+slice) shows that the stage fits; one above it is no proof that it does not. This is elapsed time on the graphics
+queue, **not whole-device busy time**, and it does not establish whether the stage causes rav1g release-fence
+waits.
+
+**Only the total is reported.** Per-pass events would need a submission at every boundary, and because the poll
+thread cannot read while apply holds the device lock, on an idle GPU those boundaries would complete before the
+first read and time the CPU's recording rather than the passes. The ABI's `avg_ms` / `max_ms` slots now hold
+total, end resolution, 0, 0 (they were total, input copy, luma, chroma), and `disjoint` is always 0. For a pass's
+cost, compare totals against an A/B switch (`tonemap-debug nostaged`, `bilinearchroma`, ...).
+
+### Bounds and failures
+
+One measurement is in flight at a time: two event queries, one thread, no frame textures. An event is never ended
+again before the previous measurement completed and was accounted. A finished measurement is accounted no sooner
+than four applies after it was issued, so at most one apply in four is measured; the others count as unavailable,
+never as zero-ms samples. Query creation validates the returned interface, the descriptor (event, no flags, 3D
+context) and `GetDataSize`; every read checks the 4-byte size again before passing a pointer. Only `S_OK` with
+`TRUE` is complete and `S_FALSE` is pending; anything else, including `S_OK` with `FALSE`, disables timing. A
+reading over 1 s (an app suspension mid-measurement) is unavailable. An end event still pending after 4000 polls
+(about 1 s) disables timing, so a set that never completes cannot keep the poll thread busy.
+
+A timing error or Rust panic, on either thread, disables that stage's measurement permanently, accounts pending
+samples as unavailable, and lets the draw continue. An apply-side failure stops the poll thread while apply still
+holds the device lock, and the thread checks its stop flag after taking that lock, so no read follows a failure.
+The debug row shows the reason/HRESULT and logs `Bale stage gpu: disabled (<reason>; query HRESULT 0x...)` once
+per measured session, even for creation failure before the first window. The ABI's reserved word carries a fixed
+failure reason code (see the header; 9 = no poll thread and 10 = event never completed are new); layout and ABI 1
+are unchanged. Teardown performs no query reads and never waits: it accounts a result or failure the poll thread
+already handed back, stops the thread without joining it (destroy may run under the device lock the thread is
+waiting for; the thread drops its own references when it exits), retires anything still in flight as
+unavailable, and publishes any partial final window for readers still attached. An export-level panic catch
+remains a final guard, but timing has its own catch so an instrumentation panic does not become an apply error.
+Rust unwind handling does not catch native driver faults or repair a removed device.
+
+Each 240 accounted outcomes makes a window (valid result or unavailable measurement); results completing late may
+fall into a later window. `frames = valid + unavailable`; averages/maxima use **valid only**, never zero-fill
+missing results. Pending is the in-flight count at publication. All-invalid windows say unavailable rather than
+reporting 0 ms. The QPC frequency is read once per stage; zero, or edges out of order, disable timing instead of
+producing bogus milliseconds. The event version has **not run on the console yet**: whether `CreateQuery1` with
+the 3D context and std's high-resolution sleep behave there as on desktop is unmeasured, so check the state, the
+valid count and end resolution before interpreting totals. The WARP tests (`stage_events_*`) cover creation,
+state restoration, a burst without readback, and teardown with a measurement in flight.
 
 The two optional exports `bale_tonemap_debug_timing_enable` / `bale_tonemap_debug_timing_read` and
 `BaleToneMapTimingStats` are documented in `include/bale_tonemap.h`; absence means measurement is

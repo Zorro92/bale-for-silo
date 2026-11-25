@@ -399,25 +399,15 @@ impl ToneMapGpu {
             }
             None => Guard::Saved(Box::new(SavedBindings::enter(&context, &multithread))),
         };
-        // Keep query issue/read/close inside this lock and private state. Desktop permits active
-        // queries across state swaps, but avoid exercising that path on the shared Xbox MF device.
+        // Debug timing ends its start event here, before the stage's first command, and its end
+        // event after the last draw, inside this lock and private state (timing_gpu.rs).
         #[cfg(feature = "stage-timing")]
-        let timing_slot = self
-            .timing
-            .as_mut()
-            .and_then(|t| t.begin(&context, !direct));
-        #[cfg(feature = "stage-timing")]
-        if let (Some(timing), Some(slot)) = (&mut self.timing, timing_slot) {
-            timing.mark(&context, slot, 1);
-        }
-        // SAFETY: descriptors, devices, slice, dimensions and binds checked above. No flush in apply.
+        let timing_slot = self.timing.as_mut().and_then(|t| t.begin(&context));
+        // SAFETY: descriptors, devices, slice, dimensions and binds checked above. No flush in apply
+        // (a measured apply of a stage-timing build requests two submissions, timing_gpu.rs).
         unsafe {
             if let Some(copy_source) = copy_source {
                 context.CopySubresourceRegion(copy_source, 0, 0, 0, 0, input, subresource, None);
-            }
-            #[cfg(feature = "stage-timing")]
-            if let (Some(timing), Some(slot)) = (&mut self.timing, timing_slot) {
-                timing.mark(&context, slot, 2);
             }
             // The buffer keeps its contents across context-state swaps: upload only what changed.
             if self.uploaded != Some(constants) {
@@ -436,7 +426,7 @@ impl ToneMapGpu {
             context.VSSetShader(&self.vs, None);
             context.PSSetConstantBuffers(0, Some(&[Some(self.constants.clone())]));
             context.PSSetShaderResources(0, Some(&views.map(Some)));
-            // Downscale: each output pixel's area sum once (counted in the luma timing interval).
+            // Downscale: each output pixel's area sum once.
             if let Some((target, _)) = &staged {
                 context.RSSetViewports(Some(&[D3D11_VIEWPORT {
                     Width: config.width as f32,
@@ -464,10 +454,6 @@ impl ToneMapGpu {
                 }
                 context.PSSetShader(shader, None);
                 context.Draw(3, 0);
-                #[cfg(feature = "stage-timing")]
-                if let (Some(timing), Some(slot)) = (&mut self.timing, timing_slot) {
-                    timing.mark(&context, slot, 3 + plane);
-                }
             }
         }
         #[cfg(feature = "stage-timing")]

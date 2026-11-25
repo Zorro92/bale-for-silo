@@ -85,7 +85,8 @@ pub unsafe extern "C" fn bale_tonemap_create(
     })
 }
 
-/// Queue HDR P010 -> SDR NV12 work, restoring the context's pipeline state. No flush.
+/// Queue HDR P010 -> SDR NV12 work, restoring the context's pipeline state. No flush (a measured
+/// apply of a stage-timing build with timing on requests two submissions; it never waits for the GPU).
 /// Input readiness/synchronization and post-submit device-loss detection belong to caller.
 /// # Safety
 /// handle is live/exclusive; other non-null pointers are live COM interfaces or a readable

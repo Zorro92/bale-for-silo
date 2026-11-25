@@ -26,16 +26,15 @@ public sealed class DebugStageGpuTimingTests
         {
             ("Session", 0), ("Window", 8), ("State", 16), ("Frames", 20), ("Valid", 24),
             ("Disjoint", 28), ("Unavailable", 32), ("Pending", 36), ("Error", 40), ("Reserved", 44),
-            ("TotalAvg", 48), ("CopyAvg", 56), ("LumaAvg", 64), ("ChromaAvg", 72),
-            ("TotalMax", 80), ("CopyMax", 88), ("LumaMax", 96), ("ChromaMax", 104),
+            ("TotalAvg", 48), ("ResolutionAvg", 56), ("UnusedAvg2", 64), ("UnusedAvg3", 72),
+            ("TotalMax", 80), ("ResolutionMax", 88), ("UnusedMax2", 96), ("UnusedMax3", 104),
         }) Assert.Equal(offset, Marshal.OffsetOf<DebugStageGpuTiming.Stats>(field).ToInt32());
     }
 
     private static DebugStageGpuTiming.Stats Window() => new()
     {
-        Session = 2, Window = 1, State = 1, Frames = 240, Valid = 235, Disjoint = 2, Unavailable = 3, Pending = 4,
-        TotalAvg = 10.5, TotalMax = 12, CopyAvg = 0, CopyMax = 0,
-        LumaAvg = 4.5, LumaMax = 5, ChromaAvg = 6, ChromaMax = 7,
+        Session = 2, Window = 1, State = 1, Frames = 240, Valid = 60, Unavailable = 180, Pending = 1,
+        TotalAvg = 10.5, TotalMax = 12, ResolutionAvg = 0.25, ResolutionMax = 0.5,
     };
 
     [Fact]
@@ -47,11 +46,12 @@ public sealed class DebugStageGpuTimingTests
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
             var timing = new DebugStageGpuTiming(1, true);
             var row = timing.Accept(Window(), out var line);
-            Assert.Contains("frames=240 total avg/max 10.500/12.000 ms", row);
-            Assert.Contains("input-copy 0.000/0.000 ms", row);
-            Assert.Contains("luma 4.500/5.000 ms", row);
-            Assert.Contains("chroma 6.000/7.000 ms", row);
-            Assert.Contains("valid=235 disjoint=2 unavailable=3 pending=4", row);
+            Assert.Contains("frames=240 total avg/max 10.500/12.000 ms (upper bound)", row);
+            Assert.Contains("end resolution 0.250/0.500 ms", row);
+            Assert.Contains("valid=60 unavailable=180 pending=1", row);
+            // Events measure the total only: no pass rows that could read as zero-ms passes.
+            foreach (var gone in new[] { "input-copy", "luma", "chroma", "disjoint" })
+                Assert.DoesNotContain(gone, row);
             Assert.StartsWith("Bale stage gpu: frames=240", line);
             Assert.Contains("Stage GPU", DebugStatsRowFilter.KnownLabels);
         }
@@ -85,7 +85,7 @@ public sealed class DebugStageGpuTimingTests
         var stats = Window();
         stats.Valid = 0;
         var row = timing.Accept(stats, out _);
-        Assert.Contains("unavailable (no valid timestamps)", row);
+        Assert.Contains("total unavailable (no completed event pairs)", row);
         Assert.DoesNotContain("avg/max 0", row);
         stats.Window = 0;
         stats.State = 2;
@@ -104,11 +104,14 @@ public sealed class DebugStageGpuTimingTests
     [InlineData(1u, "query creation failed")]
     [InlineData(2u, "query data size mismatch")]
     [InlineData(3u, "GetData failed")]
-    [InlineData(4u, "zero timestamp frequency")]
-    [InlineData(5u, "invalid timestamp sequence")]
+    [InlineData(4u, "zero QPC frequency")]
+    [InlineData(5u, "invalid event sequence")]
     [InlineData(6u, "timing panic contained")]
     [InlineData(7u, "context is not immediate")]
     [InlineData(8u, "device failure")]
+    [InlineData(9u, "no event poll thread")]
+    [InlineData(10u, "event never completed")]
+    [InlineData(11u, "query failure")]
     [InlineData(uint.MaxValue, "query failure")]
     public void DisabledStageLogsOnceEvenWhenCreationFailsBeforeTheFirstWindow(uint reason, string expected)
     {

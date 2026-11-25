@@ -123,7 +123,8 @@ const _: () = {
 };
 
 /// Optional debug snapshot, additive to ABI 1. Layout is checked against C and C#.
-/// avg_ms/max_ms: total, input copy, luma, chroma. Counters describe one completed window.
+/// avg_ms/max_ms: total (upper bound), end resolution, 0, 0 since the event queries (2026-11-24;
+/// were total, input copy, luma, chroma); `disjoint` stays 0. Counters describe one completed window.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct BaleToneMapTimingStats {
