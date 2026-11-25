@@ -360,7 +360,7 @@ enum AutoMode<'a> {
 /// Version Auto picks a file inside it, never changing it:
 /// - `selected_file_id`, an explicit Version pick, wins.
 /// - The edition is `edition_id`, else the last played one (`last_edition_key`, then the edition
-///   of `last_file_id`), else the one whose Auto file compares best across cuts.
+///   of `last_file_id`), else the preferred cut by name whose Auto file compares best.
 /// - History picks only the edition, except a later part of a multi-part item while it is
 ///   `in_progress`, so Resume continues that part.
 /// - Auto inside the edition ranks like the server's version order (resolution, HDR, file size;
@@ -565,16 +565,21 @@ fn match_display(
         .unwrap_or_else(|| smallest(versions, ranked, decodable))
 }
 
-/// The edition a page opens on with no history: each edition's Auto file compared across cuts by
-/// fit (within the cap or display, above it, unknown resolution), then resolution (higher within,
-/// lower above), then HDR, then edition preference (unnamed or standard, theatrical, other), then
-/// server order. File size is not compared across cuts.
+/// The edition a page opens on with no history, chosen by name first (DetailVersionSelector.kt,
+/// Android e15879514; Apple b54fefb1, Roku 3e7ee3a, server 66105aa): only the cuts in the most
+/// preferred `edition_preference` class compete (unnamed or standard, then theatrical, then any
+/// other), so a standard cut is never passed over for a longer one in better quality. Among those,
+/// each cut's Auto file is compared by fit (within the cap or display, above it, unknown
+/// resolution), then resolution (higher within, lower above), then HDR, then server order. File
+/// size is not compared across cuts.
 fn opening_edition(versions: &[FileVersion], editions: &[Edition], mode: &AutoMode) -> usize {
     let cap = match mode {
         AutoMode::Cap(cap) => *cap,
         AutoMode::Display(display_match) => Some(i64::from(display_match.display_max_height)),
     };
+    let best_class = editions.iter().map(edition_preference).min().unwrap_or(0);
     (0..editions.len())
+        .filter(|&index| edition_preference(&editions[index]) == best_class)
         .min_by_key(|&index| {
             let edition = &editions[index];
             let auto =
@@ -586,17 +591,12 @@ fn opening_edition(versions: &[FileVersion], editions: &[Edition], mode: &AutoMo
                 _ => 0,
             };
             let resolution = if fit == 1 { height } else { -height };
-            (
-                fit,
-                resolution,
-                !auto.hdr.unwrap_or(false),
-                edition_preference(edition),
-                index,
-            )
+            (fit, resolution, !auto.hdr.unwrap_or(false), index)
         })
         .unwrap_or(0)
 }
 
+/// 0 for the unnamed or standard edition, 1 for a theatrical one, 2 for any other cut.
 fn edition_preference(edition: &Edition) -> u8 {
     let names: Vec<String> = [Some(edition.id.as_str()), Some(edition.label.as_str())]
         .into_iter()
@@ -617,5 +617,158 @@ fn edition_preference(edition: &Edition) -> u8 {
         1
     } else {
         2
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Value, json};
+
+    /// `select_version`'s pick as the file id, from a JSON `SelectArgs` (the C# wrapper's shape).
+    fn select(args: Value) -> Option<String> {
+        let args: super::SelectArgs = serde_json::from_value(args).unwrap();
+        super::select_version(&args).and_then(|index| args.versions[index].file_id.clone())
+    }
+
+    fn cut(id: &str, key: Option<&str>, resolution: &str, hdr: bool, size: i64) -> Value {
+        json!({ "file_id": id, "edition_key": key, "edition_raw": key, "resolution": resolution,
+                "hdr": hdr, "file_size": size })
+    }
+
+    fn opening(files: Vec<Value>, quality: &str) -> Option<String> {
+        select(json!({ "versions": files, "preferred_quality": quality }))
+    }
+
+    // DetailVersionSelectorTest.kt withNoHistoryTheCutIsPickedByNameThenQuality (Android e15879514).
+    #[test]
+    fn with_no_history_the_cut_is_picked_by_name_then_quality() {
+        let q = "2160p";
+        // Name first (unnamed or standard, then theatrical, then any other cut), even over better quality.
+        let standard = cut("1", Some("standard"), "1080p", false, 1);
+        let extended = cut("2", Some("extended"), "2160p", true, 1);
+        assert_eq!(opening(vec![standard, extended], q).as_deref(), Some("1"));
+        let theatrical = || cut("1", Some("theatrical"), "1080p", false, 1);
+        let unnamed = cut("2", None, "1080p", false, 1);
+        assert_eq!(
+            opening(vec![theatrical(), unnamed], q).as_deref(),
+            Some("2")
+        );
+        let standard_edition = cut("2", Some("standard edition"), "1080p", false, 1);
+        assert_eq!(
+            opening(vec![theatrical(), standard_edition], q).as_deref(),
+            Some("2")
+        );
+        let directors = cut("1", Some("directors_cut"), "1080p", false, 9_000);
+        let theatrical2 = cut("2", Some("theatrical"), "1080p", false, 1);
+        assert_eq!(
+            opening(vec![directors, theatrical2], q).as_deref(),
+            Some("2")
+        );
+        // Among equally named cuts, a file within the cap beats one only above it.
+        let imax = || cut("1", Some("imax"), "2160p", false, 1);
+        let extended720 = || cut("2", Some("extended"), "720p", false, 1);
+        assert_eq!(
+            opening(vec![imax(), extended720()], "1080p").as_deref(),
+            Some("2")
+        );
+        // Above the cap, the closer one wins.
+        assert_eq!(
+            opening(vec![imax(), extended720()], "480p").as_deref(),
+            Some("2")
+        );
+        // Same resolution: HDR; never file size.
+        let big = cut("1", Some("extended"), "1080p", false, 9_000);
+        let hdr = cut("2", Some("directors_cut"), "1080p", true, 1);
+        assert_eq!(opening(vec![big, hdr], q).as_deref(), Some("2"));
+        // A full tie keeps server order.
+        let first = cut("1", Some("extended"), "1080p", false, 1);
+        let second = cut("2", Some("directors_cut"), "1080p", false, 9_000);
+        assert_eq!(opening(vec![first, second], q).as_deref(), Some("1"));
+    }
+
+    // DetailEditionSelectionTests.swift testWithNothingPlayedThePageComparesEachCutsAutoFile (Apple b54fefb1).
+    #[test]
+    fn the_standard_cut_opens_before_a_better_longer_one() {
+        let files = || {
+            vec![
+                json!({ "file_id": "1", "edition_key": "theatrical", "edition_raw": "Theatrical",
+                        "resolution": "1080p", "file_size": 90 }),
+                json!({ "file_id": "2", "resolution": "1080p", "file_size": 10 }),
+                json!({ "file_id": "3", "edition_key": "extended", "edition_raw": "Extended",
+                        "resolution": "2160p", "hdr": true }),
+                json!({ "file_id": "4", "edition_key": "imax", "edition_raw": "IMAX", "resolution": "" }),
+            ]
+        };
+        let pick = |ids: &[&str], quality: &str| {
+            let chosen = files()
+                .into_iter()
+                .filter(|f| ids.contains(&f["file_id"].as_str().unwrap()))
+                .collect();
+            opening(chosen, quality)
+        };
+        // The unnamed cut over Theatrical, though its file is smaller.
+        assert_eq!(pick(&["1", "2"], "auto").as_deref(), Some("2"));
+        // The 1080p SDR standard cut over a 2160p HDR Extended one.
+        assert_eq!(pick(&["2", "3"], "auto").as_deref(), Some("2"));
+        // Above the cap before unknown.
+        assert_eq!(pick(&["3", "4"], "720p").as_deref(), Some("3"));
+        // versionRankingUtils.test.ts (server 66105aa): with no standard cut, quality decides.
+        let directors =
+            json!({ "file_id": "5", "edition_key": "directors", "resolution": "1080p" });
+        let extended = json!({ "file_id": "6", "edition_key": "extended", "resolution": "2160p" });
+        assert_eq!(
+            opening(vec![directors, extended], "auto").as_deref(),
+            Some("6")
+        );
+    }
+
+    // choice.spec.bs (Roku 3e7ee3a): a last played edition still wins, and Auto stays inside it.
+    #[test]
+    fn a_last_played_edition_still_wins_over_the_name() {
+        let files = json!([
+            { "file_id": "201", "edition_key": "standard", "edition_raw": "Standard", "resolution": "1080p" },
+            { "file_id": "202", "edition_key": "extended", "edition_raw": "Extended", "resolution": "2160p",
+              "hdr": true },
+            { "file_id": "203", "edition_key": "extended", "edition_raw": "Extended", "resolution": "720p" },
+        ]);
+        let with = |extra: Value| {
+            let mut args = json!({ "versions": files, "preferred_quality": "auto" });
+            args.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            select(args)
+        };
+        assert_eq!(with(json!({})).as_deref(), Some("201"));
+        assert_eq!(
+            with(json!({ "last_edition_key": "extended" })).as_deref(),
+            Some("202")
+        );
+        assert_eq!(
+            with(json!({ "last_file_id": "203" })).as_deref(),
+            Some("202")
+        );
+        assert_eq!(
+            with(json!({ "edition_id": "extended" })).as_deref(),
+            Some("202")
+        );
+    }
+
+    // Bale's display matching keeps the official Edition rule: the name class comes before the display fit.
+    #[test]
+    fn display_matching_ranks_only_inside_the_preferred_cut() {
+        let display = json!({ "display_max_height": 1080, "video_decode": [{
+            "codec": "hevc", "profiles": [], "bit_depths": [8, 10], "max_width": 3840, "max_height": 2160,
+            "max_frame_rate": 60, "max_bitrate_kbps": null, "hardware": true }] });
+        let files = json!([
+            { "file_id": "1", "edition_key": "extended", "edition_raw": "Extended", "resolution": "1080p",
+              "codec_video": "hevc" },
+            { "file_id": "2", "edition_key": "theatrical", "edition_raw": "Theatrical", "resolution": "2160p",
+              "codec_video": "hevc" },
+            { "file_id": "3", "edition_key": "theatrical", "edition_raw": "Theatrical", "resolution": "720p",
+              "codec_video": "hevc" },
+        ]);
+        // Theatrical outranks Extended by name; the display then picks inside it (no 1080p there: 720p).
+        let args = json!({ "versions": files, "match": display, "preferred_quality": null });
+        assert_eq!(select(args).as_deref(), Some("3"));
     }
 }

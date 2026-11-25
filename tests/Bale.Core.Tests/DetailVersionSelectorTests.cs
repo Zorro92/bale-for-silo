@@ -23,7 +23,7 @@ public class DetailVersionSelectorTests
             lastEditionKey, inProgress)?.FileId;
 
     [Fact]
-    public void NothingPlayedOpensOnTheEditionHoldingTheBestFile() => Assert.Equal("1", Select());
+    public void NothingPlayedOpensOnThePreferredCutWithItsBestFile() => Assert.Equal("1", Select());
 
     [Fact]
     public void APickedEditionKeepsAutoInsideItEvenWhenAnotherCutIsBetter() =>
@@ -64,17 +64,26 @@ public class DetailVersionSelectorTests
     }
 
     [Fact]
-    public void WithNoHistoryEachCutsAutoFileIsComparedAcrossCuts()
+    public void WithNoHistoryTheCutIsPickedByNameThenQuality()
     {
+        // DetailVersionSelectorTest.kt (Android e15879514; Apple b54fefb1, Roku 3e7ee3a, server 66105aa).
         static FileVersion Cut(string id, string? key, string resolution, bool hdr = false, long size = 1) =>
             File(id, resolution, key, key, hdr, size);
-        Assert.Equal("2", Select(quality: "1080p", files: [Cut("1", "imax", "2160p"), Cut("2", "extended", "720p")]));
-        Assert.Equal("2", Select(quality: "480p", files: [Cut("1", "imax", "2160p"), Cut("2", "extended", "720p")]));
-        Assert.Equal("2", Select(files: [Cut("1", "theatrical", "1080p"), Cut("2", "directors_cut", "1080p", hdr: true)]));
-        Assert.Equal("2", Select(files: [Cut("1", "directors_cut", "1080p", size: 9_000), Cut("2", "theatrical", "1080p")]));
+        // Name first (unnamed or standard, then theatrical, then any other cut), even over better quality.
+        Assert.Equal("1", Select(files: [Cut("1", "standard", "1080p"), Cut("2", "extended", "2160p", hdr: true)]));
         Assert.Equal("2", Select(files: [Cut("1", "theatrical", "1080p"), Cut("2", null, "1080p")]));
         Assert.Equal("2", Select(files: [Cut("1", "theatrical", "1080p"), Cut("2", "standard edition", "1080p")]));
+        Assert.Equal("2", Select(files: [Cut("1", "directors_cut", "1080p", size: 9_000), Cut("2", "theatrical", "1080p")]));
+        // Among equally named cuts, a file within the cap beats one only above it.
+        Assert.Equal("2", Select(quality: "1080p", files: [Cut("1", "imax", "2160p"), Cut("2", "extended", "720p")]));
+        // Above the cap, the closer one wins.
+        Assert.Equal("2", Select(quality: "480p", files: [Cut("1", "imax", "2160p"), Cut("2", "extended", "720p")]));
+        // Same resolution: HDR; never file size.
+        Assert.Equal("2", Select(files: [Cut("1", "extended", "1080p", size: 9_000), Cut("2", "directors_cut", "1080p", hdr: true)]));
+        // A full tie keeps server order.
         Assert.Equal("1", Select(files: [Cut("1", "extended", "1080p"), Cut("2", "directors_cut", "1080p", size: 9_000)]));
+        // A last played edition still wins over the name.
+        Assert.Equal("2", Select(lastEditionKey: "extended", files: [Cut("1", "standard", "1080p"), Cut("2", "extended", "2160p", hdr: true)]));
     }
 
     [Fact]

@@ -11,7 +11,7 @@ public static partial class PlaybackFormatting
     /// <summary>
     /// The file a detail page shows and Play starts (DetailVersionSelector.kt): an explicit Version pick,
     /// else Auto inside the current edition (the Edition pick, else the last-played edition, else the
-    /// best one across cuts). History picks only the edition, except a later part of an item in
+    /// preferred cut by name whose Auto file compares best). History picks only the edition, except a later part of an item in
     /// progress. Plain Auto applies <see cref="DisplayVersionMatch.Current"/> (Bale's display
     /// resolution matching) inside the edition.
     /// </summary>

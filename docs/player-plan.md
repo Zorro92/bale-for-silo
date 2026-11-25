@@ -1653,7 +1653,8 @@ The rule, in Rust `formatting::select_version` (called through `PlaybackFormatti
 1. An explicit version pick wins, as in the official apps. Otherwise the official Edition rule
    (`DetailVersionSelector.kt`, 2026-11) picks the edition: the viewer's Edition pick, else the
    last played edition (`last_edition_key`, then the edition of `last_file_id`), else the edition
-   whose Auto file compares best across cuts. History picks only the edition, not the file, except
+   chosen by name first (unnamed or standard, then theatrical, then any other cut; Android `e15879514`)
+   whose Auto file compares best within that class. History picks only the edition, not the file, except
    a later part of a multi-part item in progress. Display matching below ranks inside that edition.
 2. On Auto, the display's height is the height of its largest supported HDMI mode:
    - the best version at or below that height that a decode claim admits (so it plays as it is);
