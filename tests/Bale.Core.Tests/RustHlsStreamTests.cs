@@ -196,6 +196,22 @@ public sealed class RustHlsStreamTests
     }
 
     [Fact]
+    public async Task ASegmentThroughAServerOutageIsRetriedWhileTheStreamPlaysOn()
+    {
+        // silo-server 40c093c (web reconnect cycle, native/bale-core/src/outage_budget.rs): a server error is an outage,
+        // not the end of the stream. The first wait is 1 s; the cycle's limits are Rust tests.
+        using var server = Server();
+        server.FileReplies[Dir + "video/seg_00001.m4s"] = new(["500 Internal Server Error"]);
+        using var client = Client(server);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenNativeHlsAsync(0, default);
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        Assert.True((await ReadAll(stream)).AsSpan().SequenceEqual(Expected(0)));
+        Assert.InRange(started.ElapsedMilliseconds, 900, 10_000);
+        Assert.True(stream.Completed);
+        Assert.False(stream.Faulted);
+    }
+
+    [Fact]
     public async Task DisposingEndsAReadWaitingForAGrowingPlaylist()
     {
         using var server = Server(media: () => MediaPlaylist(1, ended: false));

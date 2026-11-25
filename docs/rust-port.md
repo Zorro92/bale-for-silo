@@ -310,7 +310,9 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    - `HlsSource` feeds the init and segments, from the one holding the start time, into the
      forward-only pump (`BodySource`), re-reading a growing playlist every half target duration (up
      to 60 s per segment). Requests go through `AuthClient`, the range stream's headers, 401 refresh
-     and busy retries, now shared; `NativeHeaderRefresh` is the C# side for both streams.
+     and busy retries, now shared; `NativeHeaderRefresh` is the C# side for both streams. Since
+     2026-11-25 a failed request or a cut segment retries through an outage (`outage_budget.rs`) and
+     each segment is scanned for media (`segment_media.rs`); docs/player-plan.md "Playback reliability".
    - Route: `hls_through_ffmpeg` sends HLS to FFmpeg's forward-only input (audio ordinal 0) and lets
      the console tone map cover `server_remux_hls`. The mount's clock starts at the opened segment
      (`PlaybackTimeline.StartingAt`, since FFmpegInteropX zeroes the first timestamp). Seeks inside

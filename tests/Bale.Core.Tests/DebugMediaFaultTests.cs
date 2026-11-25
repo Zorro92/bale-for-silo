@@ -58,7 +58,7 @@ public sealed class DebugMediaFaultTests
         var status = DebugMediaFault.Apply(null);
         Assert.Contains("outage-remaining-ms: 0\n", status);
         foreach (var counter in new[] { "empty-tail-armed", "range-retries", "range-renewals", "range-given-up",
-                     "hls-empty-segments", "hls-empty-served", "hls-no-media" })
+                     "hls-empty-segments", "hls-empty-served", "hls-no-media", "hls-retries", "hls-resumes", "hls-given-up" })
             Assert.Matches(counter + @": \d+\n", status);
         Assert.Equal(status.Split('\n').Length, DebugMediaFault.Apply(0).Split('\n').Length);
     }

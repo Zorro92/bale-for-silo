@@ -9,6 +9,11 @@
 //! `PlaybackMediaUrl.IsAllowedChild` requires of Windows' HLS downloads. Anything this reader can't
 //! play safely (encryption, byte ranges, discontinuities, separate audio renditions) is reported as
 //! unsupported so the caller can keep Windows' own HLS source. Nothing logs; URLs carry tokens.
+//!
+//! Through a server outage the player keeps playing what the forward-only stream already buffered,
+//! while a failed request (or a segment cut mid-body) retries with the web player's backoff until the
+//! server answers or the budget is spent (outage_budget.rs, silo-server `40c093c`); only then does the
+//! stream end as a fault, once its buffer has run out.
 
 use std::collections::HashMap;
 use std::io::Read;
@@ -18,6 +23,7 @@ use std::time::{Duration, Instant};
 
 use crate::auth_client::AuthClient;
 use crate::media_fault;
+use crate::outage_budget::{OutageBudget, Policy as OutagePolicy};
 use crate::progressive_stream::BodySource;
 use crate::range_stream::StreamError;
 use crate::segment_media::Scanned;
@@ -291,9 +297,32 @@ pub fn resolve_child(base: &str, reference: &str, server: &str) -> Option<String
         .then_some(absolute)
 }
 
-fn read_text(response: ureq::http::Response<ureq::Body>) -> Result<String, StreamError> {
+/// A failed request, and whether the server can recover from it (protocol §6.2: a network failure, a
+/// 5xx, 408 or 429, which the client has already retried as `Busy`, waits for the next attempt).
+struct Failure {
+    error: StreamError,
+    transient: bool,
+}
+
+impl From<StreamError> for Failure {
+    fn from(error: StreamError) -> Self {
+        Failure {
+            error,
+            transient: matches!(error, StreamError::Network | StreamError::Busy),
+        }
+    }
+}
+
+fn status_failure(status: u16) -> Failure {
+    Failure {
+        error: StreamError::Status,
+        transient: matches!(status, 408 | 429 | 500..=599),
+    }
+}
+
+fn read_text(response: ureq::http::Response<ureq::Body>) -> Result<String, Failure> {
     if !response.status().is_success() {
-        return Err(StreamError::Status);
+        return Err(status_failure(response.status().as_u16()));
     }
     let mut text = String::new();
     response
@@ -302,7 +331,7 @@ fn read_text(response: ureq::http::Response<ureq::Body>) -> Result<String, Strea
         .limit(MAX_PLAYLIST_BYTES)
         .reader()
         .read_to_string(&mut text)
-        .map_err(|_| StreamError::Network)?;
+        .map_err(|_| Failure::from(StreamError::Network))?;
     Ok(text)
 }
 
@@ -338,12 +367,32 @@ pub struct HlsSource {
     /// Debug (`media-fault empty-tail`): this many of a complete playlist's last segments are answered here
     /// with no media, as Silo answers segments past a transcode's real end.
     empty_tail: usize,
+    /// While playing, a request the server can recover from retries through an outage (outage_budget.rs).
+    outage: OutageBudget,
+    epoch: Instant,
+    /// The body being played, to resume it after a cut: its URL, declared length, and whether it is a
+    /// media segment (scanned for media) rather than the init segment.
+    current: Option<(String, Option<u64>, bool)>,
 }
 
 impl HlsSource {
     fn fetch(&self, url: &str) -> Result<Playlist, OpenError> {
-        let response = self.client.get(url, None, |request| request)?;
-        parse(&read_text(response)?).map_err(OpenError::Playlist)
+        self.fetch_classified(url).map_err(|(error, _)| error)
+    }
+
+    /// A playlist GET; a failure says whether the server can recover from it.
+    fn fetch_classified(&self, url: &str) -> Result<Playlist, (OpenError, bool)> {
+        let stream = |failure: Failure| (OpenError::Stream(failure.error), failure.transient);
+        let response = self
+            .client
+            .get(url, None, |request| request)
+            .map_err(|error| stream(error.into()))?;
+        let text = read_text(response).map_err(stream)?;
+        parse(&text).map_err(|error| (OpenError::Playlist(error), false))
+    }
+
+    fn now_ms(&self) -> u64 {
+        self.epoch.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
     }
 
     fn child(&self, reference: &str) -> Result<String, OpenError> {
@@ -360,6 +409,17 @@ impl HlsSource {
         url: &str,
         start_seconds: f64,
     ) -> Result<(Self, f64), OpenError> {
+        Self::open_with_policy(client, server, url, start_seconds, OutagePolicy::WEB)
+    }
+
+    /// [`HlsSource::open`] with another outage budget (tests scale it down).
+    pub fn open_with_policy(
+        client: Arc<AuthClient>,
+        server: &str,
+        url: &str,
+        start_seconds: f64,
+        outage: OutagePolicy,
+    ) -> Result<(Self, f64), OpenError> {
         let mut source = HlsSource {
             client,
             server: server.to_owned(),
@@ -370,6 +430,9 @@ impl HlsSource {
             media: Arc::new(AtomicBool::new(false)),
             ts_tables: Arc::new(Mutex::new(None)),
             empty_tail: media_fault::take_empty_tail(),
+            outage: OutageBudget::new(outage),
+            epoch: Instant::now(),
+            current: None,
         };
         let mut playlist = source.fetch(url)?;
         if let Some(variant) = playlist.variant.clone() {
@@ -410,7 +473,7 @@ impl HlsSource {
                     break (last, at);
                 }
                 None => {
-                    source.wait_for_growth()?;
+                    source.wait_for_growth().map_err(|(error, _)| error)?;
                 }
             }
         };
@@ -421,21 +484,30 @@ impl HlsSource {
         Ok((source, segment_start))
     }
 
-    /// Re-reads a growing playlist after half a target duration.
-    fn wait_for_growth(&mut self) -> Result<(), OpenError> {
+    /// Re-reads a growing playlist after half a target duration. A failure says whether the server can
+    /// recover from it.
+    fn wait_for_growth(&mut self) -> Result<(), (OpenError, bool)> {
         let pause = Duration::from_secs_f64((self.playlist.target_duration / 2.0).clamp(0.5, 5.0));
         if !self.client.sleep_unless_closed(pause) {
-            return Err(OpenError::Stream(StreamError::Disposed));
+            return Err((OpenError::Stream(StreamError::Disposed), false));
         }
-        let refreshed = self.fetch(&self.playlist_url.clone())?;
+        let refreshed = self.fetch_classified(&self.playlist_url.clone())?;
         if refreshed.variant.is_some() || refreshed.init != self.playlist.init {
-            return Err(OpenError::Playlist(PlaylistError::Unsupported));
+            return Err((OpenError::Playlist(PlaylistError::Unsupported), false));
         }
         self.playlist = refreshed;
         Ok(())
     }
 
-    fn body(&self, url: &str) -> Result<Box<dyn Read + Send>, StreamError> {
+    /// One GET of the init or a segment: the body (scanned for media when `segment`) and its declared
+    /// length, with its first `skip` bytes read and dropped when it resumes one that was cut.
+    fn get_once(
+        &self,
+        url: &str,
+        segment: bool,
+        skip: u64,
+        expected: Option<u64>,
+    ) -> Result<(Box<dyn Read + Send>, Option<u64>), Failure> {
         let response = self.client.get(url, None, |request| {
             // A segment can be large (4K) and the server may still be producing it.
             request
@@ -445,22 +517,85 @@ impl HlsSource {
                 .build()
         })?;
         if !response.status().is_success() {
-            return Err(StreamError::Status);
+            return Err(status_failure(response.status().as_u16()));
         }
-        Ok(Box::new(
-            response
-                .into_body()
-                .into_with_config()
-                .limit(u64::MAX)
-                .reader(),
-        ))
+        let length = response
+            .headers()
+            .get("content-length")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.trim().parse::<u64>().ok());
+        // A resumed body must be the one that was cut: other bytes can't be spliced onto what played.
+        if skip > 0 && expected.is_some() && length.is_some() && length != expected {
+            return Err(StreamError::InvalidRange.into());
+        }
+        let reader = response
+            .into_body()
+            .into_with_config()
+            .limit(u64::MAX)
+            .reader();
+        let mut body: Box<dyn Read + Send> = if segment {
+            Box::new(Scanned::new(
+                reader,
+                self.media.clone(),
+                self.ts_tables.clone(),
+            ))
+        } else {
+            Box::new(reader)
+        };
+        if skip > 0 {
+            let skipped = std::io::copy(&mut (&mut body).take(skip), &mut std::io::sink())
+                .map_err(|_| Failure::from(StreamError::Network))?;
+            if skipped < skip {
+                return Err(StreamError::ShortBody.into());
+            }
+        }
+        Ok((body, length))
+    }
+
+    /// The init or a segment, retried through an outage while the budget lasts (outage_budget.rs).
+    fn get(
+        &mut self,
+        url: &str,
+        segment: bool,
+        skip: u64,
+        expected: Option<u64>,
+    ) -> Result<Box<dyn Read + Send>, StreamError> {
+        loop {
+            match self.get_once(url, segment, skip, expected) {
+                Ok((body, length)) => {
+                    self.outage.succeeded(self.now_ms());
+                    self.current = Some((url.to_owned(), length, segment));
+                    return Ok(body);
+                }
+                Err(failure) if !failure.transient => return Err(failure.error),
+                Err(failure) => self.wait_out(failure.error)?,
+            }
+        }
+    }
+
+    /// The outage budget's wait after a failure the server can recover from; the failure itself once
+    /// the budget is spent.
+    fn wait_out(&mut self, error: StreamError) -> Result<(), StreamError> {
+        let Some(delay) = self.outage.failed(self.now_ms()) else {
+            media_fault::count(&media_fault::HLS_GIVEN_UP);
+            return Err(error);
+        };
+        media_fault::count(&media_fault::HLS_RETRIES);
+        if self
+            .client
+            .sleep_unless_closed(Duration::from_millis(delay))
+        {
+            Ok(())
+        } else {
+            Err(StreamError::Disposed)
+        }
     }
 
     fn next(&mut self) -> Result<Option<Box<dyn Read + Send>>, StreamError> {
         if let Some(init) = self.init_pending.take() {
-            return self.body(&init).map(Some);
+            return self.get(&init, false, 0, None).map(Some);
         }
-        let deadline = Instant::now() + GROWTH_WAIT;
+        let mut deadline = Instant::now() + GROWTH_WAIT;
         loop {
             let sequence = self.playlist.media_sequence;
             if self.next_sequence < sequence {
@@ -474,14 +609,10 @@ impl HlsSource {
                     .map_err(|_| StreamError::InvalidRange)?;
                 self.next_sequence += 1;
                 if self.playlist.ended && index + self.empty_tail >= self.playlist.segments.len() {
+                    self.current = None;
                     return Ok(Some(self.debug_empty_segment()));
                 }
-                let body = self.body(&url)?;
-                return Ok(Some(Box::new(Scanned::new(
-                    body,
-                    self.media.clone(),
-                    self.ts_tables.clone(),
-                ))));
+                return self.get(&url, true, 0, None).map(Some);
             }
             if self.playlist.ended {
                 return Ok(None);
@@ -489,11 +620,27 @@ impl HlsSource {
             if Instant::now() >= deadline {
                 return Err(StreamError::Network);
             }
-            self.wait_for_growth().map_err(|error| match error {
-                OpenError::Stream(error) => error,
-                OpenError::Playlist(_) => StreamError::InvalidRange,
-            })?;
+            match self.wait_for_growth() {
+                Ok(()) => self.outage.succeeded(self.now_ms()),
+                Err((OpenError::Stream(error), true)) => {
+                    self.wait_out(error)?;
+                    // An outage isn't the server being slow to list the next segment: a full wait once it
+                    // answers again.
+                    deadline = deadline.max(Instant::now() + GROWTH_WAIT);
+                }
+                Err((OpenError::Stream(error), false)) => return Err(error),
+                Err((OpenError::Playlist(_), _)) => return Err(StreamError::InvalidRange),
+            }
         }
+    }
+
+    /// The body being played was cut after `delivered` bytes (a reset, a stall, an outage): request it
+    /// again once the outage budget allows and skip what the stream already has.
+    fn resume_current(&mut self, delivered: u64) -> Result<Box<dyn Read + Send>, StreamError> {
+        let (url, length, segment) = self.current.clone().ok_or(StreamError::Network)?;
+        self.wait_out(StreamError::Network)?;
+        media_fault::count(&media_fault::HLS_RESUMES);
+        self.get(&url, segment, delivered, length)
     }
 }
 
@@ -520,6 +667,10 @@ impl BodySource for HlsSource {
     fn delivered_media(&self) -> Option<bool> {
         Some(self.media.load(Ordering::Acquire))
     }
+
+    fn resume(&mut self, delivered: u64) -> Option<Result<Box<dyn Read + Send>, StreamError>> {
+        Some(self.resume_current(delivered))
+    }
 }
 
 #[cfg(test)]
@@ -534,6 +685,19 @@ mod tests {
 
     /// A complete VOD playlist of 4 s segments (fMP4 with an init when `init` is given) and a server for it.
     fn serve(segments: Vec<Vec<u8>>, init: Option<Vec<u8>>) -> TestServer {
+        serve_faulty(segments, init, |_, _| None)
+    }
+
+    /// [`serve`], where `fault(segment, request)` may answer the `request`-th (0-based) request for a
+    /// segment instead.
+    fn serve_faulty(
+        segments: Vec<Vec<u8>>,
+        init: Option<Vec<u8>>,
+        fault: impl Fn(usize, usize) -> Option<Reply> + Send + Sync + 'static,
+    ) -> TestServer {
+        let requests: Vec<_> = (0..segments.len())
+            .map(|_| std::sync::atomic::AtomicUsize::new(0))
+            .collect();
         let extension = if init.is_some() { "m4s" } else { "ts" };
         let mut playlist = String::from(
             "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n",
@@ -555,19 +719,44 @@ mod tests {
             if name == "init.mp4" {
                 return init.clone().map_or_else(|| Reply::status(404), Reply::ok);
             }
-            name.strip_prefix("seg_")
+            let Some(index) = name
+                .strip_prefix("seg_")
                 .and_then(|rest| rest.split('.').next())
                 .and_then(|index| index.parse::<usize>().ok())
-                .and_then(|index| segments.get(index))
-                .map_or_else(|| Reply::status(404), |body| Reply::ok(body.clone()))
+                .filter(|index| *index < segments.len())
+            else {
+                return Reply::status(404);
+            };
+            let request = requests[index].fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            fault(index, request).unwrap_or_else(|| Reply::ok(segments[index].clone()))
         })
     }
 
     /// Opens the server's playlist at `start` and reads the stream to its end.
     fn play(server: &TestServer, start: f64) -> (Vec<u8>, ProgressiveStats) {
+        play_with(server, start, OutagePolicy::WEB)
+    }
+
+    /// Outage waits of 20 ms doubling to 40 ms, at most `attempts`.
+    fn quick(attempts: u32) -> OutagePolicy {
+        OutagePolicy {
+            base_delay_ms: 20,
+            max_delay_ms: 40,
+            max_attempts: attempts,
+            stable_ms: 30_000,
+        }
+    }
+
+    fn play_with(
+        server: &TestServer,
+        start: f64,
+        outage: OutagePolicy,
+    ) -> (Vec<u8>, ProgressiveStats) {
         let client = Arc::new(AuthClient::new(Vec::new()));
         let url = format!("{}{ROUTE}/index.m3u8?st=t", server.base);
-        let (source, _) = HlsSource::open(client.clone(), &server.base, &url, start).expect("open");
+        let (source, _) =
+            HlsSource::open_with_policy(client.clone(), &server.base, &url, start, outage)
+                .expect("open");
         let stream = ProgressiveStream::start(Box::new(source), Some(client)).expect("start");
         let mut out = Vec::new();
         let mut buffer = vec![0; 65_536];
@@ -628,6 +817,157 @@ mod tests {
         assert_eq!(play(&server, 5.0).1.no_media, 1);
         // The last real segment is no tail.
         assert_eq!(play(&server, 1.0).1.no_media, 0);
+    }
+
+    fn requests_for(server: &TestServer, segment: &str) -> usize {
+        server.count(|r| r.path().ends_with(segment))
+    }
+
+    #[test]
+    fn segments_ride_out_an_outage_while_the_stream_plays_what_it_has() {
+        let _faults = media_fault::tests::exclusive();
+        let segments = vec![ts_media(40), ts_media(40), ts_media(40), ts_media(40)];
+        // The third segment's first three requests meet a server that is away.
+        let server = serve_faulty(segments.clone(), None, |segment, request| {
+            (segment == 2 && request < 3).then_some(Reply::Drop)
+        });
+        let (bytes, stats) = play_with(&server, 0.0, quick(12));
+        assert_eq!(bytes, segments.concat());
+        assert_eq!((stats.completed, stats.faulted), (1, 0));
+        assert_eq!(requests_for(&server, "seg_2.ts"), 4);
+    }
+
+    #[test]
+    fn a_segment_cut_mid_body_is_requested_again_and_spliced_exactly() {
+        let _faults = media_fault::tests::exclusive();
+        let segments = vec![ts_media(400), ts_media(400), ts_media(400)];
+        let cut = segments[1].clone();
+        let resumes = media_fault::HLS_RESUMES.load(std::sync::atomic::Ordering::Relaxed);
+        let server = serve_faulty(segments.clone(), None, move |segment, request| {
+            (segment == 1 && request < 2).then(|| Reply::Cut {
+                status: 200,
+                headers: Vec::new(),
+                body: cut.clone(),
+                sent: 30_000 * (request + 1),
+            })
+        });
+        let (bytes, stats) = play_with(&server, 0.0, quick(12));
+        // Nothing repeated, nothing lost: what was queued before each cut is skipped in the next answer.
+        assert_eq!(bytes, segments.concat());
+        assert_eq!((stats.completed, stats.faulted), (1, 0));
+        assert_eq!(requests_for(&server, "seg_1.ts"), 3);
+        assert!(media_fault::HLS_RESUMES.load(std::sync::atomic::Ordering::Relaxed) >= resumes + 2);
+    }
+
+    #[test]
+    fn server_errors_wait_for_the_next_attempt_but_a_missing_segment_ends_the_stream() {
+        let _faults = media_fault::tests::exclusive();
+        let segments = vec![ts_media(40), ts_media(40), ts_media(40)];
+        let server = serve_faulty(segments.clone(), None, |segment, request| {
+            match (segment, request) {
+                (0, 0) => Some(Reply::status(500)),
+                (0, 1) => Some(Reply::status(502)),
+                (1, 0) => Some(Reply::status(408)),
+                _ => None,
+            }
+        });
+        let (bytes, stats) = play_with(&server, 0.0, quick(12));
+        assert_eq!(bytes, segments.concat());
+        assert_eq!((stats.completed, stats.faulted), (1, 0));
+        // A 404 is the server's answer, not an outage: the stream ends at once, after what it had.
+        let server = serve_faulty(segments.clone(), None, |segment, _| {
+            (segment == 1).then(|| Reply::status(404))
+        });
+        let (bytes, stats) = play_with(&server, 0.0, quick(12));
+        assert_eq!(bytes, segments[0]);
+        assert_eq!((stats.completed, stats.faulted), (0, 1));
+        assert_eq!(requests_for(&server, "seg_1.ts"), 1);
+    }
+
+    #[test]
+    fn a_spent_budget_ends_the_stream_as_a_fault_after_what_it_buffered() {
+        let _faults = media_fault::tests::exclusive();
+        let segments = vec![ts_media(40), ts_media(40), ts_media(40)];
+        let server = serve_faulty(segments.clone(), None, |segment, _| {
+            (segment == 2).then_some(Reply::Drop)
+        });
+        let (bytes, stats) = play_with(&server, 0.0, quick(3));
+        assert_eq!(bytes, segments[..2].concat());
+        assert_eq!((stats.completed, stats.faulted), (0, 1));
+        // The first request and one attempt after each of the budget's waits.
+        assert_eq!(requests_for(&server, "seg_2.ts"), 4);
+    }
+
+    #[test]
+    fn a_growing_playlist_refresh_rides_out_an_outage() {
+        let _faults = media_fault::tests::exclusive();
+        let segments = [ts_media(40), ts_media(40), ts_media(40)];
+        let listing = |count: usize, ended: bool| {
+            let mut text = String::from(
+                "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n",
+            );
+            for index in 0..count {
+                text.push_str(&format!("#EXTINF:1.000000,\nseg_{index}.ts\n"));
+            }
+            if ended {
+                text.push_str("#EXT-X-ENDLIST\n");
+            }
+            text.into_bytes()
+        };
+        let reads = std::sync::atomic::AtomicUsize::new(0);
+        let served = segments.clone();
+        let server = TestServer::start(move |request| {
+            let name = request.path().rsplit('/').next().unwrap_or_default();
+            if name == "index.m3u8" {
+                // The open, then two refreshes that meet a server that is away, then the rest of the list.
+                return match reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst) {
+                    0 => Reply::ok(listing(2, false)),
+                    1 | 2 => Reply::Drop,
+                    _ => Reply::ok(listing(3, true)),
+                };
+            }
+            let index: usize = name[4..5].parse().unwrap_or(9);
+            served
+                .get(index)
+                .map_or_else(|| Reply::status(404), |body| Reply::ok(body.clone()))
+        });
+        let (bytes, stats) = play_with(&server, 0.0, quick(12));
+        assert_eq!(bytes, segments.concat());
+        assert_eq!((stats.completed, stats.faulted), (1, 0));
+    }
+
+    #[test]
+    fn the_debug_outage_cuts_and_refuses_until_it_ends() {
+        let _faults = media_fault::tests::exclusive();
+        let segments = vec![ts_media(40), ts_media(40)];
+        let server = serve(segments.clone(), None);
+        let client = Arc::new(AuthClient::new(Vec::new()));
+        let url = format!("{}{ROUTE}/index.m3u8?st=t", server.base);
+        let (source, _) =
+            HlsSource::open_with_policy(client.clone(), &server.base, &url, 0.0, quick(60))
+                .expect("open");
+        media_fault::set(media_fault::SetArgs {
+            outage_seconds: Some(1),
+            ..Default::default()
+        });
+        let started = Instant::now();
+        let stream = ProgressiveStream::start(Box::new(source), Some(client)).expect("start");
+        let mut bytes = Vec::new();
+        let mut buffer = vec![0; 65_536];
+        loop {
+            let count = stream.read(&mut buffer);
+            if count == 0 {
+                break;
+            }
+            bytes.extend_from_slice(&buffer[..count]);
+        }
+        media_fault::set(media_fault::SetArgs {
+            outage_seconds: Some(0),
+            ..Default::default()
+        });
+        assert_eq!(bytes, segments.concat());
+        assert_eq!((stream.stats().completed, stream.stats().faulted), (1, 0));
+        assert!(started.elapsed() >= Duration::from_millis(900));
     }
 
     #[test]

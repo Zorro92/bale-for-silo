@@ -2362,6 +2362,39 @@ no bytes when it can't read the init segment (before, a `404`/`500` that players
   mount starting in the tail reports no media; the debug tail), `RustHlsStreamTests.AMountThatStartsPastTheMediasEndReportsNoMedia`,
   `PlayerEmptyTailWiringTests`.
 
+### HLS through a server outage (server `40c093c`)
+
+The web (`VideoPlayer.tsx`, protocol §6.2 step 1): after hls.js gives up on the network, the element plays on from its
+buffer while at least a second of it lies ahead; the reconnect cycle (waits of 1 s doubling to 15 s, 12 attempts, about
+two and a quarter minutes) starts only when the buffer runs out, a seek needs the server, or another fatal error comes.
+
+Before: Bale's Rust reader failed on the first segment request that failed (only 429/503/504 were retried, inside the
+client), or on a body cut mid-way, and ended the stream as a fault. FFmpeg played what the pump had queued (up to
+16 MiB, seconds at 4K) and then the forward-only mount's "incomplete" reconnect remounted at once, which with the server
+still away failed to the single failure replan and the error screen.
+
+Now (`outage_budget.rs`, hls.rs; the web's constants and its 30 s "continue the cycle" rule):
+
+- **Keeps playing what it has:** the pump's queue goes on feeding FFmpeg while the pump retries; FFmpeg's read waits once
+  the queue is empty (the engine shows buffering; with no media byte for 15 s the buffering controller sees an outage, not
+  a stall to lower quality for).
+- **Retries through the outage:** a failed init or segment request, a growing playlist's refresh, and a body cut
+  mid-way (a reset, a 30 s read stall, the debug outage) wait 1, 2, 4, 8, then 15 s between attempts, at most 12, while
+  the failure is one the server can recover from (§6.2 step 3: a network failure, a 5xx, 408, or 429/503/504 after the
+  client's own retries). A cut body is requested again and the bytes already queued are skipped (a different length
+  can't be spliced and ends the stream). Any success ends the cycle; a cycle that starts within 30 s of the previous one
+  recovering continues its attempts. A growing playlist gets a full 60 s to list its next segment once the server answers
+  again.
+- **Fails only when both run out:** a spent budget, or a final answer (a 404 or other 4xx, a sliding playlist that
+  evicted the segment), ends the stream as a fault, which the player sees only after FFmpeg has read the queue dry; then
+  the existing "incomplete" reconnect and the single failure replan decide, as before.
+- **Unchanged:** opening a mount (the start, a seek's remount, the reconnect) still fails at once when the server is away,
+  so a seek during an outage waits for its start budget as before (the web reconnects at the seek's target); a progressive
+  remux (one response) still faults on a cut and reconnects with `seek_reanchor`.
+- **Tests:** `outage_budget.rs` (the web's waits, a fresh or continued cycle), `hls.rs` loopback playlists (segments
+  ridden out, a cut body spliced exactly, server errors vs a 404, a spent budget faulting after what was queued, a growing
+  playlist's refresh, the debug outage), `RustHlsStreamTests.ASegmentThroughAServerOutageIsRetriedWhileTheStreamPlaysOn`.
+
 ### Debug: `media-fault`
 
 `bale-debug.sh media-fault outage=<0..600>` (native/bale-core/src/media_fault.rs, memory only, nothing armed at start):
@@ -2371,8 +2404,9 @@ open) fails as a network error, and reads of bodies already open fail too, as a 
 itself with no media, as Silo does past a transcode's real end (the PAT and PMT the mount saw for MPEG-TS, else no
 bytes), without requesting them; it applies to one mount, so arm it after the first mount started to aim it at a seek's
 remount. Without arguments it prints the armed faults and the Rust streams' recovery counters (range retries, fresh
-windows, windows given up; HLS segments without media, debug empty segments served, mounts that found no media). It
-works on any route, the real server's or `play-url`'s, because it sits in Bale's own transport.
+windows, windows given up; HLS segments without media, debug empty segments served, mounts that found no media, HLS
+outage waits, cut bodies resumed, budgets given up). It works on any route, the real server's or `play-url`'s, because
+it sits in Bale's own transport; API calls (plans, replans, progress) go through the C# client and are not affected.
 
 ## Debug: play a file URL through the real player
 

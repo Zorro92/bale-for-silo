@@ -5,7 +5,8 @@
 //!
 //! Reads never fail. FFmpeg's non-seekable input can't take an error, so a transport failure or
 //! close ends the data (0 bytes), and `faulted` tells the player the end was not the title's
-//! (protocol §4: an incomplete progressive response is a transport failure). Nothing logs; the URL
+//! (protocol §4: an incomplete progressive response is a transport failure). HLS first requests a
+//! cut segment again through an outage (hls.rs), while readers go on taking what is queued. Nothing logs; the URL
 //! and headers are credentials and stay in memory.
 
 use std::collections::VecDeque;
@@ -86,6 +87,13 @@ pub trait BodySource: Send {
     fn delivered_media(&self) -> Option<bool> {
         None
     }
+
+    /// The current body failed after `delivered` bytes: the rest of it, re-requested (HLS rides out an
+    /// outage this way, hls.rs), or None when it can't be resumed (a single response) and the stream ends
+    /// as a fault.
+    fn resume(&mut self, _delivered: u64) -> Option<Result<Box<dyn Read + Send>, StreamError>> {
+        None
+    }
 }
 
 /// A single response body.
@@ -100,6 +108,8 @@ impl BodySource for OneBody {
 impl Shared {
     fn pump(&self, mut source: Box<dyn BodySource>) {
         let mut body: Option<Box<dyn Read + Send>> = None;
+        // Bytes of the current body already queued, for a resume after a cut.
+        let mut delivered = 0u64;
         loop {
             if body.is_none() {
                 if self.closed.load(Ordering::Acquire) {
@@ -120,7 +130,10 @@ impl Shared {
                         self.faulted.store(true, Ordering::Release);
                         break;
                     }
-                    Some(Ok(next)) => body = Some(next),
+                    Some(Ok(next)) => {
+                        body = Some(next);
+                        delivered = 0;
+                    }
                 }
             }
             let mut data = lock(&self.queue)
@@ -150,12 +163,24 @@ impl Shared {
                     continue;
                 }
                 Ok(length) => length,
-                // Chunked HTTP/1.1 without its final chunk, a reset, a stall: never logged.
+                // Chunked HTTP/1.1 without its final chunk, a reset, a stall: never logged. HLS requests the
+                // body again and goes on after what it already queued, through an outage if need be; meanwhile
+                // the reader plays what is queued.
                 Err(_) => {
-                    self.faulted.store(true, Ordering::Release);
-                    break;
+                    lock(&self.queue).free.push(data);
+                    match source.resume(delivered) {
+                        Some(Ok(rest)) if !self.closed.load(Ordering::Acquire) => {
+                            body = Some(rest);
+                            continue;
+                        }
+                        _ => {
+                            self.faulted.store(true, Ordering::Release);
+                            break;
+                        }
+                    }
                 }
             };
+            delivered += length as u64;
             self.downloaded_bytes
                 .fetch_add(length as u64, Ordering::Relaxed);
             let mut queue = lock(&self.queue);

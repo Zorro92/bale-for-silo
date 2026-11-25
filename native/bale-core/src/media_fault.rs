@@ -35,6 +35,12 @@ pub static HLS_EMPTY_SEGMENTS: AtomicU64 = AtomicU64::new(0);
 pub static HLS_EMPTY_SERVED: AtomicU64 = AtomicU64::new(0);
 /// HLS: mounts whose segments to the playlist's end held no media (started past the media's end).
 pub static HLS_NO_MEDIA: AtomicU64 = AtomicU64::new(0);
+/// HLS: waits taken through an outage (outage_budget.rs).
+pub static HLS_RETRIES: AtomicU64 = AtomicU64::new(0);
+/// HLS: bodies cut mid-way and requested again.
+pub static HLS_RESUMES: AtomicU64 = AtomicU64::new(0);
+/// HLS: outage budgets spent (the stream then ends as a fault once its buffer runs out).
+pub static HLS_GIVEN_UP: AtomicU64 = AtomicU64::new(0);
 
 /// The debug empty tail armed for the next HLS mount.
 static EMPTY_TAIL: AtomicU32 = AtomicU32::new(0);
@@ -73,6 +79,9 @@ pub struct State {
     pub hls_empty_segments: u64,
     pub hls_empty_served: u64,
     pub hls_no_media: u64,
+    pub hls_retries: u64,
+    pub hls_resumes: u64,
+    pub hls_given_up: u64,
 }
 
 pub fn set(args: SetArgs) -> State {
@@ -104,6 +113,9 @@ pub fn state() -> State {
         hls_empty_segments: get(&HLS_EMPTY_SEGMENTS),
         hls_empty_served: get(&HLS_EMPTY_SERVED),
         hls_no_media: get(&HLS_NO_MEDIA),
+        hls_retries: get(&HLS_RETRIES),
+        hls_resumes: get(&HLS_RESUMES),
+        hls_given_up: get(&HLS_GIVEN_UP),
     }
 }
 

@@ -34,6 +34,7 @@ pub mod language;
 pub mod media_fault;
 pub mod meters;
 pub mod models;
+pub mod outage_budget;
 pub mod progressive_stream;
 pub mod range_stream;
 pub mod reanchor;

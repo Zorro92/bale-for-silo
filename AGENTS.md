@@ -383,7 +383,9 @@ For Bale, a normal app with hevcPlayback on the Series X:
 - `PlaybackRoutePolicy` decides each mount. HLS always plays through the Rust HLS reader and FFmpeg; Windows'
   AdaptiveMediaSource was removed 2026-11-17 (owner: it cannot feed IMFMediaEngine). A mount whose segments to the
   playlist's end hold no media (Silo's answer past a transcode's real end, server `4bee8f8`) ends playback as `MediaEnded`
-  does (`EndAtEmptyTail`), never a replan. Direct AV1/MPEG-4 Part 2
+  does (`EndAtEmptyTail`), never a replan. Through a server outage FFmpeg plays the reader's queued buffer while the
+  reader retries a failed request, or a body cut mid-way, with the web's reconnect backoff (server `40c093c`,
+  `outage_budget.rs`); the stream faults only once that budget is spent. Direct AV1/MPEG-4 Part 2
   forces FFmpeg software video; audio-only fallback forces the system video decoder and validates
   reported engines before playback. Direct MKV/WebM/AVI uses the FFmpeg demuxer with system
   video (Windows' MKV source over-reads ~2.2x and stalls on sparse subtitle tracks); MP4 stays on
