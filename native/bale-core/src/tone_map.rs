@@ -4,7 +4,7 @@
 use crate::dotnet::{eq_ignore_case, is_blank, trim_lower};
 use crate::formatting;
 use crate::models::{DeviceCapabilities, FileVersion, HdrCapabilities, PlaybackPlan};
-use crate::software_decode::normalize_codec;
+use crate::software_decode::{SOFTWARE_FALLBACK_VIDEO_CODECS, fallback_admits, normalize_codec};
 
 /// `PlaybackProtocol.ClientDolbyVision8BaseLayerReason`.
 pub const DOLBY_VISION8_BASE_LAYER_REASON: &str = "client_dv8_base_layer";
@@ -74,7 +74,9 @@ pub fn downscale_to_display(
 
 /// Whether the console tone map can take this version on an SDR display: a hardware-decoded 10-bit
 /// 4:2:0 HEVC/VP9 PQ or HLG track with BT.2020 NCL (PQ also BT.709) colour, and for Dolby Vision only
-/// a profile 7 HDR10 base layer or a profile 8.1/8.4 base layer.
+/// a profile 7 HDR10 base layer or a profile 8.1/8.4 base layer. Since phase B (wrapper bale.80+)
+/// also a 10/12-bit H.264/HEVC/VP9 PQ or HLG track of any chroma inside a claimed software envelope,
+/// never Dolby Vision: the stage tone-maps FFmpeg's software frames (swscale hands it P010).
 pub fn can_manage(version: &FileVersion, device: &DeviceCapabilities) -> bool {
     if !device.original_http_supported
         || !device.original_dynamic_range_mapping_supported
@@ -107,26 +109,42 @@ pub fn can_manage(version: &FileVersion, device: &DeviceCapabilities) -> bool {
     });
     // AV1 joins only where rav1g's display output maps it (debug rav1g route); never AV1 Dolby Vision.
     let av1 = codec.as_deref() == Some("av1") && device.av1_dynamic_range_mapping_supported;
-    let Some(codec) = codec.filter(|codec| codec == "hevc" || codec == "vp9" || av1) else {
+    // Phase B (owner, 2026-11-24, docs/software-decode.md): a file the console's decoder can't take but
+    // a claimed software envelope admits (software_decode::fallback_admits, with its 30 fps rule for
+    // 4:2:2/4:4:4) decodes in FFmpeg software, and the stage takes those frames as P010 whatever the
+    // chroma, 10 or 12 bits. Never Dolby Vision.
+    let software = device.software_dynamic_range_mapping_supported
+        && codec
+            .as_deref()
+            .is_some_and(|codec| SOFTWARE_FALLBACK_VIDEO_CODECS.contains(&codec))
+        && matches!(track.bit_depth, Some(10 | 12))
+        && !formatting::is_dolby_vision(version)
+        && fallback_admits(version, &device.video_decode);
+    let Some(codec) = codec.filter(|codec| codec == "hevc" || codec == "vp9" || av1 || software)
+    else {
         return false;
     };
-    // HEVC/VP9 need a hardware decode claim (d3d11va feeds the stage); AV1 is rav1g's own (software-class) claim.
-    let decoders: Vec<_> = device
-        .video_decode
-        .iter()
-        .filter(|claim| claim.hardware || av1)
-        .cloned()
-        .collect();
-    if track.bit_depth != Some(10)
-        || !device.video_codecs.contains(&codec)
-        || !formatting::decodes(version, &decoders)
-        || av1 && formatting::is_dolby_vision(version)
-    {
+    if !device.video_codecs.contains(&codec) {
         return false;
     }
-    // d3d11va supplies 4:2:0 P010. Do not promise the stage for known 4:2:2/4:4:4 input.
-    if !four_two_zero_ten_bit(track.pixel_format.as_deref()) {
-        return false;
+    if !software {
+        // HEVC/VP9 need a hardware decode claim (d3d11va feeds the stage); AV1 is rav1g's own (software-class) claim.
+        let decoders: Vec<_> = device
+            .video_decode
+            .iter()
+            .filter(|claim| claim.hardware || av1)
+            .cloned()
+            .collect();
+        if track.bit_depth != Some(10)
+            || !formatting::decodes(version, &decoders)
+            || av1 && formatting::is_dolby_vision(version)
+        {
+            return false;
+        }
+        // d3d11va supplies 4:2:0 P010. Do not promise the stage for known 4:2:2/4:4:4 input.
+        if !four_two_zero_ten_bit(track.pixel_format.as_deref()) {
+            return false;
+        }
     }
     let transfer = trim_lower(track.color_transfer.as_deref());
     let pq = matches!(transfer.as_deref(), Some("smpte2084" | "16"));

@@ -51,7 +51,9 @@ public static class ConsoleToneMapPolicy
     /// <summary>
     /// Whether the console tone map can take this version on an SDR display: a hardware-decoded
     /// 10-bit 4:2:0 HEVC/VP9 PQ or HLG track with BT.2020 NCL (PQ also BT.709) colour, and for Dolby
-    /// Vision only a profile 7 HDR10 base layer or a profile 8.1/8.4 base layer.
+    /// Vision only a profile 7 HDR10 base layer or a profile 8.1/8.4 base layer. With
+    /// <see cref="DeviceCapabilities.SoftwareDynamicRangeMappingSupported"/> (phase B) also a 10/12-bit
+    /// H.264/HEVC/VP9 PQ or HLG track of any chroma inside a claimed software envelope, never Dolby Vision.
     /// </summary>
     public static bool CanManage(FileVersion version, DeviceCapabilities device) =>
         BaleCoreNative.Call("tone_map.can_manage", writer =>

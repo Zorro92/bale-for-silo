@@ -1,3 +1,5 @@
+using Bale.Core.Api.Models;
+using Bale.Core.Detail;
 using Bale.Core.Playback;
 using Bale.Xbox.Services;
 using FFmpegInteropX;
@@ -64,9 +66,8 @@ public sealed class SoftwareStageTests
     [Fact]
     public void AFrameAbove1080pNeverReachesMediaFoundationLarger()
     {
-        // A 4K software entry (the claims add one in the next step; any envelope above 1080p takes this rule).
-        var uhd30 = new VideoDecodeCapability("h264", "FFmpeg", ["high"], [], [8], 3840, 2160, 30, null, false);
-        var claims = SoftwareFallbackTests.Device.VideoDecode.Append(uhd30).ToArray();
+        // The 4K30 H.264 envelope (phase B); any software entry above 1080p takes this rule.
+        var claims = SoftwareFallbackTests.Device.VideoDecode;
         var file = SoftwareFallbackTests.File("h264", "high", 8, 3840, 2160, 29.97, "yuv420p");
 
         // A 1080p display: only through the stage's downscale.
@@ -98,6 +99,133 @@ public sealed class SoftwareStageTests
         Assert.True(native.SoftwareFallback);
         Assert.False(native.ConsoleStage);
         Assert.DoesNotContain("bale_tonemap", FfmpegSource.Configuration(native).FFmpegOptions.Keys);
+    }
+
+    [Theory]
+    // codec, profile, size, fps, kbps, then: the server admits it (Bale's mirror), plays through the stage on a 1080p TV.
+    [InlineData("high", 3840, 2160, 29.97, 50_000, true)]
+    [InlineData("main", 2560, 1440, 30.0, 20_000, true)]
+    [InlineData("constrained baseline", 3840, 2160, 25.0, null, true)]
+    // Above the measured 50 Mbps, above 30 fps, a 10-bit or 4:2:2 profile, or wider than 3840: the server transcodes.
+    [InlineData("high", 3840, 2160, 29.97, 60_000, false)]
+    [InlineData("high", 3840, 2160, 59.94, 20_000, false)]
+    [InlineData("high 10", 3840, 2160, 23.976, 20_000, false)]
+    [InlineData("high 4:2:2", 3840, 2160, 23.976, 20_000, false)]
+    [InlineData("high", 4096, 2160, 24.0, 20_000, false)]
+    public void TheUhdH264EnvelopePlaysOnlyThroughTheStage(string profile, int width, int height, double fps, int? kbps, bool admitted)
+    {
+        var depth = profile.Contains("10") || profile.Contains("4:2:2") ? 10 : 8;
+        var file = SoftwareFallbackTests.File("h264", profile, depth, width, height, fps,
+            profile.Contains("4:2:2") ? "yuv422p10le" : depth == 10 ? "yuv420p10le" : "yuv420p");
+        file.Versions[0].VideoTracks![0].Bitrate = kbps;
+        var claims = SoftwareFallbackTests.Device.VideoDecode;
+        Assert.Equal(admitted, PlaybackFormatting.Decodes(file.Versions[0], claims));
+        var route = SoftwareFallbackTests.Decide(file, display: Hd);
+        Assert.True(route.SoftwareVideo);
+        Assert.Equal(admitted, route.SoftwareFallback);
+        // On a 1080p TV every such route takes the downscale; only an admitted one opens.
+        Assert.True(route.ConsoleDownscale);
+        if (!admitted)
+        {
+            Assert.Throws<InvalidDataException>(() => FfmpegSource.Configuration(route));
+            return;
+        }
+        var config = FfmpegSource.Configuration(route);
+        Assert.Equal(VideoDecoderMode.ForceFFmpegSoftwareDecoder, config.Video.VideoDecoderMode);
+        Assert.Equal("1", config.FFmpegOptions["bale_tonemap"]);
+        // Above 1080p: the software tuning for large frames (8 frames decode-ahead, 500 ms buffer).
+        Assert.Equal("8", config.FFmpegOptions["bale_decode_ahead_frames"]);
+        Assert.Equal(500, SoftwareDecodeTuning.BufferTimeMs(route.SoftwareVideo, width: route.VideoWidth, height: route.VideoHeight));
+        // A failed decode withdraws H.264 and every software entry on the single replan, so the server transcodes.
+        var start = PlaybackStartBuilder.Build("file", "profile", "attempt", null, PlaybackSelection.Auto, SoftwareFallbackTests.Device,
+            PlaybackTestSupport.Identity);
+        var replan = PlaybackReplan.ForFailure(start, file.Plan, "attempt", [], 1, 0,
+            new PlaybackFailureV3("decoder_failure", "decode failed", "FFmpegInteropX"), route);
+        Assert.False(PlaybackFormatting.Decodes(file.Versions[0], replan.ClientCapabilities.VideoDecode));
+    }
+
+    [Fact]
+    public void TheUhdEntryIsClaimedOnlyWhereTheStageTakesSoftwareFrames()
+    {
+        var device = SoftwareFallbackTests.Device;
+        Assert.Contains(device.VideoDecode, decode => decode is { Codec: "h264", Hardware: false, MaxHeight: 2160 });
+        // An older wrapper or a bale_gpu without the SDR downscale: the entry goes, the 1080p envelopes stay.
+        var without = SoftwareDecodePolicy.ForSoftwareStage(device, supported: false);
+        Assert.Equal(device.VideoDecode.Where(decode => decode.MaxHeight != 2160 || decode.Hardware), without.VideoDecode);
+        Assert.Equal(device.VideoCodecs, without.VideoCodecs);
+        Assert.Equal(device.VideoDecode, SoftwareDecodePolicy.ForSoftwareStage(device, supported: true).VideoDecode);
+        var file = SoftwareFallbackTests.File("h264", "high", 8, 3840, 2160, 29.97, "yuv420p");
+        Assert.False(PlaybackFormatting.Decodes(file.Versions[0], without.VideoDecode));
+        // The player's claims do this from the runtime and the pinned wrapper (PlaybackClaims.DetectAsync).
+        var claims = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "PlaybackClaims.cs.txt"));
+        Assert.Contains("SoftwareDecodePolicy.ForSoftwareStage(capabilities, softwareStage && ConsoleToneMapRuntime.SupportsSdrDownscale)", claims);
+        Assert.Contains("SoftwareDynamicRangeMappingSupported = softwareStage,", claims);
+    }
+
+    [Fact]
+    public void AutoNeverPrefersTheSoftwareUhdDecode()
+    {
+        // A 4K TV: the 4K H.264 version plays only in software (~3 cores), so Auto keeps the 1080p one the hardware takes.
+        var match = new DisplayVersionMatch(2160, SoftwareFallbackTests.Device.VideoDecode);
+        FileVersion Version(string id, int width, int height) => new()
+        {
+            FileId = id, Resolution = height >= 2160 ? "4K" : "1080p", CodecVideo = "h264",
+            VideoTracks = [new VideoTrack { Codec = "h264", Profile = "high", BitDepth = 8, Width = width, Height = height,
+                FrameRate = "30000/1001", PixelFormat = "yuv420p" }],
+        };
+        var versions = new[] { Version("uhd", 3840, 2160), Version("hd", 1920, 1080) };
+        Assert.Same(versions[1], PlaybackFormatting.SelectVersion(versions, match));
+    }
+
+    [Fact]
+    public void HdrSoftwareFilesArePromisedTheConsoleToneMap()
+    {
+        var sdrTv = SoftwareFallbackTests.Device with
+        {
+            DisplayHdrEvidence = "exact", OriginalDynamicRangeMappingSupported = true, SoftwareDynamicRangeMappingSupported = true,
+        };
+        FileVersion Hdr(string codec, string profile, int depth, double fps, string pixelFormat, string transfer = "smpte2084")
+        {
+            var version = SoftwareFallbackTests.File(codec, profile, depth, 1920, 1080, fps, pixelFormat).Versions[0];
+            var track = version.VideoTracks![0];
+            track.ColorTransfer = transfer;
+            track.ColorPrimaries = "bt2020";
+            track.ColorSpace = "bt2020nc";
+            return version;
+        }
+        // Inside a software envelope: PQ or HLG, any chroma, 10 or 12 bits (the stage takes swscale's P010).
+        foreach (var version in new[]
+        {
+            Hdr("hevc", "rext", 10, 29.97, "yuv422p10le"),
+            Hdr("hevc", "rext", 12, 23.976, "yuv420p12le"),
+            Hdr("h264", "high 4:2:2", 10, 29.97, "yuv422p10le", "arib-std-b67"),
+            Hdr("h264", "high 10", 10, 59.94, "yuv420p10le"),
+            Hdr("vp9", "profile 3", 10, 25.0, "yuv422p10le"),
+        })
+        {
+            Assert.True(ConsoleToneMapPolicy.CanManage(version, sdrTv), version.VideoTracks![0].Profile);
+            // Not without the stage on software frames, nor without the software entries.
+            Assert.False(ConsoleToneMapPolicy.CanManage(version, sdrTv with { SoftwareDynamicRangeMappingSupported = false }));
+            Assert.False(ConsoleToneMapPolicy.CanManage(version, SoftwareDecodePolicy.ForSoftwareVideo(sdrTv, supported: false)));
+        }
+        // Outside the envelopes (4:2:2 at 60 fps), SDR transfer, 8-bit, or Dolby Vision: not promised.
+        Assert.False(ConsoleToneMapPolicy.CanManage(Hdr("hevc", "rext", 10, 59.94, "yuv422p10le"), sdrTv));
+        Assert.False(ConsoleToneMapPolicy.CanManage(Hdr("hevc", "rext", 10, 29.97, "yuv422p10le", "bt709"), sdrTv));
+        Assert.False(ConsoleToneMapPolicy.CanManage(Hdr("hevc", "rext", 8, 29.97, "yuv422p"), sdrTv));
+        var dv = Hdr("hevc", "rext", 10, 29.97, "yuv422p10le");
+        dv.VideoTracks![0].DolbyVision = "profile 8";
+        dv.VideoTracks[0].DvProfile = 8;
+        Assert.False(ConsoleToneMapPolicy.CanManage(dv, sdrTv));
+        // The hardware path is unchanged: HEVC Main 10 4:2:0 PQ without the software flag.
+        Assert.True(ConsoleToneMapPolicy.CanManage(Hdr("hevc", "main 10", 10, 23.976, "yuv420p10le"),
+            sdrTv with { SoftwareDynamicRangeMappingSupported = false }));
+
+        // The start request for that version carries the promise, so the server plans it direct.
+        var rext = Hdr("hevc", "rext", 10, 29.97, "yuv422p10le");
+        var detail = new ItemDetail("item", "movie", "", null, null, null, null, null, [], null, [], [], null, [], null,
+            "item", null, null, new(false, false, false), []) { Versions = [rext] };
+        var start = PlaybackStartBuilder.Build(detail, PlaybackSelection.Auto, "profile", "attempt", 0, sdrTv, PlaybackTestSupport.Identity);
+        Assert.Contains(PlaybackProtocol.ClientManagedDynamicRangeClaim, start.ClientPlaybackContext.Deliveries["original_http"].ValidatedClaims);
     }
 
     [Fact]

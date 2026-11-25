@@ -28,8 +28,9 @@ public class HardwareDecodeClaimsTests
         var fallbacks = claims.VideoDecode.Where(decode => !decode.Hardware && decode.Codec != "av1"
             && !SoftwareDecodePolicy.SoftwareFallbackVideoCodecs.Contains(decode.Codec)).ToArray();
         Assert.Equal(SoftwareDecodePolicy.VideoCodecs.Where(codec => codec != "av1").Order(), fallbacks.Select(decode => decode.Codec).Order());
+        // 1080p, and the one 4K30 H.264 entry (phase B, 50 Mbps) that plays only through the stage.
         Assert.All(claims.VideoDecode.Where(decode => !decode.Hardware && SoftwareDecodePolicy.SoftwareFallbackVideoCodecs.Contains(decode.Codec)),
-            decode => Assert.Equal((1920, 1080), (decode.MaxWidth, decode.MaxHeight)));
+            decode => Assert.Equal(decode.MaxBitrateKbps is null ? (1920, 1080) : (3840, 2160), (decode.MaxWidth, decode.MaxHeight)));
         Assert.All(fallbacks, decode =>
         {
             Assert.Equal("FFmpeg", decode.DecoderName);

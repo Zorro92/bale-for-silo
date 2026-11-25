@@ -183,6 +183,7 @@ pub struct DeviceCapabilities {
     pub original_dolby_vision7_base_layer_supported: bool,
     pub original_dynamic_range_mapping_supported: bool,
     pub av1_dynamic_range_mapping_supported: bool,
+    pub software_dynamic_range_mapping_supported: bool,
 }
 
 /// Bale's `VideoDecodeCapability`, complete (C# always writes every field).
@@ -199,11 +200,15 @@ pub struct DecodeClaim {
     pub hardware: bool,
 }
 
-/// The two fields of a `VideoDecodeCapability` the capability filters read.
+/// The fields of a `VideoDecodeCapability` the capability filters read.
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct VideoDecode {
     pub codec: String,
     pub hardware: bool,
+    #[serde(default)]
+    pub max_width: Option<i32>,
+    #[serde(default)]
+    pub max_height: Option<i32>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]

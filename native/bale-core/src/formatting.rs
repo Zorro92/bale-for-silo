@@ -9,7 +9,9 @@ use crate::dotnet::{
     trim_lower,
 };
 use crate::models::{DecodeClaim, FileVersion, PlaybackVariant};
-use crate::software_decode::{SOFTWARE_FALLBACK_VIDEO_CODECS, fallback_admits, normalize_codec};
+use crate::software_decode::{
+    SOFTWARE_FALLBACK_VIDEO_CODECS, fallback_admits, needs_software_stage, normalize_codec,
+};
 
 /// A version label's height: the first `\b(\d{3,4})(?:p|i)?\b` number, else named tiers
 /// (8K, 4K/UHD, QHD, FHD, HD, SD), else 0.
@@ -550,10 +552,11 @@ fn match_display(
     // Display matching ranks versions the console plays comfortably, as the route would play them: on the
     // hardware decoder (an entry admits the file and the hardware takes its profile: the entries name no
     // profiles, so HEVC RExt, VP9 profile 1/3 and H.264 4:2:2 pass them on size and depth alone), in a
-    // bounded software entry, or in the hardware codecs' software fallback (phase A, docs/software-decode.md;
-    // `fallback_admits` adds the 30 fps chroma rule the claims can't say). The size-unbounded software
-    // entries of the software-only codecs (2026-11-17) admit any file, so they would pick a 4K software
-    // decode over a hardware 1080p version.
+    // bounded software entry, or in the hardware codecs' software fallback at 1080p (phase A,
+    // docs/software-decode.md; `fallback_admits` adds the 30 fps chroma rule the claims can't say). The
+    // size-unbounded software entries of the software-only codecs (2026-11-17) admit any file, so they
+    // would pick a 4K software decode over a hardware 1080p version; the 4K30 H.264 software entry
+    // (phase B, ~3 cores) never counts either.
     let hardware: Vec<DecodeClaim> = display_match
         .video_decode
         .iter()
@@ -570,11 +573,24 @@ fn match_display(
         })
         .cloned()
         .collect();
+    let fallback_1080p: Vec<DecodeClaim> = display_match
+        .video_decode
+        .iter()
+        .filter(|claim| {
+            !needs_software_stage(
+                &claim.codec,
+                claim.hardware,
+                claim.max_width,
+                claim.max_height,
+            )
+        })
+        .cloned()
+        .collect();
     let decodable = |i: usize| {
         let version = &versions[i];
         hardware_takes_profile(version) && decodes(version, &hardware)
             || decodes(version, &bounded_software)
-            || fallback_admits(version, &display_match.video_decode)
+            || fallback_admits(version, &fallback_1080p)
     };
     ranked
         .iter()

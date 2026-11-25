@@ -69,15 +69,16 @@ public sealed class SoftwareFallbackTests
             "h264|high 4:2:2,high 4:4:4 predictive|8,10|1920x1080@30",
             "hevc|rext|8,10,12|1920x1080@30",
             "vp9|profile 1,profile 3|8,10,12|1920x1080@30",
+            // Phase B: 8-bit H.264 past the hardware's 1080p, up to 4K30 (2.87 cores at 50 Mbps), through the stage.
+            "h264|constrained baseline,baseline,main,high|8|3840x2160@30",
         }, fallback.Select(Shape));
         Assert.All(fallback, decode =>
         {
             Assert.Equal("FFmpeg", decode.DecoderName);
             Assert.False(decode.Hardware);
-            Assert.Equal((1920, 1080), (decode.MaxWidth, decode.MaxHeight));
             Assert.Empty(decode.Levels);
-            // None was approved; the console clips ran at 20-50 Mbps.
-            Assert.Null(decode.MaxBitrateKbps);
+            // None was approved at 1080p (the console clips ran at 20-50 Mbps); the 4K entry has the 50 Mbps measured.
+            Assert.Equal(decode.MaxHeight == 2160 ? 50_000 : null, decode.MaxBitrateKbps);
         });
         // The start request opts into software decode, and every claim names a bundled FFmpeg decoder.
         var start = PlaybackStartBuilder.Build("file", "profile", "attempt", null, PlaybackSelection.Auto, Device, PlaybackTestSupport.Identity);
@@ -101,8 +102,8 @@ public sealed class SoftwareFallbackTests
     [InlineData("hevc", "rext", 12, 1920, 1080, 60.0, "yuv420p12le", true, true, true)]
     [InlineData("vp9", "profile 1", 8, 1920, 1080, 29.97, "yuv444p", true, true, true)]
     [InlineData("vp9", "profile 3", 10, 1920, 1080, 25.0, "yuv422p10le", true, true, true)]
-    // Outside them, where no entry admits the file: the server transcodes up front.
-    [InlineData("h264", "high", 8, 3840, 2160, 30.0, "yuv420p", false, true, false)]
+    // Outside them, where no entry admits the file: the server transcodes up front (4K30 H.264 8-bit is SoftwareStageTests').
+    [InlineData("h264", "high", 8, 3840, 2160, 60.0, "yuv420p", false, true, false)]
     [InlineData("h264", "high 10", 10, 3840, 2160, 23.976, "yuv420p10le", false, true, false)]
     [InlineData("h264", "high 4:2:2", 10, 1920, 1080, 60.0, "yuv422p10le", false, true, false)]
     [InlineData("h264", "high 10", 10, 1920, 1080, 120.0, "yuv420p10le", false, true, false)]

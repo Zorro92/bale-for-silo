@@ -22,7 +22,15 @@ internal static class PlaybackClaims
     {
         var hardware = await HardwareDecodeProbe.Limits;
         var capabilities = DisplayHdrOutput.DetectCapabilities(ConsoleEvidence.ForHardware(hardware));
-        capabilities = capabilities with { OriginalDynamicRangeMappingSupported = ConsoleToneMapRuntime.IsAvailable };
+        // Phase B (docs/software-decode.md): the stage takes FFmpeg software frames with wrapper bale.80+, so HDR software
+        // video may be tone-mapped here, and the 4K software entry needs the stage's SDR downscale.
+        var softwareStage = ConsoleToneMapRuntime.IsAvailable && ConsoleToneMapPolicy.SoftwareStageWrapperSupported(FfmpegWrapperVersion.Value);
+        capabilities = capabilities with
+        {
+            OriginalDynamicRangeMappingSupported = ConsoleToneMapRuntime.IsAvailable,
+            SoftwareDynamicRangeMappingSupported = softwareStage,
+        };
+        capabilities = SoftwareDecodePolicy.ForSoftwareStage(capabilities, softwareStage && ConsoleToneMapRuntime.SupportsSdrDownscale);
         var softwareVideo = SoftwareVideo();
         return (SoftwareDecodePolicy.ForSoftwareVideo(capabilities, softwareVideo), softwareVideo);
     }

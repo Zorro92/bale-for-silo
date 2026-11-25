@@ -16,9 +16,11 @@ public class PlaybackRoutePolicyTests
             decode => Assert.Contains(decode.Codec, SoftwareDecodePolicy.FfmpegVideoCodecs));
         Assert.All(ConsoleEvidence.Default.VideoDecode.Where(decode => !decode.Hardware && decode.Codec != "av1"
             && !SoftwareDecodePolicy.SoftwareFallbackVideoCodecs.Contains(decode.Codec)), decode => Assert.Null(decode.MaxHeight));
-        // The hardware codecs' software fallback stays inside its measured 1080p envelopes (phase A, owner 2026-11-24).
+        // The hardware codecs' software fallback stays inside its measured envelopes: 1080p (phase A, owner 2026-11-24), and
+        // 8-bit H.264 up to 4K30 at 50 Mbps through the stage (phase B).
         Assert.All(ConsoleEvidence.Default.VideoDecode.Where(decode => !decode.Hardware
-            && SoftwareDecodePolicy.SoftwareFallbackVideoCodecs.Contains(decode.Codec)), decode => Assert.Equal(1080, decode.MaxHeight));
+            && SoftwareDecodePolicy.SoftwareFallbackVideoCodecs.Contains(decode.Codec)), decode => Assert.Equal(
+                decode.MaxBitrateKbps is null ? (1920, 1080) : (3840, 2160), (decode.MaxWidth, decode.MaxHeight)));
         var av1 = Assert.Single(ConsoleEvidence.Default.VideoDecode, decode => decode.Codec == "av1");
         Assert.Equal("dav1d", av1.DecoderName);
         Assert.Equal(new[] { 8, 10 }, av1.BitDepths);

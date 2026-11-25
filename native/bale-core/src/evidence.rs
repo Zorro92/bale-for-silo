@@ -6,8 +6,7 @@ use serde::Serialize;
 use crate::hardware::{DecodeSize, Limits};
 use crate::models::HdrCapabilities;
 use crate::software_decode::{
-    AUDIO_CODECS, FALLBACK_ENVELOPES, FALLBACK_MAX_HEIGHT, FALLBACK_MAX_WIDTH, FFMPEG_VIDEO_CODECS,
-    SYSTEM_AUDIO_CODECS, VIDEO_CODECS,
+    AUDIO_CODECS, FALLBACK_ENVELOPES, FFMPEG_VIDEO_CODECS, SYSTEM_AUDIO_CODECS, VIDEO_CODECS,
 };
 
 /// Image subtitle codecs (silo-server's names) the overlay draws from the container.
@@ -274,12 +273,14 @@ pub fn video_decode(
             hardware: false,
         });
     }
-    // The hardware codecs' software fallback (owner, 2026-11-24, docs/software-decode.md phase A):
-    // only the console-measured envelopes, 1920x1080 at most, with profile names and bit depths so
-    // silo-server keeps them off files the hardware takes and off unknown profiles. The server takes a
-    // source any entry admits; what it can't check (chroma, and any bound when the profile-blind hardware
-    // entry admitted the file) the player does (software_decode::fallback_admits). Claimed with or
-    // without a probed hardware decoder: the software decoder doesn't depend on it.
+    // The hardware codecs' software fallback (owner, 2026-11-24, docs/software-decode.md phases A
+    // and B): only the console-measured envelopes (1080p, and 8-bit H.264 up to 4K30 at 50 Mbps),
+    // with profile names and bit depths so silo-server keeps them off files the hardware takes and
+    // off unknown profiles. The server takes a source any entry admits; what it can't check (chroma,
+    // and any bound when the profile-blind hardware entry admitted the file) the player does
+    // (software_decode::fallback_admits). Claimed with or without a probed hardware decoder: the
+    // software decoder doesn't depend on it. The 4K entry needs the stage on software frames; a
+    // device without it drops that entry (`DeviceFilter::ForSoftwareStage`).
     for envelope in FALLBACK_ENVELOPES {
         claims.push(VideoDecodeClaim {
             codec: envelope.codec,
@@ -287,10 +288,10 @@ pub fn video_decode(
             profiles: envelope.profiles.to_vec(),
             levels: vec![],
             bit_depths: envelope.bit_depths.to_vec(),
-            max_width: Some(FALLBACK_MAX_WIDTH),
-            max_height: Some(FALLBACK_MAX_HEIGHT),
+            max_width: Some(envelope.max_width),
+            max_height: Some(envelope.max_height),
             max_frame_rate: Some(envelope.max_frame_rate),
-            max_bitrate_kbps: None,
+            max_bitrate_kbps: envelope.max_bitrate_kbps,
             hardware: false,
         });
     }

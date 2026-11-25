@@ -40,6 +40,12 @@ public sealed record DeviceCapabilities(
     /// bale.74+) maps PQ/HLG to SDR itself. Never set by release builds (dav1d, 1080p, server-side mapping).
     /// </summary>
     public bool Av1DynamicRangeMappingSupported { get; init; }
+    /// <summary>
+    /// HDR originals the software fallback decodes (H.264/HEVC/VP9 inside a claimed software envelope, any chroma, 10/12-bit)
+    /// can be tone-mapped on the console too: the stage takes FFmpeg's software frames (wrapper bale.80+, docs/software-decode.md
+    /// phase B). Eligibility is still per selected version (ConsoleToneMapPolicy.CanManage).
+    /// </summary>
+    public bool SoftwareDynamicRangeMappingSupported { get; init; }
     public bool ProgressiveSupported { get; init; }
     public bool HlsSupported { get; init; } = true;
     /// <summary>

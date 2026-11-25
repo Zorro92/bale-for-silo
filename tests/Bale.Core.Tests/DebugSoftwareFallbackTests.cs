@@ -149,10 +149,11 @@ public sealed class DebugSoftwareFallbackTests
     {
         var device = SoftwareFallbackTests.Device with { OriginalDynamicRangeMappingSupported = true };
         Assert.Equal(device, Fallback.ToneMapCapabilities(device));
-        // The release claims carry the bounded envelopes only (phase A); the switch is a play-url measurement aid and never
-        // widens them, so the server never plans what only the switch would decode.
+        // The release claims carry the bounded envelopes only (phases A and B); the switch is a play-url measurement aid and
+        // never widens them, so the server never plans what only the switch would decode.
         Assert.All(device.VideoDecode.Where(decode => !decode.Hardware && SoftwareDecodePolicy.SoftwareFallbackVideoCodecs.Contains(decode.Codec)),
-            decode => Assert.Equal((1920, 1080), (decode.MaxWidth, decode.MaxHeight)));
+            decode => Assert.True(decode is { MaxWidth: 1920, MaxHeight: 1080, MaxBitrateKbps: null }
+                or { Codec: "h264", MaxWidth: 3840, MaxHeight: 2160, MaxFrameRate: 30, MaxBitrateKbps: 50_000 }));
     }
 
     [Fact]

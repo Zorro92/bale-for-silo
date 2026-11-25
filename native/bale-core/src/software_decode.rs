@@ -84,7 +84,7 @@ pub const DEMUXED_VIDEO_CODECS: &[&str] = &["vp9", "vc1", "mpeg2video"];
 
 // Hardware codecs FFmpeg decodes in software where the console's decoder can't take the file
 // (route::hardware_admits), only inside FALLBACK_ENVELOPES (owner, 2026-11-24: docs/software-decode.md
-// phase A). VC-1 and MPEG-2 have no files past their 1080p hardware decoders worth it.
+// phases A and B). VC-1 and MPEG-2 have no files past their 1080p hardware decoders worth it.
 pub const SOFTWARE_FALLBACK_VIDEO_CODECS: &[&str] = &["h264", "hevc", "vp9"];
 
 /// One console-measured software envelope of a hardware codec. The claims
@@ -93,15 +93,21 @@ pub struct FallbackEnvelope {
     pub codec: &'static str,
     /// ffprobe's profile names, lower-cased: silo-server compares a software entry's profiles
     /// literally (capabilities_v3.go videoProfileSupportedV3), so a file the hardware takes ("high",
-    /// "main 10", "profile 0") or one with no recorded profile never matches.
+    /// "main 10", "profile 0") or one with no recorded profile never matches, except where the
+    /// hardware stops at a smaller size (H.264 above 1080p).
     pub profiles: &'static [&'static str],
     pub bit_depths: &'static [i32],
+    pub max_width: i32,
+    pub max_height: i32,
     pub max_frame_rate: f64,
+    /// The measured bitrate, where one bounds the envelope (kbps).
+    pub max_bitrate_kbps: Option<i32>,
 }
 
-/// Every envelope's size. Media Foundation must never scale software 4K SDR down to a smaller
-/// display (its video processor leaks per open, docs/player-plan.md), so larger files wait for
-/// software frames through Bale's stage (phase B); the 4K30 CPU fits already.
+/// The 1080p envelopes' size. Above it a software frame plays only through the console stage's
+/// downscale or on a display that fits it (route.rs): Media Foundation must never scale software
+/// 4K SDR down (its video processor leaks per open, docs/player-plan.md), so those envelopes are
+/// claimed only where the stage takes software frames (`DeviceFilter::ForSoftwareStage`).
 pub const FALLBACK_MAX_WIDTH: i32 = 1920;
 pub const FALLBACK_MAX_HEIGHT: i32 = 1080;
 
@@ -113,42 +119,83 @@ pub const FALLBACK_NON_420_MAX_FRAME_RATE: f64 = 30.0;
 /// Measured on the Series X (2026-11-24, docs/software-decode.md "Measured on the console"), 0 missed
 /// frames each: H.264 High 10 1080p24 8 Mbps 0.78 cores and 1080p60 20 Mbps 1.90; H.264 High 4:2:2
 /// 10-bit 1080p30 50 Mbps 1.80; HEVC RExt 4:2:2 10-bit 1080p30 30 Mbps 2.08 and 12-bit 4:2:0 1080p24
-/// 1.06; VP9 profile 1 4:4:4 1080p30 0.90. No bitrate bound was approved; those clips' rates (20-50
-/// Mbps) are the measured ones.
+/// 1.06; VP9 profile 1 4:4:4 1080p30 0.90. No bitrate bound was approved at 1080p; those clips' rates
+/// (20-50 Mbps) are the measured ones.
 pub const FALLBACK_ENVELOPES: &[FallbackEnvelope] = &[
     // 4:2:0 above 8 bits: up to 60 fps, the console's app-mode output (owner).
     FallbackEnvelope {
         codec: "h264",
         profiles: &["high 10"],
         bit_depths: &[8, 10],
+        max_width: FALLBACK_MAX_WIDTH,
+        max_height: FALLBACK_MAX_HEIGHT,
         max_frame_rate: 60.0,
+        max_bitrate_kbps: None,
     },
     FallbackEnvelope {
         codec: "hevc",
         profiles: &["rext"],
         bit_depths: &[12],
+        max_width: FALLBACK_MAX_WIDTH,
+        max_height: FALLBACK_MAX_HEIGHT,
         max_frame_rate: 60.0,
+        max_bitrate_kbps: None,
     },
     // 4:2:2 and 4:4:4: up to 30 fps.
     FallbackEnvelope {
         codec: "h264",
         profiles: &["high 4:2:2", "high 4:4:4 predictive"],
         bit_depths: &[8, 10],
+        max_width: FALLBACK_MAX_WIDTH,
+        max_height: FALLBACK_MAX_HEIGHT,
         max_frame_rate: 30.0,
+        max_bitrate_kbps: None,
     },
     FallbackEnvelope {
         codec: "hevc",
         profiles: &["rext"],
         bit_depths: &[8, 10, 12],
+        max_width: FALLBACK_MAX_WIDTH,
+        max_height: FALLBACK_MAX_HEIGHT,
         max_frame_rate: 30.0,
+        max_bitrate_kbps: None,
     },
     FallbackEnvelope {
         codec: "vp9",
         profiles: &["profile 1", "profile 3"],
         bit_depths: &[8, 10, 12],
+        max_width: FALLBACK_MAX_WIDTH,
+        max_height: FALLBACK_MAX_HEIGHT,
         max_frame_rate: 30.0,
+        max_bitrate_kbps: None,
+    },
+    // Phase B (owner, 2026-11-24): 8-bit 4:2:0 H.264 past the hardware's 1080p up to 4K30, measured
+    // at 1.97 cores (13 Mbps) and 2.87 (50 Mbps) with 0 missed frames, so bounded at the 50 Mbps
+    // measured. Only through the stage's downscale on a smaller display (route.rs).
+    FallbackEnvelope {
+        codec: "h264",
+        profiles: &["constrained baseline", "baseline", "main", "high"],
+        bit_depths: &[8],
+        max_width: 3840,
+        max_height: 2160,
+        max_frame_rate: 30.0,
+        max_bitrate_kbps: Some(50_000),
     },
 ];
+
+/// A hardware codec's software entry above 1080p: it plays only through the console stage (or on a
+/// display that fits it), so a device whose stage can't take software frames doesn't claim it.
+pub fn needs_software_stage(
+    codec: &str,
+    hardware: bool,
+    max_width: Option<i32>,
+    max_height: Option<i32>,
+) -> bool {
+    !hardware
+        && SOFTWARE_FALLBACK_VIDEO_CODECS.contains(&codec)
+        && (max_width.is_some_and(|w| w > FALLBACK_MAX_WIDTH)
+            || max_height.is_some_and(|h| h > FALLBACK_MAX_HEIGHT))
+}
 
 // Measured Media Foundation playback, not merely installed decoder registrations.
 pub const SYSTEM_AUDIO_CODECS: &[&str] = &["aac", "ac3", "eac3", "mp3"];
@@ -229,8 +276,9 @@ pub fn lists() -> Lists {
     }
 }
 
-/// Whether the player decodes this file in FFmpeg software as a hardware codec's fallback (phase A
-/// of docs/software-decode.md): a software entry the attempt still claims admits it
+/// Whether the player decodes this file in FFmpeg software as a hardware codec's fallback (phases A
+/// and B of docs/software-decode.md; route.rs adds the stage rules): a software entry the attempt
+/// still claims admits it
 /// (`formatting::decodes`, Bale's mirror of the server's matching: codec, profile, bit depth, size,
 /// frame rate, bitrate), and a file not known to be 4:2:0 runs at most
 /// `FALLBACK_NON_420_MAX_FRAME_RATE` (a known rate). The server can't apply the chroma rule, nor any
@@ -355,6 +403,9 @@ pub enum DeviceFilter {
     WithoutSoftwareVideo,
     /// dav1d uses D3D11 CPU buffers and grain; no D3D12 or zero-copy gate.
     ForSoftwareVideo { supported: bool },
+    /// Without the stage on software frames (wrapper bale.80+ and bale_gpu's SDR downscale), drops
+    /// the software entries above 1080p (`needs_software_stage`); everything else stays.
+    ForSoftwareStage { supported: bool },
     /// Drops every claim that needs FFmpeg: software video, demuxer-only video and fallback audio,
     /// plus the base-layer, dynamic-range and progressive executors (FFmpeg's demuxer, tone map and
     /// non-seekable input; Windows' sources need a length).
@@ -416,6 +467,10 @@ pub fn filter_device(args: FilterDeviceArgs) -> FilteredDevice {
         DeviceFilter::WithoutSoftwareVideo => without_software(device),
         DeviceFilter::ForSoftwareVideo { supported: false } => without_software(device),
         DeviceFilter::ForSoftwareVideo { supported: true } => keep_all(device),
+        DeviceFilter::ForSoftwareStage { supported: true } => keep_all(device),
+        DeviceFilter::ForSoftwareStage { supported: false } => filter(device, &|_| true, &|d| {
+            !needs_software_stage(&d.codec, d.hardware, d.max_width, d.max_height)
+        }),
         DeviceFilter::WithoutFallbacks => FilteredDevice {
             audio_decode_codecs: device
                 .audio_decode_codecs
@@ -692,6 +747,11 @@ mod fallback_tests {
         .unwrap()
     }
 
+    fn with_kbps(mut version: FileVersion, kbps: i64) -> FileVersion {
+        version.video_tracks.as_mut().unwrap()[0].bitrate = Some(kbps);
+        version
+    }
+
     const HD: (i64, i64) = (1920, 1080);
     const UHD: (i64, i64) = (3840, 2160);
 
@@ -711,13 +771,95 @@ mod fallback_tests {
             assert_eq!(claim.bit_depths, envelope.bit_depths);
             assert_eq!(
                 (claim.max_width, claim.max_height),
-                (Some(1920), Some(1080))
+                (Some(envelope.max_width), Some(envelope.max_height))
             );
             assert_eq!(claim.max_frame_rate, Some(envelope.max_frame_rate));
-            assert_eq!(claim.max_bitrate_kbps, None);
+            assert_eq!(claim.max_bitrate_kbps, envelope.max_bitrate_kbps);
             // ffprobe's names, lower-cased, as silo-server compares them.
             assert!(claim.profiles.iter().all(|p| *p == p.to_lowercase()));
+            // Only the 4K entry (phase B) needs the stage, and only it has a bitrate bound.
+            let uhd = super::needs_software_stage(
+                &claim.codec,
+                claim.hardware,
+                claim.max_width,
+                claim.max_height,
+            );
+            assert_eq!(uhd, claim.max_bitrate_kbps.is_some());
         }
+        let uhd: Vec<_> = fallback
+            .iter()
+            .filter(|c| c.max_width > Some(1920))
+            .collect();
+        assert_eq!(uhd.len(), 1);
+        assert_eq!(
+            (uhd[0].codec.as_str(), uhd[0].bit_depths.as_slice()),
+            ("h264", &[8][..])
+        );
+        assert_eq!(
+            (uhd[0].max_width, uhd[0].max_height, uhd[0].max_frame_rate),
+            (Some(3840), Some(2160), Some(30.0))
+        );
+        assert_eq!(uhd[0].max_bitrate_kbps, Some(50_000));
+        assert_eq!(
+            uhd[0].profiles,
+            ["constrained baseline", "baseline", "main", "high"]
+        );
+    }
+
+    #[test]
+    fn a_device_without_the_software_stage_drops_only_the_4k_entry() {
+        use super::{DeviceFilter, DeviceLists, FilterDeviceArgs, filter_device};
+        let claims = series_claims();
+        let decode: Vec<crate::models::VideoDecode> = claims
+            .iter()
+            .map(|c| crate::models::VideoDecode {
+                codec: c.codec.clone(),
+                hardware: c.hardware,
+                max_width: c.max_width,
+                max_height: c.max_height,
+            })
+            .collect();
+        let lists = |decode: Vec<crate::models::VideoDecode>| DeviceLists {
+            video_codecs: vec!["h264".into(), "hevc".into(), "vp9".into()],
+            video_decode: decode,
+            audio_decode_codecs: vec!["aac".into()],
+            containers: vec!["mp4".into()],
+        };
+        let kept = filter_device(FilterDeviceArgs {
+            device: lists(decode.clone()),
+            filter: DeviceFilter::ForSoftwareStage { supported: false },
+        });
+        let dropped: Vec<usize> = (0..claims.len())
+            .filter(|i| !kept.video_decode.contains(i))
+            .collect();
+        assert_eq!(dropped.len(), 1);
+        assert_eq!(claims[dropped[0]].max_height, Some(2160));
+        assert!(!claims[dropped[0]].hardware);
+        assert_eq!(kept.video_codecs, ["h264", "hevc", "vp9"]);
+        let all = filter_device(FilterDeviceArgs {
+            device: lists(decode),
+            filter: DeviceFilter::ForSoftwareStage { supported: true },
+        });
+        assert_eq!(all.video_decode, (0..claims.len()).collect::<Vec<_>>());
+        // Hardware entries above 1080p and the other software codecs never need the software stage.
+        assert!(!super::needs_software_stage(
+            "hevc",
+            true,
+            Some(7680),
+            Some(4320)
+        ));
+        assert!(!super::needs_software_stage(
+            "av1",
+            false,
+            Some(3840),
+            Some(2160)
+        ));
+        assert!(!super::needs_software_stage(
+            "h264",
+            false,
+            Some(1920),
+            Some(1080)
+        ));
     }
 
     #[test]
@@ -790,6 +932,27 @@ mod fallback_tests {
                 Some("25"),
                 Some("yuv422p10le"),
             ),
+            // Phase B: 8-bit H.264 past the hardware's 1080p up to 4K30 and 50 Mbps.
+            file("h264", Some("High"), 8, UHD, Some("30"), Some("yuv420p")),
+            file(
+                "h264",
+                Some("main"),
+                8,
+                (2560, 1440),
+                Some("30000/1001"),
+                Some("yuv420p"),
+            ),
+            with_kbps(
+                file(
+                    "h264",
+                    Some("constrained baseline"),
+                    8,
+                    UHD,
+                    Some("25"),
+                    None,
+                ),
+                50_000,
+            ),
         ] {
             assert!(
                 super::fallback_admits(&version, &claims),
@@ -803,8 +966,20 @@ mod fallback_tests {
     fn outside_the_envelopes() {
         let claims = series_claims();
         for version in [
-            // 4K waits for phase B (software frames through Bale's stage).
-            file("h264", Some("high"), 8, UHD, Some("30"), Some("yuv420p")),
+            // Above 1080p only 8-bit H.264 at 30 fps and 50 Mbps (phase B).
+            file("h264", Some("high"), 8, UHD, Some("60"), Some("yuv420p")),
+            with_kbps(
+                file("h264", Some("high"), 8, UHD, Some("30"), Some("yuv420p")),
+                50_001,
+            ),
+            file(
+                "h264",
+                Some("high"),
+                8,
+                (4096, 2160),
+                Some("24"),
+                Some("yuv420p"),
+            ),
             file(
                 "h264",
                 Some("high 10"),
@@ -867,7 +1042,14 @@ mod fallback_tests {
                 Some("120"),
                 Some("yuv420p10le"),
             ),
-            file("h264", Some("high"), 8, HD, Some("30"), Some("yuv420p")),
+            file(
+                "hevc",
+                Some("main 10"),
+                10,
+                HD,
+                Some("30"),
+                Some("yuv420p10le"),
+            ),
             file(
                 "h264",
                 Some("high 4:2:2 intra"),

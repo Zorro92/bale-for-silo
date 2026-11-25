@@ -77,6 +77,17 @@ public static class SoftwareDecodePolicy
         });
 
     /// <summary>
+    /// Without the console stage on software frames (wrapper bale.80+ and bale_gpu's SDR downscale), drops the software
+    /// entries above 1080p (the 4K30 H.264 fallback, docs/software-decode.md phase B): Media Foundation must never scale
+    /// those frames down, so they play only through the stage or on a display that fits them.
+    /// </summary>
+    public static DeviceCapabilities ForSoftwareStage(DeviceCapabilities device, bool supported) =>
+        FilterDevice(device, "for_software_stage", writer =>
+        {
+            writer.WriteBoolean("supported", supported);
+        });
+
+    /// <summary>
     /// Drops every claim that needs FFmpeg: software video, demuxer-only video and fallback audio,
     /// and the executors built on it (DV base layers, dynamic range mapping, progressive).
     /// </summary>

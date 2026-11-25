@@ -92,6 +92,8 @@ internal static class BaleCoreArgs
             writer.WriteStartObject();
             writer.WriteString("codec", claim.Codec);
             writer.WriteBoolean("hardware", claim.Hardware);
+            if (claim.MaxWidth is { } width) writer.WriteNumber("max_width", width);
+            if (claim.MaxHeight is { } height) writer.WriteNumber("max_height", height);
             writer.WriteEndObject();
         }
         writer.WriteEndArray();
