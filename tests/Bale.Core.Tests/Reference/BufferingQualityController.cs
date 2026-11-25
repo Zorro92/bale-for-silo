@@ -253,8 +253,7 @@ internal sealed class BufferingQualityController(IBufferingQualityClock clock)
             || state.CooldownUntil is not null || LowerRung(state.Plan) is null
             || StepDownEstimate(delivered) is not { } estimate) return false;
         WithdrawPill();
-        SendReplan(BufferingAction.Lowered, AutoQuality, estimate, fromKbps: delivered,
-            observedThroughputKbps: ObservedThroughputKbps(state.Plan));
+        SendReplan(BufferingAction.Lowered, AutoQuality, estimate, fromKbps: delivered);
         return true;
     }
 
@@ -388,9 +387,9 @@ internal sealed class BufferingQualityController(IBufferingQualityClock clock)
         if (_isPaused || _transportTrouble || _current is not { } state) return;
         state.EndedStalls.RemoveAll(stall => now - stall.At >= StallWindowMs);
         if (!Triggered(state, now)) return;
-        // Before anything of the attempt played, the wait is the network's only on evidence.
+        // Before anything of the attempt played, the wait is the network's only on evidence. After that a stall lowers
+        // either way, but only evidence makes it a link fact (SendReplan).
         if (_attemptStage != AttemptStage.Played && !ArrivesSlowly(state.Plan)) return;
-        var evidenceKbps = _attemptStage == AttemptStage.Played ? null : ObservedThroughputKbps(state.Plan);
 
         // A suppressed trigger leaves history intact for a later evaluation.
         if (_answered || _pickPending || _rearmTimer is not null || _presented is not null) return;
@@ -419,8 +418,7 @@ internal sealed class BufferingQualityController(IBufferingQualityClock clock)
             }
             if (Mode == BufferingQualityMode.Always)
             {
-                SendReplan(BufferingAction.Lowered, AutoQuality, estimate, fromKbps: plan.DeliveredKbps,
-                    observedThroughputKbps: evidenceKbps);
+                SendReplan(BufferingAction.Lowered, AutoQuality, estimate, fromKbps: plan.DeliveredKbps);
                 return;
             }
         }
@@ -509,18 +507,24 @@ internal sealed class BufferingQualityController(IBufferingQualityClock clock)
 
     // ---- Replans ----
 
+    /// <summary>
+    /// An estimate (an Auto lowering) is <c>observed_rebuffer</c> with the plan's measured figure only when that figure is
+    /// below the delivered bitrate (silo-apple 3709c5fb, silo-android 878c972c4), decided here for every lowering;
+    /// otherwise the estimate goes alone.
+    /// </summary>
     private void SendReplan(BufferingAction action, string qualityPreference, int? estimateKbps = null, string? learnedLimit = null,
-        int? fromKbps = null, int? observedThroughputKbps = null)
+        int? fromKbps = null)
     {
         var now = NowMs;
+        var evidenceKbps = estimateKbps is null || _current is not { } playing ? null : ObservedThroughputKbps(playing.Plan);
         if (_current is { } state) state.Action = action;
         var request = new BufferingQualityReplan(QualityChangeOperation, qualityPreference) { BandwidthEstimateKbps = estimateKbps };
         if (SendsBufferingQualityFields)
             request = request with
             {
-                BandwidthEstimateSource = estimateKbps is null ? null : ObservedRebufferSource,
+                BandwidthEstimateSource = evidenceKbps is null ? null : ObservedRebufferSource,
                 LearnedLimit = learnedLimit,
-                ObservedThroughputKbps = observedThroughputKbps,
+                ObservedThroughputKbps = evidenceKbps,
             };
         // Only an Auto lowering sends an estimate; the next one replaces it.
         var priorKept = KeptEstimateKbps;

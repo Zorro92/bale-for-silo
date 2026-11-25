@@ -44,18 +44,34 @@ public enum BufferingWaitCause
 public sealed record BufferingQualityReplan(string Operation, string QualityPreference)
 {
     public int? BandwidthEstimateKbps { get; init; }
-    /// <summary><c>observed_rebuffer</c>; only to a server that advertises buffering_quality_v1.</summary>
+    /// <summary>
+    /// <c>observed_rebuffer</c>, on an Auto lowering with slow-link evidence (<see cref="BufferingQualityController"/>);
+    /// only to a server that advertises buffering_quality_v1.
+    /// </summary>
     public string? BandwidthEstimateSource { get; init; }
     /// <summary><c>clear</c>; only to a server that advertises buffering_quality_v1.</summary>
     public string? LearnedLimit { get; init; }
     /// <summary>
-    /// The evidence a lowering before anything of the attempt played rested on. Null on every other replan: the
-    /// player adds the playing plan's own figure.
+    /// What the plan's media measurably arrived at, below its delivered bitrate: the evidence an
+    /// <c>observed_rebuffer</c> lowering rests on. Null on every other replan, a lowering without that evidence included.
     /// </summary>
     public int? ObservedThroughputKbps { get; init; }
 
     /// <summary>Restore quality: Auto with no estimate.</summary>
     public bool IsRestore => QualityPreference == BufferingQualityController.AutoQuality && BandwidthEstimateKbps is null;
+
+    /// <summary>
+    /// The replan as it goes out, given the playing plan's reading when its request is built
+    /// (<paramref name="measuredKbps"/>, as <see cref="BufferingQualityController.MeasuredThroughputKbps"/> reads it). The
+    /// controller claimed a slow link on one reading; when the meter has none by then (the network changed, so the
+    /// server would learn the old network's stall against the new connection), the claim and its figure go and the
+    /// estimate still lowers (silo-android 878c972c4 PlaybackSessionManager: the claim goes with the reading or not at
+    /// all). The figure sent is the controller's, the one the claim rests on (silo-apple 3709c5fb).
+    /// </summary>
+    public BufferingQualityReplan WithEvidenceAtSend(int? measuredKbps) =>
+        BandwidthEstimateSource is null || measuredKbps is >= PlanThroughput.MinKbps and <= PlanThroughput.MaxKbps
+            ? this
+            : this with { BandwidthEstimateSource = null, ObservedThroughputKbps = null };
 }
 
 /// <summary>A display-only notice.</summary>
@@ -111,6 +127,13 @@ public sealed record BufferingSummaryOutput(BufferingPlanSummary Summary) : Buff
 /// one event with the clock's time, <see cref="Mode"/>, <see cref="SendsBufferingQualityFields"/> and the current
 /// <see cref="MeasuredThroughputKbps"/>, and gets back the ordered steps it caused: timers to schedule or cancel on
 /// <c>clock</c>, and outputs, which are raised through <see cref="Output"/> in that order once the call has returned.
+/// </para>
+/// <para>
+/// Slow-link evidence (silo-server f503d7e, silo-apple 3709c5fb, silo-android 878c972c4): an Auto lowering, by a trigger,
+/// a missed start deadline or Lower quality on the prompt, carries <c>observed_rebuffer</c> (which the server learns as
+/// this device's limit) and the figure as <c>observed_throughput_kbps</c> only while <see cref="MeasuredThroughputKbps"/>
+/// is below the plan's delivered bitrate, before and after the first frame. Otherwise the step-down estimate goes alone:
+/// a stall can be the server's own work, and the server plans under the estimate without learning it.
 /// </para>
 /// </summary>
 public sealed class BufferingQualityController
@@ -182,8 +205,9 @@ public sealed class BufferingQualityController
     public Action<BufferingQualityOutput>? Output { get; set; }
 
     /// <summary>
-    /// What the playing plan's media has measurably arrived at so far, in kbps, or null. Read once before every call
-    /// into the controller and passed with it: no call changes what it reads.
+    /// What the playing plan's media has measurably arrived at so far, in kbps, or null: the evidence a wait before the
+    /// first frame needs, and that any lowering needs to claim a slow link. Read once before every call into the
+    /// controller and passed with it: no call changes what it reads.
     /// </summary>
     public Func<int?> MeasuredThroughputKbps { get; set; } = () => null;
 

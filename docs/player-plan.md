@@ -2160,14 +2160,31 @@ Bale lowers quality when playback keeps buffering, as silo-server's design
   quality or track change, a reconnect) and the end of the media never count; a start wait counts only with evidence
   (below). An outage (a broken progressive body, or a wait while no media byte arrived for 4 s, 15 s on HLS) is no stall
   and ends only when media data arrives or playback runs.
-- **Throughput** (`PlanThroughput`): body bytes over the time spent inside body reads, from the Rust range/progressive
-  transports' counters (the Stats tab's Estimated bandwidth source), per plan, once 1 s of receiving time has
-  accumulated, 100–1,000,000 kbps. It is the evidence a start wait needs, the lowering's `observed_throughput_kbps`, and
-  the summary's `throughput_kbps`. Omitted on HLS (segments arrive at burst rate, as Apple omits on server HLS) and for a
-  plan that played across a network change.
+- **Throughput** (`PlanThroughput`, silo-apple's `UpstreamReadMeter`): the range/progressive transports' body bytes in
+  windows of about a second, each window that saw bytes charged its whole length (a lower bound), per plan, once 1 s of
+  receiving time has accumulated, 100–1,000,000 kbps. It is the summary's `throughput_kbps` and, off HLS, the
+  controller's reading. Omitted for a plan that played across a network change.
+- **HLS reading** (`SegmentThroughput`, 2026-11-25): Silo answers a transcode segment only once its encoder has written
+  it, so a clock that runs while the request waits reads a slow encoder as a slow link. The Rust HLS reader times each
+  segment body inside its reads (`progressive_stream.rs`, `Transfer`; Apple times server HLS on its relay per segment,
+  `3709c5fb`): the body's first read (which waited for the server), the time before and between bodies and the pump's
+  pauses on its full 16 MiB buffer never count, and a body with under 1 s of receiving counts nothing. Apple times
+  first byte to last; Bale counts only time inside the reads because its pump stops mid-segment when FFmpeg is not
+  reading, and a span would then read FFmpeg's pace as the link's. It is HLS's evidence and the lowering's
+  `observed_throughput_kbps`, never a `throughput_kbps` sample (Apple sends none on server HLS, and the server keeps the
+  highest sample as proof of what the link carries). Omitted across a network change too.
+- **Slow-link evidence** (silo-server `f503d7e`, Android `878c972c4`, Apple `3709c5fb`, 2026-11-25): the plan's reading
+  below its delivered bitrate. A wait before the first frame counts only with it. Every Auto lowering (a trigger, a
+  missed start deadline, Lower quality on the prompt), before and after the first frame, carries
+  `bandwidth_estimate_source: observed_rebuffer` with the reading as `observed_throughput_kbps` only with it, and drops
+  both when the reading is gone by the time the request is built (a network change; `WithEvidenceAtSend`). Otherwise
+  the step-down estimate goes alone: the server plans under it and learns nothing, since a stall can be the server's own
+  work (a slow encoder, subtitle burn-in, a node starting). Not ported: Apple's veto by the device's own receive count
+  (it guards a second reader of the source sharing the link; Bale reads a source through one stream and has no
+  interface counter).
 - **Modes** (`playback.buffering_quality_mode`; a server without the key runs Automatically): *Automatically* sends a
-  `quality_change` replan with `quality_preference: auto`, the step-down estimate, `bandwidth_estimate_source:
-  observed_rebuffer` and the plan's `observed_throughput_kbps`, then shows the undo pill ("Quality lowered to stop
+  `quality_change` replan with `quality_preference: auto` and the step-down estimate (with `observed_rebuffer` and
+  `observed_throughput_kbps` on slow-link evidence), then shows the undo pill ("Quality lowered to stop
   buffering" / **Restore quality**) when the new plan is lower. *Ask first* shows "Playback keeps buffering" with
   **Lower quality** / **Keep quality**; Lower sends the same replan and shows the "Quality lowered…" notice. *Never*
   detects and reports only (`buffering_action: ignored`). No lower rung: "Can't lower quality for this video", once
@@ -2187,7 +2204,10 @@ Bale lowers quality when playback keeps buffering, as silo-server's design
   server advertises `playback_plan_summary_v1`. Best effort, never retried.
 - **Debug:** `bale-debug.sh buffering` prints the controller's state; `bale-debug.sh buffering stall [ms]` injects a
   network stall of `ms` (default 8000) into the controller, bypassing detection: 6000 ms or more lowers on Auto, two of
-  1000 ms or more within 120 s also trigger (not inside the first 10 s of a plan).
+  1000 ms or more within 120 s also trigger (not inside the first 10 s of a plan). The plan's reading stays real, so on
+  a link faster than the plan the injected stall lowers with the estimate alone; the `player: buffering replan` log line
+  shows `source=` and `observed=` as sent (`evidence=gone` when the reading went before the request was built), and
+  `buffering` prints the HLS segment books next to the throughput.
 - **Skipped:** renderer waits (neither backend reports media buffered past the playhead, so a decoder that falls behind
   reads as a network stall; the spec's AVPlayer route has the same gap); waiting out an outage instead of failure recovery; keeping a summary on the device for
   the next launch when the app is killed; quality picks, Watch Party suspension and Wi-Fi/cellular pairs (Bale has no

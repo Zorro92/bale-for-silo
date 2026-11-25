@@ -23,6 +23,8 @@ pub const BUFFER_CHUNKS: usize = 256;
 /// A body read that gets no bytes this long is a stall; the C# stream waits for the server's reap.
 pub const READ_STALL: Duration = Duration::from_secs(30);
 const FREE_CHUNKS: usize = 8;
+/// A body that received for less than this gives no transfer reading ([`ProgressiveStats::transfer_us`]).
+pub const MIN_TRANSFER_US: u64 = 1_000_000;
 
 /// Diagnostics, the C# `ProgressiveHttpStream` properties. Times are microseconds; flags are 0 or 1.
 #[repr(C)]
@@ -37,6 +39,72 @@ pub struct ProgressiveStats {
     /// HLS: completed, and no segment from the mount's start held media (segment_media.rs): the mount
     /// started past the media's end.
     pub no_media: u64,
+    /// The bodies' transfer while bytes flowed, HLS's slow-link evidence ([`Transfer`]): bytes and time
+    /// inside the reads of each body that received for at least [`MIN_TRANSFER_US`], its first read
+    /// left out; the body being read counts once it has.
+    pub transfer_bytes: u64,
+    pub transfer_us: u64,
+}
+
+/// How fast the bodies arrived while they were arriving (silo-server buffering-quality design,
+/// "Slow-link evidence"; silo-apple `3709c5fb` times each server-HLS segment from its first byte to its
+/// last, segments under 1 s left out, Android's `PlaybackThroughputMeter` rules). A Silo transcode
+/// answers a segment only once its encoder has written all of it, so time spent waiting for a body is
+/// the server's work, not the link's: the first read of each body, which waited for its first bytes,
+/// counts neither its bytes nor its time, and neither does time before or between bodies.
+///
+/// Unlike AVPlayer's relay, this pump stops reading mid-body while its 16 MiB buffer is full, so a
+/// first-to-last-byte span would count FFmpeg's pace as the link's and read a fast link slow. Only time
+/// inside the reads counts: a read right after such a pause takes what waited in the socket at once,
+/// which reads fast, never slow. A failed read (a cut, a 30 s stall) adds nothing; its outage is the
+/// player's transport trouble, not a slow link. Bodies arrive one at a time, so nothing overlaps.
+#[derive(Debug, Default, Clone, Copy)]
+struct Transfer {
+    /// The body being read returned its first bytes: its later reads are timed.
+    started: bool,
+    body_bytes: u64,
+    body_us: u64,
+    /// Bodies that ended after receiving for MIN_TRANSFER_US.
+    done_bytes: u64,
+    done_us: u64,
+}
+
+impl Transfer {
+    /// A read of the current body returned `bytes` after `us` inside the read.
+    fn read(&mut self, bytes: u64, us: u64) {
+        if !self.started {
+            self.started = true;
+            return;
+        }
+        self.body_bytes += bytes;
+        self.body_us += us;
+    }
+
+    /// The current body ended, completely or cut: its books close, and the next body (or the rest of a
+    /// cut one, a new request) starts with an untimed first read.
+    fn end_body(&mut self) {
+        if self.body_us >= MIN_TRANSFER_US {
+            self.done_bytes += self.body_bytes;
+            self.done_us += self.body_us;
+        }
+        *self = Transfer {
+            done_bytes: self.done_bytes,
+            done_us: self.done_us,
+            ..Transfer::default()
+        };
+    }
+
+    /// (bytes, microseconds): the bodies counted so far, the one being read included once it counts.
+    fn totals(&self) -> (u64, u64) {
+        if self.body_us >= MIN_TRANSFER_US {
+            (
+                self.done_bytes + self.body_bytes,
+                self.done_us + self.body_us,
+            )
+        } else {
+            (self.done_bytes, self.done_us)
+        }
+    }
 }
 
 struct Chunk {
@@ -67,6 +135,8 @@ struct Shared {
     download_us: AtomicU64,
     buffered_bytes: AtomicU64,
     position: AtomicU64,
+    /// The pump's books; stats reads both totals at once.
+    transfer: Mutex<Transfer>,
 }
 
 pub struct ProgressiveStream {
@@ -151,14 +221,13 @@ impl Shared {
             } else {
                 body.as_mut().expect("a body is open").read(&mut data)
             };
-            self.download_us.fetch_add(
-                started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64,
-                Ordering::Relaxed,
-            );
+            let read_us = started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64;
+            self.download_us.fetch_add(read_us, Ordering::Relaxed);
             let length = match result {
                 Ok(0) => {
                     // This body is done; the source decides whether another follows.
                     lock(&self.queue).free.push(data);
+                    lock(&self.transfer).end_body();
                     body = None;
                     continue;
                 }
@@ -168,6 +237,8 @@ impl Shared {
                 // the reader plays what is queued.
                 Err(_) => {
                     lock(&self.queue).free.push(data);
+                    // The rest is a new request, whose wait for its first bytes is the server's again.
+                    lock(&self.transfer).end_body();
                     match source.resume(delivered) {
                         Some(Ok(rest)) if !self.closed.load(Ordering::Acquire) => {
                             body = Some(rest);
@@ -180,6 +251,7 @@ impl Shared {
                     }
                 }
             };
+            lock(&self.transfer).read(length as u64, read_us);
             delivered += length as u64;
             self.downloaded_bytes
                 .fetch_add(length as u64, Ordering::Relaxed);
@@ -322,6 +394,7 @@ impl ProgressiveStream {
     pub fn stats(&self) -> ProgressiveStats {
         let s = &self.shared;
         let flag = |value: &AtomicBool| u64::from(value.load(Ordering::Acquire));
+        let (transfer_bytes, transfer_us) = lock(&s.transfer).totals();
         ProgressiveStats {
             downloaded_bytes: s.downloaded_bytes.load(Ordering::Relaxed),
             download_us: s.download_us.load(Ordering::Relaxed),
@@ -330,6 +403,8 @@ impl ProgressiveStream {
             faulted: flag(&s.faulted),
             completed: flag(&s.completed),
             no_media: flag(&s.no_media),
+            transfer_bytes,
+            transfer_us,
         }
     }
 
@@ -358,5 +433,163 @@ impl ProgressiveStream {
 impl Drop for ProgressiveStream {
     fn drop(&mut self) {
         self.close();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::VecDeque;
+
+    #[test]
+    fn stats_keep_the_layout_the_csharp_struct_reads() {
+        // RustProgressiveStream.NativeProgressiveStats: nine u64 fields, in this order.
+        assert_eq!(std::mem::size_of::<ProgressiveStats>(), 9 * 8);
+    }
+
+    #[test]
+    fn transfer_leaves_out_first_reads_and_bodies_under_a_second() {
+        let mut t = Transfer::default();
+        // A segment the server held while it encoded: its first read waited 3 s, the rest came in 0.5 s.
+        t.read(1_000, 3_000_000);
+        t.read(64_000, 250_000);
+        t.read(64_000, 250_000);
+        t.end_body();
+        assert_eq!(t.totals(), (0, 0));
+        // A segment on a slow link counts, while it is still arriving too.
+        t.read(1_000, 10);
+        for _ in 0..4 {
+            t.read(10_000, 300_000);
+        }
+        assert_eq!(t.totals(), (40_000, 1_200_000));
+        t.end_body();
+        assert_eq!(t.totals(), (40_000, 1_200_000));
+        // The next body starts with an untimed first read, and under a second it adds nothing.
+        t.read(5_000, 2_000_000);
+        t.read(5_000, 900_000);
+        assert_eq!(t.totals(), (40_000, 1_200_000));
+    }
+
+    #[test]
+    fn a_cut_body_and_its_resumed_rest_are_two_requests() {
+        let mut t = Transfer::default();
+        t.read(1, 1);
+        t.read(10_000, 600_000);
+        t.end_body();
+        // The re-request's first read waited for the server again.
+        t.read(1, 2_000_000);
+        t.read(10_000, 600_000);
+        t.end_body();
+        assert_eq!(t.totals(), (0, 0));
+    }
+
+    /// A body whose first read returns after `first` and each of its next `reads` after `delay`, `chunk`
+    /// bytes each.
+    struct Paced {
+        first: Option<Duration>,
+        reads: usize,
+        chunk: usize,
+        delay: Duration,
+    }
+
+    impl Read for Paced {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            let wait = match self.first.take() {
+                Some(first) => first,
+                None if self.reads == 0 => return Ok(0),
+                None => {
+                    self.reads -= 1;
+                    self.delay
+                }
+            };
+            std::thread::sleep(wait);
+            let count = self.chunk.min(buffer.len());
+            buffer[..count].fill(7);
+            Ok(count)
+        }
+    }
+
+    struct Bodies(VecDeque<Paced>);
+
+    impl BodySource for Bodies {
+        fn next_body(&mut self) -> Option<Result<Box<dyn Read + Send>, StreamError>> {
+            self.0
+                .pop_front()
+                .map(|body| Ok(Box::new(body) as Box<dyn Read + Send>))
+        }
+    }
+
+    fn drain(stream: &ProgressiveStream) -> u64 {
+        let mut buffer = vec![0; CHUNK_SIZE];
+        let mut total = 0;
+        loop {
+            match stream.read(&mut buffer) {
+                0 => return total,
+                count => total += count as u64,
+            }
+        }
+    }
+
+    #[test]
+    fn the_pump_times_a_slow_body_but_not_the_wait_for_its_first_bytes() {
+        // The pump reads through the debug outage switch, which other tests arm.
+        let _faults = crate::media_fault::tests::exclusive();
+        let chunk = 16 * 1024;
+        let stream = ProgressiveStream::start(
+            Box::new(Bodies(VecDeque::from([
+                // The server worked 1.1 s before the first bytes, then sent fast.
+                Paced {
+                    first: Some(Duration::from_millis(1_100)),
+                    reads: 5,
+                    chunk,
+                    delay: Duration::ZERO,
+                },
+                // A slow link: 1.1 s of reads after the first.
+                Paced {
+                    first: Some(Duration::ZERO),
+                    reads: 5,
+                    chunk,
+                    delay: Duration::from_millis(220),
+                },
+            ]))),
+            None,
+        )
+        .unwrap();
+        assert_eq!(drain(&stream), 12 * chunk as u64);
+        let stats = stream.stats();
+        assert_eq!((stats.completed, stats.faulted), (1, 0));
+        assert_eq!(stats.transfer_bytes, 5 * chunk as u64);
+        assert!(
+            (1_100_000..2_300_000).contains(&stats.transfer_us),
+            "{}",
+            stats.transfer_us
+        );
+    }
+
+    #[test]
+    fn a_pause_on_a_full_buffer_is_not_receiving_time() {
+        let _faults = crate::media_fault::tests::exclusive();
+        // More than the 16 MiB buffer, sent fast; nothing reads for 1.2 s, so the pump waits mid-body.
+        let stream = ProgressiveStream::start(
+            Box::new(Bodies(VecDeque::from([Paced {
+                first: Some(Duration::ZERO),
+                reads: BUFFER_CHUNKS + 40,
+                chunk: CHUNK_SIZE,
+                delay: Duration::ZERO,
+            }]))),
+            None,
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_millis(1_200));
+        assert_eq!(
+            drain(&stream),
+            (BUFFER_CHUNKS as u64 + 41) * CHUNK_SIZE as u64
+        );
+        assert_eq!(stream.stats().completed, 1);
+        // Had the pause counted, the body would have spent over a second receiving: FFmpeg's pace, not the link's.
+        assert_eq!(
+            (stream.stats().transfer_bytes, stream.stats().transfer_us),
+            (0, 0)
+        );
     }
 }

@@ -324,12 +324,13 @@ mod tests {
             &mut c,
             r#"{"now":26000,"mode":"always","sends_fields":true,"measured_kbps":1,"event":{"type":"timer","timer":"long_stall"}}"#,
         );
+        // A lowering after the first frame carries the slow-link claim with the figure it rests on.
         assert_eq!(
             fired["steps"],
             serde_json::json!([
                 {"step":"schedule","timer":"rearm","at":86000},
                 {"step":"replan","replan":{"operation":"quality_change","quality_preference":"auto","bandwidth_estimate_kbps":44100,
-                    "bandwidth_estimate_source":"observed_rebuffer","learned_limit":null,"observed_throughput_kbps":null}}
+                    "bandwidth_estimate_source":"observed_rebuffer","learned_limit":null,"observed_throughput_kbps":1}}
             ])
         );
         assert_eq!(fired["state"]["kept_estimate_kbps"], 44100);

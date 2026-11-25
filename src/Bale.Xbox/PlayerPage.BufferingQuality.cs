@@ -22,6 +22,7 @@ public sealed partial class PlayerPage
     private readonly PolledBufferingQualityClock _bufferingClock = new(() => Environment.TickCount64);
     private readonly BufferingSignals _bufferingSignals = new();
     private readonly PlanThroughput _planThroughput = new();
+    private readonly SegmentThroughput _segmentThroughput = new();
     private readonly MediaSilence _mediaSilence = new();
     private readonly Dictionary<string, BufferingPlanRecord> _bufferingPlans = new(StringComparer.Ordinal);
     private BufferingQualityController? _bufferingController;
@@ -42,7 +43,10 @@ public sealed partial class PlayerPage
         public SiloClient Client { get; } = client;
         public string InstallationId { get; } = installationId;
         public int NetworkChanges { get; } = networkChanges;
-        /// <summary>Played over HLS: segments arrive at the connection's burst rate, so no throughput is reported.</summary>
+        /// <summary>
+        /// Played over HLS: its reading is the segments' transfer timing (<see cref="SegmentThroughput"/>), slow-link
+        /// evidence only, and no throughput sample is reported (silo-apple sends none on server HLS).
+        /// </summary>
         public bool Segmented { get; set; }
     }
 
@@ -54,10 +58,16 @@ public sealed partial class PlayerPage
 
     private bool BufferingPillVisible => BufferingPill.Visibility == Visibility.Visible;
 
-    /// <summary>The playing plan's media rate so far, or null (HLS, a network change, or too little to measure).</summary>
+    /// <summary>
+    /// The playing plan's media rate so far, or null (a network change, or too little to measure): the controller's
+    /// slow-link evidence. On HLS it is the segments' transfer timing (<see cref="SegmentThroughput"/>), elsewhere the
+    /// transport's windows (<see cref="PlanThroughput"/>).
+    /// </summary>
     private int? MeasuredPlanThroughput() =>
         _bufferingController?.CurrentPlanId is { } id && _bufferingPlans.TryGetValue(id, out var record)
-            && !record.Segmented && record.NetworkChanges == ConnectionSpeedService.NetworkChanges ? _planThroughput.Kbps : null;
+            && record.NetworkChanges == ConnectionSpeedService.NetworkChanges
+            ? record.Segmented ? _segmentThroughput.Kbps : _planThroughput.Kbps
+            : null;
 
     /// <summary>
     /// A replan the player sends for its own reasons (track change, seek reanchor, failure recovery): the playing plan's
@@ -91,6 +101,7 @@ public sealed partial class PlayerPage
             controller.PlanAdopted(BufferingQualityPlans.From(plan, id, start.QualityPreference, attempt.ServerFeatures, requestedEstimateKbps),
                 controllerInitiated);
             _planThroughput.Reset();
+            _segmentThroughput.Reset();
             _mediaSilence.Reset(Environment.TickCount64);
             _bufferingSignals.PlanAdopted();
             _bufferingEnded = false;
@@ -174,7 +185,13 @@ public sealed partial class PlayerPage
             // Wall-clock windows, not the transports' DownloadTime: 1 MiB blocks read at burst rate (PlanThroughput).
             _planThroughput.Observe(source, bytes, now);
             if (_mediaSilence.Observe(source, bytes, now)) _bufferingSignals.NoteMediaDataArrived();
-            if (media.Transport.IsHls && _bufferingPlans.TryGetValue(planId, out var record)) record.Segmented = true;
+            if (media.Transport.IsHls && media.Progressive is { } segments)
+            {
+                // HLS's slow-link evidence: each segment timed while it arrived, not while the server produced it.
+                var (transferred, time) = segments.BodyTransfer;
+                _segmentThroughput.Observe(segments, transferred, time);
+                if (_bufferingPlans.TryGetValue(planId, out var record)) record.Segmented = true;
+            }
         }
         catch (Exception ex) { LogFailure("buffering bytes", ex); }
     }
@@ -252,11 +269,16 @@ public sealed partial class PlayerPage
                 ? player.PlaybackSession.PlaybackState == MediaPlaybackState.Paused : media.StartPaused;
             // silo-server 4a73f48/d22e55f: a seek still waiting, not the clock it has not moved yet.
             var position = ReplanSeekPosition(attempt);
+            // silo-android 878c972c4: the slow-link claim goes with the reading it rests on, or not at all. The request is
+            // built once, so a resend keeps what this one sends.
+            var sent = change.WithEvidenceAtSend(MeasuredPlanThroughput());
             var request = PlaybackReplan.ForQualityChange(start, plan, attempt.PlanAttemptId, attempt.AttemptedPlanKeys,
-                attempt.Replanned ? 2 : 1, position, change);
+                attempt.Replanned ? 2 : 1, position, sent);
             Log.Info("player: buffering replan " + (restore ? "restore" : "lower")
-                + " estimate=" + (change.BandwidthEstimateKbps?.ToString(CultureInfo.InvariantCulture) ?? "-")
-                + " observed=" + (change.ObservedThroughputKbps?.ToString(CultureInfo.InvariantCulture) ?? "-"));
+                + " estimate=" + (sent.BandwidthEstimateKbps?.ToString(CultureInfo.InvariantCulture) ?? "-")
+                + " source=" + (sent.BandwidthEstimateSource ?? "-")
+                + " observed=" + (sent.ObservedThroughputKbps?.ToString(CultureInfo.InvariantCulture) ?? "-")
+                + (ReferenceEquals(sent, change) ? "" : " evidence=gone"));
             var decision = await SendBufferingReplanAsync(attempt, request);
             // Outcome is a server enum code; never log the plan or its URL.
             Log.Info($"player: buffering replan outcome={decision.Outcome}");
@@ -345,7 +367,8 @@ public sealed partial class PlayerPage
     private void SendPlanSummary(BufferingPlanSummary summary)
     {
         if (!_bufferingPlans.Remove(summary.PlanId, out var record)) return;
-        // throughput_kbps only from one network and outside HLS (the meter belongs to the plan that just ended).
+        // throughput_kbps only from one network and outside HLS (the meter belongs to the plan that just ended). On HLS the
+        // segments' timing is slow-link evidence only: silo-apple sends no sample on server HLS either.
         var throughput = !record.Segmented && record.NetworkChanges == ConnectionSpeedService.NetworkChanges ? _planThroughput.Kbps : null;
         summary = summary with { ThroughputKbps = throughput };
         var routeEvent = PlaybackRouteEvents.ForPlanSummary(summary, record.Context, record.InstallationId, Guid.NewGuid().ToString());
@@ -525,7 +548,7 @@ public sealed partial class PlayerPage
                 $"Mode: {(controller is null ? "none" : Bale.Core.Settings.BufferingQualityModes.Wire(controller.Mode))}\n"
                 + $"Plan: {controller?.CurrentPlanId ?? "none"} delivered={summary?.DeliveredKbps?.ToString(CultureInfo.InvariantCulture) ?? "-"} estimate={summary?.BandwidthEstimateKbps?.ToString(CultureInfo.InvariantCulture) ?? "-"}\n"
                 + $"Played: {summary?.PlayedMs ?? 0} ms; stalls={summary?.StallCount ?? 0} total={summary?.StallTotalMs ?? 0} ms longest={summary?.StallLongestMs ?? 0} ms; action={(summary is null ? "none" : BufferingQualityWire.Action(summary.Action))}\n"
-                + $"Throughput: {MeasuredPlanThroughput()?.ToString(CultureInfo.InvariantCulture) ?? "-"} kbps ({_planThroughput.Bytes} bytes)\n"
+                + $"Throughput: {MeasuredPlanThroughput()?.ToString(CultureInfo.InvariantCulture) ?? "-"} kbps ({_planThroughput.Bytes} bytes; HLS segments {_segmentThroughput.Bytes} bytes in {(long)_segmentThroughput.Time.TotalMilliseconds} ms)\n"
                 + $"Kept estimate: {controller?.KeptEstimateKbps?.ToString(CultureInfo.InvariantCulture) ?? "-"}\n"
                 + $"Pill: {(controller?.Pill is { } pill ? pill.Kind.ToString() : controller?.PillPending == true ? "hidden" : "none")}\n"
                 + $"Plan summaries: {(_attempt?.ServerFeatures.Contains(PlaybackProtocol.PlanSummaryFeature) == true ? "advertised" : "not advertised")}\n");

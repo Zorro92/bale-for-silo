@@ -166,6 +166,15 @@ public sealed class RustProgressiveStream : MediaProgressiveStream
     public override long DownloadedBytes => (long)Stats.DownloadedBytes;
     public override TimeSpan DownloadTime => TimeSpan.FromMicroseconds(Stats.DownloadUs);
 
+    public override (long Bytes, TimeSpan Time) BodyTransfer
+    {
+        get
+        {
+            var stats = Stats;
+            return ((long)stats.TransferBytes, TimeSpan.FromMicroseconds(stats.TransferUs));
+        }
+    }
+
     public override bool CanRead => !_disposed;
     public override bool CanSeek => false;
     public override bool CanWrite => false;
@@ -275,10 +284,11 @@ public sealed class RustProgressiveStream : MediaProgressiveStream
         }
     }
 
+    /// <summary>progressive_stream.rs <c>ProgressiveStats</c>, field for field.</summary>
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeProgressiveStats
     {
-        public ulong DownloadedBytes, DownloadUs, BufferedBytes, Position, Faulted, Completed, NoMedia;
+        public ulong DownloadedBytes, DownloadUs, BufferedBytes, Position, Faulted, Completed, NoMedia, TransferBytes, TransferUs;
     }
 
     private sealed class ProgressiveHandle() : SafeHandleZeroOrMinusOneIsInvalid(true)

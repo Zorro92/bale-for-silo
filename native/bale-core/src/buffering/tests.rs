@@ -462,6 +462,161 @@ fn a_long_stall_lowers_and_the_timers_it_no_longer_needs_go() {
     assert_eq!(h.pending(), 0);
 }
 
+/// The Auto lowering of `ladder_plan`'s 63 Mbps plan: the step-down estimate, with the slow-link claim
+/// and the figure it rests on when there is one.
+fn lowering(evidence_kbps: Option<i32>) -> Replan {
+    Replan {
+        operation: QUALITY_CHANGE_OPERATION.to_owned(),
+        quality_preference: AUTO_QUALITY.to_owned(),
+        bandwidth_estimate_kbps: Some(44_100),
+        bandwidth_estimate_source: evidence_kbps.map(|_| OBSERVED_REBUFFER_SOURCE),
+        learned_limit: None,
+        observed_throughput_kbps: evidence_kbps,
+    }
+}
+
+/// A plan that has played since 0 and waits from 125 s: at 131 s the long stall triggers.
+fn long_stall_after_playing(mode: Mode, sends_fields: bool, measured: Option<i32>) -> Harness {
+    let mut h = Harness::new(mode, sends_fields);
+    h.measured_kbps = measured;
+    h.call(|c| c.plan_adopted(ladder_plan("p1", Some(63_000), "auto"), true));
+    h.call(Controller::playing);
+    h.advance_to(125_000);
+    h.call(|c| c.waiting(WaitCause::Network, 0));
+    h.advance_to(131_000);
+    h
+}
+
+// Slow-link evidence: silo-android 878c972c4 (BufferingQualityControllerTest "after the first play a
+// stall lowers, but claims a slow link only with measured slow transfer"), silo-apple 3709c5fb.
+#[test]
+fn after_the_first_frame_a_stall_lowers_but_claims_a_slow_link_only_on_slow_transfer() {
+    let cases = [
+        (
+            "slow transfer measured",
+            Some(2_000),
+            Mode::Always,
+            Some(2_000),
+        ),
+        // Media waited on at the server (a slow encoder) and then arrived fast, or in bursts too short to time.
+        ("no transfer timed", None, Mode::Always, None),
+        (
+            "media arriving above the delivered bitrate",
+            Some(80_000),
+            Mode::Always,
+            None,
+        ),
+        (
+            "media arriving at the delivered bitrate",
+            Some(63_000),
+            Mode::Always,
+            None,
+        ),
+        ("an accepted prompt without evidence", None, Mode::Ask, None),
+        (
+            "an accepted prompt on a slow link",
+            Some(2_000),
+            Mode::Ask,
+            Some(2_000),
+        ),
+    ];
+    for (name, measured, mode, claim) in cases {
+        let mut h = long_stall_after_playing(mode, true, measured);
+        if mode == Mode::Ask {
+            assert_eq!(
+                h.controller.pill().map(|p| p.kind),
+                Some(PillKind::Prompt),
+                "{name}"
+            );
+            h.call(Controller::select_lower);
+        }
+        // The step-down still goes out: a smaller output helps a slow encoder too.
+        assert_eq!(h.replans(), [&lowering(claim)], "{name}");
+        assert_eq!(h.controller.kept_estimate_kbps(), Some(44_100), "{name}");
+    }
+}
+
+#[test]
+fn the_prompt_pick_claims_a_slow_link_on_the_reading_it_is_made_with() {
+    // The reading at the pick decides, not the one the prompt was offered on.
+    for (at_prompt, at_pick, claim) in [(Some(2_000), None, None), (None, Some(3_000), Some(3_000))]
+    {
+        let mut h = long_stall_after_playing(Mode::Ask, true, at_prompt);
+        assert_eq!(h.controller.pill().map(|p| p.kind), Some(PillKind::Prompt));
+        h.measured_kbps = at_pick;
+        h.advance_to(135_000);
+        h.call(Controller::select_lower);
+        assert_eq!(h.replans(), [&lowering(claim)]);
+    }
+}
+
+#[test]
+fn a_picked_rung_never_claims_a_slow_link() {
+    let mut h = Harness::new(Mode::Always, true);
+    h.measured_kbps = Some(2_000);
+    let mut plan = ladder_plan("p1", Some(8_000), "1080p-high");
+    plan.active_quality = Some("1080p-high".into());
+    h.call(|c| c.plan_adopted(plan, true));
+    h.call(Controller::playing);
+    h.advance_to(125_000);
+    h.call(|c| c.waiting(WaitCause::Network, 0));
+    h.advance_to(131_000);
+    h.call(Controller::select_lower);
+    let pick = Replan {
+        operation: QUALITY_CHANGE_OPERATION.to_owned(),
+        quality_preference: "1080p-medium".to_owned(),
+        bandwidth_estimate_kbps: None,
+        bandwidth_estimate_source: None,
+        learned_limit: None,
+        observed_throughput_kbps: None,
+    };
+    assert_eq!(h.replans(), [&pick]);
+}
+
+#[test]
+fn without_the_feature_a_lowering_sends_its_estimate_alone() {
+    let h = long_stall_after_playing(Mode::Always, false, Some(2_000));
+    assert_eq!(h.replans(), [&lowering(None)]);
+}
+
+#[test]
+fn before_anything_played_only_evidence_lowers_and_the_lowering_carries_it() {
+    for (measured, claim) in [
+        (None, None),
+        (Some(80_000), None),
+        (Some(20_000), Some(20_000)),
+    ] {
+        let mut h = Harness::new(Mode::Always, true);
+        h.measured_kbps = measured;
+        h.call(|c| c.plan_adopted(ladder_plan("p1", Some(63_000), "auto"), true));
+        h.call(|c| c.waiting(WaitCause::Network, 0));
+        h.advance_to(30_000);
+        let expected: Vec<Replan> = claim.map(|kbps| lowering(Some(kbps))).into_iter().collect();
+        assert_eq!(
+            h.replans().into_iter().cloned().collect::<Vec<_>>(),
+            expected,
+            "{measured:?}"
+        );
+    }
+}
+
+#[test]
+fn a_missed_start_deadline_lowers_only_on_evidence_and_claims_the_link() {
+    for (measured, lowers) in [(None, false), (Some(63_000), false), (Some(20_000), true)] {
+        let mut h = Harness::new(Mode::Always, true);
+        h.measured_kbps = measured;
+        h.call(|c| c.plan_adopted(ladder_plan("p1", Some(63_000), "auto"), true));
+        h.call(|c| c.waiting(WaitCause::Network, 0));
+        h.advance_to(5_000);
+        assert_eq!(h.call(Controller::start_deadline_passed), lowers);
+        let expected: Vec<Replan> = lowers.then(|| lowering(measured)).into_iter().collect();
+        assert_eq!(
+            h.replans().into_iter().cloned().collect::<Vec<_>>(),
+            expected
+        );
+    }
+}
+
 #[test]
 fn step_down_and_lower_rung() {
     assert_eq!(step_down_estimate(Some(63_000)), Some(44_100));

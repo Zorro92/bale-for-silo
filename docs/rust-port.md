@@ -365,7 +365,11 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    - **Measured throughput.** `MeasuredThroughputKbps` stays a C# callback; the wrapper reads it once
      before every call and passes the value in. The original read it only when a decision needed it,
      but nothing a call does changes what the page's callback reads (the plan's meter and the network
-     generation), so the value is the same; the callback has no side effects.
+     generation), so the value is the same; the callback has no side effects. Since 2026-11-25 every
+     Auto lowering carries `observed_rebuffer` and the figure only when it is below the delivered
+     bitrate (slow-link evidence, docs/player-plan.md "Buffering quality"); `send_replan` decides it,
+     and `Reference/BufferingQualityController.cs` got the same rule so the differential test still
+     compares the two.
    - **Timers.** Rust decides every timer (long stall, suppression, rearm, pill) and its deadline and
      reports it as a step: `schedule` (timer, deadline) or `cancel` (timer). The wrapper mirrors each one
      onto the injected `IBufferingQualityClock`, one clock timer per Rust timer, and a firing comes back

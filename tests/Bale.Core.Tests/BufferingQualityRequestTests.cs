@@ -109,6 +109,27 @@ public sealed class BufferingQualityRequestTests
     }
 
     [Fact]
+    public async Task ALoweringWithoutEvidenceReachesTheWireAsTheEstimateAlone()
+    {
+        // silo-server f503d7e: the server plans under an estimate with no source and learns no limit from it. Here the
+        // reading was gone when the request was built (silo-android 878c972c4).
+        var stub = new StubHandler().Enqueue(SpeedCapabilities).Enqueue(HttpStatusCode.Created, Decision).Enqueue(Decision);
+        using var client = Create(stub);
+        client.Settings.StoreBufferingQuality(new(BufferingQualityMode.Always, Supported: true));
+        var start = Start();
+        await client.Playback.StartAsync(start, new Installation());
+
+        await client.Playback.ReplanAsync("session", PlaybackReplan.ForQualityChange(start, Plan, "plan-attempt", [], 1, 30,
+            Lowering.WithEvidenceAtSend(null)), new Installation());
+        var body = Body(stub, 2);
+        Assert.Equal("quality_change", Text(body, "operation"));
+        Assert.Equal("44100", Text(body, "bandwidth_estimate_kbps"));
+        Assert.Null(Text(body, "bandwidth_estimate_source"));
+        Assert.Null(Text(body, "observed_throughput_kbps"));
+        Assert.Contains(ConnectionSpeed.BufferingQualityFeature, body.GetProperty("client_features").EnumerateArray().Select(e => e.GetString()));
+    }
+
+    [Fact]
     public async Task RestoreQualitySendsClearAndNoEstimate()
     {
         var stub = new StubHandler().Enqueue(SpeedCapabilities).Enqueue(HttpStatusCode.Created, Decision).Enqueue(Decision);
@@ -266,6 +287,69 @@ public sealed class BufferingQualityRequestTests
         // Above 1,000,000 is capped.
         meter.Observe(stream, 0, 0);
         meter.Observe(stream, 1_000_000_000, 1_000);
+        Assert.Equal(1_000_000, meter.Kbps);
+    }
+
+    // SegmentThroughput: the plan's share of the Rust HLS reader's segment transfer totals (silo-apple 3709c5fb
+    // RelayPlanThroughput).
+
+    private static TimeSpan Ms(long ms) => TimeSpan.FromMilliseconds(ms);
+
+    [Fact]
+    public void SegmentThroughputIsTheTimedBytesOverTheirTime()
+    {
+        var meter = new SegmentThroughput();
+        var stream = new object();
+        // Nothing timed yet: no segment has received for a second.
+        meter.Observe(stream, 0, TimeSpan.Zero);
+        Assert.Null(meter.Kbps);
+        // 5 Mbps: 1,250,000 bytes over 2 s of receiving.
+        meter.Observe(stream, 1_250_000, Ms(2_000));
+        Assert.Equal(5_000, meter.Kbps);
+        meter.Observe(stream, 2_500_000, Ms(3_000));
+        Assert.Equal(6_666, meter.Kbps);
+        Assert.Equal(2_500_000, meter.Bytes);
+        Assert.Equal(Ms(3_000), meter.Time);
+    }
+
+    [Fact]
+    public void SegmentThroughputCountsANewMountFromZeroAndTheOldPlansStreamFromWhereItWas()
+    {
+        var meter = new SegmentThroughput();
+        var first = new object();
+        meter.Observe(first, 1_000_000, Ms(1_000));
+        // A seek remount: the new stream's totals are all this plan's.
+        var second = new object();
+        meter.Observe(second, 500_000, Ms(1_000));
+        Assert.Equal(1_500_000, meter.Bytes);
+        Assert.Equal(6_000, meter.Kbps);
+        // A new plan whose stream goes on (an answer that keeps the transport): what it counted so far was the old plan's.
+        meter.Reset();
+        Assert.Null(meter.Kbps);
+        meter.Observe(second, 500_000, Ms(1_000));
+        Assert.Equal(0, meter.Bytes);
+        meter.Observe(second, 1_750_000, Ms(3_000));
+        Assert.Equal(5_000, meter.Kbps);
+        // Totals that go back on the same stream object start again from there.
+        meter.Observe(second, 100, Ms(10));
+        meter.Observe(second, 250_100, Ms(1_010));
+        Assert.Equal(1_500_000, meter.Bytes);
+        Assert.Equal(4_000, meter.Kbps);
+    }
+
+    [Fact]
+    public void SegmentThroughputOutsideTheBoundsIsNullOrCapped()
+    {
+        var meter = new SegmentThroughput();
+        var stream = new object();
+        // Under a second of receiving, or under 100 kbps, measures nothing.
+        meter.Observe(stream, 1_000_000, Ms(999));
+        Assert.Null(meter.Kbps);
+        meter.Reset();
+        meter.Observe(new object(), 10_000, Ms(1_000));
+        Assert.Null(meter.Kbps);
+        meter.Reset();
+        meter.Observe(new object(), 1_000_000_000, Ms(1_000));
         Assert.Equal(1_000_000, meter.Kbps);
     }
 

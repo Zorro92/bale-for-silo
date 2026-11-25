@@ -11,6 +11,16 @@
 //! measured throughput ([`Inputs`]), and leaves an ordered list of [`Step`]s: the timers to schedule or
 //! cancel on the host's clock and the outputs to raise (replans, pills, notices, plan summaries). The
 //! host applies them in order, so a timer the host fires comes back as [`Controller::timer_fired`].
+//!
+//! Slow-link evidence (silo-server `f503d7e`, the design's "Slow-link evidence"; silo-apple
+//! `3709c5fb`, silo-android `878c972c4`): before anything of the attempt played, a wait counts only
+//! when the plan's media measurably arrived below its delivered bitrate. After that any stall can
+//! lower, since a smaller output also helps a server encoding slower than real time, but a lowering
+//! claims a slow link, `observed_rebuffer` (which the server learns as this device's limit for 24 h)
+//! with that figure as `observed_throughput_kbps`, only on the same evidence: a stall can be the
+//! server's own work (a slow encoder, subtitle burn-in, a node starting), which says nothing about the
+//! link. Without it the step-down estimate goes alone: the server plans under it and records nothing.
+//! The Lower quality pick on the prompt follows the same rule.
 
 use serde::{Deserialize, Serialize};
 
@@ -95,12 +105,14 @@ pub struct Replan {
     pub operation: String,
     pub quality_preference: String,
     pub bandwidth_estimate_kbps: Option<i32>,
-    /// `observed_rebuffer`; only to a server that advertises buffering_quality_v1.
+    /// `observed_rebuffer`, on an Auto lowering with evidence of a slow link (the module notes); only
+    /// to a server that advertises buffering_quality_v1.
     pub bandwidth_estimate_source: Option<&'static str>,
     /// `clear`; only to a server that advertises buffering_quality_v1.
     pub learned_limit: Option<&'static str>,
-    /// The evidence a lowering before anything of the attempt played rested on. None on every other
-    /// replan: the player adds the playing plan's own figure.
+    /// What the plan's media measurably arrived at, below its delivered bitrate: the evidence a
+    /// lowering's `observed_rebuffer` rests on, sent as `observed_throughput_kbps`. None on every
+    /// other replan, a lowering without that evidence included.
     pub observed_throughput_kbps: Option<i32>,
 }
 
@@ -590,7 +602,8 @@ impl Controller {
 
     /// The plan failed before its first frame because the player's own start deadline passed. On Auto
     /// in `always` with evidence that its media arrived below its delivered bitrate, it lowers as a
-    /// long stall would and returns true; false leaves the failure to the player's usual recovery.
+    /// long stall would (so the lowering carries `observed_rebuffer` and that figure) and returns
+    /// true; false leaves the failure to the player's usual recovery.
     pub fn start_deadline_passed(&mut self) -> bool {
         let now = self.now();
         if self.inputs.mode != Mode::Always
@@ -624,7 +637,6 @@ impl Controller {
         let Some(estimate) = step_down_estimate(Some(delivered)) else {
             return false;
         };
-        let observed = self.observed_throughput_kbps(plan);
         self.withdraw_pill();
         self.send_replan(
             Action::Lowered,
@@ -632,7 +644,6 @@ impl Controller {
             Some(estimate),
             None,
             Some(delivered),
-            observed,
         );
         true
     }
@@ -643,7 +654,8 @@ impl Controller {
         self.pill.map(|pill| pill.kind)
     }
 
-    /// Lower quality on the prompt.
+    /// Lower quality on the prompt. On Auto it sends the step-down estimate, a slow-link claim only
+    /// on evidence at the pick, as a trigger's lowering does (silo-apple `3709c5fb`).
     pub fn select_lower(&mut self) {
         if self.visible_pill_kind() != Some(PillKind::Prompt) {
             return;
@@ -672,12 +684,11 @@ impl Controller {
                 Some(estimate),
                 None,
                 delivered,
-                None,
             );
         }
         // This playback only: the saved preference does not change.
         else {
-            self.send_replan(Action::Accepted, rung, None, None, from_named, None);
+            self.send_replan(Action::Accepted, rung, None, None, from_named);
         }
     }
 
@@ -706,7 +717,6 @@ impl Controller {
             AUTO_QUALITY.to_owned(),
             None,
             Some(LEARNED_LIMIT_CLEAR),
-            None,
             None,
         );
     }
@@ -822,15 +832,11 @@ impl Controller {
             return;
         }
         let state = self.current.as_ref().expect("checked above");
-        // Before anything of the attempt played, the wait is the network's only on evidence.
+        // Before anything of the attempt played, the wait is the network's only on evidence. After
+        // that a stall lowers either way, but only evidence makes it a link fact (`send_replan`).
         if self.attempt_stage != AttemptStage::Played && !self.arrives_slowly(&state.plan) {
             return;
         }
-        let evidence_kbps = if self.attempt_stage == AttemptStage::Played {
-            None
-        } else {
-            self.observed_throughput_kbps(&state.plan)
-        };
 
         // A suppressed trigger leaves history intact for a later evaluation.
         if self.answered
@@ -872,7 +878,6 @@ impl Controller {
                     Some(estimate),
                     None,
                     delivered,
-                    evidence_kbps,
                 );
                 return;
             }
@@ -917,13 +922,15 @@ impl Controller {
             .and_then(|stall| stall.timed_from)
     }
 
-    /// Evidence the plan's media arrives too slowly: its measured throughput below its delivered bitrate.
+    /// Evidence the plan's media arrives too slowly: its measured throughput below its delivered
+    /// bitrate. No figure, or one at or above the bitrate, is no evidence: the plan may stall for
+    /// another reason (the server producing media slower than real time).
     fn arrives_slowly(&self, plan: &Plan) -> bool {
         self.observed_throughput_kbps(plan).is_some()
     }
 
-    /// The figure a lowering sends as observed_throughput_kbps: the measured rate when below the
-    /// delivered bitrate.
+    /// The figure a lowering sends as observed_throughput_kbps, with `observed_rebuffer`: the measured
+    /// rate when below the delivered bitrate.
     fn observed_throughput_kbps(&self, plan: &Plan) -> Option<i32> {
         match (plan.delivered_kbps, self.inputs.measured_kbps) {
             (Some(delivered), Some(measured)) if measured < delivered => Some(measured),
@@ -947,6 +954,11 @@ impl Controller {
 
     // ---- Replans ----
 
+    /// Sends the replan for `action`, which becomes the plan's `buffering_action`. An estimate (an Auto
+    /// lowering) is `observed_rebuffer` with the plan's measured figure only when that figure is below
+    /// the delivered bitrate (silo-apple `3709c5fb` sendReplan, silo-android `878c972c4`
+    /// slowLinkEvidence), decided here once for every lowering: a trigger's, a missed start deadline's
+    /// and the prompt's Lower quality. Without it the estimate goes alone.
     fn send_replan(
         &mut self,
         action: Action,
@@ -954,9 +966,13 @@ impl Controller {
         estimate_kbps: Option<i32>,
         learned_limit: Option<&'static str>,
         from_kbps: Option<i32>,
-        observed_throughput_kbps: Option<i32>,
     ) {
         let now = self.now();
+        let evidence_kbps = estimate_kbps.and_then(|_| {
+            self.current
+                .as_ref()
+                .and_then(|state| self.observed_throughput_kbps(&state.plan))
+        });
         if let Some(state) = &mut self.current {
             state.action = action;
         }
@@ -965,11 +981,11 @@ impl Controller {
             operation: QUALITY_CHANGE_OPERATION.to_owned(),
             quality_preference,
             bandwidth_estimate_kbps: estimate_kbps,
-            bandwidth_estimate_source: estimate_kbps
+            bandwidth_estimate_source: evidence_kbps
                 .filter(|_| sends)
                 .map(|_| OBSERVED_REBUFFER_SOURCE),
             learned_limit: learned_limit.filter(|_| sends),
-            observed_throughput_kbps: observed_throughput_kbps.filter(|_| sends),
+            observed_throughput_kbps: evidence_kbps.filter(|_| sends),
         };
         // Only an Auto lowering sends an estimate; the next one replaces it.
         let prior_kept = self.kept_estimate_kbps;

@@ -250,9 +250,17 @@ internal sealed class BufferingQualityHarness
         };
     }
 
+    /// <summary>A reading below <see cref="Plan"/>'s 63 Mbps: a link too slow for it.</summary>
+    public const int SlowLinkKbps = 20_000;
+
     public ManualBufferingQualityClock Clock { get; } = new();
     public BufferingQualityController Controller { get; }
-    public int? MeasuredKbps { get; set; }
+
+    /// <summary>
+    /// The playing plan's reading. A slow link by default, so a lowering claims it (silo-android 878c972c4 defaults its
+    /// harness to a reading too); the cases without evidence set null or a fast one.
+    /// </summary>
+    public int? MeasuredKbps { get; set; } = SlowLinkKbps;
 
     public bool SendsBufferingQualityFields
     {

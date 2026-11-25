@@ -31,6 +31,14 @@ public abstract class MediaProgressiveStream : Stream
     public abstract TimeSpan DownloadTime { get; }
 
     /// <summary>
+    /// How fast the bodies arrived while they were arriving, HLS's slow-link evidence (<see cref="SegmentThroughput"/>):
+    /// body bytes and the time inside the reads of each body (segment) that received for at least a second, its first
+    /// read, which waited for the server, left out (native/bale-core/src/progressive_stream.rs, <c>Transfer</c>). Both
+    /// from one reading. Zero where the stream does not time it (the C# stream).
+    /// </summary>
+    public virtual (long Bytes, TimeSpan Time) BodyTransfer => (0, TimeSpan.Zero);
+
+    /// <summary>
     /// A WinRT IInputStream that reads without managed code and never faults, as a raw ABI pointer
     /// owning one reference; 0 when this stream has none (the C# stream).
     /// </summary>

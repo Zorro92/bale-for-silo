@@ -10,8 +10,24 @@ namespace Bale.Core.Tests;
 /// </summary>
 public sealed class BufferingQualityControllerTests
 {
-    private static BufferingQualityReplan AutoLowering(int estimate) =>
-        new("quality_change", "auto") { BandwidthEstimateKbps = estimate, BandwidthEstimateSource = "observed_rebuffer" };
+    /// <summary>An Auto lowering: the step-down estimate, and the slow-link claim with the figure it rests on, if any.</summary>
+    private static BufferingQualityReplan AutoLowering(int estimate, int? observed = SlowLinkKbps) =>
+        new("quality_change", "auto")
+        {
+            BandwidthEstimateKbps = estimate,
+            BandwidthEstimateSource = observed is null ? null : "observed_rebuffer",
+            ObservedThroughputKbps = observed,
+        };
+
+    /// <summary>The vectors' long stall on a plan that has played: it waits from 125000 and triggers at 131000.</summary>
+    private static BufferingQualityHarness LongStallAfterPlaying(BufferingQualityMode mode, int? measured)
+    {
+        var h = new BufferingQualityHarness(mode) { MeasuredKbps = measured };
+        h.StartPlaying(Plan("p1"));
+        h.At(125_000, c => c.Waiting());
+        h.Clock.AdvanceTo(131_000);
+        return h;
+    }
 
     /// <summary>The vectors' undo case: a long stall lowers Auto at 131000 and the undo pill shows at 134000.</summary>
     private static BufferingQualityHarness LoweredAutomatically()
@@ -145,11 +161,11 @@ public sealed class BufferingQualityControllerTests
         h.Clock.AdvanceTo(30_000);
         Assert.Empty(h.Replans);
 
-        var slow = new BufferingQualityHarness(BufferingQualityMode.Always) { MeasuredKbps = 20_000 };
+        var slow = new BufferingQualityHarness(BufferingQualityMode.Always) { MeasuredKbps = 15_000 };
         slow.At(0, c => c.PlanAdopted(Plan("p1")));
         slow.At(0, c => c.Waiting());
         slow.Clock.AdvanceTo(16_000);
-        Assert.Equal(AutoLowering(44_100) with { ObservedThroughputKbps = 20_000 }, slow.Replans.Single());
+        Assert.Equal(AutoLowering(44_100, observed: 15_000), slow.Replans.Single());
 
         // Media arriving at or above the bitrate is no evidence: the start runs on to its own failure path.
         var fast = new BufferingQualityHarness(BufferingQualityMode.Always) { MeasuredKbps = 80_000 };
@@ -157,6 +173,93 @@ public sealed class BufferingQualityControllerTests
         fast.At(0, c => c.Waiting());
         fast.Clock.AdvanceTo(30_000);
         Assert.Empty(fast.Replans);
+    }
+
+    /// <summary>
+    /// silo-android 878c972c4 / silo-apple 3709c5fb, server f503d7e "Slow-link evidence": once the attempt has played, any
+    /// stall lowers (a smaller output also helps a server encoding slower than real time), but only media that measurably
+    /// arrived below the plan's 63 Mbps makes the lowering claim a slow link, which the server learns for 24 hours.
+    /// </summary>
+    [Theory]
+    [InlineData(BufferingQualityMode.Always, 2_000, 2_000)]
+    // Media waited on at the server (a slow encoder) and then arrived fast, or in bursts too short to time.
+    [InlineData(BufferingQualityMode.Always, null, null)]
+    [InlineData(BufferingQualityMode.Always, 80_000, null)]
+    [InlineData(BufferingQualityMode.Always, 63_000, null)]
+    // Lower quality on the prompt follows the same rule.
+    [InlineData(BufferingQualityMode.Ask, null, null)]
+    [InlineData(BufferingQualityMode.Ask, 2_000, 2_000)]
+    public void AfterTheFirstFrameAStallLowersButClaimsASlowLinkOnlyOnSlowTransfer(BufferingQualityMode mode, int? measured,
+        int? claimed)
+    {
+        var h = LongStallAfterPlaying(mode, measured);
+        if (mode == BufferingQualityMode.Ask)
+        {
+            Assert.Equal(BufferingPillKind.Prompt, h.Controller.Pill?.Kind);
+            h.At(132_000, c => c.SelectLower());
+        }
+        Assert.Equal([AutoLowering(44_100, claimed)], h.Replans);
+        // The estimate is kept for the attempt's own later replans either way.
+        Assert.Equal(44_100, h.Controller.KeptEstimateKbps);
+    }
+
+    [Fact]
+    public void ThePromptPickClaimsASlowLinkOnTheReadingItIsMadeWith()
+    {
+        var gone = LongStallAfterPlaying(BufferingQualityMode.Ask, 2_000);
+        gone.MeasuredKbps = null;
+        gone.At(135_000, c => c.SelectLower());
+        Assert.Equal([AutoLowering(44_100, observed: null)], gone.Replans);
+
+        var measured = LongStallAfterPlaying(BufferingQualityMode.Ask, null);
+        measured.MeasuredKbps = 3_000;
+        measured.At(135_000, c => c.SelectLower());
+        Assert.Equal([AutoLowering(44_100, observed: 3_000)], measured.Replans);
+    }
+
+    [Fact]
+    public void AMissedStartDeadlineLowersOnlyOnEvidenceAndThenClaimsTheLink()
+    {
+        foreach (var (measured, lowers) in new (int?, bool)[] { (null, false), (63_000, false), (15_000, true) })
+        {
+            var h = new BufferingQualityHarness(BufferingQualityMode.Always) { MeasuredKbps = measured };
+            h.At(0, c => c.PlanAdopted(Plan("p1")));
+            h.At(0, c => c.Waiting());
+            h.Clock.AdvanceTo(5_000);
+            Assert.Equal(lowers, h.Controller.StartDeadlinePassed());
+            BufferingQualityReplan[] expected = lowers ? [AutoLowering(44_100, measured)] : [];
+            Assert.Equal(expected, h.Replans);
+        }
+    }
+
+    [Fact]
+    public void WithoutTheFeatureALoweringSendsItsEstimateAlone()
+    {
+        var h = new BufferingQualityHarness(BufferingQualityMode.Always) { SendsBufferingQualityFields = false, MeasuredKbps = 2_000 };
+        h.StartPlaying(Plan("p1"));
+        h.At(125_000, c => c.Waiting());
+        h.Clock.AdvanceTo(131_000);
+        Assert.Equal([AutoLowering(44_100, observed: null)], h.Replans);
+    }
+
+    [Fact]
+    public void ALoweringWhoseReadingIsGoneWhenSentClaimsNoSlowLink()
+    {
+        // silo-android 878c972c4: the controller saw slow transfer, then the network changed before the request was built.
+        var sourced = AutoLowering(44_100, observed: 2_000);
+        Assert.Equal(AutoLowering(44_100, observed: null), sourced.WithEvidenceAtSend(null));
+        // While a reading stands, the claim goes with the controller's own figure, the one it rests on.
+        Assert.Same(sourced, sourced.WithEvidenceAtSend(2_400));
+        // A reading the server would refuse is none.
+        Assert.Equal(AutoLowering(44_100, observed: null), sourced.WithEvidenceAtSend(99));
+        Assert.Equal(AutoLowering(44_100, observed: null), sourced.WithEvidenceAtSend(1_000_001));
+        // Nothing else changes: an unsourced lowering, Restore quality and a picked rung go as they are.
+        var unsourced = AutoLowering(44_100, observed: null);
+        Assert.Same(unsourced, unsourced.WithEvidenceAtSend(null));
+        var restore = new BufferingQualityReplan("quality_change", "auto") { LearnedLimit = "clear" };
+        Assert.Same(restore, restore.WithEvidenceAtSend(null));
+        var pick = new BufferingQualityReplan("quality_change", "1080p-medium");
+        Assert.Same(pick, pick.WithEvidenceAtSend(null));
     }
 
     [Fact]

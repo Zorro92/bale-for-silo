@@ -123,6 +123,22 @@ public sealed class RustHlsStreamTests
     }
 
     [Fact]
+    public async Task SegmentsThatArriveInUnderASecondGiveNoTransferReading()
+    {
+        // HLS slow-link evidence (progressive_stream.rs Transfer): a body counts only after a second inside its reads, so
+        // loopback segments give none, and the counters around the new stats fields still read right.
+        using var server = Server();
+        using var client = Client(server);
+        await using var stream = await client.Playback.OpenMedia(Plan()).OpenNativeHlsAsync(0, default);
+        Assert.Equal(Expected(0).Length, (await ReadAll(stream)).Length);
+        Assert.True(stream.Completed);
+        Assert.False(stream.Faulted);
+        Assert.Equal(Expected(0).Length, stream.DownloadedBytes);
+        Assert.Equal(0, stream.BufferedBytes);
+        Assert.Equal((0L, TimeSpan.Zero), stream.BodyTransfer);
+    }
+
+    [Fact]
     public async Task StartsAtTheSegmentHoldingTheStartTime()
     {
         using var server = Server();
