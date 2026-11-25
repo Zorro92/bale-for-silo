@@ -59,6 +59,7 @@ dotnet kiota generate \
   --include-path '/api/v2/library/{id}/sections' \
   --include-path '/api/v2/catalog/series/{id}/seasons' \
   --include-path '/api/v2/catalog/series/{id}/seasons/{num}/episodes' \
+  --include-path '/api/v2/events/ws-ticket' \
   --include-path '/api/v2/favorites/{item_id}' \
   --include-path '/api/v2/watchlist/{item_id}' \
   --include-path '/api/v2/watched/{id}' \

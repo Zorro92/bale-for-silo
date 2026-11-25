@@ -6,6 +6,7 @@ using Bale.Core.Api.Api.V2.Auth;
 using Bale.Core.Api.Api.V2.Calendar;
 using Bale.Core.Api.Api.V2.Capabilities;
 using Bale.Core.Api.Api.V2.Catalog;
+using Bale.Core.Api.Api.V2.Events;
 using Bale.Core.Api.Api.V2.Favorites;
 using Bale.Core.Api.Api.V2.History;
 using Bale.Core.Api.Api.V2.Home;
@@ -62,6 +63,11 @@ namespace Bale.Core.Api.Api.V2
         public global::Bale.Core.Api.Api.V2.Catalog.CatalogRequestBuilder Catalog
         {
             get => new global::Bale.Core.Api.Api.V2.Catalog.CatalogRequestBuilder(PathParameters, RequestAdapter);
+        }
+        /// <summary>The events property</summary>
+        public global::Bale.Core.Api.Api.V2.Events.EventsRequestBuilder Events
+        {
+            get => new global::Bale.Core.Api.Api.V2.Events.EventsRequestBuilder(PathParameters, RequestAdapter);
         }
         /// <summary>The favorites property</summary>
         public global::Bale.Core.Api.Api.V2.Favorites.FavoritesRequestBuilder Favorites
