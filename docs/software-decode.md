@@ -280,6 +280,12 @@ Everything up to 4K30 fits in about 3 cores; only 4K60 does not. `threads=4` cha
 through Bale's stage (phase B), whatever the CPU says. Not measured: run 8 (a library title end to end), HDR
 software frames, Series S.
 
+**Phase A console check (2026-11-24, 0.1.768, release gate, no switches):** the six 1080p clips above play through
+`software fallback (past the hardware decoder, inside the release envelope)` with 0 missed frames and the same CPU
+(0.71–2.09 cores); the 4K30 H.264 clip is refused with the envelope message (409); with `swfallback=on` it plays
+(2.95 cores, 0 missed, logged "past the release bounds"); 1080p HEVC Main 10 stays on the system decoder and 4K
+HEVC HDR10 on FFmpeg D3D11. Not checked: a library title through Silo (none at hand past the hardware decoder).
+
 ### Costs besides the decoder
 
 - **Frame memory.** A 4K frame is 12.4 MB (8-bit 4:2:0) or 24.9 MB (10/12-bit, 16-bit samples); 1080p is a quarter.
