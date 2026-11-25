@@ -17,6 +17,9 @@ public sealed partial class DetailFeed
     private const int PhotoWidth = 200;
     private const int StillWidth = 360;
 
+    /// <summary>TvArtworkLayout's SIMILAR surface, for the body's poster rails: 130dp posters at 1080p's 2x density.</summary>
+    private const int RailPosterWidth = 260;
+
     private readonly SiloApiClient _api;
     private readonly BrowseFeed _browse;
 
@@ -124,8 +127,7 @@ public sealed partial class DetailFeed
         var response = await _api.Api.V2.Recommendations.Similar[contentId].GetAsync(config =>
         {
             config.QueryParameters.Limit = 12;
-            // TvArtworkLayout's SIMILAR surface: 130dp posters at 1080p's 2x density.
-            config.QueryParameters.PosterWidth = 260;
+            config.QueryParameters.PosterWidth = RailPosterWidth;
         }, cancellationToken).ConfigureAwait(false);
         return (response?.Items ?? [])
             .Where(item => !string.IsNullOrWhiteSpace(item.ContentId) && item.ContentId != contentId && BrowseFeed.IsVisibleTvType(item.Type, showAudiobooks: true))

@@ -69,6 +69,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         _cardMenu = new CardMenuHost(this, PageScroller, item =>
         {
             if (item is EpisodeView) _ = Playback.ShowComingAsync();
+            else if (IsCollectionsItem(item)) OpenCollectionsItem(item);
             else OpenSimilar(item);
         });
         _cardMenu.Changed += OnMenuCardChanged;
@@ -128,6 +129,13 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         _trailersRail.Entered += () => AnchorSection(TrailersSection);
         _similarRail = Rail.Attach(Similar);
         _similarRail.Entered += () => AnchorSection(SimilarSection);
+        CollectionPreview.ItemsSource = _collectionTiles;
+        _collectionPreviewRail = Rail.Attach(CollectionPreview);
+        _collectionPreviewRail.Entered += () => AnchorSection(CollectionsSection);
+        _collectionCardsRail = Rail.Attach(CollectionCards);
+        _collectionCardsRail.Entered += () => AnchorSection(CollectionsSection);
+        // The section joins the page only once it has a row (PlaceCollectionsSection).
+        SupportingSections.Children.Remove(CollectionsSection);
 
         ActionButton.Attach(StartOverButton);
         ActionButton.Attach(EditionSelector);
@@ -273,6 +281,9 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
             // TvItemDetailViewModel loads recommendations after publishing the hero, never in its critical path.
             LoadingRing.Visibility = Visibility.Collapsed;
             _ = LoadSimilarAsync(detail);
+            // A new load shows no collections row until its own read answers (TvItemDetailViewModel.loadDetail).
+            ShowCollections(null);
+            _ = LoadCollectionsAsync(detail);
             FocusRetry.Until(PlayButton, () => !_active || PlayButton.Focus(FocusState.Programmatic));
 
             if (detail.PlaysEpisodes)
@@ -1022,6 +1033,12 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         else if (item.Content is TrailerView)
         {
             ApplyTrailerFocus(root, focused);
+        }
+        else if (item.Content is CollectionExploreAllView)
+        {
+            // TvExploreAllCard.kt: a poster end card lifts 1.10 and brightens, as on Home (BrowsePage.ApplyTileFocus).
+            CardFocus.Apply(item, focused, 1.10f);
+            if (root.FindName("ExploreAll") is Control surface) VisualStateManager.GoToState(surface, focused ? "Focused" : "Resting", false);
         }
         else if (item.Content is CardView)
         {

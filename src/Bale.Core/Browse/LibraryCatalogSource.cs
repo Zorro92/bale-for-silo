@@ -43,13 +43,19 @@ public sealed class LibraryCatalogSource(string title, LibraryBrowseQuery query,
         _ => "No favorites yet",
     };
 
-    /// <summary>screens/library/TvLibraryCollectionDetailViewModel.kt: source kind and stored collection order.</summary>
-    public static LibraryCatalogSource Collection(string libraryId, string? mediaScope, LibraryCollection collection, LibraryBrowseFeed library) =>
+    /// <summary>
+    /// screens/library/TvLibraryCollectionDetailViewModel.kt: source kind and stored collection order.
+    /// <paramref name="controlsMediaType"/> picks only the Sort and Filter vocabulary when there is no
+    /// <paramref name="mediaScope"/>: a title page opens a server collection unscoped with its library's type
+    /// (TvAppNavigation.kt onOpenCollection, Android cb2c32d8a).
+    /// </summary>
+    public static LibraryCatalogSource Collection(string libraryId, string? mediaScope, LibraryCollection collection, LibraryBrowseFeed library,
+        string? controlsMediaType = null) =>
         // navigation/TvAppNavigation.kt accepts only movie/series route scopes. Audiobook collections
         // keep their native facet/sort vocabulary and TV-visible covers without adding a wire type scope.
         new(collection.Title, new(mediaScope is "movie" or "series" ? libraryId : null,
             mediaScope is "movie" or "series" ? mediaScope : null, new() { Sort = LibrarySortOption.CollectionOrder },
-            collection.Id, collection.UserCollection), library) { ControlsMediaType = mediaScope };
+            collection.Id, collection.UserCollection), library) { ControlsMediaType = mediaScope ?? controlsMediaType };
 
     /// <summary>PersonalListViewModels.kt: cross-library, forty cards, server's stored list order.</summary>
     public static LibraryCatalogSource Personal(string kind, LibraryBrowseFeed library) => kind switch

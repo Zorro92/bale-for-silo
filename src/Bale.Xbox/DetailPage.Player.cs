@@ -43,6 +43,7 @@ public sealed partial class DetailPage
             };
             _returnCastIndex = null;
             _returnSimilarId = null;
+            _returnCollectionsKey = null;
             _returnPlaybackFocus = new(targetId, fromEpisode ? targetId : null, overridePosition == 0.0);
             // ShellPage.OpenDetail already pushed Detail into the root PageFrame. Its own Frame
             // therefore covers all shell chrome and keeps Back on this exact Detail stack entry.

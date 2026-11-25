@@ -31,11 +31,12 @@ public sealed partial class ExploreAllView : BrowseTileView, INotifyPropertyChan
     }
 }
 
+/// <summary>A media card, or the end card of its row (Home's Explore all, a title page's collection Explore all).</summary>
 public sealed partial class BrowseTileTemplateSelector : DataTemplateSelector
 {
     public DataTemplate MediaTemplate { get; set; } = null!;
     public DataTemplate ExploreTemplate { get; set; } = null!;
-    protected override DataTemplate SelectTemplateCore(object item) => item is ExploreAllView ? ExploreTemplate : MediaTemplate;
+    protected override DataTemplate SelectTemplateCore(object item) => item is CardView ? MediaTemplate : ExploreTemplate;
     protected override DataTemplate SelectTemplateCore(object item, DependencyObject container) => SelectTemplateCore(item);
 }
 

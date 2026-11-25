@@ -5,6 +5,15 @@ using Windows.UI.Xaml.Media.Imaging;
 
 namespace Bale.Xbox.Views;
 
+/// <summary>
+/// The Explore all card that ends a title page's collection preview and opens the collection (TvItemCollectionsRow.kt,
+/// TvExploreAllCard.kt): the preview's poster bounds, no caption, no card menu.
+/// </summary>
+public sealed partial class CollectionExploreAllView : BrowseTileView
+{
+    public override string Key => ItemCollectionsRow.ExploreAllKey;
+}
+
 /// <summary>An episode card on the series page (TvDetailEpisodeRail, series geometry): 180x101 still, "S01E02 · Title", date and runtime.</summary>
 public sealed partial class EpisodeView : INotifyPropertyChanged
 {

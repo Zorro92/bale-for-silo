@@ -99,6 +99,10 @@
         <Grid x:Name="Art" Width="{StaticResource SkylineDetailRelatedWidth}" Height="{StaticResource SkylineDetailRelatedHeight}">
           <Grid CornerRadius="{StaticResource SkylineCardRadius}" Background="{StaticResource SkylineCardPlaceholder}">
             <TextBlock Text="{x:Bind Title}" Visibility="{x:Bind FallbackVisibility}" Style="{StaticResource SkylineDetailTrailerSecondaryStyle}" TextWrapping="Wrap" VerticalAlignment="Center" />
+            <!-- TvCollectionCard.kt: Icons.Filled.VideoLibrary at white 80% on a poster-less "Also in" collection. -->
+            <Viewbox Style="{StaticResource SkylineCollectionFallbackStyle}" Visibility="{x:Bind CollectionFallbackVisibility}">
+              <Path Style="{StaticResource SkylineCollectionFallbackGlyphStyle}" Data="M4,6 H2 V20 C2,21.1 2.9,22 4,22 H18 V20 H4 Z M20,2 H8 C6.9,2 6,2.9 6,4 V16 C6,17.1 6.9,18 8,18 H20 C21.1,18 22,17.1 22,16 V4 C22,2.9 21.1,2 20,2 Z M12,14.5 V5.5 L18,10 Z" />
+            </Viewbox>
             <Image Source="{x:Bind Image}" Stretch="UniformToFill" />
             <ItemsControl ItemsSource="{x:Bind CornerTop}" ItemTemplate="{StaticResource PosterBadgeTemplate}" Margin="{x:Bind CornerInset}"
                           HorizontalAlignment="Left" VerticalAlignment="Top" IsTabStop="False" IsHitTestVisible="False" />
@@ -127,6 +131,17 @@
         </StackPanel>
       </StackPanel>
     </DataTemplate>
+    <!-- TvItemCollectionsRow.kt / TvExploreAllCard.kt: the preview's poster bounds, without a caption or menu. -->
+    <DataTemplate x:Key="CollectionExploreTemplate" x:DataType="views:CollectionExploreAllView">
+      <StackPanel Width="{StaticResource SkylineDetailRelatedWidth}" AutomationProperties.Name="Explore all">
+        <Grid x:Name="Art" Width="{StaticResource SkylineDetailRelatedWidth}" Height="{StaticResource SkylineDetailRelatedHeight}">
+          <ContentControl x:Name="ExploreAll" Style="{StaticResource SkylineExploreAllCardStyle}" />
+          <Border x:Name="FocusGlow" Style="{StaticResource SkylineDetailPosterGlowStyle}" />
+          <Border x:Name="FocusRing" Style="{StaticResource SkylineDetailPosterRingStyle}" />
+        </Grid>
+      </StackPanel>
+    </DataTemplate>
+    <views:BrowseTileTemplateSelector x:Key="CollectionTiles" MediaTemplate="{StaticResource RelatedTemplate}" ExploreTemplate="{StaticResource CollectionExploreTemplate}" />
   </Page.Resources>
 
   <Grid x:Name="Root" SizeChanged="OnRootSizeChanged">
@@ -360,6 +375,32 @@
                 </Style>
               </ListView.ItemContainerStyle>
             </ListView>
+          </StackPanel>
+
+          <!-- TvItemCollectionsRow.kt (Android cb2c32d8a): one collection's other titles under its name, then Explore all,
+               or "Also in" with the collections' posters. Below Cast & Crew on a series page; on a movie page after the box
+               set row (which Bale doesn't build), so after Trailers. DetailPage.Collections.cs places it and adds it to the
+               panel only while it has a row: StackPanel.Spacing also spaces collapsed children. -->
+          <StackPanel x:Name="CollectionsSection" Spacing="{StaticResource SkylineDetailRelatedGapSize}">
+            <TextBlock x:Name="CollectionsHeader" Margin="{StaticResource SkylineDetailHeaderInset}" Style="{StaticResource SkylineDetailSectionHeaderStyle}" />
+            <Grid>
+              <ListView x:Name="CollectionPreview" Style="{StaticResource SkylineDetailCollectionPreviewRailStyle}" ItemTemplateSelector="{StaticResource CollectionTiles}"
+                        ItemClick="OnCollectionClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur">
+                <ListView.ItemContainerStyle>
+                  <Style TargetType="ListViewItem" BasedOn="{StaticResource SkylineCardItemStyle}">
+                    <Setter Property="Margin" Value="{StaticResource SkylineDetailRailGap}" />
+                  </Style>
+                </ListView.ItemContainerStyle>
+              </ListView>
+              <ListView x:Name="CollectionCards" Style="{StaticResource SkylineDetailCollectionRailStyle}" ItemTemplate="{StaticResource RelatedTemplate}"
+                        ItemClick="OnCollectionClick" GotFocus="OnCardFocus" LostFocus="OnCardBlur" Visibility="Collapsed">
+                <ListView.ItemContainerStyle>
+                  <Style TargetType="ListViewItem" BasedOn="{StaticResource SkylineCardItemStyle}">
+                    <Setter Property="Margin" Value="{StaticResource SkylineDetailRailGap}" />
+                  </Style>
+                </ListView.ItemContainerStyle>
+              </ListView>
+            </Grid>
           </StackPanel>
 
           <!-- TvItemDetailScreen.kt: Cast → Trailers → Related/Recommended → Details, omitting empty sections. -->

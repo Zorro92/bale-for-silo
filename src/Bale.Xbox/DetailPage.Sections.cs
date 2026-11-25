@@ -100,6 +100,7 @@ public sealed partial class DetailPage
         if (item is not CardView { Card: var card } || card.ContentId == _contentId) return;
         _returnCastIndex = null;
         _returnPlaybackFocus = null;
+        _returnCollectionsKey = null;
         if (!_openedFromRelated)
         {
             _returnSimilarId = card.ContentId;
@@ -135,6 +136,7 @@ public sealed partial class DetailPage
             {
                 _returnSimilarId = null;
                 _returnPlaybackFocus = null;
+                _returnCollectionsKey = null;
                 _returnCastIndex = Cast.Items.IndexOf(view);
                 NavigateWithReturn(typeof(PersonPage), new PersonPageEntry(personId));
             }
@@ -176,7 +178,11 @@ public sealed partial class DetailPage
         }
 
         if (CastSection.Visibility == Visibility.Visible) stops.Add((Cast, () => _castRail.Focus(FocusState.Keyboard)));
+        // TvItemDetailScreen.kt: the collections row follows Cast & Crew on a series page and Trailers on a movie page.
+        var series = _detail?.IsSeries == true;
+        if (_collectionsShown && series) stops.Add((CollectionsSection, () => CollectionsRail.Focus(FocusState.Keyboard)));
         if (TrailersSection.Visibility == Visibility.Visible) stops.Add((Trailers, () => _trailersRail.Focus(FocusState.Keyboard)));
+        if (_collectionsShown && !series) stops.Add((CollectionsSection, () => CollectionsRail.Focus(FocusState.Keyboard)));
         if (SimilarSection.Visibility == Visibility.Visible) stops.Add((Similar, () => _similarRail.Focus(FocusState.Keyboard)));
         if (DetailsSection.Visibility == Visibility.Visible) stops.Add((DetailsSection, () => DetailsSection.Focus(FocusState.Keyboard)));
         var index = stops.FindIndex(stop => IsWithin(source, stop.Region));
@@ -219,7 +225,9 @@ public sealed partial class DetailPage
         string? SimilarId,
         PlaybackReturnFocus? PlaybackFocus,
         bool OpenedFromRelated,
-        DetailHeroAction? HeroAction);
+        DetailHeroAction? HeroAction,
+        ItemCollectionsRow? Collections,
+        string? CollectionsKey);
 
     private void NavigateWithReturn(Type page, object parameter)
     {
@@ -232,7 +240,7 @@ public sealed partial class DetailPage
             _seriesOverview, _selectedTab?.Season?.Number, _shownSeason, Episodes.Items.OfType<EpisodeView>().Select(view => view.Episode).ToList(),
             _seasonsLoading || _episodesLoading, _playEpisode?.ContentId, _playbackSelections,
             _similarCards, _similarLoaded, _returnCastIndex, _returnSimilarId, _returnPlaybackFocus, _openedFromRelated,
-            _heroAction);
+            _heroAction, _collections, _returnCollectionsKey);
         var frame = Frame;
         if (frame.Navigate(page, parameter) && frame.BackStack.Count > 0)
         {
@@ -246,6 +254,7 @@ public sealed partial class DetailPage
         _contentId = saved.Detail.ContentId;
         _returnCastIndex = saved.CastIndex;
         _returnSimilarId = saved.SimilarId;
+        _returnCollectionsKey = saved.CollectionsKey;
         _openedFromRelated = saved.OpenedFromRelated;
         _returnPlaybackFocus = saved.PlaybackFocus;
         _playbackSelections = saved.PlaybackSelections;
@@ -255,6 +264,7 @@ public sealed partial class DetailPage
         ShowSupportingSections(saved.Detail);
         _similarLoaded = saved.SimilarLoaded;
         ShowSimilar(saved.Similar);
+        ShowCollections(saved.Collections);
         if (saved.Detail.PlaysEpisodes)
         {
             _seriesOverview = saved.SeriesOverview;
@@ -283,6 +293,8 @@ public sealed partial class DetailPage
 
         LoadingRing.Visibility = Visibility.Collapsed;
         if (!_similarLoaded) _ = LoadSimilarAsync(saved.Detail);
+        // TvItemDetailViewModel.refreshOnReturn: a collection edited elsewhere shows on return; a failure keeps the row.
+        _ = LoadCollectionsAsync(saved.Detail);
         // PageFrame restores return focus after layout, before revealing this page.
         if (saved.PlaybackFocus is { } playback) _ = RefreshAfterPlaybackAsync(playback);
     }
@@ -318,6 +330,13 @@ public sealed partial class DetailPage
             rail = _similarRail;
             target = Similar.Items.OfType<CardView>().FirstOrDefault(view => view.Card.ContentId == id);
         }
+        else if (_returnCollectionsKey is { } key && _collectionsShown && _collections is { } collections)
+        {
+            // TvItemCollectionsRow.returnIndex: the title, Explore all or "Also in" card that opened the page.
+            list = collections.IsPreview ? CollectionPreview : CollectionCards;
+            rail = CollectionsRail;
+            target = CollectionsView(collections, collections.ReturnIndex(key));
+        }
 
         if (list is not null && rail is not null && target is not null)
         {
@@ -346,6 +365,7 @@ public sealed partial class DetailPage
         _playbackLoadVersion++;
         _episodeLoadVersion++;
         _sectionLoad?.Cancel();
+        _collectionsLoad?.Cancel();
         base.OnNavigatedFrom(e);
     }
 }

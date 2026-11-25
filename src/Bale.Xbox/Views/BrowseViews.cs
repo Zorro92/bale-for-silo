@@ -186,6 +186,9 @@ public sealed partial class CardView : BrowseTileView, INotifyPropertyChanged
 
     public double Height { get; private set; }
 
+    /// <summary>TvMediaCardActions: off where the official row passes its cards no actions (a title page's collections row).</summary>
+    public bool HasCardMenu { get; init; } = true;
+
     /// <summary>Catalog posters use the 1.10 focus lift from TvMediaCard / siloCardDefaults.</summary>
     public Services.RailFocusVisual GridFocusVisual { get; init; } = Services.RailFocusVisual.Card;
 

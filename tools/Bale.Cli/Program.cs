@@ -247,6 +247,19 @@ switch (command)
                 Console.WriteLine($"  play button: {PlayLabel.For(detail, null)}");
             }
 
+            // The title page's collections row (Android cb2c32d8a): one collection's other titles, or "Also in".
+            try
+            {
+                var collections = await client.Detail.CollectionsAsync(detail, cts.Token);
+                Console.WriteLine(collections is null ? "  collections: none" : $"  collections: {collections.Title}"
+                    + (collections.IsPreview ? " (preview + Explore all)" : string.Empty) + ": "
+                    + string.Join(", ", collections.Cards.Select(card => $"{card.Title} [{card.ContentId}]")));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.WriteLine($"  collections: read failed ({ex.GetType().Name})");
+            }
+
             return 0;
         }
 

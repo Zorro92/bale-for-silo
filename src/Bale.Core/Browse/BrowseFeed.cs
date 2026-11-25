@@ -66,14 +66,29 @@ public sealed partial class BrowseFeed
         return new CollectionContext(await libraries.ConfigureAwait(false), await owners.ConfigureAwait(false));
     }
 
-    private async Task<IReadOnlySet<string>?> ShownLibraryIdsAsync(CancellationToken cancellationToken)
+    /// <summary>The ids of <see cref="ShownLibrariesAsync"/>.</summary>
+    private async Task<IReadOnlySet<string>?> ShownLibraryIdsAsync(CancellationToken cancellationToken) =>
+        (await ShownLibrariesAsync(cancellationToken).ConfigureAwait(false))?.Keys.ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The libraries TV shows the profile, by id with their type (TvMediaTypeFilters.kt UserLibrary.visibleOnTv: never an
+    /// ebook library); null when the list can't be read.
+    /// </summary>
+    internal async Task<IReadOnlyDictionary<string, string>?> ShownLibrariesAsync(CancellationToken cancellationToken)
     {
         try
         {
             var response = await _api.Api.V2.User.Libraries.GetAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-            // TvMediaTypeFilters.kt UserLibrary.visibleOnTv: never an ebook library.
-            return (response?.Items ?? []).Where(library => !string.IsNullOrWhiteSpace(library.Id) && IsVisibleTvType(library.Type, showAudiobooks: true))
-                .Select(library => library.Id!).ToHashSet(StringComparer.Ordinal);
+            var shown = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var library in response?.Items ?? [])
+            {
+                if (!string.IsNullOrWhiteSpace(library.Id) && IsVisibleTvType(library.Type, showAudiobooks: true))
+                {
+                    shown.TryAdd(library.Id, library.Type ?? string.Empty);
+                }
+            }
+
+            return shown;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -85,7 +100,8 @@ public sealed partial class BrowseFeed
         }
         catch
         {
-            // TvHomeSections.withTvShownCollections: unknown libraries hold server collections back.
+            // Unknown: Home holds server collections back (TvHomeSections.withTvShownCollections), and a title page
+            // keeps the collections row it shows (TvItemDetailViewModel.loadCollections).
             return null;
         }
     }
@@ -116,6 +132,15 @@ public sealed partial class BrowseFeed
             // A maker this device has no name for simply gets no byline.
             return new CollectionOwners(activeProfile, new Dictionary<string, string>());
         }
+    }
+
+    /// <summary>The makers <paramref name="cards"/> can name; the profile list is read only for another profile's collection.</summary>
+    internal Task<CollectionOwners> CollectionOwnersAsync(IEnumerable<SectionCollectionCard> cards, CancellationToken cancellationToken)
+    {
+        var activeProfile = ActiveProfileId();
+        return CollectionRows.NeedsOwners(cards, activeProfile)
+            ? OwnersAsync(activeProfile, cancellationToken)
+            : Task.FromResult(new CollectionOwners(activeProfile, new Dictionary<string, string>()));
     }
 
     /// <summary>HomeSectionsV2Api.kt sends only the observed progress stamp or the Next Up series ID.</summary>

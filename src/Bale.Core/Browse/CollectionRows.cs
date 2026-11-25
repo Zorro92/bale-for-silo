@@ -120,7 +120,11 @@ public static class CollectionRows
             cards.Select(card => ToCard(card, resolve, showCounts, owners)).ToList());
 
     /// <summary>Whether any card is another profile's collection, so naming makers needs the profile list.</summary>
-    public static bool NeedsOwners(IEnumerable<Section> sections, string? activeProfileId) => activeProfileId is not null
-        && sections.Where(IsCollectionRow).SelectMany(OpenableCards).Any(card => card.Source == SectionCollectionCard_source.User
+    public static bool NeedsOwners(IEnumerable<Section> sections, string? activeProfileId) =>
+        NeedsOwners(sections.Where(IsCollectionRow).SelectMany(OpenableCards), activeProfileId);
+
+    /// <inheritdoc cref="NeedsOwners(IEnumerable{Section}, string?)"/>
+    public static bool NeedsOwners(IEnumerable<SectionCollectionCard> cards, string? activeProfileId) => activeProfileId is not null
+        && cards.Any(card => card.Source == SectionCollectionCard_source.User
             && !string.IsNullOrWhiteSpace(card.CreatorProfileId) && card.CreatorProfileId != activeProfileId);
 }

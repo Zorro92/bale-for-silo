@@ -2852,6 +2852,15 @@
     <Setter Property="services:RailLayout.ContentInset" Value="50,0,50,24" />
     <Setter Property="IsTabStop" Value="False" />
   </Style>
+  <!-- TvItemCollectionsRow.kt: one collection's preview is a TvMediaRow (tvCardWidth posters, 20dp gap, rowTopPadding 0,
+       its default 24dp bottom) ended by TvExploreAllCard's 1.10 poster lift; "Also in" is a TvCollectionRow with
+       rowTopPadding and rowBottomPadding 0. -->
+  <Style x:Key="SkylineDetailCollectionPreviewRailStyle" TargetType="ListView" BasedOn="{StaticResource SkylineDetailRelatedRailStyle}">
+    <Setter Property="services:RailLayout.FocusVisual" Value="ExplorePoster" />
+  </Style>
+  <Style x:Key="SkylineDetailCollectionRailStyle" TargetType="ListView" BasedOn="{StaticResource SkylineDetailRelatedRailStyle}">
+    <Setter Property="services:RailLayout.ContentInset" Value="50,0,50,0" />
+  </Style>
   <Style x:Key="SkylineDetailTrailerRingStyle" TargetType="Border">
     <Setter Property="CornerRadius" Value="{StaticResource SkylineDetailTrailerRadius}" />
     <Setter Property="BorderThickness" Value="2" />
