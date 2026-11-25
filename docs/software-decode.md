@@ -197,6 +197,36 @@ Reading, against the ~2.5 cores a software decode may take:
   peak RSS). On a console app that has four cores and must leave one for Bale, `threads=4` may be the better default;
   measure both.
 
+### Measured on the console (2026-11-24, Bale 0.1.767, Series X, 1080p SDR TV)
+
+Debug `play-url` of the local clips, `ffmpeg-tune swfallback=on` (run 7: `decoder=software`), whole-process CPU
+over 10 s starting ~8 s into playback (`threads 10`), overlay hidden, no input. Every run below except the last
+played with **0 missed frames and 0 stalls**; one round each.
+
+| Clip | Cores | App memory | Estimate before |
+|---|---|---|---|
+| calibration: AV1 1080p60 10-bit 10 Mbps, dav1d | 1.71 | 1065 MiB | (anchor) |
+| H.264 High 10 1080p24 8 Mbps | 0.78 | 827 MiB | ~1.0 |
+| H.264 High 10 1080p60 20 Mbps | 1.90 | 1055 MiB | ~2.3 |
+| H.264 High 4:2:2 10-bit 1080p30 50 Mbps | 1.80 | 905 MiB | 3.3 |
+| HEVC Main 4:2:2 10 1080p30 30 Mbps | 2.08 | 913 MiB | 3.9 |
+| HEVC Main 12 1080p24 10 Mbps | 1.06 | 834 MiB | ~1.8 |
+| VP9 profile 1 4:4:4 1080p30 10 Mbps | 0.90 | 664 MiB | ~1.9 |
+| H.264 High 4K24 25 Mbps | 1.68 | 1168 MiB | ~2.3 |
+| H.264 4K30 13 Mbps | 1.97 | 1228 MiB | |
+| H.264 High 4K30 50 Mbps (8 threads / `threads=4`) | 2.87 / 2.85 | 1230 MiB | ~3.7 |
+| VP9 profile 0 1080p60 8 Mbps (forced software) | 0.95 | | |
+| VP9 profile 0 4K30 18 Mbps (forced software) | 2.04 | | |
+| HEVC Main 10 1080p60 (forced software) | 2.24 | | |
+| H.264 High 4K60 80 Mbps | 6.58 | 1434 MiB | 4.5–6.6: **fails**, 12.7% missed, 6 decoder stalls (2.4 s) |
+
+So the console beats the host-scaled estimates by 20–50%, and the 4:2:2 conversion is not the limit at 1080p30.
+Everything up to 4K30 fits in about 3 cores; only 4K60 does not. `threads=4` changes nothing at 4K30.
+**Caveat:** the 4K clips on this 1080p TV were scaled by Media Foundation, the route that leaks per open
+(AGENTS.md, ~23 opens); Bale was restarted after six. 4K software claims therefore still wait for software frames
+through Bale's stage (phase B), whatever the CPU says. Not measured: run 8 (a library title end to end), HDR
+software frames, Series S.
+
 ### Costs besides the decoder
 
 - **Frame memory.** A 4K frame is 12.4 MB (8-bit 4:2:0) or 24.9 MB (10/12-bit, 16-bit samples); 1080p is a quarter.
