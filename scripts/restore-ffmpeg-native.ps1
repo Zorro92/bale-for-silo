@@ -5,12 +5,15 @@ $ErrorActionPreference = 'Stop'
 $nativePin = Get-Content (Join-Path $PSScriptRoot 'ffmpeg-native.json') -Raw | ConvertFrom-Json
 # patch_revision names the reviewed FFmpeg source patch set (scripts/ffmpeg-native-patches); optional.
 $patchRevision = "$($nativePin.patch_revision)"
+# NuGet normalizes a two-part FFmpeg release (9.1) to 9.1.0 in the package version; the release tag keeps it as built.
+$packageFfmpegVersion = if ("$($nativePin.ffmpeg_version)" -match '^\d+\.\d+$') { "$($nativePin.ffmpeg_version).0" } else { "$($nativePin.ffmpeg_version)" }
 if ($nativePin.sha256 -notmatch '^[0-9a-f]{64}$' -or $nativePin.dav1d_version -notmatch '^\d+\.\d+\.\d+$' -or
     $patchRevision -cnotmatch '^(p[1-9][0-9]*)?$' -or
-    $nativePin.version -ne "8.1.2-bale.dav1d.$($nativePin.dav1d_version)$(if ($patchRevision) { ".$patchRevision" })") {
+    $nativePin.ffmpeg_version -notmatch '^\d+\.\d+(\.\d+)?$' -or
+    $nativePin.version -ne "$packageFfmpegVersion-bale.dav1d.$($nativePin.dav1d_version)$(if ($patchRevision) { ".$patchRevision" })") {
     throw 'Invalid native FFmpeg package pin'
 }
-if ($nativePin.release_tag -ne "native-ffmpeg-8.1.2-dav1d-$($nativePin.dav1d_version)$(if ($patchRevision) { "-$patchRevision" })") {
+if ($nativePin.release_tag -ne "native-ffmpeg-$($nativePin.ffmpeg_version)-dav1d-$($nativePin.dav1d_version)$(if ($patchRevision) { "-$patchRevision" })") {
     throw 'Inconsistent native release tag'
 }
 $packages = @([pscustomobject]@{ Id = 'FFmpegInteropX.UWP.FFmpeg'; Pin = $nativePin; Repository = 'Zorro92/bale-for-silo' })

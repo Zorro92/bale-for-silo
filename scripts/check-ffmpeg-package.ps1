@@ -25,13 +25,13 @@ try {
         if ($classes -notcontains $class) { throw "Missing activation class $class" }
         Write-Output "Activation: $class"
     }
-    foreach ($dll in @('FFmpegInteropX.dll', 'avcodec-62.dll', 'avdevice-62.dll', 'avfilter-11.dll',
-        'avformat-62.dll', 'avutil-60.dll', 'swresample-6.dll', 'swscale-9.dll')) {
+    foreach ($dll in @('FFmpegInteropX.dll', 'avcodec-63.dll', 'avdevice-63.dll', 'avfilter-12.dll',
+        'avformat-63.dll', 'avutil-61.dll', 'swresample-7.dll', 'swscale-10.dll')) {
         $native = $archive.GetEntry($dll)
         if (-not $native -or $native.Length -eq 0) { throw "Missing native DLL $dll" }
         Write-Output "Native DLL: $dll ($($native.Length) bytes)"
     }
-    $codec = $archive.GetEntry('avcodec-62.dll').Open()
+    $codec = $archive.GetEntry('avcodec-63.dll').Open()
     $bytes = [System.IO.MemoryStream]::new()
     try {
         $codec.CopyTo($bytes)
@@ -72,6 +72,6 @@ try {
         }
     }
     finally { $wrapper.Dispose() }
-    Write-Output 'FFmpegInteropX activation, pinned wrapper payload, native packaging and dav1d 1.5.4: PASS'
+    Write-Output 'FFmpegInteropX activation, pinned wrapper payload, native packaging and dav1d 1.5.5: PASS'
 }
 finally { $archive.Dispose() }

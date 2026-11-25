@@ -15,7 +15,7 @@ internal sealed class DebugPlayUrlException(string reason) : Exception(reason);
 /// </summary>
 internal static unsafe class DebugFileProbeReader
 {
-    private const string Format = "avformat-62.dll", Codec = "avcodec-62.dll", Util = "avutil-60.dll";
+    private const string Format = "avformat-63.dll", Codec = "avcodec-63.dll", Util = "avutil-61.dll";
     private const int Eof = -541478725, IoError = -5, ProbeBufferSize = 32768;
     private sealed record Input(Stream Stream, CancellationToken Cancellation);
 

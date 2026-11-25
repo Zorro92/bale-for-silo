@@ -601,6 +601,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         ["white"] = tuning.SdrWhiteNits?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["threads"] = tuning.DecoderThreads?.ToString(CultureInfo.InvariantCulture) ?? "default",
         ["swfallback"] = tuning.SoftwareFallback ? "on" : "default",
+        ["d3d12probe"] = tuning.D3d12Probe ? "on" : "default",
     }, out _));
 
     [Fact]
@@ -637,6 +638,27 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("[swfallback=on|off|default]", DebugFfmpegInputTuning.Usage);
         Assert.Contains("[threads=0..16|default]", DebugFfmpegInputTuning.Usage);
         Assert.Contains("software also takes H.264/HEVC/VP9 past the hardware decoder", DebugFfmpegInputTuning.Usage);
+    }
+
+    [Fact]
+    public void TheD3d12ProbeParsesDescribesClearsAndReachesTheWrapper()
+    {
+        // Wrapper bale.82: bale_d3d12va_probe=1 logs whether D3D12 video decode supports each hardware video stream.
+        var route = new PlaybackRouteDecision(true, false, "hevc", "aac", 0, 1920, 1080);
+        try
+        {
+            Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["d3d12probe"] = "on" }, out var set));
+            Assert.True(set.D3d12Probe);
+            Assert.EndsWith(" d3d12probe=on", set.Description);
+            Assert.Equal("1", FfmpegSource.Configuration(route, set).FFmpegOptions["bale_d3d12va_probe"]);
+            foreach (var value in new[] { "ON", "1", "" })
+                Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["d3d12probe"] = value }, out _), value);
+            Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["d3d12probe"] = "default" }, out var cleared));
+            Assert.False(cleared.D3d12Probe);
+            Assert.DoesNotContain("bale_d3d12va_probe", FfmpegSource.Configuration(route, cleared).FFmpegOptions.Keys);
+            Assert.Contains("[d3d12probe=on|off|default]", DebugFfmpegInputTuning.Usage);
+        }
+        finally { DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["d3d12probe"] = "default" }, out _); }
     }
 
     [Fact]

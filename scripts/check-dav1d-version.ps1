@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)][byte[]]$Bytes,
-    [string]$ExpectedVersion = '1.5.4'
+    [string]$ExpectedVersion = '1.5.5'
 )
 
 $ErrorActionPreference = 'Stop'

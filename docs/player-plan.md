@@ -626,6 +626,16 @@ Transport uses official GitHub mirrors for FFmpeg/dav1d/x264 without changing th
 alone removes x86/ARM64 globs from a copy of the upstream nuspec and adds `SOURCES.txt`; the wrapper
 and its native activation registration are unchanged.
 
+**Current pin (2026-11-25): FFmpeg 9.1.** Upstream's NuGet stops at 8.1.2 (stable) and 9.0.2-pre01, so Bale builds
+`9.1.0-bale.dav1d.1.5.5` itself: release `native-ffmpeg-9.1-dav1d-1.5.5` (run 45617806207; NuGet normalizes 9.1 to 9.1.0,
+the tag keeps 9.1), FFmpegInteropX `a660038`, stock FFmpeg n9.1 `74e43935` (`ffmpeg_version=9.1`, `patch_revision=none`:
+no source patches, so patch p1's caller-supplied picture memory and with it the debug dav1d zero-copy key are gone),
+dav1d 1.5.5 `6c7bee68` (1.5.4 no longer compiles with current MSVC, C7780). DLL majors: avcodec/avformat/avdevice-63,
+avfilter-12, avutil-61, swresample-7, swscale-10. FFmpeg detects and builds its D3D12 decoders (d3d12va) by itself; the
+wrapper decodes through d3d11va, and bale.82's opt-in `bale_d3d12va_probe` (debug `ffmpeg-tune d3d12probe=on`) only logs
+whether D3D12 video decode supports each stream. The workflow caches NASM and Perl (`upstream/Tools`) between runs. A
+build takes about 25–35 minutes, which is why it ships as a pinned package.
+
 **Rebuild / integrate:**
 
 1. Run `gh workflow run ffmpeg-native.yml --ref main` (and watch its run with
@@ -650,7 +660,7 @@ and its native activation registration are unchanged.
    together with a reviewed package/hash change. Keep the wrapper on its pinned `2.1.0-bale.N`
    fork without changing the upstream 2.1.0 ABI. Run Core tests and watch debug **and** production
    MSIX CI. The package checker
-   reads the actual MSIX `avcodec-62.dll` and rejects anything without dav1d **1.5.4**; update its
+   reads the actual MSIX `avcodec-63.dll` and rejects anything without dav1d **1.5.5**; update its
    expected version/tests deliberately for a later dav1d upgrade. Licenses and provenance ship in
    both configurations.
 

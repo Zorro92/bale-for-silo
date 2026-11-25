@@ -11,7 +11,8 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
     int? DecodeAheadFrames = null, int? Dav1dMaxFrameDelay = null, int? DecodeThreadPriority = null,
     int? DecoderUseMaxResolution = null, int? DecoderMaxDpbCount = null, DebugFilmGrain? FilmGrain = null, bool? HdrSupport = null,
     DebugFfmpegDecoder? Decoder = null, DebugToneMap? ToneMap = null, bool? ColorInfo = null, bool? FastSeek = null,
-    bool? DecoderPoolFromStream = null, int? SdrWhiteNits = null, int? DecoderThreads = null, bool SoftwareFallback = false)
+    bool? DecoderPoolFromStream = null, int? SdrWhiteNits = null, int? DecoderThreads = null, bool SoftwareFallback = false,
+    bool D3d12Probe = false)
 {
     internal const int MinimumReadSize = 16 * 1024;
     internal const int MaximumReadSize = 1024 * 1024;
@@ -27,7 +28,7 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
     // Keep the extra native packet queue below its 100 MB / 60 s defaults on Xbox.
     internal const long ReadAheadCapBytes = 64L * 1024 * 1024;
     internal static readonly TimeSpan ReadAheadCapDuration = TimeSpan.FromSeconds(30);
-    internal const string Usage = "expected [decoder=auto|system|software|default] (debug-only FFmpeg route; auto=FFmpeg D3D11 or software fallback; default=production decoder; software also takes H.264/HEVC/VP9 past the hardware decoder) [swfallback=on|off|default] (H.264/HEVC/VP9 the console's decoder can't take (size, H.264 High 10/4:2:2/4:4:4, HEVC RExt/12-bit, VP9 profile 1/3) decode in FFmpeg software even past the release bounds (the claimed envelopes; 4:2:2/4:4:4 up to 30 fps), which release refuses, through the route's console stage; off=default) [threads=0..16|default] (software video: FFmpeg decoder threads; 0=default=logical CPU count) [tonemap=off|bt2390|hable|default] (requires decoder=auto in the same tuning and wrapper 2.1.0-bale.25+) [colorinfo=on|off|default] (compressed system-video colour/HDR metadata; wrapper 2.1.0-bale.26+) [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [delay=0..64|default] [prio=0..2|default] (0=off, 1=above normal, 2=highest) [maxres=0|1|default] [dpb=0..16|default] (system video only; 0=unset) [hdr=on|off|default] (default=Automatic) [fastseek=on|off|default] (wrapper General.FastSeek; default=on, off=upstream backward seek) [pool=stream|ffmpeg|default] (d3d11va pool sized from the stream: HEVC 2.1.0-bale.68+, H.264/VP9 bale.69+; debug default on for HEVC only; ffmpeg = FFmpeg's pool) [white=80..400|default] (SDR white in nits for the console tone map and rav1g's display pass, wrapper 2.1.0-bale.77+; wins over the device's SDR Brightness; default = that setting) [grain=dav1d|gpu|off|on|default] (software video only; default=dav1d (d3d11), on/dav1d=dav1d, gpu=GPU on zerocopy, off=export-only; wrapper 2.1.0-bale.10+); software AV1 uses D3D11 CPU output; dav1d-path zerocopy restores D3D12 GPU grain; omitted keys keep their overrides; default restores the release setting (buffer=1000 for software video; software video: ahead=16, buffer=1000 ms, delay unset; above 1080p ahead=8, buffer=500 ms, delay=6; prio and threads unset; system video: maxres/dpb unset)";
+    internal const string Usage = "expected [decoder=auto|system|software|default] (debug-only FFmpeg route; auto=FFmpeg D3D11 or software fallback; default=production decoder; software also takes H.264/HEVC/VP9 past the hardware decoder) [d3d12probe=on|off|default] (wrapper 2.1.0-bale.82+: log per hardware video stream whether D3D12 video decode supports it; decoding unchanged; off=default) [swfallback=on|off|default] (H.264/HEVC/VP9 the console's decoder can't take (size, H.264 High 10/4:2:2/4:4:4, HEVC RExt/12-bit, VP9 profile 1/3) decode in FFmpeg software even past the release bounds (the claimed envelopes; 4:2:2/4:4:4 up to 30 fps), which release refuses, through the route's console stage; off=default) [threads=0..16|default] (software video: FFmpeg decoder threads; 0=default=logical CPU count) [tonemap=off|bt2390|hable|default] (requires decoder=auto in the same tuning and wrapper 2.1.0-bale.25+) [colorinfo=on|off|default] (compressed system-video colour/HDR metadata; wrapper 2.1.0-bale.26+) [readahead=on|off|default] [readsize=16384..1048576|default] [prefetch=2..16|default] [buffer=0..5000|default] (MediaStreamSource.BufferTime ms) [ahead=0..64|default] [delay=0..64|default] [prio=0..2|default] (0=off, 1=above normal, 2=highest) [maxres=0|1|default] [dpb=0..16|default] (system video only; 0=unset) [hdr=on|off|default] (default=Automatic) [fastseek=on|off|default] (wrapper General.FastSeek; default=on, off=upstream backward seek) [pool=stream|ffmpeg|default] (d3d11va pool sized from the stream: HEVC 2.1.0-bale.68+, H.264/VP9 bale.69+; debug default on for HEVC only; ffmpeg = FFmpeg's pool) [white=80..400|default] (SDR white in nits for the console tone map and rav1g's display pass, wrapper 2.1.0-bale.77+; wins over the device's SDR Brightness; default = that setting) [grain=dav1d|gpu|off|on|default] (software video only; default=dav1d (d3d11), on/dav1d=dav1d, gpu=GPU on zerocopy, off=export-only; wrapper 2.1.0-bale.10+); software AV1 uses D3D11 CPU output; dav1d-path zerocopy restores D3D12 GPU grain; omitted keys keep their overrides; default restores the release setting (buffer=1000 for software video; software video: ahead=16, buffer=1000 ms, delay unset; above 1080p ahead=8, buffer=500 ms, delay=6; prio and threads unset; system video: maxres/dpb unset)";
     private static readonly object Gate = new();
     private static DebugFfmpegInputTuning _current = new();
 
@@ -100,7 +101,8 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
         + (DecoderPoolFromStream is { } pool ? $" pool={(pool ? "stream" : "ffmpeg")}" : "")
         + (SdrWhiteNits is { } white ? $" white={white.ToString(CultureInfo.InvariantCulture)}" : "")
         + (DecoderThreads is { } threads ? $" threads={threads.ToString(CultureInfo.InvariantCulture)}" : "")
-        + (SoftwareFallback ? " swfallback=on" : "");
+        + (SoftwareFallback ? " swfallback=on" : "")
+        + (D3d12Probe ? " d3d12probe=on" : "");
 
     internal static bool TrySet(IReadOnlyDictionary<string, string> options, out DebugFfmpegInputTuning tuning)
         => TrySet(options, out tuning, out _);
@@ -205,6 +207,10 @@ internal sealed record DebugFfmpegInputTuning(bool? ReadAhead = null, int? ReadS
                 case "threads":
                     if (!TryNumber(value, 0, MaximumDecoderThreads, out var threads)) return false;
                     next = next with { DecoderThreads = threads };
+                    break;
+                case "d3d12probe":
+                    if (value is not ("on" or "off" or "default")) return false;
+                    next = next with { D3d12Probe = value == "on" };
                     break;
                 case "swfallback":
                     // off and default are the release behaviour: such routes are refused and the server transcodes.

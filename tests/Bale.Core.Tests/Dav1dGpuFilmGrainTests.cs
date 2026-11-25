@@ -104,7 +104,7 @@ public sealed class Dav1dGpuFilmGrainTests
             ZeroCopyRuntime.Available = true;
             var config = FfmpegSource.Configuration(Route(), new(), Decision(rav1g), "zerocopy", dav1dGpuFilmGrain: true);
             Assert.Equal("2", config.FFmpegOptions["bale_film_grain_mode"]);
-            Assert.Equal("1", config.FFmpegOptions["bale_zero_copy"]);
+            Assert.DoesNotContain("bale_zero_copy", config.FFmpegOptions.Keys);
             Assert.Equal("6", config.FFmpegOptions["bale_d3d11_upload"]);
             ZeroCopyRuntime.Available = false;
             var fallback = FfmpegSource.Configuration(Route(), new(), Decision(rav1g), "zerocopy", dav1dGpuFilmGrain: true);

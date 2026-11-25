@@ -232,7 +232,6 @@ internal static class FfmpegSource
             return;
         }
         config.FFmpegOptions["bale_d3d11_upload"] = "6";
-        config.FFmpegOptions["bale_zero_copy"] = "1";
         config.FFmpegOptions["bale_film_grain_mode"] = "2";
     }
 
@@ -300,6 +299,8 @@ internal static class FfmpegSource
         // HEVC (4K 20 -> 8 surfaces, -287 MiB), VP9 (4K 12 -> 11) and H.264 (1080p 20 -> 8), each with 0 missed frames.
         var pool = tuning.DecoderPoolFromStream ?? codec is "hevc" or "h264" or "vp9";
         config.FFmpegOptions["bale_d3d11va_pool_from_stream"] = pool ? "1" : "0";
+        // Wrapper bale.82: logs "Bale d3d12va probe" per hardware video stream (D3D12 video decode support); decodes as before.
+        if (tuning.D3d12Probe) config.FFmpegOptions["bale_d3d12va_probe"] = "1";
         if (softwareVideo)
         {
             ApplyDecodeTuning(config, new(tuning.DecodeAheadFrames, tuning.Dav1dMaxFrameDelay));

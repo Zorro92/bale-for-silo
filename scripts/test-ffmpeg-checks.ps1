@@ -6,17 +6,17 @@ foreach ($file in (Get-ChildItem $PSScriptRoot -Filter '*.ps1')) {
     if ($parseErrors) { throw "PowerShell syntax error in $($file.Name): $parseErrors" }
 }
 
-foreach ($version in @('1.5.4', '1.5.4-0-g54706fc')) {
+foreach ($version in @('1.5.5', '1.5.5-0-g6c7bee6')) {
     $bytes = [System.Text.Encoding]::ASCII.GetBytes("prefix`0$version`0suffix")
     $result = & "$PSScriptRoot/check-dav1d-version.ps1" -Bytes $bytes
     if ($result -ne "Embedded dav1d: $version") { throw 'Incorrect dav1d binary-version diagnostic' }
 }
-foreach ($version in @('1.0.0-0-g99172b1', '11.5.4', '1.5.40', '1.5.4-dev', 'prefix1.5.4', 'no version')) {
+foreach ($version in @('1.0.0-0-g99172b1', '11.5.5', '1.5.50', '1.5.5-dev', 'prefix1.5.5', 'no version')) {
     $bytes = [System.Text.Encoding]::ASCII.GetBytes("prefix`0$version`0suffix")
     $rejected = $false
     try { & "$PSScriptRoot/check-dav1d-version.ps1" -Bytes $bytes | Out-Null }
     catch {
-        if ($_.Exception.Message -ne 'avcodec does not embed dav1d 1.5.4') { throw }
+        if ($_.Exception.Message -ne 'avcodec does not embed dav1d 1.5.5') { throw }
         $rejected = $true
     }
     if (-not $rejected) { throw "Accepted an incorrect dav1d version: $version" }
@@ -48,12 +48,12 @@ function New-PackageFixture {
     param([string]$Version, [string]$WrapperDll = 'fixture', [string]$WrapperSources = 'fixture', [switch]$OmitWrapperSources)
     $files = @{
         'AppxManifest.xml' = [System.Text.Encoding]::UTF8.GetBytes($fixtureManifest)
-        'avcodec-62.dll' = [System.Text.Encoding]::ASCII.GetBytes("prefix`0$Version`0suffix")
+        'avcodec-63.dll' = [System.Text.Encoding]::ASCII.GetBytes("prefix`0$Version`0suffix")
         'FFmpegInteropX.dll' = [System.Text.Encoding]::ASCII.GetBytes($WrapperDll)
         'Licenses/FFmpegInteropX/SOURCES.txt' = [System.Text.Encoding]::ASCII.GetBytes($WrapperSources)
     }
-    foreach ($name in @('avdevice-62.dll', 'avfilter-11.dll', 'avformat-62.dll',
-        'avutil-60.dll', 'swresample-6.dll', 'swscale-9.dll', 'Licenses/FFmpegInteropX.txt',
+    foreach ($name in @('avdevice-63.dll', 'avfilter-12.dll', 'avformat-63.dll',
+        'avutil-61.dll', 'swresample-7.dll', 'swscale-10.dll', 'Licenses/FFmpegInteropX.txt',
         'Licenses/FFmpeg/ffmpeg.txt', 'Licenses/FFmpeg/dav1d.txt', 'Licenses/FFmpeg/SOURCES.txt')) {
         $files[$name] = [System.Text.Encoding]::ASCII.GetBytes('fixture')
     }
@@ -66,13 +66,13 @@ try {
         'SOURCES.txt' = [System.Text.Encoding]::ASCII.GetBytes('fixture')
     }
     $check = @{ PackagePath = $package; WrapperPackagePath = $wrapper; ExpectedWrapperPackageSha256 = (Get-FileHash $wrapper -Algorithm SHA256).Hash }
-    New-PackageFixture '1.5.4-0-g54706fc'
+    New-PackageFixture '1.5.5-0-g6c7bee6'
     $result = & "$PSScriptRoot/check-ffmpeg-package.ps1" @check
-    if ($result -notcontains 'Embedded dav1d: 1.5.4-0-g54706fc') { throw 'MSIX checker did not inspect avcodec' }
+    if ($result -notcontains 'Embedded dav1d: 1.5.5-0-g6c7bee6') { throw 'MSIX checker did not inspect avcodec' }
     if (-not ($result -like 'Wrapper payload: FFmpegInteropX.dll SHA256 *')) { throw 'MSIX checker did not compare the wrapper DLL' }
     if (-not ($result -like 'Wrapper payload: Licenses/FFmpegInteropX/SOURCES.txt SHA256 *')) { throw 'MSIX checker did not compare wrapper provenance' }
     foreach ($case in @(
-        @{ Version = '1.0.0-0-g99172b1'; Error = 'avcodec does not embed dav1d 1.5.4' },
+        @{ Version = '1.0.0-0-g99172b1'; Error = 'avcodec does not embed dav1d 1.5.5' },
         @{ WrapperDll = 'old wrapper'; Error = 'MSIX FFmpegInteropX.dll does not match the pinned wrapper package' },
         @{ WrapperSources = 'old provenance'; Error = 'MSIX Licenses/FFmpegInteropX/SOURCES.txt does not match the pinned wrapper package' },
         @{ OmitWrapperSources = $true; Error = 'Missing license/provenance Licenses/FFmpegInteropX/SOURCES.txt' }
@@ -80,7 +80,7 @@ try {
         Remove-Item $package
         $expectedError = $case.Error
         $case.Remove('Error')
-        if (-not $case.ContainsKey('Version')) { $case.Version = '1.5.4' }
+        if (-not $case.ContainsKey('Version')) { $case.Version = '1.5.5' }
         New-PackageFixture @case
         $rejected = $false
         try { & "$PSScriptRoot/check-ffmpeg-package.ps1" @check | Out-Null }
@@ -91,7 +91,7 @@ try {
         if (-not $rejected) { throw "MSIX checker did not reject: $expectedError" }
     }
     Remove-Item $package
-    New-PackageFixture '1.5.4'
+    New-PackageFixture '1.5.5'
     # A matching DLL from an unreviewed nupkg is not sufficient either.
     $check.ExpectedWrapperPackageSha256 = '0' * 64
     $rejected = $false

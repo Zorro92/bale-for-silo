@@ -1,12 +1,13 @@
 {
-  "version": "8.1.2-bale.dav1d.1.5.4.p1",
-  "release_tag": "native-ffmpeg-8.1.2-dav1d-1.5.4-p1",
-  "patch_revision": "p1",
-  "sha256": "46122992937fb4f71006f6097f858bb51548a461f92be49d1376234247c37fed",
-  "nuget_content_hash": "OjSB2TKhUyS6l0H64P7jCVnth9JujjRxmWkk7gNyE8VytNVKOXMDILGh0FcMFPrDJ2x19GwqFcy+gIozGXju8Q==",
+  "version": "9.1.0-bale.dav1d.1.5.5",
+  "release_tag": "native-ffmpeg-9.1-dav1d-1.5.5",
+  "ffmpeg_version": "9.1",
+  "patch_revision": "",
+  "sha256": "38cc772a7dee5e4cc5e73d60ce52871a953965daddbc918068b33fe80b809911",
+  "nuget_content_hash": "q7UpJ1VxSi+lDSRfzL3vJMU7uBmSDrKprt5CUF0+Xz2zf5PFmzD5GV0bpAQzXYx4n01CQZN5P6IgErXnzGA0Sw==",
   "upstream_repository": "ffmpeginteropx/FFmpegInteropX",
-  "upstream_commit": "88428c66e106852338b48554a4a00c9e48da588f",
-  "ffmpeg_commit": "38b88335f99e76ed89ff3c93f877fdefce736c13",
-  "dav1d_version": "1.5.4",
-  "dav1d_commit": "54706fc6bc0cdecab7e9593974a4039cc038fca7"
+  "upstream_commit": "a660038cd3867214664c2450816c83099990de44",
+  "ffmpeg_commit": "74e4393595cf2b5857f0da925c4e0dd74ea306e5",
+  "dav1d_version": "1.5.5",
+  "dav1d_commit": "6c7bee685677fd997a431302be4fea8ea4017606"
 }

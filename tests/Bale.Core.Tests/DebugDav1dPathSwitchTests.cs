@@ -91,7 +91,8 @@ public sealed class DebugDav1dPathSwitchTests
         var decision = rav1g ? new Rav1gRouteDecision(true, 250, null, null, false, new(null, null, null, null, null)) : null;
         var config = FfmpegSource.Configuration(Route(), new(), decision, "zerocopy");
         Assert.Equal("6", config.FFmpegOptions["bale_d3d11_upload"]);
-        Assert.Equal("1", config.FFmpegOptions["bale_zero_copy"]);
+        // Wrapper bale.82 on stock FFmpeg 9.1 (no p1 picture-memory patch): the zero-copy key is gone.
+        Assert.DoesNotContain("bale_zero_copy", config.FFmpegOptions.Keys);
         Assert.Equal("2", config.FFmpegOptions["bale_film_grain_mode"]);
         if (rav1g) Assert.Equal("1080", config.FFmpegOptions["bale_av1_fallback_max_height"]);
         foreach (var route in new[] { Route("mpeg4"), Route("hevc", false) })

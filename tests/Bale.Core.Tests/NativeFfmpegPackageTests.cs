@@ -6,8 +6,8 @@ namespace Bale.Core.Tests;
 public class NativeFfmpegPackageTests
 {
     [Theory]
-    [InlineData("ffmpeg-native.json", "FFmpegInteropX.UWP.FFmpeg", "8.1.2-bale.dav1d.1.5.4.p1")]
-    [InlineData("ffmpeginteropx-wrapper.json", "FFmpegInteropX.UWP.Lib", "2.1.0-bale.81")]
+    [InlineData("ffmpeg-native.json", "FFmpegInteropX.UWP.FFmpeg", "9.1.0-bale.dav1d.1.5.5")]
+    [InlineData("ffmpeginteropx-wrapper.json", "FFmpegInteropX.UWP.Lib", "2.1.0-bale.82")]
     public void ExactReferenceAndBothLockEntriesMatchTheReviewedAsset(string pinFile, string packageId, string expectedVersion)
     {
         using var pin = JsonDocument.Parse(Read(pinFile));
@@ -34,14 +34,14 @@ public class NativeFfmpegPackageTests
     public void PinsRetainTheReviewedDav1dAndWrapperReleaseProvenance()
     {
         using var native = JsonDocument.Parse(Read("ffmpeg-native.json"));
-        Assert.Equal("1.5.4", native.RootElement.GetProperty("dav1d_version").GetString());
-        Assert.Equal("54706fc6bc0cdecab7e9593974a4039cc038fca7", native.RootElement.GetProperty("dav1d_commit").GetString());
+        Assert.Equal("1.5.5", native.RootElement.GetProperty("dav1d_version").GetString());
+        Assert.Equal("6c7bee685677fd997a431302be4fea8ea4017606", native.RootElement.GetProperty("dav1d_commit").GetString());
         using var wrapper = JsonDocument.Parse(Read("ffmpeginteropx-wrapper.json"));
-        Assert.Equal("wrapper-ffmpeginteropx-2.1.0-bale.81", wrapper.RootElement.GetProperty("release_tag").GetString());
-        Assert.Equal("ab2d07e850e2346ae29457c3f431000a6e9402b0536ba8f8c388a7a4f75611f0", wrapper.RootElement.GetProperty("sha256").GetString());
-        Assert.Equal("ChwQPISAWPps1UF2isOGKshjexLqcHbuAPhKZrbjBxgrT0cNRWhXpn8oQxc6HF/rNBya13z1UJCsFHMfAfPFiQ==", wrapper.RootElement.GetProperty("nuget_content_hash").GetString());
+        Assert.Equal("wrapper-ffmpeginteropx-2.1.0-bale.82", wrapper.RootElement.GetProperty("release_tag").GetString());
+        Assert.Equal("4867f718a72322af9fa1d4f0d322b75224374b39e214ca94f1393acf76b23c82", wrapper.RootElement.GetProperty("sha256").GetString());
+        Assert.Equal("urcOf3nXmNsDQBhEWszVU70K8n2hfMwc+tjCEgOx7jpxssB9NPNWCIRkXBXWs8wxfnnQOxBGH1wMJTC5XkV/og==", wrapper.RootElement.GetProperty("nuget_content_hash").GetString());
         Assert.Equal("Zorro92/bale-ffmpeginteropx", wrapper.RootElement.GetProperty("release_repository").GetString());
-        Assert.Equal("7ce3865cabb6848106890dabd9aec6838ff03e3a", wrapper.RootElement.GetProperty("source_commit").GetString());
+        Assert.Equal("e26c8daa78c38b3ed09c2e1ed20fd3663223c7e2", wrapper.RootElement.GetProperty("source_commit").GetString());
     }
 
     [Fact]
