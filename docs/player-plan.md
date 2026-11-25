@@ -2320,6 +2320,13 @@ Now (`retry_window.rs`, a port of silo-android's `MediaLoadRetryPolicy.kt` with 
   `media ended after a failed range read`, then `range stream gave up; remounting the same plan`. Ended before the
   remount opens, the film resumes at the position; still on, the remount's open fails and the replan decides (the debug
   outage leaves the API reachable, so the server's next route plays, or the error screen offers Retry).
+- **Console results (2026-11-25):** 0.1.774, a 1080p AV1 MKV direct play (FFmpeg, rav1g): a 20 s outage was ridden out
+  (one 23 s network stall, 5 range retries, playback on). A 150 s outage spent the window after an 87 s stall; the log showed
+  the transport stall, the same-plan remount (its open failed, the outage still on), the replan to a progressive remux (its
+  open failed too) and the error screen with Retry. But the engine's clock had run on to the title's end after the false end
+  of file, so the remount and Retry started there and ended at once. Fixed in 272ac6d (the position is held while the
+  stream reports a failed last read); 0.1.775: the same run left the error screen at the stall's position and Retry resumed
+  there (1511 s) once the outage ended.
 
 ### A seek kept across a quality or track change (server `4a73f48`, `d22e55f`)
 
@@ -2347,6 +2354,9 @@ Now, as the web (`VideoPlayer.tsx` `replanSeekRef`, `noteViewerSeek`):
 - **Tests:** `PlaybackReplanSeekTests` runs PlayerPage.Seek.cs against the seek stub (skips during a change, a refused
   change, a press after the replacement mounted, a remux that can't seek, a seek still in flight, the debug seek) and pins
   the quality and track change call sites by source.
+- **Console result (0.1.774, 2026-11-25):** a seek sent while a buffering lowering's replan was in flight was queued
+  ("its stream starts at this seek or the seek follows it"); the lowered HLS transcode opened at the seek's target with no
+  seek remount of its own.
 
 ### Empty segments at a transcode's end (server `4bee8f8`)
 
@@ -2372,6 +2382,8 @@ no bytes when it can't read the init segment (before, a `404`/`500` that players
   64-bit and open-ended `mdat`), `hls.rs` loopback playlists (TS and fMP4 ending in empty segments play to a clean end; a
   mount starting in the tail reports no media; the debug tail), `RustHlsStreamTests.AMountThatStartsPastTheMediasEndReportsNoMedia`,
   `PlayerEmptyTailWiringTests`.
+- **Console result (0.1.774, 2026-11-25):** `empty-tail=20` and a seek 30 s before a forced HLS transcode's end: 15 empty
+  segments served, the mount reported no media, and playback ended to Detail with no error screen or replan.
 
 ### HLS through a server outage (server `40c093c`)
 
@@ -2405,6 +2417,8 @@ Now (`outage_budget.rs`, hls.rs; the web's constants and its 30 s "continue the 
 - **Tests:** `outage_budget.rs` (the web's waits, a fresh or continued cycle), `hls.rs` loopback playlists (segments
   ridden out, a cut body spliced exactly, server errors vs a 404, a spent budget faulting after what was queued, a growing
   playlist's refresh, the debug outage), `RustHlsStreamTests.ASegmentThroughAServerOutageIsRetriedWhileTheStreamPlaysOn`.
+- **Console result (0.1.774, 2026-11-25):** a forced HLS transcode with a 40 s outage played on from its buffer: 6 HLS
+  waits, one cut body resumed, no budget given up, no reconnect or replan.
 
 ### Debug: `media-fault`
 
