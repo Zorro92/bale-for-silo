@@ -56,10 +56,10 @@ Bale remains AGPL-3.0-or-later; third-party components retain their own licenses
 
 ## rav1g
 
-All builds, release and development alike, bundle [rav1g](https://github.com/Zorro92/rav1g) **0.8.0-alpha.1**
+All builds, release and development alike, bundle [rav1g](https://github.com/Zorro92/rav1g) **0.8.0-alpha.2**
 (`rav1g.dll`, x64), a GPU AV1 decoder in D3D12 compute shaders, from its
-[v0.8.0-alpha.1 release](https://github.com/Zorro92/rav1g/releases/tag/v0.8.0-alpha.1) (source commit
-`93bb36bb5cba420c493e91365c8dae5205c47092`). Since 2026-11-26 it is Bale's default AV1 decoder, loaded by
+[v0.8.0-alpha.2 release](https://github.com/Zorro92/rav1g/releases/tag/v0.8.0-alpha.2) (source commit
+`9e0053475c5b9cc9b5c043b309a1b4da3c283f67`). Since 2026-11-26 it is Bale's default AV1 decoder, loaded by
 the FFmpegInteropX fork, with dav1d (below) as its fallback. rav1g is distributed under the **BSD-2-Clause**
 license and the **Alliance for Open Media Patent License 1.0**. It bundles the parse pass of
 [rav1d](https://github.com/memorysafety/rav1d), the Rust port of dav1d (BSD-2-Clause, © VideoLAN, the dav1d
