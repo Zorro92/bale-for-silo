@@ -68,10 +68,12 @@ const MAX_HISTORY: usize = 1024;
 /// A change to a live caption track, in the order made.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LiveCommand {
-    /// A new event with ReadOrder `id`; times in ms of the tap's timeline, `text` the ASS event
-    /// text (overrides included).
+    /// A new event with ReadOrder `id` on libass layer `layer` (`ass::BOX_LAYER` under
+    /// `ass::TEXT_LAYER`); times in ms of the tap's timeline, `text` the ASS event text (overrides
+    /// included).
     Add {
         id: i32,
+        layer: i32,
         start_ms: i64,
         end_ms: i64,
         text: String,
@@ -520,18 +522,19 @@ impl Inner {
         let Some(live) = &self.live else {
             return Vec::new();
         };
-        let texts = ass::events(cue, &live.options, live.flags);
-        let mut ids = Vec::with_capacity(texts.len());
-        for text in texts {
+        let events = ass::events(cue, &live.options, live.flags);
+        let mut ids = Vec::with_capacity(events.len());
+        for event in events {
             // ReadOrder is a C int; ids only have to be unique among the track's events.
             let id = (self.next_id & 0x7FFF_FFFF) as i32;
             self.next_id = self.next_id.wrapping_add(1);
             ids.push(id);
             self.commands.push(LiveCommand::Add {
                 id,
+                layer: event.layer,
                 start_ms: cue.start_ms,
                 end_ms,
-                text,
+                text: event.text,
             });
         }
         ids

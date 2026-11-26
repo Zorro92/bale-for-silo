@@ -135,6 +135,7 @@ impl LiveSink for Recorder {
                     start_ms,
                     end_ms,
                     text,
+                    ..
                 } => {
                     assert!(
                         track
@@ -243,8 +244,8 @@ fn an_attached_overlay_gets_each_caption_as_it_comes_and_ends_it_later() {
     }
     // The caption is up from 1 s and open-ended (its erase has not arrived).
     assert_eq!(recorder.visible(999), Vec::<String>::new());
-    assert_eq!(recorder.visible(1000), ["{\\an1\\pos(192,972)}HELLO"]);
-    assert_eq!(recorder.visible(20_000), ["{\\an1\\pos(192,972)}HELLO"]);
+    assert_eq!(recorder.visible(1000), ["{\\an4\\pos(192,942)}HELLO"]);
+    assert_eq!(recorder.visible(20_000), ["{\\an4\\pos(192,942)}HELLO"]);
     for frame in 60..180 {
         let data = packet(slots.get(&frame).copied(), 4, 0);
         captions.push(&data, Some(frame as i64 * FRAME), 1, 4);
@@ -252,7 +253,7 @@ fn an_attached_overlay_gets_each_caption_as_it_comes_and_ends_it_later() {
     captions.drain();
     assert_eq!(recorder.visible(2999).len(), 1);
     assert!(recorder.visible(3000).is_empty());
-    assert_eq!(recorder.visible(4500), ["{\\an1\\pos(192,972)}BYE"]);
+    assert_eq!(recorder.visible(4500), ["{\\an4\\pos(192,942)}BYE"]);
     assert!(recorder.visible(5000).is_empty());
     // A flush (seek) clears the track.
     assert_eq!(captions.flush(), S_OK);
@@ -293,8 +294,8 @@ fn attaching_replays_what_was_kept_and_a_gone_overlay_detaches() {
     }
     captions.drain();
     assert!(recorder.visible(4500).is_empty());
-    assert_eq!(second.visible(1500), ["{\\an1\\pos(192,972)}HELLO"]);
-    assert_eq!(second.visible(4500), ["{\\an1\\pos(192,972)}BYE"]);
+    assert_eq!(second.visible(1500), ["{\\an4\\pos(192,942)}HELLO"]);
+    assert_eq!(second.visible(4500), ["{\\an4\\pos(192,942)}BYE"]);
     // The overlay moved on (another track loaded): the next post finds out and detaches.
     second.0.lock().unwrap().gone = true;
     captions.flush();

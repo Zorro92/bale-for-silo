@@ -68,8 +68,10 @@ const LATENCY_TIMEOUT_MS: u32 = 1000;
 /// Live caption events are kept this long after they end (a short seek back needs no reload).
 const LIVE_RETENTION_MS: i64 = 60_000;
 /// Live caption changes the render thread may fall behind by; past it the queue restarts with a
-/// clear (only a render thread stalled for a long time gets there).
-const MAX_LIVE_COMMANDS: usize = 4096;
+/// clear (only a render thread stalled for a long time gets there). An attach replays up to
+/// `cc::MAX_HISTORY` kept captions at once, two events per row (box and text), so the cap leaves
+/// room for that batch.
+const MAX_LIVE_COMMANDS: usize = 16_384;
 
 use crate::panel::ISwapChainPanelNative;
 
@@ -817,10 +819,11 @@ fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
                 match command {
                     LiveCommand::Add {
                         id,
+                        layer,
                         start_ms,
                         end_ms,
                         text,
-                    } => live.add_event(id, start_ms, end_ms, &text),
+                    } => live.add_event(id, layer, start_ms, end_ms, &text),
                     LiveCommand::SetEnd { id, end_ms } => live.set_event_end(id, end_ms),
                     LiveCommand::Clear => live.flush_events(),
                 }

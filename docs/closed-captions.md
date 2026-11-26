@@ -118,25 +118,42 @@ ahead of the clock. While attached, each cue becomes ASS events added with a 30 
 while the caption stays and set when it ends, so a stream that stops cannot leave a caption up.
 
 **ass.rs.** The live track's header is the SubRip/WebVTT converters' (`ConvertOptions::styled`, the appearance on a
-1920×1080 script). Rows sit on 608's safe caption area (80% of the picture, centred: column `c` at
-`0.1 + 0.8 × c / 32` of the width, row `r` ending at `0.1 + 0.8 × r / 15` of the height, as FFmpeg's
-`ccaption_dec` places them), each event anchored at the bottom of its last row (`\an1`-`\an3`, `\pos`).
-Adjacent rows that line up become one event, so a box (border style 4) is one box behind them and libass stacks
-the lines at the font's height. Pop-on captions are aligned by their padding as Media3 does (centred, right or
-left; all rows of a caption take the first alignment any row needs); roll-up and paint-on start at their column.
-Colours (white is the appearance's colour), italics and underline are inline overrides. With the box style, a row's
-608 background other than opaque black colours its box (`\4c`/`\4a`, semi-transparent is half), and only then is
-black text drawn black; otherwise black text takes the text colour, so it stays readable. The appearance's
-position (bottom, lower third, top) does not apply, as on Android TV.
+1920×1080 script), with no line wrapping. Rows sit on 608's safe caption area (80% of the picture, centred: column `c`
+at `0.1 + 0.8 × c / 32` of the width, row `r` ending at `0.1 + 0.8 × r / 15` of the height, as FFmpeg's
+`ccaption_dec` places them). Every displayed row is a cell band, as 608 draws its character cells (47 CFR 15.119 (g)):
+one event draws the row's text centred in the band (`\an4`-`\an6`, `\pos`, libass layer 1), and with the appearance's
+box (border style 4) a second event under it (layer 0) draws the row's background over exactly that band, as wide as
+the row's text plus the box's padding. Bands stack edge to edge, so rows that start in different columns (an indent, a
+tab offset) have backgrounds that meet without overlapping or leaving a gap, and each row has its own background, as
+in 608 (owner, console 0.1.790: the boxes, each libass's event box padded above and below, were taller than the row
+pitch and overlapped as a darker band). A band is one 608 row (57.6 script pixels) unless the appearance's text is
+taller (libass's line height is the font size, 60 at Large): then rows are a line height apart, so the text always
+fits its band, and a block of adjacent rows keeps its row nearest the picture's edge on the 608 grid (rows 8-15: the
+last row's bottom; rows 1-7: the first row's top) and grows towards the middle, as Media3 counts rows from the bottom
+or the top by the middle; a block that would then overlap the next one towards the edge moves to meet it.
+- How a box event is exactly its band (libass 0.17.5 `ass_render.c`): border style 4 draws one rectangle per event, the
+  text's bounding box padded by the shadow, and ignores `\clip`. The box event (style `Box`: border style 4 in the
+  appearance's box colour, transparent glyphs, reached with `\r`) writes the row's text again with the same overrides,
+  so the rectangle is as wide as the text's advances; `\fscy0.001` takes the glyphs' height away and a drawing that
+  only moves the pen (`m 0 0 n 0 h`) makes the line exactly `h`, the band's height; `\xshad` is the appearance's
+  padding plus the outline its box took in. Edges are whole script pixels: exact where the picture is a whole multiple
+  of the 1080-line script (a 16:9 or 4:3 picture on the console's 1080p output); at other heights a band can end one
+  pixel short (libass's event box is in whole pixels), never overlapping the next.
+- Pop-on captions are aligned by their padding as Media3 does (centred, right or left; all rows of a caption take the
+  first alignment any row needs); roll-up and paint-on start at their column. Colours (white is the appearance's
+  colour), italics and underline are inline overrides. With the box style, a row's 608 background other than opaque
+  black colours its box (`\4c`/`\4a`, semi-transparent is half), and only then is black text drawn black; otherwise
+  black text takes the text colour, so it stays readable. The appearance's position (bottom, lower third, top) does
+  not apply, as on Android TV.
 
 **The overlay's live track.** `Overlay::begin_live` replaces the track with an empty one (`ass_new_track` +
 `ass_process_codec_private`, duplicate check off) and returns its generation and a `LiveSink`. The decoder hands
 it `Add` / `SetEnd` / `Clear` commands; they are queued in the overlay's state (an end folds into a queued add, a
-clear drops what is queued; past 4096 the queue restarts with a clear) and the render thread applies them:
-`ass_process_chunk` (ReadOrder = the event id), the event's `Duration` set in place (libass reads every event's
-times again each render), `ass_flush_events`, then `ass_prune_events` 60 s behind the clock. libass's own change
-detection decides whether a frame is presented. Another load, a clear or another attach ends the generation; the
-decoder then sees `E_NOT_FOUND` and detaches.
+clear drops what is queued; past 16384 the queue restarts with a clear) and the render thread applies them:
+`ass_process_chunk` (ReadOrder = the event id, Layer = 0 for a box and 1 for text), the event's `Duration` set in
+place (libass reads every event's times again each render), `ass_flush_events`, then `ass_prune_events` 60 s behind
+the clock. libass's own change detection decides whether a frame is presented. Another load, a clear or another
+attach ends the generation; the decoder then sees `E_NOT_FOUND` and detaches.
 
 ## Threads and limits
 
@@ -147,10 +164,13 @@ that slows the CPU about a quarter, about 1.2 GB of usable memory):
   µs per packet length-prefixed, 2.5 µs for 9 KiB Annex B packets (the start code scan, about 3.5 GB/s), so a
   30 fps stream costs well under 0.1% of a core and a 25 Mbit/s 4K MPEG-TS stream about 0.1% (the console's
   cores are slower, and slower again when idle, which leaves it far below anything that matters).
-- **Render thread:** one libass event per caption block; a roll-up caption changes every frame it types, which is
-  one re-render per change (the converters' rendering cost, no animation).
+- **Render thread:** one libass event per row, two with the box (its background and its text); a roll-up caption
+  changes every frame it types, which is one re-render per change (the converters' rendering cost, no animation).
+  A three-row roll-up typing about ten changes a second keeps some 3600 events in the live track at the minute's
+  retention (about 1 MB), whose schedule each batch of changes scans once (well under 1% of a core).
 - **Memory:** two 15×32 memories (about 12 KiB) per decoder, at most 1024 kept cues, the overlay's queue at most
-  4096 commands, libass events pruned a minute after they end. Nothing on the GPU besides the overlay's own.
+  16384 commands (an attach replays every kept cue at once, two events a row), libass events pruned a minute after they
+  end. Nothing on the GPU besides the overlay's own.
 - **Player (UI thread):** one decoder per FFmpeg mount of a tapped codec, released with the mount, so at most two
   exist while a replaced mount closes; the 100 ms tick asks the mount's decoder for its seen bits (a lock and a read)
   about once a second until the attempt has found all four channels, which for a stream with CC1 alone (the common
@@ -283,7 +303,12 @@ closed captions off`.
   samples). With `ffmpeg` the rich clip is re-encoded with B-frames as H.264 (MP4, TS), HEVC (MKV, TS) and MPEG-2
   (TS) and must match too. Skipped without the clips or `ffprobe` (CI). 2026-11-25: all 11 match, none late.
 - `tests/cc_warp.rs` (Windows CI): the caption ABI on a WARP overlay: the caption drawn at its time, gone after its
-  erase, before its start, after a flush and after a detach.
+  erase, before its start, after a flush and after a detach; and in a boxed appearance (half-transparent blue) at
+  1920×1080, two rows with different indents whose boxes cover their two 60-pixel bands edge to edge (no gap, no pixel
+  at the doubled alpha of overlapping boxes), each starting at its own row's indent.
+- `src/subs/cc/ass_tests.rs`: the layout on Linux, read back from the generated events: every row's box band meets the
+  next at every appearance size (Small to XX-Large) with indented rows, whole pixels, the text centred on its band and
+  as wide as its box; 608's grid for small text, blocks kept apart for large text.
 - `tests/cc_abi.rs` (every platform): the caption ABI without an overlay: one stream with CC1 in field 1 and CC3 and
   CC4 in field 2 (data channels 1 and 2), each picked with `bale_cc_select` and decoding only its own caption; a pick
   drops what the previous channel showed; out of range channels and 708 services refused.
@@ -297,8 +322,10 @@ closed captions off`.
   disposal, on the picked channel, the rows in both menus, the client-only pick that switches the mount's decoder and
   remembers nothing, the in-place answer, the timing origin, the flush clearing the overlay, the debug readout and
   command).
-- `cargo run --release --example cc_dump -- <clip> [cc1|cc2|cc3|cc4] [--ass]` prints a local clip's captions as Bale
-  decodes them (or the ASS script the overlay would draw).
+- `cargo run --release --example cc_dump -- <clip> [cc1|cc2|cc3|cc4] [--ass|--box]` prints a local clip's captions as
+  Bale decodes them (or the ASS script the overlay would draw: `--ass` in the converters' default style, `--box` in
+  Bale's default appearance, a 75% black box). `ffmpeg -ss <t> -i <clip> -vf "format=rgb24,setpts=PTS+<t>/TB,ass=<script>"
+  -frames:v 1 out.png` draws one frame of it with the host's libass (fonts differ; the geometry is the same).
 
 ## Left
 
@@ -309,6 +336,8 @@ closed captions off`.
   2. The captions at their times against the clock burned into the picture (10–12: "608 1/6" at 1–5 s, two lines
      6–10 s, italics 11–15 s, yellow 16–20 s, the top row 21–25 s, the last 26–29 s), in the appearance's font, size
      and box; the rich clips' colours, italics, underline and backgrounds (13, 14) and the split clip (15). Screenshots.
+     Each row's box meets the next with no darker band and no gap, indented and tab-offset rows included (13 at 5.5,
+     9.3, 15 and 17 s; 15 at 8.6, 13 and 17.4 s), also at Small and XX-Large (rows then a line height apart).
   3. A seek on each container (`seek 17`, `key l`, `key j`): the old caption goes at once, the next caption loaded after
      the keyframe the seek decodes from shows at its time, `flushes` counts up; Off from the menu ends them
      (`picked=no attached=no`).

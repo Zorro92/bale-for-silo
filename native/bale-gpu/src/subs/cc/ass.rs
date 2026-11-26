@@ -1,14 +1,23 @@
-//! Caption cues as ASS events on the 608 grid, drawn in the subtitle appearance: the script header
-//! and `Default` style are the SubRip/WebVTT converters' (`ConvertOptions`, so font, size, colours,
-//! outline, shadow and box are the profile's), and every event is positioned on the grid.
+//! Caption cues as ASS events on the 608 grid, drawn in the subtitle appearance: the script header's
+//! `Default` style is the SubRip/WebVTT converters' (`ConvertOptions`, so font, size, colours and
+//! outline are the profile's), and every event is positioned on the grid.
 //!
 //! - The grid is 608's safe caption area, 80% of the picture centred (47 CFR 15.119 (n)(12), as
 //!   FFmpeg's `ccaption_dec` and Media3 place it): 32 columns, 15 rows. Rows keep their place; the
 //!   appearance's position (bottom, lower third, top) does not move them, as on Android TV, where
 //!   Media3's caption cues carry their own line and position.
-//! - Vertically adjacent rows that line up become one event, so a box (border style 4) is one box
-//!   behind them, as Media3 draws one window behind a cue; the event's bottom line sits on the
-//!   bottom of its last row and libass stacks the lines above at the font's line height.
+//! - Every displayed row is a cell band, as 608 draws its character cells (15.119 (g)): one event
+//!   draws the row's text, centred in the band, and with the appearance's box (border style 4) one
+//!   event under it draws the row's background over exactly that band, as wide as the row's text
+//!   and the box's padding. Bands stack edge to edge, so two rows' backgrounds never overlap or
+//!   leave a gap, whatever their indents, and each row's background is its own.
+//! - The bands are 608's rows (1/15 of the safe area, 57.6 script pixels) unless the appearance's
+//!   text is taller (libass's line height is the font size): then the row pitch is that line height,
+//!   so a band is always as tall as its text and its box. A block of adjacent rows keeps the row
+//!   nearest the edge of the picture on its 608 line (in the lower half, rows 8-15, its last row's
+//!   bottom, else its first row's top) and grows towards the middle, as Media3 counts 608 rows from
+//!   the bottom or the top by the middle (`Cea608Decoder.CueBuilder`, `row > BASE_ROW / 2`); a
+//!   block that would overlap the next one towards the edge moves to meet it instead.
 //! - Pop-on captions are aligned by their padding as Media3 does it (`Cea608Decoder.CueBuilder`,
 //!   Apache-2.0, ported: see `native/bale-gpu/NOTICE`): about as much space either side is centred,
 //!   less space after than before is right-aligned, the rest left-aligned at their first column, and
@@ -17,25 +26,51 @@
 //! - 608 colours, italics and underline are inline overrides, as FFmpeg, VLC and mpv keep them;
 //!   white is the appearance's text colour (Media3 draws white as the default colour too). Android
 //!   TV drops them (`SubtitleManager.kt` sets `setApplyEmbeddedStyles(false)`), which
-//!   [`FLAG_PLAIN`] does. With the box (border style 4) a row's 608 background that is not the
-//!   default opaque black colours its box (`\4c`, `\4a`; semi-transparent is half), and only then
-//!   is black text drawn black: without a box it takes the text colour so that it stays readable.
+//!   [`FLAG_PLAIN`] does. With the box a row's 608 background that is not the default opaque black
+//!   colours its box (`\4c`, `\4a`; semi-transparent is half), and only then is black text drawn
+//!   black: without a box it takes the text colour so that it stays readable.
+//!
+//! How a box event covers exactly its band (libass 0.17.5, `ass_render.c`): border style 4 draws one
+//! rectangle per event, the text's bounding box padded by the shadow (`add_background`), and ignores
+//! `\clip`. The event writes the row's text again with the same overrides, so its advances, and the
+//! rectangle's width, are the text's; `\fscy` near zero takes the glyphs' ascender and descender
+//! away (`get_outline_glyph` scales them by it), and a drawing that only moves the pen
+//! (`m 0 0 n 0 h`: nothing drawn, a bounding box `h` high) makes the line exactly the band's height.
+//! With no vertical padding the rectangle is the band, in whole pixels where the picture is a whole
+//! multiple of the 1080-line script; elsewhere a band can end one pixel short (`EventImages` holds
+//! whole pixels), never overlapping the next. The `Box` style makes its glyphs transparent.
 
 use std::fmt::Write as _;
 
 use super::cea608::{Background, COLUMNS, Color, Opacity, ROWS};
 use super::cue::{Cue, CueKind, CueRow, CueStyle};
 use crate::subs::convert::ConvertOptions;
-use crate::subs::convert::ass_writer::{Cue as ScriptCue, Line, write_script};
+use crate::subs::convert::ass_writer::{Cue as ScriptCue, Line, write_script_styles};
 use crate::subs::convert::style::Style;
 
 /// `bale_cc_attach` flag: draw every caption in the appearance alone, without 608 colours, italics,
 /// underline or backgrounds (Android TV's look).
 pub const FLAG_PLAIN: u32 = 1;
 
+/// The libass layer of the box events: every caption's backgrounds under all of its text.
+pub const BOX_LAYER: i32 = 0;
+/// The libass layer of the text events.
+pub const TEXT_LAYER: i32 = 1;
+
+/// The style a box event switches to with `\r`: border style 4 in the appearance's box colour, with
+/// transparent glyphs and no outline or padding of its own.
+const BOX_STYLE: &str = "Box";
+/// A colour libass does not draw (ASS alpha FF).
+const TRANSPARENT: u32 = 0xFF00_0000;
+/// `\fscy` of a box event's text: its glyphs keep their advances and lose their height.
+const FLAT: &str = "0.001";
+
 /// The fraction of the picture outside the safe caption area on each side.
 const SAFE_MARGIN: f32 = 0.1;
 const SAFE_SIZE: f32 = 0.8;
+/// The first row of the lower half, whose blocks keep their bottom on the grid (Media3:
+/// `row > BASE_ROW / 2`).
+const LOWER_HALF: u8 = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Anchor {
@@ -44,9 +79,19 @@ enum Anchor {
     End,
 }
 
-/// The script header (with the `Default` style) a live caption track starts from.
+/// One libass event of a caption.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Event {
+    /// [`BOX_LAYER`] or [`TEXT_LAYER`].
+    pub layer: i32,
+    /// The event text, overrides included.
+    pub text: String,
+}
+
+/// The script header a live caption track starts from: the `Default` style the text is drawn in,
+/// and with a box the `Box` style the backgrounds are.
 pub fn header(opts: &ConvertOptions) -> String {
-    write_script(opts, Vec::new())
+    write(opts, Vec::new())
 }
 
 /// A whole script of `cues` (debug dumps and tests); an open cue runs `open_ms`.
@@ -61,18 +106,59 @@ pub fn script(cues: &[Cue], opts: &ConvertOptions, flags: u32, open_ms: i64) -> 
                 .max(0) as u64;
             events(cue, opts, flags)
                 .into_iter()
-                .map(move |text| ScriptCue {
+                .map(move |event| ScriptCue {
                     start_ms: start,
                     end_ms: end,
-                    text,
+                    layer: event.layer,
+                    text: event.text,
                 })
         })
         .collect();
-    write_script(opts, events)
+    write(opts, events)
 }
 
-/// The ASS event texts (overrides included) that draw `cue`.
-pub fn events(cue: &Cue, opts: &ConvertOptions, flags: u32) -> Vec<String> {
+fn write(opts: &ConvertOptions, events: Vec<ScriptCue>) -> String {
+    let text = text_options(opts);
+    match box_options(opts) {
+        Some(boxes) => write_script_styles(&text, &[(BOX_STYLE, &boxes)], events),
+        None => write_script_styles(&text, &[], events),
+    }
+}
+
+/// The appearance draws a box behind the text (border style 4).
+fn has_box(opts: &ConvertOptions) -> bool {
+    opts.border_style == 4
+}
+
+/// The `Default` style: the appearance, but a box is drawn by box events, not by the text: border
+/// style 4 becomes 1 without a shadow (4's shadow is the box's padding), which draws the glyphs and
+/// their outline as 4 does. A row never wraps (WrapStyle 2): it is one line however wide.
+fn text_options(opts: &ConvertOptions) -> ConvertOptions {
+    let mut text = opts.clone();
+    text.wrap_style = 2;
+    if has_box(opts) {
+        text.border_style = 1;
+        text.shadow = 0.0;
+    }
+    text
+}
+
+/// The `Box` style: border style 4 in the appearance's box colour, the glyphs and their outline
+/// transparent, no padding of its own (each box event sets its sides with `\xshad`).
+fn box_options(opts: &ConvertOptions) -> Option<ConvertOptions> {
+    has_box(opts).then(|| ConvertOptions {
+        primary_colour: TRANSPARENT,
+        outline_colour: TRANSPARENT,
+        outline: 0.0,
+        shadow: 0.0,
+        wrap_style: 2,
+        ..opts.clone()
+    })
+}
+
+/// The events that draw `cue`: with a box, one box event per row (on [`BOX_LAYER`], first), then
+/// one text event per row (on [`TEXT_LAYER`]).
+pub fn events(cue: &Cue, opts: &ConvertOptions, flags: u32) -> Vec<Event> {
     let plain = flags & FLAG_PLAIN != 0;
     let anchor = match cue.kind {
         CueKind::PopOn => cue
@@ -84,44 +170,42 @@ pub fn events(cue: &Cue, opts: &ConvertOptions, flags: u32) -> Vec<String> {
         CueKind::RollUp | CueKind::PaintOn => Anchor::Start,
     };
     let (width, height) = opts.resolution();
-    let boxed = opts.border_style == 4 && !plain;
-    let placed: Vec<(&CueRow, i32, Option<Background>)> = cue
-        .rows
-        .iter()
-        .map(|row| {
-            let x = match anchor {
-                Anchor::Start => column_x(f32::from(row.first), width),
-                Anchor::Middle => width / 2.0,
-                Anchor::End => column_x(f32::from(row.last) + 1.0, width),
-            };
-            let background = row
-                .segments
-                .first()
-                .map(|segment| segment.style.background)
-                .filter(|background| boxed && *background != Background::default());
-            (row, x.round() as i32, background)
-        })
-        .collect();
-    let mut out = Vec::new();
-    let mut at = 0;
-    while at < placed.len() {
-        let (_, x, background) = placed[at];
-        let mut end = at + 1;
-        while end < placed.len()
-            && placed[end].0.row == placed[end - 1].0.row + 1
-            && placed[end].1 == x
-            && placed[end].2 == background
-        {
-            end += 1;
-        }
-        let bottom = placed[end - 1].0.row;
-        let y = height * (SAFE_MARGIN + SAFE_SIZE * f32::from(bottom) / ROWS as f32);
-        let alignment = match anchor {
-            Anchor::Start => 1,
-            Anchor::Middle => 2,
-            Anchor::End => 3,
+    let boxed = has_box(opts);
+    let bands = bands(&cue.rows, height, pitch(opts, height));
+    let mut boxes = Vec::new();
+    let mut texts = Vec::new();
+    for (row, &(top, bottom)) in cue.rows.iter().zip(&bands) {
+        let (x, alignment) = match anchor {
+            Anchor::Start => (column_x(f32::from(row.first), width), 4),
+            Anchor::Middle => (width / 2.0, 5),
+            Anchor::End => (column_x(f32::from(row.last) + 1.0, width), 6),
         };
-        let mut block = format!("{{\\an{alignment}\\pos({x},{})", y.round() as i32);
+        // Middle alignment centres the line on the band (libass get_base_point).
+        let centre = (top + bottom) as f32 / 2.0;
+        let position = format!("\\an{alignment}\\pos({},{centre})", x.round() as i32);
+        let background = row
+            .segments
+            .first()
+            .map(|segment| segment.style.background)
+            .filter(|background| boxed && !plain && *background != Background::default());
+        let mut line = Line::new(opts);
+        line.raw_block(&format!("{{{position}}}"));
+        write_row(&mut line, row, plain, background.is_some());
+        let Some(text) = line.finish() else {
+            continue;
+        };
+        texts.push(Event {
+            layer: TEXT_LAYER,
+            text,
+        });
+        if !boxed {
+            continue;
+        }
+        // The same text, flat, as wide as the text's and exactly the band's height (module docs).
+        let mut block = format!(
+            "{{\\r{BOX_STYLE}{position}\\fscy{FLAT}\\xshad{}",
+            box_padding(opts)
+        );
         if let Some(background) = background {
             let (r, g, b) = background.color.rgb();
             let alpha = match background.opacity {
@@ -134,21 +218,102 @@ pub fn events(cue: &Cue, opts: &ConvertOptions, flags: u32) -> Vec<String> {
         block.push('}');
         let mut line = Line::new(opts);
         line.raw_block(&block);
-        for (i, (row, _, _)) in placed[at..end].iter().enumerate() {
-            if i > 0 {
-                line.ch('\n');
-            }
-            for segment in &row.segments {
-                line.set_style(style(&segment.style, plain, background.is_some()));
-                for ch in segment.text.chars() {
-                    line.ch(ch);
-                }
-            }
+        write_row(&mut line, row, plain, background.is_some());
+        line.raw_block(&format!(
+            "{{\\fscy100\\p1}}m 0 0 n 0 {}{{\\p0}}",
+            bottom - top
+        ));
+        if let Some(text) = line.finish() {
+            boxes.push(Event {
+                layer: BOX_LAYER,
+                text,
+            });
         }
-        out.extend(line.finish());
-        at = end;
     }
-    out
+    boxes.extend(texts);
+    boxes
+}
+
+/// The row's styled runs.
+fn write_row(line: &mut Line<'_>, row: &CueRow, plain: bool, coloured_box: bool) {
+    for segment in &row.segments {
+        line.set_style(style(&segment.style, plain, coloured_box));
+        for ch in segment.text.chars() {
+            line.ch(ch);
+        }
+    }
+}
+
+/// A box's padding either side of its text: the appearance's (border style 4's shadow) and the
+/// glyph outline, which the appearance's box took in too.
+fn box_padding(opts: &ConvertOptions) -> f32 {
+    let width = |value: f32| {
+        if value.is_finite() {
+            value.max(0.0)
+        } else {
+            0.0
+        }
+    };
+    width(opts.shadow) + width(opts.outline)
+}
+
+/// The distance between two rows in script pixels: one 608 row, or the text's line height (the
+/// font size) when that is taller.
+fn pitch(opts: &ConvertOptions, height: f32) -> f32 {
+    (height * SAFE_SIZE / ROWS as f32).max(opts.font_size as f32)
+}
+
+/// Each row's band, top and bottom edge in whole script pixels, in `rows`' order (ascending rows).
+///
+/// Rows come in blocks of adjacent rows, `pitch` apart. A block in the lower half (its last row 8
+/// or below) keeps its bottom on that row's 608 grid line and grows upwards; any other block keeps
+/// its top on its first row's grid line and grows downwards. At 608's own pitch that is the grid;
+/// with taller text a block that would overlap the next one towards the edge of the picture moves
+/// to meet it. A block is placed by its top edge and every edge is rounded once, so neighbours
+/// share theirs.
+fn bands(rows: &[CueRow], height: f32, pitch: f32) -> Vec<(i32, i32)> {
+    // The edge below row `k` on 608's grid (`k` = 0: the top of the safe area).
+    let grid =
+        |k: u8| height * (SAFE_MARGIN + SAFE_SIZE * f32::from(k.min(ROWS as u8)) / ROWS as f32);
+    let mut blocks: Vec<(usize, usize, f32)> = Vec::new();
+    let mut start = 0;
+    while start < rows.len() {
+        let mut end = start + 1;
+        while end < rows.len() && rows[end].row == rows[end - 1].row.saturating_add(1) {
+            end += 1;
+        }
+        blocks.push((start, end, 0.0));
+        start = end;
+    }
+    let lower = |&(_, end, _): &(usize, usize, f32)| rows[end - 1].row >= LOWER_HALF;
+    // The upper half from the top down, the lower half from the bottom up.
+    let mut floor = f32::MIN;
+    for block in blocks.iter_mut().filter(|block| !lower(block)) {
+        let top = grid(rows[block.0].row.saturating_sub(1)).max(floor);
+        block.2 = top;
+        floor = top + (block.1 - block.0) as f32 * pitch;
+    }
+    let mut ceiling = f32::MAX;
+    for block in blocks.iter_mut().rev().filter(|block| lower(block)) {
+        let bottom = grid(rows[block.1 - 1].row).min(ceiling);
+        block.2 = bottom - (block.1 - block.0) as f32 * pitch;
+        ceiling = block.2;
+    }
+    let mut bands = Vec::with_capacity(rows.len());
+    for (start, end, top) in blocks {
+        // A block taller than the picture's room is moved back into it.
+        let bottom = top + (end - start) as f32 * pitch;
+        let top = if top < 0.0 {
+            0.0
+        } else if bottom > height {
+            (top - (bottom - height)).max(0.0)
+        } else {
+            top
+        };
+        let edge = |k: usize| (top + k as f32 * pitch).round() as i32;
+        bands.extend((0..end - start).map(|k| (edge(k), edge(k + 1))));
+    }
+    bands
 }
 
 /// The x of the left edge of 608 column `column` (0..=32) in script pixels.
@@ -170,13 +335,13 @@ fn anchor_of(row: &CueRow) -> Anchor {
     }
 }
 
-fn style(style: &CueStyle, plain: bool, boxed: bool) -> Style {
+fn style(style: &CueStyle, plain: bool, coloured_box: bool) -> Style {
     if plain {
         return Style::default();
     }
     let color = match style.foreground {
         Color::White => None,
-        Color::Black if !boxed => None,
+        Color::Black if !coloured_box => None,
         color => Some(color.rgb()),
     };
     Style {
@@ -188,238 +353,5 @@ fn style(style: &CueStyle, plain: bool, boxed: bool) -> Style {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::subs::cc::cue::Segment;
-    use crate::subs::convert::TextStyle;
-
-    fn row(row: u8, first: u8, segments: &[(&str, CueStyle)]) -> CueRow {
-        let len: usize = segments.iter().map(|(text, _)| text.chars().count()).sum();
-        CueRow {
-            row,
-            first,
-            last: first + len as u8 - 1,
-            segments: segments
-                .iter()
-                .map(|(text, style)| Segment {
-                    text: (*text).to_owned(),
-                    style: *style,
-                })
-                .collect(),
-        }
-    }
-
-    fn plain_row(number: u8, first: u8, text: &str) -> CueRow {
-        row(number, first, &[(text, CueStyle::default())])
-    }
-
-    fn cue(kind: CueKind, rows: Vec<CueRow>) -> Cue {
-        Cue {
-            start_ms: 1000,
-            end_ms: Some(2000),
-            kind,
-            rows,
-        }
-    }
-
-    fn boxed() -> ConvertOptions {
-        ConvertOptions::styled(
-            &TextStyle {
-                font_size: 60,
-                primary_colour: 0x00FF_FFFF,
-                outline_colour: 0,
-                back_colour: 0x4000_0000,
-                border_style: 4,
-                outline: 0.0,
-                shadow: 7.5,
-                alignment: 2,
-                margin_v: 54,
-            },
-            None,
-        )
-    }
-
-    #[test]
-    fn rows_sit_on_the_grid_and_adjacent_rows_share_one_event() {
-        let opts = ConvertOptions::default();
-        // Rows 14 and 15 start in column 0 (left-aligned); row 1 is separate.
-        let cue = cue(
-            CueKind::RollUp,
-            vec![
-                plain_row(1, 4, "top"),
-                plain_row(14, 0, "one"),
-                plain_row(15, 0, "two"),
-            ],
-        );
-        assert_eq!(
-            events(&cue, &opts, 0),
-            [
-                // x = 1920 * (0.1 + 0.8 * 4 / 32) = 384; y = 1080 * (0.1 + 0.8 / 15) = 166.
-                "{\\an1\\pos(384,166)}top",
-                // y = 1080 * 0.9 = 972: the bottom of row 15.
-                "{\\an1\\pos(192,972)}one\\Ntwo",
-            ]
-        );
-    }
-
-    #[test]
-    fn pop_on_alignment_follows_media3() {
-        let opts = ConvertOptions::default();
-        // Centred: 11 columns either side of a 10-column row.
-        let centred = cue(CueKind::PopOn, vec![plain_row(15, 11, "0123456789")]);
-        assert_eq!(
-            events(&centred, &opts, 0),
-            ["{\\an2\\pos(960,972)}0123456789"]
-        );
-        // Right: column 20 to 30 (less space after than before).
-        let right = cue(CueKind::PopOn, vec![plain_row(15, 20, "abcdefghijk")]);
-        // x = 1920 * (0.1 + 0.8 * 31 / 32) = 1680.
-        assert_eq!(
-            events(&right, &opts, 0),
-            ["{\\an3\\pos(1680,972)}abcdefghijk"]
-        );
-        // Every row takes the first alignment any row needs: one left row makes both left.
-        let mixed = cue(
-            CueKind::PopOn,
-            vec![plain_row(14, 11, "0123456789"), plain_row(15, 2, "abc")],
-        );
-        assert_eq!(
-            events(&mixed, &opts, 0),
-            [
-                "{\\an1\\pos(720,914)}0123456789",
-                "{\\an1\\pos(288,972)}abc"
-            ]
-        );
-        // A row wider than the grid allows is centred.
-        let wide = cue(CueKind::PopOn, vec![plain_row(15, 0, &"w".repeat(32))]);
-        assert!(events(&wide, &opts, 0)[0].starts_with("{\\an2\\pos(960,972)}"));
-        // Roll-up and paint-on never centre.
-        let paint = cue(CueKind::PaintOn, vec![plain_row(8, 11, "0123456789")]);
-        assert_eq!(
-            events(&paint, &opts, 0),
-            ["{\\an1\\pos(720,569)}0123456789"]
-        );
-    }
-
-    #[test]
-    fn colours_italics_and_underline_are_overrides_and_white_is_the_appearance() {
-        let opts = ConvertOptions::default();
-        let yellow = CueStyle {
-            foreground: Color::Yellow,
-            ..CueStyle::default()
-        };
-        let italic = CueStyle {
-            italic: true,
-            ..CueStyle::default()
-        };
-        let underline_red = CueStyle {
-            foreground: Color::Red,
-            underline: true,
-            ..CueStyle::default()
-        };
-        let black = CueStyle {
-            foreground: Color::Black,
-            ..CueStyle::default()
-        };
-        let cue = cue(
-            CueKind::RollUp,
-            vec![row(
-                15,
-                0,
-                &[
-                    ("a ", CueStyle::default()),
-                    ("yellow", yellow),
-                    (" ", CueStyle::default()),
-                    ("it", italic),
-                    ("ul", underline_red),
-                    ("k", black),
-                ],
-            )],
-        );
-        assert_eq!(
-            events(&cue, &opts, 0),
-            [
-                "{\\an1\\pos(192,972)}a {\\c&H00FFFF&}yellow {\\i1\\c}it{\\i0\\u1\\c&H0000FF&}ul{\\u0\\c}k"
-            ]
-        );
-        assert_eq!(
-            events(&cue, &opts, FLAG_PLAIN),
-            ["{\\an1\\pos(192,972)}a yellow itulk"]
-        );
-    }
-
-    #[test]
-    fn a_608_background_colours_the_box_and_splits_rows() {
-        let opts = boxed();
-        let on_white = CueStyle {
-            foreground: Color::Black,
-            background: Background {
-                color: Color::White,
-                opacity: Opacity::Opaque,
-            },
-            ..CueStyle::default()
-        };
-        let semi_red = CueStyle {
-            background: Background {
-                color: Color::Red,
-                opacity: Opacity::SemiTransparent,
-            },
-            ..CueStyle::default()
-        };
-        let clear = CueStyle {
-            background: Background {
-                color: Color::Black,
-                opacity: Opacity::Transparent,
-            },
-            ..CueStyle::default()
-        };
-        let cue = cue(
-            CueKind::RollUp,
-            vec![
-                row(12, 0, &[("clear", clear)]),
-                row(13, 0, &[("black on white", on_white)]),
-                row(14, 0, &[("semi red", semi_red)]),
-                plain_row(15, 0, "default"),
-            ],
-        );
-        assert_eq!(
-            events(&cue, &opts, 0),
-            [
-                "{\\an1\\pos(192,799)\\4c&H000000&\\4a&HFF&}clear",
-                "{\\an1\\pos(192,857)\\4c&HFFFFFF&\\4a&H00&}{\\c&H000000&}black on white",
-                "{\\an1\\pos(192,914)\\4c&H0000FF&\\4a&H80&}semi red",
-                "{\\an1\\pos(192,972)}default",
-            ]
-        );
-        // Without the box style, or plain, backgrounds go and black text takes the text colour.
-        let unboxed = ConvertOptions::default();
-        let texts = events(&cue, &unboxed, 0);
-        assert_eq!(texts.len(), 1);
-        assert_eq!(
-            texts[0],
-            "{\\an1\\pos(192,972)}clear\\Nblack on white\\Nsemi red\\Ndefault"
-        );
-        assert_eq!(events(&cue, &opts, FLAG_PLAIN), texts);
-    }
-
-    #[test]
-    fn literal_text_is_escaped_and_the_script_holds_every_event() {
-        let opts = ConvertOptions::default();
-        let cue = Cue {
-            start_ms: 1234,
-            end_ms: None,
-            kind: CueKind::PaintOn,
-            rows: vec![plain_row(15, 0, "{x} \\N")],
-        };
-        let texts = events(&cue, &opts, 0);
-        assert_eq!(texts, ["{\\an1\\pos(192,972)}\\{x\\} \\\u{2060}N"]);
-        let script = script(&[cue], &opts, 0, 5000);
-        assert!(script.starts_with("[Script Info]\n"));
-        assert!(script.ends_with(&format!(
-            "Dialogue: 0,0:00:01.23,0:00:06.23,Default,,0,0,0,,{}\n",
-            texts[0]
-        )));
-        assert_eq!(header(&opts), write_script(&opts, Vec::new()));
-        assert!(header(&opts).ends_with("Effect, Text\n"));
-    }
-}
+#[path = "ass_tests.rs"]
+mod tests;

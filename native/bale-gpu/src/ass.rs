@@ -422,11 +422,18 @@ pub(crate) struct Track<'a> {
 }
 
 impl Track<'_> {
-    /// Adds one event to a live track: ReadOrder `id`, `text` the event's text field (overrides
-    /// included, no line breaks).
-    pub(crate) fn add_event(&mut self, id: i32, start_ms: i64, end_ms: i64, text: &str) {
+    /// Adds one event to a live track: ReadOrder `id` on `layer` (libass draws higher layers over
+    /// lower ones), `text` the event's text field (overrides included, no line breaks).
+    pub(crate) fn add_event(
+        &mut self,
+        id: i32,
+        layer: i32,
+        start_ms: i64,
+        end_ms: i64,
+        text: &str,
+    ) {
         // A Matroska chunk: ReadOrder, Layer, Style, Name, MarginL, MarginR, MarginV, Effect, Text.
-        let chunk = format!("{id},0,Default,,0,0,0,,{text}");
+        let chunk = format!("{id},{layer},Default,,0,0,0,,{text}");
         let Ok(size) = c_int::try_from(chunk.len()) else {
             return;
         };

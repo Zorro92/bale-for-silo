@@ -1,10 +1,12 @@
 //! Closed captions end to end on WARP through the caption ABI: a decoder registered under a token
 //! and attached to the overlay, H.264 packets carrying CEA-608 pushed as the FFmpegInteropX tap
-//! pushes them, the caption drawn at the media clock, gone after its erase and after a flush.
+//! pushes them, the caption drawn at the media clock, gone after its erase and after a flush; and
+//! in a boxed appearance, rows with different indents whose backgrounds meet without overlapping.
 #![cfg(windows)]
 
 use bale_gpu::subs::bitmap::E_NOT_FOUND;
 use bale_gpu::subs::cc::{BaleCcStats, Captions, SEEN_CC_DATA, SEEN_CC1};
+use bale_gpu::subs::convert::TextStyle;
 use bale_gpu::subs::overlay::{Capture, Overlay};
 use bale_gpu::subs::{Layout, S_OK};
 use bale_gpu::{
@@ -56,7 +58,10 @@ fn pair_at(frame: i64) -> [u8; 2] {
 /// An avcC (4-byte lengths) H.264 packet: an A/53 SEI with one field-1 and one null field-2
 /// pair, then a slice. No byte pair of it is zero, so it needs no emulation prevention.
 fn packet(frame: i64) -> Vec<u8> {
-    let [a, b] = pair_at(frame);
+    packet_with(pair_at(frame))
+}
+
+fn packet_with([a, b]: [u8; 2]) -> Vec<u8> {
     let mut payload = vec![
         0xB5,
         0x00,
@@ -150,5 +155,126 @@ fn captions_draw_through_the_live_track() {
     // SAFETY: the handle is not used again.
     unsafe { bale_cc_destroy(captions) };
     assert_eq!(push(0), E_NOT_FOUND);
+    assert_eq!(overlay.clear(), S_OK);
+}
+
+/// The field-1 pair of `frame` for a pop-on caption of two rows that start in different columns, as
+/// on the console: row 14 indented to column 4 ("AB CD"), row 15 at column 0 ("EF GH"), shown at
+/// frame 20.
+fn indented_rows_at(frame: i64) -> [u8; 2] {
+    let [a, b] = match frame {
+        0 | 1 => [0x14, 0x20],
+        // PAC row 14, indent 4 (white).
+        2 | 3 => [0x14, 0x52],
+        4 => *b"AB",
+        5 => *b" C",
+        6 => [b'D', 0],
+        // PAC row 15, column 0.
+        7 | 8 => [0x14, 0x60],
+        9 => *b"EF",
+        10 => *b" G",
+        11 => [b'H', 0],
+        20 | 21 => [0x14, 0x2F],
+        _ => return [0x80, 0x80],
+    };
+    [parity(a), if b == 0 { 0x80 } else { parity(b) }]
+}
+
+/// Premultiplied BGRA of `capture` at (`x`, `y`).
+fn pixel(capture: &Capture, x: u32, y: u32) -> [u8; 4] {
+    let at = (y as usize * capture.width as usize + x as usize) * 4;
+    capture.bgra[at..at + 4].try_into().expect("four bytes")
+}
+
+/// A pixel of the blue box with nothing over it: blue alone, any alpha.
+fn is_box(pixel: [u8; 4]) -> bool {
+    let [blue, green, red, alpha] = pixel;
+    blue > 0 && green == 0 && red == 0 && alpha > 0
+}
+
+#[test]
+fn rows_with_different_indents_have_backgrounds_that_meet_without_overlapping() {
+    const SIZE: u32 = 1920;
+    const LINES: u32 = 1080;
+    const ROWS_TOKEN: u64 = 0xCC_0002;
+    // SAFETY: a null panel renders offscreen.
+    let overlay = unsafe {
+        Overlay::create_with_driver(std::ptr::null_mut(), SIZE, LINES, D3D_DRIVER_TYPE_WARP)
+    }
+    .expect("create overlay on WARP");
+    // The 1920x1080 script on a 1920x1080 picture: script pixels are pixels.
+    assert_eq!(overlay.set_layout(Layout::full(SIZE, LINES)), S_OK);
+    assert_eq!(overlay.set_clock(1000, 1.0, false), S_OK);
+    // Bale.Core SubtitleTextStyle's Box at Large (60 script pixels, padding 7.5), white text on a
+    // blue box at half opacity (ASS alpha 0x80), so one box over another would show a darker band.
+    let style = TextStyle {
+        font_size: 60,
+        primary_colour: 0x00FF_FFFF,
+        outline_colour: 0,
+        back_colour: 0x80FF_0000,
+        border_style: 4,
+        outline: 0.0,
+        shadow: 7.5,
+        alignment: 2,
+        margin_v: 54,
+    };
+    let mut captions: *const Captions = std::ptr::null();
+    // SAFETY: a writable out pointer; `captions` is a live handle until the destroy below, `style`
+    // is read during the call, and `overlay` outlives every call that is handed it.
+    unsafe {
+        assert_eq!(bale_cc_create(&mut captions), S_OK);
+        assert_eq!(bale_cc_register(captions, ROWS_TOKEN), S_OK);
+        let overlay = (&*overlay as *const Overlay).cast_mut();
+        assert_eq!(
+            bale_cc_attach(captions, overlay, &style, std::ptr::null(), 0, 0),
+            S_OK
+        );
+    }
+    for frame in 0..40 {
+        let data = packet_with(indented_rows_at(frame));
+        // SAFETY: `data` is live for the call and as long as declared.
+        let hr =
+            unsafe { bale_cc_push(ROWS_TOKEN, data.as_ptr(), data.len(), frame * FRAME, 1, 4) };
+        assert_eq!(hr, S_OK, "frame {frame}");
+    }
+    let shown = overlay.capture().expect("capture the caption");
+    // A box and a text event per row.
+    assert_eq!(overlay.stats().events, 4);
+    // The pixel rows holding box pixels: the two rows' bands, 60 each (the text's line height is
+    // taller than a 608 row), edge to edge from row 14's top (852) to row 15's bottom (972).
+    let boxed: Vec<u32> = (0..LINES)
+        .filter(|&y| (0..SIZE).any(|x| is_box(pixel(&shown, x, y))))
+        .collect();
+    assert_eq!(boxed.first(), Some(&852), "row 14's band starts at its top");
+    assert_eq!(
+        boxed.last(),
+        Some(&971),
+        "row 15's band ends at the safe area"
+    );
+    assert_eq!(boxed.len(), 120, "no gap between the bands");
+    // One alpha everywhere: where two boxes overlapped, blue at half alpha twice is about 191.
+    let doubled = (0..LINES)
+        .flat_map(|y| (0..SIZE).map(move |x| (x, y)))
+        .filter(|&(x, y)| {
+            let pixel = pixel(&shown, x, y);
+            is_box(pixel) && pixel[3] > 140
+        })
+        .count();
+    assert_eq!(doubled, 0, "a band where both rows' boxes overlap");
+    // Each band is its own row's box: row 14's starts at its indent (column 4, x = 384, less the
+    // padding), row 15's at column 0 (x = 192).
+    let left = |y: u32| (0..SIZE).find(|&x| is_box(pixel(&shown, x, y)));
+    assert!(
+        left(860).is_some_and(|x| x.abs_diff(376) <= 2),
+        "{:?}",
+        left(860)
+    );
+    assert!(
+        left(964).is_some_and(|x| x.abs_diff(184) <= 2),
+        "{:?}",
+        left(964)
+    );
+    // SAFETY: the handle is not used again.
+    unsafe { bale_cc_destroy(captions) };
     assert_eq!(overlay.clear(), S_OK);
 }

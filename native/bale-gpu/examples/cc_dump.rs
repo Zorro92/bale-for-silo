@@ -2,9 +2,12 @@
 //! FFmpegInteropX tap hands it to `bale_cc_push` (read with the local `ffprobe`), through
 //! `bale_gpu::subs::cc`. A Linux debug path for caption streams that do not look right.
 //!
-//! cargo run --release --example cc_dump -- <clip> [cc1|cc2|cc3|cc4] [--ass]
+//! cargo run --release --example cc_dump -- <clip> [cc1|cc2|cc3|cc4] [--ass|--box]
 //!
-//! `--ass` prints the ASS script the overlay would draw (default appearance) instead of the cues.
+//! `--ass` prints the ASS script the overlay would draw (the converters' default style) instead of
+//! the cues; `--box` prints it in Bale's default subtitle appearance (Large, white on a 75% black
+//! box: Bale.Core `SubtitleTextStyle.For(SubtitleAppearance.Default)`), whose backgrounds are box
+//! events. Render either over a picture with `ffmpeg -vf ass=<script>` to look at it.
 
 #[path = "../tests/common/ffprobe.rs"]
 mod ffprobe;
@@ -14,10 +17,24 @@ use std::process::ExitCode;
 
 use bale_gpu::subs::cc::cue::{Cue, CueRow};
 use bale_gpu::subs::cc::{Captions, ass};
-use bale_gpu::subs::convert::ConvertOptions;
+use bale_gpu::subs::convert::{ConvertOptions, TextStyle};
+
+/// Bale.Core `SubtitleTextStyle.For(SubtitleAppearance.Default)`: Large (60), white, a black box at
+/// 75% padded by an eighth of the size, no outline.
+const DEFAULT_APPEARANCE: TextStyle = TextStyle {
+    font_size: 60,
+    primary_colour: 0x00FF_FFFF,
+    outline_colour: 0,
+    back_colour: 0x4000_0000,
+    border_style: 4,
+    outline: 0.0,
+    shadow: 7.5,
+    alignment: 2,
+    margin_v: 54,
+};
 
 fn usage() -> ExitCode {
-    eprintln!("usage: cc_dump <clip> [cc1|cc2|cc3|cc4] [--ass]");
+    eprintln!("usage: cc_dump <clip> [cc1|cc2|cc3|cc4] [--ass|--box]");
     ExitCode::from(2)
 }
 
@@ -60,10 +77,11 @@ fn main() -> ExitCode {
     let Some(path) = args.next() else {
         return usage();
     };
-    let (mut channel, mut script) = (1, false);
+    let (mut channel, mut script) = (1, None);
     for arg in args {
         match arg.as_str() {
-            "--ass" => script = true,
+            "--ass" => script = Some(ConvertOptions::default()),
+            "--box" => script = Some(ConvertOptions::styled(&DEFAULT_APPEARANCE, None)),
             other => match other.strip_prefix("cc").and_then(|n| n.parse().ok()) {
                 Some(n @ 1..=4) => channel = n,
                 _ => return usage(),
@@ -123,11 +141,8 @@ fn main() -> ExitCode {
         stats.late,
         cues.len()
     );
-    if script {
-        print!(
-            "{}",
-            ass::script(&cues, &ConvertOptions::default(), 0, 5000)
-        );
+    if let Some(options) = script {
+        print!("{}", ass::script(&cues, &options, 0, 5000));
         return ExitCode::SUCCESS;
     }
     for cue in &cues {

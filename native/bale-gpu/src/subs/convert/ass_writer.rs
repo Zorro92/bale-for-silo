@@ -153,11 +153,13 @@ pub(crate) fn clean_font_name(name: &str) -> Option<String> {
     (!cleaned.is_empty()).then(|| cleaned.to_owned())
 }
 
-/// One converted cue: times in milliseconds and its text as an ASS event text.
+/// One converted cue: times in milliseconds, its libass layer (higher layers draw over lower ones)
+/// and its text as an ASS event text.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Cue {
     pub start_ms: u64,
     pub end_ms: u64,
+    pub layer: i32,
     pub text: String,
 }
 
@@ -182,9 +184,19 @@ fn finite(value: f32) -> f32 {
 
 /// The whole script: header, the `Default` style from `opts`, and `cues` in start order (cues
 /// with the same start keep their input order).
-pub(crate) fn write_script(opts: &ConvertOptions, mut cues: Vec<Cue>) -> String {
+pub(crate) fn write_script(opts: &ConvertOptions, cues: Vec<Cue>) -> String {
+    write_script_styles(opts, &[], cues)
+}
+
+/// [`write_script`] with more styles after `Default`, each a name (letters only; events reach it
+/// with `\r<name>`) and the options its style fields come from. The script's own fields (play
+/// resolution, wrap style, scaling) are `opts`'s.
+pub(crate) fn write_script_styles(
+    opts: &ConvertOptions,
+    styles: &[(&str, &ConvertOptions)],
+    mut cues: Vec<Cue>,
+) -> String {
     cues.sort_by_key(|cue| cue.start_ms);
-    let font = clean_font_name(&opts.font_name).unwrap_or_else(|| "Arial".to_owned());
     let mut out = String::with_capacity(1024 + cues.len() * 96);
     let _ = write!(
         out,
@@ -199,12 +211,7 @@ pub(crate) fn write_script(opts: &ConvertOptions, mut cues: Vec<Cue>) -> String 
          [V4+ Styles]\n\
          Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, \
          BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, \
-         BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n\
-         Style: Default,{font},{},&H{:08X},&H{:08X},&H{:08X},&H{:08X},{},0,0,0,100,100,0,0,\
-         {},{},{},{},{},{},{},1\n\
-         \n\
-         [Events]\n\
-         Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n",
+         BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n",
         opts.play_res_x.max(1),
         opts.play_res_y.max(1),
         opts.wrap_style.min(3),
@@ -213,6 +220,35 @@ pub(crate) fn write_script(opts: &ConvertOptions, mut cues: Vec<Cue>) -> String 
         } else {
             "no"
         },
+    );
+    style_line(&mut out, "Default", opts);
+    for (name, style) in styles {
+        style_line(&mut out, name, style);
+    }
+    out.push_str(
+        "\n[Events]\n\
+         Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n",
+    );
+    for cue in &cues {
+        let _ = writeln!(
+            out,
+            "Dialogue: {},{},{},Default,,0,0,0,,{}",
+            cue.layer,
+            timestamp(cue.start_ms),
+            timestamp(cue.end_ms),
+            cue.text
+        );
+    }
+    out
+}
+
+/// One `Style:` line from `opts`'s style fields.
+fn style_line(out: &mut String, name: &str, opts: &ConvertOptions) {
+    let font = clean_font_name(&opts.font_name).unwrap_or_else(|| "Arial".to_owned());
+    let _ = writeln!(
+        out,
+        "Style: {name},{font},{},&H{:08X},&H{:08X},&H{:08X},&H{:08X},{},0,0,0,100,100,0,0,\
+         {},{},{},{},{},{},{},1",
         opts.font_size.max(1),
         opts.primary_colour,
         opts.primary_colour,
@@ -234,16 +270,6 @@ pub(crate) fn write_script(opts: &ConvertOptions, mut cues: Vec<Cue>) -> String 
         opts.margin_r,
         opts.margin_v,
     );
-    for cue in &cues {
-        let _ = writeln!(
-            out,
-            "Dialogue: 0,{},{},Default,,0,0,0,,{}",
-            timestamp(cue.start_ms),
-            timestamp(cue.end_ms),
-            cue.text
-        );
-    }
-    out
 }
 
 /// Builds one event text. Literal characters are escaped; the wanted style is remembered and
@@ -494,6 +520,7 @@ mod tests {
         let cue = |start_ms, end_ms, text: &str| Cue {
             start_ms,
             end_ms,
+            layer: 0,
             text: text.to_owned(),
         };
         let script = write_script(
@@ -515,6 +542,44 @@ mod tests {
                 "Dialogue: 0,0:00:01.00,0:00:01.50,Default,,0,0,0,,a2",
                 "Dialogue: 0,1:02:03.45,1:02:05.00,Default,,0,0,0,,b",
             ]
+        );
+    }
+
+    #[test]
+    fn more_styles_follow_default_and_events_keep_their_layer() {
+        let boxed = ConvertOptions {
+            primary_colour: 0xFF00_0000,
+            border_style: 4,
+            shadow: 0.0,
+            ..ConvertOptions::default()
+        };
+        let cue = |layer, text: &str| Cue {
+            start_ms: 1000,
+            end_ms: 2000,
+            layer,
+            text: text.to_owned(),
+        };
+        let script = write_script_styles(
+            &ConvertOptions::default(),
+            &[("Box", &boxed)],
+            vec![cue(0, "under"), cue(1, "over")],
+        );
+        let styles: Vec<&str> = script
+            .lines()
+            .filter(|line| line.starts_with("Style:"))
+            .collect();
+        assert_eq!(styles.len(), 2);
+        assert!(styles[0].starts_with("Style: Default,Arial,60,&H00FFFFFF,"));
+        assert!(styles[1].starts_with("Style: Box,Arial,60,&HFF000000,&HFF000000,"));
+        assert!(styles[1].ends_with(",0,0,4,3,0,2,96,96,54,1"));
+        assert!(script.contains(
+            "Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,under\n\
+             Dialogue: 1,0:00:01.00,0:00:02.00,Default,,0,0,0,,over\n"
+        ));
+        // Without more styles it is write_script's script.
+        assert_eq!(
+            write_script_styles(&ConvertOptions::default(), &[], Vec::new()),
+            write_script(&ConvertOptions::default(), Vec::new())
         );
     }
 

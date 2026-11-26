@@ -78,6 +78,7 @@ pub fn vtt_to_ass(text: &str, opts: &ConvertOptions) -> String {
             cues.push(Cue {
                 start_ms,
                 end_ms,
+                layer: 0,
                 text,
             });
         }

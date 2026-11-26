@@ -80,6 +80,7 @@ impl LiveSink for Recorder {
                     start_ms,
                     end_ms,
                     text,
+                    ..
                 } => events.push((id, start_ms, end_ms, text)),
                 LiveCommand::SetEnd { id, end_ms } => {
                     if let Some(event) = events.iter_mut().find(|event| event.0 == id) {
