@@ -288,7 +288,7 @@ public sealed class Rav1gReleaseTests
         var ci = Read("ci.yml.txt");
         var restore = ci[ci.IndexOf("- name: Download and verify pinned rav1g.dll", StringComparison.Ordinal)..];
         restore = restore[..restore.IndexOf("- name:", 10, StringComparison.Ordinal)];
-        Assert.Contains("run: ./scripts/restore-rav1g.ps1", restore);
+        Assert.Contains("run: |\n          ./scripts/restore-rav1g.ps1 -DebugServer '${{ matrix.debug_server }}'", restore);
         Assert.DoesNotContain("if:", restore);
         var check = ci[ci.IndexOf("- name: Check packaged rav1g.dll", StringComparison.Ordinal)..];
         check = check[..check.IndexOf("- name:", 10, StringComparison.Ordinal)];
@@ -300,6 +300,57 @@ public sealed class Rav1gReleaseTests
         Assert.Contains("if (-not $pin) {", script);
         Assert.Contains("if ($actual -cne $pin.dll_sha256)", script);
         Assert.Contains("foreach ($debugServer in @('true', 'false'))", Read("test-rav1g-checks.ps1.txt"));
+    }
+
+    [Fact]
+    public void AManualRunCanPackageATestRav1gBuildInTheDebugServerPackageAlone()
+    {
+        var ci = Read("ci.yml.txt");
+        // Four optional string inputs, empty by default; the production input's block stays as it was.
+        var inputs = new[] { "rav1g_test_tag", "rav1g_test_dll_sha256", "rav1g_test_header_sha256", "rav1g_test_licenses_sha256" };
+        foreach (var input in inputs)
+        {
+            var block = ci[ci.IndexOf($"\n      {input}:\n", StringComparison.Ordinal)..];
+            block = block[..block.IndexOf("default: ''\n", StringComparison.Ordinal)];
+            Assert.Contains("type: string\n        required: false\n", block);
+            // They reach the job through its environment only, never as script text.
+            Assert.Contains($": ${{{{ inputs.{input} }}}}\n", ci);
+            Assert.Equal(1, ci.Split($"inputs.{input} }}}}").Length - 1);
+        }
+        var xbox = ci[ci.IndexOf("\n  xbox:\n", StringComparison.Ordinal)..];
+        foreach (var variable in new[] { "RAV1G_TEST_TAG: ${{ inputs.rav1g_test_tag }}", "RAV1G_TEST_DLL_SHA256: ${{ inputs.rav1g_test_dll_sha256 }}",
+            "RAV1G_TEST_HEADER_SHA256: ${{ inputs.rav1g_test_header_sha256 }}", "RAV1G_TEST_LICENSES_SHA256: ${{ inputs.rav1g_test_licenses_sha256 }}" })
+            Assert.Contains($"      {variable}\n", xbox[..xbox.IndexOf("    steps:\n", StringComparison.Ordinal)]);
+        // A production run refuses a test tag in every matrix entry, as the job's first step.
+        var steps = xbox[xbox.IndexOf("    steps:\n", StringComparison.Ordinal)..];
+        Assert.StartsWith("    steps:\n      # A test build of rav1g", steps);
+        var guard = steps[steps.IndexOf("- name: Refuse a test rav1g build in a production run", StringComparison.Ordinal)..];
+        guard = guard[..guard.IndexOf("\n      - ", StringComparison.Ordinal)];
+        Assert.Contains("if: inputs.production && inputs.rav1g_test_tag\n", guard);
+        Assert.Contains("run: throw 'rav1g_test_tag is for debug-server builds only;", guard);
+        Assert.True(steps.IndexOf("- name: Refuse a test rav1g build in a production run", StringComparison.Ordinal)
+            < steps.IndexOf("- uses: actions/checkout@v7", StringComparison.Ordinal));
+        // The restore and the package check get the same four values; the scripts refuse them in production too.
+        const string values = "-TestTag $env:RAV1G_TEST_TAG `\n            -TestDllSha256 $env:RAV1G_TEST_DLL_SHA256 -TestHeaderSha256 $env:RAV1G_TEST_HEADER_SHA256 `\n            -TestLicensesSha256 $env:RAV1G_TEST_LICENSES_SHA256";
+        Assert.Contains("./scripts/restore-rav1g.ps1 -DebugServer '${{ matrix.debug_server }}' " + values, ci);
+        Assert.Contains("./scripts/check-rav1g-package.ps1 -PackagePath $package.FullName -DebugServer '${{ matrix.debug_server }}' -Dumpbin $dumpbin.FullName `\n"
+            + "            -TestTag $env:RAV1G_TEST_TAG -TestDllSha256 $env:RAV1G_TEST_DLL_SHA256 -TestHeaderSha256 $env:RAV1G_TEST_HEADER_SHA256 `\n"
+            + "            -TestLicensesSha256 $env:RAV1G_TEST_LICENSES_SHA256", ci);
+        var common = Read("rav1g-common.ps1.txt");
+        Assert.Contains("if ($DebugServer -cne 'true') {", common);
+        // A test build comes from the pin's repository; the pin itself is never edited for one.
+        using var pin = JsonDocument.Parse(Read("rav1g.json"));
+        if (pin.RootElement.GetProperty("release_repository").GetString() is { } repository)
+            Assert.Contains($"$Rav1gTestRepository = '{repository}'", common);
+        foreach (var script in new[] { "restore-rav1g.ps1.txt", "check-rav1g-package.ps1.txt" })
+            Assert.Contains("$pin = Get-Rav1gBuildPin -PinPath $PinPath -DebugServer $DebugServer -TestTag $TestTag -TestDllSha256 $TestDllSha256 `\n"
+                + "    -TestHeaderSha256 $TestHeaderSha256 -TestLicensesSha256 $TestLicensesSha256", Read(script));
+        Assert.Contains("TEST rav1g build from tag $($pin.release_tag) ($($pin.release_repository)) instead of the scripts/rav1g.json pin",
+            Read("restore-rav1g.ps1.txt"));
+        // The fixtures run the test build both ways in CI's script tests.
+        var fixtures = Read("test-rav1g-checks.ps1.txt");
+        Assert.Contains("Assert-Throws { Restore-Test $test 'false' } 'test builds are for debug-server packages only'", fixtures);
+        Assert.Contains("Assert-Throws { Test-Package $testPackaged 'false' -Test $test } 'test builds are for debug-server packages only'", fixtures);
     }
 
     [Fact]

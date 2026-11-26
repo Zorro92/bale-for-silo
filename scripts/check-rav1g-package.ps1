@@ -5,17 +5,26 @@ licence texts under Licenses/rav1g/, and a Microsoft.VCLibs.140.00 package depen
 vcruntime140_app and the UCRT API sets, from VCLibs; the build adds the dependency for FFmpegInteropX today). With
 -Dumpbin it also checks the exports the fork resolves and that the DLL imports no desktop CRT. An empty pin must carry no
 rav1g.dll (AV1 then stays on dav1d at 1080p60). -DebugServer names the build in the result.
+
+A debug-server package restored from a test build (restore-rav1g.ps1 -TestTag, CI's manual rav1g_test_* inputs) passes
+with the same four -Test* values: its rav1g.dll must then match the test build's SHA256 instead of the pin's. A
+production package refuses them.
 #>
 param(
     [Parameter(Mandatory)][string]$PackagePath,
     [Parameter(Mandatory)][ValidateSet('true', 'false')][string]$DebugServer,
     [string]$PinPath = (Join-Path $PSScriptRoot 'rav1g.json'),
-    [string]$Dumpbin
+    [string]$Dumpbin,
+    [string]$TestTag,
+    [string]$TestDllSha256,
+    [string]$TestHeaderSha256,
+    [string]$TestLicensesSha256
 )
 
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/rav1g-common.ps1"
-$pin = Get-Rav1gPin $PinPath
+$pin = Get-Rav1gBuildPin -PinPath $PinPath -DebugServer $DebugServer -TestTag $TestTag -TestDllSha256 $TestDllSha256 `
+    -TestHeaderSha256 $TestHeaderSha256 -TestLicensesSha256 $TestLicensesSha256
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $inspection = Join-Path ([System.IO.Path]::GetTempPath()) "bale-rav1g-check-$([guid]::NewGuid())"
 New-Item -ItemType Directory $inspection | Out-Null
@@ -48,7 +57,8 @@ try {
     finally { $zip.Dispose() }
 
     $actual = (Get-FileHash $packaged -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($actual -cne $pin.dll_sha256) { throw "Packaged rav1g.dll SHA256 $actual does not match the pin $($pin.dll_sha256)" }
+    $expected = if ($pin.test) { "the TEST build from tag $($pin.release_tag)" } else { 'the pin' }
+    if ($actual -cne $pin.dll_sha256) { throw "Packaged rav1g.dll SHA256 $actual does not match $expected $($pin.dll_sha256)" }
 
     if ($Dumpbin) {
         $exports = & $Dumpbin /exports $packaged
@@ -65,6 +75,12 @@ try {
             throw 'Packaged rav1g.dll imports the desktop CRT'
         }
     }
-    Write-Output "Packaged rav1g.dll $($pin.version) ($build): SHA256 matches the pin, licences and VCLibs dependency present$(if ($Dumpbin) { ", $($Rav1gExports.Count) exports present" })"
+    $exportsChecked = if ($Dumpbin) { ", $($Rav1gExports.Count) exports present" } else { '' }
+    if ($pin.test) {
+        Write-Output "TEST rav1g build from tag $($pin.release_tag) packaged ($build): rav1g.dll SHA256 matches the test build, licences and VCLibs dependency present$exportsChecked"
+    }
+    else {
+        Write-Output "Packaged rav1g.dll $($pin.version) ($build): SHA256 matches the pin, licences and VCLibs dependency present$exportsChecked"
+    }
 }
 finally { Remove-Item $inspection -Recurse -Force }

@@ -345,7 +345,9 @@ For Bale, a normal app with hevcPlayback on the Series X:
   rav1g keeps its 250 ms buffer, 8 decode-ahead frames, frame-rate-based texture cap and display pass
   (`bale_rav1g_display=1`). Every build packages the `scripts/rav1g.json` DLL (an empty pin packages none), and CI's
   `scripts/check-rav1g-package.ps1` requires it, hash-checked with its licences, in debug-server and production
-  packages alike (`scripts/test-rav1g-checks.ps1` covers both). **Prewarm (every build, owner 2026-11-26):** the Detail
+  packages alike (`scripts/test-rav1g-checks.ps1` covers both). A manual CI run's `rav1g_test_*` inputs package another
+  release in the debug-server package alone, never production, without editing the pin (docs/player-plan.md, "rav1g",
+  "Test build"). **Prewarm (every build, owner 2026-11-26):** the Detail
   page starts rav1g's device and pipeline compiles (`bale_rav1g_prewarm`, ~6.5 s on a Series X) when its selected or
   Auto version will play on rav1g (`Rav1gPolicy.PrewarmCandidate`, Rust `av1_decoder::prewarm_candidate`): once per
   process, on the thread pool, never at app start or on Home, never while a playback runs (`Rav1gPrewarm`). Debug-only:

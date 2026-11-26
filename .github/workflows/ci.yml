@@ -14,6 +14,27 @@ on:
         description: Also build the production (debug server off) package
         type: boolean
         default: false
+      # A test build of rav1g for the debug-server package alone (docs/player-plan.md, "rav1g"): all four or none.
+      rav1g_test_tag:
+        description: 'Debug-server package only: restore rav1g from this Zorro92/rav1g release tag instead of scripts/rav1g.json (refused with production)'
+        type: string
+        required: false
+        default: ''
+      rav1g_test_dll_sha256:
+        description: SHA256 of that release's rav1g.dll
+        type: string
+        required: false
+        default: ''
+      rav1g_test_header_sha256:
+        description: SHA256 of that release's rav1g.h
+        type: string
+        required: false
+        default: ''
+      rav1g_test_licenses_sha256:
+        description: SHA256 of that release's rav1g-licenses.zip
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -252,7 +273,19 @@ jobs:
     env:
       NUGET_PACKAGES: ${{ github.workspace }}\.nuget\packages
       CARGO_INCREMENTAL: 0
+      # The manual rav1g_test_* inputs (empty otherwise), passed to the scripts through the environment, never as script text.
+      RAV1G_TEST_TAG: ${{ inputs.rav1g_test_tag }}
+      RAV1G_TEST_DLL_SHA256: ${{ inputs.rav1g_test_dll_sha256 }}
+      RAV1G_TEST_HEADER_SHA256: ${{ inputs.rav1g_test_header_sha256 }}
+      RAV1G_TEST_LICENSES_SHA256: ${{ inputs.rav1g_test_licenses_sha256 }}
     steps:
+      # A test build of rav1g is for the debug-server package alone: a run that also builds production refuses it in
+      # every matrix entry, before any build work.
+      - name: Refuse a test rav1g build in a production run
+        if: inputs.production && inputs.rav1g_test_tag
+        shell: pwsh
+        run: throw 'rav1g_test_tag is for debug-server builds only; production packages always take scripts/rav1g.json. Dispatch it without production=true.'
+
       - uses: actions/checkout@v7
       - name: Rust cache keys
         id: rust
@@ -297,10 +330,14 @@ jobs:
         run: ./scripts/restore-ffmpeg-native.ps1
 
       # rav1g.dll, the default AV1 decoder in every build, production included (scripts/rav1g.json); an empty pin
-      # restores nothing. check-rav1g-package.ps1 below requires it in each package built here.
+      # restores nothing. check-rav1g-package.ps1 below requires it in each package built here. A manual run's
+      # rav1g_test_* inputs restore that release instead, for the debug-server package alone ("TEST rav1g build").
       - name: Download and verify pinned rav1g.dll
         shell: pwsh
-        run: ./scripts/restore-rav1g.ps1
+        run: |
+          ./scripts/restore-rav1g.ps1 -DebugServer '${{ matrix.debug_server }}' -TestTag $env:RAV1G_TEST_TAG `
+            -TestDllSha256 $env:RAV1G_TEST_DLL_SHA256 -TestHeaderSha256 $env:RAV1G_TEST_HEADER_SHA256 `
+            -TestLicensesSha256 $env:RAV1G_TEST_LICENSES_SHA256
 
       # libass with FreeType, FriBidi and HarfBuzz: static, UWP app partition, linked into bale_gpu.dll.
       # A DLL cache hit already includes the notices; no other package input needs the libraries.
@@ -657,7 +694,9 @@ jobs:
           $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe |
             Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
           if (-not $dumpbin) { throw 'dumpbin.exe is required to inspect rav1g.dll' }
-          ./scripts/check-rav1g-package.ps1 -PackagePath $package.FullName -DebugServer '${{ matrix.debug_server }}' -Dumpbin $dumpbin.FullName
+          ./scripts/check-rav1g-package.ps1 -PackagePath $package.FullName -DebugServer '${{ matrix.debug_server }}' -Dumpbin $dumpbin.FullName `
+            -TestTag $env:RAV1G_TEST_TAG -TestDllSha256 $env:RAV1G_TEST_DLL_SHA256 -TestHeaderSha256 $env:RAV1G_TEST_HEADER_SHA256 `
+            -TestLicensesSha256 $env:RAV1G_TEST_LICENSES_SHA256
 
       # Microsoft Store rules (docs/store-readiness.md): a production package holds only the Store's capabilities, targets
       # Windows.Xbox, carries revision 0, has no WinUI 2, symbols or debug-server markers, and ships rav1g with its

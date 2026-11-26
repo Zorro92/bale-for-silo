@@ -2766,6 +2766,24 @@ matching counts the same entries, so a 4K display now prefers a 4K AV1 version w
   desktop CRT, and the `Microsoft.VCLibs.140.00` dependency the DLL's app CRT needs; only an empty pin
   (`"release_tag": null`) carries none, and the library check then keeps AV1 on dav1d at 1080p60. A new release:
   update every field of the pin, never a hash alone (and the interface version in `av1_decoder.rs` with the wrapper's).
+- **Test build (debug-only CI override):** a manual run can package another Zorro92/rav1g release in the debug-server
+  package without touching the pin. Take the three assets' SHA256s, then dispatch:
+
+  ```sh
+  dir=$(mktemp -d) && gh release download <tag> -R Zorro92/rav1g -p rav1g.dll -p rav1g.h -p rav1g-licenses.zip -D "$dir" && sha256sum "$dir"/*
+  gh workflow run ci.yml --ref main -f rav1g_test_tag=<tag> -f rav1g_test_dll_sha256=<rav1g.dll SHA256> \
+    -f rav1g_test_header_sha256=<rav1g.h SHA256> -f rav1g_test_licenses_sha256=<rav1g-licenses.zip SHA256>
+  ```
+
+  `restore-rav1g.ps1` restores that tag instead of `scripts/rav1g.json` (a temporary pin object, `Get-Rav1gTestPin`),
+  verified exactly as a pinned release: the three hashes (either case), the header's interface version (the wrapper's,
+  3) and the six licence files; `check-rav1g-package.ps1` then requires the test DLL's hash in the package, and
+  `check-production-package.ps1` leaves rav1g to it in a debug-server package. The restore and package-check steps
+  print `TEST rav1g build from tag <tag>`. All four values or none: hashes without the tag fail the run. A test build is
+  for the debug-server package alone: with `production=true` the job's first step fails every matrix entry, and both
+  scripts refuse it for a production package too (fixtures in `scripts/test-rav1g-checks.ps1`). `deploy-xbox.sh` takes
+  push runs only, so install the test build with `BALE_RUN_ID=<run id> scripts/deploy-xbox.sh`. A dispatch on `main`
+  shares the push builds' concurrency group: it cancels an in-flight push build of `main`, and a later push cancels it.
 - **Console test list** (the fork's design §9; check the rav1g thread and that `uwp_dx12_player.exe` is not running
   first): `av1-decoder rav1g`, then `play <id>` and `stats`/`where` for each.
   1. Parity with dav1d: the same AV1 clips up to 1080p (8-bit, 10-bit, film grain) with `av1-decoder dav1d` and

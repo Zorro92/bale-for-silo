@@ -108,6 +108,11 @@ try {
         'rav1g.dll' = $null
     }
     if ((Check (Package $markers) 'true') -notmatch 'debug markers present') { throw 'A debug-server package with its markers must pass' }
+    # A debug-server package may carry a TEST rav1g build (CI's rav1g_test_* inputs): the Store scan leaves rav1g.dll's
+    # hash to check-rav1g-package.ps1, which takes the test build's values (test-rav1g-checks.ps1).
+    $testRav1g = $markers.Clone(); $testRav1g['rav1g.dll'] = 'test build dll'
+    foreach ($name in $Rav1gLicenseFiles) { $testRav1g["Licenses/rav1g/$name"] = "text of $name" }
+    if ((Check (Package $testRav1g) 'true') -notmatch 'debug markers present') { throw 'A debug-server package with a test rav1g build must pass' }
     $noMarker = $markers.Clone(); $noMarker['Bale.exe'] = Binary -Utf16 @('/media-fault', '/audio-out-test')
     Assert-Throws { Check (Package $noMarker) 'true' } "lacks the debug marker '/playtest-ffmpeg'"
     $noCapability = $markers.Clone(); $noCapability['AppxManifest.xml'] = Manifest -Version '0.1.812.3'
