@@ -17,15 +17,20 @@ namespace Bale.Xbox;
 public sealed partial class ServerListPage : Page, IBackHandler, IRestoresFocus
 {
     private readonly List<(Button Button, string Key)> _buttons = [];
-    private ConnectionPreview? _preview;
     private SavedAccount? _pageAccount;
     private SavedServer? _removing;
     private SavedServer? _renaming;
     private string? _lastKey;
     private bool _active;
     private bool _busy;
+#if DEBUG_SERVER
+    // The debug server's sign-in previews: disposable fixtures, no network, vault or storage.
+    private ConnectionPreview? _preview;
     private SavedServerRegistry Servers => _preview?.Servers ?? AppSettings.Servers;
     internal bool IsAuthPreview => _preview is not null;
+#else
+    private static SavedServerRegistry Servers => AppSettings.Servers;
+#endif
 
     public ServerListPage()
     {
@@ -45,7 +50,9 @@ public sealed partial class ServerListPage : Page, IBackHandler, IRestoresFocus
         _busy = false;
         if (args.NavigationMode != NavigationMode.Back)
         {
+#if DEBUG_SERVER
             _preview = args.Parameter as ConnectionPreview;
+#endif
             _lastKey = null;
         }
         ErrorText.Visibility = Visibility.Collapsed;
@@ -188,22 +195,26 @@ public sealed partial class ServerListPage : Page, IBackHandler, IRestoresFocus
     /// <summary>Sign in again: the account becomes the open one and its sign-in shows with its username.</summary>
     private void SignInAgain(SavedAccount account)
     {
+#if DEBUG_SERVER
         if (_preview is not null)
         {
             Frame.Navigate(typeof(MainPage), new ConnectionNavigation(_preview, ConnectionScreen.Login));
             return;
         }
+#endif
         if (Switch(account.ServerId, account.Id)) OpenSignIn();
     }
 
     /// <summary>"Add an account on {server}": a sign-in there with no account selected.</summary>
     private void AddAccount(SavedServer server)
     {
+#if DEBUG_SERVER
         if (_preview is not null)
         {
             Frame.Navigate(typeof(MainPage), new ConnectionNavigation(_preview, ConnectionScreen.Login));
             return;
         }
+#endif
         if (Switch(server.Id, null)) OpenSignIn();
     }
 
@@ -237,6 +248,7 @@ public sealed partial class ServerListPage : Page, IBackHandler, IRestoresFocus
         _busy = true;
         try
         {
+#if DEBUG_SERVER
             if (_preview is not null)
             {
                 Servers.RemoveAccount(account.Id, removeServer);
@@ -244,6 +256,7 @@ public sealed partial class ServerListPage : Page, IBackHandler, IRestoresFocus
                 Populate();
                 return;
             }
+#endif
             var wasOpen = Servers.ActiveAccount?.Id == account.Id;
             await Session.SignOutAccountAsync(account, removeServer);
             if (!_active) return;
@@ -299,8 +312,15 @@ public sealed partial class ServerListPage : Page, IBackHandler, IRestoresFocus
     {
         try
         {
-            if (_preview is not null) Servers.Remove(server.Id);
-            else if (Session.RemoveServer(server.Id))
+#if DEBUG_SERVER
+            if (_preview is not null)
+            {
+                Servers.Remove(server.Id);
+                Populate();
+                return;
+            }
+#endif
+            if (Session.RemoveServer(server.Id))
             {
                 ResolveActive();
                 return;
@@ -318,7 +338,14 @@ public sealed partial class ServerListPage : Page, IBackHandler, IRestoresFocus
     private void OnAddServer()
     {
         // Keep the signed-in page/session until a successful probe and (for HTTP) explicit consent.
-        Frame.Navigate(typeof(MainPage), _preview is null ? MainPage.ServerEntry : new ConnectionNavigation(_preview));
+#if DEBUG_SERVER
+        if (_preview is not null)
+        {
+            Frame.Navigate(typeof(MainPage), new ConnectionNavigation(_preview));
+            return;
+        }
+#endif
+        Frame.Navigate(typeof(MainPage), MainPage.ServerEntry);
     }
 
     private void ResolveActive()
@@ -340,7 +367,12 @@ public sealed partial class ServerListPage : Page, IBackHandler, IRestoresFocus
         if (IsAuthPreview && DebugServer.CloseAuthPreview(Frame)) return true;
 #endif
         // TvAppNavigation.kt: a change here that left no profile open goes to what opens next, not the old pages.
-        if (Frame.CanGoBack && (_preview is not null || Session.Client is not null)) Frame.GoBack();
+#if DEBUG_SERVER
+        var back = _preview is not null || Session.Client is not null;
+#else
+        var back = Session.Client is not null;
+#endif
+        if (Frame.CanGoBack && back) Frame.GoBack();
         else ResolveActive();
         return true;
     }

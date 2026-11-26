@@ -29,9 +29,6 @@ public sealed partial class App : Application
         {
             // e.Message carries XAML's own error text, often more specific than the exception's.
             Log.Error($"Unhandled ({e.Message})", e.Exception);
-#if DIAGNOSTICS
-            e.Handled = true;
-#endif
         };
         DebugSettings.BindingFailed += (_, e) => Log.Info($"XAML binding failed: {e.Message}");
         Suspending += OnSuspending;

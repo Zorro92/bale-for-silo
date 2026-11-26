@@ -50,7 +50,11 @@ public sealed partial class MainPage
         {
             var branding = await ServerBranding.FetchAsync(server, pairing.Token);
             if (branding is null || !IsLoginCurrent(pairing)) return;
+#if DEBUG_SERVER
             if (_preview is null) AppSettings.SetServerBranding(ServerAddress.ToBaseUrl(server), branding);
+#else
+            AppSettings.SetServerBranding(ServerAddress.ToBaseUrl(server), branding);
+#endif
             if (_loginServer == server && CodePanel.Visibility == Visibility.Visible)
             {
                 ShowServerContext(new SignInServer(server, branding.ServerName, branding));

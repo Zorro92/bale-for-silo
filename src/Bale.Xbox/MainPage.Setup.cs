@@ -31,7 +31,11 @@ public sealed partial class MainPage
         ServerBox.ApplyTemplate();
         VisualStateManager.GoToState(ServerBox, error is null ? "Valid" : "Invalid", false);
         SetConnecting(false);
+#if DEBUG_SERVER
         if (discover && _preview is null)
+#else
+        if (discover)
+#endif
         {
             _discovery ??= new LanServerDiscovery(Dispatcher, UpdateNearby);
             _discovery.Start();
@@ -155,12 +159,14 @@ public sealed partial class MainPage
         {
             ServerSetupResult result;
             string? name;
+#if DEBUG_SERVER
             if (_preview is not null)
             {
                 result = new ServerSetupResult(candidates[0]);
                 name = "Example server";
             }
             else
+#endif
             {
                 using var probe = new ServerSetupProbe(log: message => Log.Info(message));
                 result = await probe.ProbeAsync(candidates, lifetime.Token);
@@ -211,7 +217,11 @@ public sealed partial class MainPage
         try
         {
             Servers.ApproveHttp(server);
+#if DEBUG_SERVER
             Log.Info($"HTTP exact-origin consent saved preview={_preview is not null}");
+#else
+            Log.Info("HTTP exact-origin consent saved");
+#endif
             if (_pendingActivation) await FinishServerSelectionAsync(result);
             else await ResolveServerAsync(server);
         }
@@ -226,6 +236,7 @@ public sealed partial class MainPage
     {
         _pendingServer = null;
         if (result.Server is not { } server || !_active) return;
+#if DEBUG_SERVER
         if (_preview is not null)
         {
             Servers.AddAndActivate(server, _pendingName, result.VerifiedServerId);
@@ -233,6 +244,7 @@ public sealed partial class MainPage
             await StartLoginAsync(server);
             return;
         }
+#endif
         Session.ActivateServer(server, _pendingName, result.VerifiedServerId);
         _expiredNotice = false;
         Frame.BackStack.Clear(); // Old server pages must never be reachable after committing a selection.

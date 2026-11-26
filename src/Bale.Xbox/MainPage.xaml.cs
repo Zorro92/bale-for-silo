@@ -34,11 +34,15 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
     private bool _sessionAdopted;
     private InputPane? _inputPane;
     private bool _keyboardVisible;
-    // Only the debug server sets it; initialised so a release build does not flag it as never assigned (CS0649).
-    private ConnectionPreview? _preview = null;
     private Button? _httpPromptOpener;
+#if DEBUG_SERVER
+    // The debug server's sign-in previews (ShowPreview): disposable fixtures, no network, vault or storage.
+    private ConnectionPreview? _preview;
     private SavedServerRegistry Servers => _preview?.Servers ?? AppSettings.Servers;
     internal bool IsAuthPreview => _preview is not null;
+#else
+    private static SavedServerRegistry Servers => AppSettings.Servers;
+#endif
 
     public MainPage()
     {
@@ -163,8 +167,11 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
             ShowHttpPrompt(server);
             return;
         }
-        if (!_expiredNotice && _preview is null && Servers.ActiveAccount is { NeedsSignIn: false } account
-            && AppSettings.LoadRefreshToken(account) is { } refresh)
+        if (!_expiredNotice
+#if DEBUG_SERVER
+            && _preview is null
+#endif
+            && Servers.ActiveAccount is { NeedsSignIn: false } account && AppSettings.LoadRefreshToken(account) is { } refresh)
         {
             StopDiscovery();
             Session.Restore(server, account, refresh); // Local adoption only, including the migrated access/profile proof.
@@ -189,11 +196,13 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
         PasswordButton.Visibility = Visibility.Visible;
         StopDiscovery();
         ShowCodeScreen(server);
+#if DEBUG_SERVER
         if (_preview is not null)
         {
             ShowPreviewCode();
             return;
         }
+#endif
         if (Servers.RequiresHttpApproval(server)) throw new InvalidOperationException("HTTP approval is required.");
         var client = Session.Client is { } current && current.Server == server ? current : Session.Connect(server);
         _ = RefreshServerBrandingAsync(server, lifetime);
@@ -223,12 +232,14 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
 
     private async Task StartPairingAsync(Uri server)
     {
+#if DEBUG_SERVER
         if (_preview is not null)
         {
             ShowCodeScreen(server);
             ShowPreviewCode();
             return;
         }
+#endif
         _pairing?.Cancel();
         using var pairing = CancellationTokenSource.CreateLinkedTokenSource(_loginLife!.Token);
         _pairing = pairing;
@@ -298,7 +309,10 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
     private void CompleteSignIn(SiloClient client, TokenPair tokens, string? profileId = null, string? profileToken = null)
     {
         // Both completions run on the UI dispatcher. Only the first current-server success may save/route.
-        if (!_active || _sessionAdopted || _preview is not null || !ReferenceEquals(Session.Client, client)
+        if (!_active || _sessionAdopted || !ReferenceEquals(Session.Client, client)
+#if DEBUG_SERVER
+            || _preview is not null
+#endif
             || _loginServer != client.Server || Servers.Active?.Url != ServerAddress.ToBaseUrl(client.Server)
             || Servers.RequiresHttpApproval(client.Server)) return;
         _sessionAdopted = true;
@@ -336,8 +350,11 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
         PasswordPanel.Visibility = Visibility.Collapsed;
         CodeActions.Visibility = PhoneHint.Visibility = CodeCard.Visibility = Visibility.Visible;
         PhoneHelpCard.Visibility = Visibility.Collapsed;
-        ShowServerContext(new SignInServer(server, _preview is null ? AppSettings.GetServerName(ServerAddress.ToBaseUrl(server)) : "Example server",
-            _preview is null ? AppSettings.GetServerBranding(server) : null));
+#if DEBUG_SERVER
+        if (_preview is not null) ShowServerContext(new SignInServer(server, "Example server", null));
+        else
+#endif
+        ShowServerContext(new SignInServer(server, AppSettings.GetServerName(ServerAddress.ToBaseUrl(server)), AppSettings.GetServerBranding(server)));
         SetSignInInstructions(DeviceCodeFormat.ActivateText(ServerAddress.ToBaseUrl(server) + "/activate", string.Empty));
         SessionNotice.Visibility = _expiredNotice ? Visibility.Visible : Visibility.Collapsed;
         CodeDetails.Visibility = Visibility.Visible;
@@ -353,6 +370,7 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
         RestoreFocus();
     }
 
+#if DEBUG_SERVER
     private void ShowPreviewCode()
     {
         CodeText.Text = "000 000";
@@ -364,7 +382,6 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
         QrFallback.Text = "Preview\nNo live QR code";
     }
 
-#if DEBUG_SERVER
     internal void ShowPreview(ConnectionNavigation request)
     {
         StopConnectionWork();

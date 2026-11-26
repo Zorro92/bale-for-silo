@@ -1,6 +1,10 @@
+#if DEBUG_SERVER
 namespace Bale.Core.Connection;
 
-/// <summary>Disposable debug fixtures: no platform storage, vault, authenticated client or network dependency.</summary>
+/// <summary>
+/// Disposable debug fixtures (the debug server's sign-in previews, debug-server builds only): no platform storage, vault,
+/// authenticated client or network dependency.
+/// </summary>
 public sealed class ConnectionPreview
 {
     public SavedServerRegistry Servers { get; }
@@ -34,3 +38,4 @@ public sealed class ConnectionPreview
         public void Write(string json) => _json = json;
     }
 }
+#endif

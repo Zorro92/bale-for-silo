@@ -5,6 +5,9 @@ namespace Bale.Core.Playback;
 
 public sealed partial class PlaybackMedia
 {
+    /// <summary>The Rust HTTP spike (bale-debug.sh fetchbench): the plan's stream headers this transport adds. Never log them.</summary>
+    public IReadOnlyDictionary<string, string> DebugStreamHeaders => _headers;
+
     // Separate from SiloClient's auth/refresh pipeline, even for a URL on the Silo origin.
     private static readonly HttpClient DebugFileHttp = new(new HttpClientHandler
     {

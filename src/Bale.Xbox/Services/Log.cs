@@ -4,24 +4,25 @@ using Windows.Storage;
 namespace Bale.Xbox.Services;
 
 /// <summary>
-/// Plain-text log in the app's LocalState folder (scripts/xbox-logs.sh reads it), mirrored into a
+/// Plain-text log in the app's LocalState folder (scripts/xbox-logs.sh reads it). Debug-server builds mirror it into a
 /// numbered in-memory buffer that the debug server streams live (scripts/bale-debug.sh log).
 /// </summary>
 internal static class Log
 {
     private const long MaxBytes = 1024 * 1024;
-    private const int BufferLines = 2000;
 
     private static readonly object Gate = new();
     private static readonly string FilePath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "bale.log");
 #if DEBUG_SERVER
+    private const int BufferLines = 2000;
     private static readonly string PreviousPath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "bale.1.log");
-#endif
     private static readonly Queue<(long Sequence, string Line)> Recent = new();
     private static long _sequence;
+#endif
 
     public static void Info(string message) => Write("INFO", message);
 
+#if DEBUG_SERVER
     /// <summary>
     /// INFO lines in order, under one lock and with one file append: the debug frame log writes about 60 a second, in
     /// batches from its drain thread. The live buffer keeps the newest <see cref="BufferLines"/> lines, as for
@@ -30,9 +31,7 @@ internal static class Log
     public static void Lines(IReadOnlyList<string> messages)
     {
         if (messages.Count == 0) return;
-#if DEBUG_SERVER
         foreach (var message in messages) DebugNavigationHistory.PlayerEvent(message);
-#endif
         var prefix = $"{DateTimeOffset.Now:O} INFO ";
         var text = new StringBuilder(messages.Count * 128);
         lock (Gate)
@@ -51,6 +50,7 @@ internal static class Log
             Append(text.ToString());
         }
     }
+#endif
 
     public static void Error(string context, Exception ex) => Write("ERROR", $"{context}: {Describe(ex)}{ex}");
 
@@ -62,6 +62,7 @@ internal static class Log
         _ => string.Empty,
     };
 
+#if DEBUG_SERVER
     /// <summary>Lines after <paramref name="since"/>, and the sequence number to ask from next.</summary>
     public static (IReadOnlyList<string> Lines, long Next) Since(long since)
     {
@@ -71,6 +72,7 @@ internal static class Log
             return (lines, _sequence);
         }
     }
+#endif
 
     private static void Write(string level, string message)
     {
@@ -80,11 +82,13 @@ internal static class Log
         var line = $"{DateTimeOffset.Now:O} {level} {message}";
         lock (Gate)
         {
+#if DEBUG_SERVER
             Recent.Enqueue((++_sequence, line));
             while (Recent.Count > BufferLines)
             {
                 Recent.Dequeue();
             }
+#endif
 
             Append(line + Environment.NewLine);
         }

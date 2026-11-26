@@ -28,13 +28,18 @@ public sealed partial class ChangeAccountPage : Page, IBackHandler, IRestoresFoc
     private readonly Dictionary<string, (Button Card, TextBlock Detail, string? Badge)> _cards = [];
     private CancellationTokenSource? _refresh;
     private IReadOnlyList<AccountServerGroup> _groups = [];
-    private ConnectionPreview? _preview;
     private string? _shownServerId;
     private Button? _lastFocused;
     private bool _active;
     private bool _changing;
+#if DEBUG_SERVER
+    // The debug server's sign-in previews: disposable fixtures, no network, vault or storage.
+    private ConnectionPreview? _preview;
     private SavedServerRegistry Servers => _preview?.Servers ?? AppSettings.Servers;
     internal bool IsAuthPreview => _preview is not null;
+#else
+    private static SavedServerRegistry Servers => AppSettings.Servers;
+#endif
 
     public ChangeAccountPage() => InitializeComponent();
 
@@ -47,7 +52,9 @@ public sealed partial class ChangeAccountPage : Page, IBackHandler, IRestoresFoc
         _active = true;
         _changing = false;
         var navigation = args.Parameter as AccountsNavigation;
+#if DEBUG_SERVER
         _preview = navigation?.Preview; // Back navigation restores the same parameter.
+#endif
         ErrorText.Visibility = Visibility.Collapsed;
         Populate(args.NavigationMode == NavigationMode.Back ? null : navigation?.AddAccountOn);
         // Once per opening, as the ViewModel's init: coming Back to this screen keeps the counts already read.
@@ -76,8 +83,10 @@ public sealed partial class ChangeAccountPage : Page, IBackHandler, IRestoresFoc
         {
             var servers = Servers;
             AccountProfileCountSource source;
+#if DEBUG_SERVER
             if (_preview is not null) source = _preview.ProfileCounts;
             else
+#endif
             {
                 var identity = DeviceIdentity.Current();
                 source = AccountProfilesRefresher.FromSavedSessions(servers, VaultAccountCredentials.Instance, url => new SiloClient(url, identity));
@@ -239,12 +248,14 @@ public sealed partial class ChangeAccountPage : Page, IBackHandler, IRestoresFoc
     private void OnAccountChosen(SavedAccount account)
     {
         if (_changing || !_active) return;
+#if DEBUG_SERVER
         if (_preview is not null)
         {
             Servers.ActivateAccount(account.ServerId, account.Id);
             Populate(null);
             return;
         }
+#endif
         var isOpen = Servers.ActiveAccount?.Id == account.Id;
         if (isOpen && !account.NeedsSignIn && Session.Client is not null)
         {
@@ -278,11 +289,13 @@ public sealed partial class ChangeAccountPage : Page, IBackHandler, IRestoresFoc
     private void OnAddAccount(SavedServer server)
     {
         if (_changing || !_active) return;
+#if DEBUG_SERVER
         if (_preview is not null)
         {
             Frame.Navigate(typeof(MainPage), new ConnectionNavigation(_preview, ConnectionScreen.Login));
             return;
         }
+#endif
         _changing = true;
         try
         {
@@ -309,7 +322,14 @@ public sealed partial class ChangeAccountPage : Page, IBackHandler, IRestoresFoc
     {
         if (_changing) return;
         // The existing server setup flow keeps the open session until a server is committed.
-        Frame.Navigate(typeof(MainPage), _preview is null ? MainPage.ServerEntry : new ConnectionNavigation(_preview));
+#if DEBUG_SERVER
+        if (_preview is not null)
+        {
+            Frame.Navigate(typeof(MainPage), new ConnectionNavigation(_preview));
+            return;
+        }
+#endif
+        Frame.Navigate(typeof(MainPage), MainPage.ServerEntry);
     }
 
     public bool OnBack()

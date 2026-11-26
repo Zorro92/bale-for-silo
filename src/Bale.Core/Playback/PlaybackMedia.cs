@@ -47,8 +47,6 @@ public sealed partial class PlaybackMedia
     /// <summary>The playback server: HLS children must stay on its media routes.</summary>
     internal Uri Server => _server;
 
-    /// <summary>Debug only (the Rust HTTP spike): the plan's stream headers this transport adds. Never log them.</summary>
-    public IReadOnlyDictionary<string, string> DebugStreamHeaders => _headers;
     public string? MimeType { get; }
     public string? Container { get; }
     public string? Delivery { get; }

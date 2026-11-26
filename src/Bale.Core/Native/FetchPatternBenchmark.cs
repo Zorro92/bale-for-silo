@@ -1,3 +1,4 @@
+#if DEBUG_SERVER
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
@@ -93,3 +94,4 @@ public static class FetchPatternBenchmark
         return text.ToString();
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if DEBUG_SERVER
 using System.Text.Json;
 
 namespace Bale.Core.Native;
@@ -26,3 +27,4 @@ public static class RustHttpProbe
             writer.WriteNumber("limit_ms", limitMilliseconds);
         }, BaleCoreJson.Default.JsonElement).GetRawText();
 }
+#endif

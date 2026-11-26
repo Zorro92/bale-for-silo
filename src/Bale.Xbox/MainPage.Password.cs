@@ -26,7 +26,11 @@ public sealed partial class MainPage
         CodeActions.Visibility = PhoneHint.Visibility = CodeCard.Visibility = Visibility.Collapsed;
         UsePhoneButton.Visibility = _passwordOnly ? Visibility.Collapsed : Visibility.Visible;
         // Sign in again: the saved account's username is filled in (TvAccountsViewModel.kt onSignInAgain).
+#if DEBUG_SERVER
         if (_preview is null && string.IsNullOrEmpty(UsernameBox.Text) && Servers.ActiveAccount?.Username is { } username)
+#else
+        if (string.IsNullOrEmpty(UsernameBox.Text) && Servers.ActiveAccount?.Username is { } username)
+#endif
             UsernameBox.Text = username;
         UpdatePasswordCopy();
         RestoreFocus();
@@ -100,12 +104,14 @@ public sealed partial class MainPage
             ShowPasswordError(error);
             return;
         }
+#if DEBUG_SERVER
         if (_preview is not null)
         {
             // Preview input exercises the real blank/error/focus rules, never a password POST or vault write.
             ShowPasswordError("Incorrect username or password.");
             return;
         }
+#endif
         if (_loginLife is not { } lifetime || !IsLoginCurrent(lifetime) || Servers.RequiresHttpApproval(server)) return;
         SetPasswordBusy(true);
         (_passwordOnly ? PasswordChangeServerButton : UsePhoneButton).Focus(FocusState.Programmatic);
