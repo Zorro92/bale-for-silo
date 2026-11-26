@@ -160,6 +160,32 @@ public sealed partial class PlayerPage
 
     private void OnUpNextHideClick(object sender, RoutedEventArgs e) => DismissUpNext();
 
+    /// <summary>
+    /// DetailPage.AutomaticAudio.cs's policy for a start no Detail page chose: settings language, then the active
+    /// profile's language and subtitle settings. A failed profile read still starts, on the device/English fallback.
+    /// </summary>
+    private static async Task<PlaybackSelection> NextEpisodeSelectionAsync(Attempt attempt, ItemDetail detail)
+    {
+        string? language = null;
+        SubtitleAutoContext? subtitles = null;
+        try
+        {
+            if (attempt.Client.ProfileId is { } profileId
+                && (await attempt.Client.GetProfilesAsync()).FirstOrDefault(item => item.Id == profileId) is { } profile)
+            {
+                language = profile.Language;
+                subtitles = new(profile.SubtitleLanguage, profile.SubtitleMode, profile.ShowForcedSubtitles ?? true);
+            }
+        }
+        catch (Exception ex) { LogFailure("up next track policy", ex); }
+        var selection = PlaybackLaunchTracks.ForAuto(detail,
+            PlaybackAudioSelection.EffectivePreferredAudioLanguage(AppSettings.AudioLanguage, language),
+            XboxAudioCapabilities.Current, subtitles);
+        // Fixed words only, never a track's name or language.
+        Log.Info($"player: up next subtitle={(selection.SubtitleIndex is { } index ? index < 0 ? "off" : "track" : "unresolved")}");
+        return selection;
+    }
+
     /// <summary>A fresh player for the next episode replaces this one (its Back entry goes with it).</summary>
     private async Task AdvanceToNextAsync()
     {
@@ -174,11 +200,14 @@ public sealed partial class PlayerPage
             // track from the saved preference).
             await attempt.Client.Detail.WhenTrackChoicesSavedAsync(DetailFeed.TrackChoiceSettleTimeout);
             var detail = await attempt.Client.Detail.GetAsync(next.ContentId);
+            // The next episode starts on the subtitle its Detail page would show for Auto (the series' saved choice,
+            // then the profile's settings): a start without a subtitle index means Off.
+            var selection = await NextEpisodeSelectionAsync(attempt, detail);
             _leaving = true;
             UpNextCard.Visibility = Visibility.Collapsed;
             await ShutdownAsync();
             if (!ReferenceEquals(frame?.Content, this)) return;
-            if (frame.Navigate(typeof(PlayerPage), new PlayerRequest(detail, PlaybackSelection.Auto)) && frame.BackStack.Count > 0)
+            if (frame.Navigate(typeof(PlayerPage), new PlayerRequest(detail, selection)) && frame.BackStack.Count > 0)
                 frame.BackStack.RemoveAt(frame.BackStack.Count - 1);
         }
         catch (Exception ex)

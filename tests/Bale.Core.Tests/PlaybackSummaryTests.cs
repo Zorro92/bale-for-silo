@@ -188,6 +188,25 @@ public class PlaybackSummaryTests
         Assert.Equal(PlaybackSummaryValues.For(Item("movie")), state.Update(Item("movie"), transitioning: true));
     }
 
+    [Fact]
+    public void UpNextStartsOnTheSubtitleDetailWouldShowForAuto()
+    {
+        var caps = new ClientAudioCapabilities(["eac3"]);
+        // The series' saved choice (the player just saved it) comes back as the episode's effective subtitle.
+        var saved = Item("e2", "episode") with { EffectiveSubtitleLanguage = "en", EffectiveSubtitleMode = "always" };
+        Assert.Equal(0, PlaybackLaunchTracks.ForAuto(saved, "en", caps, null).SubtitleIndex);
+        // No saved choice: the profile's subtitle settings decide, as on Detail.
+        Assert.Equal(0, PlaybackLaunchTracks.ForAuto(Item("e2", "episode"), "en", caps, new("en", "always")).SubtitleIndex);
+        // A saved Off wins over the profile, and nothing at all is "Auto · None": both start Off explicitly.
+        var off = Item("e2", "episode") with { EffectiveSubtitleMode = "off" };
+        Assert.Equal(-1, PlaybackLaunchTracks.ForAuto(off, "en", caps, new("en", "always")).SubtitleIndex);
+        Assert.Equal(-1, PlaybackLaunchTracks.ForAuto(Item("e2", "episode"), "en", caps, null).SubtitleIndex);
+        // Audio is left to the server (it resolves an omitted track from the saved preference); unknown audio policy
+        // leaves the subtitle unresolved, as Detail's value does.
+        Assert.Null(PlaybackLaunchTracks.ForAuto(saved, "en", caps, null).AudioIndex);
+        Assert.Null(PlaybackLaunchTracks.ForAuto(saved, "en", null, null).SubtitleIndex);
+    }
+
     private static ItemDetail Item(string id, string type = "movie") =>
         new(id, type, "Title", null, null, null, null, null, [], null, [], [], null, [], null, id, null, null, new(false, false, false), [])
         {
