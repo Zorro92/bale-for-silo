@@ -187,12 +187,20 @@ public sealed class RustHlsStreamTests
     public async Task A401OnASegmentRefreshesOnceAndContinues()
     {
         using var server = Server();
+        // The server revokes the bearer while it serves the init segment, so the next request, a media segment, meets the
+        // 401. Revoking it after the open raced the reader, which could fetch every segment first (0 refreshes).
+        var init = server.Files[Dir + "video/init.mp4"];
+        server.Files[Dir + "video/init.mp4"] = () =>
+        {
+            server.AcceptedBearer = server.RefreshedBearer = "rotated-access";
+            return init();
+        };
         using var client = Client(server);
         await using var stream = await client.Playback.OpenMedia(Plan()).OpenNativeHlsAsync(0, default);
-        server.AcceptedBearer = server.RefreshedBearer = "rotated-access";
         Assert.True((await ReadAll(stream)).AsSpan().SequenceEqual(Expected(0)));
         Assert.True(stream.Completed);
         Assert.Equal(1, server.Refreshes);
+        Assert.Equal(1, server.Rejections);
     }
 
     [Fact]
