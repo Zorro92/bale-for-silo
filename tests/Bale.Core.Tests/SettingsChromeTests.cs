@@ -46,6 +46,39 @@ public class SettingsChromeTests
     }
 
     [Fact]
+    public void RailRowsSpanTheRail()
+    {
+        // TvSettingsScreen.kt SettingsRailCategoryRow and SettingsRailActionRow (Sign Out): fillMaxWidth() in the 245dp
+        // rail. A ToggleButton or Button defaults to Left, as wide as its own text; the account row's base stretches too.
+        Assert.Equal("Stretch", Value(Style("SkylineSettingsCategoryStyle"), "HorizontalAlignment"));
+        Assert.Equal("Stretch", Value(Style("SkylineSettingsSignOutStyle"), "HorizontalAlignment"));
+        Assert.Equal("Stretch", Value(Style("SkylineSettingsValueRowStyle"), "HorizontalAlignment"));
+        Assert.Equal("{StaticResource SkylineSettingsValueRowStyle}", Attribute(Style("SkylineSettingsAccountButtonStyle"), "BasedOn"));
+    }
+
+    [Fact]
+    public void CategoryChecksSitInTheStatesUwpsToggleButtonVisits()
+    {
+        // WinUI ToggleButton_Partial.cpp ChangeVisualState: checked goes to Checked / CheckedPointerOver / CheckedPressed /
+        // CheckedDisabled, unchecked to Normal / PointerOver / Pressed / Disabled, all in CommonStates, never to an
+        // "Unchecked" state. A separate check group therefore kept every category ever selected on its selected platter.
+        var category = Style("SkylineSettingsCategoryStyle");
+        var common = Named(category, "CommonStates");
+        Assert.Equal(["Normal", "PointerOver", "Pressed", "Disabled", "Checked", "CheckedPointerOver", "CheckedPressed", "CheckedDisabled"],
+            common.Elements(Ui + "VisualState").Select(state => (string?)state.Attribute(Xaml + "Name")));
+        Assert.DoesNotContain(category.Descendants(Ui + "VisualState"), state =>
+            ((string?)state.Attribute(Xaml + "Name"))?.StartsWith("Unchecked", StringComparison.Ordinal) == true);
+        Assert.DoesNotContain(category.Descendants(Ui + "VisualStateGroup"), group => (string?)group.Attribute(Xaml + "Name") == "CheckStates");
+        foreach (var name in new[] { "Checked", "CheckedPointerOver", "CheckedPressed", "CheckedDisabled" })
+            Assert.Equal("1", StateValue(Named(category, name), "SelectedFill.Opacity"));
+        foreach (var name in new[] { "Normal", "PointerOver", "Pressed", "Disabled" })
+            Assert.Empty(Named(category, name).Descendants(Ui + "Setter"));
+        // The focus platter is drawn over the selected one, so the focused category shows focus, selected or not.
+        var layers = Named(category, "SelectedFill").Parent!.Elements().Select(element => (string?)element.Attribute(Xaml + "Name")).ToList();
+        Assert.True(layers.IndexOf("SelectedFill") < layers.IndexOf("FocusedFill"));
+    }
+
+    [Fact]
     public void PolicyPickerShowsSelectionWithoutChangingDescriptionWeight()
     {
         // TvSettingsPickerSheet: 380dp/460dp card, semibold selected title and check, regular details.

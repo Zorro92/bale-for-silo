@@ -213,6 +213,16 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         }
     }
 
+    /// <summary>
+    /// The rail's categories (TvSettingsCategory) and their rows. Selecting a category checks its row and unchecks every
+    /// other one, and Sign Out unchecks them all, both through this list: a row left out would keep its selected platter.
+    /// </summary>
+    private (SettingsCategory Category, ToggleButton Row)[] Categories =>
+    [
+        (SettingsCategory.General, GeneralCategory), (SettingsCategory.Playback, PlaybackCategory),
+        (SettingsCategory.Subtitles, SubtitlesCategory), (SettingsCategory.Server, ServerCategory),
+    ];
+
     private void SelectCategory(SettingsCategory category)
     {
         _category = category;
@@ -220,10 +230,8 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         var playback = category == SettingsCategory.Playback;
         var subtitles = category == SettingsCategory.Subtitles;
         var server = category == SettingsCategory.Server;
-        GeneralCategory.IsChecked = general;
-        PlaybackCategory.IsChecked = playback;
-        SubtitlesCategory.IsChecked = subtitles;
-        ServerCategory.IsChecked = server;
+        // TvSettingsRailCategoryRow: only the selected category keeps the selected platter.
+        foreach (var (each, row) in Categories) row.IsChecked = each == category;
         GeneralPane.Visibility = GeneralHeaderIcon.Visibility = general ? Visibility.Visible : Visibility.Collapsed;
         PlaybackPane.Visibility = PlaybackHeaderIcon.Visibility = playback ? Visibility.Visible : Visibility.Collapsed;
         SubtitlesPane.Visibility = SubtitlesHeaderIcon.Visibility = subtitles ? Visibility.Visible : Visibility.Collapsed;
@@ -1255,7 +1263,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     private void OnSignOutFocus(object sender, RoutedEventArgs e)
     {
         // TvSettingsScreen.kt hides the category selection while the bottom rail action owns focus.
-        GeneralCategory.IsChecked = PlaybackCategory.IsChecked = SubtitlesCategory.IsChecked = ServerCategory.IsChecked = false;
+        foreach (var (_, row) in Categories) row.IsChecked = false;
     }
 
     private void OnSignOutClick(object sender, RoutedEventArgs e)

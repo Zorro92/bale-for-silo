@@ -3875,8 +3875,10 @@
   <Style x:Key="SkylineSettingsVersionStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineSettingsSmallTextStyle}">
     <Setter Property="Margin" Value="12,6,0,0" /><Setter Property="Foreground" Value="{StaticResource SkylineSecondary}" /><Setter Property="Opacity" Value="0.7" />
   </Style>
+  <!-- TvSettingsScreen.kt SettingsRailCategoryRow: fillMaxWidth() in the 245dp rail, so every row is the rail's width (a
+       ToggleButton's own default is Left, as wide as its text). -->
   <Style x:Key="SkylineSettingsCategoryStyle" TargetType="ToggleButton">
-    <Setter Property="Height" Value="50" /><Setter Property="Padding" Value="12,0" />
+    <Setter Property="Height" Value="50" /><Setter Property="Padding" Value="12,0" /><Setter Property="HorizontalAlignment" Value="Stretch" />
     <Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="UseSystemFocusVisuals" Value="False" />
     <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToggleButton">
       <Grid>
@@ -3899,12 +3901,15 @@
           </StackPanel>
         </Grid>
         <VisualStateManager.VisualStateGroups>
-          <VisualStateGroup x:Name="CommonStates"><VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" /><VisualState x:Name="Disabled" /></VisualStateGroup>
-          <VisualStateGroup x:Name="CheckStates">
-            <VisualState x:Name="Unchecked" /><VisualState x:Name="UncheckedPointerOver" /><VisualState x:Name="UncheckedPressed" />
+          <!-- UWP's ToggleButton keeps check and press in this one group: checked it goes to Checked, CheckedPointerOver,
+               CheckedPressed or CheckedDisabled, unchecked to Normal and the like, never to an "Unchecked" state. A
+               separate check group therefore never left Checked, and every category once selected kept its platter. -->
+          <VisualStateGroup x:Name="CommonStates">
+            <VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" /><VisualState x:Name="Disabled" />
             <VisualState x:Name="Checked"><VisualState.Setters><Setter Target="SelectedFill.Opacity" Value="1" /></VisualState.Setters></VisualState>
             <VisualState x:Name="CheckedPointerOver"><VisualState.Setters><Setter Target="SelectedFill.Opacity" Value="1" /></VisualState.Setters></VisualState>
             <VisualState x:Name="CheckedPressed"><VisualState.Setters><Setter Target="SelectedFill.Opacity" Value="1" /></VisualState.Setters></VisualState>
+            <VisualState x:Name="CheckedDisabled"><VisualState.Setters><Setter Target="SelectedFill.Opacity" Value="1" /></VisualState.Setters></VisualState>
           </VisualStateGroup>
           <VisualStateGroup x:Name="FocusStates">
             <VisualState x:Name="Focused"><VisualState.Setters>
@@ -3956,8 +3961,10 @@
   <Style x:Key="SkylineSettingsAccountButtonStyle" TargetType="Button" BasedOn="{StaticResource SkylineSettingsValueRowStyle}">
     <Setter Property="Height" Value="Auto" /><Setter Property="Padding" Value="12,8" /><Setter Property="Background" Value="Transparent" /><Setter Property="BorderBrush" Value="Transparent" />
   </Style>
+  <!-- TvSettingsScreen.kt SettingsRailActionRow: fillMaxWidth().height(40.dp), the rail's width like the category rows. -->
   <Style x:Key="SkylineSettingsSignOutStyle" TargetType="Button">
-    <Setter Property="Height" Value="40" /><Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Height" Value="40" /><Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="UseSystemFocusVisuals" Value="False" />
     <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
       <Border x:Name="Row" CornerRadius="7" Background="Transparent" Padding="12,0">
         <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
