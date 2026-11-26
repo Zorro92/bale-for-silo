@@ -28,22 +28,11 @@ public sealed partial class DetailPage
             if (!_active || _detail?.ContentId != owner.ContentId || !ReferenceEquals(client, Session.Client)
                 || profile != client.ProfileId || (!fromEpisode && PlayTargetId != targetId)) return;
             if (playable.PlaysEpisodes) return;
-            var selection = _playbackSelections.For(playable);
-            // TvItemDetailScreen.kt: start on exactly what the Subtitles value shows, Auto preview included.
-            // An absent V3 subtitle index means Off, so leaving Auto unresolved started without subtitles.
-            var version = PlaybackFormatting.SelectDisplayVersion(playable, selection);
-            var automaticAudio = PlaybackAudioSelection.AutomaticAudioOrdinal(version, _preferredAudioLanguage,
-                _audioSelectionCapabilities, _playbackSelections.PendingAudioChoiceFor(playable));
-            selection = selection with
-            {
-                SubtitleIndex = PlaybackSummaryValues.SubtitleLaunchIndex(playable, selection.FileId, selection.AudioIndex,
-                    selection.SubtitleIndex, automaticAudioResolutionKnown: _audioSelectionCapabilities is not null,
-                    automaticAudioTrackOrdinal: automaticAudio, subtitleAutoContext: _subtitleAutoContext,
-                    selectedEditionId: selection.EditionId),
-            };
+            var selection = LaunchSelection(playable, _playbackSelections.For(playable), _playbackSelections.PendingAudioChoiceFor(playable));
             _returnCastIndex = null;
             _returnSimilarId = null;
             _returnCollectionsKey = null;
+            _returnTrailerKey = null;
             _returnPlaybackFocus = new(targetId, fromEpisode ? targetId : null, overridePosition == 0.0);
             // ShellPage.OpenDetail already pushed Detail into the root PageFrame. Its own Frame
             // therefore covers all shell chrome and keeps Back on this exact Detail stack entry.
@@ -62,6 +51,24 @@ public sealed partial class DetailPage
             if (_active) ActionStatus.Text = "Couldn't load playback details. Try again.";
         }
         finally { _openingPlayback = false; }
+    }
+
+    /// <summary>
+    /// TvItemDetailScreen.kt: start on exactly what the Subtitles value shows, Auto preview included. An absent V3
+    /// subtitle index means Off, so leaving Auto unresolved started without subtitles.
+    /// </summary>
+    private PlaybackSelection LaunchSelection(ItemDetail playable, PlaybackSelection selection, PendingSeriesAudioChoice? pendingAudio)
+    {
+        var version = PlaybackFormatting.SelectDisplayVersion(playable, selection);
+        var automaticAudio = PlaybackAudioSelection.AutomaticAudioOrdinal(version, _preferredAudioLanguage,
+            _audioSelectionCapabilities, pendingAudio);
+        return selection with
+        {
+            SubtitleIndex = PlaybackSummaryValues.SubtitleLaunchIndex(playable, selection.FileId, selection.AudioIndex,
+                selection.SubtitleIndex, automaticAudioResolutionKnown: _audioSelectionCapabilities is not null,
+                automaticAudioTrackOrdinal: automaticAudio, subtitleAutoContext: _subtitleAutoContext,
+                selectedEditionId: selection.EditionId),
+        };
     }
 
     private async Task RefreshAfterPlaybackAsync(PlaybackReturnFocus playback)

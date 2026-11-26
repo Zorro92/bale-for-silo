@@ -247,6 +247,18 @@ switch (command)
                 Console.WriteLine($"  play button: {PlayLabel.For(detail, null)}");
             }
 
+            // Trailers & More (TrailerLaunch): what each card does, never its link.
+            foreach (var trailer in detail.Trailers)
+            {
+                var action = TrailerLaunch.For(trailer) switch
+                {
+                    ExtraPlayback extra => $"plays extra {extra.ContentId}" + (extra.FileId is { } file ? $" file={file}" : string.Empty),
+                    TrailerLink => "opens YouTube",
+                    _ => "does nothing",
+                };
+                Console.WriteLine($"  trailer: {trailer.Title} ({trailer.Secondary}): {action}");
+            }
+
             // The title page's collections row (Android cb2c32d8a): one collection's other titles, or "Also in".
             try
             {

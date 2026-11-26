@@ -69,7 +69,10 @@ public sealed class PlaybackScrub
 /// <summary>The title block above the scrubber (TvPlayerScreen.kt tvPlayerEyebrow).</summary>
 public static class PlaybackControlsText
 {
-    /// <summary>"SEVERANCE · S2:E4" for an episode, "MOVIE · 2026" for a film; null when there is nothing.</summary>
+    /// <summary>
+    /// "SEVERANCE · S2:E4" for an episode, "MOVIE · 2026" for a film; a series' extra shows its series alone and a film's
+    /// extra its year. Null when there is nothing.
+    /// </summary>
     public static string? Eyebrow(ItemDetail detail)
     {
         if (detail.Type == "episode" && !string.IsNullOrWhiteSpace(detail.Title))
@@ -78,6 +81,9 @@ public static class PlaybackControlsText
                 ? EpisodeCode.Format(season, episode) : null;
             return string.Join(" · ", new[] { detail.Title.Trim(), code }.Where(part => part is not null)).ToUpperInvariant();
         }
+
+        // tvPlayerEyebrow: any item with a series title shows that series; a series' extra has no episode code.
+        if (!string.IsNullOrWhiteSpace(detail.SeriesTitle)) return detail.SeriesTitle.Trim().ToUpperInvariant();
 
         var kind = detail.Type == "movie" ? "Movie" : null;
         var year = detail.Year is > 0 and { } y ? y.ToString(CultureInfo.InvariantCulture) : null;

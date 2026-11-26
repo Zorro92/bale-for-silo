@@ -215,6 +215,7 @@ public sealed partial class DetailPage
         _returnCastIndex = null;
         _returnSimilarId = null;
         _returnPlaybackFocus = null;
+        _returnTrailerKey = null;
         _returnCollectionsKey = key;
     }
 }

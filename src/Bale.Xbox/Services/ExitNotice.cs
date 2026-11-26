@@ -10,19 +10,26 @@ namespace Bale.Xbox.Services;
 /// returns to. TvPlayerScreen.kt shows the server-end notice as a long Toast while it exits, and Roku (6389fcc) draws its
 /// notice over every screen the same way. Bale has no system toast, so a window popup carries it, in the official player
 /// notice look (TvPlayerNoticeOverlay.kt, as SkylinePlayerNoticeStyle; literals, since code can't read XAML resources
-/// under Native AOT), at the bottom centre where Android draws a toast, for Toast.LENGTH_LONG. It never takes focus or
-/// input. UI thread.
+/// under Native AOT), at the bottom centre where Android draws a toast, for Toast.LENGTH_LONG. The Detail page's short
+/// toasts (YoutubeTrailerLauncher.kt's "No app is available to open this trailer") use it too, for Toast.LENGTH_SHORT.
+/// It never takes focus or input. UI thread.
 /// </summary>
 internal static class ExitNotice
 {
-    // android.widget.Toast.LENGTH_LONG.
-    private static readonly TimeSpan Duration = TimeSpan.FromMilliseconds(3500);
+    // android.widget.Toast.LENGTH_LONG and LENGTH_SHORT.
+    private static readonly TimeSpan LongDuration = TimeSpan.FromMilliseconds(3500);
+    private static readonly TimeSpan ShortDuration = TimeSpan.FromMilliseconds(2000);
     private static Popup? _popup;
     private static Grid? _root;
     private static TextBlock? _text;
     private static DispatcherTimer? _timer;
 
-    public static void Show(string message)
+    public static void Show(string message) => Show(message, LongDuration);
+
+    /// <summary>A Toast.LENGTH_SHORT notice over the current page.</summary>
+    public static void ShowShort(string message) => Show(message, ShortDuration);
+
+    private static void Show(string message, TimeSpan duration)
     {
         try
         {
@@ -54,7 +61,7 @@ internal static class ExitNotice
                 _root = new Grid { IsHitTestVisible = false };
                 _root.Children.Add(pill);
                 _popup = new Popup { Child = _root, IsHitTestVisible = false };
-                _timer = new DispatcherTimer { Interval = Duration };
+                _timer = new DispatcherTimer();
                 _timer.Tick += (_, _) => Hide();
             }
             var bounds = Window.Current.Bounds;
@@ -64,6 +71,7 @@ internal static class ExitNotice
             _popup.IsOpen = true;
             // A second notice restarts the time, as a new toast would.
             _timer!.Stop();
+            _timer.Interval = duration;
             _timer.Start();
         }
         catch (Exception ex) { Log.Error("exit notice", ex); }

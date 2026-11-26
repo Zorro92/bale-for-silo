@@ -17,9 +17,9 @@ public class DetailSectionsTests
         {
             Extras =
             [
-                new ItemExtraInfo { ContentId = "same", Title = "  Making Of  ", DurationSeconds = 65, StillUrl = "/art/extra.jpg" },
-                new ItemExtraInfo { ContentId = "same", Title = "Duplicate" },
-                new ItemExtraInfo { ContentId = "second", Kind = "behind_the_scenes", DurationSeconds = 3725 },
+                new ItemExtraInfo { ContentId = "same", Title = "  Making Of  ", DurationSeconds = 65, StillUrl = "/art/extra.jpg", FileId = 91 },
+                new ItemExtraInfo { ContentId = "same", Title = "Duplicate", FileId = 92 },
+                new ItemExtraInfo { ContentId = "second", Kind = "behind_the_scenes", DurationSeconds = 3725, FileId = 0 },
             ],
             Videos =
             [
@@ -37,6 +37,9 @@ public class DetailSectionsTests
         Assert.Equal("https://silo.example.com/art/extra.jpg", detail.Trailers[0].ThumbnailUrl!.AbsoluteUri);
         Assert.Null(detail.Trailers[1].ThumbnailUrl);
         Assert.Equal("https://i.ytimg.com/vi/same/hqdefault.jpg", detail.Trailers[2].ThumbnailUrl!.AbsoluteUri);
+        // What each card plays: an extra by its content id and file (none for a missing or zero file id), a video by its key.
+        Assert.Equal<TrailerSource>([new LocalExtraSource("same", "91"), new LocalExtraSource("second", null),
+            new RemoteVideoSource("YouTube", "same"), new RemoteVideoSource("youtube", "teaser")], detail.Trailers.Select(card => card.Source));
     }
 
     [Fact]

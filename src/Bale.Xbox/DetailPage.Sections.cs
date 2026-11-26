@@ -82,11 +82,6 @@ public sealed partial class DetailPage
 
     private void OnDetailsFocus(object sender, RoutedEventArgs e) => AnchorSection(DetailsSection);
 
-    private void OnTrailerClick(object sender, ItemClickEventArgs e)
-    {
-        // Playback is not implemented yet. Keep the official-shaped trailer/extra cards selectable without launching a player.
-    }
-
     private void OnSimilarClick(object sender, ItemClickEventArgs e) => OpenSimilar(e.ClickedItem);
 
     /// <summary>
@@ -101,6 +96,7 @@ public sealed partial class DetailPage
         _returnCastIndex = null;
         _returnPlaybackFocus = null;
         _returnCollectionsKey = null;
+        _returnTrailerKey = null;
         if (!_openedFromRelated)
         {
             _returnSimilarId = card.ContentId;
@@ -137,6 +133,7 @@ public sealed partial class DetailPage
                 _returnSimilarId = null;
                 _returnPlaybackFocus = null;
                 _returnCollectionsKey = null;
+                _returnTrailerKey = null;
                 _returnCastIndex = Cast.Items.IndexOf(view);
                 NavigateWithReturn(typeof(PersonPage), new PersonPageEntry(personId));
             }
@@ -227,7 +224,8 @@ public sealed partial class DetailPage
         bool OpenedFromRelated,
         DetailHeroAction? HeroAction,
         ItemCollectionsRow? Collections,
-        string? CollectionsKey);
+        string? CollectionsKey,
+        string? TrailerKey);
 
     private void NavigateWithReturn(Type page, object parameter)
     {
@@ -240,7 +238,7 @@ public sealed partial class DetailPage
             _seriesOverview, _selectedTab?.Season?.Number, _shownSeason, Episodes.Items.OfType<EpisodeView>().Select(view => view.Episode).ToList(),
             _seasonsLoading || _episodesLoading, _playEpisode?.ContentId, _playbackSelections,
             _similarCards, _similarLoaded, _returnCastIndex, _returnSimilarId, _returnPlaybackFocus, _openedFromRelated,
-            _heroAction, _collections, _returnCollectionsKey);
+            _heroAction, _collections, _returnCollectionsKey, _returnTrailerKey);
         var frame = Frame;
         if (frame.Navigate(page, parameter) && frame.BackStack.Count > 0)
         {
@@ -255,6 +253,7 @@ public sealed partial class DetailPage
         _returnCastIndex = saved.CastIndex;
         _returnSimilarId = saved.SimilarId;
         _returnCollectionsKey = saved.CollectionsKey;
+        _returnTrailerKey = saved.TrailerKey;
         _openedFromRelated = saved.OpenedFromRelated;
         _returnPlaybackFocus = saved.PlaybackFocus;
         _playbackSelections = saved.PlaybackSelections;
@@ -329,6 +328,13 @@ public sealed partial class DetailPage
             list = Similar;
             rail = _similarRail;
             target = Similar.Items.OfType<CardView>().FirstOrDefault(view => view.Card.ContentId == id);
+        }
+        else if (_returnTrailerKey is { } trailer)
+        {
+            // Back from an extra's player lands on the card that played it (DetailPage.Trailers.cs).
+            list = Trailers;
+            rail = _trailersRail;
+            target = Trailers.Items.OfType<TrailerView>().FirstOrDefault(view => view.Card.Key == trailer);
         }
         else if (_returnCollectionsKey is { } key && _collectionsShown && _collections is { } collections)
         {

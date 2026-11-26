@@ -100,6 +100,12 @@ public sealed record ItemDetail(
     /// Pedro Pascal, Bella Ramsey, Anna Torv" (TvMarqueeEnrichment.from). Null when both are empty.
     /// </summary>
     public string? MarqueeLine { get; init; }
+
+    /// <summary>
+    /// The server's series_title: an episode's series, or the series that owns an extra (silo-server sets it only for a
+    /// series' extras, never a movie's). The player's eyebrow names it (TvPlayerScreen.kt tvPlayerEyebrow).
+    /// </summary>
+    public string? SeriesTitle { get; init; }
 }
 
 /// <summary>One external rating: the source's mark ("TMDB", "IMDb") and its score as the source writes it ("8.3").</summary>
@@ -116,8 +122,11 @@ public sealed record CastMember(string Name, string? Role, Uri? PhotoUrl)
 
 public sealed record DetailFact(string Label, string Value);
 
-/// <summary>A local extra or YouTube video, in TrailerRail.kt's local-first, deduplicated order.</summary>
-public sealed record TrailerCard(string Key, string Title, string? Secondary, Uri? ThumbnailUrl);
+/// <summary>
+/// A local extra or YouTube video, in TrailerRail.kt's local-first, deduplicated order. <paramref name="Source"/> is
+/// where its video lives; <see cref="TrailerLaunch"/> decides what selecting the card does.
+/// </summary>
+public sealed record TrailerCard(string Key, string Title, string? Secondary, Uri? ThumbnailUrl, TrailerSource Source);
 
 /// <summary>A combined Series-page entry, including the one-shot rail selection (TvItemDetailScreen).</summary>
 public sealed record SeriesDetailEntry(string SeriesId, long SeasonNumber, string? EpisodeId);

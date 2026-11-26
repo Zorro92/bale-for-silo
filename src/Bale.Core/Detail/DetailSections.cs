@@ -13,14 +13,17 @@ public sealed partial class DetailFeed
             "local:" + extra.ContentId,
             ExtraTitle(extra.Title, extra.Kind),
             extra.DurationSeconds is > 0 ? PlayLabel.Clock(extra.DurationSeconds.Value) : null,
-            _browse.Resolve(extra.StillUrl)));
+            _browse.Resolve(extra.StillUrl),
+            new LocalExtraSource(extra.ContentId ?? string.Empty,
+                extra.FileId is long file && file > 0 ? file.ToString(CultureInfo.InvariantCulture) : null)));
         var remote = (item.Videos ?? [])
             .Where(video => string.Equals(video.Site, "youtube", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(video.SiteKey))
             .Select(video => new TrailerCard(
                 $"remote:{video.Site}:{video.SiteKey}",
                 ExtraTitle(video.Name, video.Kind),
                 "YouTube",
-                new Uri($"https://i.ytimg.com/vi/{Uri.EscapeDataString(video.SiteKey!)}/hqdefault.jpg")));
+                new Uri($"https://i.ytimg.com/vi/{Uri.EscapeDataString(video.SiteKey!)}/hqdefault.jpg"),
+                new RemoteVideoSource(video.Site!, video.SiteKey!)));
         return local.Concat(remote).DistinctBy(card => card.Key).ToList();
     }
 

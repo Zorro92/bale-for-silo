@@ -197,6 +197,7 @@ public sealed partial class DetailFeed
             Ratings(item))
         {
             MarqueeLine = MarqueeLine(item),
+            SeriesTitle = string.IsNullOrWhiteSpace(item.SeriesTitle) ? null : item.SeriesTitle.Trim(),
             SeasonNumber = item.SeasonNumber,
             EpisodeNumber = item.EpisodeNumber,
             Year = item.Year,
