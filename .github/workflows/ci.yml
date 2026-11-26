@@ -247,7 +247,8 @@ jobs:
         # Run this workflow manually with production=true to also build and check production.
         debug_server: ${{ fromJSON(inputs.production && '["true", "false"]' || '["true"]') }}
     runs-on: windows-latest
-    timeout-minutes: 30
+    # Production adds the WACK run (up to 25 minutes when appcert hangs without an interactive session).
+    timeout-minutes: ${{ matrix.debug_server == 'false' && 60 || 30 }}
     env:
       NUGET_PACKAGES: ${{ github.workspace }}\.nuget\packages
       CARGO_INCREMENTAL: 0
@@ -289,6 +290,7 @@ jobs:
           ./scripts/test-ffmpeg-checks.ps1
           ./scripts/test-ffmpeginteropx-wrapper.ps1
           ./scripts/test-rav1g-checks.ps1
+          ./scripts/test-production-package-checks.ps1
 
       - name: Download and verify pinned FFmpeg native and wrapper packages
         shell: pwsh
@@ -643,6 +645,39 @@ jobs:
             Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
           if (-not $dumpbin) { throw 'dumpbin.exe is required to inspect rav1g.dll' }
           ./scripts/check-rav1g-package.ps1 -PackagePath $package.FullName -DebugServer '${{ matrix.debug_server }}' -Dumpbin $dumpbin.FullName
+
+      # Microsoft Store rules (docs/store-readiness.md): a production package holds only the Store's capabilities, targets
+      # Windows.Xbox, carries revision 0, has no WinUI 2, symbols or debug-server markers, and ships rav1g with its
+      # licences. A debug-server package must hold every marker and inputInjectionBrokered, which proves on each push
+      # that the production scan would see them.
+      - name: Check the package against the Store rules
+        shell: pwsh
+        run: |
+          $package = Get-ChildItem out -Recurse -Filter '*.msix' |
+            Where-Object { $_.FullName -notmatch '[\\/]Dependencies[\\/]' } | Select-Object -First 1
+          ./scripts/check-production-package.ps1 -PackagePath $package.FullName -DebugServer '${{ matrix.debug_server }}'
+
+      # Windows App Certification Kit on the production package, non-blocking for now (docs/store-readiness.md, "WACK").
+      # The script prints the tests that did not pass, and says so in one line when appcert is missing, needs an
+      # interactive session or writes no report. An Xbox-only package gets the static tests on a desktop runner.
+      - name: Windows App Certification Kit (production)
+        id: wack
+        if: matrix.debug_server == 'false'
+        continue-on-error: true
+        timeout-minutes: 25
+        shell: pwsh
+        run: |
+          $package = Get-ChildItem out -Recurse -Filter '*.msix' |
+            Where-Object { $_.FullName -notmatch '[\\/]Dependencies[\\/]' } | Select-Object -First 1
+          ./scripts/run-wack.ps1 -PackagePath $package.FullName -ReportDirectory wack -CertificatePath out\Bale.cer -TimeoutMinutes 10
+
+      - name: Upload the WACK report
+        if: always() && matrix.debug_server == 'false' && steps.wack.outcome != 'skipped'
+        uses: actions/upload-artifact@v7
+        with:
+          name: wack-report
+          path: wack/
+          if-no-files-found: warn
 
       - name: Save Rust GPU package files
         if: steps.gpu-cache.outputs.cache-hit != 'true'

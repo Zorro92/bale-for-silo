@@ -213,6 +213,9 @@
     <!-- Store readiness (StoreManifestTests): the client channel per build and the CsWinRT check's explicit debug build. -->
     <None Include="../../src/Bale.Xbox/Services/DeviceIdentity.cs" Link="DeviceIdentity.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/check-cswinrt.sh" Link="check-cswinrt.sh" CopyToOutputDirectory="PreserveNewest" />
+    <!-- CI's Store checks (StorePackageCheckTests): the production package check and the WACK runner. -->
+    <None Include="../../scripts/check-production-package.ps1" Link="check-production-package.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/run-wack.ps1" Link="run-wack.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugStreamAdapterSwitch.cs" Link="DebugStreamAdapterSwitch.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugPlayerBackendSwitch.cs" Link="DebugPlayerBackendSwitch.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugStartBudget.cs" Link="DebugStartBudget.cs" />
