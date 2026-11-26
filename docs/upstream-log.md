@@ -17,8 +17,8 @@ part Bale hasn't built yet; check when building it), **deviation** (Bale differs
 | Repo | Commit | Reviewed |
 |---|---|---|
 | silo-android | `b7c0412af6b4` | 2026-11-24 |
-| silo-apple | `3289bedbdd01` | 2026-11-25 |
-| silo-server | `3f7985e7e44a` | 2026-11-25 |
+| silo-apple | `198a3e90f6ba` | 2026-11-26 |
+| silo-server | `0ad67a01e233` | 2026-11-26 |
 | silo-roku | `3ae62aa5c260` | 2026-11-25 |
 
 The first review (2026-11-10) started from the commit each local clone was made at.
@@ -239,7 +239,79 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   `TvPlayerViewModel` persistence port `recordTrackSelection` and tvOS). Bale's player track change
   (`PlayerPage.Tracks.cs`) only replans with `track_change`; nothing writes the preference.
 
+- **Sports episodes by air date (2026-11-26):** the server side has landed (server `08af5257d`): a series
+  with `episode_labels=air_date` (sports leagues numbered like S2026E296) carries it on cards, item detail
+  and watch detail, and episode cards carry `air_date`; clients show the air date where the code goes
+  (Android `b7c0412af`, Apple `5495cdfc`). Bale always prints `EpisodeCode.Format` (Browse rows, Calendar,
+  Detail episodes, player title, Up Next). Needs the contract bump below; the S01E01 deviation covers
+  only how numbers are spelled, so it doesn't conflict. Unblocks the parity-backlog line.
+- **API contract (2026-11-26):** bump `SILO_REF` (pinned `faa406d92`) to server `0ad67a01e` and
+  regenerate; check the catalog card/detail schemas (`episode_labels`, `air_date`, server `08af5257d`)
+  and the markers schema (`video_frames`, `10d3734c6`). The rest of the diff is admin Insights.
+
 ## Reviews
+### 2026-11-26
+
+Two act items, both from the server: sports episodes labelled by air date are now in silo-server's
+contract (Android and Apple already show them), and the contract pin is due a bump to pick that up. Also:
+a replan's new HLS transport can be marked so the old player's late segment requests can't restart it
+(opt-in, no official TV app claims it yet), the scanner now reads the hearing-impaired flag (Bale's SDH
+labels start working after a rescan), and ASS font bundles put the named fonts first.
+
+#### silo-android
+
+No new commits.
+
+#### silo-apple (`3289bedbdd01..198a3e90f6ba`, 2 commits, 2 none)
+
+None for Bale: `198a3e90` (a fast run of Up on Home could reach the top bar while tvOS's LazyVStack had
+not loaded the first row; the shell now hands focus back to the first row; a SwiftUI lazy-loading fix,
+Bale's rows are Rails in one page and Up from row two lands on row one), `5cdcf4a5` (README screenshots).
+
+#### silo-server (`3f7985e7e44a..0ad67a01e233`, 49 commits, 37 none)
+
+- `08af5257d` act: `episode_labels=air_date` on series, cards, item and watch detail, and `air_date` on
+  episode cards; the air date replaces the episode code. Bale prints `EpisodeCode.Format` everywhere and
+  reads neither field. See the Open item; regenerate and check.
+- `e898a72df` later: with `hls_transport_marker_v1` in `deliveries.hls.features`, HLS URLs carry
+  `silo_transport` (echoed into segment URIs) and a superseded transport's requests get 404
+  `playback_transport_superseded` instead of seek-restarting the replacement. Opt-in; no official TV app
+  claims it yet. If Bale does, `PlaybackMediaUrl.IsPlanQuery` must accept `silo_transport` (it rejects it
+  today), an old reader's late 404 must not count as a failure, and the problem type joins
+  `PlaybackProblemLog`. The Rust HLS reader already keeps playlist queries on segment URIs.
+- `10d3734c6` later: a credits tail with no video frame is stored as sparse; adds `video_frames` to the
+  markers schema. Check on the contract bump.
+- `4ea5679d9` later: the effective subtitle-appearance route reads the canonical
+  `playback.subtitle_appearance` rows; the device PUT answers 422 on invalid values. Bale already uses
+  the canonical settings values routes.
+- `23b0d9b72` later: an ASS font bundle (32 fonts / 32 MiB cap) puts the fonts the script names first.
+  Bale fetches the bundle as given; re-test a release with many attached fonts on the console.
+- `01bfa90f1` later: the scanner reads the hearing-impaired flag from the stream disposition (before, every
+  embedded track was stored as not hearing-impaired). Bale's SDH labels and subtitle carry-over use the
+  flag and start working after a rescan; no change.
+- `37df90198` later: trickplay marks a file damaged only after four failures in a row (seek previews more
+  often available); no contract change.
+- `0cb91f267` later: a device signed in by code sees other sessions as id + `current` only and may revoke
+  only itself. For a future signed-in sessions screen (Bale has none).
+- `f4dc5480b`, `c24e4b2ac` later: admin password policy (`GET /api/v2/auth/password-policy`) and field-error
+  codes naming the broken rule. Only once Bale sets passwords.
+- `e0630b776` later: demo visitors can't change accounts or sessions; `revoke_other_sessions` and `can_link`
+  capabilities. Bale uses neither.
+- `abbf8e0ad` later: a pause or resume confirmed over the native control socket shows in the admin views
+  at once. Bale has no control socket; admins see its pause at the next progress report.
+
+None for Bale: 37 commits, web UI, admin Insights and dashboards, backup, database, search indexing,
+collections, work metrics, audiobook progress (`b1b23adcd`), Jellyfin compatibility (`498641093`), FreeBSD
+(`281034fe8`) and the account-change lock order (`8f42f0b90`).
+
+Contract changes on generated paths: `episode_labels` / `air_date` on catalog card and detail schemas
+(`08af5257d`), `video_frames` on markers (`10d3734c6`), the one-line subtitle-appearance change; HLS
+stream paths gain `silo_transport` but aren't generated. The rest is admin Insights.
+
+#### silo-roku
+
+No new commits.
+
 ### 2026-11-25
 
 One act item, from Roku, which catches up with Android TV and tvOS: a track picked in the player is
