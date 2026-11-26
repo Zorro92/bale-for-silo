@@ -197,8 +197,11 @@ deviation from the official Silo apps. `AppSettings.Dav1dGpuFilmGrain` is device
 by default. Each playback attempt captures it, including replans/remounts and rav1g's in-open dav1d
 fallback. When enabled, `FfmpegSource.ApplySoftwareVideo` requests `bale_film_grain_mode=3` from wrapper
 `2.1.0-bale.60`: dav1d CPU output passes through a private D3D11 staged upload and bale_gpu's D3D11
-grain pass, without `bale_zero_copy`, `bale_d3d11_upload` or D3D12. This may help slower older consoles;
-console performance/visual checks are pending. A failed open-time probe keeps CPU grain for that stream
+grain pass, without `bale_zero_copy`, `bale_d3d11_upload` or D3D12. This may help slower older consoles.
+Console check (2026-11-26, Series X, 0.1.791, wrapper bale.84, 1080p60 10-bit SVT-AV1 film-grain clips, on the dav1d
+path): 0 missed frames either way. Bale's Device Portal CPU was ≈12–14% and steady with GPU grain, against ≈30–53% and
+bursty with CPU grain. The same paused frame differs GPU vs CPU by RMSE 0.73%, less than either differs from grain off
+(1.24–1.32%), and the two look the same. A failed open-time probe keeps CPU grain for that stream
 and logs `Bale film grain: mode=dav1d (reason, hr=..)`, while success logs
 `Bale film grain: mode=gpu-d3d11`. Bale logs the final `player: dav1d grain request=... (setting=on|off)`
 once per AV1 open, after debug overrides; that request does not establish which path the fork used.
