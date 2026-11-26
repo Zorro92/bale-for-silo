@@ -70,6 +70,7 @@ dotnet kiota generate \
   --include-path '/api/v2/playback/{session_id}/progress' \
   --include-path '/api/v2/playback/{session_id}' \
   --include-path '/api/v2/playback/{session_id}/replan' \
+  --include-path '/api/v2/markers/files/{file_id}#GET' \
   --include-path '/api/v2/recommendations/discover' \
   --include-path '/api/v2/requests/status' \
   --include-path '/api/v2/requests/discover' \

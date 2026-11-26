@@ -1,5 +1,5 @@
 {
-  "descriptionHash": "7F23FDD01E960FEEAF85D0C1832C315DD2C754A0729DCE8F3178EB9CB25859AA55A15CE5D461D4EBE23702B806B779DDECEF10DF843D6D8CDDC765A9329CFEFC",
+  "descriptionHash": "199B5D2E031B1E1426C5608505DB706C1CCDBA016240A37E0C1B7C2D1CBD5157FBD5FF7CBC9E376AAB207D23106806876649AA374EA4535B334DBBFCE99DEF2B",
   "descriptionLocation": "../../../.cache/silo-openapi-faa406d9246fde64767bc0d350d59278a8317812.json",
   "lockFileVersion": "1.0.0",
   "kiotaVersion": "1.36.1",
@@ -73,6 +73,7 @@
     "/api/v2/playback/{session_id}/progress",
     "/api/v2/playback/{session_id}",
     "/api/v2/playback/{session_id}/replan",
+    "/api/v2/markers/files/{file_id}#GET",
     "/api/v2/recommendations/discover",
     "/api/v2/requests/status",
     "/api/v2/requests/discover",
