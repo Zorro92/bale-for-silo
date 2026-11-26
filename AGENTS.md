@@ -417,6 +417,9 @@ For Bale, a normal app with hevcPlayback on the Series X:
   `SubtitleStreams`) sends `subtitle_embedded_failed` on the single recovery replan before Play,
   keeping session, position, tracks and every claim (`PlaybackEmbeddedSubtitleFailure`). Never for a
   sidecar, packaged artifact, burn-in or a `.sup` window fetch; with the budget spent, play on without subtitles.
+  In-band CEA-608 closed captions (A/53 `cc_data` in H.264/HEVC SEI and MPEG-2 user data) are decoded by bale_gpu
+  `subs::cc` from the fork's packet tap (`bale_cc_sink`, caption ABI `bale_cc_*`) into a live track on the same overlay
+  (`ClosedCaptions`, `SubtitleOverlay.AttachCaptions`); not wired into the player yet (docs/closed-captions.md).
 - FFmpeg audio selection must honor the server's ordinal, not FFmpeg's reordered default:
   map `AudioStreams[].StreamIndex` back to demux order, then set the item's AudioTracks.SelectedIndex
   before Play. Fail closed if the selected stream is missing.
