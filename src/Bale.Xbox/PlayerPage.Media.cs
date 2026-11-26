@@ -81,6 +81,14 @@ public sealed partial class PlayerPage
         // Set by StartSubtitles for an in-container image track: the FFmpeg source feeds the overlay.
         public int? SubtitleStreamIndex { get; set; }
         public ulong SubtitleSinkToken { get; set; }
+        /// <summary>
+        /// This mount's in-band closed caption decoder (PlayerPage.Captions.cs): the FFmpeg source's packet tap feeds it under
+        /// <see cref="CaptionToken"/> (bale_cc_sink). Null off FFmpeg or for a codec the tap does not read; disposed with the mount.
+        /// </summary>
+        public ClosedCaptions? CaptionDecoder { get; set; }
+        public ulong CaptionToken { get; set; }
+        /// <summary>The overlay draws <see cref="CaptionDecoder"/>'s captions (the viewer picked CC).</summary>
+        public bool CaptionsAttached { get; set; }
         /// <summary>The fixed stage at which this mount's native embedded subtitle could not be mounted, or null.</summary>
         public string? EmbeddedSubtitleFailure { get; set; }
         public MediaPlaybackItem? Item { get; set; }
@@ -343,12 +351,10 @@ public sealed partial class PlayerPage
                 if (!media.StageOutput8Bit && media.EngineOutput.StageOutputDepth == 8)
                     media.EngineOutput = DecideEngineOutput(attempt, media, stageNv12Dithered: false);
                 FfmpegSource.ApplySubtitleSink(config, media.SubtitleStreamIndex, media.SubtitleSinkToken);
-                // TODO(captions): in-band closed captions plug in here once the pinned wrapper has fork bale.84's caption
-                // tap (docs/closed-captions.md). For an FFmpeg mount of an H.264, HEVC or MPEG-2 stream: take a fresh token
-                // from the subtitle sink range, register the playback's ClosedCaptions under it (Register starts it afresh
-                // for the mount) and pass it with FfmpegSource.ApplyCaptionSink(config, token). ClosedCaptions.Seen then
-                // offers the CC track, and picking it calls SubtitleOverlay.AttachCaptions with the subtitle appearance, on
-                // the mount's sample timeline (_subtitleTimingOrigin as for bitmaps).
+                // In-band closed captions (fork bale.84's packet tap, docs/closed-captions.md): an H.264, HEVC or MPEG-2 mount
+                // gets its own decoder and bale_cc_sink token, drawn at once while CC is on. After the transport opened, so an
+                // HLS mount's clock already starts at its first segment (StartPlayerClockAt), the captions' timing origin.
+                StartCaptions(attempt, media, config);
                 var engineSource = attempt.UseEngine;
 #if DEBUG_SERVER
                 engineSource |= DebugPresentEngineSwitch.Seconds > 0;
@@ -462,6 +468,8 @@ public sealed partial class PlayerPage
                 media.RandomStream = NativeRandomAccessStream(media.Stream!) ?? media.Stream!.AsRandomAccessStream();
                 if (media.Stream is RustRangeStream) Log.Info("player: stream adapter=rust");
                 media.Source = MediaSource.CreateFromStream(media.RandomStream, transport.MimeType ?? "video/mp4");
+                // Windows' own source has no packet tap: no captions on this mount, but its plan still decides whether CC stays on.
+                StartCaptions(attempt, media, null);
             }
         }
 
@@ -1042,6 +1050,11 @@ public sealed partial class PlayerPage
         media.StartBudget = null;
         Cleanup("detach video output guard", () => media.VideoOutputGuard?.Dispose());
         media.VideoOutputGuard = null;
+        // The mount's caption decoder goes with it (UI thread): bale_cc_destroy unregisters its token and drops its track from
+        // the overlay, and the closing FFmpeg source's last pushes then find no decoder. A remount brings its own (StartCaptions).
+        Cleanup("dispose closed captions", () => media.CaptionDecoder?.Dispose());
+        media.CaptionDecoder = null;
+        media.CaptionsAttached = false;
         media.Opening.TrySetCanceled(media.Token);
 #if DEBUG_SERVER
         // The engine player reads this mount's source; stop it before the source goes.

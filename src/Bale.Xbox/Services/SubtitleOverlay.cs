@@ -185,7 +185,8 @@ internal sealed unsafe partial class SubtitleOverlay : IDisposable
     /// track in <paramref name="style"/> (the subtitle appearance; the converter's default without one), replacing a
     /// loaded track, and starts with the captions the decoder kept and the one shown now. Rows stay on the 608 grid,
     /// as on Android TV. <paramref name="plain"/> draws without 608 colours, italics, underline and backgrounds (Android
-    /// TV's look). LoadText, Clear, another attach or ClosedCaptions.Detach ends it. Does not wait for the render thread;
+    /// TV's look); the player never passes it (owner, 2026-11-25: captions keep their own styling).
+    /// LoadText, Clear, another attach or ClosedCaptions.Detach ends it. Does not wait for the render thread;
     /// any thread. Caption times are the FFmpeg source's sample timeline, so the clock must be that timeline too.
     /// </summary>
     internal int AttachCaptions(ClosedCaptions captions, SubtitleTextStyle? style, bool plain = false)

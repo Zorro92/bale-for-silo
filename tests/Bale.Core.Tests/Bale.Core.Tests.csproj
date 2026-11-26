@@ -94,6 +94,9 @@
     <None Include="../../native/bale-gpu/src/lib.rs" Link="bale_gpu_lib.rs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../native/bale-gpu/src/subs/cc/mod.rs" Link="bale_gpu_cc_mod.rs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../native/bale-gpu/src/subs/cc/ass.rs" Link="bale_gpu_cc_ass.rs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The player's caption wiring (a decoder per mount, the CC row, the pick) and its debug readout, pinned by source. -->
+    <None Include="../../src/Bale.Xbox/PlayerPage.Captions.cs" Link="PlayerPage.Captions.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Services/DebugServer.Captions.cs" Link="DebugServer.Captions.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <!-- A Linux build of bale_gpu (a release cargo build in native/bale-gpu), when there is one, under the DLL's name for ClosedCaptionsNativeTests. -->
     <None Include="../../native/bale-gpu/target/release/libbale_gpu.so" Link="bale_gpu.dll" CopyToOutputDirectory="PreserveNewest" Visible="false"
           Condition="Exists('$(MSBuildThisFileDirectory)../../native/bale-gpu/target/release/libbale_gpu.so')" />

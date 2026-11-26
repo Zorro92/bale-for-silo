@@ -132,6 +132,10 @@
 #   scripts/bale-debug.sh suboverlay [stats|load <url> [font-url...]|clear]  Bale's own subtitle renderer over the open player:
 #                                               load a subtitle file (.srt = SubRip, .vtt = WebVTT, else ASS/SSA; fonts are added first),
 #                                               clear it, or print its counters (default)
+#   scripts/bale-debug.sh captions [cc|off]     in-band closed captions (CEA-608) of the open player: no args = the where line's Captions:
+#                                               (offered/picked, the mount's decoder: seen channels, packets, cues, attached, timing origin);
+#                                               cc picks the subtitle menu's CC row (409 until captions were found), off its Off row, both
+#                                               through the menu's own path (off also turns a server subtitle off and saves Off as a pick does)
 #   scripts/bale-debug.sh goto "Unwatched#2"     setup only: focus the second matching control
 #   scripts/bale-debug.sh targets               list controls goto can reach
 #   scripts/bale-debug.sh tree                  the visible element tree with bounds
@@ -890,6 +894,18 @@ case "${1:-}" in
         exit 2
         ;;
     esac
+    ;;
+  captions)
+    if [[ "$#" -gt 2 || ( "$#" == 2 && ! "$2" =~ ^(cc|off)$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh captions [cc|off]' >&2
+      exit 2
+    fi
+    if [[ "$#" == 1 ]]; then
+      curl --fail-with-body -sS --max-time 5 "$BASE/captions"
+    else
+      # A pick may wait for the Off replan a server subtitle needs first (15 s) and the remount it brings.
+      curl --fail-with-body -sS --max-time 45 -X POST -G "$BASE/captions" --data-urlencode "action=$2"
+    fi
     ;;
   playtest-present)
     present_usage='usage: scripts/bale-debug.sh playtest-present <http(s)-url|@file> [seconds] [target=bgra|fp16|rgb10] [hdr=on|off] (1–60 s, default 10)'

@@ -361,7 +361,8 @@ public sealed partial class PlayerPage
     {
         try
         {
-            await (kind == PlaybackSelectorKind.Audio ? ChangeTracksAsync(trackIndex, null) : ChangeTracksAsync(null, trackIndex));
+            // A subtitle row may be in-band closed captions, which the player draws itself (PlayerPage.Captions.cs).
+            await (kind == PlaybackSelectorKind.Audio ? ChangeTracksAsync(trackIndex, null) : PickSubtitleAsync(trackIndex));
             if (OptionsOpen) MarkTrackRows();
         }
         catch (Exception ex) { LogFailure("options track", ex); }

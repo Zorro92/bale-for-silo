@@ -16,7 +16,8 @@ internal struct BaleCcStats
 /// (FfmpegSource.ApplyCaptionSink, option bale_cc_sink) hands it every packet of the playing H.264, HEVC or MPEG-2
 /// stream on its sample thread; the decoder reorders them by PTS, decodes the selected channel (CC1 first) and keeps
 /// what it shows. SubtitleOverlay.AttachCaptions draws its captions in the subtitle appearance; <see cref="Seen"/>
-/// says whether the stream carries any. Not wired into the player yet (the TODO in PlayerPage.Media.cs).
+/// says whether the stream carries any. The player gives every FFmpeg mount of those codecs its own decoder and token
+/// (PlayerPage.Captions.cs).
 /// Create and Dispose run on the UI thread, the other calls on any; every call is counted in and out, and Dispose
 /// waits for the calls in flight before it destroys the native decoder, after which calls return RO_E_CLOSED. No call
 /// throws, and failures log a fixed message and an HRESULT only, never caption text.

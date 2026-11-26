@@ -79,6 +79,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public int SdrWhiteNits { get; } = AppSettings.SdrWhiteNits;
         /// <summary>The subtitle appearance read this attempt started with; a text subtitle load waits for it (bounded).</summary>
         public Task SubtitleAppearanceRead { get; set; } = Task.CompletedTask;
+        /// <summary>In-band closed captions: whether a mount found them and whether the viewer picked CC (PlayerPage.Captions.cs).</summary>
+        public PlaybackClosedCaptions Captions { get; } = new();
 #if DEBUG_SERVER
         public DebugPlayUrlRequest? DebugUrl => Request.DebugUrl;
         // Match the capability claim and backend even if the debug toggle changes during a request/replan.
@@ -389,6 +391,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         UpdateBufferingQuality();
         UpdateStartBudget();
         UpdateSeekWatchdog();
+        // In-band closed captions: the first CC1 captions a mount's decoder sees add the CC row (about once a second until then).
+        UpdateCaptions();
         // Drift correction about once per second while playing; SubtitleClockPush drops the other ticks.
         PushSubtitleClock();
         if (_recording || _seeking) return;

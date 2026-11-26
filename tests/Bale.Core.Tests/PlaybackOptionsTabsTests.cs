@@ -113,8 +113,9 @@ public class PlaybackOptionsTabsTests
         var code = Read("PlayerPage.Options.cs.txt");
         Assert.Contains("PlaybackOptionsTabs.Visible(_optionsStatsRows.Count > 0", code);
         Assert.Contains("RefreshHudStats(attempt, sampleBandwidth: false).OfficialHudRows()", code);
-        // Picks take the control bar's path (local audio switch or replan) and leave the panel open.
-        Assert.Contains("ChangeTracksAsync(trackIndex, null) : ChangeTracksAsync(null, trackIndex)", code);
+        // Picks take the control bar's path (local audio switch or replan; closed captions the player's own) and leave the
+        // panel open.
+        Assert.Contains("ChangeTracksAsync(trackIndex, null) : PickSubtitleAsync(trackIndex)", code);
         Assert.Contains("PlaybackOptionsTabs.MoveFromRow(index, rows.Count, down, RowsEnabled(rows))", code);
         Assert.Contains("(Style)Application.Current.Resources[\"SkylinePanelRowStyle\"]", code);
         Assert.Contains("UpdateOptionsStats();", Read("PlayerPage.cs.txt"));

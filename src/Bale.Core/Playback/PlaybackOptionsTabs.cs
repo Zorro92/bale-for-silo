@@ -41,8 +41,12 @@ public static class PlaybackOptionsTabs
             option.IsSelected, option.TrackIndex!.Value, option.IsEnabled))
         .ToList();
 
-    /// <summary>The number of real tracks in <paramref name="rows"/> (Off is not a track).</summary>
-    public static int TrackCount(IReadOnlyList<PlaybackTrackRow> rows) => rows.Count(row => row.TrackIndex >= 0);
+    /// <summary>
+    /// The number of real tracks in <paramref name="rows"/>: Off is not a track, in-band closed captions are
+    /// (<see cref="PlaybackClosedCaptions.TrackIndex"/>; TvSubtitleHudState.kt lists player-discovered tracks as rows).
+    /// </summary>
+    public static int TrackCount(IReadOnlyList<PlaybackTrackRow> rows) =>
+        rows.Count(row => row.TrackIndex >= 0 || row.TrackIndex == PlaybackClosedCaptions.TrackIndex);
 
     /// <summary>
     /// The row Down from the tab bar lands on: the checked track (TvPlayerHud.kt HudSubtitlesPane entryRow), else

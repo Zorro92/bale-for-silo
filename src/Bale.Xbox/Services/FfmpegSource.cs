@@ -215,8 +215,8 @@ internal static class FfmpegSource
     /// <summary>
     /// Fork bale.84's caption tap (bale/README.md "In-band caption packet tap"): every packet of the playing H.264, HEVC
     /// or MPEG-2 video stream goes to the closed caption decoder registered under the token (ClosedCaptions.Register,
-    /// 1..ClosedCaptions.MaxToken). A remount is a new media source and needs a new token. Not called yet: see the TODO
-    /// in PlayerPage.Media.cs.
+    /// 1..ClosedCaptions.MaxToken). A remount is a new media source and needs a new token (PlayerPage.Captions.cs
+    /// StartCaptions gives each mount its own).
     /// </summary>
     internal static void ApplyCaptionSink(MediaSourceConfig config, ulong token)
     {

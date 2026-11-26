@@ -107,7 +107,7 @@ public class ClosedCaptionsWiringTests
     }
 
     [Fact]
-    public void TheSinkOptionTakesTheForksTokenRangeAndThePlayerDoesNotUseItYet()
+    public void TheSinkOptionTakesTheForksTokenRange()
     {
         var config = new MediaSourceConfig();
         FfmpegSource.ApplyCaptionSink(config, 0);
@@ -118,12 +118,9 @@ public class ClosedCaptionsWiringTests
         FfmpegSource.ApplyCaptionSink(config, ClosedCaptions.MaxToken);
         Assert.Equal("999999999", config.FFmpegOptions["bale_cc_sink"]);
 
-        // Not wired: the player only marks where the fork's tap connects.
-        var media = Read("PlayerPage.Media.cs.txt");
-        Assert.Contains("// TODO(captions):", media);
-        var code = string.Join('\n', media.Split('\n').Where(line => !line.TrimStart().StartsWith("//", StringComparison.Ordinal)));
-        Assert.DoesNotContain("ApplyCaptionSink", code);
-        Assert.DoesNotContain("ClosedCaptions", code);
+        // The player hands each mount's own token over (PlayerClosedCaptionsWiringTests); nothing is left to do.
+        Assert.Contains("FfmpegSource.ApplyCaptionSink(config, token);", Read("PlayerPage.Captions.cs.txt"));
+        Assert.DoesNotContain("TODO(captions)", Read("PlayerPage.Media.cs.txt"));
     }
 }
 

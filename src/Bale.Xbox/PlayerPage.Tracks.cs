@@ -38,13 +38,17 @@ public sealed partial class PlayerPage
         return new PlaybackSelection(fileId, audio is { } a ? checked((int)a) : null, checked((int)subtitle));
     }
 
-    /// <summary>The Detail lists without their Auto rows: in the player a pick names a track (or Off).</summary>
+    /// <summary>
+    /// The Detail lists without their Auto rows: in the player a pick names a track (or Off). Subtitles end with in-band closed
+    /// captions once the player has found them (PlaybackClosedCaptions.WithEntry, PlayerPage.Captions.cs).
+    /// </summary>
     private IReadOnlyList<PlaybackSelectorOption> TrackOptions(PlaybackSelectorKind kind)
     {
         if (PlayingSelection(out var detail) is not { } selection || detail is null) return [];
         // The Detail page's "Start without subtitles" describes a start, not a running player.
-        return PlaybackFormatting.SelectorOptions(kind, detail, selection).Where(option => option.TrackIndex is not null)
+        var options = PlaybackFormatting.SelectorOptions(kind, detail, selection).Where(option => option.TrackIndex is not null)
             .Select(option => option.TrackIndex == -1 ? option with { Detail = "No subtitles" } : option).ToList();
+        return kind == PlaybackSelectorKind.Subtitles && _attempt is { } attempt ? attempt.Captions.WithEntry(options) : options;
     }
 
     /// <summary>The value a focused Audio / Subtitles pill shows ("English", "Off").</summary>
@@ -90,10 +94,15 @@ public sealed partial class PlayerPage
         CloseTrackMenu();
         // The checked row too: picking what plays switches nothing, but it is the viewer's choice now (ChangeTracksAsync).
         if (kind is null || option.TrackIndex is not { } index) return;
-        _ = kind == PlaybackSelectorKind.Audio ? ChangeTracksAsync(index, null) : ChangeTracksAsync(null, index);
+        // A subtitle row may be in-band closed captions, which the player draws itself (PlayerPage.Captions.cs).
+        _ = kind == PlaybackSelectorKind.Audio ? ChangeTracksAsync(index, null) : PickSubtitleAsync(index);
     }
 
-    private async Task ChangeTracksAsync(int? audioIndex, int? subtitleIndex)
+    /// <param name="remember">
+    /// False for a step of another pick rather than the viewer's own choice (closed captions turning a server subtitle off
+    /// first): no preference waits for the plan it brings.
+    /// </param>
+    private async Task ChangeTracksAsync(int? audioIndex, int? subtitleIndex, bool remember = true)
     {
         // Never queue behind an open, replan or seek; the viewer can pick again.
         if (!_lifecycle.Wait(0))
@@ -115,7 +124,8 @@ public sealed partial class PlayerPage
 #if DEBUG_SERVER
             if (attempt.DebugUrl is not null) return;
 #endif
-            pick = audioIndex is { } audio ? new PlayerTrackPick(PlayerTrackKind.Audio, audio, attempt.Start!.FileId)
+            pick = !remember ? null
+                : audioIndex is { } audio ? new PlayerTrackPick(PlayerTrackKind.Audio, audio, attempt.Start!.FileId)
                 : subtitleIndex is { } subtitle ? new PlayerTrackPick(PlayerTrackKind.Subtitle, subtitle, attempt.Start!.FileId) : null;
             if (pick is not null)
             {
@@ -252,6 +262,8 @@ public sealed partial class PlayerPage
         // The overlay stays; only its track changes (ClearSubtitles also unbinds a demuxer image track).
         ClearSubtitles();
         StartSubtitles(attempt, media);
+        // A server subtitle the answer plays ends closed captions; an Off a CC pick asked for draws them on the cleared overlay.
+        AdoptCaptions(attempt, media);
         PushSubtitleClock(force: true);
         Log.Info("player: subtitle switched in place");
         SaveTrackPicks(attempt);
