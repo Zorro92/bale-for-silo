@@ -163,6 +163,8 @@ impl BenchDevice {
             )?
         };
         let (device, context) = (device.ok_or(E_FAIL)?, context.ok_or(E_FAIL)?);
+        // The release counter is a debug-probes readout; the bench also builds with stage-timing alone.
+        #[cfg(feature = "debug-probes")]
         crate::lifecycle::watch_release(&device);
         let multithread: ID3D10Multithread = context.cast()?;
         // SAFETY: configured before any work; the result is the previous setting, not an error.
