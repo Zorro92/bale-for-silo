@@ -170,6 +170,9 @@ This compares Bale's Settings with Android TV's `screens/settings/TvSettingsScre
 - [ ] Privacy Policy row (TS:2309)
 - [ ] Profile Selection: Android TV has four options (Automatic, Every Time, After 1 Hour, After 12 Hours; `ProfileLaunchPreferences.kt`:28–50) and defaults to Automatic. Bale has two, effectively defaults to Every Time with a remember offer, and has no deviation note. Decide
 
+### Rail and scrolling
+- [x] Owner's console test of 0.1.790 — done (2026-11-26, `68691a8` the rail, `a6c0619` the scrolling); console check pending. Rail: every category row and Sign Out is the rail's 245 wide (SettingsRailCategoryRow / SettingsRailActionRow fillMaxWidth), and only the selected category keeps the selected platter (the template's check states moved into CommonStates: UWP's ToggleButton goes to Normal when unchecked, never to "Unchecked", so a separate check group stayed Checked). Scrolling: every pane and the subtitle picker sheets glide the focused row to Compose's TV pivot, its top 30% down the list (PivotBringIntoViewSpec, which TS's LazyColumns and TvSettingsPickerSheet keep; `SettingsFocusScroll`), since XAML scrolls only for keyboard focus and the page focuses rows programmatically; a sheet opens on its checked row. A newly selected category opens its pane at the top; Left or Back to the selected category keeps the pane where it was. The fixed pickers (at most 7 rows) fit their 460 card and don't scroll
+
 ### Needs a decision first
 - [ ] Dolby Vision and Profile 7 HDR10 Fallback toggles (`player.dolby_vision_enabled`, `player.dv_profile7_hdr10_fallback`; TS:1329–1335): check them against Bale's Dolby Vision rule (passthrough or base layer, never tone-mapped)
 - [ ] Match Content Frame Rate toggle (`player.match_frame_rate`; TS:1341): Bale always matches, so this would be a new off switch
