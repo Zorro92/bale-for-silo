@@ -37,7 +37,7 @@ internal static class Rav1gLibrary
         StatusValue.IsValueCreated && StatusValue.Value.IsCompletedSuccessfully ? StatusValue.Value.Result : null;
 
     // UWP API sets, as the other imports (DebugAudioProbe); pointer-only signatures for DisableRuntimeMarshalling.
-    [DllImport("api-ms-win-core-libraryloader-l2-1-0.dll", ExactSpelling = true, SetLastError = true)]
+    [DllImport("api-ms-win-core-libraryloader-l2-1-0.dll", ExactSpelling = true)]
     private static extern unsafe nint LoadPackagedLibrary(char* libraryName, uint reserved);
 
     [DllImport("api-ms-win-core-libraryloader-l1-2-0.dll", ExactSpelling = true)]
@@ -48,7 +48,8 @@ internal static class Rav1gLibrary
         fixed (char* text = name)
         {
             var module = LoadPackagedLibrary(text, 0);
-            error = module == 0 ? Marshal.GetLastPInvokeError() : 0;
+            // No SetLastError with DisableRuntimeMarshalling (CA1420): read the thread's OS error right after the call.
+            error = module == 0 ? Marshal.GetLastSystemError() : 0;
             return module;
         }
     }

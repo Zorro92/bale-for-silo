@@ -140,7 +140,7 @@ public sealed class Rav1gReleaseTests
         Assert.DoesNotContain("#if", library);
         // LoadPackagedLibrary, as the fork's loader: LoadLibraryEx (NativeLibrary.TryLoad) failed on the console.
         Assert.Contains("(module = LoadPackaged(\"rav1g.dll\", out var error)) == 0", library);
-        Assert.Contains("[DllImport(\"api-ms-win-core-libraryloader-l2-1-0.dll\", ExactSpelling = true, SetLastError = true)]", library);
+        Assert.Contains("[DllImport(\"api-ms-win-core-libraryloader-l2-1-0.dll\", ExactSpelling = true)]", library);
         Assert.DoesNotContain("NativeLibrary.TryLoad", library);
         Assert.Contains("Rav1gPolicy.LibraryExports.FirstOrDefault(name => !NativeLibrary.TryGetExport(module, name, out _))", library);
         Assert.Contains("finally\n        {\n            if (module != 0) FreeLibrary(module);", library);
