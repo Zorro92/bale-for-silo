@@ -51,6 +51,10 @@ public sealed partial class PlayerPage
                     if (_transportDedup.AcceptKey(Environment.TickCount64)) _ = RunPlaybackControlAsync(PlaybackControlRequest.Toggle, "key");
                     break;
                 case PlaybackKeyAction.Select:
+                    // A skip pill on screen takes A / Enter while the controls are hidden, wherever focus is
+                    // (TvPlayerScreen.kt's root handler: Select on the intro pill, else the recap/credits pill), so the
+                    // viewer needs no first press to reveal it. Not while a held trigger scans.
+                    if (!_holdScan.Held && SelectSkipPill()) break;
                     // A on clean playback (owner's map): pause and show the controls, or resume a pause
                     // whose controls have hidden, without bringing them back.
                     var paused = _attempt?.Media?.Player?.PlaybackSession.PlaybackState == MediaPlaybackState.Paused;
@@ -262,6 +266,8 @@ public sealed partial class PlayerPage
             LinkTrackButtons();
         }
         UpdateControls(force: true);
+        // A skip pill rises clear of the controls (TvPlayerOverlays).
+        UpdateSkipPillLift();
         if (!wasVisible) FocusRetry.Until(PlayPauseButton, () => !_controls.Visible || PlayPauseButton.Focus(FocusState.Keyboard));
     }
 
@@ -271,8 +277,10 @@ public sealed partial class PlayerPage
         _scrub.Cancel();
         _controls.Hide();
         TransportControls.Visibility = Visibility.Collapsed;
-        // A buffering pill on screen takes focus back; otherwise, clean playback: the page holds focus so the next key
-        // reaches the player again.
+        UpdateSkipPillLift();
+        // A focused skip pill keeps focus (it is not part of the controls); a buffering pill on screen takes focus back;
+        // otherwise, clean playback: the page holds focus so the next key reaches the player again.
+        if (SkipPillHasFocus()) return;
         if (!FocusBufferingPill()) Focus(FocusState.Programmatic);
     }
 
@@ -294,15 +302,19 @@ public sealed partial class PlayerPage
             CloseTrackMenu();
             return true;
         }
-        // The buffering pill's Back: Keep quality on the prompt, only hiding the undo pill (consumed either way).
-        if (BackClosesBufferingPill()) return true;
-        if (!_controls.Visible) return false;
-        if (_scrub.Active)
+        // TvPlayerScreen.kt's BackHandler: a scrub preview owns Back first, then the intro pill (dismissed and resolved),
+        // then the buffering pill.
+        if (_controls.Visible && _scrub.Active)
         {
             _scrub.Cancel();
             UpdateControls(force: true);
+            return true;
         }
-        else HideControls();
+        if (BackDismissesSkipPill()) return true;
+        // The buffering pill's Back: Keep quality on the prompt, only hiding the undo pill (consumed either way).
+        if (BackClosesBufferingPill()) return true;
+        if (!_controls.Visible) return false;
+        HideControls();
         return true;
     }
 
@@ -461,7 +473,12 @@ public sealed partial class PlayerPage
                 e.Handled = true;
                 ScrubberButton.Focus(FocusState.Keyboard);
             }
-            else if (up && onBar) e.Handled = true;
+            else if (up && onBar)
+            {
+                // A skip pill sits above the bar's end, as Compose's search finds it from the scrubber; else Up stays.
+                e.Handled = true;
+                if (SkipPillVisible) SkipPillButton.Focus(FocusState.Keyboard);
+            }
             else if (down && onBar)
             {
                 e.Handled = true;

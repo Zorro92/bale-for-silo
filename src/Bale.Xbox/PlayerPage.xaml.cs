@@ -144,6 +144,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
         InitializeSubtitleLayer();
         InitializeControls();
         InitializeTracks();
+        InitializeSkipPill();
         _timer.Tick += OnTick;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
@@ -236,6 +237,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
             var ct = attempt.Cancellation.Token;
             // A new attempt of the title: the kept step-down estimate belonged to the last one (buffering-quality design).
             _bufferingController?.NewAttempt();
+            // Its intro and credits decisions too (TvPlayerViewModel.kt resets the intro controller for new playback).
+            ResetSkipMarkers();
             try
             {
                 Log.Info("player: start");
@@ -375,6 +378,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         UpdateUpNext();
         UpdateTransport();
         UpdateControls();
+        // Before the buffering pill: a skip pill outranks it.
+        UpdateSkipMarkers();
         UpdateVersionNotice();
         UpdateBufferingQuality();
         UpdateStartBudget();

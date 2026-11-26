@@ -136,8 +136,10 @@ public sealed partial class PlayerPage
         try
         {
             if (_bufferingController is not { } controller) return;
-            // Options, a track menu, Up Next or the error screen covers the pill (TvPlayerScreen.kt hudOpen || showNextUp).
-            controller.SetCompetingPillVisible(OptionsOpen || TrackMenuOpen || UpNextVisible || ErrorPanel.Visibility == Visibility.Visible);
+            // Options, a track menu, Up Next or the error screen covers the pill (TvPlayerScreen.kt hudOpen || showNextUp), and
+            // the intro, recap and credits skip pills outrank it (bufferingPillBlocked).
+            controller.SetCompetingPillVisible(OptionsOpen || TrackMenuOpen || UpNextVisible || ErrorPanel.Visibility == Visibility.Visible
+                || SkipPillVisible);
             if (_active && !_leaving && !_suspended && _attempt is { } attempt) UpdateBufferingSignals(attempt);
             _bufferingClock.Fire();
             UpdateBufferingUi();

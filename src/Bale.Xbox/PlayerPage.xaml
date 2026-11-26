@@ -204,6 +204,20 @@
         </StackPanel>
       </Grid>
     </Border>
+    <!-- TvPlayerScreen.kt TvPlayerOverlays / TvIntroAutoSkipBanner.kt: the one skip pill, bottom-end, 32 from the edge, 56
+         above the bottom and raised to 200 (clear of the title, bar and buttons) while the controls show. "Skip Intro" (ask),
+         or "Watch Intro" under its "Intro skipped" caption (always), with a fill that lands full as the 5 s timer ends; or the
+         untimed "Skip Recap" / "Skip Credits" (TvMarkerSkipPill). Black 65% capsule, 2dp ring, lit when focused. Hidden
+         while Options, a track menu, Up Next or the error screen covers it (PlayerPage.SkipMarkers.cs). -->
+    <StackPanel x:Name="SkipPillHost" Style="{StaticResource SkylinePlayerSkipPillHostStyle}" Visibility="Collapsed">
+      <TextBlock x:Name="SkipPillCaption" Style="{StaticResource SkylinePlayerSkipPillCaptionStyle}" Visibility="Collapsed" />
+      <Grid HorizontalAlignment="Right">
+        <Border Style="{StaticResource SkylinePlayerSkipPillCapsuleStyle}" />
+        <Border x:Name="SkipPillFill" Style="{StaticResource SkylinePlayerSkipPillFillStyle}" />
+        <Button x:Name="SkipPillButton" Style="{StaticResource SkylinePlayerSkipPillStyle}" Click="OnSkipPillClick"
+                PreviewKeyDown="OnSkipPillKeyDown" GotFocus="OnSkipPillFocus" LostFocus="OnSkipPillFocus" />
+      </Grid>
+    </StackPanel>
     <!-- Only DEBUG_SERVER code makes this visible. Read-only: it must never take player focus. -->
     <Border x:Name="StatsPanel" Style="{StaticResource SkylinePlayerStatsPanelStyle}"
             Visibility="Collapsed" IsHitTestVisible="False">

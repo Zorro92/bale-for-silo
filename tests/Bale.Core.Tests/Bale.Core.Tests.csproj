@@ -144,6 +144,7 @@
     <None Include="../../src/Bale.Xbox/Services/DebugVideoMediaType.cs" Link="DebugVideoMediaType.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/PlayerPage.Tracks.cs" Link="PlayerPage.Tracks.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/PlayerPage.UpNext.cs" Link="PlayerPage.UpNext.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/PlayerPage.SkipMarkers.cs" Link="PlayerPage.SkipMarkers.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <!-- The player-to-Detail handoff of saved track preferences has no UWP dependency. -->
     <Compile Include="../../src/Bale.Xbox/Services/TrackChoiceReturn.cs" Link="TrackChoiceReturn.cs" />
     <None Include="../../src/Bale.Xbox/Services/DebugServer.IdleTest.cs" Link="DebugServer.IdleTest.cs.txt" CopyToOutputDirectory="PreserveNewest" />

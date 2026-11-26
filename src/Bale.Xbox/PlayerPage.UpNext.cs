@@ -73,7 +73,8 @@ public sealed partial class PlayerPage
             if (_nextEpisode is null) return;
             var position = SourcePosition(attempt);
             var fileId = attempt.Plan?.Source?.MediaFileId ?? attempt.Start?.FileId;
-            var credits = attempt.Request.Detail.Versions.FirstOrDefault(version => version.FileId == fileId)?.Credits?.Start;
+            // MarkerTimeline.kt finalCreditsStart: the closing credits, not a credits range before a mid-credits scene.
+            var credits = PlayingMarkers(attempt, fileId).FinalCreditsStart();
             // Read every sample, as TvPlayerViewModel.kt reads nextUpPromptSeconds.value: the refresh below may land
             // (or another device may change it) while this episode plays.
             var promptSeconds = attempt.Client.Settings.NextUpPromptSeconds.Value;

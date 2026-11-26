@@ -1551,6 +1551,71 @@
     <Setter Property="FontWeight" Value="Medium" />
     <Setter Property="Margin" Value="12,0,0,0" />
   </Style>
+  <!-- silo-android TvIntroAutoSkipBanner.kt TvIntroPromptPill (the intro pill and TvMarkerSkipPill), placed by TvPlayerOverlays:
+       bottom-end, 32dp from the edge and 56dp from the bottom (200dp while the controls show; PlayerPage.SkipMarkers.cs).
+       Black 65% capsule at a 28dp radius with a 2dp ring, white 25% resting and white focused; label 18sp Medium (× 0.86),
+       white 55% resting and white focused, 32/18dp padding; the countdown fill, white 14% resting and 40% focused, is clipped
+       to the capsule from the left. Height 56 = 18 + 24sp × 0.86 line + 18, so the radius is 28 (UWP does not clamp
+       CornerRadius). Caption 14sp Medium at white 70%, end-aligned above the capsule, 12dp from its end and 6dp above. -->
+  <Style x:Key="SkylinePlayerSkipPillHostStyle" TargetType="StackPanel">
+    <Setter Property="HorizontalAlignment" Value="Right" />
+    <Setter Property="VerticalAlignment" Value="Bottom" />
+    <Setter Property="Margin" Value="0,0,32,56" />
+  </Style>
+  <Style x:Key="SkylinePlayerSkipPillCaptionStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="12.04" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Foreground" Value="#B3FFFFFF" />
+    <Setter Property="HorizontalAlignment" Value="Right" />
+    <Setter Property="Margin" Value="0,0,12,6" />
+    <Setter Property="MaxLines" Value="1" />
+  </Style>
+  <Style x:Key="SkylinePlayerSkipPillCapsuleStyle" TargetType="Border">
+    <Setter Property="CornerRadius" Value="28" />
+    <Setter Property="Background" Value="#A6000000" />
+    <Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+  <Style x:Key="SkylinePlayerSkipPillFillStyle" TargetType="Border">
+    <Setter Property="CornerRadius" Value="28" />
+    <Setter Property="Background" Value="#24FFFFFF" />
+    <Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+  <Style x:Key="SkylinePlayerSkipPillStyle" TargetType="Button">
+    <Setter Property="Height" Value="56" />
+    <Setter Property="Padding" Value="32,0" />
+    <Setter Property="Foreground" Value="#8CFFFFFF" />
+    <Setter Property="FontFamily" Value="{StaticResource SkylineFont}" />
+    <Setter Property="FontSize" Value="15.48" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Ring" Background="Transparent" BorderBrush="#40FFFFFF" BorderThickness="2" CornerRadius="28" Padding="{TemplateBinding Padding}">
+            <VisualStateManager.VisualStateGroups>
+              <VisualStateGroup x:Name="CommonStates">
+                <VisualState x:Name="Normal" />
+                <VisualState x:Name="PointerOver" />
+                <VisualState x:Name="Pressed" />
+                <VisualState x:Name="Disabled" />
+              </VisualStateGroup>
+              <VisualStateGroup x:Name="FocusStates">
+                <VisualState x:Name="Focused"><VisualState.Setters>
+                  <Setter Target="Ring.BorderBrush" Value="White" />
+                  <Setter Target="Content.Foreground" Value="White" />
+                </VisualState.Setters></VisualState>
+                <VisualState x:Name="PointerFocused" />
+                <VisualState x:Name="Unfocused" />
+              </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" FontFamily="{TemplateBinding FontFamily}"
+                              FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
   <!-- silo-android androidTvApp/.../player/TvPlayerChrome.kt / TvPlayerScrubber.kt:
        Android dp maps 1:1; Time is 14sp × 0.86. Resting track has no puck/focus.
        Bottom 86 = 26 inset + 44 transport + 16 gap, preserving the future transport geometry.

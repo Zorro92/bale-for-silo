@@ -1854,7 +1854,7 @@ Things learned on the way:
   mid-playback video-size/frame-rate notifications, as in `TvPlayerScreen.kt`.
 
 ### Later
-- Shuffle, intro/credits skip (`TvIntroAutoSkipBanner.kt`), trickplay thumbnails.
+- Shuffle, trickplay thumbnails. (Intro/credits skip: docs/player-controls.md step 6, 2026-11-25.)
 - Subtitle search / styling.
 - Watch Party.
 - Audiobooks.

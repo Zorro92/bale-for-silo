@@ -27,7 +27,7 @@ silo-android `androidTvApp/.../tv/ui/screens/player/` (port of the tvOS player).
 | Audio / subtitle switch | Local track switch, or a server `replan` when the route needs it | `TvPlayerViewModel.kt` | control-bar menus and Options tabs: local audio switch on direct play, else replan |
 | Subtitle delay / appearance | In the Subtitles tab | `TvPlayerHud.kt`, `TvSubtitleAppearanceOptions.kt` | missing |
 | Chapters | Tab lists chapters, Select seeks and closes | `TvPlayerHud.kt` | missing |
-| Intro / credits skip | "Skip Intro" pill (ask) or "Intro skipped / Watch Intro" (always), fill tracks the timer | `TvIntroAutoSkipBanner.kt` | missing (player-plan "Later") |
+| Intro / credits skip | "Skip Intro" pill (ask) or "Intro skipped / Watch Intro" (always), fill tracks the timer; untimed "Skip Recap" / "Skip Credits" pill | `TvIntroAutoSkipBanner.kt`, `TvPlayerScreen.kt` | step 6 (2026-11-25), console check pending |
 | Up Next | Next-episode card with 10 s countdown, On Deck cards, auto-play setting | `TvOnDeckItems.kt`, `NEXT_UP_COUNTDOWN_SECONDS` | missing |
 | Trickplay thumbnails | Preview frames on the scrubber (server `WatchTrickplaySheet`) | scrubber | missing |
 
@@ -144,5 +144,45 @@ rather than leaving them transparent so they cost nothing while hidden.
    opens a fresh player for the next episode that replaces this one (Back still returns to Detail);
    Hide/Back dismisses the card for this episode. Auto-play is always on for now; the Settings
    toggle and the transport's Up Next button come later.
-6. Later: intro/credits skip, trickplay, subtitle delay/appearance.
+6. **Intro and credits skip.** Code done 2026-11-25, console check pending (`PlaybackSkipMarkers`, `IntroSkipPrompt`,
+   `MarkerTimeline` in Core; `PlayerPage.SkipMarkers.cs`). Sources: Android `TvPlayerViewModel.kt`, `TvPlayerScreen.kt`
+   (TvPlayerOverlays and the root key handler), `TvIntroAutoSkipBanner.kt`, shared `IntroAutoSkipController.kt`,
+   `MarkerTimeline.kt`, `MarkerSkipTarget.kt`; the tables in silo-server docs/design/2026-08-16-intro-skip-mode.md.
+   - Markers: the playing file's catalog version gives the first occurrence of each kind at once; `GET
+     /api/v2/markers/files/{file_id}` then gives every occurrence (`marker_segments`) and has the server fill on-demand
+     online markers for that file, as the TV apps' watch read does. One read per file per attempt; a failed read keeps
+     the version's markers. Bale has no playback realtime connection, so markers the server detects after the start
+     (`markers_updated`) arrive only with the next playback.
+   - Intro, by Settings › Playback › Skip Intros (`playback.intro_skip_mode`). Ask: "Skip Intro" once playback runs inside
+     an intro not yet decided, for 5 s; the fill grows to full as the timer ends. Select seeks to the intro's end; Back
+     hides it and decides the intro (consumed, so a second Back acts as usual); the timer running out or a seek out of the
+     intro hides it without deciding (scrubbing back in offers it again, with a full timer). A pause freezes the timer at
+     once, a stall or reload after 1.5 s. Always: skip to the end at once and show "Watch Intro" under "Intro skipped" for
+     5 s, pinned to that intro while playback runs on; Select plays the intro from its start; the timer, Select and Back
+     decide it. Never: nothing. A mode change mid-intro re-evaluates it. Decisions last for the attempt (Retry and Up Next
+     start over).
+   - Recap and credits: "Skip Recap" / "Skip Credits" while the playhead is inside an occurrence (recap first), with no
+     timer; not while the intro pill shows or a mount reloads. Select seeks to that occurrence's end, never over a
+     mid-credits scene. Skip Credits in Settings (`playback.auto_skip_credits`): Android TV stores the switch but its
+     player never reads it, so this follows tvOS `CreditsAutoSkipPolicy`: entering a credits occurrence while playing
+     skips it once, and a Skip Credits press marks its occurrence too.
+   - Seeks go through the skip queue (`QueueSeekTo`, the triggers' and scrubber's path), clamped to the file, with no skip
+     chip; a seek still in flight counts at its target. A target at the file's end ends the stream, which raises Up Next or
+     leaves as any end does. Credits never move Up Next (it opens at `next_up_prompt_seconds`, Android `e580e1811`); the
+     series-page return now reads the closing credits' start (`finalCreditsStart`), past a mid-credits scene.
+   - Look: bottom-right, 32 from the edge and 56 above the bottom, raised to 200 (220 ms) while the controls show; black
+     65% capsule with a 2 px ring, white 25% resting and white focused; label 18sp Medium, white 55% resting and white
+     focused; fill white 14% / 40%; caption 14sp at 70%; 200 ms fade in, gone at once.
+   - Focus and keys: the intro pill takes focus as it appears, also with the controls up, but not during a scrub preview
+     or a held trigger; the recap/credits pill never does. Controls hidden: A / Enter press the visible pill wherever focus
+     is, instead of the owner's pause (Android routes D-pad Center to the pill the same way); Back dismisses the intro
+     pill; the D-pad brings up the controls with Play/Pause focused, as always. Controls up: Up from the bar reaches the
+     pill, Down goes back to the bar, Up/Left/Right stay on it (the triggers still skip); A presses what has focus. A pill
+     that hides with focus hands it to the bar (controls up) or the page; a focused pill keeps focus when the controls
+     hide. Back goes to a scrub preview first, then the intro pill, then the buffering pill, then the controls. Options,
+     Up Next and the error screen take the pill down (its timer runs on underneath, and a pill that comes back takes focus
+     again); a track menu only hides it. While a skip pill shows, the buffering pill waits (hidden, timer frozen).
+   - Not mirrored: the Options Video tab's Skip intros row (`TvPlayerHud.kt`), Watch Party's room rules, and the web's
+     untimed Skip Intro that comes back with the controls after the ask timer (server `594e8f1e2`; neither TV app has it).
+7. Later: trickplay, subtitle delay/appearance.
 

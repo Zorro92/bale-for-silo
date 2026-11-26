@@ -1237,6 +1237,7 @@ internal sealed partial class DebugServer
                 builder.Append(" | ").Append(label).Append('=').Append(EscapeText(value));
             builder.Append('\n');
             builder.Append("Player error: \"").Append(EscapeText(DebugScreenText.Compact(player.DebugError))).Append("\"\n");
+            builder.Append("Skip markers: ").Append(player.DebugSkipMarkers).Append('\n');
         }
         var popups = OpenPopups();
         builder.Append(popups.Count == 0 ? "Overlays: none\n" : "Overlays:\n");
