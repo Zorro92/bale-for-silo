@@ -160,6 +160,8 @@ This compares Bale's Settings with Android TV's `screens/settings/TvSettingsScre
 - [ ] Rewind on Resume (local, default 7 s; TS:1423; Bale fixed at 7 s in `PlaybackStartPosition.cs`) and Still Watching prompt (local `player.passout_threshold`, default 3; TS:1428; Bale has none)
 - [ ] Video and audiobook skip back/forward intervals (`player.video_skip_*`, profile; TS:1458–1480; Bale fixed 10/30 s in `PlaybackSeek.cs`) and Reset of the device overrides (TS:1484)
 
+- [ ] In-band closed captions (CEA-608, then 708): A53 cc_data from H.264/HEVC SEI and MPEG-2 GA94 user data, reordered to presentation order, decoded in Rust (bale_gpu) and drawn by libass in the subtitle appearance; a CC track in the subtitle menu when captions are found. Android TV gets them from Media3, and AetherEngine has its own decoder (CC1 first, `AetherEngine+ClosedCaptions.swift`, `CCDataParser.swift`). Bale has none, although it was planned on 2026-11-10. Needs a video packet tap in the FFmpegInteropX fork (requested 2026-11-25). Test clips: bale-subtitle-clips 10–15
+
 ### Display and catalog
 - [ ] Spoilers: blur unwatched episode images, hide unwatched episode descriptions (`catalog.hide_unwatched_episode_images` / `_overviews`; TS:1443–1450)
 - [ ] Cards & Posters: Poster Size and Only This Device (`ui.card_presentation`; TS:1091–1110)
