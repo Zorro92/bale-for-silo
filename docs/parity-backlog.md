@@ -146,6 +146,33 @@ Watch Party, Shuffle, theme music, audiobook player, Cast standby) waits for the
   - Console 0.1.180 (debug previews only; no real profile writes): manage picker Right stops at Add, Down → Delete → Done and Up back; Delete dialog copy matches and Cancel returns to Delete; manage PIN prompt copy matches, wrong PIN shows "Wrong PIN. Try again.", 1234 unlocks (keypad is D-pad only, like `TvPinEntryDialog.kt`); editor shows 18 distinct presets in 6 columns inside the 580 column (Compose shrinks the 584 width), style chips stop at Pixel Art, Down order chips → Shuffle → grid → Name → PIN → Child → ratings → libraries → Save. Fixed while checking: DiceBear cache key ignored the seed (all presets identical), 5-column wrap and right-edge clipping, ScrollViewer clipping Save's focus lift, square shadow corners and white icons on focused pills, and focus after the manage PIN now returns to the primary tile (`pinOpenedBy`; 0.1.182: both after 1234 and after cancel). 0.1.182 also: Shuffle loads a new batch and previews its first preset (official clears the selection and falls back to `presets.firstOrNull()`), Initials shows the official hint, editor Back returns to the opener tile. Still for the owner: real create/edit/delete, live PIN/reverification
   - Local validation (2026-11-03): all 1,013 Core/fixture/declarative tests pass; rail-layout check passes (9 card rails, 29 explicit non-card lists); all 33 Xbox XAML files parse; changed profile/dialog event bindings are instance methods and referenced resources resolve; all 10 generated profile artwork assets pass reproducibility checks; shell syntax and `git diff --check` pass. These are Linux checks, not a UWP build or console verification. No deployment, console operations or push was performed
 
+## Settings parity (audit 2026-11-25)
+
+This compares Bale's Settings with Android TV's `screens/settings/TvSettingsScreen.kt` (TS) and the tvOS settings views. Server-backed settings are read and written through `/api/v2/settings/values/{key}` (manifest `contracts/settings/v1/manifest.json`); profile_device is the per-device override. Bale today reads only `playback.auto_play_next`, `playback.next_up_prompt_seconds` and `playback.buffering_quality_mode`; subtitle defaults come from the profile record.
+
+### Playback, before the stable release
+- [ ] Skip Intros / Skip Credits: the settings (`playback.intro_skip_mode`, default ask; `playback.auto_skip_credits`, default off; TS:1403, :1408) and the player's Skip Intro / Skip Credits buttons from the server's markers. Bale has neither
+- [ ] Subtitles pane: Language, Behavior, Show Forced Subtitles (`playback.subtitle_language` / `subtitle_mode` / `show_forced_subtitles`; TS:1911–1925), Metadata Language (`catalog.metadata_language`; TS:1939), and Appearance (`playback.subtitle_appearance`, Only on This Device; TS:1958–2023) for Bale's own renderer
+- [ ] Show Next Up picker (`playback.next_up_prompt_seconds`, default 30 s; TS:1395). Bale already reads the value
+- [ ] Audio Language, Resolution, Maximum Bitrate (`playback.audio_language`, `playback.preferred_quality`, `playback.max_bitrate_kbps`; TS:1276–1317)
+- [ ] Rewind on Resume (local, default 7 s; TS:1423; Bale fixed at 7 s in `PlaybackStartPosition.cs`) and Still Watching prompt (local `player.passout_threshold`, default 3; TS:1428; Bale has none)
+- [ ] Video and audiobook skip back/forward intervals (`player.video_skip_*`, profile; TS:1458–1480; Bale fixed 10/30 s in `PlaybackSeek.cs`) and Reset of the device overrides (TS:1484)
+
+### Display and catalog
+- [ ] Spoilers: blur unwatched episode images, hide unwatched episode descriptions (`catalog.hide_unwatched_episode_images` / `_overviews`; TS:1443–1450)
+- [ ] Cards & Posters: Poster Size and Only This Device (`ui.card_presentation`; TS:1091–1110)
+- [ ] Title Pages: Show title art (`ui.title_art`; TS:3148–3161); Theme Music and Loop (`ui.theme_music_enabled` / `_loop`; TS:3097–3122)
+- [ ] Privacy Policy row (TS:2309)
+- [ ] Profile Selection: Android TV has four options (Automatic, Every Time, After 1 Hour, After 12 Hours; `ProfileLaunchPreferences.kt`:28–50) and defaults to Automatic. Bale has two, effectively defaults to Every Time with a remember offer, and has no deviation note. Decide
+
+### Needs a decision first
+- [ ] Dolby Vision and Profile 7 HDR10 Fallback toggles (`player.dolby_vision_enabled`, `player.dv_profile7_hdr10_fallback`; TS:1329–1335): check them against Bale's Dolby Vision rule (passthrough or base layer, never tone-mapped)
+- [ ] Match Content Frame Rate toggle (`player.match_frame_rate`; TS:1341): Bale always matches, so this would be a new off switch
+- [ ] Display resolution matching toggle (a documented deviation, on by default; AGENTS.md says the toggle comes with 0.2.x Settings)
+
+### Not for Xbox, or blocked
+- App language (`ui.app_language`; needs localisation); Diagnostics pane (no reporting pipeline); Show Audiobooks (no audiobook tab); Watch Party; Force HDR Passthrough and True Black Bars (Android hardware workarounds)
+
 ## From upstream reviews
 
 Items from the upstream reviews in `docs/upstream-log.md` (Open items there has the detail). Held items wait on the condition given.
