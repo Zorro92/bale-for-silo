@@ -138,9 +138,12 @@ public sealed class Rav1gReleaseTests
         // The library check runs in every build, never under DEBUG_SERVER, and frees what it loaded.
         var library = Read("Rav1gLibrary.cs.txt");
         Assert.DoesNotContain("#if", library);
-        Assert.Contains("NativeLibrary.TryLoad(\"rav1g.dll\", out module)", library);
+        // LoadPackagedLibrary, as the fork's loader: LoadLibraryEx (NativeLibrary.TryLoad) failed on the console.
+        Assert.Contains("(module = LoadPackaged(\"rav1g.dll\", out var error)) == 0", library);
+        Assert.Contains("[DllImport(\"api-ms-win-core-libraryloader-l2-1-0.dll\", ExactSpelling = true, SetLastError = true)]", library);
+        Assert.DoesNotContain("NativeLibrary.TryLoad", library);
         Assert.Contains("Rav1gPolicy.LibraryExports.FirstOrDefault(name => !NativeLibrary.TryGetExport(module, name, out _))", library);
-        Assert.Contains("finally\n        {\n            if (module != 0) NativeLibrary.Free(module);", library);
+        Assert.Contains("finally\n        {\n            if (module != 0) FreeLibrary(module);", library);
         Assert.Contains("private static readonly Lazy<Task<Rav1gLibraryStatus>> StatusValue = new(() => Task.Run(Check));", library);
     }
 

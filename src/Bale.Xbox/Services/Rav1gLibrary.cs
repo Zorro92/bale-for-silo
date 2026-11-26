@@ -36,6 +36,23 @@ internal static class Rav1gLibrary
     private static Rav1gLibraryStatus? Completed =>
         StatusValue.IsValueCreated && StatusValue.Value.IsCompletedSuccessfully ? StatusValue.Value.Result : null;
 
+    // UWP API sets, as the other imports (DebugAudioProbe); pointer-only signatures for DisableRuntimeMarshalling.
+    [DllImport("api-ms-win-core-libraryloader-l2-1-0.dll", ExactSpelling = true, SetLastError = true)]
+    private static extern unsafe nint LoadPackagedLibrary(char* libraryName, uint reserved);
+
+    [DllImport("api-ms-win-core-libraryloader-l1-2-0.dll", ExactSpelling = true)]
+    private static extern int FreeLibrary(nint module);
+
+    private static unsafe nint LoadPackaged(string name, out int error)
+    {
+        fixed (char* text = name)
+        {
+            var module = LoadPackagedLibrary(text, 0);
+            error = module == 0 ? Marshal.GetLastPInvokeError() : 0;
+            return module;
+        }
+    }
+
     private static unsafe Rav1gLibraryStatus Check()
     {
         Rav1gLibraryStatus status;
@@ -46,7 +63,13 @@ internal static class Rav1gLibrary
             // never claimed (DeviceIdentity), so the library is not even loaded.
             if (!DeviceIdentity.SoftwareVideoSupported) status = new(false, "rav1g.dll not checked (no software video on this console)");
             else if (!Present) status = Rav1gPolicy.Library(present: false, loaded: false, null, null);
-            else if (!NativeLibrary.TryLoad("rav1g.dll", out module)) status = Rav1gPolicy.Library(true, false, null, null);
+            // LoadPackagedLibrary, as the fork's loader: .NET's library loader (LoadLibraryEx) refused the packaged
+            // rav1g.dll on the console (2026-11-26, 0.2.803: "rav1g.dll failed to load" while the fork loaded it).
+            else if ((module = LoadPackaged("rav1g.dll", out var error)) == 0)
+            {
+                Log.Info($"player: rav1g.dll LoadPackagedLibrary error {error}");
+                status = Rav1gPolicy.Library(true, false, null, null);
+            }
             else
             {
                 var missing = Rav1gPolicy.LibraryExports.FirstOrDefault(name => !NativeLibrary.TryGetExport(module, name, out _));
@@ -62,7 +85,7 @@ internal static class Rav1gLibrary
         }
         finally
         {
-            if (module != 0) NativeLibrary.Free(module);
+            if (module != 0) FreeLibrary(module);
         }
         Log.Info($"player: {status.Detail}");
         return status;
